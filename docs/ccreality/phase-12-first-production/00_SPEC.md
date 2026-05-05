@@ -4,14 +4,14 @@
 
 1. Run one real SWE-bench Lite instance through the engine to confirm production wiring.
 2. Run one real `/ccreality-iterate` to confirm the optimizer side works end-to-end.
-3. Commit the entire cutover as one atomic commit (per atomicity rule).
+3. Record the final production verification/cutover commit on `ccreality-cutover`.
 
 ## Scope
 
 - One SWE-bench Lite instance (operator's choice). Recommendation: pick a known-easy one for first light.
 - One run of `target/release/reality-loop attempt --task-manifest ... --official-eval-each-attempt`.
 - One run of `claude --print "/ccreality-iterate" --model opus`.
-- One `git commit` on `ccreality-cutover`.
+- One final Phase 12 `git commit` on `ccreality-cutover` after the real attempt and optimizer turn are verified.
 
 Out of scope:
 - Merging to `main` (operator decision).
@@ -21,7 +21,7 @@ Out of scope:
 ## Deliverables
 
 - `/tmp/ccreality-prod-1/` populated with one real attempt + one optimizer recommendation.
-- One commit on `ccreality-cutover` containing all the work from Phases 1–11.
+- `ccreality-cutover` contains the verified incremental cutover commits plus a final Phase 12 commit with the production verification record.
 
 ## AI-verifiable end-state
 
@@ -50,4 +50,4 @@ The recommendation artifact has a `status` field that is one of `changed`, `no_c
 
 ## Failure handling
 
-If Phase 12 fails (e.g., recommendation never written, MCP server crashes, hooks misfire), do NOT commit. Roll back to the post-Phase-11 state with `git stash` or `git restore`, fix the offending phase, re-verify, and re-attempt Phase 12.
+If Phase 12 fails (e.g., recommendation never written, MCP server crashes, hooks misfire), do NOT create the Phase 12 commit. Roll back only the failed Phase 12 edits/artifacts with `git stash` or `git restore`, fix the offending phase, re-verify, and re-attempt Phase 12.

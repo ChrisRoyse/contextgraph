@@ -465,7 +465,7 @@ pub async fn harness_apply_line_window_edit(args: Value) -> Result<Value> {
     let project_root = context_graph_cli::governed_edit::project_root()?;
     let runtime_root = require_active_runtime_root().await?;
     let task = require_active_target_instance().await?;
-    let attempt = super::helpers::latest_attempt_number(&runtime_root, Some(&task))
+    let attempt = super::helpers::latest_attempt_number(&runtime_root, Some(&task))?
         .ok_or_else(|| CCRealityError::new(
             "CCREALITY_HARNESS_ATTEMPT_MISSING",
             "could not identify latest attempt for active target instance",
@@ -474,7 +474,7 @@ pub async fn harness_apply_line_window_edit(args: Value) -> Result<Value> {
             json!({"runtime_root": runtime_root.display().to_string(), "target_instance": task.clone()}),
             Some(format!("file:{}", runtime_root.display())),
         ))?;
-    let run_id = super::helpers::latest_run_id(&runtime_root).ok_or_else(|| CCRealityError::new(
+    let run_id = super::helpers::latest_run_id(&runtime_root)?.ok_or_else(|| CCRealityError::new(
         "CCREALITY_HARNESS_RUN_MISSING",
         "could not identify latest run directory",
         "runtime.run_id",

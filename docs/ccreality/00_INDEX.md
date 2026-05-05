@@ -67,7 +67,7 @@ Current branch: `ccreality-cutover`.
 
 Completed so far:
 - **Phase 0 — Foundation:** branch `ccreality-cutover` created from base SHA `411443fdcbd8db4005cfe46d44f64f7698c2f11b`; rollback source of truth written to `/tmp/ccreality-cutover-base.sha`.
-- **Phase 1 — Excision:** `crates/context-graph-cli/src/bin/reality-loop.rs` contains no `deepseek|openai|gpt-5|chatgpt` text and is 7,145 lines; `crates/context-graph-cli/src/governed_edit.rs` exists and is exported from the `context_graph_cli` library target.
+- **Phase 1 — Excision:** `crates/context-graph-cli/src/bin/reality-loop.rs` contains no `deepseek|openai|gpt-5|chatgpt` text and currently reads back at 7,203 lines; the Phase 1 completion log recorded 7,145 lines. `crates/context-graph-cli/src/governed_edit.rs` exists and is exported from the `context_graph_cli` library target.
 - **Phase 1 verification:** `/tmp/phase-01-verify.log` ends with `Phase 1 verification: ALL PASS`; `/tmp/ccreality-phase-progress.log` has `phase-01: PASS`.
 - **Phase 1 manual FSV artifacts:** `/tmp/ccreality-phase1-fsv-output/observations.json` records a real governed edit (`alpha/beta` → `alpha/gamma`), diff readback, command readback, and three edge-case failures.
 

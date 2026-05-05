@@ -100,7 +100,7 @@ ls -la scripts/cc/ scripts/cc/tests/hooks/
 echo "=== Permissions ==="
 stat -c '%a %n' scripts/cc/*.sh scripts/cc/tests/hooks/*.sh
 echo "=== ShellCheck ==="
-shellcheck scripts/cc/*.sh 2>&1 | head -30 || true
+shellcheck scripts/cc/*.sh
 echo "=== Test runs ==="
 for t in scripts/cc/tests/hooks/test_*.sh; do
   echo "--- $t ---"

@@ -70,9 +70,11 @@ cgreality_log_event() {
   local runtime_root="$(cgreality_runtime_root)"
   if [ -z "$runtime_root" ]; then return 0; fi
   local log="${runtime_root}/cgreality-hook-events.jsonl"
-  jq -nc --arg ts "$(date -u +%FT%TZ)" --arg ev "$1" --arg payload "$2" '{
+  if ! jq -nc --arg ts "$(date -u +%FT%TZ)" --arg ev "$1" --arg payload "$2" '{
     timestamp: $ts, event: $ev, payload: $payload
-  }' >> "$log" 2>/dev/null || true
+  }' >> "$log"; then
+    printf '{"status":"error","error_code":"CCREALITY_HOOK_EVENT_LOG_WRITE_FAILED","source_of_truth":"file:%s"}\n' "$log" >&2
+  fi
 }
 ```
 
@@ -279,13 +281,16 @@ fi
 # Mint a harness-transition record via the cgreality MCP CLI helper if available.
 TRANSITION_PATH=""
 if command -v context-graph-cli >/dev/null 2>&1; then
-  TRANSITION_PATH="$(context-graph-cli ccreality record-harness-transition \
+  TRANSITION_JSON="$(context-graph-cli ccreality record-harness-transition \
     --tool-use-id "$TOOL_USE_ID" \
     --file "$REL_PATH" \
     --new-sha "$NEW_SHA" \
     --diff-stat "$DIFF_STAT" \
     --cargo-result "$CARGO_LINE" \
-    --format json 2>/dev/null | jq -r '.transition_path // ""' || true)"
+    --format json)"
+  TRANSITION_PATH="$(printf '%s' "$TRANSITION_JSON" | jq -r '.transition_path')"
+else
+  cgreality_log_event "HarnessTransitionRecorderMissing" "{\"tool_use_id\":\"$TOOL_USE_ID\",\"file\":\"$REL_PATH\"}"
 fi
 
 CTX="Post-edit reality: file=$REL_PATH new_sha=$NEW_SHA. Diff stat: $DIFF_STAT."

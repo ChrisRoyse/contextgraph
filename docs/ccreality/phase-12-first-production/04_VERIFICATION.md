@@ -42,7 +42,7 @@ LINE_COUNT=$(wc -l < "$SHIFT_LOG")
 echo "  $LINE_COUNT shift entries"
 echo "  pass"
 
-echo "=== 12.V5 Single cutover commit on the branch ==="
+echo "=== 12.V5 Cutover commits exist on the branch ==="
 COMMIT_COUNT=$(git log --oneline ccreality-cutover ^main 2>/dev/null | wc -l || echo 0)
 echo "  commits on ccreality-cutover ahead of main: $COMMIT_COUNT"
 [ "$COMMIT_COUNT" -ge 1 ]

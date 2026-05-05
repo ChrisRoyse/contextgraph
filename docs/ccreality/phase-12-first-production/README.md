@@ -11,8 +11,8 @@
 2. Runs one real engine attempt.
 3. Runs one real `/ccreality-iterate` against that attempt.
 4. Verifies the recommendation artifact and shift log.
-5. Records the per-phase progress log into a final commit.
-6. Commits the entire cutover as one big commit on `ccreality-cutover`.
+5. Records the per-phase progress log into a final Phase 12 commit.
+6. Leaves `ccreality-cutover` ready for review; optional squashing is a review-time decision, not part of Phase 12 verification.
 
 This is the cutover finishing line. After Phase 12, the branch is ready for review and merge to `main`.
 
@@ -34,7 +34,7 @@ jq -e '.status' "$RECOMMENDATION" >/dev/null
 SHIFT_LOG=$(find /tmp/ccreality-prod-1/cgreality-shift-log -name '*.jsonl' | head -1)
 test -s "$SHIFT_LOG"
 
-# 4. Single commit on the branch contains the cutover
+# 4. Branch has cutover commits ahead of main
 [ "$(git log --oneline ccreality-cutover ^main | wc -l)" -ge 1 ]
 
 # 5. Phase progress log exists with all 13 entries

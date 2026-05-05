@@ -2,7 +2,7 @@
 
 **Estimated duration:** 2–4 hours.
 **Status:** pending.
-**Depends on:** Phase 1 (lifted module) + Phase 5 (config files; can be done first).
+**Depends on:** Phase 1 (lifted module), Phase 2 (engine subcommands/smoke contract), and Phase 5 (config files).
 **Unblocks:** Phase 4.
 **New code:** ~1,500–2,500 lines of Rust under `crates/context-graph-mcp/src/handlers/tools/reality_loop/`.
 

@@ -39,7 +39,8 @@ Note: `hook_user_prompt_submit.sh` was UPDATED during planning to also inject th
 After each:
 ```bash
 chmod +x scripts/cc/hook_*.sh
-shellcheck scripts/cc/hook_*.sh 2>/dev/null || true
+command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck is required for Phase 6 verification"; exit 1; }
+shellcheck scripts/cc/hook_*.sh
 ```
 
 If shellcheck reports issues (SC2086 unquoted vars, SC2155 declare-and-assign, etc.), fix them.

@@ -5,7 +5,7 @@
 - One real SWE-bench Lite instance has been processed end-to-end through the new ccreality stack.
 - A recommendation artifact exists, schema-validated, with status `changed|no_change|blocked|error`.
 - Shift log has at least one entry.
-- Single commit on `ccreality-cutover` contains the entire cutover (Phases 1–11's work + Phase 12's verification artifacts if any).
+- `ccreality-cutover` contains verified incremental cutover commits plus the final Phase 12 production verification/cutover commit.
 - `/tmp/ccreality-phase-progress.log` records 13 PASS entries.
 
 ## What now

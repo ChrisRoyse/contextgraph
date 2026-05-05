@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -21,13 +21,75 @@ const DEFAULT_OLLAMA_TEMPERATURE: f64 = 0.0;
 const DEFAULT_OLLAMA_TOP_P: f64 = 0.9;
 const DEFAULT_OFFICIAL_DOCKER_HOST: &str = "unix:///var/run/docker.sock";
 const DEFAULT_OFFICIAL_DOCKER_CONFIG: &str = "/home/cabdru/.cache/contextgraph-docker-config";
+const DEFAULT_SMOKE_RUNTIME_ROOT: &str = "/tmp/cgreality-smoke";
+const DEFAULT_REPLAY_OUTPUT_LABEL: &str = "replay";
 const DATASET_NAME: &str = "princeton-nlp/SWE-bench_Lite";
 const LOCAL_PYTHON_BIN: &str = "python3";
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "reality-loop")]
-#[command(about = "Rust-owned ContextGraph reality loop for local SWE-bench repair attempts")]
-struct Args {
+#[command(version)]
+#[command(
+    about = "ContextGraph reality engine: runs Gemma SWE-bench attempts and synthetic smokes; writes durable artifacts."
+)]
+#[command(
+    long_about = "After Phase 1+ of the ccreality cutover, this binary is a pure reality engine. The outer optimizer lives in Claude Code, which talks to ContextGraph through the cgreality MCP server. See docs/ccreality/05_REALITY_ENGINE_RESPONSIBILITY.md."
+)]
+struct TopArgs {
+    #[command(subcommand)]
+    cmd: Cmd,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum Cmd {
+    /// Run one or more Gemma SWE-bench repair attempts. Writes attempt artifacts.
+    Attempt(AttemptArgs),
+    /// Run a synthetic smoke attempt. No Gemma, no Docker. For wiring verification.
+    Smoke(SmokeArgs),
+    /// Replay an existing attempt's reality-signal-packet builder against current code.
+    Replay(ReplayArgs),
+    /// Full-state-verify every JSON artifact under a runtime root.
+    Verify(VerifyArgs),
+}
+
+#[derive(Parser, Debug, Clone)]
+struct SmokeArgs {
+    #[arg(long, default_value = DEFAULT_SMOKE_RUNTIME_ROOT)]
+    runtime_root: PathBuf,
+    /// Label appended to the synthetic instance ID.
+    #[arg(long, default_value = "smoke")]
+    label: String,
+    /// Force-fail the smoke to exercise failure artifact writing.
+    #[arg(long, default_value_t = false)]
+    force_fail: bool,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct ReplayArgs {
+    /// Path to an existing attempt-summary.json.
+    #[arg(long)]
+    attempt_summary_path: PathBuf,
+    /// Where to write the replayed reality-signal-packet envelope.
+    #[arg(long)]
+    output_dir: Option<PathBuf>,
+    /// Suffix on the output filename.
+    #[arg(long, default_value = DEFAULT_REPLAY_OUTPUT_LABEL)]
+    label: String,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct VerifyArgs {
+    /// Runtime root containing attempt directories.
+    #[arg(long)]
+    runtime_root: PathBuf,
+    /// Specific attempt to verify. When omitted, all JSON artifacts are enumerated.
+    #[arg(long)]
+    attempt: Option<u64>,
+}
+
+#[derive(Parser, Debug, Clone)]
+#[command(about = "Run one or more Gemma SWE-bench repair attempts")]
+struct AttemptArgs {
     #[arg(long, default_value = DEFAULT_MODEL)]
     model: String,
     #[arg(long)]
@@ -189,7 +251,7 @@ struct AttemptRecord {
 }
 
 struct AgentToolContext<'a> {
-    args: &'a Args,
+    args: &'a AttemptArgs,
     task: &'a TaskManifest,
     context_graph_bin: &'a Path,
     ledger: &'a Path,
@@ -204,8 +266,8 @@ struct AgentToolContext<'a> {
 
 #[tokio::main]
 async fn main() {
-    let args = match Args::try_parse() {
-        Ok(args) => args,
+    let top = match TopArgs::try_parse() {
+        Ok(top) => top,
         Err(err) => {
             let exit_code = err.exit_code();
             let kind = err.kind();
@@ -229,31 +291,306 @@ async fn main() {
             std::process::exit(exit_code);
         }
     };
-    let exit_code = match run(args.clone()).await {
-        Ok(summary) => {
-            println!(
-                "RUST_REALITY_LOOP_SUMMARY={}",
-                summary["source_of_truth"]["summary"].as_str().unwrap_or("")
-            );
-            0
-        }
-        Err(err) => {
-            match write_failure_artifact(&args, &err) {
-                Ok(path) => eprintln!(
-                    "RUST_REALITY_LOOP_ERROR_SOURCE_OF_TRUTH={}",
-                    file_sot(&path)
-                ),
-                Err(write_err) => eprintln!("RUST_REALITY_LOOP_ERROR_LOGGING_FAILED={write_err}"),
-            }
-            eprintln!("{}", serde_json::to_string_pretty(&err).unwrap());
-            1
-        }
+    let exit_code = match top.cmd {
+        Cmd::Attempt(args) => dispatch_attempt(args).await,
+        Cmd::Smoke(args) => dispatch_smoke(args).await,
+        Cmd::Replay(args) => dispatch_replay(args).await,
+        Cmd::Verify(args) => dispatch_verify(args).await,
     };
     std::process::exit(exit_code);
 }
 
-async fn run(args: Args) -> Result<Value> {
+async fn dispatch<F>(future: F, failure_runtime_root: &Path) -> i32
+where
+    F: std::future::Future<Output = Result<Value>>,
+{
+    match future.await {
+        Ok(summary) => {
+            println!("{}", serde_json::to_string_pretty(&summary).unwrap());
+            0
+        }
+        Err(err) => {
+            if let Err(write_err) = write_failure_artifact_for_command(failure_runtime_root, &err) {
+                let failure_write = json!({
+                    "status": "error",
+                    "error_code": "RUST_REALITY_FAILURE_ARTIFACT_WRITE_FAILED",
+                    "message": write_err,
+                    "original_error_code": err.error_code,
+                    "source_of_truth": file_sot(failure_runtime_root)
+                });
+                eprintln!("{}", serde_json::to_string_pretty(&failure_write).unwrap());
+            }
+            eprintln!("{}", serde_json::to_string_pretty(&err).unwrap());
+            1
+        }
+    }
+}
+
+async fn dispatch_attempt(args: AttemptArgs) -> i32 {
+    let failure_runtime_root = args.runtime_root.clone();
+    dispatch(run(args), &failure_runtime_root).await
+}
+
+async fn dispatch_smoke(args: SmokeArgs) -> i32 {
+    let failure_runtime_root = args.runtime_root.clone();
+    dispatch(run_smoke(args), &failure_runtime_root).await
+}
+
+async fn dispatch_replay(args: ReplayArgs) -> i32 {
+    let failure_runtime_root = match args
+        .output_dir
+        .clone()
+        .or_else(|| args.attempt_summary_path.parent().map(Path::to_path_buf))
+    {
+        Some(path) => path,
+        None => {
+            let err = RealityError::new(
+                "RUST_REALITY_REPLAY_FAILURE_ROOT_MISSING",
+                "replay could not identify a runtime root for failure artifacts",
+                "replay.output_dir",
+                "pass --output-dir explicitly",
+                json!({ "attempt_summary_path": path_str(&args.attempt_summary_path) }),
+                None,
+            );
+            eprintln!("{}", serde_json::to_string_pretty(&err).unwrap());
+            return 1;
+        }
+    };
+    dispatch(run_replay(args), &failure_runtime_root).await
+}
+
+async fn dispatch_verify(args: VerifyArgs) -> i32 {
+    let failure_runtime_root = args.runtime_root.clone();
+    dispatch(run_verify(args), &failure_runtime_root).await
+}
+
+async fn run_smoke(args: SmokeArgs) -> Result<Value> {
     let runtime_root = resolve_path(&args.runtime_root)?;
+    create_dir_checked(&runtime_root)?;
+    let run_id = format!("smoke-{}", unix_secs_for_logging());
+    let task_id = format!("cgreality-smoke-{}", safe_id(&args.label));
+    update_active_runtime_root(&runtime_root, Some(&task_id))?;
+
+    if args.force_fail {
+        return Err(RealityError::new(
+            "RUST_REALITY_SMOKE_FORCED_FAIL",
+            "smoke forced to fail via --force-fail",
+            "smoke.force_fail",
+            "remove --force-fail to verify the happy path",
+            json!({ "label": args.label, "runtime_root": path_str(&runtime_root) }),
+            Some(file_sot(&runtime_root)),
+        ));
+    }
+
+    let attempt_dir = runtime_root
+        .join(&run_id)
+        .join(&task_id)
+        .join("smoke-attempt-1");
+    create_dir_checked(&attempt_dir)?;
+
+    let problem_path = attempt_dir.join("problem-reality-packet.json");
+    let signal_path = attempt_dir.join("reality-signal-packet.json");
+    let summary_path = attempt_dir.join("attempt-summary.json");
+
+    let problem = json!({
+        "record_kind": "ccreality_smoke_problem_reality",
+        "schema_version": 1,
+        "task_id": task_id,
+        "label": args.label,
+        "synthetic": true,
+        "expected_outcome": "deterministic smoke artifacts exist and can be replayed",
+        "source_of_truth": file_sot(&problem_path)
+    });
+    write_json_checked(&problem_path, &problem)?;
+
+    let signal = json!({
+        "record_kind": "ccreality_smoke_reality_signal",
+        "schema_version": 1,
+        "task_id": task_id,
+        "attempt": 1,
+        "score_reality": { "reward": { "clipped": 0.5, "raw": 0.5 } },
+        "patch_signals": { "patch_sha256": null, "repeated_patch": false },
+        "outcome_reality": { "validation_status": "passed", "source_of_truth": { "official_evidence": null } },
+        "reinjection_directive": "smoke synthetic; no real reinjection needed",
+        "source_of_truth": file_sot(&signal_path)
+    });
+    write_json_checked(&signal_path, &signal)?;
+
+    let summary = json!({
+        "record_kind": "ccreality_smoke_attempt_summary",
+        "schema_version": 1,
+        "attempt": 1,
+        "task_id": task_id,
+        "synthetic": true,
+        "validation": { "status": "passed", "synthetic": true },
+        "official_evidence": null,
+        "reality_signal_packet_path": path_str(&signal_path),
+        "problem_reality_packet_path": path_str(&problem_path),
+        "source_of_truth": file_sot(&summary_path)
+    });
+    write_json_checked(&summary_path, &summary)?;
+
+    Ok(json!({
+        "status": "ok",
+        "kind": "smoke",
+        "runtime_root": path_str(&runtime_root),
+        "run_id": run_id,
+        "task_id": task_id,
+        "attempt": 1,
+        "attempt_summary_path": file_sot(&summary_path),
+        "source_of_truth": {
+            "problem_reality": file_sot(&problem_path),
+            "reality_signal": file_sot(&signal_path),
+            "attempt_summary": file_sot(&summary_path)
+        }
+    }))
+}
+
+async fn run_replay(args: ReplayArgs) -> Result<Value> {
+    let summary_path = resolve_path(&args.attempt_summary_path)?;
+    require_file(
+        &summary_path,
+        "attempt_summary_path",
+        "RUST_REALITY_REPLAY_SUMMARY_MISSING",
+    )?;
+    let summary: Value = read_json(&summary_path)?;
+    let out_dir = if let Some(out_dir) = args.output_dir.as_deref() {
+        resolve_path(out_dir)?
+    } else {
+        summary_path
+            .parent()
+            .ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_REPLAY_OUTPUT_DIR_MISSING",
+                    "attempt-summary path has no parent directory for replay output",
+                    "replay.attempt_summary_path",
+                    "pass --output-dir explicitly",
+                    json!({ "attempt_summary_path": path_str(&summary_path) }),
+                    Some(file_sot(&summary_path)),
+                )
+            })?
+            .to_path_buf()
+    };
+    create_dir_checked(&out_dir)?;
+    let out_path = out_dir.join(format!(
+        "reality-signal-packet.{}.json",
+        safe_id(&args.label)
+    ));
+
+    let signal_path_str = summary
+        .pointer("/reality_signal_packet_path")
+        .or_else(|| summary.pointer("/attempt/reality_signal_packet_path"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_REPLAY_NO_SIGNAL_REF",
+                "attempt-summary missing reality_signal_packet_path",
+                "attempt.reality_signal_packet_path",
+                "use a properly formed attempt-summary",
+                json!({ "summary_keys": summary.as_object().map(|m| m.keys().cloned().collect::<Vec<_>>()) }),
+                Some(file_sot(&summary_path)),
+            )
+        })?;
+    let signal_path = file_sot_to_path(signal_path_str, "", "attempt.reality_signal_packet_path")
+        .unwrap_or_else(|_| PathBuf::from(signal_path_str));
+    let signal: Value = read_json(&signal_path)?;
+    let replayed = json!({
+        "record_kind": "ccreality_replay",
+        "schema_version": 1,
+        "source_attempt_summary": file_sot(&summary_path),
+        "label": args.label,
+        "replayed_at_unix": unix_secs_for_logging(),
+        "signal": signal,
+        "source_of_truth": file_sot(&out_path)
+    });
+    write_json_checked(&out_path, &replayed)?;
+    Ok(json!({
+        "status": "ok",
+        "kind": "replay",
+        "output_path": file_sot(&out_path),
+        "source_of_truth": file_sot(&out_path)
+    }))
+}
+
+async fn run_verify(args: VerifyArgs) -> Result<Value> {
+    let runtime_root = resolve_path(&args.runtime_root)?;
+    if !runtime_root.is_dir() {
+        return Err(RealityError::new(
+            "RUST_REALITY_VERIFY_RUNTIME_ROOT_MISSING",
+            "runtime root is not a directory",
+            "verify.runtime_root",
+            "pass an existing runtime root",
+            json!({ "runtime_root": path_str(&runtime_root) }),
+            Some(file_sot(&runtime_root)),
+        ));
+    }
+    let mut json_files = Vec::new();
+    collect_json_files(&runtime_root, &mut json_files)?;
+    json_files.sort();
+    let mut entries = Vec::new();
+    let mut drift = Vec::new();
+    for path in &json_files {
+        if let Some(attempt) = args.attempt {
+            let marker = format!("attempt-{attempt}");
+            let padded = format!("attempt-{attempt:06}");
+            let smoke = format!("smoke-attempt-{attempt}");
+            let path_text = path_str(path);
+            if !path_text.contains(&marker)
+                && !path_text.contains(&padded)
+                && !path_text.contains(&smoke)
+            {
+                continue;
+            }
+        }
+        let sha = sha256_file(path)?;
+        let size = fs::metadata(path)
+            .map_err(|err| fs_error("RUST_REALITY_VERIFY_METADATA_FAILED", path, err))?
+            .len();
+        let sha_sidecar = path.with_extension("json.sha256");
+        let expected_sidecar = if sha_sidecar.is_file() {
+            Some(fs::read_to_string(&sha_sidecar).map_err(|err| {
+                fs_error(
+                    "RUST_REALITY_VERIFY_SHA_SIDECAR_READ_FAILED",
+                    &sha_sidecar,
+                    err,
+                )
+            })?)
+        } else {
+            None
+        };
+        if let Some(expected) = expected_sidecar.as_deref() {
+            let expected = expected.trim();
+            if expected != sha {
+                drift.push(json!({
+                    "path": path_str(path),
+                    "expected_sha256": expected,
+                    "actual_sha256": sha
+                }));
+            }
+        }
+        entries.push(json!({
+            "path": path_str(path),
+            "sha256": sha,
+            "size_bytes": size,
+            "sha256_sidecar": expected_sidecar.map(|_| file_sot(&sha_sidecar))
+        }));
+    }
+    Ok(json!({
+        "status": if drift.is_empty() { "ok" } else { "drift_detected" },
+        "kind": "verify",
+        "runtime_root": path_str(&runtime_root),
+        "attempt_filter": args.attempt,
+        "json_artifact_count": entries.len(),
+        "drift_count": drift.len(),
+        "drift": drift,
+        "artifacts": entries,
+        "source_of_truth": file_sot(&runtime_root)
+    }))
+}
+
+async fn run(args: AttemptArgs) -> Result<Value> {
+    let runtime_root = resolve_path(&args.runtime_root)?;
+    create_dir_checked(&runtime_root)?;
     if args.max_attempts < 1 {
         return Err(RealityError::new(
             "RUST_REALITY_MAX_ATTEMPTS_INVALID",
@@ -308,6 +645,7 @@ async fn run(args: Args) -> Result<Value> {
     )?;
     let task: TaskManifest = read_json(&task_manifest_path)?;
     validate_task_manifest_contract(&task, &task_manifest_path)?;
+    update_active_runtime_root(&runtime_root, Some(&task.instance_id))?;
     if !args.official_eval_each_attempt {
         return Err(RealityError::new(
             "RUST_REALITY_OFFICIAL_EVAL_REQUIRED",
@@ -954,7 +1292,7 @@ fn validate_task_manifest_contract(task: &TaskManifest, manifest_path: &Path) ->
 }
 
 fn build_measurement_contract(
-    args: &Args,
+    args: &AttemptArgs,
     task: &TaskManifest,
     manifest_path: &Path,
 ) -> Result<Value> {
@@ -1315,13 +1653,19 @@ fn compact_official_evidence(evidence: &Value) -> Value {
     })
 }
 
-fn write_failure_artifact(args: &Args, err: &RealityError) -> std::result::Result<PathBuf, String> {
-    let runtime_root = if args.runtime_root.is_absolute() {
-        args.runtime_root.clone()
+fn write_failure_artifact_for_command(
+    runtime_root: &Path,
+    err: &RealityError,
+) -> std::result::Result<PathBuf, String> {
+    if runtime_root.as_os_str().is_empty() {
+        return Err("runtime_root required for failure artifact".to_string());
+    }
+    let runtime_root = if runtime_root.is_absolute() {
+        runtime_root.to_path_buf()
     } else {
         std::env::current_dir()
             .map_err(|cwd_err| cwd_err.to_string())?
-            .join(&args.runtime_root)
+            .join(runtime_root)
     };
     let failure_root = runtime_root.join("failures");
     fs::create_dir_all(&failure_root).map_err(|io_err| io_err.to_string())?;
@@ -1333,30 +1677,14 @@ fn write_failure_artifact(args: &Args, err: &RealityError) -> std::result::Resul
     let payload = json!({
         "record_kind": "rust_reality_loop_failure",
         "created_at_unix": unix_secs_for_logging(),
-        "args": {
-            "model": args.model,
-            "task_manifest": path_str(&args.task_manifest),
-            "runtime_root": path_str(&runtime_root),
-            "max_attempts": args.max_attempts,
-            "run_until_resolved": args.run_until_resolved,
-            "smoke_test": args.smoke_test,
-            "official_eval_each_attempt": args.official_eval_each_attempt,
-            "official_docker_host": args.official_docker_host,
-            "official_docker_config": path_str(&args.official_docker_config),
-            "gpu_index": args.gpu_index,
-            "gpu_min_free_mb": args.gpu_min_free_mb,
-            "gpu_max_used_mb": args.gpu_max_used_mb,
-            "ollama_keep_alive": args.ollama_keep_alive,
-            "ollama_num_ctx": args.ollama_num_ctx,
-            "ollama_num_predict": args.ollama_num_predict,
-            "ollama_temperature": args.ollama_temperature,
-            "ollama_top_p": args.ollama_top_p
-        },
         "error": err,
         "source_of_truth": file_sot(&path)
     });
     let text = serde_json::to_string_pretty(&payload).map_err(|json_err| json_err.to_string())?;
-    fs::write(&path, text).map_err(|io_err| io_err.to_string())?;
+    let mut file = fs::File::create(&path).map_err(|io_err| io_err.to_string())?;
+    file.write_all(text.as_bytes())
+        .map_err(|io_err| io_err.to_string())?;
+    file.sync_all().map_err(|io_err| io_err.to_string())?;
     let readback = fs::read_to_string(&path).map_err(|io_err| io_err.to_string())?;
     let actual: Value = serde_json::from_str(&readback).map_err(|json_err| json_err.to_string())?;
     if actual != payload {
@@ -1913,7 +2241,7 @@ Do not modify tests, fixtures, or benchmark harness files.";
 
 async fn post_ollama_chat(
     client: &reqwest::Client,
-    args: &Args,
+    args: &AttemptArgs,
     body: &Value,
     request_path: &Path,
 ) -> Result<Value> {
@@ -4644,7 +4972,7 @@ exit 42
 }
 
 fn run_official_eval(
-    args: &Args,
+    args: &AttemptArgs,
     run_root: &Path,
     attempt_dir: &Path,
     task: &TaskManifest,
@@ -4747,7 +5075,7 @@ fn run_official_eval(
     }))
 }
 
-fn verify_official_docker_sdk(args: &Args, attempt_dir: &Path) -> Result<()> {
+fn verify_official_docker_sdk(args: &AttemptArgs, attempt_dir: &Path) -> Result<()> {
     let official_env = official_docker_env(args, attempt_dir)?;
     let command = vec![
         path_str(&args.swebench_python).to_string(),
@@ -4787,7 +5115,7 @@ fn verify_official_docker_sdk(args: &Args, attempt_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn official_docker_env(args: &Args, attempt_dir: &Path) -> Result<Vec<(String, String)>> {
+fn official_docker_env(args: &AttemptArgs, attempt_dir: &Path) -> Result<Vec<(String, String)>> {
     let docker_config = resolve_path(&args.official_docker_config)?;
     create_dir_checked(&docker_config)?;
     let config_path = docker_config.join("config.json");
@@ -6144,7 +6472,7 @@ Tool phase instruction: call governed ContextGraph tools to inspect real source,
 fn write_summary(
     run_root: &Path,
     task: &TaskManifest,
-    args: &Args,
+    args: &AttemptArgs,
     ledger: &Path,
     events: &Path,
     contract: &Path,
@@ -6431,7 +6759,12 @@ fn write_json_checked(path: &Path, value: &impl Serialize) -> Result<()> {
         create_dir_checked(parent)?;
     }
     let text = serde_json::to_string_pretty(value).unwrap();
-    fs::write(path, text).map_err(|err| fs_error("RUST_REALITY_JSON_WRITE_FAILED", path, err))?;
+    let mut file = fs::File::create(path)
+        .map_err(|err| fs_error("RUST_REALITY_JSON_WRITE_CREATE_FAILED", path, err))?;
+    file.write_all(text.as_bytes())
+        .map_err(|err| fs_error("RUST_REALITY_JSON_WRITE_FAILED", path, err))?;
+    file.sync_all()
+        .map_err(|err| fs_error("RUST_REALITY_JSON_SYNC_FAILED", path, err))?;
     let readback = fs::read_to_string(path)
         .map_err(|err| fs_error("RUST_REALITY_JSON_READBACK_FAILED", path, err))?;
     let expected: Value = serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap();
@@ -6462,7 +6795,12 @@ fn write_text_checked(path: &Path, text: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         create_dir_checked(parent)?;
     }
-    fs::write(path, text).map_err(|err| fs_error("RUST_REALITY_TEXT_WRITE_FAILED", path, err))?;
+    let mut file = fs::File::create(path)
+        .map_err(|err| fs_error("RUST_REALITY_TEXT_WRITE_CREATE_FAILED", path, err))?;
+    file.write_all(text.as_bytes())
+        .map_err(|err| fs_error("RUST_REALITY_TEXT_WRITE_FAILED", path, err))?;
+    file.sync_all()
+        .map_err(|err| fs_error("RUST_REALITY_TEXT_SYNC_FAILED", path, err))?;
     let readback = fs::read_to_string(path)
         .map_err(|err| fs_error("RUST_REALITY_TEXT_READBACK_FAILED", path, err))?;
     if readback != text {
@@ -6569,6 +6907,36 @@ fn unix_secs_for_logging() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
+}
+
+fn update_active_runtime_root(runtime_root: &Path, target_instance: Option<&str>) -> Result<()> {
+    let home = dirs::home_dir().ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_HOME_DIR_MISSING",
+            "could not resolve $HOME for cgreality cache",
+            "process.env.HOME",
+            "set HOME to a writable directory",
+            json!({}),
+            None,
+        )
+    })?;
+    let cache = home.join(".cache/cgreality");
+    create_dir_checked(&cache)?;
+    let canonical = runtime_root.canonicalize().map_err(|err| {
+        fs_error(
+            "RUST_REALITY_RUNTIME_ROOT_CANONICALIZE_FAILED",
+            runtime_root,
+            err,
+        )
+    })?;
+    write_text_checked(
+        &cache.join("active_runtime_root"),
+        &canonical.to_string_lossy(),
+    )?;
+    if let Some(target_instance) = target_instance {
+        write_text_checked(&cache.join("active_target_instance"), target_instance)?;
+    }
+    Ok(())
 }
 
 fn unix_ns() -> Result<u128> {

@@ -34,8 +34,8 @@
 ## Forbidden actions
 
 - No `git push` until commit is reviewed.
-- No `git rebase` on `ccreality-cutover` (the commit will be one big one; we keep it that way for atomicity).
-- No partial revert of the working tree (atomic — either commit all of Phases 1–11, or nothing).
+- No `git rebase` on `ccreality-cutover` during Phase 12. If a squash is desired, decide that explicitly during review after Phase 12 passes.
+- No partial revert of verified earlier phases. Only revert failed Phase 12 edits/artifacts if this phase fails.
 
 ## Recommended SWE-bench instance for first light
 

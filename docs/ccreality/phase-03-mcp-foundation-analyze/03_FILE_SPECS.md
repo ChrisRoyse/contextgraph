@@ -306,20 +306,17 @@ pub enum PolicyVerdict {
 
 impl GovernedPathsPolicy {
     pub fn load() -> Result<Self> {
-        // 1. Try $CGREALITY_GOVERNED_PATHS env var
-        if let Ok(path) = std::env::var("CGREALITY_GOVERNED_PATHS") {
-            return Self::load_from(&PathBuf::from(path));
-        }
-        // 2. Try $CONTEXTGRAPH_ROOT/config/ccreality_governed_paths.json
-        if let Ok(root) = std::env::var("CONTEXTGRAPH_ROOT") {
-            let candidate = PathBuf::from(root).join("config/ccreality_governed_paths.json");
-            if candidate.is_file() {
-                return Self::load_from(&candidate);
-            }
-        }
-        // 3. Fallback: hard-coded conservative
-        tracing::warn!("CGREALITY_GOVERNED_PATHS unset; using hard-coded conservative policy");
-        Ok(Self::default_conservative())
+        let path = std::env::var("CGREALITY_GOVERNED_PATHS")
+            .map(PathBuf::from)
+            .map_err(|_| CCRealityError::new(
+                "CCREALITY_GOVERNED_PATHS_ENV_MISSING",
+                "CGREALITY_GOVERNED_PATHS is not set",
+                "env.CGREALITY_GOVERNED_PATHS",
+                "export CGREALITY_GOVERNED_PATHS to the exact governed-paths JSON file",
+                serde_json::json!({}),
+                None,
+            ))?;
+        Self::load_from(&path)
     }
 
     pub fn load_from(path: &PathBuf) -> Result<Self> {
@@ -339,24 +336,14 @@ impl GovernedPathsPolicy {
             serde_json::json!({"path": path.display().to_string()}),
             Some(format!("file:{}", path.display())),
         ))?;
-        Ok(Self {
-            allow: cfg.allow.iter().map(|s| glob::Pattern::new(s).unwrap()).collect(),
-            deny:  cfg.deny.iter().map(|s| glob::Pattern::new(s).unwrap()).collect(),
-        })
+        Self::from_config(cfg)
     }
 
-    pub fn default_conservative() -> Self {
-        Self {
-            allow: vec!["crates/context-graph-cli/src/**", "scripts/cc/**", "docs/ccreality/**"]
-                .into_iter().map(|s| glob::Pattern::new(s).unwrap()).collect(),
-            deny: vec![
-                ".env", ".env.*", "**/.env",
-                "swebench/**", "tests/oracle_**",
-                "crates/context-graph-benchmark/datasets/swe_bench_*",
-                "crates/*/src/reward_specs/**",
-                "crates/*/src/verifiers/**",
-            ].into_iter().map(|s| glob::Pattern::new(s).unwrap()).collect(),
-        }
+    pub fn from_config(cfg: GovernedPathsConfig) -> Result<Self> {
+        Ok(Self {
+            allow: compile_patterns("allow", &cfg.allow)?,
+            deny: compile_patterns("deny", &cfg.deny)?,
+        })
     }
 
     pub fn is_allowed(&self, path: &str) -> PolicyVerdict {
@@ -374,16 +361,46 @@ impl GovernedPathsPolicy {
     }
 }
 
+fn compile_patterns(kind: &str, patterns: &[String]) -> Result<Vec<glob::Pattern>> {
+    patterns
+        .iter()
+        .map(|pattern| {
+            glob::Pattern::new(pattern).map_err(|e| CCRealityError::new(
+                "CCREALITY_GOVERNED_PATHS_PATTERN_INVALID",
+                format!("invalid governed-paths {kind} pattern '{pattern}': {e}"),
+                format!("config.{kind}"),
+                "fix the invalid glob pattern in the governed-paths JSON",
+                serde_json::json!({"kind": kind, "pattern": pattern}),
+                None,
+            ))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn deny_dotenv_and_swebench() {
-        let p = GovernedPathsPolicy::default_conservative();
+    fn deny_dotenv_and_swebench() -> Result<()> {
+        let p = GovernedPathsPolicy::from_config(GovernedPathsConfig {
+            allow: vec![
+                "crates/context-graph-cli/src/**".to_string(),
+                "scripts/cc/**".to_string(),
+                "docs/ccreality/**".to_string(),
+            ],
+            deny: vec![
+                ".env".to_string(),
+                ".env.*".to_string(),
+                "**/.env".to_string(),
+                "swebench/**".to_string(),
+                "tests/oracle_**".to_string(),
+            ],
+        })?;
         assert!(matches!(p.is_allowed(".env"), PolicyVerdict::DenyExplicit(_)));
         assert!(matches!(p.is_allowed("swebench/eval/runner.py"), PolicyVerdict::DenyExplicit(_)));
         assert!(matches!(p.is_allowed("crates/context-graph-cli/src/bin/reality-loop.rs"), PolicyVerdict::Allow));
         assert!(matches!(p.is_allowed("random/path.txt"), PolicyVerdict::NoMatch));
+        Ok(())
     }
 }
 ```
@@ -413,7 +430,7 @@ pub async fn reality_latest_root(_args: Value) -> Result<Value> {
     Ok(json!({
         "runtime_root": runtime_root.as_ref().map(|p| p.display().to_string()),
         "active_run_id": active_run_id,
-        "active_task_id": target,
+        "active_task_id": target.clone(),
         "active_target_instance": target,
         "success_predicate": "official SWE-bench report places target instance in resolved_ids",
         "last_attempt_number": attempt_n,

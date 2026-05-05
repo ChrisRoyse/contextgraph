@@ -31,7 +31,9 @@ As of 2026-05-05:
 - Phase 1 verification log: `/tmp/phase-01-verify.log`.
 - Phase 1 progress log row: `/tmp/ccreality-phase-progress.log`.
 - Phase 1 manual FSV source of truth: `/tmp/ccreality-phase1-fsv-output/observations.json`.
-- Current source changes awaiting the final Phase 12 commit: `[lib]` in `crates/context-graph-cli/Cargo.toml`, `pub mod governed_edit` in `crates/context-graph-cli/src/lib.rs`, and new `crates/context-graph-cli/src/governed_edit.rs`.
+- Current source state on `ccreality-cutover`: `[lib]` in `crates/context-graph-cli/Cargo.toml`, `pub mod governed_edit` in `crates/context-graph-cli/src/lib.rs`, and `crates/context-graph-cli/src/governed_edit.rs` are already present on the branch.
+- Current branch history after Phase 0 base: incremental commits `90d3896f`, `f4c4bd66`, `13fc3983`, and `2cc2f1ff`.
+- Current `reality-loop.rs` readback: 7,203 lines, with no `deepseek|openai|gpt-5|chatgpt` matches.
 - Next phase to execute: [phase-02-engine-subcommands/](phase-02-engine-subcommands/).
 
 ## Dependency DAG
@@ -40,9 +42,8 @@ As of 2026-05-05:
 Phase 0 (foundation)
   └── Phase 1 (excision)
         ├── Phase 2 (engine subcommands)
-        │     └── Phase 5 (config files) ─┐
-        └── Phase 5 (config files) ───────┤
-              └── Phase 3 (MCP foundation + analyze)
+        └── Phase 5 (config files)
+              └── Phase 3 (MCP foundation + analyze; also requires Phase 2)
                     └── Phase 4 (MCP interact + alter + shift)
                           ├── Phase 6 (hooks)
                           └── Phase 7 (claude scaffolding)
@@ -53,11 +54,11 @@ Phase 0 (foundation)
                                                         └── Phase 12 (first production)
 ```
 
-Phase 5 has two upstream dependents (2 and 3) because both refer to the schema file. It can be executed any time after Phase 1.
+Phase 2 and Phase 5 can run independently after Phase 1. Phase 3 requires both: Phase 2 provides the engine subcommands/smoke runtime contract, and Phase 5 provides the governed-paths and recommendation schema files.
 
 ## Atomicity rule
 
-Each phase MUST be completed atomically — either all its tasks pass and verification succeeds, or all are reverted. Partial completion of a phase is forbidden. If a phase fails:
+Each phase MUST be completed atomically — either all its tasks pass and verification succeeds, or all edits from that phase are reverted. The branch now uses incremental phase commits rather than one final monolithic commit; Phase 12 records the final production verification/cutover commit. If a phase fails:
 
 1. Inspect the failing verification.
 2. If recoverable (cargo error, missing dependency), fix and re-verify.

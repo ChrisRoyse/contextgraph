@@ -65,7 +65,7 @@ Before each task, run `pwd && git branch --show-current` to confirm location and
 
 - No `git push`.
 - No `git reset --hard` except for emergency recovery (see [05_RECOVERY.md](05_RECOVERY.md)).
-- No commits until the entire phase verification passes (so the phase is atomic — partial work goes in one commit at end).
+- No commits until the entire phase verification passes (so the phase is atomic). Current branch reality: verified phase work is being recorded as incremental cutover commits rather than one final monolithic commit.
 - No edits to `crates/context-graph-mcp/`, `crates/context-graph-core/`, or any other crate.
 
 ## What to do if a precondition fails

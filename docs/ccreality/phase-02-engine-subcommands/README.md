@@ -3,7 +3,7 @@
 **Estimated duration:** 30–45 minutes.
 **Status:** next.
 **Depends on:** Phase 1 (complete).
-**Unblocks:** Phase 5 (which creates config files referenced by the subcommands).
+**Unblocks:** Phase 3 smoke/analyze wiring. Phase 5 can run independently after Phase 1 and must be complete before Phase 3.
 
 ## What this phase does
 

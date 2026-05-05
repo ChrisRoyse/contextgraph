@@ -56,7 +56,7 @@
 - Do not modify `.claude/hooks/*.sh` (existing system).
 - Do not modify any other agent file under `.claude/agents/` (only ADD `cc-reality-*`).
 - Do not modify any other skill under `.claude/skills/` (only ADD `ccreality-*`).
-- Do not commit yet (single commit at end of cutover, Phase 12).
+- Do not commit partial Phase 7 work before verification passes. Current branch reality: verified cutover work is being recorded as incremental commits, with Phase 12 reserved for the final production verification/cutover commit.
 
 ## Required reading
 

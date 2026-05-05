@@ -85,4 +85,4 @@ The PostToolUse hook records a harness-transition record. Two implementation cho
 
 Option B is cleaner. Option A is faster to implement. Recommended: Option B, but only if the implementation budget allows. Option A is acceptable for Phase 6 with a follow-up to upgrade later.
 
-This phase implements **Option A** by default (simpler bash), with a TODO comment in the hook script pointing at the future Option B upgrade.
+This phase implements **Option A** by default (simpler bash), with an explicit comment in the hook script pointing at the future Option B upgrade.

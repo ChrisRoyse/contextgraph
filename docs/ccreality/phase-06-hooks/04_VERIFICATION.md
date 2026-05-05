@@ -25,7 +25,7 @@ echo "  pass"
 echo "=== 6.V4 Hooks emit valid JSON ==="
 # Pipe a synthetic stdin to each hook; pipe output through jq
 for s in hook_session_start hook_user_prompt_submit hook_pre_compact; do
-  OUT="$(echo '{"session_id":"v4-test","source":"startup","prompt":"x","trigger":"auto","current_context_size":100}' | bash "scripts/cc/$s.sh" 2>/dev/null || true)"
+  OUT="$(echo '{"session_id":"v4-test","source":"startup","prompt":"x","trigger":"auto","current_context_size":100}' | bash "scripts/cc/$s.sh")"
   if [ -n "$OUT" ]; then
     echo "$OUT" | jq -e . >/dev/null || { echo "  FAIL: $s emitted non-JSON: $OUT"; exit 1; }
   fi
@@ -42,13 +42,10 @@ OUT="$(echo '{"tool_name":"Edit","tool_input":{"file_path":"/home/cabdru/context
 [ "$(echo "$OUT" | jq -r '.hookSpecificOutput.permissionDecision')" = "allow" ]
 echo "  pass"
 
-echo "=== 6.V7 ShellCheck (if available) is clean ==="
-if command -v shellcheck >/dev/null; then
-  shellcheck scripts/cc/*.sh scripts/cc/tests/hooks/*.sh
-  echo "  pass (shellcheck clean)"
-else
-  echo "  pass (shellcheck not installed; skipped)"
-fi
+echo "=== 6.V7 ShellCheck is clean ==="
+command -v shellcheck >/dev/null 2>&1 || { echo "  shellcheck is required for Phase 6 verification"; exit 1; }
+shellcheck scripts/cc/*.sh scripts/cc/tests/hooks/*.sh
+echo "  pass"
 
 echo
 echo "Phase 6 verification: ALL PASS"

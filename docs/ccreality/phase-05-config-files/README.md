@@ -2,7 +2,7 @@
 
 **Estimated duration:** 30 minutes.
 **Status:** pending.
-**Depends on:** Phase 0 (branch). Can be done before Phase 3 or 4.
+**Depends on:** Phase 1 (complete). Can be done before or after Phase 2, but must be done before Phase 3 or 4.
 **Unblocks:** Phase 3 & Phase 4 (which read these files).
 
 ## What this phase does

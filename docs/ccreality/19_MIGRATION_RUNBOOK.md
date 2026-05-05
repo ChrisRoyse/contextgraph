@@ -49,7 +49,7 @@ Apply [04_EXCISION_PLAN](04_EXCISION_PLAN.md) in the order specified there:
 Pre: branch from stage 0.
 Post: `reality-loop.rs` is ~7,500 lines; cargo check + cargo test pass; no deepseek/openai/gpt-5 substrings remain (`rg -n "deepseek\|openai\|gpt-5" crates/context-graph-cli/src/bin/reality-loop.rs` returns nothing).
 
-Current completion record: `reality-loop.rs` is 7,145 lines; `crates/context-graph-cli/src/governed_edit.rs` exists; `cargo build -p context-graph-cli --bin reality-loop`, `cargo test -p context-graph-cli --bin reality-loop -- --skip ignored`, and `cargo test -p context-graph-cli --lib governed_edit` pass.
+Current completion record: `reality-loop.rs` currently reads back at 7,203 lines; the Phase 1 completion log recorded 7,145 lines. `crates/context-graph-cli/src/governed_edit.rs` exists; `cargo build -p context-graph-cli --bin reality-loop`, `cargo test -p context-graph-cli --bin reality-loop -- --skip ignored`, and `cargo test -p context-graph-cli --lib governed_edit` passed for Phase 1.
 
 Verification:
 ```bash

@@ -426,18 +426,19 @@ fn phase6_contextgraph_agentops_demo_capability_is_registered_and_allowed_with_v
     let ledger_str = ledger.to_str().expect("ledger path UTF-8");
 
     let registry = stdout_json(&run_context_graph(&[
-        "blackbox",
-        "policy",
-        "registry",
-        "--ledger",
-        ledger_str,
+        "blackbox", "policy", "registry", "--ledger", ledger_str,
     ]));
-    let capabilities = registry["capabilities"].as_array().expect("capabilities array");
+    let capabilities = registry["capabilities"]
+        .as_array()
+        .expect("capabilities array");
     let demo_capability = capabilities
         .iter()
         .find(|item| item["capability_id"] == "blackboxfix.demo.full_agentops_dynamicjepa")
         .expect("ContextGraph demo capability is registered");
-    assert_eq!(demo_capability["tool_name"], "run_dynamicjepa_blackboxfix_pipeline");
+    assert_eq!(
+        demo_capability["tool_name"],
+        "run_dynamicjepa_blackboxfix_pipeline"
+    );
     assert_eq!(demo_capability["mutating"], true);
     assert_eq!(demo_capability["verifier_id"], "cmd_exit_zero_v1");
     assert_eq!(demo_capability["source_kind"], "cmd_local_v1");
@@ -471,7 +472,10 @@ fn phase6_contextgraph_agentops_demo_capability_is_registered_and_allowed_with_v
     assert_eq!(decision["decision"], "allowed");
     assert!(decision["error_code"].is_null());
     assert_eq!(ledger_row_count(&ledger), before_rows + 1);
-    assert_eq!(policy_statuses(&ledger), vec![("allowed".into(), "".into())]);
+    assert_eq!(
+        policy_statuses(&ledger),
+        vec![("allowed".into(), "".into())]
+    );
 }
 
 #[test]

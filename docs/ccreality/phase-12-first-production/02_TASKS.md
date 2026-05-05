@@ -120,7 +120,7 @@ Expected: a large diff covering the ccreality cutover (most of `crates/context-g
 
 If the optimizer in Task 12.4 edited harness source, the diff includes those edits too. Inspect to confirm they look reasonable.
 
-## Task 12.8 — Stage and commit
+## Task 12.8 — Stage and commit final Phase 12 record
 
 ```bash
 cd /home/cabdru/contextgraph
@@ -134,7 +134,7 @@ git diff --cached -- '.env' '.env.*' '*credentials*' '*secret*' && { echo "ABORT
 git commit -m "$(cat <<'EOF'
 feat(ccreality): replace DeepSeek outer optimizer with Claude Code MCP integration
 
-This commits the entire ccreality cutover (Phases 0-12 of docs/ccreality/).
+This records the final Phase 12 production verification for the ccreality cutover. Earlier verified phases are already present as incremental commits on ccreality-cutover.
 
 Architecture:
 - Rust reality-loop.rs becomes a pure reality engine with attempt|smoke|replay|verify subcommands.

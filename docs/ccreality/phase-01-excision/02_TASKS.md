@@ -348,4 +348,4 @@ If outside that range, something was either over-deleted or under-deleted. Inspe
 
 ## Phase complete
 
-Run [04_VERIFICATION.md](04_VERIFICATION.md). When the full verification block returns exit 0, Phase 1 is complete. Do NOT commit yet — a single commit at end-of-phase will follow in Phase 12.
+Run [04_VERIFICATION.md](04_VERIFICATION.md). When the full verification block returns exit 0, Phase 1 is complete. Do not commit partial Phase 1 work before verification passes. Current branch reality: Phase 1 has since been committed as part of incremental cutover commits recorded in the implementation plan.

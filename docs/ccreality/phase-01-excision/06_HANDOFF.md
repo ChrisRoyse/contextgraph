@@ -9,12 +9,12 @@
 - `cargo build -p context-graph-cli --bin reality-loop` succeeds.
 - `cargo test -p context-graph-cli --bin reality-loop` and `cargo test -p context-graph-cli --lib governed_edit` both pass.
 - The engine binary still works exactly as before for Gemma + SWE-bench paths; only the outer optimizer is gone.
-- No commit has been made yet (atomicity rule — single commit at end of cutover).
+- Current branch reality: Phase 1 changes have since been committed as part of incremental cutover commits on `ccreality-cutover`.
 
 ## Completion Record
 
 - Completed on 2026-05-05 on `ccreality-cutover`.
-- `reality-loop.rs` line count is 7,145.
+- `reality-loop.rs` line count at Phase 1 completion was 7,145. Current readback after later docs/plan commits is 7,203.
 - Canonical verification source of truth: `/tmp/phase-01-verify.log`.
 - Progress log source of truth: `/tmp/ccreality-phase-progress.log`.
 - Manual FSV source of truth: `/tmp/ccreality-phase1-fsv-output/observations.json`.
@@ -39,7 +39,7 @@ Should print `Phase 1 verification exit=0`.
 
 After Phase 1 verification passes, you can record an intermediate point:
 ```bash
-git rev-parse HEAD > /tmp/ccreality-after-phase-01.sha  # only meaningful if you committed; we haven't
+git rev-parse HEAD > /tmp/ccreality-after-phase-01.sha  # records the current incremental cutover commit
 # Better: stash the work to a safe reference
 git stash push -m "ccreality-phase-01-complete" --keep-index
 git stash list | head -1
