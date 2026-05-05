@@ -19,9 +19,10 @@ const DEFAULT_OLLAMA_NUM_CTX: u64 = 32768;
 const DEFAULT_OLLAMA_NUM_PREDICT: u64 = 4096;
 const DEFAULT_OLLAMA_TEMPERATURE: f64 = 0.0;
 const DEFAULT_OLLAMA_TOP_P: f64 = 0.9;
-const DEFAULT_OPENAI_OPTIMIZER_MODEL: &str = "gpt-5.5";
+const DEFAULT_OPENAI_OPTIMIZER_MODEL: &str = "gpt-5.5-pro";
 const DEFAULT_OPENAI_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 const DEFAULT_OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
+const DEFAULT_OPENAI_OPTIMIZER_MAX_OUTPUT_TOKENS: u64 = 32768;
 const DEFAULT_OFFICIAL_DOCKER_HOST: &str = "unix:///var/run/docker.sock";
 const DEFAULT_OFFICIAL_DOCKER_CONFIG: &str = "/home/cabdru/.cache/contextgraph-docker-config";
 const DATASET_NAME: &str = "princeton-nlp/SWE-bench_Lite";
@@ -97,7 +98,7 @@ struct Args {
     openai_api_key_env: String,
     #[arg(long, default_value_t = 3)]
     openai_optimizer_tool_rounds: u64,
-    #[arg(long, default_value_t = 4096)]
+    #[arg(long, default_value_t = DEFAULT_OPENAI_OPTIMIZER_MAX_OUTPUT_TOKENS)]
     openai_optimizer_max_output_tokens: u64,
     #[arg(long, default_value = "high")]
     openai_optimizer_reasoning_effort: String,
@@ -800,8 +801,9 @@ async fn run(args: Args) -> Result<Value> {
                     .and_then(Value::as_str)
             })
             .map(|path| path.strip_prefix("file:").unwrap_or(path).to_string());
-        let openai_optimizer_recommendation_compact =
-            openai_optimizer_recommendation.as_ref().map(compact_openai_loop_optimizer);
+        let openai_optimizer_recommendation_compact = openai_optimizer_recommendation
+            .as_ref()
+            .map(compact_openai_loop_optimizer);
 
         let attempt_record = AttemptRecord {
             attempt,
@@ -1390,10 +1392,17 @@ fn write_failure_artifact(args: &Args, err: &RealityError) -> std::result::Resul
             "runtime_root": path_str(&runtime_root),
             "max_attempts": args.max_attempts,
             "run_until_resolved": args.run_until_resolved,
-        "official_eval_each_attempt": args.official_eval_each_attempt,
-        "official_docker_host": args.official_docker_host,
-        "official_docker_config": path_str(&args.official_docker_config),
-        "gpu_index": args.gpu_index,
+            "smoke_test": args.smoke_test,
+            "official_eval_each_attempt": args.official_eval_each_attempt,
+            "openai_optimizer_each_attempt": args.openai_optimizer_each_attempt,
+            "openai_optimizer_model": args.openai_optimizer_model,
+            "openai_api_key_env": args.openai_api_key_env,
+            "openai_optimizer_tool_rounds": args.openai_optimizer_tool_rounds,
+            "openai_optimizer_max_output_tokens": args.openai_optimizer_max_output_tokens,
+            "openai_optimizer_reasoning_effort": args.openai_optimizer_reasoning_effort,
+            "official_docker_host": args.official_docker_host,
+            "official_docker_config": path_str(&args.official_docker_config),
+            "gpu_index": args.gpu_index,
             "gpu_min_free_mb": args.gpu_min_free_mb,
             "gpu_max_used_mb": args.gpu_max_used_mb,
             "ollama_keep_alive": args.ollama_keep_alive,
@@ -2015,10 +2024,10 @@ async fn run_openai_loop_optimizer(
         "role": "user",
         "content": format!(
             "You are the outer ContextGraph loop optimizer. Gemma is the inner SWE-bench actor. \
-You must inspect verified reality and propose how to improve the loop, prompts, tools, reward signals, and measurement coverage. \
-Do not claim SWE success. Do not propose changing tests, the official evaluator, reward spec trust boundary, or BlackBoxFix ledger integrity. \
-Use the provided function tools if you need full artifacts or source context. \
-Optimizer input JSON:\n{}",
+    You must inspect verified reality and propose how to improve the loop, prompts, tools, reward signals, and measurement coverage. \
+    Do not claim SWE success. Do not propose changing tests, the official evaluator, reward spec trust boundary, or BlackBoxFix ledger integrity. \
+    Use the provided function tools if you need full artifacts or source context. \
+    Optimizer input JSON:\n{}",
             serde_json::to_string_pretty(&optimizer_input).unwrap()
         )
     })];
@@ -2040,7 +2049,7 @@ Optimizer input JSON:\n{}",
             post_openai_response(client, args, &api_key, &body, &request_path, &response_path)
                 .await?;
         if let Some(output) = response.get("output").and_then(Value::as_array) {
-            input_items.extend(output.iter().cloned());
+            input_items.extend(output.iter().filter_map(openai_replayable_output_item));
         }
         let calls = openai_function_calls(&response)?;
         if calls.is_empty() {
@@ -2100,7 +2109,7 @@ Optimizer input JSON:\n{}",
 
     input_items.push(json!({
         "role": "user",
-        "content": "Now produce the final optimizer recommendation as JSON matching the schema. The recommendation must be actionable for the next Gemma attempt and for improving the ContextGraph reality-loop harness."
+        "content": "Now produce the final optimizer recommendation as JSON matching the schema. The recommendation must be actionable for the next Gemma attempt and for improving the ContextGraph reality-loop harness. Keep it compact: at most 3 items per array, short strings, no repeated evidence prose."
     }));
     let final_request_path = optimizer_dir.join("openai-final-request.json");
     let final_response_path = optimizer_dir.join("openai-final-response.json");
@@ -2108,7 +2117,7 @@ Optimizer input JSON:\n{}",
         args,
         &input_items,
         None,
-        Some(json!("none")),
+        None,
         Some(openai_optimizer_json_schema()),
     );
     write_json_checked(&final_request_path, &final_body)?;
@@ -2270,10 +2279,25 @@ async fn post_openai_response(
             Some(file_sot(response_path)),
         ));
     }
+    if value.get("status").and_then(Value::as_str) == Some("incomplete") {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPENAI_RESPONSE_INCOMPLETE",
+            "OpenAI Responses API returned an incomplete response",
+            "openai.response.status",
+            "increase max_output_tokens or reduce optimizer output/schema size before using this response",
+            json!({
+                "incomplete_details": value.get("incomplete_details"),
+                "usage": value.get("usage"),
+                "response": file_sot(response_path),
+                "request": file_sot(request_path)
+            }),
+            Some(file_sot(response_path)),
+        ));
+    }
     Ok(value)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct OpenAiFunctionCall {
     call_id: String,
     name: String,
@@ -2341,6 +2365,20 @@ fn openai_function_calls(response: &Value) -> Result<Vec<OpenAiFunctionCall>> {
         }
     }
     Ok(calls)
+}
+
+fn openai_replayable_output_item(item: &Value) -> Option<Value> {
+    match item.get("type").and_then(Value::as_str) {
+        Some("reasoning") => None,
+        Some("message") | Some("function_call") => {
+            let mut replay = item.clone();
+            if let Some(object) = replay.as_object_mut() {
+                object.remove("id");
+            }
+            Some(replay)
+        }
+        _ => None,
+    }
 }
 
 fn openai_output_text(response: &Value) -> Option<String> {
@@ -7342,11 +7380,7 @@ fn load_required_secret(env_name: &str) -> Result<(String, Value)> {
         }
     }
     let env_path = resolve_path(Path::new(".env"))?;
-    require_file(
-        &env_path,
-        ".env",
-        "RUST_REALITY_SECRET_ENV_FILE_MISSING",
-    )?;
+    require_file(&env_path, ".env", "RUST_REALITY_SECRET_ENV_FILE_MISSING")?;
     let text = fs::read_to_string(&env_path)
         .map_err(|err| fs_error("RUST_REALITY_SECRET_ENV_FILE_READ_FAILED", &env_path, err))?;
     for line in text.lines() {
@@ -7358,7 +7392,11 @@ fn load_required_secret(env_name: &str) -> Result<(String, Value)> {
             continue;
         };
         if key.trim() == env_name {
-            let secret = value.trim().trim_matches('"').trim_matches('\'').to_string();
+            let secret = value
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string();
             if secret.is_empty() {
                 return Err(RealityError::new(
                     "RUST_REALITY_SECRET_EMPTY",
@@ -7889,5 +7927,45 @@ mod tests {
             err.error_code,
             "RUST_REALITY_TOOL_SUBMITTED_PATCH_READBACK_EMPTY"
         );
+    }
+
+    #[test]
+    fn openai_replay_filters_store_false_reasoning_items() {
+        let reasoning = json!({
+            "id": "rs_transient",
+            "type": "reasoning",
+            "summary": []
+        });
+        let message = json!({
+            "id": "msg_server_assigned",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {"type": "output_text", "text": "Need a tool."}
+            ]
+        });
+        let function_call = json!({
+            "id": "fc_server_assigned",
+            "type": "function_call",
+            "call_id": "call_test",
+            "name": "read_reality_signal_packet",
+            "arguments": "{\"detail\":\"compact\"}"
+        });
+
+        eprintln!(
+            "BEFORE openai_replay input={}",
+            serde_json::to_string_pretty(&json!([reasoning, message, function_call])).unwrap()
+        );
+        assert!(openai_replayable_output_item(&reasoning).is_none());
+        let replayed_message = openai_replayable_output_item(&message).expect("message replay");
+        let replayed_call = openai_replayable_output_item(&function_call).expect("call replay");
+        eprintln!(
+            "AFTER openai_replay replayed={}",
+            serde_json::to_string_pretty(&json!([replayed_message, replayed_call])).unwrap()
+        );
+        assert!(replayed_message.get("id").is_none());
+        assert!(replayed_call.get("id").is_none());
+        assert_eq!(replayed_message["type"], "message");
+        assert_eq!(replayed_call["call_id"], "call_test");
     }
 }
