@@ -1981,16 +1981,30 @@ fn collect_repository_context(repo_dir: &Path, task: &TaskManifest) -> Result<Va
     let mut selected_paths = BTreeSet::new();
     let terms = task_terms(task);
 
-    for candidate in path_candidates(task) {
-        if all_file_set.contains(&candidate) {
-            selected_paths.insert(candidate);
-        } else if !candidate.contains('/') {
-            for path in all_files
-                .iter()
-                .filter(|path| path.ends_with(&candidate))
-                .take(6)
-            {
-                selected_paths.insert(path.to_string());
+    for candidate in production_path_candidates(task)
+        .into_iter()
+        .chain(path_candidates(task))
+    {
+        add_context_candidate(&mut selected_paths, &all_files, &all_file_set, &candidate);
+    }
+
+    for symbol in task_symbols(&terms) {
+        if selected_paths.len() >= 10 {
+            break;
+        }
+        let grep = run_cmd(
+            &vec![
+                "git".to_string(),
+                "grep".to_string(),
+                "-l".to_string(),
+                format!("def {symbol}"),
+            ],
+            repo_dir,
+            120,
+        )?;
+        if grep.exit_code == 0 {
+            for line in grep.stdout.lines().take(4) {
+                add_context_candidate(&mut selected_paths, &all_files, &all_file_set, line);
             }
         }
     }
@@ -2012,12 +2026,7 @@ fn collect_repository_context(repo_dir: &Path, task: &TaskManifest) -> Result<Va
         )?;
         if grep.exit_code == 0 {
             for line in grep.stdout.lines().take(8) {
-                if all_file_set.contains(line)
-                    && is_context_file(line)
-                    && !is_low_value_context_path(line)
-                {
-                    selected_paths.insert(line.to_string());
-                }
+                add_context_candidate(&mut selected_paths, &all_files, &all_file_set, line);
             }
         }
     }
@@ -2047,7 +2056,7 @@ fn collect_repository_context(repo_dir: &Path, task: &TaskManifest) -> Result<Va
                 "path": line,
                 "sha256": sha256_file(&path)?,
                 "source_of_truth": file_sot(&path),
-                "text": truncate_chars(&text, 3200)
+                "text": focused_context_text(&text, &terms, 4800)
             }));
         }
     }
@@ -2056,6 +2065,32 @@ fn collect_repository_context(repo_dir: &Path, task: &TaskManifest) -> Result<Va
         "terms": terms,
         "files": selected
     }))
+}
+
+fn add_context_candidate(
+    selected_paths: &mut BTreeSet<String>,
+    all_files: &[String],
+    all_file_set: &BTreeSet<String>,
+    candidate: &str,
+) {
+    if selected_paths.len() >= 10 {
+        return;
+    }
+    if all_file_set.contains(candidate)
+        && is_context_file(candidate)
+        && !is_low_value_context_path(candidate)
+    {
+        selected_paths.insert(candidate.to_string());
+    } else if !candidate.contains('/') {
+        for path in all_files
+            .iter()
+            .filter(|path| path.ends_with(candidate))
+            .filter(|path| is_context_file(path) && !is_low_value_context_path(path))
+            .take(6)
+        {
+            selected_paths.insert(path.to_string());
+        }
+    }
 }
 
 fn task_terms(task: &TaskManifest) -> Vec<String> {
@@ -2075,6 +2110,32 @@ fn task_terms(task: &TaskManifest) -> Vec<String> {
         }
     }
     terms.into_iter().take(40).collect()
+}
+
+fn task_symbols(terms: &[String]) -> Vec<String> {
+    terms
+        .iter()
+        .filter(|term| {
+            term.contains('_')
+                && term
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        })
+        .cloned()
+        .take(12)
+        .collect()
+}
+
+fn production_path_candidates(task: &TaskManifest) -> Vec<String> {
+    let mut out = BTreeSet::new();
+    for path in path_candidates(task) {
+        if let Some((prefix, test_name)) = path.split_once("/tests/test_") {
+            let stem = test_name.strip_suffix(".py").unwrap_or(test_name);
+            out.insert(format!("{prefix}/{stem}.py"));
+            out.insert(format!("{prefix}/_{stem}.py"));
+        }
+    }
+    out.into_iter().collect()
 }
 
 fn path_candidates(task: &TaskManifest) -> Vec<String> {
@@ -2111,8 +2172,6 @@ fn is_context_file(path: &str) -> bool {
         || path.ends_with(".cfg")
         || path.ends_with(".ini")
         || path.ends_with(".toml")
-        || path.ends_with(".rst")
-        || path.ends_with(".md")
 }
 
 fn is_low_value_context_path(path: &str) -> bool {
@@ -2121,6 +2180,46 @@ fn is_low_value_context_path(path: &str) -> bool {
         || path.starts_with("examples/")
         || path.starts_with("benchmarks/")
         || path.starts_with(".github/")
+        || path.starts_with("tests/")
+        || path.contains("/tests/")
+        || path.ends_with("conftest.py")
+}
+
+fn focused_context_text(text: &str, terms: &[String], limit: usize) -> String {
+    if text.chars().count() <= limit {
+        return text.to_string();
+    }
+    let lower = text.to_ascii_lowercase();
+    let mut windows = Vec::new();
+    for term in terms.iter().filter(|term| term.len() >= 4) {
+        if windows.len() >= 4 {
+            break;
+        }
+        let needle = term.to_ascii_lowercase();
+        if let Some(byte_pos) = lower.find(&needle) {
+            windows.push(text_window(text, byte_pos, 1600));
+        }
+    }
+    if windows.is_empty() {
+        truncate_chars(text, limit)
+    } else {
+        truncate_chars(&windows.join("\n\n...[context window]...\n\n"), limit)
+    }
+}
+
+fn text_window(text: &str, byte_pos: usize, radius: usize) -> String {
+    let start = text[..byte_pos]
+        .char_indices()
+        .rev()
+        .nth(radius)
+        .map(|(idx, _)| idx)
+        .unwrap_or(0);
+    let end = text[byte_pos..]
+        .char_indices()
+        .nth(radius)
+        .map(|(idx, _)| byte_pos + idx)
+        .unwrap_or(text.len());
+    text[start..end].to_string()
 }
 
 fn compile_prompt(

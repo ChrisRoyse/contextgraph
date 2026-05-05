@@ -65,7 +65,7 @@ The crate uses an "owned `Arc<DB>` + per-domain repository struct" pattern. Ther
 | `EdgeRepository` (`graph_edges/repository.rs:33`) | `Arc<DB>` (cloned from teleological store) | sync | Owns `embedder_edges`, `typed_edges`, `typed_edges_by_type`; FAIL FAST errors |
 | `CodeStore` (`code/store.rs:42`) | `Arc<DB>` | sync | Owns 5 `code_*` CFs |
 | `CausalE11Index` (`teleological/rocksdb_store/causal_hnsw_index.rs`) | usearch HNSW | sync | E11 ANN over causal relationships |
-| `EmbedderIndexRegistry` (`teleological/indexes/registry.rs`) | 16 `HnswEmbedderIndex` instances | sync (internal locks) | One per HNSW-capable embedder |
+| `EmbedderIndexRegistry` (`teleological/indexes/registry.rs:71`) | 16 `HnswEmbedderIndex` instances | sync (internal `parking_lot::RwLock`) | One per HNSW-capable embedder. `get(embedder)` returns `None` for E6/E12/E13; `get_or_panic` panics with FAIL FAST. Asserts `len() == 16` at construction. |
 
 The DB handle is wrapped in `Arc<DB>` so multiple repositories can share it without re-opening.
 
@@ -412,12 +412,14 @@ Typed-edge secondary index encoding (post-fix; legacy 17-byte key still readable
 
 ## 12. Concurrency Notes
 
-- `parking_lot` is used everywhere to avoid poison cascades (MED-11 fix).
-- `DashMap` for `soft_deleted` instead of `RwLock<HashMap>` (P5 fix) eliminates contention on the read-heavy search path.
-- `secondary_index_lock` (mutex) serializes RMW on inverted indexes and `causal_by_source` to prevent lost-update races (STG-03/04/10 fix).
-- `compaction_lock` (RwLock) gates HNSW rebuild against concurrent stores: rebuild takes write-lock, store/delete take read-lock (DATA-5 fix).
-- Background batch ops use `tokio::spawn_blocking` to keep RocksDB I/O off the async runtime.
-- `RwLockReadGuard` (parking_lot) is `!Send`; call sites must drop the guard before any `.await` inside `tokio::spawn`.
+- `parking_lot` is used everywhere (`RwLock`, `Mutex`) to avoid poison cascades — one panic no longer breaks all subsequent operations (HIGH-17, MED-11 fix).
+- `DashMap` for `soft_deleted` instead of `RwLock<HashMap>` (P5 fix) eliminates contention on the read-heavy search path (5,000+ lookups under load).
+- `secondary_index_lock` (mutex) serializes RMW on E13/E6 inverted indexes, `causal_by_source`, and `file_index` to prevent lost-update races (STG-03/04/10 fix). Held across the entire RMW + `db.write(batch)` so concurrent writers cannot read stale posting lists.
+- `compaction_lock` (RwLock) gates HNSW rebuild against concurrent stores: rebuild takes write-lock, store/delete take read-lock (DATA-5 fix). Compaction is infrequent (~10min or manual) so write-lock contention is negligible.
+- Background batch ops (`store_batch_async`, `retrieve_batch_async`, `count_async`, `flush_async`, `scan_fingerprints_for_clustering_async`, `list_fingerprints_unbiased_async`) use `tokio::task::spawn_blocking` to keep RocksDB I/O off the async runtime. `Arc::clone(&self.db)` and `Arc::clone(&self.soft_deleted)` are passed into the closure — never the raw maps (cloning a `DashMap` would defeat the lock-free guarantee).
+- `parking_lot::RwLockReadGuard` is `!Send`; call sites must drop the guard before any `.await` inside `tokio::spawn`.
+- Posting-list invariant (`inverted_index.rs:25-34`): E6/E13 posting lists are stored sorted by UUID for binary-search RMW. Legacy unsorted lists are sorted in-place on first read and written back to fix the stored order.
+- Inverted-index RMW uses `db.multi_get_cf` to batch all term-key reads (`inverted_index.rs:52, 87, 208`), avoiding per-term sequential `db.get_cf` round-trips (Audit-10 STOR-M3).
 
 ## 13. What Is NOT Covered Here
 

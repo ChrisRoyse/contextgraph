@@ -9,11 +9,13 @@
 - `crates/context-graph-dynamicjepa/src/transfer.rs` (cross-domain transfer pilot)
 - `crates/context-graph-dynamicjepa/src/mi_audit.rs` (KSG-1 pairwise MI)
 - `crates/context-graph-core/src/dynamicjepa/**/*.rs` (record types, ids, schema, validation)
-- `crates/context-graph-storage/src/dynamicjepa/**/*.rs` (28-CF RocksDB plane)
+- `crates/context-graph-storage/src/dynamicjepa/**/*.rs` (28-CF RocksDB plane: `column_families.rs`, `keys.rs`, `common.rs`, `audit.rs`, `bridge.rs`, `encode.rs`, `mod.rs`, `inspection.rs`, `tests.rs`, plus per-store modules `domain_pack_store`, `event_store`, `panel_store`, `pairwise_store`, `surprise_store`, `verification_store`, `prediction_store`, `planning_store`, `binding_store`, `trajectory_store`, `dataset_store`, `artifact_store`, `constellation_store`, `threshold_store`)
 - `crates/context-graph-mcp/src/handlers/tools/dynamicjepa_tools.rs`
 - `crates/context-graph-mcp/src/tools/definitions/dynamicjepa.rs` (35 tools)
 
-**Cross-links:** [04_database_schema.md](04_database_schema.md), [09_storage_layer.md](09_storage_layer.md), [11_cuda_acceleration.md](11_cuda_acceleration.md), [16_training_subsystem.md](16_training_subsystem.md), [17_constellation_subsystem.md](17_constellation_subsystem.md), [19_camd_dpo_subsystem.md](19_camd_dpo_subsystem.md), [20_learning_subsystem.md](20_learning_subsystem.md). [01_system_overview.md](01_system_overview.md) should reference this doc in its subsystem index.
+**Cross-links:** [04_database_schema.md](04_database_schema.md), [09_storage_layer.md](09_storage_layer.md), [11_cuda_acceleration.md](11_cuda_acceleration.md), [16_training_subsystem.md](16_training_subsystem.md), [17_constellation_subsystem.md](17_constellation_subsystem.md), [19_camd_dpo_subsystem.md](19_camd_dpo_subsystem.md), [20_learning_subsystem.md](20_learning_subsystem.md), [22_reality_loop_subsystem.md](22_reality_loop_subsystem.md). [01_system_overview.md](01_system_overview.md) should reference this doc in its subsystem index.
+
+5090jepa demo plan: see `docs/5090jepa/00_TASK.md` (canonical entry for the 18-file fresh-agent build plan; RTX 5090 + CUDA 13.2 + Candle 0.9.2-alpha; counter_world + gridworld_5x5 packs).
 
 ## 1. Scope
 DynamicJEPA is a **Joint-Embedding Predictive Architecture** trained, predicted, planned, and audited entirely inside Rust on RTX 5090 / CUDA 13.2 via Candle 0.9.2-alpha. Its "Dynamic" variant takes a `(latent_panel, action)` pair and predicts the next latent panel. It is **independent** of:
@@ -182,8 +184,10 @@ Phase 3 supports `guards = ["bounds_check"]` only (`service.rs:1392`). `bounds_c
 | `TRAJECTORY_RECORD_VERSION` | 1 | `trajectory.rs:8` |
 | `DATASET_SHARD_RECORD_VERSION` | 2 | `dataset.rs:7` |
 | `MODEL_ARTIFACT_RECORD_VERSION` | 1 | `artifact.rs:8` |
-| `TRAINING_RUN_RECORD_VERSION` | 1 | (header) |
-| `PREDICTION_RECORD_VERSION` | 1 | (header) |
+| `TRAINING_RUN_RECORD_VERSION` | 1 | `predictor.rs:10` |
+| `PREDICTION_RECORD_VERSION` | 1 | `predictor.rs:11` |
+| `RAW_DOMAIN_EVENT_RECORD_VERSION` | 1 | `event.rs:7` |
+| `STATE_TRANSITION_RECORD_VERSION` | 1 | `state_action_outcome.rs:11` |
 | `SKILL_POLICY_RECORD_VERSION` | 1 | `skill.rs:7` |
 | `PLAN_TRACE_RECORD_VERSION` | 2 | `planner.rs:11` |
 | `SURPRISE_EVENT_RECORD_VERSION` | 1 | `planner.rs:12` |
@@ -230,6 +234,8 @@ Source: `crates/context-graph-storage/src/dynamicjepa/column_families.rs`.
 | `dj_audit_log` | Universal audit (every operation) | append_only (8-byte prefix) |
 
 CF options helpers: `dj_uuid_point_cf_options`, `dj_composite_index_cf_options`, `dj_secondary_index_cf_options`, `dj_append_only_cf_options`, `dj_large_blob_cf_options` (`column_families.rs:107-125`). All use Lz4 + level compaction; large_blob uses 64KB blocks + 8MB write buffer; uuid_point uses 8KB blocks + 4MB write buffer + 16-byte prefix bloom.
+
+`DJ_CF_COUNT == 28` is asserted in `crates/context-graph-storage/src/dynamicjepa/tests.rs:1126`. The same test file emits an inspection JSON whose `column_family_count` and `dynamicjepa_cf_count` fields read 28 (line 1418, 1427).
 
 ## 15. Domain Pack (`core/dynamicjepa/domain_pack.rs`)
 A domain pack is a strict TOML registered into `dj_domain_packs`. Required fields:
@@ -409,3 +415,13 @@ Every error carries a `code()` string used by audit logs.
 - Hash-verified inference: `load_artifact_for_inference` recomputes every artifact file hash on every inference; mismatch refuses to instantiate `InferenceArtifact`.
 - All persistence sites use **batch-write + readback verify**. Any divergence raises `StorageInvariantViolation` and aborts the operation — no partial state is exposed.
 - `PlanTraceStatus::Rejected` is only produced when (a) every guard rejects every candidate AND (b) the domain has no constellation fallback. With a constellation, the highest-utility candidate is selected anyway and `no_accepted_candidate = true` is recorded for downstream auditors.
+
+## 25. Relationship to the Reality Loop
+The DynamicJEPA subsystem and the SWE-bench reality loop ([22_reality_loop_subsystem.md](22_reality_loop_subsystem.md)) are independent subsystems that share a single audit substrate (the BlackBoxFix SQLite ledger at `LEDGER_SCHEMA_VERSION = 14`):
+
+| Subsystem | Owns | Persists into |
+| --- | --- | --- |
+| DynamicJEPA | Latent panels, predictions, planning, surprise, MI audit, transfer | 28 `dj_*` RocksDB CFs + `dj_audit_log` |
+| Reality loop | SWE-bench task validation, candidate patches, official Docker readback, GPU VRAM budget | `blackbox.sqlite` (BlackBoxFix), `reality-events.jsonl`, per-attempt JSON artifacts |
+
+Both subsystems write fail-closed audit rows for every persistence operation; both raise typed validation errors on schema or readback mismatch; neither can claim success without the other's source-of-truth confirmation in scope.
