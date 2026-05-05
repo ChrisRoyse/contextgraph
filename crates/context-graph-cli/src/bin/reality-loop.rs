@@ -19,14 +19,23 @@ const DEFAULT_OLLAMA_NUM_CTX: u64 = 32768;
 const DEFAULT_OLLAMA_NUM_PREDICT: u64 = 4096;
 const DEFAULT_OLLAMA_TEMPERATURE: f64 = 0.0;
 const DEFAULT_OLLAMA_TOP_P: f64 = 0.9;
-const DEFAULT_OPENAI_OPTIMIZER_MODEL: &str = "gpt-5.5-pro";
-const DEFAULT_OPENAI_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
-const DEFAULT_OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
-const DEFAULT_OPENAI_OPTIMIZER_MAX_OUTPUT_TOKENS: u64 = 32768;
-const DEFAULT_OPENAI_OPTIMIZER_TOOL_ROUNDS: u64 = 8;
+const DEFAULT_OPENAI_OPTIMIZER_MODEL: &str = "deepseek-v4-pro";
+const DEFAULT_OPENAI_RESPONSES_URL: &str = "https://api.deepseek.com/chat/completions";
+const DEFAULT_OPENAI_API_KEY_ENV: &str = "DEEPSEEK_API_KEY";
+const DEFAULT_OPENAI_OPTIMIZER_MAX_OUTPUT_TOKENS: u64 = 8192;
+const DEFAULT_OPENAI_OPTIMIZER_TOOL_ROUNDS: u64 = 4;
+const DEFAULT_OPENAI_MAX_RETRIES: u64 = 4;
+const DEFAULT_OPENAI_INITIAL_BACKOFF_MS: u64 = 2_000;
+const DEFAULT_OPENAI_MAX_BACKOFF_MS: u64 = 60_000;
+const DEFAULT_OPENAI_DEPENDENCY_BLOCK_SLEEP_MS: u64 = 600_000;
+const DEFAULT_OPTIMIZER_MAX_ESTIMATED_CALL_COST_USD: f64 = 0.50;
+const DEEPSEEK_V4_PRO_CACHE_HIT_INPUT_USD_PER_M: f64 = 0.003625;
+const DEEPSEEK_V4_PRO_CACHE_MISS_INPUT_USD_PER_M: f64 = 0.435;
+const DEEPSEEK_V4_PRO_OUTPUT_USD_PER_M: f64 = 0.87;
 const DEFAULT_OFFICIAL_DOCKER_HOST: &str = "unix:///var/run/docker.sock";
 const DEFAULT_OFFICIAL_DOCKER_CONFIG: &str = "/home/cabdru/.cache/contextgraph-docker-config";
 const DATASET_NAME: &str = "princeton-nlp/SWE-bench_Lite";
+const LOCAL_PYTHON_BIN: &str = "python3";
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "reality-loop")]
@@ -89,22 +98,32 @@ struct Args {
     agent_tool_rounds: u64,
     #[arg(long, default_value_t = 300)]
     targeted_test_timeout: u64,
-    #[arg(long)]
+    #[arg(long, alias = "optimizer-each-attempt")]
     openai_optimizer_each_attempt: bool,
-    #[arg(long, default_value = DEFAULT_OPENAI_OPTIMIZER_MODEL)]
+    #[arg(long, alias = "optimizer-model", default_value = DEFAULT_OPENAI_OPTIMIZER_MODEL)]
     openai_optimizer_model: String,
-    #[arg(long, default_value = DEFAULT_OPENAI_RESPONSES_URL)]
+    #[arg(long, alias = "optimizer-api-url", default_value = DEFAULT_OPENAI_RESPONSES_URL)]
     openai_responses_url: String,
-    #[arg(long, default_value = DEFAULT_OPENAI_API_KEY_ENV)]
+    #[arg(long, alias = "optimizer-api-key-env", alias = "deepseek-api-key-env", default_value = DEFAULT_OPENAI_API_KEY_ENV)]
     openai_api_key_env: String,
-    #[arg(long, default_value_t = DEFAULT_OPENAI_OPTIMIZER_TOOL_ROUNDS)]
+    #[arg(long, alias = "optimizer-tool-rounds", default_value_t = DEFAULT_OPENAI_OPTIMIZER_TOOL_ROUNDS)]
     openai_optimizer_tool_rounds: u64,
-    #[arg(long, default_value_t = DEFAULT_OPENAI_OPTIMIZER_MAX_OUTPUT_TOKENS)]
+    #[arg(long, alias = "optimizer-max-output-tokens", default_value_t = DEFAULT_OPENAI_OPTIMIZER_MAX_OUTPUT_TOKENS)]
     openai_optimizer_max_output_tokens: u64,
-    #[arg(long, default_value = "high")]
+    #[arg(long, alias = "optimizer-reasoning-effort", default_value = "high")]
     openai_optimizer_reasoning_effort: String,
-    #[arg(long, default_value_t = 300)]
+    #[arg(long, alias = "optimizer-timeout", default_value_t = 300)]
     openai_optimizer_timeout: u64,
+    #[arg(long, default_value_t = DEFAULT_OPENAI_MAX_RETRIES)]
+    openai_max_retries: u64,
+    #[arg(long, default_value_t = DEFAULT_OPENAI_INITIAL_BACKOFF_MS)]
+    openai_initial_backoff_ms: u64,
+    #[arg(long, default_value_t = DEFAULT_OPENAI_MAX_BACKOFF_MS)]
+    openai_max_backoff_ms: u64,
+    #[arg(long, default_value_t = DEFAULT_OPENAI_DEPENDENCY_BLOCK_SLEEP_MS)]
+    openai_dependency_block_sleep_ms: u64,
+    #[arg(long, default_value_t = DEFAULT_OPTIMIZER_MAX_ESTIMATED_CALL_COST_USD)]
+    optimizer_max_estimated_call_cost_usd: f64,
     #[arg(long, default_value_t = 0)]
     sleep_between_attempts_ms: u64,
 }
@@ -297,7 +316,7 @@ async fn run(args: Args) -> Result<Value> {
             "RUST_REALITY_SMOKE_OPENAI_OPTIMIZER_REQUIRED",
             "--smoke-test requires --openai-optimizer-each-attempt",
             "openai_optimizer_each_attempt",
-            "the smoke test must verify the Gemma inner loop and OpenAI outer optimizer together",
+            "the smoke test must verify the Gemma inner loop and outer optimizer together",
             json!({"smoke_test": true}),
             None,
         ));
@@ -763,34 +782,90 @@ async fn run(args: Args) -> Result<Value> {
             &args.model,
         )?;
         let openai_optimizer_recommendation = if args.openai_optimizer_each_attempt {
-            let recommendation = run_openai_loop_optimizer(
-                &client,
-                &args,
-                &task,
-                attempt,
-                &run_root,
-                &task_root,
-                &attempt_dir,
-                &problem_reality_path,
-                &reality_signal_packet_path,
-                &validation_path,
-                agent_tool_transcript_path.as_deref(),
-                &ledger,
-                &ledger_counts_now,
-            )
-            .await?;
-            append_event(
-                &reality_events,
-                json!({
-                    "event_type": "openai_loop_optimizer_completed",
-                    "status": recommendation.get("status"),
-                    "attempt": attempt,
-                    "optimizer": recommendation.get("optimizer"),
-                    "recommendation": recommendation.pointer("/source_of_truth/final_recommendation"),
-                    "source_of_truth": recommendation.pointer("/source_of_truth/final_recommendation")
-                }),
-            )?;
-            Some(recommendation)
+            let mut blocked_count = 0_u64;
+            loop {
+                match run_openai_loop_optimizer(
+                    &client,
+                    &args,
+                    &task,
+                    attempt,
+                    &run_root,
+                    &task_root,
+                    &attempt_dir,
+                    &problem_reality_path,
+                    &reality_signal_packet_path,
+                    &validation_path,
+                    agent_tool_transcript_path.as_deref(),
+                    &ledger,
+                    &ledger_counts_now,
+                )
+                .await
+                {
+                    Ok(recommendation) => {
+                        append_event(
+                            &reality_events,
+                            json!({
+                                "event_type": "openai_loop_optimizer_completed",
+                                "status": recommendation.get("status"),
+                                "attempt": attempt,
+                                "optimizer": recommendation.get("optimizer"),
+                                "recommendation": recommendation.pointer("/source_of_truth/final_recommendation"),
+                                "source_of_truth": recommendation.pointer("/source_of_truth/final_recommendation")
+                            }),
+                        )?;
+                        break Some(recommendation);
+                    }
+                    Err(err) if args.run_until_resolved && is_openai_dependency_error(&err) => {
+                        blocked_count += 1;
+                        let blocked_dir = attempt_dir.join("openai-loop-optimizer");
+                        create_dir_checked(&blocked_dir)?;
+                        let blocked_path =
+                            blocked_dir.join(format!("openai-blocked-{blocked_count:04}.json"));
+                        let sleep_ms = args.openai_dependency_block_sleep_ms;
+                        let blocked_packet = json!({
+                            "record_kind": "contextgraph_openai_optimizer_blocked_state",
+                            "status": "blocked_waiting_for_openai_dependency",
+                            "attempt": attempt,
+                            "blocked_count": blocked_count,
+                            "sleep_ms_before_retry": sleep_ms,
+                            "will_retry": true,
+                            "loop_mode": {
+                                "run_until_resolved": args.run_until_resolved,
+                                "success_predicate": "official SWE-bench report places instance_id in resolved_ids",
+                                "reason": "continuous reality loop must not exit before official SWE success"
+                            },
+                            "error": err,
+                            "source_of_truth": file_sot(&blocked_path)
+                        });
+                        write_json_checked(&blocked_path, &blocked_packet)?;
+                        append_event(
+                            &reality_events,
+                            json!({
+                                "event_type": "openai_loop_optimizer_blocked",
+                                "status": "blocked_waiting_for_openai_dependency",
+                                "attempt": attempt,
+                                "blocked_count": blocked_count,
+                                "sleep_ms_before_retry": sleep_ms,
+                                "source_of_truth": file_sot(&blocked_path)
+                            }),
+                        )?;
+                        write_summary(
+                            &run_root,
+                            &task,
+                            &args,
+                            &ledger,
+                            &reality_events,
+                            &contract_path,
+                            &problem_reality_path,
+                            &attempts,
+                            solved,
+                            false,
+                        )?;
+                        tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
+                    }
+                    Err(err) => return Err(err),
+                }
+            }
         } else {
             None
         };
@@ -1401,6 +1476,7 @@ fn write_failure_artifact(args: &Args, err: &RealityError) -> std::result::Resul
             "openai_optimizer_tool_rounds": args.openai_optimizer_tool_rounds,
             "openai_optimizer_max_output_tokens": args.openai_optimizer_max_output_tokens,
             "openai_optimizer_reasoning_effort": args.openai_optimizer_reasoning_effort,
+            "optimizer_max_estimated_call_cost_usd": args.optimizer_max_estimated_call_cost_usd,
             "official_docker_host": args.official_docker_host,
             "official_docker_config": path_str(&args.official_docker_config),
             "gpu_index": args.gpu_index,
@@ -1607,15 +1683,38 @@ Do not modify tests, fixtures, or benchmark harness files.";
     let mut executed_tool_calls = 0_u64;
     let mut submitted_candidate_patch: Option<Value> = None;
     let mut failed_candidate_submission: Option<Value> = None;
+    let mut latest_editable_windows: Vec<Value> = Vec::new();
+    let mut no_tool_after_window_count = 0_u64;
+    let mut repeated_navigation_count = 0_u64;
+    let mut seen_tool_calls: BTreeMap<String, u64> = BTreeMap::new();
 
     for round in 1..=args.agent_tool_rounds {
         let request_path = tools_root.join(format!("tool-round-{round:02}-request.json"));
+        let edit_deadline = edit_deadline_active(
+            round,
+            args.agent_tool_rounds,
+            &latest_editable_windows,
+            no_tool_after_window_count,
+            repeated_navigation_count,
+            submitted_candidate_patch.is_some(),
+        );
+        let round_tools = if edit_deadline {
+            agent_edit_tool_specs()
+        } else {
+            tools.clone()
+        };
         let body = json!({
             "model": args.model,
             "messages": messages,
             "stream": false,
             "think": false,
-            "tools": tools,
+            "tools": round_tools,
+            "contextgraph_tool_policy": {
+                "edit_deadline_active": edit_deadline,
+                "latest_editable_windows": latest_editable_windows.clone(),
+                "no_tool_after_window_count": no_tool_after_window_count,
+                "repeated_navigation_count": repeated_navigation_count
+            },
             "keep_alive": args.ollama_keep_alive,
             "options": {
                 "temperature": args.ollama_temperature,
@@ -1642,9 +1741,14 @@ Do not modify tests, fixtures, or benchmark harness files.";
             }
         }
         if tool_calls.is_empty() {
+            if !latest_editable_windows.is_empty() {
+                no_tool_after_window_count += 1;
+            }
             transcript_entries.push(json!({
                 "round": round,
                 "status": "no_tool_call",
+                "edit_deadline_active": edit_deadline,
+                "latest_editable_windows": latest_editable_windows.clone(),
                 "accepted_protocols": [
                     "ollama_native_tool_calls",
                     "contextgraph_content_json_tool_request"
@@ -1655,7 +1759,12 @@ Do not modify tests, fixtures, or benchmark harness files.";
             messages.push(response["message"].clone());
             messages.push(json!({
                 "role": "user",
-                "content": "ContextGraph did not receive a governed tool call. You must call exactly one governed tool now. For attempt 1, use read_problem_reality, search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool. When ready to submit the fix, prefer apply_line_window_edit with line numbers and observed_sha256 from open_file_window, or use apply_structured_edit with a unique exact find span. Do not return final JSON or prose."
+                "content": no_tool_repair_prompt(
+                    edit_deadline,
+                    &latest_editable_windows,
+                    no_tool_after_window_count,
+                    repeated_navigation_count
+                )
             }));
             continue;
         }
@@ -1664,6 +1773,15 @@ Do not modify tests, fixtures, or benchmark harness files.";
         for (index, call) in tool_calls.iter().enumerate() {
             let name = tool_call_name(call)?;
             let arguments = tool_call_arguments(call)?;
+            let arguments_sha256 = sha256_text(&serde_json::to_string(&arguments).unwrap());
+            let tool_call_fingerprint = format!("{name}:{arguments_sha256}");
+            let duplicate_count_before = *seen_tool_calls.get(&tool_call_fingerprint).unwrap_or(&0);
+            seen_tool_calls.insert(tool_call_fingerprint, duplicate_count_before + 1);
+            let duplicate_navigation_call =
+                duplicate_count_before > 0 && is_navigation_or_reality_tool(&name);
+            if duplicate_navigation_call {
+                repeated_navigation_count += 1;
+            }
             let call_id = tool_call_id(call, round, index);
             let tool_dir =
                 tools_root.join(format!("round-{round:02}-{index:02}-{}", safe_id(&name)));
@@ -1686,6 +1804,14 @@ Do not modify tests, fixtures, or benchmark harness files.";
             let result_path = tool_dir.join("tool-result.json");
             write_json_checked(&result_path, &result)?;
             let result_readback: Value = read_json(&result_path)?;
+            if name == "open_file_window" {
+                if let Some(window) = compact_editable_window(&result_readback) {
+                    latest_editable_windows.push(window);
+                    if latest_editable_windows.len() > 4 {
+                        latest_editable_windows.remove(0);
+                    }
+                }
+            }
             let result_status = result_readback
                 .get("status")
                 .and_then(Value::as_str)
@@ -1743,7 +1869,10 @@ Do not modify tests, fixtures, or benchmark harness files.";
                 "tool_call_id": call_id,
                 "tool_name": name,
                 "tool_request_protocol": tool_request_protocol,
-                "arguments_sha256": sha256_text(&serde_json::to_string(&arguments).unwrap()),
+                "arguments_sha256": arguments_sha256,
+                "duplicate_tool_call_count_before": duplicate_count_before,
+                "duplicate_navigation_call": duplicate_navigation_call,
+                "edit_deadline_active": edit_deadline,
                 "requested": file_sot(&requested_path),
                 "result": file_sot(&result_path),
                 "harness_transition": file_sot(&harness_transition_path),
@@ -1757,6 +1886,8 @@ Do not modify tests, fixtures, or benchmark harness files.";
         transcript_entries.push(json!({
             "round": round,
             "status": "tool_results_appended",
+            "edit_deadline_active": edit_deadline,
+            "latest_editable_windows": latest_editable_windows.clone(),
             "tool_request_protocol": tool_request_protocol,
             "request": file_sot(&request_path),
             "response": file_sot(&response_path),
@@ -1981,6 +2112,16 @@ async fn run_openai_loop_optimizer(
     let optimizer_dir = attempt_dir.join("openai-loop-optimizer");
     create_dir_checked(&optimizer_dir)?;
     let (api_key, api_key_metadata) = load_required_secret(&args.openai_api_key_env)?;
+    if args.openai_optimizer_model != "deepseek-v4-pro" {
+        return Err(RealityError::new(
+            "RUST_REALITY_DEEPSEEK_MODEL_UNSUPPORTED",
+            "the outer optimizer is configured for a model other than deepseek-v4-pro",
+            "openai_optimizer_model",
+            "use deepseek-v4-pro so pricing, usage accounting, and thinking/tool-call protocol are explicit",
+            json!({"configured_model": args.openai_optimizer_model}),
+            None,
+        ));
+    }
     let problem_reality: Value = read_json(problem_reality_path)?;
     let reality_signal_packet: Value = read_json(reality_signal_packet_path)?;
     let validation: Value = read_json(validation_path)?;
@@ -1989,7 +2130,12 @@ async fn run_openai_loop_optimizer(
         "schema_version": 1,
         "outer_optimizer": {
             "model": args.openai_optimizer_model,
-            "api": "openai_responses_api",
+            "provider": "deepseek",
+            "api": "openai_compatible_chat_completions",
+            "endpoint": args.openai_responses_url,
+            "thinking": {"type": "enabled"},
+            "reasoning_effort": args.openai_optimizer_reasoning_effort,
+            "max_estimated_call_cost_usd": args.optimizer_max_estimated_call_cost_usd,
             "api_key": api_key_metadata
         },
         "inner_actor": {
@@ -2021,39 +2167,45 @@ async fn run_openai_loop_optimizer(
     let optimizer_input_path = optimizer_dir.join("optimizer-input.json");
     write_json_checked(&optimizer_input_path, &optimizer_input)?;
 
-    let mut input_items = vec![json!({
-        "role": "user",
-        "content": format!(
-            "You are the outer ContextGraph loop coding agent. Gemma is the inner SWE-bench actor. \
-    You must inspect verified reality and directly optimize the ContextGraph reality-loop code when source changes are needed. \
-    You may edit the governed project files through project edit tools, then run real Rust verification. \
-    Do not claim SWE success. Do not propose changing tests, the official evaluator, reward spec trust boundary, or BlackBoxFix ledger integrity. \
-    Use the provided function tools if you need full artifacts or source context. \
-    Optimizer input JSON:\n{}",
-            serde_json::to_string_pretty(&optimizer_input).unwrap()
-        )
-    })];
-    let tools = openai_optimizer_tool_specs();
+    let mut messages = vec![
+        json!({
+            "role": "system",
+            "content": "You are the DeepSeek V4 Pro outer coding agent for ContextGraph's reality loop. You are not the SWE repair actor; Gemma is. Your job is to inspect verified source-of-truth reality, edit the ContextGraph project source when needed, run real verification, and improve the loop so Gemma gets better reality feedback. Use project edit tools for code changes. Never edit benchmark tests, hide failures, weaken verifiers, change the official oracle, expose secrets, or treat local validation as SWE success."
+        }),
+        json!({
+            "role": "user",
+            "content": format!(
+                "You are the outer ContextGraph loop coding agent. Gemma is the inner SWE-bench actor. \
+        You must inspect verified reality and directly optimize the ContextGraph reality-loop code when source changes are needed. \
+        You may edit the governed project files through project edit tools, then run real Rust verification. \
+        Do not claim SWE success. Do not propose changing tests, the official evaluator, reward spec trust boundary, or BlackBoxFix ledger integrity. \
+        Use the provided function tools if you need full artifacts or source context. \
+        Optimizer input JSON:\n{}",
+                serde_json::to_string_pretty(&optimizer_input).unwrap()
+            )
+        }),
+    ];
+    let tools = deepseek_optimizer_tool_specs();
     let mut tool_events = Vec::new();
     for round in 1..=args.openai_optimizer_tool_rounds {
         let request_path = optimizer_dir.join(format!("openai-tool-round-{round:02}-request.json"));
         let response_path =
             optimizer_dir.join(format!("openai-tool-round-{round:02}-response.json"));
-        let body = openai_response_request_body(
-            args,
-            &input_items,
-            Some(&tools),
-            Some(json!("auto")),
-            None,
-        );
+        let body =
+            deepseek_chat_request_body(args, &messages, Some(&tools), Some(json!("auto")), false);
         write_json_checked(&request_path, &body)?;
-        let response =
-            post_openai_response(client, args, &api_key, &body, &request_path, &response_path)
-                .await?;
-        if let Some(output) = response.get("output").and_then(Value::as_array) {
-            input_items.extend(output.iter().filter_map(openai_replayable_output_item));
-        }
-        let calls = openai_function_calls(&response)?;
+        let response = post_deepseek_chat_completion(
+            client,
+            args,
+            &api_key,
+            &body,
+            &request_path,
+            &response_path,
+        )
+        .await?;
+        let assistant_message = deepseek_chat_assistant_message(&response)?;
+        messages.push(assistant_message);
+        let calls = deepseek_chat_function_calls(&response)?;
         if calls.is_empty() {
             tool_events.push(json!({
                 "round": round,
@@ -2087,10 +2239,10 @@ async fn run_openai_loop_optimizer(
             let result_path = tool_dir.join("openai-optimizer-tool-result.json");
             write_json_checked(&result_path, &result)?;
             let result_readback: Value = read_json(&result_path)?;
-            input_items.push(json!({
-                "type": "function_call_output",
-                "call_id": call.call_id,
-                "output": serde_json::to_string(&result_readback).unwrap()
+            messages.push(json!({
+                "role": "tool",
+                "tool_call_id": call.call_id,
+                "content": serde_json::to_string(&result_readback).unwrap()
             }));
             round_calls.push(json!({
                 "call_id": call.call_id,
@@ -2120,7 +2272,7 @@ async fn run_openai_loop_optimizer(
         &tool_events,
         &project_verification,
     )?;
-    input_items.push(json!({
+    messages.push(json!({
         "role": "user",
         "content": format!(
             "Your own verified self-reality after optimizer tool rounds:\n{}",
@@ -2128,21 +2280,21 @@ async fn run_openai_loop_optimizer(
         )
     }));
 
-    input_items.push(json!({
+    messages.push(json!({
         "role": "user",
-        "content": "Now produce the final optimizer recommendation as JSON matching the schema. The recommendation must be actionable for the next Gemma attempt and for improving the ContextGraph reality-loop harness. If you edited project source, summarize the exact changed files and verification source of truth."
+        "content": format!(
+            "Now produce the final optimizer recommendation as JSON matching this schema exactly. \
+The recommendation must be actionable for the next Gemma attempt and for improving the ContextGraph reality-loop harness. \
+If you edited project source, summarize the exact changed files and verification source of truth. \
+Return only a valid json object.\nSchema:\n{}",
+            serde_json::to_string_pretty(&openai_optimizer_json_schema()).unwrap()
+        )
     }));
     let final_request_path = optimizer_dir.join("openai-final-request.json");
     let final_response_path = optimizer_dir.join("openai-final-response.json");
-    let final_body = openai_response_request_body(
-        args,
-        &input_items,
-        None,
-        None,
-        Some(openai_optimizer_json_schema()),
-    );
+    let final_body = deepseek_chat_request_body(args, &messages, None, None, true);
     write_json_checked(&final_request_path, &final_body)?;
-    let final_response = post_openai_response(
+    let final_response = post_deepseek_chat_completion(
         client,
         args,
         &api_key,
@@ -2151,12 +2303,12 @@ async fn run_openai_loop_optimizer(
         &final_response_path,
     )
     .await?;
-    let output_text = openai_output_text(&final_response).ok_or_else(|| {
+    let output_text = deepseek_chat_output_text(&final_response).ok_or_else(|| {
         RealityError::new(
             "RUST_REALITY_OPENAI_OPTIMIZER_OUTPUT_MISSING",
-            "OpenAI loop optimizer response did not include output_text",
-            "openai.response.output_text",
-            "inspect final OpenAI response before continuing",
+            "DeepSeek loop optimizer response did not include final JSON content",
+            "deepseek.response.choices[0].message.content",
+            "inspect final DeepSeek response before continuing",
             json!({"response": file_sot(&final_response_path)}),
             Some(file_sot(&final_response_path)),
         )
@@ -2183,11 +2335,14 @@ async fn run_openai_loop_optimizer(
         "status": "ok",
         "attempt": attempt,
         "optimizer": {
-            "provider": "openai",
-            "api": "responses",
+            "provider": "deepseek",
+            "api": "openai_compatible_chat_completions",
+            "endpoint": args.openai_responses_url,
             "model": args.openai_optimizer_model,
             "reasoning_effort": args.openai_optimizer_reasoning_effort,
             "tool_round_budget": args.openai_optimizer_tool_rounds,
+            "max_output_tokens": args.openai_optimizer_max_output_tokens,
+            "max_estimated_call_cost_usd": args.optimizer_max_estimated_call_cost_usd,
             "api_key": api_key_metadata
         },
         "tool_events": tool_events,
@@ -2218,6 +2373,7 @@ async fn run_openai_loop_optimizer(
     Ok(readback)
 }
 
+#[allow(dead_code)]
 fn openai_response_request_body(
     args: &Args,
     input_items: &[Value],
@@ -2246,6 +2402,331 @@ fn openai_response_request_body(
     body
 }
 
+fn deepseek_chat_request_body(
+    args: &Args,
+    messages: &[Value],
+    tools: Option<&Value>,
+    tool_choice: Option<Value>,
+    force_json: bool,
+) -> Value {
+    let mut body = json!({
+        "model": args.openai_optimizer_model,
+        "messages": messages,
+        "reasoning_effort": args.openai_optimizer_reasoning_effort,
+        "thinking": {"type": "enabled"},
+        "max_tokens": args.openai_optimizer_max_output_tokens,
+    });
+    if let Some(tools) = tools {
+        body["tools"] = tools.clone();
+    }
+    if let Some(tool_choice) = tool_choice {
+        body["tool_choice"] = tool_choice;
+    }
+    if force_json {
+        body["response_format"] = json!({"type": "json_object"});
+    }
+    body
+}
+
+async fn post_deepseek_chat_completion(
+    client: &reqwest::Client,
+    args: &Args,
+    api_key: &str,
+    body: &Value,
+    request_path: &Path,
+    response_path: &Path,
+) -> Result<Value> {
+    let retry_state_path = response_path.with_extension("retry-state.json");
+    let preflight_cost_path = response_path.with_extension("cost-preflight.json");
+    let usage_cost_path = response_path.with_extension("usage-cost.json");
+    let preflight = write_deepseek_cost_preflight(args, body, request_path, &preflight_cost_path)?;
+    let mut retry_events = Vec::new();
+    let total_attempts = args.openai_max_retries.saturating_add(1).max(1);
+    for api_attempt in 1..=total_attempts {
+        let started = Instant::now();
+        let response = client
+            .post(&args.openai_responses_url)
+            .bearer_auth(api_key)
+            .json(body)
+            .timeout(Duration::from_secs(args.openai_optimizer_timeout))
+            .send()
+            .await
+            .map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_DEEPSEEK_REQUEST_FAILED",
+                    "DeepSeek Chat Completions request failed",
+                    "deepseek.request",
+                    "inspect network connectivity, API key, model access, and request body",
+                    json!({
+                        "url": args.openai_responses_url,
+                        "error": err.to_string(),
+                        "request": file_sot(request_path),
+                        "cost_preflight": file_sot(&preflight_cost_path)
+                    }),
+                    Some(file_sot(request_path)),
+                )
+            })?;
+        let status = response.status();
+        let status_code = status.as_u16();
+        let headers = selected_deepseek_headers(response.headers());
+        let text = response.text().await.map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_DEEPSEEK_RESPONSE_READ_FAILED",
+                "failed to read DeepSeek Chat Completions body",
+                "deepseek.response",
+                "inspect network/API response",
+                json!({"error": err.to_string(), "request": file_sot(request_path)}),
+                Some(file_sot(request_path)),
+            )
+        })?;
+        let value: Value = serde_json::from_str(&text).unwrap_or_else(|_| {
+            json!({
+                "status": "non_json_response",
+                "body": truncate_chars(&text, 12000)
+            })
+        });
+        write_json_checked(response_path, &value)?;
+        let retryable = !status.is_success() && deepseek_error_is_retryable(status_code, &value);
+        let retry_after_ms = headers
+            .get("retry-after")
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(|seconds| seconds.saturating_mul(1000));
+        let backoff_ms = retry_after_ms
+            .unwrap_or_else(|| {
+                exponential_backoff_ms(
+                    args.openai_initial_backoff_ms,
+                    args.openai_max_backoff_ms,
+                    api_attempt,
+                )
+            })
+            .min(args.openai_max_backoff_ms);
+        let will_retry = retryable && api_attempt < total_attempts;
+        retry_events.push(json!({
+            "api_attempt": api_attempt,
+            "elapsed_ms": started.elapsed().as_millis(),
+            "http_status": status_code,
+            "success": status.is_success(),
+            "retryable": retryable,
+            "will_retry": will_retry,
+            "backoff_ms": if will_retry { Some(backoff_ms) } else { None },
+            "api_error": value.get("error"),
+            "headers": headers,
+            "request": file_sot(request_path),
+            "response": file_sot(response_path),
+            "cost_preflight": file_sot(&preflight_cost_path)
+        }));
+        write_json_checked(
+            &retry_state_path,
+            &json!({
+                "record_kind": "contextgraph_deepseek_chat_retry_state",
+                "status": if status.is_success() { "ok" } else if will_retry { "retrying" } else { "failed" },
+                "api_attempts": retry_events,
+                "source_of_truth": file_sot(&retry_state_path)
+            }),
+        )?;
+        if status.is_success() {
+            let usage_cost = deepseek_actual_usage_cost(args, &value, &preflight)?;
+            write_json_checked(&usage_cost_path, &usage_cost)?;
+            let usage_readback: Value = read_json(&usage_cost_path)?;
+            if usage_readback != usage_cost {
+                return Err(RealityError::new(
+                    "RUST_REALITY_DEEPSEEK_USAGE_COST_READBACK_MISMATCH",
+                    "DeepSeek usage-cost readback did not match written artifact",
+                    "deepseek.usage_cost.readback",
+                    "inspect filesystem durability before trusting optimizer cost",
+                    json!({"expected": usage_cost, "actual": usage_readback}),
+                    Some(file_sot(&usage_cost_path)),
+                ));
+            }
+            if value.pointer("/choices/0/message").is_none() {
+                return Err(RealityError::new(
+                    "RUST_REALITY_DEEPSEEK_MESSAGE_MISSING",
+                    "DeepSeek Chat Completions response did not include choices[0].message",
+                    "deepseek.response.choices[0].message",
+                    "inspect response body and request format",
+                    json!({
+                        "response": file_sot(response_path),
+                        "usage_cost": file_sot(&usage_cost_path),
+                        "request": file_sot(request_path)
+                    }),
+                    Some(file_sot(response_path)),
+                ));
+            }
+            return Ok(value);
+        }
+        if will_retry {
+            tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+            continue;
+        }
+        let (error_code, remediation) = deepseek_reality_error_code(status_code, &value);
+        return Err(RealityError::new(
+            error_code,
+            "DeepSeek Chat Completions API returned an error",
+            "deepseek.response.status",
+            remediation,
+            json!({
+                "http_status": status_code,
+                "api_error_code": deepseek_api_error_code(&value),
+                "api_error_type": value.pointer("/error/type"),
+                "api_error_message": value.pointer("/error/message"),
+                "response": file_sot(response_path),
+                "request": file_sot(request_path),
+                "retry_state": file_sot(&retry_state_path),
+                "cost_preflight": file_sot(&preflight_cost_path),
+                "attempts": retry_events.len()
+            }),
+            Some(file_sot(response_path)),
+        ));
+    }
+    Err(RealityError::new(
+        "RUST_REALITY_DEEPSEEK_RETRY_STATE_EXHAUSTED",
+        "DeepSeek Chat Completions retry loop exhausted without returning a response",
+        "deepseek.response.retry_state",
+        "inspect retry state artifact and DeepSeek API availability",
+        json!({
+            "retry_state": file_sot(&retry_state_path),
+            "request": file_sot(request_path),
+            "cost_preflight": file_sot(&preflight_cost_path)
+        }),
+        Some(file_sot(&retry_state_path)),
+    ))
+}
+
+fn write_deepseek_cost_preflight(
+    args: &Args,
+    body: &Value,
+    request_path: &Path,
+    cost_path: &Path,
+) -> Result<Value> {
+    let request_text = serde_json::to_string(body).unwrap();
+    let estimated_input_tokens = estimate_tokens_from_text(&request_text);
+    let estimated_max_output_tokens = args.openai_optimizer_max_output_tokens;
+    let estimated_max_cost_usd = cost_usd(
+        estimated_input_tokens,
+        DEEPSEEK_V4_PRO_CACHE_MISS_INPUT_USD_PER_M,
+    ) + cost_usd(
+        estimated_max_output_tokens,
+        DEEPSEEK_V4_PRO_OUTPUT_USD_PER_M,
+    );
+    let preflight = json!({
+        "record_kind": "contextgraph_deepseek_cost_preflight",
+        "status": if estimated_max_cost_usd <= args.optimizer_max_estimated_call_cost_usd { "ok" } else { "blocked" },
+        "model": args.openai_optimizer_model,
+        "endpoint": args.openai_responses_url,
+        "estimated_input_tokens": estimated_input_tokens,
+        "estimated_max_output_tokens": estimated_max_output_tokens,
+        "price_table_usd_per_1m_tokens": {
+            "input_cache_hit": DEEPSEEK_V4_PRO_CACHE_HIT_INPUT_USD_PER_M,
+            "input_cache_miss": DEEPSEEK_V4_PRO_CACHE_MISS_INPUT_USD_PER_M,
+            "output": DEEPSEEK_V4_PRO_OUTPUT_USD_PER_M
+        },
+        "estimated_max_cost_usd": round_money(estimated_max_cost_usd),
+        "budget_usd": args.optimizer_max_estimated_call_cost_usd,
+        "request": file_sot(request_path),
+        "source_of_truth": file_sot(cost_path)
+    });
+    write_json_checked(cost_path, &preflight)?;
+    if estimated_max_cost_usd > args.optimizer_max_estimated_call_cost_usd {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPTIMIZER_COST_BUDGET_EXCEEDED",
+            "DeepSeek optimizer request estimated cost exceeds the configured per-call budget",
+            "optimizer_max_estimated_call_cost_usd",
+            "reduce prompt/tool-round size or raise the explicit optimizer cost budget",
+            json!({
+                "estimated_max_cost_usd": round_money(estimated_max_cost_usd),
+                "budget_usd": args.optimizer_max_estimated_call_cost_usd,
+                "cost_preflight": file_sot(cost_path),
+                "request": file_sot(request_path)
+            }),
+            Some(file_sot(cost_path)),
+        ));
+    }
+    Ok(preflight)
+}
+
+fn deepseek_actual_usage_cost(args: &Args, response: &Value, preflight: &Value) -> Result<Value> {
+    let usage = response.get("usage").ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_DEEPSEEK_USAGE_MISSING",
+            "DeepSeek response did not include usage needed for durable cost accounting",
+            "deepseek.response.usage",
+            "inspect response body and DeepSeek API contract before trusting optimizer result",
+            json!({"response_usage": response.get("usage")}),
+            None,
+        )
+    })?;
+    let prompt_cache_hit_tokens = required_json_u64(
+        usage,
+        "prompt_cache_hit_tokens",
+        "RUST_REALITY_DEEPSEEK_USAGE_FIELD_MISSING",
+        "deepseek.response.usage.prompt_cache_hit_tokens",
+    )?;
+    let prompt_cache_miss_tokens = required_json_u64(
+        usage,
+        "prompt_cache_miss_tokens",
+        "RUST_REALITY_DEEPSEEK_USAGE_FIELD_MISSING",
+        "deepseek.response.usage.prompt_cache_miss_tokens",
+    )?;
+    let completion_tokens = required_json_u64(
+        usage,
+        "completion_tokens",
+        "RUST_REALITY_DEEPSEEK_USAGE_FIELD_MISSING",
+        "deepseek.response.usage.completion_tokens",
+    )?;
+    let actual_cost_usd = cost_usd(
+        prompt_cache_hit_tokens,
+        DEEPSEEK_V4_PRO_CACHE_HIT_INPUT_USD_PER_M,
+    ) + cost_usd(
+        prompt_cache_miss_tokens,
+        DEEPSEEK_V4_PRO_CACHE_MISS_INPUT_USD_PER_M,
+    ) + cost_usd(completion_tokens, DEEPSEEK_V4_PRO_OUTPUT_USD_PER_M);
+    Ok(json!({
+        "record_kind": "contextgraph_deepseek_usage_cost",
+        "status": "ok",
+        "model": args.openai_optimizer_model,
+        "usage": usage,
+        "token_accounting": {
+            "prompt_cache_hit_tokens": prompt_cache_hit_tokens,
+            "prompt_cache_miss_tokens": prompt_cache_miss_tokens,
+            "completion_tokens": completion_tokens
+        },
+        "price_table_usd_per_1m_tokens": {
+            "input_cache_hit": DEEPSEEK_V4_PRO_CACHE_HIT_INPUT_USD_PER_M,
+            "input_cache_miss": DEEPSEEK_V4_PRO_CACHE_MISS_INPUT_USD_PER_M,
+            "output": DEEPSEEK_V4_PRO_OUTPUT_USD_PER_M
+        },
+        "actual_cost_usd": round_money(actual_cost_usd),
+        "estimated_max_cost_usd": preflight.get("estimated_max_cost_usd"),
+        "budget_usd": args.optimizer_max_estimated_call_cost_usd
+    }))
+}
+
+fn estimate_tokens_from_text(text: &str) -> u64 {
+    ((text.chars().count() as u64).saturating_add(3) / 4).max(1)
+}
+
+fn cost_usd(tokens: u64, usd_per_million: f64) -> f64 {
+    tokens as f64 * usd_per_million / 1_000_000.0
+}
+
+fn round_money(value: f64) -> f64 {
+    (value * 1_000_000.0).round() / 1_000_000.0
+}
+
+fn required_json_u64(value: &Value, field: &str, code: &str, field_path: &str) -> Result<u64> {
+    value.get(field).and_then(Value::as_u64).ok_or_else(|| {
+        RealityError::new(
+            code,
+            "required numeric JSON field was missing",
+            field_path,
+            "inspect API response before trusting this state",
+            json!({"field": field, "value": value}),
+            None,
+        )
+    })
+}
+
+#[allow(dead_code)]
 async fn post_openai_response(
     client: &reqwest::Client,
     args: &Args,
@@ -2254,71 +2735,276 @@ async fn post_openai_response(
     request_path: &Path,
     response_path: &Path,
 ) -> Result<Value> {
-    let response = client
-        .post(&args.openai_responses_url)
-        .bearer_auth(api_key)
-        .json(body)
-        .timeout(Duration::from_secs(args.openai_optimizer_timeout))
-        .send()
-        .await
-        .map_err(|err| {
+    let retry_state_path = response_path.with_extension("retry-state.json");
+    let mut retry_events = Vec::new();
+    let total_attempts = args.openai_max_retries.saturating_add(1).max(1);
+    for api_attempt in 1..=total_attempts {
+        let started = Instant::now();
+        let response = client
+            .post(&args.openai_responses_url)
+            .bearer_auth(api_key)
+            .json(body)
+            .timeout(Duration::from_secs(args.openai_optimizer_timeout))
+            .send()
+            .await
+            .map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_OPENAI_REQUEST_FAILED",
+                    "OpenAI Responses API request failed",
+                    "openai.request",
+                    "inspect network connectivity, API key, model access, and request body",
+                    json!({"url": args.openai_responses_url, "error": err.to_string(), "request": file_sot(request_path)}),
+                    Some(file_sot(request_path)),
+                )
+            })?;
+        let status = response.status();
+        let status_code = status.as_u16();
+        let headers = selected_openai_headers(response.headers());
+        let text = response.text().await.map_err(|err| {
             RealityError::new(
-                "RUST_REALITY_OPENAI_REQUEST_FAILED",
-                "OpenAI Responses API request failed",
-                "openai.request",
-                "inspect network connectivity, API key, model access, and request body",
-                json!({"url": args.openai_responses_url, "error": err.to_string(), "request": file_sot(request_path)}),
+                "RUST_REALITY_OPENAI_RESPONSE_READ_FAILED",
+                "failed to read OpenAI Responses API body",
+                "openai.response",
+                "inspect network/API response",
+                json!({"error": err.to_string(), "request": file_sot(request_path)}),
                 Some(file_sot(request_path)),
             )
         })?;
-    let status = response.status();
-    let text = response.text().await.map_err(|err| {
-        RealityError::new(
-            "RUST_REALITY_OPENAI_RESPONSE_READ_FAILED",
-            "failed to read OpenAI Responses API body",
-            "openai.response",
-            "inspect network/API response",
-            json!({"error": err.to_string(), "request": file_sot(request_path)}),
-            Some(file_sot(request_path)),
-        )
-    })?;
-    let value: Value = serde_json::from_str(&text).unwrap_or_else(|_| {
-        json!({
-            "status": "non_json_response",
-            "body": truncate_chars(&text, 12000)
-        })
-    });
-    write_json_checked(response_path, &value)?;
-    if !status.is_success() {
+        let value: Value = serde_json::from_str(&text).unwrap_or_else(|_| {
+            json!({
+                "status": "non_json_response",
+                "body": truncate_chars(&text, 12000)
+            })
+        });
+        write_json_checked(response_path, &value)?;
+        let retryable = !status.is_success() && openai_error_is_retryable(status_code, &value);
+        let retry_after_ms = headers
+            .get("retry-after")
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(|seconds| seconds.saturating_mul(1000));
+        let backoff_ms = retry_after_ms
+            .unwrap_or_else(|| {
+                exponential_backoff_ms(
+                    args.openai_initial_backoff_ms,
+                    args.openai_max_backoff_ms,
+                    api_attempt,
+                )
+            })
+            .min(args.openai_max_backoff_ms);
+        let will_retry = retryable && api_attempt < total_attempts;
+        retry_events.push(json!({
+            "api_attempt": api_attempt,
+            "elapsed_ms": started.elapsed().as_millis(),
+            "http_status": status_code,
+            "success": status.is_success(),
+            "retryable": retryable,
+            "will_retry": will_retry,
+            "backoff_ms": if will_retry { Some(backoff_ms) } else { None },
+            "api_error": value.get("error"),
+            "headers": headers,
+            "request": file_sot(request_path),
+            "response": file_sot(response_path)
+        }));
+        write_json_checked(
+            &retry_state_path,
+            &json!({
+                "record_kind": "contextgraph_openai_response_retry_state",
+                "status": if status.is_success() { "ok" } else if will_retry { "retrying" } else { "failed" },
+                "api_attempts": retry_events,
+                "source_of_truth": file_sot(&retry_state_path)
+            }),
+        )?;
+        if status.is_success() {
+            if value.get("status").and_then(Value::as_str) == Some("incomplete") {
+                return Err(RealityError::new(
+                    "RUST_REALITY_OPENAI_RESPONSE_INCOMPLETE",
+                    "OpenAI Responses API returned an incomplete response",
+                    "openai.response.status",
+                    "increase max_output_tokens or reduce optimizer output/schema size before using this response",
+                    json!({
+                        "incomplete_details": value.get("incomplete_details"),
+                        "usage": value.get("usage"),
+                        "response": file_sot(response_path),
+                        "request": file_sot(request_path),
+                        "retry_state": file_sot(&retry_state_path)
+                    }),
+                    Some(file_sot(response_path)),
+                ));
+            }
+            return Ok(value);
+        }
+        if will_retry {
+            tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+            continue;
+        }
+        let (error_code, remediation) = openai_reality_error_code(status_code, &value);
         return Err(RealityError::new(
-            "RUST_REALITY_OPENAI_ERROR",
+            error_code,
             "OpenAI Responses API returned an error",
             "openai.response.status",
-            "inspect OpenAI response body, model id, key permissions, and rate limits",
+            remediation,
             json!({
-                "http_status": status.as_u16(),
+                "http_status": status_code,
+                "api_error_code": openai_api_error_code(&value),
+                "api_error_type": value.pointer("/error/type"),
+                "api_error_message": value.pointer("/error/message"),
                 "response": file_sot(response_path),
-                "request": file_sot(request_path)
+                "request": file_sot(request_path),
+                "retry_state": file_sot(&retry_state_path),
+                "attempts": retry_events.len()
             }),
             Some(file_sot(response_path)),
         ));
     }
-    if value.get("status").and_then(Value::as_str) == Some("incomplete") {
-        return Err(RealityError::new(
-            "RUST_REALITY_OPENAI_RESPONSE_INCOMPLETE",
-            "OpenAI Responses API returned an incomplete response",
-            "openai.response.status",
-            "increase max_output_tokens or reduce optimizer output/schema size before using this response",
-            json!({
-                "incomplete_details": value.get("incomplete_details"),
-                "usage": value.get("usage"),
-                "response": file_sot(response_path),
-                "request": file_sot(request_path)
-            }),
-            Some(file_sot(response_path)),
-        ));
+    Err(RealityError::new(
+        "RUST_REALITY_OPENAI_RETRY_STATE_EXHAUSTED",
+        "OpenAI Responses API retry loop exhausted without returning a response",
+        "openai.response.retry_state",
+        "inspect retry state artifact and OpenAI API availability",
+        json!({"retry_state": file_sot(&retry_state_path), "request": file_sot(request_path)}),
+        Some(file_sot(&retry_state_path)),
+    ))
+}
+
+#[allow(dead_code)]
+fn selected_openai_headers(headers: &reqwest::header::HeaderMap) -> BTreeMap<String, String> {
+    let mut selected = BTreeMap::new();
+    for name in [
+        "retry-after",
+        "x-request-id",
+        "x-ratelimit-limit-requests",
+        "x-ratelimit-limit-tokens",
+        "x-ratelimit-remaining-requests",
+        "x-ratelimit-remaining-tokens",
+        "x-ratelimit-reset-requests",
+        "x-ratelimit-reset-tokens",
+    ] {
+        if let Some(value) = headers.get(name).and_then(|value| value.to_str().ok()) {
+            selected.insert(name.to_string(), value.to_string());
+        }
     }
-    Ok(value)
+    selected
+}
+
+fn selected_deepseek_headers(headers: &reqwest::header::HeaderMap) -> BTreeMap<String, String> {
+    let mut selected = BTreeMap::new();
+    for name in [
+        "retry-after",
+        "x-request-id",
+        "x-ds-trace-id",
+        "x-ratelimit-limit-requests",
+        "x-ratelimit-limit-tokens",
+        "x-ratelimit-remaining-requests",
+        "x-ratelimit-remaining-tokens",
+        "x-ratelimit-reset-requests",
+        "x-ratelimit-reset-tokens",
+    ] {
+        if let Some(value) = headers.get(name).and_then(|value| value.to_str().ok()) {
+            selected.insert(name.to_string(), value.to_string());
+        }
+    }
+    selected
+}
+
+fn openai_api_error_code(value: &Value) -> Option<&str> {
+    value.pointer("/error/code").and_then(Value::as_str)
+}
+
+fn deepseek_api_error_code(value: &Value) -> Option<&str> {
+    value.pointer("/error/code").and_then(Value::as_str)
+}
+
+fn deepseek_error_is_retryable(status_code: u16, _value: &Value) -> bool {
+    matches!(status_code, 408 | 429 | 500 | 502 | 503 | 504)
+}
+
+fn deepseek_reality_error_code(status_code: u16, _value: &Value) -> (&'static str, &'static str) {
+    match status_code {
+        400 => (
+            "RUST_REALITY_DEEPSEEK_INVALID_FORMAT",
+            "inspect request JSON against DeepSeek Chat Completions schema",
+        ),
+        401 => (
+            "RUST_REALITY_DEEPSEEK_AUTH_FAILED",
+            "check DEEPSEEK_API_KEY in .env or process environment",
+        ),
+        402 => (
+            "RUST_REALITY_DEEPSEEK_INSUFFICIENT_BALANCE",
+            "top up DeepSeek balance or lower optimizer request volume before continuing",
+        ),
+        422 => (
+            "RUST_REALITY_DEEPSEEK_INVALID_PARAMETERS",
+            "inspect model id, tool schema, thinking parameters, and JSON mode request body",
+        ),
+        429 => (
+            "RUST_REALITY_DEEPSEEK_RATE_LIMITED",
+            "reduce optimizer concurrency/request cadence or wait for DeepSeek dynamic concurrency to clear",
+        ),
+        500 | 503 => (
+            "RUST_REALITY_DEEPSEEK_SERVER_ERROR",
+            "retry after a brief wait and inspect DeepSeek service status if persistent",
+        ),
+        _ => (
+            "RUST_REALITY_DEEPSEEK_ERROR",
+            "inspect DeepSeek response body, model id, key permissions, and service availability",
+        ),
+    }
+}
+
+fn openai_error_is_retryable(status_code: u16, value: &Value) -> bool {
+    if matches!(
+        openai_api_error_code(value),
+        Some("insufficient_quota") | Some("billing_hard_limit_reached")
+    ) {
+        return false;
+    }
+    matches!(status_code, 408 | 409 | 429 | 500 | 502 | 503 | 504)
+}
+
+fn openai_reality_error_code(status_code: u16, value: &Value) -> (&'static str, &'static str) {
+    match openai_api_error_code(value) {
+        Some("insufficient_quota") | Some("billing_hard_limit_reached") => (
+            "RUST_REALITY_OPENAI_INSUFFICIENT_QUOTA",
+            "add OpenAI API credits or raise the project/org spend limit, then restart the outer optimizer loop",
+        ),
+        _ if status_code == 429 => (
+            "RUST_REALITY_OPENAI_RATE_LIMITED",
+            "inspect retry-state and OpenAI rate-limit headers; reduce request cadence or token budget if retries exhaust",
+        ),
+        _ => (
+            "RUST_REALITY_OPENAI_ERROR",
+            "inspect OpenAI response body, model id, key permissions, and service availability",
+        ),
+    }
+}
+
+fn is_openai_dependency_error(err: &RealityError) -> bool {
+    matches!(
+        err.error_code.as_str(),
+        "RUST_REALITY_OPENAI_INSUFFICIENT_QUOTA"
+            | "RUST_REALITY_OPENAI_RATE_LIMITED"
+            | "RUST_REALITY_OPENAI_ERROR"
+            | "RUST_REALITY_OPENAI_REQUEST_FAILED"
+            | "RUST_REALITY_OPENAI_RESPONSE_READ_FAILED"
+            | "RUST_REALITY_OPENAI_RESPONSE_INCOMPLETE"
+            | "RUST_REALITY_OPENAI_RETRY_STATE_EXHAUSTED"
+            | "RUST_REALITY_DEEPSEEK_AUTH_FAILED"
+            | "RUST_REALITY_DEEPSEEK_INSUFFICIENT_BALANCE"
+            | "RUST_REALITY_DEEPSEEK_RATE_LIMITED"
+            | "RUST_REALITY_DEEPSEEK_SERVER_ERROR"
+            | "RUST_REALITY_DEEPSEEK_ERROR"
+            | "RUST_REALITY_DEEPSEEK_REQUEST_FAILED"
+            | "RUST_REALITY_DEEPSEEK_RESPONSE_READ_FAILED"
+            | "RUST_REALITY_DEEPSEEK_MESSAGE_MISSING"
+            | "RUST_REALITY_DEEPSEEK_RETRY_STATE_EXHAUSTED"
+    )
+}
+
+fn exponential_backoff_ms(initial_ms: u64, max_ms: u64, attempt: u64) -> u64 {
+    let shift = attempt.saturating_sub(1).min(16) as u32;
+    initial_ms
+        .saturating_mul(2_u64.saturating_pow(shift))
+        .min(max_ms)
 }
 
 #[derive(Debug, Serialize)]
@@ -2328,6 +3014,7 @@ struct OpenAiFunctionCall {
     arguments: Value,
 }
 
+#[allow(dead_code)]
 fn openai_function_calls(response: &Value) -> Result<Vec<OpenAiFunctionCall>> {
     let mut calls = Vec::new();
     if let Some(output) = response.get("output").and_then(Value::as_array) {
@@ -2391,6 +3078,7 @@ fn openai_function_calls(response: &Value) -> Result<Vec<OpenAiFunctionCall>> {
     Ok(calls)
 }
 
+#[allow(dead_code)]
 fn openai_replayable_output_item(item: &Value) -> Option<Value> {
     match item.get("type").and_then(Value::as_str) {
         Some("reasoning") => None,
@@ -2405,6 +3093,7 @@ fn openai_replayable_output_item(item: &Value) -> Option<Value> {
     }
 }
 
+#[allow(dead_code)]
 fn openai_output_text(response: &Value) -> Option<String> {
     if let Some(text) = response.get("output_text").and_then(Value::as_str) {
         return Some(text.to_string());
@@ -2431,6 +3120,133 @@ fn openai_output_text(response: &Value) -> Option<String> {
     } else {
         Some(out)
     }
+}
+
+fn deepseek_chat_assistant_message(response: &Value) -> Result<Value> {
+    let message = response
+        .pointer("/choices/0/message")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DEEPSEEK_MESSAGE_MISSING",
+                "DeepSeek response did not contain choices[0].message",
+                "deepseek.response.choices[0].message",
+                "inspect response body and request format",
+                json!({"response": response}),
+                None,
+            )
+        })?;
+    let mut replay = serde_json::Map::new();
+    replay.insert("role".to_string(), json!("assistant"));
+    replay.insert(
+        "content".to_string(),
+        message
+            .get("content")
+            .and_then(Value::as_str)
+            .map(|text| json!(text))
+            .unwrap_or_else(|| json!("")),
+    );
+    if let Some(reasoning) = message.get("reasoning_content") {
+        replay.insert("reasoning_content".to_string(), reasoning.clone());
+    }
+    if let Some(tool_calls) = message.get("tool_calls") {
+        replay.insert("tool_calls".to_string(), tool_calls.clone());
+    }
+    Ok(Value::Object(replay))
+}
+
+fn deepseek_chat_function_calls(response: &Value) -> Result<Vec<OpenAiFunctionCall>> {
+    let mut calls = Vec::new();
+    let Some(tool_calls) = response
+        .pointer("/choices/0/message/tool_calls")
+        .and_then(Value::as_array)
+    else {
+        return Ok(calls);
+    };
+    for item in tool_calls {
+        let call_id = item
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_DEEPSEEK_FUNCTION_CALL_ID_MISSING",
+                    "DeepSeek function call was missing id",
+                    "deepseek.choices[0].message.tool_calls[].id",
+                    "inspect DeepSeek tool-call response format",
+                    json!({"item": item}),
+                    None,
+                )
+            })?
+            .to_string();
+        let name = item
+            .pointer("/function/name")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_DEEPSEEK_FUNCTION_NAME_MISSING",
+                    "DeepSeek function call was missing function.name",
+                    "deepseek.choices[0].message.tool_calls[].function.name",
+                    "inspect DeepSeek tool-call response format",
+                    json!({"item": item}),
+                    None,
+                )
+            })?
+            .to_string();
+        let arguments = item
+            .pointer("/function/arguments")
+            .and_then(Value::as_str)
+            .map(|text| serde_json::from_str::<Value>(text))
+            .transpose()
+            .map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_DEEPSEEK_FUNCTION_ARGUMENTS_INVALID",
+                    "DeepSeek function call arguments were not valid JSON",
+                    "deepseek.choices[0].message.tool_calls[].function.arguments",
+                    "inspect DeepSeek function-call argument formatting",
+                    json!({"item": item, "error": err.to_string()}),
+                    None,
+                )
+            })?
+            .unwrap_or_else(|| json!({}));
+        calls.push(OpenAiFunctionCall {
+            call_id,
+            name,
+            arguments,
+        });
+    }
+    Ok(calls)
+}
+
+fn deepseek_chat_output_text(response: &Value) -> Option<String> {
+    response
+        .pointer("/choices/0/message/content")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn deepseek_optimizer_tool_specs() -> Value {
+    let tools = openai_optimizer_tool_specs();
+    let converted = match tools.as_array() {
+        Some(items) => items
+            .iter()
+            .map(|tool| {
+                json!({
+                    "type": "function",
+                    "function": {
+                        "name": tool.get("name").cloned().unwrap_or(Value::Null),
+                        "description": tool.get("description").cloned().unwrap_or(Value::Null),
+                        "parameters": tool.get("parameters").cloned().unwrap_or_else(|| json!({"type": "object", "properties": {}, "required": [], "additionalProperties": false}))
+                    }
+                })
+            })
+            .collect::<Vec<_>>(),
+        None => Vec::new(),
+    };
+    Value::Array(converted)
 }
 
 fn openai_optimizer_tool_specs() -> Value {
@@ -3727,6 +4543,110 @@ fn agent_tool_names() -> Vec<&'static str> {
     ]
 }
 
+fn agent_edit_tool_specs() -> Value {
+    let specs = agent_tool_specs();
+    let edit_names = ["apply_line_window_edit", "apply_structured_edit"];
+    let filtered = specs
+        .as_array()
+        .expect("agent tool specs are an array")
+        .iter()
+        .filter(|spec| {
+            spec.pointer("/function/name")
+                .and_then(Value::as_str)
+                .is_some_and(|name| edit_names.contains(&name))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    Value::Array(filtered)
+}
+
+fn is_navigation_or_reality_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "read_problem_reality"
+            | "read_official_failure_reality"
+            | "list_files"
+            | "inspect_symbol"
+            | "search_repo"
+            | "open_file_window"
+            | "compare_attempts"
+            | "retrieve_similar_verified_episodes"
+            | "synthesize_helper_tool"
+    )
+}
+
+fn edit_deadline_active(
+    round: u64,
+    max_rounds: u64,
+    latest_editable_windows: &[Value],
+    no_tool_after_window_count: u64,
+    repeated_navigation_count: u64,
+    submitted_patch: bool,
+) -> bool {
+    if submitted_patch || latest_editable_windows.is_empty() {
+        return false;
+    }
+    let low_remaining_budget = round >= max_rounds.saturating_sub(6).max(1);
+    no_tool_after_window_count > 0 || repeated_navigation_count > 0 || low_remaining_budget
+}
+
+fn compact_editable_window(result_readback: &Value) -> Option<Value> {
+    let result = result_readback.get("result").unwrap_or(result_readback);
+    if result.get("status").and_then(Value::as_str) != Some("ok") {
+        return None;
+    }
+    let payload = result.get("payload").unwrap_or(result);
+    if payload
+        .get("status")
+        .and_then(Value::as_str)
+        .is_some_and(|status| status != "ok")
+    {
+        return None;
+    }
+    let path = payload.get("path").and_then(Value::as_str)?;
+    let sha256 = payload.get("sha256").and_then(Value::as_str)?;
+    Some(json!({
+        "path": path,
+        "start_line": payload.get("start_line"),
+        "end_line": payload.get("end_line"),
+        "sha256": sha256,
+        "source_of_truth": payload.get("source_of_truth"),
+        "edit_tool": "apply_line_window_edit",
+        "edit_argument_skeleton": {
+            "edits": [
+                {
+                    "path": path,
+                    "start_line": "<line number from this opened window>",
+                    "end_line": "<line number from this opened window>",
+                    "replace": "<complete replacement text for that exact line range>",
+                    "observed_sha256": sha256
+                }
+            ]
+        }
+    }))
+}
+
+fn no_tool_repair_prompt(
+    edit_deadline: bool,
+    latest_editable_windows: &[Value],
+    no_tool_after_window_count: u64,
+    repeated_navigation_count: u64,
+) -> String {
+    if edit_deadline {
+        return format!(
+            "ContextGraph did not receive a governed tool call. EDIT DEADLINE IS ACTIVE. \
+You have already opened source windows, so the next assistant message must call exactly one edit tool: \
+apply_line_window_edit or apply_structured_edit. Do not call read/list/search/open tools again. \
+Do not answer in prose, raw diff text, or final JSON. Use an observed_sha256 from latest_editable_windows. \
+If the edit tool fails, reopen the exact source window in the following round and retry. \
+no_tool_after_window_count={no_tool_after_window_count}; repeated_navigation_count={repeated_navigation_count}; \
+latest_editable_windows={}",
+            serde_json::to_string(latest_editable_windows).unwrap_or_else(|_| "[]".to_string())
+        );
+    }
+    "ContextGraph did not receive a governed tool call. You must call exactly one governed tool now. For attempt 1, use read_problem_reality, search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool. When ready to submit the fix, prefer apply_line_window_edit with line numbers and observed_sha256 from open_file_window, or use apply_structured_edit with a unique exact find span. Do not return final JSON or prose.".to_string()
+}
+
 fn agent_tool_specs() -> Value {
     json!([
         {
@@ -4840,15 +5760,17 @@ fn tool_apply_line_window_edit(
 }
 
 fn materialize_tool_candidate_submission(result: &Value, tool_dir: &Path) -> Result<Value> {
+    let inner = result.get("result").unwrap_or(result);
     let candidate_sot = result
-        .pointer("/compilation/source_of_truth/candidate_patch")
+        .pointer("/result/compilation/source_of_truth/candidate_patch")
+        .or_else(|| inner.pointer("/compilation/source_of_truth/candidate_patch"))
         .and_then(Value::as_str)
         .ok_or_else(|| {
             RealityError::new(
                 "RUST_REALITY_TOOL_SUBMITTED_PATCH_SOT_MISSING",
-                "apply_structured_edit returned ok without a candidate patch source of truth",
-                "apply_structured_edit.compilation.source_of_truth.candidate_patch",
-                "inspect the tool result and structured edit compiler output",
+                "edit tool returned ok without a candidate patch source of truth",
+                "agent_tool_result.result.compilation.source_of_truth.candidate_patch",
+                "inspect the persisted tool result wrapper and edit compiler output",
                 json!({"result": result}),
                 None,
             )
@@ -4856,15 +5778,15 @@ fn materialize_tool_candidate_submission(result: &Value, tool_dir: &Path) -> Res
     let candidate_path = file_sot_to_path(
         candidate_sot,
         "RUST_REALITY_TOOL_SUBMITTED_PATCH_SOT_INVALID",
-        "apply_structured_edit.compilation.source_of_truth.candidate_patch",
+        "agent_tool_result.result.compilation.source_of_truth.candidate_patch",
     )?;
     let candidate_path = resolve_path(&candidate_path)?;
     let tool_dir = resolve_path(tool_dir)?;
     if !candidate_path.starts_with(&tool_dir) {
         return Err(RealityError::new(
             "RUST_REALITY_TOOL_SUBMITTED_PATCH_PATH_OUTSIDE_TOOL_DIR",
-            "apply_structured_edit candidate patch was outside the governed tool artifact directory",
-            "apply_structured_edit.compilation.source_of_truth.candidate_patch",
+            "edit tool candidate patch was outside the governed tool artifact directory",
+            "agent_tool_result.result.compilation.source_of_truth.candidate_patch",
             "reject the tool result and inspect path provenance",
             json!({
                 "candidate_patch_path": path_str(&candidate_path),
@@ -4875,7 +5797,7 @@ fn materialize_tool_candidate_submission(result: &Value, tool_dir: &Path) -> Res
     }
     require_file(
         &candidate_path,
-        "apply_structured_edit.candidate_patch",
+        "agent_tool_result.result.candidate_patch",
         "RUST_REALITY_TOOL_SUBMITTED_PATCH_MISSING",
     )?;
     let patch_text = fs::read_to_string(&candidate_path).map_err(|err| {
@@ -4888,8 +5810,8 @@ fn materialize_tool_candidate_submission(result: &Value, tool_dir: &Path) -> Res
     if patch_text.trim().is_empty() {
         return Err(RealityError::new(
             "RUST_REALITY_TOOL_SUBMITTED_PATCH_EMPTY",
-            "apply_structured_edit candidate patch was empty after source-of-truth readback",
-            "apply_structured_edit.candidate_patch",
+            "edit tool candidate patch was empty after source-of-truth readback",
+            "agent_tool_result.result.candidate_patch",
             "submit edits that produce a non-empty production-source diff",
             json!({"candidate_patch_path": path_str(&candidate_path)}),
             Some(file_sot(&candidate_path)),
@@ -4897,15 +5819,17 @@ fn materialize_tool_candidate_submission(result: &Value, tool_dir: &Path) -> Res
     }
     let actual_sha = sha256_file(&candidate_path)?;
     let expected_sha = result
-        .get("patch_sha256")
-        .or_else(|| result.pointer("/compilation/candidate_patch_sha256"))
+        .pointer("/result/patch_sha256")
+        .or_else(|| inner.get("patch_sha256"))
+        .or_else(|| result.pointer("/result/compilation/candidate_patch_sha256"))
+        .or_else(|| inner.pointer("/compilation/candidate_patch_sha256"))
         .and_then(Value::as_str);
     if let Some(expected_sha) = expected_sha {
         if expected_sha != actual_sha {
             return Err(RealityError::new(
                 "RUST_REALITY_TOOL_SUBMITTED_PATCH_SHA_MISMATCH",
-                "apply_structured_edit patch hash did not match file readback",
-                "apply_structured_edit.patch_sha256",
+                "edit tool patch hash did not match file readback",
+                "agent_tool_result.result.patch_sha256",
                 "reject the submitted patch and inspect artifact integrity",
                 json!({
                     "expected": expected_sha,
@@ -4919,16 +5843,16 @@ fn materialize_tool_candidate_submission(result: &Value, tool_dir: &Path) -> Res
     Ok(json!({
         "record_kind": "contextgraph_tool_submitted_candidate_patch",
         "status": "ok",
-        "tool_name": result.get("tool_name").and_then(Value::as_str).unwrap_or("apply_structured_edit"),
+        "tool_name": result.get("tool_name").or_else(|| inner.get("tool_name")).and_then(Value::as_str).unwrap_or("apply_structured_edit"),
         "candidate_patch_path": path_str(&candidate_path),
         "candidate_patch": file_sot(&candidate_path),
         "patch_sha256": actual_sha,
         "patch_stats": patch_line_stats(&patch_text),
-        "structured_edits": result.pointer("/compilation/source_of_truth/structured_edits"),
+        "structured_edits": result.pointer("/result/compilation/source_of_truth/structured_edits").or_else(|| inner.pointer("/compilation/source_of_truth/structured_edits")),
         "compilation": {
-            "status": result.pointer("/compilation/status"),
-            "message": result.pointer("/compilation/message"),
-            "applied_edits": result.pointer("/compilation/applied_edits")
+            "status": result.pointer("/result/compilation/status").or_else(|| inner.pointer("/compilation/status")),
+            "message": result.pointer("/result/compilation/message").or_else(|| inner.pointer("/compilation/message")),
+            "applied_edits": result.pointer("/result/compilation/applied_edits").or_else(|| inner.pointer("/compilation/applied_edits"))
         },
         "source_of_truth": {
             "candidate_patch": file_sot(&candidate_path),
@@ -4972,7 +5896,7 @@ fn tool_run_targeted_test(ctx: &AgentToolContext<'_>, arguments: &Value) -> Resu
         ));
     }
     let command = vec![
-        "python".to_string(),
+        LOCAL_PYTHON_BIN.to_string(),
         "-m".to_string(),
         "pytest".to_string(),
         "-q".to_string(),
@@ -4991,7 +5915,7 @@ fn tool_run_targeted_test(ctx: &AgentToolContext<'_>, arguments: &Value) -> Resu
             "stdout_tail": tail_chars(&process.stdout, 6000),
             "stderr_tail": tail_chars(&process.stderr, 6000)
         },
-        "source_of_truth": format!("process:python -m pytest:{}", path_str(ctx.repo_dir))
+        "source_of_truth": format!("process:{LOCAL_PYTHON_BIN} -m pytest:{}", path_str(ctx.repo_dir))
     }))
 }
 
@@ -6153,7 +7077,7 @@ fn run_static_patch_checks(
         return Ok(payload);
     }
     let mut command = vec![
-        "python".to_string(),
+        LOCAL_PYTHON_BIN.to_string(),
         "-m".to_string(),
         "py_compile".to_string(),
     ];
@@ -7124,6 +8048,18 @@ fn derive_tool_reward_signals(
         .get("changed_files_read_before_edit")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let no_tool_rounds = tool_grounding
+        .get("no_tool_rounds")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let edit_deadline_no_tool_rounds = tool_grounding
+        .get("edit_deadline_no_tool_rounds")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let duplicate_navigation_calls = tool_grounding
+        .get("duplicate_navigation_calls")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     let validation_passed = validation.get("status").and_then(Value::as_str) == Some("passed");
     let mut score = 0.0_f64;
     if used("read_problem_reality") {
@@ -7155,6 +8091,9 @@ fn derive_tool_reward_signals(
     if repeated_patch {
         score -= 2.0;
     }
+    score -= no_tool_rounds as f64 * 0.25;
+    score -= edit_deadline_no_tool_rounds as f64 * 0.75;
+    score -= duplicate_navigation_calls as f64 * 0.5;
     json!({
         "record_kind": "contextgraph_tool_use_reward_signals",
         "objective": "reward coding-agent behaviors that increase verified SWE repair odds before final official success exists",
@@ -7169,7 +8108,10 @@ fn derive_tool_reward_signals(
             "used_targeted_test": used("run_targeted_test"),
             "official_eval_ran": official_eval_ran,
             "validation_passed": validation_passed,
-            "repeated_patch": repeated_patch
+            "repeated_patch": repeated_patch,
+            "no_tool_rounds": no_tool_rounds,
+            "edit_deadline_no_tool_rounds": edit_deadline_no_tool_rounds,
+            "duplicate_navigation_calls": duplicate_navigation_calls
         },
         "score_unbounded": score,
         "recommended_reward_components": {
@@ -7180,7 +8122,10 @@ fn derive_tool_reward_signals(
             "patch_artifact_submitted": if submitted_patch { 2.0 } else { 0.0 },
             "changed_files_read_before_edit": if changed_files_read { 1.0 } else { 0.0 },
             "official_eval_readback": if official_eval_ran { 1.0 } else { 0.0 },
-            "repeated_patch_penalty": if repeated_patch { -2.0 } else { 0.0 }
+            "repeated_patch_penalty": if repeated_patch { -2.0 } else { 0.0 },
+            "no_tool_round_penalty": -(no_tool_rounds as f64 * 0.25),
+            "edit_deadline_no_tool_penalty": -(edit_deadline_no_tool_rounds as f64 * 0.75),
+            "duplicate_navigation_penalty": -(duplicate_navigation_calls as f64 * 0.5)
         },
         "source_of_truth": tool_grounding.get("source_of_truth")
     })
@@ -7342,12 +8287,32 @@ fn extract_tool_grounding(
     let transcript: Value = read_json(&transcript_path)?;
     let mut tools_used = Vec::new();
     let mut seen_files = BTreeSet::new();
+    let mut no_tool_rounds = 0_u64;
+    let mut edit_deadline_no_tool_rounds = 0_u64;
+    let mut duplicate_navigation_calls = 0_u64;
     if let Some(entries) = transcript.get("entries").and_then(Value::as_array) {
         for entry in entries {
+            if entry.get("status").and_then(Value::as_str) == Some("no_tool_call") {
+                no_tool_rounds += 1;
+                if entry
+                    .get("edit_deadline_active")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+                {
+                    edit_deadline_no_tool_rounds += 1;
+                }
+            }
             if let Some(results) = entry.get("tool_results").and_then(Value::as_array) {
                 for result in results {
                     if let Some(tool) = result.get("tool_name").and_then(Value::as_str) {
                         tools_used.push(tool.to_string());
+                    }
+                    if result
+                        .get("duplicate_navigation_call")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+                    {
+                        duplicate_navigation_calls += 1;
                     }
                     if let Some(result_sot) = result.get("result").and_then(Value::as_str) {
                         let path =
@@ -7375,6 +8340,9 @@ fn extract_tool_grounding(
     Ok(json!({
         "status": transcript.get("status"),
         "executed_tool_calls": transcript.get("executed_tool_calls"),
+        "no_tool_rounds": no_tool_rounds,
+        "edit_deadline_no_tool_rounds": edit_deadline_no_tool_rounds,
+        "duplicate_navigation_calls": duplicate_navigation_calls,
         "tools_used": tools_used,
         "opened_or_inspected_files": seen_files.into_iter().collect::<Vec<_>>(),
         "changed_files_seen_by_tools": changed_seen,
@@ -8425,6 +9393,11 @@ mod tests {
             openai_optimizer_max_output_tokens: DEFAULT_OPENAI_OPTIMIZER_MAX_OUTPUT_TOKENS,
             openai_optimizer_reasoning_effort: "high".to_string(),
             openai_optimizer_timeout: 300,
+            openai_max_retries: DEFAULT_OPENAI_MAX_RETRIES,
+            openai_initial_backoff_ms: DEFAULT_OPENAI_INITIAL_BACKOFF_MS,
+            openai_max_backoff_ms: DEFAULT_OPENAI_MAX_BACKOFF_MS,
+            openai_dependency_block_sleep_ms: DEFAULT_OPENAI_DEPENDENCY_BLOCK_SLEEP_MS,
+            optimizer_max_estimated_call_cost_usd: DEFAULT_OPTIMIZER_MAX_ESTIMATED_CALL_COST_USD,
             sleep_between_attempts_ms: 0,
         }
     }
@@ -8607,6 +9580,25 @@ mod tests {
         let submission =
             materialize_tool_candidate_submission(&result, &tool_dir).expect("submission");
         assert_eq!(submission["tool_name"], "apply_line_window_edit");
+        let wrapped_result = json!({
+            "record_kind": "contextgraph_agent_tool_result",
+            "tool_name": "apply_line_window_edit",
+            "status": "ok",
+            "result": result,
+            "source_of_truth": file_sot(&tool_dir.join("tool-result.json"))
+        });
+        let wrapped_submission = materialize_tool_candidate_submission(&wrapped_result, &tool_dir)
+            .expect("wrapped submission");
+        eprintln!(
+            "AFTER wrapped_line_window_submission source_of_truth={} submission={}",
+            file_sot(&candidate_patch),
+            serde_json::to_string_pretty(&wrapped_submission).unwrap()
+        );
+        assert_eq!(wrapped_submission["tool_name"], "apply_line_window_edit");
+        assert_eq!(
+            wrapped_submission["patch_sha256"],
+            submission["patch_sha256"]
+        );
         run_required(
             &["git", "reset", "--hard", "HEAD"],
             &repo,
@@ -8667,6 +9659,243 @@ mod tests {
             compilation["error_code"],
             "RUST_REALITY_LINE_EDIT_OBSERVED_SHA_MISMATCH"
         );
+    }
+
+    #[test]
+    fn editable_window_compacts_real_tool_result_payload_shape() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("requests").join("models.py");
+        fs::create_dir_all(source.parent().expect("source parent")).expect("source parent");
+        fs::write(
+            &source,
+            "class Request(object):\n    def prepare_method(self, method):\n        pass\n",
+        )
+        .expect("source write");
+        let observed_sha256 = sha256_file(&source).expect("source sha");
+        let result_readback = json!({
+            "record_kind": "contextgraph_agent_tool_result",
+            "tool_name": "open_file_window",
+            "status": "ok",
+            "result": {
+                "action": "read file line window",
+                "status": "ok",
+                "tool_name": "open_file_window",
+                "payload": {
+                    "status": "ok",
+                    "path": "requests/models.py",
+                    "start_line": 1,
+                    "end_line": 3,
+                    "sha256": observed_sha256,
+                    "source_of_truth": file_sot(&source),
+                    "text": "class Request(object):\n    def prepare_method(self, method):\n        pass\n",
+                    "total_lines": 3
+                }
+            },
+            "source_of_truth": file_sot(&temp.path().join("tool-result.json"))
+        });
+        eprintln!(
+            "BEFORE compact_editable_window source_of_truth={} payload={}",
+            file_sot(&source),
+            serde_json::to_string_pretty(&result_readback).unwrap()
+        );
+        let compact = compact_editable_window(&result_readback).expect("editable window");
+        eprintln!(
+            "AFTER compact_editable_window compact={}",
+            serde_json::to_string_pretty(&compact).unwrap()
+        );
+        assert_eq!(compact["path"], "requests/models.py");
+        assert_eq!(compact["sha256"], observed_sha256);
+        assert_eq!(compact["start_line"], 1);
+        assert_eq!(compact["end_line"], 3);
+        assert_eq!(compact["edit_tool"], "apply_line_window_edit");
+    }
+
+    #[test]
+    fn openai_error_classification_distinguishes_quota_from_retryable_rate_limit() {
+        let insufficient_quota = json!({
+            "error": {
+                "code": "insufficient_quota",
+                "type": "insufficient_quota",
+                "message": "You exceeded your current quota"
+            }
+        });
+        let rate_limit = json!({
+            "error": {
+                "code": "rate_limit_exceeded",
+                "type": "rate_limit_error",
+                "message": "Rate limit reached"
+            }
+        });
+        eprintln!(
+            "OPENAI_CLASSIFICATION quota_retryable={} quota_code={:?} rate_retryable={} rate_code={:?} backoffs=[{},{},{}]",
+            openai_error_is_retryable(429, &insufficient_quota),
+            openai_reality_error_code(429, &insufficient_quota),
+            openai_error_is_retryable(429, &rate_limit),
+            openai_reality_error_code(429, &rate_limit),
+            exponential_backoff_ms(2000, 60000, 1),
+            exponential_backoff_ms(2000, 60000, 2),
+            exponential_backoff_ms(2000, 60000, 10)
+        );
+        assert!(!openai_error_is_retryable(429, &insufficient_quota));
+        assert_eq!(
+            openai_reality_error_code(429, &insufficient_quota).0,
+            "RUST_REALITY_OPENAI_INSUFFICIENT_QUOTA"
+        );
+        assert!(openai_error_is_retryable(429, &rate_limit));
+        assert_eq!(
+            openai_reality_error_code(429, &rate_limit).0,
+            "RUST_REALITY_OPENAI_RATE_LIMITED"
+        );
+        assert_eq!(exponential_backoff_ms(2000, 60000, 1), 2000);
+        assert_eq!(exponential_backoff_ms(2000, 60000, 2), 4000);
+        assert_eq!(exponential_backoff_ms(2000, 60000, 10), 60000);
+        let quota_err = RealityError::new(
+            "RUST_REALITY_OPENAI_INSUFFICIENT_QUOTA",
+            "quota",
+            "openai.response.status",
+            "add quota",
+            json!({}),
+            None,
+        );
+        assert!(is_openai_dependency_error(&quota_err));
+        let syntax_err = RealityError::new(
+            "RUST_REALITY_PATCH_PY_COMPILE_FAILED",
+            "syntax",
+            "candidate.patch",
+            "fix syntax",
+            json!({}),
+            None,
+        );
+        assert!(!is_openai_dependency_error(&syntax_err));
+    }
+
+    #[test]
+    fn deepseek_tool_schema_uses_chat_completions_function_shape() {
+        let tools = deepseek_optimizer_tool_specs();
+        eprintln!(
+            "DEEPSEEK_TOOL_SCHEMA source=deepseek_optimizer_tool_specs first_tool={}",
+            serde_json::to_string_pretty(&tools[0]).unwrap()
+        );
+        let first = &tools[0];
+        assert_eq!(first["type"], "function");
+        assert!(first.get("name").is_none());
+        assert_eq!(
+            first.pointer("/function/name").and_then(Value::as_str),
+            Some("read_problem_reality_packet")
+        );
+        assert!(first.pointer("/function/parameters").is_some());
+        assert_eq!(
+            first
+                .pointer("/function/parameters/additionalProperties")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn deepseek_tool_call_replay_preserves_reasoning_content_and_arguments() {
+        let response = json!({
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "reasoning_content": "Need to read verified reality before editing.",
+                        "tool_calls": [
+                            {
+                                "id": "call_deepseek_001",
+                                "type": "function",
+                                "function": {
+                                    "name": "read_reality_signal_packet",
+                                    "arguments": "{\"detail\":\"compact\"}"
+                                }
+                            }
+                        ]
+                    }
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "prompt_cache_hit_tokens": 80,
+                "prompt_cache_miss_tokens": 20
+            }
+        });
+        let replay = deepseek_chat_assistant_message(&response).expect("assistant message");
+        let calls = deepseek_chat_function_calls(&response).expect("tool calls");
+        eprintln!(
+            "DEEPSEEK_REPLAY replay={} calls={}",
+            serde_json::to_string_pretty(&replay).unwrap(),
+            serde_json::to_string_pretty(&calls).unwrap()
+        );
+        assert_eq!(
+            replay["reasoning_content"],
+            "Need to read verified reality before editing."
+        );
+        assert!(replay.get("tool_calls").is_some());
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].call_id, "call_deepseek_001");
+        assert_eq!(calls[0].name, "read_reality_signal_packet");
+        assert_eq!(calls[0].arguments["detail"], "compact");
+    }
+
+    #[test]
+    fn deepseek_cost_preflight_and_usage_are_physical_artifacts() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mut args = test_args(
+            temp.path().join("task-manifest.json"),
+            temp.path().join("runtime"),
+        );
+        args.optimizer_max_estimated_call_cost_usd = 0.01;
+        args.openai_optimizer_max_output_tokens = 128;
+        let request_path = temp.path().join("deepseek-request.json");
+        let preflight_path = temp.path().join("deepseek-cost-preflight.json");
+        let body = deepseek_chat_request_body(
+            &args,
+            &[json!({"role": "user", "content": "Return json."})],
+            None,
+            None,
+            true,
+        );
+        write_json_checked(&request_path, &body).expect("request write");
+        eprintln!(
+            "BEFORE deepseek_cost request_sot={} preflight_sot={}",
+            file_sot(&request_path),
+            file_sot(&preflight_path)
+        );
+        let preflight = write_deepseek_cost_preflight(&args, &body, &request_path, &preflight_path)
+            .expect("preflight");
+        let preflight_readback: Value = read_json(&preflight_path).expect("preflight readback");
+        let response = json!({
+            "choices": [{"message": {"role": "assistant", "content": "{\"ok\":true}"}}],
+            "usage": {
+                "prompt_tokens": 64,
+                "completion_tokens": 16,
+                "prompt_cache_hit_tokens": 40,
+                "prompt_cache_miss_tokens": 24
+            }
+        });
+        let usage = deepseek_actual_usage_cost(&args, &response, &preflight).expect("usage cost");
+        let usage_path = temp.path().join("deepseek-usage-cost.json");
+        write_json_checked(&usage_path, &usage).expect("usage write");
+        let usage_readback: Value = read_json(&usage_path).expect("usage readback");
+        eprintln!(
+            "AFTER deepseek_cost preflight={} usage={}",
+            serde_json::to_string_pretty(&preflight_readback).unwrap(),
+            serde_json::to_string_pretty(&usage_readback).unwrap()
+        );
+        assert_eq!(preflight, preflight_readback);
+        assert_eq!(usage, usage_readback);
+        assert_eq!(
+            usage_readback["token_accounting"]["prompt_cache_hit_tokens"],
+            40
+        );
+        assert_eq!(
+            usage_readback["token_accounting"]["prompt_cache_miss_tokens"],
+            24
+        );
+        assert_eq!(usage_readback["token_accounting"]["completion_tokens"], 16);
+        assert_eq!(usage_readback["actual_cost_usd"], 0.000025);
     }
 
     #[test]
@@ -8792,6 +10021,53 @@ mod tests {
         assert!(replayed_call.get("id").is_none());
         assert_eq!(replayed_message["type"], "message");
         assert_eq!(replayed_call["call_id"], "call_test");
+    }
+
+    #[test]
+    fn edit_deadline_restricts_tool_surface_after_open_window_stall() {
+        let window = json!({
+            "path": "requests/models.py",
+            "start_line": 340,
+            "end_line": 370,
+            "sha256": "sha256:window",
+            "source_of_truth": "file:/tmp/repo/requests/models.py"
+        });
+        eprintln!("BEFORE edit_deadline window={window}");
+        assert!(!edit_deadline_active(4, 18, &[window.clone()], 0, 0, false));
+        assert!(edit_deadline_active(6, 18, &[window.clone()], 1, 0, false));
+        let tools = agent_edit_tool_specs();
+        let tool_names = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+        eprintln!("AFTER edit_deadline tools={tool_names:?}");
+        assert_eq!(
+            tool_names,
+            vec!["apply_structured_edit", "apply_line_window_edit"]
+        );
+        let prompt = no_tool_repair_prompt(true, &[window], 1, 0);
+        assert!(prompt.contains("EDIT DEADLINE IS ACTIVE"));
+        assert!(prompt.contains("sha256:window"));
+        assert!(prompt.contains("apply_line_window_edit"));
+    }
+
+    #[test]
+    fn local_python_interpreter_is_real_source_of_truth() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let process = run_cmd(
+            &[LOCAL_PYTHON_BIN.to_string(), "--version".to_string()],
+            temp.path(),
+            30,
+        )
+        .expect("python version command");
+        eprintln!(
+            "PYTHON_SOURCE_OF_TRUTH command={:?} exit={} stdout={:?} stderr={:?}",
+            process.command, process.exit_code, process.stdout, process.stderr
+        );
+        assert_eq!(process.exit_code, 0);
+        assert!(process.stdout.contains("Python") || process.stderr.contains("Python"));
     }
 
     #[test]
