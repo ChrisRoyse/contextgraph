@@ -377,6 +377,7 @@ pub async fn reality_audit_trail(handlers: &Handlers, args: Value) -> Result<Val
     }))
 }
 
+#[allow(dead_code)]
 pub async fn reality_runtime_audit_trail(args: Value) -> Result<Value> {
     let entity_id = required_str(&args, "entity_id")?;
     let limit = optional_u64(&args, "limit", 50).min(500) as usize;
