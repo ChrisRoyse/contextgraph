@@ -167,6 +167,9 @@ struct AttemptRecord {
     resolved: Option<bool>,
     failure_evidence: Value,
     official_reality: Option<Value>,
+    reality_signal_packet_path: String,
+    reality_signal_compact: Value,
+    agent_tool_transcript_path: Option<String>,
     patch_preview: Option<String>,
 }
 
@@ -180,6 +183,7 @@ struct AgentToolContext<'a> {
     repo_dir: &'a Path,
     attempt_dir: &'a Path,
     repo_context: &'a Value,
+    problem_reality: &'a Value,
     attempts: &'a [AttemptRecord],
 }
 
@@ -352,6 +356,25 @@ async fn run(args: Args) -> Result<Value> {
     )?;
 
     ensure_workspace(&task, &workspace, args.git_timeout)?;
+    let initial_repo_context = collect_repository_context(&workspace, &task)?;
+    let problem_reality_packet = build_problem_reality_packet(
+        &task,
+        &workspace,
+        &initial_repo_context,
+        &task_manifest_path,
+    )?;
+    let problem_reality_path = run_root.join("problem-reality-packet.json");
+    write_json_checked(&problem_reality_path, &problem_reality_packet)?;
+    append_event(
+        &reality_events,
+        json!({
+            "event_type": "problem_reality_packet_materialized",
+            "status": "ok",
+            "problem_reality": file_sot(&problem_reality_path),
+            "problem_reality_sha256": sha256_file(&problem_reality_path)?,
+            "source_of_truth": file_sot(&problem_reality_path)
+        }),
+    )?;
     let mut previous_patch_hashes: Vec<String> = Vec::new();
     let mut attempts: Vec<AttemptRecord> = Vec::new();
     let client = reqwest::Client::new();
@@ -363,7 +386,13 @@ async fn run(args: Args) -> Result<Value> {
         reset_workspace(&workspace, &task.base_commit, args.git_timeout)?;
         let repo_context = collect_repository_context(&workspace, &task)?;
         write_json_checked(&attempt_dir.join("repository-context.json"), &repo_context)?;
-        let prompt = compile_prompt(&task, &repo_context, &attempts, &previous_patch_hashes);
+        let prompt = compile_prompt(
+            &task,
+            &repo_context,
+            &problem_reality_packet,
+            &attempts,
+            &previous_patch_hashes,
+        );
         let prompt_path = attempt_dir.join("prompt.txt");
         write_text_checked(&prompt_path, &prompt)?;
         let prompt_sha = sha256_file(&prompt_path)?;
@@ -415,6 +444,7 @@ async fn run(args: Args) -> Result<Value> {
             repo_dir: &workspace,
             attempt_dir: &attempt_dir,
             repo_context: &repo_context,
+            problem_reality: &problem_reality_packet,
             attempts: &attempts,
         };
         let model_response = ollama_chat_json(&client, &tool_context, &prompt, attempt).await?;
@@ -607,6 +637,40 @@ async fn run(args: Args) -> Result<Value> {
         } else {
             None
         };
+        let agent_tool_transcript_path = model_response
+            .pointer("/contextgraph_runtime/agent_tool_transcript")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let ledger_counts_now = ledger_counts(&ledger)?;
+        let reality_signal_packet = build_reality_signal_packet(
+            attempt,
+            &task,
+            &problem_reality_packet,
+            &validation,
+            official_evidence_path.as_deref(),
+            official_reality.as_ref(),
+            patch.as_deref(),
+            patch_sha.as_deref(),
+            repeated_patch,
+            &model_response,
+            agent_tool_transcript_path.as_deref(),
+            &score,
+            reward.as_ref(),
+            &ledger_counts_now,
+            &attempt_dir,
+        )?;
+        let reality_signal_packet_path = attempt_dir.join("reality-signal-packet.json");
+        write_json_checked(&reality_signal_packet_path, &reality_signal_packet)?;
+        let reality_signal_compact = compact_reality_signal_packet(&reality_signal_packet);
+        let reality_signal_verifier = verify_reality_signal_packet(
+            &context_graph_bin,
+            &ledger,
+            &run_id,
+            &task_root,
+            &attempt_dir,
+            &reality_signal_packet_path,
+            &args.model,
+        )?;
 
         let attempt_record = AttemptRecord {
             attempt,
@@ -626,6 +690,9 @@ async fn run(args: Args) -> Result<Value> {
             resolved,
             failure_evidence: compact_failure_evidence(&validation),
             official_reality,
+            reality_signal_packet_path: path_str(&reality_signal_packet_path).to_string(),
+            reality_signal_compact,
+            agent_tool_transcript_path,
             patch_preview: patch.as_ref().map(|text| truncate_chars(text, 1600)),
         };
         write_json_checked(
@@ -634,6 +701,7 @@ async fn run(args: Args) -> Result<Value> {
                 "attempt": attempt_record,
                 "model_response": model_response,
                 "blackbox_verifier": verifier,
+                "reality_signal_verifier": reality_signal_verifier,
                 "score": score,
                 "reward": reward,
                 "ledger_counts": ledger_counts(&ledger)?,
@@ -658,6 +726,7 @@ async fn run(args: Args) -> Result<Value> {
             &ledger,
             &reality_events,
             &contract_path,
+            &problem_reality_path,
             &attempts,
             solved,
             false,
@@ -674,6 +743,7 @@ async fn run(args: Args) -> Result<Value> {
                 &ledger,
                 &reality_events,
                 &contract_path,
+                &problem_reality_path,
                 &attempts,
                 solved,
                 true,
@@ -699,6 +769,7 @@ async fn run(args: Args) -> Result<Value> {
         &ledger,
         &reality_events,
         &contract_path,
+        &problem_reality_path,
         &attempts,
         solved,
         true,
@@ -876,6 +947,216 @@ fn build_measurement_contract(
     }))
 }
 
+fn build_problem_reality_packet(
+    task: &TaskManifest,
+    repo_dir: &Path,
+    repo_context: &Value,
+    manifest_path: &Path,
+) -> Result<Value> {
+    let head = run_required(
+        &["git", "rev-parse", "HEAD"],
+        repo_dir,
+        120,
+        "RUST_REALITY_PROBLEM_HEAD_READ_FAILED",
+        "problem_reality.git_head",
+    )?;
+    let actual_head = head.stdout.trim();
+    if actual_head != task.base_commit {
+        return Err(RealityError::new(
+            "RUST_REALITY_PROBLEM_BASE_COMMIT_MISMATCH",
+            "problem reality capture saw a git HEAD that does not match the task base commit",
+            "problem_reality.git_head",
+            "reset the workspace to the task base commit before capturing problem reality",
+            json!({"expected": task.base_commit, "actual": actual_head}),
+            Some(format!("git:{}#HEAD", path_str(repo_dir))),
+        ));
+    }
+    let status = run_required(
+        &["git", "status", "--porcelain"],
+        repo_dir,
+        120,
+        "RUST_REALITY_PROBLEM_STATUS_READ_FAILED",
+        "problem_reality.git_status",
+    )?;
+    if !status.stdout.trim().is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_PROBLEM_WORKSPACE_DIRTY",
+            "problem reality must be captured from a clean base checkout",
+            "problem_reality.git_status",
+            "reset and clean the workspace before continuing",
+            json!({"git_status": status.stdout}),
+            Some(format!("git:{}#status", path_str(repo_dir))),
+        ));
+    }
+    let files_out = run_required(
+        &["git", "ls-files"],
+        repo_dir,
+        120,
+        "RUST_REALITY_PROBLEM_GIT_LS_FILES_FAILED",
+        "problem_reality.git_ls_files",
+    )?;
+    let all_files: Vec<String> = files_out.stdout.lines().map(ToOwned::to_owned).collect();
+    let terms = task_terms(task);
+    let symbols = task_symbols(&terms);
+    let fail_to_pass: Vec<Value> = task
+        .fail_to_pass
+        .iter()
+        .map(|test_id| test_target_reality(test_id))
+        .collect();
+    let production_candidates = problem_production_candidates(task, repo_context, &all_files);
+    let issue_file_mentions = path_candidates(task);
+    Ok(json!({
+        "record_kind": "contextgraph_swe_problem_reality_packet",
+        "schema_version": 1,
+        "claim_scope": "problem_reality_for_official_swe_instance",
+        "task_identity": {
+            "dataset": task.dataset,
+            "instance_id": task.instance_id,
+            "repo": task.repo,
+            "base_commit": task.base_commit,
+            "source_of_truth": task.source_of_truth
+        },
+        "oracle_reality": {
+            "success_predicate": "official_report.resolved_ids contains task.instance_id",
+            "fail_to_pass_total": task.fail_to_pass.len(),
+            "fail_to_pass": fail_to_pass,
+            "pass_to_pass_count": task.pass_to_pass_count,
+            "official_test_patch_sha256": task.official_test_patch_sha256,
+            "oracle_patch_sha256": task.oracle_patch_sha256
+        },
+        "problem_statement_reality": {
+            "sha256": sha256_text(&task.problem_statement),
+            "terms": terms,
+            "symbols": symbols,
+            "mentioned_paths": issue_file_mentions,
+            "preview": truncate_chars(&task.problem_statement, 4000)
+        },
+        "repository_reality": {
+            "head": actual_head,
+            "status": "clean",
+            "file_inventory": repository_file_inventory(&all_files),
+            "selected_context_files": repo_context.get("files").cloned().unwrap_or_else(|| json!([])),
+            "production_candidate_files": production_candidates,
+            "source_of_truth": {
+                "head": format!("git:{}#HEAD", path_str(repo_dir)),
+                "status": format!("git:{}#status", path_str(repo_dir)),
+                "files": format!("git:{}#ls-files", path_str(repo_dir)),
+                "selected_context": repo_context.get("source_of_truth")
+            }
+        },
+        "root_cause_discovery_protocol": {
+            "required_model_questions": [
+                "Which FAIL_TO_PASS behavior is actually failing?",
+                "Which production file implements that behavior?",
+                "Which exact source span controls the failing behavior?",
+                "What minimal production edit changes that behavior without editing tests?",
+                "Which validation readback will prove the edit affected the intended reality?"
+            ],
+            "required_tools_before_edit": [
+                "read_problem_reality",
+                "search_repo or inspect_symbol",
+                "open_file_window"
+            ],
+            "edit_grounding_rule": "changed production files should have been read through ContextGraph tools or selected repository context before final edit"
+        },
+        "measurement_boundary": {
+            "what_this_packet_proves": [
+                "the task identity, base commit, official oracle targets, problem terms, and repository context were read from durable sources",
+                "the model can be told the root-cause discovery surface before it edits"
+            ],
+            "non_claims": [
+                "this packet alone does not prove the root cause",
+                "official SWE-bench resolved_ids remains the only success proof",
+                "human intent beyond the SWE-bench oracle remains outside the official success claim"
+            ],
+            "known_blindspots_now_measured_explicitly": [
+                "dynamic coverage is unknown until targeted or official tests run",
+                "problem-statement ambiguity is represented as non-claim instead of hidden success",
+                "test oracle narrowness is visible through FAIL_TO_PASS/PASS_TO_PASS metadata"
+            ]
+        },
+        "source_of_truth": {
+            "task_manifest": file_sot(manifest_path),
+            "repo": format!("git:{}#{}", path_str(repo_dir), task.base_commit),
+            "repo_context": repo_context.get("source_of_truth")
+        }
+    }))
+}
+
+fn compact_problem_reality_packet(packet: &Value) -> Value {
+    json!({
+        "record_kind": packet.get("record_kind"),
+        "task_identity": packet.get("task_identity"),
+        "oracle_reality": packet.get("oracle_reality"),
+        "problem_terms": packet.pointer("/problem_statement_reality/terms"),
+        "problem_symbols": packet.pointer("/problem_statement_reality/symbols"),
+        "production_candidate_files": packet.pointer("/repository_reality/production_candidate_files"),
+        "selected_context_files": packet.pointer("/repository_reality/selected_context_files"),
+        "root_cause_discovery_protocol": packet.get("root_cause_discovery_protocol"),
+        "measurement_boundary": packet.get("measurement_boundary"),
+        "source_of_truth": packet.get("source_of_truth")
+    })
+}
+
+fn test_target_reality(test_id: &str) -> Value {
+    let mut parts = test_id.split("::");
+    let path = parts.next().unwrap_or(test_id).to_string();
+    let remainder: Vec<String> = parts.map(ToOwned::to_owned).collect();
+    json!({
+        "test_id": test_id,
+        "path": path,
+        "node_parts": remainder,
+        "source_of_truth": "task_manifest.fail_to_pass"
+    })
+}
+
+fn repository_file_inventory(files: &[String]) -> Value {
+    let mut extensions: BTreeMap<String, u64> = BTreeMap::new();
+    let mut top_dirs: BTreeMap<String, u64> = BTreeMap::new();
+    for file in files {
+        let ext = Path::new(file)
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("[no_extension]")
+            .to_string();
+        *extensions.entry(ext).or_insert(0) += 1;
+        let top = file.split('/').next().unwrap_or("[root]").to_string();
+        *top_dirs.entry(top).or_insert(0) += 1;
+    }
+    json!({
+        "tracked_files_total": files.len(),
+        "extensions": extensions,
+        "top_dirs": top_dirs
+    })
+}
+
+fn problem_production_candidates(
+    task: &TaskManifest,
+    repo_context: &Value,
+    all_files: &[String],
+) -> Value {
+    let all_file_set: BTreeSet<String> = all_files.iter().cloned().collect();
+    let mut candidates = BTreeSet::new();
+    for candidate in production_path_candidates(task) {
+        if all_file_set.contains(&candidate)
+            && is_context_file(&candidate)
+            && !is_low_value_context_path(&candidate)
+        {
+            candidates.insert(candidate);
+        }
+    }
+    if let Some(files) = repo_context.get("files").and_then(Value::as_array) {
+        for file in files {
+            if let Some(path) = file.get("path").and_then(Value::as_str) {
+                if is_context_file(path) && !is_low_value_context_path(path) {
+                    candidates.insert(path.to_string());
+                }
+            }
+        }
+    }
+    json!(candidates.into_iter().collect::<Vec<_>>())
+}
+
 fn is_40_hex(value: &str) -> bool {
     value.len() == 40 && value.as_bytes().iter().all(|byte| byte.is_ascii_hexdigit())
 }
@@ -895,9 +1176,14 @@ fn compact_failure_evidence(validation: &Value) -> Value {
 
 fn compact_official_evidence(evidence: &Value) -> Value {
     let report = evidence.get("official_report").unwrap_or(&Value::Null);
-    let instance_report = evidence
+    let instance_payload = evidence
         .pointer("/instance_report/payload")
         .unwrap_or(&Value::Null);
+    let instance_report = evidence
+        .get("instance_id")
+        .and_then(Value::as_str)
+        .and_then(|instance_id| instance_payload.get(instance_id))
+        .unwrap_or(instance_payload);
     let fail_to_pass = instance_report
         .pointer("/tests_status/FAIL_TO_PASS")
         .unwrap_or(&Value::Null);
@@ -1102,7 +1388,7 @@ async fn ollama_chat_json(
     )?;
     let system_prompt = "You are a software repair model inside ContextGraph's Rust reality loop. \
 You must call at least one governed tool before proposing a patch. \
-On attempt 1, start by calling search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool so your edit is grounded in real repository state. \
+On attempt 1, start by calling read_problem_reality, search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool so your edit is grounded in real task and repository state. \
 On later attempts, call read_official_failure_reality or compare_attempts before revising a failed patch. \
 The application executes tools; you do not execute code yourself. \
 After tool use, you must return one raw JSON object only, with no markdown fences and no prose. \
@@ -1162,7 +1448,7 @@ Do not modify tests, fixtures, or benchmark harness files.";
             messages.push(response["message"].clone());
             messages.push(json!({
                 "role": "user",
-                "content": "ContextGraph did not receive a native tool call. You must call exactly one governed tool now. For attempt 1, use search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool. Do not return final patch JSON in this tool phase."
+                "content": "ContextGraph did not receive a native tool call. You must call exactly one governed tool now. For attempt 1, use read_problem_reality, search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool. Do not return final patch JSON in this tool phase."
             }));
             continue;
         }
@@ -1386,6 +1672,7 @@ fn final_action_schema() -> Value {
 
 fn agent_tool_names() -> Vec<&'static str> {
     vec![
+        "read_problem_reality",
         "read_official_failure_reality",
         "inspect_symbol",
         "search_repo",
@@ -1401,6 +1688,20 @@ fn agent_tool_names() -> Vec<&'static str> {
 
 fn agent_tool_specs() -> Value {
     json!([
+        {
+            "type": "function",
+            "function": {
+                "name": "read_problem_reality",
+                "description": "Read the durable SWE problem reality packet: oracle tests, base commit, issue terms, implicated files, source/test boundary, and root-cause discovery checklist. Use this before choosing files to edit.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "detail": {"type": "string", "enum": ["compact", "full"], "description": "compact returns only model-facing root-cause evidence; full returns the entire packet."}
+                    }
+                }
+            }
+        },
         {
             "type": "function",
             "function": {
@@ -1695,6 +1996,7 @@ fn execute_agent_tool_call(
 ) -> Result<Value> {
     let started = unix_secs()?;
     let result = match name {
+        "read_problem_reality" => tool_read_problem_reality(ctx, arguments),
         "read_official_failure_reality" => tool_read_official_failure_reality(ctx, arguments),
         "inspect_symbol" => tool_inspect_symbol(ctx, arguments),
         "search_repo" => tool_search_repo(ctx, arguments),
@@ -1830,6 +2132,36 @@ fn record_agent_tool_boundary(
         "verifier_spec": file_sot(&spec_path),
         "source_of_truth": sqlite_sot(ctx.ledger)
     }))
+}
+
+fn tool_read_problem_reality(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<Value> {
+    let detail = arguments
+        .get("detail")
+        .and_then(Value::as_str)
+        .unwrap_or("compact");
+    let payload = match detail {
+        "full" => ctx.problem_reality.clone(),
+        "compact" => compact_problem_reality_packet(ctx.problem_reality),
+        other => {
+            return Ok(tool_blocked(
+                "read_problem_reality",
+                "RUST_REALITY_TOOL_PROBLEM_REALITY_DETAIL_INVALID",
+                "arguments.detail",
+                "problem reality detail must be compact or full",
+                "use detail=compact unless the full source packet is necessary",
+                json!({"detail": other}),
+                ctx.problem_reality
+                    .get("source_of_truth")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned),
+            ));
+        }
+    };
+    Ok(tool_ok(
+        "read_problem_reality",
+        "read durable SWE problem reality packet",
+        payload,
+    ))
 }
 
 fn tool_read_official_failure_reality(
@@ -2849,6 +3181,22 @@ fn validate_attempt(
             "source_of_truth": file_sot(&actual_patch)
         }));
     }
+    let static_checks = run_static_patch_checks(repo_dir, attempt_dir, &changed_files, timeout)?;
+    if static_checks.get("status").and_then(Value::as_str) != Some("passed") {
+        return Ok(json!({
+            "status": "failed",
+            "error_code": static_checks.get("error_code").and_then(Value::as_str).unwrap_or("RUST_REALITY_PATCH_STATIC_CHECK_FAILED"),
+            "field_path": static_checks.get("field_path").and_then(Value::as_str).unwrap_or("candidate.patch.static_checks"),
+            "message": static_checks.get("message").and_then(Value::as_str).unwrap_or("candidate patch failed static source verification"),
+            "remediation": static_checks.get("remediation").and_then(Value::as_str).unwrap_or("read the static check output, fix syntax/import errors, and produce a new production-source patch"),
+            "details": {
+                "changed_files": changed_files,
+                "static_checks": static_checks,
+                "actual_patch_sha256": sha256_file(&actual_patch)?
+            },
+            "source_of_truth": file_sot(&attempt_dir.join("static-checks.json"))
+        }));
+    }
     Ok(json!({
         "status": "passed",
         "error_code": null,
@@ -2857,10 +3205,81 @@ fn validate_attempt(
         "remediation": "run official SWE-bench readback before claiming task success",
         "details": {
             "actual_patch_sha256": sha256_file(&actual_patch)?,
-            "fail_to_pass": task.fail_to_pass
+            "fail_to_pass": task.fail_to_pass,
+            "changed_files": changed_files,
+            "static_checks": static_checks
         },
         "source_of_truth": file_sot(&actual_patch)
     }))
+}
+
+fn run_static_patch_checks(
+    repo_dir: &Path,
+    attempt_dir: &Path,
+    changed_files: &[String],
+    timeout: u64,
+) -> Result<Value> {
+    let python_files: Vec<String> = changed_files
+        .iter()
+        .filter(|path| path.ends_with(".py"))
+        .cloned()
+        .collect();
+    let static_path = attempt_dir.join("static-checks.json");
+    if python_files.is_empty() {
+        let payload = json!({
+            "record_kind": "contextgraph_patch_static_checks",
+            "status": "passed",
+            "check": "python_py_compile",
+            "skipped": true,
+            "reason": "candidate patch changed no Python source files",
+            "python_files": python_files,
+            "source_of_truth": file_sot(&static_path)
+        });
+        write_json_checked(&static_path, &payload)?;
+        return Ok(payload);
+    }
+    let mut command = vec![
+        "python".to_string(),
+        "-m".to_string(),
+        "py_compile".to_string(),
+    ];
+    command.extend(python_files.iter().cloned());
+    let process = run_cmd(&command, repo_dir, timeout)?;
+    let status = if process.exit_code == 0 {
+        "passed"
+    } else {
+        "failed"
+    };
+    let payload = json!({
+        "record_kind": "contextgraph_patch_static_checks",
+        "status": status,
+        "check": "python_py_compile",
+        "skipped": false,
+        "error_code": if process.exit_code == 0 { Value::Null } else { json!("RUST_REALITY_PATCH_PY_COMPILE_FAILED") },
+        "field_path": if process.exit_code == 0 { Value::Null } else { json!("candidate.patch.changed_python_files") },
+        "message": if process.exit_code == 0 {
+            "changed Python source files passed py_compile"
+        } else {
+            "changed Python source files failed py_compile"
+        },
+        "remediation": if process.exit_code == 0 {
+            "continue to official SWE-bench evaluation"
+        } else {
+            "fix the syntax/compile error before running expensive official SWE-bench evaluation"
+        },
+        "python_files": python_files,
+        "process": {
+            "command": process.command,
+            "cwd": process.cwd,
+            "exit_code": process.exit_code,
+            "elapsed_ms": process.elapsed_ms,
+            "stdout_tail": tail_chars(&process.stdout, 4000),
+            "stderr_tail": tail_chars(&process.stderr, 8000)
+        },
+        "source_of_truth": file_sot(&static_path)
+    });
+    write_json_checked(&static_path, &payload)?;
+    Ok(payload)
 }
 
 fn is_forbidden_benchmark_mutation(path: &str) -> bool {
@@ -3605,23 +4024,501 @@ fn text_window(text: &str, byte_pos: usize, radius: usize) -> String {
     text[start..end].to_string()
 }
 
+fn build_reality_signal_packet(
+    attempt: u64,
+    task: &TaskManifest,
+    problem_reality: &Value,
+    validation: &Value,
+    official_evidence_path: Option<&str>,
+    official_reality: Option<&Value>,
+    patch: Option<&str>,
+    patch_sha: Option<&str>,
+    repeated_patch: bool,
+    model_response: &Value,
+    agent_tool_transcript_path: Option<&str>,
+    score: &Value,
+    reward: Option<&Value>,
+    ledger_counts: &BTreeMap<String, i64>,
+    attempt_dir: &Path,
+) -> Result<Value> {
+    let official_evidence = match official_evidence_path {
+        Some(path) => Some(read_json::<Value>(&PathBuf::from(path))?),
+        None => None,
+    };
+    let changed_files = changed_files_from_validation(validation);
+    let tool_grounding = extract_tool_grounding(agent_tool_transcript_path, &changed_files)?;
+    let failure_digest = build_failure_digest(validation, official_evidence.as_ref());
+    let patch_stats = patch.map(patch_line_stats).unwrap_or_else(|| {
+        json!({
+            "line_count": 0,
+            "added_lines": 0,
+            "removed_lines": 0,
+            "file_header_count": 0
+        })
+    });
+    let reward_signal = reward.map(compact_reward_signal).unwrap_or_else(|| {
+        json!({
+            "status": "missing",
+            "reason": "reward compiler output was not available for this attempt"
+        })
+    });
+    Ok(json!({
+        "record_kind": "contextgraph_reality_signal_packet",
+        "schema_version": 1,
+        "attempt": attempt,
+        "task": {
+            "instance_id": task.instance_id,
+            "repo": task.repo,
+            "base_commit": task.base_commit,
+            "fail_to_pass_total": task.fail_to_pass.len(),
+            "pass_to_pass_count": task.pass_to_pass_count,
+            "source_of_truth": task.source_of_truth
+        },
+        "problem_reality": compact_problem_reality_packet(problem_reality),
+        "outcome_reality": {
+            "validation_status": validation.get("status"),
+            "validation_error_code": validation.get("error_code"),
+            "validation_message": validation.get("message"),
+            "official_evidence_path": official_evidence_path,
+            "official_reality": official_reality,
+            "resolved": official_evidence.as_ref().and_then(|value| value.get("resolved")).cloned(),
+            "success_predicate": "official_report.resolved_ids contains task.instance_id",
+            "source_of_truth": {
+                "validation": validation.get("source_of_truth"),
+                "official_evidence": official_evidence_path
+            }
+        },
+        "failure_digest": failure_digest,
+        "official_test_progress": official_test_progress(task, official_evidence.as_ref()),
+        "patch_signals": {
+            "patch_sha256": patch_sha,
+            "repeated_patch": repeated_patch,
+            "changed_files": changed_files,
+            "patch_stats": patch_stats,
+            "patch_preview": patch.map(|text| truncate_chars(text, 3000)),
+            "source_of_truth": {
+                "candidate_patch": file_sot(&attempt_dir.join("candidate.patch")),
+                "actual_applied_patch": file_sot(&attempt_dir.join("actual-applied.patch")),
+                "static_checks": file_sot(&attempt_dir.join("static-checks.json"))
+            }
+        },
+        "tool_grounding": tool_grounding,
+        "score_reality": {
+            "score": score,
+            "reward": reward_signal,
+            "ledger_counts": ledger_counts,
+            "source_of_truth": "BlackBoxFix SQLite ledger and reward compiler output"
+        },
+        "model_io_reality": {
+            "response_sha256": sha256_text(&serde_json::to_string(model_response).unwrap()),
+            "content_sha256": model_response.pointer("/message/content").and_then(Value::as_str).map(sha256_text),
+            "agent_tool_transcript": agent_tool_transcript_path
+        },
+        "reinjection_directive": {
+            "next_prompt_must_include": [
+                "problem_reality.task_identity",
+                "problem_reality.oracle_reality",
+                "failure_digest.normalized_failure_class",
+                "failure_digest.first_error_location",
+                "official_test_progress",
+                "patch_signals.changed_files",
+                "tool_grounding.changed_files_seen_by_tools",
+                "score_reality.reward"
+            ],
+            "do_not_repeat_patch_sha256": patch_sha,
+            "required_next_tool": if official_evidence_path.is_some() { "read_official_failure_reality or compare_attempts" } else { "read_problem_reality plus search/open_file_window" },
+            "optimization_target": "increase official FAIL_TO_PASS success without PASS_TO_PASS regression, while keeping source/test boundary intact"
+        },
+        "source_of_truth": {
+            "attempt_dir": file_sot(attempt_dir),
+            "validation": validation.get("source_of_truth"),
+            "official_evidence": official_evidence_path,
+            "agent_tool_transcript": agent_tool_transcript_path
+        }
+    }))
+}
+
+fn compact_reality_signal_packet(packet: &Value) -> Value {
+    json!({
+        "record_kind": packet.get("record_kind"),
+        "attempt": packet.get("attempt"),
+        "task": packet.get("task"),
+        "outcome_reality": packet.get("outcome_reality"),
+        "failure_digest": packet.get("failure_digest"),
+        "official_test_progress": packet.get("official_test_progress"),
+        "patch_signals": {
+            "patch_sha256": packet.pointer("/patch_signals/patch_sha256"),
+            "repeated_patch": packet.pointer("/patch_signals/repeated_patch"),
+            "changed_files": packet.pointer("/patch_signals/changed_files"),
+            "patch_stats": packet.pointer("/patch_signals/patch_stats")
+        },
+        "tool_grounding": packet.get("tool_grounding"),
+        "score_reality": {
+            "reward": packet.pointer("/score_reality/reward/reward"),
+            "score": packet.pointer("/score_reality/score/score"),
+            "ledger_counts": packet.pointer("/score_reality/ledger_counts")
+        },
+        "reinjection_directive": packet.get("reinjection_directive"),
+        "source_of_truth": packet.get("source_of_truth")
+    })
+}
+
+fn build_failure_digest(validation: &Value, official_evidence: Option<&Value>) -> Value {
+    let official_tail = official_evidence
+        .and_then(|value| value.pointer("/test_output_tail/tail"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let validation_error = validation
+        .get("error_code")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let (failure_class, exception_type) = classify_failure(validation_error, official_tail);
+    json!({
+        "normalized_failure_class": failure_class,
+        "exception_type": exception_type,
+        "first_error_location": first_error_location(official_tail),
+        "validation": {
+            "status": validation.get("status"),
+            "error_code": validation.get("error_code"),
+            "field_path": validation.get("field_path"),
+            "message": validation.get("message"),
+            "remediation": validation.get("remediation"),
+            "source_of_truth": validation.get("source_of_truth")
+        },
+        "official_test_output_tail": truncate_chars(official_tail, 6000)
+    })
+}
+
+fn classify_failure(validation_error: &str, official_tail: &str) -> (String, Option<String>) {
+    let exception_type = [
+        "IndentationError",
+        "SyntaxError",
+        "ImportError",
+        "ModuleNotFoundError",
+        "AssertionError",
+        "AttributeError",
+        "TypeError",
+        "ValueError",
+        "NameError",
+        "RuntimeError",
+    ]
+    .iter()
+    .find(|needle| official_tail.contains(**needle))
+    .map(|value| (*value).to_string());
+    let class = match validation_error {
+        "RUST_REALITY_MODEL_RESPONSE_JSON_INVALID" => "model_contract_json_invalid",
+        "RUST_REALITY_MODEL_ACTION_MISSING" => "model_action_missing",
+        "RUST_REALITY_PATCH_REPEATED" => "repeated_patch",
+        "RUST_REALITY_PATCH_APPLY_FAILED" => "patch_apply_failed",
+        "RUST_REALITY_PATCH_MODIFIES_TESTS" => "forbidden_test_or_harness_mutation",
+        "RUST_REALITY_PATCH_PY_COMPILE_FAILED" => "static_compile_failed",
+        _ if exception_type.as_deref() == Some("IndentationError")
+            || exception_type.as_deref() == Some("SyntaxError") =>
+        {
+            "official_syntax_or_parse_failure"
+        }
+        _ if exception_type.as_deref() == Some("AssertionError") => "official_assertion_failure",
+        _ if exception_type.is_some() => "official_runtime_failure",
+        _ if !official_tail.trim().is_empty() => "official_unresolved_without_classified_exception",
+        _ => "candidate_validation_failure",
+    };
+    (class.to_string(), exception_type)
+}
+
+fn first_error_location(text: &str) -> Value {
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("File \"") || trimmed.starts_with("E     File \"") {
+            return json!({"line": trimmed});
+        }
+    }
+    Value::Null
+}
+
+fn official_test_progress(task: &TaskManifest, official_evidence: Option<&Value>) -> Value {
+    let Some(evidence) = official_evidence else {
+        return json!({
+            "status": "not_run",
+            "fail_to_pass_total": task.fail_to_pass.len(),
+            "pass_to_pass_expected_count": task.pass_to_pass_count
+        });
+    };
+    let compact = compact_official_evidence(evidence);
+    json!({
+        "status": "read",
+        "resolved": compact.get("resolved"),
+        "completed": compact.get("completed"),
+        "errored": compact.get("errored"),
+        "empty_patch": compact.get("empty_patch"),
+        "patch_successfully_applied": compact.get("patch_successfully_applied"),
+        "fail_to_pass_total": task.fail_to_pass.len(),
+        "fail_to_pass": compact.get("fail_to_pass"),
+        "pass_to_pass_expected_count": task.pass_to_pass_count,
+        "pass_to_pass": compact.get("pass_to_pass"),
+        "resolved_ids": compact.get("resolved_ids"),
+        "unresolved_ids": compact.get("unresolved_ids"),
+        "completed_ids": compact.get("completed_ids")
+    })
+}
+
+fn patch_line_stats(patch: &str) -> Value {
+    let mut added = 0_u64;
+    let mut removed = 0_u64;
+    let mut headers = 0_u64;
+    for line in patch.lines() {
+        if line.starts_with("+++ ") || line.starts_with("--- ") {
+            headers += 1;
+        } else if line.starts_with('+') {
+            added += 1;
+        } else if line.starts_with('-') {
+            removed += 1;
+        }
+    }
+    json!({
+        "line_count": patch.lines().count(),
+        "added_lines": added,
+        "removed_lines": removed,
+        "file_header_count": headers
+    })
+}
+
+fn changed_files_from_validation(validation: &Value) -> Vec<String> {
+    validation
+        .pointer("/details/changed_files")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_tool_grounding(
+    transcript_path: Option<&str>,
+    changed_files: &[String],
+) -> Result<Value> {
+    let Some(path) = transcript_path else {
+        return Ok(json!({
+            "status": "missing",
+            "executed_tool_calls": 0,
+            "tools_used": [],
+            "opened_or_inspected_files": [],
+            "changed_files_seen_by_tools": [],
+            "changed_files_without_tool_read": changed_files,
+            "changed_files_read_before_edit": false,
+            "source_of_truth": null
+        }));
+    };
+    let transcript_path = PathBuf::from(path.strip_prefix("file:").unwrap_or(path));
+    let transcript: Value = read_json(&transcript_path)?;
+    let mut tools_used = Vec::new();
+    let mut seen_files = BTreeSet::new();
+    if let Some(entries) = transcript.get("entries").and_then(Value::as_array) {
+        for entry in entries {
+            if let Some(results) = entry.get("tool_results").and_then(Value::as_array) {
+                for result in results {
+                    if let Some(tool) = result.get("tool_name").and_then(Value::as_str) {
+                        tools_used.push(tool.to_string());
+                    }
+                    if let Some(result_sot) = result.get("result").and_then(Value::as_str) {
+                        let path =
+                            PathBuf::from(result_sot.strip_prefix("file:").unwrap_or(result_sot));
+                        if let Ok(tool_result) = read_json::<Value>(&path) {
+                            collect_tool_result_paths(&tool_result, &mut seen_files);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    tools_used.sort();
+    tools_used.dedup();
+    let changed_seen: Vec<String> = changed_files
+        .iter()
+        .filter(|path| seen_files.contains(*path))
+        .cloned()
+        .collect();
+    let changed_missing: Vec<String> = changed_files
+        .iter()
+        .filter(|path| !seen_files.contains(*path))
+        .cloned()
+        .collect();
+    Ok(json!({
+        "status": transcript.get("status"),
+        "executed_tool_calls": transcript.get("executed_tool_calls"),
+        "tools_used": tools_used,
+        "opened_or_inspected_files": seen_files.into_iter().collect::<Vec<_>>(),
+        "changed_files_seen_by_tools": changed_seen,
+        "changed_files_without_tool_read": changed_missing,
+        "changed_files_read_before_edit": changed_missing.is_empty(),
+        "source_of_truth": file_sot(&transcript_path)
+    }))
+}
+
+fn collect_tool_result_paths(value: &Value, out: &mut BTreeSet<String>) {
+    if let Some(path) = value
+        .pointer("/result/payload/path")
+        .and_then(Value::as_str)
+    {
+        out.insert(path.to_string());
+    }
+    if let Some(matches) = value
+        .pointer("/result/payload/matches")
+        .and_then(Value::as_array)
+    {
+        for item in matches {
+            if let Some(path) = item.get("path").and_then(Value::as_str) {
+                out.insert(path.to_string());
+            }
+        }
+    }
+    if let Some(files) = value
+        .pointer("/result/payload/repository_context/files")
+        .or_else(|| value.pointer("/result/payload/selected_context_files"))
+        .and_then(Value::as_array)
+    {
+        for item in files {
+            if let Some(path) = item
+                .get("path")
+                .and_then(Value::as_str)
+                .or_else(|| item.as_str())
+            {
+                out.insert(path.to_string());
+            }
+        }
+    }
+}
+
+fn compact_reward_signal(reward: &Value) -> Value {
+    json!({
+        "reward": reward.get("reward"),
+        "feature_vector": reward.get("feature_vector"),
+        "reward_id": reward.get("reward_id"),
+        "source_of_truth": reward.get("source_of_truth"),
+        "source_record_refs_sha256": reward.get("source_record_refs_sha256")
+    })
+}
+
+fn verify_reality_signal_packet(
+    bin: &Path,
+    ledger: &Path,
+    run_id: &str,
+    task_root: &Path,
+    attempt_dir: &Path,
+    packet_path: &Path,
+    model: &str,
+) -> Result<Value> {
+    let input_path = attempt_dir.join("reality-signal-tool-input.json");
+    write_json_checked(
+        &input_path,
+        &json!({
+            "expected_delta": {
+                "reality_signal_packet": "persisted_and_readable",
+                "record_kind": "contextgraph_reality_signal_packet"
+            },
+            "packet": file_sot(packet_path)
+        }),
+    )?;
+    let record = blackbox(
+        bin,
+        &[
+            "blackbox",
+            "record",
+            "tool-call",
+            "--ledger",
+            path_str(ledger),
+            "--run-id",
+            run_id,
+            "--tool",
+            "rust_materialize_reality_signal_packet",
+            "--input",
+            path_str(&input_path),
+            "--agent",
+            "contextgraph_rust_reality_loop",
+            "--model",
+            model,
+            "--capability",
+            "contextgraph.rust.reality.signal_packet",
+            "--status",
+            "ok",
+        ],
+        task_root,
+    )?;
+    let tool_call_id = record
+        .get("tool_call_id")
+        .and_then(Value::as_str)
+        .unwrap_or("tool_call_id_missing")
+        .to_string();
+    let rel_packet = packet_path.strip_prefix(task_root).unwrap_or(packet_path);
+    let spec = json!({
+        "verifier_id": "cmd_exit_zero_v1",
+        "run_id": run_id,
+        "tool_call_id": tool_call_id,
+        "source": {"cwd": path_str(task_root)},
+        "expected": {
+            "command": [
+                "bash",
+                "-c",
+                "test -s \"$1\" && grep -q '\"record_kind\": \"contextgraph_reality_signal_packet\"' \"$1\" && grep -q '\"reinjection_directive\"' \"$1\"",
+                "verify-reality-signal-packet",
+                path_str(rel_packet)
+            ],
+            "artifacts": [path_str(rel_packet)]
+        }
+    });
+    let spec_path = attempt_dir.join("blackbox-reality-signal-verify-spec.json");
+    write_json_checked(&spec_path, &spec)?;
+    let verifier = blackbox(
+        bin,
+        &[
+            "blackbox",
+            "verify",
+            "--ledger",
+            path_str(ledger),
+            "--input",
+            path_str(&spec_path),
+            "--model",
+            model,
+        ],
+        task_root,
+    )?;
+    Ok(json!({
+        "record": record,
+        "verifier": verifier,
+        "verifier_spec": file_sot(&spec_path),
+        "source_of_truth": sqlite_sot(ledger)
+    }))
+}
+
 fn compile_prompt(
     task: &TaskManifest,
     repo_context: &Value,
+    problem_reality: &Value,
     attempts: &[AttemptRecord],
     previous_patch_hashes: &[String],
 ) -> String {
-    let previous = attempts
+    let previous_attempt = attempts
         .last()
         .map(|item| serde_json::to_string_pretty(item).unwrap())
         .unwrap_or_else(|| "null".to_string());
+    let previous_reality_signal = attempts
+        .last()
+        .map(|item| serde_json::to_string_pretty(&item.reality_signal_compact).unwrap())
+        .unwrap_or_else(|| "null".to_string());
+    let problem_reality =
+        serde_json::to_string_pretty(&compact_problem_reality_packet(problem_reality)).unwrap();
     format!(
         "You are repairing a real SWE-bench Lite task through ContextGraph's Rust reality loop.\n\
 Success means the official SWE-bench report places instance_id in resolved_ids.\n\
 Do not claim success. Prefer exact structured edits: {{\"edits\":[{{\"path\":\"relative/source/file.py\",\"find\":\"exact old text\",\"replace\":\"exact new text\"}}],\"notes\":\"<brief>\"}}. Use {{\"patch\":\"<unified git diff>\",\"notes\":\"<brief>\"}} only if you can produce a complete valid diff.\n\n\
 Task:\ninstance_id: {}\nrepo: {}\nbase_commit: {}\nFAIL_TO_PASS: {}\n\n\
 Problem statement:\n<<<PROBLEM\n{}\nPROBLEM\n\n\
+Problem reality packet:\n{}\n\n\
 Previous attempt summary:\n{}\n\n\
+Previous reality signal packet for reinjection:\n{}\n\n\
 Do not repeat these patch hashes:\n{}\n\n\
 Hard validation rules:\n\
 - The final action must be one raw JSON object with notes plus either edits or patch.\n\
@@ -3631,13 +4528,15 @@ Hard validation rules:\n\
 - The patch or edits must modify production source, not tests, fixtures, or benchmark harness files.\n\
 - Do not edit tests to make the benchmark pass.\n\n\
 Repository context JSON:\n{}\n\n\
-Tool phase instruction: before any final action, call at least one governed ContextGraph tool to inspect real source, failure reality, or prior verified attempts.\n",
+Tool phase instruction: before any final action, call at least one governed ContextGraph tool to inspect real source, problem reality, failure reality, or prior verified attempts. If the previous reality signal says a changed file was not read by tools, read that file before editing again.\n",
         task.instance_id,
         task.repo,
         task.base_commit,
         serde_json::to_string(&task.fail_to_pass).unwrap(),
         task.problem_statement,
-        previous,
+        problem_reality,
+        previous_attempt,
+        previous_reality_signal,
         serde_json::to_string(previous_patch_hashes).unwrap(),
         serde_json::to_string_pretty(repo_context).unwrap()
     )
@@ -3650,6 +4549,7 @@ fn write_summary(
     ledger: &Path,
     events: &Path,
     contract: &Path,
+    problem_reality: &Path,
     attempts: &[AttemptRecord],
     solved: bool,
     terminal: bool,
@@ -3681,10 +4581,16 @@ fn write_summary(
             "sha256": sha256_file(contract)?,
             "source_of_truth": file_sot(contract)
         },
+        "problem_reality": {
+            "path": path_str(problem_reality),
+            "sha256": sha256_file(problem_reality)?,
+            "source_of_truth": file_sot(problem_reality)
+        },
         "source_of_truth": {
             "summary": file_sot(&path),
             "events": file_sot(events),
             "measurement_contract": file_sot(contract),
+            "problem_reality": file_sot(problem_reality),
             "ledger": sqlite_sot(ledger)
         }
     });
