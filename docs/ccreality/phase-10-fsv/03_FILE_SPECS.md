@@ -43,7 +43,9 @@ For each case in [../18_FSV_PLAN.md](../18_FSV_PLAN.md), write a script. Below a
 ### A2 — Synthetic-passing task resolves
 
 `scripts/cc/tests/fsv/cases/A2_passing_resolves.sh`:
-- Skip implementation note: this requires a synthetic task fixture that's known to pass without Gemma. Probably out of scope for first pass; mark as TODO.
+- Build or reuse a real synthetic task fixture whose expected outcome is known before execution.
+- Action: run the normal engine path against that fixture.
+- Assert: source-of-truth artifacts show the attempt resolved. If the fixture is unavailable, Phase 10 is blocked; do not mark the case as pass or skip.
 
 ### A3 — Synthetic-failing task does not resolve
 
@@ -112,7 +114,7 @@ These are largely the Phase 6 unit tests, re-run as FSV cases. Each case wraps `
 
 `E1`: full happy path — synthesize a failing attempt, run `claude --print "/ccreality-iterate"`, assert recommendation artifact.
 `E2`: drift mid-edit — coordinate Claude session + external mutator.
-`E3`: 3 fires of `/loop 2m` — needs ~6 minutes wall clock; may need to mock the loop interval.
+`E3`: 3 fires of `/loop 2m` — run the real loop interval and verify three recorded firings in the source-of-truth artifacts. Do not mock the interval.
 
 ### F1–F3 — Cost and limits
 
@@ -120,12 +122,10 @@ These are largely the Phase 6 unit tests, re-run as FSV cases. Each case wraps `
 `F2`: write a hook that emits >10KB additionalContext; verify Claude Code truncates to 10KB.
 `F3`: pre-create a 100MB JSON artifact; verify `reality_attempt_summary` returns a pointer not the inlined content.
 
-## Skip-list
+## Blocked-case policy
 
-For the first FSV run, mark cases that require special infrastructure (Gemma, real Docker, real Claude API spend) as `SKIP`:
-- A2 (synthetic passing): SKIP unless a fixture is built.
-- A4, A5: SKIP unless Gemma is set up.
-- E1–E3: SKIP unless real Claude API access is available.
-- F1: SKIP if budget cap is in effect.
+Phase 10 is the full verification gate. Do not mark required cases as passed when their required infrastructure is missing.
+
+If a case requires Gemma, Docker, Claude API access, or spend budget and that dependency is unavailable, record the case as `BLOCKED` with the exact missing dependency, source-of-truth evidence checked, and remediation. A `BLOCKED` case means Phase 10 is not complete.
 
 Skipped cases appear in the results doc as `SKIP` rather than PASS/FAIL.
