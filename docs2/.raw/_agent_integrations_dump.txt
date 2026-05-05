@@ -1,0 +1,758 @@
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/github_copilot
+LEN: 1691
+Quick StartAgent IntegrationsGitHub CopilotOn this pageIntegrate with GitHub Copilot
+DeepSeek V4 for Copilot Chat is a VS Code extension that adds DeepSeek V4 Pro & Flash directly into the GitHub Copilot Chat model picker. You keep Copilot's agent mode, tool calling, skills, and MCP — all powered by DeepSeek.
+1. Install the Extension​
+
+Install VS Code 1.116 or later.
+Make sure you have a GitHub Copilot subscription (Free / Pro / Enterprise — the free tier works).
+Install the extension from the VS Code Marketplace.
+
+2. Get a DeepSeek API Key​
+
+Go to DeepSeek Platform and create an API key.
+Copy the key (it starts with sk-).
+
+3. Configure the API Key in VS Code​
+
+Open the Command Palette (Cmd+Shift+P / Ctrl+Shift+P).
+Run DeepSeek: Set API Key and paste your key.
+The key is stored securely in the OS keychain, never on disk.
+
+4. Select the Model and Start Chatting​
+
+Open Copilot Chat (Cmd+Shift+I / Ctrl+Shift+I).
+Click the model picker at the top-right of the chat panel.
+Choose DeepSeek V4 Pro or DeepSeek V4 Flash.
+Start chatting — agent mode, tool calling, and all Copilot features work out of the box.
+
+Optional: Configure Thinking Effort​
+In the model picker, click the gear icon next to a DeepSeek model to choose the thinking effort level:
+
+None — fastest, no reasoning.
+High — balanced (default).
+Max — deep reasoning for complex tasks.
+
+Optional: Vision Support​
+DeepSeek V4 is text-only, but the extension handles images automatically. Drop a screenshot into chat and it proxies through another installed Copilot model (Claude, GPT-4o) to describe the image before sending to DeepSeek. Run DeepSeek: Set Vision Proxy Model to pick which model handles image descriptions.
+
+
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/copilot_cli
+LEN: 2176
+Quick StartAgent IntegrationsGitHub Copilot CLIOn this pageIntegrate with GitHub Copilot CLI
+Configure GitHub Copilot CLI to use DeepSeek V4 models via BYOK (Bring Your Own Key) with the Anthropic-compatible endpoint.
+
+Important: Use anthropic as the provider type. The openai type triggers a 400 error: The reasoning_content in the thinking mode must be passed back to the API. — DeepSeek requires reasoning_content to be echoed back on subsequent requests, which Copilot CLI's OpenAI integration does not support. The Anthropic Messages API endpoint avoids this issue entirely.
+
+1. Install GitHub Copilot CLI​
+npm install -g @github/copilot
+Requires Node.js 22 or later. See the official getting-started guide for details.
+2. Get a DeepSeek API Key​
+
+Go to DeepSeek Platform and create an API key.
+Copy the key (it starts with sk-).
+
+3. Configure Environment Variables​
+Linux / Mac:
+export COPILOT_PROVIDER_TYPE=anthropicexport COPILOT_PROVIDER_BASE_URL=https://api.deepseek.com/anthropicexport COPILOT_PROVIDER_API_KEY=sk-your-deepseek-api-keyexport COPILOT_MODEL=deepseek-v4-pro
+Windows (PowerShell):
+$env:COPILOT_PROVIDER_TYPE="anthropic"$env:COPILOT_PROVIDER_BASE_URL="https://api.deepseek.com/anthropic"$env:COPILOT_PROVIDER_API_KEY="sk-your-deepseek-api-key"$env:COPILOT_MODEL="deepseek-v4-pro"
+Available models: deepseek-v4-pro, deepseek-v4-flash. Switch by changing COPILOT_MODEL.
+4. Start Copilot CLI​
+copilot
+Full agent mode, tool calling, and MCP support — all powered by DeepSeek.
+Optional: Token Limits​
+Since deepseek-v4-pro is not in Copilot CLI's built-in model catalog, configure the token limits explicitly:
+Linux / Mac:
+export COPILOT_PROVIDER_MAX_PROMPT_TOKENS=840000export COPILOT_PROVIDER_MAX_OUTPUT_TOKENS=128000
+Windows (PowerShell):
+$env:COPILOT_PROVIDER_MAX_PROMPT_TOKENS="840000"$env:COPILOT_PROVIDER_MAX_OUTPUT_TOKENS="128000"
+Run copilot help providers for all available environment variables.
+Optional: Offline Mode​
+Linux / Mac:
+export COPILOT_OFFLINE=true
+Windows (PowerShell):
+$env:COPILOT_OFFLINE="true"
+Note: your prompts still go to api.deepseek.com — offline mode only blocks GitHub's API calls.
+Resources​
+
+GitHub Copilot CLI BYOK docs
+
+
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/kilo_code
+LEN: 875
+Quick StartAgent IntegrationsKilo CodeOn this pageIntegrate with Kilo Code
+Kilo Code is an AI coding assistant available as a CLI and editor extension.
+1. Install Kilo Code CLI​
+
+Install Node.js.
+Run the following command in your terminal to install Kilo Code CLI:
+
+npm install -g @kilocode/cli
+
+After installation, run the following command. If the version number is displayed, the installation is successful:
+
+kilo --version
+2. Run Kilo Code​
+Enter the project directory and run kilo:
+cd /path/to/my-projectkilo
+3. Connect the DeepSeek Provider​
+
+Type /connect in the command bar to open the Connect Provider panel.
+Search for deepseek, select DeepSeek, then enter your DeepSeek API Key.
+
+4. Select a DeepSeek Model​
+
+Type /models to open the model selector.
+Select one of the available DeepSeek models:
+
+DeepSeek Chat
+DeepSeek Reasoner
+DeepSeek V4 Flash
+DeepSeek V4 Pro
+
+
+
+
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/workbuddy
+LEN: 3247
+Quick StartAgent IntegrationsWorkBuddy/CodeBuddyOn this pageIntegrate with WorkBuddy/CodeBuddy
+WorkBuddy/CodeBuddy is an AI agent and coding assistant. It supports custom models through local model configuration files, and DeepSeek V4 can be connected through the OpenAI-compatible Chat Completions API.
+1. Install WorkBuddy/CodeBuddy​
+
+Install and sign in to WorkBuddy/CodeBuddy.
+Open a project folder once, so the application can create its local configuration directories.
+Get your API Key from the DeepSeek Platform.
+
+2. Configure Local Models​
+Create or edit the user-level configuration file:
+C:\Users\<your-username>\.codebuddy\models.json
+To apply the configuration only to one project, create the project-level configuration file instead:
+<your-project>\.codebuddy\models.json
+Set your DeepSeek API Key as an environment variable first:
+setx DEEPSEEK_API_KEY "<your DeepSeek API Key>"
+Then add the following configuration:
+{  "models": [    {      "id": "deepseek-v4-pro",      "name": "DeepSeek V4 Pro",      "vendor": "DeepSeek",      "url": "https://api.deepseek.com/v1/chat/completions",      "apiKey": "${DEEPSEEK_API_KEY}",      "maxInputTokens": 128000,      "maxOutputTokens": 8192,      "supportsToolCall": true,      "supportsImages": false,      "relatedModels": {        "lite": "deepseek-v4-flash",        "reasoning": "deepseek-v4-pro"      }    },    {      "id": "deepseek-v4-flash",      "name": "DeepSeek V4 Flash",      "vendor": "DeepSeek",      "url": "https://api.deepseek.com/v1/chat/completions",      "apiKey": "${DEEPSEEK_API_KEY}",      "maxInputTokens": 128000,      "maxOutputTokens": 8192,      "supportsToolCall": true,      "supportsImages": false    }  ],  "availableModels": [    "deepseek-v4-pro",    "deepseek-v4-flash"  ]}
+Save models.json as UTF-8 without BOM. Some desktop versions may fail to read local model configuration files saved with a UTF-8 BOM header.
+3. Restart and Select the Model​
+Fully quit WorkBuddy/CodeBuddy, then open it again.
+In the model selector, choose:
+DeepSeek V4 ProDeepSeek V4 Flash
+4. Optional: Verify the API Key​
+Windows users can verify the API Key in PowerShell:
+$env:DEEPSEEK_API_KEY="<your DeepSeek API Key>"curl https://api.deepseek.com/v1/chat/completions `  -H "Content-Type: application/json" `  -H "Authorization: Bearer $env:DEEPSEEK_API_KEY" `  -d '{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"hi"}],"stream":false}'
+If the request succeeds, the API Key and model name are valid.
+Troubleshooting​
+
+Authentication Fails or 401: Check whether apiKey is your real DeepSeek API Key. Do not put the API URL in the API Key field.
+Model Not Found or 404: Check whether the model id is exactly deepseek-v4-pro or deepseek-v4-flash.
+Failed to read local model configuration: Check whether models.json is valid JSON and saved as UTF-8 without BOM.
+The model does not appear in the selector: Fully restart WorkBuddy/CodeBuddy and confirm the file is placed under .codebuddy\models.json.
+${DEEPSEEK_API_KEY} is shown literally in the UI: Restart WorkBuddy/CodeBuddy from a terminal where DEEPSEEK_API_KEY is available. If the desktop UI still does not expand environment variables, paste the actual API Key in the UI or in your local models.json.
+
+
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/opencode
+LEN: 984
+Quick StartAgent IntegrationsOpenCodeOn this pageIntegrate with OpenCode
+OpenCode is an open-source AI coding assistant available in terminal, web, and other forms.
+Migrate from Existing Installation to DeepSeek​
+If you already have OpenCode installed (version >= v1.14.24 recommended), simply run OpenCode and switch to the DeepSeek provider:
+
+Execute the opencode command
+Type /connect in the input box, then enter deepseek and select the provider
+
+
+
+
+
+Enter your DeepSeek API Key
+
+
+
+
+Select the DeepSeek-V4-Pro model
+
+
+
+Install OpenCode from Scratch​
+1. Install OpenCode​
+For installation instructions, please refer to the OpenCode download page.
+To avoid compatibility issues, it is strongly recommended to upgrade OpenCode to the latest version, ensuring the version number is >= v1.14.24.
+2. Run and Configure​
+
+Execute the opencode command
+Type /connect in the input box, then enter deepseek and select the provider
+Enter your DeepSeek API Key
+Select the DeepSeek-V4-Pro model
+
+
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/oh_my_pi
+LEN: 4386
+Quick StartAgent IntegrationsOh My PiOn this pageUsing DeepSeek with Oh My Pi
+Oh My Pi is a terminal AI coding agent. As of v14.5 it ships DeepSeek V4 model entries, but the built-in compat is incomplete — a custom models.yml is still required for reliable use.
+Prerequisites​
+Install Oh My Pi: https://github.com/can1357/oh-my-pi#installation
+Get an API key from the DeepSeek Platform:
+export DEEPSEEK_API_KEY=<your API key>
+Configuration​
+Create ~/.omp/agent/models.yml:
+providers:  deepseek:    baseUrl: https://api.deepseek.com    api: openai-completions    apiKey: DEEPSEEK_API_KEY    authHeader: true    models:      - id: deepseek-v4-pro        name: DeepSeek V4 Pro        reasoning: true        thinking:          minLevel: high          maxLevel: xhigh          mode: effort        input: [text]        contextWindow: 1000000        maxTokens: 384000        compat:          supportsDeveloperRole: false          supportsReasoningEffort: true          maxTokensField: max_tokens          reasoningEffortMap:            high: high            xhigh: max          supportsToolChoice: false          requiresReasoningContentForToolCalls: true          requiresAssistantContentForToolCalls: true          extraBody:            thinking:              type: enabled      - id: deepseek-v4-flash        name: DeepSeek V4 Flash        reasoning: true        thinking:          minLevel: high          maxLevel: xhigh          mode: effort        input: [text]        contextWindow: 1000000        maxTokens: 384000        compat:          supportsDeveloperRole: false          supportsReasoningEffort: true          maxTokensField: max_tokens          reasoningEffortMap:            high: high            xhigh: max          supportsToolChoice: false          requiresReasoningContentForToolCalls: true          requiresAssistantContentForToolCalls: true          extraBody:            thinking:              type: enabled
+Configuration notes​
+Basics​
+FieldNotesbaseUrl: https://api.deepseek.comDeepSeek OpenAI-compatible endpoint. Do not append /v1.authHeader: trueSends Authorization: Bearer $DEEPSEEK_API_KEY. Does not go through OAuth /login.supportsDeveloperRole: falseSends system prompt as system role. DeepSeek rejects the developer role.maxTokensField: max_tokensDeepSeek uses max_tokens, not OpenAI's max_completion_tokens.
+Thinking mode​
+FieldNotesthinking.mode: effortUses effort-based thinking. OMP sends a reasoning_effort parameter.thinking.minLevel: high / maxLevel: xhighLocks the selector to DeepSeek's two supported levels.reasoningEffortMap: { high: high, xhigh: max }Maps OMP's xhigh to DeepSeek's max. Without this, xhigh is unrecognized.extraBody.thinking.type: enabledExplicitly enables DeepSeek V4 thinking mode.supportsReasoningEffort: trueAllows OMP to send reasoning_effort.
+Three critical compat fields​
+These three fields are essential. Without them, DeepSeek V4 will return 400 errors when using tools in thinking mode.
+FieldNotessupportsToolChoice: falseDeepSeek V4 thinking mode rejects the tool_choice parameter.requiresReasoningContentForToolCalls: trueDeepSeek requires reasoning_content to be preserved across tool-call turns in conversation history. Skipping this causes 400.requiresAssistantContentForToolCalls: trueEnsures tool-call messages have non-null content. Use together with the field above.
+Usage​
+cd /path/to/your-projectomp --model deepseek/deepseek-v4-pro
+For faster responses:
+omp --model deepseek/deepseek-v4-flash
+Switch models inside Oh My Pi with /model or Ctrl+L.
+Known issues​
+Do not rely on the built-in model entries. Recent builds list deepseek-v4-pro and deepseek-v4-flash via omp --list-models deepseek, but they lack the three critical compat fields above. Long thinking-mode conversations with tool calls will 400. Always use the models.yml configuration shown above.
+Oh My Pi does not currently have a DeepSeek OAuth /login entry. API keys must be provided via the DEEPSEEK_API_KEY environment variable or the apiKey field in models.yml.
+When using DeepSeek V4 through unofficial providers (DeepInfra, KiloCode, NVIDIA NIM, Zenmux, etc.) via OpenAI-compatible endpoints, reasoning_content replay behavior varies and compatibility is unresolved. Prefer the official api.deepseek.com endpoint.
+In models.yml, compat replaces the built-in block wholesale — it does not merge. Always specify the full set of compat fields.
+
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/openclaw
+LEN: 2321
+Quick StartAgent IntegrationsOpenClawOn this pageIntegrate with OpenClaw
+OpenClaw is an open-source personal AI assistant that can connect to popular chat tools like Feishu and WeChat, and can be extended through Skills.
+Migrate from Existing Installation to DeepSeek​
+If you already have OpenClaw installed, run the following command to re-enter the configuration phase and switch to the DeepSeek provider:
+openclaw onboard --install-daemon
+Then follow the prompts:
+
+When prompted: I understand this is personal-by-default and shared/multi-user use requires lock-down. Continue? Select Yes.
+When prompted: Setup mode It is recommended to select QuickStart.
+When prompted: Model/auth provider Select DeepSeek.
+When prompted: Enter DeepSeek API key Enter your DeepSeek API Key.
+When prompted: Default model Navigate to Enter model and enter the model name (deepseek-v4-pro or deepseek-v4-flash).
+For the remaining configuration (message channels, Skills, etc.), configure as needed. Beginners can select Skip for now.
+
+Install OpenClaw from Scratch​
+1. Install OpenClaw​
+Linux / Mac users, run the following command from the OpenClaw install script to install:
+curl -fsSL https://openclaw.ai/install.sh | bash
+Windows users, run the following command from the OpenClaw install script to install:
+iwr -useb https://openclaw.ai/install.ps1 | iex
+2. Configure the Default Model in OpenClaw​
+After the initial installation, you will automatically enter the setup phase. Users who have already installed OpenClaw can enter the configuration phase via the openclaw onboard --install-daemon command.
+
+When prompted: I understand this is personal-by-default and shared/multi-user use requires lock-down. Continue? Select Yes.
+When prompted: Setup mode It is recommended to select QuickStart.
+When prompted: Model/auth provider Select DeepSeek.
+When prompted: Enter DeepSeek API key Enter your DeepSeek API Key.
+When prompted: Default model Navigate to Enter model and enter the model name (deepseek-v4-pro or deepseek-v4-flash).
+For the remaining configuration (message channels, Skills, etc.), configure as needed. Beginners can select Skip for now.
+
+3. Get Started​
+Open the Web UI and interact on the Chat page:
+openclaw dashboard
+Open the TUI in the terminal:
+openclaw tui
+Chat with OpenClaw in the terminal:
+openclaw terminal
+
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/astrbot
+LEN: 1951
+Quick StartAgent IntegrationsAstrBotOn this pageIntegrate with AstrBot
+AstrBot is an open-source all-in-one agent assistant that integrates with mainstream messaging platforms such as QQ, WeChat, Feishu, and Telegram, and can be extended with skills, plugins, and MCPs to enhance its functionality.
+1. Install AstrBot​
+Install AstrBot via uv​
+For macOS and Linux users, run the following command to install AstrBot:
+curl -LsSf https://docs.astrbot.app/install.sh | bash
+For Windows users, run the following command instead:
+iwr -useb https://docs.astrbot.app/install.ps1 | iex
+Then initialize and start AstrBot:
+astrbot init # Run this only once to initialize the environment. This command installs AstrBot into the current terminal directory.astrbot run  # Start AstrBot. This command checks whether AstrBot is installed in the current directory; if not, it prompts you to initialize it with `astrbot init`.
+Install AstrBot via Docker​
+First, clone the AstrBot repository:
+git clone https://github.com/AstrBotDevs/AstrBot --depth 1cd AstrBot
+Then, start the service:
+sudo docker compose up -d
+2. Configure the Default Model in AstrBot​
+After initialization, open the Web UI:
+http://localhost:6185 # Or http://<server-ip>:6185 if AstrBot runs on a server
+In the left sidebar, open the Providers page, click + Add, select DeepSeek, paste your DeepSeek API Key into the API Key field, and click Save Configuration.
+Next, open the Config(Normal Config) page, set Default Chat Model to the model you just configured, confirm the selection, and click the save button in the bottom-right corner.
+For the remaining settings, such as messaging platforms and skills, configure them as needed. See the AstrBot Docs for details.
+3. Get Started​
+Click Chat in the top-right corner to switch to the AstrBot Chat UI. You can now start chatting with the DeepSeek model.
+You can also configure messaging platforms to use AstrBot directly from your preferred chat app.
+
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/deepcode
+LEN: 1913
+Quick StartAgent IntegrationsDeep CodeOn this pageIntegrate with Deep Code
+Deep Code is an open-source terminal AI coding assistant for the DeepSeek-V4 model, supporting deep thinking, reasoning effort control, and Agent Skills.
+
+GitHub: https://github.com/lessweb/deepcode-cli
+
+1. Install Deep Code​
+
+Install Node.js 18+.
+Run the following command in your terminal:
+
+npm install -g @vegamo/deepcode-cli
+
+Verify the installation:
+
+deepcode --version
+2. Configure Deep Code​
+Create ~/.deepcode/settings.json with your DeepSeek API key and model settings:
+{  "env": {    "MODEL": "deepseek-v4-pro",    "BASE_URL": "https://api.deepseek.com",    "API_KEY": "sk-..."  },  "thinkingEnabled": true,  "reasoningEffort": "max"}
+Get your API Key from the DeepSeek Platform.
+
+Note: The same settings file is shared with the Deep Code VSCode extension.
+
+Configuration options:
+OptionDescriptionMODELModel name, e.g. deepseek-v4-pro or deepseek-v4-flashBASE_URLAPI base URL, defaults to https://api.deepseek.comthinkingEnabledEnable deep thinking mode (defaults to true for deepseek-v4 models)reasoningEffort"max" or "high" — controls how much reasoning the model performsnotifyPath to a notification script executed after each model turnwebSearchToolEnable the web search capability for the agent
+3. Enter a project directory and launch Deep Code​
+cd /path/to/my-projectdeepcode
+Key Shortcuts​
+KeyActionEnterSend the promptShift+EnterInsert a newline (also Ctrl+J)Ctrl+VPaste an image from the clipboardEscInterrupt the current model turn/Open the skills / commands menu/newStart a fresh conversation/resumeChoose a previous conversation to continue/exitQuit Deep Code
+Using Agent Skills​
+Agent Skills are discovered from these locations:
+
+User-level: ~/.agents/skills/<name>/SKILL.md
+Project-level: ./.deepcode/skills/<name>/SKILL.md
+
+Press / to open the skill picker, or type the skill name directly (e.g., /skill-writer).
+
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/hermes
+LEN: 1059
+Quick StartAgent IntegrationsHermesOn this pageIntegrate with Hermes Agent
+Hermes is a self-improving AI agent built by Nous Research. It includes a built-in learning loop: it creates skills from experience, improves them during use, persists knowledge, and builds an evolving model of your preferences across sessions.
+1. Install Hermes​
+Quick Install​
+Get Hermes Agent up and running in under two minutes with the one-line installer.
+Linux / macOS / WSL2​
+curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+The only prerequisite is Git. The installer automatically handles everything else.
+For more installation instructions, please refer to the Hermes installation page.
+2. Run and Configure​
+Reload your shell and start Hermes configuration:
+
+Execute the hermes setup command
+Choose the Quick Setup option
+When prompted for the model provider, select DeepSeek
+Enter your DeepSeek API Key
+Enter the Base URL as https://api.deepseek.com
+Select the deepseek-v4-pro model
+Continue with the remaining options
+
+
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/nanobot
+LEN: 1268
+Quick StartAgent IntegrationsnanobotOn this pageIntegrating nanobot
+nanobot is a lightweight AI agent that supports integration with popular chat tools.
+1. Install nanobot​
+
+Install uv
+Run the following command to install nanobot:
+
+uv tool install nanobot-ai
+
+Note: On Windows, add the .local/bin directory under your user home directory to the environment variables:
+
+$env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+
+Or update the terminal via uv:
+
+uv tool update-shell
+
+After installation, run the following command. If a version number is displayed, the installation was successful:
+
+nanobot --version
+2. Configure nanobot​
+Run the following command to initialize the nanobot configuration file:
+nanobot onboard
+The configuration file path varies by operating system:
+
+Windows: $env:USERPROFILE\.nanobot\config.json
+Linux / macOS: ~/.nanobot/config.json
+
+Edit the config.json file and modify the following configuration items:
+{    "agents": {        "defaults": {            "model": "deepseek-v4-pro",            "provider": "deepseek",        }    },    "providers": {        "deepseek": {            "apiKey": "<your DeepSeek API Key>",            "apiBase": "https://api.deepseek.com/v1",        },    },}
+3. Get Started​
+Run in the terminal:
+nanobot agent
+
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/crush
+LEN: 1900
+Quick StartAgent IntegrationsCrushOn this pageIntegrate with Crush
+Crush is a glamorous open-source AI coding agent that runs in your terminal, built by Charm. It supports multi-model switching, LSP integration, MCP servers, and agentic coding workflows.
+1. Install Crush​
+
+Install Node.js.
+Run the following command in your terminal to install Crush:
+
+npm install -g @charmland/crush
+
+After installation, run the following command. If the version number is displayed, the installation is successful:
+
+crush --version
+
+Note: macOS users can also install via Homebrew: brew install charmbracelet/tap/crush.
+
+2. Configure DeepSeek Provider​
+Crush supports custom providers via OpenAI-compatible APIs. Add DeepSeek to your configuration file:
+
+Linux / macOS: ~/.config/crush/crush.json
+Windows: %USERPROFILE%\.config\crush\crush.json
+
+{  "$schema": "https://charm.land/crush.json",  "providers": {    "deepseek": {      "type": "openai-compat",      "base_url": "https://api.deepseek.com",      "api_key": "$DEEPSEEK_API_KEY",      "models": [        {          "id": "deepseek-v4-pro",          "name": "DeepSeek-V4-Pro",          "context_window": 1048576,          "default_max_tokens": 32768,          "can_reason": true        },        {          "id": "deepseek-v4-flash",          "name": "DeepSeek-V4-Flash",          "context_window": 1048576,          "default_max_tokens": 32768,          "can_reason": true        }      ]    }  }}
+Get your API Key from the DeepSeek Platform.
+Set the environment variable:
+Linux / Mac users:
+export DEEPSEEK_API_KEY="<your DeepSeek API Key>"
+Windows users:
+$env:DEEPSEEK_API_KEY="<your DeepSeek API Key>"
+3. Run and Select Model​
+
+Enter the project directory and execute the crush command:
+
+cd /path/to/my-projectcrush
+
+Press Ctrl+L (or type /model) to open the model switcher.
+Select the DeepSeek provider and choose DeepSeek-V4-Pro or DeepSeek-V4-Flash.
+
+
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/pi_mono
+LEN: 2973
+Quick StartAgent IntegrationsPiOn this pageIntegrate with Pi
+Pi (pi-mono) is a minimal, aggressively extensible terminal coding harness. It adapts to your workflows through TypeScript extensions, skills, prompt templates, and themes — with tree-structured sessions and 15+ built-in providers.
+1. Install Pi​
+
+Install Node.js.
+Run the following command in your terminal to install Pi:
+
+npm install -g @mariozechner/pi-coding-agent
+
+After installation, run the following command. If the version number is displayed, the installation is successful:
+
+pi --version
+
+Note: Linux / macOS users can also install via the official script:
+curl -fsSL https://pi.dev/install.sh | sh
+
+2. Configure DeepSeek Provider​
+Pi supports custom providers via models.json. Add DeepSeek as an OpenAI-compatible provider:
+
+Linux / macOS: ~/.pi/agent/models.json
+Windows: %USERPROFILE%\.pi\agent\models.json
+
+{  "providers": {    "deepseek": {      "baseUrl": "https://api.deepseek.com",      "api": "openai-completions",      "apiKey": "$DEEPSEEK_API_KEY",      "models": [        {          "id": "deepseek-v4-pro",          "name": "DeepSeek V4 Pro",          "contextWindow": 1000000,          "maxTokens": 384000,          "input": ["text"],          "reasoning": true,          "cost": {            "input": 1.74,            "output": 3.48,            "cacheRead": 0.145,            "cacheWrite": 0          },          "compat": {            "requiresReasoningContentOnAssistantMessages": true,            "thinkingFormat": "deepseek",            "reasoningEffortMap": {              "minimal": "high",              "low": "high",              "medium": "high",              "high": "high",              "xhigh": "max"            }          }        },        {          "id": "deepseek-v4-flash",          "name": "DeepSeek V4 Flash",          "contextWindow": 1000000,          "maxTokens": 384000,          "input": ["text"],          "reasoning": true,          "cost": {            "input": 0.14,            "output": 0.28,            "cacheRead": 0.028,            "cacheWrite": 0          },          "compat": {            "requiresReasoningContentOnAssistantMessages": true,            "thinkingFormat": "deepseek",            "reasoningEffortMap": {              "minimal": "high",              "low": "high",              "medium": "high",              "high": "high",              "xhigh": "max"            }          }        }      ]    }  }}
+Get your API Key from the DeepSeek Platform.
+Set the environment variable:
+Linux / Mac users:
+export DEEPSEEK_API_KEY="<your DeepSeek API Key>"
+Windows users:
+$env:DEEPSEEK_API_KEY="<your DeepSeek API Key>"
+3. Run and Select Model​
+
+Enter the project directory and execute the pi command:
+
+cd /path/to/my-projectpi
+
+Type /model to open the model switcher.
+Select deepseek and choose DeepSeek-V4-Pro or DeepSeek-V4-Flash.
+Start coding with your minimal terminal harness.
+
+For more configuration options, see the Pi models documentation.
+
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/reasonix
+LEN: 1005
+Quick StartAgent IntegrationsReasonixOn this pageIntegrate with Reasonix
+Reasonix is a DeepSeek-native coding agent that runs in the terminal. It's designed around DeepSeek's API directly — cache-first loop, flash-first cost control, automatic tool-call repair — and talks to api.deepseek.com without a translation shim.
+1. Install Node.js​
+
+Install Node.js 20.10+.
+Windows users need to install Git for Windows.
+
+2. Get a DeepSeek API Key​
+Get your API Key from the DeepSeek Platform. The first run of Reasonix prompts for it via a built-in wizard and persists it to ~/.reasonix/config.json — no environment variable needed.
+3. Enter the project directory and run npx reasonix code to get started.​
+cd /path/to/my-projectnpx reasonix code
+No global install required. By default Reasonix uses DeepSeek-V4-Flash for cost-efficient iteration. Type /pro inside the TUI to arm DeepSeek-V4-Pro for the next turn, or /preset max to use Pro for the whole session. Run /help for the full slash-command reference.
+
+
+================================================================================
+URL: https://api-docs.deepseek.com/quick_start/agent_integrations/langcli
+LEN: 1026
+Quick StartAgent IntegrationsLangcliOn this pageIntegrate with Langcli
+Langcli is an AI coding assistant that supports CLI and Zed ACP Agent.
+1. Installation​
+Quick Install (Recommended)​
+For macOS, Linux and WSL users, run the following command to install Langcli:
+bash -c "$(curl -fsSL https://assets.langcli.com/installation/install-langcli.sh)"
+For Windows users, run the following command instead (Run as Administrator CMD):
+cmd /c "curl -fsSL -o %TEMP%\install-langcli.bat https://assets.langcli.com/installation/install-langcli.bat && %TEMP%\install-langcli.bat"
+
+Note: It's recommended to restart your terminal after installation to ensure environment variables take effect.
+
+Manual Installation​
+Make sure you have Node.js 20 or later installed. Otherwise download it from nodejs.org and install first.
+npm i -g langcli-com
+2. Quick Start​
+API Key Preparation​
+Go to LangRouter, register an account, save your API key. Note: Free trial available.
+Running​
+# Start Langcli (interactive)langcli# Then, in the session:hi
+
+================================================================================
+URL: https://api-docs.deepseek.com/faq
+LEN: 4141
+FAQOn this pageFAQ
+Account​
+Cannot sign in to my account​
+If you see the message 「your account has been temporarily suspended」 while logging in，this indicates that your account has triggered suspension protocols due to potential violations of the platform usage guidelines.
+If you believe this is an error,  please contact us by filling out the 「Account Suspension Appeal」 form. We will carefully review your appeal as soon as possible. Most reviews are completed within 3 business days. Once approved, you can log in and use the service immediately. Thank you for your patience and understanding!
+Cannot register with my email​
+If you encounter an error message saying "Login failed. Your email domain is currently not supported for registration." during registration, it is because your email is not supported by DeepSeek. We recommend signing up with a major international email provider such as Gmail, Outlook, Hotmail, or Yahoo.
+If the issue persists, contact service@deepseek.com.
+Deleting Account​
+You can request account deletion via the following path:
+「Profile」 --> 「Delete」.
+Important: This action will also delete your Chat account, and all chat history will be permanently deleted. Any remaining balance in your Open Platform account will be forfeited. Please proceed with caution.
+
+Billing​
+How to Top Up?​
+You can top up online via PayPal, bank card, Alipay, or WeChat Pay on the 「Top Up」 page. You can check the results on the 「Billing」 page.
+Is there any expiration date for my balance?​
+Your topped-up balance will not expire. You can check the expiration date of the granted balance on the 「 Billing 」 page.
+Is a refund possible?​
+Unused balances are refundable.
+Go to the 「 Billing 」 page, and click 「Refunds」 to process the refund yourself.
+How to view usage by API Key​
+Follow these steps to view detailed usage for each API Key:
+
+
+Go to the 「Usage」 page.
+
+
+Select the relevant month and click 「Export」.
+
+
+Download and unzip the usage data package. You will find two CSV files.
+
+
+The file named amount contains usage details broken down by Key.
+
+
+Incorrect Top-up Balance​
+
+
+Verify that the top-up account matches the currently logged-in account.
+
+
+If you have a Google account, try logging into the Platform with Google to check if the historical payments are in that account.
+
+
+If you deleted a phone-registered account and re-registered, the new account is independent of the old one. If the old account had a balance, it couldn't be used. Submit a ticket, select 「Refund Request」, and provide the necessary information.
+
+
+
+API Call​
+Are there any rate limits when calling your API? Can I increase the limits for my account?​
+The rate limit exposed on each account is adjusted dynamically according to our real-time traffic pressure and each account's short-term historical usage.
+We temporarily do not support increasing the dynamic rate limit exposed on any individual account, and there is a unified pricing standard and no tiered plans. Thanks for your understanding.
+Why do I feel that your API's speed is slower than the web service?​
+The web service uses streaming output, i.e., every time the model outputs a token, it will be displayed incrementally on the web page.
+The API uses non-streaming output (stream=false) by default, i.e., the model's output will not be returned to the user until the generation is done completely. You can use streaming output in your API call to optimize interactivity.
+Why are empty lines continuously returned when calling the API?​
+To prevent the TCP connection from being interrupted due to timeout, we continuously return empty lines (for non-streaming requests) or SSE keep-alive comments (: keep-alive，for streaming requests) while waiting for the request to be scheduled. If you are parsing the HTTP response yourself, please make sure to handle these empty lines or comments appropriately.
+Does your API support LangChain?​
+Yes. You can refer to the demo code below, which demonstrates how to use LangChain with DeepSeek API. Replace the API key in the code as necessary.
+deepseek_langchain.py
+How to calculate token usage offline?​
+Please refer to Token & Token Usage
+
+================================================================================
+URL: https://api-docs.deepseek.com/updates
+LEN: 8872
+Change LogOn this pageChange Log
+
+Date: 2026-04-24​
+DeepSeek-V4​
+The DeepSeek API now supports V4-Pro and V4-Flash, available via both the OpenAI ChatCompletions interface and the Anthropic interface. To access the new models, the base_url remains unchanged, and the model parameter should be set to deepseek-v4-pro or deepseek-v4-flash.
+The two legacy API model names, deepseek-chat and deepseek-reasoner, will be discontinued in three months (2026-07-24). During the current period, these two model names point to the non-thinking mode and thinking mode of deepseek-v4-flash, respectively.
+For more details, please refer to this documentation.
+
+Date: 2025-12-01​
+DeepSeek-V3.2​
+Both deepseek-chat and deepseek-reasoner have been upgraded to DeepSeek-V3.2.
+
+deepseek-chat corresponds to DeepSeek-V3.2's non-thinking mode
+deepseek-reasoner corresponds to DeepSeek-V3.2's thinking mode
+
+DeepSeek-V3.2-Speciale​
+DeepSeek-V3.2-Speciale is served via a temporary endpoint: base_url="https://api.deepseek.com/v3.2_speciale_expires_on_20251215". Same pricing as V3.2, no tool calls, available until Dec 15th, 2025, 15:59 (UTC Time).
+For more details, please refer to this documentation.
+
+Date: 2025-09-29​
+DeepSeek-V3.2-Exp​
+Both deepseek-chat and deepseek-reasoner have been upgraded to DeepSeek-V3.2-Exp.
+
+deepseek-chat corresponds to DeepSeek-V3.2-Exp's non-thinking mode
+deepseek-reasoner corresponds to DeepSeek-V3.2-Exp's thinking mode
+
+For more details, please refer to this documentation.
+
+Date: 2025-09-22​
+DeepSeek-V3.1-Terminus​
+Both deepseek-chat and deepseek-reasoner have been upgraded to DeepSeek-V3.1-Terminus. deepseek-chat corresponds to DeepSeek-V3.1-Terminus's non-thinking mode, while deepseek-reasoner corresponds to its thinking mode.
+This update maintains the model's original capabilities while addressing issues reported by users, including:
+
+Language consistency: Reduced occurrences of Chinese-English mixing and occasional abnormal characters;
+Agent capabilities: Further optimized the performance of the Code Agent and Search Agent.
+
+
+Date: 2025-08-21​
+DeepSeek-V3.1​
+Both deepseek-chat and deepseek-reasoner have been upgraded to DeepSeek-V3.1. deepseek-chat corresponds to DeepSeek-V3.1's non-thinking mode, while deepseek-reasoner corresponds to its thinking mode.
+
+Key updates in DeepSeek-V3.1:
+
+Hybrid reasoning architecture: A single model supports both thinking mode and non-thinking mode
+Improved reasoning efficiency: Compared to DeepSeek-R1-0528, DeepSeek-V3.1-Think provides answers in significantly less time
+Enhanced agent capabilities: With post-training optimization, the new model achieves major improvements in tool usage and intelligent agent tasks
+
+SWE-bench Verified: 66.0
+SWE-bench Multilingual: 54.5
+Terminal-bench: 31.3
+
+
+
+
+
+
+Date: 2025-05-28​
+deepseek-reasoner​
+deepseek-reasoner Model Upgraded to DeepSeek-R1-0528:
+
+Enhanced Reasoning Capabilities
+
+Significant benchmark improvements (Pass@1)
+
+AIME 2025: 70.0 → 87.5 (+17.5)
+GPQA: 71.5 → 81.0 (+9.5)
+LCB_v6: 63.5 → 73.3 (+9.8)
+Aider: 57.0 → 71.6 (+14.6)
+
+
+Note: Complex reasoning tasks may consume more tokens compared to legacy R1 version.
+
+
+Optimized Front-end Development
+
+Generated web pages and games now feature improved aesthetics.
+
+
+Reduced Hallucinations
+
+Significantly suppressed hallucination issues present in legacy R1 version.
+
+
+JSON Output & Function Calling Support
+
+Function call performance:
+
+Tau-bench score: 53.5 (Airline) / 63.9 (Retail)
+
+
+
+
+
+
+Date: 2025-03-24​
+deepseek-chat​
+deepseek-chat Model Upgraded to DeepSeek-V3-0324:
+
+
+Enhanced Reasoning Capabilities
+
+Significant improvements in benchmark performance:
+
+MMLU-Pro: 75.9 → 81.2 (+5.3)
+GPQA: 59.1 → 68.4 (+9.3)
+AIME: 39.6 → 59.4 (+19.8)
+LiveCodeBench: 39.2 → 49.2 (+10.0)
+
+
+
+
+
+Optimized Front-End Web Development
+
+Improved accuracy in code generation
+More aesthetically pleasing web pages and game front-ends
+
+
+
+Upgraded Chinese Writing Proficiency
+
+Enhanced style and content quality:
+
+Aligned with the R1 writing style
+Better quality in medium-to-long-form writing
+
+
+
+
+
+Feature Enhancements
+
+Improved multi-turn interactive rewriting
+Optimized translation quality and letter writing
+
+
+
+Improved Chinese Search Capabilities
+
+Enhanced report analysis requests with more detailed outputs
+
+
+
+Function Calling Improvements
+
+Increased accuracy in Function Calling, fixing issues from previous V3 versions
+
+
+
+
+Date: 2025-01-20​
+deepseek-reasoner​
+
+deepseek-reasoner is our new model DeepSeek-R1. You can invoke DeepSeek-V3 by specifying model='deepseek-reasoner'.
+For details, please refer to: DeepSeek-R1 Release
+For guides, please refer to: Thinking Mode
+
+
+Date: 2024-12-26​
+deepseek-chat​
+
+The deepseek-chat model has been upgraded to DeepSeek-V3. The API remains unchanged. You can invoke DeepSeek-V3 by specifying model='deepseek-chat'.
+For details, please refer to: introducing DeepSeek-V3
+
+
+Date: 2024-12-10​
+deepseek-chat​
+The deepseek-chat model has been upgraded to DeepSeek-V2.5-1210, with improvements across various
+
