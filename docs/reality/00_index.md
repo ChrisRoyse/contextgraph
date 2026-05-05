@@ -40,6 +40,7 @@ The loop does not advance because an agent says it is done. It advances only whe
 | `18_gemma_coding_agent_harness.md` | Current Gemma coding-agent harness, optimized Ollama settings, governed tool surface, line-window edit interface, tool-use reward signals, and FSV evidence. |
 | `19_harness_transition_reality.md` | Current implementation of the harness-as-reality-loop transition contract: every governed tool call becomes a verified state/action/observation/outcome row. |
 | `20_openai_outer_optimizer.md` | Current implementation of the OpenAI/Codex-grade outer optimizer and one-attempt smoke contract before long continuous loops. |
+| `21_grand_scale_reality_autoresearch.md` | How Karpathy-style AutoResearch ideas are generalized into ContextGraph's two-level reality-loop system. |
 
 ## Current Project Mapping
 

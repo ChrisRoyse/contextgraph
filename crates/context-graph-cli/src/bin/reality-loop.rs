@@ -23,6 +23,7 @@ const DEFAULT_OPENAI_OPTIMIZER_MODEL: &str = "gpt-5.5-pro";
 const DEFAULT_OPENAI_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 const DEFAULT_OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
 const DEFAULT_OPENAI_OPTIMIZER_MAX_OUTPUT_TOKENS: u64 = 32768;
+const DEFAULT_OPENAI_OPTIMIZER_TOOL_ROUNDS: u64 = 8;
 const DEFAULT_OFFICIAL_DOCKER_HOST: &str = "unix:///var/run/docker.sock";
 const DEFAULT_OFFICIAL_DOCKER_CONFIG: &str = "/home/cabdru/.cache/contextgraph-docker-config";
 const DATASET_NAME: &str = "princeton-nlp/SWE-bench_Lite";
@@ -96,7 +97,7 @@ struct Args {
     openai_responses_url: String,
     #[arg(long, default_value = DEFAULT_OPENAI_API_KEY_ENV)]
     openai_api_key_env: String,
-    #[arg(long, default_value_t = 3)]
+    #[arg(long, default_value_t = DEFAULT_OPENAI_OPTIMIZER_TOOL_ROUNDS)]
     openai_optimizer_tool_rounds: u64,
     #[arg(long, default_value_t = DEFAULT_OPENAI_OPTIMIZER_MAX_OUTPUT_TOKENS)]
     openai_optimizer_max_output_tokens: u64,
@@ -2023,8 +2024,9 @@ async fn run_openai_loop_optimizer(
     let mut input_items = vec![json!({
         "role": "user",
         "content": format!(
-            "You are the outer ContextGraph loop optimizer. Gemma is the inner SWE-bench actor. \
-    You must inspect verified reality and propose how to improve the loop, prompts, tools, reward signals, and measurement coverage. \
+            "You are the outer ContextGraph loop coding agent. Gemma is the inner SWE-bench actor. \
+    You must inspect verified reality and directly optimize the ContextGraph reality-loop code when source changes are needed. \
+    You may edit the governed project files through project edit tools, then run real Rust verification. \
     Do not claim SWE success. Do not propose changing tests, the official evaluator, reward spec trust boundary, or BlackBoxFix ledger integrity. \
     Use the provided function tools if you need full artifacts or source context. \
     Optimizer input JSON:\n{}",
@@ -2071,8 +2073,10 @@ async fn run_openai_loop_optimizer(
             let call_path = tool_dir.join("requested-openai-optimizer-tool.json");
             write_json_checked(&call_path, call)?;
             let result = execute_openai_optimizer_tool(
+                args,
                 &call.name,
                 &call.arguments,
+                &tool_dir,
                 task_root,
                 attempt_dir,
                 problem_reality_path,
@@ -2107,9 +2111,26 @@ async fn run_openai_loop_optimizer(
         }));
     }
 
+    let project_verification =
+        verify_openai_project_state(args, &optimizer_dir, "post_tool_rounds")?;
+    let self_reality = build_openai_self_reality_packet(
+        args,
+        attempt,
+        &optimizer_dir,
+        &tool_events,
+        &project_verification,
+    )?;
     input_items.push(json!({
         "role": "user",
-        "content": "Now produce the final optimizer recommendation as JSON matching the schema. The recommendation must be actionable for the next Gemma attempt and for improving the ContextGraph reality-loop harness. Keep it compact: at most 3 items per array, short strings, no repeated evidence prose."
+        "content": format!(
+            "Your own verified self-reality after optimizer tool rounds:\n{}",
+            serde_json::to_string_pretty(&self_reality).unwrap()
+        )
+    }));
+
+    input_items.push(json!({
+        "role": "user",
+        "content": "Now produce the final optimizer recommendation as JSON matching the schema. The recommendation must be actionable for the next Gemma attempt and for improving the ContextGraph reality-loop harness. If you edited project source, summarize the exact changed files and verification source of truth."
     }));
     let final_request_path = optimizer_dir.join("openai-final-request.json");
     let final_response_path = optimizer_dir.join("openai-final-response.json");
@@ -2170,9 +2191,12 @@ async fn run_openai_loop_optimizer(
             "api_key": api_key_metadata
         },
         "tool_events": tool_events,
+        "project_verification": project_verification,
+        "self_reality": self_reality,
         "recommendation": recommendation_payload,
         "source_of_truth": {
             "optimizer_input": file_sot(&optimizer_input_path),
+            "self_reality": self_reality.pointer("/source_of_truth/self_reality"),
             "final_request": file_sot(&final_request_path),
             "final_response": file_sot(&final_response_path),
             "final_recommendation": file_sot(&recommendation_path),
@@ -2203,7 +2227,7 @@ fn openai_response_request_body(
 ) -> Value {
     let mut body = json!({
         "model": args.openai_optimizer_model,
-        "instructions": "You optimize ContextGraph's outer reality loop. You are not the SWE actor; Gemma is. You may propose changes, prompt directives, reward-signal additions, and measurement checks only from verified source-of-truth evidence. Never suggest editing benchmark tests, hiding failures, weakening verifiers, changing the official oracle, or treating local validation as SWE success.",
+        "instructions": "You are the OpenAI 5.5 outer coding agent for ContextGraph's reality loop. You are not the SWE repair actor; Gemma is. Your job is to inspect verified source-of-truth reality, edit the ContextGraph project source when needed, run real verification, and improve the loop so Gemma gets better reality feedback. Use project edit tools for code changes. Never edit benchmark tests, hide failures, weaken verifiers, change the official oracle, expose secrets, or treat local validation as SWE success.",
         "input": input_items,
         "reasoning": {"effort": args.openai_optimizer_reasoning_effort},
         "max_output_tokens": args.openai_optimizer_max_output_tokens,
@@ -2509,13 +2533,91 @@ fn openai_optimizer_tool_specs() -> Value {
                 "additionalProperties": false
             },
             "strict": true
+        },
+        {
+            "type": "function",
+            "name": "project_search",
+            "description": "Search real ContextGraph project source/docs with ripgrep. Use before editing.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "max_results": {"type": "integer"}
+                },
+                "required": ["query", "max_results"],
+                "additionalProperties": false
+            },
+            "strict": true
+        },
+        {
+            "type": "function",
+            "name": "project_open_file_window",
+            "description": "Read a real project source/doc file window with line numbers and full-file sha256. Required before editing that file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "start_line": {"type": "integer"},
+                    "end_line": {"type": "integer"}
+                },
+                "required": ["path", "start_line", "end_line"],
+                "additionalProperties": false
+            },
+            "strict": true
+        },
+        {
+            "type": "function",
+            "name": "project_apply_line_window_edit",
+            "description": "Edit real ContextGraph project source/docs using line ranges and observed_sha256 from project_open_file_window, then read the file and git diff back.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "edits": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string"},
+                                "start_line": {"type": "integer"},
+                                "end_line": {"type": "integer"},
+                                "replace": {"type": "string"},
+                                "observed_sha256": {"type": "string"}
+                            },
+                            "required": ["path", "start_line", "end_line", "replace", "observed_sha256"],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": ["edits"],
+                "additionalProperties": false
+            },
+            "strict": true
+        },
+        {
+            "type": "function",
+            "name": "project_run_command",
+            "description": "Run one governed project command and return stdout/stderr plus source-of-truth artifacts. Use after edits.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "enum": ["rustfmt_reality_loop", "cargo_check_reality_loop", "cargo_test_reality_loop", "cargo_build_reality_loop", "git_status", "git_diff_stat", "git_diff_reality_loop", "ollama_ps", "nvidia_smi"]
+                    }
+                },
+                "required": ["command"],
+                "additionalProperties": false
+            },
+            "strict": true
         }
     ])
 }
 
 fn execute_openai_optimizer_tool(
+    args: &Args,
     name: &str,
     arguments: &Value,
+    tool_dir: &Path,
     _task_root: &Path,
     attempt_dir: &Path,
     problem_reality_path: &Path,
@@ -2746,6 +2848,84 @@ fn execute_openai_optimizer_tool(
                 }),
             ))
         }
+        "project_search" => {
+            let query = required_openai_tool_str(arguments, "query")?;
+            if query.trim().is_empty() {
+                return Ok(openai_optimizer_tool_blocked(
+                    name,
+                    "RUST_REALITY_OPENAI_PROJECT_QUERY_EMPTY",
+                    "arguments.query",
+                    "query must be non-empty",
+                    json!({}),
+                ));
+            }
+            let max_results =
+                bounded_tool_u64(arguments, "max_results", 80, 1, 200) as usize;
+            let project_root = optimizer_project_root()?;
+            let result = run_cmd(
+                &vec![
+                    "rg".to_string(),
+                    "-n".to_string(),
+                    "--fixed-strings".to_string(),
+                    "--".to_string(),
+                    query.clone(),
+                    "crates".to_string(),
+                    "docs".to_string(),
+                    "docs2".to_string(),
+                    "gemmafrontend".to_string(),
+                ],
+                &project_root,
+                120,
+            )?;
+            let matches = result
+                .stdout
+                .lines()
+                .take(max_results)
+                .filter_map(parse_grep_line)
+                .map(|(path, line, text)| json!({"path": path, "line": line, "text": text}))
+                .collect::<Vec<_>>();
+            Ok(openai_optimizer_tool_ok(
+                name,
+                json!({
+                    "query": query,
+                    "matches": matches,
+                    "match_count_returned": matches.len(),
+                    "exit_code": result.exit_code,
+                    "stderr": truncate_chars(&result.stderr, 4000),
+                    "source_of_truth": format!("rg:{}#{}", path_str(&project_root), query)
+                }),
+            ))
+        }
+        "project_open_file_window" => {
+            let path = required_openai_tool_str(arguments, "path")?;
+            let start = bounded_tool_u64(arguments, "start_line", 1, 1, 1_000_000);
+            let end = bounded_tool_u64(arguments, "end_line", start + 200, start, start + 400);
+            let project_root = optimizer_project_root()?;
+            let window = project_file_window(&project_root, &path, start, end)?;
+            if window.get("status").and_then(Value::as_str) == Some("blocked") {
+                return Ok(window);
+            }
+            Ok(openai_optimizer_tool_ok(name, window))
+        }
+        "project_apply_line_window_edit" => {
+            let Some(edits) = arguments.get("edits").and_then(Value::as_array) else {
+                return Ok(openai_optimizer_tool_blocked(
+                    name,
+                    "RUST_REALITY_OPENAI_PROJECT_EDITS_MISSING",
+                    "arguments.edits",
+                    "project edit tool requires an edits array",
+                    json!({"arguments": arguments}),
+                ));
+            };
+            let project_root = optimizer_project_root()?;
+            project_apply_line_window_edits(&project_root, tool_dir, edits, args.git_timeout)
+                .map(|payload| openai_optimizer_tool_ok(name, payload))
+        }
+        "project_run_command" => {
+            let command = required_openai_tool_str(arguments, "command")?;
+            run_openai_project_command(args, tool_dir, &command)
+                .map(|payload| openai_optimizer_tool_ok(name, payload))
+        }
         _ => Ok(openai_optimizer_tool_blocked(
             name,
             "RUST_REALITY_OPENAI_TOOL_UNKNOWN",
@@ -2781,6 +2961,610 @@ fn openai_optimizer_tool_blocked(
         "message": message,
         "details": details
     })
+}
+
+fn optimizer_project_root() -> Result<PathBuf> {
+    let root = std::env::current_dir().map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_OPENAI_PROJECT_CWD_FAILED",
+            "failed to read project current directory",
+            "process.cwd",
+            "run reality-loop from the ContextGraph repository root",
+            json!({"error": err.to_string()}),
+            None,
+        )
+    })?;
+    let cargo = root.join("Cargo.toml");
+    require_file(
+        &cargo,
+        "project_root.Cargo.toml",
+        "RUST_REALITY_OPENAI_PROJECT_ROOT_INVALID",
+    )?;
+    Ok(root)
+}
+
+fn project_file_window(
+    project_root: &Path,
+    relative_path: &str,
+    start_line: u64,
+    end_line: u64,
+) -> Result<Value> {
+    let path = match validate_optimizer_project_path(relative_path) {
+        Ok(value) => value,
+        Err(err) => {
+            return Ok(openai_optimizer_tool_blocked(
+                "project_open_file_window",
+                &err.error_code,
+                &err.field_path,
+                &err.message,
+                err.details,
+            ));
+        }
+    };
+    let full_path = project_root.join(&path);
+    if !full_path.exists() || !full_path.is_file() {
+        return Ok(openai_optimizer_tool_blocked(
+            "project_open_file_window",
+            "RUST_REALITY_OPENAI_PROJECT_FILE_MISSING",
+            "arguments.path",
+            "requested project file does not exist",
+            json!({"path": path, "source_of_truth": file_sot(&full_path)}),
+        ));
+    }
+    let text = fs::read_to_string(&full_path).map_err(|err| {
+        fs_error(
+            "RUST_REALITY_OPENAI_PROJECT_FILE_READ_FAILED",
+            &full_path,
+            err,
+        )
+    })?;
+    let lines: Vec<&str> = text.lines().collect();
+    let total_lines = lines.len() as u64;
+    let start = start_line.max(1).min(total_lines.max(1));
+    let end = end_line
+        .max(start)
+        .min((start + 400).min(total_lines.max(start)));
+    let slice = if total_lines == 0 {
+        String::new()
+    } else {
+        lines[(start - 1) as usize..end as usize].join("\n")
+    };
+    Ok(json!({
+        "status": "ok",
+        "path": path,
+        "start_line": start,
+        "end_line": end,
+        "total_lines": total_lines,
+        "text": slice,
+        "sha256": sha256_file(&full_path)?,
+        "source_of_truth": file_sot(&full_path)
+    }))
+}
+
+fn project_apply_line_window_edits(
+    project_root: &Path,
+    tool_dir: &Path,
+    edits: &[Value],
+    timeout: u64,
+) -> Result<Value> {
+    let edits_path = tool_dir.join("project-line-window-edits.json");
+    write_json_checked(&edits_path, &edits)?;
+    let before_status = run_required(
+        &["git", "status", "--porcelain"],
+        project_root,
+        timeout,
+        "RUST_REALITY_OPENAI_PROJECT_STATUS_FAILED",
+        "project.git_status.before_edit",
+    )?;
+    let mut applied = Vec::new();
+    for (index, edit) in edits.iter().enumerate() {
+        let field_prefix = format!("openai_optimizer.project_edits[{index}]");
+        let path = edit.get("path").and_then(Value::as_str).ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_OPENAI_PROJECT_EDIT_PATH_MISSING",
+                "project edit path is missing",
+                format!("{field_prefix}.path"),
+                "open the project file window and edit a governed project source path",
+                json!({"edit": edit}),
+                Some(file_sot(&edits_path)),
+            )
+        })?;
+        let path = validate_optimizer_project_path(path)?;
+        let start_line = edit
+            .get("start_line")
+            .and_then(Value::as_u64)
+            .filter(|value| *value >= 1)
+            .ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_OPENAI_PROJECT_EDIT_START_INVALID",
+                    "project edit start_line is missing or invalid",
+                    format!("{field_prefix}.start_line"),
+                    "use line numbers returned by project_open_file_window",
+                    json!({"edit": edit}),
+                    Some(file_sot(&edits_path)),
+                )
+            })?;
+        let end_line = edit
+            .get("end_line")
+            .and_then(Value::as_u64)
+            .filter(|value| *value >= start_line)
+            .ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_OPENAI_PROJECT_EDIT_END_INVALID",
+                    "project edit end_line is missing or before start_line",
+                    format!("{field_prefix}.end_line"),
+                    "use line numbers returned by project_open_file_window",
+                    json!({"edit": edit}),
+                    Some(file_sot(&edits_path)),
+                )
+            })?;
+        if end_line - start_line > 500 {
+            return Err(RealityError::new(
+                "RUST_REALITY_OPENAI_PROJECT_EDIT_RANGE_TOO_LARGE",
+                "project edit range is too large",
+                format!("{field_prefix}.end_line"),
+                "split large project edits into smaller line-window edits",
+                json!({"path": path, "start_line": start_line, "end_line": end_line}),
+                Some(file_sot(&edits_path)),
+            ));
+        }
+        let observed_sha256 = edit
+            .get("observed_sha256")
+            .and_then(Value::as_str)
+            .filter(|value| value.starts_with("sha256:"))
+            .ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_OPENAI_PROJECT_EDIT_SHA_MISSING",
+                    "project edit must include observed_sha256 from project_open_file_window",
+                    format!("{field_prefix}.observed_sha256"),
+                    "read the file first, then edit against that exact source reality",
+                    json!({"path": path}),
+                    Some(file_sot(&edits_path)),
+                )
+            })?;
+        let replace = edit.get("replace").and_then(Value::as_str).ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_OPENAI_PROJECT_EDIT_REPLACE_MISSING",
+                "project edit replacement text is missing",
+                format!("{field_prefix}.replace"),
+                "provide the exact replacement text for the requested line range",
+                json!({"path": path}),
+                Some(file_sot(&edits_path)),
+            )
+        })?;
+        let full_path = project_root.join(&path);
+        let before = fs::read_to_string(&full_path).map_err(|err| {
+            fs_error(
+                "RUST_REALITY_OPENAI_PROJECT_EDIT_FILE_READ_FAILED",
+                &full_path,
+                err,
+            )
+        })?;
+        let actual_sha256 = sha256_file(&full_path)?;
+        if actual_sha256 != observed_sha256 {
+            return Err(RealityError::new(
+                "RUST_REALITY_OPENAI_PROJECT_EDIT_SHA_MISMATCH",
+                "project edit observed_sha256 does not match file readback",
+                format!("{field_prefix}.observed_sha256"),
+                "reopen the project file window before editing",
+                json!({
+                    "path": path,
+                    "expected": observed_sha256,
+                    "actual": actual_sha256,
+                    "source_of_truth": file_sot(&full_path)
+                }),
+                Some(file_sot(&full_path)),
+            ));
+        }
+        let spans = line_spans(&before);
+        if spans.is_empty() || end_line as usize > spans.len() {
+            return Err(RealityError::new(
+                "RUST_REALITY_OPENAI_PROJECT_EDIT_RANGE_OUT_OF_BOUNDS",
+                "project edit range is outside current file bounds",
+                format!("{field_prefix}.end_line"),
+                "reopen the project file window and use current line numbers",
+                json!({
+                    "path": path,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "total_lines": spans.len()
+                }),
+                Some(file_sot(&full_path)),
+            ));
+        }
+        let byte_start = spans[(start_line - 1) as usize].0;
+        let byte_end = spans[(end_line - 1) as usize].1;
+        let old_span = &before[byte_start..byte_end];
+        let mut after = String::with_capacity(before.len() + replace.len());
+        after.push_str(&before[..byte_start]);
+        after.push_str(replace);
+        after.push_str(&before[byte_end..]);
+        write_text_checked(&full_path, &after)?;
+        applied.push(json!({
+            "index": index,
+            "path": path,
+            "start_line": start_line,
+            "end_line": end_line,
+            "before_sha256": sha256_text(&before),
+            "after_sha256": sha256_text(&after),
+            "old_span_sha256": sha256_text(old_span),
+            "replace_sha256": sha256_text(replace),
+            "source_of_truth": file_sot(&full_path)
+        }));
+    }
+    let diff = run_required(
+        &["git", "diff", "--no-ext-diff", "--binary"],
+        project_root,
+        timeout,
+        "RUST_REALITY_OPENAI_PROJECT_DIFF_FAILED",
+        "project.git_diff",
+    )?;
+    let diff_path = tool_dir.join("project-diff-after-edit.patch");
+    write_text_checked(&diff_path, &diff.stdout)?;
+    let changed_files = applied
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .get("path")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        })
+        .collect::<Vec<_>>();
+    let file_readbacks = changed_files
+        .iter()
+        .map(|path| {
+            let full_path = project_root.join(path);
+            Ok(json!({
+                "path": path,
+                "sha256": sha256_file(&full_path)?,
+                "size_bytes": fs::metadata(&full_path)
+                    .map_err(|err| fs_error("RUST_REALITY_OPENAI_PROJECT_METADATA_FAILED", &full_path, err))?
+                    .len(),
+                "source_of_truth": file_sot(&full_path)
+            }))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let readbacks_path = tool_dir.join("project-file-readbacks-after-edit.json");
+    write_json_checked(&readbacks_path, &file_readbacks)?;
+    let after_status = run_required(
+        &["git", "status", "--porcelain"],
+        project_root,
+        timeout,
+        "RUST_REALITY_OPENAI_PROJECT_STATUS_FAILED",
+        "project.git_status.after_edit",
+    )?;
+    let status_path = tool_dir.join("project-status-after-edit.txt");
+    write_text_checked(&status_path, &after_status.stdout)?;
+    Ok(json!({
+        "record_kind": "contextgraph_openai_project_edit_result",
+        "status": "ok",
+        "action": "edited real ContextGraph project files through governed line-window edits",
+        "applied_edits": applied,
+        "changed_files": changed_files,
+        "file_readbacks": file_readbacks,
+        "before_git_status": before_status.stdout,
+        "after_git_status": after_status.stdout,
+        "diff_sha256": sha256_file(&diff_path)?,
+        "source_of_truth": {
+            "edits": file_sot(&edits_path),
+            "diff": file_sot(&diff_path),
+            "file_readbacks": file_sot(&readbacks_path),
+            "git_status": file_sot(&status_path),
+            "project_root": file_sot(project_root)
+        }
+    }))
+}
+
+fn run_openai_project_command(args: &Args, tool_dir: &Path, command: &str) -> Result<Value> {
+    let project_root = optimizer_project_root()?;
+    let (argv, timeout) = match command {
+        "rustfmt_reality_loop" => (
+            vec![
+                "rustfmt".to_string(),
+                "--edition".to_string(),
+                "2021".to_string(),
+                "crates/context-graph-cli/src/bin/reality-loop.rs".to_string(),
+            ],
+            120,
+        ),
+        "cargo_check_reality_loop" => (
+            vec![
+                "cargo".to_string(),
+                "check".to_string(),
+                "-p".to_string(),
+                "context-graph-cli".to_string(),
+                "--bin".to_string(),
+                "reality-loop".to_string(),
+            ],
+            900,
+        ),
+        "cargo_test_reality_loop" => (
+            vec![
+                "cargo".to_string(),
+                "test".to_string(),
+                "-p".to_string(),
+                "context-graph-cli".to_string(),
+                "--bin".to_string(),
+                "reality-loop".to_string(),
+                "--".to_string(),
+                "--nocapture".to_string(),
+            ],
+            1200,
+        ),
+        "cargo_build_reality_loop" => (
+            vec![
+                "cargo".to_string(),
+                "build".to_string(),
+                "-p".to_string(),
+                "context-graph-cli".to_string(),
+                "--bin".to_string(),
+                "reality-loop".to_string(),
+            ],
+            900,
+        ),
+        "git_status" => (
+            vec![
+                "git".to_string(),
+                "status".to_string(),
+                "--short".to_string(),
+            ],
+            args.git_timeout,
+        ),
+        "git_diff_stat" => (
+            vec!["git".to_string(), "diff".to_string(), "--stat".to_string()],
+            args.git_timeout,
+        ),
+        "git_diff_reality_loop" => (
+            vec![
+                "git".to_string(),
+                "diff".to_string(),
+                "--".to_string(),
+                "crates/context-graph-cli/src/bin/reality-loop.rs".to_string(),
+                "docs/reality".to_string(),
+            ],
+            args.git_timeout,
+        ),
+        "ollama_ps" => (vec!["ollama".to_string(), "ps".to_string()], 60),
+        "nvidia_smi" => (
+            vec![
+                "nvidia-smi".to_string(),
+                "--query-gpu=index,name,memory.total,memory.used,memory.free".to_string(),
+                "--format=csv,noheader,nounits".to_string(),
+            ],
+            60,
+        ),
+        _ => {
+            return Ok(openai_optimizer_tool_blocked(
+                "project_run_command",
+                "RUST_REALITY_OPENAI_PROJECT_COMMAND_UNKNOWN",
+                "arguments.command",
+                "requested command is not in the governed allowlist",
+                json!({"command": command}),
+            ));
+        }
+    };
+    let result = run_cmd(&argv, &project_root, timeout)?;
+    let output_path = tool_dir.join(format!("project-command-{}.json", safe_id(command)));
+    let payload = json!({
+        "record_kind": "contextgraph_openai_project_command_result",
+        "status": if result.exit_code == 0 { "ok" } else { "failed" },
+        "command_name": command,
+        "process": result,
+        "source_of_truth": {
+            "output": file_sot(&output_path),
+            "project_root": file_sot(&project_root)
+        }
+    });
+    write_json_checked(&output_path, &payload)?;
+    let readback: Value = read_json(&output_path)?;
+    if readback != payload {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPENAI_PROJECT_COMMAND_READBACK_MISMATCH",
+            "project command artifact readback did not match written payload",
+            "openai_optimizer.project_command.readback",
+            "inspect filesystem durability before using command result",
+            json!({"expected": payload, "actual": readback}),
+            Some(file_sot(&output_path)),
+        ));
+    }
+    Ok(readback)
+}
+
+fn verify_openai_project_state(args: &Args, optimizer_dir: &Path, label: &str) -> Result<Value> {
+    let verify_dir = optimizer_dir.join(format!("project-verification-{}", safe_id(label)));
+    create_dir_checked(&verify_dir)?;
+    let rustfmt = run_openai_project_command(args, &verify_dir, "rustfmt_reality_loop")?;
+    let check = run_openai_project_command(args, &verify_dir, "cargo_check_reality_loop")?;
+    let status = run_openai_project_command(args, &verify_dir, "git_status")?;
+    let diff = run_openai_project_command(args, &verify_dir, "git_diff_stat")?;
+    let payload = json!({
+        "record_kind": "contextgraph_openai_project_state_verification",
+        "status": if check.pointer("/process/exit_code").and_then(Value::as_i64) == Some(0) { "ok" } else { "failed" },
+        "label": label,
+        "rustfmt": rustfmt,
+        "cargo_check": check,
+        "git_status": status,
+        "git_diff_stat": diff,
+        "source_of_truth": file_sot(&verify_dir)
+    });
+    let path = verify_dir.join("project-state-verification.json");
+    write_json_checked(&path, &payload)?;
+    let readback: Value = read_json(&path)?;
+    if readback != payload {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPENAI_PROJECT_VERIFY_READBACK_MISMATCH",
+            "OpenAI project state verification readback did not match written payload",
+            "openai_optimizer.project_verification.readback",
+            "inspect filesystem durability before continuing",
+            json!({"expected": payload, "actual": readback}),
+            Some(file_sot(&path)),
+        ));
+    }
+    if readback.get("status").and_then(Value::as_str) != Some("ok") {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPENAI_PROJECT_VERIFY_FAILED",
+            "OpenAI optimizer project verification failed",
+            "openai_optimizer.project_verification.cargo_check",
+            "inspect project verification artifacts and fix compile errors before continuing",
+            json!({"verification": file_sot(&path)}),
+            Some(file_sot(&path)),
+        ));
+    }
+    Ok(readback)
+}
+
+fn build_openai_self_reality_packet(
+    args: &Args,
+    attempt: u64,
+    optimizer_dir: &Path,
+    tool_events: &[Value],
+    project_verification: &Value,
+) -> Result<Value> {
+    let mut tools_used = BTreeMap::<String, u64>::new();
+    let mut tool_result_paths = Vec::new();
+    for event in tool_events {
+        if let Some(calls) = event.get("tool_calls").and_then(Value::as_array) {
+            for call in calls {
+                if let Some(name) = call.get("name").and_then(Value::as_str) {
+                    *tools_used.entry(name.to_string()).or_default() += 1;
+                }
+                if let Some(result) = call.get("result").and_then(Value::as_str) {
+                    tool_result_paths.push(result.to_string());
+                }
+            }
+        }
+    }
+    let edited_project = tools_used
+        .get("project_apply_line_window_edit")
+        .copied()
+        .unwrap_or(0)
+        > 0;
+    let ran_project_commands = tools_used.get("project_run_command").copied().unwrap_or(0) > 0;
+    let project_verification_status = project_verification
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let path = optimizer_dir.join("openai-self-reality-packet.json");
+    let payload = json!({
+        "record_kind": "contextgraph_openai_self_reality_packet",
+        "schema_version": 1,
+        "attempt": attempt,
+        "model": args.openai_optimizer_model,
+        "role": "outer_reality_loop_coding_agent",
+        "methodology": {
+            "inspiration": "autoresearch-style loop generalized from single-file ML experiments to project-level reality-loop engineering",
+            "cycle": [
+                "read verified reality",
+                "form an implementation hypothesis",
+                "make governed project edits if needed",
+                "run bounded real verification",
+                "feed self-reality and Gemma reality into the next decision",
+                "accept only changes that preserve source-of-truth checks"
+            ],
+            "difference_from_autoresearch": "ContextGraph optimizes a two-level reality system, not a single train.py metric; success remains official SWE-bench durable readback for Gemma and Rust/project verification for loop changes"
+        },
+        "tool_reality": {
+            "tool_round_budget": args.openai_optimizer_tool_rounds,
+            "tools_used": tools_used,
+            "tool_result_sources": tool_result_paths,
+            "edited_project": edited_project,
+            "ran_project_commands": ran_project_commands
+        },
+        "project_reality": {
+            "verification_status": project_verification_status,
+            "verification": project_verification,
+            "git_status": project_verification.pointer("/git_status/process/stdout"),
+            "git_diff_stat": project_verification.pointer("/git_diff_stat/process/stdout"),
+            "cargo_check_exit_code": project_verification.pointer("/cargo_check/process/exit_code")
+        },
+        "next_optimizer_prompt_must_include": [
+            "tool_reality.tools_used",
+            "project_reality.verification_status",
+            "project_reality.git_status",
+            "project_reality.git_diff_stat",
+            "project_reality.cargo_check_exit_code",
+            "Gemma outcome reality from reality_signal_packet",
+            "hard boundaries: no benchmark-test edits, no verifier weakening, no secret access"
+        ],
+        "source_of_truth": {
+            "self_reality": file_sot(&path),
+            "optimizer_dir": file_sot(optimizer_dir),
+            "project_verification": project_verification.get("source_of_truth")
+        }
+    });
+    write_json_checked(&path, &payload)?;
+    let readback: Value = read_json(&path)?;
+    if readback != payload {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPENAI_SELF_REALITY_READBACK_MISMATCH",
+            "OpenAI self-reality packet readback did not match written payload",
+            "openai_optimizer.self_reality.readback",
+            "inspect filesystem durability before feeding self-reality to the optimizer",
+            json!({"expected": payload, "actual": readback}),
+            Some(file_sot(&path)),
+        ));
+    }
+    Ok(readback)
+}
+
+fn validate_optimizer_project_path(path: &str) -> Result<String> {
+    let path = path.trim();
+    if path.is_empty()
+        || path.starts_with('/')
+        || path.contains('\\')
+        || Path::new(path)
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPENAI_PROJECT_PATH_INVALID",
+            "project path must be repo-relative without parent traversal",
+            "arguments.path",
+            "use a relative ContextGraph project path returned by project_search or project_open_file_window",
+            json!({"path": path}),
+            None,
+        ));
+    }
+    if path == ".env"
+        || path.contains("/.env")
+        || path.contains("target/")
+        || path.contains(".git/")
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPENAI_PROJECT_SECRET_OR_BUILD_PATH_BLOCKED",
+            "project path targets secrets, git internals, or build output",
+            "arguments.path",
+            "do not read or edit secrets, .git, or target outputs",
+            json!({"path": path}),
+            None,
+        ));
+    }
+    let allowed = path == "Cargo.toml"
+        || path.starts_with("crates/")
+        || path.starts_with("docs/reality/")
+        || path.starts_with("docs2/contextgraphspecs/")
+        || path.starts_with("gemmafrontend/");
+    if !allowed {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPENAI_PROJECT_PATH_NOT_GOVERNED",
+            "project path is outside the OpenAI optimizer governed edit surface",
+            "arguments.path",
+            "edit crates/, docs/reality/, docs2/contextgraphspecs/, gemmafrontend/, or Cargo.toml only",
+            json!({"path": path}),
+            None,
+        ));
+    }
+    if path.contains("swebench") && (path.contains("test") || path.contains("harness")) {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPENAI_PROJECT_BENCHMARK_EDIT_BLOCKED",
+            "project path appears to target benchmark tests or harness trust boundaries",
+            "arguments.path",
+            "do not edit benchmark tests or official evaluator trust boundaries",
+            json!({"path": path}),
+            None,
+        ));
+    }
+    Ok(path.to_string())
 }
 
 fn required_openai_tool_str(arguments: &Value, field: &str) -> Result<String> {
@@ -7604,6 +8388,47 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    fn test_args(task_manifest: PathBuf, runtime_root: PathBuf) -> Args {
+        Args {
+            model: DEFAULT_MODEL.to_string(),
+            task_manifest,
+            runtime_root,
+            ollama_url: DEFAULT_OLLAMA_URL.to_string(),
+            context_graph_bin: PathBuf::from(DEFAULT_CONTEXT_GRAPH_BIN),
+            max_attempts: 1,
+            run_until_resolved: false,
+            smoke_test: true,
+            official_eval_each_attempt: true,
+            swebench_python: PathBuf::from("/tmp/contextgraph-test-swebench-python"),
+            official_timeout: 900,
+            official_max_workers: 1,
+            official_cache_level: "env".to_string(),
+            official_docker_host: DEFAULT_OFFICIAL_DOCKER_HOST.to_string(),
+            official_docker_config: PathBuf::from(DEFAULT_OFFICIAL_DOCKER_CONFIG),
+            gpu_index: 0,
+            gpu_min_free_mb: DEFAULT_GPU_MIN_FREE_MB,
+            gpu_max_used_mb: None,
+            ollama_keep_alive: DEFAULT_OLLAMA_KEEP_ALIVE.to_string(),
+            ollama_num_ctx: DEFAULT_OLLAMA_NUM_CTX,
+            ollama_num_predict: DEFAULT_OLLAMA_NUM_PREDICT,
+            ollama_temperature: DEFAULT_OLLAMA_TEMPERATURE,
+            ollama_top_p: DEFAULT_OLLAMA_TOP_P,
+            model_timeout: 300,
+            git_timeout: 30,
+            agent_tool_rounds: 8,
+            targeted_test_timeout: 300,
+            openai_optimizer_each_attempt: true,
+            openai_optimizer_model: DEFAULT_OPENAI_OPTIMIZER_MODEL.to_string(),
+            openai_responses_url: DEFAULT_OPENAI_RESPONSES_URL.to_string(),
+            openai_api_key_env: DEFAULT_OPENAI_API_KEY_ENV.to_string(),
+            openai_optimizer_tool_rounds: DEFAULT_OPENAI_OPTIMIZER_TOOL_ROUNDS,
+            openai_optimizer_max_output_tokens: DEFAULT_OPENAI_OPTIMIZER_MAX_OUTPUT_TOKENS,
+            openai_optimizer_reasoning_effort: "high".to_string(),
+            openai_optimizer_timeout: 300,
+            sleep_between_attempts_ms: 0,
+        }
+    }
+
     fn init_real_git_repo() -> (TempDir, PathBuf) {
         let temp = tempfile::tempdir().expect("tempdir");
         let repo = temp.path().join("repo");
@@ -7967,5 +8792,211 @@ mod tests {
         assert!(replayed_call.get("id").is_none());
         assert_eq!(replayed_message["type"], "message");
         assert_eq!(replayed_call["call_id"], "call_test");
+    }
+
+    #[test]
+    fn openai_project_edit_tool_updates_real_file_and_reads_back_diff() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        run_required(
+            &["git", "init"],
+            root,
+            30,
+            "TEST_GIT_INIT_FAILED",
+            "test.git.init",
+        )
+        .expect("git init");
+        run_required(
+            &[
+                "git",
+                "config",
+                "user.email",
+                "reality-loop@example.invalid",
+            ],
+            root,
+            30,
+            "TEST_GIT_CONFIG_EMAIL_FAILED",
+            "test.git.config.email",
+        )
+        .expect("git config email");
+        run_required(
+            &["git", "config", "user.name", "Reality Loop FSV"],
+            root,
+            30,
+            "TEST_GIT_CONFIG_NAME_FAILED",
+            "test.git.config.name",
+        )
+        .expect("git config name");
+        write_text_checked(&root.join("Cargo.toml"), "[workspace]\n").expect("cargo write");
+        create_dir_checked(&root.join("docs/reality")).expect("docs dir");
+        write_text_checked(&root.join("docs/reality/example.md"), "alpha\nbeta\n")
+            .expect("doc write");
+        run_required(
+            &["git", "add", "Cargo.toml", "docs/reality/example.md"],
+            root,
+            30,
+            "TEST_GIT_ADD_FAILED",
+            "test.git.add",
+        )
+        .expect("git add");
+        run_required(
+            &["git", "commit", "-m", "base"],
+            root,
+            30,
+            "TEST_GIT_COMMIT_FAILED",
+            "test.git.commit",
+        )
+        .expect("git commit");
+        let before_sha = sha256_file(&root.join("docs/reality/example.md")).expect("sha");
+        let tool_dir = root.join("attempt/openai-tool");
+        let edits = vec![json!({
+            "path": "docs/reality/example.md",
+            "start_line": 2,
+            "end_line": 2,
+            "replace": "gamma\n",
+            "observed_sha256": before_sha
+        })];
+        eprintln!(
+            "BEFORE openai_project_edit source_of_truth={} data={:?}",
+            file_sot(&root.join("docs/reality/example.md")),
+            fs::read_to_string(root.join("docs/reality/example.md")).unwrap()
+        );
+        let result =
+            project_apply_line_window_edits(root, &tool_dir, &edits, 30).expect("project edit");
+        let after = fs::read_to_string(root.join("docs/reality/example.md")).expect("after");
+        eprintln!(
+            "AFTER openai_project_edit result={} data={:?}",
+            serde_json::to_string_pretty(&result).unwrap(),
+            after
+        );
+        assert_eq!(after, "alpha\ngamma\n");
+        assert_eq!(result["status"], "ok");
+        assert_ne!(
+            result["diff_sha256"],
+            "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert!(root
+            .join("attempt/openai-tool/project-diff-after-edit.patch")
+            .exists());
+    }
+
+    #[test]
+    fn openai_project_edit_rejects_stale_observed_sha256() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        run_required(
+            &["git", "init"],
+            root,
+            30,
+            "TEST_GIT_INIT_FAILED",
+            "test.git.init",
+        )
+        .expect("git init");
+        write_text_checked(&root.join("Cargo.toml"), "[workspace]\n").expect("cargo write");
+        create_dir_checked(&root.join("docs/reality")).expect("docs dir");
+        write_text_checked(&root.join("docs/reality/example.md"), "alpha\nbeta\n")
+            .expect("doc write");
+        let tool_dir = root.join("attempt/openai-tool");
+        let edits = vec![json!({
+            "path": "docs/reality/example.md",
+            "start_line": 2,
+            "end_line": 2,
+            "replace": "gamma\n",
+            "observed_sha256": "sha256:stale"
+        })];
+        eprintln!(
+            "BEFORE openai_project_stale source_of_truth={} actual_sha={}",
+            file_sot(&root.join("docs/reality/example.md")),
+            sha256_file(&root.join("docs/reality/example.md")).unwrap()
+        );
+        let err = project_apply_line_window_edits(root, &tool_dir, &edits, 30)
+            .expect_err("stale sha must fail");
+        eprintln!(
+            "AFTER openai_project_stale error={}",
+            serde_json::to_string_pretty(&err).unwrap()
+        );
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_OPENAI_PROJECT_EDIT_SHA_MISMATCH"
+        );
+    }
+
+    #[test]
+    fn openai_project_path_policy_blocks_secret_and_traversal() {
+        let secret = validate_optimizer_project_path(".env").expect_err(".env blocked");
+        let traversal =
+            validate_optimizer_project_path("../Cargo.toml").expect_err("traversal blocked");
+        let source =
+            validate_optimizer_project_path("crates/context-graph-cli/src/bin/reality-loop.rs")
+                .expect("source path allowed");
+        eprintln!(
+            "PATH_POLICY secret={} traversal={} allowed={}",
+            serde_json::to_string_pretty(&secret).unwrap(),
+            serde_json::to_string_pretty(&traversal).unwrap(),
+            source
+        );
+        assert_eq!(
+            secret.error_code,
+            "RUST_REALITY_OPENAI_PROJECT_SECRET_OR_BUILD_PATH_BLOCKED"
+        );
+        assert_eq!(
+            traversal.error_code,
+            "RUST_REALITY_OPENAI_PROJECT_PATH_INVALID"
+        );
+    }
+
+    #[test]
+    fn openai_self_reality_packet_records_outer_agent_reality() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let args = test_args(
+            temp.path().join("task-manifest.json"),
+            temp.path().join("runtime"),
+        );
+        let optimizer_dir = temp.path().join("openai-loop-optimizer");
+        create_dir_checked(&optimizer_dir).expect("optimizer dir");
+        let verification = json!({
+            "record_kind": "contextgraph_openai_project_state_verification",
+            "status": "ok",
+            "cargo_check": {"process": {"exit_code": 0}},
+            "git_status": {"process": {"stdout": " M crates/context-graph-cli/src/bin/reality-loop.rs\n"}},
+            "git_diff_stat": {"process": {"stdout": " reality-loop.rs | 10 +++++\n"}},
+            "source_of_truth": file_sot(&optimizer_dir)
+        });
+        let tool_events = vec![json!({
+            "round": 1,
+            "status": "tool_outputs_appended",
+            "tool_calls": [
+                {
+                    "name": "read_reality_signal_packet",
+                    "result": "file:/tmp/read-reality.json"
+                },
+                {
+                    "name": "project_apply_line_window_edit",
+                    "result": "file:/tmp/project-edit.json"
+                },
+                {
+                    "name": "project_run_command",
+                    "result": "file:/tmp/project-command.json"
+                }
+            ]
+        })];
+        let packet =
+            build_openai_self_reality_packet(&args, 1, &optimizer_dir, &tool_events, &verification)
+                .expect("self reality");
+        let packet_path = optimizer_dir.join("openai-self-reality-packet.json");
+        let readback: Value = read_json(&packet_path).expect("readback");
+        eprintln!(
+            "SELF_REALITY source_of_truth={} packet={}",
+            file_sot(&packet_path),
+            serde_json::to_string_pretty(&readback).unwrap()
+        );
+        assert_eq!(packet, readback);
+        assert_eq!(
+            readback["record_kind"],
+            "contextgraph_openai_self_reality_packet"
+        );
+        assert_eq!(readback["tool_reality"]["edited_project"], true);
+        assert_eq!(readback["tool_reality"]["ran_project_commands"], true);
+        assert_eq!(readback["project_reality"]["verification_status"], "ok");
     }
 }
