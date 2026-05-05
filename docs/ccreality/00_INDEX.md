@@ -22,6 +22,7 @@ This is the architecture the user described:
 |---|-----|---------|
 | 00 | this file | navigation |
 | 01 | [ARCHITECTURE](01_ARCHITECTURE.md) | the meta reality loop, top-down |
+| 01b | [REALITY_SHIFT_PRINCIPLE](01b_REALITY_SHIFT_PRINCIPLE.md) | **core invariant** — no alteration without current state, no alteration without a delta back into perception |
 | 02 | [REALITY_DRIP_PROTOCOL](02_REALITY_DRIP_PROTOCOL.md) | every touchpoint where reality is fed into Claude Code |
 | 03 | [MCP_REALITY_TOOLS_SPEC](03_MCP_REALITY_TOOLS_SPEC.md) | the analyze / interact / alter MCP tool surface (the main spec) |
 | 04 | [EXCISION_PLAN](04_EXCISION_PLAN.md) | what we delete from `reality-loop.rs`, with line ranges |
@@ -50,9 +51,10 @@ This is the architecture the user described:
 
 ## Core invariants we preserve
 
+0. **Reality-shift principle (01b).** No alteration without current state. No alteration without a delta back into perception. The agent must always be able to answer "has reality changed under me since I last looked?".
 1. **Durable artifacts are the source of truth.** Model text never decides anything; only readback from disk + git diff + cargo output + official SWE-bench `resolved_ids`.
 2. **No editing benchmarks, evaluators, reward specs, verifiers, or `.env`.** Hooks enforce this deterministically — not "the model remembers."
-3. **Every alter-reality MCP call writes an artifact and reads it back.** The pattern is `mutate → fsync → re-read → diff → return readback`.
+3. **Every alter-reality MCP call writes an artifact and reads it back, AND appends a shift-log entry.** The pattern is `mutate → fsync → re-read → diff → log shift → return readback`.
 4. **Event-triggered, not always-on.** Claude Code wakes up when ContextGraph emits a trigger artifact, does one optimization turn, then yields. No idle thinking.
 5. **One source-editing optimizer.** Optional read-only critics. Never two writers racing on the same file.
 6. **Pre-production: no backwards-compatibility shims.** Per project rule. Wipe DeepSeek/OpenAI cleanly.

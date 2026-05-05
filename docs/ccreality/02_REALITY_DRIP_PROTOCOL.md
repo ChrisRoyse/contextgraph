@@ -5,12 +5,21 @@
 
 This is the design center. Claude Code is **always** receiving fresh reality during a turn, never just at the start. Six injection points, plus the always-available MCP query channel.
 
+## Relationship to the reality-shift principle
+
+The drip protocol is the **mechanism**. The shift principle (see [01b_REALITY_SHIFT_PRINCIPLE](01b_REALITY_SHIFT_PRINCIPLE.md)) is the **goal**. Drip injections deliver three derivatives every turn:
+1. **Current state** — runtime root, latest attempt summary, latest signal compact (SessionStart, UserPromptSubmit).
+2. **Recent shift** — latest 3 shift-log entries from this Claude Code session (UserPromptSubmit, PostToolUse).
+3. **Drift detection** — file SHAs at each PreToolUse Edit; the readback subagent calls `reality_shift_compare_to_my_view` on demand.
+
+If a drip injection ever delivers stale reality (e.g. an old runtime root), the shift principle is violated. The drip path must always return current state.
+
 ## Six injection points
 
 | # | Hook | Trigger | What gets injected | Cap |
 |---|------|---------|---------------------|-----|
 | 1 | `SessionStart` (matcher: `startup\|resume`) | Session begins or resumes | Runtime root, target SWE instance, success predicate, latest run summary path, the explicit reality-boundary rules | 10 KB |
-| 2 | `UserPromptSubmit` | Each user prompt before Claude sees it | Latest trigger decision, reality-signal compact, top-3 unresolved attempts, latest harness-transition outcome | 10 KB |
+| 2 | `UserPromptSubmit` | Each user prompt before Claude sees it | Latest trigger decision, reality-signal compact, top-3 unresolved attempts, latest harness-transition outcome, **last 3 shift-log entries from this session** | 10 KB |
 | 3 | `PreToolUse` (matcher: `Edit\|Write`) | Before Claude edits a file | Current file SHA-256, governed-path policy verdict, recent harness transitions touching this file | 10 KB |
 | 4 | `PostToolUse` (matcher: `Edit\|Write`) | After Claude's edit succeeds | `cargo check` exit + new SHA + `git diff --stat` + writes a `harness-transition` record | 10 KB |
 | 5 | `Stop` | Claude is about to end its turn | Refuses to stop until `optimizer_record_recommendation` MCP tool was called this session; injects the missing-recommendation reason | n/a |
@@ -30,6 +39,8 @@ At any moment in the turn, Claude can call `mcp__cgreality__reality_*` to pull a
 - `reality_harness_transitions {run_id, attempt, round?}` — list or detail
 - `reality_compare_attempts {run_id, a, b}` — diff two attempts
 - `reality_audit_trail {entity_id}` — ContextGraph audit log
+- `reality_shift_log {session_id, limit?, since_shift_id?}` — every alter call this session made, with deltas
+- `reality_shift_compare_to_my_view {session_id, files}` — drift detection (file SHA on disk vs session's last-known SHA)
 
 Memory tools are reused unchanged: `search_graph`, `get_neighbors`, `traverse_graph`, `search_by_embedder`, `get_audit_trail`, `get_provenance_chain`, `get_memory_fingerprint`, `extract_entities`. They are exposed under the `cgreality` MCP server with the same schemas.
 

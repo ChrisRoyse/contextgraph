@@ -163,6 +163,71 @@ This artifact is now written by the **MCP server itself** at the start of each C
 
 ---
 
+### `reality_shift_log`
+
+**Purpose:** Read the per-session shift log. Every successful alter-tool call appends one record here. This is how the agent perceives "how reality is shifting" within its own session. See [01b_REALITY_SHIFT_PRINCIPLE](01b_REALITY_SHIFT_PRINCIPLE.md).
+
+**Input:**
+```json
+{
+  "session_id": "string (Claude Code session_id)",
+  "limit": "integer (default 20)",
+  "since_shift_id": "string or null"
+}
+```
+
+**Output:** array of shift records, each:
+```json
+{
+  "shift_id": "uuid",
+  "timestamp_unix_ns": "integer",
+  "tool_name": "string (the alter tool that produced this shift)",
+  "tool_use_id": "string",
+  "subject": { "type": "file|memory|recommendation|decision|harness_transition", "...": "..." },
+  "before": { "sha256": "string", "size_bytes": "integer", "mtime_unix": "integer" },
+  "after":  { "sha256": "string", "size_bytes": "integer", "mtime_unix": "integer" },
+  "delta_summary": { "lines_added": "integer", "lines_removed": "integer", "diff_stat": "string" },
+  "verification": { "cargo_check": "PASS|FAIL|SKIPPED", "smoke": "PASS|FAIL|SKIPPED" },
+  "harness_transition_path": "file:..."
+}
+```
+
+**Implementation:** Reads `<runtime_root>/cgreality-shift-log/<session_id>.jsonl`. Filters by `since_shift_id` if provided. Always sorted by `timestamp_unix_ns` ascending.
+
+---
+
+### `reality_shift_compare_to_my_view`
+
+**Purpose:** Drift detection. Compare each file's current SHA on disk to the SHA the session last saw (from its own shift log). If they differ AND no shift in this session caused the change, an external writer mutated reality between the agent's actions.
+
+**Input:**
+```json
+{ "session_id": "string", "files": ["string (project-relative path)"] }
+```
+
+**Output:**
+```json
+{
+  "files": [{
+    "path": "string",
+    "current_sha256": "string",
+    "session_last_known_sha256": "string or null",
+    "drift": "no_change | session_caused | external_drift_detected | unseen_file",
+    "external_writer_hint": "string or null"
+  }]
+}
+```
+
+**`drift` values:**
+- `no_change` — current SHA matches session's last-known SHA exactly.
+- `session_caused` — current SHA matches the most recent `after.sha256` in this session's shift log for this file. The change is the agent's own work.
+- `external_drift_detected` — current SHA differs from session's last-known SHA AND does not match any session shift's `after.sha256` for this file. **Strong signal**: the agent must re-perceive before continuing.
+- `unseen_file` — the session has never opened or edited this file; no last-known SHA exists. The agent should call `harness_open_window` first.
+
+**`external_writer_hint`** is filled when the MCP server can identify the cause (e.g. "git checkout was run", "another Claude Code session edited at 12:45:08"). Otherwise null.
+
+---
+
 ### `reality_audit_trail`
 
 **Purpose:** Pull the ContextGraph audit log for an entity.
@@ -307,7 +372,14 @@ Read-only; injects `LIMIT` and rejects non-SELECT statements.
 
 ## Family C — ALTER reality
 
-Every alter tool follows the **mutate → fsync → re-read → diff → return readback** pattern. The MCP tool is the source of write provenance: every alter call records `tool_use_id` (provided by Claude Code in the MCP call envelope) into the artifact's metadata.
+Every alter tool follows the **mutate → fsync → re-read → diff → log shift → return readback** pattern. The MCP tool is the source of write provenance: every alter call records `tool_use_id` (provided by Claude Code in the MCP call envelope) into the artifact's metadata AND appends a shift record to `<runtime_root>/cgreality-shift-log/<session_id>.jsonl` (see [01b_REALITY_SHIFT_PRINCIPLE](01b_REALITY_SHIFT_PRINCIPLE.md)).
+
+**Mandatory shift-log discipline:**
+1. The shift record is appended only AFTER the mutation has been re-read and verified.
+2. The append is fsync'd before the tool returns (so a crash either commits the shift or leaves no trace).
+3. The shift record's `before.sha256` MUST equal the SHA the agent supplied as `observed_sha256` (or, for non-file mutations, the previous artifact's SHA).
+4. The shift record's `after.sha256` is computed by re-reading the freshly-written artifact.
+5. The tool's response includes the new `shift_id` so the agent can fetch it back via `reality_shift_log`.
 
 ### `harness_open_window`
 

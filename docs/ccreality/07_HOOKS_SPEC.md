@@ -169,6 +169,22 @@ fi
 if [ ${#CTX_PARTS[@]} -eq 0 ]; then
   CTX="No active reality-loop attempt to drip. Call mcp__cgreality__reality_run_smoke or mcp__cgreality__reality_run_attempt to produce reality."
 else
+  # Append the last 3 shift-log entries for THIS Claude Code session so the agent
+  # always perceives how reality is shifting under its own actions (reality-shift
+  # principle: docs/ccreality/01b_REALITY_SHIFT_PRINCIPLE.md).
+  SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // ""')"
+  if [ -n "$SESSION_ID" ] && [ -n "$RUNTIME_ROOT" ]; then
+    SHIFT_LOG="$RUNTIME_ROOT/cgreality-shift-log/${SESSION_ID}.jsonl"
+    if [ -f "$SHIFT_LOG" ]; then
+      RECENT_SHIFTS="$(tail -n 3 "$SHIFT_LOG" 2>/dev/null | jq -sc 'map({
+        shift_id, timestamp_unix_ns, tool_name,
+        subject: (.subject // {}),
+        delta: (.delta_summary // {}),
+        verification: (.verification // {})
+      })' 2>/dev/null || echo '[]')"
+      CTX_PARTS+=("Last 3 reality shifts in this session: $RECENT_SHIFTS. Source of truth: file:$SHIFT_LOG")
+    fi
+  fi
   CTX="$(printf '%s\n\n' "${CTX_PARTS[@]}")"
   # Cap at ~9 KB to leave headroom under Claude Code's 10 KB context limit.
   CTX="$(printf '%s' "$CTX" | head -c 9216)"

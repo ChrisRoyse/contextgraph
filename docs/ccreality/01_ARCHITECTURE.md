@@ -97,6 +97,10 @@ By putting Claude Code on the operator side and ContextGraph on the engine side 
 - **Verified mutation**: MCP alter tools close the read-write-readback loop in one place.
 - **Audit-able cognition**: every Claude turn produces a structured recommendation tied to the artifacts it read and the artifacts it wrote — the loop's own provenance chain.
 
+## Reality-shift principle (the core invariant)
+
+See [01b_REALITY_SHIFT_PRINCIPLE](01b_REALITY_SHIFT_PRINCIPLE.md) for the full doc. In one sentence: **no alteration without current state, no alteration without a delta back into perception**. The agent must always be able to answer "what is reality now? what has shifted since I started? did anything drift without me knowing?" — using only its tools and hooks. Every other mechanism in this directory exists to serve that.
+
 ## Reality-drip principle
 
 Claude Code is **always reading reality during an optimization turn**, not just at the start. There are six injection points (detailed in [02_REALITY_DRIP_PROTOCOL](02_REALITY_DRIP_PROTOCOL.md)):
