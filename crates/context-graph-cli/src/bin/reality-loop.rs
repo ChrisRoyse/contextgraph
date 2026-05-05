@@ -66,6 +66,10 @@ struct Args {
     model_timeout: u64,
     #[arg(long, default_value_t = 600)]
     git_timeout: u64,
+    #[arg(long, default_value_t = 4)]
+    agent_tool_rounds: u64,
+    #[arg(long, default_value_t = 300)]
+    targeted_test_timeout: u64,
     #[arg(long, default_value_t = 0)]
     sleep_between_attempts_ms: u64,
 }
@@ -164,6 +168,19 @@ struct AttemptRecord {
     failure_evidence: Value,
     official_reality: Option<Value>,
     patch_preview: Option<String>,
+}
+
+struct AgentToolContext<'a> {
+    args: &'a Args,
+    task: &'a TaskManifest,
+    context_graph_bin: &'a Path,
+    ledger: &'a Path,
+    run_id: &'a str,
+    task_root: &'a Path,
+    repo_dir: &'a Path,
+    attempt_dir: &'a Path,
+    repo_context: &'a Value,
+    attempts: &'a [AttemptRecord],
 }
 
 #[tokio::main]
@@ -388,8 +405,19 @@ async fn run(args: Args) -> Result<Value> {
             &task_root,
         )?;
 
-        let model_response =
-            ollama_chat_json(&client, &args, &prompt, &attempt_dir, attempt).await?;
+        let tool_context = AgentToolContext {
+            args: &args,
+            task: &task,
+            context_graph_bin: &context_graph_bin,
+            ledger: &ledger,
+            run_id: &run_id,
+            task_root: &task_root,
+            repo_dir: &workspace,
+            attempt_dir: &attempt_dir,
+            repo_context: &repo_context,
+            attempts: &attempts,
+        };
+        let model_response = ollama_chat_json(&client, &tool_context, &prompt, attempt).await?;
         let response_text = model_response["message"]["content"]
             .as_str()
             .unwrap_or("")
@@ -867,6 +895,15 @@ fn compact_failure_evidence(validation: &Value) -> Value {
 
 fn compact_official_evidence(evidence: &Value) -> Value {
     let report = evidence.get("official_report").unwrap_or(&Value::Null);
+    let instance_report = evidence
+        .pointer("/instance_report/payload")
+        .unwrap_or(&Value::Null);
+    let fail_to_pass = instance_report
+        .pointer("/tests_status/FAIL_TO_PASS")
+        .unwrap_or(&Value::Null);
+    let pass_to_pass = instance_report
+        .pointer("/tests_status/PASS_TO_PASS")
+        .unwrap_or(&Value::Null);
     json!({
         "claim_scope": evidence.get("claim_scope"),
         "success_predicate": evidence.get("success_predicate"),
@@ -879,6 +916,19 @@ fn compact_official_evidence(evidence: &Value) -> Value {
         "resolved_ids": report.get("resolved_ids"),
         "unresolved_ids": report.get("unresolved_ids"),
         "completed_ids": report.get("completed_ids"),
+        "patch_successfully_applied": instance_report.get("patch_successfully_applied"),
+        "fail_to_pass": {
+            "success_count": fail_to_pass.get("success").and_then(Value::as_array).map(|items| items.len()),
+            "failure_count": fail_to_pass.get("failure").and_then(Value::as_array).map(|items| items.len()),
+            "success": fail_to_pass.get("success"),
+            "failure": fail_to_pass.get("failure")
+        },
+        "pass_to_pass": {
+            "success_count": pass_to_pass.get("success").and_then(Value::as_array).map(|items| items.len()),
+            "failure_count": pass_to_pass.get("failure").and_then(Value::as_array).map(|items| items.len()),
+            "failure": pass_to_pass.get("failure")
+        },
+        "test_output_tail": evidence.pointer("/test_output_tail/tail"),
         "previous_patch_sha256": evidence.get("previous_patch_sha256"),
         "source_of_truth": evidence.get("source_of_truth"),
     })
@@ -1036,11 +1086,12 @@ fn blackbox(bin: &Path, args: &[&str], cwd: &Path) -> Result<Value> {
 
 async fn ollama_chat_json(
     client: &reqwest::Client,
-    args: &Args,
+    ctx: &AgentToolContext<'_>,
     prompt: &str,
-    attempt_dir: &Path,
     attempt: u64,
 ) -> Result<Value> {
+    let args = ctx.args;
+    let attempt_dir = ctx.attempt_dir;
     let gpu_before = read_gpu_vram_state(args.gpu_index)?;
     assert_gpu_budget(
         &gpu_before,
@@ -1049,45 +1100,228 @@ async fn ollama_chat_json(
         "before_ollama_chat",
         &args.model,
     )?;
-    let body = json!({
+    let system_prompt = "You are a software repair model inside ContextGraph's Rust reality loop. \
+You must call at least one governed tool before proposing a patch. \
+On attempt 1, start by calling search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool so your edit is grounded in real repository state. \
+On later attempts, call read_official_failure_reality or compare_attempts before revising a failed patch. \
+The application executes tools; you do not execute code yourself. \
+After tool use, you must return one raw JSON object only, with no markdown fences and no prose. \
+Prefer structured edits over raw diffs: {\"edits\":[{\"path\":\"relative/source/file.py\",\"find\":\"exact old text\",\"replace\":\"exact new text\"}],\"notes\":\"brief\"}. \
+ContextGraph compiles structured edits into a git diff and verifies them against the real repository. \
+You may return {\"patch\":\"<complete unified git diff>\",\"notes\":\"brief\"} only if you can produce a syntactically valid diff. \
+Do not modify tests, fixtures, or benchmark harness files.";
+    let mut messages = vec![
+        json!({"role": "system", "content": system_prompt}),
+        json!({"role": "user", "content": prompt}),
+    ];
+    let tools = agent_tool_specs();
+    let tools_root = attempt_dir.join("agent-tools");
+    create_dir_checked(&tools_root)?;
+    let mut transcript_entries = Vec::new();
+    let mut executed_tool_calls = 0_u64;
+
+    for round in 1..=args.agent_tool_rounds {
+        let request_path = tools_root.join(format!("tool-round-{round:02}-request.json"));
+        let body = json!({
+            "model": args.model,
+            "messages": messages,
+            "stream": false,
+            "think": false,
+            "tools": tools,
+            "keep_alive": args.ollama_keep_alive,
+            "options": {"temperature": 0, "num_predict": 2048}
+        });
+        write_json_checked(&request_path, &body)?;
+        let response = post_ollama_chat(client, args, &body, &request_path).await?;
+        let response_path = tools_root.join(format!("tool-round-{round:02}-response.json"));
+        write_json_checked(&response_path, &response)?;
+        let mut tool_request_protocol = "ollama_native_tool_calls";
+        let mut tool_calls = response
+            .pointer("/message/tool_calls")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if tool_calls.is_empty() {
+            let content_requests = content_json_tool_calls(&response, round)?;
+            if !content_requests.is_empty() {
+                tool_request_protocol = "contextgraph_content_json_tool_request";
+                tool_calls = content_requests;
+            }
+        }
+        if tool_calls.is_empty() {
+            transcript_entries.push(json!({
+                "round": round,
+                "status": "no_tool_call",
+                "accepted_protocols": [
+                    "ollama_native_tool_calls",
+                    "contextgraph_content_json_tool_request"
+                ],
+                "request": file_sot(&request_path),
+                "response": file_sot(&response_path)
+            }));
+            messages.push(response["message"].clone());
+            messages.push(json!({
+                "role": "user",
+                "content": "ContextGraph did not receive a native tool call. You must call exactly one governed tool now. For attempt 1, use search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool. Do not return final patch JSON in this tool phase."
+            }));
+            continue;
+        }
+        messages.push(response["message"].clone());
+        let mut tool_results = Vec::new();
+        for (index, call) in tool_calls.iter().enumerate() {
+            let name = tool_call_name(call)?;
+            let arguments = tool_call_arguments(call)?;
+            let call_id = tool_call_id(call, round, index);
+            let tool_dir =
+                tools_root.join(format!("round-{round:02}-{index:02}-{}", safe_id(&name)));
+            create_dir_checked(&tool_dir)?;
+            let requested_path = tool_dir.join("requested-tool-call.json");
+            write_json_checked(
+                &requested_path,
+                &json!({
+                "round": round,
+                "index": index,
+                "tool_call_id": call_id,
+                "tool_name": name,
+                "tool_request_protocol": tool_request_protocol,
+                "arguments": arguments,
+                "raw_call": call,
+                "source_of_truth": file_sot(&requested_path)
+                }),
+            )?;
+            let result = execute_agent_tool_call(ctx, &name, &arguments, &tool_dir)?;
+            let result_path = tool_dir.join("tool-result.json");
+            write_json_checked(&result_path, &result)?;
+            let result_readback: Value = read_json(&result_path)?;
+            let result_status = result_readback
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("failed");
+            let ledger_evidence = record_agent_tool_boundary(
+                ctx,
+                &name,
+                &requested_path,
+                &result_path,
+                result_status,
+                &tool_dir,
+            )?;
+            let result_text = serde_json::to_string(&result_readback).unwrap();
+            messages.push(json!({
+                "role": "tool",
+                "tool_name": name,
+                "content": result_text
+            }));
+            executed_tool_calls += 1;
+            tool_results.push(json!({
+                "tool_call_id": call_id,
+                "tool_name": name,
+                "tool_request_protocol": tool_request_protocol,
+                "arguments_sha256": sha256_text(&serde_json::to_string(&arguments).unwrap()),
+                "requested": file_sot(&requested_path),
+                "result": file_sot(&result_path),
+                "status": result_readback.get("status"),
+                "error_code": result_readback.get("error_code"),
+                "blackbox_ledger_evidence": ledger_evidence
+            }));
+        }
+        transcript_entries.push(json!({
+            "round": round,
+            "status": "tool_results_appended",
+            "tool_request_protocol": tool_request_protocol,
+            "request": file_sot(&request_path),
+            "response": file_sot(&response_path),
+            "tool_results": tool_results
+        }));
+    }
+
+    let transcript_path = tools_root.join("agent-tool-transcript.json");
+    if args.agent_tool_rounds > 0 && executed_tool_calls == 0 {
+        let transcript = json!({
+            "record_kind": "contextgraph_agent_tool_transcript",
+            "attempt": attempt,
+            "model": args.model,
+            "tool_round_budget": args.agent_tool_rounds,
+            "tools": agent_tool_names(),
+            "entries": transcript_entries,
+            "executed_tool_calls": executed_tool_calls,
+            "status": "blocked",
+            "error_code": "RUST_REALITY_AGENT_TOOL_REQUIRED_BUT_MISSING",
+            "source_of_truth": file_sot(&transcript_path)
+        });
+        write_json_checked(&transcript_path, &transcript)?;
+        return Err(RealityError::new(
+            "RUST_REALITY_AGENT_TOOL_REQUIRED_BUT_MISSING",
+            "model did not call any governed ContextGraph tool before trying to answer",
+            "ollama.message.tool_calls",
+            "use a tool-capable local model and prompt it to call search_repo, inspect_symbol, open_file_window, or read_official_failure_reality before returning edits",
+            json!({
+                "attempt": attempt,
+                "model": args.model,
+                "tool_round_budget": args.agent_tool_rounds,
+                "transcript": file_sot(&transcript_path),
+                "tools": agent_tool_names()
+            }),
+            Some(file_sot(&transcript_path)),
+        ));
+    }
+
+    messages.push(json!({
+        "role": "user",
+        "content": "Using only the verified task, repository context, and tool-result reality above, return exactly one raw JSON object with notes plus either edits or patch. No markdown and no prose."
+    }));
+    let final_body = json!({
         "model": args.model,
-        "messages": [
-            {"role": "system", "content": "You are a software repair model. Return one raw JSON object only, with no markdown fences and no surrounding prose. Prefer structured edits over raw diffs: {\"edits\":[{\"path\":\"relative/source/file.py\",\"find\":\"exact old text\",\"replace\":\"exact new text\"}],\"notes\":\"brief\"}. ContextGraph will compile structured edits into a git diff and verify them against the real repository. You may return {\"patch\":\"<complete unified git diff>\",\"notes\":\"brief\"} only if you can produce a syntactically valid diff. Do not modify tests, fixtures, or benchmark harness files."},
-            {"role": "user", "content": prompt}
-        ],
+        "messages": messages,
         "stream": false,
         "think": false,
-        "format": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["notes"],
-            "properties": {
-                "patch": {"type": "string"},
-                "edits": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": ["path", "find", "replace"],
-                        "properties": {
-                            "path": {"type": "string"},
-                            "find": {"type": "string"},
-                            "replace": {"type": "string"}
-                        }
-                    }
-                },
-                "notes": {"type": "string"}
-            }
-        },
+        "format": final_action_schema(),
         "keep_alive": args.ollama_keep_alive,
         "options": {"temperature": 0, "num_predict": 4096}
     });
-    let request_path = attempt_dir.join("ollama-request.json");
-    write_json_checked(&request_path, &body)?;
+    let final_request_path = attempt_dir.join("ollama-request.json");
+    write_json_checked(&final_request_path, &final_body)?;
+    let mut enriched = post_ollama_chat(client, args, &final_body, &final_request_path).await?;
+    let gpu_after = read_gpu_vram_state(args.gpu_index)?;
+    assert_gpu_budget(
+        &gpu_after,
+        args.gpu_min_free_mb,
+        args.gpu_max_used_mb,
+        "after_ollama_chat",
+        &args.model,
+    )?;
+    let transcript = json!({
+        "record_kind": "contextgraph_agent_tool_transcript",
+        "attempt": attempt,
+        "model": args.model,
+        "tool_round_budget": args.agent_tool_rounds,
+        "tools": agent_tool_names(),
+        "entries": transcript_entries,
+        "executed_tool_calls": executed_tool_calls,
+        "status": "ok",
+        "source_of_truth": file_sot(&tools_root.join("agent-tool-transcript.json"))
+    });
+    write_json_checked(&transcript_path, &transcript)?;
+    enriched["contextgraph_runtime"] = json!({
+        "attempt": attempt,
+        "gpu_before": gpu_before,
+        "gpu_after": gpu_after,
+        "request_source_of_truth": file_sot(&final_request_path),
+        "agent_tool_transcript": file_sot(&transcript_path)
+    });
+    write_json_checked(&attempt_dir.join("ollama-response.json"), &enriched)?;
+    Ok(enriched)
+}
+
+async fn post_ollama_chat(
+    client: &reqwest::Client,
+    args: &Args,
+    body: &Value,
+    request_path: &Path,
+) -> Result<Value> {
     let url = format!("{}/api/chat", args.ollama_url.trim_end_matches('/'));
     let response = client
         .post(&url)
-        .json(&body)
+        .json(body)
         .timeout(Duration::from_secs(args.model_timeout))
         .send()
         .await
@@ -1097,7 +1331,7 @@ async fn ollama_chat_json(
                 "Ollama request failed",
                 "ollama.request",
                 "inspect Ollama server/model state and GPU budget",
-                json!({ "url": url, "error": err.to_string(), "request": file_sot(&request_path) }),
+                json!({ "url": url, "error": err.to_string(), "request": file_sot(request_path) }),
                 Some(url.clone()),
             )
         })?;
@@ -1108,7 +1342,7 @@ async fn ollama_chat_json(
             "Ollama response was not valid JSON",
             "ollama.response",
             "inspect Ollama server output",
-            json!({ "error": err.to_string() }),
+            json!({ "error": err.to_string(), "request": file_sot(request_path) }),
             Some(url.clone()),
         )
     })?;
@@ -1118,27 +1352,1056 @@ async fn ollama_chat_json(
             "Ollama returned an error",
             "ollama.response",
             "inspect the model tag, prompt size, and Ollama server state",
-            json!({ "status": status.as_u16(), "response": value }),
+            json!({ "status": status.as_u16(), "response": value, "request": file_sot(request_path) }),
             Some(url),
         ));
     }
-    let gpu_after = read_gpu_vram_state(args.gpu_index)?;
-    assert_gpu_budget(
-        &gpu_after,
-        args.gpu_min_free_mb,
-        args.gpu_max_used_mb,
-        "after_ollama_chat",
-        &args.model,
+    Ok(value)
+}
+
+fn final_action_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["notes"],
+        "properties": {
+            "patch": {"type": "string"},
+            "edits": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["path", "find", "replace"],
+                    "properties": {
+                        "path": {"type": "string"},
+                        "find": {"type": "string"},
+                        "replace": {"type": "string"}
+                    }
+                }
+            },
+            "notes": {"type": "string"}
+        }
+    })
+}
+
+fn agent_tool_names() -> Vec<&'static str> {
+    vec![
+        "read_official_failure_reality",
+        "inspect_symbol",
+        "search_repo",
+        "open_file_window",
+        "apply_structured_edit",
+        "run_targeted_test",
+        "run_official_swe_eval",
+        "compare_attempts",
+        "retrieve_similar_verified_episodes",
+        "synthesize_helper_tool",
+    ]
+}
+
+fn agent_tool_specs() -> Value {
+    json!([
+        {
+            "type": "function",
+            "function": {
+                "name": "read_official_failure_reality",
+                "description": "Read the latest official SWE-bench failure evidence from durable attempt artifacts. Use this before revising a failed patch.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "attempt": {"type": "integer", "description": "Optional prior attempt number to inspect. Defaults to latest attempt with official evidence."}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "inspect_symbol",
+                "description": "Find real source locations for a symbol and return compact file windows with hashes.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["symbol"],
+                    "properties": {
+                        "symbol": {"type": "string"},
+                        "max_results": {"type": "integer", "minimum": 1, "maximum": 20}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_repo",
+                "description": "Run a bounded literal git grep over the real checked-out repository.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["query"],
+                    "properties": {
+                        "query": {"type": "string"},
+                        "max_results": {"type": "integer", "minimum": 1, "maximum": 80}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "open_file_window",
+                "description": "Read a real repo-relative file slice by line range with SHA-256 readback.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["path"],
+                    "properties": {
+                        "path": {"type": "string"},
+                        "start_line": {"type": "integer", "minimum": 1},
+                        "end_line": {"type": "integer", "minimum": 1}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "apply_structured_edit",
+                "description": "Compile exact find/replace edits against the real checkout, generate a candidate patch preview, then reset the workspace. The final response still must include edits or patch.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["edits"],
+                    "properties": {
+                        "edits": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["path", "find", "replace"],
+                                "properties": {
+                                    "path": {"type": "string"},
+                                    "find": {"type": "string"},
+                                    "replace": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_targeted_test",
+                "description": "Run one bounded targeted pytest command in the real checkout and return stdout/stderr. Official SWE-bench remains the only success oracle.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["test_id"],
+                    "properties": {
+                        "test_id": {"type": "string"}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_official_swe_eval",
+                "description": "Read or explain official SWE-bench evaluation state. It cannot run before a candidate patch exists.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "attempt": {"type": "integer"}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "compare_attempts",
+                "description": "Compare prior attempts, patches, failure evidence, official results, and repeated-patch signals.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 20}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "retrieve_similar_verified_episodes",
+                "description": "Retrieve real prior official evidence artifacts for the same repository or instance from the configured runtime root.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "query": {"type": "string"},
+                        "max_results": {"type": "integer", "minimum": 1, "maximum": 20}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "synthesize_helper_tool",
+                "description": "Run a vetted deterministic analyzer. Arbitrary generated code is not executed.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["analyzer"],
+                    "properties": {
+                        "analyzer": {"type": "string", "enum": ["test_failure_digest", "diff_risk_scan", "repository_file_inventory"]},
+                        "question": {"type": "string"}
+                    }
+                }
+            }
+        }
+    ])
+}
+
+fn tool_call_name(call: &Value) -> Result<String> {
+    call.pointer("/function/name")
+        .or_else(|| call.get("name"))
+        .and_then(Value::as_str)
+        .filter(|name| !name.trim().is_empty())
+        .map(|name| name.trim().to_string())
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_TOOL_CALL_NAME_MISSING",
+                "Ollama tool call did not include a function name",
+                "ollama.message.tool_calls[].function.name",
+                "inspect Ollama tool-call response format",
+                json!({"tool_call": call}),
+                None,
+            )
+        })
+}
+
+fn tool_call_arguments(call: &Value) -> Result<Value> {
+    let raw = call
+        .pointer("/function/arguments")
+        .or_else(|| call.get("arguments"))
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    match raw {
+        Value::Object(_) => Ok(raw),
+        Value::String(text) if text.trim().is_empty() => Ok(json!({})),
+        Value::String(text) => serde_json::from_str::<Value>(&text).map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_TOOL_CALL_ARGUMENTS_JSON_INVALID",
+                "Ollama tool call arguments string was not JSON",
+                "ollama.message.tool_calls[].function.arguments",
+                "inspect model tool-call argument formatting",
+                json!({"arguments": text, "error": err.to_string(), "tool_call": call}),
+                None,
+            )
+        }),
+        other => Err(RealityError::new(
+            "RUST_REALITY_TOOL_CALL_ARGUMENTS_INVALID",
+            "Ollama tool call arguments must be a JSON object or JSON object string",
+            "ollama.message.tool_calls[].function.arguments",
+            "inspect model tool-call argument formatting",
+            json!({"arguments": other, "tool_call": call}),
+            None,
+        )),
+    }
+}
+
+fn content_json_tool_calls(response: &Value, round: u64) -> Result<Vec<Value>> {
+    let Some(content) = response.pointer("/message/content").and_then(Value::as_str) else {
+        return Ok(Vec::new());
+    };
+    let trimmed = content.trim();
+    if !trimmed.starts_with('{') {
+        return Ok(Vec::new());
+    }
+    for candidate in json_candidates(trimmed) {
+        let Ok(value) = serde_json::from_str::<Value>(&candidate) else {
+            continue;
+        };
+        let Some(obj) = value.as_object() else {
+            continue;
+        };
+        let Some(name) = obj
+            .get("tool_name")
+            .or_else(|| obj.get("tool"))
+            .or_else(|| obj.get("name"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        else {
+            return Ok(Vec::new());
+        };
+        let arguments = obj
+            .get("arguments")
+            .or_else(|| obj.get("params"))
+            .or_else(|| obj.get("input"))
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        if !arguments.is_object() {
+            return Err(RealityError::new(
+                "RUST_REALITY_CONTENT_TOOL_ARGUMENTS_INVALID",
+                "content JSON tool request arguments must be a JSON object",
+                "ollama.message.content.arguments",
+                "emit {\"tool_name\":\"search_repo\",\"arguments\":{\"query\":\"...\"}} or use native tool_calls",
+                json!({"content": truncate_chars(trimmed, 2000), "arguments": arguments}),
+                None,
+            ));
+        }
+        return Ok(vec![json!({
+            "id": format!("content_tool_round_{round:02}_00"),
+            "function": {
+                "index": 0,
+                "name": name,
+                "arguments": arguments
+            },
+            "contextgraph_tool_protocol": "content_json_tool_request"
+        })]);
+    }
+    if trimmed.contains("\"tool_name\"") || trimmed.contains("\"tool\"") {
+        return Err(RealityError::new(
+            "RUST_REALITY_CONTENT_TOOL_JSON_INVALID",
+            "assistant content looked like a tool request but was not valid JSON",
+            "ollama.message.content",
+            "emit a valid JSON object tool request or use native tool_calls",
+            json!({"content": truncate_chars(trimmed, 2000)}),
+            None,
+        ));
+    }
+    Ok(Vec::new())
+}
+
+fn tool_call_id(call: &Value, round: u64, index: usize) -> String {
+    call.get("id")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("tool_round_{round:02}_{index:02}"))
+}
+
+fn execute_agent_tool_call(
+    ctx: &AgentToolContext<'_>,
+    name: &str,
+    arguments: &Value,
+    tool_dir: &Path,
+) -> Result<Value> {
+    let started = unix_secs()?;
+    let result = match name {
+        "read_official_failure_reality" => tool_read_official_failure_reality(ctx, arguments),
+        "inspect_symbol" => tool_inspect_symbol(ctx, arguments),
+        "search_repo" => tool_search_repo(ctx, arguments),
+        "open_file_window" => tool_open_file_window(ctx, arguments),
+        "apply_structured_edit" => tool_apply_structured_edit(ctx, arguments, tool_dir),
+        "run_targeted_test" => tool_run_targeted_test(ctx, arguments),
+        "run_official_swe_eval" => tool_run_official_swe_eval(ctx, arguments),
+        "compare_attempts" => tool_compare_attempts(ctx, arguments),
+        "retrieve_similar_verified_episodes" => {
+            tool_retrieve_similar_verified_episodes(ctx, arguments)
+        }
+        "synthesize_helper_tool" => tool_synthesize_helper_tool(ctx, arguments),
+        _ => Ok(tool_blocked(
+            name,
+            "RUST_REALITY_AGENT_TOOL_UNKNOWN",
+            "tool_name",
+            "model requested a tool that is not registered in the ContextGraph Rust gateway",
+            "choose one of the listed ContextGraph tools",
+            json!({"requested_tool": name, "allowed_tools": agent_tool_names()}),
+            None,
+        )),
+    }?;
+    let status = result
+        .get("status")
+        .cloned()
+        .unwrap_or_else(|| json!("failed"));
+    let error_code = result.get("error_code").cloned().unwrap_or(Value::Null);
+    Ok(json!({
+        "record_kind": "contextgraph_agent_tool_result",
+        "tool_name": name,
+        "status": status,
+        "error_code": error_code,
+        "started_at_unix": started,
+        "finished_at_unix": unix_secs()?,
+        "arguments": arguments,
+        "result": result,
+        "source_of_truth": file_sot(&tool_dir.join("tool-result.json"))
+    }))
+}
+
+fn record_agent_tool_boundary(
+    ctx: &AgentToolContext<'_>,
+    tool_name: &str,
+    requested_path: &Path,
+    result_path: &Path,
+    status: &str,
+    tool_dir: &Path,
+) -> Result<Value> {
+    let normalized_status = match status {
+        "ok" => "ok",
+        "blocked" => "blocked",
+        "failed" => "failed",
+        _ => "failed",
+    };
+    let record = blackbox(
+        ctx.context_graph_bin,
+        &[
+            "blackbox",
+            "record",
+            "tool-call",
+            "--ledger",
+            path_str(ctx.ledger),
+            "--run-id",
+            ctx.run_id,
+            "--tool",
+            &format!("contextgraph_agent_tool.{tool_name}"),
+            "--input",
+            path_str(requested_path),
+            "--agent",
+            "contextgraph_rust_reality_loop",
+            "--model",
+            &ctx.args.model,
+            "--capability",
+            &format!(
+                "contextgraph.rust.reality.agent_tool.{}",
+                safe_id(tool_name)
+            ),
+            "--status",
+            normalized_status,
+        ],
+        ctx.task_root,
     )?;
-    let mut enriched = value;
-    enriched["contextgraph_runtime"] = json!({
-        "attempt": attempt,
-        "gpu_before": gpu_before,
-        "gpu_after": gpu_after,
-        "request_source_of_truth": file_sot(&request_path)
+    let tool_call_id = record
+        .get("tool_call_id")
+        .and_then(Value::as_str)
+        .unwrap_or("tool_call_id_missing")
+        .to_string();
+    let rel_requested = requested_path
+        .strip_prefix(ctx.task_root)
+        .unwrap_or(requested_path);
+    let rel_result = result_path
+        .strip_prefix(ctx.task_root)
+        .unwrap_or(result_path);
+    let verifier_spec = json!({
+        "verifier_id": "cmd_exit_zero_v1",
+        "run_id": ctx.run_id,
+        "tool_call_id": tool_call_id,
+        "source": {"cwd": path_str(ctx.task_root)},
+        "expected": {
+            "command": [
+                "bash",
+                "-c",
+                "test -s \"$1\" && test -s \"$2\" && grep -q '\"record_kind\": \"contextgraph_agent_tool_result\"' \"$2\"",
+                "verify-agent-tool-artifacts",
+                path_str(rel_requested),
+                path_str(rel_result)
+            ],
+            "artifacts": [
+                path_str(rel_requested),
+                path_str(rel_result)
+            ]
+        }
     });
-    write_json_checked(&attempt_dir.join("ollama-response.json"), &enriched)?;
-    Ok(enriched)
+    let spec_path = tool_dir.join("blackbox-agent-tool-verify-spec.json");
+    write_json_checked(&spec_path, &verifier_spec)?;
+    let verifier = blackbox(
+        ctx.context_graph_bin,
+        &[
+            "blackbox",
+            "verify",
+            "--ledger",
+            path_str(ctx.ledger),
+            "--input",
+            path_str(&spec_path),
+            "--model",
+            &ctx.args.model,
+        ],
+        ctx.task_root,
+    )?;
+    Ok(json!({
+        "record": record,
+        "verifier": verifier,
+        "verifier_spec": file_sot(&spec_path),
+        "source_of_truth": sqlite_sot(ctx.ledger)
+    }))
+}
+
+fn tool_read_official_failure_reality(
+    ctx: &AgentToolContext<'_>,
+    arguments: &Value,
+) -> Result<Value> {
+    let requested_attempt = arguments.get("attempt").and_then(Value::as_u64);
+    let mut candidates: Vec<&AttemptRecord> = ctx
+        .attempts
+        .iter()
+        .filter(|attempt| {
+            requested_attempt
+                .map(|number| attempt.attempt == number)
+                .unwrap_or(true)
+        })
+        .filter(|attempt| {
+            attempt.official_evidence_path.is_some() || attempt.official_reality.is_some()
+        })
+        .collect();
+    candidates.sort_by_key(|attempt| attempt.attempt);
+    let Some(attempt) = candidates.last() else {
+        return Ok(tool_blocked(
+            "read_official_failure_reality",
+            "RUST_REALITY_TOOL_OFFICIAL_FAILURE_MISSING",
+            "attempts.official_evidence_path",
+            "no prior official SWE-bench evidence exists for the requested attempt",
+            "use repository tools on attempt 1; after an official failure, call this tool before revising",
+            json!({"requested_attempt": requested_attempt, "attempts_total": ctx.attempts.len()}),
+            Some(format!("file:{}#attempts", path_str(ctx.attempt_dir))),
+        ));
+    };
+    let evidence = if let Some(path) = &attempt.official_evidence_path {
+        let path = PathBuf::from(path);
+        let value: Value = read_json(&path)?;
+        json!({
+            "attempt": attempt.attempt,
+            "official_reality": compact_official_evidence(&value),
+            "official_evidence": value,
+            "source_of_truth": file_sot(&path),
+            "sha256": sha256_file(&path)?
+        })
+    } else {
+        json!({
+            "attempt": attempt.attempt,
+            "official_reality": attempt.official_reality,
+            "source_of_truth": attempt.validation_path
+        })
+    };
+    Ok(tool_ok(
+        "read_official_failure_reality",
+        "read durable official SWE-bench failure evidence",
+        evidence,
+    ))
+}
+
+fn tool_inspect_symbol(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<Value> {
+    let symbol = required_tool_str(arguments, "symbol")?;
+    if !symbol
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '.')
+    {
+        return Ok(tool_blocked(
+            "inspect_symbol",
+            "RUST_REALITY_TOOL_SYMBOL_INVALID",
+            "arguments.symbol",
+            "symbol contains unsupported characters",
+            "use a literal identifier or dotted identifier",
+            json!({"symbol": symbol}),
+            None,
+        ));
+    }
+    let max_results = bounded_tool_u64(arguments, "max_results", 8, 1, 20) as usize;
+    let grep = run_cmd(
+        &vec![
+            "git".to_string(),
+            "grep".to_string(),
+            "-n".to_string(),
+            "-I".to_string(),
+            "--".to_string(),
+            symbol.clone(),
+        ],
+        ctx.repo_dir,
+        120,
+    )?;
+    let mut windows = Vec::new();
+    if grep.exit_code == 0 {
+        for line in grep.stdout.lines().take(max_results) {
+            if let Some((path, line_no, text)) = parse_grep_line(line) {
+                if is_forbidden_benchmark_mutation(&path) {
+                    continue;
+                }
+                let start = line_no.saturating_sub(20).max(1);
+                let end = line_no + 40;
+                windows.push(file_window(ctx.repo_dir, &path, start, end, Some(text))?);
+            }
+        }
+    }
+    Ok(tool_ok(
+        "inspect_symbol",
+        "inspected real repository symbol matches",
+        json!({
+            "symbol": symbol,
+            "matches": windows,
+            "grep_exit_code": grep.exit_code,
+            "source_of_truth": format!("git:{}#grep:{}", path_str(ctx.repo_dir), symbol)
+        }),
+    ))
+}
+
+fn tool_search_repo(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<Value> {
+    let query = required_tool_str(arguments, "query")?;
+    if query.trim().is_empty() {
+        return Ok(tool_blocked(
+            "search_repo",
+            "RUST_REALITY_TOOL_QUERY_EMPTY",
+            "arguments.query",
+            "search query is empty",
+            "provide a non-empty literal term from the problem statement or failure output",
+            json!({}),
+            None,
+        ));
+    }
+    let max_results = bounded_tool_u64(arguments, "max_results", 40, 1, 80) as usize;
+    let grep = run_cmd(
+        &vec![
+            "git".to_string(),
+            "grep".to_string(),
+            "-n".to_string(),
+            "-I".to_string(),
+            "--".to_string(),
+            query.clone(),
+        ],
+        ctx.repo_dir,
+        120,
+    )?;
+    let mut matches = Vec::new();
+    if grep.exit_code == 0 {
+        for line in grep.stdout.lines().take(max_results) {
+            if let Some((path, line_no, text)) = parse_grep_line(line) {
+                matches.push(json!({"path": path, "line": line_no, "text": text}));
+            }
+        }
+    }
+    Ok(tool_ok(
+        "search_repo",
+        "searched real repository through git grep",
+        json!({
+            "query": query,
+            "matches": matches,
+            "match_count_returned": matches.len(),
+            "grep_exit_code": grep.exit_code,
+            "source_of_truth": format!("git:{}#grep", path_str(ctx.repo_dir))
+        }),
+    ))
+}
+
+fn tool_open_file_window(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<Value> {
+    let path = required_tool_str(arguments, "path")?;
+    let start = bounded_tool_u64(arguments, "start_line", 1, 1, 1_000_000);
+    let end = bounded_tool_u64(arguments, "end_line", start + 160, start, start + 240);
+    let window = file_window(ctx.repo_dir, &path, start, end, None)?;
+    if window.get("status").and_then(Value::as_str) == Some("blocked") {
+        return Ok(window);
+    }
+    Ok(tool_ok(
+        "open_file_window",
+        "read real file window from the checked-out repository",
+        window,
+    ))
+}
+
+fn tool_apply_structured_edit(
+    ctx: &AgentToolContext<'_>,
+    arguments: &Value,
+    tool_dir: &Path,
+) -> Result<Value> {
+    let Some(edits) = arguments.get("edits").and_then(Value::as_array) else {
+        return Ok(tool_blocked(
+            "apply_structured_edit",
+            "RUST_REALITY_TOOL_EDITS_MISSING",
+            "arguments.edits",
+            "structured edit tool requires an edits array",
+            "provide exact find/replace edits copied from source windows",
+            json!({"arguments": arguments}),
+            None,
+        ));
+    };
+    let (patch, compilation) =
+        compile_structured_edits(ctx.repo_dir, tool_dir, edits, ctx.args.git_timeout)?;
+    reset_workspace(ctx.repo_dir, &ctx.task.base_commit, ctx.args.git_timeout)?;
+    let status = if patch.is_some() { "ok" } else { "failed" };
+    Ok(json!({
+        "status": status,
+        "action": "compiled structured edits against real checkout, generated patch preview, then reset workspace to base commit",
+        "patch_preview": patch.as_ref().map(|text| truncate_chars(text, 4000)),
+        "patch_sha256": patch.as_ref().map(|text| sha256_text(text)),
+        "compilation": compilation,
+        "workspace_after": {
+            "head": ctx.task.base_commit,
+            "source_of_truth": format!("git:{}#HEAD", path_str(ctx.repo_dir))
+        }
+    }))
+}
+
+fn tool_run_targeted_test(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<Value> {
+    let test_id = required_tool_str(arguments, "test_id")?;
+    if test_id.trim().is_empty() || test_id.contains('\n') || test_id.contains('\0') {
+        return Ok(tool_blocked(
+            "run_targeted_test",
+            "RUST_REALITY_TOOL_TEST_ID_INVALID",
+            "arguments.test_id",
+            "test id is empty or contains invalid control characters",
+            "use one exact FAIL_TO_PASS test id from the task manifest or official evidence",
+            json!({"test_id": test_id}),
+            None,
+        ));
+    }
+    let command = vec![
+        "python".to_string(),
+        "-m".to_string(),
+        "pytest".to_string(),
+        "-q".to_string(),
+        test_id.clone(),
+    ];
+    let process = run_cmd(&command, ctx.repo_dir, ctx.args.targeted_test_timeout)?;
+    Ok(json!({
+        "status": if process.exit_code == 0 { "ok" } else { "failed" },
+        "action": "ran bounded targeted pytest in the real checkout",
+        "test_id": test_id,
+        "process": {
+            "command": process.command,
+            "cwd": process.cwd,
+            "exit_code": process.exit_code,
+            "elapsed_ms": process.elapsed_ms,
+            "stdout_tail": tail_chars(&process.stdout, 6000),
+            "stderr_tail": tail_chars(&process.stderr, 6000)
+        },
+        "source_of_truth": format!("process:python -m pytest:{}", path_str(ctx.repo_dir))
+    }))
+}
+
+fn tool_run_official_swe_eval(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<Value> {
+    let requested_attempt = arguments.get("attempt").and_then(Value::as_u64);
+    let mut candidates: Vec<&AttemptRecord> = ctx
+        .attempts
+        .iter()
+        .filter(|attempt| {
+            requested_attempt
+                .map(|number| attempt.attempt == number)
+                .unwrap_or(true)
+        })
+        .filter(|attempt| attempt.official_evidence_path.is_some())
+        .collect();
+    candidates.sort_by_key(|attempt| attempt.attempt);
+    if let Some(attempt) = candidates.last() {
+        let path = PathBuf::from(attempt.official_evidence_path.as_ref().unwrap());
+        let evidence: Value = read_json(&path)?;
+        return Ok(tool_ok(
+            "run_official_swe_eval",
+            "read existing official SWE-bench evaluation evidence",
+            json!({
+                "attempt": attempt.attempt,
+                "resolved": attempt.resolved,
+                "official_evidence": compact_official_evidence(&evidence),
+                "source_of_truth": file_sot(&path),
+                "sha256": sha256_file(&path)?
+            }),
+        ));
+    }
+    Ok(tool_blocked(
+        "run_official_swe_eval",
+        "RUST_REALITY_TOOL_OFFICIAL_EVAL_REQUIRES_CANDIDATE_PATCH",
+        "candidate.patch",
+        "official SWE-bench evaluation cannot run before the model has produced a candidate patch",
+        "return final edits or patch; the Rust loop will run official SWE-bench evaluation after validation passes",
+        json!({"requested_attempt": requested_attempt, "attempts_total": ctx.attempts.len()}),
+        Some(format!("file:{}#attempts", path_str(ctx.attempt_dir))),
+    ))
+}
+
+fn tool_compare_attempts(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<Value> {
+    let limit = bounded_tool_u64(arguments, "limit", 8, 1, 20) as usize;
+    let mut attempts: Vec<Value> = ctx
+        .attempts
+        .iter()
+        .rev()
+        .take(limit)
+        .map(|attempt| {
+            json!({
+                "attempt": attempt.attempt,
+                "status": attempt.status,
+                "error_code": attempt.error_code,
+                "message": attempt.message,
+                "patch_sha256": attempt.patch_sha256,
+                "repeated_patch": attempt.repeated_patch,
+                "resolved": attempt.resolved,
+                "failure_evidence": attempt.failure_evidence,
+                "official_reality": attempt.official_reality,
+                "patch_preview": attempt.patch_preview,
+                "validation_path": attempt.validation_path,
+                "official_evidence_path": attempt.official_evidence_path
+            })
+        })
+        .collect();
+    attempts.reverse();
+    Ok(tool_ok(
+        "compare_attempts",
+        "compared persisted prior attempt records",
+        json!({
+            "attempts_total": ctx.attempts.len(),
+            "returned": attempts,
+            "source_of_truth": format!("memory:attempts:{}#{}", ctx.task.instance_id, path_str(ctx.attempt_dir))
+        }),
+    ))
+}
+
+fn tool_retrieve_similar_verified_episodes(
+    ctx: &AgentToolContext<'_>,
+    arguments: &Value,
+) -> Result<Value> {
+    let max_results = bounded_tool_u64(arguments, "max_results", 8, 1, 20) as usize;
+    let query = arguments
+        .get("query")
+        .and_then(Value::as_str)
+        .unwrap_or(&ctx.task.instance_id)
+        .to_string();
+    let runtime_root = resolve_path(&ctx.args.runtime_root)?;
+    let mut evidence_files = Vec::new();
+    collect_evidence_files(&runtime_root, &mut evidence_files)?;
+    evidence_files.sort();
+    let mut episodes = Vec::new();
+    for path in evidence_files {
+        if episodes.len() >= max_results {
+            break;
+        }
+        let text = fs::read_to_string(&path)
+            .map_err(|err| fs_error("RUST_REALITY_EPISODE_READ_FAILED", &path, err))?;
+        if !text.contains(&ctx.task.instance_id)
+            && !text.contains(&ctx.task.repo)
+            && !query.is_empty()
+            && !text.contains(&query)
+        {
+            continue;
+        }
+        if let Ok(value) = serde_json::from_str::<Value>(&text) {
+            episodes.push(json!({
+                "path": path_str(&path),
+                "sha256": sha256_file(&path)?,
+                "resolved": value.get("resolved"),
+                "instance_id": value.get("instance_id"),
+                "official_reality": compact_official_evidence(&value),
+                "source_of_truth": file_sot(&path)
+            }));
+        }
+    }
+    Ok(tool_ok(
+        "retrieve_similar_verified_episodes",
+        "retrieved real prior official evidence artifacts from runtime root",
+        json!({
+            "query": query,
+            "runtime_root": path_str(&runtime_root),
+            "episodes": episodes,
+            "source_of_truth": file_sot(&runtime_root)
+        }),
+    ))
+}
+
+fn tool_synthesize_helper_tool(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<Value> {
+    let analyzer = required_tool_str(arguments, "analyzer")?;
+    let payload = match analyzer.as_str() {
+        "test_failure_digest" => json!({
+            "analyzer": analyzer,
+            "fail_to_pass": ctx.task.fail_to_pass,
+            "latest_official_reality": ctx.attempts.iter().rev().find_map(|attempt| attempt.official_reality.clone()),
+            "latest_failure_evidence": ctx.attempts.last().map(|attempt| attempt.failure_evidence.clone()),
+            "source_of_truth": ctx.task.source_of_truth
+        }),
+        "diff_risk_scan" => json!({
+            "analyzer": analyzer,
+            "forbidden_patterns": [
+                "tests/",
+                "/tests/",
+                "test_",
+                "_test.py",
+                "conftest.py",
+                "tox.ini",
+                "pytest"
+            ],
+            "previous_patch_hashes": ctx.attempts.iter().filter_map(|attempt| attempt.patch_sha256.clone()).collect::<Vec<_>>(),
+            "source_of_truth": format!("memory:attempts:{}#patches", ctx.task.instance_id)
+        }),
+        "repository_file_inventory" => json!({
+            "analyzer": analyzer,
+            "repository_context": ctx.repo_context,
+            "source_of_truth": ctx.repo_context.get("source_of_truth")
+        }),
+        _ => {
+            return Ok(tool_blocked(
+                "synthesize_helper_tool",
+                "RUST_REALITY_TOOL_ANALYZER_UNKNOWN",
+                "arguments.analyzer",
+                "requested analyzer is not one of the vetted deterministic analyzers",
+                "choose test_failure_digest, diff_risk_scan, or repository_file_inventory",
+                json!({"analyzer": analyzer}),
+                None,
+            ));
+        }
+    };
+    Ok(tool_ok(
+        "synthesize_helper_tool",
+        "ran vetted deterministic analyzer without executing model-generated code",
+        payload,
+    ))
+}
+
+fn tool_ok(tool_name: &str, action: &str, payload: Value) -> Value {
+    json!({
+        "status": "ok",
+        "tool_name": tool_name,
+        "action": action,
+        "payload": payload
+    })
+}
+
+fn tool_blocked(
+    tool_name: &str,
+    error_code: &str,
+    field_path: &str,
+    message: &str,
+    remediation: &str,
+    details: Value,
+    source_of_truth: Option<String>,
+) -> Value {
+    json!({
+        "status": "blocked",
+        "tool_name": tool_name,
+        "error_code": error_code,
+        "field_path": field_path,
+        "message": message,
+        "remediation": remediation,
+        "details": details,
+        "source_of_truth": source_of_truth
+    })
+}
+
+fn required_tool_str(arguments: &Value, field: &str) -> Result<String> {
+    arguments
+        .get(field)
+        .and_then(Value::as_str)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_TOOL_ARGUMENT_MISSING",
+                "required tool argument is missing",
+                format!("arguments.{field}"),
+                "inspect model tool-call arguments",
+                json!({"field": field, "arguments": arguments}),
+                None,
+            )
+        })
+}
+
+fn bounded_tool_u64(arguments: &Value, field: &str, default: u64, min: u64, max: u64) -> u64 {
+    arguments
+        .get(field)
+        .and_then(Value::as_u64)
+        .unwrap_or(default)
+        .clamp(min, max)
+}
+
+fn parse_grep_line(line: &str) -> Option<(String, u64, String)> {
+    let mut parts = line.splitn(3, ':');
+    let path = parts.next()?.to_string();
+    let line_no = parts.next()?.parse::<u64>().ok()?;
+    let text = parts.next().unwrap_or("").to_string();
+    Some((path, line_no, text))
+}
+
+fn file_window(
+    repo_dir: &Path,
+    relative_path: &str,
+    start_line: u64,
+    end_line: u64,
+    matched_line: Option<String>,
+) -> Result<Value> {
+    if relative_path.starts_with('/')
+        || relative_path.contains('\\')
+        || Path::new(relative_path)
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return Ok(tool_blocked(
+            "open_file_window",
+            "RUST_REALITY_TOOL_PATH_INVALID",
+            "arguments.path",
+            "path must be repo-relative without parent traversal",
+            "choose a path returned by search_repo or repository context",
+            json!({"path": relative_path}),
+            None,
+        ));
+    }
+    let path = repo_dir.join(relative_path);
+    if !path.exists() || !path.is_file() {
+        return Ok(tool_blocked(
+            "open_file_window",
+            "RUST_REALITY_TOOL_FILE_MISSING",
+            "arguments.path",
+            "requested file does not exist in the real checkout",
+            "choose a path returned by search_repo or repository context",
+            json!({"path": relative_path, "source_of_truth": file_sot(&path)}),
+            Some(file_sot(&path)),
+        ));
+    }
+    let text = fs::read_to_string(&path)
+        .map_err(|err| fs_error("RUST_REALITY_TOOL_FILE_READ_FAILED", &path, err))?;
+    let lines: Vec<&str> = text.lines().collect();
+    let total_lines = lines.len() as u64;
+    let start = start_line.max(1).min(total_lines.max(1));
+    let end = end_line
+        .max(start)
+        .min((start + 240).min(total_lines.max(start)));
+    let slice = if total_lines == 0 {
+        String::new()
+    } else {
+        lines[(start - 1) as usize..end as usize].join("\n")
+    };
+    Ok(json!({
+        "status": "ok",
+        "path": relative_path,
+        "start_line": start,
+        "end_line": end,
+        "total_lines": total_lines,
+        "text": slice,
+        "matched_line": matched_line,
+        "sha256": sha256_file(&path)?,
+        "source_of_truth": file_sot(&path)
+    }))
+}
+
+fn collect_evidence_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    if !root.exists() {
+        return Ok(());
+    }
+    for entry in
+        fs::read_dir(root).map_err(|err| fs_error("RUST_REALITY_READ_DIR_FAILED", root, err))?
+    {
+        let entry =
+            entry.map_err(|err| fs_error("RUST_REALITY_READ_DIR_ENTRY_FAILED", root, err))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_evidence_files(&path, out)?;
+        } else if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                name == "official-failure-evidence.json" || name == "official-success-evidence.json"
+            })
+        {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn tail_chars(value: &str, limit: usize) -> String {
+    let len = value.chars().count();
+    if len <= limit {
+        value.to_string()
+    } else {
+        value.chars().skip(len - limit).collect()
+    }
 }
 
 fn parse_patch_report(response_text: &str) -> (Option<String>, Value) {
@@ -1774,15 +3037,22 @@ fn run_official_eval(
         ));
     }
     let final_report = find_json_report(&official_root, &run_id)?;
+    let instance_report = find_instance_report(&official_root, &task.instance_id)?;
+    let test_output =
+        find_instance_text_artifact(&official_root, &task.instance_id, "test_output.txt")?;
     Ok(json!({
         "status": "ok",
         "run_id": run_id,
         "report_dir": path_str(&official_root),
         "final_report": final_report,
+        "instance_report": instance_report,
+        "test_output": test_output,
         "source_of_truth": {
             "command": file_sot(&command_path),
             "predictions": file_sot(&predictions),
-            "report": final_report["source_of_truth"].clone()
+            "final_report": final_report["source_of_truth"].clone(),
+            "instance_report": instance_report["source_of_truth"].clone(),
+            "test_output": test_output["source_of_truth"].clone()
         }
     }))
 }
@@ -1911,6 +3181,8 @@ fn build_official_evidence(
         "previous_patch_sha256": sha256_text(patch),
         "source_of_truth": official["source_of_truth"].clone(),
         "official_report": report,
+        "instance_report": official["instance_report"].clone(),
+        "test_output_tail": official["test_output"].clone(),
     }))
 }
 
@@ -1973,6 +3245,94 @@ fn find_json_report(root: &Path, run_id: &str) -> Result<Value> {
         json!({ "report_dir": path_str(root), "run_id": run_id }),
         Some(file_sot(root)),
     ))
+}
+
+fn find_instance_report(root: &Path, instance_id: &str) -> Result<Value> {
+    let mut candidates = Vec::new();
+    collect_json_files(root, &mut candidates)?;
+    candidates.sort();
+    for path in candidates {
+        let path_text = path_str(&path);
+        let name_matches = path.file_name().and_then(|name| name.to_str()) == Some("report.json");
+        if !name_matches || !path_text.contains(instance_id) {
+            continue;
+        }
+        let text = fs::read_to_string(&path)
+            .map_err(|err| fs_error("RUST_REALITY_INSTANCE_REPORT_READ_FAILED", &path, err))?;
+        let payload: Value = serde_json::from_str(&text).map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_INSTANCE_REPORT_JSON_INVALID",
+                "official per-instance report was not valid JSON",
+                "official_eval.instance_report",
+                "inspect the official SWE-bench per-instance report before using it as prompt evidence",
+                json!({"path": path_str(&path), "error": err.to_string()}),
+                Some(file_sot(&path)),
+            )
+        })?;
+        return Ok(json!({
+            "path": path_str(&path),
+            "sha256": sha256_file(&path)?,
+            "source_of_truth": file_sot(&path),
+            "payload": payload
+        }));
+    }
+    Err(RealityError::new(
+        "RUST_REALITY_INSTANCE_REPORT_MISSING",
+        "official SWE-bench run did not produce a per-instance report.json for the target instance",
+        "official_eval.instance_report",
+        "inspect official report directory and SWE-bench logs before continuing",
+        json!({"report_dir": path_str(root), "instance_id": instance_id}),
+        Some(file_sot(root)),
+    ))
+}
+
+fn find_instance_text_artifact(root: &Path, instance_id: &str, file_name: &str) -> Result<Value> {
+    let mut candidates = Vec::new();
+    collect_named_files(root, file_name, &mut candidates)?;
+    candidates.sort();
+    for path in candidates {
+        if !path_str(&path).contains(instance_id) {
+            continue;
+        }
+        let text = fs::read_to_string(&path).map_err(|err| {
+            fs_error(
+                "RUST_REALITY_INSTANCE_TEXT_ARTIFACT_READ_FAILED",
+                &path,
+                err,
+            )
+        })?;
+        return Ok(json!({
+            "path": path_str(&path),
+            "sha256": sha256_file(&path)?,
+            "size_bytes": text.len(),
+            "tail": tail_chars(&text, 12000),
+            "source_of_truth": file_sot(&path)
+        }));
+    }
+    Err(RealityError::new(
+        "RUST_REALITY_INSTANCE_TEXT_ARTIFACT_MISSING",
+        "official SWE-bench run did not produce the required per-instance text artifact",
+        format!("official_eval.{file_name}"),
+        "inspect official report directory and SWE-bench logs before continuing",
+        json!({"report_dir": path_str(root), "instance_id": instance_id, "file_name": file_name}),
+        Some(file_sot(root)),
+    ))
+}
+
+fn collect_named_files(root: &Path, file_name: &str, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in
+        fs::read_dir(root).map_err(|err| fs_error("RUST_REALITY_READ_DIR_FAILED", root, err))?
+    {
+        let entry =
+            entry.map_err(|err| fs_error("RUST_REALITY_READ_DIR_ENTRY_FAILED", root, err))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_named_files(&path, file_name, out)?;
+        } else if path.file_name().and_then(|name| name.to_str()) == Some(file_name) {
+            out.push(path);
+        }
+    }
+    Ok(())
 }
 
 fn collect_json_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
@@ -2264,14 +3624,14 @@ Problem statement:\n<<<PROBLEM\n{}\nPROBLEM\n\n\
 Previous attempt summary:\n{}\n\n\
 Do not repeat these patch hashes:\n{}\n\n\
 Hard validation rules:\n\
-- The response must be one raw JSON object with notes plus either edits or patch.\n\
+- The final action must be one raw JSON object with notes plus either edits or patch.\n\
 - Prefer edits. Each edit path must be repo-relative production source; find must match exactly one source span; replace is the desired source span.\n\
 - ContextGraph applies edits to the real checkout, generates candidate.patch with git diff, resets to base, then applies/evaluates the generated patch.\n\
 - If you use patch instead, it must apply to the exact base commit with git apply and be a complete unified diff with correct ---/+++ headers and @@ hunks.\n\
 - The patch or edits must modify production source, not tests, fixtures, or benchmark harness files.\n\
 - Do not edit tests to make the benchmark pass.\n\n\
 Repository context JSON:\n{}\n\n\
-Final instruction: return exactly one JSON object with notes and either edits or patch. No markdown, no summary, no prose.\n",
+Tool phase instruction: before any final action, call at least one governed ContextGraph tool to inspect real source, failure reality, or prior verified attempts.\n",
         task.instance_id,
         task.repo,
         task.base_commit,
