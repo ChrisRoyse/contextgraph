@@ -56,7 +56,7 @@ Both subsystems live behind RocksDB-only paths; in-memory backends return tool e
 
 `NUM_ANOMALY_KINDS = 6`. `AnomalyKind::all()` returns the variants in `as_u8` order. `from_u8` returns `None` for any other byte. `AnomalyKind::parse(s)` accepts the snake-case form (case-sensitive).
 
-`classify_anomaly` (`contrastive/mining.rs:109`) priority is **stable** — the first matching rule wins, in this order:
+`classify_anomaly` (`contrastive/mining.rs:109`) is the **type-agnostic** classifier used by `mine_contrastive_pairs` — priority is stable, the first matching rule wins:
 
 1. `high(6) && low(0)` → `CodeShapeButDifferentIntent` (E7 first to avoid swallowing into `SemanticButNotCausal`)
 2. `high(10) && low(7)` → `EntitySharedButDifferentStructure`
@@ -64,6 +64,19 @@ Both subsystems live behind RocksDB-only paths; in-memory backends return tool e
 4. `(high(5) || high(12)) && low(9)` → `KeywordButNotParaphrase`
 5. `high(0) && low(4)` → `SemanticButNotCausal`
 6. otherwise → `Other`
+
+`classify_edge_as_anomaly` (`anomaly_derivation.rs:203`) is the **edge-type-aware** classifier used by `derive_anomalies_from_edges` — pattern is gated on `edge.edge_type()`:
+
+| Edge type | Pattern | Resulting kind |
+| --- | --- | --- |
+| `SemanticSimilar` | `is_high(0) && is_low(4)` | `SemanticButNotCausal` |
+| `KeywordOverlap` | `(is_high(5) || is_high(12)) && is_low(9)` | `KeywordButNotParaphrase` |
+| `CodeRelated` | `is_high(6) && is_low(0)` | `CodeShapeButDifferentIntent` |
+| `EntityShared` | `is_high(10) && is_low(7)` | `EntitySharedButDifferentStructure` |
+| any other | `is_high(8) && is_low(0)` | `HdcRobustButSemanticDifferent` (cross-type fallback) |
+| no match | — | `None` (skipped, NOT `Other`) |
+
+Both classifiers use SRC-3 `[0,1]` thresholds. The edge-classifier uses `is_high = score >= cfg.high_threshold` and `is_low = score <= cfg.low_threshold` (inclusive), while the offline miner uses strict `>` and `<` (exclusive).
 
 ---
 
@@ -94,6 +107,19 @@ Both subsystems live behind RocksDB-only paths; in-memory backends return tool e
 - `cfg.kinds` is `Some(list)` and the classified kind is not in the list.
 
 Surviving pairs get a fresh `Utc::now()` timestamp and the `cross_embedder_anomaly_v1` generator tag.
+
+### 3.1 `AnomalyDerivationConfig` (online derivation defaults)
+
+`derive_anomalies_from_edges` uses a separate but compatible config (`anomaly_derivation.rs:32`):
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `high_threshold` | `0.60` | Mirrors `DEFAULT_HIGH_THRESHOLD` |
+| `low_threshold` | `0.30` | Mirrors `DEFAULT_LOW_THRESHOLD` |
+| `min_disagreement` | `0.30` | Mirrors `DEFAULT_MIN_DISAGREEMENT` |
+| `max_pairs` | `10_000` | Mirrors `DEFAULT_MAX_PAIRS` |
+
+A unit test asserts these values stay in lockstep with the offline miner (`anomaly_derivation.rs:389-395`).
 
 ---
 
