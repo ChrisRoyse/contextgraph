@@ -2,18 +2,23 @@
 
 **Source files covered:**
 - `crates/context-graph-storage/src/lib.rs` — crate root, `TOTAL_COLUMN_FAMILIES` re-export
-- `crates/context-graph-storage/src/column_families.rs` — base 11 CFs, option profiles, `get_all_column_family_descriptors`
-- `crates/context-graph-storage/src/teleological/column_families.rs` — 41 teleological + 14 quantized embedder + 5 code + 2 causal CFs
-- `crates/context-graph-storage/src/dynamicjepa/column_families.rs` — 28 DynamicJEPA CFs
-- `crates/context-graph-storage/src/teleological/serialization.rs` — `TELEOLOGICAL_VERSION` (=1), bincode rules
-- `crates/context-graph-storage/src/teleological/rocksdb_store/store.rs` — DB open path, single-writer setup, soft-delete persistence
-- `crates/context-graph-storage/src/teleological/rocksdb_store/types.rs` — `TeleologicalStoreConfig` (block cache, retention)
-- `crates/context-graph-storage/src/teleological/rocksdb_store/crud.rs` — soft-delete prefix, hard-delete batch order
-- `crates/context-graph-storage/src/teleological/indexes/hnsw_config/embedder.rs` — `EmbedderIndex::all_hnsw()` (16 indexes)
+- `crates/context-graph-storage/src/column_families.rs` — base 11 CFs, option profiles, `get_all_column_family_descriptors` (line 387), `TOTAL_COLUMN_FAMILIES = 101` (line 408)
+- `crates/context-graph-storage/src/teleological/column_families.rs` — 41 teleological + 14 quantized embedder + 5 code + 2 causal CFs (line 657 `TELEOLOGICAL_CF_COUNT`, line 746 `QUANTIZED_EMBEDDER_CF_COUNT`, line 1887 `CODE_CF_COUNT`, line 2057 `CAUSAL_CF_COUNT`)
+- `crates/context-graph-storage/src/dynamicjepa/column_families.rs` — 28 DynamicJEPA CFs (`DJ_CF_NAMES` line 43, `DJ_CF_COUNT` line 74)
+- `crates/context-graph-storage/src/dynamicjepa/keys.rs` — fixed-byte key encoders for DJ CFs
+- `crates/context-graph-storage/src/teleological/serialization.rs` — `TELEOLOGICAL_VERSION = 1` (line 35), `MIN_FINGERPRINT_SIZE = 5_000` (line 44), `MAX_FINGERPRINT_SIZE = 150_000` (line 56), JSON-vs-bincode rules
+- `crates/context-graph-storage/src/teleological/rocksdb_store/store.rs` — DB open path, single-writer setup, soft-delete persistence, lock inspection
+- `crates/context-graph-storage/src/teleological/rocksdb_store/types.rs` — `TeleologicalStoreConfig` defaults (line 170)
+- `crates/context-graph-storage/src/teleological/rocksdb_store/crud.rs` — `SOFT_DELETE_PREFIX = "soft_deleted::"` (line 34), hard-delete batch order, GC compaction threshold
+- `crates/context-graph-storage/src/teleological/indexes/hnsw_config/embedder.rs` — `EmbedderIndex::all_hnsw()` (line 186, 16 indexes)
+- `crates/context-graph-storage/src/teleological/indexes/hnsw_config/constants.rs` — `NUM_EMBEDDERS = 14`, `TOPIC_PROFILE_DIM = 14`, dimension constants
+- `crates/context-graph-storage/src/teleological/indexes/hnsw_config/config.rs` — `HnswConfig::default_for_dimension` (M=16, ef_construction=200, ef_search=100), `HnswConfig::matryoshka_128d` (M=32, 256, 128)
+- `crates/context-graph-storage/src/teleological/indexes/hnsw_impl/types.rs` — `MAX_HNSW_VECTORS_PER_INDEX = 2_000_000` (line 18)
 - `crates/context-graph-storage/src/teleological/indexes/registry.rs` — `EmbedderIndexRegistry`
-- `crates/context-graph-mcp/src/main.rs:560-791` — `PidFileGuard`
+- `crates/context-graph-storage/src/graph_edges/repository.rs` — typed-edges-by-type 33-byte secondary key construction (lines 235-238, 301-305, 508-511)
+- `crates/context-graph-mcp/src/main.rs:564-791` — `PidFileGuard`
 - `crates/context-graph-core/src/training/mod.rs`, `learner/mod.rs`, `learning/mod.rs`, `constellation/mod.rs`, `contrastive/mod.rs`, `typed_edge_export/mod.rs`, `llm_edge_validation/mod.rs`, `learner_training.rs` — record version constants
-- `crates/context-graph-storage/src/dynamicjepa/audit.rs` — `DJ_AUDIT_RECORD_VERSION`
+- `crates/context-graph-storage/src/dynamicjepa/audit.rs:7` — `DJ_AUDIT_RECORD_VERSION = 2`
 
 Cross-references:
 - [03_configuration.md](03_configuration.md) — config knobs that govern open path (`storage.path`, block cache, GC retention)
@@ -27,17 +32,20 @@ RocksDB column families (no SQL, no foreign keys, no triggers, no migrations).
 
 `RocksDbTeleologicalStore::open_with_config` (`teleological/rocksdb_store/store.rs:145`) performs:
 
-1. Pre-open lock inspection: `inspect_rocksdb_lock(path)` and `assert_existing_dynamicjepa_column_families(path)` (only if path already exists).
-2. Build shared `Cache::new_lru_cache(config.block_cache_size)`.
+1. Pre-open lock inspection: `inspect_rocksdb_lock(path)` (read-only fcntl probe of the RocksDB `LOCK` file — never removed) and `assert_existing_dynamicjepa_column_families(path)` (FAIL FAST if any of the 28 DJ CFs are missing from an existing DB; `store.rs:368-395`).
+2. Build shared `Cache::new_lru_cache(config.block_cache_size)` (default 256MB).
 3. Construct DB `Options`: `create_if_missing(true)`, `create_missing_column_families(true)`, `set_max_open_files(config.max_open_files)`, `set_paranoid_checks(true)`. If `enable_wal=false`, `set_manual_wal_flush(true)`.
-4. `cf_descriptors = get_all_column_family_descriptors(&cache)` — returns the canonical `TOTAL_COLUMN_FAMILIES = 101` descriptors (`column_families.rs:408`).
-5. `DB::open_cf_descriptors(&db_opts, &path_str, cf_descriptors)`. On failure, `transform_corruption_error` converts missing-SST errors into `TeleologicalStoreError::CorruptionDetected`.
-6. Verify all 28 DJ_CF_NAMES handles are present; otherwise FAIL with `ColumnFamilyNotFound`.
-7. Construct `EmbedderIndexRegistry::new()` (16 HNSW indexes, see §10) and `CausalE11Index::new()`.
-8. Load persisted soft-delete markers from `CF_SYSTEM` (`SOFT_DELETE_PREFIX = "soft_deleted::"` from `crud.rs:34`).
-9. Initialize `total_doc_count = raw_fingerprint_count - soft_deleted.len()` for BM25-IDF.
+4. `cf_descriptors = get_all_column_family_descriptors(&cache)` — returns the canonical `TOTAL_COLUMN_FAMILIES = 101` descriptors (`column_families.rs:387/408`).
+5. `DB::open_cf_descriptors(&db_opts, &path_str, cf_descriptors)`. On failure, `transform_corruption_error` (`store.rs:576`) converts missing-SST and corrupted-MANIFEST errors into `TeleologicalStoreError::CorruptionDetected` with extracted file names.
+6. Verify all 28 `DJ_CF_NAMES` handles are present after open; otherwise FAIL with `ColumnFamilyNotFound` (`store.rs:200-210`).
+7. Construct `EmbedderIndexRegistry::new()` (16 HNSW indexes, see §10) and `CausalE11Index::new()` (E11 ANN over causal relationships).
+8. Load persisted soft-delete markers from `CF_SYSTEM` (`SOFT_DELETE_PREFIX = "soft_deleted::"` from `crud.rs:34`) into an `Arc<DashMap<Uuid, i64>>`. Legacy 1-byte markers are accepted with timestamp 0 (immediately GC-eligible) (`store.rs:228-276`).
+9. Initialize `total_doc_count = raw_fingerprint_count - soft_deleted.len()` for BM25-IDF using `Arc<AtomicUsize>` (`store.rs:281-299`).
+10. `try_load_hnsw_indexes()`: restore from `CF_HNSW_GRAPHS`. Returns `Ok(true)` if **any** index loads. If true and any index is empty (e.g. newly-enabled embedder), `clear_all()` + `rebuild_indexes_from_store()` (`store.rs:316-351`). E2 persisted graph is **always skipped** to force sinusoidal-PE recompute from `created_at` (`store.rs:1054-1059`).
+11. If `E11_ENTITY_ENABLED`, `rebuild_causal_e11_index()` from `CF_CAUSAL_RELATIONSHIPS`.
+12. `verify_consistency(raw_fp_count)` cross-checks `CF_FINGERPRINTS` vs `CF_CONTENT` count, HNSW size vs live fingerprint count (10% tolerance, min 5), and `total_doc_count` consistency. Logs warnings only — never blocks startup.
 
-Single-writer enforcement via `PidFileGuard` is owned by the MCP main, NOT by the storage crate (see §11).
+Single-writer enforcement via `PidFileGuard` (PID file + Unix `flock`) is owned by the MCP main, NOT by the storage crate (see §11).
 
 ## 2. CF Counts (canonical: `TOTAL_COLUMN_FAMILIES = 101`)
 
@@ -65,19 +73,24 @@ Source: `crates/context-graph-storage/src/column_families.rs`. Constants in `cf_
 
 | Name | Key encoding | Value encoding | Option profile | Purpose |
 | --- | --- | --- | --- | --- |
-| `nodes` | `UUID` (16B) | (legacy `MemoryNode` bincode) | `nodes_options` (bloom 10b, LZ4, point-lookup 256MB hint, 4MB WB) | Primary node record (legacy MemoryStore path) |
+| `nodes` | `UUID` (16B) | (legacy `MemoryNode` bincode) | `nodes_options` (bloom 10b, LZ4, point-lookup 256MB hint, 4MB WB) | Primary node record (legacy MemoryStore path; not used by current teleological store) |
 | `edges` | composite `[source:16][...]` | (legacy edge bincode) | `edges_options` (bloom, LZ4, 16B prefix, 4MB WB) | Generic graph edge storage (legacy) |
 | `embeddings` | `UUID` (16B) | `Vec<f32>` 1536D = 6144B | `embeddings_options` (64KB blocks, LZ4, 8MB WB) | Embedding vectors (legacy code path) |
-| `metadata` | `UUID` (16B) | `MemoryNode` metadata (bincode) | `index_options` (bloom, LZ4, 16B prefix, 2MB WB) | Node metadata |
+| `metadata` | `UUID` (16B) | `MemoryNode` metadata (bincode) | `index_options` (bloom, LZ4, 16B prefix, 2MB WB) | Node metadata (legacy) |
 | `temporal` | `[ts_ms:?][uuid:16]` | UUID | `index_options` | Temporal index for range scans |
 | `tags` | `[tag_bytes][uuid:16]` | UUID | `index_options` | Tag → UUID list |
 | `sources` | `[source_uri][uuid:16]` | UUID | `index_options` | Source URI → UUID list |
-| `system` | sentinel string keys (e.g. `"soft_deleted::{uuid}"`) | varies (e.g. `i64 BE` 8B for soft-delete TS) | `system_options` (NO compression, NO bloom, no prefix, 2MB WB) | Rare metadata; SOFT-DELETE markers persisted here |
-| `embedder_edges` | `[embedder_id:u8][source:16]` (legacy, 17B) OR `[embedder_id:u8][source:16][target:16]` (33B) | `Vec<EmbedderEdge>` bincode | `embedder_edges_options` (bloom, LZ4, 1B prefix, 4MB WB) | K-NN edges per embedder |
-| `typed_edges` | `[source:16][target:16]` (32B) | `TypedEdge` bincode | `typed_edges_options` (bloom, LZ4, 16B prefix, 4MB WB) | Multi-relation typed edges |
-| `typed_edges_by_type` | `[edge_type:u8][source:16][target:16]` (33B; previous 17B legacy still readable) | `target_uuid` (16B) | `typed_edges_by_type_options` (bloom, LZ4, 1B prefix, 2MB WB) | Edge-type secondary index |
+| `system` | sentinel string keys (e.g. `"soft_deleted::{uuid}"`, `"cursor::{key}"`) | varies (`i64 BE` 8B for soft-delete TS; opaque bytes for cursors) | `system_options` (NO compression, NO bloom, no prefix, 2MB WB) | Rare metadata; SOFT-DELETE markers + processing cursors persisted here |
+| `embedder_edges` | `[embedder_id:u8][source:16]` = 17B (`EdgeStorageKey::new`) | `[v:u8 = 1][count:u32 LE][N × ([target:16][sim:f32 LE])]` (`graph_edges/serialization.rs:30`) | `embedder_edges_options` (bloom, LZ4, 1B prefix, 4MB WB) | K-NN edges per embedder; one posting list per (embedder, source) |
+| `typed_edges` | `[source:16][target:16]` (32B) | `[v:u8 = 1][bincode TypedEdge]` (`graph_edges/serialization.rs:157`) | `typed_edges_options` (bloom, LZ4, 16B prefix, 4MB WB) | Multi-relation typed edges (primary store) |
+| `typed_edges_by_type` | `[edge_type:u8][source:16][target:16]` (33B; legacy 17B `[type][source]` still readable on iterate) | `target_uuid` (16B) | `typed_edges_by_type_options` (bloom, LZ4, 1B prefix, 2MB WB) | Edge-type secondary index, queried by 17B prefix `[type][source]` |
 
-Notes on the 33-byte typed-edges secondary key (`graph_edges/repository.rs`): the legacy 17-byte form `[type][source]` lost edges when the same source had multiple edges of the same type. The fix extends the key to `[type][source][target]`; legacy entries are still readable.
+Notes on the 33-byte typed-edges-by-type secondary key (`graph_edges/repository.rs:235-243`, `301-305`, `508-514`): the legacy 17-byte key `[type][source]` (with the target stored only in the value) silently overwrote earlier edges when the same `(type, source)` had multiple targets. The current encoding writes the full `[type][source][target]` (33B) key with `target_uuid` (16B) duplicated as the value. `get_typed_edges_by_type` iterates with the 17-byte `[type][source]` prefix and parses the target from key bytes 17..33 when available, otherwise from the value (legacy compat) (`repository.rs:344-424`).
+
+Direction-aware typed-edge queries (`crates/context-graph-mcp/src/handlers/tools/graph_link_tools.rs:397-510`):
+- `outgoing` / default: secondary index `get_typed_edges_by_type(source, type)` (fast, 17B prefix scan).
+- `incoming`: full CF scan via `get_typed_edges_to(target)` and post-filter by edge type (O(n) over `CF_TYPED_EDGES`; no reverse index).
+- `both`: union of the above.
 
 ## 4. Teleological CFs (41)
 
@@ -85,11 +98,11 @@ Source: `crates/context-graph-storage/src/teleological/column_families.rs:611-65
 
 | Name | Key | Value | Notes / Source |
 | --- | --- | --- | --- |
-| `fingerprints` | UUID (16B) | `[v:u8 = 1][bincode TeleologicalFingerprint]` (~50KB; range 5KB–150KB) | `CF_FINGERPRINTS` (l.70). `TELEOLOGICAL_VERSION = 1` (`serialization.rs:35`). Min/max enforced (`serialization.rs:44,56`). |
-| `topic_profiles` | UUID (16B) | `13 × f32` = 52B | `CF_TOPIC_PROFILES` (l.76). No compression (52B too small). |
+| `fingerprints` | UUID (16B) | `[v:u8 = 1][bincode TeleologicalFingerprint]` (~50KB; range 5KB–150KB) | `CF_FINGERPRINTS` (l.70). `TELEOLOGICAL_VERSION = 1` (`serialization.rs:35`). Min/max enforced (`serialization.rs:44,56`); panic on write outside range, `Err` on read. |
+| `topic_profiles` | UUID (16B) | `14 × f32` = 56B (LE, `serialize_topic_profile`) | `CF_TOPIC_PROFILES` (l.76). `TOPIC_PROFILE_DIM = 14` (constants.rs:54). No compression (56B too small). Written by clustering pipeline only — NOT by `store_fingerprint_internal`. |
 | `e13_splade_inverted` | `term_id: u16` (2B) | `Vec<UUID>` (bincode) | `CF_E13_SPLADE_INVERTED` (l.84). SPLADE 30,522-term BERT vocab. |
 | `e6_sparse_inverted` | `term_id: u16` (2B) | `Vec<UUID>` | `CF_E6_SPARSE_INVERTED` (l.97). E6 30,522 vocab; ~235 active terms/doc (0.77% sparsity). |
-| `e1_matryoshka_128` | UUID (16B) | `128 × f32` = 512B | `CF_E1_MATRYOSHKA_128` (l.106). E1 truncated for Stage 2. |
+| `e1_matryoshka_128` | UUID (16B) | `128 × f32` = 512B (LE, `serialize_e1_matryoshka_128`) | `CF_E1_MATRYOSHKA_128` (l.106). E1 truncated to first 128 dims for Stage 2 fast filter. Durable backup; runtime path reads from in-memory HNSW. |
 | `content` | UUID (16B) | UTF-8 (max 1MB, app-enforced) | `CF_CONTENT` (l.122). LZ4 only. |
 | `source_metadata` | UUID (16B) | `SourceMetadata` JSON (~100-500B) | `CF_SOURCE_METADATA` (l.136). JSON, NOT bincode (per skip_serializing_if rule). |
 | `file_index` | file_path bytes (UTF-8, var) | `FileIndexEntry` bincode (`Vec<UUID> + metadata`) | `CF_FILE_INDEX` (l.150). |
@@ -103,7 +116,7 @@ Source: `crates/context-graph-storage/src/teleological/column_families.rs:611-65
 | `tool_call_index` | `tool_use_id` bytes (UTF-8) | `Vec<UUID>` bincode | `CF_TOOL_CALL_INDEX` (l.306). RESERVED. |
 | `consolidation_recommendations` | `recommendation_uuid:16` | `ConsolidationRecommendation` bincode | `CF_CONSOLIDATION_RECOMMENDATIONS` (l.325). RESERVED. |
 | `embedding_registry` | `fingerprint_uuid:16` | `EmbeddingVersionRecord` JSON | `CF_EMBEDDING_REGISTRY` (l.344). PERMANENT (current-state provenance), 16B prefix. |
-| `custom_weight_profiles` | `profile_name` bytes | `[f32; 14]` JSON (~100-200B) | `CF_CUSTOM_WEIGHT_PROFILES` (l.362). |
+| `custom_weight_profiles` | `profile_name` bytes (UTF-8) | `[f32; 14]` JSON (~100-200B) | `CF_CUSTOM_WEIGHT_PROFILES` (l.362). One profile per name; cap 1000 (M1 fix). |
 | `hnsw_graphs` | `graph:{embedder}` OR `meta:{embedder}` (UTF-8) | usearch serialized bytes (1-100MB) OR JSON `{id_to_key, key_to_id, next_key, count}` | `CF_HNSW_GRAPHS` (l.377). NO bloom (few keys). 8MB WB. |
 | `training_records` | UUID (16B) | `[v:u8 = 3][bincode TrainingRecord]` | `CF_TRAINING_RECORDS` (l.399). `TRAINING_RECORD_VERSION = 3` (core/training/mod.rs:67). 8MB WB. |
 | `learning_events` | event UUID (16B) | `[v:u8 = 1][bincode LearningEvent]` | `CF_LEARNING_EVENTS` (l.416). `LEARNING_EVENT_VERSION = 1` (core/learning/mod.rs:18). |
@@ -290,8 +303,7 @@ HNSW graphs persist into `CF_HNSW_GRAPHS` (key formats `graph:{embedder}` and `m
 
 | CF | Composite key | Total bytes | Prefix extractor |
 | --- | --- | --- | --- |
-| `embedder_edges` (current) | `[embedder_id:u8][source:16][target:16]` | 33 | 1B (embedder_id) |
-| `embedder_edges` (legacy compat) | `[embedder_id:u8][source:16]` | 17 | 1B |
+| `embedder_edges` | `[embedder_id:u8][source:16]` | 17 | 1B (embedder_id) — value is the full posting list of K-NN edges for this `(embedder, source)` |
 | `typed_edges` | `[source:16][target:16]` | 32 | 16B (source UUID) |
 | `typed_edges_by_type` (current) | `[edge_type:u8][source:16][target:16]` | 33 | 1B |
 | `typed_edges_by_type` (legacy) | `[edge_type:u8][source:16]` | 17 | 1B |
@@ -332,14 +344,16 @@ Source: `crates/context-graph-storage/src/teleological/rocksdb_store/crud.rs:32-
 `PidFileGuard` (`crates/context-graph-mcp/src/main.rs:564-791`):
 
 - Writes the current PID to `<storage.path>/mcp.pid`.
-- Holds `flock(LOCK_EX | LOCK_NB)` on Unix; on non-Unix, NO lock is acquired and a `E_PID_NO_LOCK` warning is logged.
+- Holds `flock(LOCK_EX | LOCK_NB)` on Unix; on non-Unix, NO lock is acquired and an `E_PID_NO_LOCK` warning is logged (multiple instances WILL corrupt RocksDB).
 - On contention (`EWOULDBLOCK`), reads the holder PID and runs:
-  - `kill(pid, 0) != 0` ⇒ holder is dead, lock is stale, reclaim.
+  - If PID file is unreadable ⇒ refuse to start (`E_PID_READ_FAIL`) — cannot determine if holder is alive.
+  - `kill(pid, 0) != 0` ⇒ holder process gone, lock is stale, reclaim.
   - Else, read `/proc/{pid}/status` for `State:\tZ` (zombie) or `State:\tX` (dead) ⇒ stale, reclaim.
-  - Otherwise, refuse to start.
-- On reclaim: drop the file, `sleep(100ms)`, reopen with `truncate(true)`, retry `flock`. On success, write current PID and return guard.
+  - Otherwise, refuse to start with explicit kill instructions.
+- On reclaim: drop the file, `sleep(100ms)`, reopen with `truncate(true)`, retry `flock`. On success, write current PID (with logged warnings on seek/truncate/write/flush failures) and return guard.
 - On `Drop`, removes the PID file (best-effort; logs `E_PID_CLEANUP` warning on failure).
-- RocksDB's own LOCK file is owned by RocksDB; `RocksDbTeleologicalStore::open_with_config` only inspects it for diagnostics and never removes it (`store.rs:158-167`).
+- RocksDB's own `LOCK` file is owned by RocksDB; `RocksDbTeleologicalStore::open_with_config` only inspects it via a non-blocking `fcntl(F_SETLK, F_WRLCK)` probe for diagnostics and never removes it (`store.rs:472-564`).
+- Daemon-mode HTTP health check (`is_daemon_healthy_on_port`, `main.rs:793+`): a live PID does not prove the daemon is *responsive* — daemon mode also runs a JSON-RPC `tools/list` round-trip on the configured port and only treats the lock as legitimate when both checks pass.
 
 `TeleologicalStoreConfig` defaults (`types.rs:170-183`):
 
@@ -351,6 +365,17 @@ Source: `crates/context-graph-storage/src/teleological/rocksdb_store/crud.rs:32-
 | `create_if_missing` | `true` | DB-level option |
 | `create_missing_column_families` | `true` | DB-level option |
 | `gc_retention_secs` | `7 * 24 * 3600` (7 days) | Soft-delete GC threshold |
+
+In-memory caps (storage-side; not config-driven):
+
+| Constant | Value | Source | Purpose |
+| --- | --- | --- | --- |
+| `MAX_HNSW_VECTORS_PER_INDEX` | `2_000_000` | `teleological/indexes/hnsw_impl/types.rs:18` | Per-HNSW-index hard cap (insert returns error when reached); ~16GB total at 1024D × f32 |
+| `MAX_TOKENS_PER_MEMORY` | `512` | `teleological/search/token_storage.rs:41` | E12 ColBERT max tokens per memory; rejected at insert |
+| `MAX_TOKEN_ENTRIES` | `5_000` | `teleological/search/pipeline/traits.rs:32` | `InMemoryTokenStorage` LRU cap |
+| `MAX_SPLADE_DOCS` | `100_000` | `teleological/search/pipeline/traits.rs:158` | `InMemorySpladeIndex` LRU cap |
+| `MAX_CHECKPOINTS` | `5` | `teleological/rocksdb_store/persistence.rs:394` | Auto-rotate `<path>/checkpoints/` retaining most recent 5 |
+| `GC_COMPACTION_THRESHOLD` | `10` | `teleological/rocksdb_store/crud.rs:557` | Number of GC hard-deletes before triggering RocksDB `compact_range_cf` on primary + quantized CFs |
 
 ## 12. RocksDB Option Profiles (Summary)
 
@@ -367,7 +392,7 @@ Derived from `crates/context-graph-storage/src/column_families.rs` and `teleolog
 | `typed_edges_options` | `typed_edges` | LZ4 | 10 bits | 16B | 4MB |
 | `typed_edges_by_type_options` | `typed_edges_by_type` | LZ4 | 10 bits | 1B | 2MB |
 | `fingerprint_cf_options` | `fingerprints` | LZ4 | 10 bits | none (64KB blocks) | 8MB |
-| `topic_profile_cf_options` | `topic_profiles` | NONE (52B) | 10 bits (point-lookup 64MB hint) | none | 2MB |
+| `topic_profile_cf_options` | `topic_profiles` | NONE (56B) | 10 bits (point-lookup 64MB hint) | none | 2MB |
 | `e13_splade_inverted_cf_options` / `e6_sparse_inverted_cf_options` | both inverted CFs | LZ4 | 10 bits | none | 4MB |
 | `e1_matryoshka_128_cf_options` | `e1_matryoshka_128` | LZ4 | 10 bits | none (4KB blocks) | 2MB |
 | `uuid_prefixed_cf_options(block_size, wb)` | `training_records`, `learning_events`, all `learner_*`, `learner_training_datasets`, `goal_centroids`, `fingerprints_learner` | LZ4 | 10 bits | 16B (level compaction) | parameterized |

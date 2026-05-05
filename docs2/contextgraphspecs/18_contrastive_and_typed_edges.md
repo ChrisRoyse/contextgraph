@@ -223,7 +223,7 @@ The handler reproduces the `search_cross_embedder_anomalies` algorithm in-proces
 | Tool | Behavior | Source |
 | --- | --- | --- |
 | `export_typed_edges_corpus` | F1 — walk every row in `TYPED_EDGES`, optionally join content (`includeContent`), source metadata (`includeSourceMetadata`), causal mechanism type (`includeMechanismType`), and LLM validation (`joinLLMValidation`); persist one `TypedEdgeTrainingRecord` per edge into `CF_TYPED_EDGE_RECORDS`. Idempotent on the 33-byte composite key. `clearExisting=true` truncates first. Default `maxEdges=10_000`, hard cap `1_000_000`. | `typed_edges_tools.rs:62` |
-| `derive_anomalies_from_edges` | F2 — walk `TYPED_EDGES`, classify each edge against the five expressible `AnomalyKind` patterns (`Other` is excluded — only named axes are emitted), persist matching pairs into `CF_CONTRASTIVE_PAIRS` via the standard contrastive write path with `generator="edge_derived"`. Hard cap `1_000_000`. | `typed_edges_tools.rs:338` |
+| `derive_anomalies_from_edges` | F2 — walk `TYPED_EDGES` via `EdgeRepository.iter_all_typed_edges()`, classify each edge against five expressible `AnomalyKind` patterns (`Other` is excluded — only named axes are emitted), persist matching pairs into `CF_CONTRASTIVE_PAIRS` via the standard contrastive write path with `generator="typed_edge_anomaly_derivation_v1"`. Edges whose source/target content is missing are counted under `skipped_missing_content`. Hard cap `1_000_000`. Returns `AnomalyDerivationSummary { edges_scanned, pairs_written, skipped_below_threshold, skipped_missing_content, per_kind_counts: HashMap<AnomalyKind,usize>, duration_ms }`. | `typed_edges_tools.rs:338`, `anomaly_derivation.rs:79` |
 | `validate_low_confidence_edges` | F4 — LLM-gated. Find typed edges with `weight < ceiling`, call the graph agent (Hermes-2-Pro-Mistral-7B), persist verdicts to `CF_TYPED_EDGE_VALIDATIONS`. Returns `{status:"skipped"}` when the LLM is unavailable (`#[cfg(not(feature = "llm"))]` or no model loaded). Default `maxEdges=100`, hard cap `10_000`. | `typed_edges_tools.rs` |
 | `list_typed_edge_records` | Paginated read view of `CF_TYPED_EDGE_RECORDS`. Default limit 100, hard cap 1000. | `typed_edges_tools.rs:747` |
 
@@ -280,10 +280,10 @@ For incoming edges, the response's `target_id` is set to `edge.source()` (the pe
 
 ## 10. Generators (provenance field on contrastive records)
 
-| `generator` value | Source tool |
-| --- | --- |
-| `cross_embedder_anomaly_v1` | `mine_contrastive_pairs` (the `GENERATOR_TAG` constant in `contrastive/mining.rs:31`) |
-| `edge_derived` | `derive_anomalies_from_edges` (typed-edge → contrastive transform) |
+| `generator` value | Source tool / file | Notes |
+| --- | --- | --- |
+| `cross_embedder_anomaly_v1` | `mine_contrastive_pairs` (the `GENERATOR_TAG` constant in `contrastive/mining.rs:31`) | Offline miner — anchors × candidate-pool sweep with full per-embedder profile |
+| `typed_edge_anomaly_derivation_v1` | `derive_anomalies_from_edges` (`teleological/rocksdb_store/anomaly_derivation.rs:163`) | Online derivation — walks `CF_TYPED_EDGES` and reuses the edge's `embedder_scores()` array as the similarity profile |
 
 Storage-layer write paths set `generator` before persisting, so consumers can filter by origin (e.g., CAMD-DPO miners select `cross_embedder_anomaly_v1` only).
 

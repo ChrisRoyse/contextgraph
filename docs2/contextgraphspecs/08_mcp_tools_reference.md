@@ -97,21 +97,38 @@ pub struct ToolDefinition {
 }
 ```
 
-Almost every schema sets `additionalProperties: false` — unknown params return `InvalidParams`.
+Every schema sets `additionalProperties: false` (Audit #9 L5 — unknown params return `InvalidParams`). Schema integer fields use JSON `integer` (not `number`) to enforce type at the JSON-RPC boundary (Audit #9 H2 — e.g., `lastHours`, `lastDays` on `search_graph`).
+
+### 1.4 Schema↔DTO alignment
+
+Each `definitions/<group>.rs` schema is paired with a DTO module under `handlers/tools/<group>_dtos.rs`. Defaults specified in schemas (`default: …`) MUST match handler defaults (Audit #5 fix — `decayFunction` default was previously `"linear"` in the handler vs `"exponential"` in the schema). The `validate.rs` helpers at `handlers/tools/validate.rs` provide shared `additionalProperties:false` enforcement and numeric clamping utilities.
 
 ---
 
 ## 2. Protocol Methods
 
+Source: `crates/context-graph-mcp/src/protocol.rs`. The MCP server speaks JSON-RPC 2.0 with `id` of type `Number(i64)` or `String`.
+
 | Method | Handler | Behavior |
 | --- | --- | --- |
 | `initialize` | `handle_initialize` | MCP session metadata + capabilities |
+| `shutdown` | `handle_shutdown` | Triggers `McpServer::shutdown()` graceful path |
 | `tools/list` | `handle_tools_list` (`dispatch.rs:40`) | Returns `ToolDefinition[]` (145 with llm, 141 without) |
-| `tools/call` | `handle_tools_call` (`dispatch.rs:46`) | Resolves alias, dispatches to per-tool handler |
+| `tools/call` | `handle_tools_call` (`dispatch.rs:46`) | Resolves alias (`aliases::resolve_alias`), dispatches via `tool_dispatch!` macro (`dispatch.rs:24`) |
+
+Per-tool timeout: `config.mcp.request_timeout` is enforced via `tokio::time::timeout` for every request and every batch sub-request. On timeout: emits `LAYER_TIMEOUT` (-32007) with the original `request.id` (MCP-H2 fix — id is parsed BEFORE consuming the payload). Notifications (no `id` field per JSON-RPC 2.0 §4.1, distinguished from `id: null` per Audit #10 SRV-M2) NEVER receive a response — even on timeout.
+
+Transport modes (`crates/context-graph-mcp/src/server/mod.rs:37` `TransportMode`):
+- `Stdio` (default) — newline-delimited JSON over stdin/stdout. Supports JSON-RPC batch arrays (`[{...},{...}]`) per spec §6 (INFRA-H3 fix). Capped via `MAX_BATCH_SIZE` (`server::transport`) and `MAX_LINE_BYTES` per-line (AGT-04).
+- `Tcp` — bound on `config.mcp.bind_address:tcp_port`, default `127.0.0.1:3100`, `max_connections=32` semaphore-gated. TCP-specific error codes `-32110…-32114` (see `server/transport.rs`). Selected by `--transport tcp`, `CONTEXT_GRAPH_TRANSPORT=tcp`, or `config.mcp.transport="tcp"`. **`sse` transport is rejected** (`determine_transport_mode` at `main.rs:283`).
+- Daemon mode (`--daemon`): TCP daemon shared across stdio clients via stdio-to-TCP proxy. Lock file at `/tmp/context-graph-mcp-daemon.lock`; stale-lock detection uses `flock` + `kill(pid, 0)` + `/proc/pid/status` zombie check.
 
 Errors:
 - `INVALID_PARAMS` (-32602) — missing/unknown params, schema violation
 - `TOOL_NOT_FOUND` (-32601) — name does not match any dispatch entry
+- `LAYER_TIMEOUT` (-32007) — handler exceeded `config.mcp.request_timeout`
+- `INVALID_REQUEST` (-32600) — bad JSON-RPC envelope, oversized batch, empty batch
+- `PARSE_ERROR` (-32700) — malformed JSON line
 
 ---
 

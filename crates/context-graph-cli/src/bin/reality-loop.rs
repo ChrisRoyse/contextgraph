@@ -161,6 +161,8 @@ struct AttemptRecord {
     validation_path: String,
     official_evidence_path: Option<String>,
     resolved: Option<bool>,
+    failure_evidence: Value,
+    patch_preview: Option<String>,
 }
 
 #[tokio::main]
@@ -393,7 +395,33 @@ async fn run(args: Args) -> Result<Value> {
             .to_string();
         let response_path = attempt_dir.join("model-response.txt");
         write_text_checked(&response_path, &response_text)?;
-        let (patch, parse_report) = parse_patch_report(&response_text);
+        let (mut patch, mut parse_report) = parse_patch_report(&response_text);
+        if patch.is_none() {
+            if let Some(edits) = parse_report
+                .get("structured_edits")
+                .and_then(Value::as_array)
+            {
+                let (compiled_patch, compilation_report) =
+                    compile_structured_edits(&workspace, &attempt_dir, edits, args.git_timeout)?;
+                parse_report["structured_edit_compilation"] = compilation_report.clone();
+                if let Some(compiled_patch) = compiled_patch {
+                    patch = Some(compiled_patch);
+                    parse_report["status"] = json!("passed");
+                    parse_report["error_code"] = Value::Null;
+                    parse_report["field_path"] = json!("model_response.edits");
+                    parse_report["message"] = json!(
+                        "model response supplied structured edits that Rust compiled into a git diff"
+                    );
+                } else {
+                    parse_report["status"] = json!("failed");
+                    parse_report["error_code"] = compilation_report["error_code"].clone();
+                    parse_report["field_path"] = compilation_report["field_path"].clone();
+                    parse_report["message"] = compilation_report["message"].clone();
+                    parse_report["remediation"] = compilation_report["remediation"].clone();
+                }
+                reset_workspace(&workspace, &task.base_commit, args.git_timeout)?;
+            }
+        }
         let parse_report_path = attempt_dir.join("model-parse-report.json");
         write_json_checked(&parse_report_path, &parse_report)?;
         let patch_sha = patch.as_ref().map(|p| sha256_text(p));
@@ -417,6 +445,7 @@ async fn run(args: Args) -> Result<Value> {
             patch.as_deref(),
             &parse_report,
             &parse_report_path,
+            repeated_patch,
             args.git_timeout,
         )?;
         let validation_path = attempt_dir.join("validation.json");
@@ -564,6 +593,8 @@ async fn run(args: Args) -> Result<Value> {
             validation_path: path_str(&validation_path).to_string(),
             official_evidence_path,
             resolved,
+            failure_evidence: compact_failure_evidence(&validation),
+            patch_preview: patch.as_ref().map(|text| truncate_chars(text, 1600)),
         };
         write_json_checked(
             &attempt_dir.join("attempt-summary.json"),
@@ -790,6 +821,7 @@ fn build_measurement_contract(
         ],
         "model_editable_scope": [
             "candidate.patch",
+            "structured edit plan compiled by Rust into candidate.patch",
             "notes"
         ],
         "model_forbidden_scope": [
@@ -814,6 +846,19 @@ fn build_measurement_contract(
 
 fn is_40_hex(value: &str) -> bool {
     value.len() == 40 && value.as_bytes().iter().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn compact_failure_evidence(validation: &Value) -> Value {
+    json!({
+        "status": validation.get("status"),
+        "error_code": validation.get("error_code"),
+        "field_path": validation.get("field_path"),
+        "message": validation.get("message"),
+        "remediation": validation.get("remediation"),
+        "git_apply_stderr": validation.pointer("/details/git_apply/stderr"),
+        "git_apply_stdout": validation.pointer("/details/git_apply/stdout"),
+        "source_of_truth": validation.get("source_of_truth"),
+    })
 }
 
 fn write_failure_artifact(args: &Args, err: &RealityError) -> std::result::Result<PathBuf, String> {
@@ -984,7 +1029,7 @@ async fn ollama_chat_json(
     let body = json!({
         "model": args.model,
         "messages": [
-            {"role": "system", "content": "You are a software repair model. Return one raw JSON object only, with no markdown fences and no surrounding prose. The object must contain keys patch and notes. patch must be a unified git diff against the base repository; newlines inside the JSON string must be escaped as \\n. Do not modify tests, fixtures, or benchmark harness files."},
+            {"role": "system", "content": "You are a software repair model. Return one raw JSON object only, with no markdown fences and no surrounding prose. Prefer structured edits over raw diffs: {\"edits\":[{\"path\":\"relative/source/file.py\",\"find\":\"exact old text\",\"replace\":\"exact new text\"}],\"notes\":\"brief\"}. ContextGraph will compile structured edits into a git diff and verify them against the real repository. You may return {\"patch\":\"<complete unified git diff>\",\"notes\":\"brief\"} only if you can produce a syntactically valid diff. Do not modify tests, fixtures, or benchmark harness files."},
             {"role": "user", "content": prompt}
         ],
         "stream": false,
@@ -992,9 +1037,22 @@ async fn ollama_chat_json(
         "format": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["patch", "notes"],
+            "required": ["notes"],
             "properties": {
                 "patch": {"type": "string"},
+                "edits": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["path", "find", "replace"],
+                        "properties": {
+                            "path": {"type": "string"},
+                            "find": {"type": "string"},
+                            "replace": {"type": "string"}
+                        }
+                    }
+                },
                 "notes": {"type": "string"}
             }
         },
@@ -1066,6 +1124,21 @@ fn parse_patch_report(response_text: &str) -> (Option<String>, Value) {
     for candidate in candidates {
         match serde_json::from_str::<Value>(&candidate) {
             Ok(value) => {
+                if let Some(edits) = value.get("edits").and_then(Value::as_array) {
+                    if !edits.is_empty() {
+                        return (
+                            None,
+                            json!({
+                                "status": "pending_structured_edit_compilation",
+                                "error_code": null,
+                                "field_path": "model_response.edits",
+                                "message": "model response supplied structured edits for deterministic Rust compilation",
+                                "structured_edits": edits,
+                                "notes": value.get("notes").cloned().unwrap_or(Value::Null)
+                            }),
+                        );
+                    }
+                }
                 if let Some(patch) = value.get("patch").and_then(Value::as_str) {
                     if !patch.trim().is_empty() {
                         return (
@@ -1074,7 +1147,8 @@ fn parse_patch_report(response_text: &str) -> (Option<String>, Value) {
                                 "status": "passed",
                                 "error_code": null,
                                 "field_path": "model_response.patch",
-                                "message": "model response satisfied the required patch JSON contract"
+                                "message": "model response satisfied the patch JSON contract",
+                                "notes": value.get("notes").cloned().unwrap_or(Value::Null)
                             }),
                         );
                     }
@@ -1083,9 +1157,9 @@ fn parse_patch_report(response_text: &str) -> (Option<String>, Value) {
                     None,
                     json!({
                         "status": "failed",
-                        "error_code": "RUST_REALITY_MODEL_PATCH_MISSING",
-                        "field_path": "model_response.patch",
-                        "message": "model returned JSON, but patch was missing or empty",
+                        "error_code": "RUST_REALITY_MODEL_ACTION_MISSING",
+                        "field_path": "model_response.patch_or_edits",
+                        "message": "model returned JSON, but patch and edits were missing or empty",
                         "details": {"parsed_keys": value.as_object().map(|obj| obj.keys().cloned().collect::<Vec<_>>()).unwrap_or_default()}
                     }),
                 );
@@ -1101,6 +1175,198 @@ fn parse_patch_report(response_text: &str) -> (Option<String>, Value) {
             "field_path": "model_response",
             "message": "model response did not satisfy the required raw JSON object contract",
             "details": {"parse_errors": parse_errors}
+        }),
+    )
+}
+
+fn compile_structured_edits(
+    repo_dir: &Path,
+    attempt_dir: &Path,
+    edits: &[Value],
+    timeout: u64,
+) -> Result<(Option<String>, Value)> {
+    let edits_path = attempt_dir.join("structured-edits.json");
+    write_json_checked(&edits_path, &edits)?;
+    let mut applied = Vec::new();
+
+    for (index, edit) in edits.iter().enumerate() {
+        let field_prefix = format!("model_response.edits[{index}]");
+        let path = match edit.get("path").and_then(Value::as_str) {
+            Some(value) if !value.trim().is_empty() => value.trim(),
+            _ => {
+                return Ok(structured_edit_failure(
+                    "RUST_REALITY_STRUCTURED_EDIT_PATH_MISSING",
+                    &format!("{field_prefix}.path"),
+                    "structured edit path is missing",
+                    "return a relative production-source path that exists in the checked-out repository",
+                    json!({"edit": edit}),
+                    &edits_path,
+                ));
+            }
+        };
+        if path.starts_with('/')
+            || path.contains('\\')
+            || Path::new(path)
+                .components()
+                .any(|part| matches!(part, std::path::Component::ParentDir))
+        {
+            return Ok(structured_edit_failure(
+                "RUST_REALITY_STRUCTURED_EDIT_PATH_INVALID",
+                &format!("{field_prefix}.path"),
+                "structured edit path must be a relative repository path",
+                "return a normal repo-relative path without absolute roots, parent traversal, or backslashes",
+                json!({"path": path}),
+                &edits_path,
+            ));
+        }
+        if is_forbidden_benchmark_mutation(path) {
+            return Ok(structured_edit_failure(
+                "RUST_REALITY_STRUCTURED_EDIT_FORBIDDEN_PATH",
+                &format!("{field_prefix}.path"),
+                "structured edit targets tests, fixtures, or benchmark harness files",
+                "repair production source only; do not change tests, fixtures, or evaluation harnesses",
+                json!({"path": path}),
+                &edits_path,
+            ));
+        }
+        let find = match edit.get("find").and_then(Value::as_str) {
+            Some(value) if !value.is_empty() => value,
+            _ => {
+                return Ok(structured_edit_failure(
+                    "RUST_REALITY_STRUCTURED_EDIT_FIND_MISSING",
+                    &format!("{field_prefix}.find"),
+                    "structured edit find text is missing",
+                    "return exact old source text copied from the repository context",
+                    json!({"path": path}),
+                    &edits_path,
+                ));
+            }
+        };
+        let replace = match edit.get("replace").and_then(Value::as_str) {
+            Some(value) => value,
+            _ => {
+                return Ok(structured_edit_failure(
+                    "RUST_REALITY_STRUCTURED_EDIT_REPLACE_MISSING",
+                    &format!("{field_prefix}.replace"),
+                    "structured edit replace text is missing",
+                    "return the exact replacement source text",
+                    json!({"path": path}),
+                    &edits_path,
+                ));
+            }
+        };
+        let target = repo_dir.join(path);
+        if !target.exists() || !target.is_file() {
+            return Ok(structured_edit_failure(
+                "RUST_REALITY_STRUCTURED_EDIT_TARGET_MISSING",
+                &format!("{field_prefix}.path"),
+                "structured edit target file does not exist",
+                "choose a real production-source file from repository context",
+                json!({"path": path, "source_of_truth": file_sot(&target)}),
+                &edits_path,
+            ));
+        }
+        let before = match fs::read_to_string(&target) {
+            Ok(value) => value,
+            Err(err) => {
+                return Ok(structured_edit_failure(
+                    "RUST_REALITY_STRUCTURED_EDIT_TARGET_READ_FAILED",
+                    &format!("{field_prefix}.path"),
+                    "structured edit target could not be read as UTF-8 text",
+                    "choose a text source file and avoid binary/generated artifacts",
+                    json!({"path": path, "error": err.to_string()}),
+                    &edits_path,
+                ));
+            }
+        };
+        let matches = before.matches(find).count();
+        if matches != 1 {
+            return Ok(structured_edit_failure(
+                if matches == 0 {
+                    "RUST_REALITY_STRUCTURED_EDIT_FIND_NOT_FOUND"
+                } else {
+                    "RUST_REALITY_STRUCTURED_EDIT_FIND_AMBIGUOUS"
+                },
+                &format!("{field_prefix}.find"),
+                "structured edit find text must match exactly one location",
+                "use the latest failure evidence and repository context to provide a unique exact source span",
+                json!({
+                    "path": path,
+                    "matches": matches,
+                    "find_sha256": sha256_text(find),
+                    "source_of_truth": file_sot(&target)
+                }),
+                &edits_path,
+            ));
+        }
+        let after = before.replacen(find, replace, 1);
+        write_text_checked(&target, &after)?;
+        applied.push(json!({
+            "index": index,
+            "path": path,
+            "before_sha256": sha256_text(&before),
+            "after_sha256": sha256_text(&after),
+            "find_sha256": sha256_text(find),
+            "replace_sha256": sha256_text(replace),
+            "source_of_truth": file_sot(&target)
+        }));
+    }
+
+    let diff = run_required(
+        &["git", "diff", "--no-ext-diff", "--binary"],
+        repo_dir,
+        timeout,
+        "RUST_REALITY_STRUCTURED_EDIT_GIT_DIFF_FAILED",
+        "structured_edits.git_diff",
+    )?;
+    if diff.stdout.trim().is_empty() {
+        return Ok(structured_edit_failure(
+            "RUST_REALITY_STRUCTURED_EDIT_EMPTY_DIFF",
+            "model_response.edits",
+            "structured edits produced no repository diff",
+            "change production source so the official oracle has a candidate patch to evaluate",
+            json!({"applied_edits": applied}),
+            &edits_path,
+        ));
+    }
+    let patch_path = attempt_dir.join("candidate.patch");
+    write_text_checked(&patch_path, &diff.stdout)?;
+    Ok((
+        Some(diff.stdout),
+        json!({
+            "status": "passed",
+            "error_code": null,
+            "field_path": "model_response.edits",
+            "message": "Rust compiled structured edits into a git diff from the real checkout",
+            "applied_edits": applied,
+            "candidate_patch_sha256": sha256_file(&patch_path)?,
+            "source_of_truth": {
+                "structured_edits": file_sot(&edits_path),
+                "candidate_patch": file_sot(&patch_path),
+                "workspace_diff": format!("git:{}#diff", path_str(repo_dir))
+            }
+        }),
+    ))
+}
+
+fn structured_edit_failure(
+    error_code: &str,
+    field_path: &str,
+    message: &str,
+    remediation: &str,
+    details: Value,
+    edits_path: &Path,
+) -> (Option<String>, Value) {
+    (
+        None,
+        json!({
+            "status": "failed",
+            "error_code": error_code,
+            "field_path": field_path,
+            "message": message,
+            "remediation": remediation,
+            "details": details,
+            "source_of_truth": file_sot(edits_path)
         }),
     )
 }
@@ -1213,20 +1479,32 @@ fn validate_attempt(
     patch: Option<&str>,
     parse_report: &Value,
     parse_report_path: &Path,
+    repeated_patch: bool,
     timeout: u64,
 ) -> Result<Value> {
     if patch.is_none() {
         return Ok(json!({
             "status": "failed",
-            "error_code": parse_report["error_code"].as_str().unwrap_or("RUST_REALITY_MODEL_PATCH_MISSING"),
-            "field_path": parse_report["field_path"].as_str().unwrap_or("model_response.patch"),
-            "message": parse_report["message"].as_str().unwrap_or("model did not produce a non-empty unified diff patch"),
-            "remediation": "reinject parse failure and require the exact JSON Schema response contract",
+            "error_code": parse_report["error_code"].as_str().unwrap_or("RUST_REALITY_MODEL_ACTION_MISSING"),
+            "field_path": parse_report["field_path"].as_str().unwrap_or("model_response.patch_or_edits"),
+            "message": parse_report["message"].as_str().unwrap_or("model did not produce a usable patch or structured edit plan"),
+            "remediation": parse_report["remediation"].as_str().unwrap_or("reinject parse failure and require the exact JSON response contract with either structured edits or a valid patch"),
             "details": {"parse_report": parse_report, "model_response": file_sot(&attempt_dir.join("model-response.txt"))},
             "source_of_truth": file_sot(parse_report_path)
         }));
     }
     let patch_path = attempt_dir.join("candidate.patch");
+    if repeated_patch {
+        return Ok(json!({
+            "status": "failed",
+            "error_code": "RUST_REALITY_PATCH_REPEATED",
+            "field_path": "candidate.patch",
+            "message": "model repeated a previous candidate patch exactly",
+            "remediation": "produce a materially different patch; use the validation stderr and prior patch preview instead of repeating",
+            "details": {"patch_sha256": sha256_file(&patch_path)?},
+            "source_of_truth": file_sot(&patch_path)
+        }));
+    }
     let apply = run_cmd(
         &vec![
             "git".to_string(),
@@ -1691,18 +1969,6 @@ fn collect_json_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 }
 
 fn collect_repository_context(repo_dir: &Path, task: &TaskManifest) -> Result<Value> {
-    let mut terms = vec![
-        "requests".to_string(),
-        "timeout".to_string(),
-        "redirect".to_string(),
-    ];
-    for test in &task.fail_to_pass {
-        for token in test.split(|c: char| !c.is_alphanumeric() && c != '_') {
-            if token.len() > 3 && !terms.iter().any(|t| t == token) {
-                terms.push(token.to_string());
-            }
-        }
-    }
     let files = run_required(
         &["git", "ls-files"],
         repo_dir,
@@ -1713,51 +1979,54 @@ fn collect_repository_context(repo_dir: &Path, task: &TaskManifest) -> Result<Va
     let all_files: Vec<String> = files.stdout.lines().map(ToOwned::to_owned).collect();
     let all_file_set: BTreeSet<String> = all_files.iter().cloned().collect();
     let mut selected_paths = BTreeSet::new();
+    let terms = task_terms(task);
 
-    for token in task
-        .problem_statement
-        .split(|ch: char| ch.is_whitespace() || ch == '(' || ch == ')' || ch == ',' || ch == ':')
-    {
-        let candidate = token.trim_matches(|ch: char| {
-            ch == '`' || ch == '"' || ch == '\'' || ch == '.' || ch == ';' || ch == '[' || ch == ']'
-        });
-        if candidate.contains('/') && all_file_set.contains(candidate) {
-            selected_paths.insert(candidate.to_string());
+    for candidate in path_candidates(task) {
+        if all_file_set.contains(&candidate) {
+            selected_paths.insert(candidate);
+        } else if !candidate.contains('/') {
+            for path in all_files
+                .iter()
+                .filter(|path| path.ends_with(&candidate))
+                .take(6)
+            {
+                selected_paths.insert(path.to_string());
+            }
         }
     }
-    for must_have in ["requests/sessions.py", "test_requests.py"] {
-        if all_file_set.contains(must_have) {
-            selected_paths.insert(must_have.to_string());
+
+    let grep_terms: Vec<String> = terms.iter().take(24).cloned().collect();
+    for grep_term in grep_terms {
+        if selected_paths.len() >= 10 {
+            break;
         }
-    }
-    for grep_term in ["builtin_str(method)", "def request", "def prepare_request"] {
         let grep = run_cmd(
             &vec![
                 "git".to_string(),
                 "grep".to_string(),
                 "-l".to_string(),
-                grep_term.to_string(),
+                grep_term,
             ],
             repo_dir,
             120,
         )?;
         if grep.exit_code == 0 {
             for line in grep.stdout.lines().take(8) {
-                if all_file_set.contains(line) {
+                if all_file_set.contains(line)
+                    && is_context_file(line)
+                    && !is_low_value_context_path(line)
+                {
                     selected_paths.insert(line.to_string());
                 }
             }
         }
     }
+
     for line in &all_files {
-        if selected_paths.len() >= 12 {
+        if selected_paths.len() >= 10 {
             break;
         }
-        if !(line.ends_with(".py")
-            || line.ends_with(".cfg")
-            || line.ends_with(".ini")
-            || line.ends_with(".rst"))
-        {
+        if !is_context_file(line) || is_low_value_context_path(line) {
             continue;
         }
         let lower = line.to_lowercase();
@@ -1778,7 +2047,7 @@ fn collect_repository_context(repo_dir: &Path, task: &TaskManifest) -> Result<Va
                 "path": line,
                 "sha256": sha256_file(&path)?,
                 "source_of_truth": file_sot(&path),
-                "text": truncate_chars(&text, 6000)
+                "text": truncate_chars(&text, 3200)
             }));
         }
     }
@@ -1787,6 +2056,71 @@ fn collect_repository_context(repo_dir: &Path, task: &TaskManifest) -> Result<Va
         "terms": terms,
         "files": selected
     }))
+}
+
+fn task_terms(task: &TaskManifest) -> Vec<String> {
+    let mut terms = BTreeSet::new();
+    for part in task.repo.split(['/', '-', '_']) {
+        if part.len() > 2 {
+            terms.insert(part.to_string());
+        }
+    }
+    for source in std::iter::once(task.problem_statement.as_str())
+        .chain(task.fail_to_pass.iter().map(String::as_str))
+    {
+        for token in source.split(|c: char| !c.is_alphanumeric() && c != '_') {
+            if token.len() > 3 && token.len() < 64 && !token.chars().all(|c| c.is_ascii_digit()) {
+                terms.insert(token.to_string());
+            }
+        }
+    }
+    terms.into_iter().take(40).collect()
+}
+
+fn path_candidates(task: &TaskManifest) -> Vec<String> {
+    let mut out = BTreeSet::new();
+    for source in std::iter::once(task.problem_statement.as_str())
+        .chain(task.fail_to_pass.iter().map(String::as_str))
+    {
+        for token in source.split(|ch: char| {
+            ch.is_whitespace() || ch == '(' || ch == ')' || ch == ',' || ch == ':'
+        }) {
+            let candidate = token.trim_matches(|ch: char| {
+                ch == '`'
+                    || ch == '"'
+                    || ch == '\''
+                    || ch == '.'
+                    || ch == ';'
+                    || ch == '['
+                    || ch == ']'
+            });
+            if candidate.contains('/') || candidate.ends_with(".py") || candidate.ends_with(".pyx")
+            {
+                let path = candidate.split("::").next().unwrap_or(candidate);
+                out.insert(path.to_string());
+            }
+        }
+    }
+    out.into_iter().collect()
+}
+
+fn is_context_file(path: &str) -> bool {
+    path.ends_with(".py")
+        || path.ends_with(".pyx")
+        || path.ends_with(".pxd")
+        || path.ends_with(".cfg")
+        || path.ends_with(".ini")
+        || path.ends_with(".toml")
+        || path.ends_with(".rst")
+        || path.ends_with(".md")
+}
+
+fn is_low_value_context_path(path: &str) -> bool {
+    path.starts_with("doc/")
+        || path.starts_with("docs/")
+        || path.starts_with("examples/")
+        || path.starts_with("benchmarks/")
+        || path.starts_with(".github/")
 }
 
 fn compile_prompt(
@@ -1802,17 +2136,20 @@ fn compile_prompt(
     format!(
         "You are repairing a real SWE-bench Lite task through ContextGraph's Rust reality loop.\n\
 Success means the official SWE-bench report places instance_id in resolved_ids.\n\
-Do not claim success. Output only JSON: {{\"patch\":\"<unified git diff>\",\"notes\":\"<brief>\"}}.\n\n\
+Do not claim success. Prefer exact structured edits: {{\"edits\":[{{\"path\":\"relative/source/file.py\",\"find\":\"exact old text\",\"replace\":\"exact new text\"}}],\"notes\":\"<brief>\"}}. Use {{\"patch\":\"<unified git diff>\",\"notes\":\"<brief>\"}} only if you can produce a complete valid diff.\n\n\
 Task:\ninstance_id: {}\nrepo: {}\nbase_commit: {}\nFAIL_TO_PASS: {}\n\n\
 Problem statement:\n<<<PROBLEM\n{}\nPROBLEM\n\n\
 Previous attempt summary:\n{}\n\n\
 Do not repeat these patch hashes:\n{}\n\n\
 Hard validation rules:\n\
-- The response must be one raw JSON object with keys patch and notes.\n\
-- The patch must apply to the exact base commit with git apply.\n\
-- The patch must modify production source, not tests, fixtures, or benchmark harness files.\n\
+- The response must be one raw JSON object with notes plus either edits or patch.\n\
+- Prefer edits. Each edit path must be repo-relative production source; find must match exactly one source span; replace is the desired source span.\n\
+- ContextGraph applies edits to the real checkout, generates candidate.patch with git diff, resets to base, then applies/evaluates the generated patch.\n\
+- If you use patch instead, it must apply to the exact base commit with git apply and be a complete unified diff with correct ---/+++ headers and @@ hunks.\n\
+- The patch or edits must modify production source, not tests, fixtures, or benchmark harness files.\n\
 - Do not edit tests to make the benchmark pass.\n\n\
-Repository context JSON:\n{}\n",
+Repository context JSON:\n{}\n\n\
+Final instruction: return exactly one JSON object with notes and either edits or patch. No markdown, no summary, no prose.\n",
         task.instance_id,
         task.repo,
         task.base_commit,
