@@ -136,7 +136,10 @@ pub fn latest_run_id(runtime_root: &Path) -> Result<Option<String>> {
     Ok(candidates.into_iter().last().map(|(_, name)| name))
 }
 
-pub fn latest_attempt_number(runtime_root: &Path, target_instance: Option<&str>) -> Result<Option<u64>> {
+pub fn latest_attempt_number(
+    runtime_root: &Path,
+    target_instance: Option<&str>,
+) -> Result<Option<u64>> {
     let Some(run_id) = latest_run_id(runtime_root)? else {
         return Ok(None);
     };
@@ -146,7 +149,10 @@ pub fn latest_attempt_number(runtime_root: &Path, target_instance: Option<&str>)
     Ok(attempts.into_iter().map(|(n, _)| n).max())
 }
 
-pub fn latest_attempt_dir(runtime_root: &Path, target_instance: Option<&str>) -> Result<Option<(String, u64, PathBuf)>> {
+pub fn latest_attempt_dir(
+    runtime_root: &Path,
+    target_instance: Option<&str>,
+) -> Result<Option<(String, u64, PathBuf)>> {
     let Some(run_id) = latest_run_id(runtime_root)? else {
         return Ok(None);
     };
@@ -157,13 +163,20 @@ pub fn latest_attempt_dir(runtime_root: &Path, target_instance: Option<&str>) ->
     Ok(attempts.into_iter().last().map(|(n, p)| (run_id, n, p)))
 }
 
-pub fn attempt_dir(runtime_root: &Path, run_id: &str, task_id: &str, attempt: u64) -> Result<PathBuf> {
+pub fn attempt_dir(
+    runtime_root: &Path,
+    run_id: &str,
+    task_id: &str,
+    attempt: u64,
+) -> Result<PathBuf> {
     let run_dir = runtime_root.join(run_id);
     let direct = run_dir.join(task_id).join(format!("attempt-{attempt}"));
     if direct.is_dir() {
         return Ok(direct);
     }
-    let smoke = run_dir.join(task_id).join(format!("smoke-attempt-{attempt}"));
+    let smoke = run_dir
+        .join(task_id)
+        .join(format!("smoke-attempt-{attempt}"));
     if smoke.is_dir() {
         return Ok(smoke);
     }
@@ -273,12 +286,17 @@ pub fn write_json_checked(path: &Path, value: &impl Serialize) -> Result<()> {
 
 pub fn write_text_checked(path: &Path, text: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| fs_error("CCREALITY_DIR_CREATE_FAILED", parent, e))?;
+        fs::create_dir_all(parent)
+            .map_err(|e| fs_error("CCREALITY_DIR_CREATE_FAILED", parent, e))?;
     }
-    let mut file = fs::File::create(path).map_err(|e| fs_error("CCREALITY_FILE_CREATE_FAILED", path, e))?;
-    file.write_all(text.as_bytes()).map_err(|e| fs_error("CCREALITY_FILE_WRITE_FAILED", path, e))?;
-    file.sync_all().map_err(|e| fs_error("CCREALITY_FILE_SYNC_FAILED", path, e))?;
-    let readback = fs::read_to_string(path).map_err(|e| fs_error("CCREALITY_FILE_READBACK_FAILED", path, e))?;
+    let mut file =
+        fs::File::create(path).map_err(|e| fs_error("CCREALITY_FILE_CREATE_FAILED", path, e))?;
+    file.write_all(text.as_bytes())
+        .map_err(|e| fs_error("CCREALITY_FILE_WRITE_FAILED", path, e))?;
+    file.sync_all()
+        .map_err(|e| fs_error("CCREALITY_FILE_SYNC_FAILED", path, e))?;
+    let readback = fs::read_to_string(path)
+        .map_err(|e| fs_error("CCREALITY_FILE_READBACK_FAILED", path, e))?;
     if readback != text {
         return Err(CCRealityError::new(
             "CCREALITY_FILE_READBACK_MISMATCH",
@@ -397,13 +415,23 @@ pub fn project_root() -> Result<PathBuf> {
 pub fn safe_id(value: &str) -> String {
     let id = value
         .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == '.' { ch } else { '-' })
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == '.' {
+                ch
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim_matches('-')
         .chars()
         .take(160)
         .collect::<String>();
-    if id.is_empty() { "artifact".to_string() } else { id }
+    if id.is_empty() {
+        "artifact".to_string()
+    } else {
+        id
+    }
 }
 
 pub fn unix_secs() -> Result<u64> {

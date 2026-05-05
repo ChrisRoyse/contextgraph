@@ -12,7 +12,10 @@ As of 2026-05-05:
 |-------|--------|----------|
 | 0 — Branch + safety net | Complete | `ccreality-cutover` exists; `/tmp/ccreality-cutover-base.sha` contains `411443fdcbd8db4005cfe46d44f64f7698c2f11b`. |
 | 1 — Excision | Complete | `/tmp/phase-01-verify.log` ends with `Phase 1 verification: ALL PASS`; `/tmp/ccreality-phase1-fsv-output/observations.json` contains manual FSV readback. |
-| 2 — Reality-engine subcommands | Next | Start at [phase-02-engine-subcommands/](phase-02-engine-subcommands/). |
+| 2 — Reality-engine subcommands | Complete | `/tmp/phase-02-verify.log` ends with `Phase 2 verification: ALL PASS`; `/tmp/cgreality-phase02-ready` is the successful handoff smoke runtime root. |
+| 5 — Config files | Complete | `/tmp/phase-05-verify.log` ends with `Phase 5 verification: ALL PASS`; config files and sample recommendation validate. |
+| 3 — MCP `reality_loop` ANALYZE module | Complete | `/tmp/phase-03-verify.log` ends with `Phase 3 verification: ALL PASS`; `tools/list` over `--mode reality-loop` read back the 11 Phase 3 analyze tools and live analyze calls read smoke artifacts. |
+| 4 — MCP INTERACT/ALTER/SHIFT tools | In progress | Working-tree modules exist and compile; `cargo test -p context-graph-mcp --lib reality_loop --quiet` passes; bounded `tools/list` read back 173 total tools and 32 cgreality reality/alter/shift/memory tools. No `phase-04: PASS` row has been recorded yet. |
 
 ## Stage 0 — Branch + safety net
 
@@ -49,7 +52,7 @@ Apply [04_EXCISION_PLAN](04_EXCISION_PLAN.md) in the order specified there:
 Pre: branch from stage 0.
 Post: `reality-loop.rs` is ~7,500 lines; cargo check + cargo test pass; no deepseek/openai/gpt-5 substrings remain (`rg -n "deepseek\|openai\|gpt-5" crates/context-graph-cli/src/bin/reality-loop.rs` returns nothing).
 
-Current completion record: `reality-loop.rs` currently reads back at 7,203 lines; the Phase 1 completion log recorded 7,145 lines. `crates/context-graph-cli/src/governed_edit.rs` exists; `cargo build -p context-graph-cli --bin reality-loop`, `cargo test -p context-graph-cli --bin reality-loop -- --skip ignored`, and `cargo test -p context-graph-cli --lib governed_edit` passed for Phase 1.
+Current completion record: `reality-loop.rs` currently reads back at 7,990 lines; the Phase 1 completion log recorded 7,145 lines. `crates/context-graph-cli/src/governed_edit.rs` exists; `cargo build -p context-graph-cli --bin reality-loop`, `cargo test -p context-graph-cli --bin reality-loop -- --skip ignored`, and `cargo test -p context-graph-cli --lib governed_edit` passed for Phase 1.
 
 Verification:
 ```bash
@@ -87,16 +90,20 @@ Update `main()` to dispatch.
 Add a tiny helper at the top of `attempt` that updates `~/.cache/cgreality/active_runtime_root` and `~/.cache/cgreality/active_target_instance` when a run starts.
 
 Pre: stage 1 complete.
-Post: `./target/debug/context-graph-cli reality-loop attempt --task-manifest=… --runtime-root=… --official-eval` works exactly as the old default invocation. `reality-loop smoke` runs and writes the synthetic tree.
+Post: `./target/debug/reality-loop attempt --task-manifest=… --runtime-root=… --official-eval-each-attempt` works as the old default invocation. `reality-loop smoke` runs and writes the synthetic tree.
+
+Current completion record: `/tmp/phase-02-verify.log` ends with `Phase 2 verification: ALL PASS`; `/tmp/cgreality-phase02-ready` is the successful handoff smoke runtime root; `~/.cache/cgreality/active_runtime_root` reads back `/tmp/cgreality-phase02-ready`.
 
 Verification:
 ```bash
-./target/debug/context-graph-cli reality-loop smoke --runtime-root /tmp/ccreality-smoke
-ls /tmp/ccreality-smoke/run-*/
-# expected: at least one run directory with attempt-1/ and the standard artifacts
+./target/debug/reality-loop smoke --runtime-root /tmp/cgreality-smoke --label runbook
+find /tmp/cgreality-smoke -name attempt-summary.json -type f | head -1
+# expected: at least one smoke-attempt-1/ directory with the standard artifacts
 ```
 
 ## Stage 3 — MCP `reality_loop` module
+
+Current ordering correction: Phase 5 config files must exist before this MCP stage because path policy now fails closed when `CGREALITY_GOVERNED_PATHS` is missing. Execute Stage 4 / [phase-05-config-files/](phase-05-config-files/) before starting this section.
 
 Create `crates/context-graph-mcp/src/handlers/tools/reality_loop/`:
 
@@ -116,10 +123,12 @@ Logging: route `tracing` to stderr only.
 Pre: stage 2 complete.
 Post: `cargo build -p context-graph-mcp` succeeds. Manual MCP-protocol smoke (using a simple client) lists every tool name in the spec.
 
+Current completion record: `/tmp/phase-03-verify.log` ends with `Phase 3 verification: ALL PASS`; `/tmp/ccreality-phase-progress.log` contains `phase-03: PASS`.
+
 Verification:
 ```bash
 cargo build -p context-graph-mcp
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | ./target/debug/context-graph-mcp --mode reality-loop | head -c 4000
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop | head -c 4000
 # expected: JSON-RPC reply with tools array including mcp-spec tool names
 ```
 

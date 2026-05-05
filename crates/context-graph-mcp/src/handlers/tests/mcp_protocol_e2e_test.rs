@@ -222,10 +222,13 @@ async fn test_e2e_tools_list_all_tools() {
     //   embed_learning_event_signals
     // 2026-04-28: Bumped 108 → 110 after graph-learning policy tools:
     //   record_graph_learning_event, resolve_graph_learning_policy
+    // 2026-05-05: Bumped 110 → 145 after DynamicJEPA's 35-tool MCP surface
+    //   landed in the default registry. Keep this exact so unplanned registry
+    //   changes are visible in protocol E2E.
     assert_eq!(
         tools.len(),
-        110,
-        "Expected exactly 110 tools with LLM feature, found {}",
+        145,
+        "Expected exactly 145 tools with LLM feature, found {}",
         tools.len()
     );
 

@@ -88,14 +88,15 @@ for af in .claude/agents/cc-reality-*.md; do
     if [[ "$t" == mcp__cgreality__* ]]; then
       bare="${t#mcp__cgreality__}"
       if ! echo "$ALLOWED_TOOLS" | grep -qx "$bare"; then
-        echo "WARN: $af references $t but tools/list does not include $bare"
+        echo "FAIL: $af references $t but tools/list does not include $bare" >&2
+        exit 1
       fi
     fi
   done
 done
 ```
 
-Any WARN means the subagent will fail to invoke that tool at runtime. Fix the subagent OR add the tool to Phase 4.
+Any failure means the subagent will fail to invoke that tool at runtime. Fix the subagent or add the missing tool to Phase 4 before marking Phase 7 complete.
 
 ## Path policy update needed
 

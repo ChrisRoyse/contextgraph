@@ -1,7 +1,7 @@
 # Phase 10 — Verification
 
 ```bash
-set -e
+set -euo pipefail
 cd /home/cabdru/contextgraph
 
 echo "=== 10.V1 FSV master script exists ==="
@@ -22,8 +22,12 @@ echo "  pass"
 
 echo "=== 10.V4 All A-E cases PASS in results ==="
 DATE=$(date -u +%Y-%m-%d)
-FAIL_COUNT=$(grep -E "^\| [A-E][0-9]+" docs/ccreality/FSV_RESULTS_${DATE}.md | grep -c " FAIL " || echo 0)
+AE_COUNT=$(awk '/^\| [A-E][0-9]+/ {count++} END {print count+0}' docs/ccreality/FSV_RESULTS_${DATE}.md)
+FAIL_COUNT=$(awk '/^\| [A-E][0-9]+/ && / FAIL / {count++} END {print count+0}' docs/ccreality/FSV_RESULTS_${DATE}.md)
+BLOCKED_COUNT=$(awk '/^\| [A-E][0-9]+/ && / BLOCKED / {count++} END {print count+0}' docs/ccreality/FSV_RESULTS_${DATE}.md)
+[ "$AE_COUNT" -gt 0 ]
 [ "$FAIL_COUNT" -eq 0 ]
+[ "$BLOCKED_COUNT" -eq 0 ]
 echo "  pass"
 
 echo "=== 10.V5 Results doc summary line shows zero failures ==="

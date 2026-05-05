@@ -1,7 +1,7 @@
 # Phase 7 — Verification
 
 ```bash
-set -e
+set -euo pipefail
 cd /home/cabdru/contextgraph
 
 echo "=== 7.V1 .claude/settings.json valid JSON with expected keys ==="
@@ -64,21 +64,23 @@ done
 echo "  pass"
 
 echo "=== 7.V7 Subagent tool references all valid ==="
-ALLOWED_TOOLS=$(echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null | jq -r '.result.tools[].name' || echo "")
-WARNINGS=0
+ALLOWED_TOOLS=$(echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase07-tools-list.err \
+  | jq -r '.result.tools[].name')
+MISSING=0
 for af in .claude/agents/cc-reality-*.md; do
   TOOLS_LINE=$(grep '^tools:' "$af" | head -1 | sed 's/^tools: *//')
   for t in $(echo "$TOOLS_LINE" | tr ',' '\n' | tr -d ' '); do
     if [[ "$t" == mcp__cgreality__* ]]; then
       bare="${t#mcp__cgreality__}"
-      if [ -n "$ALLOWED_TOOLS" ] && ! echo "$ALLOWED_TOOLS" | grep -qx "$bare"; then
-        echo "  WARN: $af → $t (not in tools/list)"
-        WARNINGS=$((WARNINGS + 1))
+      if ! echo "$ALLOWED_TOOLS" | grep -qx "$bare"; then
+        echo "  FAIL: $af references $t, but tools/list does not include $bare"
+        MISSING=$((MISSING + 1))
       fi
     fi
   done
 done
-[ "$WARNINGS" -eq 0 ] || echo "  ($WARNINGS warnings; resolve before Phase 9)"
+[ "$MISSING" -eq 0 ]
 echo "  pass"
 
 echo "=== 7.V8 Path policy includes new files ==="

@@ -1,7 +1,7 @@
 # Phase 6 — Verification
 
 ```bash
-set -e
+set -euo pipefail
 cd /home/cabdru/contextgraph
 
 echo "=== 6.V1 All hook scripts exist and are executable ==="
@@ -23,7 +23,7 @@ done
 echo "  pass"
 
 echo "=== 6.V4 Hooks emit valid JSON ==="
-# Pipe a synthetic stdin to each hook; pipe output through jq
+# Pipe representative Claude Code hook stdin to each hook; pipe output through jq.
 for s in hook_session_start hook_user_prompt_submit hook_pre_compact; do
   OUT="$(echo '{"session_id":"v4-test","source":"startup","prompt":"x","trigger":"auto","current_context_size":100}' | bash "scripts/cc/$s.sh")"
   if [ -n "$OUT" ]; then

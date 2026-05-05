@@ -47,13 +47,14 @@ Inspect tool calls. If `optimizer_record_recommendation` is never called, the sk
 
 ## Layer 6: drift detection mechanism wrong
 
-The smoke's Layer 6 is a manual SHA check. If it fails, `sha256sum` isn't producing different hashes for different content — diagnose via:
+The smoke's Layer 6 now performs a real MCP shift-log/drift readback against a governed probe file under `scripts/cc/tests/`. If it fails, first confirm hashing and then inspect the MCP responses captured by the smoke log:
 ```bash
 echo "a" | sha256sum
 echo "b" | sha256sum
+tail -120 "$SMOKE_ROOT/smoke.log"
 ```
 
-If hashes differ, the test is fine; check the script's git restore step.
+If hashes differ, inspect `harness_apply_line_window_edit`, the shift-log file under the active runtime root, and `reality_shift_compare_to_my_view` before changing the smoke test.
 
 The deeper drift FSV (full Claude session that mutates a file mid-edit) is in Phase 10 case C5.
 
@@ -89,7 +90,7 @@ cd /home/cabdru/contextgraph
 echo "=== Phases ==="
 cat /tmp/ccreality-phase-progress.log
 echo "=== Tools ==="
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null | jq '.result.tools | length' || echo "MCP failed"
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase09-tools.err | jq '.result.tools | length'
 echo "=== Hooks ==="
 ls -la scripts/cc/hook_*.sh
 echo "=== Settings ==="

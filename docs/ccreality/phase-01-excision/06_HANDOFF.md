@@ -14,7 +14,7 @@
 ## Completion Record
 
 - Completed on 2026-05-05 on `ccreality-cutover`.
-- `reality-loop.rs` line count at Phase 1 completion was 7,145. Current readback after later docs/plan commits is 7,203.
+- `reality-loop.rs` line count at Phase 1 completion was 7,145. Current readback after later phase work is 7,990.
 - Canonical verification source of truth: `/tmp/phase-01-verify.log`.
 - Progress log source of truth: `/tmp/ccreality-phase-progress.log`.
 - Manual FSV source of truth: `/tmp/ccreality-phase1-fsv-output/observations.json`.

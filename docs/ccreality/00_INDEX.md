@@ -1,6 +1,6 @@
 # ccreality — Claude Code as the Outer Reality-Loop Optimizer
 
-**Status:** cutover in progress — Phases 0 and 1 complete; Phase 2 is next
+**Status:** cutover in progress — Phases 0, 1, 2, 3, and 5 complete; Phase 4 is in progress
 **Date:** 2026-05-05
 **Author:** Claude (this session) for Chris Royse
 **Supersedes:** `docs2/CLAUDE_CODE_REALITY_LOOP_GUIDE.md` (kept for historical context),
@@ -67,14 +67,21 @@ Current branch: `ccreality-cutover`.
 
 Completed so far:
 - **Phase 0 — Foundation:** branch `ccreality-cutover` created from base SHA `411443fdcbd8db4005cfe46d44f64f7698c2f11b`; rollback source of truth written to `/tmp/ccreality-cutover-base.sha`.
-- **Phase 1 — Excision:** `crates/context-graph-cli/src/bin/reality-loop.rs` contains no `deepseek|openai|gpt-5|chatgpt` text and currently reads back at 7,203 lines; the Phase 1 completion log recorded 7,145 lines. `crates/context-graph-cli/src/governed_edit.rs` exists and is exported from the `context_graph_cli` library target.
+- **Phase 1 — Excision:** `crates/context-graph-cli/src/bin/reality-loop.rs` contains no `deepseek|openai|gpt-5|chatgpt` text and currently reads back at 7,990 lines; the Phase 1 completion log recorded 7,145 lines. `crates/context-graph-cli/src/governed_edit.rs` exists and is exported from the `context_graph_cli` library target.
 - **Phase 1 verification:** `/tmp/phase-01-verify.log` ends with `Phase 1 verification: ALL PASS`; `/tmp/ccreality-phase-progress.log` has `phase-01: PASS`.
 - **Phase 1 manual FSV artifacts:** `/tmp/ccreality-phase1-fsv-output/observations.json` records a real governed edit (`alpha/beta` → `alpha/gamma`), diff readback, command readback, and three edge-case failures.
+- **Phase 2 — Engine subcommands:** `./target/debug/reality-loop --help` exposes `attempt|smoke|replay|verify`; `smoke`, `replay`, `verify`, and forced-failure paths wrote real artifacts.
+- **Phase 2 verification:** `/tmp/phase-02-verify.log` ends with `Phase 2 verification: ALL PASS`; `/tmp/ccreality-phase-progress.log` has `phase-02: PASS`.
+- **Phase 2 handoff source of truth:** successful smoke runtime root `/tmp/cgreality-phase02-ready`; active-root files read back as `/tmp/cgreality-phase02-ready` and `cgreality-smoke-phase02-ready`.
+- **Phase 5 — Config files:** `config/ccreality_governed_paths.json`, `config/ccreality_recommendation_schema.json`, and `docs/ccreality/phase-05-config-files/sample_recommendation.json` exist and validate.
+- **Phase 5 verification:** `/tmp/phase-05-verify.log` ends with `Phase 5 verification: ALL PASS`; `/tmp/ccreality-phase-progress.log` has `phase-05: PASS`.
+- **Phase 3 — MCP foundation + analyze:** `context-graph-mcp --mode reality-loop` builds, lists the 11 ANALYZE `reality_*` tools, and reads the active smoke runtime artifacts through MCP calls.
+- **Phase 3 verification:** `/tmp/phase-03-verify.log` ends with `Phase 3 verification: ALL PASS`; `/tmp/ccreality-phase-progress.log` has `phase-03: PASS`.
+
+In progress:
+- **Phase 4 — MCP interact + alter + shift:** the current working tree contains `alter.rs`, `interact.rs`, `shift_log.rs`, `optimizer.rs`, `lock.rs`, and `schema_validator.rs`; `cargo build -p context-graph-mcp --quiet` and `cargo test -p context-graph-mcp --lib reality_loop --quiet` pass; a bounded `tools/list` probe read back 173 total tools and 32 cgreality reality/alter/shift/memory tools. Phase 4 is not complete until [phase-04-mcp-interact-alter-shift/04_VERIFICATION.md](phase-04-mcp-interact-alter-shift/04_VERIFICATION.md) passes and `/tmp/ccreality-phase-progress.log` contains `phase-04: PASS`.
 
 Still pending:
-- **Phase 2:** refactor remaining engine into explicit `reality-loop attempt|smoke|replay|verify` subcommands and write active runtime-root files.
-- **Phase 3/4:** implement `context-graph-mcp --mode reality-loop` with analyze/interact/alter tools, using `context_graph_cli::governed_edit` for harness operations.
-- **Phase 5:** add governed path and recommendation schema config files.
 - **Phase 6–8:** add hooks, Claude scaffolding, and `CLAUDE.md` runtime addendum.
 - **Phase 9–12:** smoke, full FSV, docs cleanup, first production attempt, and final cutover commit.
 

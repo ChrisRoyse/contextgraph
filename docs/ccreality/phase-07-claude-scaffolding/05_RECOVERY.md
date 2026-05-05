@@ -90,8 +90,10 @@ ls -la .claude/settings.json .mcp.json .claude/loop.md
 ls -la .claude/agents/cc-reality-*.md
 ls -la .claude/skills/ccreality-*/SKILL.md
 echo "=== JSON validity ==="
-jq -e . .claude/settings.json >/dev/null && echo "settings.json OK" || echo "settings.json BAD"
-jq -e . .mcp.json >/dev/null && echo ".mcp.json OK" || echo ".mcp.json BAD"
+jq -e . .claude/settings.json >/dev/null
+echo "settings.json OK"
+jq -e . .mcp.json >/dev/null
+echo ".mcp.json OK"
 echo "=== Subagent frontmatter ==="
 for f in .claude/agents/cc-reality-*.md; do
   echo "--- $f ---"

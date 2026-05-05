@@ -78,7 +78,7 @@ A1 example (`scripts/cc/tests/fsv/cases/A1_smoke_sha_match.sh`):
 
 ```bash
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 ROOT="/tmp/cgreality-fsv-A1-$$"
 mkdir -p "$ROOT"
 trap "rm -rf '$ROOT'" EXIT

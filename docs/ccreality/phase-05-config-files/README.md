@@ -1,7 +1,7 @@
 # Phase 5 — Config Files
 
 **Estimated duration:** 30 minutes.
-**Status:** pending.
+**Status:** complete.
 **Depends on:** Phase 1 (complete). Can be done before or after Phase 2, but must be done before Phase 3 or 4.
 **Unblocks:** Phase 3 & Phase 4 (which read these files).
 
@@ -21,9 +21,8 @@ cd /home/cabdru/contextgraph
 test -f config/ccreality_governed_paths.json && jq -e '.allow' config/ccreality_governed_paths.json >/dev/null
 test -f config/ccreality_recommendation_schema.json && jq -e '.["$schema"]' config/ccreality_recommendation_schema.json >/dev/null
 
-# Schema is self-valid
-python3 -c "import json, jsonschema; s = json.load(open('config/ccreality_recommendation_schema.json')); jsonschema.Draft202012Validator.check_schema(s)" || \
-  echo "(python3 + jsonschema not available; install with: pip install jsonschema)"
+# Schema is self-valid. Python jsonschema is required; missing dependency is a verification failure.
+python3 -c "import json, jsonschema; s = json.load(open('config/ccreality_recommendation_schema.json')); jsonschema.Draft202012Validator.check_schema(s)"
 
 # Worked-example validates against the schema
 python3 -c "
@@ -44,6 +43,14 @@ print('OK')
 - [06_HANDOFF.md](06_HANDOFF.md) — what's true after.
 
 Plus a `sample_recommendation.json` artifact in this folder used by the verification.
+
+## Completion Record
+
+- Completed on 2026-05-05.
+- Canonical verification log: `/tmp/phase-05-verify.log`, ending with `Phase 5 verification: ALL PASS`.
+- Progress log source of truth: `/tmp/ccreality-phase-progress.log`, containing `phase-05: PASS`.
+- Source-of-truth files: `config/ccreality_governed_paths.json`, `config/ccreality_recommendation_schema.json`, and `docs/ccreality/phase-05-config-files/sample_recommendation.json`.
+- Schema validation used Python `jsonschema` Draft 2020-12; the sample recommendation validates, and an intentionally incomplete payload is rejected.
 
 ## Reference docs
 

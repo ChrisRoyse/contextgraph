@@ -21,8 +21,20 @@ pub mod definitions;
 pub mod names;
 pub mod types;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 pub use self::definitions::get_tool_definitions;
 pub use self::names as tool_names;
+
+static REALITY_LOOP_MODE: AtomicBool = AtomicBool::new(false);
+
+pub fn set_reality_loop_mode(enabled: bool) {
+    REALITY_LOOP_MODE.store(enabled, Ordering::SeqCst);
+}
+
+pub fn is_reality_loop_mode() -> bool {
+    REALITY_LOOP_MODE.load(Ordering::SeqCst)
+}
 
 #[cfg(test)]
 mod tests {

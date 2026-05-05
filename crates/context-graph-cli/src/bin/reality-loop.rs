@@ -46,6 +46,10 @@ enum Cmd {
     Attempt(AttemptArgs),
     /// Run a synthetic smoke attempt. No Gemma, no Docker. For wiring verification.
     Smoke(SmokeArgs),
+    /// Re-run official SWE-bench Docker evaluation against an existing attempt patch.
+    OfficialEval(OfficialEvalArgs),
+    /// Apply an existing attempt patch and run one exact fail_to_pass pytest target.
+    TargetedTest(TargetedTestArgs),
     /// Replay an existing attempt's reality-signal-packet builder against current code.
     Replay(ReplayArgs),
     /// Full-state-verify every JSON artifact under a runtime root.
@@ -75,6 +79,53 @@ struct ReplayArgs {
     /// Suffix on the output filename.
     #[arg(long, default_value = DEFAULT_REPLAY_OUTPUT_LABEL)]
     label: String,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct OfficialEvalArgs {
+    #[arg(long, default_value = DEFAULT_RUNTIME_ROOT)]
+    runtime_root: PathBuf,
+    #[arg(long)]
+    run_id: String,
+    #[arg(long)]
+    target_instance: String,
+    #[arg(long)]
+    attempt: u64,
+    #[arg(long, default_value = DEFAULT_MODEL)]
+    model: String,
+    #[arg(
+        long,
+        default_value = "/home/cabdru/.cache/contextgraph-swebench/venv/bin/python"
+    )]
+    swebench_python: PathBuf,
+    #[arg(long, default_value_t = 900)]
+    official_timeout: u64,
+    #[arg(long, default_value_t = 1)]
+    official_max_workers: u64,
+    #[arg(long, default_value = "env")]
+    official_cache_level: String,
+    #[arg(long, default_value = DEFAULT_OFFICIAL_DOCKER_HOST)]
+    official_docker_host: String,
+    #[arg(long, default_value = DEFAULT_OFFICIAL_DOCKER_CONFIG)]
+    official_docker_config: PathBuf,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct TargetedTestArgs {
+    #[arg(long, default_value = DEFAULT_RUNTIME_ROOT)]
+    runtime_root: PathBuf,
+    #[arg(long)]
+    run_id: String,
+    #[arg(long)]
+    target_instance: String,
+    #[arg(long)]
+    attempt: u64,
+    #[arg(long)]
+    test_id: String,
+    #[arg(long, default_value_t = 300)]
+    timeout_secs: u64,
+    #[arg(long, default_value_t = 600)]
+    git_timeout: u64,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -294,6 +345,8 @@ async fn main() {
     let exit_code = match top.cmd {
         Cmd::Attempt(args) => dispatch_attempt(args).await,
         Cmd::Smoke(args) => dispatch_smoke(args).await,
+        Cmd::OfficialEval(args) => dispatch_official_eval(args).await,
+        Cmd::TargetedTest(args) => dispatch_targeted_test(args).await,
         Cmd::Replay(args) => dispatch_replay(args).await,
         Cmd::Verify(args) => dispatch_verify(args).await,
     };
@@ -336,6 +389,16 @@ async fn dispatch_smoke(args: SmokeArgs) -> i32 {
     dispatch(run_smoke(args), &failure_runtime_root).await
 }
 
+async fn dispatch_official_eval(args: OfficialEvalArgs) -> i32 {
+    let failure_runtime_root = args.runtime_root.clone();
+    dispatch(run_official_eval_subcommand(args), &failure_runtime_root).await
+}
+
+async fn dispatch_targeted_test(args: TargetedTestArgs) -> i32 {
+    let failure_runtime_root = args.runtime_root.clone();
+    dispatch(run_targeted_test_subcommand(args), &failure_runtime_root).await
+}
+
 async fn dispatch_replay(args: ReplayArgs) -> i32 {
     let failure_runtime_root = match args
         .output_dir
@@ -369,7 +432,6 @@ async fn run_smoke(args: SmokeArgs) -> Result<Value> {
     create_dir_checked(&runtime_root)?;
     let run_id = format!("smoke-{}", unix_secs_for_logging());
     let task_id = format!("cgreality-smoke-{}", safe_id(&args.label));
-    update_active_runtime_root(&runtime_root, Some(&task_id))?;
 
     if args.force_fail {
         return Err(RealityError::new(
@@ -429,6 +491,7 @@ async fn run_smoke(args: SmokeArgs) -> Result<Value> {
         "source_of_truth": file_sot(&summary_path)
     });
     write_json_checked(&summary_path, &summary)?;
+    update_active_runtime_root(&runtime_root, Some(&task_id))?;
 
     Ok(json!({
         "status": "ok",
@@ -443,6 +506,304 @@ async fn run_smoke(args: SmokeArgs) -> Result<Value> {
             "reality_signal": file_sot(&signal_path),
             "attempt_summary": file_sot(&summary_path)
         }
+    }))
+}
+
+async fn run_official_eval_subcommand(args: OfficialEvalArgs) -> Result<Value> {
+    let runtime_root = resolve_path(&args.runtime_root)?;
+    let run_root = runtime_root.join(&args.run_id);
+    let attempt_dir = locate_existing_attempt(
+        &runtime_root,
+        &args.run_id,
+        &args.target_instance,
+        args.attempt,
+    )?;
+    let task_manifest_path = run_root.join("task-manifest-readback.json");
+    require_file(
+        &task_manifest_path,
+        "official_eval.task_manifest_readback",
+        "RUST_REALITY_OFFICIAL_EVAL_TASK_MANIFEST_MISSING",
+    )?;
+    let task: TaskManifest = read_json(&task_manifest_path)?;
+    if task.instance_id != args.target_instance {
+        return Err(RealityError::new(
+            "RUST_REALITY_OFFICIAL_EVAL_TARGET_MISMATCH",
+            "requested target_instance does not match task-manifest readback",
+            "official_eval.target_instance",
+            "use the active target instance recorded by the engine for this run",
+            json!({
+                "requested": args.target_instance,
+                "manifest_instance_id": task.instance_id,
+                "task_manifest": file_sot(&task_manifest_path)
+            }),
+            Some(file_sot(&task_manifest_path)),
+        ));
+    }
+    let patch_path = attempt_dir.join("candidate.patch");
+    require_file(
+        &patch_path,
+        "official_eval.candidate_patch",
+        "RUST_REALITY_OFFICIAL_EVAL_CANDIDATE_PATCH_MISSING",
+    )?;
+    let patch = fs::read_to_string(&patch_path).map_err(|err| {
+        fs_error(
+            "RUST_REALITY_OFFICIAL_EVAL_PATCH_READ_FAILED",
+            &patch_path,
+            err,
+        )
+    })?;
+    if patch.trim().is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_OFFICIAL_EVAL_CANDIDATE_PATCH_EMPTY",
+            "candidate.patch exists but is empty",
+            "official_eval.candidate_patch",
+            "run official evaluation only after a non-empty candidate patch exists",
+            json!({"candidate_patch": file_sot(&patch_path)}),
+            Some(file_sot(&patch_path)),
+        ));
+    }
+
+    let attempt_args = official_eval_attempt_args(&args, &task_manifest_path);
+    let official = run_official_eval(&attempt_args, &run_root, &attempt_dir, &task, &patch)?;
+    let evidence = build_official_evidence(&official, &task, args.attempt, &patch)?;
+    let evidence_path = attempt_dir.join(format!(
+        "official-rerun-evidence-{}.json",
+        unix_secs_for_logging()
+    ));
+    write_json_checked(&evidence_path, &evidence)?;
+    Ok(json!({
+        "kind": "official-eval",
+        "status": "ok",
+        "run_id": args.run_id,
+        "target_instance": args.target_instance,
+        "attempt": args.attempt,
+        "resolved": evidence.get("resolved").cloned().unwrap_or(Value::Null),
+        "candidate_patch_sha256": sha256_file(&patch_path)?,
+        "official": official,
+        "official_evidence": evidence,
+        "official_evidence_sha256": sha256_file(&evidence_path)?,
+        "source_of_truth": {
+            "candidate_patch": file_sot(&patch_path),
+            "official_evidence": file_sot(&evidence_path),
+            "attempt_dir": file_sot(&attempt_dir)
+        }
+    }))
+}
+
+async fn run_targeted_test_subcommand(args: TargetedTestArgs) -> Result<Value> {
+    let runtime_root = resolve_path(&args.runtime_root)?;
+    let run_root = runtime_root.join(&args.run_id);
+    let attempt_dir = locate_existing_attempt(
+        &runtime_root,
+        &args.run_id,
+        &args.target_instance,
+        args.attempt,
+    )?;
+    if args.test_id.trim().is_empty() || args.test_id.contains('\n') || args.test_id.contains('\0')
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_TARGETED_TEST_ID_INVALID",
+            "test_id is empty or contains invalid control characters",
+            "targeted_test.test_id",
+            "use one exact fail_to_pass test id from the task manifest",
+            json!({"test_id": args.test_id}),
+            None,
+        ));
+    }
+    let task_manifest_path = run_root.join("task-manifest-readback.json");
+    require_file(
+        &task_manifest_path,
+        "targeted_test.task_manifest_readback",
+        "RUST_REALITY_TARGETED_TEST_TASK_MANIFEST_MISSING",
+    )?;
+    let task: TaskManifest = read_json(&task_manifest_path)?;
+    if task.instance_id != args.target_instance {
+        return Err(RealityError::new(
+            "RUST_REALITY_TARGETED_TEST_TARGET_MISMATCH",
+            "requested target_instance does not match task-manifest readback",
+            "targeted_test.target_instance",
+            "use the active target instance recorded by the engine for this run",
+            json!({
+                "requested": args.target_instance,
+                "manifest_instance_id": task.instance_id,
+                "task_manifest": file_sot(&task_manifest_path)
+            }),
+            Some(file_sot(&task_manifest_path)),
+        ));
+    }
+    if !task
+        .fail_to_pass
+        .iter()
+        .any(|test_id| test_id == &args.test_id)
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_TARGETED_TEST_NOT_IN_ORACLE",
+            "test_id is not listed in the task manifest fail_to_pass oracle",
+            "targeted_test.test_id",
+            "choose one exact fail_to_pass test id from task-manifest-readback.json",
+            json!({
+                "test_id": args.test_id,
+                "fail_to_pass": task.fail_to_pass,
+                "task_manifest": file_sot(&task_manifest_path)
+            }),
+            Some(file_sot(&task_manifest_path)),
+        ));
+    }
+    let repo_dir = runtime_root
+        .join("workspaces")
+        .join(&args.target_instance)
+        .join("repo");
+    if !repo_dir.is_dir() {
+        return Err(RealityError::new(
+            "RUST_REALITY_TARGETED_TEST_REPO_MISSING",
+            "target checkout is missing",
+            "targeted_test.repo",
+            "run a full attempt first so the real repository checkout exists",
+            json!({"repo_dir": path_str(&repo_dir)}),
+            Some(file_sot(&repo_dir)),
+        ));
+    }
+    let patch_path = attempt_dir.join("candidate.patch");
+    require_file(
+        &patch_path,
+        "targeted_test.candidate_patch",
+        "RUST_REALITY_TARGETED_TEST_CANDIDATE_PATCH_MISSING",
+    )?;
+    let patch = fs::read_to_string(&patch_path).map_err(|err| {
+        fs_error(
+            "RUST_REALITY_TARGETED_TEST_PATCH_READ_FAILED",
+            &patch_path,
+            err,
+        )
+    })?;
+    if patch.trim().is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_TARGETED_TEST_CANDIDATE_PATCH_EMPTY",
+            "candidate.patch exists but is empty",
+            "targeted_test.candidate_patch",
+            "run targeted tests only after a non-empty candidate patch exists",
+            json!({"candidate_patch": file_sot(&patch_path)}),
+            Some(file_sot(&patch_path)),
+        ));
+    }
+
+    reset_workspace(&repo_dir, &task.base_commit, args.git_timeout)?;
+    let apply_check = run_cmd(
+        &[
+            "git".to_string(),
+            "apply".to_string(),
+            "--check".to_string(),
+            path_str(&patch_path).to_string(),
+        ],
+        &repo_dir,
+        args.git_timeout,
+    )?;
+    if apply_check.exit_code != 0 {
+        return Err(RealityError::new(
+            "RUST_REALITY_TARGETED_TEST_PATCH_APPLY_CHECK_FAILED",
+            "candidate patch did not apply cleanly to the target checkout",
+            "targeted_test.candidate_patch",
+            "inspect candidate.patch and regenerate it against the task base commit",
+            json!({"process": apply_check, "candidate_patch": file_sot(&patch_path)}),
+            Some(file_sot(&patch_path)),
+        ));
+    }
+    let apply = run_cmd(
+        &[
+            "git".to_string(),
+            "apply".to_string(),
+            path_str(&patch_path).to_string(),
+        ],
+        &repo_dir,
+        args.git_timeout,
+    )?;
+    if apply.exit_code != 0 {
+        return Err(RealityError::new(
+            "RUST_REALITY_TARGETED_TEST_PATCH_APPLY_FAILED",
+            "candidate patch apply failed after apply --check passed",
+            "targeted_test.candidate_patch",
+            "inspect git apply output and repository state",
+            json!({"process": apply, "candidate_patch": file_sot(&patch_path)}),
+            Some(file_sot(&patch_path)),
+        ));
+    }
+    let process_result = run_cmd(
+        &[
+            LOCAL_PYTHON_BIN.to_string(),
+            "-m".to_string(),
+            "pytest".to_string(),
+            "-q".to_string(),
+            args.test_id.clone(),
+        ],
+        &repo_dir,
+        args.timeout_secs,
+    );
+    let reset_result = reset_workspace(&repo_dir, &task.base_commit, args.git_timeout);
+    let process = match (process_result, reset_result) {
+        (Ok(process), Ok(())) => process,
+        (Err(process_err), Ok(())) => return Err(process_err),
+        (Ok(process), Err(reset_err)) => {
+            return Err(RealityError::new(
+                "RUST_REALITY_TARGETED_TEST_RESET_FAILED",
+                "targeted test completed but workspace reset failed",
+                "targeted_test.workspace_reset",
+                "inspect the checkout immediately before any further test runs",
+                json!({"process": process, "reset_error": reset_err}),
+                Some(file_sot(&repo_dir)),
+            ))
+        }
+        (Err(process_err), Err(reset_err)) => {
+            return Err(RealityError::new(
+                "RUST_REALITY_TARGETED_TEST_AND_RESET_FAILED",
+                "targeted test command failed to execute and workspace reset also failed",
+                "targeted_test",
+                "inspect the checkout and command environment before continuing",
+                json!({"process_error": process_err, "reset_error": reset_err}),
+                Some(file_sot(&repo_dir)),
+            ))
+        }
+    };
+
+    let artifact = json!({
+        "record_kind": "ccreality_targeted_test",
+        "schema_version": 1,
+        "run_id": args.run_id,
+        "target_instance": args.target_instance,
+        "attempt": args.attempt,
+        "test_id": args.test_id,
+        "status": if process.exit_code == 0 { "passed" } else { "failed" },
+        "candidate_patch_sha256": sha256_file(&patch_path)?,
+        "process": {
+            "command": process.command,
+            "cwd": process.cwd,
+            "exit_code": process.exit_code,
+            "elapsed_ms": process.elapsed_ms,
+            "stdout_tail": tail_chars(&process.stdout, 6000),
+            "stderr_tail": tail_chars(&process.stderr, 6000)
+        },
+        "source_of_truth": {
+            "candidate_patch": file_sot(&patch_path),
+            "repo_head_after_reset": format!("git:{}#HEAD", path_str(&repo_dir)),
+            "repo_status_after_reset": format!("git:{}#status", path_str(&repo_dir))
+        }
+    });
+    let artifact_path = attempt_dir.join("targeted-tests").join(format!(
+        "{}-{}.json",
+        safe_id(&args.test_id),
+        unix_secs_for_logging()
+    ));
+    write_json_checked(&artifact_path, &artifact)?;
+    Ok(json!({
+        "kind": "targeted-test",
+        "status": artifact.get("status").cloned().unwrap_or(Value::Null),
+        "run_id": artifact.get("run_id").cloned().unwrap_or(Value::Null),
+        "target_instance": artifact.get("target_instance").cloned().unwrap_or(Value::Null),
+        "attempt": artifact.get("attempt").cloned().unwrap_or(Value::Null),
+        "test_id": artifact.get("test_id").cloned().unwrap_or(Value::Null),
+        "candidate_patch_sha256": artifact.get("candidate_patch_sha256").cloned().unwrap_or(Value::Null),
+        "process": artifact.get("process").cloned().unwrap_or(Value::Null),
+        "artifact_sha256": sha256_file(&artifact_path)?,
+        "source_of_truth": file_sot(&artifact_path)
     }))
 }
 
@@ -588,6 +949,122 @@ async fn run_verify(args: VerifyArgs) -> Result<Value> {
     }))
 }
 
+fn official_eval_attempt_args(args: &OfficialEvalArgs, task_manifest: &Path) -> AttemptArgs {
+    AttemptArgs {
+        model: args.model.clone(),
+        task_manifest: task_manifest.to_path_buf(),
+        runtime_root: args.runtime_root.clone(),
+        ollama_url: DEFAULT_OLLAMA_URL.to_string(),
+        context_graph_bin: PathBuf::from(DEFAULT_CONTEXT_GRAPH_BIN),
+        max_attempts: 1,
+        run_until_resolved: false,
+        smoke_test: false,
+        official_eval_each_attempt: true,
+        swebench_python: args.swebench_python.clone(),
+        official_timeout: args.official_timeout,
+        official_max_workers: args.official_max_workers,
+        official_cache_level: args.official_cache_level.clone(),
+        official_docker_host: args.official_docker_host.clone(),
+        official_docker_config: args.official_docker_config.clone(),
+        gpu_index: 0,
+        gpu_min_free_mb: DEFAULT_GPU_MIN_FREE_MB,
+        gpu_max_used_mb: None,
+        ollama_keep_alive: DEFAULT_OLLAMA_KEEP_ALIVE.to_string(),
+        ollama_num_ctx: DEFAULT_OLLAMA_NUM_CTX,
+        ollama_num_predict: DEFAULT_OLLAMA_NUM_PREDICT,
+        ollama_temperature: DEFAULT_OLLAMA_TEMPERATURE,
+        ollama_top_p: DEFAULT_OLLAMA_TOP_P,
+        model_timeout: 300,
+        git_timeout: 600,
+        agent_tool_rounds: 8,
+        targeted_test_timeout: 300,
+        sleep_between_attempts_ms: 0,
+    }
+}
+
+fn locate_existing_attempt(
+    runtime_root: &Path,
+    run_id: &str,
+    target_instance: &str,
+    attempt: u64,
+) -> Result<PathBuf> {
+    let run_root = runtime_root.join(run_id);
+    if !run_root.is_dir() {
+        return Err(RealityError::new(
+            "RUST_REALITY_RUN_ROOT_MISSING",
+            "run root does not exist",
+            "run_id",
+            "verify run_id and runtime_root against reality_latest_root",
+            json!({"runtime_root": path_str(runtime_root), "run_id": run_id}),
+            Some(file_sot(&run_root)),
+        ));
+    }
+
+    let direct = run_root
+        .join(target_instance)
+        .join(format!("attempt-{attempt}"));
+    if direct.is_dir() {
+        return Ok(direct);
+    }
+    let smoke = run_root
+        .join(target_instance)
+        .join(format!("smoke-attempt-{attempt}"));
+    if smoke.is_dir() {
+        return Ok(smoke);
+    }
+
+    let mut matches = Vec::new();
+    collect_attempt_dirs_for_run(&run_root, target_instance, attempt, &mut matches)?;
+    matches.sort();
+    matches.into_iter().next().ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_ATTEMPT_DIR_MISSING",
+            "could not locate requested attempt directory",
+            "attempt",
+            "verify run_id, target_instance, and attempt number against runtime artifacts",
+            json!({
+                "runtime_root": path_str(runtime_root),
+                "run_id": run_id,
+                "target_instance": target_instance,
+                "attempt": attempt
+            }),
+            Some(file_sot(&run_root)),
+        )
+    })
+}
+
+fn collect_attempt_dirs_for_run(
+    root: &Path,
+    target_instance: &str,
+    attempt: u64,
+    out: &mut Vec<PathBuf>,
+) -> Result<()> {
+    if !root.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(root)
+        .map_err(|err| fs_error("RUST_REALITY_ATTEMPT_WALK_READ_FAILED", root, err))?
+    {
+        let entry =
+            entry.map_err(|err| fs_error("RUST_REALITY_ATTEMPT_WALK_ENTRY_FAILED", root, err))?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        let parsed = name
+            .strip_prefix("attempt-")
+            .or_else(|| name.strip_prefix("smoke-attempt-"))
+            .and_then(|suffix| suffix.parse::<u64>().ok());
+        if parsed == Some(attempt) && path.display().to_string().contains(target_instance) {
+            out.push(path);
+            continue;
+        }
+        collect_attempt_dirs_for_run(&path, target_instance, attempt, out)?;
+    }
+    Ok(())
+}
+
 async fn run(args: AttemptArgs) -> Result<Value> {
     let runtime_root = resolve_path(&args.runtime_root)?;
     create_dir_checked(&runtime_root)?;
@@ -645,7 +1122,6 @@ async fn run(args: AttemptArgs) -> Result<Value> {
     )?;
     let task: TaskManifest = read_json(&task_manifest_path)?;
     validate_task_manifest_contract(&task, &task_manifest_path)?;
-    update_active_runtime_root(&runtime_root, Some(&task.instance_id))?;
     if !args.official_eval_each_attempt {
         return Err(RealityError::new(
             "RUST_REALITY_OFFICIAL_EVAL_REQUIRED",
@@ -660,6 +1136,7 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             Some(file_sot(&task_manifest_path)),
         ));
     }
+    update_active_runtime_root(&runtime_root, Some(&task.instance_id))?;
     let loop_id = format!(
         "rust_reality_{}_{}",
         unix_ns()?,

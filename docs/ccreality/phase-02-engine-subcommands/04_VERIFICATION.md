@@ -74,6 +74,19 @@ cargo test -p context-graph-cli --bin reality-loop --quiet -- --skip ignored
 cargo test -p context-graph-cli --lib governed_edit --quiet
 echo "  pass"
 
+echo "=== 2.V11 Final successful handoff smoke ==="
+READY_ROOT="/tmp/cgreality-phase02-ready"
+rm -rf "$READY_ROOT"
+./target/debug/reality-loop smoke --runtime-root "$READY_ROOT" --label phase02-ready >/tmp/phase02-ready-smoke.json
+test -s ~/.cache/cgreality/active_runtime_root
+[ "$(cat ~/.cache/cgreality/active_runtime_root)" = "$READY_ROOT" ]
+[ "$(cat ~/.cache/cgreality/active_target_instance)" = "cgreality-smoke-phase02-ready" ]
+READY_ATTEMPT_DIR=$(find "$READY_ROOT" -name 'smoke-attempt-1' -type d | head -1)
+test -s "$READY_ATTEMPT_DIR/attempt-summary.json"
+test -s "$READY_ATTEMPT_DIR/reality-signal-packet.json"
+test -s "$READY_ATTEMPT_DIR/problem-reality-packet.json"
+echo "  pass; ready smoke artifacts at $READY_ATTEMPT_DIR"
+
 echo
 echo "Phase 2 verification: ALL PASS"
 ```
@@ -92,6 +105,7 @@ echo "Phase 2 verification: ALL PASS"
 | 2.V8 | Verify subcommand enumerates artifacts |
 | 2.V9 | --force-fail correctly produces non-zero exit + error JSON |
 | 2.V10 | All Phase 1 tests still pass after refactor |
+| 2.V11 | Final active-root state points at a successful smoke runtime for Phase 3 |
 
 ## Cleanup after verification
 
@@ -100,4 +114,10 @@ rm -rf /tmp/cgreality-phase02-verify-* /tmp/cgreality-phase02-fail
 rm -f /tmp/phase02-smoke.json /tmp/phase02-replay.json /tmp/phase02-verify.json /tmp/phase02-fail.json /tmp/phase02-fail.err
 ```
 
-Don't delete `~/.cache/cgreality/active_runtime_root` — it's the durable contract for Phase 6+ hooks.
+Don't delete `/tmp/cgreality-phase02-ready` or `~/.cache/cgreality/active_runtime_root` — they are the handoff source of truth for Phase 3+.
+
+## What to record
+
+```bash
+echo "phase-02: PASS, $(date -u +%FT%TZ), smoke_root=/tmp/cgreality-phase02-ready, verify_log=/tmp/phase-02-verify.log" >> /tmp/ccreality-phase-progress.log
+```

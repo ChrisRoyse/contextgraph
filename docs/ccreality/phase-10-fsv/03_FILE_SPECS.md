@@ -10,7 +10,7 @@ Every case follows this template:
 
 ```bash
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 CASE_NAME="$(basename "${BASH_SOURCE[0]}" .sh)"
 WORK="/tmp/cgreality-fsv-${CASE_NAME}-$$"
 mkdir -p "$WORK"
@@ -18,7 +18,7 @@ trap "rm -rf '$WORK'" EXIT
 cd /home/cabdru/contextgraph
 
 # --- setup ---
-# (synthesize required state)
+# (prepare known real smoke/attempt state)
 
 # --- action ---
 # (run the thing under test)
@@ -55,11 +55,11 @@ For each case in [../18_FSV_PLAN.md](../18_FSV_PLAN.md), write a script. Below a
 
 ### A4 — Repeated patch detected
 
-Skip; requires Gemma run.
+Use a real known-answer fixture or a real Gemma run whose expected repeated-patch signature is defined before execution. If that fixture is not available, record `BLOCKED` with the missing dependency and remediation. Do not mark the case PASS or SKIP.
 
 ### A5 — Engine crash mid-attempt
 
-Skip; requires careful subprocess management.
+Use a real subprocess-management case that forces the engine to fail and then reads the failure artifact from disk. If that fixture is not available, record `BLOCKED` with the missing dependency and remediation. Do not mark the case PASS or SKIP.
 
 ### B1–B6 — MCP analyze cases
 
@@ -68,24 +68,27 @@ Each makes one MCP tool call against a known smoke runtime root and asserts the 
 `scripts/cc/tests/fsv/cases/B1_latest_root.sh`:
 ```bash
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 cd /home/cabdru/contextgraph
 RES=$(echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"reality_latest_root","arguments":{}}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/fsv-B1.err \
   | jq -r '.result.content[0].text')
-echo "$RES" | jq -e '.runtime_root | type == "string" or . == null' >/dev/null
+echo "$RES" | jq -e '.runtime_root | type == "string"' >/dev/null
+ROOT=$(echo "$RES" | jq -r '.runtime_root')
+test -d "$ROOT"
 echo "B1 PASS"
 ```
 
-(Allow null runtime_root if no smoke has been run; this is OK behavior.)
+The case requires a real smoke runtime root. If no active root exists, run `reality-loop smoke` before the case; do not accept a null runtime root as pass.
 
 ### C1–C12 — MCP alter + shift cases
 
 `scripts/cc/tests/fsv/cases/C1_open_then_apply.sh`:
-- Open `docs/ccreality/00_INDEX.md` lines 1-5.
+- Create a governed probe file under `scripts/cc/tests/fsv/work/C1_probe.txt`.
+- Open that probe file lines 1-1.
 - Apply edit with the SHA → expect success.
 - Verify shift_log entry exists.
-- Revert the edit (`git restore`).
+- Remove the probe file during cleanup after source-of-truth readback.
 
 `scripts/cc/tests/fsv/cases/C2_stale_sha_fails.sh`:
 - Apply edit with deliberately wrong SHA.

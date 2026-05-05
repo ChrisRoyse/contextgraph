@@ -18,7 +18,8 @@ Copy the body verbatim from [../07_HOOKS_SPEC.md](../07_HOOKS_SPEC.md) §"Common
 
 ```bash
 chmod +x scripts/cc/_common.sh
-shellcheck scripts/cc/_common.sh 2>/dev/null || echo "(install shellcheck for linting)"
+command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck is required for Phase 6"; exit 1; }
+shellcheck scripts/cc/_common.sh
 ```
 
 ## Task 6.3 — Write each of the 6 hook scripts
@@ -63,7 +64,10 @@ assert_exit() {
 assert_jq() {
   local input="$1" expr="$2" expected="$3" label="$4"
   local actual
-  actual="$(echo "$input" | jq -r "$expr" 2>/dev/null || echo '<jq-failed>')"
+  if ! actual="$(echo "$input" | jq -r "$expr")"; then
+    echo "FAIL [$label]: jq failed for expression $expr against input: $input" >&2
+    return 1
+  fi
   if [ "$actual" != "$expected" ]; then
     echo "FAIL [$label]: $expr expected '$expected', got '$actual'" >&2
     return 1
@@ -74,30 +78,23 @@ mktempdir() {
   mktemp -d "/tmp/cgreality-hook-test-XXXXXX"
 }
 
-setup_synthetic_runtime_root() {
-  # Creates a synthetic runtime root with a smoke attempt for hook tests.
-  local root="$1" task="${2:-cgreality-test}" attempt="${3:-1}"
-  mkdir -p "$root/run-$(date +%s)/$task/attempt-$attempt"
-  local rdir
-  rdir="$(find "$root" -mindepth 3 -maxdepth 3 -type d | head -1)"
-  cat > "$rdir/attempt-summary.json" <<EOF
-{"record_kind":"test","attempt":$attempt,"validation":{"status":"failed"}}
-EOF
-  cat > "$rdir/reality-signal-packet.json" <<EOF
-{"failure_digest":{"class":"test_failure"},"score_reality":{"reward":{"clipped":0.1}},"reinjection_directive":"test directive"}
-EOF
-  cat > "$rdir/trigger-decision.json" <<EOF
-{"status":"triggered","should_run":true,"policy":"failure_or_regression","reasons":[{"reason":"test"}]}
-EOF
-  echo "$rdir"
+setup_real_smoke_runtime_root() {
+  # Creates a real runtime root by invoking the Phase 2 smoke subcommand.
+  local root="$1" label="${2:-hook-test}"
+  cargo build -p context-graph-cli --bin reality-loop --quiet
+  ./target/debug/reality-loop smoke --runtime-root "$root" --label "$label" >/dev/null
+  local summary
+  summary="$(find "$root" -name attempt-summary.json -type f -print -quit)"
+  test -n "$summary" || { echo "FAIL: smoke wrote no attempt-summary.json under $root" >&2; return 1; }
+  dirname "$summary"
 }
 ```
 
 ## Task 6.5 — Write the 6 hook unit tests
 
 For each of the 6 hooks, create a test under `scripts/cc/tests/hooks/test_<hookname>.sh`. See [03_FILE_SPECS.md](03_FILE_SPECS.md) §"Hook unit tests" for full bodies. Each test:
-1. Sets up a synthetic runtime root.
-2. Crafts a synthetic stdin JSON.
+1. Sets up a real smoke runtime root by invoking `./target/debug/reality-loop smoke`.
+2. Crafts representative Claude Code hook stdin JSON.
 3. Runs the hook.
 4. Asserts exit code + stdout shape.
 5. Cleans up.
@@ -126,12 +123,11 @@ bash -x scripts/cc/tests/hooks/test_<failing>.sh 2>&1 | head -50
 ## Task 6.7 — Run shellcheck on every script (if available)
 
 ```bash
-if command -v shellcheck >/dev/null; then
-  shellcheck scripts/cc/*.sh scripts/cc/tests/hooks/*.sh
-fi
+command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck is required for Phase 6"; exit 1; }
+shellcheck scripts/cc/*.sh scripts/cc/tests/hooks/*.sh
 ```
 
-If shellcheck isn't installed, skip; the verification clause is conditional.
+If shellcheck isn't installed, install it before continuing. Phase 6 is incomplete without this check.
 
 ## Task 6.8 — Verify
 

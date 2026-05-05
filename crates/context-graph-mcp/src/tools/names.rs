@@ -341,3 +341,33 @@ pub const DYNAMICJEPA_GET_SURPRISE: &str = "dynamicjepa_get_surprise";
 pub const DYNAMICJEPA_INSPECT_COUNTS: &str = "dynamicjepa_inspect_counts";
 /// Decode rows from one DynamicJEPA column family.
 pub const DYNAMICJEPA_INSPECT_CF: &str = "dynamicjepa_inspect_cf";
+
+// ========== CGREALITY REALITY-LOOP TOOLS ==========
+pub const REALITY_LATEST_ROOT: &str = "reality_latest_root";
+pub const REALITY_ATTEMPT_SUMMARY: &str = "reality_attempt_summary";
+pub const REALITY_OFFICIAL_REPORT: &str = "reality_official_report";
+pub const REALITY_PROBLEM_PACKET: &str = "reality_problem_packet";
+pub const REALITY_SIGNAL: &str = "reality_signal";
+pub const REALITY_FAILURE: &str = "reality_failure";
+pub const REALITY_TRIGGER_DECISION: &str = "reality_trigger_decision";
+pub const REALITY_HARNESS_TRANSITIONS: &str = "reality_harness_transitions";
+pub const REALITY_COMPARE_ATTEMPTS: &str = "reality_compare_attempts";
+pub const REALITY_AUDIT_TRAIL: &str = "reality_audit_trail";
+pub const REALITY_REPLAY_ARTIFACT: &str = "reality_replay_artifact";
+pub const REALITY_RUN_ATTEMPT: &str = "reality_run_attempt";
+pub const REALITY_RUN_SMOKE: &str = "reality_run_smoke";
+pub const REALITY_RUN_OFFICIAL_EVAL: &str = "reality_run_official_eval";
+pub const REALITY_RUN_TARGETED_TEST: &str = "reality_run_targeted_test";
+pub const REALITY_RECOMPILE_REWARD: &str = "reality_recompile_reward";
+pub const REALITY_QUERY_LEDGER: &str = "reality_query_ledger";
+pub const HARNESS_OPEN_WINDOW: &str = "harness_open_window";
+pub const HARNESS_APPLY_LINE_WINDOW_EDIT: &str = "harness_apply_line_window_edit";
+pub const HARNESS_RUN_COMMAND: &str = "harness_run_command";
+pub const HARNESS_GIT_DIFF: &str = "harness_git_diff";
+pub const HARNESS_GIT_STATUS: &str = "harness_git_status";
+pub const HARNESS_VERIFY_STATE: &str = "harness_verify_state";
+pub const OPTIMIZER_RECORD_DECISION: &str = "optimizer_record_decision";
+pub const OPTIMIZER_RECORD_RECOMMENDATION: &str = "optimizer_record_recommendation";
+pub const OPTIMIZER_RECORD_HARNESS_TRANSITION: &str = "optimizer_record_harness_transition";
+pub const REALITY_SHIFT_LOG: &str = "reality_shift_log";
+pub const REALITY_SHIFT_COMPARE_TO_MY_VIEW: &str = "reality_shift_compare_to_my_view";

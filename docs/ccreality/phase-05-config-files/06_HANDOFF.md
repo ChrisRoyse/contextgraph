@@ -8,6 +8,13 @@
 - Phase 3's `path_policy::load()` (when run) finds and loads the governed-paths file.
 - Phase 4's `RecommendationValidator::load()` finds and loads the schema.
 
+## Completion Record
+
+- Completed on 2026-05-05.
+- Canonical verification log: `/tmp/phase-05-verify.log`, ending with `Phase 5 verification: ALL PASS`.
+- Progress log source of truth: `/tmp/ccreality-phase-progress.log`, containing `phase-05: PASS`.
+- Schema validation source of truth: `docs/ccreality/phase-05-config-files/sample_recommendation.json` validates against `config/ccreality_recommendation_schema.json`, and `/tmp/bad-rec.json` was rejected during verification.
+
 ## Useful environment variables
 
 When running the MCP server outside Claude Code (e.g., manual smoke), set:
@@ -21,8 +28,6 @@ export CGREALITY_RECOMMENDATION_SCHEMA=$CONTEXTGRAPH_ROOT/config/ccreality_recom
 
 ## Next phase
 
-Three options, depending on which path you took:
+→ [phase-04-mcp-interact-alter-shift/](../phase-04-mcp-interact-alter-shift/README.md)
 
-- If you completed Phases 0–4 already, → [phase-06-hooks/](../phase-06-hooks/README.md).
-- If you came here before Phase 3 (recommended order: 0 → 1 → 5 → 2 → 3 → 4), → [phase-02-engine-subcommands/](../phase-02-engine-subcommands/README.md).
-- If you're in the middle of Phase 4 and just needed the schema, → resume Phase 4.
+Phase 3 is now complete. Phase 4 consumes both Phase 3's MCP foundation and Phase 5's config files; do not mark Phase 4 complete until the full Phase 4 verification block passes and records `phase-04: PASS`.

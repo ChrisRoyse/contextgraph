@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contextgraph.dev/schemas/ccreality_recommendation.v1.json",
+  "title": "ccreality optimizer recommendation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "record_kind",
+    "claude_session_id",
+    "claude_model",
+    "run_id",
+    "attempt",
+    "turn_number",
+    "status",
+    "reason",
+    "source_files_changed",
+    "verification_commands",
+    "source_of_truth_readbacks",
+    "next_gemma_prompt_delta",
+    "expected_reward_signal_delta",
+    "remaining_risks",
+    "memories_created",
+    "memories_boosted",
+    "harness_transitions_minted",
+    "shift_log_excerpt",
+    "created_at_unix",
+    "source_of_truth"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "record_kind": { "const": "ccreality_optimizer_recommendation" },
+    "claude_session_id": { "type": "string", "minLength": 1 },
+    "claude_model": { "type": "string", "enum": ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001", "opus", "sonnet", "haiku", "inherit"] },
+    "run_id": { "type": "string", "minLength": 1 },
+    "attempt": { "type": "integer", "minimum": 0 },
+    "turn_number": { "type": "integer", "minimum": 1 },
+    "status": { "enum": ["changed", "no_change", "blocked", "error"] },
+    "reason": { "type": "string", "minLength": 4, "maxLength": 4000 },
+    "source_files_changed": { "type": "array", "items": { "type": "string", "pattern": "^[a-zA-Z0-9_./-]+$" }, "uniqueItems": true, "maxItems": 25 },
+    "verification_commands": { "type": "array", "items": { "type": "string", "maxLength": 400 }, "maxItems": 25 },
+    "source_of_truth_readbacks": { "type": "array", "items": { "type": "string", "pattern": "^(file:|sqlite:|git:)" }, "uniqueItems": true, "maxItems": 50 },
+    "next_gemma_prompt_delta": { "type": "string", "maxLength": 2000 },
+    "expected_reward_signal_delta": { "type": "string", "maxLength": 2000 },
+    "remaining_risks": { "type": "array", "items": { "type": "string", "maxLength": 600 }, "maxItems": 25 },
+    "memories_created": { "type": "array", "items": { "type": "string", "format": "uuid" }, "uniqueItems": true, "maxItems": 50 },
+    "memories_boosted": { "type": "array", "items": { "type": "string", "format": "uuid" }, "uniqueItems": true, "maxItems": 50 },
+    "harness_transitions_minted": { "type": "array", "items": { "type": "string", "pattern": "^file:" }, "uniqueItems": true, "maxItems": 25 },
+    "shift_log_excerpt": { "type": "array", "items": { "type": "string", "minLength": 8, "maxLength": 64 }, "uniqueItems": true, "maxItems": 50 },
+    "diagnosis_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "failure_class": { "enum": ["patch_apply_failure", "py_compile_failure", "static_check_failure", "local_validation_failure", "official_eval_failure", "tool_grounding_failure", "reward_unavailable", "external_drift", "other"] },
+        "root_cause_hypothesis": { "type": "string", "maxLength": 2000 },
+        "evidence_paths": { "type": "array", "items": { "type": "string", "pattern": "^file:" }, "maxItems": 20 },
+        "intervention_surface": { "enum": ["prompt_reinjection", "tool_surface", "reward_features", "structured_edit_path", "problem_reality_packet", "none"] }
+      },
+      "required": ["failure_class", "root_cause_hypothesis", "intervention_surface"]
+    },
+    "drift_detected": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "current_sha256", "session_last_known_sha256"],
+            "properties": {
+              "path": { "type": "string" },
+              "current_sha256": { "type": "string" },
+              "session_last_known_sha256": { "type": ["string", "null"] },
+              "external_writer_hint": { "type": ["string", "null"] }
+            }
+          },
+          "maxItems": 25
+        }
+      }
+    },
+    "cost_estimate_usd": { "type": "number", "minimum": 0 },
+    "created_at_unix": { "type": "integer", "minimum": 0 },
+    "source_of_truth": { "type": "string", "pattern": "^file:" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "changed" } } },
+      "then": { "properties": { "source_files_changed": { "minItems": 1 }, "harness_transitions_minted": { "minItems": 1 }, "shift_log_excerpt": { "minItems": 1 } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "no_change" } } },
+      "then": { "properties": { "source_files_changed": { "maxItems": 0 }, "harness_transitions_minted": { "maxItems": 0 } } }
+    }
+  ]
+}

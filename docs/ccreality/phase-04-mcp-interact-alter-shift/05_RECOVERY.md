@@ -104,8 +104,13 @@ cd /home/cabdru/contextgraph
 echo "=== Build ==="; cargo build -p context-graph-mcp 2>&1 | tail -10
 echo "=== Tests ==="; cargo test -p context-graph-mcp --lib reality_loop --quiet 2>&1 | tail -10
 echo "=== tools/list ==="
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null | jq -r '.result.tools[].name'
-echo "=== Lock state ==="; ls -la ~/.cache/cgreality/edit_lock 2>/dev/null || echo "no lock"
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase04-recovery-tools.err | jq -r '.result.tools[].name'
+echo "=== Lock state ==="
+if [ -e ~/.cache/cgreality/edit_lock ]; then
+  ls -la ~/.cache/cgreality/edit_lock
+else
+  echo "no lock file present"
+fi
 echo "=== Active runtime ==="; cat ~/.cache/cgreality/active_runtime_root 2>/dev/null
 echo "=== Shift logs ==="; ls -la "$(cat ~/.cache/cgreality/active_runtime_root)/cgreality-shift-log/" 2>/dev/null
 ```

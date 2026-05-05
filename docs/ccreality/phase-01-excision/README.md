@@ -44,7 +44,7 @@ All four blocks must exit 0.
 ## Completion Record
 
 - Completed on 2026-05-05 on branch `ccreality-cutover`.
-- `reality-loop.rs` line count at Phase 1 completion: 7,145. Current readback after later docs/plan commits: 7,203.
+- `reality-loop.rs` line count at Phase 1 completion: 7,145. Current readback after later phase work: 7,990.
 - New governed-edit module: `crates/context-graph-cli/src/governed_edit.rs`.
 - Library export: `crates/context-graph-cli/src/lib.rs` contains `pub mod governed_edit;`.
 - Manifest export: `crates/context-graph-cli/Cargo.toml` contains `[lib] name = "context_graph_cli"`.

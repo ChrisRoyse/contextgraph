@@ -74,6 +74,8 @@ struct CliArgs {
     config_path: Option<PathBuf>,
     /// Transport mode override (--transport)
     transport: Option<String>,
+    /// MCP server mode (--mode): default or reality-loop
+    mode: String,
     /// TCP port override (--port)
     port: Option<u16>,
     /// TCP bind address override (--bind)
@@ -108,6 +110,7 @@ impl CliArgs {
         let mut cli = CliArgs {
             config_path: None,
             transport: None,
+            mode: "default".to_string(),
             port: None,
             bind_address: None,
             help: false,
@@ -134,6 +137,18 @@ impl CliArgs {
                     i += 1;
                     if i < args.len() {
                         cli.transport = Some(args[i].clone());
+                    }
+                }
+                "--mode" => {
+                    i += 1;
+                    if i < args.len() {
+                        match args[i].as_str() {
+                            "default" | "reality-loop" => cli.mode = args[i].clone(),
+                            other => {
+                                eprintln!("[E_CLI_MODE_001] Invalid --mode value '{}': must be default or reality-loop", other);
+                                cli.help = true;
+                            }
+                        }
                     }
                 }
                 "--port" => {
@@ -209,6 +224,7 @@ USAGE:
 OPTIONS:
     --config <PATH>      Path to configuration file
     --transport <MODE>   Transport mode: stdio (default) or tcp
+    --mode <MODE>        MCP server mode: default or reality-loop
     --port <PORT>        TCP port (only used with --transport tcp)
     --bind <ADDRESS>     TCP bind address (default: 127.0.0.1)
     --warm-first         Block startup until embedding models are loaded into VRAM (default)
@@ -1803,6 +1819,163 @@ fn arm_doomsday_watchdog(trigger: &'static str) {
 /// lingers meaningfully.
 const DOOMSDAY_SECS: u64 = 20;
 
+async fn run_reality_loop_stdio() -> Result<()> {
+    use crate::handlers::tools::reality_loop;
+    use crate::tools::tool_names;
+    use serde_json::{json, Value};
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    let stdin = tokio::io::stdin();
+    let stdout = tokio::io::stdout();
+    let mut reader = BufReader::new(stdin);
+    let mut writer = tokio::io::BufWriter::new(stdout);
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+        let read = reader.read_line(&mut line).await?;
+        if read == 0 {
+            break;
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let request: Value = match serde_json::from_str(trimmed) {
+            Ok(value) => value,
+            Err(e) => {
+                let response = json!({
+                    "jsonrpc": "2.0",
+                    "id": Value::Null,
+                    "error": {"code": -32700, "message": format!("Parse error: {e}")}
+                });
+                write_jsonrpc_line(&mut writer, &response).await?;
+                continue;
+            }
+        };
+        let id = request.get("id").cloned().unwrap_or(Value::Null);
+        let method = request.get("method").and_then(Value::as_str).unwrap_or("");
+        let response = match method {
+            "initialize" => json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "cgreality", "version": env!("CARGO_PKG_VERSION")}
+                }
+            }),
+            "notifications/initialized" => continue,
+            "tools/list" => json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {"tools": crate::tools::get_tool_definitions()}
+            }),
+            "tools/call" => {
+                let params = request.get("params").cloned().unwrap_or_else(|| json!({}));
+                let name = params.get("name").and_then(Value::as_str).unwrap_or("");
+                let args = params
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_else(|| json!({}));
+                let result = match name {
+                    tool_names::REALITY_LATEST_ROOT => reality_loop::analyze::reality_latest_root(args).await,
+                    tool_names::REALITY_ATTEMPT_SUMMARY => reality_loop::analyze::reality_attempt_summary(args).await,
+                    tool_names::REALITY_OFFICIAL_REPORT => reality_loop::analyze::reality_official_report(args).await,
+                    tool_names::REALITY_PROBLEM_PACKET => reality_loop::analyze::reality_problem_packet(args).await,
+                    tool_names::REALITY_SIGNAL => reality_loop::analyze::reality_signal(args).await,
+                    tool_names::REALITY_FAILURE => reality_loop::analyze::reality_failure(args).await,
+                    tool_names::REALITY_TRIGGER_DECISION => reality_loop::analyze::reality_trigger_decision(args).await,
+                    tool_names::REALITY_HARNESS_TRANSITIONS => reality_loop::analyze::reality_harness_transitions(args).await,
+                    tool_names::REALITY_COMPARE_ATTEMPTS => reality_loop::analyze::reality_compare_attempts(args).await,
+                    tool_names::REALITY_REPLAY_ARTIFACT => reality_loop::analyze::reality_replay_artifact(args).await,
+                    tool_names::REALITY_AUDIT_TRAIL => Err(reality_loop::CCRealityError::new(
+                        "CCREALITY_LIGHTWEIGHT_AUDIT_REQUIRES_FULL_SERVER",
+                        "reality_audit_trail requires the full memory-store MCP server",
+                        "tools.call.name",
+                        "run the default context-graph-mcp server for RocksDB-backed audit queries",
+                        json!({"tool": name}),
+                        Some("rocksdb:CF_AUDIT_LOG".to_string()),
+                    )),
+                    tool_names::REALITY_RUN_SMOKE => reality_loop::interact::reality_run_smoke(args).await,
+                    tool_names::REALITY_RUN_ATTEMPT => reality_loop::interact::reality_run_attempt(args).await,
+                    tool_names::REALITY_RUN_OFFICIAL_EVAL => reality_loop::interact::reality_run_official_eval(args).await,
+                    tool_names::REALITY_RUN_TARGETED_TEST => reality_loop::interact::reality_run_targeted_test(args).await,
+                    tool_names::REALITY_RECOMPILE_REWARD => reality_loop::interact::reality_recompile_reward(args).await,
+                    tool_names::REALITY_QUERY_LEDGER => reality_loop::interact::reality_query_ledger(args).await,
+                    tool_names::HARNESS_OPEN_WINDOW => reality_loop::alter::harness_open_window(args).await,
+                    tool_names::HARNESS_APPLY_LINE_WINDOW_EDIT => reality_loop::alter::harness_apply_line_window_edit(args).await,
+                    tool_names::HARNESS_RUN_COMMAND => reality_loop::alter::harness_run_command(args).await,
+                    tool_names::HARNESS_GIT_DIFF => reality_loop::alter::harness_git_diff(args).await,
+                    tool_names::HARNESS_GIT_STATUS => reality_loop::alter::harness_git_status(args).await,
+                    tool_names::HARNESS_VERIFY_STATE => reality_loop::alter::harness_verify_state(args).await,
+                    tool_names::OPTIMIZER_RECORD_DECISION => reality_loop::optimizer::optimizer_record_decision(args).await,
+                    tool_names::OPTIMIZER_RECORD_RECOMMENDATION => reality_loop::optimizer::optimizer_record_recommendation(args).await,
+                    tool_names::OPTIMIZER_RECORD_HARNESS_TRANSITION => reality_loop::optimizer::optimizer_record_harness_transition(args, true).await,
+                    tool_names::REALITY_SHIFT_LOG => reality_loop::shift_log::reality_shift_log(args).await,
+                    tool_names::REALITY_SHIFT_COMPARE_TO_MY_VIEW => reality_loop::shift_log::reality_shift_compare_to_my_view(args).await,
+                    _ => Err(reality_loop::CCRealityError::new(
+                        "CCREALITY_LIGHTWEIGHT_TOOL_NOT_AVAILABLE",
+                        "tool is not implemented by the lightweight cgreality stdio server",
+                        "tools.call.name",
+                        "use one of the reality_* / harness_* / optimizer_* tools or run the full default server for memory graph tools",
+                        json!({"tool": name}),
+                        None,
+                    )),
+                };
+                match result {
+                    Ok(value) => tool_success(id, value),
+                    Err(err) => tool_error(id, err.into_value()),
+                }
+            }
+            _ => json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {"code": -32601, "message": format!("Method not found: {method}")}
+            }),
+        };
+        write_jsonrpc_line(&mut writer, &response).await?;
+    }
+    Ok(())
+}
+
+fn tool_success(id: serde_json::Value, value: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {
+            "content": [{"type": "text", "text": serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string())}],
+            "structuredContent": value,
+            "isError": false
+        }
+    })
+}
+
+fn tool_error(id: serde_json::Value, value: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {
+            "content": [{"type": "text", "text": serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string())}],
+            "structuredContent": value,
+            "isError": true
+        }
+    })
+}
+
+async fn write_jsonrpc_line<W: tokio::io::AsyncWrite + Unpin>(
+    writer: &mut W,
+    value: &serde_json::Value,
+) -> Result<()> {
+    use tokio::io::AsyncWriteExt;
+
+    let line = serde_json::to_string(value)?;
+    writer.write_all(line.as_bytes()).await?;
+    writer.write_all(b"\n").await?;
+    writer.flush().await?;
+    Ok(())
+}
+
 async fn async_main() -> Result<()> {
     // Parse CLI arguments first (before logging init so --help works cleanly)
     let cli = CliArgs::parse();
@@ -1811,6 +1984,7 @@ async fn async_main() -> Result<()> {
         print_help();
         return Ok(());
     }
+    crate::tools::set_reality_loop_mode(cli.mode == "reality-loop");
 
     // Initialize logging - CRITICAL: Must write to stderr, not stdout!
     // MCP protocol requires stdout to be exclusively for JSON-RPC messages
@@ -1822,6 +1996,14 @@ async fn async_main() -> Result<()> {
         .with_env_filter(filter)
         .with_target(false) // Cleaner output for MCP
         .init();
+
+    if cli.mode == "reality-loop"
+        && cli.transport.as_deref().unwrap_or("stdio") == "stdio"
+        && !cli.daemon
+        && !cli.daemon_server_only
+    {
+        return run_reality_loop_stdio().await;
+    }
 
     // ROOT-CAUSE FIX (zombie prevention): install kernel-level parent-death
     // tracking so if the MCP client dies for ANY reason (crash, kill -9,

@@ -23,6 +23,7 @@ pub(crate) mod learning;
 pub(crate) mod maintenance;
 pub(crate) mod merge;
 pub(crate) mod provenance;
+pub(crate) mod reality;
 pub(crate) mod robustness;
 pub(crate) mod sequence;
 pub(crate) mod temporal;
@@ -120,6 +121,10 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
 
     // DynamicJEPA tools (35) - 5090jepa MCP surface through Phase 6.
     tools.extend(dynamicjepa::definitions());
+
+    if crate::tools::is_reality_loop_mode() {
+        tools.extend(reality::definitions());
+    }
 
     tools
 }

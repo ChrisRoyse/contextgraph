@@ -104,6 +104,10 @@ shellcheck scripts/cc/*.sh
 echo "=== Test runs ==="
 for t in scripts/cc/tests/hooks/test_*.sh; do
   echo "--- $t ---"
-  bash "$t" 2>&1 | head -5 || echo "FAILED"
+  if ! bash "$t" >/tmp/ccreality-hook-diagnostic.out 2>&1; then
+    head -20 /tmp/ccreality-hook-diagnostic.out
+    exit 1
+  fi
+  head -5 /tmp/ccreality-hook-diagnostic.out
 done
 ```

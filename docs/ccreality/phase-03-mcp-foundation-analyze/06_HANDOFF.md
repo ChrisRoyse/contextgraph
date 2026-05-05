@@ -10,6 +10,13 @@
 - Memory/graph/causal tools (existing) are still available; the new mode adds tools without removing any.
 - A smoke attempt's artifacts can be queried end-to-end via the MCP tools.
 
+## Completion Record
+
+- Completed on 2026-05-05.
+- Canonical verification log: `/tmp/phase-03-verify.log`, ending with `Phase 3 verification: ALL PASS`.
+- Progress log source of truth: `/tmp/ccreality-phase-progress.log`, containing `phase-03: PASS`.
+- MCP readback source of truth: `./target/debug/context-graph-mcp --mode reality-loop` returned a parseable JSON-RPC `tools/list` response and live tool-call payloads for `reality_latest_root`, `reality_attempt_summary`, `reality_problem_packet`, and `reality_replay_artifact`.
+
 ## What's still missing
 
 - **All ALTER tools** (Phase 4): `harness_open_window`, `harness_apply_line_window_edit`, `harness_run_command`, `harness_git_diff`, `harness_git_status`, `harness_verify_state`, `optimizer_record_decision`, `optimizer_record_recommendation`, `optimizer_record_harness_transition`.

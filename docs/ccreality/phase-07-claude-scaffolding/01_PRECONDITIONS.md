@@ -25,12 +25,18 @@
 
 4. **No conflicting agents.** The existing `.claude/agents/` directory has many subagents (claude-flow, github-*, sparc-*, etc.). Confirm none start with `cc-reality-`:
    ```bash
-   ls /home/cabdru/contextgraph/.claude/agents/cc-reality-* 2>/dev/null && echo "CONFLICT" || echo "no conflict"
+   if compgen -G "/home/cabdru/contextgraph/.claude/agents/cc-reality-*" >/dev/null; then
+     echo "CONFLICT: ccreality agent files already exist" >&2
+     exit 1
+   fi
    ```
 
 5. **No conflicting skills.** Check `.claude/skills/`:
    ```bash
-   ls /home/cabdru/contextgraph/.claude/skills/ccreality-* 2>/dev/null && echo "CONFLICT" || echo "no conflict"
+   if compgen -G "/home/cabdru/contextgraph/.claude/skills/ccreality-*" >/dev/null; then
+     echo "CONFLICT: ccreality skill directories already exist" >&2
+     exit 1
+   fi
    ```
 
 6. **Hook scripts from Phase 6 exist and are executable.** Verify:

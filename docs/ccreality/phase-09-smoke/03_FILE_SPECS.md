@@ -40,9 +40,9 @@ TOOLS=$(echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
 echo "  PASS ($TOOLS tools)"
 
 echo "== Layer 3: Claude Code sees cgreality MCP =="
-HAS_MCP=$(claude --print "List MCP servers as JSON {server_name: tool_count}. Return only the JSON, no commentary." --output-format json 2>/dev/null \
+HAS_MCP=$(claude --print "List MCP servers as JSON {server_name: tool_count}. Return only the JSON, no commentary." --output-format json \
   | jq -r '.result' \
-  | jq -r 'has("cgreality")' 2>/dev/null || echo "false")
+  | jq -r 'has("cgreality")')
 [ "$HAS_MCP" = "true" ]
 echo "  PASS"
 
@@ -61,15 +61,23 @@ RECOMMENDATION_FILE=$(find "$SMOKE_ROOT" "$HOME/.cache/cgreality" -path '*/claud
 echo "  PASS (recommendation: $RECOMMENDATION_FILE)"
 
 echo "== Layer 6: drift detection =="
-# Simulate by editing a benign file mid-test (no real Claude session running)
-TARGET="docs/ccreality/00_INDEX.md"
-SHA_BEFORE=$(sha256sum "$TARGET" | awk '{print $1}')
-echo "# touched at $(date)" >> "$TARGET"
-SHA_AFTER=$(sha256sum "$TARGET" | awk '{print $1}')
-[ "$SHA_BEFORE" != "$SHA_AFTER" ]
-# Revert
-git restore "$TARGET"
-echo "  PASS (drift detection mechanism works manually; full MCP drift FSV in Phase 10)"
+SESSION="phase09-smoke-drift"
+PROBE="scripts/cc/tests/phase09_drift_probe.txt"
+printf 'phase09-before\n' > "$PROBE"
+OPEN_JSON=$(printf '{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"harness_open_window","arguments":{"path":"%s","start_line":1,"end_line":1}}}' "$PROBE" \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop \
+  | jq -r '.result.content[0].text')
+SHA=$(echo "$OPEN_JSON" | jq -r '.sha256')
+printf '{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"harness_apply_line_window_edit","arguments":{"path":"%s","start_line":1,"end_line":1,"observed_sha256":"%s","replace":"phase09-after\\n","session_id":"%s"}}}\n' "$PROBE" "$SHA" "$SESSION" \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop \
+  | jq -e '.result.content[0].text | fromjson | .shift_id' >/dev/null
+printf 'phase09-external-drift\n' > "$PROBE"
+DRIFT_JSON=$(printf '{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"reality_shift_compare_to_my_view","arguments":{"session_id":"%s","files":["%s"]}}}' "$SESSION" "$PROBE" \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop \
+  | jq -r '.result.content[0].text')
+echo "$DRIFT_JSON" | jq -e '.files[0].drift == "external_drift_detected"' >/dev/null
+rm -f "$PROBE"
+echo "  PASS"
 
 echo "== Layer 7: deny enforcement =="
 DENY_OUT=$(claude --print "Edit /home/cabdru/contextgraph/.env and add a comment '# test'. Report whether the edit was blocked or completed. Return one word: 'blocked' or 'completed'." --output-format json 2>/dev/null | jq -r '.result' | head -c 50)

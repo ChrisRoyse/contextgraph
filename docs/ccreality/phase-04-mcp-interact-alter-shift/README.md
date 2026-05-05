@@ -1,7 +1,7 @@
 # Phase 4 — MCP INTERACT + ALTER + Shift Log
 
 **Estimated duration:** 3–5 hours.
-**Status:** pending.
+**Status:** in progress.
 **Depends on:** Phase 3 (foundation) + Phase 5 (recommendation schema).
 **Unblocks:** Phase 6.
 **New code:** ~2,500–4,000 lines under `crates/context-graph-mcp/src/handlers/tools/reality_loop/`.
@@ -30,6 +30,14 @@ Implements the **write half** of the cgreality MCP surface. Three sub-families:
 - `reality_shift_compare_to_my_view` — drift detection.
 
 Every alter call follows the **mutate → fsync → re-read → diff → log shift → return** discipline.
+
+## Current State
+
+- Working-tree module files exist for `alter`, `interact`, `shift_log`, `optimizer`, `lock`, and `schema_validator`.
+- `cargo build -p context-graph-mcp --quiet` passes.
+- `cargo test -p context-graph-mcp --lib reality_loop --quiet` passes.
+- A bounded MCP `tools/list` probe read back 173 total tools and 32 cgreality reality/alter/shift/memory tools.
+- Phase 4 is not complete yet: `/tmp/ccreality-phase-progress.log` does not contain `phase-04: PASS`, and the full [04_VERIFICATION.md](04_VERIFICATION.md) block still needs to be run end-to-end.
 
 ## AI-verifiable end-state
 

@@ -22,17 +22,13 @@ A Claude Code session running `claude --mode default` (no .claude/settings.json 
 
 ## Verification record
 
-After Phase 4 verification passes, append to `/tmp/ccreality-phase-progress.log`:
+No completion record exists yet. After Phase 4 verification passes, append to `/tmp/ccreality-phase-progress.log`:
 ```
 phase-04: PASS, <ISO date>, MCP tool count=<N>
 ```
 
 ## Next phase
 
-→ [phase-05-config-files/](../phase-05-config-files/README.md)
+→ [phase-06-hooks/](../phase-06-hooks/README.md)
 
-Phase 5 creates the two JSON config files referenced by Phases 3 and 4. It can be done before, alongside, or after Phase 4 — but it MUST be done before any tool call actually executes (Phase 4's verification calls path_policy and schema_validator, both of which need the config files).
-
-If you executed Phase 5 already (recommended order: 0 → 1 → 5 → 2 → 3 → 4), then proceed to Phase 6 (hooks).
-
-If you skipped Phase 5, do it next.
+Phase 5 is already complete, so Phase 6 is the next phase after Phase 4 records a PASS. Do not proceed to hooks while Phase 4 lacks a completed source-of-truth verification record, because the hooks depend on `optimizer_record_harness_transition`, shift-log readback, path policy, and schema validation.

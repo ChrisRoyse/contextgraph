@@ -1,7 +1,7 @@
 # Phase 3 — MCP Foundation + ANALYZE Tool Family
 
 **Estimated duration:** 2–4 hours.
-**Status:** pending.
+**Status:** complete.
 **Depends on:** Phase 1 (lifted module), Phase 2 (engine subcommands/smoke contract), and Phase 5 (config files).
 **Unblocks:** Phase 4.
 **New code:** ~1,500–2,500 lines of Rust under `crates/context-graph-mcp/src/handlers/tools/reality_loop/`.
@@ -15,6 +15,15 @@
 4. Re-exports the existing memory/graph/causal tools under the same `cgreality` namespace.
 
 This is the read half of the MCP surface. Phase 4 adds INTERACT and ALTER (the write half).
+
+## Completion Record
+
+- `cargo build -p context-graph-mcp` passes.
+- `cargo test -p context-graph-mcp --lib reality_loop::path_policy --quiet` passes.
+- `tools/list` over `./target/debug/context-graph-mcp --mode reality-loop` read back the 11 Phase 3 ANALYZE `reality_*` tools.
+- Live MCP calls read the active smoke runtime root and attempt artifacts with `source_of_truth` fields.
+- Canonical verification log: `/tmp/phase-03-verify.log`, ending with `Phase 3 verification: ALL PASS`.
+- Progress log source of truth: `/tmp/ccreality-phase-progress.log`, containing `phase-03: PASS`.
 
 ## AI-verifiable end-state
 
@@ -32,7 +41,7 @@ test -f crates/context-graph-mcp/src/handlers/tools/reality_loop/errors.rs
 
 # 3. tools/list returns at least the expected analyze tool count
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop \
   | jq -r '.result.tools[].name' \
   | grep -cE '^reality_(latest_root|attempt_summary|official_report|problem_packet|signal|failure|trigger_decision|harness_transitions|compare_attempts|audit_trail|replay_artifact)$' \
   | grep -q '^11$'
@@ -40,7 +49,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
 # 4. A live tool call returns a properly-shaped payload
 # (uses the smoke runtime root from Phase 2)
 RES=$(echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"reality_latest_root","arguments":{}}}' \
-       | ./target/debug/context-graph-mcp --mode reality-loop)
+       | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop)
 echo "$RES" | jq -e '.result.content[0].text | fromjson | .runtime_root' >/dev/null
 ```
 

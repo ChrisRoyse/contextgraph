@@ -1,7 +1,7 @@
 # Phase 2 — Engine Subcommands
 
 **Estimated duration:** 30–45 minutes.
-**Status:** next.
+**Status:** complete.
 **Depends on:** Phase 1 (complete).
 **Unblocks:** Phase 3 smoke/analyze wiring. Phase 5 can run independently after Phase 1 and must be complete before Phase 3.
 
@@ -25,12 +25,6 @@ This phase also adds the `~/.cache/cgreality/active_runtime_root` and `~/.cache/
 ```bash
 cd /home/cabdru/contextgraph
 cargo build -p context-graph-cli --bin reality-loop --quiet
-./target/debug/context-graph-cli-reality-loop --help 2>&1 | grep -E "attempt|smoke|replay|verify" | wc -l
-```
-
-Wait — the binary is named `reality-loop` not `context-graph-cli-reality-loop`. Verify with the actual invocation:
-
-```bash
 ./target/debug/reality-loop --help 2>&1 | grep -cE "attempt|smoke|replay|verify"
 ```
 
@@ -38,11 +32,20 @@ Should be ≥ 4.
 
 ```bash
 ./target/debug/reality-loop smoke --runtime-root /tmp/cgreality-phase02-smoke --label phase02-test
-test -f /tmp/cgreality-phase02-smoke/run-*/smoke-attempt-1/attempt-summary.json
+test -n "$(find /tmp/cgreality-phase02-smoke -name attempt-summary.json -type f | head -1)"
 test -f ~/.cache/cgreality/active_runtime_root
 ```
 
 All three must succeed.
+
+## Completion Record
+
+- Completed on 2026-05-05 on `ccreality-cutover`.
+- Canonical verification log: `/tmp/phase-02-verify.log`, ending with `Phase 2 verification: ALL PASS`.
+- Progress log source of truth: `/tmp/ccreality-phase-progress.log`, containing `phase-02: PASS`.
+- Handoff smoke runtime root: `/tmp/cgreality-phase02-ready`.
+- Active-root readback after final successful smoke: `~/.cache/cgreality/active_runtime_root=/tmp/cgreality-phase02-ready`; `~/.cache/cgreality/active_target_instance=cgreality-smoke-phase02-ready`.
+- Source changes are verified in the working tree and not yet committed: `crates/context-graph-cli/src/bin/reality-loop.rs` and `crates/context-graph-cli/Cargo.toml`.
 
 ## Files
 

@@ -9,8 +9,10 @@
 ## Canonical end-state block
 
 ```bash
-set -e
+set -euo pipefail
 cd /home/cabdru/contextgraph
+export CGREALITY_GOVERNED_PATHS=/home/cabdru/contextgraph/config/ccreality_governed_paths.json
+export CGREALITY_RECOMMENDATION_SCHEMA=/home/cabdru/contextgraph/config/ccreality_recommendation_schema.json
 
 echo "=== 4.V1 MCP server builds ==="
 cargo build -p context-graph-mcp --quiet
@@ -28,7 +30,7 @@ echo "  pass"
 
 echo "=== 4.V4 tools/list returns ≥30 tools ==="
 TOOLS=$(echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase04-tools-list.err \
   | jq -r '.result.tools[].name' | wc -l)
 echo "  total tool count: $TOOLS"
 [ "$TOOLS" -ge 30 ]
@@ -36,7 +38,7 @@ echo "  pass"
 
 echo "=== 4.V5 All expected tools present ==="
 TOOL_NAMES=$(echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase04-tool-names.err \
   | jq -r '.result.tools[].name')
 for expected in \
   reality_run_attempt reality_run_smoke reality_run_official_eval reality_run_targeted_test \
@@ -52,14 +54,14 @@ echo "  pass"
 
 echo "=== 4.V6 reality_run_smoke succeeds end-to-end ==="
 RES=$(echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"reality_run_smoke","arguments":{"runtime_root":"/tmp/cgreality-phase04-smoke","label":"phase04-mcp"}}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null \
+  | timeout 30s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase04-run-smoke.err \
   | jq -r '.result.content[0].text')
 echo "$RES" | jq -e '.status == "success"' >/dev/null
 echo "  pass"
 
 echo "=== 4.V7 harness_open_window returns SHA for benign file ==="
 RES=$(echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"harness_open_window","arguments":{"path":"docs/ccreality/00_INDEX.md","start_line":1,"end_line":5}}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase04-open-window.err \
   | jq -r '.result.content[0].text')
 SHA=$(echo "$RES" | jq -r '.sha256')
 echo "  observed SHA: $SHA"
@@ -68,7 +70,7 @@ echo "  pass"
 
 echo "=== 4.V8 harness_open_window denies forbidden path ==="
 RES=$(echo '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"harness_open_window","arguments":{"path":".env","start_line":1,"end_line":5}}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase04-open-denied.err \
   | jq -r '.result.content[0].text')
 echo "$RES" | jq -e '.error_code == "CCREALITY_HARNESS_PATH_DENIED" or .error_code == "CCREALITY_GOVERNED_PROJECT_PATH_DENIED"' >/dev/null
 echo "  pass"
@@ -76,7 +78,7 @@ echo "  pass"
 echo "=== 4.V9 harness_apply_line_window_edit with stale SHA fails ==="
 # Use a deliberately wrong observed_sha256
 RES=$(echo '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"harness_apply_line_window_edit","arguments":{"path":"docs/ccreality/00_INDEX.md","start_line":1,"end_line":1,"observed_sha256":"sha256:0000000000000000000000000000000000000000000000000000000000000000","replace":"# wrong"}}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase04-stale-sha.err \
   | jq -r '.result.content[0].text')
 echo "$RES" | jq -e '.error_code | contains("SHA_MISMATCH")' >/dev/null
 echo "  pass"
@@ -84,21 +86,21 @@ echo "  pass"
 echo "=== 4.V10 reality_shift_log returns array ==="
 SESS="phase04-test-session"
 RES=$(echo "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"reality_shift_log\",\"arguments\":{\"session_id\":\"$SESS\",\"limit\":5}}}" \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase04-shift-log.err \
   | jq -r '.result.content[0].text')
 echo "$RES" | jq -e '.shifts | type == "array"' >/dev/null
 echo "  pass"
 
 echo "=== 4.V11 optimizer_record_recommendation rejects malformed payload ==="
 RES=$(echo '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"optimizer_record_recommendation","arguments":{"status":"changed","reason":"missing required fields"}}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase04-bad-recommendation.err \
   | jq -r '.result.content[0].text')
 echo "$RES" | jq -e '.error_code == "CCREALITY_RECOMMENDATION_SCHEMA_INVALID"' >/dev/null
 echo "  pass"
 
 echo "=== 4.V12 reality_query_ledger rejects DROP attempt ==="
 RES=$(echo '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"reality_query_ledger","arguments":{"run_id":"any","where":"1=1; DROP TABLE ledger_records"}}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase04-ledger-denied.err \
   | jq -r '.result.content[0].text')
 echo "$RES" | jq -e '.error_code == "CCREALITY_LEDGER_QUERY_REJECTED"' >/dev/null
 echo "  pass"
@@ -110,13 +112,13 @@ echo "=== 4.V13 Single-writer lock blocks concurrent harness_apply ==="
 test ! -f ~/.cache/cgreality/edit_lock || rm ~/.cache/cgreality/edit_lock
 # Trigger one apply (fails on bad SHA but should still cycle the lock).
 echo '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"harness_apply_line_window_edit","arguments":{"path":"docs/ccreality/00_INDEX.md","start_line":1,"end_line":1,"observed_sha256":"sha256:0000000000000000000000000000000000000000000000000000000000000000","replace":"x"}}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null > /dev/null
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase04-lock-release.err > /dev/null
 test ! -f ~/.cache/cgreality/edit_lock  # should be released by Drop
 echo "  pass"
 
 echo "=== 4.V14 stdout is JSON-RPC only ==="
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase04-json-only.err \
   | jq -e '.result.tools | length > 0' >/dev/null
 echo "  pass"
 

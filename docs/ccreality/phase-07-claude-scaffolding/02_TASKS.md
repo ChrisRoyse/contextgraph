@@ -96,14 +96,13 @@ done
 
 ```bash
 cd /home/cabdru/contextgraph
-# Confirm Claude Code finds the MCP server (this requires `claude` CLI installed)
-if command -v claude >/dev/null; then
-  # Single-shot list MCP tools to confirm cgreality is loaded
-  claude --print "List all MCP servers loaded and the count of tools each provides. Return just JSON of {server: tool_count}." 2>&1 | tail -20
-fi
+command -v claude >/dev/null 2>&1 || { echo "claude CLI is required for Phase 7 smoke wiring"; exit 1; }
+claude --print "List all MCP servers loaded and the count of tools each provides. Return just JSON of {server: tool_count}." --output-format json \
+  | jq -r '.result' \
+  | jq -e 'has("cgreality")'
 ```
 
-If `claude` is not installed, skip this — Phase 9 (smoke) will exercise the full path.
+If `claude` is not installed or cannot see `cgreality`, Phase 7 is blocked. Record the exact missing dependency or MCP configuration failure; do not skip the check.
 
 ## Task 7.8 — Verify
 

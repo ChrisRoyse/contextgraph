@@ -50,4 +50,4 @@ The recommendation artifact has a `status` field that is one of `changed`, `no_c
 
 ## Failure handling
 
-If Phase 12 fails (e.g., recommendation never written, MCP server crashes, hooks misfire), do NOT create the Phase 12 commit. Roll back only the failed Phase 12 edits/artifacts with `git stash` or `git restore`, fix the offending phase, re-verify, and re-attempt Phase 12.
+If Phase 12 fails (e.g., recommendation never written, MCP server crashes, hooks misfire), do NOT create the Phase 12 commit. Preserve the failed artifacts for diagnosis, remove only generated Phase 12 scratch artifacts after they are recorded, fix the offending phase, re-verify, and re-attempt Phase 12. Do not use broad restore commands that could discard unrelated operator changes.

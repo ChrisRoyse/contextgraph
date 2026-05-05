@@ -10,10 +10,10 @@ Each phase has its own subfolder under `docs/ccreality/phase-NN-shortname/` with
 |---|--------|-------|----------------------------------|--------|
 | 0 | Complete | Foundation | `git rev-parse ccreality-cutover && test -s /tmp/ccreality-cutover-base.sha` | [phase-00-foundation/](phase-00-foundation/) |
 | 1 | Complete | Excision | `! rg -nq "deepseek\|openai\|gpt-5\|chatgpt" crates/context-graph-cli/src/bin/reality-loop.rs && cargo build -p context-graph-cli --bin reality-loop && cargo test -p context-graph-cli --bin reality-loop && cargo test -p context-graph-cli --lib governed_edit` | [phase-01-excision/](phase-01-excision/) |
-| 2 | Next | Engine subcommands | `./target/debug/reality-loop --help \| grep -E "attempt\|smoke\|replay\|verify"` | [phase-02-engine-subcommands/](phase-02-engine-subcommands/) |
-| 3 | Pending | MCP foundation + analyze | MCP `tools/list` returns ≥10 `mcp__cgreality__reality_*` tools; each analyze tool returns a payload with `source_of_truth` field | [phase-03-mcp-foundation-analyze/](phase-03-mcp-foundation-analyze/) |
-| 4 | Pending | MCP interact + alter + shift | `harness_apply_line_window_edit` round-trip succeeds and writes shift_log entry; `reality_shift_compare_to_my_view` detects external drift | [phase-04-mcp-interact-alter-shift/](phase-04-mcp-interact-alter-shift/) |
-| 5 | Pending | Config files | `jq -e . config/ccreality_governed_paths.json && jq -e . config/ccreality_recommendation_schema.json` | [phase-05-config-files/](phase-05-config-files/) |
+| 2 | Complete | Engine subcommands | `./target/debug/reality-loop --help \| grep -E "attempt\|smoke\|replay\|verify"` | [phase-02-engine-subcommands/](phase-02-engine-subcommands/) |
+| 3 | Complete | MCP foundation + analyze | MCP `tools/list` returns the 11 Phase 3 `reality_*` ANALYZE tools; analyze calls return payloads tied to `source_of_truth` readback | [phase-03-mcp-foundation-analyze/](phase-03-mcp-foundation-analyze/) |
+| 4 | In progress | MCP interact + alter + shift | `harness_apply_line_window_edit` round-trip succeeds and writes shift_log entry; `reality_shift_compare_to_my_view` detects external drift | [phase-04-mcp-interact-alter-shift/](phase-04-mcp-interact-alter-shift/) |
+| 5 | Complete | Config files | `jq -e . config/ccreality_governed_paths.json && jq -e . config/ccreality_recommendation_schema.json` | [phase-05-config-files/](phase-05-config-files/) |
 | 6 | Pending | Hooks | All 6 `scripts/cc/hook_*.sh` scripts pass their bash unit tests under `scripts/cc/tests/hooks/` | [phase-06-hooks/](phase-06-hooks/) |
 | 7 | Pending | Claude scaffolding | `.claude/settings.json`, `.mcp.json`, `.claude/loop.md`, 5 agent files, 4 skill `SKILL.md` files all exist with valid frontmatter | [phase-07-claude-scaffolding/](phase-07-claude-scaffolding/) |
 | 8 | Pending | CLAUDE.md addendum | `rg -q "ccreality — Outer Reality-Loop Optimizer Role" CLAUDE.md` | [phase-08-claude-md-addendum/](phase-08-claude-md-addendum/) |
@@ -31,10 +31,18 @@ As of 2026-05-05:
 - Phase 1 verification log: `/tmp/phase-01-verify.log`.
 - Phase 1 progress log row: `/tmp/ccreality-phase-progress.log`.
 - Phase 1 manual FSV source of truth: `/tmp/ccreality-phase1-fsv-output/observations.json`.
+- Phase 2 verification log: `/tmp/phase-02-verify.log`.
+- Phase 2 ready smoke source of truth: `/tmp/cgreality-phase02-ready`; active-root readback is `~/.cache/cgreality/active_runtime_root=/tmp/cgreality-phase02-ready` and `~/.cache/cgreality/active_target_instance=cgreality-smoke-phase02-ready`.
+- Phase 5 verification log: `/tmp/phase-05-verify.log`.
+- Phase 5 source of truth: `config/ccreality_governed_paths.json`, `config/ccreality_recommendation_schema.json`, and `docs/ccreality/phase-05-config-files/sample_recommendation.json`.
+- Phase 3 verification log: `/tmp/phase-03-verify.log`.
+- Phase 3 source of truth: bounded MCP JSON-RPC readback from `./target/debug/context-graph-mcp --mode reality-loop`, with 11 Phase 3 analyze tools listed and live calls reading active smoke artifacts.
 - Current source state on `ccreality-cutover`: `[lib]` in `crates/context-graph-cli/Cargo.toml`, `pub mod governed_edit` in `crates/context-graph-cli/src/lib.rs`, and `crates/context-graph-cli/src/governed_edit.rs` are already present on the branch.
-- Current branch history after Phase 0 base: incremental commits `90d3896f`, `f4c4bd66`, `13fc3983`, and `2cc2f1ff`.
-- Current `reality-loop.rs` readback: 7,203 lines, with no `deepseek|openai|gpt-5|chatgpt` matches.
-- Next phase to execute: [phase-02-engine-subcommands/](phase-02-engine-subcommands/).
+- Current verified Phase 2 source state: `crates/context-graph-cli/src/bin/reality-loop.rs` implements `attempt|smoke|replay|verify`; `crates/context-graph-cli/Cargo.toml` includes `dirs = "5"`.
+- Current Phase 4 working-tree state: `crates/context-graph-mcp/src/handlers/tools/reality_loop/{alter,interact,shift_log,optimizer,lock,schema_validator}.rs` and `crates/context-graph-mcp/src/tools/definitions/reality.rs` exist. `cargo build -p context-graph-mcp --quiet` and `cargo test -p context-graph-mcp --lib reality_loop --quiet` pass. A bounded `tools/list` probe read back 173 total tools and 32 cgreality reality/alter/shift/memory tools. There is not yet a `phase-04: PASS` row in `/tmp/ccreality-phase-progress.log`.
+- Current branch history after Phase 0 base: incremental commits through `0472c199`.
+- Current `reality-loop.rs` readback: 7,990 lines, with no `deepseek|openai|gpt-5|chatgpt` matches.
+- Next phase to execute: finish [phase-04-mcp-interact-alter-shift/](phase-04-mcp-interact-alter-shift/) by running its canonical verification, fixing any no-fallback/no-workaround violations surfaced by that verification, and appending `phase-04: PASS` only after the source-of-truth readbacks pass.
 
 ## Dependency DAG
 

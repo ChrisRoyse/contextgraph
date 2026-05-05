@@ -47,11 +47,11 @@ assert_jq "$OUT" '.hookSpecificOutput.additionalContext | contains("not currentl
 # Restore active root
 [ -n "$BACKUP" ] && echo "$BACKUP" > "$ORIG_ACTIVE"
 
-# Test 2: with a synthetic runtime root
+# Test 2: with a real smoke runtime root
 TMPROOT="$(mktempdir)"
-RDIR="$(setup_synthetic_runtime_root "$TMPROOT")"
+RDIR="$(setup_real_smoke_runtime_root "$TMPROOT" "hook-session-start")"
 echo "$TMPROOT" > "$ORIG_ACTIVE"
-echo "test-task" > "$HOME/.cache/cgreality/active_target_instance"
+echo "cgreality-smoke-hook-session-start" > "$HOME/.cache/cgreality/active_target_instance"
 
 OUT="$(echo '{"session_id":"test-sess-2","source":"startup"}' \
   | "$SCRIPT_DIR/../../hook_session_start.sh")"
@@ -74,14 +74,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/_common_helpers.sh"
 
 TMPROOT="$(mktempdir)"
-RDIR="$(setup_synthetic_runtime_root "$TMPROOT" "test-task" 1)"
+RDIR="$(setup_real_smoke_runtime_root "$TMPROOT" "hook-user-prompt")"
 ORIG_ACTIVE="$HOME/.cache/cgreality/active_runtime_root"
 ORIG_TARGET="$HOME/.cache/cgreality/active_target_instance"
 BACKUP_R=""; BACKUP_T=""
 [ -f "$ORIG_ACTIVE" ] && BACKUP_R="$(cat "$ORIG_ACTIVE")"
 [ -f "$ORIG_TARGET" ] && BACKUP_T="$(cat "$ORIG_TARGET")"
 echo "$TMPROOT" > "$ORIG_ACTIVE"
-echo "test-task" > "$ORIG_TARGET"
+echo "cgreality-smoke-hook-user-prompt" > "$ORIG_TARGET"
 
 OUT="$(echo '{"session_id":"test-sess-3","prompt":"hello","permission_mode":"acceptEdits"}' \
   | "$SCRIPT_DIR/../../hook_user_prompt_submit.sh")"
@@ -186,16 +186,18 @@ OUT="$(echo "{\"session_id\":\"test\",\"transcript_path\":\"$TMPTRANS\",\"stop_r
 EC="$(echo "$OUT" | tail -1 | sed 's/EXIT=//')"
 assert_exit 0 "$EC" "stop_no_root"
 
-# Test 2: active runtime, no recommendation → block (exit 0 with decision: block)
+# Test 2: active smoke runtime, no recommendation → block (exit 0 with decision: block)
 TMPROOT="$(mktempdir)"
-mkdir -p "$TMPROOT/test-task/attempt-1/claude-code-optimizer"
+RDIR="$(setup_real_smoke_runtime_root "$TMPROOT" "hook-stop-block")"
+mkdir -p "$RDIR/claude-code-optimizer"
 echo "$TMPROOT" > "$ORIG_ACTIVE"
+echo "cgreality-smoke-hook-stop-block" > "$HOME/.cache/cgreality/active_target_instance"
 OUT="$("$SCRIPT_DIR/../../hook_stop.sh" <<< "{\"session_id\":\"test-block\",\"transcript_path\":\"$TMPTRANS\",\"stop_reason\":\"end\"}")"
 EC=$?
 assert_jq "$OUT" '.decision' "block" "stop_block_decision"
 
 # Test 3: with recommendation present → exit 0 (allow)
-echo '{"status":"no_change","reason":"smoke"}' > "$TMPROOT/test-task/attempt-1/claude-code-optimizer/recommendation-turn-01.json"
+echo '{"status":"no_change","reason":"smoke"}' > "$RDIR/claude-code-optimizer/recommendation-turn-01.json"
 echo 'mcp__cgreality__optimizer_record_recommendation' > "$TMPTRANS"
 touch "$HOME/.cache/cgreality/last_session_marker"
 OUT="$("$SCRIPT_DIR/../../hook_stop.sh" <<< "{\"session_id\":\"test-allow\",\"transcript_path\":\"$TMPTRANS\",\"stop_reason\":\"end\"}"; echo "EXIT=$?")"
@@ -211,6 +213,6 @@ echo "test_stop.sh: PASS"
 
 ## Notes on the test bodies
 
-The tests are simplified versions of what real Claude Code hook input looks like. They focus on the contract: given a synthetic stdin, the hook produces a structured JSON envelope with the expected fields.
+The tests use real `reality-loop smoke` artifacts for runtime state and representative Claude Code hook stdin JSON for the trigger event. They focus on the contract: given a hook event, the hook produces a structured JSON envelope with the expected fields.
 
 For more thorough integration testing, Phase 9's smoke launches actual Claude Code sessions and observes hook fires end-to-end.

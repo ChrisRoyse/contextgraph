@@ -10,8 +10,10 @@ A smoke runtime root from Phase 2 must exist. Re-run if not:
 ## Canonical end-state block
 
 ```bash
-set -e
+set -euo pipefail
 cd /home/cabdru/contextgraph
+export CGREALITY_GOVERNED_PATHS=/home/cabdru/contextgraph/config/ccreality_governed_paths.json
+export CGREALITY_RECOMMENDATION_SCHEMA=/home/cabdru/contextgraph/config/ccreality_recommendation_schema.json
 
 echo "=== 3.V1 MCP server builds ==="
 cargo build -p context-graph-mcp --quiet
@@ -35,7 +37,7 @@ echo "  pass"
 
 echo "=== 3.V5 tools/list returns 11 reality_* tool names ==="
 TOOLS_LIST=$(echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null)
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase03-tools-list.err)
 COUNT=$(echo "$TOOLS_LIST" | jq -r '.result.tools[].name' | grep -cE '^reality_(latest_root|attempt_summary|official_report|problem_packet|signal|failure|trigger_decision|harness_transitions|compare_attempts|audit_trail|replay_artifact)$')
 echo "  reality_* tool count: $COUNT"
 [ "$COUNT" -ge 11 ]
@@ -43,7 +45,7 @@ echo "  pass"
 
 echo "=== 3.V6 reality_latest_root returns valid payload ==="
 RES=$(echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"reality_latest_root","arguments":{}}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null)
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase03-latest-root.err)
 PAYLOAD=$(echo "$RES" | jq -r '.result.content[0].text')
 echo "  payload: $(echo "$PAYLOAD" | head -c 200)"
 echo "$PAYLOAD" | jq -e '.runtime_root' >/dev/null
@@ -55,7 +57,7 @@ RUN_ID=$(echo "$PAYLOAD" | jq -r '.active_run_id')
 TASK_ID=$(echo "$PAYLOAD" | jq -r '.active_task_id')
 [ "$RUN_ID" != "null" ] && [ "$TASK_ID" != "null" ] || { echo "  FAIL: smoke not active"; exit 1; }
 RES=$(echo "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"reality_attempt_summary\",\"arguments\":{\"run_id\":\"$RUN_ID\",\"attempt\":1}}}" \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null)
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase03-attempt-summary.err)
 SUMMARY=$(echo "$RES" | jq -r '.result.content[0].text')
 echo "$SUMMARY" | jq -e '.source_of_truth' >/dev/null
 echo "$SUMMARY" | jq -e '.attempt' >/dev/null
@@ -63,14 +65,14 @@ echo "  pass"
 
 echo "=== 3.V8 reality_problem_packet (compact) returns shape ==="
 RES=$(echo "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"reality_problem_packet\",\"arguments\":{\"run_id\":\"$RUN_ID\",\"compact\":true}}}" \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null)
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase03-problem-packet.err)
 echo "$RES" | jq -r '.result.content[0].text' | jq -e '.source_of_truth' >/dev/null
 echo "  pass"
 
 echo "=== 3.V9 reality_replay_artifact returns SHA + content for small file ==="
 SUMMARY_PATH="$(cat ~/.cache/cgreality/active_runtime_root)/$RUN_ID/$TASK_ID/smoke-attempt-1/attempt-summary.json"
 RES=$(echo "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"reality_replay_artifact\",\"arguments\":{\"path\":\"$SUMMARY_PATH\"}}}" \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null)
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase03-replay-artifact.err)
 REPLAY=$(echo "$RES" | jq -r '.result.content[0].text')
 echo "$REPLAY" | jq -e '.exists == true' >/dev/null
 echo "$REPLAY" | jq -e '.sha256 | startswith("sha256:")' >/dev/null
@@ -79,7 +81,7 @@ echo "  pass"
 echo "=== 3.V10 stdout is JSON-RPC only (no log corruption) ==="
 # Capture only stdout while sending a request; if the server logs to stdout, JSON parsing will break.
 RES=$(echo '{"jsonrpc":"2.0","id":6,"method":"tools/list","params":{}}' \
-  | ./target/debug/context-graph-mcp --mode reality-loop 2>/dev/null \
+  | timeout 10s ./target/debug/context-graph-mcp --mode reality-loop 2>/tmp/phase03-json-only.err \
   | jq -e '.result.tools | length > 0' 2>&1)
 [ "$RES" = "true" ]
 echo "  pass"

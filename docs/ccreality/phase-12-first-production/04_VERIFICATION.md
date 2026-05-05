@@ -1,7 +1,7 @@
 # Phase 12 — Verification
 
 ```bash
-set -e
+set -euo pipefail
 cd /home/cabdru/contextgraph
 
 echo "=== 12.V1 Real attempt artifact exists ==="
@@ -21,17 +21,14 @@ jq -r '.status' "$RECOMMENDATION" | grep -qE '^(changed|no_change|blocked|error)
 echo "  pass"
 
 echo "=== 12.V3 Recommendation validates against schema ==="
-if command -v python3 >/dev/null && python3 -c "import jsonschema" 2>/dev/null; then
-  python3 -c "
+python3 -c "import jsonschema" >/dev/null
+python3 -c "
 import json, jsonschema
 schema = json.load(open('config/ccreality_recommendation_schema.json'))
 rec = json.load(open('$RECOMMENDATION'))
 jsonschema.validate(rec, schema)
 print('schema-validated')
 "
-else
-  echo "  (skipped: no python jsonschema)"
-fi
 echo "  pass"
 
 echo "=== 12.V4 Shift log has entries ==="
@@ -43,19 +40,22 @@ echo "  $LINE_COUNT shift entries"
 echo "  pass"
 
 echo "=== 12.V5 Cutover commits exist on the branch ==="
-COMMIT_COUNT=$(git log --oneline ccreality-cutover ^main 2>/dev/null | wc -l || echo 0)
+COMMIT_COUNT=$(git log --oneline ccreality-cutover ^main | wc -l)
 echo "  commits on ccreality-cutover ahead of main: $COMMIT_COUNT"
 [ "$COMMIT_COUNT" -ge 1 ]
 echo "  pass"
 
 echo "=== 12.V6 All 13 phases recorded as PASS ==="
-PHASE_PASS_COUNT=$(grep -c PASS /tmp/ccreality-phase-progress.log 2>/dev/null || echo 0)
+test -f /tmp/ccreality-phase-progress.log
+PHASE_PASS_COUNT=$(grep -c PASS /tmp/ccreality-phase-progress.log)
 echo "  phase PASS lines: $PHASE_PASS_COUNT"
 [ "$PHASE_PASS_COUNT" -ge 13 ]
 echo "  pass"
 
 echo "=== 12.V7 No DeepSeek/OpenAI text remains anywhere significant ==="
-HITS=$(rg -l "deepseek|openai|gpt-5" \
+HIT_FILE=/tmp/phase12-openai-hits.txt
+set +e
+rg -l "deepseek|openai|gpt-5" \
   --hidden \
   -g '!target/' -g '!.git/' -g '!docs/ccreality/' -g '!docs2/CLAUDE_CODE_REALITY_LOOP_GUIDE.md' \
   -g '!docs/reality/21_grand_scale_reality_autoresearch.md' \
@@ -66,12 +66,23 @@ HITS=$(rg -l "deepseek|openai|gpt-5" \
   -g '!crates/context-graph-benchmark/' \
   -g '!crates/context-graph-core/src/types/memory_node/' \
   -g '!config/default.toml' \
-  | head -10)
-if [ -n "$HITS" ]; then
-  echo "  unexpected hits (review):"
-  echo "$HITS"
+  > "$HIT_FILE"
+RG_STATUS=$?
+set -e
+if [ "$RG_STATUS" -eq 0 ]; then
+  HITS=$(head -10 "$HIT_FILE")
+elif [ "$RG_STATUS" -eq 1 ]; then
+  HITS=""
+else
+  echo "  FAIL: rg returned status $RG_STATUS" >&2
+  exit "$RG_STATUS"
 fi
-echo "  pass (informational)"
+if [ -n "$HITS" ]; then
+  echo "  FAIL: unexpected hits:"
+  echo "$HITS"
+  exit 1
+fi
+echo "  pass"
 
 echo
 echo "Phase 12 verification: ALL PASS"

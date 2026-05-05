@@ -4,8 +4,8 @@
 
 - 30+ FSV case scripts exist under `scripts/cc/tests/fsv/cases/`.
 - Master runner `scripts/cc/tests/fsv.sh` runs them all and exits 0 when no failures.
-- A `docs/ccreality/FSV_RESULTS_<date>.md` records per-case pass/fail/skip.
-- All A–E cases PASS (or are explicitly SKIP for documented reasons).
+- A `docs/ccreality/FSV_RESULTS_<date>.md` records per-case pass/fail/blocked.
+- All A–E cases PASS. A BLOCKED case is a valid diagnostic record, but Phase 10 is not complete while any BLOCKED case remains.
 - F cases PASS or are within tolerance.
 
 ## Verification record

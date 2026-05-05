@@ -1,0 +1,28 @@
+{
+  "allow": [
+    "crates/context-graph-cli/src/bin/reality-loop.rs",
+    "crates/context-graph-cli/src/**",
+    "crates/context-graph-mcp/src/handlers/tools/reality_loop/**",
+    "crates/context-graph-mcp/src/handlers/tools/mod.rs",
+    "crates/context-graph-mcp/src/handlers/tools/dispatch.rs",
+    "crates/context-graph-mcp/src/tools/**",
+    "crates/context-graph-mcp/src/main.rs",
+    "scripts/cc/**",
+    ".claude/loop.md",
+    ".claude/agents/cc-reality-*.md",
+    ".claude/skills/ccreality-*/**",
+    "docs/ccreality/**",
+    "docs/reality/**",
+    "config/ccreality_*.json"
+  ],
+  "deny": [
+    ".env",
+    ".env.*",
+    "**/.env",
+    "swebench/**",
+    "tests/oracle_*",
+    "crates/context-graph-benchmark/datasets/swe_bench_*",
+    "crates/*/src/reward_specs/**",
+    "crates/*/src/verifiers/**"
+  ]
+}

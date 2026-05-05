@@ -45,6 +45,7 @@ mod learning_tools;
 mod maintenance_tools;
 mod memory_tools;
 mod provenance_tools;
+pub(crate) mod reality_loop;
 mod robustness_tools;
 mod sequence_tools;
 mod status_tools;

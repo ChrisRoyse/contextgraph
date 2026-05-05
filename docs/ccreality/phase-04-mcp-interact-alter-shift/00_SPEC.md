@@ -63,7 +63,7 @@ Every successful alter call:
 6. fsyncs the JSONL.
 7. Returns the response, including `shift_id`.
 
-If steps 1–5 succeed but 6 fails, the tool returns success (the file is mutated and the next session will detect external drift correctly). The implementation logs the fsync failure to stderr.
+If steps 1–6 do not all succeed, the tool returns a structured error that names the failed operation, the artifact path, and the remediation. Do not return success for a mutation whose shift-log append or fsync failed; that would hide a broken reality-drip record.
 
 If step 1 fails, no shift is logged. Caller retries against fresh state.
 

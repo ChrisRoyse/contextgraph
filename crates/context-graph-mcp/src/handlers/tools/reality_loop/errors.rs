@@ -44,7 +44,11 @@ impl CCRealityError {
 
 impl std::fmt::Display for CCRealityError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}] {} ({})", self.error_code, self.message, self.field_path)
+        write!(
+            f,
+            "[{}] {} ({})",
+            self.error_code, self.message, self.field_path
+        )
     }
 }
 

@@ -170,12 +170,24 @@ mod tests {
     fn deny_dotenv_and_swebench() {
         let policy_json = serde_json::json!({
             "allow": ["Cargo.toml", "crates/**", "docs/ccreality/**"],
-            "deny": [".env", ".env.*", "swebench/**", "tests/oracle_**"]
+            "deny": [".env", ".env.*", "swebench/**", "tests/oracle_*"]
         });
         let p = GovernedPathsPolicy::from_json(policy_json).expect("valid policy");
-        assert!(matches!(p.is_allowed(".env"), PolicyVerdict::DenyExplicit(_)));
-        assert!(matches!(p.is_allowed("swebench/eval/runner.py"), PolicyVerdict::DenyExplicit(_)));
-        assert!(matches!(p.is_allowed("crates/context-graph-cli/src/bin/reality-loop.rs"), PolicyVerdict::Allow));
-        assert!(matches!(p.is_allowed("random/path.txt"), PolicyVerdict::NoMatch));
+        assert!(matches!(
+            p.is_allowed(".env"),
+            PolicyVerdict::DenyExplicit(_)
+        ));
+        assert!(matches!(
+            p.is_allowed("swebench/eval/runner.py"),
+            PolicyVerdict::DenyExplicit(_)
+        ));
+        assert!(matches!(
+            p.is_allowed("crates/context-graph-cli/src/bin/reality-loop.rs"),
+            PolicyVerdict::Allow
+        ));
+        assert!(matches!(
+            p.is_allowed("random/path.txt"),
+            PolicyVerdict::NoMatch
+        ));
     }
 }
