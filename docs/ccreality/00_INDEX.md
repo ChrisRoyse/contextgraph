@@ -42,6 +42,8 @@ This is the architecture the user described:
 | 18 | [FSV_PLAN](18_FSV_PLAN.md) | full-state-verification suite |
 | 19 | [MIGRATION_RUNBOOK](19_MIGRATION_RUNBOOK.md) | execution order for the cutover |
 | 20 | [OPEN_QUESTIONS](20_OPEN_QUESTIONS.md) | what remains undecided |
+| 21 | [IMPLEMENTATION_PLAN](21_IMPLEMENTATION_PLAN.md) | **execution plan** — 13 phases, AI-verifiable end-states, dependency DAG, time estimates |
+| 21+ | [phase-NN-shortname/](phase-00-foundation/) folders | per-phase task/spec/verification packets, one for each of the 13 phases |
 
 ## What changes in one paragraph
 
