@@ -149,10 +149,8 @@ Spawns `target/debug/reality-loop smoke --runtime-root <runtime_root> --label <l
 
 ```rust
 pub async fn reality_run_smoke(args: Value) -> Result<Value> {
-    let runtime_root = args.get("runtime_root").and_then(Value::as_str)
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from("/tmp/cgreality-smoke"));
-    let label = args.get("label").and_then(Value::as_str).unwrap_or("mcp-smoke");
+    let runtime_root = std::path::PathBuf::from(required_str(&args, "runtime_root")?);
+    let label = required_str(&args, "label")?;
     let bin = locate_engine_binary()?;
     let output = tokio::process::Command::new(&bin)
         .args(["smoke", "--runtime-root", &runtime_root.display().to_string(), "--label", label])
@@ -165,9 +163,22 @@ pub async fn reality_run_smoke(args: Value) -> Result<Value> {
             json!({"bin": bin.display().to_string()}),
             None,
         ))?;
-    let stdout_tail: Value = if let Ok(text) = std::str::from_utf8(&output.stdout) {
-        serde_json::from_str(text).unwrap_or(json!({"raw": text}))
-    } else { json!(null) };
+    let stdout_text = std::str::from_utf8(&output.stdout).map_err(|e| CCRealityError::new(
+        "CCREALITY_INTERACT_STDOUT_UTF8_INVALID",
+        format!("engine stdout was not valid UTF-8: {e}"),
+        "reality_run_smoke.stdout",
+        "inspect engine stderr and fix the engine output",
+        json!({"bin": bin.display().to_string()}),
+        None,
+    ))?;
+    let stdout_tail: Value = serde_json::from_str(stdout_text).map_err(|e| CCRealityError::new(
+        "CCREALITY_INTERACT_STDOUT_JSON_INVALID",
+        format!("engine stdout was not JSON: {e}"),
+        "reality_run_smoke.stdout",
+        "inspect engine stderr and fix the engine output",
+        json!({"stdout": stdout_text}),
+        None,
+    ))?;
     let stderr_tail = String::from_utf8_lossy(&output.stderr).to_string();
     Ok(json!({
         "status": if output.status.success() { "success" } else { "failed" },
