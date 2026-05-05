@@ -373,6 +373,43 @@ Schema evolution is **wipe-and-rebuild**. Every record type carries a one-byte v
 
 Mismatched version bytes return a `SerializationError` describing the mismatch and stating "No automatic migration is supported - data must be regenerated." Adding a CF: auto-creates on next open thanks to `create_missing_column_families = true`. Removing a CF: requires deleting the DB (RocksDB requires opening every existing CF).
 
+## 11.4 CodeStore (`code/store.rs`)
+
+`CodeStore` (`code/store.rs:61`) wraps `Arc<DB>` and operates on the 5 code CFs:
+
+| CF | Key | Value | Format |
+| --- | --- | --- | --- |
+| `code_entities` | UUID | `CodeEntity` | JSON (metadata) |
+| `code_e7_embeddings` | UUID | `Vec<f32>` 1536D = 6144B | bincode (dense vectors) |
+| `code_file_index` | file_path bytes (UTF-8) | `CodeFileIndexEntry` | JSON |
+| `code_name_index` | entity_name bytes (UTF-8) | `Vec<UUID>` | JSON |
+| `code_signature_index` | `SHA256(signature)` 32B | `Vec<UUID>` | JSON |
+
+Constitution rule applied here verbatim (`code/store.rs:38-40`): "JSON for provenance/metadata/audit. Bincode for dense vectors only." Each entity's full `SemanticFingerprint` (all 14 embedders) is stored alongside the entity for multi-space code search; the dense fingerprint stays bincode while the entity wrapper is JSON.
+
+`CodeStore::open(path)` opens a standalone RocksDB at the given path with a 64MB block cache (vs. the 256MB shared cache in the main store). Inside the main DB, `CodeStore::new(db_arc)` shares the existing `Arc<DB>` and reuses the main 256MB cache.
+
+## 11.5 Graph Edges (`EdgeRepository`)
+
+`EdgeRepository` (`graph_edges/repository.rs:33`) wraps the same `Arc<DB>` as `RocksDbTeleologicalStore` (via `db_arc()`) and owns three CFs:
+
+| CF | Operation surface |
+| --- | --- |
+| `embedder_edges` | `store_embedder_edges(emb_id, source, edges)` / `get_embedder_edges` / `delete_embedder_edges` / `iter_embedder_edges(emb_id)`; `embedder_id` validated against `NUM_EMBEDDERS=14` |
+| `typed_edges` | `store_typed_edge(edge)` / `get_typed_edge(source, target)` / `get_typed_edges_from(source)` (16B prefix scan) / `get_typed_edges_to(target)` (full O(n) CF scan, no reverse index) / `iter_all_typed_edges()` / `delete_typed_edge` / `store_typed_edges_batch` |
+| `typed_edges_by_type` | Secondary index — written atomically alongside `typed_edges` via the same `WriteBatch` (`repository.rs:241-247`) |
+
+Typed-edge secondary index encoding (post-fix; legacy 17-byte key still readable):
+- Primary key (`typed_edges`): `[source:16][target:16]` = 32 bytes; value = `[v:u8 = 1][bincode TypedEdge]`.
+- Secondary key (`typed_edges_by_type`): `[edge_type:u8][source:16][target:16]` = 33 bytes; value = `target_uuid` (16B). The 17B-suffix form `[type][source]` (with target only in the value) silently lost edges when the same `(type, source)` had multiple targets — fixed by writing the full 33-byte key.
+- Read path: `get_typed_edges_by_type(source, type)` iterates with the 17-byte prefix `[type][source]`, reading the target UUID from key bytes 17..33 when available, otherwise from the value (legacy fallback). It then reads each edge from the primary `typed_edges` CF (`repository.rs:344-424`).
+- Direction-aware lookup at the MCP layer (`graph_link_tools.rs:397-510`): outgoing uses the secondary index; incoming uses `get_typed_edges_to` + post-filter (full scan); both unions the two.
+
+`BackgroundGraphBuilder` (`graph_edges/builder.rs:156`):
+- Default `GraphBuilderConfig`: `batch_interval_secs = 60`, `max_batch_size = 1000`, `active_embedders = [0, 4, 6, 7, 9, 10]` (E1, E5, E7, E8, E10, E11), `process_on_max = true` (line 96-104).
+- `process_batch()` drains the queue (up to `max_batch_size`), computes K-NN for each active embedder via in-memory HNSW search, writes posting lists to `embedder_edges`, and emits an audit record on completion.
+- `rebuild_all()` recomputes K-NN for every fingerprint across active embedders (used after large ingestion or HNSW compaction).
+
 ## 12. Concurrency Notes
 
 - `parking_lot` is used everywhere to avoid poison cascades (MED-11 fix).
