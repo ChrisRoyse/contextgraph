@@ -26,7 +26,7 @@ Cross-references: [10_cli_reference.md](10_cli_reference.md), [15_verification_r
 | FSV-tagged test files | 46 | filename grep `*_fsv.rs` |
 | Python FSV scripts (`scripts/v4_2/`) | 32 | filesystem |
 | Python scripts (`scripts/`, total) | 126 | filesystem |
-| Python harness scripts (`gemmafrontend/`) | 6 (`server.py`, `swe_lite_refinement_loop.py`, `swe_lite_official_eval.py`, `reality_prompt_compiler.py`, `model_benchmark.py`, `model_prompt_matrix.py`) + `manual_fsv.py` | filesystem |
+| Python harness scripts (`gemmafrontend/`) | 3 (`server.py`, `model_benchmark.py`, `model_prompt_matrix.py`) + `manual_fsv.py` | filesystem |
 
 ## 2. Test Files per Crate
 
@@ -61,7 +61,7 @@ The exact 246 figure for `.rs` files under `crates/*/tests` includes nested modu
 | Real-data | `crates/context-graph-storage/tests/full_integration_real_data/{main.rs, helpers.rs, operations_tests.rs, performance_tests.rs, pipeline_tests.rs, roundtrip_tests.rs, search_tests.rs}` | Real embeddings on real corpus (uses test utils) |
 | Crash recovery | `crates/context-graph-storage/tests/crash_recovery_tests.rs` | Open store after dirty shutdown |
 | Tool-count assertions | `crates/context-graph-mcp/src/tools/definitions/mod.rs:131-198` | `test_total_tool_count_and_no_duplicates`, `test_submodule_counts` |
-| Reality-loop FSV (Python) | `gemmafrontend/manual_fsv.py`, `gemmafrontend/model_benchmark.py`, `gemmafrontend/model_prompt_matrix.py` | Reality loop / SWE-bench / verified-outcome harnesses (see [22_reality_loop_subsystem.md](22_reality_loop_subsystem.md)) |
+| Reality-loop FSV | `crates/context-graph-cli/src/bin/reality-loop.rs`; `gemmafrontend/manual_fsv.py`, `gemmafrontend/model_benchmark.py`, `gemmafrontend/model_prompt_matrix.py` | Rust SWE-bench loop plus verified-outcome UI harnesses (see [22_reality_loop_subsystem.md](22_reality_loop_subsystem.md)) |
 
 ## 4. Run Commands
 
@@ -82,7 +82,6 @@ The exact 246 figure for `.rs` files under `crates/*/tests` includes nested modu
 | `cargo test -p context-graph-mcp tools::definitions::tests::test_submodule_counts` | Asserts per-submodule counts |
 | `cargo run --release --bin reality-loop -- --task-manifest <path>.json --official-eval-each-attempt` | End-to-end reality loop (see [22_reality_loop_subsystem.md](22_reality_loop_subsystem.md)) |
 | `python3 gemmafrontend/manual_fsv.py --run-root /tmp/blackboxfix-agentops-demo-manual-03` | Manual FSV against the gemmafrontend stack |
-| `python3 gemmafrontend/swe_lite_refinement_loop.py --official-eval-each-attempt --max-attempts 3` | Python ContextGraph-guided SWE-bench Lite refinement loop |
 | `make test` | Rust + Python smoke |
 | `make test-rust` | `cargo test --workspace` |
 | `make test-e2e` | `cargo test -p context-graph-cli --test e2e` |

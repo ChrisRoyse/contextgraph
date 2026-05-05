@@ -1,16 +1,16 @@
 # Implementation Roadmap
 
-## Phase 1: Finish The SWE-Bench Reality Retry Loop
+## Phase 1: Rust-Only SWE-Bench Reality Retry Loop
 
-Goal: make official Docker failure evidence drive attempt two and beyond.
+Goal: make official Docker failure evidence drive attempt two and beyond through the Rust `reality-loop` binary only.
 
 Tasks:
 
-1. Add an `--official-eval-each-attempt` mode to `gemmafrontend/swe_lite_refinement_loop.py`.
-2. After each candidate patch, export an attempt-specific predictions JSONL.
-3. Run `gemmafrontend/swe_lite_official_eval.py` for that attempt.
-4. Read `official-eval-summary.json`, final report, instance `report.json`, and `test_output.txt`.
-5. Persist a compact `official-failure-evidence.json` beside the attempt.
+1. Use `crates/context-graph-cli/src/bin/reality-loop.rs` as the only ContextGraph SWE-bench loop implementation.
+2. After each candidate patch, export attempt-specific predictions for the official harness.
+3. Run the official SWE-bench Docker evaluator directly from the Rust loop.
+4. Read the final report, instance `report.json`, and `test_output.txt`.
+5. Persist compact `official-failure-evidence.json` or `official-success-evidence.json` beside the attempt.
 6. Build the next prompt from official evidence, not local `pytest` blockage.
 7. Stop only when official `resolved_ids` contains the instance id.
 8. Persist source-of-truth paths and SHA-256 for every official artifact.
@@ -23,12 +23,12 @@ Full-state verification:
 - prove the failed official test name appears in the next prompt;
 - prove the ledger has the official verifier/evidence/incident rows.
 
-## Phase 2: Add A Prompt Compiler
+## Phase 2: Keep Prompt Compilation In Rust
 
-Create:
+Implementation location:
 
 ```text
-gemmafrontend/reality_prompt_compiler.py
+crates/context-graph-cli/src/bin/reality-loop.rs
 ```
 
 Inputs:
@@ -50,21 +50,20 @@ Outputs:
 - excluded evidence refs;
 - no-repeat patch constraints.
 
-The prompt compiler should be deterministic for the same inputs.
+The prompt compiler must be deterministic for the same inputs and must write/read back the prompt artifacts before a model call.
 
 ## Phase 2 Current Implementation Status
 
 Implemented:
 
-- `gemmafrontend/reality_prompt_compiler.py`;
-- initial prompt compilation in `gemmafrontend/swe_lite_refinement_loop.py`;
+- Rust prompt compilation in `crates/context-graph-cli/src/bin/reality-loop.rs`;
 - official failure prompt candidate compilation after SWE-bench Docker readback;
 - local failure prompt candidate compilation after local patch/test readback;
 - deterministic prompt templates: `swe_repair_initial_v2`, `swe_repair_local_failure_v2`, and `swe_repair_official_failure_v2`;
 - compiler manifest persistence in both `<attempt_root>/prompt-manifest.json` and `<task_root>/prompt-candidates/attempt-NNN/prompt-manifest.json`;
 - compiler quality gates with explicit `null` for non-applicable checks;
 - source-of-truth refs for task manifest, repo context, official failure evidence, local attempt summary, previous prompt SHA, previous output SHA, and previous patch SHA;
-- CLI mode that writes and reads back `prompt.txt`, `prompt-compiler-output.json`, and `prompt-quality.json`.
+- Rust artifacts that write and read back prompt, request, response, parse report, and quality metadata.
 
 Root cause fixed:
 
@@ -74,10 +73,10 @@ Fail-closed behavior:
 
 | Case | Error Code | Field |
 |---|---|---|
-| Missing task or repo context source of truth | `PROMPT_COMPILER_REPO_CONTEXT_SOURCE_MISSING` | `repo_context.source_of_truth` |
-| Unknown prompt kind | `PROMPT_COMPILER_KIND_UNKNOWN` | `prompt_kind` |
-| Hidden solution/gold patch leakage | `PROMPT_COMPILER_QUALITY_FAILED` | `prompt_quality` |
-| Missing required task fields | `PROMPT_COMPILER_TASK_FIELD_MISSING` | `task.<field>` |
+| Missing task or repo context source of truth | Rust `RUST_REALITY_*` source-of-truth error | `repo_context.source_of_truth` |
+| Unknown prompt kind | Rust prompt contract error | `prompt_kind` |
+| Hidden solution/gold patch leakage | Rust prompt quality error | `prompt_quality` |
+| Missing required task fields | `RUST_REALITY_TASK_*` manifest errors | `task.<field>` |
 
 Latest verified Phase 2 smoke:
 
@@ -94,7 +93,7 @@ Observed durable outputs:
 - task BlackBoxFix ledger counts: `agent_run=1`, `model_decision=1`, `tool_call=2`, `verifier_result=2`, `evidence_packet=2`, `incident_packet=2`, `reward_compilation=2`, `scorecard=2`;
 - second-attempt prompt candidate: `<run_root>/tasks/psf__requests-2317/qwen3-8b/prompt-candidates/attempt-002/`;
 - second-attempt template: `swe_repair_official_failure_v2`;
-- compiler version: `reality_prompt_compiler_v1`;
+- compiler version: Rust reality-loop prompt contract;
 - prompt quality: `status=passed`, `score=1.0`;
 - previous prompt SHA and previous output SHA persisted in compiler `input_refs`.
 
@@ -102,12 +101,13 @@ This does not claim the model solved the SWE-bench instance. It proves the loop 
 
 ## Continuous Reality Loop Mode
 
-Implemented in `gemmafrontend/swe_lite_refinement_loop.py`:
+Implemented only in `crates/context-graph-cli/src/bin/reality-loop.rs`:
 
 ```bash
-python3 gemmafrontend/swe_lite_refinement_loop.py \
-  --model qwen3:8b \
-  --instance-id psf__requests-2317 \
+cargo build -p context-graph-cli --bin reality-loop
+target/debug/reality-loop \
+  --model gemma4:e4b \
+  --task-manifest /tmp/contextgraph-hard-swe-sklearn-25638-task-manifest.json \
   --official-eval-each-attempt \
   --run-until-resolved
 ```
@@ -154,7 +154,7 @@ attempt_2_error=RUST_REALITY_MODEL_RESPONSE_JSON_INVALID
 ledger: model_decision=2, tool_call=2, verifier_result=2, incident_packet=2, reward_compilation=2
 ```
 
-The Rust port is intentionally stricter than the Python loop. It does not repair malformed model output by heuristic extraction. If the model violates the response contract, that violation becomes typed evidence for the next attempt.
+The Rust loop is intentionally strict. It does not repair malformed model output by heuristic extraction. If the model violates the response contract, that violation becomes typed evidence for the next attempt.
 
 ## Phase 3: Add Experiment State
 
@@ -292,14 +292,14 @@ Required edge cases:
 Implement Phase 1 in code, then run one bounded smoke:
 
 ```bash
-python3 gemmafrontend/swe_lite_refinement_loop.py \
-  --model qwen3:8b \
-  --instance-id psf__requests-2317 \
-  --max-tasks 1 \
+cargo build -p context-graph-cli --bin reality-loop
+target/debug/reality-loop \
+  --model gemma4:e4b \
+  --task-manifest /tmp/contextgraph-hard-swe-sklearn-25638-task-manifest.json \
+  --runtime-root /tmp/contextgraph-rust-reality-loop-smoke \
   --max-attempts 2 \
   --official-eval-each-attempt \
   --git-timeout 600 \
-  --pytest-timeout 120 \
   --model-timeout 300
 ```
 
@@ -313,11 +313,11 @@ Success for this smoke is not solving the instance. Success is proving:
 
 ## Phase 1 Current Implementation Status
 
-Implemented in `gemmafrontend/swe_lite_refinement_loop.py`:
+Implemented in `crates/context-graph-cli/src/bin/reality-loop.rs`:
 
 - official per-attempt SWE-bench evaluation with `--official-eval-each-attempt`;
-- governed model tool gateway with `--agent-tool-rounds`;
-- read-only tools: `list_files`, `read_file`, `search_repo`, `inspect_repository_context`, `read_failure_evidence`;
+- governed Rust model tool gateway;
+- read-only context tools such as repository search, source-window readback, official failure readback, and attempt comparison;
 - mutating patch application only through the ContextGraph/BlackBoxFix verification path;
 - root/meta reality ledger at `<run_root>/reality-loop.sqlite`;
 - append-only root event stream at `<run_root>/reality-events.jsonl`;
@@ -339,7 +339,7 @@ The current root cause fixed in Phase 1 was an official SWE-bench edge case: if 
 Latest verified smoke output:
 
 ```text
-/tmp/contextgraph-swe-lite-refinement/swe_lite_refine_1777937357771207798_801dcad0/
+/tmp/contextgraph-rust-reality-loop-smoke-v4/rust_reality_1777959982988939074_e525987d/
 ```
 
-That run proves a local model used the governed `search_repo` tool, submitted a patch, failed official Docker evaluation with `SWE_OFFICIAL_PATCH_APPLY_FAILED`, recorded the failure in BlackBoxFix, and compiled the next prompt candidate from durable official evidence.
+That run proves a local model submitted attempts through the Rust loop, failed without a false success claim, recorded the failures in BlackBoxFix, and persisted typed reality evidence for the next prompt.

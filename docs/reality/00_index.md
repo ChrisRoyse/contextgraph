@@ -43,11 +43,10 @@ The loop does not advance because an agent says it is done. It advances only whe
 |---|---|
 | Local Gemma/Qwen/Mistral frontend and tool harness | `gemmafrontend/` |
 | Verified reward compiler spec | `gemmafrontend/reward_spec.verified_outcome.json` |
-| SWE-bench local refinement loop | `gemmafrontend/swe_lite_refinement_loop.py` |
 | Rust-owned SWE reality loop | `target/debug/reality-loop` from `crates/context-graph-cli/src/bin/reality-loop.rs` |
-| Official SWE-bench Docker readback bridge | `gemmafrontend/swe_lite_official_eval.py` |
-| Governed SWE agent tool gateway | `gemmafrontend/swe_lite_refinement_loop.py --agent-tool-rounds` |
-| Deterministic reality prompt compiler | `gemmafrontend/reality_prompt_compiler.py` |
+| Official SWE-bench Docker readback | `target/debug/reality-loop` invoking the official SWE-bench harness directly |
+| Governed SWE agent tool gateway | `crates/context-graph-cli/src/bin/reality-loop.rs` |
+| Deterministic reality prompt compiler | `crates/context-graph-cli/src/bin/reality-loop.rs` |
 | Smoke benchmark suite definition | `gemmafrontend/swe_smoke_benchmark_suite.json` |
 | Current SWE-bench status doc | `docs/contextgraph_swe_bench_refinement_loop.md` |
 | BlackBoxFix ledger/evidence CLI | `target/debug/context-graph blackbox ...` |
@@ -68,15 +67,14 @@ The current model-facing tools are read-only and governed: `list_files`, `read_f
 
 ## Phase 2 Implementation Snapshot
 
-Phase 2 adds a first-class prompt compiler so prompt reinjection is a deterministic artifact, not scattered string assembly inside the loop.
+Phase 2 prompt reinjection is now owned by the Rust loop. The previous Python prompt compiler was removed so there is one implementation path.
 
 Current source-of-truth artifacts:
 
-- compiler implementation: `gemmafrontend/reality_prompt_compiler.py`;
-- loop integration: `gemmafrontend/swe_lite_refinement_loop.py`;
+- compiler implementation: `crates/context-graph-cli/src/bin/reality-loop.rs`;
 - initial prompt manifest: `<attempt_root>/prompt-manifest.json`;
 - refinement prompt candidate: `<task_root>/prompt-candidates/attempt-NNN/`;
-- compiler readback files: `prompt.txt`, `prompt-compiler-output.json`, and `prompt-quality.json`;
+- compiler readback files: Rust prompt, request, response, parse report, and failure-evidence artifacts;
 - task BlackBoxFix ledger: `<task_root>/blackbox.sqlite`;
 - root reality ledger: `<run_root>/reality-loop.sqlite`.
 
@@ -98,19 +96,7 @@ That run proves the compiler generated a second-attempt official-failure prompt 
 
 ## Continuous Reality Loop
 
-The legacy Python loop can run until official source-of-truth success:
-
-```bash
-python3 gemmafrontend/swe_lite_refinement_loop.py \
-  --model qwen3:8b \
-  --instance-id psf__requests-2317 \
-  --official-eval-each-attempt \
-  --run-until-resolved
-```
-
-This mode requires official SWE-bench evaluation and stops only when the official report places the instance id in `resolved_ids`. Candidate failures become next-prompt evidence. Infrastructure, model-runtime, ledger, compiler, or official-harness failures still fail closed with typed errors.
-
-The Rust port now owns the same core loop for Gemma-first smoke testing:
+The Rust binary is the only supported SWE-bench reality loop:
 
 ```bash
 cargo build -p context-graph-cli --bin reality-loop
@@ -122,7 +108,9 @@ target/debug/reality-loop \
   --run-until-resolved
 ```
 
-The Rust binary uses Rust-owned orchestration, typed failure artifacts, JSON readback checks, SQLite ledger readbacks, GPU VRAM budget checks through `nvidia-smi`, a runtime `measurement-contract.json`, and BlackBoxFix reward/evidence compilation. The official SWE-bench evaluator remains an external Python/Docker verifier because SWE-bench itself is distributed that way; the reality loop does not implement its control flow in Python.
+This mode requires official SWE-bench evaluation and stops only when the official report places the instance id in `resolved_ids`. Candidate failures become next-prompt evidence. Infrastructure, model-runtime, ledger, compiler, or official-harness failures still fail closed with typed Rust errors.
+
+The Rust binary uses Rust-owned orchestration, typed failure artifacts, JSON readback checks, SQLite ledger readbacks, GPU VRAM budget checks through `nvidia-smi`, a runtime `measurement-contract.json`, and BlackBoxFix reward/evidence compilation. The official SWE-bench evaluator remains an external Python/Docker verifier because SWE-bench itself is distributed that way; ContextGraph no longer has a Python refinement loop.
 
 The Rust loop now fails closed if official SWE-bench readback is disabled. Local patch validation can produce useful failure evidence, but it cannot become a SWE success claim.
 

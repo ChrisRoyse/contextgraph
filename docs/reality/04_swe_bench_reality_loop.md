@@ -26,8 +26,7 @@ Local validation is useful but secondary. A candidate is solved only when the of
 
 Current files:
 
-- `gemmafrontend/swe_lite_refinement_loop.py`
-- `gemmafrontend/swe_lite_official_eval.py`
+- `crates/context-graph-cli/src/bin/reality-loop.rs`
 - `gemmafrontend/swe_smoke_benchmark_suite.json`
 - `docs/contextgraph_swe_bench_refinement_loop.md`
 
@@ -46,9 +45,12 @@ Verified current behavior:
 - official result is appended to the same BlackBoxFix ledger;
 - scorecard and reward are recomputed after official evidence is added.
 
-Known gap to finish in code:
+Rust-only status:
 
-- the main refinement loop must run official evaluation after each candidate attempt and compile the official failure evidence into the next prompt. The bridge exists; the retry loop must consume it directly.
+- the previous Python refinement loop, Python official-eval bridge, and Python prompt compiler were removed;
+- the Rust loop is the only supported ContextGraph SWE-bench refinement path;
+- the official SWE-bench harness is still an external Python/Docker evaluator because that is how SWE-bench is distributed;
+- the Rust loop must keep compacting official per-instance report/test-output reality into the next prompt.
 
 ## Attempt Algorithm
 

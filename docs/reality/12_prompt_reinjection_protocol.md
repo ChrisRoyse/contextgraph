@@ -118,7 +118,7 @@ For every prompt, persist:
 
 ## Current Compiler Artifact
 
-Phase 2 implements the prompt contract through `gemmafrontend/reality_prompt_compiler.py`.
+Phase 2 implements the prompt contract through the Rust-owned `crates/context-graph-cli/src/bin/reality-loop.rs` path.
 
 The compiler writes:
 
@@ -145,7 +145,7 @@ The compiler manifest includes:
 
 ```json
 {
-  "compiler_version": "reality_prompt_compiler_v1",
+  "compiler_version": "rust_reality_loop_prompt_contract",
   "prompt_template_id": "swe_repair_official_failure_v2",
   "prompt_sha256": "sha256:...",
   "input_refs": {

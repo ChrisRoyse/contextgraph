@@ -27,7 +27,7 @@ Each artifact needs:
   "artifact_id": "prompt_compiler_v3",
   "artifact_kind": "prompt_compiler",
   "version": 3,
-  "path": "gemmafrontend/reality_prompt_compiler.py",
+  "path": "crates/context-graph-cli/src/bin/reality-loop.rs",
   "sha256": "sha256:...",
   "created_by": "reality_loop_builder",
   "editable_scope": "dev_smoke",
