@@ -28,16 +28,38 @@ pub struct EditLock {
 impl EditLock {
     pub fn try_acquire(session_id: &str) -> Result<Self> {
         let path = lock_path()?;
-        std::fs::create_dir_all(path.parent().unwrap()).ok();
+        let parent = path.parent().ok_or_else(|| CCRealityError::new(
+            "CCREALITY_HARNESS_EDIT_LOCK_PARENT_MISSING",
+            "edit lock path has no parent directory",
+            "edit_lock.path",
+            "fix the configured edit-lock path",
+            serde_json::json!({"path": path.display().to_string()}),
+            Some(format!("file:{}", path.display())),
+        ))?;
+        std::fs::create_dir_all(parent).map_err(|e| CCRealityError::new(
+            "CCREALITY_HARNESS_EDIT_LOCK_DIR_FAILED",
+            format!("failed to create edit-lock directory: {e}"),
+            "edit_lock.parent",
+            "ensure the cgreality cache directory is writable",
+            serde_json::json!({"path": parent.display().to_string()}),
+            Some(format!("file:{}", parent.display())),
+        ))?;
 
         // First check if there's a stale lock to clean up.
         if let Ok(content) = std::fs::read_to_string(&path) {
             if let Some((existing_session, ts_str)) = content.trim().split_once(':') {
                 if let Ok(ts) = ts_str.parse::<u64>() {
-                    let now = unix_secs();
+                    let now = unix_secs()?;
                     if now.saturating_sub(ts) > STALE_LOCK_AGE_SECS {
                         tracing::warn!("removing stale edit lock from session {}", existing_session);
-                        std::fs::remove_file(&path).ok();
+                        std::fs::remove_file(&path).map_err(|e| CCRealityError::new(
+                            "CCREALITY_HARNESS_STALE_LOCK_REMOVE_FAILED",
+                            format!("failed to remove stale edit lock: {e}"),
+                            "edit_lock.remove_stale",
+                            "inspect and remove the stale lock manually",
+                            serde_json::json!({"path": path.display().to_string(), "holder": existing_session}),
+                            Some(format!("file:{}", path.display())),
+                        ))?;
                     } else {
                         return Err(CCRealityError::new(
                             "CCREALITY_HARNESS_EDIT_OWNER_BUSY",
@@ -52,7 +74,7 @@ impl EditLock {
             }
         }
 
-        let acquired_at = unix_secs();
+        let acquired_at = unix_secs()?;
         let mut f = OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -66,8 +88,22 @@ impl EditLock {
                 serde_json::json!({"path": path.display().to_string()}),
                 Some(format!("file:{}", path.display())),
             ))?;
-        write!(f, "{}:{}", session_id, acquired_at).ok();
-        f.sync_all().ok();
+        write!(f, "{}:{}", session_id, acquired_at).map_err(|e| CCRealityError::new(
+            "CCREALITY_HARNESS_EDIT_LOCK_WRITE_FAILED",
+            format!("failed to write edit lock: {e}"),
+            "edit_lock.write",
+            "ensure the cgreality cache directory is writable",
+            serde_json::json!({"path": path.display().to_string()}),
+            Some(format!("file:{}", path.display())),
+        ))?;
+        f.sync_all().map_err(|e| CCRealityError::new(
+            "CCREALITY_HARNESS_EDIT_LOCK_SYNC_FAILED",
+            format!("failed to sync edit lock: {e}"),
+            "edit_lock.sync",
+            "ensure the filesystem accepts fsync for the lock path",
+            serde_json::json!({"path": path.display().to_string()}),
+            Some(format!("file:{}", path.display())),
+        ))?;
         Ok(Self { path, session_id: session_id.to_string(), acquired_at })
     }
 }
@@ -77,7 +113,9 @@ impl Drop for EditLock {
         // Only remove if we still own the lock.
         if let Ok(content) = std::fs::read_to_string(&self.path) {
             if content.starts_with(&format!("{}:", self.session_id)) {
-                std::fs::remove_file(&self.path).ok();
+                if let Err(err) = std::fs::remove_file(&self.path) {
+                    tracing::warn!("failed to remove owned edit lock {}: {}", self.path.display(), err);
+                }
             }
         }
     }
@@ -95,8 +133,17 @@ fn lock_path() -> Result<PathBuf> {
         .join(LOCK_FILE))
 }
 
-fn unix_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+fn unix_secs() -> Result<u64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .map_err(|e| CCRealityError::new(
+            "CCREALITY_SYSTEM_CLOCK_INVALID",
+            format!("system clock is before UNIX_EPOCH: {e}"),
+            "system_time",
+            "fix the system clock before recording ccreality artifacts",
+            serde_json::json!({}), None,
+        ))
 }
 ```
 
@@ -127,10 +174,10 @@ pub struct ShiftRecord {
 }
 
 impl ShiftRecord {
-    pub fn new(tool_name: &str, session_id: &str, subject: Value) -> Self {
-        Self {
+    pub fn new(tool_name: &str, session_id: &str, subject: Value) -> Result<Self> {
+        Ok(Self {
             shift_id: format!("01J{}", uuid::Uuid::new_v4().as_simple().to_string()[..20].to_uppercase()),
-            timestamp_unix_ns: unix_ns(),
+            timestamp_unix_ns: unix_ns()?,
             tool_name: tool_name.to_string(),
             tool_use_id: None,
             session_id: session_id.to_string(),
@@ -140,7 +187,7 @@ impl ShiftRecord {
             delta_summary: json!({}),
             verification: json!({}),
             harness_transition_path: None,
-        }
+        })
     }
 }
 
@@ -162,9 +209,30 @@ pub fn append_shift(runtime_root: &Path, session_id: &str, record: &ShiftRecord)
             json!({"path": path.display().to_string()}),
             Some(format!("file:{}", path.display())),
         ))?;
-    let line = serde_json::to_string(record).unwrap();
-    writeln!(f, "{}", line).ok();
-    f.sync_all().ok();
+    let line = serde_json::to_string(record).map_err(|e| CCRealityError::new(
+        "CCREALITY_SHIFT_LOG_SERIALIZE_FAILED",
+        format!("failed to serialize shift record: {e}"),
+        "shift_log.serialize",
+        "fix the shift record payload",
+        json!({"shift_id": record.shift_id}),
+        Some(format!("file:{}", path.display())),
+    ))?;
+    writeln!(f, "{}", line).map_err(|e| CCRealityError::new(
+        "CCREALITY_SHIFT_LOG_WRITE_FAILED",
+        format!("failed to append shift log: {e}"),
+        "shift_log.write",
+        "ensure runtime root is writable",
+        json!({"path": path.display().to_string()}),
+        Some(format!("file:{}", path.display())),
+    ))?;
+    f.sync_all().map_err(|e| CCRealityError::new(
+        "CCREALITY_SHIFT_LOG_SYNC_FAILED",
+        format!("failed to sync shift log: {e}"),
+        "shift_log.sync",
+        "ensure the filesystem accepts fsync for the shift log",
+        json!({"path": path.display().to_string()}),
+        Some(format!("file:{}", path.display())),
+    ))?;
     Ok(())
 }
 
@@ -185,9 +253,18 @@ pub async fn reality_shift_log(args: Value) -> Result<Value> {
         json!({"path": path.display().to_string()}),
         Some(format!("file:{}", path.display())),
     ))?;
-    let mut records: Vec<Value> = raw.lines()
-        .filter_map(|l| serde_json::from_str(l).ok())
-        .collect();
+    let mut records = Vec::new();
+    for (idx, line) in raw.lines().enumerate() {
+        let record = serde_json::from_str(line).map_err(|e| CCRealityError::new(
+            "CCREALITY_SHIFT_LOG_JSON_INVALID",
+            format!("invalid JSON at shift log line {}: {e}", idx + 1),
+            "shift_log.parse",
+            "repair or remove the corrupt shift log line",
+            json!({"path": path.display().to_string(), "line": idx + 1}),
+            Some(format!("file:{}", path.display())),
+        ))?;
+        records.push(record);
+    }
     if let Some(since) = since_id {
         if let Some(idx) = records.iter().position(|r| r.get("shift_id").and_then(Value::as_str) == Some(since)) {
             records = records.into_iter().skip(idx + 1).collect();
@@ -213,9 +290,26 @@ pub async fn reality_shift_compare_to_my_view(args: Value) -> Result<Value> {
     let runtime_root = require_active_runtime_root().await?;
     let log_path = runtime_root.join("cgreality-shift-log").join(format!("{}.jsonl", session_id));
     let session_records: Vec<Value> = if log_path.is_file() {
-        std::fs::read_to_string(&log_path).ok()
-            .map(|raw| raw.lines().filter_map(|l| serde_json::from_str(l).ok()).collect())
-            .unwrap_or_default()
+        let raw = std::fs::read_to_string(&log_path).map_err(|e| CCRealityError::new(
+            "CCREALITY_SHIFT_LOG_READ_FAILED",
+            format!("failed to read shift log: {e}"),
+            "shift_log.read",
+            "ensure file is readable",
+            json!({"path": log_path.display().to_string()}),
+            Some(format!("file:{}", log_path.display())),
+        ))?;
+        let mut parsed = Vec::new();
+        for (idx, line) in raw.lines().enumerate() {
+            parsed.push(serde_json::from_str(line).map_err(|e| CCRealityError::new(
+                "CCREALITY_SHIFT_LOG_JSON_INVALID",
+                format!("invalid JSON at shift log line {}: {e}", idx + 1),
+                "shift_log.parse",
+                "repair or remove the corrupt shift log line",
+                json!({"path": log_path.display().to_string(), "line": idx + 1}),
+                Some(format!("file:{}", log_path.display())),
+            ))?);
+        }
+        parsed
     } else { vec![] };
 
     let mut results = Vec::new();
@@ -259,9 +353,16 @@ pub fn register(server: &mut crate::server::McpServer) {
     server.register_tool("reality_shift_compare_to_my_view", input_schema_shift_compare(), reality_shift_compare_to_my_view);
 }
 
-fn unix_ns() -> u128 {
+fn unix_ns() -> Result<u128> {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos()).unwrap_or(0)
+        .map(|d| d.as_nanos())
+        .map_err(|e| CCRealityError::new(
+            "CCREALITY_SYSTEM_CLOCK_INVALID",
+            format!("system clock is before UNIX_EPOCH: {e}"),
+            "system_time",
+            "fix the system clock before recording ccreality artifacts",
+            json!({}), None,
+        ))
 }
 ```
 
@@ -278,14 +379,11 @@ pub struct RecommendationValidator { compiled: JSONSchema }
 impl RecommendationValidator {
     pub fn load() -> Result<Self> {
         let path = std::env::var("CGREALITY_RECOMMENDATION_SCHEMA")
-            .ok()
             .map(PathBuf::from)
-            .or_else(|| std::env::var("CONTEXTGRAPH_ROOT").ok().map(|r|
-                PathBuf::from(r).join("config/ccreality_recommendation_schema.json")))
-            .ok_or_else(|| CCRealityError::new(
+            .map_err(|_| CCRealityError::new(
                 "CCREALITY_RECOMMENDATION_SCHEMA_PATH_MISSING",
-                "neither CGREALITY_RECOMMENDATION_SCHEMA nor CONTEXTGRAPH_ROOT is set",
-                "config.recommendation_schema", "set CGREALITY_RECOMMENDATION_SCHEMA env",
+                "CGREALITY_RECOMMENDATION_SCHEMA is not set",
+                "env.CGREALITY_RECOMMENDATION_SCHEMA", "set CGREALITY_RECOMMENDATION_SCHEMA to the exact schema path",
                 serde_json::json!({}), None,
             ))?;
         let raw = std::fs::read_to_string(&path).map_err(|e| CCRealityError::new(
@@ -347,7 +445,7 @@ pub async fn harness_apply_line_window_edit(args: Value) -> Result<Value> {
     let end = required_u64(&args, "end_line")?;
     let observed_sha = required_str(&args, "observed_sha256")?;
     let replace = required_str(&args, "replace")?;
-    let session_id = required_str(&args, "_session_id").unwrap_or_else(|_| "unknown".to_string());
+    let session_id = required_str(&args, "_session_id")?;
 
     // 1. Path policy
     let policy = super::path_policy::GovernedPathsPolicy::load()?;
@@ -368,10 +466,32 @@ pub async fn harness_apply_line_window_edit(args: Value) -> Result<Value> {
     let runtime_root = require_active_runtime_root().await?;
     let task = require_active_target_instance().await?;
     let attempt = super::helpers::latest_attempt_number(&runtime_root, Some(&task))
-        .unwrap_or(1);
-    let attempt_dir = super::helpers::attempt_dir(&runtime_root, &super::helpers::latest_run_id(&runtime_root).unwrap(), &task, attempt);
+        .ok_or_else(|| CCRealityError::new(
+            "CCREALITY_HARNESS_ATTEMPT_MISSING",
+            "could not identify latest attempt for active target instance",
+            "runtime.attempt",
+            "run the engine before applying a harness edit",
+            json!({"runtime_root": runtime_root.display().to_string(), "target_instance": task.clone()}),
+            Some(format!("file:{}", runtime_root.display())),
+        ))?;
+    let run_id = super::helpers::latest_run_id(&runtime_root).ok_or_else(|| CCRealityError::new(
+        "CCREALITY_HARNESS_RUN_MISSING",
+        "could not identify latest run directory",
+        "runtime.run_id",
+        "run the engine before applying a harness edit",
+        json!({"runtime_root": runtime_root.display().to_string()}),
+        Some(format!("file:{}", runtime_root.display())),
+    ))?;
+    let attempt_dir = super::helpers::attempt_dir(&runtime_root, &run_id, &task, attempt);
     let tool_dir = attempt_dir.join("claude-code-optimizer/edits");
-    std::fs::create_dir_all(&tool_dir).ok();
+    std::fs::create_dir_all(&tool_dir).map_err(|e| CCRealityError::new(
+        "CCREALITY_HARNESS_TOOL_DIR_CREATE_FAILED",
+        format!("failed to create optimizer edit artifact directory: {e}"),
+        "harness.tool_dir",
+        "ensure runtime root is writable",
+        json!({"path": tool_dir.display().to_string()}),
+        Some(format!("file:{}", tool_dir.display())),
+    ))?;
 
     let edits = vec![json!({
         "path": path,
@@ -389,15 +509,29 @@ pub async fn harness_apply_line_window_edit(args: Value) -> Result<Value> {
 
     // 4. Compute deltas
     let after_sha = super::helpers::sha256_file(&project_root.join(&path))?;
-    let lines_added = result.pointer("/applied/0/lines_added").and_then(Value::as_u64).unwrap_or(0);
-    let lines_removed = result.pointer("/applied/0/lines_removed").and_then(Value::as_u64).unwrap_or(0);
+    let lines_added = result.pointer("/applied/0/lines_added").and_then(Value::as_u64).ok_or_else(|| CCRealityError::new(
+        "CCREALITY_HARNESS_EDIT_RESULT_MISSING_LINES_ADDED",
+        "governed edit result did not include applied[0].lines_added",
+        "governed_edit.result.applied[0].lines_added",
+        "fix governed_edit to return the expected edit telemetry",
+        json!({"result": result.clone()}),
+        None,
+    ))?;
+    let lines_removed = result.pointer("/applied/0/lines_removed").and_then(Value::as_u64).ok_or_else(|| CCRealityError::new(
+        "CCREALITY_HARNESS_EDIT_RESULT_MISSING_LINES_REMOVED",
+        "governed edit result did not include applied[0].lines_removed",
+        "governed_edit.result.applied[0].lines_removed",
+        "fix governed_edit to return the expected edit telemetry",
+        json!({"result": result.clone()}),
+        None,
+    ))?;
 
     // 5. Build shift record
     let mut shift = super::shift_log::ShiftRecord::new(
         "harness_apply_line_window_edit",
         &session_id,
         json!({"type": "file", "path": path}),
-    );
+    )?;
     shift.before = json!({"sha256": observed_sha});
     shift.after = json!({"sha256": after_sha});
     shift.delta_summary = json!({"lines_added": lines_added, "lines_removed": lines_removed});

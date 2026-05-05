@@ -66,7 +66,7 @@ See [04_VERIFICATION.md](04_VERIFICATION.md). Three clauses:
 
 ## Hook authorship rules (lifted from [../07_HOOKS_SPEC.md](../07_HOOKS_SPEC.md))
 
-1. Hook scripts must never exit non-zero except for intentional blocks. Use `set -euo pipefail` but wrap risky operations with `|| true`.
+1. Hook scripts must never exit non-zero except for intentional blocks. Use `set -euo pipefail`; for non-blocking observations, capture failures explicitly, emit a structured log record with the exact command, exit code, stderr tail, and source-of-truth path inspected, then return a JSON envelope.
 2. Hook scripts must never write to stdout outside the JSON envelope. Use `>&2` or the log helper.
 3. Hook scripts must never spawn anything long-running synchronously. Cap cargo check at 60s; other spawns at 10–30s.
 4. Hook scripts must never read or write files outside the project tree without explicit cause. They may read `~/.cache/cgreality/*` and write `~/.cache/cgreality/last_session_marker`.

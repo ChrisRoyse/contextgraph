@@ -97,16 +97,23 @@ In `analyze.rs`, add:
 ```rust
 pub async fn reality_latest_root(_args: serde_json::Value) -> Result<serde_json::Value> {
     let runtime_root = read_active_runtime_root().await?;
-    let target = read_active_target_instance().await.unwrap_or(None);
+    let target = read_active_target_instance().await?;
     // Walk runtime_root for the most recent run-* dir
-    let active_run_id = runtime_root.as_ref().and_then(|r| latest_run_id(r));
+    let active_run_id = match runtime_root.as_ref() {
+        Some(r) => latest_run_id(r)?,
+        None => None,
+    };
+    let last_attempt_number = match runtime_root.as_ref() {
+        Some(r) => latest_attempt_number(r, target.as_deref())?,
+        None => None,
+    };
     Ok(serde_json::json!({
         "runtime_root": runtime_root.as_ref().map(|p| p.to_string_lossy()),
         "active_run_id": active_run_id,
-        "active_task_id": target,
+        "active_task_id": target.clone(),
         "active_target_instance": target,
         "success_predicate": "official SWE-bench report places target instance in resolved_ids",
-        "last_attempt_number": runtime_root.as_ref().and_then(|r| latest_attempt_number(r, target.as_deref())),
+        "last_attempt_number": last_attempt_number,
         "source_of_truth": runtime_root.as_ref().map(|p| format!("file:{}", p.to_string_lossy()))
     }))
 }

@@ -374,7 +374,7 @@ exit 0
 
 ## Hook safety rules
 
-1. **Hook scripts must never exit non-zero except for intentional blocks.** Use `set -euo pipefail` but wrap risky operations with `|| true` if a missing artifact is acceptable.
+1. **Hook scripts must never exit non-zero except for intentional blocks.** Use `set -euo pipefail`; when a hook observes a non-blocking failure, capture the exact command, exit code, stderr tail, and source-of-truth path inspected in `cgreality_log_event` before returning a JSON envelope.
 2. **Hook scripts must never write to stdout outside the JSON envelope.** Any debug print corrupts the hook output. Use `>&2` or `cgreality_log_event`.
 3. **Hook scripts must never spawn anything long-running synchronously.** Cap `cargo check` at 60s. Other spawns at 10–30s.
 4. **Hook scripts must never read or write files outside the project tree without explicit cause.** They may read `~/.cache/cgreality/*` and write `~/.cache/cgreality/last_session_marker`.

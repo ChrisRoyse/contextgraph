@@ -147,28 +147,92 @@ pub async fn read_active_target_instance() -> Result<Option<String>> {
     ))?.trim().to_string()))
 }
 
-pub fn latest_run_id(runtime_root: &Path) -> Option<String> {
-    let entries: Vec<_> = std::fs::read_dir(runtime_root).ok()?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
-        .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|name| name.starts_with("run-"))
-        .collect();
-    let mut sorted = entries;
+pub fn latest_run_id(runtime_root: &Path) -> Result<Option<String>> {
+    let mut sorted = Vec::new();
+    for entry in std::fs::read_dir(runtime_root).map_err(|e| CCRealityError::new(
+        "CCREALITY_RUNTIME_ROOT_READ_FAILED",
+        format!("failed to read runtime root: {e}"),
+        "runtime_root.read_dir",
+        "ensure the active runtime root exists and is readable",
+        serde_json::json!({"path": runtime_root.display().to_string()}),
+        Some(format!("file:{}", runtime_root.display())),
+    ))? {
+        let entry = entry.map_err(|e| CCRealityError::new(
+            "CCREALITY_RUNTIME_ROOT_ENTRY_READ_FAILED",
+            format!("failed to read runtime root entry: {e}"),
+            "runtime_root.entry",
+            "inspect runtime root permissions",
+            serde_json::json!({"path": runtime_root.display().to_string()}),
+            Some(format!("file:{}", runtime_root.display())),
+        ))?;
+        if !entry.file_type().map_err(|e| CCRealityError::new(
+            "CCREALITY_RUNTIME_ROOT_ENTRY_TYPE_FAILED",
+            format!("failed to stat runtime root entry: {e}"),
+            "runtime_root.entry_type",
+            "inspect runtime root permissions",
+            serde_json::json!({"path": entry.path().display().to_string()}),
+            Some(format!("file:{}", entry.path().display())),
+        ))?.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().into_string().map_err(|_| CCRealityError::new(
+            "CCREALITY_RUNTIME_ROOT_ENTRY_NAME_INVALID",
+            "runtime root entry name is not valid UTF-8",
+            "runtime_root.entry_name",
+            "rename or remove the invalid runtime artifact directory",
+            serde_json::json!({"path": entry.path().display().to_string()}),
+            Some(format!("file:{}", entry.path().display())),
+        ))?;
+        if name.starts_with("run-") {
+            sorted.push(name);
+        }
+    }
     sorted.sort();
-    sorted.into_iter().last()
+    Ok(sorted.into_iter().last())
 }
 
-pub fn latest_attempt_number(runtime_root: &Path, target_instance: Option<&str>) -> Option<u64> {
-    let run_id = latest_run_id(runtime_root)?;
-    let task = target_instance?;
+pub fn latest_attempt_number(runtime_root: &Path, target_instance: Option<&str>) -> Result<Option<u64>> {
+    let Some(run_id) = latest_run_id(runtime_root)? else { return Ok(None); };
+    let Some(task) = target_instance else { return Ok(None); };
     let task_dir = runtime_root.join(run_id).join(task);
-    let attempts: Vec<u64> = std::fs::read_dir(&task_dir).ok()?
-        .filter_map(|e| e.ok())
-        .filter_map(|e| e.file_name().into_string().ok())
-        .filter_map(|name| name.strip_prefix("attempt-").and_then(|s| s.parse().ok()))
-        .collect();
-    attempts.into_iter().max()
+    let mut attempts = Vec::new();
+    for entry in std::fs::read_dir(&task_dir).map_err(|e| CCRealityError::new(
+        "CCREALITY_TASK_ATTEMPT_DIR_READ_FAILED",
+        format!("failed to read task attempt directory: {e}"),
+        "runtime_root.task_dir",
+        "ensure the active task directory exists and is readable",
+        serde_json::json!({"path": task_dir.display().to_string()}),
+        Some(format!("file:{}", task_dir.display())),
+    ))? {
+        let entry = entry.map_err(|e| CCRealityError::new(
+            "CCREALITY_TASK_ATTEMPT_ENTRY_READ_FAILED",
+            format!("failed to read task attempt entry: {e}"),
+            "runtime_root.task_entry",
+            "inspect task attempt directory permissions",
+            serde_json::json!({"path": task_dir.display().to_string()}),
+            Some(format!("file:{}", task_dir.display())),
+        ))?;
+        let name = entry.file_name().into_string().map_err(|_| CCRealityError::new(
+            "CCREALITY_TASK_ATTEMPT_ENTRY_NAME_INVALID",
+            "attempt directory name is not valid UTF-8",
+            "runtime_root.task_entry_name",
+            "rename or remove the invalid attempt artifact directory",
+            serde_json::json!({"path": entry.path().display().to_string()}),
+            Some(format!("file:{}", entry.path().display())),
+        ))?;
+        if let Some(suffix) = name.strip_prefix("attempt-") {
+            let attempt = suffix.parse::<u64>().map_err(|e| CCRealityError::new(
+                "CCREALITY_TASK_ATTEMPT_NAME_INVALID",
+                format!("attempt directory suffix is not a number: {e}"),
+                "runtime_root.attempt_name",
+                "rename attempt directories to attempt-N",
+                serde_json::json!({"name": name, "path": entry.path().display().to_string()}),
+                Some(format!("file:{}", entry.path().display())),
+            ))?;
+            attempts.push(attempt);
+        }
+    }
+    Ok(attempts.into_iter().max())
 }
 
 pub fn attempt_dir(runtime_root: &Path, run_id: &str, task_id: &str, attempt: u64) -> PathBuf {
@@ -338,8 +402,14 @@ use serde_json::{json, Value};
 pub async fn reality_latest_root(_args: Value) -> Result<Value> {
     let runtime_root = read_active_runtime_root().await?;
     let target = read_active_target_instance().await?;
-    let active_run_id = runtime_root.as_ref().and_then(|r| latest_run_id(r));
-    let attempt_n = runtime_root.as_ref().and_then(|r| latest_attempt_number(r, target.as_deref()));
+    let active_run_id = match runtime_root.as_ref() {
+        Some(r) => latest_run_id(r)?,
+        None => None,
+    };
+    let attempt_n = match runtime_root.as_ref() {
+        Some(r) => latest_attempt_number(r, target.as_deref())?,
+        None => None,
+    };
     Ok(json!({
         "runtime_root": runtime_root.as_ref().map(|p| p.display().to_string()),
         "active_run_id": active_run_id,

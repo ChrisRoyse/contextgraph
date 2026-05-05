@@ -209,7 +209,7 @@ Shells `reality-loop replay --attempt-summary-path ... --label recompile-reward`
 ```rust
 pub async fn reality_query_ledger(args: Value) -> Result<Value> {
     let run_id = required_str(&args, "run_id")?;
-    let where_clause = args.get("where").and_then(Value::as_str).unwrap_or("1=1");
+    let where_clause = required_str(&args, "where")?;
     let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(50).min(500);
 
     // Reject anything that isn't strictly a WHERE clause: no SELECT, INSERT, UPDATE, DELETE, DROP.
@@ -233,13 +233,14 @@ pub async fn reality_query_ledger(args: Value) -> Result<Value> {
     let sql = format!("SELECT record_kind, created_at, payload FROM ledger_records WHERE {} ORDER BY created_at DESC LIMIT {}",
                        where_clause, limit);
     let mut stmt = conn.prepare(&sql)?;
-    let rows: Vec<Value> = stmt.query_map([], |row| {
+    let mapped = stmt.query_map([], |row| {
         Ok(json!({
             "record_kind": row.get::<_, String>(0)?,
             "created_at": row.get::<_, i64>(1)?,
             "payload": row.get::<_, String>(2)?
         }))
-    })?.filter_map(|r| r.ok()).collect();
+    })?;
+    let rows: Vec<Value> = mapped.collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(json!({
         "rows": rows,
         "row_count": rows.len(),
