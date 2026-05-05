@@ -1,28 +1,43 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ccreality governed paths policy",
+  "description": "Allowed and denied repo-relative paths for CC Reality harness mutation tools.",
+  "version": 1,
   "allow": [
     "crates/context-graph-cli/src/bin/reality-loop.rs",
+    "crates/context-graph-cli/src/governed_edit.rs",
+    "crates/context-graph-cli/src/lib.rs",
     "crates/context-graph-cli/src/**",
     "crates/context-graph-mcp/src/handlers/tools/reality_loop/**",
-    "crates/context-graph-mcp/src/handlers/tools/mod.rs",
-    "crates/context-graph-mcp/src/handlers/tools/dispatch.rs",
-    "crates/context-graph-mcp/src/tools/**",
-    "crates/context-graph-mcp/src/main.rs",
+    "crates/context-graph-mcp/src/handlers/tools/reality_loop/*.rs",
     "scripts/cc/**",
+    "scripts/cc/tests/**",
     ".claude/loop.md",
     ".claude/agents/cc-reality-*.md",
     ".claude/skills/ccreality-*/**",
+    ".claude/skills/ccreality-*/SKILL.md",
     "docs/ccreality/**",
+    "docs/ccreality/phase-*/**",
     "docs/reality/**",
-    "config/ccreality_*.json"
+    "config/ccreality_governed_paths.json",
+    "config/ccreality_recommendation_schema.json"
   ],
   "deny": [
     ".env",
     ".env.*",
     "**/.env",
+    "**/.env.*",
     "swebench/**",
-    "tests/oracle_*",
+    "tests/oracle_**",
+    "tests/oracle_**/**",
     "crates/context-graph-benchmark/datasets/swe_bench_*",
+    "crates/context-graph-benchmark/datasets/swe_bench_*/**",
     "crates/*/src/reward_specs/**",
-    "crates/*/src/verifiers/**"
+    "crates/*/src/verifiers/**",
+    "**/*.pem",
+    "**/*.key",
+    "**/credentials.json",
+    "/etc/**",
+    "/root/**"
   ]
 }

@@ -1,18 +1,31 @@
 use super::errors::{CCRealityError, Result};
+use regex::Regex;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GovernedPathsConfig {
+    #[serde(rename = "$schema")]
+    pub schema: String,
+    pub title: String,
+    pub description: String,
+    pub version: u64,
     pub allow: Vec<String>,
     pub deny: Vec<String>,
 }
 
 #[derive(Debug)]
 pub struct GovernedPathsPolicy {
-    pub allow: Vec<glob::Pattern>,
-    pub deny: Vec<glob::Pattern>,
+    allow: Vec<CompiledPathPattern>,
+    deny: Vec<CompiledPathPattern>,
+}
+
+#[derive(Debug)]
+struct CompiledPathPattern {
+    source: String,
+    regex: Regex,
 }
 
 #[derive(Debug, Clone)]
@@ -67,11 +80,51 @@ impl GovernedPathsPolicy {
                 "CCREALITY_GOVERNED_PATHS_SHAPE_INVALID",
                 format!("governed-paths config shape is invalid: {e}"),
                 "config.shape",
-                "write JSON as {\"allow\":[...],\"deny\":[...]}",
+                "write the exact Phase 5 governed-paths JSON contract",
                 json!({"value": value}),
                 None,
             )
         })?;
+        if !cfg.schema.starts_with("https://json-schema.org/draft/") {
+            return Err(CCRealityError::new(
+                "CCREALITY_GOVERNED_PATHS_SCHEMA_INVALID",
+                "governed-paths $schema must identify a JSON Schema draft",
+                "config.$schema",
+                "use the Phase 5 ccreality_governed_paths.json file",
+                json!({"schema": cfg.schema}),
+                None,
+            ));
+        }
+        if cfg.title != "ccreality governed paths policy" {
+            return Err(CCRealityError::new(
+                "CCREALITY_GOVERNED_PATHS_TITLE_INVALID",
+                "governed-paths title is not the expected policy title",
+                "config.title",
+                "use the Phase 5 ccreality_governed_paths.json file",
+                json!({"title": cfg.title}),
+                None,
+            ));
+        }
+        if cfg.description.trim().is_empty() {
+            return Err(CCRealityError::new(
+                "CCREALITY_GOVERNED_PATHS_DESCRIPTION_MISSING",
+                "governed-paths description must not be empty",
+                "config.description",
+                "use the Phase 5 ccreality_governed_paths.json file",
+                json!({}),
+                None,
+            ));
+        }
+        if cfg.version != 1 {
+            return Err(CCRealityError::new(
+                "CCREALITY_GOVERNED_PATHS_VERSION_UNSUPPORTED",
+                "governed-paths config version is unsupported",
+                "config.version",
+                "use version 1 of the governed paths policy",
+                json!({"version": cfg.version, "supported": [1]}),
+                None,
+            ));
+        }
         if cfg.allow.is_empty() {
             return Err(CCRealityError::new(
                 "CCREALITY_GOVERNED_PATHS_ALLOW_EMPTY",
@@ -82,19 +135,29 @@ impl GovernedPathsPolicy {
                 None,
             ));
         }
+        if cfg.deny.is_empty() {
+            return Err(CCRealityError::new(
+                "CCREALITY_GOVERNED_PATHS_DENY_EMPTY",
+                "governed-paths deny list is empty",
+                "config.deny",
+                "add protected deny patterns before using the policy",
+                json!({}),
+                None,
+            ));
+        }
         let allow = compile_patterns("allow", &cfg.allow)?;
         let deny = compile_patterns("deny", &cfg.deny)?;
         Ok(Self { allow, deny })
     }
 
     pub fn is_allowed(&self, path: &str) -> PolicyVerdict {
-        for pat in &self.deny {
-            if pat.matches(path) {
-                return PolicyVerdict::DenyExplicit(pat.as_str().to_string());
+        for rule in &self.deny {
+            if rule.regex.is_match(path) {
+                return PolicyVerdict::DenyExplicit(rule.source.clone());
             }
         }
-        for pat in &self.allow {
-            if pat.matches(path) {
+        for rule in &self.allow {
+            if rule.regex.is_match(path) {
                 return PolicyVerdict::Allow;
             }
         }
@@ -102,23 +165,80 @@ impl GovernedPathsPolicy {
     }
 }
 
-fn compile_patterns(field: &str, values: &[String]) -> Result<Vec<glob::Pattern>> {
-    values
-        .iter()
-        .enumerate()
-        .map(|(index, pattern)| {
-            glob::Pattern::new(pattern).map_err(|e| {
-                CCRealityError::new(
-                    "CCREALITY_GOVERNED_PATHS_GLOB_INVALID",
-                    format!("invalid glob pattern: {e}"),
-                    format!("config.{field}[{index}]"),
-                    "fix the invalid glob expression",
-                    json!({"pattern": pattern}),
-                    None,
-                )
-            })
-        })
-        .collect()
+fn compile_patterns(field: &str, values: &[String]) -> Result<Vec<CompiledPathPattern>> {
+    let mut compiled = Vec::with_capacity(values.len());
+    for (index, pattern) in values.iter().enumerate() {
+        let regex_source = pattern_to_regex(pattern).map_err(|e| {
+            CCRealityError::new(
+                "CCREALITY_GOVERNED_PATHS_PATTERN_INVALID",
+                format!("invalid path pattern: {e}"),
+                format!("config.{field}[{index}]"),
+                "fix the invalid path expression in the Phase 5 policy",
+                json!({"pattern": pattern}),
+                None,
+            )
+        })?;
+        let regex = Regex::new(&regex_source).map_err(|e| {
+            CCRealityError::new(
+                "CCREALITY_GOVERNED_PATHS_PATTERN_COMPILE_FAILED",
+                format!("failed to compile path pattern: {e}"),
+                format!("config.{field}[{index}]"),
+                "inspect the policy pattern and generated regex",
+                json!({"pattern": pattern, "regex": regex_source}),
+                None,
+            )
+        })?;
+        compiled.push(CompiledPathPattern {
+            source: pattern.clone(),
+            regex,
+        });
+    }
+    Ok(compiled)
+}
+
+fn pattern_to_regex(pattern: &str) -> std::result::Result<String, &'static str> {
+    if pattern.is_empty() {
+        return Err("pattern must not be empty");
+    }
+    if pattern.contains('\\') || pattern.contains('\0') || pattern.contains('\n') {
+        return Err("pattern must use forward slashes and contain no control characters");
+    }
+
+    let mut regex = String::with_capacity(pattern.len() * 2 + 2);
+    regex.push('^');
+    let mut i = 0;
+    while i < pattern.len() {
+        let rest = &pattern[i..];
+        if rest.starts_with("**/") {
+            regex.push_str("(?:.*/)?");
+            i += 3;
+        } else if rest.starts_with("/**/") {
+            regex.push_str("/(?:.*/)?");
+            i += 4;
+        } else if rest == "/**" {
+            regex.push_str("/.*");
+            i += 3;
+        } else if rest.starts_with("**") {
+            regex.push_str(".*");
+            i += 2;
+        } else {
+            let ch = rest.chars().next().ok_or("unexpected empty pattern tail")?;
+            match ch {
+                '*' => regex.push_str("[^/]*"),
+                '?' => regex.push_str("[^/]"),
+                '.' | '+' | '(' | ')' | '|' | '^' | '$' | '{' | '}' | '[' | ']' => {
+                    regex.push('\\');
+                    regex.push(ch);
+                }
+                '/' | '_' | '-' => regex.push(ch),
+                c if c.is_ascii_alphanumeric() => regex.push(c),
+                _ => return Err("pattern contains an unsupported character"),
+            }
+            i += ch.len_utf8();
+        }
+    }
+    regex.push('$');
+    Ok(regex)
 }
 
 pub fn ensure_path_allowed(path: &str) -> Result<()> {
@@ -167,12 +287,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn deny_dotenv_and_swebench() {
-        let policy_json = serde_json::json!({
-            "allow": ["Cargo.toml", "crates/**", "docs/ccreality/**"],
-            "deny": [".env", ".env.*", "swebench/**", "tests/oracle_*"]
-        });
-        let p = GovernedPathsPolicy::from_json(policy_json).expect("valid policy");
+    fn real_phase5_policy_denies_protected_paths() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let policy_path = root.join("config/ccreality_governed_paths.json");
+        let p = GovernedPathsPolicy::load_from(&policy_path).expect("valid Phase 5 policy");
         assert!(matches!(
             p.is_allowed(".env"),
             PolicyVerdict::DenyExplicit(_)
@@ -182,12 +300,60 @@ mod tests {
             PolicyVerdict::DenyExplicit(_)
         ));
         assert!(matches!(
+            p.is_allowed("tests/oracle_case/fixture.json"),
+            PolicyVerdict::DenyExplicit(_)
+        ));
+        assert!(matches!(
+            p.is_allowed("crates/context-graph-benchmark/datasets/swe_bench_lite/data.json"),
+            PolicyVerdict::DenyExplicit(_)
+        ));
+        assert!(matches!(
             p.is_allowed("crates/context-graph-cli/src/bin/reality-loop.rs"),
+            PolicyVerdict::Allow
+        ));
+        assert!(matches!(
+            p.is_allowed("config/ccreality_governed_paths.json"),
             PolicyVerdict::Allow
         ));
         assert!(matches!(
             p.is_allowed("random/path.txt"),
             PolicyVerdict::NoMatch
         ));
+    }
+
+    #[test]
+    fn real_phase5_policy_rejects_unsupported_version() {
+        let value = serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "ccreality governed paths policy",
+            "description": "test",
+            "version": 999,
+            "allow": ["docs/ccreality/**"],
+            "deny": [".env"]
+        });
+        let err = GovernedPathsPolicy::from_json(value).expect_err("version must be rejected");
+        assert_eq!(
+            err.error_code,
+            "CCREALITY_GOVERNED_PATHS_VERSION_UNSUPPORTED"
+        );
+    }
+
+    #[test]
+    fn ccreality_pattern_compiler_matches_documented_globstar_dialect() {
+        let regex = Regex::new(&pattern_to_regex("tests/oracle_**/**").expect("regex source"))
+            .expect("compiled");
+        assert!(regex.is_match("tests/oracle_case/fixture.json"));
+        assert!(regex.is_match("tests/oracle_large/nested/fixture.json"));
+
+        let root_secret =
+            Regex::new(&pattern_to_regex("**/credentials.json").expect("regex source"))
+                .expect("compiled");
+        assert!(root_secret.is_match("credentials.json"));
+        assert!(root_secret.is_match("service/credentials.json"));
+
+        let single_segment =
+            Regex::new(&pattern_to_regex("*.pem").expect("regex source")).expect("compiled");
+        assert!(single_segment.is_match("secret.pem"));
+        assert!(!single_segment.is_match("nested/secret.pem"));
     }
 }

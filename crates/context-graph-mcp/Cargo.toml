@@ -59,6 +59,7 @@ hex = "0.4"
 
 # Glob pattern matching for file watcher tools
 glob = "0.3"
+regex = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 
 # PID file flock guard (Unix only, prevents multi-process DB corruption)

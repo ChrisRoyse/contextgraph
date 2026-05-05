@@ -1062,6 +1062,7 @@ dependencies = [
  "jsonschema",
  "libc",
  "parking_lot",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

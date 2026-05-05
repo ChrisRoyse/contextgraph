@@ -92,20 +92,112 @@ impl RecommendationValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::path::Path;
+
+    fn repo_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
 
     #[test]
-    fn validates_required_field() {
-        let schema = json!({
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "object",
-            "required": ["record_kind"],
-            "properties": { "record_kind": { "const": "ccreality_optimizer_recommendation" } }
-        });
-        let validator = RecommendationValidator::from_schema_value(schema, None).expect("schema");
-        validator
-            .validate(&json!({"record_kind": "ccreality_optimizer_recommendation"}))
-            .expect("valid");
-        let err = validator.validate(&json!({})).expect_err("invalid");
+    fn real_phase5_schema_validates_sample_recommendation() {
+        let root = repo_root();
+        let schema_path = root.join("config/ccreality_recommendation_schema.json");
+        let sample_path =
+            root.join("docs/ccreality/phase-05-config-files/sample_recommendation.json");
+        let schema: Value =
+            serde_json::from_str(&fs::read_to_string(&schema_path).expect("schema file"))
+                .expect("schema json");
+        let sample: Value =
+            serde_json::from_str(&fs::read_to_string(&sample_path).expect("sample file"))
+                .expect("sample json");
+        let validator = RecommendationValidator::from_schema_value(
+            schema,
+            Some(format!("file:{}", schema_path.display())),
+        )
+        .expect("schema");
+        validator.validate(&sample).expect("sample is valid");
+    }
+
+    #[test]
+    fn real_phase5_schema_rejects_over_limit_changed_recommendation() {
+        let root = repo_root();
+        let schema_path = root.join("config/ccreality_recommendation_schema.json");
+        let sample_path =
+            root.join("docs/ccreality/phase-05-config-files/sample_recommendation.json");
+        let schema: Value =
+            serde_json::from_str(&fs::read_to_string(&schema_path).expect("schema file"))
+                .expect("schema json");
+        let mut sample: Value =
+            serde_json::from_str(&fs::read_to_string(&sample_path).expect("sample file"))
+                .expect("sample json");
+        sample["source_files_changed"] = Value::Array(
+            (0..26)
+                .map(|i| Value::String(format!("docs/ccreality/phase-05-config-files/file-{i}.md")))
+                .collect(),
+        );
+        let validator = RecommendationValidator::from_schema_value(
+            schema,
+            Some(format!("file:{}", schema_path.display())),
+        )
+        .expect("schema");
+        let err = validator.validate(&sample).expect_err("invalid");
         assert_eq!(err.error_code, "CCREALITY_RECOMMENDATION_SCHEMA_INVALID");
+        assert!(err
+            .details
+            .to_string()
+            .contains("\"schema_path\":\"/properties/source_files_changed/maxItems\""));
+    }
+
+    #[test]
+    fn real_phase5_schema_rejects_unknown_fields() {
+        let root = repo_root();
+        let schema_path = root.join("config/ccreality_recommendation_schema.json");
+        let sample_path =
+            root.join("docs/ccreality/phase-05-config-files/sample_recommendation.json");
+        let schema: Value =
+            serde_json::from_str(&fs::read_to_string(&schema_path).expect("schema file"))
+                .expect("schema json");
+        let mut sample: Value =
+            serde_json::from_str(&fs::read_to_string(&sample_path).expect("sample file"))
+                .expect("sample json");
+        sample["unexpected_field"] = Value::String("must fail".to_string());
+        let validator = RecommendationValidator::from_schema_value(
+            schema,
+            Some(format!("file:{}", schema_path.display())),
+        )
+        .expect("schema");
+        let err = validator.validate(&sample).expect_err("invalid");
+        assert_eq!(err.error_code, "CCREALITY_RECOMMENDATION_SCHEMA_INVALID");
+        assert!(err
+            .details
+            .to_string()
+            .contains("\"schema_path\":\"/additionalProperties\""));
+    }
+
+    #[test]
+    fn real_phase5_schema_accepts_no_change_with_empty_change_sets() {
+        let root = repo_root();
+        let schema_path = root.join("config/ccreality_recommendation_schema.json");
+        let sample_path =
+            root.join("docs/ccreality/phase-05-config-files/sample_recommendation.json");
+        let schema: Value =
+            serde_json::from_str(&fs::read_to_string(&schema_path).expect("schema file"))
+                .expect("schema json");
+        let mut sample: Value =
+            serde_json::from_str(&fs::read_to_string(&sample_path).expect("sample file"))
+                .expect("sample json");
+        sample["status"] = Value::String("no_change".to_string());
+        sample["source_files_changed"] = Value::Array(Vec::new());
+        sample["harness_transitions_minted"] = Value::Array(Vec::new());
+        sample["shift_log_excerpt"] = Value::Array(Vec::new());
+        let validator = RecommendationValidator::from_schema_value(
+            schema,
+            Some(format!("file:{}", schema_path.display())),
+        )
+        .expect("schema");
+        validator
+            .validate(&sample)
+            .expect("no_change recommendation is valid");
     }
 }
