@@ -1,31 +1,39 @@
 # Constellation Subsystem
 
 **Source files covered:**
-- `crates/context-graph-core/src/constellation/{mod,types,compiler,welford,reservoir}.rs` — types, accumulator, compiler, Welford online stats, reservoir percentiles
+- `crates/context-graph-core/src/constellation/{mod,types,compiler,welford,reservoir,tests}.rs` — types, accumulator, compiler, Welford online stats, reservoir percentiles
 - `crates/context-graph-storage/src/teleological/rocksdb_store/constellation.rs` — `CF_CONSTELLATIONS` + `CF_CONSTELLATION_BY_SELECTOR` persistence + secondary-index management
-- `crates/context-graph-storage/src/teleological/rocksdb_store/learner.rs:124-143, 283-287` — `CF_LEARNER_CONSTELLATIONS` storage methods
+- `crates/context-graph-storage/src/teleological/rocksdb_store/learner.rs` — `CF_LEARNER_CONSTELLATIONS` storage methods (per-learner regulated-state baselines)
+- `crates/context-graph-storage/src/teleological/column_families.rs` — `CF_CONSTELLATIONS` (`:511`), `CF_CONSTELLATION_BY_SELECTOR` (`:529`), `CF_LEARNER_CONSTELLATIONS` (`:428`); CF option builders `constellations_cf_options`, `constellation_by_selector_cf_options`, `learner_constellations_cf_options`
 - `crates/context-graph-mcp/src/handlers/tools/constellation_tools.rs` — six MCP handlers
-- `crates/context-graph-mcp/src/handlers/tools/utl_tools.rs:1327+` — `compile_learner_constellation` handler
+- `crates/context-graph-mcp/src/handlers/tools/utl_tools.rs` — `compile_learner_constellation` handler (~`:1327`)
 - `crates/context-graph-mcp/src/tools/definitions/constellation.rs` — schema definitions
+- `crates/context-graph-storage/src/dynamicjepa/constellation_store.rs` — `CF_DJ_CONSTELLATIONS` reader/writer
+- `crates/context-graph-storage/src/dynamicjepa/keys.rs` — `constellation_key(...)` 36-byte composite
+- `crates/context-graph-storage/src/dynamicjepa/inspection.rs` — JSON inspection of `CF_DJ_CONSTELLATIONS`
+- `crates/context-graph-storage/src/dynamicjepa/column_families.rs` — `CF_DJ_CONSTELLATIONS` definition
+- `crates/context-graph-core/src/dynamicjepa/meaning_compression.rs` — `ConstellationCentroid` struct + validation
+- `crates/context-graph-core/src/dynamicjepa/panel.rs` — `LatentPanel` (panel/constellation relationship)
 
-Cross-references: see [04](04_database_schema.md) for CF layout, [13](13_teleological_subsystem.md) for the teleological context that feeds constellation compilation, [18](18_contrastive_and_typed_edges.md) for `derive_constellation anti_pole`'s consumption of fingerprint scores, [20](20_learning_subsystem.md) for the learner-state side.
+Cross-references: [04](04_database_schema.md) for the full CF catalog; [13](13_teleological_subsystem.md) §5, §9 for the teleological context that feeds constellation compilation; [18](18_contrastive_and_typed_edges.md) for `derive_constellation anti_pole`'s consumption of fingerprint scores; [20](20_learning_subsystem.md) for the learner-state side; [08_mcp_protocol.md](08_mcp_protocol.md) for the MCP schema layer.
 
-## 1. Scope
+## 1. What a constellation is
 
-A **constellation** is a compiled summary of a set of memories selected by topic, session, tag, time range, or explicit id list. It captures, for one selector resolution:
+A **constellation** is a compiled, queryable summary of a set of memories selected by topic, session, tag, time range, or explicit id list. It captures, for one selector resolution:
 
 - per-embedder dense centroids and spread statistics (mean, stddev, p50/p95 cosine, min/max cosine, coverage)
 - aggregate 14D topic-profile centroid, 6D group-alignment centroid, 91D cross-correlation centroid
 - coherence (median pairwise cosine to E1 centroid) and topic purity (when selector is `Topic`)
 
-Two stores share the design and the `Constellation` shape:
+Three distinct stores share the "constellation" name in this codebase. They are **not interchangeable** — each has its own record shape, key format, and persistence path:
 
-| Store | CF | Key | Built by | Reader |
-|---|---|---|---|---|
-| **Content** | `CF_CONSTELLATIONS` + secondary index `CF_CONSTELLATION_BY_SELECTOR` | UUID | `compile_constellation`, `derive_constellation` | `list_constellations`, `get_constellation`, `score_against_constellation`, `delete_constellation` |
-| **Learner** (regulated-state baseline) | `CF_LEARNER_CONSTELLATIONS` | `[learner_id:16][selector_kind:u8]` (17B) | `compile_learner_constellation` | scope-restricted to a learner; consumed by `resolve_learner_retrieval_policy`, drift detection, and learner training pipelines |
+| Store | CF | Record type | Key | Built by | Reader |
+|---|---|---|---|---|---|
+| **Content** | `CF_CONSTELLATIONS` + secondary `CF_CONSTELLATION_BY_SELECTOR` | `Constellation` (core/constellation/types.rs) | UUID (16 B) | `compile_constellation`, `derive_constellation` | `list_constellations`, `get_constellation`, `score_against_constellation`, `delete_constellation` |
+| **Learner** (regulated-state baseline) | `CF_LEARNER_CONSTELLATIONS` | `LearnerConstellation` (learner/mod.rs:643-710) | `[learner_id:16][selector_kind:u8]` (17 B) | `compile_learner_constellation` | scope-restricted to a learner; consumed by `resolve_learner_retrieval_policy`, drift detection, learner training pipelines |
+| **DynamicJEPA** (per-domain instrument centroid) | `CF_DJ_CONSTELLATIONS` | `ConstellationCentroid` (core/dynamicjepa/meaning_compression.rs:43-60) | `[domain_uuid:16][sha256(subject_id)[..16]:16][modality_id_LE:4]` (36 B) | `put_constellation` / `put_constellations_with_audit_batch` | `get_constellation`, `list_constellations`, `count_constellations`, `inspect_cf` |
 
-This document focuses on the content store. The learner variant is summarized in §7 and detailed in [13](13_teleological_subsystem.md) §4 and [20](20_learning_subsystem.md).
+This document focuses primarily on the **content store** (§2-§6, §8-§9) since that is what the MCP `compile_constellation` family targets. The **learner variant** is summarized in §7 and detailed in [13](13_teleological_subsystem.md) §9 and [20](20_learning_subsystem.md). The **DynamicJEPA variant** is documented in §10 since it shares the same conceptual name but a completely different data model.
 
 ## 2. Constants
 
@@ -36,18 +44,18 @@ This document focuses on the content store. The learner variant is summarized in
 | `CONSTELLATION_VERSION` | 2 | First byte of every `CF_CONSTELLATIONS` payload; v2 = E14-aware (14 per-embedder stats, 14D topic centroid, 91-entry cross-correlation centroid) |
 | `RESERVOIR_SAMPLE_SIZE` | 1024 | Bounded reservoir per embedder for percentile estimation |
 | `MIN_CONSTELLATION_MEMBERS` | 3 | Below this `finalize` returns `ConstellationError::TooFewMembers` |
-| `DEFAULT_MAX_MEMBERS` | 50_000 | Default ceiling on members fed to one accumulator (`compiler.rs:46`) |
+| `DEFAULT_MAX_MEMBERS` | 50_000 | Default ceiling on members fed to one accumulator |
 | `NUM_CONSTELLATION_EMBEDDERS` | 14 | = `teleological::types::NUM_EMBEDDERS` |
 | `TOPIC_PROFILE_CENTROID_DIM` | 14 | Mean topic-profile alignment array |
 | `GROUP_ALIGNMENT_CENTROID_DIM` | 6 | Factual / Temporal / Causal / Relational / Qualitative / Implementation |
 | `CROSS_CORRELATION_CENTROID_DIM` | 91 | C(14, 2) cross-embedder pairs |
-| `SELECTOR_INDEX_KEY_LEN` | 17 | `[kind:u8][SHA256(canonical)[..16]:16B]` |
+| `SELECTOR_INDEX_KEY_LEN` | 17 | `[kind:u8][SHA256(canonical)[..16]:16B]` (storage/.../constellation.rs:41) |
 
 Wire format: `[CONSTELLATION_VERSION:u8][bincode-encoded Constellation]`. Deserialization rejects mismatched versions with `CoreError::SerializationError` — **no automatic migration**.
 
 ## 3. Selectors
 
-Five variants, each with a stable canonical string used for SHA-256 hashing into the secondary index (`types.rs:105-166`):
+`crates/context-graph-core/src/constellation/types.rs:105-166`. Five variants, each with a stable canonical string used for SHA-256 hashing into the secondary index:
 
 | Variant | Canonical form | `kind_byte` |
 |---|---|---|
@@ -59,7 +67,9 @@ Five variants, each with a stable canonical string used for SHA-256 hashing into
 
 For `ExplicitIds` the `rationale` is intentionally **not** hashed — only the (sorted, deduplicated) UUID set determines identity. For `TimeRange` the timestamps emit RFC-3339 with nanosecond precision so tooling cannot accidentally collide two different windows.
 
-Secondary-index key: `[kind_byte:u8][SHA256(canonical)[..16]]` → 17B fixed → constellation UUID (16B value). `compile_constellation` enforces "at most one primary row per selector": when the index pointer already maps to a different UUID (rebuild case), the prior primary row is **deleted in the same WriteBatch** as the new put (`storage/.../constellation.rs:80-110`).
+Secondary-index key: `[kind_byte:u8][SHA256(canonical)[..16]]` → 17 B fixed → constellation UUID (16 B value). `compile_constellation` enforces "at most one primary row per selector": when the index pointer already maps to a different UUID (rebuild case), the prior primary row is **deleted in the same WriteBatch** as the new put (`storage/.../constellation.rs:80-110`).
+
+The CF option builder for the secondary index uses a 1-byte prefix extractor (`column_families.rs:1036`) so `prefix_iterator_cf(kind_byte)` can enumerate every constellation of a given selector kind (e.g. "list all topic-based constellations").
 
 ## 4. `Constellation` record
 
@@ -98,9 +108,11 @@ Secondary-index key: `[kind_byte:u8][SHA256(canonical)[..16]]` → 17B fixed →
 | `min_cosine`, `max_cosine` | f32 | Observed extremes |
 | `coverage` | f32 in [0, 1] | Fraction of members with a non-zero vector for this embedder |
 
+`VectorKind` enum (`types.rs:170-183`): `Dense` (E1, E2, E3, E4, E7, E9, E11), `Sparse` (E6, E13 — `centroid` empty, `sparse_top_terms` populated), `TokenLevel` (E12 — `pooled_token_centroid` + `mean_token_count`), `Asymmetric` (E5 cause, E8 source, E10 paraphrase — only the canonical side participates).
+
 ### 4.2 Silent-zero invariant on topic centroid
 
-`Constellation::has_topic_profile_signal()` returns `true` iff at least one of the 14 slots is non-zero. **Reason** (per the doc-comment on `topic_profile_centroid`): the compiler only observes the topic profile when `RocksDbTeleologicalStore::get_topic_profile(member_id)` returns `Some`. On a fresh DB, before the clustering pipeline has populated `CF_TOPIC_PROFILES`, every member yields `None`, the Welford accumulator stays at `count = 0`, and the field serializes as all-zeros — **indistinguishable from "all members had topic-zero alignment"**. Consumers that condition on topic-centroid trustworthiness MUST call `has_topic_profile_signal()`.
+`Constellation::has_topic_profile_signal()` (`types.rs:95-97`) returns `true` iff at least one of the 14 slots is non-zero. **Reason** (per the doc-comment on `topic_profile_centroid`): the compiler only observes the topic profile when `RocksDbTeleologicalStore::get_topic_profile(member_id)` returns `Some`. On a fresh DB, before the clustering pipeline has populated `CF_TOPIC_PROFILES`, every member yields `None`, the Welford accumulator stays at `count = 0`, and the field serializes as all-zeros — **indistinguishable from "all members had topic-zero alignment"**. Consumers that condition on topic-centroid trustworthiness MUST call `has_topic_profile_signal()`.
 
 `group_alignment_centroid` and `cross_correlation_centroid` are derived from `topic_profile_centroid` and inherit the same caveat.
 
@@ -125,7 +137,7 @@ Secondary-index key: `[kind_byte:u8][SHA256(canonical)[..16]]` → 17B fixed →
 
 ## 6. MCP tools (six)
 
-Handlers: `crates/context-graph-mcp/src/handlers/tools/constellation_tools.rs`. All six downcast `Handlers::teleological_store` to `RocksDbTeleologicalStore` and return `"requires RocksDbTeleologicalStore"` otherwise.
+Handlers: `crates/context-graph-mcp/src/handlers/tools/constellation_tools.rs`. All six downcast `Handlers::teleological_store` to `RocksDbTeleologicalStore` and return `"requires RocksDbTeleologicalStore"` otherwise. Function names in the source are `call_compile_constellation`, `call_list_constellations`, `call_get_constellation`, `call_score_against_constellation`, `call_delete_constellation`, `call_derive_constellation`.
 
 ### 6.1 `compile_constellation` (`constellation_tools.rs:42`)
 
@@ -222,11 +234,11 @@ For `anti_pole` the resulting selector is **always** a synthetic `Tag` so the se
 |---|---|---|
 | `constellationId` | UUID | yes |
 
-Returns `{ constellation_id, deleted: bool }`. Idempotent: `deleted=false` if not found. Implementation deletes both primary and secondary index entry in one `WriteBatch`.
+Returns `{ constellation_id, deleted: bool }`. Idempotent: `deleted=false` if not found. Implementation deletes both primary and secondary index entry in one `WriteBatch`. The secondary index entry is only deleted if it still points at this UUID — avoids clobbering a newer constellation that happens to share the selector (`storage/.../constellation.rs:223-248`).
 
 ## 7. Learner variant
 
-`compile_learner_constellation` (handler `utl_tools.rs:1327+`) compiles a regulated-state baseline from `CF_FINGERPRINTS_LEARNER` rows.
+`compile_learner_constellation` (handler `utl_tools.rs:~1327`) compiles a regulated-state baseline from `CF_FINGERPRINTS_LEARNER` rows.
 
 | Arg | Type | Required | Default |
 |---|---|---|---|
@@ -240,7 +252,7 @@ Pipeline:
 2. `compile_constellation_from_fingerprints(learner_id, &args, &fingerprints)` aggregates:
    - per-modality centroids (`LearnerModalityCentroid { modality, vector, scalar_mean, sample_count }`) — **`SelfReport` is rejected** (`learner/mod.rs:684-691`)
    - state centroid (Welford over `state_vector.values`)
-3. Persist via `store.store_learner_constellation(&c)` to `CF_LEARNER_CONSTELLATIONS` keyed by `[learner_id:16][selector_kind:u8]` (17B). One baseline per `(learner_id, selector_kind)` pair.
+3. Persist via `store.store_learner_constellation(&c)` to `CF_LEARNER_CONSTELLATIONS` keyed by `[learner_id:16][selector_kind:u8]` (17 B). One baseline per `(learner_id, selector_kind)` pair.
 
 `LearnerConstellation::validate` (`learner/mod.rs:656-710`) enforces:
 - `sample_count > 0`
@@ -250,7 +262,7 @@ Pipeline:
 - no `SelfReport` centroid
 - `state_centroid.learner_id == constellation.learner_id`
 
-Counts surface via `count_learner_constellations` in `get_capability_matrix.runtime.learnerState.learnerConstellations`.
+Counts surface via `count_learner_constellations` in `get_capability_matrix.runtime.learnerState.learnerConstellations`. See [13](13_teleological_subsystem.md) §11.1.
 
 ## 8. Failure modes
 
@@ -267,20 +279,94 @@ Counts surface via `count_learner_constellations` in `get_capability_matrix.runt
 
 ## 9. Atomicity guarantees
 
-`store_constellation` (`storage/.../constellation.rs:70-130`):
-- Probes `CF_CONSTELLATION_BY_SELECTOR[index_key]` for a prior pointer.
+`store_constellation` (`storage/.../constellation.rs:70-142`):
+- Probes `CF_CONSTELLATION_BY_SELECTOR[index_key]` for a prior pointer (returns RocksDB error wrapped in `TeleologicalStoreError::rocksdb_op` on failure).
 - If the prior pointer maps to a **different** UUID than the new record → schedules `delete_cf(primary_cf, old)` in the same WriteBatch.
 - Always writes new primary row + index pointer in the same WriteBatch.
 - Single `db.write(batch)` ensures all three operations land atomically.
 
-`delete_constellation` mirrors the pattern (deletes both rows in one WriteBatch).
+`delete_constellation` (`storage/.../constellation.rs:209-260`) mirrors the pattern:
+- Resolves the selector by reading the primary row first (the only `.await` in the function so CF handles never cross an await boundary — they are `!Sync` and `tokio::spawn` would reject the resulting future).
+- Schedules `delete_cf(primary_cf, id_bytes)` in a `WriteBatch`.
+- Probes the secondary index; only deletes the index entry when it still points at this UUID.
+- Single `db.write(batch)` for atomicity.
 
 `derive_constellation` performs an explicit `get_constellation(derived.id)` readback after store and reports `before_count` and `after_count` from `count_constellations()` so callers can confirm idempotent persistence.
 
-## 10. What is NOT covered here
+`encode_constellation` / `decode_constellation` (`storage/.../constellation.rs:343-372`) own the wire format `[CONSTELLATION_VERSION:u8][bincode]`. `decode_constellation` rejects empty payloads and version mismatches with `CoreError::SerializationError`.
 
-- The synergy matrix used during compilation — see [13](13_teleological_subsystem.md) §9.
-- The 14-embedder fingerprint shape (E1–E14, dual asymmetric vectors) — see [05](05_embedding_subsystem.md).
+## 10. DynamicJEPA constellation variant (`CF_DJ_CONSTELLATIONS`)
+
+A separate, namespace-aligned constellation lives inside the DynamicJEPA subsystem — used to capture per-(domain, subject, modality) instrument-reading centroids derived from constellation `LatentPanel` artifacts.
+
+### 10.1 Data model
+
+`crates/context-graph-core/src/dynamicjepa/meaning_compression.rs:43-60`:
+
+```text
+pub struct ConstellationCentroid {
+    pub header: DjRecordHeader,
+    pub constellation_id: ConstellationId,
+    pub domain_pack_id: DomainPackId,
+    pub subject_id: String,                  // <= 256 bytes; trimmed-empty rejected
+    pub modality_id: InstrumentId,
+    pub centroid: Vec<f32>,                  // L2-normalized, |norm-1| <= 1e-3
+    pub instrument_artifact_hash: [u8; 32],  // SHA-256 of the frozen instrument artifact (non-zero)
+    pub reference_set_count: u32,            // > 0
+    pub kept_count: u32,                     // > 0
+    pub dropped_zero_norm: u32,              // kept + dropped <= reference_set_count
+    pub loo_stability: f32,                  // [0, 1] cosine LOO stability
+    pub calibration_percentile: u8,          // <= 100
+    pub calibration_set_size: u32,           // > 0
+    pub built_at_unix_ms: u64,
+    pub built_by_run_id: Option<Uuid>,       // None or non-nil
+}
+```
+
+`CONSTELLATION_CENTROID_RECORD_VERSION = 1`. Validation rules live in `impl Validate for ConstellationCentroid` (`meaning_compression.rs:190-277`).
+
+### 10.2 Storage layout
+
+| Aspect | Value | Source |
+|---|---|---|
+| CF name | `dj_constellations` | `dynamicjepa/column_families.rs:22` |
+| CF options | `dj_composite_index_cf_options(cache)` — 8 KB blocks, LZ4, bloom, 16-byte prefix extractor, 4 MB write buffer | `dynamicjepa/column_families.rs:111-113`, `:157` |
+| Key | 36 bytes: `[domain_uuid:16][SHA256(subject_id)[..16]:16][modality_id:LE u32:4]` | `dynamicjepa/keys.rs:72-81` |
+| Value | `[DYNAMIC_JEPA_STORAGE_VALUE_VERSION:u8 = 1][bincode-encoded ConstellationCentroid]` | `dynamicjepa/encode.rs` |
+| Audit | Each batch write is paired with a `DjAuditRecord` row in `CF_DJ_AUDIT_LOG` (`audit_key = [ts_BE:8][audit_id:16]` = 24 B) | `dynamicjepa/keys.rs:115-120` |
+
+`threshold_calibration_key(domain, subject, modality, supersede_seq)` extends the constellation key with a 4-byte supersede sequence (`keys.rs:83-93`) — keeping calibrations co-located with their constellation prefix for efficient prefix scans.
+
+### 10.3 Read / write paths
+
+`crates/context-graph-storage/src/dynamicjepa/constellation_store.rs`:
+
+| Function | Behavior |
+|---|---|
+| `put_constellation(db, domain_uuid, subject_id, modality_id, &record)` | Single-row put via `put_record` (validates record header + serializes via `encode_record`) |
+| `get_constellation(db, domain_uuid, subject_id, modality_id)` | Single-row read; returns `Option<ConstellationCentroid>` |
+| `put_constellations_with_audit_batch(db, &records, &audit)` | Validates every record + audit, writes them all into one `WriteBatch` together with the `DjAuditRecord`, executes as a single `db.write(batch)` for atomicity |
+| `list_constellations(db, limit, offset)` | Paginated linear scan over the CF |
+| `count_constellations(db)` | O(n) scan via `count_cf` |
+
+### 10.4 Inspection
+
+`crates/context-graph-storage/src/dynamicjepa/inspection.rs:142-144`: `inspect_cf` and `inspect_cf_key` decode any `CF_DJ_CONSTELLATIONS` row to JSON via `decode_core_row::<ConstellationCentroid>(value, "ConstellationCentroid")`. The decoded JSON includes the full record. `snapshot_dj_counts` returns `BTreeMap<String, u64>` of every DJ CF including `dj_constellations` for live counters.
+
+Unknown CF names raise `DynamicJepaError::StorageInvariantViolation`.
+
+### 10.5 Relationship to `LatentPanel`
+
+The DynamicJEPA pipeline materializes `LatentPanel` records (`core/dynamicjepa/panel.rs:13-28`) — per-event slot vectors (state/action/outcome/time) keyed by `panel_id` and stored in `CF_DJ_LATENT_PANELS`. Each panel references multiple `instrument_reading_ids` and `pairwise_reading_ids`. `ConstellationCentroid` rows are derived from the population of instrument readings for a `(domain_pack_id, subject_id, modality_id)` tuple — they compress those readings into a single L2-normalized centroid, plus calibration statistics that downstream `ThresholdCalibration` rows consume.
+
+The DJ constellation has **no relationship** to `Constellation` from §4 — they share a name and the conceptual "centroid of a member set" idea but use entirely different keys, value formats, validation rules, and audit logs.
+
+## 11. What is NOT covered here
+
+- The synergy matrix used during compilation — see [13](13_teleological_subsystem.md) §13.
+- The 14-embedder fingerprint shape (E1-E14, dual asymmetric vectors) — see [05](05_embedding_subsystem.md).
 - How learner constellations feed `resolve_learner_retrieval_policy` and drift detection — see [20](20_learning_subsystem.md).
-- How `derive_anomalies_from_edges` produces contrastive pairs from typed edges (often paired with constellation outputs in training pipelines) — see [13](13_teleological_subsystem.md) §7 and [18](18_contrastive_and_typed_edges.md).
+- How `derive_anomalies_from_edges` produces contrastive pairs from typed edges (often paired with constellation outputs in training pipelines) — see [13](13_teleological_subsystem.md) §12 and [18](18_contrastive_and_typed_edges.md).
 - Topic clustering and stability metrics consumed by `purity` — see [12](12_clustering_and_topics.md).
+- DynamicJEPA pipeline overview, panel materialization, instrument/adapter registries — see the DynamicJEPA-focused doc (cross-ref: `dynamicjepa/mod.rs` re-exports).
+- MCP schema definitions for the six constellation tools — see [08](08_mcp_protocol.md).

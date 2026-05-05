@@ -162,6 +162,7 @@ struct AttemptRecord {
     official_evidence_path: Option<String>,
     resolved: Option<bool>,
     failure_evidence: Value,
+    official_reality: Option<Value>,
     patch_preview: Option<String>,
 }
 
@@ -514,6 +515,7 @@ async fn run(args: Args) -> Result<Value> {
         )?;
 
         let mut official_evidence_path = None;
+        let mut official_reality = None;
         let mut resolved = None;
         if args.official_eval_each_attempt && patch.is_some() && validation["status"] == "passed" {
             let official = run_official_eval(
@@ -532,6 +534,7 @@ async fn run(args: Args) -> Result<Value> {
             });
             write_json_checked(&evidence_path, &evidence)?;
             official_evidence_path = Some(path_str(&evidence_path).to_string());
+            official_reality = Some(compact_official_evidence(&evidence));
             resolved = evidence["resolved"].as_bool();
             if resolved == Some(true) {
                 solved = true;
@@ -594,6 +597,7 @@ async fn run(args: Args) -> Result<Value> {
             official_evidence_path,
             resolved,
             failure_evidence: compact_failure_evidence(&validation),
+            official_reality,
             patch_preview: patch.as_ref().map(|text| truncate_chars(text, 1600)),
         };
         write_json_checked(
@@ -858,6 +862,25 @@ fn compact_failure_evidence(validation: &Value) -> Value {
         "git_apply_stderr": validation.pointer("/details/git_apply/stderr"),
         "git_apply_stdout": validation.pointer("/details/git_apply/stdout"),
         "source_of_truth": validation.get("source_of_truth"),
+    })
+}
+
+fn compact_official_evidence(evidence: &Value) -> Value {
+    let report = evidence.get("official_report").unwrap_or(&Value::Null);
+    json!({
+        "claim_scope": evidence.get("claim_scope"),
+        "success_predicate": evidence.get("success_predicate"),
+        "instance_id": evidence.get("instance_id"),
+        "resolved": evidence.get("resolved"),
+        "completed": evidence.get("completed"),
+        "incomplete": evidence.get("incomplete"),
+        "errored": evidence.get("errored"),
+        "empty_patch": evidence.get("empty_patch"),
+        "resolved_ids": report.get("resolved_ids"),
+        "unresolved_ids": report.get("unresolved_ids"),
+        "completed_ids": report.get("completed_ids"),
+        "previous_patch_sha256": evidence.get("previous_patch_sha256"),
+        "source_of_truth": evidence.get("source_of_truth"),
     })
 }
 
