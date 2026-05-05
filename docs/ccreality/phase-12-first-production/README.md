@@ -1,7 +1,7 @@
 # Phase 12 — First Production Attempt + Cutover Commit
 
 **Estimated duration:** 1 hour.
-**Status:** pending.
+**Status:** complete.
 **Depends on:** Phases 0–11.
 **Unblocks:** project ready for ongoing ccreality use.
 
@@ -15,6 +15,8 @@
 6. Leaves `ccreality-cutover` ready for review; optional squashing is a review-time decision, not part of Phase 12 verification.
 
 This is the cutover finishing line. After Phase 12, the branch is ready for review and merge to `main`.
+
+Final result: see [../PHASE12_RESULTS_2026-05-05.md](../PHASE12_RESULTS_2026-05-05.md). The production runtime root is `/tmp/ccreality-prod-1`; final FSV log is `/tmp/ccreality-phase12-fsv-20260505T225350Z.log`.
 
 ## AI-verifiable end-state
 

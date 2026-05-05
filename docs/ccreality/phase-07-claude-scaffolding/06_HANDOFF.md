@@ -9,7 +9,7 @@
 - 4 skill `SKILL.md` files under `.claude/skills/ccreality-*/`.
 - `config/ccreality_governed_paths.json` allow list now includes `.claude/settings.json`, `.mcp.json`, `.gitignore`, and `CLAUDE.md`.
 - Opening Claude Code in this project loads everything: MCP server connects, project settings allow `mcp__cgreality__*`, hooks fire, subagents are discoverable, skills are typeable.
-- Root-cause hardening is recorded in the source specs: `.mcp.json` is no longer ignored at the repo root, `.claude/settings.json` uses the official SchemaStore schema URL, MCP permissions use Claude Code's `mcp__cgreality__*` wildcard, and the diagnostician references the real `get_memory_neighbors` tool.
+- Root-cause hardening is recorded in the source specs: `.mcp.json` is no longer ignored at the repo root, `.claude/settings.json` uses the official SchemaStore schema URL, MCP permissions use Claude Code's `mcp__cgreality__*` wildcard, and the diagnostician references only tools implemented by the lightweight `cgreality` runtime server.
 
 ## What's still missing
 

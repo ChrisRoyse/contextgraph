@@ -154,10 +154,14 @@ pub async fn reality_latest_root(_args: Value) -> Result<Value> {
 pub async fn reality_attempt_summary(args: Value) -> Result<Value> {
     let run_id = required_str(&args, "run_id")?;
     let attempt = required_u64(&args, "attempt")?;
+    let compact = optional_bool(&args, "compact", false);
     let runtime_root = require_active_runtime_root().await?;
     let task = require_active_target_instance().await?;
     let path = attempt_dir(&runtime_root, &run_id, &task, attempt)?.join("attempt-summary.json");
     let mut body = read_json(&path)?;
+    if compact {
+        body = compact_attempt_summary(&body);
+    }
     insert_sot(&mut body, &path);
     Ok(body)
 }
@@ -475,6 +479,43 @@ fn compact_problem(packet: &Value) -> Value {
         "problem_terms": packet.pointer("/problem_statement_reality/terms"),
         "production_candidate_files": packet.pointer("/repository_reality/production_candidate_files"),
         "source_of_truth": packet.get("source_of_truth")
+    })
+}
+
+fn compact_attempt_summary(summary: &Value) -> Value {
+    let message = summary
+        .pointer("/model_response/message/content")
+        .or_else(|| summary.pointer("/model_response/message"))
+        .and_then(Value::as_str);
+    json!({
+        "record_kind": "contextgraph_attempt_summary_compact",
+        "attempt": summary.get("attempt").cloned().unwrap_or(Value::Null),
+        "ledger_counts": summary.get("ledger_counts").cloned().unwrap_or(Value::Null),
+        "reality_signal_verifier": compact_verifier(summary.get("reality_signal_verifier")),
+        "blackbox_verifier": compact_verifier(summary.get("blackbox_verifier")),
+        "score": summary.pointer("/score/score").cloned().unwrap_or(Value::Null),
+        "reward": summary.pointer("/reward/reward").cloned().unwrap_or(Value::Null),
+        "reward_components": summary.pointer("/reward/components").cloned().unwrap_or(Value::Null),
+        "model_response": {
+            "model": summary.pointer("/model_response/model").cloned().unwrap_or(Value::Null),
+            "created_at_unix": summary.pointer("/model_response/created_at_unix").cloned().unwrap_or(Value::Null),
+            "done": summary.pointer("/model_response/done").cloned().unwrap_or(Value::Null),
+            "message_sha256": message.map(sha256_text),
+            "message_size_chars": message.map(|value| value.chars().count()),
+            "submitted_candidate_patch": summary.pointer("/model_response/contextgraph_runtime/submitted_candidate_patch").cloned().unwrap_or(Value::Null)
+        }
+    })
+}
+
+fn compact_verifier(verifier: Option<&Value>) -> Value {
+    let Some(verifier) = verifier else {
+        return Value::Null;
+    };
+    json!({
+        "source_of_truth": verifier.get("source_of_truth").cloned().unwrap_or(Value::Null),
+        "status": verifier.pointer("/verifier/status").or_else(|| verifier.pointer("/record/status")).cloned().unwrap_or(Value::Null),
+        "verifier_status": verifier.pointer("/verifier/verifier_status").cloned().unwrap_or(Value::Null),
+        "ledger_sequence": verifier.pointer("/record/ledger_sequence").cloned().unwrap_or(Value::Null)
     })
 }
 

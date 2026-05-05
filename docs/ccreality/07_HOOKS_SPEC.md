@@ -109,7 +109,7 @@ Active reality-loop runtime root: $RUNTIME_ROOT
 Target SWE-bench instance: ${TARGET_INSTANCE:-unset}
 Success predicate: official SWE-bench report places target instance in resolved_ids
 $RUN_SUMMARY
-ContextGraph MCP tools available under prefix mcp__cgreality__. Call mcp__cgreality__reality_latest_root first to confirm the active root, then mcp__cgreality__reality_attempt_summary to inspect the most recent attempt.
+ContextGraph MCP tools available under prefix mcp__cgreality__. Call mcp__cgreality__reality_latest_root first to confirm the active root, then mcp__cgreality__reality_attempt_summary with compact: true to inspect the most recent attempt unless full transcript readback is required.
 Reality-boundary rules (deterministic deny list also applies):
 - Never edit .env files
 - Never edit swebench/ official evaluator

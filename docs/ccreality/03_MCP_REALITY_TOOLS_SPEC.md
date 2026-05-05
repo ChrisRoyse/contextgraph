@@ -50,11 +50,11 @@ The split is conceptual; the actual MCP tool list is flat.
 
 ### `reality_attempt_summary`
 
-**Purpose:** Pull the full attempt summary (artifact written by the reality engine).
+**Purpose:** Pull the attempt summary artifact written by the reality engine. The default is full fidelity; `compact: true` returns a bounded, source-linked summary for Claude subagents that do not need the full model transcript.
 
 **Input:**
 ```json
-{ "run_id": "string", "attempt": "integer" }
+{ "run_id": "string", "attempt": "integer", "compact": "boolean (default false)" }
 ```
 
 **Output:**
@@ -237,15 +237,15 @@ This artifact is now written by the **MCP server itself** at the start of each C
 { "entity_id": "string (uuid)", "limit": "integer (default 50)" }
 ```
 
-**Output:** array of audit records from `CF_AUDIT_LOG` (existing infra).
+**Output:** runtime audit records from the active ccreality runtime tree.
 
-This is the canonical "how did this memory get here" tool. Already implemented in `context-graph-mcp`; we re-expose it under the `cgreality` namespace so Claude Code's allowlist is one server.
+This is the canonical "how did this runtime artifact get here" tool for lightweight `--mode reality-loop`.
 
 ---
 
-### Memory-graph tools (re-exposed)
+### Memory-graph tools
 
-All of these already exist in `context-graph-mcp`. The `cgreality` MCP server registers them under its namespace by re-exporting:
+Memory and graph tools remain available through the full ContextGraph MCP server. The lightweight `cgreality` MCP server must not advertise these names in `tools/list`, because its `tools/call` dispatcher does not execute them:
 
 - `search_graph` — multi-space search across 13 embedders
 - `search_by_embedder` — single-embedder search
@@ -563,7 +563,7 @@ The decision artifact is read by the SessionStart and UserPromptSubmit hooks, so
 
 **Output:** `{ "recommendation_path": "file:...", "sha256": "...", "ledger_record_id": "string" }`.
 
-The artifact is written under `<run>/<task>/attempt-N/claude-code-optimizer/recommendation-<turn-N>.json` and a corresponding ledger row is appended (`record_kind: "ccreality_optimizer_recommendation"`).
+The artifact is written under `<run>/<task>/attempt-N/claude-code-optimizer/recommendation-<turn-N>.json` and a corresponding ledger row is appended (`record_kind: "ccreality_optimizer_recommendation"`). The MCP server owns `source_of_truth` and `created_at_unix`: callers provide schema-shaped placeholders, then the server stamps the actual path and write timestamp before the final schema validation and durable write.
 
 ---
 

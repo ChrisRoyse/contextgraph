@@ -4640,6 +4640,7 @@ fn compile_structured_edits(
     let edits_path = attempt_dir.join("structured-edits.json");
     write_json_checked(&edits_path, &edits)?;
     let mut applied = Vec::new();
+    let mut original_contents = BTreeMap::new();
 
     for (index, edit) in edits.iter().enumerate() {
         let field_prefix = format!("model_response.edits[{index}]");
@@ -4752,6 +4753,9 @@ fn compile_structured_edits(
             ));
         }
         let after = before.replacen(find, replace, 1);
+        original_contents
+            .entry(path.to_string())
+            .or_insert_with(|| before.clone());
         write_text_checked(&target, &after)?;
         applied.push(json!({
             "index": index,
@@ -4762,6 +4766,34 @@ fn compile_structured_edits(
             "replace_sha256": sha256_text(replace),
             "source_of_truth": file_sot(&target)
         }));
+    }
+
+    let syntax_probe = python_syntax_probe_after_candidate_edits(
+        repo_dir,
+        attempt_dir,
+        "structured-edit",
+        &applied,
+        timeout,
+    )?;
+    if syntax_probe.get("status").and_then(Value::as_str) == Some("failed") {
+        let restore = restore_original_candidate_sources(
+            repo_dir,
+            attempt_dir,
+            "structured-edit",
+            &original_contents,
+        )?;
+        return Ok(structured_edit_failure(
+            "RUST_REALITY_STRUCTURED_EDIT_PY_COMPILE_FAILED",
+            "model_response.edits",
+            "structured edits produced syntactically invalid Python source before candidate patch generation",
+            "reopen the edited source window, preserve Python syntax, and resubmit a candidate patch only after the syntax probe passes",
+            json!({
+                "applied_edits": applied,
+                "syntax_probe": syntax_probe,
+                "workspace_restore": restore
+            }),
+            &edits_path,
+        ));
     }
 
     let diff = run_required(
@@ -4791,6 +4823,7 @@ fn compile_structured_edits(
             "field_path": "model_response.edits",
             "message": "Rust compiled structured edits into a git diff from the real checkout",
             "applied_edits": applied,
+            "syntax_probe": syntax_probe,
             "candidate_patch_sha256": sha256_file(&patch_path)?,
             "source_of_truth": {
                 "structured_edits": file_sot(&edits_path),
@@ -4810,6 +4843,7 @@ fn compile_line_window_edits(
     let edits_path = attempt_dir.join("line-window-edits.json");
     write_json_checked(&edits_path, &edits)?;
     let mut applied = Vec::new();
+    let mut original_contents = BTreeMap::new();
 
     for (index, edit) in edits.iter().enumerate() {
         let field_prefix = format!("model_response.line_edits[{index}]");
@@ -4977,6 +5011,9 @@ fn compile_line_window_edits(
         after.push_str(&before[..byte_start]);
         after.push_str(replace);
         after.push_str(&before[byte_end..]);
+        original_contents
+            .entry(path.to_string())
+            .or_insert_with(|| before.clone());
         write_text_checked(&target, &after)?;
         applied.push(json!({
             "index": index,
@@ -4990,6 +5027,34 @@ fn compile_line_window_edits(
             "replace_sha256": sha256_text(replace),
             "source_of_truth": file_sot(&target)
         }));
+    }
+
+    let syntax_probe = python_syntax_probe_after_candidate_edits(
+        repo_dir,
+        attempt_dir,
+        "line-window-edit",
+        &applied,
+        timeout,
+    )?;
+    if syntax_probe.get("status").and_then(Value::as_str) == Some("failed") {
+        let restore = restore_original_candidate_sources(
+            repo_dir,
+            attempt_dir,
+            "line-window-edit",
+            &original_contents,
+        )?;
+        return Ok(structured_edit_failure(
+            "RUST_REALITY_LINE_EDIT_PY_COMPILE_FAILED",
+            "model_response.line_edits",
+            "line-window edits produced syntactically invalid Python source before candidate patch generation",
+            "reopen the edited source window, preserve Python syntax, and resubmit a candidate patch only after the syntax probe passes",
+            json!({
+                "applied_edits": applied,
+                "syntax_probe": syntax_probe,
+                "workspace_restore": restore
+            }),
+            &edits_path,
+        ));
     }
 
     let diff = run_required(
@@ -5019,6 +5084,7 @@ fn compile_line_window_edits(
             "field_path": "model_response.line_edits",
             "message": "Rust compiled line-window edits into a git diff from the real checkout",
             "applied_edits": applied,
+            "syntax_probe": syntax_probe,
             "candidate_patch_sha256": sha256_file(&patch_path)?,
             "source_of_truth": {
                 "line_window_edits": file_sot(&edits_path),
@@ -5041,6 +5107,160 @@ fn line_spans(text: &str) -> Vec<(usize, usize)> {
         spans.push((start, text.len()));
     }
     spans
+}
+
+fn python_syntax_probe_after_candidate_edits(
+    repo_dir: &Path,
+    attempt_dir: &Path,
+    label: &str,
+    applied: &[Value],
+    timeout: u64,
+) -> Result<Value> {
+    let mut python_files = BTreeSet::new();
+    for edit in applied {
+        if let Some(path) = edit.get("path").and_then(Value::as_str) {
+            if path.ends_with(".py") {
+                python_files.insert(path.to_string());
+            }
+        }
+    }
+    let python_files = python_files.into_iter().collect::<Vec<_>>();
+    let probe_path = attempt_dir.join(format!("{label}-python-py-compile.json"));
+    if python_files.is_empty() {
+        let payload = json!({
+            "record_kind": "contextgraph_candidate_edit_syntax_probe",
+            "status": "passed",
+            "check": "python_py_compile",
+            "skipped": true,
+            "reason": "candidate edit changed no Python source files",
+            "python_files": python_files,
+            "source_of_truth": file_sot(&probe_path)
+        });
+        write_json_checked(&probe_path, &payload)?;
+        let readback: Value = read_json(&probe_path)?;
+        if readback != payload {
+            return Err(RealityError::new(
+                "RUST_REALITY_EDIT_SYNTAX_PROBE_READBACK_MISMATCH",
+                "candidate edit syntax probe readback did not match written payload",
+                "candidate_edit.syntax_probe.readback",
+                "inspect filesystem durability before accepting edit output",
+                json!({"expected": payload, "actual": readback}),
+                Some(file_sot(&probe_path)),
+            ));
+        }
+        return Ok(readback);
+    }
+
+    let mut command = vec![
+        LOCAL_PYTHON_BIN.to_string(),
+        "-B".to_string(),
+        "-m".to_string(),
+        "py_compile".to_string(),
+    ];
+    command.extend(python_files.iter().cloned());
+    let process = run_cmd(&command, repo_dir, timeout)?;
+    let status = if process.exit_code == 0 {
+        "passed"
+    } else {
+        "failed"
+    };
+    let payload = json!({
+        "record_kind": "contextgraph_candidate_edit_syntax_probe",
+        "status": status,
+        "check": "python_py_compile",
+        "skipped": false,
+        "error_code": if process.exit_code == 0 { Value::Null } else { json!("RUST_REALITY_EDIT_PY_COMPILE_FAILED") },
+        "field_path": if process.exit_code == 0 { Value::Null } else { json!("candidate_edit.changed_python_files") },
+        "message": if process.exit_code == 0 {
+            "changed Python source files passed py_compile before candidate patch generation"
+        } else {
+            "changed Python source files failed py_compile before candidate patch generation"
+        },
+        "remediation": if process.exit_code == 0 {
+            "continue candidate patch generation"
+        } else {
+            "repair syntax before writing candidate.patch or running SWE-bench evaluation"
+        },
+        "python_files": python_files,
+        "process": {
+            "command": process.command,
+            "cwd": process.cwd,
+            "exit_code": process.exit_code,
+            "elapsed_ms": process.elapsed_ms,
+            "stdout_tail": tail_chars(&process.stdout, 4000),
+            "stderr_tail": tail_chars(&process.stderr, 8000)
+        },
+        "source_of_truth": file_sot(&probe_path)
+    });
+    write_json_checked(&probe_path, &payload)?;
+    let readback: Value = read_json(&probe_path)?;
+    if readback != payload {
+        return Err(RealityError::new(
+            "RUST_REALITY_EDIT_SYNTAX_PROBE_READBACK_MISMATCH",
+            "candidate edit syntax probe readback did not match written payload",
+            "candidate_edit.syntax_probe.readback",
+            "inspect filesystem durability before accepting edit output",
+            json!({"expected": payload, "actual": readback}),
+            Some(file_sot(&probe_path)),
+        ));
+    }
+    Ok(readback)
+}
+
+fn restore_original_candidate_sources(
+    repo_dir: &Path,
+    attempt_dir: &Path,
+    label: &str,
+    original_contents: &BTreeMap<String, String>,
+) -> Result<Value> {
+    let restore_path = attempt_dir.join(format!("{label}-workspace-restore.json"));
+    let mut readbacks = Vec::new();
+    for (path, content) in original_contents {
+        let full_path = repo_dir.join(path);
+        write_text_checked(&full_path, content)?;
+        let readback = fs::read_to_string(&full_path).map_err(|err| {
+            fs_error("RUST_REALITY_EDIT_RESTORE_READBACK_FAILED", &full_path, err)
+        })?;
+        if readback != *content {
+            return Err(RealityError::new(
+                "RUST_REALITY_EDIT_RESTORE_READBACK_MISMATCH",
+                "candidate edit workspace restore readback did not match original source",
+                "candidate_edit.restore.readback",
+                "inspect filesystem durability before continuing",
+                json!({
+                    "path": path,
+                    "expected_sha256": sha256_text(content),
+                    "actual_sha256": sha256_text(&readback)
+                }),
+                Some(file_sot(&full_path)),
+            ));
+        }
+        readbacks.push(json!({
+            "path": path,
+            "sha256": sha256_text(&readback),
+            "size_bytes": readback.len(),
+            "source_of_truth": file_sot(&full_path)
+        }));
+    }
+    let payload = json!({
+        "record_kind": "contextgraph_candidate_edit_workspace_restore",
+        "status": "ok",
+        "restored_files": readbacks,
+        "source_of_truth": file_sot(&restore_path)
+    });
+    write_json_checked(&restore_path, &payload)?;
+    let readback: Value = read_json(&restore_path)?;
+    if readback != payload {
+        return Err(RealityError::new(
+            "RUST_REALITY_EDIT_RESTORE_ARTIFACT_READBACK_MISMATCH",
+            "candidate edit restore artifact readback did not match written payload",
+            "candidate_edit.restore_artifact.readback",
+            "inspect filesystem durability before continuing",
+            json!({"expected": payload, "actual": readback}),
+            Some(file_sot(&restore_path)),
+        ));
+    }
+    Ok(readback)
 }
 
 fn structured_edit_failure(
@@ -7813,6 +8033,112 @@ mod tests {
         assert_eq!(
             compilation["error_code"],
             "RUST_REALITY_LINE_EDIT_OBSERVED_SHA_MISMATCH"
+        );
+    }
+
+    #[test]
+    fn line_window_edit_rejects_python_syntax_failure_before_candidate_patch_fsv() {
+        let (_temp, repo) = init_real_git_repo();
+        let tool_dir = repo
+            .parent()
+            .expect("repo parent")
+            .join("attempt-000001")
+            .join("agent-tools")
+            .join("round-01-00-apply_line_window_edit");
+        create_dir_checked(&tool_dir).expect("tool dir");
+        let source = repo.join("src/example.py");
+        let before = fs::read_to_string(&source).expect("before read");
+        let observed_sha256 = sha256_file(&source).expect("source sha");
+        eprintln!(
+            "BEFORE syntax_line_window source_of_truth={} sha256={} data={:?}",
+            file_sot(&source),
+            observed_sha256,
+            before
+        );
+        let edits = vec![json!({
+            "path": "src/example.py",
+            "start_line": 2,
+            "end_line": 2,
+            "replace": "    return \"\"\"unterminated\n",
+            "observed_sha256": observed_sha256
+        })];
+        let (patch, compilation) =
+            compile_line_window_edits(&repo, &tool_dir, &edits, 30).expect("compile line edits");
+        let after = fs::read_to_string(&source).expect("after read");
+        eprintln!(
+            "AFTER syntax_line_window compilation={} data={:?}",
+            serde_json::to_string_pretty(&compilation).unwrap(),
+            after
+        );
+        assert!(patch.is_none());
+        assert_eq!(
+            compilation["error_code"],
+            "RUST_REALITY_LINE_EDIT_PY_COMPILE_FAILED"
+        );
+        assert_eq!(after, before);
+        assert!(
+            !tool_dir.join("candidate.patch").exists(),
+            "candidate.patch must not be written for syntactically invalid edits"
+        );
+        assert_eq!(
+            compilation
+                .pointer("/details/syntax_probe/process/exit_code")
+                .and_then(Value::as_i64),
+            Some(1)
+        );
+        assert_eq!(
+            compilation
+                .pointer("/details/workspace_restore/status")
+                .and_then(Value::as_str),
+            Some("ok")
+        );
+    }
+
+    #[test]
+    fn structured_edit_rejects_python_syntax_failure_before_candidate_patch_fsv() {
+        let (_temp, repo) = init_real_git_repo();
+        let tool_dir = repo
+            .parent()
+            .expect("repo parent")
+            .join("attempt-000001")
+            .join("agent-tools")
+            .join("round-01-00-apply_structured_edit");
+        create_dir_checked(&tool_dir).expect("tool dir");
+        let source = repo.join("src/example.py");
+        let before = fs::read_to_string(&source).expect("before read");
+        eprintln!(
+            "BEFORE syntax_structured source_of_truth={} data={:?}",
+            file_sot(&source),
+            before
+        );
+        let edits = vec![json!({
+            "path": "src/example.py",
+            "find": "    return x + 1\n",
+            "replace": "    return (\n"
+        })];
+        let (patch, compilation) =
+            compile_structured_edits(&repo, &tool_dir, &edits, 30).expect("compile edits");
+        let after = fs::read_to_string(&source).expect("after read");
+        eprintln!(
+            "AFTER syntax_structured compilation={} data={:?}",
+            serde_json::to_string_pretty(&compilation).unwrap(),
+            after
+        );
+        assert!(patch.is_none());
+        assert_eq!(
+            compilation["error_code"],
+            "RUST_REALITY_STRUCTURED_EDIT_PY_COMPILE_FAILED"
+        );
+        assert_eq!(after, before);
+        assert!(
+            !tool_dir.join("candidate.patch").exists(),
+            "candidate.patch must not be written for syntactically invalid edits"
+        );
+        assert_eq!(
+            compilation
+                .pointer("/details/syntax_probe/process/exit_code")
+                .and_then(Value::as_i64),
+            Some(1)
         );
     }
 

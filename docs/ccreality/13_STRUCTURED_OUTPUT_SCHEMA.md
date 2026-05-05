@@ -156,7 +156,7 @@ The optimizer's terminal artifact per turn. Validated by the MCP tool against th
 
 ## Validation enforcement
 
-`mcp__cgreality__optimizer_record_recommendation` validates the input against this schema before writing. On validation failure:
+`mcp__cgreality__optimizer_record_recommendation` validates the input against this schema before writing. `source_of_truth` and `created_at_unix` are persistence-layer fields: the caller must provide schema-shaped placeholders, and the MCP server overwrites them with the actual recommendation path and server write timestamp before the final validation/write. On validation failure:
 
 ```json
 {
@@ -176,6 +176,7 @@ The agent must correct and retry. The Stop hook will not allow turn end until a 
 
 - **`shift_log_excerpt`** — the principle from [01b_REALITY_SHIFT_PRINCIPLE](01b_REALITY_SHIFT_PRINCIPLE.md). Every recommendation must declare which shifts it caused, so future turns can replay or revert.
 - **`source_of_truth_readbacks`** — durable artifact pointers, not model claims. Every claim in the recommendation must be backed by one of these.
+- **`created_at_unix` / `source_of_truth`** — server-owned persistence metadata. The MCP tool stamps these immediately before writing so stale model timestamps and placeholder paths cannot become durable truth.
 - **`next_gemma_prompt_delta`** — the actionable output that feeds into the next inner-Gemma attempt. This is what closes the meta-loop: optimizer → reality engine.
 - **`expected_reward_signal_delta`** — the optimizer's prediction. Future turns can compare actual reward delta to this prediction; consistent over-prediction means the optimizer is hallucinating progress.
 - **`drift_detected`** — when set, this recommendation acknowledges that reality shifted out from under the agent. The next turn knows to re-perceive.

@@ -16,10 +16,13 @@ As of 2026-05-05:
 | 5 — Config files | Complete | `/tmp/phase-05-verify.log` ends with `Phase 5 verification: ALL PASS`; config files and sample recommendation validate. |
 | 3 — MCP `reality_loop` ANALYZE module | Complete | `/tmp/phase-03-verify.log` ends with `Phase 3 verification: ALL PASS`; `tools/list` over `--mode reality-loop` read back the 11 Phase 3 analyze tools and live analyze calls read smoke artifacts. |
 | 4 — MCP INTERACT/ALTER/SHIFT tools | Complete | `cargo build -p context-graph-mcp --quiet` and `cargo test -p context-graph-mcp --lib reality_loop --quiet` pass; `/tmp/ccreality-phase4-ledger-fsv-1778000024.log` proves real harness edit, shift log, optimizer decision/recommendation artifacts, and SQLite ledger rows. |
-| 6 — Hook scripts | Pending, WIP present | Preconditions are satisfied by completed Phases 0–5. Local WIP exists for the MCP-backed `context-graph-cli ccreality record-harness-transition` support command and `scripts/cc/` hooks, but the scripts are not executable and two tests are missing. Next action is finishing the WIP and running real-runtime hook tests. |
-| 7 — Claude scaffolding | Pending | Blocked on Phase 6 hook scripts. |
-| 8 — CLAUDE.md addendum | Pending | Blocked on Phase 7 scaffolding. |
-| 9–12 — Smoke, FSV, docs cleanup, first production | Pending | Blocked on Phases 6–8. |
+| 6 — Hook scripts | Complete | Canonical Phase 6 verification passed; `/tmp/ccreality-phase6-fsv-1778003099.log` proves real hook readbacks, MCP-backed harness-transition recording, shift-log writes, and edge-case outcomes. |
+| 7 — Claude scaffolding | Complete | Canonical Phase 7 verification passed, including `claude mcp list` and real `mcp__cgreality__reality_latest_root` through `claude --print`; FSV log `/tmp/ccreality-phase7-fsv-1778005930.log`. |
+| 8 — CLAUDE.md addendum | Complete | `CLAUDE.md` ends with the ccreality project-memory addendum and Phase 8 FSV passed at `/tmp/ccreality-phase8-fsv-1778007923.log`. |
+| 9 — Smoke | Complete | `bash scripts/cc/tests/smoke.sh` passed; latest source-of-truth root `/tmp/cgreality-smoke-1778013189`, report `/tmp/cgreality-smoke-1778013189/smoke-report.json`. |
+| 10 — FSV | Complete | `bash scripts/cc/tests/fsv.sh` passed 39/39 cases; results doc `docs/ccreality/FSV_RESULTS_2026-05-05.md`, run root `/tmp/cgreality-fsv-1778016954`. |
+| 11 — Docs cleanup | Complete | Deleted legacy docs are absent, historical docs are restored with status headers, and `docs/reality/00_index.md` points to `docs/ccreality/`. |
+| 12 — First production | Complete | Real SWE-bench Lite `psf__requests-2317` attempt and `/ccreality-iterate` recommendation are under `/tmp/ccreality-prod-1`; final FSV log `/tmp/ccreality-phase12-fsv-20260505T225350Z.log`; results doc `docs/ccreality/PHASE12_RESULTS_2026-05-05.md`. |
 
 ## Stage 0 — Branch + safety net
 
@@ -147,7 +150,7 @@ Post: both files committed. `harness_open_window` against an allowed path succee
 
 ## Stage 5 — Hooks + `.claude/` scaffolding
 
-Current state: **in progress but unverified**. This runbook stage maps to Phases 6, 7, and 8 in [21_IMPLEMENTATION_PLAN.md](21_IMPLEMENTATION_PLAN.md). Local WIP exists for `scripts/cc/_common.sh`, all six `scripts/cc/hook_*.sh` files, `_common_helpers.sh`, and four hook tests. The files are not executable, `test_pre_compact.sh` and `test_stop.sh` are absent, and Phase 6 verification has not passed. Do not wire `.claude/settings.json` until the hook scripts pass their real-runtime unit tests.
+Current state: **complete and verified**. This runbook stage maps to Phases 6, 7, and 8 in [21_IMPLEMENTATION_PLAN.md](21_IMPLEMENTATION_PLAN.md). The hook scripts, Claude settings/MCP scaffolding, loop prompt, agents, skills, and `CLAUDE.md` addendum are all present. Phase 6, Phase 7, and Phase 8 canonical verification and manual FSV runs passed.
 
 Drop in:
 - `scripts/cc/_common.sh`, `hook_session_start.sh`, `hook_user_prompt_submit.sh`, `hook_pre_tool_use_edit.sh`, `hook_post_tool_use_edit.sh`, `hook_pre_compact.sh`, `hook_stop.sh` — bodies from [07_HOOKS_SPEC](07_HOOKS_SPEC.md). All `chmod +x`.
@@ -177,6 +180,8 @@ bash scripts/cc/tests/smoke.sh
 
 All eight layers pass.
 
+Current completion record: `/tmp/cgreality-smoke-1778013189/smoke-report.json` records all eight smoke layers as PASS; `docs/ccreality/SMOKE_RESULTS_2026-05-05.md` records the latest source-of-truth readbacks.
+
 ## Stage 7 — FSV
 
 Run [18_FSV_PLAN](18_FSV_PLAN.md):
@@ -184,25 +189,28 @@ Run [18_FSV_PLAN](18_FSV_PLAN.md):
 bash scripts/cc/tests/fsv.sh
 ```
 
-All A–E cases pass; F within tolerance.
+All A–F cases pass.
 
 Generate `docs/ccreality/FSV_RESULTS_<date>.md`.
+
+Current completion record: `/tmp/cgreality-fsv-1778016954/fsv-master.log` records 39/39 cases PASS; `docs/ccreality/FSV_RESULTS_2026-05-05.md` records the case table, edge-case audit, and source-of-truth log paths.
 
 ## Stage 8 — Tear down old `docs/reality/2*` files
 
 ```bash
 git rm docs/reality/20_openai_outer_optimizer.md
-git rm docs/reality/21_grand_scale_reality_autoresearch.md   # superseded; replaced by ccreality docs
-# (optionally KEEP 21 with a note pointing to ccreality)
+# Keep docs/reality/21_grand_scale_reality_autoresearch.md with a status header.
 ```
 
-Update `docs/reality/00_index.md` to remove the deleted entries and add a one-line pointer to `docs/ccreality/`.
+Update `docs/reality/00_index.md` to remove the deleted 20 entry, keep the historical 21 entry, and add a one-line pointer to `docs/ccreality/`.
 
 `docs2/CLAUDE_CODE_REALITY_LOOP_GUIDE.md`: prepend a header `> Superseded by docs/ccreality/. Kept for historical context.` and otherwise leave untouched.
 
 `docs2/DEEPSEEK_API_GUIDE.md`: delete (`git rm`).
 
 The `docs2/.raw/*.md` files referenced in `git status` as deleted are already removed in working tree; just `git add -u` to commit the removal.
+
+Current completion record: Phase 11 restored the historical 21 and `docs2/CLAUDE_CODE_REALITY_LOOP_GUIDE.md` docs from git history with status headers, confirmed `20_openai_outer_optimizer.md`, `DEEPSEEK_API_GUIDE.md`, and `docs2/.raw/` are absent, and verified live indexes no longer link to deleted files. Manual FSV log: `/tmp/ccreality-phase11-fsv-1778017778.log`.
 
 ## Stage 9 — First real attempt
 
@@ -227,6 +235,8 @@ claude --model opus --permission-mode acceptEdits
 ```
 
 Observe the full loop: SessionStart hook injects reality, the diagnostician runs, the harness-editor edits if warranted, the readback confirms, the recommendation is recorded, the Stop hook allows end.
+
+Current completion record: Phase 12 used real SWE-bench Lite instance `psf__requests-2317`. The hardened production run is `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d`; the real `/ccreality-iterate` recommendation is `attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json`; final FSV PASS log is `/tmp/ccreality-phase12-fsv-20260505T225350Z.log`.
 
 ## Stage 10 — Commit + PR
 

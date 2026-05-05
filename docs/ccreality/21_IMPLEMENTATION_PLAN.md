@@ -18,9 +18,9 @@ Each phase has its own subfolder under `docs/ccreality/phase-NN-shortname/` with
 | 7 | Complete | Claude scaffolding | `.claude/settings.json`, `.mcp.json`, `.claude/loop.md`, 5 agent files, 4 skill `SKILL.md` files all exist with valid frontmatter | [phase-07-claude-scaffolding/](phase-07-claude-scaffolding/) |
 | 8 | Complete | CLAUDE.md addendum | `rg -q "ccreality — Outer Reality-Loop Optimizer Role" CLAUDE.md` | [phase-08-claude-md-addendum/](phase-08-claude-md-addendum/) |
 | 9 | Complete | Smoke | `bash scripts/cc/tests/smoke.sh` exits 0 with all 8 layers PASS | [phase-09-smoke/](phase-09-smoke/) |
-| 10 | Pending | FSV | `bash scripts/cc/tests/fsv.sh` exits 0; `docs/ccreality/FSV_RESULTS_*.md` created with all A–E PASS | [phase-10-fsv/](phase-10-fsv/) |
-| 11 | Pending | Docs cleanup | `! test -f docs/reality/20_openai_outer_optimizer.md && grep -q ccreality docs/reality/00_index.md` | [phase-11-docs-cleanup/](phase-11-docs-cleanup/) |
-| 12 | Pending | First production attempt | One real SWE-bench instance attempt produced + one valid recommendation artifact + commit on branch | [phase-12-first-production/](phase-12-first-production/) |
+| 10 | Complete | FSV | `bash scripts/cc/tests/fsv.sh` exits 0; `docs/ccreality/FSV_RESULTS_*.md` created with all cases PASS | [phase-10-fsv/](phase-10-fsv/) |
+| 11 | Complete | Docs cleanup | deleted docs absent, retained historical docs have status headers, and `docs/reality/00_index.md` points to ccreality | [phase-11-docs-cleanup/](phase-11-docs-cleanup/) |
+| 12 | Complete | First production attempt | One real SWE-bench instance attempt produced + one valid recommendation artifact + final FSV PASS log | [phase-12-first-production/](phase-12-first-production/) |
 
 ## Current State
 
@@ -62,7 +62,11 @@ As of 2026-05-05:
 - Phase 9 smoke harness: `scripts/cc/tests/smoke.sh` is implemented as the repeatable deterministic smoke for Layers 0-8. Latest clean run: `/tmp/cgreality-smoke-1778013189/smoke.log`; report: `/tmp/cgreality-smoke-1778013189/smoke-report.json`; results doc: `docs/ccreality/SMOKE_RESULTS_2026-05-05.md`.
 - Phase 9 physical readbacks: the smoke created `/tmp/cgreality-smoke-1778013189/layer5-skill-runtime/ledger.sqlite` and read back `agent_run|1` plus `tool_call|2`; it read back attempt summary, reality signal, problem packet, command artifact, project verification artifact, recommendation artifact, harness transition, shift-log drift record, hook event logs, deny-hook output, and invalid recommendation errors.
 - Phase 9 hardening fixes: the smoke uses returned `source_of_truth` file URIs instead of guessed paths, validates actual MCP wrapper/tool output contracts, uses the governed command allowlist (`git status --short`), initializes a real BlackBox ledger using the current CLI contract, reads SQLite `ledger_records`, restores its drift fixture byte-for-byte, and verifies invalid writes leave ledger/recommendation/shift state unchanged.
-- Next phase to execute: [phase-10-fsv/](phase-10-fsv/README.md).
+- Phase 10 FSV: `scripts/cc/tests/fsv.sh` passed with 39/39 cases PASS. Results doc: `docs/ccreality/FSV_RESULTS_2026-05-05.md`; run root: `/tmp/cgreality-fsv-1778016954`; master log: `/tmp/cgreality-fsv-1778016954/fsv-master.log`.
+- Phase 10 physical readbacks: the FSV suite read runtime artifact files, `~/.cache/cgreality/active_runtime_root`, shift-log JSONL files, hook event JSONL files, large-artifact pointer files, and BlackBox `ledger_records` rows for the exercised cases.
+- Phase 11 docs cleanup: `docs/reality/20_openai_outer_optimizer.md`, `docs2/DEEPSEEK_API_GUIDE.md`, and `docs2/.raw/` are absent; `docs/reality/21_grand_scale_reality_autoresearch.md` and `docs2/CLAUDE_CODE_REALITY_LOOP_GUIDE.md` are restored historical docs with status headers; `docs/reality/00_index.md` points to `docs/ccreality/`. Manual FSV log: `/tmp/ccreality-phase11-fsv-1778017778.log`.
+- Phase 12 first production attempt: real SWE-bench Lite instance `psf__requests-2317` ran through `/tmp/ccreality-prod-1`; the hardened run is `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d`; real `/ccreality-iterate` recommendation is `recommendation-turn-01.json`; final FSV log is `/tmp/ccreality-phase12-fsv-20260505T225350Z.log`; results doc is `docs/ccreality/PHASE12_RESULTS_2026-05-05.md`.
+- Cutover state: all 13 phases are complete on `ccreality-cutover`; branch is ready for review.
 
 ## Dependency DAG
 

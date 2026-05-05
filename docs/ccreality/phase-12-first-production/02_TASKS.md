@@ -66,7 +66,8 @@ cd /home/cabdru/contextgraph
 claude --print "/ccreality-iterate" \
   --model opus \
   --max-turns 25 \
-  --output-format json \
+  --output-format stream-json \
+  --verbose \
   --include-partial-messages 2>&1 | tee /tmp/ccreality-prod-1-iterate.log
 ```
 

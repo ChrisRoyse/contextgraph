@@ -1,10 +1,9 @@
 # ccreality — Claude Code as the Outer Reality-Loop Optimizer
 
-**Status:** cutover in progress — Phases 0 through 9 are implemented and manually FSV'd; Phase 10 is the next implementation phase
+**Status:** cutover complete — Phases 0 through 12 are implemented and manually FSV'd; branch is ready for review
 **Date:** 2026-05-05
 **Author:** Claude (this session) for Chris Royse
-**Supersedes:** `docs2/CLAUDE_CODE_REALITY_LOOP_GUIDE.md` (kept for historical context),
-`docs/reality/20_openai_outer_optimizer.md`, `docs/reality/21_grand_scale_reality_autoresearch.md`
+**Supersedes:** model-integration details in `docs2/CLAUDE_CODE_REALITY_LOOP_GUIDE.md` and `docs/reality/21_grand_scale_reality_autoresearch.md` (both kept with status headers), plus `docs/reality/20_openai_outer_optimizer.md` (deleted).
 
 ## What this directory is
 
@@ -44,6 +43,7 @@ This is the architecture the user described:
 | 20 | [OPEN_QUESTIONS](20_OPEN_QUESTIONS.md) | what remains undecided |
 | 21 | [IMPLEMENTATION_PLAN](21_IMPLEMENTATION_PLAN.md) | **execution plan** — 13 phases, AI-verifiable end-states, dependency DAG, time estimates |
 | 21+ | [phase-NN-shortname/](phase-00-foundation/) folders | per-phase task/spec/verification packets, one for each of the 13 phases |
+| R12 | [PHASE12_RESULTS_2026-05-05](PHASE12_RESULTS_2026-05-05.md) | first production attempt, root-cause hardening, and final FSV evidence |
 
 ## What changes in one paragraph
 
@@ -87,8 +87,9 @@ Completed so far:
 - **Phase 7 verification and FSV:** the canonical Phase 7 verification passed, including `claude mcp list` and a real `mcp__cgreality__reality_latest_root` call through `claude --print`. Manual FSV log `/tmp/ccreality-phase7-fsv-1778005930.log` read back settings, MCP config, governed paths, hook executables, agent/skill frontmatter, direct MCP tools/list, Claude Code MCP health, and four edge-case outcomes.
 - **Phase 8 — CLAUDE.md addendum:** `CLAUDE.md` ends with the ccreality outer optimizer role contract, and the source block in `docs/ccreality/10_CLAUDE_MD_PROJECT_MEMORY.md` matches the appended block byte-for-byte.
 - **Phase 8 verification and FSV:** the canonical Phase 8 verification passed, including a real `claude --print` project-memory smoke with tools disabled. Manual FSV log `/tmp/ccreality-phase8-fsv-1778007923.log` read back the project-memory file, source addendum spec, gitignore trackability, loaded Claude Code memory, and five edge-case outcomes.
-
-Still pending:
-- **Phase 9–12:** smoke, full FSV, docs cleanup, first production attempt, and final cutover commit.
+- **Phase 9 — Smoke:** `scripts/cc/tests/smoke.sh` is the deterministic smoke harness for Layers 0-8. Latest clean run: `/tmp/cgreality-smoke-1778013189/smoke.log`; report: `/tmp/cgreality-smoke-1778013189/smoke-report.json`; results doc: `docs/ccreality/SMOKE_RESULTS_2026-05-05.md`.
+- **Phase 10 — FSV:** `scripts/cc/tests/fsv.sh` passed with 39/39 cases PASS. Results doc: `docs/ccreality/FSV_RESULTS_2026-05-05.md`; run root: `/tmp/cgreality-fsv-1778016954`.
+- **Phase 11 — Docs cleanup:** superseded legacy docs are removed or explicitly marked historical, `docs/reality/00_index.md` points to `docs/ccreality/`, and live navigation no longer links to deleted DeepSeek/OpenAI-era docs. Manual FSV log: `/tmp/ccreality-phase11-fsv-1778017778.log`.
+- **Phase 12 — First production attempt:** real SWE-bench Lite instance `psf__requests-2317` ran through the engine in `/tmp/ccreality-prod-1`; real `/ccreality-iterate` wrote a valid optimizer recommendation; root-cause hardening fixed MCP tool advertisement, bounded summaries, fail-fast Python syntax probes, server-owned recommendation timestamps, and significant-location legacy-token scanning. Final FSV log: `/tmp/ccreality-phase12-fsv-20260505T225350Z.log`; results: [PHASE12_RESULTS_2026-05-05](PHASE12_RESULTS_2026-05-05.md).
 
 See [19_MIGRATION_RUNBOOK](19_MIGRATION_RUNBOOK.md) for the execution sequence.

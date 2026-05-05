@@ -124,6 +124,7 @@ pub async fn optimizer_record_recommendation(args: Value) -> Result<Value> {
             "source_of_truth".to_string(),
             Value::String(file_sot(&path)),
         );
+        map.insert("created_at_unix".to_string(), json!(unix_secs()?));
     }
     validator.validate(&payload)?;
     write_json_checked(&path, &payload)?;

@@ -1,7 +1,7 @@
 # Phase 11 — Documentation Cleanup
 
 **Estimated duration:** 15 minutes.
-**Status:** pending.
+**Status:** complete.
 **Depends on:** Phase 10.
 **Unblocks:** Phase 12.
 
@@ -15,7 +15,7 @@ Deletions:
 - `docs2/.raw/*.md` files (already shown deleted in working tree per `git status`).
 
 Updates:
-- `docs/reality/00_index.md` — remove entries 20 and 21; add a one-line pointer to `docs/ccreality/`.
+- `docs/reality/00_index.md` — remove the entry for 20, keep the historical entry for 21, and add a one-line pointer to `docs/ccreality/`.
 - `docs/reality/21_grand_scale_reality_autoresearch.md` — keep, but prepend a "Superseded for the model swap; architectural framing still valid; see docs/ccreality/" header.
 - `docs2/CLAUDE_CODE_REALITY_LOOP_GUIDE.md` — prepend a "Superseded by docs/ccreality/" header; keep for historical context.
 

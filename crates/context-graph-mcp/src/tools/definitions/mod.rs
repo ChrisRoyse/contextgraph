@@ -129,9 +129,16 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     tools
 }
 
+/// Get only the tools implemented by the lightweight `--mode reality-loop`
+/// stdio server.
+pub fn get_reality_loop_tool_definitions() -> Vec<ToolDefinition> {
+    reality::definitions()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     #[test]
     fn test_total_tool_count_and_no_duplicates() {
@@ -200,5 +207,17 @@ mod tests {
             assert_eq!(graph::definitions().len(), 2);
             assert_eq!(causal_discovery::definitions().len(), 0);
         }
+    }
+
+    #[test]
+    fn test_reality_loop_lightweight_registry_only_lists_callable_tools() {
+        let tools = get_reality_loop_tool_definitions();
+        let names: BTreeSet<&str> = tools.iter().map(|tool| tool.name.as_str()).collect();
+        assert_eq!(tools.len(), reality::definitions().len());
+        assert!(names.contains("reality_attempt_summary"));
+        assert!(names.contains("optimizer_record_recommendation"));
+        assert!(!names.contains("search_graph"));
+        assert!(!names.contains("get_memory_neighbors"));
+        assert!(!names.contains("get_audit_trail"));
     }
 }

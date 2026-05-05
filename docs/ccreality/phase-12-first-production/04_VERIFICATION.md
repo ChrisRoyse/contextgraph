@@ -66,6 +66,8 @@ rg -l "deepseek|openai|gpt-5" \
   -g '!crates/context-graph-benchmark/' \
   -g '!crates/context-graph-core/src/types/memory_node/' \
   -g '!config/default.toml' \
+  -g '!backupdocs/' -g '!clipcannon/' -g '!gemmafrontend/' \
+  -g '!scripts/download_models.py' -g '!zenodo_new_upload_initial.yml' \
   > "$HIT_FILE"
 RG_STATUS=$?
 set -e

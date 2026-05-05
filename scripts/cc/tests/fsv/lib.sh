@@ -714,17 +714,24 @@ case_E1_drip_happy_path() {
   init_ledger
   claude mcp list >"${CASE_WORK}/claude-mcp-list.txt"
   grep -q '^cgreality: .*Connected$' "${CASE_WORK}/claude-mcp-list.txt" || fail "Claude MCP cgreality server is not connected"
-  claude --print "Call mcp__cgreality__reality_latest_root exactly once. Return only a concise confirmation containing the active runtime_root." \
+  claude --print "Use only cgreality MCP tools. Call mcp__cgreality__reality_latest_root, then record a no_change optimizer recommendation for the active run and attempt 1 with mcp__cgreality__optimizer_record_recommendation. Return the runtime_root and recommendation_path. Do not call Bash." \
     --model haiku \
     --output-format json \
-    --max-turns 3 \
+    --max-turns 8 \
     --max-budget-usd 1.00 \
+    --allowedTools "mcp__cgreality__reality_latest_root,mcp__cgreality__reality_attempt_summary,mcp__cgreality__optimizer_record_recommendation" \
+    --permission-mode acceptEdits \
     --no-session-persistence >"${CASE_WORK}/claude-drip.json"
-  assert_jq_file "${CASE_WORK}/claude-drip.json" '(.permission_denials // []) | length == 0' "claude permissions"
-  assert_jq_file "${CASE_WORK}/claude-drip.json" '.result | type == "string" and contains("runtime_root")' "claude drip result"
+  assert_jq_file "${CASE_WORK}/claude-drip.json" '.is_error == false and .terminal_reason == "completed" and (.result | type == "string")' "claude drip result"
   source_read_file "${CASE_WORK}/claude-mcp-list.txt"
   source_read_file "${CASE_WORK}/claude-drip.json"
-  record_recommendation 1
+  local rec_path tool_count
+  rec_path="$(find "${ATTEMPT_DIR}/claude-code-optimizer" -name 'recommendation-turn-*.json' -type f -print -quit)"
+  [ -n "${rec_path}" ] || fail "Claude did not write a recommendation artifact"
+  source_read_file "${rec_path}"
+  tool_count="$(sqlite3 "${LEDGER}" "SELECT COUNT(*) FROM ledger_records WHERE record_kind = 'tool_call';")"
+  [ "${tool_count}" -ge 1 ] || fail "Claude recommendation did not append a ledger tool_call row"
+  source_read_sqlite_counts "${LEDGER}"
 }
 
 case_E2_drift_mid_edit() {

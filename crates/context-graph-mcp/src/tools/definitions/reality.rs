@@ -11,7 +11,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         def(
             "reality_attempt_summary",
             "Read an attempt-summary artifact.",
-            run_attempt_schema(),
+            run_attempt_summary_schema(),
         ),
         def(
             "reality_official_report",
@@ -152,6 +152,10 @@ fn def(name: &str, description: &str, schema: serde_json::Value) -> ToolDefiniti
 
 fn run_attempt_schema() -> serde_json::Value {
     json!({"type":"object","properties":{"run_id":{"type":"string"},"attempt":{"type":"integer","minimum":0}},"required":["run_id","attempt"],"additionalProperties":false})
+}
+
+fn run_attempt_summary_schema() -> serde_json::Value {
+    json!({"type":"object","properties":{"run_id":{"type":"string"},"attempt":{"type":"integer","minimum":0},"compact":{"type":"boolean","default":false}},"required":["run_id","attempt"],"additionalProperties":false})
 }
 
 fn run_attempt_compact_schema() -> serde_json::Value {

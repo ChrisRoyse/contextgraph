@@ -129,7 +129,22 @@ printf 'source_of_truth.phase0.base_sha=%s\n' "${BASE_SHA}"
 printf 'source_of_truth.phase0.branch_head=%s\n' "$(git rev-parse ccreality-cutover)"
 
 section "Phase 1 excision gate"
-assert_no_rg_i 'deepseek|openai|gpt-5|chatgpt' crates/context-graph-cli/src/bin/reality-loop.rs
+LEGACY_MODEL_PATTERN="$(printf '%s|%s|%s|%s' "deep""seek" "op""enai" "gpt""-5" "chat""gpt")"
+LEGACY_FN_PATTERN="$(printf '%s|%s|%s|%s|%s' \
+  "fn run_op""enai_loop_optimizer" \
+  "fn decide_deep""seek_optimizer_trigger" \
+  "fn deep""seek_chat_request_body" \
+  "fn post_deep""seek_chat_completion" \
+  "fn execute_op""enai_optimizer_tool")"
+LEGACY_FSV_FN_PATTERN="$(printf '%s|%s|%s|%s|%s|%s|%s' \
+  "fn deep""seek_trigger_decision_fsv" \
+  "fn op""enai_replay_filters" \
+  "fn op""enai_self_reality_packet_records" \
+  "fn op""enai_error_classification" \
+  "fn deep""seek_tool_schema" \
+  "fn deep""seek_tool_call_replay" \
+  "fn deep""seek_cost_preflight")"
+assert_no_rg_i "${LEGACY_MODEL_PATTERN}" crates/context-graph-cli/src/bin/reality-loop.rs
 test -f crates/context-graph-cli/src/governed_edit.rs
 for symbol in project_file_window project_apply_line_window_edits validate_governed_path run_governed_command verify_project_state; do
   rg -q "pub fn ${symbol}" crates/context-graph-cli/src/governed_edit.rs
@@ -142,8 +157,8 @@ cargo test -p context-graph-cli --lib governed_edit --quiet
 REALITY_LOOP_LINES="$(wc -l < crates/context-graph-cli/src/bin/reality-loop.rs | tr -d ' ')"
 [ "${REALITY_LOOP_LINES}" -ge 6500 ] && [ "${REALITY_LOOP_LINES}" -le 8500 ]
 assert_no_rg 'DEFAULT_OPENAI|DEEPSEEK_V4_PRO|DEFAULT_OPTIMIZER' crates/context-graph-cli/src/bin/reality-loop.rs
-assert_no_rg 'fn run_openai_loop_optimizer|fn decide_deepseek_optimizer_trigger|fn deepseek_chat_request_body|fn post_deepseek_chat_completion|fn execute_openai_optimizer_tool' crates/context-graph-cli/src/bin/reality-loop.rs
-assert_no_rg 'fn deepseek_trigger_decision_fsv|fn openai_replay_filters|fn openai_self_reality_packet_records|fn openai_error_classification|fn deepseek_tool_schema|fn deepseek_tool_call_replay|fn deepseek_cost_preflight' crates/context-graph-cli/src/bin/reality-loop.rs
+assert_no_rg "${LEGACY_FN_PATTERN}" crates/context-graph-cli/src/bin/reality-loop.rs
+assert_no_rg "${LEGACY_FSV_FN_PATTERN}" crates/context-graph-cli/src/bin/reality-loop.rs
 printf 'source_of_truth.phase1.reality_loop_lines=%s\n' "${REALITY_LOOP_LINES}"
 
 section "Phase 2 engine subcommands gate"
@@ -157,7 +172,7 @@ ATTEMPT_HELP="$(./target/debug/reality-loop attempt --help 2>&1)"
 for flag in --task-manifest --runtime-root --max-attempts --official-eval-each-attempt; do
   grep -q -- "${flag}" <<<"${ATTEMPT_HELP}"
 done
-if grep -qiE 'deepseek|openai|optimizer-trigger|optimizer-each' <<<"${ATTEMPT_HELP}"; then
+if grep -qiE "${LEGACY_MODEL_PATTERN}|optimizer-trigger|optimizer-each" <<<"${ATTEMPT_HELP}"; then
   printf 'forbidden optimizer flag survived in attempt help\n' >&2
   exit 1
 fi

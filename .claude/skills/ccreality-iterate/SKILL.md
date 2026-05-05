@@ -24,6 +24,7 @@ Step 6 - Record. Call `mcp__cgreality__optimizer_record_recommendation` with the
 - `no_change` if no edit was warranted
 - `blocked` if you tried to edit but verification or policy blocked
 - `error` if something else went wrong
+For `created_at_unix` and `source_of_truth`, provide schema-shaped placeholders; the MCP server stamps the actual write timestamp and file path before persistence.
 
 Step 7 - Done. The Stop hook will allow the turn to end once the recommendation is recorded.
 

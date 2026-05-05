@@ -30,7 +30,7 @@ If a drip injection ever delivers stale reality (e.g. an old runtime root), the 
 At any moment in the turn, Claude can call `mcp__cgreality__reality_*` to pull any artifact:
 
 - `reality_latest_root` — currently active runtime root + run id
-- `reality_attempt_summary {run_id, attempt}` — full attempt JSON
+- `reality_attempt_summary {run_id, attempt, compact?}` — full attempt JSON by default; bounded source-linked summary when `compact: true`
 - `reality_official_report {run_id, attempt}` — official SWE-bench JSON for that attempt
 - `reality_problem_packet {run_id}` — problem-reality packet
 - `reality_signal {run_id, attempt}` — reality-signal packet
@@ -42,7 +42,7 @@ At any moment in the turn, Claude can call `mcp__cgreality__reality_*` to pull a
 - `reality_shift_log {session_id, limit?, since_shift_id?}` — every alter call this session made, with deltas
 - `reality_shift_compare_to_my_view {session_id, files}` — drift detection (file SHA on disk vs session's last-known SHA)
 
-Memory tools are reused unchanged: `search_graph`, `get_memory_neighbors`, `get_unified_neighbors`, `traverse_graph`, `search_by_embedder`, `get_audit_trail`, `get_provenance_chain`, `get_memory_fingerprint`, `extract_entities`. They are exposed under the `cgreality` MCP server with the same schemas.
+The lightweight `cgreality` MCP server exposes only reality-loop runtime tools. Memory and graph tools remain available through the full ContextGraph MCP server, not through `--mode reality-loop`; `tools/list` for `cgreality` must advertise only tools that `tools/call` can actually execute.
 
 ## Phrasing rule (avoid prompt-injection defense)
 

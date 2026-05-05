@@ -1,7 +1,7 @@
 ---
 name: cc-reality-reward-analyst
 description: Use when cc-reality-diagnostician returns "reward_unavailable" or "tool_grounding_failure" or when the operator suspects the reward signal isn't capturing real progress. Reads reality-signal packets and ledger counts. Suggests new reward features as a structured proposal - never edits.
-tools: Read, Grep, mcp__cgreality__reality_signal, mcp__cgreality__reality_compare_attempts, mcp__cgreality__reality_query_ledger, mcp__cgreality__reality_recompile_reward, mcp__cgreality__search_graph
+tools: Read, Grep, mcp__cgreality__reality_signal, mcp__cgreality__reality_compare_attempts, mcp__cgreality__reality_query_ledger, mcp__cgreality__reality_recompile_reward
 model: sonnet
 ---
 

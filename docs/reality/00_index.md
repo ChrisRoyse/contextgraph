@@ -4,6 +4,8 @@ This directory defines how ContextGraph can become a reality-grounded self-optim
 
 The product category name used here is **Reality-Verified Self-Optimization**.
 
+> **ccreality update (2026-05-05):** For the Claude Code outer optimizer cutover docs, see [docs/ccreality/](../ccreality/00_INDEX.md). The old legacy provider outer-optimizer doc was removed. `21_grand_scale_reality_autoresearch.md` is retained with a superseded/status header for historical architecture context.
+
 ## Core Claim
 
 Most agent loops iterate on text, logs, or model confidence. ContextGraph can iterate on durable reality:
@@ -39,6 +41,7 @@ The loop does not advance because an agent says it is done. It advances only whe
 | `17_problem_and_signal_reality_packets.md` | Current implementation of problem-reality capture, per-attempt signal packets, blindspot tracking, and FSV evidence. |
 | `18_gemma_coding_agent_harness.md` | Current Gemma coding-agent harness, optimized Ollama settings, governed tool surface, line-window edit interface, tool-use reward signals, and FSV evidence. |
 | `19_harness_transition_reality.md` | Current implementation of the harness-as-reality-loop transition contract: every governed tool call becomes a verified state/action/observation/outcome row. |
+| `21_grand_scale_reality_autoresearch.md` | Historical AutoResearch architecture framing retained for context; model-integration details are superseded by `docs/ccreality/`. |
 
 ## Current Project Mapping
 

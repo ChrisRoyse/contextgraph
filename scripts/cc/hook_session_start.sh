@@ -23,8 +23,27 @@ else
   if [ -d "${RUNTIME_ROOT}" ]; then
     SUMMARY_PATH="$(find "${RUNTIME_ROOT}" -path '*/attempt-summary.json' -type f -print 2>/dev/null | sort | tail -n 1 || true)"
     if [ -n "${SUMMARY_PATH}" ]; then
-      SUMMARY_COMPACT="$(jq -c '{record_kind, task_id, attempt, validation, synthetic, source_of_truth}' "${SUMMARY_PATH}" 2>/dev/null || printf '{}')"
-      LATEST_SUMMARY="Latest attempt summary: ${SUMMARY_COMPACT}. Source of truth: $(cgreality_file_sot "${SUMMARY_PATH}")."
+      if SUMMARY_COMPACT="$(jq -c '{
+        record_kind: "contextgraph_attempt_summary_hook_compact",
+        attempt_number: .attempt.attempt,
+        status: .attempt.status,
+        error_code: .attempt.error_code,
+        message: .attempt.message,
+        remediation: .attempt.remediation,
+        patch_sha256: .attempt.patch_sha256,
+        ledger_counts: .ledger_counts,
+        score: .score.score,
+        reward: .reward.reward,
+        model_response: {
+          status: .model_response.status,
+          error_code: .model_response.error_code,
+          message_sha256: .attempt.response_sha256
+        }
+      }' "${SUMMARY_PATH}" 2>/dev/null)"; then
+        LATEST_SUMMARY="Latest attempt summary: ${SUMMARY_COMPACT}. Source of truth: $(cgreality_file_sot "${SUMMARY_PATH}")."
+      else
+        LATEST_SUMMARY="Latest attempt summary read failed. Source of truth: $(cgreality_file_sot "${SUMMARY_PATH}"). Remediation: inspect malformed attempt-summary.json before relying on session-start context."
+      fi
     fi
   else
     LATEST_SUMMARY="Active runtime root path is set but missing on disk. Source of truth: $(cgreality_file_sot "${RUNTIME_ROOT_FILE}")."

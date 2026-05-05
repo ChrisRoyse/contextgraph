@@ -59,6 +59,7 @@ Call `mcp__cgreality__optimizer_record_recommendation` with the schema in `docs/
 - `memories_created`, `memories_boosted`: uuids
 - `harness_transitions_minted`: file:...
 - `shift_log_excerpt`: shift_ids of the shifts your turn produced (so future readers can replay)
+- `created_at_unix` and `source_of_truth`: provide schema-shaped placeholders; the MCP server stamps the actual write timestamp and file path
 
 The Stop hook will allow the turn to end once this is recorded.
 

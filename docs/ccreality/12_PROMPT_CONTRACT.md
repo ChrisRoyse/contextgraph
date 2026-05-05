@@ -38,7 +38,7 @@ Active reality-loop runtime root: /tmp/contextgraph-rust-reality-loop/run-2026-0
 Target SWE-bench instance: django__django-12345
 Success predicate: official SWE-bench report places target instance in resolved_ids
 Run status: in_progress. Attempts so far: 3.
-ContextGraph MCP tools available under prefix mcp__cgreality__. Call mcp__cgreality__reality_latest_root first to confirm the active root, then mcp__cgreality__reality_attempt_summary to inspect the most recent attempt.
+ContextGraph MCP tools available under prefix mcp__cgreality__. Call mcp__cgreality__reality_latest_root first to confirm the active root, then mcp__cgreality__reality_attempt_summary with compact: true to inspect the most recent attempt unless full transcript readback is required.
 Reality-boundary rules (deterministic deny list also applies):
 - Never edit .env files
 - Never edit swebench/ official evaluator
@@ -124,6 +124,7 @@ The artifact includes:
 - `shift_log_excerpt`: the shift_ids of the mutations this turn produced. Lets future turns replay.
 - `verification_commands`: the exact commands the agent ran (or had a subagent run).
 - `next_gemma_prompt_delta`: the one-line directive to feed to the next inner-Gemma attempt.
+- `created_at_unix` and `source_of_truth`: schema-shaped placeholders only. The MCP server stamps the actual write timestamp and file path.
 
 ## Prompt-injection defense (recap)
 

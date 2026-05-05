@@ -1869,7 +1869,7 @@ async fn run_reality_loop_stdio() -> Result<()> {
             "tools/list" => json!({
                 "jsonrpc": "2.0",
                 "id": id,
-                "result": {"tools": crate::tools::get_tool_definitions()}
+                "result": {"tools": crate::tools::definitions::get_reality_loop_tool_definitions()}
             }),
             "tools/call" => {
                 let params = request.get("params").cloned().unwrap_or_else(|| json!({}));
