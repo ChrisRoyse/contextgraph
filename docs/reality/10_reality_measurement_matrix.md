@@ -17,6 +17,7 @@ If we cannot observe it, we cannot optimize it. If we cannot verify it from dura
 | Runtime budget | elapsed time per attempt, per official eval, total loop time | command logs and run summaries |
 | GPU/model runtime | model loaded, prompt/eval tokens, latency, timeout, VRAM when available | Ollama response and `nvidia-smi` readback |
 | Process integrity | exit codes, stdout/stderr hashes, timeout status | process result artifacts |
+| Measurement contract | claim scope, success predicate, non-claims, forbidden scopes, mandatory readbacks | `<run_root>/measurement-contract.json` |
 
 ## Task Measurements
 
@@ -55,6 +56,7 @@ If we cannot observe it, we cannot optimize it. If we cannot verify it from dura
 |---|---|---|
 | Official status | resolved/unresolved/error | official final report |
 | Stop condition | instance id in `resolved_ids` | official final report |
+| Target classification | target id appears in completed, incomplete, empty-patch, or error classification | official final report |
 | Patch result | patch exists and applied | official instance report |
 | FAIL_TO_PASS | success/failure tests | official instance report |
 | PASS_TO_PASS | regression tests | official instance report |

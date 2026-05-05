@@ -15,6 +15,8 @@ const DEFAULT_MODEL: &str = "gemma4:e4b";
 const DEFAULT_OLLAMA_URL: &str = "http://127.0.0.1:11434";
 const DEFAULT_GPU_MIN_FREE_MB: u64 = 8192;
 const DEFAULT_OLLAMA_KEEP_ALIVE: &str = "30m";
+const DEFAULT_OFFICIAL_DOCKER_HOST: &str = "unix:///var/run/docker.sock";
+const DEFAULT_OFFICIAL_DOCKER_CONFIG: &str = "/home/cabdru/.cache/contextgraph-docker-config";
 const DATASET_NAME: &str = "princeton-nlp/SWE-bench_Lite";
 
 #[derive(Parser, Debug, Clone)]
@@ -48,6 +50,10 @@ struct Args {
     official_max_workers: u64,
     #[arg(long, default_value = "env")]
     official_cache_level: String,
+    #[arg(long, default_value = DEFAULT_OFFICIAL_DOCKER_HOST)]
+    official_docker_host: String,
+    #[arg(long, default_value = DEFAULT_OFFICIAL_DOCKER_CONFIG)]
+    official_docker_config: PathBuf,
     #[arg(long, default_value_t = 0)]
     gpu_index: u64,
     #[arg(long, default_value_t = DEFAULT_GPU_MIN_FREE_MB)]
@@ -117,6 +123,12 @@ struct TaskManifest {
     problem_statement: String,
     #[serde(default)]
     fail_to_pass: Vec<String>,
+    #[serde(default)]
+    pass_to_pass_count: Option<u64>,
+    #[serde(default)]
+    official_test_patch_sha256: Option<String>,
+    #[serde(default)]
+    oracle_patch_sha256: Option<String>,
     #[serde(default)]
     source_of_truth: Option<String>,
 }
@@ -212,6 +224,21 @@ async fn run(args: Args) -> Result<Value> {
         "RUST_REALITY_TASK_MANIFEST_MISSING",
     )?;
     let task: TaskManifest = read_json(&task_manifest_path)?;
+    validate_task_manifest_contract(&task, &task_manifest_path)?;
+    if !args.official_eval_each_attempt {
+        return Err(RealityError::new(
+            "RUST_REALITY_OFFICIAL_EVAL_REQUIRED",
+            "SWE reality loops require official Docker SWE-bench evaluation on every candidate attempt",
+            "official_eval_each_attempt",
+            "rerun with --official-eval-each-attempt so measurement scope cannot collapse to local patch validation",
+            json!({
+                "claim_scope": "official_swe_instance_resolution_only",
+                "reason": "local validation can prove patch application, but cannot prove SWE-bench resolution",
+                "task_source_of_truth": file_sot(&task_manifest_path)
+            }),
+            Some(file_sot(&task_manifest_path)),
+        ));
+    }
     let loop_id = format!(
         "rust_reality_{}_{}",
         unix_ns()?,
@@ -219,6 +246,9 @@ async fn run(args: Args) -> Result<Value> {
     );
     let run_root = runtime_root.join(&loop_id);
     create_dir_checked(&run_root)?;
+    let contract_path = run_root.join("measurement-contract.json");
+    let measurement_contract = build_measurement_contract(&args, &task, &task_manifest_path)?;
+    write_json_checked(&contract_path, &measurement_contract)?;
     let task_root = run_root
         .join("tasks")
         .join(&task.instance_id)
@@ -295,6 +325,7 @@ async fn run(args: Args) -> Result<Value> {
             "gpu_initial": gpu_initial,
             "source_of_truth": {
                 "task_manifest": file_sot(&task_manifest_path),
+                "measurement_contract": file_sot(&contract_path),
                 "ledger": sqlite_sot(&ledger)
             }
         }),
@@ -563,6 +594,7 @@ async fn run(args: Args) -> Result<Value> {
             &args,
             &ledger,
             &reality_events,
+            &contract_path,
             &attempts,
             solved,
             false,
@@ -578,6 +610,7 @@ async fn run(args: Args) -> Result<Value> {
                 &args,
                 &ledger,
                 &reality_events,
+                &contract_path,
                 &attempts,
                 solved,
                 true,
@@ -602,11 +635,185 @@ async fn run(args: Args) -> Result<Value> {
         &args,
         &ledger,
         &reality_events,
+        &contract_path,
         &attempts,
         solved,
         true,
     )?;
     Ok(summary)
+}
+
+fn validate_task_manifest_contract(task: &TaskManifest, manifest_path: &Path) -> Result<()> {
+    let dataset = task.dataset.as_deref().unwrap_or("");
+    let source_of_truth = task.source_of_truth.as_deref().unwrap_or("");
+    if dataset != DATASET_NAME {
+        return Err(RealityError::new(
+            "RUST_REALITY_TASK_DATASET_MISMATCH",
+            "task manifest dataset does not match the official SWE-bench Lite measurement contract",
+            "task_manifest.dataset",
+            "regenerate the task manifest from the official SWE-bench Lite split before running",
+            json!({"expected": DATASET_NAME, "actual": dataset}),
+            Some(file_sot(manifest_path)),
+        ));
+    }
+    if task.instance_id.trim().is_empty() || !task.instance_id.contains("__") {
+        return Err(RealityError::new(
+            "RUST_REALITY_TASK_INSTANCE_ID_INVALID",
+            "task manifest instance_id is not a valid SWE-bench instance id",
+            "task_manifest.instance_id",
+            "use the exact instance_id from the official dataset row",
+            json!({"instance_id": task.instance_id}),
+            Some(file_sot(manifest_path)),
+        ));
+    }
+    if task.repo.split('/').count() != 2 || task.repo.contains("..") {
+        return Err(RealityError::new(
+            "RUST_REALITY_TASK_REPO_INVALID",
+            "task manifest repo must be a GitHub owner/repo identifier",
+            "task_manifest.repo",
+            "use the repo value from the official dataset row",
+            json!({"repo": task.repo}),
+            Some(file_sot(manifest_path)),
+        ));
+    }
+    if !is_40_hex(&task.base_commit) {
+        return Err(RealityError::new(
+            "RUST_REALITY_TASK_BASE_COMMIT_INVALID",
+            "task manifest base_commit must be a full 40-character git SHA",
+            "task_manifest.base_commit",
+            "regenerate the manifest with the official base_commit",
+            json!({"base_commit": task.base_commit}),
+            Some(file_sot(manifest_path)),
+        ));
+    }
+    if task.problem_statement.trim().is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_TASK_PROBLEM_STATEMENT_MISSING",
+            "task manifest problem_statement is empty",
+            "task_manifest.problem_statement",
+            "regenerate the manifest from the official dataset row",
+            json!({}),
+            Some(file_sot(manifest_path)),
+        ));
+    }
+    if task.fail_to_pass.is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_TASK_FAIL_TO_PASS_MISSING",
+            "task manifest has no FAIL_TO_PASS tests",
+            "task_manifest.fail_to_pass",
+            "use a SWE-bench task with explicit FAIL_TO_PASS tests so the oracle boundary is concrete",
+            json!({}),
+            Some(file_sot(manifest_path)),
+        ));
+    }
+    if task.pass_to_pass_count.unwrap_or(0) == 0 {
+        return Err(RealityError::new(
+            "RUST_REALITY_TASK_PASS_TO_PASS_MISSING",
+            "task manifest has no PASS_TO_PASS count",
+            "task_manifest.pass_to_pass_count",
+            "regenerate the manifest with PASS_TO_PASS metadata so regression coverage is visible",
+            json!({"pass_to_pass_count": task.pass_to_pass_count}),
+            Some(file_sot(manifest_path)),
+        ));
+    }
+    if source_of_truth.is_empty()
+        || !source_of_truth.contains(DATASET_NAME)
+        || !source_of_truth.contains(&task.instance_id)
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_TASK_SOURCE_OF_TRUTH_INCOMPLETE",
+            "task manifest source_of_truth does not bind dataset and instance id",
+            "task_manifest.source_of_truth",
+            "record the official dataset split and instance id in source_of_truth",
+            json!({
+                "source_of_truth": source_of_truth,
+                "required_dataset": DATASET_NAME,
+                "required_instance_id": task.instance_id
+            }),
+            Some(file_sot(manifest_path)),
+        ));
+    }
+    Ok(())
+}
+
+fn build_measurement_contract(
+    args: &Args,
+    task: &TaskManifest,
+    manifest_path: &Path,
+) -> Result<Value> {
+    Ok(json!({
+        "schema": "contextgraph_reality_measurement_contract_v1",
+        "contract_id": format!(
+            "contract_{}_{}",
+            safe_id(&task.instance_id),
+            short_hash(&format!("{}:{}:{}", DATASET_NAME, task.instance_id, task.base_commit))
+        ),
+        "claim_scope": {
+            "primary_claim": "official_swe_instance_resolution_only",
+            "success_predicate": "official_report.resolved_ids contains task.instance_id",
+            "explicit_non_claims": [
+                "not a proof of all possible repository behavior",
+                "not a proof of human product intent beyond the SWE-bench oracle",
+                "not a success claim when official Docker evaluation is unavailable"
+            ]
+        },
+        "oracle": {
+            "dataset": DATASET_NAME,
+            "split": "test",
+            "instance_id": task.instance_id,
+            "fail_to_pass": task.fail_to_pass,
+            "pass_to_pass_count": task.pass_to_pass_count,
+            "official_test_patch_sha256": task.official_test_patch_sha256,
+            "oracle_patch_sha256": task.oracle_patch_sha256,
+            "source_of_truth": task.source_of_truth
+        },
+        "immutable_boundaries": {
+            "task_manifest": file_sot(manifest_path),
+            "base_commit": task.base_commit,
+            "repo": task.repo,
+            "official_evaluator": "python -m swebench.harness.run_evaluation",
+            "official_docker_host": args.official_docker_host,
+            "official_docker_config": path_str(&args.official_docker_config),
+            "reward_spec": file_sot(Path::new("gemmafrontend/reward_spec.verified_outcome.json"))
+        },
+        "mandatory_readbacks": [
+            "task_manifest_readback",
+            "measurement_contract_readback",
+            "git_head_equals_base_commit",
+            "git_status_clean_before_attempt",
+            "candidate_patch_applies_to_base",
+            "candidate_patch_does_not_modify_tests_or_harness",
+            "official_docker_sdk_preflight",
+            "official_swe_report_with_resolved_ids",
+            "blackbox_sqlite_ledger_counts",
+            "reality_event_log_append_readback"
+        ],
+        "model_editable_scope": [
+            "candidate.patch",
+            "notes"
+        ],
+        "model_forbidden_scope": [
+            "task manifest",
+            "official evaluator",
+            "Docker harness",
+            "BlackBoxFix ledger schema/hash chain",
+            "reward spec",
+            "verifier source",
+            "benchmark tests/fixtures/harness files"
+        ],
+        "failure_policy": {
+            "unmeasured_success": "blocked",
+            "missing_source_of_truth": "error",
+            "incomplete_oracle": "error",
+            "official_evaluator_unavailable": "error",
+            "test_or_harness_mutation": "failed"
+        },
+        "source_of_truth": file_sot(manifest_path)
+    }))
+}
+
+fn is_40_hex(value: &str) -> bool {
+    value.len() == 40 && value.as_bytes().iter().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn write_failure_artifact(args: &Args, err: &RealityError) -> std::result::Result<PathBuf, String> {
@@ -633,8 +840,10 @@ fn write_failure_artifact(args: &Args, err: &RealityError) -> std::result::Resul
             "runtime_root": path_str(&runtime_root),
             "max_attempts": args.max_attempts,
             "run_until_resolved": args.run_until_resolved,
-            "official_eval_each_attempt": args.official_eval_each_attempt,
-            "gpu_index": args.gpu_index,
+        "official_eval_each_attempt": args.official_eval_each_attempt,
+        "official_docker_host": args.official_docker_host,
+        "official_docker_config": path_str(&args.official_docker_config),
+        "gpu_index": args.gpu_index,
             "gpu_min_free_mb": args.gpu_min_free_mb,
             "gpu_max_used_mb": args.gpu_max_used_mb,
             "ollama_keep_alive": args.ollama_keep_alive
@@ -656,23 +865,35 @@ fn write_failure_artifact(args: &Args, err: &RealityError) -> std::result::Resul
 }
 
 fn run_cmd(command: &[String], cwd: &Path, timeout_secs: u64) -> Result<ProcessResult> {
+    run_cmd_env(command, cwd, timeout_secs, &[])
+}
+
+fn run_cmd_env(
+    command: &[String],
+    cwd: &Path,
+    timeout_secs: u64,
+    envs: &[(String, String)],
+) -> Result<ProcessResult> {
     let started = Instant::now();
-    let mut child = Command::new(&command[0])
+    let mut process = Command::new(&command[0]);
+    process
         .args(&command[1..])
         .current_dir(cwd)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|err| {
-            RealityError::new(
-                "RUST_REALITY_PROCESS_SPAWN_FAILED",
-                "failed to spawn child process",
-                "process.spawn",
-                "inspect command path and permissions",
-                json!({ "command": command, "error": err.to_string() }),
-                None,
-            )
-        })?;
+        .stderr(Stdio::piped());
+    for (key, value) in envs {
+        process.env(key, value);
+    }
+    let mut child = process.spawn().map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_PROCESS_SPAWN_FAILED",
+            "failed to spawn child process",
+            "process.spawn",
+            "inspect command path and permissions",
+            json!({ "command": command, "error": err.to_string() }),
+            None,
+        )
+    })?;
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     loop {
         if let Some(_status) = child.try_wait().map_err(|err| {
@@ -940,6 +1161,48 @@ fn reset_workspace(repo_dir: &Path, base_commit: &str, timeout: u64) -> Result<(
         "RUST_REALITY_GIT_CLEAN_FAILED",
         "workspace.clean",
     )?;
+    let head = run_required(
+        &["git", "rev-parse", "HEAD"],
+        repo_dir,
+        timeout,
+        "RUST_REALITY_GIT_HEAD_READ_FAILED",
+        "workspace.head",
+    )?;
+    let actual_head = head.stdout.trim();
+    if actual_head != base_commit {
+        return Err(RealityError::new(
+            "RUST_REALITY_BASE_COMMIT_READBACK_MISMATCH",
+            "workspace HEAD did not match the task manifest base commit after reset",
+            "workspace.head",
+            "inspect the task manifest base_commit and repository checkout before continuing",
+            json!({
+                "expected_base_commit": base_commit,
+                "actual_head": actual_head,
+                "repo_dir": path_str(repo_dir)
+            }),
+            Some(format!("git:{}#HEAD", path_str(repo_dir))),
+        ));
+    }
+    let status = run_required(
+        &["git", "status", "--porcelain"],
+        repo_dir,
+        timeout,
+        "RUST_REALITY_GIT_STATUS_READ_FAILED",
+        "workspace.status",
+    )?;
+    if !status.stdout.trim().is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_WORKSPACE_NOT_CLEAN_AFTER_RESET",
+            "workspace was not clean after reset and clean",
+            "workspace.status",
+            "inspect untracked/modified files before continuing",
+            json!({
+                "git_status": status.stdout,
+                "repo_dir": path_str(repo_dir)
+            }),
+            Some(format!("git:{}#status", path_str(repo_dir))),
+        ));
+    }
     Ok(())
 }
 
@@ -1138,6 +1401,7 @@ fn run_official_eval(
         "swebench_python",
         "RUST_REALITY_SWEBENCH_PYTHON_MISSING",
     )?;
+    verify_official_docker_sdk(args, attempt_dir)?;
     let predictions = attempt_dir.join("official-prediction.jsonl");
     write_text_checked(
         &predictions,
@@ -1186,7 +1450,13 @@ fn run_official_eval(
         "--report_dir".to_string(),
         path_str(&official_root).to_string(),
     ];
-    let result = run_cmd(&command, Path::new("."), args.official_timeout + 3600)?;
+    let official_env = official_docker_env(args, attempt_dir)?;
+    let result = run_cmd_env(
+        &command,
+        &official_root,
+        args.official_timeout + 3600,
+        &official_env,
+    )?;
     let command_path = attempt_dir.join("official-eval-command.json");
     write_json_checked(
         &command_path,
@@ -1216,6 +1486,79 @@ fn run_official_eval(
     }))
 }
 
+fn verify_official_docker_sdk(args: &Args, attempt_dir: &Path) -> Result<()> {
+    let official_env = official_docker_env(args, attempt_dir)?;
+    let command = vec![
+        path_str(&args.swebench_python).to_string(),
+        "-c".to_string(),
+        "import docker, json; c=docker.from_env(); v=c.version(); print(json.dumps({'status':'ok','version':v.get('Version'),'api_version':v.get('ApiVersion')}))".to_string(),
+    ];
+    let result = run_cmd_env(&command, Path::new("."), 60, &official_env)?;
+    let preflight_path = attempt_dir.join("official-docker-preflight.json");
+    write_json_checked(
+        &preflight_path,
+        &json!({
+            "record_kind": "official_docker_preflight",
+            "process": result,
+            "source_of_truth": "python-docker-sdk:docker.from_env().version"
+        }),
+    )?;
+    if result.exit_code != 0 {
+        return Err(RealityError::new(
+            "RUST_REALITY_OFFICIAL_DOCKER_UNAVAILABLE",
+            "official SWE-bench evaluator cannot access Docker through the Python Docker SDK",
+            "official_eval.docker",
+            "expose Docker Desktop as /var/run/docker.sock for this WSL distro before running official evaluation",
+            json!({ "preflight": file_sot(&preflight_path) }),
+            Some(file_sot(&preflight_path)),
+        ));
+    }
+    serde_json::from_str::<Value>(result.stdout.trim()).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_OFFICIAL_DOCKER_PREFLIGHT_JSON_INVALID",
+            "Docker preflight did not return JSON",
+            "official_eval.docker_preflight.stdout",
+            "inspect official-docker-preflight.json",
+            json!({ "error": err.to_string(), "preflight": file_sot(&preflight_path) }),
+            Some(file_sot(&preflight_path)),
+        )
+    })?;
+    Ok(())
+}
+
+fn official_docker_env(args: &Args, attempt_dir: &Path) -> Result<Vec<(String, String)>> {
+    let docker_config = resolve_path(&args.official_docker_config)?;
+    create_dir_checked(&docker_config)?;
+    let config_path = docker_config.join("config.json");
+    if !config_path.exists() {
+        write_json_checked(&config_path, &json!({"auths": {}}))?;
+    } else {
+        let _: Value = read_json(&config_path)?;
+    }
+    let env_manifest = attempt_dir.join("official-docker-env.json");
+    write_json_checked(
+        &env_manifest,
+        &json!({
+            "record_kind": "official_docker_env",
+            "docker_host": args.official_docker_host,
+            "docker_config": path_str(&docker_config),
+            "docker_config_sha256": sha256_file(&config_path)?,
+            "docker_sock_exists": Path::new("/var/run/docker.sock").exists(),
+            "source_of_truth": {
+                "docker_config": file_sot(&config_path),
+                "docker_socket": "unix:/var/run/docker.sock"
+            }
+        }),
+    )?;
+    Ok(vec![
+        ("DOCKER_HOST".to_string(), args.official_docker_host.clone()),
+        (
+            "DOCKER_CONFIG".to_string(),
+            path_str(&docker_config).to_string(),
+        ),
+    ])
+}
+
 fn build_official_evidence(
     official: &Value,
     task: &TaskManifest,
@@ -1223,26 +1566,81 @@ fn build_official_evidence(
     patch: &str,
 ) -> Result<Value> {
     let report = &official["final_report"]["payload"];
-    let resolved_ids: Vec<String> = report
-        .get("resolved_ids")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .map(ToOwned::to_owned)
-                .collect()
-        })
-        .unwrap_or_default();
+    let resolved_ids = json_string_array(report, "resolved_ids")?;
+    let completed_ids = json_string_array(report, "completed_ids")?;
+    let incomplete_ids = json_string_array(report, "incomplete_ids")?;
+    let empty_patch_ids = json_string_array(report, "empty_patch_ids")?;
+    let error_ids = json_string_array(report, "error_ids").unwrap_or_default();
+    let instance_id = &task.instance_id;
+    let resolved = resolved_ids.iter().any(|id| id == instance_id);
+    let completed = completed_ids.iter().any(|id| id == instance_id);
+    let incomplete = incomplete_ids.iter().any(|id| id == instance_id);
+    let empty_patch = empty_patch_ids.iter().any(|id| id == instance_id);
+    let errored = error_ids.iter().any(|id| id == instance_id);
+    if !completed && !incomplete && !empty_patch && !errored {
+        return Err(RealityError::new(
+            "RUST_REALITY_OFFICIAL_REPORT_INSTANCE_MISSING",
+            "official report did not classify the target instance",
+            "official_report.instance_id",
+            "inspect the official report, run_id, and --instance_ids before continuing",
+            json!({
+                "instance_id": instance_id,
+                "completed_ids": completed_ids,
+                "incomplete_ids": incomplete_ids,
+                "empty_patch_ids": empty_patch_ids,
+                "error_ids": error_ids,
+                "report_source_of_truth": official["final_report"]["source_of_truth"]
+            }),
+            official["final_report"]["source_of_truth"]
+                .as_str()
+                .map(ToOwned::to_owned),
+        ));
+    }
     Ok(json!({
         "evidence_kind": "rust_official_swe_result",
         "attempt": attempt,
+        "claim_scope": "official_swe_instance_resolution_only",
+        "success_predicate": "official_report.resolved_ids contains task.instance_id",
         "instance_id": task.instance_id,
-        "resolved": resolved_ids.iter().any(|id| id == &task.instance_id),
+        "resolved": resolved,
+        "completed": completed,
+        "incomplete": incomplete,
+        "empty_patch": empty_patch,
+        "errored": errored,
         "previous_patch_sha256": sha256_text(patch),
         "source_of_truth": official["source_of_truth"].clone(),
         "official_report": report,
     }))
+}
+
+fn json_string_array(value: &Value, field: &str) -> Result<Vec<String>> {
+    value
+        .get(field)
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_OFFICIAL_REPORT_FIELD_MISSING",
+                "official report was missing a required instance classification field",
+                format!("official_report.{field}"),
+                "inspect SWE-bench report schema before trusting the run",
+                json!({"field": field, "report": value}),
+                None,
+            )
+        })?
+        .iter()
+        .map(|item| {
+            item.as_str().map(ToOwned::to_owned).ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_OFFICIAL_REPORT_FIELD_INVALID",
+                    "official report classification field contained a non-string id",
+                    format!("official_report.{field}"),
+                    "inspect SWE-bench report schema before trusting the run",
+                    json!({"field": field, "item": item}),
+                    None,
+                )
+            })
+        })
+        .collect()
 }
 
 fn find_json_report(root: &Path, run_id: &str) -> Result<Value> {
@@ -1432,6 +1830,7 @@ fn write_summary(
     args: &Args,
     ledger: &Path,
     events: &Path,
+    contract: &Path,
     attempts: &[AttemptRecord],
     solved: bool,
     terminal: bool,
@@ -1458,9 +1857,15 @@ fn write_summary(
             "sha256": sha256_file(ledger)?,
             "source_of_truth": sqlite_sot(ledger)
         },
+        "measurement_contract": {
+            "path": path_str(contract),
+            "sha256": sha256_file(contract)?,
+            "source_of_truth": file_sot(contract)
+        },
         "source_of_truth": {
             "summary": file_sot(&path),
             "events": file_sot(events),
+            "measurement_contract": file_sot(contract),
             "ledger": sqlite_sot(ledger)
         }
     });

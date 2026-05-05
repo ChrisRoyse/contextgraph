@@ -35,6 +35,7 @@ The loop does not advance because an agent says it is done. It advances only whe
 | `13_path_to_100_percent_swe.md` | Strategy for pushing all three local models toward 100% on the selected SWE suite. |
 | `14_operational_scoreboard.md` | The scoreboard that tells whether the meta-loop is actually improving the inner loop. |
 | `15_rust_reality_loop_port.md` | Current Rust-owned reality loop implementation, validation evidence, and remaining gaps. |
+| `16_measurement_contract.md` | Runtime contract that prevents measurement-spec and boundary failures from becoming false success claims. |
 
 ## Current Project Mapping
 
@@ -121,7 +122,9 @@ target/debug/reality-loop \
   --run-until-resolved
 ```
 
-The Rust binary uses Rust-owned orchestration, typed failure artifacts, JSON readback checks, SQLite ledger readbacks, GPU VRAM budget checks through `nvidia-smi`, and BlackBoxFix reward/evidence compilation. The official SWE-bench evaluator remains an external Python/Docker verifier because SWE-bench itself is distributed that way; the reality loop does not implement its control flow in Python.
+The Rust binary uses Rust-owned orchestration, typed failure artifacts, JSON readback checks, SQLite ledger readbacks, GPU VRAM budget checks through `nvidia-smi`, a runtime `measurement-contract.json`, and BlackBoxFix reward/evidence compilation. The official SWE-bench evaluator remains an external Python/Docker verifier because SWE-bench itself is distributed that way; the reality loop does not implement its control flow in Python.
+
+The Rust loop now fails closed if official SWE-bench readback is disabled. Local patch validation can produce useful failure evidence, but it cannot become a SWE success claim.
 
 Latest Rust smoke output:
 

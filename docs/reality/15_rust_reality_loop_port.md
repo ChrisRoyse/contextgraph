@@ -16,7 +16,10 @@ The port exists because the loop is infrastructure, not a notebook experiment. I
 The binary currently owns:
 
 - task manifest readback from a real SWE-bench Lite task manifest;
+- runtime measurement contract generation and readback;
+- fail-closed official SWE-bench readback requirement;
 - workspace clone/reset/clean for the target repository;
+- git HEAD and clean-status readbacks after reset;
 - repository context selection from real git files and grep results;
 - prompt writing with SHA-256 readback;
 - Ollama/Gemma `/api/chat` request construction;
@@ -39,6 +42,7 @@ For a Rust run, the core source-of-truth paths are:
 ```text
 <run_root>/reality-loop-summary.json
 <run_root>/reality-events.jsonl
+<run_root>/measurement-contract.json
 <run_root>/task-manifest-readback.json
 <task_root>/blackbox.sqlite
 <attempt_root>/prompt.txt
@@ -68,7 +72,7 @@ Latest bounded Gemma smoke:
 /tmp/contextgraph-rust-reality-loop-smoke-v4/rust_reality_1777959982988939074_e525987d/
 ```
 
-Command shape:
+This historical smoke was a local validation smoke. Current reality-boundary hardening requires official readback for new SWE reality-loop runs, so the command shape is now:
 
 ```bash
 target/debug/reality-loop \
@@ -76,6 +80,7 @@ target/debug/reality-loop \
   --runtime-root /tmp/contextgraph-rust-reality-loop-smoke-v4 \
   --model gemma4:e4b \
   --max-attempts 2 \
+  --official-eval-each-attempt \
   --gpu-min-free-mb 8192 \
   --context-graph-bin target/debug/context-graph
 ```
@@ -104,6 +109,8 @@ The Rust binary fails closed and writes failure artifacts for:
 ```text
 RUST_REALITY_TASK_MANIFEST_MISSING
 RUST_REALITY_CONTINUOUS_REQUIRES_OFFICIAL_EVAL
+RUST_REALITY_OFFICIAL_EVAL_REQUIRED
+RUST_REALITY_TASK_DATASET_MISMATCH
 RUST_REALITY_GPU_VRAM_BUDGET_EXCEEDED
 ```
 
@@ -115,6 +122,29 @@ Failure artifacts are stored under:
 
 Each artifact records the input args, typed error, remediation, and source-of-truth reference.
 
+Latest measurement-boundary edge artifacts:
+
+```text
+/tmp/contextgraph-boundary-edge-official-disabled/failures/failure-1777962519-RUST_REALITY_OFFICIAL_EVAL_REQUIRED.json
+/tmp/contextgraph-boundary-edge-invalid-budget/failures/failure-1777962527-RUST_REALITY_MAX_ATTEMPTS_INVALID.json
+/tmp/contextgraph-boundary-edge-bad-manifest/failures/failure-1777962530-RUST_REALITY_TASK_DATASET_MISMATCH.json
+```
+
+Latest official Docker happy-path readback:
+
+```text
+/tmp/contextgraph-official-report-cwd-smoke/gold.rust_contract_gold_psf_requests_2317.json
+```
+
+Observed official reality:
+
+```text
+completed_instances=1
+resolved_instances=1
+completed_ids=["psf__requests-2317"]
+resolved_ids=["psf__requests-2317"]
+```
+
 ## Root Causes Fixed During Port
 
 The port exposed and fixed these issues:
@@ -124,6 +154,9 @@ The port exposed and fixed these issues:
 - repository context selection now prioritizes files named in the issue, including `requests/sessions.py`;
 - model parse failures now produce `model-parse-report.json` instead of being mislabeled as a missing patch;
 - patches that modify benchmark tests or harness files are rejected before any success claim.
+- SWE reality-loop runs now require official Docker evaluation every attempt; local validation alone cannot produce a reality success claim.
+- task manifests now require dataset/source-of-truth/base-commit/FAIL_TO_PASS/PASS_TO_PASS boundary data before execution.
+- official reports now must classify the target instance; a report file without target-instance classification is an error.
 
 ## Current Gap
 
@@ -137,7 +170,7 @@ That is useful signal. The next optimization target is a stronger action contrac
 
 ## Run Until Resolved
 
-Continuous mode is enabled only when official SWE-bench evaluation is also enabled:
+SWE reality mode requires official SWE-bench evaluation:
 
 ```bash
 target/debug/reality-loop \
@@ -147,4 +180,4 @@ target/debug/reality-loop \
   --run-until-resolved
 ```
 
-The binary refuses `--run-until-resolved` without official readback because local validation is not reality success.
+The binary refuses to run without official readback because local validation is not reality success.
