@@ -29,6 +29,9 @@ const DEFAULT_OPENAI_INITIAL_BACKOFF_MS: u64 = 2_000;
 const DEFAULT_OPENAI_MAX_BACKOFF_MS: u64 = 60_000;
 const DEFAULT_OPENAI_DEPENDENCY_BLOCK_SLEEP_MS: u64 = 600_000;
 const DEFAULT_OPTIMIZER_MAX_ESTIMATED_CALL_COST_USD: f64 = 0.50;
+const DEFAULT_OPTIMIZER_TRIGGER_POLICY: &str = "failure_or_regression";
+const DEFAULT_OPTIMIZER_MAX_PARALLEL_AGENTS: u64 = 1;
+const DEFAULT_OPTIMIZER_REWARD_REGRESSION_THRESHOLD: f64 = 0.0;
 const DEEPSEEK_V4_PRO_CACHE_HIT_INPUT_USD_PER_M: f64 = 0.003625;
 const DEEPSEEK_V4_PRO_CACHE_MISS_INPUT_USD_PER_M: f64 = 0.435;
 const DEEPSEEK_V4_PRO_OUTPUT_USD_PER_M: f64 = 0.87;
@@ -57,6 +60,8 @@ struct Args {
     run_until_resolved: bool,
     #[arg(long)]
     smoke_test: bool,
+    #[arg(long)]
+    optimizer_api_smoke_test: bool,
     #[arg(long)]
     official_eval_each_attempt: bool,
     #[arg(
@@ -124,6 +129,12 @@ struct Args {
     openai_dependency_block_sleep_ms: u64,
     #[arg(long, default_value_t = DEFAULT_OPTIMIZER_MAX_ESTIMATED_CALL_COST_USD)]
     optimizer_max_estimated_call_cost_usd: f64,
+    #[arg(long, default_value = DEFAULT_OPTIMIZER_TRIGGER_POLICY)]
+    optimizer_trigger_policy: String,
+    #[arg(long, default_value_t = DEFAULT_OPTIMIZER_MAX_PARALLEL_AGENTS)]
+    optimizer_max_parallel_agents: u64,
+    #[arg(long, default_value_t = DEFAULT_OPTIMIZER_REWARD_REGRESSION_THRESHOLD)]
+    optimizer_reward_regression_threshold: f64,
     #[arg(long, default_value_t = 0)]
     sleep_between_attempts_ms: u64,
 }
@@ -311,15 +322,23 @@ async fn run(args: Args) -> Result<Value> {
             None,
         ));
     }
-    if args.smoke_test && !args.openai_optimizer_each_attempt {
+    if args.smoke_test
+        && !args.openai_optimizer_each_attempt
+        && args.optimizer_trigger_policy == "disabled"
+    {
         return Err(RealityError::new(
             "RUST_REALITY_SMOKE_OPENAI_OPTIMIZER_REQUIRED",
-            "--smoke-test requires --openai-optimizer-each-attempt",
-            "openai_optimizer_each_attempt",
+            "--smoke-test requires an enabled optimizer trigger policy",
+            "optimizer_trigger_policy",
             "the smoke test must verify the Gemma inner loop and outer optimizer together",
-            json!({"smoke_test": true}),
+            json!({"smoke_test": true, "optimizer_trigger_policy": args.optimizer_trigger_policy}),
             None,
         ));
+    }
+    validate_optimizer_trigger_config(&args)?;
+    if args.optimizer_api_smoke_test {
+        let client = reqwest::Client::new();
+        return run_deepseek_optimizer_api_smoke_test(&client, &args, &runtime_root).await;
     }
     let context_graph_bin = resolve_path(&args.context_graph_bin)?;
     require_file(
@@ -781,7 +800,51 @@ async fn run(args: Args) -> Result<Value> {
             &reality_signal_packet_path,
             &args.model,
         )?;
-        let openai_optimizer_recommendation = if args.openai_optimizer_each_attempt {
+        let optimizer_trigger_decision = decide_deepseek_optimizer_trigger(
+            &args,
+            attempt,
+            resolved,
+            repeated_patch,
+            &validation,
+            &reality_signal_compact,
+            &attempts,
+            &attempt_dir,
+        )?;
+        let optimizer_trigger_decision_path =
+            attempt_dir.join("deepseek-optimizer-trigger-decision.json");
+        write_json_checked(
+            &optimizer_trigger_decision_path,
+            &optimizer_trigger_decision,
+        )?;
+        let optimizer_trigger_decision_readback: Value =
+            read_json(&optimizer_trigger_decision_path)?;
+        if optimizer_trigger_decision_readback != optimizer_trigger_decision {
+            return Err(RealityError::new(
+                "RUST_REALITY_DEEPSEEK_TRIGGER_DECISION_READBACK_MISMATCH",
+                "DeepSeek optimizer trigger decision readback did not match the written artifact",
+                "deepseek_optimizer.trigger_decision.readback",
+                "inspect filesystem durability before using optimizer trigger state",
+                json!({"expected": optimizer_trigger_decision, "actual": optimizer_trigger_decision_readback}),
+                Some(file_sot(&optimizer_trigger_decision_path)),
+            ));
+        }
+        append_event(
+            &reality_events,
+            json!({
+                "event_type": "deepseek_optimizer_trigger_decided",
+                "status": optimizer_trigger_decision_readback.get("status"),
+                "attempt": attempt,
+                "should_run": optimizer_trigger_decision_readback.get("should_run"),
+                "policy": optimizer_trigger_decision_readback.get("policy"),
+                "reasons": optimizer_trigger_decision_readback.get("reasons"),
+                "source_of_truth": file_sot(&optimizer_trigger_decision_path)
+            }),
+        )?;
+        let openai_optimizer_recommendation = if optimizer_trigger_decision_readback
+            .get("should_run")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
             let mut blocked_count = 0_u64;
             loop {
                 match run_openai_loop_optimizer(
@@ -913,6 +976,7 @@ async fn run(args: Args) -> Result<Value> {
                 "model_response": model_response,
                 "blackbox_verifier": verifier,
                 "reality_signal_verifier": reality_signal_verifier,
+                "deepseek_optimizer_trigger_decision": optimizer_trigger_decision_readback,
                 "openai_loop_optimizer": openai_optimizer_recommendation,
                 "score": score,
                 "reward": reward,
@@ -1477,6 +1541,9 @@ fn write_failure_artifact(args: &Args, err: &RealityError) -> std::result::Resul
             "openai_optimizer_max_output_tokens": args.openai_optimizer_max_output_tokens,
             "openai_optimizer_reasoning_effort": args.openai_optimizer_reasoning_effort,
             "optimizer_max_estimated_call_cost_usd": args.optimizer_max_estimated_call_cost_usd,
+            "optimizer_trigger_policy": args.optimizer_trigger_policy,
+            "optimizer_max_parallel_agents": args.optimizer_max_parallel_agents,
+            "optimizer_reward_regression_threshold": args.optimizer_reward_regression_threshold,
             "official_docker_host": args.official_docker_host,
             "official_docker_config": path_str(&args.official_docker_config),
             "gpu_index": args.gpu_index,
@@ -2047,6 +2114,191 @@ Do not modify tests, fixtures, or benchmark harness files.";
     Ok(enriched)
 }
 
+fn validate_optimizer_trigger_config(args: &Args) -> Result<()> {
+    if !matches!(
+        args.optimizer_trigger_policy.as_str(),
+        "disabled" | "every_attempt" | "failure" | "failure_or_regression"
+    ) {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPTIMIZER_TRIGGER_POLICY_INVALID",
+            "optimizer trigger policy is not supported",
+            "optimizer_trigger_policy",
+            "use disabled, every_attempt, failure, or failure_or_regression",
+            json!({"optimizer_trigger_policy": args.optimizer_trigger_policy}),
+            None,
+        ));
+    }
+    if args.optimizer_max_parallel_agents == 0 || args.optimizer_max_parallel_agents > 40 {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPTIMIZER_PARALLEL_AGENT_LIMIT_INVALID",
+            "optimizer parallel agent limit must be between 1 and 40",
+            "optimizer_max_parallel_agents",
+            "use one source-editing optimizer agent; reserve parallelism for future read-only analysis agents",
+            json!({"optimizer_max_parallel_agents": args.optimizer_max_parallel_agents}),
+            None,
+        ));
+    }
+    if !args.optimizer_reward_regression_threshold.is_finite()
+        || args.optimizer_reward_regression_threshold < 0.0
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPTIMIZER_REWARD_REGRESSION_THRESHOLD_INVALID",
+            "optimizer reward regression threshold must be a finite non-negative number",
+            "optimizer_reward_regression_threshold",
+            "use a finite threshold such as 0.0 or 0.25",
+            json!({"optimizer_reward_regression_threshold": args.optimizer_reward_regression_threshold}),
+            None,
+        ));
+    }
+    Ok(())
+}
+
+fn decide_deepseek_optimizer_trigger(
+    args: &Args,
+    attempt: u64,
+    resolved: Option<bool>,
+    repeated_patch: bool,
+    validation: &Value,
+    reality_signal_compact: &Value,
+    previous_attempts: &[AttemptRecord],
+    attempt_dir: &Path,
+) -> Result<Value> {
+    let current_reward = reward_scalar_from_reality_signal(reality_signal_compact);
+    let previous_reward = previous_attempts
+        .last()
+        .and_then(|attempt| reward_scalar_from_reality_signal(&attempt.reality_signal_compact));
+    let reward_regression = match (current_reward, previous_reward) {
+        (Some(current), Some(previous)) => {
+            previous - current > args.optimizer_reward_regression_threshold
+        }
+        _ => false,
+    };
+    let officially_unresolved = resolved != Some(true);
+    let validation_failed = validation.get("status").and_then(Value::as_str) != Some("passed");
+    let reward_unavailable = current_reward.is_none();
+    let mut reasons = Vec::new();
+    if args.openai_optimizer_each_attempt {
+        reasons.push(json!({
+            "reason": "legacy_optimizer_each_attempt_enabled",
+            "source": "openai_optimizer_each_attempt"
+        }));
+    }
+    if officially_unresolved {
+        reasons.push(json!({
+            "reason": "official_swe_not_resolved",
+            "resolved": resolved,
+            "source": reality_signal_compact.pointer("/outcome_reality/source_of_truth/official_evidence")
+        }));
+    }
+    if validation_failed {
+        reasons.push(json!({
+            "reason": "local_or_official_validation_failed",
+            "validation_status": validation.get("status"),
+            "validation_error_code": validation.get("error_code"),
+            "source": validation.get("source_of_truth")
+        }));
+    }
+    if repeated_patch {
+        reasons.push(json!({
+            "reason": "repeated_patch_detected",
+            "patch_sha256": reality_signal_compact.pointer("/patch_signals/patch_sha256")
+        }));
+    }
+    if reward_regression {
+        reasons.push(json!({
+            "reason": "reward_regressed",
+            "current_reward": current_reward,
+            "previous_reward": previous_reward,
+            "threshold": args.optimizer_reward_regression_threshold
+        }));
+    }
+    if reward_unavailable {
+        reasons.push(json!({
+            "reason": "reward_unavailable",
+            "source": reality_signal_compact.pointer("/score_reality/reward")
+        }));
+    }
+    let policy_should_run = match args.optimizer_trigger_policy.as_str() {
+        "disabled" => false,
+        "every_attempt" => true,
+        "failure" => officially_unresolved || validation_failed || repeated_patch,
+        "failure_or_regression" => {
+            officially_unresolved
+                || validation_failed
+                || repeated_patch
+                || reward_regression
+                || reward_unavailable
+        }
+        _ => {
+            return Err(RealityError::new(
+                "RUST_REALITY_OPTIMIZER_TRIGGER_POLICY_INVALID",
+                "optimizer trigger policy is not supported",
+                "optimizer_trigger_policy",
+                "use disabled, every_attempt, failure, or failure_or_regression",
+                json!({"optimizer_trigger_policy": args.optimizer_trigger_policy}),
+                None,
+            ));
+        }
+    };
+    let should_run = args.openai_optimizer_each_attempt || policy_should_run;
+    let source_editing_agents = 1_u64;
+    let read_only_parallel_agents_available = args
+        .optimizer_max_parallel_agents
+        .saturating_sub(source_editing_agents);
+    Ok(json!({
+        "record_kind": "contextgraph_deepseek_optimizer_trigger_decision",
+        "schema_version": 1,
+        "status": "triggered",
+        "attempt": attempt,
+        "policy": args.optimizer_trigger_policy,
+        "should_run": should_run,
+        "why_event_triggered_not_always_on": "DeepSeek is invoked only after durable reality changes; persisted artifacts are the memory, so idle always-on thinking would add cost without new source-of-truth evidence.",
+        "parallelism": {
+            "configured_max_agents": args.optimizer_max_parallel_agents,
+            "source_editing_agents": source_editing_agents,
+            "read_only_parallel_agents_available": read_only_parallel_agents_available,
+            "rationale": "only one agent may edit ContextGraph source to avoid conflicting patches; future parallel agents should be read-only critics over the same persisted reality packet"
+        },
+        "signals": {
+            "officially_unresolved": officially_unresolved,
+            "validation_failed": validation_failed,
+            "repeated_patch": repeated_patch,
+            "reward_regression": reward_regression,
+            "reward_unavailable": reward_unavailable,
+            "current_reward": current_reward,
+            "previous_reward": previous_reward,
+            "reward_regression_threshold": args.optimizer_reward_regression_threshold
+        },
+        "reasons": reasons,
+        "source_of_truth": {
+            "attempt_dir": file_sot(attempt_dir),
+            "validation": validation.get("source_of_truth"),
+            "reality_signal": reality_signal_compact.pointer("/source_of_truth")
+        }
+    }))
+}
+
+fn reward_scalar_from_reality_signal(value: &Value) -> Option<f64> {
+    value
+        .pointer("/score_reality/reward/clipped")
+        .and_then(Value::as_f64)
+        .or_else(|| {
+            value
+                .pointer("/score_reality/reward/raw")
+                .and_then(Value::as_f64)
+        })
+        .or_else(|| {
+            value
+                .pointer("/score_reality/reward/reward/clipped")
+                .and_then(Value::as_f64)
+        })
+        .or_else(|| {
+            value
+                .pointer("/score_reality/reward/reward/raw")
+                .and_then(Value::as_f64)
+        })
+}
+
 async fn post_ollama_chat(
     client: &reqwest::Client,
     args: &Args,
@@ -2368,6 +2620,230 @@ Return only a valid json object.\nSchema:\n{}",
             "inspect filesystem durability before using optimizer guidance",
             json!({"expected": envelope, "actual": readback}),
             Some(file_sot(&recommendation_path)),
+        ));
+    }
+    Ok(readback)
+}
+
+async fn run_deepseek_optimizer_api_smoke_test(
+    client: &reqwest::Client,
+    args: &Args,
+    runtime_root: &Path,
+) -> Result<Value> {
+    let smoke_root = runtime_root.join(format!(
+        "deepseek_optimizer_api_smoke_{}_{}",
+        unix_ns()?,
+        short_hash(&args.openai_optimizer_model)
+    ));
+    create_dir_checked(&smoke_root)?;
+    let (api_key, api_key_metadata) = load_required_secret(&args.openai_api_key_env)?;
+    let tool_schema = json!([
+        {
+            "type": "function",
+            "function": {
+                "name": "read_smoke_reality",
+                "description": "Read a deterministic ContextGraph smoke reality fact from the harness.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "label": {"type": "string"}
+                    },
+                    "required": ["label"],
+                    "additionalProperties": false
+                }
+            }
+        }
+    ]);
+    let mut messages = vec![
+        json!({
+            "role": "system",
+            "content": "You are DeepSeek V4 Pro inside a ContextGraph provider smoke test. You must use the provided tool, then return valid json."
+        }),
+        json!({
+            "role": "user",
+            "content": "Call read_smoke_reality with label smoke-check. After the tool result is supplied, return only a valid json object containing status, label, observed_number, provider, and source_of_truth."
+        }),
+    ];
+    let tool_request_path = smoke_root.join("deepseek-tool-request.json");
+    let tool_response_path = smoke_root.join("deepseek-tool-response.json");
+    let tool_body = deepseek_chat_request_body(
+        args,
+        &messages,
+        Some(&tool_schema),
+        Some(json!("auto")),
+        false,
+    );
+    write_json_checked(&tool_request_path, &tool_body)?;
+    let tool_response = post_deepseek_chat_completion(
+        client,
+        args,
+        &api_key,
+        &tool_body,
+        &tool_request_path,
+        &tool_response_path,
+    )
+    .await?;
+    let assistant_message = deepseek_chat_assistant_message(&tool_response)?;
+    let tool_calls = deepseek_chat_function_calls(&tool_response)?;
+    if tool_calls.len() != 1 || tool_calls[0].name != "read_smoke_reality" {
+        return Err(RealityError::new(
+            "RUST_REALITY_DEEPSEEK_SMOKE_TOOL_CALL_INVALID",
+            "DeepSeek smoke response did not request the required tool call",
+            "deepseek.response.choices[0].message.tool_calls",
+            "inspect DeepSeek tool-call support, tool_choice handling, and request body",
+            json!({
+                "tool_call_count": tool_calls.len(),
+                "tool_calls": tool_calls,
+                "response": file_sot(&tool_response_path),
+                "request": file_sot(&tool_request_path)
+            }),
+            Some(file_sot(&tool_response_path)),
+        ));
+    }
+    let label = tool_calls[0]
+        .arguments
+        .get("label")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if label != "smoke-check" {
+        return Err(RealityError::new(
+            "RUST_REALITY_DEEPSEEK_SMOKE_TOOL_ARGUMENT_INVALID",
+            "DeepSeek smoke tool call used the wrong label argument",
+            "deepseek.tool_call.arguments.label",
+            "inspect DeepSeek function-call argument formatting",
+            json!({
+                "expected": "smoke-check",
+                "actual": label,
+                "response": file_sot(&tool_response_path)
+            }),
+            Some(file_sot(&tool_response_path)),
+        ));
+    }
+    let tool_result_path = smoke_root.join("smoke-tool-result.json");
+    let tool_result = json!({
+        "record_kind": "contextgraph_deepseek_smoke_tool_result",
+        "status": "ok",
+        "label": label,
+        "observed_number": 4,
+        "meaning": "2 + 2 durable smoke fact supplied by ContextGraph after a real DeepSeek tool call",
+        "source_of_truth": file_sot(&tool_result_path)
+    });
+    write_json_checked(&tool_result_path, &tool_result)?;
+    let tool_result_readback: Value = read_json(&tool_result_path)?;
+    if tool_result_readback != tool_result {
+        return Err(RealityError::new(
+            "RUST_REALITY_DEEPSEEK_SMOKE_TOOL_RESULT_READBACK_MISMATCH",
+            "DeepSeek smoke tool result readback did not match the written artifact",
+            "deepseek_smoke.tool_result.readback",
+            "inspect filesystem durability before trusting provider smoke test",
+            json!({"expected": tool_result, "actual": tool_result_readback}),
+            Some(file_sot(&tool_result_path)),
+        ));
+    }
+    messages.push(assistant_message);
+    messages.push(json!({
+        "role": "tool",
+        "tool_call_id": tool_calls[0].call_id,
+        "content": serde_json::to_string(&tool_result_readback).unwrap()
+    }));
+    messages.push(json!({
+        "role": "user",
+        "content": "Using only the tool result, return valid json exactly like {\"status\":\"ok\",\"label\":\"smoke-check\",\"observed_number\":4,\"provider\":\"deepseek-v4-pro\",\"source_of_truth\":\"file:/path\"}."
+    }));
+    let final_request_path = smoke_root.join("deepseek-final-request.json");
+    let final_response_path = smoke_root.join("deepseek-final-response.json");
+    let final_body = deepseek_chat_request_body(args, &messages, None, None, true);
+    write_json_checked(&final_request_path, &final_body)?;
+    let final_response = post_deepseek_chat_completion(
+        client,
+        args,
+        &api_key,
+        &final_body,
+        &final_request_path,
+        &final_response_path,
+    )
+    .await?;
+    let final_text = deepseek_chat_output_text(&final_response).ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_DEEPSEEK_SMOKE_FINAL_CONTENT_MISSING",
+            "DeepSeek smoke final response did not include JSON content",
+            "deepseek.response.choices[0].message.content",
+            "inspect final smoke response",
+            json!({"response": file_sot(&final_response_path)}),
+            Some(file_sot(&final_response_path)),
+        )
+    })?;
+    let final_json: Value = serde_json::from_str(&final_text).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DEEPSEEK_SMOKE_FINAL_JSON_INVALID",
+            "DeepSeek smoke final content was not valid JSON",
+            "deepseek.response.choices[0].message.content",
+            "inspect JSON mode prompt and max token budget",
+            json!({
+                "error": err.to_string(),
+                "content_preview": truncate_chars(&final_text, 4000),
+                "response": file_sot(&final_response_path)
+            }),
+            Some(file_sot(&final_response_path)),
+        )
+    })?;
+    if final_json.get("status").and_then(Value::as_str) != Some("ok")
+        || final_json.get("label").and_then(Value::as_str) != Some("smoke-check")
+        || final_json.get("observed_number").and_then(Value::as_u64) != Some(4)
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_DEEPSEEK_SMOKE_FINAL_JSON_WRONG",
+            "DeepSeek smoke final JSON did not reflect the physical tool result",
+            "deepseek.smoke.final_json",
+            "inspect final response and tool-result source of truth",
+            json!({
+                "expected": {"status": "ok", "label": "smoke-check", "observed_number": 4},
+                "actual": final_json,
+                "tool_result": file_sot(&tool_result_path),
+                "response": file_sot(&final_response_path)
+            }),
+            Some(file_sot(&final_response_path)),
+        ));
+    }
+    let summary_path = smoke_root.join("deepseek-optimizer-api-smoke-summary.json");
+    let summary = json!({
+        "record_kind": "contextgraph_deepseek_optimizer_api_smoke",
+        "schema_version": 1,
+        "status": "ok",
+        "provider": "deepseek",
+        "model": args.openai_optimizer_model,
+        "endpoint": args.openai_responses_url,
+        "api_key": api_key_metadata,
+        "tool_call": {
+            "call_id": tool_calls[0].call_id,
+            "name": tool_calls[0].name,
+            "arguments": tool_calls[0].arguments
+        },
+        "tool_result_readback": tool_result_readback,
+        "final_json": final_json,
+        "source_of_truth": {
+            "summary": file_sot(&summary_path),
+            "tool_request": file_sot(&tool_request_path),
+            "tool_response": file_sot(&tool_response_path),
+            "tool_cost_preflight": file_sot(&tool_response_path.with_extension("cost-preflight.json")),
+            "tool_usage_cost": file_sot(&tool_response_path.with_extension("usage-cost.json")),
+            "tool_result": file_sot(&tool_result_path),
+            "final_request": file_sot(&final_request_path),
+            "final_response": file_sot(&final_response_path),
+            "final_cost_preflight": file_sot(&final_response_path.with_extension("cost-preflight.json")),
+            "final_usage_cost": file_sot(&final_response_path.with_extension("usage-cost.json"))
+        }
+    });
+    write_json_checked(&summary_path, &summary)?;
+    let readback: Value = read_json(&summary_path)?;
+    if readback != summary {
+        return Err(RealityError::new(
+            "RUST_REALITY_DEEPSEEK_SMOKE_SUMMARY_READBACK_MISMATCH",
+            "DeepSeek smoke summary readback did not match written artifact",
+            "deepseek_smoke.summary.readback",
+            "inspect filesystem durability before trusting provider smoke result",
+            json!({"expected": summary, "actual": readback}),
+            Some(file_sot(&summary_path)),
         ));
     }
     Ok(readback)
@@ -8737,6 +9213,9 @@ fn write_summary(
         "run_until_resolved": args.run_until_resolved,
         "official_eval_each_attempt": args.official_eval_each_attempt,
         "openai_optimizer_each_attempt": args.openai_optimizer_each_attempt,
+        "optimizer_trigger_policy": args.optimizer_trigger_policy,
+        "optimizer_max_parallel_agents": args.optimizer_max_parallel_agents,
+        "optimizer_reward_regression_threshold": args.optimizer_reward_regression_threshold,
         "attempts_total": attempts.len(),
         "attempts": attempts,
         "gpu_budget": {
@@ -9366,6 +9845,7 @@ mod tests {
             max_attempts: 1,
             run_until_resolved: false,
             smoke_test: true,
+            optimizer_api_smoke_test: false,
             official_eval_each_attempt: true,
             swebench_python: PathBuf::from("/tmp/contextgraph-test-swebench-python"),
             official_timeout: 900,
@@ -9398,6 +9878,9 @@ mod tests {
             openai_max_backoff_ms: DEFAULT_OPENAI_MAX_BACKOFF_MS,
             openai_dependency_block_sleep_ms: DEFAULT_OPENAI_DEPENDENCY_BLOCK_SLEEP_MS,
             optimizer_max_estimated_call_cost_usd: DEFAULT_OPTIMIZER_MAX_ESTIMATED_CALL_COST_USD,
+            optimizer_trigger_policy: DEFAULT_OPTIMIZER_TRIGGER_POLICY.to_string(),
+            optimizer_max_parallel_agents: DEFAULT_OPTIMIZER_MAX_PARALLEL_AGENTS,
+            optimizer_reward_regression_threshold: DEFAULT_OPTIMIZER_REWARD_REGRESSION_THRESHOLD,
             sleep_between_attempts_ms: 0,
         }
     }
@@ -9896,6 +10379,118 @@ mod tests {
         );
         assert_eq!(usage_readback["token_accounting"]["completion_tokens"], 16);
         assert_eq!(usage_readback["actual_cost_usd"], 0.000025);
+    }
+
+    #[test]
+    fn deepseek_trigger_decision_fsv_runs_on_failed_official_reality() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let args = test_args(
+            temp.path().join("task-manifest.json"),
+            temp.path().join("runtime"),
+        );
+        let attempt_dir = temp.path().join("attempt-000001");
+        create_dir_checked(&attempt_dir).expect("attempt dir");
+        let validation_path = attempt_dir.join("validation.json");
+        let validation = json!({
+            "status": "failed",
+            "error_code": "RUST_REALITY_OFFICIAL_UNRESOLVED",
+            "source_of_truth": file_sot(&validation_path)
+        });
+        write_json_checked(&validation_path, &validation).expect("validation write");
+        let signal = json!({
+            "score_reality": {
+                "reward": {"clipped": -2.5}
+            },
+            "outcome_reality": {
+                "source_of_truth": {"official_evidence": "file:/tmp/official.json"}
+            },
+            "patch_signals": {"patch_sha256": "sha256:patch"},
+            "source_of_truth": {"validation": file_sot(&validation_path)}
+        });
+        eprintln!(
+            "BEFORE deepseek_trigger_failure validation={} signal={}",
+            serde_json::to_string_pretty(&validation).unwrap(),
+            serde_json::to_string_pretty(&signal).unwrap()
+        );
+        let decision = decide_deepseek_optimizer_trigger(
+            &args,
+            1,
+            Some(false),
+            false,
+            &validation,
+            &signal,
+            &[],
+            &attempt_dir,
+        )
+        .expect("trigger decision");
+        let decision_path = attempt_dir.join("deepseek-optimizer-trigger-decision.json");
+        write_json_checked(&decision_path, &decision).expect("decision write");
+        let readback: Value = read_json(&decision_path).expect("decision readback");
+        eprintln!(
+            "AFTER deepseek_trigger_failure source_of_truth={} decision={}",
+            file_sot(&decision_path),
+            serde_json::to_string_pretty(&readback).unwrap()
+        );
+        assert_eq!(readback, decision);
+        assert_eq!(readback["should_run"], true);
+        assert_eq!(readback["signals"]["officially_unresolved"], true);
+        assert_eq!(readback["signals"]["current_reward"], -2.5);
+    }
+
+    #[test]
+    fn deepseek_trigger_decision_fsv_blocks_disabled_success() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mut args = test_args(
+            temp.path().join("task-manifest.json"),
+            temp.path().join("runtime"),
+        );
+        args.openai_optimizer_each_attempt = false;
+        args.optimizer_trigger_policy = "disabled".to_string();
+        let attempt_dir = temp.path().join("attempt-000001");
+        create_dir_checked(&attempt_dir).expect("attempt dir");
+        let validation_path = attempt_dir.join("validation.json");
+        let validation = json!({
+            "status": "passed",
+            "source_of_truth": file_sot(&validation_path)
+        });
+        write_json_checked(&validation_path, &validation).expect("validation write");
+        let signal = json!({
+            "score_reality": {
+                "reward": {"clipped": 1.0}
+            },
+            "outcome_reality": {
+                "source_of_truth": {"official_evidence": "file:/tmp/official.json"}
+            },
+            "source_of_truth": {"validation": file_sot(&validation_path)}
+        });
+        eprintln!(
+            "BEFORE deepseek_trigger_disabled validation={} signal={}",
+            serde_json::to_string_pretty(&validation).unwrap(),
+            serde_json::to_string_pretty(&signal).unwrap()
+        );
+        let decision = decide_deepseek_optimizer_trigger(
+            &args,
+            1,
+            Some(true),
+            false,
+            &validation,
+            &signal,
+            &[],
+            &attempt_dir,
+        )
+        .expect("trigger decision");
+        let decision_path = attempt_dir.join("deepseek-optimizer-trigger-decision.json");
+        write_json_checked(&decision_path, &decision).expect("decision write");
+        let readback: Value = read_json(&decision_path).expect("decision readback");
+        eprintln!(
+            "AFTER deepseek_trigger_disabled source_of_truth={} decision={}",
+            file_sot(&decision_path),
+            serde_json::to_string_pretty(&readback).unwrap()
+        );
+        assert_eq!(readback, decision);
+        assert_eq!(readback["should_run"], false);
+        assert_eq!(readback["signals"]["officially_unresolved"], false);
+        assert_eq!(readback["parallelism"]["source_editing_agents"], 1);
     }
 
     #[test]
