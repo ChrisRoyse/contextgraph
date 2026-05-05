@@ -3,8 +3,10 @@ use super::helpers::*;
 use super::shift_log::{append_shift, ShiftRecord};
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
+use regex::Regex;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use tokio::process::Command;
 
 impl Handlers {
@@ -205,21 +207,7 @@ pub async fn reality_recompile_reward(args: Value) -> Result<Value> {
 pub async fn reality_query_ledger(args: Value) -> Result<Value> {
     let where_clause = required_str(&args, "where")?;
     let limit = optional_u64(&args, "limit", 50).min(500);
-    let lower = where_clause.to_ascii_lowercase();
-    for denied in [
-        "select", "insert", "update", "delete", "drop", "alter", ";", "--",
-    ] {
-        if lower.contains(denied) {
-            return Err(CCRealityError::new(
-                "CCREALITY_LEDGER_QUERY_REJECTED",
-                format!("WHERE clause may not contain '{denied}'"),
-                "reality_query_ledger.where",
-                "use only column comparisons in the WHERE clause",
-                json!({"where": where_clause}),
-                None,
-            ));
-        }
-    }
+    let where_clause = validate_ledger_where(&where_clause)?;
     let runtime_root = require_active_runtime_root().await?;
     let ledger = find_ledger(&runtime_root)?;
     let conn =
@@ -247,6 +235,27 @@ pub async fn reality_query_ledger(args: Value) -> Result<Value> {
         "row_count": rows.len(),
         "source_of_truth": format!("sqlite:{}#ledger_records", ledger.display())
     }))
+}
+
+fn validate_ledger_where(where_clause: &str) -> Result<String> {
+    static WHERE_RE: OnceLock<Regex> = OnceLock::new();
+    let re = WHERE_RE.get_or_init(|| {
+        let atom = r#"(?:record_kind|created_at|payload_json)\s*(?:<=|>=|<>|!=|=|<|>|LIKE)\s*(?:'(?:[^']|'')*'|[0-9]+)"#;
+        Regex::new(&format!(r#"(?i)^\s*{atom}(?:\s+AND\s+{atom})*\s*$"#))
+            .expect("ledger WHERE validator regex compiles")
+    });
+    let trimmed = where_clause.trim();
+    if trimmed.is_empty() || !re.is_match(trimmed) {
+        return Err(CCRealityError::new(
+            "CCREALITY_LEDGER_QUERY_REJECTED",
+            "WHERE clause is outside the read-only ledger query contract",
+            "reality_query_ledger.where",
+            "use AND-joined comparisons on record_kind, created_at, or payload_json with quoted string or numeric literals",
+            json!({"where": where_clause}),
+            None,
+        ));
+    }
+    Ok(trimmed.to_string())
 }
 
 fn locate_engine_binary() -> Result<PathBuf> {
@@ -390,4 +399,36 @@ fn sqlite_err(code: &str, path: &Path, err: rusqlite::Error) -> CCRealityError {
         json!({"path": path.display().to_string(), "error": err.to_string()}),
         Some(format!("sqlite:{}#ledger_records", path.display())),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ledger_where_validator_accepts_allowlisted_comparisons() {
+        assert!(validate_ledger_where("record_kind = 'agent_run'").is_ok());
+        assert!(validate_ledger_where(
+            "record_kind = 'tool_call' AND payload_json LIKE '%optimizer%'"
+        )
+        .is_ok());
+        assert!(validate_ledger_where("created_at >= 1700000000").is_ok());
+    }
+
+    #[test]
+    fn ledger_where_validator_rejects_sql_control_syntax() {
+        for clause in [
+            "1=1",
+            "record_kind = 'agent_run' OR 1=1",
+            "record_kind = 'agent_run'; DROP TABLE ledger_records",
+            "record_kind IN ('agent_run')",
+            "json_extract(payload_json, '$.status') = 'ok'",
+            "record_kind = 'agent_run' --",
+        ] {
+            assert!(
+                validate_ledger_where(clause).is_err(),
+                "{clause} should be rejected"
+            );
+        }
+    }
 }

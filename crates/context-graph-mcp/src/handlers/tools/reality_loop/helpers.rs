@@ -121,7 +121,7 @@ pub fn latest_run_id(runtime_root: &Path) -> Result<Option<String>> {
             continue;
         }
         let name = entry.file_name().to_string_lossy().to_string();
-        if name == "failures" || name == "workspaces" || name == "cgreality-shift-log" {
+        if is_runtime_metadata_dir(&name) {
             continue;
         }
         let modified = meta
@@ -245,6 +245,17 @@ fn parse_attempt_name(name: &str) -> Option<u64> {
     name.strip_prefix("attempt-")
         .or_else(|| name.strip_prefix("smoke-attempt-"))
         .and_then(|suffix| suffix.parse::<u64>().ok())
+}
+
+fn is_runtime_metadata_dir(name: &str) -> bool {
+    matches!(
+        name,
+        "failures"
+            | "workspaces"
+            | "cgreality-shift-log"
+            | "cgreality-hook-state"
+            | "claude-code-optimizer"
+    )
 }
 
 pub fn read_json(path: &Path) -> Result<Value> {
@@ -475,4 +486,41 @@ pub fn fs_error(code: &str, path: &Path, err: std::io::Error) -> CCRealityError 
         json!({"path": path.display().to_string(), "error": err.to_string()}),
         Some(file_sot(path)),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn latest_run_id_ignores_runtime_metadata_directories() {
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(root.path().join("smoke-1778013223")).expect("run dir");
+        for name in [
+            "failures",
+            "workspaces",
+            "cgreality-shift-log",
+            "cgreality-hook-state",
+            "claude-code-optimizer",
+        ] {
+            std::fs::create_dir_all(root.path().join(name)).expect("metadata dir");
+        }
+
+        let run_id = latest_run_id(root.path()).expect("latest run id");
+        assert_eq!(run_id.as_deref(), Some("smoke-1778013223"));
+    }
+
+    #[test]
+    fn runtime_metadata_dir_list_stays_explicit() {
+        for name in [
+            "failures",
+            "workspaces",
+            "cgreality-shift-log",
+            "cgreality-hook-state",
+            "claude-code-optimizer",
+        ] {
+            assert!(is_runtime_metadata_dir(name), "{name} should be metadata");
+        }
+        assert!(!is_runtime_metadata_dir("smoke-1778013223"));
+    }
 }

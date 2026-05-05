@@ -377,6 +377,58 @@ pub async fn reality_audit_trail(handlers: &Handlers, args: Value) -> Result<Val
     }))
 }
 
+pub async fn reality_runtime_audit_trail(args: Value) -> Result<Value> {
+    let entity_id = required_str(&args, "entity_id")?;
+    let limit = optional_u64(&args, "limit", 50).min(500) as usize;
+    let uuid = uuid::Uuid::parse_str(&entity_id).map_err(|e| {
+        CCRealityError::new(
+            "CCREALITY_AUDIT_ENTITY_ID_INVALID",
+            format!("entity_id is not a UUID: {e}"),
+            "arguments.entity_id",
+            "provide a valid audit entity UUID",
+            json!({"entity_id": entity_id}),
+            None,
+        )
+    })?;
+    let runtime_root = require_active_runtime_root().await?;
+    let path = runtime_root
+        .join("cgreality-audit-log")
+        .join(format!("{uuid}.jsonl"));
+    if !path.is_file() {
+        return Err(CCRealityError::new(
+            "CCREALITY_RUNTIME_AUDIT_TRAIL_MISSING",
+            "runtime audit trail is missing for entity",
+            "runtime_audit.path",
+            "write a cgreality runtime audit record before querying the lightweight server",
+            json!({"entity_id": entity_id, "path": path.display().to_string()}),
+            Some(file_sot(&path)),
+        ));
+    }
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| fs_error("CCREALITY_RUNTIME_AUDIT_TRAIL_READ_FAILED", &path, e))?;
+    let mut records = Vec::new();
+    for (idx, line) in raw.lines().enumerate() {
+        let record: Value = serde_json::from_str(line).map_err(|e| {
+            CCRealityError::new(
+                "CCREALITY_RUNTIME_AUDIT_TRAIL_JSON_INVALID",
+                format!("invalid runtime audit JSON at line {}: {e}", idx + 1),
+                "runtime_audit.parse",
+                "repair or remove the corrupt audit log line",
+                json!({"path": path.display().to_string(), "line": idx + 1}),
+                Some(file_sot(&path)),
+            )
+        })?;
+        records.push(record);
+    }
+    records.truncate(limit);
+    Ok(json!({
+        "audit_trail": records,
+        "count": records.len(),
+        "entity_id": entity_id,
+        "source_of_truth": file_sot(&path)
+    }))
+}
+
 pub async fn reality_replay_artifact(args: Value) -> Result<Value> {
     let path_arg = required_str(&args, "path")?;
     let path = file_arg_to_path(&path_arg);
