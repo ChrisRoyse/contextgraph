@@ -42,7 +42,10 @@ claude-flow
 # Generated/temporary files
 claude-flow.config.json
 hive-mind-prompt-*.txt
-.mcp.json
+# Project root .mcp.json is committed so shared Claude Code MCP servers load consistently.
+**/.mcp.json
+!/.mcp.json
+**/.mcp.local.json
 
 # Backup and copy files
 *_backup*

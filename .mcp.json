@@ -1,0 +1,29 @@
+{
+  "$schema": "https://code.claude.com/schemas/mcp.json",
+  "mcpServers": {
+    "context-graph": {
+      "command": "/home/cabdru/contextgraph/scripts/context-graph-mcp-wrapper.sh",
+      "args": [],
+      "env": {
+        "CONTEXT_GRAPH_STORAGE_PATH": "/home/cabdru/contextgraph/contextgraph_data",
+        "CONTEXT_GRAPH_MODELS_PATH": "/home/cabdru/contextgraph/models",
+        "RUST_LOG": "warn"
+      }
+    },
+    "cgreality": {
+      "type": "stdio",
+      "command": "/home/cabdru/contextgraph/target/debug/context-graph-mcp",
+      "args": [
+        "--mode",
+        "reality-loop"
+      ],
+      "env": {
+        "CONTEXTGRAPH_ROOT": "/home/cabdru/contextgraph",
+        "CGREALITY_RUNTIME_ROOT_HINT": "/home/cabdru/.cache/cgreality/active_runtime_root",
+        "CGREALITY_GOVERNED_PATHS": "/home/cabdru/contextgraph/config/ccreality_governed_paths.json",
+        "CGREALITY_RECOMMENDATION_SCHEMA": "/home/cabdru/contextgraph/config/ccreality_recommendation_schema.json",
+        "RUST_LOG": "cgreality=info,context_graph_mcp=info"
+      }
+    }
+  }
+}
