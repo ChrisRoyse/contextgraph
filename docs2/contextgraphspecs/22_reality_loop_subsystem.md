@@ -5,9 +5,6 @@
 - `crates/context-graph-cli/src/commands/blackbox.rs` — BlackBoxFix ledger CLI used by the loop
 - `crates/context-graph-cli/Cargo.toml` — `[[bin]] name = "context-graph"` (the binary the loop spawns for ledger ops)
 - `gemmafrontend/server.py` (3,879 lines) — Python evidence/console server, agent-tool gateway
-- `gemmafrontend/swe_lite_refinement_loop.py` (4,560 lines) — Python ContextGraph-guided SWE-bench Lite refinement loop
-- `gemmafrontend/swe_lite_official_eval.py` (682 lines) — official SWE-bench Docker bridge + readback
-- `gemmafrontend/reality_prompt_compiler.py` (540 lines) — deterministic prompt compiler
 - `gemmafrontend/model_benchmark.py` (248 lines) — multi-model verified-outcome benchmark runner
 - `gemmafrontend/model_prompt_matrix.py` (497 lines) — model × prompt grid with edge cases
 - `gemmafrontend/manual_fsv.py` (382 lines) — manual end-to-end FSV harness for the gemmafrontend stack
@@ -18,14 +15,13 @@
 **Cross-links:** [04_database_schema.md](04_database_schema.md), [05_embedding_subsystem.md](05_embedding_subsystem.md), [08_mcp_tools_reference.md](08_mcp_tools_reference.md), [10_cli_reference.md](10_cli_reference.md), [21_dynamicjepa_subsystem.md](21_dynamicjepa_subsystem.md), [15_verification_report.md](15_verification_report.md). [01_system_overview.md](01_system_overview.md) section 10 lists this subsystem alongside DynamicJEPA.
 
 ## 1. Summary
-The reality loop is the SWE-bench Lite repair pipeline that uses ContextGraph as durable memory and the official Docker SWE-bench evaluator as the **only** success oracle. Two ownership variants exist:
+The reality loop is the SWE-bench Lite repair pipeline that uses ContextGraph as durable memory and the official Docker SWE-bench evaluator as the **only** success oracle. It is now owned by one implementation:
 
 | Variant | Process | Source-of-truth driver |
 | --- | --- | --- |
 | Rust reality loop | `cargo run --release --bin reality-loop` | `crates/context-graph-cli/src/bin/reality-loop.rs` |
-| Python refinement loop | `python3 gemmafrontend/swe_lite_refinement_loop.py` | shared with Rust loop via the same `target/debug/context-graph` ledger binary |
 
-Both loops:
+The Rust loop:
 1. Validate a SWE-bench task manifest against an immutable measurement contract.
 2. Compile a deterministic prompt with verified failure evidence.
 3. Drive a local Ollama model through the prompt under a GPU VRAM budget.
@@ -41,9 +37,8 @@ Success is **only** declared when the official report's `resolved_ids` array con
 +----------------------+      +--------------------+      +-------------------------+
 | reality-loop.rs      |--->  | target/debug/      |--->  | blackbox.sqlite         |
 | (Rust)               |      | context-graph      |      | (LEDGER_SCHEMA_VERSION=14)
-| OR                   |      |  blackbox CLI      |      +-------------------------+
-| swe_lite_refinement_ |
-| loop.py (Python)     |--->  | reality-events.jsonl (append-only with readback verify)
+|                      |      |  blackbox CLI      |      +-------------------------+
+|                      |--->  | reality-events.jsonl (append-only with readback verify)
 +----------+-----------+
            |
            v
@@ -67,14 +62,11 @@ Components and their concrete roles:
 | Component | Role | Key files |
 | --- | --- | --- |
 | `reality-loop.rs` | Rust binary that owns the entire loop in one process | `crates/context-graph-cli/src/bin/reality-loop.rs` |
-| `gemmafrontend/swe_lite_refinement_loop.py` | Earlier Python implementation; richer agent-tool surface | `swe_lite_refinement_loop.py` |
 | `gemmafrontend/server.py` | Long-lived HTTP console / agent-tool gateway with prevalidated tool calls | `server.py` |
-| `gemmafrontend/swe_lite_official_eval.py` | One-shot wrapper to invoke the official SWE-bench harness with WSL Docker Desktop | `swe_lite_official_eval.py` |
-| `gemmafrontend/reality_prompt_compiler.py` | Deterministic prompt compiler with quality gate | `reality_prompt_compiler.py` |
 | `target/debug/context-graph` | BlackBoxFix ledger CLI used for `blackbox init`, `record`, `verify`, `score`, `reward compile` | `crates/context-graph-cli/src/main.rs` |
 | ContextGraph DB | Memory + reality-event durable store | RocksDB CFs in [04_database_schema.md](04_database_schema.md) |
 
-The Rust loop is the canonical entry point introduced by recent commits cc8e6c33 (measurement contract + fail-closed gates) and 56d9026b (initial Rust-owned binary). The Python loop predates it and adds a deeper governed agent-tool surface (commit 33562474).
+The Rust loop is the canonical and only SWE-bench refinement entry point. The old Python loop, Python official-eval bridge, and Python prompt compiler have been deleted to prevent split ownership.
 
 ## 3. Runtime Measurement Contract (commit cc8e6c33)
 `build_measurement_contract` (reality-loop.rs:744) writes a JSON object to `<run_root>/measurement-contract.json` that pins the entire claim scope **before any model is called**.
@@ -144,8 +136,8 @@ Every step is fail-closed with a typed `RealityError` (reality-loop.rs:73-103) c
 
 `is_forbidden_benchmark_mutation` (reality-loop.rs:1332) considers a path forbidden when it starts with `test_`, `tests/`, contains `/test_`, `/tests/`, ends in `_test.py`, contains `conftest.py`, `tox.ini`, or `pytest`.
 
-## 5. Reality Branches & Governed Agent Tools (commit 33562474)
-The Python `swe_lite_refinement_loop.py` exposes a deterministic 5-tool **read-only** surface that the model can call between attempts (`agent_tool_surface`, line 1267). Tools are validated server-side and persisted into `attempt-XXXXXX/agent-tools/agent-tool-transcript.json`.
+## 5. Reality Branches & Governed Agent Tools
+The Rust `reality-loop` owns the governed SWE agent-tool surface. Tools are validated in-process and persisted into attempt-scoped tool transcripts with readback verification.
 
 | Tool name | Mode | Args | Source-of-truth |
 | --- | --- | --- | --- |
@@ -157,7 +149,7 @@ The Python `swe_lite_refinement_loop.py` exposes a deterministic 5-tool **read-o
 
 Every tool call is rejected with a typed `tool_result_blocked` row (line 1351) for: unknown tool (`SWE_AGENT_TOOL_UNKNOWN`), missing path (`SWE_AGENT_TOOL_PATH_REQUIRED`), absolute or `..` path (`SWE_AGENT_TOOL_PATH_OUTSIDE_REPO`), resolved escape (`SWE_AGENT_TOOL_PATH_ESCAPE`), missing list dir (`SWE_AGENT_TOOL_LIST_PATH_MISSING`), missing file (`SWE_AGENT_TOOL_FILE_MISSING`), empty query (`SWE_AGENT_TOOL_QUERY_REQUIRED`).
 
-**Reality branch IDs** (line 2228-2241) namespace each event so the loop is multi-layer auditable:
+**Reality branch IDs** namespace each event so the loop is multi-layer auditable:
 | Function | Pattern |
 | --- | --- |
 | `root_reality_branch_id(loop_id)` | `<loop_id>:root` |
@@ -165,17 +157,12 @@ Every tool call is rejected with a typed `tool_result_blocked` row (line 1351) f
 | `attempt_reality_branch_id(loop_id, model, instance, attempt)` | `<loop_id>:<model>:<instance>:attempt-NNN` |
 | `prompt_candidate_branch_id(loop_id, model, instance, attempt)` | `<loop_id>:<model>:<instance>:prompt-candidate-NNN` |
 
-Every reality event has `schema_version = 1` and includes `loop_id`, `loop_layer`, `event_type`, `status`, `model`, `instance_id`, `attempt`, `reality_branch_id`, `parent_reality_branch_id`, `promotion_status`, `payload`, `payload_sha256` (`append_reality_event`, line 2399).
+Every reality event has `schema_version = 1` and includes `loop_id`, `loop_layer`, `event_type`, `status`, `model`, `instance_id`, `attempt`, `reality_branch_id`, `parent_reality_branch_id`, `promotion_status`, `payload`, and `payload_sha256`.
 
-## 6. Deterministic Prompt Compiler (`reality_prompt_compiler.py`)
-| Constant | Value | Line |
-| --- | --- | --- |
-| `PROMPT_COMPILER_VERSION` | `"reality_prompt_compiler_v1"` | 20 |
-| `MAX_FAILURE_TEXT_CHARS` | 6,000 | 21 |
-| `MAX_REPO_CONTEXT_CHARS` | 24,000 | 22 |
-| `MAX_PATCH_PREVIEW_CHARS` | 4,000 | 23 |
+## 6. Deterministic Prompt Compiler (Rust)
+Prompt compilation is now part of `crates/context-graph-cli/src/bin/reality-loop.rs`; the deleted Python compiler must not be used or recreated.
 
-`compile_reality_prompt` (line 320) supports three `prompt_kind` values:
+The Rust prompt contract supports three prompt kinds:
 
 | `prompt_kind` | Template ID | Required inputs |
 | --- | --- | --- |
@@ -192,7 +179,7 @@ The compiled prompt always carries:
 - A `NO_REPEAT_PATCH_SHA256` list to forbid re-emitting prior patches
 - A `REPOSITORY_CONTEXT` block built from durable on-disk file snippets
 
-`compile_quality` (line 285) computes 8 boolean checks. The compiler returns a hard `PROMPT_COMPILER_QUALITY_FAILED` error when `hidden_solution_leak_absent` is false (any oracle/test-patch substring is found in the prompt). All other checks contribute to a fractional `score`.
+The compiler returns hard typed Rust errors when required source-of-truth inputs are missing, when prompt quality gates fail, or when hidden solution/test-patch leakage is detected.
 
 | Quality check | Trigger |
 | --- | --- |
@@ -205,7 +192,7 @@ The compiled prompt always carries:
 | `source_of_truth_refs_included` | every short source-of-truth ref appears |
 | `hidden_solution_leak_absent` | gold patch / test patch text absent (hard gate) |
 
-Outputs (line 481): `prompt.txt`, `prompt-compiler-output.json`, `prompt-quality.json`. Each is byte-equal-verified on readback.
+Outputs include prompt text, prompt manifest, request/response artifacts, parse report, and prompt-quality metadata. Each is byte-equal-verified on readback.
 
 ## 7. Continuous Run-Until-Resolved + GPU VRAM Budgeting (commit b7c4c5a2)
 Both loops accept `--run-until-resolved`. When set, the attempt counter is uncapped (`while args.run_until_resolved || attempt <= args.max_attempts`, reality-loop.rs:342) and the loop only terminates on:
@@ -213,7 +200,7 @@ Both loops accept `--run-until-resolved`. When set, the attempt counter is uncap
 1. `solved == true` (an attempt's official evidence has `resolved_ids` containing the instance), OR
 2. A fail-closed error (any of the gates in §4).
 
-`--run-until-resolved` requires `--official-eval-each-attempt` (reality-loop.rs:206; `swe_lite_refinement_loop.py` line 4203). Without official Docker readback, the loop refuses to enter continuous mode because there would be no oracle.
+`--run-until-resolved` requires `--official-eval-each-attempt` (reality-loop.rs:206). Without official Docker readback, the loop refuses to enter continuous mode because there would be no oracle.
 
 GPU VRAM is read from `nvidia-smi --query-gpu=index,name,uuid,memory.total,memory.used,memory.free,driver_version` (reality-loop.rs:2002) before and after every Ollama call (`assert_gpu_budget`, line 2069). Defaults:
 
