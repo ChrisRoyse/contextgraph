@@ -2179,6 +2179,7 @@ fn compact_problem_reality_packet(packet: &Value) -> Value {
         "oracle_reality": packet.get("oracle_reality"),
         "problem_terms": packet.pointer("/problem_statement_reality/terms"),
         "problem_symbols": packet.pointer("/problem_statement_reality/symbols"),
+        "issue_mentioned_paths": packet.pointer("/problem_statement_reality/mentioned_paths"),
         "production_candidate_files": packet.pointer("/repository_reality/production_candidate_files"),
         "selected_context_files": packet.pointer("/repository_reality/selected_context_files"),
         "root_cause_discovery_protocol": packet.get("root_cause_discovery_protocol"),
@@ -2224,26 +2225,35 @@ fn problem_production_candidates(
     repo_context: &Value,
     all_files: &[String],
 ) -> Value {
+    // Issue-text-mention priority: ordering preserves the precision signal that the issue
+    // text directly named a file (per arxiv 2512.07022 file-localization findings).
+    // Priority 0 = paths produced by production_path_candidates (issue-text mention order).
+    // Priority 1 = paths returned by repo_context.files (BM25-ranked by reality engine).
     let all_file_set: BTreeSet<String> = all_files.iter().cloned().collect();
-    let mut candidates = BTreeSet::new();
+    let mut ordered: Vec<String> = Vec::new();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
     for candidate in production_path_candidates(task) {
         if all_file_set.contains(&candidate)
             && is_context_file(&candidate)
             && !is_low_value_context_path(&candidate)
+            && seen.insert(candidate.clone())
         {
-            candidates.insert(candidate);
+            ordered.push(candidate);
         }
     }
     if let Some(files) = repo_context.get("files").and_then(Value::as_array) {
         for file in files {
             if let Some(path) = file.get("path").and_then(Value::as_str) {
-                if is_context_file(path) && !is_low_value_context_path(path) {
-                    candidates.insert(path.to_string());
+                if is_context_file(path)
+                    && !is_low_value_context_path(path)
+                    && seen.insert(path.to_string())
+                {
+                    ordered.push(path.to_string());
                 }
             }
         }
     }
-    json!(candidates.into_iter().collect::<Vec<_>>())
+    json!(ordered)
 }
 
 fn is_40_hex(value: &str) -> bool {
@@ -7752,19 +7762,42 @@ fn task_symbols(terms: &[String]) -> Vec<String> {
 }
 
 fn production_path_candidates(task: &TaskManifest) -> Vec<String> {
-    let mut out = BTreeSet::new();
+    // Preserves issue-text mention order. Emits two classes of production candidates:
+    //   1. Direct: a non-test .py / .pyx mention is itself a production candidate.
+    //   2. Derived: from `prefix/tests/test_X.py`, derive `prefix/X.py` and `prefix/_X.py`.
+    // Order of emission follows mention order from path_candidates so the highest-precision
+    // signal (the issue text named this file directly) lands at index 0.
+    let mut out: Vec<String> = Vec::new();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
     for path in path_candidates(task) {
+        let is_python = path.ends_with(".py") || path.ends_with(".pyx");
+        let looks_like_test = path.contains("/tests/")
+            || path.contains("/test_")
+            || path.starts_with("test_")
+            || path.starts_with("tests/");
+        if is_python && !looks_like_test && seen.insert(path.clone()) {
+            out.push(path.clone());
+        }
         if let Some((prefix, test_name)) = path.split_once("/tests/test_") {
             let stem = test_name.strip_suffix(".py").unwrap_or(test_name);
-            out.insert(format!("{prefix}/{stem}.py"));
-            out.insert(format!("{prefix}/_{stem}.py"));
+            let prod = format!("{prefix}/{stem}.py");
+            if seen.insert(prod.clone()) {
+                out.push(prod);
+            }
+            let prod_under = format!("{prefix}/_{stem}.py");
+            if seen.insert(prod_under.clone()) {
+                out.push(prod_under);
+            }
         }
     }
-    out.into_iter().collect()
+    out
 }
 
 fn path_candidates(task: &TaskManifest) -> Vec<String> {
-    let mut out = BTreeSet::new();
+    // Order-preserving deduplication: emit paths in the order they appear in the issue text
+    // (first), then in fail_to_pass test ids (second). Earlier mentions win on collision.
+    let mut out: Vec<String> = Vec::new();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
     for source in std::iter::once(task.problem_statement.as_str())
         .chain(task.fail_to_pass.iter().map(String::as_str))
     {
@@ -7783,11 +7816,13 @@ fn path_candidates(task: &TaskManifest) -> Vec<String> {
             if candidate.contains('/') || candidate.ends_with(".py") || candidate.ends_with(".pyx")
             {
                 let path = candidate.split("::").next().unwrap_or(candidate);
-                out.insert(path.to_string());
+                if !path.is_empty() && seen.insert(path.to_string()) {
+                    out.push(path.to_string());
+                }
             }
         }
     }
-    out.into_iter().collect()
+    out
 }
 
 fn is_context_file(path: &str) -> bool {
@@ -10478,5 +10513,240 @@ diff --git a/src/example.py b/src/example.py
         );
         assert_eq!(process.exit_code, 0);
         assert!(process.stdout.contains("Python") || process.stderr.contains("Python"));
+    }
+
+    #[test]
+    fn problem_production_candidates_priority_zero_is_issue_text_mention_fsv() {
+        // Regression for empirical bug observed in
+        //   /tmp/ccreality-prod-3/rust_reality_1778040002059614711_e525987d/problem-reality-packet.json
+        // BEFORE FIX: BTreeSet alphabetized — requests/models.py landed at index 0 and
+        // requests/sessions.py at index 6, even though the issue text only named sessions.py.
+        // EXPECTED AFTER FIX: sessions.py lands at priority-0 (issue-text mention preserved).
+        let task = TaskManifest {
+            dataset: None,
+            instance_id: "psf__requests-2317".to_string(),
+            repo: "psf/requests".to_string(),
+            base_commit: "deadbeef".to_string(),
+            problem_statement:
+                "Method = builtins.str(method) in requests/sessions.py is causing a UnicodeDecodeError when the URL contains non-ASCII characters. See test_requests.py for the failing test."
+                    .to_string(),
+            fail_to_pass: vec![
+                "test_requests.py::RequestsTestCase::test_unicode_method_name".to_string(),
+            ],
+            pass_to_pass_count: None,
+            official_test_patch_sha256: None,
+            oracle_patch_sha256: None,
+            source_of_truth: None,
+        };
+        let all_files = vec![
+            "requests/__init__.py".to_string(),
+            "requests/adapters.py".to_string(),
+            "requests/auth.py".to_string(),
+            "requests/models.py".to_string(),
+            "requests/sessions.py".to_string(),
+            "requests/structures.py".to_string(),
+            "test_requests.py".to_string(),
+        ];
+        let repo_context = json!({
+            "files": [
+                {"path": "requests/adapters.py"},
+                {"path": "requests/auth.py"},
+                {"path": "requests/models.py"},
+                {"path": "requests/sessions.py"},
+                {"path": "requests/structures.py"}
+            ]
+        });
+        eprintln!(
+            "BEFORE_FIX_EVIDENCE empirical_packet=/tmp/ccreality-prod-3/rust_reality_1778040002059614711_e525987d/problem-reality-packet.json sessions_index_was=6 models_index_was=0"
+        );
+        let result = problem_production_candidates(&task, &repo_context, &all_files);
+        let arr = result.as_array().expect("result is array");
+        let paths: Vec<&str> = arr.iter().map(|v| v.as_str().expect("string")).collect();
+        eprintln!(
+            "AFTER_FIX paths_index_0_5={:?} total={}",
+            &paths[..paths.len().min(6)],
+            paths.len()
+        );
+        assert_eq!(
+            paths[0], "requests/sessions.py",
+            "issue-text-mentioned production file must land at priority 0; got {:?}",
+            paths
+        );
+        let sessions_idx = paths
+            .iter()
+            .position(|&p| p == "requests/sessions.py")
+            .expect("sessions.py present");
+        let models_idx = paths
+            .iter()
+            .position(|&p| p == "requests/models.py")
+            .expect("models.py present");
+        assert!(
+            sessions_idx < models_idx,
+            "sessions.py must precede models.py — issue-text priority over BM25; got {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn problem_production_candidates_handles_no_py_mentions_edge() {
+        // Edge case 1: issue text has no .py mentions at all. production_path_candidates
+        // returns empty; repo_context drives entirely; no panic, no error.
+        let task = TaskManifest {
+            dataset: None,
+            instance_id: "test_no_py_mentions".to_string(),
+            repo: "x/y".to_string(),
+            base_commit: "deadbeef".to_string(),
+            problem_statement: "Something is broken when temperatures exceed 100 degrees."
+                .to_string(),
+            fail_to_pass: vec![],
+            pass_to_pass_count: None,
+            official_test_patch_sha256: None,
+            oracle_patch_sha256: None,
+            source_of_truth: None,
+        };
+        let all_files = vec!["src/foo.py".to_string(), "src/bar.py".to_string()];
+        let repo_context = json!({
+            "files": [{"path": "src/foo.py"}, {"path": "src/bar.py"}]
+        });
+        eprintln!(
+            "BEFORE_NO_PY problem_statement={:?} expected_mentions=0",
+            task.problem_statement
+        );
+        let result = problem_production_candidates(&task, &repo_context, &all_files);
+        let arr = result.as_array().expect("result is array");
+        let paths: Vec<&str> = arr.iter().map(|v| v.as_str().expect("string")).collect();
+        eprintln!("AFTER_NO_PY paths={:?}", paths);
+        assert_eq!(
+            paths,
+            vec!["src/foo.py", "src/bar.py"],
+            "with no issue mentions, repo_context order is preserved"
+        );
+    }
+
+    #[test]
+    fn problem_production_candidates_skips_phantom_mention_edge() {
+        // Edge case 2: issue text mentions a path that doesn't exist in the repo
+        // (typo, refactored away). all_file_set filtering MUST reject it. No error,
+        // no panic — the phantom mention is silently absent from candidate_files.
+        let task = TaskManifest {
+            dataset: None,
+            instance_id: "test_phantom_mention".to_string(),
+            repo: "x/y".to_string(),
+            base_commit: "deadbeef".to_string(),
+            problem_statement:
+                "Bug in src/nonexistent_module.py with the foo function.".to_string(),
+            fail_to_pass: vec![],
+            pass_to_pass_count: None,
+            official_test_patch_sha256: None,
+            oracle_patch_sha256: None,
+            source_of_truth: None,
+        };
+        let all_files = vec!["src/real_module.py".to_string()];
+        let repo_context = json!({
+            "files": [{"path": "src/real_module.py"}]
+        });
+        eprintln!(
+            "BEFORE_PHANTOM mention=src/nonexistent_module.py all_files={:?}",
+            all_files
+        );
+        let result = problem_production_candidates(&task, &repo_context, &all_files);
+        let arr = result.as_array().expect("result is array");
+        let paths: Vec<&str> = arr.iter().map(|v| v.as_str().expect("string")).collect();
+        eprintln!("AFTER_PHANTOM paths={:?}", paths);
+        assert!(
+            !paths.contains(&"src/nonexistent_module.py"),
+            "phantom mention must not enter candidate_files; got {:?}",
+            paths
+        );
+        assert_eq!(paths, vec!["src/real_module.py"]);
+    }
+
+    #[test]
+    fn problem_production_candidates_preserves_multi_mention_order_edge() {
+        // Edge case 3: issue text mentions multiple production files; first-mentioned
+        // wins index 0 even when alphabetically later than other mentions.
+        let task = TaskManifest {
+            dataset: None,
+            instance_id: "test_multi_mention".to_string(),
+            repo: "x/y".to_string(),
+            base_commit: "deadbeef".to_string(),
+            problem_statement:
+                "The bug is in pkg/zeta.py and also affects pkg/alpha.py downstream."
+                    .to_string(),
+            fail_to_pass: vec![],
+            pass_to_pass_count: None,
+            official_test_patch_sha256: None,
+            oracle_patch_sha256: None,
+            source_of_truth: None,
+        };
+        let all_files = vec![
+            "pkg/alpha.py".to_string(),
+            "pkg/beta.py".to_string(),
+            "pkg/zeta.py".to_string(),
+        ];
+        let repo_context = json!({
+            "files": [
+                {"path": "pkg/alpha.py"},
+                {"path": "pkg/beta.py"},
+                {"path": "pkg/zeta.py"}
+            ]
+        });
+        eprintln!(
+            "BEFORE_MULTI mention_order=[zeta.py, alpha.py] repo_context_order=[alpha.py, beta.py, zeta.py]"
+        );
+        let result = problem_production_candidates(&task, &repo_context, &all_files);
+        let arr = result.as_array().expect("result is array");
+        let paths: Vec<&str> = arr.iter().map(|v| v.as_str().expect("string")).collect();
+        eprintln!("AFTER_MULTI paths={:?}", paths);
+        assert_eq!(paths[0], "pkg/zeta.py", "first-mentioned file at index 0");
+        assert_eq!(paths[1], "pkg/alpha.py", "second-mentioned file at index 1");
+        assert_eq!(
+            paths[2], "pkg/beta.py",
+            "non-mentioned file from repo_context appears last"
+        );
+    }
+
+    #[test]
+    fn compact_problem_reality_packet_surfaces_issue_mentioned_paths_fsv() {
+        // FSV: the compact packet (what reaches Gemma's prompt) MUST surface the
+        // issue-text-mentioned paths so the model sees the explicit precision signal.
+        let packet = json!({
+            "record_kind": "contextgraph_swe_problem_reality_packet",
+            "task_identity": {"instance_id": "psf__requests-2317"},
+            "oracle_reality": {"fail_to_pass_total": 1},
+            "problem_statement_reality": {
+                "terms": ["sessions", "unicode"],
+                "symbols": ["test_unicode_method_name"],
+                "mentioned_paths": ["requests/sessions.py", "test_requests.py"]
+            },
+            "repository_reality": {
+                "production_candidate_files": ["requests/sessions.py"],
+                "selected_context_files": []
+            },
+            "root_cause_discovery_protocol": {},
+            "measurement_boundary": {},
+            "source_of_truth": {}
+        });
+        eprintln!(
+            "BEFORE_COMPACT mentioned_paths_in_packet={:?}",
+            packet.pointer("/problem_statement_reality/mentioned_paths")
+        );
+        let compact = compact_problem_reality_packet(&packet);
+        eprintln!(
+            "AFTER_COMPACT issue_mentioned_paths={:?}",
+            compact.get("issue_mentioned_paths")
+        );
+        let mentioned: Vec<&str> = compact
+            .get("issue_mentioned_paths")
+            .and_then(|v| v.as_array())
+            .expect("issue_mentioned_paths must be present in compact packet")
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        assert_eq!(
+            mentioned,
+            vec!["requests/sessions.py", "test_requests.py"],
+            "compact packet must surface mentioned_paths to Gemma's prompt"
+        );
     }
 }
