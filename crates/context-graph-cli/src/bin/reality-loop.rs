@@ -30,7 +30,7 @@ const DEFAULT_GEMMA_MODEL_PIN_PATH: &str = "config/ccreality_model_pins.json";
 const DEFAULT_GEMMA_MODEL_PIN_KEY: &str = "gemma4_e4b_bf16";
 const DEFAULT_GPU_MIN_FREE_MB: u64 = 8192;
 const DEFAULT_GEMMA_MIN_CONTEXT_TOKENS: u32 = 128_000;
-const DEFAULT_GEMMA_MAX_NEW_TOKENS: usize = 16384;
+const DEFAULT_GEMMA_MAX_NEW_TOKENS: usize = 8192;
 const DEFAULT_GEMMA_TEMPERATURE: f32 = 0.0;
 const DEFAULT_GEMMA_TOP_P: f32 = 0.9;
 const DEFAULT_GEMMA_BATCH_SIZE: usize = 2048;
@@ -297,6 +297,34 @@ struct TaskManifest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct GpuComputeProcess {
+    gpu_uuid: String,
+    pid: u64,
+    process_name: String,
+    used_memory_mb: u64,
+    procfs: GpuProcfsSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GpuProcfsSnapshot {
+    status: String,
+    uid: Option<u64>,
+    comm: Option<String>,
+    cmdline: Option<String>,
+    exe: Option<String>,
+    errors: Vec<String>,
+    source_of_truth: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct GpuComputeProcessRow {
+    gpu_uuid: String,
+    pid: u64,
+    process_name: String,
+    used_memory_mb: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct GpuState {
     index: u64,
     name: String,
@@ -305,6 +333,8 @@ struct GpuState {
     memory_used_mb: u64,
     memory_free_mb: u64,
     driver_version: String,
+    compute_process_count: usize,
+    compute_processes: Vec<GpuComputeProcess>,
     compute_processes_raw: String,
     source_of_truth: String,
     read_at_unix: u64,
@@ -9610,15 +9640,7 @@ fn read_gpu_vram_state(gpu_index: u64) -> Result<GpuState> {
         if index != gpu_index {
             continue;
         }
-        let apps = run_cmd(
-            &[
-                "nvidia-smi".to_string(),
-                "--query-compute-apps=pid,process_name,used_memory".to_string(),
-                "--format=csv,noheader,nounits".to_string(),
-            ],
-            Path::new("."),
-            30,
-        )?;
+        let (compute_processes_raw, compute_processes) = read_gpu_compute_processes(parts[2])?;
         return Ok(GpuState {
             index,
             name: parts[1].to_string(),
@@ -9627,7 +9649,9 @@ fn read_gpu_vram_state(gpu_index: u64) -> Result<GpuState> {
             memory_used_mb: parse_u64(parts[4], "gpu_vram.memory_used_mb")?,
             memory_free_mb: parse_u64(parts[5], "gpu_vram.memory_free_mb")?,
             driver_version: parts[6].to_string(),
-            compute_processes_raw: apps.stdout.trim().to_string(),
+            compute_process_count: compute_processes.len(),
+            compute_processes,
+            compute_processes_raw,
             source_of_truth: "nvidia-smi:query-gpu+query-compute-apps".to_string(),
             read_at_unix: unix_secs()?,
         });
@@ -9640,6 +9664,194 @@ fn read_gpu_vram_state(gpu_index: u64) -> Result<GpuState> {
         json!({ "gpu_index": gpu_index, "stdout": result.stdout }),
         Some("nvidia-smi:query-gpu".to_string()),
     ))
+}
+
+fn read_gpu_compute_processes(gpu_uuid: &str) -> Result<(String, Vec<GpuComputeProcess>)> {
+    let apps = run_cmd(
+        &[
+            "nvidia-smi".to_string(),
+            "--query-compute-apps=gpu_uuid,pid,process_name,used_memory".to_string(),
+            "--format=csv,noheader,nounits".to_string(),
+        ],
+        Path::new("."),
+        30,
+    )?;
+    if apps.exit_code != 0 {
+        return Err(RealityError::new(
+            "RUST_REALITY_GPU_COMPUTE_APPS_READ_FAILED",
+            "nvidia-smi failed while reading GPU compute process state",
+            "gpu_vram.compute_processes",
+            "inspect nvidia-smi --help-query-compute-apps and driver process visibility before rerunning the loop",
+            json!({ "process": apps, "gpu_uuid": gpu_uuid }),
+            Some("nvidia-smi:query-compute-apps".to_string()),
+        ));
+    }
+    let raw = apps.stdout.trim().to_string();
+    let rows = parse_gpu_compute_process_rows(&raw, gpu_uuid)?;
+    let processes = rows
+        .into_iter()
+        .map(|row| GpuComputeProcess {
+            gpu_uuid: row.gpu_uuid,
+            pid: row.pid,
+            process_name: row.process_name,
+            used_memory_mb: row.used_memory_mb,
+            procfs: procfs_snapshot_for_pid(row.pid),
+        })
+        .collect();
+    Ok((raw, processes))
+}
+
+fn parse_gpu_compute_process_rows(
+    raw: &str,
+    target_gpu_uuid: &str,
+) -> Result<Vec<GpuComputeProcessRow>> {
+    let mut rows = Vec::new();
+    for (line_index, line) in raw.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let parts: Vec<_> = trimmed.split(',').map(|item| item.trim()).collect();
+        if parts.len() != 4 {
+            return Err(RealityError::new(
+                "RUST_REALITY_GPU_COMPUTE_APPS_PARSE_FAILED",
+                "nvidia-smi compute-apps row did not match expected CSV shape",
+                "gpu_vram.compute_processes",
+                "query compute apps with gpu_uuid,pid,process_name,used_memory and inspect the raw row",
+                json!({
+                    "line_index": line_index,
+                    "line": trimmed,
+                    "expected_fields": ["gpu_uuid", "pid", "process_name", "used_memory"],
+                    "actual_field_count": parts.len()
+                }),
+                Some("nvidia-smi:query-compute-apps".to_string()),
+            ));
+        }
+        if parts[0] != target_gpu_uuid {
+            continue;
+        }
+        let pid = parts[1].parse::<u64>().map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_GPU_COMPUTE_APPS_PID_PARSE_FAILED",
+                "nvidia-smi compute-apps PID was not numeric",
+                "gpu_vram.compute_processes.pid",
+                "inspect nvidia-smi compute-apps output before using the GPU state as evidence",
+                json!({ "line_index": line_index, "line": trimmed, "value": parts[1], "error": err.to_string() }),
+                Some("nvidia-smi:query-compute-apps".to_string()),
+            )
+        })?;
+        let used_memory_mb = parts[3].parse::<u64>().map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_GPU_COMPUTE_APPS_MEMORY_PARSE_FAILED",
+                "nvidia-smi compute-apps used_memory was not numeric",
+                "gpu_vram.compute_processes.used_memory_mb",
+                "inspect nvidia-smi compute-apps output before using the GPU state as evidence",
+                json!({ "line_index": line_index, "line": trimmed, "value": parts[3], "error": err.to_string() }),
+                Some("nvidia-smi:query-compute-apps".to_string()),
+            )
+        })?;
+        rows.push(GpuComputeProcessRow {
+            gpu_uuid: parts[0].to_string(),
+            pid,
+            process_name: parts[2].to_string(),
+            used_memory_mb,
+        });
+    }
+    Ok(rows)
+}
+
+fn procfs_snapshot_for_pid(pid: u64) -> GpuProcfsSnapshot {
+    let proc_root = PathBuf::from(format!("/proc/{pid}"));
+    let mut errors = Vec::new();
+    let mut source_of_truth = Vec::new();
+
+    if !proc_root.exists() {
+        return GpuProcfsSnapshot {
+            status: "exited_before_procfs_read".to_string(),
+            uid: None,
+            comm: None,
+            cmdline: None,
+            exe: None,
+            errors: vec![format!(
+                "{} did not exist at read time",
+                path_str(&proc_root)
+            )],
+            source_of_truth: vec![file_sot(&proc_root)],
+        };
+    }
+
+    let status_path = proc_root.join("status");
+    source_of_truth.push(file_sot(&status_path));
+    let uid = match fs::read_to_string(&status_path) {
+        Ok(text) => parse_proc_status_uid(&text).or_else(|| {
+            errors.push(format!("Uid field missing in {}", path_str(&status_path)));
+            None
+        }),
+        Err(err) => {
+            errors.push(format!("{}: {}", path_str(&status_path), err));
+            None
+        }
+    };
+
+    let comm_path = proc_root.join("comm");
+    source_of_truth.push(file_sot(&comm_path));
+    let comm = match fs::read_to_string(&comm_path) {
+        Ok(text) => Some(text.trim().to_string()).filter(|value| !value.is_empty()),
+        Err(err) => {
+            errors.push(format!("{}: {}", path_str(&comm_path), err));
+            None
+        }
+    };
+
+    let cmdline_path = proc_root.join("cmdline");
+    source_of_truth.push(file_sot(&cmdline_path));
+    let cmdline = match fs::read(&cmdline_path) {
+        Ok(bytes) => {
+            let text = bytes
+                .split(|byte| *byte == 0)
+                .filter_map(|part| std::str::from_utf8(part).ok())
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+            Some(text).filter(|value| !value.is_empty())
+        }
+        Err(err) => {
+            errors.push(format!("{}: {}", path_str(&cmdline_path), err));
+            None
+        }
+    };
+
+    let exe_path = proc_root.join("exe");
+    source_of_truth.push(file_sot(&exe_path));
+    let exe = match fs::read_link(&exe_path) {
+        Ok(path) => Some(path_str(&path).to_string()).filter(|value| !value.is_empty()),
+        Err(err) => {
+            errors.push(format!("{}: {}", path_str(&exe_path), err));
+            None
+        }
+    };
+
+    GpuProcfsSnapshot {
+        status: if errors.is_empty() {
+            "ok".to_string()
+        } else {
+            "partial".to_string()
+        },
+        uid,
+        comm,
+        cmdline,
+        exe,
+        errors,
+        source_of_truth,
+    }
+}
+
+fn parse_proc_status_uid(status_text: &str) -> Option<u64> {
+    status_text.lines().find_map(|line| {
+        line.strip_prefix("Uid:")
+            .and_then(|rest| rest.split_whitespace().next())
+            .and_then(|value| value.parse::<u64>().ok())
+    })
 }
 
 fn assert_gpu_budget(
@@ -10857,8 +11069,8 @@ diff --git a/src/example.py b/src/example.py
             instance_id: "test_phantom_mention".to_string(),
             repo: "x/y".to_string(),
             base_commit: "deadbeef".to_string(),
-            problem_statement:
-                "Bug in src/nonexistent_module.py with the foo function.".to_string(),
+            problem_statement: "Bug in src/nonexistent_module.py with the foo function."
+                .to_string(),
             fail_to_pass: vec![],
             pass_to_pass_count: None,
             official_test_patch_sha256: None,
@@ -10895,8 +11107,7 @@ diff --git a/src/example.py b/src/example.py
             repo: "x/y".to_string(),
             base_commit: "deadbeef".to_string(),
             problem_statement:
-                "The bug is in pkg/zeta.py and also affects pkg/alpha.py downstream."
-                    .to_string(),
+                "The bug is in pkg/zeta.py and also affects pkg/alpha.py downstream.".to_string(),
             fail_to_pass: vec![],
             pass_to_pass_count: None,
             official_test_patch_sha256: None,
@@ -11003,7 +11214,10 @@ diff --git a/src/example.py b/src/example.py
             "config/ccreality_model_pins.json missing; pin gate cannot be FSV'd: {:?}",
             pin_path
         );
-        eprintln!("BEFORE_FSV pin_path={:?} key={}", pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY);
+        eprintln!(
+            "BEFORE_FSV pin_path={:?} key={}",
+            pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY
+        );
         let pin = load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY)
             .expect("pin entry must resolve for the default key");
         eprintln!(
@@ -11042,8 +11256,14 @@ diff --git a/src/example.py b/src/example.py
         eprintln!("BEFORE_FSV pin_path={:?} (does NOT exist by design)", bogus);
         let err = load_model_pin(&bogus, DEFAULT_GEMMA_MODEL_PIN_KEY)
             .expect_err("missing pin file must fail loud");
-        eprintln!("AFTER_FSV error_code={} field_path={}", err.error_code, err.field_path);
-        assert_eq!(err.error_code, "RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_MISSING");
+        eprintln!(
+            "AFTER_FSV error_code={} field_path={}",
+            err.error_code, err.field_path
+        );
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_MISSING"
+        );
     }
 
     #[test]
@@ -11068,7 +11288,10 @@ diff --git a/src/example.py b/src/example.py
         let err = load_model_pin(&bad, DEFAULT_GEMMA_MODEL_PIN_KEY)
             .expect_err("invalid JSON must fail loud");
         eprintln!("AFTER_FSV error_code={}", err.error_code);
-        assert_eq!(err.error_code, "RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_INVALID_JSON");
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_INVALID_JSON"
+        );
     }
 
     #[test]
@@ -11087,11 +11310,17 @@ diff --git a/src/example.py b/src/example.py
         });
         fs::write(&pin_file, serde_json::to_string(&body).expect("ser"))
             .expect("write schema-bad pin");
-        eprintln!("BEFORE_FSV schema_bad_pin={:?} (missing required fields)", pin_file);
+        eprintln!(
+            "BEFORE_FSV schema_bad_pin={:?} (missing required fields)",
+            pin_file
+        );
         let err = load_model_pin(&pin_file, DEFAULT_GEMMA_MODEL_PIN_KEY)
             .expect_err("incomplete schema must fail loud");
         eprintln!("AFTER_FSV error_code={}", err.error_code);
-        assert_eq!(err.error_code, "RUST_REALITY_GEMMA_MODEL_PIN_SCHEMA_INVALID");
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_GEMMA_MODEL_PIN_SCHEMA_INVALID"
+        );
     }
 
     #[test]
@@ -11171,8 +11400,7 @@ diff --git a/src/example.py b/src/example.py
     #[test]
     fn validate_gemma_model_pin_passes_with_real_bf16_gguf_fsv() {
         let pin_path = real_pin_path();
-        let pin = load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY)
-            .expect("pin must load");
+        let pin = load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY).expect("pin must load");
         let model_path = real_model_path();
         if !model_path.exists() {
             eprintln!("SKIP: real BF16 GGUF not on disk at {:?}", model_path);
@@ -11182,13 +11410,8 @@ diff --git a/src/example.py b/src/example.py
             "BEFORE_FSV model_path={:?} pin.expected_sha256={}",
             model_path, pin.expected_sha256
         );
-        validate_gemma_model_pin(
-            &model_path,
-            &pin,
-            &pin_path,
-            DEFAULT_GEMMA_MODEL_PIN_KEY,
-        )
-        .expect("real model file MUST satisfy the pin");
+        validate_gemma_model_pin(&model_path, &pin, &pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY)
+            .expect("real model file MUST satisfy the pin");
         let actual_sha = sha256_file_streaming(&model_path).expect("stream sha");
         eprintln!(
             "AFTER_FSV streaming_sha256={} matches_pin={}",
@@ -11201,8 +11424,8 @@ diff --git a/src/example.py b/src/example.py
     #[test]
     fn validate_gemma_model_pin_identity_substrings_rejects_missing_substring_fsv() {
         let pin_path = real_pin_path();
-        let mut pin = load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY)
-            .expect("pin must load");
+        let mut pin =
+            load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY).expect("pin must load");
         // Inject a substring that real Gemma 4 GGUF metadata cannot contain.
         pin.expected_identity_substrings
             .push("definitely-not-a-real-model-name-xyzzy".to_string());
@@ -11229,6 +11452,143 @@ diff --git a/src/example.py b/src/example.py
         assert_eq!(
             err.error_code,
             "RUST_REALITY_GEMMA_MODEL_PIN_IDENTITY_SUBSTRING_MISSING"
+        );
+    }
+
+    #[test]
+    fn gpu_compute_process_rows_parse_and_filter_by_uuid_fsv() {
+        let raw = "\
+GPU-target, 4242, /opt/contextgraph/reality-loop, 8192
+GPU-other, 9999, /usr/bin/other, 1024
+";
+        eprintln!("BEFORE_GPU_PARSE raw={raw:?} target_uuid=GPU-target");
+        let rows = parse_gpu_compute_process_rows(raw, "GPU-target").expect("parse rows");
+        eprintln!("AFTER_GPU_PARSE rows={rows:#?}");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].gpu_uuid, "GPU-target");
+        assert_eq!(rows[0].pid, 4242);
+        assert_eq!(rows[0].process_name, "/opt/contextgraph/reality-loop");
+        assert_eq!(rows[0].used_memory_mb, 8192);
+    }
+
+    #[test]
+    fn gpu_compute_process_rows_empty_output_edge_fsv() {
+        eprintln!("BEFORE_GPU_EMPTY raw='' target_uuid=GPU-target");
+        let rows = parse_gpu_compute_process_rows("", "GPU-target").expect("empty parse");
+        eprintln!("AFTER_GPU_EMPTY rows={rows:#?}");
+        assert!(
+            rows.is_empty(),
+            "empty nvidia-smi compute-apps output should mean zero exposed compute processes"
+        );
+    }
+
+    #[test]
+    fn gpu_compute_process_rows_reject_malformed_csv_edge_fsv() {
+        let raw = "GPU-target, 4242, missing-memory-field";
+        eprintln!("BEFORE_GPU_MALFORMED raw={raw:?}");
+        let err = parse_gpu_compute_process_rows(raw, "GPU-target")
+            .expect_err("malformed row must fail loud");
+        eprintln!(
+            "AFTER_GPU_MALFORMED error={}",
+            serde_json::to_string_pretty(&err).unwrap()
+        );
+        assert_eq!(err.error_code, "RUST_REALITY_GPU_COMPUTE_APPS_PARSE_FAILED");
+        assert_eq!(
+            err.details
+                .get("actual_field_count")
+                .and_then(Value::as_u64),
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn gpu_compute_process_rows_reject_non_numeric_memory_edge_fsv() {
+        let raw = "GPU-target, 4242, /opt/contextgraph/reality-loop, N/A";
+        eprintln!("BEFORE_GPU_BAD_MEMORY raw={raw:?}");
+        let err = parse_gpu_compute_process_rows(raw, "GPU-target")
+            .expect_err("non-numeric memory must fail loud");
+        eprintln!(
+            "AFTER_GPU_BAD_MEMORY error={}",
+            serde_json::to_string_pretty(&err).unwrap()
+        );
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_GPU_COMPUTE_APPS_MEMORY_PARSE_FAILED"
+        );
+        assert_eq!(err.field_path, "gpu_vram.compute_processes.used_memory_mb");
+    }
+
+    #[test]
+    fn procfs_snapshot_reads_current_process_source_of_truth_fsv() {
+        let pid = std::process::id() as u64;
+        let proc_root = PathBuf::from(format!("/proc/{pid}"));
+        eprintln!(
+            "BEFORE_PROCFS pid={} source_of_truth={}",
+            pid,
+            file_sot(&proc_root)
+        );
+        let snapshot = procfs_snapshot_for_pid(pid);
+        eprintln!("AFTER_PROCFS snapshot={snapshot:#?}");
+        assert_eq!(snapshot.status, "ok");
+        assert!(snapshot.uid.is_some(), "current process UID must be read");
+        assert!(snapshot.comm.is_some(), "current process comm must be read");
+        assert!(
+            snapshot
+                .source_of_truth
+                .iter()
+                .any(|path| path.ends_with("/status")),
+            "procfs status path must be listed as source of truth"
+        );
+    }
+
+    #[test]
+    fn gpu_budget_failure_surfaces_structured_compute_processes_fsv() {
+        let pid = std::process::id() as u64;
+        let state = GpuState {
+            index: 0,
+            name: "NVIDIA GeForce RTX 5090".to_string(),
+            uuid: "GPU-target".to_string(),
+            memory_total_mb: 32607,
+            memory_used_mb: 31000,
+            memory_free_mb: 1607,
+            driver_version: "test-driver".to_string(),
+            compute_process_count: 1,
+            compute_processes: vec![GpuComputeProcess {
+                gpu_uuid: "GPU-target".to_string(),
+                pid,
+                process_name: "reality-loop-test".to_string(),
+                used_memory_mb: 29400,
+                procfs: procfs_snapshot_for_pid(pid),
+            }],
+            compute_processes_raw: format!("GPU-target, {pid}, reality-loop-test, 29400"),
+            source_of_truth: "nvidia-smi:query-gpu+query-compute-apps".to_string(),
+            read_at_unix: 1,
+        };
+        eprintln!("BEFORE_GPU_BUDGET state={state:#?}");
+        let err = assert_gpu_budget(&state, 8192, None, "test_phase", DEFAULT_MODEL)
+            .expect_err("low free VRAM must fail");
+        eprintln!(
+            "AFTER_GPU_BUDGET error={}",
+            serde_json::to_string_pretty(&err).unwrap()
+        );
+        assert_eq!(err.error_code, "RUST_REALITY_GPU_VRAM_BUDGET_EXCEEDED");
+        assert_eq!(
+            err.details
+                .pointer("/state/compute_process_count")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            err.details
+                .pointer("/state/compute_processes/0/pid")
+                .and_then(Value::as_u64),
+            Some(pid)
+        );
+        assert_eq!(
+            err.details
+                .pointer("/state/compute_processes/0/used_memory_mb")
+                .and_then(Value::as_u64),
+            Some(29400)
         );
     }
 

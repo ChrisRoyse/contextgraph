@@ -34,11 +34,11 @@ Local model readback:
 
 ```text
 model label: gemma4:e4b
-model source of truth: models/gemma4-e4b/gemma4-e4b.Q4_K_M.gguf
+model source of truth: models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf
 architecture: gemma4
-parameters: 8.0B
+parameters: 7.5B
 context length: 131072
-quantization: Q4_K_M
+quantization: BF16 (lossless, ~15 GB on disk)
 capabilities required by harness: chat template, OpenAI-compatible tool calls, GGUF llama.cpp load
 ```
 

@@ -24,10 +24,17 @@
    ```
    If Docker isn't running, start it. SWE-bench Lite eval pulls images of significant size (~1 GB).
 
-5. **Gemma GGUF model file present for the Rust coding harness.** Verify:
+5. **Gemma GGUF model file present for the Rust coding harness.** The default
+   path baked into the reality-loop binary is `models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf`
+   (BF16, ~15 GB on disk, sha256 pin in `config/ccreality_model_pins.json`). Verify:
    ```bash
-   test -f models/gemma4-e4b/gemma4-e4b.Q4_K_M.gguf
+   test -f models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf \
+     && jq -r '.models.gemma4_e4b_bf16.expected_sha256' \
+        config/ccreality_model_pins.json
    ```
+   The cryptographic-pin gate refuses to load any GGUF whose size or sha256
+   deviates from the pin (`RUST_REALITY_GEMMA_MODEL_SIZE_MISMATCH` or
+   `RUST_REALITY_GEMMA_MODEL_SHA_MISMATCH`).
 
 6. **A SWE-bench Lite task manifest selected.** Either pick from `tasks/swebench-lite/` if it exists, or create one. See Task 12.1.
 
