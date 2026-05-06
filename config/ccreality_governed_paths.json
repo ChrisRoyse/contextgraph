@@ -29,6 +29,7 @@
     "docs/ccreality/phase-*/**",
     "docs/reality/**",
     "docs/fullloop/**",
+    "docs2/realitywhitepaper/**",
     "config/ccreality_governed_paths.json",
     "config/ccreality_recommendation_schema.json",
     "config/ccreality_model_pins.json",

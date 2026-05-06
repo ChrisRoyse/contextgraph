@@ -3659,39 +3659,46 @@ Do not modify tests, fixtures, or benchmark harness files.",
             repeated_navigation_count,
             submitted_candidate_patch.is_some(),
         );
+        // EDIT_LEAD_MARKER
         let round_tools = if edit_deadline {
             agent_edit_tool_specs()
         } else {
             tools.clone()
         };
+        evict_messages_for_token_budget(
+            &mut messages,
+            harness.context_tokens,
+            harness.max_new_tokens,
+        );
         let body = json!({
-            "model": args.model,
-            "messages": messages,
-            "stream": false,
-            "think": false,
-            "tools": round_tools,
-            "contextgraph_tool_policy": {
-                "edit_deadline_active": edit_deadline,
-                "latest_editable_windows": latest_editable_windows.clone(),
-                "no_tool_after_window_count": no_tool_after_window_count,
-                "repeated_navigation_count": repeated_navigation_count
-            },
-            "runtime": {
-                "provider": "contextgraph_rust_gemma_coding_harness",
-                "model_path": file_sot(&harness.model_path)
-            },
-            "options": {
-                "temperature": args.gemma_temperature,
-                "top_p": args.gemma_top_p,
-                "requested_context_tokens": args.gemma_context_tokens,
-                "effective_context_tokens": harness.context_tokens,
-                "model_context_train_tokens": harness.model_context_train_tokens,
-                "max_new_tokens": harness.max_new_tokens,
-                "gpu_layers": args.gemma_gpu_layers,
-                "batch_size": args.gemma_batch_size,
-                "seed": args.gemma_seed
-            }
-        });
+                    "model": args.model,
+                    "messages": messages,
+        // FIX_LEAD
+                    "stream": false,
+                    "think": false,
+        // noop_marker_3
+                    "tools": round_tools,            "contextgraph_tool_policy": {
+                        "edit_deadline_active": edit_deadline,
+                        "latest_editable_windows": latest_editable_windows.clone(),
+                        "no_tool_after_window_count": no_tool_after_window_count,
+                        "repeated_navigation_count": repeated_navigation_count
+                    },
+                    "runtime": {
+                        "provider": "contextgraph_rust_gemma_coding_harness",
+                        "model_path": file_sot(&harness.model_path)
+                    },
+                    "options": {
+                        "temperature": args.gemma_temperature,
+                        "top_p": args.gemma_top_p,
+                        "requested_context_tokens": args.gemma_context_tokens,
+                        "effective_context_tokens": harness.context_tokens,
+                        "model_context_train_tokens": harness.model_context_train_tokens,
+                        "max_new_tokens": harness.max_new_tokens,
+                        "gpu_layers": args.gemma_gpu_layers,
+                        "batch_size": args.gemma_batch_size,
+                        "seed": args.gemma_seed
+                    }
+                });
         write_json_checked(&request_path, &body)?;
         let response = harness.chat(args, &body, &request_path)?;
         let response_path = tools_root.join(format!("tool-round-{round:02}-response.json"));
@@ -4093,6 +4100,92 @@ fn edit_deadline_active(
     no_tool_after_window_count > 0 || repeated_navigation_count > 0 || low_remaining_budget
 }
 
+/// Approximate token count for a JSON message using a conservative
+/// chars-per-token ratio for Gemma's tokenizer (~3.5 chars/token). This is
+/// intentionally a heuristic — exact counting requires the model tokenizer
+/// which lives inside `harness.chat`. The estimate is only used to decide
+/// when to evict middle-of-conversation tool turns before the prompt grows
+/// past the context cap. Eviction preserves the system prompt (index 0),
+/// the initial user task description (index 1), and the most recent turns
+/// so the model never loses its grounding instructions or recent state.
+fn estimate_message_tokens(message: &Value) -> usize {
+    let serialized = serde_json::to_string(message).unwrap_or_default();
+    // 3.5 chars/token rounded up; +8 for chat-template framing per message.
+    (serialized.len() * 2 / 7) + 8
+}
+
+/// Proactive context-window guard. When the accumulated `messages` plus
+/// reserved generation budget approach the model's context cap, evict the
+/// oldest middle-section assistant/tool turn pairs until we are back below
+/// the safety threshold. The first two messages (system, initial user) and
+/// the most recent turns are always preserved. Tool-call/tool-response
+/// pairing is preserved by evicting an assistant message together with all
+/// `tool` messages that immediately follow it.
+fn evict_messages_for_token_budget(
+    messages: &mut Vec<Value>,
+    context_tokens: u32,
+    max_new_tokens: usize,
+) {
+    // Reserve room for the model's reply and chat-template overhead. Use
+    // 80% of (context - max_new_tokens) as the soft target so the next
+    // round's response has headroom even if its prompt grows slightly.
+    let context = context_tokens as usize;
+    let reserved = max_new_tokens;
+    if context <= reserved {
+        return;
+    }
+    let prompt_budget = context.saturating_sub(reserved);
+    let soft_target = prompt_budget * 4 / 5;
+
+    let mut total: usize = messages.iter().map(estimate_message_tokens).sum();
+    if total <= soft_target {
+        return;
+    }
+
+    // Always preserve: index 0 (system), index 1 (initial user prompt).
+    // Always preserve: the last `keep_recent` messages.
+    let keep_head = 2usize;
+    let keep_recent = 6usize;
+    loop {
+        if total <= soft_target {
+            break;
+        }
+        if messages.len() <= keep_head + keep_recent {
+            break;
+        }
+        // Eviction window starts at index `keep_head`. Evict one assistant
+        // message plus any contiguous following `tool` messages so that
+        // tool_call/tool_response pairing is preserved.
+        let evict_start = keep_head;
+        if evict_start >= messages.len().saturating_sub(keep_recent) {
+            break;
+        }
+        let mut evict_end = evict_start + 1;
+        while evict_end < messages.len().saturating_sub(keep_recent) {
+            let role = messages[evict_end]
+                .get("role")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if role == "tool" {
+                evict_end += 1;
+            } else {
+                break;
+            }
+        }
+        // Subtract estimated tokens for the slice we are about to drain.
+        let removed_tokens: usize = messages[evict_start..evict_end]
+            .iter()
+            .map(estimate_message_tokens)
+            .sum();
+        messages.drain(evict_start..evict_end);
+        total = total.saturating_sub(removed_tokens);
+        if removed_tokens == 0 {
+            // Defensive: avoid infinite loop if estimator returned zero.
+            break;
+        }
+    }
+}
+
 fn compact_editable_window(result_readback: &Value) -> Option<Value> {
     let result = result_readback.get("result").unwrap_or(result_readback);
     if result.get("status").and_then(Value::as_str) != Some("ok") {
@@ -4103,6 +4196,7 @@ fn compact_editable_window(result_readback: &Value) -> Option<Value> {
         .get("status")
         .and_then(Value::as_str)
         .is_some_and(|status| status != "ok")
+    // noop_marker_compact_1
     {
         return None;
     }
@@ -4111,8 +4205,7 @@ fn compact_editable_window(result_readback: &Value) -> Option<Value> {
     Some(json!({
         "path": path,
         "start_line": payload.get("start_line"),
-        "end_line": payload.get("end_line"),
-        "sha256": sha256,
+        "end_line": payload.get("end_line"),        "sha256": sha256,
         "source_of_truth": payload.get("source_of_truth"),
         "edit_tool": "apply_line_window_edit",
         "edit_argument_skeleton": {
