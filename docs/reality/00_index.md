@@ -39,7 +39,7 @@ The loop does not advance because an agent says it is done. It advances only whe
 | `15_rust_reality_loop_port.md` | Current Rust-owned reality loop implementation, validation evidence, and remaining gaps. |
 | `16_measurement_contract.md` | Runtime contract that prevents measurement-spec and boundary failures from becoming false success claims. |
 | `17_problem_and_signal_reality_packets.md` | Current implementation of problem-reality capture, per-attempt signal packets, blindspot tracking, and FSV evidence. |
-| `18_gemma_coding_agent_harness.md` | Current Gemma coding-agent harness, optimized Ollama settings, governed tool surface, line-window edit interface, tool-use reward signals, and FSV evidence. |
+| `18_gemma_coding_agent_harness.md` | Current Rust Gemma coding-agent harness, GGUF runtime settings, governed tool surface, line-window edit interface, tool-use reward signals, and FSV evidence. |
 | `19_harness_transition_reality.md` | Current implementation of the harness-as-reality-loop transition contract: every governed tool call becomes a verified state/action/observation/outcome row. |
 | `21_grand_scale_reality_autoresearch.md` | Historical AutoResearch architecture framing retained for context; model-integration details are superseded by `docs/ccreality/`. |
 
@@ -129,7 +129,7 @@ The final candidate-patch handoff is now tool-mediated. The model must call `app
 
 Gemma coding-agent mode is now explicit. In this architecture, the governed coding-agent harness is the inner reality loop itself: it is the sensor/actuator layer where Gemma reads problem reality, navigates source, submits edits, receives verified failures, and gets reward-facing signals for the next attempt.
 
-- Ollama request options are persisted in each tool-round request: `temperature=0`, `top_p=0.9`, `num_ctx=32768`, `num_predict=4096`.
+- Rust Gemma harness options are persisted in each tool-round request: `temperature=0`, `top_p=0.9`, `context_tokens=32768`, `max_new_tokens=4096`.
 - Default tool-round budget is `8` so Gemma has enough turns to inspect, navigate, open a source window, and submit a patch.
 - `apply_line_window_edit` is the preferred edit tool because it replaces line ranges from an `open_file_window` readback and requires the observed file SHA-256.
 - Every governed tool call now writes `harness-transition.json`, reads it back, and has BlackBoxFix verify it with the request/result artifacts.
@@ -142,7 +142,7 @@ Latest reality-signal FSV output:
 /tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/
 ```
 
-That run used the real `scikit-learn__scikit-learn-25638` SWE-bench Lite task and real Gemma/Ollama output. Gemma inspected reality through governed tools but did not submit a candidate patch through `apply_structured_edit`. The loop persisted and read back the problem packet, tool transcript, failed validation, reality-signal packet, reward compilation, BlackBoxFix ledger rows, and final summary instead of claiming success.
+That run used the real `scikit-learn__scikit-learn-25638` SWE-bench Lite task and real Gemma output. Gemma inspected reality through governed tools but did not submit a candidate patch through `apply_structured_edit`. The loop persisted and read back the problem packet, tool transcript, failed validation, reality-signal packet, reward compilation, BlackBoxFix ledger rows, and final summary instead of claiming success.
 
 Latest Rust smoke output:
 
@@ -150,7 +150,7 @@ Latest Rust smoke output:
 /tmp/contextgraph-rust-reality-loop-smoke-v4/rust_reality_1777959982988939074_e525987d/
 ```
 
-That run used real Gemma/Ollama output and real `psf/requests` source. It intentionally does not claim success: attempt 1 produced a corrupt patch, attempt 2 violated the raw JSON contract, and BlackBoxFix persisted two verifier failures, two incident packets, and two reward compilations.
+That run used real Gemma output and real `psf/requests` source. It intentionally does not claim success: attempt 1 produced a corrupt patch, attempt 2 violated the raw JSON contract, and BlackBoxFix persisted two verifier failures, two incident packets, and two reward compilations.
 
 ## Research Sources
 

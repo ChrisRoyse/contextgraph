@@ -151,7 +151,7 @@ Verified state from the latest run:
 4. Model missed the required tool call but the loop remained operational:
 
 ```text
-/tmp/contextgraph-reality-signal-fsv-04/rust_reality_1777968923321426755_69ff234d/tasks/scikit-learn__scikit-learn-25638/gemma4-e4b/attempts/attempt-000001/ollama-response.json
+/tmp/contextgraph-reality-signal-fsv-04/rust_reality_1777968923321426755_69ff234d/tasks/scikit-learn__scikit-learn-25638/gemma4-e4b/attempts/attempt-000001/gemma-harness-response.json
 ```
 
 The model miss was persisted as attempt reality, scored, written to the BlackBoxFix ledger, and converted into a reality-signal packet for the next prompt.
@@ -212,12 +212,12 @@ That run proves Gemma read problem/source reality through governed tools, but ne
 /tmp/contextgraph-gemma-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/
 ```
 
-That run used real `gemma4:e4b`, real Ollama tool calling, and the real `scikit-learn__scikit-learn-25638` task. The first request persisted the optimized options:
+That run used real `gemma4:e4b`, real governed tool calling, and the real `scikit-learn__scikit-learn-25638` task. The first request persisted the optimized options:
 
 ```json
 {
-  "num_ctx": 32768,
-  "num_predict": 4096,
+  "context_tokens": 32768,
+  "max_new_tokens": 4096,
   "temperature": 0.0,
   "top_p": 0.9
 }
@@ -245,4 +245,4 @@ This is the desired optimization signal: Gemma gets credit for early reality dis
 - SWE-agent's ACI work emphasizes that software agents need concise repository browsing, editing, linting, and test feedback interfaces.
 - SWE-bench's official harness report is the durable success source because it writes `resolved_ids`, `unresolved_ids`, `completed_ids`, and related report fields.
 - Aider's edit-format docs support using structured search/replace style edits rather than asking local models to emit raw full patches.
-- Ollama's tool-calling flow supports the application executing model-requested tools and returning the tool result back to the model.
+- Gemma's tool-calling flow requires the application to execute model-requested tools and return the tool result back to the model.

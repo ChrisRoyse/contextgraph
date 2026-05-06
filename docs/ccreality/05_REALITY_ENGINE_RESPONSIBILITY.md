@@ -1,11 +1,11 @@
 # Reality Engine Responsibility — what stays in Rust after excision
 
-After [04_EXCISION_PLAN](04_EXCISION_PLAN.md) is applied, `crates/context-graph-cli/src/bin/reality-loop.rs` is reframed as the **reality engine**: a deterministic Rust binary that runs Gemma SWE-bench attempts and emits durable artifacts. It contains no outer optimizer, no chat-completion HTTP client, no model-specific tool dispatch beyond Ollama for Gemma.
+After [04_EXCISION_PLAN](04_EXCISION_PLAN.md) is applied, `crates/context-graph-cli/src/bin/reality-loop.rs` is reframed as the **reality engine**: a deterministic Rust binary that runs Gemma SWE-bench attempts and emits durable artifacts. It contains no outer optimizer and no chat-completion HTTP client. The Gemma actor is loaded from a real GGUF by the in-process Rust coding harness.
 
 ## CLI shape post-refactor
 
 ```
-reality-loop attempt   --task-manifest=… --runtime-root=… [--max-attempts=N] [--official-eval] [--smoke-test] [--run-until-resolved] [--model=…] [--gpu-index=…] [--ollama-url=…] [...]
+reality-loop attempt   --task-manifest=… --runtime-root=… [--max-attempts=N] [--official-eval] [--smoke-test] [--run-until-resolved] [--model=…] [--gemma-model-path=…] [--gpu-index=…] [...]
 reality-loop smoke     --runtime-root=… [--label=…]
 reality-loop replay    --attempt-summary-path=…
 reality-loop verify    --runtime-root=… --attempt=N    # full-state verification of an attempt's artifacts
@@ -14,7 +14,7 @@ reality-loop verify    --runtime-root=… --attempt=N    # full-state verificati
 Notes:
 - `attempt`, `smoke`, `replay`, `verify` are subcommands. `clap` derive on a top-level `enum Command`. Existing `Args` becomes `AttemptArgs`.
 - The default subcommand is `attempt` to preserve the most common invocation shape, but it is no longer the implicit binary entry point — every call must declare a subcommand.
-- All Gemma/Ollama/SWE-bench/governed-tool/problem-reality/reality-signal/harness-transition/BlackBox-ledger machinery stays exactly as is.
+- All Gemma/SWE-bench/governed-tool/problem-reality/reality-signal/harness-transition/BlackBox-ledger machinery stays in the Rust engine.
 
 ## What the engine produces (per attempt)
 
@@ -29,8 +29,8 @@ Notes:
     problem-reality-packet.json
     run-summary.json                           # rolling
     attempt-1/
-      ollama-prompt.txt
-      ollama-response.json
+      prompt.txt
+      gemma-harness-response.json
       candidate-patch.patch
       validation.json
       official-evidence/<instance>.json
@@ -50,7 +50,7 @@ The engine never writes anything under `claude-code-optimizer/`. That subtree is
 
 ## What the engine does NOT do
 
-- Does not call any HTTP API except Ollama for Gemma + the official SWE-bench Docker bridge.
+- Does not call any model HTTP API. Gemma generation is in-process Rust over a GGUF model file; the official SWE-bench Docker bridge remains the measurement boundary.
 - Does not run any "optimizer trigger" decision. That decision is now made when Claude Code calls `mcp__cgreality__optimizer_record_decision`.
 - Does not spawn `claude -p`. Claude Code is started by the human operator (interactive) or by an external scheduler/cron (unattended). See [14_TRIGGER_AND_INVOCATION_POLICY](14_TRIGGER_AND_INVOCATION_POLICY.md).
 - Does not write the `recommendation` artifact. That is written by the MCP server when Claude Code calls `optimizer_record_recommendation`.
@@ -59,7 +59,7 @@ The engine never writes anything under `claude-code-optimizer/`. That subtree is
 ## What the engine still does
 
 - Builds `problem-reality-packet.json`.
-- Runs Gemma via Ollama (with the existing governed agent tool harness — `agent_tool_specs`, the 13 tools, harness transitions, structured edit submission, line-window edit submission).
+- Runs Gemma through the Rust coding harness (with `agent_tool_specs`, the governed tools, harness transitions, structured edit submission, and line-window edit submission).
 - Validates each candidate (static patch checks, py_compile, etc.).
 - Runs official SWE-bench Docker eval per attempt (when `--official-eval`).
 - Builds `reality-signal-packet.json` and runs the BlackBoxFix verifier on it.

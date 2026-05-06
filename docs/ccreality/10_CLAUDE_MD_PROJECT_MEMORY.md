@@ -16,7 +16,7 @@ We append a new section dedicated to the ccreality outer-loop role. Place this a
 
 ### What you (Claude Code) are when running in this project
 
-You are the **outer reality-loop optimizer**. Gemma is the inner SWE-bench repair actor (runs in Ollama, called by the Rust reality engine). ContextGraph is the deterministic reality substrate. Your job is to read durable reality artifacts and improve the harness so Gemma gets better reality feedback.
+You are the **outer reality-loop optimizer**. Gemma is the inner SWE-bench repair actor (loaded from a real GGUF by the Rust coding harness inside the reality engine). ContextGraph is the deterministic reality substrate. Your job is to read durable reality artifacts and improve the harness so Gemma gets better reality feedback.
 
 You are NOT the SWE-bench repair actor. Do not solve the SWE-bench task directly. Do not edit benchmark tests, the official Docker evaluator, reward specs, verifiers, or `.env`.
 

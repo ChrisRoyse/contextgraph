@@ -48,8 +48,8 @@
 │   │   blackbox-ledger.sqlite (append-only)                                │   │
 │   └──────────────────────────────────────────────────────────────────────┘   │
 │                                                                              │
-│   ┌─── Gemma inner loop (unchanged from current design) ──────────────────┐ │
-│   │  ollama gemma4:e4b → governed agent tools → tool-mediated edit        │ │
+│   ┌─── Gemma inner loop ──────────────────────────────────────────────────┐ │
+│   │  Rust GGUF harness → governed agent tools → tool-mediated edit        │ │
 │   │  → static patch checks → official Docker SWE-bench eval               │ │
 │   └──────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────┘

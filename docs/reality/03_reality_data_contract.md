@@ -25,11 +25,11 @@ Every record must carry:
   "run_id": "run_...",
   "attempt_id": "attempt_001",
   "model": {
-    "provider": "ollama",
-    "name": "qwen3:8b",
+    "provider": "contextgraph_rust_gemma_coding_harness",
+    "name": "gemma4:e4b",
     "params": {
       "temperature": 0,
-      "num_predict": 4096
+      "max_new_tokens": 4096
     }
   },
   "input": {

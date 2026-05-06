@@ -57,7 +57,6 @@
       "Bash(git log *)",
       "Bash(git show *)",
       "Bash(git rev-parse *)",
-      "Bash(ollama ps)",
       "Bash(nvidia-smi)",
       "Bash(jq *)",
       "Bash(ls *)",

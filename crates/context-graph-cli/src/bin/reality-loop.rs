@@ -1,10 +1,23 @@
 use clap::{Parser, Subcommand};
+use llama_cpp_2::context::params::LlamaContextParams;
+use llama_cpp_2::context::LlamaContext;
+use llama_cpp_2::llama_backend::LlamaBackend;
+use llama_cpp_2::llama_batch::LlamaBatch;
+use llama_cpp_2::model::params::LlamaModelParams;
+use llama_cpp_2::model::{
+    AddBos, ChatTemplateResult, GrammarTriggerType, LlamaChatTemplate, LlamaModel,
+};
+use llama_cpp_2::openai::OpenAIChatTemplateParams;
+use llama_cpp_2::sampling::LlamaSampler;
+use llama_cpp_2::token::LlamaToken;
+use llama_cpp_2::TokenToStringError;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -12,13 +25,14 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const DEFAULT_RUNTIME_ROOT: &str = "/tmp/contextgraph-rust-reality-loop";
 const DEFAULT_CONTEXT_GRAPH_BIN: &str = "target/debug/context-graph";
 const DEFAULT_MODEL: &str = "gemma4:e4b";
-const DEFAULT_OLLAMA_URL: &str = "http://127.0.0.1:11434";
+const DEFAULT_GEMMA_MODEL_PATH: &str = "models/gemma4-e4b/gemma4-e4b.Q4_K_M.gguf";
 const DEFAULT_GPU_MIN_FREE_MB: u64 = 8192;
-const DEFAULT_OLLAMA_KEEP_ALIVE: &str = "30m";
-const DEFAULT_OLLAMA_NUM_CTX: u64 = 32768;
-const DEFAULT_OLLAMA_NUM_PREDICT: u64 = 4096;
-const DEFAULT_OLLAMA_TEMPERATURE: f64 = 0.0;
-const DEFAULT_OLLAMA_TOP_P: f64 = 0.9;
+const DEFAULT_GEMMA_MAX_NEW_TOKENS: usize = 16384;
+const DEFAULT_GEMMA_TEMPERATURE: f32 = 0.0;
+const DEFAULT_GEMMA_TOP_P: f32 = 0.9;
+const DEFAULT_GEMMA_BATCH_SIZE: usize = 2048;
+const DEFAULT_GEMMA_SEED: u32 = 1;
+const DEFAULT_AGENT_TOOL_ROUNDS: u64 = 24;
 const DEFAULT_OFFICIAL_DOCKER_HOST: &str = "unix:///var/run/docker.sock";
 const DEFAULT_OFFICIAL_DOCKER_CONFIG: &str = "/home/cabdru/.cache/contextgraph-docker-config";
 const DEFAULT_SMOKE_RUNTIME_ROOT: &str = "/tmp/cgreality-smoke";
@@ -141,14 +155,19 @@ struct VerifyArgs {
 #[derive(Parser, Debug, Clone)]
 #[command(about = "Run one or more Gemma SWE-bench repair attempts")]
 struct AttemptArgs {
+    /// Stable model label used in artifacts and BlackBox ledger rows.
     #[arg(long, default_value = DEFAULT_MODEL)]
     model: String,
+    /// Real GGUF model file loaded by the Rust Gemma coding harness.
+    #[arg(long, default_value = DEFAULT_GEMMA_MODEL_PATH)]
+    gemma_model_path: PathBuf,
+    /// Optional explicit llama.cpp chat template name or template text.
+    #[arg(long)]
+    gemma_chat_template: Option<String>,
     #[arg(long)]
     task_manifest: PathBuf,
     #[arg(long, default_value = DEFAULT_RUNTIME_ROOT)]
     runtime_root: PathBuf,
-    #[arg(long, default_value = DEFAULT_OLLAMA_URL)]
-    ollama_url: String,
     #[arg(long, default_value = DEFAULT_CONTEXT_GRAPH_BIN)]
     context_graph_bin: PathBuf,
     #[arg(long, default_value_t = 1)]
@@ -180,21 +199,24 @@ struct AttemptArgs {
     gpu_min_free_mb: u64,
     #[arg(long)]
     gpu_max_used_mb: Option<u64>,
-    #[arg(long, default_value = DEFAULT_OLLAMA_KEEP_ALIVE)]
-    ollama_keep_alive: String,
-    #[arg(long, default_value_t = DEFAULT_OLLAMA_NUM_CTX)]
-    ollama_num_ctx: u64,
-    #[arg(long, default_value_t = DEFAULT_OLLAMA_NUM_PREDICT)]
-    ollama_num_predict: u64,
-    #[arg(long, default_value_t = DEFAULT_OLLAMA_TEMPERATURE)]
-    ollama_temperature: f64,
-    #[arg(long, default_value_t = DEFAULT_OLLAMA_TOP_P)]
-    ollama_top_p: f64,
-    #[arg(long, default_value_t = 300)]
-    model_timeout: u64,
+    /// Context window tokens. Omit to use the loaded GGUF model's full training context.
+    #[arg(long)]
+    gemma_context_tokens: Option<u32>,
+    #[arg(long, default_value_t = DEFAULT_GEMMA_MAX_NEW_TOKENS)]
+    gemma_max_new_tokens: usize,
+    #[arg(long, default_value_t = DEFAULT_GEMMA_TEMPERATURE)]
+    gemma_temperature: f32,
+    #[arg(long, default_value_t = DEFAULT_GEMMA_TOP_P)]
+    gemma_top_p: f32,
+    #[arg(long, default_value_t = u32::MAX)]
+    gemma_gpu_layers: u32,
+    #[arg(long, default_value_t = DEFAULT_GEMMA_BATCH_SIZE)]
+    gemma_batch_size: usize,
+    #[arg(long, default_value_t = DEFAULT_GEMMA_SEED)]
+    gemma_seed: u32,
     #[arg(long, default_value_t = 600)]
     git_timeout: u64,
-    #[arg(long, default_value_t = 8)]
+    #[arg(long, default_value_t = DEFAULT_AGENT_TOOL_ROUNDS)]
     agent_tool_rounds: u64,
     #[arg(long, default_value_t = 300)]
     targeted_test_timeout: u64,
@@ -952,9 +974,10 @@ async fn run_verify(args: VerifyArgs) -> Result<Value> {
 fn official_eval_attempt_args(args: &OfficialEvalArgs, task_manifest: &Path) -> AttemptArgs {
     AttemptArgs {
         model: args.model.clone(),
+        gemma_model_path: PathBuf::from(DEFAULT_GEMMA_MODEL_PATH),
+        gemma_chat_template: None,
         task_manifest: task_manifest.to_path_buf(),
         runtime_root: args.runtime_root.clone(),
-        ollama_url: DEFAULT_OLLAMA_URL.to_string(),
         context_graph_bin: PathBuf::from(DEFAULT_CONTEXT_GRAPH_BIN),
         max_attempts: 1,
         run_until_resolved: false,
@@ -969,14 +992,15 @@ fn official_eval_attempt_args(args: &OfficialEvalArgs, task_manifest: &Path) -> 
         gpu_index: 0,
         gpu_min_free_mb: DEFAULT_GPU_MIN_FREE_MB,
         gpu_max_used_mb: None,
-        ollama_keep_alive: DEFAULT_OLLAMA_KEEP_ALIVE.to_string(),
-        ollama_num_ctx: DEFAULT_OLLAMA_NUM_CTX,
-        ollama_num_predict: DEFAULT_OLLAMA_NUM_PREDICT,
-        ollama_temperature: DEFAULT_OLLAMA_TEMPERATURE,
-        ollama_top_p: DEFAULT_OLLAMA_TOP_P,
-        model_timeout: 300,
+        gemma_context_tokens: None,
+        gemma_max_new_tokens: DEFAULT_GEMMA_MAX_NEW_TOKENS,
+        gemma_temperature: DEFAULT_GEMMA_TEMPERATURE,
+        gemma_top_p: DEFAULT_GEMMA_TOP_P,
+        gemma_gpu_layers: u32::MAX,
+        gemma_batch_size: DEFAULT_GEMMA_BATCH_SIZE,
+        gemma_seed: DEFAULT_GEMMA_SEED,
         git_timeout: 600,
-        agent_tool_rounds: 8,
+        agent_tool_rounds: DEFAULT_AGENT_TOOL_ROUNDS,
         targeted_test_timeout: 300,
         sleep_between_attempts_ms: 0,
     }
@@ -1065,6 +1089,70 @@ fn collect_attempt_dirs_for_run(
     Ok(())
 }
 
+fn validate_gemma_harness_args(args: &AttemptArgs) -> Result<()> {
+    if args.gemma_context_tokens == Some(0) {
+        return Err(RealityError::new(
+            "RUST_REALITY_GEMMA_CONTEXT_TOKENS_INVALID",
+            "--gemma-context-tokens must be greater than zero",
+            "gemma_context_tokens",
+            "omit --gemma-context-tokens to use the GGUF training context, or set a positive explicit context window",
+            json!({"gemma_context_tokens": args.gemma_context_tokens}),
+            None,
+        ));
+    }
+    if args.gemma_max_new_tokens == 0 {
+        return Err(RealityError::new(
+            "RUST_REALITY_GEMMA_MAX_NEW_TOKENS_INVALID",
+            "--gemma-max-new-tokens must be greater than zero",
+            "gemma_max_new_tokens",
+            "set a positive generation budget so the harness can emit a tool call",
+            json!({"gemma_max_new_tokens": args.gemma_max_new_tokens}),
+            None,
+        ));
+    }
+    if args.gemma_batch_size == 0 {
+        return Err(RealityError::new(
+            "RUST_REALITY_GEMMA_BATCH_SIZE_INVALID",
+            "--gemma-batch-size must be greater than zero",
+            "gemma_batch_size",
+            "set a positive llama.cpp prompt batch size",
+            json!({"gemma_batch_size": args.gemma_batch_size}),
+            None,
+        ));
+    }
+    if args.gemma_batch_size > u32::MAX as usize {
+        return Err(RealityError::new(
+            "RUST_REALITY_GEMMA_BATCH_SIZE_TOO_LARGE",
+            "--gemma-batch-size exceeds llama.cpp u32 limits",
+            "gemma_batch_size",
+            "set a positive batch size no larger than u32::MAX",
+            json!({"gemma_batch_size": args.gemma_batch_size, "max": u32::MAX}),
+            None,
+        ));
+    }
+    if !args.gemma_temperature.is_finite() || !(0.0..=2.0).contains(&args.gemma_temperature) {
+        return Err(RealityError::new(
+            "RUST_REALITY_GEMMA_TEMPERATURE_INVALID",
+            "--gemma-temperature must be a finite value between 0.0 and 2.0",
+            "gemma_temperature",
+            "use deterministic 0.0 for SWE repair unless intentionally experimenting",
+            json!({"gemma_temperature": args.gemma_temperature}),
+            None,
+        ));
+    }
+    if !args.gemma_top_p.is_finite() || args.gemma_top_p <= 0.0 || args.gemma_top_p > 1.0 {
+        return Err(RealityError::new(
+            "RUST_REALITY_GEMMA_TOP_P_INVALID",
+            "--gemma-top-p must be a finite value in (0.0, 1.0]",
+            "gemma_top_p",
+            "use 0.9 for bounded sampling or 1.0 to disable nucleus pruning",
+            json!({"gemma_top_p": args.gemma_top_p}),
+            None,
+        ));
+    }
+    Ok(())
+}
+
 async fn run(args: AttemptArgs) -> Result<Value> {
     let runtime_root = resolve_path(&args.runtime_root)?;
     create_dir_checked(&runtime_root)?;
@@ -1108,6 +1196,7 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             None,
         ));
     }
+    validate_gemma_harness_args(&args)?;
     let context_graph_bin = resolve_path(&args.context_graph_bin)?;
     require_file(
         &context_graph_bin,
@@ -1250,9 +1339,9 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             "source_of_truth": file_sot(&problem_reality_path)
         }),
     )?;
+    let gemma_harness = GemmaCodingHarness::load(&args)?;
     let mut previous_patch_hashes: Vec<String> = Vec::new();
     let mut attempts: Vec<AttemptRecord> = Vec::new();
-    let client = reqwest::Client::new();
     let mut solved = false;
     let mut attempt = 1_u64;
     while args.run_until_resolved || attempt <= args.max_attempts {
@@ -1322,7 +1411,8 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             problem_reality: &problem_reality_packet,
             attempts: &attempts,
         };
-        let model_response = ollama_chat_json(&client, &tool_context, &prompt, attempt).await?;
+        let model_response =
+            gemma_coding_harness_chat_json(&gemma_harness, &tool_context, &prompt, attempt)?;
         let response_text = model_response["message"]["content"]
             .as_str()
             .unwrap_or("")
@@ -1497,7 +1587,21 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             }
         }
 
-        let score = blackbox(
+        // Phase 14 (forward) intervention #4: capture BlackBox score + reward
+        // compilation errors as evidence rather than letting `?` propagate them up
+        // and terminate the attempt before write_summary / write_optimizer_artifacts /
+        // write_training_export run. Diagnosed from
+        // /tmp/ccreality-prod-3/rust_reality_1778039692404664879_e525987d where
+        // Docker eval completed cleanly (completed=true, resolved=false, patch
+        // applied, all 8 FAIL_TO_PASS still failing) but reward compilation
+        // returned RUST_REALITY_BLACKBOX_COMMAND_FAILED with stderr
+        // "feature correctness is null because source /score/correctness had no
+        // measurable value". The attempt aborted, attempt-summary.json was never
+        // written, Phase 15 + Phase 18 artifacts were lost. With this lift, score
+        // and reward errors become first-class fields in the attempt-summary so
+        // the optimizer can react to them and the autoresearch / training writers
+        // still fire.
+        let score = match blackbox(
             &context_graph_bin,
             &[
                 "blackbox",
@@ -1511,27 +1615,51 @@ async fn run(args: AttemptArgs) -> Result<Value> {
                 &args.model,
             ],
             &task_root,
-        )?;
+        ) {
+            Ok(v) => v,
+            Err(err) => json!({
+                "status": "error",
+                "error_code": err.error_code.clone(),
+                "field_path": err.field_path.clone(),
+                "message": err.message.clone(),
+                "remediation": err.remediation.clone(),
+                "details": err.details.clone(),
+                "source_of_truth": err.source_of_truth.clone(),
+            }),
+        };
         let reward_spec =
             resolve_path(Path::new("gemmafrontend/reward_spec.verified_outcome.json"))?;
         let reward = if reward_spec.exists() {
-            Some(blackbox(
-                &context_graph_bin,
-                &[
-                    "blackbox",
-                    "reward",
-                    "compile",
-                    "--ledger",
-                    path_str(&ledger),
-                    "--run-id",
-                    &run_id,
-                    "--input",
-                    path_str(&reward_spec),
-                    "--model",
-                    &args.model,
-                ],
-                &task_root,
-            )?)
+            Some(
+                match blackbox(
+                    &context_graph_bin,
+                    &[
+                        "blackbox",
+                        "reward",
+                        "compile",
+                        "--ledger",
+                        path_str(&ledger),
+                        "--run-id",
+                        &run_id,
+                        "--input",
+                        path_str(&reward_spec),
+                        "--model",
+                        &args.model,
+                    ],
+                    &task_root,
+                ) {
+                    Ok(v) => v,
+                    Err(err) => json!({
+                        "status": "error",
+                        "error_code": err.error_code.clone(),
+                        "field_path": err.field_path.clone(),
+                        "message": err.message.clone(),
+                        "remediation": err.remediation.clone(),
+                        "details": err.details.clone(),
+                        "source_of_truth": err.source_of_truth.clone(),
+                    }),
+                },
+            )
         } else {
             None
         };
@@ -1825,6 +1953,20 @@ fn build_measurement_contract(
             "official_evaluator": "python -m swebench.harness.run_evaluation",
             "official_docker_host": args.official_docker_host,
             "official_docker_config": path_str(&args.official_docker_config),
+            "model_runtime": {
+                "provider": "contextgraph_rust_gemma_coding_harness",
+                "model_label": args.model,
+                "gemma_model_path": file_sot(&resolve_path(&args.gemma_model_path)?),
+                "chat_template": args.gemma_chat_template.as_deref(),
+                "context_policy": if args.gemma_context_tokens.is_some() { "explicit_cli" } else { "gguf_n_ctx_train_max" },
+                "requested_context_tokens": args.gemma_context_tokens,
+                "max_new_tokens": args.gemma_max_new_tokens,
+                "temperature": args.gemma_temperature,
+                "top_p": args.gemma_top_p,
+                "gpu_layers": args.gemma_gpu_layers,
+                "batch_size": args.gemma_batch_size,
+                "seed": args.gemma_seed
+            },
             "reward_spec": file_sot(Path::new("gemmafrontend/reward_spec.verified_outcome.json"))
         },
         "mandatory_readbacks": [
@@ -2333,8 +2475,687 @@ fn blackbox(bin: &Path, args: &[&str], cwd: &Path) -> Result<Value> {
     })
 }
 
-async fn ollama_chat_json(
-    client: &reqwest::Client,
+struct GemmaCodingHarness {
+    backend: LlamaBackend,
+    model: LlamaModel,
+    model_path: PathBuf,
+    chat_template: LlamaChatTemplate,
+    requested_context_tokens: Option<u32>,
+    model_context_train_tokens: u32,
+    context_tokens: u32,
+    max_new_tokens: usize,
+    temperature: f32,
+    top_p: f32,
+    batch_size: usize,
+    seed: u32,
+}
+
+impl GemmaCodingHarness {
+    fn load(args: &AttemptArgs) -> Result<Self> {
+        let model_path = resolve_path(&args.gemma_model_path)?;
+        require_file(
+            &model_path,
+            "gemma_model_path",
+            "RUST_REALITY_GEMMA_MODEL_PATH_MISSING",
+        )?;
+        let backend = LlamaBackend::init().map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_GEMMA_BACKEND_INIT_FAILED",
+                "failed to initialize the Rust llama.cpp backend",
+                "gemma_harness.backend",
+                "inspect CUDA/llama.cpp runtime initialization before retrying",
+                json!({"error": err.to_string(), "model_path": file_sot(&model_path)}),
+                Some(file_sot(&model_path)),
+            )
+        })?;
+        let model_params = LlamaModelParams::default().with_n_gpu_layers(args.gemma_gpu_layers);
+        let model =
+            LlamaModel::load_from_file(&backend, &model_path, &model_params).map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_GEMMA_MODEL_LOAD_FAILED",
+                    "failed to load Gemma GGUF model through the Rust coding harness",
+                    "gemma_harness.model_path",
+                    "provide a real Gemma GGUF file readable by the Rust harness",
+                    json!({
+                        "error": err.to_string(),
+                        "model_path": file_sot(&model_path),
+                        "gpu_layers": args.gemma_gpu_layers
+                    }),
+                    Some(file_sot(&model_path)),
+                )
+            })?;
+        let chat_template = match args.gemma_chat_template.as_deref() {
+            Some(template) => LlamaChatTemplate::new(template).map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_GEMMA_CHAT_TEMPLATE_INVALID",
+                    "explicit Gemma chat template contained an invalid NUL byte",
+                    "gemma_chat_template",
+                    "provide a valid llama.cpp chat template name or template text",
+                    json!({"error": err.to_string()}),
+                    Some(file_sot(&model_path)),
+                )
+            })?,
+            None => model.chat_template(None).map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_GEMMA_CHAT_TEMPLATE_MISSING",
+                    "Gemma GGUF model does not expose a usable chat template",
+                    "gemma_harness.chat_template",
+                    "install a Gemma GGUF with chat-template metadata or pass --gemma-chat-template explicitly",
+                    json!({"error": err.to_string(), "model_path": file_sot(&model_path)}),
+                    Some(file_sot(&model_path)),
+                )
+            })?,
+        };
+        let model_context_train_tokens = model.n_ctx_train();
+        if model_context_train_tokens == 0 {
+            return Err(RealityError::new(
+                "RUST_REALITY_GEMMA_MODEL_CONTEXT_INVALID",
+                "loaded GGUF reported a zero training context window",
+                "gemma_harness.model.n_ctx_train",
+                "install a valid Gemma GGUF with context metadata",
+                json!({"model_path": file_sot(&model_path), "n_ctx_train": model_context_train_tokens}),
+                Some(file_sot(&model_path)),
+            ));
+        }
+        let context_tokens = args.gemma_context_tokens.unwrap_or(model_context_train_tokens);
+        if context_tokens > model_context_train_tokens {
+            return Err(RealityError::new(
+                "RUST_REALITY_GEMMA_CONTEXT_EXCEEDS_MODEL_LIMIT",
+                "requested Gemma context exceeds the loaded GGUF training context",
+                "gemma_context_tokens",
+                "omit --gemma-context-tokens to use the model maximum, or set a value within the GGUF n_ctx_train limit",
+                json!({
+                    "requested_context_tokens": context_tokens,
+                    "model_context_train_tokens": model_context_train_tokens,
+                    "model_path": file_sot(&model_path)
+                }),
+                Some(file_sot(&model_path)),
+            ));
+        }
+        if args.gemma_max_new_tokens >= context_tokens as usize {
+            return Err(RealityError::new(
+                "RUST_REALITY_GEMMA_MAX_NEW_TOKENS_EXCEEDS_CONTEXT",
+                "Gemma max_new_tokens leaves no room for a prompt inside the configured context window",
+                "gemma_max_new_tokens",
+                "set max_new_tokens lower than the effective context window",
+                json!({
+                    "max_new_tokens": args.gemma_max_new_tokens,
+                    "effective_context_tokens": context_tokens,
+                    "requested_context_tokens": args.gemma_context_tokens,
+                    "model_context_train_tokens": model_context_train_tokens
+                }),
+                Some(file_sot(&model_path)),
+            ));
+        }
+        Ok(Self {
+            backend,
+            model,
+            model_path,
+            chat_template,
+            requested_context_tokens: args.gemma_context_tokens,
+            model_context_train_tokens,
+            context_tokens,
+            max_new_tokens: args.gemma_max_new_tokens,
+            temperature: args.gemma_temperature,
+            top_p: args.gemma_top_p,
+            batch_size: args.gemma_batch_size,
+            seed: args.gemma_seed,
+        })
+    }
+
+    fn chat(&self, args: &AttemptArgs, body: &Value, request_path: &Path) -> Result<Value> {
+        let messages = body
+            .get("messages")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_GEMMA_MESSAGES_MISSING",
+                    "Gemma harness request did not contain messages array",
+                    "gemma_harness.request.messages",
+                    "fix the Rust request builder before running another attempt",
+                    json!({"request": file_sot(request_path)}),
+                    Some(file_sot(request_path)),
+                )
+            })?;
+        let tools = body.get("tools").and_then(Value::as_array).ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_GEMMA_TOOLS_MISSING",
+                "Gemma harness request did not contain tools array",
+                "gemma_harness.request.tools",
+                "fix the Rust request builder before running another attempt",
+                json!({"request": file_sot(request_path)}),
+                Some(file_sot(request_path)),
+            )
+        })?;
+        if tools.is_empty() {
+            return Err(RealityError::new(
+                "RUST_REALITY_GEMMA_TOOLS_EMPTY",
+                "Gemma coding harness refuses to run without governed tools",
+                "gemma_harness.request.tools",
+                "provide the ContextGraph coding-agent tool schema",
+                json!({"request": file_sot(request_path)}),
+                Some(file_sot(request_path)),
+            ));
+        }
+        let messages_json =
+            serde_json::to_string(&Value::Array(messages.clone())).map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_GEMMA_MESSAGES_SERIALIZE_FAILED",
+                    "failed to serialize Gemma chat messages",
+                    "gemma_harness.request.messages",
+                    "inspect the message JSON shape",
+                    json!({"error": err.to_string(), "request": file_sot(request_path)}),
+                    Some(file_sot(request_path)),
+                )
+            })?;
+        let tools_json = serde_json::to_string(&Value::Array(tools.clone())).map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_GEMMA_TOOLS_SERIALIZE_FAILED",
+                "failed to serialize Gemma tool schemas",
+                "gemma_harness.request.tools",
+                "inspect the tool JSON schema",
+                json!({"error": err.to_string(), "request": file_sot(request_path)}),
+                Some(file_sot(request_path)),
+            )
+        })?;
+        let params = OpenAIChatTemplateParams {
+            messages_json: &messages_json,
+            tools_json: Some(&tools_json),
+            tool_choice: Some("auto"),
+            json_schema: None,
+            grammar: None,
+            reasoning_format: None,
+            chat_template_kwargs: None,
+            add_generation_prompt: true,
+            use_jinja: true,
+            parallel_tool_calls: false,
+            enable_thinking: false,
+            add_bos: false,
+            add_eos: false,
+            parse_tool_calls: true,
+        };
+        let rendered = self
+            .model
+            .apply_chat_template_oaicompat(&self.chat_template, &params)
+            .map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_GEMMA_CHAT_TEMPLATE_APPLY_FAILED",
+                    "failed to render Gemma chat template with ContextGraph tools",
+                    "gemma_harness.chat_template",
+                    "inspect the GGUF chat template and tool schema compatibility",
+                    json!({
+                        "error": err.to_string(),
+                        "request": file_sot(request_path),
+                        "model_path": file_sot(&self.model_path)
+                    }),
+                    Some(file_sot(request_path)),
+                )
+            })?;
+        let rendered_prompt_path = request_sibling_path(request_path, "rendered-prompt.txt");
+        write_text_checked(&rendered_prompt_path, &rendered.prompt)?;
+        let grammar = rendered.grammar.as_deref().ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_GEMMA_TOOL_GRAMMAR_MISSING",
+                "Gemma chat template did not produce a tool-call grammar",
+                "gemma_harness.tool_grammar",
+                "use a Gemma GGUF/template combination that supports strict OpenAI-compatible tool grammar",
+                json!({
+                    "request": file_sot(request_path),
+                    "rendered_prompt": file_sot(&rendered_prompt_path),
+                    "model_path": file_sot(&self.model_path),
+                    "parse_tool_calls": rendered.parse_tool_calls
+                }),
+                Some(file_sot(&rendered_prompt_path)),
+            )
+        })?;
+        let grammar_path = request_sibling_path(request_path, "tool-grammar.gbnf");
+        write_text_checked(&grammar_path, grammar)?;
+        let (raw_generation, prompt_tokens, generated_tokens) =
+            self.generate(&rendered, request_path)?;
+        let raw_generation_path = request_sibling_path(request_path, "raw-generation.txt");
+        write_text_checked(&raw_generation_path, &raw_generation)?;
+        let parsed_text = rendered
+            .parse_response_oaicompat(&raw_generation, false)
+            .map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_GEMMA_TOOL_RESPONSE_PARSE_FAILED",
+                    "Gemma generation could not be parsed as an OpenAI-compatible assistant message",
+                    "gemma_harness.response",
+                    "inspect raw generation, prompt, and tool grammar before retrying",
+                    json!({
+                        "error": err.to_string(),
+                        "request": file_sot(request_path),
+                        "raw_generation": file_sot(&raw_generation_path),
+                        "rendered_prompt": file_sot(&rendered_prompt_path),
+                        "tool_grammar": file_sot(&grammar_path)
+                    }),
+                    Some(file_sot(&raw_generation_path)),
+                )
+            })?;
+        let parsed: Value = serde_json::from_str(&parsed_text).map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_GEMMA_TOOL_RESPONSE_JSON_INVALID",
+                "parsed Gemma assistant message was not JSON",
+                "gemma_harness.response_json",
+                "inspect the llama.cpp OpenAI-compatible parser output",
+                json!({
+                    "error": err.to_string(),
+                    "parsed_text": parsed_text,
+                    "raw_generation": file_sot(&raw_generation_path)
+                }),
+                Some(file_sot(&raw_generation_path)),
+            )
+        })?;
+        let message = normalize_gemma_harness_message(&parsed, request_path, &raw_generation_path)?;
+        Ok(json!({
+            "model": args.model,
+            "created_at_unix": unix_secs()?,
+            "done": true,
+            "message": message,
+            "contextgraph_gemma_harness": {
+                "provider": "contextgraph_rust_gemma_coding_harness",
+                "model_path": file_sot(&self.model_path),
+                "prompt_tokens": prompt_tokens,
+                "generated_tokens": generated_tokens,
+                "chat_format": rendered.chat_format,
+                "parse_tool_calls": rendered.parse_tool_calls,
+                "grammar_lazy": rendered.grammar_lazy,
+                "additional_stops": rendered.additional_stops,
+                "source_of_truth": {
+                    "request": file_sot(request_path),
+                    "rendered_prompt": file_sot(&rendered_prompt_path),
+                    "tool_grammar": file_sot(&grammar_path),
+                    "raw_generation": file_sot(&raw_generation_path),
+                    "model_path": file_sot(&self.model_path)
+                }
+            }
+        }))
+    }
+
+    fn generate(
+        &self,
+        rendered: &ChatTemplateResult,
+        request_path: &Path,
+    ) -> Result<(String, usize, usize)> {
+        let context_tokens = NonZeroU32::new(self.context_tokens).ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_GEMMA_CONTEXT_TOKENS_INVALID",
+                "Gemma context window cannot be zero",
+                "gemma_context_tokens",
+                "set --gemma-context-tokens to a positive value",
+                json!({"gemma_context_tokens": self.context_tokens}),
+                Some(file_sot(request_path)),
+            )
+        })?;
+        let ctx_params = LlamaContextParams::default().with_n_ctx(Some(context_tokens));
+        let mut ctx = self
+            .model
+            .new_context(&self.backend, ctx_params)
+            .map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_GEMMA_CONTEXT_CREATE_FAILED",
+                    "failed to create llama.cpp generation context",
+                    "gemma_harness.context",
+                    "inspect context window size, GPU memory, and model compatibility",
+                    json!({
+                        "error": err.to_string(),
+                        "context_tokens": self.context_tokens,
+                        "model_path": file_sot(&self.model_path),
+                        "request": file_sot(request_path)
+                    }),
+                    Some(file_sot(&self.model_path)),
+                )
+            })?;
+        let tokens = self
+            .model
+            .str_to_token(&rendered.prompt, AddBos::Never)
+            .map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_GEMMA_PROMPT_TOKENIZE_FAILED",
+                    "failed to tokenize rendered Gemma prompt",
+                    "gemma_harness.prompt",
+                    "inspect chat template output and model tokenizer compatibility",
+                    json!({"error": err.to_string(), "request": file_sot(request_path)}),
+                    Some(file_sot(request_path)),
+                )
+            })?;
+        if tokens.len() >= self.context_tokens as usize {
+            return Err(RealityError::new(
+                "RUST_REALITY_GEMMA_PROMPT_CONTEXT_EXCEEDED",
+                "rendered Gemma prompt exceeds the configured context window",
+                "gemma_harness.prompt_tokens",
+                "reduce repository context/tool transcript size or increase --gemma-context-tokens after verifying model capacity",
+                json!({
+                    "prompt_tokens": tokens.len(),
+                    "context_tokens": self.context_tokens,
+                    "request": file_sot(request_path)
+                }),
+                Some(file_sot(request_path)),
+            ));
+        }
+        decode_prompt_tokens(&mut ctx, &tokens, self.batch_size, request_path)?;
+        let grammar_sampler = self.grammar_sampler(rendered, request_path)?;
+        let mut sampler_chain = vec![
+            grammar_sampler,
+            LlamaSampler::top_p(self.top_p, 1),
+            LlamaSampler::temp(self.temperature),
+        ];
+        if self.temperature <= 0.0 {
+            sampler_chain.push(LlamaSampler::greedy());
+        } else {
+            sampler_chain.push(LlamaSampler::dist(self.seed));
+        }
+        let mut sampler = LlamaSampler::chain_simple(sampler_chain);
+        let mut generated_tokens: Vec<LlamaToken> = Vec::new();
+        for (current_pos, _) in (tokens.len()..).zip(0..self.max_new_tokens) {
+            let token = sampler.sample(&ctx, -1);
+            if self.model.is_eog_token(token) {
+                break;
+            }
+            generated_tokens.push(token);
+            let mut batch = LlamaBatch::new(1, 1);
+            batch
+                .add(token, current_pos as i32, &[0], true)
+                .map_err(|err| {
+                    RealityError::new(
+                        "RUST_REALITY_GEMMA_GENERATION_BATCH_ADD_FAILED",
+                        "failed to append generated token to llama.cpp batch",
+                        "gemma_harness.generation_batch",
+                        "inspect llama.cpp batch state and generated token position",
+                        json!({
+                            "error": err.to_string(),
+                            "current_pos": current_pos,
+                            "request": file_sot(request_path)
+                        }),
+                        Some(file_sot(request_path)),
+                    )
+                })?;
+            ctx.decode(&mut batch).map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_GEMMA_GENERATION_DECODE_FAILED",
+                    "llama.cpp failed while decoding a generated token",
+                    "gemma_harness.generation_decode",
+                    "inspect model/runtime state and GPU memory",
+                    json!({
+                        "error": err.to_string(),
+                        "current_pos": current_pos,
+                        "request": file_sot(request_path)
+                    }),
+                    Some(file_sot(request_path)),
+                )
+            })?;
+        }
+        let mut output = decode_llama_tokens(&self.model, &generated_tokens).map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_GEMMA_TOKEN_DECODE_FAILED",
+                "failed to decode generated llama.cpp tokens",
+                "gemma_harness.generated_tokens",
+                "inspect generated token stream and model tokenizer",
+                json!({"error": err.to_string(), "request": file_sot(request_path)}),
+                Some(file_sot(request_path)),
+            )
+        })?;
+        for stop in &rendered.additional_stops {
+            if let Some(index) = output.find(stop) {
+                output.truncate(index);
+                break;
+            }
+        }
+        Ok((output, tokens.len(), generated_tokens.len()))
+    }
+
+    fn grammar_sampler(
+        &self,
+        rendered: &ChatTemplateResult,
+        request_path: &Path,
+    ) -> Result<LlamaSampler> {
+        let grammar = rendered.grammar.as_deref().ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_GEMMA_TOOL_GRAMMAR_MISSING",
+                "Gemma chat template did not produce a tool-call grammar",
+                "gemma_harness.tool_grammar",
+                "use a Gemma GGUF/template combination that supports strict tool grammar",
+                json!({"request": file_sot(request_path)}),
+                Some(file_sot(request_path)),
+            )
+        })?;
+        if rendered.grammar_lazy {
+            let mut token_triggers = Vec::new();
+            let mut word_triggers = Vec::new();
+            let mut pattern_triggers = Vec::new();
+            for trigger in &rendered.grammar_triggers {
+                match trigger.trigger_type {
+                    GrammarTriggerType::Token => {
+                        if let Some(token) = trigger.token {
+                            token_triggers.push(token);
+                        }
+                    }
+                    GrammarTriggerType::Word => word_triggers.push(trigger.value.clone()),
+                    GrammarTriggerType::Pattern | GrammarTriggerType::PatternFull => {
+                        pattern_triggers.push(trigger.value.clone());
+                    }
+                }
+            }
+            if !pattern_triggers.is_empty() {
+                LlamaSampler::grammar_lazy_patterns(
+                    &self.model,
+                    grammar,
+                    "root",
+                    &pattern_triggers,
+                    &token_triggers,
+                )
+                .map_err(|err| {
+                    RealityError::new(
+                        "RUST_REALITY_GEMMA_GRAMMAR_SAMPLER_FAILED",
+                        "failed to create lazy-pattern tool grammar sampler",
+                        "gemma_harness.tool_grammar",
+                        "inspect generated tool grammar and chat-template triggers",
+                        json!({"error": err.to_string(), "request": file_sot(request_path)}),
+                        Some(file_sot(request_path)),
+                    )
+                })
+            } else {
+                LlamaSampler::grammar_lazy(
+                    &self.model,
+                    grammar,
+                    "root",
+                    word_triggers.iter().map(String::as_str),
+                    &token_triggers,
+                )
+                .map_err(|err| {
+                    RealityError::new(
+                        "RUST_REALITY_GEMMA_GRAMMAR_SAMPLER_FAILED",
+                        "failed to create lazy tool grammar sampler",
+                        "gemma_harness.tool_grammar",
+                        "inspect generated tool grammar and chat-template triggers",
+                        json!({"error": err.to_string(), "request": file_sot(request_path)}),
+                        Some(file_sot(request_path)),
+                    )
+                })
+            }
+        } else {
+            LlamaSampler::grammar(&self.model, grammar, "root").map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_GEMMA_GRAMMAR_SAMPLER_FAILED",
+                    "failed to create strict tool grammar sampler",
+                    "gemma_harness.tool_grammar",
+                    "inspect generated tool grammar",
+                    json!({"error": err.to_string(), "request": file_sot(request_path)}),
+                    Some(file_sot(request_path)),
+                )
+            })
+        }
+    }
+}
+
+fn request_sibling_path(request_path: &Path, suffix: &str) -> PathBuf {
+    let stem = request_path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("gemma-harness");
+    request_path.with_file_name(format!("{stem}-{suffix}"))
+}
+
+fn decode_prompt_tokens(
+    ctx: &mut LlamaContext<'_>,
+    tokens: &[LlamaToken],
+    batch_size: usize,
+    request_path: &Path,
+) -> Result<()> {
+    let mut offset = 0_usize;
+    while offset < tokens.len() {
+        let end = (offset + batch_size).min(tokens.len());
+        let mut batch = LlamaBatch::new(batch_size, 1);
+        for (relative_index, token) in tokens[offset..end].iter().copied().enumerate() {
+            let absolute_index = offset + relative_index;
+            let is_last = absolute_index + 1 == tokens.len();
+            batch
+                .add(token, absolute_index as i32, &[0], is_last)
+                .map_err(|err| {
+                    RealityError::new(
+                        "RUST_REALITY_GEMMA_PROMPT_BATCH_ADD_FAILED",
+                        "failed to append prompt token to llama.cpp batch",
+                        "gemma_harness.prompt_batch",
+                        "inspect prompt length, batch size, and llama.cpp context state",
+                        json!({
+                            "error": err.to_string(),
+                            "absolute_index": absolute_index,
+                            "batch_size": batch_size,
+                            "request": file_sot(request_path)
+                        }),
+                        Some(file_sot(request_path)),
+                    )
+                })?;
+        }
+        ctx.decode(&mut batch).map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_GEMMA_PROMPT_DECODE_FAILED",
+                "llama.cpp failed while decoding rendered prompt",
+                "gemma_harness.prompt_decode",
+                "inspect prompt, context window, and GPU memory",
+                json!({
+                    "error": err.to_string(),
+                    "offset": offset,
+                    "end": end,
+                    "request": file_sot(request_path)
+                }),
+                Some(file_sot(request_path)),
+            )
+        })?;
+        offset = end;
+    }
+    Ok(())
+}
+
+fn decode_llama_tokens(
+    model: &LlamaModel,
+    tokens: &[LlamaToken],
+) -> std::result::Result<String, TokenToStringError> {
+    let mut bytes = Vec::with_capacity(tokens.len() * 4);
+    for token in tokens.iter().copied() {
+        let mut buffer_size = 8_usize;
+        loop {
+            match model.token_to_piece_bytes(token, buffer_size, true, None) {
+                Ok(piece) => {
+                    bytes.extend_from_slice(&piece);
+                    break;
+                }
+                Err(TokenToStringError::InsufficientBufferSpace(size)) if size < 0 => {
+                    buffer_size = usize::try_from(-size).expect("buffer size is positive");
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+    Ok(String::from_utf8(bytes)?)
+}
+
+fn normalize_gemma_harness_message(
+    parsed: &Value,
+    request_path: &Path,
+    raw_generation_path: &Path,
+) -> Result<Value> {
+    let mut message = if let Some(message) = parsed.get("message") {
+        message.clone()
+    } else if let Some(message) = parsed
+        .pointer("/choices/0/message")
+        .filter(|message| message.is_object())
+    {
+        message.clone()
+    } else {
+        parsed.clone()
+    };
+    let Some(obj) = message.as_object_mut() else {
+        return Err(RealityError::new(
+            "RUST_REALITY_GEMMA_MESSAGE_SHAPE_INVALID",
+            "Gemma parser output was not an assistant message object",
+            "gemma_harness.response.message",
+            "inspect raw generation and parser output",
+            json!({
+                "parsed": parsed,
+                "request": file_sot(request_path),
+                "raw_generation": file_sot(raw_generation_path)
+            }),
+            Some(file_sot(raw_generation_path)),
+        ));
+    };
+    match obj.get("role").and_then(Value::as_str) {
+        Some("assistant") => {}
+        Some(other) => {
+            return Err(RealityError::new(
+                "RUST_REALITY_GEMMA_MESSAGE_ROLE_INVALID",
+                "Gemma parser output did not return an assistant role",
+                "gemma_harness.response.message.role",
+                "inspect chat template parser output and role mapping",
+                json!({
+                    "role": other,
+                    "parsed": parsed,
+                    "request": file_sot(request_path),
+                    "raw_generation": file_sot(raw_generation_path)
+                }),
+                Some(file_sot(raw_generation_path)),
+            ));
+        }
+        None => {
+            return Err(RealityError::new(
+                "RUST_REALITY_GEMMA_MESSAGE_ROLE_MISSING",
+                "Gemma parser output omitted assistant message role",
+                "gemma_harness.response.message.role",
+                "inspect chat template parser output",
+                json!({
+                    "parsed": parsed,
+                    "request": file_sot(request_path),
+                    "raw_generation": file_sot(raw_generation_path)
+                }),
+                Some(file_sot(raw_generation_path)),
+            ));
+        }
+    }
+    if !obj.contains_key("content") {
+        obj.insert("content".to_string(), json!(""));
+    }
+    if let Some(tool_calls) = obj.get("tool_calls") {
+        if !tool_calls.is_array() {
+            return Err(RealityError::new(
+                "RUST_REALITY_GEMMA_TOOL_CALLS_SHAPE_INVALID",
+                "Gemma parser output tool_calls was not an array",
+                "gemma_harness.response.message.tool_calls",
+                "inspect chat template parser output",
+                json!({
+                    "tool_calls": tool_calls,
+                    "request": file_sot(request_path),
+                    "raw_generation": file_sot(raw_generation_path)
+                }),
+                Some(file_sot(raw_generation_path)),
+            ));
+        }
+    }
+    Ok(message)
+}
+
+fn gemma_coding_harness_chat_json(
+    harness: &GemmaCodingHarness,
     ctx: &AgentToolContext<'_>,
     prompt: &str,
     attempt: u64,
@@ -2346,7 +3167,7 @@ async fn ollama_chat_json(
         &gpu_before,
         args.gpu_min_free_mb,
         args.gpu_max_used_mb,
-        "before_ollama_chat",
+        "before_gemma_coding_harness",
         &args.model,
     )?;
     let system_prompt = "You are a model that can do function calling with the following functions. \
@@ -2403,19 +3224,25 @@ Do not modify tests, fixtures, or benchmark harness files.";
                 "no_tool_after_window_count": no_tool_after_window_count,
                 "repeated_navigation_count": repeated_navigation_count
             },
-            "keep_alive": args.ollama_keep_alive,
+            "runtime": {
+                "provider": "contextgraph_rust_gemma_coding_harness",
+                "model_path": file_sot(&harness.model_path)
+            },
             "options": {
-                "temperature": args.ollama_temperature,
-                "top_p": args.ollama_top_p,
-                "num_ctx": args.ollama_num_ctx,
-                "num_predict": args.ollama_num_predict
+                "temperature": args.gemma_temperature,
+                "top_p": args.gemma_top_p,
+                "context_tokens": args.gemma_context_tokens,
+                "max_new_tokens": args.gemma_max_new_tokens,
+                "gpu_layers": args.gemma_gpu_layers,
+                "batch_size": args.gemma_batch_size,
+                "seed": args.gemma_seed
             }
         });
         write_json_checked(&request_path, &body)?;
-        let response = post_ollama_chat(client, args, &body, &request_path).await?;
+        let response = harness.chat(args, &body, &request_path)?;
         let response_path = tools_root.join(format!("tool-round-{round:02}-response.json"));
         write_json_checked(&response_path, &response)?;
-        let mut tool_request_protocol = "ollama_native_tool_calls";
+        let mut tool_request_protocol = "contextgraph_native_tool_calls";
         let mut tool_calls = response
             .pointer("/message/tool_calls")
             .and_then(Value::as_array)
@@ -2438,7 +3265,7 @@ Do not modify tests, fixtures, or benchmark harness files.";
                 "edit_deadline_active": edit_deadline,
                 "latest_editable_windows": latest_editable_windows.clone(),
                 "accepted_protocols": [
-                    "ollama_native_tool_calls",
+                    "contextgraph_native_tool_calls",
                     "contextgraph_content_json_tool_request"
                 ],
                 "request": file_sot(&request_path),
@@ -2549,7 +3376,9 @@ Do not modify tests, fixtures, or benchmark harness files.";
             let result_text = serde_json::to_string(&result_readback).unwrap();
             messages.push(json!({
                 "role": "tool",
+                "name": name,
                 "tool_name": name,
+                "tool_call_id": call_id,
                 "content": result_text
             }));
             executed_tool_calls += 1;
@@ -2610,7 +3439,7 @@ Do not modify tests, fixtures, or benchmark harness files.";
             "record_kind": "contextgraph_model_step_blocked",
             "status": "blocked",
             "error_code": "RUST_REALITY_AGENT_TOOL_REQUIRED_BUT_MISSING",
-            "field_path": "ollama.message.tool_calls",
+            "field_path": "gemma_harness.message.tool_calls",
             "message_text": "model did not call any governed ContextGraph tool before trying to answer",
             "remediation": "reinject this blocked-step reality and require read_problem_reality, search_repo, inspect_symbol, open_file_window, or read_official_failure_reality before submitting edits",
             "message": {"role": "assistant", "content": ""},
@@ -2628,7 +3457,7 @@ Do not modify tests, fixtures, or benchmark harness files.";
             },
             "source_of_truth": file_sot(&transcript_path)
         });
-        write_json_checked(&attempt_dir.join("ollama-response.json"), &blocked)?;
+        write_json_checked(&attempt_dir.join("gemma-harness-response.json"), &blocked)?;
         return Ok(blocked);
     }
 
@@ -2637,7 +3466,7 @@ Do not modify tests, fixtures, or benchmark harness files.";
         &gpu_after,
         args.gpu_min_free_mb,
         args.gpu_max_used_mb,
-        "after_ollama_chat",
+        "after_gemma_coding_harness",
         &args.model,
     )?;
     let Some(submitted_candidate_patch) = submitted_candidate_patch else {
@@ -2697,7 +3526,7 @@ Do not modify tests, fixtures, or benchmark harness files.";
             },
             "source_of_truth": file_sot(&transcript_path)
         });
-        write_json_checked(&attempt_dir.join("ollama-response.json"), &blocked)?;
+        write_json_checked(&attempt_dir.join("gemma-harness-response.json"), &blocked)?;
         return Ok(blocked);
     };
     let transcript = json!({
@@ -2731,55 +3560,8 @@ Do not modify tests, fixtures, or benchmark harness files.";
             "agent_tool_transcript": file_sot(&transcript_path)
         }
     });
-    write_json_checked(&attempt_dir.join("ollama-response.json"), &enriched)?;
+    write_json_checked(&attempt_dir.join("gemma-harness-response.json"), &enriched)?;
     Ok(enriched)
-}
-
-async fn post_ollama_chat(
-    client: &reqwest::Client,
-    args: &AttemptArgs,
-    body: &Value,
-    request_path: &Path,
-) -> Result<Value> {
-    let url = format!("{}/api/chat", args.ollama_url.trim_end_matches('/'));
-    let response = client
-        .post(&url)
-        .json(body)
-        .timeout(Duration::from_secs(args.model_timeout))
-        .send()
-        .await
-        .map_err(|err| {
-            RealityError::new(
-                "RUST_REALITY_OLLAMA_REQUEST_FAILED",
-                "Ollama request failed",
-                "ollama.request",
-                "inspect Ollama server/model state and GPU budget",
-                json!({ "url": url, "error": err.to_string(), "request": file_sot(request_path) }),
-                Some(url.clone()),
-            )
-        })?;
-    let status = response.status();
-    let value: Value = response.json().await.map_err(|err| {
-        RealityError::new(
-            "RUST_REALITY_OLLAMA_JSON_INVALID",
-            "Ollama response was not valid JSON",
-            "ollama.response",
-            "inspect Ollama server output",
-            json!({ "error": err.to_string(), "request": file_sot(request_path) }),
-            Some(url.clone()),
-        )
-    })?;
-    if !status.is_success() || value.get("error").is_some() {
-        return Err(RealityError::new(
-            "RUST_REALITY_OLLAMA_ERROR",
-            "Ollama returned an error",
-            "ollama.response",
-            "inspect the model tag, prompt size, and Ollama server state",
-            json!({ "status": status.as_u16(), "response": value, "request": file_sot(request_path) }),
-            Some(url),
-        ));
-    }
-    Ok(value)
 }
 
 fn agent_tool_names() -> Vec<&'static str> {
@@ -3140,9 +3922,9 @@ fn tool_call_name(call: &Value) -> Result<String> {
         .ok_or_else(|| {
             RealityError::new(
                 "RUST_REALITY_TOOL_CALL_NAME_MISSING",
-                "Ollama tool call did not include a function name",
-                "ollama.message.tool_calls[].function.name",
-                "inspect Ollama tool-call response format",
+                "Gemma tool call did not include a function name",
+                "gemma_harness.message.tool_calls[].function.name",
+                "inspect Gemma tool-call response format",
                 json!({"tool_call": call}),
                 None,
             )
@@ -3152,7 +3934,9 @@ fn tool_call_name(call: &Value) -> Result<String> {
 fn tool_call_arguments(call: &Value) -> Result<Value> {
     let raw = call
         .pointer("/function/arguments")
+        .or_else(|| call.pointer("/function/parameters"))
         .or_else(|| call.get("arguments"))
+        .or_else(|| call.get("parameters"))
         .cloned()
         .unwrap_or_else(|| json!({}));
     match raw {
@@ -3161,8 +3945,8 @@ fn tool_call_arguments(call: &Value) -> Result<Value> {
         Value::String(text) => serde_json::from_str::<Value>(&text).map_err(|err| {
             RealityError::new(
                 "RUST_REALITY_TOOL_CALL_ARGUMENTS_JSON_INVALID",
-                "Ollama tool call arguments string was not JSON",
-                "ollama.message.tool_calls[].function.arguments",
+                "Gemma tool call arguments string was not JSON",
+                "gemma_harness.message.tool_calls[].function.arguments",
                 "inspect model tool-call argument formatting",
                 json!({"arguments": text, "error": err.to_string(), "tool_call": call}),
                 None,
@@ -3170,8 +3954,8 @@ fn tool_call_arguments(call: &Value) -> Result<Value> {
         }),
         other => Err(RealityError::new(
             "RUST_REALITY_TOOL_CALL_ARGUMENTS_INVALID",
-            "Ollama tool call arguments must be a JSON object or JSON object string",
-            "ollama.message.tool_calls[].function.arguments",
+            "Gemma tool call arguments must be a JSON object or JSON object string",
+            "gemma_harness.message.tool_calls[].function.arguments",
             "inspect model tool-call argument formatting",
             json!({"arguments": other, "tool_call": call}),
             None,
@@ -3214,7 +3998,7 @@ fn content_json_tool_calls(response: &Value, round: u64) -> Result<Vec<Value>> {
             return Err(RealityError::new(
                 "RUST_REALITY_CONTENT_TOOL_ARGUMENTS_INVALID",
                 "content JSON tool request arguments must be a JSON object",
-                "ollama.message.content.arguments",
+                "gemma_harness.message.content.arguments",
                 "emit {\"tool_name\":\"search_repo\",\"arguments\":{\"query\":\"...\"}} or use native tool_calls",
                 json!({"content": truncate_chars(trimmed, 2000), "arguments": arguments}),
                 None,
@@ -3234,7 +4018,7 @@ fn content_json_tool_calls(response: &Value, round: u64) -> Result<Vec<Value>> {
         return Err(RealityError::new(
             "RUST_REALITY_CONTENT_TOOL_JSON_INVALID",
             "assistant content looked like a tool request but was not valid JSON",
-            "ollama.message.content",
+            "gemma_harness.message.content",
             "emit a valid JSON object tool request or use native tool_calls",
             json!({"content": truncate_chars(trimmed, 2000)}),
             None,
@@ -3421,7 +4205,7 @@ fn build_harness_transition(
             "source_of_truth": {
                 "repo_head": format!("git:{}#HEAD", path_str(ctx.repo_dir)),
                 "repo_status": format!("git:{}#status", path_str(ctx.repo_dir)),
-                "ollama_response": file_sot(response_path)
+                "gemma_harness_response": file_sot(response_path)
             }
         },
         "action": {
@@ -3833,7 +4617,40 @@ fn tool_list_files(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<Valu
 }
 
 fn tool_inspect_symbol(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<Value> {
-    let symbol = required_tool_str(arguments, "symbol")?;
+    // Phase 14 (forward) intervention #2: accept `symbol`, `symbol_name`, or `name`
+    // as the symbol argument so a model that confuses the arg name produces a
+    // recoverable tool result instead of a fatal RUST_REALITY_TOOL_ARGUMENT_MISSING
+    // that aborts the entire attempt. Diagnosed from
+    // /tmp/ccreality-prod-3/rust_reality_1778039147061721975_e525987d where Gemma
+    // called inspect_symbol with {symbol_name, symbol_type} and the run aborted
+    // before writing attempt-summary.json. The previous tool_inspect_symbol used
+    // required_tool_str() which returns Err(RealityError) — fatal — for missing
+    // args. We now return a tool_blocked envelope (status=failed, recoverable)
+    // listing the accepted aliases so the model can reissue.
+    let symbol_opt = arguments
+        .get("symbol")
+        .and_then(Value::as_str)
+        .or_else(|| arguments.get("symbol_name").and_then(Value::as_str))
+        .or_else(|| arguments.get("name").and_then(Value::as_str))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let symbol = match symbol_opt {
+        Some(s) => s,
+        None => {
+            return Ok(tool_blocked(
+                "inspect_symbol",
+                "RUST_REALITY_TOOL_INSPECT_SYMBOL_NAME_MISSING",
+                "arguments.symbol",
+                "inspect_symbol requires a non-empty symbol name",
+                "pass `symbol` (preferred) or alias `symbol_name`/`name` with the identifier you want to find",
+                json!({
+                    "accepted_aliases": ["symbol", "symbol_name", "name"],
+                    "received_arguments": arguments,
+                }),
+                None,
+            ));
+        }
+    };
     if !symbol
         .chars()
         .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '.')
@@ -3968,12 +4785,65 @@ fn tool_apply_structured_edit(
         compile_structured_edits(ctx.repo_dir, tool_dir, edits, ctx.args.git_timeout)?;
     reset_workspace(ctx.repo_dir, &ctx.task.base_commit, ctx.args.git_timeout)?;
     let status = if patch.is_some() { "ok" } else { "failed" };
+    // Phase 14 (forward): same top-level error lift as apply_line_window_edit.
+    let top_error_code = compilation
+        .get("error_code")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let top_message = compilation.get("message").cloned().unwrap_or(Value::Null);
+    let top_remediation = compilation
+        .get("remediation")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let top_field_path = compilation
+        .get("field_path")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let syntax_probe_summary = compilation
+        .pointer("/details/syntax_probe")
+        .or_else(|| compilation.pointer("/syntax_probe"))
+        .map(|probe| {
+            // The probe writes process.stderr_tail and process.stdout_tail
+            // (already truncated by tail_chars). The earlier turn-01 lift
+            // pointed at /process/stderr and /process/stdout — fields that
+            // do not exist — so syntax_probe_summary surfaced empty strings
+            // even when py_compile clearly produced output. This corrects
+            // the field names so Gemma actually sees the SyntaxError text.
+            // We additionally truncate to 1500 chars to keep the tool result
+            // bounded inside the model context window.
+            let stderr_tail = probe
+                .pointer("/process/stderr_tail")
+                .or_else(|| probe.pointer("/process/stderr"))
+                .and_then(Value::as_str)
+                .map(|s| truncate_chars(s, 1500))
+                .unwrap_or_default();
+            let stdout_tail = probe
+                .pointer("/process/stdout_tail")
+                .or_else(|| probe.pointer("/process/stdout"))
+                .and_then(Value::as_str)
+                .map(|s| truncate_chars(s, 1500))
+                .unwrap_or_default();
+            let exit_code = probe.pointer("/process/exit_code").and_then(Value::as_i64);
+            json!({
+                "status": probe.get("status"),
+                "error_code": probe.get("error_code"),
+                "exit_code": exit_code,
+                "stderr_tail": stderr_tail,
+                "stdout_tail": stdout_tail,
+            })
+        })
+        .unwrap_or(Value::Null);
     Ok(json!({
         "status": status,
         "tool_name": "apply_structured_edit",
         "action": "compiled structured edits against real checkout, generated patch preview, then reset workspace to base commit",
         "patch_preview": patch.as_ref().map(|text| truncate_chars(text, 4000)),
         "patch_sha256": patch.as_ref().map(|text| sha256_text(text)),
+        "error_code": top_error_code,
+        "message": top_message,
+        "remediation": top_remediation,
+        "field_path": top_field_path,
+        "syntax_probe_summary": syntax_probe_summary,
         "compilation": compilation,
         "workspace_after": {
             "head": ctx.task.base_commit,
@@ -4002,12 +4872,72 @@ fn tool_apply_line_window_edit(
         compile_line_window_edits(ctx.repo_dir, tool_dir, edits, ctx.args.git_timeout)?;
     reset_workspace(ctx.repo_dir, &ctx.task.base_commit, ctx.args.git_timeout)?;
     let status = if patch.is_some() { "ok" } else { "failed" };
+    // Phase 14 (forward) intervention: lift error_code/message/remediation/syntax_probe
+    // tail from the compilation detail to the top level of the tool result so Gemma
+    // sees the actionable failure reason without having to navigate
+    // result.compilation.details.syntax_probe. This is a tool-grounding fix grounded
+    // in the diagnosis from /tmp/ccreality-prod-3 attempt-000001 (rounds 4-7) where
+    // three apply_line_window_edit calls failed with RUST_REALITY_LINE_EDIT_PY_COMPILE_FAILED
+    // but the tool result reported {status:failed, error_code:null, message:null,
+    // remediation:null} — leaving the model unable to self-correct.
+    let top_error_code = compilation
+        .get("error_code")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let top_message = compilation.get("message").cloned().unwrap_or(Value::Null);
+    let top_remediation = compilation
+        .get("remediation")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let top_field_path = compilation
+        .get("field_path")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let syntax_probe_summary = compilation
+        .pointer("/details/syntax_probe")
+        .or_else(|| compilation.pointer("/syntax_probe"))
+        .map(|probe| {
+            // The probe writes process.stderr_tail and process.stdout_tail
+            // (already truncated by tail_chars). The earlier turn-01 lift
+            // pointed at /process/stderr and /process/stdout — fields that
+            // do not exist — so syntax_probe_summary surfaced empty strings
+            // even when py_compile clearly produced output. This corrects
+            // the field names so Gemma actually sees the SyntaxError text.
+            // We additionally truncate to 1500 chars to keep the tool result
+            // bounded inside the model context window.
+            let stderr_tail = probe
+                .pointer("/process/stderr_tail")
+                .or_else(|| probe.pointer("/process/stderr"))
+                .and_then(Value::as_str)
+                .map(|s| truncate_chars(s, 1500))
+                .unwrap_or_default();
+            let stdout_tail = probe
+                .pointer("/process/stdout_tail")
+                .or_else(|| probe.pointer("/process/stdout"))
+                .and_then(Value::as_str)
+                .map(|s| truncate_chars(s, 1500))
+                .unwrap_or_default();
+            let exit_code = probe.pointer("/process/exit_code").and_then(Value::as_i64);
+            json!({
+                "status": probe.get("status"),
+                "error_code": probe.get("error_code"),
+                "exit_code": exit_code,
+                "stderr_tail": stderr_tail,
+                "stdout_tail": stdout_tail,
+            })
+        })
+        .unwrap_or(Value::Null);
     Ok(json!({
         "status": status,
         "tool_name": "apply_line_window_edit",
         "action": "compiled line-window edits against real checkout, generated patch preview, then reset workspace to base commit",
         "patch_preview": patch.as_ref().map(|text| truncate_chars(text, 4000)),
         "patch_sha256": patch.as_ref().map(|text| sha256_text(text)),
+        "error_code": top_error_code,
+        "message": top_message,
+        "remediation": top_remediation,
+        "field_path": top_field_path,
+        "syntax_probe_summary": syntax_probe_summary,
         "compilation": compilation,
         "workspace_after": {
             "head": ctx.task.base_commit,

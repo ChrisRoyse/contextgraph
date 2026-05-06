@@ -24,9 +24,9 @@
    ```
    If Docker isn't running, start it. SWE-bench Lite eval pulls images of significant size (~1 GB).
 
-5. **Ollama running with gemma4:e4b loaded.** Verify:
+5. **Gemma GGUF model file present for the Rust coding harness.** Verify:
    ```bash
-   ollama list | grep gemma4
+   test -f models/gemma4-e4b/gemma4-e4b.Q4_K_M.gguf
    ```
 
 6. **A SWE-bench Lite task manifest selected.** Either pick from `tasks/swebench-lite/` if it exists, or create one. See Task 12.1.

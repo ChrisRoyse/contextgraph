@@ -23,6 +23,7 @@ shakespear/
 .hive-mind/
 .serena/
 .swarm/
+.claude/scheduled_tasks.lock
 # Root CLAUDE.md is committed project memory; nested/local/private notes stay ignored.
 **/CLAUDE.md
 !/CLAUDE.md

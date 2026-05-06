@@ -26,32 +26,37 @@ SWE-agent's Agent-Computer Interface research is directly relevant to Gemma. Its
 
 Gemma 4 supports function calling, but Google is explicit that the model does not execute code. The application must parse, validate, execute, and return tool results. That matches ContextGraph's architecture: Gemma requests tools; ContextGraph validates and executes; BlackBoxFix verifies durable state.
 
+The active implementation is now the Rust Gemma coding harness inside `reality-loop.rs`. It loads a real GGUF model file through `llama-cpp-2`, renders the model chat template with the governed ContextGraph tool schemas, requires a generated tool-call grammar, performs grammar-constrained generation, parses the assistant message through the llama.cpp OpenAI-compatible parser, and only then executes governed tools. There is no model HTTP server in this boundary.
+
 ## Current Gemma Runtime Settings
 
 Local model readback:
 
 ```text
-model: gemma4:e4b
+model label: gemma4:e4b
+model source of truth: models/gemma4-e4b/gemma4-e4b.Q4_K_M.gguf
 architecture: gemma4
 parameters: 8.0B
 context length: 131072
 quantization: Q4_K_M
-capabilities: completion, vision, audio, tools, thinking
-model defaults: temperature=1 top_k=64 top_p=0.95
+capabilities required by harness: chat template, OpenAI-compatible tool calls, GGUF llama.cpp load
 ```
 
 Reality-loop request settings now override the sampling defaults for coding-agent work:
 
 ```json
 {
+  "provider": "contextgraph_rust_gemma_coding_harness",
   "temperature": 0.0,
   "top_p": 0.9,
-  "num_ctx": 32768,
-  "num_predict": 4096
+  "context_tokens": 32768,
+  "max_new_tokens": 4096,
+  "batch_size": 2048,
+  "gpu_layers": 4294967295
 }
 ```
 
-These values are persisted in each `tool-round-NN-request.json` file so model behavior can be correlated with outcomes.
+These values are persisted in each `tool-round-NN-request.json` file. Each model turn also writes source-of-truth artifacts for the rendered prompt, generated grammar, raw generation, parsed response, and final `gemma-harness-response.json`.
 
 ## Governed Coding-Agent Tool Surface
 
@@ -83,7 +88,7 @@ Preferred path:
 4. ContextGraph verifies the observed SHA-256 matches the current file.
 5. ContextGraph applies the line edit, writes `candidate.patch`, reads the patch SHA-256 back from disk, resets the workspace, and proceeds to validation.
 
-Fallback path:
+Alternate edit path:
 
 1. Gemma copies an exact unique source span from a real source window.
 2. Gemma calls `apply_structured_edit`.
@@ -192,4 +197,4 @@ This is not success, and the system does not claim success. It is a verified cod
 - SWE-agent ACI paper: https://openreview.net/pdf/7b9425730150fb166d4e6c77995f67ea38638fca.pdf
 - Reflexion: https://arxiv.org/abs/2303.11366
 - Gemma 4 function calling: https://ai.google.dev/gemma/docs/capabilities/text/function-calling-gemma4
-- Ollama tool calling: https://docs.ollama.com/capabilities/tool-calling
+- llama.cpp grammars: https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md

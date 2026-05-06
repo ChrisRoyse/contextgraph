@@ -899,6 +899,7 @@ dependencies = [
  "criterion",
  "dirs",
  "futures",
+ "llama-cpp-2",
  "parquet",
  "reqwest",
  "rocksdb",

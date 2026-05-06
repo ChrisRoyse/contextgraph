@@ -10,7 +10,7 @@
 | `cc-reality-reward-analyst` subagent | Sonnet | Read-only signal analysis; spawned only on ambiguous diagnoses |
 | `cc-reality-swe-failure-triage` subagent | Sonnet | Read-only Docker/env triage; spawned only on official-eval failures |
 | `cc-reality-source-of-truth-readback` subagent | Sonnet | Mechanical SHA verification; cheap context |
-| Inner Gemma actor | gemma4:e4b (local Ollama) | Existing; not Anthropic-billed |
+| Inner Gemma actor | gemma4:e4b label, real GGUF loaded by Rust harness | Existing; not Anthropic-billed |
 
 The `model` field in `.claude/settings.json` is `opus` (drives the main session). Each subagent's frontmatter overrides per the table above.
 

@@ -450,7 +450,6 @@ This deduplicates existing Rust code; we'll lift `project_apply_line_window_edit
 - `^cargo (fmt|check|test|build|clippy)( |$)`
 - `^rustfmt( |$)`
 - `^git (status|diff|log|show)( |$)`
-- `^ollama ps$`
 - `^nvidia-smi$`
 
 **Deny:** anything else, including command chains via `&&`, `;`, `|`, backticks, `$()`.
