@@ -369,7 +369,7 @@ pub fn optional_str(args: &Value, field: &str) -> Option<String> {
 }
 
 pub fn required_u64(args: &Value, field: &str) -> Result<u64> {
-    args.get(field).and_then(Value::as_u64).ok_or_else(|| {
+    coerce_u64(args.get(field)).ok_or_else(|| {
         CCRealityError::new(
             "CCREALITY_ARG_MISSING_OR_NOT_U64",
             format!("argument '{field}' must be a non-negative integer"),
@@ -382,11 +382,82 @@ pub fn required_u64(args: &Value, field: &str) -> Result<u64> {
 }
 
 pub fn optional_u64(args: &Value, field: &str, default: u64) -> u64 {
-    args.get(field).and_then(Value::as_u64).unwrap_or(default)
+    coerce_u64(args.get(field)).unwrap_or(default)
 }
 
 pub fn optional_bool(args: &Value, field: &str, default: bool) -> bool {
-    args.get(field).and_then(Value::as_bool).unwrap_or(default)
+    coerce_bool(args.get(field)).unwrap_or(default)
+}
+
+/// Accept either a JSON number or a JSON string that parses to a non-negative integer.
+/// This coexists with the JSON-RPC client wrapper that occasionally stringifies typed
+/// arguments before they reach the MCP tool handler (see Phase 13 task T13.2).
+fn coerce_u64(value: Option<&Value>) -> Option<u64> {
+    match value? {
+        Value::Number(n) => n.as_u64(),
+        Value::String(s) => s.trim().parse::<u64>().ok(),
+        _ => None,
+    }
+}
+
+fn coerce_bool(value: Option<&Value>) -> Option<bool> {
+    match value? {
+        Value::Bool(b) => Some(*b),
+        Value::String(s) => match s.trim() {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Recursively coerce JSON-stringified primitive/array/object values back to their
+/// intrinsic types. Used at the entry of schema-validated handlers (e.g.
+/// `optimizer_record_recommendation`) so the recommendation passes validation even
+/// when the caller's transport stringified its typed arguments.
+///
+/// Coercion rules:
+/// - leave strings that do not look like a JSON literal alone (preserves natural prose
+///   such as `reason`).
+/// - if a string parses as JSON AND the result is a non-string type (number, bool,
+///   array, object, null), use the parsed value.
+/// - traverse into objects and arrays recursively.
+pub fn coerce_stringified_args(value: Value) -> Value {
+    match value {
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(k, v)| (k, coerce_stringified_args(v)))
+                .collect(),
+        ),
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(coerce_stringified_args).collect())
+        }
+        Value::String(s) => match looks_like_json_literal(&s) {
+            true => match serde_json::from_str::<Value>(&s) {
+                Ok(parsed @ Value::Number(_))
+                | Ok(parsed @ Value::Bool(_))
+                | Ok(parsed @ Value::Array(_))
+                | Ok(parsed @ Value::Object(_))
+                | Ok(parsed @ Value::Null) => coerce_stringified_args(parsed),
+                _ => Value::String(s),
+            },
+            false => Value::String(s),
+        },
+        other => other,
+    }
+}
+
+fn looks_like_json_literal(s: &str) -> bool {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let first = trimmed.as_bytes()[0];
+    matches!(
+        first,
+        b'{' | b'[' | b'-' | b'0'..=b'9'
+    ) || matches!(trimmed, "true" | "false" | "null")
 }
 
 pub fn session_id(args: &Value) -> String {
@@ -522,5 +593,84 @@ mod tests {
             assert!(is_runtime_metadata_dir(name), "{name} should be metadata");
         }
         assert!(!is_runtime_metadata_dir("smoke-1778013223"));
+    }
+
+    #[test]
+    fn required_u64_accepts_stringified_integer() {
+        let args = json!({"attempt": "1"});
+        assert_eq!(required_u64(&args, "attempt").expect("coerced"), 1);
+    }
+
+    #[test]
+    fn required_u64_accepts_native_integer() {
+        let args = json!({"attempt": 7});
+        assert_eq!(required_u64(&args, "attempt").expect("native"), 7);
+    }
+
+    #[test]
+    fn required_u64_rejects_unparseable_string() {
+        let args = json!({"attempt": "not-a-number"});
+        let err = required_u64(&args, "attempt").expect_err("invalid");
+        assert_eq!(err.error_code, "CCREALITY_ARG_MISSING_OR_NOT_U64");
+    }
+
+    #[test]
+    fn optional_bool_accepts_stringified_true_false() {
+        assert!(optional_bool(&json!({"k": "true"}), "k", false));
+        assert!(!optional_bool(&json!({"k": "false"}), "k", true));
+        assert!(optional_bool(&json!({"k": true}), "k", false));
+        assert!(!optional_bool(&json!({"k": "garbage"}), "k", false));
+    }
+
+    #[test]
+    fn coerce_stringified_args_round_trips_typed_recommendation() {
+        let stringified = json!({
+            "schema_version": "1",
+            "attempt": "3",
+            "turn_number": "2",
+            "status": "changed",
+            "reason": "natural prose stays unchanged",
+            "source_files_changed": "[\"a.rs\",\"b.rs\"]",
+            "memories_created": "[]",
+            "harness_transitions_minted": "[\"file:/tmp/x\"]",
+            "drift_detected": "{\"files\":[]}",
+            "cost_estimate_usd": "0.45"
+        });
+        let coerced = coerce_stringified_args(stringified);
+        assert_eq!(coerced["schema_version"], json!(1));
+        assert_eq!(coerced["attempt"], json!(3));
+        assert_eq!(coerced["turn_number"], json!(2));
+        assert_eq!(coerced["status"], json!("changed"));
+        assert_eq!(coerced["reason"], json!("natural prose stays unchanged"));
+        assert_eq!(coerced["source_files_changed"], json!(["a.rs", "b.rs"]));
+        assert_eq!(coerced["memories_created"], json!([]));
+        assert_eq!(coerced["harness_transitions_minted"], json!(["file:/tmp/x"]));
+        assert_eq!(coerced["drift_detected"], json!({"files": []}));
+        assert!(coerced["cost_estimate_usd"].as_f64().unwrap() - 0.45 < 1e-9);
+    }
+
+    #[test]
+    fn coerce_stringified_args_does_not_mangle_natural_strings() {
+        let original = json!({
+            "reason": "Phase 13 T13.2 fix",
+            "next_gemma_prompt_delta": "Use open_file_window before drafting any patch.",
+            "source_of_truth": "file:placeholder"
+        });
+        let coerced = coerce_stringified_args(original.clone());
+        assert_eq!(coerced, original);
+    }
+
+    #[test]
+    fn looks_like_json_literal_is_strict() {
+        assert!(looks_like_json_literal("1"));
+        assert!(looks_like_json_literal("-5"));
+        assert!(looks_like_json_literal("[1,2]"));
+        assert!(looks_like_json_literal("{\"k\":1}"));
+        assert!(looks_like_json_literal("true"));
+        assert!(looks_like_json_literal("false"));
+        assert!(looks_like_json_literal("null"));
+        assert!(!looks_like_json_literal("changed"));
+        assert!(!looks_like_json_literal("file:/tmp/x"));
+        assert!(!looks_like_json_literal(""));
     }
 }

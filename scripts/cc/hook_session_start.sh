@@ -23,7 +23,27 @@ else
   if [ -d "${RUNTIME_ROOT}" ]; then
     SUMMARY_PATH="$(find "${RUNTIME_ROOT}" -path '*/attempt-summary.json' -type f -print 2>/dev/null | sort | tail -n 1 || true)"
     if [ -n "${SUMMARY_PATH}" ]; then
-      if SUMMARY_COMPACT="$(jq -c '{
+      # Phase 13 T13.1: branch on record_kind so synthetic-smoke summaries
+      # (ccreality_smoke_attempt_summary, flat shape) and full attempt summaries
+      # (with .attempt.* nested object) both produce a usable compact summary
+      # without falsely reporting a "read failed" condition.
+      RECORD_KIND="$(jq -r '.record_kind // ""' "${SUMMARY_PATH}" 2>/dev/null || echo "")"
+      if [ "${RECORD_KIND}" = "ccreality_smoke_attempt_summary" ]; then
+        if SUMMARY_COMPACT="$(jq -c '{
+          record_kind: .record_kind,
+          attempt_number: .attempt,
+          task_id: .task_id,
+          synthetic: .synthetic,
+          validation_status: .validation.status,
+          official_evidence: (.official_evidence != null),
+          problem_reality_packet: .problem_reality_packet_path,
+          reality_signal_packet: .reality_signal_packet_path
+        }' "${SUMMARY_PATH}" 2>/dev/null)"; then
+          LATEST_SUMMARY="Latest attempt summary: ${SUMMARY_COMPACT}. Source of truth: $(cgreality_file_sot "${SUMMARY_PATH}")."
+        else
+          LATEST_SUMMARY="Latest smoke attempt summary read failed. Source of truth: $(cgreality_file_sot "${SUMMARY_PATH}")."
+        fi
+      elif SUMMARY_COMPACT="$(jq -c '{
         record_kind: "contextgraph_attempt_summary_hook_compact",
         attempt_number: .attempt.attempt,
         status: .attempt.status,

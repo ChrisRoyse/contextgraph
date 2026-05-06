@@ -105,6 +105,9 @@ pub async fn optimizer_record_decision(args: Value) -> Result<Value> {
 }
 
 pub async fn optimizer_record_recommendation(args: Value) -> Result<Value> {
+    // Phase 13 T13.2: tolerate JSON-stringified arguments from JSON-RPC clients that
+    // collapse typed values (integers, arrays, booleans) into strings before transport.
+    let args = coerce_stringified_args(args);
     let validator = RecommendationValidator::load()?;
     validator.validate(&args)?;
     let run_id = required_str(&args, "run_id")?;
