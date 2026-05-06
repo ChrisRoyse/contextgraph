@@ -14,7 +14,7 @@ use llama_cpp_2::TokenToStringError;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::io::{Read, Write};
 use std::num::NonZeroU32;
@@ -36,13 +36,24 @@ const DEFAULT_GEMMA_TOP_P: f32 = 0.9;
 const DEFAULT_GEMMA_BATCH_SIZE: usize = 2048;
 const DEFAULT_GEMMA_SEED: u32 = 1;
 const DEFAULT_AGENT_TOOL_ROUNDS: u64 = 24;
+/// Hard cap on rounds-per-attempt enforced inside `gemma_coding_harness_chat_json`,
+/// independent of `--agent-tool-rounds`. Chosen to cover the longest known successful
+/// trajectory (~16 rounds on psf__requests-2317) with headroom while preventing the
+/// exponential-escape and context-overflow cascades observed past ~15 rounds. Bump
+/// this constant — do not loosen the deadlock detector — if a genuinely complex task
+/// proves to need more.
+const MAX_ROUNDS_PER_ATTEMPT_HARD_CAP: u64 = 20;
+/// Number of consecutive rounds that must end with the same non-success
+/// `error_code` before the harness force-fails the attempt with
+/// `RUST_REALITY_REPEATED_ERROR_DEADLOCK`. Five matches the operator's stuck-loop
+/// guidance and gives the model enough rope to self-correct once or twice first.
+const REPEATED_ERROR_DEADLOCK_LEN: usize = 5;
 const DEFAULT_OFFICIAL_DOCKER_HOST: &str = "unix:///var/run/docker.sock";
 const DEFAULT_OFFICIAL_DOCKER_CONFIG: &str = "/home/cabdru/.cache/contextgraph-docker-config";
 const DEFAULT_SMOKE_RUNTIME_ROOT: &str = "/tmp/cgreality-smoke";
 const DEFAULT_REPLAY_OUTPUT_LABEL: &str = "replay";
 const DATASET_NAME: &str = "princeton-nlp/SWE-bench_Lite";
 const LOCAL_PYTHON_BIN: &str = "python3";
-
 #[derive(Parser, Debug, Clone)]
 #[command(name = "reality-loop")]
 #[command(version)]
@@ -3652,7 +3663,36 @@ Do not modify tests, fixtures, or benchmark harness files.",
     let mut no_tool_after_window_count = 0_u64;
     let mut repeated_navigation_count = 0_u64;
     let mut seen_tool_calls: BTreeMap<String, u64> = BTreeMap::new();
+    // Force-stop bookkeeping: when set, the round loop breaks and the existing
+    // post-loop blocked path uses these fields instead of the generic
+    // RUST_REALITY_FINAL_EDIT_TOOL_REQUIRED error. Keeps the engine's exit
+    // contract (Ok(blocked_value)) while giving the optimizer a precise
+    // diagnosis. See MAX_ROUNDS_PER_ATTEMPT_HARD_CAP and
+    // REPEATED_ERROR_DEADLOCK_LEN at module scope.
+    let mut forced_stop: Option<(String, String, String)> = None; // (error_code, message, remediation)
+    let mut forced_stop_round: Option<u64> = None;
+    let mut last_error_codes: VecDeque<String> =
+        VecDeque::with_capacity(REPEATED_ERROR_DEADLOCK_LEN);
     for round in 1..=args.agent_tool_rounds {
+        if round > MAX_ROUNDS_PER_ATTEMPT_HARD_CAP {
+            forced_stop = Some((
+                "RUST_REALITY_MAX_ROUNDS_EXCEEDED".to_string(),
+                format!(
+                    "model exceeded max-rounds-per-attempt ({MAX_ROUNDS_PER_ATTEMPT_HARD_CAP}) without producing a valid candidate patch"
+                ),
+                "raise MAX_ROUNDS_PER_ATTEMPT_HARD_CAP only after confirming the failing trajectory is genuinely exploring; otherwise diagnose why Gemma cannot converge inside the cap"
+                    .to_string(),
+            ));
+            forced_stop_round = Some(round);
+            transcript_entries.push(json!({
+                "round": round,
+                "status": "forced_stop",
+                "error_code": "RUST_REALITY_MAX_ROUNDS_EXCEEDED",
+                "max_rounds_per_attempt_hard_cap": MAX_ROUNDS_PER_ATTEMPT_HARD_CAP,
+                "tool_round_budget": args.agent_tool_rounds,
+            }));
+            break;
+        }
         let request_path = tools_root.join(format!("tool-round-{round:02}-request.json"));
         let edit_deadline = edit_deadline_active(
             round,
@@ -3745,10 +3785,18 @@ Do not modify tests, fixtures, or benchmark harness files.",
                     repeated_navigation_count
                 )
             }));
+            // No tool call this round resets any error-code streak: the model
+            // is no longer producing the "same" failure, it produced none at all.
+            last_error_codes.clear();
             continue;
         }
         messages.push(response["message"].clone());
         let mut tool_results = Vec::new();
+        // Round-level error code: None if any tool in this round succeeded;
+        // otherwise the error_code of the last failing tool call. Used by the
+        // consecutive-error deadlock detector below.
+        let mut round_error_code: Option<String> = None;
+        let mut round_had_ok_tool = false;
         for (index, call) in tool_calls.iter().enumerate() {
             let name = tool_call_name(call)?;
             let arguments = tool_call_arguments(call)?;
@@ -3795,6 +3843,11 @@ Do not modify tests, fixtures, or benchmark harness files.",
                 .get("status")
                 .and_then(Value::as_str)
                 .unwrap_or("failed");
+            if result_status == "ok" {
+                round_had_ok_tool = true;
+            } else if let Some(code) = result_readback.get("error_code").and_then(Value::as_str) {
+                round_error_code = Some(code.to_string());
+            }
             if is_final_edit_tool(&name) && result_status == "ok" {
                 submitted_candidate_patch = Some(materialize_tool_candidate_submission(
                     &result_readback,
@@ -3862,6 +3915,19 @@ Do not modify tests, fixtures, or benchmark harness files.",
                 "blackbox_ledger_evidence": ledger_evidence
             }));
         }
+        // Update the rolling tail of round-level error codes for the
+        // consecutive-error deadlock detector. A round with ANY ok tool
+        // resets the streak. A round whose tools all failed contributes
+        // its last failing error_code (or "UNKNOWN" if none was emitted).
+        if round_had_ok_tool {
+            last_error_codes.clear();
+        } else {
+            let code = round_error_code.unwrap_or_else(|| "UNKNOWN".to_string());
+            if last_error_codes.len() == REPEATED_ERROR_DEADLOCK_LEN {
+                last_error_codes.pop_front();
+            }
+            last_error_codes.push_back(code);
+        }
         transcript_entries.push(json!({
             "round": round,
             "status": "tool_results_appended",
@@ -3870,8 +3936,27 @@ Do not modify tests, fixtures, or benchmark harness files.",
             "tool_request_protocol": tool_request_protocol,
             "request": file_sot(&request_path),
             "response": file_sot(&response_path),
-            "tool_results": tool_results
+            "tool_results": tool_results,
+            "round_error_code": last_error_codes.back()
         }));
+        if let Some(deadlock_code) = repeated_error_deadlock_code(&last_error_codes) {
+            forced_stop = Some((
+                "RUST_REALITY_REPEATED_ERROR_DEADLOCK".to_string(),
+                format!(
+                    "model produced the same tool error_code ({deadlock_code}) for {REPEATED_ERROR_DEADLOCK_LEN} consecutive rounds without recovering"
+                ),
+                "diagnose why the failing tool keeps rejecting the model's input (e.g., observed_sha256 drift, malformed find/replace, repeated py_compile failure) and either fix the tool's error contract or guide the model with a clearer remediation prompt".to_string(),
+            ));
+            forced_stop_round = Some(round);
+            transcript_entries.push(json!({
+                "round": round,
+                "status": "forced_stop",
+                "error_code": "RUST_REALITY_REPEATED_ERROR_DEADLOCK",
+                "deadlock_error_code": deadlock_code,
+                "deadlock_length": REPEATED_ERROR_DEADLOCK_LEN,
+            }));
+            break;
+        }
     }
 
     let transcript_path = tools_root.join("agent-tool-transcript.json");
@@ -3883,8 +3968,7 @@ Do not modify tests, fixtures, or benchmark harness files.",
             "tool_round_budget": args.agent_tool_rounds,
             "tools": agent_tool_names(),
             "entries": transcript_entries,
-            "executed_tool_calls": executed_tool_calls,
-            "status": "blocked",
+            "executed_tool_calls": executed_tool_calls,            "status": "blocked",
             "error_code": "RUST_REALITY_AGENT_TOOL_REQUIRED_BUT_MISSING",
             "source_of_truth": file_sot(&transcript_path)
         });
@@ -3933,26 +4017,37 @@ Do not modify tests, fixtures, or benchmark harness files.",
     )?;
     let Some(submitted_candidate_patch) = submitted_candidate_patch else {
         let attempted_edit = failed_candidate_submission.is_some();
-        let error_code = if attempted_edit {
-            "RUST_REALITY_FINAL_EDIT_TOOL_FAILED"
+        // forced_stop wins over the generic "no final edit" diagnosis: it
+        // pinpoints why the loop was cut short (round cap or repeated-error
+        // deadlock) so the optimizer reads a precise error_code instead of
+        // the vague RUST_REALITY_FINAL_EDIT_TOOL_REQUIRED.
+        let (error_code, message, remediation) = if let Some((c, m, r)) = forced_stop.as_ref() {
+            (c.as_str(), m.as_str(), r.as_str())
+        } else if attempted_edit {
+            (
+                "RUST_REALITY_FINAL_EDIT_TOOL_FAILED",
+                "model called a final edit tool but it did not produce a candidate patch",
+                "reinject the failed final edit result, open the exact source window, and submit a line-window edit, unique find/replace edit, or observed unified diff",
+            )
         } else {
-            "RUST_REALITY_FINAL_EDIT_TOOL_REQUIRED"
+            (
+                "RUST_REALITY_FINAL_EDIT_TOOL_REQUIRED",
+                "model used governed tools but never submitted a candidate patch through apply_line_window_edit, apply_structured_edit, or apply_unified_diff",
+                "call apply_line_window_edit with observed_sha256 from open_file_window, apply_structured_edit with exact find/replace edits copied from opened source windows, or apply_unified_diff with observed file hashes",
+            )
         };
-        let message = if attempted_edit {
-            "model called a final edit tool but it did not produce a candidate patch"
+        let forced_stop_field_path = if forced_stop.is_some() {
+            "agent_tools.round_loop_forced_stop"
         } else {
-            "model used governed tools but never submitted a candidate patch through apply_line_window_edit, apply_structured_edit, or apply_unified_diff"
-        };
-        let remediation = if attempted_edit {
-            "reinject the failed final edit result, open the exact source window, and submit a line-window edit, unique find/replace edit, or observed unified diff"
-        } else {
-            "call apply_line_window_edit with observed_sha256 from open_file_window, apply_structured_edit with exact find/replace edits copied from opened source windows, or apply_unified_diff with observed file hashes"
+            "agent_tools.final_edit_submission"
         };
         let transcript = json!({
             "record_kind": "contextgraph_agent_tool_transcript",
             "attempt": attempt,
             "model": args.model,
             "tool_round_budget": args.agent_tool_rounds,
+            "max_rounds_per_attempt_hard_cap": MAX_ROUNDS_PER_ATTEMPT_HARD_CAP,
+            "repeated_error_deadlock_len": REPEATED_ERROR_DEADLOCK_LEN,
             "tools": agent_tool_names(),
             "entries": transcript_entries,
             "executed_tool_calls": executed_tool_calls,
@@ -3960,6 +4055,7 @@ Do not modify tests, fixtures, or benchmark harness files.",
             "error_code": error_code,
             "message": message,
             "remediation": remediation,
+            "forced_stop_round": forced_stop_round,
             "failed_candidate_submission": failed_candidate_submission,
             "source_of_truth": file_sot(&transcript_path)
         });
@@ -3968,7 +4064,7 @@ Do not modify tests, fixtures, or benchmark harness files.",
             "record_kind": "contextgraph_model_step_blocked",
             "status": "blocked",
             "error_code": error_code,
-            "field_path": "agent_tools.final_edit_submission",
+            "field_path": forced_stop_field_path,
             "message_text": message,
             "remediation": remediation,
             "message": {"role": "assistant", "content": ""},
@@ -3976,7 +4072,10 @@ Do not modify tests, fixtures, or benchmark harness files.",
                 "attempt": attempt,
                 "model": args.model,
                 "tool_round_budget": args.agent_tool_rounds,
+                "max_rounds_per_attempt_hard_cap": MAX_ROUNDS_PER_ATTEMPT_HARD_CAP,
+                "repeated_error_deadlock_len": REPEATED_ERROR_DEADLOCK_LEN,
                 "executed_tool_calls": executed_tool_calls,
+                "forced_stop_round": forced_stop_round,
                 "tools": agent_tool_names(),
                 "failed_candidate_submission": failed_candidate_submission
             },
@@ -4024,6 +4123,27 @@ Do not modify tests, fixtures, or benchmark harness files.",
     });
     write_json_checked(&attempt_dir.join("gemma-harness-response.json"), &enriched)?;
     Ok(enriched)
+}
+
+/// Returns `Some(code)` when the rolling tail of round-level error codes shows
+/// `REPEATED_ERROR_DEADLOCK_LEN` consecutive identical non-empty codes — the
+/// signal that the model is stuck repeating the exact same failure (e.g.
+/// `RUST_REALITY_LINE_EDIT_PY_COMPILE_FAILED` round after round). Returns
+/// `None` otherwise. Pure function so the round-loop logic is unit-testable
+/// without spinning up a real Gemma harness.
+fn repeated_error_deadlock_code(tail: &VecDeque<String>) -> Option<String> {
+    if tail.len() < REPEATED_ERROR_DEADLOCK_LEN {
+        return None;
+    }
+    let first = tail.front()?;
+    if first.is_empty() {
+        return None;
+    }
+    if tail.iter().all(|code| code == first) {
+        Some(first.clone())
+    } else {
+        None
+    }
 }
 
 fn agent_tool_names() -> Vec<&'static str> {
@@ -6620,6 +6740,7 @@ fn compile_line_window_edits(
             .entry(path.to_string())
             .or_insert_with(|| before.clone());
         write_text_checked(&target, &after)?;
+        let post_edit_window = build_post_edit_window(path, &after, start_line, end_line, &target);
         applied.push(json!({
             "index": index,
             "path": path,
@@ -6630,6 +6751,7 @@ fn compile_line_window_edits(
             "observed_sha256": observed_sha256,
             "old_span_sha256": sha256_text(old_span),
             "replace_sha256": sha256_text(replace),
+            "post_edit_window": post_edit_window,
             "source_of_truth": file_sot(&target)
         }));
     }
@@ -6974,6 +7096,69 @@ fn line_spans(text: &str) -> Vec<(usize, usize)> {
         spans.push((start, text.len()));
     }
     spans
+}
+
+/// Build a post-edit window snippet so the model can verify what its edit produced.
+///
+/// Returns a JSON object with `path`, `start_line` (1-based), `end_line` (1-based),
+/// `total_lines`, and `lines: [{n, text}]` covering `edit_start - 5` through
+/// `edit_end + 5` (clamped to file bounds). Each line's `text` is the raw line
+/// content with any trailing `\n` stripped. Output is bounded to MAX_LINES so
+/// pathological large edits do not bloat tool transcripts.
+fn build_post_edit_window(
+    path: &str,
+    after_text: &str,
+    edit_start_line: u64,
+    edit_end_line: u64,
+    full_path: &Path,
+) -> Value {
+    const CONTEXT: u64 = 5;
+    const MAX_LINES: usize = 500;
+    const MAX_BYTES: usize = 20_000;
+    let spans = line_spans(after_text);
+    let total_lines = spans.len();
+    if total_lines == 0 {
+        return json!({
+            "path": path,
+            "start_line": 0,
+            "end_line": 0,
+            "total_lines": 0,
+            "lines": [],
+            "source_of_truth": file_sot(full_path)
+        });
+    }
+    let total_lines_u64 = total_lines as u64;
+    let window_start = edit_start_line.saturating_sub(CONTEXT).max(1);
+    let window_end = edit_end_line.saturating_add(CONTEXT).min(total_lines_u64);
+    let mut lines = Vec::new();
+    let mut bytes_used = 0usize;
+    let mut truncated = false;
+    for n in window_start..=window_end {
+        if lines.len() >= MAX_LINES {
+            truncated = true;
+            break;
+        }
+        let idx = (n - 1) as usize;
+        let (lo, hi) = spans[idx];
+        let raw = &after_text[lo..hi];
+        let text = raw.strip_suffix('\n').unwrap_or(raw);
+        let text = text.strip_suffix('\r').unwrap_or(text);
+        if bytes_used + text.len() > MAX_BYTES {
+            truncated = true;
+            break;
+        }
+        bytes_used += text.len();
+        lines.push(json!({"n": n, "text": text}));
+    }
+    json!({
+        "path": path,
+        "start_line": window_start,
+        "end_line": window_end,
+        "total_lines": total_lines_u64,
+        "lines": lines,
+        "truncated": truncated,
+        "source_of_truth": file_sot(full_path)
+    })
 }
 
 fn python_syntax_probe_after_candidate_edits(
@@ -10814,6 +10999,105 @@ diff --git a/src/example.py b/src/example.py
     }
 
     #[test]
+    fn line_window_edit_emits_post_edit_window_on_success_and_py_compile_failure_fsv() {
+        // Build a repo with a multi-line python file so we can exercise context expansion.
+        let (_temp, repo) = init_real_git_repo();
+        let multi = "def a():\n    return 1\n\ndef b():\n    return 2\n\ndef c():\n    return 3\n\ndef d():\n    return 4\n\ndef e():\n    return 5\n";
+        write_text_checked(&repo.join("src/example.py"), multi).expect("write multi");
+        run_required(
+            &["git", "add", "src/example.py"],
+            &repo,
+            30,
+            "TEST_GIT_ADD_FAILED",
+            "test.git.add",
+        )
+        .expect("git add multi");
+        run_required(
+            &["git", "commit", "-m", "multi"],
+            &repo,
+            30,
+            "TEST_GIT_COMMIT_FAILED",
+            "test.git.commit.multi",
+        )
+        .expect("git commit multi");
+        let source = repo.join("src/example.py");
+        let observed_sha256 = sha256_file(&source).expect("sha");
+
+        // Success path: edit line 8 (`    return 3`) -> `    return 33`.
+        let tool_dir_ok = repo
+            .parent()
+            .expect("repo parent")
+            .join("attempt-000001")
+            .join("agent-tools")
+            .join("round-01-00-apply_line_window_edit-ok");
+        create_dir_checked(&tool_dir_ok).expect("tool dir ok");
+        let edits_ok = vec![json!({
+            "path": "src/example.py",
+            "start_line": 8,
+            "end_line": 8,
+            "replace": "    return 33\n",
+            "observed_sha256": observed_sha256.clone(),
+        })];
+        let (patch_ok, compilation_ok) =
+            compile_line_window_edits(&repo, &tool_dir_ok, &edits_ok, 30).expect("compile ok");
+        assert!(patch_ok.is_some(), "success path must produce a patch");
+        let window_ok = compilation_ok
+            .pointer("/applied_edits/0/post_edit_window")
+            .expect("post_edit_window present on success");
+        assert_eq!(window_ok["path"], "src/example.py");
+        assert_eq!(window_ok["start_line"], 3);
+        assert_eq!(window_ok["end_line"], 13);
+        let lines_ok = window_ok["lines"].as_array().expect("lines array");
+        assert!(!lines_ok.is_empty());
+        let edited_row = lines_ok
+            .iter()
+            .find(|row| row["n"].as_u64() == Some(8))
+            .expect("line 8 in window");
+        assert_eq!(edited_row["text"].as_str(), Some("    return 33"));
+        // Restore for the failure path by overwriting from in-memory truth.
+        write_text_checked(&source, multi).expect("restore source");
+
+        // Failure path: edit line 8 with broken Python so the syntax probe rejects the patch.
+        let observed_after_restore = sha256_file(&source).expect("sha after restore");
+        let tool_dir_fail = repo
+            .parent()
+            .expect("repo parent")
+            .join("attempt-000001")
+            .join("agent-tools")
+            .join("round-01-00-apply_line_window_edit-fail");
+        create_dir_checked(&tool_dir_fail).expect("tool dir fail");
+        let edits_fail = vec![json!({
+            "path": "src/example.py",
+            "start_line": 8,
+            "end_line": 8,
+            "replace": "    return \"\"\"oops\n",
+            "observed_sha256": observed_after_restore,
+        })];
+        let (patch_fail, compilation_fail) =
+            compile_line_window_edits(&repo, &tool_dir_fail, &edits_fail, 30)
+                .expect("compile fail");
+        assert!(patch_fail.is_none(), "failure path must not return a patch");
+        assert_eq!(
+            compilation_fail["error_code"],
+            "RUST_REALITY_LINE_EDIT_PY_COMPILE_FAILED"
+        );
+        let window_fail = compilation_fail
+            .pointer("/details/applied_edits/0/post_edit_window")
+            .expect("post_edit_window present on PY_COMPILE_FAILED");
+        assert_eq!(window_fail["path"], "src/example.py");
+        let lines_fail = window_fail["lines"].as_array().expect("lines array");
+        let broken_row = lines_fail
+            .iter()
+            .find(|row| row["n"].as_u64() == Some(8))
+            .expect("broken line 8 in window");
+        assert_eq!(
+            broken_row["text"].as_str(),
+            Some("    return \"\"\"oops"),
+            "post_edit_window must echo the broken text so the model can self-diagnose"
+        );
+    }
+
+    #[test]
     fn structured_edit_rejects_python_syntax_failure_before_candidate_patch_fsv() {
         let (_temp, repo) = init_real_git_repo();
         let tool_dir = repo
@@ -11793,5 +12077,64 @@ GPU-other, 9999, /usr/bin/other, 1024
         );
         // Drop is automatic at end-of-scope: harness's LlamaModel + LlamaBackend
         // release GPU memory when the struct goes out of scope.
+    }
+
+    /// FSV: the round-loop's repeated-error deadlock detector must fire only
+    /// when the rolling tail is full of identical non-empty error codes. This
+    /// guards the consecutive-error escape hatch added to
+    /// `gemma_coding_harness_chat_json` so a stuck Gemma trajectory cannot
+    /// burn ~5 minutes of GPU producing the same parser error round after round.
+    #[test]
+    fn repeated_error_deadlock_code_fsv() {
+        // Empty tail: no deadlock.
+        let empty: VecDeque<String> = VecDeque::new();
+        assert_eq!(repeated_error_deadlock_code(&empty), None);
+
+        // Below threshold even when all codes match: still no deadlock.
+        let mut short: VecDeque<String> = VecDeque::new();
+        for _ in 0..(REPEATED_ERROR_DEADLOCK_LEN - 1) {
+            short.push_back("RUST_REALITY_LINE_EDIT_PY_COMPILE_FAILED".to_string());
+        }
+        assert_eq!(repeated_error_deadlock_code(&short), None);
+
+        // At threshold with mixed codes: no deadlock.
+        let mut mixed: VecDeque<String> = VecDeque::new();
+        for i in 0..REPEATED_ERROR_DEADLOCK_LEN {
+            mixed.push_back(if i == 2 {
+                "RUST_REALITY_LINE_EDIT_START_MISSING".to_string()
+            } else {
+                "RUST_REALITY_LINE_EDIT_PY_COMPILE_FAILED".to_string()
+            });
+        }
+        assert_eq!(repeated_error_deadlock_code(&mixed), None);
+
+        // At threshold with all identical non-empty codes: deadlock fires.
+        let mut deadlock: VecDeque<String> = VecDeque::new();
+        for _ in 0..REPEATED_ERROR_DEADLOCK_LEN {
+            deadlock.push_back("RUST_REALITY_LINE_EDIT_PY_COMPILE_FAILED".to_string());
+        }
+        assert_eq!(
+            repeated_error_deadlock_code(&deadlock).as_deref(),
+            Some("RUST_REALITY_LINE_EDIT_PY_COMPILE_FAILED")
+        );
+
+        // All-empty codes must not fire — empty isn't a meaningful streak.
+        let mut empties: VecDeque<String> = VecDeque::new();
+        for _ in 0..REPEATED_ERROR_DEADLOCK_LEN {
+            empties.push_back(String::new());
+        }
+        assert_eq!(repeated_error_deadlock_code(&empties), None);
+    }
+
+    /// FSV: hard cap and deadlock-len constants encode the operator's chosen
+    /// policy. If anyone bumps these, this assertion forces them to update
+    /// the doc comments and the diagnostician runbook deliberately.
+    #[test]
+    fn round_cap_constants_fsv() {
+        assert_eq!(MAX_ROUNDS_PER_ATTEMPT_HARD_CAP, 20);
+        assert_eq!(REPEATED_ERROR_DEADLOCK_LEN, 5);
+        // Hard cap must comfortably exceed the deadlock detector window so
+        // the deadlock detector can actually fire before the cap kicks in.
+        assert!((MAX_ROUNDS_PER_ATTEMPT_HARD_CAP as usize) > REPEATED_ERROR_DEADLOCK_LEN);
     }
 }
