@@ -42,7 +42,7 @@ Success is **only** declared when the official report's `resolved_ids` array con
 +----------+-----------+
            |
            v
-   Ollama /api/chat (gemma4:e4b | qwen3:8b | mistral-nemo:12b)
+   Ollama /api/chat (gemma4:e4b, --keep-alive 30m)
            |
            v
    git apply --whitespace=nowarn  (--> repo workspace)

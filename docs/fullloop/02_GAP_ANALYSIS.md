@@ -1,6 +1,6 @@
 # Gap Analysis — what is missing to fully realize the meta-reality-loop
 
-The cutover delivered the plumbing. This doc enumerates the *productive capability* gaps between "smoke green" and the long-term goal documented in `docs/reality/13_path_to_100_percent_swe.md` (gemma4:e4b + qwen3:8b + mistral-nemo:12b all resolve every selected smoke instance with full source-of-truth coverage and no reward hacking).
+The cutover delivered the plumbing. This doc enumerates the *productive capability* gaps between "smoke green" and the long-term goal documented in `docs/reality/13_path_to_100_percent_swe.md` (the single-model loop driving `gemma4:e4b` resolves every selected smoke instance with full source-of-truth coverage and no reward hacking). Earlier drafts of this gap analysis tracked multi-model coverage as a productive gap; that gap was closed by deliberately scoping the loop to a single model.
 
 ## Gap dimensions
 
@@ -40,11 +40,9 @@ Missing artifacts:
 
 Without these, the outer loop cannot answer "what change did I make and what did it produce?" beyond reading individual attempt summaries.
 
-### 4. Cross-model coverage  (→ Phase 16)
+### 4. Cross-model coverage — RETIRED
 
-Only `gemma4:e4b` is wired into the engine's model-call path. `qwen3:8b` and `mistral-nemo:12b` exist on the host but are not exercised by the reality loop. Cross-model verified-failure memory does not exist.
-
-Forward work: extend `--model` to a comma-separated matrix; add a per-(model, task) result registry; route shared failure facts (NOT model claims) into Gemma/Qwen/Mistral prompts.
+Earlier project drafts planned multi-model coverage (`gemma4:e4b`, `qwen3:8b`, `mistral-nemo:12b`) with shared verified-failure memory. The plan was retired: the loop is now intentionally single-model (`gemma4:e4b`), cryptographically pinned via `config/ccreality_model_pins.json` and validated at load time. Optimizer effort focuses on harness quality, not on cross-model generalisation.
 
 ### 5. Reward optimization (shadow mode)  (→ Phase 17)
 

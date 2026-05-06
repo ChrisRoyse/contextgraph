@@ -23,8 +23,10 @@ Then open:
 http://127.0.0.1:8787
 ```
 
-The UI has a model selector populated from Ollama `/api/tags`. Current local
-benchmark models are `gemma4:e4b`, `qwen3:8b`, and `mistral-nemo:12b`.
+The UI has a model selector populated from Ollama `/api/tags`. The single
+pinned local benchmark model is `gemma4:e4b`. (Earlier drafts also benchmarked
+`qwen3:8b` and `mistral-nemo:12b`; that multi-model scope was retired and
+those models removed from the local Ollama cache.)
 
 The left pane intentionally does not contain preset agent prompts. It shows a
 non-clickable prompt-hint guide sourced from `/api/tools`, which is generated
@@ -159,9 +161,7 @@ multiple local Ollama models:
 ```bash
 python3 gemmafrontend/model_benchmark.py \
   --base-url http://127.0.0.1:8787 \
-  --model gemma4:e4b \
-  --model qwen3:8b \
-  --model mistral-nemo:12b
+  --model gemma4:e4b
 ```
 
 The benchmark is not a text-answer benchmark. Each model must emit a native
@@ -227,21 +227,19 @@ Source-of-truth summary:
 /tmp/gemmafrontend-runs/model-benchmarks/model_benchmark_1777911308159691625_e7e17dfb/model-benchmark-summary.json
 ```
 
-Models installed and tested through Ollama:
+Model installed and tested through Ollama (single-model pinned configuration):
 
 ```text
-gemma4:e4b          8.0B   Q4_K_M   9.6 GB
-qwen3:8b            8.2B   Q4_K_M   5.2 GB
-mistral-nemo:12b    12.2B  Q4_0     7.1 GB
+gemma4:e4b          8.0B   BF16     9.6 GB
 ```
 
-Full proof readback:
+Full proof readback (latest single-model run):
 
 ```text
 gemma4:e4b          run_6678fc42a5ce4a34bcd12f6174496fa2  tool=run_proof_pipeline  reward=-3.365  loss=3.365
-qwen3:8b            run_5e6c4b3f4fc64bd49c749812fc394727  tool=run_proof_pipeline  reward=-3.365  loss=3.365
-mistral-nemo:12b    run_da781447ad334e39ae7c35e84ab92bf6  tool=run_proof_pipeline  reward=-3.365  loss=3.365
 ```
+
+Earlier multi-model benchmark rows (`qwen3:8b`, `mistral-nemo:12b`) are preserved in the historical evidence directories under `/tmp/gemmafrontend-runs/` but are no longer regenerated; those models have been removed from the local Ollama cache.
 
 Each ledger read back as schema `14` with:
 

@@ -105,7 +105,7 @@ The Reality Loop turns the criteria in §4 into a single Rust binary. This secti
 +-----------+-----------+
             |
             v
-   Ollama /api/chat (gemma4:e4b | qwen3:8b | mistral-nemo:12b, --keep-alive 30m)
+   Ollama /api/chat (gemma4:e4b, --keep-alive 30m)
             |
             v
    git apply --whitespace=nowarn (--> repo workspace at exact base_commit)
@@ -470,9 +470,9 @@ Both the LLM-driven discovery agents (`Hermes-2-Pro-Mistral-7B` for causal/graph
 
 The Reality Loop refuses to enter the model loop without `--official-eval-each-attempt`. That flag in turn requires a working Docker daemon and the official SWE-bench harness installed at `/home/cabdru/.cache/contextgraph-swebench/venv` (or wherever `--swebench-python` points). The system explicitly does not implement a "CI-only" or "Docker-free" path; that would amount to building an alternative oracle, which would re-introduce the verification gap the project was built to close.
 
-### 8.4 Local Ollama Models
+### 8.4 Single Local Ollama Model
 
-The default model is `gemma4:e4b`. The smoke curriculum also exercises `qwen3:8b` and `mistral-nemo:12b`. These models are small relative to frontier closed-weight models. The system *could* drive a stronger model — the prompt contract is model-agnostic — but doing so over a network introduces uncertainty (rate limits, transient errors, response latency tail risk) that is hostile to the loop's discipline. Local Ollama is the production posture; remote models are out of scope for the public artefact.
+The Reality Loop is bound to a single local Ollama model: `gemma4:e4b` (cryptographically pinned via `config/ccreality_model_pins.json` and validated at load time by `validate_gemma4_model_identity` in `reality-loop.rs:2592`). Earlier iterations of the project carried plumbing for additional models (`qwen3:8b`, `mistral-nemo:12b`); that scope was explicitly removed when the loop refactored to a single-model design. The prompt contract remains model-agnostic in principle, so a future operator could re-introduce additional local models, but doing so requires updating the model-pin gate, the harness identity check, and the smoke curriculum in lockstep. Remote API models are out of scope: network introduces uncertainty (rate limits, transient errors, response-latency tail risk) that is hostile to the loop's discipline. Local Ollama is the production posture.
 
 ### 8.5 No Backwards Compatibility
 

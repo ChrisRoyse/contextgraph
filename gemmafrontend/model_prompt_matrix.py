@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_MODELS = ["gemma4:e4b", "qwen3:8b", "mistral-nemo:12b"]
+DEFAULT_MODELS = ["gemma4:e4b"]
 MAX_PROMPT_CHARS = 4096
 
 PROMPTS: list[dict[str, Any]] = [

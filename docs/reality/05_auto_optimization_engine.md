@@ -53,7 +53,7 @@ The engine maintains a champion for each task/model/scope:
 {
   "champion_id": "champion_...",
   "task_id": "psf__requests-2317",
-  "model": "qwen3:8b",
+  "model": "gemma4:e4b",
   "attempt_id": "attempt_003",
   "reward": 4.25,
   "mandatory_verifiers": "passed",

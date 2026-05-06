@@ -6,7 +6,7 @@ This is the day-one + day-N field guide for the human operator. It is intentiona
 
 - ContextGraph repo at `~/contextgraph`, branch `ccreality-cutover`.
 - Rust toolchain installed (`rust-toolchain.toml`).
-- Local Ollama with `gemma4:e4b` pulled (and `qwen3:8b`, `mistral-nemo:12b` after Phase 16).
+- Local Ollama with `gemma4:e4b` pulled (single-model loop; the previous multi-model plan was retired).
 - Docker Desktop (or compatible daemon) for the official SWE-bench evaluator.
 - ANTHROPIC_API_KEY exported in the shell where Claude Code or the watcher runs (unless using `claude.ai` interactive login).
 - `claude` CLI installed.

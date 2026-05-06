@@ -556,9 +556,7 @@ productive."
   full surface — `mcp__cgreality__champion_state_get`,
   `mcp__cgreality__experiment_registry_list`, `attempts_history_query` —
   is forward work. The kickoff plan above does not assume them.
-- **Not enabling cross-model.** Gemma-only for kickoff. qwen3:8b and
-  mistral-nemo:12b come in Phase 16 once Phase 14 has a verified
-  `resolved_ids`.
+- **Not enabling cross-model.** The loop is single-model by design (`gemma4:e4b`, cryptographically pinned). The Phase-16 cross-model plan was retired; multi-model is no longer a forward goal.
 - **Not changing the success predicate.** Sacred: `official_report.resolved_ids`
   contains the target instance. Anything else — partial test-pass ratio,
   patch parse rate, reward signal — is *partial progress* and informative

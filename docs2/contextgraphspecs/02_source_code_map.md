@@ -314,10 +314,10 @@ Located under `scripts/` (78 entries) and `gemmafrontend/` (7 Python files). The
 | `scripts/check-embedder-count.sh`, `check-ffi-consolidation.sh` | CI guards |
 | `scripts/restart_pipeline_services.sh`, `vram_watchdog.py` | Runtime ops |
 | `scripts/blackboxfix_*.py` | BlackBoxFix demos and intelligence reports |
-| `gemmafrontend/server.py` (3,879 LOC) | Python evidence console; HTTP `:8787`; loads tools from backend; selects local Ollama models (gemma4:e4b, qwen3:8b, mistral-nemo:12b); persists frontend snapshots under `/tmp/gemmafrontend-runs/frontend-runs/*/system-snapshot.json` |
+| `gemmafrontend/server.py` (3,879 LOC) | Python evidence console; HTTP `:8787`; loads tools from backend; targets the single local Ollama model (`gemma4:e4b`); persists frontend snapshots under `/tmp/gemmafrontend-runs/frontend-runs/*/system-snapshot.json` |
 | `gemmafrontend/manual_fsv.py` (382 LOC) | Manual FSV starter for the gemma frontend server, ledger, snapshot, product-category pack, signed attestation, tamper detection |
-| `gemmafrontend/model_benchmark.py` (248 LOC) | Multi-model benchmark runner across local Ollama models |
-| `gemmafrontend/model_prompt_matrix.py` (497 LOC) | Prompt × model evidence matrix |
+| `gemmafrontend/model_benchmark.py` (248 LOC) | Single-model benchmark runner against the local `gemma4:e4b` Ollama model |
+| `gemmafrontend/model_prompt_matrix.py` (497 LOC) | Prompt × model evidence matrix (currently single-model: `gemma4:e4b`) |
 | `crates/context-graph-cli/src/bin/reality-loop.rs` | Rust-only SWE-bench Lite refinement loop and prompt compiler |
 
 ## 15. Build Configuration

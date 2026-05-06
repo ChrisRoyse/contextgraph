@@ -183,11 +183,11 @@ Use the smoke suite first:
 - `psf__requests-2317`
 - `django__django-12908`
 
-Run models one at a time:
+Run the single pinned model:
 
 - `gemma4:e4b`
-- `qwen3:8b`
-- `mistral-nemo:12b`
+
+(Earlier project drafts ran a multi-model rotation; that scope has been retired.)
 
 Metrics:
 

@@ -7,15 +7,15 @@ The target is:
 ```text
 For each selected smoke SWE-bench task:
   gemma4:e4b resolves it
-  qwen3:8b resolves it
-  mistral-nemo:12b resolves it
 
 Proof:
-  official SWE-bench report contains every instance id in resolved_ids
-  for every model run.
+  official SWE-bench report contains every selected instance id in resolved_ids
+  for the single pinned gemma4:e4b run.
 ```
 
 This document defines a strategy. It is not a claim that the current system has achieved it.
+
+> Note: Earlier drafts targeted three models (`gemma4:e4b`, `qwen3:8b`, `mistral-nemo:12b`) in parallel. The cross-model goal was retired so optimizer effort stays focused on harness quality for a single, cryptographically pinned model.
 
 ## Why 100 Percent Is Plausible On A Smoke Suite
 
@@ -23,7 +23,6 @@ It may be possible on a small, carefully selected suite because ContextGraph can
 
 - exact source-of-truth failure evidence;
 - repeated attempts;
-- cross-model transfer;
 - prompt compiler optimization;
 - repository context optimization;
 - verified reward/loss;

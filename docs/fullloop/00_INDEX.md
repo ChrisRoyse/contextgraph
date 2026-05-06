@@ -25,7 +25,7 @@ Source of truth: `docs/ccreality/00_INDEX.md` "Status of this work" section.
 
 - No SWE-bench Lite instance has been resolved end-to-end (`official_report.resolved_ids` empty).
 - Gemma's inner-loop tool surface still produces invalid line-window edits (FSV-09 ambiguous-find, Phase-12 edit-tool-failure).
-- Cross-model paths (`qwen3:8b`, `mistral-nemo:12b`) are documented but not wired.
+- The cross-model variant of the loop was retired; the production loop is single-model (`gemma4:e4b`). Phase 16 below is preserved for historical context only.
 - Champion state, experiment registry, training-data export, curriculum gate, and DynamicJEPA reward integration are designed but not built.
 - No production cron / external-watcher invocation has run unattended.
 - The dashboard surfaces (gemmafrontend, scoreboard) do not yet visualize ccreality optimizer artifacts.
@@ -41,7 +41,7 @@ Source of truth: `docs/ccreality/00_INDEX.md` "Status of this work" section.
 | 04 | [04_PHASE_13_HARDENING](04_PHASE_13_HARDENING.md) | small bug fixes blocking smooth /loop runs |
 | 05 | [05_PHASE_14_INNER_CAPABILITY](05_PHASE_14_INNER_CAPABILITY.md) | reach first verified `resolved_ids` |
 | 06 | [06_PHASE_15_AUTORESEARCH_ENGINE](06_PHASE_15_AUTORESEARCH_ENGINE.md) | champion state + experiment registry |
-| 07 | [07_PHASE_16_CROSS_MODEL](07_PHASE_16_CROSS_MODEL.md) | qwen3:8b + mistral-nemo:12b parallel inner loops |
+| 07 | [07_PHASE_16_CROSS_MODEL](07_PHASE_16_CROSS_MODEL.md) | RETIRED — historical multi-model plan; the loop is now single-model (`gemma4:e4b`). |
 | 08 | [08_PHASE_17_REWARD_SHADOW](08_PHASE_17_REWARD_SHADOW.md) | shadow reward spec optimization |
 | 09 | [09_PHASE_18_TRAINING_EXPORT](09_PHASE_18_TRAINING_EXPORT.md) | verified-episode export + LoRA prep |
 | 10 | [10_PHASE_19_CURRICULUM](10_PHASE_19_CURRICULUM.md) | dev / holdout / promotion split |

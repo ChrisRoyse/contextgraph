@@ -33,21 +33,9 @@ test -s <run_root>/reality-optimizer/experiment-registry.json \
   && mcp__cgreality__champion_state_get
 ```
 
-## Phase 16 — Cross-Model
+## Phase 16 — RETIRED (Cross-Model)
 
-```bash
-target/release/reality-loop attempt \
-  --task-manifest tasks/swebench-lite/psf__requests-2317.json \
-  --model gemma4:e4b,qwen3:8b,mistral-nemo:12b \
-  --official-eval-each-attempt --max-attempts 1 \
-  --runtime-root /tmp/ccreality-cross-model-test
-
-for M in gemma4-e4b qwen3-8b mistral-nemo-12b; do
-  test -s "/tmp/ccreality-cross-model-test/<task>/$M/attempts/attempt-000001/attempt-summary.json" || exit 1
-done
-test -s "/tmp/ccreality-cross-model-test/<task>/cross-model-summary.json"
-mcp__cgreality__cross_model_failures_for_task instance_id=psf__requests-2317
-```
+The cross-model phase was retired; the loop is now single-model (`gemma4:e4b`). No verifiable end-state remains for this phase.
 
 ## Phase 17 — Reward Shadow
 

@@ -53,10 +53,10 @@ This is the end-state diagram and the responsibility split once phases 13–22 a
 │  │   scoreboard, reality-branches, reality-scoreboard.md (post-Phase 20)    │    │
 │  └──────────────────────────────────────────────────────────────────────────┘    │
 │                                                                                   │
-│  ┌── inner SWE actor (THREE local models) ─────────────────────────────────┐     │
+│  ┌── inner SWE actor (single local model: gemma4:e4b) ────────────────────┐     │
 │  │  gemma4:e4b   ←  governed coding-agent harness  → real repo / git apply │     │
-│  │  qwen3:8b      ←   (open_file_window, apply_line_window_edit, ...)       │     │
-│  │  mistral-nemo  ← + cross-model verified-failure memory (Phase 16)        │     │
+│  │                ←  (open_file_window, apply_line_window_edit, ...)       │     │
+│  │                ←  cryptographic model pin enforced at load time          │     │
 │  │  ↓                                                                        │     │
 │  │  official SWE-bench Docker eval → resolved_ids → success predicate       │     │
 │  └──────────────────────────────────────────────────────────────────────────┘     │
@@ -71,7 +71,7 @@ This is the end-state diagram and the responsibility split once phases 13–22 a
 
 ## Three roles  (unchanged from cutover)
 
-- **Gemma 4 (and peers Qwen, Mistral)** — inner SWE-bench repair actor. Reads problem reality, navigates the repo through governed tools, submits a candidate patch via `apply_line_window_edit` or `apply_structured_edit`, gets graded by the official Docker evaluator.
+- **Gemma 4 (`gemma4:e4b`)** — inner SWE-bench repair actor (single-model, cryptographically pinned). Reads problem reality, navigates the repo through governed tools, submits a candidate patch via `apply_line_window_edit` or `apply_structured_edit`, gets graded by the official Docker evaluator.
 - **ContextGraph (Rust workspace)** — deterministic reality substrate. Runs the inner attempts, runs official SWE-bench Docker eval per attempt, persists every artifact, exposes the artifacts and memory graph through the `cgreality` MCP server, holds the BlackBox ledger and 101-CF RocksDB.
 - **Claude Code (outer optimizer)** — reads durable reality, diagnoses why the inner loop failed, edits the harness/prompts/tool surface/reward features through governed MCP `alter` tools, triggers re-attempts, records a structured recommendation per turn.
 
@@ -90,12 +90,9 @@ This is the end-state diagram and the responsibility split once phases 13–22 a
 
 Claude Code reads these to know "am I improving?"; the engine writes them. The MCP server gets two new tools: `experiment_registry_list`, `champion_state_get`.
 
-### B. Cross-model layer (Phase 16)
+### B. Cross-model layer (RETIRED)
 
-- Engine accepts `--model gemma4:e4b,qwen3:8b,mistral-nemo:12b` as a matrix.
-- Per-(model, task, attempt) result rows in the registry.
-- Shared verified-failure memory in the ContextGraph memory graph (namespace `reality_loop_cross_model`). Memories are stored only after official Docker readback proves the failure.
-- Inner-loop prompt compiler reads cross-model facts: "Gemma already tried patch sha256:abc...; Qwen failed on test foo()." (verified facts only, never raw model claims).
+The cross-model layer was deliberately removed. The engine accepts a single `--model gemma4:e4b`; cross-model verified-failure memory is not implemented. Optimizer effort is concentrated on improving harness quality for a single, cryptographically pinned model.
 
 ### C. Reward shadow layer (Phase 17)
 
