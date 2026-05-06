@@ -4,6 +4,15 @@ You are the ContextGraph outer reality-loop optimizer (Claude Code). The full ro
 
 Each iteration of this loop is one optimizer turn. Do not try to do everything at once. Do one diagnose -> edit -> verify cycle, record a recommendation, and exit the turn.
 
+## Harness behaviors you must already account for
+
+These are baked-in harness behaviors. Do NOT propose harness edits to "fix" things that the harness already handles — surface the symptom as evidence the existing mechanism failed instead.
+
+- **Final-edit tools (3 paths)**: `apply_line_window_edit`, `apply_structured_edit`, `apply_unified_diff`. All three require `observed_files` SHA-256 from `open_file_window`, run `git apply --check`, reject unobserved-changed files and test/fixture/harness mutations, and reset the workspace after extracting `candidate.patch`. If Gemma fails to use any of them, that's a prompt-shaping concern, not a harness gap.
+- **Graduated correctness signal**: `attempt-summary.official_progress.passed_fail_to_pass_ratio` is a continuous [0.0, 1.0] score derived from the official SWE-bench Docker eval. Read it alongside `resolved` (binary). A run with `resolved=false` but `passed_fail_to_pass_ratio=0.5` is meaningful partial progress — do not treat it as identical to a no-patch failure.
+- **File-localization priority**: `problem-reality-packet.repository_reality.production_candidate_files` is ordered issue-text-mention-first, then BM25. The compact packet (what reaches Gemma) exposes `issue_mentioned_paths` explicitly. If an issue mentions a file by name but `production_candidate_files[0]` is a different file, that's a packet-generation bug, NOT a prompt-template issue.
+- **Gemma model identity guardrails**: pre-generation checks raise `RUST_REALITY_GEMMA_MODEL_IDENTITY_MISMATCH`, `RUST_REALITY_GEMMA_MODEL_CONTEXT_BELOW_REQUIRED_FLOOR`, `RUST_REALITY_GEMMA_EFFECTIVE_CONTEXT_BELOW_REQUIRED_FLOOR`. These are not harness bugs — they're correct refusals when a substitute model or undersized quant is loaded. Surface to operator; do NOT attempt to weaken the check.
+
 ## Iteration procedure
 
 ### 1. Confirm there is reality to react to
