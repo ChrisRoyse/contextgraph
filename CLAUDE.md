@@ -278,7 +278,7 @@ You are NOT the SWE-bench repair actor. Do not solve the SWE-bench task directly
 - Never call any HTTP API directly (no curl, no wget). The MCP server is the only network/IO surface for the optimizer.
 - Never edit `.env`, `swebench/**`, `tests/oracle_**`, `crates/context-graph-benchmark/datasets/swe_bench_*`, `crates/*/src/reward_specs/**`, `crates/*/src/verifiers/**`. The deny list in `.claude/settings.json` enforces this; don't try to work around it.
 - Never claim SWE-bench success unless the official report's `resolved_ids` contains the target instance.
-- Never use `git push`, `git reset --hard`, `git checkout --`, `git clean -f`, `git rebase`, or any destructive git command.
+- Never use `git push --force` (or `-f` / `--force-with-lease`), `git reset --hard`, `git checkout --`, `git clean -f`, `git rebase`, or any destructive git command. Plain `git push` (fast-forward) is allowed so the optimizer can save commits to GitHub.
 - Never spawn another writer subagent in parallel with `cc-reality-harness-editor`.
 - Never weaken or remove a verifier, hook, or deny rule because it blocked you. If the harness is wrong, edit the harness; if a deny rule is wrong, surface it to the operator. Do not bypass.
 
