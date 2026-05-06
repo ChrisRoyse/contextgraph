@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-15781",
+  "repo": "django/django",
+  "base_commit": "8d160f154f0240a423e83ffe0690e472f837373c",
+  "problem_statement": "Customizable management command formatters.\nDescription\n\t\nWith code like:\nclass Command(BaseCommand):\n\thelp = '''\n\tImport a contract from tzkt.\n\tExample usage:\n\t\t./manage.py tzkt_import 'Tezos Mainnet' KT1HTDtMBRCKoNHjfWEEvXneGQpCfPAt6BRe\n\t'''\nHelp output is:\n$ ./manage.py help tzkt_import\nusage: manage.py tzkt_import [-h] [--api API] [--version] [-v {0,1,2,3}] [--settings SETTINGS]\n\t\t\t\t\t\t\t [--pythonpath PYTHONPATH] [--traceback] [--no-color] [--force-color]\n\t\t\t\t\t\t\t [--skip-checks]\n\t\t\t\t\t\t\t blockchain target\nImport a contract from tzkt Example usage: ./manage.py tzkt_import 'Tezos Mainnet'\nKT1HTDtMBRCKoNHjfWEEvXneGQpCfPAt6BRe\npositional arguments:\n blockchain\t\t\tName of the blockchain to import into\n target\t\t\t\tId of the contract to import\nWhen that was expected:\n$ ./manage.py help tzkt_import\nusage: manage.py tzkt_import [-h] [--api API] [--version] [-v {0,1,2,3}] [--settings SETTINGS]\n\t\t\t\t\t\t\t [--pythonpath PYTHONPATH] [--traceback] [--no-color] [--force-color]\n\t\t\t\t\t\t\t [--skip-checks]\n\t\t\t\t\t\t\t blockchain target\nImport a contract from tzkt \nExample usage: \n\t./manage.py tzkt_import 'Tezos Mainnet' KT1HTDtMBRCKoNHjfWEEvXneGQpCfPAt6BRe\npositional arguments:\n blockchain\t\t\tName of the blockchain to import into\n target\t\t\t\tId of the contract to import\n",
+  "fail_to_pass": [
+    "BaseCommand.create_parser() passes kwargs to CommandParser."
+  ],
+  "pass_to_pass_count": 43,
+  "official_test_patch_sha256": "sha256:164909e6170ef909723ad3b8ad8e3ad6156913dbb9c247b0328520fc5c9cef8c",
+  "oracle_patch_sha256": "sha256:9a0d633e49974583bf9faadac0e9185a6648386ccb32fe9042757281619a2d8d",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-15781"
+}

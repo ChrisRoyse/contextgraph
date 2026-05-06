@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-12308",
+  "repo": "django/django",
+  "base_commit": "2e0f04507b17362239ba49830d26fec504d46978",
+  "problem_statement": "JSONField are not properly displayed in admin when they are readonly.\nDescription\n\t\nJSONField values are displayed as dict when readonly in the admin.\nFor example, {\"foo\": \"bar\"} would be displayed as {'foo': 'bar'}, which is not valid JSON.\nI believe the fix would be to add a special case in django.contrib.admin.utils.display_for_field to call the prepare_value of the JSONField (not calling json.dumps directly to take care of the InvalidJSONInput case).\n",
+  "fail_to_pass": [
+    "test_json_display_for_field (admin_utils.tests.UtilsTests)",
+    "test_label_for_field (admin_utils.tests.UtilsTests)"
+  ],
+  "pass_to_pass_count": 20,
+  "official_test_patch_sha256": "sha256:9a617028004b9c64a3642113b1fb22c454112107820925ac39cfa5172c07780f",
+  "oracle_patch_sha256": "sha256:5b01ba6570e402108145db119391aed9bf82b0030d8ba41b6e4a56bd3b9446d2",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-12308"
+}

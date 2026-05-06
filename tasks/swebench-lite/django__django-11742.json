@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-11742",
+  "repo": "django/django",
+  "base_commit": "fee75d2aed4e58ada6567c464cfd22e89dc65f4a",
+  "problem_statement": "Add check to ensure max_length fits longest choice.\nDescription\n\t\nThere is currently no check to ensure that Field.max_length is large enough to fit the longest value in Field.choices.\nThis would be very helpful as often this mistake is not noticed until an attempt is made to save a record with those values that are too long.\n",
+  "fail_to_pass": [
+    "test_choices_in_max_length (invalid_models_tests.test_ordinary_fields.CharFieldTests)",
+    "test_choices_named_group (invalid_models_tests.test_ordinary_fields.CharFieldTests)"
+  ],
+  "pass_to_pass_count": 43,
+  "official_test_patch_sha256": "sha256:437fd3b5d88fe36b52b2ad4fcad4625a64c09a67df42cc5f837d0a28987aacac",
+  "oracle_patch_sha256": "sha256:c5ee9c51a09b4d8367270579585b6d23000a481e654029258cd68b9ca1dd3ad5",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-11742"
+}

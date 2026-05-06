@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "scikit-learn__scikit-learn-10508",
+  "repo": "scikit-learn/scikit-learn",
+  "base_commit": "c753b77ac49e72ebc0fe5e3c2369fe628f975017",
+  "problem_statement": "LabelEncoder transform fails for empty lists (for certain inputs)\nPython 3.6.3, scikit_learn 0.19.1\r\n\r\nDepending on which datatypes were used to fit the LabelEncoder, transforming empty lists works or not. Expected behavior would be that empty arrays are returned in both cases.\r\n\r\n```python\r\n>>> from sklearn.preprocessing import LabelEncoder\r\n>>> le = LabelEncoder()\r\n>>> le.fit([1,2])\r\nLabelEncoder()\r\n>>> le.transform([])\r\narray([], dtype=int64)\r\n>>> le.fit([\"a\",\"b\"])\r\nLabelEncoder()\r\n>>> le.transform([])\r\nTraceback (most recent call last):\r\n  File \"[...]\\Python36\\lib\\site-packages\\numpy\\core\\fromnumeric.py\", line 57, in _wrapfunc\r\n    return getattr(obj, method)(*args, **kwds)\r\nTypeError: Cannot cast array data from dtype('float64') to dtype('<U32') according to the rule 'safe'\r\n\r\nDuring handling of the above exception, another exception occurred:\r\n\r\nTraceback (most recent call last):\r\n  File \"<stdin>\", line 1, in <module>\r\n  File \"[...]\\Python36\\lib\\site-packages\\sklearn\\preprocessing\\label.py\", line 134, in transform\r\n    return np.searchsorted(self.classes_, y)\r\n  File \"[...]\\Python36\\lib\\site-packages\\numpy\\core\\fromnumeric.py\", line 1075, in searchsorted\r\n    return _wrapfunc(a, 'searchsorted', v, side=side, sorter=sorter)\r\n  File \"[...]\\Python36\\lib\\site-packages\\numpy\\core\\fromnumeric.py\", line 67, in _wrapfunc\r\n    return _wrapit(obj, method, *args, **kwds)\r\n  File \"[...]\\Python36\\lib\\site-packages\\numpy\\core\\fromnumeric.py\", line 47, in _wrapit\r\n    result = getattr(asarray(obj), method)(*args, **kwds)\r\nTypeError: Cannot cast array data from dtype('float64') to dtype('<U32') according to the rule 'safe'\r\n```\n",
+  "fail_to_pass": [
+    "sklearn/preprocessing/tests/test_label.py::test_label_encoder_errors",
+    "sklearn/preprocessing/tests/test_label.py::test_label_encoder_empty_array"
+  ],
+  "pass_to_pass_count": 18,
+  "official_test_patch_sha256": "sha256:4f1ae3a3d971cda5b992dfd7323ba0419033674b373e0afc2a5c5f0692a29e6b",
+  "oracle_patch_sha256": "sha256:7664039eb8b692bddab2bcf1ad5e20b59cd319827a8b2b792818b0769d5d6065",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:scikit-learn__scikit-learn-10508"
+}

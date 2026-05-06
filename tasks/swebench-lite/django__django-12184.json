@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-12184",
+  "repo": "django/django",
+  "base_commit": "5d674eac871a306405b0fbbaeb17bbeba9c68bf3",
+  "problem_statement": "Optional URL params crash some view functions.\nDescription\n\t\nMy use case, running fine with Django until 2.2:\nURLConf:\nurlpatterns += [\n\t...\n\tre_path(r'^module/(?P<format>(html|json|xml))?/?$', views.modules, name='modules'),\n]\nView:\ndef modules(request, format='html'):\n\t...\n\treturn render(...)\nWith Django 3.0, this is now producing an error:\nTraceback (most recent call last):\n File \"/l10n/venv/lib/python3.6/site-packages/django/core/handlers/exception.py\", line 34, in inner\n\tresponse = get_response(request)\n File \"/l10n/venv/lib/python3.6/site-packages/django/core/handlers/base.py\", line 115, in _get_response\n\tresponse = self.process_exception_by_middleware(e, request)\n File \"/l10n/venv/lib/python3.6/site-packages/django/core/handlers/base.py\", line 113, in _get_response\n\tresponse = wrapped_callback(request, *callback_args, **callback_kwargs)\nException Type: TypeError at /module/\nException Value: modules() takes from 1 to 2 positional arguments but 3 were given\n",
+  "fail_to_pass": [
+    "test_re_path_with_missing_optional_parameter (urlpatterns.tests.SimplifiedURLTests)"
+  ],
+  "pass_to_pass_count": 25,
+  "official_test_patch_sha256": "sha256:5170486ae24cb963647490197eae2bf5fdac097157e70654272d739f4ceb287a",
+  "oracle_patch_sha256": "sha256:1c8919db8bff1ae86df24399f213372b19b6f2cfbdb7e57993b525b6e1ee9587",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-12184"
+}

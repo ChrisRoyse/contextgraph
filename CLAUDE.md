@@ -252,7 +252,9 @@ You are the **outer reality-loop optimizer AND the attempt driver**. Gemma is th
 
 You are NOT the SWE-bench repair actor. Do not solve the SWE-bench task directly via patches that mutate `requests/`/`django/`/etc. — that's Gemma's job. Do not edit benchmark tests, the official Docker evaluator, reward specs, verifiers, or `.env`. Your edits target the harness (prompt templates, tool surface, problem-reality packet builder, reward features), not the codebase under test.
 
-**Standing self-drive authorization (operator-granted 2026-05-06):** at the start of every turn, drip a fresh attempt for the active target unless one of the skip conditions in "When to run" applies. The optimizer is the producer of attempts in this session, not the operator.
+**Standing self-drive authorization (operator-granted 2026-05-06):** at the start of every turn, drip a fresh attempt for the **next unresolved task in the SWE-bench Lite queue** unless one of the skip conditions in "When to run" applies. The optimizer is the producer of attempts in this session, not the operator.
+
+**Queue-based task progression (operator-granted 2026-05-06):** the optimizer works through SWE-bench Lite ONE TASK AT A TIME. The queue is the set of manifests in `tasks/swebench-lite/*.json` (300 instances, populated from the HuggingFace `princeton-nlp/SWE-bench_Lite` test split). At the start of each turn, iterate manifests in lexicographic order; the first instance whose `mcp__cgreality__champion_state_get(model, instance_id)` returns either no champion or a champion with `official_resolved: false` is the next target. Only when ALL 300 instances have an `official_resolved: true` champion does the loop go fully idle. This way the harness is developed and stress-tested incrementally — each resolution is evidence the harness handles that class of bug, each unresolved task surfaces a real harness gap to diagnose and patch.
 
 ### Reality-shift principle (core invariant)
 
@@ -270,7 +272,7 @@ You are NOT the SWE-bench repair actor. Do not solve the SWE-bench task directly
 ### Always do
 
 - At the start of any turn, call `mcp__cgreality__reality_latest_root` to confirm what reality you're looking at.
-- **Drip a fresh `mcp__cgreality__reality_run_attempt`** against the active target at the start of every turn (after `reality_latest_root`, before diagnosis). Use the active task manifest from `<runtime_root>/<active_run_id>/measurement-contract.json` to choose the model and `tasks/swebench-lite/<instance_id>.json` for `task_manifest`. Pass `runtime_root: <current runtime root>`, `model: <from contract.model_label>`, `max_attempts: 1`, `official_eval: true`. Skip the drip ONLY when one of the conditions in "When to run, when to wait" applies.
+- **Drip a fresh `mcp__cgreality__reality_run_attempt`** against the next unresolved task at the start of every turn (after `reality_latest_root`, before diagnosis). Pick the next task by listing `tasks/swebench-lite/*.json` in lexicographic order and finding the first whose `mcp__cgreality__champion_state_get(model, <instance_id>)` returns either no champion or `official_resolved: false`. Determine `model` from the active runtime's `measurement-contract.json` (currently `gemma4:e4b`); use `tasks/swebench-lite/<instance_id>.json` for `task_manifest`. Pass `runtime_root: <current runtime root>`, `max_attempts: 1`, `official_eval: true`. Skip the drip ONLY when one of the conditions in "When to run, when to wait" applies.
 - Use the `cc-reality-diagnostician` subagent (via the Task tool) for failure analysis. It is read-only and Sonnet-priced.
 - Use the `cc-reality-harness-editor` subagent for any source edit. It is the single writer. Never edit harness source from the main session in parallel.
 - Use the `cc-reality-source-of-truth-readback` subagent after any edit, before recording the recommendation.
@@ -303,7 +305,7 @@ You are NOT the SWE-bench repair actor. Do not solve the SWE-bench task directly
 
 Self-driving model: drip a fresh attempt at the start of every turn unless one of the following SKIP conditions is true (then record `no_change` immediately and exit):
 
-1. **Champion already resolved**: `mcp__cgreality__champion_state_get` returns a champion with `official_resolved: true` for the active `(model, task)`. The task is solved; no further attempts add value. Surface to operator.
+1. **All queue tasks resolved**: every manifest in `tasks/swebench-lite/*.json` has a champion with `official_resolved: true` for the active model. The whole SWE-bench Lite queue is exhausted; no further attempts add value. Surface to operator. (For per-task progression: if the CURRENT candidate task is resolved but others remain unresolved, that's NOT a skip — the optimizer advances to the next unresolved task in the queue.)
 2. **Cost cap reached**: cumulative attempts in this session × per-attempt cost approach the operator's stated budget. Cost-cap escalations are recorded as `blocked` with `cost_cap_reached`.
 3. **External drift detected**: `mcp__cgreality__reality_shift_compare_to_my_view` reports `external_drift_detected: true` on a governed path. Re-perceive before dripping.
 4. **Recent drip in flight**: latest attempt was minted <5 minutes ago AND no harness change has been recorded since. (Avoids double-drip when cron and operator both fire `/loop` near-simultaneously.)

@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sympy__sympy-22005",
+  "repo": "sympy/sympy",
+  "base_commit": "2c83657ff1c62fc2761b639469fdac7f7561a72a",
+  "problem_statement": "detection of infinite solution request\n```python\r\n>>> solve_poly_system((x - 1,), x, y)\r\nTraceback (most recent call last):\r\n...\r\nNotImplementedError:\r\nonly zero-dimensional systems supported (finite number of solutions)\r\n>>> solve_poly_system((y - 1,), x, y)  <--- this is not handled correctly\r\n[(1,)]\r\n```\r\n```diff\r\ndiff --git a/sympy/solvers/polysys.py b/sympy/solvers/polysys.py\r\nindex b9809fd4e9..674322d4eb 100644\r\n--- a/sympy/solvers/polysys.py\r\n+++ b/sympy/solvers/polysys.py\r\n@@ -240,7 +240,7 @@ def _solve_reduced_system(system, gens, entry=False):\r\n \r\n         univariate = list(filter(_is_univariate, basis))\r\n \r\n-        if len(univariate) == 1:\r\n+        if len(univariate) == 1 and len(gens) == 1:\r\n             f = univariate.pop()\r\n         else:\r\n             raise NotImplementedError(filldedent('''\r\ndiff --git a/sympy/solvers/tests/test_polysys.py b/sympy/solvers/tests/test_polysys.py\r\nindex 58419f8762..9e674a6fe6 100644\r\n--- a/sympy/solvers/tests/test_polysys.py\r\n+++ b/sympy/solvers/tests/test_polysys.py\r\n@@ -48,6 +48,10 @@ def test_solve_poly_system():\r\n     raises(NotImplementedError, lambda: solve_poly_system(\r\n         [z, -2*x*y**2 + x + y**2*z, y**2*(-z - 4) + 2]))\r\n     raises(PolynomialError, lambda: solve_poly_system([1/x], x))\r\n+    raises(NotImplementedError, lambda: solve_poly_system(\r\n+        Poly(x - 1, x, y), (x, y)))\r\n+    raises(NotImplementedError, lambda: solve_poly_system(\r\n+        Poly(y - 1, x, y), (x, y)))\r\n \r\n \r\n def test_solve_biquadratic():\r\n```\n",
+  "fail_to_pass": [
+    "test_solve_poly_system"
+  ],
+  "pass_to_pass_count": 2,
+  "official_test_patch_sha256": "sha256:02693afc0a8cf0d1335c5eaf67dea771e0064a3ec2d68c6d3047bb2b803930e4",
+  "oracle_patch_sha256": "sha256:10762dbd420f083b97d105bc6c7835a3b89f0d406b21e15bc09e12fad1a888d1",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sympy__sympy-22005"
+}

@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-14999",
+  "repo": "django/django",
+  "base_commit": "a754b82dac511475b6276039471ccd17cc64aeb8",
+  "problem_statement": "RenameModel with db_table should be a noop.\nDescription\n\t\nA RenameModel operation that already has db_table defined must be a noop.\nIn Postgres, it drops and recreates foreign key constraints. In sqlite it recreates the table (as expected for a table renaming).\n",
+  "fail_to_pass": [
+    "test_rename_model_with_db_table_noop (migrations.test_operations.OperationTests)"
+  ],
+  "pass_to_pass_count": 113,
+  "official_test_patch_sha256": "sha256:aaca9f9c4b4d68b7be758b7e6557aa2776ec06505c5f944593fa927a1f0a69ab",
+  "oracle_patch_sha256": "sha256:fccaeb2cb82e0371ae3dad2714cbe18a630ea4508beafb3394932a0828437cf1",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-14999"
+}

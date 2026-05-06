@@ -1,0 +1,16 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-14155",
+  "repo": "django/django",
+  "base_commit": "2f13c476abe4ba787b6cb71131818341911f43cc",
+  "problem_statement": "ResolverMatch.__repr__() doesn't handle functools.partial() nicely.\nDescription\n\t \n\t\t(last modified by Nick Pope)\n\t \nWhen a partial function is passed as the view, the __repr__ shows the func argument as functools.partial which isn't very helpful, especially as it doesn't reveal the underlying function or arguments provided.\nBecause a partial function also has arguments provided up front, we need to handle those specially so that they are accessible in __repr__.\nISTM that we can simply unwrap functools.partial objects in ResolverMatch.__init__().\n",
+  "fail_to_pass": [
+    "test_repr (urlpatterns_reverse.tests.ResolverMatchTests)",
+    "test_repr_functools_partial (urlpatterns_reverse.tests.ResolverMatchTests)",
+    "test_resolver_match_on_request (urlpatterns_reverse.tests.ResolverMatchTests)"
+  ],
+  "pass_to_pass_count": 89,
+  "official_test_patch_sha256": "sha256:810e2e672f819be99f575aefb8b965acb6f985f1b148b4c3306311acca5501a8",
+  "oracle_patch_sha256": "sha256:61d14e3a2a18ccca02273a04b47f56e5b49f37ed037f684c2207aecce90a1816",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-14155"
+}

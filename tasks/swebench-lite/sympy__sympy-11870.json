@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sympy__sympy-11870",
+  "repo": "sympy/sympy",
+  "base_commit": "5c2e1f96a7ff562d4a778f4ca9ffc9c81557197e",
+  "problem_statement": "simplifying exponential -> trig identities\n```\r\nf = 1 / 2 * (-I*exp(I*k) + I*exp(-I*k))\r\ntrigsimp(f)\r\n```\r\n\r\nIdeally, this would yield `sin(k)`. Is there a way to do this?\r\n\r\nAs a corollary, it would be awesome if \r\n\r\n```\r\nf = 1 / 2 / k* (-I*exp(I*k) + I*exp(-I*k))\r\ntrigsimp(f)\r\n```\r\n\r\ncould yield `sinc(k)`. Thank you for your consideration!\n",
+  "fail_to_pass": [
+    "test_sinc"
+  ],
+  "pass_to_pass_count": 58,
+  "official_test_patch_sha256": "sha256:0a8abafeed218953c8a64ccba38c0f9ff027e7b372f0176e8a43d0a208fa84f1",
+  "oracle_patch_sha256": "sha256:051c56fee9628243fb9c8fdcaae677f7cd82afcf8574e373b87dda95b11b57df",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sympy__sympy-11870"
+}

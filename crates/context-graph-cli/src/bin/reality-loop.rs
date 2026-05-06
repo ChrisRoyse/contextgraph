@@ -3617,7 +3617,7 @@ fn gemma_coding_harness_chat_json(
         "before_gemma_coding_harness",
         &args.model,
     )?;
-    let system_prompt = format!(
+let system_prompt = format!(
         "You are a model that can do function calling with the following functions. \
 You are a software repair model inside ContextGraph's Rust reality loop. \
 You must call governed tools to inspect reality and must submit the candidate patch with apply_line_window_edit, apply_structured_edit, or apply_unified_diff. \
@@ -3630,10 +3630,13 @@ Use apply_unified_diff only when you can provide a real unified diff and observe
 ContextGraph compiles that tool call into a git diff and verifies it against the real repository. \
 Runtime limits: effective context window is {} tokens from the loaded GGUF; per-turn max_new_tokens is {}; governed tool-round budget is {}. \
 Do not try to finish with prose, raw JSON, or a hand-written patch in assistant content. \
+Edit-scope guardrail (critical): when calling apply_line_window_edit, apply_structured_edit, or apply_unified_diff, replace the SMALLEST contiguous range needed for the fix. \
+Never delete module-level definitions (functions, classes, constants, dicts, imports) that lie outside your fix scope; if any such definitions exist inside your replace range, they MUST appear unchanged in your replace text. \
+Most bugs are fixable by a 1-10 line change inside ONE function; if your replace range spans more than one def/class/top-level statement, reconsider because you are probably over-selecting. \
+Before submitting, mentally verify that your replace text preserves every import, function signature, and top-level definition that existed in your replace range. \
 Do not modify tests, fixtures, or benchmark harness files.",
         harness.context_tokens, harness.max_new_tokens, args.agent_tool_rounds
-    );
-    let mut messages = vec![
+    );    let mut messages = vec![
         json!({"role": "system", "content": system_prompt}),
         json!({"role": "user", "content": prompt}),
     ];

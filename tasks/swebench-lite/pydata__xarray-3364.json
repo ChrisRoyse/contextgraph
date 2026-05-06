@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "pydata__xarray-3364",
+  "repo": "pydata/xarray",
+  "base_commit": "863e49066ca4d61c9adfe62aca3bf21b90e1af8c",
+  "problem_statement": "Ignore missing variables when concatenating datasets?\nSeveral users (@raj-kesavan, @richardotis, now myself) have wondered about how to concatenate xray Datasets with different variables.\n\nWith the current `xray.concat`, you need to awkwardly create dummy variables filled with `NaN` in datasets that don't have them (or drop mismatched variables entirely). Neither of these are great options -- `concat` should have an option (the default?) to take care of this for the user.\n\nThis would also be more consistent with `pd.concat`, which takes a more relaxed approach to matching dataframes with different variables (it does an outer join).\n\n",
+  "fail_to_pass": [
+    "xarray/tests/test_combine.py::TestAutoCombineOldAPI::test_auto_combine_with_new_variables",
+    "xarray/tests/test_concat.py::TestConcatDataset::test_concat_merge_variables_present_in_some_datasets"
+  ],
+  "pass_to_pass_count": 110,
+  "official_test_patch_sha256": "sha256:648f0daea9ee38f4b30f37dff4af749701cf1675d5d916a2ee5a9d3325b9669c",
+  "oracle_patch_sha256": "sha256:dd7e65a94252a1c6d387e771082a11d8af8cdc23045e987fa2c2e1729b274eb3",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:pydata__xarray-3364"
+}

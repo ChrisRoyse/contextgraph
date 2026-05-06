@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "pallets__flask-5063",
+  "repo": "pallets/flask",
+  "base_commit": "182ce3dd15dfa3537391c3efaf9c3ff407d134d4",
+  "problem_statement": "Flask routes to return domain/sub-domains information\nCurrently when checking **flask routes** it provides all routes but **it is no way to see which routes are assigned to which subdomain**.\r\n\r\n**Default server name:**\r\nSERVER_NAME: 'test.local'\r\n\r\n**Domains (sub-domains):**\r\ntest.test.local\r\nadmin.test.local\r\ntest.local\r\n\r\n**Adding blueprints:**\r\napp.register_blueprint(admin_blueprint,url_prefix='',subdomain='admin')\r\napp.register_blueprint(test_subdomain_blueprint,url_prefix='',subdomain='test')\r\n\r\n\r\n```\r\n$ flask routes\r\n * Tip: There are .env or .flaskenv files present. Do \"pip install python-dotenv\" to use them.\r\nEndpoint                                                 Methods    Rule\r\n-------------------------------------------------------  ---------  ------------------------------------------------\r\nadmin_blueprint.home                                      GET        /home\r\ntest_subdomain_blueprint.home                             GET        /home\r\nstatic                                                    GET        /static/<path:filename>\r\n...\r\n```\r\n\r\n\r\n**Feature request**\r\nIt will be good to see something like below (that will make more clear which route for which subdomain, because now need to go and check configuration).\r\n**If it is not possible to fix routes**, can you add or tell which method(s) should be used to get below information from flask? \r\n\r\n```\r\n$ flask routes\r\n * Tip: There are .env or .flaskenv files present. Do \"pip install python-dotenv\" to use them.\r\nDomain                Endpoint                                             Methods    Rule\r\n-----------------   ----------------------------------------------------  ----------  ------------------------------------------------\r\nadmin.test.local     admin_blueprint.home                                  GET        /home\r\ntest.test.local      test_subdomain_blueprint.home                         GET        /home\r\ntest.local           static                                                GET        /static/<path:filename>\r\n...\r\n```\r\n\n",
+  "fail_to_pass": [
+    "tests/test_cli.py::TestRoutes::test_subdomain",
+    "tests/test_cli.py::TestRoutes::test_host"
+  ],
+  "pass_to_pass_count": 54,
+  "official_test_patch_sha256": "sha256:e5b1124e11d391cc01f7d9d03ada6ccd629a817a3334d5980884ed276237bf96",
+  "oracle_patch_sha256": "sha256:f9c1ef426acac91e34d551f80f34dfe27fc124ac316af71d70eec1764b4a6497",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:pallets__flask-5063"
+}

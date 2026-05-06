@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sympy__sympy-15308",
+  "repo": "sympy/sympy",
+  "base_commit": "fb59d703e6863ed803c98177b59197b5513332e9",
+  "problem_statement": "LaTeX printing for Matrix Expression\n```py\r\n>>> A = MatrixSymbol(\"A\", n, n)\r\n>>> latex(trace(A**2))\r\n'Trace(A**2)'\r\n```\r\n\r\nThe bad part is not only is Trace not recognized, but whatever printer is being used doesn't fallback to the LaTeX printer for the inner expression (it should be `A^2`). \n",
+  "fail_to_pass": [
+    "test_trace"
+  ],
+  "pass_to_pass_count": 120,
+  "official_test_patch_sha256": "sha256:d108bb2ab77c476532d5d9a806ee3700c413546e711463387ee7e6384715f6ca",
+  "oracle_patch_sha256": "sha256:60e9321558d3f95f1e5aeccd5159ef124c4310979668ff99d490bf485ace9034",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sympy__sympy-15308"
+}

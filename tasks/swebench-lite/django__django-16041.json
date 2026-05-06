@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-16041",
+  "repo": "django/django",
+  "base_commit": "6df9398cce063874ae4d59db126d4adacb0fa8d3",
+  "problem_statement": "Rendering empty_form crashes when empty_permitted is passed to form_kwargs\nDescription\n\t\nIssue\nWhen explicitly setting form_kwargs = {'empty_permitted':True} or form_kwargs = {'empty_permitted':False} , a KeyError occurs when rendering a template that uses a formset's empty_form.\nExpected Behavior\nempty_permitted is ignored for formset.empty_form since empty_permitted is irrelevant for empty_form, as empty_form is not meant to be used to pass data and therefore does not need to be validated.\nSteps to Reproduce\n# views.py\nfrom django.shortcuts import render\nfrom .models import MyModel\ndef test_view(request):\n\tcontext = {}\n\tff = modelformset_factory(MyModel, fields = ['a_field'])\n\tcontext['formset'] = ff(\n\t\tqueryset = MyModel.objects.none(),\n\t\tform_kwargs = {'empty_permitted':True} # or form_kwargs = {'empty_permitted':False}\n\t)\n\treturn render(request, 'my_app/my_model_formset.html', context)\n# urls.py\nfrom django.urls import path, include\nfrom .views import test_view\nurlpatterns = [\n\tpath('test', test_view)\n]\n# my_model_formset.html\n{% extends \"my_app/base.html\" %}\n{% block content %}\n<form id=\"my-form\" method=\"post\">\n {% csrf_token %}\n {{ formset }}\n <input type=\"submit\" value=\"Save\">\n</form>\n{{ formset.empty_form }}\n{% endblock %}\n",
+  "fail_to_pass": [
+    "test_empty_permitted_ignored_empty_form (forms_tests.tests.test_formsets.FormsFormsetTestCase)",
+    "test_empty_permitted_ignored_empty_form (forms_tests.tests.test_formsets.Jinja2FormsFormsetTestCase)"
+  ],
+  "pass_to_pass_count": 113,
+  "official_test_patch_sha256": "sha256:1e39de162adde647a030caa139abaf09aedcbd2569dec3d6368f3f64b83a548f",
+  "oracle_patch_sha256": "sha256:7f05dbfefa4229f7ee6d23c098feea1513c246f8de25d8e6b300a6d9738f18ed",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-16041"
+}

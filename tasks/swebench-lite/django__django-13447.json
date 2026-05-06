@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-13447",
+  "repo": "django/django",
+  "base_commit": "0456d3e42795481a186db05719300691fe2a1029",
+  "problem_statement": "Added model class to app_list context\nDescription\n\t \n\t\t(last modified by Raffaele Salmaso)\n\t \nI need to manipulate the app_list in my custom admin view, and the easiest way to get the result is to have access to the model class (currently the dictionary is a serialized model).\nIn addition I would make the _build_app_dict method public, as it is used by the two views index and app_index.\n",
+  "fail_to_pass": [
+    "test_available_apps (admin_views.test_adminsite.SiteEachContextTest)"
+  ],
+  "pass_to_pass_count": 5,
+  "official_test_patch_sha256": "sha256:2f10fb3fa9652e6ac7471249bd35ef2d9a0d0e23d9de84b7c52ac1783b13826e",
+  "oracle_patch_sha256": "sha256:4405b13629dde0bd48cf8441f4f4c4a23cc702c0a120a018f05183706ee36037",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-13447"
+}

@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sympy__sympy-12419",
+  "repo": "sympy/sympy",
+  "base_commit": "479939f8c65c8c2908bbedc959549a257a7c0b0b",
+  "problem_statement": "Sum of the elements of an identity matrix is zero\nI think this is a bug.\r\n\r\nI created a matrix by M.T * M under an assumption that M is orthogonal.  SymPy successfully recognized that the result is an identity matrix.  I tested its identity-ness by element-wise, queries, and sum of the diagonal elements and received expected results.\r\n\r\nHowever, when I attempt to evaluate the total sum of the elements the result was 0 while 'n' is expected.\r\n\r\n```\r\nfrom sympy import *\r\nfrom sympy import Q as Query\r\n\r\nn = Symbol('n', integer=True, positive=True)\r\ni, j = symbols('i j', integer=True)\r\nM = MatrixSymbol('M', n, n)\r\n\r\ne = None\r\nwith assuming(Query.orthogonal(M)):\r\n    e = refine((M.T * M).doit())\r\n\r\n# Correct: M.T * M is an identity matrix.\r\nprint(e, e[0, 0], e[0, 1], e[1, 0], e[1, 1])\r\n\r\n# Correct: The output is True True\r\nprint(ask(Query.diagonal(e)), ask(Query.integer_elements(e)))\r\n\r\n# Correct: The sum of the diagonal elements is n\r\nprint(Sum(e[i, i], (i, 0, n-1)).doit())\r\n\r\n# So far so good\r\n# Total sum of the elements is expected to be 'n' but the answer is 0!\r\nprint(Sum(Sum(e[i, j], (i, 0, n-1)), (j, 0, n-1)).doit())\r\n```\n",
+  "fail_to_pass": [
+    "test_Identity"
+  ],
+  "pass_to_pass_count": 25,
+  "official_test_patch_sha256": "sha256:750840d1dc46b2982e8e62ac6dccd676a46b4fbf192db63276f104466d1c10f7",
+  "oracle_patch_sha256": "sha256:18794d75ba41397df2db6f4bad1c870a0d15be216987b0f594d5fdf11ded7f99",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sympy__sympy-12419"
+}

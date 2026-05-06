@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-14017",
+  "repo": "django/django",
+  "base_commit": "466920f6d726eee90d5566e0a9948e92b33a122e",
+  "problem_statement": "Q(...) & Exists(...) raises a TypeError\nDescription\n\t\nExists(...) & Q(...) works, but Q(...) & Exists(...) raise a TypeError\nHere's a minimal example:\nIn [3]: Exists(Product.objects.all()) & Q()\nOut[3]: <Q: (AND: <django.db.models.expressions.Exists object at 0x7fc18dd0ed90>, (AND: ))>\nIn [4]: Q() & Exists(Product.objects.all())\n---------------------------------------------------------------------------\nTypeError\t\t\t\t\t\t\t\t Traceback (most recent call last)\n<ipython-input-4-21d3dea0fcb9> in <module>\n----> 1 Q() & Exists(Product.objects.all())\n~/Code/venv/ecom/lib/python3.8/site-packages/django/db/models/query_utils.py in __and__(self, other)\n\t 90 \n\t 91\t def __and__(self, other):\n---> 92\t\t return self._combine(other, self.AND)\n\t 93 \n\t 94\t def __invert__(self):\n~/Code/venv/ecom/lib/python3.8/site-packages/django/db/models/query_utils.py in _combine(self, other, conn)\n\t 71\t def _combine(self, other, conn):\n\t 72\t\t if not isinstance(other, Q):\n---> 73\t\t\t raise TypeError(other)\n\t 74 \n\t 75\t\t # If the other Q() is empty, ignore it and just use `self`.\nTypeError: <django.db.models.expressions.Exists object at 0x7fc18dd21400>\nThe & (and |) operators should be commutative on Q-Exists pairs, but it's not\nI think there's a missing definition of __rand__ somewhere.\n",
+  "fail_to_pass": [
+    "test_boolean_expression_combined (expressions.tests.BasicExpressionsTests)",
+    "test_boolean_expression_combined_with_empty_Q (expressions.tests.BasicExpressionsTests)"
+  ],
+  "pass_to_pass_count": 147,
+  "official_test_patch_sha256": "sha256:dab6267fd18cc6865546befb12a3c6853fedbba0d1ee78a6d3a4f0b961fea4b1",
+  "oracle_patch_sha256": "sha256:15c067a3f0ff5f31fc8160b54e7e2e8c80f34d2d6b83a214d22df4338bc7b7d0",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-14017"
+}

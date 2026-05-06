@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sympy__sympy-14308",
+  "repo": "sympy/sympy",
+  "base_commit": "fb536869fb7aa28b2695ad7a3b70949926b291c4",
+  "problem_statement": "vectors break pretty printing\n```py\r\nIn [1]: from sympy.vector import *\r\n\r\nIn [2]: e = CoordSysCartesian('e')\r\n\r\nIn [3]: (x/y)**t*e.j\r\nOut[3]:\r\n\u239b   t\u239e e_j\r\n\u239c\u239bx\u239e e_j \u239f\r\n\u239c\u239c\u2500\u239f \u239f\r\n\u239d\u239dy\u23a0 \u23a0\r\n```\r\n\r\nAlso, when it does print correctly, the baseline is wrong (it should be centered). \n",
+  "fail_to_pass": [
+    "test_issue_12675",
+    "test_pretty_print_unicode"
+  ],
+  "pass_to_pass_count": 113,
+  "official_test_patch_sha256": "sha256:3df30a37bf95d292040bc0ade3b9502a3ca8215b275af1aee82e1f786a4c62e2",
+  "oracle_patch_sha256": "sha256:ad8c9be5ff3c411ec54f07d66940dfa76cf15f4133c3cea3ae2741d3a37a9020",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sympy__sympy-14308"
+}

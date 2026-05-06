@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "mwaskom__seaborn-2848",
+  "repo": "mwaskom/seaborn",
+  "base_commit": "94621cef29f80282436d73e8d2c0aa76dab81273",
+  "problem_statement": "pairplot fails with hue_order not containing all hue values in seaborn 0.11.1\nIn seaborn < 0.11, one could plot only a subset of the values in the hue column, by passing a hue_order list containing only the desired values. Points with hue values not in the list were simply not plotted.\n```python\niris = sns.load_dataset(\"iris\")`\n# The hue column contains three different species; here we want to plot two\nsns.pairplot(iris, hue=\"species\", hue_order=[\"setosa\", \"versicolor\"])\n```\n\nThis no longer works in 0.11.1. Passing a hue_order list that does not contain some of the values in the hue column raises a long, ugly error traceback. The first exception arises in seaborn/_core.py:\n```\nTypeError: ufunc 'isnan' not supported for the input types, and the inputs could not be safely coerced to any supported types according to the casting rule ''safe''\n```\nseaborn version: 0.11.1\nmatplotlib version: 3.3.2\nmatplotlib backends: MacOSX, Agg or jupyter notebook inline.",
+  "fail_to_pass": [
+    "tests/test_relational.py::TestScatterPlotter::test_hue_order"
+  ],
+  "pass_to_pass_count": 50,
+  "official_test_patch_sha256": "sha256:ac2da37d734c9c3c388b098ae9b631c8c06bf4590e4449ca2d186d68baad6e9d",
+  "oracle_patch_sha256": "sha256:c57a9e1c3469d1fa115576ec277fa828a7a5e4b32c41e3975bc5b426cf33048d",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:mwaskom__seaborn-2848"
+}

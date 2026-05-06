@@ -1,0 +1,16 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-12747",
+  "repo": "django/django",
+  "base_commit": "c86201b6ed4f8256b0a0520c08aa674f623d4127",
+  "problem_statement": "QuerySet.Delete - inconsistent result when zero objects deleted\nDescription\n\t\nThe result format of the QuerySet.Delete method is a tuple: (X, Y) \nX - is the total amount of deleted objects (including foreign key deleted objects)\nY - is a dictionary specifying counters of deleted objects for each specific model (the key is the _meta.label of the model and the value is counter of deleted objects of this model).\nExample: <class 'tuple'>: (2, {'my_app.FileAccess': 1, 'my_app.File': 1})\nWhen there are zero objects to delete in total - the result is inconsistent:\nFor models with foreign keys - the result will be: <class 'tuple'>: (0, {})\nFor \"simple\" models without foreign key - the result will be: <class 'tuple'>: (0, {'my_app.BlockLibrary': 0})\nI would expect there will be no difference between the two cases: Either both will have the empty dictionary OR both will have dictionary with model-label keys and zero value.\n",
+  "fail_to_pass": [
+    "test_fast_delete_empty_no_update_can_self_select (delete.tests.FastDeleteTests)",
+    "test_model_delete_returns_num_rows (delete.tests.DeletionTests)",
+    "test_queryset_delete_returns_num_rows (delete.tests.DeletionTests)"
+  ],
+  "pass_to_pass_count": 49,
+  "official_test_patch_sha256": "sha256:94a566acdb68a4ed9c7bcbedd035029fafaea7e993f1547cdb36ab506a60eb01",
+  "oracle_patch_sha256": "sha256:ff171b34d328823f6a016cda471129cc8c549902ca23eec23a60402d5efd85a5",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-12747"
+}

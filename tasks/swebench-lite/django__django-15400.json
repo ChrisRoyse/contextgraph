@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-15400",
+  "repo": "django/django",
+  "base_commit": "4c76ffc2d6c77c850b4bef8d9acc197d11c47937",
+  "problem_statement": "SimpleLazyObject doesn't implement __radd__\nDescription\n\t\nTechnically, there's a whole bunch of magic methods it doesn't implement, compared to a complete proxy implementation, like that of wrapt.ObjectProxy, but __radd__ being missing is the one that's biting me at the moment.\nAs far as I can tell, the implementation can't just be\n__radd__ = new_method_proxy(operator.radd)\nbecause that doesn't exist, which is rubbish.\n__radd__ = new_method_proxy(operator.attrgetter(\"__radd__\"))\nalso won't work because types may not have that attr, and attrgetter doesn't supress the exception (correctly)\nThe minimal implementation I've found that works for me is:\n\tdef __radd__(self, other):\n\t\tif self._wrapped is empty:\n\t\t\tself._setup()\n\t\treturn other + self._wrapped\n",
+  "fail_to_pass": [
+    "test_add (utils_tests.test_lazyobject.SimpleLazyObjectTestCase)",
+    "test_radd (utils_tests.test_lazyobject.SimpleLazyObjectTestCase)"
+  ],
+  "pass_to_pass_count": 62,
+  "official_test_patch_sha256": "sha256:a1ca141ce58c83be4eb8c29dabcd3d83e760b275ad260910d075abe2fabdbc94",
+  "oracle_patch_sha256": "sha256:008a5db75b0307b63417db5b820260def70ea8c5fec62d20fb097beb6b9b0485",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-15400"
+}

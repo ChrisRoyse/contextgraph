@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sphinx-doc__sphinx-7738",
+  "repo": "sphinx-doc/sphinx",
+  "base_commit": "c087d717f6ed183dd422359bf91210dc59689d63",
+  "problem_statement": "overescaped trailing underscore on attribute with napoleon\n**Describe the bug**\r\nAttribute name `hello_` shows up as `hello\\_` in the html (visible backslash) with napoleon.\r\n\r\n**To Reproduce**\r\nSteps to reproduce the behavior:\r\n\r\nempty `__init__.py`\r\n`a.py` contains\r\n```python\r\nclass A:\r\n    \"\"\"\r\n    Attributes\r\n    ----------\r\n    hello_: int\r\n        hi\r\n    \"\"\"\r\n    pass\r\n```\r\nrun `sphinx-quickstart`\r\nadd `'sphinx.ext.autodoc', 'sphinx.ext.napoleon'` to extensions in conf.py.\r\nadd `.. autoclass:: a.A` to index.rst\r\nPYTHONPATH=. make clean html\r\nopen _build/html/index.html in web browser and see the ugly backslash.\r\n\r\n**Expected behavior**\r\nNo backslash, a similar output to what I get for\r\n```rst\r\n    .. attribute:: hello_\r\n        :type: int\r\n\r\n        hi\r\n```\r\n(the type shows up differently as well, but that's not the point here)\r\nOlder versions like 2.4.3 look ok to me.\r\n\r\n**Environment info**\r\n- OS: Linux debian testing\r\n- Python version: 3.8.3\r\n- Sphinx version: 3.0.4\r\n- Sphinx extensions:  sphinx.ext.autodoc, sphinx.ext.napoleon\r\n- Extra tools:\n",
+  "fail_to_pass": [
+    "tests/test_ext_napoleon_docstring.py::NumpyDocstringTest::test_underscore_in_attribute"
+  ],
+  "pass_to_pass_count": 30,
+  "official_test_patch_sha256": "sha256:38a4764b28d1030fc5dbea0c334407216e8a467eed5dfb99556b7eb6fd510b3b",
+  "oracle_patch_sha256": "sha256:3866a1c6c3971beecff7fd55b812932b7d907a8d7cbb06709a1e7a95ab5aab7b",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sphinx-doc__sphinx-7738"
+}

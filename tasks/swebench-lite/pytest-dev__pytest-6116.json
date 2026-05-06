@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "pytest-dev__pytest-6116",
+  "repo": "pytest-dev/pytest",
+  "base_commit": "e670ff76cbad80108bde9bab616b66771b8653cf",
+  "problem_statement": "pytest --collect-only needs a one char shortcut command\nI find myself needing to run `--collect-only` very often and that cli argument is a very long to type one. \r\n\r\nI do think that it would be great to allocate a character for it, not sure which one yet. Please use up/down thumbs to vote if you would find it useful or not and eventually proposing which char should be used. \r\n\r\nClearly this is a change very easy to implement but first I want to see if others would find it useful or not.\npytest --collect-only needs a one char shortcut command\nI find myself needing to run `--collect-only` very often and that cli argument is a very long to type one. \r\n\r\nI do think that it would be great to allocate a character for it, not sure which one yet. Please use up/down thumbs to vote if you would find it useful or not and eventually proposing which char should be used. \r\n\r\nClearly this is a change very easy to implement but first I want to see if others would find it useful or not.\n",
+  "fail_to_pass": [
+    "testing/test_collection.py::TestCustomConftests::test_pytest_fs_collect_hooks_are_seen",
+    "testing/test_collection.py::TestCustomConftests::test_pytest_collect_file_from_sister_dir"
+  ],
+  "pass_to_pass_count": 69,
+  "official_test_patch_sha256": "sha256:9dd944ad50e9813b129b14d531925e9c480ddbc15f8681f3856e9c8733c1f4ec",
+  "oracle_patch_sha256": "sha256:2d80109efb3ae83bdebc1338be3407baebef89458fe00d4553397359d41ce611",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:pytest-dev__pytest-6116"
+}

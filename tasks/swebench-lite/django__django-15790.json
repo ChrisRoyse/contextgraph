@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-15790",
+  "repo": "django/django",
+  "base_commit": "c627226d05dd52aef59447dcfb29cec2c2b11b8a",
+  "problem_statement": "check_for_template_tags_with_the_same_name with libraries in TEMPLATES\nDescription\n\t\nI didn't explore this thoroughly, but I think there might be an issue with the check_for_template_tags_with_the_same_name when you add a template tag library into TEMPLATES['OPTIONS']['librairies'].\nI'm getting an error like: \n(templates.E003) 'my_tags' is used for multiple template tag modules: 'someapp.templatetags.my_tags', 'someapp.templatetags.my_tags'\n",
+  "fail_to_pass": [
+    "test_template_tags_same_library_in_installed_apps_libraries (check_framework.test_templates.CheckTemplateTagLibrariesWithSameName)"
+  ],
+  "pass_to_pass_count": 12,
+  "official_test_patch_sha256": "sha256:965e61ca051d3b6e3bc525006120006081c29842796f9ad32bb5b2ad6b4cae46",
+  "oracle_patch_sha256": "sha256:a65603185800ad90c357cc17c5e6c9f9f03cb9d6cb82dd1830139721b8cdc33c",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-15790"
+}

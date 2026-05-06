@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-12983",
+  "repo": "django/django",
+  "base_commit": "3bc4240d979812bd11365ede04c028ea13fdc8c6",
+  "problem_statement": "Make django.utils.text.slugify() strip dashes and underscores\nDescription\n\t \n\t\t(last modified by Elinaldo do Nascimento Monteiro)\n\t \nBug generation slug\nExample:\nfrom django.utils import text\ntext.slugify(\"___This is a test ---\")\noutput: ___this-is-a-test-\nImprovement after correction\nfrom django.utils import text\ntext.slugify(\"___This is a test ---\")\noutput: this-is-a-test\n\u200bPR\n",
+  "fail_to_pass": [
+    "test_slugify (utils_tests.test_text.TestUtilsText)"
+  ],
+  "pass_to_pass_count": 15,
+  "official_test_patch_sha256": "sha256:68926b823f893cd9852e63033dc2e839fec7d51fccfff0949eca023011d24fe1",
+  "oracle_patch_sha256": "sha256:2c44e68e6efe51fb623fd73adf2f36ca1cff3a5e64c62201ec4023f88e2deec3",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-12983"
+}

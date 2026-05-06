@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sympy__sympy-21627",
+  "repo": "sympy/sympy",
+  "base_commit": "126f80578140e752ad5135aac77b8ff887eede3e",
+  "problem_statement": "Bug: maximum recusion depth error when checking is_zero of cosh expression\nThe following code causes a `RecursionError: maximum recursion depth exceeded while calling a Python object` error when checked if it is zero:\r\n```\r\nexpr =sympify(\"cosh(acos(-i + acosh(-g + i)))\")\r\nexpr.is_zero\r\n```\n",
+  "fail_to_pass": [
+    "test_Abs"
+  ],
+  "pass_to_pass_count": 26,
+  "official_test_patch_sha256": "sha256:92f1f2a16bb8e757c797091153e9b22a6adad18619fe24b971105098620c4b10",
+  "oracle_patch_sha256": "sha256:b5ba97320a3af097a979e4fd2ec66ade3c7480c130a611a6c7aab137387144f2",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sympy__sympy-21627"
+}

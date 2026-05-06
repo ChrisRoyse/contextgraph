@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-11422",
+  "repo": "django/django",
+  "base_commit": "df46b329e0900e9e4dc1d60816c1dce6dfc1094e",
+  "problem_statement": "Autoreloader with StatReloader doesn't track changes in manage.py.\nDescription\n\t \n\t\t(last modified by Mariusz Felisiak)\n\t \nThis is a bit convoluted, but here we go.\nEnvironment (OSX 10.11):\n$ python -V\nPython 3.6.2\n$ pip -V\npip 19.1.1\n$ pip install Django==2.2.1\nSteps to reproduce:\nRun a server python manage.py runserver\nEdit the manage.py file, e.g. add print(): \ndef main():\n\tprint('sth')\n\tos.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ticket_30479.settings')\n\t...\nUnder 2.1.8 (and prior), this will trigger the auto-reloading mechanism. Under 2.2.1, it won't. As far as I can tell from the django.utils.autoreload log lines, it never sees the manage.py itself.\n",
+  "fail_to_pass": [
+    "test_main_module_is_resolved (utils_tests.test_autoreload.TestIterModulesAndFiles)"
+  ],
+  "pass_to_pass_count": 46,
+  "official_test_patch_sha256": "sha256:873cde69b492b5fb30fb0e94f290ad545187078b8d1f9dc4b81cddbdf9aeef91",
+  "oracle_patch_sha256": "sha256:9fb9c9642c897c1185d2fb8757020998a34afb2bc11c9d6585b3374ab379924d",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-11422"
+}

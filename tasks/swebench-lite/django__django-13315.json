@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-13315",
+  "repo": "django/django",
+  "base_commit": "36bc47069ce071e80c8129500de3b8664d2058a7",
+  "problem_statement": "limit_choices_to on a ForeignKey can render duplicate options in formfield\nDescription\n\t\nIf you pass a Q object as limit_choices_to on a ForeignKey field involving a join, you may end up with duplicate options in your form.\nSee regressiontest in patch for a clear view on the problem.\n",
+  "fail_to_pass": [
+    "test_limit_choices_to_no_duplicates (model_forms.tests.LimitChoicesToTests)"
+  ],
+  "pass_to_pass_count": 146,
+  "official_test_patch_sha256": "sha256:2480d4bcb614feaa20779dc1a895079c0406ef4a4f559748221b9bdd0fce79c0",
+  "oracle_patch_sha256": "sha256:fee7f9e8aebfa2ffaa94f38d65e3b962f1fc4d1abf5066486c809686b176c338",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-13315"
+}

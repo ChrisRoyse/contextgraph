@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-11999",
+  "repo": "django/django",
+  "base_commit": "84633905273fc916e3d17883810d9969c03f73c2",
+  "problem_statement": "Cannot override get_FOO_display() in Django 2.2+.\nDescription\n\t\nI cannot override the get_FIELD_display function on models since version 2.2. It works in version 2.1.\nExample:\nclass FooBar(models.Model):\n\tfoo_bar = models.CharField(_(\"foo\"), choices=[(1, 'foo'), (2, 'bar')])\n\tdef __str__(self):\n\t\treturn self.get_foo_bar_display() # This returns 'foo' or 'bar' in 2.2, but 'something' in 2.1\n\tdef get_foo_bar_display(self):\n\t\treturn \"something\"\nWhat I expect is that I should be able to override this function.\n",
+  "fail_to_pass": [
+    "test_overriding_FIELD_display (model_fields.tests.GetFieldDisplayTests)"
+  ],
+  "pass_to_pass_count": 30,
+  "official_test_patch_sha256": "sha256:35c1b2d9a343fd1ccbb8e49f7374b9f5264dad8ba00676758fda955508c20279",
+  "oracle_patch_sha256": "sha256:bd5d283307e59b9a05f5ca0df57565026fde3fa399c1a067425bfda397bd261d",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-11999"
+}

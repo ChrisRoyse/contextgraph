@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "pytest-dev__pytest-7432",
+  "repo": "pytest-dev/pytest",
+  "base_commit": "e6e300e729dd33956e5448d8be9a0b1540b4e53a",
+  "problem_statement": "skipping: --runxfail breaks pytest.mark.skip location reporting\npytest versions: 5.4.x, current master\r\n\r\nWhen `@pytest.mark.skip`/`skipif` marks are used to skip a test, for example\r\n\r\n```py\r\nimport pytest\r\n@pytest.mark.skip\r\ndef test_skip_location() -> None:\r\n    assert 0\r\n```\r\n\r\nthe expected skip location reported should point to the item itself, and this is indeed what happens when running with `pytest -rs`:\r\n\r\n```\r\nSKIPPED [1] test_it.py:3: unconditional skip\r\n```\r\n\r\nHowever, adding `pytest -rs --runxfail` breaks this:\r\n\r\n```\r\nSKIPPED [1] src/_pytest/skipping.py:238: unconditional skip\r\n```\r\n\r\nThe `--runxfail` is only about xfail and should not affect this at all.\r\n\r\n---\r\n\r\nHint: the bug is in `src/_pytest/skipping.py`, the `pytest_runtest_makereport` hook.\n",
+  "fail_to_pass": [
+    "testing/test_skipping.py::TestXFail::test_xfail_run_with_skip_mark[test_input1-expected1]"
+  ],
+  "pass_to_pass_count": 77,
+  "official_test_patch_sha256": "sha256:5e498d11d5bffa2d19f34627d2aa16ecadd805d313fc0fec5f197373d1df9937",
+  "oracle_patch_sha256": "sha256:fe1bcec846085b964928724c5e75591b1e0280ef37dd9cdb7faf31a89cfcf062",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:pytest-dev__pytest-7432"
+}

@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "pallets__flask-4045",
+  "repo": "pallets/flask",
+  "base_commit": "d8c37f43724cd9fb0870f77877b7c4c7e38a19e0",
+  "problem_statement": "Raise error when blueprint name contains a dot\nThis is required since every dot is now significant since blueprints can be nested. An error was already added for endpoint names in 1.0, but should have been added for this as well.\n",
+  "fail_to_pass": [
+    "tests/test_blueprints.py::test_dotted_name_not_allowed",
+    "tests/test_blueprints.py::test_route_decorator_custom_endpoint_with_dots"
+  ],
+  "pass_to_pass_count": 50,
+  "official_test_patch_sha256": "sha256:def1da53a3857f67b571f108abde6fcdac61da5c7820c0749fa7c487fe87a62a",
+  "oracle_patch_sha256": "sha256:6c4055e1cb35cf9c5d50bbba639af1787d6f5d5146f9539cedc364a43d01c687",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:pallets__flask-4045"
+}

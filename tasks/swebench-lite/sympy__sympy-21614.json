@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sympy__sympy-21614",
+  "repo": "sympy/sympy",
+  "base_commit": "b4777fdcef467b7132c055f8ac2c9a5059e6a145",
+  "problem_statement": "Wrong Derivative kind attribute\nI'm playing around with the `kind` attribute.\r\n\r\nThe following is correct:\r\n\r\n```\r\nfrom sympy import Integral, Derivative\r\nfrom sympy import MatrixSymbol\r\nfrom sympy.abc import x\r\nA = MatrixSymbol('A', 2, 2)\r\ni = Integral(A, x)\r\ni.kind\r\n# MatrixKind(NumberKind)\r\n```\r\n\r\nThis one is wrong:\r\n```\r\nd = Derivative(A, x)\r\nd.kind\r\n# UndefinedKind\r\n```\n",
+  "fail_to_pass": [
+    "test_Derivative_kind"
+  ],
+  "pass_to_pass_count": 6,
+  "official_test_patch_sha256": "sha256:55d2672c66a3ddce4236b7cfe912c730232657a7008d7ab26ec50c40ad4a1ee7",
+  "oracle_patch_sha256": "sha256:5a20f33fdb0a731064a81dc26e925e91557900bb7edbfce84463de6280e8e3cd",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sympy__sympy-21614"
+}

@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sphinx-doc__sphinx-8713",
+  "repo": "sphinx-doc/sphinx",
+  "base_commit": "3ed7590ed411bd93b26098faab4f23619cdb2267",
+  "problem_statement": "napoleon_use_param should also affect \"other parameters\" section\nSubject: napoleon_use_param should also affect \"other parameters\" section\r\n\r\n### Problem\r\nCurrently, napoleon always renders the Other parameters section as if napoleon_use_param was False, see source\r\n```\r\n    def _parse_other_parameters_section(self, section):\r\n        # type: (unicode) -> List[unicode]\r\n        return self._format_fields(_('Other Parameters'), self._consume_fields())\r\n\r\n    def _parse_parameters_section(self, section):\r\n        # type: (unicode) -> List[unicode]\r\n        fields = self._consume_fields()\r\n        if self._config.napoleon_use_param:\r\n            return self._format_docutils_params(fields)\r\n        else:\r\n            return self._format_fields(_('Parameters'), fields)\r\n```\r\nwhereas it would make sense that this section should follow the same formatting rules as the Parameters section.\r\n\r\n#### Procedure to reproduce the problem\r\n```\r\nIn [5]: print(str(sphinx.ext.napoleon.NumpyDocstring(\"\"\"\\ \r\n   ...: Parameters \r\n   ...: ---------- \r\n   ...: x : int \r\n   ...:  \r\n   ...: Other parameters \r\n   ...: ---------------- \r\n   ...: y: float \r\n   ...: \"\"\")))                                                                                                                                                                                      \r\n:param x:\r\n:type x: int\r\n\r\n:Other Parameters: **y** (*float*)\r\n```\r\n\r\nNote the difference in rendering.\r\n\r\n#### Error logs / results\r\nSee above.\r\n\r\n#### Expected results\r\n```\r\n:param x:\r\n:type x: int\r\n\r\n:Other Parameters:  // Or some other kind of heading.\r\n:param: y\r\n:type y: float\r\n```\r\n\r\nAlternatively another separate config value could be introduced, but that seems a bit overkill.\r\n\r\n### Reproducible project / your project\r\nN/A\r\n\r\n### Environment info\r\n- OS: Linux\r\n- Python version: 3.7\r\n- Sphinx version: 1.8.1\r\n\n",
+  "fail_to_pass": [
+    "tests/test_ext_napoleon_docstring.py::NumpyDocstringTest::test_parameters_with_class_reference"
+  ],
+  "pass_to_pass_count": 45,
+  "official_test_patch_sha256": "sha256:12177bcae59fb9803f6e41aed9593877c863558472af25696fb0e73f9c7126ff",
+  "oracle_patch_sha256": "sha256:790ea5dc9611d778d1147d4eeb2945d413961932546340f910c9c0b41846ee8d",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sphinx-doc__sphinx-8713"
+}

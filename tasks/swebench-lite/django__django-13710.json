@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-13710",
+  "repo": "django/django",
+  "base_commit": "1bd6a7a0acc11e249fca11c017505ad39f15ebf6",
+  "problem_statement": "Use Admin Inline verbose_name as default for Inline verbose_name_plural\nDescription\n\t\nDjango allows specification of a verbose_name and a verbose_name_plural for Inline classes in admin views. However, verbose_name_plural for an Inline is not currently based on a specified verbose_name. Instead, it continues to be based on the model name, or an a verbose_name specified in the model's Meta class. This was confusing to me initially (I didn't understand why I had to specify both name forms for an Inline if I wanted to overrule the default name), and seems inconsistent with the approach for a model's Meta class (which does automatically base the plural form on a specified verbose_name). I propose that verbose_name_plural for an Inline class should by default be based on the verbose_name for an Inline if that is specified.\nI have written a patch to implement this, including tests. Would be happy to submit that.\n",
+  "fail_to_pass": [
+    "test_verbose_name_inline (admin_inlines.tests.TestVerboseNameInlineForms)"
+  ],
+  "pass_to_pass_count": 62,
+  "official_test_patch_sha256": "sha256:fb1929068f42e05b0bf8aef42322b496f0eec120871f16dd79b03881a0bf9df7",
+  "oracle_patch_sha256": "sha256:69b7cac991a922cd83d1578ec0ceeee2ce9b4df640d0ece019f43a9c639be6ff",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-13710"
+}

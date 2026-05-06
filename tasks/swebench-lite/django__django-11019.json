@@ -1,0 +1,29 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-11019",
+  "repo": "django/django",
+  "base_commit": "93e892bb645b16ebaf287beb5fe7f3ffe8d10408",
+  "problem_statement": "Merging 3 or more media objects can throw unnecessary MediaOrderConflictWarnings\nDescription\n\t\nConsider the following form definition, where text-editor-extras.js depends on text-editor.js but all other JS files are independent:\nfrom django import forms\nclass ColorPicker(forms.Widget):\n\tclass Media:\n\t\tjs = ['color-picker.js']\nclass SimpleTextWidget(forms.Widget):\n\tclass Media:\n\t\tjs = ['text-editor.js']\nclass FancyTextWidget(forms.Widget):\n\tclass Media:\n\t\tjs = ['text-editor.js', 'text-editor-extras.js', 'color-picker.js']\nclass MyForm(forms.Form):\n\tbackground_color = forms.CharField(widget=ColorPicker())\n\tintro = forms.CharField(widget=SimpleTextWidget())\n\tbody = forms.CharField(widget=FancyTextWidget())\nDjango should be able to resolve the JS files for the final form into the order text-editor.js, text-editor-extras.js, color-picker.js. However, accessing MyForm().media results in:\n/projects/django/django/forms/widgets.py:145: MediaOrderConflictWarning: Detected duplicate Media files in an opposite order:\ntext-editor-extras.js\ntext-editor.js\n MediaOrderConflictWarning,\nMedia(css={}, js=['text-editor-extras.js', 'color-picker.js', 'text-editor.js'])\nThe MediaOrderConflictWarning is a result of the order that the additions happen in: ColorPicker().media + SimpleTextWidget().media produces Media(css={}, js=['color-picker.js', 'text-editor.js']), which (wrongly) imposes the constraint that color-picker.js must appear before text-editor.js.\nThe final result is particularly unintuitive here, as it's worse than the \"na\u00efve\" result produced by Django 1.11 before order-checking was added (color-picker.js, text-editor.js, text-editor-extras.js), and the pair of files reported in the warning message seems wrong too (aren't color-picker.js and text-editor.js the wrong-ordered ones?)\n",
+  "fail_to_pass": [
+    "test_combine_media (forms_tests.tests.test_media.FormsMediaTestCase)",
+    "test_construction (forms_tests.tests.test_media.FormsMediaTestCase)",
+    "test_form_media (forms_tests.tests.test_media.FormsMediaTestCase)",
+    "test_media_deduplication (forms_tests.tests.test_media.FormsMediaTestCase)",
+    "test_media_inheritance (forms_tests.tests.test_media.FormsMediaTestCase)",
+    "test_media_inheritance_extends (forms_tests.tests.test_media.FormsMediaTestCase)",
+    "test_media_property_parent_references (forms_tests.tests.test_media.FormsMediaTestCase)",
+    "test_merge (forms_tests.tests.test_media.FormsMediaTestCase)",
+    "test_merge_css_three_way (forms_tests.tests.test_media.FormsMediaTestCase)",
+    "test_merge_js_three_way (forms_tests.tests.test_media.FormsMediaTestCase)",
+    "test_merge_js_three_way2 (forms_tests.tests.test_media.FormsMediaTestCase)",
+    "test_merge_warning (forms_tests.tests.test_media.FormsMediaTestCase)",
+    "test_multi_widget (forms_tests.tests.test_media.FormsMediaTestCase)",
+    "test_media (admin_widgets.test_autocomplete_widget.AutocompleteMixinTests)",
+    "test_render_options (admin_widgets.test_autocomplete_widget.AutocompleteMixinTests)",
+    "test_inline_media_only_inline (admin_inlines.tests.TestInlineMedia)"
+  ],
+  "pass_to_pass_count": 58,
+  "official_test_patch_sha256": "sha256:d7e6fa1c9a87c8dd1308c4c6c0f6aa0a2e7b7391c8c8de1b305ea5a9d15643ca",
+  "oracle_patch_sha256": "sha256:0658bbd23761770fbd2967eedb6cb846cd6f1c0798c369e8001d250e6b379075",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-11019"
+}

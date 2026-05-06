@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-14411",
+  "repo": "django/django",
+  "base_commit": "fa4e963ee7e6876581b5432363603571839ba00c",
+  "problem_statement": "Label for ReadOnlyPasswordHashWidget points to non-labelable element.\nDescription\n\t \n\t\t(last modified by David Sanders)\n\t \nIn the admin, the label element for the ReadOnlyPasswordHashWidget widget has a 'for' attribute which points to a non-labelable element, since the widget just renders text, not an input. There's no labelable element for the widget, so the label shouldn't have a 'for' attribute.\n",
+  "fail_to_pass": [
+    "ReadOnlyPasswordHashWidget doesn't contain a for attribute in the"
+  ],
+  "pass_to_pass_count": 83,
+  "official_test_patch_sha256": "sha256:42cc789f88822be932ed1a62f75518eb64e1e6a055e85bdb26649fa8d8bc565f",
+  "oracle_patch_sha256": "sha256:42f7341e45b7d33faa29c31fe9943f6b023ce9200c2fee1fb5dfd324e3d309f1",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-14411"
+}

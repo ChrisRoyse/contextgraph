@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sympy__sympy-11400",
+  "repo": "sympy/sympy",
+  "base_commit": "8dcb12a6cf500e8738d6729ab954a261758f49ca",
+  "problem_statement": "ccode(sinc(x)) doesn't work\n```\nIn [30]: ccode(sinc(x))\nOut[30]: '// Not supported in C:\\n// sinc\\nsinc(x)'\n```\n\nI don't think `math.h` has `sinc`, but it could print\n\n```\nIn [38]: ccode(Piecewise((sin(theta)/theta, Ne(theta, 0)), (1, True)))\nOut[38]: '((Ne(theta, 0)) ? (\\n   sin(theta)/theta\\n)\\n: (\\n   1\\n))'\n```\n\n",
+  "fail_to_pass": [
+    "test_ccode_Relational",
+    "test_ccode_sinc"
+  ],
+  "pass_to_pass_count": 29,
+  "official_test_patch_sha256": "sha256:e9398bf638c46e8c411f2eb3e8f096b92c4638ba896ac68d120fe810b7b1b0f4",
+  "oracle_patch_sha256": "sha256:7f79e0c6e6909a311c54215f3e858f057db77bb11248853e84095261195d6c1b",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sympy__sympy-11400"
+}

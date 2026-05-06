@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sympy__sympy-23117",
+  "repo": "sympy/sympy",
+  "base_commit": "c5cef2499d6eed024b0db5c792d6ec7c53baa470",
+  "problem_statement": "sympy.Array([]) fails, while sympy.Matrix([]) works\nSymPy 1.4 does not allow to construct empty Array (see code below). Is this the intended behavior?\r\n\r\n```\r\n>>> import sympy\r\nKeyboardInterrupt\r\n>>> import sympy\r\n>>> from sympy import Array\r\n>>> sympy.__version__\r\n'1.4'\r\n>>> a = Array([])\r\nTraceback (most recent call last):\r\n  File \"<stdin>\", line 1, in <module>\r\n  File \"/Users/hcui7/miniconda3/envs/a/lib/python3.7/site-packages/sympy/tensor/array/dense_ndim_array.py\", line 130, in __new__\r\n    return cls._new(iterable, shape, **kwargs)\r\n  File \"/Users/hcui7/miniconda3/envs/a/lib/python3.7/site-packages/sympy/tensor/array/dense_ndim_array.py\", line 136, in _new\r\n    shape, flat_list = cls._handle_ndarray_creation_inputs(iterable, shape, **kwargs)\r\n  File \"/Users/hcui7/miniconda3/envs/a/lib/python3.7/site-packages/sympy/tensor/array/ndim_array.py\", line 142, in _handle_ndarray_creation_inputs\r\n    iterable, shape = cls._scan_iterable_shape(iterable)\r\n  File \"/Users/hcui7/miniconda3/envs/a/lib/python3.7/site-packages/sympy/tensor/array/ndim_array.py\", line 127, in _scan_iterable_shape\r\n    return f(iterable)\r\n  File \"/Users/hcui7/miniconda3/envs/a/lib/python3.7/site-packages/sympy/tensor/array/ndim_array.py\", line 120, in f\r\n    elems, shapes = zip(*[f(i) for i in pointer])\r\nValueError: not enough values to unpack (expected 2, got 0)\r\n```\r\n\r\n@czgdp1807 \n",
+  "fail_to_pass": [
+    "test_issue_17851"
+  ],
+  "pass_to_pass_count": 3,
+  "official_test_patch_sha256": "sha256:41804ea686e4d707d7e9b0c7b53208f9d4eef59455ef27b29c630ae1afe8dad0",
+  "oracle_patch_sha256": "sha256:05baa345b3ee6bb9d40b5eee0f5ef02cf18cfe23b79ea30a245212ea00ef9f89",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sympy__sympy-23117"
+}

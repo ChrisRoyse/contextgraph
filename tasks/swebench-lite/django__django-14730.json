@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-14730",
+  "repo": "django/django",
+  "base_commit": "4fe3774c729f3fd5105b3001fe69a70bdca95ac3",
+  "problem_statement": "Prevent developers from defining a related_name on symmetrical ManyToManyFields\nDescription\n\t\nIn ManyToManyField, if the symmetrical argument is passed, or if it's a self-referential ManyToMany relationship, the related field on the target model is not created. However, if a developer passes in the related_name not understanding this fact, they may be confused until they find the information about symmetrical relationship. Thus, it is proposed to raise an error when the user defines a ManyToManyField in this condition.\n",
+  "fail_to_pass": [
+    "test_many_to_many_with_useless_related_name (invalid_models_tests.test_relative_fields.RelativeFieldTests)"
+  ],
+  "pass_to_pass_count": 119,
+  "official_test_patch_sha256": "sha256:36259ced40d1176a5a6d17a69210f967f103faf04c2cd34e8a6c3d6438e649cf",
+  "oracle_patch_sha256": "sha256:a26ded2d7073b08a06d0e4c27892c53fa72837e6f4d15da287fbaee4aa01d6d1",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-14730"
+}

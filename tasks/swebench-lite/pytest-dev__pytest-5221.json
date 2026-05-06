@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "pytest-dev__pytest-5221",
+  "repo": "pytest-dev/pytest",
+  "base_commit": "4a2fdce62b73944030cff9b3e52862868ca9584d",
+  "problem_statement": "Display fixture scope with `pytest --fixtures`\nIt would be useful to show fixture scopes with `pytest --fixtures`; currently the only way to learn the scope of a fixture is look at the docs (when that is documented) or at the source code.\n",
+  "fail_to_pass": [
+    "testing/python/fixtures.py::TestShowFixtures::test_show_fixtures",
+    "testing/python/fixtures.py::TestShowFixtures::test_show_fixtures_verbose"
+  ],
+  "pass_to_pass_count": 170,
+  "official_test_patch_sha256": "sha256:2ef78e8e8f6ae6965c52756f15af115a80e980bcb52dfe7147a7d38c6f70de08",
+  "oracle_patch_sha256": "sha256:be5549ceff2ee5643ad3743e8919241e16ebf9549c79c68cd56a0ee3aaaf666b",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:pytest-dev__pytest-5221"
+}

@@ -1,0 +1,19 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "scikit-learn__scikit-learn-13584",
+  "repo": "scikit-learn/scikit-learn",
+  "base_commit": "0e3c1879b06d839171b7d0a607d71bbb19a966a9",
+  "problem_statement": "bug in print_changed_only in new repr: vector values\n```python\r\nimport sklearn\r\nimport numpy as np\r\nfrom sklearn.linear_model import LogisticRegressionCV\r\nsklearn.set_config(print_changed_only=True)\r\nprint(LogisticRegressionCV(Cs=np.array([0.1, 1])))\r\n```\r\n> ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()\r\n\r\nping @NicolasHug \r\n\n",
+  "fail_to_pass": [
+    "sklearn/utils/tests/test_pprint.py::test_changed_only",
+    "sklearn/utils/tests/test_pprint.py::test_pipeline",
+    "sklearn/utils/tests/test_pprint.py::test_deeply_nested",
+    "sklearn/utils/tests/test_pprint.py::test_gridsearch",
+    "sklearn/utils/tests/test_pprint.py::test_gridsearch_pipeline",
+    "sklearn/utils/tests/test_pprint.py::test_n_max_elements_to_show"
+  ],
+  "pass_to_pass_count": 3,
+  "official_test_patch_sha256": "sha256:22446b7b57524d79a06c07b89b49087ca26f2a3ffb8028bd104ded3003331c87",
+  "oracle_patch_sha256": "sha256:acb1af9f4aff9be141c13e5b2e0143f5abc78e56f8e585e8b2407f1254b875ef",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:scikit-learn__scikit-learn-13584"
+}

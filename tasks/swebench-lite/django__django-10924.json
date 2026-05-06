@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-10924",
+  "repo": "django/django",
+  "base_commit": "bceadd2788dc2dad53eba0caae172bd8522fd483",
+  "problem_statement": "Allow FilePathField path to accept a callable.\nDescription\n\t\nI have a special case where I want to create a model containing the path to some local files on the server/dev machine. Seeing as the place where these files are stored is different on different machines I have the following:\nimport os\nfrom django.conf import settings\nfrom django.db import models\nclass LocalFiles(models.Model):\n\tname = models.CharField(max_length=255)\n\tfile = models.FilePathField(path=os.path.join(settings.LOCAL_FILE_DIR, 'example_dir'))\nNow when running manage.py makemigrations it will resolve the path based on the machine it is being run on. Eg: /home/<username>/server_files/example_dir\nI had to manually change the migration to include the os.path.join() part to not break this when running the migration on production/other machine.\n",
+  "fail_to_pass": [
+    "test_callable_path (model_fields.test_filepathfield.FilePathFieldTests)"
+  ],
+  "pass_to_pass_count": 1,
+  "official_test_patch_sha256": "sha256:418a17eede0c413fb5424bc202f1d1cd43d51ee67941370580e21b87be0550ce",
+  "oracle_patch_sha256": "sha256:c15a336f335509fea0aa33a77e41b88e9ab95359f344a31fa7fa68eaa97165ac",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-10924"
+}

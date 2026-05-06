@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "matplotlib__matplotlib-23913",
+  "repo": "matplotlib/matplotlib",
+  "base_commit": "5c4595267ccd3daf78f5fd05693b7ecbcd575c1e",
+  "problem_statement": "legend draggable as keyword\n<!--To help us understand and resolve your issue, please fill out the form to the best of your ability.-->\r\n<!--You can feel free to delete the sections that do not apply.-->\r\n\r\n### Feature request\r\n\r\n**There is not keyword to make legend draggable at creation**\r\n\r\n<!--A short 1-2 sentences that succinctly describes the bug-->\r\n\r\nIs there a code reason why one can not add a \"draggable=True\" keyword to the __init__ function for Legend?  This would be more handy than having to call it after legend creation.  And, naively, it would seem simple to do.  But maybe there is a reason why it would not work?\n",
+  "fail_to_pass": [
+    "lib/matplotlib/tests/test_legend.py::test_legend_draggable[True]",
+    "lib/matplotlib/tests/test_legend.py::test_legend_draggable[False]"
+  ],
+  "pass_to_pass_count": 101,
+  "official_test_patch_sha256": "sha256:1be9bae7a73992a9fea70dc9d6052edd8619f231268e37ae7010996ec74c6d14",
+  "oracle_patch_sha256": "sha256:3810bcff06e35d23fd6a2446f591553e05af68ec153d64bcd82e525ba020de96",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:matplotlib__matplotlib-23913"
+}

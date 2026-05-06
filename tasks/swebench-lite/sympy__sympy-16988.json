@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sympy__sympy-16988",
+  "repo": "sympy/sympy",
+  "base_commit": "e727339af6dc22321b00f52d971cda39e4ce89fb",
+  "problem_statement": "Intersection should remove duplicates\n```python\r\n>>> Intersection({1},{1},{x})\r\nEmptySet()\r\n>>> Intersection({1},{x})\r\n{1}\r\n```\r\nThe answer should be `Piecewise(({1}, Eq(x, 1)), (S.EmptySet, True))` or remain unevaluated.\r\n\r\nThe routine should give the same answer if duplicates are present; my initial guess is that duplicates should just be removed at the outset of instantiation. Ordering them will produce canonical processing.\n",
+  "fail_to_pass": [
+    "test_imageset",
+    "test_intersection"
+  ],
+  "pass_to_pass_count": 72,
+  "official_test_patch_sha256": "sha256:75f3545703958e4463d3008e8a5591a6fba6146d9fb9c09aa83db83027c3f89b",
+  "oracle_patch_sha256": "sha256:7c9993d01cfa4a3bba61734d0b5235e3b70df8fd65b4818e59f78ff1582f70e1",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sympy__sympy-16988"
+}

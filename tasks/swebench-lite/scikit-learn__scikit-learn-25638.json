@@ -1,0 +1,23 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "scikit-learn__scikit-learn-25638",
+  "repo": "scikit-learn/scikit-learn",
+  "base_commit": "6adb209acd63825affc884abcd85381f148fb1b0",
+  "problem_statement": "Support nullable pandas dtypes in `unique_labels`\n### Describe the workflow you want to enable\n\nI would like to be able to pass the nullable pandas dtypes (\"Int64\", \"Float64\", \"boolean\") into sklearn's `unique_labels` function. Because the dtypes become `object` dtype when converted to numpy arrays we get `ValueError: Mix type of y not allowed, got types {'binary', 'unknown'}`:\r\n\r\nRepro with sklearn 1.2.1\r\n```py \r\n    import pandas as pd\r\n    import pytest\r\n    from sklearn.utils.multiclass import unique_labels\r\n    \r\n    for dtype in [\"Int64\", \"Float64\", \"boolean\"]:\r\n        y_true = pd.Series([1, 0, 0, 1, 0, 1, 1, 0, 1], dtype=dtype)\r\n        y_predicted = pd.Series([0, 0, 1, 1, 0, 1, 1, 1, 1], dtype=\"int64\")\r\n\r\n        with pytest.raises(ValueError, match=\"Mix type of y not allowed, got types\"):\r\n            unique_labels(y_true, y_predicted)\r\n```\n\n### Describe your proposed solution\n\nWe should get the same behavior as when `int64`, `float64`, and `bool` dtypes are used, which is no error:  \r\n\r\n```python\r\n    import pandas as pd\r\n    from sklearn.utils.multiclass import unique_labels\r\n    \r\n    for dtype in [\"int64\", \"float64\", \"bool\"]:\r\n        y_true = pd.Series([1, 0, 0, 1, 0, 1, 1, 0, 1], dtype=dtype)\r\n        y_predicted = pd.Series([0, 0, 1, 1, 0, 1, 1, 1, 1], dtype=\"int64\")\r\n\r\n        unique_labels(y_true, y_predicted)\r\n```\n\n### Describe alternatives you've considered, if relevant\n\nOur current workaround is to convert the data to numpy arrays with the corresponding dtype that works prior to passing it into `unique_labels`.\n\n### Additional context\n\n_No response_\n",
+  "fail_to_pass": [
+    "sklearn/metrics/tests/test_classification.py::test_confusion_matrix_pandas_nullable[Int64]",
+    "sklearn/metrics/tests/test_classification.py::test_confusion_matrix_pandas_nullable[Float64]",
+    "sklearn/metrics/tests/test_classification.py::test_confusion_matrix_pandas_nullable[boolean]",
+    "sklearn/preprocessing/tests/test_label.py::test_label_binarizer_pandas_nullable[Int64]",
+    "sklearn/preprocessing/tests/test_label.py::test_label_binarizer_pandas_nullable[Float64]",
+    "sklearn/preprocessing/tests/test_label.py::test_label_binarizer_pandas_nullable[boolean]",
+    "sklearn/utils/tests/test_multiclass.py::test_type_of_target_pandas_nullable",
+    "sklearn/utils/tests/test_multiclass.py::test_unique_labels_pandas_nullable[Int64]",
+    "sklearn/utils/tests/test_multiclass.py::test_unique_labels_pandas_nullable[Float64]",
+    "sklearn/utils/tests/test_multiclass.py::test_unique_labels_pandas_nullable[boolean]"
+  ],
+  "pass_to_pass_count": 194,
+  "official_test_patch_sha256": "sha256:6ec64a6bac3e5cd82c19e51013077c0e2273b51dd3a001293abfffd8dcee777e",
+  "oracle_patch_sha256": "sha256:5deca928e57a86c4377e6756f3f3690809283e316ca2a8e03617f1838c78a0d3",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:scikit-learn__scikit-learn-25638"
+}

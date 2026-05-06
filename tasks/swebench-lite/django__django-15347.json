@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-15347",
+  "repo": "django/django",
+  "base_commit": "7c4f3965098baad2396e24501e09237425a7bd6f",
+  "problem_statement": "Messages framework incorrectly serializes/deserializes extra_tags when it's an empty string\nDescription\n\t\nWhen a message is serialised and then deserialised with any of the built in storage backends, then extra_tags==\"\" is converted to extra_tags==None. This is because MessageEncoder checks for the truthyness of extra_tags rather than checking it is not None.\nTo replicate this bug\n>>> from django.conf import settings\n>>> settings.configure() # Just to allow the following import\n>>> from django.contrib.messages.storage.base import Message\n>>> from django.contrib.messages.storage.cookie import MessageEncoder, MessageDecoder\n>>> original_message = Message(10, \"Here is a message\", extra_tags=\"\")\n>>> encoded_message = MessageEncoder().encode(original_message)\n>>> decoded_message = MessageDecoder().decode(encoded_message)\n>>> original_message.extra_tags == \"\"\nTrue\n>>> decoded_message.extra_tags is None\nTrue\nEffect of the bug in application behaviour\nThis error occurred in the wild with a template tag similar to the following:\n{% if x not in message.extra_tags %}\nWhen the message was displayed as part of a redirect, it had been serialised and deserialized which meant that extra_tags was None instead of the empty string. This caused an error.\nIt's important to note that this bug affects all of the standard API (messages.debug, messages.info etc. all have a default value of extra_tags equal to \"\").\n",
+  "fail_to_pass": [
+    "A message's extra_tags attribute is correctly preserved when retrieved"
+  ],
+  "pass_to_pass_count": 29,
+  "official_test_patch_sha256": "sha256:a7b2afc06b0c68f066247af50c3078dc76afba8b30cb2c90d6ac5a5533191e14",
+  "oracle_patch_sha256": "sha256:17762e80dbf22612bf72224d37c7f40c3ff48b9073580cce34bedd516bcb39b6",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-15347"
+}

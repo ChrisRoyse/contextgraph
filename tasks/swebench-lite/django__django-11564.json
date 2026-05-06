@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-11564",
+  "repo": "django/django",
+  "base_commit": "580e644f24f1c5ae5b94784fb73a9953a178fd26",
+  "problem_statement": "Add support for SCRIPT_NAME in STATIC_URL and MEDIA_URL\nDescription\n\t \n\t\t(last modified by Rostyslav Bryzgunov)\n\t \nBy default, {% static '...' %} tag just appends STATIC_URL in the path. When running on sub-path, using SCRIPT_NAME WSGI param, it results in incorrect static URL - it doesn't prepend SCRIPT_NAME prefix.\nThis problem can be solved with prepending SCRIPT_NAME to STATIC_URL in settings.py but that doesn't work when SCRIPT_NAME is a dynamic value.\nThis can be easily added into default Django static tag and django.contrib.staticfiles tag as following:\ndef render(self, context):\n\turl = self.url(context)\n\t# Updating url here with request.META['SCRIPT_NAME'] \n\tif self.varname is None:\n\t\treturn url\n\tcontext[self.varname] = url\n\t\treturn ''\nOn more research I found that FileSystemStorage and StaticFilesStorage ignores SCRIPT_NAME as well. \nWe might have to do a lot of changes but I think it's worth the efforts.\n",
+  "fail_to_pass": [
+    "test_add_script_name_prefix (settings_tests.tests.MediaURLStaticURLPrefixTest)",
+    "test_not_prefixed (settings_tests.tests.MediaURLStaticURLPrefixTest)"
+  ],
+  "pass_to_pass_count": 174,
+  "official_test_patch_sha256": "sha256:2365712db9b8f7b16ffdcd2eb1df1a4e48337f3adec464f2bd1a8072c3f39f94",
+  "oracle_patch_sha256": "sha256:85742264db3f85980438a75ea582a1984d541772b66d2ce0979d812adff9784e",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-11564"
+}

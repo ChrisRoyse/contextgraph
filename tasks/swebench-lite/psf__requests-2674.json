@@ -1,0 +1,25 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "psf__requests-2674",
+  "repo": "psf/requests",
+  "base_commit": "0be38a0c37c59c4b66ce908731da15b401655113",
+  "problem_statement": "urllib3 exceptions passing through requests API\nI don't know if it's a design goal of requests to hide urllib3's exceptions and wrap them around requests.exceptions types.\n\n(If it's not IMHO it should be, but that's another discussion)\n\nIf it is, I have at least two of them passing through that I have to catch in addition to requests' exceptions. They are requests.packages.urllib3.exceptions.DecodeError and requests.packages.urllib3.exceptions.TimeoutError (this one I get when a proxy timeouts)\n\nThanks!\n\n",
+  "fail_to_pass": [
+    "test_requests.py::RequestsTestCase::test_BASICAUTH_TUPLE_HTTP_200_OK_GET",
+    "test_requests.py::RequestsTestCase::test_HTTP_200_OK_GET_ALTERNATIVE",
+    "test_requests.py::RequestsTestCase::test_HTTP_200_OK_GET_WITH_PARAMS",
+    "test_requests.py::RequestsTestCase::test_HTTP_200_OK_HEAD",
+    "test_requests.py::RequestsTestCase::test_auth_is_retained_for_redirect_on_host",
+    "test_requests.py::RequestsTestCase::test_different_encodings_dont_break_post",
+    "test_requests.py::RequestsTestCase::test_manual_redirect_with_partial_body_read",
+    "test_requests.py::RequestsTestCase::test_mixed_case_scheme_acceptable",
+    "test_requests.py::RequestsTestCase::test_prepared_from_session",
+    "test_requests.py::RequestsTestCase::test_unicode_multipart_post",
+    "test_requests.py::TestTimeout::test_none_timeout",
+    "test_requests.py::TestTimeout::test_encoded_methods"
+  ],
+  "pass_to_pass_count": 142,
+  "official_test_patch_sha256": "sha256:ac74744ddcd4a449753944771e99f790e94f07040d7baa82d386ff1f7c4b05ae",
+  "oracle_patch_sha256": "sha256:548962b377b03b6dc0095cc0336e26b7b9c52839e7be9383a50873ede44988c0",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:psf__requests-2674"
+}

@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "matplotlib__matplotlib-25498",
+  "repo": "matplotlib/matplotlib",
+  "base_commit": "78bf53caacbb5ce0dc7aa73f07a74c99f1ed919b",
+  "problem_statement": "Update colorbar after changing mappable.norm\nHow can I update a colorbar, after I changed the norm instance of the colorbar?\n\n`colorbar.update_normal(mappable)` has now effect and `colorbar.update_bruteforce(mappable)` throws a `ZeroDivsionError`-Exception.\n\nConsider this example:\n\n``` python\nimport matplotlib.pyplot as plt\nfrom matplotlib.colors import LogNorm\nimport numpy as np\n\nimg = 10**np.random.normal(1, 1, size=(50, 50))\n\nfig, ax = plt.subplots(1, 1)\nplot = ax.imshow(img, cmap='gray')\ncb = fig.colorbar(plot, ax=ax)\nplot.norm = LogNorm()\ncb.update_normal(plot)  # no effect\ncb.update_bruteforce(plot)  # throws ZeroDivisionError\nplt.show()\n```\n\nOutput for `cb.update_bruteforce(plot)`:\n\n```\nTraceback (most recent call last):\n  File \"test_norm.py\", line 12, in <module>\n    cb.update_bruteforce(plot)\n  File \"/home/maxnoe/.local/anaconda3/lib/python3.4/site-packages/matplotlib/colorbar.py\", line 967, in update_bruteforce\n    self.draw_all()\n  File \"/home/maxnoe/.local/anaconda3/lib/python3.4/site-packages/matplotlib/colorbar.py\", line 342, in draw_all\n    self._process_values()\n  File \"/home/maxnoe/.local/anaconda3/lib/python3.4/site-packages/matplotlib/colorbar.py\", line 664, in _process_values\n    b = self.norm.inverse(self._uniform_y(self.cmap.N + 1))\n  File \"/home/maxnoe/.local/anaconda3/lib/python3.4/site-packages/matplotlib/colors.py\", line 1011, in inverse\n    return vmin * ma.power((vmax / vmin), val)\nZeroDivisionError: division by zero\n```\n\n",
+  "fail_to_pass": [
+    "lib/matplotlib/tests/test_colorbar.py::test_colorbar_scale_reset"
+  ],
+  "pass_to_pass_count": 69,
+  "official_test_patch_sha256": "sha256:9a8149912d43e297566b7550e9b137e510ea0beda08be1c40250295b03947ddc",
+  "oracle_patch_sha256": "sha256:815d9d133ced1717ef91c09f641fe34572c2a822483b9d721dcae543f6bec49f",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:matplotlib__matplotlib-25498"
+}

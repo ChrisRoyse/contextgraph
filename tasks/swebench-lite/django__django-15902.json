@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-15902",
+  "repo": "django/django",
+  "base_commit": "44c24bf02835323d5418512ebe8e76166739ebf8",
+  "problem_statement": "\"default.html\" deprecation warning raised for ManagementForm's\nDescription\n\t\nI have a project where I never render forms with the {{ form }} expression. However, I'm still getting the new template deprecation warning because of the formset management form production, during which the template used is insignificant (only hidden inputs are produced).\nIs it worth special-casing this and avoid producing the warning for the management forms?\n",
+  "fail_to_pass": [
+    "Management forms are already rendered with the new div template."
+  ],
+  "pass_to_pass_count": 112,
+  "official_test_patch_sha256": "sha256:67a72edaa143f54f78a735eb2bb65b0cf3499eb9bc8a219c44b4aec52ce3333a",
+  "oracle_patch_sha256": "sha256:0bfbeb2d8f825240fe2e3601a0209a2f796647ef49f9ec172c67277d2efc7b6d",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-15902"
+}

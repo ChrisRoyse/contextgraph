@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-13757",
+  "repo": "django/django",
+  "base_commit": "3f140dde51c0fe6c350acb7727bbe489a99f0632",
+  "problem_statement": "Using __isnull=True on a KeyTransform should not match JSON null on SQLite and Oracle\nDescription\n\t\nThe KeyTransformIsNull lookup borrows the logic from HasKey for isnull=False, which is correct. If isnull=True, the query should only match objects that do not have the key. The query is correct for MariaDB, MySQL, and PostgreSQL. However, on SQLite and Oracle, the query also matches objects that have the key with the value null, which is incorrect.\nTo confirm, edit tests.model_fields.test_jsonfield.TestQuerying.test_isnull_key. For the first assertion, change\n\t\tself.assertSequenceEqual(\n\t\t\tNullableJSONModel.objects.filter(value__a__isnull=True),\n\t\t\tself.objs[:3] + self.objs[5:],\n\t\t)\nto\n\t\tself.assertSequenceEqual(\n\t\t\tNullableJSONModel.objects.filter(value__j__isnull=True),\n\t\t\tself.objs[:4] + self.objs[5:],\n\t\t)\nThe test previously only checks with value__a which could not catch this behavior because the value is not JSON null.\n",
+  "fail_to_pass": [
+    "test_isnull_key (model_fields.test_jsonfield.TestQuerying)"
+  ],
+  "pass_to_pass_count": 76,
+  "official_test_patch_sha256": "sha256:8d756b02a9916c0da597ecacc74f6079183368efa61e4dca2c71f9942af95263",
+  "oracle_patch_sha256": "sha256:b6be4919dd2dce63bff8f7f28f178e13439fd0064d57a21b12a7abb92e18eb8e",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-13757"
+}

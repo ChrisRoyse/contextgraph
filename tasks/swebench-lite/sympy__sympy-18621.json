@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sympy__sympy-18621",
+  "repo": "sympy/sympy",
+  "base_commit": "b17ef6effe278d5b861d65896cc53442a6370d8f",
+  "problem_statement": "BlockDiagMatrix with one element cannot be converted to regular Matrix\nCreating a BlockDiagMatrix with one Matrix element will raise if trying to convert it back to a regular Matrix:\r\n\r\n```python\r\nM = sympy.Matrix([[1, 2], [3, 4]])\r\nD = sympy.BlockDiagMatrix(M)\r\nB = sympy.Matrix(D)\r\n```\r\n\r\n```\r\nTraceback (most recent call last):\r\n\r\n  File \"<ipython-input-37-5b65c1f8f23e>\", line 3, in <module>\r\n    B = sympy.Matrix(D)\r\n\r\n  File \"/home/rikard/.local/lib/python3.7/site-packages/sympy/matrices/dense.py\", line 430, in __new__\r\n    return cls._new(*args, **kwargs)\r\n\r\n  File \"/home/rikard/.local/lib/python3.7/site-packages/sympy/matrices/dense.py\", line 442, in _new\r\n    rows, cols, flat_list = cls._handle_creation_inputs(*args, **kwargs)\r\n\r\n  File \"/home/rikard/.local/lib/python3.7/site-packages/sympy/matrices/matrices.py\", line 2528, in _handle_creation_inputs\r\n    return args[0].rows, args[0].cols, args[0].as_explicit()._mat\r\n\r\n  File \"/home/rikard/.local/lib/python3.7/site-packages/sympy/matrices/expressions/matexpr.py\", line 340, in as_explicit\r\n    for i in range(self.rows)])\r\n\r\n  File \"/home/rikard/.local/lib/python3.7/site-packages/sympy/matrices/expressions/matexpr.py\", line 340, in <listcomp>\r\n    for i in range(self.rows)])\r\n\r\n  File \"/home/rikard/.local/lib/python3.7/site-packages/sympy/matrices/expressions/matexpr.py\", line 339, in <listcomp>\r\n    for j in range(self.cols)]\r\n\r\n  File \"/home/rikard/.local/lib/python3.7/site-packages/sympy/matrices/expressions/matexpr.py\", line 289, in __getitem__\r\n    return self._entry(i, j)\r\n\r\n  File \"/home/rikard/.local/lib/python3.7/site-packages/sympy/matrices/expressions/blockmatrix.py\", line 248, in _entry\r\n    return self.blocks[row_block, col_block][i, j]\r\n\r\nTypeError: 'One' object is not subscriptable\r\n```\r\n\r\nInstead having two elements will work as expected:\r\n\r\n```python\r\nM = sympy.Matrix([[1, 2], [3, 4]])\r\nD = sympy.BlockDiagMatrix(M, M)\r\nB = sympy.Matrix(D)\r\n```\r\n\r\n```\r\nMatrix([\r\n[1, 2, 0, 0],\r\n[3, 4, 0, 0],\r\n[0, 0, 1, 2],\r\n[0, 0, 3, 4]])\r\n```\r\nThis issue exists for sympy 1.5.1 but not for sympy 1.4\n",
+  "fail_to_pass": [
+    "test_issue_18618"
+  ],
+  "pass_to_pass_count": 15,
+  "official_test_patch_sha256": "sha256:78a509df11911073c9994f2a87a0c83244b0a53d98eb8555e2293723f1b5a212",
+  "oracle_patch_sha256": "sha256:97e6091b56c2bf17e0f20656ed1ddc2af96fec95cfcaeb5d6941dcaff2beb50c",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sympy__sympy-18621"
+}

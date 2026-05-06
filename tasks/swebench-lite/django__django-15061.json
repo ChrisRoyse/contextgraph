@@ -1,0 +1,16 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-15061",
+  "repo": "django/django",
+  "base_commit": "2c01ebb4be5d53cbf6450f356c10e436025d6d07",
+  "problem_statement": "Remove \"for = ...\" from MultiWidget's <label>.\nDescription\n\t\nThe instance from Raw MultiWidget class generate id_for_label like f'{id_}0'\nIt has not sense.\nFor example ChoiceWidget has self.add_id_index and I can decide it myself, how I will see label_id - with or without index.\nI think, it is better to remove completely id_for_label method from MultiWidget Class.\n",
+  "fail_to_pass": [
+    "test_form_as_table (forms_tests.field_tests.test_multivaluefield.MultiValueFieldTest)",
+    "test_form_as_table_data (forms_tests.field_tests.test_multivaluefield.MultiValueFieldTest)",
+    "test_form_as_table (forms_tests.field_tests.test_splitdatetimefield.SplitDateTimeFieldTest)"
+  ],
+  "pass_to_pass_count": 14,
+  "official_test_patch_sha256": "sha256:15fe48e8ef89ebd8bc4cb90d2209417da622a82379a598143a8c72210d8c2bec",
+  "oracle_patch_sha256": "sha256:8fb179d536a0c05116ce84d0bc3691a9ac0706772f3d4fad491501e96bd776f2",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-15061"
+}

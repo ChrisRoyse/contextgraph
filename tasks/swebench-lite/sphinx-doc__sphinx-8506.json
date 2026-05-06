@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sphinx-doc__sphinx-8506",
+  "repo": "sphinx-doc/sphinx",
+  "base_commit": "e4bd3bd3ddd42c6642ff779a4f7381f219655c2c",
+  "problem_statement": "Sphinx 3.2 complains about option:: syntax that earlier versions accepted\nSphinx 3.2 complains about use of the option:: directive that earlier versions accepted without complaint.\r\n\r\nThe QEMU documentation includes this:\r\n```\r\n.. option:: [enable=]PATTERN\r\n\r\n   Immediately enable events matching *PATTERN*\r\n```\r\n\r\nas part of the documentation of the command line options of one of its programs. Earlier versions of Sphinx were fine with this, but Sphinx 3.2 complains:\r\n\r\n```\r\nWarning, treated as error:\r\n../../docs/qemu-option-trace.rst.inc:4:Malformed option description '[enable=]PATTERN', should look like \"opt\", \"-opt args\", \"--opt args\", \"/opt args\" or \"+opt args\"\r\n```\r\n\r\nSphinx ideally shouldn't change in ways that break the building of documentation that worked in older versions, because this makes it unworkably difficult to have documentation that builds with whatever the Linux distro's sphinx-build is.\r\n\r\nThe error message suggests that Sphinx has a very restrictive idea of what option syntax is; it would be better if it just accepted any string, because not all programs and OSes have option syntax that matches the limited list the error message indicates.\r\n\n",
+  "fail_to_pass": [
+    "tests/test_domain_std.py::test_cmd_option_starting_with_bracket"
+  ],
+  "pass_to_pass_count": 14,
+  "official_test_patch_sha256": "sha256:82e61ce7eb66207b7fe78eb62a22676c15ff28b0c0e19b246efadb8b6bf45c41",
+  "oracle_patch_sha256": "sha256:a99517671ca1aec8033a000c5212ab6f1a80afe4563e0e8c76889577e67e4a7b",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sphinx-doc__sphinx-8506"
+}

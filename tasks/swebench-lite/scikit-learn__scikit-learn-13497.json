@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "scikit-learn__scikit-learn-13497",
+  "repo": "scikit-learn/scikit-learn",
+  "base_commit": "26f690961a52946dd2f53bf0fdd4264b2ae5be90",
+  "problem_statement": "Comparing string to array in _estimate_mi\nIn ``_estimate_mi`` there is ``discrete_features == 'auto'`` but discrete features can be an array of indices or a boolean mask.\r\nThis will error in future versions of numpy.\r\nAlso this means we never test this function with discrete features != 'auto', it seems?\n",
+  "fail_to_pass": [
+    "sklearn/feature_selection/tests/test_mutual_info.py::test_mutual_info_options"
+  ],
+  "pass_to_pass_count": 7,
+  "official_test_patch_sha256": "sha256:bef8749e56f523cb6c03a47e6b72f6839a3a28c58735c8b0e0f37e2dbc090b2e",
+  "oracle_patch_sha256": "sha256:05b8e713181abb4e5cbb9c5b8d24fcf639cdad600f281a77f63ba64d7767a08d",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:scikit-learn__scikit-learn-13497"
+}

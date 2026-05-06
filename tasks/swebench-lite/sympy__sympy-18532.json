@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sympy__sympy-18532",
+  "repo": "sympy/sympy",
+  "base_commit": "74227f900b05009d4eed62e34a166228788a32ca",
+  "problem_statement": "expr.atoms() should return objects with no args instead of subclasses of Atom\n`expr.atoms()` with no arguments returns subclasses of `Atom` in `expr`. But the correct definition of a leaf node should be that it has no `.args`. \n\nThis should be easy to fix, but one needs to check that this doesn't affect the performance. \n\n",
+  "fail_to_pass": [
+    "test_sizeof",
+    "test_atoms"
+  ],
+  "pass_to_pass_count": 28,
+  "official_test_patch_sha256": "sha256:82028ad72c1bad6ffa77a871a1235c576a873df5e56f7d299a773e7f221b29c4",
+  "oracle_patch_sha256": "sha256:7917938dffaaf1ad3a9a50b292f1a33eb47a498d65b36aab108e90f78fb1a8d0",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sympy__sympy-18532"
+}

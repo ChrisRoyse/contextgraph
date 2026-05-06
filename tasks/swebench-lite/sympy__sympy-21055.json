@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "sympy__sympy-21055",
+  "repo": "sympy/sympy",
+  "base_commit": "748ce73479ee2cd5c861431091001cc18943c735",
+  "problem_statement": "`refine()` does not understand how to simplify complex arguments\nJust learned about the refine-function, which would come in handy frequently for me.  But\r\n`refine()` does not recognize that argument functions simplify for real numbers.\r\n\r\n```\r\n>>> from sympy import *                                                     \r\n>>> var('a,x')                                                              \r\n>>> J = Integral(sin(x)*exp(-a*x),(x,0,oo))                                     \r\n>>> J.doit()\r\n\tPiecewise((1/(a**2 + 1), 2*Abs(arg(a)) < pi), (Integral(exp(-a*x)*sin(x), (x, 0, oo)), True))\r\n>>> refine(J.doit(),Q.positive(a))                                                 \r\n        Piecewise((1/(a**2 + 1), 2*Abs(arg(a)) < pi), (Integral(exp(-a*x)*sin(x), (x, 0, oo)), True))\r\n>>> refine(abs(a),Q.positive(a))                                            \r\n\ta\r\n>>> refine(arg(a),Q.positive(a))                                            \r\n\targ(a)\r\n```\r\nI cann't find any open issues identifying this.  Easy to fix, though.\r\n\r\n\n",
+  "fail_to_pass": [
+    "test_arg"
+  ],
+  "pass_to_pass_count": 13,
+  "official_test_patch_sha256": "sha256:4347276e1339d2eea1f7f7d983d9cec0678957eaf68846c820c65a82031dcdc2",
+  "oracle_patch_sha256": "sha256:87d45465c20f16dc0cd141eef23a4ceefe22b5688a919209a9a3e3f508dde4fd",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:sympy__sympy-21055"
+}

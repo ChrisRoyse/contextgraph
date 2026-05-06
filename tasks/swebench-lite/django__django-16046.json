@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-16046",
+  "repo": "django/django",
+  "base_commit": "ec13e801b820614ff374cb0046092caab8d67249",
+  "problem_statement": "Fix numberformat.py \"string index out of range\" when null\nDescription\n\t\nWhen:\nif str_number[0] == \"-\"\nencounters a number field that's null when formatting for the admin list_display this causes an \nIndexError: string index out of range\nI can attach the proposed fix here, or open a pull request on GitHub if you like?\n",
+  "fail_to_pass": [
+    "test_empty (utils_tests.test_numberformat.TestNumberFormat)"
+  ],
+  "pass_to_pass_count": 6,
+  "official_test_patch_sha256": "sha256:328eca7eac168e44c3a50e791dadde3ac74d3f3f79d92feecf7e3026aa786e00",
+  "oracle_patch_sha256": "sha256:79a88249dd118392c24a507b5f70b562218f0054b63b923a3bf2a05100761b93",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-16046"
+}

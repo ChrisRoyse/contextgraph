@@ -1,0 +1,20 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-16820",
+  "repo": "django/django",
+  "base_commit": "c61219a7ae051d2baab53f041e00592011fc550c",
+  "problem_statement": "Squashing migrations with Meta.index_together -> indexes transition should remove deprecation warnings.\nDescription\n\t\nSquashing migrations with Meta.index_together -> Meta.indexes transition should remove deprecation warnings. As far as I'm aware, it's a 4.2 release blocker because you cannot get rid of the index_together deprecation warnings without rewriting migrations, see comment.\n",
+  "fail_to_pass": [
+    "test_create_model_add_index (migrations.test_optimizer.OptimizerTests.test_create_model_add_index)",
+    "test_create_model_index_together_rename_index (migrations.test_optimizer.OptimizerTests.test_create_model_index_together_rename_index)",
+    "test_create_model_remove_index (migrations.test_optimizer.OptimizerTests.test_create_model_remove_index)",
+    "test_create_model_remove_index_together_rename_index (migrations.test_optimizer.OptimizerTests.test_create_model_remove_index_together_rename_index)",
+    "test_add_model_order_with_respect_to_index (migrations.test_autodetector.AutodetectorTests.test_add_model_order_with_respect_to_index)",
+    "Test creation of new model with indexes already defined.",
+    "#22275 - A migration with circular FK dependency does not try"
+  ],
+  "pass_to_pass_count": 203,
+  "official_test_patch_sha256": "sha256:8af510354ecab233eeb041d80bc06c6368308144a477d84ce88bc2e1d356d35b",
+  "oracle_patch_sha256": "sha256:97ff90e73ba61fce91a34c44a81e0d6208bc6d41eef62a9a7b2cf2ef1fcad14a",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-16820"
+}

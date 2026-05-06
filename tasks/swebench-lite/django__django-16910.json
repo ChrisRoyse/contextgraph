@@ -1,0 +1,15 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-16910",
+  "repo": "django/django",
+  "base_commit": "4142739af1cda53581af4169dbe16d6cd5e26948",
+  "problem_statement": "QuerySet.only() doesn't work with select_related() on a reverse OneToOneField relation.\nDescription\n\t\nOn Django 4.2 calling only() with select_related() on a query using the reverse lookup for a OneToOne relation does not generate the correct query.\nAll the fields from the related model are still included in the generated SQL.\nSample models:\nclass Main(models.Model):\n\tmain_field_1 = models.CharField(blank=True, max_length=45)\n\tmain_field_2 = models.CharField(blank=True, max_length=45)\n\tmain_field_3 = models.CharField(blank=True, max_length=45)\nclass Secondary(models.Model):\n\tmain = models.OneToOneField(Main, primary_key=True, related_name='secondary', on_delete=models.CASCADE)\n\tsecondary_field_1 = models.CharField(blank=True, max_length=45)\n\tsecondary_field_2 = models.CharField(blank=True, max_length=45)\n\tsecondary_field_3 = models.CharField(blank=True, max_length=45)\nSample code:\nMain.objects.select_related('secondary').only('main_field_1', 'secondary__secondary_field_1')\nGenerated query on Django 4.2.1:\nSELECT \"bugtest_main\".\"id\", \"bugtest_main\".\"main_field_1\", \"bugtest_secondary\".\"main_id\", \"bugtest_secondary\".\"secondary_field_1\", \"bugtest_secondary\".\"secondary_field_2\", \"bugtest_secondary\".\"secondary_field_3\" FROM \"bugtest_main\" LEFT OUTER JOIN \"bugtest_secondary\" ON (\"bugtest_main\".\"id\" = \"bugtest_secondary\".\"main_id\")\nGenerated query on Django 4.1.9:\nSELECT \"bugtest_main\".\"id\", \"bugtest_main\".\"main_field_1\", \"bugtest_secondary\".\"main_id\", \"bugtest_secondary\".\"secondary_field_1\" FROM \"bugtest_main\" LEFT OUTER JOIN \"bugtest_secondary\" ON (\"bugtest_main\".\"id\" = \"bugtest_secondary\".\"main_id\")\n",
+  "fail_to_pass": [
+    "test_inheritance_deferred2 (select_related_onetoone.tests.ReverseSelectRelatedTestCase.test_inheritance_deferred2)",
+    "test_reverse_one_to_one_relations (defer_regress.tests.DeferRegressionTest.test_reverse_one_to_one_relations)"
+  ],
+  "pass_to_pass_count": 36,
+  "official_test_patch_sha256": "sha256:8db981b742e4958c696a162eb0158804bcd68de2190d38a981cde41611f3740e",
+  "oracle_patch_sha256": "sha256:b237ed64ed89f8086f3807bb90d893e11bca872d50731b174247292970c1c114",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-16910"
+}

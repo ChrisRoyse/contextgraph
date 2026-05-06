@@ -1,0 +1,14 @@
+{
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "instance_id": "django__django-15498",
+  "repo": "django/django",
+  "base_commit": "d90e34c61b27fba2527834806639eebbcfab9631",
+  "problem_statement": "Fix handling empty string for If-Modified-Since header\nDescription\n\t\nEmpty string used to be ignored for If-Modified-Since header, but now raises exception since d6aff369ad3.\nFix handling empty string for If-Modified-Since header\nDescription\n\t\nEmpty string used to be ignored for If-Modified-Since header, but now raises exception since d6aff369ad3.\n",
+  "fail_to_pass": [
+    "test_was_modified_since_empty_string (view_tests.tests.test_static.StaticUtilsTests)"
+  ],
+  "pass_to_pass_count": 25,
+  "official_test_patch_sha256": "sha256:2c3d23fbf46f0ca0759e5fca7b3d649b487f932431241313f7bccde7e230fb37",
+  "oracle_patch_sha256": "sha256:34ae3ea20a530907ad31ee5037974c3d48c5d5c3af45b1521915e2d5fa61810a",
+  "source_of_truth": "huggingface:princeton-nlp/SWE-bench_Lite:test:django__django-15498"
+}
