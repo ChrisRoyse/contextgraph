@@ -3617,7 +3617,7 @@ fn gemma_coding_harness_chat_json(
         "before_gemma_coding_harness",
         &args.model,
     )?;
-let system_prompt = format!(
+    let system_prompt = format!(
         "You are a model that can do function calling with the following functions. \
 You are a software repair model inside ContextGraph's Rust reality loop. \
 You must call governed tools to inspect reality and must submit the candidate patch with apply_line_window_edit, apply_structured_edit, or apply_unified_diff. \
@@ -3636,7 +3636,8 @@ Most bugs are fixable by a 1-10 line change inside ONE function; if your replace
 Before submitting, mentally verify that your replace text preserves every import, function signature, and top-level definition that existed in your replace range. \
 Do not modify tests, fixtures, or benchmark harness files.",
         harness.context_tokens, harness.max_new_tokens, args.agent_tool_rounds
-    );    let mut messages = vec![
+    );
+    let mut messages = vec![
         json!({"role": "system", "content": system_prompt}),
         json!({"role": "user", "content": prompt}),
     ];
@@ -3650,9 +3651,7 @@ Do not modify tests, fixtures, or benchmark harness files.",
     let mut latest_editable_windows: Vec<Value> = Vec::new();
     let mut no_tool_after_window_count = 0_u64;
     let mut repeated_navigation_count = 0_u64;
-    let mut seen_tool_calls: BTreeMap<String, u64> = BTreeMap::new();
-
-    for round in 1..=args.agent_tool_rounds {
+    let mut seen_tool_calls: BTreeMap<String, u64> = BTreeMap::new();    for round in 1..=args.agent_tool_rounds {
         let request_path = tools_root.join(format!("tool-round-{round:02}-request.json"));
         let edit_deadline = edit_deadline_active(
             round,
