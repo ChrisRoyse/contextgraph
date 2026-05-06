@@ -240,12 +240,17 @@ cargo build --quiet --bin context-graph --bin context-graph-mcp
 TOOLS_RAW="$(mcp_tools_json)"
 printf '%s\n' "$TOOLS_RAW" | jq '.result.tools' >"$SMOKE_ROOT/mcp-tools-list.json"
 TOOL_COUNT="$(jq '.result.tools | length' "$SMOKE_ROOT/mcp-tools-list.raw.json")"
-[[ "$TOOL_COUNT" -ge 30 ]] || fail "expected at least 30 MCP tools, got $TOOL_COUNT"
+[[ "$TOOL_COUNT" -ge 28 ]] || fail "expected at least 28 MCP tools, got $TOOL_COUNT"
 for tool in reality_latest_root reality_run_smoke reality_shift_compare_to_my_view harness_open_window harness_apply_line_window_edit harness_verify_state optimizer_record_recommendation; do
   jq -e --arg tool "$tool" '.result.tools[] | select(.name == $tool)' "$SMOKE_ROOT/mcp-tools-list.raw.json" >/dev/null || fail "MCP tools/list missing $tool"
 done
+for tool in search_graph get_memory_neighbors get_audit_trail store_memory boost_importance forget_concept merge_concepts; do
+  if jq -e --arg tool "$tool" '.result.tools[] | select(.name == $tool)' "$SMOKE_ROOT/mcp-tools-list.raw.json" >/dev/null; then
+    fail "lightweight cgreality tools/list leaked full-server tool: $tool"
+  fi
+done
 record_source_read "$SMOKE_ROOT/mcp-tools-list.raw.json"
-record_layer "2 - MCP server" "$TOOL_COUNT tools listed; required ccreality tools present"
+record_layer "2 - MCP server" "$TOOL_COUNT callable cgreality tools listed; required tools present and full-server tools absent"
 
 section "Layer 3 - Claude Code MCP Registration"
 claude mcp list >"$SMOKE_ROOT/claude-mcp-list.txt"

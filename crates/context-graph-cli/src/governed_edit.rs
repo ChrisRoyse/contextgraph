@@ -500,9 +500,9 @@ pub fn verify_project_state(
     };
     let test_command = match scope {
         VerifyScope::RealityLoopOnly => {
-            "cargo test -p context-graph-cli --bin reality-loop -- --skip ignored"
+            "cargo test -p context-graph-cli --bin reality-loop -- --skip ignored --test-threads=1"
         }
-        VerifyScope::Full => "cargo test -p context-graph-cli -- --skip ignored",
+        VerifyScope::Full => "cargo test -p context-graph-cli -- --skip ignored --test-threads=1",
     };
 
     let rustfmt = run_governed_command(project_root, &verify_dir, rustfmt_command, 120)?;

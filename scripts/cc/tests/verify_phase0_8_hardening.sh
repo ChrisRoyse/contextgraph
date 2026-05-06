@@ -152,7 +152,7 @@ done
 test -f crates/context-graph-cli/src/lib.rs
 rg -q 'pub mod governed_edit' crates/context-graph-cli/src/lib.rs
 cargo build -p context-graph-cli --bin reality-loop --quiet
-cargo test -p context-graph-cli --bin reality-loop --quiet -- --skip ignored
+cargo test -p context-graph-cli --bin reality-loop --quiet -- --skip ignored --test-threads=1
 cargo test -p context-graph-cli --lib governed_edit --quiet
 REALITY_LOOP_LINES="$(wc -l < crates/context-graph-cli/src/bin/reality-loop.rs | tr -d ' ')"
 [ "${REALITY_LOOP_LINES}" -ge 6500 ] && [ "${REALITY_LOOP_LINES}" -le 8500 ]
@@ -234,16 +234,21 @@ done
 cargo test -p context-graph-mcp --lib reality_loop --quiet
 TOOL_NAMES="$(mcp_tools_json | jq -r '.result.tools[].name')"
 TOOL_COUNT="$(wc -l <<<"${TOOL_NAMES}" | tr -d ' ')"
-[ "${TOOL_COUNT}" -ge 30 ]
+[ "${TOOL_COUNT}" -ge 28 ]
 for expected in \
   reality_run_attempt reality_run_smoke reality_run_official_eval reality_run_targeted_test \
   reality_recompile_reward reality_query_ledger \
   harness_open_window harness_apply_line_window_edit harness_run_command \
   harness_git_diff harness_git_status harness_verify_state \
-  store_memory boost_importance forget_concept merge_concepts \
   optimizer_record_decision optimizer_record_recommendation optimizer_record_harness_transition \
   reality_shift_log reality_shift_compare_to_my_view; do
   grep -qx "${expected}" <<<"${TOOL_NAMES}"
+done
+for forbidden in search_graph get_memory_neighbors get_audit_trail store_memory boost_importance forget_concept merge_concepts; do
+  if grep -qx "${forbidden}" <<<"${TOOL_NAMES}"; then
+    printf 'lightweight cgreality server advertised unimplemented/full-server tool: %s\n' "${forbidden}" >&2
+    exit 1
+  fi
 done
 rm -rf "${PHASE4_SMOKE_ROOT}"
 RUN_SMOKE_RES="$(mcp_call_text reality_run_smoke "$(jq -nc --arg runtime_root "${PHASE4_SMOKE_ROOT}" '{runtime_root: $runtime_root, label: "phase04-hardening"}')")"
