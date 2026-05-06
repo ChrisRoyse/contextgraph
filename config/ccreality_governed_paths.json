@@ -23,6 +23,7 @@
     "docs/ccreality/**",
     "docs/ccreality/phase-*/**",
     "docs/reality/**",
+    "docs/fullloop/**",
     "config/ccreality_governed_paths.json",
     "config/ccreality_recommendation_schema.json"
   ],
