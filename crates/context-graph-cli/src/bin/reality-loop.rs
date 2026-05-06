@@ -1340,6 +1340,22 @@ async fn run(args: AttemptArgs) -> Result<Value> {
         }),
     )?;
     let gemma_harness = GemmaCodingHarness::load(&args)?;
+    let gemma_model_readback_path = run_root.join("gemma-harness-model-readback.json");
+    let gemma_model_readback = gemma_harness.model_capability_report(&gemma_model_readback_path)?;
+    write_json_checked(&gemma_model_readback_path, &gemma_model_readback)?;
+    append_event(
+        &reality_events,
+        json!({
+            "event_type": "gemma_harness_model_capability_readback",
+            "status": "ok",
+            "model": args.model,
+            "model_path": file_sot(&gemma_harness.model_path),
+            "effective_context_tokens": gemma_harness.context_tokens,
+            "max_new_tokens": gemma_harness.max_new_tokens,
+            "source_of_truth": file_sot(&gemma_model_readback_path),
+            "sha256": sha256_file(&gemma_model_readback_path)?
+        }),
+    )?;
     let mut previous_patch_hashes: Vec<String> = Vec::new();
     let mut attempts: Vec<AttemptRecord> = Vec::new();
     let mut solved = false;
@@ -2603,6 +2619,68 @@ impl GemmaCodingHarness {
         })
     }
 
+    fn model_capability_report(&self, report_path: &Path) -> Result<Value> {
+        let chat_template = self.chat_template.to_string().map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_GEMMA_CHAT_TEMPLATE_UTF8_INVALID",
+                "Gemma chat template was not valid UTF-8",
+                "gemma_harness.chat_template",
+                "install a GGUF with a valid UTF-8 chat template or pass a valid explicit template",
+                json!({"error": err.to_string(), "model_path": file_sot(&self.model_path)}),
+                Some(file_sot(&self.model_path)),
+            )
+        })?;
+        let mut selected_metadata = BTreeMap::new();
+        for key in [
+            "general.architecture",
+            "general.name",
+            "general.basename",
+            "general.size_label",
+            "llama.context_length",
+            "gemma.context_length",
+            "gemma3.context_length",
+            "tokenizer.chat_template",
+        ] {
+            if let Ok(value) = self.model.meta_val_str(key) {
+                selected_metadata.insert(key.to_string(), value);
+            }
+        }
+        Ok(json!({
+            "record_kind": "contextgraph_gemma_harness_model_capability_readback",
+            "status": "ok",
+            "provider": "contextgraph_rust_gemma_coding_harness",
+            "model_path": file_sot(&self.model_path),
+            "requested_context_tokens": self.requested_context_tokens,
+            "effective_context_tokens": self.context_tokens,
+            "context_policy": if self.requested_context_tokens.is_some() { "explicit_cli" } else { "gguf_n_ctx_train_max" },
+            "model_context_train_tokens": self.model_context_train_tokens,
+            "max_new_tokens": self.max_new_tokens,
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "batch_size": self.batch_size,
+            "seed": self.seed,
+            "model_readback": {
+                "n_vocab": self.model.n_vocab(),
+                "n_embd": self.model.n_embd(),
+                "n_layer": self.model.n_layer(),
+                "n_head": self.model.n_head(),
+                "n_head_kv": self.model.n_head_kv(),
+                "n_params": self.model.n_params(),
+                "size_bytes": self.model.size(),
+                "metadata_count": self.model.meta_count(),
+                "selected_metadata": selected_metadata
+            },
+            "chat_template": {
+                "sha256": sha256_text(&chat_template),
+                "preview": truncate_chars(&chat_template, 4000)
+            },
+            "source_of_truth": {
+                "report": file_sot(report_path),
+                "model_path": file_sot(&self.model_path)
+            }
+        }))
+    }
+
     fn chat(&self, args: &AttemptArgs, body: &Value, request_path: &Path) -> Result<Value> {
         let messages = body
             .get("messages")
@@ -2755,6 +2833,10 @@ impl GemmaCodingHarness {
             "contextgraph_gemma_harness": {
                 "provider": "contextgraph_rust_gemma_coding_harness",
                 "model_path": file_sot(&self.model_path),
+                "requested_context_tokens": self.requested_context_tokens,
+                "effective_context_tokens": self.context_tokens,
+                "model_context_train_tokens": self.model_context_train_tokens,
+                "max_new_tokens": self.max_new_tokens,
                 "prompt_tokens": prompt_tokens,
                 "generated_tokens": generated_tokens,
                 "chat_format": rendered.chat_format,
@@ -2787,7 +2869,20 @@ impl GemmaCodingHarness {
                 Some(file_sot(request_path)),
             )
         })?;
-        let ctx_params = LlamaContextParams::default().with_n_ctx(Some(context_tokens));
+        let batch_size = u32::try_from(self.batch_size).map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_GEMMA_BATCH_SIZE_TOO_LARGE",
+                "Gemma batch size could not be represented for llama.cpp context params",
+                "gemma_batch_size",
+                "set --gemma-batch-size no larger than u32::MAX",
+                json!({"error": err.to_string(), "batch_size": self.batch_size}),
+                Some(file_sot(request_path)),
+            )
+        })?;
+        let ctx_params = LlamaContextParams::default()
+            .with_n_ctx(Some(context_tokens))
+            .with_n_batch(batch_size)
+            .with_n_ubatch(batch_size);
         let mut ctx = self
             .model
             .new_context(&self.backend, ctx_params)
@@ -2799,7 +2894,10 @@ impl GemmaCodingHarness {
                     "inspect context window size, GPU memory, and model compatibility",
                     json!({
                         "error": err.to_string(),
-                        "context_tokens": self.context_tokens,
+                        "effective_context_tokens": self.context_tokens,
+                        "requested_context_tokens": self.requested_context_tokens,
+                        "model_context_train_tokens": self.model_context_train_tokens,
+                        "batch_size": self.batch_size,
                         "model_path": file_sot(&self.model_path),
                         "request": file_sot(request_path)
                     }),
@@ -2828,6 +2926,24 @@ impl GemmaCodingHarness {
                 json!({
                     "prompt_tokens": tokens.len(),
                     "context_tokens": self.context_tokens,
+                    "request": file_sot(request_path)
+                }),
+                Some(file_sot(request_path)),
+            ));
+        }
+        let available_generation_tokens = self.context_tokens as usize - tokens.len();
+        if self.max_new_tokens > available_generation_tokens {
+            return Err(RealityError::new(
+                "RUST_REALITY_GEMMA_PROMPT_AND_OUTPUT_CONTEXT_EXCEEDED",
+                "rendered Gemma prompt plus requested generation budget exceeds the configured context window",
+                "gemma_harness.prompt_tokens_plus_max_new_tokens",
+                "reduce prompt/tool transcript size or use a Gemma GGUF with a larger training context; the harness will not silently lower the requested budget",
+                json!({
+                    "prompt_tokens": tokens.len(),
+                    "max_new_tokens": self.max_new_tokens,
+                    "available_generation_tokens": available_generation_tokens,
+                    "effective_context_tokens": self.context_tokens,
+                    "model_context_train_tokens": self.model_context_train_tokens,
                     "request": file_sot(request_path)
                 }),
                 Some(file_sot(request_path)),
@@ -3170,7 +3286,8 @@ fn gemma_coding_harness_chat_json(
         "before_gemma_coding_harness",
         &args.model,
     )?;
-    let system_prompt = "You are a model that can do function calling with the following functions. \
+    let system_prompt = format!(
+        "You are a model that can do function calling with the following functions. \
 You are a software repair model inside ContextGraph's Rust reality loop. \
 You must call governed tools to inspect reality and must submit the candidate patch with apply_line_window_edit or apply_structured_edit. \
 On attempt 1, start by calling read_problem_reality, search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool so your edit is grounded in real task and repository state. \
@@ -3179,8 +3296,11 @@ The application executes tools; you do not execute code yourself. \
 Prefer apply_line_window_edit after open_file_window because it replaces line ranges from a file hash you observed. \
 Use apply_structured_edit only when you can provide an exact unique find span copied from real source windows. \
 ContextGraph compiles that tool call into a git diff and verifies it against the real repository. \
+Runtime limits: effective context window is {} tokens from the loaded GGUF; per-turn max_new_tokens is {}; governed tool-round budget is {}. \
 Do not try to finish with prose, raw JSON, or a hand-written patch in assistant content. \
-Do not modify tests, fixtures, or benchmark harness files.";
+Do not modify tests, fixtures, or benchmark harness files.",
+        harness.context_tokens, harness.max_new_tokens, args.agent_tool_rounds
+    );
     let mut messages = vec![
         json!({"role": "system", "content": system_prompt}),
         json!({"role": "user", "content": prompt}),
@@ -3231,8 +3351,10 @@ Do not modify tests, fixtures, or benchmark harness files.";
             "options": {
                 "temperature": args.gemma_temperature,
                 "top_p": args.gemma_top_p,
-                "context_tokens": args.gemma_context_tokens,
-                "max_new_tokens": args.gemma_max_new_tokens,
+                "requested_context_tokens": args.gemma_context_tokens,
+                "effective_context_tokens": harness.context_tokens,
+                "model_context_train_tokens": harness.model_context_train_tokens,
+                "max_new_tokens": harness.max_new_tokens,
                 "gpu_layers": args.gemma_gpu_layers,
                 "batch_size": args.gemma_batch_size,
                 "seed": args.gemma_seed
