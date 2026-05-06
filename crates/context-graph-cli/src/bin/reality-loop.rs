@@ -27,6 +27,7 @@ const DEFAULT_CONTEXT_GRAPH_BIN: &str = "target/debug/context-graph";
 const DEFAULT_MODEL: &str = "gemma4:e4b";
 const DEFAULT_GEMMA_MODEL_PATH: &str = "models/gemma4-e4b/gemma4-e4b.Q4_K_M.gguf";
 const DEFAULT_GPU_MIN_FREE_MB: u64 = 8192;
+const DEFAULT_GEMMA_MIN_CONTEXT_TOKENS: u32 = 128_000;
 const DEFAULT_GEMMA_MAX_NEW_TOKENS: usize = 16384;
 const DEFAULT_GEMMA_TEMPERATURE: f32 = 0.0;
 const DEFAULT_GEMMA_TOP_P: f32 = 0.9;
@@ -1976,6 +1977,7 @@ fn build_measurement_contract(
                 "chat_template": args.gemma_chat_template.as_deref(),
                 "context_policy": if args.gemma_context_tokens.is_some() { "explicit_cli" } else { "gguf_n_ctx_train_max" },
                 "requested_context_tokens": args.gemma_context_tokens,
+                "minimum_context_tokens": DEFAULT_GEMMA_MIN_CONTEXT_TOKENS,
                 "max_new_tokens": args.gemma_max_new_tokens,
                 "temperature": args.gemma_temperature,
                 "top_p": args.gemma_top_p,
@@ -2506,6 +2508,68 @@ struct GemmaCodingHarness {
     seed: u32,
 }
 
+fn gemma_model_identity_readback(
+    model: &LlamaModel,
+    model_path: &Path,
+) -> BTreeMap<String, String> {
+    let mut selected_metadata = BTreeMap::new();
+    if let Some(file_name) = model_path.file_name().and_then(|name| name.to_str()) {
+        selected_metadata.insert(
+            "contextgraph.model_path_file_name".to_string(),
+            file_name.to_string(),
+        );
+    }
+    for key in [
+        "general.architecture",
+        "general.name",
+        "general.basename",
+        "general.finetune",
+        "general.size_label",
+        "general.type",
+        "llama.context_length",
+        "gemma.context_length",
+        "gemma3.context_length",
+        "gemma4.context_length",
+        "tokenizer.chat_template",
+    ] {
+        if let Ok(value) = model.meta_val_str(key) {
+            selected_metadata.insert(key.to_string(), value);
+        }
+    }
+    selected_metadata
+}
+
+fn validate_gemma4_model_identity(
+    model_path: &Path,
+    identity: &BTreeMap<String, String>,
+) -> Result<()> {
+    let identity_text = identity
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .to_ascii_lowercase();
+    let compact_identity = identity_text
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect::<String>();
+    if !compact_identity.contains("gemma4") {
+        return Err(RealityError::new(
+            "RUST_REALITY_GEMMA_MODEL_IDENTITY_MISMATCH",
+            "loaded GGUF does not identify as Gemma 4",
+            "gemma_harness.model.metadata",
+            "install the intended Gemma 4 GGUF; the SWE harness will not run a substitute model under a Gemma label",
+            json!({
+                "required_identity": "gemma4",
+                "identity_readback": identity,
+                "model_path": file_sot(model_path)
+            }),
+            Some(file_sot(model_path)),
+        ));
+    }
+    Ok(())
+}
+
 impl GemmaCodingHarness {
     fn load(args: &AttemptArgs) -> Result<Self> {
         let model_path = resolve_path(&args.gemma_model_path)?;
@@ -2563,6 +2627,8 @@ impl GemmaCodingHarness {
             })?,
         };
         let model_context_train_tokens = model.n_ctx_train();
+        let model_identity = gemma_model_identity_readback(&model, &model_path);
+        validate_gemma4_model_identity(&model_path, &model_identity)?;
         if model_context_train_tokens == 0 {
             return Err(RealityError::new(
                 "RUST_REALITY_GEMMA_MODEL_CONTEXT_INVALID",
@@ -2570,6 +2636,21 @@ impl GemmaCodingHarness {
                 "gemma_harness.model.n_ctx_train",
                 "install a valid Gemma GGUF with context metadata",
                 json!({"model_path": file_sot(&model_path), "n_ctx_train": model_context_train_tokens}),
+                Some(file_sot(&model_path)),
+            ));
+        }
+        if model_context_train_tokens < DEFAULT_GEMMA_MIN_CONTEXT_TOKENS {
+            return Err(RealityError::new(
+                "RUST_REALITY_GEMMA_MODEL_CONTEXT_BELOW_REQUIRED_FLOOR",
+                "loaded Gemma GGUF context is below the SWE coding harness capability floor",
+                "gemma_harness.model.n_ctx_train",
+                "install a Gemma 4 GGUF with at least a 128K training context so repository context and tool transcripts fit without silent truncation",
+                json!({
+                    "minimum_context_tokens": DEFAULT_GEMMA_MIN_CONTEXT_TOKENS,
+                    "model_context_train_tokens": model_context_train_tokens,
+                    "model_identity": model_identity,
+                    "model_path": file_sot(&model_path)
+                }),
                 Some(file_sot(&model_path)),
             ));
         }
@@ -2584,6 +2665,22 @@ impl GemmaCodingHarness {
                 "omit --gemma-context-tokens to use the model maximum, or set a value within the GGUF n_ctx_train limit",
                 json!({
                     "requested_context_tokens": context_tokens,
+                    "model_context_train_tokens": model_context_train_tokens,
+                    "model_path": file_sot(&model_path)
+                }),
+                Some(file_sot(&model_path)),
+            ));
+        }
+        if context_tokens < DEFAULT_GEMMA_MIN_CONTEXT_TOKENS {
+            return Err(RealityError::new(
+                "RUST_REALITY_GEMMA_EFFECTIVE_CONTEXT_BELOW_REQUIRED_FLOOR",
+                "effective Gemma context is below the SWE coding harness capability floor",
+                "gemma_context_tokens",
+                "omit --gemma-context-tokens to use the GGUF maximum, or set an explicit context of at least 128K tokens",
+                json!({
+                    "minimum_context_tokens": DEFAULT_GEMMA_MIN_CONTEXT_TOKENS,
+                    "effective_context_tokens": context_tokens,
+                    "requested_context_tokens": args.gemma_context_tokens,
                     "model_context_train_tokens": model_context_train_tokens,
                     "model_path": file_sot(&model_path)
                 }),
@@ -2633,20 +2730,7 @@ impl GemmaCodingHarness {
             )
         })?;
         let mut selected_metadata = BTreeMap::new();
-        for key in [
-            "general.architecture",
-            "general.name",
-            "general.basename",
-            "general.size_label",
-            "llama.context_length",
-            "gemma.context_length",
-            "gemma3.context_length",
-            "tokenizer.chat_template",
-        ] {
-            if let Ok(value) = self.model.meta_val_str(key) {
-                selected_metadata.insert(key.to_string(), value);
-            }
-        }
+        selected_metadata.extend(gemma_model_identity_readback(&self.model, &self.model_path));
         Ok(json!({
             "record_kind": "contextgraph_gemma_harness_model_capability_readback",
             "status": "ok",
@@ -2656,6 +2740,7 @@ impl GemmaCodingHarness {
             "effective_context_tokens": self.context_tokens,
             "context_policy": if self.requested_context_tokens.is_some() { "explicit_cli" } else { "gguf_n_ctx_train_max" },
             "model_context_train_tokens": self.model_context_train_tokens,
+            "minimum_context_tokens": DEFAULT_GEMMA_MIN_CONTEXT_TOKENS,
             "max_new_tokens": self.max_new_tokens,
             "temperature": self.temperature,
             "top_p": self.top_p,

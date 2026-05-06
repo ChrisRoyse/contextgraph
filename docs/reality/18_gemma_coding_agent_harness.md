@@ -51,6 +51,7 @@ Reality-loop request settings now override the sampling defaults for coding-agen
   "top_p": 0.9,
   "context_policy": "gguf_n_ctx_train_max",
   "effective_context_tokens": "loaded GGUF n_ctx_train",
+  "minimum_context_tokens": 128000,
   "max_new_tokens": 16384,
   "batch_size": 2048,
   "gpu_layers": 4294967295,
@@ -59,6 +60,8 @@ Reality-loop request settings now override the sampling defaults for coding-agen
 ```
 
 The harness uses the loaded GGUF model's training context by default. An explicit `--gemma-context-tokens` value is allowed only when it is positive and no larger than the model readback. The run writes `gemma-harness-model-readback.json` with the model path, `n_ctx_train`, effective context, generation budget, template hash, and selected GGUF metadata. Each model turn also writes source-of-truth artifacts for the rendered prompt, generated grammar, raw generation, parsed response, and final `gemma-harness-response.json`.
+
+The harness also fails closed before generation if the loaded GGUF does not identify as Gemma 4 or if the GGUF/effective context is below the 128K coding-agent floor. This prevents a substitute local model or a low-context quant from being run under the Gemma SWE label.
 
 ## Governed Coding-Agent Tool Surface
 
