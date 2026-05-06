@@ -1605,6 +1605,25 @@ async fn run(args: AttemptArgs) -> Result<Value> {
                 "ledger_counts": ledger_counts(&ledger)?,
             }),
         )?;
+        // Phase 15: emit autoresearch engine artifacts under <run_root>/reality-optimizer/
+        write_optimizer_artifacts(
+            &run_root,
+            &args.model,
+            &task,
+            &attempt_record,
+            reward.as_ref(),
+            &attempts,
+        )?;
+        // Phase 18: emit verified-episode training samples under <run_root>/training/
+        write_training_export(
+            &run_root,
+            &args.model,
+            &task,
+            &attempt_record,
+            reward.as_ref(),
+            &attempts,
+            &attempt_dir,
+        )?;
         append_event(
             &reality_events,
             json!({
@@ -7221,6 +7240,519 @@ fn write_summary(
     });
     write_json_checked(&path, &summary)?;
     Ok(summary)
+}
+
+// ----- Phase 15: autoresearch engine artifacts ---------------------------------------
+//
+// After every attempt the engine writes durable autoresearch records under
+// <run_root>/reality-optimizer/ so the outer optimizer (Claude Code) can reason
+// about its own progress: attempts.jsonl is the compact per-attempt feed,
+// reward-series.jsonl is the scalar trace, decisions.jsonl is the keep/discard
+// verdict, and champion-state.json names the best-known result per (model, task).
+// experiment-registry.json is initialized empty so the optimizer can append
+// candidate harness-change experiments via MCP tools.
+
+fn extract_reward_scalar(reward: Option<&Value>) -> Option<f64> {
+    let r = reward?;
+    // try several common shapes; the BlackBox reward compiler nests the scalar
+    // under different paths depending on the spec version
+    for path in [
+        "/reward/reward/clipped",
+        "/reward/reward/raw",
+        "/reward/clipped",
+        "/reward/raw",
+        "/reward/scalar",
+        "/reward",
+        "/score",
+    ] {
+        if let Some(v) = r.pointer(path).and_then(Value::as_f64) {
+            return Some(v);
+        }
+    }
+    None
+}
+
+fn extract_official_resolved(record: &AttemptRecord) -> Option<bool> {
+    record.resolved
+}
+
+fn write_optimizer_artifacts(
+    run_root: &Path,
+    model: &str,
+    task: &TaskManifest,
+    record: &AttemptRecord,
+    reward: Option<&Value>,
+    previous_attempts: &[AttemptRecord],
+) -> Result<()> {
+    let dir = run_root.join("reality-optimizer");
+    create_dir_checked(&dir)?;
+
+    // initialize experiment-registry.json if missing (optimizer populates it via MCP)
+    let registry_path = dir.join("experiment-registry.json");
+    if !registry_path.exists() {
+        let init = json!({
+            "schema_version": 1,
+            "record_kind": "ccreality_experiment_registry",
+            "created_at_unix": unix_secs()?,
+            "experiments": []
+        });
+        write_json_checked(&registry_path, &init)?;
+    }
+
+    let reward_scalar = extract_reward_scalar(reward);
+    let resolved = extract_official_resolved(record);
+    let unix = unix_secs()?;
+
+    // attempts.jsonl — compact per-attempt feed
+    let attempts_path = dir.join("attempts.jsonl");
+    let attempt_row = json!({
+        "schema_version": 1,
+        "record_kind": "ccreality_autoresearch_attempt",
+        "model": model,
+        "instance_id": task.instance_id,
+        "repo": task.repo,
+        "attempt": record.attempt,
+        "status": record.status,
+        "error_code": record.error_code,
+        "patch_sha256": record.patch_sha256,
+        "repeated_patch": record.repeated_patch,
+        "official_resolved": resolved,
+        "reward_scalar": reward_scalar,
+        "reality_signal_packet": record.reality_signal_packet_path,
+        "validation_path": record.validation_path,
+        "created_at_unix": unix,
+    });
+    append_jsonl_checked(&attempts_path, &attempt_row)?;
+
+    // reward-series.jsonl — scalar trace per (model, task, attempt)
+    if let Some(scalar) = reward_scalar {
+        let reward_path = dir.join("reward-series.jsonl");
+        let row = json!({
+            "schema_version": 1,
+            "record_kind": "ccreality_reward_series_point",
+            "model": model,
+            "instance_id": task.instance_id,
+            "attempt": record.attempt,
+            "reward_scalar": scalar,
+            "official_resolved": resolved,
+            "created_at_unix": unix,
+        });
+        append_jsonl_checked(&reward_path, &row)?;
+    }
+
+    // decisions.jsonl — auto keep/discard/repair/escalate per docs/reality/05
+    let decision = autoresearch_decision(record, reward_scalar, previous_attempts, model, task);
+    let decisions_path = dir.join("decisions.jsonl");
+    let decision_row = json!({
+        "schema_version": 1,
+        "record_kind": "ccreality_autoresearch_decision",
+        "model": model,
+        "instance_id": task.instance_id,
+        "attempt": record.attempt,
+        "decision": decision.decision,
+        "reasoning": decision.reasoning,
+        "reward_scalar": reward_scalar,
+        "official_resolved": resolved,
+        "created_at_unix": unix,
+    });
+    append_jsonl_checked(&decisions_path, &decision_row)?;
+
+    // champion-state.json — best (model, task) result so far
+    update_champion_state(&dir, model, task, record, reward_scalar, resolved)?;
+
+    Ok(())
+}
+
+struct AutoresearchDecision {
+    decision: &'static str,
+    reasoning: String,
+}
+
+fn autoresearch_decision(
+    record: &AttemptRecord,
+    reward_scalar: Option<f64>,
+    previous: &[AttemptRecord],
+    _model: &str,
+    _task: &TaskManifest,
+) -> AutoresearchDecision {
+    if record.resolved == Some(true) {
+        return AutoresearchDecision {
+            decision: "keep",
+            reasoning: "official_resolved=true; promotion candidate per Phase 19".to_string(),
+        };
+    }
+    if record.repeated_patch {
+        return AutoresearchDecision {
+            decision: "discard",
+            reasoning: "repeated_patch detected; failure does not produce new evidence".to_string(),
+        };
+    }
+    if record.error_code.is_some() && record.patch_sha256.is_none() {
+        return AutoresearchDecision {
+            decision: "escalate",
+            reasoning: format!(
+                "infrastructure or contract failure: error_code={}",
+                record.error_code.as_deref().unwrap_or("unknown")
+            ),
+        };
+    }
+    let prev_reward = previous
+        .iter()
+        .filter_map(|p| {
+            p.reality_signal_compact
+                .pointer("/score_reality/reward/clipped")
+                .and_then(Value::as_f64)
+                .or_else(|| {
+                    p.reality_signal_compact
+                        .pointer("/score_reality/reward/raw")
+                        .and_then(Value::as_f64)
+                })
+        })
+        .last();
+    match (reward_scalar, prev_reward) {
+        (Some(cur), Some(prev)) if cur > prev + 0.05 => AutoresearchDecision {
+            decision: "repair",
+            reasoning: format!("reward improved (prev={prev:.3} → cur={cur:.3}); next attempt should continue this trajectory"),
+        },
+        (Some(cur), Some(prev)) if cur < prev - 0.05 => AutoresearchDecision {
+            decision: "discard",
+            reasoning: format!("reward regressed (prev={prev:.3} → cur={cur:.3})"),
+        },
+        _ => AutoresearchDecision {
+            decision: "repair",
+            reasoning: "reward flat or first attempt; continue iterating with updated prompt evidence".to_string(),
+        },
+    }
+}
+
+fn update_champion_state(
+    dir: &Path,
+    model: &str,
+    task: &TaskManifest,
+    record: &AttemptRecord,
+    reward_scalar: Option<f64>,
+    resolved: Option<bool>,
+) -> Result<()> {
+    let path = dir.join("champion-state.json");
+    let mut state = if path.is_file() {
+        read_json::<Value>(&path)?
+    } else {
+        json!({
+            "schema_version": 1,
+            "record_kind": "ccreality_champion_state",
+            "champions": []
+        })
+    };
+    let champions = state["champions"].as_array_mut().ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_CHAMPION_STATE_INVALID_SHAPE",
+            "champion-state.json does not contain an array at .champions",
+            "champion_state.shape",
+            "wipe champion-state.json so the engine can re-initialize it",
+            json!({"path": path_str(&path)}),
+            Some(file_sot(&path)),
+        )
+    })?;
+
+    // Find existing champion for (model, task)
+    let position = champions.iter().position(|c| {
+        c.get("model").and_then(Value::as_str) == Some(model)
+            && c.get("task").and_then(Value::as_str) == Some(task.instance_id.as_str())
+    });
+    let candidate = json!({
+        "model": model,
+        "task": task.instance_id,
+        "repo": task.repo,
+        "attempt": record.attempt,
+        "official_resolved": resolved,
+        "best_reward": reward_scalar,
+        "patch_sha256": record.patch_sha256,
+        "reality_signal_packet": record.reality_signal_packet_path,
+        "promoted_at_unix": Value::Null,  // promotion happens via Phase 19 only
+        "candidate_at_unix": unix_secs()?,
+    });
+
+    let should_replace = match position {
+        None => true,
+        Some(idx) => {
+            let existing = &champions[idx];
+            let existing_resolved = existing.get("official_resolved").and_then(Value::as_bool);
+            let existing_reward = existing.get("best_reward").and_then(Value::as_f64);
+            // resolved beats unresolved; among same-resolved, higher reward wins
+            match (resolved, existing_resolved) {
+                (Some(true), Some(true)) | (Some(false), Some(false)) | (None, None) => {
+                    matches!((reward_scalar, existing_reward),
+                        (Some(cur), Some(prev)) if cur > prev)
+                        || matches!((reward_scalar, existing_reward), (Some(_), None))
+                }
+                (Some(true), _) => true,
+                (_, Some(true)) => false,
+                _ => false,
+            }
+        }
+    };
+    if should_replace {
+        match position {
+            Some(idx) => champions[idx] = candidate,
+            None => champions.push(candidate),
+        }
+        write_json_checked(&path, &state)?;
+    }
+    Ok(())
+}
+
+// ----- Phase 18: training export -----------------------------------------------------
+//
+// After every attempt with official Docker readback, the engine appends a verified
+// training sample under <run_root>/training/. Four classes are produced:
+//
+//   positive.jsonl       — official_resolved + clean validation
+//   negative.jsonl       — official_unresolved with verified failure
+//   preference_pairs.jsonl — same (model, task) where this attempt's reward
+//                            differs from a prior attempt's by >= 0.5
+//   rejected_patches.jsonl — harness-rejected patches (malformed, repeated, etc.)
+//
+// The intent matches docs/fullloop/09_PHASE_18_TRAINING_EXPORT.md and
+// docs/reality/07_implementation_roadmap.md Phase 5. Rows are append-only with
+// read-after-write byte-equal verification.
+
+fn write_training_export(
+    run_root: &Path,
+    model: &str,
+    task: &TaskManifest,
+    record: &AttemptRecord,
+    reward: Option<&Value>,
+    previous: &[AttemptRecord],
+    attempt_dir: &Path,
+) -> Result<()> {
+    let dir = run_root.join("training");
+    create_dir_checked(&dir)?;
+    let unix = unix_secs()?;
+    let reward_scalar = extract_reward_scalar(reward);
+    let resolved = extract_official_resolved(record);
+    let candidate_patch_path = attempt_dir.join("candidate.patch");
+    let candidate_patch_pointer = if candidate_patch_path.is_file() {
+        Some(file_sot(&candidate_patch_path))
+    } else {
+        None
+    };
+
+    // -- rejected_patches.jsonl: harness rejected this attempt's edit/patch ----
+    if record.repeated_patch
+        || matches!(
+            record.error_code.as_deref(),
+            Some("RUST_REALITY_PATCH_REPEATED")
+                | Some("RUST_REALITY_PATCH_APPLY_FAILED")
+                | Some("RUST_REALITY_FINAL_EDIT_TOOL_FAILED")
+                | Some("RUST_REALITY_FINAL_EDIT_TOOL_REQUIRED")
+                | Some("RUST_REALITY_STRUCTURED_EDIT_FIND_AMBIGUOUS")
+                | Some("RUST_REALITY_MODEL_RESPONSE_JSON_INVALID")
+        )
+    {
+        let row = json!({
+            "schema_version": 1,
+            "kind": "rejected_patch",
+            "instance_id": task.instance_id,
+            "repo": task.repo,
+            "model": model,
+            "attempt": record.attempt,
+            "patch_sha256": record.patch_sha256,
+            "reject_reason": record.error_code,
+            "patch_text_pointer": candidate_patch_pointer,
+            "validation_path": record.validation_path,
+            "created_at_unix": unix,
+        });
+        append_jsonl_checked(&dir.join("rejected_patches.jsonl"), &row)?;
+    }
+
+    // -- positive.jsonl: official_resolved with no critical incident ---------------
+    if resolved == Some(true) {
+        let row = json!({
+            "schema_version": 1,
+            "kind": "positive",
+            "instance_id": task.instance_id,
+            "repo": task.repo,
+            "model": model,
+            "attempt": record.attempt,
+            "prompt_sha256": record.prompt_sha256,
+            "response_sha256": record.response_sha256,
+            "patch_sha256": record.patch_sha256,
+            "candidate_patch": candidate_patch_pointer,
+            "official_evidence_path": record.official_evidence_path,
+            "reality_signal_packet_path": record.reality_signal_packet_path,
+            "reward_scalar": reward_scalar,
+            "source_of_truth_refs": [
+                record.official_evidence_path.clone().map(Value::String).unwrap_or(Value::Null),
+                Value::String(record.reality_signal_packet_path.clone()),
+            ],
+            "created_at_unix": unix,
+        });
+        append_jsonl_checked(&dir.join("positive.jsonl"), &row)?;
+    }
+    // -- negative.jsonl: official_unresolved with verified failure -----------------
+    else if resolved == Some(false) || record.status != "passed" {
+        let failure_class = record
+            .reality_signal_compact
+            .pointer("/failure_digest/class")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .or_else(|| record.error_code.clone())
+            .unwrap_or_else(|| "unknown".to_string());
+        let first_error_location = record
+            .reality_signal_compact
+            .pointer("/failure_digest/first_error_location")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let failed_test_names = record
+            .reality_signal_compact
+            .pointer("/official_progress/fail_to_pass/failed_tests")
+            .cloned()
+            .unwrap_or_else(|| json!([]));
+        let row = json!({
+            "schema_version": 1,
+            "kind": "negative",
+            "instance_id": task.instance_id,
+            "repo": task.repo,
+            "model": model,
+            "attempt": record.attempt,
+            "prompt_sha256": record.prompt_sha256,
+            "response_sha256": record.response_sha256,
+            "patch_sha256": record.patch_sha256,
+            "candidate_patch": candidate_patch_pointer,
+            "failure_class": failure_class,
+            "first_error_location": first_error_location,
+            "failed_test_names": failed_test_names,
+            "reality_signal_packet_path": record.reality_signal_packet_path,
+            "reward_scalar": reward_scalar,
+            "created_at_unix": unix,
+        });
+        append_jsonl_checked(&dir.join("negative.jsonl"), &row)?;
+    }
+
+    // -- preference_pairs.jsonl: this attempt vs a prior attempt with reward delta ≥ 0.5 ---
+    if let Some(cur_reward) = reward_scalar {
+        for prev in previous.iter() {
+            let prev_reward = prev
+                .reality_signal_compact
+                .pointer("/score_reality/reward/clipped")
+                .and_then(Value::as_f64)
+                .or_else(|| {
+                    prev.reality_signal_compact
+                        .pointer("/score_reality/reward/raw")
+                        .and_then(Value::as_f64)
+                });
+            let Some(prev_r) = prev_reward else { continue };
+            let delta = (cur_reward - prev_r).abs();
+            if delta < 0.5 {
+                continue;
+            }
+            let (preferred, rejected, preferred_reward, rejected_reward) = if cur_reward > prev_r {
+                (record, prev, cur_reward, prev_r)
+            } else {
+                (prev, record, prev_r, cur_reward)
+            };
+            let row = json!({
+                "schema_version": 1,
+                "kind": "preference_pair",
+                "instance_id": task.instance_id,
+                "model": model,
+                "preferred_attempt": preferred.attempt,
+                "preferred_reward": preferred_reward,
+                "preferred_patch_sha256": preferred.patch_sha256,
+                "preferred_reality_signal_packet": preferred.reality_signal_packet_path,
+                "rejected_attempt": rejected.attempt,
+                "rejected_reward": rejected_reward,
+                "rejected_patch_sha256": rejected.patch_sha256,
+                "rejected_reality_signal_packet": rejected.reality_signal_packet_path,
+                "preference_strength": delta,
+                "rationale": format!(
+                    "preferred attempt {} reward={:.3}; rejected attempt {} reward={:.3}",
+                    preferred.attempt, preferred_reward, rejected.attempt, rejected_reward
+                ),
+                "created_at_unix": unix,
+            });
+            append_jsonl_checked(&dir.join("preference_pairs.jsonl"), &row)?;
+        }
+    }
+
+    // -- manifest.json: summary the operator + LoRA training driver consult -----
+    let manifest_path = dir.join("manifest.json");
+    let counts = count_training_jsonl(&dir)?;
+    let manifest = json!({
+        "schema_version": 1,
+        "record_kind": "ccreality_training_export_manifest",
+        "exporter_version": "v1",
+        "active_runtime_root": run_root.display().to_string(),
+        "model": model,
+        "instance_id": task.instance_id,
+        "counts": counts,
+        "last_updated_at_unix": unix,
+    });
+    write_json_checked(&manifest_path, &manifest)?;
+
+    Ok(())
+}
+
+fn count_training_jsonl(dir: &Path) -> Result<Value> {
+    let mut counts = serde_json::Map::new();
+    for class in [
+        "positive",
+        "negative",
+        "preference_pairs",
+        "rejected_patches",
+    ] {
+        let path = dir.join(format!("{class}.jsonl"));
+        let n: u64 = if path.is_file() {
+            fs::read_to_string(&path)
+                .map_err(|err| fs_error("RUST_REALITY_TRAINING_COUNT_READ_FAILED", &path, err))?
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .count() as u64
+        } else {
+            0
+        };
+        counts.insert(format!("{class}_count"), json!(n));
+    }
+    Ok(Value::Object(counts))
+}
+
+fn append_jsonl_checked(path: &Path, value: &Value) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        create_dir_checked(parent)?;
+    }
+    let line = serde_json::to_string(value).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_OPTIMIZER_ARTIFACT_SERIALIZE_FAILED",
+            "failed to serialize autoresearch artifact row",
+            "optimizer_artifact.serialize",
+            "inspect the row payload",
+            json!({"error": err.to_string()}),
+            Some(file_sot(path)),
+        )
+    })?;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|err| fs_error("RUST_REALITY_OPTIMIZER_ARTIFACT_OPEN_FAILED", path, err))?;
+    writeln!(file, "{line}")
+        .map_err(|err| fs_error("RUST_REALITY_OPTIMIZER_ARTIFACT_WRITE_FAILED", path, err))?;
+    file.sync_all()
+        .map_err(|err| fs_error("RUST_REALITY_OPTIMIZER_ARTIFACT_SYNC_FAILED", path, err))?;
+    let readback = fs::read_to_string(path)
+        .map_err(|err| fs_error("RUST_REALITY_OPTIMIZER_ARTIFACT_READBACK_FAILED", path, err))?;
+    let last_line = readback.lines().last().unwrap_or("");
+    if last_line != line {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPTIMIZER_ARTIFACT_READBACK_MISMATCH",
+            "autoresearch artifact readback did not match written row",
+            "optimizer_artifact.readback",
+            "inspect filesystem durability",
+            json!({"path": path_str(path), "expected": line, "actual": last_line}),
+            Some(file_sot(path)),
+        ));
+    }
+    Ok(())
 }
 
 fn append_event(path: &Path, event: Value) -> Result<()> {

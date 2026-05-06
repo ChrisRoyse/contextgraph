@@ -371,3 +371,11 @@ pub const OPTIMIZER_RECORD_RECOMMENDATION: &str = "optimizer_record_recommendati
 pub const OPTIMIZER_RECORD_HARNESS_TRANSITION: &str = "optimizer_record_harness_transition";
 pub const REALITY_SHIFT_LOG: &str = "reality_shift_log";
 pub const REALITY_SHIFT_COMPARE_TO_MY_VIEW: &str = "reality_shift_compare_to_my_view";
+// Phase 15: autoresearch engine
+pub const EXPERIMENT_REGISTRY_LIST: &str = "experiment_registry_list";
+pub const EXPERIMENT_REGISTRY_GET: &str = "experiment_registry_get";
+pub const CHAMPION_STATE_GET: &str = "champion_state_get";
+pub const ATTEMPTS_HISTORY_QUERY: &str = "attempts_history_query";
+pub const EXPERIMENT_REGISTRY_PROPOSE: &str = "experiment_registry_propose";
+pub const EXPERIMENT_REGISTRY_UPDATE_OUTCOME: &str = "experiment_registry_update_outcome";
+pub const CHAMPION_STATE_PROMOTE: &str = "champion_state_promote";

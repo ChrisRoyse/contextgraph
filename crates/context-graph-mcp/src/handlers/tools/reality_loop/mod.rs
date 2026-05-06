@@ -2,6 +2,7 @@
 
 pub mod alter;
 pub mod analyze;
+pub mod autoresearch;
 pub mod errors;
 pub mod helpers;
 pub mod interact;

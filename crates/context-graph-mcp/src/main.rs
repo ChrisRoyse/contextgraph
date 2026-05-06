@@ -1907,6 +1907,14 @@ async fn run_reality_loop_stdio() -> Result<()> {
                     tool_names::OPTIMIZER_RECORD_HARNESS_TRANSITION => reality_loop::optimizer::optimizer_record_harness_transition(args, true).await,
                     tool_names::REALITY_SHIFT_LOG => reality_loop::shift_log::reality_shift_log(args).await,
                     tool_names::REALITY_SHIFT_COMPARE_TO_MY_VIEW => reality_loop::shift_log::reality_shift_compare_to_my_view(args).await,
+                    // Phase 15: autoresearch engine
+                    tool_names::EXPERIMENT_REGISTRY_LIST => reality_loop::autoresearch::experiment_registry_list(args).await,
+                    tool_names::EXPERIMENT_REGISTRY_GET => reality_loop::autoresearch::experiment_registry_get(args).await,
+                    tool_names::CHAMPION_STATE_GET => reality_loop::autoresearch::champion_state_get(args).await,
+                    tool_names::ATTEMPTS_HISTORY_QUERY => reality_loop::autoresearch::attempts_history_query(args).await,
+                    tool_names::EXPERIMENT_REGISTRY_PROPOSE => reality_loop::autoresearch::experiment_registry_propose(args).await,
+                    tool_names::EXPERIMENT_REGISTRY_UPDATE_OUTCOME => reality_loop::autoresearch::experiment_registry_update_outcome(args).await,
+                    tool_names::CHAMPION_STATE_PROMOTE => reality_loop::autoresearch::champion_state_promote(args).await,
                     _ => Err(reality_loop::CCRealityError::new(
                         "CCREALITY_LIGHTWEIGHT_TOOL_NOT_AVAILABLE",
                         "tool is not implemented by the lightweight cgreality stdio server",

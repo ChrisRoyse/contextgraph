@@ -454,10 +454,8 @@ fn looks_like_json_literal(s: &str) -> bool {
         return false;
     }
     let first = trimmed.as_bytes()[0];
-    matches!(
-        first,
-        b'{' | b'[' | b'-' | b'0'..=b'9'
-    ) || matches!(trimmed, "true" | "false" | "null")
+    matches!(first, b'{' | b'[' | b'-' | b'0'..=b'9')
+        || matches!(trimmed, "true" | "false" | "null")
 }
 
 pub fn session_id(args: &Value) -> String {
@@ -644,7 +642,10 @@ mod tests {
         assert_eq!(coerced["reason"], json!("natural prose stays unchanged"));
         assert_eq!(coerced["source_files_changed"], json!(["a.rs", "b.rs"]));
         assert_eq!(coerced["memories_created"], json!([]));
-        assert_eq!(coerced["harness_transitions_minted"], json!(["file:/tmp/x"]));
+        assert_eq!(
+            coerced["harness_transitions_minted"],
+            json!(["file:/tmp/x"])
+        );
         assert_eq!(coerced["drift_detected"], json!({"files": []}));
         assert!(coerced["cost_estimate_usd"].as_f64().unwrap() - 0.45 < 1e-9);
     }

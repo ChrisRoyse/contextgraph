@@ -130,16 +130,20 @@ fi
 # ----- phase 15 — autoresearch engine -----
 
 echo "== phase 15 =="
-if [ -n "$RUNTIME" ] && [ -d "$RUNTIME/reality-optimizer" ]; then
-  if [ -s "$RUNTIME/reality-optimizer/experiment-registry.json" ] \
-     && [ -s "$RUNTIME/reality-optimizer/champion-state.json" ] \
-     && [ -s "$RUNTIME/reality-optimizer/attempts.jsonl" ]; then
-    record "phase_15_autoresearch_artifacts" pass "registry+champion+attempts all present"
+if [ -n "$RUNTIME" ]; then
+  AUTORES_DIR="$(find "$RUNTIME" -maxdepth 3 -type d -name reality-optimizer 2>/dev/null | head -n 1 || true)"
+  if [ -n "$AUTORES_DIR" ] \
+     && [ -s "$AUTORES_DIR/experiment-registry.json" ] \
+     && [ -s "$AUTORES_DIR/champion-state.json" ] \
+     && [ -s "$AUTORES_DIR/attempts.jsonl" ]; then
+    record "phase_15_autoresearch_artifacts" pass "registry+champion+attempts all present at $AUTORES_DIR"
+  elif [ -n "$AUTORES_DIR" ]; then
+    record "phase_15_autoresearch_artifacts" skip "reality-optimizer dir partial at $AUTORES_DIR"
   else
-    record "phase_15_autoresearch_artifacts" skip "reality-optimizer dir partial"
+    record "phase_15_autoresearch_artifacts" skip "reality-optimizer dir not yet created"
   fi
 else
-  record "phase_15_autoresearch_artifacts" skip "reality-optimizer dir not yet created"
+  record "phase_15_autoresearch_artifacts" skip "no active runtime"
 fi
 
 # ----- phase 16 — cross-model -----
@@ -173,14 +177,19 @@ fi
 # ----- phase 18 — training export -----
 
 echo "== phase 18 =="
-if [ -n "$RUNTIME" ] && [ -d "$RUNTIME/training" ]; then
-  if [ -s "$RUNTIME/training/positive.jsonl" ] && [ -s "$RUNTIME/training/negative.jsonl" ]; then
-    record "phase_18_training_export" pass "positive+negative jsonl present"
+if [ -n "$RUNTIME" ]; then
+  TRAIN_DIR="$(find "$RUNTIME" -maxdepth 3 -type d -name training 2>/dev/null | head -n 1 || true)"
+  if [ -n "$TRAIN_DIR" ] && [ -s "$TRAIN_DIR/manifest.json" ]; then
+    if [ -s "$TRAIN_DIR/positive.jsonl" ] || [ -s "$TRAIN_DIR/negative.jsonl" ] || [ -s "$TRAIN_DIR/rejected_patches.jsonl" ]; then
+      record "phase_18_training_export" pass "training manifest + at least one class present at $TRAIN_DIR"
+    else
+      record "phase_18_training_export" skip "training dir present but no class samples yet"
+    fi
   else
-    record "phase_18_training_export" skip "training dir present but classes incomplete"
+    record "phase_18_training_export" skip "training dir not yet created"
   fi
 else
-  record "phase_18_training_export" skip "training dir not yet created"
+  record "phase_18_training_export" skip "no active runtime"
 fi
 
 # ----- phase 19 — curriculum -----

@@ -18,6 +18,14 @@ Call `mcp__cgreality__reality_shift_log {session_id: "<your session id>", limit:
 
 If you see external drift (a file's current SHA differs from your session's last-known SHA AND no shift in your log caused it), surface it via the recommendation and prefer a `no_change` until you can re-perceive cleanly.
 
+### 2b. Consult autoresearch state (Phase 15)
+
+Call `mcp__cgreality__champion_state_get {model: "<the inner model>", task: "<the instance>"}`. If a champion already exists with `official_resolved=true` and the latest attempt's reward is within 5% of the champion's reward, prefer `no_change` over a speculative harness edit — the loop should not churn near a verified champion.
+
+Call `mcp__cgreality__experiment_registry_list {status_filter: "discarded", limit: 5}` and `{status_filter: "kept", limit: 5}`. If three consecutive experiments for similar diagnoses were discarded, mark the new candidate as `requires human inspection` instead of running another speculative edit.
+
+Call `mcp__cgreality__attempts_history_query {model: "<inner>", instance_id: "<task>", limit: 10}` to see the recent reward trajectory before drafting an intervention.
+
 ### 3. Diagnose
 
 Use the `cc-reality-diagnostician` subagent (Sonnet, read-only). It returns structured Markdown with failure class, root cause hypothesis, evidence file paths, similar past failures, and suggested intervention surface.

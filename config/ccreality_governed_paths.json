@@ -10,6 +10,11 @@
     "crates/context-graph-cli/src/**",
     "crates/context-graph-mcp/src/handlers/tools/reality_loop/**",
     "crates/context-graph-mcp/src/handlers/tools/reality_loop/*.rs",
+    "crates/context-graph-mcp/src/handlers/tools/dispatch.rs",
+    "crates/context-graph-mcp/src/tools/names.rs",
+    "crates/context-graph-mcp/src/tools/definitions/reality.rs",
+    "crates/context-graph-mcp/src/tools/definitions/mod.rs",
+    "crates/context-graph-mcp/src/main.rs",
     "scripts/cc/**",
     "scripts/cc/tests/**",
     ".claude/settings.json",
@@ -25,7 +30,8 @@
     "docs/reality/**",
     "docs/fullloop/**",
     "config/ccreality_governed_paths.json",
-    "config/ccreality_recommendation_schema.json"
+    "config/ccreality_recommendation_schema.json",
+    "gemmafrontend/swe_smoke_benchmark_suite.json"
   ],
   "deny": [
     ".env",

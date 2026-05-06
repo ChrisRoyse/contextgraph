@@ -289,6 +289,14 @@ impl Handlers {
             tool_names::OPTIMIZER_RECORD_HARNESS_TRANSITION => call_optimizer_record_harness_transition(arguments),
             tool_names::REALITY_SHIFT_LOG => call_reality_shift_log(arguments),
             tool_names::REALITY_SHIFT_COMPARE_TO_MY_VIEW => call_reality_shift_compare_to_my_view(arguments),
+            // Phase 15: autoresearch engine
+            tool_names::EXPERIMENT_REGISTRY_LIST => call_experiment_registry_list(arguments),
+            tool_names::EXPERIMENT_REGISTRY_GET => call_experiment_registry_get(arguments),
+            tool_names::CHAMPION_STATE_GET => call_champion_state_get(arguments),
+            tool_names::ATTEMPTS_HISTORY_QUERY => call_attempts_history_query(arguments),
+            tool_names::EXPERIMENT_REGISTRY_PROPOSE => call_experiment_registry_propose(arguments),
+            tool_names::EXPERIMENT_REGISTRY_UPDATE_OUTCOME => call_experiment_registry_update_outcome(arguments),
+            tool_names::CHAMPION_STATE_PROMOTE => call_champion_state_promote(arguments),
         )
     }
 }

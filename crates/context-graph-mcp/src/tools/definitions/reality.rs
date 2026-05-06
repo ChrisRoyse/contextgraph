@@ -143,6 +143,42 @@ pub fn definitions() -> Vec<ToolDefinition> {
             "Compare current file SHAs to a session's shift-log view.",
             json!({"type":"object","properties":{"session_id":{"type":"string"},"files":{"type":"array","items":{"type":"string"}}},"required":["session_id","files"],"additionalProperties":false}),
         ),
+        // Phase 15: autoresearch engine
+        def(
+            "experiment_registry_list",
+            "List experiments tracked in <run_root>/reality-optimizer/experiment-registry.json.",
+            json!({"type":"object","properties":{"status_filter":{"type":"string","enum":["pending","kept","discarded","escalated","promoted"]},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100}},"additionalProperties":false}),
+        ),
+        def(
+            "experiment_registry_get",
+            "Read a single experiment record by experiment_id.",
+            json!({"type":"object","properties":{"experiment_id":{"type":"string"}},"required":["experiment_id"],"additionalProperties":false}),
+        ),
+        def(
+            "champion_state_get",
+            "Read champion-state.json (best (model, task) result so far).",
+            json!({"type":"object","properties":{"model":{"type":"string"},"task":{"type":"string"}},"additionalProperties":false}),
+        ),
+        def(
+            "attempts_history_query",
+            "Read recent rows from <run_root>/reality-optimizer/attempts.jsonl.",
+            json!({"type":"object","properties":{"model":{"type":"string"},"instance_id":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100}},"additionalProperties":false}),
+        ),
+        def(
+            "experiment_registry_propose",
+            "Append a candidate harness-change experiment to the registry.",
+            json!({"type":"object","properties":{"harness_change_summary":{"type":"string"},"harness_change_recommendation_path":{"type":["string","null"]},"harness_change_shift_ids":{"type":"array","items":{"type":"string"}},"files_changed":{"type":"array","items":{"type":"string"}},"before_attempt_count":{"type":"integer","minimum":0},"claude_session_id":{"type":"string"}},"required":["harness_change_summary","claude_session_id"],"additionalProperties":true}),
+        ),
+        def(
+            "experiment_registry_update_outcome",
+            "Record kept/discarded/escalated/promoted on an existing experiment.",
+            json!({"type":"object","properties":{"experiment_id":{"type":"string"},"outcome":{"type":"string","enum":["pending","kept","discarded","escalated","promoted"]},"reasoning":{"type":"string"},"claude_session_id":{"type":"string"}},"required":["experiment_id","outcome","claude_session_id"],"additionalProperties":true}),
+        ),
+        def(
+            "champion_state_promote",
+            "Promote a candidate champion. Requires official_resolved=true.",
+            json!({"type":"object","properties":{"model":{"type":"string"},"task":{"type":"string"},"justification":{"type":"string"},"claude_session_id":{"type":"string"}},"required":["model","task","justification","claude_session_id"],"additionalProperties":true}),
+        ),
     ]
 }
 

@@ -1,14 +1,48 @@
 {
-  "suite_id": "contextgraph_swe_lite_smoke_v1",
+  "schema_version": 2,
+  "suite_id": "contextgraph_swe_lite_smoke_v2",
   "dataset": "princeton-nlp/SWE-bench_Lite",
   "split": "test",
-  "purpose": "Small verified-reality benchmark seed for local model refinement loops.",
+  "purpose": "Small verified-reality benchmark seed for local model refinement loops with dev/holdout/promotion splits per docs/fullloop/10_PHASE_19_CURRICULUM.md.",
   "limits": {
     "max_models_per_batch": 1,
     "max_workers": 1,
     "max_attempts_per_model_task_run": 1,
     "official_timeout_seconds": 900,
     "expand_only_after_manual_review": true
+  },
+  "splits": {
+    "dev": {
+      "purpose": "Optimizer iterates against this split. Every dev attempt may produce harness edits via the outer optimizer.",
+      "instances": [
+        {
+          "instance_id": "psf__requests-2317",
+          "repo": "psf/requests",
+          "tier": "smoke",
+          "why_selected": "Already verified as a useful hard failure: Qwen patch applies but official Docker SWE-bench remains unresolved.",
+          "fail_to_pass_count": 8,
+          "baseline_status": "official_unresolved"
+        },
+        {
+          "instance_id": "django__django-12908",
+          "repo": "django/django",
+          "tier": "smoke",
+          "why_selected": "Small different-repository task with 2 FAIL_TO_PASS tests, 25 PASS_TO_PASS tests, short gold patch.",
+          "fail_to_pass_count": 2,
+          "baseline_status": "not_yet_run"
+        }
+      ]
+    },
+    "holdout": {
+      "purpose": "Scheduled scoring runs only. Optimizer turns are forbidden by policy on holdout-split attempts.",
+      "instances": [],
+      "expansion_policy": "operator-curated; add an instance only after it has been observed at least once on dev split with a known baseline_status."
+    },
+    "promotion": {
+      "purpose": "Final gate before declaring a harness change is genuinely better. Run only when an experiment from the experiment-registry reaches kept status on dev + passes on holdout.",
+      "instances": [],
+      "expansion_policy": "operator-curated; promotion split must contain at least 30 instances before promotions are statistically meaningful."
+    }
   },
   "selected_instances": [
     {
@@ -35,6 +69,12 @@
       "at least one task shows reward improvement across attempts",
       "disk and Docker cache remain manually inspected after each run"
     ],
-    "do_not_claim_success_until": "the official SWE-bench report places the instance id in resolved_ids"
+    "do_not_claim_success_until": "the official SWE-bench report places the instance id in resolved_ids",
+    "champion_promotion_requires": [
+      "dev split shows official_resolved=true",
+      "holdout split aggregate reality_score did not regress versus prior champion",
+      "promotion split resolves every instance the prior champion resolved",
+      "no incident_packet flagged as reward_hacking_suspected for the candidate's training data"
+    ]
   }
 }
