@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -25,7 +25,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const DEFAULT_RUNTIME_ROOT: &str = "/tmp/contextgraph-rust-reality-loop";
 const DEFAULT_CONTEXT_GRAPH_BIN: &str = "target/debug/context-graph";
 const DEFAULT_MODEL: &str = "gemma4:e4b";
-const DEFAULT_GEMMA_MODEL_PATH: &str = "models/gemma4-e4b/gemma4-e4b.Q4_K_M.gguf";
+const DEFAULT_GEMMA_MODEL_PATH: &str = "models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf";
+const DEFAULT_GEMMA_MODEL_PIN_PATH: &str = "config/ccreality_model_pins.json";
+const DEFAULT_GEMMA_MODEL_PIN_KEY: &str = "gemma4_e4b_bf16";
 const DEFAULT_GPU_MIN_FREE_MB: u64 = 8192;
 const DEFAULT_GEMMA_MIN_CONTEXT_TOKENS: u32 = 128_000;
 const DEFAULT_GEMMA_MAX_NEW_TOKENS: usize = 16384;
@@ -215,6 +217,12 @@ struct AttemptArgs {
     gemma_batch_size: usize,
     #[arg(long, default_value_t = DEFAULT_GEMMA_SEED)]
     gemma_seed: u32,
+    /// Path to the model-pin manifest (sha256/size/identity-substring expectations).
+    #[arg(long, default_value = DEFAULT_GEMMA_MODEL_PIN_PATH)]
+    gemma_model_pin_path: PathBuf,
+    /// Active model-pin entry key (looked up under .models in the pin manifest).
+    #[arg(long, default_value = DEFAULT_GEMMA_MODEL_PIN_KEY)]
+    gemma_model_pin_key: String,
     #[arg(long, default_value_t = 600)]
     git_timeout: u64,
     #[arg(long, default_value_t = DEFAULT_AGENT_TOOL_ROUNDS)]
@@ -1000,6 +1008,8 @@ fn official_eval_attempt_args(args: &OfficialEvalArgs, task_manifest: &Path) -> 
         gemma_gpu_layers: u32::MAX,
         gemma_batch_size: DEFAULT_GEMMA_BATCH_SIZE,
         gemma_seed: DEFAULT_GEMMA_SEED,
+        gemma_model_pin_path: PathBuf::from(DEFAULT_GEMMA_MODEL_PIN_PATH),
+        gemma_model_pin_key: DEFAULT_GEMMA_MODEL_PIN_KEY.to_string(),
         git_timeout: 600,
         agent_tool_rounds: DEFAULT_AGENT_TOOL_ROUNDS,
         targeted_test_timeout: 300,
@@ -2580,6 +2590,175 @@ fn validate_gemma4_model_identity(
     Ok(())
 }
 
+/// Cryptographic pin entry for the Gemma coding harness.
+///
+/// Loaded from `config/ccreality_model_pins.json` (or
+/// `--gemma-model-pin-path`). Every field is mandatory: the harness fails
+/// closed on missing fields, missing keys, missing files, size drift, and
+/// SHA drift. There is no fallback to "unpinned" mode by design.
+#[derive(Debug, Deserialize)]
+struct GemmaModelPin {
+    #[allow(dead_code)] // surfaced in error details for operator readability
+    repo_id: String,
+    #[allow(dead_code)] // surfaced in error details for operator readability
+    filename: String,
+    /// `sha256:<hex>` matching the streaming SHA-256 of the model file.
+    expected_sha256: String,
+    /// File size in bytes. Cheap pre-check before SHA over a 15 GiB file.
+    expected_size_bytes: u64,
+    /// Lower bound on `n_ctx_train` from GGUF metadata.
+    expected_min_context_tokens: u32,
+    /// Required substrings inside the lowercase-alnum-stripped identity blob.
+    /// Defense-in-depth alongside SHA: catches "right bytes, but the file we
+    /// pinned was the wrong model in the first place" only after fixed.
+    expected_identity_substrings: Vec<String>,
+}
+
+fn load_model_pin(pin_path: &Path, key: &str) -> Result<GemmaModelPin> {
+    let content = fs::read_to_string(pin_path).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_MISSING",
+            "model pin config file is missing or unreadable",
+            "ccreality_model_pins.path",
+            "ensure config/ccreality_model_pins.json exists and is readable, or pass --gemma-model-pin-path",
+            json!({"error": err.to_string(), "pin_path": file_sot(pin_path), "pin_key": key}),
+            Some(file_sot(pin_path)),
+        )
+    })?;
+    let config: Value = serde_json::from_str(&content).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_INVALID_JSON",
+            "model pin config file is not valid JSON",
+            "ccreality_model_pins.json",
+            "fix the JSON syntax in the model pin config",
+            json!({"error": err.to_string(), "pin_path": file_sot(pin_path), "pin_key": key}),
+            Some(file_sot(pin_path)),
+        )
+    })?;
+    let pointer = format!("/models/{key}");
+    let pin_value = config.pointer(&pointer).ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_GEMMA_MODEL_PIN_NOT_FOUND",
+            "no pin entry exists for the requested model key",
+            "ccreality_model_pins.models",
+            "add a pin entry under .models for this key, or pass --gemma-model-pin-key with a key that exists",
+            json!({"requested_key": key, "pin_path": file_sot(pin_path)}),
+            Some(file_sot(pin_path)),
+        )
+    })?;
+    serde_json::from_value::<GemmaModelPin>(pin_value.clone()).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_GEMMA_MODEL_PIN_SCHEMA_INVALID",
+            "model pin entry schema is invalid",
+            &format!("ccreality_model_pins.models.{key}"),
+            "the pin entry must include all of: repo_id, filename, expected_sha256, expected_size_bytes, expected_min_context_tokens, expected_identity_substrings",
+            json!({
+                "error": err.to_string(),
+                "key": key,
+                "value": pin_value,
+                "pin_path": file_sot(pin_path)
+            }),
+            Some(file_sot(pin_path)),
+        )
+    })
+}
+
+fn validate_gemma_model_pin(
+    model_path: &Path,
+    pin: &GemmaModelPin,
+    pin_path: &Path,
+    pin_key: &str,
+) -> Result<()> {
+    // Size first: cheap fail-fast before paying for a streaming SHA over a 15 GiB file.
+    let metadata = fs::metadata(model_path)
+        .map_err(|err| fs_error("RUST_REALITY_GEMMA_MODEL_PIN_STAT_FAILED", model_path, err))?;
+    let actual_size = metadata.len();
+    if actual_size != pin.expected_size_bytes {
+        return Err(RealityError::new(
+            "RUST_REALITY_GEMMA_MODEL_SIZE_MISMATCH",
+            "loaded GGUF size does not match the pinned size",
+            "gemma_harness.model.size_bytes",
+            "the file on disk has been replaced, truncated, or corrupted; re-download to match the pin, or update the pin if intentionally upgrading",
+            json!({
+                "expected_size_bytes": pin.expected_size_bytes,
+                "actual_size_bytes": actual_size,
+                "pin_key": pin_key,
+                "pin_path": file_sot(pin_path),
+                "model_path": file_sot(model_path),
+            }),
+            Some(file_sot(model_path)),
+        ));
+    }
+    // SHA-256 next: streaming so we don't allocate 15 GiB of resident memory.
+    let actual_sha = sha256_file_streaming(model_path)?;
+    if actual_sha != pin.expected_sha256 {
+        return Err(RealityError::new(
+            "RUST_REALITY_GEMMA_MODEL_SHA_MISMATCH",
+            "loaded GGUF SHA-256 does not match the pinned hash",
+            "gemma_harness.model.sha256",
+            "the file content drifted from the pin; re-download from the pinned repo_id/filename, or update the pin if intentionally upgrading",
+            json!({
+                "expected_sha256": pin.expected_sha256,
+                "actual_sha256": actual_sha,
+                "pin_key": pin_key,
+                "pin_path": file_sot(pin_path),
+                "model_path": file_sot(model_path),
+            }),
+            Some(file_sot(model_path)),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_gemma_model_pin_identity_substrings(
+    model_path: &Path,
+    pin: &GemmaModelPin,
+    pin_path: &Path,
+    pin_key: &str,
+    identity: &BTreeMap<String, String>,
+) -> Result<()> {
+    let identity_text = identity
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .to_ascii_lowercase();
+    let compact_identity = identity_text
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect::<String>();
+    let missing: Vec<&String> = pin
+        .expected_identity_substrings
+        .iter()
+        .filter(|needle| {
+            let n: String = needle
+                .chars()
+                .filter(|ch| ch.is_ascii_alphanumeric())
+                .map(|ch| ch.to_ascii_lowercase())
+                .collect();
+            !compact_identity.contains(&n)
+        })
+        .collect();
+    if !missing.is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_GEMMA_MODEL_PIN_IDENTITY_SUBSTRING_MISSING",
+            "loaded GGUF identity does not include all required substrings from the pin",
+            "gemma_harness.model.metadata",
+            "the pinned bytes match but the metadata does not declare the expected identity; this typically means the pin was authored against a wrongly-tagged file",
+            json!({
+                "expected_identity_substrings": pin.expected_identity_substrings,
+                "missing_substrings": missing,
+                "identity_readback": identity,
+                "pin_key": pin_key,
+                "pin_path": file_sot(pin_path),
+                "model_path": file_sot(model_path),
+            }),
+            Some(file_sot(model_path)),
+        ));
+    }
+    Ok(())
+}
+
 impl GemmaCodingHarness {
     fn load(args: &AttemptArgs) -> Result<Self> {
         let model_path = resolve_path(&args.gemma_model_path)?;
@@ -2588,6 +2767,17 @@ impl GemmaCodingHarness {
             "gemma_model_path",
             "RUST_REALITY_GEMMA_MODEL_PATH_MISSING",
         )?;
+        // Cryptographic pin gate: load the active model pin and verify the
+        // bytes on disk match BEFORE we touch the GPU backend. Size first
+        // (cheap), then streaming SHA-256. Mismatch fails loud — no fallback.
+        let pin_path = resolve_path(&args.gemma_model_pin_path)?;
+        require_file(
+            &pin_path,
+            "gemma_model_pin_path",
+            "RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_MISSING",
+        )?;
+        let pin = load_model_pin(&pin_path, &args.gemma_model_pin_key)?;
+        validate_gemma_model_pin(&model_path, &pin, &pin_path, &args.gemma_model_pin_key)?;
         let backend = LlamaBackend::init().map_err(|err| {
             RealityError::new(
                 "RUST_REALITY_GEMMA_BACKEND_INIT_FAILED",
@@ -2639,6 +2829,13 @@ impl GemmaCodingHarness {
         let model_context_train_tokens = model.n_ctx_train();
         let model_identity = gemma_model_identity_readback(&model, &model_path);
         validate_gemma4_model_identity(&model_path, &model_identity)?;
+        validate_gemma_model_pin_identity_substrings(
+            &model_path,
+            &pin,
+            &pin_path,
+            &args.gemma_model_pin_key,
+            &model_identity,
+        )?;
         if model_context_train_tokens == 0 {
             return Err(RealityError::new(
                 "RUST_REALITY_GEMMA_MODEL_CONTEXT_INVALID",
@@ -2649,14 +2846,21 @@ impl GemmaCodingHarness {
                 Some(file_sot(&model_path)),
             ));
         }
-        if model_context_train_tokens < DEFAULT_GEMMA_MIN_CONTEXT_TOKENS {
+        // The pin can require a higher per-model floor than the global default.
+        // Both gates fail loud independently — defense in depth.
+        let effective_min_context = pin
+            .expected_min_context_tokens
+            .max(DEFAULT_GEMMA_MIN_CONTEXT_TOKENS);
+        if model_context_train_tokens < effective_min_context {
             return Err(RealityError::new(
                 "RUST_REALITY_GEMMA_MODEL_CONTEXT_BELOW_REQUIRED_FLOOR",
                 "loaded Gemma GGUF context is below the SWE coding harness capability floor",
                 "gemma_harness.model.n_ctx_train",
-                "install a Gemma 4 GGUF with at least a 128K training context so repository context and tool transcripts fit without silent truncation",
+                "install a Gemma 4 GGUF with at least the pinned training context so repository context and tool transcripts fit without silent truncation",
                 json!({
-                    "minimum_context_tokens": DEFAULT_GEMMA_MIN_CONTEXT_TOKENS,
+                    "minimum_context_tokens": effective_min_context,
+                    "global_minimum_context_tokens": DEFAULT_GEMMA_MIN_CONTEXT_TOKENS,
+                    "pin_minimum_context_tokens": pin.expected_min_context_tokens,
                     "model_context_train_tokens": model_context_train_tokens,
                     "model_identity": model_identity,
                     "model_path": file_sot(&model_path)
@@ -9684,6 +9888,26 @@ fn sha256_file(path: &Path) -> Result<String> {
     Ok(format!("sha256:{:x}", hasher.finalize()))
 }
 
+/// Streaming SHA-256 for large files (Gemma BF16 GGUF is ~15 GiB; the
+/// `fs::read`-based `sha256_file` would allocate the entire payload into
+/// memory). 64 KiB chunks balance syscall overhead and resident set size.
+fn sha256_file_streaming(path: &Path) -> Result<String> {
+    let mut file = fs::File::open(path)
+        .map_err(|err| fs_error("RUST_REALITY_SHA256_OPEN_FAILED", path, err))?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .map_err(|err| fs_error("RUST_REALITY_SHA256_READ_FAILED", path, err))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("sha256:{:x}", hasher.finalize()))
+}
+
 fn short_hash(text: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(text.as_bytes());
@@ -10748,5 +10972,370 @@ diff --git a/src/example.py b/src/example.py
             vec!["requests/sessions.py", "test_requests.py"],
             "compact packet must surface mentioned_paths to Gemma's prompt"
         );
+    }
+
+    /// Resolves to the contextgraph project root from the test process so the
+    /// pin/model paths can use real on-disk artifacts regardless of cargo's
+    /// current_dir at test time.
+    fn fsv_project_root() -> PathBuf {
+        // CARGO_MANIFEST_DIR for this crate = .../crates/context-graph-cli
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        manifest
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.to_path_buf())
+            .expect("contextgraph project root above crates/context-graph-cli")
+    }
+
+    fn real_pin_path() -> PathBuf {
+        fsv_project_root().join(DEFAULT_GEMMA_MODEL_PIN_PATH)
+    }
+
+    fn real_model_path() -> PathBuf {
+        fsv_project_root().join(DEFAULT_GEMMA_MODEL_PATH)
+    }
+
+    #[test]
+    fn load_model_pin_resolves_real_pin_entry_fsv() {
+        let pin_path = real_pin_path();
+        assert!(
+            pin_path.exists(),
+            "config/ccreality_model_pins.json missing; pin gate cannot be FSV'd: {:?}",
+            pin_path
+        );
+        eprintln!("BEFORE_FSV pin_path={:?} key={}", pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY);
+        let pin = load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY)
+            .expect("pin entry must resolve for the default key");
+        eprintln!(
+            "AFTER_FSV pin.expected_sha256={} expected_size_bytes={} expected_min_context_tokens={}",
+            pin.expected_sha256, pin.expected_size_bytes, pin.expected_min_context_tokens
+        );
+        assert_eq!(
+            pin.repo_id, "ggml-org/gemma-4-E4B-it-GGUF",
+            "pin must reference the official ggml-org repository"
+        );
+        assert_eq!(pin.filename, "gemma-4-E4B-it-bf16.gguf");
+        assert!(
+            pin.expected_sha256.starts_with("sha256:"),
+            "expected_sha256 must be in `sha256:<hex>` form, got {}",
+            pin.expected_sha256
+        );
+        assert!(
+            pin.expected_size_bytes > 14_000_000_000,
+            "BF16 GGUF should be ~15 GB; got {}",
+            pin.expected_size_bytes
+        );
+        assert_eq!(pin.expected_min_context_tokens, 128_000);
+        assert!(
+            pin.expected_identity_substrings
+                .iter()
+                .any(|s| s.eq_ignore_ascii_case("gemma4")),
+            "pin must require gemma4 substring; got {:?}",
+            pin.expected_identity_substrings
+        );
+    }
+
+    #[test]
+    fn load_model_pin_fails_loud_on_missing_pin_file_fsv() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let bogus = temp.path().join("nonexistent.json");
+        eprintln!("BEFORE_FSV pin_path={:?} (does NOT exist by design)", bogus);
+        let err = load_model_pin(&bogus, DEFAULT_GEMMA_MODEL_PIN_KEY)
+            .expect_err("missing pin file must fail loud");
+        eprintln!("AFTER_FSV error_code={} field_path={}", err.error_code, err.field_path);
+        assert_eq!(err.error_code, "RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_MISSING");
+    }
+
+    #[test]
+    fn load_model_pin_fails_loud_on_unknown_key_fsv() {
+        let pin_path = real_pin_path();
+        eprintln!(
+            "BEFORE_FSV pin_path={:?} key=this_key_does_not_exist",
+            pin_path
+        );
+        let err = load_model_pin(&pin_path, "this_key_does_not_exist")
+            .expect_err("unknown key must fail loud");
+        eprintln!("AFTER_FSV error_code={}", err.error_code);
+        assert_eq!(err.error_code, "RUST_REALITY_GEMMA_MODEL_PIN_NOT_FOUND");
+    }
+
+    #[test]
+    fn load_model_pin_fails_loud_on_invalid_json_fsv() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let bad = temp.path().join("bad.json");
+        fs::write(&bad, "{ this is not json").expect("write bad json");
+        eprintln!("BEFORE_FSV bad_pin={:?} content=invalid", bad);
+        let err = load_model_pin(&bad, DEFAULT_GEMMA_MODEL_PIN_KEY)
+            .expect_err("invalid JSON must fail loud");
+        eprintln!("AFTER_FSV error_code={}", err.error_code);
+        assert_eq!(err.error_code, "RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_INVALID_JSON");
+    }
+
+    #[test]
+    fn load_model_pin_fails_loud_on_schema_invalid_fsv() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let pin_file = temp.path().join("schema_bad.json");
+        // Missing required fields like expected_sha256 and expected_size_bytes.
+        let body = json!({
+            "$schema_version": "1",
+            "models": {
+                "gemma4_e4b_bf16": {
+                    "repo_id": "ggml-org/gemma-4-E4B-it-GGUF",
+                    "filename": "gemma-4-E4B-it-bf16.gguf"
+                }
+            }
+        });
+        fs::write(&pin_file, serde_json::to_string(&body).expect("ser"))
+            .expect("write schema-bad pin");
+        eprintln!("BEFORE_FSV schema_bad_pin={:?} (missing required fields)", pin_file);
+        let err = load_model_pin(&pin_file, DEFAULT_GEMMA_MODEL_PIN_KEY)
+            .expect_err("incomplete schema must fail loud");
+        eprintln!("AFTER_FSV error_code={}", err.error_code);
+        assert_eq!(err.error_code, "RUST_REALITY_GEMMA_MODEL_PIN_SCHEMA_INVALID");
+    }
+
+    #[test]
+    fn validate_gemma_model_pin_rejects_size_drift_fsv() {
+        let pin_path = real_pin_path();
+        let pin = load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY)
+            .expect("pin must load for happy-path baseline");
+        // Synthesize a pin with the wrong expected size — the file is real,
+        // the pin is wrong. validate_gemma_model_pin must reject at the size gate
+        // before paying for SHA.
+        let tampered = GemmaModelPin {
+            repo_id: pin.repo_id.clone(),
+            filename: pin.filename.clone(),
+            expected_sha256: pin.expected_sha256.clone(),
+            expected_size_bytes: pin.expected_size_bytes + 1, // +1 byte == size mismatch
+            expected_min_context_tokens: pin.expected_min_context_tokens,
+            expected_identity_substrings: pin.expected_identity_substrings.clone(),
+        };
+        let model_path = real_model_path();
+        if !model_path.exists() {
+            eprintln!("SKIP: real BF16 GGUF not on disk at {:?}", model_path);
+            return;
+        }
+        eprintln!(
+            "BEFORE_FSV model_path={:?} actual_size={} pinned_size={}",
+            model_path,
+            fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0),
+            tampered.expected_size_bytes
+        );
+        let err = validate_gemma_model_pin(
+            &model_path,
+            &tampered,
+            &pin_path,
+            DEFAULT_GEMMA_MODEL_PIN_KEY,
+        )
+        .expect_err("size drift must fail loud");
+        eprintln!("AFTER_FSV error_code={}", err.error_code);
+        assert_eq!(err.error_code, "RUST_REALITY_GEMMA_MODEL_SIZE_MISMATCH");
+    }
+
+    #[test]
+    fn validate_gemma_model_pin_rejects_sha_drift_fsv() {
+        let pin_path = real_pin_path();
+        let pin = load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY)
+            .expect("pin must load for happy-path baseline");
+        // Same size, wrong SHA → must reject at SHA gate.
+        let tampered = GemmaModelPin {
+            repo_id: pin.repo_id.clone(),
+            filename: pin.filename.clone(),
+            expected_sha256:
+                "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                    .to_string(),
+            expected_size_bytes: pin.expected_size_bytes,
+            expected_min_context_tokens: pin.expected_min_context_tokens,
+            expected_identity_substrings: pin.expected_identity_substrings.clone(),
+        };
+        let model_path = real_model_path();
+        if !model_path.exists() {
+            eprintln!("SKIP: real BF16 GGUF not on disk at {:?}", model_path);
+            return;
+        }
+        eprintln!(
+            "BEFORE_FSV model_path={:?} pinned_sha=zeros actual_sha=(real)",
+            model_path
+        );
+        let err = validate_gemma_model_pin(
+            &model_path,
+            &tampered,
+            &pin_path,
+            DEFAULT_GEMMA_MODEL_PIN_KEY,
+        )
+        .expect_err("sha drift must fail loud");
+        eprintln!("AFTER_FSV error_code={}", err.error_code);
+        assert_eq!(err.error_code, "RUST_REALITY_GEMMA_MODEL_SHA_MISMATCH");
+    }
+
+    #[test]
+    fn validate_gemma_model_pin_passes_with_real_bf16_gguf_fsv() {
+        let pin_path = real_pin_path();
+        let pin = load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY)
+            .expect("pin must load");
+        let model_path = real_model_path();
+        if !model_path.exists() {
+            eprintln!("SKIP: real BF16 GGUF not on disk at {:?}", model_path);
+            return;
+        }
+        eprintln!(
+            "BEFORE_FSV model_path={:?} pin.expected_sha256={}",
+            model_path, pin.expected_sha256
+        );
+        validate_gemma_model_pin(
+            &model_path,
+            &pin,
+            &pin_path,
+            DEFAULT_GEMMA_MODEL_PIN_KEY,
+        )
+        .expect("real model file MUST satisfy the pin");
+        let actual_sha = sha256_file_streaming(&model_path).expect("stream sha");
+        eprintln!(
+            "AFTER_FSV streaming_sha256={} matches_pin={}",
+            actual_sha,
+            actual_sha == pin.expected_sha256
+        );
+        assert_eq!(actual_sha, pin.expected_sha256);
+    }
+
+    #[test]
+    fn validate_gemma_model_pin_identity_substrings_rejects_missing_substring_fsv() {
+        let pin_path = real_pin_path();
+        let mut pin = load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY)
+            .expect("pin must load");
+        // Inject a substring that real Gemma 4 GGUF metadata cannot contain.
+        pin.expected_identity_substrings
+            .push("definitely-not-a-real-model-name-xyzzy".to_string());
+        let identity: BTreeMap<String, String> = [
+            ("general.architecture".to_string(), "gemma4".to_string()),
+            ("general.name".to_string(), "gemma-4-E4B-it".to_string()),
+        ]
+        .into_iter()
+        .collect();
+        let model_path = PathBuf::from("/dev/null");
+        eprintln!(
+            "BEFORE_FSV identity={:?} required_includes={:?}",
+            identity, pin.expected_identity_substrings
+        );
+        let err = validate_gemma_model_pin_identity_substrings(
+            &model_path,
+            &pin,
+            &pin_path,
+            DEFAULT_GEMMA_MODEL_PIN_KEY,
+            &identity,
+        )
+        .expect_err("missing substring must fail loud");
+        eprintln!("AFTER_FSV error_code={}", err.error_code);
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_GEMMA_MODEL_PIN_IDENTITY_SUBSTRING_MISSING"
+        );
+    }
+
+    /// Builds a minimal AttemptArgs pointing at the real on-disk pin manifest
+    /// and BF16 GGUF, suitable only for harness-load FSV. Other fields are
+    /// safe defaults — none of the SWE-bench paths execute in this test.
+    fn fsv_load_test_args() -> AttemptArgs {
+        AttemptArgs {
+            model: DEFAULT_MODEL.to_string(),
+            gemma_model_path: real_model_path(),
+            gemma_chat_template: None,
+            task_manifest: PathBuf::from("/dev/null"),
+            runtime_root: PathBuf::from("/tmp/cgreality-fsv-load-test"),
+            context_graph_bin: PathBuf::from(DEFAULT_CONTEXT_GRAPH_BIN),
+            max_attempts: 1,
+            run_until_resolved: false,
+            smoke_test: true,
+            official_eval_each_attempt: false,
+            swebench_python: PathBuf::from("/usr/bin/python3"),
+            official_timeout: 60,
+            official_max_workers: 1,
+            official_cache_level: "env".to_string(),
+            official_docker_host: DEFAULT_OFFICIAL_DOCKER_HOST.to_string(),
+            official_docker_config: PathBuf::from(DEFAULT_OFFICIAL_DOCKER_CONFIG),
+            gpu_index: 0,
+            gpu_min_free_mb: 0,
+            gpu_max_used_mb: None,
+            // Omit explicit context-tokens so the harness uses the model's
+            // full n_ctx_train. The pin floor (128K) is enforced — the test
+            // proves a real Gemma 4 E4B GGUF satisfies that floor.
+            gemma_context_tokens: None,
+            gemma_max_new_tokens: 32,
+            gemma_temperature: DEFAULT_GEMMA_TEMPERATURE,
+            gemma_top_p: DEFAULT_GEMMA_TOP_P,
+            gemma_gpu_layers: u32::MAX,
+            gemma_batch_size: 512,
+            gemma_seed: DEFAULT_GEMMA_SEED,
+            gemma_model_pin_path: real_pin_path(),
+            gemma_model_pin_key: DEFAULT_GEMMA_MODEL_PIN_KEY.to_string(),
+            git_timeout: 30,
+            agent_tool_rounds: 1,
+            targeted_test_timeout: 60,
+            sleep_between_attempts_ms: 0,
+        }
+    }
+
+    #[test]
+    #[ignore = "loads ~15GB BF16 GGUF onto the RTX 5090 and computes streaming SHA over it (~25s wall). Run via `cargo test --ignored gemma_harness_load_end_to_end`."]
+    fn gemma_harness_load_end_to_end_with_real_bf16_gguf_fsv() {
+        let args = fsv_load_test_args();
+        eprintln!(
+            "BEFORE_FSV model_path={:?} pin_path={:?} pin_key={}",
+            args.gemma_model_path, args.gemma_model_pin_path, args.gemma_model_pin_key
+        );
+        if !args.gemma_model_path.exists() {
+            panic!(
+                "real BF16 GGUF not on disk; fsv impossible: {:?}",
+                args.gemma_model_path
+            );
+        }
+        if !args.gemma_model_pin_path.exists() {
+            panic!(
+                "real pin manifest not on disk; fsv impossible: {:?}",
+                args.gemma_model_pin_path
+            );
+        }
+        let harness =
+            GemmaCodingHarness::load(&args).expect("real BF16 GGUF + matching pin must load");
+        eprintln!(
+            "AFTER_FSV n_ctx_train={} effective_ctx={} max_new_tokens={} model_path={:?}",
+            harness.model_context_train_tokens,
+            harness.context_tokens,
+            harness.max_new_tokens,
+            harness.model_path
+        );
+        assert_eq!(harness.model_path, args.gemma_model_path);
+        assert!(
+            harness.model_context_train_tokens >= DEFAULT_GEMMA_MIN_CONTEXT_TOKENS,
+            "Gemma 4 E4B must report a training context >= {} tokens; got {}",
+            DEFAULT_GEMMA_MIN_CONTEXT_TOKENS,
+            harness.model_context_train_tokens
+        );
+        assert_eq!(
+            harness.context_tokens, harness.model_context_train_tokens,
+            "with --gemma-context-tokens omitted, effective ctx must equal n_ctx_train; got effective={} train={}",
+            harness.context_tokens, harness.model_context_train_tokens
+        );
+        assert!(
+            harness.context_tokens >= 128_000,
+            "Gemma 4 E4B effective ctx must be >= 128K; got {}",
+            harness.context_tokens
+        );
+        let identity = gemma_model_identity_readback(&harness.model, &harness.model_path);
+        eprintln!("AFTER_FSV identity_readback={:#?}", identity);
+        let identity_blob = identity
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("|")
+            .to_ascii_lowercase();
+        assert!(
+            identity_blob.contains("gemma4")
+                || identity_blob.contains("gemma-4")
+                || identity_blob.contains("gemma 4"),
+            "loaded GGUF identity must declare Gemma 4; got blob={identity_blob}"
+        );
+        // Drop is automatic at end-of-scope: harness's LlamaModel + LlamaBackend
+        // release GPU memory when the struct goes out of scope.
     }
 }

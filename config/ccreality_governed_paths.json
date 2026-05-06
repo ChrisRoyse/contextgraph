@@ -31,6 +31,7 @@
     "docs/fullloop/**",
     "config/ccreality_governed_paths.json",
     "config/ccreality_recommendation_schema.json",
+    "config/ccreality_model_pins.json",
     "gemmafrontend/swe_smoke_benchmark_suite.json"
   ],
   "deny": [
