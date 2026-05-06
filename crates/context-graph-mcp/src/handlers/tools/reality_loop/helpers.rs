@@ -345,7 +345,6 @@ pub fn file_arg_to_path(path: &str) -> PathBuf {
 pub fn required_str(args: &Value, field: &str) -> Result<String> {
     args.get(field)
         .and_then(Value::as_str)
-        .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
         .ok_or_else(|| {
@@ -363,14 +362,12 @@ pub fn required_str(args: &Value, field: &str) -> Result<String> {
 pub fn optional_str(args: &Value, field: &str) -> Option<String> {
     args.get(field)
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+.filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
 }
 
 pub fn required_u64(args: &Value, field: &str) -> Result<u64> {
-    coerce_u64(args.get(field)).ok_or_else(|| {
-        CCRealityError::new(
+    coerce_u64(args.get(field)).ok_or_else(|| {        CCRealityError::new(
             "CCREALITY_ARG_MISSING_OR_NOT_U64",
             format!("argument '{field}' must be a non-negative integer"),
             format!("arguments.{field}"),
@@ -670,8 +667,25 @@ mod tests {
         assert!(looks_like_json_literal("true"));
         assert!(looks_like_json_literal("false"));
         assert!(looks_like_json_literal("null"));
-        assert!(!looks_like_json_literal("changed"));
+assert!(!looks_like_json_literal("changed"));
         assert!(!looks_like_json_literal("file:/tmp/x"));
         assert!(!looks_like_json_literal(""));
+    }
+
+    #[test]
+    fn required_str_preserves_leading_and_trailing_whitespace() {        // Regression: str::trim previously stripped indentation from Gemma's
+        // `replace` payloads, corrupting py_compile-sensitive Python blocks.
+        let payload = "    if x:\n        pass\n";
+        let args = json!({"replace": payload});
+        let got = required_str(&args, "replace").expect("non-empty");
+        assert_eq!(got, payload, "required_str must preserve bytes verbatim");
+    }
+
+    #[test]
+    fn optional_str_preserves_leading_and_trailing_whitespace() {
+        let payload = "\n  indented value\t\n";
+        let args = json!({"replace": payload});
+        let got = optional_str(&args, "replace").expect("present");
+        assert_eq!(got, payload, "optional_str must preserve bytes verbatim");
     }
 }

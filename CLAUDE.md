@@ -311,6 +311,8 @@ Self-driving model: drip a fresh attempt at the start of every turn unless one o
 4. **Recent drip in flight**: latest attempt was minted <5 minutes ago AND no harness change has been recorded since. (Avoids double-drip when cron and operator both fire `/loop` near-simultaneously.)
 5. **Trigger decision overrides**: if `mcp__cgreality__reality_trigger_decision` for the latest attempt explicitly returns `should_run: false` with a non-`manual_operator` policy, honor it.
 
+**Per-task progression rule (operator-granted 2026-05-06):** when picking the next task in the queue, also skip any task that has accumulated **3+ consecutive non-resolved attempts** in `mcp__cgreality__attempts_history_query`. A "stuck task" is parked (still unresolved, but not chosen for drip) until either (a) a harness improvement plausibly addresses its failure mode (operator/optimizer notes this in a recommendation's `next_gemma_prompt_delta` and explicitly clears the park by re-attempting), or (b) ALL other unresolved tasks in the queue have also been parked. This prevents the loop from churning ~5min/attempt on a single task whose failure pattern is harness-deficient and the harness can't yet fix; new tasks may surface different harness gaps that, when addressed, also unblock the parked tasks.
+
 Otherwise — drip. Then read the new attempt's reality-signal-packet, run the diagnostician, decide edit/no_change/blocked, and record the recommendation.
 
 ### Artifact layout you should know by heart

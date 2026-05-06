@@ -3626,6 +3626,7 @@ fn gemma_coding_harness_chat_json(
         args.gpu_min_free_mb,
         args.gpu_max_used_mb,
         "before_gemma_coding_harness",
+        //cgreality
         &args.model,
     )?;
     let system_prompt = format!(
@@ -3645,8 +3646,11 @@ Edit-scope guardrail (critical): when calling apply_line_window_edit, apply_stru
 Never delete module-level definitions (functions, classes, constants, dicts, imports) that lie outside your fix scope; if any such definitions exist inside your replace range, they MUST appear unchanged in your replace text. \
 Most bugs are fixable by a 1-10 line change inside ONE function; if your replace range spans more than one def/class/top-level statement, reconsider because you are probably over-selecting. \
 Before submitting, mentally verify that your replace text preserves every import, function signature, and top-level definition that existed in your replace range. \
-Do not modify tests, fixtures, or benchmark harness files.",
-        harness.context_tokens, harness.max_new_tokens, args.agent_tool_rounds
+Post-edit self-check (critical): after every apply_line_window_edit call, the response payload contains a post_edit_window field showing the post-edit file content (edit_range +/- 5 lines). You MUST read post_edit_window before doing anything else. \
+Verify the edit landed in the intended file region; verify no module-level definitions (functions, classes, imports, constants) outside the fix scope were deleted or corrupted; verify indentation is consistent and no if/for/def/class body is empty. \
+If post_edit_window shows broken indentation, an empty block body, missing imports, or content in the wrong region, the edit is wrong: call open_file_window on adjacent lines and re-issue apply_line_window_edit with a corrected line range, or switch to apply_structured_edit with a precise unique find span. \
+Do NOT submit the candidate patch until post_edit_window confirms the edit is syntactically valid and semantically targeted. \
+Do not modify tests, fixtures, or benchmark harness files.",        harness.context_tokens, harness.max_new_tokens, args.agent_tool_rounds
     );
     let mut messages = vec![
         json!({"role": "system", "content": system_prompt}),
