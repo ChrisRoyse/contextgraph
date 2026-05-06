@@ -202,22 +202,29 @@ The most consequential file in the system is the JSON object the loop writes to 
 | `oracle.fail_to_pass` | from manifest |
 | `oracle.pass_to_pass_count` | integer from manifest |
 | `oracle.source_of_truth` | binding statement from manifest |
-| `model.driver` | `llama-cpp-2 in-process` |
-| `model.gguf_path` | absolute path to GGUF |
-| `model.pin_key` | active key in `ccreality_model_pins.json` |
-| `model.expected_sha256` | sha256 enforced before load |
-| `model.expected_size_bytes` | byte count enforced before load |
 | `immutable_boundaries.task_manifest` | `file:<path>` |
 | `immutable_boundaries.base_commit` | git SHA |
+| `immutable_boundaries.repo` | `owner/name` from manifest |
 | `immutable_boundaries.official_evaluator` | `python -m swebench.harness.run_evaluation` |
+| `immutable_boundaries.model_runtime.provider` | `contextgraph_rust_gemma_coding_harness` |
+| `immutable_boundaries.model_runtime.gemma_model_path` | `file:` path to BF16 GGUF |
+| `immutable_boundaries.model_runtime.minimum_context_tokens` | `128_000` |
+| `immutable_boundaries.model_runtime.max_new_tokens` | `8192` |
+| `immutable_boundaries.model_runtime.temperature` | `0.0` |
+| `immutable_boundaries.model_runtime.top_p` | `0.9` |
+| `immutable_boundaries.model_runtime.batch_size` | `2048` |
+| `immutable_boundaries.model_runtime.seed` | `1` |
+| `immutable_boundaries.model_runtime.gpu_layers` | `u32::MAX` (all) |
 | `immutable_boundaries.reward_spec` | `file:gemmafrontend/reward_spec.verified_outcome.json` |
 | `mandatory_readbacks` | 10 readback IDs |
-| `model_editable_scope` | `["candidate.patch", "notes"]` |
+| `model_editable_scope` | `candidate.patch`, `structured edit plan`, `notes` |
 | `model_forbidden_scope` | manifest, harness, ledger, reward spec, verifier, tests, fixtures |
 | `failure_policy.unmeasured_success` | `blocked` |
 | `failure_policy.test_or_harness_mutation` | `failed` |
 
-The 10 mandatory readbacks include `task_manifest_readback`, `measurement_contract_readback`, `gemma_model_pin_match`, `git_head_equals_base_commit`, `git_status_clean_before_attempt`, `candidate_patch_applies_to_base`, `candidate_patch_does_not_modify_tests_or_harness`, `official_docker_sdk_preflight`, `official_swe_report_with_resolved_ids`, and `reality_event_log_append_readback`. Each readback maps to a fail-closed gate enumerated in Appendix B.
+The cryptographic pin (`config/ccreality_model_pins.json`) is loaded and validated *before* the model file is opened; its fields (`expected_sha256`, `expected_size_bytes`, `expected_min_context_tokens`, `expected_identity_substrings`) are not duplicated into the contract because the contract already binds the run to the pin file by reference and the pin gates run before the contract is consumed by the inner attempt loop.
+
+The 10 mandatory readbacks are: `task_manifest_readback`, `measurement_contract_readback`, `git_head_equals_base_commit`, `git_status_clean_before_attempt`, `candidate_patch_applies_to_base`, `candidate_patch_does_not_modify_tests_or_harness`, `official_docker_sdk_preflight`, `official_swe_report_with_resolved_ids`, `blackbox_sqlite_ledger_counts`, and `reality_event_log_append_readback`. Each readback maps to a fail-closed gate enumerated in Appendix B.
 
 ## The In-Process Gemma Harness
 
@@ -289,33 +296,42 @@ Every event carries `schema_version = 1` and includes `loop_id`, `loop_layer`, `
 
 ## Governed Agent Tool Surface
 
-When the model needs to read or write the working repository, it does so through a small, governed tool surface. Read tools are unrestricted in volume; write tools are constrained both by the GBNF grammar (their argument schema cannot be malformed) and by the harness's deny-list (they cannot reach forbidden paths).
+When the model needs to read, write, or run something inside the working repository, it does so through a small, governed tool surface. The harness's tool-dispatch table accepts exactly the tools listed below; any other tool name returns a typed `RUST_REALITY_AGENT_TOOL_UNKNOWN` row. Read tools are unrestricted in volume. Write tools are constrained by the GBNF grammar (their argument schema cannot be malformed) and by the harness's deny-list (they cannot reach forbidden paths). The "action" tools call out to the harness's own subroutines (targeted tests, official evaluator, prior-attempt comparison, episode retrieval, helper-tool synthesis) so the model can ground subsequent decisions on real evidence.
 
 \begingroup\scriptsize
 
-**Read tools**
+**Read tools (evidence and navigation)**
 
 | Tool | Purpose |
 |--------------------------|--------------------------------------------------------|
+| `read_problem_reality` | Read the active `problem-reality-packet.json` for the current task. |
+| `read_official_failure_reality` | Read the most recent `official-failure-evidence.json` and supporting test logs. |
 | `list_files` | List files matching an optional pattern under a path. |
-| `read_file` | Read bytes from a file with optional line range; returns SHA-256. |
-| `search_repo` | grep-style search across the repo, returning paths and SHAs. |
 | `inspect_symbol` | Locate a symbol definition and return its source window. |
-| `inspect_repository_context` | Read pre-materialised `repository-context.json`. |
-| `read_failure_evidence` | Read persisted validation/official evidence files for the current task. |
+| `search_repo` | grep-style search across the repo, returning paths and SHAs. |
 
-**Write tools (governed)**
+**Write tools (governed; bound by grammar and forbidden-paths predicate)**
 
 | Tool | Effect |
 |--------------------------|--------------------------------------------------------|
-| `open_file_window` | Open a writable line window over a file (records pre-edit SHA). |
+| `open_file_window` | Open a line window over a file (records pre-edit SHA). |
 | `apply_line_window_edit` | Replace the open line window with new text; preferred edit primitive. |
-| `apply_structured_edit` | Apply a structured AST-aware edit. |
+| `apply_structured_edit` | Apply a structured find-and-replace edit. |
 | `apply_unified_diff` | Apply a unified diff to the repo. |
+
+**Action tools (harness-side subroutines that produce verifiable evidence)**
+
+| Tool | Effect |
+|--------------------------|--------------------------------------------------------|
+| `run_targeted_test` | Run a specific test file/function inside the workspace and return the result. |
+| `run_official_swe_eval` | Run the official Docker SWE-bench evaluator on the current candidate. |
+| `compare_attempts` | Diff the current attempt's evidence against a prior attempt's evidence. |
+| `retrieve_similar_verified_episodes` | Retrieve verified prior episodes from BlackBoxFix matching the current task. |
+| `synthesize_helper_tool` | Compile a one-off helper script under harness supervision. |
 
 \endgroup
 
-Every tool call is rejected with a typed `tool_result_blocked` row when: the tool is unknown, a required path is missing, the path is absolute or contains `..`, the resolved path escapes the repository, the listed directory is missing, the file is missing, or a query is empty. Write tools additionally refuse to operate on any path that matches the forbidden-paths predicate (Section 4.4). The default attempt is allowed `--agent-tool-rounds 24` round-trips between the model and the harness; calls past that count are rejected.
+Every tool call is rejected with a typed `tool_result_blocked` row when: the tool is unknown, a required path is missing, the path is absolute or contains `..`, the resolved path escapes the repository, the listed directory is missing, the file is missing, or a query is empty. Write tools additionally refuse to operate on any path that matches the forbidden-paths predicate (Section 4.4). The default attempt is allowed `--agent-tool-rounds 24` round-trips between the model and the harness; an attempt that completes the budget without executing any tool call is rejected with `RUST_REALITY_AGENT_TOOL_REQUIRED_BUT_MISSING`.
 
 ## The Deterministic Prompt Compiler
 
@@ -390,11 +406,11 @@ GPU VRAM is read from `nvidia-smi --query-gpu=index,name,uuid,memory.total,memor
 
 ## Smoke Curriculum
 
-The initial smoke curriculum (`gemmafrontend/swe_smoke_benchmark_suite.json`) is intentionally tiny --- two instances --- and its expansion is gated on manual review:
+The initial smoke curriculum (`gemmafrontend/swe_smoke_benchmark_suite.json`, `schema_version: 2`) is intentionally tiny --- two instances on the dev split --- and its expansion is gated on manual review:
 
 | Field | Value |
 |----------------------------|-----------------------|
-| `suite_id` | `contextgraph_swe_lite_smoke_v1` |
+| `suite_id` | `contextgraph_swe_lite_smoke_v2` |
 | `dataset` | `princeton-nlp/SWE-bench_Lite` |
 | `split` | `test` |
 | `limits.max_models_per_batch` | 1 |
@@ -403,7 +419,13 @@ The initial smoke curriculum (`gemmafrontend/swe_smoke_benchmark_suite.json`) is
 | `limits.official_timeout_seconds` | 900 |
 | `limits.expand_only_after_manual_review` | true |
 
-Selected instances: `psf__requests-2317` (8 FAIL_TO_PASS, baseline `official_unresolved`) and `django__django-12908` (2 FAIL_TO_PASS, baseline `not_yet_run`).
+The suite carries three named splits whose roles are operationally distinct:
+
+- **`splits.dev`** --- the optimizer iterates against this split. Every dev attempt may produce harness edits via the outer optimizer. Initial entries: `psf__requests-2317` (8 FAIL_TO_PASS, baseline `official_unresolved`) and `django__django-12908` (2 FAIL_TO_PASS, baseline `not_yet_run`).
+- **`splits.holdout`** --- scheduled scoring runs only. Optimizer turns are forbidden by policy on holdout-split attempts. Operator-curated.
+- **`splits.promotion`** --- final gate before declaring a harness change is genuinely better. Run only when an experiment from the experiment registry reaches `kept` status on dev and passes on holdout. The promotion split must contain at least 30 instances before promotions are statistically meaningful.
+
+The `champion_promotion_requires` block enforces that a candidate champion must show `official_resolved=true` on dev, must not regress aggregate `reality_score` on holdout vs. the prior champion, must resolve every instance the prior champion resolved on the promotion split, and must carry no incident packet flagged as `reward_hacking_suspected` for its training data. The `do_not_claim_success_until` clause re-asserts that the only success signal is the official SWE-bench report placing the instance id in `resolved_ids`.
 
 # The Role of ME-JEPA (DynamicJEPA) {#sec:me-jepa}
 
@@ -813,17 +835,21 @@ There are 38 gates across the Reality Loop and 17 across ME-JEPA. Each gate can 
 
 ## Reality Loop --- Gemma Harness Gates
 
+The harness ships ~50 typed Gemma-prefix error codes. The most operationally consequential are listed below; the full set is enumerated in `crates/context-graph-cli/src/bin/reality-loop.rs` and grep-able as `RUST_REALITY_GEMMA_*`.
+
 | # | Gate | Error code |
 |---|---|---|
-| 14 | Pin manifest readable + key present | `RUST_REALITY_GEMMA_MODEL_PIN_LOAD_FAILED` |
-| 15 | GGUF file size matches `expected_size_bytes` | `RUST_REALITY_GEMMA_MODEL_PIN_SIZE_MISMATCH` |
-| 16 | GGUF SHA-256 matches `expected_sha256` | `RUST_REALITY_GEMMA_MODEL_PIN_SHA256_MISMATCH` |
-| 17 | GGUF identity substrings present | `RUST_REALITY_GEMMA_MODEL_PIN_IDENTITY_MISSING` |
-| 18 | Loaded ctx satisfies `expected_min_context_tokens` | `RUST_REALITY_GEMMA_MIN_CONTEXT_TOKENS_NOT_MET` |
+| 14 | Pin manifest readable + JSON valid | `RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_MISSING` / `..._INVALID_JSON` |
+| 15 | GGUF file size matches `expected_size_bytes` | `RUST_REALITY_GEMMA_MODEL_SIZE_MISMATCH` |
+| 16 | GGUF SHA-256 matches `expected_sha256` | `RUST_REALITY_GEMMA_MODEL_SHA_MISMATCH` |
+| 17 | GGUF identity substrings present | `RUST_REALITY_GEMMA_MODEL_PIN_IDENTITY_SUBSTRING_MISSING` |
+| 18 | Loaded ctx satisfies `expected_min_context_tokens` | `RUST_REALITY_GEMMA_EFFECTIVE_CONTEXT_BELOW_REQUIRED_FLOOR` |
 | 19 | Chat template emits a tool grammar | `RUST_REALITY_GEMMA_TOOL_GRAMMAR_MISSING` |
-| 20 | `gemma_max_new_tokens > 0` | `RUST_REALITY_GEMMA_MAX_NEW_TOKENS_INVALID` |
-| 21 | `gemma_batch_size` valid | `RUST_REALITY_GEMMA_BATCH_SIZE_INVALID` |
+| 20 | `gemma_max_new_tokens > 0` and within ctx | `RUST_REALITY_GEMMA_MAX_NEW_TOKENS_INVALID` / `..._EXCEEDS_CONTEXT` |
+| 21 | `gemma_batch_size` valid | `RUST_REALITY_GEMMA_BATCH_SIZE_INVALID` / `..._TOO_LARGE` |
 | 22 | `gemma_temperature` finite, in `[0, 2]` | `RUST_REALITY_GEMMA_TEMPERATURE_INVALID` |
+| 22a | `gemma_top_p` finite, in `(0, 1]` | `RUST_REALITY_GEMMA_TOP_P_INVALID` |
+| 22b | Tool response parses as JSON | `RUST_REALITY_GEMMA_TOOL_RESPONSE_JSON_INVALID` / `..._PARSE_FAILED` |
 
 ## Reality Loop --- Execution Gates
 
@@ -833,7 +859,7 @@ There are 38 gates across the Reality Loop and 17 across ME-JEPA. Each gate can 
 | 24 | `git status --porcelain` empty after reset | `RUST_REALITY_WORKSPACE_NOT_CLEAN_AFTER_RESET` |
 | 25 | Free GPU VRAM $\geq$ `--gpu-min-free-mb` | `RUST_REALITY_GPU_VRAM_BUDGET_EXCEEDED` |
 | 26 | Used GPU VRAM $\leq$ `--gpu-max-used-mb` | `RUST_REALITY_GPU_VRAM_BUDGET_EXCEEDED` |
-| 27 | Tool-call submissions parse against grammar | `RUST_REALITY_GEMMA_TOOL_CALL_INVALID` |
+| 27 | Tool-call submissions parse against grammar | `RUST_REALITY_GEMMA_TOOL_RESPONSE_PARSE_FAILED` |
 | 28 | Patch differs from previous attempts (SHA-256) | `RUST_REALITY_PATCH_REPEATED` |
 | 29 | Patch applies via `git apply` | `RUST_REALITY_PATCH_APPLY_FAILED` |
 | 30 | Patch does not touch test/fixture/harness | `RUST_REALITY_PATCH_TOUCHES_BENCHMARK` |
@@ -841,7 +867,7 @@ There are 38 gates across the Reality Loop and 17 across ME-JEPA. Each gate can 
 | 32 | Official harness exits 0 | `RUST_REALITY_OFFICIAL_EVAL_FAILED` |
 | 33 | Final report contains `resolved_ids` | `RUST_REALITY_OFFICIAL_REPORT_MISSING` |
 | 34 | Target instance is classified | `RUST_REALITY_OFFICIAL_REPORT_INSTANCE_MISSING` |
-| 35 | Agent tool round count $\leq$ `--agent-tool-rounds` | `RUST_REALITY_AGENT_ROUNDS_EXCEEDED` |
+| 35 | Attempt executed at least one agent tool call within the round budget | `RUST_REALITY_AGENT_TOOL_REQUIRED_BUT_MISSING` |
 
 ## Reality Loop --- Persistence Integrity Gates
 

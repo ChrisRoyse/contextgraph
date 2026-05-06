@@ -3651,7 +3651,8 @@ Do not modify tests, fixtures, or benchmark harness files.",
     let mut latest_editable_windows: Vec<Value> = Vec::new();
     let mut no_tool_after_window_count = 0_u64;
     let mut repeated_navigation_count = 0_u64;
-    let mut seen_tool_calls: BTreeMap<String, u64> = BTreeMap::new();    for round in 1..=args.agent_tool_rounds {
+    let mut seen_tool_calls: BTreeMap<String, u64> = BTreeMap::new();
+    for round in 1..=args.agent_tool_rounds {
         let request_path = tools_root.join(format!("tool-round-{round:02}-request.json"));
         let edit_deadline = edit_deadline_active(
             round,
