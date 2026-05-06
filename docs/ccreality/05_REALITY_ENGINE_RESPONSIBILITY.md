@@ -50,11 +50,11 @@ The engine never writes anything under `claude-code-optimizer/`. That subtree is
 
 ## What the engine does NOT do
 
-- Does not call any model HTTP API. Gemma generation is in-process Rust over a GGUF model file; the official SWE-bench Docker bridge remains the measurement boundary.
+- Does not call any model HTTP API. Gemma generation is in-process Rust over a GGUF model file. The harness reads the GGUF `n_ctx_train` as the default context ceiling and writes `gemma-harness-model-readback.json`; the official SWE-bench Docker bridge remains the measurement boundary.
 - Does not run any "optimizer trigger" decision. That decision is now made when Claude Code calls `mcp__cgreality__optimizer_record_decision`.
 - Does not spawn `claude -p`. Claude Code is started by the human operator (interactive) or by an external scheduler/cron (unattended). See [14_TRIGGER_AND_INVOCATION_POLICY](14_TRIGGER_AND_INVOCATION_POLICY.md).
 - Does not write the `recommendation` artifact. That is written by the MCP server when Claude Code calls `optimizer_record_recommendation`.
-- Does not parse model output. That is the MCP server + structured-output schema.
+- Does not delegate model output parsing to an external service. The Rust harness renders the chat template, applies grammar-constrained generation, parses tool calls, and executes only governed tools.
 
 ## What the engine still does
 

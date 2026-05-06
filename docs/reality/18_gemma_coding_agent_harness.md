@@ -49,14 +49,16 @@ Reality-loop request settings now override the sampling defaults for coding-agen
   "provider": "contextgraph_rust_gemma_coding_harness",
   "temperature": 0.0,
   "top_p": 0.9,
-  "context_tokens": 32768,
-  "max_new_tokens": 4096,
+  "context_policy": "gguf_n_ctx_train_max",
+  "effective_context_tokens": "loaded GGUF n_ctx_train",
+  "max_new_tokens": 16384,
   "batch_size": 2048,
-  "gpu_layers": 4294967295
+  "gpu_layers": 4294967295,
+  "agent_tool_rounds": 24
 }
 ```
 
-These values are persisted in each `tool-round-NN-request.json` file. Each model turn also writes source-of-truth artifacts for the rendered prompt, generated grammar, raw generation, parsed response, and final `gemma-harness-response.json`.
+The harness uses the loaded GGUF model's training context by default. An explicit `--gemma-context-tokens` value is allowed only when it is positive and no larger than the model readback. The run writes `gemma-harness-model-readback.json` with the model path, `n_ctx_train`, effective context, generation budget, template hash, and selected GGUF metadata. Each model turn also writes source-of-truth artifacts for the rendered prompt, generated grammar, raw generation, parsed response, and final `gemma-harness-response.json`.
 
 ## Governed Coding-Agent Tool Surface
 
@@ -70,6 +72,7 @@ Gemma currently receives these governed tools:
 - `open_file_window`: line-numbered file window with SHA-256 readback.
 - `apply_line_window_edit`: preferred final edit tool; replaces line ranges from an observed file SHA-256.
 - `apply_structured_edit`: exact find/replace final edit tool for unique copied source spans.
+- `apply_unified_diff`: final unified-diff submission tool; requires observed file SHA-256 values and verifies the diff against the real checkout.
 - `run_targeted_test`: bounded targeted pytest command in the real checkout.
 - `run_official_swe_eval`: reads official SWE-bench state; cannot claim success without official report readback.
 - `compare_attempts`: compares prior patches, failures, repeated patch signals, and official outcomes.
@@ -94,6 +97,12 @@ Alternate edit path:
 2. Gemma calls `apply_structured_edit`.
 3. ContextGraph rejects missing, ambiguous, empty, or tampered patch artifacts.
 
+Unified diff path:
+
+1. Gemma opens every file changed by the diff and copies the observed SHA-256 values.
+2. Gemma calls `apply_unified_diff` with a non-empty unified diff and `observed_files`.
+3. ContextGraph runs `git apply --check`, applies the diff to the real checkout, rejects unobserved changed files, rejects test/fixture/harness mutations, runs static checks, writes `candidate.patch`, reads the patch SHA-256 back, and resets the workspace.
+
 ## Reality Reward Signals
 
 Each attempt now records `tool_reward_signals` in the reality-signal packet. These are not a replacement for official SWE success; they are intermediate shaping signals for the loop:
@@ -102,6 +111,7 @@ Each attempt now records `tool_reward_signals` in the reality-signal packet. The
 - repository navigation or search;
 - source window opened;
 - preferred line-window edit used;
+- unified diff edit used;
 - patch artifact submitted;
 - changed files read before edit;
 - targeted test used;
@@ -150,6 +160,7 @@ Verified:
 
 - `apply_structured_edit` writes a real patch and changes a real git repo file from `return x + 1` to `return x + 2`.
 - `apply_line_window_edit` writes a real patch and changes a real git repo file from `return x + 1` to `return x + 3`.
+- `apply_unified_diff` writes a real patch from an observed file hash and validates it with `git apply --check`.
 - missing candidate patch source-of-truth fails closed.
 - empty patch readback fails closed.
 - patch SHA mismatch fails closed.

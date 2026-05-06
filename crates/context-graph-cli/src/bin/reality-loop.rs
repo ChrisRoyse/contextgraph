@@ -2573,7 +2573,9 @@ impl GemmaCodingHarness {
                 Some(file_sot(&model_path)),
             ));
         }
-        let context_tokens = args.gemma_context_tokens.unwrap_or(model_context_train_tokens);
+        let context_tokens = args
+            .gemma_context_tokens
+            .unwrap_or(model_context_train_tokens);
         if context_tokens > model_context_train_tokens {
             return Err(RealityError::new(
                 "RUST_REALITY_GEMMA_CONTEXT_EXCEEDS_MODEL_LIMIT",
@@ -3289,12 +3291,13 @@ fn gemma_coding_harness_chat_json(
     let system_prompt = format!(
         "You are a model that can do function calling with the following functions. \
 You are a software repair model inside ContextGraph's Rust reality loop. \
-You must call governed tools to inspect reality and must submit the candidate patch with apply_line_window_edit or apply_structured_edit. \
+You must call governed tools to inspect reality and must submit the candidate patch with apply_line_window_edit, apply_structured_edit, or apply_unified_diff. \
 On attempt 1, start by calling read_problem_reality, search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool so your edit is grounded in real task and repository state. \
 On later attempts, call read_official_failure_reality or compare_attempts before revising a failed patch. \
 The application executes tools; you do not execute code yourself. \
 Prefer apply_line_window_edit after open_file_window because it replaces line ranges from a file hash you observed. \
 Use apply_structured_edit only when you can provide an exact unique find span copied from real source windows. \
+Use apply_unified_diff only when you can provide a real unified diff and observed file hashes from opened source windows. \
 ContextGraph compiles that tool call into a git diff and verifies it against the real repository. \
 Runtime limits: effective context window is {} tokens from the loaded GGUF; per-turn max_new_tokens is {}; governed tool-round budget is {}. \
 Do not try to finish with prose, raw JSON, or a hand-written patch in assistant content. \
@@ -3453,14 +3456,12 @@ Do not modify tests, fixtures, or benchmark harness files.",
                 .get("status")
                 .and_then(Value::as_str)
                 .unwrap_or("failed");
-            if (name == "apply_structured_edit" || name == "apply_line_window_edit")
-                && result_status == "ok"
-            {
+            if is_final_edit_tool(&name) && result_status == "ok" {
                 submitted_candidate_patch = Some(materialize_tool_candidate_submission(
                     &result_readback,
                     &tool_dir,
                 )?);
-            } else if name == "apply_structured_edit" || name == "apply_line_window_edit" {
+            } else if is_final_edit_tool(&name) {
                 failed_candidate_submission = Some(compact_failed_candidate_submission(
                     &result_readback,
                     &result_path,
@@ -3601,12 +3602,12 @@ Do not modify tests, fixtures, or benchmark harness files.",
         let message = if attempted_edit {
             "model called a final edit tool but it did not produce a candidate patch"
         } else {
-            "model used governed tools but never submitted a candidate patch through apply_line_window_edit or apply_structured_edit"
+            "model used governed tools but never submitted a candidate patch through apply_line_window_edit, apply_structured_edit, or apply_unified_diff"
         };
         let remediation = if attempted_edit {
-            "reinject the failed final edit result, open the exact source window, and submit a line-window edit or unique find/replace edit"
+            "reinject the failed final edit result, open the exact source window, and submit a line-window edit, unique find/replace edit, or observed unified diff"
         } else {
-            "call apply_line_window_edit with observed_sha256 from open_file_window, or apply_structured_edit with exact find/replace edits copied from opened source windows"
+            "call apply_line_window_edit with observed_sha256 from open_file_window, apply_structured_edit with exact find/replace edits copied from opened source windows, or apply_unified_diff with observed file hashes"
         };
         let transcript = json!({
             "record_kind": "contextgraph_agent_tool_transcript",
@@ -3659,7 +3660,7 @@ Do not modify tests, fixtures, or benchmark harness files.",
         "tools": agent_tool_names(),
         "entries": transcript_entries,
         "executed_tool_calls": executed_tool_calls,
-        "final_action_mode": "tool_mediated_apply_structured_edit",
+        "final_action_mode": "tool_mediated_final_edit_submission",
         "submitted_candidate_patch": submitted_candidate_patch,
         "status": "ok",
         "source_of_truth": file_sot(&tools_root.join("agent-tool-transcript.json"))
@@ -3677,7 +3678,7 @@ Do not modify tests, fixtures, or benchmark harness files.",
             "attempt": attempt,
             "gpu_before": gpu_before,
             "gpu_after": gpu_after,
-            "final_action_mode": "tool_mediated_apply_structured_edit",
+            "final_action_mode": "tool_mediated_final_edit_submission",
             "submitted_candidate_patch": submitted_candidate_patch,
             "agent_tool_transcript": file_sot(&transcript_path)
         }
@@ -3696,6 +3697,7 @@ fn agent_tool_names() -> Vec<&'static str> {
         "open_file_window",
         "apply_line_window_edit",
         "apply_structured_edit",
+        "apply_unified_diff",
         "run_targeted_test",
         "run_official_swe_eval",
         "compare_attempts",
@@ -3704,9 +3706,20 @@ fn agent_tool_names() -> Vec<&'static str> {
     ]
 }
 
+fn is_final_edit_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "apply_line_window_edit" | "apply_structured_edit" | "apply_unified_diff"
+    )
+}
+
 fn agent_edit_tool_specs() -> Value {
     let specs = agent_tool_specs();
-    let edit_names = ["apply_line_window_edit", "apply_structured_edit"];
+    let edit_names = [
+        "apply_line_window_edit",
+        "apply_structured_edit",
+        "apply_unified_diff",
+    ];
     let filtered = specs
         .as_array()
         .expect("agent tool specs are an array")
@@ -3797,7 +3810,8 @@ fn no_tool_repair_prompt(
         return format!(
             "ContextGraph did not receive a governed tool call. EDIT DEADLINE IS ACTIVE. \
 You have already opened source windows, so the next assistant message must call exactly one edit tool: \
-apply_line_window_edit or apply_structured_edit. Do not call read/list/search/open tools again. \
+apply_line_window_edit, apply_structured_edit, or apply_unified_diff. Do not call read/list/search/open tools again. \
+Use apply_unified_diff only if you include observed file hashes from latest_editable_windows. \
 Do not answer in prose, raw diff text, or final JSON. Use an observed_sha256 from latest_editable_windows. \
 If the edit tool fails, reopen the exact source window in the following round and retry. \
 no_tool_after_window_count={no_tool_after_window_count}; repeated_navigation_count={repeated_navigation_count}; \
@@ -3805,7 +3819,7 @@ latest_editable_windows={}",
             serde_json::to_string(latest_editable_windows).unwrap_or_else(|_| "[]".to_string())
         );
     }
-    "ContextGraph did not receive a governed tool call. You must call exactly one governed tool now. For attempt 1, use read_problem_reality, search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool. When ready to submit the fix, prefer apply_line_window_edit with line numbers and observed_sha256 from open_file_window, or use apply_structured_edit with a unique exact find span. Do not return final JSON or prose.".to_string()
+    "ContextGraph did not receive a governed tool call. You must call exactly one governed tool now. For attempt 1, use read_problem_reality, search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool. When ready to submit the fix, prefer apply_line_window_edit with line numbers and observed_sha256 from open_file_window, use apply_structured_edit with a unique exact find span, or use apply_unified_diff with observed file hashes. Do not return final JSON or prose.".to_string()
 }
 
 fn agent_tool_specs() -> Value {
@@ -3951,6 +3965,33 @@ fn agent_tool_specs() -> Value {
                                     "end_line": {"type": "integer", "minimum": 1},
                                     "replace": {"type": "string"},
                                     "observed_sha256": {"type": "string", "description": "The sha256 returned by open_file_window for this file."}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "apply_unified_diff",
+                "description": "Submit a unified diff as the final candidate patch. ContextGraph applies it to the real checkout, verifies changed files against observed source hashes from open_file_window, rejects tests/fixtures/harness changes, runs syntax checks, writes candidate.patch, then resets the workspace.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["patch", "observed_files"],
+                    "properties": {
+                        "patch": {"type": "string", "description": "A non-empty unified diff generated against the task base commit."},
+                        "observed_files": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["path", "observed_sha256"],
+                                "properties": {
+                                    "path": {"type": "string"},
+                                    "observed_sha256": {"type": "string", "description": "The sha256 returned by open_file_window for this file before editing."}
                                 }
                             }
                         }
@@ -4172,6 +4213,7 @@ fn execute_agent_tool_call(
         "open_file_window" => tool_open_file_window(ctx, arguments),
         "apply_line_window_edit" => tool_apply_line_window_edit(ctx, arguments, tool_dir),
         "apply_structured_edit" => tool_apply_structured_edit(ctx, arguments, tool_dir),
+        "apply_unified_diff" => tool_apply_unified_diff(ctx, arguments, tool_dir),
         "run_targeted_test" => tool_run_targeted_test(ctx, arguments),
         "run_official_swe_eval" => tool_run_official_swe_eval(ctx, arguments),
         "compare_attempts" => tool_compare_attempts(ctx, arguments),
@@ -4389,10 +4431,7 @@ fn harness_transition_outcome(
 ) -> Value {
     let (label, utility_delta, correction_required, reuse_observed) = if result_status != "ok" {
         ("Harmful", -0.35, true, false)
-    } else if matches!(
-        tool_name,
-        "apply_line_window_edit" | "apply_structured_edit"
-    ) {
+    } else if is_final_edit_tool(tool_name) {
         if submitted_patch_after_tool {
             ("Useful", 0.7, false, true)
         } else {
@@ -4429,10 +4468,7 @@ fn harness_learning_signal(
     executed_tool_calls_before: u64,
 ) -> Value {
     let success = result_status == "ok";
-    let edit_tool = matches!(
-        tool_name,
-        "apply_line_window_edit" | "apply_structured_edit"
-    );
+    let edit_tool = is_final_edit_tool(tool_name);
     let exploration = matches!(
         tool_name,
         "read_problem_reality"
@@ -4487,7 +4523,9 @@ fn harness_tool_family(tool_name: &str) -> &'static str {
         "list_files" | "inspect_symbol" | "search_repo" | "open_file_window" => {
             "repository_navigation"
         }
-        "apply_line_window_edit" | "apply_structured_edit" => "workspace_mutation",
+        "apply_line_window_edit" | "apply_structured_edit" | "apply_unified_diff" => {
+            "workspace_mutation"
+        }
         "run_targeted_test" | "run_official_swe_eval" => "verification",
         "retrieve_similar_verified_episodes" => "memory_retrieval",
         "synthesize_helper_tool" => "deterministic_analysis",
@@ -5068,6 +5106,77 @@ fn tool_apply_line_window_edit(
     }))
 }
 
+fn tool_apply_unified_diff(
+    ctx: &AgentToolContext<'_>,
+    arguments: &Value,
+    tool_dir: &Path,
+) -> Result<Value> {
+    let Some(patch) = arguments.get("patch").and_then(Value::as_str) else {
+        return Ok(tool_blocked(
+            "apply_unified_diff",
+            "RUST_REALITY_TOOL_UNIFIED_DIFF_MISSING",
+            "arguments.patch",
+            "unified diff tool requires a non-empty patch string",
+            "provide a unified diff generated against the task base commit",
+            json!({"arguments": arguments}),
+            None,
+        ));
+    };
+    let Some(observed_files) = arguments.get("observed_files").and_then(Value::as_array) else {
+        return Ok(tool_blocked(
+            "apply_unified_diff",
+            "RUST_REALITY_TOOL_UNIFIED_DIFF_OBSERVED_FILES_MISSING",
+            "arguments.observed_files",
+            "unified diff tool requires observed file hashes from open_file_window",
+            "open each file changed by the diff and include path plus observed_sha256",
+            json!({"arguments": arguments}),
+            None,
+        ));
+    };
+    let (compiled_patch, compilation) = compile_unified_diff_submission(
+        ctx.repo_dir,
+        tool_dir,
+        patch,
+        observed_files,
+        ctx.args.git_timeout,
+    )?;
+    reset_workspace(ctx.repo_dir, &ctx.task.base_commit, ctx.args.git_timeout)?;
+    let status = if compiled_patch.is_some() {
+        "ok"
+    } else {
+        "failed"
+    };
+    let top_error_code = compilation
+        .get("error_code")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let top_message = compilation.get("message").cloned().unwrap_or(Value::Null);
+    let top_remediation = compilation
+        .get("remediation")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let top_field_path = compilation
+        .get("field_path")
+        .cloned()
+        .unwrap_or(Value::Null);
+    Ok(json!({
+        "status": status,
+        "tool_name": "apply_unified_diff",
+        "action": "applied unified diff against real checkout, verified observed file hashes, generated normalized candidate patch, then reset workspace to base commit",
+        "patch_preview": compiled_patch.as_ref().map(|text| truncate_chars(text, 4000)),
+        "patch_sha256": compiled_patch.as_ref().map(|text| sha256_text(text)),
+        "error_code": top_error_code,
+        "message": top_message,
+        "remediation": top_remediation,
+        "field_path": top_field_path,
+        "compilation": compilation,
+        "workspace_after": {
+            "head": ctx.task.base_commit,
+            "source_of_truth": format!("git:{}#HEAD", path_str(ctx.repo_dir))
+        }
+    }))
+}
+
 fn materialize_tool_candidate_submission(result: &Value, tool_dir: &Path) -> Result<Value> {
     let inner = result.get("result").unwrap_or(result);
     let candidate_sot = result
@@ -5152,7 +5261,7 @@ fn materialize_tool_candidate_submission(result: &Value, tool_dir: &Path) -> Res
     Ok(json!({
         "record_kind": "contextgraph_tool_submitted_candidate_patch",
         "status": "ok",
-        "tool_name": result.get("tool_name").or_else(|| inner.get("tool_name")).and_then(Value::as_str).unwrap_or("apply_structured_edit"),
+        "tool_name": result.get("tool_name").or_else(|| inner.get("tool_name")).and_then(Value::as_str).unwrap_or("final_edit_submission"),
         "candidate_patch_path": path_str(&candidate_path),
         "candidate_patch": file_sot(&candidate_path),
         "patch_sha256": actual_sha,
@@ -5180,7 +5289,7 @@ fn compact_failed_candidate_submission(result: &Value, result_path: &Path) -> Va
             .get("tool_name")
             .or_else(|| result.get("result").and_then(|value| value.get("tool_name")))
             .and_then(Value::as_str)
-            .unwrap_or("apply_structured_edit"),
+            .unwrap_or("final_edit_submission"),
         "status": result.get("status"),
         "error_code": result.get("error_code").or_else(|| compilation.and_then(|value| value.get("error_code"))),
         "field_path": compilation.and_then(|value| value.get("field_path")),
@@ -5261,7 +5370,7 @@ fn tool_run_official_swe_eval(ctx: &AgentToolContext<'_>, arguments: &Value) -> 
         "RUST_REALITY_TOOL_OFFICIAL_EVAL_REQUIRES_CANDIDATE_PATCH",
         "candidate.patch",
         "official SWE-bench evaluation cannot run before the model has produced a candidate patch",
-        "call apply_structured_edit with exact find/replace edits; the Rust loop will run official SWE-bench evaluation after validation passes",
+        "call apply_line_window_edit, apply_structured_edit, or apply_unified_diff; the Rust loop will run official SWE-bench evaluation after validation passes",
         json!({"requested_attempt": requested_attempt, "attempts_total": ctx.attempts.len()}),
         Some(format!("file:{}#attempts", path_str(ctx.attempt_dir))),
     ))
@@ -5632,9 +5741,9 @@ fn patch_from_tool_submission(model_response: &Value) -> Result<Option<(String, 
         json!({
             "status": "passed",
             "error_code": null,
-            "field_path": "agent_tools.apply_structured_edit",
-            "message": "candidate patch was submitted through the governed apply_structured_edit tool and read back from its durable artifact",
-            "final_action_mode": "tool_mediated_apply_structured_edit",
+            "field_path": "agent_tools.final_edit_submission",
+            "message": "candidate patch was submitted through a governed final edit tool and read back from its durable artifact",
+            "final_action_mode": "tool_mediated_final_edit_submission",
             "tool_submitted_candidate_patch": submission,
             "source_of_truth": file_sot(&path)
         }),
@@ -6159,6 +6268,268 @@ fn compile_line_window_edits(
             "candidate_patch_sha256": sha256_file(&patch_path)?,
             "source_of_truth": {
                 "line_window_edits": file_sot(&edits_path),
+                "candidate_patch": file_sot(&patch_path),
+                "workspace_diff": format!("git:{}#diff", path_str(repo_dir))
+            }
+        }),
+    ))
+}
+
+fn compile_unified_diff_submission(
+    repo_dir: &Path,
+    attempt_dir: &Path,
+    patch: &str,
+    observed_files: &[Value],
+    timeout: u64,
+) -> Result<(Option<String>, Value)> {
+    let submitted_patch_path = attempt_dir.join("unified-diff-submission.patch");
+    write_text_checked(&submitted_patch_path, patch)?;
+    if patch.trim().is_empty() {
+        return Ok(structured_edit_failure(
+            "RUST_REALITY_UNIFIED_DIFF_EMPTY",
+            "model_response.unified_diff.patch",
+            "unified diff submission was empty",
+            "submit a non-empty unified diff against production source",
+            json!({"patch_sha256": sha256_text(patch)}),
+            &submitted_patch_path,
+        ));
+    }
+    if observed_files.is_empty() {
+        return Ok(structured_edit_failure(
+            "RUST_REALITY_UNIFIED_DIFF_OBSERVED_FILES_EMPTY",
+            "model_response.unified_diff.observed_files",
+            "unified diff submission did not include observed source hashes",
+            "open each changed source file and include observed_sha256 before submitting a diff",
+            json!({}),
+            &submitted_patch_path,
+        ));
+    }
+
+    let mut observed = BTreeMap::new();
+    for (index, item) in observed_files.iter().enumerate() {
+        let field_prefix = format!("model_response.unified_diff.observed_files[{index}]");
+        let path = match item.get("path").and_then(Value::as_str) {
+            Some(value) if !value.trim().is_empty() => value.trim(),
+            _ => {
+                return Ok(structured_edit_failure(
+                    "RUST_REALITY_UNIFIED_DIFF_OBSERVED_PATH_MISSING",
+                    &format!("{field_prefix}.path"),
+                    "observed file path is missing",
+                    "include repo-relative path values from open_file_window",
+                    json!({"observed_file": item}),
+                    &submitted_patch_path,
+                ));
+            }
+        };
+        if path.starts_with('/')
+            || path.contains('\\')
+            || Path::new(path)
+                .components()
+                .any(|part| matches!(part, std::path::Component::ParentDir))
+        {
+            return Ok(structured_edit_failure(
+                "RUST_REALITY_UNIFIED_DIFF_OBSERVED_PATH_INVALID",
+                &format!("{field_prefix}.path"),
+                "observed file path must be a relative repository path",
+                "use normal repo-relative paths without absolute roots, parent traversal, or backslashes",
+                json!({"path": path}),
+                &submitted_patch_path,
+            ));
+        }
+        let observed_sha256 = match item.get("observed_sha256").and_then(Value::as_str) {
+            Some(value) if value.starts_with("sha256:") => value,
+            _ => {
+                return Ok(structured_edit_failure(
+                    "RUST_REALITY_UNIFIED_DIFF_OBSERVED_SHA_MISSING",
+                    &format!("{field_prefix}.observed_sha256"),
+                    "observed file hash is missing",
+                    "copy observed_sha256 from open_file_window for every changed file",
+                    json!({"path": path}),
+                    &submitted_patch_path,
+                ));
+            }
+        };
+        let target = repo_dir.join(path);
+        if !target.exists() || !target.is_file() {
+            return Ok(structured_edit_failure(
+                "RUST_REALITY_UNIFIED_DIFF_OBSERVED_TARGET_MISSING",
+                &format!("{field_prefix}.path"),
+                "observed file target does not exist",
+                "open a real production-source file before submitting the diff",
+                json!({"path": path, "source_of_truth": file_sot(&target)}),
+                &submitted_patch_path,
+            ));
+        }
+        let actual_sha256 = sha256_file(&target)?;
+        if actual_sha256 != observed_sha256 {
+            return Ok(structured_edit_failure(
+                "RUST_REALITY_UNIFIED_DIFF_OBSERVED_SHA_MISMATCH",
+                &format!("{field_prefix}.observed_sha256"),
+                "observed file hash does not match current source readback",
+                "reopen the file window and submit a diff against the current source reality",
+                json!({
+                    "path": path,
+                    "expected": observed_sha256,
+                    "actual": actual_sha256,
+                    "source_of_truth": file_sot(&target)
+                }),
+                &submitted_patch_path,
+            ));
+        }
+        observed.insert(path.to_string(), observed_sha256.to_string());
+    }
+
+    let apply_check = run_cmd(
+        &vec![
+            "git".to_string(),
+            "apply".to_string(),
+            "--check".to_string(),
+            "--whitespace=nowarn".to_string(),
+            path_str(&submitted_patch_path).to_string(),
+        ],
+        repo_dir,
+        timeout,
+    )?;
+    if apply_check.exit_code != 0 {
+        return Ok(structured_edit_failure(
+            "RUST_REALITY_UNIFIED_DIFF_APPLY_CHECK_FAILED",
+            "model_response.unified_diff.patch",
+            "unified diff did not apply cleanly to the base checkout",
+            "regenerate the diff against the exact task base commit and observed source windows",
+            json!({"process": apply_check, "patch": file_sot(&submitted_patch_path)}),
+            &submitted_patch_path,
+        ));
+    }
+    let apply = run_cmd(
+        &vec![
+            "git".to_string(),
+            "apply".to_string(),
+            "--whitespace=nowarn".to_string(),
+            path_str(&submitted_patch_path).to_string(),
+        ],
+        repo_dir,
+        timeout,
+    )?;
+    if apply.exit_code != 0 {
+        return Ok(structured_edit_failure(
+            "RUST_REALITY_UNIFIED_DIFF_APPLY_FAILED",
+            "model_response.unified_diff.patch",
+            "unified diff apply failed after apply --check passed",
+            "inspect git apply output and regenerate the candidate diff",
+            json!({"process": apply, "patch": file_sot(&submitted_patch_path)}),
+            &submitted_patch_path,
+        ));
+    }
+    let changed = run_required(
+        &["git", "diff", "--name-only"],
+        repo_dir,
+        timeout,
+        "RUST_REALITY_UNIFIED_DIFF_NAME_ONLY_FAILED",
+        "unified_diff.git_diff_name_only",
+    )?;
+    let changed_files: Vec<String> = changed.stdout.lines().map(ToOwned::to_owned).collect();
+    if changed_files.is_empty() {
+        return Ok(structured_edit_failure(
+            "RUST_REALITY_UNIFIED_DIFF_EMPTY_DIFF",
+            "model_response.unified_diff.patch",
+            "unified diff applied but produced no repository diff",
+            "change production source so the official oracle has a candidate patch to evaluate",
+            json!({"patch": file_sot(&submitted_patch_path)}),
+            &submitted_patch_path,
+        ));
+    }
+    let forbidden_paths: Vec<String> = changed_files
+        .iter()
+        .filter(|path| is_forbidden_benchmark_mutation(path))
+        .cloned()
+        .collect();
+    if !forbidden_paths.is_empty() {
+        return Ok(structured_edit_failure(
+            "RUST_REALITY_UNIFIED_DIFF_FORBIDDEN_PATH",
+            "model_response.unified_diff.patch",
+            "unified diff targets tests, fixtures, or benchmark harness files",
+            "repair production source only; do not change tests, fixtures, or evaluation harnesses",
+            json!({"forbidden_paths": forbidden_paths, "changed_files": changed_files}),
+            &submitted_patch_path,
+        ));
+    }
+    let unobserved_changed_files: Vec<String> = changed_files
+        .iter()
+        .filter(|path| !observed.contains_key(*path))
+        .cloned()
+        .collect();
+    if !unobserved_changed_files.is_empty() {
+        return Ok(structured_edit_failure(
+            "RUST_REALITY_UNIFIED_DIFF_CHANGED_FILE_NOT_OBSERVED",
+            "model_response.unified_diff.observed_files",
+            "unified diff changed files that were not backed by observed source hashes",
+            "open every changed source file and include its observed_sha256 before submitting the diff",
+            json!({
+                "unobserved_changed_files": unobserved_changed_files,
+                "changed_files": changed_files,
+                "observed_files": observed.keys().cloned().collect::<Vec<_>>()
+            }),
+            &submitted_patch_path,
+        ));
+    }
+
+    let applied = changed_files
+        .iter()
+        .map(|path| {
+            let target = repo_dir.join(path);
+            Ok(json!({
+                "path": path,
+                "observed_sha256": observed.get(path),
+                "after_sha256": sha256_file(&target)?,
+                "source_of_truth": file_sot(&target)
+            }))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let static_checks = run_static_patch_checks(repo_dir, attempt_dir, &changed_files, timeout)?;
+    if static_checks.get("status").and_then(Value::as_str) != Some("passed") {
+        return Ok(structured_edit_failure(
+            static_checks
+                .get("error_code")
+                .and_then(Value::as_str)
+                .unwrap_or("RUST_REALITY_UNIFIED_DIFF_STATIC_CHECK_FAILED"),
+            static_checks
+                .get("field_path")
+                .and_then(Value::as_str)
+                .unwrap_or("candidate.patch.static_checks"),
+            static_checks
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("unified diff failed static source verification"),
+            static_checks
+                .get("remediation")
+                .and_then(Value::as_str)
+                .unwrap_or("fix syntax/import errors and resubmit the diff"),
+            json!({"changed_files": changed_files, "static_checks": static_checks}),
+            &submitted_patch_path,
+        ));
+    }
+    let diff = run_required(
+        &["git", "diff", "--no-ext-diff", "--binary"],
+        repo_dir,
+        timeout,
+        "RUST_REALITY_UNIFIED_DIFF_GIT_DIFF_FAILED",
+        "unified_diff.git_diff",
+    )?;
+    let patch_path = attempt_dir.join("candidate.patch");
+    write_text_checked(&patch_path, &diff.stdout)?;
+    Ok((
+        Some(diff.stdout),
+        json!({
+            "status": "passed",
+            "error_code": null,
+            "field_path": "model_response.unified_diff.patch",
+            "message": "Rust applied unified diff, verified observed file hashes, and normalized it into a git diff from the real checkout",
+            "applied_edits": applied,
+            "changed_files": changed_files,
+            "static_checks": static_checks,
+            "candidate_patch_sha256": sha256_file(&patch_path)?,
+            "source_of_truth": {
+                "unified_diff_submission": file_sot(&submitted_patch_path),
                 "candidate_patch": file_sot(&patch_path),
                 "workspace_diff": format!("git:{}#diff", path_str(repo_dir))
             }
@@ -7550,10 +7921,10 @@ fn required_next_tool_for_validation(
 ) -> &'static str {
     match validation.get("error_code").and_then(Value::as_str) {
         Some("RUST_REALITY_FINAL_EDIT_TOOL_FAILED") => {
-            "open_file_window for the exact source span, then apply_line_window_edit with observed_sha256 or apply_structured_edit with a unique find block"
+            "open_file_window for the exact source span, then apply_line_window_edit with observed_sha256, apply_structured_edit with a unique find block, or apply_unified_diff with observed file hashes"
         }
         Some("RUST_REALITY_FINAL_EDIT_TOOL_REQUIRED") => {
-            "apply_line_window_edit with observed_sha256 from open_file_window, or apply_structured_edit with exact find/replace edits copied from opened source windows"
+            "apply_line_window_edit with observed_sha256 from open_file_window, apply_structured_edit with exact find/replace edits copied from opened source windows, or apply_unified_diff with observed file hashes"
         }
         _ if has_official_evidence => "read_official_failure_reality or compare_attempts",
         _ => "read_problem_reality plus search/open_file_window",
@@ -7604,6 +7975,8 @@ fn derive_tool_reward_signals(
         score += 1.5;
     } else if used("apply_structured_edit") {
         score += 1.0;
+    } else if used("apply_unified_diff") {
+        score += 1.0;
     }
     if submitted_patch {
         score += 2.0;
@@ -7632,6 +8005,7 @@ fn derive_tool_reward_signals(
             "opened_source_window": used("open_file_window"),
             "used_preferred_line_window_edit": used("apply_line_window_edit"),
             "used_structured_find_replace_edit": used("apply_structured_edit"),
+            "used_unified_diff_edit": used("apply_unified_diff"),
             "submitted_patch_artifact": submitted_patch,
             "changed_files_read_before_edit": changed_files_read,
             "used_targeted_test": used("run_targeted_test"),
@@ -7648,6 +8022,7 @@ fn derive_tool_reward_signals(
             "repo_navigation": if used("search_repo") || used("inspect_symbol") || used("list_files") { 1.0 } else { 0.0 },
             "source_window_grounding": if used("open_file_window") { 1.0 } else { 0.0 },
             "preferred_edit_interface": if used("apply_line_window_edit") { 1.5 } else { 0.0 },
+            "unified_diff_interface": if used("apply_unified_diff") { 1.0 } else { 0.0 },
             "patch_artifact_submitted": if submitted_patch { 2.0 } else { 0.0 },
             "changed_files_read_before_edit": if changed_files_read { 1.0 } else { 0.0 },
             "official_eval_readback": if official_eval_ran { 1.0 } else { 0.0 },
@@ -7744,6 +8119,22 @@ fn official_test_progress(task: &TaskManifest, official_evidence: Option<&Value>
         });
     };
     let compact = compact_official_evidence(evidence);
+    let fail_to_pass_success = compact
+        .pointer("/fail_to_pass/success_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let fail_to_pass_failure = compact
+        .pointer("/fail_to_pass/failure_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let fail_to_pass_total = task.fail_to_pass.len() as u64;
+    let passed_fail_to_pass_ratio = if fail_to_pass_total == 0 {
+        Value::Null
+    } else {
+        json!(round_signal(
+            fail_to_pass_success as f64 / fail_to_pass_total as f64
+        ))
+    };
     json!({
         "status": "read",
         "resolved": compact.get("resolved"),
@@ -7751,7 +8142,15 @@ fn official_test_progress(task: &TaskManifest, official_evidence: Option<&Value>
         "errored": compact.get("errored"),
         "empty_patch": compact.get("empty_patch"),
         "patch_successfully_applied": compact.get("patch_successfully_applied"),
-        "fail_to_pass_total": task.fail_to_pass.len(),
+        "fail_to_pass_total": fail_to_pass_total,
+        "passed_fail_to_pass": fail_to_pass_success,
+        "failed_fail_to_pass": fail_to_pass_failure,
+        "passed_fail_to_pass_ratio": passed_fail_to_pass_ratio,
+        "graduated_correctness_signal": {
+            "component": "passed_fail_to_pass / total_fail_to_pass",
+            "value": passed_fail_to_pass_ratio,
+            "source": "official SWE-bench instance_report.tests_status.FAIL_TO_PASS readback"
+        },
         "fail_to_pass": compact.get("fail_to_pass"),
         "pass_to_pass_expected_count": task.pass_to_pass_count,
         "pass_to_pass": compact.get("pass_to_pass"),
@@ -7759,6 +8158,10 @@ fn official_test_progress(task: &TaskManifest, official_evidence: Option<&Value>
         "unresolved_ids": compact.get("unresolved_ids"),
         "completed_ids": compact.get("completed_ids")
     })
+}
+
+fn round_signal(value: f64) -> f64 {
+    (value * 10_000.0).round() / 10_000.0
 }
 
 fn patch_line_stats(patch: &str) -> Value {
@@ -8209,7 +8612,7 @@ fn compile_prompt(
     format!(
         "You are repairing a real SWE-bench Lite task through ContextGraph's Rust reality loop.\n\
 Success means the official SWE-bench report places instance_id in resolved_ids.\n\
-Do not claim success. Inspect reality with governed tools, then submit the candidate patch by calling apply_structured_edit with exact find/replace edits copied from real source windows.\n\n\
+Do not claim success. Inspect reality with governed tools, then submit the candidate patch by calling apply_line_window_edit, apply_structured_edit, or apply_unified_diff with evidence copied from real source windows.\n\n\
 Task:\ninstance_id: {}\nrepo: {}\nbase_commit: {}\nFAIL_TO_PASS: {}\n\n\
 Problem statement:\n<<<PROBLEM\n{}\nPROBLEM\n\n\
 Problem reality packet:\n{}\n\n\
@@ -8217,13 +8620,13 @@ Previous attempt summary:\n{}\n\n\
 Previous reality signal packet for reinjection:\n{}\n\n\
 Do not repeat these patch hashes:\n{}\n\n\
 Hard validation rules:\n\
-- Final candidate submission is tool-mediated. Call apply_structured_edit; do not return a hand-written JSON final answer or prose.\n\
-- Each edit path must be repo-relative production source; find must match exactly one source span; replace is the desired source span.\n\
-- ContextGraph applies edits to the real checkout, generates candidate.patch with git diff, resets to base, then applies/evaluates the generated patch.\n\
+- Final candidate submission is tool-mediated. Call apply_line_window_edit, apply_structured_edit, or apply_unified_diff; do not return a hand-written JSON final answer or prose.\n\
+- Each edit path must be repo-relative production source. Line-window and unified-diff submissions must include observed_sha256 values from opened file windows. Structured find text must match exactly one source span.\n\
+- ContextGraph applies edits or diffs to the real checkout, generates candidate.patch with git diff, resets to base, then applies/evaluates the generated patch.\n\
 - The edit must modify production source, not tests, fixtures, or benchmark harness files.\n\
 - Do not edit tests to make the benchmark pass.\n\n\
 Repository context JSON:\n{}\n\n\
-Tool phase instruction: call governed ContextGraph tools to inspect real source, problem reality, failure reality, or prior verified attempts. If the previous reality signal says a changed file was not read by tools, read that file before editing again. When ready, call apply_structured_edit as the final candidate submission for this attempt.\n",
+Tool phase instruction: call governed ContextGraph tools to inspect real source, problem reality, failure reality, or prior verified attempts. If the previous reality signal says a changed file was not read by tools, read that file before editing again. When ready, call apply_line_window_edit, apply_structured_edit, or apply_unified_diff as the final candidate submission for this attempt.\n",
         task.instance_id,
         task.repo,
         task.base_commit,
@@ -9460,7 +9863,7 @@ mod tests {
         assert_eq!(parse_report["status"], "passed");
         assert_eq!(
             parse_report["final_action_mode"],
-            "tool_mediated_apply_structured_edit"
+            "tool_mediated_final_edit_submission"
         );
 
         run_required(
@@ -9494,6 +9897,86 @@ mod tests {
             after
         );
         assert_eq!(after, "def bump(x):\n    return x + 2\n");
+    }
+
+    #[test]
+    fn unified_diff_submission_is_tool_mediated_and_observed_file_backed_fsv() {
+        let (_temp, repo) = init_real_git_repo();
+        let tool_dir = repo
+            .parent()
+            .expect("repo parent")
+            .join("attempt-000001")
+            .join("agent-tools")
+            .join("round-01-00-apply_unified_diff");
+        create_dir_checked(&tool_dir).expect("tool dir");
+        let source = repo.join("src/example.py");
+        let observed_sha256 = sha256_file(&source).expect("source sha");
+        let before = fs::read_to_string(&source).expect("before read");
+        eprintln!(
+            "BEFORE unified_diff source_of_truth={} sha256={} data={:?}",
+            file_sot(&source),
+            observed_sha256,
+            before
+        );
+        let patch_text = "\
+diff --git a/src/example.py b/src/example.py
+--- a/src/example.py
++++ b/src/example.py
+@@ -1,2 +1,2 @@
+ def bump(x):
+-    return x + 1
++    return x + 2
+";
+        let observed_files =
+            vec![json!({"path": "src/example.py", "observed_sha256": observed_sha256})];
+        let (patch, compilation) =
+            compile_unified_diff_submission(&repo, &tool_dir, patch_text, &observed_files, 30)
+                .expect("compile unified diff");
+        assert_eq!(compilation["status"], "passed");
+        let patch = patch.unwrap_or_else(|| {
+            panic!(
+                "unified diff compilation did not produce a patch: {}",
+                serde_json::to_string_pretty(&compilation).unwrap()
+            )
+        });
+        let after = fs::read_to_string(&source).expect("after read");
+        eprintln!(
+            "AFTER unified_diff source_of_truth={} data={:?} compilation={}",
+            file_sot(&source),
+            after,
+            serde_json::to_string_pretty(&compilation).unwrap()
+        );
+        assert!(after.contains("return x + 2"));
+        let candidate_patch = tool_dir.join("candidate.patch");
+        let result = json!({
+            "status": "ok",
+            "tool_name": "apply_unified_diff",
+            "patch_sha256": sha256_file(&candidate_patch).expect("patch sha"),
+            "compilation": compilation
+        });
+        let submission =
+            materialize_tool_candidate_submission(&result, &tool_dir).expect("submission");
+        assert_eq!(submission["tool_name"], "apply_unified_diff");
+        assert_eq!(
+            patch,
+            fs::read_to_string(&candidate_patch).expect("patch readback")
+        );
+        run_required(
+            &["git", "reset", "--hard", "HEAD"],
+            &repo,
+            30,
+            "TEST_GIT_RESET_FAILED",
+            "test.git.reset",
+        )
+        .expect("git reset");
+        run_required(
+            &["git", "apply", "--check", path_str(&candidate_patch)],
+            &repo,
+            30,
+            "TEST_GIT_APPLY_CHECK_FAILED",
+            "test.git.apply_check",
+        )
+        .expect("git apply check");
     }
 
     #[test]
@@ -9882,12 +10365,17 @@ mod tests {
         eprintln!("AFTER edit_deadline tools={tool_names:?}");
         assert_eq!(
             tool_names,
-            vec!["apply_structured_edit", "apply_line_window_edit"]
+            vec![
+                "apply_structured_edit",
+                "apply_line_window_edit",
+                "apply_unified_diff"
+            ]
         );
         let prompt = no_tool_repair_prompt(true, &[window], 1, 0);
         assert!(prompt.contains("EDIT DEADLINE IS ACTIVE"));
         assert!(prompt.contains("sha256:window"));
         assert!(prompt.contains("apply_line_window_edit"));
+        assert!(prompt.contains("apply_unified_diff"));
     }
 
     #[test]
