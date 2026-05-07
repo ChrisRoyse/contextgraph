@@ -36,35 +36,47 @@ These are baked-in harness behaviors. Do NOT propose harness edits to "fix" thin
 
 ## Build freshness — running on the latest code WITHOUT operator reconnect
 
-**CRITICAL**: this loop is designed to run unattended for days. Operator-side `/mcp` reconnects MUST NOT be on the critical path. Each turn must be self-sufficient at picking up its own harness fixes.
+**CRITICAL**: this loop is designed to run unattended for days. Operator-side `/mcp` reconnects MUST NOT be on the critical path. As of the **2026-05-07 MCP→CLI shim refactor**, this is now structurally enforced: the four harness write tools (`harness_open_window`, `harness_apply_line_window_edit`, `harness_run_command`, `harness_verify_state`) no longer link `governed_edit::*` in-process. Each call fork/execs `target/release/reality-loop harness <subcommand>` as a fresh subprocess. The shim re-resolves the binary on every call, so harness logic rebuilds propagate to the next MCP call automatically — no `/mcp` reconnect.
 
-### The two binaries and their staleness behavior
+### The three binaries and their staleness behavior (post-refactor)
 
-- **`target/release/context-graph-mcp`** — the long-running MCP server process spawned at Claude Code start. Holds its binary mapped in memory. ANY MCP tool that exercises harness-editing or harness-running code (`harness_apply_line_window_edit`, `harness_run_command`, `reality_run_attempt`, etc.) uses the binary that was on disk when MCP started. Source edits + rebuild are invisible to it until `/mcp` reconnect. **Avoid relying on MCP for harness writes after a `changed` recommendation in the same loop run.**
-- **`target/release/reality-loop`** — the engine binary spawned per-attempt by `reality_run_attempt`. Each fresh `reality_run_attempt` invocation re-execs the binary and picks up whatever is on disk. So engine attempts ALWAYS use the latest disk binary IF a rebuild happened before the next mint.
-- **`target/release/context-graph-cli`** — the CLI binary. Each Bash invocation spawns a fresh process; always loads current on-disk binary. **CLI invocations are the cheapest way to "test the fix actually took effect" without any process restart.**
+- **`target/release/reality-loop`** — workhorse binary. Runs the engine (per-attempt mint) AND now implements the four MCP harness write tools as `harness <subcommand>`: `open-window`, `apply-line-window-edit` (stdin-piped JSON edit), `run-command` (stdin-piped JSON command), `verify-state`. Every MCP harness call spawns this fresh; ALWAYS loads current on-disk version. Rebuild → next call uses new code.
+- **`target/release/context-graph-mcp`** — protocol shim. Holds its binary mapped in memory. After the refactor, contains only JSON-RPC ↔ subprocess translation, governed-path policy enforcement, edit-lock acquisition, and ledger/shift-log persistence. Does NOT contain `governed_edit::project_apply_line_window_edits`, `run_governed_command`, `verify_project_state` anymore. Changes to harness-edit logic in `governed_edit.rs` or `reality-loop.rs` no longer require MCP reconnect.
+- **`target/release/context-graph-cli`** — human-facing CLI. Each Bash invocation spawns fresh; always loads current binary. Useful for sanity-checking that a rebuild took effect without going through MCP.
+
+### When `/mcp` reconnect IS still required (rare)
+
+Only for changes to the MCP server's own protocol-layer code:
+
+- Adding/removing tool names (`tools/names.rs`, `tools/definitions/*.rs`, `handlers/tools/dispatch.rs`)
+- JSON-RPC framing or transport (`main.rs`, `protocol.rs`)
+- Edit-lock semantics (`handlers/tools/reality_loop/lock.rs`)
+- Governed-paths policy (`handlers/tools/reality_loop/path_policy.rs`)
+- Shift-log writer (`handlers/tools/reality_loop/shift_log.rs`)
+- Optimizer recommendation/decision/transition writers (`handlers/tools/reality_loop/optimizer.rs`)
+- The shim helper itself (`handlers/tools/reality_loop/alter.rs::spawn_harness_subcommand`) and `handlers/tools/reality_loop/interact.rs::locate_engine_binary`
+
+Changes to **anything in `crates/context-graph-cli/`** (including `governed_edit.rs`, `bin/reality-loop.rs`, the harness CLI subcommands) do NOT require reconnect. The shim re-resolves the binary on every call.
 
 ### After every `changed` recommendation, you MUST do this in the SAME turn
 
-This is non-negotiable. Without it, the next attempt mint may run on stale code OR — worse — on a half-rebuild where some symbols are new and some are old.
+This is non-negotiable. Without it, the next mint may run on stale binary code.
 
-1. **`cargo build --release` via Bash** immediately after `cc-reality-harness-editor` returns success. The editor's `cargo check` does NOT produce a new release binary; only `cargo build --release` does.
-2. **Verify binary mtimes are newer than the start of this turn**:
+1. **`cargo build --release` via Bash** immediately after `cc-reality-harness-editor` returns success. The editor's `cargo check` does NOT produce new release binaries; only `cargo build --release` does. Build both crates the editor touched (typically `-p context-graph-cli` for harness logic; add `-p context-graph-mcp` ONLY if the edit touched the MCP protocol layer).
+2. **Confirm `target/release/reality-loop` mtime moved forward**:
    ```bash
-   stat -c '%Y %n' target/release/context-graph-mcp target/release/context-graph-cli target/release/reality-loop
+   stat -c '%y %n' target/release/reality-loop target/release/context-graph-mcp
    ```
-   All three should have mtime > the timestamp recorded at turn start.
-3. **Smoke-test the new CLI binary** with a stateless command that exercises the changed code path. CLI invocations don't require any reconnect, so this is a real test of the new code:
+   The mtime should be newer than the start of this turn. The MCP binary mtime is informational — its rebuild only matters if step 4 below applies.
+3. **Smoke-test the new CLI binary directly** to prove the change actually took effect — this exercises the SAME subprocess code path the MCP shim spawns on every harness call:
    ```bash
-   ./target/release/context-graph-cli --help              # always works; sanity check
-   ./target/release/context-graph-cli verify-build         # if such a subcommand exists
-   ./target/release/context-graph-cli reality-loop --help  # confirms reality-loop subcommand still resolves
+   ./target/release/reality-loop harness open-window --path .claude/loop.md --start-line 1 --end-line 1
    ```
-   If a CLI subcommand directly exercising the changed code exists (e.g., a `dry-run-edit` or `validate-tool-args`), invoke it with synthetic inputs. Add the exact command + exit_code to `verification_commands`.
-4. **Engine staleness check**: if a `reality-loop` engine PID is mid-attempt, its `etime` predates your new binary. The in-flight attempt CANNOT benefit. Decision tree:
-   - In-flight attempt has elapsed < 30 min: let it finish naturally; next mint picks up new binary.
-   - In-flight attempt has elapsed > 60 min AND last 3 turns recorded `no_change` for "round still in flight": surface in `remaining_risks` as `"operator: in-flight engine PID <X> stale relative to fresh harness fix; consider terminating to drip fresh attempt sooner"`. Do NOT kill it yourself.
-5. **MCP server staleness handling (NO operator reconnect required)**: do NOT call any MCP harness-write tool (`harness_apply_line_window_edit`, `harness_run_command` exercising cargo) in the SAME loop run after a rebuild. The MCP server still runs the old binary. Use the Bash tool with direct CLI invocations instead. Read-only MCP tools (`reality_attempt_summary`, `reality_signal`, `reality_replay_artifact`, `optimizer_record_recommendation`, `reality_shift_log`, `reality_query_ledger`, `champion_state_get`) work fine without restart — they don't depend on harness-editing code paths.
+   The output should be a JSON envelope with `status: "ok"` and a `sha256` matching `sha256sum`. If your edit changed `governed_edit.rs`, this single command proves the new code runs in a fresh subprocess — same mechanism the MCP server uses on every harness tool call. Add the command + exit_code to `verification_commands`.
+4. **Did the recommendation touch the MCP protocol layer?** Only if YES (files in `crates/context-graph-mcp/src/handlers/`, `protocol.rs`, `tools/`, `main.rs`, `lock.rs`, `path_policy.rs`, `shift_log.rs`, `optimizer.rs`, `alter.rs`'s `spawn_harness_subcommand`, `interact.rs`'s `locate_engine_binary`) → surface in `remaining_risks` as `"operator: /mcp reconnect required to load new MCP protocol-layer behavior from <files>"`. For pure harness-logic changes (`crates/context-graph-cli/**` only) → do NOT request reconnect; the shim's next subprocess call picks up the new binary automatically.
+5. **Engine staleness check**: if a `reality-loop` engine PID is mid-attempt, its `etime` predates your new binary. The in-flight attempt CANNOT benefit (running engine has its binary mapped at exec time). Decision tree:
+   - In-flight attempt elapsed < 30 min: let it finish naturally; next mint picks up new binary.
+   - In-flight attempt elapsed > 60 min AND last 3 turns recorded `no_change` for "round still in flight": surface in `remaining_risks` as `"operator: in-flight engine PID <X> stale relative to fresh harness fix; consider terminating to drip fresh attempt sooner"`. Do NOT kill it yourself.
 
 ### Pre-iteration freshness probe (run at the top of EVERY turn)
 
@@ -75,24 +87,32 @@ ps -eo pid,etime,cmd | grep -E 'reality-loop attempt|context-graph-mcp' | grep -
 ```
 Compare each running process's etime-derived start time against the binary mtime. If a process started BEFORE the on-disk binary was rebuilt, that process is stale. If the running MCP is stale AND a previous turn already recorded a `changed` recommendation, write the recommendation with `remaining_risks: ["MCP server stale relative to harness fix from turn-NN — but loop continues unblocked because all MCP harness-write tools are avoided this turn"]`. The loop CONTINUES — it does not need an operator reconnect to make progress.
 
-### Architectural target — MCP as a thin CLI shim (not a code-linker)
+### MCP→CLI shim (DONE 2026-05-07 for harness writes)
 
-**Operator-stated invariant (2026-05-07)**: the MCP server SHOULD be based entirely around the CLI. Any MCP `harness_*` or `reality_*` write/run tool ideally shells out to `target/release/context-graph-cli <subcommand>` rather than linking the implementation directly into `crates/context-graph-mcp/`. The MCP server's job is JSON-RPC ↔ argv translation + governed-path policy enforcement + ledger writes; the actual harness logic should ALWAYS run in a fresh CLI subprocess.
+**Status: shipped.** The four MCP harness write tools — `harness_open_window`, `harness_apply_line_window_edit`, `harness_run_command`, `harness_verify_state` — are now thin shims around `target/release/reality-loop harness <subcommand>`.
 
-This matters because:
+Implementation:
 
-- MCP-as-shim means each `mcp__cgreality__harness_apply_line_window_edit` call spawns a fresh `context-graph-cli` process that loads whatever's on disk → no staleness ever
-- Operator-side `/mcp` reconnect becomes rare (only needed for changes to MCP's own protocol layer, not harness logic)
-- `cargo build --release` immediately propagates to the next MCP call's behavior — same effect as restarting
-- The loop can run unattended for days without operator intervention
+- `crates/context-graph-mcp/src/handlers/tools/reality_loop/alter.rs::spawn_harness_subcommand` — the subprocess helper. Sets `kill_on_drop(true)`, explicit CWD, stdout/stderr piped, stdin piped only when payload present, `tokio::time::timeout` wraps `wait_with_output`.
+- `crates/context-graph-mcp/src/handlers/tools/reality_loop/interact.rs::locate_engine_binary` — resolves the CLI binary path. Honors `CGREALITY_REALITY_LOOP_BIN` env override, then prefers `target/release/reality-loop`, falls back to `target/debug/reality-loop`.
+- `crates/context-graph-cli/src/bin/reality-loop.rs` — adds the `harness` subcommand with four sub-subcommands (open-window, apply-line-window-edit, run-command, verify-state). Each is a thin wrapper around the same `governed_edit::*` functions the MCP previously called in-process. Output contract: stdout = JSON envelope, stderr = human-readable, exit codes 0/1/2/64+ per LSP/JSON-RPC convention.
 
-Today, some MCP tools still link harness code directly (e.g., `harness_apply_line_window_edit` calls `governed_edit.rs::project_apply_line_window_edits` in-process). When you encounter one of these and rebuild, the MCP server is stale on that path until reconnect.
+Verified end-to-end with 12 tests including SHA-256 physical state verification (artifacts on disk, file SHAs match readbacks, error envelopes preserved across the boundary).
 
-**What you do about it in this loop**:
+**What this means for the loop**:
 
-1. After any `changed` recommendation that touches `crates/context-graph-cli/src/**` or `crates/context-graph-mcp/**`, switch to using the Bash tool + direct CLI invocations for any subsequent harness-write you need this turn. CLI invocations are always fresh-on-disk — no MCP shim needed.
-2. Surface the as-yet-not-shimmed MCP tools in `remaining_risks` so the operator can prioritize the refactor: `"architectural: mcp__cgreality__<tool_name> still links harness code directly; would benefit from being refactored to shell out to context-graph-cli for fresh-on-disk semantics"`.
-3. Do not attempt the MCP→CLI refactor in a single turn — it's a multi-turn architectural project. List the candidate tools as separate `remaining_risks` entries so future turns or human operators can pick them up incrementally.
+- After a `changed` recommendation that touches `governed_edit.rs`, `bin/reality-loop.rs`, or anything in `crates/context-graph-cli/`, the next MCP harness-tool call (in the same iteration or any future one) runs the new code with NO operator action required. This is the "MCP-as-shim" property in practice.
+- You can verify the freshness invariant in any turn: read `target/release/reality-loop`'s mtime, then call `mcp__cgreality__harness_open_window` on a known governed file — the response should reflect the current binary semantics consistently.
+- Override path via `CGREALITY_REALITY_LOOP_BIN` env var if you ever need to point the shim at a different binary (e.g., a debug build during local-dev).
+
+**Tools NOT YET shimmed (lower priority; surface as `remaining_risks` if you find friction)**:
+
+- `mcp__cgreality__optimizer_record_recommendation` / `optimizer_record_decision` / `optimizer_record_harness_transition` — schema-validate + write JSON + append ledger. The blackbox-ledger append already shells out to `target/debug/context-graph blackbox`; the schema validation is in-MCP. Low staleness risk because the schema rarely changes.
+- `mcp__cgreality__experiment_registry_*`, `champion_state_*`, `attempts_history_query` — pure JSON file IO; no harness-code dependency.
+- `mcp__cgreality__reality_shift_log` / `reality_shift_compare_to_my_view` — file-based persistence in the MCP process. Stale only if the shift-log format itself changes (rare).
+- `mcp__cgreality__reality_audit_trail` — reads RocksDB through the MCP server's storage stack (not a harness path; staleness is on the storage-stack side).
+
+For each unshimmed tool: if a `cc-reality-harness-editor` edit touches its in-MCP code, request `/mcp reconnect` in `remaining_risks`. Otherwise no reconnect.
 
 ## Iteration procedure
 
