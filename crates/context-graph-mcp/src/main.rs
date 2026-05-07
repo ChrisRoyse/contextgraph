@@ -1293,6 +1293,410 @@ async fn kill_stale_standalone_holder(db_path: &Path) -> bool {
     false
 }
 
+// ============================================================================
+// Reality-Loop Stdio Singleton Guard
+//
+// Root cause being fixed (2026-05-07): `run_reality_loop_stdio()` previously
+// performed NO singleton enforcement. Each `/mcp` reconnect from Claude Code
+// spawns a fresh subprocess; the previous one's stdin is left half-open and
+// never EOFs (Claude Code's stdio transport does not call shutdown(SHUT_WR)
+// on disconnect — see github.com/anthropics/claude-code issues #1935, #11778,
+// #22612, #33947, #43177). The orphaned MCP would then sit in `read_line`
+// forever until either MAX_STDIO_IDLE_SECS (1h) elapsed or the operator
+// killed it manually. Result: 2-3 reality-loop MCP processes alive at once,
+// each holding a separate copy of in-memory state.
+//
+// This module implements a takeover-style flock singleton:
+//   1. New MCP attempts flock(LOCK_EX|LOCK_NB) on a fixed lockfile.
+//   2. If acquired → writes its PID, proceeds.
+//   3. If EWOULDBLOCK → reads the holder PID, verifies it is also a
+//      `--mode reality-loop` MCP (refuses to evict unrelated processes),
+//      sends SIGTERM (2s grace) → SIGKILL (1s grace), then re-acquires.
+//   4. If a third process raced us in after the eviction → loud error.
+// Drop releases the flock and removes the lockfile.
+//
+// Different from `PidFileGuard` (DB-path-based). Reality-loop stdio does not
+// open RocksDB, so we use a host-global lockfile instead of a per-DB one.
+// ============================================================================
+
+/// Compute the lockfile path for the reality-loop stdio singleton.
+///
+/// Returns `$HOME/.cache/cgreality/reality-loop-stdio.lock` (consistent with
+/// the existing `~/.cache/cgreality/active_runtime_root` location used by
+/// CGREALITY_RUNTIME_ROOT_HINT). Errors out loudly if HOME is unset rather
+/// than silently falling back to /tmp (which would create cross-user
+/// collisions on shared hosts).
+#[cfg(unix)]
+fn reality_loop_singleton_lock_path() -> Result<PathBuf> {
+    let home = std::env::var("HOME").map_err(|e| {
+        anyhow::anyhow!(
+            "HOME env var is required to compute the reality-loop singleton lock path: {}",
+            e
+        )
+    })?;
+    Ok(PathBuf::from(home)
+        .join(".cache")
+        .join("cgreality")
+        .join("reality-loop-stdio.lock"))
+}
+
+/// Read /proc/PID/cmdline as a space-joined string.
+/// Returns None if /proc is unreadable for that PID (process dead or kernel
+/// without procfs).
+#[cfg(target_os = "linux")]
+fn read_process_cmdline(pid: i32) -> Option<String> {
+    std::fs::read_to_string(format!("/proc/{}/cmdline", pid))
+        .ok()
+        .map(|s| s.replace('\0', " ").trim().to_string())
+}
+
+/// True iff PID looks like a context-graph-mcp process running in
+/// `--mode reality-loop`. False on any read failure or non-match — we err
+/// on the side of "do not evict" when classification is uncertain.
+#[cfg(target_os = "linux")]
+fn is_reality_loop_mcp_process(pid: i32) -> bool {
+    let Some(cmdline) = read_process_cmdline(pid) else {
+        return false;
+    };
+    cmdline.contains("context-graph-mcp") && cmdline.contains("--mode reality-loop")
+}
+
+/// Evict an existing reality-loop MCP holder via SIGTERM (2s grace) then
+/// SIGKILL (1s grace).
+///
+/// Returns true if the holder is dead (or never was alive), false if eviction
+/// failed and the caller should propagate an error.
+///
+/// Refuses to evict:
+///   - PID ≤ 1 (init or invalid)
+///   - Our own PID (paranoia — flock should have succeeded if so)
+///   - Any process whose cmdline does NOT match a reality-loop MCP (the
+///     lockfile may have been touched by an unrelated tool; refuse to harm
+///     foreign processes)
+#[cfg(target_os = "linux")]
+async fn evict_reality_loop_singleton_holder(pid: i32) -> bool {
+    use tokio::time::{sleep, Duration};
+
+    if pid <= 1 {
+        warn!(
+            "Refusing to evict reality-loop singleton holder PID {} (init or invalid)",
+            pid
+        );
+        return false;
+    }
+    let our_pid = std::process::id() as i32;
+    if pid == our_pid {
+        error!(
+            "Reality-loop singleton lockfile contains our own PID {} but flock is held — \
+             refusing to self-evict; investigate fd inheritance or stale state",
+            pid
+        );
+        return false;
+    }
+
+    // Liveness probe BEFORE classification: a dead process needs no eviction
+    // and the kernel has already released its flock (so why are we here?).
+    if unsafe { libc::kill(pid, 0) } != 0 {
+        let errno = std::io::Error::last_os_error();
+        if errno.raw_os_error() == Some(libc::ESRCH) {
+            info!(
+                "Reality-loop singleton holder PID {} is already dead (ESRCH); \
+                 flock should be releasable",
+                pid
+            );
+            return true;
+        }
+        warn!(
+            "kill({}, 0) probe failed with non-ESRCH errno {} — treating as alive",
+            pid, errno
+        );
+    }
+
+    if !is_reality_loop_mcp_process(pid) {
+        let cmdline = read_process_cmdline(pid).unwrap_or_default();
+        error!(
+            "Reality-loop singleton lockfile holder PID {} is NOT a reality-loop MCP \
+             (cmdline: '{}'). Refusing to evict an unrelated process. \
+             Resolve manually: 'kill {}' to terminate, or 'rm <lockfile>' if you are \
+             certain the PID is stale.",
+            pid, cmdline, pid
+        );
+        return false;
+    }
+
+    info!(
+        "TAKEOVER: evicting older reality-loop MCP PID {} via SIGTERM (2s grace)",
+        pid
+    );
+    if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
+        let errno = std::io::Error::last_os_error();
+        if errno.raw_os_error() == Some(libc::ESRCH) {
+            info!("PID {} died between liveness probe and SIGTERM (ESRCH)", pid);
+            return true;
+        }
+        error!("kill({}, SIGTERM) failed: {}", pid, errno);
+        return false;
+    }
+
+    // 2-second SIGTERM grace, polled every 100ms
+    for i in 0..20 {
+        sleep(Duration::from_millis(100)).await;
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            info!(
+                "Old reality-loop MCP PID {} exited after SIGTERM ({}ms)",
+                pid,
+                (i + 1) * 100
+            );
+            // Kernel needs a tick to fully release the flock
+            sleep(Duration::from_millis(200)).await;
+            return true;
+        }
+    }
+
+    warn!(
+        "Reality-loop MCP PID {} ignored SIGTERM after 2s — escalating to SIGKILL",
+        pid
+    );
+    if unsafe { libc::kill(pid, libc::SIGKILL) } != 0 {
+        let errno = std::io::Error::last_os_error();
+        if errno.raw_os_error() == Some(libc::ESRCH) {
+            return true;
+        }
+        error!("kill({}, SIGKILL) failed: {}", pid, errno);
+        return false;
+    }
+    for i in 0..10 {
+        sleep(Duration::from_millis(100)).await;
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            info!(
+                "Old reality-loop MCP PID {} terminated by SIGKILL ({}ms)",
+                pid,
+                (i + 1) * 100
+            );
+            sleep(Duration::from_millis(200)).await;
+            return true;
+        }
+        // Zombie check: kill(pid,0)==0 still succeeds for zombies (process-table
+        // entry exists) but the kernel HAS released the flock (and all other
+        // resources) at the moment of exit. Treat zombie as released.
+        let status_path = format!("/proc/{}/status", pid);
+        let is_zombie = std::fs::read_to_string(&status_path)
+            .map(|s| s.contains("State:\tZ") || s.contains("State:\tX"))
+            .unwrap_or(false);
+        if is_zombie {
+            info!(
+                "Old reality-loop MCP PID {} is zombie after SIGKILL — flock released",
+                pid
+            );
+            return true;
+        }
+    }
+
+    error!(
+        "FATAL: reality-loop MCP PID {} did not die after SIGKILL (1s grace) — \
+         manual intervention required: kill -9 {}",
+        pid, pid
+    );
+    false
+}
+
+/// Holder of the reality-loop stdio singleton flock.
+///
+/// While this struct is alive, no other reality-loop MCP can acquire the
+/// lock. On Drop the kernel releases the flock and we remove the lockfile.
+#[cfg(unix)]
+struct RealityLoopSingletonGuard {
+    path: PathBuf,
+    _file: std::fs::File,
+}
+
+#[cfg(unix)]
+impl RealityLoopSingletonGuard {
+    /// Acquire the singleton lock with takeover semantics.
+    ///
+    /// Up to TWO acquire attempts: the first either succeeds or evicts the
+    /// existing holder; the second re-acquires. If the second still
+    /// EWOULDBLOCKs, a third process raced us — we exit loudly rather than
+    /// loop forever.
+    async fn acquire_with_takeover() -> Result<Self> {
+        use std::io::{Read, Seek, Write};
+        use std::os::unix::io::AsRawFd;
+
+        let path = reality_loop_singleton_lock_path()?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                anyhow::anyhow!(
+                    "Cannot create singleton lock directory '{}': {}",
+                    parent.display(),
+                    e
+                )
+            })?;
+        }
+
+        let mut last_holder_pid: Option<i32> = None;
+        for attempt in 1..=2 {
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .read(true)
+                .write(true)
+                .open(&path)
+                .map_err(|e| {
+                    anyhow::anyhow!("Cannot open singleton lock '{}': {}", path.display(), e)
+                })?;
+
+            let fd = file.as_raw_fd();
+            let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+            if result == 0 {
+                // We hold the lock. Write our PID.
+                let mut f = &file;
+                if let Err(e) = f.seek(std::io::SeekFrom::Start(0)) {
+                    warn!("singleton lock seek failed: {}", e);
+                }
+                if let Err(e) = f.set_len(0) {
+                    warn!("singleton lock truncate failed: {}", e);
+                }
+                if let Err(e) = write!(f, "{}", std::process::id()) {
+                    warn!("singleton lock PID write failed: {}", e);
+                }
+                if let Err(e) = f.flush() {
+                    warn!("singleton lock flush failed: {}", e);
+                }
+                if attempt == 2 {
+                    info!(
+                        "Reality-loop singleton acquired AFTER takeover of PID {} (pid={}, path={})",
+                        last_holder_pid.unwrap_or(-1),
+                        std::process::id(),
+                        path.display()
+                    );
+                } else {
+                    info!(
+                        "Reality-loop singleton acquired (pid={}, path={})",
+                        std::process::id(),
+                        path.display()
+                    );
+                }
+                return Ok(RealityLoopSingletonGuard { path, _file: file });
+            }
+
+            let errno = std::io::Error::last_os_error();
+            if errno.raw_os_error() != Some(libc::EWOULDBLOCK) {
+                return Err(anyhow::anyhow!(
+                    "flock({}) failed with non-EWOULDBLOCK error: {}",
+                    path.display(),
+                    errno
+                ));
+            }
+
+            if attempt == 2 {
+                return Err(anyhow::anyhow!(
+                    "Reality-loop singleton lock '{}' is still held after eviction of PID {} — \
+                     a third reality-loop MCP raced us. Refusing to loop. \
+                     Investigate manually: 'lsof {}' and 'ps -ef | grep reality-loop'.",
+                    path.display(),
+                    last_holder_pid.unwrap_or(-1),
+                    path.display()
+                ));
+            }
+
+            // Read holder PID
+            let mut contents = String::new();
+            let mut f = &file;
+            if let Err(e) = f.seek(std::io::SeekFrom::Start(0)) {
+                error!("singleton lock seek-to-read failed while contended: {}", e);
+                return Err(anyhow::anyhow!(
+                    "Cannot read contended singleton lockfile '{}': seek failed: {}",
+                    path.display(),
+                    e
+                ));
+            }
+            if let Err(e) = f.read_to_string(&mut contents) {
+                error!("singleton lock read failed while contended: {}", e);
+                return Err(anyhow::anyhow!(
+                    "Cannot read contended singleton lockfile '{}': {}",
+                    path.display(),
+                    e
+                ));
+            }
+            let holder_str = contents.trim().to_string();
+            let holder_pid = match holder_str.parse::<i32>() {
+                Ok(pid) => pid,
+                Err(parse_err) => {
+                    warn!(
+                        "Singleton lockfile contained non-numeric content '{}' ({}) — \
+                         removing and retrying",
+                        holder_str, parse_err
+                    );
+                    drop(file);
+                    if let Err(e) = std::fs::remove_file(&path) {
+                        warn!("Failed to remove corrupt singleton lockfile: {}", e);
+                    }
+                    continue;
+                }
+            };
+            last_holder_pid = Some(holder_pid);
+
+            #[cfg(target_os = "linux")]
+            {
+                if !evict_reality_loop_singleton_holder(holder_pid).await {
+                    return Err(anyhow::anyhow!(
+                        "Cannot evict reality-loop singleton holder PID {} — see error log above. \
+                         Lockfile: '{}'.",
+                        holder_pid,
+                        path.display()
+                    ));
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = holder_pid;
+                return Err(anyhow::anyhow!(
+                    "Singleton lock contended on non-Linux platform; eviction not implemented. \
+                     Manually kill PID {} and remove '{}'.",
+                    holder_pid,
+                    path.display()
+                ));
+            }
+
+            drop(file);
+            // Brief pause for kernel to release the flock after the evicted
+            // process exits. The evict function already polled for exit, but
+            // flock release is a separate kernel-tick away.
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        }
+        unreachable!("singleton acquire loop must return or error within 2 attempts")
+    }
+}
+
+#[cfg(unix)]
+impl Drop for RealityLoopSingletonGuard {
+    fn drop(&mut self) {
+        // The flock is auto-released when self._file closes. Best-effort:
+        // remove the lockfile so the next startup sees a clean slate.
+        if let Err(e) = std::fs::remove_file(&self.path) {
+            warn!(
+                "Failed to remove reality-loop singleton lockfile '{}' on drop: {}",
+                self.path.display(),
+                e
+            );
+        }
+    }
+}
+
+#[cfg(not(unix))]
+struct RealityLoopSingletonGuard;
+
+#[cfg(not(unix))]
+impl RealityLoopSingletonGuard {
+    async fn acquire_with_takeover() -> Result<Self> {
+        warn!(
+            "Reality-loop singleton enforcement requires Unix flock; \
+             multi-instance protection disabled on this platform"
+        );
+        Ok(RealityLoopSingletonGuard)
+    }
+}
+
 /// Quick TCP connect check (no protocol verification).
 /// Used only to detect if a port is in use before attempting to bind.
 async fn is_port_in_use(port: u16) -> bool {
@@ -1824,6 +2228,24 @@ async fn run_reality_loop_stdio() -> Result<()> {
     use crate::tools::tool_names;
     use serde_json::{json, Value};
     use tokio::io::{AsyncBufReadExt, BufReader};
+
+    // SINGLETON ENFORCEMENT (2026-05-07 root-cause fix). Acquire a flock on a
+    // host-wide reality-loop lockfile BEFORE any other state is touched. If
+    // another reality-loop MCP holds the lock — the dominant case is "Claude
+    // Code did `/mcp reconnect` and the previous subprocess never EOFed" — the
+    // takeover protocol kills it (SIGTERM 2s grace, then SIGKILL) and reclaims
+    // the lock. If a non-reality-loop process holds the lock, we exit loudly.
+    // The guard is held for the lifetime of this function; Drop releases the
+    // flock and removes the lockfile.
+    //
+    // Without this guard, every `/mcp reconnect` orphaned the prior MCP because
+    // Claude Code's stdio transport does not call shutdown(SHUT_WR) on the
+    // socketpair, so the orphan's `read_line` blocks forever (until the 1h
+    // MAX_STDIO_IDLE_SECS watchdog fires). Two or three concurrent reality-loop
+    // MCPs were routinely observed before this guard.
+    let _singleton_guard = RealityLoopSingletonGuard::acquire_with_takeover()
+        .await
+        .map_err(|e| anyhow::anyhow!("FATAL: reality-loop singleton acquire failed: {}", e))?;
 
     // ZOMBIE-PREVENTION (root-cause fix for accumulated stale --mode reality-loop
     // processes): install the same defenses the default-mode stdio path uses.
