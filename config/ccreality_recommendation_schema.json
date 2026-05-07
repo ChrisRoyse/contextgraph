@@ -79,7 +79,6 @@
         }
       }
     },
-    "cost_estimate_usd": { "type": "number", "minimum": 0 },
     "created_at_unix": { "type": "integer", "minimum": 0 },
     "source_of_truth": { "type": "string", "pattern": "^file:" }
   },

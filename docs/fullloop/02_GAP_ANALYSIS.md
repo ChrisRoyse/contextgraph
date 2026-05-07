@@ -70,7 +70,6 @@ The smoke suite is intentionally tiny (2 instances). There is no holdout split, 
 
 - **Concurrency** — the engine and MCP both run as single-writer; concurrent `/loop` invocations are not yet stress-tested.
 - **External-watcher cron** — `docs/ccreality/14_TRIGGER_AND_INVOCATION_POLICY.md` Section E describes the production watcher; no script exists in repo or `/usr/local/bin/`.
-- **Cost cap enforcement** — `cost_estimate_usd` is in the recommendation schema but no enforcement closes the loop when totals exceed a per-day budget.
 - **Drift detection coverage** — `reality_shift_compare_to_my_view` is implemented but is not part of the canonical /loop iteration step. Should be invoked at every `/loop` start.
 - **One known parser glitch** — the SessionStart hook in this active session reported "Latest attempt summary read failed" against `…/smoke-attempt-1/attempt-summary.json`, but the file is well-formed JSON. Hook script likely tries to parse a substring or expected a key it doesn't find. Tracked under Phase 13.
 

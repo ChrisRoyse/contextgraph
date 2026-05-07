@@ -40,15 +40,6 @@ Fix:
 
 End-state: smoke run includes the new drift layer and passes.
 
-### T13.4 — Recommendation `cost_estimate_usd` budget warning
-
-Symptom: schema accepts `cost_estimate_usd` but no per-day rollup exists.
-
-Fix:
-- Add `mcp__cgreality__optimizer_record_recommendation` server logic that, after writing the recommendation, sums `cost_estimate_usd` across all recommendations in the active runtime root for today (UTC). If total > $20 USD (configurable via env `CGREALITY_DAILY_COST_CAP_USD`), append a `cost_cap_warning` field to the response (does not block writing). When total > 1.5× cap, return `CCREALITY_COST_CAP_REACHED` (blocking) and require operator override.
-
-End-state: a contrived `claude --print` run that records 25 recommendations with `cost_estimate_usd: 1.0` each blocks recommendation #21+ until the env var is set higher.
-
 ### T13.5 — Cleanup stale shift-log files
 
 Symptom: `<runtime_root>/cgreality-shift-log/` accumulates per-session JSONL files indefinitely. After 30 days of runs this is a minor disk-space concern.

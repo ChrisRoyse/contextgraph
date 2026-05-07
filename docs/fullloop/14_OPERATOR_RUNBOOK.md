@@ -125,7 +125,6 @@ The optimizer will see a new attempt next /loop tick.
 
 - Three consecutive `blocked` recommendations cite the same root cause.
 - A single recommendation reports `external_drift_detected` against a file the operator did not edit.
-- Cost cap reached unexpectedly (single-day spike).
 - A new failure class appears that no diagnostician category matches.
 
 In any case: stop the loop, inspect the latest 3 recommendations, fix root cause manually, restart.

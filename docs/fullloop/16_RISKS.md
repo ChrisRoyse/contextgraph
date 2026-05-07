@@ -15,18 +15,6 @@ The forward plan introduces new ways the loop can fail. Each risk has an owner (
 
 **Detection:** dashboard reality_score "reward up but resolved_rate flat" pattern (Phase 20). Auto-flag.
 
-## R2 — Cost runaway
-
-**Risk:** /loop spawns more subagents per turn than expected; daily API spend exceeds budget.
-
-**Mitigations:**
-- Per-recommendation cost ceiling enforced by Phase 13 task T13.4.
-- Daily cap enforced by `cgreality-tick.sh` (Phase 21).
-- Operator dashboard surfaces cost-summary on the same page as reality_score.
-- One-writer rule (one harness-editor subagent per turn) bounds parallelism.
-
-**Detection:** daily summary cron emits an alert at 75% of cap.
-
 ## R3 — Stale state edits (mitigated by Phase 0; verified continuously)
 
 **Risk:** the optimizer edits a file based on stale SHA; another writer (operator, watcher, simultaneous /loop) mutated it first.

@@ -542,7 +542,7 @@ Recommended trigger policies:
 ```text
 smoke: failure
 development: failure_or_regression
-overnight: failure_or_regression with cost cap
+overnight: failure_or_regression
 manual debugging: /loop with 5m to 15m interval
 ```
 

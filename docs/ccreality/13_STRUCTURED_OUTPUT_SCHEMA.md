@@ -137,7 +137,6 @@ The optimizer's terminal artifact per turn. Validated by the MCP tool against th
         }
       }
     },
-    "cost_estimate_usd": { "type": "number", "minimum": 0 },
     "created_at_unix": { "type": "integer", "minimum": 0 },
     "source_of_truth": { "type": "string", "pattern": "^file:" }
   },
@@ -233,7 +232,6 @@ The agent must correct and retry. The Stop hook will not allow turn end until a 
     ],
     "intervention_surface": "tool_surface"
   },
-  "cost_estimate_usd": 0.18,
   "created_at_unix": 1714896000,
   "source_of_truth": "file:/tmp/contextgraph-rust-reality-loop/run-2026-05-05-1234/django__django-12345/attempt-3/claude-code-optimizer/recommendation-turn-01.json"
 }

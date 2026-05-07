@@ -32,7 +32,6 @@ Keep editing on the branch; each future session uses `/ccreality-iterate` agains
 - Add cron / systemd timer for autonomous overnight runs (see [../14_TRIGGER_AND_INVOCATION_POLICY.md](../14_TRIGGER_AND_INVOCATION_POLICY.md) §"E. External-watcher cron").
 - Run `bash scripts/cc/tests/smoke.sh` as a daily CI gate for the first week.
 - Run `bash scripts/cc/tests/fsv.sh` weekly for the first month.
-- After 100 production turns, audit `cost_estimate_usd` in recommendations; consider Sonnet for routine writer turns.
 - After 30 days, audit shift log for principle violations.
 
 ## Verification record

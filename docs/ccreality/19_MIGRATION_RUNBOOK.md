@@ -275,5 +275,4 @@ git checkout ccreality-cutover-base.sha -- crates/ docs/ .claude/
 - Run `bash scripts/cc/tests/smoke.sh` daily for the first week as a CI gate.
 - Run FSV weekly for the first month.
 - Update `docs/ccreality/FSV_RESULTS_<date>.md` for each FSV run.
-- After 100 production turns, review `cost_estimate_usd` in recommendations and decide whether to switch the writer's default model (Opus → Sonnet for routine turns).
 - After 30 days, audit the shift log for any patterns that suggest principle violations (e.g., consecutive turns recording status=changed without intervening drift checks).

@@ -52,13 +52,9 @@ The MCP protocol supports `elicitation` — a server can request user input mid-
 
 Decision: **no** for the initial cutover. The deny list + edit lock + recommendation+readback chain provides enough safety. Elicitation adds friction that defeats unattended runs. Revisit if real attacks emerge.
 
-## Q6 — Cost accumulator: where does `cost_today.json` live?
+## Q6 — RESOLVED — local-only operation, no cost accumulator
 
-[15_COST_AND_MODEL_POLICY](15_COST_AND_MODEL_POLICY.md) mentions a `~/.cache/cgreality/cost_today.json` accumulator updated by the Stop hook from the session's `total_cost_usd`. Open: schema, rotation cadence (per UTC day? per local day?), aggregation across operators.
-
-Recommendation: per-operator JSON file, rotated daily at UTC midnight, format `{"date": "YYYY-MM-DD", "total_usd": float, "by_session": {"sess_id": float}}`. Watcher script (stage E in [14_TRIGGER_AND_INVOCATION_POLICY](14_TRIGGER_AND_INVOCATION_POLICY.md)) reads this before spawning.
-
-Defer implementation until first turn of real production usage.
+The system runs locally on operator hardware; there are no per-turn or per-day spend caps. The `cost_today.json` accumulator concept was removed 2026-05-07 with the rest of the cost-cap machinery. No further action.
 
 ## Q7 — Telemetry export
 

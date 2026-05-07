@@ -85,15 +85,9 @@ Items that need a decision before or during the relevant forward phase. None blo
 
 **Default:** local systemd. Templates committed; operator copies to /etc/systemd/.
 
-## OQ-8 — Recommendation cost-estimate accuracy
+## OQ-8 — RESOLVED — local-only operation, no cost tracking
 
-**Question:** the model fills `cost_estimate_usd` based on its self-knowledge. Should we override with a real cost calculation from `claude --print` exit metadata?
-
-**Trade-off:**
-- Self-reported: low effort, "good enough" for rate limiting.
-- Real cost: precise but requires plumbing claude-cli output into the recommendation tool.
-
-**Decision deadline:** Phase 13 T13.4.
+The system runs locally on operator hardware; there is no third-party API spend to bound. The `cost_estimate_usd` field and the entire cost-cap concept were removed 2026-05-07. No further action.
 
 **Default:** self-reported. Add real-cost overlay if rate-limit false-positives become a problem.
 

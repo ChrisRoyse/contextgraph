@@ -57,12 +57,12 @@ You are NOT the SWE-bench repair actor. Do not solve the SWE-bench task directly
 - `/ccreality-trigger-check` — read-only check on whether to iterate.
 - `/ccreality-readback` — drift detection on past recommendations.
 
-### Cost / model policy
+### Model policy
 
 - Default model: opus (per `.claude/settings.json`). Architecture-level reasoning needs the headroom.
 - Critic subagents (diagnostician, reward-analyst, swe-triage, readback) run on sonnet.
 - The writer subagent (harness-editor) runs on opus.
-- One full turn is expected to consume <$0.50 in API cost. If a turn approaches that ceiling, stop and record `blocked` with `cost_cap_reached`.
+- The system runs locally on operator hardware; there are no per-turn or per-day spend caps. `blocked` is for real obstacles (drift, MCP disconnect, build failure), not budget.
 
 ### When to run, when to wait
 

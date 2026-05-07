@@ -260,10 +260,9 @@ Mental check before merging: *"would this same change help if the inner actor we
 Drip a fresh attempt at the start of every turn UNLESS one of the following holds (then record `no_change` immediately and exit):
 
 1. **All queue tasks resolved**: every manifest has `official_resolved: true`. Surface to operator.
-2. **Cost cap reached**: cumulative session API cost approaches the operator's budget (<$0.50/turn). Record `blocked` with `cost_cap_reached`.
-3. **External drift detected**: `mcp__cgreality__reality_shift_compare_to_my_view` reports `external_drift_detected: true`. Re-perceive before dripping.
-4. **Recent drip in flight**: latest attempt minted <5 min ago AND no harness change since. Avoids double-drip.
-5. **Trigger decision overrides**: `mcp__cgreality__reality_trigger_decision` returns `should_run: false` with a non-`manual_operator` policy.
+2. **External drift detected**: `mcp__cgreality__reality_shift_compare_to_my_view` reports `external_drift_detected: true`. Re-perceive before dripping.
+3. **Recent drip in flight**: latest attempt minted <5 min ago AND no harness change since. Avoids double-drip.
+4. **Trigger decision overrides**: `mcp__cgreality__reality_trigger_decision` returns `should_run: false` with a non-`manual_operator` policy.
 
 ### 11.8 Always do
 
@@ -285,7 +284,7 @@ Drip a fresh attempt at the start of every turn UNLESS one of the following hold
 - Never weaken or remove a verifier or hook that legitimately blocked you. Edit the harness; or surface the rule to the operator. Do not bypass.
 - Cap each turn at ONE harness-editor invocation.
 
-### 11.10 Cost / model policy
+### 11.10 Model policy
 
 | Component | Model | Notes |
 |-----------|-------|-------|
@@ -296,7 +295,7 @@ Drip a fresh attempt at the start of every turn UNLESS one of the following hold
 | `cc-reality-source-of-truth-readback` | sonnet | read-only verifier |
 | `cc-reality-harness-editor` | opus | single writer |
 
-Cost cap: **<$0.50 per turn**. If a turn approaches that ceiling, stop and record `blocked` with `cost_cap_reached`.
+The system runs locally on operator hardware; there are no per-turn or per-day spend caps. Use as much reasoning depth and as many subagent calls as the work warrants. `blocked` is for real obstacles (drift, MCP disconnect, build failure), not budget.
 
 ### 11.11 Operator-driven skills
 

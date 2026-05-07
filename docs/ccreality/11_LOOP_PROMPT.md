@@ -133,6 +133,5 @@ Both ultimately end at the same thing: one recommendation artifact per turn.
 |------|-----------|----------|
 | Session lifetime > 7 days | Claude Code refuses to resume the recurring task | Operator restarts the loop |
 | Permission prompt mid-iteration | `acceptEdits` mode blocks anything not in `permissions.allow` | Add the rule to `.claude/settings.json` (committed) and restart |
-| Cost cap reached | The ccreality skill records `blocked` with `cost_cap_reached` | Operator inspects, raises cap or pauses |
 | External drift detected mid-iteration | Recommendation status `blocked`, reason includes drift detail | Operator decides whether to investigate or let next iteration re-perceive |
 | `Stop` hook blocks indefinitely | Should not happen — recommendation is mandatory; if it does, debug log shows why | Operator inspects the session transcript |

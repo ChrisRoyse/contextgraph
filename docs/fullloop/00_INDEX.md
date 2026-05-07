@@ -46,7 +46,7 @@ Source of truth: `docs/ccreality/00_INDEX.md` "Status of this work" section.
 | 09 | [09_PHASE_18_TRAINING_EXPORT](09_PHASE_18_TRAINING_EXPORT.md) | verified-episode export + LoRA prep |
 | 10 | [10_PHASE_19_CURRICULUM](10_PHASE_19_CURRICULUM.md) | dev / holdout / promotion split |
 | 11 | [11_PHASE_20_DASHBOARD](11_PHASE_20_DASHBOARD.md) | operational scoreboard surfaces |
-| 12 | [12_PHASE_21_PRODUCTION_OPS](12_PHASE_21_PRODUCTION_OPS.md) | external-watcher cron, cost cap, alerts |
+| 12 | [12_PHASE_21_PRODUCTION_OPS](12_PHASE_21_PRODUCTION_OPS.md) | external-watcher cron, alerts |
 | 13 | [13_PHASE_22_DYNAMICJEPA](13_PHASE_22_DYNAMICJEPA.md) | DynamicJEPA surprise → optimizer reward signal |
 | 14 | [14_OPERATOR_RUNBOOK](14_OPERATOR_RUNBOOK.md) | how to actually start / drive / supervise the loop |
 | 15 | [15_AI_VERIFIABLE_END_STATES](15_AI_VERIFIABLE_END_STATES.md) | per-phase commands whose pass = phase done |

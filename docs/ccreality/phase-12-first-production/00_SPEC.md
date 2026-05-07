@@ -35,10 +35,6 @@ See [04_VERIFICATION.md](04_VERIFICATION.md). Five clauses.
 - Optimizer turn: 5–10 min.
 - Verification + commit: 15 min.
 
-## Cost budget
-
-The optimizer turn is bounded by Claude Code's max-turns and the operator's API quota. Expected: <$0.50.
-
 ## What success looks like
 
 The recommendation artifact has a `status` field that is one of `changed`, `no_change`, `blocked`, `error`. Any of these is a successful Phase 12 outcome — the cutover is verified.

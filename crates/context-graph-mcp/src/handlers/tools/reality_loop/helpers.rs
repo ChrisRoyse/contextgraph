@@ -628,8 +628,7 @@ mod tests {
             "source_files_changed": "[\"a.rs\",\"b.rs\"]",
             "memories_created": "[]",
             "harness_transitions_minted": "[\"file:/tmp/x\"]",
-            "drift_detected": "{\"files\":[]}",
-            "cost_estimate_usd": "0.45"
+            "drift_detected": "{\"files\":[]}"
         });
         let coerced = coerce_stringified_args(stringified);
         assert_eq!(coerced["schema_version"], json!(1));
@@ -644,7 +643,6 @@ mod tests {
             json!(["file:/tmp/x"])
         );
         assert_eq!(coerced["drift_detected"], json!({"files": []}));
-        assert!(coerced["cost_estimate_usd"].as_f64().unwrap() - 0.45 < 1e-9);
     }
 
     #[test]

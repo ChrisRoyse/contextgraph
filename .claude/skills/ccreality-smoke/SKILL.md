@@ -47,7 +47,6 @@ Call `mcp__cgreality__optimizer_record_recommendation` with a schema-complete `n
 - `memories_boosted: []`
 - `harness_transitions_minted: []`
 - `shift_log_excerpt: []`
-- `cost_estimate_usd`: numeric estimate
 - `created_at_unix`: current unix timestamp
 - `source_of_truth`: placeholder file URI; the tool will replace it with the persisted recommendation path
 

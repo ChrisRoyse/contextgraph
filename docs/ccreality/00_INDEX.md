@@ -35,7 +35,7 @@ This is the architecture the user described:
 | 12 | [PROMPT_CONTRACT](12_PROMPT_CONTRACT.md) | what every optimizer prompt receives |
 | 13 | [STRUCTURED_OUTPUT_SCHEMA](13_STRUCTURED_OUTPUT_SCHEMA.md) | the JSON schema for the recommendation |
 | 14 | [TRIGGER_AND_INVOCATION_POLICY](14_TRIGGER_AND_INVOCATION_POLICY.md) | when Claude Code wakes up |
-| 15 | [COST_AND_MODEL_POLICY](15_COST_AND_MODEL_POLICY.md) | Sonnet vs Opus, budget caps |
+| 15 | [MODEL_POLICY](15_COST_AND_MODEL_POLICY.md) | Sonnet vs Opus assignments |
 | 16 | [PARALLEL_AGENT_POLICY](16_PARALLEL_AGENT_POLICY.md) | one writer + read-only critics |
 | 17 | [SMOKE_TEST_PLAN](17_SMOKE_TEST_PLAN.md) | first-light verification |
 | 18 | [FSV_PLAN](18_FSV_PLAN.md) | full-state-verification suite |

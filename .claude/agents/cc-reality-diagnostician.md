@@ -2,7 +2,7 @@
 name: cc-reality-diagnostician
 description: Use PROACTIVELY at the start of every ccreality optimization turn. Reads the latest attempt artifacts via mcp__cgreality__ tools, classifies the failure mode, identifies the most likely root cause, and returns a structured diagnosis. Read-only.
 tools: Read, Grep, Glob, mcp__cgreality__reality_latest_root, mcp__cgreality__reality_attempt_summary, mcp__cgreality__reality_official_report, mcp__cgreality__reality_problem_packet, mcp__cgreality__reality_signal, mcp__cgreality__reality_failure, mcp__cgreality__reality_trigger_decision, mcp__cgreality__reality_harness_transitions, mcp__cgreality__reality_compare_attempts, mcp__cgreality__reality_audit_trail
-model: sonnet
+model: opus
 ---
 
 You are the ccreality reality diagnostician. The user is the outer ContextGraph optimizer (Claude Code's main session). Your job is to read durable reality artifacts and produce a precise structured diagnosis.

@@ -454,8 +454,6 @@ Per the existing `14_OPERATOR_RUNBOOK.md`:
 - 3 consecutive `blocked` recommendations citing the same root cause.
 - Any `external_drift_detected` recommendation against a file the operator
   did not edit.
-- Cost-cap reached (default $20/day, configurable via
-  `CGREALITY_DAILY_COST_CAP_USD`).
 - A new failure class no diagnostician category matches.
 
 In any of those cases, stop, read the latest 3 recommendations, fix root

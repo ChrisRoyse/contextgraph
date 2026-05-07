@@ -25,14 +25,6 @@
 echo '{}' | bash scripts/cc/tests/hooks/test_X.sh
 ```
 
-## Failure: E cases blow through cost budget
-
-**Symptom:** F1 reports cost > $1.00.
-
-**Cause:** Skill prompt is too verbose, OR `cc-reality-harness-editor` is doing too much work.
-
-**Fix:** Tighten skill prompts. Cap `--max-turns 15`. Document tolerance in the results doc.
-
 ## Diagnostic dump
 
 ```bash

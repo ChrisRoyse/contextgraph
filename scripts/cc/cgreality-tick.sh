@@ -7,15 +7,13 @@
 #   1. read the active runtime root from ~/.cache/cgreality/active_runtime_root
 #   2. find the latest attempt-summary.json under it
 #   3. skip if a recommendation already exists for this attempt
-#   4. skip if today's optimizer cost exceeds the daily cap
-#   5. otherwise launch a single-shot Claude Code optimizer turn
+#   4. otherwise launch a single-shot Claude Code optimizer turn
 #
 # Environment variables:
-#   ANTHROPIC_API_KEY         — required for headless Claude Code (unless using
-#                                operator's interactive login)
-#   CGREALITY_DAILY_COST_CAP_USD — soft daily ceiling (default 20)
-#   CGREALITY_MAX_TURNS         — single-shot turn cap (default 25)
-#   CGREALITY_MODEL             — claude model id (default opus)
+#   ANTHROPIC_API_KEY  — required for headless Claude Code (unless using
+#                        operator's interactive login)
+#   CGREALITY_MAX_TURNS — single-shot turn cap (default 25)
+#   CGREALITY_MODEL     — claude model id (default opus)
 #   SIMULATE_NO_CLAUDE          — if set, skip the claude exec (for AI-verifiable
 #                                  end-state)
 #
@@ -51,25 +49,6 @@ if find "$ATTEMPT_DIR/claude-code-optimizer" -name 'recommendation-*.json' -type
   exit 0
 fi
 
-# Cost cap — sum cost_estimate_usd across all recommendations under the active root
-DAILY_CAP="${CGREALITY_DAILY_COST_CAP_USD:-20}"
-TODAY_TOTAL_USD="$(
-  find "$ACTIVE" -name 'recommendation-*.json' -type f -newermt "$(date -u +%F)" -print0 2>/dev/null \
-    | xargs -0 -r jq -s 'map(.cost_estimate_usd // 0) | add // 0' 2>/dev/null \
-    || echo 0
-)"
-# numeric guard against jq returning empty/null
-TODAY_TOTAL_USD="${TODAY_TOTAL_USD:-0}"
-if awk -v t="$TODAY_TOTAL_USD" -v c="$DAILY_CAP" 'BEGIN { exit !(t+0 >= c+0) }'; then
-  WATCH_DIR="$ACTIVE/cgreality-watcher"
-  mkdir -p "$WATCH_DIR"
-  printf '{"event":"cost_cap_reached","today_total_usd":%s,"daily_cap_usd":%s,"unix":%s,"attempt":"%s"}\n' \
-    "$TODAY_TOTAL_USD" "$DAILY_CAP" "$(date +%s)" "$ATTEMPT_DIR" \
-    > "$WATCH_DIR/cost-cap-$(date +%s).json"
-  echo "cgreality-tick: cost cap reached ($TODAY_TOTAL_USD >= $DAILY_CAP) — skipping" >&2
-  exit 0
-fi
-
 # Persist a no-op trace for AI-verifiable simulation paths
 WATCH_DIR="$ACTIVE/cgreality-watcher"
 mkdir -p "$WATCH_DIR"
@@ -78,8 +57,6 @@ cat > "$TICK_TRACE" <<EOF
 {
   "event": "tick_fired",
   "attempt_summary": "$LATEST_ATTEMPT",
-  "today_total_usd": $TODAY_TOTAL_USD,
-  "daily_cap_usd": $DAILY_CAP,
   "unix": $(date +%s),
   "simulate_no_claude": "${SIMULATE_NO_CLAUDE:-0}"
 }

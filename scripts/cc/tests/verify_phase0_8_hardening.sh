@@ -523,7 +523,6 @@ jq -nc \
     shift_log_excerpt: [
       "phase0-8-hardening-fsv"
     ],
-    cost_estimate_usd: 0,
     created_at_unix: $created_at,
     source_of_truth: "file:/tmp/placeholder/recommendation-turn-01.json"
   }' >"${GOOD_REC}"

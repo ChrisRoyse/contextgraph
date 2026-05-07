@@ -299,7 +299,6 @@ recommendation_payload() {
       reason: "Phase 10 FSV writes a known optimizer recommendation and verifies the file plus BlackBox ledger readback.",
       expected_reward_signal_delta: "none",
       next_inner_prompt_delta: "none",
-      cost_estimate_usd: 0,
       source_files_changed: [],
       harness_transitions_minted: [],
       memories_created: [],

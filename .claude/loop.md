@@ -25,7 +25,7 @@ Each cron firing is a fresh Claude Code conversation with NO memory of prior tur
 3. Run the freshness probe (§4.6) — verify which binaries are current and whether any engine PID is mid-attempt.
 4. Read `./memory/decisions/` (locked choices), `./memory/blockers/` (active issues, skip `status: resolved`), `./memory/handoff/` (items left for you).
 
-Then evaluate the 5 SKIP conditions (§6.1). If any holds, record `no_change` and exit. Otherwise proceed through §6.2-6.9.
+Then evaluate the 4 SKIP conditions (§6.1). If any holds, record `no_change` and exit. Otherwise proceed through §6.2-6.9.
 
 ### Output contract (what THIS turn MUST produce on disk by end)
 
@@ -220,13 +220,12 @@ These are baked-in behaviors. Do NOT propose harness edits to "fix" things the h
 
 ### 6.1 Confirm reality + check skip conditions
 
-Call `mcp__cgreality__reality_latest_root`. Read `./memory/context/{mission-brief,current-phase}.md`. Run the freshness probe (§4.6). Then evaluate the 5 SKIP conditions:
+Call `mcp__cgreality__reality_latest_root`. Read `./memory/context/{mission-brief,current-phase}.md`. Run the freshness probe (§4.6). Then evaluate the 4 SKIP conditions:
 
 1. **All queue tasks resolved**: every manifest in `tasks/swebench-lite/*.json` has a champion with `official_resolved: true` for `qwen3.6:27b`. Surface to operator and exit `no_change`.
-2. **Cost cap reached**: cumulative session API cost approaching $0.50/turn budget. Record `blocked` with `cost_cap_reached`.
-3. **External drift detected**: `mcp__cgreality__reality_shift_compare_to_my_view` reports `external_drift_detected: true` on a governed path. Re-perceive before dripping.
-4. **Recent drip in flight**: latest attempt minted <5 min ago AND no harness change since. Avoids double-drip when cron and operator fire near-simultaneously.
-5. **Trigger decision overrides**: `mcp__cgreality__reality_trigger_decision` returns `should_run: false` with a non-`manual_operator` policy.
+2. **External drift detected**: `mcp__cgreality__reality_shift_compare_to_my_view` reports `external_drift_detected: true` on a governed path. Re-perceive before dripping.
+3. **Recent drip in flight**: latest attempt minted <5 min ago AND no harness change since. Avoids double-drip when cron and operator fire near-simultaneously.
+4. **Trigger decision overrides**: `mcp__cgreality__reality_trigger_decision` returns `should_run: false` with a non-`manual_operator` policy.
 
 If any skip condition holds, record `no_change` immediately and exit. Otherwise → step 2.
 
@@ -320,7 +319,7 @@ If the turn made discoveries/decisions/blockers, those were already written incr
 
 ---
 
-## 8. Cost / model policy
+## 8. Model policy
 
 | Component | Model | Notes |
 |-----------|-------|-------|
@@ -331,7 +330,7 @@ If the turn made discoveries/decisions/blockers, those were already written incr
 | `cc-reality-source-of-truth-readback` | sonnet | read-only verifier |
 | `cc-reality-harness-editor` | opus | single writer |
 
-**Cost cap: <$0.50 per turn.** If a turn approaches that ceiling, stop and record `blocked` with `cost_cap_reached`. Track informally — the framework doesn't expose live cost; estimate from token usage and tool calls.
+The system runs locally on operator hardware; there are no per-turn or per-day spend caps. Use as much reasoning depth and as many subagent calls as the work warrants — `blocked` is for real obstacles (drift, MCP disconnect, build failure), not budget.
 
 ---
 
@@ -376,15 +375,11 @@ If the freshness probe shows >1 reality-loop MCP, the singleton machinery is mal
 
 If a spawned subagent returns without referencing `./memory/`, treat as a SMAP violation. Either re-spawn with explicit "follow SMAP" guidance, or write its findings to the right namespace yourself before recording the recommendation. Note the non-compliance in `./memory/journal/agent-{N}-coordinator--subagent-smap-violation.md`.
 
-### 9.8 Cost cap creeping up
-
-When the turn approaches the $0.50 ceiling and the harness edit is incomplete, do NOT push through. Record `blocked` with `cost_cap_reached`. Mark progress in `./memory/handoff/agent-{N}-to-{N+1}--cost-cap-resume.md` so the next turn can pick up where you left off.
-
-### 9.9 Inner-actor silent hang (UNFIXED — top queued)
+### 9.8 Inner-actor silent hang (UNFIXED — top queued)
 
 After a successful tool call returning a large result (e.g., 60K compact `read_problem_reality`), the inner actor sometimes goes silent for 13+ minutes before the next round. There is currently NO per-round wallclock cap in the engine's chat loop; only the MCP-stdio idle watchdog (1h, §5) catches this. **Generic intervention queued**: per-round wallclock cap in `crates/context-graph-cli/src/bin/reality-loop.rs` chat-loop around line 4388, wrap `harness.chat()` with a tokio-style timeout, abort emitting reality-events `round_stall_aborted` so `attempt-summary.json` still gets written. If you observe this signature on a fresh attempt, prioritize this fix.
 
-### 9.10 Cannot record (MCP disconnected, schema rejection, build failure)
+### 9.9 Cannot record (MCP disconnected, schema rejection, build failure)
 
 **MCP server disconnected mid-tick** (e.g. operator did `/mcp` reset, MCP crashed, or post-`changed`-rebuild the connection went away):
 - The `mcp__cgreality__*` tools all fail with "MCP server disconnected" or transport error.

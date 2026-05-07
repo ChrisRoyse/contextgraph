@@ -120,7 +120,6 @@ The skeleton (must be `additionalProperties: false`, all top-level fields requir
     ],
     "intervention_surface": "tool_surface"
   },
-  "cost_estimate_usd": 0.18,
   "created_at_unix": 1714896000,
   "source_of_truth": "file:/tmp/contextgraph-rust-reality-loop/run-2026-05-05-1234/django__django-12345/attempt-3/claude-code-optimizer/recommendation-turn-01.json"
 }
