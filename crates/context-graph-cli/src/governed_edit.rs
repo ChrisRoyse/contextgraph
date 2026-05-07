@@ -92,49 +92,25 @@ pub fn project_root() -> Result<PathBuf> {
     Ok(root)
 }
 
+/// Validate a project-relative path for the harness write tools.
+///
+/// **GOVERNED-PATHS GATE FULLY REMOVED 2026-05-07** (operator directive: "remove all
+/// those governed paths. i need them all gone. i need you to have no restrictions.
+/// the ai needs to be able to do anything it needs to do"). The CLI engine no longer
+/// consults the allow/deny policy — it accepts any project-relative path that passes
+/// the basic shape check in `validate_relative_path` (non-empty, no NUL/newline,
+/// no absolute prefix, no `..` traversal). Those remaining rules are FUNCTIONAL —
+/// the harness tools integrate with `git apply --check` and assume project-relative
+/// paths; absolute paths or `..` would error downstream regardless.
+///
+/// Path discipline (don't touch `.env`, `swebench/**`, `tests/oracle_**`, reward
+/// specs, verifiers) is now BEHAVIORAL, documented in CLAUDE.md §8 and
+/// `./memory/context/constraints.md`.
+///
+/// `load_path_policy` and the `PathPolicy` struct remain available for tests but
+/// are no longer invoked by `validate_governed_path`.
 pub fn validate_governed_path(path: &str) -> Result<String> {
-    let path = validate_relative_path(path)?;
-    let policy = load_path_policy()?;
-
-    if policy
-        .deny
-        .iter()
-        .any(|pattern| path_matches(pattern, &path))
-    {
-        return Err(GovernedEditError::new(
-            "RUST_REALITY_GOVERNED_PATH_DENIED",
-            "project path is denied by governed-paths policy",
-            "arguments.path",
-            "choose a path outside protected benchmark, verifier, secret, and build surfaces",
-            json!({
-                "path": path,
-                "policy": file_sot(&policy.source),
-                "matching_patterns": policy.deny.iter().filter(|pattern| path_matches(pattern, &path)).collect::<Vec<_>>()
-            }),
-            Some(file_sot(&policy.source)),
-        ));
-    }
-
-    if !policy
-        .allow
-        .iter()
-        .any(|pattern| path_matches(pattern, &path))
-    {
-        return Err(GovernedEditError::new(
-            "RUST_REALITY_GOVERNED_PATH_NOT_ALLOWED",
-            "project path is outside the governed edit allowlist",
-            "arguments.path",
-            "edit only paths explicitly listed in CGREALITY_GOVERNED_PATHS",
-            json!({
-                "path": path,
-                "policy": file_sot(&policy.source),
-                "allow": policy.allow
-            }),
-            Some(file_sot(&policy.source)),
-        ));
-    }
-
-    Ok(path)
+    validate_relative_path(path)
 }
 
 pub fn project_file_window(

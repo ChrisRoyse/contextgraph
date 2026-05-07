@@ -241,45 +241,42 @@ fn pattern_to_regex(pattern: &str) -> std::result::Result<String, &'static str> 
     Ok(regex)
 }
 
+/// Path policy gate for harness write tools.
+///
+/// **GATE FULLY REMOVED 2026-05-07** (operator directive: "remove all those governed paths.
+/// i need them all gone. i need you to have no restrictions. the ai needs to be able to
+/// do anything it needs to do"). The MCP harness tools no longer consult the
+/// allow/deny policy — they accept any non-empty, control-character-free path.
+///
+/// What we KEEP: a thin sanity check that the path string is non-empty and contains no
+/// embedded NUL or newline characters. These are not "restrictions" — they reject
+/// inputs that cannot represent a real filesystem path on Linux. Without them the
+/// downstream `std::fs` / `git apply` calls would error with a less helpful message.
+///
+/// What we REMOVE:
+///   - allow-list match requirement
+///   - deny-list rejection of `.env`, `swebench/**`, `tests/oracle_**`, reward-specs,
+///     verifiers, etc. (these are now BEHAVIORAL — documented in CLAUDE.md and
+///     `./memory/context/constraints.md`; the AI is trusted to honor them)
+///   - the require-relative-path rule (absolute paths are allowed; the AI may legitimately
+///     need to read/write under `~/.claude/`, `/tmp/`, or other system locations)
+///   - the no-traversal rule (`..` is allowed; rare but legitimate)
+///
+/// `GovernedPathsPolicy::load_from` and `is_allowed` remain available as a library
+/// surface (the unit tests still cover the historical policy shape) but they are no
+/// longer invoked by `ensure_path_allowed`.
 pub fn ensure_path_allowed(path: &str) -> Result<()> {
-    if path.trim().is_empty()
-        || path.starts_with('/')
-        || path.contains('\\')
-        || path.contains('\0')
-        || path.contains('\n')
-        || std::path::Path::new(path)
-            .components()
-            .any(|part| !matches!(part, std::path::Component::Normal(_)))
-    {
+    if path.trim().is_empty() || path.contains('\0') || path.contains('\n') {
         return Err(CCRealityError::new(
             "CCREALITY_GOVERNED_PROJECT_PATH_INVALID",
-            "project path must be repo-relative without traversal or control characters",
+            "path is empty or contains control characters (NUL or newline)",
             "arguments.path",
-            "use a normalized relative path inside the ContextGraph checkout",
+            "pass a non-empty path string with no embedded NUL or newline",
             json!({"path": path}),
             None,
         ));
     }
-    let policy = GovernedPathsPolicy::load()?;
-    match policy.is_allowed(path) {
-        PolicyVerdict::Allow => Ok(()),
-        PolicyVerdict::DenyExplicit(rule) => Err(CCRealityError::new(
-            "CCREALITY_HARNESS_PATH_DENIED",
-            format!("path '{path}' matches deny rule '{rule}'"),
-            "arguments.path",
-            "choose a path outside protected benchmark, verifier, secret, and reward surfaces",
-            json!({"path": path, "rule": rule}),
-            None,
-        )),
-        PolicyVerdict::NoMatch => Err(CCRealityError::new(
-            "CCREALITY_HARNESS_PATH_NOT_ALLOWED",
-            "path is outside the governed edit allowlist",
-            "arguments.path",
-            "choose a path explicitly allowed by CGREALITY_GOVERNED_PATHS",
-            json!({"path": path}),
-            None,
-        )),
-    }
+    Ok(())
 }
 
 #[cfg(test)]

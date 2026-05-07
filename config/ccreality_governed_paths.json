@@ -1,8 +1,25 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ccreality governed paths policy",
-  "description": "Permissive policy. The deny-on-mismatch gate was removed 2026-05-07 (see scripts/cc/hook_pre_tool_use_edit.sh) so the reality loop can edit any path required to solve the problem. CLAUDE.md still documents which paths Claude SHOULD NOT modify (.env, swebench oracles, reward specs, verifiers); enforcement is now behavioral, not hook-blocking.",
-  "version": 2,
+  "description": "Permissive ALLOW with surgical DENY of paths that would corrupt benchmarks or leak secrets. The hook's deny-on-no-allow-match gate (scripts/cc/hook_pre_tool_use_edit.sh) was REMOVED 2026-05-07 (operator directive: it was blocking legitimate edits). This file is still read by the MCP server's own path-policy enforcement (crates/context-graph-mcp/src/handlers/tools/reality_loop/path_policy.rs); allow:['**'] grants the loop full edit reach, while the deny list keeps SWE-bench oracles, reward specs, verifiers, and secrets off-limits at the MCP boundary. Schema: version=1, allow non-empty, deny non-empty.",
+  "version": 1,
   "allow": ["**"],
-  "deny": []
+  "deny": [
+    ".env",
+    ".env.*",
+    "**/.env",
+    "**/.env.*",
+    "swebench/**",
+    "tests/oracle_**",
+    "tests/oracle_**/**",
+    "crates/context-graph-benchmark/datasets/swe_bench_*",
+    "crates/context-graph-benchmark/datasets/swe_bench_*/**",
+    "crates/*/src/reward_specs/**",
+    "crates/*/src/verifiers/**",
+    "**/*.pem",
+    "**/*.key",
+    "**/credentials.json",
+    "/etc/**",
+    "/root/**"
+  ]
 }

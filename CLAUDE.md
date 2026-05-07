@@ -1,340 +1,375 @@
-# Claude Code Configuration - Claude Flow V3
+# CLAUDE.md — ContextGraph Project Configuration
 
-## Behavioral Rules (Always Enforced)
+You are working in the **ContextGraph** repository. This file is loaded automatically into every Claude Code session that opens this directory. It is the canonical source for behavioral rules, project architecture, and the **ccreality outer reality-loop optimizer** role.
 
-- Do what has been asked; nothing more, nothing less
-- NEVER create files unless they're absolutely necessary for achieving your goal
-- ALWAYS prefer editing an existing file to creating a new one
-- NEVER proactively create documentation files (*.md) or README files unless explicitly requested
-- NEVER save working files, text/mds, or tests to the root folder
-- Never continuously check status after spawning a swarm — wait for results
-- ALWAYS read a file before editing it
-- NEVER commit secrets, credentials, or .env files
-
-## File Organization
-
-- NEVER save to root folder — use the directories below
-- Use `/src` for source code files
-- Use `/tests` for test files
-- Use `/docs` for documentation and markdown files
-- Use `/config` for configuration files
-- Use `/scripts` for utility scripts
-- Use `/examples` for example code
-
-## Project Architecture
-
-- Follow Domain-Driven Design with bounded contexts
-- Keep files under 500 lines
-- Use typed interfaces for all public APIs
-- Prefer TDD London School (mock-first) for new code
-- Use event sourcing for state changes
-- Ensure input validation at system boundaries
-
-### Project Config
-
-- **Topology**: hierarchical-mesh
-- **Max Agents**: 15
-- **Memory**: hybrid
-- **HNSW**: Enabled
-- **Neural**: Enabled
-
-## Build & Test
-
-```bash
-# Build
-npm run build
-
-# Test
-npm test
-
-# Lint
-npm run lint
-```
-
-- ALWAYS run tests after making code changes
-- ALWAYS verify build succeeds before committing
-
-## Security Rules
-
-- NEVER hardcode API keys, secrets, or credentials in source files
-- NEVER commit .env files or any file containing secrets
-- Always validate user input at system boundaries
-- Always sanitize file paths to prevent directory traversal
-- Run `npx @claude-flow/cli@latest security scan` after security-related changes
-
-## Concurrency: 1 MESSAGE = ALL RELATED OPERATIONS
-
-- All operations MUST be concurrent/parallel in a single message
-- Use Claude Code's Task tool for spawning agents, not just MCP
-- ALWAYS batch ALL todos in ONE TodoWrite call (5-10+ minimum)
-- ALWAYS spawn ALL agents in ONE message with full instructions via Task tool
-- ALWAYS batch ALL file reads/writes/edits in ONE message
-- ALWAYS batch ALL Bash commands in ONE message
-
-## Swarm Orchestration
-
-- MUST initialize the swarm using CLI tools when starting complex tasks
-- MUST spawn concurrent agents using Claude Code's Task tool
-- Never use CLI tools alone for execution — Task tool agents do the actual work
-- MUST call CLI tools AND Task tool in ONE message for complex work
-
-### 3-Tier Model Routing (ADR-026)
-
-| Tier | Handler | Latency | Cost | Use Cases |
-|------|---------|---------|------|-----------|
-| **1** | Agent Booster (WASM) | <1ms | $0 | Simple transforms (var→const, add types) — Skip LLM |
-| **2** | Haiku | ~500ms | $0.0002 | Simple tasks, low complexity (<30%) |
-| **3** | Sonnet/Opus | 2-5s | $0.003-0.015 | Complex reasoning, architecture, security (>30%) |
-
-- Always check for `[AGENT_BOOSTER_AVAILABLE]` or `[TASK_MODEL_RECOMMENDATION]` before spawning agents
-- Use Edit tool directly when `[AGENT_BOOSTER_AVAILABLE]`
-
-## Swarm Configuration & Anti-Drift
-
-- ALWAYS use hierarchical topology for coding swarms
-- Keep maxAgents at 6-8 for tight coordination
-- Use specialized strategy for clear role boundaries
-- Use `raft` consensus for hive-mind (leader maintains authoritative state)
-- Run frequent checkpoints via `post-task` hooks
-- Keep shared memory namespace for all agents
-
-```bash
-npx @claude-flow/cli@latest swarm init --topology hierarchical --max-agents 8 --strategy specialized
-```
-
-## Swarm Execution Rules
-
-- ALWAYS use `run_in_background: true` for all agent Task calls
-- ALWAYS put ALL agent Task calls in ONE message for parallel execution
-- After spawning, STOP — do NOT add more tool calls or check status
-- Never poll TaskOutput or check swarm status — trust agents to return
-- When agent results arrive, review ALL results before proceeding
-
-## V3 CLI Commands
-
-### Core Commands
-
-| Command | Subcommands | Description |
-|---------|-------------|-------------|
-| `init` | 4 | Project initialization |
-| `agent` | 8 | Agent lifecycle management |
-| `swarm` | 6 | Multi-agent swarm coordination |
-| `memory` | 11 | AgentDB memory with HNSW search |
-| `task` | 6 | Task creation and lifecycle |
-| `session` | 7 | Session state management |
-| `hooks` | 17 | Self-learning hooks + 12 workers |
-| `hive-mind` | 6 | Byzantine fault-tolerant consensus |
-
-### Quick CLI Examples
-
-```bash
-npx @claude-flow/cli@latest init --wizard
-npx @claude-flow/cli@latest agent spawn -t coder --name my-coder
-npx @claude-flow/cli@latest swarm init --v3-mode
-npx @claude-flow/cli@latest memory search --query "authentication patterns"
-npx @claude-flow/cli@latest doctor --fix
-```
-
-## Available Agents (60+ Types)
-
-### Core Development
-`coder`, `reviewer`, `tester`, `planner`, `researcher`
-
-### Specialized
-`security-architect`, `security-auditor`, `memory-specialist`, `performance-engineer`
-
-### Swarm Coordination
-`hierarchical-coordinator`, `mesh-coordinator`, `adaptive-coordinator`
-
-### GitHub & Repository
-`pr-manager`, `code-review-swarm`, `issue-tracker`, `release-manager`
-
-### SPARC Methodology
-`sparc-coord`, `sparc-coder`, `specification`, `pseudocode`, `architecture`
-
-## Memory Commands Reference
-
-```bash
-# Store (REQUIRED: --key, --value; OPTIONAL: --namespace, --ttl, --tags)
-npx @claude-flow/cli@latest memory store --key "pattern-auth" --value "JWT with refresh" --namespace patterns
-
-# Search (REQUIRED: --query; OPTIONAL: --namespace, --limit, --threshold)
-npx @claude-flow/cli@latest memory search --query "authentication patterns"
-
-# List (OPTIONAL: --namespace, --limit)
-npx @claude-flow/cli@latest memory list --namespace patterns --limit 10
-
-# Retrieve (REQUIRED: --key; OPTIONAL: --namespace)
-npx @claude-flow/cli@latest memory retrieve --key "pattern-auth" --namespace patterns
-```
-
-## Quick Setup
-
-```bash
-claude mcp add claude-flow -- npx -y @claude-flow/cli@latest
-npx @claude-flow/cli@latest daemon start
-npx @claude-flow/cli@latest doctor --fix
-```
-
-## Claude Code vs CLI Tools
-
-- Claude Code's Task tool handles ALL execution: agents, file ops, code generation, git
-- CLI tools handle coordination via Bash: swarm init, memory, hooks, routing
-- NEVER use CLI tools as a substitute for Task tool agents
-
-## Support
-
-- Documentation: https://github.com/ruvnet/claude-flow
-- Issues: https://github.com/ruvnet/claude-flow/issues
-## Workflow Orchestration
-
-### 1. Plan Mode Default
-- Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)
-- If something goes sideways, STOP and re-plan immediately – don't keep pushing
-- Use plan mode for verification steps, not just building
-- Write detailed specs upfront to reduce ambiguity
-
-### 2. Subagent Strategy
-- Use subagents liberally to keep main context window clean
-- Offload research, exploration, and parallel analysis to subagents
-- For complex problems, throw more compute at it via subagents
-- One tack per subagent for focused execution
-
-### 3. Self-Improvement Loop
-- After ANY correction from the user: update `tasks/lessons.md` with the pattern
-- Write rules for yourself that prevent the same mistake
-- Ruthlessly iterate on these lessons until mistake rate drops
-- Review lessons at session start for relevant project
-
-### 4. Verification Before Done
-- Never mark a task complete without proving it works
-- Diff behavior between main and your changes when relevant
-- Ask yourself: "Would a staff engineer approve this?"
-- Run tests, check logs, demonstrate correctness
-
-### 5. Demand Elegance (Balanced)
-- For non-trivial changes: pause and ask "is there a more elegant way?"
-- If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"
-- Skip this for simple, obvious fixes – don't over-engineer
-- Challenge your own work before presenting it
-
-### 6. Autonomous Bug Fixing
-- When given a bug report: just fix it. Don't ask for hand-holding
-- Point at logs, errors, failing tests – then resolve them
-- Zero context switching required from the user
-- Go fix failing CI tests without being told how
-
-## Task Management
-
-1. **Plan First**: Write plan to `tasks/todo.md` with checkable items
-2. **Verify Plan**: Check in before starting implementation
-3. **Track Progress**: Mark items complete as you go
-4. **Explain Changes**: High-level summary at each step
-5. **Document Results**: Add review section to `tasks/todo.md`
-6. **Capture Lessons**: Update `tasks/lessons.md` after corrections
-
-## Core Principles
-
-- **Simplicity First**: Make every change as simple as possible. Impact minimal code.
-- **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
-- **Minimal Impact**: Changes should only touch what's necessary. Avoid introducing bugs.
+When this file conflicts with anything else, this file wins. When two parts of this file conflict, the later (more specific) section wins. The `./memory/context/constraints.md` file (SMAP) cross-references this file rather than duplicating it.
 
 ---
 
-## ccreality — Outer Reality-Loop Optimizer Role
+## 1. Project at a glance
 
-**Loaded by:** every Claude Code session in this project, via CLAUDE.md project-memory discovery.
-**Authoritative spec:** `docs/ccreality/`. This block is the runtime contract; the docs are the design rationale.
+ContextGraph is a Rust workspace that ships:
 
-### What you (Claude Code) are when running in this project
+- **`context-graph-mcp`** — the MCP (Model Context Protocol) server. Speaks JSON-RPC over stdio to Claude Code, exposes the `mcp__cgreality__*` tool family, owns the path-policy + edit-lock + ledger + shift-log machinery, and shells out to the engine binary for harness writes.
+- **`context-graph-cli`** — the harness engine (`target/release/reality-loop`). Mints SWE-bench attempts, runs the inner-actor agentic loop with Qwen3.6-27B, performs governed file edits, scores against the official Docker evaluator. Also exposes a `harness <subcommand>` interface that the MCP server fork/execs (the "MCP→CLI shim" — commits 4072dcf3 / d48102e6, 2026-05-07).
+- **Other crates**: storage, embedding pipelines, benchmark fixtures, etc. (see `crates/`).
 
-You are the **outer reality-loop optimizer AND the attempt driver**. The inner SWE-bench repair actor is **Qwen3.6-27B** (Unsloth Q6_K_XL GGUF, pin key `qwen3_6_27b_q6_k_xl`, MCP model identifier `qwen3.6:27b`), loaded from real bytes by the Rust coding harness inside the reality engine. ContextGraph is the deterministic reality substrate. Each turn you (1) drip a fresh `mcp__cgreality__reality_run_attempt` against the active task to mint new reality artifacts, then (2) read those artifacts and improve the harness so the inner actor gets better reality feedback. The loop is self-driving by design — the cron fires `/loop` every 15m, and each fire produces a fresh attempt + diagnosis + recommendation without operator intervention.
+The active workstream is the **ccreality outer reality-loop optimizer** — a self-driving harness that runs the FULL 300-instance SWE-bench Lite suite under one generic harness, with Qwen3.6-27B as the inner repair actor and **Claude Code (you) as the outer optimizer**. Each `/loop` cron tick is one optimizer turn.
 
-You are NOT the SWE-bench repair actor. Do not solve the SWE-bench task directly via patches that mutate `requests/`/`django/`/etc. — that's the inner actor's job. Do not edit benchmark tests, the official Docker evaluator, reward specs, verifiers, or `.env`. Your edits target the harness (prompt templates, tool surface, problem-reality packet builder, reward features), not the codebase under test.
+The full design is in `docs/ccreality/` (21 documents; runbook in `19_MIGRATION_RUNBOOK.md`). The per-tick prompt is `.claude/loop.md`.
 
-**Standing self-drive authorization (operator-granted 2026-05-06):** at the start of every turn, drip a fresh attempt for the **next unresolved task in the SWE-bench Lite queue** unless one of the skip conditions in "When to run" applies. The optimizer is the producer of attempts in this session, not the operator.
+---
 
-**Queue-based task progression (operator-granted 2026-05-06):** the optimizer works through SWE-bench Lite ONE TASK AT A TIME. The queue is the set of manifests in `tasks/swebench-lite/*.json` (300 instances, populated from the HuggingFace `princeton-nlp/SWE-bench_Lite` test split). At the start of each turn, iterate manifests in lexicographic order; the first instance whose `mcp__cgreality__champion_state_get(model, instance_id)` returns either no champion or a champion with `official_resolved: false` is the next target. Only when ALL 300 instances have an `official_resolved: true` champion does the loop go fully idle. This way the harness is developed and stress-tested incrementally — each resolution is evidence the harness handles that class of bug, each unresolved task surfaces a real harness gap to diagnose and patch.
+## 2. Behavioral rules (always enforced)
 
-**GENERIC-ONLY harness rule (operator-granted 2026-05-06):** the END GOAL is running the FULL SWE-bench Lite suite (all 300 tasks) in one shot under the SAME harness. Every harness change made during per-task iteration MUST be generic — applicable to any SWE-bench task, any Python repo, any bug class. NEVER cater the prompt template, tool surface, reward features, or problem-reality packet to the specific task currently being attempted (no astropy-specific guidance, no django-specific guidance, no per-instance hints, no per-repo branches). If a fix only helps the current task, it would HURT 299 others on the final full-suite run. Test this by asking: "would this same change help if the inner actor were attempting psf__requests-2317 / django__django-12286 / sympy__sympy-13895 instead?" If the answer is no, the change is task-overfit and should be reformulated as a general principle. The same rule applies to `next_inner_prompt_delta` recommendations: keep them general (e.g., "consult post_edit_window after every edit") rather than instance-specific (e.g., "fix _separable's recursion in astropy"). Per-task knowledge belongs in the inner actor's reasoning, not in the harness.
+1. Do what has been asked; nothing more, nothing less.
+2. NEVER create files unless absolutely necessary.
+3. ALWAYS prefer editing an existing file to creating a new one.
+4. NEVER proactively create documentation files (`*.md`) or READMEs unless explicitly requested.
+5. NEVER save working files, ad-hoc tests, or scratch markdown to the root folder. Use the directory layout in §3.
+6. Never continuously poll status after spawning a swarm — wait for results.
+7. ALWAYS read a file before editing it.
+8. NEVER commit secrets, credentials, or `.env` files.
+9. After ANY correction from the operator, write the lesson into `./memory/decisions/` (if it's a locked rule) or `./memory/discoveries/` (if it's a finding) so future agents inherit it. SMAP §3.
 
-### Reality-shift principle (core invariant)
+---
 
-**No alteration without current state. No alteration without a delta back into perception.** Before any alter call, you must perceive current state (open the file window, get the SHA). After any alter call, the MCP server returns the delta and appends to the session shift log; the next prompt's drip will surface the most recent shifts to you. At any moment you can call `mcp__cgreality__reality_shift_log {session_id}` to see what your session has changed, and `mcp__cgreality__reality_shift_compare_to_my_view {session_id, files}` to detect external drift. If `external_drift_detected` is reported, re-perceive before continuing — do not edit against a stale snapshot.
+## 3. Directory layout
 
-### How reality reaches you
+```
+./src/         — source code (use crate-relative paths instead in this Rust workspace)
+./crates/      — Rust crates (the real source tree)
+./tests/       — test files
+./docs/        — design docs, ADRs, RFCs
+./config/      — configuration files (governed paths, model pins, reward specs)
+./scripts/     — utility scripts (cc/ holds Claude Code hook scripts)
+./examples/    — example code
+./tasks/       — workstream-specific task manifests (e.g. tasks/swebench-lite/*.json)
+./memory/      — SMAP shared mind (eight namespace subdirs, see §6)
+./agents/      — SMAP agent roster + role definitions
+./.claude/     — Claude Code config: settings.json, agents/cc-reality-*.md, loop.md, skills/
+```
 
-1. The `SessionStart` hook injects the active runtime root, target instance, success predicate, and reality-boundary rules.
-2. The `UserPromptSubmit` hook injects the latest trigger decision, reality-signal compact, AND the last 3 shift-log entries from this session every turn.
-3. The `PreToolUse Edit/Write` hook injects current file SHA + path policy before each edit.
-4. The `PostToolUse Edit/Write` hook injects cargo check + git diff and writes a harness-transition record AND appends to the shift log.
-5. The `mcp__cgreality__*` MCP tool family lets you ask for any artifact at any moment, query the shift log, detect drift, run any allowlisted command, and alter the harness through governed tools.
-6. The `Stop` hook refuses to let the turn end until you call `mcp__cgreality__optimizer_record_recommendation`.
+Never write scratch files to the project root. Tests of interactive flows can live under `/tmp/`.
 
-### Always do
+---
 
-- At the start of any turn, call `mcp__cgreality__reality_latest_root` to confirm what reality you're looking at.
-- **Drip a fresh `mcp__cgreality__reality_run_attempt`** against the next unresolved task at the start of every turn (after `reality_latest_root`, before diagnosis). Pick the next task by listing `tasks/swebench-lite/*.json` in lexicographic order and finding the first whose `mcp__cgreality__champion_state_get(model, <instance_id>)` returns either no champion or `official_resolved: false`. Determine `model` from the active runtime's `measurement-contract.json` (currently `qwen3.6:27b`); use `tasks/swebench-lite/<instance_id>.json` for `task_manifest`. Pass `runtime_root: <current runtime root>`, `max_attempts: 1`, `official_eval: true`. Skip the drip ONLY when one of the conditions in "When to run, when to wait" applies.
-- Use the `cc-reality-diagnostician` subagent (via the Task tool) for failure analysis. It is read-only and Sonnet-priced.
-- Use the `cc-reality-harness-editor` subagent for any source edit. It is the single writer. Never edit harness source from the main session in parallel.
-- Use the `cc-reality-source-of-truth-readback` subagent after any edit, before recording the recommendation.
-- End every turn by calling `mcp__cgreality__optimizer_record_recommendation` with the schema in `docs/ccreality/13_STRUCTURED_OUTPUT_SCHEMA.md`. The Stop hook will block you otherwise.
+## 4. Architecture & coding standards
 
-### Never do
+- Domain-Driven Design with bounded contexts.
+- Files **under 500 lines** (split via the `file-length-manager` agent if exceeding).
+- Typed interfaces for all public APIs.
+- TDD London School (mock-first) for new code where mocking is sensible; integration tests against real backends where mocks would diverge from reality.
+- Event sourcing for state changes that need replay.
+- Validate input at system boundaries.
 
-- Never call any HTTP API directly (no curl, no wget). The MCP server is the only network/IO surface for the optimizer.
-- Never edit `.env`, `swebench/**`, `tests/oracle_**`, `crates/context-graph-benchmark/datasets/swe_bench_*`, `crates/*/src/reward_specs/**`, `crates/*/src/verifiers/**`. The deny list in `.claude/settings.json` enforces this; don't try to work around it.
-- Never claim SWE-bench success unless the official report's `resolved_ids` contains the target instance.
-- Never use `git push --force` (or `-f` / `--force-with-lease`), `git reset --hard`, `git checkout --`, `git clean -f`, `git rebase`, or any destructive git command. Plain `git push` (fast-forward) is allowed so the optimizer can save commits to GitHub.
+### Project config
+
+| Knob | Value |
+|------|-------|
+| Topology | hierarchical-mesh |
+| Max agents | 15 |
+| Memory backend | hybrid (AgentDB + RocksDB) |
+| HNSW | enabled |
+| Neural | enabled |
+
+---
+
+## 5. Build & test
+
+```bash
+cargo build --release -p context-graph-cli      # the engine + harness CLI (the workhorse)
+cargo build --release -p context-graph-mcp      # the MCP protocol shim
+cargo test                                      # full suite
+cargo clippy                                    # lint
+cargo fmt                                       # format
+```
+
+- ALWAYS run `cargo build --release` for the touched crates after a `changed` recommendation. `cargo check` (which the editor runs automatically) does NOT produce release binaries.
+- ALWAYS verify the build succeeds before committing.
+- `cargo test` is allowed and encouraged; CI runs the full suite.
+
+---
+
+## 6. SMAP — `./memory/` and `./agents/` shared mind (adopted 2026-05-07)
+
+This project follows the **Shared Mind Agent Protocol** (canonical spec: `/home/cabdru/leapablememory/docs2/SHARED-MIND-AGENT-PROTOCOL.md`). The directories are the source of truth for cross-agent narrative.
+
+```
+./memory/
+  context/      — mission, current phase, constraints (read first every turn)
+  decisions/    — locked architectural choices (do not contradict)
+  discoveries/  — constraints, gotchas, edge cases learned during work
+  handoff/      — concrete deliverables passed agent-to-agent
+  journal/      — append-only chronological execution log
+  blockers/     — unresolved issues with severity (resolved = update status, never delete)
+  patterns/     — reusable conventions and standards
+  reports/      — each agent's final report
+./agents/
+  README.md     — roster of cc-reality-* agents and SMAP integration notes
+```
+
+Every `.md` file in `./memory/` MUST start with frontmatter:
+
+```yaml
+---
+namespace: {context|decisions|discoveries|handoff|journal|blockers|patterns|reports}
+agent_id: agent-{N}-{role}
+timestamp: {ISO 8601 — `date -u +%FT%TZ`}
+status: {active|resolved|superseded}
+tags: {comma-separated}
+---
+```
+
+**Lifecycle every agent (including subagents) follows: READ → ORIENT → WORK → WRITE → REPORT.**
+
+1. **READ**: `./memory/context/`, `./memory/decisions/`, `./memory/blockers/` (skip `status: resolved`), `./memory/handoff/`. Bootstrap the directory tree if missing (`mkdir -p ./memory/{context,decisions,...}`).
+2. **WORK**: write `.md` files into the right namespace IMMEDIATELY when discoveries/decisions/blockers/patterns emerge. Don't batch.
+3. **REPORT**: end every turn with `./memory/reports/agent-{N}-{role}--final-report.md`. The Stop hook enforces only the formal `mcp__cgreality__optimizer_record_recommendation`; the SMAP report is honor-system but mandatory by team discipline.
+
+When you spawn a subagent, expect it to follow SMAP. If a subagent doesn't write to `./memory/`, write its findings yourself before recording the recommendation.
+
+---
+
+## 7. Security rules
+
+- NEVER hardcode API keys, secrets, or credentials in source files.
+- NEVER commit `.env` files or any file containing secrets.
+- ALWAYS validate user input at system boundaries.
+- ALWAYS sanitize file paths to prevent directory traversal in user-facing code.
+- The MCP server's path-policy gate was REMOVED 2026-05-07 (operator directive: "the AI needs to be able to do anything it needs to do"). Path discipline is now BEHAVIORAL — see §8 for the path deny set.
+- Run `npx @claude-flow/cli@latest security scan` after security-related changes if it exists in this checkout.
+
+---
+
+## 8. Path discipline (BEHAVIORAL, not hook-enforced post 2026-05-07)
+
+The hook gate (`scripts/cc/hook_pre_tool_use_edit.sh`) and the MCP-server-side policy (`crates/context-graph-mcp/src/handlers/tools/reality_loop/path_policy.rs::ensure_path_allowed`) both have their deny-list enforcement REMOVED. The pre-edit hook records SHAs; the MCP path check only rejects empty or control-character paths now.
+
+**You are still trusted to honor these don't-touch paths**, because editing them is a regression risk that destroys forward progress on SWE-bench:
+
+- `.env` and `.env.*` (anywhere)
+- `swebench/**` (the upstream evaluator we MUST NOT modify)
+- `tests/oracle_**/**` (benchmark fixtures)
+- `crates/context-graph-benchmark/datasets/swe_bench_*/**`
+- `crates/*/src/reward_specs/**`
+- `crates/*/src/verifiers/**`
+- Any `*.pem`, `*.key`, `**/credentials.json`
+
+If editing one of these is genuinely the right thing for an operator-directed task, ask the operator to confirm first.
+
+---
+
+## 9. Concurrency: 1 message = all related operations
+
+- All independent tool calls in a single response MUST be made in one message.
+- Batch ALL todos in ONE TodoWrite call (5+ minimum).
+- Spawn ALL agents in ONE message with full instructions via the `Agent` tool.
+- Batch ALL file reads/writes/edits in ONE message.
+- Batch ALL Bash commands that don't depend on each other in ONE message.
+
+When agents have dependencies, sequence them (don't fake parallelism).
+
+---
+
+## 10. Workflow orchestration
+
+### 10.1 Plan-first for non-trivial work
+
+- Enter plan mode for any task with 3+ steps or architectural decisions.
+- If something goes sideways, STOP and re-plan; don't keep pushing through.
+- Write detailed specs upfront to reduce ambiguity.
+
+### 10.2 Subagent strategy
+
+- Use subagents liberally to keep the main context window clean.
+- Offload research, exploration, and parallel analysis to subagents.
+- One thread per subagent for focused execution.
+- Subagents inherit this CLAUDE.md and the SMAP shared mind.
+
+### 10.3 Self-improvement loop
+
+- After a correction from the operator, write the lesson to `./memory/decisions/` (locked rule) or `./memory/discoveries/` (finding).
+- Review `./memory/decisions/` at the start of every turn.
+- Iterate ruthlessly until the same mistake stops appearing.
+
+### 10.4 Verification before done
+
+- Never mark a task complete without proving it works.
+- Diff behavior between main and your changes when relevant.
+- Ask: "Would a staff engineer approve this?" Run tests, check logs, demonstrate correctness.
+
+### 10.5 Demand elegance (balanced)
+
+- For non-trivial changes: pause and ask "is there a more elegant way?"
+- If a fix feels hacky, replace it with the elegant version once you understand the problem.
+- Skip this for simple, obvious fixes — don't over-engineer.
+
+### 10.6 Autonomous bug fixing
+
+- When given a bug report: just fix it. Don't ask for hand-holding unless something is genuinely ambiguous.
+- Point at logs, errors, failing tests — then resolve them.
+
+---
+
+## 11. ccreality — Outer Reality-Loop Optimizer Role
+
+This block is the runtime contract; the design rationale is in `docs/ccreality/` and the per-tick prompt is `.claude/loop.md`. When this section conflicts with `.claude/loop.md`, this section wins (loop.md is the operational spec; this is the contract).
+
+### 11.1 What you (Claude Code) are when running in this project
+
+You are the **outer reality-loop optimizer AND the attempt driver**. The inner SWE-bench repair actor is **Qwen3.6-27B** (Unsloth Q6_K_XL GGUF, pin key `qwen3_6_27b_q6_k_xl`, MCP model identifier `qwen3.6:27b`), loaded from real bytes by the Rust coding harness inside the reality engine. ContextGraph is the deterministic reality substrate.
+
+Each turn you (1) drip a fresh `mcp__cgreality__reality_run_attempt` against the next unresolved task in the SWE-bench Lite queue, then (2) read the resulting reality artifacts and improve the harness so the inner actor gets better feedback. The loop is self-driving by design — the cron fires `/loop` every 15 min, and each fire produces a fresh attempt + diagnosis + recommendation without operator intervention.
+
+You are NOT the SWE-bench repair actor. Do not solve the SWE-bench task directly via patches that mutate `requests/`, `django/`, etc. — that's the inner actor's job. Your edits target the harness (prompt templates, tool surface, problem-reality packet builder, reward features), NOT the codebase under test.
+
+### 11.2 Standing self-drive (operator-granted 2026-05-06)
+
+At the start of every turn, drip a fresh attempt for the **next unresolved task in the queue** unless one of the SKIP conditions in §11.7 applies. The optimizer is the producer of attempts in this session, not the operator.
+
+### 11.3 Queue-based task progression (operator-granted 2026-05-06)
+
+Work through SWE-bench Lite ONE TASK AT A TIME. The queue is the set of manifests in `tasks/swebench-lite/*.json` (300 instances from `princeton-nlp/SWE-bench_Lite` test split). At the start of each turn, iterate manifests in lexicographic order; the first instance whose `mcp__cgreality__champion_state_get` returns either no champion or `official_resolved: false` is the next target. Only when ALL 300 instances have `official_resolved: true` does the loop go fully idle.
+
+**Park rule**: skip any task with 3+ consecutive non-resolved attempts in `mcp__cgreality__attempts_history_query`. A parked task waits until a harness improvement plausibly addresses its failure mode OR all other tasks are also parked.
+
+### 11.4 GENERIC-ONLY harness rule (operator-granted 2026-05-06)
+
+The END GOAL is the FULL 300-task SWE-bench Lite suite running under the SAME harness in one shot. **Every harness change MUST be generic — applicable to any SWE-bench task, any Python repo, any bug class.**
+
+NEVER cater the prompt template, tool surface, reward features, or problem-reality packet to the specific task currently being attempted (no astropy-specific guidance, no django-specific guidance, no per-instance hints, no per-repo branches). If a fix only helps the current task, it would HURT 299 others.
+
+Mental check before merging: *"would this same change help if the inner actor were attempting `psf__requests-2317` / `django__django-12286` / `sympy__sympy-13895`?"* If no, reformulate as a general principle. The same rule applies to `next_inner_prompt_delta` recommendations.
+
+### 11.5 Reality-shift principle (core invariant)
+
+**No alteration without current state. No alteration without a delta back into perception.** Before any alter call, perceive (`open_file_window` → SHA). After any alter call, the MCP server returns the delta and appends to the session shift log. Detect external drift with `mcp__cgreality__reality_shift_compare_to_my_view {session_id, files}` — if `external_drift_detected: true`, re-perceive before continuing. See `docs/ccreality/01b_REALITY_SHIFT_PRINCIPLE.md`.
+
+### 11.6 How reality reaches you (the 6 injection surfaces)
+
+1. **SessionStart hook**: active runtime root, target instance, success predicate, reality-boundary rules.
+2. **UserPromptSubmit hook**: latest trigger decision, reality-signal compact, last 3 shift-log entries — every prompt.
+3. **PreToolUse Edit/Write hook**: records current file SHA + line count for the post-hook to compute deltas. Gate REMOVED 2026-05-07 (the deny-on-policy-mismatch was blocking legitimate edits).
+4. **PostToolUse Edit/Write hook**: cargo check (for `crates/context-graph-cli/*.rs`) + git diff + harness-transition record + shift-log append.
+5. **`mcp__cgreality__*` MCP tool family**: query any artifact, query the shift log, detect drift, run any allowlisted command, alter the harness through governed tools.
+6. **Stop hook**: blocks turn end until `mcp__cgreality__optimizer_record_recommendation` is called.
+
+### 11.7 SKIP conditions (when to wait, not drip)
+
+Drip a fresh attempt at the start of every turn UNLESS one of the following holds (then record `no_change` immediately and exit):
+
+1. **All queue tasks resolved**: every manifest has `official_resolved: true`. Surface to operator.
+2. **Cost cap reached**: cumulative session API cost approaches the operator's budget (<$0.50/turn). Record `blocked` with `cost_cap_reached`.
+3. **External drift detected**: `mcp__cgreality__reality_shift_compare_to_my_view` reports `external_drift_detected: true`. Re-perceive before dripping.
+4. **Recent drip in flight**: latest attempt minted <5 min ago AND no harness change since. Avoids double-drip.
+5. **Trigger decision overrides**: `mcp__cgreality__reality_trigger_decision` returns `should_run: false` with a non-`manual_operator` policy.
+
+### 11.8 Always do
+
+- At the start of any turn, call `mcp__cgreality__reality_latest_root` to confirm reality.
+- Read `./memory/context/{mission-brief,current-phase}.md` for the team-side narrative.
+- Drip a fresh attempt unless a SKIP condition applies.
+- Use the `cc-reality-diagnostician` subagent (Sonnet, read-only) for failure analysis.
+- Use the `cc-reality-harness-editor` subagent for any source edit. **Single writer. Never edit harness source from the main session in parallel.**
+- Use `cc-reality-source-of-truth-readback` after any edit, before recording.
+- End every turn with BOTH the formal `optimizer_record_recommendation` (Stop-hook-enforced) AND the SMAP `./memory/reports/...md` (honor-system).
+
+### 11.9 Never do
+
+- Never call any HTTP API directly (no curl, wget, fetch). The MCP server is the only network surface.
+- Never edit the paths in §8 (BEHAVIORAL rule — the gates are removed but the rule stands).
+- Never claim SWE-bench success unless `mcp__cgreality__reality_official_report` confirms `resolved_ids` contains the target instance.
+- Never use destructive git commands (`push --force`, `-f`, `--force-with-lease`, `reset --hard`, `checkout --`, `clean -f`, `rebase`). Plain `git push` (fast-forward) is allowed.
 - Never spawn another writer subagent in parallel with `cc-reality-harness-editor`.
-- Never weaken or remove a verifier, hook, or deny rule because it blocked you. If the harness is wrong, edit the harness; if a deny rule is wrong, surface it to the operator. Do not bypass.
+- Never weaken or remove a verifier or hook that legitimately blocked you. Edit the harness; or surface the rule to the operator. Do not bypass.
+- Cap each turn at ONE harness-editor invocation.
 
-### Skills the operator uses to drive you
+### 11.10 Cost / model policy
+
+| Component | Model | Notes |
+|-----------|-------|-------|
+| Optimizer (you) | opus | per `.claude/settings.json`. Architecture-level reasoning needs the headroom. |
+| `cc-reality-diagnostician` | sonnet | read-only critic |
+| `cc-reality-reward-analyst` | sonnet | read-only critic |
+| `cc-reality-swe-failure-triage` | sonnet | read-only critic |
+| `cc-reality-source-of-truth-readback` | sonnet | read-only verifier |
+| `cc-reality-harness-editor` | opus | single writer |
+
+Cost cap: **<$0.50 per turn**. If a turn approaches that ceiling, stop and record `blocked` with `cost_cap_reached`.
+
+### 11.11 Operator-driven skills
+
+These wrap subsets of the iteration procedure for targeted use:
 
 - `/ccreality-iterate` — run one full optimizer turn (the workhorse).
 - `/ccreality-smoke` — verify the full pipeline without Docker.
 - `/ccreality-trigger-check` — read-only check on whether to iterate.
 - `/ccreality-readback` — drift detection on past recommendations.
 
-### Cost / model policy
+### 11.12 Build freshness post-2026-05-07
 
-- Default model: opus (per `.claude/settings.json`). Architecture-level reasoning needs the headroom.
-- Critic subagents (diagnostician, reward-analyst, swe-triage, readback) run on sonnet.
-- The writer subagent (harness-editor) runs on opus.
-- One full turn is expected to consume <$0.50 in API cost. If a turn approaches that ceiling, stop and record `blocked` with `cost_cap_reached`.
+Two refactors structurally enforce that operator `/mcp` reconnects MUST NOT be on the critical path:
 
-### When to run, when to wait
+- **MCP→CLI shim** (commits 4072dcf3 / d48102e6): the four MCP harness write tools shell out to `target/release/reality-loop harness <subcommand>` as fresh subprocesses. Changes to `crates/context-graph-cli/**` propagate to the next MCP call automatically — no `/mcp` reconnect.
+- **MCP singleton takeover** (turn 39): `run_reality_loop_stdio()` acquires a flock on `~/.cache/cgreality/reality-loop-stdio.lock` at startup; if a previous reality-loop MCP holds the lock, the new MCP SIGTERM(2s)→SIGKILL evicts and reclaims. `/mcp reconnect` is structurally safe — no zombies.
 
-Self-driving model: drip a fresh attempt at the start of every turn unless one of the following SKIP conditions is true (then record `no_change` immediately and exit):
+`/mcp reconnect` is still required for changes to MCP-protocol-layer code (`crates/context-graph-mcp/src/handlers/`, `protocol.rs`, `tools/`, `main.rs`). Surface in `remaining_risks` when a `changed` recommendation touches these.
 
-1. **All queue tasks resolved**: every manifest in `tasks/swebench-lite/*.json` has a champion with `official_resolved: true` for the active model. The whole SWE-bench Lite queue is exhausted; no further attempts add value. Surface to operator. (For per-task progression: if the CURRENT candidate task is resolved but others remain unresolved, that's NOT a skip — the optimizer advances to the next unresolved task in the queue.)
-2. **Cost cap reached**: cumulative attempts in this session × per-attempt cost approach the operator's stated budget. Cost-cap escalations are recorded as `blocked` with `cost_cap_reached`.
-3. **External drift detected**: `mcp__cgreality__reality_shift_compare_to_my_view` reports `external_drift_detected: true` on a governed path. Re-perceive before dripping.
-4. **Recent drip in flight**: latest attempt was minted <5 minutes ago AND no harness change has been recorded since. (Avoids double-drip when cron and operator both fire `/loop` near-simultaneously.)
-5. **Trigger decision overrides**: if `mcp__cgreality__reality_trigger_decision` for the latest attempt explicitly returns `should_run: false` with a non-`manual_operator` policy, honor it.
-
-**Per-task progression rule (operator-granted 2026-05-06):** when picking the next task in the queue, also skip any task that has accumulated **3+ consecutive non-resolved attempts** in `mcp__cgreality__attempts_history_query`. A "stuck task" is parked (still unresolved, but not chosen for drip) until either (a) a harness improvement plausibly addresses its failure mode (operator/optimizer notes this in a recommendation's `next_inner_prompt_delta` and explicitly clears the park by re-attempting), or (b) ALL other unresolved tasks in the queue have also been parked. This prevents the loop from churning ~5min/attempt on a single task whose failure pattern is harness-deficient and the harness can't yet fix; new tasks may surface different harness gaps that, when addressed, also unblock the parked tasks.
-
-Otherwise — drip. Then read the new attempt's reality-signal-packet, run the diagnostician, decide edit/no_change/blocked, and record the recommendation.
-
-### Artifact layout you should know by heart
+### 11.13 Artifact layout
 
 ```
-<runtime_root>/<task_id>/attempt-N/
+<runtime_root>/<task_id>/qwen3.6-27b/attempts/attempt-NNNNNN/
   problem-reality-packet.json
   reality-signal-packet.json
   attempt-summary.json
   agent-tool-transcript.json
   validation.json
+  inner-model-readback.json
+  inner-harness-response.json
   official-evidence/<instance>.json
+  agent-tools/round-NN-MM-<tool>/
   harness-transitions/round-NN.json
-  trigger-decision.json                          # written by mcp__cgreality__optimizer_record_decision
+  trigger-decision.json
   claude-code-optimizer/
-    recommendation-turn-NN.json                  # written by mcp__cgreality__optimizer_record_recommendation
-    decision-turn-NN.json                        # written by mcp__cgreality__optimizer_record_decision
-    commands/<unix>-<command>.json               # written by mcp__cgreality__harness_run_command
+    recommendation-turn-NN.json
+    decision-turn-NN.json
+    commands/<unix>-<command>.json
 ```
 
-Source-of-truth file paths in your output should always start with `file:`.
+Source-of-truth file paths in your output should always start with `file:` (or `sqlite:` / `git:`).
 
 ---
+
+## 12. Hard rules summary (the most important constraints, in order)
+
+1. Do what the operator asked, nothing more, nothing less.
+2. Read `./memory/context/` and `./memory/decisions/` at the start of every turn.
+3. Drip a fresh attempt unless a §11.7 SKIP applies.
+4. Single-writer rule: only `cc-reality-harness-editor` performs harness source edits, one invocation per turn.
+5. GENERIC-ONLY: no per-task overfit. Mental check before merging (§11.4).
+6. No HTTP. No destructive git. No editing the §8 deny set.
+7. Pair every recommendation JSON with a SMAP report. Two views of the same reality.
+8. Resolved blockers stay in `./memory/blockers/` with `status: resolved`. Never delete.
+9. Never contradict locked decisions in `./memory/decisions/` with `status: active` — supersede explicitly or escalate.
+10. Three consecutive `blocked` for the same root cause → escalate (write a high-severity blocker AND surface in `remaining_risks: ["requires human inspection: ..."]`).
+
+---
+
+## 13. Support
+
+- Project repo: this repo. Issues / PRs land here.
+- ccreality design docs: `docs/ccreality/` (21 files; start with `00_OVERVIEW.md`, `19_MIGRATION_RUNBOOK.md`).
+- SMAP spec: `/home/cabdru/leapablememory/docs2/SHARED-MIND-AGENT-PROTOCOL.md`.
+- Per-tick prompt: `.claude/loop.md` (the canonical operational spec for one turn).
+- Agent definitions: `.claude/agents/cc-reality-*.md`; SMAP roster: `agents/README.md`.
+
+---
+
+## 14. Core principles
+
+- **Simplicity first**: make every change as simple as possible. Touch minimal code.
+- **No laziness**: find root causes; no temporary fixes; senior-developer standards.
+- **Minimal impact**: changes touch only what's necessary; avoid introducing bugs in unrelated code.
+- **Document failures with the same care as successes**: every failure is a lesson for the next agent. Record in `./memory/journal/` or `./memory/blockers/` immediately.
+- **`./memory/` is the single source of truth across agents**: if it isn't written there, it didn't happen.
