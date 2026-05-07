@@ -8,7 +8,7 @@
 
 `docs2/contextgraphspecs/21_dynamicjepa_subsystem.md` describes a complete latent-state machinery: domain packs, instrument readings, panels, predictions, surprise events, planning traces, guard decisions, verification runs. It is plumbed but not yet *consumed* by the reality loop.
 
-Reality loop today scores attempts via `gemmafrontend/reward_spec.verified_outcome.json`'s six components (correctness, verification_confidence, risk_penalty, incident_penalty, policy_missing_penalty, training_value). DynamicJEPA-derived signals are absent. The Phase 17 shadow framework is the right place to introduce them.
+Reality loop today scores attempts via `config/reward_spec.verified_outcome.json`'s six components (correctness, verification_confidence, risk_penalty, incident_penalty, policy_missing_penalty, training_value). DynamicJEPA-derived signals are absent. The Phase 17 shadow framework is the right place to introduce them.
 
 ## What DynamicJEPA can offer the reality loop
 

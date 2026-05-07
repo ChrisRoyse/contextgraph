@@ -19,7 +19,7 @@ Source of truth: `docs/ccreality/00_INDEX.md` "Status of this work" section.
 - `.claude/{settings.json, loop.md, agents/cc-reality-*.md, skills/ccreality-*/}` and `.mcp.json` are committed and validated.
 - Six `scripts/cc/hook_*.sh` hooks deliver SessionStart, UserPromptSubmit, PreToolUse Edit, PostToolUse Edit, Stop, PreCompact reality drips.
 - Phase 12 ran a real SWE-bench Lite production attempt against `psf__requests-2317`. Outcome: failed closed at `RUST_REALITY_FINAL_EDIT_TOOL_FAILED` — the loop correctly refused to claim success because the inner actor did not submit a valid candidate patch.
-- One real `/ccreality-iterate` recommendation artifact exists at `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-e4b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json`.
+- One real `/ccreality-iterate` recommendation artifact exists at `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-27b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json`.
 
 ## What is *not* yet true (the forward gap)
 

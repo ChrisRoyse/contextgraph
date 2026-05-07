@@ -12,9 +12,9 @@
 - Hugging Face source row: `princeton-nlp/SWE-bench_Lite:test:psf__requests-2317`
 - Initial run: `/tmp/ccreality-prod-1/rust_reality_1778019193433351252_e525987d`
 - Hardened run: `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d`
-- Hardened attempt summary: `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-e4b/attempts/attempt-000001/attempt-summary.json`
-- BlackBox ledger: `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-e4b/blackbox.sqlite`
-- Real `/ccreality-iterate` recommendation: `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-e4b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json`
+- Hardened attempt summary: `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-27b/attempts/attempt-000001/attempt-summary.json`
+- BlackBox ledger: `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-27b/blackbox.sqlite`
+- Real `/ccreality-iterate` recommendation: `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-27b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json`
 
 ## Production Outcome
 

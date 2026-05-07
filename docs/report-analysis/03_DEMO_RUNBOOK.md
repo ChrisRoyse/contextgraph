@@ -76,10 +76,10 @@ cat /tmp/cgreality-fullstack-fsv-1778022699/cases/F3_large_artifact_pointer/sour
 ```bash
 cd /home/cabdru/contextgraph
 jq '{status:.attempt.status,error_code:.attempt.error_code,message:.attempt.message,ledger_counts}' \
-  /tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/gemma4-e4b/attempts/attempt-000001/attempt-summary.json
+  /tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-27b/attempts/attempt-000001/attempt-summary.json
 
 jq '{turn_number,status,reason,source_of_truth_readbacks}' \
-  /tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/gemma4-e4b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json
+  /tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-27b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json
 ```
 
 Expected: the attempt failed closed because the inner model produced invalid edits; the recommendation explains why no harness edit was warranted.

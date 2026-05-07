@@ -25,10 +25,10 @@
    If Docker isn't running, start it. SWE-bench Lite eval pulls images of significant size (~1 GB).
 
 5. **the inner actor GGUF model file present for the Rust coding harness.** The default
-   path baked into the reality-loop binary is `models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf`
+   path baked into the reality-loop binary is `models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf`
    (BF16, ~15 GB on disk, sha256 pin in `config/ccreality_model_pins.json`). Verify:
    ```bash
-   test -f models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf \
+   test -f models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf \
      && jq -r '.models.qwen3_6_27b_q6_k_xl.expected_sha256' \
         config/ccreality_model_pins.json
    ```

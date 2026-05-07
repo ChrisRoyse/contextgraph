@@ -81,7 +81,7 @@ Phase 12 production source remains:
 ```text
 runtime_root=/tmp/ccreality-prod-1
 hardened_run=/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d
-production_recommendation=/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/gemma4-e4b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json
+production_recommendation=/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-27b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json
 phase12_fsv=/tmp/ccreality-phase12-fsv-20260505T225350Z.log
 ```
 

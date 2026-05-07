@@ -8,6 +8,8 @@
     "crates/context-graph-cli/src/governed_edit.rs",
     "crates/context-graph-cli/src/lib.rs",
     "crates/context-graph-cli/src/**",
+    "crates/context-graph-cli/Cargo.toml",
+    "crates/context-graph-mcp/Cargo.toml",
     "crates/context-graph-mcp/src/handlers/tools/reality_loop/**",
     "crates/context-graph-mcp/src/handlers/tools/reality_loop/*.rs",
     "crates/context-graph-mcp/src/handlers/tools/dispatch.rs",
@@ -31,14 +33,11 @@
     "docs/fullloop/**",
     "docs2/realitywhitepaper/**",
     "docs2/contextgraphspecs/**",
-    "gemmafrontend/model_benchmark.py",
-    "gemmafrontend/model_prompt_matrix.py",
-    "gemmafrontend/README.md",
     "docs2/realitywhitepaper/build/**",
     "config/ccreality_governed_paths.json",
     "config/ccreality_recommendation_schema.json",
     "config/ccreality_model_pins.json",
-    "gemmafrontend/swe_smoke_benchmark_suite.json"
+    "config/reward_spec.verified_outcome.json"
   ],
   "deny": [
     ".env",

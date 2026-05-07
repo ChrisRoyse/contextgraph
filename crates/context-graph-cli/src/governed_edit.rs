@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Write;
+use std::os::unix::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -880,7 +881,11 @@ fn run_cmd(command: &[String], cwd: &Path, timeout_secs: u64) -> Result<ProcessR
         .args(&command[1..])
         .current_dir(cwd)
         .stdout(Stdio::from(stdout_file))
-        .stderr(Stdio::from(stderr_file));
+        .stderr(Stdio::from(stderr_file))
+        // Child becomes its own process-group leader so timeout-kill can reap the
+        // whole subtree (e.g., a `bash -c "cargo build && cargo test"` spawns rustc
+        // workers; SIGKILL on the bash alone leaves rustc orphaned).
+        .process_group(0);
     let mut child = process.spawn().map_err(|err| {
         GovernedEditError::new(
             "RUST_REALITY_GOVERNED_PROCESS_SPAWN_FAILED",
@@ -926,7 +931,18 @@ fn run_cmd(command: &[String], cwd: &Path, timeout_secs: u64) -> Result<ProcessR
             });
         }
         if Instant::now() > deadline {
-            let _ = child.kill();
+            // SIGTERM the entire process group; wait 2s; SIGKILL the group.
+            // process_group(0) at spawn ensured pgid == child.id().
+            let pgid_pid = child.id() as i32;
+            if pgid_pid > 0 {
+                unsafe {
+                    libc::kill(-pgid_pid, libc::SIGTERM);
+                }
+                std::thread::sleep(Duration::from_secs(2));
+                unsafe {
+                    libc::kill(-pgid_pid, libc::SIGKILL);
+                }
+            }
             let _ = child.wait();
             let stdout = read_process_output(&stdout_path).unwrap_or_default();
             let stderr = read_process_output(&stderr_path).unwrap_or_default();

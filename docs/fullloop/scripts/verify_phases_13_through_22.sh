@@ -68,7 +68,7 @@ else
   record "inviolable_claude_md_addendum" fail "CLAUDE.md missing the ccreality role addendum"
 fi
 
-if git diff --quiet -- gemmafrontend/reward_spec.verified_outcome.json 2>/dev/null; then
+if git diff --quiet -- config/reward_spec.verified_outcome.json 2>/dev/null; then
   record "inviolable_production_reward_spec_untouched" pass "production reward spec unchanged on disk"
 else
   record "inviolable_production_reward_spec_untouched" fail "production reward spec has uncommitted changes"

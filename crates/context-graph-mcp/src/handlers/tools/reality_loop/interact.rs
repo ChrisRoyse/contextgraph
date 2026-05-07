@@ -88,6 +88,10 @@ pub async fn reality_run_smoke(args: Value) -> Result<Value> {
         .arg(&runtime_root)
         .arg("--label")
         .arg(&label)
+        // If this future is dropped (caller cancels, MCP shutdown, panic in
+        // surrounding task), the child engine process gets SIGKILL instead of
+        // becoming an orphan reparented to PID 1.
+        .kill_on_drop(true)
         .output()
         .await
         .map_err(|e| spawn_err("reality_run_smoke", &bin, e))?;
@@ -140,6 +144,7 @@ pub async fn reality_run_attempt(args: Value) -> Result<Value> {
     if official {
         cmd.arg("--official-eval-each-attempt");
     }
+    cmd.kill_on_drop(true);
     let out = cmd
         .output()
         .await
@@ -163,6 +168,7 @@ pub async fn reality_run_official_eval(args: Value) -> Result<Value> {
         .arg(&target)
         .arg("--attempt")
         .arg(attempt.to_string())
+        .kill_on_drop(true)
         .output()
         .await
         .map_err(|e| spawn_err("reality_run_official_eval", &bin, e))?;
@@ -191,6 +197,7 @@ pub async fn reality_run_targeted_test(args: Value) -> Result<Value> {
         .arg(&test_id)
         .arg("--timeout-secs")
         .arg(timeout_secs)
+        .kill_on_drop(true)
         .output()
         .await
         .map_err(|e| spawn_err("reality_run_targeted_test", &bin, e))?;
@@ -210,6 +217,7 @@ pub async fn reality_recompile_reward(args: Value) -> Result<Value> {
         .arg(&summary)
         .arg("--label")
         .arg("recompile-reward")
+        .kill_on_drop(true)
         .output()
         .await
         .map_err(|e| spawn_err("reality_recompile_reward", &bin, e))?;

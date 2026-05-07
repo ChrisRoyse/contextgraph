@@ -83,10 +83,10 @@ Source-of-truth files:
 ```text
 summary: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/reality-loop-summary.json
 problem: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/problem-reality-packet.json
-ledger: sqlite:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/blackbox.sqlite#ledger_records
-signal: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/reality-signal-packet.json
-tool_transcript: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/agent-tools/agent-tool-transcript.json
-validation: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/model-parse-report.json
+ledger: sqlite:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-27b/blackbox.sqlite#ledger_records
+signal: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-27b/attempts/attempt-000001/reality-signal-packet.json
+tool_transcript: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-27b/attempts/attempt-000001/agent-tools/agent-tool-transcript.json
+validation: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-27b/attempts/attempt-000001/model-parse-report.json
 ```
 
 Verified state from the latest run:
@@ -151,7 +151,7 @@ Verified state from the latest run:
 4. Model missed the required tool call but the loop remained operational:
 
 ```text
-/tmp/contextgraph-reality-signal-fsv-04/rust_reality_1777968923321426755_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/inner-harness-response.json
+/tmp/contextgraph-reality-signal-fsv-04/rust_reality_1777968923321426755_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-27b/attempts/attempt-000001/inner-harness-response.json
 ```
 
 The model miss was persisted as attempt reality, scored, written to the BlackBoxFix ledger, and converted into a reality-signal packet for the next prompt.
@@ -159,7 +159,7 @@ The model miss was persisted as attempt reality, scored, written to the BlackBox
 5. Model used governed tools but failed the final JSON patch contract:
 
 ```text
-/tmp/contextgraph-reality-signal-fsv-05/rust_reality_1777969093757587401_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/model-parse-report.json
+/tmp/contextgraph-reality-signal-fsv-05/rust_reality_1777969093757587401_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-27b/attempts/attempt-000001/model-parse-report.json
 ```
 
 This is the older blindspot that motivated the current fix. The final raw JSON patch contract has been removed from the live path.
@@ -193,7 +193,7 @@ RUST_REALITY_TOOL_SUBMITTED_PATCH_READBACK_EMPTY
 10. Ambiguous structured edit fails closed with a specific source span error:
 
 ```text
-/tmp/contextgraph-tool-mediated-fsv-09/rust_reality_1777970590995615862_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/agent-tools/round-04-00-apply_structured_edit/tool-result.json
+/tmp/contextgraph-tool-mediated-fsv-09/rust_reality_1777970590995615862_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-27b/attempts/attempt-000001/agent-tools/round-04-00-apply_structured_edit/tool-result.json
 ```
 
 That run proves the model called `apply_structured_edit`, but the find block matched three locations in `sklearn/utils/multiclass.py`. The persisted error was `RUST_REALITY_STRUCTURED_EDIT_FIND_AMBIGUOUS`, with remediation to open the exact source window and submit a unique find block.
@@ -201,7 +201,7 @@ That run proves the model called `apply_structured_edit`, but the find block mat
 11. Missing final `apply_structured_edit` is now captured as attempt reality:
 
 ```text
-/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/reality-signal-packet.json
+/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-27b/attempts/attempt-000001/reality-signal-packet.json
 ```
 
 That run proves the inner actor read problem/source reality through governed tools, but never submitted the candidate patch through `apply_structured_edit`. The loop did not run official SWE-bench evaluation because there was no patch artifact to evaluate. It persisted the failure, score, reward, source-of-truth paths, BlackBoxFix evidence rows, and the exact next required tool.

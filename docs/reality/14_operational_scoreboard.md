@@ -216,6 +216,6 @@ Observed values from `reality-loop-summary.json` and the BlackBoxFix SQLite ledg
 - ledger rows: `agent_run=1`, `model_decision=2`, `tool_call=2`, `verifier_result=2`, `evidence_packet=2`, `incident_packet=2`, `scorecard=2`, `reward_compilation=2`;
 - GPU budget current readback: `nvidia-smi:query-gpu+query-compute-apps`;
 - summary source of truth: `file:/tmp/contextgraph-rust-reality-loop-smoke-v4/rust_reality_1777959982988939074_e525987d/reality-loop-summary.json`;
-- ledger source of truth: `sqlite:/tmp/contextgraph-rust-reality-loop-smoke-v4/rust_reality_1777959982988939074_e525987d/tasks/psf__requests-2317/qwen3.6-e4b/blackbox.sqlite#ledger_records`.
+- ledger source of truth: `sqlite:/tmp/contextgraph-rust-reality-loop-smoke-v4/rust_reality_1777959982988939074_e525987d/tasks/psf__requests-2317/qwen3.6-27b/blackbox.sqlite#ledger_records`.
 
 This row should be treated as a real failed benchmark attempt, not a demo success. Its value is that it proves the loop catches invalid patch generation and carries failure evidence forward.

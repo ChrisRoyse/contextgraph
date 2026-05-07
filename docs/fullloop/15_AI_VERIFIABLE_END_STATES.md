@@ -45,7 +45,7 @@ mcp__cgreality__reward_shadow_propose spec='{...}' proposal_markdown='...'
 mcp__cgreality__reward_shadow_recompile_all spec_id=$SPEC_ID
 mcp__cgreality__reward_shadow_correlation_report spec_id=$SPEC_ID
 test -s <run_root>/reality-optimizer/reward-shadow/correlation/$SPEC_ID-correlation-report.json
-git diff --quiet -- gemmafrontend/reward_spec.verified_outcome.json
+git diff --quiet -- config/reward_spec.verified_outcome.json
 ```
 
 The last `git diff --quiet` MUST exit 0 (production reward spec untouched).

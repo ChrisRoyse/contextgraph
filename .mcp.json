@@ -3,7 +3,7 @@
   "mcpServers": {
     "cgreality": {
       "type": "stdio",
-      "command": "/home/cabdru/contextgraph/target/debug/context-graph-mcp",
+      "command": "/home/cabdru/contextgraph/target/release/context-graph-mcp",
       "args": [
         "--mode",
         "reality-loop"

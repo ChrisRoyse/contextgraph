@@ -104,7 +104,7 @@ Companion to [`whitepaper.md`](whitepaper.md). Project-specific terms appear in 
 
 **Reality-shift principle.** The runtime invariant that "no alteration without current state, no alteration without a delta back into perception." Before any edit, perceive (open the file, get the SHA); after any edit, observe the delta (re-read, compute new SHA, append shift-log entry). Defined in `docs/ccreality/01b_reality_shift_principle.md`.
 
-**Reward spec.** A weighted scoring function applied to verified outcomes. ContextGraph's default is `gemmafrontend/reward_spec.verified_outcome.json` (six components, bounded [-10, +10]). The Rust loop forwards the spec file to `target/debug/context-graph blackbox reward compile --input <reward_spec>` after every attempt.
+**Reward spec.** A weighted scoring function applied to verified outcomes. ContextGraph's default is `config/reward_spec.verified_outcome.json` (six components, bounded [-10, +10]). The Rust loop forwards the spec file to `target/debug/context-graph blackbox reward compile --input <reward_spec>` after every attempt.
 
 **RocksDB.** The embedded key-value store underlying ContextGraph's storage layer. Single database holds 101 column families. Pre-production policy: no migrations; schema changes wipe the database.
 

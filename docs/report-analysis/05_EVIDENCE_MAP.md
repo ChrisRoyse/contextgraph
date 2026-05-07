@@ -25,11 +25,11 @@ This file maps claims to physical artifacts.
 | Real SWE-bench Lite task manifest | `tasks/swebench-lite/psf__requests-2317.json` |
 | Production runtime root | `/tmp/ccreality-prod-1` |
 | Hardened production run | `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d` |
-| Attempt summary | `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/gemma4-e4b/attempts/attempt-000001/attempt-summary.json` |
-| Python syntax probe | `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/gemma4-e4b/attempts/attempt-000001/agent-tools/round-05-00-apply_line_window_edit/line-window-edit-python-py-compile.json` |
-| Workspace restore | `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/gemma4-e4b/attempts/attempt-000001/agent-tools/round-05-00-apply_line_window_edit/line-window-edit-workspace-restore.json` |
-| Production recommendation | `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/gemma4-e4b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json` |
-| Production BlackBox ledger | `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/gemma4-e4b/blackbox.sqlite#ledger_records` |
+| Attempt summary | `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-27b/attempts/attempt-000001/attempt-summary.json` |
+| Python syntax probe | `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-27b/attempts/attempt-000001/agent-tools/round-05-00-apply_line_window_edit/line-window-edit-python-py-compile.json` |
+| Workspace restore | `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-27b/attempts/attempt-000001/agent-tools/round-05-00-apply_line_window_edit/line-window-edit-workspace-restore.json` |
+| Production recommendation | `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-27b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json` |
+| Production BlackBox ledger | `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-27b/blackbox.sqlite#ledger_records` |
 | Phase 12 FSV log | `/tmp/ccreality-phase12-fsv-20260505T225350Z.log` |
 | Phase 12 report | `docs/ccreality/PHASE12_RESULTS_2026-05-05.md` |
 

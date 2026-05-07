@@ -416,7 +416,7 @@ Schema `contextgraph_reality_measurement_contract_v1` written to `<run_root>/mea
 10. `blackbox record tool-call` (capability `contextgraph.rust.reality.swe.apply_patch`, status `ok`/`blocked`/`failed`).
 11. `verify_attempt` — generate per-task `verify_attempt_status.sh`, run it via `blackbox verify` with verifier-id `cmd_exit_zero_v1`.
 12. **If patch applied AND `--official-eval-each-attempt`:** `verify_official_docker_sdk` (`docker.from_env().version`) → `python -m swebench.harness.run_evaluation` with `DOCKER_HOST` + `DOCKER_CONFIG` env. Result parsed by `find_json_report` + `build_official_evidence`. Instance must appear in one of `resolved_ids`/`completed_ids`/`incomplete_ids`/`empty_patch_ids`/`error_ids` else `RUST_REALITY_OFFICIAL_REPORT_INSTANCE_MISSING`.
-13. `blackbox score run`; if `gemmafrontend/reward_spec.verified_outcome.json` exists, also `blackbox reward compile`.
+13. `blackbox score run`; if `config/reward_spec.verified_outcome.json` exists, also `blackbox reward compile`.
 14. Append `attempt-summary.json`, append to `reality-events.jsonl`, refresh `reality-loop-summary.json` (schema `contextgraph_rust_reality_loop_summary_v1`).
 15. Continue until solved (`resolved=true`) or `attempt >= max_attempts` (when `run_until_resolved=false`).
 
@@ -472,5 +472,5 @@ Schema `contextgraph_reality_measurement_contract_v1` written to `<run_root>/mea
 
 ### Cross-references
 - BlackBoxFix command surface — §13
-- Reward spec contract — `gemmafrontend/reward_spec.verified_outcome.json` (referenced via `immutable_boundaries.reward_spec`)
+- Reward spec contract — `config/reward_spec.verified_outcome.json` (referenced via `immutable_boundaries.reward_spec`)
 - See commit cc8e6c33 ("feat(context-graph-cli,reality): runtime measurement contract and reality-boundary fail-closed gates") and 56d9026b ("feat(context-graph-cli,reality): Rust-owned reality-loop binary for SWE-bench repair") for change history

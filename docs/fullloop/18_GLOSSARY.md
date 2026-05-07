@@ -52,7 +52,7 @@ Used everywhere in this directory. Whenever any term below feels ambiguous, this
 
 **Governed coding-agent tools** — the inner actor's tool surface (`open_file_window`, `apply_line_window_edit`, etc.) — *not* the optimizer's MCP `harness_*` tools.
 
-**Reward spec** — `gemmafrontend/reward_spec.verified_outcome.json`. Production scoring rules. Read-only to the optimizer; shadow specs are the only writable surface.
+**Reward spec** — `config/reward_spec.verified_outcome.json`. Production scoring rules. Read-only to the optimizer; shadow specs are the only writable surface.
 
 **Reality score** — single aggregate operational metric (Phase 20). Not a training reward.
 

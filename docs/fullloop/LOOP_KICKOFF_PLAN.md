@@ -79,12 +79,12 @@ runs exist:
 Source of truth:
 `file:/tmp/contextgraph-rust-reality-loop/failures/failure-1778064266-RUST_REALITY_INNER_MODEL_PATH_MISSING.json`
 
-Engine looked at `/home/cabdru/contextgraph/models/qwen3.6-e4b/qwen3.6-e4b.Q4_K_M.gguf`.
+Engine looked at `/home/cabdru/contextgraph/models/qwen3.6-27b/qwen3.6-e4b.Q4_K_M.gguf`.
 The actual file on disk is `qwen3.6-E4B-it-bf16.gguf` (15 GB BF16). The
 **default in `crates/context-graph-cli/src/bin/reality-loop.rs:28`** is the
 correct BF16 path:
 ```rust
-const DEFAULT_INNER_MODEL_PATH: &str = "models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf";
+const DEFAULT_INNER_MODEL_PATH: &str = "models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf";
 ```
 
 Root cause: the operator (or watcher) was following stale documentation that
@@ -224,7 +224,7 @@ Sources:
 
 Edits applied:
 - `docs/reality/18_inner_actor_coding_agent_harness.md:37` →
-  `models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf`, params 7.5 B, quant
+  `models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf`, params 7.5 B, quant
   `BF16 (lossless, ~15 GB on disk)`.
 - `docs/ccreality/phase-12-first-production/01_PRECONDITIONS.md:29` →
   preconditions block now references the BF16 path *and* points operators
@@ -351,8 +351,8 @@ Post-condition: three binaries exist under `target/release/`.
 ### Step 1 — Verify the model + pin
 
 ```bash
-ls -la models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf
-sha256sum models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf | head -c 71
+ls -la models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf
+sha256sum models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf | head -c 71
 jq -r '.models.qwen3_6_27b_q6_k_xl.expected_sha256' config/ccreality_model_pins.json
 ```
 
@@ -413,7 +413,7 @@ target/release/reality-loop attempt \
 ```
 
 Post-condition: an `attempt-summary.json` exists at
-`$RUNTIME_ROOT/<run>/tasks/psf__requests-2317/qwen3.6-e4b/attempts/attempt-000001/`.
+`$RUNTIME_ROOT/<run>/tasks/psf__requests-2317/qwen3.6-27b/attempts/attempt-000001/`.
 If `error_code` is set, read it carefully — it tells you exactly which
 fix-class to address next. Do **not** retry blindly; the outer optimizer
 is what reasons about retries.
@@ -427,7 +427,7 @@ claude --model opus --permission-mode acceptEdits
 ```
 
 Post-condition: a `recommendation-turn-01.json` lands at
-`$RUNTIME_ROOT/<run>/tasks/psf__requests-2317/qwen3.6-e4b/attempts/attempt-000001/claude-code-optimizer/`.
+`$RUNTIME_ROOT/<run>/tasks/psf__requests-2317/qwen3.6-27b/attempts/attempt-000001/claude-code-optimizer/`.
 The Stop hook will block the turn from ending without one.
 
 ### Step 7 — Sustained run
@@ -513,8 +513,8 @@ cargo test -p context-graph-mcp --lib reality_loop --quiet                     #
 bash scripts/cc/tests/fsv/cases/D1_recommendation_no_overwrite.sh              # exit 0 (NEW)
 
 # Phase 14a kickoff (this is the productive milestone)
-test -f models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf
-sha256sum models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf \
+test -f models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf
+sha256sum models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf \
   | awk '{print "sha256:" $1}' \
   | grep -q "$(jq -r '.models.qwen3_6_27b_q6_k_xl.expected_sha256' config/ccreality_model_pins.json)"
 nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits \
@@ -525,12 +525,12 @@ target/release/reality-loop attempt \
   --runtime-root /tmp/ccreality-kickoff \
   --model qwen3.6:27b \
   --official-eval-each-attempt --max-attempts 1
-test -f /tmp/ccreality-kickoff/*/tasks/psf__requests-2317/qwen3.6-e4b/attempts/attempt-000001/attempt-summary.json
+test -f /tmp/ccreality-kickoff/*/tasks/psf__requests-2317/qwen3.6-27b/attempts/attempt-000001/attempt-summary.json
 
 # Then in a Claude Code session:
 #   > /ccreality-iterate
 # After it lands, verify:
-ls /tmp/ccreality-kickoff/*/tasks/psf__requests-2317/qwen3.6-e4b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json
+ls /tmp/ccreality-kickoff/*/tasks/psf__requests-2317/qwen3.6-27b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json
 
 # Phase 14a success predicate (the actual goal)
 mcp__cgreality__reality_official_report run_id=<run_id> attempt=<n> \

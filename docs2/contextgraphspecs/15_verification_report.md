@@ -160,7 +160,7 @@ Source: enumerated `pub const` in the listed files.
 | Reality-loop default Docker host | `unix:///var/run/docker.sock` | `bin/reality-loop.rs:18` (`DEFAULT_OFFICIAL_DOCKER_HOST`) |
 | Reality-loop dataset constant | `"princeton-nlp/SWE-bench_Lite"` | `bin/reality-loop.rs:20` (`DATASET_NAME`) |
 | Prompt compiler owner | Rust `reality-loop` prompt contract | `bin/reality-loop.rs` |
-| Reward spec schema version | 1 | `gemmafrontend/reward_spec.verified_outcome.json` |
+| Reward spec schema version | 1 | `config/reward_spec.verified_outcome.json` |
 
 ## 7. MCP Tool Composition
 

@@ -18,6 +18,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::io::{Read, Write};
 use std::num::NonZeroU32;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -28,7 +29,20 @@ const DEFAULT_MODEL: &str = "qwen3.6:27b";
 const DEFAULT_INNER_MODEL_PATH: &str = "models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf";
 const DEFAULT_INNER_MODEL_PIN_PATH: &str = "config/ccreality_model_pins.json";
 const DEFAULT_INNER_MODEL_PIN_KEY: &str = "qwen3_6_27b_q6_k_xl";
+/// Minimum free GPU VRAM that must remain *during* a per-chat call, after the
+/// inner-actor model is already resident. Sized for steady-state operation: model
+/// weights + KV cache are already allocated, so we only need enough free VRAM for
+/// CUDA driver overhead and bursty allocations during attention. Tightened from
+/// 8192 → 1536 in `eb8a0d10` because the qwen3.6-27b GGUF leaves only ~1.5GB free
+/// once loaded with the full 256K context.
 const DEFAULT_GPU_MIN_FREE_MB: u64 = 1536;
+/// Minimum free GPU VRAM required *before* the inner-actor model is loaded. The
+/// loop_start preflight uses this. Sized for the model file (~24 GB Q6_K_XL) plus
+/// KV cache headroom. Without this separate threshold, a shared `--gpu-min-free-mb`
+/// of 1536 would let preflight pass on a machine with only 1.5 GB free, then the
+/// model load would CUDA-OOM mid-load. Setting to 25600 (25 GB) means at most ~7 GB
+/// can be held by other GPU consumers when the loop starts.
+const DEFAULT_GPU_PRELOAD_MIN_FREE_MB: u64 = 25600;
 const DEFAULT_INNER_MIN_CONTEXT_TOKENS: u32 = 128_000;
 const DEFAULT_INNER_MAX_NEW_TOKENS: usize = 8192;
 const DEFAULT_INNER_TEMPERATURE: f32 = 0.0;
@@ -211,6 +225,12 @@ struct AttemptArgs {
     gpu_index: u64,
     #[arg(long, default_value_t = DEFAULT_GPU_MIN_FREE_MB)]
     gpu_min_free_mb: u64,
+    /// Minimum free GPU VRAM required at loop_start, before any model bytes hit the GPU.
+    /// Distinct from `--gpu-min-free-mb` (which gates per-chat checks after load).
+    /// Defaults to model_size + KV-cache + safety. Lower this only if you have a smaller
+    /// model and know what you're doing.
+    #[arg(long, default_value_t = DEFAULT_GPU_PRELOAD_MIN_FREE_MB)]
+    gpu_preload_min_free_mb: u64,
     #[arg(long)]
     gpu_max_used_mb: Option<u64>,
     /// Context window tokens. Omit to use the loaded GGUF model's full training context.
@@ -1041,6 +1061,7 @@ fn official_eval_attempt_args(args: &OfficialEvalArgs, task_manifest: &Path) -> 
         official_docker_config: args.official_docker_config.clone(),
         gpu_index: 0,
         gpu_min_free_mb: DEFAULT_GPU_MIN_FREE_MB,
+        gpu_preload_min_free_mb: DEFAULT_GPU_PRELOAD_MIN_FREE_MB,
         gpu_max_used_mb: None,
         inner_context_tokens: None,
         inner_max_new_tokens: DEFAULT_INNER_MAX_NEW_TOKENS,
@@ -1305,7 +1326,7 @@ async fn run(args: AttemptArgs) -> Result<Value> {
     let gpu_initial = read_gpu_vram_state(args.gpu_index)?;
     assert_gpu_budget(
         &gpu_initial,
-        args.gpu_min_free_mb,
+        args.gpu_preload_min_free_mb,
         args.gpu_max_used_mb,
         "loop_start",
         &args.model,
@@ -1696,7 +1717,7 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             }),
         };
         let reward_spec =
-            resolve_path(Path::new("gemmafrontend/reward_spec.verified_outcome.json"))?;
+            resolve_path(Path::new("config/reward_spec.verified_outcome.json"))?;
         let reward = if reward_spec.exists() {
             Some(
                 match blackbox(
@@ -2036,7 +2057,7 @@ fn build_measurement_contract(
                 "batch_size": args.inner_batch_size,
                 "seed": args.inner_seed
             },
-            "reward_spec": file_sot(Path::new("gemmafrontend/reward_spec.verified_outcome.json"))
+            "reward_spec": file_sot(Path::new("config/reward_spec.verified_outcome.json"))
         },
         "mandatory_readbacks": [
             "task_manifest_readback",
@@ -2451,7 +2472,13 @@ fn run_cmd_env(
         .args(&command[1..])
         .current_dir(cwd)
         .stdout(Stdio::from(stdout_file))
-        .stderr(Stdio::from(stderr_file));
+        .stderr(Stdio::from(stderr_file))
+        // Put the child in its OWN process group (pgid == child pid). On timeout we
+        // kill the entire group (-pgid) so all descendants — docker containers
+        // launched by python swebench, cargo workers, git subprocs — die with the
+        // immediate child. Without this, SIGKILL on the immediate child orphans
+        // grandchildren (notably leaks Docker containers labeled to this run).
+        .process_group(0);
     for (key, value) in envs {
         process.env(key, value);
     }
@@ -2500,7 +2527,11 @@ fn run_cmd_env(
             });
         }
         if Instant::now() > deadline {
-            let _ = child.kill();
+            // Kill the WHOLE process group, not just the immediate child. This
+            // ensures docker containers / python subprocs / cargo workers spawned
+            // by the child get cleaned up. Negative PID = pgid kill (process_group(0)
+            // earlier set pgid == child.id()).
+            kill_process_group_graceful(child.id() as i32);
             let _ = child.wait();
             let stdout = read_process_output(&stdout_path).unwrap_or_default();
             let stderr = read_process_output(&stderr_path).unwrap_or_default();
@@ -2519,6 +2550,25 @@ fn run_cmd_env(
             });
         }
         std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Send SIGTERM to the process group rooted at `pgid_pid` (the child's pid, since
+/// we spawned with `process_group(0)`), give it 2 seconds to exit gracefully,
+/// then SIGKILL the group. Failures are silent — the caller has already decided
+/// to give up on the child and will reap it via `wait()` afterwards.
+fn kill_process_group_graceful(pgid_pid: i32) {
+    if pgid_pid <= 0 {
+        return;
+    }
+    // SAFETY: libc::kill with a negative pid sends to the process group abs(pid).
+    // No memory access; just a syscall.
+    unsafe {
+        libc::kill(-pgid_pid, libc::SIGTERM);
+    }
+    std::thread::sleep(Duration::from_secs(2));
+    unsafe {
+        libc::kill(-pgid_pid, libc::SIGKILL);
     }
 }
 
@@ -3750,7 +3800,36 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
                     }
                 });
         write_json_checked(&request_path, &body)?;
-        let response = harness.chat(args, &body, &request_path)?;
+        let response = match harness.chat(args, &body, &request_path) {
+            Ok(r) => r,
+            Err(err) => {
+                // V3-FORENSIC: capture gpu_after on the chat error path before
+                // propagating. Without this, the failure record at
+                // <run_root>/failures/failure-<ts>-<code>.json contains only
+                // gpu_before — we lose evidence of whether chat leaked or grew
+                // VRAM (CUDA OOM, tokenizer OOM, KV cache spike) before erroring.
+                // Best-effort: ignore failures of read_gpu_vram_state itself.
+                if let Ok(gpu_after) = read_gpu_vram_state(args.gpu_index) {
+                    let path = tools_root
+                        .join(format!("tool-round-{round:02}-gpu-after-chat-error.json"));
+                    let _ = write_json_checked(
+                        &path,
+                        &json!({
+                            "round": round,
+                            "gpu_before": gpu_before,
+                            "gpu_after_chat_error": gpu_after,
+                            "delta_used_mb": (gpu_after.memory_used_mb as i64)
+                                - (gpu_before.memory_used_mb as i64),
+                            "delta_free_mb": (gpu_after.memory_free_mb as i64)
+                                - (gpu_before.memory_free_mb as i64),
+                            "error_code": err.error_code,
+                            "source_of_truth": "nvidia-smi:query-gpu+query-compute-apps",
+                        }),
+                    );
+                }
+                return Err(err);
+            }
+        };
         let response_path = tools_root.join(format!("tool-round-{round:02}-response.json"));
         write_json_checked(&response_path, &response)?;
         let mut tool_request_protocol = "contextgraph_native_tool_calls";
@@ -12177,6 +12256,7 @@ GPU-other, 9999, /usr/bin/other, 1024
             official_docker_config: PathBuf::from(DEFAULT_OFFICIAL_DOCKER_CONFIG),
             gpu_index: 0,
             gpu_min_free_mb: 0,
+            gpu_preload_min_free_mb: 0,
             gpu_max_used_mb: None,
             // Omit explicit context-tokens so the harness uses the model's
             // full n_ctx_train. The pin floor (128K) is enforced — the test

@@ -96,7 +96,7 @@ The cross-model layer was deliberately removed. The engine accepts a single `--m
 
 ### C. Reward shadow layer (Phase 17)
 
-- Production reward spec: `gemmafrontend/reward_spec.verified_outcome.json` (read-only to the optimizer).
+- Production reward spec: `config/reward_spec.verified_outcome.json` (read-only to the optimizer).
 - Shadow specs: `<run_root>/reality-optimizer/reward-shadow/<spec-id>.json`.
 - For every existing attempt's reality-signal packet, the engine recompiles reward against each shadow spec and writes `shadow-reward-<spec-id>.json` beside the canonical reward record.
 - A shadow spec is promotable to production only if (a) Pearson correlation of its scalar with `official_resolved` on a held-out attempt set exceeds the production spec's correlation by a threshold, AND (b) human review approves.
@@ -131,7 +131,7 @@ The cross-model layer was deliberately removed. The engine accepts a single `--m
 ### G. DynamicJEPA reward integration (Phase 22)
 
 - Each attempt's reality-signal packet gains a `dynamicjepa_reality` block with surprise count, latent-panel divergence, prediction error, plan-trace coverage.
-- `gemmafrontend/reward_spec.verified_outcome.json` gains `dynamicjepa_surprise_penalty` (negative weight) and `dynamicjepa_prediction_accuracy_bonus` (positive weight). Shadow-tested first per Phase 17 rule.
+- `config/reward_spec.verified_outcome.json` gains `dynamicjepa_surprise_penalty` (negative weight) and `dynamicjepa_prediction_accuracy_bonus` (positive weight). Shadow-tested first per Phase 17 rule.
 
 ## What stays sacred (never altered by any forward phase)
 

@@ -34,7 +34,7 @@ Local model readback:
 
 ```text
 model label: qwen3.6:27b
-model source of truth: models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf
+model source of truth: models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf
 architecture: qwen3.6
 parameters: 7.5B
 context length: 131072
@@ -179,8 +179,8 @@ Source-of-truth readbacks:
 
 ```text
 summary: file:/tmp/contextgraph-inner-actor-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/reality-loop-summary.json
-tool_transcript: file:/tmp/contextgraph-inner-actor-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/agent-tools/agent-tool-transcript.json
-ledger: sqlite:/tmp/contextgraph-inner-actor-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/blackbox.sqlite#ledger_records
+tool_transcript: file:/tmp/contextgraph-inner-actor-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-27b/attempts/attempt-000001/agent-tools/agent-tool-transcript.json
+ledger: sqlite:/tmp/contextgraph-inner-actor-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-27b/blackbox.sqlite#ledger_records
 ```
 
 Observed result:

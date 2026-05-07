@@ -46,7 +46,7 @@ Earlier project drafts planned multi-model coverage (`qwen3.6:27b`, `qwen3:8b`, 
 
 ### 5. Reward optimization (shadow mode)  (→ Phase 17)
 
-`gemmafrontend/reward_spec.verified_outcome.json` is the production reward spec. The `cc-reality-reward-analyst` subagent can propose new components, but there is no mechanism to *try* a candidate reward spec without changing production. No held-out outcome correlation pipeline.
+`config/reward_spec.verified_outcome.json` is the production reward spec. The `cc-reality-reward-analyst` subagent can propose new components, but there is no mechanism to *try* a candidate reward spec without changing production. No held-out outcome correlation pipeline.
 
 Forward work: shadow-spec slot, replay every existing attempt's signal packet through it, score correlation with verified outcomes before allowing promotion.
 
@@ -64,7 +64,7 @@ The smoke suite is intentionally tiny (2 instances). There is no holdout split, 
 
 ### 9. DynamicJEPA reward integration  (→ Phase 22)
 
-`docs2/contextgraphspecs/21_dynamicjepa_subsystem.md` describes a 28-CF DynamicJEPA store with surprise events, latent-state predictions, planning traces, etc. Reality-signal packets currently include no DJ projection counts beyond what the reward signal already records. The DJ "surprise" signal is not yet a reward feature, even though `gemmafrontend/reward_spec.verified_outcome.json` reserves space for one.
+`docs2/contextgraphspecs/21_dynamicjepa_subsystem.md` describes a 28-CF DynamicJEPA store with surprise events, latent-state predictions, planning traces, etc. Reality-signal packets currently include no DJ projection counts beyond what the reward signal already records. The DJ "surprise" signal is not yet a reward feature, even though `config/reward_spec.verified_outcome.json` reserves space for one.
 
 ## Cross-cutting gaps
 

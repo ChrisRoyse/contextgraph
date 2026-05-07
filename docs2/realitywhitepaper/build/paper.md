@@ -215,7 +215,7 @@ The most consequential file in the system is the JSON object the loop writes to 
 | `immutable_boundaries.model_runtime.batch_size` | `2048` |
 | `immutable_boundaries.model_runtime.seed` | `1` |
 | `immutable_boundaries.model_runtime.gpu_layers` | `u32::MAX` (all) |
-| `immutable_boundaries.reward_spec` | `file:gemmafrontend/reward_spec.verified_outcome.json` |
+| `immutable_boundaries.reward_spec` | `file:config/reward_spec.verified_outcome.json` |
 | `mandatory_readbacks` | 10 readback IDs |
 | `model_editable_scope` | `candidate.patch`, `structured edit plan`, `notes` |
 | `model_forbidden_scope` | manifest, harness, ledger, reward spec, verifier, tests, fixtures |
@@ -231,7 +231,7 @@ The 10 mandatory readbacks are: `task_manifest_readback`, `measurement_contract_
 The harness is the heart of the new architecture. It is a single Rust struct that owns:
 
 - A `LlamaBackend` (one per process; reused across attempts).
-- A `LlamaModel` loaded from the GGUF file at `models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf`.
+- A `LlamaModel` loaded from the GGUF file at `models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf`.
 - A `LlamaContext` with `n_ctx >= 128_000`, `n_batch = 2048`, all transformer layers offloaded to the GPU (`n_gpu_layers = u32::MAX`).
 - A `LlamaChatTemplate` (from the GGUF metadata `tokenizer.chat_template`, or from `--inner-chat-template` if overridden).
 - A `LlamaSampler` chain composed of a grammar sampler followed by either a greedy or seeded distribution sampler.
@@ -240,7 +240,7 @@ The harness is the heart of the new architecture. It is a single Rust struct tha
 
 | Knob | Default | Source |
 |--------------------------|---------------------|--------------------------|
-| `inner_model_path` | `models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf` | `bin/reality-loop.rs:28` |
+| `inner_model_path` | `models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf` | `bin/reality-loop.rs:28` |
 | `inner_model_pin_path` | `config/ccreality_model_pins.json` | `bin/reality-loop.rs:29` |
 | `inner_model_pin_key` | `qwen3_6_27b_q6_k_xl` | `bin/reality-loop.rs:30` |
 | `inner_min_context_tokens` | 128,000 | `bin/reality-loop.rs:32` |
@@ -379,7 +379,7 @@ If the report exits 0 but the target `instance_id` is not classified into any of
 
 ## Reward Spec
 
-The reward spec (`gemmafrontend/reward_spec.verified_outcome.json`) is a six-component weighted scoring function operating on the verified outcome of an attempt:
+The reward spec (`config/reward_spec.verified_outcome.json`) is a six-component weighted scoring function operating on the verified outcome of an attempt:
 
 | Component | Weight |
 |-----------------------------|--------|
@@ -772,7 +772,7 @@ Three independent append-only stores form the substrate: BlackBoxFix SQLite (`LE
 | Constant | Value |
 |----------------------------------|-----------------------------|
 | `DEFAULT_MODEL` | `qwen3.6:27b` |
-| `DEFAULT_INNER_MODEL_PATH` | `models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf` |
+| `DEFAULT_INNER_MODEL_PATH` | `models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf` |
 | `DEFAULT_INNER_MODEL_PIN_PATH` | `config/ccreality_model_pins.json` |
 | `DEFAULT_INNER_MODEL_PIN_KEY` | `qwen3_6_27b_q6_k_xl` |
 | `DEFAULT_INNER_MIN_CONTEXT_TOKENS`| 128,000 |

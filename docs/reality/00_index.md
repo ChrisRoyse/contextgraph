@@ -48,7 +48,7 @@ The loop does not advance because an agent says it is done. It advances only whe
 | Capability | Current Location |
 |---|---|
 | Local the inner actor/Qwen/Mistral frontend and tool harness | `gemmafrontend/` |
-| Verified reward compiler spec | `gemmafrontend/reward_spec.verified_outcome.json` |
+| Verified reward compiler spec | `config/reward_spec.verified_outcome.json` |
 | Rust-owned SWE reality loop | `target/debug/reality-loop` from `crates/context-graph-cli/src/bin/reality-loop.rs` |
 | Official SWE-bench Docker readback | `target/debug/reality-loop` invoking the official SWE-bench harness directly |
 | Governed SWE agent tool gateway | `crates/context-graph-cli/src/bin/reality-loop.rs` |

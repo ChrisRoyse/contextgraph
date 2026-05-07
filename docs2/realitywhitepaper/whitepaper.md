@@ -150,7 +150,7 @@ The most consequential file in the system is the JSON object the loop writes to 
 | `immutable_boundaries.task_manifest` | `file:<path>` | The task manifest itself becomes part of the immutable scope. |
 | `immutable_boundaries.base_commit` | git SHA | The exact commit the repair must work against. |
 | `immutable_boundaries.official_evaluator` | `"python -m swebench.harness.run_evaluation"` | The verifier is named explicitly, not abstracted. |
-| `immutable_boundaries.reward_spec` | `file:gemmafrontend/reward_spec.verified_outcome.json` | The reward spec is also immutable from the model's view. |
+| `immutable_boundaries.reward_spec` | `file:config/reward_spec.verified_outcome.json` | The reward spec is also immutable from the model's view. |
 | `mandatory_readbacks` | 10 readback IDs | Every step that *must* readback to count as performed. |
 | `model_editable_scope` | `["candidate.patch", "notes"]` | The minimal surface the model is allowed to write. |
 | `model_forbidden_scope` | 7 explicit names (manifest, harness, ledger, reward spec, verifier, tests, fixtures) | Deny-by-default. |
@@ -228,7 +228,7 @@ If the report exits 0 but the target `instance_id` is not classified into any of
 
 ### 5.7 Reward Spec
 
-The reward spec (`gemmafrontend/reward_spec.verified_outcome.json`) is a six-component weighted scoring function operating on the verified outcome of an attempt:
+The reward spec (`config/reward_spec.verified_outcome.json`) is a six-component weighted scoring function operating on the verified outcome of an attempt:
 
 | Component | Feature | Weight |
 |---|---|---|

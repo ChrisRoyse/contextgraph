@@ -6,7 +6,7 @@
 
 ## Why shadow
 
-`gemmafrontend/reward_spec.verified_outcome.json` is the single source of truth for reward and is in the deny list (under `crates/*/src/reward_specs/**` for the engine-internal copy, plus the gemmafrontend root copy is operationally treated as immutable). Editing it without verification risks reward hacking — the loop could optimize itself by re-weighting toward easy-to-satisfy components.
+`config/reward_spec.verified_outcome.json` is the single source of truth for reward and is in the deny list (under `crates/*/src/reward_specs/**` for the engine-internal copy, plus the gemmafrontend root copy is operationally treated as immutable). Editing it without verification risks reward hacking — the loop could optimize itself by re-weighting toward easy-to-satisfy components.
 
 Shadow mode lets the `cc-reality-reward-analyst` subagent propose new components, attach them to a *candidate* spec, and have the engine re-score every existing attempt against it. Promotion only happens after correlation with verified outcomes is rigorously checked.
 
@@ -87,7 +87,7 @@ mcp__cgreality__reward_shadow_correlation_report spec_id=<id>
 test -s <run_root>/reality-optimizer/reward-shadow/correlation/<id>-correlation-report.json
 
 # verify the production reward spec was NEVER touched:
-git diff -- gemmafrontend/reward_spec.verified_outcome.json   # empty
+git diff -- config/reward_spec.verified_outcome.json   # empty
 ```
 
 ## Cross-references

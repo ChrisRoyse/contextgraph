@@ -8,7 +8,7 @@
 - `gemmafrontend/model_benchmark.py` (248 lines) — multi-model verified-outcome benchmark runner
 - `gemmafrontend/model_prompt_matrix.py` (497 lines) — model × prompt grid with edge cases
 - `gemmafrontend/manual_fsv.py` (382 lines) — manual end-to-end FSV harness for the gemmafrontend stack
-- `gemmafrontend/reward_spec.verified_outcome.json` (41 lines) — verified-outcome reward spec
+- `config/reward_spec.verified_outcome.json` (41 lines) — verified-outcome reward spec
 - `gemmafrontend/swe_smoke_benchmark_suite.json` (40 lines) — initial smoke curriculum (2 instances)
 - `gemmafrontend/README.md` — operator-facing docs
 
@@ -90,7 +90,7 @@ The Rust loop is the canonical and only SWE-bench refinement entry point. The ol
 | `immutable_boundaries.official_evaluator` | `"python -m swebench.harness.run_evaluation"` | reality-loop.rs:779 |
 | `immutable_boundaries.official_docker_host` | default `unix:///var/run/docker.sock` | reality-loop.rs:18 |
 | `immutable_boundaries.official_docker_config` | default `/home/cabdru/.cache/contextgraph-docker-config` | reality-loop.rs:19 |
-| `immutable_boundaries.reward_spec` | `file:gemmafrontend/reward_spec.verified_outcome.json` | reality-loop.rs:782 |
+| `immutable_boundaries.reward_spec` | `file:config/reward_spec.verified_outcome.json` | reality-loop.rs:782 |
 | `mandatory_readbacks` | 10 required readback IDs | reality-loop.rs:784-795 |
 | `model_editable_scope` | `["candidate.patch", "notes"]` | reality-loop.rs:797 |
 | `model_forbidden_scope` | 7 explicit names (manifest, harness, ledger, reward spec, verifier, tests, fixtures) | reality-loop.rs:800-808 |
@@ -221,7 +221,7 @@ A `compute_processes_raw` snapshot (`nvidia-smi --query-compute-apps=pid,process
 3. Run `python -m swebench.harness.run_evaluation --dataset_name princeton-nlp/SWE-bench_Lite --split test --instance_ids <id> --predictions_path <path> --max_workers <n> --timeout <s> --cache_level <env> --run_id <id> --report_dir <dir>` with `DOCKER_HOST` and `DOCKER_CONFIG` env vars (reality-loop.rs:1559).
 4. Find the JSON report whose filename contains `<run_id>` and that has a `resolved_ids` array (reality-loop.rs:1676).
 5. Build `official-success-evidence.json` or `official-failure-evidence.json` carrying `resolved`, `completed`, `incomplete`, `empty_patch`, `errored`, `previous_patch_sha256`, `source_of_truth`, and the full `official_report` payload (reality-loop.rs:1592).
-6. Persist a BlackBoxFix `score` row and (when `gemmafrontend/reward_spec.verified_outcome.json` is present) a `reward compile` row for the attempt.
+6. Persist a BlackBoxFix `score` row and (when `config/reward_spec.verified_outcome.json` is present) a `reward compile` row for the attempt.
 
 If the report exits 0 but the target `instance_id` is not in any of `completed_ids | incomplete_ids | empty_patch_ids | error_ids`, the loop raises `RUST_REALITY_OFFICIAL_REPORT_INSTANCE_MISSING` rather than silently treating the run as a non-resolution (reality-loop.rs:1610). Failure evidence becomes the next prompt's `official_evidence` input (deterministic prompt compiler §6).
 

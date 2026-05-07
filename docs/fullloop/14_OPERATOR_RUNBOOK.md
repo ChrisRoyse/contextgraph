@@ -144,7 +144,7 @@ In any case: stop the loop, inspect the latest 3 recommendations, fix root cause
 
 ## Cardinal rules (operator-side)
 
-1. Never edit `gemmafrontend/reward_spec.verified_outcome.json`. The shadow framework is the only path.
+1. Never edit `config/reward_spec.verified_outcome.json`. The shadow framework is the only path.
 2. Never edit `swebench/`, `tests/oracle_**`, dataset fixtures, or anything else in the deny list.
 3. Never `git push --force` or `git reset --hard` against `ccreality-cutover`.
 4. Never claim resolution without `mcp__cgreality__reality_official_report` confirming `resolved_ids` contains the instance.

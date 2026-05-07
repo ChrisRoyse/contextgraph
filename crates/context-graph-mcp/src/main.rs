@@ -1856,6 +1856,24 @@ async fn run_reality_loop_stdio() -> Result<()> {
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .map_err(|e| anyhow::anyhow!("failed to register SIGTERM handler: {e}"))?;
 
+    // ZOMBIE-PREVENTION (H1, follow-up to PR_SET_PDEATHSIG): periodic idle
+    // watchdog covering the cases the parent-death signal misses. stdin here is
+    // a socketpair; it only EOFs when the peer calls shutdown(SHUT_WR). A
+    // claude process that goes silent (SIGSTOP, debugger break, hot-reload that
+    // holds the connection) would otherwise leave us blocked in read_line
+    // forever. Two checks fire on every IDLE_TICK_SECS interval:
+    //   1. getppid() == 1 ⇒ orphaned (parent reparented to init). PR_SET_PDEATHSIG
+    //      catches this on Linux but is per-thread; this re-checks runtime-wide.
+    //   2. last_byte.elapsed() > MAX_STDIO_IDLE_SECS ⇒ silent parent. Bound at 1h
+    //      so /loop 15m or 30m intervals are nowhere near the threshold.
+    // On any healthy tick we return `usize::MAX` as a sentinel so the loop
+    // continues without treating the tick as a request.
+    const IDLE_TICK_SECS: u64 = 30;
+    const MAX_STDIO_IDLE_SECS: u64 = 3600;
+    let mut idle_tick = tokio::time::interval(std::time::Duration::from_secs(IDLE_TICK_SECS));
+    idle_tick.tick().await; // skip the immediate first tick
+    let mut last_byte = std::time::Instant::now();
+
     loop {
         line.clear();
         let read = tokio::select! {
@@ -1875,6 +1893,31 @@ async fn run_reality_loop_stdio() -> Result<()> {
                 arm_doomsday_watchdog("SIGINT");
                 0usize
             }
+            _ = idle_tick.tick() => {
+                #[cfg(unix)]
+                let ppid = unsafe { libc::getppid() };
+                #[cfg(not(unix))]
+                let ppid: i32 = -1;
+                if ppid == 1 {
+                    eprintln!(
+                        "[reality-loop-stdio] parent reparented to PID 1 (orphaned) — initiating shutdown"
+                    );
+                    arm_doomsday_watchdog("orphan_ppid_1");
+                    0usize
+                } else if last_byte.elapsed() >= std::time::Duration::from_secs(MAX_STDIO_IDLE_SECS) {
+                    eprintln!(
+                        "[reality-loop-stdio] stdio idle {}s exceeds {}s — initiating shutdown",
+                        last_byte.elapsed().as_secs(), MAX_STDIO_IDLE_SECS
+                    );
+                    arm_doomsday_watchdog("stdio_idle_timeout");
+                    0usize
+                } else {
+                    // Healthy idle tick: continue waiting without treating this
+                    // as a request. usize::MAX is impossible from a real read
+                    // (would mean 18 exabytes), so it's safe as a sentinel.
+                    usize::MAX
+                }
+            }
             r = reader.read_line(&mut line) => r?,
         };
         if read == 0 {
@@ -1883,6 +1926,11 @@ async fn run_reality_loop_stdio() -> Result<()> {
             arm_doomsday_watchdog("stdio EOF");
             break;
         }
+        if read == usize::MAX {
+            // Healthy idle tick — continue waiting for the next byte/signal.
+            continue;
+        }
+        last_byte = std::time::Instant::now();
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;

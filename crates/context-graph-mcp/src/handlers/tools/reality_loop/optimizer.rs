@@ -301,6 +301,7 @@ async fn append_optimizer_ledger(
     if let Some(model) = payload.get("claude_model").and_then(Value::as_str) {
         cmd.arg("--model").arg(model);
     }
+    cmd.kill_on_drop(true);
     let output = cmd.output().await.map_err(|e| {
         super::errors::CCRealityError::new(
             "CCREALITY_OPTIMIZER_LEDGER_APPEND_SPAWN_FAILED",
