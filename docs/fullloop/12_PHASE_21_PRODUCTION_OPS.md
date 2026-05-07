@@ -54,10 +54,6 @@ WantedBy=timers.target
 
 `scripts/cc/cgreality-tick.systemd-example.{service,timer}` are committed alongside the script as templates. Real install lives in `/etc/systemd/system/` and is operator-side.
 
-## No spend caps
-
-The system runs locally on operator hardware; there are no per-turn or per-day spend limits. The watcher script does NOT enforce any cost cap.
-
 ## Alerts
 
 `scripts/cc/cgreality-alert.sh` is invoked by the engine when:

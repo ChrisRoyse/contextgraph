@@ -52,9 +52,9 @@ The MCP protocol supports `elicitation` — a server can request user input mid-
 
 Decision: **no** for the initial cutover. The deny list + edit lock + recommendation+readback chain provides enough safety. Elicitation adds friction that defeats unattended runs. Revisit if real attacks emerge.
 
-## Q6 — RESOLVED — local-only operation, no cost accumulator
+## Q6 — RESOLVED 2026-05-07 — local-only operation
 
-The system runs locally on operator hardware; there are no per-turn or per-day spend caps. The `cost_today.json` accumulator concept was removed 2026-05-07 with the rest of the cost-cap machinery. No further action.
+The system runs locally on operator hardware. No spend tracking is required. No further action.
 
 ## Q7 — Telemetry export
 

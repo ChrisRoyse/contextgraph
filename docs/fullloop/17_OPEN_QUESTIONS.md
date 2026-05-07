@@ -85,9 +85,9 @@ Items that need a decision before or during the relevant forward phase. None blo
 
 **Default:** local systemd. Templates committed; operator copies to /etc/systemd/.
 
-## OQ-8 — RESOLVED — local-only operation, no cost tracking
+## OQ-8 — RESOLVED 2026-05-07 — local-only operation
 
-The system runs locally on operator hardware; there is no third-party API spend to bound. The `cost_estimate_usd` field and the entire cost-cap concept were removed 2026-05-07. No further action.
+The system runs locally on operator hardware. No spend tracking is required. No further action.
 
 **Default:** self-reported. Add real-cost overlay if rate-limit false-positives become a problem.
 

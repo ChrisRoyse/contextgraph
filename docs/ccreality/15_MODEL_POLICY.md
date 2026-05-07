@@ -1,7 +1,5 @@
 # Model Policy
 
-> **Filename note:** kept as `15_COST_AND_MODEL_POLICY.md` to preserve cross-reference links from the index and other phase docs. Content is model policy only — the cost-cap concept was removed 2026-05-07 because the system runs locally on operator hardware and there is no third-party API spend to bound.
-
 ## Default model assignments
 
 | Component | Default model | Why |
@@ -16,9 +14,9 @@
 
 The `model` field in `.claude/settings.json` is `opus` (drives the main session). Each subagent's frontmatter overrides per the table above.
 
-## No spend caps
+## Use the reasoning depth the work warrants
 
-The system runs locally on the operator's hardware. There are no per-turn or per-day spend limits, no `cost_estimate_usd` recommendation field, no daily-cap watcher logic. Use as much reasoning depth and as many subagent calls as the work warrants. `blocked` is for real obstacles (drift, MCP disconnect, schema rejection, build failure), never budget.
+The system runs locally on the operator's hardware. Use as much reasoning depth and as many subagent calls as the work warrants. `blocked` is for real obstacles (drift, MCP disconnect, schema rejection, build failure), not budget.
 
 ## Critic ensemble policy
 

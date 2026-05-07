@@ -195,7 +195,7 @@
 
 ### Why `model: opus` as default
 
-Per [15_MODEL_POLICY](15_COST_AND_MODEL_POLICY.md), the optimizer defaults to Opus because:
+Per [15_MODEL_POLICY](15_MODEL_POLICY.md), the optimizer defaults to Opus because:
 - The work is harness optimization (architecture-level).
 - Opus's better reasoning materially improves the structured recommendation quality.
 Sonnet is still used for the read-only critic subagents.
