@@ -1229,6 +1229,36 @@ fn validate_inner_harness_args(args: &AttemptArgs) -> Result<()> {
 async fn run(args: AttemptArgs) -> Result<Value> {
     let runtime_root = resolve_path(&args.runtime_root)?;
     create_dir_checked(&runtime_root)?;
+    // GC: garbage-collect aged runs, workspace clones, shift-logs, and oversized
+    // hook-events at every attempt start. Best-effort; never blocks the attempt.
+    // Report is overwritten at <runtime_root>/.gc-last-report.json so operators
+    // can du-track effectiveness without per-run accumulation.
+    {
+        let gc_report = gc_runtime_root(&runtime_root);
+        let report_path = runtime_root.join(".gc-last-report.json");
+        let _ = fs::write(
+            &report_path,
+            serde_json::to_string_pretty(&gc_report)
+                .unwrap_or_else(|_| "{}".to_string())
+                .as_bytes(),
+        );
+        if gc_report.runs_deleted > 0
+            || gc_report.workspaces_deleted > 0
+            || gc_report.shift_logs_deleted > 0
+            || gc_report.hook_events_truncated
+        {
+            eprintln!(
+                "[reality-loop] gc: runs={} ({} MB), workspaces={} ({} MB), shift_logs={} ({} MB), hook_events_truncated={}",
+                gc_report.runs_deleted,
+                gc_report.runs_bytes_freed / (1024 * 1024),
+                gc_report.workspaces_deleted,
+                gc_report.workspaces_bytes_freed / (1024 * 1024),
+                gc_report.shift_logs_deleted,
+                gc_report.shift_logs_bytes_freed / (1024 * 1024),
+                gc_report.hook_events_truncated,
+            );
+        }
+    }
     if args.max_attempts < 1 {
         return Err(RealityError::new(
             "RUST_REALITY_MAX_ATTEMPTS_INVALID",
@@ -2391,6 +2421,283 @@ fn compact_official_evidence(evidence: &Value) -> Value {
     })
 }
 
+/// GC retention policy constants. These bound on-disk growth of the runtime root
+/// without losing recent diagnostic value. Tuned for a /loop running 24/7 on
+/// /tmp (typical /tmp = 100-1000 GB, but other tools also consume it).
+///
+/// - 30 days for runs: long enough to span the operator's typical inspection
+///   window after a failure (post-incident review, weekly retros, etc.) without
+///   accumulating indefinitely.
+/// - 14 days for workspaces: a workspace clone is reproducible from the
+///   task manifest's base_commit; aging out and re-cloning is cheap (~1 min).
+/// - 7 days for shift-log session files: each /loop session writes one; daily
+///   rotation is more than enough for diagnosis.
+/// - 100 MB for hook-events: tight cap because this is a single append-only
+///   file, no per-session split. Truncated tail-keep to 50 MB on overflow.
+/// - 1 hour minimum age: safety bumper. Never delete anything created in the
+///   last hour, regardless of nominal retention. Protects against clock-skew
+///   misconfiguration deleting the active run.
+const GC_RUNS_RETENTION_DAYS: u64 = 30;
+const GC_WORKSPACE_RETENTION_DAYS: u64 = 14;
+const GC_SHIFT_LOG_RETENTION_DAYS: u64 = 7;
+const GC_HOOK_EVENTS_MAX_BYTES: u64 = 100 * 1024 * 1024;
+const GC_HOOK_EVENTS_TARGET_AFTER_TRUNCATE_BYTES: u64 = 50 * 1024 * 1024;
+const GC_MIN_ENTRY_AGE_SECONDS: u64 = 3600;
+
+/// Operator-visible report from one GC pass. Serialized to
+/// `<runtime_root>/.gc-last-report.json` so operators can verify GC ran and
+/// see what was freed without re-running the engine.
+#[derive(Debug, Default, Serialize)]
+struct GcReport {
+    runtime_root: String,
+    started_at_unix: u64,
+    finished_at_unix: u64,
+    runs_deleted: usize,
+    runs_bytes_freed: u64,
+    workspaces_deleted: usize,
+    workspaces_bytes_freed: u64,
+    shift_logs_deleted: usize,
+    shift_logs_bytes_freed: u64,
+    hook_events_bytes_before: u64,
+    hook_events_bytes_after: u64,
+    hook_events_truncated: bool,
+    errors: Vec<String>,
+    policy: GcPolicySnapshot,
+}
+
+#[derive(Debug, Default, Serialize)]
+struct GcPolicySnapshot {
+    runs_retention_days: u64,
+    workspace_retention_days: u64,
+    shift_log_retention_days: u64,
+    hook_events_max_bytes: u64,
+    hook_events_target_after_truncate_bytes: u64,
+    min_entry_age_seconds: u64,
+}
+
+/// Walk a directory recursively and sum file sizes. Best-effort: any errors
+/// (permission denied, broken symlink) are silently skipped. Used to attribute
+/// freed bytes per category in the GC report.
+fn dir_size_bytes(path: &Path) -> u64 {
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
+    let mut total = 0u64;
+    for entry in entries.flatten() {
+        let Ok(meta) = entry.metadata() else { continue };
+        if meta.is_dir() {
+            total = total.saturating_add(dir_size_bytes(&entry.path()));
+        } else if meta.is_file() {
+            total = total.saturating_add(meta.len());
+        }
+    }
+    total
+}
+
+/// True iff `path`'s mtime is older than `retention_days` AND older than the
+/// safety floor `GC_MIN_ENTRY_AGE_SECONDS`. The double-check protects against
+/// (a) clock skew on system boot deleting fresh data and (b) misconfiguration
+/// where retention_days might be set to 0.
+fn path_older_than(path: &Path, retention_days: u64, now_unix: u64) -> bool {
+    let Ok(meta) = fs::metadata(path) else {
+        return false;
+    };
+    let Ok(mtime) = meta.modified() else {
+        return false;
+    };
+    let Ok(dur) = mtime.duration_since(UNIX_EPOCH) else {
+        return false;
+    };
+    let age = now_unix.saturating_sub(dur.as_secs());
+    age >= GC_MIN_ENTRY_AGE_SECONDS && age >= retention_days.saturating_mul(86400)
+}
+
+/// Tail-truncate a JSONL file to keep only the last `target_bytes` bytes,
+/// aligning the cut to the next newline so partial lines aren't kept. Returns
+/// the new file size.
+fn truncate_jsonl_to_tail(path: &Path, target_bytes: u64) -> std::result::Result<u64, String> {
+    let bytes = fs::read(path).map_err(|e| format!("read {}: {}", path.display(), e))?;
+    let total = bytes.len() as u64;
+    if total <= target_bytes {
+        return Ok(total);
+    }
+    let cut = (total - target_bytes) as usize;
+    let aligned_cut = bytes[cut..]
+        .iter()
+        .position(|&b| b == b'\n')
+        .map(|i| cut + i + 1)
+        .unwrap_or(cut);
+    let kept = &bytes[aligned_cut..];
+    fs::write(path, kept).map_err(|e| format!("write {}: {}", path.display(), e))?;
+    Ok(kept.len() as u64)
+}
+
+/// Run one GC pass over `runtime_root`. Best-effort: every error is recorded
+/// in `errors` but never propagated. The function returns the report by value
+/// so callers can decide whether to log it, persist it, or both.
+fn gc_runtime_root(runtime_root: &Path) -> GcReport {
+    let started = unix_secs_for_logging();
+    let mut report = GcReport {
+        runtime_root: path_str(runtime_root).to_string(),
+        started_at_unix: started,
+        policy: GcPolicySnapshot {
+            runs_retention_days: GC_RUNS_RETENTION_DAYS,
+            workspace_retention_days: GC_WORKSPACE_RETENTION_DAYS,
+            shift_log_retention_days: GC_SHIFT_LOG_RETENTION_DAYS,
+            hook_events_max_bytes: GC_HOOK_EVENTS_MAX_BYTES,
+            hook_events_target_after_truncate_bytes: GC_HOOK_EVENTS_TARGET_AFTER_TRUNCATE_BYTES,
+            min_entry_age_seconds: GC_MIN_ENTRY_AGE_SECONDS,
+        },
+        ..Default::default()
+    };
+    let now_unix = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(d) => d.as_secs(),
+        Err(_) => {
+            report
+                .errors
+                .push("system time before unix epoch; skipping GC".to_string());
+            report.finished_at_unix = unix_secs_for_logging();
+            return report;
+        }
+    };
+    // 1. Old run dirs: rust_reality_<id>/
+    if let Ok(entries) = fs::read_dir(runtime_root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.starts_with("rust_reality_") {
+                continue;
+            }
+            if !path_older_than(&path, GC_RUNS_RETENTION_DAYS, now_unix) {
+                continue;
+            }
+            let size = dir_size_bytes(&path);
+            match fs::remove_dir_all(&path) {
+                Ok(_) => {
+                    report.runs_deleted += 1;
+                    report.runs_bytes_freed = report.runs_bytes_freed.saturating_add(size);
+                }
+                Err(e) => report
+                    .errors
+                    .push(format!("rm run {}: {}", path.display(), e)),
+            }
+        }
+    }
+    // 2. Old workspace clones: workspaces/<instance>/repo/
+    let workspaces = runtime_root.join("workspaces");
+    if let Ok(entries) = fs::read_dir(&workspaces) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let repo = path.join("repo");
+            if !repo.exists() {
+                continue;
+            }
+            if !path_older_than(&repo, GC_WORKSPACE_RETENTION_DAYS, now_unix) {
+                continue;
+            }
+            let size = dir_size_bytes(&repo);
+            match fs::remove_dir_all(&repo) {
+                Ok(_) => {
+                    report.workspaces_deleted += 1;
+                    report.workspaces_bytes_freed =
+                        report.workspaces_bytes_freed.saturating_add(size);
+                }
+                Err(e) => report
+                    .errors
+                    .push(format!("rm workspace {}: {}", repo.display(), e)),
+            }
+        }
+    }
+    // 3. Old shift-log session files
+    let shift_log_root = runtime_root.join("cgreality-shift-log");
+    if let Ok(entries) = fs::read_dir(&shift_log_root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(meta) = entry.metadata() else { continue };
+            if !meta.is_file() {
+                continue;
+            }
+            if !path_older_than(&path, GC_SHIFT_LOG_RETENTION_DAYS, now_unix) {
+                continue;
+            }
+            let size = meta.len();
+            match fs::remove_file(&path) {
+                Ok(_) => {
+                    report.shift_logs_deleted += 1;
+                    report.shift_logs_bytes_freed =
+                        report.shift_logs_bytes_freed.saturating_add(size);
+                }
+                Err(e) => report
+                    .errors
+                    .push(format!("rm shift-log {}: {}", path.display(), e)),
+            }
+        }
+    }
+    // 4. Oversized hook-events.jsonl: tail-truncate to TARGET_AFTER_TRUNCATE
+    let hook_events = runtime_root.join("cgreality-hook-events.jsonl");
+    if let Ok(meta) = fs::metadata(&hook_events) {
+        let size = meta.len();
+        report.hook_events_bytes_before = size;
+        if size > GC_HOOK_EVENTS_MAX_BYTES {
+            match truncate_jsonl_to_tail(&hook_events, GC_HOOK_EVENTS_TARGET_AFTER_TRUNCATE_BYTES) {
+                Ok(after) => {
+                    report.hook_events_truncated = true;
+                    report.hook_events_bytes_after = after;
+                }
+                Err(e) => report
+                    .errors
+                    .push(format!("truncate hook-events: {}", e)),
+            }
+        } else {
+            report.hook_events_bytes_after = size;
+        }
+    }
+    report.finished_at_unix = unix_secs_for_logging();
+    report
+}
+
+/// U1-LIMIT: cap on failure-* files retained under `<runtime_root>/failures/`.
+/// Each record can be ~100 KB (full tool-call args embedded), so a tight failure
+/// loop fills disk fast. After each write we prune oldest beyond this count.
+const MAX_FAILURE_FILES_RETAINED: usize = 100;
+
+/// Best-effort prune: keep the newest `max_files` failure-*.json files in
+/// `failure_root`, delete older ones. Silent on errors — we never fail a
+/// failure write because cleanup hit a permission issue.
+fn prune_failure_dir(failure_root: &Path, max_files: usize) -> std::result::Result<usize, String> {
+    let entries = match fs::read_dir(failure_root) {
+        Ok(e) => e,
+        Err(e) => return Err(e.to_string()),
+    };
+    let mut files: Vec<(SystemTime, PathBuf)> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_name()
+                .to_str()
+                .map(|s| s.starts_with("failure-") && s.ends_with(".json"))
+                .unwrap_or(false)
+        })
+        .filter_map(|e| {
+            let mtime = e.metadata().ok()?.modified().ok()?;
+            Some((mtime, e.path()))
+        })
+        .collect();
+    if files.len() <= max_files {
+        return Ok(0);
+    }
+    files.sort_by_key(|(mtime, _)| *mtime); // oldest first
+    let to_delete = files.len() - max_files;
+    let mut deleted = 0usize;
+    for (_, path) in files.iter().take(to_delete) {
+        if fs::remove_file(path).is_ok() {
+            deleted += 1;
+        }
+    }
+    Ok(deleted)
+}
+
 fn write_failure_artifact_for_command(
     runtime_root: &Path,
     err: &RealityError,
@@ -2422,6 +2729,9 @@ fn write_failure_artifact_for_command(
     let mut file = fs::File::create(&path).map_err(|io_err| io_err.to_string())?;
     file.write_all(text.as_bytes())
         .map_err(|io_err| io_err.to_string())?;
+    // U1: prune after each write. Best-effort — never propagate cleanup errors
+    // back to the caller; the failure record itself was written successfully.
+    let _ = prune_failure_dir(&failure_root, MAX_FAILURE_FILES_RETAINED);
     file.sync_all().map_err(|io_err| io_err.to_string())?;
     let readback = fs::read_to_string(&path).map_err(|io_err| io_err.to_string())?;
     let actual: Value = serde_json::from_str(&readback).map_err(|json_err| json_err.to_string())?;
@@ -7952,6 +8262,13 @@ fn run_official_eval(
         args.official_timeout + 3600,
         &official_env,
     )?;
+    // C2: best-effort Docker container cleanup keyed on this eval's --run_id.
+    // SWE-bench's harness normally cleans its own containers on graceful exit,
+    // but a SIGKILL of the python proc (run_cmd_env timeout, kernel OOM, panic)
+    // can leak containers labeled with the run_id. C1's process_group + 2s
+    // SIGTERM grace mitigates the common case; this is the defense-in-depth.
+    // Failures are silent — a stray container is not a reason to fail the eval.
+    cleanup_swebench_containers_for_run(&run_id);
     let command_path = attempt_dir.join("official-eval-command.json");
     write_json_checked(
         &command_path,
@@ -7986,6 +8303,39 @@ fn run_official_eval(
             "test_output": test_output["source_of_truth"].clone()
         }
     }))
+}
+
+/// Best-effort cleanup of any Docker containers whose names include this run_id.
+/// SWE-bench's evaluator names containers like `sweb.eval.<instance>.<run_id>.<...>`,
+/// so a substring filter on `name=<run_id>` reliably scopes cleanup to this eval.
+/// Silent on errors — never propagates back to the caller. Skips entirely if the
+/// docker binary is missing.
+fn cleanup_swebench_containers_for_run(run_id: &str) {
+    if run_id.is_empty() {
+        return;
+    }
+    let filter = format!("name={}", run_id);
+    let list = match std::process::Command::new("docker")
+        .args(["ps", "-aq", "--filter", &filter])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return,
+    };
+    if !list.status.success() {
+        return;
+    }
+    let ids: Vec<String> = String::from_utf8_lossy(&list.stdout)
+        .lines()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if ids.is_empty() {
+        return;
+    }
+    let mut args: Vec<String> = vec!["rm".to_string(), "-f".to_string()];
+    args.extend(ids);
+    let _ = std::process::Command::new("docker").args(&args).output();
 }
 
 fn verify_official_docker_sdk(args: &AttemptArgs, attempt_dir: &Path) -> Result<()> {

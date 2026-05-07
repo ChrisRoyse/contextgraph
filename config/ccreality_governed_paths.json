@@ -10,6 +10,7 @@
     "crates/context-graph-cli/src/**",
     "crates/context-graph-cli/Cargo.toml",
     "crates/context-graph-mcp/Cargo.toml",
+    ".cargo/config.toml",
     "crates/context-graph-mcp/src/handlers/tools/reality_loop/**",
     "crates/context-graph-mcp/src/handlers/tools/reality_loop/*.rs",
     "crates/context-graph-mcp/src/handlers/tools/dispatch.rs",
