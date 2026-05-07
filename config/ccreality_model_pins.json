@@ -1,15 +1,15 @@
 {
   "$schema_version": "1",
-  "_doc": "Cryptographic pins for Gemma coding-harness model files. The reality-loop binary loads this file at start-up and refuses to load any GGUF whose size or sha256 does not match the active pin entry. New entries must include all six fields; missing fields fail closed. Recompute sha256 deliberately when intentionally upgrading.",
+  "_doc": "Cryptographic pins for the ccreality inner-actor coding-harness model files. The reality-loop binary loads this file at start-up and refuses to load any GGUF whose size or sha256 does not match the active pin entry. New entries must include all six fields; missing fields fail closed. Recompute sha256 deliberately when intentionally upgrading.",
   "models": {
-    "gemma4_e4b_bf16": {
-      "description": "Gemma 4 E4B Instruction-Tuned, BF16 GGUF (full precision, lossless).",
-      "repo_id": "ggml-org/gemma-4-E4B-it-GGUF",
-      "filename": "gemma-4-E4B-it-bf16.gguf",
-      "expected_sha256": "sha256:23458339ab520c5632ab8251ba42ed8f30baa29e0c74210b3fcbe9a4b047720c",
-      "expected_size_bytes": 15053094880,
+    "qwen3_6_27b_q6_k_xl": {
+      "description": "Qwen3.6-27B Instruction-Tuned, Unsloth Dynamic Q6_K_XL GGUF (~25.6 GB on-disk, ~22 GB resident on RTX 5090, full 128K context).",
+      "repo_id": "unsloth/Qwen3.6-27B-GGUF",
+      "filename": "Qwen3.6-27B-UD-Q6_K_XL.gguf",
+      "expected_sha256": "sha256:8746881d40f280b1b6b858c656a347c754ed3d9cc8d2e1ad46b3635b87f611f8",
+      "expected_size_bytes": 25636485344,
       "expected_min_context_tokens": 128000,
-      "expected_identity_substrings": ["gemma4"]
+      "expected_identity_substrings": ["qwen3"]
     }
   }
 }
