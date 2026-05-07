@@ -40,7 +40,7 @@ Call `mcp__cgreality__optimizer_record_recommendation` with a schema-complete `n
 - `source_files_changed: []`
 - `verification_commands`: include `git status --short` and `harness_verify_state reality_loop_only`
 - `source_of_truth_readbacks`: the exact `file:` URIs from steps 2-5
-- `next_gemma_prompt_delta`: explicit no-change statement
+- `next_inner_prompt_delta`: explicit no-change statement
 - `expected_reward_signal_delta`: explicit no-change statement
 - `remaining_risks: []`
 - `memories_created: []`

@@ -544,7 +544,7 @@ mod tests {
                 "schema_version": 1,
                 "record_kind": "ccreality_champion_state",
                 "champions": [{
-                    "model": "gemma4:e4b",
+                    "model": "qwen3.6:27b",
                     "task": "psf__requests-2317",
                     "repo": "psf/requests",
                     "attempt": 1,
@@ -559,8 +559,8 @@ mod tests {
         .expect("write champion");
         std::fs::write(
             optimizer_dir.join("attempts.jsonl"),
-            r#"{"model":"gemma4:e4b","instance_id":"psf__requests-2317","attempt":1,"reward_scalar":4.31}
-{"model":"gemma4:e4b","instance_id":"psf__requests-2317","attempt":2,"reward_scalar":4.78}
+            r#"{"model":"qwen3.6:27b","instance_id":"psf__requests-2317","attempt":1,"reward_scalar":4.31}
+{"model":"qwen3.6:27b","instance_id":"psf__requests-2317","attempt":2,"reward_scalar":4.78}
 "#,
         ).expect("write attempts");
 
@@ -600,7 +600,7 @@ mod tests {
     #[tokio::test]
     async fn champion_state_get_filters_by_model() {
         let _rt = setup_runtime();
-        let result = champion_state_get(json!({"model": "gemma4:e4b"}))
+        let result = champion_state_get(json!({"model": "qwen3.6:27b"}))
             .await
             .expect("ok");
         let champions = result["champions"].as_array().unwrap();
@@ -685,7 +685,7 @@ mod tests {
         let mut state: Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         state["champions"].as_array_mut().unwrap().push(json!({
-            "model": "gemma4:e4b",
+            "model": "qwen3.6:27b",
             "task": "django__django-12908",
             "official_resolved": false,
             "best_reward": 1.0
@@ -693,7 +693,7 @@ mod tests {
         std::fs::write(&path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
 
         let err = champion_state_promote(json!({
-            "model": "gemma4:e4b",
+            "model": "qwen3.6:27b",
             "task": "django__django-12908",
             "justification": "trying to short-circuit",
             "claude_session_id": "test"

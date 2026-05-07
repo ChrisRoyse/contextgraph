@@ -38,9 +38,9 @@ The forward plan introduces new ways the loop can fail. Each risk has an owner (
 
 **Detection:** mismatch returns `HARNESS_EDIT_SHA_MISMATCH` immediately; recommendation is `blocked` with drift detail.
 
-## R4 — Inner-model regression (the loop made Gemma worse)
+## R4 — Inner-model regression (the loop made the inner actor worse)
 
-**Risk:** an "improvement" actually narrows Gemma's behavior — fewer parsable patches, more retries, lower reward.
+**Risk:** an "improvement" actually narrows the inner actor's behavior — fewer parsable patches, more retries, lower reward.
 
 **Mitigations:**
 - `experiment-registry.json` tracks every harness candidate's keep/discard verdict (Phase 15).
@@ -52,7 +52,7 @@ The forward plan introduces new ways the loop can fail. Each risk has an owner (
 
 ## R5 — Cross-model contamination
 
-**Risk:** raw Qwen output leaks into Gemma's prompt, polluting it with unverified claims.
+**Risk:** raw Qwen output leaks into the inner actor's prompt, polluting it with unverified claims.
 
 **Mitigations:**
 - Cross-model memory namespace stores only verified failure facts (Phase 16).
@@ -141,4 +141,4 @@ The forward plan introduces new ways the loop can fail. Each risk has an owner (
 
 - "The optimizer makes a non-optimal harness change." That's the *purpose* of the loop — it must be free to try, fail, and learn. The mitigation is the experiment registry, not preventing the change.
 - "An attempt fails." Failure is the loop's input. Phase 12 already proved the system handles this correctly.
-- "Gemma can't solve a hard task." Out of scope for the meta-loop; covered by curriculum (Phase 19).
+- "the inner actor can't solve a hard task." Out of scope for the meta-loop; covered by curriculum (Phase 19).

@@ -36,8 +36,8 @@ Verify with: `mcp__cgreality__reality_latest_root`, `mcp__cgreality__reality_att
 
 `./target/debug/reality-loop --help` exposes:
 
-- `attempt`        — one Gemma SWE-bench attempt with optional official Docker eval.
-- `smoke`          — synthetic deterministic attempt; no Gemma, no Docker.
+- `attempt`        — one the inner actor SWE-bench attempt with optional official Docker eval.
+- `smoke`          — synthetic deterministic attempt; no the inner actor, no Docker.
 - `replay`         — replay an artifact into a new run root.
 - `verify`         — verify a runtime root's artifacts against schemas + readback.
 - `official-eval`  — re-run official SWE-bench Docker eval against an existing attempt.
@@ -102,7 +102,7 @@ Tests: `scripts/cc/tests/hooks/test_*.sh` and the master `scripts/cc/tests/smoke
 - Runtime root: `/tmp/ccreality-prod-1`.
 - Hardened run: `rust_reality_1778020383548106093_e525987d`.
 - Task: `psf__requests-2317` (SWE-bench Lite, real Hugging Face row).
-- Attempt-summary: `tasks/psf__requests-2317/gemma4-e4b/attempts/attempt-000001/attempt-summary.json`.
+- Attempt-summary: `tasks/psf__requests-2317/qwen3.6-e4b/attempts/attempt-000001/attempt-summary.json`.
 - Outcome: `status=failed`, `error_code=RUST_REALITY_FINAL_EDIT_TOOL_FAILED`, `patch_sha256=null`.
 - Optimizer recommendation: `…/claude-code-optimizer/recommendation-turn-01.json` (real, schema-valid).
 - Final FSV log: `/tmp/ccreality-phase12-fsv-20260505T225350Z.log`.

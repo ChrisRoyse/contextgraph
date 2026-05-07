@@ -123,7 +123,7 @@ The artifact includes:
 - `source_of_truth_readbacks`: file:... paths the agent claims to have actually re-read after editing.
 - `shift_log_excerpt`: the shift_ids of the mutations this turn produced. Lets future turns replay.
 - `verification_commands`: the exact commands the agent ran (or had a subagent run).
-- `next_gemma_prompt_delta`: the one-line directive to feed to the next inner-Gemma attempt.
+- `next_inner_prompt_delta`: the one-line directive to feed to the next inner-the inner actor attempt.
 - `created_at_unix` and `source_of_truth`: schema-shaped placeholders only. The MCP server stamps the actual write timestamp and file path.
 
 ## Prompt-injection defense (recap)

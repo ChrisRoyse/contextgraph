@@ -266,7 +266,7 @@ Memory and graph tools remain available through the full ContextGraph MCP server
 
 ### `reality_run_attempt`
 
-**Purpose:** Run one Gemma attempt and produce a fresh attempt-N artifact tree.
+**Purpose:** Run one the inner actor attempt and produce a fresh attempt-N artifact tree.
 
 **Input:**
 ```json
@@ -275,7 +275,7 @@ Memory and graph tools remain available through the full ContextGraph MCP server
   "runtime_root": "string (absolute path; default: latest)",
   "max_attempts": "integer (default 1)",
   "official_eval": "boolean (default true)",
-  "model": "string (default gemma4:e4b)"
+  "model": "string (default qwen3.6:27b)"
 }
 ```
 
@@ -301,7 +301,7 @@ Memory and graph tools remain available through the full ContextGraph MCP server
 
 ### `reality_run_smoke`
 
-**Purpose:** Run a synthetic smoke attempt that does not require Gemma + Docker.
+**Purpose:** Run a synthetic smoke attempt that does not require the inner actor + Docker.
 
 **Input:** `{ "runtime_root": "string (default tmp)", "label": "string (default smoke)" }`
 
@@ -319,7 +319,7 @@ Memory and graph tools remain available through the full ContextGraph MCP server
 
 **Output:** updated official report + new SHA.
 
-Useful when the operator wants to re-confirm an official result without re-running Gemma.
+Useful when the operator wants to re-confirm an official result without re-running the inner actor.
 
 ---
 
@@ -436,7 +436,7 @@ This is the analyze-half of the editing pair. Claude must always call this befor
 6. Mint a harness-transition record (round = max(existing) + 1) including the tool_use_id.
 7. Return.
 
-This deduplicates existing Rust code; we'll lift `project_apply_line_window_edits` (line 4336 of `reality-loop.rs`) into a shared crate utility used by both the MCP tool and the existing Gemma agent tool.
+This deduplicates existing Rust code; we'll lift `project_apply_line_window_edits` (line 4336 of `reality-loop.rs`) into a shared crate utility used by both the MCP tool and the existing the inner actor agent tool.
 
 ---
 
@@ -551,7 +551,7 @@ The decision artifact is read by the SessionStart and UserPromptSubmit hooks, so
   "source_files_changed": ["string"],
   "verification_commands": ["string"],
   "source_of_truth_readbacks": ["file:..."],
-  "next_gemma_prompt_delta": "string",
+  "next_inner_prompt_delta": "string",
   "expected_reward_signal_delta": "string",
   "remaining_risks": ["string"],
   "memories_created": ["uuid"],
@@ -568,7 +568,7 @@ The artifact is written under `<run>/<task>/attempt-N/claude-code-optimizer/reco
 
 ### `optimizer_record_harness_transition`
 
-**Purpose:** Called by the PostToolUse Edit/Write hook (via stdio MCP client) to write a harness-transition record, since the existing reality-engine harness-transition writer is in the inner-Gemma loop.
+**Purpose:** Called by the PostToolUse Edit/Write hook (via stdio MCP client) to write a harness-transition record, since the existing reality-engine harness-transition writer is in the inner-the inner actor loop.
 
 **Input:**
 ```json

@@ -17,7 +17,7 @@ The outer loop's purpose is to build the best possible inner loop. The inner loo
 
 The working goal is:
 
-> Build a ContextGraph-controlled reality loop that can drive `gemma4:e4b` toward 100% official success on a smoke SWE-bench Lite suite, then expand only when the loop proves improvement without reward hacking. (Earlier project drafts envisioned multiple local models in parallel; that scope was deliberately reduced to a single model so optimizer effort stays focused on harness quality.)
+> Build a ContextGraph-controlled reality loop that can drive `qwen3.6:27b` toward 100% official success on a smoke SWE-bench Lite suite, then expand only when the loop proves improvement without reward hacking. (Earlier project drafts envisioned multiple local models in parallel; that scope was deliberately reduced to a single model so optimizer effort stays focused on harness quality.)
 
 This is an optimization target, not a claim of current capability. The system can only claim 100% after the official SWE-bench report proves every selected instance is in `resolved_ids` for every selected model.
 

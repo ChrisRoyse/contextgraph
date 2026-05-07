@@ -4,7 +4,7 @@
 
 Date: 2026-05-05
 
-Purpose: define how to use Claude Code as the outer reality-loop optimizer that currently exists as the DeepSeek optimizer, while Gemma remains the inner SWE-bench repair actor.
+Purpose: define how to use Claude Code as the outer reality-loop optimizer that currently exists as the DeepSeek optimizer, while the inner actor remains the inner SWE-bench repair actor.
 
 ## Executive Decision
 
@@ -23,7 +23,7 @@ Do not run an always-thinking Claude session as the primary optimizer. Durable a
 The best design is:
 
 ```text
-Gemma attempt
+the inner actor attempt
   -> ContextGraph applies patch through governed tools
   -> official SWE-bench Docker eval
   -> durable reality artifacts
@@ -31,7 +31,7 @@ Gemma attempt
   -> Claude Code optimizer session
   -> Claude reads actual artifacts and edits ContextGraph harness
   -> cargo/test/source-of-truth readback
-  -> next Gemma attempt gets better reality
+  -> next the inner actor attempt gets better reality
 ```
 
 ## Research Basis
@@ -70,9 +70,9 @@ Claude Code already has this shape. Its value is that it has native coding-agent
 
 ### Roles
 
-**Gemma**
+**the inner actor**
 
-Gemma is the inner SWE-bench repair agent.
+the inner actor is the inner SWE-bench repair agent.
 
 Responsibilities:
 
@@ -82,7 +82,7 @@ Responsibilities:
 - respond to official SWE-bench failure reality
 - iterate until the official evaluator resolves the instance
 
-Gemma must not:
+the inner actor must not:
 
 - edit official tests
 - edit SWE-bench evaluation code
@@ -96,7 +96,7 @@ ContextGraph is the deterministic reality substrate.
 
 Responsibilities:
 
-- run Gemma attempts
+- run the inner actor attempts
 - apply patches only through governed tools
 - run official SWE-bench Docker evaluation
 - write and read back artifacts
@@ -112,7 +112,7 @@ Claude Code is the outer harness optimizer.
 Responsibilities:
 
 - read ContextGraph's latest durable reality artifacts
-- diagnose why Gemma failed
+- diagnose why the inner actor failed
 - improve the harness, prompt reinjection, tool surface, reward features, or telemetry
 - edit ContextGraph project source when needed
 - run real verification
@@ -135,7 +135,7 @@ Use event-triggered Claude Code, not always-on Claude Code.
 Trigger Claude Code when any of these durable facts appears:
 
 - official SWE-bench report does not include the target instance in `resolved_ids`
-- Gemma produced an empty patch
+- the inner actor produced an empty patch
 - patch failed to apply
 - patch repeated a previous failed patch hash
 - local validation failed
@@ -206,7 +206,7 @@ The memory should say:
 ```markdown
 # ContextGraph Reality Loop Rules
 
-Gemma is the inner SWE-bench repair actor.
+the inner actor is the inner SWE-bench repair actor.
 Claude Code is the outer harness optimizer.
 ContextGraph owns the deterministic reality boundary.
 
@@ -222,7 +222,7 @@ Never claim success unless the official SWE-bench report places the target insta
 When optimizing the harness:
 - inspect the latest durable reality artifacts first
 - identify the source of truth for the result
-- make the smallest source edit that improves Gemma's reality feedback
+- make the smallest source edit that improves the inner actor's reality feedback
 - run cargo fmt/test/build
 - inspect generated artifacts after execution
 - write a concise report with file paths, commands, source-of-truth paths, and remaining risk
@@ -235,7 +235,7 @@ Create `.claude/loop.md` for manual operator mode:
 ```markdown
 You are the Claude Code outer optimizer for ContextGraph.
 
-Goal: improve the ContextGraph reality loop so Gemma can pass the configured SWE-bench Lite instance through the official Docker evaluator.
+Goal: improve the ContextGraph reality loop so the inner actor can pass the configured SWE-bench Lite instance through the official Docker evaluator.
 
 On every iteration:
 
@@ -243,8 +243,8 @@ On every iteration:
 2. Read the latest attempt summary, official SWE-bench report, reward signal, trigger decision, and optimizer artifacts.
 3. Define the source of truth for success.
 4. If the target instance is already in official resolved_ids, report success and do not change code.
-5. If not resolved, diagnose why Gemma failed using only durable artifacts and real source files.
-6. Improve the harness, prompt reinjection, tool contracts, reward features, or verification reporting if that will make Gemma more capable on the next attempt.
+5. If not resolved, diagnose why the inner actor failed using only durable artifacts and real source files.
+6. Improve the harness, prompt reinjection, tool contracts, reward features, or verification reporting if that will make the inner actor more capable on the next attempt.
 7. Run cargo fmt, focused tests, and cargo build for changed Rust code.
 8. Read back the relevant source-of-truth files and summarize the actual state.
 
@@ -269,7 +269,7 @@ Then inside Claude Code:
 Or for a specific live watch:
 
 ```text
-/loop Watch the latest ContextGraph reality-loop attempt. If Gemma fails, inspect the physical artifacts and improve the harness. Stop only if official SWE-bench resolved_ids includes the target instance.
+/loop Watch the latest ContextGraph reality-loop attempt. If the inner actor fails, inspect the physical artifacts and improve the harness. Stop only if official SWE-bench resolved_ids includes the target instance.
 ```
 
 ### Phase 4: Use Claude Programmatically From ContextGraph
@@ -476,7 +476,7 @@ Every Claude optimizer call should include:
 ```json
 {
   "role": "outer_optimizer",
-  "inner_actor": "gemma",
+  "inner_actor": "inner-actor",
   "target": {
     "dataset": "princeton-nlp/SWE-bench_Lite",
     "instance_id": "<instance_id>",
@@ -492,7 +492,7 @@ Every Claude optimizer call should include:
   },
   "allowed_work": [
     "improve ContextGraph reality-loop harness",
-    "improve Gemma prompt reinjection",
+    "improve the inner actor prompt reinjection",
     "improve tool schema and structured edit path",
     "improve reward feature extraction",
     "improve source-of-truth reporting",
@@ -518,7 +518,7 @@ Claude's final structured output should conform to:
   "source_files_changed": ["string"],
   "verification_commands": ["string"],
   "source_of_truth_readbacks": ["string"],
-  "next_gemma_prompt_delta": "string",
+  "next_inner_prompt_delta": "string",
   "expected_reward_signal_delta": "string",
   "remaining_risks": ["string"]
 }
@@ -735,7 +735,7 @@ For manual development, use:
 For the real autonomous reality loop, use:
 
 ```text
-ContextGraph event trigger -> claude -p or Agent SDK -> artifacts -> readback -> next Gemma attempt
+ContextGraph event trigger -> claude -p or Agent SDK -> artifacts -> readback -> next the inner actor attempt
 ```
 
 That gives you the benefits of Claude Code's coding-agent harness without giving up the core ContextGraph claim: durable reality, not model confidence, decides whether the system is working.

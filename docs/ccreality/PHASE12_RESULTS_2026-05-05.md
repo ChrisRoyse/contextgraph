@@ -12,9 +12,9 @@
 - Hugging Face source row: `princeton-nlp/SWE-bench_Lite:test:psf__requests-2317`
 - Initial run: `/tmp/ccreality-prod-1/rust_reality_1778019193433351252_e525987d`
 - Hardened run: `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d`
-- Hardened attempt summary: `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/gemma4-e4b/attempts/attempt-000001/attempt-summary.json`
-- BlackBox ledger: `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/gemma4-e4b/blackbox.sqlite`
-- Real `/ccreality-iterate` recommendation: `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/gemma4-e4b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json`
+- Hardened attempt summary: `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-e4b/attempts/attempt-000001/attempt-summary.json`
+- BlackBox ledger: `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-e4b/blackbox.sqlite`
+- Real `/ccreality-iterate` recommendation: `/tmp/ccreality-prod-1/rust_reality_1778020383548106093_e525987d/tasks/psf__requests-2317/qwen3.6-e4b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json`
 
 ## Production Outcome
 
@@ -30,7 +30,7 @@ The hardened production attempt failed closed before producing a candidate patch
 {"status":"failed","error_code":"RUST_REALITY_FINAL_EDIT_TOOL_FAILED","message":"model called a final edit tool but it did not produce a candidate patch","patch_sha256":null}
 ```
 
-This is the intended Phase 12 result for the observed model behavior. Gemma submitted an invalid line-window edit twice; the engine rejected it before `candidate.patch` and restored the real checkout.
+This is the intended Phase 12 result for the observed model behavior. the inner actor submitted an invalid line-window edit twice; the engine rejected it before `candidate.patch` and restored the real checkout.
 
 ## Root Causes Fixed
 

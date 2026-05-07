@@ -106,7 +106,7 @@ Implemented only in `crates/context-graph-cli/src/bin/reality-loop.rs`:
 ```bash
 cargo build -p context-graph-cli --bin reality-loop
 target/debug/reality-loop \
-  --model gemma4:e4b \
+  --model qwen3.6:27b \
   --task-manifest /tmp/contextgraph-hard-swe-sklearn-25638-task-manifest.json \
   --official-eval-each-attempt \
   --run-until-resolved
@@ -127,10 +127,10 @@ The root cause fixed here was that the loop used a finite `for attempt in range(
 
 Implemented in `crates/context-graph-cli/src/bin/reality-loop.rs`:
 
-- Rust-owned SWE task loop for one local model at a time, starting with `gemma4:e4b`;
+- Rust-owned SWE task loop for one local model at a time, starting with `qwen3.6:27b`;
 - real SWE-bench Lite task manifest input;
 - real git clone/reset/clean workspace control;
-- real Ollama/Gemma model calls;
+- real Ollama/the inner-actor model calls;
 - VRAM budget readbacks through `nvidia-smi`;
 - prompt, request, response, parse report, validation, event, and summary artifacts with read-after-write verification;
 - BlackBoxFix ledger/evidence/incident/score/reward integration;
@@ -185,7 +185,7 @@ Use the smoke suite first:
 
 Run the single pinned model:
 
-- `gemma4:e4b`
+- `qwen3.6:27b`
 
 (Earlier project drafts ran a multi-model rotation; that scope has been retired.)
 
@@ -294,7 +294,7 @@ Implement Phase 1 in code, then run one bounded smoke:
 ```bash
 cargo build -p context-graph-cli --bin reality-loop
 target/debug/reality-loop \
-  --model gemma4:e4b \
+  --model qwen3.6:27b \
   --task-manifest /tmp/contextgraph-hard-swe-sklearn-25638-task-manifest.json \
   --runtime-root /tmp/contextgraph-rust-reality-loop-smoke \
   --max-attempts 2 \

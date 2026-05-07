@@ -193,7 +193,7 @@ Default features: `cuda`. Four binaries (per `cargo metadata`): `context-graph-c
 | `lib.rs` | `commands`, `error`, `mcp_client`, `mcp_helpers`; `CliExitCode`, `is_corruption_indicator`, `exit_code_for_error` |
 | `bin/context-graph.rs` | Auxiliary binary (6 LOC stub forwarding to lib) |
 | `bin/blackbox.rs` | Black-box harness entry (24 LOC; phase-13 retention dashboard, FSV) |
-| `bin/reality-loop.rs` | Rust-owned SWE-bench reality loop (2,379 LOC). `tokio::main` async binary. Drives one local Ollama model (default `gemma4:e4b`) through SWE-bench_Lite repair attempts: task-manifest readback, git workspace control, repository context selection, prompt/request/response/parse-report SHA-256 read-after-write, real `/api/chat` calls, `nvidia-smi` GPU VRAM budget enforcement, BlackBoxFix run/model/tool/verifier/score/reward records with SQLite ledger readback, append-only `reality-events.jsonl`, typed `RealityError` failure artifacts, fail-closed `<run_root>/measurement-contract.json` written before execution. Hard rejects `--run-until-resolved` without `--official-eval-each-attempt`, dataset ≠ `princeton-nlp/SWE-bench_Lite`, malformed instance/repo/SHA, dirty worktree, base_commit ≠ git HEAD, candidate patch touching benchmark/test/fixture/harness paths. |
+| `bin/reality-loop.rs` | Rust-owned SWE-bench reality loop (2,379 LOC). `tokio::main` async binary. Drives one local Ollama model (default `qwen3.6:27b`) through SWE-bench_Lite repair attempts: task-manifest readback, git workspace control, repository context selection, prompt/request/response/parse-report SHA-256 read-after-write, real `/api/chat` calls, `nvidia-smi` GPU VRAM budget enforcement, BlackBoxFix run/model/tool/verifier/score/reward records with SQLite ledger readback, append-only `reality-events.jsonl`, typed `RealityError` failure artifacts, fail-closed `<run_root>/measurement-contract.json` written before execution. Hard rejects `--run-until-resolved` without `--official-eval-each-attempt`, dataset ≠ `princeton-nlp/SWE-bench_Lite`, malformed instance/repo/SHA, dirty worktree, base_commit ≠ git HEAD, candidate patch touching benchmark/test/fixture/harness paths. |
 | `error.rs` | CLI exit-code mapping |
 | `mcp_client.rs`, `mcp_helpers.rs` | Local MCP client for hook scripts |
 | `commands/setup.rs` | Bootstrap (`init`, model download orchestration) |
@@ -314,10 +314,10 @@ Located under `scripts/` (78 entries) and `gemmafrontend/` (7 Python files). The
 | `scripts/check-embedder-count.sh`, `check-ffi-consolidation.sh` | CI guards |
 | `scripts/restart_pipeline_services.sh`, `vram_watchdog.py` | Runtime ops |
 | `scripts/blackboxfix_*.py` | BlackBoxFix demos and intelligence reports |
-| `gemmafrontend/server.py` (3,879 LOC) | Python evidence console; HTTP `:8787`; loads tools from backend; targets the single local Ollama model (`gemma4:e4b`); persists frontend snapshots under `/tmp/gemmafrontend-runs/frontend-runs/*/system-snapshot.json` |
-| `gemmafrontend/manual_fsv.py` (382 LOC) | Manual FSV starter for the gemma frontend server, ledger, snapshot, product-category pack, signed attestation, tamper detection |
-| `gemmafrontend/model_benchmark.py` (248 LOC) | Single-model benchmark runner against the local `gemma4:e4b` Ollama model |
-| `gemmafrontend/model_prompt_matrix.py` (497 LOC) | Prompt × model evidence matrix (currently single-model: `gemma4:e4b`) |
+| `gemmafrontend/server.py` (3,879 LOC) | Python evidence console; HTTP `:8787`; loads tools from backend; targets the single local Ollama model (`qwen3.6:27b`); persists frontend snapshots under `/tmp/gemmafrontend-runs/frontend-runs/*/system-snapshot.json` |
+| `gemmafrontend/manual_fsv.py` (382 LOC) | Manual FSV starter for the inner-actor frontend server, ledger, snapshot, product-category pack, signed attestation, tamper detection |
+| `gemmafrontend/model_benchmark.py` (248 LOC) | Single-model benchmark runner against the local `qwen3.6:27b` Ollama model |
+| `gemmafrontend/model_prompt_matrix.py` (497 LOC) | Prompt × model evidence matrix (currently single-model: `qwen3.6:27b`) |
 | `crates/context-graph-cli/src/bin/reality-loop.rs` | Rust-only SWE-bench Lite refinement loop and prompt compiler |
 
 ## 15. Build Configuration

@@ -55,7 +55,7 @@ For each case in [../18_FSV_PLAN.md](../18_FSV_PLAN.md), write a script. Below a
 
 ### A4 — Repeated patch detected
 
-Use a real known-answer fixture or a real Gemma run whose expected repeated-patch signature is defined before execution. If that fixture is not available, record `BLOCKED` with the missing dependency and remediation. Do not mark the case PASS or SKIP.
+Use a real known-answer fixture or a real the inner actor run whose expected repeated-patch signature is defined before execution. If that fixture is not available, record `BLOCKED` with the missing dependency and remediation. Do not mark the case PASS or SKIP.
 
 ### A5 — Engine crash mid-attempt
 
@@ -129,6 +129,6 @@ These are largely the Phase 6 unit tests, re-run as FSV cases. Each case wraps `
 
 Phase 10 is the full verification gate. Do not mark required cases as passed when their required infrastructure is missing.
 
-If a case requires Gemma, Docker, Claude API access, or spend budget and that dependency is unavailable, record the case as `BLOCKED` with the exact missing dependency, source-of-truth evidence checked, and remediation. A `BLOCKED` case means Phase 10 is not complete.
+If a case requires the inner actor, Docker, Claude API access, or spend budget and that dependency is unavailable, record the case as `BLOCKED` with the exact missing dependency, source-of-truth evidence checked, and remediation. A `BLOCKED` case means Phase 10 is not complete.
 
 Skipped cases appear in the results doc as `SKIP` rather than PASS/FAIL.

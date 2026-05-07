@@ -32,7 +32,7 @@
 │                                                                              │
 │   ┌─── reality engine (binary) ───┐    ┌─── memory store (RocksDB) ────┐   │
 │   │ context-graph-cli reality-loop│    │ 13 embedders, HNSW, ledger,    │   │
-│   │   attempt   — one Gemma run    │    │ audit log, provenance chain,   │   │
+│   │   attempt   — one the inner actor run    │    │ audit log, provenance chain,   │   │
 │   │   smoke     — one synthetic   │    │ causal graph, harness deltas   │   │
 │   │   replay    — replay artifact │    └────────────────────────────────┘   │
 │   └────────────────┬───────────────┘                                         │
@@ -48,7 +48,7 @@
 │   │   blackbox-ledger.sqlite (append-only)                                │   │
 │   └──────────────────────────────────────────────────────────────────────┘   │
 │                                                                              │
-│   ┌─── Gemma inner loop ──────────────────────────────────────────────────┐ │
+│   ┌─── the inner actor inner loop ──────────────────────────────────────────────────┐ │
 │   │  Rust GGUF harness → governed agent tools → tool-mediated edit        │ │
 │   │  → static patch checks → official Docker SWE-bench eval               │ │
 │   └──────────────────────────────────────────────────────────────────────┘ │
@@ -57,12 +57,12 @@
 
 ## Three roles, sharply separated
 
-### Gemma — inner SWE-bench repair actor
+### the inner actor — inner SWE-bench repair actor
 Owns: reading the SWE-bench task, walking the cloned repo through governed tools, proposing structured edits, iterating until the official Docker evaluator places the instance in `resolved_ids`. Unchanged.
 
 ### ContextGraph — deterministic reality substrate
 Owns:
-- Running Gemma attempts (`reality-loop attempt`).
+- Running the inner actor attempts (`reality-loop attempt`).
 - Running official SWE-bench Docker eval per attempt.
 - Writing every artifact (problem reality, reality signal, harness transitions, official evidence, attempt summary, BlackBox ledger entries).
 - Exposing the durable reality plus the memory graph through the **MCP server** that Claude Code consumes.
@@ -71,7 +71,7 @@ Owns:
 ### Claude Code — outer harness optimizer
 Owns:
 - Reading durable reality through MCP `analyze` tools.
-- Diagnosing why Gemma failed.
+- Diagnosing why the inner actor failed.
 - Editing the harness, prompts, tool surface, reward features, telemetry through MCP `alter` tools (which write to disk + readback + diff).
 - Triggering re-attempts through MCP `interact` tools.
 - Producing a structured recommendation conforming to a JSON schema, persisted via `optimizer_record_recommendation`.
@@ -118,7 +118,7 @@ Plus the always-on MCP channel: Claude can call `reality_*` tools at any moment 
 
 This plan **does not** break:
 - The MCP server's existing tool surface (memory_tools, graph_tools, causal_tools, etc.). The `reality_loop` module is additive.
-- The Gemma inner loop, governed agent tools, problem-reality packet builder, reality-signal packet builder, harness-transition recorder, BlackBox ledger.
+- The the inner actor inner loop, governed agent tools, problem-reality packet builder, reality-signal packet builder, harness-transition recorder, BlackBox ledger.
 - The official SWE-bench Docker bridge.
 
 This plan **does** remove (per [04_EXCISION_PLAN](04_EXCISION_PLAN.md)):

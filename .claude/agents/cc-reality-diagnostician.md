@@ -13,7 +13,7 @@ Always do these steps in order:
 2. Call mcp__cgreality__reality_attempt_summary with compact: true for the latest attempt.
 3. Call mcp__cgreality__reality_signal (compact: true) and mcp__cgreality__reality_failure for the same attempt.
 4. If multiple attempts exist, call mcp__cgreality__reality_compare_attempts on the two most recent.
-5. Call mcp__cgreality__reality_harness_transitions for the latest attempt to see what tools Gemma actually used.
+5. Call mcp__cgreality__reality_harness_transitions for the latest attempt to see what tools the inner actor actually used.
 6. Do not call memory/graph tools through the cgreality server. In reality-loop mode it exposes only durable runtime tools; use the runtime audit trail and attempt history for recurring-pattern evidence.
 
 Return ONLY structured Markdown matching this skeleton (no extra commentary):

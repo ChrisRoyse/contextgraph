@@ -38,7 +38,7 @@ Step 6 — Record. Call `mcp__cgreality__optimizer_record_recommendation` with t
 
 Step 7 — Done. The Stop hook will allow the turn to end once the recommendation is recorded.
 
-If you complete this turn without a meaningful change but the loop is still failing, return a `no_change` recommendation with a clear `next_gemma_prompt_delta` so the next attempt has at least one new directive.
+If you complete this turn without a meaningful change but the loop is still failing, return a `no_change` recommendation with a clear `next_inner_prompt_delta` so the next attempt has at least one new directive.
 ```
 
 ## 2. `ccreality-smoke` — run the smoke flow

@@ -34,7 +34,7 @@ The packet includes:
 - scorecard, reward/loss, feature vector, and SQLite ledger counts;
 - reinjection directive for the next prompt.
 
-The final candidate patch is now also a governed tool artifact. The live loop no longer asks the model to finish with raw JSON text. When the model knows the fix, it must call `apply_line_window_edit` or `apply_structured_edit`. The preferred path for Gemma is `apply_line_window_edit`: Gemma opens a real file window, copies the returned file SHA-256, and submits an inclusive line range plus replacement text. ContextGraph compiles those edits into a candidate patch, writes the patch to the attempt tool artifact directory, reads the patch file and SHA-256 back from disk, and only then allows patch validation or official SWE-bench evaluation to proceed.
+The final candidate patch is now also a governed tool artifact. The live loop no longer asks the model to finish with raw JSON text. When the model knows the fix, it must call `apply_line_window_edit` or `apply_structured_edit`. The preferred path for the inner actor is `apply_line_window_edit`: the inner actor opens a real file window, copies the returned file SHA-256, and submits an inclusive line range plus replacement text. ContextGraph compiles those edits into a candidate patch, writes the patch to the attempt tool artifact directory, reads the patch file and SHA-256 back from disk, and only then allows patch validation or official SWE-bench evaluation to proceed.
 
 ## Root Cause Fixed
 
@@ -83,10 +83,10 @@ Source-of-truth files:
 ```text
 summary: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/reality-loop-summary.json
 problem: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/problem-reality-packet.json
-ledger: sqlite:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/gemma4-e4b/blackbox.sqlite#ledger_records
-signal: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/gemma4-e4b/attempts/attempt-000001/reality-signal-packet.json
-tool_transcript: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/gemma4-e4b/attempts/attempt-000001/agent-tools/agent-tool-transcript.json
-validation: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/gemma4-e4b/attempts/attempt-000001/model-parse-report.json
+ledger: sqlite:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/blackbox.sqlite#ledger_records
+signal: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/reality-signal-packet.json
+tool_transcript: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/agent-tools/agent-tool-transcript.json
+validation: file:/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/model-parse-report.json
 ```
 
 Verified state from the latest run:
@@ -151,7 +151,7 @@ Verified state from the latest run:
 4. Model missed the required tool call but the loop remained operational:
 
 ```text
-/tmp/contextgraph-reality-signal-fsv-04/rust_reality_1777968923321426755_69ff234d/tasks/scikit-learn__scikit-learn-25638/gemma4-e4b/attempts/attempt-000001/gemma-harness-response.json
+/tmp/contextgraph-reality-signal-fsv-04/rust_reality_1777968923321426755_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/inner-harness-response.json
 ```
 
 The model miss was persisted as attempt reality, scored, written to the BlackBoxFix ledger, and converted into a reality-signal packet for the next prompt.
@@ -159,7 +159,7 @@ The model miss was persisted as attempt reality, scored, written to the BlackBox
 5. Model used governed tools but failed the final JSON patch contract:
 
 ```text
-/tmp/contextgraph-reality-signal-fsv-05/rust_reality_1777969093757587401_69ff234d/tasks/scikit-learn__scikit-learn-25638/gemma4-e4b/attempts/attempt-000001/model-parse-report.json
+/tmp/contextgraph-reality-signal-fsv-05/rust_reality_1777969093757587401_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/model-parse-report.json
 ```
 
 This is the older blindspot that motivated the current fix. The final raw JSON patch contract has been removed from the live path.
@@ -193,7 +193,7 @@ RUST_REALITY_TOOL_SUBMITTED_PATCH_READBACK_EMPTY
 10. Ambiguous structured edit fails closed with a specific source span error:
 
 ```text
-/tmp/contextgraph-tool-mediated-fsv-09/rust_reality_1777970590995615862_69ff234d/tasks/scikit-learn__scikit-learn-25638/gemma4-e4b/attempts/attempt-000001/agent-tools/round-04-00-apply_structured_edit/tool-result.json
+/tmp/contextgraph-tool-mediated-fsv-09/rust_reality_1777970590995615862_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/agent-tools/round-04-00-apply_structured_edit/tool-result.json
 ```
 
 That run proves the model called `apply_structured_edit`, but the find block matched three locations in `sklearn/utils/multiclass.py`. The persisted error was `RUST_REALITY_STRUCTURED_EDIT_FIND_AMBIGUOUS`, with remediation to open the exact source window and submit a unique find block.
@@ -201,18 +201,18 @@ That run proves the model called `apply_structured_edit`, but the find block mat
 11. Missing final `apply_structured_edit` is now captured as attempt reality:
 
 ```text
-/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/gemma4-e4b/attempts/attempt-000001/reality-signal-packet.json
+/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/reality-signal-packet.json
 ```
 
-That run proves Gemma read problem/source reality through governed tools, but never submitted the candidate patch through `apply_structured_edit`. The loop did not run official SWE-bench evaluation because there was no patch artifact to evaluate. It persisted the failure, score, reward, source-of-truth paths, BlackBoxFix evidence rows, and the exact next required tool.
+That run proves the inner actor read problem/source reality through governed tools, but never submitted the candidate patch through `apply_structured_edit`. The loop did not run official SWE-bench evaluation because there was no patch artifact to evaluate. It persisted the failure, score, reward, source-of-truth paths, BlackBoxFix evidence rows, and the exact next required tool.
 
-12. Gemma coding-agent harness smoke with tool-use reward signals:
+12. the inner actor coding-agent harness smoke with tool-use reward signals:
 
 ```text
-/tmp/contextgraph-gemma-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/
+/tmp/contextgraph-inner-actor-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/
 ```
 
-That run used real `gemma4:e4b`, real governed tool calling, and the real `scikit-learn__scikit-learn-25638` task. The first request persisted the optimized options:
+That run used real `qwen3.6:27b`, real governed tool calling, and the real `scikit-learn__scikit-learn-25638` task. The first request persisted the optimized options:
 
 ```json
 {
@@ -223,7 +223,7 @@ That run used real `gemma4:e4b`, real governed tool calling, and the real `sciki
 }
 ```
 
-The tool surface included `list_files`, `apply_line_window_edit`, and `apply_structured_edit`. Gemma used `read_problem_reality` and `inspect_symbol` but did not open a file window or submit a patch. The reality packet therefore scored:
+The tool surface included `list_files`, `apply_line_window_edit`, and `apply_structured_edit`. the inner actor used `read_problem_reality` and `inspect_symbol` but did not open a file window or submit a patch. The reality packet therefore scored:
 
 ```json
 {
@@ -238,11 +238,11 @@ The tool surface included `list_files`, `apply_line_window_edit`, and `apply_str
 }
 ```
 
-This is the desired optimization signal: Gemma gets credit for early reality discovery, but the next loop is explicitly pushed toward `open_file_window` and `apply_line_window_edit`.
+This is the desired optimization signal: the inner actor gets credit for early reality discovery, but the next loop is explicitly pushed toward `open_file_window` and `apply_line_window_edit`.
 
 ## Research Basis
 
 - SWE-agent's ACI work emphasizes that software agents need concise repository browsing, editing, linting, and test feedback interfaces.
 - SWE-bench's official harness report is the durable success source because it writes `resolved_ids`, `unresolved_ids`, `completed_ids`, and related report fields.
 - Aider's edit-format docs support using structured search/replace style edits rather than asking local models to emit raw full patches.
-- Gemma's tool-calling flow requires the application to execute model-requested tools and return the tool result back to the model.
+- the inner actor's tool-calling flow requires the application to execute model-requested tools and return the tool result back to the model.

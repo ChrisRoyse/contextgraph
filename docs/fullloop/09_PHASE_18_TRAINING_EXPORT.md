@@ -29,7 +29,7 @@ All four jsonl files are append-only. `manifest.json` is rewritten on every expo
   "schema_version": 1,
   "kind": "positive",
   "instance_id": "psf__requests-2317",
-  "model": "gemma4:e4b",
+  "model": "qwen3.6:27b",
   "attempt_path": "file:/.../attempt-000017",
   "prompt_text_path": "file:/.../prompt.txt",
   "candidate_patch_path": "file:/.../candidate.patch",
@@ -58,7 +58,7 @@ Same shape plus:
 {
   "kind": "preference_pair",
   "instance_id": "psf__requests-2317",
-  "model": "gemma4:e4b",
+  "model": "qwen3.6:27b",
   "preferred_attempt_path": "file:/.../attempt-000017",
   "preferred_reward": 4.31,
   "rejected_attempt_path": "file:/.../attempt-000003",
@@ -73,7 +73,7 @@ Same shape plus:
 {
   "kind": "rejected_patch",
   "instance_id": "psf__requests-2317",
-  "model": "gemma4:e4b",
+  "model": "qwen3.6:27b",
   "patch_sha256": "sha256:...",
   "reject_reason": "RUST_REALITY_PATCH_REPEATED | RUST_REALITY_PATCH_APPLY_FAILED | RUST_REALITY_FINAL_EDIT_TOOL_FAILED | RUST_REALITY_STRUCTURED_EDIT_FIND_AMBIGUOUS",
   "patch_text_pointer": "file:/.../candidate.patch (or null when no patch artifact)"

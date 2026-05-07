@@ -90,7 +90,7 @@ enum Cmd {
 }
 ```
 
-`AttemptArgs` is the existing `Args` minus the deleted flags. `SmokeArgs` writes a synthetic attempt artifact tree. `ReplayArgs` reads an attempt-summary and re-emits the reality-signal-packet (for testing the MCP analyze tools without re-running Gemma). `VerifyArgs` runs full-state verification against an existing attempt.
+`AttemptArgs` is the existing `Args` minus the deleted flags. `SmokeArgs` writes a synthetic attempt artifact tree. `ReplayArgs` reads an attempt-summary and re-emits the reality-signal-packet (for testing the MCP analyze tools without re-running the inner actor). `VerifyArgs` runs full-state verification against an existing attempt.
 
 Update `main()` to dispatch.
 

@@ -1,6 +1,6 @@
 # Gap Analysis — what is missing to fully realize the meta-reality-loop
 
-The cutover delivered the plumbing. This doc enumerates the *productive capability* gaps between "smoke green" and the long-term goal documented in `docs/reality/13_path_to_100_percent_swe.md` (the single-model loop driving `gemma4:e4b` resolves every selected smoke instance with full source-of-truth coverage and no reward hacking). Earlier drafts of this gap analysis tracked multi-model coverage as a productive gap; that gap was closed by deliberately scoping the loop to a single model.
+The cutover delivered the plumbing. This doc enumerates the *productive capability* gaps between "smoke green" and the long-term goal documented in `docs/reality/13_path_to_100_percent_swe.md` (the single-model loop driving `qwen3.6:27b` resolves every selected smoke instance with full source-of-truth coverage and no reward hacking). Earlier drafts of this gap analysis tracked multi-model coverage as a productive gap; that gap was closed by deliberately scoping the loop to a single model.
 
 ## Gap dimensions
 
@@ -8,13 +8,13 @@ The gaps fall into nine dimensions. Each dimension maps to one or more forward p
 
 ### 1. Inner-loop edit reliability  (→ Phase 13, 14)
 
-Symptom: Phase 12's real attempt ended at `RUST_REALITY_FINAL_EDIT_TOOL_FAILED` because Gemma submitted invalid line-window edits twice. FSV-09 also showed `RUST_REALITY_STRUCTURED_EDIT_FIND_AMBIGUOUS` (find block matched three locations).
+Symptom: Phase 12's real attempt ended at `RUST_REALITY_FINAL_EDIT_TOOL_FAILED` because the inner actor submitted invalid line-window edits twice. FSV-09 also showed `RUST_REALITY_STRUCTURED_EDIT_FIND_AMBIGUOUS` (find block matched three locations).
 
 Root causes (suspected):
-- Gemma's tool-use prompt omits the SHA-handoff requirement clearly enough.
-- `apply_line_window_edit` returns errors that don't compose well with Gemma's reasoning trace.
+- the inner actor's tool-use prompt omits the SHA-handoff requirement clearly enough.
+- `apply_line_window_edit` returns errors that don't compose well with the inner actor's reasoning trace.
 - Repository context selection still occasionally surfaces the wrong file for the issue.
-- No structured "second chance" path inside one attempt — failure ends the attempt rather than reprompting Gemma with the rejection reason.
+- No structured "second chance" path inside one attempt — failure ends the attempt rather than reprompting the inner actor with the rejection reason.
 
 Forward work: in-attempt retry budget for tool-rejection failures, sharpen tool descriptions, and add a `tool_grounding_failure` recovery prompt template.
 
@@ -22,7 +22,7 @@ Forward work: in-attempt retry budget for tool-rejection failures, sharpen tool 
 
 Symptom: Only one real `/ccreality-iterate` recommendation has been recorded against a real attempt (Phase 12). The loop has never run for hours and accumulated a long shift log.
 
-Forward work: drive `/loop` for an extended period against `psf__requests-2317`, watch shift log growth, prove that diagnoses + harness edits actually shift Gemma's behavior across attempts. Verify by running 5 attempts on the same instance and showing patch parse rate, fail_to_pass count, or reward improving over the sequence.
+Forward work: drive `/loop` for an extended period against `psf__requests-2317`, watch shift log growth, prove that diagnoses + harness edits actually shift the inner actor's behavior across attempts. Verify by running 5 attempts on the same instance and showing patch parse rate, fail_to_pass count, or reward improving over the sequence.
 
 ### 3. Champion state + experiment registry  (→ Phase 15)
 
@@ -42,7 +42,7 @@ Without these, the outer loop cannot answer "what change did I make and what did
 
 ### 4. Cross-model coverage — RETIRED
 
-Earlier project drafts planned multi-model coverage (`gemma4:e4b`, `qwen3:8b`, `mistral-nemo:12b`) with shared verified-failure memory. The plan was retired: the loop is now intentionally single-model (`gemma4:e4b`), cryptographically pinned via `config/ccreality_model_pins.json` and validated at load time. Optimizer effort focuses on harness quality, not on cross-model generalisation.
+Earlier project drafts planned multi-model coverage (`qwen3.6:27b`, `qwen3:8b`, `mistral-nemo:12b`) with shared verified-failure memory. The plan was retired: the loop is now intentionally single-model (`qwen3.6:27b`), cryptographically pinned via `config/ccreality_model_pins.json` and validated at load time. Optimizer effort focuses on harness quality, not on cross-model generalisation.
 
 ### 5. Reward optimization (shadow mode)  (→ Phase 17)
 

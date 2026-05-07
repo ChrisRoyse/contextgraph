@@ -6,7 +6,7 @@
 - `scripts/v4_2/extended_camd.py`, `extended_constellation.py`, `extended_ensemble.py`, `extended_fsv.py`, `extended_store.py` (E14 sidecar via LMDB)
 - `scripts/v4_2/mine_camd_pairs.py`, `mine_camd_pairs_extended.py`, `mine_camd_from_lmdb.py` (pair mining CLIs)
 - `scripts/v4_2/build_learner_dpo_pairs.py` (learner-conditioned DPO pairs)
-- `scripts/v4_2/train_camd_dpo.py` (Gemma-4-E4B-it DPO trainer with TRL)
+- `scripts/v4_2/train_camd_dpo.py` (Qwen3.6-27B-it DPO trainer with TRL)
 - `scripts/v4_2/validate_camd.py`, `analyze_correlations.py`, `backfill_extended.py`
 - `scripts/v4_2/cuda13_blackwell.py`, `cuda13_wsl_fsv.py`, `unified_realdata_fsv.py`, `bigunlock_fsv_lib.py`, `learner_state_bigunlock_fsv.py`, `smoke_dpo_v4_2.py`
 - `scripts/v4_2/shakespeare_*.py` (corpus FSV, empirical cycle, learner training FSV, learning event FSV, phase6 policy benchmark, state-conditioned FSV, embedding benchmark, constellation guard)
@@ -24,7 +24,7 @@
 The CAMD-DPO subsystem is **out-of-Rust Python tooling** that:
 
 1. **Mines deterministic Direct Preference Optimization (DPO) pairs** from RocksDB-resident contrastive pairs, learning events, retrieval logs, and constellation scores.
-2. **Trains a base LLM** (Gemma-4-E4B-it) with a Shakespeare-style LoRA adapter using `trl` DPO with Reg-DPO SFT regularization.
+2. **Trains a base LLM** (Qwen3.6-27B-it) with a Shakespeare-style LoRA adapter using `trl` DPO with Reg-DPO SFT regularization.
 
 CAMD = **Constellation-Anchored Multi-View DPO** (per `scripts/v4_2/README.md`). Chosen/rejected pairs are scored against a `Sonnets` constellation (E1-E14 multi-view) without a judge LLM. The Sonnets constellation `18ef2460-9ab6-44fc-8d7e-8d7513174ac8` (313 members, coherence 0.9036) is the canonical Shakespeare anchor in the production database.
 
@@ -155,7 +155,7 @@ Key design constants baked into the trainer (per `train_camd_dpo.py:8-25`):
 | `lr_scheduler_type` | `cosine` | Smooth convergence over single epoch |
 | `warmup_ratio` | 0.05 | 5% warmup |
 | Optimizer | `paged_adamw_8bit` (bitsandbytes); fallback `adamw_torch` | |
-| Quantization | 4-bit nf4 base, bf16 compute, double quant | Fits Gemma-4-E4B-it on RTX 5090 32 GB |
+| Quantization | 4-bit nf4 base, bf16 compute, double quant | Fits Qwen3.6-27B-it on RTX 5090 32 GB |
 | LoRA rank | 256 | (Adapter-side; CAMD pair selection is unrelated to LoRA rank) |
 | Gradient checkpointing | enabled (`use_reentrant=False`) | RTX 5090 32 GB constraint |
 | `precompute_ref_log_probs` | optional | Avoids per-step ref forward pass; sidesteps Blackwell driver bugs |

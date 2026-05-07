@@ -10,9 +10,9 @@ Karpathy's AutoResearch loop is deliberately small: an agent reads `program.md`,
 outer OpenAI coding agent
   -> edits the ContextGraph reality-loop system
   -> verifies project reality with Rust/build/git readbacks
-  -> improves the inner Gemma SWE loop
+  -> improves the inner the inner actor SWE loop
 
-inner Gemma SWE agent
+inner the inner actor SWE agent
   -> attempts real SWE-bench repair through governed tools
   -> receives problem/failure/reward reality
   -> stops only when official SWE-bench durable readback proves success
@@ -39,7 +39,7 @@ ContextGraph generalizes those ideas:
 
 ## Reality Packets
 
-Gemma receives:
+the inner actor receives:
 
 - `problem-reality-packet.json`;
 - `reality-signal-packet.json`;
@@ -49,7 +49,7 @@ Gemma receives:
 
 The OpenAI outer coding agent receives:
 
-- Gemma outcome reality;
+- the inner actor outcome reality;
 - its own tool-call reality;
 - its own project-edit readbacks;
 - git status and git diff reality;
@@ -60,7 +60,7 @@ The two agents should not receive the same raw blob. Each receives the reality r
 
 ## Accept / Reject Rules
 
-Gemma changes are accepted only if:
+the inner actor changes are accepted only if:
 
 - the candidate patch was produced by a governed edit tool;
 - the patch artifact was read back from disk;
@@ -86,7 +86,7 @@ Outer-loop tools:
 - `project_open_file_window`;
 - `project_apply_line_window_edit`;
 - `project_run_command`;
-- reality readers for Gemma attempt artifacts.
+- reality readers for the inner actor attempt artifacts.
 
 Outer-loop self-reality:
 

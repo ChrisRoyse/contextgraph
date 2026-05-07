@@ -62,9 +62,9 @@ struct TopArgs {
 
 #[derive(Subcommand, Debug, Clone)]
 enum Cmd {
-    /// Run one Gemma SWE-bench repair attempt
+    /// Run one the inner actor SWE-bench repair attempt
     Attempt(AttemptArgs),
-    /// Run a synthetic smoke attempt (no Gemma, no Docker)
+    /// Run a synthetic smoke attempt (no the inner actor, no Docker)
     Smoke(SmokeArgs),
     /// Re-emit a reality-signal-packet from an existing attempt-summary
     Replay(ReplayArgs),

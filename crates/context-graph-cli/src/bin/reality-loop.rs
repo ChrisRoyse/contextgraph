@@ -24,19 +24,19 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const DEFAULT_RUNTIME_ROOT: &str = "/tmp/contextgraph-rust-reality-loop";
 const DEFAULT_CONTEXT_GRAPH_BIN: &str = "target/debug/context-graph";
-const DEFAULT_MODEL: &str = "gemma4:e4b";
-const DEFAULT_GEMMA_MODEL_PATH: &str = "models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf";
-const DEFAULT_GEMMA_MODEL_PIN_PATH: &str = "config/ccreality_model_pins.json";
-const DEFAULT_GEMMA_MODEL_PIN_KEY: &str = "gemma4_e4b_bf16";
+const DEFAULT_MODEL: &str = "qwen3.6:27b";
+const DEFAULT_INNER_MODEL_PATH: &str = "models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf";
+const DEFAULT_INNER_MODEL_PIN_PATH: &str = "config/ccreality_model_pins.json";
+const DEFAULT_INNER_MODEL_PIN_KEY: &str = "qwen3_6_27b_q6_k_xl";
 const DEFAULT_GPU_MIN_FREE_MB: u64 = 8192;
-const DEFAULT_GEMMA_MIN_CONTEXT_TOKENS: u32 = 128_000;
-const DEFAULT_GEMMA_MAX_NEW_TOKENS: usize = 8192;
-const DEFAULT_GEMMA_TEMPERATURE: f32 = 0.0;
-const DEFAULT_GEMMA_TOP_P: f32 = 0.9;
-const DEFAULT_GEMMA_BATCH_SIZE: usize = 2048;
-const DEFAULT_GEMMA_SEED: u32 = 1;
+const DEFAULT_INNER_MIN_CONTEXT_TOKENS: u32 = 128_000;
+const DEFAULT_INNER_MAX_NEW_TOKENS: usize = 8192;
+const DEFAULT_INNER_TEMPERATURE: f32 = 0.0;
+const DEFAULT_INNER_TOP_P: f32 = 0.9;
+const DEFAULT_INNER_BATCH_SIZE: usize = 2048;
+const DEFAULT_INNER_SEED: u32 = 1;
 const DEFAULT_AGENT_TOOL_ROUNDS: u64 = 24;
-/// Hard cap on rounds-per-attempt enforced inside `gemma_coding_harness_chat_json`,
+/// Hard cap on rounds-per-attempt enforced inside `inner_coding_harness_chat_json`,
 /// independent of `--agent-tool-rounds`. Chosen to cover the longest known successful
 /// trajectory (~16 rounds on psf__requests-2317) with headroom while preventing the
 /// exponential-escape and context-overflow cascades observed past ~15 rounds. Bump
@@ -58,7 +58,7 @@ const LOCAL_PYTHON_BIN: &str = "python3";
 #[command(name = "reality-loop")]
 #[command(version)]
 #[command(
-    about = "ContextGraph reality engine: runs Gemma SWE-bench attempts and synthetic smokes; writes durable artifacts."
+    about = "ContextGraph reality engine: runs the inner model SWE-bench attempts and synthetic smokes; writes durable artifacts."
 )]
 #[command(
     long_about = "After Phase 1+ of the ccreality cutover, this binary is a pure reality engine. The outer optimizer lives in Claude Code, which talks to ContextGraph through the cgreality MCP server. See docs/ccreality/05_REALITY_ENGINE_RESPONSIBILITY.md."
@@ -70,9 +70,9 @@ struct TopArgs {
 
 #[derive(Subcommand, Debug, Clone)]
 enum Cmd {
-    /// Run one or more Gemma SWE-bench repair attempts. Writes attempt artifacts.
+    /// Run one or more the inner model SWE-bench repair attempts. Writes attempt artifacts.
     Attempt(AttemptArgs),
-    /// Run a synthetic smoke attempt. No Gemma, no Docker. For wiring verification.
+    /// Run a synthetic smoke attempt. No the inner model, no Docker. For wiring verification.
     Smoke(SmokeArgs),
     /// Re-run official SWE-bench Docker evaluation against an existing attempt patch.
     OfficialEval(OfficialEvalArgs),
@@ -167,17 +167,17 @@ struct VerifyArgs {
 }
 
 #[derive(Parser, Debug, Clone)]
-#[command(about = "Run one or more Gemma SWE-bench repair attempts")]
+#[command(about = "Run one or more the inner model SWE-bench repair attempts")]
 struct AttemptArgs {
     /// Stable model label used in artifacts and BlackBox ledger rows.
     #[arg(long, default_value = DEFAULT_MODEL)]
     model: String,
-    /// Real GGUF model file loaded by the Rust Gemma coding harness.
-    #[arg(long, default_value = DEFAULT_GEMMA_MODEL_PATH)]
-    gemma_model_path: PathBuf,
+    /// Real GGUF model file loaded by the Rust the inner model coding harness.
+    #[arg(long, default_value = DEFAULT_INNER_MODEL_PATH)]
+    inner_model_path: PathBuf,
     /// Optional explicit llama.cpp chat template name or template text.
     #[arg(long)]
-    gemma_chat_template: Option<String>,
+    inner_chat_template: Option<String>,
     #[arg(long)]
     task_manifest: PathBuf,
     #[arg(long, default_value = DEFAULT_RUNTIME_ROOT)]
@@ -215,25 +215,25 @@ struct AttemptArgs {
     gpu_max_used_mb: Option<u64>,
     /// Context window tokens. Omit to use the loaded GGUF model's full training context.
     #[arg(long)]
-    gemma_context_tokens: Option<u32>,
-    #[arg(long, default_value_t = DEFAULT_GEMMA_MAX_NEW_TOKENS)]
-    gemma_max_new_tokens: usize,
-    #[arg(long, default_value_t = DEFAULT_GEMMA_TEMPERATURE)]
-    gemma_temperature: f32,
-    #[arg(long, default_value_t = DEFAULT_GEMMA_TOP_P)]
-    gemma_top_p: f32,
+    inner_context_tokens: Option<u32>,
+    #[arg(long, default_value_t = DEFAULT_INNER_MAX_NEW_TOKENS)]
+    inner_max_new_tokens: usize,
+    #[arg(long, default_value_t = DEFAULT_INNER_TEMPERATURE)]
+    inner_temperature: f32,
+    #[arg(long, default_value_t = DEFAULT_INNER_TOP_P)]
+    inner_top_p: f32,
     #[arg(long, default_value_t = u32::MAX)]
-    gemma_gpu_layers: u32,
-    #[arg(long, default_value_t = DEFAULT_GEMMA_BATCH_SIZE)]
-    gemma_batch_size: usize,
-    #[arg(long, default_value_t = DEFAULT_GEMMA_SEED)]
-    gemma_seed: u32,
+    inner_gpu_layers: u32,
+    #[arg(long, default_value_t = DEFAULT_INNER_BATCH_SIZE)]
+    inner_batch_size: usize,
+    #[arg(long, default_value_t = DEFAULT_INNER_SEED)]
+    inner_seed: u32,
     /// Path to the model-pin manifest (sha256/size/identity-substring expectations).
-    #[arg(long, default_value = DEFAULT_GEMMA_MODEL_PIN_PATH)]
-    gemma_model_pin_path: PathBuf,
+    #[arg(long, default_value = DEFAULT_INNER_MODEL_PIN_PATH)]
+    inner_model_pin_path: PathBuf,
     /// Active model-pin entry key (looked up under .models in the pin manifest).
-    #[arg(long, default_value = DEFAULT_GEMMA_MODEL_PIN_KEY)]
-    gemma_model_pin_key: String,
+    #[arg(long, default_value = DEFAULT_INNER_MODEL_PIN_KEY)]
+    inner_model_pin_key: String,
     #[arg(long, default_value_t = 600)]
     git_timeout: u64,
     #[arg(long, default_value_t = DEFAULT_AGENT_TOOL_ROUNDS)]
@@ -1024,8 +1024,8 @@ async fn run_verify(args: VerifyArgs) -> Result<Value> {
 fn official_eval_attempt_args(args: &OfficialEvalArgs, task_manifest: &Path) -> AttemptArgs {
     AttemptArgs {
         model: args.model.clone(),
-        gemma_model_path: PathBuf::from(DEFAULT_GEMMA_MODEL_PATH),
-        gemma_chat_template: None,
+        inner_model_path: PathBuf::from(DEFAULT_INNER_MODEL_PATH),
+        inner_chat_template: None,
         task_manifest: task_manifest.to_path_buf(),
         runtime_root: args.runtime_root.clone(),
         context_graph_bin: PathBuf::from(DEFAULT_CONTEXT_GRAPH_BIN),
@@ -1042,15 +1042,15 @@ fn official_eval_attempt_args(args: &OfficialEvalArgs, task_manifest: &Path) -> 
         gpu_index: 0,
         gpu_min_free_mb: DEFAULT_GPU_MIN_FREE_MB,
         gpu_max_used_mb: None,
-        gemma_context_tokens: None,
-        gemma_max_new_tokens: DEFAULT_GEMMA_MAX_NEW_TOKENS,
-        gemma_temperature: DEFAULT_GEMMA_TEMPERATURE,
-        gemma_top_p: DEFAULT_GEMMA_TOP_P,
-        gemma_gpu_layers: u32::MAX,
-        gemma_batch_size: DEFAULT_GEMMA_BATCH_SIZE,
-        gemma_seed: DEFAULT_GEMMA_SEED,
-        gemma_model_pin_path: PathBuf::from(DEFAULT_GEMMA_MODEL_PIN_PATH),
-        gemma_model_pin_key: DEFAULT_GEMMA_MODEL_PIN_KEY.to_string(),
+        inner_context_tokens: None,
+        inner_max_new_tokens: DEFAULT_INNER_MAX_NEW_TOKENS,
+        inner_temperature: DEFAULT_INNER_TEMPERATURE,
+        inner_top_p: DEFAULT_INNER_TOP_P,
+        inner_gpu_layers: u32::MAX,
+        inner_batch_size: DEFAULT_INNER_BATCH_SIZE,
+        inner_seed: DEFAULT_INNER_SEED,
+        inner_model_pin_path: PathBuf::from(DEFAULT_INNER_MODEL_PIN_PATH),
+        inner_model_pin_key: DEFAULT_INNER_MODEL_PIN_KEY.to_string(),
         git_timeout: 600,
         agent_tool_rounds: DEFAULT_AGENT_TOOL_ROUNDS,
         targeted_test_timeout: 300,
@@ -1141,64 +1141,64 @@ fn collect_attempt_dirs_for_run(
     Ok(())
 }
 
-fn validate_gemma_harness_args(args: &AttemptArgs) -> Result<()> {
-    if args.gemma_context_tokens == Some(0) {
+fn validate_inner_harness_args(args: &AttemptArgs) -> Result<()> {
+    if args.inner_context_tokens == Some(0) {
         return Err(RealityError::new(
-            "RUST_REALITY_GEMMA_CONTEXT_TOKENS_INVALID",
-            "--gemma-context-tokens must be greater than zero",
-            "gemma_context_tokens",
-            "omit --gemma-context-tokens to use the GGUF training context, or set a positive explicit context window",
-            json!({"gemma_context_tokens": args.gemma_context_tokens}),
+            "RUST_REALITY_INNER_CONTEXT_TOKENS_INVALID",
+            "--inner-context-tokens must be greater than zero",
+            "inner_context_tokens",
+            "omit --inner-context-tokens to use the GGUF training context, or set a positive explicit context window",
+            json!({"inner_context_tokens": args.inner_context_tokens}),
             None,
         ));
     }
-    if args.gemma_max_new_tokens == 0 {
+    if args.inner_max_new_tokens == 0 {
         return Err(RealityError::new(
-            "RUST_REALITY_GEMMA_MAX_NEW_TOKENS_INVALID",
-            "--gemma-max-new-tokens must be greater than zero",
-            "gemma_max_new_tokens",
+            "RUST_REALITY_INNER_MAX_NEW_TOKENS_INVALID",
+            "--inner-max-new-tokens must be greater than zero",
+            "inner_max_new_tokens",
             "set a positive generation budget so the harness can emit a tool call",
-            json!({"gemma_max_new_tokens": args.gemma_max_new_tokens}),
+            json!({"inner_max_new_tokens": args.inner_max_new_tokens}),
             None,
         ));
     }
-    if args.gemma_batch_size == 0 {
+    if args.inner_batch_size == 0 {
         return Err(RealityError::new(
-            "RUST_REALITY_GEMMA_BATCH_SIZE_INVALID",
-            "--gemma-batch-size must be greater than zero",
-            "gemma_batch_size",
+            "RUST_REALITY_INNER_BATCH_SIZE_INVALID",
+            "--inner-batch-size must be greater than zero",
+            "inner_batch_size",
             "set a positive llama.cpp prompt batch size",
-            json!({"gemma_batch_size": args.gemma_batch_size}),
+            json!({"inner_batch_size": args.inner_batch_size}),
             None,
         ));
     }
-    if args.gemma_batch_size > u32::MAX as usize {
+    if args.inner_batch_size > u32::MAX as usize {
         return Err(RealityError::new(
-            "RUST_REALITY_GEMMA_BATCH_SIZE_TOO_LARGE",
-            "--gemma-batch-size exceeds llama.cpp u32 limits",
-            "gemma_batch_size",
+            "RUST_REALITY_INNER_BATCH_SIZE_TOO_LARGE",
+            "--inner-batch-size exceeds llama.cpp u32 limits",
+            "inner_batch_size",
             "set a positive batch size no larger than u32::MAX",
-            json!({"gemma_batch_size": args.gemma_batch_size, "max": u32::MAX}),
+            json!({"inner_batch_size": args.inner_batch_size, "max": u32::MAX}),
             None,
         ));
     }
-    if !args.gemma_temperature.is_finite() || !(0.0..=2.0).contains(&args.gemma_temperature) {
+    if !args.inner_temperature.is_finite() || !(0.0..=2.0).contains(&args.inner_temperature) {
         return Err(RealityError::new(
-            "RUST_REALITY_GEMMA_TEMPERATURE_INVALID",
-            "--gemma-temperature must be a finite value between 0.0 and 2.0",
-            "gemma_temperature",
+            "RUST_REALITY_INNER_TEMPERATURE_INVALID",
+            "--inner-temperature must be a finite value between 0.0 and 2.0",
+            "inner_temperature",
             "use deterministic 0.0 for SWE repair unless intentionally experimenting",
-            json!({"gemma_temperature": args.gemma_temperature}),
+            json!({"inner_temperature": args.inner_temperature}),
             None,
         ));
     }
-    if !args.gemma_top_p.is_finite() || args.gemma_top_p <= 0.0 || args.gemma_top_p > 1.0 {
+    if !args.inner_top_p.is_finite() || args.inner_top_p <= 0.0 || args.inner_top_p > 1.0 {
         return Err(RealityError::new(
-            "RUST_REALITY_GEMMA_TOP_P_INVALID",
-            "--gemma-top-p must be a finite value in (0.0, 1.0]",
-            "gemma_top_p",
+            "RUST_REALITY_INNER_TOP_P_INVALID",
+            "--inner-top-p must be a finite value in (0.0, 1.0]",
+            "inner_top_p",
             "use 0.9 for bounded sampling or 1.0 to disable nucleus pruning",
-            json!({"gemma_top_p": args.gemma_top_p}),
+            json!({"inner_top_p": args.inner_top_p}),
             None,
         ));
     }
@@ -1248,7 +1248,7 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             None,
         ));
     }
-    validate_gemma_harness_args(&args)?;
+    validate_inner_harness_args(&args)?;
     let context_graph_bin = resolve_path(&args.context_graph_bin)?;
     require_file(
         &context_graph_bin,
@@ -1391,21 +1391,21 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             "source_of_truth": file_sot(&problem_reality_path)
         }),
     )?;
-    let gemma_harness = GemmaCodingHarness::load(&args)?;
-    let gemma_model_readback_path = run_root.join("gemma-harness-model-readback.json");
-    let gemma_model_readback = gemma_harness.model_capability_report(&gemma_model_readback_path)?;
-    write_json_checked(&gemma_model_readback_path, &gemma_model_readback)?;
+    let inner_harness = InnerCodingHarness::load(&args)?;
+    let inner_model_readback_path = run_root.join("inner-model-readback.json");
+    let inner_model_readback = inner_harness.model_capability_report(&inner_model_readback_path)?;
+    write_json_checked(&inner_model_readback_path, &inner_model_readback)?;
     append_event(
         &reality_events,
         json!({
-            "event_type": "gemma_harness_model_capability_readback",
+            "event_type": "inner_harness_model_capability_readback",
             "status": "ok",
             "model": args.model,
-            "model_path": file_sot(&gemma_harness.model_path),
-            "effective_context_tokens": gemma_harness.context_tokens,
-            "max_new_tokens": gemma_harness.max_new_tokens,
-            "source_of_truth": file_sot(&gemma_model_readback_path),
-            "sha256": sha256_file(&gemma_model_readback_path)?
+            "model_path": file_sot(&inner_harness.model_path),
+            "effective_context_tokens": inner_harness.context_tokens,
+            "max_new_tokens": inner_harness.max_new_tokens,
+            "source_of_truth": file_sot(&inner_model_readback_path),
+            "sha256": sha256_file(&inner_model_readback_path)?
         }),
     )?;
     let mut previous_patch_hashes: Vec<String> = Vec::new();
@@ -1480,7 +1480,7 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             attempts: &attempts,
         };
         let model_response =
-            gemma_coding_harness_chat_json(&gemma_harness, &tool_context, &prompt, attempt)?;
+            inner_coding_harness_chat_json(&inner_harness, &tool_context, &prompt, attempt)?;
         let response_text = model_response["message"]["content"]
             .as_str()
             .unwrap_or("")
@@ -2022,19 +2022,19 @@ fn build_measurement_contract(
             "official_docker_host": args.official_docker_host,
             "official_docker_config": path_str(&args.official_docker_config),
             "model_runtime": {
-                "provider": "contextgraph_rust_gemma_coding_harness",
+                "provider": "contextgraph_rust_inner_coding_harness",
                 "model_label": args.model,
-                "gemma_model_path": file_sot(&resolve_path(&args.gemma_model_path)?),
-                "chat_template": args.gemma_chat_template.as_deref(),
-                "context_policy": if args.gemma_context_tokens.is_some() { "explicit_cli" } else { "gguf_n_ctx_train_max" },
-                "requested_context_tokens": args.gemma_context_tokens,
-                "minimum_context_tokens": DEFAULT_GEMMA_MIN_CONTEXT_TOKENS,
-                "max_new_tokens": args.gemma_max_new_tokens,
-                "temperature": args.gemma_temperature,
-                "top_p": args.gemma_top_p,
-                "gpu_layers": args.gemma_gpu_layers,
-                "batch_size": args.gemma_batch_size,
-                "seed": args.gemma_seed
+                "inner_model_path": file_sot(&resolve_path(&args.inner_model_path)?),
+                "chat_template": args.inner_chat_template.as_deref(),
+                "context_policy": if args.inner_context_tokens.is_some() { "explicit_cli" } else { "gguf_n_ctx_train_max" },
+                "requested_context_tokens": args.inner_context_tokens,
+                "minimum_context_tokens": DEFAULT_INNER_MIN_CONTEXT_TOKENS,
+                "max_new_tokens": args.inner_max_new_tokens,
+                "temperature": args.inner_temperature,
+                "top_p": args.inner_top_p,
+                "gpu_layers": args.inner_gpu_layers,
+                "batch_size": args.inner_batch_size,
+                "seed": args.inner_seed
             },
             "reward_spec": file_sot(Path::new("gemmafrontend/reward_spec.verified_outcome.json"))
         },
@@ -2554,7 +2554,7 @@ fn blackbox(bin: &Path, args: &[&str], cwd: &Path) -> Result<Value> {
     })
 }
 
-struct GemmaCodingHarness {
+struct InnerCodingHarness {
     backend: LlamaBackend,
     model: LlamaModel,
     model_path: PathBuf,
@@ -2569,7 +2569,7 @@ struct GemmaCodingHarness {
     seed: u32,
 }
 
-fn gemma_model_identity_readback(
+fn inner_model_identity_readback(
     model: &LlamaModel,
     model_path: &Path,
 ) -> BTreeMap<String, String> {
@@ -2588,9 +2588,8 @@ fn gemma_model_identity_readback(
         "general.size_label",
         "general.type",
         "llama.context_length",
-        "gemma.context_length",
-        "gemma3.context_length",
-        "gemma4.context_length",
+        "qwen3.context_length",
+        "qwen2.context_length",
         "tokenizer.chat_template",
     ] {
         if let Ok(value) = model.meta_val_str(key) {
@@ -2600,7 +2599,7 @@ fn gemma_model_identity_readback(
     selected_metadata
 }
 
-fn validate_gemma4_model_identity(
+fn validate_inner_model_identity(
     model_path: &Path,
     identity: &BTreeMap<String, String>,
 ) -> Result<()> {
@@ -2614,14 +2613,14 @@ fn validate_gemma4_model_identity(
         .chars()
         .filter(|ch| ch.is_ascii_alphanumeric())
         .collect::<String>();
-    if !compact_identity.contains("gemma4") {
+    if !compact_identity.contains("qwen3") {
         return Err(RealityError::new(
-            "RUST_REALITY_GEMMA_MODEL_IDENTITY_MISMATCH",
-            "loaded GGUF does not identify as Gemma 4",
-            "gemma_harness.model.metadata",
-            "install the intended Gemma 4 GGUF; the SWE harness will not run a substitute model under a Gemma label",
+            "RUST_REALITY_INNER_MODEL_IDENTITY_MISMATCH",
+            "loaded GGUF does not identify as Qwen 3",
+            "inner_harness.model.metadata",
+            "install the intended Qwen 3.6 27B GGUF; the SWE harness will not run a substitute model under a pinned label",
             json!({
-                "required_identity": "gemma4",
+                "required_identity": "qwen3",
                 "identity_readback": identity,
                 "model_path": file_sot(model_path)
             }),
@@ -2631,14 +2630,14 @@ fn validate_gemma4_model_identity(
     Ok(())
 }
 
-/// Cryptographic pin entry for the Gemma coding harness.
+/// Cryptographic pin entry for the the inner model coding harness.
 ///
 /// Loaded from `config/ccreality_model_pins.json` (or
-/// `--gemma-model-pin-path`). Every field is mandatory: the harness fails
+/// `--inner-model-pin-path`). Every field is mandatory: the harness fails
 /// closed on missing fields, missing keys, missing files, size drift, and
 /// SHA drift. There is no fallback to "unpinned" mode by design.
 #[derive(Debug, Deserialize)]
-struct GemmaModelPin {
+struct InnerModelPin {
     #[allow(dead_code)] // surfaced in error details for operator readability
     repo_id: String,
     #[allow(dead_code)] // surfaced in error details for operator readability
@@ -2655,20 +2654,20 @@ struct GemmaModelPin {
     expected_identity_substrings: Vec<String>,
 }
 
-fn load_model_pin(pin_path: &Path, key: &str) -> Result<GemmaModelPin> {
+fn load_model_pin(pin_path: &Path, key: &str) -> Result<InnerModelPin> {
     let content = fs::read_to_string(pin_path).map_err(|err| {
         RealityError::new(
-            "RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_MISSING",
+            "RUST_REALITY_INNER_MODEL_PIN_CONFIG_MISSING",
             "model pin config file is missing or unreadable",
             "ccreality_model_pins.path",
-            "ensure config/ccreality_model_pins.json exists and is readable, or pass --gemma-model-pin-path",
+            "ensure config/ccreality_model_pins.json exists and is readable, or pass --inner-model-pin-path",
             json!({"error": err.to_string(), "pin_path": file_sot(pin_path), "pin_key": key}),
             Some(file_sot(pin_path)),
         )
     })?;
     let config: Value = serde_json::from_str(&content).map_err(|err| {
         RealityError::new(
-            "RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_INVALID_JSON",
+            "RUST_REALITY_INNER_MODEL_PIN_CONFIG_INVALID_JSON",
             "model pin config file is not valid JSON",
             "ccreality_model_pins.json",
             "fix the JSON syntax in the model pin config",
@@ -2679,17 +2678,17 @@ fn load_model_pin(pin_path: &Path, key: &str) -> Result<GemmaModelPin> {
     let pointer = format!("/models/{key}");
     let pin_value = config.pointer(&pointer).ok_or_else(|| {
         RealityError::new(
-            "RUST_REALITY_GEMMA_MODEL_PIN_NOT_FOUND",
+            "RUST_REALITY_INNER_MODEL_PIN_NOT_FOUND",
             "no pin entry exists for the requested model key",
             "ccreality_model_pins.models",
-            "add a pin entry under .models for this key, or pass --gemma-model-pin-key with a key that exists",
+            "add a pin entry under .models for this key, or pass --inner-model-pin-key with a key that exists",
             json!({"requested_key": key, "pin_path": file_sot(pin_path)}),
             Some(file_sot(pin_path)),
         )
     })?;
-    serde_json::from_value::<GemmaModelPin>(pin_value.clone()).map_err(|err| {
+    serde_json::from_value::<InnerModelPin>(pin_value.clone()).map_err(|err| {
         RealityError::new(
-            "RUST_REALITY_GEMMA_MODEL_PIN_SCHEMA_INVALID",
+            "RUST_REALITY_INNER_MODEL_PIN_SCHEMA_INVALID",
             "model pin entry schema is invalid",
             &format!("ccreality_model_pins.models.{key}"),
             "the pin entry must include all of: repo_id, filename, expected_sha256, expected_size_bytes, expected_min_context_tokens, expected_identity_substrings",
@@ -2704,21 +2703,21 @@ fn load_model_pin(pin_path: &Path, key: &str) -> Result<GemmaModelPin> {
     })
 }
 
-fn validate_gemma_model_pin(
+fn validate_inner_model_pin(
     model_path: &Path,
-    pin: &GemmaModelPin,
+    pin: &InnerModelPin,
     pin_path: &Path,
     pin_key: &str,
 ) -> Result<()> {
     // Size first: cheap fail-fast before paying for a streaming SHA over a 15 GiB file.
     let metadata = fs::metadata(model_path)
-        .map_err(|err| fs_error("RUST_REALITY_GEMMA_MODEL_PIN_STAT_FAILED", model_path, err))?;
+        .map_err(|err| fs_error("RUST_REALITY_INNER_MODEL_PIN_STAT_FAILED", model_path, err))?;
     let actual_size = metadata.len();
     if actual_size != pin.expected_size_bytes {
         return Err(RealityError::new(
-            "RUST_REALITY_GEMMA_MODEL_SIZE_MISMATCH",
+            "RUST_REALITY_INNER_MODEL_SIZE_MISMATCH",
             "loaded GGUF size does not match the pinned size",
-            "gemma_harness.model.size_bytes",
+            "inner_harness.model.size_bytes",
             "the file on disk has been replaced, truncated, or corrupted; re-download to match the pin, or update the pin if intentionally upgrading",
             json!({
                 "expected_size_bytes": pin.expected_size_bytes,
@@ -2734,9 +2733,9 @@ fn validate_gemma_model_pin(
     let actual_sha = sha256_file_streaming(model_path)?;
     if actual_sha != pin.expected_sha256 {
         return Err(RealityError::new(
-            "RUST_REALITY_GEMMA_MODEL_SHA_MISMATCH",
+            "RUST_REALITY_INNER_MODEL_SHA_MISMATCH",
             "loaded GGUF SHA-256 does not match the pinned hash",
-            "gemma_harness.model.sha256",
+            "inner_harness.model.sha256",
             "the file content drifted from the pin; re-download from the pinned repo_id/filename, or update the pin if intentionally upgrading",
             json!({
                 "expected_sha256": pin.expected_sha256,
@@ -2751,9 +2750,9 @@ fn validate_gemma_model_pin(
     Ok(())
 }
 
-fn validate_gemma_model_pin_identity_substrings(
+fn validate_inner_model_pin_identity_substrings(
     model_path: &Path,
-    pin: &GemmaModelPin,
+    pin: &InnerModelPin,
     pin_path: &Path,
     pin_key: &str,
     identity: &BTreeMap<String, String>,
@@ -2782,9 +2781,9 @@ fn validate_gemma_model_pin_identity_substrings(
         .collect();
     if !missing.is_empty() {
         return Err(RealityError::new(
-            "RUST_REALITY_GEMMA_MODEL_PIN_IDENTITY_SUBSTRING_MISSING",
+            "RUST_REALITY_INNER_MODEL_PIN_IDENTITY_SUBSTRING_MISSING",
             "loaded GGUF identity does not include all required substrings from the pin",
-            "gemma_harness.model.metadata",
+            "inner_harness.model.metadata",
             "the pinned bytes match but the metadata does not declare the expected identity; this typically means the pin was authored against a wrongly-tagged file",
             json!({
                 "expected_identity_substrings": pin.expected_identity_substrings,
@@ -2800,57 +2799,57 @@ fn validate_gemma_model_pin_identity_substrings(
     Ok(())
 }
 
-impl GemmaCodingHarness {
+impl InnerCodingHarness {
     fn load(args: &AttemptArgs) -> Result<Self> {
-        let model_path = resolve_path(&args.gemma_model_path)?;
+        let model_path = resolve_path(&args.inner_model_path)?;
         require_file(
             &model_path,
-            "gemma_model_path",
-            "RUST_REALITY_GEMMA_MODEL_PATH_MISSING",
+            "inner_model_path",
+            "RUST_REALITY_INNER_MODEL_PATH_MISSING",
         )?;
         // Cryptographic pin gate: load the active model pin and verify the
         // bytes on disk match BEFORE we touch the GPU backend. Size first
         // (cheap), then streaming SHA-256. Mismatch fails loud — no fallback.
-        let pin_path = resolve_path(&args.gemma_model_pin_path)?;
+        let pin_path = resolve_path(&args.inner_model_pin_path)?;
         require_file(
             &pin_path,
-            "gemma_model_pin_path",
-            "RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_MISSING",
+            "inner_model_pin_path",
+            "RUST_REALITY_INNER_MODEL_PIN_CONFIG_MISSING",
         )?;
-        let pin = load_model_pin(&pin_path, &args.gemma_model_pin_key)?;
-        validate_gemma_model_pin(&model_path, &pin, &pin_path, &args.gemma_model_pin_key)?;
+        let pin = load_model_pin(&pin_path, &args.inner_model_pin_key)?;
+        validate_inner_model_pin(&model_path, &pin, &pin_path, &args.inner_model_pin_key)?;
         let backend = LlamaBackend::init().map_err(|err| {
             RealityError::new(
-                "RUST_REALITY_GEMMA_BACKEND_INIT_FAILED",
+                "RUST_REALITY_INNER_BACKEND_INIT_FAILED",
                 "failed to initialize the Rust llama.cpp backend",
-                "gemma_harness.backend",
+                "inner_harness.backend",
                 "inspect CUDA/llama.cpp runtime initialization before retrying",
                 json!({"error": err.to_string(), "model_path": file_sot(&model_path)}),
                 Some(file_sot(&model_path)),
             )
         })?;
-        let model_params = LlamaModelParams::default().with_n_gpu_layers(args.gemma_gpu_layers);
+        let model_params = LlamaModelParams::default().with_n_gpu_layers(args.inner_gpu_layers);
         let model =
             LlamaModel::load_from_file(&backend, &model_path, &model_params).map_err(|err| {
                 RealityError::new(
-                    "RUST_REALITY_GEMMA_MODEL_LOAD_FAILED",
-                    "failed to load Gemma GGUF model through the Rust coding harness",
-                    "gemma_harness.model_path",
-                    "provide a real Gemma GGUF file readable by the Rust harness",
+                    "RUST_REALITY_INNER_MODEL_LOAD_FAILED",
+                    "failed to load the inner model GGUF model through the Rust coding harness",
+                    "inner_harness.model_path",
+                    "provide a real the inner model GGUF file readable by the Rust harness",
                     json!({
                         "error": err.to_string(),
                         "model_path": file_sot(&model_path),
-                        "gpu_layers": args.gemma_gpu_layers
+                        "gpu_layers": args.inner_gpu_layers
                     }),
                     Some(file_sot(&model_path)),
                 )
             })?;
-        let chat_template = match args.gemma_chat_template.as_deref() {
+        let chat_template = match args.inner_chat_template.as_deref() {
             Some(template) => LlamaChatTemplate::new(template).map_err(|err| {
                 RealityError::new(
-                    "RUST_REALITY_GEMMA_CHAT_TEMPLATE_INVALID",
-                    "explicit Gemma chat template contained an invalid NUL byte",
-                    "gemma_chat_template",
+                    "RUST_REALITY_INNER_CHAT_TEMPLATE_INVALID",
+                    "explicit the inner model chat template contained an invalid NUL byte",
+                    "inner_chat_template",
                     "provide a valid llama.cpp chat template name or template text",
                     json!({"error": err.to_string()}),
                     Some(file_sot(&model_path)),
@@ -2858,31 +2857,31 @@ impl GemmaCodingHarness {
             })?,
             None => model.chat_template(None).map_err(|err| {
                 RealityError::new(
-                    "RUST_REALITY_GEMMA_CHAT_TEMPLATE_MISSING",
-                    "Gemma GGUF model does not expose a usable chat template",
-                    "gemma_harness.chat_template",
-                    "install a Gemma GGUF with chat-template metadata or pass --gemma-chat-template explicitly",
+                    "RUST_REALITY_INNER_CHAT_TEMPLATE_MISSING",
+                    "the inner model GGUF model does not expose a usable chat template",
+                    "inner_harness.chat_template",
+                    "install a the inner model GGUF with chat-template metadata or pass --inner-chat-template explicitly",
                     json!({"error": err.to_string(), "model_path": file_sot(&model_path)}),
                     Some(file_sot(&model_path)),
                 )
             })?,
         };
         let model_context_train_tokens = model.n_ctx_train();
-        let model_identity = gemma_model_identity_readback(&model, &model_path);
-        validate_gemma4_model_identity(&model_path, &model_identity)?;
-        validate_gemma_model_pin_identity_substrings(
+        let model_identity = inner_model_identity_readback(&model, &model_path);
+        validate_inner_model_identity(&model_path, &model_identity)?;
+        validate_inner_model_pin_identity_substrings(
             &model_path,
             &pin,
             &pin_path,
-            &args.gemma_model_pin_key,
+            &args.inner_model_pin_key,
             &model_identity,
         )?;
         if model_context_train_tokens == 0 {
             return Err(RealityError::new(
-                "RUST_REALITY_GEMMA_MODEL_CONTEXT_INVALID",
+                "RUST_REALITY_INNER_MODEL_CONTEXT_INVALID",
                 "loaded GGUF reported a zero training context window",
-                "gemma_harness.model.n_ctx_train",
-                "install a valid Gemma GGUF with context metadata",
+                "inner_harness.model.n_ctx_train",
+                "install a valid the inner model GGUF with context metadata",
                 json!({"model_path": file_sot(&model_path), "n_ctx_train": model_context_train_tokens}),
                 Some(file_sot(&model_path)),
             ));
@@ -2891,16 +2890,16 @@ impl GemmaCodingHarness {
         // Both gates fail loud independently — defense in depth.
         let effective_min_context = pin
             .expected_min_context_tokens
-            .max(DEFAULT_GEMMA_MIN_CONTEXT_TOKENS);
+            .max(DEFAULT_INNER_MIN_CONTEXT_TOKENS);
         if model_context_train_tokens < effective_min_context {
             return Err(RealityError::new(
-                "RUST_REALITY_GEMMA_MODEL_CONTEXT_BELOW_REQUIRED_FLOOR",
-                "loaded Gemma GGUF context is below the SWE coding harness capability floor",
-                "gemma_harness.model.n_ctx_train",
-                "install a Gemma 4 GGUF with at least the pinned training context so repository context and tool transcripts fit without silent truncation",
+                "RUST_REALITY_INNER_MODEL_CONTEXT_BELOW_REQUIRED_FLOOR",
+                "loaded the inner model GGUF context is below the SWE coding harness capability floor",
+                "inner_harness.model.n_ctx_train",
+                "install an inner-model GGUF with at least the pinned training context so repository context and tool transcripts fit without silent truncation",
                 json!({
                     "minimum_context_tokens": effective_min_context,
-                    "global_minimum_context_tokens": DEFAULT_GEMMA_MIN_CONTEXT_TOKENS,
+                    "global_minimum_context_tokens": DEFAULT_INNER_MIN_CONTEXT_TOKENS,
                     "pin_minimum_context_tokens": pin.expected_min_context_tokens,
                     "model_context_train_tokens": model_context_train_tokens,
                     "model_identity": model_identity,
@@ -2910,14 +2909,14 @@ impl GemmaCodingHarness {
             ));
         }
         let context_tokens = args
-            .gemma_context_tokens
+            .inner_context_tokens
             .unwrap_or(model_context_train_tokens);
         if context_tokens > model_context_train_tokens {
             return Err(RealityError::new(
-                "RUST_REALITY_GEMMA_CONTEXT_EXCEEDS_MODEL_LIMIT",
-                "requested Gemma context exceeds the loaded GGUF training context",
-                "gemma_context_tokens",
-                "omit --gemma-context-tokens to use the model maximum, or set a value within the GGUF n_ctx_train limit",
+                "RUST_REALITY_INNER_CONTEXT_EXCEEDS_MODEL_LIMIT",
+                "requested the inner model context exceeds the loaded GGUF training context",
+                "inner_context_tokens",
+                "omit --inner-context-tokens to use the model maximum, or set a value within the GGUF n_ctx_train limit",
                 json!({
                     "requested_context_tokens": context_tokens,
                     "model_context_train_tokens": model_context_train_tokens,
@@ -2926,32 +2925,32 @@ impl GemmaCodingHarness {
                 Some(file_sot(&model_path)),
             ));
         }
-        if context_tokens < DEFAULT_GEMMA_MIN_CONTEXT_TOKENS {
+        if context_tokens < DEFAULT_INNER_MIN_CONTEXT_TOKENS {
             return Err(RealityError::new(
-                "RUST_REALITY_GEMMA_EFFECTIVE_CONTEXT_BELOW_REQUIRED_FLOOR",
-                "effective Gemma context is below the SWE coding harness capability floor",
-                "gemma_context_tokens",
-                "omit --gemma-context-tokens to use the GGUF maximum, or set an explicit context of at least 128K tokens",
+                "RUST_REALITY_INNER_EFFECTIVE_CONTEXT_BELOW_REQUIRED_FLOOR",
+                "effective the inner model context is below the SWE coding harness capability floor",
+                "inner_context_tokens",
+                "omit --inner-context-tokens to use the GGUF maximum, or set an explicit context of at least 128K tokens",
                 json!({
-                    "minimum_context_tokens": DEFAULT_GEMMA_MIN_CONTEXT_TOKENS,
+                    "minimum_context_tokens": DEFAULT_INNER_MIN_CONTEXT_TOKENS,
                     "effective_context_tokens": context_tokens,
-                    "requested_context_tokens": args.gemma_context_tokens,
+                    "requested_context_tokens": args.inner_context_tokens,
                     "model_context_train_tokens": model_context_train_tokens,
                     "model_path": file_sot(&model_path)
                 }),
                 Some(file_sot(&model_path)),
             ));
         }
-        if args.gemma_max_new_tokens >= context_tokens as usize {
+        if args.inner_max_new_tokens >= context_tokens as usize {
             return Err(RealityError::new(
-                "RUST_REALITY_GEMMA_MAX_NEW_TOKENS_EXCEEDS_CONTEXT",
-                "Gemma max_new_tokens leaves no room for a prompt inside the configured context window",
-                "gemma_max_new_tokens",
+                "RUST_REALITY_INNER_MAX_NEW_TOKENS_EXCEEDS_CONTEXT",
+                "the inner model max_new_tokens leaves no room for a prompt inside the configured context window",
+                "inner_max_new_tokens",
                 "set max_new_tokens lower than the effective context window",
                 json!({
-                    "max_new_tokens": args.gemma_max_new_tokens,
+                    "max_new_tokens": args.inner_max_new_tokens,
                     "effective_context_tokens": context_tokens,
-                    "requested_context_tokens": args.gemma_context_tokens,
+                    "requested_context_tokens": args.inner_context_tokens,
                     "model_context_train_tokens": model_context_train_tokens
                 }),
                 Some(file_sot(&model_path)),
@@ -2962,40 +2961,40 @@ impl GemmaCodingHarness {
             model,
             model_path,
             chat_template,
-            requested_context_tokens: args.gemma_context_tokens,
+            requested_context_tokens: args.inner_context_tokens,
             model_context_train_tokens,
             context_tokens,
-            max_new_tokens: args.gemma_max_new_tokens,
-            temperature: args.gemma_temperature,
-            top_p: args.gemma_top_p,
-            batch_size: args.gemma_batch_size,
-            seed: args.gemma_seed,
+            max_new_tokens: args.inner_max_new_tokens,
+            temperature: args.inner_temperature,
+            top_p: args.inner_top_p,
+            batch_size: args.inner_batch_size,
+            seed: args.inner_seed,
         })
     }
 
     fn model_capability_report(&self, report_path: &Path) -> Result<Value> {
         let chat_template = self.chat_template.to_string().map_err(|err| {
             RealityError::new(
-                "RUST_REALITY_GEMMA_CHAT_TEMPLATE_UTF8_INVALID",
-                "Gemma chat template was not valid UTF-8",
-                "gemma_harness.chat_template",
+                "RUST_REALITY_INNER_CHAT_TEMPLATE_UTF8_INVALID",
+                "the inner model chat template was not valid UTF-8",
+                "inner_harness.chat_template",
                 "install a GGUF with a valid UTF-8 chat template or pass a valid explicit template",
                 json!({"error": err.to_string(), "model_path": file_sot(&self.model_path)}),
                 Some(file_sot(&self.model_path)),
             )
         })?;
         let mut selected_metadata = BTreeMap::new();
-        selected_metadata.extend(gemma_model_identity_readback(&self.model, &self.model_path));
+        selected_metadata.extend(inner_model_identity_readback(&self.model, &self.model_path));
         Ok(json!({
-            "record_kind": "contextgraph_gemma_harness_model_capability_readback",
+            "record_kind": "contextgraph_inner_harness_model_capability_readback",
             "status": "ok",
-            "provider": "contextgraph_rust_gemma_coding_harness",
+            "provider": "contextgraph_rust_inner_coding_harness",
             "model_path": file_sot(&self.model_path),
             "requested_context_tokens": self.requested_context_tokens,
             "effective_context_tokens": self.context_tokens,
             "context_policy": if self.requested_context_tokens.is_some() { "explicit_cli" } else { "gguf_n_ctx_train_max" },
             "model_context_train_tokens": self.model_context_train_tokens,
-            "minimum_context_tokens": DEFAULT_GEMMA_MIN_CONTEXT_TOKENS,
+            "minimum_context_tokens": DEFAULT_INNER_MIN_CONTEXT_TOKENS,
             "max_new_tokens": self.max_new_tokens,
             "temperature": self.temperature,
             "top_p": self.top_p,
@@ -3029,9 +3028,9 @@ impl GemmaCodingHarness {
             .and_then(Value::as_array)
             .ok_or_else(|| {
                 RealityError::new(
-                    "RUST_REALITY_GEMMA_MESSAGES_MISSING",
-                    "Gemma harness request did not contain messages array",
-                    "gemma_harness.request.messages",
+                    "RUST_REALITY_INNER_MESSAGES_MISSING",
+                    "the inner model harness request did not contain messages array",
+                    "inner_harness.request.messages",
                     "fix the Rust request builder before running another attempt",
                     json!({"request": file_sot(request_path)}),
                     Some(file_sot(request_path)),
@@ -3039,9 +3038,9 @@ impl GemmaCodingHarness {
             })?;
         let tools = body.get("tools").and_then(Value::as_array).ok_or_else(|| {
             RealityError::new(
-                "RUST_REALITY_GEMMA_TOOLS_MISSING",
-                "Gemma harness request did not contain tools array",
-                "gemma_harness.request.tools",
+                "RUST_REALITY_INNER_TOOLS_MISSING",
+                "the inner model harness request did not contain tools array",
+                "inner_harness.request.tools",
                 "fix the Rust request builder before running another attempt",
                 json!({"request": file_sot(request_path)}),
                 Some(file_sot(request_path)),
@@ -3049,9 +3048,9 @@ impl GemmaCodingHarness {
         })?;
         if tools.is_empty() {
             return Err(RealityError::new(
-                "RUST_REALITY_GEMMA_TOOLS_EMPTY",
-                "Gemma coding harness refuses to run without governed tools",
-                "gemma_harness.request.tools",
+                "RUST_REALITY_INNER_TOOLS_EMPTY",
+                "the inner model coding harness refuses to run without governed tools",
+                "inner_harness.request.tools",
                 "provide the ContextGraph coding-agent tool schema",
                 json!({"request": file_sot(request_path)}),
                 Some(file_sot(request_path)),
@@ -3060,9 +3059,9 @@ impl GemmaCodingHarness {
         let messages_json =
             serde_json::to_string(&Value::Array(messages.clone())).map_err(|err| {
                 RealityError::new(
-                    "RUST_REALITY_GEMMA_MESSAGES_SERIALIZE_FAILED",
-                    "failed to serialize Gemma chat messages",
-                    "gemma_harness.request.messages",
+                    "RUST_REALITY_INNER_MESSAGES_SERIALIZE_FAILED",
+                    "failed to serialize the inner model chat messages",
+                    "inner_harness.request.messages",
                     "inspect the message JSON shape",
                     json!({"error": err.to_string(), "request": file_sot(request_path)}),
                     Some(file_sot(request_path)),
@@ -3070,9 +3069,9 @@ impl GemmaCodingHarness {
             })?;
         let tools_json = serde_json::to_string(&Value::Array(tools.clone())).map_err(|err| {
             RealityError::new(
-                "RUST_REALITY_GEMMA_TOOLS_SERIALIZE_FAILED",
-                "failed to serialize Gemma tool schemas",
-                "gemma_harness.request.tools",
+                "RUST_REALITY_INNER_TOOLS_SERIALIZE_FAILED",
+                "failed to serialize the inner model tool schemas",
+                "inner_harness.request.tools",
                 "inspect the tool JSON schema",
                 json!({"error": err.to_string(), "request": file_sot(request_path)}),
                 Some(file_sot(request_path)),
@@ -3099,9 +3098,9 @@ impl GemmaCodingHarness {
             .apply_chat_template_oaicompat(&self.chat_template, &params)
             .map_err(|err| {
                 RealityError::new(
-                    "RUST_REALITY_GEMMA_CHAT_TEMPLATE_APPLY_FAILED",
-                    "failed to render Gemma chat template with ContextGraph tools",
-                    "gemma_harness.chat_template",
+                    "RUST_REALITY_INNER_CHAT_TEMPLATE_APPLY_FAILED",
+                    "failed to render the inner model chat template with ContextGraph tools",
+                    "inner_harness.chat_template",
                     "inspect the GGUF chat template and tool schema compatibility",
                     json!({
                         "error": err.to_string(),
@@ -3115,10 +3114,10 @@ impl GemmaCodingHarness {
         write_text_checked(&rendered_prompt_path, &rendered.prompt)?;
         let grammar = rendered.grammar.as_deref().ok_or_else(|| {
             RealityError::new(
-                "RUST_REALITY_GEMMA_TOOL_GRAMMAR_MISSING",
-                "Gemma chat template did not produce a tool-call grammar",
-                "gemma_harness.tool_grammar",
-                "use a Gemma GGUF/template combination that supports strict OpenAI-compatible tool grammar",
+                "RUST_REALITY_INNER_TOOL_GRAMMAR_MISSING",
+                "the inner model chat template did not produce a tool-call grammar",
+                "inner_harness.tool_grammar",
+                "use a the inner model GGUF/template combination that supports strict OpenAI-compatible tool grammar",
                 json!({
                     "request": file_sot(request_path),
                     "rendered_prompt": file_sot(&rendered_prompt_path),
@@ -3138,9 +3137,9 @@ impl GemmaCodingHarness {
             .parse_response_oaicompat(&raw_generation, false)
             .map_err(|err| {
                 RealityError::new(
-                    "RUST_REALITY_GEMMA_TOOL_RESPONSE_PARSE_FAILED",
-                    "Gemma generation could not be parsed as an OpenAI-compatible assistant message",
-                    "gemma_harness.response",
+                    "RUST_REALITY_INNER_TOOL_RESPONSE_PARSE_FAILED",
+                    "the inner model generation could not be parsed as an OpenAI-compatible assistant message",
+                    "inner_harness.response",
                     "inspect raw generation, prompt, and tool grammar before retrying",
                     json!({
                         "error": err.to_string(),
@@ -3154,9 +3153,9 @@ impl GemmaCodingHarness {
             })?;
         let parsed: Value = serde_json::from_str(&parsed_text).map_err(|err| {
             RealityError::new(
-                "RUST_REALITY_GEMMA_TOOL_RESPONSE_JSON_INVALID",
-                "parsed Gemma assistant message was not JSON",
-                "gemma_harness.response_json",
+                "RUST_REALITY_INNER_TOOL_RESPONSE_JSON_INVALID",
+                "parsed the inner model assistant message was not JSON",
+                "inner_harness.response_json",
                 "inspect the llama.cpp OpenAI-compatible parser output",
                 json!({
                     "error": err.to_string(),
@@ -3166,14 +3165,14 @@ impl GemmaCodingHarness {
                 Some(file_sot(&raw_generation_path)),
             )
         })?;
-        let message = normalize_gemma_harness_message(&parsed, request_path, &raw_generation_path)?;
+        let message = normalize_inner_harness_message(&parsed, request_path, &raw_generation_path)?;
         Ok(json!({
             "model": args.model,
             "created_at_unix": unix_secs()?,
             "done": true,
             "message": message,
-            "contextgraph_gemma_harness": {
-                "provider": "contextgraph_rust_gemma_coding_harness",
+            "contextgraph_inner_harness": {
+                "provider": "contextgraph_rust_inner_coding_harness",
                 "model_path": file_sot(&self.model_path),
                 "requested_context_tokens": self.requested_context_tokens,
                 "effective_context_tokens": self.context_tokens,
@@ -3203,20 +3202,20 @@ impl GemmaCodingHarness {
     ) -> Result<(String, usize, usize)> {
         let context_tokens = NonZeroU32::new(self.context_tokens).ok_or_else(|| {
             RealityError::new(
-                "RUST_REALITY_GEMMA_CONTEXT_TOKENS_INVALID",
-                "Gemma context window cannot be zero",
-                "gemma_context_tokens",
-                "set --gemma-context-tokens to a positive value",
-                json!({"gemma_context_tokens": self.context_tokens}),
+                "RUST_REALITY_INNER_CONTEXT_TOKENS_INVALID",
+                "the inner model context window cannot be zero",
+                "inner_context_tokens",
+                "set --inner-context-tokens to a positive value",
+                json!({"inner_context_tokens": self.context_tokens}),
                 Some(file_sot(request_path)),
             )
         })?;
         let batch_size = u32::try_from(self.batch_size).map_err(|err| {
             RealityError::new(
-                "RUST_REALITY_GEMMA_BATCH_SIZE_TOO_LARGE",
-                "Gemma batch size could not be represented for llama.cpp context params",
-                "gemma_batch_size",
-                "set --gemma-batch-size no larger than u32::MAX",
+                "RUST_REALITY_INNER_BATCH_SIZE_TOO_LARGE",
+                "the inner model batch size could not be represented for llama.cpp context params",
+                "inner_batch_size",
+                "set --inner-batch-size no larger than u32::MAX",
                 json!({"error": err.to_string(), "batch_size": self.batch_size}),
                 Some(file_sot(request_path)),
             )
@@ -3230,9 +3229,9 @@ impl GemmaCodingHarness {
             .new_context(&self.backend, ctx_params)
             .map_err(|err| {
                 RealityError::new(
-                    "RUST_REALITY_GEMMA_CONTEXT_CREATE_FAILED",
+                    "RUST_REALITY_INNER_CONTEXT_CREATE_FAILED",
                     "failed to create llama.cpp generation context",
-                    "gemma_harness.context",
+                    "inner_harness.context",
                     "inspect context window size, GPU memory, and model compatibility",
                     json!({
                         "error": err.to_string(),
@@ -3251,9 +3250,9 @@ impl GemmaCodingHarness {
             .str_to_token(&rendered.prompt, AddBos::Never)
             .map_err(|err| {
                 RealityError::new(
-                    "RUST_REALITY_GEMMA_PROMPT_TOKENIZE_FAILED",
-                    "failed to tokenize rendered Gemma prompt",
-                    "gemma_harness.prompt",
+                    "RUST_REALITY_INNER_PROMPT_TOKENIZE_FAILED",
+                    "failed to tokenize rendered the inner model prompt",
+                    "inner_harness.prompt",
                     "inspect chat template output and model tokenizer compatibility",
                     json!({"error": err.to_string(), "request": file_sot(request_path)}),
                     Some(file_sot(request_path)),
@@ -3261,10 +3260,10 @@ impl GemmaCodingHarness {
             })?;
         if tokens.len() >= self.context_tokens as usize {
             return Err(RealityError::new(
-                "RUST_REALITY_GEMMA_PROMPT_CONTEXT_EXCEEDED",
-                "rendered Gemma prompt exceeds the configured context window",
-                "gemma_harness.prompt_tokens",
-                "reduce repository context/tool transcript size or increase --gemma-context-tokens after verifying model capacity",
+                "RUST_REALITY_INNER_PROMPT_CONTEXT_EXCEEDED",
+                "rendered the inner model prompt exceeds the configured context window",
+                "inner_harness.prompt_tokens",
+                "reduce repository context/tool transcript size or increase --inner-context-tokens after verifying model capacity",
                 json!({
                     "prompt_tokens": tokens.len(),
                     "context_tokens": self.context_tokens,
@@ -3276,10 +3275,10 @@ impl GemmaCodingHarness {
         let available_generation_tokens = self.context_tokens as usize - tokens.len();
         if self.max_new_tokens > available_generation_tokens {
             return Err(RealityError::new(
-                "RUST_REALITY_GEMMA_PROMPT_AND_OUTPUT_CONTEXT_EXCEEDED",
-                "rendered Gemma prompt plus requested generation budget exceeds the configured context window",
-                "gemma_harness.prompt_tokens_plus_max_new_tokens",
-                "reduce prompt/tool transcript size or use a Gemma GGUF with a larger training context; the harness will not silently lower the requested budget",
+                "RUST_REALITY_INNER_PROMPT_AND_OUTPUT_CONTEXT_EXCEEDED",
+                "rendered the inner model prompt plus requested generation budget exceeds the configured context window",
+                "inner_harness.prompt_tokens_plus_max_new_tokens",
+                "reduce prompt/tool transcript size or use a the inner model GGUF with a larger training context; the harness will not silently lower the requested budget",
                 json!({
                     "prompt_tokens": tokens.len(),
                     "max_new_tokens": self.max_new_tokens,
@@ -3316,9 +3315,9 @@ impl GemmaCodingHarness {
                 .add(token, current_pos as i32, &[0], true)
                 .map_err(|err| {
                     RealityError::new(
-                        "RUST_REALITY_GEMMA_GENERATION_BATCH_ADD_FAILED",
+                        "RUST_REALITY_INNER_GENERATION_BATCH_ADD_FAILED",
                         "failed to append generated token to llama.cpp batch",
-                        "gemma_harness.generation_batch",
+                        "inner_harness.generation_batch",
                         "inspect llama.cpp batch state and generated token position",
                         json!({
                             "error": err.to_string(),
@@ -3330,9 +3329,9 @@ impl GemmaCodingHarness {
                 })?;
             ctx.decode(&mut batch).map_err(|err| {
                 RealityError::new(
-                    "RUST_REALITY_GEMMA_GENERATION_DECODE_FAILED",
+                    "RUST_REALITY_INNER_GENERATION_DECODE_FAILED",
                     "llama.cpp failed while decoding a generated token",
-                    "gemma_harness.generation_decode",
+                    "inner_harness.generation_decode",
                     "inspect model/runtime state and GPU memory",
                     json!({
                         "error": err.to_string(),
@@ -3345,9 +3344,9 @@ impl GemmaCodingHarness {
         }
         let mut output = decode_llama_tokens(&self.model, &generated_tokens).map_err(|err| {
             RealityError::new(
-                "RUST_REALITY_GEMMA_TOKEN_DECODE_FAILED",
+                "RUST_REALITY_INNER_TOKEN_DECODE_FAILED",
                 "failed to decode generated llama.cpp tokens",
-                "gemma_harness.generated_tokens",
+                "inner_harness.generated_tokens",
                 "inspect generated token stream and model tokenizer",
                 json!({"error": err.to_string(), "request": file_sot(request_path)}),
                 Some(file_sot(request_path)),
@@ -3369,10 +3368,10 @@ impl GemmaCodingHarness {
     ) -> Result<LlamaSampler> {
         let grammar = rendered.grammar.as_deref().ok_or_else(|| {
             RealityError::new(
-                "RUST_REALITY_GEMMA_TOOL_GRAMMAR_MISSING",
-                "Gemma chat template did not produce a tool-call grammar",
-                "gemma_harness.tool_grammar",
-                "use a Gemma GGUF/template combination that supports strict tool grammar",
+                "RUST_REALITY_INNER_TOOL_GRAMMAR_MISSING",
+                "the inner model chat template did not produce a tool-call grammar",
+                "inner_harness.tool_grammar",
+                "use a the inner model GGUF/template combination that supports strict tool grammar",
                 json!({"request": file_sot(request_path)}),
                 Some(file_sot(request_path)),
             )
@@ -3404,9 +3403,9 @@ impl GemmaCodingHarness {
                 )
                 .map_err(|err| {
                     RealityError::new(
-                        "RUST_REALITY_GEMMA_GRAMMAR_SAMPLER_FAILED",
+                        "RUST_REALITY_INNER_GRAMMAR_SAMPLER_FAILED",
                         "failed to create lazy-pattern tool grammar sampler",
-                        "gemma_harness.tool_grammar",
+                        "inner_harness.tool_grammar",
                         "inspect generated tool grammar and chat-template triggers",
                         json!({"error": err.to_string(), "request": file_sot(request_path)}),
                         Some(file_sot(request_path)),
@@ -3422,9 +3421,9 @@ impl GemmaCodingHarness {
                 )
                 .map_err(|err| {
                     RealityError::new(
-                        "RUST_REALITY_GEMMA_GRAMMAR_SAMPLER_FAILED",
+                        "RUST_REALITY_INNER_GRAMMAR_SAMPLER_FAILED",
                         "failed to create lazy tool grammar sampler",
-                        "gemma_harness.tool_grammar",
+                        "inner_harness.tool_grammar",
                         "inspect generated tool grammar and chat-template triggers",
                         json!({"error": err.to_string(), "request": file_sot(request_path)}),
                         Some(file_sot(request_path)),
@@ -3434,9 +3433,9 @@ impl GemmaCodingHarness {
         } else {
             LlamaSampler::grammar(&self.model, grammar, "root").map_err(|err| {
                 RealityError::new(
-                    "RUST_REALITY_GEMMA_GRAMMAR_SAMPLER_FAILED",
+                    "RUST_REALITY_INNER_GRAMMAR_SAMPLER_FAILED",
                     "failed to create strict tool grammar sampler",
-                    "gemma_harness.tool_grammar",
+                    "inner_harness.tool_grammar",
                     "inspect generated tool grammar",
                     json!({"error": err.to_string(), "request": file_sot(request_path)}),
                     Some(file_sot(request_path)),
@@ -3451,7 +3450,7 @@ fn request_sibling_path(request_path: &Path, suffix: &str) -> PathBuf {
         .file_stem()
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
-        .unwrap_or("gemma-harness");
+        .unwrap_or("inner-harness");
     request_path.with_file_name(format!("{stem}-{suffix}"))
 }
 
@@ -3472,9 +3471,9 @@ fn decode_prompt_tokens(
                 .add(token, absolute_index as i32, &[0], is_last)
                 .map_err(|err| {
                     RealityError::new(
-                        "RUST_REALITY_GEMMA_PROMPT_BATCH_ADD_FAILED",
+                        "RUST_REALITY_INNER_PROMPT_BATCH_ADD_FAILED",
                         "failed to append prompt token to llama.cpp batch",
-                        "gemma_harness.prompt_batch",
+                        "inner_harness.prompt_batch",
                         "inspect prompt length, batch size, and llama.cpp context state",
                         json!({
                             "error": err.to_string(),
@@ -3488,9 +3487,9 @@ fn decode_prompt_tokens(
         }
         ctx.decode(&mut batch).map_err(|err| {
             RealityError::new(
-                "RUST_REALITY_GEMMA_PROMPT_DECODE_FAILED",
+                "RUST_REALITY_INNER_PROMPT_DECODE_FAILED",
                 "llama.cpp failed while decoding rendered prompt",
-                "gemma_harness.prompt_decode",
+                "inner_harness.prompt_decode",
                 "inspect prompt, context window, and GPU memory",
                 json!({
                     "error": err.to_string(),
@@ -3529,7 +3528,7 @@ fn decode_llama_tokens(
     Ok(String::from_utf8(bytes)?)
 }
 
-fn normalize_gemma_harness_message(
+fn normalize_inner_harness_message(
     parsed: &Value,
     request_path: &Path,
     raw_generation_path: &Path,
@@ -3546,9 +3545,9 @@ fn normalize_gemma_harness_message(
     };
     let Some(obj) = message.as_object_mut() else {
         return Err(RealityError::new(
-            "RUST_REALITY_GEMMA_MESSAGE_SHAPE_INVALID",
-            "Gemma parser output was not an assistant message object",
-            "gemma_harness.response.message",
+            "RUST_REALITY_INNER_MESSAGE_SHAPE_INVALID",
+            "the inner model parser output was not an assistant message object",
+            "inner_harness.response.message",
             "inspect raw generation and parser output",
             json!({
                 "parsed": parsed,
@@ -3562,9 +3561,9 @@ fn normalize_gemma_harness_message(
         Some("assistant") => {}
         Some(other) => {
             return Err(RealityError::new(
-                "RUST_REALITY_GEMMA_MESSAGE_ROLE_INVALID",
-                "Gemma parser output did not return an assistant role",
-                "gemma_harness.response.message.role",
+                "RUST_REALITY_INNER_MESSAGE_ROLE_INVALID",
+                "the inner model parser output did not return an assistant role",
+                "inner_harness.response.message.role",
                 "inspect chat template parser output and role mapping",
                 json!({
                     "role": other,
@@ -3577,9 +3576,9 @@ fn normalize_gemma_harness_message(
         }
         None => {
             return Err(RealityError::new(
-                "RUST_REALITY_GEMMA_MESSAGE_ROLE_MISSING",
-                "Gemma parser output omitted assistant message role",
-                "gemma_harness.response.message.role",
+                "RUST_REALITY_INNER_MESSAGE_ROLE_MISSING",
+                "the inner model parser output omitted assistant message role",
+                "inner_harness.response.message.role",
                 "inspect chat template parser output",
                 json!({
                     "parsed": parsed,
@@ -3596,9 +3595,9 @@ fn normalize_gemma_harness_message(
     if let Some(tool_calls) = obj.get("tool_calls") {
         if !tool_calls.is_array() {
             return Err(RealityError::new(
-                "RUST_REALITY_GEMMA_TOOL_CALLS_SHAPE_INVALID",
-                "Gemma parser output tool_calls was not an array",
-                "gemma_harness.response.message.tool_calls",
+                "RUST_REALITY_INNER_TOOL_CALLS_SHAPE_INVALID",
+                "the inner model parser output tool_calls was not an array",
+                "inner_harness.response.message.tool_calls",
                 "inspect chat template parser output",
                 json!({
                     "tool_calls": tool_calls,
@@ -3612,8 +3611,8 @@ fn normalize_gemma_harness_message(
     Ok(message)
 }
 
-fn gemma_coding_harness_chat_json(
-    harness: &GemmaCodingHarness,
+fn inner_coding_harness_chat_json(
+    harness: &InnerCodingHarness,
     ctx: &AgentToolContext<'_>,
     prompt: &str,
     attempt: u64,
@@ -3625,7 +3624,7 @@ fn gemma_coding_harness_chat_json(
         &gpu_before,
         args.gpu_min_free_mb,
         args.gpu_max_used_mb,
-        "before_gemma_coding_harness",
+        "before_inner_coding_harness",
         //cgreality
         &args.model,
     )?;
@@ -3650,8 +3649,12 @@ Post-edit self-check (critical): after every apply_line_window_edit call, the re
 Verify the edit landed in the intended file region; verify no module-level definitions (functions, classes, imports, constants) outside the fix scope were deleted or corrupted; verify indentation is consistent and no if/for/def/class body is empty. \
 If post_edit_window shows broken indentation, an empty block body, missing imports, or content in the wrong region, the edit is wrong: call open_file_window on adjacent lines and re-issue apply_line_window_edit with a corrected line range, or switch to apply_structured_edit with a precise unique find span. \
 Do NOT submit the candidate patch until post_edit_window confirms the edit is syntactically valid and semantically targeted. \
-Do not modify tests, fixtures, or benchmark harness files.",        harness.context_tokens, harness.max_new_tokens, args.agent_tool_rounds
-    );
+Pre-submit verification (critical): after post_edit_window confirms the edit, BEFORE producing your final candidate patch you MUST call run_targeted_test once for each FAIL_TO_PASS test id listed in the problem-reality packet. \
+A response with status 'ok' (exit_code 0) means that test now passes against your edit; status 'failed' (exit_code != 0) means the patch does not yet fix that test, so revise the edit and re-test. \
+After all FAIL_TO_PASS tests return 'ok', also call run_targeted_test on at least 2-3 PASS_TO_PASS tests from the same packet to catch regressions; if any returns 'failed', your edit broke a previously passing test and must be revised. \
+Tool limitation: if run_targeted_test stdout/stderr shows ImportError or ModuleNotFoundError for a missing dependency, that is an environment limitation of this host, NOT a defect in your patch. Skip that test, note it in your reasoning, rely on the official Docker evaluator downstream, and do not loop retrying. \
+Only after FAIL_TO_PASS tests pass (or are environment-skipped) and sampled PASS_TO_PASS tests still pass should you submit. \
+Do not modify tests, fixtures, or benchmark harness files.",        harness.context_tokens, harness.max_new_tokens, args.agent_tool_rounds    );
     let mut messages = vec![
         json!({"role": "system", "content": system_prompt}),
         json!({"role": "user", "content": prompt}),
@@ -3684,7 +3687,7 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
                 format!(
                     "model exceeded max-rounds-per-attempt ({MAX_ROUNDS_PER_ATTEMPT_HARD_CAP}) without producing a valid candidate patch"
                 ),
-                "raise MAX_ROUNDS_PER_ATTEMPT_HARD_CAP only after confirming the failing trajectory is genuinely exploring; otherwise diagnose why Gemma cannot converge inside the cap"
+                "raise MAX_ROUNDS_PER_ATTEMPT_HARD_CAP only after confirming the failing trajectory is genuinely exploring; otherwise diagnose why the inner model cannot converge inside the cap"
                     .to_string(),
             ));
             forced_stop_round = Some(round);
@@ -3731,19 +3734,19 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
                         "repeated_navigation_count": repeated_navigation_count
                     },
                     "runtime": {
-                        "provider": "contextgraph_rust_gemma_coding_harness",
+                        "provider": "contextgraph_rust_inner_coding_harness",
                         "model_path": file_sot(&harness.model_path)
                     },
                     "options": {
-                        "temperature": args.gemma_temperature,
-                        "top_p": args.gemma_top_p,
-                        "requested_context_tokens": args.gemma_context_tokens,
+                        "temperature": args.inner_temperature,
+                        "top_p": args.inner_top_p,
+                        "requested_context_tokens": args.inner_context_tokens,
                         "effective_context_tokens": harness.context_tokens,
                         "model_context_train_tokens": harness.model_context_train_tokens,
                         "max_new_tokens": harness.max_new_tokens,
-                        "gpu_layers": args.gemma_gpu_layers,
-                        "batch_size": args.gemma_batch_size,
-                        "seed": args.gemma_seed
+                        "gpu_layers": args.inner_gpu_layers,
+                        "batch_size": args.inner_batch_size,
+                        "seed": args.inner_seed
                     }
                 });
         write_json_checked(&request_path, &body)?;
@@ -3989,7 +3992,7 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
             "record_kind": "contextgraph_model_step_blocked",
             "status": "blocked",
             "error_code": "RUST_REALITY_AGENT_TOOL_REQUIRED_BUT_MISSING",
-            "field_path": "gemma_harness.message.tool_calls",
+            "field_path": "inner_harness.message.tool_calls",
             "message_text": "model did not call any governed ContextGraph tool before trying to answer",
             "remediation": "reinject this blocked-step reality and require read_problem_reality, search_repo, inspect_symbol, open_file_window, or read_official_failure_reality before submitting edits",
             "message": {"role": "assistant", "content": ""},
@@ -4007,7 +4010,7 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
             },
             "source_of_truth": file_sot(&transcript_path)
         });
-        write_json_checked(&attempt_dir.join("gemma-harness-response.json"), &blocked)?;
+        write_json_checked(&attempt_dir.join("inner-harness-response.json"), &blocked)?;
         return Ok(blocked);
     }
 
@@ -4016,7 +4019,7 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
         &gpu_after,
         args.gpu_min_free_mb,
         args.gpu_max_used_mb,
-        "after_gemma_coding_harness",
+        "after_inner_coding_harness",
         &args.model,
     )?;
     let Some(submitted_candidate_patch) = submitted_candidate_patch else {
@@ -4091,7 +4094,7 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
             },
             "source_of_truth": file_sot(&transcript_path)
         });
-        write_json_checked(&attempt_dir.join("gemma-harness-response.json"), &blocked)?;
+        write_json_checked(&attempt_dir.join("inner-harness-response.json"), &blocked)?;
         return Ok(blocked);
     };
     let transcript = json!({
@@ -4125,7 +4128,7 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
             "agent_tool_transcript": file_sot(&transcript_path)
         }
     });
-    write_json_checked(&attempt_dir.join("gemma-harness-response.json"), &enriched)?;
+    write_json_checked(&attempt_dir.join("inner-harness-response.json"), &enriched)?;
     Ok(enriched)
 }
 
@@ -4134,7 +4137,7 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
 /// signal that the model is stuck repeating the exact same failure (e.g.
 /// `RUST_REALITY_LINE_EDIT_PY_COMPILE_FAILED` round after round). Returns
 /// `None` otherwise. Pure function so the round-loop logic is unit-testable
-/// without spinning up a real Gemma harness.
+/// without spinning up a real the inner model harness.
 fn repeated_error_deadlock_code(tail: &VecDeque<String>) -> Option<String> {
     if tail.len() < REPEATED_ERROR_DEADLOCK_LEN {
         return None;
@@ -4228,7 +4231,7 @@ fn edit_deadline_active(
 }
 
 /// Approximate token count for a JSON message using a conservative
-/// chars-per-token ratio for Gemma's tokenizer (~3.5 chars/token). This is
+/// chars-per-token ratio for the inner model's tokenizer (~3.5 chars/token). This is
 /// intentionally a heuristic — exact counting requires the model tokenizer
 /// which lives inside `harness.chat`. The estimate is only used to decide
 /// when to evict middle-of-conversation tool turns before the prompt grows
@@ -4496,7 +4499,7 @@ fn agent_tool_specs() -> Value {
             "type": "function",
             "function": {
                 "name": "apply_line_window_edit",
-                "description": "Preferred final patch submission tool for Gemma coding-agent mode. Replace line ranges from a file returned by open_file_window. You must pass the file sha256 observed from open_file_window so ContextGraph can prove the edit targets the same durable source reality you inspected.",
+                "description": "Preferred final patch submission tool for the inner model coding-agent mode. Replace line ranges from a file returned by open_file_window. You must pass the file sha256 observed from open_file_window so ContextGraph can prove the edit targets the same durable source reality you inspected.",
                 "parameters": {
                     "type": "object",
                     "additionalProperties": false,
@@ -4634,9 +4637,9 @@ fn tool_call_name(call: &Value) -> Result<String> {
         .ok_or_else(|| {
             RealityError::new(
                 "RUST_REALITY_TOOL_CALL_NAME_MISSING",
-                "Gemma tool call did not include a function name",
-                "gemma_harness.message.tool_calls[].function.name",
-                "inspect Gemma tool-call response format",
+                "the inner model tool call did not include a function name",
+                "inner_harness.message.tool_calls[].function.name",
+                "inspect the inner model tool-call response format",
                 json!({"tool_call": call}),
                 None,
             )
@@ -4657,8 +4660,8 @@ fn tool_call_arguments(call: &Value) -> Result<Value> {
         Value::String(text) => serde_json::from_str::<Value>(&text).map_err(|err| {
             RealityError::new(
                 "RUST_REALITY_TOOL_CALL_ARGUMENTS_JSON_INVALID",
-                "Gemma tool call arguments string was not JSON",
-                "gemma_harness.message.tool_calls[].function.arguments",
+                "the inner model tool call arguments string was not JSON",
+                "inner_harness.message.tool_calls[].function.arguments",
                 "inspect model tool-call argument formatting",
                 json!({"arguments": text, "error": err.to_string(), "tool_call": call}),
                 None,
@@ -4666,8 +4669,8 @@ fn tool_call_arguments(call: &Value) -> Result<Value> {
         }),
         other => Err(RealityError::new(
             "RUST_REALITY_TOOL_CALL_ARGUMENTS_INVALID",
-            "Gemma tool call arguments must be a JSON object or JSON object string",
-            "gemma_harness.message.tool_calls[].function.arguments",
+            "the inner model tool call arguments must be a JSON object or JSON object string",
+            "inner_harness.message.tool_calls[].function.arguments",
             "inspect model tool-call argument formatting",
             json!({"arguments": other, "tool_call": call}),
             None,
@@ -4710,7 +4713,7 @@ fn content_json_tool_calls(response: &Value, round: u64) -> Result<Vec<Value>> {
             return Err(RealityError::new(
                 "RUST_REALITY_CONTENT_TOOL_ARGUMENTS_INVALID",
                 "content JSON tool request arguments must be a JSON object",
-                "gemma_harness.message.content.arguments",
+                "inner_harness.message.content.arguments",
                 "emit {\"tool_name\":\"search_repo\",\"arguments\":{\"query\":\"...\"}} or use native tool_calls",
                 json!({"content": truncate_chars(trimmed, 2000), "arguments": arguments}),
                 None,
@@ -4730,7 +4733,7 @@ fn content_json_tool_calls(response: &Value, round: u64) -> Result<Vec<Value>> {
         return Err(RealityError::new(
             "RUST_REALITY_CONTENT_TOOL_JSON_INVALID",
             "assistant content looked like a tool request but was not valid JSON",
-            "gemma_harness.message.content",
+            "inner_harness.message.content",
             "emit a valid JSON object tool request or use native tool_calls",
             json!({"content": truncate_chars(trimmed, 2000)}),
             None,
@@ -4918,7 +4921,7 @@ fn build_harness_transition(
             "source_of_truth": {
                 "repo_head": format!("git:{}#HEAD", path_str(ctx.repo_dir)),
                 "repo_status": format!("git:{}#status", path_str(ctx.repo_dir)),
-                "gemma_harness_response": file_sot(response_path)
+                "inner_harness_response": file_sot(response_path)
             }
         },
         "action": {
@@ -5330,7 +5333,7 @@ fn tool_inspect_symbol(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<
     // as the symbol argument so a model that confuses the arg name produces a
     // recoverable tool result instead of a fatal RUST_REALITY_TOOL_ARGUMENT_MISSING
     // that aborts the entire attempt. Diagnosed from
-    // /tmp/ccreality-prod-3/rust_reality_1778039147061721975_e525987d where Gemma
+    // /tmp/ccreality-prod-3/rust_reality_1778039147061721975_e525987d where the inner model
     // called inspect_symbol with {symbol_name, symbol_type} and the run aborted
     // before writing attempt-summary.json. The previous tool_inspect_symbol used
     // required_tool_str() which returns Err(RealityError) — fatal — for missing
@@ -5517,7 +5520,7 @@ fn tool_apply_structured_edit(
             // pointed at /process/stderr and /process/stdout — fields that
             // do not exist — so syntax_probe_summary surfaced empty strings
             // even when py_compile clearly produced output. This corrects
-            // the field names so Gemma actually sees the SyntaxError text.
+            // the field names so the inner model actually sees the SyntaxError text.
             // We additionally truncate to 1500 chars to keep the tool result
             // bounded inside the model context window.
             let stderr_tail = probe
@@ -5582,7 +5585,7 @@ fn tool_apply_line_window_edit(
     reset_workspace(ctx.repo_dir, &ctx.task.base_commit, ctx.args.git_timeout)?;
     let status = if patch.is_some() { "ok" } else { "failed" };
     // Phase 14 (forward) intervention: lift error_code/message/remediation/syntax_probe
-    // tail from the compilation detail to the top level of the tool result so Gemma
+    // tail from the compilation detail to the top level of the tool result so the inner model
     // sees the actionable failure reason without having to navigate
     // result.compilation.details.syntax_probe. This is a tool-grounding fix grounded
     // in the diagnosis from /tmp/ccreality-prod-3 attempt-000001 (rounds 4-7) where
@@ -5611,7 +5614,7 @@ fn tool_apply_line_window_edit(
             // pointed at /process/stderr and /process/stdout — fields that
             // do not exist — so syntax_probe_summary surfaced empty strings
             // even when py_compile clearly produced output. This corrects
-            // the field names so Gemma actually sees the SyntaxError text.
+            // the field names so the inner model actually sees the SyntaxError text.
             // We additionally truncate to 1500 chars to keep the tool result
             // bounded inside the model context window.
             let stderr_tail = probe
@@ -6481,11 +6484,23 @@ fn compile_structured_edits(
                 &edits_path,
             ));
         }
+        let find_byte_start = before.find(find).unwrap_or(0);
         let after = before.replacen(find, replace, 1);
+        let edit_start_line = before[..find_byte_start].matches('\n').count() as u64 + 1;
+        let replace_newlines = replace.matches('\n').count() as u64;
+        let edit_end_line = if replace.is_empty() {
+            edit_start_line
+        } else if replace.ends_with('\n') {
+            edit_start_line + replace_newlines.saturating_sub(1)
+        } else {
+            edit_start_line + replace_newlines
+        };
         original_contents
             .entry(path.to_string())
             .or_insert_with(|| before.clone());
         write_text_checked(&target, &after)?;
+        let post_edit_window =
+            build_post_edit_window(path, &after, edit_start_line, edit_end_line, &target);
         applied.push(json!({
             "index": index,
             "path": path,
@@ -6493,6 +6508,7 @@ fn compile_structured_edits(
             "after_sha256": sha256_text(&after),
             "find_sha256": sha256_text(find),
             "replace_sha256": sha256_text(replace),
+            "post_edit_window": post_edit_window,
             "source_of_truth": file_sot(&target)
         }));
     }
@@ -6562,7 +6578,6 @@ fn compile_structured_edits(
         }),
     ))
 }
-
 fn compile_line_window_edits(
     repo_dir: &Path,
     attempt_dir: &Path,
@@ -7024,16 +7039,28 @@ fn compile_unified_diff_submission(
         ));
     }
 
+    let hunk_ranges = parse_unified_diff_post_apply_ranges(patch);
     let applied = changed_files
         .iter()
         .map(|path| {
             let target = repo_dir.join(path);
-            Ok(json!({
+            let after_sha = sha256_file(&target)?;
+            let mut entry = json!({
                 "path": path,
                 "observed_sha256": observed.get(path),
-                "after_sha256": sha256_file(&target)?,
+                "after_sha256": after_sha,
                 "source_of_truth": file_sot(&target)
-            }))
+            });
+            if let Some(&(start, end)) = hunk_ranges.get(path) {
+                if let Ok(after_text) = fs::read_to_string(&target) {
+                    let window = build_post_edit_window(path, &after_text, start, end, &target);
+                    entry
+                        .as_object_mut()
+                        .expect("entry is object")
+                        .insert("post_edit_window".to_string(), window);
+                }
+            }
+            Ok(entry)
         })
         .collect::<Result<Vec<_>>>()?;
     let static_checks = run_static_patch_checks(repo_dir, attempt_dir, &changed_files, timeout)?;
@@ -7055,7 +7082,11 @@ fn compile_unified_diff_submission(
                 .get("remediation")
                 .and_then(Value::as_str)
                 .unwrap_or("fix syntax/import errors and resubmit the diff"),
-            json!({"changed_files": changed_files, "static_checks": static_checks}),
+            json!({
+                "changed_files": changed_files,
+                "static_checks": static_checks,
+                "applied_edits": applied
+            }),
             &submitted_patch_path,
         ));
     }
@@ -7088,6 +7119,56 @@ fn compile_unified_diff_submission(
     ))
 }
 
+/// Parse a unified diff and return per-file post-apply line ranges as the
+/// union of all hunks for that file. Hunk header form: `@@ -X,Y +A,B @@` (Y/B
+/// optional; default 1). Returned `(start, end)` is inclusive 1-based against
+/// the post-apply file.
+fn parse_unified_diff_post_apply_ranges(patch: &str) -> BTreeMap<String, (u64, u64)> {
+    let mut ranges: BTreeMap<String, (u64, u64)> = BTreeMap::new();
+    let mut current_path: Option<String> = None;
+    for line in patch.lines() {
+        if let Some(rest) = line.strip_prefix("+++ ") {
+            // Strip optional "b/" git prefix and any trailing tab metadata.
+            let path_part = rest.split('\t').next().unwrap_or(rest).trim();
+            let cleaned = path_part.strip_prefix("b/").unwrap_or(path_part);
+            if cleaned == "/dev/null" || cleaned.is_empty() {
+                current_path = None;
+            } else {
+                current_path = Some(cleaned.to_string());
+            }
+            continue;
+        }
+        if !line.starts_with("@@") {
+            continue;
+        }
+        let Some(path) = current_path.as_ref() else {
+            continue;
+        };
+        // Find the "+" segment of the hunk header.
+        let Some(plus_idx) = line.find('+') else {
+            continue;
+        };
+        let after_plus = &line[plus_idx + 1..];
+        let nums = after_plus.split_whitespace().next().unwrap_or("");
+        let mut parts = nums.split(',');
+        let start: u64 = match parts.next().and_then(|s| s.parse().ok()) {
+            Some(v) => v,
+            None => continue,
+        };
+        let count: u64 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(1);
+        // For empty target (count=0) the hunk's anchor is `start` itself; treat
+        // it as a single-line window so the readback still has signal.
+        let end = if count == 0 { start } else { start + count - 1 };
+        ranges
+            .entry(path.clone())
+            .and_modify(|cur| {
+                cur.0 = cur.0.min(start);
+                cur.1 = cur.1.max(end);
+            })
+            .or_insert((start, end));
+    }
+    ranges
+}
 fn line_spans(text: &str) -> Vec<(usize, usize)> {
     let mut spans = Vec::new();
     let mut start = 0;
@@ -10385,7 +10466,7 @@ fn sha256_file(path: &Path) -> Result<String> {
     Ok(format!("sha256:{:x}", hasher.finalize()))
 }
 
-/// Streaming SHA-256 for large files (Gemma BF16 GGUF is ~15 GiB; the
+/// Streaming SHA-256 for large files (the inner model BF16 GGUF is ~15 GiB; the
 /// `fs::read`-based `sha256_file` would allocate the entire payload into
 /// memory). 64 KiB chunks balance syscall overhead and resident set size.
 fn sha256_file_streaming(path: &Path) -> Result<String> {
@@ -10739,7 +10820,104 @@ mod tests {
         );
         assert_eq!(after, "def bump(x):\n    return x + 2\n");
     }
+    #[test]
+    fn structured_edit_and_unified_diff_emit_post_edit_window_fsv() {
+        let (_temp, repo) = init_real_git_repo();
+        let source = repo.join("src/example.py");
 
+        // Structured edit success path: post_edit_window must surface in applied_edits[0].
+        let structured_dir = repo
+            .parent()
+            .expect("repo parent")
+            .join("attempt-000001")
+            .join("agent-tools")
+            .join("round-01-00-apply_structured_edit_post_edit_window");
+        create_dir_checked(&structured_dir).expect("structured tool dir");
+        let edits = vec![json!({
+            "path": "src/example.py",
+            "find": "def bump(x):\n    return x + 1\n",
+            "replace": "def bump(x):\n    return x + 5\n"
+        })];
+        let (patch, compilation) = compile_structured_edits(&repo, &structured_dir, &edits, 30)
+            .expect("compile structured edits");
+        assert!(
+            patch.is_some(),
+            "structured edit compilation must produce a patch: {}",
+            serde_json::to_string_pretty(&compilation).unwrap()
+        );
+        let window = compilation
+            .pointer("/applied_edits/0/post_edit_window")
+            .expect("post_edit_window present in structured-edit applied_edits[0]");
+        let lines = window
+            .pointer("/lines")
+            .and_then(|v| v.as_array())
+            .expect("post_edit_window.lines is an array");
+        let saw_replacement = lines.iter().any(|line| {
+            line.pointer("/text")
+                .and_then(|v| v.as_str())
+                .map(|t| t.contains("return x + 5"))
+                .unwrap_or(false)
+        });
+        assert!(
+            saw_replacement,
+            "structured-edit post_edit_window must contain the replacement text; window={}",
+            serde_json::to_string_pretty(window).unwrap()
+        );
+
+        // Reset workspace before running the unified-diff path.
+        run_required(
+            &["git", "reset", "--hard", "HEAD"],
+            &repo,
+            30,
+            "TEST_GIT_RESET_FAILED",
+            "test.git.reset",
+        )
+        .expect("git reset");
+
+        // Unified diff success path: post_edit_window must surface per changed file.
+        let unified_dir = repo
+            .parent()
+            .expect("repo parent")
+            .join("attempt-000001")
+            .join("agent-tools")
+            .join("round-01-00-apply_unified_diff_post_edit_window");
+        create_dir_checked(&unified_dir).expect("unified tool dir");
+        let observed_sha256 = sha256_file(&source).expect("source sha");
+        let patch_text = "\
+diff --git a/src/example.py b/src/example.py
+--- a/src/example.py
++++ b/src/example.py
+@@ -1,2 +1,2 @@
+ def bump(x):
+-    return x + 1
++    return x + 7
+";
+        let observed_files =
+            vec![json!({"path": "src/example.py", "observed_sha256": observed_sha256})];
+        let (patch, compilation) =
+            compile_unified_diff_submission(&repo, &unified_dir, patch_text, &observed_files, 30)
+                .expect("compile unified diff");
+        assert_eq!(compilation["status"], "passed");
+        assert!(patch.is_some());
+        let window = compilation
+            .pointer("/applied_edits/0/post_edit_window")
+            .expect("post_edit_window present in unified-diff applied_edits[0]");
+        let lines = window
+            .pointer("/lines")
+            .and_then(|v| v.as_array())
+            .expect("unified-diff post_edit_window.lines is an array");
+        let saw_replacement = lines.iter().any(|line| {
+            line.pointer("/text")
+                .and_then(|v| v.as_str())
+                .map(|t| t.contains("return x + 7"))
+                .unwrap_or(false)
+        });
+        assert!(
+            saw_replacement,
+            "unified-diff post_edit_window must contain the replacement text; window={}",
+            serde_json::to_string_pretty(window).unwrap()
+        );
+    }
     #[test]
     fn unified_diff_submission_is_tool_mediated_and_observed_file_backed_fsv() {
         let (_temp, repo) = init_real_git_repo();
@@ -11527,7 +11705,7 @@ diff --git a/src/example.py b/src/example.py
 
     #[test]
     fn compact_problem_reality_packet_surfaces_issue_mentioned_paths_fsv() {
-        // FSV: the compact packet (what reaches Gemma's prompt) MUST surface the
+        // FSV: the compact packet (what reaches the inner model's prompt) MUST surface the
         // issue-text-mentioned paths so the model sees the explicit precision signal.
         let packet = json!({
             "record_kind": "contextgraph_swe_problem_reality_packet",
@@ -11565,7 +11743,7 @@ diff --git a/src/example.py b/src/example.py
         assert_eq!(
             mentioned,
             vec!["requests/sessions.py", "test_requests.py"],
-            "compact packet must surface mentioned_paths to Gemma's prompt"
+            "compact packet must surface mentioned_paths to the inner model's prompt"
         );
     }
 
@@ -11583,11 +11761,11 @@ diff --git a/src/example.py b/src/example.py
     }
 
     fn real_pin_path() -> PathBuf {
-        fsv_project_root().join(DEFAULT_GEMMA_MODEL_PIN_PATH)
+        fsv_project_root().join(DEFAULT_INNER_MODEL_PIN_PATH)
     }
 
     fn real_model_path() -> PathBuf {
-        fsv_project_root().join(DEFAULT_GEMMA_MODEL_PATH)
+        fsv_project_root().join(DEFAULT_INNER_MODEL_PATH)
     }
 
     #[test]
@@ -11600,35 +11778,35 @@ diff --git a/src/example.py b/src/example.py
         );
         eprintln!(
             "BEFORE_FSV pin_path={:?} key={}",
-            pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY
+            pin_path, DEFAULT_INNER_MODEL_PIN_KEY
         );
-        let pin = load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY)
+        let pin = load_model_pin(&pin_path, DEFAULT_INNER_MODEL_PIN_KEY)
             .expect("pin entry must resolve for the default key");
         eprintln!(
             "AFTER_FSV pin.expected_sha256={} expected_size_bytes={} expected_min_context_tokens={}",
             pin.expected_sha256, pin.expected_size_bytes, pin.expected_min_context_tokens
         );
         assert_eq!(
-            pin.repo_id, "ggml-org/gemma-4-E4B-it-GGUF",
-            "pin must reference the official ggml-org repository"
+            pin.repo_id, "unsloth/Qwen3.6-27B-GGUF",
+            "pin must reference the official unsloth repository"
         );
-        assert_eq!(pin.filename, "gemma-4-E4B-it-bf16.gguf");
+        assert_eq!(pin.filename, "Qwen3.6-27B-UD-Q6_K_XL.gguf");
         assert!(
             pin.expected_sha256.starts_with("sha256:"),
             "expected_sha256 must be in `sha256:<hex>` form, got {}",
             pin.expected_sha256
         );
         assert!(
-            pin.expected_size_bytes > 14_000_000_000,
-            "BF16 GGUF should be ~15 GB; got {}",
+            pin.expected_size_bytes > 25_000_000_000,
+            "Q6_K_XL GGUF should be ~25.6 GB; got {}",
             pin.expected_size_bytes
         );
         assert_eq!(pin.expected_min_context_tokens, 128_000);
         assert!(
             pin.expected_identity_substrings
                 .iter()
-                .any(|s| s.eq_ignore_ascii_case("gemma4")),
-            "pin must require gemma4 substring; got {:?}",
+                .any(|s| s.eq_ignore_ascii_case("qwen3")),
+            "pin must require qwen3 substring; got {:?}",
             pin.expected_identity_substrings
         );
     }
@@ -11638,7 +11816,7 @@ diff --git a/src/example.py b/src/example.py
         let temp = tempfile::tempdir().expect("tempdir");
         let bogus = temp.path().join("nonexistent.json");
         eprintln!("BEFORE_FSV pin_path={:?} (does NOT exist by design)", bogus);
-        let err = load_model_pin(&bogus, DEFAULT_GEMMA_MODEL_PIN_KEY)
+        let err = load_model_pin(&bogus, DEFAULT_INNER_MODEL_PIN_KEY)
             .expect_err("missing pin file must fail loud");
         eprintln!(
             "AFTER_FSV error_code={} field_path={}",
@@ -11646,7 +11824,7 @@ diff --git a/src/example.py b/src/example.py
         );
         assert_eq!(
             err.error_code,
-            "RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_MISSING"
+            "RUST_REALITY_INNER_MODEL_PIN_CONFIG_MISSING"
         );
     }
 
@@ -11660,7 +11838,7 @@ diff --git a/src/example.py b/src/example.py
         let err = load_model_pin(&pin_path, "this_key_does_not_exist")
             .expect_err("unknown key must fail loud");
         eprintln!("AFTER_FSV error_code={}", err.error_code);
-        assert_eq!(err.error_code, "RUST_REALITY_GEMMA_MODEL_PIN_NOT_FOUND");
+        assert_eq!(err.error_code, "RUST_REALITY_INNER_MODEL_PIN_NOT_FOUND");
     }
 
     #[test]
@@ -11669,12 +11847,12 @@ diff --git a/src/example.py b/src/example.py
         let bad = temp.path().join("bad.json");
         fs::write(&bad, "{ this is not json").expect("write bad json");
         eprintln!("BEFORE_FSV bad_pin={:?} content=invalid", bad);
-        let err = load_model_pin(&bad, DEFAULT_GEMMA_MODEL_PIN_KEY)
+        let err = load_model_pin(&bad, DEFAULT_INNER_MODEL_PIN_KEY)
             .expect_err("invalid JSON must fail loud");
         eprintln!("AFTER_FSV error_code={}", err.error_code);
         assert_eq!(
             err.error_code,
-            "RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_INVALID_JSON"
+            "RUST_REALITY_INNER_MODEL_PIN_CONFIG_INVALID_JSON"
         );
     }
 
@@ -11686,9 +11864,9 @@ diff --git a/src/example.py b/src/example.py
         let body = json!({
             "$schema_version": "1",
             "models": {
-                "gemma4_e4b_bf16": {
-                    "repo_id": "ggml-org/gemma-4-E4B-it-GGUF",
-                    "filename": "gemma-4-E4B-it-bf16.gguf"
+                "qwen3_6_27b_q6_k_xl": {
+                    "repo_id": "unsloth/Qwen3.6-27B-GGUF",
+                    "filename": "Qwen3.6-27B-UD-Q6_K_XL.gguf"
                 }
             }
         });
@@ -11698,24 +11876,24 @@ diff --git a/src/example.py b/src/example.py
             "BEFORE_FSV schema_bad_pin={:?} (missing required fields)",
             pin_file
         );
-        let err = load_model_pin(&pin_file, DEFAULT_GEMMA_MODEL_PIN_KEY)
+        let err = load_model_pin(&pin_file, DEFAULT_INNER_MODEL_PIN_KEY)
             .expect_err("incomplete schema must fail loud");
         eprintln!("AFTER_FSV error_code={}", err.error_code);
         assert_eq!(
             err.error_code,
-            "RUST_REALITY_GEMMA_MODEL_PIN_SCHEMA_INVALID"
+            "RUST_REALITY_INNER_MODEL_PIN_SCHEMA_INVALID"
         );
     }
 
     #[test]
-    fn validate_gemma_model_pin_rejects_size_drift_fsv() {
+    fn validate_inner_model_pin_rejects_size_drift_fsv() {
         let pin_path = real_pin_path();
-        let pin = load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY)
+        let pin = load_model_pin(&pin_path, DEFAULT_INNER_MODEL_PIN_KEY)
             .expect("pin must load for happy-path baseline");
         // Synthesize a pin with the wrong expected size — the file is real,
-        // the pin is wrong. validate_gemma_model_pin must reject at the size gate
+        // the pin is wrong. validate_inner_model_pin must reject at the size gate
         // before paying for SHA.
-        let tampered = GemmaModelPin {
+        let tampered = InnerModelPin {
             repo_id: pin.repo_id.clone(),
             filename: pin.filename.clone(),
             expected_sha256: pin.expected_sha256.clone(),
@@ -11734,24 +11912,24 @@ diff --git a/src/example.py b/src/example.py
             fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0),
             tampered.expected_size_bytes
         );
-        let err = validate_gemma_model_pin(
+        let err = validate_inner_model_pin(
             &model_path,
             &tampered,
             &pin_path,
-            DEFAULT_GEMMA_MODEL_PIN_KEY,
+            DEFAULT_INNER_MODEL_PIN_KEY,
         )
         .expect_err("size drift must fail loud");
         eprintln!("AFTER_FSV error_code={}", err.error_code);
-        assert_eq!(err.error_code, "RUST_REALITY_GEMMA_MODEL_SIZE_MISMATCH");
+        assert_eq!(err.error_code, "RUST_REALITY_INNER_MODEL_SIZE_MISMATCH");
     }
 
     #[test]
-    fn validate_gemma_model_pin_rejects_sha_drift_fsv() {
+    fn validate_inner_model_pin_rejects_sha_drift_fsv() {
         let pin_path = real_pin_path();
-        let pin = load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY)
+        let pin = load_model_pin(&pin_path, DEFAULT_INNER_MODEL_PIN_KEY)
             .expect("pin must load for happy-path baseline");
         // Same size, wrong SHA → must reject at SHA gate.
-        let tampered = GemmaModelPin {
+        let tampered = InnerModelPin {
             repo_id: pin.repo_id.clone(),
             filename: pin.filename.clone(),
             expected_sha256:
@@ -11770,21 +11948,21 @@ diff --git a/src/example.py b/src/example.py
             "BEFORE_FSV model_path={:?} pinned_sha=zeros actual_sha=(real)",
             model_path
         );
-        let err = validate_gemma_model_pin(
+        let err = validate_inner_model_pin(
             &model_path,
             &tampered,
             &pin_path,
-            DEFAULT_GEMMA_MODEL_PIN_KEY,
+            DEFAULT_INNER_MODEL_PIN_KEY,
         )
         .expect_err("sha drift must fail loud");
         eprintln!("AFTER_FSV error_code={}", err.error_code);
-        assert_eq!(err.error_code, "RUST_REALITY_GEMMA_MODEL_SHA_MISMATCH");
+        assert_eq!(err.error_code, "RUST_REALITY_INNER_MODEL_SHA_MISMATCH");
     }
 
     #[test]
-    fn validate_gemma_model_pin_passes_with_real_bf16_gguf_fsv() {
+    fn validate_inner_model_pin_passes_with_real_bf16_gguf_fsv() {
         let pin_path = real_pin_path();
-        let pin = load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY).expect("pin must load");
+        let pin = load_model_pin(&pin_path, DEFAULT_INNER_MODEL_PIN_KEY).expect("pin must load");
         let model_path = real_model_path();
         if !model_path.exists() {
             eprintln!("SKIP: real BF16 GGUF not on disk at {:?}", model_path);
@@ -11794,7 +11972,7 @@ diff --git a/src/example.py b/src/example.py
             "BEFORE_FSV model_path={:?} pin.expected_sha256={}",
             model_path, pin.expected_sha256
         );
-        validate_gemma_model_pin(&model_path, &pin, &pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY)
+        validate_inner_model_pin(&model_path, &pin, &pin_path, DEFAULT_INNER_MODEL_PIN_KEY)
             .expect("real model file MUST satisfy the pin");
         let actual_sha = sha256_file_streaming(&model_path).expect("stream sha");
         eprintln!(
@@ -11806,16 +11984,16 @@ diff --git a/src/example.py b/src/example.py
     }
 
     #[test]
-    fn validate_gemma_model_pin_identity_substrings_rejects_missing_substring_fsv() {
+    fn validate_inner_model_pin_identity_substrings_rejects_missing_substring_fsv() {
         let pin_path = real_pin_path();
         let mut pin =
-            load_model_pin(&pin_path, DEFAULT_GEMMA_MODEL_PIN_KEY).expect("pin must load");
-        // Inject a substring that real Gemma 4 GGUF metadata cannot contain.
+            load_model_pin(&pin_path, DEFAULT_INNER_MODEL_PIN_KEY).expect("pin must load");
+        // Inject a substring that real inner-model GGUF metadata cannot contain.
         pin.expected_identity_substrings
             .push("definitely-not-a-real-model-name-xyzzy".to_string());
         let identity: BTreeMap<String, String> = [
-            ("general.architecture".to_string(), "gemma4".to_string()),
-            ("general.name".to_string(), "gemma-4-E4B-it".to_string()),
+            ("general.architecture".to_string(), "qwen3".to_string()),
+            ("general.name".to_string(), "Qwen3.6-27B-Instruct".to_string()),
         ]
         .into_iter()
         .collect();
@@ -11824,18 +12002,18 @@ diff --git a/src/example.py b/src/example.py
             "BEFORE_FSV identity={:?} required_includes={:?}",
             identity, pin.expected_identity_substrings
         );
-        let err = validate_gemma_model_pin_identity_substrings(
+        let err = validate_inner_model_pin_identity_substrings(
             &model_path,
             &pin,
             &pin_path,
-            DEFAULT_GEMMA_MODEL_PIN_KEY,
+            DEFAULT_INNER_MODEL_PIN_KEY,
             &identity,
         )
         .expect_err("missing substring must fail loud");
         eprintln!("AFTER_FSV error_code={}", err.error_code);
         assert_eq!(
             err.error_code,
-            "RUST_REALITY_GEMMA_MODEL_PIN_IDENTITY_SUBSTRING_MISSING"
+            "RUST_REALITY_INNER_MODEL_PIN_IDENTITY_SUBSTRING_MISSING"
         );
     }
 
@@ -11982,8 +12160,8 @@ GPU-other, 9999, /usr/bin/other, 1024
     fn fsv_load_test_args() -> AttemptArgs {
         AttemptArgs {
             model: DEFAULT_MODEL.to_string(),
-            gemma_model_path: real_model_path(),
-            gemma_chat_template: None,
+            inner_model_path: real_model_path(),
+            inner_chat_template: None,
             task_manifest: PathBuf::from("/dev/null"),
             runtime_root: PathBuf::from("/tmp/cgreality-fsv-load-test"),
             context_graph_bin: PathBuf::from(DEFAULT_CONTEXT_GRAPH_BIN),
@@ -12002,16 +12180,16 @@ GPU-other, 9999, /usr/bin/other, 1024
             gpu_max_used_mb: None,
             // Omit explicit context-tokens so the harness uses the model's
             // full n_ctx_train. The pin floor (128K) is enforced — the test
-            // proves a real Gemma 4 E4B GGUF satisfies that floor.
-            gemma_context_tokens: None,
-            gemma_max_new_tokens: 32,
-            gemma_temperature: DEFAULT_GEMMA_TEMPERATURE,
-            gemma_top_p: DEFAULT_GEMMA_TOP_P,
-            gemma_gpu_layers: u32::MAX,
-            gemma_batch_size: 512,
-            gemma_seed: DEFAULT_GEMMA_SEED,
-            gemma_model_pin_path: real_pin_path(),
-            gemma_model_pin_key: DEFAULT_GEMMA_MODEL_PIN_KEY.to_string(),
+            // proves a real inner-model GGUF satisfies that floor.
+            inner_context_tokens: None,
+            inner_max_new_tokens: 32,
+            inner_temperature: DEFAULT_INNER_TEMPERATURE,
+            inner_top_p: DEFAULT_INNER_TOP_P,
+            inner_gpu_layers: u32::MAX,
+            inner_batch_size: 512,
+            inner_seed: DEFAULT_INNER_SEED,
+            inner_model_pin_path: real_pin_path(),
+            inner_model_pin_key: DEFAULT_INNER_MODEL_PIN_KEY.to_string(),
             git_timeout: 30,
             agent_tool_rounds: 1,
             targeted_test_timeout: 60,
@@ -12020,27 +12198,27 @@ GPU-other, 9999, /usr/bin/other, 1024
     }
 
     #[test]
-    #[ignore = "loads ~15GB BF16 GGUF onto the RTX 5090 and computes streaming SHA over it (~25s wall). Run via `cargo test --ignored gemma_harness_load_end_to_end`."]
-    fn gemma_harness_load_end_to_end_with_real_bf16_gguf_fsv() {
+    #[ignore = "loads ~15GB BF16 GGUF onto the RTX 5090 and computes streaming SHA over it (~25s wall). Run via `cargo test --ignored inner_harness_load_end_to_end`."]
+    fn inner_harness_load_end_to_end_with_real_bf16_gguf_fsv() {
         let args = fsv_load_test_args();
         eprintln!(
             "BEFORE_FSV model_path={:?} pin_path={:?} pin_key={}",
-            args.gemma_model_path, args.gemma_model_pin_path, args.gemma_model_pin_key
+            args.inner_model_path, args.inner_model_pin_path, args.inner_model_pin_key
         );
-        if !args.gemma_model_path.exists() {
+        if !args.inner_model_path.exists() {
             panic!(
                 "real BF16 GGUF not on disk; fsv impossible: {:?}",
-                args.gemma_model_path
+                args.inner_model_path
             );
         }
-        if !args.gemma_model_pin_path.exists() {
+        if !args.inner_model_pin_path.exists() {
             panic!(
                 "real pin manifest not on disk; fsv impossible: {:?}",
-                args.gemma_model_pin_path
+                args.inner_model_pin_path
             );
         }
         let harness =
-            GemmaCodingHarness::load(&args).expect("real BF16 GGUF + matching pin must load");
+            InnerCodingHarness::load(&args).expect("real BF16 GGUF + matching pin must load");
         eprintln!(
             "AFTER_FSV n_ctx_train={} effective_ctx={} max_new_tokens={} model_path={:?}",
             harness.model_context_train_tokens,
@@ -12048,24 +12226,24 @@ GPU-other, 9999, /usr/bin/other, 1024
             harness.max_new_tokens,
             harness.model_path
         );
-        assert_eq!(harness.model_path, args.gemma_model_path);
+        assert_eq!(harness.model_path, args.inner_model_path);
         assert!(
-            harness.model_context_train_tokens >= DEFAULT_GEMMA_MIN_CONTEXT_TOKENS,
-            "Gemma 4 E4B must report a training context >= {} tokens; got {}",
-            DEFAULT_GEMMA_MIN_CONTEXT_TOKENS,
+            harness.model_context_train_tokens >= DEFAULT_INNER_MIN_CONTEXT_TOKENS,
+            "inner model must report a training context >= {} tokens; got {}",
+            DEFAULT_INNER_MIN_CONTEXT_TOKENS,
             harness.model_context_train_tokens
         );
         assert_eq!(
             harness.context_tokens, harness.model_context_train_tokens,
-            "with --gemma-context-tokens omitted, effective ctx must equal n_ctx_train; got effective={} train={}",
+            "with --inner-context-tokens omitted, effective ctx must equal n_ctx_train; got effective={} train={}",
             harness.context_tokens, harness.model_context_train_tokens
         );
         assert!(
             harness.context_tokens >= 128_000,
-            "Gemma 4 E4B effective ctx must be >= 128K; got {}",
+            "inner model effective ctx must be >= 128K; got {}",
             harness.context_tokens
         );
-        let identity = gemma_model_identity_readback(&harness.model, &harness.model_path);
+        let identity = inner_model_identity_readback(&harness.model, &harness.model_path);
         eprintln!("AFTER_FSV identity_readback={:#?}", identity);
         let identity_blob = identity
             .iter()
@@ -12074,10 +12252,10 @@ GPU-other, 9999, /usr/bin/other, 1024
             .join("|")
             .to_ascii_lowercase();
         assert!(
-            identity_blob.contains("gemma4")
-                || identity_blob.contains("gemma-4")
-                || identity_blob.contains("gemma 4"),
-            "loaded GGUF identity must declare Gemma 4; got blob={identity_blob}"
+            identity_blob.contains("qwen3")
+                || identity_blob.contains("qwen-3")
+                || identity_blob.contains("qwen 3"),
+            "loaded GGUF identity must declare the pinned inner model; got blob={identity_blob}"
         );
         // Drop is automatic at end-of-scope: harness's LlamaModel + LlamaBackend
         // release GPU memory when the struct goes out of scope.
@@ -12086,7 +12264,7 @@ GPU-other, 9999, /usr/bin/other, 1024
     /// FSV: the round-loop's repeated-error deadlock detector must fire only
     /// when the rolling tail is full of identical non-empty error codes. This
     /// guards the consecutive-error escape hatch added to
-    /// `gemma_coding_harness_chat_json` so a stuck Gemma trajectory cannot
+    /// `inner_coding_harness_chat_json` so a stuck the inner model trajectory cannot
     /// burn ~5 minutes of GPU producing the same parser error round after round.
     #[test]
     fn repeated_error_deadlock_code_fsv() {

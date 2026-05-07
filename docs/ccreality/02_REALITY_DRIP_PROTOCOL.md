@@ -179,7 +179,7 @@ Rule: hook output should be **a navigable reality summary**, never an attempt to
 Every prompt the operator submits triggers:
 
 1. Hook 2 (UserPromptSubmit) injects the latest trigger decision and signal compact.
-2. Claude Code sees: "Reality update: trigger fired because official_swe_not_resolved and repeated_patch_detected. Failure digest: PatchApplyError on auth.py:42. Reinjection directive: Gemma should re-read the problem-reality packet's oracle paths before drafting a new patch. Source: file:..."
+2. Claude Code sees: "Reality update: trigger fired because official_swe_not_resolved and repeated_patch_detected. Failure digest: PatchApplyError on auth.py:42. Reinjection directive: the inner actor should re-read the problem-reality packet's oracle paths before drafting a new patch. Source: file:..."
 3. Claude reasons, calls `mcp__cgreality__reality_problem_packet` for full detail, calls `mcp__cgreality__reality_compare_attempts` for the diff, decides to edit `reality-loop.rs:5126` (where `agent_tool_specs()` lives).
 4. Hook 3 (PreToolUse Edit) injects current SHA + path policy → allow with context.
 5. Claude edits.

@@ -651,7 +651,7 @@ mod tests {
     fn coerce_stringified_args_does_not_mangle_natural_strings() {
         let original = json!({
             "reason": "Phase 13 T13.2 fix",
-            "next_gemma_prompt_delta": "Use open_file_window before drafting any patch.",
+            "next_inner_prompt_delta": "Use open_file_window before drafting any patch.",
             "source_of_truth": "file:placeholder"
         });
         let coerced = coerce_stringified_args(original.clone());
@@ -673,7 +673,7 @@ assert!(!looks_like_json_literal("changed"));
     }
 
     #[test]
-    fn required_str_preserves_leading_and_trailing_whitespace() {        // Regression: str::trim previously stripped indentation from Gemma's
+    fn required_str_preserves_leading_and_trailing_whitespace() {        // Regression: str::trim previously stripped indentation from the inner model's
         // `replace` payloads, corrupting py_compile-sensitive Python blocks.
         let payload = "    if x:\n        pass\n";
         let args = json!({"replace": payload});

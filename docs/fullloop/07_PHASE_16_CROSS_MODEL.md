@@ -4,8 +4,8 @@
 
 The reality loop is intentionally single-model:
 
-- **Production model:** `gemma4:e4b`, cryptographically pinned via `config/ccreality_model_pins.json` and validated at load time by `validate_gemma4_model_identity` in `crates/context-graph-cli/src/bin/reality-loop.rs`.
-- **Removed scope:** the original Phase-16 plan to drive `gemma4:e4b`, `qwen3:8b`, and `mistral-nemo:12b` in parallel with shared verified-failure memory was retired so optimizer effort stays focused on harness quality for a single model. The `qwen3:8b` and `mistral-nemo:12b` Ollama models have been removed from the local cache.
+- **Production model:** `qwen3.6:27b`, cryptographically pinned via `config/ccreality_model_pins.json` and validated at load time by `validate_inner_model_identity` in `crates/context-graph-cli/src/bin/reality-loop.rs`.
+- **Removed scope:** the original Phase-16 plan to drive `qwen3.6:27b`, `qwen3:8b`, and `mistral-nemo:12b` in parallel with shared verified-failure memory was retired so optimizer effort stays focused on harness quality for a single model. The `qwen3:8b` and `mistral-nemo:12b` Ollama models have been removed from the local cache.
 - **Engine surface:** `--model` accepts a single model name. There is no comma-separated matrix, no per-(model, task, attempt) result registry, and no `reality_loop_cross_model` memory namespace.
 
 This file is retained as a navigation stub so that links from `00_INDEX.md` and other historical documents continue to resolve. There is no implementation work associated with this phase.

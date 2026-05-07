@@ -42,7 +42,7 @@ Success is **only** declared when the official report's `resolved_ids` array con
 +----------+-----------+
            |
            v
-   Ollama /api/chat (gemma4:e4b, --keep-alive 30m)
+   Ollama /api/chat (qwen3.6:27b, --keep-alive 30m)
            |
            v
    git apply --whitespace=nowarn  (--> repo workspace)
@@ -276,14 +276,14 @@ Built as part of `crates/context-graph-cli` via `[[bin]] name = "reality-loop"` 
 ```
 cargo run --release --bin reality-loop -- \
   --task-manifest <path>.json \
-  --model gemma4:e4b \
+  --model qwen3.6:27b \
   --official-eval-each-attempt \
   --max-attempts 1
 ```
 
 | Flag | Default | Source |
 | --- | --- | --- |
-| `--model` | `gemma4:e4b` | reality-loop.rs:14, 26 |
+| `--model` | `qwen3.6:27b` | reality-loop.rs:14, 26 |
 | `--task-manifest` | (required) | reality-loop.rs:28 |
 | `--runtime-root` | `/tmp/contextgraph-rust-reality-loop` | reality-loop.rs:12, 30 |
 | `--ollama-url` | `http://127.0.0.1:11434` | reality-loop.rs:15, 32 |

@@ -35,7 +35,7 @@ test -s <run_root>/reality-optimizer/experiment-registry.json \
 
 ## Phase 16 — RETIRED (Cross-Model)
 
-The cross-model phase was retired; the loop is now single-model (`gemma4:e4b`). No verifiable end-state remains for this phase.
+The cross-model phase was retired; the loop is now single-model (`qwen3.6:27b`). No verifiable end-state remains for this phase.
 
 ## Phase 17 — Reward Shadow
 

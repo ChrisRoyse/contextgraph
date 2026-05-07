@@ -39,7 +39,7 @@ The loop does not advance because an agent says it is done. It advances only whe
 | `15_rust_reality_loop_port.md` | Current Rust-owned reality loop implementation, validation evidence, and remaining gaps. |
 | `16_measurement_contract.md` | Runtime contract that prevents measurement-spec and boundary failures from becoming false success claims. |
 | `17_problem_and_signal_reality_packets.md` | Current implementation of problem-reality capture, per-attempt signal packets, blindspot tracking, and FSV evidence. |
-| `18_gemma_coding_agent_harness.md` | Current Rust Gemma coding-agent harness, GGUF runtime settings, governed tool surface, line-window edit interface, tool-use reward signals, and FSV evidence. |
+| `18_inner_actor_coding_agent_harness.md` | Current Rust inner-actor coding-agent harness, GGUF runtime settings, governed tool surface, line-window edit interface, tool-use reward signals, and FSV evidence. |
 | `19_harness_transition_reality.md` | Current implementation of the harness-as-reality-loop transition contract: every governed tool call becomes a verified state/action/observation/outcome row. |
 | `21_grand_scale_reality_autoresearch.md` | Historical AutoResearch architecture framing retained for context; model-integration details are superseded by `docs/ccreality/`. |
 
@@ -47,7 +47,7 @@ The loop does not advance because an agent says it is done. It advances only whe
 
 | Capability | Current Location |
 |---|---|
-| Local Gemma/Qwen/Mistral frontend and tool harness | `gemmafrontend/` |
+| Local the inner actor/Qwen/Mistral frontend and tool harness | `gemmafrontend/` |
 | Verified reward compiler spec | `gemmafrontend/reward_spec.verified_outcome.json` |
 | Rust-owned SWE reality loop | `target/debug/reality-loop` from `crates/context-graph-cli/src/bin/reality-loop.rs` |
 | Official SWE-bench Docker readback | `target/debug/reality-loop` invoking the official SWE-bench harness directly |
@@ -107,7 +107,7 @@ The Rust binary is the only supported SWE-bench reality loop:
 ```bash
 cargo build -p context-graph-cli --bin reality-loop
 target/debug/reality-loop \
-  --model gemma4:e4b \
+  --model qwen3.6:27b \
   --task-manifest /tmp/contextgraph-swe-lite-refinement/swe_lite_refine_1777940680618314859_801dcad0/tasks/psf__requests-2317/qwen3-8b/task-manifest.json \
   --runtime-root /tmp/contextgraph-rust-reality-loop \
   --official-eval-each-attempt \
@@ -127,14 +127,14 @@ Current hardening adds two first-class model-facing reality packets:
 
 The final candidate-patch handoff is now tool-mediated. The model must call `apply_line_window_edit` or `apply_structured_edit`; ContextGraph compiles the edit into a patch artifact, reads the patch file and SHA-256 back from disk, and then validates that artifact. The old second-step raw JSON final answer contract has been removed from the live path.
 
-Gemma coding-agent mode is now explicit. In this architecture, the governed coding-agent harness is the inner reality loop itself: it is the sensor/actuator layer where Gemma reads problem reality, navigates source, submits edits, receives verified failures, and gets reward-facing signals for the next attempt.
+the inner actor coding-agent mode is now explicit. In this architecture, the governed coding-agent harness is the inner reality loop itself: it is the sensor/actuator layer where the inner actor reads problem reality, navigates source, submits edits, receives verified failures, and gets reward-facing signals for the next attempt.
 
-- Rust Gemma harness options are persisted in each tool-round request: `temperature=0`, `top_p=0.9`, `context_tokens=32768`, `max_new_tokens=4096`.
-- Default tool-round budget is `8` so Gemma has enough turns to inspect, navigate, open a source window, and submit a patch.
+- Rust the inner actor harness options are persisted in each tool-round request: `temperature=0`, `top_p=0.9`, `context_tokens=32768`, `max_new_tokens=4096`.
+- Default tool-round budget is `8` so the inner actor has enough turns to inspect, navigate, open a source window, and submit a patch.
 - `apply_line_window_edit` is the preferred edit tool because it replaces line ranges from an `open_file_window` readback and requires the observed file SHA-256.
 - Every governed tool call now writes `harness-transition.json`, reads it back, and has BlackBoxFix verify it with the request/result artifacts.
 - Reality-signal packets now include `harness_reality` and `tool_reward_signals`, which score intermediate coding-agent behaviors before official SWE success exists.
-- `--smoke-test --max-attempts 1 --official-eval-each-attempt` is the required short path for validating the Gemma inner loop before a long `--run-until-resolved` execution.
+- `--smoke-test --max-attempts 1 --official-eval-each-attempt` is the required short path for validating the the inner actor inner loop before a long `--run-until-resolved` execution.
 
 Latest reality-signal FSV output:
 
@@ -142,7 +142,7 @@ Latest reality-signal FSV output:
 /tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/
 ```
 
-That run used the real `scikit-learn__scikit-learn-25638` SWE-bench Lite task and real Gemma output. Gemma inspected reality through governed tools but did not submit a candidate patch through `apply_structured_edit`. The loop persisted and read back the problem packet, tool transcript, failed validation, reality-signal packet, reward compilation, BlackBoxFix ledger rows, and final summary instead of claiming success.
+That run used the real `scikit-learn__scikit-learn-25638` SWE-bench Lite task and real the inner actor output. the inner actor inspected reality through governed tools but did not submit a candidate patch through `apply_structured_edit`. The loop persisted and read back the problem packet, tool transcript, failed validation, reality-signal packet, reward compilation, BlackBoxFix ledger rows, and final summary instead of claiming success.
 
 Latest Rust smoke output:
 
@@ -150,7 +150,7 @@ Latest Rust smoke output:
 /tmp/contextgraph-rust-reality-loop-smoke-v4/rust_reality_1777959982988939074_e525987d/
 ```
 
-That run used real Gemma output and real `psf/requests` source. It intentionally does not claim success: attempt 1 produced a corrupt patch, attempt 2 violated the raw JSON contract, and BlackBoxFix persisted two verifier failures, two incident packets, and two reward compilations.
+That run used real the inner actor output and real `psf/requests` source. It intentionally does not claim success: attempt 1 produced a corrupt patch, attempt 2 violated the raw JSON contract, and BlackBoxFix persisted two verifier failures, two incident packets, and two reward compilations.
 
 ## Research Sources
 

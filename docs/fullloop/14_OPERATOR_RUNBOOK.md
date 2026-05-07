@@ -6,7 +6,7 @@ This is the day-one + day-N field guide for the human operator. It is intentiona
 
 - ContextGraph repo at `~/contextgraph`, branch `ccreality-cutover`.
 - Rust toolchain installed (`rust-toolchain.toml`).
-- Local Ollama with `gemma4:e4b` pulled (single-model loop; the previous multi-model plan was retired).
+- Local Ollama with `qwen3.6:27b` pulled (single-model loop; the previous multi-model plan was retired).
 - Docker Desktop (or compatible daemon) for the official SWE-bench evaluator.
 - ANTHROPIC_API_KEY exported in the shell where Claude Code or the watcher runs (unless using `claude.ai` interactive login).
 - `claude` CLI installed.
@@ -14,7 +14,7 @@ This is the day-one + day-N field guide for the human operator. It is intentiona
 Verify with:
 ```bash
 cargo build --release -p context-graph-cli --bin reality-loop -p context-graph-cli --bin context-graph -p context-graph-mcp --bin context-graph-mcp
-ollama list | grep gemma4
+ollama list | grep qwen3.6
 docker version
 claude --version
 ```
@@ -39,7 +39,7 @@ echo "$RUNTIME_ROOT" > ~/.cache/cgreality/active_runtime_root
 target/release/reality-loop attempt \
   --task-manifest tasks/swebench-lite/psf__requests-2317.json \
   --runtime-root "$RUNTIME_ROOT" \
-  --model gemma4:e4b \
+  --model qwen3.6:27b \
   --official-eval-each-attempt \
   --max-attempts 1
 ```

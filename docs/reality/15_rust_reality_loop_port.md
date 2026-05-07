@@ -22,7 +22,7 @@ The binary currently owns:
 - git HEAD and clean-status readbacks after reset;
 - repository context selection from real git files and grep results;
 - prompt writing with SHA-256 readback;
-- Ollama/Gemma `/api/chat` request construction;
+- Ollama/the inner actor `/api/chat` request construction;
 - GPU VRAM readback before and after model calls using `nvidia-smi`;
 - model response parse reporting;
 - candidate patch write/readback;
@@ -66,7 +66,7 @@ When official evaluation is enabled, the additional source-of-truth files are:
 
 ## Latest Verified Smoke
 
-Latest bounded Gemma smoke:
+Latest bounded the inner actor smoke:
 
 ```text
 /tmp/contextgraph-rust-reality-loop-smoke-v4/rust_reality_1777959982988939074_e525987d/
@@ -78,7 +78,7 @@ This historical smoke was a local validation smoke. Current reality-boundary har
 target/debug/reality-loop \
   --task-manifest /tmp/contextgraph-swe-lite-refinement/swe_lite_refine_1777940680618314859_801dcad0/tasks/psf__requests-2317/qwen3-8b/task-manifest.json \
   --runtime-root /tmp/contextgraph-rust-reality-loop-smoke-v4 \
-  --model gemma4:e4b \
+  --model qwen3.6:27b \
   --max-attempts 2 \
   --official-eval-each-attempt \
   --gpu-min-free-mb 8192 \
@@ -160,7 +160,7 @@ The port exposed and fixed these issues:
 
 ## Current Gap
 
-Gemma still fails this smoke task at the patch-generation layer:
+the inner actor still fails this smoke task at the patch-generation layer:
 
 - it can produce malformed raw JSON;
 - it can produce corrupt unified diffs;
@@ -174,7 +174,7 @@ SWE reality mode requires official SWE-bench evaluation:
 
 ```bash
 target/debug/reality-loop \
-  --model gemma4:e4b \
+  --model qwen3.6:27b \
   --task-manifest <real-task-manifest.json> \
   --official-eval-each-attempt \
   --run-until-resolved

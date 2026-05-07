@@ -512,7 +512,7 @@ jq -nc \
       $transition_sot,
       $config_sot
     ],
-    next_gemma_prompt_delta: "No inner Gemma prompt delta; this recommendation records outer-loop hardening state only.",
+    next_inner_prompt_delta: "No inner-actor prompt delta; this recommendation records outer-loop hardening state only.",
     expected_reward_signal_delta: "No SWE-bench reward delta expected from this audit-only recommendation.",
     remaining_risks: [],
     memories_created: [],

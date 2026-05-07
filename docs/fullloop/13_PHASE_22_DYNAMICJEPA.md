@@ -15,7 +15,7 @@ Reality loop today scores attempts via `gemmafrontend/reward_spec.verified_outco
 | DJ artifact | Reality-loop signal |
 |-------------|---------------------|
 | Surprise event count per attempt | Penalty weight when latent state diverges from prediction |
-| Latent panel divergence | Indicates Gemma's edits diverged from learned latent dynamics |
+| Latent panel divergence | Indicates the inner actor's edits diverged from learned latent dynamics |
 | Prediction error norm | Quantifies how badly the predictor missed the post-edit state |
 | Plan-trace coverage | Did the agent's tool-use match a known plan? |
 | Guard decisions | Did any DJ guard fire? |
@@ -43,7 +43,7 @@ Each `<attempt_root>/reality-signal-packet.json` gains a `dynamicjepa_reality` b
 }
 ```
 
-Engine writes this block by querying the DJ store after Gemma's tool transcript completes and the validation phase ends. Block writes follow the existing read-after-write byte-equal pattern.
+Engine writes this block by querying the DJ store after the inner actor's tool transcript completes and the validation phase ends. Block writes follow the existing read-after-write byte-equal pattern.
 
 ## New shadow reward components (Phase 17 → Phase 22)
 
@@ -72,7 +72,7 @@ The `cc-reality-diagnostician` subagent gains a step that consults `dynamicjepa_
 
 - New MCP tool: `mcp__cgreality__dynamicjepa_reality_for_attempt {run_id, attempt}` returns the DJ block.
 - New MCP tool: `mcp__cgreality__dynamicjepa_intervention_hint {run_id, attempt}` returns a structured `{surface_class, magnitude, reasoning}` hint based on surprise sources.
-- DJ projection writers in the inner-Gemma harness (`crates/context-graph-cli/src/bin/reality-loop.rs`) emit panels at the right moments — they already do per `docs2/contextgraphspecs/22_reality_loop_subsystem.md`'s `harness_reality` block; this phase just exposes them as first-class reality-signal data.
+- DJ projection writers in the inner-the inner actor harness (`crates/context-graph-cli/src/bin/reality-loop.rs`) emit panels at the right moments — they already do per `docs2/contextgraphspecs/22_reality_loop_subsystem.md`'s `harness_reality` block; this phase just exposes them as first-class reality-signal data.
 
 ## Operator playbook for Phase 22
 

@@ -333,7 +333,7 @@ clap-derived `Args` struct (`reality-loop.rs:22-71`). All defaults are constants
 | Flag | Type | Default | Required? |
 | --- | --- | --- | --- |
 | `--task-manifest <PATH>` | `PathBuf` | — | **Required** |
-| `--model <NAME>` | `String` | `"gemma4:e4b"` | no |
+| `--model <NAME>` | `String` | `"qwen3.6:27b"` | no |
 | `--runtime-root <PATH>` | `PathBuf` | `"/tmp/contextgraph-rust-reality-loop"` | no |
 | `--ollama-url <URL>` | `String` | `"http://127.0.0.1:11434"` | no |
 | `--context-graph-bin <PATH>` | `PathBuf` | `"target/debug/context-graph"` | no |

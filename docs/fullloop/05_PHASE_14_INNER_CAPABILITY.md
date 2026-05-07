@@ -2,7 +2,7 @@
 
 **Goal:** drive the meta-loop sustained for as long as it takes to land **one** SWE-bench Lite instance in the official `resolved_ids` array. This is the first time the system actually solves a task end-to-end.
 **Effort:** 2–4 days (model behavior dependent).
-**Risk:** medium — depends on Gemma's capability ceiling. If Gemma can't solve `psf__requests-2317`, the strategy is to widen the curriculum and look for the easiest task in the smoke suite that any local model can solve.
+**Risk:** medium — depends on the inner actor's capability ceiling. If the inner actor can't solve `psf__requests-2317`, the strategy is to widen the curriculum and look for the easiest task in the smoke suite that any local model can solve.
 
 ## Definition of done
 
@@ -15,14 +15,14 @@ mcp__cgreality__reality_official_report {run_id, attempt} →
 
 ## Strategy
 
-The cutover proves the loop works. Phase 14 closes the capability gap between "loop catches Gemma's failure" and "loop gives Gemma what it needs to succeed."
+The cutover proves the loop works. Phase 14 closes the capability gap between "loop catches the inner actor's failure" and "loop gives the inner actor what it needs to succeed."
 
 ### Layer 1: Inner-attempt retry budget
 
 Today, a malformed `apply_line_window_edit` ends the attempt at `RUST_REALITY_FINAL_EDIT_TOOL_FAILED`. Phase 14 introduces a small in-attempt retry budget for tool-rejection failures:
 
 - Engine accepts `--tool-edit-retries N` (default 2).
-- On `apply_line_window_edit` rejection, engine reprompts Gemma with the rejection reason verbatim plus a one-sentence remediation hint, then loops back to tool-call.
+- On `apply_line_window_edit` rejection, engine reprompts the inner actor with the rejection reason verbatim plus a one-sentence remediation hint, then loops back to tool-call.
 - After N rejections, the attempt fails as today.
 
 Source of truth: a new `tool-rejection-recovery-prompt-vN.md` template is added to the prompt compiler, with a quality check that the rejection reason and `observed_sha256` field are present.
@@ -38,9 +38,9 @@ Fix:
 
 ### Layer 3: Better repository-context selection
 
-Today's selection prioritizes files mentioned in the issue. For `psf__requests-2317` that includes `requests/sessions.py`. Verify against the existing reality-signal packet whether the file Gemma was guided to is the file the gold patch actually touches.
+Today's selection prioritizes files mentioned in the issue. For `psf__requests-2317` that includes `requests/sessions.py`. Verify against the existing reality-signal packet whether the file the inner actor was guided to is the file the gold patch actually touches.
 
-If not, add a tiny "intersect with FAIL_TO_PASS test imports" step to the selector. If yes, the issue is purely in Gemma's edit synthesis.
+If not, add a tiny "intersect with FAIL_TO_PASS test imports" step to the selector. If yes, the issue is purely in the inner actor's edit synthesis.
 
 ### Layer 4: Prompt template hardening for the second-attempt path
 
@@ -77,7 +77,7 @@ Per `docs/ccreality/11_LOOP_PROMPT.md`:
 2. `reality_trigger_decision` → confirm `should_run`.
 3. `reality_shift_log` and `reality_shift_compare_to_my_view` → check for drift.
 4. `cc-reality-diagnostician` → classify the latest failure.
-5. Decide: edit harness vs reprompt only (via `next_gemma_prompt_delta`).
+5. Decide: edit harness vs reprompt only (via `next_inner_prompt_delta`).
 6. If editing: `cc-reality-harness-editor` → governed edit + cargo check.
 7. `cc-reality-source-of-truth-readback` → SHA verification.
 8. `optimizer_record_recommendation` with `status: changed` (if edit) or `no_change` (if just prompt delta).

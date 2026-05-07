@@ -1,6 +1,6 @@
 # Smoke Test Plan — first-light verification
 
-Before letting the loop touch real SWE-bench attempts, smoke must pass end-to-end. The smoke is designed to verify every layer **without** burning Docker time or Gemma inference.
+Before letting the loop touch real SWE-bench attempts, smoke must pass end-to-end. The smoke is designed to verify every layer **without** burning Docker time or the inner actor inference.
 
 ## Current State
 

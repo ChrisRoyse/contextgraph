@@ -343,7 +343,7 @@ This is intentional: the Reality Loop must be runnable with the MCP server *down
 
 | Constant | Value | Source |
 |---|---|---|
-| `DEFAULT_MODEL` | `"gemma4:e4b"` | `bin/reality-loop.rs:14` |
+| `DEFAULT_MODEL` | `"qwen3.6:27b"` | `bin/reality-loop.rs:14` |
 | `DEFAULT_RUNTIME_ROOT` | `"/tmp/contextgraph-rust-reality-loop"` | `bin/reality-loop.rs:12` |
 | `DEFAULT_OLLAMA_URL` | `"http://127.0.0.1:11434"` | `bin/reality-loop.rs:15` |
 | `DEFAULT_OLLAMA_KEEP_ALIVE` | `"30m"` | `bin/reality-loop.rs:17` |

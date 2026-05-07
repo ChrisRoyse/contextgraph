@@ -39,7 +39,7 @@ The MCP server writes the decision to `<runtime_root>/<task>/attempt-N/trigger-d
 
 1. **Symmetry with `optimizer_record_recommendation`**: every optimizer artifact (decision and recommendation) is now produced by the same MCP layer. Easier to audit.
 2. **Bypass-able from the operator side**: when the operator uses `manual_operator` policy, the decision tool simply sets `should_run: true`. No special engine path needed.
-3. **Allows model-aware decisions**: the MCP server can incorporate per-attempt context the engine can't easily compute (e.g. "the previous turn's recommendation said `next_gemma_prompt_delta` was X; did the engine actually run with that delta? if not, don't trigger again").
+3. **Allows model-aware decisions**: the MCP server can incorporate per-attempt context the engine can't easily compute (e.g. "the previous turn's recommendation said `next_inner_prompt_delta` was X; did the engine actually run with that delta? if not, don't trigger again").
 
 ## Invocation methods (in order of preference)
 

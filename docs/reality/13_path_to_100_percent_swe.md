@@ -6,16 +6,16 @@ The target is:
 
 ```text
 For each selected smoke SWE-bench task:
-  gemma4:e4b resolves it
+  qwen3.6:27b resolves it
 
 Proof:
   official SWE-bench report contains every selected instance id in resolved_ids
-  for the single pinned gemma4:e4b run.
+  for the single pinned qwen3.6:27b run.
 ```
 
 This document defines a strategy. It is not a claim that the current system has achieved it.
 
-> Note: Earlier drafts targeted three models (`gemma4:e4b`, `qwen3:8b`, `mistral-nemo:12b`) in parallel. The cross-model goal was retired so optimizer effort stays focused on harness quality for a single, cryptographically pinned model.
+> Note: Earlier drafts targeted three models (`qwen3.6:27b`, `qwen3:8b`, `mistral-nemo:12b`) in parallel. The cross-model goal was retired so optimizer effort stays focused on harness quality for a single, cryptographically pinned model.
 
 ## Why 100 Percent Is Plausible On A Smoke Suite
 
@@ -76,8 +76,8 @@ Use one model's verified failure/success to help another model.
 
 Examples:
 
-- Gemma fails to locate file; Qwen found relevant file.
-- Mistral produces malformed patch; Gemma produces valid diff pattern.
+- the inner actor fails to locate file; Qwen found relevant file.
+- Mistral produces malformed patch; the inner actor produces valid diff pattern.
 - Qwen resolves 7/8 tests; another model proposes final fix.
 
 The system can generate cross-model hints only from verified evidence.

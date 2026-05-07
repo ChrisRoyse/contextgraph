@@ -26,11 +26,11 @@ Items that need a decision before or during the relevant forward phase. None blo
 
 ## OQ-3 — Cross-model preference pairs
 
-**Question:** if Qwen resolves and Gemma doesn't, is Qwen's patch a "preferred" sample for Gemma's training set?
+**Question:** if Qwen resolves and the inner actor doesn't, is Qwen's patch a "preferred" sample for the inner actor's training set?
 
 **Trade-off:**
-- Yes: fastest signal for Gemma to learn what worked.
-- No: cross-model patches may use idioms Gemma can't produce at its capacity.
+- Yes: fastest signal for the inner actor to learn what worked.
+- No: cross-model patches may use idioms the inner actor can't produce at its capacity.
 
 **Decision deadline:** Phase 18.
 

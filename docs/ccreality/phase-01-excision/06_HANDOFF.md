@@ -8,7 +8,7 @@
 - `crates/context-graph-cli/Cargo.toml` has a `[lib]` section.
 - `cargo build -p context-graph-cli --bin reality-loop` succeeds.
 - `cargo test -p context-graph-cli --bin reality-loop` and `cargo test -p context-graph-cli --lib governed_edit` both pass.
-- The engine binary still works exactly as before for Gemma + SWE-bench paths; only the outer optimizer is gone.
+- The engine binary still works exactly as before for the inner actor + SWE-bench paths; only the outer optimizer is gone.
 - Current branch reality: Phase 1 changes have since been committed as part of incremental cutover commits on `ccreality-cutover`.
 
 ## Completion Record
@@ -24,7 +24,7 @@
 ## What's now MISSING from the system
 
 - The outer optimizer is gone but no replacement is wired up yet. **Running a real attempt will succeed but no one will react to its failure.** This is intentional — Phase 12 wires the new optimizer (Claude Code via MCP) into a working state.
-- Between Phase 1 and Phase 12, the engine is "headless" — it produces reality but nothing acts on reality. Gemma's inner attempts still run; they just don't get an outer-loop improvement after each failure.
+- Between Phase 1 and Phase 12, the engine is "headless" — it produces reality but nothing acts on reality. the inner actor's inner attempts still run; they just don't get an outer-loop improvement after each failure.
 
 ## What to verify before moving to Phase 2
 

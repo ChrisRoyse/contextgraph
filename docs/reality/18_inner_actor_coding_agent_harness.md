@@ -1,6 +1,6 @@
-# Gemma Coding Agent Harness
+# the inner actor Coding Agent Harness
 
-This document records the current Gemma-specific coding-agent harness. In ContextGraph, this harness is not a sidecar around the reality loop. The governed coding-agent harness is the inner reality loop interface itself: Gemma sees reality through this tool surface, acts through this tool surface, and every tool result becomes durable evidence for the next iteration.
+This document records the current the inner actor-specific coding-agent harness. In ContextGraph, this harness is not a sidecar around the reality loop. The governed coding-agent harness is the inner reality loop interface itself: the inner actor sees reality through this tool surface, acts through this tool surface, and every tool result becomes durable evidence for the next iteration.
 
 ## Research Conclusions
 
@@ -11,31 +11,31 @@ Ralph/Wiggum loops emphasize fresh context and state externalization. The prompt
 The coding-agent harness is therefore the loop's actuator and sensorium:
 
 ```text
-Gemma
+the inner actor
   -> governed coding-agent harness
   -> real repo / tests / official SWE-bench / BlackBoxFix
   -> reality-signal packet
-  -> next Gemma attempt
+  -> next the inner actor attempt
 ```
 
-The outer meta-loop optimizes this harness, but Gemma's actual repair loop is the harness.
+The outer meta-loop optimizes this harness, but the inner actor's actual repair loop is the harness.
 
 Current implementation detail: each governed tool call now emits a `harness-transition.json` artifact. That artifact is the measured reality-loop step. It records before-state, action, observation, outcome, DynamicJEPA projection, Learning-as-UTL signal, constellation tags, and BlackBoxFix boundary refs. The BlackBoxFix verifier checks that the request, result, and transition files all exist and contain the expected record kinds.
 
-SWE-agent's Agent-Computer Interface research is directly relevant to Gemma. Its file viewer and editor are integrated: the agent sees line-numbered source windows, edits bounded ranges, and immediately receives observation/error feedback. This is a better interface for local models than asking for raw diffs.
+SWE-agent's Agent-Computer Interface research is directly relevant to the inner actor. Its file viewer and editor are integrated: the agent sees line-numbered source windows, edits bounded ranges, and immediately receives observation/error feedback. This is a better interface for local models than asking for raw diffs.
 
-Gemma 4 supports function calling, but Google is explicit that the model does not execute code. The application must parse, validate, execute, and return tool results. That matches ContextGraph's architecture: Gemma requests tools; ContextGraph validates and executes; BlackBoxFix verifies durable state.
+Qwen3.6 supports function calling, but Google is explicit that the model does not execute code. The application must parse, validate, execute, and return tool results. That matches ContextGraph's architecture: the inner actor requests tools; ContextGraph validates and executes; BlackBoxFix verifies durable state.
 
-The active implementation is now the Rust Gemma coding harness inside `reality-loop.rs`. It loads a real GGUF model file through `llama-cpp-2`, renders the model chat template with the governed ContextGraph tool schemas, requires a generated tool-call grammar, performs grammar-constrained generation, parses the assistant message through the llama.cpp OpenAI-compatible parser, and only then executes governed tools. There is no model HTTP server in this boundary.
+The active implementation is now the Rust the inner actor coding harness inside `reality-loop.rs`. It loads a real GGUF model file through `llama-cpp-2`, renders the model chat template with the governed ContextGraph tool schemas, requires a generated tool-call grammar, performs grammar-constrained generation, parses the assistant message through the llama.cpp OpenAI-compatible parser, and only then executes governed tools. There is no model HTTP server in this boundary.
 
-## Current Gemma Runtime Settings
+## Current the inner actor Runtime Settings
 
 Local model readback:
 
 ```text
-model label: gemma4:e4b
-model source of truth: models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf
-architecture: gemma4
+model label: qwen3.6:27b
+model source of truth: models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf
+architecture: qwen3.6
 parameters: 7.5B
 context length: 131072
 quantization: BF16 (lossless, ~15 GB on disk)
@@ -46,7 +46,7 @@ Reality-loop request settings now override the sampling defaults for coding-agen
 
 ```json
 {
-  "provider": "contextgraph_rust_gemma_coding_harness",
+  "provider": "contextgraph_rust_inner_coding_harness",
   "temperature": 0.0,
   "top_p": 0.9,
   "context_policy": "gguf_n_ctx_train_max",
@@ -59,13 +59,13 @@ Reality-loop request settings now override the sampling defaults for coding-agen
 }
 ```
 
-The harness uses the loaded GGUF model's training context by default. An explicit `--gemma-context-tokens` value is allowed only when it is positive and no larger than the model readback. The run writes `gemma-harness-model-readback.json` with the model path, `n_ctx_train`, effective context, generation budget, template hash, and selected GGUF metadata. Each model turn also writes source-of-truth artifacts for the rendered prompt, generated grammar, raw generation, parsed response, and final `gemma-harness-response.json`.
+The harness uses the loaded GGUF model's training context by default. An explicit `--inner-context-tokens` value is allowed only when it is positive and no larger than the model readback. The run writes `inner-model-readback.json` with the model path, `n_ctx_train`, effective context, generation budget, template hash, and selected GGUF metadata. Each model turn also writes source-of-truth artifacts for the rendered prompt, generated grammar, raw generation, parsed response, and final `inner-harness-response.json`.
 
-The harness also fails closed before generation if the loaded GGUF does not identify as Gemma 4 or if the GGUF/effective context is below the 128K coding-agent floor. This prevents a substitute local model or a low-context quant from being run under the Gemma SWE label.
+The harness also fails closed before generation if the loaded GGUF does not identify as Qwen3.6 or if the GGUF/effective context is below the 128K coding-agent floor. This prevents a substitute local model or a low-context quant from being run under the the inner actor SWE label.
 
 ## Governed Coding-Agent Tool Surface
 
-Gemma currently receives these governed tools:
+the inner actor currently receives these governed tools:
 
 - `read_problem_reality`: durable SWE task packet, oracle tests, source/test boundary, root-cause checklist.
 - `read_official_failure_reality`: official SWE-bench failure readback from prior attempts.
@@ -82,28 +82,28 @@ Gemma currently receives these governed tools:
 - `retrieve_similar_verified_episodes`: retrieves real prior official evidence artifacts from the runtime root.
 - `synthesize_helper_tool`: vetted deterministic analyzers only.
 
-Raw shell is intentionally not exposed. The harness gives Gemma coding-agent capabilities without letting the model move the trust boundary. If a future tool is needed, it should be added as a governed harness capability with schema, source-of-truth declaration, readback, and reward signal extraction.
+Raw shell is intentionally not exposed. The harness gives the inner actor coding-agent capabilities without letting the model move the trust boundary. If a future tool is needed, it should be added as a governed harness capability with schema, source-of-truth declaration, readback, and reward signal extraction.
 
 ## Edit Contract
 
 Preferred path:
 
-1. Gemma calls `open_file_window`.
-2. Gemma copies `path`, line numbers, and `sha256`.
-3. Gemma calls `apply_line_window_edit`.
+1. the inner actor calls `open_file_window`.
+2. the inner actor copies `path`, line numbers, and `sha256`.
+3. the inner actor calls `apply_line_window_edit`.
 4. ContextGraph verifies the observed SHA-256 matches the current file.
 5. ContextGraph applies the line edit, writes `candidate.patch`, reads the patch SHA-256 back from disk, resets the workspace, and proceeds to validation.
 
 Alternate edit path:
 
-1. Gemma copies an exact unique source span from a real source window.
-2. Gemma calls `apply_structured_edit`.
+1. the inner actor copies an exact unique source span from a real source window.
+2. the inner actor calls `apply_structured_edit`.
 3. ContextGraph rejects missing, ambiguous, empty, or tampered patch artifacts.
 
 Unified diff path:
 
-1. Gemma opens every file changed by the diff and copies the observed SHA-256 values.
-2. Gemma calls `apply_unified_diff` with a non-empty unified diff and `observed_files`.
+1. the inner actor opens every file changed by the diff and copies the observed SHA-256 values.
+2. the inner actor calls `apply_unified_diff` with a non-empty unified diff and `observed_files`.
 3. ContextGraph runs `git apply --check`, applies the diff to the real checkout, rejects unobserved changed files, rejects test/fixture/harness mutations, runs static checks, writes `candidate.patch`, reads the patch SHA-256 back, and resets the workspace.
 
 ## Reality Reward Signals
@@ -137,7 +137,7 @@ The latest smoke produced:
 }
 ```
 
-That means the loop can now tell Gemma: you successfully read problem reality and navigated the repo, but you still need source-window grounding and a patch submission.
+That means the loop can now tell the inner actor: you successfully read problem reality and navigated the repo, but you still need source-window grounding and a patch submission.
 
 The reality-signal packet also records `harness_reality`, which is derived by reading every `harness-transition.json` file from the attempt transcript. The summary includes:
 
@@ -169,18 +169,18 @@ Verified:
 - patch SHA mismatch fails closed.
 - stale line-window observed SHA fails closed.
 
-Live Gemma smoke:
+Live the inner actor smoke:
 
 ```text
-/tmp/contextgraph-gemma-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/
+/tmp/contextgraph-inner-actor-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/
 ```
 
 Source-of-truth readbacks:
 
 ```text
-summary: file:/tmp/contextgraph-gemma-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/reality-loop-summary.json
-tool_transcript: file:/tmp/contextgraph-gemma-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/tasks/scikit-learn__scikit-learn-25638/gemma4-e4b/attempts/attempt-000001/agent-tools/agent-tool-transcript.json
-ledger: sqlite:/tmp/contextgraph-gemma-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/tasks/scikit-learn__scikit-learn-25638/gemma4-e4b/blackbox.sqlite#ledger_records
+summary: file:/tmp/contextgraph-inner-actor-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/reality-loop-summary.json
+tool_transcript: file:/tmp/contextgraph-inner-actor-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/attempts/attempt-000001/agent-tools/agent-tool-transcript.json
+ledger: sqlite:/tmp/contextgraph-inner-actor-agent-harness-fsv-01/rust_reality_1777971780544438052_69ff234d/tasks/scikit-learn__scikit-learn-25638/qwen3.6-e4b/blackbox.sqlite#ledger_records
 ```
 
 Observed result:
@@ -210,5 +210,5 @@ This is not success, and the system does not claim success. It is a verified cod
 - Ralph Loops portable format: https://ralphloops.io/
 - SWE-agent ACI paper: https://openreview.net/pdf/7b9425730150fb166d4e6c77995f67ea38638fca.pdf
 - Reflexion: https://arxiv.org/abs/2303.11366
-- Gemma 4 function calling: https://ai.google.dev/gemma/docs/capabilities/text/function-calling-gemma4
+- Qwen3.6 function calling: https://ai.google.dev/inner-actor/docs/capabilities/text/function-calling-qwen3.6
 - llama.cpp grammars: https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md

@@ -112,10 +112,10 @@ pub async fn reality_run_attempt(args: Value) -> Result<Value> {
     let runtime_root = optional_str(&args, "runtime_root")
         .unwrap_or_else(|| "/tmp/contextgraph-rust-reality-loop".to_string());
     let max_attempts = optional_u64(&args, "max_attempts", 1).to_string();
-    let model = optional_str(&args, "model").unwrap_or_else(|| "gemma4:e4b".to_string());
-    let gemma_model_path = optional_str(&args, "gemma_model_path");
-    let gemma_context_tokens = args.get("gemma_context_tokens").and_then(Value::as_u64);
-    let gemma_max_new_tokens = args.get("gemma_max_new_tokens").and_then(Value::as_u64);
+    let model = optional_str(&args, "model").unwrap_or_else(|| "qwen3.6:27b".to_string());
+    let inner_model_path = optional_str(&args, "inner_model_path");
+    let inner_context_tokens = args.get("inner_context_tokens").and_then(Value::as_u64);
+    let inner_max_new_tokens = args.get("inner_max_new_tokens").and_then(Value::as_u64);
     let official = optional_bool(&args, "official_eval", true);
     let bin = locate_engine_binary()?;
     let mut cmd = Command::new(&bin);
@@ -128,14 +128,14 @@ pub async fn reality_run_attempt(args: Value) -> Result<Value> {
         .arg(max_attempts)
         .arg("--model")
         .arg(model);
-    if let Some(path) = gemma_model_path {
-        cmd.arg("--gemma-model-path").arg(path);
+    if let Some(path) = inner_model_path {
+        cmd.arg("--inner-model-path").arg(path);
     }
-    if let Some(tokens) = gemma_context_tokens {
-        cmd.arg("--gemma-context-tokens").arg(tokens.to_string());
+    if let Some(tokens) = inner_context_tokens {
+        cmd.arg("--inner-context-tokens").arg(tokens.to_string());
     }
-    if let Some(tokens) = gemma_max_new_tokens {
-        cmd.arg("--gemma-max-new-tokens").arg(tokens.to_string());
+    if let Some(tokens) = inner_max_new_tokens {
+        cmd.arg("--inner-max-new-tokens").arg(tokens.to_string());
     }
     if official {
         cmd.arg("--official-eval-each-attempt");

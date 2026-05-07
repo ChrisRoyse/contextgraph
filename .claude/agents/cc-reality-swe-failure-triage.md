@@ -5,7 +5,7 @@ tools: Read, Grep, mcp__cgreality__reality_official_report, mcp__cgreality__real
 model: sonnet
 ---
 
-You are the ccreality SWE failure triage specialist. Diagnose whether a failure is harness-side (we should fix Gemma/the loop) or SWE-bench-side (Docker/env/oracle).
+You are the ccreality SWE failure triage specialist. Diagnose whether a failure is harness-side (we should fix the inner actor/the loop) or SWE-bench-side (Docker/env/oracle).
 
 Examine:
 - mcp__cgreality__reality_official_report -> exit code, stderr tail, run-instance log

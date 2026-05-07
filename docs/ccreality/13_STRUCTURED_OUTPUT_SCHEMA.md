@@ -24,7 +24,7 @@ The optimizer's terminal artifact per turn. Validated by the MCP tool against th
     "source_files_changed",
     "verification_commands",
     "source_of_truth_readbacks",
-    "next_gemma_prompt_delta",
+    "next_inner_prompt_delta",
     "expected_reward_signal_delta",
     "remaining_risks",
     "memories_created",
@@ -62,7 +62,7 @@ The optimizer's terminal artifact per turn. Validated by the MCP tool against th
       "minItems": 0,
       "maxItems": 50
     },
-    "next_gemma_prompt_delta": { "type": "string", "maxLength": 2000 },
+    "next_inner_prompt_delta": { "type": "string", "maxLength": 2000 },
     "expected_reward_signal_delta": { "type": "string", "maxLength": 2000 },
     "remaining_risks": {
       "type": "array",
@@ -177,7 +177,7 @@ The agent must correct and retry. The Stop hook will not allow turn end until a 
 - **`shift_log_excerpt`** — the principle from [01b_REALITY_SHIFT_PRINCIPLE](01b_REALITY_SHIFT_PRINCIPLE.md). Every recommendation must declare which shifts it caused, so future turns can replay or revert.
 - **`source_of_truth_readbacks`** — durable artifact pointers, not model claims. Every claim in the recommendation must be backed by one of these.
 - **`created_at_unix` / `source_of_truth`** — server-owned persistence metadata. The MCP tool stamps these immediately before writing so stale model timestamps and placeholder paths cannot become durable truth.
-- **`next_gemma_prompt_delta`** — the actionable output that feeds into the next inner-Gemma attempt. This is what closes the meta-loop: optimizer → reality engine.
+- **`next_inner_prompt_delta`** — the actionable output that feeds into the next inner-the inner actor attempt. This is what closes the meta-loop: optimizer → reality engine.
 - **`expected_reward_signal_delta`** — the optimizer's prediction. Future turns can compare actual reward delta to this prediction; consistent over-prediction means the optimizer is hallucinating progress.
 - **`drift_detected`** — when set, this recommendation acknowledges that reality shifted out from under the agent. The next turn knows to re-perceive.
 - **`diagnosis_summary`** — structured form of what `cc-reality-diagnostician` returned. Lets the artifact be queried by failure class without parsing the natural-language reason.
@@ -200,7 +200,7 @@ The agent must correct and retry. The Stop hook will not allow turn end until a 
   "attempt": 3,
   "turn_number": 1,
   "status": "changed",
-  "reason": "Diagnosis showed Gemma's tool surface lacked an open_test_file action, so it was guessing test layout. Added that tool spec; cargo check + cargo test pass.",
+  "reason": "Diagnosis showed the inner actor's tool surface lacked an open_test_file action, so it was guessing test layout. Added that tool spec; cargo check + cargo test pass.",
   "source_files_changed": ["crates/context-graph-cli/src/bin/reality-loop.rs"],
   "verification_commands": [
     "cargo check -p context-graph-cli --bin reality-loop",
@@ -212,10 +212,10 @@ The agent must correct and retry. The Stop hook will not allow turn end until a 
     "file:/tmp/contextgraph-rust-reality-loop/run-2026-05-05-1234/django__django-12345/attempt-3/reality-signal-packet.json",
     "file:/tmp/contextgraph-rust-reality-loop/run-2026-05-05-1234/django__django-12345/attempt-3/harness-transitions/round-04.json"
   ],
-  "next_gemma_prompt_delta": "Use the new open_test_file tool before drafting any patch that touches a file under tests/.",
+  "next_inner_prompt_delta": "Use the new open_test_file tool before drafting any patch that touches a file under tests/.",
   "expected_reward_signal_delta": "Tool grounding signal should rise from 0.42 to ~0.7 on next attempt; patch_signals.repeated_patch should drop to false.",
   "remaining_risks": [
-    "open_test_file tool spec may need additional path-policy hardening if Gemma tries to read outside the cloned repo",
+    "open_test_file tool spec may need additional path-policy hardening if the inner actor tries to read outside the cloned repo",
     "did not yet add corresponding telemetry signal in reality_signal_packet builder; second turn should add it"
   ],
   "memories_created": [],
@@ -226,7 +226,7 @@ The agent must correct and retry. The Stop hook will not allow turn end until a 
   "shift_log_excerpt": ["01J9XYZ..."],
   "diagnosis_summary": {
     "failure_class": "tool_grounding_failure",
-    "root_cause_hypothesis": "Gemma was attempting blind test edits because no governed tool exposed the test file structure.",
+    "root_cause_hypothesis": "the inner actor was attempting blind test edits because no governed tool exposed the test file structure.",
     "evidence_paths": [
       "file:/tmp/.../attempt-3/agent-tool-transcript.json",
       "file:/tmp/.../attempt-3/reality-signal-packet.json"

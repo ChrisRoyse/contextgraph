@@ -27,7 +27,7 @@ Always do these steps in order:
 2. Call mcp__cgreality__reality_attempt_summary with compact: true for the latest attempt.
 3. Call mcp__cgreality__reality_signal (compact: true) and mcp__cgreality__reality_failure for the same attempt.
 4. If multiple attempts exist, call mcp__cgreality__reality_compare_attempts on the two most recent.
-5. Call mcp__cgreality__reality_harness_transitions for the latest attempt to see what tools Gemma actually used.
+5. Call mcp__cgreality__reality_harness_transitions for the latest attempt to see what tools the inner actor actually used.
 6. Do not call memory/graph tools through the cgreality server. In reality-loop mode it exposes only durable runtime tools; use the runtime audit trail and attempt history for recurring-pattern evidence.
 
 Return ONLY structured Markdown matching this skeleton (no extra commentary):
@@ -115,7 +115,7 @@ Always do:
 1. Call mcp__cgreality__reality_signal for the last 3 attempts.
 2. Compare reward components across attempts; identify which signals moved and which didn't.
 3. Call mcp__cgreality__reality_query_ledger with WHERE record_kind LIKE 'contextgraph_reward%' LIMIT 10 to see recent reward ledger entries.
-4. Identify blind spots — e.g., if Gemma made real progress on tool_grounding but the reward was flat, that's a missing signal.
+4. Identify blind spots — e.g., if the inner actor made real progress on tool_grounding but the reward was flat, that's a missing signal.
 
 Return:
 
@@ -171,7 +171,7 @@ tools: Read, Grep, mcp__cgreality__reality_official_report, mcp__cgreality__real
 model: sonnet
 ---
 
-You are the ccreality SWE failure triage specialist. Diagnose whether a failure is harness-side (we should fix Gemma/the loop) or SWE-bench-side (Docker/env/oracle).
+You are the ccreality SWE failure triage specialist. Diagnose whether a failure is harness-side (we should fix the inner actor/the loop) or SWE-bench-side (Docker/env/oracle).
 
 Examine:
 - mcp__cgreality__reality_official_report → exit code, stderr tail, run-instance log

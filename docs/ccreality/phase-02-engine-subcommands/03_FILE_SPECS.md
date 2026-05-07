@@ -11,7 +11,7 @@ const DEFAULT_REPLAY_OUTPUT_LABEL: &str = "replay";
 #[derive(Parser, Debug, Clone)]
 #[command(name = "reality-loop")]
 #[command(version)]
-#[command(about = "ContextGraph reality engine: runs Gemma SWE-bench attempts and synthetic smokes; writes durable artifacts.")]
+#[command(about = "ContextGraph reality engine: runs the inner actor SWE-bench attempts and synthetic smokes; writes durable artifacts.")]
 #[command(long_about = "After Phase 1+ of the ccreality cutover, this binary is a pure reality engine. \
 The outer optimizer lives in Claude Code, which talks to ContextGraph through the cgreality MCP server. \
 See docs/ccreality/05_REALITY_ENGINE_RESPONSIBILITY.md.")]
@@ -22,9 +22,9 @@ struct TopArgs {
 
 #[derive(Subcommand, Debug, Clone)]
 enum Cmd {
-    /// Run one (or more) Gemma SWE-bench repair attempts. Writes attempt artifacts.
+    /// Run one (or more) the inner actor SWE-bench repair attempts. Writes attempt artifacts.
     Attempt(AttemptArgs),
-    /// Run a synthetic smoke attempt. No Gemma, no Docker. For wiring verification.
+    /// Run a synthetic smoke attempt. No the inner actor, no Docker. For wiring verification.
     Smoke(SmokeArgs),
     /// Replay an existing attempt's reality-signal-packet builder against current code.
     Replay(ReplayArgs),

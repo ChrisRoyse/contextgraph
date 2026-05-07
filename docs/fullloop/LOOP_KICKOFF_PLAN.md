@@ -25,7 +25,7 @@ diff stat):
 |---|---|---|
 | `bb32aed4`–`9bf9dcdf` | DynamicJEPA + BlackBoxFix demo | reward compiler v14 + verified-outcome benchmark wired |
 | `e9d394c3`–`f1d0937c` | gemmafrontend evidence console | multi-tool ContextGraph gateway for the frontend |
-| `9f3838de`–`245894bb` | dynamic tool hint guide | Gemma frontend now uses tool-hint guide instead of static presets |
+| `9f3838de`–`245894bb` | dynamic tool hint guide | the inner actor frontend now uses tool-hint guide instead of static presets |
 | `b57a2f1c`–`8a3fce9a` | Reality-loop docs first cut | `docs/reality/` 4 new docs (meta-loop, smoke curriculum, measurement matrix, scoreboard) |
 | `c12a5216`–`33562474` | Python loop → Rust loop pivot starts | governed agent tools, GPU VRAM budgeting, deterministic prompt compiler |
 | `b7c4c5a2`–`56d9026b` | Rust reality-loop binary | `target/<profile>/reality-loop` owns the loop end-to-end |
@@ -51,16 +51,16 @@ diff stat):
 | `80c01cc5` | Post-cutover hardening | serial tests, tool-leak guards, full-stack reports |
 | `19238126`–`5b3affb3` | **fullloop docs land** | 19 docs covering Phase 13–22 forward plan |
 | `eac5d411`–`704e6fe0` | Phase 13 stringified-arg + Phase 15 autoresearch + Phase 18 training-export | three forward phases get partial implementations |
-| `1d8a5275` | **Ollama Gemma → Rust llama.cpp in-process** | inner SWE actor now runs without Ollama, reads GGUF directly |
-| `95dfd583`–`47e840b4` | Gemma harness model-capability readback + prompt-budget guard + `apply_unified_diff` | additional final-edit path, graduated FAIL_TO_PASS signal |
+| `1d8a5275` | **Ollama the inner actor → Rust llama.cpp in-process** | inner SWE actor now runs without Ollama, reads GGUF directly |
+| `95dfd583`–`47e840b4` | the inner actor harness model-capability readback + prompt-budget guard + `apply_unified_diff` | additional final-edit path, graduated FAIL_TO_PASS signal |
 | `6cbca8ac`–`5510e7e2` | Identity guards + issue-text mention priority | harness fails closed on identity mismatch / sub-128 K context |
 | `d44fc71b`–`a66402d7` | Optimizer-side hardening | `.claude/loop.md` documents harness-already-handles behaviors; plain `git push` allowed; force-push denied |
 | `0017cdaa` | **Cryptographic model-pin gate** | new `config/ccreality_model_pins.json` and pin-validation step in the harness |
 
 **One-paragraph summary.** The last 48 h took the pre-cutover prototype
-(Python SWE-bench loop with Ollama Gemma, DeepSeek-driven outer optimizer)
+(Python SWE-bench loop with Ollama the inner actor, DeepSeek-driven outer optimizer)
 and replaced it with a Rust-only reality-loop binary, an in-process llama.cpp
-Gemma harness with a cryptographic pin gate, a Claude-Code-driven outer
+the inner actor harness with a cryptographic pin gate, a Claude-Code-driven outer
 optimizer wired through MCP/hooks/subagents/skills, and 19 forward-planning
 docs under `docs/fullloop/`. Phase 12 ran one real attempt against
 `psf__requests-2317` and failed closed correctly. Phases 13/14 are the
@@ -74,22 +74,22 @@ I read every artifact under `/tmp/contextgraph-rust-reality-loop/` (the
 runtime root in `~/.cache/cgreality/active_runtime_root`). Three different
 runs exist:
 
-### Failure 1 — `1778064266` `RUST_REALITY_GEMMA_MODEL_PATH_MISSING`
+### Failure 1 — `1778064266` `RUST_REALITY_INNER_MODEL_PATH_MISSING`
 
 Source of truth:
-`file:/tmp/contextgraph-rust-reality-loop/failures/failure-1778064266-RUST_REALITY_GEMMA_MODEL_PATH_MISSING.json`
+`file:/tmp/contextgraph-rust-reality-loop/failures/failure-1778064266-RUST_REALITY_INNER_MODEL_PATH_MISSING.json`
 
-Engine looked at `/home/cabdru/contextgraph/models/gemma4-e4b/gemma4-e4b.Q4_K_M.gguf`.
-The actual file on disk is `gemma-4-E4B-it-bf16.gguf` (15 GB BF16). The
+Engine looked at `/home/cabdru/contextgraph/models/qwen3.6-e4b/qwen3.6-e4b.Q4_K_M.gguf`.
+The actual file on disk is `qwen3.6-E4B-it-bf16.gguf` (15 GB BF16). The
 **default in `crates/context-graph-cli/src/bin/reality-loop.rs:28`** is the
 correct BF16 path:
 ```rust
-const DEFAULT_GEMMA_MODEL_PATH: &str = "models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf";
+const DEFAULT_INNER_MODEL_PATH: &str = "models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf";
 ```
 
 Root cause: the operator (or watcher) was following stale documentation that
 referenced the old `Q4_K_M` filename. Stale references found in:
-- `docs/reality/18_gemma_coding_agent_harness.md:37` ← **fixed this turn**
+- `docs/reality/18_inner_actor_coding_agent_harness.md:37` ← **fixed this turn**
 - `docs/ccreality/phase-12-first-production/01_PRECONDITIONS.md:29` ← **fixed this turn**
 
 Both edits routed through the harness-editor governance with PreToolUse SHA
@@ -107,7 +107,7 @@ Source of truth:
   "memory_used_mb": 25178,
   "min_free_mb": 8192,
   "phase": "loop_start",
-  "model": "gemma4:e4b"
+  "model": "qwen3.6:27b"
 }
 ```
 
@@ -120,7 +120,7 @@ behavior is correct; the operator just needs to free GPU before kickoff.
 ### Run that *almost* worked — `1778064282` (no attempt-summary, but everything else)
 
 This run got all the way through:
-- Model load + identity readback OK (`gemma-harness-model-readback.json` has
+- Model load + identity readback OK (`inner-model-readback.json` has
   full metadata; 7.5 B params, 131 072 ctx, BF16).
 - Problem-reality packet emitted.
 - 24 rounds of agent tool calls (`agent-tools/round-01..round-24/`).
@@ -137,13 +137,13 @@ But:
    likely from the VRAM-overshoot above, since this run is the one that ran
    immediately before the VRAM failure) or the eval timed out without the
    summary writeback path closing.
-2. **The candidate patch is wrong.** Gemma submitted a patch that *deletes*
+2. **The candidate patch is wrong.** the inner actor submitted a patch that *deletes*
    the `kwargs.setdefault('allow_redirects', True)` line in `Session.get()`
    and prepends a stray comment `# method = builtin_str(method)` to the
    `return self.request(...)` line — semantically destroying the GET helper.
    Compare to the gold fix for `psf__requests-2317`, which puts
    `method = builtin_str(method)` (no `#`) at the top of `Session.request()`,
-   not `Session.get()`. Gemma had the *text* but applied it to the wrong
+   not `Session.get()`. the inner actor had the *text* but applied it to the wrong
    function. This is a model-capability gap, not a harness gap.
 
 ### Quiet-but-real issue — Phase 13 T13.6 already half-fixed
@@ -184,7 +184,7 @@ I pulled three search bands relevant to this work. Sources at end of section.
   small-model loop. Our harness is more structured (typed tools + governed
   edits) which is correct for verifiability but more constraining for the
   model.
-- **Energy/efficiency**: Gemma-3 4 B = 23.41 kJ per run, Qwen-3 1.7 B =
+- **Energy/efficiency**: the inner actor-3 4 B = 23.41 kJ per run, Qwen-3 1.7 B =
   54.13 kJ per run. The 5090 budget is not the bottleneck; reasoning
   capacity is.
 - **Bottleneck named**: "the SLM's intrinsic reasoning capacity" — without
@@ -198,9 +198,9 @@ I pulled three search bands relevant to this work. Sources at end of section.
   on a 7.5 B BF16 model; the KV cache alone is ≈ 8–12 GB at 128 K. With
   the 15 GB model weights, a fully GPU-resident run wants 23–27 GB.
 - **Partial offload via `-ngl`** — half the layers on GPU still gives a
-  meaningful speedup over CPU-only. Our `args.gemma_gpu_layers` is currently
+  meaningful speedup over CPU-only. Our `args.inner_gpu_layers` is currently
   `u32::MAX` (all-on-GPU). For a 5090 sharing the GPU with other processes,
-  adding `--gemma-gpu-layers <N>` to drop layers when free VRAM is tight is
+  adding `--inner-actor-gpu-layers <N>` to drop layers when free VRAM is tight is
   a robust fallback that respects the fail-closed reserve.
 - **`--override-tensor` regex** lets us keep attention/KV on GPU and
   push FFN to CPU. For BF16-7.5B that recovers ~6–8 GB VRAM. Worth
@@ -223,14 +223,14 @@ Sources:
 ### Fix 1 — Stale model-path docs (DONE this turn)
 
 Edits applied:
-- `docs/reality/18_gemma_coding_agent_harness.md:37` →
-  `models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf`, params 7.5 B, quant
+- `docs/reality/18_inner_actor_coding_agent_harness.md:37` →
+  `models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf`, params 7.5 B, quant
   `BF16 (lossless, ~15 GB on disk)`.
 - `docs/ccreality/phase-12-first-production/01_PRECONDITIONS.md:29` →
   preconditions block now references the BF16 path *and* points operators
   at `config/ccreality_model_pins.json` for SHA verification, *and* names
-  the `RUST_REALITY_GEMMA_MODEL_SIZE_MISMATCH` /
-  `RUST_REALITY_GEMMA_MODEL_SHA_MISMATCH` error codes so a fail-closed pin
+  the `RUST_REALITY_INNER_MODEL_SIZE_MISMATCH` /
+  `RUST_REALITY_INNER_MODEL_SHA_MISMATCH` error codes so a fail-closed pin
   gate is no longer surprising.
 
 Both edits passed the PreToolUse governed-path allow check
@@ -260,10 +260,10 @@ upgrades, neither of which weakens the gate:
    `crates/context-graph-cli/src/bin/reality-loop.rs` (search for
    `compute_processes_raw`) — the field should be JSON-array-of-objects, not
    raw text.
-2. **Optional `--gemma-gpu-layers <N>` override.** Currently the engine
+2. **Optional `--inner-actor-gpu-layers <N>` override.** Currently the engine
    loads with `u32::MAX` (all layers on GPU). When VRAM is tight, the
    research-supported pattern is partial offload (e.g., 36 of 42 layers on
-   GPU + the rest on CPU). Wire `args.gemma_gpu_layers` to a CLI flag with
+   GPU + the rest on CPU). Wire `args.inner_gpu_layers` to a CLI flag with
    a soft default of `all`, and require either the all-GPU reserve OR a
    user-specified partial-offload count. The pin gate stays — it only
    checks the file, not VRAM placement.
@@ -351,9 +351,9 @@ Post-condition: three binaries exist under `target/release/`.
 ### Step 1 — Verify the model + pin
 
 ```bash
-ls -la models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf
-sha256sum models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf | head -c 71
-jq -r '.models.gemma4_e4b_bf16.expected_sha256' config/ccreality_model_pins.json
+ls -la models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf
+sha256sum models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf | head -c 71
+jq -r '.models.qwen3_6_27b_q6_k_xl.expected_sha256' config/ccreality_model_pins.json
 ```
 
 Post-condition: the file exists, is ~15 GB, and the sha256 matches the
@@ -368,7 +368,7 @@ nvidia-smi --query-gpu=memory.free,memory.used,memory.total --format=csv,noheade
 
 Post-condition: `memory.free` ≥ 28 GB if you want full GPU offload of the
 BF16 model + 128 K KV cache. If less, either kill other GPU processes or
-plan to add `--gemma-gpu-layers 30` (partial offload, ~80% on GPU). If
+plan to add `--inner-actor-gpu-layers 30` (partial offload, ~80% on GPU). If
 free VRAM < 8 GB, kill processes; the reserve will refuse to start anyway.
 
 ```bash
@@ -407,13 +407,13 @@ attempt summary read failed" (Phase 13 T13.1 fix verified).
 target/release/reality-loop attempt \
   --task-manifest tasks/swebench-lite/psf__requests-2317.json \
   --runtime-root "$RUNTIME_ROOT" \
-  --model gemma4:e4b \
+  --model qwen3.6:27b \
   --official-eval-each-attempt \
   --max-attempts 1
 ```
 
 Post-condition: an `attempt-summary.json` exists at
-`$RUNTIME_ROOT/<run>/tasks/psf__requests-2317/gemma4-e4b/attempts/attempt-000001/`.
+`$RUNTIME_ROOT/<run>/tasks/psf__requests-2317/qwen3.6-e4b/attempts/attempt-000001/`.
 If `error_code` is set, read it carefully — it tells you exactly which
 fix-class to address next. Do **not** retry blindly; the outer optimizer
 is what reasons about retries.
@@ -427,7 +427,7 @@ claude --model opus --permission-mode acceptEdits
 ```
 
 Post-condition: a `recommendation-turn-01.json` lands at
-`$RUNTIME_ROOT/<run>/tasks/psf__requests-2317/gemma4-e4b/attempts/attempt-000001/claude-code-optimizer/`.
+`$RUNTIME_ROOT/<run>/tasks/psf__requests-2317/qwen3.6-e4b/attempts/attempt-000001/claude-code-optimizer/`.
 The Stop hook will block the turn from ending without one.
 
 ### Step 7 — Sustained run
@@ -475,9 +475,9 @@ read of the durable artifact, not by trusting an intermediate log line.
 | `.claude/loop.md` exists and is the optimizer runtime contract | `Read /home/cabdru/contextgraph/.claude/loop.md` | yes |
 | Active runtime root | `cat ~/.cache/cgreality/active_runtime_root` | yes — `/tmp/contextgraph-rust-reality-loop` |
 | Active target | `cat ~/.cache/cgreality/active_target_instance` | yes — `psf__requests-2317` |
-| `RUST_REALITY_GEMMA_MODEL_PATH_MISSING` failure | `cat .../failure-1778064266-*.json` | yes |
+| `RUST_REALITY_INNER_MODEL_PATH_MISSING` failure | `cat .../failure-1778064266-*.json` | yes |
 | `RUST_REALITY_GPU_VRAM_BUDGET_EXCEEDED` failure | `cat .../failure-1778064748-*.json` | yes |
-| Stale `Q4_K_M` references in 2 docs | `rg "gemma4-e4b\.Q4_K_M"` | yes — fixed both |
+| Stale `Q4_K_M` references in 2 docs | `rg "qwen3.6-e4b\.Q4_K_M"` | yes — fixed both |
 | Default model path in source is BF16 | `crates/context-graph-cli/src/bin/reality-loop.rs:28` | yes |
 | Almost-worked run has no attempt-summary | `ls .../attempts/attempt-000001/` | yes — confirmed missing |
 | Candidate patch is semantically wrong | `cat candidate.patch` | yes — verified the broken edit |
@@ -513,24 +513,24 @@ cargo test -p context-graph-mcp --lib reality_loop --quiet                     #
 bash scripts/cc/tests/fsv/cases/D1_recommendation_no_overwrite.sh              # exit 0 (NEW)
 
 # Phase 14a kickoff (this is the productive milestone)
-test -f models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf
-sha256sum models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf \
+test -f models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf
+sha256sum models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf \
   | awk '{print "sha256:" $1}' \
-  | grep -q "$(jq -r '.models.gemma4_e4b_bf16.expected_sha256' config/ccreality_model_pins.json)"
+  | grep -q "$(jq -r '.models.qwen3_6_27b_q6_k_xl.expected_sha256' config/ccreality_model_pins.json)"
 nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits \
   | awk '{ exit !($1 >= 28000) }'   # 28 GB+ free for full-GPU BF16+128K
 target/release/reality-loop smoke --runtime-root /tmp/ccreality-kickoff
 target/release/reality-loop attempt \
   --task-manifest tasks/swebench-lite/psf__requests-2317.json \
   --runtime-root /tmp/ccreality-kickoff \
-  --model gemma4:e4b \
+  --model qwen3.6:27b \
   --official-eval-each-attempt --max-attempts 1
-test -f /tmp/ccreality-kickoff/*/tasks/psf__requests-2317/gemma4-e4b/attempts/attempt-000001/attempt-summary.json
+test -f /tmp/ccreality-kickoff/*/tasks/psf__requests-2317/qwen3.6-e4b/attempts/attempt-000001/attempt-summary.json
 
 # Then in a Claude Code session:
 #   > /ccreality-iterate
 # After it lands, verify:
-ls /tmp/ccreality-kickoff/*/tasks/psf__requests-2317/gemma4-e4b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json
+ls /tmp/ccreality-kickoff/*/tasks/psf__requests-2317/qwen3.6-e4b/attempts/attempt-000001/claude-code-optimizer/recommendation-turn-01.json
 
 # Phase 14a success predicate (the actual goal)
 mcp__cgreality__reality_official_report run_id=<run_id> attempt=<n> \
@@ -545,10 +545,10 @@ productive."
 
 ## 8. Risks & explicit non-goals for this kickoff
 
-- **Not fixing Gemma's reasoning capacity.** That is a model-quality issue.
-  The harness can give Gemma better prompts, retry budgets, and tool
+- **Not fixing the inner actor's reasoning capacity.** That is a model-quality issue.
+  The harness can give the inner actor better prompts, retry budgets, and tool
   affordances, but it cannot make a 7.5 B model reason like a 70 B one.
-  If after 50 sustained `/loop` turns Gemma still cannot land
+  If after 50 sustained `/loop` turns the inner actor still cannot land
   `psf__requests-2317`, switch instance per the Phase 14 failure-mode
   plan.
 - **Not building the autoresearch engine yet.** Phase 15 (champion state +
@@ -556,7 +556,7 @@ productive."
   full surface — `mcp__cgreality__champion_state_get`,
   `mcp__cgreality__experiment_registry_list`, `attempts_history_query` —
   is forward work. The kickoff plan above does not assume them.
-- **Not enabling cross-model.** The loop is single-model by design (`gemma4:e4b`, cryptographically pinned). The Phase-16 cross-model plan was retired; multi-model is no longer a forward goal.
+- **Not enabling cross-model.** The loop is single-model by design (`qwen3.6:27b`, cryptographically pinned). The Phase-16 cross-model plan was retired; multi-model is no longer a forward goal.
 - **Not changing the success predicate.** Sacred: `official_report.resolved_ids`
   contains the target instance. Anything else — partial test-pass ratio,
   patch parse rate, reward signal — is *partial progress* and informative
@@ -571,9 +571,9 @@ productive."
 ## 9. One-paragraph TL;DR
 
 The plumbing works. The two failures in the active runtime root were
-(a) someone pointed `--gemma-model-path` at a stale `Q4_K_M` filename
+(a) someone pointed `--inner-model-path` at a stale `Q4_K_M` filename
 that two docs (now fixed) still referenced, and (b) the GPU was busy. The
-near-success run shows Gemma can reach the official Docker eval but
+near-success run shows the inner actor can reach the official Docker eval but
 submits a semantically-wrong patch on its own — exactly the inner-
 capability gap Phase 14 names. Kickoff is: free GPU, verify model SHA,
 run smoke + 1 real attempt, then drive `/loop 15m` against it. The

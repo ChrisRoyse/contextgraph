@@ -57,7 +57,7 @@ All of these are written by the engine (which sees attempts), updated by the MCP
   "schema_version": 1,
   "champions": [
     {
-      "model": "gemma4:e4b",
+      "model": "qwen3.6:27b",
       "task": "psf__requests-2317",
       "attempt_path": "file:/.../attempt-000017",
       "official_resolved": true,

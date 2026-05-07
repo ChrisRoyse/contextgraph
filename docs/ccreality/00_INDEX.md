@@ -47,9 +47,9 @@ This is the architecture the user described:
 
 ## What changes in one paragraph
 
-**Before:** Rust `reality-loop.rs` runs Gemma, then calls DeepSeek V4 Pro over HTTP for outer-loop optimization, parses the JSON response, applies its line-window edits to ContextGraph source, persists artifacts, re-attempts. The optimizer is a chat completion endpoint pretending to be a coding agent through a hand-rolled tool harness.
+**Before:** Rust `reality-loop.rs` runs the inner actor, then calls DeepSeek V4 Pro over HTTP for outer-loop optimization, parses the JSON response, applies its line-window edits to ContextGraph source, persists artifacts, re-attempts. The optimizer is a chat completion endpoint pretending to be a coding agent through a hand-rolled tool harness.
 
-**After:** Rust `reality-loop.rs` becomes a pure **reality engine** that runs Gemma, runs official SWE-bench Docker eval, writes durable artifacts, and exits. **ContextGraph MCP server** exposes those artifacts plus the entire memory graph (search across 13 embedders, audit trails, provenance chains, causal links, harness transitions) plus a governed action surface (edit harness source, store/boost/forget memories, trigger new attempts, run targeted tests, run official eval). **Claude Code** is the operator: it runs against the project, hooks inject fresh reality at every step, MCP tools let it ask for any artifact at any moment and act on the system, and a structured-output recommendation closes each turn with a source-of-truth-tied summary.
+**After:** Rust `reality-loop.rs` becomes a pure **reality engine** that runs the inner actor, runs official SWE-bench Docker eval, writes durable artifacts, and exits. **ContextGraph MCP server** exposes those artifacts plus the entire memory graph (search across 13 embedders, audit trails, provenance chains, causal links, harness transitions) plus a governed action surface (edit harness source, store/boost/forget memories, trigger new attempts, run targeted tests, run official eval). **Claude Code** is the operator: it runs against the project, hooks inject fresh reality at every step, MCP tools let it ask for any artifact at any moment and act on the system, and a structured-output recommendation closes each turn with a source-of-truth-tied summary.
 
 ## Core invariants we preserve
 

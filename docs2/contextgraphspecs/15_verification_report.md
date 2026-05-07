@@ -156,7 +156,7 @@ Source: enumerated `pub const` in the listed files.
 | `DEFAULT_VALIDATE_MAX_EDGES` | 100 | typed-edge tools |
 | Reality-loop default GPU min-free MB | 8,192 | `bin/reality-loop.rs:16` (`DEFAULT_GPU_MIN_FREE_MB`) |
 | Reality-loop default Ollama keep-alive | `"30m"` | `bin/reality-loop.rs:17` (`DEFAULT_OLLAMA_KEEP_ALIVE`) |
-| Reality-loop default model | `gemma4:e4b` | `bin/reality-loop.rs:14` (`DEFAULT_MODEL`) |
+| Reality-loop default model | `qwen3.6:27b` | `bin/reality-loop.rs:14` (`DEFAULT_MODEL`) |
 | Reality-loop default Docker host | `unix:///var/run/docker.sock` | `bin/reality-loop.rs:18` (`DEFAULT_OFFICIAL_DOCKER_HOST`) |
 | Reality-loop dataset constant | `"princeton-nlp/SWE-bench_Lite"` | `bin/reality-loop.rs:20` (`DATASET_NAME`) |
 | Prompt compiler owner | Rust `reality-loop` prompt contract | `bin/reality-loop.rs` |

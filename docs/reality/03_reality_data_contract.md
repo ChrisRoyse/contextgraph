@@ -25,8 +25,8 @@ Every record must carry:
   "run_id": "run_...",
   "attempt_id": "attempt_001",
   "model": {
-    "provider": "contextgraph_rust_gemma_coding_harness",
-    "name": "gemma4:e4b",
+    "provider": "contextgraph_rust_inner_coding_harness",
+    "name": "qwen3.6:27b",
     "params": {
       "temperature": 0,
       "max_new_tokens": 4096

@@ -12,7 +12,7 @@ Always do:
 1. Call mcp__cgreality__reality_signal for the last 3 attempts.
 2. Compare reward components across attempts; identify which signals moved and which didn't.
 3. Call mcp__cgreality__reality_query_ledger with WHERE record_kind LIKE 'contextgraph_reward%' LIMIT 10 to see recent reward ledger entries.
-4. Identify blind spots - e.g., if Gemma made real progress on tool_grounding but the reward was flat, that's a missing signal.
+4. Identify blind spots - e.g., if the inner actor made real progress on tool_grounding but the reward was flat, that's a missing signal.
 
 Return:
 

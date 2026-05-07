@@ -8,10 +8,10 @@ Each iteration of this loop is one optimizer turn. Do not try to do everything a
 
 These are baked-in harness behaviors. Do NOT propose harness edits to "fix" things that the harness already handles — surface the symptom as evidence the existing mechanism failed instead.
 
-- **Final-edit tools (3 paths)**: `apply_line_window_edit`, `apply_structured_edit`, `apply_unified_diff`. All three require `observed_files` SHA-256 from `open_file_window`, run `git apply --check`, reject unobserved-changed files and test/fixture/harness mutations, and reset the workspace after extracting `candidate.patch`. If Gemma fails to use any of them, that's a prompt-shaping concern, not a harness gap.
+- **Final-edit tools (3 paths)**: `apply_line_window_edit`, `apply_structured_edit`, `apply_unified_diff`. All three require `observed_files` SHA-256 from `open_file_window`, run `git apply --check`, reject unobserved-changed files and test/fixture/harness mutations, and reset the workspace after extracting `candidate.patch`. If the inner actor fails to use any of them, that's a prompt-shaping concern, not a harness gap.
 - **Graduated correctness signal**: `attempt-summary.official_progress.passed_fail_to_pass_ratio` is a continuous [0.0, 1.0] score derived from the official SWE-bench Docker eval. Read it alongside `resolved` (binary). A run with `resolved=false` but `passed_fail_to_pass_ratio=0.5` is meaningful partial progress — do not treat it as identical to a no-patch failure.
-- **File-localization priority**: `problem-reality-packet.repository_reality.production_candidate_files` is ordered issue-text-mention-first, then BM25. The compact packet (what reaches Gemma) exposes `issue_mentioned_paths` explicitly. If an issue mentions a file by name but `production_candidate_files[0]` is a different file, that's a packet-generation bug, NOT a prompt-template issue.
-- **Gemma model identity guardrails**: pre-generation checks raise `RUST_REALITY_GEMMA_MODEL_IDENTITY_MISMATCH`, `RUST_REALITY_GEMMA_MODEL_CONTEXT_BELOW_REQUIRED_FLOOR`, `RUST_REALITY_GEMMA_EFFECTIVE_CONTEXT_BELOW_REQUIRED_FLOOR`. These are not harness bugs — they're correct refusals when a substitute model or undersized quant is loaded. Surface to operator; do NOT attempt to weaken the check.
+- **File-localization priority**: `problem-reality-packet.repository_reality.production_candidate_files` is ordered issue-text-mention-first, then BM25. The compact packet (what reaches the inner actor) exposes `issue_mentioned_paths` explicitly. If an issue mentions a file by name but `production_candidate_files[0]` is a different file, that's a packet-generation bug, NOT a prompt-template issue.
+- **the inner-actor model identity guardrails**: pre-generation checks raise `RUST_REALITY_INNER_MODEL_IDENTITY_MISMATCH`, `RUST_REALITY_INNER_MODEL_CONTEXT_BELOW_REQUIRED_FLOOR`, `RUST_REALITY_INNER_EFFECTIVE_CONTEXT_BELOW_REQUIRED_FLOOR`. These are not harness bugs — they're correct refusals when a substitute model or undersized quant is loaded. Surface to operator; do NOT attempt to weaken the check.
 
 ## Iteration procedure
 
@@ -70,7 +70,7 @@ Call `mcp__cgreality__optimizer_record_recommendation` with the schema in `docs/
 - `source_files_changed`: project-relative paths
 - `verification_commands`: the exact commands you ran (cargo check, cargo test, smoke)
 - `source_of_truth_readbacks`: file:... paths the next turn should consult
-- `next_gemma_prompt_delta`: a one-line directive that, if added to Gemma's next prompt, would help
+- `next_inner_prompt_delta`: a one-line directive that, if added to the inner actor's next prompt, would help
 - `expected_reward_signal_delta`: which signal you expect to move and by how much
 - `remaining_risks`: bullets
 - `memories_created`, `memories_boosted`: uuids
@@ -86,7 +86,7 @@ The Stop hook will allow the turn to end once this is recorded.
 - Never claim SWE-bench success unless `mcp__cgreality__reality_official_report` confirms `resolved_ids` contains the target instance.
 - Never spawn another writer subagent in parallel with `cc-reality-harness-editor`.
 - Never use destructive git commands (push, reset --hard, checkout --, clean -f, rebase).
-- Cap each turn at one `cc-reality-harness-editor` invocation. If diagnosis suggests multiple separate edits, surface the additional ones in `next_gemma_prompt_delta` or `remaining_risks` and let the operator drive a follow-up `/loop` iteration.
+- Cap each turn at one `cc-reality-harness-editor` invocation. If diagnosis suggests multiple separate edits, surface the additional ones in `next_inner_prompt_delta` or `remaining_risks` and let the operator drive a follow-up `/loop` iteration.
 
 ## When `/loop` runs unattended overnight
 

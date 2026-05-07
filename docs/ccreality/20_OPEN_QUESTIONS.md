@@ -118,7 +118,7 @@ Decision: ccreality is one **subsystem** of BlackBoxFix's broader telemetry/rewa
 
 ## Q15 — Should the operator be able to trigger an attempt-replay for fitness testing?
 
-E.g.: take attempt-3, replay just the validation + reward computation against a candidate harness change, without re-running Gemma. This would let the operator A/B-test reward feature changes cheaply.
+E.g.: take attempt-3, replay just the validation + reward computation against a candidate harness change, without re-running the inner actor. This would let the operator A/B-test reward feature changes cheaply.
 
 The `reality-loop replay` subcommand from [05_REALITY_ENGINE_RESPONSIBILITY](05_REALITY_ENGINE_RESPONSIBILITY.md) is the seed of this. Defer fleshing out until there's a real reward-feature change to test.
 

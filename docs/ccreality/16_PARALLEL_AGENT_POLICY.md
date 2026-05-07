@@ -64,13 +64,13 @@ Two operators on two machines could theoretically run two Claude Code sessions a
 
 - The edit lock prevents conflicting edits, but coordination overhead is high.
 - Reality-shift artifacts get interleaved.
-- Engine attempts can't be parallelized (Gemma + Docker + GPU are single-occupant).
+- Engine attempts can't be parallelized (the inner actor + Docker + GPU are single-occupant).
 
 If two-operator collaboration is needed, give each operator their own clone of the repo and their own `~/.cache/cgreality/active_runtime_root`. Merge harness changes via git PR review, not via concurrent edit.
 
 ## Across-runtime-root parallelism (allowed)
 
-If the operator runs **two separate reality-loop runs** for two different SWE-bench instances simultaneously (e.g. one Gemma + Docker per GPU), each gets its own runtime root. The MCP server can serve different sessions for different runtime roots concurrently — no single-writer conflict because they touch different artifact trees.
+If the operator runs **two separate reality-loop runs** for two different SWE-bench instances simultaneously (e.g. one the inner actor + Docker per GPU), each gets its own runtime root. The MCP server can serve different sessions for different runtime roots concurrently — no single-writer conflict because they touch different artifact trees.
 
 The harness source code, however, is shared across runtime roots. So the harness-edit lock is global (single file in `~/.cache/cgreality/`). One writer at a time across the whole machine.
 

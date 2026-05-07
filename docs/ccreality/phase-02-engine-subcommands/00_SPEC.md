@@ -21,7 +21,7 @@ Out of scope:
 | Subcommand | Wraps | New behavior |
 |------------|-------|--------------|
 | `attempt` | existing `run()` (post-Phase-1) | Same args; writes active-root file on start |
-| `smoke` | NEW: synthetic deterministic attempt | Writes a fake `attempt-summary.json` tree; no Gemma, no Docker |
+| `smoke` | NEW: synthetic deterministic attempt | Writes a fake `attempt-summary.json` tree; no the inner actor, no Docker |
 | `replay` | NEW: re-emit reality-signal-packet | Reads attempt-summary.json from disk; rebuilds and rewrites reality-signal-packet.json |
 | `verify` | NEW: full-state verification | Re-reads every artifact under `<runtime>/<task>/attempt-N/`, recomputes SHAs, reports any drift |
 

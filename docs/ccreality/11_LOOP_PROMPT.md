@@ -62,7 +62,7 @@ Call `mcp__cgreality__optimizer_record_recommendation` with the schema in `docs/
 - `source_files_changed`: project-relative paths
 - `verification_commands`: the exact commands you ran (cargo check, cargo test, smoke)
 - `source_of_truth_readbacks`: file:... paths the next turn should consult
-- `next_gemma_prompt_delta`: a one-line directive that, if added to Gemma's next prompt, would help
+- `next_inner_prompt_delta`: a one-line directive that, if added to the inner actor's next prompt, would help
 - `expected_reward_signal_delta`: which signal you expect to move and by how much
 - `remaining_risks`: bullets
 - `memories_created`, `memories_boosted`: uuids
@@ -77,7 +77,7 @@ The Stop hook will allow the turn to end once this is recorded.
 - Never claim SWE-bench success unless `mcp__cgreality__reality_official_report` confirms `resolved_ids` contains the target instance.
 - Never spawn another writer subagent in parallel with `cc-reality-harness-editor`.
 - Never use destructive git commands (push, reset --hard, checkout --, clean -f, rebase).
-- Cap each turn at one `cc-reality-harness-editor` invocation. If diagnosis suggests multiple separate edits, surface the additional ones in `next_gemma_prompt_delta` or `remaining_risks` and let the operator drive a follow-up `/loop` iteration.
+- Cap each turn at one `cc-reality-harness-editor` invocation. If diagnosis suggests multiple separate edits, surface the additional ones in `next_inner_prompt_delta` or `remaining_risks` and let the operator drive a follow-up `/loop` iteration.
 
 ## When `/loop` runs unattended overnight
 

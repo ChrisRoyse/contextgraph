@@ -46,11 +46,11 @@ When the outer loop tests an artifact, persist:
   "changed_artifact": "prompt_compiler_v3",
   "baseline_artifact": "prompt_compiler_v2",
   "suite": "dev_smoke",
-  "models": ["gemma4:e4b"],
+  "models": ["qwen3.6:27b"],
   "score_before": {},
   "score_after": {},
   "decision": "keep",
-  "decision_reason": "official failure evidence reached attempt 2 prompt and reward improved for gemma4:e4b"
+  "decision_reason": "official failure evidence reached attempt 2 prompt and reward improved for qwen3.6:27b"
 }
 ```
 

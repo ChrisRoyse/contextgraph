@@ -357,7 +357,7 @@ Source: `crates/context-graph-cli/src/bin/reality-loop.rs` (2,380 lines). Standa
 ### Top-level flags (clap derive `Args` at line 22)
 | Flag | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `--model <NAME>` | string | `gemma4:e4b` | Ollama model tag |
+| `--model <NAME>` | string | `qwen3.6:27b` | Ollama model tag |
 | `--task-manifest <PATH>` | PathBuf | required | JSON manifest for the SWE-bench instance |
 | `--runtime-root <PATH>` | PathBuf | `/tmp/contextgraph-rust-reality-loop` | Per-loop scratch root |
 | `--ollama-url <URL>` | string | `http://127.0.0.1:11434` | Ollama HTTP endpoint |
@@ -462,7 +462,7 @@ Schema `contextgraph_reality_measurement_contract_v1` written to `<run_root>/mea
 | --- | --- |
 | `DEFAULT_RUNTIME_ROOT` | `/tmp/contextgraph-rust-reality-loop` |
 | `DEFAULT_CONTEXT_GRAPH_BIN` | `target/debug/context-graph` |
-| `DEFAULT_MODEL` | `gemma4:e4b` |
+| `DEFAULT_MODEL` | `qwen3.6:27b` |
 | `DEFAULT_OLLAMA_URL` | `http://127.0.0.1:11434` |
 | `DEFAULT_GPU_MIN_FREE_MB` | `8192` |
 | `DEFAULT_OLLAMA_KEEP_ALIVE` | `30m` |

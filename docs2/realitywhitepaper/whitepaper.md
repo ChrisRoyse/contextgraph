@@ -105,7 +105,7 @@ The Reality Loop turns the criteria in §4 into a single Rust binary. This secti
 +-----------+-----------+
             |
             v
-   Ollama /api/chat (gemma4:e4b, --keep-alive 30m)
+   Ollama /api/chat (qwen3.6:27b, --keep-alive 30m)
             |
             v
    git apply --whitespace=nowarn (--> repo workspace at exact base_commit)
@@ -472,7 +472,7 @@ The Reality Loop refuses to enter the model loop without `--official-eval-each-a
 
 ### 8.4 Single Local Ollama Model
 
-The Reality Loop is bound to a single local Ollama model: `gemma4:e4b` (cryptographically pinned via `config/ccreality_model_pins.json` and validated at load time by `validate_gemma4_model_identity` in `reality-loop.rs:2592`). Earlier iterations of the project carried plumbing for additional models (`qwen3:8b`, `mistral-nemo:12b`); that scope was explicitly removed when the loop refactored to a single-model design. The prompt contract remains model-agnostic in principle, so a future operator could re-introduce additional local models, but doing so requires updating the model-pin gate, the harness identity check, and the smoke curriculum in lockstep. Remote API models are out of scope: network introduces uncertainty (rate limits, transient errors, response-latency tail risk) that is hostile to the loop's discipline. Local Ollama is the production posture.
+The Reality Loop is bound to a single local Ollama model: `qwen3.6:27b` (cryptographically pinned via `config/ccreality_model_pins.json` and validated at load time by `validate_inner_model_identity` in `reality-loop.rs:2592`). Earlier iterations of the project carried plumbing for additional models (`qwen3:8b`, `mistral-nemo:12b`); that scope was explicitly removed when the loop refactored to a single-model design. The prompt contract remains model-agnostic in principle, so a future operator could re-introduce additional local models, but doing so requires updating the model-pin gate, the harness identity check, and the smoke curriculum in lockstep. Remote API models are out of scope: network introduces uncertainty (rate limits, transient errors, response-latency tail risk) that is hostile to the loop's discipline. Local Ollama is the production posture.
 
 ### 8.5 No Backwards Compatibility
 

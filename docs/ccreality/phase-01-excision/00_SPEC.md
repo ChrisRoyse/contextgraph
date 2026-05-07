@@ -2,7 +2,7 @@
 
 ## Objectives
 
-1. Lift provider-neutral governed-edit helpers into a shared module so both the engine (Gemma inner loop) and Phase 3's MCP module can use the same code.
+1. Lift provider-neutral governed-edit helpers into a shared module so both the engine (the inner actor inner loop) and Phase 3's MCP module can use the same code.
 2. Delete every DeepSeek/OpenAI/ChatGPT/gpt-5 code path from `reality-loop.rs`. Pre-production rule: no shims.
 3. Leave the engine in a buildable, testable state with all surviving tests passing.
 
@@ -26,7 +26,7 @@ Out of scope:
 | Governed-edit module | `crates/context-graph-cli/src/governed_edit.rs` | NEW: ~600–900 lines |
 | Library crate target | `crates/context-graph-cli/src/lib.rs` | NEW or updated to export `governed_edit` |
 | Cargo manifest | `crates/context-graph-cli/Cargo.toml` | add `[lib]` section if missing |
-| Engine binary | `crates/context-graph-cli/src/bin/reality-loop.rs` | DELETE ~3,400 lines; KEEP everything Gemma/Ollama/SWE-bench/governed-tool/problem-reality/reality-signal/harness-transition/BlackBox related |
+| Engine binary | `crates/context-graph-cli/src/bin/reality-loop.rs` | DELETE ~3,400 lines; KEEP everything the inner actor/Ollama/SWE-bench/governed-tool/problem-reality/reality-signal/harness-transition/BlackBox related |
 
 ## AI-verifiable end-state (full)
 
@@ -41,7 +41,7 @@ See [04_VERIFICATION.md](04_VERIFICATION.md) for the canonical commands. Summary
 ## What stays in `reality-loop.rs`
 
 After this phase, `reality-loop.rs` contains exactly:
-- CLI args struct (Gemma/Ollama/SWE-bench/GPU only).
+- CLI args struct (the inner actor/Ollama/SWE-bench/GPU only).
 - `RealityError`, `ProcessResult`, `TaskManifest`, `GpuState`, `AttemptRecord`, `AgentToolContext`.
 - `main()` + `run()` (with the trigger/optimizer block deleted).
 - `validate_task_manifest_contract`, `build_measurement_contract`.

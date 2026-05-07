@@ -1,5 +1,5 @@
 ---
-title: "ContextGraph Reality Loop: A Measurement-Bound Software-Repair Engine with an In-Process Gemma Harness and a Joint-Embedding Predictive World Model"
+title: "ContextGraph Reality Loop: A Measurement-Bound Software-Repair Engine with an In-Process the inner actor Harness and a Joint-Embedding Predictive World Model"
 subtitle: "A Software-Architecture White Paper on Fail-Closed Software Repair, Cryptographic Model Pinning, Grammar-Constrained Tool Calls, ME-JEPA Latent Dynamics, and Durable Provenance"
 author: "Chris Royse\\thanks{Independent Research --- ContextGraph Project. Email: \\texttt{thenumberonellc@gmail.com}. Source repository: \\texttt{contextgraph} workspace, branch \\texttt{ccreality-cutover}.}"
 date: "May 6, 2026 \\quad Version 1.1"
@@ -12,7 +12,7 @@ keywords:
   - "Cryptographic model pinning"
   - "Provenance and audit logs"
 abstract: |
-  Modern coding agents that drive code edits and tool calls increasingly speak in the language of certainty --- "fixed", "passes", "ready to merge" --- without owning a primitive that proves any of those words. The result is a quiet, expensive class of failures: patches that look right but never apply, tests that pass locally and fail in continuous integration, and capabilities reported by self-confidence rather than by an oracle. ContextGraph's *Reality Loop* is a Rust subsystem that refuses to declare success unless the official SWE-bench Lite Docker evaluator places the target instance in `resolved_ids`. Every artefact along the way --- the prompt, the model response, the candidate patch, the per-attempt evidence, the audit row --- is byte-equal-readback verified before it is permitted to influence the next decision. The model itself is loaded in-process via the llama.cpp Rust bindings (\texttt{llama-cpp-2}) from a cryptographically-pinned BF16 GGUF of \texttt{gemma-4-E4B-it}, with tool calls constrained by a GBNF grammar emitted by the chat template so the model literally cannot emit malformed tool syntax. Alongside the loop, ContextGraph ships a Joint-Embedding Predictive Architecture (called *ME-JEPA* in this paper, *DynamicJEPA* in the codebase) that learns latent dynamics from instrument readings and emits *surprise events* whenever the world disagrees with its predictions. Together, the two engines turn a coding agent from a confident narrator into a measurement-grounded participant: it perceives current state, alters it through governed grammar-bounded tools, observes a real outcome, and persists the delta on an append-only audit substrate. This paper documents how the loop and the world model are built, why specific design decisions were made, and what evidence the system produces to back its claims.
+  Modern coding agents that drive code edits and tool calls increasingly speak in the language of certainty --- "fixed", "passes", "ready to merge" --- without owning a primitive that proves any of those words. The result is a quiet, expensive class of failures: patches that look right but never apply, tests that pass locally and fail in continuous integration, and capabilities reported by self-confidence rather than by an oracle. ContextGraph's *Reality Loop* is a Rust subsystem that refuses to declare success unless the official SWE-bench Lite Docker evaluator places the target instance in `resolved_ids`. Every artefact along the way --- the prompt, the model response, the candidate patch, the per-attempt evidence, the audit row --- is byte-equal-readback verified before it is permitted to influence the next decision. The model itself is loaded in-process via the llama.cpp Rust bindings (\texttt{llama-cpp-2}) from a cryptographically-pinned BF16 GGUF of \texttt{qwen3.6-E4B-it}, with tool calls constrained by a GBNF grammar emitted by the chat template so the model literally cannot emit malformed tool syntax. Alongside the loop, ContextGraph ships a Joint-Embedding Predictive Architecture (called *ME-JEPA* in this paper, *DynamicJEPA* in the codebase) that learns latent dynamics from instrument readings and emits *surprise events* whenever the world disagrees with its predictions. Together, the two engines turn a coding agent from a confident narrator into a measurement-grounded participant: it perceives current state, alters it through governed grammar-bounded tools, observes a real outcome, and persists the delta on an append-only audit substrate. This paper documents how the loop and the world model are built, why specific design decisions were made, and what evidence the system produces to back its claims.
 documentclass: article
 classoption:
   - 11pt
@@ -68,7 +68,7 @@ ContextGraph is an 11-crate Rust workspace that stores text and code as 14-embed
 
 Two of its subsystems push beyond memory:
 
-- The **Reality Loop** (`crates/context-graph-cli/src/bin/reality-loop.rs`) is a self-contained `tokio::main` Rust binary that drives a single local Gemma model through SWE-bench Lite repair attempts. The model is loaded *in-process* through the llama.cpp Rust bindings (`llama-cpp-2`) [10] from a BF16 GGUF of `gemma-4-E4B-it`. The Reality Loop's single, immovable definition of success is whether the official SWE-bench Docker harness reports the target instance in `resolved_ids` [5,6].
+- The **Reality Loop** (`crates/context-graph-cli/src/bin/reality-loop.rs`) is a self-contained `tokio::main` Rust binary that drives a single local the inner-actor model through SWE-bench Lite repair attempts. The model is loaded *in-process* through the llama.cpp Rust bindings (`llama-cpp-2`) [10] from a BF16 GGUF of `qwen3.6-E4B-it`. The Reality Loop's single, immovable definition of success is whether the official SWE-bench Docker harness reports the target instance in `resolved_ids` [5,6].
 - **DynamicJEPA / ME-JEPA** (`crates/context-graph-dynamicjepa/`) is a 28-column-family Joint-Embedding Predictive Architecture trained on Candle 0.10.2 with CUDA. It learns to predict the next latent panel from a `(panel, action)` pair [3] and persists *surprise events* whenever observed reality diverges from its prediction.
 
 Both subsystems share a single audit substrate --- a BlackBoxFix SQLite ledger at `LEDGER_SCHEMA_VERSION = 14` and an append-only `reality-events.jsonl` event stream. Neither subsystem can claim success without the other's source-of-truth confirmation in scope. This separation is intentional: the Reality Loop owns *external* truth (Docker), the world model owns *internal* prediction quality, and the audit substrate is the only place where the two meet.
@@ -114,7 +114,7 @@ The success predicate for SWE-bench is, by construction, the only one the loop h
 
 ## Cryptographic model identity
 
-Before the harness loads any GGUF, the loop reads `config/ccreality_model_pins.json` and checks four pin fields against the on-disk file: `expected_sha256`, `expected_size_bytes`, `expected_min_context_tokens`, and `expected_identity_substrings`. A mismatch on any field aborts with `RUST_REALITY_GEMMA_MODEL_PIN_*`. The current production pin is `gemma4_e4b_bf16` referencing `gemma-4-E4B-it-bf16.gguf` (15,053,094,880 bytes, SHA-256 prefix `23458339...`, minimum context 128,000 tokens, identity substring `gemma4`).
+Before the harness loads any GGUF, the loop reads `config/ccreality_model_pins.json` and checks four pin fields against the on-disk file: `expected_sha256`, `expected_size_bytes`, `expected_min_context_tokens`, and `expected_identity_substrings`. A mismatch on any field aborts with `RUST_REALITY_INNER_MODEL_PIN_*`. The current production pin is `qwen3_6_27b_q6_k_xl` referencing `qwen3.6-E4B-it-bf16.gguf` (15,053,094,880 bytes, SHA-256 prefix `23458339...`, minimum context 128,000 tokens, identity substring `qwen3.6`).
 
 ## Deny-by-default edit boundaries
 
@@ -122,7 +122,7 @@ The model is permitted to edit two things conceptually: a candidate patch and a 
 
 ## Grammar-constrained tool calls
 
-Tool calls are constrained by a GBNF grammar emitted by the GGUF's chat template (or supplied by `--gemma-chat-template`). The grammar is written to disk as `tool-grammar.gbnf`, byte-equal-verified, and then loaded into a `LlamaSampler` chain. The model cannot emit a tool call that fails the grammar; the sampler will not produce tokens that violate it. Three grammar variants are supported: strict, lazy-pattern (pattern-driven trigger), and lazy (free-text trigger). When the GGUF/template combination does not produce a tool grammar, the loop aborts with `RUST_REALITY_GEMMA_TOOL_GRAMMAR_MISSING`.
+Tool calls are constrained by a GBNF grammar emitted by the GGUF's chat template (or supplied by `--inner-chat-template`). The grammar is written to disk as `tool-grammar.gbnf`, byte-equal-verified, and then loaded into a `LlamaSampler` chain. The model cannot emit a tool call that fails the grammar; the sampler will not produce tokens that violate it. Three grammar variants are supported: strict, lazy-pattern (pattern-driven trigger), and lazy (free-text trigger). When the GGUF/template combination does not produce a tool grammar, the loop aborts with `RUST_REALITY_INNER_TOOL_GRAMMAR_MISSING`.
 
 ## Byte-equal readback on every persisted artefact
 
@@ -138,7 +138,7 @@ Pre-production policy is: when a record version changes, the database is wiped, 
 
 # The ContextGraph Reality Loop {#sec:reality-loop}
 
-The Reality Loop turns the criteria in Section 4 into a single Rust binary. This section walks through its lifecycle, its measurement contract, its in-process Gemma harness, its agent-tool surface, its prompt compiler, and the artefacts it writes.
+The Reality Loop turns the criteria in Section 4 into a single Rust binary. This section walks through its lifecycle, its measurement contract, its in-process the inner actor harness, its agent-tool surface, its prompt compiler, and the artefacts it writes.
 
 ## Lifecycle
 
@@ -152,7 +152,7 @@ The Reality Loop turns the criteria in Section 4 into a single Rust binary. This
 +-----------+-----------+
             |
             v
-   In-process Gemma harness (llama-cpp-2 -> llama.cpp)
+   In-process the inner actor harness (llama-cpp-2 -> llama.cpp)
    - LlamaModel + LlamaContext, all GPU layers, ctx>=128k, batch 2048
    - cryptographic pin (sha256 + size + identity substrings)
    - chat template from GGUF; GBNF tool grammar; greedy/seeded sampler chain
@@ -177,9 +177,9 @@ The Reality Loop turns the criteria in Section 4 into a single Rust binary. This
 A single attempt --- the unit of work the loop orchestrates --- consists of:
 
 1. Validate the task manifest against an immutable measurement contract.
-2. Load and cryptographically pin the Gemma GGUF.
+2. Load and cryptographically pin the the inner actor GGUF.
 3. Compile a deterministic prompt that includes verified failure evidence and the no-repeat-patch hash list.
-4. Drive the Gemma harness in-process under a GPU VRAM budget, with tool calls constrained by GBNF grammar.
+4. Drive the the inner actor harness in-process under a GPU VRAM budget, with tool calls constrained by GBNF grammar.
 5. Apply the candidate patch (built from the agent's `apply_*` tool submissions) to the real repository checked out at the exact `base_commit`.
 6. Validate fail-closed: no test/harness mutation, no patch repeat, patch must apply with `git apply`.
 7. Run the official Docker SWE-bench evaluator and read `resolved_ids` back from the JSON report.
@@ -206,8 +206,8 @@ The most consequential file in the system is the JSON object the loop writes to 
 | `immutable_boundaries.base_commit` | git SHA |
 | `immutable_boundaries.repo` | `owner/name` from manifest |
 | `immutable_boundaries.official_evaluator` | `python -m swebench.harness.run_evaluation` |
-| `immutable_boundaries.model_runtime.provider` | `contextgraph_rust_gemma_coding_harness` |
-| `immutable_boundaries.model_runtime.gemma_model_path` | `file:` path to BF16 GGUF |
+| `immutable_boundaries.model_runtime.provider` | `contextgraph_rust_inner_coding_harness` |
+| `immutable_boundaries.model_runtime.inner_model_path` | `file:` path to BF16 GGUF |
 | `immutable_boundaries.model_runtime.minimum_context_tokens` | `128_000` |
 | `immutable_boundaries.model_runtime.max_new_tokens` | `8192` |
 | `immutable_boundaries.model_runtime.temperature` | `0.0` |
@@ -226,30 +226,30 @@ The cryptographic pin (`config/ccreality_model_pins.json`) is loaded and validat
 
 The 10 mandatory readbacks are: `task_manifest_readback`, `measurement_contract_readback`, `git_head_equals_base_commit`, `git_status_clean_before_attempt`, `candidate_patch_applies_to_base`, `candidate_patch_does_not_modify_tests_or_harness`, `official_docker_sdk_preflight`, `official_swe_report_with_resolved_ids`, `blackbox_sqlite_ledger_counts`, and `reality_event_log_append_readback`. Each readback maps to a fail-closed gate enumerated in Appendix B.
 
-## The In-Process Gemma Harness
+## The In-Process the inner actor Harness
 
 The harness is the heart of the new architecture. It is a single Rust struct that owns:
 
 - A `LlamaBackend` (one per process; reused across attempts).
-- A `LlamaModel` loaded from the GGUF file at `models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf`.
+- A `LlamaModel` loaded from the GGUF file at `models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf`.
 - A `LlamaContext` with `n_ctx >= 128_000`, `n_batch = 2048`, all transformer layers offloaded to the GPU (`n_gpu_layers = u32::MAX`).
-- A `LlamaChatTemplate` (from the GGUF metadata `tokenizer.chat_template`, or from `--gemma-chat-template` if overridden).
+- A `LlamaChatTemplate` (from the GGUF metadata `tokenizer.chat_template`, or from `--inner-chat-template` if overridden).
 - A `LlamaSampler` chain composed of a grammar sampler followed by either a greedy or seeded distribution sampler.
 
 \begingroup\scriptsize
 
 | Knob | Default | Source |
 |--------------------------|---------------------|--------------------------|
-| `gemma_model_path` | `models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf` | `bin/reality-loop.rs:28` |
-| `gemma_model_pin_path` | `config/ccreality_model_pins.json` | `bin/reality-loop.rs:29` |
-| `gemma_model_pin_key` | `gemma4_e4b_bf16` | `bin/reality-loop.rs:30` |
-| `gemma_min_context_tokens` | 128,000 | `bin/reality-loop.rs:32` |
-| `gemma_max_new_tokens` | 8,192 | `bin/reality-loop.rs:33` |
-| `gemma_temperature` | 0.0 (deterministic) | `bin/reality-loop.rs:34` |
-| `gemma_top_p` | 0.9 | `bin/reality-loop.rs:35` |
-| `gemma_batch_size` | 2,048 | `bin/reality-loop.rs:36` |
-| `gemma_seed` | 1 | `bin/reality-loop.rs:37` |
-| `gemma_gpu_layers` | `u32::MAX` (all) | `bin/reality-loop.rs` |
+| `inner_model_path` | `models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf` | `bin/reality-loop.rs:28` |
+| `inner_model_pin_path` | `config/ccreality_model_pins.json` | `bin/reality-loop.rs:29` |
+| `inner_model_pin_key` | `qwen3_6_27b_q6_k_xl` | `bin/reality-loop.rs:30` |
+| `inner_min_context_tokens` | 128,000 | `bin/reality-loop.rs:32` |
+| `inner_max_new_tokens` | 8,192 | `bin/reality-loop.rs:33` |
+| `inner_temperature` | 0.0 (deterministic) | `bin/reality-loop.rs:34` |
+| `inner_top_p` | 0.9 | `bin/reality-loop.rs:35` |
+| `inner_batch_size` | 2,048 | `bin/reality-loop.rs:36` |
+| `inner_seed` | 1 | `bin/reality-loop.rs:37` |
+| `inner_gpu_layers` | `u32::MAX` (all) | `bin/reality-loop.rs` |
 
 \endgroup
 
@@ -263,21 +263,21 @@ The model file is loaded with `LlamaModel::load_from_file` after the cryptograph
 ```
 {
   "models": {
-    "gemma4_e4b_bf16": {
-      "description": "Gemma 4 E4B Instruction-Tuned, BF16 GGUF (full precision, lossless).",
-      "repo_id": "ggml-org/gemma-4-E4B-it-GGUF",
-      "filename": "gemma-4-E4B-it-bf16.gguf",
+    "qwen3_6_27b_q6_k_xl": {
+      "description": "Qwen3.6-27B Instruction-Tuned, BF16 GGUF (full precision, lossless).",
+      "repo_id": "ggml-org/qwen3.6-E4B-it-GGUF",
+      "filename": "qwen3.6-E4B-it-bf16.gguf",
       "expected_sha256": "sha256:23458339ab520c5632ab8251ba42ed8f30baa29e0c74210b3fcbe9a4b047720c",
       "expected_size_bytes": 15053094880,
       "expected_min_context_tokens": 128000,
-      "expected_identity_substrings": ["gemma4"]
+      "expected_identity_substrings": ["qwen3.6"]
     }
   }
 }
 ```
 \endgroup
 
-`load_model_pin()` parses the manifest, `validate_gemma_model_pin()` compares the on-disk file's SHA-256 and size, and `validate_gemma4_model_identity()` (called after model load) inspects the GGUF's `general.architecture` and `general.name` metadata fields and asserts every required identity substring (case-insensitive) is present. New model entries must include all six fields; missing fields fail closed.
+`load_model_pin()` parses the manifest, `validate_inner_model_pin()` compares the on-disk file's SHA-256 and size, and `validate_inner_model_identity()` (called after model load) inspects the GGUF's `general.architecture` and `general.name` metadata fields and asserts every required identity substring (case-insensitive) is present. New model entries must include all six fields; missing fields fail closed.
 
 The pin guards against silent model swaps: the harness will refuse to load a quantised version of the same model, a fine-tuned derivative, or an unrelated model with the same filename. This is a defence-in-depth feature: the deny list, the cargo build, the BF16 GGUF file, and the cryptographic pin all have to agree before inference proceeds.
 
@@ -455,7 +455,7 @@ Why a JEPA, and not an autoregressive token predictor? Three reasons:
 
 1. **Predicting in latent space is robust to surface variation.** Two sequences of pixel/token observations that are functionally equivalent can have wildly different surface forms; predicting in a learned latent compresses away the irrelevant variation [3].
 2. **The target encoder is trained without gradient leakage.** The EMA target encoder receives no gradient --- only an exponential moving average of the online encoder's weights. Stop-gradient on $z_{\text{target}}$ is applied via `.detach()`. This prevents the trivial collapse "make every encoding the same so prediction is easy" [7].
-3. **The architecture is small.** ME-JEPA's MLP totals well under a million parameters at default config. It is a *world model*, not a foundation model. It runs in real time on the same GPU that holds the embedding subsystem and the Gemma harness.
+3. **The architecture is small.** ME-JEPA's MLP totals well under a million parameters at default config. It is a *world model*, not a foundation model. It runs in real time on the same GPU that holds the embedding subsystem and the the inner actor harness.
 
 ## Loss
 
@@ -575,7 +575,7 @@ Source-of-truth file paths in tool output always start with `file:`. Any operato
 | BlackBoxFix ledger schema version | 14 |
 | Measurement contract schema | `contextgraph_reality_measurement_contract_v1` |
 | DynamicJEPA column families | 28 |
-| Production model GGUF | `gemma-4-E4B-it-bf16.gguf` (15,053,094,880 bytes) |
+| Production model GGUF | `qwen3.6-E4B-it-bf16.gguf` (15,053,094,880 bytes) |
 | Production model SHA-256 prefix | `23458339...` |
 | Production model min context | 128,000 tokens |
 | Production model max new tokens | 8,192 |
@@ -597,7 +597,7 @@ ContextGraph enforces a single-writer discipline through a Unix `flock(LOCK_EX |
 
 ## Hardware Dependency
 
-The in-process Gemma harness needs a CUDA GPU; ME-JEPA's `TrainConfig::validate` rejects any configuration where `schedule.device != "cuda"`. The Reality Loop refuses to call any model when free VRAM is below `--gpu-min-free-mb` (default 8 GB). The harness offloads all transformer layers to GPU (`gemma_gpu_layers = u32::MAX`); a BF16 GGUF of Gemma 4 E4B requires roughly 15 GB of VRAM resident plus context-cache memory. Operators on CPU-only or pre-Blackwell hardware cannot run the full stack today.
+The in-process the inner actor harness needs a CUDA GPU; ME-JEPA's `TrainConfig::validate` rejects any configuration where `schedule.device != "cuda"`. The Reality Loop refuses to call any model when free VRAM is below `--gpu-min-free-mb` (default 8 GB). The harness offloads all transformer layers to GPU (`inner_gpu_layers = u32::MAX`); a BF16 GGUF of Qwen3.6-27B requires roughly 15 GB of VRAM resident plus context-cache memory. Operators on CPU-only or pre-Blackwell hardware cannot run the full stack today.
 
 ## Docker Dependency for the Reality Loop
 
@@ -605,7 +605,7 @@ The Reality Loop refuses to enter the model loop without `--official-eval-each-a
 
 ## Single Pinned Local Model
 
-The Reality Loop is bound to a single local model: `gemma-4-E4B-it-bf16.gguf`, validated by the cryptographic pin in `config/ccreality_model_pins.json`. Earlier iterations of the project routed inference through a local Ollama daemon over HTTP and considered driving multiple models in parallel; both choices were retired so optimizer effort stays focused on harness quality for a single, pinned model. A future operator can re-introduce additional models, but doing so requires updating the pin manifest, the harness identity check, the smoke curriculum, and the prompt compiler in lockstep. Remote API models are out of scope: network introduces uncertainty (rate limits, transient errors, response-latency tail risk) that is hostile to the loop's discipline.
+The Reality Loop is bound to a single local model: `qwen3.6-E4B-it-bf16.gguf`, validated by the cryptographic pin in `config/ccreality_model_pins.json`. Earlier iterations of the project routed inference through a local Ollama daemon over HTTP and considered driving multiple models in parallel; both choices were retired so optimizer effort stays focused on harness quality for a single, pinned model. A future operator can re-introduce additional models, but doing so requires updating the pin manifest, the harness identity check, the smoke curriculum, and the prompt compiler in lockstep. Remote API models are out of scope: network introduces uncertainty (rate limits, transient errors, response-latency tail risk) that is hostile to the loop's discipline.
 
 ## No Backwards Compatibility
 
@@ -623,7 +623,7 @@ The ME-JEPA service currently supports `objective.kind = "latent_delta"` only. T
 
 ## No Outbound HTTP
 
-The Reality Loop never calls any HTTP API. The MCP server is the only network/IO surface, and the in-process Gemma harness has no network code at all. Tools that wrap external services (Docker, the official SWE-bench evaluator) are invoked via local sockets. This is enforced both by the `.claude/settings.json` deny list and by the absence of any `reqwest` call in `reality-loop.rs` that targets an off-host URL.
+The Reality Loop never calls any HTTP API. The MCP server is the only network/IO surface, and the in-process the inner actor harness has no network code at all. Tools that wrap external services (Docker, the official SWE-bench evaluator) are invoked via local sockets. This is enforced both by the `.claude/settings.json` deny list and by the absence of any `reqwest` call in `reality-loop.rs` that targets an off-host URL.
 
 ## Deny-Listed Files
 
@@ -635,7 +635,7 @@ The audit log column families `audit_log`, `audit_by_target`, `dj_audit_log`, `m
 
 ## Hash-Bound Predictions and Hash-Bound Inference
 
-Every ME-JEPA prediction record carries `model_artifact_hash_at_inference` --- the SHA-256 of the artefact file used to produce it. Every Gemma inference is preceded by the cryptographic pin check on the GGUF. If either artefact is later replaced or corrupted, the resulting predictions can still be traced back to the exact model version that produced them.
+Every ME-JEPA prediction record carries `model_artifact_hash_at_inference` --- the SHA-256 of the artefact file used to produce it. Every the inner actor inference is preceded by the cryptographic pin check on the GGUF. If either artefact is later replaced or corrupted, the resulting predictions can still be traced back to the exact model version that produced them.
 
 ## Permanent Merge and Importance History
 
@@ -722,7 +722,7 @@ What we hope a careful reader takes away is structural rather than feature-by-fe
 |                                                                      |
 |  reality-loop.rs (tokio::main)                                       |
 |   - Validates manifest against measurement-contract-v1               |
-|   - Cryptographically pins gemma-4-E4B-it-bf16.gguf                  |
+|   - Cryptographically pins qwen3.6-E4B-it-bf16.gguf                  |
 |   - Loads model in-process via llama-cpp-2                           |
 |   - Drives generation with GBNF-grammar-constrained sampler          |
 |   - Routes governed write tools (apply_line_window_edit, ...)        |
@@ -771,16 +771,16 @@ Three independent append-only stores form the substrate: BlackBoxFix SQLite (`LE
 
 | Constant | Value |
 |----------------------------------|-----------------------------|
-| `DEFAULT_MODEL` | `gemma4:e4b` |
-| `DEFAULT_GEMMA_MODEL_PATH` | `models/gemma4-e4b/gemma-4-E4B-it-bf16.gguf` |
-| `DEFAULT_GEMMA_MODEL_PIN_PATH` | `config/ccreality_model_pins.json` |
-| `DEFAULT_GEMMA_MODEL_PIN_KEY` | `gemma4_e4b_bf16` |
-| `DEFAULT_GEMMA_MIN_CONTEXT_TOKENS`| 128,000 |
-| `DEFAULT_GEMMA_MAX_NEW_TOKENS` | 8,192 |
-| `DEFAULT_GEMMA_TEMPERATURE` | 0.0 |
-| `DEFAULT_GEMMA_TOP_P` | 0.9 |
-| `DEFAULT_GEMMA_BATCH_SIZE` | 2,048 |
-| `DEFAULT_GEMMA_SEED` | 1 |
+| `DEFAULT_MODEL` | `qwen3.6:27b` |
+| `DEFAULT_INNER_MODEL_PATH` | `models/qwen3.6-e4b/qwen3.6-E4B-it-bf16.gguf` |
+| `DEFAULT_INNER_MODEL_PIN_PATH` | `config/ccreality_model_pins.json` |
+| `DEFAULT_INNER_MODEL_PIN_KEY` | `qwen3_6_27b_q6_k_xl` |
+| `DEFAULT_INNER_MIN_CONTEXT_TOKENS`| 128,000 |
+| `DEFAULT_INNER_MAX_NEW_TOKENS` | 8,192 |
+| `DEFAULT_INNER_TEMPERATURE` | 0.0 |
+| `DEFAULT_INNER_TOP_P` | 0.9 |
+| `DEFAULT_INNER_BATCH_SIZE` | 2,048 |
+| `DEFAULT_INNER_SEED` | 1 |
 | `DEFAULT_AGENT_TOOL_ROUNDS` | 24 |
 | `DEFAULT_GPU_MIN_FREE_MB` | 8,192 |
 | `DEFAULT_OFFICIAL_DOCKER_HOST` | `unix:///var/run/docker.sock` |
@@ -833,23 +833,23 @@ There are 38 gates across the Reality Loop and 17 across ME-JEPA. Each gate can 
 | 12 | `pass_to_pass_count > 0` | `RUST_REALITY_TASK_PASS_TO_PASS_MISSING` |
 | 13 | `source_of_truth` binds dataset + instance | `RUST_REALITY_TASK_SOURCE_OF_TRUTH_INCOMPLETE` |
 
-## Reality Loop --- Gemma Harness Gates
+## Reality Loop --- the inner actor Harness Gates
 
-The harness ships ~50 typed Gemma-prefix error codes. The most operationally consequential are listed below; the full set is enumerated in `crates/context-graph-cli/src/bin/reality-loop.rs` and grep-able as `RUST_REALITY_GEMMA_*`.
+The harness ships ~50 typed the inner actor-prefix error codes. The most operationally consequential are listed below; the full set is enumerated in `crates/context-graph-cli/src/bin/reality-loop.rs` and grep-able as `RUST_REALITY_INNER_*`.
 
 | # | Gate | Error code |
 |---|---|---|
-| 14 | Pin manifest readable + JSON valid | `RUST_REALITY_GEMMA_MODEL_PIN_CONFIG_MISSING` / `..._INVALID_JSON` |
-| 15 | GGUF file size matches `expected_size_bytes` | `RUST_REALITY_GEMMA_MODEL_SIZE_MISMATCH` |
-| 16 | GGUF SHA-256 matches `expected_sha256` | `RUST_REALITY_GEMMA_MODEL_SHA_MISMATCH` |
-| 17 | GGUF identity substrings present | `RUST_REALITY_GEMMA_MODEL_PIN_IDENTITY_SUBSTRING_MISSING` |
-| 18 | Loaded ctx satisfies `expected_min_context_tokens` | `RUST_REALITY_GEMMA_EFFECTIVE_CONTEXT_BELOW_REQUIRED_FLOOR` |
-| 19 | Chat template emits a tool grammar | `RUST_REALITY_GEMMA_TOOL_GRAMMAR_MISSING` |
-| 20 | `gemma_max_new_tokens > 0` and within ctx | `RUST_REALITY_GEMMA_MAX_NEW_TOKENS_INVALID` / `..._EXCEEDS_CONTEXT` |
-| 21 | `gemma_batch_size` valid | `RUST_REALITY_GEMMA_BATCH_SIZE_INVALID` / `..._TOO_LARGE` |
-| 22 | `gemma_temperature` finite, in `[0, 2]` | `RUST_REALITY_GEMMA_TEMPERATURE_INVALID` |
-| 22a | `gemma_top_p` finite, in `(0, 1]` | `RUST_REALITY_GEMMA_TOP_P_INVALID` |
-| 22b | Tool response parses as JSON | `RUST_REALITY_GEMMA_TOOL_RESPONSE_JSON_INVALID` / `..._PARSE_FAILED` |
+| 14 | Pin manifest readable + JSON valid | `RUST_REALITY_INNER_MODEL_PIN_CONFIG_MISSING` / `..._INVALID_JSON` |
+| 15 | GGUF file size matches `expected_size_bytes` | `RUST_REALITY_INNER_MODEL_SIZE_MISMATCH` |
+| 16 | GGUF SHA-256 matches `expected_sha256` | `RUST_REALITY_INNER_MODEL_SHA_MISMATCH` |
+| 17 | GGUF identity substrings present | `RUST_REALITY_INNER_MODEL_PIN_IDENTITY_SUBSTRING_MISSING` |
+| 18 | Loaded ctx satisfies `expected_min_context_tokens` | `RUST_REALITY_INNER_EFFECTIVE_CONTEXT_BELOW_REQUIRED_FLOOR` |
+| 19 | Chat template emits a tool grammar | `RUST_REALITY_INNER_TOOL_GRAMMAR_MISSING` |
+| 20 | `inner_max_new_tokens > 0` and within ctx | `RUST_REALITY_INNER_MAX_NEW_TOKENS_INVALID` / `..._EXCEEDS_CONTEXT` |
+| 21 | `inner_batch_size` valid | `RUST_REALITY_INNER_BATCH_SIZE_INVALID` / `..._TOO_LARGE` |
+| 22 | `inner_temperature` finite, in `[0, 2]` | `RUST_REALITY_INNER_TEMPERATURE_INVALID` |
+| 22a | `inner_top_p` finite, in `(0, 1]` | `RUST_REALITY_INNER_TOP_P_INVALID` |
+| 22b | Tool response parses as JSON | `RUST_REALITY_INNER_TOOL_RESPONSE_JSON_INVALID` / `..._PARSE_FAILED` |
 
 ## Reality Loop --- Execution Gates
 
@@ -859,7 +859,7 @@ The harness ships ~50 typed Gemma-prefix error codes. The most operationally con
 | 24 | `git status --porcelain` empty after reset | `RUST_REALITY_WORKSPACE_NOT_CLEAN_AFTER_RESET` |
 | 25 | Free GPU VRAM $\geq$ `--gpu-min-free-mb` | `RUST_REALITY_GPU_VRAM_BUDGET_EXCEEDED` |
 | 26 | Used GPU VRAM $\leq$ `--gpu-max-used-mb` | `RUST_REALITY_GPU_VRAM_BUDGET_EXCEEDED` |
-| 27 | Tool-call submissions parse against grammar | `RUST_REALITY_GEMMA_TOOL_RESPONSE_PARSE_FAILED` |
+| 27 | Tool-call submissions parse against grammar | `RUST_REALITY_INNER_TOOL_RESPONSE_PARSE_FAILED` |
 | 28 | Patch differs from previous attempts (SHA-256) | `RUST_REALITY_PATCH_REPEATED` |
 | 29 | Patch applies via `git apply` | `RUST_REALITY_PATCH_APPLY_FAILED` |
 | 30 | Patch does not touch test/fixture/harness | `RUST_REALITY_PATCH_TOUCHES_BENCHMARK` |
@@ -953,7 +953,7 @@ The deterministic prompt compiler enforces one hard semantic gate: a prompt is r
 
 **GBNF grammar.** A formal context-free grammar format used by llama.cpp (and `llama-cpp-2`) to constrain a language model's outputs token-by-token. The Reality Loop uses GBNF to make tool-call syntax mechanically un-malformable.
 
-**GGUF.** "GGML Universal Format" --- the on-disk format used by llama.cpp for quantised and full-precision LLM weights. The production model file is `gemma-4-E4B-it-bf16.gguf` (15.05 GB).
+**GGUF.** "GGML Universal Format" --- the on-disk format used by llama.cpp for quantised and full-precision LLM weights. The production model file is `qwen3.6-E4B-it-bf16.gguf` (15.05 GB).
 
 **Governed path policy.** The set of paths the ccreality harness is allowed to edit. Defined in `config/ccreality_governed_paths.json`.
 
@@ -1005,7 +1005,7 @@ The deterministic prompt compiler enforces one hard semantic gate: a prompt is r
 
 **SWE-bench Lite.** The benchmark dataset (`princeton-nlp/SWE-bench_Lite`) the Reality Loop targets [5,6].
 
-**Tool grammar.** The GBNF text emitted by the GGUF's chat template (or supplied via `--gemma-chat-template`). Constrains the model's tool-call syntax to a parseable form.
+**Tool grammar.** The GBNF text emitted by the GGUF's chat template (or supplied via `--inner-chat-template`). Constrains the model's tool-call syntax to a parseable form.
 
 **Typed edge.** A directed edge between two memories carrying an explicit relationship type.
 

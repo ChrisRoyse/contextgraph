@@ -12,7 +12,7 @@ The missing reality was:
 before harness state + model tool action -> observed tool result -> outcome label + learning signal
 ```
 
-Without that transition record, DynamicJEPA, Learning-as-UTL, and constellation machinery could only consume coarse attempt-level summaries. The agent loop could tell Gemma that an attempt failed, but not cleanly explain which harness behaviors moved the loop toward or away from verified success.
+Without that transition record, DynamicJEPA, Learning-as-UTL, and constellation machinery could only consume coarse attempt-level summaries. The agent loop could tell the inner actor that an attempt failed, but not cleanly explain which harness behaviors moved the loop toward or away from verified success.
 
 ## Implementation
 
@@ -120,7 +120,7 @@ Harness transition reality improves the next prompt and future training samples.
 
 To verify this feature manually:
 
-1. Run a real Gemma attempt through `target/debug/reality-loop`.
+1. Run a real the inner actor attempt through `target/debug/reality-loop`.
 2. Open `agent-tool-transcript.json`.
 3. For each `tool_results[].harness_transition`, read the referenced file.
 4. Verify `record_kind=contextgraph_harness_transition`.

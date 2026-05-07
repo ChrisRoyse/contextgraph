@@ -39,7 +39,7 @@ Initial content (functions populated in Task 1.4 by lifting from `reality-loop.r
 //!
 //! Lifted out of `bin/reality-loop.rs` during Phase 1 of the ccreality cutover
 //! (see docs/ccreality/phase-01-excision/). Used by:
-//! - `bin/reality-loop.rs` for the inner Gemma agent's apply_line_window_edit tool
+//! - `bin/reality-loop.rs` for the inner the inner actor agent's apply_line_window_edit tool
 //! - `crates/context-graph-mcp/src/handlers/tools/reality_loop/` (Phase 4) for
 //!   the MCP harness_apply_line_window_edit tool
 
@@ -165,14 +165,14 @@ This is a judgment call during execution. Either way, the verification just chec
 After all 18 tasks:
 - Approximately 6,500–7,500 lines.
 - No `deepseek|openai|gpt-5|chatgpt` substring (case-insensitive).
-- `struct Args` has ~25 fields (Gemma/Ollama/SWE-bench/GPU only).
+- `struct Args` has ~25 fields (the inner actor/Ollama/SWE-bench/GPU only).
 - `struct AttemptRecord` has ~17 fields (none mentioning openai/optimizer).
 - `run()` is shorter — the trigger+optimizer block is gone.
 - All preserved tests still compile and pass.
-- Imports `use context_graph_cli::governed_edit;` (or the equivalent) when the inner Gemma `tool_apply_line_window_edit` needs the lifted helpers (it does — see line 6204 in the original, which uses `compile_line_window_edits`; note that `compile_line_window_edits` is different from `project_apply_line_window_edits` and STAYS in `reality-loop.rs` because it operates on candidate-patch artifacts, not on project source files).
+- Imports `use context_graph_cli::governed_edit;` (or the equivalent) when the inner the inner actor `tool_apply_line_window_edit` needs the lifted helpers (it does — see line 6204 in the original, which uses `compile_line_window_edits`; note that `compile_line_window_edits` is different from `project_apply_line_window_edits` and STAYS in `reality-loop.rs` because it operates on candidate-patch artifacts, not on project source files).
 
 The KEEP/DELETE distinction is sharp:
-- **KEEP** (in `reality-loop.rs`): `compile_line_window_edits`, `compile_structured_edits` — these compile candidate patches from Gemma's tool calls. They write to attempt-N's candidate-patch.patch, not to the project tree.
+- **KEEP** (in `reality-loop.rs`): `compile_line_window_edits`, `compile_structured_edits` — these compile candidate patches from the inner actor's tool calls. They write to attempt-N's candidate-patch.patch, not to the project tree.
 - **LIFT** (to `governed_edit.rs`): `project_apply_line_window_edits` — this writes to the project tree (e.g. `crates/context-graph-cli/src/bin/reality-loop.rs` itself). Different semantics, different policy (path allowlist), different artifact (git diff, cargo check).
 
 ## What `attempt-summary.json` looks like after Task 1.11
@@ -198,7 +198,7 @@ The KEEP/DELETE distinction is sharp:
   "record_kind": "rust_reality_loop_failure",
   "created_at_unix": 1714896000,
   "args": {
-    "model": "gemma4:e4b",
+    "model": "qwen3.6:27b",
     "task_manifest": "...",
     "runtime_root": "...",
     "max_attempts": 1,

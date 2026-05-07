@@ -10,7 +10,7 @@ Three classes:
 
 - **DELETE** — code that exists only because of DeepSeek/OpenAI. Gone.
 - **REPLACE** — provider-agnostic shape we keep, but the body changes.
-- **KEEP** — provider-neutral helper used by the inner Gemma loop or governed agent tools.
+- **KEEP** — provider-neutral helper used by the inner the inner actor loop or governed agent tools.
 
 ## Constants (lines 22–37)
 
@@ -131,7 +131,7 @@ In the `#[cfg(test)] mod tests` block:
 - DELETE `openai_project_path_policy_blocks_secret_and_traversal` (10796) — same; MOVE if helper is moved.
 - DELETE `openai_self_reality_packet_records_outer_agent_reality` (10820)
 
-KEEP these tests (Gemma/inner-loop/agent-tool tests, all provider-neutral):
+KEEP these tests (the inner actor/inner-loop/agent-tool tests, all provider-neutral):
 - `tool_mediated_final_edit_submission_fsv` (9946)
 - `line_window_edit_submission_fsv` (10028)
 - `line_window_edit_rejects_stale_observed_sha256` (10111)
@@ -156,7 +156,7 @@ In `run()` (line 283):
 After excision the attempt loop becomes:
 
 ```
-build problem reality → execute Gemma → validate → official eval → reward → write attempt summary
+build problem reality → execute the inner actor → validate → official eval → reward → write attempt summary
 ```
 
 No outer optimizer is invoked from inside the engine.
@@ -175,7 +175,7 @@ DELETE the OpenAI/DeepSeek-specific keys from the failure JSON:
 - `optimizer_max_parallel_agents`
 - `optimizer_reward_regression_threshold`
 
-KEEP everything Gemma/Ollama/GPU/SWE-bench related.
+KEEP everything the inner actor/Ollama/GPU/SWE-bench related.
 
 ## `AttemptRecord` summary
 
@@ -218,7 +218,7 @@ These reference DeepSeek/OpenAI but are NOT in `reality-loop.rs`:
 | `docs2/CLAUDE_CODE_REALITY_LOOP_GUIDE.md` | Earlier draft | KEEP for historical context; mark superseded at top |
 | `docs2/DEEPSEEK_API_GUIDE.md` | Raw API ref | DELETE (no longer relevant) |
 | `docs2/.raw/02_pricing.md` … `docs2/.raw/13_anthropic_api.md` | Already deleted (per `git status`) | n/a — these are already shown deleted in working tree |
-| `tasks/GEMMA_DEMOS_FSV.md`, `tasks/TELEOX_GTM_MASTER.md`, `tasks/newdata/alldata.md` | Mention OpenAI/ChatGPT in unrelated contexts | LEAVE — out of reality-loop scope |
+| `tasks/INNER_DEMOS_FSV.md`, `tasks/TELEOX_GTM_MASTER.md`, `tasks/newdata/alldata.md` | Mention OpenAI/ChatGPT in unrelated contexts | LEAVE — out of reality-loop scope |
 | `docs/PAPER.md`, `docs/alldata.md`, `docs/leapableai_youtube_transcripts.md` | Unrelated | LEAVE |
 | `models/`, `models/multimodal/` | Hugging Face references mentioning openai-whisper, etc. | LEAVE — different concern |
 | `crates/context-graph-mcp/src/handlers/tools/entity_tools.rs` | Probably an example string mentioning OpenAI | INSPECT before action |

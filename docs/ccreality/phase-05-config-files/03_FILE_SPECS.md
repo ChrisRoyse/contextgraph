@@ -87,7 +87,7 @@ The skeleton (must be `additionalProperties: false`, all top-level fields requir
   "attempt": 3,
   "turn_number": 1,
   "status": "changed",
-  "reason": "Diagnosis showed Gemma's tool surface lacked an open_test_file action, so it was guessing test layout. Added that tool spec; cargo check + cargo test pass.",
+  "reason": "Diagnosis showed the inner actor's tool surface lacked an open_test_file action, so it was guessing test layout. Added that tool spec; cargo check + cargo test pass.",
   "source_files_changed": ["crates/context-graph-cli/src/bin/reality-loop.rs"],
   "verification_commands": [
     "cargo check -p context-graph-cli --bin reality-loop",
@@ -99,10 +99,10 @@ The skeleton (must be `additionalProperties: false`, all top-level fields requir
     "file:/tmp/.../attempt-3/reality-signal-packet.json",
     "file:/tmp/.../attempt-3/harness-transitions/round-04.json"
   ],
-  "next_gemma_prompt_delta": "Use the new open_test_file tool before drafting any patch that touches a file under tests/.",
+  "next_inner_prompt_delta": "Use the new open_test_file tool before drafting any patch that touches a file under tests/.",
   "expected_reward_signal_delta": "Tool grounding signal should rise from 0.42 to ~0.7 on next attempt; patch_signals.repeated_patch should drop to false.",
   "remaining_risks": [
-    "open_test_file tool spec may need additional path-policy hardening if Gemma tries to read outside the cloned repo",
+    "open_test_file tool spec may need additional path-policy hardening if the inner actor tries to read outside the cloned repo",
     "did not yet add corresponding telemetry signal in reality_signal_packet builder; second turn should add it"
   ],
   "memories_created": [],
@@ -113,7 +113,7 @@ The skeleton (must be `additionalProperties: false`, all top-level fields requir
   "shift_log_excerpt": ["01J9XYZ..."],
   "diagnosis_summary": {
     "failure_class": "tool_grounding_failure",
-    "root_cause_hypothesis": "Gemma was attempting blind test edits because no governed tool exposed the test file structure.",
+    "root_cause_hypothesis": "the inner actor was attempting blind test edits because no governed tool exposed the test file structure.",
     "evidence_paths": [
       "file:/tmp/.../attempt-3/agent-tool-transcript.json",
       "file:/tmp/.../attempt-3/reality-signal-packet.json"

@@ -4,13 +4,13 @@ Used everywhere in this directory. Whenever any term below feels ambiguous, this
 
 ## Core entities
 
-**Reality engine** — `target/release/reality-loop`. The Rust binary that runs Gemma SWE attempts, calls official SWE-bench Docker eval, and writes durable artifacts. Owned by ContextGraph; never edited by Claude Code directly (Claude Code edits its source via governed MCP `harness_*` tools).
+**Reality engine** — `target/release/reality-loop`. The Rust binary that runs the inner actor SWE attempts, calls official SWE-bench Docker eval, and writes durable artifacts. Owned by ContextGraph; never edited by Claude Code directly (Claude Code edits its source via governed MCP `harness_*` tools).
 
 **cgreality MCP server** — `target/release/context-graph-mcp --mode reality-loop`. The lightweight MCP server that exposes the reality-loop's analyze/interact/alter tool surface to Claude Code over stdio JSON-RPC.
 
 **Outer optimizer** — Claude Code (Opus 4.7). Reads reality, diagnoses failures, edits the harness, records a structured recommendation per turn.
 
-**Inner SWE actor** — Gemma 4 (gemma4:e4b on Ollama). Receives the problem-reality + reality-signal, navigates the repo through governed coding-agent tools, submits a candidate patch via `apply_line_window_edit` or `apply_structured_edit`. Phase 16 adds Qwen and Mistral as peer actors.
+**Inner SWE actor** — Qwen3.6 (qwen3.6:27b on Ollama). Receives the problem-reality + reality-signal, navigates the repo through governed coding-agent tools, submits a candidate patch via `apply_line_window_edit` or `apply_structured_edit`. Phase 16 adds Qwen and Mistral as peer actors.
 
 **ContextGraph** — the Rust workspace housing the engine, MCP, memory store, embedders, and DynamicJEPA.
 
@@ -50,7 +50,7 @@ Used everywhere in this directory. Whenever any term below feels ambiguous, this
 
 **Governed paths** — repo paths the optimizer can read/edit/run, defined in `config/ccreality_governed_paths.json`. Allow + deny lists. Deny wins over allow.
 
-**Governed coding-agent tools** — Gemma's tool surface (`open_file_window`, `apply_line_window_edit`, etc.) — *not* the optimizer's MCP `harness_*` tools.
+**Governed coding-agent tools** — the inner actor's tool surface (`open_file_window`, `apply_line_window_edit`, etc.) — *not* the optimizer's MCP `harness_*` tools.
 
 **Reward spec** — `gemmafrontend/reward_spec.verified_outcome.json`. Production scoring rules. Read-only to the optimizer; shadow specs are the only writable surface.
 

@@ -15,7 +15,7 @@ If we cannot observe it, we cannot optimize it. If we cannot verify it from dura
 | Docker health | Docker CLI path, socket, engine version, container status | Docker Desktop socket and `docker version` |
 | Disk health | free space before/after, run root size, Docker cache size | filesystem readback |
 | Runtime budget | elapsed time per attempt, per official eval, total loop time | command logs and run summaries |
-| GPU/model runtime | model loaded, prompt/eval tokens, latency, timeout, VRAM when available | Rust Gemma harness response artifacts and `nvidia-smi` readback |
+| GPU/model runtime | model loaded, prompt/eval tokens, latency, timeout, VRAM when available | Rust the inner actor harness response artifacts and `nvidia-smi` readback |
 | Process integrity | exit codes, stdout/stderr hashes, timeout status | process result artifacts |
 | Measurement contract | claim scope, success predicate, non-claims, forbidden scopes, mandatory readbacks | `<run_root>/measurement-contract.json` |
 
