@@ -1746,8 +1746,7 @@ async fn run(args: AttemptArgs) -> Result<Value> {
                 "source_of_truth": err.source_of_truth.clone(),
             }),
         };
-        let reward_spec =
-            resolve_path(Path::new("config/reward_spec.verified_outcome.json"))?;
+        let reward_spec = resolve_path(Path::new("config/reward_spec.verified_outcome.json"))?;
         let reward = if reward_spec.exists() {
             Some(
                 match blackbox(
@@ -2421,6 +2420,44 @@ fn compact_official_evidence(evidence: &Value) -> Value {
     })
 }
 
+/// CONTEXT-BUDGET: maximum size in bytes for a single tool result that gets
+/// embedded in the conversation history sent to the inner model. Tool results
+/// accumulate across rounds (each round's prompt = system + problem packet +
+/// all prior assistant messages + all prior tool results), so an unbounded
+/// 60 KB read_problem_reality output stacked across 24 rounds = ~1.4 MB of
+/// pure tool-result text in the round-24 prompt — enough to push past Qwen's
+/// 256K context AND make every round's prefill slow because we mint a fresh
+/// LlamaContext per chat call (full re-prefill of growing prompt).
+///
+/// 16 KB ≈ 4000 tokens is small enough to stack 20+ tool results inside a
+/// 100K-token budget with room for assistant thinking and the system prompt.
+/// Big enough to convey an open_file_window of ~250 source lines, an issue
+/// summary, or a directory listing of ~200 files. Bigger results get truncated
+/// with an explicit marker telling the model how to recover (call again with a
+/// narrower scope). The full result is always persisted to
+/// <tool_dir>/tool-result.json regardless of truncation.
+const TOOL_RESULT_HISTORY_CAP_BYTES: usize = 16 * 1024;
+
+fn truncate_tool_result_for_history(text: &str) -> String {
+    if text.len() <= TOOL_RESULT_HISTORY_CAP_BYTES {
+        return text.to_string();
+    }
+    // Find a UTF-8 char boundary at or before the cap so we never produce
+    // invalid UTF-8 (would break JSON serialization downstream).
+    let mut cut = TOOL_RESULT_HISTORY_CAP_BYTES;
+    while cut > 0 && !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    let kept = &text[..cut];
+    let elided = text.len() - cut;
+    format!(
+        "{kept}\n[CONTEXT-BUDGET-TRUNCATED: {elided} bytes elided from this tool result. \
+The full untruncated result is on disk at the source-of-truth path. To see what was elided, \
+re-call this tool with a tighter scope: open_file_window with a smaller line range, \
+search_repo with a more specific query, read_problem_reality with detail=compact, etc.]"
+    )
+}
+
 /// GC retention policy constants. These bound on-disk growth of the runtime root
 /// without losing recent diagnostic value. Tuned for a /loop running 24/7 on
 /// /tmp (typical /tmp = 100-1000 GB, but other tools also consume it).
@@ -2646,9 +2683,7 @@ fn gc_runtime_root(runtime_root: &Path) -> GcReport {
                     report.hook_events_truncated = true;
                     report.hook_events_bytes_after = after;
                 }
-                Err(e) => report
-                    .errors
-                    .push(format!("truncate hook-events: {}", e)),
+                Err(e) => report.errors.push(format!("truncate hook-events: {}", e)),
             }
         } else {
             report.hook_events_bytes_after = size;
@@ -4120,8 +4155,8 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
                 // VRAM (CUDA OOM, tokenizer OOM, KV cache spike) before erroring.
                 // Best-effort: ignore failures of read_gpu_vram_state itself.
                 if let Ok(gpu_after) = read_gpu_vram_state(args.gpu_index) {
-                    let path = tools_root
-                        .join(format!("tool-round-{round:02}-gpu-after-chat-error.json"));
+                    let path =
+                        tools_root.join(format!("tool-round-{round:02}-gpu-after-chat-error.json"));
                     let _ = write_json_checked(
                         &path,
                         &json!({
@@ -4284,7 +4319,20 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
                 result_status,
                 &tool_dir,
             )?;
-            let result_text = serde_json::to_string(&result_readback).unwrap();
+            // CONTEXT-BUDGET: tool results are the dominant context-growth driver
+            // across rounds. read_problem_reality(compact) can produce 60 KB, and
+            // open_file_window/search_repo on large files can be similar. Each
+            // result accumulates in the conversation history and gets re-prefilled
+            // every round (we mint a fresh LlamaContext per chat call). Without a
+            // cap, round-N prompt size is the sum of all prior results — quadratic
+            // attention cost on a 27B model crawls past ~50K tokens.
+            //
+            // Truncate the COPY that goes into history; the full JSON is still
+            // persisted at <tool_dir>/tool-result.json. The marker tells the inner
+            // model exactly how to recover (re-call with tighter scope) so this is
+            // not an information loss — just a context-budget discipline.
+            let full_result_text = serde_json::to_string(&result_readback).unwrap();
+            let result_text = truncate_tool_result_for_history(&full_result_text);
             messages.push(json!({
                 "role": "tool",
                 "name": name,
@@ -6262,8 +6310,22 @@ fn tool_run_targeted_test(ctx: &AgentToolContext<'_>, arguments: &Value) -> Resu
         test_id.clone(),
     ];
     let process = run_cmd(&command, ctx.repo_dir, ctx.args.targeted_test_timeout)?;
-    Ok(json!({
-        "status": if process.exit_code == 0 { "ok" } else { "failed" },
+    // Distinguish pytest exit codes so the inner actor does not misinterpret
+    // infrastructure problems (collection errors, missing test deps) as bad patches.
+    // Reference: https://docs.pytest.org/en/stable/reference/exit-codes.html
+    //   0 = all tests passed
+    //   1 = test assertion failure
+    //   2 = test execution interrupted
+    //   3 = pytest internal error
+    //   4 = pytest UsageError (e.g., conftest ImportError, missing test dep like 'hypothesis')
+    //   5 = no tests collected (test_id did not match any test)
+    let mut response = json!({
+        "status": match process.exit_code {
+            0 => "ok",
+            1 | 2 | 3 => "failed",
+            4 | 5 => "infra_unavailable",
+            _ => "failed",
+        },
         "action": "ran bounded targeted pytest in the real checkout",
         "test_id": test_id,
         "process": {
@@ -6275,7 +6337,36 @@ fn tool_run_targeted_test(ctx: &AgentToolContext<'_>, arguments: &Value) -> Resu
             "stderr_tail": tail_chars(&process.stderr, 6000)
         },
         "source_of_truth": format!("process:{LOCAL_PYTHON_BIN} -m pytest:{}", path_str(ctx.repo_dir))
-    }))
+    });
+    if let Some(obj) = response.as_object_mut() {
+        match process.exit_code {
+            1 => {
+                obj.insert("real_test_failure".to_string(), json!(true));
+            }
+            2 => {
+                obj.insert("interrupted".to_string(), json!(true));
+            }
+            3 => {
+                obj.insert("internal_error".to_string(), json!(true));
+            }
+            4 => {
+                obj.insert("collection_error".to_string(), json!(true));
+                obj.insert(
+                    "note".to_string(),
+                    json!("Test collection failed (often due to missing test infra dep such as hypothesis or a pytest plugin). This does NOT indicate a bad patch. If your apply_line_window_edit returned status:ok, your patch is already submitted; the official eval runs at end-of-attempt automatically."),
+                );
+            }
+            5 => {
+                obj.insert("no_tests_collected".to_string(), json!(true));
+                obj.insert(
+                    "note".to_string(),
+                    json!("pytest collected zero tests for this test_id. Verify the test_id matches a FAIL_TO_PASS entry from the task manifest. This does NOT indicate a bad patch."),
+                );
+            }
+            _ => {}
+        }
+    }
+    Ok(response)
 }
 
 fn tool_run_official_swe_eval(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<Value> {
@@ -6310,8 +6401,8 @@ fn tool_run_official_swe_eval(ctx: &AgentToolContext<'_>, arguments: &Value) -> 
         "run_official_swe_eval",
         "RUST_REALITY_TOOL_OFFICIAL_EVAL_REQUIRES_CANDIDATE_PATCH",
         "candidate.patch",
-        "official SWE-bench evaluation cannot run before the model has produced a candidate patch",
-        "call apply_line_window_edit, apply_structured_edit, or apply_unified_diff; the Rust loop will run official SWE-bench evaluation after validation passes",
+        "this tool only serves PRIOR completed-attempt evidence; official eval for the CURRENT attempt runs automatically when the attempt terminates. If your apply_line_window_edit returned status:ok, your patch is already submitted.",
+        "stop calling run_official_swe_eval and stop re-applying edits; allow the attempt to terminate so the outer loop can run the official eval automatically",
         json!({"requested_attempt": requested_attempt, "attempts_total": ctx.attempts.len()}),
         Some(format!("file:{}#attempts", path_str(ctx.attempt_dir))),
     ))
@@ -7055,8 +7146,25 @@ fn compile_line_window_edits(
             ));
         }
         let observed_sha256 = match edit.get("observed_sha256").and_then(Value::as_str) {
-            Some(value) if value.starts_with("sha256:") => value,
-            _ => {
+            Some(value) if value.starts_with("sha256:") => value.to_string(),
+            Some(value)
+                if value.len() == 64 && value.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) =>
+            {
+                // Lenient normalization: bare 64-hex is accepted and prefixed
+                // internally. Downstream byte-for-byte comparison still validates                // the actual hash, so this introduces zero integrity risk.
+                format!("sha256:{value}")
+            }
+            Some(value) => {
+                return Ok(structured_edit_failure(
+                    "RUST_REALITY_LINE_EDIT_OBSERVED_SHA_FORMAT_INVALID",
+                    &format!("{field_prefix}.observed_sha256"),
+                    "line-window edit observed_sha256 has an unrecognized format",
+                    "observed_sha256 must be 'sha256:<64-hex>' or bare '<64-hex>' (will be normalized)",
+                    json!({"path": path, "received": value}),
+                    &edits_path,
+                ));
+            }
+            None => {
                 return Ok(structured_edit_failure(
                     "RUST_REALITY_LINE_EDIT_OBSERVED_SHA_MISSING",
                     &format!("{field_prefix}.observed_sha256"),
@@ -7143,6 +7251,15 @@ fn compile_line_window_edits(
         let mut after = String::with_capacity(before.len() + replace.len());
         after.push_str(&before[..byte_start]);
         after.push_str(replace);
+        // line_spans uses split_inclusive('\n'), so byte_end points to the first byte
+        // of the line AFTER end_line (i.e. before[byte_end..] begins with that line's
+        // text content, not a leading '\n'). If the model's replace text does not end
+        // with '\n' and we are not at end-of-file, we must insert the missing newline
+        // separator; otherwise replace's last line silently merges with the next line,
+        // producing invalid source (e.g. two Python statements concatenated on one line).
+        if !replace.ends_with('\n') && byte_end < before.len() {
+            after.push('\n');
+        }
         after.push_str(&before[byte_end..]);
         original_contents
             .entry(path.to_string())
@@ -12422,7 +12539,10 @@ diff --git a/src/example.py b/src/example.py
             .push("definitely-not-a-real-model-name-xyzzy".to_string());
         let identity: BTreeMap<String, String> = [
             ("general.architecture".to_string(), "qwen3".to_string()),
-            ("general.name".to_string(), "Qwen3.6-27B-Instruct".to_string()),
+            (
+                "general.name".to_string(),
+                "Qwen3.6-27B-Instruct".to_string(),
+            ),
         ]
         .into_iter()
         .collect();

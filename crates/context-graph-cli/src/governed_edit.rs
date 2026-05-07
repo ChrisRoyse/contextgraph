@@ -256,20 +256,36 @@ pub fn project_apply_line_window_edits(
                 Some(file_sot(&edits_path)),
             ));
         }
-        let observed_sha256 = edit
-            .get("observed_sha256")
-            .and_then(Value::as_str)
-            .filter(|value| value.starts_with("sha256:"))
-            .ok_or_else(|| {
-                GovernedEditError::new(
+        let observed_sha256 = match edit.get("observed_sha256").and_then(Value::as_str) {
+            Some(value) if value.starts_with("sha256:") => value.to_string(),
+            Some(value)
+                if value.len() == 64 && value.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) =>
+            {
+                // Lenient normalization: bare 64-hex is accepted and prefixed
+                // internally. Downstream byte-for-byte comparison still validates                // the actual hash, so this introduces zero integrity risk.
+                format!("sha256:{value}")
+            }
+            Some(value) => {
+                return Err(GovernedEditError::new(
+                    "RUST_REALITY_GOVERNED_PROJECT_EDIT_SHA_FORMAT_INVALID",
+                    "project edit observed_sha256 has an unrecognized format",
+                    format!("{field_prefix}.observed_sha256"),
+                    "observed_sha256 must be 'sha256:<64-hex>' or bare '<64-hex>' (will be normalized)",
+                    json!({"path": path, "received": value}),
+                    Some(file_sot(&edits_path)),
+                ));
+            }
+            None => {
+                return Err(GovernedEditError::new(
                     "RUST_REALITY_GOVERNED_PROJECT_EDIT_SHA_MISSING",
                     "project edit must include observed_sha256 from project_file_window",
                     format!("{field_prefix}.observed_sha256"),
                     "read the file first, then edit against that exact source reality",
                     json!({"path": path}),
                     Some(file_sot(&edits_path)),
-                )
-            })?;
+                ));
+            }
+        };
         let replace = edit.get("replace").and_then(Value::as_str).ok_or_else(|| {
             GovernedEditError::new(
                 "RUST_REALITY_GOVERNED_PROJECT_EDIT_REPLACE_MISSING",
@@ -329,6 +345,15 @@ pub fn project_apply_line_window_edits(
         let mut after = String::with_capacity(before.len() + replace.len());
         after.push_str(&before[..byte_start]);
         after.push_str(replace);
+        // line_spans uses split_inclusive('\n'), so byte_end points to the first byte
+        // of the line AFTER end_line (i.e. before[byte_end..] begins with that line's
+        // text content, not a leading '\n'). If the model's replace text does not end
+        // with '\n' and we are not at end-of-file, we must insert the missing newline
+        // separator; otherwise replace's last line silently merges with the next line,
+        // producing invalid source (e.g. two Python statements concatenated on one line).
+        if !replace.ends_with('\n') && byte_end < before.len() {
+            after.push('\n');
+        }
         after.push_str(&before[byte_end..]);
         write_text_checked(&full_path, &after)?;
         let readback = fs::read_to_string(&full_path).map_err(|err| {
