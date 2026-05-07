@@ -278,20 +278,47 @@ fn validate_ledger_where(where_clause: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
-fn locate_engine_binary() -> Result<PathBuf> {
-    let root = project_root()?;
-    let bin = root.join("target/debug/reality-loop");
-    if !bin.is_file() {
-        return Err(CCRealityError::new(
-            "CCREALITY_ENGINE_BINARY_MISSING",
-            "target/debug/reality-loop is missing",
-            "engine.binary",
-            "run cargo build -p context-graph-cli --bin reality-loop",
-            json!({"path": bin.display().to_string()}),
-            Some(file_sot(&bin)),
-        ));
+/// Locate the reality-loop CLI binary. Prefers release over debug so that the
+/// MCP server picks up production rebuilds without needing path-specific config.
+/// Operator override via `CGREALITY_REALITY_LOOP_BIN` always wins.
+///
+/// Made `pub(super)` so the harness-write tools in `alter.rs` can shell out
+/// through the same binary-resolution path as `interact.rs` engine spawns.
+pub(super) fn locate_engine_binary() -> Result<PathBuf> {
+    if let Ok(env_bin) = std::env::var("CGREALITY_REALITY_LOOP_BIN") {
+        let bin = PathBuf::from(env_bin);
+        if !bin.is_file() {
+            return Err(CCRealityError::new(
+                "CCREALITY_ENGINE_BINARY_MISSING",
+                "CGREALITY_REALITY_LOOP_BIN points to a missing file",
+                "engine.binary",
+                "fix or unset CGREALITY_REALITY_LOOP_BIN",
+                json!({"path": bin.display().to_string()}),
+                Some(file_sot(&bin)),
+            ));
+        }
+        return Ok(bin);
     }
-    Ok(bin)
+    let root = project_root()?;
+    let release = root.join("target/release/reality-loop");
+    if release.is_file() {
+        return Ok(release);
+    }
+    let debug = root.join("target/debug/reality-loop");
+    if debug.is_file() {
+        return Ok(debug);
+    }
+    Err(CCRealityError::new(
+        "CCREALITY_ENGINE_BINARY_MISSING",
+        "neither target/release/reality-loop nor target/debug/reality-loop exists",
+        "engine.binary",
+        "run cargo build --release -p context-graph-cli --bin reality-loop",
+        json!({
+            "release_path": release.display().to_string(),
+            "debug_path": debug.display().to_string()
+        }),
+        Some(file_sot(&release)),
+    ))
 }
 
 fn engine_output(tool: &str, bin: &Path, output: std::process::Output) -> Result<Value> {

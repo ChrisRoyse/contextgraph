@@ -96,6 +96,75 @@ enum Cmd {
     Replay(ReplayArgs),
     /// Full-state-verify every JSON artifact under a runtime root.
     Verify(VerifyArgs),
+    /// Governed harness operations (open file windows, apply edits, run commands, verify state).
+    /// Designed to be invoked as a fresh subprocess per call so the on-disk binary is always
+    /// the source of truth — the MCP server shells out to these to avoid stale-link staleness.
+    Harness(HarnessArgs),
+}
+
+#[derive(Parser, Debug, Clone)]
+struct HarnessArgs {
+    #[command(subcommand)]
+    cmd: HarnessCmd,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum HarnessCmd {
+    /// Read a window of lines from a governed file. Emits JSON envelope on stdout.
+    /// All inputs via argv; no stdin payload.
+    OpenWindow(HarnessOpenWindowArgs),
+    /// Apply line-window edits to a governed file. Edit payload (single edit object) on
+    /// stdin as JSON: {"path","start_line","end_line","observed_sha256","replace"}.
+    /// Stdin avoids argv length and quoting hazards on multi-line replace text.
+    ApplyLineWindowEdit(HarnessApplyLineWindowEditArgs),
+    /// Run an allowlisted shell command via the governed runner. Command string on stdin
+    /// as JSON: {"command": "..."}. Uses stdin to avoid argv quoting hazards.
+    RunCommand(HarnessRunCommandArgs),
+    /// Verify project state (cargo fmt + check + targeted test). All inputs via argv.
+    VerifyState(HarnessVerifyStateArgs),
+}
+
+#[derive(Parser, Debug, Clone)]
+struct HarnessOpenWindowArgs {
+    #[arg(long)]
+    path: String,
+    #[arg(long)]
+    start_line: u64,
+    #[arg(long)]
+    end_line: u64,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct HarnessApplyLineWindowEditArgs {
+    /// Where to write the diff/transition artifacts (attempt-relative).
+    #[arg(long)]
+    tool_dir: PathBuf,
+    /// Per-edit cargo wallclock cap.
+    #[arg(long, default_value_t = 120)]
+    timeout_secs: u64,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct HarnessRunCommandArgs {
+    /// Where to write the command output artifact (attempt-relative).
+    #[arg(long)]
+    tool_dir: PathBuf,
+    /// Wallclock cap for the command.
+    #[arg(long, default_value_t = 120)]
+    timeout_secs: u64,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct HarnessVerifyStateArgs {
+    /// Where to write the verification artifact (attempt-relative).
+    #[arg(long)]
+    tool_dir: PathBuf,
+    /// Either "reality_loop_only" (default) or "full".
+    #[arg(long, default_value = "reality_loop_only")]
+    scope: String,
+    /// Caller-supplied label embedded in the verification record.
+    #[arg(long, default_value = "cli")]
+    label: String,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -441,8 +510,179 @@ async fn main() {
         Cmd::TargetedTest(args) => dispatch_targeted_test(args).await,
         Cmd::Replay(args) => dispatch_replay(args).await,
         Cmd::Verify(args) => dispatch_verify(args).await,
+        Cmd::Harness(args) => dispatch_harness(args).await,
     };
     std::process::exit(exit_code);
+}
+
+async fn dispatch_harness(args: HarnessArgs) -> i32 {
+    match args.cmd {
+        HarnessCmd::OpenWindow(a) => harness_dispatch(harness_open_window(a)).await,
+        HarnessCmd::ApplyLineWindowEdit(a) => {
+            harness_dispatch(harness_apply_line_window_edit(a)).await
+        }
+        HarnessCmd::RunCommand(a) => harness_dispatch(harness_run_command(a)).await,
+        HarnessCmd::VerifyState(a) => harness_dispatch(harness_verify_state(a)).await,
+    }
+}
+
+async fn harness_dispatch<F>(future: F) -> i32
+where
+    F: std::future::Future<Output = std::result::Result<Value, Value>>,
+{
+    match future.await {
+        Ok(payload) => {
+            println!("{}", serde_json::to_string_pretty(&payload).unwrap());
+            0
+        }
+        Err(err_payload) => {
+            // Tool-level error — JSON envelope on STDOUT (machine-parseable),
+            // exit code 1 (per LSP/JSON-RPC convention: tool ran, returned an error).
+            // Reserve exit 2 for invocation errors (clap parse failure already exits 2)
+            // and exit 64+ for infrastructure crashes (panics, OOM).
+            println!("{}", serde_json::to_string_pretty(&err_payload).unwrap());
+            1
+        }
+    }
+}
+
+async fn harness_open_window(args: HarnessOpenWindowArgs) -> std::result::Result<Value, Value> {
+    let root = context_graph_cli::governed_edit::project_root()
+        .map_err(governed_error_to_json)?;
+    context_graph_cli::governed_edit::project_file_window(
+        &root,
+        &args.path,
+        args.start_line,
+        args.end_line,
+    )
+    .map_err(governed_error_to_json)
+}
+
+async fn harness_apply_line_window_edit(
+    args: HarnessApplyLineWindowEditArgs,
+) -> std::result::Result<Value, Value> {
+    let edit = read_stdin_json()?;
+    let root = context_graph_cli::governed_edit::project_root()
+        .map_err(governed_error_to_json)?;
+    context_graph_cli::governed_edit::project_apply_line_window_edits(
+        &root,
+        &args.tool_dir,
+        &[edit],
+        args.timeout_secs,
+    )
+    .map_err(governed_error_to_json)
+}
+
+async fn harness_run_command(
+    args: HarnessRunCommandArgs,
+) -> std::result::Result<Value, Value> {
+    let payload = read_stdin_json()?;
+    let command = payload
+        .get("command")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            json!({
+                "status": "error",
+                "error_code": "RUST_REALITY_HARNESS_RUN_COMMAND_FIELD_MISSING",
+                "message": "stdin JSON must contain a 'command' string field",
+                "field_path": "stdin.command",
+                "remediation": "pipe {\"command\": \"<allowlisted shell command>\"} on stdin",
+                "details": payload.clone(),
+                "source_of_truth": null
+            })
+        })?;
+    let root = context_graph_cli::governed_edit::project_root()
+        .map_err(governed_error_to_json)?;
+    context_graph_cli::governed_edit::run_governed_command(
+        &root,
+        &args.tool_dir,
+        command,
+        args.timeout_secs,
+    )
+    .map_err(governed_error_to_json)
+}
+
+async fn harness_verify_state(
+    args: HarnessVerifyStateArgs,
+) -> std::result::Result<Value, Value> {
+    let scope = match args.scope.as_str() {
+        "full" => context_graph_cli::governed_edit::VerifyScope::Full,
+        "reality_loop_only" => context_graph_cli::governed_edit::VerifyScope::RealityLoopOnly,
+        other => {
+            return Err(json!({
+                "status": "error",
+                "error_code": "RUST_REALITY_HARNESS_VERIFY_SCOPE_INVALID",
+                "message": format!("scope must be 'reality_loop_only' or 'full', got '{other}'"),
+                "field_path": "args.scope",
+                "remediation": "pass --scope reality_loop_only or --scope full",
+                "details": json!({"scope": other}),
+                "source_of_truth": null
+            }));
+        }
+    };
+    let root = context_graph_cli::governed_edit::project_root()
+        .map_err(governed_error_to_json)?;
+    context_graph_cli::governed_edit::verify_project_state(&root, &args.tool_dir, &args.label, scope)
+        .map_err(governed_error_to_json)
+}
+
+fn read_stdin_json() -> std::result::Result<Value, Value> {
+    use std::io::Read;
+    let mut buf = String::new();
+    std::io::stdin().read_to_string(&mut buf).map_err(|e| {
+        json!({
+            "status": "error",
+            "error_code": "RUST_REALITY_HARNESS_STDIN_READ_FAILED",
+            "message": format!("failed to read stdin: {e}"),
+            "field_path": "stdin",
+            "remediation": "ensure caller writes the JSON payload then closes stdin",
+            "details": json!({"io_error": e.to_string()}),
+            "source_of_truth": null
+        })
+    })?;
+    if buf.trim().is_empty() {
+        return Err(json!({
+            "status": "error",
+            "error_code": "RUST_REALITY_HARNESS_STDIN_EMPTY",
+            "message": "stdin was empty; expected a JSON payload",
+            "field_path": "stdin",
+            "remediation": "write the JSON payload to the child's stdin before closing it",
+            "details": json!({}),
+            "source_of_truth": null
+        }));
+    }
+    serde_json::from_str(&buf).map_err(|e| {
+        json!({
+            "status": "error",
+            "error_code": "RUST_REALITY_HARNESS_STDIN_JSON_INVALID",
+            "message": format!("stdin was not valid JSON: {e}"),
+            "field_path": "stdin",
+            "remediation": "send a single JSON document on stdin",
+            "details": json!({"stdin_preview": tail_str(&buf, 1024), "json_error": e.to_string()}),
+            "source_of_truth": null
+        })
+    })
+}
+
+fn governed_error_to_json(err: context_graph_cli::governed_edit::GovernedEditError) -> Value {
+    json!({
+        "status": "error",
+        "error_code": err.error_code,
+        "message": err.message,
+        "field_path": err.field_path,
+        "remediation": err.remediation,
+        "details": err.details,
+        "source_of_truth": err.source_of_truth
+    })
+}
+
+fn tail_str(s: &str, n: usize) -> String {
+    let len = s.chars().count();
+    if len <= n {
+        s.to_string()
+    } else {
+        s.chars().skip(len - n).collect()
+    }
 }
 
 async fn dispatch<F>(future: F, failure_runtime_root: &Path) -> i32
