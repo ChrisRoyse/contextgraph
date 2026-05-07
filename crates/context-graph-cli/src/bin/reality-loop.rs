@@ -10892,6 +10892,15 @@ fn parse_gpu_compute_process_rows(
                 Some("nvidia-smi:query-compute-apps".to_string()),
             )
         })?;
+        // nvidia-smi sentinel: when the driver cannot introspect a process's
+        // VRAM usage (common in WSL2 and for processes without proper introspection
+        // access), the used_memory field is "[N/A]" instead of an integer. This is
+        // not a parse failure — it means the row's memory contribution is unknown.
+        // Skip the row so the GpuState still reports a usable snapshot of the rows
+        // the driver could quantify, rather than failing the entire attempt.
+        if parts[3] == "[N/A]" {
+            continue;
+        }
         let used_memory_mb = parts[3].parse::<u64>().map_err(|err| {
             RealityError::new(
                 "RUST_REALITY_GPU_COMPUTE_APPS_MEMORY_PARSE_FAILED",
@@ -12867,6 +12876,21 @@ GPU-other, 9999, /usr/bin/other, 1024
             "RUST_REALITY_GPU_COMPUTE_APPS_MEMORY_PARSE_FAILED"
         );
         assert_eq!(err.field_path, "gpu_vram.compute_processes.used_memory_mb");
+    }
+
+    #[test]
+    fn gpu_compute_process_rows_skip_bracketed_na_memory_edge_fsv() {
+        // nvidia-smi sentinel: "[N/A]" memory means the driver could not
+        // introspect this process's VRAM usage. Skip the row, do not fail.
+        let raw = "GPU-target, 31923, [Not Found], [N/A]\n\
+                   GPU-target, 4242, /opt/contextgraph/reality-loop, 8192";
+        eprintln!("BEFORE_GPU_NA_SENTINEL raw={raw:?}");
+        let rows = parse_gpu_compute_process_rows(raw, "GPU-target")
+            .expect("[N/A] sentinel must be skipped, not failed");
+        eprintln!("AFTER_GPU_NA_SENTINEL rows={rows:#?}");
+        assert_eq!(rows.len(), 1, "the [N/A] row must be skipped");
+        assert_eq!(rows[0].pid, 4242);
+        assert_eq!(rows[0].used_memory_mb, 8192);
     }
 
     #[test]
