@@ -1825,16 +1825,62 @@ async fn run_reality_loop_stdio() -> Result<()> {
     use serde_json::{json, Value};
     use tokio::io::{AsyncBufReadExt, BufReader};
 
+    // ZOMBIE-PREVENTION (root-cause fix for accumulated stale --mode reality-loop
+    // processes): install the same defenses the default-mode stdio path uses.
+    //
+    //   1. PR_SET_PDEATHSIG: kernel delivers SIGTERM if Claude Code (our parent)
+    //      dies for any reason — crash, kill -9, OOM, hot-reload. This makes a
+    //      bare-orphaned MCP server impossible on Linux.
+    //
+    //   2. SIGTERM/SIGINT signal handlers: trigger the doomsday watchdog the
+    //      moment a signal lands, so we cannot ignore a kill request.
+    //
+    //   3. Doomsday watchdog (armed on every shutdown trigger): a separate OS
+    //      thread that calls libc::_exit(0) after DOOMSDAY_SECS regardless of
+    //      whether tokio is wedged. The kernel reaps all fds + flocks on _exit,
+    //      so even a hung in-flight tool call cannot leave us as a zombie.
+    //
+    // Without these, an `--mode reality-loop` server lingers indefinitely after
+    // Claude Code disconnects (observed: 3 procs alive 12+ hours, holding stdin
+    // sockets and PID file references).
+    install_parent_death_signal();
+
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
     let mut reader = BufReader::new(stdin);
     let mut writer = tokio::io::BufWriter::new(stdout);
     let mut line = String::new();
 
+    // Signal handlers run in parallel with the request loop; first to fire wins.
+    #[cfg(unix)]
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .map_err(|e| anyhow::anyhow!("failed to register SIGTERM handler: {e}"))?;
+
     loop {
         line.clear();
-        let read = reader.read_line(&mut line).await?;
+        let read = tokio::select! {
+            biased; // poll signals first so a kill request is never starved
+            _ = async {
+                #[cfg(unix)]
+                { sigterm.recv().await; }
+                #[cfg(not(unix))]
+                { std::future::pending::<()>().await; }
+            } => {
+                eprintln!("[reality-loop-stdio] SIGTERM received — initiating shutdown");
+                arm_doomsday_watchdog("SIGTERM");
+                0usize
+            }
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("[reality-loop-stdio] SIGINT received — initiating shutdown");
+                arm_doomsday_watchdog("SIGINT");
+                0usize
+            }
+            r = reader.read_line(&mut line) => r?,
+        };
         if read == 0 {
+            // EOF (Claude Code closed stdio) OR signal-triggered fall-through.
+            // Arm the watchdog so any hung in-flight tool call cannot pin us.
+            arm_doomsday_watchdog("stdio EOF");
             break;
         }
         let trimmed = line.trim();
