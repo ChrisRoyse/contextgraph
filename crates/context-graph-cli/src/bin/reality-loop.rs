@@ -15148,8 +15148,9 @@ fn swe_symbol_bucket(
 
 fn looks_like_source_path(path: &str) -> bool {
     [
-        ".py", ".rs", ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".c", ".cc", ".cpp", ".h",
-        ".hpp", ".cs", ".rb", ".php",
+        ".py", ".rs", ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".c", ".cc", ".cpp",
+        ".cxx", ".h", ".hh", ".hpp", ".hxx", ".cs", ".rb", ".php", ".swift", ".kt",
+        ".kts", ".scala",
     ]
     .iter()
     .any(|suffix| path.ends_with(suffix))
@@ -17174,6 +17175,10 @@ mod tests {
         assert_eq!(action["ast_symbol_kind"], "function");
         assert_eq!(action["ast_edit_kind"], "function_body");
         assert_eq!(action["ast_touched_node_count"], 1);
+        assert_eq!(action["semantic_provider"], "parser_symbol_graph");
+        assert_eq!(action["semantic_status"], "analyzed");
+        assert_eq!(action["patch_delta_kind"], "return_contract");
+        assert_eq!(action["api_contract_delta"], "return_changed");
         assert_eq!(action["symbol_bucket"], "function");
         assert_eq!(action["patch_scope_bucket"], "single_symbol");
     }
@@ -17181,15 +17186,15 @@ mod tests {
     #[test]
     fn dynamicjepa_ast_action_semantics_fail_closed_for_unsupported_source() {
         let (_temp, repo) = init_real_git_repo();
-        write_text_checked(&repo.join("src/main.go"), "package main\nfunc main() {}\n")
-            .expect("go source write");
+        write_text_checked(&repo.join("src/main.swift"), "func main() {}\n")
+            .expect("swift source write");
         let args = json!({
             "edits": [{
-                "path": "src/main.go",
-                "start_line": 2,
-                "end_line": 2,
-                "replace": "func main() { println(\"x\") }\n",
-                "observed_sha256": sha256_file(&repo.join("src/main.go")).expect("sha")
+                "path": "src/main.swift",
+                "start_line": 1,
+                "end_line": 1,
+                "replace": "func main() { print(\"x\") }\n",
+                "observed_sha256": sha256_file(&repo.join("src/main.swift")).expect("sha")
             }]
         });
         let err = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
