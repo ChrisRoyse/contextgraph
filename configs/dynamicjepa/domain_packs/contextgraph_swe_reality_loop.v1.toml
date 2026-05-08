@@ -161,7 +161,7 @@ required = true
 
 [[action.fields]]
 name = "ast_language"
-kind = { type = "categorical", variants = ["none", "python", "rust", "javascript", "typescript", "tsx", "mixed", "unknown"] }
+kind = { type = "categorical", variants = ["none", "python", "rust", "javascript", "typescript", "tsx", "go", "java", "c", "cpp", "csharp", "ruby", "php", "mixed", "unknown"] }
 required = true
 
 [[action.fields]]
@@ -193,6 +193,48 @@ max = 10000
 
 [[action.fields]]
 name = "ast_symbol_count"
+kind = { type = "i64" }
+required = true
+min = 0
+max = 10000
+
+[[action.fields]]
+name = "semantic_provider"
+kind = { type = "categorical", variants = ["none", "parser_symbol_graph", "compiler_lsp", "mixed", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "semantic_status"
+kind = { type = "categorical", variants = ["none", "analyzed", "syntax_error", "unsupported_language", "graph_missing", "mixed", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "symbol_visibility"
+kind = { type = "categorical", variants = ["none", "private", "public", "exported", "mixed", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "patch_delta_kind"
+kind = { type = "categorical", variants = ["none", "behavior_logic", "control_flow", "error_handling", "return_contract", "api_contract", "import_dependency", "data_shape", "test_assertion", "config", "mixed", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "control_flow_delta"
+kind = { type = "categorical", variants = ["none", "changed", "unchanged", "mixed", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "api_contract_delta"
+kind = { type = "categorical", variants = ["none", "signature_changed", "visibility_changed", "return_changed", "unchanged", "mixed", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "dependency_blast_radius"
+kind = { type = "categorical", variants = ["none", "local_symbol", "single_file", "cross_file", "cross_layer", "mixed", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "reverse_reference_count"
 kind = { type = "i64" }
 required = true
 min = 0
@@ -700,9 +742,9 @@ reject_inf = true
 
 [[instruments]]
 id = "action_ast_language"
-kind = { type = "categorical", variants = ["none", "python", "rust", "javascript", "typescript", "tsx", "mixed", "unknown"] }
+kind = { type = "categorical", variants = ["none", "python", "rust", "javascript", "typescript", "tsx", "go", "java", "c", "cpp", "csharp", "ruby", "php", "mixed", "unknown"] }
 input_fields = ["action.ast_language"]
-output_shape = [8]
+output_shape = [15]
 normalization = { type = "none" }
 required = true
 pair_kinds = ["cosine"]
@@ -790,6 +832,120 @@ kind = { type = "scalar" }
 input_fields = ["action.ast_symbol_count"]
 output_shape = [1]
 normalization = { type = "standard_score", mean = 1.0, std = 4.0 }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+min = 0.0
+max = 10000.0
+
+[[instruments]]
+id = "action_semantic_provider"
+kind = { type = "categorical", variants = ["none", "parser_symbol_graph", "compiler_lsp", "mixed", "unknown"] }
+input_fields = ["action.semantic_provider"]
+output_shape = [5]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_semantic_status"
+kind = { type = "categorical", variants = ["none", "analyzed", "syntax_error", "unsupported_language", "graph_missing", "mixed", "unknown"] }
+input_fields = ["action.semantic_status"]
+output_shape = [7]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_symbol_visibility"
+kind = { type = "categorical", variants = ["none", "private", "public", "exported", "mixed", "unknown"] }
+input_fields = ["action.symbol_visibility"]
+output_shape = [6]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_patch_delta_kind"
+kind = { type = "categorical", variants = ["none", "behavior_logic", "control_flow", "error_handling", "return_contract", "api_contract", "import_dependency", "data_shape", "test_assertion", "config", "mixed", "unknown"] }
+input_fields = ["action.patch_delta_kind"]
+output_shape = [12]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_control_flow_delta"
+kind = { type = "categorical", variants = ["none", "changed", "unchanged", "mixed", "unknown"] }
+input_fields = ["action.control_flow_delta"]
+output_shape = [5]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_api_contract_delta"
+kind = { type = "categorical", variants = ["none", "signature_changed", "visibility_changed", "return_changed", "unchanged", "mixed", "unknown"] }
+input_fields = ["action.api_contract_delta"]
+output_shape = [7]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_dependency_blast_radius"
+kind = { type = "categorical", variants = ["none", "local_symbol", "single_file", "cross_file", "cross_layer", "mixed", "unknown"] }
+input_fields = ["action.dependency_blast_radius"]
+output_shape = [7]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_reverse_reference_count"
+kind = { type = "scalar" }
+input_fields = ["action.reverse_reference_count"]
+output_shape = [1]
+normalization = { type = "standard_score", mean = 1.0, std = 8.0 }
 required = true
 pair_kinds = ["cosine"]
 version = 1
@@ -1071,6 +1227,14 @@ version = 1
 "action.ast_edit_kind" = "$.action.ast_edit_kind"
 "action.ast_touched_node_count" = "$.action.ast_touched_node_count"
 "action.ast_symbol_count" = "$.action.ast_symbol_count"
+"action.semantic_provider" = "$.action.semantic_provider"
+"action.semantic_status" = "$.action.semantic_status"
+"action.symbol_visibility" = "$.action.symbol_visibility"
+"action.patch_delta_kind" = "$.action.patch_delta_kind"
+"action.control_flow_delta" = "$.action.control_flow_delta"
+"action.api_contract_delta" = "$.action.api_contract_delta"
+"action.dependency_blast_radius" = "$.action.dependency_blast_radius"
+"action.reverse_reference_count" = "$.action.reverse_reference_count"
 "outcome.next_counter" = "$.outcome.next_counter"
 "outcome.outcome_label" = "$.outcome.outcome_label"
 "outcome.result_status" = "$.outcome.result_status"

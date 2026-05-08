@@ -2,7 +2,7 @@
 
 **Source files covered:**
 - `scripts/v4_2/README.md` (CAMD-DPO design rationale)
-- `scripts/v4_2/camd_lib.py` (ConstellationScorer, CAMDPairFilter, data classes)
+- `scripts/v4_2/camd_lib.py` (~492 lines: ConstellationScorer, CAMDPairFilter, data classes, STYLE_WEIGHTS)
 - `scripts/v4_2/extended_camd.py`, `extended_constellation.py`, `extended_ensemble.py`, `extended_fsv.py`, `extended_store.py` (E14 sidecar via LMDB)
 - `scripts/v4_2/mine_camd_pairs.py`, `mine_camd_pairs_extended.py`, `mine_camd_from_lmdb.py` (pair mining CLIs)
 - `scripts/v4_2/build_learner_dpo_pairs.py` (learner-conditioned DPO pairs)
@@ -11,11 +11,10 @@
 - `scripts/v4_2/cuda13_blackwell.py`, `cuda13_wsl_fsv.py`, `unified_realdata_fsv.py`, `bigunlock_fsv_lib.py`, `learner_state_bigunlock_fsv.py`, `smoke_dpo_v4_2.py`
 - `scripts/v4_2/shakespeare_*.py` (corpus FSV, empirical cycle, learner training FSV, learning event FSV, phase6 policy benchmark, state-conditioned FSV, embedding benchmark, constellation guard)
 - `scripts/v4_2/conceptual_capabilities_fsv.py`, `agent_workflow_learning.py`, `phase6_existing_data_inventory.py`
-- `scripts/_gemma_shakespeare_lib.py` (shared Rpc + probe helpers)
 - Rust counterparts:
-  - `crates/context-graph-benchmark/src/bin/causal_accuracy_bench.rs`, `causal_provenance_e2e_bench.rs`, `causal_e2e_bench.rs`, `causal_realdata_bench.rs`, `causal_provenance_llm_bench.rs`, `causal_prompt_experiment_bench.rs`, `causal_span_fix_bench.rs`, `causal_discovery_mcp_bench.rs`, `causal_embedding_bench.rs`, `causal_perf_bench.rs`, `causal_provenance_bench.rs`
   - `crates/context-graph-cli/src/commands/learning.rs` (`export-events-jsonl` — input source for `build_learner_dpo_pairs.py`)
   - `crates/context-graph-storage/src/teleological/` (CFs `CF_CONTRASTIVE_PAIRS`, `CF_CONSTELLATIONS`, `CF_LEARNING_EVENTS`, `CF_LEARNER_RETRIEVAL_LOG`)
+  - `crates/context-graph-benchmark/src/bin/causal_*.rs` (validation surface)
 
 **Cross-links:** [16_training_subsystem.md](16_training_subsystem.md), [17_constellation_subsystem.md](17_constellation_subsystem.md), [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md), [20_learning_subsystem.md](20_learning_subsystem.md), [21_dynamicjepa_subsystem.md](21_dynamicjepa_subsystem.md).
 
@@ -30,13 +29,15 @@ CAMD = **Constellation-Anchored Multi-View DPO** (per `scripts/v4_2/README.md`).
 
 Phase 6 adds **learner-conditioned DPO** that joins `CF_LEARNING_EVENTS` and `CF_LEARNER_RETRIEVAL_LOG` so the same prompt's two real assistant responses with different learner outcomes become one preference pair (`build_learner_dpo_pairs.py`).
 
-Base CAMD remains 13-view (E1-E13). E14 access is via the `extended_*` sidecar scripts and `bigunlock_fsv_lib.py`; sidecar embeddings live in an LMDB cache at `~/.contextgraph/extended_embeddings.lmdb` and never enter the sacred RocksDB store.
+**No Rust DPO trainer exists in this codebase.** A workspace-wide grep of `crates/context-graph-{core,embeddings,mcp,cli}/` for "CAMD" returns one comment in `crates/context-graph-core/src/learner_training.rs` ("…downstream DPO/RL trainers…") and one comment in `crates/context-graph-cli/src/commands/learning.rs` ("Include … needed by learner DPO pair mining."). All actual CAMD/DPO code lives in `scripts/v4_2/` (~15,000 lines of Python).
 
-There is **no Rust implementation of the DPO trainer itself** — DPO training runs entirely in Python via TRL. The Rust side provides:
+Base CAMD remains 13-view (E1-E13). E14 access is via the `extended_*` sidecar scripts and `bigunlock_fsv_lib.py`; sidecar embeddings live in an LMDB cache at `~/.contextgraph/extended_embeddings.lmdb` and never enter the sacred RocksDB store. The LMDB cache is referenced by `extended_store.py:50`, `unified_realdata_fsv.py:33`, `analyze_correlations.py:22`, `conceptual_capabilities_fsv.py:390`, `phase6_existing_data_inventory.py:399`.
+
+Rust-side support surface for CAMD-DPO:
 - The constellation scoring tool `score_against_constellation` consumed by the Python `ConstellationScorer`.
 - The contrastive pair store `CF_CONTRASTIVE_PAIRS` (~13,465 pairs as of 2026-04-21).
 - The `learning export-events-jsonl` CLI command that supplies inputs to `build_learner_dpo_pairs.py`.
-- 11+ causal benchmarks that validate fine-tuning impact end-to-end (see §6).
+- Causal benchmarks in `crates/context-graph-benchmark/src/bin/` that validate fine-tuning impact end-to-end (see §10).
 
 ## 2. Why CAMD-DPO Is Novel
 
@@ -68,7 +69,7 @@ Combined weighted cosine-to-constellation-centroid across the 5 style-discrimina
 | E12 (ColBERT per-token, 128D/token) | 0.30 | Per-token late-interaction — strongest style signal |
 | E13 (SPLADE sparse, 30K) | 0.25 | Sparse lexical expansion — archaic vocabulary detector |
 
-`STYLE_WEIGHTS` sums to exactly 1.0 (asserted at module load in `camd_lib.py:74`).
+`STYLE_WEIGHTS` sums to exactly 1.0 (asserted at module load — `camd_lib.py:74`).
 
 The 13-embedder index map (`camd_lib.py:49-63`) follows the daemon's `similarity_profile` ordering from `list_contrastive_pairs`:
 
@@ -169,7 +170,7 @@ Output directory: `~/.contextgraph/models/shakespeare_lora_v4_2/dpo`. Final adap
 
 ## 7. Learner-Conditioned DPO Pair Filter (`build_learner_dpo_pairs.py`)
 
-A pair is emitted only when **two real recorded assistant responses for the same `(task_id, query, retrieved_context)` group** exhibit different learner outcomes:
+A pair is emitted only when **two real recorded assistant responses for the same `(task_id, query, retrieved_context)` group** exhibit different learner outcomes. The Rust handler `record_learning_event` (see [20_learning_subsystem.md](20_learning_subsystem.md) §14.b) is the source of truth feeding this miner via `learning export-events-jsonl`. Contrastive pair shape and edge mining concepts live in [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md).
 
 | Threshold | Default | Meaning |
 | --- | --- | --- |
@@ -200,7 +201,7 @@ Output meta block carries `source = "learning_event_outcome"`, chosen/rejected `
 | --- | --- |
 | `hard_negative_scale ≥ 2.0` + `temperature 0.05` collapses logits | Use `hard_negative_scale = 1.0` (Rust E5 trainer default — see [16](16_training_subsystem.md) §4.3) |
 | LoRA dropout adds VRAM (tracked grad tensors) | Drop `batch_size 16 → 8` when dropout enabled (Rust E5 trainer — see [16](16_training_subsystem.md) §4.2) |
-| `Cell<bool>` inference-mode toggle (Rust embedder side) | LoRA train/inference paths share weights without re-instantiating |
+| `Cell<bool>` inference-mode toggle (Rust embedder side) | LoRA train/inference paths share weights without re-instantiating (see [16](16_training_subsystem.md) §4.2) |
 | Train/inference prefix mismatch (nomic-embed `search_document:`) | Prefix asserted at load time |
 | Best-stage selection by `directional_accuracy` is brittle | Select by `score_spread` (Rust trainer — see [16](16_training_subsystem.md) §4.7) |
 | Per-stage LoRA checkpoints | Each stage keeps the projection it was trained against; CAMD-DPO inherits this discipline |
@@ -241,42 +242,42 @@ These benchmarks consume the trained E5 weights (`models/causal/trained/lora_bes
 
 ## 11. Scripts Inventory (`scripts/v4_2/`)
 
-| Script | Lines | Role |
-| --- | --- | --- |
-| `__init__.py` | — | Module init |
-| `camd_lib.py` | ~492 | Base 13-view daemon client + filter + scorer |
-| `extended_camd.py` | 428 | E14 sidecar CAMD wrapper |
-| `extended_constellation.py` | 261 | E14 constellation extensions |
-| `extended_ensemble.py` | 508 | Multi-embedder ensemble scoring |
-| `extended_fsv.py` | 351 | Sidecar full-state verification |
-| `extended_store.py` | 420 | LMDB sidecar persistence |
-| `bigunlock_fsv_lib.py` | — | BigUnlock harness (sidecar) |
-| `learner_state_bigunlock_fsv.py` | 379 | Learner-state FSV |
-| `mine_camd_pairs.py` | 251 | Mine DPO pairs from `CF_CONTRASTIVE_PAIRS` |
-| `mine_camd_pairs_extended.py` | 353 | Sidecar (E14) variant |
-| `mine_camd_from_lmdb.py` | 300 | LMDB sidecar miner |
-| `build_learner_dpo_pairs.py` | ~283 | Learner-conditioned DPO pairs from learning events |
-| `train_camd_dpo.py` | 487 | TRL DPO training loop with telemetry |
-| `validate_camd.py` | 307 | 3-part pair validation (reward sanity, pair discrimination, stats) |
-| `analyze_correlations.py` | — | Cross-embedder correlation analysis |
-| `backfill_extended.py` | — | Backfill sidecar views |
-| `shakespeare_constellation_guard.py` | 551 | Constellation invariants for Shakespeare run |
-| `shakespeare_corpus_fsv.py` | 1113 | Corpus FSV |
-| `shakespeare_embedding_benchmark.py` | 926 | Embedding benchmark |
-| `shakespeare_empirical_cycle.py` | 732 | Closed-loop runner |
-| `shakespeare_learner_training_fsv.py` | 436 | Learner training FSV |
-| `shakespeare_learning_event_fsv.py` | 432 | Learning event ingest FSV |
-| `shakespeare_phase6_policy_benchmark.py` | 846 | State-conditioned policy benchmark |
-| `shakespeare_state_conditioned_fsv.py` | 387 | State-conditioned retrieval FSV |
-| `phase6_existing_data_inventory.py` | 426 | Phase-6 evidence inventory |
-| `agent_workflow_learning.py` | — | Agent workflow learning loop |
-| `conceptual_capabilities_fsv.py` | — | `get_capability_matrix` FSV |
-| `cuda13_blackwell.py` | 131 | CUDA 13 / RTX 5090 (compute_cap 12.0) helpers |
-| `cuda13_wsl_fsv.py` | 377 | WSL CUDA FSV |
-| `unified_realdata_fsv.py` | 448 | Unified real-data FSV |
-| `smoke_dpo_v4_2.py` | 252 | Smoke test |
+| Script | Role |
+| --- | --- |
+| `__init__.py` | Module init |
+| `camd_lib.py` (~492 lines) | Base 13-view daemon client + filter + scorer |
+| `extended_camd.py` (428) | E14 sidecar CAMD wrapper |
+| `extended_constellation.py` (261) | E14 constellation extensions |
+| `extended_ensemble.py` (508) | Multi-embedder ensemble scoring |
+| `extended_fsv.py` (351) | Sidecar full-state verification |
+| `extended_store.py` (420) | LMDB sidecar persistence |
+| `bigunlock_fsv_lib.py` | BigUnlock harness (sidecar) |
+| `learner_state_bigunlock_fsv.py` (379) | Learner-state FSV |
+| `mine_camd_pairs.py` (251) | Mine DPO pairs from `CF_CONTRASTIVE_PAIRS` |
+| `mine_camd_pairs_extended.py` (353) | Sidecar (E14) variant |
+| `mine_camd_from_lmdb.py` (300) | LMDB sidecar miner |
+| `build_learner_dpo_pairs.py` (~283) | Learner-conditioned DPO pairs from learning events |
+| `train_camd_dpo.py` (487) | TRL DPO training loop with telemetry |
+| `validate_camd.py` (307) | 3-part pair validation (reward sanity, pair discrimination, stats) |
+| `analyze_correlations.py` | Cross-embedder correlation analysis |
+| `backfill_extended.py` | Backfill sidecar views |
+| `shakespeare_constellation_guard.py` (551) | Constellation invariants for Shakespeare run |
+| `shakespeare_corpus_fsv.py` (1113) | Corpus FSV |
+| `shakespeare_embedding_benchmark.py` (926) | Embedding benchmark |
+| `shakespeare_empirical_cycle.py` (732) | Closed-loop runner |
+| `shakespeare_learner_training_fsv.py` (436) | Learner training FSV |
+| `shakespeare_learning_event_fsv.py` (432) | Learning event ingest FSV |
+| `shakespeare_phase6_policy_benchmark.py` (846) | State-conditioned policy benchmark |
+| `shakespeare_state_conditioned_fsv.py` (387) | State-conditioned retrieval FSV |
+| `phase6_existing_data_inventory.py` (426) | Phase-6 evidence inventory |
+| `agent_workflow_learning.py` | Agent workflow learning loop |
+| `conceptual_capabilities_fsv.py` | `get_capability_matrix` FSV |
+| `cuda13_blackwell.py` (131) | CUDA 13 / RTX 5090 (compute_cap 12.0) helpers |
+| `cuda13_wsl_fsv.py` (377) | WSL CUDA FSV |
+| `unified_realdata_fsv.py` (448) | Unified real-data FSV |
+| `smoke_dpo_v4_2.py` (252) | Smoke test |
 
-Total ≈ 15,447 lines of Python in `scripts/v4_2/`.
+Approximately 15,000 lines of Python in `scripts/v4_2/`.
 
 ## 12. Cache Sidecar and Output Paths
 
@@ -293,7 +294,7 @@ Total ≈ 15,447 lines of Python in `scripts/v4_2/`.
 ## 13. Source Notes
 
 - Base CAMD remains 13-view. E14 access is via `extended_*` sidecar scripts (no direct `camd_lib.py` change).
-- Learner-conditioned DPO joins `CF_LEARNER_RETRIEVAL_LOG` and `CF_LEARNING_EVENTS` to assemble pairs that account for affect state. The Rust handler `record_learning_event` (see [20](20_learning_subsystem.md) §12) is the source of truth.
+- Learner-conditioned DPO joins `CF_LEARNER_RETRIEVAL_LOG` and `CF_LEARNING_EVENTS` to assemble pairs that account for affect state. The Rust handler `record_learning_event` (see [20](20_learning_subsystem.md) §14.b) is the source of truth.
 - DPO trainer telemetry writes per-step JSONL for offline analysis. There is **no MCP integration for DPO training itself**; the MCP surface is restricted to evidence ingest (`record_learning_event`, `record_graph_learning_event`) and policy resolution (`resolve_learner_retrieval_policy`, `resolve_graph_learning_policy`).
 - The Rust DynamicJEPA subsystem ([21](21_dynamicjepa_subsystem.md)) is **separate** from CAMD-DPO and uses an entirely different training pipeline (Candle, CUDA, VICReg + EMA target encoder) that does **not** touch the LLM weights.
 - TRL 1.1.0 introduced `processing_class=` (replacing `tokenizer=`) and the `loss_type=['sigmoid','sft']` + `loss_weights` pattern for Reg-DPO. Older TRL used `rpo_alpha` + single `loss_type='sigmoid'` (`train_camd_dpo.py:399-414`).

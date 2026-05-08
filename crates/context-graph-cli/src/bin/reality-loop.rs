@@ -5804,7 +5804,15 @@ fn bootstrap_dynamicjepa_cold_start_panel(
             "ast_symbol_kind": "none",
             "ast_edit_kind": "none",
             "ast_touched_node_count": 0,
-            "ast_symbol_count": 0
+            "ast_symbol_count": 0,
+            "semantic_provider": "none",
+            "semantic_status": "none",
+            "symbol_visibility": "none",
+            "patch_delta_kind": "none",
+            "control_flow_delta": "none",
+            "api_contract_delta": "none",
+            "dependency_blast_radius": "none",
+            "reverse_reference_count": 0
         },
         "outcome": {
             "next_counter": 0,
@@ -6331,6 +6339,14 @@ fn inferred_dynamicjepa_action_from_tool(
         "ast_edit_kind": ast_semantics.edit_kind,
         "ast_touched_node_count": ast_semantics.touched_node_count,
         "ast_symbol_count": ast_semantics.symbol_count,
+        "semantic_provider": ast_semantics.semantic_provider,
+        "semantic_status": ast_semantics.semantic_status,
+        "symbol_visibility": ast_semantics.symbol_visibility,
+        "patch_delta_kind": ast_semantics.patch_delta_kind,
+        "control_flow_delta": ast_semantics.control_flow_delta,
+        "api_contract_delta": ast_semantics.api_contract_delta,
+        "dependency_blast_radius": ast_semantics.dependency_blast_radius,
+        "reverse_reference_count": ast_semantics.reverse_reference_count,
     }))
 }
 
@@ -6411,6 +6427,14 @@ struct SweAstEditSemantics {
     edit_kind: &'static str,
     touched_node_count: i64,
     symbol_count: i64,
+    semantic_provider: &'static str,
+    semantic_status: &'static str,
+    symbol_visibility: &'static str,
+    patch_delta_kind: &'static str,
+    control_flow_delta: &'static str,
+    api_contract_delta: &'static str,
+    dependency_blast_radius: &'static str,
+    reverse_reference_count: i64,
 }
 
 impl SweAstEditSemantics {
@@ -6423,6 +6447,14 @@ impl SweAstEditSemantics {
             edit_kind: "none",
             touched_node_count: 0,
             symbol_count: 0,
+            semantic_provider: "none",
+            semantic_status: "none",
+            symbol_visibility: "none",
+            patch_delta_kind: "none",
+            control_flow_delta: "none",
+            api_contract_delta: "none",
+            dependency_blast_radius: "none",
+            reverse_reference_count: 0,
         }
     }
 }
@@ -6469,6 +6501,34 @@ fn dynamicjepa_ast_edit_semantics(
         .iter()
         .map(|sem| sem.edit_kind)
         .collect::<BTreeSet<_>>();
+    let semantic_providers = per_path
+        .iter()
+        .map(|sem| sem.semantic_provider)
+        .collect::<BTreeSet<_>>();
+    let semantic_statuses = per_path
+        .iter()
+        .map(|sem| sem.semantic_status)
+        .collect::<BTreeSet<_>>();
+    let symbol_visibilities = per_path
+        .iter()
+        .map(|sem| sem.symbol_visibility)
+        .collect::<BTreeSet<_>>();
+    let patch_delta_kinds = per_path
+        .iter()
+        .map(|sem| sem.patch_delta_kind)
+        .collect::<BTreeSet<_>>();
+    let control_flow_deltas = per_path
+        .iter()
+        .map(|sem| sem.control_flow_delta)
+        .collect::<BTreeSet<_>>();
+    let api_contract_deltas = per_path
+        .iter()
+        .map(|sem| sem.api_contract_delta)
+        .collect::<BTreeSet<_>>();
+    let dependency_blast_radii = per_path
+        .iter()
+        .map(|sem| sem.dependency_blast_radius)
+        .collect::<BTreeSet<_>>();
     Ok(SweAstEditSemantics {
         language: collapse_ast_category(&languages, "mixed"),
         parse_status: if per_path.iter().any(|sem| sem.parse_status == "parsed") {
@@ -6490,6 +6550,21 @@ fn dynamicjepa_ast_edit_semantics(
             .map(|sem| sem.touched_node_count)
             .sum::<i64>(),
         symbol_count: per_path.iter().map(|sem| sem.symbol_count).sum::<i64>(),
+        semantic_provider: collapse_ast_category(&semantic_providers, "mixed"),
+        semantic_status: if per_path.iter().any(|sem| sem.semantic_status == "analyzed") {
+            "analyzed"
+        } else {
+            collapse_ast_category(&semantic_statuses, "none")
+        },
+        symbol_visibility: collapse_ast_category(&symbol_visibilities, "mixed"),
+        patch_delta_kind: collapse_ast_category(&patch_delta_kinds, "mixed"),
+        control_flow_delta: collapse_ast_category(&control_flow_deltas, "mixed"),
+        api_contract_delta: collapse_ast_category(&api_contract_deltas, "mixed"),
+        dependency_blast_radius: collapse_ast_category(&dependency_blast_radii, "mixed"),
+        reverse_reference_count: per_path
+            .iter()
+            .map(|sem| sem.reverse_reference_count)
+            .sum::<i64>(),
     })
 }
 
@@ -6524,6 +6599,14 @@ fn dynamicjepa_ast_semantics_for_path(
             edit_kind: "config",
             touched_node_count: 1,
             symbol_count: 1,
+            semantic_provider: "parser_symbol_graph",
+            semantic_status: "analyzed",
+            symbol_visibility: "none",
+            patch_delta_kind: "config",
+            control_flow_delta: "none",
+            api_contract_delta: "none",
+            dependency_blast_radius: "single_file",
+            reverse_reference_count: 0,
         });
     }
     let Some(language) = swe_ast_language_for_path(repo_relative_path) else {
@@ -6571,6 +6654,13 @@ fn dynamicjepa_ast_semantics_for_path(
         "javascript" => tree_sitter_javascript::LANGUAGE.into(),
         "typescript" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
         "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
+        "go" => tree_sitter_go::LANGUAGE.into(),
+        "java" => tree_sitter_java::LANGUAGE.into(),
+        "c" => tree_sitter_c::LANGUAGE.into(),
+        "cpp" => tree_sitter_cpp::LANGUAGE.into(),
+        "csharp" => tree_sitter_c_sharp::LANGUAGE.into(),
+        "ruby" => tree_sitter_ruby::LANGUAGE.into(),
+        "php" => tree_sitter_php::LANGUAGE_PHP_ONLY.into(),
         _ => unreachable!("language is constrained by swe_ast_language_for_path"),
     };
     parser.set_language(&language_fn).map_err(|err| {
@@ -6608,6 +6698,9 @@ fn dynamicjepa_ast_semantics_for_path(
     let mut node_kinds = BTreeSet::new();
     let mut symbol_kinds = BTreeSet::new();
     let mut edit_kinds = BTreeSet::new();
+    let mut symbol_visibilities = BTreeSet::new();
+    let mut touched_symbols = BTreeSet::new();
+    let mut changed_text = String::new();
     let mut touched = 0i64;
     for range in &ranges {
         let start = range.0.min(source.len());
@@ -6620,22 +6713,56 @@ fn dynamicjepa_ast_semantics_for_path(
         let semantic = dynamicjepa_ast_semantic_node(language, node, &source, repo_relative_path);
         node_kinds.insert(semantic.node_kind);
         symbol_kinds.insert(semantic.symbol_kind);
+        symbol_visibilities.insert(semantic.visibility);
+        if let Some(name) = semantic.symbol_name {
+            touched_symbols.insert(name);
+        }
         edit_kinds.insert(dynamicjepa_ast_edit_kind_for_range(
             semantic.node_kind,
             semantic.node_start_line,
             range.2,
         ));
+        changed_text.push_str(&source[start..end_exclusive.min(source.len())]);
+        changed_text.push('\n');
         touched += 1;
     }
+    let after_source = dynamicjepa_ast_after_source_for_path(tool_name, arguments, repo_relative_path, &source)?;
+    if let Some(after) = after_source.as_deref() {
+        changed_text.push_str(after);
+    } else if tool_name == "apply_unified_diff" {
+        changed_text.push_str(arguments.get("patch").and_then(Value::as_str).unwrap_or(""));
+    }
+    let reverse_reference_count =
+        dynamicjepa_reverse_reference_count(repo_dir, repo_relative_path, &touched_symbols)?;
+    let node_kind = collapse_ast_category(&node_kinds, "mixed");
+    let symbol_visibility = collapse_ast_category(&symbol_visibilities, "mixed");
+    let edit_kind = collapse_ast_category(&edit_kinds, "mixed");
 
     Ok(SweAstEditSemantics {
         language,
         parse_status: "parsed",
-        node_kind: collapse_ast_category(&node_kinds, "mixed"),
+        node_kind,
         symbol_kind: collapse_ast_category(&symbol_kinds, "mixed"),
-        edit_kind: collapse_ast_category(&edit_kinds, "mixed"),
+        edit_kind,
         touched_node_count: touched,
         symbol_count: symbol_kinds.iter().filter(|kind| **kind != "none").count() as i64,
+        semantic_provider: "parser_symbol_graph",
+        semantic_status: "analyzed",
+        symbol_visibility,
+        patch_delta_kind: dynamicjepa_patch_delta_kind(
+            repo_relative_path,
+            node_kind,
+            edit_kind,
+            symbol_visibility,
+            &changed_text,
+        ),
+        control_flow_delta: dynamicjepa_control_flow_delta(&changed_text),
+        api_contract_delta: dynamicjepa_api_contract_delta(edit_kind, symbol_visibility, &changed_text),
+        dependency_blast_radius: dynamicjepa_dependency_blast_radius(
+            repo_relative_path,
+            reverse_reference_count,
+        ),
+        reverse_reference_count,
     })
 }
 
@@ -6673,6 +6800,26 @@ fn swe_ast_language_for_path(path: &str) -> Option<&'static str> {
         Some("tsx")
     } else if path.ends_with(".ts") || path.ends_with(".mts") || path.ends_with(".cts") {
         Some("typescript")
+    } else if path.ends_with(".go") {
+        Some("go")
+    } else if path.ends_with(".java") {
+        Some("java")
+    } else if path.ends_with(".c") || path.ends_with(".h") {
+        Some("c")
+    } else if path.ends_with(".cc")
+        || path.ends_with(".cpp")
+        || path.ends_with(".cxx")
+        || path.ends_with(".hpp")
+        || path.ends_with(".hh")
+        || path.ends_with(".hxx")
+    {
+        Some("cpp")
+    } else if path.ends_with(".cs") {
+        Some("csharp")
+    } else if path.ends_with(".rb") {
+        Some("ruby")
+    } else if path.ends_with(".php") {
+        Some("php")
     } else {
         None
     }
@@ -6854,6 +7001,178 @@ fn dynamicjepa_ast_unified_diff_ranges(
     Ok(ranges)
 }
 
+fn dynamicjepa_ast_after_source_for_path(
+    tool_name: &str,
+    arguments: &Value,
+    path: &str,
+    source: &str,
+) -> Result<Option<String>> {
+    match tool_name {
+        "apply_line_window_edit" => Ok(Some(dynamicjepa_apply_line_window_to_source(
+            arguments, path, source,
+        )?)),
+        "apply_structured_edit" => Ok(Some(dynamicjepa_apply_structured_to_source(
+            arguments, path, source,
+        )?)),
+        // Unified-diff semantic deltas are classified from the hunk text. The
+        // real apply path still uses `git apply --check` and physical readback;
+        // this extractor refuses to synthesize a partial after-file.
+        "apply_unified_diff" => Ok(None),
+        _ => Ok(None),
+    }
+}
+
+fn dynamicjepa_apply_line_window_to_source(
+    arguments: &Value,
+    path: &str,
+    source: &str,
+) -> Result<String> {
+    let edits = arguments
+        .get("edits")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SEMANTIC_LINE_EDITS_MISSING",
+                "semantic diff extraction requires an edits array for line-window edits",
+                "dynamicjepa.action.semantic.line_window.edits",
+                "provide the same governed line-window edits used by the mutating tool",
+                json!({"arguments": arguments}),
+                None,
+            )
+        })?;
+    let mut replacements = Vec::new();
+    for edit in edits {
+        if edit.get("path").and_then(Value::as_str) != Some(path) {
+            continue;
+        }
+        let replace = edit.get("replace").and_then(Value::as_str).ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SEMANTIC_LINE_REPLACE_MISSING",
+                "semantic diff extraction requires replacement text for line-window edits",
+                "dynamicjepa.action.semantic.line_window.replace",
+                "provide exact replacement text before pre-action planning or ingestion",
+                json!({"path": path, "edit": edit}),
+                None,
+            )
+        })?;
+        let start_line = edit
+            .get("start_line")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_SEMANTIC_LINE_START_MISSING",
+                    "semantic diff extraction requires start_line",
+                    "dynamicjepa.action.semantic.line_window.start_line",
+                    "provide exact governed line-window coordinates",
+                    json!({"path": path, "edit": edit}),
+                    None,
+                )
+            })?;
+        let end_line = edit.get("end_line").and_then(Value::as_u64).ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SEMANTIC_LINE_END_MISSING",
+                "semantic diff extraction requires end_line",
+                "dynamicjepa.action.semantic.line_window.end_line",
+                "provide exact governed line-window coordinates",
+                json!({"path": path, "edit": edit}),
+                None,
+            )
+        })?;
+        let (start, end, _) = line_range_to_byte_range(source, start_line, end_line, path)?;
+        replacements.push((start, end, replace.to_string()));
+    }
+    dynamicjepa_apply_byte_replacements(source, replacements, path)
+}
+
+fn dynamicjepa_apply_structured_to_source(
+    arguments: &Value,
+    path: &str,
+    source: &str,
+) -> Result<String> {
+    let edits = arguments
+        .get("edits")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SEMANTIC_STRUCTURED_EDITS_MISSING",
+                "semantic diff extraction requires an edits array for structured edits",
+                "dynamicjepa.action.semantic.structured.edits",
+                "provide exact find/replace edits before pre-action planning or ingestion",
+                json!({"arguments": arguments}),
+                None,
+            )
+        })?;
+    let mut replacements = Vec::new();
+    for edit in edits {
+        if edit.get("path").and_then(Value::as_str) != Some(path) {
+            continue;
+        }
+        let find = edit.get("find").and_then(Value::as_str).ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SEMANTIC_FIND_MISSING",
+                "semantic diff extraction requires a structured edit find span",
+                "dynamicjepa.action.semantic.structured.find",
+                "provide the exact find span used by the mutating tool",
+                json!({"path": path, "edit": edit}),
+                None,
+            )
+        })?;
+        let replace = edit.get("replace").and_then(Value::as_str).ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SEMANTIC_REPLACE_MISSING",
+                "semantic diff extraction requires structured edit replacement text",
+                "dynamicjepa.action.semantic.structured.replace",
+                "provide the exact replacement span used by the mutating tool",
+                json!({"path": path, "edit": edit}),
+                None,
+            )
+        })?;
+        let matches = source.match_indices(find).collect::<Vec<_>>();
+        if matches.len() != 1 {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SEMANTIC_FIND_NOT_UNIQUE",
+                "semantic diff extraction requires the structured find span to match exactly once",
+                "dynamicjepa.action.semantic.structured.find",
+                "use the latest source window and provide one unique find span",
+                json!({"path": path, "match_count": matches.len()}),
+                None,
+            ));
+        }
+        replacements.push((matches[0].0, matches[0].0 + find.len(), replace.to_string()));
+    }
+    dynamicjepa_apply_byte_replacements(source, replacements, path)
+}
+
+fn dynamicjepa_apply_byte_replacements(
+    source: &str,
+    mut replacements: Vec<(usize, usize, String)>,
+    path: &str,
+) -> Result<String> {
+    replacements.sort_by_key(|(start, _, _)| *start);
+    let mut cursor = 0usize;
+    let mut out = String::with_capacity(source.len());
+    for (start, end, replace) in replacements {
+        if start < cursor || end < start || end > source.len() {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SEMANTIC_REPLACEMENT_OVERLAP",
+                "semantic diff extraction refused overlapping or invalid edit spans",
+                "dynamicjepa.action.semantic.replacements",
+                "submit non-overlapping governed edits before DynamicJEPA action control",
+                json!({"path": path, "start": start, "end": end, "cursor": cursor, "source_len": source.len()}),
+                None,
+            ));
+        }
+        out.push_str(&source[cursor..start]);
+        out.push_str(&replace);
+        if !replace.ends_with('\n') && end < source.len() {
+            out.push('\n');
+        }
+        cursor = end;
+    }
+    out.push_str(&source[cursor..]);
+    Ok(out)
+}
+
 fn parse_unified_diff_old_range(line: &str, path: &str) -> Result<(u32, u32)> {
     let rest = line.strip_prefix("@@ -").ok_or_else(|| {
         RealityError::new(
@@ -6996,6 +7315,8 @@ struct AstSemanticNode {
     node_kind: &'static str,
     symbol_kind: &'static str,
     node_start_line: u32,
+    symbol_name: Option<String>,
+    visibility: &'static str,
 }
 
 fn dynamicjepa_ast_semantic_node(
@@ -7012,6 +7333,8 @@ fn dynamicjepa_ast_semantic_node(
                 node_kind,
                 symbol_kind: ast_symbol_kind_for_node_kind(node_kind),
                 node_start_line: candidate.start_position().row as u32 + 1,
+                symbol_name: ast_node_name(candidate, source),
+                visibility: ast_symbol_visibility(language, candidate, source),
             };
         }
         current = candidate.parent();
@@ -7020,6 +7343,11 @@ fn dynamicjepa_ast_semantic_node(
         node_kind: "module",
         symbol_kind: "module",
         node_start_line: 1,
+        symbol_name: Path::new(path)
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .map(ToOwned::to_owned),
+        visibility: "none",
     }
 }
 
@@ -7085,6 +7413,86 @@ fn ast_node_kind_for_language(
             "program" => "module",
             _ => "unknown",
         },
+        "go" => match kind {
+            "function_declaration" => {
+                if path_is_test(path)
+                    || ast_node_name(node, source).is_some_and(|name| name.starts_with("Test"))
+                {
+                    "test"
+                } else {
+                    "function"
+                }
+            }
+            "method_declaration" => "method",
+            "type_declaration" => "class",
+            "import_declaration" => "import",
+            "call_expression" => "call",
+            "short_var_declaration" | "var_declaration" | "assignment_statement"
+            | "const_declaration" => "assignment",
+            "source_file" => "module",
+            _ => "unknown",
+        },
+        "java" => match kind {
+            "method_declaration" | "constructor_declaration" => {
+                if path_is_test(path)
+                    || ast_node_name(node, source).is_some_and(|name| name.starts_with("test"))
+                {
+                    "test"
+                } else {
+                    "method"
+                }
+            }
+            "class_declaration" | "interface_declaration" | "enum_declaration"
+            | "record_declaration" => "class",
+            "import_declaration" => "import",
+            "method_invocation" | "object_creation_expression" => "call",
+            "local_variable_declaration" | "assignment_expression" | "field_declaration" => {
+                "assignment"
+            }
+            "program" => "module",
+            _ => "unknown",
+        },
+        "c" | "cpp" => match kind {
+            "function_definition" | "function_declarator" => "function",
+            "class_specifier" | "struct_specifier" | "enum_specifier" | "union_specifier" => "class",
+            "preproc_include" | "using_declaration" | "using_directive" => "import",
+            "call_expression" => "call",
+            "declaration" | "init_declarator" | "assignment_expression" => "assignment",
+            "translation_unit" => "module",
+            _ => "unknown",
+        },
+        "csharp" => match kind {
+            "method_declaration" | "constructor_declaration" => "method",
+            "class_declaration" | "interface_declaration" | "struct_declaration"
+            | "enum_declaration" | "record_declaration" => "class",
+            "using_directive" => "import",
+            "invocation_expression" | "object_creation_expression" => "call",
+            "variable_declaration" | "assignment_expression" | "field_declaration" => "assignment",
+            "compilation_unit" => "module",
+            _ => "unknown",
+        },
+        "ruby" => match kind {
+            "method" | "singleton_method" => "method",
+            "class" | "module" => "class",
+            "require" | "require_relative" => "import",
+            "call" | "command" => "call",
+            "assignment" | "operator_assignment" => "assignment",
+            "program" => "module",
+            _ => "unknown",
+        },
+        "php" => match kind {
+            "function_definition" => "function",
+            "method_declaration" => "method",
+            "class_declaration" | "interface_declaration" | "trait_declaration"
+            | "enum_declaration" => "class",
+            "namespace_use_declaration" | "require_expression" | "include_expression" => "import",
+            "function_call_expression" | "member_call_expression" | "object_creation_expression" => {
+                "call"
+            }
+            "assignment_expression" | "variable_name" => "assignment",
+            "program" => "module",
+            _ => "unknown",
+        },
         _ => "unknown",
     }
 }
@@ -7092,7 +7500,27 @@ fn ast_node_kind_for_language(
 fn ast_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
     node.child_by_field_name("name")
         .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+        .or_else(|| ast_first_identifier_text(node, source))
         .map(ToOwned::to_owned)
+}
+
+fn ast_first_identifier_text<'a>(node: tree_sitter::Node<'_>, source: &'a str) -> Option<&'a str> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if matches!(
+            child.kind(),
+            "identifier" | "field_identifier" | "property_identifier" | "type_identifier"
+                | "constant" | "simple_identifier" | "name" | "variable_name"
+        ) {
+            if let Ok(text) = child.utf8_text(source.as_bytes()) {
+                return Some(text);
+            }
+        }
+        if let Some(text) = ast_first_identifier_text(child, source) {
+            return Some(text);
+        }
+    }
+    None
 }
 
 fn ast_has_ancestor_kind(node: tree_sitter::Node<'_>, kind: &str) -> bool {
@@ -7104,6 +7532,64 @@ fn ast_has_ancestor_kind(node: tree_sitter::Node<'_>, kind: &str) -> bool {
         current = candidate.parent();
     }
     false
+}
+
+fn ast_symbol_visibility(
+    language: &'static str,
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> &'static str {
+    let node_text = node.utf8_text(source.as_bytes()).unwrap_or("");
+    let name = ast_node_name(node, source).unwrap_or_default();
+    match language {
+        "python" | "ruby" => {
+            if name.starts_with('_') && !name.starts_with("__") {
+                "private"
+            } else {
+                "public"
+            }
+        }
+        "go" => name
+            .chars()
+            .next()
+            .map(|ch| if ch.is_uppercase() { "exported" } else { "private" })
+            .unwrap_or("unknown"),
+        "rust" => {
+            if node_text.trim_start().starts_with("pub ")
+                || node_text.contains(" pub ")
+                || node_text.contains("pub(")
+            {
+                "public"
+            } else {
+                "private"
+            }
+        }
+        "javascript" | "typescript" | "tsx" => {
+            if node_text.trim_start().starts_with("export ") || node_text.contains("\nexport ") {
+                "exported"
+            } else {
+                "public"
+            }
+        }
+        "java" | "csharp" | "php" => {
+            if node_text.contains(" private ") || node_text.trim_start().starts_with("private ") {
+                "private"
+            } else if node_text.contains(" public ") || node_text.trim_start().starts_with("public ")
+            {
+                "public"
+            } else {
+                "unknown"
+            }
+        }
+        "c" | "cpp" => {
+            if node_text.trim_start().starts_with("static ") || node_text.contains("\nstatic ") {
+                "private"
+            } else {
+                "public"
+            }
+        }
+        _ => "unknown",
+    }
 }
 
 fn ast_symbol_kind_for_node_kind(node_kind: &str) -> &'static str {
@@ -7119,6 +7605,232 @@ fn ast_symbol_kind_for_node_kind(node_kind: &str) -> &'static str {
         "mixed" => "mixed",
         _ => "unknown",
     }
+}
+
+fn dynamicjepa_patch_delta_kind(
+    path: &str,
+    node_kind: &'static str,
+    edit_kind: &'static str,
+    symbol_visibility: &'static str,
+    changed_text: &str,
+) -> &'static str {
+    let lower = changed_text.to_ascii_lowercase();
+    if swe_path_bucket(&[path.to_string()], &[]) == "config_or_build" {
+        return "config";
+    }
+    if path_is_test(path) && contains_any(&lower, &["assert", "expect", "should", "pytest"]) {
+        return "test_assertion";
+    }
+    if edit_kind == "signature" || matches!(symbol_visibility, "public" | "exported") {
+        return "api_contract";
+    }
+    if contains_any(
+        &lower,
+        &["return ", "return\n", "->", "=>", " yield ", "yield "],
+    ) {
+        return "return_contract";
+    }
+    if contains_any(
+        &lower,
+        &["if ", "elif ", "else:", "for ", "while ", "match ", "switch", "case ", "?"],
+    ) {
+        return "control_flow";
+    }
+    if contains_any(
+        &lower,
+        &["except", "catch", "raise ", "throw ", "err(", "error", "result<", "panic!"],
+    ) {
+        return "error_handling";
+    }
+    if matches!(node_kind, "import") || contains_any(&lower, &["import ", "from ", "use ", "#include", "require"]) {
+        return "import_dependency";
+    }
+    if matches!(node_kind, "assignment") {
+        return "data_shape";
+    }
+    if changed_text.trim().is_empty() {
+        "none"
+    } else {
+        "behavior_logic"
+    }
+}
+
+fn dynamicjepa_control_flow_delta(changed_text: &str) -> &'static str {
+    let lower = changed_text.to_ascii_lowercase();
+    if contains_any(
+        &lower,
+        &[
+            "if ", "elif ", "else:", "for ", "while ", "match ", "switch", "case ", "break",
+            "continue", "try:", "catch", "except",
+        ],
+    ) {
+        "changed"
+    } else if changed_text.trim().is_empty() {
+        "none"
+    } else {
+        "unchanged"
+    }
+}
+
+fn dynamicjepa_api_contract_delta(
+    edit_kind: &'static str,
+    symbol_visibility: &'static str,
+    changed_text: &str,
+) -> &'static str {
+    let lower = changed_text.to_ascii_lowercase();
+    if edit_kind == "signature" {
+        "signature_changed"
+    } else if matches!(symbol_visibility, "public" | "exported")
+        && contains_any(&lower, &["pub ", "public ", "export ", "private "])
+    {
+        "visibility_changed"
+    } else if contains_any(&lower, &["return ", "->", "=>", ": "]) {
+        "return_changed"
+    } else if changed_text.trim().is_empty() {
+        "none"
+    } else {
+        "unchanged"
+    }
+}
+
+fn dynamicjepa_dependency_blast_radius(path: &str, reverse_reference_count: i64) -> &'static str {
+    if reverse_reference_count <= 0 {
+        "single_file"
+    } else if reverse_reference_count <= 2 {
+        "local_symbol"
+    } else if reverse_reference_count <= 12 {
+        "cross_file"
+    } else if swe_dependency_layer(&[path.to_string()], &[]) != "unknown" {
+        "cross_layer"
+    } else {
+        "cross_file"
+    }
+}
+
+fn contains_any(haystack: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| haystack.contains(needle))
+}
+
+fn dynamicjepa_reverse_reference_count(
+    repo_dir: &Path,
+    edited_path: &str,
+    symbols: &BTreeSet<String>,
+) -> Result<i64> {
+    if symbols.is_empty() {
+        return Ok(0);
+    }
+    let mut files = Vec::new();
+    collect_dynamicjepa_source_files(repo_dir, repo_dir, &mut files)?;
+    let mut count = 0i64;
+    for path in files {
+        let rel = path.strip_prefix(repo_dir).map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SEMANTIC_RELATIVE_PATH_FAILED",
+                "semantic dependency graph could not derive a repo-relative path",
+                "dynamicjepa.action.semantic.source_path",
+                "inspect repository checkout path canonicalization",
+                json!({"path": path_str(&path), "repo_dir": path_str(repo_dir), "error": err.to_string()}),
+                Some(file_sot(repo_dir)),
+            )
+        })?;
+        let rel = rel.to_string_lossy().replace('\\', "/");
+        if rel == edited_path {
+            continue;
+        }
+        let text = fs::read_to_string(&path).map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SEMANTIC_SOURCE_READ_FAILED",
+                "semantic dependency graph could not read a source file",
+                "dynamicjepa.action.semantic.repository_source",
+                "remove unreadable generated/binary files from source paths or fix checkout permissions",
+                json!({"path": file_sot(&path), "error": err.to_string()}),
+                Some(file_sot(&path)),
+            )
+        })?;
+        for symbol in symbols {
+            count = count.saturating_add(count_identifier_occurrences(&text, symbol) as i64);
+        }
+    }
+    Ok(count.min(10_000))
+}
+
+fn collect_dynamicjepa_source_files(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(dir).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_SEMANTIC_READDIR_FAILED",
+            "semantic dependency graph could not enumerate repository files",
+            "dynamicjepa.action.semantic.repository_walk",
+            "fix repository checkout permissions before training or pre-action control",
+            json!({"dir": file_sot(dir), "error": err.to_string()}),
+            Some(file_sot(dir)),
+        )
+    })? {
+        let entry = entry.map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SEMANTIC_DIRENTRY_FAILED",
+                "semantic dependency graph could not read a repository directory entry",
+                "dynamicjepa.action.semantic.repository_walk",
+                "fix repository checkout permissions before training or pre-action control",
+                json!({"dir": file_sot(dir), "error": err.to_string()}),
+                Some(file_sot(dir)),
+            )
+        })?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name == ".git" || name == "target" || name == "node_modules" || name == "__pycache__" {
+            continue;
+        }
+        let file_type = entry.file_type().map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SEMANTIC_FILETYPE_FAILED",
+                "semantic dependency graph could not inspect a repository path type",
+                "dynamicjepa.action.semantic.repository_walk.file_type",
+                "fix repository checkout permissions before training or pre-action control",
+                json!({"path": file_sot(&path), "error": err.to_string()}),
+                Some(file_sot(&path)),
+            )
+        })?;
+        if file_type.is_dir() {
+            collect_dynamicjepa_source_files(root, &path, out)?;
+        } else if file_type.is_file() {
+            let rel = path.strip_prefix(root).map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_SEMANTIC_RELATIVE_PATH_FAILED",
+                    "semantic dependency graph could not derive a repo-relative path",
+                    "dynamicjepa.action.semantic.source_path",
+                    "inspect repository checkout path canonicalization",
+                    json!({"path": path_str(&path), "repo_dir": path_str(root), "error": err.to_string()}),
+                    Some(file_sot(root)),
+                )
+            })?;
+            let rel = rel.to_string_lossy().replace('\\', "/");
+            if swe_ast_language_for_path(&rel).is_some() {
+                out.push(path);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn count_identifier_occurrences(text: &str, symbol: &str) -> usize {
+    if symbol.is_empty() {
+        return 0;
+    }
+    text.match_indices(symbol)
+        .filter(|(idx, _)| {
+            let before = if *idx == 0 {
+                None
+            } else {
+                text[..*idx].chars().next_back()
+            };
+            let after = text[*idx + symbol.len()..].chars().next();
+            !before.is_some_and(is_identifier_char) && !after.is_some_and(is_identifier_char)
+        })
+        .count()
+}
+
+fn is_identifier_char(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
 }
 
 fn dynamicjepa_ast_edit_kind_for_range(
@@ -13044,7 +13756,13 @@ fn validate_dynamicjepa_attempt_segment_drift(
                 Some(file_sot(dynamicjepa_db)),
             )
         })?;
-        for field in ["tool_family", "path_risk"] {
+        for field in [
+            "tool_family",
+            "path_risk",
+            "patch_delta_kind",
+            "dependency_blast_radius",
+            "semantic_status",
+        ] {
             let value = action.get(field).and_then(Value::as_str).ok_or_else(|| {
                 RealityError::new(
                     "RUST_REALITY_DYNAMICJEPA_DRIFT_EVENT_SEGMENT_MISSING",
@@ -13682,6 +14400,14 @@ fn action_fields_match(candidate_fields: &Value, observed_action: &Value) -> boo
         "ast_edit_kind",
         "ast_touched_node_count",
         "ast_symbol_count",
+        "semantic_provider",
+        "semantic_status",
+        "symbol_visibility",
+        "patch_delta_kind",
+        "control_flow_delta",
+        "api_contract_delta",
+        "dependency_blast_radius",
+        "reverse_reference_count",
     ];
     for field in HARD_ACTION_CONTROL_FIELDS {
         let Some(observed_value) = observed.get(*field) else {
@@ -14120,7 +14846,15 @@ fn dynamicjepa_swe_events_from_transcript(
                                 "ast_symbol_kind": ast_semantics.symbol_kind,
                                 "ast_edit_kind": ast_semantics.edit_kind,
                                 "ast_touched_node_count": ast_semantics.touched_node_count,
-                                "ast_symbol_count": ast_semantics.symbol_count
+                                "ast_symbol_count": ast_semantics.symbol_count,
+                                "semantic_provider": ast_semantics.semantic_provider,
+                                "semantic_status": ast_semantics.semantic_status,
+                                "symbol_visibility": ast_semantics.symbol_visibility,
+                                "patch_delta_kind": ast_semantics.patch_delta_kind,
+                                "control_flow_delta": ast_semantics.control_flow_delta,
+                                "api_contract_delta": ast_semantics.api_contract_delta,
+                                "dependency_blast_radius": ast_semantics.dependency_blast_radius,
+                                "reverse_reference_count": ast_semantics.reverse_reference_count
                             },
                             "outcome": {
                                 "next_counter": counter + delta,

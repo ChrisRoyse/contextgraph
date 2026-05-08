@@ -3,8 +3,9 @@
 **Source files covered:**
 - `crates/context-graph-core/src/training/{mod,computation,edge_signature,temporal,tests}.rs`
 - `crates/context-graph-core/src/learner_training.rs`
-- `crates/context-graph-storage/src/teleological/rocksdb_store/export.rs`
+- `crates/context-graph-storage/src/teleological/rocksdb_store/{export,learner_training,learning,learner}.rs`
 - `crates/context-graph-storage/src/teleological/column_families.rs` (`CF_TRAINING_RECORDS`, `CF_TYPED_EDGE_RECORDS`, `CF_LEARNER_TRAINING_DATASETS`, `CF_LEARNING_EVENTS`)
+- `crates/context-graph-mcp/src/handlers/tools/training_tools.rs` (~945 lines)
 - `crates/context-graph-mcp/src/tools/definitions/{training,typed_edges,learning}.rs`
 - `crates/context-graph-cli/src/commands/{export_training,learning,utl}.rs`
 - `crates/context-graph-cli/tests/{export_training_integration,learning_jsonl_export_integration}.rs`
@@ -17,7 +18,7 @@
 
 There are three distinct training surfaces in this repo:
 
-1. **Training-data export** (`context-graph-core` + `-storage` + `-mcp` + `-cli`) — turns the live memory graph into bincode `TrainingRecord` rows persisted to RocksDB column families. Used to feed offline pipelines.
+1. **Training-data export** (`context-graph-core` + `-storage` + `-mcp` + `-cli`) — turns the live memory graph into bincode `TrainingRecord` rows persisted to RocksDB. Used to feed offline pipelines.
 2. **Causal embedder fine-tuning** (`context-graph-embeddings/src/training/` + `bin/train_causal.rs`) — a 3-stage progressive LoRA + projection trainer for the E5 nomic-embed-text-v1.5 backbone. Outputs `models/causal/trained/{lora,projection_stage{1,2,3}_best}.safetensors`.
 3. **Learner-as-UTL training datasets** (`context-graph-core/src/learner_training.rs`) — matrix-shard compilation of `CF_LEARNING_EVENTS` and learner-state CFs into row-major f32 tensors with SHA-256 manifest, persisted to `CF_LEARNER_TRAINING_DATASETS`.
 
@@ -28,12 +29,13 @@ Cross-references:
 - Learner-state subsystem and 7-slot E15-E21 namespace: [20_learning_subsystem.md](20_learning_subsystem.md).
 - Embedder topology consumed by training (E1-E14, E5 dual vectors): [05_embedding_subsystem.md](05_embedding_subsystem.md).
 - Typed-edge training records and contrastive pair mining: [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md).
+- Memory-record fingerprint shape: [04_storage_layer.md](04_storage_layer.md).
 
 ## 1. TrainingRecord (v3) — Offline Export
 
 `TRAINING_RECORD_VERSION = 3` (`crates/context-graph-core/src/training/mod.rs:67`). v3 adds `e14_bge_m3_dense`. v1/v2 records are unreadable by the v3 decoder; per the no-backwards-compat policy callers must wipe the column family and re-export.
 
-### Record shape (`TrainingRecord`)
+### 1.1 Record shape (`TrainingRecord`)
 
 | Group | Field(s) | Notes |
 | --- | --- | --- |
@@ -49,11 +51,19 @@ Cross-references:
 | Topics | `topic_memberships: Vec<TopicMembership>` | Each carries `topic_profile: [f32; 14]` |
 | Temporal | `temporal_labels: Option<TemporalLabels>` | Phase-5 hour/day/month buckets, age, session position |
 | Tucker | `tucker_core: Option<TuckerCore>` | Phase-4 hook; `None` until Agent D populates it |
-| Typed-edge sig | `edge_type_distribution: [u32; 8]` | bincode positional, MUST stay last |
+| Typed-edge sig | `edge_type_distribution: [u32; 8]` | bincode positional, MUST stay last (append-only field) |
 
-`NUM_CROSS_CORRELATIONS = 91` (= C(14, 2)); `NUM_GROUP_ALIGNMENTS = 6`; `NUM_EDGE_TYPE_DISTRIBUTION = 8`.
+Counts (`crates/context-graph-core/src/training/mod.rs:67-74`):
 
-### `TrainingEdge` (`mod.rs:179-189`)
+| Constant | Value | Meaning |
+| --- | --- | --- |
+| `TRAINING_RECORD_VERSION` | 3 | On-disk version byte |
+| `NUM_EMBEDDERS` | 14 | Content embedder slot count (E1-E14) |
+| `NUM_CROSS_CORRELATIONS` | 91 | C(14, 2) — unique embedder pairs |
+| `NUM_GROUP_ALIGNMENTS` | 6 | Factual / Temporal / Causal / Relational / Qualitative / Implementation |
+| `NUM_EDGE_TYPE_DISTRIBUTION` | 8 | Per-`GraphLinkEdgeType` counts |
+
+### 1.2 `TrainingEdge` (`mod.rs:179-189`)
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -64,7 +74,7 @@ Cross-references:
 | `agreement_count` | `u8` | |
 | `embedder_scores` | `[f32; 14]` | Per-embedder similarity at edge creation time |
 
-### `CausalLabel` (`mod.rs:206-222`)
+### 1.3 `CausalLabel` (`mod.rs:206-222`)
 
 | Field | Notes |
 | --- | --- |
@@ -75,7 +85,7 @@ Cross-references:
 | `confidence: f32` | |
 | `mechanism_type: Option<String>` | `"direct"` / `"mediated"` / `"feedback"` / `"temporal"` |
 
-### `TemporalLabels` (`temporal.rs`)
+### 1.4 `TemporalLabels` (`temporal.rs`)
 
 | Field | Notes |
 | --- | --- |
@@ -85,38 +95,34 @@ Cross-references:
 | `periodic_bucket: PeriodicBucket` | 8-class enum: WeekdayMorning..WeekendNight (`temporal.rs:24-50`); boundaries 5..12 / 12..17 / 17..21 / 21..5 |
 | `e2_recency_norm`, `e3_periodic_norm`, `e4_positional_norm` | L2 norms of the three temporal vectors |
 
-### `compute_edge_type_distribution` (`edge_signature.rs`)
+### 1.5 `compute_edge_type_distribution` (`edge_signature.rs`)
 
-Saturating `u32` count per `GraphLinkEdgeType` slot; debug_assert that `edge.edge_type().as_u8() < 8`.
+Saturating `u32` count per `GraphLinkEdgeType` slot. `debug_assert` that `edge.edge_type().as_u8() < 8`. The sum equals `outgoing_edges.len()` modulo `u32::MAX` saturation.
 
-### Persistence
+### 1.6 Fusion features (`computation.rs`)
 
-Records are bincode-serialized with a single version byte prefix (no `skip_serializing_if` per constitution). Stored in `CF_TRAINING_RECORDS` (column-families.rs). Iteration helpers and version handling live in `context_graph_storage::teleological::rocksdb_store::export`. The encoder/decoder pair is `encode_training_record` / `decode_training_record`; tests roundtrip via real `RocksDbTeleologicalStore` in `tests/training_records_integration.rs`.
+- `topic_profile_or_fallback(stored_profile, fingerprint)`: prefers the `CF_TOPIC_PROFILES` row when present; otherwise derives a per-embedder presence indicator (dense L2 norm clamped, sparse `sqrt(sum_sq)` clamped, E12 mean of non-zero per-token alignments).
+- `compute_cross_correlations(topic_profile, synergy)`: `cross_corr[(i,j)] = alignment_i · alignment_j · synergy(i, j)` for all `i < j` in `0..14`. Returns exactly 91 values in `[0, 1]`.
+- `compute_group_alignments(topic_profile)`: 6D group aggregation — `Factual=E1/E12/E13/E14, Temporal=E2/E3, Causal=E4/E7, Relational=E5/E8/E9, Qualitative=E10/E11, Implementation=E6` (per `GroupAlignments::from_alignments`).
 
-## 2. MCP Training Tools
+### 1.7 Persistence
 
-`crates/context-graph-mcp/src/tools/definitions/training.rs` registers four tools:
+Records are bincode-serialized with a single version byte prefix (no `skip_serializing_if` per constitution). Stored in `CF_TRAINING_RECORDS` (`column_families.rs:399`). Iteration helpers and version handling live in `context_graph_storage::teleological::rocksdb_store::export`. The encoder/decoder pair is `encode_training_record` / `decode_training_record`; tests roundtrip via real `RocksDbTeleologicalStore` in `tests/training_records_integration.rs`.
+
+## 2. MCP Training Tools (4 tools)
+
+`crates/context-graph-mcp/src/tools/definitions/training.rs` registers four tools (verified count from grep `ToolDefinition::new`):
 
 | Tool | Inputs | Behavior |
 | --- | --- | --- |
 | `export_training_corpus` | `filter: "all"|"session"`, `filterId`, `maxMemories` (default 10000, max 1_000_000), `includeEmbeddings` (default true), `includeSparseVectors` (default true), `includeTokenEmbeddings` (default false), `includeEdges` (default true), `includeCausalLabels` (default true), `includeIncomingEdges` (default false), `includeTemporalLabels` (default true), `includeTuckerCore` (default false), `clearExisting` (default false) | Iterates non-soft-deleted fingerprints, assembles `TrainingRecord`, writes to `CF_TRAINING_RECORDS`. Output is binary only (bincode + version byte). `additionalProperties:false` enforced server-side |
-| `list_training_records` | `limit` (default 50, max 1000), `offset`, `includeShape` (default true) | |
-| `get_training_record` | `memoryId` (required), `includeVectors` (default false), `includeTokenEmbeddings` (default false), `includeEdges` (default true) | |
+| `list_training_records` | `limit` (default 50, max 1000), `offset`, `includeShape` (default true) | UUIDs + optional record-shape summary |
+| `get_training_record` | `memoryId` (required), `includeVectors` (default false), `includeTokenEmbeddings` (default false), `includeEdges` (default true) | Full record by UUID |
 | `count_training_records` | — | Returns row count |
 
-`crates/context-graph-mcp/src/tools/definitions/typed_edges.rs` exposes typed-edge corpus tools:
-
-| Tool | Output CF |
-| --- | --- |
-| `export_typed_edges_corpus` | `CF_TYPED_EDGE_RECORDS` (one `TypedEdgeTrainingRecord` per typed edge — see [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md)) |
-| `list_typed_edge_records`, `get_typed_edges`, `validate_low_confidence_edges` | |
-
-`crates/context-graph-mcp/src/tools/definitions/learning.rs` exposes the learner-as-UTL dataset tools (see §7 below):
-
-| Tool | Output CF |
-| --- | --- |
-| `export_learner_training_dataset` | `CF_LEARNER_TRAINING_DATASETS` (per-task matrix shards — see [20_learning_subsystem.md](20_learning_subsystem.md)) |
-| `list_learner_training_datasets`, `get_learner_training_dataset`, `count_learner_training_datasets` | |
+Sister surfaces:
+- `crates/context-graph-mcp/src/tools/definitions/typed_edges.rs` exposes `export_typed_edges_corpus` (`CF_TYPED_EDGE_RECORDS`), `list_typed_edge_records`, `get_typed_edges`, `validate_low_confidence_edges` — see [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md).
+- `crates/context-graph-mcp/src/tools/definitions/learning.rs` exposes the learner-as-UTL dataset tools `export_learner_training_dataset`, `list_learner_training_datasets`, `get_learner_training_dataset`, `count_learner_training_datasets` (`CF_LEARNER_TRAINING_DATASETS`) — see §5 below and [20_learning_subsystem.md](20_learning_subsystem.md).
 
 ## 3. CLI Export
 
@@ -139,7 +145,7 @@ Compression: ZSTD (default level via `parquet::file::properties::WriterPropertie
 - Version-byte mismatches on read are surfaced via `decode_training_record`, never silently dropped.
 
 Sister CLI surfaces:
-- `context-graph-cli learning {count|list|get|export-events-jsonl|export-dataset-jsonl|record-events-jsonl|record-synthetic}` — dumps `CF_LEARNING_EVENTS` and `CF_LEARNER_TRAINING_DATASETS` to JSONL for downstream Python DPO miners (`build_learner_dpo_pairs.py`). See [20_learning_subsystem.md](20_learning_subsystem.md) §15 and [19_camd_dpo_subsystem.md](19_camd_dpo_subsystem.md) §9.
+- `context-graph-cli learning {count|list|get|export-events-jsonl|export-dataset-jsonl|record-events-jsonl|record-synthetic}` — dumps `CF_LEARNING_EVENTS` and `CF_LEARNER_TRAINING_DATASETS` to JSONL for downstream Python DPO miners (`build_learner_dpo_pairs.py`). See [20_learning_subsystem.md](20_learning_subsystem.md) §17 and [19_camd_dpo_subsystem.md](19_camd_dpo_subsystem.md) §7.
 - `context-graph-cli utl {list-embedders|fixture|preflight-assets|count|record-synthetic|get-delta|get-m}` — operational view of E15-E21 learner-state.
 
 Integration tests:
@@ -188,13 +194,13 @@ LLM (Hermes 2 Pro) ──> CausalTrainingPair ──> CausalDataLoader
 
 `CausalTrainingPair::is_causal()` = `direction != None && confidence >= 0.5`. `difficulty()` returns 0.2 (explicit markers like "because"/"therefore"), 0.5 (no markers, no hard negative), or 0.8 (hard negative present); 0.0 for non-causal pairs. Used for stage-1 curriculum filtering (`stage1_max_difficulty = 0.2`).
 
-`seed_training_pairs()` ships ~250+ in-tree seed pairs spanning health, environment, economics, technology, social, physics, nutrition, cybersecurity, psychology, history, legal, engineering for smoke runs without external data. `expand_seed_pairs()` returns the expanded dataset.
+`seed_training_pairs()` ships ~250+ in-tree seed pairs spanning health, environment, economics, technology, social, physics, nutrition, cybersecurity, psychology, history, legal, engineering for smoke runs without external data. `expand_seed_pairs()` returns the expanded dataset (reversed + cross-domain negatives).
 
 `CausalDataLoader::new(pairs, batch_size, seed)` uses `rand::rngs::StdRng::seed_from_u64(seed)`; `shuffle_epoch()` reshuffles indices each epoch.
 
 ### 4.2 LoRA Adapters (`training/lora.rs`)
 
-`LoraConfig` defaults:
+`LoraConfig` defaults (lines 53-66):
 
 | Field | Default |
 | --- | --- |
@@ -207,7 +213,7 @@ LLM (Hermes 2 Pro) ──> CausalTrainingPair ──> CausalDataLoader
 | `apply_value` | true |
 | `apply_key` | false |
 
-`total_params` = `2 * hidden_size * rank * (apply_query + apply_value + apply_key) * num_layers` = 2·768·16 = 24,576 per adapter × (Q + V) × 12 layers = **589,824** trainable LoRA parameters.
+`total_params` = `2 * hidden_size * rank * (apply_query + apply_value + apply_key) * num_layers` = 2·768·16 = 24,576 per adapter × 2 (Q + V) × 12 layers = **589,824** trainable LoRA parameters.
 
 `LoraAdapter`:
 - `a: Var [hidden_size, rank]` initialized via deterministic golden-ratio low-discrepancy quasi-random with Kaiming scale (`std_dev = sqrt(2/hidden_size)`).
@@ -226,15 +232,15 @@ LLM (Hermes 2 Pro) ──> CausalTrainingPair ──> CausalDataLoader
 | `config` | `LoraConfig` |
 | `training` | **`Cell<bool>`** |
 
-The `Cell<bool>` lets `&self` methods toggle dropout on/off without `&mut self`. Stage entry points call `set_training(true)` (`pipeline.rs:933,1061`) and `set_training(false)` after the stage finishes (`pipeline.rs:948,1076`); evaluation passes also save/restore via `was_training = self.lora.training.get(); self.lora.set_training(false); ... self.lora.set_training(was_training);` (`pipeline.rs:563-618`).
+The `Cell<bool>` lets `&self` methods toggle dropout on/off without `&mut self` (`lora.rs:189,300`). Stage entry points call `set_training(true)` (`pipeline.rs:933,1061`) and `set_training(false)` after the stage finishes (`pipeline.rs:948,1076`); evaluation passes save/restore via `was_training = self.lora.training.get(); self.lora.set_training(false); ... self.lora.set_training(was_training);` (`pipeline.rs:563-618`).
 
-LoRA can be loaded from safetensors (`LoraLayers::load_from_safetensors`) using tensor naming `lora.{query|value|key}.{layer}.{a|b}`, matching the `save_lora` format in `pipeline.rs:1196-1263`.
+LoRA can be loaded from safetensors (`LoraLayers::load_from_safetensors`) using tensor naming `lora.{query|value|key}.{layer}.{a|b}`, matching the `save_lora` format (`pipeline.rs:1196-1263`).
 
 **Lesson (load-bearing):** LoRA dropout adds dropout-mask tensors to the autograd graph — VRAM consumption rises. Default `batch_size=16` was reduced from `32` once dropout was enabled, and re-raising it can OOM RTX 5090. When dropout is disabled or removed, gate thresholds must be recalibrated because dropout regularization compresses absolute scores.
 
 ### 4.3 Loss Functions (`training/loss.rs`)
 
-`LossConfig` defaults:
+`LossConfig` defaults (lines 42-51):
 
 | Field | Default | Purpose |
 | --- | --- | --- |
@@ -281,7 +287,7 @@ Components implemented in `DirectionalContrastiveLoss`:
 Step semantics:
 - Computes global gradient L2 norm across all tracked params, scales every grad by `max_grad_norm / (norm + ε)` if exceeded.
 - AdamW updates: `m ← β1·m + (1-β1)·grad`; `v ← β2·v + (1-β2)·grad²`; bias-corrected `m_hat = m/(1-β1ᵗ)`, `v_hat = v/(1-β2ᵗ)`; `θ ← θ - lr·m_hat/(√v_hat + ε)`.
-- Decoupled weight decay: `θ ← θ - lr·weight_decay·θ` applied as separate term; per AdamW paper.
+- Decoupled weight decay: `θ ← θ - lr·weight_decay·θ` applied as separate term (per AdamW paper).
 - All updates `.detach()` to prevent the autograd graph from chaining across steps.
 - `reset_moments()` zeros m/v on stage transitions.
 
@@ -331,7 +337,7 @@ Each head is a 2-layer MLP (linear → ReLU → linear) with deterministic Xavie
 
 ### 4.7 3-Stage Progressive Pipeline (`training/pipeline.rs`)
 
-`PipelineConfig` defaults:
+`PipelineConfig` defaults (lines 58-72):
 
 | Field | Default | Purpose |
 | --- | --- | --- |
@@ -431,9 +437,11 @@ train-causal --model-path models/causal --output models/causal/trained
 train-causal --model-path models/causal --data pairs.jsonl --epochs 50
 ```
 
-CLI flags: `--model-path`, `--data` (JSONL), `--output`, `--epochs`, `--batch-size`, `--lora-rank`, `--eval-every`, `--seed`, `--no-multitask` (saves VRAM by setting `multitask_config = None`).
+CLI flags: `--model-path`, `--data` (JSONL), `--output`, `--epochs`, `--batch-size` (default 16), `--lora-rank` (default 16), `--eval-every` (default 5), `--seed` (default 42), `--no-multitask` (saves VRAM by setting `multitask_config = None`).
 
-`expand_seed_pairs()` and `seed_training_pairs()` (in `training/data.rs`) provide a built-in seed corpus for smoke runs without external data.
+When `--epochs N` is supplied, the binary distributes as `stage1 = N/5`, `stage2 = N·2/5`, `stage3 = N − stage1 − stage2` (each clamped to ≥ 1). Train/eval split is 80/20 with seeded shuffle. After training, the binary writes `lora_weights.safetensors` to `--output`.
+
+Device selection: CUDA when `candle_core::utils::cuda_is_available()`, else CPU (with a warning).
 
 ### 4.11 Checkpoint Files
 
@@ -547,6 +555,7 @@ Notable benchmark binaries relevant to training:
 - DPO/CAMD downstream consumers of these outputs: [19_camd_dpo_subsystem.md](19_camd_dpo_subsystem.md).
 - Learner subsystem and 7-slot E15-E21 namespace: [20_learning_subsystem.md](20_learning_subsystem.md).
 - Embedder topology (E1-E14, E5 dual vectors): [05_embedding_subsystem.md](05_embedding_subsystem.md).
+- Memory-record fingerprint shape (input to training records): [04_storage_layer.md](04_storage_layer.md).
 - GPU device singleton shared between training and inference: [11_cuda_acceleration.md](11_cuda_acceleration.md) §7-§8.
 - Typed-edge training records and contrastive pair mining: [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md).
 - Causal discovery LLM that supplies `CausalTrainingPair`s: [07_graph_and_causal.md](07_graph_and_causal.md).

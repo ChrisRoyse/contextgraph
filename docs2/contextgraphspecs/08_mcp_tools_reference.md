@@ -1,45 +1,50 @@
 # MCP Tools Reference
 
-**Source files covered:**
-- `crates/context-graph-mcp/src/tools/mod.rs`
-- `crates/context-graph-mcp/src/tools/names.rs` — canonical name constants
+This document describes every MCP tool the ContextGraph server exposes. The server speaks JSON-RPC 2.0 over stdio (default) or TCP. All tools live under the `tools/list` and `tools/call` JSON-RPC methods.
+
+**Source-of-truth files:**
+- `crates/context-graph-mcp/src/tools/mod.rs` — registry assembly
+- `crates/context-graph-mcp/src/tools/names.rs` — canonical name constants for dispatch
 - `crates/context-graph-mcp/src/tools/aliases.rs` — alias resolution
 - `crates/context-graph-mcp/src/tools/types.rs` — `ToolDefinition` shape
-- `crates/context-graph-mcp/src/tools/definitions/mod.rs` — registry assembly
-- `crates/context-graph-mcp/src/tools/definitions/{capability,core,merge,curation,topic,file_watcher,sequence,causal,causal_discovery,keyword,code,graph,robustness,entity,embedder,temporal,graph_link,maintenance,provenance,daemon,training,learning,utl,constellation,contrastive,typed_edges,dynamicjepa}.rs`
-- `crates/context-graph-mcp/src/handlers/tools/dispatch.rs` — runtime dispatch
-- `crates/context-graph-mcp/src/handlers/tools/*.rs` — handler implementations
+- `crates/context-graph-mcp/src/tools/definitions/mod.rs` — registry assembly + count assertions
+- `crates/context-graph-mcp/src/tools/definitions/{capability,core,merge,curation,topic,file_watcher,sequence,causal,causal_discovery,keyword,code,graph,robustness,entity,embedder,temporal,graph_link,maintenance,provenance,daemon,training,learning,utl,constellation,contrastive,typed_edges,dynamicjepa,reality}.rs`
+- `crates/context-graph-mcp/src/handlers/tools/dispatch.rs` — the `tool_dispatch!` macro routing
+- `crates/context-graph-mcp/src/handlers/tools/*_dtos.rs` — argument shapes for non-trivial handlers
+- `crates/context-graph-mcp/src/handlers/tools/reality_loop/{alter,analyze,interact,optimizer,autoresearch,helpers,path_policy,shift_log,schema_validator,lock,errors}.rs` — ccreality reality-loop handler family
 
-**Cross-references:**
-- See [05_embedding_subsystem.md](05_embedding_subsystem.md) for embedder identifiers (E1–E14, E15–E21).
-- See [06_search_and_fusion.md](06_search_and_fusion.md) for search strategies and weight profiles.
-- See [07_graph_and_causal.md](07_graph_and_causal.md) for typed edges, K-NN, and causal directions.
-- See [09_storage_layer.md](09_storage_layer.md) for column families written by these tools.
-- See [17_constellation_subsystem.md](17_constellation_subsystem.md) for constellation semantics.
-- See [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md) for AnomalyKind taxonomy.
-- See [20_learning_subsystem.md](20_learning_subsystem.md) for Learning-as-UTL details.
+**Related docs:**
+- [05_embedding_subsystem.md](05_embedding_subsystem.md) — embedder identifiers (E1–E14, E15–E21)
+- [06_search_and_fusion.md](06_search_and_fusion.md) — search strategies and weight profiles
+- [07_graph_and_causal.md](07_graph_and_causal.md) — typed edges, K-NN, causal direction
+- [09_storage_layer.md](09_storage_layer.md) — RocksDB column families written by these tools
+- [17_constellation_subsystem.md](17_constellation_subsystem.md) — constellation semantics
+- [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md) — AnomalyKind taxonomy
+- [20_learning_subsystem.md](20_learning_subsystem.md) — Learning-as-UTL
+- [21_dynamicjepa_subsystem.md](21_dynamicjepa_subsystem.md) — DynamicJEPA (5090jepa) MCP surface
+- [22_reality_loop_subsystem.md](22_reality_loop_subsystem.md) — ccreality reality-loop subsystem
 
 ---
 
-## 1. Tool Registry Overview
+## 1. Tool registry overview
 
-`get_tool_definitions()` (in `crates/context-graph-mcp/src/tools/definitions/mod.rs:37`) aggregates per-category modules. Test `tools::definitions::tests::test_total_tool_count_and_no_duplicates` pins the totals:
+`get_tool_definitions()` (in `crates/context-graph-mcp/src/tools/definitions/mod.rs:38`) aggregates per-category modules into one `Vec<ToolDefinition>`. The test `tools::definitions::tests::test_total_tool_count_and_no_duplicates` pins the totals:
 
-| Build | Total tools |
+| Build feature flag | Total tools |
 | --- | --- |
-| With `--features llm` (default) | **145** |
-| Without `llm` (LLM-gated tools omitted) | **141** |
+| `--features llm` (default) | **145** |
+| Without `llm` | **141** |
 
-`names.rs` (line 1–344) defines all canonical name constants. `dispatch.rs` (line 87–263 in `crates/context-graph-mcp/src/handlers/tools/dispatch.rs`) wires every name to a handler method. `tool_dispatch!` (line 24) is the macro that generates the `match` arms.
+When the server is launched with `--mode reality-loop` (`tools::is_reality_loop_mode()` returns true), the registry additionally includes the 35 ccreality reality-loop tools defined in `definitions/reality.rs`. The lightweight reality-loop stdio server (`get_reality_loop_tool_definitions()`) only exposes that subset.
 
 LLM-gated tools (require `--features llm`):
-- `discover_graph_relationships`, `validate_graph_link` — graph relationship LLM
+- `discover_graph_relationships`, `validate_graph_link` — LLM-based graph relationship discovery
 - `trigger_causal_discovery`, `get_causal_discovery_status` — Qwen2.5 causal discovery
-- (`validate_low_confidence_edges` — the tool exists but returns `{status:"skipped"}` when LLM disabled)
+- `validate_low_confidence_edges` exists in both builds, but returns `{status:"skipped"}` when LLM disabled
 
 ### 1.1 Tool count by category
 
-The following counts come from `tests::test_submodule_counts` in `definitions/mod.rs:159`.
+The following counts come from `tests::test_submodule_counts` in `definitions/mod.rs:172-210`. Reality-loop tools (`definitions/reality.rs`) only appear when `is_reality_loop_mode()` is true.
 
 | Category | Count (with llm) | Count (without llm) | Definition file |
 | --- | --- | --- | --- |
@@ -57,8 +62,8 @@ The following counts come from `tests::test_submodule_counts` in `definitions/mo
 | graph | 4 | 2 | `graph.rs` |
 | robustness | 1 | 1 | `robustness.rs` |
 | entity | 6 | 6 | `entity.rs` |
-| embedder (cross-cutting) | 7 | 7 | `embedder.rs` (`definitions()`) |
-| embedder (standalone E12/E13) | 2 | 2 | `embedder.rs` (`standalone_definitions()`) |
+| embedder (cross-cutting) | 7 | 7 | `embedder.rs::definitions()` |
+| embedder (E12/E13 standalone) | 2 | 2 | `embedder.rs::standalone_definitions()` |
 | temporal | 2 | 2 | `temporal.rs` |
 | graph_link | 4 | 4 | `graph_link.rs` |
 | maintenance | 1 | 1 | `maintenance.rs` |
@@ -71,22 +76,22 @@ The following counts come from `tests::test_submodule_counts` in `definitions/mo
 | contrastive | 4 | 4 | `contrastive.rs` |
 | typed_edges | 4 | 4 | `typed_edges.rs` |
 | dynamicjepa | 35 | 35 | `dynamicjepa.rs` |
-| **Total** | **145** | **141** | |
+| reality (only `--mode reality-loop`) | 35 | 35 | `reality.rs` |
+| **Total (default mode)** | **145** | **141** | |
+| **Total (reality-loop mode)** | **180** | **176** | |
 
 ### 1.2 Aliases
 
-Defined in `crates/context-graph-mcp/src/tools/aliases.rs:31`:
+Defined in `crates/context-graph-mcp/src/tools/aliases.rs`. `resolve_alias()` runs in `dispatch.rs:73` for every `tools/call`; unknown names pass through unchanged.
 
 | Legacy name | Canonical name | Notes |
 | --- | --- | --- |
 | `consolidate_memories` | `trigger_consolidation` | renamed for clarity |
 | `inject_context` | `store_memory` | merged tools — `rationale` field travels through |
 
-`resolve_alias()` runs in `dispatch.rs:73` for every `tools/call`. Unknown names pass through unchanged.
-
 ### 1.3 ToolDefinition shape
 
-`crates/context-graph-mcp/src/tools/types.rs:8` defines:
+`crates/context-graph-mcp/src/tools/types.rs`:
 
 ```rust
 pub struct ToolDefinition {
@@ -97,42 +102,50 @@ pub struct ToolDefinition {
 }
 ```
 
-Every schema sets `additionalProperties: false` (Audit #9 L5 — unknown params return `InvalidParams`). Schema integer fields use JSON `integer` (not `number`) to enforce type at the JSON-RPC boundary (Audit #9 H2 — e.g., `lastHours`, `lastDays` on `search_graph`).
+Every schema sets `additionalProperties: false` — unknown params are rejected with `INVALID_PARAMS`. Schema integer fields use JSON `integer` (not `number`) to enforce type at the JSON-RPC boundary (e.g., `lastHours`, `lastDays` on `search_graph`).
 
 ### 1.4 Schema↔DTO alignment
 
-Each `definitions/<group>.rs` schema is paired with a DTO module under `handlers/tools/<group>_dtos.rs`. Defaults specified in schemas (`default: …`) MUST match handler defaults (Audit #5 fix — `decayFunction` default was previously `"linear"` in the handler vs `"exponential"` in the schema). The `validate.rs` helpers at `handlers/tools/validate.rs` provide shared `additionalProperties:false` enforcement and numeric clamping utilities.
+Each `definitions/<group>.rs` schema is paired with a DTO module under `handlers/tools/<group>_dtos.rs`. Defaults specified in schemas (`default: …`) MUST match handler defaults. The `validate.rs` helpers at `handlers/tools/validate.rs` provide shared `additionalProperties:false` enforcement and numeric clamping utilities.
 
 ---
 
-## 2. Protocol Methods
+## 2. Protocol and dispatch
 
-Source: `crates/context-graph-mcp/src/protocol.rs`. The MCP server speaks JSON-RPC 2.0 with `id` of type `Number(i64)` or `String`.
+Source: `crates/context-graph-mcp/src/protocol.rs` and `crates/context-graph-mcp/src/handlers/tools/dispatch.rs`. The MCP server speaks JSON-RPC 2.0 with `id` of type `Number(i64)` or `String`.
 
 | Method | Handler | Behavior |
 | --- | --- | --- |
 | `initialize` | `handle_initialize` | MCP session metadata + capabilities |
 | `shutdown` | `handle_shutdown` | Triggers `McpServer::shutdown()` graceful path |
-| `tools/list` | `handle_tools_list` (`dispatch.rs:40`) | Returns `ToolDefinition[]` (145 with llm, 141 without) |
-| `tools/call` | `handle_tools_call` (`dispatch.rs:46`) | Resolves alias (`aliases::resolve_alias`), dispatches via `tool_dispatch!` macro (`dispatch.rs:24`) |
+| `tools/list` | `handle_tools_list` (`dispatch.rs:40`) | Returns `ToolDefinition[]` |
+| `tools/call` | `handle_tools_call` (`dispatch.rs:46`) | Resolves alias, dispatches via `tool_dispatch!` macro |
 
-Per-tool timeout: `config.mcp.request_timeout` is enforced via `tokio::time::timeout` for every request and every batch sub-request. On timeout: emits `LAYER_TIMEOUT` (-32007) with the original `request.id` (MCP-H2 fix — id is parsed BEFORE consuming the payload). Notifications (no `id` field per JSON-RPC 2.0 §4.1, distinguished from `id: null` per Audit #10 SRV-M2) NEVER receive a response — even on timeout.
+Per-tool timeout: `config.mcp.request_timeout` is enforced via `tokio::time::timeout` for every request and every batch sub-request. On timeout the server emits `LAYER_TIMEOUT` (-32007) with the original `request.id` (id is parsed BEFORE consuming the payload). Notifications (no `id` field) NEVER receive a response — even on timeout.
 
-Transport modes (`crates/context-graph-mcp/src/server/mod.rs:37` `TransportMode`):
-- `Stdio` (default) — newline-delimited JSON over stdin/stdout. Supports JSON-RPC batch arrays (`[{...},{...}]`) per spec §6 (INFRA-H3 fix). Capped via `MAX_BATCH_SIZE` (`server::transport`) and `MAX_LINE_BYTES` per-line (AGT-04).
-- `Tcp` — bound on `config.mcp.bind_address:tcp_port`, default `127.0.0.1:3100`, `max_connections=32` semaphore-gated. TCP-specific error codes `-32110…-32114` (see `server/transport.rs`). Selected by `--transport tcp`, `CONTEXT_GRAPH_TRANSPORT=tcp`, or `config.mcp.transport="tcp"`. **`sse` transport is rejected** (`determine_transport_mode` at `main.rs:283`).
-- Daemon mode (`--daemon`): TCP daemon shared across stdio clients via stdio-to-TCP proxy. Lock file at `/tmp/context-graph-mcp-daemon.lock`; stale-lock detection uses `flock` + `kill(pid, 0)` + `/proc/pid/status` zombie check.
+Transport modes (`crates/context-graph-mcp/src/server/mod.rs::TransportMode`):
+- **Stdio** (default): newline-delimited JSON over stdin/stdout. Supports JSON-RPC batch arrays per spec §6.
+- **TCP**: bound on `config.mcp.bind_address:tcp_port`, default `127.0.0.1:3100`. TCP-specific error codes `-32110…-32114`.
+- **Daemon mode** (`--daemon`): TCP daemon shared across stdio clients via stdio-to-TCP proxy. Lock file at `/tmp/context-graph-mcp-daemon.lock`.
+- **Reality-loop mode** (`--mode reality-loop`): lightweight stdio server that exposes only the 35 `mcp__cgreality__*` tools. Acquires a flock at `~/.cache/cgreality/reality-loop-stdio.lock` to evict stale prior MCPs (SIGTERM 2s → SIGKILL).
 
-Errors:
-- `INVALID_PARAMS` (-32602) — missing/unknown params, schema violation
-- `TOOL_NOT_FOUND` (-32601) — name does not match any dispatch entry
-- `LAYER_TIMEOUT` (-32007) — handler exceeded `config.mcp.request_timeout`
-- `INVALID_REQUEST` (-32600) — bad JSON-RPC envelope, oversized batch, empty batch
-- `PARSE_ERROR` (-32700) — malformed JSON line
+Standard error codes:
+
+| Code | Name | Meaning |
+| --- | --- | --- |
+| -32700 | `PARSE_ERROR` | Malformed JSON line |
+| -32600 | `INVALID_REQUEST` | Bad envelope, oversized batch, empty batch |
+| -32601 | `TOOL_NOT_FOUND` | Name does not match any dispatch entry |
+| -32602 | `INVALID_PARAMS` | Missing/unknown params, schema violation |
+| -32007 | `LAYER_TIMEOUT` | Handler exceeded `request_timeout` |
+
+ccreality tools also emit a structured per-error body with `error_code` (e.g., `CCREALITY_OFFICIAL_REPORT_MISSING`), `field_path`, `message`, `source_of_truth`, and `details`. See `handlers/tools/reality_loop/errors.rs`.
 
 ---
 
-## 3. Tool Inventory (Navigation Table)
+## 3. Tool inventory (navigation table)
+
+Quick lookup for every tool, its category, and the parameters it requires. Optional parameters are not listed here — see the per-tool sections below.
 
 | Tool | Category | Required params |
 | --- | --- | --- |
@@ -191,7 +204,7 @@ Errors:
 | `get_typed_edges` | graph_link | `memory_id` |
 | `traverse_graph` | graph_link | `start_memory_id` |
 | `get_unified_neighbors` | graph_link | `memory_id` |
-| `record_graph_learning_event` | learning | `policyScope`, `sourceMemoryId`, `selectedNeighborIds`, `beforeRank`, `afterRank`, `outcome` |
+| `record_graph_learning_event` | learning | several |
 | `resolve_graph_learning_policy` | learning | `policyScope` |
 | `repair_causal_relationships` | maintenance | — |
 | `get_audit_trail` | provenance | — |
@@ -226,10 +239,10 @@ Errors:
 | `preflight_learner_assets` | utl | — |
 | `count_learner_state` | utl | — |
 | `get_learner_state` | utl | `learnerId` |
-| `record_learner_k_sleep` | utl | `learnerId`, `sessionTs`, `slowWaveMinutes` |
-| `record_learner_retrieval` | utl | `learnerId`, `traceId`, `ts`, `correct`, `score` |
+| `record_learner_k_sleep` | utl | several |
+| `record_learner_retrieval` | utl | several |
 | `upsert_goal_centroid` | utl | `skillId`, `modality`, `vector` |
-| `get_goal_distance` | utl | `learnerId`, `skillId`, `sessionTs`, `modality` |
+| `get_goal_distance` | utl | several |
 | `compile_learner_constellation` | utl | `learnerId`, `sessionTsList` |
 | `resolve_learner_retrieval_policy` | utl | `learnerId`, `sessionTs` |
 | `compile_constellation` | constellation | `selector`, `label` |
@@ -246,49 +259,16 @@ Errors:
 | `derive_anomalies_from_edges` | typed_edges | — |
 | `validate_low_confidence_edges` | typed_edges | — |
 | `list_typed_edge_records` | typed_edges | — |
-| `dynamicjepa_register_domain_pack` | dynamicjepa | `dbPath`, `file` |
-| `dynamicjepa_list_domain_packs` | dynamicjepa | `dbPath` |
-| `dynamicjepa_get_domain_pack` | dynamicjepa | `dbPath`, `id` |
-| `dynamicjepa_ingest_event` | dynamicjepa | `dbPath`, `domain`, `adapter`, `file` |
-| `dynamicjepa_run_adapter` | dynamicjepa | `dbPath`, `eventId` |
-| `dynamicjepa_materialize_panel` | dynamicjepa | `dbPath` |
-| `dynamicjepa_get_panel` | dynamicjepa | `dbPath`, `panelId` |
-| `dynamicjepa_list_instrument_readings` | dynamicjepa | `dbPath`, `eventId` |
-| `dynamicjepa_create_binding` | dynamicjepa | `dbPath`, `leftCf`, `leftKey`, `rightCf`, `rightKey` |
-| `dynamicjepa_list_bindings` | dynamicjepa | `dbPath` |
-| `dynamicjepa_compile_trajectories` | dynamicjepa | `dbPath`, `domain` |
-| `dynamicjepa_get_trajectory` | dynamicjepa | `dbPath`, `id` |
-| `dynamicjepa_list_trajectories` | dynamicjepa | `dbPath`, `domain` |
-| `dynamicjepa_compile_dataset` | dynamicjepa | `dbPath`, `domain` |
-| `dynamicjepa_get_dataset_shard` | dynamicjepa | `dbPath`, `datasetId`, `shardId` |
-| `dynamicjepa_inspect_dataset_row` | dynamicjepa | `dbPath`, `datasetId`, `shardId`, `row` |
-| `dynamicjepa_train` | dynamicjepa | `dbPath`, `datasetId`, `config`, `artifactRoot` |
-| `dynamicjepa_get_training_run` | dynamicjepa | `dbPath`, `id` |
-| `dynamicjepa_get_artifact` | dynamicjepa | `dbPath`, `id` |
-| `dynamicjepa_predict` | dynamicjepa | `dbPath`, `artifactId`, `panelId`, `actionId` |
-| `dynamicjepa_plan` | dynamicjepa | `dbPath`, `artifactId`, `panelId`, `skillId` |
-| `dynamicjepa_record_surprise` | dynamicjepa | `dbPath`, `predictionId`, `observedOutcomeId`, `observedPanelId` |
-| `dynamicjepa_build_constellation` | dynamicjepa | `dbPath`, `domain` |
-| `dynamicjepa_list_constellations` | dynamicjepa | `dbPath` |
-| `dynamicjepa_get_constellation` | dynamicjepa | `dbPath`, `domain`, `modality` |
-| `dynamicjepa_calibrate_threshold` | dynamicjepa | `dbPath`, `domain` |
-| `dynamicjepa_recalibrate_threshold` | dynamicjepa | `dbPath`, `domain`, `supersedes`, `reason` |
-| `dynamicjepa_compute_mc_ratio` | dynamicjepa | `dbPath`, `domain`, `outputDir` |
-| `dynamicjepa_audit_pairwise_mi` | dynamicjepa | `dbPath`, `domain`, `outputDir` |
-| `dynamicjepa_cross_domain_transfer` | dynamicjepa | `outputRoot` |
-| `dynamicjepa_get_prediction` | dynamicjepa | `dbPath`, `id` |
-| `dynamicjepa_get_plan_trace` | dynamicjepa | `dbPath`, `id` |
-| `dynamicjepa_get_surprise` | dynamicjepa | `dbPath`, `id` |
-| `dynamicjepa_inspect_counts` | dynamicjepa | `dbPath` |
-| `dynamicjepa_inspect_cf` | dynamicjepa | `dbPath`, `cf` |
+| `dynamicjepa_*` (35 tools) | dynamicjepa | see § 18 |
+| `reality_*` / `harness_*` / `optimizer_*` / `champion_state_*` / `experiment_registry_*` (35 tools) | reality | see § 19 |
 
 ---
 
-## 4. Capability Tools
+## 4. Capability tool
 
 ### `get_capability_matrix`
 **Description:** Return the MCP capability matrix: every E1–E14 content embedder, E15–E21 learner-state slots, tool groups, source-of-truth RocksDB CFs, and (optional) live runtime counts.
-**Source:** `crates/context-graph-mcp/src/tools/definitions/capability.rs:11`; handler `crates/context-graph-mcp/src/handlers/tools/capability_tools.rs:25`.
+**Source:** `tools/definitions/capability.rs:11`; handler `handlers/tools/capability_tools.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
@@ -300,1471 +280,1526 @@ Errors:
 
 ---
 
-## 5. Core Tools
+## 5. Core tools
 
 ### `store_memory`
 **Description:** Store a single memory directly into the knowledge graph without UTL processing.
-**Source:** `crates/context-graph-mcp/src/tools/definitions/core.rs:17`; handler `crates/context-graph-mcp/src/handlers/tools/memory_tools.rs:179`.
+**Source:** `tools/definitions/core.rs:17`; handler `handlers/tools/memory_tools.rs`.
 
 | Param | Type | Req | Default | Range / Description |
 | --- | --- | :-: | --- | --- |
 | `content` | string | yes | — | 1–10000 chars |
-| `rationale` | string |  | — | 1–1024 chars; when provided, mirrored in response |
-| `importance` | number |  | `0.5` | `[0.0, 1.0]` clamped |
+| `rationale` | string |  | — | 1–1024 chars; when provided, mirrored in response (legacy `inject_context` alias) |
+| `importance` | number |  | `0.5` | clamped to `[0.0, 1.0]` |
 | `sessionId` | string |  | env `CLAUDE_SESSION_ID` | scopes the memory to a session |
-| `operatorId` | string |  | — | tracked in audit |
+| `operatorId` | string |  | — | tracked in audit log |
 
 **Side effects:** writes `CF_FINGERPRINTS`, `CF_CONTENT`, `CF_SOURCE_METADATA`, all `CF_EMB_*` indexes, `CF_AUDIT_LOG`. Triggers HNSW insertion across 11 dense embedders + sparse insertion for E6/E13 + token insertion for E12.
 
 ### `store_memories`
-**Description:** All-or-error batch ingestion. Each item runs the same 14-content-embedder pipeline. On any required write/readback failure, every fingerprint produced in the batch is hard-deleted before returning.
-**Source:** `core.rs:55`; handler `memory_tools.rs:614`.
+**Description:** Store a validated batch of memories through the same 14-content-embedder pipeline. Batch is **all-or-error**: if any fingerprint/content/source-metadata/embedding/audit readback fails, every fingerprint stored in this batch is hard-deleted and the tool returns an error.
+**Source:** `tools/definitions/core.rs:55`; DTOs `handlers/tools/memory_tools.rs`.
 
-| Param | Type | Req | Default | Description |
+| Param | Type | Req | Default | Range / Description |
 | --- | --- | :-: | --- | --- |
 | `items` | array | yes | — | 1–64 items, each `{content, rationale?, importance?, sessionId?, operatorId?}` |
-| `sessionId` | string |  | — | default for items missing `sessionId` |
-| `operatorId` | string |  | — | default for items missing `operatorId` |
-| `causalHints` | boolean |  | `false` | request LLM E5 causal hints before embedding |
+| `sessionId` | string |  | — | default for items that omit it |
+| `operatorId` | string |  | — | default for items that omit it |
+| `causalHints` | boolean |  | `false` | When true, ask the LLM causal-hint provider for E5 hints before batch embedding |
 
-**Output schema:** `{requestedCount, storedCount, embedderCount, items}`.
-**Side effects:** same as `store_memory`, batched; rolls back fingerprints on partial failure.
+**Output schema:** `{requestedCount, storedCount, embedderCount, items[]}` (declared on the tool definition).
+**Side effects:** identical to `store_memory` but multiplied by `items.len()`. On rollback, all just-inserted UUIDs are hard-deleted from every CF.
 
 ### `get_memetic_status`
-**Description:** System status — fingerprint count, 14 embedder count, storage backend/size, layer status.
-**Source:** `core.rs:127`; handler `crates/context-graph-mcp/src/handlers/tools/status_tools.rs:21`.
-**Params:** none. **Side effects:** none.
+**Description:** Return current system status: fingerprint count, number of embedders (14), storage backend, total bytes on disk, layer status from `LayerStatusProvider`.
+**Source:** `tools/definitions/core.rs:128`; handler `handlers/tools/status_tools.rs`.
+
+| Param | Type | Req | Default | Description |
+
+| (no parameters) | | | | |
+
+**Side effects:** none (read-only).
 
 ### `search_graph`
-**Description:** Multi-space semantic search across 14 embedders. Auto-applies asymmetric E5 (cause↔effect) for causal queries, E10 for paraphrase, E8 for graph. Supports temporal (E2/E3/E4), state-conditioned, and rerank pipelines.
-**Source:** `core.rs:140`; handler `memory_tools.rs:1267`.
+**Description:** Multi-space semantic search across all 14 embedders. Default profile is `multi_space` weighted RRF; `pipeline` runs E13 recall → E1 dense → E12 rerank; `e1_only` is the fast E1-dense path. Supports temporal weighting (E2/E3/E4), causal direction reranking (E5 asymmetric), session scope, decay function, ColBERT rerank.
+**Source:** `tools/definitions/core.rs:140`; DTOs `handlers/tools/memory_tools.rs::SearchGraphRequest`.
 
 | Param | Type | Req | Default | Range / Description |
 | --- | --- | :-: | --- | --- |
 | `query` | string | yes | — | search text |
 | `topK` | integer |  | `10` | 1–100 |
-| `minSimilarity` | number |  | `0.0` | `[0,1]` |
-| `includeContent` | boolean |  | `false` | include content text in results |
-| `strategy` | string |  | `multi_space` | `e1_only` \| `multi_space` \| `pipeline` |
-| `weightProfile` | string |  | — | one of 20 named profiles (see [06_search_and_fusion.md](06_search_and_fusion.md) §profiles); includes `temporal_navigation`, `sequence_navigation`, `conversation_history`, `multilingual_search`, `long_context`, `translation_finder`, `affect_repair`, `affect_priming`, `affect_neutral`, etc. |
-| `stateConditionedProfile` | boolean |  | `false` | resolve weight profile via `CF_LEARNER_STATE_HISTORY` for `learnerId`+`learnerSessionTs` |
-| `learnerId` | uuid |  | — | with `stateConditionedProfile=true` |
-| `learnerSessionTs` | integer |  | — | with `stateConditionedProfile=true` |
-| `customWeights` | object (E1–E14) |  | — | overrides `weightProfile`; values 0–1, sum ≈ 1.0 |
-| `excludeEmbedders` | array<E1..E14> |  | — | weight set to 0; remainder renormalized |
-| `useQuantizedPrefilter` | boolean |  | `false` | PQ-8 prefilter |
-| `includeEmbedderBreakdown` | boolean |  | `false` | per-embedder scores per result |
-| `enableRerank` | boolean |  | `false` | enable Stage 3 ColBERT (E12) rerank |
-| `enableAsymmetricE5` | boolean |  | `true` | enable cause↔effect direction modifiers |
-| `causalDirection` | string |  | `auto` | `auto` \| `cause` \| `effect` \| `none` |
-| `enableQueryExpansion` | boolean |  | `false` | expand causal queries |
-| `temporalWeight` | number |  | `0.0` | `[0,1]` post-retrieval boost |
+| `minSimilarity` | number |  | `0.0` | `[0.0, 1.0]` |
+| `includeContent` | boolean |  | `false` | inline result content text |
+| `strategy` | string |  | `multi_space` | enum: `e1_only`, `multi_space`, `pipeline` |
+| `weightProfile` | string |  | profile-dependent | enum (see §5.4 below) |
+| `stateConditionedProfile` | boolean |  | `false` | route `weightProfile` through learner-state-conditioned policy (requires `learnerId`+`learnerSessionTs`) |
+| `learnerId` | string (uuid) |  | — | required when `stateConditionedProfile=true` |
+| `learnerSessionTs` | integer |  | — | persisted learner session timestamp (≥0) |
+| `customWeights` | object |  | — | per-embedder weights `E1`..`E14`, each `[0,1]`, must sum to ~1.0 |
+| `excludeEmbedders` | array |  | — | embedders to drop from fusion (renormalize remainder) |
+| `useQuantizedPrefilter` | boolean |  | `false` | PQ-8 prefilter for fast approximate recall |
+| `includeEmbedderBreakdown` | boolean |  | `false` | per-embedder contribution per result |
+| `enableRerank` | boolean |  | `false` | E12 ColBERT rerank stage |
+| `enableAsymmetricE5` | boolean |  | `true` | apply E5 asymmetric reranking when query looks causal |
+| `causalDirection` | string |  | `auto` | enum: `auto`, `cause`, `effect`, `none` |
+| `enableQueryExpansion` | boolean |  | `false` | expand causal queries with related terms |
+| `temporalWeight` | number |  | `0.0` | post-retrieval temporal boost weight `[0,1]` |
 | `conversationContext` | object |  | — | `{anchorToCurrentTurn?, turnsBack?, turnsForward?}` |
-| `sessionScope` | string |  | `all` | `current` \| `all` \| `recent` |
-| `decayHalfLifeSecs` | integer |  | `86400` | exponential half-life |
-| `lastHours` | integer |  | — | filter to last N hours |
-| `lastDays` | integer |  | — | filter to last N days |
-| `sessionId` | string |  | — | exact session filter |
-| `periodicBoost` | number |  | — | E3 boost weight |
-| `targetHour` | integer |  | — | 0–23 |
-| `targetDayOfWeek` | integer |  | — | 0=Sun, 6=Sat |
-| `sequenceAnchor` | uuid |  | — | E4 anchor |
-| `sequenceDirection` | string |  | — | `before` \| `after` \| `around` \| `both` |
-| `includeProvenance` | boolean |  | `false` | retrieval provenance metadata |
-| `decayFunction` | string |  | `exponential` | `linear` \| `exponential` \| `step` \| `none` \| `no_decay` |
-| `temporalScale` | string |  | `meso` | `micro` \| `meso` \| `macro` \| `long` \| `archival` |
+| `sessionScope` | string |  | `all` | enum: `current`, `all`, `recent` |
+| `decayFunction` | string |  | `exponential` | enum: `linear`, `exponential`, `step`, `none`, `no_decay` |
+| `decayHalfLifeSecs` | integer |  | `86400` | half-life for exponential decay |
+| `temporalScale` | string |  | `meso` | enum: `micro`, `meso`, `macro`, `long`, `archival` |
+| `lastHours` | integer |  | — | hard window filter (≥1) |
+| `lastDays` | integer |  | — | hard window filter (≥1) |
+| `sessionId` | string |  | — | filter to one session |
+| `periodicBoost` | number |  | — | weight for E3 periodic boost |
+| `targetHour` | integer |  | — | 0–23, used with `periodicBoost` |
+| `targetDayOfWeek` | integer |  | — | 0=Sun…6=Sat, used with `periodicBoost` |
+| `sequenceAnchor` | string (uuid) |  | — | E4 anchor memory |
+| `sequenceDirection` | string |  | — | enum: `before`, `after`, `around`, `both` |
+| `includeProvenance` | boolean |  | `false` | include retrieval provenance metadata |
 
-**Side effects:** none (read-only).
+**Weight profiles** (`weightProfile` enum, 19 values):
+`semantic_search`, `causal_reasoning`, `code_search`, `fact_checking`, `graph_reasoning`, `temporal_navigation`, `sequence_navigation`, `conversation_history`, `category_weighted`, `typo_tolerant`, `pipeline_stage1_recall`, `pipeline_stage2_scoring`, `pipeline_full`, `balanced`, `multilingual_search`, `long_context`, `translation_finder`, `affect_repair`, `affect_priming`, `affect_neutral`.
+
+**Side effects:** none (read-only). Reads `CF_FINGERPRINTS`, `CF_CONTENT`, `CF_HNSW_*`, `CF_INVERTED_*`, `CF_TOKEN_*`.
 
 ### `trigger_consolidation`
-**Description:** Identify merge candidates. **Does NOT auto-merge.** Use `merge_concepts` to execute.
-**Source:** `core.rs:376`; handler `crates/context-graph-mcp/src/handlers/tools/consolidation.rs:248`.
+**Description:** Analyze memories for consolidation candidates. Returns pairs that **could** be merged but does not auto-merge. Use `merge_concepts` to execute.
+**Source:** `tools/definitions/core.rs:376`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Range / Description |
 | --- | --- | :-: | --- | --- |
-| `strategy` | string |  | `similarity` | `similarity` \| `temporal` \| `semantic` |
-| `min_similarity` | number |  | `0.925` | SRC-3 normalized `[0,1]` |
-| `max_memories` | integer |  | `100` | 1–10000 |
+| `strategy` | string |  | `similarity` | enum: `similarity`, `temporal`, `semantic` |
+| `min_similarity` | number |  | `0.925` | normalized cosine threshold `[0,1]` |
+| `max_memories` | integer |  | `100` | 1–10000 fingerprints to consider |
 
-**Alias:** `consolidate_memories`. **Side effects:** none (returns candidate pairs).
+**Side effects:** none (read-only — only proposes candidates).
 
 ---
 
-## 6. Merge & Curation
+## 6. Merge tool
 
 ### `merge_concepts`
-**Description:** Merge ≥2 concept nodes into a unified node with reversal_hash for 30-day undo.
-**Source:** `crates/context-graph-mcp/src/tools/definitions/merge.rs:16`; handler in `curation_tools.rs` / `memory_tools.rs`.
+**Description:** Merge 2–10 concept fingerprints into a single unified node. Returns `reversal_hash` for 30-day undo.
+**Source:** `tools/definitions/merge.rs:16`; handler `handlers/tools/memory_tools.rs`.
 
-| Param | Type | Req | Default | Description |
+| Param | Type | Req | Default | Range / Description |
 | --- | --- | :-: | --- | --- |
-| `source_ids` | array<uuid> | yes | — | 2–10 UUIDs |
+| `source_ids` | array | yes | — | 2–10 UUIDs |
 | `target_name` | string | yes | — | 1–256 chars |
-| `merge_strategy` | string |  | `union` | `union` \| `intersection` \| `weighted_average` |
-| `rationale` | string | yes | — | 1–1024 chars (PRD 0.3) |
-| `force_merge` | boolean |  | `false` | bypass prior-conflict guard |
+| `merge_strategy` | string |  | `union` | enum: `union`, `intersection`, `weighted_average` |
+| `rationale` | string | yes | — | 1–1024 chars (PRD 0.3 mandate) |
+| `force_merge` | boolean |  | `false` | ignore prior conflicts |
 
-**Side effects:** writes target into `CF_FINGERPRINTS`, `CF_MERGE_HISTORY`, `CF_AUDIT_LOG`; sources soft-deleted; reversal hash retained 30 days.
-
-### `forget_concept`
-**Description:** Soft-delete with 30-day recovery (SEC-06) or permanent delete.
-**Source:** `crates/context-graph-mcp/src/tools/definitions/curation.rs:21`; handler `crates/context-graph-mcp/src/handlers/tools/curation_tools.rs:38`.
-
-| Param | Type | Req | Default | Description |
-| --- | --- | :-: | --- | --- |
-| `node_id` | uuid | yes | — | memory UUID |
-| `soft_delete` | boolean |  | `true` | `false` = permanent delete |
-| `operator_id` | string |  | — | provenance |
-| `reason` | string |  | — | audit text |
-
-**Side effects:** writes tombstone in `CF_SYSTEM` + `CF_AUDIT_LOG`; soft-delete blocks fingerprint from search.
-
-### `boost_importance`
-**Description:** Adjust importance by `delta`; final value clamped `[0,1]` (BR-MCP-002).
-**Source:** `curation.rs:53`; handler `curation_tools.rs:163`.
-
-| Param | Type | Req | Default | Range |
-| --- | --- | :-: | --- | --- |
-| `node_id` | uuid | yes | — | — |
-| `delta` | number | yes | — | `[-1.0, 1.0]` |
-| `operator_id` | string |  | — | provenance |
-
-**Side effects:** updates `CF_FINGERPRINTS.importance`, appends `CF_IMPORTANCE_HISTORY`, `CF_AUDIT_LOG`.
+**Side effects:** writes a new fingerprint, soft-deletes (status: superseded) the sources, writes `CF_MERGE_HISTORY`, `CF_AUDIT_LOG`. Updates HNSW indexes.
 
 ---
 
-## 7. Topic Tools
+## 7. Curation tools
 
-### `get_topic_portfolio`
-**Description:** All discovered topics with profiles + stability + tier info. Topics emerge from weighted multi-space clustering (`weighted_agreement >= 2.5`); E2–E4 excluded (AP-60).
-**Source:** `topic.rs:20`; handler `topic_tools.rs:192`.
+### `forget_concept`
+**Description:** Soft-delete a memory with 30-day recovery window (per SEC-06). Set `soft_delete=false` for permanent deletion.
+**Source:** `tools/definitions/curation.rs:20`; DTOs `handlers/tools/curation_dtos.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `format` | string |  | `standard` | `brief` \| `standard` \| `verbose` |
+| `node_id` | string (uuid) | yes | — | memory to forget |
+| `soft_delete` | boolean |  | `true` | when false, hard-deletes (irrecoverable) |
+| `operator_id` | string |  | — | tracked in audit |
+| `reason` | string |  | — | tracked in audit |
+
+**Side effects:** soft path writes `deleted_at` to `CF_SOURCE_METADATA` and appends `CF_AUDIT_LOG`. Hard path removes the fingerprint from every `CF_EMB_*`/`CF_HNSW_*`/sparse/token CF, then deletes from `CF_FINGERPRINTS` (RocksDB-first ordering).
+
+### `boost_importance`
+**Description:** Adjust a memory's importance score by `delta`. Final value is clamped to `[0.0, 1.0]` (BR-MCP-002). Response includes old, delta, and new.
+**Source:** `tools/definitions/curation.rs:53`; DTOs `handlers/tools/curation_dtos.rs`.
+
+| Param | Type | Req | Default | Range / Description |
+| --- | --- | :-: | --- | --- |
+| `node_id` | string (uuid) | yes | — | memory UUID |
+| `delta` | number | yes | — | `[-1.0, 1.0]` |
+| `operator_id` | string |  | — | tracked in audit |
+
+**Side effects:** updates `CF_FINGERPRINTS::importance`, appends `CF_AUDIT_LOG`.
+
+---
+
+## 8. Topic tools
+
+### `get_topic_portfolio`
+**Description:** All discovered topics with profiles, stability metrics, and tier info. Topics emerge from weighted multi-space clustering (threshold ≥ 2.5; AP-60 excludes E2-E4).
+**Source:** `tools/definitions/topic.rs:20`; DTOs `handlers/tools/topic_dtos.rs`.
+
+| Param | Type | Req | Default | Description |
+| --- | --- | :-: | --- | --- |
+| `format` | string |  | `standard` | enum: `brief`, `standard`, `verbose` |
+
+**Side effects:** none (read-only `CF_TOPICS`).
 
 ### `get_topic_stability`
 **Description:** Portfolio-level churn rate, entropy, phase breakdown.
-**Source:** `topic.rs:39`; handler `topic_tools.rs:367`.
+**Source:** `tools/definitions/topic.rs:39`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `hours` | integer |  | `6` | 1–168 |
+| `hours` | integer |  | `6` | lookback 1–168 |
 
 ### `detect_topics`
-**Description:** Force HDBSCAN recalculation; minimum 3 memories.
-**Source:** `topic.rs:57`; handler `topic_tools.rs:441`.
+**Description:** Force topic detection recalculation using HDBSCAN. Requires ≥3 memories. Threshold `weighted_agreement >= 2.5`.
+**Source:** `tools/definitions/topic.rs:57`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `force` | boolean |  | `false` | bypass recent-cache check |
+| `force` | boolean |  | `false` | ignore recent computation |
 | `max_memories` | integer |  | `10000` | 1–50000 |
 
-**Side effects:** writes `CF_TOPICS`, `CF_TOPIC_MEMBERSHIPS`.
+**Side effects:** writes `CF_TOPICS`, `CF_TOPIC_MEMBERSHIP`.
 
 ### `get_divergence_alerts`
-**Description:** Divergence vs recent activity using SEMANTIC embedders only (E1, E6, E7, E10, E12, E13). E5 excluded (AP-77), E2–E4 excluded (AP-63).
-**Source:** `topic.rs:82`; handler `topic_tools.rs:684`.
+**Description:** Check for divergence from recent activity using **semantic** embedders only (E1, E6, E7, E10, E12, E13 per AP-62). E5 is excluded because it returns 0.0 without a CausalDirection (AP-77). Temporal embedders excluded per AP-63.
+**Source:** `tools/definitions/topic.rs:82`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
 | `lookback_hours` | integer |  | `2` | 1–48 |
 
 ---
 
-## 8. File Watcher Tools
-
-Source: `crates/context-graph-mcp/src/tools/definitions/file_watcher.rs`; handler `crates/context-graph-mcp/src/handlers/tools/file_watcher_tools.rs`.
+## 9. File watcher tools
 
 ### `list_watched_files`
-**Description:** Files with embeddings + chunk counts + last update.
+**Description:** All files that have embeddings from the file watcher.
+**Source:** `tools/definitions/file_watcher.rs:20`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `include_counts` | boolean |  | `true` | per-file chunk counts |
-| `path_filter` | string |  | — | glob pattern (e.g., `**/docs/*.md`) |
+| `include_counts` | boolean |  | `true` | include chunk counts |
+| `path_filter` | string |  | — | glob pattern |
 
 ### `get_file_watcher_stats`
-**Description:** Aggregate stats — total files, total chunks, avg/min/max.
-**Params:** none.
+**Description:** Total files, total chunks, avg/min/max chunks per file.
+**Source:** `tools/definitions/file_watcher.rs:42`.
+
+(no parameters)
 
 ### `delete_file_content`
-**Description:** Delete embeddings for a path; soft-delete supported (SEC-06).
+**Description:** Delete all embeddings for a file. Soft-delete by default (SEC-06).
+**Source:** `tools/definitions/file_watcher.rs:54`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
 | `file_path` | string | yes | — | absolute path |
 | `soft_delete` | boolean |  | `true` | 30-day recovery |
 
-**Side effects:** removes fingerprints + HNSW entries; writes `CF_AUDIT_LOG` rows.
+**Side effects:** soft sets `deleted_at`; hard removes from every CF.
 
 ### `reconcile_files`
-**Description:** Find orphaned embeddings (file missing on disk) and optionally delete.
+**Description:** Find orphaned files (DB has chunks, disk doesn't have file) and optionally delete them.
+**Source:** `tools/definitions/file_watcher.rs:76`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
 | `dry_run` | boolean |  | `true` | preview only |
-| `base_path` | string |  | — | scope to a subtree |
-
-**Side effects:** soft-deletes orphans when `dry_run=false`.
+| `base_path` | string |  | — | optional scope |
 
 ---
 
-## 9. Sequence Tools (E4 V_ordering)
+## 10. Sequence tools (E4)
 
-Source: `sequence.rs`; handler `sequence_tools.rs`.
+E4 is the V_ordering embedder for conversation/session sequence position.
 
 ### `get_conversation_context`
-**Description:** Memories around the current turn with auto-anchoring.
+**Description:** Memories around the current conversation turn, auto-anchored. Uses E4.
+**Source:** `tools/definitions/sequence.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `direction` | string |  | `before` | `before` \| `after` \| `both` |
+| `direction` | string |  | `before` | enum: `before`, `after`, `both` |
 | `windowSize` | integer |  | `10` | 1–50 |
-| `sessionOnly` | boolean |  | `true` | scope to current session |
-| `includeContent` | boolean |  | `true` | full text |
-| `query` | string |  | — | optional semantic filter |
-| `minSimilarity` | number |  | `0.0` | `[0,1]` |
+| `sessionOnly` | boolean |  | `true` | restrict to current session |
+| `includeContent` | boolean |  | `true` | inline content |
 
 ### `get_session_timeline`
-**Description:** Ordered timeline; sorted by `session_sequence` ascending; emits human-readable position labels.
+**Description:** Ordered timeline by `session_sequence` ascending. Includes labels like "2 turns ago".
+**Source:** `tools/definitions/sequence.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `sessionId` | string |  | current | session UUID |
+| `sessionId` | string |  | current | session to scope |
 | `limit` | integer |  | `50` | 1–200 |
-| `offset` | integer |  | `0` | ≥0 |
-| `sourceTypes` | array<string> |  | all | `HookDescription` \| `ClaudeResponse` \| `Manual` \| `MDFileChunk` |
-| `includeContent` | boolean |  | `false` | full text |
+| `offset` | integer |  | `0` | pagination |
+| `sourceTypes` | array |  | — | enum: `HookDescription`, `ClaudeResponse`, `Manual`, `MDFileChunk` |
 
 ### `traverse_memory_chain`
-**Description:** Multi-hop chain navigation from an anchor.
+**Description:** Multi-hop traversal from an anchor.
+**Source:** `tools/definitions/sequence.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `anchorId` | uuid | yes | — | starting memory |
-| `direction` | string |  | `backward` | `forward` \| `backward` \| `bidirectional` |
+| `anchorId` | string (uuid) | yes | — | starting memory |
+| `direction` | string |  | `backward` | enum: `forward`, `backward`, `bidirectional` |
 | `hops` | integer |  | `5` | 1–20 |
 | `semanticFilter` | string |  | — | optional topic filter |
-| `minSimilarity` | number |  | `0.3` | `[0,1]` |
-| `includeContent` | boolean |  | `true` | full text |
+| `minSimilarity` | number |  | — | similarity floor |
 
 ### `compare_session_states`
-**Description:** Compare memory state at two sequence points.
+**Description:** Compare memory state at two sequence points in a session.
+**Source:** `tools/definitions/sequence.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `beforeSequence` | int \| string | yes | — | integer or `"start"` |
-| `afterSequence` | int \| string | yes | — | integer or `"current"` |
-| `sessionId` | string |  | current | scope |
+| `beforeSequence` | int|string | yes | — | sequence number or `"start"` |
+| `afterSequence` | int|string | yes | — | sequence number or `"current"` |
+| `sessionId` | string |  | current | session to scope |
 
 ---
 
-## 10. Causal Tools (E5)
+## 11. Causal tools (E5)
 
-Source: `causal.rs`; handler `causal_tools.rs` and `causal_relationship_tools.rs`.
+E5 is the asymmetric causal embedder. Direction modifiers: cause→effect 1.2x, effect→cause 0.8x.
 
 ### `search_causal_relationships`
-**Description:** E5 asymmetric similarity + LLM 1–3 paragraph descriptions with provenance to source memories.
-**Source:** `causal.rs:16`; handler `causal_relationship_tools.rs:74`.
+**Description:** Search causal relationships by description similarity with provenance. Returns LLM-generated descriptions linked to source memories.
+**Source:** `tools/definitions/causal.rs`; DTOs `handlers/tools/causal_dtos.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `query` | string | yes | — | natural-language causal query |
-| `direction` | string |  | `all` | `cause` \| `effect` \| `all` |
-| `topK` | integer |  | `10` | 1–100 |
-| `includeSource` | boolean |  | `true` | include original source content |
-| `includeProvenance` | boolean |  | `false` | retrieval provenance metadata |
-| `sourceWeight` | number |  | `0.6` | `[0,1]` source-anchored embedding weight |
-| `explanationWeight` | number |  | `0.4` | `[0,1]` explanation embedding weight |
-| `multiEmbedder` | boolean |  | `false` | E1+E5+E8+E11 consensus (requires direction `cause`/`effect`) |
-| `minConsensus` | number |  | `0.0` | `[0,1]` |
-| `e1Weight` | number |  | `0.30` | `[0,1]` consensus weight |
-| `e5Weight` | number |  | `0.35` | `[0,1]` |
-| `e8Weight` | number |  | `0.15` | `[0,1]` |
-| `e11Weight` | number |  | `0.20` | `[0,1]` |
+| `query` | string | yes | — | description text |
+| `direction` | string |  | — | enum: `cause`, `effect` |
+| `top_k` | integer |  | `10` | results |
+| `min_similarity` | number |  | — | floor |
+| `include_provenance` | boolean |  | `true` | include source memory IDs |
 
 ### `search_causes`
-**Description:** Abductive — find causes of effects with 0.8× effect→cause dampening (AP-77).
-**Source:** `causal.rs:111`; handler `causal_tools.rs:59`.
+**Description:** Find memories that caused something matching the query. Applies asymmetric E5 reranking.
+**Source:** `tools/definitions/causal.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `query` | string | yes | — | observed effect |
-| `topK` | integer |  | `10` | 1–50 |
-| `minScore` | number |  | `0.1` | `[0,1]` |
-| `includeContent` | boolean |  | `false` | — |
-| `filterCausalDirection` | string |  | — | `cause` \| `effect` \| `unknown` |
-| `searchScope` | string |  | `memories` | `memories` \| `relationships` \| `all` |
-| `strategy` | string |  | — | `e1_only` \| `multi_space` \| `pipeline` |
-| `rerankWeight` | number |  | `0.4` | `[0,1]`; only for `pipeline` |
+| `query` | string | yes | — | what happened |
+| `top_k` | integer |  | `10` | results |
+| `min_similarity` | number |  | — | floor |
 
 ### `search_effects`
-**Description:** Predictive — find effects of causes with 1.2× cause→effect boost.
-**Source:** `causal.rs:172`; handler `causal_tools.rs:444`. **Same params as `search_causes`** with `query` describing the cause.
+**Description:** Find memories that resulted from a cause matching the query.
+**Source:** `tools/definitions/causal.rs`.
+
+| Param | Type | Req | Default | Description |
+| --- | --- | :-: | --- | --- |
+| `query` | string | yes | — | the cause |
+| `top_k` | integer |  | `10` | results |
+| `min_similarity` | number |  | — | floor |
 
 ### `get_causal_chain`
-**Description:** Transitive causal chain from anchor; hop attenuation 0.9^hop.
-**Source:** `causal.rs:232`; handler `causal_tools.rs:813`.
+**Description:** Traverse a chain of causal relationships starting from an anchor.
+**Source:** `tools/definitions/causal.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `anchorId` | uuid | yes | — | starting memory |
-| `direction` | string |  | `forward` | `forward` \| `backward` |
-| `maxHops` | integer |  | `5` | 1–10 |
-| `minSimilarity` | number |  | `0.3` | `[0,1]` |
-| `includeContent` | boolean |  | `false` | — |
+| `anchorId` | string (uuid) | yes | — | starting memory |
+| `direction` | string |  | `forward` | causal direction |
+| `hops` | integer |  | `5` | max depth |
+| `min_strength` | number |  | — | edge weight floor |
 
 ---
 
-## 11. Causal Discovery Tools (LLM)
+## 12. Causal discovery tools (LLM-gated)
 
-LLM-gated; require `--features llm`. Source: `causal_discovery.rs`; handler `causal_discovery_tools.rs`.
+These tools are only present with `--features llm`. They use Qwen2.5-7B for causal analysis with GBNF grammar constraints.
 
 ### `trigger_causal_discovery`
-**Description:** Run the Qwen2.5 causal discovery agent. FP16 on RTX 5090. ~6GB VRAM (3B), ~14GB (7B). Confirmed relationships call `CausalModel.embed_dual()` to produce asymmetric E5 vectors.
-**Source:** `causal_discovery.rs:32`; handler `causal_discovery_tools.rs:85`.
+**Description:** Manually trigger the causal discovery agent on memories.
+**Source:** `tools/definitions/causal_discovery.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `mode` | string |  | `extract` | `extract` (within-memory) \| `pairs` (between memories) |
-| `maxPairs` | integer |  | `50` | 1–200 |
-| `minConfidence` | number |  | `0.7` | `[0.5, 1.0]` |
-| `sessionScope` | string |  | `all` | `current` \| `all` \| `recent` |
-| `session_id` | string |  | — | with `sessionScope=current` for exact match |
-| `dryRun` | boolean |  | `false` | analyze without writing edges/embeddings |
+| `mode` | string |  | `extract` | enum: `extract` (find new), `validate` (check existing) |
+| `max_memories` | integer |  | — | scope cap |
+| `min_score` | number |  | — | confidence floor |
+| `session_scope` | string |  | `current` | enum: `current`, `all` |
 
-**Side effects:** writes `CF_CAUSAL_RELATIONSHIPS`, `CF_CAUSAL_BY_SOURCE`; updates E5 cause/effect HNSW indexes.
+**Side effects:** writes `CF_CAUSAL_RELATIONSHIPS`, may write `CF_AUDIT_LOG`.
 
 ### `get_causal_discovery_status`
-**Description:** Agent status, last cycle stats, VRAM, cumulative counts.
-**Source:** `causal_discovery.rs:84`; handler `causal_discovery_tools.rs:485`.
+**Description:** Status and statistics of the causal discovery agent.
+**Source:** `tools/definitions/causal_discovery.rs`.
 
-| Param | Type | Req | Default | Description |
-| --- | --- | :-: | --- | --- |
-| `includeLastResult` | boolean |  | `true` | include last cycle's analyzed pairs |
-| `includeGraphStats` | boolean |  | `true` | causal graph node/edge counts |
+(no parameters)
 
 ---
 
-## 12. Keyword / Code / Robustness
+## 13. Single-purpose search tools
 
 ### `search_by_keywords` (E6)
-Source: `keyword.rs:23`; handler `keyword_tools.rs:59`.
+**Description:** Sparse keyword inverted-index search.
+**Source:** `tools/definitions/keyword.rs`; DTOs `handlers/tools/keyword_dtos.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `query` | string | yes | — | phrase or keywords |
-| `topK` | integer |  | `10` | 1–50 |
-| `minScore` | number |  | `0.1` | `[0,1]` |
-| `blendWithSemantic` | number |  | `0.3` | `[0,1]` (0=pure E1, 1=pure E6) |
-| `useSpladeExpansion` | boolean |  | `true` | E13 SPLADE expansion |
-| `includeContent` | boolean |  | `false` | — |
-| `strategy` | string |  | `multi_space` | `e1_only` \| `multi_space` \| `pipeline` |
+| `query` | string | yes | — | keyword query |
+| `top_k` | integer |  | `10` | results |
+| `min_similarity` | number |  | — | floor |
+| `boost_factor` | number |  | — | E6 weight in fusion |
+| `include_content` | boolean |  | `false` | inline content |
+| `multi_space` | boolean |  | — | mix into multi-space fusion |
+| `weight_profile` | string |  | — | profile override |
 
 ### `search_code` (E7)
-Source: `code.rs:23`; handler `code_tools.rs:62`.
+**Description:** Code-aware search using Qodo-Embed (1536D).
+**Source:** `tools/definitions/code.rs`; DTOs `handlers/tools/code_dtos.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `query` | string | yes | — | code description or pattern |
-| `topK` | integer |  | `10` | 1–50 |
-| `minScore` | number |  | `0.2` | `[0,1]` |
-| `blendWithSemantic` | number |  | `0.4` | `[0,1]` |
-| `includeContent` | boolean |  | `false` | — |
-| `searchMode` | string |  | `hybrid` | `hybrid` \| `e7Only` \| `e1WithE7Rerank` \| `pipeline` |
-| `languageHint` | string |  | — | `rust` \| `python` \| `javascript` \| `typescript` \| `go` \| `java` \| `cpp` \| `sql` |
+| `query` | string | yes | — | code or signature query |
+| `top_k` | integer |  | `10` | results |
+| `language` | string |  | — | hint (`rust`, `python`, …) |
+| `mode` | string |  | `hybrid` | enum: `hybrid` (E7+E1) and similar |
+| `include_content` | boolean |  | `false` | inline content |
 
-### `search_robust` (E9 HDC)
-Source: `robustness.rs:34`; handler `robustness_tools.rs:73`.
+### `search_robust` (E9)
+**Description:** Typo-tolerant search via E9 HDC. Surfaces results with high E9 + low E1 (blind-spot detection).
+**Source:** `tools/definitions/robustness.rs`; DTOs `handlers/tools/robustness_dtos.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `query` | string | yes | — | minLength 3 (trigram requirement) |
-| `topK` | integer |  | `10` | 1–50 |
-| `minScore` | number |  | `0.1` | `[0,1]` |
-| `e9DiscoveryThreshold` | number |  | `0.08` | `[0,1]` E9 score to mark as 'E9 discovery' |
-| `e1WeaknessThreshold` | number |  | `0.5` | `[0,1]` max E1 to qualify as missed |
-| `includeContent` | boolean |  | `false` | — |
-| `includeE9Score` | boolean |  | `true` | per-result E9/E1 split |
-| `strategy` | string |  | `multi_space` | `e1_only` \| `multi_space` \| `pipeline` |
+| `query` | string | yes | — | possibly noisy query |
+| `top_k` | integer |  | `10` | results |
+| `min_similarity` | number |  | — | floor |
+| `min_e9` | number |  | — | E9 floor |
+| `max_e1` | number |  | — | E1 ceiling for blind-spot mode |
+| `compare_e1` | boolean |  | — | return both E1 and E9 scores |
 
 ---
 
-## 13. Entity Tools (E11 / TransE)
+## 14. Graph tools (E8)
 
-Source: `entity.rs`; handler `entity_tools.rs`.
+### `search_connections`
+**Description:** Search the graph by E8 structural similarity (imports, dependencies, references).
+**Source:** `tools/definitions/graph.rs`; DTOs `handlers/tools/graph_dtos.rs`.
+
+| Param | Type | Req | Default | Description |
+| --- | --- | :-: | --- | --- |
+| `query` | string | yes | — | concept or symbol |
+| `direction` | string |  | — | enum: `source`, `target`, both |
+| `top_k` | integer |  | `10` | results |
+| `min_similarity` | number |  | — | floor |
+| `include_content` | boolean |  | `false` | inline content |
+
+### `get_graph_path`
+**Description:** Shortest path between two memories through the graph.
+**Source:** `tools/definitions/graph.rs`.
+
+| Param | Type | Req | Default | Description |
+| --- | --- | :-: | --- | --- |
+| `anchorId` | string (uuid) | yes | — | start |
+| `targetId` | string (uuid) | yes | — | end |
+| `max_hops` | integer |  | `5` | depth cap |
+| `min_strength` | number |  | — | edge weight floor |
+
+### `discover_graph_relationships` (LLM)
+**Description:** Use LLM analysis (graph-agent + CausalDiscoveryLLM) to discover relationships among a set of memories.
+**Source:** `tools/definitions/graph.rs` (LLM-gated).
+
+| Param | Type | Req | Default | Description |
+| --- | --- | :-: | --- | --- |
+| `memory_ids` | array | yes | — | UUIDs to analyze |
+| `min_confidence` | number |  | — | confidence floor |
+
+### `validate_graph_link` (LLM)
+**Description:** Validate one proposed graph link via LLM.
+**Source:** `tools/definitions/graph.rs` (LLM-gated).
+
+| Param | Type | Req | Default | Description |
+| --- | --- | :-: | --- | --- |
+| `source_id` | string (uuid) | yes | — | source memory |
+| `target_id` | string (uuid) | yes | — | target memory |
+| `relation` | string |  | — | proposed relation type |
+
+---
+
+## 15. Entity tools (E11)
+
+E11 is the KEPLER/TransE entity embedder (768D). Asymmetric for head/tail entities.
 
 ### `extract_entities`
-Source: `entity.rs:24`; handler `entity_tools.rs:622`.
+**Description:** Extract named entities from raw text.
+**Source:** `tools/definitions/entity.rs`; DTOs `handlers/tools/entity_dtos.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `text` | string | yes | — | text to canonicalize |
-| `includeUnknown` | boolean |  | `true` | include heuristic-detected entities |
-| `groupByType` | boolean |  | `false` | group by entity type |
+| `text` | string | yes | — | input text |
+| `include_types` | boolean |  | `true` | tag with entity types |
+| `include_offsets` | boolean |  | `false` | character offsets |
 
 ### `search_by_entities`
-Source: `entity.rs:53`; handler `entity_tools.rs:760`.
+**Description:** Search the graph by entity match.
+**Source:** `tools/definitions/entity.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `entities` | array<string> | yes | — | names; canonicalized |
-| `entityTypes` | array<enum> |  | — | `ProgrammingLanguage` \| `Framework` \| `Database` \| `Cloud` \| `Company` \| `TechnicalTerm` \| `Unknown` |
-| `matchMode` | string |  | `any` | `any` \| `all` |
-| `topK` | integer |  | `10` | 1–50 |
-| `minScore` | number |  | `0.2` | `[0,1]` |
-| `includeContent` | boolean |  | `false` | — |
-| `boostExactMatch` | number |  | `1.15` | `[1.0, 3.0]` |
-| `strategy` | string |  | — | `e1_only` \| `multi_space` \| `pipeline` |
+| `entities` | array | yes | — | one or more entity strings |
+| `top_k` | integer |  | `10` | results |
+| `mode` | string |  | — | match strategy |
 
-### `infer_relationship` (TransE r̂ = t − h)
-Source: `entity.rs:118`; handler `entity_tools.rs:1158`.
+### `infer_relationship`
+**Description:** TransE-style relation inference: given head and tail entities, predict relations.
+**Source:** `tools/definitions/entity.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
 | `headEntity` | string | yes | — | subject |
 | `tailEntity` | string | yes | — | object |
-| `headType` | enum |  | — | type hint |
-| `tailType` | enum |  | — | type hint |
-| `topK` | integer |  | `5` | 1–20 |
-| `includeScore` | boolean |  | `true` | raw TransE scores |
+| `top_k` | integer |  | — | top relations |
 
 ### `find_related_entities`
-Source: `entity.rs:163`; handler `entity_tools.rs:1350`.
+**Description:** Given an entity and a relation, find related entities via TransE arithmetic.
+**Source:** `tools/definitions/entity.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `entity` | string | yes | — | source entity |
-| `relation` | string | yes | — | predicate name |
-| `direction` | string |  | `outgoing` | `outgoing` (h→t) \| `incoming` (t←h) |
-| `entityType` | enum |  | — | restrict result type |
-| `topK` | integer |  | `10` | 1–50 |
-| `minScore` | number |  | — | `[-10, 0]` (TransE distance, more negative = looser) |
-| `searchMemories` | boolean |  | `true` | filter to entities found in stored memories |
+| `entity` | string | yes | — | anchor |
+| `relation` | string | yes | — | relation type |
+| `direction` | string |  | — | head→tail or tail→head |
+| `top_k` | integer |  | — | results |
 
 ### `validate_knowledge`
-Source: `entity.rs:215`; handler `entity_tools.rs:1581`. Computes `score = -||h + r - t||₂`. Returns `valid` / `uncertain` / `unlikely`.
+**Description:** Validate a `(subject, predicate, object)` triple via the knowledge graph.
+**Source:** `tools/definitions/entity.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
 | `subject` | string | yes | — | head |
 | `predicate` | string | yes | — | relation |
 | `object` | string | yes | — | tail |
-| `subjectType` | enum |  | — | type hint |
-| `objectType` | enum |  | — | type hint |
 
 ### `get_entity_graph`
-Source: `entity.rs:252`; handler `entity_tools.rs:1875`.
+**Description:** Return a structured entity graph (nodes + edges).
+**Source:** `tools/definitions/entity.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `centerEntity` | string |  | — | focal entity |
-| `maxNodes` | integer |  | `50` | 1–500 |
-| `entityTypes` | array<enum> |  | all | filter |
-| `minRelationScore` | number |  | `0.3` | `[0,1]` |
-| `includeMemoryCounts` | boolean |  | `true` | reference counts per node |
+| `seed_entities` | array |  | — | seed set |
+| `max_nodes` | integer |  | — | cap |
+| `max_hops` | integer |  | — | depth cap |
 
 ---
 
-## 14. Embedder Tools
+## 16. Embedder-first search tools
 
-Source: `embedder.rs`; handler `embedder_tools.rs`. The cross-cutting embedder list excludes E6/E12/E13 (non-HNSW) — they use `search_by_tokens`/`search_by_expansion` standalone. E14 is BGE-M3 Dense (1024-D, multilingual, 8192-token context).
+7 cross-cutting tools (`embedder::definitions()`) plus 2 standalone (E12, E13).
 
 ### `search_by_embedder`
-Source: `embedder.rs:37`; handler `embedder_tools.rs:71`.
+**Description:** Search using a specific embedder as the primary perspective. Each embedder sees the graph differently.
+**Source:** `tools/definitions/embedder.rs`; DTOs `handlers/tools/embedder_dtos.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `embedder` | enum | yes | — | `E1`–`E14` excluding `E6`,`E12`,`E13` (11 values) |
-| `query` | string | yes | — | — |
-| `topK` | integer |  | `10` | 1–100 |
-| `minSimilarity` | number |  | `0` | `[0,1]` |
-| `includeContent` | boolean |  | `false` | — |
-| `includeAllScores` | boolean |  | `false` | per-embedder scores in each result |
+| `embedder` | string | yes | — | enum: E1..E14 |
+| `query` | string | yes | — | search text |
+| `top_k` | integer |  | `10` | results |
+| `min_similarity` | number |  | — | floor |
+| `include_content` | boolean |  | `false` | inline content |
+| `include_provenance` | boolean |  | `false` | retrieval provenance |
 
 ### `get_embedder_clusters`
-Source: `embedder.rs:91`; handler `embedder_tools.rs:322`. Same embedder enum (11 values).
+**Description:** HDBSCAN clusters within a single embedder's index.
+**Source:** `tools/definitions/embedder.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `embedder` | enum | yes | — | E1–E14 (11 HNSW-capable) |
-| `minClusterSize` | integer |  | `3` | 2–50 |
-| `topClusters` | integer |  | `10` | 1–50 |
-| `includeSamples` | boolean |  | `true` | sample memories |
-| `samplesPerCluster` | integer |  | `3` | 1–10 |
+| `embedder` | string | yes | — | embedder name |
+| `min_cluster_size` | integer |  | — | clustering param |
+| `max_clusters` | integer |  | — | cap |
 
 ### `compare_embedder_views`
-Source: `embedder.rs:137`; handler `embedder_tools.rs:543`.
+**Description:** Run the same query against multiple embedders, return per-embedder rankings + agreement metrics.
+**Source:** `tools/definitions/embedder.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `query` | string | yes | — | — |
-| `embedders` | array<enum> | yes | — | 2–5 embedders, same 11-value enum |
-| `topK` | integer |  | `5` | 1–20 |
-| `includeContent` | boolean |  | `false` | — |
+| `query` | string | yes | — | search text |
+| `embedders` | array | yes | — | embedders to compare |
+| `top_k` | integer |  | — | results per embedder |
 
 ### `list_embedder_indexes`
-Source: `embedder.rs:178`; handler `embedder_tools.rs:804`.
+**Description:** List all loaded embedder indexes (HNSW, sparse, token) with shapes and counts.
+**Source:** `tools/definitions/embedder.rs`.
 
-| Param | Type | Req | Default | Description |
-| --- | --- | :-: | --- | --- |
-| `includeDetails` | boolean |  | `true` | memory usage + latency |
+(no parameters)
 
 ### `get_memory_fingerprint`
-Source: `embedder.rs:196`; handler `embedder_tools.rs:941`.
+**Description:** Full fingerprint for one memory: embeddings, scores, source metadata.
+**Source:** `tools/definitions/embedder.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `memoryId` | uuid | yes | — | — |
-| `embedders` | array<E1..E14> |  | all 14 | filter |
-| `includeVectorNorms` | boolean |  | `true` | L2 norms |
-| `includeContent` | boolean |  | `false` | — |
+| `memoryId` | string (uuid) | yes | — | memory |
+| `include_vectors` | boolean |  | `false` | inline raw vectors |
 
 ### `create_weight_profile`
-Source: `embedder.rs:236`; handler `embedder_tools.rs:1242`. Session-scoped; rejects built-in profile names.
+**Description:** Create a session-scoped custom weight profile for reuse.
+**Source:** `tools/definitions/embedder.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `name` | string | yes | — | 1–64 chars, must not collide with built-ins |
-| `weights` | object | yes | — | E1–E14 numbers in `[0,1]`, sum ≈ 1.0 |
-| `description` | string |  | — | free text |
+| `name` | string | yes | — | profile name |
+| `weights` | object | yes | — | `{E1, E2, …}` each `[0,1]` |
+| `description` | string |  | — | docs |
+
+**Side effects:** session-scoped — not persisted to RocksDB.
 
 ### `search_cross_embedder_anomalies`
-Source: `embedder.rs:282`; handler `embedder_tools.rs:1362`.
+**Description:** Memories that score high in `highEmbedder` but low in `lowEmbedder`. Useful for blind-spot mining.
+**Source:** `tools/definitions/embedder.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `query` | string | yes | — | — |
-| `highEmbedder` | enum<E1..E14> | yes | — | expected HIGH |
-| `lowEmbedder` | enum<E1..E14> | yes | — | expected LOW |
-| `highThreshold` | number |  | `0.5` | `[0,1]` |
-| `lowThreshold` | number |  | `0.3` | `[0,1]` |
-| `topK` | integer |  | `10` | 1–100 |
-| `includeContent` | boolean |  | `false` | — |
-| `primaryEmbedder` | enum<E1..E14> |  | `E1` | for generalized blind-spot mode |
-| `contrastEmbedder` | enum<E1..E14> |  | `E9` | for generalized blind-spot mode |
+| `query` | string | yes | — | search text |
+| `highEmbedder` | string | yes | — | embedder A |
+| `lowEmbedder` | string | yes | — | embedder B |
+| `min_high` | number |  | — | A score floor |
+| `max_low` | number |  | — | B score ceiling |
+| `top_k` | integer |  | — | results |
 
-### `search_by_tokens` (E12 ColBERT MaxSim, standalone)
-Source: `embedder.rs:354`; handler `embedder_tools.rs:1576`.
+### `search_by_tokens` (E12 standalone)
+**Description:** ColBERT MaxSim per-token retrieval (E12).
+**Source:** `tools/definitions/embedder.rs::standalone_definitions()`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `query` | string | yes | — | — |
-| `topK` | integer |  | `10` | 1–100 |
-| `minSimilarity` | number |  | `0.3` | `[0,1]` |
+| `query` | string | yes | — | search text |
+| `top_k` | integer |  | — | results |
+| `min_score` | number |  | — | floor |
 
-### `search_by_expansion` (E13 SPLADE, standalone)
-Source: `embedder.rs:368`; handler `embedder_tools.rs:1642`.
+### `search_by_expansion` (E13 standalone)
+**Description:** SPLADE sparse expansion-based recall (E13).
+**Source:** `tools/definitions/embedder.rs::standalone_definitions()`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `query` | string | yes | — | — |
-| `topK` | integer |  | `10` | 1–100 |
-| `minScore` | number |  | `0.1` | `[0,1]` |
+| `query` | string | yes | — | search text |
+| `top_k` | integer |  | — | results |
+| `min_score` | number |  | — | floor |
+| `expansion_terms` | integer |  | — | top-k expansion vocabulary |
 
 ---
 
-## 15. Temporal Tools
+## 17. Temporal tools (E2/E3)
 
-Source: `temporal.rs`; handler `temporal_tools.rs`. Both apply boost POST-retrieval (ARCH-25), not in similarity fusion.
+### `search_recent`
+**Description:** Recency-weighted search via E2 (sinusoidal positional encoding of unix timestamp).
+**Source:** `tools/definitions/temporal.rs`; DTOs `handlers/tools/temporal_dtos.rs`.
 
-### `search_recent` (E2 freshness)
-Source: `temporal.rs:18`; handler `temporal_tools.rs:34`.
-
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `query` | string | yes | — | — |
-| `topK` | integer |  | `10` | 1–100 |
-| `temporalWeight` | number |  | `0.3` | `[0.1, 1.0]` |
-| `decayFunction` | string |  | `exponential` | `linear` \| `exponential` \| `step` \| `none` \| `no_decay` |
-| `temporalScale` | string |  | `meso` | `micro` (1h) \| `meso` (1d) \| `macro` (1w) \| `long` (1mo) \| `archival` (1y) |
-| `includeContent` | boolean |  | `true` | — |
-| `minSimilarity` | number |  | `0.1` | `[0,1]` |
+| `query` | string | yes | — | search text |
+| `top_k` | integer |  | `10` | results |
+| `decayFunction` | string |  | `exponential` | enum: `linear`, `exponential`, `step`, `none` |
+| `decayHalfLifeSecs` | integer |  | `86400` | half-life seconds |
+| `temporal_weight` | number |  | — | E2 weight in fusion |
 
-### `search_periodic` (E3 V_periodicity)
-Source: `temporal.rs:76`; handler `temporal_tools.rs:203`.
+### `search_periodic`
+**Description:** Match periodic patterns via E3.
+**Source:** `tools/definitions/temporal.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `query` | string | yes | — | — |
-| `topK` | integer |  | `10` | 1–100 |
+| `query` | string | yes | — | search text |
 | `targetHour` | integer |  | — | 0–23 |
-| `targetDayOfWeek` | integer |  | — | 0=Sun, 6=Sat |
-| `autoDetect` | boolean |  | `false` | use current time if targets omitted |
-| `periodicWeight` | number |  | `0.3` | `[0.1, 1.0]` |
-| `includeContent` | boolean |  | `true` | — |
-| `minSimilarity` | number |  | `0.1` | `[0,1]` |
+| `targetDayOfWeek` | integer |  | — | 0=Sun…6=Sat |
+| `periodicBoost` | number |  | — | E3 weight |
+| `top_k` | integer |  | — | results |
 
 ---
 
-## 16. Graph Tools
-
-### `search_connections` (E8 asymmetric)
-Source: `graph.rs:20`; handler `graph_tools.rs:81`.
-
-| Param | Type | Req | Default | Range |
-| --- | --- | :-: | --- | --- |
-| `query` | string | yes | — | — |
-| `direction` | string |  | `both` | `source` \| `target` \| `both` |
-| `topK` | integer |  | `10` | 1–50 |
-| `minScore` | number |  | `0.1` | `[0,1]` |
-| `includeContent` | boolean |  | `false` | — |
-| `filterGraphDirection` | string |  | — | `source` \| `target` \| `unknown` |
-| `includeProvenance` | boolean |  | `false` | — |
-
-### `get_graph_path`
-Source: `graph.rs:74`; handler `graph_tools.rs:400`. Hop attenuation 0.9^hop.
-
-| Param | Type | Req | Default | Range |
-| --- | --- | :-: | --- | --- |
-| `anchorId` | uuid | yes | — | starting node |
-| `direction` | string |  | `forward` | `forward` \| `backward` |
-| `maxHops` | integer |  | `5` | 1–10 |
-| `minSimilarity` | number |  | `0.3` | `[0,1]` |
-| `includeContent` | boolean |  | `false` | — |
-
-### `discover_graph_relationships` (LLM)
-Source: `graph.rs:125`; handler `graph_tools.rs:679`. 20 relationship types across Code, Legal, Academic, General domains.
-
-| Param | Type | Req | Default | Range |
-| --- | --- | :-: | --- | --- |
-| `memory_ids` | array<uuid> | yes | — | 2–50 |
-| `relationship_types` | array<enum> |  | all | 19 enum values incl. `contains`, `imports`, `cites`, `interprets`, `implements`, `extends`, `supersedes`, `calls`, `applies`, `used_by`, etc. |
-| `min_confidence` | number |  | `0.7` | `[0,1]` |
-| `batch_size` | integer |  | `50` | 1–100 |
-
-**Side effects:** writes typed edges into `CF_TYPED_EDGES` + reverse indexes.
-
-### `validate_graph_link` (LLM)
-Source: `graph.rs:180`; handler `graph_tools.rs:1014`.
-
-| Param | Type | Req | Default | Description |
-| --- | --- | :-: | --- | --- |
-| `source_id` | uuid | yes | — | "points to" memory |
-| `target_id` | uuid | yes | — | "pointed to" memory |
-| `expected_relationship_type` | enum |  | — | one of 19 relationship enums |
-
----
-
-## 17. Graph-Link Tools (K-NN + Typed Edges)
-
-Source: `graph_link.rs`; handler `graph_link_tools.rs`.
+## 18. Graph linking tools (K-NN navigation)
 
 ### `get_memory_neighbors`
-Source: `graph_link.rs:22`; handler `graph_link_tools.rs:72`.
+**Description:** K-nearest-neighbours of a memory via the unified K-NN index.
+**Source:** `tools/definitions/graph_link.rs`; DTOs `handlers/tools/graph_link_dtos.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `memory_id` | uuid | yes | — | — |
-| `embedder_id` | integer |  | `0` | 0–12 (0=E1, 4=E5, 6=E7, 7=E8, 9=E10, 10=E11) |
-| `top_k` | integer |  | `10` | 1–50 |
-| `min_similarity` | number |  | `0.0` | `[0,1]` |
-| `include_content` | boolean |  | `false` | — |
-
-NOTE: returns 0 results until the background K-NN graph builder runs (~60s after store).
+| `memory_id` | string (uuid) | yes | — | anchor |
+| `k` | integer |  | `10` | neighbours |
+| `min_similarity` | number |  | — | floor |
+| `include_content` | boolean |  | `false` | inline content |
 
 ### `get_typed_edges`
-Source: `graph_link.rs:70`; handler `graph_link_tools.rs:343`.
+**Description:** Typed edges (cause/effect, supports/contradicts, etc.) for a memory. Direction-aware (incoming/outgoing/both).
+**Source:** `tools/definitions/graph_link.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `memory_id` | uuid | yes | — | — |
-| `edge_type` | enum |  | — | `semantic_similar` \| `code_related` \| `entity_shared` \| `causal_chain` \| `graph_connected` \| `paraphrase_aligned` \| `keyword_overlap` \| `multi_agreement` |
-| `direction` | enum |  | `outgoing` | `outgoing` \| `incoming` \| `both` |
-| `min_weight` | number |  | `0.0` | `[0,1]` |
-| `include_content` | boolean |  | `false` | — |
+| `memory_id` | string (uuid) | yes | — | anchor |
+| `edge_type` | string |  | — | filter by type |
+| `direction` | string |  | `both` | enum: `incoming`, `outgoing`, `both` |
+| `min_strength` | number |  | — | weight floor |
+| `limit` | integer |  | — | cap |
 
 ### `traverse_graph`
-Source: `graph_link.rs:123`; handler `graph_link_tools.rs:648`.
+**Description:** Multi-hop traversal of typed edges from a starting memory.
+**Source:** `tools/definitions/graph_link.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `start_memory_id` | uuid | yes | — | — |
-| `max_hops` | integer |  | `2` | 1–5 |
-| `edge_type` | enum |  | — | same 8 edge types |
-| `min_weight` | number |  | `0.3` | `[0,1]` |
-| `max_results` | integer |  | `20` | 1–100 |
-| `include_content` | boolean |  | `false` | — |
+| `start_memory_id` | string (uuid) | yes | — | starting memory |
+| `direction` | string |  | — | enum: `incoming`, `outgoing`, `both` |
+| `max_hops` | integer |  | `3` | depth cap |
+| `edge_types` | array |  | — | filter |
+| `min_strength` | number |  | — | weight floor |
 
 ### `get_unified_neighbors`
-Source: `graph_link.rs:184`; handler `graph_link_tools.rs:948`. Weighted RRF fusion across all 14 embedders (ARCH-21). Temporal embedders (E2-E4) excluded by default (AP-60).
-
-| Param | Type | Req | Default | Range |
-| --- | --- | :-: | --- | --- |
-| `memory_id` | uuid | yes | — | — |
-| `weight_profile` | enum |  | `semantic_search` | 20 named profiles (same set as `search_graph`) |
-| `top_k` | integer |  | `10` | 1–50 |
-| `min_score` | number |  | `0.0` | `[0,1]` RRF score |
-| `include_content` | boolean |  | `false` | — |
-| `include_embedder_breakdown` | boolean |  | `true` | per-embedder scores + ranks |
-| `custom_weights` | object<E1..E14> |  | — | overrides profile |
-| `exclude_embedders` | array<E1..E14> |  | — | renormalize remainder |
-| `learning_policy` | object |  | — | `{policy_scope*, min_evidence?, max_scan?, learning_rate?, include_evidence?}` — fails if no matching graph LearningEvents |
-
----
-
-## 18. Graph-Learning Tools
-
-Source: `learning.rs` (within `definitions/learning.rs`); handler `crates/context-graph-mcp/src/handlers/tools/graph_learning_tools.rs`.
-
-### `record_graph_learning_event`
-Source: `learning.rs:259`; handler `graph_learning_tools.rs:217`.
+**Description:** Multi-space K-NN via Weighted RRF across all 14 embedders. Per ARCH-21: fusion via RRF, not weighted sum. Per AP-60: temporal embedders excluded from semantic fusion.
+**Source:** `tools/definitions/graph_link.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `eventId` | uuid |  | generated | — |
-| `policyScope` | string | yes | — | stored as `taskId=graph_learning:<scope>` |
-| `graphTool` | enum |  | `get_unified_neighbors` | `get_unified_neighbors` \| `get_memory_neighbors` \| `traverse_graph` |
-| `sourceMemoryId` | uuid | yes | — | — |
-| `selectedNeighborIds` | array<uuid> | yes | — | minItems 1 |
-| `rejectedNeighborIds` | array<uuid> |  | `[]` | — |
-| `weightProfile` | string |  | `semantic_search` | — |
-| `beforeRank` | integer | yes | — | minimum 1 |
-| `afterRank` | integer | yes | — | minimum 1 |
-| `query` | string |  | `""` | — |
-| `sessionId` | string |  | — | — |
-| `responseId` | string |  | — | — |
-| `outcome` | object | yes | — | `{label*, utilityDelta*, correctionRequired?, reuseObserved?}` |
-| `outcomeReason` | string |  | — | — |
-
-**Side effects:** writes a row into `CF_LEARNING_EVENTS` then reads it back for verification. Rejects when graph evidence is missing.
-
-### `resolve_graph_learning_policy`
-Source: `learning.rs:298`; handler `graph_learning_tools.rs:435`.
-
-| Param | Type | Req | Default | Range |
-| --- | --- | :-: | --- | --- |
-| `policyScope` | string | yes | — | — |
-| `sourceMemoryId` | uuid |  | — | optional filter |
-| `baseWeightProfile` | string |  | `semantic_search` | — |
-| `minEvidence` | integer |  | `1` | 1–10000 |
-| `maxScan` | integer |  | `10000` | 1–200000 |
-| `learningRate` | number |  | `0.35` | `[0,1]` |
-| `includeEvidence` | boolean |  | `true` | — |
+| `memory_id` | string (uuid) | yes | — | anchor |
+| `k` | integer |  | `10` | neighbours |
+| `weight_profile` | string |  | — | profile override |
+| `custom_weights` | object |  | — | per-embedder weights |
+| `include_breakdown` | boolean |  | `false` | per-embedder per-result scores |
 
 ---
 
-## 19. Maintenance / Provenance / Daemon
+## 19. Maintenance tool
 
 ### `repair_causal_relationships`
-Source: `maintenance.rs:14`; handler `maintenance_tools.rs:16`.
-**Description:** Scan `CF_CAUSAL_RELATIONSHIPS` and delete entries that fail deserialization. Returns `(deleted_count, total_scanned)`.
-**Params:** none.
-**Side effects:** deletes corrupt rows.
+**Description:** Scan `CF_CAUSAL_RELATIONSHIPS`, delete entries that fail deserialization (truncated or corrupted bincode rows).
+**Source:** `tools/definitions/maintenance.rs`.
+
+(no parameters)
+
+**Side effects:** prunes `CF_CAUSAL_RELATIONSHIPS`. Read+write.
+
+---
+
+## 20. Provenance tools
 
 ### `get_audit_trail`
-Source: `provenance.rs:13`; handler `provenance_tools.rs:35`.
+**Description:** Audit log entries for a memory or time window.
+**Source:** `tools/definitions/provenance.rs`; DTOs `handlers/tools/provenance_dtos.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `target_id` | uuid |  | — | optional memory filter |
-| `start_time` | string (ISO 8601) |  | — | RFC-3339 lower bound |
-| `end_time` | string (ISO 8601) |  | — | RFC-3339 upper bound |
-| `limit` | integer |  | `50` | max 500 |
+| `memory_id` | string (uuid) |  | — | filter to one memory |
+| `operator_id` | string |  | — | filter to one operator |
+| `event_type` | string |  | — | filter to one event |
+| `since` | integer |  | — | unix timestamp lower bound |
+| `until` | integer |  | — | unix timestamp upper bound |
+| `limit` | integer |  | — | cap |
 
 ### `get_merge_history`
-Source: `provenance.rs:40`; handler `provenance_tools.rs:144`.
+**Description:** Merge lineage for a fingerprint — chain of merges that produced or affected this memory. Supports 30-day reversal.
+**Source:** `tools/definitions/provenance.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `memory_id` | uuid | yes | — | — |
-| `include_source_metadata` | boolean |  | `false` | — |
+| `memory_id` | string (uuid) | yes | — | memory |
+| `include_reversed` | boolean |  | — | include reversed merges |
 
 ### `get_provenance_chain`
-Source: `provenance.rs:60`; handler `provenance_tools.rs:269`.
+**Description:** Full chain from embeddings back to source for a memory.
+**Source:** `tools/definitions/provenance.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `memory_id` | uuid | yes | — | — |
-| `include_audit` | boolean |  | `false` | — |
-| `include_embedding_version` | boolean |  | `false` | — |
-| `include_importance_history` | boolean |  | `false` | — |
-| `include_merge_history` | boolean |  | `false` | — |
-| `depth_full` | boolean |  | `false` | shortcut for all-true |
+| `memory_id` | string (uuid) | yes | — | memory |
+| `depth` | integer |  | — | trace depth |
+
+---
+
+## 21. Daemon tool
 
 ### `daemon_status`
-Source: `daemon.rs:11`; handler `daemon_tools.rs:54`.
-**Description:** Active connection count, model state, GC/HNSW-persist/graph-builder background task state, uptime, PID.
-**Params:** none.
+**Description:** Daemon health metrics: active connections, model state, background tasks, lock holder.
+**Source:** `tools/definitions/daemon.rs`.
+
+(no parameters)
 
 ---
 
-## 20. Training Tools
+## 22. Training tools
 
-Source: `training.rs`; handler `training_tools.rs`.
+Persist training data to `CF_TRAINING_RECORDS`.
 
 ### `export_training_corpus`
-Source: `training.rs:16`; handler `training_tools.rs:63`. Each record bundles content, all 14 embedding vectors, 14D topic profile, 91D synergy cross-correlations, 6D group alignments, outgoing typed edges, K-NN, LLM causal labels, optional Tucker-1 decomposition.
-
-| Param | Type | Req | Default | Range |
-| --- | --- | :-: | --- | --- |
-| `filter` | enum |  | `all` | `all` \| `session` |
-| `filterId` | string |  | — | session id when `filter=session` |
-| `maxMemories` | integer |  | `10000` | 1–1000000 |
-| `includeEmbeddings` | boolean |  | `true` | dense E1/E2/E3/E4/E5/E7/E8/E9/E10/E11/E14 |
-| `includeSparseVectors` | boolean |  | `true` | E6 + E13 |
-| `includeTokenEmbeddings` | boolean |  | `false` | E12 (~15KB/record) |
-| `includeEdges` | boolean |  | `true` | outgoing + per-embedder K-NN |
-| `includeCausalLabels` | boolean |  | `true` | LLM causal_effects (causal_causes empty in v1) |
-| `includeIncomingEdges` | boolean |  | `false` | requires O(N) reverse-index scan |
-| `includeTemporalLabels` | boolean |  | `true` | hour, dow, periodic bucket, age, seq pos, E2/E3/E4 norms |
-| `includeTuckerCore` | boolean |  | `false` | Phase-4 Tucker-1 (4,4,128) of 14×14×1024 tensor |
-| `clearExisting` | boolean |  | `false` | wipe `CF_TRAINING_RECORDS` first |
-
-**Side effects:** writes `CF_TRAINING_RECORDS` (binary bincode + version byte).
-
-### `list_training_records`
-Source: `training.rs:99`; handler `training_tools.rs:559`.
-
-| Param | Type | Req | Default | Range |
-| --- | --- | :-: | --- | --- |
-| `limit` | integer |  | `50` | 1–1000 |
-| `offset` | integer |  | `0` | ≥0 |
-| `includeShape` | boolean |  | `true` | — |
-
-### `get_training_record`
-Source: `training.rs:130`; handler `training_tools.rs:660`.
+**Description:** Export memories as fully-labeled `TrainingRecord`s persisted to `CF_TRAINING_RECORDS`. Output is RocksDB-only (no external formats).
+**Source:** `tools/definitions/training.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `memoryId` | uuid | yes | — | — |
-| `includeVectors` | boolean |  | `false` | dense + sparse |
-| `includeTokenEmbeddings` | boolean |  | `false` | E12 |
-| `includeEdges` | boolean |  | `true` | outgoing + incoming + K-NN |
+| `selector` | string |  | `all` | enum: `all`, scope subset |
+| `min_importance` | number |  | — | floor |
+| `session_id` | string |  | — | scope to one session |
+| `max_records` | integer |  | — | cap |
+| `include_vectors` | boolean |  | — | persist embeddings |
+| `include_audit` | boolean |  | — | include audit history |
+| `include_e1_only` | boolean |  | — | restrict to E1 vector |
+
+**Side effects:** writes `CF_TRAINING_RECORDS`.
+
+### `list_training_records`
+**Description:** List UUIDs in `CF_TRAINING_RECORDS` with shape stats.
+**Source:** `tools/definitions/training.rs`.
+
+| Param | Type | Req | Default | Description |
+| --- | --- | :-: | --- | --- |
+| `limit` | integer |  | — | cap |
+| `offset` | integer |  | — | pagination |
+
+### `get_training_record`
+**Description:** Fetch one record by memory UUID.
+**Source:** `tools/definitions/training.rs`.
+
+| Param | Type | Req | Default | Description |
+| --- | --- | :-: | --- | --- |
+| `memoryId` | string (uuid) | yes | — | record id |
+| `omit_vectors` | boolean |  | — | strip heavy vectors |
 
 ### `count_training_records`
-Source: `training.rs:164`; handler `training_tools.rs:705`. **Params:** none.
+**Description:** Count rows in `CF_TRAINING_RECORDS`.
+**Source:** `tools/definitions/training.rs`.
+
+(no parameters)
 
 ---
 
-## 21. Learning-as-UTL Tools
+## 23. Learning-as-UTL tools (14)
 
-Source: `learning.rs`; handler `learning_tools.rs`. These are event-level UTL embedders (5 baseline signals: `delta_e`, `surprise`, `coherence`, `consolidation`, `transfer`), distinct from the E1–E14 content embedders.
+Persists Universal Theory of Learning events to `CF_LEARNING_EVENTS` and derived rows. Detail in [20_learning_subsystem.md](20_learning_subsystem.md).
 
 ### `record_learning_event`
-Source: `learning.rs:9`; handler `learning_tools.rs:188`.
+**Description:** Persist one before/after learning event to `CF_LEARNING_EVENTS`.
+**Source:** `tools/definitions/learning.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `eventId` | uuid |  | generated | — |
-| `memoryIds` | array<uuid> |  | `[]` | — |
-| `sessionId` | string |  | — | — |
-| `responseId` | string |  | — | — |
-| `taskId` | string |  | — | — |
-| `query` | string |  | `""` | — |
-| `retrievedContext` | string |  | `""` | — |
-| `assistantResponse` | string |  | `""` | — |
-| `before` | object | yes | — | `{topicProfile[14], crossCorrelations[91], retrievalRank?, embedderScores[14]?, contradictionPressure?, integrationConfidence?, recurrenceCount?, stabilityScore?, domain?, successfulTransferCount?}` |
-| `after` | object | yes | — | same shape as `before` |
-| `outcome` | object | yes | — | `{label*: useful\|neutral\|harmful\|no_learning, utilityDelta?, correctionRequired?, reuseObserved?}` |
+| `before` | object | yes | — | learner state before |
+| `after` | object | yes | — | learner state after |
+| `outcome` | object | yes | — | outcome details |
+| `learner_id` | string |  | — | optional learner |
+| `signal_embeddings` | boolean |  | — | also embed signals |
 
-**Side effects:** writes `CF_LEARNING_EVENTS`; signal embedders run server-side.
+**Side effects:** writes `CF_LEARNING_EVENTS`, optionally `CF_LEARNING_SIGNAL_VECTORS`.
 
 ### `list_learning_events`
-Source: `learning.rs:64`; handler `learning_tools.rs:306`.
+**Description:** List UUIDs in `CF_LEARNING_EVENTS`.
+**Source:** `tools/definitions/learning.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `limit` | integer |  | `50` | 1–1000 |
-| `offset` | integer |  | `0` | ≥0 |
-| `includeFeatures` | boolean |  | `true` | — |
+| `limit` | integer |  | — | cap |
+| `offset` | integer |  | — | pagination |
 
 ### `get_learning_event`
-Source: `learning.rs:78`; handler `learning_tools.rs:383`.
+**Description:** Fetch one Learning-as-UTL event by UUID.
+**Source:** `tools/definitions/learning.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `eventId` | uuid | yes | — | — |
-| `includeText` | boolean |  | `true` | — |
-| `includeSignals` | boolean |  | `true` | — |
+| `eventId` | string (uuid) | yes | — | event id |
 
 ### `count_learning_events`
-Source: `learning.rs:92`; handler `learning_tools.rs:423`. **Params:** none.
+**Description:** Count rows in `CF_LEARNING_EVENTS`.
+**Source:** `tools/definitions/learning.rs`.
+
+(no parameters)
 
 ### `list_learning_signal_embedders`
-Source: `learning.rs:102`; handler `learning_tools.rs:443`. **Params:** none.
+**Description:** List deterministic Learning-as-UTL signal embedders (the curated set used to embed before/after states).
+**Source:** `tools/definitions/learning.rs`.
+
+(no parameters)
 
 ### `compute_learning_signals`
-Source: `learning.rs:114`; handler `learning_tools.rs:464`. Inline compute, no storage write.
+**Description:** Compute deterministic Learning-as-UTL features and signal embeddings from an inline transition.
+**Source:** `tools/definitions/learning.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `before` | object | yes | — | state |
-| `after` | object | yes | — | state |
-| `outcome` | object | yes | — | label etc. |
-| `signalIds` | array<enum> |  | all 5 | `delta_e` \| `surprise` \| `coherence` \| `consolidation` \| `transfer` |
-| `includeFeatures` | boolean |  | `true` | — |
+| `before` | object | yes | — | state before |
+| `after` | object | yes | — | state after |
+| `outcome` | object | yes | — | outcome |
 
 ### `embed_learning_event_signals`
-Source: `learning.rs:170`; handler `learning_tools.rs:528`.
+**Description:** Embed one persisted LearningEvent with deterministic signal embedders.
+**Source:** `tools/definitions/learning.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `eventId` | uuid | yes | — | persisted event |
-| `signalIds` | array<enum> |  | all 5 | — |
-| `includePersisted` | boolean |  | `true` | compare freshly-computed vs persisted |
+| `eventId` | string (uuid) | yes | — | event id |
+
+**Side effects:** writes `CF_LEARNING_SIGNAL_VECTORS`.
 
 ### `estimate_learning_outcome`
-Source: `learning.rs:194`; handler `learning_tools.rs:628`. Nearest-neighbor case-based reasoning over `CF_LEARNING_EVENTS`.
+**Description:** Predict a candidate transition's outcome from nearest persisted LearningEvent cases.
+**Source:** `tools/definitions/learning.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
 | `before` | object | yes | — | candidate before-state |
 | `candidateAfter` | object | yes | — | candidate after-state |
-| `maxNeighbors` | integer |  | `5` | 1–100 |
-| `maxScan` | integer |  | `10000` | 1–200000 |
-| `minSimilarity` | number |  | `0.0` | `[-1, 1]` |
-| `taskId` | string |  | — | exact filter |
-| `domain` | string |  | — | before/after domain filter |
-| `includeNeighbors` | boolean |  | `true` | — |
+| `top_k` | integer |  | — | NN cases |
+
+### `record_graph_learning_event`
+**Description:** Persist a graph-navigation outcome as a LearningEvent backed by real EdgeRepository evidence.
+**Source:** `tools/definitions/learning.rs`.
+
+| Param | Type | Req | Default | Description |
+| --- | --- | :-: | --- | --- |
+| `policyScope` | string | yes | — | scope (`global`, `session`, ...) |
+| `sourceMemoryId` | string (uuid) | yes | — | anchor |
+| `selectedNeighborIds` | array | yes | — | the neighbours the user selected |
+| `beforeRank` | array | yes | — | ranking before |
+| `afterRank` | array | yes | — | ranking after |
+| `outcome` | object | yes | — | outcome details |
+
+### `resolve_graph_learning_policy`
+**Description:** Resolve a learned graph ranking policy from persisted graph LearningEvents.
+**Source:** `tools/definitions/learning.rs`.
+
+| Param | Type | Req | Default | Description |
+| --- | --- | :-: | --- | --- |
+| `policyScope` | string | yes | — | scope |
 
 ### `export_learner_training_dataset`
-Source: `learning.rs:318`; handler `learning_tools.rs:810`.
+**Description:** Compile learner/learning CF rows into a matrix-shaped RocksDB dataset.
+**Source:** `tools/definitions/learning.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `datasetId` | uuid |  | generated | — |
-| `task` | enum |  | `reward_model` | `reward_model` \| `reranker` \| `embedder_contrastive` \| `diagnostic_classifier` \| `scheduler` \| `personal_physiology` |
-| `maxRows` | integer |  | `10000` | 1–1000000 |
-| `clearExisting` | boolean |  | `false` | — |
+| `selector` | string |  | — | scope |
+| `description` | string |  | — | metadata |
+| `include_signals` | boolean |  | — | include signal vectors |
 
-**Side effects:** writes `CF_LEARNER_TRAINING_DATASETS` (versioned row-major f32 matrix).
+**Side effects:** writes a learner-training-dataset row.
 
 ### `list_learner_training_datasets`
-Source: `learning.rs:337`; handler `learning_tools.rs:916`.
+**Source:** `tools/definitions/learning.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `limit` | integer |  | `50` | 1–1000 |
-| `offset` | integer |  | `0` | ≥0 |
-| `includeShape` | boolean |  | `true` | — |
+| `limit` | integer |  | — | cap |
+| `offset` | integer |  | — | pagination |
 
 ### `get_learner_training_dataset`
-Source: `learning.rs:351`; handler `learning_tools.rs:993`.
+**Source:** `tools/definitions/learning.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `datasetId` | uuid | yes | — | — |
-| `includeMatrix` | boolean |  | `false` | full f32 buffer |
-| `previewRows` | integer |  | `3` | 0–100 |
+| `datasetId` | string (uuid) | yes | — | dataset id |
+| `include_rows` | boolean |  | — | hydrate rows |
 
 ### `count_learner_training_datasets`
-Source: `learning.rs:365`; handler `learning_tools.rs:1033`. **Params:** none.
+**Source:** `tools/definitions/learning.rs`.
+
+(no parameters)
 
 ---
 
-## 22. UTL Learner-State Tools
+## 24. UTL learner-state tools (18)
 
-Source: `utl.rs`; handler `utl_tools.rs`. These tools cover the Phase-0/Phase-1 measurement substrate plus state-conditioned retrieval policy. They write to learner-specific column families (`CF_FINGERPRINTS_LEARNER`, `CF_LEARNER_STATE_HISTORY`, `CF_LEARNER_DELTA_LOG`, `CF_LEARNER_K_SLEEP`, `CF_LEARNER_RETRIEVAL_LOG`, `CF_LEARNER_M_PER_TRACE`, `CF_GOAL_CENTROIDS`, `CF_LEARNER_PROFILE`).
+Phase-0/Phase-1 measurement substrate + retrieval policy. Detail in [20_learning_subsystem.md](20_learning_subsystem.md).
 
 ### `register_learner`
-Source: `utl.rs:10`; handler `utl_tools.rs:270`.
+**Source:** `tools/definitions/utl.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `learnerId` | uuid |  | generated | — |
-| `handle` | string | yes | — | display handle |
-| `consentState` | string |  | `consented-local-first` | — |
-| `modalitiesEnabled` | array<string> |  | `["affect_text","self_report"]` | — |
-| `calibrationSessionTs` | integer |  | — | ≥0 |
+| `handle` | string | yes | — | learner identifier |
+| `metadata` | object |  | — | learner metadata |
+
+**Side effects:** writes `CF_LEARNER_PROFILE`.
 
 ### `record_session_observation`
-Source: `utl.rs:26`; handler `utl_tools.rs:328`.
+**Source:** `tools/definitions/utl.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `learnerId` | uuid | yes | — | — |
-| `sessionTs` | integer | yes | — | unix seconds |
-| `modality` | string |  | `affect_text` | — |
-| `rawText` | string |  | `""` | — |
-| `consentState` | string |  | `consented-local-first` | — |
-| `preprocessingVersion` | string |  | `phase0-preprocess-v1` | — |
-| `embedderVersion` | string |  | `phase0-deterministic-v1` | — |
-| `thresholdVersion` | string |  | `thresholds-default-pending-calibration-v1` | — |
-| `stateVector` | array<number> |  | — | learner state vector |
-| `components` | object |  | — | `{plasticityWindow*, hrvCoherence*, valence*, arousal*, stressFloor*, kSleep?}` |
-| `embeddings` | array |  | `[]` | `[{modality*, vector*, scalar?}]` |
-| `signals` | array |  | `[]` | `[{modality*, text?, samples?, features?, sampleRateHz?, channels?}]` |
+| `learnerId` | string (uuid) | yes | — | learner |
+| `sessionTs` | integer | yes | — | session timestamp |
+| `observation` | object |  | — | observation payload |
+| `state_vector` | array |  | — | state vector |
+
+**Side effects:** writes `CF_LEARNER_STATE_HISTORY`.
 
 ### `compute_delta_s`
-Source: `utl.rs:88`; handler `utl_tools.rs:578`.
+**Description:** Compute the UTL Δ_S surprise signal.
+**Source:** `tools/definitions/utl.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `predictedText` | string |  | `""` | — |
-| `actualText` | string |  | `""` | — |
-| `simulatedText` | string |  | — | optional |
-| `explorationRate` | number |  | `0.0` | `[0,1]` |
-| `gamma` | number |  | `0.7` | `[0,1]` |
+| `learnerId` | string (uuid) |  | — | learner |
+| `before` | object |  | — | state before |
+| `after` | object |  | — | state after |
 
 ### `compute_delta_c`
-Source: `utl.rs:103`; handler `utl_tools.rs:599`.
-
-| Param | Type | Req | Default | Range |
-| --- | --- | :-: | --- | --- |
-| `recentScores` | array<number> |  | `[]` | — |
-| `hrvCoherence` | number |  | `0.0` | `[0,1]` |
-| `panelAgreement` | number |  | `0.0` | `[0,1]` |
-| `contradiction` | number |  | `0.0` | `[0,1]` |
-| `gradientScale` | number |  | — | ≥0 |
+**Description:** Compute the UTL Δ_C coherence signal.
+**Source:** `tools/definitions/utl.rs`. Same shape as `compute_delta_s`.
 
 ### `compute_delta_e`
-Source: `utl.rs:119`; handler `utl_tools.rs:620`.
-
-| Param | Type | Req | Default | Description |
-| --- | --- | :-: | --- | --- |
-| `learnerId` | uuid |  | — | resolves stored components |
-| `sessionTs` | integer |  | — | with `learnerId` |
-| `components` | object |  | — | inline override |
+**Description:** Compute the UTL Δ_E embodied-state signal.
+**Source:** `tools/definitions/utl.rs`. Same shape as `compute_delta_s`.
 
 ### `compute_L`
-Source: `utl.rs:148`; handler `utl_tools.rs:657`. L = ΔS · ΔC · ΔE.
+**Description:** Compute UTL L = Δ_S × Δ_C × Δ_E.
+**Source:** `tools/definitions/utl.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `learnerId` | uuid |  | — | required when `persist=true` |
-| `sessionTs` | integer |  | — | required when `persist=true` |
-| `traceId` | uuid |  | — | required when `persist=true` |
-| `predictedText` | string |  | `""` | — |
-| `actualText` | string |  | `""` | — |
-| `simulatedText` | string |  | — | — |
-| `explorationRate` | number |  | `0.0` | `[0,1]` |
-| `recentScores` | array<number> |  | `[]` | — |
-| `hrvCoherence` | number |  | `0.0` | `[0,1]` |
-| `panelAgreement` | number |  | `0.0` | `[0,1]` |
-| `contradiction` | number |  | `0.0` | `[0,1]` |
-| `components` | object | yes | — | physiology subset |
-| `persist` | boolean |  | `false` | write delta log + M trace |
-| `retrievalCorrect` | boolean |  | — | for M trace |
+| `components` | object | yes | — | `{delta_s, delta_c, delta_e}` |
 
 ### `get_learner_M`
-Source: `utl.rs:188`; handler `utl_tools.rs:804`.
+**Description:** Read a persisted learner M(t) trace.
+**Source:** `tools/definitions/utl.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `learnerId` | uuid | yes | — | — |
-| `traceId` | uuid | yes | — | — |
+| `learnerId` | string (uuid) | yes | — | learner |
+| `traceId` | string (uuid) | yes | — | trace id |
 
 ### `next_review_for_trace`
-Source: `utl.rs:201`; handler `utl_tools.rs:829`.
+**Description:** Compute next-review timestamp for a learner trace (spaced repetition).
+**Source:** `tools/definitions/utl.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `learnerId` | uuid | yes | — | — |
-| `traceId` | uuid | yes | — | — |
+| `learnerId` | string (uuid) | yes | — | learner |
+| `traceId` | string (uuid) | yes | — | trace id |
 
 ### `list_learner_embedders`
-Source: `utl.rs:214`; handler `utl_tools.rs:867`. **Params:** none. Returns the canonical E1–E21 matrix.
+**Description:** List the canonical E1–E21 content + learner-state embedder matrix.
+**Source:** `tools/definitions/utl.rs`. (no parameters)
 
 ### `preflight_learner_assets`
-Source: `utl.rs:224`; handler `utl_tools.rs:907`.
+**Description:** Inspect cached E15–E21 model assets and real calibration datasets.
+**Source:** `tools/definitions/utl.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `modelsRoot` | string |  | `models` | path |
-| `calibrationRoot` | string |  | `data/utl_calibration` | path |
-| `allowMissing` | boolean |  | `false` | when false, fails closed on missing assets |
+| `verify` | boolean |  | — | also recompute hashes |
 
 ### `count_learner_state`
-Source: `utl.rs:238`; handler `utl_tools.rs:940`. **Params:** none.
+**Description:** Count all learner-state RocksDB column families.
+**Source:** `tools/definitions/utl.rs`. (no parameters)
 
 ### `get_learner_state`
-Source: `utl.rs:248`; handler `utl_tools.rs:968`.
+**Description:** Read persisted learner profile/session-state/delta rows.
+**Source:** `tools/definitions/utl.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `learnerId` | uuid | yes | — | — |
-| `sessionTs` | integer |  | — | optional fingerprint/state fetch |
-| `traceId` | uuid |  | — | optional M trace fetch |
-| `includeVectors` | boolean |  | `false` | — |
+| `learnerId` | string (uuid) | yes | — | learner |
+| `sessionTs` | integer |  | — | scope to one session |
 
 ### `record_learner_k_sleep`
-Source: `utl.rs:263`; handler `utl_tools.rs:1056`.
+**Description:** Persist a sleep-derived k(τ) row.
+**Source:** `tools/definitions/utl.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `learnerId` | uuid | yes | — | — |
-| `sessionTs` | integer | yes | — | ≥0 |
-| `slowWaveMinutes` | integer | yes | — | 0–1440 |
-| `k` | number |  | — | `[0, 5]` |
+| `learnerId` | string (uuid) | yes | — | learner |
+| `sessionTs` | integer | yes | — | session |
+| `slowWaveMinutes` | number | yes | — | sleep duration |
 
 ### `record_learner_retrieval`
-Source: `utl.rs:278`; handler `utl_tools.rs:1109`.
+**Description:** Persist a retrieval-practice row tied to a learner trace.
+**Source:** `tools/definitions/utl.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `learnerId` | uuid | yes | — | — |
-| `traceId` | uuid | yes | — | — |
-| `ts` | integer | yes | — | ≥0 |
-| `sessionTs` | integer |  | — | resolves stored state when set |
-| `correct` | boolean | yes | — | retrieval outcome |
-| `score` | number | yes | — | `[0,1]` |
-| `stateVector` | array<number> |  | — | inline override |
-| `components` | object |  | — | inline override |
+| `learnerId` | string (uuid) | yes | — | learner |
+| `traceId` | string (uuid) | yes | — | trace |
+| `ts` | integer | yes | — | retrieval time |
+| `correct` | boolean | yes | — | correctness |
+| `score` | number | yes | — | score |
 
 ### `upsert_goal_centroid`
-Source: `utl.rs:312`; handler `utl_tools.rs:1191`.
+**Description:** Persist an expert goal centroid for a skill and learner modality.
+**Source:** `tools/definitions/utl.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `skillId` | uuid | yes | — | — |
-| `modality` | string | yes | — | — |
-| `vector` | array<number> | yes | — | minItems 1 |
+| `skillId` | string (uuid) | yes | — | skill |
+| `modality` | string | yes | — | learner modality |
+| `vector` | array | yes | — | centroid vector |
 
 ### `get_goal_distance`
-Source: `utl.rs:326`; handler `utl_tools.rs:1233`.
+**Description:** Compare a learner session embedding to a persisted goal centroid.
+**Source:** `tools/definitions/utl.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `learnerId` | uuid | yes | — | — |
-| `skillId` | uuid | yes | — | — |
-| `sessionTs` | integer | yes | — | ≥0 |
-| `modality` | string | yes | — | — |
-| `persistGoalState` | boolean |  | `false` | snapshot the comparison |
+| `learnerId` | string (uuid) | yes | — | learner |
+| `skillId` | string (uuid) | yes | — | skill |
+| `sessionTs` | integer | yes | — | session |
+| `modality` | string | yes | — | modality |
 
 ### `compile_learner_constellation`
-Source: `utl.rs:342`; handler `utl_tools.rs:1327`.
+**Description:** Compile and persist a learner regulated-state baseline constellation.
+**Source:** `tools/definitions/utl.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `learnerId` | uuid | yes | — | — |
-| `sessionTsList` | array<integer> | yes | — | minItems 1 |
-| `selectorKind` | integer |  | `1` | 0–255 |
-| `label` | string |  | `regulated-baseline` | — |
+| `learnerId` | string (uuid) | yes | — | learner |
+| `sessionTsList` | array | yes | — | session timestamps |
+| `label` | string |  | — | label |
 
 ### `resolve_learner_retrieval_policy`
-Source: `utl.rs:357`; handler `utl_tools.rs:1404`.
+**Description:** Resolve the state-conditioned retrieval weight profile for a persisted learner session.
+**Source:** `tools/definitions/utl.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `learnerId` | uuid | yes | — | — |
-| `sessionTs` | integer | yes | — | ≥0 |
-| `baseWeightProfile` | enum |  | `semantic_search` | one of 20 named profiles |
-| `includeWeights` | boolean |  | `true` | resolved E1–E14 weights |
+| `learnerId` | string (uuid) | yes | — | learner |
+| `sessionTs` | integer | yes | — | session |
 
 ---
 
-## 23. Constellation Tools
+## 25. Constellation tools (Phase 2)
 
-Source: `constellation.rs`; handler `constellation_tools.rs`. Constellations are per-embedder centroids + spread statistics over a member set. See [17_constellation_subsystem.md](17_constellation_subsystem.md).
+Constellations are per-embedder centroids + spread stats over a selected set of memories. Detail in [17_constellation_subsystem.md](17_constellation_subsystem.md).
 
 ### `compile_constellation`
-Source: `constellation.rs:23`; handler `constellation_tools.rs:42`.
+**Description:** Compile a constellation from caller-selected memories and persist to `CF_CONSTELLATIONS`.
+**Source:** `tools/definitions/constellation.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `selector` | enum | yes | — | `topic` \| `session` \| `tag` \| `time_range` \| `explicit_ids` |
-| `topicId` | string |  | — | required for `selector=topic` |
-| `sessionId` | string |  | — | required for `selector=session` |
-| `tag` | string |  | — | required for `selector=tag` |
-| `startIso` | RFC-3339 |  | — | required for `selector=time_range` |
-| `endIso` | RFC-3339 |  | — | required for `selector=time_range` |
-| `memoryIds` | array<uuid> |  | — | required for `selector=explicit_ids` |
-| `rationale` | string |  | — | annotation for `explicit_ids` (NOT part of selector hash) |
-| `label` | string | yes | — | 1–256 chars |
-| `maxMembers` | integer |  | `50000` | 3–100000 (`TooManyMembers` if exceeded) |
-| `rebuildIfExists` | boolean |  | `false` | recompile vs return existing |
+| `selector` | object|array | yes | — | selection rule (memory IDs, query, filter) |
+| `label` | string | yes | — | label |
+| `description` | string |  | — | docs |
 
-**Side effects:** writes `CF_CONSTELLATIONS` + `CF_CONSTELLATION_BY_SELECTOR`. Fails with `TooFewMembers` when fewer than 3 members.
+**Side effects:** writes `CF_CONSTELLATIONS` and the selector index.
 
 ### `list_constellations`
-Source: `constellation.rs:93`; handler `constellation_tools.rs:203`.
+**Source:** `tools/definitions/constellation.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `limit` | integer |  | `50` | 1–1000 |
-| `offset` | integer |  | `0` | ≥0 |
-| `includeCentroids` | boolean |  | `false` | per-embedder centroids |
+| `limit` | integer |  | — | cap |
+| `offset` | integer |  | — | pagination |
+| `include_shape` | boolean |  | — | include shape stats |
 
 ### `get_constellation`
-Source: `constellation.rs:124`; handler `constellation_tools.rs:271`.
+**Source:** `tools/definitions/constellation.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `constellationId` | uuid | yes | — | — |
-| `includeCentroids` | boolean |  | `true` | per-embedder centroid + sparse_top_terms + pooled_token_centroid |
+| `constellationId` | string (uuid) | yes | — | id |
+| `include_centroids` | boolean |  | — | inline centroid arrays |
 
 ### `score_against_constellation`
-Source: `constellation.rs:148`; handler `constellation_tools.rs:305`.
+**Source:** `tools/definitions/constellation.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `constellationId` | uuid | yes | — | — |
-| `memoryId` | uuid | yes | — | candidate memory (must be in `CF_FINGERPRINTS`) |
-
-Returns per-embedder cosine, unweighted `combined_score`, `in_spread_p95` flag.
+| `constellationId` | string (uuid) | yes | — | id |
+| `memoryId` | string (uuid) | yes | — | candidate memory |
 
 ### `derive_constellation`
-Source: `constellation.rs:172`; handler `constellation_tools.rs:405`.
+**Description:** Persist a derived constellation through interpolation/add/difference or anti-pole mining from real candidate memories.
+**Source:** `tools/definitions/constellation.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `operation` | enum | yes | — | `interpolate` \| `add` \| `difference` \| `anti_pole` |
-| `sourceConstellationId` | uuid | yes | — | — |
-| `otherConstellationId` | uuid |  | — | for binary ops |
-| `alpha` | number |  | `0.5` | `[0,1]` for `interpolate` |
-| `label` | string | yes | — | 1–256 chars |
-| `selector` | enum |  | — | candidate pool for `anti_pole` |
-| `topicId`/`sessionId`/`tag`/`startIso`/`endIso`/`memoryIds`/`rationale` |  |  | — | as in `compile_constellation` |
-| `maxCandidates` | integer |  | `10000` | 3–200000 |
-| `selectedMembers` | integer |  | `50` | 3–100000 |
-
-**Side effects:** writes `CF_CONSTELLATIONS`; performs RocksDB readback verification.
+| `operation` | string | yes | — | enum: `interpolate`, `add`, `difference`, `antipole` |
+| `sourceConstellationId` | string (uuid) | yes | — | base constellation |
+| `label` | string | yes | — | derived label |
+| `parameter` | object |  | — | operation-specific args |
 
 ### `delete_constellation`
-Source: `constellation.rs:267`; handler `constellation_tools.rs:367`. Idempotent.
+**Source:** `tools/definitions/constellation.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `constellationId` | uuid | yes | — | returns `{deleted: bool}` |
+| `constellationId` | string (uuid) | yes | — | id |
+
+**Side effects:** deletes from `CF_CONSTELLATIONS` and removes selector-index entry.
 
 ---
 
-## 24. Contrastive Pair Tools
+## 26. Contrastive pair tools (Phase 3)
 
-Source: `contrastive.rs`; handler `contrastive_tools.rs`. AnomalyKind enum: `semantic_but_not_causal`, `keyword_but_not_paraphrase`, `code_shape_but_different_intent`, `entity_shared_but_different_structure`, `hdc_robust_but_semantic_different`, `other`.
+Detail in [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md).
 
 ### `mine_contrastive_pairs`
-Source: `contrastive.rs:20`; handler `contrastive_tools.rs:70`.
+**Description:** Mine cross-embedder anomaly pairs from the corpus and persist to `CF_CONTRASTIVE_PAIRS`.
+**Source:** `tools/definitions/contrastive.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `maxPairs` | integer |  | `1000` | 1–100000 |
-| `minDisagreement` | number |  | `0.3` | `[0,1]` |
-| `highThreshold` | number |  | `0.6` | `[0,1]` |
-| `lowThreshold` | number |  | `0.3` | `[0,1]`, must be `<` highThreshold |
-| `kinds` | array<enum> |  | all | filter |
-| `sessionFilter` | string |  | — | — |
-| `topKCandidatesPerAnchor` | integer |  | `10` | 1–500 |
-| `candidatePoolSize` | integer |  | `500` | 10–50000 |
+| `kind` | string |  | — | filter to one anomaly kind |
+| `max_pairs` | integer |  | — | cap |
+| `min_high` | number |  | — | high-embedder floor |
+| `max_low` | number |  | — | low-embedder ceiling |
 
-**Side effects:** writes `CF_CONTRASTIVE_PAIRS`, `CF_CONTRASTIVE_BY_KIND`, `CF_CONTRASTIVE_BY_ANCHOR`.
+**Side effects:** writes `CF_CONTRASTIVE_PAIRS`.
 
 ### `list_contrastive_pairs`
-Source: `contrastive.rs:99`; handler `contrastive_tools.rs:381`.
+**Source:** `tools/definitions/contrastive.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `limit` | integer |  | `100` | 1–10000 |
-| `offset` | integer |  | `0` | ≥0 |
-| `kind` | enum |  | — | AnomalyKind |
-| `anchorId` | uuid |  | — | — |
-| `includeFull` | boolean |  | `false` | full record (heavier) |
+| `limit` | integer |  | — | cap |
+| `offset` | integer |  | — | pagination |
+| `kind` | string |  | — | filter |
+| `anchor_id` | string (uuid) |  | — | filter |
 
 ### `get_contrastive_pair`
-Source: `contrastive.rs:148`; handler `contrastive_tools.rs:524`.
+**Source:** `tools/definitions/contrastive.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `anchorId` | uuid | yes | — | — |
-| `negativeId` | uuid | yes | — | — |
+| `anchorId` | string (uuid) | yes | — | anchor |
+| `negativeId` | string (uuid) | yes | — | negative |
 
 ### `count_contrastive_pairs`
-Source: `contrastive.rs:171`; handler `contrastive_tools.rs:569`.
+**Source:** `tools/definitions/contrastive.rs`.
 
 | Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `kind` | enum |  | — | optional AnomalyKind filter |
+| `kind` | string |  | — | filter |
 
 ---
 
-## 25. Typed-Edge Training Tools
-
-Source: `typed_edges.rs`; handler `typed_edges_tools.rs`. See [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md).
+## 27. Typed-edge training tools (Phase 4)
 
 ### `export_typed_edges_corpus`
-Source: `typed_edges.rs:25`; handler `typed_edges_tools.rs:62`.
+**Description:** Export typed edges as `TypedEdgeTrainingRecord`s persisted to `CF_TYPED_EDGE_RECORDS`.
+**Source:** `tools/definitions/typed_edges.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `maxEdges` | integer |  | `10000` | 1–1000000 |
-| `includeContent` | boolean |  | `true` | — |
-| `includeSourceMetadata` | boolean |  | `true` | session_id + source_type |
-| `includeMechanismType` | boolean |  | `true` | join `CF_CAUSAL_RELATIONSHIPS` for `CausalChain` edges |
-| `joinLLMValidation` | boolean |  | `true` | join `CF_TYPED_EDGE_VALIDATIONS` |
-| `clearExisting` | boolean |  | `false` | — |
+| `min_strength` | number |  | — | weight floor |
+| `edge_types` | array |  | — | filter |
+| `max_records` | integer |  | — | cap |
 
-**Side effects:** writes `CF_TYPED_EDGE_RECORDS` (idempotent on `(source, target, edge_type)` key).
+**Side effects:** writes `CF_TYPED_EDGE_RECORDS`.
 
 ### `derive_anomalies_from_edges`
-Source: `typed_edges.rs:78`; handler `typed_edges_tools.rs:338`. Generator stamp: `typed_edge_anomaly_derivation_v1`.
+**Description:** Derive anomaly pairs directly from typed-edge classifications and persist to `CF_CONTRASTIVE_PAIRS` (F2).
+**Source:** `tools/definitions/typed_edges.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `highThreshold` | number |  | `0.60` | `[0,1]` |
-| `lowThreshold` | number |  | `0.30` | `[0,1]` |
-| `minDisagreement` | number |  | `0.30` | `[0,1]` |
-| `maxPairs` | integer |  | `10000` | 1–1000000 |
-| `kinds` | array<string> |  | — | NOT YET SUPPORTED — passing returns InvalidParams |
+| `min_confidence` | number |  | — | floor |
+| `max_pairs` | integer |  | — | cap |
 
-**Side effects:** writes `CF_CONTRASTIVE_PAIRS` via the contrastive write path.
+**Side effects:** writes `CF_CONTRASTIVE_PAIRS`.
 
 ### `validate_low_confidence_edges`
-Source: `typed_edges.rs:130`; handler `typed_edges_tools.rs:448`. LLM-gated; returns `{status:"skipped"}` when LLM disabled.
+**Description:** Run LLM validation on typed edges below the configured weight ceiling and persist verdicts to `CF_TYPED_EDGE_VALIDATIONS` (F4). Returns `{status:"skipped"}` without `--features llm`.
+**Source:** `tools/definitions/typed_edges.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `weightCeiling` | number |  | `0.60` | `[0,1]` |
-| `maxEdges` | integer |  | `100` | 1–10000 |
-| `sessionFilter` | string |  | — | restricts by source's session_id |
+| `weight_ceiling` | number |  | — | ceiling |
+| `max_edges` | integer |  | — | cap |
 
-**Side effects:** writes `CF_TYPED_EDGE_VALIDATIONS` (idempotent; skips edges that already have a row).
+**Side effects:** writes `CF_TYPED_EDGE_VALIDATIONS` (LLM build only).
 
 ### `list_typed_edge_records`
-Source: `typed_edges.rs:166`; handler `typed_edges_tools.rs:747`.
+**Source:** `tools/definitions/typed_edges.rs`.
 
-| Param | Type | Req | Default | Range |
+| Param | Type | Req | Default | Description |
 | --- | --- | :-: | --- | --- |
-| `limit` | integer |  | `100` | 1–1000 |
-| `offset` | integer |  | `0` | ≥0 |
-| `includeFull` | boolean |  | `false` | hydrate full record |
+| `limit` | integer |  | — | cap |
+| `offset` | integer |  | — | pagination |
+| `hydrate` | boolean |  | — | include full records |
 
 ---
 
-## 26. DynamicJEPA Tools (5090jepa Phase 9)
+## 28. DynamicJEPA tools (35)
 
-Source: `dynamicjepa.rs` (35 tools); handler `dynamicjepa_tools.rs`. Every tool requires a `dbPath` parameter pointing to the DynamicJEPA RocksDB data directory (except `dynamicjepa_cross_domain_transfer`, which writes its own output root). All schemas use `additionalProperties: false`.
+Surface the DynamicJEPA (5090jepa) world-model pipeline. Schemas live in `tools/definitions/dynamicjepa.rs`; DTOs in `handlers/tools/dynamicjepa_dtos.rs`. Every tool requires `dbPath` (path to the DynamicJEPA RocksDB data directory). See [21_dynamicjepa_subsystem.md](21_dynamicjepa_subsystem.md) for end-to-end semantics.
 
-### Domain-pack registry
-| Tool | Required | Optional | Description |
+### 28.1 Domain pack registry
+
+| Tool | Required params | Optional params | Side effects |
 | --- | --- | --- | --- |
-| `dynamicjepa_register_domain_pack` (`dynamicjepa.rs:11`, handler `dynamicjepa_tools.rs:26`) | `dbPath`, `file` | — | Registers a strict domain-pack TOML. Writes to physical RocksDB. |
-| `dynamicjepa_list_domain_packs` (`dynamicjepa.rs:17`, handler line 47) | `dbPath` | `limit`, `offset` | Paginated list. |
-| `dynamicjepa_get_domain_pack` (`dynamicjepa.rs:23`, handler line 69) | `dbPath`, `id` | `domainVersion` (default `1.0.0`) | Read one pack. |
+| `dynamicjepa_register_domain_pack` | `dbPath`, `file` | — | writes domain-pack CFs |
+| `dynamicjepa_list_domain_packs` | `dbPath` | `limit`, `offset` | none |
+| `dynamicjepa_get_domain_pack` | `dbPath`, `id` | `domainVersion` (default `"1.0.0"`) | none |
 
-### Event ingestion + adapters
-| Tool | Required | Optional | Description |
+### 28.2 Event ingestion + adapters
+
+| Tool | Required params | Optional params | Side effects |
 | --- | --- | --- | --- |
-| `dynamicjepa_ingest_event` (handler line 91) | `dbPath`, `domain`, `adapter`, `file` | — | Ingest JSONL fixture; runs adapter. |
-| `dynamicjepa_run_adapter` (handler line 114) | `dbPath`, `eventId` | — | Re-run adapter for persisted event. |
-| `dynamicjepa_materialize_panel` (handler line 135) | `dbPath` | `transitionId`, `allPending`, `domain` | Materialize one panel or all pending for `domain`. |
-| `dynamicjepa_get_panel` (handler line 158) | `dbPath`, `panelId` | `includeReadings` | Read one panel. |
-| `dynamicjepa_list_instrument_readings` (handler line 180) | `dbPath`, `eventId` | — | List readings for one raw event. |
+| `dynamicjepa_ingest_event` | `dbPath`, `domain`, `adapter`, `file` | — | writes raw events + adapter outputs |
+| `dynamicjepa_run_adapter` | `dbPath`, `eventId` | — | runs adapter; writes instrument readings |
+| `dynamicjepa_list_instrument_readings` | `dbPath`, `eventId` | — | none |
 
-### Bindings
-| Tool | Required | Optional |
-| --- | --- | --- |
-| `dynamicjepa_create_binding` (handler line 201) | `dbPath`, `leftCf`, `leftKey`, `rightCf`, `rightKey` | `method` (`explicit_mapping`), `kind` (`event_to_trajectory`), `score` (1.0; `[0,1]`) |
-| `dynamicjepa_list_bindings` (handler line 228) | `dbPath` | `entity`, `limit`, `offset` |
+### 28.3 Latent panels
 
-### Trajectories + datasets
-| Tool | Required | Optional | Description |
+| Tool | Required params | Optional params | Side effects |
 | --- | --- | --- | --- |
-| `dynamicjepa_compile_trajectories` (handler line 251) | `dbPath`, `domain` | `policy` (`by_domain_session`) | Compile panels + transitions into trajectories. |
-| `dynamicjepa_get_trajectory` (handler line 273) | `dbPath`, `id` | — | Read one trajectory. |
-| `dynamicjepa_list_trajectories` (handler line 294) | `dbPath`, `domain` | `limit`, `offset` | Paginated list. |
-| `dynamicjepa_compile_dataset` (handler line 317) | `dbPath`, `domain` | `policy` (`one_step`), `split` (`train`) | Compile dataset shards. |
-| `dynamicjepa_get_dataset_shard` (handler line 340) | `dbPath`, `datasetId`, `shardId` | — | Read one shard. |
-| `dynamicjepa_inspect_dataset_row` (handler line 362) | `dbPath`, `datasetId`, `shardId`, `row` | — | Inspect one decoded row. |
+| `dynamicjepa_materialize_panel` | `dbPath` | `transitionId`, `allPending` (default `false`), `domain` | writes panels |
+| `dynamicjepa_get_panel` | `dbPath`, `panelId` | `includeReadings` (default `false`) | none |
 
-### Training & artifacts (CUDA-only)
-| Tool | Required | Optional |
-| --- | --- | --- |
-| `dynamicjepa_train` (handler line 385) | `dbPath`, `datasetId`, `config`, `artifactRoot` | — |
-| `dynamicjepa_get_training_run` (handler line 407) | `dbPath`, `id` | — |
-| `dynamicjepa_get_artifact` (handler line 428) | `dbPath`, `id` | `verifyFiles` |
+### 28.4 Bindings
 
-### Predictions, plans, surprise
-| Tool | Required | Optional |
-| --- | --- | --- |
-| `dynamicjepa_predict` (handler line 450) | `dbPath`, `artifactId`, `panelId`, `actionId` | — |
-| `dynamicjepa_plan` (handler line 473) | `dbPath`, `artifactId`, `panelId`, `skillId` | — |
-| `dynamicjepa_record_surprise` (handler line 495) | `dbPath`, `predictionId`, `observedOutcomeId`, `observedPanelId` | — |
+| Tool | Required params | Optional params | Side effects |
+| --- | --- | --- | --- |
+| `dynamicjepa_create_binding` | `dbPath`, `leftCf`, `leftKey`, `rightCf`, `rightKey` | `method` (default `"explicit_mapping"`), `kind` (default `"event_to_trajectory"`), `score` (default `1.0`) | writes binding |
+| `dynamicjepa_list_bindings` | `dbPath` | `entity`, `limit`, `offset` | none |
 
-### Constellations
-| Tool | Required | Optional |
-| --- | --- | --- |
-| `dynamicjepa_build_constellation` (handler line 518) | `dbPath`, `domain` | `domainVersion`, `subject`, `sourceEventSelector`, `builtByRunId` |
-| `dynamicjepa_list_constellations` (handler line 543) | `dbPath` | `domain`, `subject`, `limit`, `offset` |
-| `dynamicjepa_get_constellation` (handler line 567) | `dbPath`, `domain`, `modality` | `domainVersion`, `subject` |
+### 28.5 Trajectories + datasets
 
-### Calibration & audit
-| Tool | Required | Optional |
-| --- | --- | --- |
-| `dynamicjepa_calibrate_threshold` (handler line 591) | `dbPath`, `domain` | `domainVersion`, `subject`, `modality`, `calibrationEventSelector`, `percentile` (0–100) |
-| `dynamicjepa_recalibrate_threshold` (handler line 617) | `dbPath`, `domain`, `supersedes`, `reason` | `domainVersion`, `subject`, `modality`, `calibrationEventSelector`, `percentile` |
-| `dynamicjepa_compute_mc_ratio` (handler line 645) | `dbPath`, `domain`, `outputDir` | `domainVersion` |
-| `dynamicjepa_audit_pairwise_mi` (handler line 668) | `dbPath`, `domain`, `outputDir` | `domainVersion`, `sampleSize` (≥50), `estimator` (`ksg`), `ksgK` (≥1), `bootstrapIters`, `seed` |
-| `dynamicjepa_cross_domain_transfer` (handler line 696) | `outputRoot` | `seeds` (default `[42,43,44,45,46]`), `sourceEvents`, `targetEvents`, `bootstrapIters`, `trainEpochs`, `batchSize`, `maxSecondsPerTraining`, `learningRate` (>0), `stoppingTarget` (>0) |
+| Tool | Required params | Optional params | Side effects |
+| --- | --- | --- | --- |
+| `dynamicjepa_compile_trajectories` | `dbPath`, `domain` | `policy` (default `"by_domain_session"`) | writes trajectories |
+| `dynamicjepa_get_trajectory` | `dbPath`, `id` | — | none |
+| `dynamicjepa_list_trajectories` | `dbPath`, `domain` | `limit`, `offset` | none |
+| `dynamicjepa_compile_dataset` | `dbPath`, `domain` | `policy` (default `"one_step"`), `split` (default `"train"`) | writes dataset shards |
+| `dynamicjepa_get_dataset_shard` | `dbPath`, `datasetId`, `shardId` | — | none |
+| `dynamicjepa_inspect_dataset_row` | `dbPath`, `datasetId`, `shardId`, `row` | — | none |
 
-### Read-only inspection
-| Tool | Required | Optional |
-| --- | --- | --- |
-| `dynamicjepa_get_prediction` (handler line 725) | `dbPath`, `id` | — |
-| `dynamicjepa_get_plan_trace` (handler line 746) | `dbPath`, `id` | `includePredictions`, `includeGuards` |
-| `dynamicjepa_get_surprise` (handler line 769) | `dbPath`, `id` | — |
-| `dynamicjepa_inspect_counts` (handler line 790) | `dbPath` | — |
-| `dynamicjepa_inspect_cf` (handler line 811) | `dbPath`, `cf` | `keyHex`, `limit`, `offset` |
+### 28.6 Training
 
----
+| Tool | Required params | Optional params | Side effects |
+| --- | --- | --- | --- |
+| `dynamicjepa_train` | `dbPath`, `datasetId`, `config`, `artifactRoot` | — | trains tiny CUDA artifact; writes training run + artifact rows |
+| `dynamicjepa_get_training_run` | `dbPath`, `id` | — | none |
+| `dynamicjepa_get_artifact` | `dbPath`, `id` | `verifyFiles` (default `false`) | none |
 
-## 27. Common Side Effects Summary
+### 28.7 Prediction + planning + surprise
 
-| Tool group | Column families written |
-| --- | --- |
-| `store_memory(_ies)` | `CF_FINGERPRINTS`, `CF_CONTENT`, `CF_SOURCE_METADATA`, all `CF_EMB_*`, `CF_AUDIT_LOG` |
-| `forget_concept` | tombstone in `CF_SYSTEM`, `CF_AUDIT_LOG` |
-| `merge_concepts` | `CF_FINGERPRINTS` (target), `CF_MERGE_HISTORY`, `CF_AUDIT_LOG`; soft-delete on sources |
-| `boost_importance` | `CF_FINGERPRINTS`, `CF_IMPORTANCE_HISTORY`, `CF_AUDIT_LOG` |
-| `delete_file_content` / `reconcile_files` | per-file fingerprint deletion + HNSW removal + `CF_AUDIT_LOG` |
-| `detect_topics` | `CF_TOPICS`, `CF_TOPIC_MEMBERSHIPS` |
-| `trigger_causal_discovery` | `CF_CAUSAL_RELATIONSHIPS`, `CF_CAUSAL_BY_SOURCE`; updates E5 cause/effect HNSW |
-| `discover_graph_relationships` / `validate_graph_link` | `CF_TYPED_EDGES` (+ reverse indexes) |
-| `repair_causal_relationships` | deletes corrupt rows from `CF_CAUSAL_RELATIONSHIPS` |
-| `export_training_corpus` | `CF_TRAINING_RECORDS` (binary bincode) |
-| `record_learning_event` / graph-learning event | `CF_LEARNING_EVENTS` |
-| `record_session_observation` | `CF_FINGERPRINTS_LEARNER`, `CF_LEARNER_STATE_HISTORY` |
-| `compute_L` (persist=true) | `CF_LEARNER_DELTA_LOG`, `CF_LEARNER_M_PER_TRACE` |
-| `record_learner_k_sleep` | `CF_LEARNER_K_SLEEP` |
-| `record_learner_retrieval` | `CF_LEARNER_RETRIEVAL_LOG` |
-| `upsert_goal_centroid` | `CF_GOAL_CENTROIDS` |
-| `compile_constellation` / `derive_constellation` | `CF_CONSTELLATIONS`, `CF_CONSTELLATION_BY_SELECTOR` |
-| `delete_constellation` | deletes from above |
-| `mine_contrastive_pairs` / `derive_anomalies_from_edges` | `CF_CONTRASTIVE_PAIRS`, `CF_CONTRASTIVE_BY_KIND`, `CF_CONTRASTIVE_BY_ANCHOR` |
-| `validate_low_confidence_edges` | `CF_TYPED_EDGE_VALIDATIONS` |
-| `export_typed_edges_corpus` | `CF_TYPED_EDGE_RECORDS` |
-| `export_learner_training_dataset` | `CF_LEARNER_TRAINING_DATASETS` |
-| DynamicJEPA writers | DynamicJEPA-namespaced CFs in the supplied `dbPath` |
+| Tool | Required params | Optional params | Side effects |
+| --- | --- | --- | --- |
+| `dynamicjepa_predict` | `dbPath`, `artifactId`, `panelId`, `actionId` | — | writes prediction |
+| `dynamicjepa_plan` | `dbPath`, `artifactId`, `panelId`, `skillId` | `candidateActionJson` | writes plan trace |
+| `dynamicjepa_record_surprise` | `dbPath`, `predictionId`, `observedOutcomeId`, `observedPanelId` | — | writes surprise event when threshold breached |
+| `dynamicjepa_get_prediction` | `dbPath`, `id` | — | none |
+| `dynamicjepa_get_plan_trace` | `dbPath`, `id` | `includePredictions` (default `false`), `includeGuards` (default `false`) | none |
+| `dynamicjepa_get_surprise` | `dbPath`, `id` | — | none |
 
-For full CF schema see [09_storage_layer.md](09_storage_layer.md).
+### 28.8 Constellations + thresholds
+
+| Tool | Required params | Optional params | Side effects |
+| --- | --- | --- | --- |
+| `dynamicjepa_build_constellation` | `dbPath`, `domain` | `domainVersion` (default `"1.0.0"`), `subject` (default `"global"`), `sourceEventSelector`, `builtByRunId` | writes immutable constellation centroids |
+| `dynamicjepa_list_constellations` | `dbPath` | `domain`, `subject`, `limit`, `offset` | none |
+| `dynamicjepa_get_constellation` | `dbPath`, `domain`, `modality` | `domainVersion`, `subject` | none |
+| `dynamicjepa_calibrate_threshold` | `dbPath`, `domain` | `domainVersion`, `subject`, `modality` (default `"all"`), `calibrationEventSelector`, `percentile` | writes calibration row |
+| `dynamicjepa_recalibrate_threshold` | `dbPath`, `domain`, `supersedes`, `reason` | `domainVersion`, `subject`, `modality`, `calibrationEventSelector`, `percentile` | supersedes prior calibration |
+
+### 28.9 Audits + paper evidence
+
+| Tool | Required params | Optional params | Side effects |
+| --- | --- | --- | --- |
+| `dynamicjepa_compute_mc_ratio` | `dbPath`, `domain`, `outputDir` | `domainVersion` | writes `table_mc_ratio.csv` + plot artifacts |
+| `dynamicjepa_audit_pairwise_mi` | `dbPath`, `domain`, `outputDir` | `domainVersion`, `sampleSize` (default 50; ≤1000), `estimator` (default `"ksg"`), `ksgK` (default 1; ≤5), `bootstrapIters` (default 1; ≤1000), `seed` (default 0; ≤20260501) | writes pairwise MI artifacts |
+| `dynamicjepa_cross_domain_transfer` | `outputRoot` | `seeds` (default `[42,43,44,45,46]`), `sourceEvents` (default 20), `targetEvents` (default 20), `bootstrapIters` (default 1), `trainEpochs` (default 1), `batchSize` (default 1), `maxSecondsPerTraining` (default 1), `learningRate` (default 0.001), `stoppingTarget` (default 0.20) | runs counter_world→gridworld transfer pilot; writes `transfer_results.json`, paper table, plots, bridge artifacts |
+
+### 28.10 Inspection
+
+| Tool | Required params | Optional params | Side effects |
+| --- | --- | --- | --- |
+| `dynamicjepa_inspect_counts` | `dbPath` | — | none |
+| `dynamicjepa_inspect_cf` | `dbPath`, `cf` | `keyHex`, `limit`, `offset` | none |
 
 ---
 
-## 28. Common Error Conditions
+## 29. Reality-loop tools (35; mode-gated)
 
-| Condition | Error | Where |
-| --- | --- | --- |
-| Unknown tool name | `TOOL_NOT_FOUND` (-32601) | `dispatch.rs:30` |
-| Missing `params` | `INVALID_PARAMS` | `dispatch.rs:54` |
-| Missing `name` field | `INVALID_PARAMS` | `dispatch.rs:65` |
-| Unknown property in args (`additionalProperties: false`) | `InvalidParams` | per-handler validation |
-| Missing required field | `InvalidParams` | per-handler validation |
-| Out-of-range numeric/integer | `InvalidParams` | per-handler validation |
-| Soft-deleted memory referenced | `NotFound` | per-handler |
-| LLM-gated tool without `--features llm` | `Unsupported` or `{status:"skipped"}` | `causal_discovery.rs`, `graph.rs`, `typed_edges.rs:130` |
-| Constellation member count below 3 | `TooFewMembers` | `constellation_tools.rs` |
-| Constellation member count above `maxMembers` | `TooManyMembers` | `constellation_tools.rs` |
-| Graph-learning resolve without persisted evidence | hard error (no fallback) | `graph_learning_tools.rs:435` |
-| `derive_anomalies_from_edges` with `kinds` filter | `InvalidParams` (not yet supported) | `typed_edges_tools.rs:338` |
+The `mcp__cgreality__*` family is exposed by the lightweight reality-loop stdio MCP server (launched with `--mode reality-loop`) and by the standard server when `tools::is_reality_loop_mode()` is true. Schemas live in `tools/definitions/reality.rs`; handlers in `handlers/tools/reality_loop/`. See [22_reality_loop_subsystem.md](22_reality_loop_subsystem.md) for the subsystem description.
+
+All reality tools return error bodies with `error_code`, `field_path`, `message`, `source_of_truth`, and `details` (`reality_loop/errors.rs`). Reality reads dispatch to `analyze.rs`; harness writes dispatch to `alter.rs`; runs and queries dispatch to `interact.rs`; optimizer artifacts dispatch to `optimizer.rs`; champion/experiment registry to `autoresearch.rs`; shift logging to `shift_log.rs`.
+
+### 29.1 Reality query tools (analyze.rs)
+
+Read-only artifact queries against the active runtime root.
+
+| Tool | Required params | Optional params | Returns |
+| --- | --- | --- | --- |
+| `reality_latest_root` | — | — | `{runtime_root, active_run_id, active_task_id, active_target_instance, success_predicate, last_attempt_number, source_of_truth}` |
+| `reality_attempt_summary` | `run_id`, `attempt` | `compact` (default `false`) | attempt-summary.json (compactable) |
+| `reality_official_report` | `run_id`, `attempt` | — | `official-success-evidence.json` or `official-failure-evidence.json` |
+| `reality_problem_packet` | `run_id` | `compact` (default `false`) | `problem-reality-packet.json` |
+| `reality_signal` | `run_id`, `attempt` | `compact` (default `false`) | `reality-signal-packet.json` |
+| `dynamicjepa_reality_for_attempt` | `run_id`, `attempt` | — | `dynamicjepa_reality` block + SQLite verification |
+| `reality_failure` | `run_id`, `attempt` | — | compact failure evidence |
+| `reality_trigger_decision` | `run_id`, `attempt` | — | `trigger-decision.json` |
+| `reality_harness_transitions` | `run_id`, `attempt` | `round` (`integer\|null`) | one or all transition artifacts under `harness-transitions/round-NN.json` |
+| `reality_compare_attempts` | `run_id`, `attempt_a`, `attempt_b` | — | per-attempt summaries with diff |
+| `reality_audit_trail` | `entity_id` | `limit` (1–500, default 50) | ContextGraph audit trail rows |
+| `reality_replay_artifact` | `path` | — | any file artifact + SHA-256 readback |
+
+**Side effects:** all read-only.
+**Cross-cutting behavior:** every reality query tool invariant-checks the active runtime root via `read_active_runtime_root()` and the active target instance via `read_active_target_instance()`. Errors include `CCREALITY_ACTIVE_RUNTIME_ROOT_MISSING`, `CCREALITY_ACTIVE_TARGET_INSTANCE_MISSING`, `CCREALITY_OFFICIAL_REPORT_MISSING`, `CCREALITY_PROBLEM_PACKET_MISSING`, `CCREALITY_DYNAMICJEPA_REALITY_*` (8 sub-codes when DynamicJEPA reality block fails verification).
+
+### 29.2 Reality run tools (interact.rs)
+
+Spawn or replay reality-loop runs.
+
+| Tool | Required params | Optional params | Side effects |
+| --- | --- | --- | --- |
+| `reality_run_attempt` | `task_manifest` | `runtime_root`, `max_attempts` (default 1), `official_eval` (default `true`), `model`, `inner_model_path`, `inner_context_tokens`, `inner_max_new_tokens` | spawns `reality-loop` engine subprocess; writes attempt artifacts |
+| `reality_run_smoke` | — | `runtime_root`, `label`, `session_id` | spawns synthetic smoke; writes attempt artifacts |
+| `reality_run_official_eval` | `run_id`, `attempt` | — | runs official SWE-bench Docker evaluator; writes `official-*.json` |
+| `reality_run_targeted_test` | `run_id`, `attempt`, `test_id` | `timeout_secs` (1–1800) | runs one targeted test; writes targeted-test artifact |
+| `reality_recompile_reward` | `run_id`, `attempt` | — | replays signal packet under current reward spec |
+| `reality_query_ledger` | `run_id`, `where` | `limit` (1–500) | constrained read-only BlackBox ledger query |
+
+### 29.3 Harness write tools (alter.rs)
+
+Governed file edits and command runs. Each shells out to `target/release/reality-loop harness <subcommand>` (the MCP→CLI shim, post-2026-05-07). The path-policy gate was removed 2026-05-07; the only path checks remaining are empty-string and control-character rejection.
+
+| Tool | Required params | Optional params | Side effects |
+| --- | --- | --- | --- |
+| `harness_open_window` | `path`, `start_line`, `end_line` | — | reads file window, returns SHA-256 |
+| `harness_apply_line_window_edit` | `path`, `start_line`, `end_line`, `observed_sha256`, `replace` | `session_id`, `tool_use_id` | SHA-guarded line-window edit; writes file; appends shift log |
+| `harness_run_command` | `command` | `timeout_secs` (1–1800), `session_id` | runs allowlisted command in project root; appends shift log |
+| `harness_git_diff` | — | `path` (`string\|null`), `base` | runs `git diff` |
+| `harness_git_status` | — | — | runs `git status --porcelain` |
+| `harness_verify_state` | — | `scope` (default `reality_loop_only`; enum `reality_loop_only`/`full`) | runs governed `cargo fmt`/`check`/`test` |
+
+**Cross-cutting behavior:** every harness write goes through `EditLock` (`reality_loop/lock.rs`) — single-writer per project tree. SHA mismatches return `CCREALITY_OBSERVED_SHA256_MISMATCH`. Shift records are appended to `<runtime_root>/shift-logs/<session_id>.jsonl` via `shift_log::append_shift`.
+
+### 29.4 Optimizer record tools (optimizer.rs)
+
+The Stop-hook-enforced trio that closes the loop on every optimizer turn.
+
+| Tool | Required params | Optional params | Side effects |
+| --- | --- | --- | --- |
+| `optimizer_record_decision` | `run_id`, `attempt`, `policy`, `should_run`, `claude_session_id`, `claude_model` | `reasons` | writes `decision-turn-NN.json`, `trigger-decision.json`; appends ledger; appends shift log |
+| `optimizer_record_recommendation` | (validated by `RecommendationValidator`; see schema below) | — | writes `recommendation-turn-NN.json`; appends ledger; appends shift log |
+| `optimizer_record_harness_transition` | `run_id`, `attempt`, `file_path`, `before_sha256`, `after_sha256`, `lines_added`, `lines_removed` | `tool_use_id`, `cargo_check`, `git_diff_stat`, `session_id` | writes `harness-transitions/round-NN.json`; appends ledger; appends shift log |
+
+**`optimizer_record_recommendation` schema:** validated against `crates/context-graph-mcp/src/handlers/tools/reality_loop/schema_validator.rs::RecommendationValidator`. The schema is loaded at handler startup. Required fields include `run_id`, `attempt`, `turn_number`, `claude_session_id`, plus the recommendation body (`status`, `confidence`, `next_inner_prompt_delta`, `harness_changes`, `remaining_risks`, etc.).
+
+**Recommendation tolerance:** `coerce_stringified_args(args)` in `optimizer.rs::optimizer_record_recommendation` re-types JSON-stringified ints/arrays/booleans before validation (Phase 13 T13.2 — for clients that flatten typed values to strings before transport).
+
+### 29.5 Shift log tools (shift_log.rs)
+
+Per-session reality-shift log: every alter call has a before/after SHA delta appended to `<runtime_root>/shift-logs/<session_id>.jsonl`.
+
+| Tool | Required params | Optional params | Returns |
+| --- | --- | --- | --- |
+| `reality_shift_log` | `session_id` | `limit` (1–500), `since_shift_id` (`string\|null`) | recent shift records |
+| `reality_shift_compare_to_my_view` | `session_id`, `files` | — | per-file `{external_drift_detected, current_sha256, last_seen_sha256}` |
+
+**External drift detection:** `reality_shift_compare_to_my_view` is the canonical way to check if files changed outside the session's shift log. If `external_drift_detected: true`, the optimizer must re-perceive (`harness_open_window`) before any further alter.
+
+### 29.6 Champion state and experiment registry (autoresearch.rs)
+
+Phase 15 autoresearch engine. Tracks (model, task) champions and harness-change experiments at `<run_root>/reality-optimizer/{champion-state.json, experiment-registry.json, attempts.jsonl}`.
+
+| Tool | Required params | Optional params | Side effects |
+| --- | --- | --- | --- |
+| `champion_state_get` | — | `model`, `task` | none |
+| `champion_state_promote` | `model`, `task`, `justification`, `claude_session_id` | — | writes `champion-state.json` (requires `official_resolved=true`) |
+| `attempts_history_query` | — | `model`, `instance_id`, `limit` (1–500, default 100) | none |
+| `experiment_registry_list` | — | `status_filter` (`pending`/`kept`/`discarded`/`escalated`/`promoted`), `limit` (1–500, default 100) | none |
+| `experiment_registry_get` | `experiment_id` | — | none |
+| `experiment_registry_propose` | `harness_change_summary`, `claude_session_id` | `harness_change_recommendation_path`, `harness_change_shift_ids`, `files_changed`, `before_attempt_count` | appends experiment registry |
+| `experiment_registry_update_outcome` | `experiment_id`, `outcome` (enum: `pending`/`kept`/`discarded`/`escalated`/`promoted`), `claude_session_id` | `reasoning` | updates experiment outcome |
+
+**Champion promotion:** `champion_state_promote` requires the latest attempt for `(model, task)` to have `official_resolved=true` in the BlackBox ledger; otherwise it returns `CCREALITY_CHAMPION_PROMOTION_REJECTED`.
+
+### 29.7 Reality-loop artifact layout
+
+Source-of-truth file paths for reality artifacts:
+
+```
+<runtime_root>/<run_id>/
+  problem-reality-packet.json
+  reality-signal-packet.json
+<runtime_root>/<run_id>/<task_id>/qwen3.6-27b/attempts/attempt-NNNNNN/
+  attempt-summary.json
+  agent-tool-transcript.json
+  validation.json
+  inner-model-readback.json
+  inner-harness-response.json
+  reality-signal-packet.json
+  trigger-decision.json
+  agent-tools/round-NN-MM-<tool>/
+  harness-transitions/round-NN.json
+  official-evidence/<instance>.json
+  official-success-evidence.json | official-failure-evidence.json
+  claude-code-optimizer/
+    recommendation-turn-NN.json
+    decision-turn-NN.json
+    commands/<unix>-<command>.json
+<runtime_root>/shift-logs/<session_id>.jsonl
+<runtime_root>/reality-optimizer/
+  champion-state.json
+  experiment-registry.json
+  attempts.jsonl
+```
+
+All file paths returned to the client carry a `source_of_truth: "file:<absolute path>"` marker (or `sqlite:` / `git:` for ledger and git artifacts).
 
 ---
 
-## 29. AnomalyKinds (used by contrastive + typed_edges)
+## 30. Conventions
 
-- `semantic_but_not_causal` — high E1 but low E5
-- `keyword_but_not_paraphrase` — high E6 but low E10
-- `code_shape_but_different_intent` — high E7 but low E1
-- `entity_shared_but_different_structure` — high E11 but low E8
-- `hdc_robust_but_semantic_different` — high E9 but low E1
-- `other` — sentinel for unmatched configurations
+### 30.1 Identifiers
+- All memory IDs are RFC-4122 UUIDv7 strings.
+- Run IDs (reality-loop) are deterministic strings minted by the engine; treated as opaque.
+- Session IDs are caller-provided strings (typically `CLAUDE_SESSION_ID`).
+- Attempt numbers are zero-based integers per `(run_id, task_id)` pair.
+
+### 30.2 Time
+- All timestamps are integer unix seconds unless noted otherwise.
+- Decay half-life on `search_graph` is `decayHalfLifeSecs` (default 86400 = 1 day).
+
+### 30.3 Numeric ranges
+- Importance, similarity, weight components all use `[0.0, 1.0]` (cosine normalized via SRC-3 `(raw+1)/2` for embedders that return `[-1, 1]`).
+- `boost_importance.delta` is the only signed numeric param: `[-1.0, 1.0]`.
+
+### 30.4 Strict additionalProperties
+Every input schema sets `additionalProperties: false`. Unknown fields are rejected with `INVALID_PARAMS`. Two exceptions: `optimizer_record_decision` and `optimizer_record_recommendation` permit additional fields (the recommendation validator carries the strict shape).
+
+### 30.5 LLM gating
+`#[cfg(feature = "llm")]` guards `discover_graph_relationships`, `validate_graph_link`, `trigger_causal_discovery`, `get_causal_discovery_status`. Counts in §1.1 reflect both builds. `validate_low_confidence_edges` is always present but no-ops in non-LLM builds.
+
+### 30.6 Reality-loop mode gating
+`tools::is_reality_loop_mode()` reads the `--mode reality-loop` flag (or `CONTEXT_GRAPH_REALITY_MODE=1` env var). When true, the standard server registers all 35 reality tools alongside the default 145/141 surface; when false, only the lightweight `--mode reality-loop` server exposes them.
+
+### 30.7 Session-scoped state
+`create_weight_profile` is session-scoped and is **not** persisted to RocksDB. Custom weight profiles must be re-created when the MCP session restarts.
+
+### 30.8 Soft-delete vs hard-delete
+- `forget_concept`: soft by default (30-day recovery via `deleted_at` in `CF_SOURCE_METADATA`).
+- `delete_file_content`: soft by default (same mechanism).
+- `delete_constellation`: hard delete only.
+- Hard-delete order: every `CF_EMB_*`/`CF_HNSW_*`/sparse/token CF first, then `CF_FINGERPRINTS` (RocksDB-first ordering, audit-13 lessons).
+
+### 30.9 Source-of-truth markers
+Every reality-loop response carries `source_of_truth` as `file:<absolute path>` (or `sqlite:` / `git:`). Clients should treat these as the canonical reference when summarizing or quoting state.
 
 ---
 
-## 30. Supported Weight Profiles
+## 31. Adding a new tool
 
-Used by `search_graph.weightProfile`, `get_unified_neighbors.weight_profile`, and `resolve_learner_retrieval_policy.baseWeightProfile`:
+Procedure (also documented in `dispatch.rs:5-9`):
 
-`semantic_search`, `causal_reasoning`, `code_search`, `fact_checking`, `graph_reasoning`, `temporal_navigation`, `sequence_navigation`, `conversation_history`, `category_weighted`, `typo_tolerant`, `pipeline_stage1_recall`, `pipeline_stage2_scoring`, `pipeline_full`, `balanced`, `multilingual_search`, `long_context`, `translation_finder`, `affect_repair`, `affect_priming`, `affect_neutral`.
+1. Add the tool name constant to `crates/context-graph-mcp/src/tools/names.rs`.
+2. Append a `ToolDefinition::new(...)` entry to the appropriate `definitions/<group>.rs` (or create a new submodule and wire it in `definitions/mod.rs`).
+3. Update the `test_total_tool_count_and_no_duplicates` and `test_submodule_counts` assertions in `definitions/mod.rs`.
+4. Add the handler method `call_X(id, args)` to the relevant `handlers/tools/*_tools.rs` (and DTO struct in `*_dtos.rs` if non-trivial).
+5. Add one line to the `tool_dispatch!` invocation in `dispatch.rs:87`.
+6. Update §1.1, §3, and the per-category section in this document.
 
-For the resolved E1–E14 weights of each profile see [06_search_and_fusion.md](06_search_and_fusion.md) §weight-profiles. For learner state-conditioned profiles (`affect_*`) see [20_learning_subsystem.md](20_learning_subsystem.md).
+For LLM-gated tools, place the `ToolDefinition::new(...)` inside `#[cfg(feature = "llm")]` and update `test_submodule_counts` accordingly.
+
+For reality-loop tools, add the tool to `tools/names.rs` (under `// ========== CGREALITY REALITY-LOOP TOOLS ==========`), to `definitions/reality.rs`, and to `dispatch.rs` (after `// ccreality reality-loop tools`). The lightweight `--mode reality-loop` registry uses `definitions/reality.rs::definitions()` directly.
+
+---
+
+## 32. Schema↔documentation invariants
+
+To keep this reference honest:
+
+- The **count tables in §1.1** must equal the assertions in `definitions/mod.rs::tests::test_submodule_counts` and `test_total_tool_count_and_no_duplicates`.
+- Every tool listed in **§3 Tool inventory** must have a `tool_dispatch!` entry in `dispatch.rs`.
+- Every required parameter listed for a tool in **§4–§29** must appear in `required: [...]` in the corresponding `definitions/<group>.rs` schema.
+- Defaults documented in **§4–§29** must match the `default:` field in the schema AND the handler default (audit lesson — schema-handler default mismatches caused ranking drift).
+- Side effects listed in **§4–§29** must match what the corresponding `*_tools.rs` handler actually writes (verify against `tracing` calls and CF writes during code review).
+
+If you change any of the above, update this doc in the same PR.
