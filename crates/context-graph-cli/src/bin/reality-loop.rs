@@ -14341,11 +14341,7 @@ fn swe_path_risk(changed_files: &[String], observed_paths: &[String]) -> &'stati
         || path.ends_with("Cargo.lock")
     {
         "config_or_build"
-    } else if path.ends_with(".py")
-        || path.ends_with(".rs")
-        || path.ends_with(".js")
-        || path.ends_with(".ts")
-    {
+    } else if looks_like_source_path(path) {
         "source"
     } else {
         "unknown"
@@ -14378,11 +14374,7 @@ fn swe_path_bucket(changed_files: &[String], observed_paths: &[String]) -> &'sta
         "docs"
     } else if path.contains("migration") || path.contains("migrations/") {
         "migrations"
-    } else if path.ends_with(".py")
-        || path.ends_with(".rs")
-        || path.ends_with(".js")
-        || path.ends_with(".ts")
-    {
+    } else if looks_like_source_path(path) {
         "source"
     } else {
         "unknown"
@@ -14413,15 +14405,20 @@ fn swe_symbol_bucket(
         || first.ends_with("Cargo.toml")
     {
         "config_key"
-    } else if first.ends_with(".py")
-        || first.ends_with(".rs")
-        || first.ends_with(".js")
-        || first.ends_with(".ts")
-    {
+    } else if looks_like_source_path(first) {
         "module"
     } else {
         "unknown"
     }
+}
+
+fn looks_like_source_path(path: &str) -> bool {
+    [
+        ".py", ".rs", ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".c", ".cc", ".cpp", ".h",
+        ".hpp", ".cs", ".rb", ".php",
+    ]
+    .iter()
+    .any(|suffix| path.ends_with(suffix))
 }
 
 fn swe_symbol_bucket_from_ast_or_path(
@@ -16421,6 +16418,77 @@ mod tests {
         )
         .expect("git commit");
         (temp, repo)
+    }
+
+    #[test]
+    fn dynamicjepa_ast_action_semantics_parse_real_python_edit() {
+        let (_temp, repo) = init_real_git_repo();
+        let args = json!({
+            "edits": [{
+                "path": "src/example.py",
+                "start_line": 2,
+                "end_line": 2,
+                "replace": "    return x + 2\n",
+                "observed_sha256": sha256_file(&repo.join("src/example.py")).expect("sha")
+            }]
+        });
+        let action = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+            .expect("parser-backed action semantics");
+        assert_eq!(action["ast_language"], "python");
+        assert_eq!(action["ast_parse_status"], "parsed");
+        assert_eq!(action["ast_node_kind"], "function");
+        assert_eq!(action["ast_symbol_kind"], "function");
+        assert_eq!(action["ast_edit_kind"], "function_body");
+        assert_eq!(action["ast_touched_node_count"], 1);
+        assert_eq!(action["symbol_bucket"], "function");
+        assert_eq!(action["patch_scope_bucket"], "single_symbol");
+    }
+
+    #[test]
+    fn dynamicjepa_ast_action_semantics_fail_closed_for_unsupported_source() {
+        let (_temp, repo) = init_real_git_repo();
+        write_text_checked(&repo.join("src/main.go"), "package main\nfunc main() {}\n")
+            .expect("go source write");
+        let args = json!({
+            "edits": [{
+                "path": "src/main.go",
+                "start_line": 2,
+                "end_line": 2,
+                "replace": "func main() { println(\"x\") }\n",
+                "observed_sha256": sha256_file(&repo.join("src/main.go")).expect("sha")
+            }]
+        });
+        let err = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+            .expect_err("unsupported source language must fail closed");
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_DYNAMICJEPA_AST_UNSUPPORTED_SOURCE_LANGUAGE"
+        );
+        assert_eq!(err.field_path, "dynamicjepa.action.ast_language");
+    }
+
+    #[test]
+    fn dynamicjepa_ast_action_semantics_fail_closed_for_nonunique_structured_span() {
+        let (_temp, repo) = init_real_git_repo();
+        write_text_checked(
+            &repo.join("src/dupe.py"),
+            "def a():\n    return 1\n\ndef b():\n    return 1\n",
+        )
+        .expect("dupe source write");
+        let args = json!({
+            "edits": [{
+                "path": "src/dupe.py",
+                "find": "    return 1\n",
+                "replace": "    return 2\n"
+            }]
+        });
+        let err = inferred_dynamicjepa_action_from_tool(&repo, "apply_structured_edit", &args)
+            .expect_err("non-unique structured find span must fail closed");
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_DYNAMICJEPA_AST_FIND_SPAN_NOT_UNIQUE"
+        );
+        assert_eq!(err.field_path, "dynamicjepa.action.ast.structured.find");
     }
 
     #[test]
