@@ -6,6 +6,7 @@ use crate::dynamicjepa::record_header::{validate_semver, DjRecordHeader};
 use crate::dynamicjepa::schema::{
     ActionSchema, EntitySchema, FieldKind, OutcomeSchema, StateSchema, TimeSchema,
 };
+use crate::dynamicjepa::state_action_outcome::FieldValue;
 use crate::dynamicjepa::validation::{ensure_no_duplicates, Validate};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -72,8 +73,15 @@ pub struct PlannerPolicy {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CandidateActionConfig {
-    EnumeratedDeltas { deltas: Vec<i64> },
-    EnumeratedMoves { moves: Vec<String> },
+    EnumeratedDeltas {
+        deltas: Vec<i64>,
+    },
+    EnumeratedMoves {
+        moves: Vec<String>,
+    },
+    EnumeratedActionRecords {
+        records: Vec<BTreeMap<String, FieldValue>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -239,6 +247,36 @@ impl Validate for PlannerPolicy {
                     ));
                 }
                 ensure_no_duplicates(moves.iter().map(String::as_str), "PlannerPolicy.moves")?;
+            }
+            CandidateActionConfig::EnumeratedActionRecords { records } => {
+                if records.is_empty() {
+                    return Err(DynamicJepaError::validation(
+                        "PlannerPolicy.candidate_actions.records",
+                        "candidate action records must not be empty",
+                        "declare the finite structured action set",
+                    ));
+                }
+                for (idx, record) in records.iter().enumerate() {
+                    if record.is_empty() {
+                        return Err(DynamicJepaError::validation(
+                            format!("PlannerPolicy.candidate_actions.records[{idx}]"),
+                            "candidate action record must contain at least one field",
+                            "declare every required action field in each structured candidate",
+                        ));
+                    }
+                    for (field, value) in record {
+                        if field.trim().is_empty() || field.contains('.') {
+                            return Err(DynamicJepaError::validation(
+                                format!("PlannerPolicy.candidate_actions.records[{idx}]"),
+                                format!("invalid action field name {field:?}"),
+                                "use bare action schema field names inside structured candidate records",
+                            ));
+                        }
+                        value.validate(&format!(
+                            "PlannerPolicy.candidate_actions.records[{idx}].{field}"
+                        ))?;
+                    }
+                }
             }
         }
         if self.guards.is_empty() {

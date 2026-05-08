@@ -1232,6 +1232,16 @@ fn enumerate_candidate_actions(
                 )?);
             }
         }
+        CandidateActionConfig::EnumeratedActionRecords { records } => {
+            for record in records {
+                actions.push(build_hypothetical_action_record(
+                    domain,
+                    source_state.source_event_id,
+                    plan_run_id,
+                    record,
+                )?);
+            }
+        }
     }
     Ok(actions)
 }
@@ -1262,6 +1272,52 @@ fn build_hypothetical_action(
     };
     record.refresh_content_hash()?;
     Ok(record)
+}
+
+fn build_hypothetical_action_record(
+    domain: &DomainPack,
+    source_event_id: EventId,
+    plan_run_id: Uuid,
+    fields: &BTreeMap<String, FieldValue>,
+) -> DynamicJepaResult<NormalizedAction> {
+    validate_structured_action_record(domain, fields)?;
+    let action_id = ActionId::new_v4();
+    let now = now_unix_ms()?;
+    let mut record = NormalizedAction {
+        header: DjRecordHeader::new(
+            action_id.0,
+            NORMALIZED_ACTION_RECORD_VERSION,
+            domain.id.clone(),
+            domain.version.clone(),
+            now,
+            Some(plan_run_id),
+        ),
+        action_id,
+        fields: fields.clone(),
+        source_event_id,
+        action_origin: ActionOrigin::Hypothetical,
+    };
+    record.refresh_content_hash()?;
+    Ok(record)
+}
+
+fn validate_structured_action_record(
+    domain: &DomainPack,
+    fields: &BTreeMap<String, FieldValue>,
+) -> DynamicJepaResult<()> {
+    for spec in &domain.action_schema.fields {
+        if spec.required && !fields.contains_key(&spec.name) {
+            return Err(DynamicJepaError::validation(
+                format!("candidate_action.{}", spec.name),
+                "structured candidate action is missing a required field",
+                "declare every required action schema field in each planner candidate record",
+            ));
+        }
+    }
+    for (field, value) in fields {
+        validate_action_field(domain, field, value)?;
+    }
+    Ok(())
 }
 
 fn single_action_field(domain: &DomainPack) -> DynamicJepaResult<&str> {
@@ -1322,6 +1378,8 @@ fn validate_field_value_against_spec(
                 ))
             }
         }
+        (FieldKind::Bool, FieldValue::Bool(_)) => Ok(()),
+        (FieldKind::String, FieldValue::String(_)) => Ok(()),
         (expected, actual) => Err(DynamicJepaError::validation(
             format!("{context}.{}", spec.name),
             format!(

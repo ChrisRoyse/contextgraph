@@ -99,6 +99,18 @@ fn write_unsupported_pair_kind_domain(root: &Path, temp: &Path) -> PathBuf {
     path
 }
 
+fn write_counter_invariant_mismatch(temp: &Path) -> PathBuf {
+    let path = temp.join("counter_world_invariant_mismatch.jsonl");
+    let line = json!({
+        "state": {"counter": 10},
+        "action": {"delta": 2},
+        "outcome": {"next_counter": 13},
+        "ts": 1_778_215_000_000_i64
+    });
+    fs::write(&path, format!("{line}\n")).expect("write invariant mismatch fixture");
+    path
+}
+
 fn inspect_cf(db: &str, cf: &str, limit: &str) -> Value {
     run_ok(&[
         "dynamicjepa",
@@ -154,6 +166,9 @@ fn dynamicjepa_phase4_cli_fsv_real_rocksdb() {
         .to_string();
     let counter_max = root
         .join("configs/dynamicjepa/verification/counter_world_edge_max_panel.jsonl")
+        .display()
+        .to_string();
+    let counter_invariant_mismatch = write_counter_invariant_mismatch(temp.path())
         .display()
         .to_string();
 
@@ -382,6 +397,61 @@ fn dynamicjepa_phase4_cli_fsv_real_rocksdb() {
     let invalid_adapters = inspect_cf(&counter_db, "dj_adapter_runs", "20");
     assert_any_adapter_failed(&invalid_adapters, "action.delta");
     evidence.push(json!({"step": "counter_edge_invalid_action", "before": before_invalid, "error": invalid_err, "after": after_invalid, "adapter_rows": invalid_adapters}));
+
+    let before_invariant = run_ok(&[
+        "dynamicjepa",
+        "inspect-counts",
+        "--db",
+        &counter_db,
+        "--json",
+    ]);
+    let invariant_err = run_err(&[
+        "dynamicjepa",
+        "ingest-event",
+        "--db",
+        &counter_db,
+        "--domain",
+        "counter_world",
+        "--adapter",
+        "json_event",
+        "--file",
+        &counter_invariant_mismatch,
+        "--json",
+    ]);
+    assert_eq!(invariant_err["error_code"], "ADAPTER_FAILED");
+    assert!(
+        invariant_err["error_message"]
+            .as_str()
+            .expect("invariant error message")
+            .contains("fatal invariant arithmetic_consistency failed"),
+        "expected fatal invariant failure, got {invariant_err:#}"
+    );
+    let after_invariant = run_ok(&[
+        "dynamicjepa",
+        "inspect-counts",
+        "--db",
+        &counter_db,
+        "--json",
+    ]);
+    assert_eq!(
+        delta(&before_invariant, &after_invariant, "dj_raw_events"),
+        1
+    );
+    assert_eq!(
+        delta(&before_invariant, &after_invariant, "dj_adapter_runs"),
+        1
+    );
+    assert_eq!(
+        delta(&before_invariant, &after_invariant, "dj_normalized_states"),
+        0
+    );
+    assert_eq!(
+        delta(&before_invariant, &after_invariant, "dj_transitions"),
+        0
+    );
+    let invariant_adapters = inspect_cf(&counter_db, "dj_adapter_runs", "30");
+    assert_any_adapter_failed(&invariant_adapters, "invariant.arithmetic_consistency");
+    evidence.push(json!({"step": "counter_edge_invariant_mismatch", "before": before_invariant, "error": invariant_err, "after": after_invariant, "adapter_rows": invariant_adapters}));
 
     let before_max = run_ok(&[
         "dynamicjepa",

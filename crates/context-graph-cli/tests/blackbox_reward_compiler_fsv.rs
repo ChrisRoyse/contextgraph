@@ -439,6 +439,8 @@ fn write_dynamicjepa_reality_payload(
         "surprise_events": surprise_events,
         "surprise_event_count": surprise_count,
         "surprise_candidate_rate": surprise_rate,
+        "projection_surprise_rate": surprise_rate,
+        "trained_surprise_rate": Value::Null,
         "prediction_error_l2": Value::Null,
         "prediction_error_l2_status": {
             "status": "unavailable",
@@ -453,7 +455,7 @@ fn write_dynamicjepa_reality_payload(
             "dynamicjepa_projection_surprise_count": surprise_count,
             "dynamicjepa_projection_surprise_rate": surprise_rate,
             "dynamicjepa_projection_accuracy": projection_accuracy,
-            "dynamicjepa_plan_trace_coverage": 1.0
+            "dynamicjepa_projection_plan_trace_coverage": 1.0
         },
         "recorded_at_unix": 1778210000
     });
@@ -489,6 +491,8 @@ fn write_trained_dynamicjepa_reality_payload(
     let mut payload: Value = serde_json::from_slice(&fs::read(&input).expect("read payload"))
         .expect("parse projection payload");
     payload["source_mode"] = json!("trained_dynamicjepa_artifact");
+    payload["projection_surprise_rate"] = Value::Null;
+    payload["trained_surprise_rate"] = payload["surprise_candidate_rate"].clone();
     payload["prediction_error_l2"] = json!((prediction_error_l2 * 10_000.0).round() / 10_000.0);
     payload["prediction_error_l2_status"] = json!({
         "status": "available",
@@ -496,9 +500,16 @@ fn write_trained_dynamicjepa_reality_payload(
     });
     let prediction_accuracy =
         ((1.0 - prediction_error_l2).clamp(0.0, 1.0) * 10_000.0).round() / 10_000.0;
-    payload["reward_features"]["dynamicjepa_prediction_error_l2"] =
-        payload["prediction_error_l2"].clone();
-    payload["reward_features"]["dynamicjepa_prediction_accuracy"] = json!(prediction_accuracy);
+    let panel_count_f = panel_count as f64;
+    let surprise_count_f = surprise_count as f64;
+    payload["reward_features"] = json!({
+        "dynamicjepa_trained_panel_count": panel_count_f,
+        "dynamicjepa_trained_surprise_count": surprise_count_f,
+        "dynamicjepa_trained_surprise_rate": payload["trained_surprise_rate"].clone(),
+        "dynamicjepa_trained_plan_trace_coverage": 1.0,
+        "dynamicjepa_prediction_error_l2": payload["prediction_error_l2"].clone(),
+        "dynamicjepa_prediction_accuracy": prediction_accuracy
+    });
     let predictions = (0..panel_count)
         .map(|idx| {
             json!({
@@ -535,10 +546,40 @@ fn write_trained_dynamicjepa_reality_payload(
     payload["trained_artifact"] = json!({
         "artifact_id": format!("artifact-{label}"),
         "artifact_readback": format!("file:{}", artifact_readback.display()),
+        "lifecycle_policy": {
+            "status": "passed",
+            "checks": {
+                "artifact_status": "Active",
+                "file_hashes_verified": true,
+                "latent_collapsed": false,
+                "dataset_shards": 3,
+                "raw_events": 60,
+                "constellations": 23,
+                "threshold_calibrations": 23
+            },
+            "source_of_truth": {
+                "model_artifact": format!("file:{}", artifact_readback.display()),
+                "threshold_calibrations": "sqlite:test#dj_threshold_calibrations"
+            }
+        },
         "predictions": predictions,
         "plan_trace_ids": (0..panel_count).map(|idx| json!(format!("plan-{label}-{idx}"))).collect::<Vec<_>>(),
         "source_of_truth": format!("file:{}", artifact_readback.display())
     });
+    payload["action_controls"] = (0..panel_count)
+        .map(|idx| {
+            json!({
+                "status": "passed",
+                "mode": "post_action_hard_gate",
+                "risky_action": true,
+                "transition_id": format!("{label}-transition-{idx}"),
+                "observed_candidate_action_id": format!("action-{label}-{idx}"),
+                "selected_action_id": format!("action-{label}-{idx}"),
+                "source_of_truth": "sqlite:test#dj_plan_traces,dj_guard_decisions"
+            })
+        })
+        .collect::<Vec<_>>()
+        .into();
     write_json(&input, &payload);
     input
 }
@@ -572,9 +613,9 @@ fn dynamicjepa_reward_spec(path: &Path) {
             "objective": "prove trained DynamicJEPA reward features are compiled only from persisted scorecard state",
             "bounds": {"min": -10.0, "max": 10.0},
             "components": [
-                {"id": "dj_surprise_rate_penalty", "feature": "dynamicjepa_surprise_candidate_rate", "weight": -2.0},
+                {"id": "dj_surprise_rate_penalty", "feature": "dynamicjepa_trained_surprise_rate", "weight": -2.0},
                 {"id": "dj_prediction_accuracy_bonus", "feature": "dynamicjepa_prediction_accuracy", "weight": 3.0},
-                {"id": "dj_plan_trace_bonus", "feature": "dynamicjepa_plan_trace_coverage", "weight": 1.0}
+                {"id": "dj_plan_trace_bonus", "feature": "dynamicjepa_trained_plan_trace_coverage", "weight": 1.0}
             ]
         }),
     );
@@ -910,7 +951,7 @@ fn dynamicjepa_reality_features_are_persisted_scored_and_fail_closed() {
         reward_output["reward_compilation_id"]
     );
     assert_eq!(
-        stored_reward["feature_vector"]["dynamicjepa_surprise_candidate_rate"]["value"],
+        stored_reward["feature_vector"]["dynamicjepa_trained_surprise_rate"]["value"],
         0.25
     );
     assert_eq!(
@@ -918,7 +959,7 @@ fn dynamicjepa_reality_features_are_persisted_scored_and_fail_closed() {
         0.8
     );
     assert_eq!(
-        stored_reward["feature_vector"]["dynamicjepa_plan_trace_coverage"]["value"],
+        stored_reward["feature_vector"]["dynamicjepa_trained_plan_trace_coverage"]["value"],
         1.0
     );
     assert_eq!(stored_reward["reward"]["raw"], 2.9);
@@ -982,7 +1023,7 @@ fn dynamicjepa_reality_features_are_persisted_scored_and_fail_closed() {
         stored_max_reward
     );
     assert_eq!(
-        max_reward["feature_vector"]["dynamicjepa_surprise_candidate_rate"]["value"],
+        max_reward["feature_vector"]["dynamicjepa_trained_surprise_rate"]["value"],
         1.0
     );
     assert_eq!(

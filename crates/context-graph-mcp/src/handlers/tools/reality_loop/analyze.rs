@@ -929,3 +929,132 @@ fn collect_named_json(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn sqlite_ledger_with_dynamicjepa_row(
+        dir: &Path,
+        run_id: &str,
+        payload: &Value,
+    ) -> (PathBuf, String, String) {
+        let ledger = dir.join("blackbox.sqlite");
+        let conn = Connection::open(&ledger).expect("open real temp sqlite ledger");
+        conn.execute_batch(
+            "CREATE TABLE ledger_records (
+                sequence INTEGER PRIMARY KEY,
+                record_kind TEXT NOT NULL,
+                run_id TEXT,
+                payload_sha256 TEXT NOT NULL,
+                record_sha256 TEXT NOT NULL,
+                payload_json TEXT NOT NULL
+            );",
+        )
+        .expect("create ledger_records");
+        let payload_sha256 = canonical_json_sha256(payload).expect("hash payload");
+        let record_sha256 =
+            "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+        conn.execute(
+            "INSERT INTO ledger_records
+             (sequence, record_kind, run_id, payload_sha256, record_sha256, payload_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                7_i64,
+                "dynamicjepa_reality",
+                run_id,
+                payload_sha256,
+                record_sha256,
+                serde_json::to_string(payload).expect("serialize payload")
+            ],
+        )
+        .expect("insert dynamicjepa_reality row");
+        (ledger, payload_sha256, record_sha256.to_string())
+    }
+
+    fn packet_block(payload: Value, payload_sha256: &str, record_sha256: &str) -> Value {
+        json!({
+            "block": payload,
+            "ledger_record": {
+                "ledger_sequence": 7,
+                "payload_sha256": payload_sha256,
+                "record_sha256": record_sha256,
+                "readback": {"status": "passed"}
+            }
+        })
+    }
+
+    #[test]
+    fn dynamicjepa_sqlite_verification_reads_physical_row() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let run_id = "run_mcp_sqlite_fsv";
+        let payload = json!({
+            "run_id": run_id,
+            "source_mode": "trained_dynamicjepa_artifact",
+            "reward_features": {
+                "dynamicjepa_prediction_accuracy": 0.75
+            }
+        });
+        let (ledger, payload_sha256, record_sha256) =
+            sqlite_ledger_with_dynamicjepa_row(temp.path(), run_id, &payload);
+        let packet_path = temp.path().join("reality-signal-packet.json");
+        let verified = verify_dynamicjepa_reality_sqlite_row(
+            &ledger,
+            run_id,
+            &packet_path,
+            &packet_block(payload, &payload_sha256, &record_sha256),
+        )
+        .expect("physical SQLite row verifies");
+
+        assert_eq!(verified["status"], "passed");
+        assert_eq!(
+            verified["source_of_truth"],
+            format!("sqlite:{}#ledger_records", ledger.display())
+        );
+        assert_eq!(verified["sequence"], 7);
+        assert_eq!(verified["record_kind"], "dynamicjepa_reality");
+    }
+
+    #[test]
+    fn dynamicjepa_sqlite_verification_rejects_packet_row_divergence() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let run_id = "run_mcp_sqlite_mismatch";
+        let packet_payload = json!({
+            "run_id": run_id,
+            "source_mode": "trained_dynamicjepa_artifact",
+            "reward_features": {
+                "dynamicjepa_prediction_accuracy": 0.80
+            }
+        });
+        let persisted_payload = json!({
+            "run_id": run_id,
+            "source_mode": "harness_transition_projection",
+            "reward_features": {
+                "dynamicjepa_prediction_accuracy": null
+            }
+        });
+        let (ledger, _persisted_payload_sha256, record_sha256) =
+            sqlite_ledger_with_dynamicjepa_row(temp.path(), run_id, &persisted_payload);
+        let expected_packet_payload_sha256 =
+            canonical_json_sha256(&packet_payload).expect("hash packet payload");
+        let packet_path = temp.path().join("reality-signal-packet.json");
+        let err = verify_dynamicjepa_reality_sqlite_row(
+            &ledger,
+            run_id,
+            &packet_path,
+            &packet_block(
+                packet_payload,
+                &expected_packet_payload_sha256,
+                &record_sha256,
+            ),
+        )
+        .expect_err("packet/row divergence must fail closed");
+
+        assert_eq!(err.error_code, "CCREALITY_DYNAMICJEPA_LEDGER_ROW_MISMATCH");
+        assert_eq!(
+            err.source_of_truth,
+            Some(format!("sqlite:{}#ledger_records", ledger.display()))
+        );
+    }
+}

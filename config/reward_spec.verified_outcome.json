@@ -39,7 +39,7 @@
     },
     {
       "id": "dj_surprise_rate_penalty",
-      "feature": "dynamicjepa_surprise_candidate_rate",
+      "feature": "dynamicjepa_trained_surprise_rate",
       "weight": -0.5
     },
     {
@@ -49,7 +49,7 @@
     },
     {
       "id": "dj_plan_trace_bonus",
-      "feature": "dynamicjepa_plan_trace_coverage",
+      "feature": "dynamicjepa_trained_plan_trace_coverage",
       "weight": 0.5
     }
   ]

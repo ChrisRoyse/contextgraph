@@ -4282,11 +4282,14 @@ fn validate_dynamicjepa_reality_payload(
             "surprise_events",
             "surprise_event_count",
             "surprise_candidate_rate",
+            "projection_surprise_rate",
+            "trained_surprise_rate",
             "prediction_error_l2",
             "prediction_error_l2_status",
             "projection_accuracy",
             "plan_trace_coverage",
             "guard_decisions",
+            "action_controls",
             "source_of_truth_refs",
             "reward_features",
             "trained_artifact",
@@ -4396,6 +4399,53 @@ fn validate_dynamicjepa_reality_payload(
         surprise_candidate_rate,
         expected_surprise_rate,
     )?;
+    match source_mode {
+        "harness_transition_projection" => {
+            let projection_surprise_rate =
+                dynamicjepa_required_f64_01(ledger, object, "$.projection_surprise_rate")?;
+            dynamicjepa_assert_close(
+                ledger,
+                "$.projection_surprise_rate",
+                projection_surprise_rate,
+                expected_surprise_rate,
+            )?;
+            if !object
+                .get("trained_surprise_rate")
+                .unwrap_or(&Value::Null)
+                .is_null()
+            {
+                return Err(dynamicjepa_reality_invalid(
+                    ledger,
+                    "$.trained_surprise_rate",
+                    "projection-mode DynamicJEPA records must not claim trained surprise",
+                    "write trained_surprise_rate=null until artifact-backed inference produced the metric",
+                ));
+            }
+        }
+        "trained_dynamicjepa_artifact" => {
+            let trained_surprise_rate =
+                dynamicjepa_required_f64_01(ledger, object, "$.trained_surprise_rate")?;
+            dynamicjepa_assert_close(
+                ledger,
+                "$.trained_surprise_rate",
+                trained_surprise_rate,
+                expected_surprise_rate,
+            )?;
+            if !object
+                .get("projection_surprise_rate")
+                .unwrap_or(&Value::Null)
+                .is_null()
+            {
+                return Err(dynamicjepa_reality_invalid(
+                    ledger,
+                    "$.projection_surprise_rate",
+                    "trained DynamicJEPA records must not publish projection surprise as a trained metric",
+                    "write projection_surprise_rate=null for artifact-backed records",
+                ));
+            }
+        }
+        _ => unreachable!("source_mode validated above"),
+    }
     let projection_accuracy = dynamicjepa_required_f64_01(ledger, object, "$.projection_accuracy")?;
     dynamicjepa_assert_close(
         ledger,
@@ -4472,6 +4522,30 @@ fn validate_dynamicjepa_reality_payload(
                 trained_artifact,
                 "$.trained_artifact.source_of_truth",
             )?;
+            let lifecycle = trained_artifact
+                .get("lifecycle_policy")
+                .and_then(Value::as_object)
+                .ok_or_else(|| {
+                    dynamicjepa_reality_invalid(
+                        ledger,
+                        "$.trained_artifact.lifecycle_policy",
+                        "trained_dynamicjepa_artifact records require artifact lifecycle evidence",
+                        "include artifact hash, non-collapse, dataset diversity, and threshold calibration gate evidence",
+                    )
+                })?;
+            let lifecycle_status = dynamicjepa_required_str(
+                ledger,
+                lifecycle,
+                "$.trained_artifact.lifecycle_policy.status",
+            )?;
+            if lifecycle_status != "passed" {
+                return Err(dynamicjepa_reality_invalid(
+                    ledger,
+                    "$.trained_artifact.lifecycle_policy.status",
+                    format!("artifact lifecycle policy must pass, found {lifecycle_status:?}"),
+                    "do not compile reward for unpromoted DynamicJEPA artifacts",
+                ));
+            }
             let predictions = dynamicjepa_required_array(
                 ledger,
                 trained_artifact,
@@ -4511,6 +4585,20 @@ fn validate_dynamicjepa_reality_payload(
     }
 
     dynamicjepa_required_array(ledger, object, "$.guard_decisions")?;
+    if source_mode == "trained_dynamicjepa_artifact" {
+        let action_controls = dynamicjepa_required_array(ledger, object, "$.action_controls")?;
+        if action_controls.len() as i64 != panel_count {
+            return Err(dynamicjepa_reality_invalid(
+                ledger,
+                "$.action_controls",
+                format!(
+                    "action_controls length {} did not equal panel_count {panel_count}",
+                    action_controls.len()
+                ),
+                "write one DynamicJEPA action-control decision per trained panel",
+            ));
+        }
+    }
     let source_refs = dynamicjepa_required_array(ledger, object, "$.source_of_truth_refs")?;
     if source_refs.is_empty() {
         return Err(dynamicjepa_reality_invalid(
@@ -4544,51 +4632,80 @@ fn validate_dynamicjepa_reality_payload(
                 "materialize explicit feature values so reward compilation never derives them from side effects",
             )
         })?;
-    dynamicjepa_required_feature_matches(
-        ledger,
-        reward_features,
-        "dynamicjepa_projection_panel_count",
-        panel_count as f64,
-    )?;
-    dynamicjepa_required_feature_matches(
-        ledger,
-        reward_features,
-        "dynamicjepa_projection_surprise_count",
-        surprise_event_count as f64,
-    )?;
-    dynamicjepa_required_feature_matches(
-        ledger,
-        reward_features,
-        "dynamicjepa_projection_surprise_rate",
-        surprise_candidate_rate,
-    )?;
-    dynamicjepa_required_feature_matches(
-        ledger,
-        reward_features,
-        "dynamicjepa_projection_accuracy",
-        projection_accuracy,
-    )?;
     let plan_trace_coverage = dynamicjepa_required_f64_01(ledger, object, "$.plan_trace_coverage")?;
-    dynamicjepa_required_feature_matches(
-        ledger,
-        reward_features,
-        "dynamicjepa_plan_trace_coverage",
-        plan_trace_coverage,
-    )?;
-    if source_mode == "trained_dynamicjepa_artifact" {
-        let prediction_error = prediction_error.as_f64().unwrap_or(0.0);
-        dynamicjepa_required_feature_matches(
-            ledger,
-            reward_features,
-            "dynamicjepa_prediction_error_l2",
-            prediction_error,
-        )?;
-        dynamicjepa_required_feature_matches(
-            ledger,
-            reward_features,
-            "dynamicjepa_prediction_accuracy",
-            round_score(clamp01(1.0 - prediction_error)),
-        )?;
+    match source_mode {
+        "harness_transition_projection" => {
+            dynamicjepa_required_feature_matches(
+                ledger,
+                reward_features,
+                "dynamicjepa_projection_panel_count",
+                panel_count as f64,
+            )?;
+            dynamicjepa_required_feature_matches(
+                ledger,
+                reward_features,
+                "dynamicjepa_projection_surprise_count",
+                surprise_event_count as f64,
+            )?;
+            dynamicjepa_required_feature_matches(
+                ledger,
+                reward_features,
+                "dynamicjepa_projection_surprise_rate",
+                surprise_candidate_rate,
+            )?;
+            dynamicjepa_required_feature_matches(
+                ledger,
+                reward_features,
+                "dynamicjepa_projection_accuracy",
+                projection_accuracy,
+            )?;
+            dynamicjepa_required_feature_matches(
+                ledger,
+                reward_features,
+                "dynamicjepa_projection_plan_trace_coverage",
+                plan_trace_coverage,
+            )?;
+        }
+        "trained_dynamicjepa_artifact" => {
+            dynamicjepa_required_feature_matches(
+                ledger,
+                reward_features,
+                "dynamicjepa_trained_panel_count",
+                panel_count as f64,
+            )?;
+            dynamicjepa_required_feature_matches(
+                ledger,
+                reward_features,
+                "dynamicjepa_trained_surprise_count",
+                surprise_event_count as f64,
+            )?;
+            dynamicjepa_required_feature_matches(
+                ledger,
+                reward_features,
+                "dynamicjepa_trained_surprise_rate",
+                surprise_candidate_rate,
+            )?;
+            dynamicjepa_required_feature_matches(
+                ledger,
+                reward_features,
+                "dynamicjepa_trained_plan_trace_coverage",
+                plan_trace_coverage,
+            )?;
+            let prediction_error = prediction_error.as_f64().unwrap_or(0.0);
+            dynamicjepa_required_feature_matches(
+                ledger,
+                reward_features,
+                "dynamicjepa_prediction_error_l2",
+                prediction_error,
+            )?;
+            dynamicjepa_required_feature_matches(
+                ledger,
+                reward_features,
+                "dynamicjepa_prediction_accuracy",
+                round_score(clamp01(1.0 - prediction_error)),
+            )?;
+        }
+        _ => unreachable!("source_mode validated above"),
     }
     Ok(())
 }
@@ -14136,7 +14253,9 @@ fn build_scorecard_payload(
                     "dynamicjepa_projection_surprise_count",
                     "dynamicjepa_projection_surprise_rate",
                     "dynamicjepa_projection_accuracy",
-                    "dynamicjepa_plan_trace_coverage",
+                    "dynamicjepa_projection_plan_trace_coverage",
+                    "dynamicjepa_trained_surprise_rate",
+                    "dynamicjepa_trained_plan_trace_coverage",
                     "dynamicjepa_prediction_error_l2",
                     "dynamicjepa_prediction_accuracy"
                 ]
@@ -14415,12 +14534,15 @@ fn scorecard_dynamicjepa_reality_from_record(
         "panel_count": record.payload.get("panel_count").cloned().unwrap_or(Value::Null),
         "surprise_event_count": record.payload.get("surprise_event_count").cloned().unwrap_or(Value::Null),
         "surprise_candidate_rate": record.payload.get("surprise_candidate_rate").cloned().unwrap_or(Value::Null),
+        "projection_surprise_rate": record.payload.get("projection_surprise_rate").cloned().unwrap_or(Value::Null),
+        "trained_surprise_rate": record.payload.get("trained_surprise_rate").cloned().unwrap_or(Value::Null),
         "projection_accuracy": record.payload.get("projection_accuracy").cloned().unwrap_or(Value::Null),
         "prediction_error_l2": record.payload.get("prediction_error_l2").cloned().unwrap_or(Value::Null),
         "prediction_error_l2_status": record.payload.get("prediction_error_l2_status").cloned().unwrap_or(Value::Null),
         "plan_trace_coverage": record.payload.get("plan_trace_coverage").cloned().unwrap_or(Value::Null),
         "surprise_events": record.payload.get("surprise_events").cloned().unwrap_or(Value::Null),
         "guard_decisions": record.payload.get("guard_decisions").cloned().unwrap_or(Value::Null),
+        "action_controls": record.payload.get("action_controls").cloned().unwrap_or(Value::Null),
         "source_of_truth_refs": record.payload.get("source_of_truth_refs").cloned().unwrap_or(Value::Null),
         "reward_features": record.payload.get("reward_features").cloned().unwrap_or(Value::Null),
         "source": "ledger_records.dynamicjepa_reality",
@@ -14875,10 +14997,30 @@ fn reward_feature_vector(
         scorecard_payload,
         "dynamicjepa_projection_accuracy",
     )?;
-    let dynamicjepa_plan_trace_coverage = reward_dynamicjepa_feature(
+    let dynamicjepa_projection_plan_trace_coverage = reward_dynamicjepa_feature(
         ledger_path,
         scorecard_payload,
-        "dynamicjepa_plan_trace_coverage",
+        "dynamicjepa_projection_plan_trace_coverage",
+    )?;
+    let dynamicjepa_trained_panel_count = reward_dynamicjepa_feature(
+        ledger_path,
+        scorecard_payload,
+        "dynamicjepa_trained_panel_count",
+    )?;
+    let dynamicjepa_trained_surprise_count = reward_dynamicjepa_feature(
+        ledger_path,
+        scorecard_payload,
+        "dynamicjepa_trained_surprise_count",
+    )?;
+    let dynamicjepa_trained_surprise_rate = reward_dynamicjepa_feature(
+        ledger_path,
+        scorecard_payload,
+        "dynamicjepa_trained_surprise_rate",
+    )?;
+    let dynamicjepa_trained_plan_trace_coverage = reward_dynamicjepa_feature(
+        ledger_path,
+        scorecard_payload,
+        "dynamicjepa_trained_plan_trace_coverage",
     )?;
     let dynamicjepa_prediction_error_l2 = reward_dynamicjepa_feature(
         ledger_path,
@@ -15053,13 +15195,6 @@ fn reward_feature_vector(
     );
     reward_insert_feature(
         &mut features,
-        "dynamicjepa_surprise_candidate_rate",
-        dynamicjepa_projection_surprise_rate,
-        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_projection_surprise_rate",
-        "alias for projected surprise candidate rate",
-    );
-    reward_insert_feature(
-        &mut features,
         "dynamicjepa_projection_accuracy",
         dynamicjepa_projection_accuracy,
         "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_projection_accuracy",
@@ -15067,10 +15202,38 @@ fn reward_feature_vector(
     );
     reward_insert_feature(
         &mut features,
-        "dynamicjepa_plan_trace_coverage",
-        dynamicjepa_plan_trace_coverage,
-        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_plan_trace_coverage",
-        "ratio of executed tool calls that produced DynamicJEPA-mapped harness transitions",
+        "dynamicjepa_projection_plan_trace_coverage",
+        dynamicjepa_projection_plan_trace_coverage,
+        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_projection_plan_trace_coverage",
+        "projection-only ratio of executed tool calls that produced DynamicJEPA-mapped harness transitions",
+    );
+    reward_insert_feature(
+        &mut features,
+        "dynamicjepa_trained_panel_count",
+        dynamicjepa_trained_panel_count,
+        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_trained_panel_count",
+        "number of panels scored by a trained DynamicJEPA artifact",
+    );
+    reward_insert_feature(
+        &mut features,
+        "dynamicjepa_trained_surprise_count",
+        dynamicjepa_trained_surprise_count,
+        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_trained_surprise_count",
+        "count of artifact-backed DynamicJEPA surprise events",
+    );
+    reward_insert_feature(
+        &mut features,
+        "dynamicjepa_trained_surprise_rate",
+        dynamicjepa_trained_surprise_rate,
+        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_trained_surprise_rate",
+        "artifact-backed surprise event count divided by trained DynamicJEPA panel count",
+    );
+    reward_insert_feature(
+        &mut features,
+        "dynamicjepa_trained_plan_trace_coverage",
+        dynamicjepa_trained_plan_trace_coverage,
+        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_trained_plan_trace_coverage",
+        "ratio of artifact-backed DynamicJEPA panels that produced plan traces",
     );
     reward_insert_feature(
         &mut features,
@@ -15119,12 +15282,7 @@ fn reward_dynamicjepa_feature(
                         .get("source_mode")
                         .and_then(Value::as_str)
                         .unwrap_or("");
-                    if source_mode == "harness_transition_projection"
-                        && matches!(
-                            feature,
-                            "dynamicjepa_prediction_error_l2" | "dynamicjepa_prediction_accuracy"
-                        )
-                    {
+                    if dynamicjepa_feature_unavailable_for_source_mode(source_mode, feature) {
                         return Ok(None);
                     }
                     return Err(reward_invalid(
@@ -15170,6 +15328,29 @@ fn reward_dynamicjepa_feature(
             format!("unsupported dynamicjepa_reality status {other:?}"),
             "rerun scoring with a supported DynamicJEPA reality status",
         )),
+    }
+}
+
+fn dynamicjepa_feature_unavailable_for_source_mode(source_mode: &str, feature: &str) -> bool {
+    match source_mode {
+        "harness_transition_projection" => matches!(
+            feature,
+            "dynamicjepa_trained_panel_count"
+                | "dynamicjepa_trained_surprise_count"
+                | "dynamicjepa_trained_surprise_rate"
+                | "dynamicjepa_trained_plan_trace_coverage"
+                | "dynamicjepa_prediction_error_l2"
+                | "dynamicjepa_prediction_accuracy"
+        ),
+        "trained_dynamicjepa_artifact" => matches!(
+            feature,
+            "dynamicjepa_projection_panel_count"
+                | "dynamicjepa_projection_surprise_count"
+                | "dynamicjepa_projection_surprise_rate"
+                | "dynamicjepa_projection_accuracy"
+                | "dynamicjepa_projection_plan_trace_coverage"
+        ),
+        _ => false,
     }
 }
 
@@ -15810,9 +15991,12 @@ fn reward_known_features() -> Vec<&'static str> {
         "dynamicjepa_projection_surprise_count",
         "dynamicjepa_surprise_events",
         "dynamicjepa_projection_surprise_rate",
-        "dynamicjepa_surprise_candidate_rate",
         "dynamicjepa_projection_accuracy",
-        "dynamicjepa_plan_trace_coverage",
+        "dynamicjepa_projection_plan_trace_coverage",
+        "dynamicjepa_trained_panel_count",
+        "dynamicjepa_trained_surprise_count",
+        "dynamicjepa_trained_surprise_rate",
+        "dynamicjepa_trained_plan_trace_coverage",
         "dynamicjepa_prediction_error_l2",
         "dynamicjepa_prediction_accuracy",
     ]

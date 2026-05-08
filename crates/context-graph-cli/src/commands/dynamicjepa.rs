@@ -5082,6 +5082,7 @@ fn candidate_action_count(domain: &DomainPack) -> DynamicJepaResult<u32> {
     let count = match &domain.planner_policy.candidate_actions {
         CandidateActionConfig::EnumeratedDeltas { deltas } => deltas.len(),
         CandidateActionConfig::EnumeratedMoves { moves } => moves.len(),
+        CandidateActionConfig::EnumeratedActionRecords { records } => records.len(),
     };
     u32::try_from(count).map_err(|_| {
         DynamicJepaError::validation(
@@ -14639,6 +14640,7 @@ impl VerificationDomain {
         let candidate_count = match &domain_pack.planner_policy.candidate_actions {
             CandidateActionConfig::EnumeratedDeltas { deltas } => deltas.len() as u64,
             CandidateActionConfig::EnumeratedMoves { moves } => moves.len() as u64,
+            CandidateActionConfig::EnumeratedActionRecords { records } => records.len() as u64,
         };
         let instrument_count = domain_pack.instrument_specs.len() as u64;
         let pairwise_per_panel =
@@ -18221,6 +18223,7 @@ fn adapt_payload(
     ensure_required_schema_fields(domain_pack, "action", &action_fields)?;
     ensure_required_schema_fields(domain_pack, "outcome", &outcome_fields)?;
     ensure_time_field(domain_pack, &time_fields)?;
+    validate_adapted_invariants(domain_pack, &state_fields, &action_fields, &outcome_fields)?;
 
     Ok(AdaptedLine {
         state_fields,
@@ -18266,6 +18269,535 @@ fn ordered_adapter_targets(domain_pack: &DomainPack, adapter: &AdapterSpec) -> V
         }
     }
     ordered
+}
+
+fn validate_adapted_invariants(
+    domain_pack: &DomainPack,
+    state_fields: &BTreeMap<String, FieldValue>,
+    action_fields: &BTreeMap<String, FieldValue>,
+    outcome_fields: &BTreeMap<String, FieldValue>,
+) -> Result<(), AdapterLineError> {
+    let context = InvariantContext {
+        state_fields,
+        action_fields,
+        outcome_fields,
+    };
+    for invariant in &domain_pack.invariants {
+        let passed =
+            evaluate_invariant_expression(&invariant.expression, &context).map_err(|message| {
+                AdapterLineError {
+                    message: format!(
+                        "fatal invariant {} could not be evaluated: {message}",
+                        invariant.id
+                    ),
+                    field_path: format!("invariant.{}", invariant.id),
+                    expected_kind: "supported fatal invariant expression".to_string(),
+                    actual_kind: "unsupported_invariant".to_string(),
+                }
+            })?;
+        if !passed {
+            return Err(AdapterLineError {
+                message: format!(
+                    "fatal invariant {} failed: {}",
+                    invariant.id,
+                    invariant
+                        .expression
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ),
+                field_path: format!("invariant.{}", invariant.id),
+                expected_kind: "expression evaluates true".to_string(),
+                actual_kind: "false".to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+struct InvariantContext<'a> {
+    state_fields: &'a BTreeMap<String, FieldValue>,
+    action_fields: &'a BTreeMap<String, FieldValue>,
+    outcome_fields: &'a BTreeMap<String, FieldValue>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum InvariantToken {
+    Ident(String),
+    Number(f64),
+    Text(String),
+    And,
+    Eq,
+    Le,
+    Ge,
+    Lt,
+    Gt,
+    Plus,
+    Minus,
+    Arrow,
+    LParen,
+    RParen,
+    Comma,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum InvariantValue {
+    Bool(bool),
+    Number(f64),
+    Text(String),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum InvariantCompareOp {
+    Eq,
+    Le,
+    Ge,
+    Lt,
+    Gt,
+}
+
+fn evaluate_invariant_expression(
+    expression: &str,
+    context: &InvariantContext<'_>,
+) -> Result<bool, String> {
+    let tokens = tokenize_invariant(expression)?;
+    let mut parser = InvariantParser::new(&tokens, context);
+    let value = parser.parse_expression()?;
+    parser.expect_end()?;
+    invariant_bool(value, "invariant expression")
+}
+
+fn tokenize_invariant(expression: &str) -> Result<Vec<InvariantToken>, String> {
+    let chars = expression.chars().collect::<Vec<_>>();
+    let mut tokens = Vec::new();
+    let mut idx = 0usize;
+    while idx < chars.len() {
+        let ch = chars[idx];
+        if ch.is_whitespace() {
+            idx += 1;
+            continue;
+        }
+        match ch {
+            '(' => {
+                tokens.push(InvariantToken::LParen);
+                idx += 1;
+            }
+            ')' => {
+                tokens.push(InvariantToken::RParen);
+                idx += 1;
+            }
+            ',' => {
+                tokens.push(InvariantToken::Comma);
+                idx += 1;
+            }
+            '+' => {
+                tokens.push(InvariantToken::Plus);
+                idx += 1;
+            }
+            '-' if chars.get(idx + 1) == Some(&'>') => {
+                tokens.push(InvariantToken::Arrow);
+                idx += 2;
+            }
+            '-' => {
+                tokens.push(InvariantToken::Minus);
+                idx += 1;
+            }
+            '=' if chars.get(idx + 1) == Some(&'=') => {
+                tokens.push(InvariantToken::Eq);
+                idx += 2;
+            }
+            '<' if chars.get(idx + 1) == Some(&'=') => {
+                tokens.push(InvariantToken::Le);
+                idx += 2;
+            }
+            '>' if chars.get(idx + 1) == Some(&'=') => {
+                tokens.push(InvariantToken::Ge);
+                idx += 2;
+            }
+            '<' => {
+                tokens.push(InvariantToken::Lt);
+                idx += 1;
+            }
+            '>' => {
+                tokens.push(InvariantToken::Gt);
+                idx += 1;
+            }
+            '\'' => {
+                let start = idx + 1;
+                idx = start;
+                while idx < chars.len() && chars[idx] != '\'' {
+                    idx += 1;
+                }
+                if idx >= chars.len() {
+                    return Err("unterminated string literal".to_string());
+                }
+                tokens.push(InvariantToken::Text(chars[start..idx].iter().collect()));
+                idx += 1;
+            }
+            '0'..='9' => {
+                let start = idx;
+                idx += 1;
+                while idx < chars.len() && (chars[idx].is_ascii_digit() || chars[idx] == '.') {
+                    idx += 1;
+                }
+                let raw = chars[start..idx].iter().collect::<String>();
+                let number = raw
+                    .parse::<f64>()
+                    .map_err(|err| format!("invalid numeric literal {raw:?}: {err}"))?;
+                tokens.push(InvariantToken::Number(number));
+            }
+            _ if ch.is_ascii_alphabetic() || ch == '_' => {
+                let start = idx;
+                idx += 1;
+                while idx < chars.len()
+                    && (chars[idx].is_ascii_alphanumeric()
+                        || chars[idx] == '_'
+                        || chars[idx] == '.')
+                {
+                    idx += 1;
+                }
+                let ident = chars[start..idx].iter().collect::<String>();
+                if ident == "AND" {
+                    tokens.push(InvariantToken::And);
+                } else {
+                    tokens.push(InvariantToken::Ident(ident));
+                }
+            }
+            _ => {
+                return Err(format!("unsupported token starting at {ch:?}"));
+            }
+        }
+    }
+    Ok(tokens)
+}
+
+struct InvariantParser<'a> {
+    tokens: &'a [InvariantToken],
+    pos: usize,
+    context: &'a InvariantContext<'a>,
+}
+
+impl<'a> InvariantParser<'a> {
+    fn new(tokens: &'a [InvariantToken], context: &'a InvariantContext<'a>) -> Self {
+        Self {
+            tokens,
+            pos: 0,
+            context,
+        }
+    }
+
+    fn parse_expression(&mut self) -> Result<InvariantValue, String> {
+        self.parse_implication()
+    }
+
+    fn parse_implication(&mut self) -> Result<InvariantValue, String> {
+        let left = self.parse_and()?;
+        if self.consume(&InvariantToken::Arrow) {
+            let right = self.parse_implication()?;
+            return Ok(InvariantValue::Bool(
+                !invariant_bool(left, "left side of ->")?
+                    || invariant_bool(right, "right side of ->")?,
+            ));
+        }
+        Ok(left)
+    }
+
+    fn parse_and(&mut self) -> Result<InvariantValue, String> {
+        let mut value = self.parse_comparison()?;
+        while self.consume(&InvariantToken::And) {
+            let right = self.parse_comparison()?;
+            value = InvariantValue::Bool(
+                invariant_bool(value, "left side of AND")?
+                    && invariant_bool(right, "right side of AND")?,
+            );
+        }
+        Ok(value)
+    }
+
+    fn parse_comparison(&mut self) -> Result<InvariantValue, String> {
+        let left = self.parse_additive()?;
+        let op = match self.peek() {
+            Some(InvariantToken::Eq) => Some(InvariantCompareOp::Eq),
+            Some(InvariantToken::Le) => Some(InvariantCompareOp::Le),
+            Some(InvariantToken::Ge) => Some(InvariantCompareOp::Ge),
+            Some(InvariantToken::Lt) => Some(InvariantCompareOp::Lt),
+            Some(InvariantToken::Gt) => Some(InvariantCompareOp::Gt),
+            _ => None,
+        };
+        if let Some(op) = op {
+            self.pos += 1;
+            let right = self.parse_additive()?;
+            return compare_invariant_values(left, op, right).map(InvariantValue::Bool);
+        }
+        Ok(left)
+    }
+
+    fn parse_additive(&mut self) -> Result<InvariantValue, String> {
+        let mut value = self.parse_primary()?;
+        loop {
+            if self.consume(&InvariantToken::Plus) {
+                let right = self.parse_primary()?;
+                value = InvariantValue::Number(
+                    invariant_number(value, "left side of +")?
+                        + invariant_number(right, "right side of +")?,
+                );
+            } else if self.consume(&InvariantToken::Minus) {
+                let right = self.parse_primary()?;
+                value = InvariantValue::Number(
+                    invariant_number(value, "left side of -")?
+                        - invariant_number(right, "right side of -")?,
+                );
+            } else {
+                break;
+            }
+        }
+        Ok(value)
+    }
+
+    fn parse_primary(&mut self) -> Result<InvariantValue, String> {
+        let token = self
+            .tokens
+            .get(self.pos)
+            .cloned()
+            .ok_or_else(|| "unexpected end of expression".to_string())?;
+        self.pos += 1;
+        match token {
+            InvariantToken::Number(value) => Ok(InvariantValue::Number(value)),
+            InvariantToken::Text(value) => Ok(InvariantValue::Text(value)),
+            InvariantToken::Ident(ident) if ident == "min" || ident == "max" => {
+                self.expect(InvariantToken::LParen)?;
+                let left = invariant_number(self.parse_expression()?, "first function argument")?;
+                self.expect(InvariantToken::Comma)?;
+                let right = invariant_number(self.parse_expression()?, "second function argument")?;
+                self.expect(InvariantToken::RParen)?;
+                Ok(InvariantValue::Number(if ident == "min" {
+                    left.min(right)
+                } else {
+                    left.max(right)
+                }))
+            }
+            InvariantToken::Ident(ident) => self.resolve_field(&ident),
+            InvariantToken::LParen => {
+                let value = self.parse_expression()?;
+                self.expect(InvariantToken::RParen)?;
+                Ok(value)
+            }
+            other => Err(format!("unexpected token {other:?}")),
+        }
+    }
+
+    fn resolve_field(&self, ident: &str) -> Result<InvariantValue, String> {
+        let (scope, field) = ident
+            .split_once('.')
+            .ok_or_else(|| format!("field reference {ident:?} is not scope.field"))?;
+        let value = match scope {
+            "state" => self.context.state_fields.get(field),
+            "action" => self.context.action_fields.get(field),
+            "outcome" => self.context.outcome_fields.get(field),
+            other => {
+                return Err(format!(
+                    "unsupported invariant field scope {other:?} in {ident:?}"
+                ))
+            }
+        }
+        .ok_or_else(|| format!("field reference {ident:?} is missing from adapted payload"))?;
+        field_value_to_invariant_value(value, ident)
+    }
+
+    fn consume(&mut self, expected: &InvariantToken) -> bool {
+        if self.peek() == Some(expected) {
+            self.pos += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn expect(&mut self, expected: InvariantToken) -> Result<(), String> {
+        if self.consume(&expected) {
+            Ok(())
+        } else {
+            Err(format!(
+                "expected token {expected:?}, got {:?}",
+                self.tokens.get(self.pos)
+            ))
+        }
+    }
+
+    fn expect_end(&self) -> Result<(), String> {
+        if self.pos == self.tokens.len() {
+            Ok(())
+        } else {
+            Err(format!(
+                "unexpected trailing token {:?}",
+                self.tokens.get(self.pos)
+            ))
+        }
+    }
+
+    fn peek(&self) -> Option<&InvariantToken> {
+        self.tokens.get(self.pos)
+    }
+}
+
+fn field_value_to_invariant_value(
+    value: &FieldValue,
+    field_path: &str,
+) -> Result<InvariantValue, String> {
+    match value {
+        FieldValue::I64(value) | FieldValue::UnixMs(value) => {
+            Ok(InvariantValue::Number(*value as f64))
+        }
+        FieldValue::F64(value) => Ok(InvariantValue::Number(*value)),
+        FieldValue::Bool(value) => Ok(InvariantValue::Bool(*value)),
+        FieldValue::String(value) => Ok(InvariantValue::Text(value.clone())),
+        FieldValue::Categorical { variant } => Ok(InvariantValue::Text(variant.clone())),
+        FieldValue::Vector(_) => Err(format!(
+            "vector field {field_path} cannot be used in scalar invariant expressions"
+        )),
+    }
+}
+
+fn invariant_bool(value: InvariantValue, context: &str) -> Result<bool, String> {
+    match value {
+        InvariantValue::Bool(value) => Ok(value),
+        other => Err(format!("{context} must be boolean, got {other:?}")),
+    }
+}
+
+fn invariant_number(value: InvariantValue, context: &str) -> Result<f64, String> {
+    match value {
+        InvariantValue::Number(value) if value.is_finite() => Ok(value),
+        InvariantValue::Number(value) => Err(format!("{context} must be finite, got {value}")),
+        other => Err(format!("{context} must be numeric, got {other:?}")),
+    }
+}
+
+fn compare_invariant_values(
+    left: InvariantValue,
+    op: InvariantCompareOp,
+    right: InvariantValue,
+) -> Result<bool, String> {
+    match (left, right) {
+        (InvariantValue::Number(left), InvariantValue::Number(right)) => Ok(match op {
+            InvariantCompareOp::Eq => (left - right).abs() <= 1e-9,
+            InvariantCompareOp::Le => left <= right,
+            InvariantCompareOp::Ge => left >= right,
+            InvariantCompareOp::Lt => left < right,
+            InvariantCompareOp::Gt => left > right,
+        }),
+        (InvariantValue::Text(left), InvariantValue::Text(right)) => match op {
+            InvariantCompareOp::Eq => Ok(left == right),
+            _ => Err("text invariant comparisons only support ==".to_string()),
+        },
+        (InvariantValue::Bool(left), InvariantValue::Bool(right)) => match op {
+            InvariantCompareOp::Eq => Ok(left == right),
+            _ => Err("boolean invariant comparisons only support ==".to_string()),
+        },
+        (left, right) => Err(format!(
+            "cannot compare different invariant value types: {left:?} vs {right:?}"
+        )),
+    }
+}
+
+fn validate_domain_pack_invariant_grammar(domain_pack: &DomainPack) -> DynamicJepaResult<()> {
+    let state_fields = default_invariant_fields(&domain_pack.state_schema.fields, "state")?;
+    let action_fields = default_invariant_fields(&domain_pack.action_schema.fields, "action")?;
+    let outcome_fields = default_invariant_fields(&domain_pack.outcome_schema.fields, "outcome")?;
+    let context = InvariantContext {
+        state_fields: &state_fields,
+        action_fields: &action_fields,
+        outcome_fields: &outcome_fields,
+    };
+    for invariant in &domain_pack.invariants {
+        if invariant.severity != "fatal" {
+            return Err(DynamicJepaError::validation(
+                format!("invariants.{}.severity", invariant.id),
+                format!("unsupported invariant severity {:?}", invariant.severity),
+                "register-time invariant validation currently supports fatal invariants only",
+            ));
+        }
+        evaluate_invariant_expression(&invariant.expression, &context).map_err(|message| {
+            DynamicJepaError::validation(
+                format!("invariants.{}.expression", invariant.id),
+                format!("unsupported invariant expression at registration: {message}"),
+                "fix the invariant grammar or field references before registering the domain pack",
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn default_invariant_fields(
+    fields: &[FieldSpec],
+    scope: &str,
+) -> DynamicJepaResult<BTreeMap<String, FieldValue>> {
+    fields
+        .iter()
+        .map(|field| {
+            default_invariant_field_value(field)
+                .map(|value| (field.name.clone(), value))
+                .map_err(|message| {
+                    DynamicJepaError::validation(
+                        format!("{scope}.{}", field.name),
+                        message,
+                        "declare bounded scalar/categorical fields before using them in invariants",
+                    )
+                })
+        })
+        .collect()
+}
+
+fn default_invariant_field_value(field: &FieldSpec) -> Result<FieldValue, String> {
+    match &field.kind {
+        FieldKind::I64 => {
+            let min = field.min.unwrap_or(0.0).ceil() as i64;
+            let max = field.max.unwrap_or(0.0).floor() as i64;
+            if min > max {
+                return Err(format!("min {min} exceeds max {max}"));
+            }
+            let value = if field.min.is_some() || field.max.is_some() {
+                0_i64.clamp(min, max)
+            } else {
+                0
+            };
+            Ok(FieldValue::I64(value))
+        }
+        FieldKind::UnixMs => {
+            let min = field.min.unwrap_or(0.0).ceil() as i64;
+            let max = field.max.unwrap_or(0.0).floor() as i64;
+            if min > max {
+                return Err(format!("min {min} exceeds max {max}"));
+            }
+            let value = if field.min.is_some() || field.max.is_some() {
+                0_i64.clamp(min, max)
+            } else {
+                0
+            };
+            Ok(FieldValue::UnixMs(value))
+        }
+        FieldKind::F64 => {
+            let min = field.min.unwrap_or(0.0);
+            let max = field.max.unwrap_or(0.0);
+            if min > max {
+                return Err(format!("min {min} exceeds max {max}"));
+            }
+            let value = if field.min.is_some() || field.max.is_some() {
+                0.0_f64.clamp(min, max)
+            } else {
+                0.0
+            };
+            Ok(FieldValue::F64(value))
+        }
+        FieldKind::Bool => Ok(FieldValue::Bool(false)),
+        FieldKind::String => Ok(FieldValue::String(String::new())),
+        FieldKind::Categorical { variants } => variants
+            .first()
+            .cloned()
+            .map(|variant| FieldValue::Categorical { variant })
+            .ok_or_else(|| "categorical field has no variants".to_string()),
+        FieldKind::Vector { dim } => Ok(FieldValue::Vector(vec![0.0; *dim])),
+    }
 }
 
 fn trim_jsonl_newline(bytes: &[u8]) -> &[u8] {
@@ -20848,6 +21380,7 @@ fn parse_domain_pack_file(path: &Path) -> DynamicJepaResult<DomainPack> {
         },
         source_hash,
     };
+    validate_domain_pack_invariant_grammar(&pack)?;
     pack.refresh_content_hash()?;
     pack.validate_record()?;
     Ok(pack)
@@ -21033,17 +21566,55 @@ fn candidate_actions_from_toml(
             format!("unsupported candidate action kind {:?}", value.kind),
         ));
     }
-    match (value.deltas, value.moves) {
-        (Some(deltas), None) => Ok(CandidateActionConfig::EnumeratedDeltas { deltas }),
-        (None, Some(moves)) => Ok(CandidateActionConfig::EnumeratedMoves { moves }),
-        (Some(_), Some(_)) => Err(toml_validation_error(
+    let configured =
+        value.deltas.is_some() as u8 + value.moves.is_some() as u8 + value.records.is_some() as u8;
+    if configured != 1 {
+        return Err(toml_validation_error(
             "planner_policy.candidate_actions",
-            "declare deltas or moves, not both",
-        )),
-        (None, None) => Err(toml_validation_error(
-            "planner_policy.candidate_actions",
-            "enumerated candidate actions require deltas or moves",
-        )),
+            "enumerated candidate actions require exactly one of deltas, moves, or records",
+        ));
+    }
+    if let Some(deltas) = value.deltas {
+        return Ok(CandidateActionConfig::EnumeratedDeltas { deltas });
+    }
+    if let Some(moves) = value.moves {
+        return Ok(CandidateActionConfig::EnumeratedMoves { moves });
+    }
+    let records = value.records.expect("configured count checked");
+    let records = records
+        .into_iter()
+        .enumerate()
+        .map(|(idx, record)| {
+            record
+                .into_iter()
+                .map(|(field, value)| {
+                    let field_for_error = field.clone();
+                    candidate_action_value_from_toml(value)
+                        .map(|field_value| (field, field_value))
+                        .map_err(|err| {
+                            toml_validation_error(
+                                format!(
+                                    "planner_policy.candidate_actions.records[{idx}].{field_for_error}"
+                                ),
+                                err,
+                            )
+                        })
+                })
+                .collect::<DynamicJepaResult<BTreeMap<_, _>>>()
+        })
+        .collect::<DynamicJepaResult<Vec<_>>>()?;
+    Ok(CandidateActionConfig::EnumeratedActionRecords { records })
+}
+
+fn candidate_action_value_from_toml(value: CandidateActionValueToml) -> Result<FieldValue, String> {
+    match value {
+        CandidateActionValueToml::Integer(value) => Ok(FieldValue::I64(value)),
+        CandidateActionValueToml::Float(value) if value.is_finite() => Ok(FieldValue::F64(value)),
+        CandidateActionValueToml::Float(value) => {
+            Err(format!("f64 value must be finite, got {value}"))
+        }
+        CandidateActionValueToml::Bool(value) => Ok(FieldValue::Bool(value)),
+        CandidateActionValueToml::String(value) => Ok(FieldValue::String(value)),
     }
 }
 
@@ -21668,6 +22239,16 @@ struct CandidateActionsToml {
     kind: String,
     deltas: Option<Vec<i64>>,
     moves: Option<Vec<String>>,
+    records: Option<Vec<BTreeMap<String, CandidateActionValueToml>>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum CandidateActionValueToml {
+    Integer(i64),
+    Float(f64),
+    Bool(bool),
+    String(String),
 }
 
 #[derive(Debug, Deserialize)]

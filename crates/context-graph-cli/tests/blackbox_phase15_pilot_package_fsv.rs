@@ -412,6 +412,8 @@ fn record_trained_dynamicjepa_reality(ledger: &Path, root: &Path, run_id: &str, 
             "surprise_events": [],
             "surprise_event_count": 0,
             "surprise_candidate_rate": 0.0,
+            "projection_surprise_rate": null,
+            "trained_surprise_rate": 0.0,
             "prediction_error_l2": 0.0,
             "prediction_error_l2_status": {"status": "available", "source": "phase15 physical artifact readback"},
             "projection_accuracy": 1.0,
@@ -422,17 +424,29 @@ fn record_trained_dynamicjepa_reality(ledger: &Path, root: &Path, run_id: &str, 
                 {"kind": "blackbox_ledger", "source_of_truth": format!("sqlite:{}#ledger_records", ledger.display())}
             ],
             "reward_features": {
-                "dynamicjepa_projection_panel_count": 1,
-                "dynamicjepa_projection_surprise_count": 0,
-                "dynamicjepa_projection_surprise_rate": 0.0,
-                "dynamicjepa_projection_accuracy": 1.0,
-                "dynamicjepa_plan_trace_coverage": 1.0,
+                "dynamicjepa_trained_panel_count": 1,
+                "dynamicjepa_trained_surprise_count": 0,
+                "dynamicjepa_trained_surprise_rate": 0.0,
+                "dynamicjepa_trained_plan_trace_coverage": 1.0,
                 "dynamicjepa_prediction_error_l2": 0.0,
                 "dynamicjepa_prediction_accuracy": 1.0
             },
             "trained_artifact": {
                 "artifact_id": format!("artifact-{label}"),
                 "artifact_readback": format!("file:{}", artifact_path.display()),
+                "lifecycle_policy": {
+                    "status": "passed",
+                    "checks": {
+                        "artifact_status": "Active",
+                        "file_hashes_verified": true,
+                        "latent_collapsed": false,
+                        "dataset_shards": 3,
+                        "raw_events": 60,
+                        "constellations": 1,
+                        "threshold_calibrations": 1
+                    },
+                    "source_of_truth": {"model_artifact": format!("file:{}", artifact_path.display())}
+                },
                 "predictions": [{
                     "transition_id": format!("{label}-transition-0"),
                     "panel_id": format!("{label}-panel-0"),
@@ -445,6 +459,15 @@ fn record_trained_dynamicjepa_reality(ledger: &Path, root: &Path, run_id: &str, 
                 "plan_trace_ids": [format!("{label}-plan-0")],
                 "source_of_truth": format!("file:{}", artifact_path.display())
             },
+            "action_controls": [{
+                "status": "passed",
+                "mode": "post_action_hard_gate",
+                "risky_action": true,
+                "transition_id": format!("{label}-transition-0"),
+                "observed_candidate_action_id": format!("{label}-action-0"),
+                "selected_action_id": format!("{label}-action-0"),
+                "source_of_truth": "sqlite:test#dj_plan_traces,dj_guard_decisions"
+            }],
             "recorded_at_unix": 1778210000
         }),
     );

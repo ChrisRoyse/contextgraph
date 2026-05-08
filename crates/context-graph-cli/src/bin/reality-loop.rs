@@ -72,7 +72,7 @@ const DEFAULT_REPLAY_OUTPUT_LABEL: &str = "replay";
 const DATASET_NAME: &str = "princeton-nlp/SWE-bench_Lite";
 const LOCAL_PYTHON_BIN: &str = "python3";
 const DYNAMICJEPA_REALITY_DOMAIN_PACK: &str = "contextgraph_swe_reality_loop_v1";
-const DEFAULT_DYNAMICJEPA_SKILL_ID: &str = "contextgraph_swe_repair";
+const DEFAULT_DYNAMICJEPA_SKILL_ID: &str = "d91e5e0c-3557-57a9-8b48-0fa2acb429a0";
 #[derive(Parser, Debug, Clone)]
 #[command(name = "reality-loop")]
 #[command(version)]
@@ -9529,6 +9529,8 @@ fn compact_reality_signal_packet(packet: &Value) -> Value {
                 "panel_count": packet.pointer("/dynamicjepa_reality/block/panel_count"),
                 "surprise_event_count": packet.pointer("/dynamicjepa_reality/block/surprise_event_count"),
                 "surprise_candidate_rate": packet.pointer("/dynamicjepa_reality/block/surprise_candidate_rate"),
+                "projection_surprise_rate": packet.pointer("/dynamicjepa_reality/block/projection_surprise_rate"),
+                "trained_surprise_rate": packet.pointer("/dynamicjepa_reality/block/trained_surprise_rate"),
                 "projection_accuracy": packet.pointer("/dynamicjepa_reality/block/projection_accuracy"),
                 "prediction_error_l2": packet.pointer("/dynamicjepa_reality/block/prediction_error_l2"),
                 "plan_trace_coverage": packet.pointer("/dynamicjepa_reality/block/plan_trace_coverage"),
@@ -9562,7 +9564,9 @@ fn derive_dynamicjepa_intervention_hint(
         .and_then(Value::as_str)
         .unwrap_or("unknown");
     let surprise_rate = dynamicjepa_reality
-        .get("surprise_candidate_rate")
+        .get("trained_surprise_rate")
+        .or_else(|| dynamicjepa_reality.get("projection_surprise_rate"))
+        .or_else(|| dynamicjepa_reality.get("surprise_candidate_rate"))
         .and_then(Value::as_f64)
         .unwrap_or(0.0);
     let prediction_error_l2 = dynamicjepa_reality
@@ -9589,7 +9593,8 @@ fn derive_dynamicjepa_intervention_hint(
             "reason": "DynamicJEPA reality is projection evidence, not learned world-model inference",
             "observed": {
                 "source_mode": source_mode,
-                "surprise_candidate_rate": surprise_rate,
+                "projection_surprise_rate": dynamicjepa_reality.get("projection_surprise_rate"),
+                "trained_surprise_rate": dynamicjepa_reality.get("trained_surprise_rate"),
                 "prediction_error_l2": prediction_error_l2,
                 "plan_trace_coverage": plan_trace_coverage,
             },
@@ -9671,7 +9676,7 @@ fn derive_dynamicjepa_intervention_hint(
         "reason": reason,
         "observed": {
             "source_mode": source_mode,
-            "surprise_candidate_rate": round_signal(surprise_rate),
+            "trained_surprise_rate": round_signal(surprise_rate),
             "prediction_error_l2": prediction_error_l2.map(round_signal),
             "plan_trace_coverage": round_signal(plan_trace_coverage),
             "guard_decision_count": guard_decision_count,
@@ -10341,6 +10346,8 @@ fn build_dynamicjepa_reality_for_attempt(
         "surprise_events": surprise_events,
         "surprise_event_count": surprise_count,
         "surprise_candidate_rate": surprise_rate,
+        "projection_surprise_rate": surprise_rate,
+        "trained_surprise_rate": Value::Null,
         "prediction_error_l2": Value::Null,
         "prediction_error_l2_status": {
             "status": "unavailable",
@@ -10354,9 +10361,8 @@ fn build_dynamicjepa_reality_for_attempt(
             "dynamicjepa_projection_panel_count": panel_count,
             "dynamicjepa_projection_surprise_count": surprise_count,
             "dynamicjepa_projection_surprise_rate": surprise_rate,
-            "dynamicjepa_surprise_candidate_rate": surprise_rate,
             "dynamicjepa_projection_accuracy": projection_accuracy,
-            "dynamicjepa_plan_trace_coverage": plan_trace_coverage,
+            "dynamicjepa_projection_plan_trace_coverage": plan_trace_coverage,
         },
         "recorded_at_unix": unix_secs()?,
     }))
@@ -10459,6 +10465,14 @@ fn build_trained_dynamicjepa_reality_for_attempt(
             Some(file_sot(dynamicjepa_db)),
         ));
     }
+    let artifact_lifecycle_policy = validate_dynamicjepa_artifact_lifecycle(
+        context_graph_bin,
+        task_root,
+        dynamicjepa_db,
+        &artifact,
+        artifact_id,
+        &dj_dir,
+    )?;
 
     let ingest = dynamicjepa_json_command(
         context_graph_bin,
@@ -10676,6 +10690,7 @@ fn build_trained_dynamicjepa_reality_for_attempt(
 
     let mut guard_decisions = Vec::new();
     let mut plan_trace_ids = Vec::with_capacity(panel_ids.len());
+    let mut action_controls = Vec::with_capacity(panel_ids.len());
     for (idx, panel_id) in panel_ids.iter().enumerate() {
         let plan = dynamicjepa_json_command(
             context_graph_bin,
@@ -10709,6 +10724,21 @@ fn build_trained_dynamicjepa_reality_for_attempt(
         {
             guard_decisions.extend(items.iter().cloned());
         }
+        action_controls.push(validate_dynamicjepa_action_control(
+            &plan,
+            events[idx].event.get("action").ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_EVENT_ACTION_MISSING",
+                    "structured SWE event was missing action for DJ-guided action control",
+                    "dynamicjepa.event.action",
+                    "inspect transition-to-domain mapping before reward consumption",
+                    json!({"event": events[idx].event}),
+                    Some(file_sot(&events_path)),
+                )
+            })?,
+            &events[idx].transition_id,
+            dynamicjepa_db,
+        )?);
     }
 
     let panel_count = panel_ids.len() as u64;
@@ -10728,6 +10758,8 @@ fn build_trained_dynamicjepa_reality_for_attempt(
         "surprise_events": surprise_events,
         "surprise_event_count": surprise_count,
         "surprise_candidate_rate": surprise_rate,
+        "projection_surprise_rate": Value::Null,
+        "trained_surprise_rate": surprise_rate,
         "prediction_error_l2": prediction_error_l2,
         "prediction_error_l2_status": {
             "status": "available",
@@ -10736,6 +10768,7 @@ fn build_trained_dynamicjepa_reality_for_attempt(
         "projection_accuracy": round_signal(1.0 - surprise_rate),
         "plan_trace_coverage": plan_trace_coverage,
         "guard_decisions": guard_decisions,
+        "action_controls": action_controls,
         "source_of_truth_refs": [
             {
                 "kind": "agent_tool_transcript",
@@ -10760,24 +10793,507 @@ fn build_trained_dynamicjepa_reality_for_attempt(
             }
         ],
         "reward_features": {
-            "dynamicjepa_projection_panel_count": panel_count,
-            "dynamicjepa_projection_surprise_count": surprise_count,
-            "dynamicjepa_projection_surprise_rate": surprise_rate,
-            "dynamicjepa_surprise_candidate_rate": surprise_rate,
-            "dynamicjepa_projection_accuracy": round_signal(1.0 - surprise_rate),
-            "dynamicjepa_plan_trace_coverage": plan_trace_coverage,
+            "dynamicjepa_trained_panel_count": panel_count,
+            "dynamicjepa_trained_surprise_count": surprise_count,
+            "dynamicjepa_trained_surprise_rate": surprise_rate,
+            "dynamicjepa_trained_plan_trace_coverage": plan_trace_coverage,
             "dynamicjepa_prediction_error_l2": prediction_error_l2,
             "dynamicjepa_prediction_accuracy": prediction_accuracy,
         },
         "trained_artifact": {
             "artifact_id": artifact_id,
             "artifact_readback": file_sot(&dj_dir.join("artifact-readback.json")),
+            "lifecycle_policy": artifact_lifecycle_policy,
             "predictions": predictions,
             "plan_trace_ids": plan_trace_ids,
             "source_of_truth": format!("rocksdb:{}#dj_model_artifacts", dynamicjepa_db.display()),
         },
         "recorded_at_unix": unix_secs()?,
     }))
+}
+
+fn validate_dynamicjepa_artifact_lifecycle(
+    context_graph_bin: &Path,
+    task_root: &Path,
+    dynamicjepa_db: &Path,
+    artifact: &Value,
+    artifact_id: &str,
+    dj_dir: &Path,
+) -> Result<Value> {
+    let artifact_record = artifact
+        .pointer("/decoded_records/artifact")
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_ARTIFACT_RECORD_MISSING",
+                "DynamicJEPA artifact readback did not include decoded_records.artifact",
+                "dynamicjepa.get_artifact.decoded_records.artifact",
+                "inspect dj_model_artifacts before using this artifact for reward",
+                json!({"artifact_readback": artifact}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
+    let status = artifact_record
+        .get("status")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_ARTIFACT_STATUS_MISSING",
+                "DynamicJEPA artifact readback did not include artifact status",
+                "dynamicjepa.get_artifact.decoded_records.artifact.status",
+                "inspect dj_model_artifacts before using this artifact for reward",
+                json!({"artifact": artifact_record}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
+    if status != "Active" {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_ARTIFACT_NOT_ACTIVE",
+            "DynamicJEPA artifact lifecycle gate rejected a non-active artifact",
+            "dynamicjepa.get_artifact.decoded_records.artifact.status",
+            "promote only hash-verified Active artifacts",
+            json!({"artifact_id": artifact_id, "status": status}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+    let artifact_hashes = artifact
+        .get("artifact_hashes")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_ARTIFACT_HASHES_MISSING",
+                "DynamicJEPA get-artifact --verify-files did not return artifact_hashes",
+                "dynamicjepa.get_artifact.artifact_hashes",
+                "rerun get-artifact with --verify-files and do not use unverified model bytes",
+                json!({"artifact": artifact}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
+    if artifact_hashes.is_empty()
+        || artifact_hashes
+            .iter()
+            .any(|item| item.get("equal").and_then(Value::as_bool) != Some(true))
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_ARTIFACT_HASH_MISMATCH",
+            "DynamicJEPA artifact lifecycle gate rejected missing or mismatched file hashes",
+            "dynamicjepa.get_artifact.artifact_hashes",
+            "rerun training from a clean artifact root; inference must not continue on hash mismatch",
+            json!({"artifact_id": artifact_id, "artifact_hashes": artifact_hashes}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+    let artifact_root = artifact_record
+        .get("artifact_root")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_ARTIFACT_ROOT_MISSING",
+                "DynamicJEPA artifact readback did not include artifact_root",
+                "dynamicjepa.get_artifact.decoded_records.artifact.artifact_root",
+                "inspect dj_model_artifacts before using this artifact for reward",
+                json!({"artifact": artifact_record}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
+    let artifact_created_at = artifact_record
+        .get("created_at_unix_ms")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_ARTIFACT_CREATED_AT_MISSING",
+                "DynamicJEPA artifact readback did not include created_at_unix_ms",
+                "dynamicjepa.get_artifact.decoded_records.artifact.created_at_unix_ms",
+                "inspect dj_model_artifacts before using this artifact for reward",
+                json!({"artifact": artifact_record}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
+    let now_ms = i64::try_from(unix_secs()?).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_UNIX_TIME_OVERFLOW",
+            "current unix seconds did not fit i64 during artifact lifecycle gating",
+            "system_time",
+            "inspect system clock before using DynamicJEPA artifacts",
+            json!({"error": err.to_string()}),
+            None,
+        )
+    })? * 1000;
+    if artifact_created_at > now_ms {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_ARTIFACT_FROM_FUTURE",
+            "DynamicJEPA artifact lifecycle gate rejected an artifact timestamp newer than the system clock",
+            "dynamicjepa.get_artifact.decoded_records.artifact.created_at_unix_ms",
+            "fix system clock skew or retrain the artifact before reward consumption",
+            json!({"artifact_id": artifact_id, "created_at_unix_ms": artifact_created_at, "now_unix_ms": now_ms}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+    let max_age_ms = 30_i64 * 24 * 60 * 60 * 1000;
+    if now_ms.saturating_sub(artifact_created_at) > max_age_ms {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_ARTIFACT_STALE",
+            "DynamicJEPA artifact lifecycle gate rejected a stale artifact",
+            "dynamicjepa.get_artifact.decoded_records.artifact.created_at_unix_ms",
+            "retrain or explicitly promote a fresh SWE-loop artifact before reward consumption",
+            json!({"artifact_id": artifact_id, "created_at_unix_ms": artifact_created_at, "now_unix_ms": now_ms, "max_age_ms": max_age_ms}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+    let evaluation_report_path = artifact_root.join("evaluation_report.json");
+    let evaluation_report: Value = read_json(&evaluation_report_path)?;
+    let latent_collapsed = evaluation_report
+        .pointer("/collapse_diagnostics/latent_collapsed")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_COLLAPSE_DIAGNOSTICS_MISSING",
+                "DynamicJEPA artifact evaluation_report is missing collapse diagnostics",
+                "artifact.evaluation_report.collapse_diagnostics.latent_collapsed",
+                "rerun training; production artifacts require non-collapse diagnostics",
+                json!({"artifact_id": artifact_id, "evaluation_report": file_sot(&evaluation_report_path)}),
+                Some(file_sot(&evaluation_report_path)),
+            )
+        })?;
+    if latent_collapsed {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_ARTIFACT_COLLAPSED",
+            "DynamicJEPA artifact lifecycle gate rejected a collapsed latent representation",
+            "artifact.evaluation_report.collapse_diagnostics.latent_collapsed",
+            "retrain with non-collapse diagnostics passing before reward consumption",
+            json!({"artifact_id": artifact_id, "evaluation_report": file_sot(&evaluation_report_path)}),
+            Some(file_sot(&evaluation_report_path)),
+        ));
+    }
+    let val_latent_mse = evaluation_report
+        .pointer("/split_metrics/val/latent_mse")
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_VAL_METRIC_MISSING",
+                "DynamicJEPA artifact evaluation_report is missing finite val latent_mse",
+                "artifact.evaluation_report.split_metrics.val.latent_mse",
+                "rerun training; production artifacts require finite held-out metrics",
+                json!({"artifact_id": artifact_id, "evaluation_report": file_sot(&evaluation_report_path)}),
+                Some(file_sot(&evaluation_report_path)),
+            )
+        })?;
+    let training_run_id = artifact_record
+        .get("training_run_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_TRAINING_RUN_ID_MISSING",
+                "DynamicJEPA artifact readback did not include training_run_id",
+                "dynamicjepa.get_artifact.decoded_records.artifact.training_run_id",
+                "inspect dj_model_artifacts before using this artifact for reward",
+                json!({"artifact": artifact_record}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
+    let training = dynamicjepa_json_command(
+        context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "get-training-run".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--id".to_string(),
+            training_run_id.to_string(),
+            "--json".to_string(),
+        ],
+        task_root,
+        "dynamicjepa_get_training_run",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    write_json_checked(&dj_dir.join("training-run-readback.json"), &training)?;
+    if training
+        .pointer("/decoded_records/training_run/status")
+        .and_then(Value::as_str)
+        != Some("Completed")
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_TRAINING_NOT_COMPLETED",
+            "DynamicJEPA artifact lifecycle gate rejected an artifact whose training run is not completed",
+            "dynamicjepa.get_training_run.decoded_records.training_run.status",
+            "use only artifacts backed by completed training runs",
+            json!({"artifact_id": artifact_id, "training": training}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+    let counts = dynamicjepa_json_command(
+        context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "inspect-counts".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--json".to_string(),
+        ],
+        task_root,
+        "dynamicjepa_inspect_counts",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    write_json_checked(&dj_dir.join("artifact-lifecycle-counts.json"), &counts)?;
+    let threshold_calibrations =
+        required_dynamicjepa_count(&counts, "dj_threshold_calibrations", dynamicjepa_db)?;
+    if threshold_calibrations == 0 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_UNCALIBRATED_ARTIFACT",
+            "DynamicJEPA artifact lifecycle gate rejected an artifact without persisted threshold calibration rows",
+            "rocksdb.dj_threshold_calibrations",
+            "build constellations and calibrate thresholds on held-out events before using trained DJ reward features",
+            json!({"artifact_id": artifact_id, "counts": counts.get("counts")}),
+            Some(format!("rocksdb:{}#dj_threshold_calibrations", dynamicjepa_db.display())),
+        ));
+    }
+    let constellations = required_dynamicjepa_count(&counts, "dj_constellations", dynamicjepa_db)?;
+    if constellations == 0 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_CONSTELLATION_MISSING",
+            "DynamicJEPA artifact lifecycle gate rejected an artifact without persisted guard constellations",
+            "rocksdb.dj_constellations",
+            "build guard constellations before calibrating thresholds and using trained DJ reward features",
+            json!({"artifact_id": artifact_id, "counts": counts.get("counts")}),
+            Some(format!("rocksdb:{}#dj_constellations", dynamicjepa_db.display())),
+        ));
+    }
+    let dataset_shards = required_dynamicjepa_count(&counts, "dj_dataset_shards", dynamicjepa_db)?;
+    let raw_events = required_dynamicjepa_count(&counts, "dj_raw_events", dynamicjepa_db)?;
+    if dataset_shards < 3 || raw_events < 60 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_DATASET_DIVERSITY_TOO_LOW",
+            "DynamicJEPA artifact lifecycle gate rejected an artifact with insufficient source dataset diversity",
+            "rocksdb.dj_dataset_shards,dj_raw_events",
+            "compile train/val/test shards from at least the SWE-loop verification corpus before production reward use",
+            json!({"artifact_id": artifact_id, "dataset_shards": dataset_shards, "raw_events": raw_events}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+    Ok(json!({
+        "status": "passed",
+        "artifact_id": artifact_id,
+        "checks": {
+            "artifact_status": status,
+            "file_hashes_verified": true,
+            "artifact_age_ms": now_ms.saturating_sub(artifact_created_at),
+            "latent_collapsed": latent_collapsed,
+            "val_latent_mse": round_signal(val_latent_mse),
+            "training_run_status": "Completed",
+            "dataset_shards": dataset_shards,
+            "raw_events": raw_events,
+            "constellations": constellations,
+            "threshold_calibrations": threshold_calibrations
+        },
+        "source_of_truth": {
+            "model_artifact": format!("rocksdb:{}#dj_model_artifacts", dynamicjepa_db.display()),
+            "training_run": format!("rocksdb:{}#dj_training_runs", dynamicjepa_db.display()),
+            "threshold_calibrations": format!("rocksdb:{}#dj_threshold_calibrations", dynamicjepa_db.display()),
+            "evaluation_report": file_sot(&evaluation_report_path),
+            "counts_readback": file_sot(&dj_dir.join("artifact-lifecycle-counts.json"))
+        }
+    }))
+}
+
+fn required_dynamicjepa_count(counts: &Value, cf_name: &str, dynamicjepa_db: &Path) -> Result<u64> {
+    counts
+        .pointer(&format!("/counts/{cf_name}"))
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_COUNTS_SCHEMA_INVALID",
+                "DynamicJEPA inspect-counts output was missing a required column-family count",
+                format!("dynamicjepa.inspect_counts.counts.{cf_name}"),
+                "inspect the DynamicJEPA CLI output schema before lifecycle gating",
+                json!({"cf_name": cf_name, "counts": counts}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })
+}
+
+fn validate_dynamicjepa_action_control(
+    plan: &Value,
+    observed_action: &Value,
+    transition_id: &str,
+    dynamicjepa_db: &Path,
+) -> Result<Value> {
+    let observed_family = observed_action
+        .get("tool_family")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_ACTION_CONTROL_FIELD_MISSING",
+                "observed DynamicJEPA action is missing tool_family",
+                "dynamicjepa.event.action.tool_family",
+                "regenerate structured SWE events before action control",
+                json!({"transition_id": transition_id, "observed_action": observed_action}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
+    let risky = observed_family == "workspace_mutation";
+    if !risky {
+        return Ok(json!({
+            "status": "observed",
+            "mode": "post_action_audit",
+            "risky_action": false,
+            "transition_id": transition_id,
+            "observed_action": observed_action,
+            "source_of_truth": format!("rocksdb:{}#dj_plan_traces,dj_guard_decisions", dynamicjepa_db.display()),
+        }));
+    }
+    let candidates = plan
+        .pointer("/decoded_records/candidate_actions")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_ACTION_CONTROL_PLAN_SCHEMA_INVALID",
+                "DynamicJEPA plan output was missing candidate_actions for action control",
+                "dynamicjepa.plan.decoded_records.candidate_actions",
+                "inspect plan output before reward consumption",
+                json!({"transition_id": transition_id, "plan": plan}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
+    let matching_candidate = candidates.iter().find(|candidate| {
+        candidate
+            .get("fields")
+            .is_some_and(|fields| action_fields_match(fields, observed_action))
+    });
+    let Some(candidate) = matching_candidate else {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_ACTION_NOT_DECLARED",
+            "risky observed action was not present in the DynamicJEPA planner candidate set",
+            "dynamicjepa.plan.decoded_records.candidate_actions",
+            "update the SWE-loop domain pack planner records or block this action before execution",
+            json!({"transition_id": transition_id, "observed_action": observed_action, "plan": plan}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    };
+    let candidate_action_id = candidate
+        .get("action_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_ACTION_CONTROL_CANDIDATE_ID_MISSING",
+                "DynamicJEPA plan candidate was missing action_id",
+                "dynamicjepa.plan.decoded_records.candidate_actions[].action_id",
+                "inspect plan output before reward consumption",
+                json!({"transition_id": transition_id, "candidate": candidate}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
+    let selected_action_id = plan
+        .pointer("/decoded_records/plan_trace/selected_action_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_ACTION_CONTROL_SELECTED_ID_MISSING",
+                "DynamicJEPA plan trace did not select an action for risky action control",
+                "dynamicjepa.plan.decoded_records.plan_trace.selected_action_id",
+                "inspect guard decisions and model artifact before reward consumption",
+                json!({"transition_id": transition_id, "plan": plan}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
+    let guard_decisions = plan
+        .pointer("/decoded_records/guard_decisions")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_ACTION_CONTROL_GUARDS_MISSING",
+                "DynamicJEPA plan output was missing guard_decisions for action control",
+                "dynamicjepa.plan.decoded_records.guard_decisions",
+                "inspect plan output before reward consumption",
+                json!({"transition_id": transition_id, "plan": plan}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
+    let rejecting_guard = guard_decisions.iter().find(|guard| {
+        guard.get("candidate_action_id").and_then(Value::as_str) == Some(candidate_action_id)
+            && guard.get("decision").and_then(Value::as_str) == Some("Reject")
+    });
+    if let Some(guard) = rejecting_guard {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_ACTION_GUARD_REJECTED",
+            "risky observed action was rejected by DynamicJEPA guard decisions",
+            "dynamicjepa.plan.decoded_records.guard_decisions",
+            "block this action before execution or fix the domain guard calibration",
+            json!({"transition_id": transition_id, "observed_action": observed_action, "guard": guard}),
+            Some(format!(
+                "rocksdb:{}#dj_guard_decisions",
+                dynamicjepa_db.display()
+            )),
+        ));
+    }
+    if selected_action_id != candidate_action_id {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_ACTION_DIVERGED_FROM_PLAN",
+            "risky observed action did not match DynamicJEPA selected action",
+            "dynamicjepa.plan.decoded_records.plan_trace.selected_action_id",
+            "route risky tool actions through DynamicJEPA planning before execution",
+            json!({
+                "transition_id": transition_id,
+                "observed_action": observed_action,
+                "observed_candidate_action_id": candidate_action_id,
+                "selected_action_id": selected_action_id,
+            }),
+            Some(format!(
+                "rocksdb:{}#dj_plan_traces",
+                dynamicjepa_db.display()
+            )),
+        ));
+    }
+    Ok(json!({
+        "status": "passed",
+        "mode": "post_action_hard_gate",
+        "risky_action": true,
+        "transition_id": transition_id,
+        "observed_candidate_action_id": candidate_action_id,
+        "selected_action_id": selected_action_id,
+        "observed_action": observed_action,
+        "source_of_truth": format!("rocksdb:{}#dj_plan_traces,dj_guard_decisions", dynamicjepa_db.display()),
+    }))
+}
+
+fn action_fields_match(candidate_fields: &Value, observed_action: &Value) -> bool {
+    let Some(candidate) = candidate_fields.as_object() else {
+        return false;
+    };
+    let Some(observed) = observed_action.as_object() else {
+        return false;
+    };
+    for (field, observed_value) in observed {
+        let Some(candidate_value) = candidate.get(field) else {
+            return false;
+        };
+        if field_value_to_plain_json(candidate_value) != Some(observed_value.clone()) {
+            return false;
+        }
+    }
+    true
+}
+
+fn field_value_to_plain_json(value: &Value) -> Option<Value> {
+    if let Some(v) = value.get("I64").and_then(Value::as_i64) {
+        return Some(json!(v));
+    }
+    if let Some(v) = value.get("F64").and_then(Value::as_f64) {
+        return Some(json!(v));
+    }
+    if let Some(v) = value.get("Bool").and_then(Value::as_bool) {
+        return Some(json!(v));
+    }
+    if let Some(v) = value.get("String").and_then(Value::as_str) {
+        return Some(json!(v));
+    }
+    if let Some(v) = value
+        .pointer("/Categorical/variant")
+        .and_then(Value::as_str)
+    {
+        return Some(json!(v));
+    }
+    None
 }
 
 #[derive(Debug, Clone)]
@@ -10926,20 +11442,193 @@ fn dynamicjepa_swe_events_from_transcript(
                             Some(file_sot(&transition_path)),
                         ));
                     }
-                    let round = transition.get("round").and_then(Value::as_u64).unwrap_or(0);
-                    let index = transition.get("index").and_then(Value::as_u64).unwrap_or(0);
+                    let round = transition
+                        .get("round")
+                        .and_then(Value::as_u64)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_ROUND_MISSING",
+                                "harness transition was missing round for structured SWE event materialization",
+                                "harness_transition.round",
+                                "regenerate the transition with current reality-loop metadata",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    let index = transition
+                        .get("index")
+                        .and_then(Value::as_u64)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_INDEX_MISSING",
+                                "harness transition was missing index for structured SWE event materialization",
+                                "harness_transition.index",
+                                "regenerate the transition with current reality-loop metadata",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
                     let ts_ms = (attempt as i64)
                         .saturating_mul(1_000_000)
                         .saturating_add((round as i64).saturating_mul(1_000))
                         .saturating_add(index as i64);
+                    let tool_name = transition
+                        .get("tool_name")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_TOOL_NAME_MISSING",
+                                "harness transition was missing tool_name for structured SWE event materialization",
+                                "harness_transition.tool_name",
+                                "regenerate the transition with current tool metadata",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    let tool_family = transition
+                        .pointer("/constellation_signal/tool_family")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_TOOL_FAMILY_MISSING",
+                                "harness transition was missing constellation_signal.tool_family for structured SWE event materialization",
+                                "harness_transition.constellation_signal.tool_family",
+                                "regenerate the transition with current constellation metadata",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    let tool_family = swe_tool_family_variant(tool_family);
+                    let command_kind = swe_command_kind_variant(tool_name);
+                    let changed_files = transition_string_array(
+                        &transition,
+                        "/observation/changed_files",
+                        "harness_transition.observation.changed_files",
+                        &transition_path,
+                    )?;
+                    let observed_paths = transition_string_array(
+                        &transition,
+                        "/observation/observed_paths",
+                        "harness_transition.observation.observed_paths",
+                        &transition_path,
+                    )?;
+                    let patch_bytes = transition_patch_size_bytes(&transition)?;
+                    let path_risk = swe_path_risk(&changed_files, &observed_paths);
+                    let result_status = transition
+                        .pointer("/observation/status")
+                        .and_then(Value::as_str)
+                        .map(swe_result_status_variant)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_RESULT_STATUS_MISSING",
+                                "harness transition was missing observation.status for structured SWE event materialization",
+                                "harness_transition.observation.status",
+                                "regenerate the transition with current tool result status metadata",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    let error_code = transition
+                        .pointer("/outcome/error_code")
+                        .or_else(|| transition.pointer("/observation/error_code"))
+                        .and_then(Value::as_str);
+                    let outcome_label = transition
+                        .pointer("/outcome/label")
+                        .and_then(Value::as_str)
+                        .map(swe_outcome_label_variant)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_OUTCOME_LABEL_MISSING",
+                                "harness transition was missing outcome.label for structured SWE event materialization",
+                                "harness_transition.outcome.label",
+                                "regenerate the transition with current outcome metadata",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    let correction_required = transition
+                        .pointer("/outcome/correction_required")
+                        .and_then(Value::as_bool)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_CORRECTION_REQUIRED_MISSING",
+                                "harness transition was missing outcome.correction_required for structured SWE event materialization",
+                                "harness_transition.outcome.correction_required",
+                                "regenerate the transition with current outcome metadata",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    let repo_dirty_state = transition
+                        .pointer("/before_state/repo_status_porcelain")
+                        .and_then(Value::as_str)
+                        .map(|status| if status.trim().is_empty() { "clean" } else { "dirty" })
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_REPO_STATUS_MISSING",
+                                "harness transition was missing repo_status_porcelain for structured SWE event materialization",
+                                "harness_transition.before_state.repo_status_porcelain",
+                                "regenerate the transition with current git status metadata",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    let model_id = transcript
+                        .get("model")
+                        .and_then(Value::as_str)
+                        .map(swe_model_id_variant)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_TRANSCRIPT_MODEL_MISSING",
+                                "agent tool transcript was missing model for structured SWE event materialization",
+                                "agent_tool_transcript.model",
+                                "regenerate the transcript with current inner-model metadata",
+                                json!({"transcript": file_sot(transcript_path)}),
+                                Some(file_sot(transcript_path)),
+                            )
+                        })?;
                     events.push(SweDynamicJepaEvent {
                         transition_id: transition_id.clone(),
                         event: json!({
-                            "state": {"counter": counter},
-                            "action": {"delta": delta},
-                            "outcome": {"next_counter": counter + delta},
+                            "state": {
+                                "counter": counter,
+                                "attempt": attempt as i64,
+                                "round": round as i64,
+                                "tool_family": tool_family,
+                                "repo_dirty_state": repo_dirty_state,
+                                "prompt_version": "v1",
+                                "model_id": model_id
+                            },
+                            "action": {
+                                "delta": delta,
+                                "tool_family": tool_family,
+                                "command_kind": command_kind,
+                                "edit_size_bucket": swe_edit_size_bucket(patch_bytes),
+                                "path_risk": path_risk
+                            },
+                            "outcome": {
+                                "next_counter": counter + delta,
+                                "outcome_label": outcome_label,
+                                "result_status": result_status,
+                                "verifier_status": swe_verifier_status(tool_name, result_status),
+                                "test_failure_class": swe_test_failure_class(error_code),
+                                "incident_code": swe_incident_code(error_code),
+                                "changed_file_count": i64::try_from(changed_files.len()).map_err(|err| RealityError::new(
+                                    "RUST_REALITY_DYNAMICJEPA_CHANGED_FILE_COUNT_OVERFLOW",
+                                    "changed_files length did not fit the SWE DynamicJEPA i64 schema",
+                                    "dynamicjepa.event.outcome.changed_file_count",
+                                    "inspect the transition artifact before DynamicJEPA ingestion",
+                                    json!({"transition": file_sot(&transition_path), "error": err.to_string()}),
+                                    Some(file_sot(&transition_path)),
+                                ))?,
+                                "patch_bytes": patch_bytes,
+                                "correction_required": if correction_required { "true" } else { "false" },
+                                "file_risk": path_risk
+                            },
                             "ts_ms": ts_ms,
                             "trajectory_id": format!("{run_id}:attempt-{attempt}"),
+                            "run_id": run_id,
+                            "transition_id": transition_id,
                         }),
                     });
                 }
@@ -10970,6 +11659,230 @@ fn dynamicjepa_swe_events_from_transcript(
         ));
     }
     Ok(events)
+}
+
+fn transition_string_array(
+    transition: &Value,
+    pointer: &str,
+    field_path: &'static str,
+    transition_path: &Path,
+) -> Result<Vec<String>> {
+    let array = transition.pointer(pointer).and_then(Value::as_array).ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_TRANSITION_ARRAY_MISSING",
+            "harness transition was missing a required array for structured SWE event materialization",
+            field_path,
+            "regenerate the transition with current observation metadata",
+            json!({"transition": file_sot(transition_path), "pointer": pointer}),
+            Some(file_sot(transition_path)),
+        )
+    })?;
+    array
+        .iter()
+        .enumerate()
+        .map(|(idx, value)| {
+            value.as_str().map(ToOwned::to_owned).ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_TRANSITION_ARRAY_ITEM_INVALID",
+                    "harness transition array contained a non-string item",
+                    format!("{field_path}[{idx}]"),
+                    "regenerate the transition with string file path arrays",
+                    json!({"transition": file_sot(transition_path), "item": value}),
+                    Some(file_sot(transition_path)),
+                )
+            })
+        })
+        .collect()
+}
+
+fn transition_patch_size_bytes(transition: &Value) -> Result<i64> {
+    let Some(raw) = transition
+        .pointer("/observation/candidate_patch")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return Ok(0);
+    };
+    let path = PathBuf::from(raw.strip_prefix("file:").unwrap_or(raw));
+    if !path.exists() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_PATCH_SOT_MISSING",
+            "harness transition candidate_patch source-of-truth file does not exist",
+            "harness_transition.observation.candidate_patch",
+            "regenerate the final edit transition or repair the candidate patch artifact path",
+            json!({"candidate_patch": raw}),
+            Some(file_sot(&path)),
+        ));
+    }
+    let size = fs::metadata(&path)
+        .map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_PATCH_METADATA_FAILED",
+                "failed to read candidate_patch metadata for structured SWE event materialization",
+                "harness_transition.observation.candidate_patch",
+                "verify the candidate patch artifact is readable",
+                json!({"candidate_patch": file_sot(&path), "error": err.to_string()}),
+                Some(file_sot(&path)),
+            )
+        })?
+        .len();
+    i64::try_from(size).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_PATCH_BYTES_OVERFLOW",
+            "candidate_patch size did not fit the SWE DynamicJEPA i64 schema",
+            "dynamicjepa.event.outcome.patch_bytes",
+            "inspect the candidate patch artifact size before DynamicJEPA ingestion",
+            json!({"candidate_patch": file_sot(&path), "size_bytes": size, "error": err.to_string()}),
+            Some(file_sot(&path)),
+        )
+    })
+}
+
+fn swe_tool_family_variant(value: &str) -> &'static str {
+    match value {
+        "reality_readback" => "reality_readback",
+        "repository_navigation" => "repository_navigation",
+        "workspace_mutation" => "workspace_mutation",
+        "verification" => "verification",
+        "memory_retrieval" => "memory_retrieval",
+        "deterministic_analysis" => "deterministic_analysis",
+        _ => "unknown_tool_family",
+    }
+}
+
+fn swe_command_kind_variant(tool_name: &str) -> &'static str {
+    match tool_name {
+        "read_problem_reality" => "read_problem_reality",
+        "read_official_failure_reality" => "read_official_failure_reality",
+        "list_files" => "list_files",
+        "inspect_symbol" => "inspect_symbol",
+        "search_repo" => "search_repo",
+        "open_file_window" => "open_file_window",
+        "apply_line_window_edit" => "apply_line_window_edit",
+        "apply_structured_edit" => "apply_structured_edit",
+        "apply_unified_diff" => "apply_unified_diff",
+        "run_targeted_test" => "run_targeted_test",
+        "run_official_swe_eval" => "run_official_swe_eval",
+        "compare_attempts" => "compare_attempts",
+        "retrieve_similar_verified_episodes" => "retrieve_similar_verified_episodes",
+        "synthesize_helper_tool" => "synthesize_helper_tool",
+        _ => "unknown_tool",
+    }
+}
+
+fn swe_result_status_variant(status: &str) -> &'static str {
+    match status {
+        "ok" => "ok",
+        "failed" => "failed",
+        "blocked" => "blocked",
+        "error" => "error",
+        _ => "unknown",
+    }
+}
+
+fn swe_outcome_label_variant(label: &str) -> &'static str {
+    match label {
+        "Useful" => "Useful",
+        "Neutral" => "Neutral",
+        "Harmful" => "Harmful",
+        _ => "Unknown",
+    }
+}
+
+fn swe_edit_size_bucket(patch_bytes: i64) -> &'static str {
+    match patch_bytes {
+        0 => "none",
+        1..=2048 => "small",
+        2049..=16384 => "medium",
+        _ => "large",
+    }
+}
+
+fn swe_path_risk(changed_files: &[String], observed_paths: &[String]) -> &'static str {
+    let paths = if changed_files.is_empty() {
+        observed_paths
+    } else {
+        changed_files
+    };
+    if paths.is_empty() {
+        return "none";
+    }
+    if paths.len() > 1 {
+        return "multiple";
+    }
+    let path = paths[0].as_str();
+    if path.starts_with("tests/") || path.contains("/tests/") || path.ends_with("_test.py") {
+        "tests"
+    } else if path.ends_with("pyproject.toml")
+        || path.ends_with("setup.py")
+        || path.ends_with("setup.cfg")
+        || path.ends_with("Cargo.toml")
+        || path.ends_with("Cargo.lock")
+    {
+        "config_or_build"
+    } else if path.ends_with(".py")
+        || path.ends_with(".rs")
+        || path.ends_with(".js")
+        || path.ends_with(".ts")
+    {
+        "source"
+    } else {
+        "unknown"
+    }
+}
+
+fn swe_verifier_status(tool_name: &str, result_status: &str) -> &'static str {
+    match (tool_name, result_status) {
+        ("run_targeted_test", "ok") => "targeted_ok",
+        ("run_targeted_test", "failed" | "blocked" | "error") => "targeted_failed",
+        ("run_official_swe_eval", "ok") => "official_ok",
+        ("run_official_swe_eval", "failed" | "blocked" | "error") => "official_failed",
+        (_, "blocked") => "blocked",
+        _ => "not_run",
+    }
+}
+
+fn swe_test_failure_class(error_code: Option<&str>) -> &'static str {
+    let Some(code) = error_code else {
+        return "none";
+    };
+    if code.contains("ASSERT") {
+        "assertion"
+    } else if code.contains("IMPORT") {
+        "import_error"
+    } else if code.contains("PY_COMPILE") || code.contains("SYNTAX") {
+        "syntax_error"
+    } else if code.contains("TIMEOUT") {
+        "timeout"
+    } else if code.contains("COLLECT") {
+        "collection"
+    } else {
+        "unknown"
+    }
+}
+
+fn swe_incident_code(error_code: Option<&str>) -> &'static str {
+    let Some(code) = error_code else {
+        return "none";
+    };
+    if code.contains("POLICY") || code.contains("SOURCE_TEST_BOUNDARY") {
+        "policy_violation"
+    } else if code.contains("REPEATED_ERROR_DEADLOCK") {
+        "repeated_error_deadlock"
+    } else if code.contains("EDIT") || code.contains("COMPILE") || code.contains("DIFF") {
+        "edit_compile_error"
+    } else {
+        "tool_error"
+    }
+}
+
+fn swe_model_id_variant(model: &str) -> &'static str {
+    let normalized = model.to_ascii_lowercase().replace(['-', '_', '.'], "");
+    if normalized.contains("qwen") && normalized.contains("27b") {
+        "qwen3_6_27b"
+    } else {
+        "other"
+    }
 }
 
 fn dynamicjepa_json_command(
