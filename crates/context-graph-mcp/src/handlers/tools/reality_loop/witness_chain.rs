@@ -142,7 +142,7 @@ pub async fn optimizer_witness_chain_verify(args: Value) -> Result<Value> {
         "valid": true,
         "entry_size": WITNESS_ENTRY_SIZE,
         "entries": verification.entries,
-        "last_chain_hash": hex_hash(&verification.last_chain_hash),
+        "last_chain_hash": chain_hash_hex(&verification.last_chain_hash),
         "last_op": verification.last_op,
         "source_of_truth": file_sot(&path),
         "sha256": if path.is_file() { sha256_file(&path)? } else { "absent".to_string() },
@@ -180,7 +180,7 @@ pub async fn optimizer_witness_chain_diff(args: Value) -> Result<Value> {
         "since_offset": since_offset,
         "entries": entries,
         "total_entries": verification.entries,
-        "last_chain_hash": hex_hash(&verification.last_chain_hash),
+        "last_chain_hash": chain_hash_hex(&verification.last_chain_hash),
         "source_of_truth": file_sot(&path),
     }))
 }
@@ -223,8 +223,8 @@ fn append_entry(
                 "path": path.display().to_string(),
                 "expected_entries": offset + 1,
                 "actual_entries": after.entries,
-                "expected_last_chain_hash": hex_hash(&hash_entry(&entry)),
-                "actual_last_chain_hash": hex_hash(&after.last_chain_hash),
+                "expected_last_chain_hash": chain_hash_hex(&hash_entry(&entry)),
+                "actual_last_chain_hash": chain_hash_hex(&after.last_chain_hash),
             }),
             Some(file_sot(path)),
         ));
@@ -234,9 +234,9 @@ fn append_entry(
         "offset": offset,
         "entry_size": WITNESS_ENTRY_SIZE,
         "op_type": op_type.as_str(),
-        "content_sha256": hex_hash(&content_sha256),
-        "prev_chain_hash": hex_hash(&entry.prev_chain_hash),
-        "chain_hash": hex_hash(&after.last_chain_hash),
+        "content_sha256": sha256_hex(&content_sha256),
+        "prev_chain_hash": chain_hash_hex(&entry.prev_chain_hash),
+        "chain_hash": chain_hash_hex(&after.last_chain_hash),
         "entries": after.entries,
         "source_of_truth": file_sot(path),
     }))
@@ -276,8 +276,8 @@ fn verify_chain(path: &Path) -> Result<Verification> {
                 json!({
                     "path": path.display().to_string(),
                     "offset": idx,
-                    "expected_prev_chain_hash": hex_hash(&expected_prev),
-                    "actual_prev_chain_hash": hex_hash(&entry.prev_chain_hash),
+                    "expected_prev_chain_hash": chain_hash_hex(&expected_prev),
+                    "actual_prev_chain_hash": chain_hash_hex(&entry.prev_chain_hash),
                 }),
                 Some(file_sot(path)),
             ));
@@ -361,8 +361,12 @@ fn parse_sha256_hex(value: &str) -> Result<[u8; HASH_SIZE]> {
     Ok(out)
 }
 
-fn hex_hash(hash: &[u8; HASH_SIZE]) -> String {
+fn sha256_hex(hash: &[u8; HASH_SIZE]) -> String {
     format!("sha256:{}", hex::encode(hash))
+}
+
+fn chain_hash_hex(hash: &[u8; HASH_SIZE]) -> String {
+    format!("shake256:{}", hex::encode(hash))
 }
 
 fn entry_json(offset: u64, entry: &WitnessEntry, chain_hash: &[u8; HASH_SIZE]) -> Value {
@@ -370,9 +374,9 @@ fn entry_json(offset: u64, entry: &WitnessEntry, chain_hash: &[u8; HASH_SIZE]) -
         "offset": offset,
         "timestamp_unix": entry.timestamp_unix,
         "op_type": WitnessOpType::from_u8(entry.op_type).map(WitnessOpType::as_str).unwrap_or("unknown"),
-        "content_sha256": hex_hash(&entry.content_sha256),
-        "prev_chain_hash": hex_hash(&entry.prev_chain_hash),
-        "chain_hash": hex_hash(chain_hash),
+        "content_sha256": sha256_hex(&entry.content_sha256),
+        "prev_chain_hash": chain_hash_hex(&entry.prev_chain_hash),
+        "chain_hash": chain_hash_hex(chain_hash),
     })
 }
 

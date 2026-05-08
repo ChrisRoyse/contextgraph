@@ -17045,8 +17045,8 @@ fn normalized_attempt_reward(reward: Option<&Value>, resolved: Option<bool>) -> 
     extract_reward_scalar(reward).unwrap_or(0.0).clamp(0.0, 1.0)
 }
 
-fn attempt_success(resolved: Option<bool>, validation: &Value) -> bool {
-    resolved == Some(true) || (resolved.is_none() && validation["status"] == "passed")
+fn attempt_success(resolved: Option<bool>, _validation: &Value) -> bool {
+    resolved == Some(true)
 }
 
 fn attempt_outcome_kind(
