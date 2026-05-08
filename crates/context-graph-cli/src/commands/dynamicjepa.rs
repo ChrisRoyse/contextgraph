@@ -4689,6 +4689,12 @@ fn build_semantic_index_command(args: BuildSemanticIndexArgs) -> DynamicJepaResu
         ));
     }
     let output = args.output;
+    let evidence_dir = semantic_index_evidence_dir(&output);
+    let before_state = json!({
+        "repo": ci_path_state(&args.repo)?,
+        "output": ci_path_state(&output)?,
+        "evidence_dir": ci_path_state(&evidence_dir)?,
+    });
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent).map_err(|err| DynamicJepaError::Storage {
             operation: "semantic_index.create_output_parent".to_string(),
@@ -4697,7 +4703,13 @@ fn build_semantic_index_command(args: BuildSemanticIndexArgs) -> DynamicJepaResu
             remediation: "choose a writable --output path".to_string(),
         })?;
     }
-    let evidence_dir = semantic_index_evidence_dir(&output);
+    if output.exists() {
+        return Err(DynamicJepaError::validation(
+            "semantic-index.output",
+            format!("semantic index output already exists: {}", output.display()),
+            "use a fresh --output path; semantic index evidence is immutable",
+        ));
+    }
     if evidence_dir.exists() {
         return Err(DynamicJepaError::validation(
             "semantic-index.output",
@@ -4714,12 +4726,6 @@ fn build_semantic_index_command(args: BuildSemanticIndexArgs) -> DynamicJepaResu
         message: format!("failed to create {}: {err}", evidence_dir.display()),
         remediation: "choose a writable --output path".to_string(),
     })?;
-
-    let before_state = json!({
-        "repo": ci_path_state(&args.repo)?,
-        "output": ci_path_state(&output)?,
-        "evidence_dir": ci_path_state(&evidence_dir)?,
-    });
     let repo_head = semantic_run_required(
         &["git", "rev-parse", "HEAD"],
         &args.repo,
@@ -5412,6 +5418,186 @@ fn semantic_run_required(
     Ok(evidence)
 }
 
+fn semantic_run_required_owned(
+    argv: &[String],
+    cwd: &Path,
+    stdin_text: Option<&str>,
+    evidence_dir: &Path,
+    label: &str,
+) -> DynamicJepaResult<Value> {
+    let argv_refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
+    semantic_run_required(&argv_refs, cwd, stdin_text, evidence_dir, label)
+}
+
+fn semantic_source_files_for_language(
+    repo: &Path,
+    language: &str,
+) -> DynamicJepaResult<Vec<SemanticSourceFile>> {
+    let files = semantic_collect_source_files(repo, usize::MAX)?
+        .into_iter()
+        .filter(|file| file.language == language)
+        .collect::<Vec<_>>();
+    if files.is_empty() {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: format!("no {language} source files were available for compiler validation"),
+            evidence_path: repo.display().to_string(),
+        });
+    }
+    Ok(files)
+}
+
+fn semantic_run_source_file_checks(
+    language: &str,
+    repo: &Path,
+    evidence_dir: &Path,
+    executable: &str,
+    args_before_file: &[&str],
+    args_after_file: &[&str],
+) -> DynamicJepaResult<Value> {
+    let files = semantic_source_files_for_language(repo, language)?;
+    let mut checks = Vec::new();
+    for file in files {
+        let mut argv = vec![executable.to_string()];
+        argv.extend(args_before_file.iter().map(|arg| (*arg).to_string()));
+        argv.push(file.path.clone());
+        argv.extend(args_after_file.iter().map(|arg| (*arg).to_string()));
+        let label = format!("{language}_syntax_{}", safe_filename(&file.path));
+        let evidence = semantic_run_required_owned(&argv, repo, None, evidence_dir, &label)?;
+        checks.push(json!({
+            "path": file.path,
+            "evidence": evidence,
+        }));
+    }
+    Ok(json!({
+        "mode": "per_source_file_syntax",
+        "language": language,
+        "check_count": checks.len(),
+        "checks": checks,
+    }))
+}
+
+fn semantic_run_java_batch_check(repo: &Path, evidence_dir: &Path) -> DynamicJepaResult<Value> {
+    let files = semantic_source_files_for_language(repo, "java")?;
+    let classes_dir = evidence_dir.join("java_classes");
+    fs::create_dir_all(&classes_dir).map_err(|err| DynamicJepaError::Storage {
+        operation: "semantic_index.create_java_classes_dir".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to create {}: {err}", classes_dir.display()),
+        remediation: "choose a writable --output path for semantic-index evidence".to_string(),
+    })?;
+    let mut argv = vec![
+        "javac".to_string(),
+        "-d".to_string(),
+        classes_dir.display().to_string(),
+    ];
+    argv.extend(files.iter().map(|file| file.path.clone()));
+    let evidence =
+        semantic_run_required_owned(&argv, repo, None, evidence_dir, "java_javac_compile")?;
+    Ok(json!({
+        "mode": "javac_compile_all_sources",
+        "language": "java",
+        "source_files": files.iter().map(|file| file.path.clone()).collect::<Vec<_>>(),
+        "classes_dir": file_sot_string(&classes_dir),
+        "evidence": evidence,
+    }))
+}
+
+fn semantic_run_compile_commands_batch_check(
+    language: &str,
+    repo: &Path,
+    evidence_dir: &Path,
+) -> DynamicJepaResult<Value> {
+    let compile_commands_path = repo.join("compile_commands.json");
+    let compile_commands = read_json_file(&compile_commands_path)?;
+    let entries = compile_commands.as_array().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "semantic-index.compile_commands",
+            "compile_commands.json must be a JSON array",
+            "regenerate the compilation database before semantic indexing C/C++ sources",
+        )
+    })?;
+    let mut checks = Vec::new();
+    for (idx, entry) in entries.iter().enumerate() {
+        let file_value = entry.get("file").and_then(Value::as_str).ok_or_else(|| {
+            DynamicJepaError::validation(
+                "semantic-index.compile_commands.file",
+                format!("compile_commands entry {idx} is missing file"),
+                "regenerate the compilation database with file paths for every translation unit",
+            )
+        })?;
+        let file_path = Path::new(file_value);
+        let repo_relative = if file_path.is_absolute() {
+            file_path
+                .strip_prefix(repo)
+                .ok()
+                .map(|path| path.to_string_lossy().replace('\\', "/"))
+        } else {
+            Some(file_value.replace('\\', "/"))
+        };
+        let Some(repo_relative) = repo_relative else {
+            continue;
+        };
+        if semantic_language_for_path(&repo_relative) != Some(language) {
+            continue;
+        }
+        let directory = entry
+            .get("directory")
+            .and_then(Value::as_str)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| repo.to_path_buf());
+        let cwd = if directory.is_absolute() {
+            directory
+        } else {
+            repo.join(directory)
+        };
+        let arguments = entry.get("arguments").and_then(Value::as_array).ok_or_else(|| {
+            DynamicJepaError::VerificationFailed {
+                test_name: "dynamicjepa_semantic_index".to_string(),
+                message: format!(
+                    "compile_commands entry for {repo_relative} must include structured arguments; shell command strings are refused"
+                ),
+                evidence_path: compile_commands_path.display().to_string(),
+            }
+        })?;
+        let mut argv = Vec::new();
+        for argument in arguments {
+            let value = argument.as_str().ok_or_else(|| {
+                DynamicJepaError::validation(
+                    "semantic-index.compile_commands.arguments",
+                    format!("compile_commands entry {idx} contains a non-string argument"),
+                    "regenerate compile_commands.json with string argv entries",
+                )
+            })?;
+            argv.push(value.to_string());
+        }
+        argv.push("-fsyntax-only".to_string());
+        let label = format!("{language}_syntax_{}", safe_filename(&repo_relative));
+        let evidence = semantic_run_required_owned(&argv, &cwd, None, evidence_dir, &label)?;
+        checks.push(json!({
+            "path": repo_relative,
+            "cwd": cwd,
+            "evidence": evidence,
+        }));
+    }
+    if checks.is_empty() {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: format!(
+                "compile_commands.json contained no structured {language} translation-unit checks"
+            ),
+            evidence_path: compile_commands_path.display().to_string(),
+        });
+    }
+    Ok(json!({
+        "mode": "compile_commands_fsyntax_only",
+        "language": language,
+        "compile_commands": file_sot_string(&compile_commands_path),
+        "check_count": checks.len(),
+        "checks": checks,
+    }))
+}
+
 fn semantic_collect_source_files(
     repo: &Path,
     max_files: usize,
@@ -5678,27 +5864,8 @@ fn semantic_run_language_batch_check(
             evidence_dir,
             "go_test",
         ),
-        "java" => semantic_run_required(
-            &["javac", "-version"],
-            repo,
-            None,
-            evidence_dir,
-            "java_javac_version",
-        ),
-        "c" => semantic_run_required(
-            &["gcc", "--version"],
-            repo,
-            None,
-            evidence_dir,
-            "c_gcc_version",
-        ),
-        "cpp" => semantic_run_required(
-            &["g++", "--version"],
-            repo,
-            None,
-            evidence_dir,
-            "cpp_gpp_version",
-        ),
+        "java" => semantic_run_java_batch_check(repo, evidence_dir),
+        "c" | "cpp" => semantic_run_compile_commands_batch_check(language, repo, evidence_dir),
         "csharp" => semantic_run_required(
             &["dotnet", "build", "--no-restore"],
             repo,
@@ -5706,14 +5873,10 @@ fn semantic_run_language_batch_check(
             evidence_dir,
             "csharp_dotnet_build",
         ),
-        "ruby" => semantic_run_required(
-            &["ruby", "-c", "."],
-            repo,
-            None,
-            evidence_dir,
-            "ruby_syntax",
-        ),
-        "php" => semantic_run_required(&["php", "-v"], repo, None, evidence_dir, "php_version"),
+        "ruby" => {
+            semantic_run_source_file_checks(language, repo, evidence_dir, "ruby", &["-c"], &[])
+        }
+        "php" => semantic_run_source_file_checks(language, repo, evidence_dir, "php", &["-l"], &[]),
         _ => Err(DynamicJepaError::VerificationFailed {
             test_name: "dynamicjepa_semantic_index".to_string(),
             message: format!("unsupported semantic language {language}"),
@@ -5729,9 +5892,13 @@ fn semantic_extract_source_facts(
 ) -> DynamicJepaResult<SemanticSourceExtraction> {
     match language {
         "rust" => semantic_extract_rust_source_facts(path, source),
-        _ => Ok(semantic_extract_textual_source_facts(
-            path, language, source,
-        )),
+        "python" | "javascript" | "typescript" | "tsx" | "go" | "java" | "c" | "cpp" | "csharp"
+        | "ruby" | "php" => semantic_extract_tree_sitter_source_facts(path, language, source),
+        _ => Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: format!("unsupported parser-backed semantic extraction language {language}"),
+            evidence_path: path.to_string(),
+        }),
     }
 }
 
@@ -5756,6 +5923,13 @@ fn semantic_extract_rust_source_facts(
             "fix Rust syntax before semantic indexing",
         )
     })?;
+    if tree.root_node().has_error() {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: format!("tree-sitter Rust parse reported syntax errors in {path}"),
+            evidence_path: path.to_string(),
+        });
+    }
     let mut extraction = SemanticSourceExtraction::default();
     semantic_walk_rust_node(tree.root_node(), source, path, "module", &mut extraction);
     Ok(extraction)
@@ -5780,11 +5954,8 @@ fn semantic_walk_rust_node(
             | "mod_item"
             | "type_item"
     ) {
-        let name = node
-            .child_by_field_name("name")
-            .and_then(|child| child.utf8_text(source.as_bytes()).ok())
-            .unwrap_or(kind);
-        active_symbol = name.to_string();
+        let name = semantic_rust_symbol_name(node, source).unwrap_or_else(|| kind.to_string());
+        active_symbol = name.clone();
         extraction.symbols.push(json!({
             "path": path,
             "language": "rust",
@@ -5810,11 +5981,8 @@ fn semantic_walk_rust_node(
             "import": node.utf8_text(source.as_bytes()).unwrap_or("").trim(),
             "line": node.start_position().row + 1,
         }));
-    } else if kind == "call_expression" {
-        let function = node
-            .child_by_field_name("function")
-            .and_then(|child| child.utf8_text(source.as_bytes()).ok())
-            .unwrap_or("unknown");
+    } else if matches!(kind, "call_expression" | "macro_invocation") {
+        let function = semantic_rust_callee_text(node, source).unwrap_or_else(|| "unknown".into());
         extraction.calls.push(json!({
             "path": path,
             "language": "rust",
@@ -5851,28 +6019,503 @@ fn semantic_walk_rust_node(
     }
 }
 
-fn semantic_extract_textual_source_facts(
+fn semantic_rust_symbol_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    if node.kind() == "impl_item" {
+        let trait_name = node
+            .child_by_field_name("trait")
+            .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let type_name = node
+            .child_by_field_name("type")
+            .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())?;
+        return Some(match trait_name {
+            Some(trait_name) => format!("impl {trait_name} for {type_name}"),
+            None => format!("impl {type_name}"),
+        });
+    }
+    node.child_by_field_name("name")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+        .map(ToOwned::to_owned)
+}
+
+fn semantic_rust_callee_text(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    if node.kind() == "macro_invocation" {
+        return node
+            .child_by_field_name("macro")
+            .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+            .map(|name| format!("{}!", name.trim_end_matches('!')));
+    }
+    node.child_by_field_name("function")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+        .map(ToOwned::to_owned)
+}
+
+fn semantic_extract_tree_sitter_source_facts(
     path: &str,
     language: &str,
     source: &str,
-) -> SemanticSourceExtraction {
+) -> DynamicJepaResult<SemanticSourceExtraction> {
+    let grammar = semantic_tree_sitter_language(language).ok_or_else(|| {
+        DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: format!("missing parser-backed semantic extractor for {language}"),
+            evidence_path: path.to_string(),
+        }
+    })?;
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(&grammar).map_err(|err| {
+        DynamicJepaError::validation(
+            "semantic-index.parser",
+            format!("failed to initialize {language} parser for {path}: {err}"),
+            "ensure the language's tree-sitter grammar crate is linked correctly",
+        )
+    })?;
+    let tree = parser.parse(source, None).ok_or_else(|| {
+        DynamicJepaError::validation(
+            "semantic-index.parse",
+            format!("failed to parse {language} source {path}"),
+            "fix source syntax before semantic indexing",
+        )
+    })?;
+    let root = tree.root_node();
+    if root.has_error() {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: format!("tree-sitter {language} parse reported syntax errors in {path}"),
+            evidence_path: path.to_string(),
+        });
+    }
     let mut extraction = SemanticSourceExtraction::default();
-    for (idx, line) in source.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("import ")
-            || trimmed.starts_with("from ")
-            || trimmed.starts_with("use ")
-            || trimmed.starts_with("#include")
-        {
+    semantic_walk_tree_sitter_node(root, source, path, language, "module", &mut extraction);
+    Ok(extraction)
+}
+
+fn semantic_tree_sitter_language(language: &str) -> Option<tree_sitter::Language> {
+    Some(match language {
+        "python" => tree_sitter_python::LANGUAGE.into(),
+        "javascript" => tree_sitter_javascript::LANGUAGE.into(),
+        "typescript" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
+        "go" => tree_sitter_go::LANGUAGE.into(),
+        "java" => tree_sitter_java::LANGUAGE.into(),
+        "c" => tree_sitter_c::LANGUAGE.into(),
+        "cpp" => tree_sitter_cpp::LANGUAGE.into(),
+        "csharp" => tree_sitter_c_sharp::LANGUAGE.into(),
+        "ruby" => tree_sitter_ruby::LANGUAGE.into(),
+        "php" => tree_sitter_php::LANGUAGE_PHP_ONLY.into(),
+        _ => return None,
+    })
+}
+
+fn semantic_walk_tree_sitter_node(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+    path: &str,
+    language: &str,
+    current_symbol: &str,
+    extraction: &mut SemanticSourceExtraction,
+) {
+    let semantic_kind = semantic_ast_node_kind_for_language(language, node, source, path);
+    let mut active_symbol = current_symbol.to_string();
+    let line = node.start_position().row + 1;
+    match semantic_kind {
+        "function" | "method" | "class" | "test" => {
+            let name = semantic_ast_node_name(node, source)
+                .unwrap_or_else(|| format!("anonymous@{path}:{line}"));
+            active_symbol = name.clone();
+            extraction.symbols.push(json!({
+                "path": path,
+                "language": language,
+                "name": name,
+                "kind": node.kind(),
+                "semantic_kind": semantic_kind,
+                "start_line": line,
+                "end_line": node.end_position().row + 1,
+                "visibility": semantic_ast_symbol_visibility(language, node, source),
+                "source_hash": hex_bytes(&sha256(semantic_node_text(node, source).as_bytes())),
+            }));
+            if semantic_kind == "class" {
+                extraction.type_facts.push(json!({
+                    "path": path,
+                    "language": language,
+                    "symbol": active_symbol,
+                    "fact_kind": "type_declaration",
+                    "line": line,
+                }));
+            }
+        }
+        "import" => {
             extraction.imports.push(json!({
                 "path": path,
                 "language": language,
-                "import": trimmed,
-                "line": idx + 1,
+                "from_symbol": current_symbol,
+                "import": semantic_node_text(node, source).trim(),
+                "line": line,
+                "node_kind": node.kind(),
             }));
         }
+        "call" => {
+            if semantic_call_is_import(language, node, source) {
+                extraction.imports.push(json!({
+                    "path": path,
+                    "language": language,
+                    "from_symbol": current_symbol,
+                    "import": semantic_node_text(node, source).trim(),
+                    "line": line,
+                    "node_kind": node.kind(),
+                }));
+            } else {
+                let callee = semantic_callee_text(node, source)
+                    .unwrap_or_else(|| semantic_node_text(node, source).trim().to_string());
+                extraction.calls.push(json!({
+                    "path": path,
+                    "language": language,
+                    "caller": current_symbol,
+                    "callee_expr": callee,
+                    "line": line,
+                    "node_kind": node.kind(),
+                }));
+            }
+        }
+        "assignment" => {
+            let node_text = semantic_node_text(node, source);
+            extraction.dataflow_edges.push(json!({
+                "path": path,
+                "language": language,
+                "scope": current_symbol,
+                "edge_kind": node.kind(),
+                "line": line,
+                "source_hash": hex_bytes(&sha256(node_text.as_bytes())),
+            }));
+            if semantic_node_has_type_annotation(language, node, source) {
+                extraction.type_facts.push(json!({
+                    "path": path,
+                    "language": language,
+                    "scope": current_symbol,
+                    "fact_kind": "annotated_binding",
+                    "line": line,
+                    "node_kind": node.kind(),
+                }));
+            }
+        }
+        _ => {}
     }
-    extraction
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        semantic_walk_tree_sitter_node(child, source, path, language, &active_symbol, extraction);
+    }
+}
+
+fn semantic_ast_node_kind_for_language(
+    language: &str,
+    node: tree_sitter::Node<'_>,
+    source: &str,
+    path: &str,
+) -> &'static str {
+    let kind = node.kind();
+    match language {
+        "python" => match kind {
+            "function_definition" => {
+                if semantic_path_is_test(path)
+                    || semantic_ast_node_name(node, source)
+                        .is_some_and(|name| name.starts_with("test"))
+                {
+                    "test"
+                } else if semantic_has_ancestor_kind(node, "class_definition") {
+                    "method"
+                } else {
+                    "function"
+                }
+            }
+            "class_definition" => "class",
+            "import_statement" | "import_from_statement" => "import",
+            "call" => "call",
+            "assignment" | "augmented_assignment" | "typed_parameter" => "assignment",
+            _ => "unknown",
+        },
+        "javascript" | "typescript" | "tsx" => match kind {
+            "function_declaration" | "generator_function_declaration" | "arrow_function" => {
+                if semantic_path_is_test(path)
+                    || semantic_ast_node_name(node, source)
+                        .is_some_and(|name| name.starts_with("test"))
+                {
+                    "test"
+                } else {
+                    "function"
+                }
+            }
+            "method_definition" => "method",
+            "class_declaration" => "class",
+            "import_statement" => "import",
+            "call_expression" => "call",
+            "assignment_expression"
+            | "lexical_declaration"
+            | "variable_declarator"
+            | "type_annotation"
+            | "interface_declaration"
+            | "type_alias_declaration" => "assignment",
+            _ => "unknown",
+        },
+        "go" => match kind {
+            "function_declaration" => {
+                if semantic_path_is_test(path)
+                    || semantic_ast_node_name(node, source)
+                        .is_some_and(|name| name.starts_with("Test"))
+                {
+                    "test"
+                } else {
+                    "function"
+                }
+            }
+            "method_declaration" => "method",
+            "type_declaration" => "class",
+            "import_declaration" => "import",
+            "call_expression" => "call",
+            "short_var_declaration"
+            | "var_declaration"
+            | "assignment_statement"
+            | "const_declaration" => "assignment",
+            _ => "unknown",
+        },
+        "java" => match kind {
+            "method_declaration" | "constructor_declaration" => {
+                if semantic_path_is_test(path)
+                    || semantic_ast_node_name(node, source)
+                        .is_some_and(|name| name.starts_with("test"))
+                {
+                    "test"
+                } else {
+                    "method"
+                }
+            }
+            "class_declaration"
+            | "interface_declaration"
+            | "enum_declaration"
+            | "record_declaration" => "class",
+            "import_declaration" => "import",
+            "method_invocation" | "object_creation_expression" => "call",
+            "local_variable_declaration" | "assignment_expression" | "field_declaration" => {
+                "assignment"
+            }
+            _ => "unknown",
+        },
+        "c" | "cpp" => match kind {
+            "function_definition" | "function_declarator" => "function",
+            "class_specifier" | "struct_specifier" | "enum_specifier" | "union_specifier" => {
+                "class"
+            }
+            "preproc_include" | "using_declaration" | "using_directive" => "import",
+            "call_expression" => "call",
+            "declaration" | "init_declarator" | "assignment_expression" => "assignment",
+            _ => "unknown",
+        },
+        "csharp" => match kind {
+            "method_declaration" | "constructor_declaration" => "method",
+            "class_declaration"
+            | "interface_declaration"
+            | "struct_declaration"
+            | "enum_declaration"
+            | "record_declaration" => "class",
+            "using_directive" => "import",
+            "invocation_expression" | "object_creation_expression" => "call",
+            "variable_declaration" | "assignment_expression" | "field_declaration" => "assignment",
+            _ => "unknown",
+        },
+        "ruby" => match kind {
+            "method" | "singleton_method" => "method",
+            "class" | "module" => "class",
+            "require" | "require_relative" => "import",
+            "call" | "command" => "call",
+            "assignment" | "operator_assignment" => "assignment",
+            _ => "unknown",
+        },
+        "php" => match kind {
+            "function_definition" => "function",
+            "method_declaration" => "method",
+            "class_declaration"
+            | "interface_declaration"
+            | "trait_declaration"
+            | "enum_declaration" => "class",
+            "namespace_use_declaration" | "require_expression" | "include_expression" => "import",
+            "function_call_expression"
+            | "member_call_expression"
+            | "object_creation_expression" => "call",
+            "assignment_expression" | "variable_name" => "assignment",
+            _ => "unknown",
+        },
+        _ => "unknown",
+    }
+}
+
+fn semantic_ast_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    node.child_by_field_name("name")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+        .or_else(|| semantic_first_identifier_text(node, source))
+        .map(ToOwned::to_owned)
+}
+
+fn semantic_first_identifier_text<'a>(
+    node: tree_sitter::Node<'_>,
+    source: &'a str,
+) -> Option<&'a str> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if matches!(
+            child.kind(),
+            "identifier"
+                | "field_identifier"
+                | "property_identifier"
+                | "type_identifier"
+                | "constant"
+                | "simple_identifier"
+                | "name"
+                | "variable_name"
+        ) {
+            if let Ok(text) = child.utf8_text(source.as_bytes()) {
+                return Some(text);
+            }
+        }
+        if let Some(text) = semantic_first_identifier_text(child, source) {
+            return Some(text);
+        }
+    }
+    None
+}
+
+fn semantic_has_ancestor_kind(node: tree_sitter::Node<'_>, kind: &str) -> bool {
+    let mut current = node.parent();
+    while let Some(candidate) = current {
+        if candidate.kind() == kind {
+            return true;
+        }
+        current = candidate.parent();
+    }
+    false
+}
+
+fn semantic_ast_symbol_visibility(
+    language: &str,
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> &'static str {
+    let node_text = semantic_node_text(node, source);
+    let name = semantic_ast_node_name(node, source).unwrap_or_default();
+    match language {
+        "python" | "ruby" => {
+            if name.starts_with('_') && !name.starts_with("__") {
+                "private"
+            } else {
+                "public"
+            }
+        }
+        "go" => name
+            .chars()
+            .next()
+            .map(|ch| {
+                if ch.is_uppercase() {
+                    "exported"
+                } else {
+                    "private"
+                }
+            })
+            .unwrap_or("unknown"),
+        "javascript" | "typescript" | "tsx" => {
+            if node_text.trim_start().starts_with("export ") || node_text.contains("\nexport ") {
+                "exported"
+            } else {
+                "public"
+            }
+        }
+        "java" | "csharp" | "php" => {
+            if node_text.contains(" private ") || node_text.trim_start().starts_with("private ") {
+                "private"
+            } else if node_text.contains(" public ")
+                || node_text.trim_start().starts_with("public ")
+            {
+                "public"
+            } else {
+                "unknown"
+            }
+        }
+        "c" | "cpp" => {
+            if node_text.trim_start().starts_with("static ") || node_text.contains("\nstatic ") {
+                "private"
+            } else {
+                "public"
+            }
+        }
+        _ => "unknown",
+    }
+}
+
+fn semantic_node_text(node: tree_sitter::Node<'_>, source: &str) -> String {
+    node.utf8_text(source.as_bytes()).unwrap_or("").to_string()
+}
+
+fn semantic_callee_text(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    node.child_by_field_name("function")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+        .or_else(|| semantic_first_identifier_text(node, source))
+        .map(ToOwned::to_owned)
+}
+
+fn semantic_call_is_import(language: &str, node: tree_sitter::Node<'_>, source: &str) -> bool {
+    let text = semantic_node_text(node, source);
+    let trimmed = text.trim_start();
+    match language {
+        "ruby" => {
+            trimmed.starts_with("require ")
+                || trimmed.starts_with("require(")
+                || trimmed.starts_with("require_relative ")
+                || trimmed.starts_with("require_relative(")
+        }
+        "php" => {
+            trimmed.starts_with("require ")
+                || trimmed.starts_with("require(")
+                || trimmed.starts_with("include ")
+                || trimmed.starts_with("include(")
+        }
+        _ => false,
+    }
+}
+
+fn semantic_node_has_type_annotation(
+    language: &str,
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> bool {
+    let text = semantic_node_text(node, source);
+    match language {
+        "python" | "typescript" | "tsx" | "c" | "cpp" | "csharp" | "java" | "php" => {
+            text.contains(':') || text.contains("->")
+        }
+        "rust" => text.contains(':') || text.contains("->"),
+        "go" => matches!(
+            node.kind(),
+            "var_declaration" | "const_declaration" | "type_declaration"
+        ),
+        _ => false,
+    }
+}
+
+fn semantic_path_is_test(path: &str) -> bool {
+    path.starts_with("tests/")
+        || path.contains("/tests/")
+        || path.ends_with("_test.py")
+        || path.ends_with("_test.go")
+        || path.ends_with(".test.js")
+        || path.ends_with(".spec.js")
+        || path.ends_with(".test.ts")
+        || path.ends_with(".spec.ts")
+        || path.ends_with(".test.tsx")
+        || path.ends_with(".spec.tsx")
+        || path.ends_with("Test.java")
+        || path.ends_with("Tests.cs")
+        || path.ends_with("_test.rb")
+        || path.ends_with("Test.php")
 }
 
 fn command_exists_on_path(name: &str) -> bool {
@@ -24044,4 +24687,102 @@ struct VerificationPolicyToml {
     expected_val_rows_max: Option<u64>,
     expected_test_rows_min: Option<u64>,
     expected_test_rows_max: Option<u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rust_semantic_extraction_captures_impl_targets_and_macro_calls() {
+        let source = r#"
+use std::fmt::Display;
+
+pub struct Accumulator {
+    pub total: i32,
+}
+
+impl Accumulator {
+    pub fn add<T: Display>(&mut self, value: i32, label: T) -> i32 {
+        println!("{}", label);
+        self.total = self.total + value;
+        self.total
+    }
+}
+
+pub fn helper(value: i32) -> i32 {
+    value + 1
+}
+
+pub fn add_two(x: i32) -> i32 {
+    let y: i32 = helper(x);
+    y
+}
+"#;
+        let extraction =
+            semantic_extract_source_facts("src/lib.rs", "rust", source).expect("valid Rust AST");
+
+        let symbol_names = extraction
+            .symbols
+            .iter()
+            .filter_map(|symbol| symbol.get("name").and_then(Value::as_str))
+            .collect::<BTreeSet<_>>();
+        assert!(symbol_names.contains("Accumulator"));
+        assert!(symbol_names.contains("impl Accumulator"));
+        assert!(symbol_names.contains("add_two"));
+
+        let callees = extraction
+            .calls
+            .iter()
+            .filter_map(|call| call.get("callee_expr").and_then(Value::as_str))
+            .collect::<BTreeSet<_>>();
+        assert!(callees.contains("println!"));
+        assert!(callees.contains("helper"));
+    }
+
+    #[test]
+    fn rust_semantic_extraction_fails_closed_on_parse_errors() {
+        let err = semantic_extract_source_facts("src/lib.rs", "rust", "pub fn broken(")
+            .expect_err("syntax errors must not produce a semantic index");
+        assert_eq!(err.code(), "VERIFICATION_FAILED");
+        assert!(
+            err.to_string().contains("parse reported syntax errors"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn semantic_index_rejects_existing_output_without_creating_evidence_dir() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        fs::create_dir(&repo).expect("create repo dir");
+        let output = temp.path().join("semantic-index.json");
+        fs::write(&output, "{}\n").expect("seed existing output");
+        let evidence_dir = semantic_index_evidence_dir(&output);
+
+        let err = match build_semantic_index_command(BuildSemanticIndexArgs {
+            repo,
+            output: output.clone(),
+            languages: vec!["rust".to_string()],
+            max_files: 20,
+            json: true,
+        }) {
+            Ok(_) => panic!("existing output must fail before tool execution"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.code(), "VALIDATION");
+        assert!(
+            err.to_string().contains("output already exists"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            !evidence_dir.exists(),
+            "failed existing-output preflight must not create evidence dir"
+        );
+        assert_eq!(
+            fs::read_to_string(&output).expect("read existing output"),
+            "{}\n"
+        );
+    }
 }
