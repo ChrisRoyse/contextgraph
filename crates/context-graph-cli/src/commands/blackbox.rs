@@ -4289,6 +4289,7 @@ fn validate_dynamicjepa_reality_payload(
             "guard_decisions",
             "source_of_truth_refs",
             "reward_features",
+            "trained_artifact",
             "recorded_at_unix",
         ],
     )?;
@@ -4454,6 +4455,57 @@ fn validate_dynamicjepa_reality_payload(
                     "record a finite non-negative prediction error from the artifact readback",
                 ));
             }
+            let trained_artifact = object
+                .get("trained_artifact")
+                .and_then(Value::as_object)
+                .ok_or_else(|| {
+                    dynamicjepa_reality_invalid(
+                        ledger,
+                        "$.trained_artifact",
+                        "trained_dynamicjepa_artifact records require a trained_artifact object",
+                        "include artifact_id, source_of_truth, predictions, and plan_trace_ids read back from DynamicJEPA",
+                    )
+                })?;
+            dynamicjepa_required_str(ledger, trained_artifact, "$.trained_artifact.artifact_id")?;
+            dynamicjepa_required_str(
+                ledger,
+                trained_artifact,
+                "$.trained_artifact.source_of_truth",
+            )?;
+            let predictions = dynamicjepa_required_array(
+                ledger,
+                trained_artifact,
+                "$.trained_artifact.predictions",
+            )?;
+            if predictions.len() as i64 != panel_count {
+                return Err(dynamicjepa_reality_invalid(
+                    ledger,
+                    "$.trained_artifact.predictions",
+                    format!(
+                        "trained_artifact.predictions length {} did not equal panel_count {panel_count}",
+                        predictions.len()
+                    ),
+                    "write one artifact-backed prediction readback per materialized panel",
+                ));
+            }
+            let plan_trace_ids = dynamicjepa_required_array(
+                ledger,
+                trained_artifact,
+                "$.trained_artifact.plan_trace_ids",
+            )?;
+            let plan_trace_coverage =
+                dynamicjepa_required_f64_01(ledger, object, "$.plan_trace_coverage")?;
+            let expected_plan_traces = if panel_count == 0 {
+                0.0
+            } else {
+                round_score(plan_trace_ids.len() as f64 / panel_count as f64)
+            };
+            dynamicjepa_assert_close(
+                ledger,
+                "$.trained_artifact.plan_trace_ids",
+                expected_plan_traces,
+                plan_trace_coverage,
+            )?;
         }
         _ => unreachable!("source_mode validated above"),
     }
@@ -8330,6 +8382,11 @@ fn build_release_gate_payload(
         .copied()
         .rev()
         .find(|record| record.record_kind == "scorecard");
+    let latest_reward_compilation = input_records
+        .iter()
+        .copied()
+        .rev()
+        .find(|record| record.record_kind == "reward_compilation");
     let latest_retention = input_records
         .iter()
         .copied()
@@ -8359,6 +8416,38 @@ fn build_release_gate_payload(
         "ledger_records.record_kind",
         "run `blackbox score run` for the run before evaluating the release gate",
     ));
+    checks.push(gate_check(
+        "reward_compilation_present",
+        latest_reward_compilation.is_some(),
+        latest_reward_compilation
+            .map(|record| json!({"sequence": record.sequence, "record_sha256": record.hash["record_sha256"].clone()}))
+            .unwrap_or(Value::Null),
+        json!("latest reward_compilation row for run"),
+        "RELEASE_GATE_REWARD_COMPILATION_REQUIRED",
+        "ledger_records.record_kind",
+        "run `blackbox reward compile` successfully for the latest scorecard before evaluating the release gate",
+    ));
+    let reward_latest_scorecard_sequence = latest_reward_compilation.and_then(|record| {
+        record
+            .payload
+            .pointer("/source_record_refs/latest_scorecard/sequence")
+            .and_then(Value::as_i64)
+    });
+    let latest_scorecard_sequence = latest_scorecard.map(|record| record.sequence);
+    checks.push(gate_check(
+        "reward_compilation_matches_latest_scorecard",
+        latest_reward_compilation.is_some()
+            && latest_scorecard_sequence.is_some()
+            && reward_latest_scorecard_sequence == latest_scorecard_sequence,
+        json!({
+            "latest_scorecard_sequence": latest_scorecard_sequence,
+            "reward_latest_scorecard_sequence": reward_latest_scorecard_sequence,
+        }),
+        json!("reward source_record_refs.latest_scorecard.sequence equals latest scorecard sequence"),
+        "RELEASE_GATE_REWARD_STALE",
+        "reward_compilation.source_record_refs.latest_scorecard.sequence",
+        "rerun reward compilation after the latest scorecard so promotion cannot use stale reward evidence",
+    ));
 
     let mut score_summary = Value::Null;
     if let Some(scorecard) = latest_scorecard {
@@ -8382,8 +8471,35 @@ fn build_release_gate_payload(
                 "tool_calls_with_evidence": scorecard.payload.pointer("/score_inputs/tool_calls_with_evidence").cloned().unwrap_or(Value::Null),
                 "verifier_status_counts": scorecard.payload.pointer("/score_inputs/verifier_status_counts").cloned().unwrap_or(Value::Null),
                 "policy_decision_counts": scorecard.payload.pointer("/score_inputs/policy_decision_counts").cloned().unwrap_or(Value::Null),
+                "dynamicjepa_reality": scorecard.payload.pointer("/score_inputs/dynamicjepa_reality").cloned().unwrap_or(Value::Null),
             }
         });
+        let dynamicjepa_source_mode = scorecard
+            .payload
+            .pointer("/score_inputs/dynamicjepa_reality/source_mode")
+            .and_then(Value::as_str);
+        let dynamicjepa_prediction_accuracy = scorecard
+            .payload
+            .pointer(
+                "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_prediction_accuracy",
+            )
+            .and_then(Value::as_f64);
+        checks.push(gate_check(
+            "dynamicjepa_trained_world_model_required",
+            dynamicjepa_source_mode == Some("trained_dynamicjepa_artifact")
+                && dynamicjepa_prediction_accuracy.is_some(),
+            json!({
+                "source_mode": dynamicjepa_source_mode,
+                "dynamicjepa_prediction_accuracy": dynamicjepa_prediction_accuracy,
+            }),
+            json!({
+                "source_mode": "trained_dynamicjepa_artifact",
+                "dynamicjepa_prediction_accuracy": "finite number",
+            }),
+            "RELEASE_GATE_DYNAMICJEPA_TRAINED_FEATURES_REQUIRED",
+            "scorecard.score_inputs.dynamicjepa_reality",
+            "record trained DynamicJEPA artifact predictions, rerun score, then rerun reward compilation before promotion",
+        ));
         checks.push(gate_check(
             "trust_level_at_or_above_minimum",
             gate_trust_rank(trust_level) >= gate_trust_rank(&args.min_trust_level),
@@ -8426,6 +8542,20 @@ fn build_release_gate_payload(
             "verify every mutating tool call and rerun scoring before gate evaluation",
         ));
     }
+
+    let reward_summary = latest_reward_compilation
+        .map(|record| {
+            Ok(json!({
+                "reward_compilation_ref": gate_record_ref_from_output(ledger_path, "latest_reward_compilation", record)?,
+                "reward_compilation_id": required_gate_payload_str(ledger_path, record, "reward_compilation_id")?,
+                "reward": record.payload.get("reward").cloned().unwrap_or(Value::Null),
+                "reward_spec": record.payload.get("reward_spec").cloned().unwrap_or(Value::Null),
+                "source_record_refs": record.payload.get("source_record_refs").cloned().unwrap_or(Value::Null),
+                "dynamicjepa_prediction_accuracy": record.payload.pointer("/feature_vector/dynamicjepa_prediction_accuracy/value").cloned().unwrap_or(Value::Null),
+            }))
+        })
+        .transpose()?
+        .unwrap_or(Value::Null);
 
     checks.push(gate_check(
         "verifier_results_clean",
@@ -8540,6 +8670,7 @@ fn build_release_gate_payload(
             "input_record_refs_sha256": input_record_refs_sha256,
         },
         "scorecard_summary": score_summary,
+        "reward_summary": reward_summary,
         "privacy_summary": {
             "latest_retention_decision": latest_retention
                 .map(|record| gate_record_ref_from_output(ledger_path, "latest_retention_decision", record))

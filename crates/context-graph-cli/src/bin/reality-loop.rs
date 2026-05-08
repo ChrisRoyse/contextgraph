@@ -72,6 +72,7 @@ const DEFAULT_REPLAY_OUTPUT_LABEL: &str = "replay";
 const DATASET_NAME: &str = "princeton-nlp/SWE-bench_Lite";
 const LOCAL_PYTHON_BIN: &str = "python3";
 const DYNAMICJEPA_REALITY_DOMAIN_PACK: &str = "contextgraph_swe_reality_loop_v1";
+const DEFAULT_DYNAMICJEPA_SKILL_ID: &str = "contextgraph_swe_repair";
 #[derive(Parser, Debug, Clone)]
 #[command(name = "reality-loop")]
 #[command(version)]
@@ -335,6 +336,17 @@ struct AttemptArgs {
     targeted_test_timeout: u64,
     #[arg(long, default_value_t = 0)]
     sleep_between_attempts_ms: u64,
+    /// DynamicJEPA RocksDB path used to ingest attempt panels and run artifact-backed inference.
+    /// Must be supplied with --dynamicjepa-artifact-id when trained DJ reward features are required.
+    #[arg(long)]
+    dynamicjepa_db: Option<PathBuf>,
+    /// DynamicJEPA model artifact id trained for contextgraph_swe_reality_loop_v1.
+    /// Must be supplied with --dynamicjepa-db; the reality loop verifies artifact files before inference.
+    #[arg(long)]
+    dynamicjepa_artifact_id: Option<String>,
+    /// Skill id used when persisting DynamicJEPA plan traces for SWE-loop attempts.
+    #[arg(long, default_value = DEFAULT_DYNAMICJEPA_SKILL_ID)]
+    dynamicjepa_skill_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -1317,6 +1329,9 @@ fn official_eval_attempt_args(args: &OfficialEvalArgs, task_manifest: &Path) -> 
         agent_tool_rounds: DEFAULT_AGENT_TOOL_ROUNDS,
         targeted_test_timeout: 300,
         sleep_between_attempts_ms: 0,
+        dynamicjepa_db: None,
+        dynamicjepa_artifact_id: None,
+        dynamicjepa_skill_id: DEFAULT_DYNAMICJEPA_SKILL_ID.to_string(),
     }
 }
 
@@ -1463,6 +1478,34 @@ fn validate_inner_harness_args(args: &AttemptArgs) -> Result<()> {
             json!({"inner_top_p": args.inner_top_p}),
             None,
         ));
+    }
+    match (&args.dynamicjepa_db, &args.dynamicjepa_artifact_id) {
+        (Some(db), Some(artifact_id)) => {
+            if artifact_id.trim().is_empty() {
+                return Err(RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_ARTIFACT_ID_INVALID",
+                    "--dynamicjepa-artifact-id must not be empty",
+                    "dynamicjepa_artifact_id",
+                    "pass the model_artifact_id produced by `context-graph dynamicjepa train`",
+                    json!({"dynamicjepa_db": path_str(db), "dynamicjepa_artifact_id": artifact_id}),
+                    Some(file_sot(db)),
+                ));
+            }
+        }
+        (None, None) => {}
+        _ => {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_CONFIG_INCOMPLETE",
+                "--dynamicjepa-db and --dynamicjepa-artifact-id must be supplied together",
+                "dynamicjepa",
+                "register contextgraph_swe_reality_loop_v1, train a DynamicJEPA artifact, then pass both values or omit both to emit projection-only evidence",
+                json!({
+                    "dynamicjepa_db": args.dynamicjepa_db.as_ref().map(|p| path_str(p)),
+                    "dynamicjepa_artifact_id": args.dynamicjepa_artifact_id.clone(),
+                }),
+                args.dynamicjepa_db.as_ref().map(|p| file_sot(p)),
+            ));
+        }
     }
     Ok(())
 }
@@ -1956,6 +1999,12 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             attempt,
             agent_tool_transcript_path.as_deref(),
             &ledger,
+            &attempt_dir,
+            &context_graph_bin,
+            &task_root,
+            args.dynamicjepa_db.as_deref(),
+            args.dynamicjepa_artifact_id.as_deref(),
+            &args.dynamicjepa_skill_id,
         )?;
         let dynamicjepa_reality_path = attempt_dir.join("dynamicjepa-reality.json");
         write_json_checked(&dynamicjepa_reality_path, &dynamicjepa_reality)?;
@@ -1979,21 +2028,7 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             &task_root,
         )?;
 
-        // Phase 14 (forward) intervention #4: capture BlackBox score + reward
-        // compilation errors as evidence rather than letting `?` propagate them up
-        // and terminate the attempt before write_summary / write_optimizer_artifacts /
-        // write_training_export run. Diagnosed from
-        // /tmp/ccreality-prod-3/rust_reality_1778039692404664879_e525987d where
-        // Docker eval completed cleanly (completed=true, resolved=false, patch
-        // applied, all 8 FAIL_TO_PASS still failing) but reward compilation
-        // returned RUST_REALITY_BLACKBOX_COMMAND_FAILED with stderr
-        // "feature correctness is null because source /score/correctness had no
-        // measurable value". The attempt aborted, attempt-summary.json was never
-        // written, Phase 15 + Phase 18 artifacts were lost. With this lift, score
-        // and reward errors become first-class fields in the attempt-summary so
-        // the optimizer can react to them and the autoresearch / training writers
-        // still fire.
-        let score = match blackbox(
+        let score = blackbox(
             &context_graph_bin,
             &[
                 "blackbox",
@@ -2007,53 +2042,35 @@ async fn run(args: AttemptArgs) -> Result<Value> {
                 &args.model,
             ],
             &task_root,
-        ) {
-            Ok(v) => v,
-            Err(err) => json!({
-                "status": "error",
-                "error_code": err.error_code.clone(),
-                "field_path": err.field_path.clone(),
-                "message": err.message.clone(),
-                "remediation": err.remediation.clone(),
-                "details": err.details.clone(),
-                "source_of_truth": err.source_of_truth.clone(),
-            }),
-        };
+        )?;
         let reward_spec = resolve_path(Path::new("config/reward_spec.verified_outcome.json"))?;
-        let reward = if reward_spec.exists() {
-            Some(
-                match blackbox(
-                    &context_graph_bin,
-                    &[
-                        "blackbox",
-                        "reward",
-                        "compile",
-                        "--ledger",
-                        path_str(&ledger),
-                        "--run-id",
-                        &run_id,
-                        "--input",
-                        path_str(&reward_spec),
-                        "--model",
-                        &args.model,
-                    ],
-                    &task_root,
-                ) {
-                    Ok(v) => v,
-                    Err(err) => json!({
-                        "status": "error",
-                        "error_code": err.error_code.clone(),
-                        "field_path": err.field_path.clone(),
-                        "message": err.message.clone(),
-                        "remediation": err.remediation.clone(),
-                        "details": err.details.clone(),
-                        "source_of_truth": err.source_of_truth.clone(),
-                    }),
-                },
-            )
-        } else {
-            None
-        };
+        if !reward_spec.is_file() {
+            return Err(RealityError::new(
+                "RUST_REALITY_REWARD_SPEC_MISSING",
+                "verified outcome reward spec is required before an attempt can complete",
+                "config/reward_spec.verified_outcome.json",
+                "restore the reward spec or pass a build containing it; attempts must not complete without reward compilation",
+                json!({"reward_spec": path_str(&reward_spec)}),
+                Some(file_sot(&reward_spec)),
+            ));
+        }
+        let reward = Some(blackbox(
+            &context_graph_bin,
+            &[
+                "blackbox",
+                "reward",
+                "compile",
+                "--ledger",
+                path_str(&ledger),
+                "--run-id",
+                &run_id,
+                "--input",
+                path_str(&reward_spec),
+                "--model",
+                &args.model,
+            ],
+            &task_root,
+        )?);
         let ledger_counts_now = ledger_counts(&ledger)?;
         let reality_signal_packet = build_reality_signal_packet(
             attempt,
@@ -9377,6 +9394,11 @@ fn build_reality_signal_packet(
         validation,
         official_evidence_path.is_some(),
     );
+    let dynamicjepa_intervention_hint = derive_dynamicjepa_intervention_hint(
+        dynamicjepa_reality,
+        validation,
+        official_evidence.as_ref(),
+    );
     let failure_digest = build_failure_digest(validation, official_evidence.as_ref());
     let patch_stats = patch.map(patch_line_stats).unwrap_or_else(|| {
         json!({
@@ -9437,6 +9459,7 @@ fn build_reality_signal_packet(
         "dynamicjepa_reality": {
             "block": dynamicjepa_reality,
             "ledger_record": dynamicjepa_reality_record,
+            "intervention_hint": dynamicjepa_intervention_hint,
             "source_of_truth": {
                 "dynamicjepa_reality_file": optional_file_sot(&attempt_dir.join("dynamicjepa-reality.json")),
                 "blackbox_ledger": dynamicjepa_reality_record.get("source_of_truth")
@@ -9465,6 +9488,7 @@ fn build_reality_signal_packet(
                 "tool_grounding.changed_files_seen_by_tools",
                 "harness_reality.transition_reward_signals",
                 "dynamicjepa_reality.block.reward_features",
+                "dynamicjepa_reality.intervention_hint",
                 "tool_reward_signals",
                 "score_reality.reward"
             ],
@@ -9510,6 +9534,7 @@ fn compact_reality_signal_packet(packet: &Value) -> Value {
                 "plan_trace_coverage": packet.pointer("/dynamicjepa_reality/block/plan_trace_coverage"),
                 "reward_features": packet.pointer("/dynamicjepa_reality/block/reward_features")
             },
+            "intervention_hint": packet.pointer("/dynamicjepa_reality/intervention_hint"),
             "ledger_record": {
                 "status": packet.pointer("/dynamicjepa_reality/ledger_record/status"),
                 "ledger_sequence": packet.pointer("/dynamicjepa_reality/ledger_record/ledger_sequence"),
@@ -9524,6 +9549,137 @@ fn compact_reality_signal_packet(packet: &Value) -> Value {
         },
         "reinjection_directive": packet.get("reinjection_directive"),
         "source_of_truth": packet.get("source_of_truth")
+    })
+}
+
+fn derive_dynamicjepa_intervention_hint(
+    dynamicjepa_reality: &Value,
+    validation: &Value,
+    official_evidence: Option<&Value>,
+) -> Value {
+    let source_mode = dynamicjepa_reality
+        .get("source_mode")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let surprise_rate = dynamicjepa_reality
+        .get("surprise_candidate_rate")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    let prediction_error_l2 = dynamicjepa_reality
+        .get("prediction_error_l2")
+        .and_then(Value::as_f64);
+    let plan_trace_coverage = dynamicjepa_reality
+        .get("plan_trace_coverage")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    let resolved = official_evidence
+        .and_then(|value| value.get("resolved"))
+        .and_then(Value::as_bool);
+    let validation_status = validation.get("status").and_then(Value::as_str);
+    let validation_error_code = validation.get("error_code").and_then(Value::as_str);
+    let unresolved =
+        resolved == Some(false) || matches!(validation_status, Some("failed" | "error"));
+
+    if source_mode != "trained_dynamicjepa_artifact" {
+        return json!({
+            "status": "capability_gap",
+            "intervention_surface": "dynamicjepa_artifact_training",
+            "recommendation": "train_and_pass_contextgraph_swe_reality_loop_v1_artifact",
+            "confidence": 1.0,
+            "reason": "DynamicJEPA reality is projection evidence, not learned world-model inference",
+            "observed": {
+                "source_mode": source_mode,
+                "surprise_candidate_rate": surprise_rate,
+                "prediction_error_l2": prediction_error_l2,
+                "plan_trace_coverage": plan_trace_coverage,
+            },
+        });
+    }
+
+    let high_surprise =
+        surprise_rate >= 0.30 || prediction_error_l2.is_some_and(|value| value >= 0.35);
+    let low_surprise =
+        surprise_rate <= 0.10 && prediction_error_l2.is_some_and(|value| value <= 0.10);
+    let surprise_tool_families = dynamicjepa_reality
+        .get("surprise_events")
+        .and_then(Value::as_array)
+        .map(|events| {
+            let mut counts = BTreeMap::<String, u64>::new();
+            for event in events {
+                if let Some(tool_family) = event.get("tool_family").and_then(Value::as_str) {
+                    *counts.entry(tool_family.to_string()).or_insert(0) += 1;
+                }
+            }
+            counts
+        })
+        .unwrap_or_default();
+    let guard_decision_count = dynamicjepa_reality
+        .get("guard_decisions")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+
+    let (status, intervention_surface, recommendation, reason, confidence) = if low_surprise
+        && unresolved
+    {
+        (
+            "model_bottleneck",
+            "inner_model",
+            "escalate_model_or_task_context",
+            "trained DynamicJEPA surprise is low while the attempt remains unresolved",
+            0.85,
+        )
+    } else if high_surprise && guard_decision_count > 0 {
+        (
+            "actionable",
+            "tool_guard_surface",
+            "inspect_tool_guard_or_tool_spec",
+            "trained DynamicJEPA surprise coincides with guard decisions",
+            0.90,
+        )
+    } else if high_surprise && !surprise_tool_families.is_empty() {
+        (
+            "actionable",
+            "tool_surface",
+            "inspect_high_surprise_tool_family",
+            "trained DynamicJEPA surprise localizes to one or more tool families",
+            0.82,
+        )
+    } else if high_surprise {
+        (
+            "actionable",
+            "prompt_template",
+            "inspect_prompt_state_action_mapping",
+            "trained DynamicJEPA surprise is high without a narrower tool or guard localization",
+            0.70,
+        )
+    } else {
+        (
+            "stable",
+            "current_loop",
+            "continue_with_verified_failure_evidence",
+            "trained DynamicJEPA surprise and prediction error are within the configured low-risk band",
+            0.60,
+        )
+    };
+
+    json!({
+        "status": status,
+        "intervention_surface": intervention_surface,
+        "recommendation": recommendation,
+        "confidence": confidence,
+        "reason": reason,
+        "observed": {
+            "source_mode": source_mode,
+            "surprise_candidate_rate": round_signal(surprise_rate),
+            "prediction_error_l2": prediction_error_l2.map(round_signal),
+            "plan_trace_coverage": round_signal(plan_trace_coverage),
+            "guard_decision_count": guard_decision_count,
+            "surprise_tool_family_counts": surprise_tool_families,
+            "resolved": resolved,
+            "validation_status": validation_status,
+            "validation_error_code": validation_error_code,
+        },
     })
 }
 
@@ -9901,7 +10057,43 @@ fn build_dynamicjepa_reality_for_attempt(
     attempt: u64,
     transcript_path: Option<&str>,
     ledger: &Path,
+    attempt_dir: &Path,
+    context_graph_bin: &Path,
+    task_root: &Path,
+    dynamicjepa_db: Option<&Path>,
+    dynamicjepa_artifact_id: Option<&str>,
+    dynamicjepa_skill_id: &str,
 ) -> Result<Value> {
+    match (dynamicjepa_db, dynamicjepa_artifact_id) {
+        (Some(db), Some(artifact_id)) => {
+            return build_trained_dynamicjepa_reality_for_attempt(
+                run_id,
+                attempt,
+                transcript_path,
+                ledger,
+                attempt_dir,
+                context_graph_bin,
+                task_root,
+                db,
+                artifact_id,
+                dynamicjepa_skill_id,
+            );
+        }
+        (None, None) => {}
+        _ => {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_CONFIG_INCOMPLETE",
+                "trained DynamicJEPA mode requires both a RocksDB path and a model artifact id",
+                "dynamicjepa",
+                "pass --dynamicjepa-db and --dynamicjepa-artifact-id together",
+                json!({
+                    "dynamicjepa_db": dynamicjepa_db.map(|path| path_str(path)),
+                    "dynamicjepa_artifact_id": dynamicjepa_artifact_id,
+                }),
+                dynamicjepa_db.map(|path| file_sot(path)),
+            ));
+        }
+    }
     let Some(path) = transcript_path else {
         return Err(RealityError::new(
             "RUST_REALITY_DYNAMICJEPA_TRANSCRIPT_MISSING",
@@ -10162,11 +10354,688 @@ fn build_dynamicjepa_reality_for_attempt(
             "dynamicjepa_projection_panel_count": panel_count,
             "dynamicjepa_projection_surprise_count": surprise_count,
             "dynamicjepa_projection_surprise_rate": surprise_rate,
+            "dynamicjepa_surprise_candidate_rate": surprise_rate,
             "dynamicjepa_projection_accuracy": projection_accuracy,
             "dynamicjepa_plan_trace_coverage": plan_trace_coverage,
         },
         "recorded_at_unix": unix_secs()?,
     }))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_trained_dynamicjepa_reality_for_attempt(
+    run_id: &str,
+    attempt: u64,
+    transcript_path: Option<&str>,
+    ledger: &Path,
+    attempt_dir: &Path,
+    context_graph_bin: &Path,
+    task_root: &Path,
+    dynamicjepa_db: &Path,
+    artifact_id: &str,
+    skill_id: &str,
+) -> Result<Value> {
+    let Some(path) = transcript_path else {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_TRANSCRIPT_MISSING",
+            "trained DynamicJEPA reward features require the physical agent tool transcript",
+            "model_response.contextgraph_runtime.agent_tool_transcript",
+            "rerun with the current governed inner harness so every attempt writes an agent_tool_transcript artifact",
+            json!({"run_id": run_id, "attempt": attempt}),
+            Some(sqlite_sot(ledger)),
+        ));
+    };
+    let transcript_path = PathBuf::from(path.strip_prefix("file:").unwrap_or(path));
+    let transcript: Value = read_json(&transcript_path)?;
+    let events =
+        dynamicjepa_swe_events_from_transcript(run_id, attempt, &transcript_path, &transcript)?;
+    if events.is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_NO_PANELS_FOR_TRAINED_ARTIFACT",
+            "trained DynamicJEPA mode cannot score an attempt with zero tool transitions",
+            "agent_tool_transcript.executed_tool_calls",
+            "rerun an attempt that emits at least one governed tool transition before compiling trained DJ reward features",
+            json!({"run_id": run_id, "attempt": attempt, "transcript": file_sot(&transcript_path)}),
+            Some(file_sot(&transcript_path)),
+        ));
+    }
+
+    let dj_dir = attempt_dir.join("dynamicjepa-trained");
+    create_dir_checked(&dj_dir)?;
+    let events_path = dj_dir.join("swe-reality-events.jsonl");
+    let mut jsonl = String::new();
+    for event in &events {
+        jsonl.push_str(&serde_json::to_string(&event.event).map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_EVENT_SERIALIZE_FAILED",
+                "DynamicJEPA SWE event could not be serialized",
+                "dynamicjepa.event",
+                "inspect transition-to-domain mapping code",
+                json!({"error": err.to_string(), "event": event.event}),
+                Some(file_sot(&transcript_path)),
+            )
+        })?);
+        jsonl.push('\n');
+    }
+    write_text_checked(&events_path, &jsonl)?;
+
+    let artifact = dynamicjepa_json_command(
+        context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "get-artifact".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--id".to_string(),
+            artifact_id.to_string(),
+            "--verify-files".to_string(),
+            "--json".to_string(),
+        ],
+        task_root,
+        "dynamicjepa_get_artifact",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    write_json_checked(&dj_dir.join("artifact-readback.json"), &artifact)?;
+    let artifact_domain = artifact
+        .pointer("/decoded_records/artifact/domain_pack_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_ARTIFACT_DOMAIN_MISSING",
+                "DynamicJEPA artifact readback did not contain domain_pack_id",
+                "dynamicjepa.get_artifact.decoded_records.artifact.domain_pack_id",
+                "inspect the model artifact row in dj_model_artifacts",
+                json!({"artifact": artifact}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
+    if artifact_domain != DYNAMICJEPA_REALITY_DOMAIN_PACK {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_ARTIFACT_DOMAIN_MISMATCH",
+            "DynamicJEPA artifact domain does not match the SWE reality-loop domain pack",
+            "dynamicjepa.get_artifact.decoded_records.artifact.domain_pack_id",
+            "train or pass an artifact whose domain_pack_id is contextgraph_swe_reality_loop_v1",
+            json!({"expected": DYNAMICJEPA_REALITY_DOMAIN_PACK, "actual": artifact_domain, "artifact_id": artifact_id}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+
+    let ingest = dynamicjepa_json_command(
+        context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "ingest-event".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--domain".to_string(),
+            DYNAMICJEPA_REALITY_DOMAIN_PACK.to_string(),
+            "--adapter".to_string(),
+            "json_event".to_string(),
+            "--file".to_string(),
+            path_str(&events_path).to_string(),
+            "--json".to_string(),
+        ],
+        task_root,
+        "dynamicjepa_ingest_event",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    write_json_checked(&dj_dir.join("ingest-readback.json"), &ingest)?;
+    let transition_ids = required_json_string_array(
+        &ingest,
+        "/created_ids/transition_ids",
+        "dynamicjepa.ingest.created_ids.transition_ids",
+        dynamicjepa_db,
+    )?;
+    let action_ids = required_json_string_array(
+        &ingest,
+        "/created_ids/action_ids",
+        "dynamicjepa.ingest.created_ids.action_ids",
+        dynamicjepa_db,
+    )?;
+    let outcome_ids = required_json_string_array(
+        &ingest,
+        "/created_ids/outcome_ids",
+        "dynamicjepa.ingest.created_ids.outcome_ids",
+        dynamicjepa_db,
+    )?;
+    let failed_adapter_runs = ingest
+        .pointer("/created_ids/failed_adapter_run_ids")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    if failed_adapter_runs != 0 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_INGEST_ADAPTER_FAILED",
+            "DynamicJEPA SWE event ingestion produced failed adapter runs",
+            "dynamicjepa.ingest.created_ids.failed_adapter_run_ids",
+            "inspect the event JSONL and registered domain pack adapter mapping",
+            json!({"ingest": ingest, "events": file_sot(&events_path)}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+    if transition_ids.len() != events.len()
+        || action_ids.len() != events.len()
+        || outcome_ids.len() != events.len()
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_INGEST_COUNT_MISMATCH",
+            "DynamicJEPA ingest created-id counts did not match emitted SWE events",
+            "dynamicjepa.ingest.created_ids",
+            "inspect the ingest output before running predictions",
+            json!({
+                "events": events.len(),
+                "transition_ids": transition_ids.len(),
+                "action_ids": action_ids.len(),
+                "outcome_ids": outcome_ids.len()
+            }),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+
+    let mut panel_ids = Vec::with_capacity(transition_ids.len());
+    for (idx, transition_id) in transition_ids.iter().enumerate() {
+        let materialized = dynamicjepa_json_command(
+            context_graph_bin,
+            vec![
+                "dynamicjepa".to_string(),
+                "materialize-panel".to_string(),
+                "--db".to_string(),
+                path_str(dynamicjepa_db).to_string(),
+                "--transition-id".to_string(),
+                transition_id.clone(),
+                "--json".to_string(),
+            ],
+            task_root,
+            "dynamicjepa_materialize_panel",
+            Some(file_sot(dynamicjepa_db)),
+        )?;
+        write_json_checked(
+            &dj_dir.join(format!("materialize-{idx:03}.json")),
+            &materialized,
+        )?;
+        let created_panels = required_json_string_array(
+            &materialized,
+            "/created_ids/panel_ids",
+            "dynamicjepa.materialize.created_ids.panel_ids",
+            dynamicjepa_db,
+        )?;
+        if created_panels.len() != 1 {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_PANEL_COUNT_MISMATCH",
+                "materialize-panel by transition did not create exactly one panel",
+                "dynamicjepa.materialize.created_ids.panel_ids",
+                "inspect the transition id and existing dj_latent_panels rows",
+                json!({"transition_id": transition_id, "panel_ids": created_panels}),
+                Some(file_sot(dynamicjepa_db)),
+            ));
+        }
+        panel_ids.push(created_panels[0].clone());
+    }
+
+    let mut predictions = Vec::with_capacity(panel_ids.len());
+    let mut surprise_events = Vec::new();
+    let mut error_sum = 0.0_f64;
+    for idx in 0..panel_ids.len() {
+        let predict = dynamicjepa_json_command(
+            context_graph_bin,
+            vec![
+                "dynamicjepa".to_string(),
+                "predict".to_string(),
+                "--db".to_string(),
+                path_str(dynamicjepa_db).to_string(),
+                "--artifact-id".to_string(),
+                artifact_id.to_string(),
+                "--panel-id".to_string(),
+                panel_ids[idx].clone(),
+                "--action-id".to_string(),
+                action_ids[idx].clone(),
+                "--json".to_string(),
+            ],
+            task_root,
+            "dynamicjepa_predict",
+            Some(file_sot(dynamicjepa_db)),
+        )?;
+        write_json_checked(&dj_dir.join(format!("predict-{idx:03}.json")), &predict)?;
+        let prediction_id = predict
+            .pointer("/created_ids/prediction_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_PREDICTION_ID_MISSING",
+                    "DynamicJEPA predict output was missing prediction_id",
+                    "dynamicjepa.predict.created_ids.prediction_id",
+                    "inspect dj_predictions readback before compiling reward",
+                    json!({"predict": predict}),
+                    Some(file_sot(dynamicjepa_db)),
+                )
+            })?
+            .to_string();
+        let surprise = dynamicjepa_json_command(
+            context_graph_bin,
+            vec![
+                "dynamicjepa".to_string(),
+                "record-surprise".to_string(),
+                "--db".to_string(),
+                path_str(dynamicjepa_db).to_string(),
+                "--prediction-id".to_string(),
+                prediction_id.clone(),
+                "--observed-outcome-id".to_string(),
+                outcome_ids[idx].clone(),
+                "--observed-panel-id".to_string(),
+                panel_ids[idx].clone(),
+                "--json".to_string(),
+            ],
+            task_root,
+            "dynamicjepa_record_surprise",
+            Some(file_sot(dynamicjepa_db)),
+        )?;
+        write_json_checked(&dj_dir.join(format!("surprise-{idx:03}.json")), &surprise)?;
+        let error_norm = surprise
+            .pointer("/summary/error_norm")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_SURPRISE_ERROR_MISSING",
+                    "DynamicJEPA surprise output was missing numeric error_norm",
+                    "dynamicjepa.record_surprise.summary.error_norm",
+                    "inspect dj_predictions and dj_surprise_events readbacks",
+                    json!({"surprise": surprise}),
+                    Some(file_sot(dynamicjepa_db)),
+                )
+            })?;
+        error_sum += error_norm;
+        let wrote_surprise = surprise
+            .pointer("/summary/wrote_surprise")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if wrote_surprise {
+            let event_id = surprise
+                .pointer("/created_ids/surprise_event_id")
+                .and_then(Value::as_str)
+                .unwrap_or("surprise_event_id_missing");
+            surprise_events.push(json!({
+                "event_id": event_id,
+                "kind": "UnexpectedOutcome",
+                "magnitude": round_signal(error_norm),
+                "transition_id": events[idx].transition_id,
+                "prediction_id": prediction_id,
+                "panel_id": panel_ids[idx],
+                "source_of_truth": format!("rocksdb:{}#dj_surprise_events", dynamicjepa_db.display()),
+            }));
+        }
+        predictions.push(json!({
+            "transition_id": events[idx].transition_id,
+            "panel_id": panel_ids[idx],
+            "action_id": action_ids[idx],
+            "outcome_id": outcome_ids[idx],
+            "prediction_id": prediction_id,
+            "error_norm": round_signal(error_norm),
+            "source_of_truth": format!("rocksdb:{}#dj_predictions", dynamicjepa_db.display()),
+        }));
+    }
+
+    let mut guard_decisions = Vec::new();
+    let mut plan_trace_ids = Vec::with_capacity(panel_ids.len());
+    for (idx, panel_id) in panel_ids.iter().enumerate() {
+        let plan = dynamicjepa_json_command(
+            context_graph_bin,
+            vec![
+                "dynamicjepa".to_string(),
+                "plan".to_string(),
+                "--db".to_string(),
+                path_str(dynamicjepa_db).to_string(),
+                "--artifact-id".to_string(),
+                artifact_id.to_string(),
+                "--panel-id".to_string(),
+                panel_id.clone(),
+                "--skill-id".to_string(),
+                skill_id.to_string(),
+                "--json".to_string(),
+            ],
+            task_root,
+            "dynamicjepa_plan",
+            Some(file_sot(dynamicjepa_db)),
+        )?;
+        write_json_checked(&dj_dir.join(format!("plan-{idx:03}.json")), &plan)?;
+        if let Some(plan_id) = plan
+            .pointer("/created_ids/plan_trace_id")
+            .and_then(Value::as_str)
+        {
+            plan_trace_ids.push(plan_id.to_string());
+        }
+        if let Some(items) = plan
+            .pointer("/decoded_records/guard_decisions")
+            .and_then(Value::as_array)
+        {
+            guard_decisions.extend(items.iter().cloned());
+        }
+    }
+
+    let panel_count = panel_ids.len() as u64;
+    let surprise_count = surprise_events.len() as u64;
+    let surprise_rate = round_signal(surprise_count as f64 / panel_count as f64);
+    let prediction_error_l2 = round_signal(error_sum / panel_count as f64);
+    let prediction_accuracy = round_signal((1.0 - prediction_error_l2).clamp(0.0, 1.0));
+    let plan_trace_coverage = round_signal(plan_trace_ids.len() as f64 / panel_count as f64);
+    Ok(json!({
+        "record_kind": "dynamicjepa_reality",
+        "schema_version": 1,
+        "run_id": run_id,
+        "attempt": attempt,
+        "domain_pack": DYNAMICJEPA_REALITY_DOMAIN_PACK,
+        "source_mode": "trained_dynamicjepa_artifact",
+        "panel_count": panel_count,
+        "surprise_events": surprise_events,
+        "surprise_event_count": surprise_count,
+        "surprise_candidate_rate": surprise_rate,
+        "prediction_error_l2": prediction_error_l2,
+        "prediction_error_l2_status": {
+            "status": "available",
+            "source": "dynamicjepa record-surprise summary.error_norm averaged over attempt panels",
+        },
+        "projection_accuracy": round_signal(1.0 - surprise_rate),
+        "plan_trace_coverage": plan_trace_coverage,
+        "guard_decisions": guard_decisions,
+        "source_of_truth_refs": [
+            {
+                "kind": "agent_tool_transcript",
+                "source_of_truth": file_sot(&transcript_path),
+                "sha256": sha256_file(&transcript_path)?,
+            },
+            {
+                "kind": "dynamicjepa_swe_events_jsonl",
+                "source_of_truth": file_sot(&events_path),
+                "sha256": sha256_file(&events_path)?,
+            },
+            {
+                "kind": "dynamicjepa_rocksdb",
+                "source_of_truth": format!("rocksdb:{}#dj_predictions,dj_plan_traces,dj_guard_decisions,dj_surprise_events", dynamicjepa_db.display()),
+                "domain_pack": DYNAMICJEPA_REALITY_DOMAIN_PACK,
+                "artifact_id": artifact_id,
+            },
+            {
+                "kind": "blackbox_ledger",
+                "source_of_truth": sqlite_sot(ledger),
+                "record_kind": "dynamicjepa_reality",
+            }
+        ],
+        "reward_features": {
+            "dynamicjepa_projection_panel_count": panel_count,
+            "dynamicjepa_projection_surprise_count": surprise_count,
+            "dynamicjepa_projection_surprise_rate": surprise_rate,
+            "dynamicjepa_surprise_candidate_rate": surprise_rate,
+            "dynamicjepa_projection_accuracy": round_signal(1.0 - surprise_rate),
+            "dynamicjepa_plan_trace_coverage": plan_trace_coverage,
+            "dynamicjepa_prediction_error_l2": prediction_error_l2,
+            "dynamicjepa_prediction_accuracy": prediction_accuracy,
+        },
+        "trained_artifact": {
+            "artifact_id": artifact_id,
+            "artifact_readback": file_sot(&dj_dir.join("artifact-readback.json")),
+            "predictions": predictions,
+            "plan_trace_ids": plan_trace_ids,
+            "source_of_truth": format!("rocksdb:{}#dj_model_artifacts", dynamicjepa_db.display()),
+        },
+        "recorded_at_unix": unix_secs()?,
+    }))
+}
+
+#[derive(Debug, Clone)]
+struct SweDynamicJepaEvent {
+    event: Value,
+    transition_id: String,
+}
+
+fn dynamicjepa_swe_events_from_transcript(
+    run_id: &str,
+    attempt: u64,
+    transcript_path: &Path,
+    transcript: &Value,
+) -> Result<Vec<SweDynamicJepaEvent>> {
+    let mut events = Vec::new();
+    if let Some(entries) = transcript.get("entries").and_then(Value::as_array) {
+        for entry in entries {
+            if let Some(results) = entry.get("tool_results").and_then(Value::as_array) {
+                for result in results {
+                    let transition_sot = result
+                        .get("harness_transition")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_TRANSITION_REF_MISSING",
+                                "tool transcript entry was missing the harness transition needed for trained DynamicJEPA reality",
+                                "agent_tool_transcript.entries[].tool_results[].harness_transition",
+                                "rerun with the current Rust reality-loop so every tool call emits a transition artifact",
+                                json!({"tool_result": result, "transcript": file_sot(transcript_path)}),
+                                Some(file_sot(transcript_path)),
+                            )
+                        })?;
+                    let transition_path = PathBuf::from(
+                        transition_sot
+                            .strip_prefix("file:")
+                            .unwrap_or(transition_sot),
+                    );
+                    let transition: Value = read_json(&transition_path)?;
+                    if transition.get("record_kind").and_then(Value::as_str)
+                        != Some("contextgraph_harness_transition")
+                    {
+                        return Err(RealityError::new(
+                            "RUST_REALITY_DYNAMICJEPA_TRANSITION_KIND_INVALID",
+                            "trained DynamicJEPA reality requires current contextgraph_harness_transition artifacts",
+                            "harness_transition.record_kind",
+                            "regenerate the transition with the current harness before trained inference",
+                            json!({"transition": file_sot(&transition_path), "record_kind": transition.get("record_kind")}),
+                            Some(file_sot(&transition_path)),
+                        ));
+                    }
+                    let mapping = transition
+                        .get("dynamicjepa_mapping")
+                        .and_then(Value::as_object)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_MAPPING_MISSING",
+                                "harness transition was missing dynamicjepa_mapping",
+                                "harness_transition.dynamicjepa_mapping",
+                                "regenerate the transition with the current harness before trained inference",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    let domain_pack = mapping
+                        .get("domain_pack_id")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_DOMAIN_PACK_MISSING",
+                                "dynamicjepa_mapping.domain_pack_id was missing",
+                                "harness_transition.dynamicjepa_mapping.domain_pack_id",
+                                "regenerate the transition with a typed DynamicJEPA domain pack id",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    if domain_pack != DYNAMICJEPA_REALITY_DOMAIN_PACK {
+                        return Err(RealityError::new(
+                            "RUST_REALITY_DYNAMICJEPA_DOMAIN_PACK_MISMATCH",
+                            "dynamicjepa_mapping.domain_pack_id did not match the reality-loop domain pack",
+                            "harness_transition.dynamicjepa_mapping.domain_pack_id",
+                            "do not mix DynamicJEPA domains inside one reality-loop trained inference record",
+                            json!({"expected": DYNAMICJEPA_REALITY_DOMAIN_PACK, "actual": domain_pack, "transition": file_sot(&transition_path)}),
+                            Some(file_sot(&transition_path)),
+                        ));
+                    }
+                    let transition_id = mapping
+                        .get("transition_id")
+                        .and_then(Value::as_str)
+                        .or_else(|| transition.get("transition_id").and_then(Value::as_str))
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_TRANSITION_ID_MISSING",
+                                "dynamicjepa_mapping.transition_id was missing",
+                                "harness_transition.dynamicjepa_mapping.transition_id",
+                                "regenerate the transition with a stable transition_id",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?
+                        .to_string();
+                    let counter = transition
+                        .pointer("/before_state/executed_tool_calls_before")
+                        .and_then(Value::as_i64)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_STATE_COUNTER_MISSING",
+                                "harness transition was missing executed_tool_calls_before",
+                                "harness_transition.before_state.executed_tool_calls_before",
+                                "regenerate the transition with the current harness state snapshot",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    let utility_delta = transition
+                        .pointer("/outcome/utility_delta")
+                        .and_then(Value::as_f64)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_UTILITY_DELTA_MISSING",
+                                "harness transition was missing outcome.utility_delta",
+                                "harness_transition.outcome.utility_delta",
+                                "regenerate the transition with current outcome shaping",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    if !utility_delta.is_finite() {
+                        return Err(RealityError::new(
+                            "RUST_REALITY_DYNAMICJEPA_UTILITY_DELTA_INVALID",
+                            "harness transition utility_delta was non-finite",
+                            "harness_transition.outcome.utility_delta",
+                            "inspect transition generation before DynamicJEPA ingestion",
+                            json!({"transition": file_sot(&transition_path), "utility_delta": utility_delta}),
+                            Some(file_sot(&transition_path)),
+                        ));
+                    }
+                    let delta = (utility_delta * 10.0).round() as i64;
+                    if !(-10..=10).contains(&delta) {
+                        return Err(RealityError::new(
+                            "RUST_REALITY_DYNAMICJEPA_DELTA_OUT_OF_RANGE",
+                            "quantized tool utility delta exceeded the SWE DynamicJEPA action bounds",
+                            "dynamicjepa.event.action.delta",
+                            "adjust the domain pack bounds only after inspecting the real transition utility distribution",
+                            json!({"transition": file_sot(&transition_path), "utility_delta": utility_delta, "delta": delta}),
+                            Some(file_sot(&transition_path)),
+                        ));
+                    }
+                    let round = transition.get("round").and_then(Value::as_u64).unwrap_or(0);
+                    let index = transition.get("index").and_then(Value::as_u64).unwrap_or(0);
+                    let ts_ms = (attempt as i64)
+                        .saturating_mul(1_000_000)
+                        .saturating_add((round as i64).saturating_mul(1_000))
+                        .saturating_add(index as i64);
+                    events.push(SweDynamicJepaEvent {
+                        transition_id: transition_id.clone(),
+                        event: json!({
+                            "state": {"counter": counter},
+                            "action": {"delta": delta},
+                            "outcome": {"next_counter": counter + delta},
+                            "ts_ms": ts_ms,
+                            "trajectory_id": format!("{run_id}:attempt-{attempt}"),
+                        }),
+                    });
+                }
+            }
+        }
+    }
+    let executed = transcript
+        .get("executed_tool_calls")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_EXECUTED_COUNT_MISSING",
+                "agent tool transcript was missing executed_tool_calls",
+                "agent_tool_transcript.executed_tool_calls",
+                "rerun with the current inner harness so DynamicJEPA coverage can be measured",
+                json!({"transcript": file_sot(transcript_path)}),
+                Some(file_sot(transcript_path)),
+            )
+        })?;
+    if events.len() as u64 != executed {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_PANEL_COUNT_MISMATCH",
+            "DynamicJEPA event count did not equal executed tool-call count",
+            "agent_tool_transcript.executed_tool_calls",
+            "inspect missing transition artifacts before trained DynamicJEPA inference",
+            json!({"executed_tool_calls": executed, "event_count": events.len(), "transcript": file_sot(transcript_path)}),
+            Some(file_sot(transcript_path)),
+        ));
+    }
+    Ok(events)
+}
+
+fn dynamicjepa_json_command(
+    bin: &Path,
+    args: Vec<String>,
+    cwd: &Path,
+    operation: &'static str,
+    source_of_truth: Option<String>,
+) -> Result<Value> {
+    let mut command = vec![path_str(bin).to_string()];
+    command.extend(args);
+    let result = run_cmd(&command, cwd, 600)?;
+    if result.exit_code != 0 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_COMMAND_FAILED",
+            "DynamicJEPA command failed",
+            operation,
+            "inspect stdout/stderr, DynamicJEPA RocksDB path, domain registration, and artifact id",
+            json!({ "process": result }),
+            source_of_truth.clone(),
+        ));
+    }
+    serde_json::from_str(&result.stdout).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_JSON_INVALID",
+            "DynamicJEPA command did not return JSON",
+            operation,
+            "inspect DynamicJEPA command output",
+            json!({"stdout": result.stdout, "stderr": result.stderr, "error": err.to_string()}),
+            source_of_truth,
+        )
+    })
+}
+
+fn required_json_string_array(
+    value: &Value,
+    pointer: &str,
+    field_path: &'static str,
+    source_path: &Path,
+) -> Result<Vec<String>> {
+    let array = value.pointer(pointer).and_then(Value::as_array).ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_OUTPUT_SCHEMA_INVALID",
+            "DynamicJEPA command output was missing a required string array",
+            field_path,
+            "inspect the command JSON output and update the caller only after confirming schema changes",
+            json!({"pointer": pointer, "value": value}),
+            Some(file_sot(source_path)),
+        )
+    })?;
+    array
+        .iter()
+        .enumerate()
+        .map(|(idx, item)| {
+            item.as_str().map(ToOwned::to_owned).ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_OUTPUT_SCHEMA_INVALID",
+                    "DynamicJEPA command output array contained a non-string item",
+                    format!("{field_path}[{idx}]"),
+                    "inspect the command JSON output and source record ids",
+                    json!({"item": item, "pointer": pointer}),
+                    Some(file_sot(source_path)),
+                )
+            })
+        })
+        .collect()
 }
 
 fn extract_harness_transition_reality(transcript_path: Option<&str>) -> Result<Value> {
@@ -10642,6 +11511,11 @@ fn write_optimizer_artifacts(
     let reward_scalar = extract_reward_scalar(reward);
     let resolved = extract_official_resolved(record);
     let unix = unix_secs()?;
+    let dynamicjepa_intervention_hint = record
+        .reality_signal_compact
+        .pointer("/dynamicjepa_reality/intervention_hint")
+        .cloned()
+        .unwrap_or(Value::Null);
 
     // attempts.jsonl — compact per-attempt feed
     let attempts_path = dir.join("attempts.jsonl");
@@ -10658,6 +11532,7 @@ fn write_optimizer_artifacts(
         "repeated_patch": record.repeated_patch,
         "official_resolved": resolved,
         "reward_scalar": reward_scalar,
+        "dynamicjepa_intervention_hint": dynamicjepa_intervention_hint,
         "reality_signal_packet": record.reality_signal_packet_path,
         "validation_path": record.validation_path,
         "created_at_unix": unix,
@@ -10735,6 +11610,32 @@ fn autoresearch_decision(
                 record.error_code.as_deref().unwrap_or("unknown")
             ),
         };
+    }
+    if let Some(surface) = record
+        .reality_signal_compact
+        .pointer("/dynamicjepa_reality/intervention_hint/intervention_surface")
+        .and_then(Value::as_str)
+    {
+        let reason = record
+            .reality_signal_compact
+            .pointer("/dynamicjepa_reality/intervention_hint/reason")
+            .and_then(Value::as_str)
+            .unwrap_or("DynamicJEPA intervention hint present");
+        match surface {
+            "inner_model" | "dynamicjepa_artifact_training" => {
+                return AutoresearchDecision {
+                    decision: "escalate",
+                    reasoning: format!("DynamicJEPA intervention surface={surface}: {reason}"),
+                };
+            }
+            "tool_surface" | "tool_guard_surface" | "prompt_template" => {
+                return AutoresearchDecision {
+                    decision: "repair",
+                    reasoning: format!("DynamicJEPA intervention surface={surface}: {reason}"),
+                };
+            }
+            _ => {}
+        }
     }
     let prev_reward = previous
         .iter()
@@ -13387,6 +14288,9 @@ GPU-other, 9999, /usr/bin/other, 1024
             agent_tool_rounds: 1,
             targeted_test_timeout: 60,
             sleep_between_attempts_ms: 0,
+            dynamicjepa_db: None,
+            dynamicjepa_artifact_id: None,
+            dynamicjepa_skill_id: DEFAULT_DYNAMICJEPA_SKILL_ID.to_string(),
         }
     }
 

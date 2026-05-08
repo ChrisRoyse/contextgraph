@@ -311,6 +311,40 @@ fn record_dynamicjepa_reality(
     ]))
 }
 
+fn record_trained_dynamicjepa_reality(
+    ledger: &Path,
+    root: &Path,
+    run_id: &str,
+    label: &str,
+    panel_count: u64,
+    surprise_count: u64,
+    prediction_error_l2: f64,
+) -> Value {
+    let input = write_trained_dynamicjepa_reality_payload(
+        root,
+        run_id,
+        label,
+        panel_count,
+        surprise_count,
+        prediction_error_l2,
+    );
+    stdout_json(&run_context_graph(&[
+        "blackbox",
+        "record",
+        "dynamicjepa-reality",
+        "--ledger",
+        ledger.to_str().expect("ledger path UTF-8"),
+        "--run-id",
+        run_id,
+        "--input",
+        input.to_str().expect("input path UTF-8"),
+        "--agent",
+        AGENT,
+        "--tenant",
+        TENANT,
+    ]))
+}
+
 fn write_dynamicjepa_reality_payload(
     root: &Path,
     run_id: &str,
@@ -428,6 +462,87 @@ fn write_dynamicjepa_reality_payload(
     input
 }
 
+fn write_trained_dynamicjepa_reality_payload(
+    root: &Path,
+    run_id: &str,
+    label: &str,
+    panel_count: u64,
+    surprise_count: u64,
+    prediction_error_l2: f64,
+) -> PathBuf {
+    assert!(surprise_count <= panel_count);
+    assert!(prediction_error_l2.is_finite());
+    assert!(prediction_error_l2 >= 0.0);
+    let input = write_dynamicjepa_reality_payload(root, run_id, label, panel_count, surprise_count);
+    let fixture_dir = root.join(format!("{label}-dynamicjepa-fixture"));
+    let artifact_readback = fixture_dir.join("artifact-readback.json");
+    let predictions_readback = fixture_dir.join("prediction-readbacks.json");
+    write_json(
+        &artifact_readback,
+        &json!({
+            "record_kind": "dynamicjepa_artifact_readback",
+            "artifact_id": format!("artifact-{label}"),
+            "domain_pack_id": "contextgraph_swe_reality_loop_v1",
+            "status": "verified"
+        }),
+    );
+    let mut payload: Value = serde_json::from_slice(&fs::read(&input).expect("read payload"))
+        .expect("parse projection payload");
+    payload["source_mode"] = json!("trained_dynamicjepa_artifact");
+    payload["prediction_error_l2"] = json!((prediction_error_l2 * 10_000.0).round() / 10_000.0);
+    payload["prediction_error_l2_status"] = json!({
+        "status": "available",
+        "source": "synthetic real ledger fixture with explicit trained artifact readback rows"
+    });
+    let prediction_accuracy =
+        ((1.0 - prediction_error_l2).clamp(0.0, 1.0) * 10_000.0).round() / 10_000.0;
+    payload["reward_features"]["dynamicjepa_prediction_error_l2"] =
+        payload["prediction_error_l2"].clone();
+    payload["reward_features"]["dynamicjepa_prediction_accuracy"] = json!(prediction_accuracy);
+    let predictions = (0..panel_count)
+        .map(|idx| {
+            json!({
+            "transition_id": format!("{label}-transition-{idx}"),
+            "panel_id": format!("panel-{label}-{idx}"),
+            "action_id": format!("action-{label}-{idx}"),
+            "outcome_id": format!("outcome-{label}-{idx}"),
+            "prediction_id": format!("prediction-{label}-{idx}"),
+            "error_norm": prediction_error_l2,
+            "source_of_truth": format!("file:{}", predictions_readback.display())
+            })
+        })
+        .collect::<Vec<_>>();
+    write_json(
+        &predictions_readback,
+        &json!({
+            "record_kind": "dynamicjepa_prediction_readbacks",
+            "artifact_id": format!("artifact-{label}"),
+            "predictions": predictions
+        }),
+    );
+    if let Some(source_refs) = payload["source_of_truth_refs"].as_array_mut() {
+        source_refs.push(json!({
+            "kind": "dynamicjepa_artifact_readback",
+            "source_of_truth": format!("file:{}", artifact_readback.display()),
+            "sha256": sha256_file(&artifact_readback)
+        }));
+        source_refs.push(json!({
+            "kind": "dynamicjepa_prediction_readbacks",
+            "source_of_truth": format!("file:{}", predictions_readback.display()),
+            "sha256": sha256_file(&predictions_readback)
+        }));
+    }
+    payload["trained_artifact"] = json!({
+        "artifact_id": format!("artifact-{label}"),
+        "artifact_readback": format!("file:{}", artifact_readback.display()),
+        "predictions": predictions,
+        "plan_trace_ids": (0..panel_count).map(|idx| json!(format!("plan-{label}-{idx}"))).collect::<Vec<_>>(),
+        "source_of_truth": format!("file:{}", artifact_readback.display())
+    });
+    write_json(&input, &payload);
+    input
+}
+
 fn reward_spec(path: &Path) {
     write_json(
         path,
@@ -454,11 +569,11 @@ fn dynamicjepa_reward_spec(path: &Path) {
         &json!({
             "reward_spec_schema_version": 1,
             "reward_id": "dynamicjepa_reward_features_v1",
-            "objective": "prove DynamicJEPA reward features are compiled only from persisted scorecard state",
+            "objective": "prove trained DynamicJEPA reward features are compiled only from persisted scorecard state",
             "bounds": {"min": -10.0, "max": 10.0},
             "components": [
-                {"id": "dj_surprise_rate_penalty", "feature": "dynamicjepa_projection_surprise_rate", "weight": -2.0},
-                {"id": "dj_projection_accuracy_bonus", "feature": "dynamicjepa_projection_accuracy", "weight": 3.0},
+                {"id": "dj_surprise_rate_penalty", "feature": "dynamicjepa_surprise_candidate_rate", "weight": -2.0},
+                {"id": "dj_prediction_accuracy_bonus", "feature": "dynamicjepa_prediction_accuracy", "weight": 3.0},
                 {"id": "dj_plan_trace_bonus", "feature": "dynamicjepa_plan_trace_coverage", "weight": 1.0}
             ]
         }),
@@ -697,25 +812,34 @@ fn dynamicjepa_reality_features_are_persisted_scored_and_fail_closed() {
         kind_counts(&case.ledger)
     );
 
-    let happy_run = record_run(
+    let projection_run = record_run(
         &case.ledger,
-        "dynamicjepa reward projection happy path",
+        "dynamicjepa projection evidence fail-closed path",
         "medium",
     );
     let dj_before = kind_counts(&case.ledger);
-    let dj_record =
-        record_dynamicjepa_reality(&case.ledger, &case.root, &happy_run, "happy-dj", 4, 1);
+    let dj_record = record_dynamicjepa_reality(
+        &case.ledger,
+        &case.root,
+        &projection_run,
+        "projection-dj",
+        4,
+        1,
+    );
     println!(
-        "FSV_DJ_REWARD happy record BEFORE counts={:?} AFTER counts={:?}",
+        "FSV_DJ_REWARD projection record BEFORE counts={:?} AFTER counts={:?}",
         dj_before,
         kind_counts(&case.ledger)
     );
     assert_eq!(dj_record["readback"]["status"], "passed");
     assert_eq!(kind_count(&case.ledger, "dynamicjepa_reality"), 1);
 
-    let score = score_run(&case.ledger, &happy_run);
-    let stored_score = latest_payload(&case.ledger, &happy_run, "scorecard");
-    println!("FSV_DJ_REWARD happy STORED scorecard: {}", stored_score);
+    let score = score_run(&case.ledger, &projection_run);
+    let stored_score = latest_payload(&case.ledger, &projection_run, "scorecard");
+    println!(
+        "FSV_DJ_REWARD projection STORED scorecard: {}",
+        stored_score
+    );
     assert_eq!(
         score["score_inputs"]["dynamicjepa_reality"]["status"],
         "present"
@@ -733,11 +857,49 @@ fn dynamicjepa_reality_features_are_persisted_scored_and_fail_closed() {
 
     let spec = case.root.join("dynamicjepa-reward-spec.json");
     dynamicjepa_reward_spec(&spec);
+    let projection_reward_before = reward_count(&case.ledger);
+    let projection_error = stderr_json(&reward_compile(&case.ledger, &projection_run, &spec));
+    let projection_reward_after = reward_count(&case.ledger);
+    println!(
+        "FSV_DJ_REWARD projection reward BEFORE reward_count={} AFTER={} error={}",
+        projection_reward_before, projection_reward_after, projection_error
+    );
+    assert_eq!(projection_error["error_code"], "REWARD_FEATURE_NULL");
+    assert_eq!(projection_reward_before, projection_reward_after);
+
+    let happy_run = record_run(
+        &case.ledger,
+        "dynamicjepa trained artifact happy path",
+        "medium",
+    );
+    let trained_before = kind_counts(&case.ledger);
+    let trained_record = record_trained_dynamicjepa_reality(
+        &case.ledger,
+        &case.root,
+        &happy_run,
+        "happy-trained-dj",
+        4,
+        1,
+        0.2,
+    );
+    println!(
+        "FSV_DJ_REWARD trained record BEFORE counts={:?} AFTER counts={:?}",
+        trained_before,
+        kind_counts(&case.ledger)
+    );
+    assert_eq!(trained_record["readback"]["status"], "passed");
+    score_run(&case.ledger, &happy_run);
+    let trained_score = latest_payload(&case.ledger, &happy_run, "scorecard");
+    println!("FSV_DJ_REWARD trained STORED scorecard: {}", trained_score);
+    assert_eq!(
+        trained_score["score_inputs"]["dynamicjepa_reality"]["source_mode"],
+        "trained_dynamicjepa_artifact"
+    );
     let reward_before = reward_count(&case.ledger);
     let reward_output = stdout_json(&reward_compile(&case.ledger, &happy_run, &spec));
     let stored_reward = latest_payload(&case.ledger, &happy_run, "reward_compilation");
     println!(
-        "FSV_DJ_REWARD happy reward BEFORE reward_count={} AFTER reward_count={} STORED={}",
+        "FSV_DJ_REWARD trained reward BEFORE reward_count={} AFTER reward_count={} STORED={}",
         reward_before,
         reward_count(&case.ledger),
         stored_reward
@@ -748,18 +910,18 @@ fn dynamicjepa_reality_features_are_persisted_scored_and_fail_closed() {
         reward_output["reward_compilation_id"]
     );
     assert_eq!(
-        stored_reward["feature_vector"]["dynamicjepa_projection_surprise_rate"]["value"],
+        stored_reward["feature_vector"]["dynamicjepa_surprise_candidate_rate"]["value"],
         0.25
     );
     assert_eq!(
-        stored_reward["feature_vector"]["dynamicjepa_projection_accuracy"]["value"],
-        0.75
+        stored_reward["feature_vector"]["dynamicjepa_prediction_accuracy"]["value"],
+        0.8
     );
     assert_eq!(
         stored_reward["feature_vector"]["dynamicjepa_plan_trace_coverage"]["value"],
         1.0
     );
-    assert_eq!(stored_reward["reward"]["raw"], 2.75);
+    assert_eq!(stored_reward["reward"]["raw"], 2.9);
 
     let invalid_run = record_run(
         &case.ledger,
@@ -809,7 +971,7 @@ fn dynamicjepa_reality_features_are_persisted_scored_and_fail_closed() {
 
     let max_run = record_run(&case.ledger, "dynamicjepa max surprise edge", "medium");
     let max_before = kind_counts(&case.ledger);
-    record_dynamicjepa_reality(&case.ledger, &case.root, &max_run, "max-dj", 3, 3);
+    record_trained_dynamicjepa_reality(&case.ledger, &case.root, &max_run, "max-dj", 3, 3, 1.0);
     score_run(&case.ledger, &max_run);
     let max_reward = stdout_json(&reward_compile(&case.ledger, &max_run, &spec));
     let stored_max_reward = latest_payload(&case.ledger, &max_run, "reward_compilation");
@@ -820,11 +982,11 @@ fn dynamicjepa_reality_features_are_persisted_scored_and_fail_closed() {
         stored_max_reward
     );
     assert_eq!(
-        max_reward["feature_vector"]["dynamicjepa_projection_surprise_rate"]["value"],
+        max_reward["feature_vector"]["dynamicjepa_surprise_candidate_rate"]["value"],
         1.0
     );
     assert_eq!(
-        stored_max_reward["feature_vector"]["dynamicjepa_projection_accuracy"]["value"],
+        stored_max_reward["feature_vector"]["dynamicjepa_prediction_accuracy"]["value"],
         0.0
     );
     assert_eq!(stored_max_reward["reward"]["raw"], -1.0);
@@ -836,7 +998,7 @@ fn dynamicjepa_reality_features_are_persisted_scored_and_fail_closed() {
             .get("dynamicjepa_reality")
             .copied()
             .unwrap_or(0),
-        2
+        3
     );
     assert_eq!(
         final_counts.get("reward_compilation").copied().unwrap_or(0),

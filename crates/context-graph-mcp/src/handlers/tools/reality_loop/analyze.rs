@@ -2,9 +2,12 @@ use super::errors::{CCRealityError, Result};
 use super::helpers::*;
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
-use serde_json::{json, Value};
+use rusqlite::OptionalExtension;
+use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 impl Handlers {
     pub(crate) async fn call_reality_latest_root(
@@ -278,12 +281,296 @@ pub async fn dynamicjepa_reality_for_attempt(args: Value) -> Result<Value> {
             Some(file_sot(&packet_path)),
         ));
     }
+    let ledger = super::interact::find_ledger_for_run(&runtime_root, &run_id, Some(&task))?;
+    let sqlite_verification =
+        verify_dynamicjepa_reality_sqlite_row(&ledger, &run_id, &packet_path, &block)?;
     Ok(json!({
         "status": "ok",
         "dynamicjepa_reality": block,
+        "sqlite_verification": sqlite_verification,
         "source_of_truth": file_sot(&packet_path),
         "sha256": sha256_file(&packet_path)?,
     }))
+}
+
+#[derive(Debug)]
+struct DynamicJepaRealityLedgerRow {
+    sequence: i64,
+    record_kind: String,
+    run_id: Option<String>,
+    payload_sha256: String,
+    record_sha256: String,
+    payload: Value,
+}
+
+fn verify_dynamicjepa_reality_sqlite_row(
+    ledger: &Path,
+    run_id: &str,
+    packet_path: &Path,
+    packet_block: &Value,
+) -> Result<Value> {
+    let expected_payload = packet_block.get("block").ok_or_else(|| {
+        dynamicjepa_sqlite_error(
+            "CCREALITY_DYNAMICJEPA_PACKET_BLOCK_MISSING",
+            packet_path,
+            "dynamicjepa_reality.block",
+            "reality-signal packet dynamicjepa_reality block is missing the persisted payload",
+            "rerun the attempt with a current reality-loop build that records typed DynamicJEPA reality",
+            json!({"packet": file_sot(packet_path), "dynamicjepa_reality": packet_block}),
+            Some(file_sot(packet_path)),
+        )
+    })?;
+    let expected_sequence = packet_block
+        .pointer("/ledger_record/ledger_sequence")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| {
+            dynamicjepa_sqlite_error(
+                "CCREALITY_DYNAMICJEPA_LEDGER_SEQUENCE_MISSING",
+                packet_path,
+                "dynamicjepa_reality.ledger_record.ledger_sequence",
+                "dynamicjepa_reality packet is missing the ledger sequence to verify",
+                "rerun the attempt so the packet includes the BlackBox readback record identity",
+                json!({"packet": file_sot(packet_path), "dynamicjepa_reality": packet_block}),
+                Some(file_sot(packet_path)),
+            )
+        })?;
+    let expected_payload_sha256 = packet_block
+        .pointer("/ledger_record/payload_sha256")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            dynamicjepa_sqlite_error(
+                "CCREALITY_DYNAMICJEPA_PAYLOAD_HASH_MISSING",
+                packet_path,
+                "dynamicjepa_reality.ledger_record.payload_sha256",
+                "dynamicjepa_reality packet is missing payload_sha256",
+                "rerun the attempt so the packet includes the BlackBox append hash",
+                json!({"packet": file_sot(packet_path), "dynamicjepa_reality": packet_block}),
+                Some(file_sot(packet_path)),
+            )
+        })?;
+    let expected_record_sha256 = packet_block
+        .pointer("/ledger_record/record_sha256")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            dynamicjepa_sqlite_error(
+                "CCREALITY_DYNAMICJEPA_RECORD_HASH_MISSING",
+                packet_path,
+                "dynamicjepa_reality.ledger_record.record_sha256",
+                "dynamicjepa_reality packet is missing record_sha256",
+                "rerun the attempt so the packet includes the BlackBox append hash",
+                json!({"packet": file_sot(packet_path), "dynamicjepa_reality": packet_block}),
+                Some(file_sot(packet_path)),
+            )
+        })?;
+
+    let expected_payload_canonical_sha256 =
+        canonical_json_sha256(expected_payload).map_err(|details| {
+            dynamicjepa_sqlite_error(
+                "CCREALITY_DYNAMICJEPA_PACKET_PAYLOAD_HASH_FAILED",
+                packet_path,
+                "dynamicjepa_reality.block",
+                "failed to independently hash packet DynamicJEPA payload",
+                "inspect the packet payload JSON before trusting reward features",
+                details,
+                Some(file_sot(packet_path)),
+            )
+        })?;
+    if expected_payload_canonical_sha256 != expected_payload_sha256 {
+        return Err(dynamicjepa_sqlite_error(
+            "CCREALITY_DYNAMICJEPA_PACKET_PAYLOAD_HASH_MISMATCH",
+            packet_path,
+            "dynamicjepa_reality.ledger_record.payload_sha256",
+            "packet payload hash does not match the packet's ledger_record payload_sha256",
+            "rebuild the packet from the physical BlackBox ledger row",
+            json!({
+                "packet": file_sot(packet_path),
+                "expected_from_block": expected_payload_canonical_sha256,
+                "packet_ledger_hash": expected_payload_sha256,
+            }),
+            Some(file_sot(packet_path)),
+        ));
+    }
+
+    let conn =
+        rusqlite::Connection::open_with_flags(ledger, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|err| {
+            dynamicjepa_rusqlite_error("CCREALITY_DYNAMICJEPA_LEDGER_OPEN_FAILED", ledger, err)
+        })?;
+    let row = conn
+        .query_row(
+            "SELECT sequence, record_kind, run_id, payload_sha256, record_sha256, payload_json
+             FROM ledger_records
+             WHERE sequence = ?1",
+            rusqlite::params![expected_sequence],
+            |row| {
+                let payload_json: String = row.get(5)?;
+                let payload = serde_json::from_str::<Value>(&payload_json).map_err(|err| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        payload_json.len(),
+                        rusqlite::types::Type::Text,
+                        Box::new(err),
+                    )
+                })?;
+                Ok(DynamicJepaRealityLedgerRow {
+                    sequence: row.get(0)?,
+                    record_kind: row.get(1)?,
+                    run_id: row.get(2)?,
+                    payload_sha256: row.get(3)?,
+                    record_sha256: row.get(4)?,
+                    payload,
+                })
+            },
+        )
+        .optional()
+        .map_err(|err| dynamicjepa_rusqlite_error("CCREALITY_DYNAMICJEPA_LEDGER_QUERY_FAILED", ledger, err))?
+        .ok_or_else(|| {
+            dynamicjepa_sqlite_error(
+                "CCREALITY_DYNAMICJEPA_LEDGER_ROW_MISSING",
+                ledger,
+                "ledger_records.sequence",
+                format!("dynamicjepa_reality ledger row sequence {expected_sequence} was not found"),
+                "inspect the active runtime root and BlackBox ledger path before trusting the packet",
+                json!({"ledger": ledger.display().to_string(), "sequence": expected_sequence}),
+                Some(format!("sqlite:{}#ledger_records", ledger.display())),
+            )
+        })?;
+
+    let mut mismatches = Vec::new();
+    if row.record_kind != "dynamicjepa_reality" {
+        mismatches.push(json!({
+            "field": "record_kind",
+            "expected": "dynamicjepa_reality",
+            "actual": row.record_kind,
+        }));
+    }
+    if row.run_id.as_deref() != Some(run_id) {
+        mismatches.push(json!({
+            "field": "run_id",
+            "expected": run_id,
+            "actual": row.run_id,
+        }));
+    }
+    if row.payload_sha256 != expected_payload_sha256 {
+        mismatches.push(json!({
+            "field": "payload_sha256",
+            "expected": expected_payload_sha256,
+            "actual": row.payload_sha256,
+        }));
+    }
+    if row.record_sha256 != expected_record_sha256 {
+        mismatches.push(json!({
+            "field": "record_sha256",
+            "expected": expected_record_sha256,
+            "actual": row.record_sha256,
+        }));
+    }
+    if &row.payload != expected_payload {
+        mismatches.push(json!({
+            "field": "payload_json",
+            "expected_sha256": expected_payload_sha256,
+            "actual_payload_sha256": canonical_json_sha256(&row.payload).unwrap_or_else(|_| "sha256:hash_failed".to_string()),
+        }));
+    }
+    if !mismatches.is_empty() {
+        return Err(dynamicjepa_sqlite_error(
+            "CCREALITY_DYNAMICJEPA_LEDGER_ROW_MISMATCH",
+            ledger,
+            "ledger_records.dynamicjepa_reality",
+            "physical SQLite dynamicjepa_reality row does not match the reality-signal packet",
+            "discard the packet and rebuild it from the append-only ledger row",
+            json!({
+                "ledger": ledger.display().to_string(),
+                "packet": file_sot(packet_path),
+                "sequence": expected_sequence,
+                "mismatches": mismatches,
+            }),
+            Some(format!("sqlite:{}#ledger_records", ledger.display())),
+        ));
+    }
+    Ok(json!({
+        "status": "passed",
+        "source_of_truth": format!("sqlite:{}#ledger_records", ledger.display()),
+        "sequence": row.sequence,
+        "record_kind": "dynamicjepa_reality",
+        "run_id": run_id,
+        "payload_sha256": expected_payload_sha256,
+        "record_sha256": expected_record_sha256,
+    }))
+}
+
+fn dynamicjepa_rusqlite_error(
+    code: &'static str,
+    ledger: &Path,
+    err: rusqlite::Error,
+) -> CCRealityError {
+    dynamicjepa_sqlite_error(
+        code,
+        ledger,
+        "ledger_records.dynamicjepa_reality",
+        format!("SQLite verification failed: {err}"),
+        "inspect the ledger path, schema, and row identity before trusting DynamicJEPA reality",
+        json!({"ledger": ledger.display().to_string(), "error": err.to_string()}),
+        Some(format!("sqlite:{}#ledger_records", ledger.display())),
+    )
+}
+
+fn dynamicjepa_sqlite_error(
+    code: &'static str,
+    path: &Path,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+    details: Value,
+    source_of_truth: Option<String>,
+) -> CCRealityError {
+    CCRealityError::new(
+        code,
+        message,
+        field_path,
+        remediation,
+        {
+            let mut out = details;
+            if let Value::Object(map) = &mut out {
+                map.entry("path".to_string())
+                    .or_insert_with(|| json!(path.display().to_string()));
+            }
+            out
+        },
+        source_of_truth,
+    )
+}
+
+fn canonical_json_sha256(value: &Value) -> std::result::Result<String, Value> {
+    let canonical = canonicalize_json(value);
+    let bytes = serde_json::to_vec(&canonical).map_err(|err| {
+        json!({
+            "error": err.to_string(),
+            "value": value,
+        })
+    })?;
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    Ok(format!("sha256:{:x}", hasher.finalize()))
+}
+
+fn canonicalize_json(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut sorted = BTreeMap::new();
+            for (key, val) in map {
+                sorted.insert(key.clone(), canonicalize_json(val));
+            }
+            let mut out = Map::new();
+            for (key, val) in sorted {
+                out.insert(key, val);
+            }
+            Value::Object(out)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(canonicalize_json).collect()),
+        other => other.clone(),
+    }
 }
 
 pub async fn reality_failure(args: Value) -> Result<Value> {
