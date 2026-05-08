@@ -486,6 +486,7 @@ impl Handlers {
                 artifact_id: req.artifact_id,
                 panel_id: req.panel_id,
                 skill_id: req.skill_id,
+                candidate_action_json: req.candidate_action_json,
                 json: true,
             }),
         )

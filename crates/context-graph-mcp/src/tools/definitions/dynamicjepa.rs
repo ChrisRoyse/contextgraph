@@ -207,6 +207,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 string_prop("artifactId", "Model artifact UUID."),
                 string_prop("panelId", "Current panel UUID."),
                 string_prop("skillId", "Skill policy UUID."),
+                string_prop("candidateActionJson", "Optional durable JSON file containing one actual pending action to score alongside declared candidates."),
             ]),
             &["dbPath", "artifactId", "panelId", "skillId"],
         ),

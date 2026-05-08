@@ -317,6 +317,7 @@ pub(crate) struct PlanRequest {
     pub artifact_id: String,
     pub panel_id: String,
     pub skill_id: String,
+    pub candidate_action_json: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
