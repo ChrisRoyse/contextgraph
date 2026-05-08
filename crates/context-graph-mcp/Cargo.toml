@@ -22,6 +22,7 @@ context-graph-cuda = { path = "../context-graph-cuda" }
 context-graph-embeddings = { path = "../context-graph-embeddings" }
 context-graph-storage = { path = "../context-graph-storage" }
 context-graph-witness = { path = "../context-graph-witness" }
+context-graph-solver = { path = "../context-graph-solver" }
 context-graph-cli = { path = "../context-graph-cli", default-features = false }
 context-graph-causal-agent = { path = "../context-graph-causal-agent" }
 context-graph-graph-agent = { path = "../context-graph-graph-agent" }

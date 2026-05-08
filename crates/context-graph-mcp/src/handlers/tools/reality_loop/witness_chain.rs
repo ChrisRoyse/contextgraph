@@ -23,6 +23,7 @@ pub enum WitnessOpType {
     BanditSelect = 3,
     BanditReward = 4,
     Autoresearch = 5,
+    InfluenceComputation = 6,
 }
 
 impl WitnessOpType {
@@ -34,6 +35,7 @@ impl WitnessOpType {
             3 => Some(Self::BanditSelect),
             4 => Some(Self::BanditReward),
             5 => Some(Self::Autoresearch),
+            6 => Some(Self::InfluenceComputation),
             _ => None,
         }
     }
@@ -46,6 +48,7 @@ impl WitnessOpType {
             Self::BanditSelect => "bandit_select",
             Self::BanditReward => "bandit_reward",
             Self::Autoresearch => "autoresearch",
+            Self::InfluenceComputation => "influence_computation",
         }
     }
 }

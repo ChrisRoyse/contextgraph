@@ -296,6 +296,7 @@ impl Handlers {
             tool_names::OPTIMIZER_BANDIT_RECORD_REWARD => call_optimizer_bandit_record_reward(arguments),
             tool_names::OPTIMIZER_BANDIT_STATE => call_optimizer_bandit_state(arguments),
             tool_names::OPTIMIZER_RECALL_RECOMMENDATIONS => call_optimizer_recall_recommendations(arguments),
+            tool_names::OPTIMIZER_COMPUTE_INFLUENCE => call_optimizer_compute_influence(arguments),
             tool_names::OPTIMIZER_WITNESS_CHAIN_VERIFY => call_optimizer_witness_chain_verify(arguments),
             tool_names::OPTIMIZER_WITNESS_CHAIN_DIFF => call_optimizer_witness_chain_diff(arguments),
             tool_names::REALITY_SHIFT_LOG => call_reality_shift_log(arguments),

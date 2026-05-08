@@ -382,6 +382,7 @@ pub const OPTIMIZER_BANDIT_SELECT: &str = "optimizer_bandit_select";
 pub const OPTIMIZER_BANDIT_RECORD_REWARD: &str = "optimizer_bandit_record_reward";
 pub const OPTIMIZER_BANDIT_STATE: &str = "optimizer_bandit_state";
 pub const OPTIMIZER_RECALL_RECOMMENDATIONS: &str = "optimizer_recall_recommendations";
+pub const OPTIMIZER_COMPUTE_INFLUENCE: &str = "optimizer_compute_influence";
 pub const OPTIMIZER_WITNESS_CHAIN_VERIFY: &str = "optimizer_witness_chain_verify";
 pub const OPTIMIZER_WITNESS_CHAIN_DIFF: &str = "optimizer_witness_chain_diff";
 pub const REALITY_SHIFT_LOG: &str = "reality_shift_log";

@@ -225,10 +225,14 @@ async fn test_e2e_tools_list_all_tools() {
     // 2026-05-05: Bumped 110 → 145 after DynamicJEPA's 35-tool MCP surface
     //   landed in the default registry. Keep this exact so unplanned registry
     //   changes are visible in protocol E2E.
+    // 2026-05-08: Bumped 145 → 149 after later DynamicJEPA semantic-index,
+    //   corpus-diversity, test-delta attribution, and shadow-utility tools.
+    //   Reality-loop-only tools such as optimizer_compute_influence are listed
+    //   by get_reality_loop_tool_definitions(), not this default registry.
     assert_eq!(
         tools.len(),
-        145,
-        "Expected exactly 145 tools with LLM feature, found {}",
+        149,
+        "Expected exactly 149 tools with LLM feature, found {}",
         tools.len()
     );
 

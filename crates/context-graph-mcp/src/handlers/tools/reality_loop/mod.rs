@@ -6,6 +6,7 @@ pub mod autoresearch;
 pub mod bandit;
 pub mod errors;
 pub mod helpers;
+pub mod influence;
 pub mod interact;
 pub mod lock;
 pub mod optimizer;

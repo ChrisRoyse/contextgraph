@@ -1,7 +1,8 @@
 //! Tool definitions for the MCP surface.
 //!
-//! The current registry exposes 145 tools with the `llm` feature and 141
-//! without it, including the 35-tool DynamicJEPA MCP surface.
+//! The current default registry exposes 149 tools with the `llm` feature and
+//! 145 without it, including the 39-tool DynamicJEPA MCP surface. The
+//! ccreality tool surface is listed separately in reality-loop mode.
 
 pub(crate) mod capability;
 pub(crate) mod causal;
@@ -36,7 +37,7 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(145);
+    let mut tools = Vec::with_capacity(149);
 
     // Capability discovery tools (1) - compact map of embedders, CFs, and tools
     tools.extend(capability::definitions());
@@ -119,7 +120,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Typed-edge training tools (4) - Phase 4 (F1/F2/F4 + list)
     tools.extend(typed_edges::definitions());
 
-    // DynamicJEPA tools (35) - 5090jepa MCP surface through Phase 6.
+    // DynamicJEPA tools (39) - 5090jepa MCP surface through Phase 6.
     tools.extend(dynamicjepa::definitions());
 
     if crate::tools::is_reality_loop_mode() {
@@ -144,9 +145,9 @@ mod tests {
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
         #[cfg(feature = "llm")]
-        assert_eq!(tools.len(), 145);
+        assert_eq!(tools.len(), 149);
         #[cfg(not(feature = "llm"))]
-        assert_eq!(tools.len(), 141);
+        assert_eq!(tools.len(), 145);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         let len_before = names.len();
@@ -195,7 +196,7 @@ mod tests {
         assert_eq!(constellation::definitions().len(), 6);
         assert_eq!(contrastive::definitions().len(), 4);
         assert_eq!(typed_edges::definitions().len(), 4);
-        assert_eq!(dynamicjepa::definitions().len(), 35);
+        assert_eq!(dynamicjepa::definitions().len(), 39);
         // Audit-12 TST-H2 FIX: graph and causal_discovery are LLM-gated, must be tested
         #[cfg(feature = "llm")]
         {
@@ -217,6 +218,7 @@ mod tests {
         assert!(names.contains("reality_attempt_summary"));
         assert!(names.contains("dynamicjepa_reality_for_attempt"));
         assert!(names.contains("optimizer_record_recommendation"));
+        assert!(names.contains("optimizer_compute_influence"));
         assert!(!names.contains("search_graph"));
         assert!(!names.contains("get_memory_neighbors"));
         assert!(!names.contains("get_audit_trail"));

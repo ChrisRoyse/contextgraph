@@ -2429,6 +2429,7 @@ async fn run_reality_loop_stdio() -> Result<()> {
                     tool_names::OPTIMIZER_BANDIT_RECORD_REWARD => reality_loop::bandit::optimizer_bandit_record_reward(args).await,
                     tool_names::OPTIMIZER_BANDIT_STATE => reality_loop::bandit::optimizer_bandit_state(args).await,
                     tool_names::OPTIMIZER_RECALL_RECOMMENDATIONS => reality_loop::recommendations::optimizer_recall_recommendations(args).await,
+                    tool_names::OPTIMIZER_COMPUTE_INFLUENCE => reality_loop::influence::optimizer_compute_influence(args).await,
                     tool_names::OPTIMIZER_WITNESS_CHAIN_VERIFY => reality_loop::witness_chain::optimizer_witness_chain_verify(args).await,
                     tool_names::OPTIMIZER_WITNESS_CHAIN_DIFF => reality_loop::witness_chain::optimizer_witness_chain_diff(args).await,
                     tool_names::REALITY_SHIFT_LOG => reality_loop::shift_log::reality_shift_log(args).await,

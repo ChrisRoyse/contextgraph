@@ -159,6 +159,11 @@ pub fn definitions() -> Vec<ToolDefinition> {
             json!({"type":"object","properties":{"failure_summary":{"type":"string"},"k":{"type":"integer","minimum":1,"maximum":50,"default":5},"alpha":{"type":"number","minimum":0,"default":0.7},"beta":{"type":"number","minimum":0,"default":0.2},"gamma":{"type":"number","minimum":0,"default":0.1}},"required":["failure_summary"],"additionalProperties":false}),
         ),
         def(
+            "optimizer_compute_influence",
+            "Compute graph-backed influence ranking from persisted attempts and recommendations using Forward-Push PPR, then persist and witness the computation audit.",
+            json!({"type":"object","properties":{"failure_tag":{"type":"string"},"run_id":{"type":"string"},"k":{"type":"integer","minimum":1,"maximum":100,"default":5},"alpha":{"type":"number","exclusiveMinimum":0,"exclusiveMaximum":1,"default":0.15},"tolerance":{"type":"number","exclusiveMinimum":0,"default":1e-8},"max_pushes":{"type":"integer","minimum":1,"default":1000000}},"required":["failure_tag"],"additionalProperties":false}),
+        ),
+        def(
             "optimizer_witness_chain_verify",
             "Verify the SHAKE-256 optimizer witness chain for a run.",
             json!({"type":"object","properties":{"run_id":{"type":"string"}},"additionalProperties":false}),
