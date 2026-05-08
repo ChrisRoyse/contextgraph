@@ -15,7 +15,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct CaseEvidence {
-    name: &'static str,
+    name: String,
     trigger: serde_json::Value,
     before_state: serde_json::Value,
     after_state: serde_json::Value,
@@ -25,8 +25,8 @@ struct CaseEvidence {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Evidence {
-    operation: &'static str,
-    status: &'static str,
+    operation: String,
+    status: String,
     source_of_truth: String,
     cases: Vec<CaseEvidence>,
 }
@@ -56,8 +56,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     ];
     let passed = cases.iter().all(|case| case.passed);
     let evidence = Evidence {
-        operation: "context_graph_solver_full_state_verification",
-        status: if passed { "ok" } else { "failed" },
+        operation: "context_graph_solver_full_state_verification".to_string(),
+        status: if passed { "ok" } else { "failed" }.to_string(),
         source_of_truth: output.display().to_string(),
         cases,
     };
@@ -97,7 +97,7 @@ fn happy_path_ppr() -> Result<CaseEvidence, Box<dyn std::error::Error>> {
         && (report.estimate[1] - expected_1).abs() < 1e-9
         && (report.total_mass - 1.0).abs() < 1e-9;
     Ok(CaseEvidence {
-        name: "happy_path_ppr_two_node_closed_form",
+        name: "happy_path_ppr_two_node_closed_form".to_string(),
         trigger: json!({"algorithm": "forward_push_ppr", "seed": 0}),
         before_state: json!({"rows": graph.rows, "cols": graph.cols, "edges": [[0, 1, 1.0], [1, 0, 1.0]], "alpha": 0.5}),
         after_state: json!({"estimate": report.estimate, "residual_l1": report.residual_l1, "total_mass": report.total_mass, "pushes": report.pushes}),
@@ -121,7 +121,7 @@ fn happy_path_cg() -> Result<CaseEvidence, Box<dyn std::error::Error>> {
         && (report.solution[1] - expected_x1).abs() < 1e-9
         && report.converged;
     Ok(CaseEvidence {
-        name: "happy_path_cg_two_by_two_closed_form",
+        name: "happy_path_cg_two_by_two_closed_form".to_string(),
         trigger: json!({"algorithm": "conjugate_gradient", "rhs": [1.0, 2.0]}),
         before_state: json!({"matrix": [[4.0, 1.0], [1.0, 3.0]], "rhs": [1.0, 2.0]}),
         after_state: json!({"solution": report.solution, "residual_norm": report.residual_norm, "iterations": report.iterations, "converged": report.converged}),
@@ -134,7 +134,7 @@ fn edge_empty_graph() -> CaseEvidence {
     let result = CsrMatrix::from_edges(0, 0, MatrixKind::NonNegativeAdjacency, &[]);
     let passed = matches!(result, Err(SolverError::InvalidInput { .. }));
     CaseEvidence {
-        name: "edge_empty_graph_fails_closed",
+        name: "edge_empty_graph_fails_closed".to_string(),
         trigger: json!({"algorithm": "csr_from_edges", "rows": 0, "cols": 0}),
         before_state: json!({"rows": 0, "cols": 0, "edges": []}),
         after_state: json!({"error_code": result.expect_err("empty graph must fail").code()}),
@@ -151,7 +151,7 @@ fn edge_invalid_tolerance() -> CaseEvidence {
     });
     let passed = matches!(result, Err(SolverError::InvalidInput { .. }));
     CaseEvidence {
-        name: "edge_zero_tolerance_fails_closed",
+        name: "edge_zero_tolerance_fails_closed".to_string(),
         trigger: json!({"algorithm": "forward_push_ppr", "tolerance": 0.0}),
         before_state: json!({"alpha": 0.15, "tolerance": 0.0, "max_pushes": 10}),
         after_state: json!({"error_code": result.expect_err("zero tolerance must fail").code()}),
@@ -171,7 +171,7 @@ fn edge_unsymmetric_cg() -> Result<CaseEvidence, Box<dyn std::error::Error>> {
     let result = solver.solve(&matrix, &[1.0, 1.0]);
     let passed = matches!(result, Err(SolverError::InvalidInput { .. }));
     Ok(CaseEvidence {
-        name: "edge_unsymmetric_cg_fails_closed",
+        name: "edge_unsymmetric_cg_fails_closed".to_string(),
         trigger: json!({"algorithm": "conjugate_gradient", "rhs": [1.0, 1.0]}),
         before_state: json!({"matrix_edges": [[0, 0, 2.0], [0, 1, 1.0], [1, 1, 2.0]], "claimed_kind": "SymmetricPositiveDefinite"}),
         after_state: json!({"error_code": result.expect_err("unsymmetric CG must fail").code()}),
