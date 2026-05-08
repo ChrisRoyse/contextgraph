@@ -7,7 +7,7 @@ use rocksdb::{WriteBatch, DB};
 use crate::dynamicjepa::audit::DjAuditRecord;
 use crate::dynamicjepa::audit_witness::write_batch_with_audit_witnesses;
 use crate::dynamicjepa::column_families::{CF_DJ_MODEL_ARTIFACTS, CF_DJ_TRAINING_RUNS};
-use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record, write_batch};
+use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record};
 use crate::dynamicjepa::encode::encode_record;
 
 pub fn put_training_run(db: &DB, record: &TrainingRunRecord) -> DynamicJepaResult<()> {

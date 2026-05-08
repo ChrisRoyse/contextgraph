@@ -903,6 +903,80 @@ fn flush_dj_cfs(db: &DB) {
 }
 
 #[test]
+fn dynamicjepa_audit_witness_chain_tamper_fsv() {
+    let evidence_root = root_dir().join("tmp/5090jepa_evidence/phase2/audit_witness_tamper_fsv");
+    if evidence_root.exists() {
+        fs::remove_dir_all(&evidence_root).expect("clear stale audit witness tamper evidence");
+    }
+    fs::create_dir_all(&evidence_root).expect("create audit witness tamper evidence root");
+
+    let db_path = evidence_root.join("rocksdb");
+    let store =
+        crate::teleological::RocksDbTeleologicalStore::open(&db_path).expect("open witness DB");
+    let db = store.dynamicjepa_db();
+
+    let empty_before = snapshot_dj_counts(db).expect("snapshot empty DB");
+    let empty_verification =
+        verify_audit_witness_chain(db).expect("empty audit witness chain verifies");
+    assert_eq!(empty_verification.entries, 0);
+    assert_eq!(empty_verification.audit_rows, 0);
+    assert_eq!(empty_verification.witness_rows, 0);
+    assert_eq!(
+        empty_before,
+        snapshot_dj_counts(db).expect("empty verification must not mutate DB")
+    );
+
+    let (domain, _) = sample_records();
+    let domain_uuid = put_domain_pack(db, &domain).expect("put audited domain pack");
+    let after_write = snapshot_dj_counts(db).expect("snapshot after audited write");
+    let verified =
+        verify_audit_witness_chain(db).expect("audit witness chain verifies after write");
+    assert_eq!(verified.entries, 1);
+    assert_eq!(verified.audit_rows, 1);
+    assert_eq!(verified.witness_rows, 1);
+
+    let witness_cf = db
+        .cf_handle(CF_DJ_AUDIT_WITNESS_CHAIN)
+        .expect("audit witness CF exists");
+    let sequence_zero = 0u64.to_be_bytes();
+    let mut witness_value = db
+        .get_cf(witness_cf, sequence_zero)
+        .expect("read persisted witness row")
+        .expect("sequence zero witness row exists");
+    assert_eq!(witness_value.len(), 97);
+    witness_value[24 + 32] ^= 0x01;
+    db.put_cf(witness_cf, sequence_zero, witness_value)
+        .expect("tamper persisted witness row");
+    flush_dj_cfs(db);
+
+    let after_tamper = snapshot_dj_counts(db).expect("snapshot after tamper");
+    assert_eq!(after_write, after_tamper);
+    let err = verify_audit_witness_chain(db).expect_err("tampered witness row must fail closed");
+    assert_eq!(err.code(), "STORAGE_INVARIANT_VIOLATION");
+
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "operation": "dynamicjepa_audit_witness_chain_tamper_fsv",
+            "status": "ok",
+            "source_of_truth": {
+                "path": db_path,
+                "column_families": [CF_DJ_AUDIT_LOG, CF_DJ_AUDIT_WITNESS_CHAIN],
+                "domain_pack_storage_uuid": domain_uuid.to_string()
+            },
+            "empty_before_counts": empty_before,
+            "empty_verification": empty_verification,
+            "after_write_counts": after_write,
+            "verified_after_write": verified,
+            "after_tamper_counts": after_tamper,
+            "tamper_error_code": err.code(),
+            "tamper_error_message": err.to_string()
+        }))
+        .expect("serialize tamper FSV evidence")
+    );
+}
+
+#[test]
 fn dynamicjepa_phase1_meaning_compression_storage_fsv() {
     let evidence_root = root_dir().join("tmp/upgradeplancombine/phase1/storage_records_fsv");
     if evidence_root.exists() {

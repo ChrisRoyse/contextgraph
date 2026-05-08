@@ -372,6 +372,7 @@ fn put_audit_and_witness_in_batch(
         audit.timestamp_unix_nanos,
         witness_type,
     );
+    let chain_hash = entry.chain_hash();
     let row = AuditWitnessRow { audit_key, entry };
     batch.put_cf(cf(db, CF_DJ_AUDIT_LOG)?, audit_key, audit_bytes);
     batch.put_cf(
@@ -384,7 +385,7 @@ fn put_audit_and_witness_in_batch(
             message: "DynamicJEPA audit witness sequence exceeded u64::MAX".to_string(),
         }
     })?;
-    *prev_chain_hash = entry.chain_hash();
+    *prev_chain_hash = chain_hash;
     Ok(AppendedAuditWitness {
         sequence: witness_sequence,
         audit_key,

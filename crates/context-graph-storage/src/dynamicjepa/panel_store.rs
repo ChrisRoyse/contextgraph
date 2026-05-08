@@ -11,7 +11,7 @@ use crate::dynamicjepa::column_families::{
     CF_DJ_INSTRUMENT_READINGS, CF_DJ_LATENT_PANELS, CF_DJ_PAIRWISE_READINGS,
 };
 use crate::dynamicjepa::common::{
-    cf, count_cf, get_record, list_prefix_records, list_records, put_record, write_batch,
+    cf, count_cf, get_record, list_prefix_records, list_records, put_record,
 };
 use crate::dynamicjepa::encode::encode_record;
 use crate::dynamicjepa::keys::{instrument_reading_key, pairwise_reading_key};

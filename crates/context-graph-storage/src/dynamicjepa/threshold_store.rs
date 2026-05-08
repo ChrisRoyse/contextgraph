@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::dynamicjepa::audit::DjAuditRecord;
 use crate::dynamicjepa::audit_witness::write_batch_with_audit_witnesses;
 use crate::dynamicjepa::column_families::CF_DJ_THRESHOLD_CALIBRATIONS;
-use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record, write_batch};
+use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record};
 use crate::dynamicjepa::encode::encode_record;
 use crate::dynamicjepa::keys::threshold_calibration_key;
 

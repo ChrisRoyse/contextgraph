@@ -8,9 +8,7 @@ use uuid::Uuid;
 use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
 use crate::dynamicjepa::audit_witness::write_batch_with_audit_witnesses;
 use crate::dynamicjepa::column_families::{CF_DJ_AUDIT_LOG, CF_DJ_VERIFICATION_RUNS};
-use crate::dynamicjepa::common::{
-    cf, count_cf, get_record, list_records, storage_error, write_batch,
-};
+use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, storage_error};
 use crate::dynamicjepa::encode::{decode_plain, encode_record};
 use crate::dynamicjepa::keys::audit_key;
 
@@ -60,7 +58,7 @@ pub fn count_verification_runs(db: &DB) -> DynamicJepaResult<u64> {
 
 pub fn put_audit_record(db: &DB, record: &DjAuditRecord) -> DynamicJepaResult<()> {
     record.validate()?;
-    let mut batch = rocksdb::WriteBatch::default();
+    let batch = rocksdb::WriteBatch::default();
     write_batch_with_audit_witnesses(db, batch, &[record], "put_audit_record")
 }
 

@@ -12,7 +12,7 @@ use crate::dynamicjepa::column_families::{
     CF_DJ_ACTIONS, CF_DJ_ADAPTER_RUNS, CF_DJ_NORMALIZED_STATES, CF_DJ_OUTCOMES, CF_DJ_RAW_EVENTS,
     CF_DJ_TRANSITIONS,
 };
-use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record, write_batch};
+use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record};
 use crate::dynamicjepa::encode::encode_record;
 
 pub fn put_raw_event_and_adapter_run_started(

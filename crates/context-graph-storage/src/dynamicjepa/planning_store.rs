@@ -10,7 +10,7 @@ use crate::dynamicjepa::column_families::{
     CF_DJ_ACTIONS, CF_DJ_GUARD_DECISIONS, CF_DJ_PLAN_TRACES, CF_DJ_PREDICTIONS,
     CF_DJ_SKILL_POLICIES,
 };
-use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record, write_batch};
+use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record};
 use crate::dynamicjepa::encode::encode_record;
 
 pub fn put_skill_policy(db: &DB, record: &SkillPolicyRecord) -> DynamicJepaResult<()> {
