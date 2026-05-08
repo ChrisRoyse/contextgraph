@@ -216,7 +216,7 @@ fn new_case() -> Phase15Case {
         "--ledger",
         ledger.to_str().expect("ledger path UTF-8"),
     ]));
-    assert_eq!(init["schema_version"], 13);
+    assert_eq!(init["schema_version"], 14);
     init_git_repo(&repo);
 
     let config_path = root.join("enterprise-config.json");
@@ -387,6 +387,120 @@ fn score_run(ledger: &Path, run_id: &str) {
     ]));
 }
 
+fn record_trained_dynamicjepa_reality(ledger: &Path, root: &Path, run_id: &str, label: &str) {
+    let artifact_path = root.join(format!("{label}-dynamicjepa-artifact.json"));
+    write_json(
+        &artifact_path,
+        &json!({
+            "record_kind": "dynamicjepa_artifact_readback",
+            "artifact_id": format!("artifact-{label}"),
+            "domain_pack_id": "contextgraph_swe_reality_loop_v1",
+            "status": "verified"
+        }),
+    );
+    let input = root.join(format!("{label}-dynamicjepa-reality.json"));
+    write_json(
+        &input,
+        &json!({
+            "record_kind": "dynamicjepa_reality",
+            "schema_version": 1,
+            "run_id": run_id,
+            "attempt": 1,
+            "domain_pack": "contextgraph_swe_reality_loop_v1",
+            "source_mode": "trained_dynamicjepa_artifact",
+            "panel_count": 1,
+            "surprise_events": [],
+            "surprise_event_count": 0,
+            "surprise_candidate_rate": 0.0,
+            "prediction_error_l2": 0.0,
+            "prediction_error_l2_status": {"status": "available", "source": "phase15 physical artifact readback"},
+            "projection_accuracy": 1.0,
+            "plan_trace_coverage": 1.0,
+            "guard_decisions": [],
+            "source_of_truth_refs": [
+                {"kind": "dynamicjepa_artifact_readback", "source_of_truth": format!("file:{}", artifact_path.display())},
+                {"kind": "blackbox_ledger", "source_of_truth": format!("sqlite:{}#ledger_records", ledger.display())}
+            ],
+            "reward_features": {
+                "dynamicjepa_projection_panel_count": 1,
+                "dynamicjepa_projection_surprise_count": 0,
+                "dynamicjepa_projection_surprise_rate": 0.0,
+                "dynamicjepa_projection_accuracy": 1.0,
+                "dynamicjepa_plan_trace_coverage": 1.0,
+                "dynamicjepa_prediction_error_l2": 0.0,
+                "dynamicjepa_prediction_accuracy": 1.0
+            },
+            "trained_artifact": {
+                "artifact_id": format!("artifact-{label}"),
+                "artifact_readback": format!("file:{}", artifact_path.display()),
+                "predictions": [{
+                    "transition_id": format!("{label}-transition-0"),
+                    "panel_id": format!("{label}-panel-0"),
+                    "action_id": format!("{label}-action-0"),
+                    "outcome_id": format!("{label}-outcome-0"),
+                    "prediction_id": format!("{label}-prediction-0"),
+                    "error_norm": 0.0,
+                    "source_of_truth": format!("file:{}", artifact_path.display())
+                }],
+                "plan_trace_ids": [format!("{label}-plan-0")],
+                "source_of_truth": format!("file:{}", artifact_path.display())
+            },
+            "recorded_at_unix": 1778210000
+        }),
+    );
+    let output = stdout_json(&run_context_graph(&[
+        "blackbox",
+        "record",
+        "dynamicjepa-reality",
+        "--ledger",
+        ledger.to_str().expect("ledger path UTF-8"),
+        "--run-id",
+        run_id,
+        "--input",
+        input.to_str().expect("input path UTF-8"),
+        "--agent",
+        AGENT,
+        "--tenant",
+        TENANT,
+    ]));
+    assert_eq!(output["readback"]["status"], "passed");
+}
+
+fn compile_trained_dynamicjepa_reward(ledger: &Path, root: &Path, run_id: &str) {
+    let spec = root.join(format!("{run_id}-trained-dynamicjepa-reward-spec.json"));
+    write_json(
+        &spec,
+        &json!({
+            "reward_spec_schema_version": 1,
+            "reward_id": "phase15_trained_dynamicjepa_reward_v1",
+            "objective": "require trained DynamicJEPA prediction features before pilot packaging",
+            "bounds": {"min": -10.0, "max": 10.0},
+            "components": [
+                {"id": "correctness", "feature": "correctness", "weight": 4.0},
+                {"id": "verification_confidence", "feature": "verification_confidence", "weight": 2.0},
+                {"id": "risk_penalty", "feature": "risk", "weight": -2.0},
+                {"id": "dj_prediction_accuracy_bonus", "feature": "dynamicjepa_prediction_accuracy", "weight": 1.0}
+            ]
+        }),
+    );
+    let output = stdout_json(&run_context_graph(&[
+        "blackbox",
+        "reward",
+        "compile",
+        "--ledger",
+        ledger.to_str().expect("ledger path UTF-8"),
+        "--run-id",
+        run_id,
+        "--input",
+        spec.to_str().expect("reward spec path UTF-8"),
+        "--agent",
+        AGENT,
+        "--tenant",
+        TENANT,
+    ]));
+    assert_eq!(output["readback"]["status"], "passed");
+}
+
 fn evaluate_retention(ledger: &Path, run_id: &str) {
     stdout_json(&run_context_graph(&[
         "blackbox",
@@ -449,7 +563,9 @@ fn verified_run(case: &Phase15Case, task: &str) -> String {
         &tool_call_id,
         true,
     ));
+    record_trained_dynamicjepa_reality(&case.ledger, &case.root, &run_id, "phase15-trained-dj");
     score_run(&case.ledger, &run_id);
+    compile_trained_dynamicjepa_reward(&case.ledger, &case.root, &run_id);
     evaluate_retention(&case.ledger, &run_id);
     gate_evaluate(&case.ledger, &run_id);
     run_id
