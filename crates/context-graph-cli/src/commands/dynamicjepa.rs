@@ -11,7 +11,7 @@ use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Subcommand};
@@ -157,6 +157,14 @@ pub enum DynamicJepaCommands {
     AuditPairwiseMi(AuditPairwiseMiArgs),
     /// Run the counter_world to gridworld cross-domain transfer pilot.
     CrossDomainTransfer(CrossDomainTransferArgs),
+    /// Build a persisted compiler/LSP-backed semantic index for a repair repository.
+    BuildSemanticIndex(BuildSemanticIndexArgs),
+    /// Validate real SWE-loop DynamicJEPA corpus diversity from persisted RocksDB rows.
+    ValidateCorpusDiversity(ValidateCorpusDiversityArgs),
+    /// Attribute verifier/test deltas from real coverage and failure-signature evidence.
+    AttributeTestDelta(AttributeTestDeltaArgs),
+    /// Compare candidate-vs-active DynamicJEPA live-shadow utility evidence.
+    CompareShadowUtility(CompareShadowUtilityArgs),
     /// Read a persisted DynamicJEPA prediction.
     GetPrediction(GetPredictionArgs),
     /// Read a persisted DynamicJEPA plan trace.
@@ -218,6 +226,10 @@ impl DynamicJepaCommands {
             Self::ComputeMcRatio(_) => "dynamicjepa_compute_mc_ratio",
             Self::AuditPairwiseMi(_) => "dynamicjepa_audit_pairwise_mi",
             Self::CrossDomainTransfer(_) => "dynamicjepa_cross_domain_transfer",
+            Self::BuildSemanticIndex(_) => "dynamicjepa_build_semantic_index",
+            Self::ValidateCorpusDiversity(_) => "dynamicjepa_validate_corpus_diversity",
+            Self::AttributeTestDelta(_) => "dynamicjepa_attribute_test_delta",
+            Self::CompareShadowUtility(_) => "dynamicjepa_compare_shadow_utility",
             Self::GetPrediction(_) => "dynamicjepa_get_prediction",
             Self::GetPlanTrace(_) => "dynamicjepa_get_plan_trace",
             Self::GetSurprise(_) => "dynamicjepa_get_surprise",
@@ -1021,6 +1033,122 @@ pub struct CrossDomainTransferArgs {
 }
 
 #[derive(Args, Debug)]
+pub struct BuildSemanticIndexArgs {
+    /// Repair repository root to index. Must be a real git checkout.
+    #[arg(long)]
+    pub repo: PathBuf,
+
+    /// Output JSON file. The command also writes sibling command evidence under <output>.evidence/.
+    #[arg(long)]
+    pub output: PathBuf,
+
+    /// Optional language allow-list. When omitted, every detected source language is required.
+    #[arg(long = "language", value_delimiter = ',')]
+    pub languages: Vec<String>,
+
+    /// Maximum indexed source files. Exceeding this fails closed instead of truncating silently.
+    #[arg(long = "max-files", default_value_t = 5000)]
+    pub max_files: usize,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct ValidateCorpusDiversityArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Minimum persisted raw events required for production-quality training evidence.
+    #[arg(long = "min-raw-events", default_value_t = 60)]
+    pub min_raw_events: usize,
+
+    /// Minimum distinct tool families required in dj_actions.
+    #[arg(long = "min-tool-families", default_value_t = 3)]
+    pub min_tool_families: usize,
+
+    /// Minimum distinct AST/source languages required in dj_actions.
+    #[arg(long = "min-languages", default_value_t = 2)]
+    pub min_languages: usize,
+
+    /// Minimum distinct patch delta classes required in dj_actions.
+    #[arg(long = "min-patch-deltas", default_value_t = 3)]
+    pub min_patch_deltas: usize,
+
+    /// Minimum rows whose compiler_semantic_status is checked.
+    #[arg(long = "min-compiler-checked", default_value_t = 1)]
+    pub min_compiler_checked: usize,
+
+    /// Optional evidence JSON file. When supplied, the written file is immediately read back.
+    #[arg(long)]
+    pub output: Option<PathBuf>,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct AttributeTestDeltaArgs {
+    /// Repair repository root used to validate changed file paths.
+    #[arg(long)]
+    pub repo: PathBuf,
+
+    /// Coverage JSON produced by the real test/coverage tool.
+    #[arg(long = "coverage-json")]
+    pub coverage_json: PathBuf,
+
+    /// JSON file containing changed_files and optional touched_symbols arrays.
+    #[arg(long = "changed-files-json")]
+    pub changed_files_json: PathBuf,
+
+    /// JSON file containing verifier/test failures before the action.
+    #[arg(long = "failures-before-json")]
+    pub failures_before_json: PathBuf,
+
+    /// JSON file containing verifier/test failures after the action.
+    #[arg(long = "failures-after-json")]
+    pub failures_after_json: PathBuf,
+
+    /// Output attribution evidence JSON file.
+    #[arg(long)]
+    pub output: PathBuf,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct CompareShadowUtilityArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Candidate model artifact UUID to evaluate.
+    #[arg(long = "candidate-artifact-id")]
+    pub candidate_artifact_id: String,
+
+    /// Active/baseline model artifact UUID that the candidate must beat.
+    #[arg(long = "active-artifact-id")]
+    pub active_artifact_id: String,
+
+    /// Minimum positive utility margin required for promotion.
+    #[arg(long = "min-margin", default_value_t = 0.0)]
+    pub min_margin: f64,
+
+    /// Optional evidence JSON file. When supplied, the written file is immediately read back.
+    #[arg(long)]
+    pub output: Option<PathBuf>,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
 pub struct GetPredictionArgs {
     /// Path to the RocksDB data directory.
     #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
@@ -1430,6 +1558,12 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::ComputeMcRatio(args) => compute_mc_ratio_command(args),
         DynamicJepaCommands::AuditPairwiseMi(args) => audit_pairwise_mi_command(args),
         DynamicJepaCommands::CrossDomainTransfer(args) => cross_domain_transfer_command(args),
+        DynamicJepaCommands::BuildSemanticIndex(args) => build_semantic_index_command(args),
+        DynamicJepaCommands::ValidateCorpusDiversity(args) => {
+            validate_corpus_diversity_command(args)
+        }
+        DynamicJepaCommands::AttributeTestDelta(args) => attribute_test_delta_command(args),
+        DynamicJepaCommands::CompareShadowUtility(args) => compare_shadow_utility_command(args),
         DynamicJepaCommands::GetPrediction(args) => get_prediction_command(args),
         DynamicJepaCommands::GetPlanTrace(args) => get_plan_trace_command(args),
         DynamicJepaCommands::GetSurprise(args) => get_surprise_command(args),
@@ -4542,6 +4676,1522 @@ fn cross_domain_transfer_command(
             })
         }
     }
+}
+
+fn build_semantic_index_command(args: BuildSemanticIndexArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let repo_path = canonical_existing_path(&args.repo, "semantic-index.repo")?;
+    if args.max_files == 0 {
+        return Err(DynamicJepaError::validation(
+            "semantic-index.max-files",
+            "--max-files must be greater than zero",
+            "choose an explicit positive source file ceiling so indexing cannot silently truncate",
+        ));
+    }
+    let output = args.output;
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent).map_err(|err| DynamicJepaError::Storage {
+            operation: "semantic_index.create_output_parent".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to create {}: {err}", parent.display()),
+            remediation: "choose a writable --output path".to_string(),
+        })?;
+    }
+    let evidence_dir = semantic_index_evidence_dir(&output);
+    if evidence_dir.exists() {
+        return Err(DynamicJepaError::validation(
+            "semantic-index.output",
+            format!(
+                "semantic index evidence directory already exists: {}",
+                evidence_dir.display()
+            ),
+            "use a fresh --output path; semantic index command evidence is immutable",
+        ));
+    }
+    fs::create_dir_all(&evidence_dir).map_err(|err| DynamicJepaError::Storage {
+        operation: "semantic_index.create_evidence_dir".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to create {}: {err}", evidence_dir.display()),
+        remediation: "choose a writable --output path".to_string(),
+    })?;
+
+    let before_state = json!({
+        "repo": ci_path_state(&args.repo)?,
+        "output": ci_path_state(&output)?,
+        "evidence_dir": ci_path_state(&evidence_dir)?,
+    });
+    let repo_head = semantic_run_required(
+        &["git", "rev-parse", "HEAD"],
+        &args.repo,
+        None,
+        &evidence_dir,
+        "git_rev_parse_head",
+    )?;
+    let repo_head_text = repo_head
+        .get("stdout_inline")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: "git rev-parse HEAD produced no commit id".to_string(),
+            evidence_path: evidence_dir.display().to_string(),
+        })?
+        .to_string();
+
+    let requested_languages = args
+        .languages
+        .iter()
+        .map(|lang| lang.trim().to_ascii_lowercase())
+        .filter(|lang| !lang.is_empty())
+        .collect::<BTreeSet<_>>();
+    let source_files = semantic_collect_source_files(&args.repo, args.max_files)?;
+    let detected_languages = source_files
+        .iter()
+        .map(|file| file.language.clone())
+        .collect::<BTreeSet<_>>();
+    let languages = if requested_languages.is_empty() {
+        detected_languages.clone()
+    } else {
+        for language in &requested_languages {
+            if !detected_languages.contains(language) {
+                return Err(DynamicJepaError::VerificationFailed {
+                    test_name: "dynamicjepa_semantic_index".to_string(),
+                    message: format!(
+                        "requested language {language} was not present in repository source files"
+                    ),
+                    evidence_path: evidence_dir.display().to_string(),
+                });
+            }
+        }
+        requested_languages
+    };
+    for language in &languages {
+        semantic_require_language_toolchain(language, &args.repo)?;
+    }
+
+    let mut tool_evidence = BTreeMap::new();
+    if languages.contains("rust") {
+        tool_evidence.insert(
+            "rust_cargo_metadata".to_string(),
+            semantic_run_required(
+                &["cargo", "metadata", "--format-version", "1"],
+                &args.repo,
+                None,
+                &evidence_dir,
+                "rust_cargo_metadata",
+            )?,
+        );
+        tool_evidence.insert(
+            "rust_cargo_check".to_string(),
+            semantic_run_required(
+                &["cargo", "check", "--message-format=json", "--quiet"],
+                &args.repo,
+                None,
+                &evidence_dir,
+                "rust_cargo_check",
+            )?,
+        );
+        tool_evidence.insert(
+            "rust_analyzer_analysis_stats".to_string(),
+            semantic_run_required(
+                &[
+                    "rust-analyzer",
+                    "analysis-stats",
+                    ".",
+                    "--run-all-ide-things",
+                ],
+                &args.repo,
+                None,
+                &evidence_dir,
+                "rust_analyzer_analysis_stats",
+            )?,
+        );
+    }
+    for language in languages
+        .iter()
+        .filter(|language| language.as_str() != "rust")
+    {
+        let evidence = semantic_run_language_batch_check(language, &args.repo, &evidence_dir)?;
+        tool_evidence.insert(format!("{language}_batch_semantics"), evidence);
+    }
+
+    let mut files = Vec::new();
+    let mut symbols = Vec::new();
+    let mut imports = Vec::new();
+    let mut calls = Vec::new();
+    let mut dataflow_edges = Vec::new();
+    let mut type_facts = Vec::new();
+    for file in source_files
+        .iter()
+        .filter(|file| languages.contains(&file.language))
+    {
+        let source_path = args.repo.join(&file.path);
+        let source = read_text_file(&source_path, "semantic-index.source_file")?;
+        let extraction = semantic_extract_source_facts(&file.path, &file.language, &source)?;
+        let file_sha = hex_bytes(&file_sha256(&source_path)?);
+        for symbol in &extraction.symbols {
+            symbols.push(symbol.clone());
+        }
+        for import in &extraction.imports {
+            imports.push(import.clone());
+        }
+        for call in &extraction.calls {
+            calls.push(call.clone());
+        }
+        for edge in &extraction.dataflow_edges {
+            dataflow_edges.push(edge.clone());
+        }
+        for fact in &extraction.type_facts {
+            type_facts.push(fact.clone());
+        }
+        files.push(json!({
+            "path": file.path,
+            "language": file.language,
+            "sha256": file_sha,
+            "symbol_count": extraction.symbols.len(),
+            "import_edge_count": extraction.imports.len(),
+            "call_edge_count": extraction.calls.len(),
+            "dataflow_edge_count": extraction.dataflow_edges.len(),
+            "type_fact_count": extraction.type_facts.len(),
+        }));
+    }
+    if files.is_empty() {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: "semantic index found no source files for the required languages".to_string(),
+            evidence_path: evidence_dir.display().to_string(),
+        });
+    }
+    let index = json!({
+        "record_kind": "dynamicjepa_compiler_lsp_semantic_index",
+        "schema_version": 1,
+        "created_at_unix_ms": now_unix_ms()?,
+        "repo_root": repo_path,
+        "repo_head": repo_head_text,
+        "languages": languages,
+        "detected_languages": detected_languages,
+        "semantic_provider": "compiler_lsp_plus_parser_symbol_graph",
+        "fail_closed_policy": {
+            "missing_toolchain": "error",
+            "compiler_or_lsp_diagnostic": "error",
+            "source_truncation": "error",
+            "unsupported_language": "error"
+        },
+        "source_file_count": files.len(),
+        "files": files,
+        "symbol_graph": {
+            "symbols": symbols,
+            "imports": imports,
+            "calls": calls,
+            "type_facts": type_facts,
+            "dataflow_edges": dataflow_edges
+        },
+        "tool_evidence": tool_evidence,
+        "source_of_truth": {
+            "repo": file_sot_string(&args.repo),
+            "output": file_sot_string(&output),
+            "command_evidence_dir": file_sot_string(&evidence_dir)
+        }
+    });
+    write_json_file(&output, &index)?;
+    let readback = read_json_file(&output)?;
+    if readback != index {
+        return Err(DynamicJepaError::StorageInvariantViolation {
+            message: format!(
+                "semantic index file readback diverged after write: {}",
+                output.display()
+            ),
+        });
+    }
+    Ok(CommandOutcome {
+        value: json!({
+            "operation": "dynamicjepa_build_semantic_index",
+            "status": "ok",
+            "source_of_truth": {
+                "repo": file_sot_string(&args.repo),
+                "output": file_sot_string(&output),
+                "command_evidence_dir": file_sot_string(&evidence_dir)
+            },
+            "before_state": before_state,
+            "after_state": {
+                "output": ci_path_state(&output)?,
+                "evidence_dir": ci_path_state(&evidence_dir)?,
+            },
+            "decoded_records": {
+                "semantic_index": readback
+            }
+        }),
+        exit_code: 0,
+    })
+}
+
+fn validate_corpus_diversity_command(
+    args: ValidateCorpusDiversityArgs,
+) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [CF_DJ_RAW_EVENTS, CF_DJ_ACTIONS, CF_DJ_OUTCOMES];
+    let store = open_existing_store(&args.db, "dynamicjepa_validate_corpus_diversity")?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "validate-corpus-diversity.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let raw_events = counts.get(CF_DJ_RAW_EVENTS).copied().unwrap_or(0) as usize;
+    let action_rows = inspect_cf(db, CF_DJ_ACTIONS, 10_000, 0)?;
+    let outcome_rows = inspect_cf(db, CF_DJ_OUTCOMES, 10_000, 0)?;
+    let mut tool_families = BTreeSet::new();
+    let mut languages = BTreeSet::new();
+    let mut patch_deltas = BTreeSet::new();
+    let mut compiler_checked = 0usize;
+    let mut verifier_statuses = BTreeSet::new();
+    let mut result_statuses = BTreeSet::new();
+    for row in &action_rows {
+        if let Some(value) = semantic_action_field(row, "tool_family") {
+            tool_families.insert(value);
+        }
+        if let Some(value) = semantic_action_field(row, "ast_language") {
+            if value != "none" {
+                languages.insert(value);
+            }
+        }
+        if let Some(value) = semantic_action_field(row, "patch_delta_kind") {
+            patch_deltas.insert(value);
+        }
+        if semantic_action_field(row, "compiler_semantic_status").as_deref() == Some("checked") {
+            compiler_checked += 1;
+        }
+    }
+    for row in &outcome_rows {
+        if let Some(value) = semantic_action_field(row, "verifier_status") {
+            verifier_statuses.insert(value);
+        }
+        if let Some(value) = semantic_action_field(row, "result_status") {
+            result_statuses.insert(value);
+        }
+    }
+    let evidence = json!({
+        "record_kind": "dynamicjepa_corpus_diversity_gate",
+        "status": "passed",
+        "source_of_truth": {
+            "rocksdb": format!("rocksdb:{}#dj_raw_events,dj_actions,dj_outcomes", args.db.display()),
+            "output": args.output.as_ref().map(|path| file_sot_string(path)),
+        },
+        "counts": counts,
+        "thresholds": {
+            "min_raw_events": args.min_raw_events,
+            "min_tool_families": args.min_tool_families,
+            "min_languages": args.min_languages,
+            "min_patch_deltas": args.min_patch_deltas,
+            "min_compiler_checked": args.min_compiler_checked,
+        },
+        "observed": {
+            "raw_events": raw_events,
+            "action_rows": action_rows.len(),
+            "outcome_rows": outcome_rows.len(),
+            "tool_families": tool_families,
+            "ast_languages": languages,
+            "patch_delta_kinds": patch_deltas,
+            "compiler_checked_rows": compiler_checked,
+            "verifier_statuses": verifier_statuses,
+            "result_statuses": result_statuses,
+        }
+    });
+    let failures = corpus_diversity_failures(&evidence);
+    if !failures.is_empty() {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_validate_corpus_diversity".to_string(),
+            message: format!("corpus diversity gate failed: {}", failures.join("; ")),
+            evidence_path: db_path,
+        });
+    }
+    let readback = if let Some(output) = args.output.as_ref() {
+        if let Some(parent) = output.parent() {
+            fs::create_dir_all(parent).map_err(|err| DynamicJepaError::Storage {
+                operation: "corpus_diversity.create_output_parent".to_string(),
+                cf: "filesystem".to_string(),
+                message: format!("failed to create {}: {err}", parent.display()),
+                remediation: "choose a writable --output path".to_string(),
+            })?;
+        }
+        write_json_file(output, &evidence)?;
+        let readback = read_json_file(output)?;
+        if readback != evidence {
+            return Err(DynamicJepaError::StorageInvariantViolation {
+                message: format!(
+                    "corpus diversity evidence readback diverged after write: {}",
+                    output.display()
+                ),
+            });
+        }
+        readback
+    } else {
+        evidence
+    };
+    Ok(CommandOutcome {
+        value: json!({
+            "operation": "dynamicjepa_validate_corpus_diversity",
+            "status": "ok",
+            "db_path": db_path,
+            "source_of_truth": source_cfs,
+            "decoded_records": {
+                "corpus_diversity": readback
+            }
+        }),
+        exit_code: 0,
+    })
+}
+
+fn attribute_test_delta_command(args: AttributeTestDeltaArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let repo_path = canonical_existing_path(&args.repo, "attribute-test-delta.repo")?;
+    let coverage = read_json_file(&args.coverage_json)?;
+    let changed = read_json_file(&args.changed_files_json)?;
+    let failures_before = read_json_file(&args.failures_before_json)?;
+    let failures_after = read_json_file(&args.failures_after_json)?;
+    let changed_files = changed
+        .get("changed_files")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "attribute-test-delta.changed_files",
+                "changed-files JSON must contain changed_files array",
+                "write changed_files from the real transition/readback before attribution",
+            )
+        })?
+        .iter()
+        .map(|value| {
+            value.as_str().map(ToOwned::to_owned).ok_or_else(|| {
+                DynamicJepaError::validation(
+                    "attribute-test-delta.changed_files[]",
+                    "changed_files contained a non-string path",
+                    "write repo-relative string paths only",
+                )
+            })
+        })
+        .collect::<DynamicJepaResult<Vec<_>>>()?;
+    if changed_files.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "attribute-test-delta.changed_files",
+            "changed_files was empty",
+            "attribute a concrete source edit; do not record attribution for an unobserved change",
+        ));
+    }
+    let mut coverage_hits = Vec::new();
+    for path in &changed_files {
+        ensure_repo_relative_semantic_path(path)?;
+        let physical = args.repo.join(path);
+        if !physical.exists() {
+            return Err(DynamicJepaError::SourceOfTruthMissing {
+                cf: "filesystem.changed_file".to_string(),
+                key: path.as_bytes().to_vec(),
+            });
+        }
+        let executed_lines = coverage_executed_lines(&coverage, path)?;
+        coverage_hits.push(json!({
+            "path": path,
+            "executed_lines": executed_lines,
+            "executed_line_count": executed_lines.len(),
+        }));
+    }
+    let covered_changed_files = coverage_hits
+        .iter()
+        .filter(|hit| {
+            hit.get("executed_line_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+                > 0
+        })
+        .count();
+    if covered_changed_files == 0 {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_attribute_test_delta".to_string(),
+            message: "coverage evidence did not execute any changed source file".to_string(),
+            evidence_path: args.coverage_json.display().to_string(),
+        });
+    }
+    let before_signature = stable_json_signature(&failures_before)?;
+    let after_signature = stable_json_signature(&failures_after)?;
+    if before_signature == after_signature {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_attribute_test_delta".to_string(),
+            message: "before/after verifier failure signatures are identical; causal delta is not evidenced".to_string(),
+            evidence_path: args.failures_after_json.display().to_string(),
+        });
+    }
+    let evidence = json!({
+        "record_kind": "dynamicjepa_test_outcome_attribution",
+        "status": "passed",
+        "repo": repo_path,
+        "source_of_truth": {
+            "coverage_json": file_sot_string(&args.coverage_json),
+            "changed_files_json": file_sot_string(&args.changed_files_json),
+            "failures_before_json": file_sot_string(&args.failures_before_json),
+            "failures_after_json": file_sot_string(&args.failures_after_json),
+            "output": file_sot_string(&args.output),
+        },
+        "changed_files": changed_files,
+        "touched_symbols": changed.get("touched_symbols").cloned().unwrap_or_else(|| json!([])),
+        "coverage_hits": coverage_hits,
+        "covered_changed_files": covered_changed_files,
+        "failure_signatures": {
+            "before_sha256": before_signature,
+            "after_sha256": after_signature,
+            "changed": true,
+        }
+    });
+    if let Some(parent) = args.output.parent() {
+        fs::create_dir_all(parent).map_err(|err| DynamicJepaError::Storage {
+            operation: "attribute_test_delta.create_output_parent".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to create {}: {err}", parent.display()),
+            remediation: "choose a writable --output path".to_string(),
+        })?;
+    }
+    write_json_file(&args.output, &evidence)?;
+    let readback = read_json_file(&args.output)?;
+    if readback != evidence {
+        return Err(DynamicJepaError::StorageInvariantViolation {
+            message: format!(
+                "test attribution evidence readback diverged after write: {}",
+                args.output.display()
+            ),
+        });
+    }
+    Ok(CommandOutcome {
+        value: json!({
+            "operation": "dynamicjepa_attribute_test_delta",
+            "status": "ok",
+            "source_of_truth": {
+                "coverage_json": file_sot_string(&args.coverage_json),
+                "changed_files_json": file_sot_string(&args.changed_files_json),
+                "failures_before_json": file_sot_string(&args.failures_before_json),
+                "failures_after_json": file_sot_string(&args.failures_after_json),
+                "output": file_sot_string(&args.output),
+            },
+            "decoded_records": {
+                "test_attribution": readback
+            }
+        }),
+        exit_code: 0,
+    })
+}
+
+fn compare_shadow_utility_command(
+    args: CompareShadowUtilityArgs,
+) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [
+        CF_DJ_MODEL_ARTIFACTS,
+        CF_DJ_PREDICTIONS,
+        CF_DJ_PLAN_TRACES,
+        CF_DJ_GUARD_DECISIONS,
+        CF_DJ_SURPRISE_EVENTS,
+    ];
+    let store = open_existing_store(&args.db, "dynamicjepa_compare_shadow_utility")?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "compare-shadow-utility.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let candidate_artifact =
+        shadow_artifact_record_with_hashes(db, &args.candidate_artifact_id, "shadow.candidate")?;
+    let active_artifact =
+        shadow_artifact_record_with_hashes(db, &args.active_artifact_id, "shadow.active")?;
+    let candidate = shadow_utility_for_artifact(db, &args.candidate_artifact_id)?;
+    let active = shadow_utility_for_artifact(db, &args.active_artifact_id)?;
+    let candidate_score = candidate
+        .get("downstream_utility_score")
+        .and_then(Value::as_f64)
+        .ok_or_else(|| DynamicJepaError::StorageInvariantViolation {
+            message: "candidate shadow utility score missing after computation".to_string(),
+        })?;
+    let active_score = active
+        .get("downstream_utility_score")
+        .and_then(Value::as_f64)
+        .ok_or_else(|| DynamicJepaError::StorageInvariantViolation {
+            message: "active shadow utility score missing after computation".to_string(),
+        })?;
+    let margin = round_f64(candidate_score - active_score);
+    let evidence = json!({
+        "record_kind": "dynamicjepa_live_shadow_utility_comparison",
+        "status": "passed",
+        "source_of_truth": {
+            "rocksdb": format!("rocksdb:{}#dj_model_artifacts,dj_predictions,dj_plan_traces,dj_guard_decisions,dj_surprise_events", args.db.display()),
+            "output": args.output.as_ref().map(|path| file_sot_string(path)),
+        },
+        "candidate_artifact": candidate_artifact,
+        "active_artifact": active_artifact,
+        "candidate": candidate,
+        "active": active,
+        "margin": margin,
+        "min_margin": args.min_margin,
+    });
+    if margin <= args.min_margin {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_compare_shadow_utility".to_string(),
+            message: format!(
+                "candidate artifact did not beat active artifact: margin={margin} min_margin={}",
+                args.min_margin
+            ),
+            evidence_path: db_path,
+        });
+    }
+    let readback = if let Some(output) = args.output.as_ref() {
+        if let Some(parent) = output.parent() {
+            fs::create_dir_all(parent).map_err(|err| DynamicJepaError::Storage {
+                operation: "shadow_utility.create_output_parent".to_string(),
+                cf: "filesystem".to_string(),
+                message: format!("failed to create {}: {err}", parent.display()),
+                remediation: "choose a writable --output path".to_string(),
+            })?;
+        }
+        write_json_file(output, &evidence)?;
+        let readback = read_json_file(output)?;
+        if readback != evidence {
+            return Err(DynamicJepaError::StorageInvariantViolation {
+                message: format!(
+                    "shadow utility comparison evidence readback diverged after write: {}",
+                    output.display()
+                ),
+            });
+        }
+        readback
+    } else {
+        evidence
+    };
+    Ok(CommandOutcome {
+        value: json!({
+            "operation": "dynamicjepa_compare_shadow_utility",
+            "status": "ok",
+            "db_path": db_path,
+            "source_of_truth": source_cfs,
+            "counts": counts,
+            "decoded_records": {
+                "shadow_utility_comparison": readback
+            }
+        }),
+        exit_code: 0,
+    })
+}
+
+#[derive(Debug, Clone)]
+struct SemanticSourceFile {
+    path: String,
+    language: String,
+}
+
+#[derive(Debug, Default)]
+struct SemanticSourceExtraction {
+    symbols: Vec<Value>,
+    imports: Vec<Value>,
+    calls: Vec<Value>,
+    dataflow_edges: Vec<Value>,
+    type_facts: Vec<Value>,
+}
+
+fn file_sot_string(path: &Path) -> String {
+    format!("file:{}", path.display())
+}
+
+fn semantic_index_evidence_dir(output: &Path) -> PathBuf {
+    let mut name = output
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "semantic-index.json".to_string());
+    name.push_str(".evidence");
+    output
+        .parent()
+        .map(|parent| parent.join(&name))
+        .unwrap_or_else(|| PathBuf::from(name))
+}
+
+fn semantic_run_required(
+    argv: &[&str],
+    cwd: &Path,
+    stdin_text: Option<&str>,
+    evidence_dir: &Path,
+    label: &str,
+) -> DynamicJepaResult<Value> {
+    if argv.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "semantic-index.command",
+            "empty command argv",
+            "semantic index command definitions must include an executable",
+        ));
+    }
+    let safe = safe_filename(label);
+    let stdout_path = evidence_dir.join(format!("{safe}.stdout"));
+    let stderr_path = evidence_dir.join(format!("{safe}.stderr"));
+    let mut command = Command::new(argv[0]);
+    command.args(&argv[1..]);
+    command.current_dir(cwd);
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+    if stdin_text.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    let started_at_unix_ms = now_unix_ms()?;
+    let started = Instant::now();
+    let mut child = command.spawn().map_err(|err| DynamicJepaError::Storage {
+        operation: "semantic_index.spawn_command".to_string(),
+        cf: "process".to_string(),
+        message: format!("failed to spawn {argv:?}: {err}"),
+        remediation: "install the required compiler/LSP toolchain and ensure it is on PATH"
+            .to_string(),
+    })?;
+    if let Some(stdin_text) = stdin_text {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| DynamicJepaError::Storage {
+                operation: "semantic_index.open_stdin".to_string(),
+                cf: "process".to_string(),
+                message: format!("failed to open stdin for {argv:?}"),
+                remediation: "rerun after inspecting process spawning permissions".to_string(),
+            })?;
+        stdin
+            .write_all(stdin_text.as_bytes())
+            .map_err(|err| DynamicJepaError::Storage {
+                operation: "semantic_index.write_stdin".to_string(),
+                cf: "process".to_string(),
+                message: format!("failed to write stdin for {argv:?}: {err}"),
+                remediation: "inspect semantic index process IO permissions".to_string(),
+            })?;
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|err| DynamicJepaError::Storage {
+            operation: "semantic_index.wait_command".to_string(),
+            cf: "process".to_string(),
+            message: format!("failed while waiting for {argv:?}: {err}"),
+            remediation: "inspect compiler/LSP process failure before retrying".to_string(),
+        })?;
+    let finished_at_unix_ms = now_unix_ms()?;
+    fs::write(&stdout_path, &output.stdout).map_err(|err| DynamicJepaError::Storage {
+        operation: "semantic_index.write_stdout".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to write {}: {err}", stdout_path.display()),
+        remediation: "choose a writable semantic index evidence directory".to_string(),
+    })?;
+    fs::write(&stderr_path, &output.stderr).map_err(|err| DynamicJepaError::Storage {
+        operation: "semantic_index.write_stderr".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to write {}: {err}", stderr_path.display()),
+        remediation: "choose a writable semantic index evidence directory".to_string(),
+    })?;
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout_inline = if output.stdout.len() <= 8192 {
+        Some(stdout.trim().to_string())
+    } else {
+        None
+    };
+    let evidence = json!({
+        "argv": argv,
+        "cwd": cwd,
+        "started_at_unix_ms": started_at_unix_ms,
+        "finished_at_unix_ms": finished_at_unix_ms,
+        "elapsed_ms": started.elapsed().as_millis() as u64,
+        "exit_code": exit_code,
+        "stdout_path": file_sot_string(&stdout_path),
+        "stderr_path": file_sot_string(&stderr_path),
+        "stdout_sha256": hex_bytes(&sha256(&output.stdout)),
+        "stderr_sha256": hex_bytes(&sha256(&output.stderr)),
+        "stdout_tail": tail_lines(&stdout, 20),
+        "stderr_tail": tail_lines(&stderr, 20),
+        "stdout_inline": stdout_inline,
+    });
+    if exit_code != 0 {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: format!(
+                "compiler/LSP command {label} failed with exit_code={exit_code}; stderr_tail={:?}",
+                evidence["stderr_tail"]
+            ),
+            evidence_path: evidence_dir.display().to_string(),
+        });
+    }
+    Ok(evidence)
+}
+
+fn semantic_collect_source_files(
+    repo: &Path,
+    max_files: usize,
+) -> DynamicJepaResult<Vec<SemanticSourceFile>> {
+    let mut out = Vec::new();
+    semantic_collect_source_files_inner(repo, repo, max_files, &mut out)?;
+    out.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(out)
+}
+
+fn semantic_collect_source_files_inner(
+    repo: &Path,
+    dir: &Path,
+    max_files: usize,
+    out: &mut Vec<SemanticSourceFile>,
+) -> DynamicJepaResult<()> {
+    for entry in fs::read_dir(dir).map_err(|err| DynamicJepaError::Storage {
+        operation: "semantic_index.read_dir".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to read {}: {err}", dir.display()),
+        remediation: "ensure the repair repository is readable".to_string(),
+    })? {
+        let entry = entry.map_err(|err| DynamicJepaError::Storage {
+            operation: "semantic_index.read_dir_entry".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to inspect {}: {err}", dir.display()),
+            remediation: "ensure the repair repository is readable".to_string(),
+        })?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if matches!(
+            name.as_str(),
+            ".git"
+                | "target"
+                | "node_modules"
+                | "__pycache__"
+                | ".venv"
+                | "venv"
+                | "dist"
+                | "build"
+        ) {
+            continue;
+        }
+        let file_type = entry.file_type().map_err(|err| DynamicJepaError::Storage {
+            operation: "semantic_index.file_type".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to inspect {}: {err}", path.display()),
+            remediation: "ensure the repair repository contains regular files/directories"
+                .to_string(),
+        })?;
+        if file_type.is_dir() {
+            semantic_collect_source_files_inner(repo, &path, max_files, out)?;
+        } else if file_type.is_file() {
+            let rel = path
+                .strip_prefix(repo)
+                .map_err(|err| {
+                    DynamicJepaError::validation(
+                        "semantic-index.path",
+                        format!(
+                            "failed to derive repo-relative path for {}: {err}",
+                            path.display()
+                        ),
+                        "run semantic-index against a stable repository root",
+                    )
+                })?
+                .to_string_lossy()
+                .replace('\\', "/");
+            if let Some(language) = semantic_language_for_path(&rel) {
+                out.push(SemanticSourceFile {
+                    path: rel,
+                    language: language.to_string(),
+                });
+                if out.len() > max_files {
+                    return Err(DynamicJepaError::VerificationFailed {
+                        test_name: "dynamicjepa_semantic_index".to_string(),
+                        message: format!(
+                            "source file count exceeded --max-files ({max_files}); refusing truncated semantic graph"
+                        ),
+                        evidence_path: repo.display().to_string(),
+                    });
+                }
+            }
+        } else {
+            return Err(DynamicJepaError::VerificationFailed {
+                test_name: "dynamicjepa_semantic_index".to_string(),
+                message: format!("non-regular repository entry refused: {}", path.display()),
+                evidence_path: path.display().to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn semantic_language_for_path(path: &str) -> Option<&'static str> {
+    if path.ends_with(".rs") {
+        Some("rust")
+    } else if path.ends_with(".py") {
+        Some("python")
+    } else if path.ends_with(".ts") || path.ends_with(".tsx") {
+        Some("typescript")
+    } else if path.ends_with(".js") || path.ends_with(".jsx") || path.ends_with(".mjs") {
+        Some("javascript")
+    } else if path.ends_with(".go") {
+        Some("go")
+    } else if path.ends_with(".java") {
+        Some("java")
+    } else if path.ends_with(".c") || path.ends_with(".h") {
+        Some("c")
+    } else if path.ends_with(".cc")
+        || path.ends_with(".cpp")
+        || path.ends_with(".cxx")
+        || path.ends_with(".hpp")
+        || path.ends_with(".hh")
+    {
+        Some("cpp")
+    } else if path.ends_with(".cs") {
+        Some("csharp")
+    } else if path.ends_with(".rb") {
+        Some("ruby")
+    } else if path.ends_with(".php") {
+        Some("php")
+    } else {
+        None
+    }
+}
+
+fn semantic_require_language_toolchain(language: &str, repo: &Path) -> DynamicJepaResult<()> {
+    let missing = match language {
+        "rust" => {
+            let mut missing = Vec::new();
+            if !command_exists_on_path("cargo") {
+                missing.push("cargo");
+            }
+            if !command_exists_on_path("rust-analyzer") {
+                missing.push("rust-analyzer");
+            }
+            if !repo.join("Cargo.toml").exists() {
+                missing.push("Cargo.toml");
+            }
+            missing
+        }
+        "python" => {
+            if command_exists_on_path("pyright") {
+                Vec::new()
+            } else {
+                vec!["pyright"]
+            }
+        }
+        "typescript" | "javascript" => {
+            if repo.join("node_modules/.bin/tsc").exists() || command_exists_on_path("tsc") {
+                Vec::new()
+            } else {
+                vec!["tsc"]
+            }
+        }
+        "go" => {
+            if command_exists_on_path("go") {
+                Vec::new()
+            } else {
+                vec!["go"]
+            }
+        }
+        "java" => {
+            if command_exists_on_path("javac") {
+                Vec::new()
+            } else {
+                vec!["javac"]
+            }
+        }
+        "c" => {
+            if command_exists_on_path("gcc") && repo.join("compile_commands.json").exists() {
+                Vec::new()
+            } else {
+                vec!["gcc", "compile_commands.json"]
+            }
+        }
+        "cpp" => {
+            if command_exists_on_path("g++") && repo.join("compile_commands.json").exists() {
+                Vec::new()
+            } else {
+                vec!["g++", "compile_commands.json"]
+            }
+        }
+        "csharp" => {
+            if command_exists_on_path("dotnet") {
+                Vec::new()
+            } else {
+                vec!["dotnet"]
+            }
+        }
+        "ruby" => {
+            if command_exists_on_path("ruby") {
+                Vec::new()
+            } else {
+                vec!["ruby"]
+            }
+        }
+        "php" => {
+            if command_exists_on_path("php") {
+                Vec::new()
+            } else {
+                vec!["php"]
+            }
+        }
+        _ => vec!["unsupported-language"],
+    };
+    if !missing.is_empty() {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: format!(
+                "semantic index requires real compiler/LSP tooling for {language}; missing {:?}",
+                missing
+            ),
+            evidence_path: repo.display().to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn semantic_run_language_batch_check(
+    language: &str,
+    repo: &Path,
+    evidence_dir: &Path,
+) -> DynamicJepaResult<Value> {
+    match language {
+        "python" => semantic_run_required(
+            &["pyright", "--outputjson"],
+            repo,
+            None,
+            evidence_dir,
+            "python_pyright",
+        ),
+        "typescript" | "javascript" => {
+            let local = repo.join("node_modules/.bin/tsc");
+            if local.exists() {
+                let local = local.to_str().ok_or_else(|| {
+                    DynamicJepaError::validation(
+                        "semantic-index.typescript.local_tsc",
+                        format!("local tsc path is not valid UTF-8: {}", local.display()),
+                        "install tsc at a UTF-8 path before semantic indexing",
+                    )
+                })?;
+                semantic_run_required(
+                    &[local, "--noEmit", "--pretty", "false"],
+                    repo,
+                    None,
+                    evidence_dir,
+                    "typescript_tsc",
+                )
+            } else {
+                semantic_run_required(
+                    &["tsc", "--noEmit", "--pretty", "false"],
+                    repo,
+                    None,
+                    evidence_dir,
+                    "typescript_tsc",
+                )
+            }
+        }
+        "go" => semantic_run_required(
+            &["go", "test", "./..."],
+            repo,
+            None,
+            evidence_dir,
+            "go_test",
+        ),
+        "java" => semantic_run_required(
+            &["javac", "-version"],
+            repo,
+            None,
+            evidence_dir,
+            "java_javac_version",
+        ),
+        "c" => semantic_run_required(
+            &["gcc", "--version"],
+            repo,
+            None,
+            evidence_dir,
+            "c_gcc_version",
+        ),
+        "cpp" => semantic_run_required(
+            &["g++", "--version"],
+            repo,
+            None,
+            evidence_dir,
+            "cpp_gpp_version",
+        ),
+        "csharp" => semantic_run_required(
+            &["dotnet", "build", "--no-restore"],
+            repo,
+            None,
+            evidence_dir,
+            "csharp_dotnet_build",
+        ),
+        "ruby" => semantic_run_required(
+            &["ruby", "-c", "."],
+            repo,
+            None,
+            evidence_dir,
+            "ruby_syntax",
+        ),
+        "php" => semantic_run_required(&["php", "-v"], repo, None, evidence_dir, "php_version"),
+        _ => Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: format!("unsupported semantic language {language}"),
+            evidence_path: repo.display().to_string(),
+        }),
+    }
+}
+
+fn semantic_extract_source_facts(
+    path: &str,
+    language: &str,
+    source: &str,
+) -> DynamicJepaResult<SemanticSourceExtraction> {
+    match language {
+        "rust" => semantic_extract_rust_source_facts(path, source),
+        _ => Ok(semantic_extract_textual_source_facts(
+            path, language, source,
+        )),
+    }
+}
+
+fn semantic_extract_rust_source_facts(
+    path: &str,
+    source: &str,
+) -> DynamicJepaResult<SemanticSourceExtraction> {
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_rust::LANGUAGE.into())
+        .map_err(|err| {
+            DynamicJepaError::validation(
+                "semantic-index.rust_parser",
+                format!("failed to initialize Rust parser: {err}"),
+                "ensure tree-sitter-rust is linked correctly",
+            )
+        })?;
+    let tree = parser.parse(source, None).ok_or_else(|| {
+        DynamicJepaError::validation(
+            "semantic-index.rust_parse",
+            format!("failed to parse {path}"),
+            "fix Rust syntax before semantic indexing",
+        )
+    })?;
+    let mut extraction = SemanticSourceExtraction::default();
+    semantic_walk_rust_node(tree.root_node(), source, path, "module", &mut extraction);
+    Ok(extraction)
+}
+
+fn semantic_walk_rust_node(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+    path: &str,
+    current_symbol: &str,
+    extraction: &mut SemanticSourceExtraction,
+) {
+    let kind = node.kind();
+    let mut active_symbol = current_symbol.to_string();
+    if matches!(
+        kind,
+        "function_item"
+            | "struct_item"
+            | "enum_item"
+            | "trait_item"
+            | "impl_item"
+            | "mod_item"
+            | "type_item"
+    ) {
+        let name = node
+            .child_by_field_name("name")
+            .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+            .unwrap_or(kind);
+        active_symbol = name.to_string();
+        extraction.symbols.push(json!({
+            "path": path,
+            "language": "rust",
+            "name": name,
+            "kind": kind,
+            "start_line": node.start_position().row + 1,
+            "end_line": node.end_position().row + 1,
+            "visibility": if node.utf8_text(source.as_bytes()).unwrap_or("").trim_start().starts_with("pub") { "public" } else { "private" },
+        }));
+        if kind == "type_item" {
+            extraction.type_facts.push(json!({
+                "path": path,
+                "symbol": name,
+                "fact_kind": "type_alias",
+                "line": node.start_position().row + 1,
+            }));
+        }
+    } else if kind == "use_declaration" {
+        extraction.imports.push(json!({
+            "path": path,
+            "language": "rust",
+            "from_symbol": current_symbol,
+            "import": node.utf8_text(source.as_bytes()).unwrap_or("").trim(),
+            "line": node.start_position().row + 1,
+        }));
+    } else if kind == "call_expression" {
+        let function = node
+            .child_by_field_name("function")
+            .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+            .unwrap_or("unknown");
+        extraction.calls.push(json!({
+            "path": path,
+            "language": "rust",
+            "caller": current_symbol,
+            "callee_expr": function,
+            "line": node.start_position().row + 1,
+        }));
+    } else if matches!(kind, "let_declaration" | "assignment_expression") {
+        extraction.dataflow_edges.push(json!({
+            "path": path,
+            "language": "rust",
+            "scope": current_symbol,
+            "edge_kind": kind,
+            "line": node.start_position().row + 1,
+            "source_hash": hex_bytes(&sha256(node.utf8_text(source.as_bytes()).unwrap_or("").as_bytes())),
+        }));
+        if kind == "let_declaration"
+            && node
+                .utf8_text(source.as_bytes())
+                .unwrap_or("")
+                .contains(':')
+        {
+            extraction.type_facts.push(json!({
+                "path": path,
+                "scope": current_symbol,
+                "fact_kind": "annotated_binding",
+                "line": node.start_position().row + 1,
+            }));
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        semantic_walk_rust_node(child, source, path, &active_symbol, extraction);
+    }
+}
+
+fn semantic_extract_textual_source_facts(
+    path: &str,
+    language: &str,
+    source: &str,
+) -> SemanticSourceExtraction {
+    let mut extraction = SemanticSourceExtraction::default();
+    for (idx, line) in source.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("import ")
+            || trimmed.starts_with("from ")
+            || trimmed.starts_with("use ")
+            || trimmed.starts_with("#include")
+        {
+            extraction.imports.push(json!({
+                "path": path,
+                "language": language,
+                "import": trimmed,
+                "line": idx + 1,
+            }));
+        }
+    }
+    extraction
+}
+
+fn command_exists_on_path(name: &str) -> bool {
+    env::var_os("PATH")
+        .map(|paths| env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
+        .unwrap_or(false)
+}
+
+fn ensure_repo_relative_semantic_path(path: &str) -> DynamicJepaResult<()> {
+    let path_obj = Path::new(path);
+    if path_obj.is_absolute()
+        || path_obj
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err(DynamicJepaError::validation(
+            "dynamicjepa.semantic.path",
+            format!("path is not repo-relative: {path}"),
+            "use governed repo-relative paths only",
+        ));
+    }
+    Ok(())
+}
+
+fn semantic_action_field(row: &Value, field: &str) -> Option<String> {
+    let record = row
+        .pointer("/decoded/record")
+        .or_else(|| row.get("decoded"))?;
+    let fields = record.get("fields")?;
+    let value = fields.get(field)?;
+    dynamicjepa_field_value_to_string(value)
+}
+
+fn dynamicjepa_field_value_to_string(value: &Value) -> Option<String> {
+    if let Some(variant) = value
+        .pointer("/Categorical/variant")
+        .and_then(Value::as_str)
+    {
+        return Some(variant.to_string());
+    }
+    if let Some(text) = value.get("String").and_then(Value::as_str) {
+        return Some(text.to_string());
+    }
+    if let Some(number) = value.get("I64").and_then(Value::as_i64) {
+        return Some(number.to_string());
+    }
+    if let Some(number) = value.get("F64").and_then(Value::as_f64) {
+        return Some(number.to_string());
+    }
+    if let Some(flag) = value.get("Bool").and_then(Value::as_bool) {
+        return Some(flag.to_string());
+    }
+    None
+}
+
+fn corpus_diversity_failures(evidence: &Value) -> Vec<String> {
+    let threshold = |name: &str| {
+        evidence
+            .pointer(&format!("/thresholds/{name}"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as usize
+    };
+    let observed_count = |pointer: &str| {
+        evidence
+            .pointer(pointer)
+            .and_then(Value::as_array)
+            .map(|values| values.len())
+            .unwrap_or(0)
+    };
+    let mut failures = Vec::new();
+    let raw_events = evidence
+        .pointer("/observed/raw_events")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    if raw_events < threshold("min_raw_events") {
+        failures.push(format!(
+            "raw_events {raw_events} < {}",
+            threshold("min_raw_events")
+        ));
+    }
+    for (label, pointer, threshold_name) in [
+        (
+            "tool_families",
+            "/observed/tool_families",
+            "min_tool_families",
+        ),
+        ("ast_languages", "/observed/ast_languages", "min_languages"),
+        (
+            "patch_delta_kinds",
+            "/observed/patch_delta_kinds",
+            "min_patch_deltas",
+        ),
+    ] {
+        let count = observed_count(pointer);
+        if count < threshold(threshold_name) {
+            failures.push(format!("{label} {count} < {}", threshold(threshold_name)));
+        }
+    }
+    let checked = evidence
+        .pointer("/observed/compiler_checked_rows")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    if checked < threshold("min_compiler_checked") {
+        failures.push(format!(
+            "compiler_checked_rows {checked} < {}",
+            threshold("min_compiler_checked")
+        ));
+    }
+    failures
+}
+
+fn coverage_executed_lines(coverage: &Value, changed_path: &str) -> DynamicJepaResult<Vec<u64>> {
+    let files = coverage
+        .get("files")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "attribute-test-delta.coverage.files",
+                "coverage JSON must contain files object",
+                "generate JSON coverage from the real coverage tool before attribution",
+            )
+        })?;
+    let mut candidates = vec![changed_path.to_string()];
+    candidates.push(format!("./{changed_path}"));
+    let basename = Path::new(changed_path)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string());
+    for candidate in files.keys() {
+        if candidate.ends_with(changed_path) {
+            candidates.push(candidate.clone());
+        }
+        if let Some(basename) = basename.as_deref() {
+            if candidate.ends_with(basename) {
+                candidates.push(candidate.clone());
+            }
+        }
+    }
+    for candidate in candidates {
+        if let Some(file) = files.get(&candidate) {
+            let lines = file
+                .get("executed_lines")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    DynamicJepaError::validation(
+                        "attribute-test-delta.coverage.executed_lines",
+                        format!("coverage entry for {candidate} lacks executed_lines"),
+                        "generate coverage JSON with line execution data",
+                    )
+                })?
+                .iter()
+                .map(|value| {
+                    value.as_u64().ok_or_else(|| {
+                        DynamicJepaError::validation(
+                            "attribute-test-delta.coverage.executed_lines[]",
+                            "executed_lines contained a non-integer",
+                            "regenerate coverage JSON from the real coverage tool",
+                        )
+                    })
+                })
+                .collect::<DynamicJepaResult<Vec<_>>>()?;
+            return Ok(lines);
+        }
+    }
+    Err(DynamicJepaError::SourceOfTruthMissing {
+        cf: "coverage_json.files".to_string(),
+        key: changed_path.as_bytes().to_vec(),
+    })
+}
+
+fn stable_json_signature(value: &Value) -> DynamicJepaResult<String> {
+    let canonical = serde_json::to_vec(value).map_err(|err| {
+        DynamicJepaError::validation(
+            "stable-json-signature",
+            format!("failed to serialize JSON evidence: {err}"),
+            "JSON evidence must be serializable before hashing",
+        )
+    })?;
+    Ok(hex_bytes(&sha256(&canonical)))
+}
+
+fn shadow_artifact_record_with_hashes(
+    db: &rocksdb::DB,
+    artifact_id: &str,
+    field: &str,
+) -> DynamicJepaResult<Value> {
+    let id = parse_model_artifact_id(artifact_id, field)?;
+    let artifact = get_model_artifact(db, id.clone())?.ok_or_else(|| {
+        DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_MODEL_ARTIFACTS.to_string(),
+            key: id.into_bytes().to_vec(),
+        }
+    })?;
+    let artifact_hashes = verify_artifact_files(&artifact)?;
+    if let Some(mismatch) = artifact_hashes.iter().find(|check| !check.equal) {
+        return Err(DynamicJepaError::ArtifactHashMismatch {
+            artifact_id: artifact.artifact_id.0,
+            file: mismatch.relative_path.clone(),
+            expected: mismatch.registry_sha256.clone(),
+            actual: mismatch.recomputed_sha256.clone(),
+        });
+    }
+    Ok(json!({
+        "artifact_id": artifact.artifact_id,
+        "domain_pack_id": artifact.domain_pack_id,
+        "dataset_id": artifact.dataset_id,
+        "status": artifact.status,
+        "artifact_root": artifact.artifact_root,
+        "file_hashes": artifact_hashes,
+    }))
+}
+
+fn shadow_utility_for_artifact(db: &rocksdb::DB, artifact_id: &str) -> DynamicJepaResult<Value> {
+    let predictions = inspect_cf(db, CF_DJ_PREDICTIONS, 10_000, 0)?;
+    let plans = inspect_cf(db, CF_DJ_PLAN_TRACES, 10_000, 0)?;
+    let guards = inspect_cf(db, CF_DJ_GUARD_DECISIONS, 10_000, 0)?;
+    let surprises = inspect_cf(db, CF_DJ_SURPRISE_EVENTS, 10_000, 0)?;
+    let mut prediction_ids = BTreeSet::new();
+    let mut prediction_count = 0usize;
+    for row in &predictions {
+        let Some(record) = inspect_row_record(row) else {
+            continue;
+        };
+        if record.get("model_artifact_id").and_then(Value::as_str) == Some(artifact_id) {
+            prediction_count += 1;
+            if let Some(id) = record.get("prediction_id").and_then(Value::as_str) {
+                prediction_ids.insert(id.to_string());
+            }
+        }
+    }
+    let mut plan_ids = BTreeSet::new();
+    let mut plan_count = 0usize;
+    let mut selected_count = 0usize;
+    for row in &plans {
+        let Some(record) = inspect_row_record(row) else {
+            continue;
+        };
+        if record.get("model_artifact_id").and_then(Value::as_str) == Some(artifact_id) {
+            plan_count += 1;
+            if record.get("status").and_then(Value::as_str) == Some("Selected") {
+                selected_count += 1;
+            }
+            if let Some(id) = record.get("plan_trace_id").and_then(Value::as_str) {
+                plan_ids.insert(id.to_string());
+            }
+        }
+    }
+    let mut guard_count = 0usize;
+    let mut guard_reject_count = 0usize;
+    for row in &guards {
+        let Some(record) = inspect_row_record(row) else {
+            continue;
+        };
+        let Some(plan_trace_id) = record.get("plan_trace_id").and_then(Value::as_str) else {
+            continue;
+        };
+        if !plan_ids.contains(plan_trace_id) {
+            continue;
+        }
+        guard_count += 1;
+        if record
+            .get("decision")
+            .is_some_and(|value| value.as_str() == Some("Reject") || value.get("Reject").is_some())
+        {
+            guard_reject_count += 1;
+        }
+    }
+    let mut surprise_count = 0usize;
+    for row in &surprises {
+        let Some(record) = inspect_row_record(row) else {
+            continue;
+        };
+        if record
+            .get("prediction_id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| prediction_ids.contains(id))
+        {
+            surprise_count += 1;
+        }
+    }
+    if prediction_count == 0 || plan_count == 0 {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_compare_shadow_utility".to_string(),
+            message: format!(
+                "artifact {artifact_id} has insufficient persisted live-shadow evidence: predictions={prediction_count} plans={plan_count}"
+            ),
+            evidence_path: "rocksdb.dj_predictions,dj_plan_traces".to_string(),
+        });
+    }
+    let selected_plan_rate = selected_count as f64 / plan_count as f64;
+    let guard_reject_rate = if guard_count == 0 {
+        0.0
+    } else {
+        guard_reject_count as f64 / guard_count as f64
+    };
+    let surprise_rate = surprise_count as f64 / prediction_count as f64;
+    let score = round_f64(selected_plan_rate - guard_reject_rate - surprise_rate);
+    Ok(json!({
+        "artifact_id": artifact_id,
+        "downstream_utility_score": score,
+        "components": {
+            "selected_plan_rate": round_f64(selected_plan_rate),
+            "guard_reject_rate": round_f64(guard_reject_rate),
+            "surprise_rate": round_f64(surprise_rate),
+            "prediction_count": prediction_count,
+            "plan_count": plan_count,
+            "guard_decision_count": guard_count,
+            "guard_reject_count": guard_reject_count,
+            "surprise_count": surprise_count,
+        }
+    }))
+}
+
+fn inspect_row_record(row: &Value) -> Option<&Value> {
+    row.pointer("/decoded/record")
+        .or_else(|| row.get("decoded"))
+}
+
+fn round_f64(value: f64) -> f64 {
+    (value * 1_000_000.0).round() / 1_000_000.0
 }
 
 #[derive(Debug)]

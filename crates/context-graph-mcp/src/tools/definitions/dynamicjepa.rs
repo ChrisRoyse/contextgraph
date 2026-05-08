@@ -372,6 +372,104 @@ pub fn definitions() -> Vec<ToolDefinition> {
             &["outputRoot"],
         ),
         tool(
+            tool_names::DYNAMICJEPA_BUILD_SEMANTIC_INDEX,
+            "Build a persisted compiler/LSP-backed semantic index for a real repair repository.",
+            props(&[
+                path_prop("repo", "Repair repository root. Must be a real git checkout."),
+                path_prop("output", "Output JSON file for the semantic index."),
+                string_array_optional(
+                    "languages",
+                    "Optional language allow-list. Omit to require every detected source language.",
+                ),
+                integer_default(
+                    "maxFiles",
+                    1,
+                    5000,
+                    "Maximum indexed source files; exceeding this fails closed.",
+                ),
+            ]),
+            &["repo", "output"],
+        ),
+        tool(
+            tool_names::DYNAMICJEPA_VALIDATE_CORPUS_DIVERSITY,
+            "Validate real SWE-loop DynamicJEPA corpus diversity from persisted RocksDB rows.",
+            props(&[
+                db_path(),
+                integer_default("minRawEvents", 1, 60, "Minimum persisted raw events."),
+                integer_default(
+                    "minToolFamilies",
+                    1,
+                    3,
+                    "Minimum distinct tool families in dj_actions.",
+                ),
+                integer_default(
+                    "minLanguages",
+                    1,
+                    2,
+                    "Minimum distinct AST/source languages in dj_actions.",
+                ),
+                integer_default(
+                    "minPatchDeltas",
+                    1,
+                    3,
+                    "Minimum distinct patch delta classes in dj_actions.",
+                ),
+                integer_default(
+                    "minCompilerChecked",
+                    0,
+                    1,
+                    "Minimum rows with compiler_semantic_status=checked.",
+                ),
+                path_optional("output", "Optional evidence JSON file to write and read back."),
+            ]),
+            &["dbPath"],
+        ),
+        tool(
+            tool_names::DYNAMICJEPA_ATTRIBUTE_TEST_DELTA,
+            "Attribute verifier/test deltas from real coverage and failure-signature evidence.",
+            props(&[
+                path_prop("repo", "Repair repository root used to validate changed paths."),
+                path_prop("coverageJson", "Coverage JSON from the real test/coverage tool."),
+                path_prop(
+                    "changedFilesJson",
+                    "JSON file containing changed_files and optional touched_symbols arrays.",
+                ),
+                path_prop(
+                    "failuresBeforeJson",
+                    "JSON file containing verifier/test failures before the action.",
+                ),
+                path_prop(
+                    "failuresAfterJson",
+                    "JSON file containing verifier/test failures after the action.",
+                ),
+                path_prop("output", "Output attribution evidence JSON file."),
+            ]),
+            &[
+                "repo",
+                "coverageJson",
+                "changedFilesJson",
+                "failuresBeforeJson",
+                "failuresAfterJson",
+                "output",
+            ],
+        ),
+        tool(
+            tool_names::DYNAMICJEPA_COMPARE_SHADOW_UTILITY,
+            "Compare candidate-vs-active DynamicJEPA live-shadow utility evidence from persisted rows.",
+            props(&[
+                db_path(),
+                string_prop("candidateArtifactId", "Candidate model artifact UUID."),
+                string_prop("activeArtifactId", "Active/baseline model artifact UUID."),
+                number_positive_default(
+                    "minMargin",
+                    0.000001,
+                    "Minimum positive utility margin required for promotion.",
+                ),
+                path_optional("output", "Optional evidence JSON file to write and read back."),
+            ]),
+            &["dbPath", "candidateArtifactId", "activeArtifactId"],
+        ),
+        tool(
             tool_names::DYNAMICJEPA_GET_PREDICTION,
             "Read one persisted DynamicJEPA prediction.",
             props(&[db_path(), string_prop("id", "Prediction UUID.")]),
@@ -452,10 +550,28 @@ fn path_prop(name: &'static str, description: &'static str) -> (&'static str, Va
     )
 }
 
+fn path_optional(name: &'static str, description: &'static str) -> (&'static str, Value) {
+    (
+        name,
+        json!({"type": "string", "minLength": 1, "description": description}),
+    )
+}
+
 fn string_prop(name: &'static str, description: &'static str) -> (&'static str, Value) {
     (
         name,
         json!({"type": "string", "minLength": 1, "description": description}),
+    )
+}
+
+fn string_array_optional(name: &'static str, description: &'static str) -> (&'static str, Value) {
+    (
+        name,
+        json!({
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "description": description
+        }),
     )
 }
 

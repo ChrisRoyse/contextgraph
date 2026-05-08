@@ -331,6 +331,14 @@ pub const DYNAMICJEPA_COMPUTE_MC_RATIO: &str = "dynamicjepa_compute_mc_ratio";
 pub const DYNAMICJEPA_AUDIT_PAIRWISE_MI: &str = "dynamicjepa_audit_pairwise_mi";
 /// Run the counter_world to gridworld DynamicJEPA cross-domain transfer pilot.
 pub const DYNAMICJEPA_CROSS_DOMAIN_TRANSFER: &str = "dynamicjepa_cross_domain_transfer";
+/// Build a persisted compiler/LSP-backed semantic index for a repair repository.
+pub const DYNAMICJEPA_BUILD_SEMANTIC_INDEX: &str = "dynamicjepa_build_semantic_index";
+/// Validate real SWE-loop DynamicJEPA corpus diversity from persisted RocksDB rows.
+pub const DYNAMICJEPA_VALIDATE_CORPUS_DIVERSITY: &str = "dynamicjepa_validate_corpus_diversity";
+/// Attribute verifier/test deltas from real coverage and failure-signature evidence.
+pub const DYNAMICJEPA_ATTRIBUTE_TEST_DELTA: &str = "dynamicjepa_attribute_test_delta";
+/// Compare candidate-vs-active DynamicJEPA live-shadow utility evidence.
+pub const DYNAMICJEPA_COMPARE_SHADOW_UTILITY: &str = "dynamicjepa_compare_shadow_utility";
 /// Read one persisted prediction.
 pub const DYNAMICJEPA_GET_PREDICTION: &str = "dynamicjepa_get_prediction";
 /// Read one persisted plan trace.

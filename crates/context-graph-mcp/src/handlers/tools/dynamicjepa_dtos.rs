@@ -108,6 +108,34 @@ fn default_transfer_stopping_target() -> f64 {
     0.20
 }
 
+fn default_semantic_max_files() -> usize {
+    5000
+}
+
+fn default_min_raw_events() -> usize {
+    60
+}
+
+fn default_min_tool_families() -> usize {
+    3
+}
+
+fn default_min_languages() -> usize {
+    2
+}
+
+fn default_min_patch_deltas() -> usize {
+    3
+}
+
+fn default_min_compiler_checked() -> usize {
+    1
+}
+
+fn default_min_margin() -> f64 {
+    0.0
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct RegisterDomainPackRequest {
@@ -450,6 +478,56 @@ pub(crate) struct CrossDomainTransferRequest {
     pub learning_rate: f64,
     #[serde(default = "default_transfer_stopping_target")]
     pub stopping_target: f64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct BuildSemanticIndexRequest {
+    pub repo: PathBuf,
+    pub output: PathBuf,
+    #[serde(default)]
+    pub languages: Vec<String>,
+    #[serde(default = "default_semantic_max_files")]
+    pub max_files: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ValidateCorpusDiversityRequest {
+    pub db_path: PathBuf,
+    #[serde(default = "default_min_raw_events")]
+    pub min_raw_events: usize,
+    #[serde(default = "default_min_tool_families")]
+    pub min_tool_families: usize,
+    #[serde(default = "default_min_languages")]
+    pub min_languages: usize,
+    #[serde(default = "default_min_patch_deltas")]
+    pub min_patch_deltas: usize,
+    #[serde(default = "default_min_compiler_checked")]
+    pub min_compiler_checked: usize,
+    pub output: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct AttributeTestDeltaRequest {
+    pub repo: PathBuf,
+    pub coverage_json: PathBuf,
+    pub changed_files_json: PathBuf,
+    pub failures_before_json: PathBuf,
+    pub failures_after_json: PathBuf,
+    pub output: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct CompareShadowUtilityRequest {
+    pub db_path: PathBuf,
+    pub candidate_artifact_id: String,
+    pub active_artifact_id: String,
+    #[serde(default = "default_min_margin")]
+    pub min_margin: f64,
+    pub output: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]

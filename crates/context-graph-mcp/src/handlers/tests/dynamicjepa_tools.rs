@@ -322,7 +322,7 @@ fn assert_dynamicjepa_tools_listed() {
         .filter(|tool| tool.name.starts_with("dynamicjepa_"))
         .map(|tool| tool.name.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(dynamic_names.len(), 35);
+    assert_eq!(dynamic_names.len(), 39);
     for name in [
         tool_names::DYNAMICJEPA_REGISTER_DOMAIN_PACK,
         tool_names::DYNAMICJEPA_LIST_DOMAIN_PACKS,
@@ -354,6 +354,10 @@ fn assert_dynamicjepa_tools_listed() {
         tool_names::DYNAMICJEPA_COMPUTE_MC_RATIO,
         tool_names::DYNAMICJEPA_AUDIT_PAIRWISE_MI,
         tool_names::DYNAMICJEPA_CROSS_DOMAIN_TRANSFER,
+        tool_names::DYNAMICJEPA_BUILD_SEMANTIC_INDEX,
+        tool_names::DYNAMICJEPA_VALIDATE_CORPUS_DIVERSITY,
+        tool_names::DYNAMICJEPA_ATTRIBUTE_TEST_DELTA,
+        tool_names::DYNAMICJEPA_COMPARE_SHADOW_UTILITY,
         tool_names::DYNAMICJEPA_GET_PREDICTION,
         tool_names::DYNAMICJEPA_GET_PLAN_TRACE,
         tool_names::DYNAMICJEPA_GET_SURPRISE,

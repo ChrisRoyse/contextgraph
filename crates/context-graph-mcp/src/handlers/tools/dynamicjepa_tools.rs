@@ -5,15 +5,16 @@ use serde_json::{json, Value};
 use tracing::{error, info};
 
 use context_graph_cli::commands::dynamicjepa::{
-    run_dynamicjepa_command, AuditPairwiseMiArgs, BindArgs, BuildConstellationArgs,
-    CalibrateThresholdArgs, CompileDatasetArgs, CompileTrajectoriesArgs, ComputeMcRatioArgs,
+    run_dynamicjepa_command, AttributeTestDeltaArgs, AuditPairwiseMiArgs, BindArgs,
+    BuildConstellationArgs, BuildSemanticIndexArgs, CalibrateThresholdArgs,
+    CompareShadowUtilityArgs, CompileDatasetArgs, CompileTrajectoriesArgs, ComputeMcRatioArgs,
     CrossDomainTransferArgs, DynamicJepaCommands, GetArtifactArgs, GetConstellationArgs,
     GetDatasetShardArgs, GetDomainArgs, GetPanelArgs, GetPlanTraceArgs, GetPredictionArgs,
     GetSurpriseArgs, GetTrainingRunArgs, GetTrajectoryArgs, IngestEventArgs, InspectCfArgs,
     InspectCountsArgs, InspectDatasetArgs, ListBindingsArgs, ListConstellationsArgs,
     ListDomainsArgs, ListInstrumentReadingsArgs, ListTrajectoriesArgs, MaterializePanelArgs,
     PlanArgs, PredictArgs, RecalibrateThresholdArgs, RecordSurpriseArgs, RegisterDomainArgs,
-    RunAdapterArgs, TrainArgs,
+    RunAdapterArgs, TrainArgs, ValidateCorpusDiversityArgs,
 };
 
 use crate::handlers::Handlers;
@@ -717,6 +718,108 @@ impl Handlers {
                 max_seconds_per_training: req.max_seconds_per_training,
                 learning_rate: req.learning_rate,
                 stopping_target: req.stopping_target,
+                json: true,
+            }),
+        )
+        .await
+    }
+
+    pub(crate) async fn call_dynamicjepa_build_semantic_index(
+        &self,
+        id: Option<JsonRpcId>,
+        args: Value,
+    ) -> JsonRpcResponse {
+        let req: BuildSemanticIndexRequest =
+            match parse_dynamicjepa_args(&id, args, "dynamicjepa_build_semantic_index", self) {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
+        self.run_dynamicjepa_mcp(
+            id,
+            DynamicJepaCommands::BuildSemanticIndex(BuildSemanticIndexArgs {
+                repo: req.repo,
+                output: req.output,
+                languages: req.languages,
+                max_files: req.max_files,
+                json: true,
+            }),
+        )
+        .await
+    }
+
+    pub(crate) async fn call_dynamicjepa_validate_corpus_diversity(
+        &self,
+        id: Option<JsonRpcId>,
+        args: Value,
+    ) -> JsonRpcResponse {
+        let req: ValidateCorpusDiversityRequest = match parse_dynamicjepa_args(
+            &id,
+            args,
+            "dynamicjepa_validate_corpus_diversity",
+            self,
+        ) {
+            Ok(req) => req,
+            Err(resp) => return resp,
+        };
+        self.run_dynamicjepa_mcp(
+            id,
+            DynamicJepaCommands::ValidateCorpusDiversity(ValidateCorpusDiversityArgs {
+                db: req.db_path,
+                min_raw_events: req.min_raw_events,
+                min_tool_families: req.min_tool_families,
+                min_languages: req.min_languages,
+                min_patch_deltas: req.min_patch_deltas,
+                min_compiler_checked: req.min_compiler_checked,
+                output: req.output,
+                json: true,
+            }),
+        )
+        .await
+    }
+
+    pub(crate) async fn call_dynamicjepa_attribute_test_delta(
+        &self,
+        id: Option<JsonRpcId>,
+        args: Value,
+    ) -> JsonRpcResponse {
+        let req: AttributeTestDeltaRequest =
+            match parse_dynamicjepa_args(&id, args, "dynamicjepa_attribute_test_delta", self) {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
+        self.run_dynamicjepa_mcp(
+            id,
+            DynamicJepaCommands::AttributeTestDelta(AttributeTestDeltaArgs {
+                repo: req.repo,
+                coverage_json: req.coverage_json,
+                changed_files_json: req.changed_files_json,
+                failures_before_json: req.failures_before_json,
+                failures_after_json: req.failures_after_json,
+                output: req.output,
+                json: true,
+            }),
+        )
+        .await
+    }
+
+    pub(crate) async fn call_dynamicjepa_compare_shadow_utility(
+        &self,
+        id: Option<JsonRpcId>,
+        args: Value,
+    ) -> JsonRpcResponse {
+        let req: CompareShadowUtilityRequest =
+            match parse_dynamicjepa_args(&id, args, "dynamicjepa_compare_shadow_utility", self) {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
+        self.run_dynamicjepa_mcp(
+            id,
+            DynamicJepaCommands::CompareShadowUtility(CompareShadowUtilityArgs {
+                db: req.db_path,
+                candidate_artifact_id: req.candidate_artifact_id,
+                active_artifact_id: req.active_artifact_id,
+                min_margin: req.min_margin,
+                output: req.output,
                 json: true,
             }),
         )
