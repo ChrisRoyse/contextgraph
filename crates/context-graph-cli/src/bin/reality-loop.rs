@@ -550,8 +550,7 @@ where
 }
 
 async fn harness_open_window(args: HarnessOpenWindowArgs) -> std::result::Result<Value, Value> {
-    let root = context_graph_cli::governed_edit::project_root()
-        .map_err(governed_error_to_json)?;
+    let root = context_graph_cli::governed_edit::project_root().map_err(governed_error_to_json)?;
     context_graph_cli::governed_edit::project_file_window(
         &root,
         &args.path,
@@ -565,8 +564,7 @@ async fn harness_apply_line_window_edit(
     args: HarnessApplyLineWindowEditArgs,
 ) -> std::result::Result<Value, Value> {
     let edit = read_stdin_json()?;
-    let root = context_graph_cli::governed_edit::project_root()
-        .map_err(governed_error_to_json)?;
+    let root = context_graph_cli::governed_edit::project_root().map_err(governed_error_to_json)?;
     context_graph_cli::governed_edit::project_apply_line_window_edits(
         &root,
         &args.tool_dir,
@@ -576,9 +574,7 @@ async fn harness_apply_line_window_edit(
     .map_err(governed_error_to_json)
 }
 
-async fn harness_run_command(
-    args: HarnessRunCommandArgs,
-) -> std::result::Result<Value, Value> {
+async fn harness_run_command(args: HarnessRunCommandArgs) -> std::result::Result<Value, Value> {
     let payload = read_stdin_json()?;
     let command = payload
         .get("command")
@@ -594,8 +590,7 @@ async fn harness_run_command(
                 "source_of_truth": null
             })
         })?;
-    let root = context_graph_cli::governed_edit::project_root()
-        .map_err(governed_error_to_json)?;
+    let root = context_graph_cli::governed_edit::project_root().map_err(governed_error_to_json)?;
     context_graph_cli::governed_edit::run_governed_command(
         &root,
         &args.tool_dir,
@@ -605,9 +600,7 @@ async fn harness_run_command(
     .map_err(governed_error_to_json)
 }
 
-async fn harness_verify_state(
-    args: HarnessVerifyStateArgs,
-) -> std::result::Result<Value, Value> {
+async fn harness_verify_state(args: HarnessVerifyStateArgs) -> std::result::Result<Value, Value> {
     let scope = match args.scope.as_str() {
         "full" => context_graph_cli::governed_edit::VerifyScope::Full,
         "reality_loop_only" => context_graph_cli::governed_edit::VerifyScope::RealityLoopOnly,
@@ -623,10 +616,14 @@ async fn harness_verify_state(
             }));
         }
     };
-    let root = context_graph_cli::governed_edit::project_root()
-        .map_err(governed_error_to_json)?;
-    context_graph_cli::governed_edit::verify_project_state(&root, &args.tool_dir, &args.label, scope)
-        .map_err(governed_error_to_json)
+    let root = context_graph_cli::governed_edit::project_root().map_err(governed_error_to_json)?;
+    context_graph_cli::governed_edit::verify_project_state(
+        &root,
+        &args.tool_dir,
+        &args.label,
+        scope,
+    )
+    .map_err(governed_error_to_json)
 }
 
 fn read_stdin_json() -> std::result::Result<Value, Value> {
@@ -2672,14 +2669,17 @@ fn compact_official_evidence(evidence: &Value) -> Value {
 /// 256K context AND make every round's prefill slow because we mint a fresh
 /// LlamaContext per chat call (full re-prefill of growing prompt).
 ///
-/// 16 KB ≈ 4000 tokens is small enough to stack 20+ tool results inside a
-/// 100K-token budget with room for assistant thinking and the system prompt.
-/// Big enough to convey an open_file_window of ~250 source lines, an issue
-/// summary, or a directory listing of ~200 files. Bigger results get truncated
-/// with an explicit marker telling the model how to recover (call again with a
-/// narrower scope). The full result is always persisted to
-/// <tool_dir>/tool-result.json regardless of truncation.
-const TOOL_RESULT_HISTORY_CAP_BYTES: usize = 16 * 1024;
+/// 4 KB ≈ 1000 tokens is small enough to stack 24 tool results inside a
+/// 32K-token budget with room for the system prompt + tool definitions + any
+/// active assistant reasoning. Big enough to convey an open_file_window of
+/// ~60 source lines, a one-paragraph issue summary, or a directory listing
+/// of ~50 files. Bigger results get truncated with an explicit marker telling
+/// the model how to recover (call again with a narrower scope). The full
+/// result is always persisted to <tool_dir>/tool-result.json regardless of
+/// truncation. Lowered from 16 KB on 2026-05-08 (turn 79) after empirical
+/// observation that round-3 prompts already hit 40K tokens with the prior cap;
+/// per-round prefill was ~10 min for a 72-token response.
+const TOOL_RESULT_HISTORY_CAP_BYTES: usize = 4 * 1024;
 
 fn truncate_tool_result_for_history(text: &str) -> String {
     if text.len() <= TOOL_RESULT_HISTORY_CAP_BYTES {

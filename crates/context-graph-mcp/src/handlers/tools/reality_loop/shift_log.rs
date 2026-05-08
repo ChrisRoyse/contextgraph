@@ -96,8 +96,8 @@ pub fn append_shift(runtime_root: &Path, session_id: &str, record: &ShiftRecord)
 
 pub async fn reality_shift_log(args: Value) -> Result<Value> {
     let session_id = required_str(&args, "session_id")?;
-    let limit = optional_u64(&args, "limit", 20).min(500) as usize;
-    let since_id = optional_str(&args, "since_shift_id");
+    let limit = optional_u64_strict(&args, "limit", 20)?.min(500) as usize;
+    let since_id = optional_str_strict(&args, "since_shift_id")?;
     let runtime_root = require_active_runtime_root().await?;
     let path = runtime_root
         .join("cgreality-shift-log")
@@ -127,6 +127,15 @@ pub async fn reality_shift_log(args: Value) -> Result<Value> {
             .position(|r| r.get("shift_id").and_then(Value::as_str) == Some(&since))
         {
             records = records.into_iter().skip(pos + 1).collect();
+        } else {
+            return Err(CCRealityError::new(
+                "CCREALITY_SHIFT_LOG_SINCE_ID_MISSING",
+                "since_shift_id was not found in the session shift log",
+                "shift_log.since_shift_id",
+                "read the current shift log and retry with an existing shift_id",
+                json!({"since_shift_id": since, "path": path.display().to_string()}),
+                Some(file_sot(&path)),
+            ));
         }
     }
     records.truncate(limit);
@@ -155,13 +164,29 @@ pub async fn reality_shift_compare_to_my_view(args: Value) -> Result<Value> {
         .get("shifts")
         .and_then(Value::as_array)
         .cloned()
-        .unwrap_or_default();
+        .ok_or_else(|| {
+            CCRealityError::new(
+                "CCREALITY_SHIFT_LOG_RESULT_INVALID_SHAPE",
+                "reality_shift_log result did not contain an array at .shifts",
+                "shift_log.shifts",
+                "inspect the shift log reader output before comparing state",
+                json!({"result": log}),
+                Some(file_sot(&runtime_root.join("reality-shifts"))),
+            )
+        })?;
     let root = project_root()?;
     let mut out = Vec::new();
-    for file in files {
-        let Some(path_str_arg) = file.as_str() else {
-            continue;
-        };
+    for (idx, file) in files.iter().enumerate() {
+        let path_str_arg = file.as_str().ok_or_else(|| {
+            CCRealityError::new(
+                "CCREALITY_ARG_FILES_ITEM_NOT_STRING",
+                "every item in argument 'files' must be a string path",
+                format!("arguments.files[{idx}]"),
+                "provide an array of string paths",
+                json!({"value": file}),
+                None,
+            )
+        })?;
         let path = if path_str_arg.starts_with('/') {
             std::path::PathBuf::from(path_str_arg)
         } else {

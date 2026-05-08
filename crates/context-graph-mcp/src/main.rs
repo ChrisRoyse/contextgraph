@@ -1431,7 +1431,10 @@ async fn evict_reality_loop_singleton_holder(pid: i32) -> bool {
     if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
         let errno = std::io::Error::last_os_error();
         if errno.raw_os_error() == Some(libc::ESRCH) {
-            info!("PID {} died between liveness probe and SIGTERM (ESRCH)", pid);
+            info!(
+                "PID {} died between liveness probe and SIGTERM (ESRCH)",
+                pid
+            );
             return true;
         }
         error!("kill({}, SIGTERM) failed: {}", pid, errno);
@@ -2469,6 +2472,18 @@ fn tool_success(id: serde_json::Value, value: serde_json::Value) -> serde_json::
 }
 
 fn tool_error(id: serde_json::Value, value: serde_json::Value) -> serde_json::Value {
+    tracing::error!(error = %value, "cgreality lightweight tool call failed");
+    eprintln!(
+        "{}",
+        serde_json::to_string(&serde_json::json!({
+            "event": "cgreality_tool_error",
+            "error": value.clone()
+        }))
+        .unwrap_or_else(|_| {
+            r#"{"event":"cgreality_tool_error","error":{"status":"error","error_code":"CCREALITY_ERROR_LOG_SERIALIZATION_FAILED"}}"#
+                .to_string()
+        })
+    );
     serde_json::json!({
         "jsonrpc": "2.0",
         "id": id,

@@ -27,7 +27,26 @@ pub(super) fn ok(
 }
 
 pub(super) fn err(id: Option<JsonRpcId>, error: CCRealityError) -> JsonRpcResponse {
+    tracing::error!(
+        error_code = %error.error_code,
+        field_path = %error.field_path,
+        message = %error.message,
+        source_of_truth = ?error.source_of_truth,
+        details = %error.details,
+        "cgreality tool call failed"
+    );
     let value = error.into_value();
+    eprintln!(
+        "{}",
+        serde_json::to_string(&json!({
+            "event": "cgreality_tool_error",
+            "error": value.clone()
+        }))
+        .unwrap_or_else(|_| {
+            r#"{"event":"cgreality_tool_error","error":{"status":"error","error_code":"CCREALITY_ERROR_LOG_SERIALIZATION_FAILED"}}"#
+                .to_string()
+        })
+    );
     JsonRpcResponse::success(
         id,
         json!({

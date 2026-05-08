@@ -448,13 +448,14 @@ pub fn train_tiny_jepa(
         .len()
         .div_ceil(config.schedule.batch_size)
         .max(1);
+    let eval_interval_epochs = stopping_eval_interval(config.schedule.epochs);
     let mut converged = false;
     for epoch in 0..config.schedule.epochs {
         let epoch_indices = shuffled_epoch_indices(&train_indices, config.seed, epoch as u64);
-        let mut epoch_loss = 0.0;
-        let mut epoch_mse = 0.0;
-        let mut epoch_var = 0.0;
-        let mut epoch_cov = 0.0;
+        let mut epoch_loss = None;
+        let mut epoch_mse = None;
+        let mut epoch_var = None;
+        let mut epoch_cov = None;
         for step in 0..steps_per_epoch {
             global_step += 1;
             apply_lr_schedule(&mut opt, config, global_step);
@@ -503,10 +504,10 @@ pub fn train_tiny_jepa(
             device
                 .synchronize()
                 .map_err(|err| training_err(format!("CUDA synchronize failed: {err}")))?;
-            epoch_loss += scalar_f64(&loss)?;
-            epoch_mse += scalar_f64(&latent_mse)?;
-            epoch_var += scalar_f64(&vic_var)?;
-            epoch_cov += scalar_f64(&vic_cov)?;
+            epoch_loss = accumulate_epoch_scalar(epoch_loss, &loss, "loss")?;
+            epoch_mse = accumulate_epoch_scalar(epoch_mse, &latent_mse, "latent_mse")?;
+            epoch_var = accumulate_epoch_scalar(epoch_var, &vic_var, "vicreg_variance")?;
+            epoch_cov = accumulate_epoch_scalar(epoch_cov, &vic_cov, "vicreg_covariance")?;
             if start.elapsed().as_secs_f64() > config.stopping.max_seconds as f64 {
                 return Err(DynamicJepaError::TrainingFailed {
                     training_run_id: uuid::Uuid::nil(),
@@ -521,26 +522,50 @@ pub fn train_tiny_jepa(
             }
         }
         let denom = steps_per_epoch as f64;
+        let epoch_loss =
+            mean_epoch_scalar(epoch_loss, denom, "loss").map_err(|err| training_err(err))?;
+        let epoch_mse =
+            mean_epoch_scalar(epoch_mse, denom, "latent_mse").map_err(|err| training_err(err))?;
+        let epoch_var = mean_epoch_scalar(epoch_var, denom, "vicreg_variance")
+            .map_err(|err| training_err(err))?;
+        let epoch_cov = mean_epoch_scalar(epoch_cov, denom, "vicreg_covariance")
+            .map_err(|err| training_err(err))?;
         epoch_metrics.push(EpochMetric {
             epoch,
-            loss: epoch_loss / denom,
-            latent_mse: epoch_mse / denom,
-            vicreg_variance: epoch_var / denom,
-            vicreg_covariance: epoch_cov / denom,
+            loss: epoch_loss,
+            latent_mse: epoch_mse,
+            vicreg_variance: epoch_var,
+            vicreg_covariance: epoch_cov,
         });
-        let epoch_eval = evaluate_model(
-            &model,
-            examples,
-            &eval_input,
-            &eval_target,
-            &eval_action,
-            &eval_negative,
-            false,
-        )?;
-        let stopping_value = metric_value(&epoch_eval, &config.stopping.metric)?;
-        if stopping_value <= config.stopping.target {
-            converged = true;
-            break;
+        let completed_epoch = epoch + 1;
+        let should_eval_stopping = completed_epoch % eval_interval_epochs == 0
+            || completed_epoch == config.schedule.epochs;
+        if should_eval_stopping {
+            let epoch_eval = evaluate_model(
+                &model,
+                examples,
+                &eval_input,
+                &eval_target,
+                &eval_action,
+                &eval_negative,
+                false,
+            )?;
+            if start.elapsed().as_secs_f64() > config.stopping.max_seconds as f64 {
+                return Err(DynamicJepaError::TrainingFailed {
+                    training_run_id: uuid::Uuid::nil(),
+                    message: format!(
+                        "max_seconds budget {} exceeded before convergence after epoch {epoch} evaluation",
+                        config.stopping.max_seconds
+                    ),
+                    remediation: "check CUDA utilization and inspect metrics.json for collapse or divergence"
+                        .to_string(),
+                });
+            }
+            let stopping_value = metric_value(&epoch_eval, &config.stopping.metric)?;
+            if stopping_value <= config.stopping.target {
+                converged = true;
+                break;
+            }
         }
     }
 
@@ -567,13 +592,21 @@ pub fn train_tiny_jepa(
         });
     }
     evaluation.objective_id = objective_id.to_string();
-    evaluation.random_init_baseline = std::collections::BTreeMap::from([(
-        "cosine".to_string(),
-        first_split_metric(&baseline_metrics, "latent_cosine").unwrap_or(0.0),
-    )]);
+    let random_init_cosine =
+        first_split_metric(&baseline_metrics, "latent_cosine").ok_or_else(|| {
+            DynamicJepaError::TrainingFailed {
+                training_run_id: uuid::Uuid::nil(),
+                message: "random-init baseline did not produce latent_cosine".to_string(),
+                remediation:
+                    "inspect evaluation split metrics; missing baseline metrics must not be treated as zero"
+                        .to_string(),
+            }
+        })?;
+    evaluation.random_init_baseline =
+        std::collections::BTreeMap::from([("cosine".to_string(), random_init_cosine)]);
     evaluation.epoch_metrics = epoch_metrics;
     evaluation.parameter_count_trainable = model.parameter_count_trainable();
-    let metrics = flatten_metrics(&evaluation);
+    let metrics = flatten_metrics(&evaluation)?;
     Ok(TrainedTinyJepa {
         tensors: model.tensors(),
         metrics,
@@ -676,6 +709,31 @@ fn apply_lr_schedule(opt: &mut AdamW, config: &TrainConfig, global_step: u64) {
     let warmup = config.optim.warmup_steps as f64;
     let scale = (global_step as f64 / warmup).clamp(0.0, 1.0);
     opt.set_learning_rate(config.optim.lr * scale);
+}
+
+fn stopping_eval_interval(epochs: usize) -> usize {
+    epochs.div_ceil(50).max(1)
+}
+
+fn accumulate_epoch_scalar(
+    acc: Option<Tensor>,
+    value: &Tensor,
+    name: &'static str,
+) -> DynamicJepaResult<Option<Tensor>> {
+    let value = value.detach();
+    let next = match acc {
+        Some(acc) => acc
+            .add(&value)
+            .map_err(|err| training_err(format!("failed to accumulate {name}: {err}")))?,
+        None => value,
+    };
+    Ok(Some(next))
+}
+
+fn mean_epoch_scalar(acc: Option<Tensor>, denom: f64, name: &'static str) -> Result<f64, String> {
+    let acc = acc.ok_or_else(|| format!("epoch did not accumulate {name}"))?;
+    let mean = (&acc / denom).map_err(|err| format!("failed to average {name}: {err}"))?;
+    scalar_f64(&mean).map_err(|err| format!("failed to read {name}: {err}"))
 }
 
 fn validate_examples(
@@ -972,24 +1030,37 @@ fn first_split_metric(report: &EvaluationReport, metric: &str) -> Option<f64> {
         .copied()
 }
 
-fn flatten_metrics(report: &EvaluationReport) -> std::collections::BTreeMap<String, f64> {
+fn flatten_metrics(
+    report: &EvaluationReport,
+) -> DynamicJepaResult<std::collections::BTreeMap<String, f64>> {
     let mut out = std::collections::BTreeMap::new();
     for (split, metrics) in &report.split_metrics {
         for (metric, value) in metrics {
             out.insert(format!("{split}_{metric}"), *value);
         }
     }
-    out.insert(
-        "shuffled_target_cosine".to_string(),
-        *report
-            .shuffled_target_baseline
-            .get("cosine")
-            .unwrap_or(&0.0),
-    );
-    out.insert(
-        "random_init_cosine".to_string(),
-        *report.random_init_baseline.get("cosine").unwrap_or(&0.0),
-    );
+    let shuffled_target_cosine = report
+        .shuffled_target_baseline
+        .get("cosine")
+        .copied()
+        .ok_or_else(|| DynamicJepaError::TrainingFailed {
+            training_run_id: uuid::Uuid::nil(),
+            message: "evaluation report is missing shuffled_target_baseline.cosine".to_string(),
+            remediation: "fix evaluation_model output; missing baseline metrics must fail"
+                .to_string(),
+        })?;
+    let random_init_cosine = report
+        .random_init_baseline
+        .get("cosine")
+        .copied()
+        .ok_or_else(|| DynamicJepaError::TrainingFailed {
+            training_run_id: uuid::Uuid::nil(),
+            message: "evaluation report is missing random_init_baseline.cosine".to_string(),
+            remediation: "fix training baseline evaluation; missing baseline metrics must fail"
+                .to_string(),
+        })?;
+    out.insert("shuffled_target_cosine".to_string(), shuffled_target_cosine);
+    out.insert("random_init_cosine".to_string(), random_init_cosine);
     out.insert(
         "vicreg_variance_per_dim_min".to_string(),
         report.vicreg_variance_per_dim_min,
@@ -1090,7 +1161,7 @@ fn flatten_metrics(report: &EvaluationReport) -> std::collections::BTreeMap<Stri
         "parameter_count_trainable".to_string(),
         report.parameter_count_trainable as f64,
     );
-    out
+    Ok(out)
 }
 
 #[derive(Debug, Clone)]

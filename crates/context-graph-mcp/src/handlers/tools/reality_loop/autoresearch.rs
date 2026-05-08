@@ -153,11 +153,18 @@ pub async fn experiment_registry_list(args: Value) -> Result<Value> {
         }));
     }
     let registry = read_json(&path)?;
-    let mut experiments: Vec<Value> = registry["experiments"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
-    if let Some(filter) = optional_str(&args, "status_filter") {
+    let mut experiments: Vec<Value> =
+        registry["experiments"].as_array().cloned().ok_or_else(|| {
+            CCRealityError::new(
+                "CCREALITY_AUTORESEARCH_REGISTRY_INVALID_SHAPE",
+                "experiment-registry.json does not contain an array at .experiments",
+                "experiment_registry.shape",
+                "repair the registry JSON before listing experiments",
+                json!({"path": path.display().to_string()}),
+                Some(file_sot(&path)),
+            )
+        })?;
+    if let Some(filter) = optional_str_strict(&args, "status_filter")? {
         experiments.retain(|e| {
             e.get("outcome")
                 .and_then(Value::as_str)
@@ -165,7 +172,7 @@ pub async fn experiment_registry_list(args: Value) -> Result<Value> {
                 .unwrap_or(false)
         });
     }
-    let limit = optional_u64(&args, "limit", 100).min(500) as usize;
+    let limit = optional_u64_strict(&args, "limit", 100)?.min(500) as usize;
     experiments.truncate(limit);
     Ok(json!({
         "experiments": experiments,
@@ -213,17 +220,30 @@ pub async fn champion_state_get(args: Value) -> Result<Value> {
     require_optimizer_dir(&dir)?;
     let path = dir.join("champion-state.json");
     if !path.is_file() {
-        return Ok(json!({
-            "champions": [],
-            "source_of_truth": file_sot(&path)
-        }));
+        return Err(CCRealityError::new(
+            "CCREALITY_AUTORESEARCH_CHAMPION_STATE_MISSING",
+            "champion-state.json is missing from the optimizer state directory",
+            "champion_state.path",
+            "run a real reality-loop attempt so the engine writes champion-state.json",
+            json!({"path": path.display().to_string()}),
+            Some(file_sot(&path)),
+        ));
     }
     let state = read_json(&path)?;
-    let mut champions: Vec<Value> = state["champions"].as_array().cloned().unwrap_or_default();
-    if let Some(model) = optional_str(&args, "model") {
+    let mut champions: Vec<Value> = state["champions"].as_array().cloned().ok_or_else(|| {
+        CCRealityError::new(
+            "CCREALITY_AUTORESEARCH_CHAMPION_INVALID_SHAPE",
+            "champion-state.json does not contain an array at .champions",
+            "champion_state.shape",
+            "repair champion-state.json before reading champions",
+            json!({"path": path.display().to_string()}),
+            Some(file_sot(&path)),
+        )
+    })?;
+    if let Some(model) = optional_str_strict(&args, "model")? {
         champions.retain(|c| c.get("model").and_then(Value::as_str) == Some(model.as_str()));
     }
-    if let Some(task) = optional_str(&args, "task") {
+    if let Some(task) = optional_str_strict(&args, "task")? {
         champions.retain(|c| c.get("task").and_then(Value::as_str) == Some(task.as_str()));
     }
     Ok(json!({
@@ -242,25 +262,40 @@ pub async fn attempts_history_query(args: Value) -> Result<Value> {
     require_optimizer_dir(&dir)?;
     let path = dir.join("attempts.jsonl");
     if !path.is_file() {
-        return Ok(json!({
-            "attempts": [],
-            "source_of_truth": file_sot(&path)
-        }));
+        return Err(CCRealityError::new(
+            "CCREALITY_AUTORESEARCH_ATTEMPTS_MISSING",
+            "attempts.jsonl is missing from the optimizer state directory",
+            "attempts_history.path",
+            "run a real reality-loop attempt so the engine writes attempts.jsonl",
+            json!({"path": path.display().to_string()}),
+            Some(file_sot(&path)),
+        ));
     }
     let raw = fs::read_to_string(&path)
         .map_err(|e| fs_error("CCREALITY_AUTORESEARCH_ATTEMPTS_READ_FAILED", &path, e))?;
-    let mut rows: Vec<Value> = raw
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str(l).ok())
-        .collect();
-    if let Some(model) = optional_str(&args, "model") {
+    let mut rows = Vec::new();
+    for (idx, line) in raw.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        rows.push(serde_json::from_str::<Value>(line).map_err(|e| {
+            CCRealityError::new(
+                "CCREALITY_AUTORESEARCH_ATTEMPTS_JSON_INVALID",
+                format!("invalid attempts.jsonl JSON at line {}: {e}", idx + 1),
+                "attempts_history.parse",
+                "repair or remove the corrupt attempts.jsonl line",
+                json!({"path": path.display().to_string(), "line": idx + 1}),
+                Some(file_sot(&path)),
+            )
+        })?);
+    }
+    if let Some(model) = optional_str_strict(&args, "model")? {
         rows.retain(|r| r.get("model").and_then(Value::as_str) == Some(model.as_str()));
     }
-    if let Some(task) = optional_str(&args, "instance_id") {
+    if let Some(task) = optional_str_strict(&args, "instance_id")? {
         rows.retain(|r| r.get("instance_id").and_then(Value::as_str) == Some(task.as_str()));
     }
-    let limit = optional_u64(&args, "limit", 100).min(500) as usize;
+    let limit = optional_u64_strict(&args, "limit", 100)?.min(500) as usize;
     let total = rows.len();
     if rows.len() > limit {
         rows.drain(0..rows.len() - limit);
@@ -279,8 +314,7 @@ pub async fn attempts_history_query(args: Value) -> Result<Value> {
 pub async fn experiment_registry_propose(args: Value) -> Result<Value> {
     let args = coerce_stringified_args(args);
     let summary = required_str(&args, "harness_change_summary")?;
-    let session = required_str(&args, "claude_session_id")
-        .or_else(|_| Ok::<String, CCRealityError>(session_id(&args)))?;
+    let session = required_str(&args, "claude_session_id").or_else(|_| session_id(&args))?;
     let dir = reality_optimizer_dir().await?;
     require_optimizer_dir(&dir)?;
     let path = dir.join("experiment-registry.json");
@@ -298,13 +332,14 @@ pub async fn experiment_registry_propose(args: Value) -> Result<Value> {
         "exp-{unix}-{}",
         safe_id(&summary).chars().take(40).collect::<String>()
     );
+    let before_attempt_count = optional_u64_strict(&args, "before_attempt_count", 0)?;
     let entry = json!({
         "experiment_id": experiment_id,
         "harness_change_summary": summary,
         "harness_change_recommendation_path": args.get("harness_change_recommendation_path"),
         "harness_change_shift_ids": args.get("harness_change_shift_ids").cloned().unwrap_or_else(|| json!([])),
         "files_changed": args.get("files_changed").cloned().unwrap_or_else(|| json!([])),
-        "before_attempt_count": args.get("before_attempt_count").and_then(Value::as_u64).unwrap_or(0),
+        "before_attempt_count": before_attempt_count,
         "after_attempt_count": 0,
         "outcome": "pending",
         "reasoning": Value::Null,
@@ -347,9 +382,8 @@ pub async fn experiment_registry_update_outcome(args: Value) -> Result<Value> {
     let args = coerce_stringified_args(args);
     let id = required_str(&args, "experiment_id")?;
     let outcome = required_str(&args, "outcome")?;
-    let reasoning = optional_str(&args, "reasoning").unwrap_or_default();
-    let session = required_str(&args, "claude_session_id")
-        .or_else(|_| Ok::<String, CCRealityError>(session_id(&args)))?;
+    let reasoning = optional_str_strict(&args, "reasoning")?.unwrap_or_default();
+    let session = required_str(&args, "claude_session_id").or_else(|_| session_id(&args))?;
     if !matches!(
         outcome.as_str(),
         "pending" | "kept" | "discarded" | "escalated" | "promoted"
@@ -424,8 +458,7 @@ pub async fn champion_state_promote(args: Value) -> Result<Value> {
     let model = required_str(&args, "model")?;
     let task = required_str(&args, "task")?;
     let justification = required_str(&args, "justification")?;
-    let session = required_str(&args, "claude_session_id")
-        .or_else(|_| Ok::<String, CCRealityError>(session_id(&args)))?;
+    let session = required_str(&args, "claude_session_id").or_else(|_| session_id(&args))?;
     let dir = reality_optimizer_dir().await?;
     require_optimizer_dir(&dir)?;
     let path = dir.join("champion-state.json");

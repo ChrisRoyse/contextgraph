@@ -154,7 +154,7 @@ pub async fn reality_latest_root(_args: Value) -> Result<Value> {
 pub async fn reality_attempt_summary(args: Value) -> Result<Value> {
     let run_id = required_str(&args, "run_id")?;
     let attempt = required_u64(&args, "attempt")?;
-    let compact = optional_bool(&args, "compact", false);
+    let compact = optional_bool_strict(&args, "compact", false)?;
     let runtime_root = require_active_runtime_root().await?;
     let task = require_active_target_instance().await?;
     let path = attempt_dir(&runtime_root, &run_id, &task, attempt)?.join("attempt-summary.json");
@@ -193,7 +193,7 @@ pub async fn reality_official_report(args: Value) -> Result<Value> {
 
 pub async fn reality_problem_packet(args: Value) -> Result<Value> {
     let run_id = required_str(&args, "run_id")?;
-    let compact = optional_bool(&args, "compact", false);
+    let compact = optional_bool_strict(&args, "compact", false)?;
     let runtime_root = require_active_runtime_root().await?;
     let run_dir = runtime_root.join(&run_id);
     let mut candidates = Vec::new();
@@ -219,7 +219,7 @@ pub async fn reality_problem_packet(args: Value) -> Result<Value> {
 pub async fn reality_signal(args: Value) -> Result<Value> {
     let run_id = required_str(&args, "run_id")?;
     let attempt = required_u64(&args, "attempt")?;
-    let compact = optional_bool(&args, "compact", false);
+    let compact = optional_bool_strict(&args, "compact", false)?;
     let runtime_root = require_active_runtime_root().await?;
     let task = require_active_target_instance().await?;
     let path =
@@ -261,7 +261,14 @@ pub async fn reality_trigger_decision(args: Value) -> Result<Value> {
     let task = require_active_target_instance().await?;
     let path = attempt_dir(&runtime_root, &run_id, &task, attempt)?.join("trigger-decision.json");
     if !path.is_file() {
-        return Ok(json!({"status": "no_decision_recorded", "source_of_truth": Value::Null}));
+        return Err(CCRealityError::new(
+            "CCREALITY_TRIGGER_DECISION_MISSING",
+            "trigger-decision.json is missing for the requested attempt",
+            "trigger_decision.path",
+            "record an optimizer decision before reading trigger-decision evidence",
+            json!({"path": path.display().to_string(), "run_id": run_id, "attempt": attempt}),
+            Some(file_sot(&path)),
+        ));
     }
     let mut body = read_json(&path)?;
     insert_sot(&mut body, &path);
@@ -271,7 +278,7 @@ pub async fn reality_trigger_decision(args: Value) -> Result<Value> {
 pub async fn reality_harness_transitions(args: Value) -> Result<Value> {
     let run_id = required_str(&args, "run_id")?;
     let attempt = required_u64(&args, "attempt")?;
-    let round = args.get("round").and_then(Value::as_u64);
+    let round = optional_u64_value_strict(&args, "round")?;
     let runtime_root = require_active_runtime_root().await?;
     let task = require_active_target_instance().await?;
     let dir = attempt_dir(&runtime_root, &run_id, &task, attempt)?.join("harness-transitions");
@@ -348,7 +355,7 @@ pub async fn reality_compare_attempts(args: Value) -> Result<Value> {
 
 pub async fn reality_audit_trail(handlers: &Handlers, args: Value) -> Result<Value> {
     let entity_id = required_str(&args, "entity_id")?;
-    let limit = optional_u64(&args, "limit", 50).min(500) as usize;
+    let limit = optional_u64_strict(&args, "limit", 50)?.min(500) as usize;
     let uuid = uuid::Uuid::parse_str(&entity_id).map_err(|e| {
         CCRealityError::new(
             "CCREALITY_AUDIT_ENTITY_ID_INVALID",
@@ -384,7 +391,7 @@ pub async fn reality_audit_trail(handlers: &Handlers, args: Value) -> Result<Val
 #[allow(dead_code)]
 pub async fn reality_runtime_audit_trail(args: Value) -> Result<Value> {
     let entity_id = required_str(&args, "entity_id")?;
-    let limit = optional_u64(&args, "limit", 50).min(500) as usize;
+    let limit = optional_u64_strict(&args, "limit", 50)?.min(500) as usize;
     let uuid = uuid::Uuid::parse_str(&entity_id).map_err(|e| {
         CCRealityError::new(
             "CCREALITY_AUDIT_ENTITY_ID_INVALID",
@@ -438,15 +445,33 @@ pub async fn reality_replay_artifact(args: Value) -> Result<Value> {
     let path_arg = required_str(&args, "path")?;
     let path = file_arg_to_path(&path_arg);
     if !path.is_file() {
-        return Ok(json!({
-            "exists": false,
-            "path": path.display().to_string(),
-            "source_of_truth": file_sot(&path)
-        }));
+        return Err(CCRealityError::new(
+            "CCREALITY_REPLAY_ARTIFACT_MISSING",
+            "requested artifact path does not exist as a regular file",
+            "replay_artifact.path",
+            "verify the artifact path from the source-of-truth record before replaying it",
+            json!({"path": path.display().to_string()}),
+            Some(file_sot(&path)),
+        ));
     }
     let meta = fs::metadata(&path)
         .map_err(|e| fs_error("CCREALITY_REPLAY_ARTIFACT_METADATA_FAILED", &path, e))?;
     let sha = sha256_file(&path)?;
+    let mtime_unix = meta
+        .modified()
+        .map_err(|e| fs_error("CCREALITY_REPLAY_ARTIFACT_MTIME_FAILED", &path, e))?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| {
+            CCRealityError::new(
+                "CCREALITY_REPLAY_ARTIFACT_MTIME_INVALID",
+                format!("artifact mtime is before UNIX_EPOCH: {e}"),
+                "replay_artifact.mtime",
+                "repair the artifact timestamp before replaying it",
+                json!({"path": path.display().to_string()}),
+                Some(file_sot(&path)),
+            )
+        })?
+        .as_secs();
     let content_or_pointer = if meta.len() < 32 * 1024 {
         Value::String(
             fs::read_to_string(&path)
@@ -459,7 +484,7 @@ pub async fn reality_replay_artifact(args: Value) -> Result<Value> {
         "exists": true,
         "sha256": sha,
         "size_bytes": meta.len(),
-        "mtime_unix": meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()),
+        "mtime_unix": mtime_unix,
         "content_or_pointer": content_or_pointer,
         "source_of_truth": file_sot(&path)
     }))

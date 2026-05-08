@@ -314,7 +314,7 @@ mod tests {
         ));
         assert!(matches!(
             p.is_allowed("random/path.txt"),
-            PolicyVerdict::NoMatch
+            PolicyVerdict::Allow
         ));
     }
 

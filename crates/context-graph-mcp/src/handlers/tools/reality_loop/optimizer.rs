@@ -47,7 +47,7 @@ impl Handlers {
 pub async fn optimizer_record_decision(args: Value) -> Result<Value> {
     let run_id = required_str(&args, "run_id")?;
     let attempt = required_u64(&args, "attempt")?;
-    let session = required_str(&args, "claude_session_id").or_else(|_| Ok(session_id(&args)))?;
+    let session = required_str(&args, "claude_session_id").or_else(|_| session_id(&args))?;
     let runtime_root = require_active_runtime_root().await?;
     let task = require_active_target_instance().await?;
     let attempt_dir = attempt_dir(&runtime_root, &run_id, &task, attempt)?;
@@ -76,6 +76,8 @@ pub async fn optimizer_record_decision(args: Value) -> Result<Value> {
     let ledger_append = append_optimizer_ledger(
         &runtime_root,
         &optimizer_dir,
+        &run_id,
+        Some(&task),
         "optimizer_record_decision",
         &payload,
     )
@@ -134,6 +136,8 @@ pub async fn optimizer_record_recommendation(args: Value) -> Result<Value> {
     let ledger_append = append_optimizer_ledger(
         &runtime_root,
         &optimizer_dir,
+        &run_id,
+        Some(&task),
         "optimizer_record_recommendation",
         &payload,
     )
@@ -171,8 +175,17 @@ pub async fn optimizer_record_harness_transition(
     let round = read_json(&path)?
         .get("round")
         .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let session = session_id(&args);
+        .ok_or_else(|| {
+            super::errors::CCRealityError::new(
+                "CCREALITY_HARNESS_TRANSITION_ROUND_MISSING",
+                "harness transition readback did not contain a numeric round",
+                "harness_transition.round",
+                "inspect the transition artifact writer before using this transition",
+                json!({"path": path.display().to_string()}),
+                Some(file_sot(&path)),
+            )
+        })?;
+    let session = session_id(&args)?;
     let mut shift_id = Value::Null;
     if append_external_shift {
         let mut shift = ShiftRecord::new(
@@ -261,10 +274,12 @@ fn next_round(dir: &Path) -> Result<u64> {
 async fn append_optimizer_ledger(
     runtime_root: &Path,
     optimizer_dir: &Path,
+    run_id: &str,
+    target_instance: Option<&str>,
     tool_name: &str,
     payload: &Value,
 ) -> Result<Value> {
-    let ledger = find_optimizer_ledger(runtime_root)?;
+    let ledger = super::interact::find_ledger_for_run(runtime_root, run_id, target_instance)?;
     let blackbox_run_id = latest_blackbox_run_id(&ledger)?;
     let input_path =
         optimizer_dir.join(format!("ledger-input-{}-{}.json", tool_name, unix_secs()?));
@@ -343,48 +358,6 @@ async fn append_optimizer_ledger(
         map.insert("ledger_input".to_string(), json!(file_sot(&input_path)));
     }
     Ok(parsed)
-}
-
-fn find_optimizer_ledger(root: &Path) -> Result<PathBuf> {
-    let direct = root.join("ledger.sqlite");
-    if direct.is_file() {
-        return Ok(direct);
-    }
-    let mut found = Vec::new();
-    collect_optimizer_ledgers(root, &mut found)?;
-    found.into_iter().next().ok_or_else(|| {
-        super::errors::CCRealityError::new(
-            "CCREALITY_OPTIMIZER_LEDGER_MISSING",
-            "no ledger.sqlite or blackbox.sqlite was found under active runtime root",
-            "optimizer.ledger.path",
-            "initialize a real BlackBox ledger before recording optimizer artifacts",
-            json!({"runtime_root": root.display().to_string()}),
-            Some(file_sot(root)),
-        )
-    })
-}
-
-fn collect_optimizer_ledgers(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    if !root.is_dir() {
-        return Ok(());
-    }
-    for entry in fs::read_dir(root)
-        .map_err(|e| fs_error("CCREALITY_OPTIMIZER_LEDGER_WALK_READ_FAILED", root, e))?
-    {
-        let entry =
-            entry.map_err(|e| fs_error("CCREALITY_OPTIMIZER_LEDGER_WALK_ENTRY_FAILED", root, e))?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_optimizer_ledgers(&path, out)?;
-        } else if path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n == "ledger.sqlite" || n == "blackbox.sqlite")
-        {
-            out.push(path);
-        }
-    }
-    Ok(())
 }
 
 fn latest_blackbox_run_id(ledger: &Path) -> Result<String> {

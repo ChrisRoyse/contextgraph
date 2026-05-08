@@ -78,9 +78,9 @@ impl Handlers {
 }
 
 pub async fn reality_run_smoke(args: Value) -> Result<Value> {
-    let runtime_root = optional_str(&args, "runtime_root")
+    let runtime_root = optional_str_strict(&args, "runtime_root")?
         .unwrap_or_else(|| "/tmp/cgreality-mcp-smoke".to_string());
-    let label = optional_str(&args, "label").unwrap_or_else(|| "mcp-smoke".to_string());
+    let label = optional_str_strict(&args, "label")?.unwrap_or_else(|| "mcp-smoke".to_string());
     let bin = locate_engine_binary()?;
     let out = Command::new(&bin)
         .arg("smoke")
@@ -98,7 +98,7 @@ pub async fn reality_run_smoke(args: Value) -> Result<Value> {
     let payload = engine_output("reality_run_smoke", &bin, out)?;
     if payload.get("status").and_then(Value::as_str) == Some("success") {
         let rr = PathBuf::from(&runtime_root);
-        let session = session_id(&args);
+        let session = session_id(&args)?;
         let mut shift = ShiftRecord::new(
             "reality_run_smoke",
             &session,
@@ -113,14 +113,14 @@ pub async fn reality_run_smoke(args: Value) -> Result<Value> {
 
 pub async fn reality_run_attempt(args: Value) -> Result<Value> {
     let task_manifest = required_str(&args, "task_manifest")?;
-    let runtime_root = optional_str(&args, "runtime_root")
+    let runtime_root = optional_str_strict(&args, "runtime_root")?
         .unwrap_or_else(|| "/tmp/contextgraph-rust-reality-loop".to_string());
-    let max_attempts = optional_u64(&args, "max_attempts", 1).to_string();
-    let model = optional_str(&args, "model").unwrap_or_else(|| "qwen3.6:27b".to_string());
-    let inner_model_path = optional_str(&args, "inner_model_path");
-    let inner_context_tokens = args.get("inner_context_tokens").and_then(Value::as_u64);
-    let inner_max_new_tokens = args.get("inner_max_new_tokens").and_then(Value::as_u64);
-    let official = optional_bool(&args, "official_eval", true);
+    let max_attempts = optional_u64_strict(&args, "max_attempts", 1)?.to_string();
+    let model = optional_str_strict(&args, "model")?.unwrap_or_else(|| "qwen3.6:27b".to_string());
+    let inner_model_path = optional_str_strict(&args, "inner_model_path")?;
+    let inner_context_tokens = optional_u64_value_strict(&args, "inner_context_tokens")?;
+    let inner_max_new_tokens = optional_u64_value_strict(&args, "inner_max_new_tokens")?;
+    let official = optional_bool_strict(&args, "official_eval", true)?;
     let bin = locate_engine_binary()?;
     let mut cmd = Command::new(&bin);
     cmd.arg("attempt")
@@ -179,7 +179,7 @@ pub async fn reality_run_targeted_test(args: Value) -> Result<Value> {
     let run_id = required_str(&args, "run_id")?;
     let attempt = required_u64(&args, "attempt")?;
     let test_id = required_str(&args, "test_id")?;
-    let timeout_secs = optional_u64(&args, "timeout_secs", 300).to_string();
+    let timeout_secs = optional_u64_strict(&args, "timeout_secs", 300)?.to_string();
     let runtime_root = require_active_runtime_root().await?;
     let target = require_active_target_instance().await?;
     let bin = locate_engine_binary()?;
@@ -225,34 +225,74 @@ pub async fn reality_recompile_reward(args: Value) -> Result<Value> {
 }
 
 pub async fn reality_query_ledger(args: Value) -> Result<Value> {
+    let run_id = required_str(&args, "run_id")?;
     let where_clause = required_str(&args, "where")?;
-    let limit = optional_u64(&args, "limit", 50).min(500);
+    let limit = optional_u64_strict(&args, "limit", 50)?.min(500);
     let where_clause = validate_ledger_where(&where_clause)?;
     let runtime_root = require_active_runtime_root().await?;
-    let ledger = find_ledger(&runtime_root)?;
+    let target = read_active_target_instance().await?;
+    let ledger = find_ledger_for_run(&runtime_root, &run_id, target.as_deref())?;
     let conn =
         rusqlite::Connection::open_with_flags(&ledger, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| sqlite_err("CCREALITY_LEDGER_OPEN_FAILED", &ledger, e))?;
     let sql = format!(
-        "SELECT record_kind, created_at, payload_json FROM ledger_records WHERE {where_clause} ORDER BY created_at DESC LIMIT {limit}"
+        "SELECT sequence, record_kind, created_at, payload_json FROM ledger_records WHERE run_id = ?1 AND ({where_clause}) ORDER BY sequence DESC LIMIT ?2"
     );
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| sqlite_err("CCREALITY_LEDGER_PREPARE_FAILED", &ledger, e))?;
     let rows = stmt
-        .query_map([], |row| {
+        .query_map(rusqlite::params![&run_id, limit as i64], |row| {
             Ok(json!({
-                "record_kind": row.get::<_, String>(0)?,
-                "created_at": row.get::<_, String>(1)?,
-                "payload_json": row.get::<_, String>(2)?
+                "sequence": row.get::<_, i64>(0)?,
+                "record_kind": row.get::<_, String>(1)?,
+                "created_at": row.get::<_, String>(2)?,
+                "payload_json": row.get::<_, String>(3)?
             }))
         })
         .map_err(|e| sqlite_err("CCREALITY_LEDGER_QUERY_FAILED", &ledger, e))?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|e| sqlite_err("CCREALITY_LEDGER_ROW_READ_FAILED", &ledger, e))?;
+    let rows = rows
+        .into_iter()
+        .map(|mut row| {
+            let payload_json =
+                row.get("payload_json")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        CCRealityError::new(
+                            "CCREALITY_LEDGER_PAYLOAD_MISSING",
+                            "ledger row did not contain payload_json",
+                            "ledger.payload_json",
+                            "inspect the ledger schema and row projection",
+                            json!({"ledger": ledger.display().to_string(), "row": row}),
+                            Some(format!("sqlite:{}#ledger_records", ledger.display())),
+                        )
+                    })?;
+            let payload = serde_json::from_str::<Value>(payload_json).map_err(|e| {
+                CCRealityError::new(
+                    "CCREALITY_LEDGER_PAYLOAD_JSON_INVALID",
+                    format!("ledger payload_json is not valid JSON: {e}"),
+                    "ledger.payload_json",
+                    "repair the ledger row or rebuild the attempt from source artifacts",
+                    json!({
+                        "ledger": ledger.display().to_string(),
+                        "sequence": row.get("sequence").cloned().unwrap_or(Value::Null)
+                    }),
+                    Some(format!("sqlite:{}#ledger_records", ledger.display())),
+                )
+            })?;
+            if let Value::Object(map) = &mut row {
+                map.insert("payload".to_string(), payload);
+            }
+            Ok(row)
+        })
+        .collect::<Result<Vec<_>>>()?;
     Ok(json!({
         "rows": rows,
         "row_count": rows.len(),
+        "run_id": run_id,
+        "ledger_path": ledger.display().to_string(),
         "source_of_truth": format!("sqlite:{}#ledger_records", ledger.display())
     }))
 }
@@ -396,23 +436,84 @@ fn tail(text: &str, limit: usize) -> String {
     }
 }
 
-fn find_ledger(root: &Path) -> Result<PathBuf> {
+pub(super) fn find_ledger_for_run(
+    root: &Path,
+    run_id: &str,
+    target_instance: Option<&str>,
+) -> Result<PathBuf> {
     let direct = root.join("ledger.sqlite");
     if direct.is_file() {
         return Ok(direct);
     }
+    let run_dir = root.join(run_id);
+    if !run_dir.is_dir() {
+        return Err(CCRealityError::new(
+            "CCREALITY_LEDGER_RUN_DIR_MISSING",
+            "run_id directory is missing under active runtime root",
+            "ledger.run_id",
+            "verify run_id with reality_latest_root and rerun the engine if artifacts are missing",
+            json!({"runtime_root": root.display().to_string(), "run_id": run_id, "path": run_dir.display().to_string()}),
+            Some(file_sot(&run_dir)),
+        ));
+    }
     let mut found = Vec::new();
-    collect_ledgers(root, &mut found)?;
-    found.into_iter().next().ok_or_else(|| {
-        CCRealityError::new(
+    collect_ledgers(&run_dir, &mut found)?;
+    found.sort();
+    let candidates = match target_instance {
+        Some(target) => {
+            let target_filtered = found
+                .iter()
+                .filter(|path| path_has_component(path, target))
+                .cloned()
+                .collect::<Vec<_>>();
+            if target_filtered.is_empty() && !found.is_empty() {
+                return Err(CCRealityError::new(
+                    "CCREALITY_LEDGER_TARGET_MISMATCH",
+                    "no ledger under the requested run_id matches the active target instance",
+                    "ledger.target_instance",
+                    "set the active target instance to the run's target or inspect the run directory before querying",
+                    json!({
+                        "runtime_root": root.display().to_string(),
+                        "run_id": run_id,
+                        "target_instance": target,
+                        "candidates": found.iter().map(|p| p.display().to_string()).collect::<Vec<_>>()
+                    }),
+                    Some(file_sot(&run_dir)),
+                ));
+            }
+            target_filtered
+        }
+        None => found,
+    };
+    match candidates.as_slice() {
+        [ledger] => Ok(ledger.clone()),
+        [] => Err(CCRealityError::new(
             "CCREALITY_LEDGER_MISSING",
-            "no ledger.sqlite or blackbox.sqlite was found under active runtime root",
+            "no ledger.sqlite or blackbox.sqlite was found under requested run_id",
             "ledger.path",
-            "run an attempt that initializes the BlackBox ledger",
-            json!({"runtime_root": root.display().to_string()}),
-            Some(file_sot(root)),
-        )
-    })
+            "run an attempt that initializes the BlackBox ledger for this run_id",
+            json!({"runtime_root": root.display().to_string(), "run_id": run_id, "target_instance": target_instance}),
+            Some(file_sot(&run_dir)),
+        )),
+        many => Err(CCRealityError::new(
+            "CCREALITY_LEDGER_AMBIGUOUS",
+            "multiple ledgers match the requested run_id",
+            "ledger.path",
+            "narrow the active target instance or inspect the run directory before querying",
+            json!({
+                "runtime_root": root.display().to_string(),
+                "run_id": run_id,
+                "target_instance": target_instance,
+                "candidates": many.iter().map(|p| p.display().to_string()).collect::<Vec<_>>()
+            }),
+            Some(file_sot(&run_dir)),
+        )),
+    }
+}
+
+fn path_has_component(path: &Path, expected: &str) -> bool {
+    path.components()
+        .any(|component| component.as_os_str().to_str() == Some(expected))
 }
 
 fn collect_ledgers(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
@@ -477,5 +578,54 @@ mod tests {
                 "{clause} should be rejected"
             );
         }
+    }
+
+    #[test]
+    fn ledger_locator_scopes_to_run_id_and_target_component() {
+        let root = tempfile::tempdir().expect("runtime root");
+        let run_a_ledger = root
+            .path()
+            .join("run-a/tasks/target-a/model/blackbox.sqlite");
+        let run_b_ledger = root
+            .path()
+            .join("run-b/tasks/target-b/model/blackbox.sqlite");
+        std::fs::create_dir_all(run_a_ledger.parent().expect("parent")).expect("run a parent");
+        std::fs::create_dir_all(run_b_ledger.parent().expect("parent")).expect("run b parent");
+        std::fs::write(&run_a_ledger, b"sqlite-a").expect("run a ledger");
+        std::fs::write(&run_b_ledger, b"sqlite-b").expect("run b ledger");
+
+        let resolved =
+            find_ledger_for_run(root.path(), "run-b", Some("target-b")).expect("run b ledger");
+        assert_eq!(resolved, run_b_ledger);
+    }
+
+    #[test]
+    fn ledger_locator_rejects_ambiguous_run_ledgers() {
+        let root = tempfile::tempdir().expect("runtime root");
+        let ledger_a = root.path().join("run-a/tasks/target-a/blackbox.sqlite");
+        let ledger_b = root.path().join("run-a/tasks/target-b/blackbox.sqlite");
+        std::fs::create_dir_all(ledger_a.parent().expect("parent")).expect("target a parent");
+        std::fs::create_dir_all(ledger_b.parent().expect("parent")).expect("target b parent");
+        std::fs::write(&ledger_a, b"sqlite-a").expect("target a ledger");
+        std::fs::write(&ledger_b, b"sqlite-b").expect("target b ledger");
+
+        let err = find_ledger_for_run(root.path(), "run-a", None).expect_err("ambiguous");
+        assert_eq!(err.error_code, "CCREALITY_LEDGER_AMBIGUOUS");
+
+        let resolved =
+            find_ledger_for_run(root.path(), "run-a", Some("target-a")).expect("target filter");
+        assert_eq!(resolved, ledger_a);
+    }
+
+    #[test]
+    fn ledger_locator_rejects_active_target_mismatch() {
+        let root = tempfile::tempdir().expect("runtime root");
+        let ledger = root.path().join("run-a/tasks/target-a/blackbox.sqlite");
+        std::fs::create_dir_all(ledger.parent().expect("parent")).expect("target parent");
+        std::fs::write(&ledger, b"sqlite-a").expect("ledger");
+
+        let err = find_ledger_for_run(root.path(), "run-a", Some("target-b"))
+            .expect_err("target mismatch");
+        assert_eq!(err.error_code, "CCREALITY_LEDGER_TARGET_MISMATCH");
     }
 }

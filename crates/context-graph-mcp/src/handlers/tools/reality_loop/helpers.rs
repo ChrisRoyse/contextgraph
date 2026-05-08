@@ -124,12 +124,29 @@ pub fn latest_run_id(runtime_root: &Path) -> Result<Option<String>> {
         if is_runtime_metadata_dir(&name) {
             continue;
         }
-        let modified = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        let modified_at = meta.modified().map_err(|e| {
+            CCRealityError::new(
+                "CCREALITY_RUNTIME_ROOT_ENTRY_MTIME_FAILED",
+                format!("failed to read runtime root entry mtime: {e}"),
+                "runtime_root.entry.modified",
+                "inspect runtime root filesystem metadata",
+                json!({"path": entry.path().display().to_string()}),
+                Some(file_sot(&entry.path())),
+            )
+        })?;
+        let modified = modified_at
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| {
+                CCRealityError::new(
+                    "CCREALITY_RUNTIME_ROOT_ENTRY_MTIME_INVALID",
+                    format!("runtime root entry mtime is before UNIX_EPOCH: {e}"),
+                    "runtime_root.entry.modified",
+                    "repair the runtime root entry timestamp before selecting latest run",
+                    json!({"path": entry.path().display().to_string()}),
+                    Some(file_sot(&entry.path())),
+                )
+            })?
+            .as_secs();
         candidates.push((modified, name));
     }
     candidates.sort();
@@ -359,15 +376,24 @@ pub fn required_str(args: &Value, field: &str) -> Result<String> {
         })
 }
 
-pub fn optional_str(args: &Value, field: &str) -> Option<String> {
-    args.get(field)
-        .and_then(Value::as_str)
-.filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
+pub fn optional_str_strict(args: &Value, field: &str) -> Result<Option<String>> {
+    match args.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) if !value.is_empty() => Ok(Some(value.clone())),
+        Some(value) => Err(CCRealityError::new(
+            "CCREALITY_ARG_INVALID_STRING",
+            format!("argument '{field}' must be a non-empty string when provided"),
+            format!("arguments.{field}"),
+            format!("omit arguments.{field} or provide a non-empty string"),
+            json!({"value": value}),
+            None,
+        )),
+    }
 }
 
 pub fn required_u64(args: &Value, field: &str) -> Result<u64> {
-    coerce_u64(args.get(field)).ok_or_else(|| {        CCRealityError::new(
+    coerce_u64(args.get(field)).ok_or_else(|| {
+        CCRealityError::new(
             "CCREALITY_ARG_MISSING_OR_NOT_U64",
             format!("argument '{field}' must be a non-negative integer"),
             format!("arguments.{field}"),
@@ -378,12 +404,52 @@ pub fn required_u64(args: &Value, field: &str) -> Result<u64> {
     })
 }
 
-pub fn optional_u64(args: &Value, field: &str, default: u64) -> u64 {
-    coerce_u64(args.get(field)).unwrap_or(default)
+pub fn optional_u64_strict(args: &Value, field: &str, default: u64) -> Result<u64> {
+    match args.get(field) {
+        None | Some(Value::Null) => Ok(default),
+        Some(value) => coerce_u64(Some(value)).ok_or_else(|| {
+            CCRealityError::new(
+                "CCREALITY_ARG_INVALID_U64",
+                format!("argument '{field}' must be a non-negative integer when provided"),
+                format!("arguments.{field}"),
+                format!("omit arguments.{field} or provide a non-negative integer"),
+                json!({"value": value}),
+                None,
+            )
+        }),
+    }
 }
 
-pub fn optional_bool(args: &Value, field: &str, default: bool) -> bool {
-    coerce_bool(args.get(field)).unwrap_or(default)
+pub fn optional_u64_value_strict(args: &Value, field: &str) -> Result<Option<u64>> {
+    match args.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => coerce_u64(Some(value)).map(Some).ok_or_else(|| {
+            CCRealityError::new(
+                "CCREALITY_ARG_INVALID_U64",
+                format!("argument '{field}' must be a non-negative integer when provided"),
+                format!("arguments.{field}"),
+                format!("omit arguments.{field} or provide a non-negative integer"),
+                json!({"value": value}),
+                None,
+            )
+        }),
+    }
+}
+
+pub fn optional_bool_strict(args: &Value, field: &str, default: bool) -> Result<bool> {
+    match args.get(field) {
+        None | Some(Value::Null) => Ok(default),
+        Some(value) => coerce_bool(Some(value)).ok_or_else(|| {
+            CCRealityError::new(
+                "CCREALITY_ARG_INVALID_BOOL",
+                format!("argument '{field}' must be a boolean when provided"),
+                format!("arguments.{field}"),
+                format!("omit arguments.{field} or provide true/false"),
+                json!({"value": value}),
+                None,
+            )
+        }),
+    }
 }
 
 /// Accept either a JSON number or a JSON string that parses to a non-negative integer.
@@ -455,11 +521,15 @@ fn looks_like_json_literal(s: &str) -> bool {
         || matches!(trimmed, "true" | "false" | "null")
 }
 
-pub fn session_id(args: &Value) -> String {
-    optional_str(args, "session_id")
-        .or_else(|| optional_str(args, "_session_id"))
-        .or_else(|| std::env::var("CLAUDE_SESSION_ID").ok())
-        .unwrap_or_else(|| "cgreality-stdio-session".to_string())
+pub fn session_id(args: &Value) -> Result<String> {
+    Ok(optional_str_strict(args, "session_id")?
+        .or(optional_str_strict(args, "_session_id")?)
+        .or_else(|| {
+            std::env::var("CLAUDE_SESSION_ID")
+                .ok()
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or_else(|| "cgreality-stdio-session".to_string()))
 }
 
 pub fn project_root() -> Result<PathBuf> {
@@ -611,10 +681,12 @@ mod tests {
 
     #[test]
     fn optional_bool_accepts_stringified_true_false() {
-        assert!(optional_bool(&json!({"k": "true"}), "k", false));
-        assert!(!optional_bool(&json!({"k": "false"}), "k", true));
-        assert!(optional_bool(&json!({"k": true}), "k", false));
-        assert!(!optional_bool(&json!({"k": "garbage"}), "k", false));
+        assert!(optional_bool_strict(&json!({"k": "true"}), "k", false).expect("true"));
+        assert!(!optional_bool_strict(&json!({"k": "false"}), "k", true).expect("false"));
+        assert!(optional_bool_strict(&json!({"k": true}), "k", false).expect("native"));
+        let err =
+            optional_bool_strict(&json!({"k": "garbage"}), "k", false).expect_err("invalid bool");
+        assert_eq!(err.error_code, "CCREALITY_ARG_INVALID_BOOL");
     }
 
     #[test]
@@ -665,13 +737,14 @@ mod tests {
         assert!(looks_like_json_literal("true"));
         assert!(looks_like_json_literal("false"));
         assert!(looks_like_json_literal("null"));
-assert!(!looks_like_json_literal("changed"));
+        assert!(!looks_like_json_literal("changed"));
         assert!(!looks_like_json_literal("file:/tmp/x"));
         assert!(!looks_like_json_literal(""));
     }
 
     #[test]
-    fn required_str_preserves_leading_and_trailing_whitespace() {        // Regression: str::trim previously stripped indentation from the inner model's
+    fn required_str_preserves_leading_and_trailing_whitespace() {
+        // Regression: str::trim previously stripped indentation from the inner model's
         // `replace` payloads, corrupting py_compile-sensitive Python blocks.
         let payload = "    if x:\n        pass\n";
         let args = json!({"replace": payload});
@@ -680,10 +753,22 @@ assert!(!looks_like_json_literal("changed"));
     }
 
     #[test]
-    fn optional_str_preserves_leading_and_trailing_whitespace() {
+    fn optional_str_strict_preserves_leading_and_trailing_whitespace() {
         let payload = "\n  indented value\t\n";
         let args = json!({"replace": payload});
-        let got = optional_str(&args, "replace").expect("present");
-        assert_eq!(got, payload, "optional_str must preserve bytes verbatim");
+        let got = optional_str_strict(&args, "replace")
+            .expect("valid")
+            .expect("present");
+        assert_eq!(
+            got, payload,
+            "optional_str_strict must preserve bytes verbatim"
+        );
+    }
+
+    #[test]
+    fn optional_str_strict_rejects_invalid_values() {
+        let args = json!({"replace": 42});
+        let err = optional_str_strict(&args, "replace").expect_err("invalid");
+        assert_eq!(err.error_code, "CCREALITY_ARG_INVALID_STRING");
     }
 }

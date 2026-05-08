@@ -109,7 +109,7 @@ pub async fn harness_apply_line_window_edit(args: Value) -> Result<Value> {
     let end = required_u64(&args, "end_line")?;
     let observed_sha = required_str(&args, "observed_sha256")?;
     let replace = required_str(&args, "replace")?;
-    let session = session_id(&args);
+    let session = session_id(&args)?;
     let _lock = EditLock::try_acquire(&session)?;
 
     let root = project_root()?;
@@ -165,12 +165,22 @@ pub async fn harness_apply_line_window_edit(args: Value) -> Result<Value> {
     let diff_path = result
         .pointer("/source_of_truth/diff")
         .and_then(Value::as_str)
-        .unwrap_or("");
+        .ok_or_else(|| {
+            CCRealityError::new(
+                "CCREALITY_HARNESS_EDIT_DIFF_SOT_MISSING",
+                "governed edit result did not include source_of_truth.diff",
+                "governed_edit.source_of_truth.diff",
+                "inspect the governed-edit output schema before recording the transition",
+                json!({"result": result}),
+                None,
+            )
+        })?;
+    let tool_use_id = optional_str_strict(&args, "tool_use_id")?;
 
     let transition_payload = json!({
         "run_id": run_id,
         "attempt": attempt,
-        "tool_use_id": optional_str(&args, "tool_use_id"),
+        "tool_use_id": tool_use_id.clone(),
         "file_path": path,
         "before_sha256": before_sha,
         "after_sha256": after_sha,
@@ -188,7 +198,7 @@ pub async fn harness_apply_line_window_edit(args: Value) -> Result<Value> {
         &session,
         json!({"type": "file", "path": path}),
     )?;
-    shift.tool_use_id = optional_str(&args, "tool_use_id");
+    shift.tool_use_id = tool_use_id.clone();
     shift.before = json!({"sha256": before_sha});
     shift.after = json!({"sha256": after_sha, "source_of_truth": file_sot(&before_path)});
     shift.delta_summary = json!({"lines_added": lines_added, "lines_removed": lines_removed, "git_diff_path": diff_path});
@@ -213,8 +223,8 @@ pub async fn harness_apply_line_window_edit(args: Value) -> Result<Value> {
 
 pub async fn harness_run_command(args: Value) -> Result<Value> {
     let command = required_str(&args, "command")?;
-    let timeout = optional_u64(&args, "timeout_secs", 120).min(1800);
-    let session = session_id(&args);
+    let timeout = optional_u64_strict(&args, "timeout_secs", 120)?.min(1800);
+    let session = session_id(&args)?;
     let root = project_root()?;
     let runtime_root = require_active_runtime_root().await?;
     let target = read_active_target_instance().await?;
@@ -252,7 +262,16 @@ pub async fn harness_run_command(args: Value) -> Result<Value> {
     let output = result
         .pointer("/source_of_truth/output")
         .and_then(Value::as_str)
-        .unwrap_or("")
+        .ok_or_else(|| {
+            CCRealityError::new(
+                "CCREALITY_HARNESS_COMMAND_OUTPUT_SOT_MISSING",
+                "run-command result did not include source_of_truth.output",
+                "run_command.source_of_truth.output",
+                "inspect the harness run-command output schema before recording the shift",
+                json!({"result": result}),
+                None,
+            )
+        })?
         .to_string();
 
     let mut shift = ShiftRecord::new(
@@ -272,15 +291,18 @@ pub async fn harness_run_command(args: Value) -> Result<Value> {
 }
 
 pub async fn harness_git_diff(args: Value) -> Result<Value> {
-    let path = optional_str(&args, "path");
+    let path = optional_str_strict(&args, "path")?;
     if let Some(path) = path.as_ref() {
         path_policy::ensure_path_allowed(path)?;
     }
-    let diff = match path {
-        Some(path) => run_git(&["diff", "--", &path])?,
+    let diff = match path.as_ref() {
+        Some(path) => run_git(&["diff", "--", path])?,
         None => run_git(&["diff"])?,
     };
-    let stat = run_git(&["diff", "--stat"])?;
+    let stat = match path.as_ref() {
+        Some(path) => run_git(&["diff", "--stat", "--", path])?,
+        None => run_git(&["diff", "--stat"])?,
+    };
     Ok(json!({
         "diff": diff.0,
         "diff_stat": stat.0,
@@ -317,9 +339,19 @@ pub async fn harness_git_status(_args: Value) -> Result<Value> {
 }
 
 pub async fn harness_verify_state(args: Value) -> Result<Value> {
-    let scope_str = match optional_str(&args, "scope").as_deref() {
+    let scope_str = match optional_str_strict(&args, "scope")?.as_deref() {
         Some("full") => "full",
-        _ => "reality_loop_only",
+        Some("reality_loop_only") | None => "reality_loop_only",
+        Some(other) => {
+            return Err(CCRealityError::new(
+                "CCREALITY_HARNESS_VERIFY_SCOPE_INVALID",
+                format!("unsupported harness verification scope '{other}'"),
+                "arguments.scope",
+                "use scope=\"reality_loop_only\" or scope=\"full\"",
+                json!({"scope": other}),
+                None,
+            ));
+        }
     };
     let runtime_root = require_active_runtime_root().await?;
     let target = read_active_target_instance().await?;
@@ -570,7 +602,14 @@ fn envelope_to_ccreality(envelope: Value, stderr_text: &str, subcommand: &str) -
         .get("source_of_truth")
         .and_then(Value::as_str)
         .map(ToOwned::to_owned);
-    CCRealityError::new(error_code, message, field_path, remediation, details, source_of_truth)
+    CCRealityError::new(
+        error_code,
+        message,
+        field_path,
+        remediation,
+        details,
+        source_of_truth,
+    )
 }
 
 fn tail(text: &str, limit: usize) -> String {
@@ -601,10 +640,29 @@ fn run_git(args: &[&str]) -> Result<(String, String)> {
                 Some(file_sot(&root)),
             )
         })?;
-    Ok((
-        String::from_utf8_lossy(&output.stdout).to_string(),
-        String::from_utf8_lossy(&output.stderr).to_string(),
-    ))
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if !output.status.success() {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_READ_COMMAND_FAILED",
+            format!(
+                "git read command exited nonzero: {:?}",
+                output.status.code()
+            ),
+            "harness.git",
+            "inspect git stderr and fix the requested path or repository state",
+            json!({
+                "command": ["git"],
+                "args": args,
+                "project_root": root.display().to_string(),
+                "exit_code": output.status.code(),
+                "stdout_tail": tail(&stdout, 4096),
+                "stderr_tail": tail(&stderr, 4096)
+            }),
+            Some(file_sot(&root)),
+        ));
+    }
+    Ok((stdout, stderr))
 }
 
 fn changed_files_from_diff(diff: &str) -> Vec<String> {
@@ -625,5 +683,19 @@ fn fsync_parent(path: &Path) {
         if let Ok(dir) = fs::File::open(parent) {
             let _ = dir.sync_all();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn harness_verify_state_rejects_unknown_scope_before_runtime_lookup() {
+        let err = harness_verify_state(json!({"scope": "quiet"}))
+            .await
+            .expect_err("invalid scope must fail");
+        assert_eq!(err.error_code, "CCREALITY_HARNESS_VERIFY_SCOPE_INVALID");
     }
 }
