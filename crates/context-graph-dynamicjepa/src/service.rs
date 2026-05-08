@@ -745,7 +745,7 @@ pub fn record_surprise(
     }
     let cosine = cosine_f32(&prediction.predicted_next_panel_vec, &observed_vec);
     let error_norm = l2_distance(&prediction.predicted_next_panel_vec, &observed_vec);
-    let threshold = calibrated_surprise_threshold(&artifact)?;
+    let threshold = calibrated_surprise_threshold(&artifact, &candidate_action)?;
     if cosine >= threshold {
         return Ok(SurpriseServiceOutcome {
             surprise_event_id: None,
@@ -849,7 +849,10 @@ fn load_inference_artifact(
     })
 }
 
-fn calibrated_surprise_threshold(artifact: &InferenceArtifact) -> DynamicJepaResult<f32> {
+fn calibrated_surprise_threshold(
+    artifact: &InferenceArtifact,
+    candidate_action: &NormalizedAction,
+) -> DynamicJepaResult<f32> {
     let report_path = artifact
         .loaded
         .registry
@@ -874,16 +877,38 @@ fn calibrated_surprise_threshold(artifact: &InferenceArtifact) -> DynamicJepaRes
                 "rerun training; evaluation_report.json must contain strict surprise_calibration"
                     .to_string(),
         })?;
-    let calibration =
-        report
-            .get("surprise_calibration")
-            .ok_or_else(|| DynamicJepaError::TrainingFailed {
-                training_run_id: artifact.loaded.registry.training_run_id.0,
-                message: "evaluation_report.json is missing surprise_calibration".to_string(),
-                remediation:
-                    "retrain the artifact with calibrated held-out DynamicJEPA surprise enabled"
-                        .to_string(),
-            })?;
+    if artifact.loaded.registry.domain_pack_id.as_str() != "contextgraph_swe_reality_loop_v1" {
+        let calibration =
+            report
+                .get("surprise_calibration")
+                .ok_or_else(|| DynamicJepaError::TrainingFailed {
+                    training_run_id: artifact.loaded.registry.training_run_id.0,
+                    message: "evaluation_report.json is missing surprise_calibration".to_string(),
+                    remediation:
+                        "retrain the artifact with calibrated held-out DynamicJEPA surprise enabled"
+                            .to_string(),
+                })?;
+        return threshold_from_calibration_report(artifact, calibration, "surprise_calibration");
+    }
+    let segment_key = surprise_calibration_segment_key(candidate_action)?;
+    let calibration = report
+        .get("surprise_segment_calibrations")
+        .and_then(|value| value.get(&segment_key))
+        .ok_or_else(|| DynamicJepaError::TrainingFailed {
+            training_run_id: artifact.loaded.registry.training_run_id.0,
+            message: format!(
+                "evaluation_report.json is missing calibrated surprise segment {segment_key}"
+            ),
+            remediation: "retrain with held-out examples covering this action segment before record-surprise or reward use".to_string(),
+        })?;
+    threshold_from_calibration_report(artifact, calibration, &segment_key)
+}
+
+fn threshold_from_calibration_report(
+    artifact: &InferenceArtifact,
+    calibration: &serde_json::Value,
+    calibration_name: &str,
+) -> DynamicJepaResult<f32> {
     if calibration
         .get("status")
         .and_then(serde_json::Value::as_str)
@@ -892,11 +917,10 @@ fn calibrated_surprise_threshold(artifact: &InferenceArtifact) -> DynamicJepaRes
         return Err(DynamicJepaError::TrainingFailed {
             training_run_id: artifact.loaded.registry.training_run_id.0,
             message: format!(
-                "artifact surprise calibration is not calibrated: {:?}",
+                "artifact surprise calibration {calibration_name} is not calibrated: {:?}",
                 calibration.get("status")
             ),
-            remediation: "compile a val split and retrain before record-surprise or reward use"
-                .to_string(),
+            remediation: "compile a validation split with enough real examples for this action segment and retrain".to_string(),
         });
     }
     let threshold = calibration
@@ -906,7 +930,9 @@ fn calibrated_surprise_threshold(artifact: &InferenceArtifact) -> DynamicJepaRes
         .ok_or_else(|| DynamicJepaError::TrainingFailed {
             training_run_id: artifact.loaded.registry.training_run_id.0,
             message: "artifact surprise calibration is missing finite threshold_cosine".to_string(),
-            remediation: "inspect evaluation_report.json and retrain from held-out outcomes"
+            remediation: format!(
+                "inspect evaluation_report.json calibration {calibration_name} and retrain from held-out outcomes"
+            )
                 .to_string(),
         })?;
     if !(-1.0..=1.0).contains(&threshold) {
@@ -919,6 +945,42 @@ fn calibrated_surprise_threshold(artifact: &InferenceArtifact) -> DynamicJepaRes
         });
     }
     Ok(threshold as f32)
+}
+
+fn surprise_calibration_segment_key(action: &NormalizedAction) -> DynamicJepaResult<String> {
+    let tool_family = action
+        .fields
+        .get("tool_family")
+        .and_then(field_value_segment_string)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "record-surprise.action.tool_family",
+                format!(
+                    "action {} is missing categorical tool_family",
+                    action.action_id
+                ),
+                "use action rows generated by the registered SWE-loop domain pack",
+            )
+        })?;
+    if tool_family == "workspace_mutation" {
+        let path_risk = action
+            .fields
+            .get("path_risk")
+            .and_then(field_value_segment_string)
+            .ok_or_else(|| {
+                DynamicJepaError::validation(
+                    "record-surprise.action.path_risk",
+                    format!(
+                        "workspace mutation action {} is missing path_risk",
+                        action.action_id
+                    ),
+                    "use argument-aware SWE-loop action rows before surprise recording",
+                )
+            })?;
+        Ok(format!("action.path_risk={path_risk}"))
+    } else {
+        Ok(format!("action.tool_family={tool_family}"))
+    }
 }
 
 fn domain_for_artifact(db: &DB, artifact: &ModelArtifactRecord) -> DynamicJepaResult<DomainPack> {
@@ -2351,9 +2413,11 @@ fn collect_examples(
             let target_panel = get_panel_or_missing(db, shard.target_panel_ids[row_idx])?;
             let negative_panel = get_panel_or_missing(db, shard.negative_panel_ids[row_idx])?;
             let action_id = shard.action_ids[row_idx];
-            get_action(db, action_id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
-                cf: CF_DJ_ACTIONS.to_string(),
-                key: action_id.into_bytes().to_vec(),
+            let action_record = get_action(db, action_id)?.ok_or_else(|| {
+                DynamicJepaError::SourceOfTruthMissing {
+                    cf: CF_DJ_ACTIONS.to_string(),
+                    key: action_id.into_bytes().to_vec(),
+                }
             })?;
             if shard.source_hashes[row_idx * 2] != input_panel.header.content_hash {
                 return Err(DynamicJepaError::DatasetLeakageDetected {
@@ -2383,6 +2447,7 @@ fn collect_examples(
                 target_panel,
                 action,
                 negative_panel,
+                segments: action_calibration_segments(&action_record),
             });
         }
     }
@@ -2393,6 +2458,36 @@ fn collect_examples(
         });
     }
     Ok(examples)
+}
+
+fn action_calibration_segments(action: &NormalizedAction) -> BTreeMap<String, String> {
+    let mut segments = BTreeMap::new();
+    for field in [
+        "tool_family",
+        "path_risk",
+        "target_path_bucket",
+        "patch_intent_bucket",
+        "patch_shape_bucket",
+        "patch_scope_bucket",
+    ] {
+        if let Some(value) = action
+            .fields
+            .get(field)
+            .and_then(field_value_segment_string)
+        {
+            segments.insert(format!("action.{field}"), value);
+        }
+    }
+    segments
+}
+
+fn field_value_segment_string(value: &FieldValue) -> Option<String> {
+    match value {
+        FieldValue::Categorical { variant } | FieldValue::String(variant) => Some(variant.clone()),
+        FieldValue::I64(value) => Some(value.to_string()),
+        FieldValue::Bool(value) => Some(value.to_string()),
+        _ => None,
+    }
 }
 
 fn get_panel_or_missing(

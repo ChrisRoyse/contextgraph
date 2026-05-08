@@ -12,6 +12,7 @@ pub struct TrainExample {
     pub target_panel: Vec<f32>,
     pub action: Vec<f32>,
     pub negative_panel: Vec<f32>,
+    pub segments: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -28,6 +29,8 @@ pub struct EvaluationReport {
     pub objective_id: String,
     pub target_architecture: TargetArchitecture,
     pub surprise_calibration: SurpriseCalibrationReport,
+    pub surprise_segment_calibrations:
+        std::collections::BTreeMap<String, SurpriseCalibrationReport>,
     pub split_metrics: std::collections::BTreeMap<String, std::collections::BTreeMap<String, f64>>,
     pub skipped_row_count: u32,
     pub skipped_reasons: std::collections::BTreeMap<String, u32>,
@@ -1041,6 +1044,9 @@ fn evaluate_model(
         objective_id: String::new(),
         target_architecture: TargetArchitecture::EmaEncoder,
         surprise_calibration: surprise_calibration_report(examples, &pred, &target),
+        surprise_segment_calibrations: surprise_segment_calibration_reports(
+            examples, &pred, &target,
+        ),
         split_metrics,
         skipped_row_count: 0,
         skipped_reasons: std::collections::BTreeMap::new(),
@@ -1230,6 +1236,14 @@ fn flatten_metrics(
             report.surprise_calibration.calibration_set_count as f64,
         );
     }
+    out.insert(
+        "surprise_segment_calibration_count".to_string(),
+        report
+            .surprise_segment_calibrations
+            .values()
+            .filter(|report| report.status == "calibrated")
+            .count() as f64,
+    );
     Ok(out)
 }
 
@@ -1435,6 +1449,64 @@ fn surprise_calibration_report(
         cosine_max: *cosines.last().unwrap_or(&f64::NAN),
         false_positive_budget: 0.10,
     }
+}
+
+fn surprise_segment_calibration_reports(
+    examples: &[TrainExample],
+    pred: &[Vec<f32>],
+    target: &[Vec<f32>],
+) -> std::collections::BTreeMap<String, SurpriseCalibrationReport> {
+    let mut by_segment: std::collections::BTreeMap<String, Vec<f64>> =
+        std::collections::BTreeMap::new();
+    for (idx, example) in examples.iter().enumerate() {
+        if example.split_name != "val" {
+            continue;
+        }
+        let cosine = cosine(&pred[idx], &target[idx]);
+        if !cosine.is_finite() {
+            continue;
+        }
+        for (field, value) in &example.segments {
+            by_segment
+                .entry(format!("{field}={value}"))
+                .or_default()
+                .push(cosine);
+        }
+    }
+    let mut reports = std::collections::BTreeMap::new();
+    for (segment, mut cosines) in by_segment {
+        cosines.sort_by(f64::total_cmp);
+        let report = if cosines.len() < 2 {
+            SurpriseCalibrationReport {
+                status: "insufficient_segment_data".to_string(),
+                split: "val".to_string(),
+                threshold_cosine: 0.0,
+                percentile: 10.0,
+                calibration_set_count: cosines.len(),
+                cosine_min: *cosines.first().unwrap_or(&0.0),
+                cosine_p10: 0.0,
+                cosine_median: *cosines.first().unwrap_or(&0.0),
+                cosine_max: *cosines.last().unwrap_or(&0.0),
+                false_positive_budget: 0.10,
+            }
+        } else {
+            let p10 = sorted_quantile(&cosines, 0.10);
+            SurpriseCalibrationReport {
+                status: "calibrated".to_string(),
+                split: "val".to_string(),
+                threshold_cosine: p10,
+                percentile: 10.0,
+                calibration_set_count: cosines.len(),
+                cosine_min: *cosines.first().unwrap_or(&f64::NAN),
+                cosine_p10: p10,
+                cosine_median: sorted_quantile(&cosines, 0.50),
+                cosine_max: *cosines.last().unwrap_or(&f64::NAN),
+                false_positive_budget: 0.10,
+            }
+        };
+        reports.insert(segment, report);
+    }
+    reports
 }
 
 fn effective_rank_from_eigenvalues(eigenvalues: &[f64]) -> f64 {

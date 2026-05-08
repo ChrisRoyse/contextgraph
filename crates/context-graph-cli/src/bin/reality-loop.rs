@@ -490,6 +490,7 @@ struct AgentToolContext<'a> {
     repo_context: &'a Value,
     problem_reality: &'a Value,
     attempts: &'a [AttemptRecord],
+    dynamicjepa_initial_panel_id: Option<String>,
 }
 
 #[tokio::main]
@@ -1801,7 +1802,7 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             &task_root,
         )?;
 
-        let tool_context = AgentToolContext {
+        let mut tool_context = AgentToolContext {
             args: &args,
             task: &task,
             context_graph_bin: &context_graph_bin,
@@ -1813,7 +1814,10 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             repo_context: &repo_context,
             problem_reality: &problem_reality_packet,
             attempts: &attempts,
+            dynamicjepa_initial_panel_id: None,
         };
+        tool_context.dynamicjepa_initial_panel_id =
+            bootstrap_dynamicjepa_cold_start_panel(&tool_context, attempt)?;
         let model_response =
             inner_coding_harness_chat_json(&inner_harness, &tool_context, &prompt, attempt)?;
         let response_text = model_response["message"]["content"]
@@ -4373,7 +4377,8 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
     let mut no_tool_after_window_count = 0_u64;
     let mut repeated_navigation_count = 0_u64;
     let mut seen_tool_calls: BTreeMap<String, u64> = BTreeMap::new();
-    let mut dynamicjepa_live_last_panel_id: Option<String> = None;
+    let mut dynamicjepa_live_last_panel_id: Option<String> =
+        ctx.dynamicjepa_initial_panel_id.clone();
     // Force-stop bookkeeping: when set, the round loop breaks and the existing
     // post-loop blocked path uses these fields instead of the generic
     // RUST_REALITY_FINAL_EDIT_TOOL_REQUIRED error. Keeps the engine's exit
@@ -4766,6 +4771,7 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
             "tool_round_budget": args.agent_tool_rounds,
             "tools": agent_tool_names(),
             "entries": transcript_entries,
+            "dynamicjepa_initial_panel_id": ctx.dynamicjepa_initial_panel_id.clone(),
             "executed_tool_calls": executed_tool_calls,            "status": "blocked",
             "error_code": "RUST_REALITY_AGENT_TOOL_REQUIRED_BUT_MISSING",
             "source_of_truth": file_sot(&transcript_path)
@@ -4848,6 +4854,7 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
             "repeated_error_deadlock_len": REPEATED_ERROR_DEADLOCK_LEN,
             "tools": agent_tool_names(),
             "entries": transcript_entries,
+            "dynamicjepa_initial_panel_id": ctx.dynamicjepa_initial_panel_id.clone(),
             "executed_tool_calls": executed_tool_calls,
             "status": "blocked",
             "error_code": error_code,
@@ -4895,6 +4902,7 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
         "tool_round_budget": args.agent_tool_rounds,
         "tools": agent_tool_names(),
         "entries": transcript_entries,
+        "dynamicjepa_initial_panel_id": ctx.dynamicjepa_initial_panel_id.clone(),
         "executed_tool_calls": executed_tool_calls,
         "final_action_mode": "tool_mediated_final_edit_submission",
         "submitted_candidate_patch": submitted_candidate_patch,
@@ -5604,6 +5612,463 @@ fn pre_action_dynamicjepa_gate(
     Ok(Some(read_json(&control_path)?))
 }
 
+fn bootstrap_dynamicjepa_cold_start_panel(
+    ctx: &AgentToolContext<'_>,
+    attempt: u64,
+) -> Result<Option<String>> {
+    match (
+        ctx.args.dynamicjepa_db.as_deref(),
+        ctx.args.dynamicjepa_artifact_id.as_deref(),
+    ) {
+        (None, None) => return Ok(None),
+        (Some(_), Some(_)) => {}
+        (db, artifact_id) => {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_CONFIG_INCOMPLETE",
+                "DynamicJEPA cold-start pre-action control requires both a RocksDB path and a model artifact id",
+                "dynamicjepa",
+                "pass --dynamicjepa-db and --dynamicjepa-artifact-id together or omit both",
+                json!({
+                    "dynamicjepa_db": db.map(path_str),
+                    "dynamicjepa_artifact_id": artifact_id,
+                }),
+                db.map(file_sot),
+            ));
+        }
+    }
+    let dynamicjepa_db = ctx.args.dynamicjepa_db.as_deref().unwrap();
+    let artifact_id = ctx.args.dynamicjepa_artifact_id.as_deref().unwrap();
+    let live_dir = ctx.attempt_dir.join("dynamicjepa-live");
+    create_dir_checked(&live_dir)?;
+    let cold_dir = live_dir.join("cold-start");
+    create_dir_checked(&cold_dir)?;
+
+    let artifact = dynamicjepa_json_command(
+        ctx.context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "get-artifact".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--id".to_string(),
+            artifact_id.to_string(),
+            "--verify-files".to_string(),
+            "--json".to_string(),
+        ],
+        ctx.task_root,
+        "dynamicjepa_cold_start_get_artifact",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    write_json_checked(&cold_dir.join("artifact-readback.json"), &artifact)?;
+    let artifact_domain = artifact
+        .pointer("/decoded_records/artifact/domain_pack_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_COLD_START_ARTIFACT_DOMAIN_MISSING",
+                "DynamicJEPA cold-start artifact readback did not contain domain_pack_id",
+                "dynamicjepa.get_artifact.decoded_records.artifact.domain_pack_id",
+                "inspect the model artifact row in dj_model_artifacts before actor execution",
+                json!({"artifact": artifact}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
+    if artifact_domain != DYNAMICJEPA_REALITY_DOMAIN_PACK {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_COLD_START_DOMAIN_MISMATCH",
+            "DynamicJEPA cold-start refused an artifact from a non-SWE-loop domain",
+            "dynamicjepa.get_artifact.decoded_records.artifact.domain_pack_id",
+            "train or pass an artifact whose domain_pack_id is contextgraph_swe_reality_loop_v1",
+            json!({"expected": DYNAMICJEPA_REALITY_DOMAIN_PACK, "actual": artifact_domain, "artifact_id": artifact_id}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+
+    let counts_before = dynamicjepa_json_command(
+        ctx.context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "inspect-counts".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--json".to_string(),
+        ],
+        ctx.task_root,
+        "dynamicjepa_cold_start_counts_before",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    write_json_checked(&cold_dir.join("counts-before.json"), &counts_before)?;
+
+    let seed_paths = dynamicjepa_problem_seed_paths(ctx)?;
+    let repo_status = run_required(
+        &["git", "status", "--porcelain"],
+        ctx.repo_dir,
+        ctx.args.git_timeout,
+        "RUST_REALITY_DYNAMICJEPA_COLD_START_STATUS_FAILED",
+        "dynamicjepa.cold_start.repo_status",
+    )?
+    .stdout;
+    let repo_head = run_required(
+        &["git", "rev-parse", "HEAD"],
+        ctx.repo_dir,
+        ctx.args.git_timeout,
+        "RUST_REALITY_DYNAMICJEPA_COLD_START_HEAD_FAILED",
+        "dynamicjepa.cold_start.repo_head",
+    )?
+    .stdout
+    .trim()
+    .to_string();
+    let path_risk = swe_path_risk(&[], &seed_paths);
+    let target_path_bucket = swe_path_bucket(&[], &seed_paths);
+    let symbol_bucket = swe_symbol_bucket("read_problem_reality", &[], &seed_paths);
+    let dependency_layer = swe_dependency_layer(&[], &seed_paths);
+    let test_target_kind = swe_test_target_kind("read_problem_reality", None, &[], &seed_paths);
+    let ownership_bucket = swe_ownership_bucket(&[], &seed_paths);
+    let attempt_i64 = i64::try_from(attempt).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_COLD_START_ATTEMPT_OVERFLOW",
+            "attempt number did not fit the SWE DynamicJEPA i64 schema",
+            "dynamicjepa.cold_start.state.attempt",
+            "inspect the run attempt counter before bootstrapping DynamicJEPA",
+            json!({"attempt": attempt, "error": err.to_string()}),
+            None,
+        )
+    })?;
+    let ts_ms = attempt_i64.saturating_mul(1_000_000);
+    let problem_reality_json = serde_json::to_string(ctx.problem_reality).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_COLD_START_PROBLEM_SERIALIZE_FAILED",
+            "problem reality packet could not be serialized for cold-start identity hashing",
+            "dynamicjepa.cold_start.problem_reality",
+            "inspect problem-reality-packet.json before bootstrapping DynamicJEPA",
+            json!({"error": err.to_string()}),
+            ctx.problem_reality
+                .pointer("/source_of_truth/task_manifest")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned),
+        )
+    })?;
+    let transition_id = format!(
+        "cold-start-{}",
+        short_hash(&sha256_text(
+            &serde_json::to_string(&json!({
+                "run_id": ctx.run_id,
+                "attempt": attempt,
+                "repo_head": repo_head,
+                "seed_paths": &seed_paths,
+                "problem_reality_sha256": sha256_text(&problem_reality_json),
+            }))
+            .unwrap()
+        ))
+    );
+    let event = json!({
+        "state": {
+            "counter": 0,
+            "attempt": attempt_i64,
+            "round": 0,
+            "tool_family": "reality_readback",
+            "repo_dirty_state": if repo_status.trim().is_empty() { "clean" } else { "dirty" },
+            "prompt_version": "v1",
+            "model_id": swe_model_id_variant(&ctx.args.model),
+            "primary_path_bucket": target_path_bucket,
+            "symbol_bucket": symbol_bucket,
+            "dependency_layer": dependency_layer,
+            "test_target_kind": test_target_kind,
+            "error_signature": "none",
+            "ownership_bucket": ownership_bucket
+        },
+        "action": {
+            "delta": 0,
+            "tool_family": "reality_readback",
+            "command_kind": "read_problem_reality",
+            "edit_size_bucket": "none",
+            "path_risk": path_risk,
+            "target_path_bucket": target_path_bucket,
+            "symbol_bucket": symbol_bucket,
+            "dependency_layer": dependency_layer,
+            "test_target_kind": test_target_kind,
+            "ownership_bucket": ownership_bucket,
+            "planned_patch_bytes": 0,
+            "planned_changed_file_count": 0,
+            "patch_intent_bucket": "none",
+            "patch_shape_bucket": "none",
+            "patch_scope_bucket": "none"
+        },
+        "outcome": {
+            "next_counter": 0,
+            "outcome_label": "Useful",
+            "result_status": "ok",
+            "verifier_status": "not_run",
+            "test_failure_class": "none",
+            "incident_code": "none",
+            "changed_file_count": 0,
+            "patch_bytes": 0,
+            "correction_required": "false",
+            "file_risk": path_risk,
+            "error_signature": "none",
+            "symbol_bucket": symbol_bucket,
+            "dependency_layer": dependency_layer,
+            "test_target_kind": test_target_kind,
+            "ownership_bucket": ownership_bucket
+        },
+        "ts_ms": ts_ms,
+        "trajectory_id": format!("{}:attempt-{}", ctx.run_id, attempt),
+        "run_id": ctx.run_id,
+        "transition_id": transition_id,
+        "cold_start": {
+            "source": "problem_reality_packet_and_repository_context",
+            "seed_paths": seed_paths,
+            "problem_reality": ctx.problem_reality.get("source_of_truth"),
+            "repository_context": ctx.repo_context.get("source_of_truth"),
+            "repo_head": repo_head
+        }
+    });
+    let event_path = cold_dir.join("event.jsonl");
+    write_text_checked(
+        &event_path,
+        &format!("{}\n", serde_json::to_string(&event).unwrap()),
+    )?;
+    let ingest = dynamicjepa_json_command(
+        ctx.context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "ingest-event".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--domain".to_string(),
+            DYNAMICJEPA_REALITY_DOMAIN_PACK.to_string(),
+            "--adapter".to_string(),
+            "json_event".to_string(),
+            "--file".to_string(),
+            path_str(&event_path).to_string(),
+            "--json".to_string(),
+        ],
+        ctx.task_root,
+        "dynamicjepa_cold_start_ingest_event",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    write_json_checked(&cold_dir.join("ingest-readback.json"), &ingest)?;
+    if ingest
+        .pointer("/created_ids/failed_adapter_run_ids")
+        .and_then(Value::as_array)
+        .is_some_and(|items| !items.is_empty())
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_COLD_START_INGEST_FAILED",
+            "DynamicJEPA cold-start event failed adapter validation",
+            "dynamicjepa.cold_start.ingest.failed_adapter_run_ids",
+            "inspect cold-start event fields against the registered SWE-loop domain pack",
+            json!({"ingest": ingest, "event": file_sot(&event_path)}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+    let transition_ids = required_json_string_array(
+        &ingest,
+        "/created_ids/transition_ids",
+        "dynamicjepa.cold_start.ingest.created_ids.transition_ids",
+        dynamicjepa_db,
+    )?;
+    let action_ids = required_json_string_array(
+        &ingest,
+        "/created_ids/action_ids",
+        "dynamicjepa.cold_start.ingest.created_ids.action_ids",
+        dynamicjepa_db,
+    )?;
+    let outcome_ids = required_json_string_array(
+        &ingest,
+        "/created_ids/outcome_ids",
+        "dynamicjepa.cold_start.ingest.created_ids.outcome_ids",
+        dynamicjepa_db,
+    )?;
+    if transition_ids.len() != 1 || action_ids.len() != 1 || outcome_ids.len() != 1 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_COLD_START_INGEST_COUNT_MISMATCH",
+            "DynamicJEPA cold-start ingest did not create exactly one transition/action/outcome",
+            "dynamicjepa.cold_start.ingest.created_ids",
+            "inspect cold-start ingestion output before actor execution",
+            json!({"ingest": ingest}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+    let materialized = dynamicjepa_json_command(
+        ctx.context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "materialize-panel".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--transition-id".to_string(),
+            transition_ids[0].clone(),
+            "--json".to_string(),
+        ],
+        ctx.task_root,
+        "dynamicjepa_cold_start_materialize_panel",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    write_json_checked(&cold_dir.join("materialize-readback.json"), &materialized)?;
+    let panel_ids = required_json_string_array(
+        &materialized,
+        "/created_ids/panel_ids",
+        "dynamicjepa.cold_start.materialize.created_ids.panel_ids",
+        dynamicjepa_db,
+    )?;
+    if panel_ids.len() != 1 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_COLD_START_PANEL_COUNT_MISMATCH",
+            "DynamicJEPA cold-start materialization did not create exactly one panel",
+            "dynamicjepa.cold_start.materialize.created_ids.panel_ids",
+            "inspect cold-start transition and latent panel rows",
+            json!({"materialized": materialized}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+    let panel = dynamicjepa_json_command(
+        ctx.context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "get-panel".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--panel-id".to_string(),
+            panel_ids[0].clone(),
+            "--include-readings".to_string(),
+            "--json".to_string(),
+        ],
+        ctx.task_root,
+        "dynamicjepa_cold_start_get_panel",
+        Some(format!(
+            "rocksdb:{}#dj_latent_panels",
+            dynamicjepa_db.display()
+        )),
+    )?;
+    write_json_checked(&cold_dir.join("panel-readback.json"), &panel)?;
+    if panel
+        .pointer("/decoded_records/instrument_readings")
+        .and_then(Value::as_array)
+        .map(|items| items.is_empty())
+        .unwrap_or(true)
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_COLD_START_PANEL_EMPTY",
+            "DynamicJEPA cold-start panel readback contained no instrument readings",
+            "dynamicjepa.get_panel.decoded_records.instrument_readings",
+            "inspect domain pack instruments and cold-start materialization before actor execution",
+            json!({"panel": panel, "panel_id": panel_ids[0]}),
+            Some(format!(
+                "rocksdb:{}#dj_latent_panels,dj_instrument_readings",
+                dynamicjepa_db.display()
+            )),
+        ));
+    }
+    let counts_after = dynamicjepa_json_command(
+        ctx.context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "inspect-counts".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--json".to_string(),
+        ],
+        ctx.task_root,
+        "dynamicjepa_cold_start_counts_after",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    write_json_checked(&cold_dir.join("counts-after.json"), &counts_after)?;
+    for cf in [
+        "dj_raw_events",
+        "dj_adapter_runs",
+        "dj_normalized_states",
+        "dj_actions",
+        "dj_outcomes",
+        "dj_transitions",
+        "dj_latent_panels",
+    ] {
+        let before = counts_before
+            .pointer(&format!("/counts/{cf}"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let after = counts_after
+            .pointer(&format!("/counts/{cf}"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        if after != before + 1 {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_COLD_START_COUNT_DELTA_MISMATCH",
+                "DynamicJEPA cold-start source-of-truth count delta did not match one persisted panel event",
+                format!("dynamicjepa.cold_start.counts.{cf}"),
+                "inspect cold-start ingest/materialize readbacks and RocksDB column-family counts",
+                json!({"cf": cf, "before": before, "after": after, "counts_before": file_sot(&cold_dir.join("counts-before.json")), "counts_after": file_sot(&cold_dir.join("counts-after.json"))}),
+                Some(file_sot(dynamicjepa_db)),
+            ));
+        }
+    }
+    let record = json!({
+        "record_kind": "dynamicjepa_cold_start_panel_bootstrap",
+        "status": "passed",
+        "artifact_id": artifact_id,
+        "transition_id": transition_id,
+        "dynamicjepa_transition_id": transition_ids[0],
+        "action_id": action_ids[0],
+        "outcome_id": outcome_ids[0],
+        "panel_id": panel_ids[0],
+        "event": file_sot(&event_path),
+        "ingest": file_sot(&cold_dir.join("ingest-readback.json")),
+        "materialize": file_sot(&cold_dir.join("materialize-readback.json")),
+        "panel_readback": file_sot(&cold_dir.join("panel-readback.json")),
+        "counts_before": file_sot(&cold_dir.join("counts-before.json")),
+        "counts_after": file_sot(&cold_dir.join("counts-after.json")),
+        "source_of_truth": format!("rocksdb:{}#dj_raw_events,dj_transitions,dj_latent_panels", dynamicjepa_db.display()),
+    });
+    let record_path = cold_dir.join("record.json");
+    write_json_checked(&record_path, &record)?;
+    update_dynamicjepa_live_index(&live_dir, &record)?;
+    Ok(Some(panel_ids[0].clone()))
+}
+
+fn dynamicjepa_problem_seed_paths(ctx: &AgentToolContext<'_>) -> Result<Vec<String>> {
+    let mut paths = BTreeSet::new();
+    if let Some(files) = ctx.repo_context.get("files").and_then(Value::as_array) {
+        for file in files {
+            if let Some(path) = file.get("path").and_then(Value::as_str) {
+                paths.insert(path.to_string());
+            }
+        }
+    }
+    if let Some(candidates) = ctx
+        .problem_reality
+        .pointer("/repository_reality/production_candidate_files")
+        .and_then(Value::as_array)
+    {
+        for candidate in candidates {
+            if let Some(path) = candidate.as_str().or_else(|| {
+                candidate
+                    .get("path")
+                    .or_else(|| candidate.get("file"))
+                    .and_then(Value::as_str)
+            }) {
+                paths.insert(path.to_string());
+            }
+        }
+    }
+    if paths.is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_COLD_START_SEED_PATHS_MISSING",
+            "DynamicJEPA cold-start could not derive any real repository path from problem reality or repository context",
+            "dynamicjepa.cold_start.seed_paths",
+            "repair repository context collection before enabling pre-action DJ control",
+            json!({
+                "repo_context_source": ctx.repo_context.get("source_of_truth"),
+                "problem_reality_source": ctx.problem_reality.get("source_of_truth"),
+            }),
+            ctx.problem_reality
+                .pointer("/source_of_truth/task_manifest")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned),
+        ));
+    }
+    Ok(paths.into_iter().take(16).collect())
+}
+
 fn live_ingest_dynamicjepa_transition(
     ctx: &AgentToolContext<'_>,
     attempt: u64,
@@ -5808,6 +6273,16 @@ fn inferred_dynamicjepa_action_from_tool(name: &str, arguments: &Value) -> Resul
     let edit_size_bucket = swe_edit_size_bucket(patch_bytes);
     let path_risk = swe_path_risk(&paths, &[]);
     let target_path_bucket = swe_path_bucket(&paths, &[]);
+    let planned_changed_file_count = i64::try_from(paths.len()).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_PREACTION_PATH_COUNT_OVERFLOW",
+            "pre-action DynamicJEPA planned path count did not fit the SWE domain schema",
+            "dynamicjepa.pre_action.action.planned_changed_file_count",
+            "inspect the tool arguments before planner gating",
+            json!({"tool_name": name, "path_count": paths.len(), "error": err.to_string()}),
+            None,
+        )
+    })?;
     let delta = match name {
         "apply_line_window_edit" => 7,
         "apply_structured_edit" => 6,
@@ -5826,6 +6301,11 @@ fn inferred_dynamicjepa_action_from_tool(name: &str, arguments: &Value) -> Resul
         "dependency_layer": swe_dependency_layer(&paths, &[]),
         "test_target_kind": swe_test_target_kind(name, None, &paths, &[]),
         "ownership_bucket": swe_ownership_bucket(&paths, &[]),
+        "planned_patch_bytes": patch_bytes,
+        "planned_changed_file_count": planned_changed_file_count,
+        "patch_intent_bucket": swe_patch_intent_bucket(name, patch_bytes, path_risk),
+        "patch_shape_bucket": swe_patch_shape_bucket(name, arguments, &paths),
+        "patch_scope_bucket": swe_patch_scope_bucket(name, &paths),
     }))
 }
 
@@ -5895,6 +6375,66 @@ fn dynamicjepa_tool_argument_paths(name: &str, arguments: &Value) -> Vec<String>
         }
     }
     paths.into_iter().collect()
+}
+
+fn swe_patch_intent_bucket(tool_name: &str, patch_bytes: i64, path_risk: &str) -> &'static str {
+    if !is_final_edit_tool(tool_name) {
+        return "none";
+    }
+    match path_risk {
+        "multiple" => "multi_file",
+        "tests" => "test_adjustment",
+        "config_or_build" => "config_update",
+        _ if patch_bytes > 16_384 => "refactor",
+        "source" => "localized_fix",
+        "none" => "none",
+        _ => "unknown",
+    }
+}
+
+fn swe_patch_shape_bucket(tool_name: &str, arguments: &Value, paths: &[String]) -> &'static str {
+    match tool_name {
+        "apply_line_window_edit" => "line_window",
+        "apply_structured_edit" => "structured_replace",
+        "apply_unified_diff" => {
+            let hunk_count = arguments
+                .get("patch")
+                .and_then(Value::as_str)
+                .map(|patch| patch.lines().filter(|line| line.starts_with("@@")).count())
+                .unwrap_or(0);
+            if paths.len() > 1 {
+                "unified_multi_file"
+            } else if hunk_count > 1 {
+                "unified_multi_hunk"
+            } else if hunk_count == 1 {
+                "unified_single_hunk"
+            } else {
+                "unknown"
+            }
+        }
+        _ => "none",
+    }
+}
+
+fn swe_patch_scope_bucket(tool_name: &str, paths: &[String]) -> &'static str {
+    if !is_final_edit_tool(tool_name) || paths.is_empty() {
+        return "none";
+    }
+    if paths.len() == 1 {
+        return match tool_name {
+            "apply_line_window_edit" | "apply_structured_edit" => "single_symbol",
+            _ => "single_file",
+        };
+    }
+    let layers = paths
+        .iter()
+        .map(|path| swe_dependency_layer(std::slice::from_ref(path), &[]))
+        .collect::<BTreeSet<_>>();
+    if layers.len() > 1 {
+        "cross_layer"
+    } else {
+        "multi_file"
+    }
 }
 
 fn execute_agent_tool_call(
@@ -11125,6 +11665,11 @@ fn build_trained_dynamicjepa_reality_for_attempt(
     let prediction_error_l2 = round_signal(error_sum / panel_count as f64);
     let prediction_accuracy = round_signal((1.0 - prediction_error_l2).clamp(0.0, 1.0));
     let plan_trace_coverage = round_signal(plan_trace_ids.len() as f64 / panel_count as f64);
+    let attempt_segment_drift = validate_dynamicjepa_attempt_segment_drift(
+        &events,
+        &artifact_lifecycle_policy,
+        dynamicjepa_db,
+    )?;
     Ok(json!({
         "record_kind": "dynamicjepa_reality",
         "schema_version": 1,
@@ -11147,6 +11692,7 @@ fn build_trained_dynamicjepa_reality_for_attempt(
         "plan_trace_coverage": plan_trace_coverage,
         "guard_decisions": guard_decisions,
         "action_controls": action_controls,
+        "attempt_segment_drift": attempt_segment_drift,
         "source_of_truth_refs": [
             {
                 "kind": "agent_tool_transcript",
@@ -11439,6 +11985,11 @@ fn validate_dynamicjepa_artifact_lifecycle(
             Some(file_sot(&evaluation_report_path)),
         ));
     }
+    let segmented_surprise_calibration = validate_dynamicjepa_segmented_surprise_calibration(
+        &evaluation_report,
+        &evaluation_report_path,
+        artifact_id,
+    )?;
     let training_run_id = artifact_record
         .get("training_run_id")
         .and_then(Value::as_str)
@@ -11559,6 +12110,7 @@ fn validate_dynamicjepa_artifact_lifecycle(
             "target_architecture": target_architecture,
             "surprise_threshold_cosine": round_signal(surprise_threshold),
             "surprise_calibration_set_count": calibration_set_count,
+            "segmented_surprise_calibration": segmented_surprise_calibration,
             "training_run_status": "Completed",
             "dataset_shards": dataset_shards,
             "raw_events": raw_events,
@@ -11574,6 +12126,152 @@ fn validate_dynamicjepa_artifact_lifecycle(
             "evaluation_report": file_sot(&evaluation_report_path),
             "counts_readback": file_sot(&dj_dir.join("artifact-lifecycle-counts.json"))
         }
+    }))
+}
+
+fn validate_dynamicjepa_segmented_surprise_calibration(
+    evaluation_report: &Value,
+    evaluation_report_path: &Path,
+    artifact_id: &str,
+) -> Result<Value> {
+    let segments = evaluation_report
+        .get("surprise_segment_calibrations")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SEGMENT_CALIBRATION_MISSING",
+                "DynamicJEPA artifact evaluation_report is missing segmented surprise calibration",
+                "artifact.evaluation_report.surprise_segment_calibrations",
+                "retrain with action-segment metadata so surprise thresholds are calibrated per tool/risk segment",
+                json!({"artifact_id": artifact_id, "evaluation_report": file_sot(evaluation_report_path)}),
+                Some(file_sot(evaluation_report_path)),
+            )
+        })?;
+    let calibrated = segments
+        .iter()
+        .filter(|(_, report)| report.get("status").and_then(Value::as_str) == Some("calibrated"))
+        .map(|(key, _)| key.clone())
+        .collect::<BTreeSet<_>>();
+    let required_segments = [
+        "action.tool_family=repository_navigation",
+        "action.tool_family=workspace_mutation",
+        "action.path_risk=source",
+        "action.path_risk=none",
+    ];
+    let missing = required_segments
+        .iter()
+        .filter(|segment| !calibrated.contains(&segment.to_string()))
+        .copied()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_SEGMENT_CALIBRATION_INCOMPLETE",
+            "DynamicJEPA artifact lifecycle gate rejected missing calibrated tool/risk surprise segments",
+            "artifact.evaluation_report.surprise_segment_calibrations",
+            "compile a broader real SWE validation split and retrain before production reward or pre-action use",
+            json!({
+                "artifact_id": artifact_id,
+                "missing_segments": missing,
+                "calibrated_segments": calibrated,
+                "evaluation_report": file_sot(evaluation_report_path),
+            }),
+            Some(file_sot(evaluation_report_path)),
+        ));
+    }
+    let calibrated_segment_count = calibrated.len();
+    Ok(json!({
+        "status": "passed",
+        "required_segments": required_segments,
+        "calibrated_segments": calibrated,
+        "calibrated_segment_count": calibrated_segment_count,
+        "source_of_truth": file_sot(evaluation_report_path),
+    }))
+}
+
+fn validate_dynamicjepa_attempt_segment_drift(
+    events: &[SweDynamicJepaEvent],
+    artifact_lifecycle_policy: &Value,
+    dynamicjepa_db: &Path,
+) -> Result<Value> {
+    let calibrated_segments = artifact_lifecycle_policy
+        .pointer("/checks/segmented_surprise_calibration/calibrated_segments")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_DRIFT_CALIBRATION_SCHEMA_INVALID",
+                "DynamicJEPA lifecycle policy did not expose calibrated surprise segments for drift detection",
+                "dynamicjepa.trained_artifact.lifecycle_policy.checks.segmented_surprise_calibration.calibrated_segments",
+                "inspect lifecycle policy generation before consuming trained DJ reward features",
+                json!({"artifact_lifecycle_policy": artifact_lifecycle_policy}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?
+        .iter()
+        .map(|value| {
+            value.as_str().map(ToOwned::to_owned).ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_DRIFT_CALIBRATION_SEGMENT_INVALID",
+                    "calibrated_segments contained a non-string segment key",
+                    "dynamicjepa.segment_drift.calibrated_segments[]",
+                    "inspect evaluation_report segmented calibration serialization",
+                    json!({"segment": value}),
+                    Some(file_sot(dynamicjepa_db)),
+                )
+            })
+        })
+        .collect::<Result<BTreeSet<_>>>()?;
+    let mut observed_counts: BTreeMap<String, u64> = BTreeMap::new();
+    for event in events {
+        let action = event.event.get("action").ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_DRIFT_EVENT_ACTION_MISSING",
+                "SWE event was missing action during segment drift detection",
+                "dynamicjepa.event.action",
+                "inspect transition-to-domain mapping before reward consumption",
+                json!({"transition_id": event.transition_id, "event": event.event}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
+        for field in ["tool_family", "path_risk"] {
+            let value = action.get(field).and_then(Value::as_str).ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_DRIFT_EVENT_SEGMENT_MISSING",
+                    "SWE event action was missing a segment field needed for drift detection",
+                    format!("dynamicjepa.event.action.{field}"),
+                    "regenerate argument-aware SWE events before reward consumption",
+                    json!({"transition_id": event.transition_id, "event": event.event}),
+                    Some(file_sot(dynamicjepa_db)),
+                )
+            })?;
+            *observed_counts
+                .entry(format!("action.{field}={value}"))
+                .or_insert(0) += 1;
+        }
+    }
+    let missing_segments = observed_counts
+        .keys()
+        .filter(|key| !calibrated_segments.contains(*key))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !missing_segments.is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_SEGMENT_DRIFT_UNCALIBRATED",
+            "attempt contains action segments that were not calibrated in the artifact validation split",
+            "dynamicjepa.attempt_segment_drift.observed_segments",
+            "retrain with validation coverage for the observed action segments before scoring this attempt",
+            json!({
+                "missing_segments": missing_segments,
+                "observed_counts": observed_counts,
+                "calibrated_segments": calibrated_segments,
+            }),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+    Ok(json!({
+        "status": "passed",
+        "mode": "calibrated_segment_coverage",
+        "observed_counts": observed_counts,
+        "source_of_truth": format!("rocksdb:{}#dj_actions,dj_model_artifacts", dynamicjepa_db.display()),
     }))
 }
 
@@ -11640,6 +12338,9 @@ fn validate_dynamicjepa_corpus_diversity(
     let command_kinds = unique_dynamicjepa_field_values(&actions, "command_kind");
     let path_buckets = unique_dynamicjepa_field_values(&actions, "target_path_bucket");
     let dependency_layers = unique_dynamicjepa_field_values(&actions, "dependency_layer");
+    let patch_intents = unique_dynamicjepa_field_values(&actions, "patch_intent_bucket");
+    let patch_shapes = unique_dynamicjepa_field_values(&actions, "patch_shape_bucket");
+    let patch_scopes = unique_dynamicjepa_field_values(&actions, "patch_scope_bucket");
     let result_statuses = unique_dynamicjepa_field_values(&outcomes, "result_status");
     let verifier_statuses = unique_dynamicjepa_field_values(&outcomes, "verifier_status");
     let error_signatures = unique_dynamicjepa_field_values(&outcomes, "error_signature");
@@ -11655,6 +12356,9 @@ fn validate_dynamicjepa_corpus_diversity(
             "command_kind": command_kinds.len(),
             "target_path_bucket": path_buckets.len(),
             "dependency_layer": dependency_layers.len(),
+            "patch_intent_bucket": patch_intents.len(),
+            "patch_shape_bucket": patch_shapes.len(),
+            "patch_scope_bucket": patch_scopes.len(),
             "result_status": result_statuses.len(),
             "verifier_status": verifier_statuses.len(),
             "error_signature": error_signatures.len(),
@@ -11664,6 +12368,9 @@ fn validate_dynamicjepa_corpus_diversity(
             "command_kind": command_kinds,
             "target_path_bucket": path_buckets,
             "dependency_layer": dependency_layers,
+            "patch_intent_bucket": patch_intents,
+            "patch_shape_bucket": patch_shapes,
+            "patch_scope_bucket": patch_scopes,
             "result_status": result_statuses,
             "verifier_status": verifier_statuses,
             "error_signature": error_signatures,
@@ -11708,6 +12415,38 @@ fn validate_dynamicjepa_corpus_diversity(
             2usize,
             summary
                 .pointer("/unique_counts/result_status")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "patch_intent_bucket",
+            3usize,
+            summary
+                .pointer("/unique_counts/patch_intent_bucket")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "patch_shape_bucket",
+            3usize,
+            summary
+                .pointer("/unique_counts/patch_shape_bucket")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "patch_scope_bucket",
+            2usize,
+            summary
+                .pointer("/unique_counts/patch_scope_bucket")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "verifier_status",
+            2usize,
+            summary
+                .pointer("/unique_counts/verifier_status")
                 .and_then(Value::as_u64)
                 .unwrap_or(0) as usize,
         ),
@@ -11758,6 +12497,18 @@ fn validate_dynamicjepa_comparative_promotion(
     val_latent_mse: f64,
     dj_dir: &Path,
 ) -> Result<Value> {
+    let candidate_report_path = artifact_root.join("evaluation_report.json");
+    let candidate_report: Value = read_json(&candidate_report_path)?;
+    let candidate_utility = dynamicjepa_heldout_utility_score(&candidate_report).ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_PROMOTION_UTILITY_MISSING",
+            "DynamicJEPA candidate artifact evaluation_report is missing held-out utility metrics",
+            "artifact.evaluation_report.split_metrics.val",
+            "retrain with finite val latent_mse, latent_cosine, and action_contrast_acc before promotion",
+            json!({"artifact_id": artifact_id, "evaluation_report": file_sot(&candidate_report_path)}),
+            Some(file_sot(&candidate_report_path)),
+        )
+    })?;
     let artifacts = dynamicjepa_json_command(
         context_graph_bin,
         vec![
@@ -11819,36 +12570,45 @@ fn validate_dynamicjepa_comparative_promotion(
             else {
                 continue;
             };
+            let Some(utility_score) = dynamicjepa_heldout_utility_score(&report) else {
+                continue;
+            };
             baselines.push(json!({
                 "artifact_id": row_artifact_id,
                 "val_latent_mse": metric,
+                "heldout_utility_score": utility_score,
                 "evaluation_report": file_sot(&report_path),
             }));
         }
     }
     baselines.sort_by(|left, right| {
         let l = left
-            .get("val_latent_mse")
+            .get("heldout_utility_score")
             .and_then(Value::as_f64)
-            .unwrap_or(f64::INFINITY);
+            .unwrap_or(f64::NEG_INFINITY);
         let r = right
-            .get("val_latent_mse")
+            .get("heldout_utility_score")
             .and_then(Value::as_f64)
-            .unwrap_or(f64::INFINITY);
-        l.total_cmp(&r)
+            .unwrap_or(f64::NEG_INFINITY);
+        r.total_cmp(&l)
     });
     let best_baseline = baselines.first().cloned();
     let passed = best_baseline
         .as_ref()
-        .and_then(|baseline| baseline.get("val_latent_mse").and_then(Value::as_f64))
-        .map(|baseline_mse| val_latent_mse < baseline_mse)
+        .and_then(|baseline| {
+            baseline
+                .get("heldout_utility_score")
+                .and_then(Value::as_f64)
+        })
+        .map(|baseline_score| candidate_utility > baseline_score)
         .unwrap_or(true);
     let summary = json!({
         "status": if passed { "passed" } else { "failed" },
-        "mode": if best_baseline.is_some() { "candidate_beats_active_baseline" } else { "initial_artifact_no_active_baseline" },
+        "mode": if best_baseline.is_some() { "candidate_beats_active_downstream_proxy_baseline" } else { "initial_artifact_no_active_baseline" },
         "candidate": {
             "artifact_id": artifact_id,
             "val_latent_mse": val_latent_mse,
+            "heldout_utility_score": candidate_utility,
             "evaluation_report": file_sot(&artifact_root.join("evaluation_report.json")),
         },
         "best_active_baseline": best_baseline,
@@ -11862,14 +12622,44 @@ fn validate_dynamicjepa_comparative_promotion(
     if !passed {
         return Err(RealityError::new(
             "RUST_REALITY_DYNAMICJEPA_PROMOTION_REGRESSION",
-            "DynamicJEPA artifact lifecycle gate rejected a candidate that did not beat the active held-out baseline",
-            "dynamicjepa.artifact_promotion.val_latent_mse",
-            "keep the active artifact and retrain/evaluate the candidate on held-out SWE attempts",
+            "DynamicJEPA artifact lifecycle gate rejected a candidate that did not beat the active held-out downstream-utility proxy baseline",
+            "dynamicjepa.artifact_promotion.heldout_utility_score",
+            "keep the active artifact and retrain/evaluate the candidate on held-out SWE attempts with better action contrast, latent cosine, and lower MSE",
             read_json(&evidence_path)?,
             Some(file_sot(&evidence_path)),
         ));
     }
     Ok(read_json(&evidence_path)?)
+}
+
+fn dynamicjepa_heldout_utility_score(report: &Value) -> Option<f64> {
+    let mse = report
+        .pointer("/split_metrics/val/latent_mse")
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite())?;
+    let cosine = report
+        .pointer("/split_metrics/val/latent_cosine")
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite())?;
+    let contrast = report
+        .pointer("/split_metrics/val/action_contrast_acc")
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite())?;
+    let calibrated_segment_count = report
+        .get("surprise_segment_calibrations")
+        .and_then(Value::as_object)
+        .map(|segments| {
+            segments
+                .values()
+                .filter(|segment| {
+                    segment.get("status").and_then(Value::as_str) == Some("calibrated")
+                })
+                .count() as f64
+        })
+        .unwrap_or(0.0);
+    Some(round_signal(
+        contrast + cosine - mse + calibrated_segment_count.min(20.0) * 0.01,
+    ))
 }
 
 fn validate_dynamicjepa_action_control(
@@ -12029,6 +12819,11 @@ fn action_fields_match(candidate_fields: &Value, observed_action: &Value) -> boo
         "command_kind",
         "edit_size_bucket",
         "path_risk",
+        "target_path_bucket",
+        "planned_changed_file_count",
+        "patch_intent_bucket",
+        "patch_shape_bucket",
+        "patch_scope_bucket",
     ];
     for field in HARD_ACTION_CONTROL_FIELDS {
         let Some(observed_value) = observed.get(*field) else {
@@ -12270,6 +13065,53 @@ fn dynamicjepa_swe_events_from_transcript(
                         })?;
                     let tool_family = swe_tool_family_variant(tool_family);
                     let command_kind = swe_command_kind_variant(tool_name);
+                    let requested_sot = transition
+                        .pointer("/action/requested")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_REQUESTED_TOOL_CALL_MISSING",
+                                "harness transition was missing action.requested for argument-aware SWE event materialization",
+                                "harness_transition.action.requested",
+                                "regenerate the transition with the requested-tool-call source-of-truth path",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    let requested_path = file_sot_to_path(
+                        requested_sot,
+                        "RUST_REALITY_DYNAMICJEPA_REQUESTED_TOOL_CALL_SOT_INVALID",
+                        "harness_transition.action.requested",
+                    )?;
+                    let requested_call: Value = read_json(&requested_path)?;
+                    let requested_arguments = requested_call
+                        .get("arguments")
+                        .filter(|value| value.is_object())
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_REQUESTED_TOOL_ARGUMENTS_INVALID",
+                                "requested tool-call readback did not contain a JSON object arguments field",
+                                "requested_tool_call.arguments",
+                                "inspect the requested-tool-call artifact before DynamicJEPA ingestion",
+                                json!({"requested_tool_call": file_sot(&requested_path), "arguments": requested_call.get("arguments")}),
+                                Some(file_sot(&requested_path)),
+                            )
+                        })?;
+                    let planned_paths =
+                        dynamicjepa_tool_argument_paths(tool_name, requested_arguments);
+                    let planned_patch_bytes =
+                        dynamicjepa_tool_argument_patch_bytes(tool_name, requested_arguments)?;
+                    let planned_changed_file_count =
+                        i64::try_from(planned_paths.len()).map_err(|err| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_PLANNED_PATH_COUNT_OVERFLOW",
+                                "planned tool argument path count did not fit the SWE DynamicJEPA i64 schema",
+                                "dynamicjepa.event.action.planned_changed_file_count",
+                                "inspect requested tool arguments before DynamicJEPA ingestion",
+                                json!({"transition": file_sot(&transition_path), "path_count": planned_paths.len(), "error": err.to_string()}),
+                                Some(file_sot(&requested_path)),
+                            )
+                        })?;
                     let changed_files = transition_string_array(
                         &transition,
                         "/observation/changed_files",
@@ -12397,7 +13239,12 @@ fn dynamicjepa_swe_events_from_transcript(
                                 "symbol_bucket": symbol_bucket,
                                 "dependency_layer": dependency_layer,
                                 "test_target_kind": test_target_kind,
-                                "ownership_bucket": ownership_bucket
+                                "ownership_bucket": ownership_bucket,
+                                "planned_patch_bytes": planned_patch_bytes,
+                                "planned_changed_file_count": planned_changed_file_count,
+                                "patch_intent_bucket": swe_patch_intent_bucket(tool_name, planned_patch_bytes, path_risk),
+                                "patch_shape_bucket": swe_patch_shape_bucket(tool_name, requested_arguments, &planned_paths),
+                                "patch_scope_bucket": swe_patch_scope_bucket(tool_name, &planned_paths)
                             },
                             "outcome": {
                                 "next_counter": counter + delta,

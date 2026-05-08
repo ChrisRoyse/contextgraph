@@ -12,8 +12,8 @@
       "hidden": [
         128
       ],
-      "in_action_dim": 67,
-      "out_dim": 201
+      "in_action_dim": 90,
+      "out_dim": 224
     },
     "target_architecture": "frozen_instrument_projection",
     "ema_momentum": 0.0

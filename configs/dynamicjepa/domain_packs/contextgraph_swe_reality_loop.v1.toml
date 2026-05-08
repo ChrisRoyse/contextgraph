@@ -130,6 +130,35 @@ name = "ownership_bucket"
 kind = { type = "categorical", variants = ["none", "application", "tests", "build_or_config", "generated", "unknown"] }
 required = true
 
+[[action.fields]]
+name = "planned_patch_bytes"
+kind = { type = "i64" }
+required = true
+min = 0
+max = 1000000
+
+[[action.fields]]
+name = "planned_changed_file_count"
+kind = { type = "i64" }
+required = true
+min = 0
+max = 100
+
+[[action.fields]]
+name = "patch_intent_bucket"
+kind = { type = "categorical", variants = ["none", "localized_fix", "refactor", "config_update", "test_adjustment", "multi_file", "verification_only", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "patch_shape_bucket"
+kind = { type = "categorical", variants = ["none", "line_window", "structured_replace", "unified_single_hunk", "unified_multi_hunk", "unified_multi_file", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "patch_scope_bucket"
+kind = { type = "categorical", variants = ["none", "single_symbol", "single_file", "multi_file", "cross_layer", "unknown"] }
+required = true
+
 [[outcome.fields]]
 name = "next_counter"
 kind = { type = "i64" }
@@ -557,6 +586,80 @@ reject_nan = true
 reject_inf = true
 
 [[instruments]]
+id = "planned_patch_bytes"
+kind = { type = "scalar" }
+input_fields = ["action.planned_patch_bytes"]
+output_shape = [1]
+normalization = { type = "standard_score", mean = 0.0, std = 2048.0 }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+min = 0.0
+max = 1000000.0
+
+[[instruments]]
+id = "planned_changed_file_count"
+kind = { type = "scalar" }
+input_fields = ["action.planned_changed_file_count"]
+output_shape = [1]
+normalization = { type = "standard_score", mean = 0.0, std = 4.0 }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+min = 0.0
+max = 100.0
+
+[[instruments]]
+id = "patch_intent_bucket"
+kind = { type = "categorical", variants = ["none", "localized_fix", "refactor", "config_update", "test_adjustment", "multi_file", "verification_only", "unknown"] }
+input_fields = ["action.patch_intent_bucket"]
+output_shape = [8]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "patch_shape_bucket"
+kind = { type = "categorical", variants = ["none", "line_window", "structured_replace", "unified_single_hunk", "unified_multi_hunk", "unified_multi_file", "unknown"] }
+input_fields = ["action.patch_shape_bucket"]
+output_shape = [7]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "patch_scope_bucket"
+kind = { type = "categorical", variants = ["none", "single_symbol", "single_file", "multi_file", "cross_layer", "unknown"] }
+input_fields = ["action.patch_scope_bucket"]
+output_shape = [6]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
 id = "observed_progress_counter"
 kind = { type = "scalar" }
 input_fields = ["outcome.next_counter"]
@@ -815,6 +918,11 @@ version = 1
 "action.dependency_layer" = "$.action.dependency_layer"
 "action.test_target_kind" = "$.action.test_target_kind"
 "action.ownership_bucket" = "$.action.ownership_bucket"
+"action.planned_patch_bytes" = "$.action.planned_patch_bytes"
+"action.planned_changed_file_count" = "$.action.planned_changed_file_count"
+"action.patch_intent_bucket" = "$.action.patch_intent_bucket"
+"action.patch_shape_bucket" = "$.action.patch_shape_bucket"
+"action.patch_scope_bucket" = "$.action.patch_scope_bucket"
 "outcome.next_counter" = "$.outcome.next_counter"
 "outcome.outcome_label" = "$.outcome.outcome_label"
 "outcome.result_status" = "$.outcome.result_status"
@@ -856,14 +964,14 @@ min_negatives_per_row = 1
 
 [planner_policy]
 candidate_actions = { kind = "enumerated", records = [
-  { delta = -4, tool_family = "workspace_mutation", command_kind = "apply_unified_diff", edit_size_bucket = "large", path_risk = "multiple", target_path_bucket = "multiple", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application" },
-  { delta = -2, tool_family = "verification", command_kind = "run_targeted_test", edit_size_bucket = "none", path_risk = "none", target_path_bucket = "tests", symbol_bucket = "test_case", dependency_layer = "test_harness", test_target_kind = "unit", ownership_bucket = "tests" },
-  { delta = 0, tool_family = "repository_navigation", command_kind = "list_files", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application" },
-  { delta = 2, tool_family = "repository_navigation", command_kind = "search_repo", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application" },
-  { delta = 4, tool_family = "repository_navigation", command_kind = "open_file_window", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application" },
-  { delta = 6, tool_family = "workspace_mutation", command_kind = "apply_structured_edit", edit_size_bucket = "small", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application" },
-  { delta = 7, tool_family = "workspace_mutation", command_kind = "apply_line_window_edit", edit_size_bucket = "small", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application" },
-  { delta = 5, tool_family = "workspace_mutation", command_kind = "apply_unified_diff", edit_size_bucket = "medium", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application" }
+  { delta = -4, tool_family = "workspace_mutation", command_kind = "apply_unified_diff", edit_size_bucket = "large", path_risk = "multiple", target_path_bucket = "multiple", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 32768, planned_changed_file_count = 2, patch_intent_bucket = "multi_file", patch_shape_bucket = "unified_multi_file", patch_scope_bucket = "cross_layer" },
+  { delta = -2, tool_family = "verification", command_kind = "run_targeted_test", edit_size_bucket = "none", path_risk = "none", target_path_bucket = "tests", symbol_bucket = "test_case", dependency_layer = "test_harness", test_target_kind = "unit", ownership_bucket = "tests", planned_patch_bytes = 0, planned_changed_file_count = 0, patch_intent_bucket = "verification_only", patch_shape_bucket = "none", patch_scope_bucket = "none" },
+  { delta = 0, tool_family = "repository_navigation", command_kind = "list_files", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 0, planned_changed_file_count = 0, patch_intent_bucket = "none", patch_shape_bucket = "none", patch_scope_bucket = "none" },
+  { delta = 2, tool_family = "repository_navigation", command_kind = "search_repo", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 0, planned_changed_file_count = 0, patch_intent_bucket = "none", patch_shape_bucket = "none", patch_scope_bucket = "none" },
+  { delta = 4, tool_family = "repository_navigation", command_kind = "open_file_window", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 0, planned_changed_file_count = 0, patch_intent_bucket = "none", patch_shape_bucket = "none", patch_scope_bucket = "none" },
+  { delta = 6, tool_family = "workspace_mutation", command_kind = "apply_structured_edit", edit_size_bucket = "small", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 512, planned_changed_file_count = 1, patch_intent_bucket = "localized_fix", patch_shape_bucket = "structured_replace", patch_scope_bucket = "single_symbol" },
+  { delta = 7, tool_family = "workspace_mutation", command_kind = "apply_line_window_edit", edit_size_bucket = "small", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 512, planned_changed_file_count = 1, patch_intent_bucket = "localized_fix", patch_shape_bucket = "line_window", patch_scope_bucket = "single_symbol" },
+  { delta = 5, tool_family = "workspace_mutation", command_kind = "apply_unified_diff", edit_size_bucket = "medium", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 4096, planned_changed_file_count = 1, patch_intent_bucket = "localized_fix", patch_shape_bucket = "unified_single_hunk", patch_scope_bucket = "single_file" }
 ] }
 guards = ["bounds_check"]
 surprise_threshold = 0.85
@@ -889,6 +997,9 @@ modalities = [
   "action_dependency_layer",
   "action_test_target_kind",
   "action_ownership_bucket",
+  "patch_intent_bucket",
+  "patch_shape_bucket",
+  "patch_scope_bucket",
   "outcome_label",
   "result_status",
   "verifier_status",

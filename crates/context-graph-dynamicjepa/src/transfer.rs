@@ -622,6 +622,7 @@ fn build_train_examples(
             target_panel: example.target_panel.clone(),
             action: example.action.clone(),
             negative_panel,
+            segments: Default::default(),
         });
     }
     Ok(out)
