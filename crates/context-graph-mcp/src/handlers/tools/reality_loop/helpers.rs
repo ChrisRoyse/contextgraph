@@ -265,14 +265,15 @@ fn parse_attempt_name(name: &str) -> Option<u64> {
 }
 
 fn is_runtime_metadata_dir(name: &str) -> bool {
-    matches!(
-        name,
-        "failures"
-            | "workspaces"
-            | "cgreality-shift-log"
-            | "cgreality-hook-state"
-            | "claude-code-optimizer"
-    )
+    name.starts_with('_')
+        || matches!(
+            name,
+            "failures"
+                | "workspaces"
+                | "cgreality-shift-log"
+                | "cgreality-hook-state"
+                | "claude-code-optimizer"
+        )
 }
 
 pub fn read_json(path: &Path) -> Result<Value> {
@@ -633,6 +634,8 @@ mod tests {
         let root = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(root.path().join("smoke-1778013223")).expect("run dir");
         for name in [
+            "_engine_logs",
+            "_manual_fsv_outputs",
             "failures",
             "workspaces",
             "cgreality-shift-log",
@@ -649,6 +652,8 @@ mod tests {
     #[test]
     fn runtime_metadata_dir_list_stays_explicit() {
         for name in [
+            "_engine_logs",
+            "_manual_fsv_outputs",
             "failures",
             "workspaces",
             "cgreality-shift-log",

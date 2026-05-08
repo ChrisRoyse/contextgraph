@@ -187,6 +187,28 @@ The agent must correct and retry. The Stop hook will not allow turn end until a 
 2. JSON Schema is queryable: future analytics can `jq` over recommendations and aggregate by `diagnosis_summary.failure_class`.
 3. Schema can be hot-reloaded by the MCP server without recompiling, allowing iteration during the design phase.
 
+## Reflexion attempt episode fields
+
+Every new attempt summary and `reality-optimizer/attempts.jsonl` row includes the Reflexion-style episode fields used by the outer reality loop:
+
+```json
+{
+  "task_id": "string",
+  "task_summary": "string",
+  "input_excerpt": "string",
+  "output_excerpt": "string or null",
+  "critique": "string",
+  "reward": "number from 0.0 to 1.0",
+  "success": "boolean; true only when official SWE-bench resolved is true",
+  "outcome_kind": "official_resolved | official_unresolved | repeated_patch | no_candidate_patch | validation_failed | validation_passed_official_not_run",
+  "latency_ms": "integer or null",
+  "tokens_used": "integer or null",
+  "tags": ["string"]
+}
+```
+
+The source of truth is the physical attempt artifact tree, not the MCP return value: `<runtime_root>/<run_id>/<task>/attempt-N/attempt-summary.json` and `<runtime_root>/<run_id>/reality-optimizer/attempts.jsonl`. Validation-only pass is intentionally not counted as `success`; it is recorded as `outcome_kind: "validation_passed_official_not_run"` with an `official-not-run` tag so the next optimizer turn can act on incomplete evidence instead of mistaking it for a solved instance.
+
 ## Sample valid recommendation (worked example)
 
 ```json

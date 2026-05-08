@@ -5,6 +5,7 @@
 
 use super::errors::{CCRealityError, Result};
 use super::helpers::*;
+use super::witness_chain::{append_witness_entry_for_run, WitnessOpType};
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use rand_distr::{Beta, Distribution};
@@ -203,8 +204,8 @@ pub async fn optimizer_bandit_select(args: Value) -> Result<Value> {
     if !cost_weight.is_finite() || cost_weight < 0.0 {
         return Err(invalid_f64("cost_weight", args.get("cost_weight")));
     }
-    let path = active_bandit_path().await?;
-    let mut state = load_or_init_state(&path)?;
+    let active = active_bandit_context().await?;
+    let mut state = load_or_init_state(&active.path)?;
     let unix = unix_secs()?;
     let ctx = context_key(&decision_point, &context_bucket);
     let arm_map = state.contexts.entry(ctx.clone()).or_default();
@@ -223,7 +224,7 @@ pub async fn optimizer_bandit_select(args: Value) -> Result<Value> {
                 "solver_bandit.beta",
                 "inspect persisted alpha/beta values",
                 json!({"context": ctx, "arm": arm, "alpha": stats.alpha, "beta": stats.beta}),
-                Some(file_sot(&path)),
+                Some(file_sot(&active.path)),
             )
         })?;
         let sample = beta.sample(&mut rng);
@@ -238,8 +239,8 @@ pub async fn optimizer_bandit_select(args: Value) -> Result<Value> {
     selected_stats.last_selected_at_unix = Some(unix);
     state.selection_count = state.selection_count.saturating_add(1);
     state.updated_at_unix = unix;
-    save_state(&path, &state)?;
-    let readback = load_state_required(&path)?;
+    save_state(&active.path, &state)?;
+    let readback = load_state_required(&active.path)?;
     let readback_arm = readback
         .contexts
         .get(&ctx)
@@ -251,7 +252,7 @@ pub async fn optimizer_bandit_select(args: Value) -> Result<Value> {
                 "solver_bandit.readback",
                 "inspect solver-bandit.json durability",
                 json!({"context": ctx, "selected_arm": selected_arm}),
-                Some(file_sot(&path)),
+                Some(file_sot(&active.path)),
             )
         })?;
     if readback_arm.last_selected_at_unix != Some(unix) {
@@ -261,9 +262,16 @@ pub async fn optimizer_bandit_select(args: Value) -> Result<Value> {
             "solver_bandit.readback.last_selected_at_unix",
             "inspect solver-bandit.json durability",
             json!({"context": ctx, "selected_arm": selected_arm, "expected": unix, "actual": readback_arm.last_selected_at_unix}),
-            Some(file_sot(&path)),
+            Some(file_sot(&active.path)),
         ));
     }
+    let state_sha256 = sha256_file(&active.path)?;
+    let witness_append = append_witness_entry_for_run(
+        &active.runtime_root,
+        &active.run_id,
+        WitnessOpType::BanditSelect,
+        &state_sha256,
+    )?;
     Ok(json!({
         "status": "ok",
         "decision_point": decision_point,
@@ -277,8 +285,9 @@ pub async fn optimizer_bandit_select(args: Value) -> Result<Value> {
                 "cost_penalty": cost_penalty,
             })
         }).collect::<Vec<_>>(),
-        "state_sha256": sha256_file(&path)?,
-        "source_of_truth": file_sot(&path),
+        "state_sha256": state_sha256,
+        "witness_append": witness_append,
+        "source_of_truth": file_sot(&active.path),
         "readback": {
             "selection_count": readback.selection_count,
             "selected_arm_last_selected_at_unix": readback_arm.last_selected_at_unix,
@@ -308,8 +317,8 @@ pub async fn optimizer_bandit_record_reward(args: Value) -> Result<Value> {
             return Err(invalid_f64("cost", args.get("cost")));
         }
     }
-    let path = active_bandit_path().await?;
-    let mut state = load_state_required(&path)?;
+    let active = active_bandit_context().await?;
+    let mut state = load_state_required(&active.path)?;
     let ctx = context_key(&decision_point, &context_bucket);
     let arm_stats = state
         .contexts
@@ -322,15 +331,15 @@ pub async fn optimizer_bandit_record_reward(args: Value) -> Result<Value> {
                 "arguments.arm",
                 "call optimizer_bandit_select with this context and arm before recording reward",
                 json!({"decision_point": decision_point, "context_bucket": context_bucket, "arm": arm}),
-                Some(file_sot(&path)),
+                Some(file_sot(&active.path)),
             )
         })?;
     let unix = unix_secs()?;
     arm_stats.record_reward(reward, cost, unix);
     state.reward_update_count = state.reward_update_count.saturating_add(1);
     state.updated_at_unix = unix;
-    save_state(&path, &state)?;
-    let readback = load_state_required(&path)?;
+    save_state(&active.path, &state)?;
+    let readback = load_state_required(&active.path)?;
     let stats = readback
         .contexts
         .get(&ctx)
@@ -342,7 +351,7 @@ pub async fn optimizer_bandit_record_reward(args: Value) -> Result<Value> {
                 "solver_bandit.readback",
                 "inspect solver-bandit.json durability",
                 json!({"context": ctx, "arm": arm}),
-                Some(file_sot(&path)),
+                Some(file_sot(&active.path)),
             )
         })?;
     if stats.last_reward != Some(reward) {
@@ -352,17 +361,25 @@ pub async fn optimizer_bandit_record_reward(args: Value) -> Result<Value> {
             "solver_bandit.readback.last_reward",
             "inspect solver-bandit.json durability",
             json!({"context": ctx, "arm": arm, "expected": reward, "actual": stats.last_reward}),
-            Some(file_sot(&path)),
+            Some(file_sot(&active.path)),
         ));
     }
+    let state_sha256 = sha256_file(&active.path)?;
+    let witness_append = append_witness_entry_for_run(
+        &active.runtime_root,
+        &active.run_id,
+        WitnessOpType::BanditReward,
+        &state_sha256,
+    )?;
     Ok(json!({
         "status": "ok",
         "decision_point": decision_point,
         "context_bucket": context_bucket,
         "arm": arm,
         "stats": arm_stats_to_json(stats),
-        "state_sha256": sha256_file(&path)?,
-        "source_of_truth": file_sot(&path),
+        "state_sha256": state_sha256,
+        "witness_append": witness_append,
+        "source_of_truth": file_sot(&active.path),
         "readback": {
             "reward_update_count": readback.reward_update_count,
             "last_reward": stats.last_reward,
@@ -406,6 +423,16 @@ pub async fn optimizer_bandit_state(args: Value) -> Result<Value> {
 }
 
 async fn active_bandit_path() -> Result<PathBuf> {
+    active_bandit_context().await.map(|active| active.path)
+}
+
+struct ActiveBanditContext {
+    runtime_root: PathBuf,
+    run_id: String,
+    path: PathBuf,
+}
+
+async fn active_bandit_context() -> Result<ActiveBanditContext> {
     let runtime_root = require_active_runtime_root().await?;
     let run_id = latest_run_id(&runtime_root)?.ok_or_else(|| {
         CCRealityError::new(
@@ -417,10 +444,15 @@ async fn active_bandit_path() -> Result<PathBuf> {
             Some(file_sot(&runtime_root)),
         )
     })?;
-    Ok(runtime_root
-        .join(run_id)
+    let path = runtime_root
+        .join(&run_id)
         .join("reality-optimizer")
-        .join("solver-bandit.json"))
+        .join("solver-bandit.json");
+    Ok(ActiveBanditContext {
+        runtime_root,
+        run_id,
+        path,
+    })
 }
 
 fn load_or_init_state(path: &Path) -> Result<SolverBanditState> {

@@ -347,15 +347,16 @@ fn list_run_dirs(rr: &Path) -> Result<HashSet<String>> {
 }
 
 fn is_run_metadata_dir(name: &str) -> bool {
-    matches!(
-        name,
-        "_engine_logs"
-            | "failures"
-            | "workspaces"
-            | "cgreality-shift-log"
-            | "cgreality-hook-state"
-            | "claude-code-optimizer"
-    )
+    name.starts_with('_')
+        || matches!(
+            name,
+            "_engine_logs"
+                | "failures"
+                | "workspaces"
+                | "cgreality-shift-log"
+                | "cgreality-hook-state"
+                | "claude-code-optimizer"
+        )
 }
 
 pub async fn reality_run_official_eval(args: Value) -> Result<Value> {

@@ -17,6 +17,7 @@ shakespear/
 
 # Nested external repo (separate project, has its own .git)
 agentdb/
+ruvector/
 
 # Cargo local config
 .cargo/

@@ -590,6 +590,68 @@ The artifact is written under `<run>/<task>/attempt-N/claude-code-optimizer/reco
 
 ---
 
+### AgentDB-derived evidence tools
+
+These are selective Rust-native ports of the useful agentdb primitives. They do not import the TypeScript runtime, `.rvf` storage, optional JS fallbacks, or toy RL code.
+
+#### `optimizer_bandit_select`
+
+**Purpose:** Thompson-sample a repeated outer-loop decision such as trigger policy, next-prompt-delta family, retrieval strategy, or verifier budget.
+
+**Source of truth:** `<runtime_root>/<run_id>/reality-optimizer/solver-bandit.json`.
+
+**Behavior:** reads persisted arm priors, samples `Beta(alpha, beta)` per arm, subtracts cost, records the selected arm with read-after-write verification, and appends a SHAKE-256 witness-chain entry. Empty or duplicate arm sets fail before any write.
+
+#### `optimizer_bandit_record_reward`
+
+**Purpose:** Update the chosen arm after an observed reward from the real attempt/reward pipeline.
+
+**Source of truth:** `<runtime_root>/<run_id>/reality-optimizer/solver-bandit.json`.
+
+**Behavior:** updates alpha/beta, reward EMA, cost EMA, and counters only for an existing `(context_key, arm_id)` pair. Unknown arms and non-finite reward/cost values return structured errors and leave the state file unchanged.
+
+#### `optimizer_bandit_state`
+
+**Purpose:** Read the persisted bandit state for inspection, replay, and FSV.
+
+#### `attempts_query_reflexion`
+
+**Purpose:** Query persisted attempt episodes by deterministic token similarity plus MMR diversity. Supports `only_failures`, `only_successes`, `min_reward`, `tag`, `outcome_kind`, and structured `metadata_filter`.
+
+**Source of truth:** `<runtime_root>/<run_id>/reality-optimizer/attempts.jsonl`.
+
+#### `attempts_critique_summary`
+
+**Purpose:** Summarize recurring failure critiques from the real attempt episode index.
+
+#### `attempts_success_strategies`
+
+**Purpose:** Surface recurring factors from successful attempts. Success means official resolved, not local validation-only success.
+
+#### `attempts_synthesize`
+
+**Purpose:** Return a compact context bundle containing selected attempts, recurring tags/outcomes, and evidence pointers for the next outer-loop turn.
+
+#### `optimizer_recall_recommendations`
+
+**Purpose:** Rank persisted optimizer recommendations with `alpha*similarity + beta*uplift - gamma*latency_cost`.
+
+**Source of truth:** `recommendation-turn-*.json` files under the active run.
+
+**Behavior:** reads recommendation files from disk, hashes the recommendation and supported `source_of_truth_readbacks`, and returns an RFC 9162-style domain-separated Merkle root. Unsupported reference kinds are explicitly labeled as opaque references rather than silently treated as verified files.
+
+#### `optimizer_witness_chain_verify`
+
+**Purpose:** Replay the append-only optimizer witness chain and fail if length, op type, or previous-hash linkage is invalid.
+
+**Source of truth:** `<runtime_root>/<run_id>/claude-code-optimizer/witness-chain.bin`.
+
+#### `optimizer_witness_chain_diff`
+
+**Purpose:** List verified entries since an offset for readback-oriented FSV and session handoff.
+
+---
+
 ## Path policy file
 
 `config/ccreality_governed_paths.json`:
