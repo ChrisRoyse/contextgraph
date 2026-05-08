@@ -412,6 +412,26 @@ pub fn plan_next_action(
     panel_id: PanelId,
     skill_id: SkillId,
 ) -> DynamicJepaResult<PlanServiceOutcome> {
+    plan_next_action_internal(db, artifact_id, panel_id, skill_id, None)
+}
+
+pub fn plan_next_action_with_candidate(
+    db: &DB,
+    artifact_id: ModelArtifactId,
+    panel_id: PanelId,
+    skill_id: SkillId,
+    candidate_fields: BTreeMap<String, FieldValue>,
+) -> DynamicJepaResult<PlanServiceOutcome> {
+    plan_next_action_internal(db, artifact_id, panel_id, skill_id, Some(candidate_fields))
+}
+
+fn plan_next_action_internal(
+    db: &DB,
+    artifact_id: ModelArtifactId,
+    panel_id: PanelId,
+    skill_id: SkillId,
+    candidate_fields: Option<BTreeMap<String, FieldValue>>,
+) -> DynamicJepaResult<PlanServiceOutcome> {
     let artifact = load_inference_artifact(db, artifact_id)?;
     let domain = domain_for_artifact(db, &artifact.loaded.registry)?;
     let panel = get_latent_panel(db, panel_id)?.ok_or_else(|| {
@@ -430,7 +450,15 @@ pub fn plan_next_action(
     let plan_trace_id = PlanTraceId::new_v4();
     let (skill_policy, write_skill_policy) =
         ensure_skill_policy(db, &domain, skill_id, plan_trace_id.0)?;
-    let actions = enumerate_candidate_actions(&domain, &source_state, plan_trace_id.0)?;
+    let mut actions = enumerate_candidate_actions(&domain, &source_state, plan_trace_id.0)?;
+    if let Some(fields) = candidate_fields {
+        actions.push(build_hypothetical_action_record(
+            &domain,
+            source_state.source_event_id,
+            plan_trace_id.0,
+            &fields,
+        )?);
+    }
 
     let mut predictions = Vec::with_capacity(actions.len());
     let mut guard_decisions =
@@ -2469,6 +2497,11 @@ fn action_calibration_segments(action: &NormalizedAction) -> BTreeMap<String, St
         "patch_intent_bucket",
         "patch_shape_bucket",
         "patch_scope_bucket",
+        "ast_language",
+        "ast_parse_status",
+        "ast_node_kind",
+        "ast_symbol_kind",
+        "ast_edit_kind",
     ] {
         if let Some(value) = action
             .fields

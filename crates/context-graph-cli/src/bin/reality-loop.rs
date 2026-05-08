@@ -2004,6 +2004,7 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             agent_tool_transcript_path.as_deref(),
             &ledger,
             &attempt_dir,
+            &workspace,
             &context_graph_bin,
             &task_root,
             args.dynamicjepa_db.as_deref(),
@@ -5574,7 +5575,9 @@ fn pre_action_dynamicjepa_gate(
             Some(file_sot(dynamicjepa_db)),
         ));
     };
-    let observed_action = inferred_dynamicjepa_action_from_tool(name, arguments)?;
+    let observed_action = inferred_dynamicjepa_action_from_tool(ctx.repo_dir, name, arguments)?;
+    let candidate_action_path = tool_dir.join("dynamicjepa-pending-action.json");
+    write_json_checked(&candidate_action_path, &observed_action)?;
     let plan = dynamicjepa_json_command(
         ctx.context_graph_bin,
         vec![
@@ -5588,6 +5591,8 @@ fn pre_action_dynamicjepa_gate(
             panel_id.to_string(),
             "--skill-id".to_string(),
             ctx.args.dynamicjepa_skill_id.clone(),
+            "--candidate-action-json".to_string(),
+            path_str(&candidate_action_path).to_string(),
             "--json".to_string(),
         ],
         ctx.task_root,
@@ -5792,7 +5797,14 @@ fn bootstrap_dynamicjepa_cold_start_panel(
             "planned_changed_file_count": 0,
             "patch_intent_bucket": "none",
             "patch_shape_bucket": "none",
-            "patch_scope_bucket": "none"
+            "patch_scope_bucket": "none",
+            "ast_language": "none",
+            "ast_parse_status": "none",
+            "ast_node_kind": "none",
+            "ast_symbol_kind": "none",
+            "ast_edit_kind": "none",
+            "ast_touched_node_count": 0,
+            "ast_symbol_count": 0
         },
         "outcome": {
             "next_counter": 0,
@@ -6108,6 +6120,7 @@ fn live_ingest_dynamicjepa_transition(
         attempt,
         &mini_transcript_path,
         &mini_transcript,
+        ctx.repo_dir,
     )?;
     if events.len() != 1 {
         return Err(RealityError::new(
@@ -6267,12 +6280,17 @@ fn update_dynamicjepa_live_index(live_dir: &Path, record: &Value) -> Result<()> 
     )
 }
 
-fn inferred_dynamicjepa_action_from_tool(name: &str, arguments: &Value) -> Result<Value> {
+fn inferred_dynamicjepa_action_from_tool(
+    repo_dir: &Path,
+    name: &str,
+    arguments: &Value,
+) -> Result<Value> {
     let paths = dynamicjepa_tool_argument_paths(name, arguments);
     let patch_bytes = dynamicjepa_tool_argument_patch_bytes(name, arguments)?;
     let edit_size_bucket = swe_edit_size_bucket(patch_bytes);
     let path_risk = swe_path_risk(&paths, &[]);
     let target_path_bucket = swe_path_bucket(&paths, &[]);
+    let ast_semantics = dynamicjepa_ast_edit_semantics(repo_dir, name, arguments, &paths)?;
     let planned_changed_file_count = i64::try_from(paths.len()).map_err(|err| {
         RealityError::new(
             "RUST_REALITY_DYNAMICJEPA_PREACTION_PATH_COUNT_OVERFLOW",
@@ -6297,7 +6315,7 @@ fn inferred_dynamicjepa_action_from_tool(name: &str, arguments: &Value) -> Resul
         "edit_size_bucket": edit_size_bucket,
         "path_risk": path_risk,
         "target_path_bucket": target_path_bucket,
-        "symbol_bucket": swe_symbol_bucket(name, &paths, &[]),
+        "symbol_bucket": swe_symbol_bucket_from_ast_or_path(name, &paths, &[], &ast_semantics),
         "dependency_layer": swe_dependency_layer(&paths, &[]),
         "test_target_kind": swe_test_target_kind(name, None, &paths, &[]),
         "ownership_bucket": swe_ownership_bucket(&paths, &[]),
@@ -6305,7 +6323,14 @@ fn inferred_dynamicjepa_action_from_tool(name: &str, arguments: &Value) -> Resul
         "planned_changed_file_count": planned_changed_file_count,
         "patch_intent_bucket": swe_patch_intent_bucket(name, patch_bytes, path_risk),
         "patch_shape_bucket": swe_patch_shape_bucket(name, arguments, &paths),
-        "patch_scope_bucket": swe_patch_scope_bucket(name, &paths),
+        "patch_scope_bucket": swe_patch_scope_bucket_from_ast_or_path(name, &paths, &ast_semantics),
+        "ast_language": ast_semantics.language,
+        "ast_parse_status": ast_semantics.parse_status,
+        "ast_node_kind": ast_semantics.node_kind,
+        "ast_symbol_kind": ast_semantics.symbol_kind,
+        "ast_edit_kind": ast_semantics.edit_kind,
+        "ast_touched_node_count": ast_semantics.touched_node_count,
+        "ast_symbol_count": ast_semantics.symbol_count,
     }))
 }
 
@@ -6377,6 +6402,759 @@ fn dynamicjepa_tool_argument_paths(name: &str, arguments: &Value) -> Vec<String>
     paths.into_iter().collect()
 }
 
+#[derive(Debug, Clone)]
+struct SweAstEditSemantics {
+    language: &'static str,
+    parse_status: &'static str,
+    node_kind: &'static str,
+    symbol_kind: &'static str,
+    edit_kind: &'static str,
+    touched_node_count: i64,
+    symbol_count: i64,
+}
+
+impl SweAstEditSemantics {
+    fn none() -> Self {
+        Self {
+            language: "none",
+            parse_status: "none",
+            node_kind: "none",
+            symbol_kind: "none",
+            edit_kind: "none",
+            touched_node_count: 0,
+            symbol_count: 0,
+        }
+    }
+}
+
+fn dynamicjepa_ast_edit_semantics(
+    repo_dir: &Path,
+    tool_name: &str,
+    arguments: &Value,
+    paths: &[String],
+) -> Result<SweAstEditSemantics> {
+    if !is_final_edit_tool(tool_name) {
+        return Ok(SweAstEditSemantics::none());
+    }
+    if paths.is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_AST_TARGET_PATHS_MISSING",
+            "DynamicJEPA AST action semantics could not identify any target path for a mutating tool call",
+            "dynamicjepa.action.ast.paths",
+            "include governed edit path evidence in the tool arguments before pre-action planning or ingestion",
+            json!({"tool_name": tool_name, "arguments": arguments}),
+            Some(file_sot(repo_dir)),
+        ));
+    }
+
+    let mut per_path = Vec::new();
+    for path in paths {
+        per_path.push(dynamicjepa_ast_semantics_for_path(
+            repo_dir, tool_name, arguments, path,
+        )?);
+    }
+    let languages = per_path
+        .iter()
+        .map(|sem| sem.language)
+        .collect::<BTreeSet<_>>();
+    let node_kinds = per_path
+        .iter()
+        .map(|sem| sem.node_kind)
+        .collect::<BTreeSet<_>>();
+    let symbol_kinds = per_path
+        .iter()
+        .map(|sem| sem.symbol_kind)
+        .collect::<BTreeSet<_>>();
+    let edit_kinds = per_path
+        .iter()
+        .map(|sem| sem.edit_kind)
+        .collect::<BTreeSet<_>>();
+    Ok(SweAstEditSemantics {
+        language: collapse_ast_category(&languages, "mixed"),
+        parse_status: if per_path.iter().any(|sem| sem.parse_status == "parsed") {
+            "parsed"
+        } else {
+            collapse_ast_category(
+                &per_path
+                    .iter()
+                    .map(|sem| sem.parse_status)
+                    .collect::<BTreeSet<_>>(),
+                "none",
+            )
+        },
+        node_kind: collapse_ast_category(&node_kinds, "mixed"),
+        symbol_kind: collapse_ast_category(&symbol_kinds, "mixed"),
+        edit_kind: collapse_ast_category(&edit_kinds, "mixed"),
+        touched_node_count: per_path
+            .iter()
+            .map(|sem| sem.touched_node_count)
+            .sum::<i64>(),
+        symbol_count: per_path.iter().map(|sem| sem.symbol_count).sum::<i64>(),
+    })
+}
+
+fn collapse_ast_category(values: &BTreeSet<&'static str>, mixed: &'static str) -> &'static str {
+    let meaningful = values
+        .iter()
+        .copied()
+        .filter(|value| *value != "none")
+        .collect::<BTreeSet<_>>();
+    if meaningful.is_empty() {
+        "none"
+    } else if meaningful.len() == 1 {
+        meaningful.iter().next().copied().unwrap_or("none")
+    } else {
+        mixed
+    }
+}
+
+fn dynamicjepa_ast_semantics_for_path(
+    repo_dir: &Path,
+    tool_name: &str,
+    arguments: &Value,
+    repo_relative_path: &str,
+) -> Result<SweAstEditSemantics> {
+    ensure_dynamicjepa_ast_safe_repo_path(repo_relative_path, repo_dir)?;
+    if swe_path_bucket(&[repo_relative_path.to_string()], &[]) == "config_or_build" {
+        return Ok(SweAstEditSemantics {
+            language: "none",
+            parse_status: "none",
+            node_kind: "config",
+            symbol_kind: "config_key",
+            edit_kind: "config",
+            touched_node_count: 1,
+            symbol_count: 1,
+        });
+    }
+    let Some(language) = swe_ast_language_for_path(repo_relative_path) else {
+        if swe_path_risk(&[repo_relative_path.to_string()], &[]) == "source" {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_AST_UNSUPPORTED_SOURCE_LANGUAGE",
+                "DynamicJEPA AST action semantics refused a source edit for a language without a parser-backed extractor",
+                "dynamicjepa.action.ast_language",
+                "add a tree-sitter grammar and language-specific extractor before using this source language for ME-JEPA action control",
+                json!({"path": repo_relative_path, "tool_name": tool_name}),
+                Some(format!("git:{}#{}", repo_dir.display(), repo_relative_path)),
+            ));
+        }
+        return Ok(SweAstEditSemantics::none());
+    };
+
+    let source_path = repo_dir.join(repo_relative_path);
+    let source = fs::read_to_string(&source_path).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_AST_SOURCE_READ_FAILED",
+            "DynamicJEPA AST action semantics could not read the target source file",
+            "dynamicjepa.action.ast.source_file",
+            "inspect the governed edit path and repository checkout before pre-action planning",
+            json!({"path": repo_relative_path, "error": err.to_string()}),
+            Some(file_sot(&source_path)),
+        )
+    })?;
+    let ranges =
+        dynamicjepa_ast_byte_ranges_for_path(tool_name, arguments, repo_relative_path, &source)?;
+    if ranges.is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_AST_EDIT_RANGE_MISSING",
+            "DynamicJEPA AST action semantics could not resolve any concrete edit range in the target source file",
+            "dynamicjepa.action.ast.edit_range",
+            "provide line ranges, exact find spans, or unified-diff hunks that map to the real checked-out file",
+            json!({"path": repo_relative_path, "tool_name": tool_name}),
+            Some(file_sot(&source_path)),
+        ));
+    }
+
+    let mut parser = tree_sitter::Parser::new();
+    let language_fn: tree_sitter::Language = match language {
+        "python" => tree_sitter_python::LANGUAGE.into(),
+        "rust" => tree_sitter_rust::LANGUAGE.into(),
+        "javascript" => tree_sitter_javascript::LANGUAGE.into(),
+        "typescript" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
+        _ => unreachable!("language is constrained by swe_ast_language_for_path"),
+    };
+    parser.set_language(&language_fn).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_AST_LANGUAGE_SET_FAILED",
+            "DynamicJEPA AST parser could not set the requested tree-sitter language",
+            "dynamicjepa.action.ast.parser.language",
+            "verify tree-sitter grammar crate versions before training or pre-action use",
+            json!({"language": language, "path": repo_relative_path, "error": err.to_string()}),
+            Some(file_sot(&source_path)),
+        )
+    })?;
+    let tree = parser.parse(&source, None).ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_AST_PARSE_RETURNED_NONE",
+            "tree-sitter returned no syntax tree for a source file required by DynamicJEPA action control",
+            "dynamicjepa.action.ast.parser.tree",
+            "inspect parser grammar compatibility and the source file bytes",
+            json!({"language": language, "path": repo_relative_path}),
+            Some(file_sot(&source_path)),
+        )
+    })?;
+    let root = tree.root_node();
+    if root.has_error() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_AST_PARSE_SYNTAX_ERROR",
+            "DynamicJEPA AST action semantics refused a source file with tree-sitter syntax errors",
+            "dynamicjepa.action.ast_parse_status",
+            "fix or exclude syntactically invalid source before training or pre-action control; parser-backed semantics must not be guessed",
+            json!({"language": language, "path": repo_relative_path}),
+            Some(file_sot(&source_path)),
+        ));
+    }
+
+    let mut node_kinds = BTreeSet::new();
+    let mut symbol_kinds = BTreeSet::new();
+    let mut edit_kinds = BTreeSet::new();
+    let mut touched = 0i64;
+    for range in &ranges {
+        let start = range.0.min(source.len());
+        let end_exclusive = range
+            .1
+            .min(source.len())
+            .max(start.saturating_add(1).min(source.len()));
+        let end = end_exclusive.saturating_sub(1).max(start);
+        let node = root.descendant_for_byte_range(start, end).unwrap_or(root);
+        let semantic = dynamicjepa_ast_semantic_node(language, node, &source, repo_relative_path);
+        node_kinds.insert(semantic.node_kind);
+        symbol_kinds.insert(semantic.symbol_kind);
+        edit_kinds.insert(dynamicjepa_ast_edit_kind_for_range(
+            semantic.node_kind,
+            semantic.node_start_line,
+            range.2,
+        ));
+        touched += 1;
+    }
+
+    Ok(SweAstEditSemantics {
+        language,
+        parse_status: "parsed",
+        node_kind: collapse_ast_category(&node_kinds, "mixed"),
+        symbol_kind: collapse_ast_category(&symbol_kinds, "mixed"),
+        edit_kind: collapse_ast_category(&edit_kinds, "mixed"),
+        touched_node_count: touched,
+        symbol_count: symbol_kinds.iter().filter(|kind| **kind != "none").count() as i64,
+    })
+}
+
+fn ensure_dynamicjepa_ast_safe_repo_path(path: &str, repo_dir: &Path) -> Result<()> {
+    let path_obj = Path::new(path);
+    if path_obj.is_absolute()
+        || path_obj
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_AST_PATH_OUTSIDE_REPO",
+            "DynamicJEPA AST action semantics refused a path outside the governed repository",
+            "dynamicjepa.action.ast.path",
+            "use repo-relative governed file paths only",
+            json!({"path": path}),
+            Some(file_sot(repo_dir)),
+        ));
+    }
+    Ok(())
+}
+
+fn swe_ast_language_for_path(path: &str) -> Option<&'static str> {
+    if path.ends_with(".py") {
+        Some("python")
+    } else if path.ends_with(".rs") {
+        Some("rust")
+    } else if path.ends_with(".jsx")
+        || path.ends_with(".js")
+        || path.ends_with(".mjs")
+        || path.ends_with(".cjs")
+    {
+        Some("javascript")
+    } else if path.ends_with(".tsx") {
+        Some("tsx")
+    } else if path.ends_with(".ts") || path.ends_with(".mts") || path.ends_with(".cts") {
+        Some("typescript")
+    } else {
+        None
+    }
+}
+
+fn dynamicjepa_ast_byte_ranges_for_path(
+    tool_name: &str,
+    arguments: &Value,
+    path: &str,
+    source: &str,
+) -> Result<Vec<(usize, usize, u32)>> {
+    match tool_name {
+        "apply_line_window_edit" => dynamicjepa_ast_line_edit_ranges(arguments, path, source),
+        "apply_structured_edit" => dynamicjepa_ast_structured_edit_ranges(arguments, path, source),
+        "apply_unified_diff" => dynamicjepa_ast_unified_diff_ranges(arguments, path, source),
+        _ => Ok(Vec::new()),
+    }
+}
+
+fn dynamicjepa_ast_line_edit_ranges(
+    arguments: &Value,
+    path: &str,
+    source: &str,
+) -> Result<Vec<(usize, usize, u32)>> {
+    let edits = arguments
+        .get("edits")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_AST_LINE_EDITS_MISSING",
+                "line-window AST extraction requires an edits array",
+                "dynamicjepa.action.ast.line_window.edits",
+                "provide apply_line_window_edit arguments with path/start_line/end_line",
+                json!({"arguments": arguments}),
+                None,
+            )
+        })?;
+    let mut ranges = Vec::new();
+    for edit in edits {
+        if edit.get("path").and_then(Value::as_str) != Some(path) {
+            continue;
+        }
+        let start_line = edit
+            .get("start_line")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_AST_START_LINE_MISSING",
+                    "line-window AST extraction requires start_line",
+                    "dynamicjepa.action.ast.line_window.start_line",
+                    "provide exact governed line-window edit coordinates",
+                    json!({"path": path, "edit": edit}),
+                    None,
+                )
+            })?;
+        let end_line = edit
+            .get("end_line")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_AST_END_LINE_MISSING",
+                    "line-window AST extraction requires end_line",
+                    "dynamicjepa.action.ast.line_window.end_line",
+                    "provide exact governed line-window edit coordinates",
+                    json!({"path": path, "edit": edit}),
+                    None,
+                )
+            })?;
+        ranges.push(line_range_to_byte_range(
+            source, start_line, end_line, path,
+        )?);
+    }
+    Ok(ranges)
+}
+
+fn dynamicjepa_ast_structured_edit_ranges(
+    arguments: &Value,
+    path: &str,
+    source: &str,
+) -> Result<Vec<(usize, usize, u32)>> {
+    let edits = arguments
+        .get("edits")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_AST_STRUCTURED_EDITS_MISSING",
+                "structured AST extraction requires an edits array",
+                "dynamicjepa.action.ast.structured.edits",
+                "provide apply_structured_edit arguments with exact find spans",
+                json!({"arguments": arguments}),
+                None,
+            )
+        })?;
+    let mut ranges = Vec::new();
+    for edit in edits {
+        if edit.get("path").and_then(Value::as_str) != Some(path) {
+            continue;
+        }
+        let find = edit.get("find").and_then(Value::as_str).ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_AST_FIND_SPAN_MISSING",
+                "structured AST extraction requires an exact find span",
+                "dynamicjepa.action.ast.structured.find",
+                "provide the exact source span copied from a governed source window",
+                json!({"path": path, "edit": edit}),
+                None,
+            )
+        })?;
+        if find.is_empty() {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_AST_FIND_SPAN_EMPTY",
+                "structured AST extraction refused an empty find span",
+                "dynamicjepa.action.ast.structured.find",
+                "provide a non-empty exact source span",
+                json!({"path": path}),
+                None,
+            ));
+        }
+        let matches = source.match_indices(find).collect::<Vec<_>>();
+        if matches.len() != 1 {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_AST_FIND_SPAN_NOT_UNIQUE",
+                "structured AST extraction requires the find span to match the source file exactly once",
+                "dynamicjepa.action.ast.structured.find",
+                "open the source window and provide a unique find span before DynamicJEPA action control",
+                json!({"path": path, "match_count": matches.len()}),
+                None,
+            ));
+        }
+        let start = matches[0].0;
+        let end = start + find.len();
+        let start_line = byte_to_one_based_line(source, start)?;
+        ranges.push((start, end, start_line));
+    }
+    Ok(ranges)
+}
+
+fn dynamicjepa_ast_unified_diff_ranges(
+    arguments: &Value,
+    path: &str,
+    source: &str,
+) -> Result<Vec<(usize, usize, u32)>> {
+    let patch = arguments
+        .get("patch")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_AST_PATCH_MISSING",
+                "unified-diff AST extraction requires a patch string",
+                "dynamicjepa.action.ast.unified_diff.patch",
+                "provide the unified diff before DynamicJEPA action control",
+                json!({"arguments": arguments}),
+                None,
+            )
+        })?;
+    let mut current_path: Option<String> = None;
+    let mut ranges = Vec::new();
+    for line in patch.lines() {
+        if let Some(next_path) = line.strip_prefix("+++ b/") {
+            current_path = Some(next_path.to_string());
+            continue;
+        }
+        if !line.starts_with("@@") || current_path.as_deref() != Some(path) {
+            continue;
+        }
+        let (start_line, line_count) = parse_unified_diff_old_range(line, path)?;
+        let end_line = if line_count == 0 {
+            start_line
+        } else {
+            start_line.saturating_add(line_count).saturating_sub(1)
+        };
+        ranges.push(line_range_to_byte_range(
+            source,
+            start_line as u64,
+            end_line as u64,
+            path,
+        )?);
+    }
+    Ok(ranges)
+}
+
+fn parse_unified_diff_old_range(line: &str, path: &str) -> Result<(u32, u32)> {
+    let rest = line.strip_prefix("@@ -").ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_AST_HUNK_HEADER_INVALID",
+            "unified-diff AST extraction could not parse a hunk header",
+            "dynamicjepa.action.ast.unified_diff.hunk",
+            "provide standard unified diff hunk headers",
+            json!({"path": path, "hunk": line}),
+            None,
+        )
+    })?;
+    let old_range = rest.split_whitespace().next().ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_AST_HUNK_RANGE_MISSING",
+            "unified-diff AST extraction could not find the old-file hunk range",
+            "dynamicjepa.action.ast.unified_diff.hunk.old_range",
+            "provide standard unified diff hunk headers",
+            json!({"path": path, "hunk": line}),
+            None,
+        )
+    })?;
+    let mut parts = old_range.split(',');
+    let start = parts
+        .next()
+        .and_then(|value| value.parse::<u32>().ok())
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_AST_HUNK_START_INVALID",
+                "unified-diff AST extraction could not parse the old-file hunk start line",
+                "dynamicjepa.action.ast.unified_diff.hunk.old_start",
+                "provide standard unified diff hunk headers",
+                json!({"path": path, "hunk": line}),
+                None,
+            )
+        })?;
+    let count = parts
+        .next()
+        .map(|value| value.parse::<u32>())
+        .transpose()
+        .map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_AST_HUNK_COUNT_INVALID",
+                "unified-diff AST extraction could not parse the old-file hunk line count",
+                "dynamicjepa.action.ast.unified_diff.hunk.old_count",
+                "provide standard unified diff hunk headers",
+                json!({"path": path, "hunk": line, "error": err.to_string()}),
+                None,
+            )
+        })?
+        .unwrap_or(1);
+    Ok((start, count))
+}
+
+fn line_range_to_byte_range(
+    source: &str,
+    start_line: u64,
+    end_line: u64,
+    path: &str,
+) -> Result<(usize, usize, u32)> {
+    if start_line == 0 || end_line == 0 || end_line < start_line {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_AST_LINE_RANGE_INVALID",
+            "AST extraction refused an invalid one-based line range",
+            "dynamicjepa.action.ast.line_range",
+            "provide a valid governed line range",
+            json!({"path": path, "start_line": start_line, "end_line": end_line}),
+            None,
+        ));
+    }
+    let mut line_starts = vec![0usize];
+    for (idx, byte) in source.bytes().enumerate() {
+        if byte == b'\n' {
+            line_starts.push(idx + 1);
+        }
+    }
+    let start_idx = usize::try_from(start_line - 1).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_AST_START_LINE_OVERFLOW",
+            "AST extraction start_line did not fit usize",
+            "dynamicjepa.action.ast.line_range.start_line",
+            "provide a bounded line range",
+            json!({"path": path, "start_line": start_line, "error": err.to_string()}),
+            None,
+        )
+    })?;
+    let end_idx = usize::try_from(end_line - 1).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_AST_END_LINE_OVERFLOW",
+            "AST extraction end_line did not fit usize",
+            "dynamicjepa.action.ast.line_range.end_line",
+            "provide a bounded line range",
+            json!({"path": path, "end_line": end_line, "error": err.to_string()}),
+            None,
+        )
+    })?;
+    if start_idx >= line_starts.len() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_AST_START_LINE_OUT_OF_BOUNDS",
+            "AST extraction start_line exceeds the source file line count",
+            "dynamicjepa.action.ast.line_range.start_line",
+            "open the current source window before planning or ingesting this edit",
+            json!({"path": path, "start_line": start_line, "line_count": line_starts.len()}),
+            None,
+        ));
+    }
+    if end_idx >= line_starts.len() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_AST_END_LINE_OUT_OF_BOUNDS",
+            "AST extraction end_line exceeds the source file line count",
+            "dynamicjepa.action.ast.line_range.end_line",
+            "open the current source window before planning or ingesting this edit",
+            json!({"path": path, "end_line": end_line, "line_count": line_starts.len()}),
+            None,
+        ));
+    }
+    let start_byte = line_starts[start_idx];
+    let end_byte = if end_idx + 1 < line_starts.len() {
+        line_starts[end_idx + 1]
+    } else {
+        source.len()
+    };
+    Ok((start_byte, end_byte.max(start_byte), start_line as u32))
+}
+
+fn byte_to_one_based_line(source: &str, byte_offset: usize) -> Result<u32> {
+    let mut line = 1u32;
+    for (idx, byte) in source.bytes().enumerate() {
+        if idx >= byte_offset {
+            break;
+        }
+        if byte == b'\n' {
+            line = line.saturating_add(1);
+        }
+    }
+    Ok(line)
+}
+
+#[derive(Debug, Clone)]
+struct AstSemanticNode {
+    node_kind: &'static str,
+    symbol_kind: &'static str,
+    node_start_line: u32,
+}
+
+fn dynamicjepa_ast_semantic_node(
+    language: &'static str,
+    node: tree_sitter::Node<'_>,
+    source: &str,
+    path: &str,
+) -> AstSemanticNode {
+    let mut current = Some(node);
+    while let Some(candidate) = current {
+        let node_kind = ast_node_kind_for_language(language, candidate, source, path);
+        if node_kind != "unknown" {
+            return AstSemanticNode {
+                node_kind,
+                symbol_kind: ast_symbol_kind_for_node_kind(node_kind),
+                node_start_line: candidate.start_position().row as u32 + 1,
+            };
+        }
+        current = candidate.parent();
+    }
+    AstSemanticNode {
+        node_kind: "module",
+        symbol_kind: "module",
+        node_start_line: 1,
+    }
+}
+
+fn ast_node_kind_for_language(
+    language: &'static str,
+    node: tree_sitter::Node<'_>,
+    source: &str,
+    path: &str,
+) -> &'static str {
+    let kind = node.kind();
+    match language {
+        "python" => match kind {
+            "function_definition" => {
+                if path_is_test(path)
+                    || ast_node_name(node, source).is_some_and(|name| name.starts_with("test"))
+                {
+                    "test"
+                } else if ast_has_ancestor_kind(node, "class_definition") {
+                    "method"
+                } else {
+                    "function"
+                }
+            }
+            "class_definition" => "class",
+            "import_statement" | "import_from_statement" => "import",
+            "call" => "call",
+            "assignment" | "augmented_assignment" => "assignment",
+            "module" => "module",
+            _ => "unknown",
+        },
+        "rust" => match kind {
+            "function_item" => {
+                if ast_has_ancestor_kind(node, "impl_item") {
+                    "method"
+                } else {
+                    "function"
+                }
+            }
+            "struct_item" | "enum_item" | "trait_item" | "impl_item" => "class",
+            "use_declaration" | "extern_crate_declaration" => "import",
+            "call_expression" => "call",
+            "let_declaration" | "assignment_expression" | "const_item" | "static_item" => {
+                "assignment"
+            }
+            "source_file" => "module",
+            _ => "unknown",
+        },
+        "javascript" | "typescript" | "tsx" => match kind {
+            "function_declaration" | "generator_function_declaration" | "arrow_function" => {
+                if path_is_test(path)
+                    || ast_node_name(node, source).is_some_and(|name| name.starts_with("test"))
+                {
+                    "test"
+                } else {
+                    "function"
+                }
+            }
+            "method_definition" => "method",
+            "class_declaration" => "class",
+            "import_statement" => "import",
+            "call_expression" => "call",
+            "assignment_expression" | "lexical_declaration" | "variable_declarator" => "assignment",
+            "program" => "module",
+            _ => "unknown",
+        },
+        _ => "unknown",
+    }
+}
+
+fn ast_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    node.child_by_field_name("name")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+        .map(ToOwned::to_owned)
+}
+
+fn ast_has_ancestor_kind(node: tree_sitter::Node<'_>, kind: &str) -> bool {
+    let mut current = node.parent();
+    while let Some(candidate) = current {
+        if candidate.kind() == kind {
+            return true;
+        }
+        current = candidate.parent();
+    }
+    false
+}
+
+fn ast_symbol_kind_for_node_kind(node_kind: &str) -> &'static str {
+    match node_kind {
+        "function" => "function",
+        "method" => "method",
+        "class" => "class",
+        "test" => "test_case",
+        "module" => "module",
+        "import" | "assignment" | "call" => "module",
+        "config" => "config_key",
+        "none" => "none",
+        "mixed" => "mixed",
+        _ => "unknown",
+    }
+}
+
+fn dynamicjepa_ast_edit_kind_for_range(
+    node_kind: &'static str,
+    node_start_line: u32,
+    edit_start_line: u32,
+) -> &'static str {
+    match node_kind {
+        "function" | "method" if edit_start_line <= node_start_line => "signature",
+        "function" | "method" => "function_body",
+        "class" if edit_start_line <= node_start_line => "signature",
+        "class" => "class_body",
+        "import" => "import_section",
+        "call" => "call_site",
+        "assignment" => "assignment",
+        "test" => "test_case",
+        "module" => "module_scope",
+        "config" => "config",
+        "none" => "none",
+        "mixed" => "mixed",
+        _ => "unknown",
+    }
+}
+
+fn path_is_test(path: &str) -> bool {
+    path.starts_with("tests/")
+        || path.contains("/tests/")
+        || path.ends_with("_test.py")
+        || path.ends_with(".test.js")
+        || path.ends_with(".spec.js")
+        || path.ends_with(".test.ts")
+        || path.ends_with(".spec.ts")
+        || path.ends_with(".test.tsx")
+        || path.ends_with(".spec.tsx")
+}
+
 fn swe_patch_intent_bucket(tool_name: &str, patch_bytes: i64, path_risk: &str) -> &'static str {
     if !is_final_edit_tool(tool_name) {
         return "none";
@@ -6435,6 +7213,24 @@ fn swe_patch_scope_bucket(tool_name: &str, paths: &[String]) -> &'static str {
     } else {
         "multi_file"
     }
+}
+
+fn swe_patch_scope_bucket_from_ast_or_path(
+    tool_name: &str,
+    paths: &[String],
+    ast: &SweAstEditSemantics,
+) -> &'static str {
+    if !is_final_edit_tool(tool_name) || paths.is_empty() {
+        return "none";
+    }
+    if paths.len() == 1 && ast.parse_status == "parsed" {
+        return match ast.symbol_kind {
+            "function" | "method" | "class" | "test_case" => "single_symbol",
+            "module" | "config_key" => "single_file",
+            _ => swe_patch_scope_bucket(tool_name, paths),
+        };
+    }
+    swe_patch_scope_bucket(tool_name, paths)
 }
 
 fn execute_agent_tool_call(
@@ -10981,6 +11777,7 @@ fn build_dynamicjepa_reality_for_attempt(
     transcript_path: Option<&str>,
     ledger: &Path,
     attempt_dir: &Path,
+    repo_dir: &Path,
     context_graph_bin: &Path,
     task_root: &Path,
     dynamicjepa_db: Option<&Path>,
@@ -10995,6 +11792,7 @@ fn build_dynamicjepa_reality_for_attempt(
                 transcript_path,
                 ledger,
                 attempt_dir,
+                repo_dir,
                 context_graph_bin,
                 task_root,
                 db,
@@ -11293,6 +12091,7 @@ fn build_trained_dynamicjepa_reality_for_attempt(
     transcript_path: Option<&str>,
     ledger: &Path,
     attempt_dir: &Path,
+    repo_dir: &Path,
     context_graph_bin: &Path,
     task_root: &Path,
     dynamicjepa_db: &Path,
@@ -11311,8 +12110,13 @@ fn build_trained_dynamicjepa_reality_for_attempt(
     };
     let transcript_path = PathBuf::from(path.strip_prefix("file:").unwrap_or(path));
     let transcript: Value = read_json(&transcript_path)?;
-    let events =
-        dynamicjepa_swe_events_from_transcript(run_id, attempt, &transcript_path, &transcript)?;
+    let events = dynamicjepa_swe_events_from_transcript(
+        run_id,
+        attempt,
+        &transcript_path,
+        &transcript,
+        repo_dir,
+    )?;
     if events.is_empty() {
         return Err(RealityError::new(
             "RUST_REALITY_DYNAMICJEPA_NO_PANELS_FOR_TRAINED_ARTIFACT",
@@ -11610,6 +12414,18 @@ fn build_trained_dynamicjepa_reality_for_attempt(
     let mut plan_trace_ids = Vec::with_capacity(panel_ids.len());
     let mut action_controls = Vec::with_capacity(panel_ids.len());
     for (idx, panel_id) in panel_ids.iter().enumerate() {
+        let observed_action = events[idx].event.get("action").ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_EVENT_ACTION_MISSING",
+                "structured SWE event was missing action for DJ-guided action control",
+                "dynamicjepa.event.action",
+                "inspect transition-to-domain mapping before reward consumption",
+                json!({"event": events[idx].event}),
+                Some(file_sot(&events_path)),
+            )
+        })?;
+        let candidate_action_path = dj_dir.join(format!("plan-{idx:03}-candidate-action.json"));
+        write_json_checked(&candidate_action_path, observed_action)?;
         let plan = dynamicjepa_json_command(
             context_graph_bin,
             vec![
@@ -11623,6 +12439,8 @@ fn build_trained_dynamicjepa_reality_for_attempt(
                 panel_id.clone(),
                 "--skill-id".to_string(),
                 skill_id.to_string(),
+                "--candidate-action-json".to_string(),
+                path_str(&candidate_action_path).to_string(),
                 "--json".to_string(),
             ],
             task_root,
@@ -11644,16 +12462,7 @@ fn build_trained_dynamicjepa_reality_for_attempt(
         }
         action_controls.push(validate_dynamicjepa_action_control(
             &plan,
-            events[idx].event.get("action").ok_or_else(|| {
-                RealityError::new(
-                    "RUST_REALITY_DYNAMICJEPA_EVENT_ACTION_MISSING",
-                    "structured SWE event was missing action for DJ-guided action control",
-                    "dynamicjepa.event.action",
-                    "inspect transition-to-domain mapping before reward consumption",
-                    json!({"event": events[idx].event}),
-                    Some(file_sot(&events_path)),
-                )
-            })?,
+            observed_action,
             &events[idx].transition_id,
             dynamicjepa_db,
         )?);
@@ -12157,6 +12966,9 @@ fn validate_dynamicjepa_segmented_surprise_calibration(
         "action.tool_family=workspace_mutation",
         "action.path_risk=source",
         "action.path_risk=none",
+        "action.ast_language=python",
+        "action.ast_node_kind=function",
+        "action.ast_edit_kind=function_body",
     ];
     let missing = required_segments
         .iter()
@@ -12341,6 +13153,11 @@ fn validate_dynamicjepa_corpus_diversity(
     let patch_intents = unique_dynamicjepa_field_values(&actions, "patch_intent_bucket");
     let patch_shapes = unique_dynamicjepa_field_values(&actions, "patch_shape_bucket");
     let patch_scopes = unique_dynamicjepa_field_values(&actions, "patch_scope_bucket");
+    let ast_languages = unique_dynamicjepa_field_values(&actions, "ast_language");
+    let ast_parse_statuses = unique_dynamicjepa_field_values(&actions, "ast_parse_status");
+    let ast_node_kinds = unique_dynamicjepa_field_values(&actions, "ast_node_kind");
+    let ast_symbol_kinds = unique_dynamicjepa_field_values(&actions, "ast_symbol_kind");
+    let ast_edit_kinds = unique_dynamicjepa_field_values(&actions, "ast_edit_kind");
     let result_statuses = unique_dynamicjepa_field_values(&outcomes, "result_status");
     let verifier_statuses = unique_dynamicjepa_field_values(&outcomes, "verifier_status");
     let error_signatures = unique_dynamicjepa_field_values(&outcomes, "error_signature");
@@ -12359,6 +13176,11 @@ fn validate_dynamicjepa_corpus_diversity(
             "patch_intent_bucket": patch_intents.len(),
             "patch_shape_bucket": patch_shapes.len(),
             "patch_scope_bucket": patch_scopes.len(),
+            "ast_language": ast_languages.len(),
+            "ast_parse_status": ast_parse_statuses.len(),
+            "ast_node_kind": ast_node_kinds.len(),
+            "ast_symbol_kind": ast_symbol_kinds.len(),
+            "ast_edit_kind": ast_edit_kinds.len(),
             "result_status": result_statuses.len(),
             "verifier_status": verifier_statuses.len(),
             "error_signature": error_signatures.len(),
@@ -12371,6 +13193,11 @@ fn validate_dynamicjepa_corpus_diversity(
             "patch_intent_bucket": patch_intents,
             "patch_shape_bucket": patch_shapes,
             "patch_scope_bucket": patch_scopes,
+            "ast_language": ast_languages,
+            "ast_parse_status": ast_parse_statuses,
+            "ast_node_kind": ast_node_kinds,
+            "ast_symbol_kind": ast_symbol_kinds,
+            "ast_edit_kind": ast_edit_kinds,
             "result_status": result_statuses,
             "verifier_status": verifier_statuses,
             "error_signature": error_signatures,
@@ -12439,6 +13266,30 @@ fn validate_dynamicjepa_corpus_diversity(
             2usize,
             summary
                 .pointer("/unique_counts/patch_scope_bucket")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "ast_language",
+            2usize,
+            summary
+                .pointer("/unique_counts/ast_language")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "ast_node_kind",
+            3usize,
+            summary
+                .pointer("/unique_counts/ast_node_kind")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "ast_edit_kind",
+            3usize,
+            summary
+                .pointer("/unique_counts/ast_edit_kind")
                 .and_then(Value::as_u64)
                 .unwrap_or(0) as usize,
         ),
@@ -12824,6 +13675,13 @@ fn action_fields_match(candidate_fields: &Value, observed_action: &Value) -> boo
         "patch_intent_bucket",
         "patch_shape_bucket",
         "patch_scope_bucket",
+        "ast_language",
+        "ast_parse_status",
+        "ast_node_kind",
+        "ast_symbol_kind",
+        "ast_edit_kind",
+        "ast_touched_node_count",
+        "ast_symbol_count",
     ];
     for field in HARD_ACTION_CONTROL_FIELDS {
         let Some(observed_value) = observed.get(*field) else {
@@ -12872,6 +13730,7 @@ fn dynamicjepa_swe_events_from_transcript(
     attempt: u64,
     transcript_path: &Path,
     transcript: &Value,
+    repo_dir: &Path,
 ) -> Result<Vec<SweDynamicJepaEvent>> {
     let mut events = Vec::new();
     if let Some(entries) = transcript.get("entries").and_then(Value::as_array) {
@@ -13127,8 +13986,18 @@ fn dynamicjepa_swe_events_from_transcript(
                     let patch_bytes = transition_patch_size_bytes(&transition)?;
                     let path_risk = swe_path_risk(&changed_files, &observed_paths);
                     let target_path_bucket = swe_path_bucket(&changed_files, &observed_paths);
-                    let symbol_bucket =
-                        swe_symbol_bucket(tool_name, &changed_files, &observed_paths);
+                    let ast_semantics = dynamicjepa_ast_edit_semantics(
+                        repo_dir,
+                        tool_name,
+                        requested_arguments,
+                        &planned_paths,
+                    )?;
+                    let symbol_bucket = swe_symbol_bucket_from_ast_or_path(
+                        tool_name,
+                        &changed_files,
+                        &observed_paths,
+                        &ast_semantics,
+                    );
                     let dependency_layer = swe_dependency_layer(&changed_files, &observed_paths);
                     let result_status = transition
                         .pointer("/observation/status")
@@ -13244,7 +14113,14 @@ fn dynamicjepa_swe_events_from_transcript(
                                 "planned_changed_file_count": planned_changed_file_count,
                                 "patch_intent_bucket": swe_patch_intent_bucket(tool_name, planned_patch_bytes, path_risk),
                                 "patch_shape_bucket": swe_patch_shape_bucket(tool_name, requested_arguments, &planned_paths),
-                                "patch_scope_bucket": swe_patch_scope_bucket(tool_name, &planned_paths)
+                                "patch_scope_bucket": swe_patch_scope_bucket_from_ast_or_path(tool_name, &planned_paths, &ast_semantics),
+                                "ast_language": ast_semantics.language,
+                                "ast_parse_status": ast_semantics.parse_status,
+                                "ast_node_kind": ast_semantics.node_kind,
+                                "ast_symbol_kind": ast_semantics.symbol_kind,
+                                "ast_edit_kind": ast_semantics.edit_kind,
+                                "ast_touched_node_count": ast_semantics.touched_node_count,
+                                "ast_symbol_count": ast_semantics.symbol_count
                             },
                             "outcome": {
                                 "next_counter": counter + delta,
@@ -13546,6 +14422,26 @@ fn swe_symbol_bucket(
     } else {
         "unknown"
     }
+}
+
+fn swe_symbol_bucket_from_ast_or_path(
+    tool_name: &str,
+    changed_files: &[String],
+    observed_paths: &[String],
+    ast: &SweAstEditSemantics,
+) -> &'static str {
+    if ast.parse_status == "parsed" {
+        return match ast.symbol_kind {
+            "function" | "method" => "function",
+            "class" => "class",
+            "module" | "mixed" => "module",
+            "test_case" => "test_case",
+            "config_key" => "config_key",
+            "none" => "none",
+            _ => "unknown",
+        };
+    }
+    swe_symbol_bucket(tool_name, changed_files, observed_paths)
 }
 
 fn swe_dependency_layer(changed_files: &[String], observed_paths: &[String]) -> &'static str {

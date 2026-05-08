@@ -159,6 +159,45 @@ name = "patch_scope_bucket"
 kind = { type = "categorical", variants = ["none", "single_symbol", "single_file", "multi_file", "cross_layer", "unknown"] }
 required = true
 
+[[action.fields]]
+name = "ast_language"
+kind = { type = "categorical", variants = ["none", "python", "rust", "javascript", "typescript", "tsx", "mixed", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "ast_parse_status"
+kind = { type = "categorical", variants = ["none", "parsed", "syntax_error", "unsupported_language", "file_missing"] }
+required = true
+
+[[action.fields]]
+name = "ast_node_kind"
+kind = { type = "categorical", variants = ["none", "function", "class", "method", "module", "import", "call", "assignment", "config", "test", "mixed", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "ast_symbol_kind"
+kind = { type = "categorical", variants = ["none", "function", "class", "method", "module", "test_case", "config_key", "mixed", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "ast_edit_kind"
+kind = { type = "categorical", variants = ["none", "function_body", "signature", "import_section", "class_body", "module_scope", "call_site", "assignment", "test_case", "config", "mixed", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "ast_touched_node_count"
+kind = { type = "i64" }
+required = true
+min = 0
+max = 10000
+
+[[action.fields]]
+name = "ast_symbol_count"
+kind = { type = "i64" }
+required = true
+min = 0
+max = 10000
+
 [[outcome.fields]]
 name = "next_counter"
 kind = { type = "i64" }
@@ -660,6 +699,108 @@ reject_nan = true
 reject_inf = true
 
 [[instruments]]
+id = "action_ast_language"
+kind = { type = "categorical", variants = ["none", "python", "rust", "javascript", "typescript", "tsx", "mixed", "unknown"] }
+input_fields = ["action.ast_language"]
+output_shape = [8]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_ast_parse_status"
+kind = { type = "categorical", variants = ["none", "parsed", "syntax_error", "unsupported_language", "file_missing"] }
+input_fields = ["action.ast_parse_status"]
+output_shape = [5]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_ast_node_kind"
+kind = { type = "categorical", variants = ["none", "function", "class", "method", "module", "import", "call", "assignment", "config", "test", "mixed", "unknown"] }
+input_fields = ["action.ast_node_kind"]
+output_shape = [12]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_ast_symbol_kind"
+kind = { type = "categorical", variants = ["none", "function", "class", "method", "module", "test_case", "config_key", "mixed", "unknown"] }
+input_fields = ["action.ast_symbol_kind"]
+output_shape = [9]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_ast_edit_kind"
+kind = { type = "categorical", variants = ["none", "function_body", "signature", "import_section", "class_body", "module_scope", "call_site", "assignment", "test_case", "config", "mixed", "unknown"] }
+input_fields = ["action.ast_edit_kind"]
+output_shape = [12]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_ast_touched_node_count"
+kind = { type = "scalar" }
+input_fields = ["action.ast_touched_node_count"]
+output_shape = [1]
+normalization = { type = "standard_score", mean = 1.0, std = 4.0 }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+min = 0.0
+max = 10000.0
+
+[[instruments]]
+id = "action_ast_symbol_count"
+kind = { type = "scalar" }
+input_fields = ["action.ast_symbol_count"]
+output_shape = [1]
+normalization = { type = "standard_score", mean = 1.0, std = 4.0 }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+min = 0.0
+max = 10000.0
+
+[[instruments]]
 id = "observed_progress_counter"
 kind = { type = "scalar" }
 input_fields = ["outcome.next_counter"]
@@ -923,6 +1064,13 @@ version = 1
 "action.patch_intent_bucket" = "$.action.patch_intent_bucket"
 "action.patch_shape_bucket" = "$.action.patch_shape_bucket"
 "action.patch_scope_bucket" = "$.action.patch_scope_bucket"
+"action.ast_language" = "$.action.ast_language"
+"action.ast_parse_status" = "$.action.ast_parse_status"
+"action.ast_node_kind" = "$.action.ast_node_kind"
+"action.ast_symbol_kind" = "$.action.ast_symbol_kind"
+"action.ast_edit_kind" = "$.action.ast_edit_kind"
+"action.ast_touched_node_count" = "$.action.ast_touched_node_count"
+"action.ast_symbol_count" = "$.action.ast_symbol_count"
 "outcome.next_counter" = "$.outcome.next_counter"
 "outcome.outcome_label" = "$.outcome.outcome_label"
 "outcome.result_status" = "$.outcome.result_status"
@@ -964,14 +1112,14 @@ min_negatives_per_row = 1
 
 [planner_policy]
 candidate_actions = { kind = "enumerated", records = [
-  { delta = -4, tool_family = "workspace_mutation", command_kind = "apply_unified_diff", edit_size_bucket = "large", path_risk = "multiple", target_path_bucket = "multiple", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 32768, planned_changed_file_count = 2, patch_intent_bucket = "multi_file", patch_shape_bucket = "unified_multi_file", patch_scope_bucket = "cross_layer" },
-  { delta = -2, tool_family = "verification", command_kind = "run_targeted_test", edit_size_bucket = "none", path_risk = "none", target_path_bucket = "tests", symbol_bucket = "test_case", dependency_layer = "test_harness", test_target_kind = "unit", ownership_bucket = "tests", planned_patch_bytes = 0, planned_changed_file_count = 0, patch_intent_bucket = "verification_only", patch_shape_bucket = "none", patch_scope_bucket = "none" },
-  { delta = 0, tool_family = "repository_navigation", command_kind = "list_files", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 0, planned_changed_file_count = 0, patch_intent_bucket = "none", patch_shape_bucket = "none", patch_scope_bucket = "none" },
-  { delta = 2, tool_family = "repository_navigation", command_kind = "search_repo", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 0, planned_changed_file_count = 0, patch_intent_bucket = "none", patch_shape_bucket = "none", patch_scope_bucket = "none" },
-  { delta = 4, tool_family = "repository_navigation", command_kind = "open_file_window", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 0, planned_changed_file_count = 0, patch_intent_bucket = "none", patch_shape_bucket = "none", patch_scope_bucket = "none" },
-  { delta = 6, tool_family = "workspace_mutation", command_kind = "apply_structured_edit", edit_size_bucket = "small", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 512, planned_changed_file_count = 1, patch_intent_bucket = "localized_fix", patch_shape_bucket = "structured_replace", patch_scope_bucket = "single_symbol" },
-  { delta = 7, tool_family = "workspace_mutation", command_kind = "apply_line_window_edit", edit_size_bucket = "small", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 512, planned_changed_file_count = 1, patch_intent_bucket = "localized_fix", patch_shape_bucket = "line_window", patch_scope_bucket = "single_symbol" },
-  { delta = 5, tool_family = "workspace_mutation", command_kind = "apply_unified_diff", edit_size_bucket = "medium", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 4096, planned_changed_file_count = 1, patch_intent_bucket = "localized_fix", patch_shape_bucket = "unified_single_hunk", patch_scope_bucket = "single_file" }
+  { delta = -4, tool_family = "workspace_mutation", command_kind = "apply_unified_diff", edit_size_bucket = "large", path_risk = "multiple", target_path_bucket = "multiple", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 32768, planned_changed_file_count = 2, patch_intent_bucket = "multi_file", patch_shape_bucket = "unified_multi_file", patch_scope_bucket = "cross_layer", ast_language = "mixed", ast_parse_status = "parsed", ast_node_kind = "mixed", ast_symbol_kind = "mixed", ast_edit_kind = "mixed", ast_touched_node_count = 2, ast_symbol_count = 2 },
+  { delta = -2, tool_family = "verification", command_kind = "run_targeted_test", edit_size_bucket = "none", path_risk = "none", target_path_bucket = "tests", symbol_bucket = "test_case", dependency_layer = "test_harness", test_target_kind = "unit", ownership_bucket = "tests", planned_patch_bytes = 0, planned_changed_file_count = 0, patch_intent_bucket = "verification_only", patch_shape_bucket = "none", patch_scope_bucket = "none", ast_language = "none", ast_parse_status = "none", ast_node_kind = "none", ast_symbol_kind = "none", ast_edit_kind = "none", ast_touched_node_count = 0, ast_symbol_count = 0 },
+  { delta = 0, tool_family = "repository_navigation", command_kind = "list_files", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 0, planned_changed_file_count = 0, patch_intent_bucket = "none", patch_shape_bucket = "none", patch_scope_bucket = "none", ast_language = "none", ast_parse_status = "none", ast_node_kind = "none", ast_symbol_kind = "none", ast_edit_kind = "none", ast_touched_node_count = 0, ast_symbol_count = 0 },
+  { delta = 2, tool_family = "repository_navigation", command_kind = "search_repo", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 0, planned_changed_file_count = 0, patch_intent_bucket = "none", patch_shape_bucket = "none", patch_scope_bucket = "none", ast_language = "none", ast_parse_status = "none", ast_node_kind = "none", ast_symbol_kind = "none", ast_edit_kind = "none", ast_touched_node_count = 0, ast_symbol_count = 0 },
+  { delta = 4, tool_family = "repository_navigation", command_kind = "open_file_window", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 0, planned_changed_file_count = 0, patch_intent_bucket = "none", patch_shape_bucket = "none", patch_scope_bucket = "none", ast_language = "none", ast_parse_status = "none", ast_node_kind = "none", ast_symbol_kind = "none", ast_edit_kind = "none", ast_touched_node_count = 0, ast_symbol_count = 0 },
+  { delta = 6, tool_family = "workspace_mutation", command_kind = "apply_structured_edit", edit_size_bucket = "small", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 512, planned_changed_file_count = 1, patch_intent_bucket = "localized_fix", patch_shape_bucket = "structured_replace", patch_scope_bucket = "single_symbol", ast_language = "python", ast_parse_status = "parsed", ast_node_kind = "function", ast_symbol_kind = "function", ast_edit_kind = "function_body", ast_touched_node_count = 1, ast_symbol_count = 1 },
+  { delta = 7, tool_family = "workspace_mutation", command_kind = "apply_line_window_edit", edit_size_bucket = "small", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 512, planned_changed_file_count = 1, patch_intent_bucket = "localized_fix", patch_shape_bucket = "line_window", patch_scope_bucket = "single_symbol", ast_language = "python", ast_parse_status = "parsed", ast_node_kind = "function", ast_symbol_kind = "function", ast_edit_kind = "function_body", ast_touched_node_count = 1, ast_symbol_count = 1 },
+  { delta = 5, tool_family = "workspace_mutation", command_kind = "apply_unified_diff", edit_size_bucket = "medium", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application", planned_patch_bytes = 4096, planned_changed_file_count = 1, patch_intent_bucket = "localized_fix", patch_shape_bucket = "unified_single_hunk", patch_scope_bucket = "single_file", ast_language = "python", ast_parse_status = "parsed", ast_node_kind = "module", ast_symbol_kind = "module", ast_edit_kind = "module_scope", ast_touched_node_count = 1, ast_symbol_count = 1 }
 ] }
 guards = ["bounds_check"]
 surprise_threshold = 0.85
@@ -1000,6 +1148,11 @@ modalities = [
   "patch_intent_bucket",
   "patch_shape_bucket",
   "patch_scope_bucket",
+  "action_ast_language",
+  "action_ast_parse_status",
+  "action_ast_node_kind",
+  "action_ast_symbol_kind",
+  "action_ast_edit_kind",
   "outcome_label",
   "result_status",
   "verifier_status",

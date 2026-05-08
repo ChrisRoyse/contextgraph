@@ -40,10 +40,10 @@ use context_graph_core::dynamicjepa::{
     THRESHOLD_CALIBRATION_RECORD_VERSION, TRAJECTORY_RECORD_VERSION,
 };
 use context_graph_dynamicjepa::{
-    bootstrap_ksg_1_ci, estimate_ksg_1, plan_next_action, predict_next_panel, record_surprise,
-    run_cross_domain_transfer, summarize_pairwise_mi, train_dataset, verify_artifact_files,
-    CrossDomainTransferConfig, PairwiseMiPairReport, PairwiseMiSummary, TrainConfig,
-    MI_AUDIT_MIN_SAMPLE_SIZE, TRANSFER_DEFAULT_BOOTSTRAP_ITERS,
+    bootstrap_ksg_1_ci, estimate_ksg_1, plan_next_action, plan_next_action_with_candidate,
+    predict_next_panel, record_surprise, run_cross_domain_transfer, summarize_pairwise_mi,
+    train_dataset, verify_artifact_files, CrossDomainTransferConfig, PairwiseMiPairReport,
+    PairwiseMiSummary, TrainConfig, MI_AUDIT_MIN_SAMPLE_SIZE, TRANSFER_DEFAULT_BOOTSTRAP_ITERS,
 };
 use context_graph_storage::dynamicjepa::column_families::{
     CF_DJ_ACTIONS, CF_DJ_ADAPTER_REGISTRY, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG, CF_DJ_BINDINGS,
@@ -707,6 +707,10 @@ pub struct PlanArgs {
     /// Skill policy id. If missing, plan writes enumerate_declared_actions under this id.
     #[arg(long = "skill-id")]
     pub skill_id: String,
+
+    /// Optional JSON file containing one concrete pending action object to include alongside declared candidates.
+    #[arg(long = "candidate-action-json")]
+    pub candidate_action_json: Option<PathBuf>,
 
     /// Emit one machine-readable JSON object.
     #[arg(long)]
@@ -3191,6 +3195,81 @@ fn predict_command(args: PredictArgs) -> DynamicJepaResult<CommandOutcome> {
     }
 }
 
+fn candidate_action_fields_from_json_file(
+    db: &rocksdb::DB,
+    artifact_id: ModelArtifactId,
+    path: &Path,
+) -> DynamicJepaResult<BTreeMap<String, FieldValue>> {
+    let text = fs::read_to_string(path).map_err(|err| DynamicJepaError::Storage {
+        operation: "plan.read_candidate_action_json".to_string(),
+        cf: "artifact_file".to_string(),
+        message: format!("failed to read {}: {err}", path.display()),
+        remediation: "write the actual pending action JSON to a durable file before planning"
+            .to_string(),
+    })?;
+    let value: Value = serde_json::from_str(&text).map_err(|err| DynamicJepaError::Validation {
+        field: "plan.candidate_action_json".to_string(),
+        message: format!("candidate action JSON could not be parsed: {err}"),
+        remediation: "write one JSON object whose keys match the registered domain action schema"
+            .to_string(),
+    })?;
+    let object = value.as_object().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "plan.candidate_action_json",
+            "candidate action JSON must be an object",
+            "write one JSON object whose keys match the registered domain action schema",
+        )
+    })?;
+    let artifact = get_model_artifact(db, artifact_id)?.ok_or_else(|| {
+        DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_MODEL_ARTIFACTS.to_string(),
+            key: artifact_id.into_bytes().to_vec(),
+        }
+    })?;
+    let domain = get_domain_pack(db, &artifact.domain_pack_id, &artifact.domain_pack_version)?
+        .ok_or_else(|| DynamicJepaError::DomainPackNotFound {
+            id: artifact.domain_pack_id.to_string(),
+        })?;
+    let declared_fields = domain
+        .action_schema
+        .fields
+        .iter()
+        .map(|field| field.name.as_str())
+        .collect::<BTreeSet<_>>();
+    for key in object.keys() {
+        if !declared_fields.contains(key.as_str()) {
+            return Err(DynamicJepaError::validation(
+                format!("candidate_action.{key}"),
+                "candidate action JSON contains a field that is not declared in the action schema",
+                "remove stale/unknown candidate-action fields before planning",
+            ));
+        }
+    }
+    let mut fields = BTreeMap::new();
+    for spec in &domain.action_schema.fields {
+        if let Some(raw) = object.get(&spec.name) {
+            let field_path = format!("candidate_action.{}", spec.name);
+            let coerced =
+                coerce_json_value(raw, spec, &field_path).map_err(|err| {
+                    DynamicJepaError::validation(
+                        err.field_path,
+                        err.message,
+                        "fix the actual pending action JSON before planning; this value must satisfy the registered action schema",
+                    )
+                })?;
+            fields.insert(spec.name.clone(), coerced);
+        }
+    }
+    ensure_required_schema_fields(&domain, "action", &fields).map_err(|err| {
+        DynamicJepaError::validation(
+            err.field_path,
+            err.message,
+            "include every required action field in the actual pending action JSON",
+        )
+    })?;
+    Ok(fields)
+}
+
 fn plan_command(args: PlanArgs) -> DynamicJepaResult<CommandOutcome> {
     let _json = args.json;
     let source_cfs = [
@@ -3212,9 +3291,18 @@ fn plan_command(args: PlanArgs) -> DynamicJepaResult<CommandOutcome> {
     let artifact_id = parse_model_artifact_id(&args.artifact_id, "plan.artifact_id")?;
     let panel_id = parse_panel_id(&args.panel_id, "plan.panel_id")?;
     let skill_id = parse_skill_id(&args.skill_id, "plan.skill_id")?;
+    let candidate_fields = args
+        .candidate_action_json
+        .as_deref()
+        .map(|path| candidate_action_fields_from_json_file(db, artifact_id, path))
+        .transpose()?;
 
     let result = (|| -> DynamicJepaResult<Value> {
-        let outcome = plan_next_action(db, artifact_id, panel_id, skill_id)?;
+        let outcome = if let Some(fields) = candidate_fields.clone() {
+            plan_next_action_with_candidate(db, artifact_id, panel_id, skill_id, fields)?
+        } else {
+            plan_next_action(db, artifact_id, panel_id, skill_id)?
+        };
         Ok(json!({
             "created_ids": {
                 "plan_trace_id": outcome.plan_trace_id.to_string(),
@@ -3230,6 +3318,7 @@ fn plan_command(args: PlanArgs) -> DynamicJepaResult<CommandOutcome> {
                 "guard_decision_count": outcome.guard_decisions.len(),
                 "status": outcome.plan_trace.status,
                 "utility_scores": outcome.plan_trace.utility_scores,
+                "actual_pending_candidate_included": candidate_fields.is_some(),
             },
             "decoded_records": {
                 "plan_trace": outcome.plan_trace,
@@ -15325,6 +15414,7 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
             artifact_id: artifact_id.clone(),
             panel_id: input_panel_id.clone(),
             skill_id: "10000000-0000-0000-0000-000000000010".to_string(),
+            candidate_action_json: None,
             json: true,
         }),
         ctx,
