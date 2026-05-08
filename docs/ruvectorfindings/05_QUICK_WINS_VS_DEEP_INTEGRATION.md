@@ -23,9 +23,9 @@ Everything else in Tier 1 and Tier 2 remains pending unless stated otherwise in 
 
 | Tier | Effort | Meaning |
 |------|--------|---------|
-| **S** | < 1 day | Single `Cargo.toml` line + a wrapper module |
-| **M** | 1-3 days | Vendor a sub-crate + a couple of glue modules |
-| **L** | 3-7 days | Vendor + non-trivial integration touching multiple crates |
+| **S** | < 1 day | Small self-contained module or wrapper around an existing ContextGraph crate |
+| **M** | 1-3 days | Bounded clean-room module plus integration tests/FSV |
+| **L** | 3-7 days | Non-trivial clean-room integration touching multiple crates |
 | **XL** | > 7 days | Multi-ADR effort, real coordination cost |
 
 ## Leverage scale
@@ -53,7 +53,7 @@ Everything else in Tier 1 and Tier 2 remains pending unless stated otherwise in 
 
 After Tier 1:
 - Cryptographic audit chain over optimizer + DynamicJEPA training/verification (in our own crate).
-- Forward Push / BMSSP / CG for graph-influence ranking and Laplacian solve.
+- Forward Push / BMSSP / CG for graph-influence ranking and Laplacian solve. Current state: Forward Push + CG exist; BMSSP and product integrations are pending.
 - 4-10× cold-tier compression for attempt embeddings + JEPA panel storage.
 - Diverse top-k retrieval over past failures.
 - Training-free retrieval-LM planner head for gridworld (the 6.9× design win).
@@ -161,7 +161,7 @@ If the operator wants to start tomorrow with maximum leverage and bounded risk, 
 - Run 1 gridworld planner episode through our diffuser.
 - Write SMAP report to `./memory/decisions/ruvector-tier-1-clean-room-adopted.md` per CLAUDE.md §6.
 
-End of sprint: cryptographic audit + sublinear solvers + cold-tier compression + diverse retrieval + training-free planner + calibrated confidence — **all in our own crates, zero foreign deps, zero upstream tracking.** Six load-bearing primitives, two weeks.
+Target end of sprint: cryptographic audit + sublinear solvers + cold-tier compression + diverse retrieval + training-free planner + calibrated confidence — **all in our own crates, zero RuVector deps, zero upstream tracking.** Six load-bearing primitives, roughly two weeks after the remaining Tier 1 work is resumed.
 
 ---
 
@@ -171,17 +171,17 @@ Before each Tier:
 
 | Tier | Required prerequisite |
 |------|------------------------|
-| 1.1 | None — independent vendor. |
-| 1.2 | None — independent path-dep. |
+| 1.1 | Partially satisfied: `context-graph-witness` chain core exists; signing/lineage/attestation pending. |
+| 1.2 | Partially satisfied: `context-graph-solver` Forward Push + CG exist; BMSSP/integration pending. |
 | 1.3 | None — independent. |
-| 1.4 | `ruvector-core` accepts feature-gated import (verify by `cargo check`). |
-| 1.5 | `ruvllm_sparse_attention` builds in your toolchain. |
+| 1.4 | Existing retrieval stack has a shared rerank hook and real attempt embeddings to test against. |
+| 1.5 | Tokenization/panel-vocab limits are fixed for the target gridworld/counter-world domain. |
 | 1.6 | Calibration set exists (last N attempts). |
 | 2.1 | Tier 1.1 (witness chain) exists, because SONA decisions go through it. |
 | 2.2 | Tier 1.1 + Tier 2.1 (witness chain + SONA exist). |
-| 2.3 | Tier 1.1 (rvf-crypto vendored). |
-| 2.4 | Tier 1.2 (`ruvector-solver` exists, mincut graph builders use shared utilities). |
-| 2.5 | Tier 1.4 (uses adjacent `ruvector-core` features). |
+| 2.3 | Tier 1.1 (`context-graph-witness` core exists; certificate-specific entries still need implementation). |
+| 2.4 | Tier 1.2 (`context-graph-solver` exists, mincut graph builders use shared utilities). |
+| 2.5 | Tier 1.4 (uses adjacent clean-room retrieval features). |
 | 2.6 | Tier 2.1 (Granger consumes SONA trajectories). |
 | 3.1 | DynamicJEPA Phase 0 ships first. |
 | 3.2 | Tier 2.1 + Tier 2.2. |
@@ -217,7 +217,7 @@ If any tier doesn't hit its ship signal, surface a high-severity blocker in `./m
 | | agentdb roadmap | RuVector roadmap (clean-room) |
 |--|-----------------|--------------------------------|
 | Tier 1 effort | 3-4 days (Rust port from TS) | 15-19 days (clean-room from Rust reference) |
-| Tier 1 capability | Bandit + MMR + episode schema + ContextSynthesizer | Witness chain + Forward Push + BMSSP + CG + 8/7/5/3-bit tier compression + MMR + training-free retrieval LM + conformal CI |
+| Tier 1 capability | Bandit + MMR + episode schema + ContextSynthesizer | Witness chain + Forward Push + BMSSP + CG + 8/7/5/3-bit tier compression + MMR + training-free retrieval LM + conformal CI. Current state: witness core and Forward Push + CG are done; remaining items are pending. |
 | Tier 2 effort | 7-8 days | 24-31 days clean-room |
 | Tier 2 capability | Bandit wired to 4 decision points + Reflexion query tools + MetadataFilter + witness chain | SONA online learning + verified_training certs + Stage 0/F certs + mincut splits + Matryoshka + Graph RAG + Granger |
 | Tier 3 effort | 16-20 days | 40+ days clean-room |
@@ -229,5 +229,5 @@ The RuVector clean-room path costs roughly **3-4× the agentdb-port time** but d
 
 ## Read next
 
-- `06_RISKS_AND_NON_TRANSFERABLE.md` for vendor-vs-path-dep tradeoffs and license considerations.
+- `06_RISKS_AND_NON_TRANSFERABLE.md` for clean-room discipline, non-transferable risks, and license considerations.
 - `08_HONEST_SUMMARY.md` for the verdict.

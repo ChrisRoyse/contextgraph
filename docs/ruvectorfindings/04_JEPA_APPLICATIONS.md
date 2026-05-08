@@ -109,7 +109,7 @@ If you ever train on a TEE-bound machine (operator wants ME-JEPA training to hap
 
 **Effort:** ~3-4 days (3 days clean-room shared with §03 ccreality + 1 day JEPA-specific witness type enum + CLI integration).
 
-**Risk:** low. Vendor already has tests; integration is purely additive.
+**Risk:** low. The reference implementation has tests and the integration is additive, but our clean-room code still needs its own FSV coverage and fail-closed diagnostics.
 
 ---
 
@@ -124,19 +124,23 @@ If you ever train on a TEE-bound machine (operator wants ME-JEPA training to hap
 When the predictor (per `backupdocs/dynamicjepa/07_dynamic_predictor_and_objectives.md`) trains on trajectories, naive uniform sampling over-weights long flat trajectories that teach little. PPR over the panel-transition graph gives importance scores; the training sampler uses these as weights.
 
 ```rust
-use ruvector_solver::{forward_push::ForwardPushSolver, types::ComputeBudget};
+use context_graph_solver::{CsrMatrix, ForwardPushConfig, ForwardPushSolver, MatrixKind};
 
 // Build the panel-transition graph: nodes = unique panel signatures,
 // edge weight = transition frequency
-let graph = build_panel_transition_graph(&trajectories);
+let graph: CsrMatrix = build_panel_transition_graph(&trajectories, MatrixKind::NonNegativeAdjacency)?;
 
 // PPR with α=0.15, threshold 1e-4 — classic Bahmani 2011 defaults
-let solver = ForwardPushSolver::new(0.15, 1e-4);
-let importance = solver.solve(&graph, &uniform_seed, &ComputeBudget::default())?;
+let solver = ForwardPushSolver::new(ForwardPushConfig {
+    alpha: 0.15,
+    tolerance: 1e-4,
+    max_pushes: 1_000_000,
+})?;
+let report = solver.solve_from_distribution(&graph, &uniform_seed)?;
 
 // Per-trajectory importance = sum over transitions
 let traj_importance: HashMap<TrajectoryId, f32> = trajectories.iter()
-    .map(|t| (t.id, t.transitions.iter().map(|tr| importance[tr.panel_idx]).sum()))
+    .map(|t| (t.id, t.transitions.iter().map(|tr| report.estimate[tr.panel_idx] as f32).sum()))
     .collect();
 ```
 
@@ -148,7 +152,7 @@ The training sampler weights samples by `traj_importance`. Predictor focuses on 
 
 **Risk:** medium. PPR can over-weight high-degree centroid nodes; verify against uniform-sampling baseline before promoting.
 
-**Cross-reference:** `docs/agentdbfindings/04 §6` proposed implementing PPR; here you path-dep a battle-tested Rust implementation.
+**Cross-reference:** `docs/agentdbfindings/04 §6` proposed implementing PPR; the clean-room primitive now exists, and JEPA still needs the sampler integration.
 
 ---
 
@@ -342,7 +346,7 @@ Plus a **Merkle root** over `(trajectory_id, content_sha256)` pairs so any audit
 
 **Risk:** low. Cryptographic, append-only, additive.
 
-**Cross-reference:** `docs/agentdbfindings/04 §5` proposed this with a re-implemented witness chain. Here it's vendored.
+**Cross-reference:** `docs/agentdbfindings/04 §5` proposed this with a re-implemented witness chain. Here it builds on our existing `context-graph-witness` crate.
 
 ---
 

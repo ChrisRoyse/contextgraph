@@ -95,7 +95,7 @@ Full list with reasoning is `06_RISKS_AND_NON_TRANSFERABLE.md`.
 
 After this sprint:
 - Optimizer's decision stream has a SHAKE-256 witness chain (in our own `crates/context-graph-witness`). `optimizer_witness_chain_verify` returns `valid: true` cryptographically.
-- Optimizer can answer "which past attempts most influenced today's failure?" via Forward-Push PPR over the (failure_tag, recommendation) graph in 1 tool call (using our own `crates/context-graph-solver`).
+- Optimizer influence can now be built on a real Forward-Push PPR primitive in `crates/context-graph-solver`; the `optimizer_compute_influence` MCP tool and graph-builder/audit wrapper are still pending.
 - Optimizer learns across turns via SONA-style trajectory + REINFORCE + EWC++ (in our own `crates/context-graph-sona`). The bandit (proposed in `agentdbfindings/03 §2`) sits on top.
 
 Tier 2 adds ~24-31 days clean-room for verified_training certificates per gradient step, MMR + Matryoshka + Graph RAG retrieval, mincut for A/B splits, conformal prediction.
@@ -143,9 +143,9 @@ Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.
 
 | Inspirational source | Our new crate / module |
 |----------------------|------------------------|
-| `rvf-types` + `rvf-crypto` | `crates/context-graph-witness/` |
+| `rvf-types` + `rvf-crypto` | `crates/context-graph-witness/` (core chain done; signing/lineage/attestation pending) |
 | `sona` | `crates/context-graph-sona/` |
-| `ruvector-solver` (PPR, BMSSP, CG subset) | `crates/context-graph-solver/` |
+| `ruvector-solver` (PPR, BMSSP, CG subset) | `crates/context-graph-solver/` (Forward Push + CG done; BMSSP pending) |
 | `ruvector-temporal-tensor` | new module under our quantization crate |
 | `ruvector-mincut` (Stoer-Wagner subset) | `crates/context-graph-mincut/` |
 | `ruvector-core::advanced_features::*` | new modules under our retrieval crate |
@@ -171,7 +171,7 @@ RuVector is MIT. We never copy code, so the MIT obligations don't apply to our t
 3. **`05_QUICK_WINS_VS_DEEP_INTEGRATION.md`** for the prioritized triage and a concrete one-week sprint plan.
 4. Pick from Tier 1 (witness chain + sublinear solvers + SONA + temporal-tensor + MMR + retrieval-diffusion + conformal prediction).
 5. Read the relevant section in `03_REALITY_LOOP_APPLICATIONS.md` or `04_JEPA_APPLICATIONS.md` for the concrete shape.
-6. Read `06_RISKS_AND_NON_TRANSFERABLE.md` for what to NOT do and vendor-vs-path-dep tradeoffs.
+6. Read `06_RISKS_AND_NON_TRANSFERABLE.md` for what to NOT do, clean-room discipline, and non-transferable risks.
 7. Implement.
 8. Write the locked decision to `./memory/decisions/ruvector-<dep>.md` per CLAUDE.md §6.
 

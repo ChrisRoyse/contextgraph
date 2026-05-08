@@ -38,11 +38,16 @@ Pending:
 When the optimizer asks "which past attempts most influenced today's failure mode?", PPR over the (attempt-tag) bipartite graph gives a principled influence ranking — better than cosine similarity over critique embeddings alone. Forward Push converges quickly even on sparse graphs.
 
 ```rust
-use ruvector_solver::{forward_push::ForwardPushSolver, types::ComputeBudget, traits::Solver};
+use context_graph_solver::{ForwardPushConfig, ForwardPushSolver};
 
-let solver = ForwardPushSolver::new(/* alpha */ 0.15, /* threshold */ 1e-4);
-let importance = solver.solve(&attempt_graph, &seed_vec, &ComputeBudget::default())?;
+let solver = ForwardPushSolver::new(ForwardPushConfig {
+    alpha: 0.15,
+    tolerance: 1e-4,
+    max_pushes: 1_000_000,
+})?;
+let report = solver.solve_from_distribution(&attempt_graph, &seed_vec)?;
 // importance[i] = PPR mass on attempt i, given seed = current failing attempt
+let importance = report.estimate;
 ```
 
 ### 1b. BMSSP multigrid for Laplacian solve over the harness-transition history
@@ -124,11 +129,13 @@ For higher-stakes audit, sign each emitted segment with the optimizer's ed25519 
 
 **Effect on FSV:** the existing FSV protocol (`docs/ccreality/18_FSV_PLAN.md`) wants every persisted decision to be independently re-verifiable. Witness chain gives that *cryptographically* in one tool call.
 
-**Effort:** 1 day vendor + 0.5 day witness append + 0.5 day verifier MCP. Total ~2 days.
+**Current status:** chain core, append/readback behavior, and ccreality verifier/diff tooling exist through `crates/context-graph-witness/` and the optimizer witness-chain module. ed25519 segment signing is still pending.
 
-**Risk:** low. Cryptographically sound implementation already in production at RuVector.
+**Remaining effort:** ~1-2 days for ed25519 segment signing, key handling, and FSV coverage around signed segments.
 
-**Cross-reference:** `docs/agentdbfindings/03_REALITY_LOOP_APPLICATIONS.md §5` proposed re-implementing this; here it's a vendor.
+**Risk:** low. The cryptographic shape is additive, but any signing failure must fail closed and identify the broken segment/key material explicitly.
+
+**Cross-reference:** `docs/agentdbfindings/03_REALITY_LOOP_APPLICATIONS.md §5` proposed re-implementing this; the chain core now exists as our own `context-graph-witness` crate.
 
 ---
 
@@ -186,7 +193,7 @@ The optimizer's foreground turn doesn't need to compute gradients. The backgroun
 
 **Effect on the bandit story:** this *deepens* the `SolverBandit` proposal. The bandit picks arms; SONA's trajectory recording + REINFORCE gradient estimation gives a richer reward signal that re-weights bandit priors over time. Bandit + SONA is strictly better than bandit alone.
 
-**Effort:** 5-7 days clean-room reimplementation + integration. Major modules are LoRA forward pass (~200 LOC), EWC++ Fisher info update (~300 LOC), trajectory + REINFORCE (~250 LOC), ReasoningBank pattern clustering (~200 LOC), loop coordinator (~150 LOC). 2-3× vendor estimate, but the math is well-described in their source comments.
+**Effort:** 5-7 days clean-room reimplementation + integration. Major modules are LoRA forward pass (~200 LOC), EWC++ Fisher info update (~300 LOC), trajectory + REINFORCE (~250 LOC), ReasoningBank pattern clustering (~200 LOC), loop coordinator (~150 LOC). This is the clean-room estimate against the reference source; the math is well-described in their source comments.
 
 **Risk:** medium. SONA is research-grade; verify EWC++ task-boundary detection actually fires on your decision-stream pattern. Run with `RUST_LOG=sona=debug` for the first 50 turns.
 
@@ -452,5 +459,5 @@ The agentdb findings recommended ~10-12 days of *Rust port* work for Tier 1+2. T
 - `docs/ccreality/03_MCP_REALITY_TOOLS_SPEC.md` — where new tools fit.
 - `docs/ccreality/13_STRUCTURED_OUTPUT_SCHEMA.md` — schema extensions for §2/§4d.
 - `docs/agentdbfindings/03_REALITY_LOOP_APPLICATIONS.md` — same primitives at the *idea* level; this doc is the *implementation* level.
-- `docs/ruvectorfindings/06_RISKS_AND_NON_TRANSFERABLE.md` — vendor-vs-path-dep tradeoffs.
+- `docs/ruvectorfindings/06_RISKS_AND_NON_TRANSFERABLE.md` — clean-room discipline, non-transferable risks, and license notes.
 - `docs/ruvectorfindings/05_QUICK_WINS_VS_DEEP_INTEGRATION.md` — sprint-level effort triage.

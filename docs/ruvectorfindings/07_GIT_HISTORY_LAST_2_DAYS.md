@@ -94,7 +94,7 @@ The c3098727 commit "add SOTA extension sections to sparse-attention ADRs 183/18
 - Each PR is single-purpose (PR #429 = new crate; PR #450 = new crate building on it).
 - Auto-republish of NAPI binaries is automated — no human bottleneck for npm distribution.
 
-Implication for path-dep: high-cadence with small PRs is *easier* to track than infrequent large dumps. If you path-dep RuVector, expect a working pull every 1-3 days.
+Implication for clean-room reference use: high-cadence with small PRs is easier to review than infrequent large dumps, but we still do not track upstream as a dependency. Treat new commits as optional research material only.
 
 ---
 
@@ -118,15 +118,15 @@ If the RuVector team is shipping training-free retrieval LMs, they're betting he
 
 **We do not track upstream.** The locked rule (`memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md`) means the snapshot at HEAD `ef5274c2` is our only state. The list below is preserved for historical context only — disregard for adoption decisions.
 
-~~If you path-dep `ruvector/`, watch for:~~
+Historical upstream signals that may be worth reading as inspiration:
 
 | Signal | What it means |
 |--------|---------------|
 | New `ruvllm_*` crates | The retrieval-LM workstream continues. Investigate immediately. |
 | New ADRs in `docs/adr/` (currently at 206) | Architectural decisions to absorb into your `./memory/decisions/`. |
 | Updates to `crates/sona/` | LoRA / EWC++ tuning changes. Review for Tier 1.6 / 2.1 impact. |
-| Updates to `crates/rvf/rvf-crypto/` | Witness chain protocol changes. Re-vendor if substantive. |
-| Updates to `crates/ruvector-solver/` | New algorithms or solver-router improvements. Path-dep gets these for free. |
+| Updates to `crates/rvf/rvf-crypto/` | Witness chain protocol changes. Review for clean-room follow-up only. |
+| Updates to `crates/ruvector-solver/` | New algorithms or solver-router improvements. Review, then reimplement explicitly if adopted. |
 | New `examples/*` directories | Reference apps that may reveal new transplant opportunities. |
 
 Cron suggestion: weekly `git -C ruvector log --since='1 week ago' --pretty='%h %ai %s'`. Five minutes per week to stay current.

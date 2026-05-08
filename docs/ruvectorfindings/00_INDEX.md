@@ -81,9 +81,9 @@ Workspace version: `2.0.5` (per CHANGELOG); npm distribution `ruvector` package;
 | 00 | `00_INDEX.md` (this file) | Map, scope, headline framing of "RuVector is the upstream, not an idea source" |
 | 01 | `01_RUVECTOR_ARCHITECTURE.md` | The 135-crate workspace tour: crate families, dependency layering, what's WASM/NAPI/native, CLAUDE.md vs ours |
 | 02 | `02_CAPABILITIES_INVENTORY.md` | Per-crate capability catalog (75+ features). What's production, what's research-grade |
-| 03 | `03_REALITY_LOOP_APPLICATIONS.md` | Concrete vendor/path-dep transplants to ccreality. Each cites the ccreality doc + the RuVector crate |
+| 03 | `03_REALITY_LOOP_APPLICATIONS.md` | Concrete clean-room reimplementation targets for ccreality. Each cites the ccreality doc + the RuVector reference crate |
 | 04 | `04_JEPA_APPLICATIONS.md` | Concrete transplants to ME-JEPA / DynamicJEPA / 5090jepa with crate refs |
-| 05 | `05_QUICK_WINS_VS_DEEP_INTEGRATION.md` | Triage. *Different from agentdb's triage* — many "L effort" agentdb ports become "S effort" path-deps here |
+| 05 | `05_QUICK_WINS_VS_DEEP_INTEGRATION.md` | Triage after the locked clean-room decision; earlier path-dep assumptions are superseded |
 | 06 | `06_RISKS_AND_NON_TRANSFERABLE.md` | The honest "don't take these" list — license, build complexity, branding leakage |
 | 07 | `07_GIT_HISTORY_LAST_2_DAYS.md` | The 6 commits in last 2 days + what they tell us about active workstreams (sparse-mario / retrieval diffusion / FastGRNN-gated attention / sm_120-relevant) |
 | 08 | `08_HONEST_SUMMARY.md` | The verdict — read first if you only have 5 minutes |
@@ -101,7 +101,7 @@ Workspace version: `2.0.5` (per CHANGELOG); npm distribution `ruvector` package;
 
 4. **Access-pattern-driven 8/7/5/3-bit tier compression** — **pending.** Current PQ-8/Float8/token-pruning quantization exists elsewhere, but this access-pattern tier policy is not implemented. See `04 §4`.
 
-The remainder are individual quality-of-life primitives ranked in `05_QUICK_WINS_VS_DEEP_INTEGRATION.md`. **Every effort estimate in `05` should be multiplied by 2-3× to convert path-dep estimates into clean-room reimplementation estimates.**
+The remainder are individual quality-of-life primitives ranked in `05_QUICK_WINS_VS_DEEP_INTEGRATION.md`. **Any older import/path-dep effort estimate should be treated as historical and replaced by the current clean-room estimates in `05`.**
 
 ---
 
@@ -128,4 +128,4 @@ The remainder are individual quality-of-life primitives ranked in `05_QUICK_WINS
 2. Read `09_END_GOAL_REVIEW_REPLACEMENT.md` Section 0-2 for the architecture, Section 7 for the build plan.
 3. Use `01_RUVECTOR_ARCHITECTURE.md` and `02_CAPABILITIES_INVENTORY.md` as reference when reviewing any specific clean-room reimplementation.
 
-**Important:** docs 03-08 contain earlier framings that talk about "vendor / path-dep" and "verify_ai_output gates." Those framings are SUPERSEDED by doc 09's reality-compiler framing — gates are now *input features* to ME-JEPA, ME-JEPA itself is the verifier. When the supporting docs disagree with doc 09, doc 09 wins.
+**Important:** docs 03-08 contain historical framing about "verify_ai_output gates." That framing is SUPERSEDED by doc 09's reality-compiler framing — gates are now *input features* to ME-JEPA, ME-JEPA itself is the verifier. When the supporting docs disagree with doc 09, doc 09 wins.

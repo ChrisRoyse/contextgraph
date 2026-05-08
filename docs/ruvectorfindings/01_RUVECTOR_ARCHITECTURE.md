@@ -167,7 +167,7 @@ Workspace builds 100+ crates by default but **excludes**:
 - **advanced_features/** — `compaction.rs` (LSM), `conformal_prediction.rs`, `diskann.rs` (Vamana), `filtered_search.rs`, `graph_rag.rs` (Leiden community detection), `hybrid_search.rs` (BM25+vector RRF), `matryoshka.rs`, `mmr.rs` (diversity rerank), `multi_vector.rs` (ColBERT), `opq.rs`, `product_quantization.rs`, `sparse_vector.rs`.
 - Plus `agenticdb.rs` (the agentic-DB layer), `arena.rs`, `cache_optimized.rs`, `distance.rs`, `embeddings.rs`, `error.rs`, `lockfree.rs`, `memory.rs`, `quantization.rs`, `simd_intrinsics.rs`, `storage*.rs`, `vector_db.rs`.
 
-This single crate has *more* retrieval variety than most production vector DBs. It's the place you'd vendor first if you wanted a self-contained ANN engine.
+This single crate has *more* retrieval variety than most production vector DBs. It is the first place to study when designing our own self-contained ANN/retrieval modules.
 
 ### 2. `sona` — the self-learning engine
 

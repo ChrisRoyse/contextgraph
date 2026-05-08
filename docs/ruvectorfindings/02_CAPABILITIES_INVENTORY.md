@@ -60,7 +60,7 @@ Not implemented yet:
 - **Neural hash** — `src/advanced/neural_hash.rs`. Learned LSH.
 - **TDA** — `src/advanced/tda.rs`. Topological data analysis (persistent homology, Betti numbers, drift detection).
 
-**Verdict:** core engine; you'd path-dep this for any vector retrieval need that goes beyond pure cosine k-NN. Big win: conformal prediction, Graph RAG, ColBERT, Matryoshka are uncommon together in a single Rust crate.
+**Verdict:** core engine reference for any vector retrieval need that goes beyond pure cosine k-NN. Big win: conformal prediction, Graph RAG, ColBERT, Matryoshka are uncommon together in a single Rust crate. Reimplement only the specific modules we need.
 
 ---
 
@@ -143,7 +143,7 @@ Not implemented yet:
 - **`TeeBoundKeyRecord`** — Key-binding records.
 - **`build_attestation_witness_payload`, `verify_attestation_witness_payload`** — TEE attestation in the witness chain.
 
-**Verdict:** the highest-leverage drop-in transplant in the entire RuVector tree. ~700 LOC, no_std (`#![cfg_attr(not(feature = "std"), no_std)]`), pulls only `rvf-types` for error types. Vendor or path-dep this **today**. Two consumers: ccreality optimizer audit, DynamicJEPA training-run audit.
+**Verdict:** the highest-leverage clean-room target in the entire RuVector tree. The SHAKE-256 witness-chain core is now implemented in `crates/context-graph-witness/` and wired into ccreality optimizer audit plus DynamicJEPA training-run audit. Signing, lineage, and attestation remain pending.
 
 ---
 
@@ -507,7 +507,7 @@ Underlies `proof_gated` + `verified_training` in graph-transformer. Provides:
 - `ProofTier`, `ProofKind`, `TierDecision`, `VerifiedOp`.
 - `proof_store::create_attestation` — store attestations.
 
-**Verdict:** if DynamicJEPA's verified-training story matters, vendor this with `ruvector-graph-transformer/temporal.rs`. ContextGraph's existing FSV is conceptually similar but proof-free; this adds formal scaffolding.
+**Verdict:** if DynamicJEPA's verified-training story matters, reimplement the relevant proof/certificate pieces with `ruvector-graph-transformer/temporal.rs` as reference. ContextGraph's existing FSV is conceptually similar but proof-free; this adds formal scaffolding.
 
 ---
 
@@ -523,7 +523,7 @@ Listed for completeness — unlikely transplants for ccreality/JEPA but interest
 - **`thermorust`** — Thermal modeling.
 - **`ruvix`** — Unspecified; presumably an experimentation harness.
 
-If any of these later become relevant to a side workstream, vendor on demand.
+If any of these later become relevant to a side workstream, study the reference and reimplement only the bounded subset we need.
 
 ---
 

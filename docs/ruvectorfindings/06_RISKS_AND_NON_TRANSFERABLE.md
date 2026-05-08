@@ -240,21 +240,21 @@ Domain-specific. Safe to ignore.
 
 ---
 
-### L. Vendoring `sona` ties you to its ABI
+### L. Reimplementing SONA still creates state-schema compatibility risk
 
-**The trap:** SONA's `SonaConfig`, `LearningSignal`, `QueryTrajectory` types are public API. If you vendor at commit X and upstream evolves the schema at commit Y, your safetensors-exported state isn't loadable by upstream's commit Y consumers. Cross-version interoperability is *not* free.
+**The trap:** SONA's `SonaConfig`, `LearningSignal`, `QueryTrajectory` types are useful reference shapes, but our clean-room `context-graph-sona` state will be our own public API. If that safetensors schema changes without explicit migration, older optimizer/JEPA state will not load cleanly. Cross-version interoperability is *not* free.
 
-**Mitigation:** if you only consume SONA's safetensors, no concern. If you ever federate with another consumer of SONA, pin to the same upstream commit. Surface this in `./memory/decisions/sona-version-pin.md`.
+**Mitigation:** version our SONA state schema from day one, write migration tests against real safetensors files, and surface any incompatible change in `./memory/decisions/sona-state-schema.md`.
 
 ---
 
 ### M. The cloned `ruvector/` repo is 11,137 files / multi-GB
 
-**The trap:** cloning the repo into `ContextGraph/ruvector/` adds significant disk + working-tree size. Path-deps mean you can't rm -rf the clone.
+**The trap:** cloning the repo into `ContextGraph/ruvector/` adds significant disk + working-tree size. The clone is useful only as a read-only reference; it must never become a build dependency.
 
 **Mitigation:**
 - Add `ruvector/` to `.gitignore` (don't commit the clone — it's a tool checkout, not a source dependency).
-- Vendor the crates you actually need into `vendor/` — your tree reflects only what's used.
+- Do not vendor crates into `vendor/`; reimplement the bounded subset in our own `crates/context-graph-*` modules.
 - Periodically (weekly) `git -C ruvector fetch --shallow-since='1 month ago'` to keep the local clone manageable.
 
 ---
