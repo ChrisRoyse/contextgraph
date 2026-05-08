@@ -10,6 +10,22 @@ References to JEPA docs use `backupdocs/{mejepa,dynamicjepa,5090jepa}/` paths.
 
 ---
 
+## Current JEPA implementation state (updated 2026-05-08)
+
+Done:
+
+- DynamicJEPA has a RocksDB audit witness chain (`dj_audit_witness_chain`) backed by `context-graph-witness`.
+- `dynamicjepa verify-audit-witness` verifies audit rows against witness entries without mutating RocksDB counts.
+- `context-graph-solver` provides reusable Forward-Push PPR and CG primitives.
+
+Pending:
+
+- JEPA trajectory-importance sampler is not wired to `context-graph-solver`.
+- ME-JEPA-Code Phase 0 mutation corpus, code-domain instruments, 4,096-d panels, predictor, conformal calibration, OOD, and self-healing are not implemented.
+- Retrieval diffusion, SONA planner integration, Stage 0/F certs, verified training certs, mincut, Granger, and tiered panel storage remain pending.
+
+---
+
 ## 1. Clean-room reimplement a witness chain crate, inspired by `crates/rvf/rvf-crypto`
 
 **Inspirational source crate (read-only reference):** `ruvector/crates/rvf/rvf-crypto/` — same crate as `docs/ruvectorfindings/03 §2` for ccreality. Single clean-room reimplementation, two consumers (the new `crates/context-graph-witness/` serves both).
@@ -101,6 +117,8 @@ If you ever train on a TEE-bound machine (operator wants ME-JEPA training to hap
 
 **Inspirational source crate (read-only reference):** `ruvector/crates/ruvector-solver/`.
 
+**Current status:** the algorithmic primitive exists in `crates/context-graph-solver/` as weighted Forward-Push PPR with FSV evidence. The JEPA-specific panel-transition graph builder and sampler weighting are still pending.
+
 **JEPA use case:**
 
 When the predictor (per `backupdocs/dynamicjepa/07_dynamic_predictor_and_objectives.md`) trains on trajectories, naive uniform sampling over-weights long flat trajectories that teach little. PPR over the panel-transition graph gives importance scores; the training sampler uses these as weights.
@@ -126,7 +144,7 @@ The training sampler weights samples by `traj_importance`. Predictor focuses on 
 
 **Effect on training quality:** lower variance in held-out loss; faster convergence on dynamics-relevant transitions. Standard PPR-importance sampling result.
 
-**Effort:** 3-4 days clean-room — Forward Push (~200 LOC) + graph-builder for `panel_transition_graph` + sampler-weight integration. Shared with §03 ccreality §1 if both ship together.
+**Remaining effort:** 1-2 days for the JEPA graph-builder and sampler integration. The Forward-Push primitive itself is implemented.
 
 **Risk:** medium. PPR can over-weight high-degree centroid nodes; verify against uniform-sampling baseline before promoting.
 
@@ -578,11 +596,7 @@ All efforts are **clean-room reimplementation** estimates per the locked rule.
 11. **§12 (cross-instrument transfer via manifold)** — read; ~10+ days clean-room if adopted.
 12. **§11 (prime-radiant coherence)** — read; ~10-12 days clean-room if adopted.
 
-**Tier 1 (§1 + §10 + §3): ~12-16 days clean-room.** After this sprint:
-- Every training / verification run has cryptographic audit (in our own crate).
-- gridworld planner is a training-free retrieval-LM with the 6.9× speedup story.
-- The planner learns online via REINFORCE-trajectory + EWC++.
-- Zero upstream dependency.
+**Tier 1 status:** partially complete. §1 witness/audit foundation exists for DynamicJEPA audit rows, and §2's Forward-Push primitive exists in `context-graph-solver`. §10 retrieval diffusion and §3 SONA-style planner learning remain pending. Therefore, do not claim the gridworld planner or online REINFORCE/EWC++ path has shipped yet.
 
 **Tier 2 (§5 + §9 + §2 + §4 + §6): ~19-24 days clean-room.** Compliance certs + FSV-grade per-step audit + better training quality + cold storage + cleaner splits.
 
@@ -599,7 +613,7 @@ agentdb's findings recommended 8-15+ days of *Rust port* work for JEPA transplan
 | Port 73-byte SHAKE-256 witness chain | Clean-room reimplement our own `context-graph-witness` (chain + ed25519 + lineage + attestation) — ~3-4 days |
 | Port doubly-robust uplift estimator (NightlyLearner) | Clean-room: SONA REINFORCE + our mincut for A/B + Granger test — ~12-15 days |
 | Port Merkle certificates for Stage 0/F | Clean-room: build certificates atop our witness crate in ~150 LOC of glue — ~3-4 days total |
-| Implement PPR for trajectory importance | Clean-room Forward Push (~200 LOC) shared with §03 — ~3-4 days |
+| Implement PPR for trajectory importance | **Primitive done:** clean-room Forward Push in `context-graph-solver`; JEPA sampler integration remains |
 | Implement Mincut for leakage check | Clean-room Stoer-Wagner — ~4-5 days |
 | Implement TemporalCompressor 5-tier | Clean-room 8/7/5/3-bit groupwise symmetric quant — ~4-5 days |
 | Use ContextSynthesizer narrative | Same — port the heuristic, no transplant needed |

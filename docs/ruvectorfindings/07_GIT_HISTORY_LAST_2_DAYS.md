@@ -8,6 +8,20 @@ You asked me to review git history "for the last 2 days." Unlike agentdb (which 
 
 ---
 
+## ContextGraph state after acting on this snapshot (updated 2026-05-08)
+
+We still do **not** track RuVector upstream. This section remains historical context only.
+
+ContextGraph work completed from this frozen snapshot:
+
+- `c6a42423` added clean-room `crates/context-graph-solver/`.
+- `e3b7a9c4` fixed the solver FSV evidence DTOs so disk readback deserializes into owned state.
+- The implemented subset covers Forward-Push PPR + CG, not BMSSP or retrieval diffusion.
+
+Do not reinterpret the RuVector last-two-days activity as a moving target. New work should continue from ContextGraph's current crates and the locked reference snapshot only.
+
+---
+
 ## The 6 commits since 2026-05-07
 
 ```

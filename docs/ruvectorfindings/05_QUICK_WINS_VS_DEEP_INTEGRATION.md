@@ -8,6 +8,17 @@ Effort triage for the reimplementation targets in `03_REALITY_LOOP_APPLICATIONS.
 
 ---
 
+## Current sprint status (updated 2026-05-08)
+
+Completed or partially completed:
+
+- **Tier 1.1 partial:** `context-graph-witness` SHAKE-256 73-byte chain core exists and is wired into ccreality + DynamicJEPA audit witnesses. Signing, lineage, attestation, and Merkle compression are still pending.
+- **Tier 1.2 partial:** `context-graph-solver` exists with weighted Forward-Push PPR + validated CG + CSR validation + manual FSV evidence. BMSSP/multigrid and the ccreality/JEPA integration wrappers are still pending.
+
+Everything else in Tier 1 and Tier 2 remains pending unless stated otherwise in the docs.
+
+---
+
 ## Effort scale (recapped)
 
 | Tier | Effort | Meaning |
@@ -31,14 +42,14 @@ Effort triage for the reimplementation targets in `03_REALITY_LOOP_APPLICATIONS.
 
 | # | Reimplementation target | Where | Clean-room effort | Leverage | Notes |
 |---|-------------------------|-------|--------------------|----------|-------|
-| 1.1 | **Clean-room `context-graph-witness` crate** (SHAKE-256 73-byte chain + ed25519 + lineage) | shared (ccreality §2 + JEPA §1, §5) | L (3-4 days) | ★★★ | Single highest-leverage. Inspired by `rvf-crypto`. Two consumers. |
-| 1.2 | **Clean-room sublinear-solver subset** (Forward Push + BMSSP + CG) | ccreality §1, JEPA §2 | L (3-4 days) | ★★★ | Inspired by `ruvector-solver`. ~600-800 LOC + tests. |
+| 1.1 | **Clean-room `context-graph-witness` crate** (SHAKE-256 73-byte chain + ed25519 + lineage) | shared (ccreality §2 + JEPA §1, §5) | Partial | ★★★ | SHAKE-256 chain core + ccreality/DynamicJEPA wiring done; ed25519/lineage/attestation pending. |
+| 1.2 | **Clean-room sublinear-solver subset** (Forward Push + BMSSP + CG) | ccreality §1, JEPA §2 | Partial | ★★★ | Forward Push + CG done in `context-graph-solver`; BMSSP and integration wrappers pending. |
 | 1.3 | **Clean-room 8/7/5/3-bit tier compressor** | ccreality §5, JEPA §4 | M (2-3 days) | ★★ | Inspired by `ruvector-temporal-tensor`. Zero-dep groupwise quant. |
 | 1.4 | **Clean-room MMR + tests** | ccreality §4a | S (1 day) | ★★ | ~150 LOC + tests. Inspired by `ruvector-core::advanced_features::mmr`. |
 | 1.5 | **Clean-room training-free retrieval LM + diffuser** | JEPA §10 | L (4-5 days) | ★★★ | Inspired by `ruvllm_retrieval_diffusion` (PR #450). Training-free → no autograd. |
 | 1.6 | **Clean-room conformal prediction** | ccreality §4d | M (2 days) | ★★ | Inspired by `ruvector-core::advanced_features::conformal_prediction`. |
 
-**Tier 1 total: ~15-19 days clean-room.** (Roughly 2-3× the path-dep estimate; in exchange, zero upstream tracking burden, full ownership of every line.)
+**Tier 1 remaining:** still substantial. Witness core and solver foundation are complete, but the Tier is not done until BMSSP/integration, tier compression, reusable MMR, retrieval diffusion, and conformal prediction ship.
 
 After Tier 1:
 - Cryptographic audit chain over optimizer + DynamicJEPA training/verification (in our own crate).
@@ -117,9 +128,9 @@ If the operator wants to start tomorrow with maximum leverage and bounded risk, 
 - Tests: write 5 entries, replay chain, verify, replay with a tampered byte → reject.
 
 **Days 5-8 — Sublinear solvers (Tier 1.2)**
-- New crate `crates/context-graph-solver/` with our own Forward Push, BMSSP V-cycle, CG.
-- Inspired by `ruvector/crates/ruvector-solver/src/{forward_push,bmssp,cg}.rs`.
-- Tests: PPR over a synthetic 1000-node graph; importance vector sums close to 1.
+- **Done:** new crate `crates/context-graph-solver/` with our own Forward Push + CG + CSR validation.
+- **Done:** manual FSV evidence writes and readbacks at `target/context-graph-solver-fsv/manual-evidence.json`.
+- **Pending:** BMSSP V-cycle, ccreality influence wrapper, JEPA sampler integration.
 
 **Days 9-10 — 8/7/5/3-bit tier compressor (Tier 1.3)**
 - New module under existing quantization crate.
@@ -184,7 +195,7 @@ You'll know each Tier earned its keep if:
 
 **After Tier 1**:
 - `mcp__cgreality__optimizer_witness_chain_verify` returns `valid: true` after a fresh attempt cycle.
-- A PPR-based "show me influential past attempts" tool returns sensibly different top-5 from cosine-only ranking on at least one synthetic test case.
+- A PPR-based "show me influential past attempts" tool returns sensibly different top-5 from cosine-only ranking on at least one synthetic test case. **Current status:** algorithm primitive exists; MCP tool pending.
 - `ruvllm_retrieval_diffusion::Diffuser` completes a gridworld trajectory at >60% success on a held-out set.
 - Conformal prediction set covers the held-out outcome at the configured confidence level (90% by default).
 

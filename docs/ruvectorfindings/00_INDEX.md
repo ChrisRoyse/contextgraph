@@ -27,6 +27,18 @@
 
 ---
 
+## Current ContextGraph implementation state (updated 2026-05-08)
+
+This doc set is no longer purely pre-implementation. The workspace now contains:
+
+- **`crates/context-graph-witness/` implemented** — 73-byte SHAKE-256 witness entries, chain verification, and file-backed ccreality optimizer witness tools (`optimizer_witness_chain_verify`, `optimizer_witness_chain_diff`). DynamicJEPA audit rows are also bound to RocksDB CF `dj_audit_witness_chain` with readback/tamper FSV.
+- **`crates/context-graph-solver/` partially implemented** — clean-room weighted Forward-Push PPR, validated Conjugate Gradient, CSR validation, structured fail-closed errors, and manual FSV evidence at `target/context-graph-solver-fsv/manual-evidence.json`.
+- **Still pending:** BMSSP/multigrid, the ccreality `optimizer_compute_influence` MCP tool, JEPA sampler integration, SONA/EWC++, tiered 8/7/5/3-bit compression, conformal prediction, retrieval diffusion, mincut, Granger, and the ME-JEPA-Code Phase 0 mutation corpus.
+
+When this index says "reimplement," read it as either **done**, **partial**, or **pending** according to the state above and the per-doc status notes below.
+
+---
+
 ## TL;DR — what changes if you read RuVector after agentdb
 
 RuVector is the **upstream** that agentdb wraps. Per the locked rule above, we treat it as **read-only reference** — NOT as a dependency candidate.
@@ -81,13 +93,13 @@ Workspace version: `2.0.5` (per CHANGELOG); npm distribution `ruvector` package;
 
 ## The four highest-leverage primitives to clean-room reimplement
 
-1. **A sublinear solver suite (PPR + BMSSP + CG)** — design the algorithms after reading `ruvector/crates/ruvector-solver/src/{forward_push,bmssp,cg}.rs`. Reimplement in our own `crates/context-graph-solver/` (or extend an existing crate). See `03 §1`, `04 §1`.
+1. **A sublinear solver suite (PPR + BMSSP + CG)** — **partial.** `crates/context-graph-solver/` now has Forward-Push PPR + CG + CSR validation + FSV evidence. BMSSP/multigrid and ccreality/JEPA integration are still pending. See `03 §1`, `04 §2`.
 
-2. **A 73-byte SHAKE-256 witness chain + ed25519/ML-DSA-65 signing** — design after reading `ruvector/crates/rvf/rvf-crypto/src/{witness,sign,attestation,lineage}.rs`. Reimplement in our own `crates/context-graph-witness/` (or similar). Drops into both ccreality optimizer audit + DynamicJEPA training-run audit. See `03 §2`, `04 §1`.
+2. **A 73-byte SHAKE-256 witness chain + ed25519/ML-DSA-65 signing** — **core chain implemented.** `crates/context-graph-witness/` exists and is wired into ccreality optimizer files plus DynamicJEPA audit witnesses. ed25519/ML-DSA-65 signing, lineage, and attestation remain pending. See `03 §2`, `04 §1`.
 
-3. **An adaptive learning engine (μLoRA + EWC++ + REINFORCE trajectory + ReasoningBank)** — design after reading `ruvector/crates/sona/src/`. Reimplement in our own `crates/context-graph-sona/`. Closest open-source reference for Rust-native trajectory learning. See `03 §3`, `04 §3`.
+3. **An adaptive learning engine (μLoRA + EWC++ + REINFORCE trajectory + ReasoningBank)** — **pending.** No `crates/context-graph-sona/` crate yet. See `03 §3`, `04 §3`.
 
-4. **Access-pattern-driven 8/7/5/3-bit tier compression** — design after reading `ruvector/crates/ruvector-temporal-tensor/src/`. Reimplement in our own quantization module. Strictly richer than current PQ-8 path. See `04 §4`.
+4. **Access-pattern-driven 8/7/5/3-bit tier compression** — **pending.** Current PQ-8/Float8/token-pruning quantization exists elsewhere, but this access-pattern tier policy is not implemented. See `04 §4`.
 
 The remainder are individual quality-of-life primitives ranked in `05_QUICK_WINS_VS_DEEP_INTEGRATION.md`. **Every effort estimate in `05` should be multiplied by 2-3× to convert path-dep estimates into clean-room reimplementation estimates.**
 

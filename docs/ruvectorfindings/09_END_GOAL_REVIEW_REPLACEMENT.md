@@ -20,6 +20,13 @@ Key system properties:
 - **Auditable.** Every training step has a certificate; every prediction has a confidence interval; every input file has a SHA chain back to its origin.
 - **Clean-room owned.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md`, every line is ours; no foreign Rust crates, no npm dependencies on the ruvnet ecosystem.
 
+**Current implementation snapshot (2026-05-08):**
+
+- The witness-chain substrate exists (`context-graph-witness`) and is wired into ccreality optimizer files and DynamicJEPA audit rows.
+- The solver substrate exists in part (`context-graph-solver`): Forward-Push PPR + Conjugate Gradient + CSR validation + manual FSV evidence.
+- The actual ME-JEPA-Code pipeline in this doc has **not** shipped yet: no mutation corpus, code-domain instruments, 4,096-d panels, predictor, conformal calibration, OOD gate, self-healing loop, or reality-loop verify integration.
+- BMSSP/multigrid is deliberately still pending; no fallback wrapper is allowed.
+
 ---
 
 ## Section 1 — The Reality Compiler
@@ -526,6 +533,12 @@ All ops are MCP-callable for operator inspection.
 ## Section 7 — Phase Plan for an AI Agent
 
 This section is the **direct hand-off**: an AI agent picks up here and executes phases sequentially. Each phase has a deliverable, a definition of done, and a verification protocol.
+
+**Pre-phase foundations already present (2026-05-08):**
+
+- `context-graph-witness` can be used for `E_Witness` and audit-chain integrity.
+- `context-graph-solver` can be used for Forward-Push importance weighting and CG solves.
+- These foundations do not replace Phase 0. The next blocking ME-JEPA-Code step is still the mutation corpus.
 
 ### Phase 0 — Workspace + corpus generation (~5-7 days)
 

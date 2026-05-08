@@ -4,6 +4,8 @@
 
 > **🎯 Master plan:** [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md) is the build-ready specification for **ME-JEPA-Code** — a reality compiler that predicts oracle outcomes from `(code, context)` and replaces line-by-line code review. The architecture below is the *inspirational substrate*; doc 09 is *what we build*. When this doc disagrees with doc 09, doc 09 wins.
 
+> **Current ContextGraph state (2026-05-08):** this architecture remains a reference map. ContextGraph has clean-room implementations for the witness-chain core and a solver foundation (`Forward-Push PPR + CG`). It does **not** currently contain RuVector's full solver router, BMSSP multigrid, SONA, temporal tensor compression, retrieval diffusion, or graph-transformer modules.
+
 ## One-line definition
 
 **RuVector is a 135-crate Rust workspace** that ships a self-learning vector database, a graph engine with Cypher + 8 graph-transformer module families, an attention library with ~50 mechanisms, a local LLM runtime, a single-file `.rvf` cognitive container format with post-quantum signatures and witness chains, an MCP gate for Claude/GPT integration, and dozens of WASM/NAPI/Hailo/FPGA/ESP32 backends.
@@ -227,6 +229,8 @@ If you reimplement one thing from RuVector inspiration, this is it. ~700 LOC of 
 - **validation.rs** — Result validation.
 
 Each algorithm is `O(log n)` to `O(sqrt n)`. Used by Postgres extension (in-SQL PageRank), graph transformer (sublinear attention), and prime-radiant. If your workspace ever needs PageRank, Laplacian solve, or fast sparse linear solve — this is the canonical answer.
+
+**ContextGraph implementation status:** `crates/context-graph-solver/` now clean-room implements weighted Forward-Push PPR and Conjugate Gradient with CSR validation and manual FSV evidence. BMSSP/multigrid, solver routing, solver audit persistence, and ccreality/JEPA integration are still pending. Do not claim "the solver suite" is complete yet.
 
 ### 5. `ruvector-mincut` — graph cuts everywhere
 

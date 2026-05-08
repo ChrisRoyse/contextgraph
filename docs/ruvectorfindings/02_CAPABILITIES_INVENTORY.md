@@ -8,6 +8,22 @@ Per-crate catalog of capabilities relevant to ccreality and JEPA. Roughly ordere
 
 ---
 
+## Current ContextGraph implementation state (updated 2026-05-08)
+
+Implemented in our tree:
+
+- `crates/context-graph-witness/`: clean-room 73-byte SHAKE-256 witness entry layout, chain hashing, verification, and unit tests.
+- ccreality optimizer witness chain: file source of truth `<runtime_root>/<run_id>/claude-code-optimizer/witness-chain.bin`, verify/diff tools, append/readback on optimizer writes.
+- DynamicJEPA audit witness chain: RocksDB CF `dj_audit_witness_chain`, atomic audit+witness writes via `WriteBatch`, CLI `dynamicjepa verify-audit-witness`, and tamper FSV.
+- `crates/context-graph-solver/`: clean-room weighted Forward-Push PPR, validated Conjugate Gradient, CSR validation, fail-closed structured errors, and manual FSV example.
+
+Not implemented yet:
+
+- BMSSP/multigrid, solver router/audit persistence, `optimizer_compute_influence` MCP integration, JEPA trajectory sampler integration.
+- SONA/EWC++, temporal tensor tiering, mincut, conformal prediction, retrieval diffusion, Granger, verified training certificates, and ME-JEPA-Code mutation corpus.
+
+---
+
 ## A. `ruvector-core` — vector storage + retrieval (the trunk)
 
 **Path:** `crates/ruvector-core/`
@@ -549,9 +565,9 @@ All effort estimates are **clean-room Rust reimplementation against the read-onl
 
 | Capability | Verdict | Clean-room effort |
 |------------|---------|-------------------|
-| `rvf-crypto` witness chain + signatures (SHAKE-256 + ed25519 + ML-DSA-65 + lineage + attestation) | **Reimplement today** | 2-3 days |
+| `rvf-crypto` witness chain + signatures (SHAKE-256 + ed25519 + ML-DSA-65 + lineage + attestation) | **Partially implemented** — SHAKE-256 chain core + optimizer/DynamicJEPA wiring done; signatures/lineage/attestation pending | remaining 2-3 days |
 | `ruvector-temporal-tensor` 8/7/5/3-bit tier policy | **Reimplement** | 2-3 days |
-| `ruvector-solver` (Forward Push / BMSSP / CG) | **Reimplement subset** | 3-4 days |
+| `ruvector-solver` (Forward Push / BMSSP / CG) | **Partially implemented** — Forward Push + CG done in `context-graph-solver`; BMSSP + integration pending | remaining 2-4 days |
 | `ruvector-mincut` (canonical, parallel, link-cut) | **Reimplement subset** | 2-3 days per use case |
 | `sona` (μLoRA + EWC++ + REINFORCE + ReasoningBank) | **Reimplement** | 5-7 days |
 | `ruvector-core` advanced_features (mmr, matryoshka, graph_rag, conformal_prediction, opq) | **Reimplement selectively** | 2-3 days each |
@@ -567,6 +583,6 @@ All effort estimates are **clean-room Rust reimplementation against the read-onl
 | `ruvector-postgres` | **Skip** | n/a |
 | `agentic-robotics`, `neural-trader`, `thermorust` | **Skip** | n/a |
 
-The Tier 1 + Tier 2 reimplementations together total roughly **17-22 days** of clean-room Rust work — about 2-3× what the path-dep estimates would have been. Worth it: zero upstream tracking burden, no foreign crates in our build graph, full ownership of every line.
+The Tier 1 + Tier 2 reimplementations are now **partially underway**. Witness-chain core and solver foundation are done; the remaining Tier 1/Tier 2 work is still substantial. Preserve the clean-room rule: zero upstream tracking burden, no foreign crates in our build graph, full ownership of every line.
 
 Continue to `03_REALITY_LOOP_APPLICATIONS.md` for the named transplants.

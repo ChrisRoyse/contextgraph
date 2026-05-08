@@ -10,6 +10,24 @@ References to ccreality docs use `docs/ccreality/` paths. Path discipline (CLAUD
 
 ---
 
+## Current ccreality implementation state (updated 2026-05-08)
+
+Done:
+
+- `context-graph-witness` exists and is wired to the ccreality optimizer witness file.
+- MCP tools `optimizer_witness_chain_verify` and `optimizer_witness_chain_diff` exist.
+- Bandit/optimizer writes append witness entries and read back the source-of-truth file.
+- `context-graph-solver` exists with weighted Forward-Push PPR + CG + CSR validation and manual FSV evidence.
+
+Pending:
+
+- `optimizer_compute_influence(failure_tag, k)` is not wired yet.
+- BMSSP/multigrid is not implemented.
+- Solver calls are not yet persisted as optimizer audit rows beyond the manual FSV evidence.
+- SONA/EWC++ and the richer retrieval/conformal/mincut/Granger modules are still pending.
+
+---
+
 ## 1. Clean-room reimplement a sublinear-solver subset for graph influence ranking
 
 **Inspirational source crate (read-only reference):** `ruvector/crates/ruvector-solver/` — 18-file Rust crate with `BMSSP`, `CG`, `Neumann`, `ForwardPush`, `BackwardPush`, `TRUE`, `RandomWalk`, plus router + audit + budget + SIMD.
@@ -34,13 +52,14 @@ Every `harness-transitions/round-NN.json` is an edge in a tracked graph. Computi
 `ruvector-solver` writes its own audit log (`src/audit.rs`). When integrated into the optimizer's recommendation, the audit becomes a verifiable trace of what the optimizer asked the solver to compute.
 
 **ccreality changes:**
-- New crate `crates/context-graph-solver/` with our own Forward Push, BMSSP, CG implementations. Header comment cites `ruvnet/RuVector crates/ruvector-solver/src/{forward_push,bmssp,cg}.rs at HEAD ef5274c2` as inspiration; no code copied.
-- New module `crates/context-graph-cli/src/optimizer/influence.rs` — graph-builder helpers + thin wrapper over our `context-graph-solver`.
-- New MCP tool `mcp__cgreality__optimizer_compute_influence(failure_tag, k)` — runs PPR, returns top-k most-influential past attempts.
+- **Done:** new crate `crates/context-graph-solver/` with our own weighted Forward Push, CG, CSR validation, structured errors, and manual FSV evidence. Header comments cite `ruvnet/RuVector crates/ruvector-solver/src/{types,forward_push,cg}.rs at HEAD ef5274c2` as inspiration; no code copied.
+- **Pending:** BMSSP/multigrid. Do not fake this with a CG wrapper.
+- **Pending:** new module `crates/context-graph-cli/src/optimizer/influence.rs` — graph-builder helpers + thin wrapper over our `context-graph-solver`.
+- **Pending:** new MCP tool `mcp__cgreality__optimizer_compute_influence(failure_tag, k)` — runs PPR, returns top-k most-influential past attempts.
 
 **Effect on throughput:** when the diagnostician needs "which historical recommendations are most relevant to this failure?", the answer goes from cosine-only ranking to PPR-graph-aware ranking. Empirically PPR over (failure_tag, recommendation, attempt) gives more useful candidates than cosine.
 
-**Effort:** 3-4 days (clean-room implementation of Forward Push + BMSSP + CG, plus tests + the wrapper). 2-3× a path-dep estimate, but the algorithms are well-documented in their inspirational source.
+**Remaining effort:** 2-4 days. Forward Push + CG foundation is done; remaining work is BMSSP/multigrid plus graph-builder, CLI/MCP wrapper, and persisted solver-call audit evidence.
 
 **Risk:** low. Solver is well-tested. The graph-construction is the only ccreality-specific code.
 
@@ -405,7 +424,7 @@ All efforts are **clean-room reimplementation** estimates (~2-3× the path-dep n
 9. §8 (coherence-driven SONA tuning) — defer until §3 is stable.
 10. §10 (retrieval-diffusion) — research direction.
 
-**Total Tier 1 (highest priority, §1 + §2 + §3): ~11-14 days clean-room.** Adds: witness chain, sublinear solvers, trajectory-based learning. After this sprint the optimizer has cryptographic audit + sublinear-PPR-aware diagnosis + REINFORCE-trajectory learning + EWC++ memory — all in our own crates with zero upstream dependency.
+**Tier 1 status:** partially complete. §2 witness-chain core is implemented and wired. §1 solver foundation is implemented for Forward Push + CG, but BMSSP and optimizer integration remain pending. §3 SONA remains pending. The optimizer has cryptographic audit today; it does **not** yet have sublinear-PPR-aware diagnosis or REINFORCE/EWC++ memory.
 
 **Tier 2 (§4 + §5 + §6 + §9): ~16-23 days clean-room.** Quality-of-life that adds up.
 
@@ -417,8 +436,8 @@ The agentdb findings recommended ~10-12 days of *Rust port* work for Tier 1+2. T
 
 | What agentdb proposes | What we do instead, inspired by RuVector |
 |------------------------|------------------------------------------|
-| Port 270-LOC SolverBandit (Thompson Sampling) | Clean-room reimplement a SONA-style learner (μLoRA + EWC++ + REINFORCE + ReasoningBank + loops) AND a sublinear-solver crate (Forward Push + BMSSP + CG + audit) — total ~10 days |
-| Port 250-LOC SHAKE-256 73-byte witness chain | Clean-room reimplement our own `context-graph-witness` (SHAKE-256 73-byte chain + ed25519 + lineage + attestation) — ~3 days |
+| Port 270-LOC SolverBandit (Thompson Sampling) | **Partially done:** SolverBandit already exists; clean-room `context-graph-solver` has Forward Push + CG. SONA and BMSSP remain pending. |
+| Port 250-LOC SHAKE-256 73-byte witness chain | **Partially done:** `context-graph-witness` SHAKE-256 chain core exists and is wired; ed25519 + lineage + attestation remain pending. |
 | Port 50-LOC MMR | Clean-room implement ~150 LOC of MMR + tests — ~1 day |
 | Port 300-LOC NightlyLearner doubly-robust uplift | Clean-room implement Granger test (~300 LOC) + mincut for A/B (~400 LOC) — ~7 days |
 | Port 250-LOC ContextSynthesizer narrative | Same — port the heuristic, no upstream needed |

@@ -8,6 +8,21 @@ The honest list. Clean-room reimplementation discipline, license-comment require
 
 ---
 
+## Current implementation state (updated 2026-05-08)
+
+The clean-room policy has already been applied to two foundations:
+
+- `crates/context-graph-witness/` implements the witness-chain core and is wired into ccreality optimizer files plus DynamicJEPA audit witness rows.
+- `crates/context-graph-solver/` implements weighted Forward-Push PPR and Conjugate Gradient. Every new solver Rust file has the required provenance header.
+
+Remaining policy-sensitive work:
+
+- Do not add BMSSP by wrapping CG and calling it multigrid. It must be a real clean-room V-cycle implementation or remain explicitly pending.
+- Do not wire `optimizer_compute_influence` until it records solver inputs/outputs as source-of-truth evidence.
+- Keep checking for forbidden `agentdb`/`ruvector` path deps and npm deps before each merge.
+
+---
+
 ## Clean-room reimplementation discipline (the only path)
 
 The locked rule says we never vendor and never path-dep. That leaves clean-room reimplementation: read the RuVector source as inspiration, then write our own implementation in our own crate. Discipline:
@@ -40,7 +55,7 @@ Default placement:
 | Capability | New crate or module |
 |------------|---------------------|
 | Witness chain + signatures | new crate `crates/context-graph-witness/` |
-| Sublinear solvers (PPR, BMSSP, CG) | new crate `crates/context-graph-solver/` |
+| Sublinear solvers (PPR, BMSSP, CG) | `crates/context-graph-solver/` exists with PPR + CG; BMSSP pending |
 | 8/7/5/3-bit tier compression | new module under existing quantization crate |
 | MMR diversity rerank | new module under existing retrieval crate |
 | Training-free retrieval LM + diffuser | new crate `crates/context-graph-retrieval-diffusion/` |
@@ -190,11 +205,11 @@ Domain-specific. Safe to ignore.
 
 ---
 
-### H. `ruvector-solver` algorithm selection by router
+### H. Solver algorithm selection / integration
 
-**The trap:** `ruvector-solver/src/router.rs` automatically picks an algorithm based on matrix properties. For a sparse PPR query, it picks Forward Push; for a dense Laplacian, BMSSP. Wrong picks just mean slow convergence — but you might not notice until a tight latency budget.
+**The trap:** the RuVector reference has a router, but ContextGraph does not. Our current `context-graph-solver` exposes explicit Forward-Push and CG calls. A future router could accidentally pick the wrong algorithm, or worse, label a CG solve as BMSSP/multigrid.
 
-**Mitigation:** for ccreality-specific use cases (PPR over (failure_tag, recommendation, attempt) graphs), call `ForwardPushSolver::new(...)` directly rather than the router. Skips the auto-selection.
+**Mitigation:** for ccreality-specific use cases (PPR over failure/recommendation/attempt graphs), call `ForwardPushSolver` directly. Keep BMSSP unimplemented until a real multigrid V-cycle lands with FSV evidence.
 
 ---
 

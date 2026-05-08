@@ -8,6 +8,21 @@ The 5-minute version. Read this for the survey of which RuVector primitives ME-J
 
 ---
 
+## Current state (updated 2026-05-08)
+
+Already implemented in ContextGraph:
+
+- **Witness-chain core:** `crates/context-graph-witness/`, ccreality optimizer witness file tools, and DynamicJEPA RocksDB audit witness chain.
+- **Solver foundation:** `crates/context-graph-solver/` with weighted Forward-Push PPR, validated CG, CSR validation, fail-closed errors, and manual FSV evidence.
+
+Not yet implemented:
+
+- BMSSP/multigrid, `optimizer_compute_influence`, JEPA sampler integration, SONA/EWC++, retrieval diffusion, tiered storage, conformal prediction, mincut, Granger, verified training certs, and the ME-JEPA-Code mutation corpus.
+
+The bottom-line roadmap below is therefore partially completed, not just a future proposal.
+
+---
+
 ## What RuVector is, in one sentence
 
 A 135-crate Rust workspace shipping a self-learning vector database (`ruvector-core`), an adaptive learning engine (`sona`), a single-file cognitive container format with cryptographic witness chains (`rvf`), an attention library (~50 mechanisms), a graph engine with Cypher + 8 verified module families, sublinear graph solvers (`ruvector-solver`), mincut everywhere (`ruvector-mincut`), local LLM runtime (`ruvllm`), and as of yesterday a training-free retrieval LM with masked discrete diffusion (`ruvllm_retrieval_diffusion`).
@@ -192,14 +207,12 @@ Where the agentdb findings doc said "port these 8 ideas in 10-12 days," the RuVe
 
 The four highest-leverage clean-room reimplementations:
 
-1. **`crates/context-graph-witness/`** — witness chain + ed25519 + lineage + attestation, inspired by `rvf-crypto`. Two consumers (ccreality + DynamicJEPA). ~3-4 days.
-2. **`crates/context-graph-solver/`** — Forward Push + BMSSP + CG, inspired by `ruvector-solver`. ~3-4 days.
+1. **`crates/context-graph-witness/`** — **partial done.** SHAKE-256 73-byte chain core is implemented and wired to ccreality + DynamicJEPA audit. ed25519, lineage, attestation, and Merkle compression remain pending.
+2. **`crates/context-graph-solver/`** — **partial done.** Forward Push + CG + CSR validation + FSV evidence are implemented. BMSSP/multigrid and integration tools remain pending.
 3. **`crates/context-graph-sona/`** — μLoRA + EWC++ + REINFORCE + ReasoningBank, inspired by `crates/sona`. ~5-7 days.
 4. **`crates/context-graph-retrieval-diffusion/`** — training-free retrieval LM + masked diffusion for gridworld planner, inspired by `ruvllm_retrieval_diffusion` (yesterday's PR #450). ~4-5 days.
 
-Total: ~15-20 days clean-room. After that:
-- ccreality optimizer has cryptographic audit + Forward-Push-aware retrieval + REINFORCE-trajectory learning + EWC++ memory — all in our own crates.
-- DynamicJEPA gridworld planner is a training-free retrieval-LM (6.9× design win) with witness-chain audit — in our own crates.
+Remaining total depends on scope. Today ccreality has cryptographic audit primitives and a reusable Forward-Push primitive, but not yet the influence MCP tool or SONA learning. DynamicJEPA has audit witnesses, but not the retrieval-LM planner.
 - ME-JEPA Stage 0 + Stage F can ship Merkle-rooted certificates built from our own `context-graph-witness` primitives in 3-4 more days.
 
 The remaining 50+ candidate primitives in `02` are individually useful but not load-bearing.
