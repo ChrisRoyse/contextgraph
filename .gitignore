@@ -15,6 +15,9 @@ target-test/
 # Local training datasets (kept locally, not pushed)
 shakespear/
 
+# Nested external repo (separate project, has its own .git)
+agentdb/
+
 # Cargo local config
 .cargo/
 
