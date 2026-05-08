@@ -2509,6 +2509,11 @@ fn action_calibration_segments(action: &NormalizedAction) -> BTreeMap<String, St
         "control_flow_delta",
         "api_contract_delta",
         "dependency_blast_radius",
+        "compiler_semantic_status",
+        "type_resolution_status",
+        "import_resolution_status",
+        "test_attribution_status",
+        "predicted_verifier_target",
     ] {
         if let Some(value) = action
             .fields

@@ -5812,7 +5812,14 @@ fn bootstrap_dynamicjepa_cold_start_panel(
             "control_flow_delta": "none",
             "api_contract_delta": "none",
             "dependency_blast_radius": "none",
-            "reverse_reference_count": 0
+            "reverse_reference_count": 0,
+            "compiler_semantic_status": "none",
+            "type_resolution_status": "none",
+            "import_resolution_status": "none",
+            "compiler_diagnostic_count": 0,
+            "test_attribution_status": "none",
+            "attributed_test_count": 0,
+            "predicted_verifier_target": "none"
         },
         "outcome": {
             "next_counter": 0,
@@ -6347,6 +6354,13 @@ fn inferred_dynamicjepa_action_from_tool(
         "api_contract_delta": ast_semantics.api_contract_delta,
         "dependency_blast_radius": ast_semantics.dependency_blast_radius,
         "reverse_reference_count": ast_semantics.reverse_reference_count,
+        "compiler_semantic_status": ast_semantics.compiler_semantic_status,
+        "type_resolution_status": ast_semantics.type_resolution_status,
+        "import_resolution_status": ast_semantics.import_resolution_status,
+        "compiler_diagnostic_count": ast_semantics.compiler_diagnostic_count,
+        "test_attribution_status": ast_semantics.test_attribution_status,
+        "attributed_test_count": ast_semantics.attributed_test_count,
+        "predicted_verifier_target": ast_semantics.predicted_verifier_target,
     }))
 }
 
@@ -6435,6 +6449,13 @@ struct SweAstEditSemantics {
     api_contract_delta: &'static str,
     dependency_blast_radius: &'static str,
     reverse_reference_count: i64,
+    compiler_semantic_status: &'static str,
+    type_resolution_status: &'static str,
+    import_resolution_status: &'static str,
+    compiler_diagnostic_count: i64,
+    test_attribution_status: &'static str,
+    attributed_test_count: i64,
+    predicted_verifier_target: &'static str,
 }
 
 impl SweAstEditSemantics {
@@ -6455,8 +6476,44 @@ impl SweAstEditSemantics {
             api_contract_delta: "none",
             dependency_blast_radius: "none",
             reverse_reference_count: 0,
+            compiler_semantic_status: "none",
+            type_resolution_status: "none",
+            import_resolution_status: "none",
+            compiler_diagnostic_count: 0,
+            test_attribution_status: "none",
+            attributed_test_count: 0,
+            predicted_verifier_target: "none",
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct SweCompilerSemanticEvidence {
+    semantic_provider: &'static str,
+    compiler_semantic_status: &'static str,
+    type_resolution_status: &'static str,
+    import_resolution_status: &'static str,
+    diagnostic_count: i64,
+    predicted_verifier_target: &'static str,
+}
+
+impl SweCompilerSemanticEvidence {
+    fn none() -> Self {
+        Self {
+            semantic_provider: "parser_symbol_graph",
+            compiler_semantic_status: "none",
+            type_resolution_status: "none",
+            import_resolution_status: "none",
+            diagnostic_count: 0,
+            predicted_verifier_target: "none",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SweTestAttributionEvidence {
+    status: &'static str,
+    test_count: i64,
 }
 
 fn dynamicjepa_ast_edit_semantics(
@@ -6529,6 +6586,26 @@ fn dynamicjepa_ast_edit_semantics(
         .iter()
         .map(|sem| sem.dependency_blast_radius)
         .collect::<BTreeSet<_>>();
+    let compiler_semantic_statuses = per_path
+        .iter()
+        .map(|sem| sem.compiler_semantic_status)
+        .collect::<BTreeSet<_>>();
+    let type_resolution_statuses = per_path
+        .iter()
+        .map(|sem| sem.type_resolution_status)
+        .collect::<BTreeSet<_>>();
+    let import_resolution_statuses = per_path
+        .iter()
+        .map(|sem| sem.import_resolution_status)
+        .collect::<BTreeSet<_>>();
+    let test_attribution_statuses = per_path
+        .iter()
+        .map(|sem| sem.test_attribution_status)
+        .collect::<BTreeSet<_>>();
+    let predicted_verifier_targets = per_path
+        .iter()
+        .map(|sem| sem.predicted_verifier_target)
+        .collect::<BTreeSet<_>>();
     Ok(SweAstEditSemantics {
         language: collapse_ast_category(&languages, "mixed"),
         parse_status: if per_path.iter().any(|sem| sem.parse_status == "parsed") {
@@ -6565,6 +6642,19 @@ fn dynamicjepa_ast_edit_semantics(
             .iter()
             .map(|sem| sem.reverse_reference_count)
             .sum::<i64>(),
+        compiler_semantic_status: collapse_ast_category(&compiler_semantic_statuses, "mixed"),
+        type_resolution_status: collapse_ast_category(&type_resolution_statuses, "mixed"),
+        import_resolution_status: collapse_ast_category(&import_resolution_statuses, "mixed"),
+        compiler_diagnostic_count: per_path
+            .iter()
+            .map(|sem| sem.compiler_diagnostic_count)
+            .sum::<i64>(),
+        test_attribution_status: collapse_ast_category(&test_attribution_statuses, "mixed"),
+        attributed_test_count: per_path
+            .iter()
+            .map(|sem| sem.attributed_test_count)
+            .sum::<i64>(),
+        predicted_verifier_target: collapse_ast_category(&predicted_verifier_targets, "mixed"),
     })
 }
 
@@ -6607,6 +6697,13 @@ fn dynamicjepa_ast_semantics_for_path(
             api_contract_delta: "none",
             dependency_blast_radius: "single_file",
             reverse_reference_count: 0,
+            compiler_semantic_status: "none",
+            type_resolution_status: "none",
+            import_resolution_status: "none",
+            compiler_diagnostic_count: 0,
+            test_attribution_status: "inferred_from_path",
+            attributed_test_count: 0,
+            predicted_verifier_target: "static_check",
         });
     }
     let Some(language) = swe_ast_language_for_path(repo_relative_path) else {
@@ -6726,7 +6823,8 @@ fn dynamicjepa_ast_semantics_for_path(
         changed_text.push('\n');
         touched += 1;
     }
-    let after_source = dynamicjepa_ast_after_source_for_path(tool_name, arguments, repo_relative_path, &source)?;
+    let after_source =
+        dynamicjepa_ast_after_source_for_path(tool_name, arguments, repo_relative_path, &source)?;
     if let Some(after) = after_source.as_deref() {
         changed_text.push_str(after);
     } else if tool_name == "apply_unified_diff" {
@@ -6734,6 +6832,16 @@ fn dynamicjepa_ast_semantics_for_path(
     }
     let reverse_reference_count =
         dynamicjepa_reverse_reference_count(repo_dir, repo_relative_path, &touched_symbols)?;
+    let compiler_evidence = dynamicjepa_compiler_lsp_semantics_for_path(
+        repo_dir,
+        tool_name,
+        arguments,
+        repo_relative_path,
+        language,
+        after_source.as_deref(),
+    )?;
+    let test_attribution =
+        dynamicjepa_test_attribution_for_path(repo_dir, repo_relative_path, language, &ranges)?;
     let node_kind = collapse_ast_category(&node_kinds, "mixed");
     let symbol_visibility = collapse_ast_category(&symbol_visibilities, "mixed");
     let edit_kind = collapse_ast_category(&edit_kinds, "mixed");
@@ -6746,7 +6854,7 @@ fn dynamicjepa_ast_semantics_for_path(
         edit_kind,
         touched_node_count: touched,
         symbol_count: symbol_kinds.iter().filter(|kind| **kind != "none").count() as i64,
-        semantic_provider: "parser_symbol_graph",
+        semantic_provider: compiler_evidence.semantic_provider,
         semantic_status: "analyzed",
         symbol_visibility,
         patch_delta_kind: dynamicjepa_patch_delta_kind(
@@ -6757,12 +6865,23 @@ fn dynamicjepa_ast_semantics_for_path(
             &changed_text,
         ),
         control_flow_delta: dynamicjepa_control_flow_delta(&changed_text),
-        api_contract_delta: dynamicjepa_api_contract_delta(edit_kind, symbol_visibility, &changed_text),
+        api_contract_delta: dynamicjepa_api_contract_delta(
+            edit_kind,
+            symbol_visibility,
+            &changed_text,
+        ),
         dependency_blast_radius: dynamicjepa_dependency_blast_radius(
             repo_relative_path,
             reverse_reference_count,
         ),
         reverse_reference_count,
+        compiler_semantic_status: compiler_evidence.compiler_semantic_status,
+        type_resolution_status: compiler_evidence.type_resolution_status,
+        import_resolution_status: compiler_evidence.import_resolution_status,
+        compiler_diagnostic_count: compiler_evidence.diagnostic_count,
+        test_attribution_status: test_attribution.status,
+        attributed_test_count: test_attribution.test_count,
+        predicted_verifier_target: compiler_evidence.predicted_verifier_target,
     })
 }
 
@@ -7068,16 +7187,19 @@ fn dynamicjepa_apply_line_window_to_source(
                     None,
                 )
             })?;
-        let end_line = edit.get("end_line").and_then(Value::as_u64).ok_or_else(|| {
-            RealityError::new(
-                "RUST_REALITY_DYNAMICJEPA_SEMANTIC_LINE_END_MISSING",
-                "semantic diff extraction requires end_line",
-                "dynamicjepa.action.semantic.line_window.end_line",
-                "provide exact governed line-window coordinates",
-                json!({"path": path, "edit": edit}),
-                None,
-            )
-        })?;
+        let end_line = edit
+            .get("end_line")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_SEMANTIC_LINE_END_MISSING",
+                    "semantic diff extraction requires end_line",
+                    "dynamicjepa.action.semantic.line_window.end_line",
+                    "provide exact governed line-window coordinates",
+                    json!({"path": path, "edit": edit}),
+                    None,
+                )
+            })?;
         let (start, end, _) = line_range_to_byte_range(source, start_line, end_line, path)?;
         replacements.push((start, end, replace.to_string()));
     }
@@ -7171,6 +7293,662 @@ fn dynamicjepa_apply_byte_replacements(
     }
     out.push_str(&source[cursor..]);
     Ok(out)
+}
+
+fn dynamicjepa_compiler_lsp_semantics_for_path(
+    repo_dir: &Path,
+    tool_name: &str,
+    arguments: &Value,
+    path: &str,
+    language: &'static str,
+    after_source: Option<&str>,
+) -> Result<SweCompilerSemanticEvidence> {
+    if after_source.is_none() && tool_name != "apply_unified_diff" {
+        return Ok(SweCompilerSemanticEvidence::none());
+    }
+    let snapshot_root = std::env::temp_dir().join(format!(
+        "contextgraph-dj-compiler-semantic-{}-{}",
+        std::process::id(),
+        unix_ns()?
+    ));
+    create_dir_checked(&snapshot_root)?;
+    copy_dynamicjepa_semantic_repo_snapshot(repo_dir, &snapshot_root)?;
+    let snapshot_target = snapshot_root.join(path);
+    if let Some(after) = after_source {
+        write_text_checked(&snapshot_target, after)?;
+    } else {
+        let patch = arguments
+            .get("patch")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_COMPILER_PATCH_MISSING",
+                    "compiler/LSP semantic extraction for a unified diff requires the exact patch text",
+                    "dynamicjepa.action.compiler_lsp.patch",
+                    "provide a standard unified diff before pre-action planning or ingestion",
+                    json!({"path": path, "tool_name": tool_name}),
+                    Some(file_sot(repo_dir)),
+                )
+            })?;
+        let patch_path = snapshot_root.join("dynamicjepa-pending.patch");
+        write_text_checked(&patch_path, patch)?;
+        for (step, args) in [
+            (
+                "check",
+                vec![
+                    "git".to_string(),
+                    "apply".to_string(),
+                    "--check".to_string(),
+                    path_str(&patch_path).to_string(),
+                ],
+            ),
+            (
+                "apply",
+                vec![
+                    "git".to_string(),
+                    "apply".to_string(),
+                    path_str(&patch_path).to_string(),
+                ],
+            ),
+        ] {
+            let result = run_cmd(&args, &snapshot_root, 60)?;
+            if result.exit_code != 0 {
+                let _ = fs::remove_dir_all(&snapshot_root);
+                return Err(RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_COMPILER_PATCH_APPLY_FAILED",
+                    "compiler/LSP semantic extraction could not apply the pending unified diff to a semantic snapshot",
+                    "dynamicjepa.action.compiler_lsp.patch_apply",
+                    "inspect the exact patch against the current checked-out source before planning or ingestion",
+                    json!({"path": path, "step": step, "process": result}),
+                    Some(file_sot(repo_dir)),
+                ));
+            }
+        }
+    }
+
+    let evidence =
+        dynamicjepa_run_language_semantic_tool(&snapshot_root, &snapshot_target, language)?;
+    let _ = fs::remove_dir_all(&snapshot_root);
+    Ok(evidence)
+}
+
+fn copy_dynamicjepa_semantic_repo_snapshot(src: &Path, dst: &Path) -> Result<()> {
+    for entry in fs::read_dir(src).map_err(|err| {
+        fs_error(
+            "RUST_REALITY_DYNAMICJEPA_COMPILER_SNAPSHOT_READDIR_FAILED",
+            src,
+            err,
+        )
+    })? {
+        let entry = entry.map_err(|err| {
+            fs_error(
+                "RUST_REALITY_DYNAMICJEPA_COMPILER_SNAPSHOT_DIRENTRY_FAILED",
+                src,
+                err,
+            )
+        })?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if matches!(
+            name.as_str(),
+            ".git"
+                | "target"
+                | "node_modules"
+                | "__pycache__"
+                | ".venv"
+                | "venv"
+                | "dist"
+                | "build"
+                | ".next"
+        ) {
+            continue;
+        }
+        let src_path = entry.path();
+        let dst_path = dst.join(&name);
+        let file_type = entry.file_type().map_err(|err| {
+            fs_error(
+                "RUST_REALITY_DYNAMICJEPA_COMPILER_SNAPSHOT_FILETYPE_FAILED",
+                &src_path,
+                err,
+            )
+        })?;
+        if file_type.is_dir() {
+            create_dir_checked(&dst_path)?;
+            copy_dynamicjepa_semantic_repo_snapshot(&src_path, &dst_path)?;
+        } else if file_type.is_file() {
+            if let Some(parent) = dst_path.parent() {
+                create_dir_checked(parent)?;
+            }
+            fs::copy(&src_path, &dst_path).map_err(|err| {
+                fs_error(
+                    "RUST_REALITY_DYNAMICJEPA_COMPILER_SNAPSHOT_COPY_FAILED",
+                    &src_path,
+                    err,
+                )
+            })?;
+        } else {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_COMPILER_SNAPSHOT_UNSUPPORTED_PATH",
+                "compiler/LSP semantic extraction refused a non-file, non-directory repository entry",
+                "dynamicjepa.action.compiler_lsp.snapshot",
+                "replace symlink/special source entries with real files before compiler-backed semantic gating",
+                json!({"path": file_sot(&src_path)}),
+                Some(file_sot(&src_path)),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn dynamicjepa_run_language_semantic_tool(
+    repo_root: &Path,
+    target: &Path,
+    language: &'static str,
+) -> Result<SweCompilerSemanticEvidence> {
+    let rel_target = target.strip_prefix(repo_root).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_COMPILER_TARGET_RELATIVE_FAILED",
+            "compiler/LSP semantic extraction could not derive a snapshot-relative target path",
+            "dynamicjepa.action.compiler_lsp.target_path",
+            "inspect semantic snapshot path construction",
+            json!({"target": path_str(target), "repo_root": path_str(repo_root), "error": err.to_string()}),
+            Some(file_sot(repo_root)),
+        )
+    })?;
+    let rel_target = rel_target.to_string_lossy().replace('\\', "/");
+    let (command, cwd, kind): (Option<Vec<String>>, PathBuf, &'static str) = match language {
+        "rust" => {
+            if command_exists("cargo") && repo_root.join("Cargo.toml").exists() {
+                (
+                    Some(vec![
+                        "cargo".to_string(),
+                        "check".to_string(),
+                        "--message-format=json".to_string(),
+                        "--quiet".to_string(),
+                    ]),
+                    repo_root.to_path_buf(),
+                    "rust_cargo_check",
+                )
+            } else if command_exists("rustc") {
+                (
+                    Some(vec![
+                        "rustc".to_string(),
+                        "--crate-type".to_string(),
+                        "lib".to_string(),
+                        "--edition=2021".to_string(),
+                        rel_target.clone(),
+                    ]),
+                    repo_root.to_path_buf(),
+                    "rustc_single_file",
+                )
+            } else {
+                (None, repo_root.to_path_buf(), "rust_toolchain_missing")
+            }
+        }
+        "python" => {
+            if command_exists("python3") {
+                (
+                    Some(vec![
+                        "python3".to_string(),
+                        "-m".to_string(),
+                        "py_compile".to_string(),
+                        rel_target.clone(),
+                    ]),
+                    repo_root.to_path_buf(),
+                    "python_py_compile",
+                )
+            } else {
+                (None, repo_root.to_path_buf(), "python_toolchain_missing")
+            }
+        }
+        "javascript" | "typescript" | "tsx" => {
+            let local_tsc = repo_root.join("node_modules/.bin/tsc");
+            if local_tsc.exists() {
+                (
+                    Some(vec![
+                        path_str(&local_tsc).to_string(),
+                        "--noEmit".to_string(),
+                        "--pretty".to_string(),
+                        "false".to_string(),
+                    ]),
+                    repo_root.to_path_buf(),
+                    "typescript_tsc",
+                )
+            } else {
+                (
+                    None,
+                    repo_root.to_path_buf(),
+                    "typescript_toolchain_missing",
+                )
+            }
+        }
+        "go" => {
+            if command_exists("go") {
+                (
+                    Some(vec![
+                        "go".to_string(),
+                        "test".to_string(),
+                        "./...".to_string(),
+                    ]),
+                    repo_root.to_path_buf(),
+                    "go_test_compile",
+                )
+            } else {
+                (None, repo_root.to_path_buf(), "go_toolchain_missing")
+            }
+        }
+        "java" => {
+            if command_exists("javac") {
+                (
+                    Some(vec!["javac".to_string(), rel_target.clone()]),
+                    repo_root.to_path_buf(),
+                    "javac",
+                )
+            } else {
+                (None, repo_root.to_path_buf(), "java_toolchain_missing")
+            }
+        }
+        "c" => {
+            if command_exists("gcc") {
+                (
+                    Some(vec![
+                        "gcc".to_string(),
+                        "-fsyntax-only".to_string(),
+                        rel_target.clone(),
+                    ]),
+                    repo_root.to_path_buf(),
+                    "gcc_syntax",
+                )
+            } else {
+                (None, repo_root.to_path_buf(), "c_toolchain_missing")
+            }
+        }
+        "cpp" => {
+            if command_exists("g++") {
+                (
+                    Some(vec![
+                        "g++".to_string(),
+                        "-fsyntax-only".to_string(),
+                        rel_target.clone(),
+                    ]),
+                    repo_root.to_path_buf(),
+                    "gpp_syntax",
+                )
+            } else {
+                (None, repo_root.to_path_buf(), "cpp_toolchain_missing")
+            }
+        }
+        "ruby" => {
+            if command_exists("ruby") {
+                (
+                    Some(vec![
+                        "ruby".to_string(),
+                        "-c".to_string(),
+                        rel_target.clone(),
+                    ]),
+                    repo_root.to_path_buf(),
+                    "ruby_syntax",
+                )
+            } else {
+                (None, repo_root.to_path_buf(), "ruby_toolchain_missing")
+            }
+        }
+        "csharp" => {
+            let has_project = dynamicjepa_repo_contains_suffix(repo_root, ".sln")?
+                || dynamicjepa_repo_contains_suffix(repo_root, ".csproj")?;
+            if command_exists("dotnet") && has_project {
+                (
+                    Some(vec![
+                        "dotnet".to_string(),
+                        "build".to_string(),
+                        "--no-restore".to_string(),
+                    ]),
+                    repo_root.to_path_buf(),
+                    "dotnet_build",
+                )
+            } else {
+                (None, repo_root.to_path_buf(), "csharp_toolchain_missing")
+            }
+        }
+        "php" => {
+            if command_exists("php") {
+                (
+                    Some(vec![
+                        "php".to_string(),
+                        "-l".to_string(),
+                        rel_target.clone(),
+                    ]),
+                    repo_root.to_path_buf(),
+                    "php_lint",
+                )
+            } else {
+                (None, repo_root.to_path_buf(), "php_toolchain_missing")
+            }
+        }
+        _ => (None, repo_root.to_path_buf(), "unsupported_language"),
+    };
+
+    let Some(command) = command else {
+        return Ok(SweCompilerSemanticEvidence {
+            semantic_provider: "parser_symbol_graph",
+            compiler_semantic_status: if kind == "unsupported_language" {
+                "unsupported_language"
+            } else {
+                "toolchain_missing"
+            },
+            type_resolution_status: "unsupported",
+            import_resolution_status: "unsupported",
+            diagnostic_count: 0,
+            predicted_verifier_target: "static_check",
+        });
+    };
+
+    let result = run_cmd(&command, &cwd, 60)?;
+    let output = format!("{}\n{}", result.stdout, result.stderr);
+    let diagnostics = dynamicjepa_compiler_diagnostic_count(language, &result, &output);
+    let status = if result.exit_code == 0 {
+        "checked"
+    } else {
+        "diagnostics"
+    };
+    Ok(SweCompilerSemanticEvidence {
+        semantic_provider: "compiler_lsp",
+        compiler_semantic_status: status,
+        type_resolution_status: dynamicjepa_type_resolution_status(language, status, &output),
+        import_resolution_status: dynamicjepa_import_resolution_status(language, status, &output),
+        diagnostic_count: diagnostics,
+        predicted_verifier_target: dynamicjepa_predicted_verifier_target(
+            language,
+            status,
+            diagnostics,
+        ),
+    })
+}
+
+fn command_exists(name: &str) -> bool {
+    std::env::var_os("PATH")
+        .and_then(|paths| {
+            std::env::split_paths(&paths)
+                .map(|dir| dir.join(name))
+                .find(|candidate| candidate.exists() && candidate.is_file())
+        })
+        .is_some()
+}
+
+fn dynamicjepa_compiler_diagnostic_count(
+    language: &str,
+    result: &ProcessResult,
+    output: &str,
+) -> i64 {
+    if result.exit_code == 0 {
+        return 0;
+    }
+    if language == "rust" {
+        let count = result
+            .stdout
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .filter(|value| value.get("reason").and_then(Value::as_str) == Some("compiler-message"))
+            .filter(|value| {
+                matches!(
+                    value.pointer("/message/level").and_then(Value::as_str),
+                    Some("error" | "warning")
+                )
+            })
+            .count();
+        if count > 0 {
+            return count.min(10_000) as i64;
+        }
+    }
+    output
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count()
+        .max(1)
+        .min(10_000) as i64
+}
+
+fn dynamicjepa_type_resolution_status(
+    language: &str,
+    compiler_status: &str,
+    output: &str,
+) -> &'static str {
+    if compiler_status != "checked" {
+        let lower = output.to_ascii_lowercase();
+        if contains_any(
+            &lower,
+            &[
+                "type mismatch",
+                "mismatched types",
+                "cannot infer",
+                "type annotations needed",
+                "expected ",
+                "found ",
+                "no method named",
+                "undefined method",
+                "unknown type",
+            ],
+        ) {
+            return "unresolved";
+        }
+    }
+    match language {
+        "rust" | "typescript" | "tsx" | "go" | "java" | "c" | "cpp" | "csharp" => {
+            if compiler_status == "checked" {
+                "resolved"
+            } else {
+                "unknown"
+            }
+        }
+        _ => "unsupported",
+    }
+}
+
+fn dynamicjepa_import_resolution_status(
+    language: &str,
+    compiler_status: &str,
+    output: &str,
+) -> &'static str {
+    let lower = output.to_ascii_lowercase();
+    if contains_any(
+        &lower,
+        &[
+            "unresolved import",
+            "cannot find module",
+            "cannot find crate",
+            "no such file or directory",
+            "package .* is not in",
+            "module not found",
+            "cannot resolve",
+        ],
+    ) {
+        return "unresolved";
+    }
+    match language {
+        "rust" | "typescript" | "tsx" | "go" | "java" | "c" | "cpp" | "csharp" => {
+            if compiler_status == "checked" {
+                "resolved"
+            } else {
+                "unknown"
+            }
+        }
+        _ => "unsupported",
+    }
+}
+
+fn dynamicjepa_predicted_verifier_target(
+    language: &str,
+    compiler_status: &str,
+    diagnostic_count: i64,
+) -> &'static str {
+    if diagnostic_count > 0 || compiler_status == "diagnostics" {
+        return "typecheck";
+    }
+    match language {
+        "rust" | "typescript" | "tsx" | "go" | "java" | "c" | "cpp" | "csharp" => "typecheck",
+        "python" | "ruby" | "php" | "javascript" => "static_check",
+        _ => "unknown",
+    }
+}
+
+fn dynamicjepa_test_attribution_for_path(
+    repo_dir: &Path,
+    path: &str,
+    language: &'static str,
+    ranges: &[(usize, usize, u32)],
+) -> Result<SweTestAttributionEvidence> {
+    if path_is_test(path) {
+        return Ok(SweTestAttributionEvidence {
+            status: "inferred_from_path",
+            test_count: 1,
+        });
+    }
+    if let Some(count) = dynamicjepa_coverage_attribution_count(repo_dir, path, ranges)? {
+        return Ok(SweTestAttributionEvidence {
+            status: "inferred_from_coverage",
+            test_count: count,
+        });
+    }
+    if dynamicjepa_repo_has_test_manifest(repo_dir, language) {
+        return Ok(SweTestAttributionEvidence {
+            status: "inferred_from_manifest",
+            test_count: 1,
+        });
+    }
+    Ok(SweTestAttributionEvidence {
+        status: "missing",
+        test_count: 0,
+    })
+}
+
+fn dynamicjepa_coverage_attribution_count(
+    repo_dir: &Path,
+    path: &str,
+    ranges: &[(usize, usize, u32)],
+) -> Result<Option<i64>> {
+    let coverage_path = repo_dir.join("coverage.json");
+    if !coverage_path.exists() {
+        return Ok(None);
+    }
+    let coverage: Value = read_json(&coverage_path)?;
+    let files = coverage
+        .get("files")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_COVERAGE_SCHEMA_INVALID",
+            "coverage attribution found coverage.json but it did not contain a files object",
+            "coverage_json.files",
+            "regenerate coverage.json from the real coverage tool before using test attribution",
+            json!({"coverage": file_sot(&coverage_path)}),
+            Some(file_sot(&coverage_path)),
+        )
+        })?;
+    let normalized = path.replace('\\', "/");
+    let Some(file) = files.get(&normalized).or_else(|| {
+        files
+            .iter()
+            .find(|(candidate, _)| candidate.replace('\\', "/").ends_with(&normalized))
+            .map(|(_, value)| value)
+    }) else {
+        return Ok(None);
+    };
+    let executed = file
+        .get("executed_lines")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_COVERAGE_LINES_MISSING",
+                "coverage attribution found the edited source file but no executed_lines array",
+                "coverage_json.files[].executed_lines",
+                "regenerate coverage.json with line execution data before using test attribution",
+                json!({"coverage": file_sot(&coverage_path), "path": path}),
+                Some(file_sot(&coverage_path)),
+            )
+        })?
+        .iter()
+        .filter_map(Value::as_u64)
+        .collect::<BTreeSet<_>>();
+    if executed.is_empty() {
+        return Ok(None);
+    }
+    let touched_lines = ranges
+        .iter()
+        .map(|(_, _, line)| u64::from(*line))
+        .collect::<BTreeSet<_>>();
+    let hit_count = touched_lines
+        .iter()
+        .filter(|line| executed.contains(line))
+        .count();
+    if hit_count == 0 {
+        Ok(None)
+    } else {
+        Ok(Some(hit_count.min(10_000) as i64))
+    }
+}
+
+fn dynamicjepa_repo_has_test_manifest(repo_dir: &Path, language: &'static str) -> bool {
+    match language {
+        "rust" => repo_dir.join("Cargo.toml").exists() || repo_dir.join("tests").is_dir(),
+        "python" => {
+            repo_dir.join("pytest.ini").exists()
+                || repo_dir.join("pyproject.toml").exists()
+                || repo_dir.join("setup.cfg").exists()
+                || repo_dir.join("tests").is_dir()
+        }
+        "javascript" | "typescript" | "tsx" => {
+            repo_dir.join("package.json").exists() || repo_dir.join("__tests__").is_dir()
+        }
+        "go" => dynamicjepa_repo_contains_suffix(repo_dir, "_test.go").unwrap_or(false),
+        "java" => repo_dir.join("pom.xml").exists() || repo_dir.join("build.gradle").exists(),
+        "ruby" => repo_dir.join("spec").is_dir() || repo_dir.join("test").is_dir(),
+        _ => repo_dir.join("tests").is_dir() || repo_dir.join("test").is_dir(),
+    }
+}
+
+fn dynamicjepa_repo_contains_suffix(repo_dir: &Path, suffix: &str) -> Result<bool> {
+    for entry in fs::read_dir(repo_dir).map_err(|err| {
+        fs_error(
+            "RUST_REALITY_DYNAMICJEPA_TEST_MANIFEST_READDIR_FAILED",
+            repo_dir,
+            err,
+        )
+    })? {
+        let entry = entry.map_err(|err| {
+            fs_error(
+                "RUST_REALITY_DYNAMICJEPA_TEST_MANIFEST_DIRENTRY_FAILED",
+                repo_dir,
+                err,
+            )
+        })?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|err| {
+            fs_error(
+                "RUST_REALITY_DYNAMICJEPA_TEST_MANIFEST_FILETYPE_FAILED",
+                &path,
+                err,
+            )
+        })?;
+        if file_type.is_dir() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if matches!(
+                name.as_str(),
+                ".git" | "target" | "node_modules" | "__pycache__"
+            ) {
+                continue;
+            }
+            if dynamicjepa_repo_contains_suffix(&path, suffix)? {
+                return Ok(true);
+            }
+        } else if file_type.is_file()
+            && path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .is_some_and(|name| name.ends_with(suffix))
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn parse_unified_diff_old_range(line: &str, path: &str) -> Result<(u32, u32)> {
@@ -7427,7 +8205,9 @@ fn ast_node_kind_for_language(
             "type_declaration" => "class",
             "import_declaration" => "import",
             "call_expression" => "call",
-            "short_var_declaration" | "var_declaration" | "assignment_statement"
+            "short_var_declaration"
+            | "var_declaration"
+            | "assignment_statement"
             | "const_declaration" => "assignment",
             "source_file" => "module",
             _ => "unknown",
@@ -7442,7 +8222,9 @@ fn ast_node_kind_for_language(
                     "method"
                 }
             }
-            "class_declaration" | "interface_declaration" | "enum_declaration"
+            "class_declaration"
+            | "interface_declaration"
+            | "enum_declaration"
             | "record_declaration" => "class",
             "import_declaration" => "import",
             "method_invocation" | "object_creation_expression" => "call",
@@ -7454,7 +8236,9 @@ fn ast_node_kind_for_language(
         },
         "c" | "cpp" => match kind {
             "function_definition" | "function_declarator" => "function",
-            "class_specifier" | "struct_specifier" | "enum_specifier" | "union_specifier" => "class",
+            "class_specifier" | "struct_specifier" | "enum_specifier" | "union_specifier" => {
+                "class"
+            }
             "preproc_include" | "using_declaration" | "using_directive" => "import",
             "call_expression" => "call",
             "declaration" | "init_declarator" | "assignment_expression" => "assignment",
@@ -7463,8 +8247,11 @@ fn ast_node_kind_for_language(
         },
         "csharp" => match kind {
             "method_declaration" | "constructor_declaration" => "method",
-            "class_declaration" | "interface_declaration" | "struct_declaration"
-            | "enum_declaration" | "record_declaration" => "class",
+            "class_declaration"
+            | "interface_declaration"
+            | "struct_declaration"
+            | "enum_declaration"
+            | "record_declaration" => "class",
             "using_directive" => "import",
             "invocation_expression" | "object_creation_expression" => "call",
             "variable_declaration" | "assignment_expression" | "field_declaration" => "assignment",
@@ -7483,12 +8270,14 @@ fn ast_node_kind_for_language(
         "php" => match kind {
             "function_definition" => "function",
             "method_declaration" => "method",
-            "class_declaration" | "interface_declaration" | "trait_declaration"
+            "class_declaration"
+            | "interface_declaration"
+            | "trait_declaration"
             | "enum_declaration" => "class",
             "namespace_use_declaration" | "require_expression" | "include_expression" => "import",
-            "function_call_expression" | "member_call_expression" | "object_creation_expression" => {
-                "call"
-            }
+            "function_call_expression"
+            | "member_call_expression"
+            | "object_creation_expression" => "call",
             "assignment_expression" | "variable_name" => "assignment",
             "program" => "module",
             _ => "unknown",
@@ -7509,8 +8298,14 @@ fn ast_first_identifier_text<'a>(node: tree_sitter::Node<'_>, source: &'a str) -
     for child in node.children(&mut cursor) {
         if matches!(
             child.kind(),
-            "identifier" | "field_identifier" | "property_identifier" | "type_identifier"
-                | "constant" | "simple_identifier" | "name" | "variable_name"
+            "identifier"
+                | "field_identifier"
+                | "property_identifier"
+                | "type_identifier"
+                | "constant"
+                | "simple_identifier"
+                | "name"
+                | "variable_name"
         ) {
             if let Ok(text) = child.utf8_text(source.as_bytes()) {
                 return Some(text);
@@ -7552,7 +8347,13 @@ fn ast_symbol_visibility(
         "go" => name
             .chars()
             .next()
-            .map(|ch| if ch.is_uppercase() { "exported" } else { "private" })
+            .map(|ch| {
+                if ch.is_uppercase() {
+                    "exported"
+                } else {
+                    "private"
+                }
+            })
             .unwrap_or("unknown"),
         "rust" => {
             if node_text.trim_start().starts_with("pub ")
@@ -7574,7 +8375,8 @@ fn ast_symbol_visibility(
         "java" | "csharp" | "php" => {
             if node_text.contains(" private ") || node_text.trim_start().starts_with("private ") {
                 "private"
-            } else if node_text.contains(" public ") || node_text.trim_start().starts_with("public ")
+            } else if node_text.contains(" public ")
+                || node_text.trim_start().starts_with("public ")
             {
                 "public"
             } else {
@@ -7635,17 +8437,23 @@ fn dynamicjepa_patch_delta_kind(
     }
     if contains_any(
         &lower,
-        &["if ", "elif ", "else:", "for ", "while ", "match ", "switch", "case ", "?"],
+        &[
+            "if ", "elif ", "else:", "for ", "while ", "match ", "switch", "case ", "?",
+        ],
     ) {
         return "control_flow";
     }
     if contains_any(
         &lower,
-        &["except", "catch", "raise ", "throw ", "err(", "error", "result<", "panic!"],
+        &[
+            "except", "catch", "raise ", "throw ", "err(", "error", "result<", "panic!",
+        ],
     ) {
         return "error_handling";
     }
-    if matches!(node_kind, "import") || contains_any(&lower, &["import ", "from ", "use ", "#include", "require"]) {
+    if matches!(node_kind, "import")
+        || contains_any(&lower, &["import ", "from ", "use ", "#include", "require"])
+    {
         return "import_dependency";
     }
     if matches!(node_kind, "assignment") {
@@ -13687,6 +14495,11 @@ fn validate_dynamicjepa_segmented_surprise_calibration(
         "action.semantic_status=analyzed",
         "action.patch_delta_kind=return_contract",
         "action.dependency_blast_radius=local_symbol",
+        "action.compiler_semantic_status=checked",
+        "action.type_resolution_status=resolved",
+        "action.import_resolution_status=resolved",
+        "action.test_attribution_status=inferred_from_manifest",
+        "action.predicted_verifier_target=typecheck",
     ];
     let missing = required_segments
         .iter()
@@ -13768,6 +14581,11 @@ fn validate_dynamicjepa_attempt_segment_drift(
             "patch_delta_kind",
             "dependency_blast_radius",
             "semantic_status",
+            "compiler_semantic_status",
+            "type_resolution_status",
+            "import_resolution_status",
+            "test_attribution_status",
+            "predicted_verifier_target",
         ] {
             let value = action.get(field).and_then(Value::as_str).ok_or_else(|| {
                 RealityError::new(
@@ -13890,6 +14708,16 @@ fn validate_dynamicjepa_corpus_diversity(
     let api_contract_deltas = unique_dynamicjepa_field_values(&actions, "api_contract_delta");
     let dependency_blast_radii =
         unique_dynamicjepa_field_values(&actions, "dependency_blast_radius");
+    let compiler_semantic_statuses =
+        unique_dynamicjepa_field_values(&actions, "compiler_semantic_status");
+    let type_resolution_statuses =
+        unique_dynamicjepa_field_values(&actions, "type_resolution_status");
+    let import_resolution_statuses =
+        unique_dynamicjepa_field_values(&actions, "import_resolution_status");
+    let test_attribution_statuses =
+        unique_dynamicjepa_field_values(&actions, "test_attribution_status");
+    let predicted_verifier_targets =
+        unique_dynamicjepa_field_values(&actions, "predicted_verifier_target");
     let result_statuses = unique_dynamicjepa_field_values(&outcomes, "result_status");
     let verifier_statuses = unique_dynamicjepa_field_values(&outcomes, "verifier_status");
     let error_signatures = unique_dynamicjepa_field_values(&outcomes, "error_signature");
@@ -13920,6 +14748,11 @@ fn validate_dynamicjepa_corpus_diversity(
             "control_flow_delta": control_flow_deltas.len(),
             "api_contract_delta": api_contract_deltas.len(),
             "dependency_blast_radius": dependency_blast_radii.len(),
+            "compiler_semantic_status": compiler_semantic_statuses.len(),
+            "type_resolution_status": type_resolution_statuses.len(),
+            "import_resolution_status": import_resolution_statuses.len(),
+            "test_attribution_status": test_attribution_statuses.len(),
+            "predicted_verifier_target": predicted_verifier_targets.len(),
             "result_status": result_statuses.len(),
             "verifier_status": verifier_statuses.len(),
             "error_signature": error_signatures.len(),
@@ -13944,6 +14777,11 @@ fn validate_dynamicjepa_corpus_diversity(
             "control_flow_delta": control_flow_deltas,
             "api_contract_delta": api_contract_deltas,
             "dependency_blast_radius": dependency_blast_radii,
+            "compiler_semantic_status": compiler_semantic_statuses,
+            "type_resolution_status": type_resolution_statuses,
+            "import_resolution_status": import_resolution_statuses,
+            "test_attribution_status": test_attribution_statuses,
+            "predicted_verifier_target": predicted_verifier_targets,
             "result_status": result_statuses,
             "verifier_status": verifier_statuses,
             "error_signature": error_signatures,
@@ -14064,6 +14902,30 @@ fn validate_dynamicjepa_corpus_diversity(
                 .unwrap_or(0) as usize,
         ),
         (
+            "compiler_semantic_status",
+            2usize,
+            summary
+                .pointer("/unique_counts/compiler_semantic_status")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "type_resolution_status",
+            2usize,
+            summary
+                .pointer("/unique_counts/type_resolution_status")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "test_attribution_status",
+            2usize,
+            summary
+                .pointer("/unique_counts/test_attribution_status")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
             "verifier_status",
             2usize,
             summary
@@ -14109,6 +14971,194 @@ fn unique_dynamicjepa_field_values(command_output: &Value, field: &str) -> Vec<S
     values.into_iter().collect()
 }
 
+fn dynamicjepa_downstream_utility_from_rows(
+    context_graph_bin: &Path,
+    task_root: &Path,
+    dynamicjepa_db: &Path,
+    artifact_id: &str,
+    dj_dir: &Path,
+    label: &str,
+) -> Result<Value> {
+    let predictions = dynamicjepa_inspect_cf_json(
+        context_graph_bin,
+        task_root,
+        dynamicjepa_db,
+        "dj_predictions",
+        "dynamicjepa_inspect_predictions_for_downstream_utility",
+    )?;
+    let plans = dynamicjepa_inspect_cf_json(
+        context_graph_bin,
+        task_root,
+        dynamicjepa_db,
+        "dj_plan_traces",
+        "dynamicjepa_inspect_plan_traces_for_downstream_utility",
+    )?;
+    let guards = dynamicjepa_inspect_cf_json(
+        context_graph_bin,
+        task_root,
+        dynamicjepa_db,
+        "dj_guard_decisions",
+        "dynamicjepa_inspect_guard_decisions_for_downstream_utility",
+    )?;
+    let surprises = dynamicjepa_inspect_cf_json(
+        context_graph_bin,
+        task_root,
+        dynamicjepa_db,
+        "dj_surprise_events",
+        "dynamicjepa_inspect_surprises_for_downstream_utility",
+    )?;
+
+    let mut prediction_ids = BTreeSet::new();
+    let mut prediction_count = 0usize;
+    for record in decoded_records_from_inspect(&predictions) {
+        if record.get("model_artifact_id").and_then(Value::as_str) == Some(artifact_id) {
+            prediction_count += 1;
+            if let Some(id) = record.get("prediction_id").and_then(Value::as_str) {
+                prediction_ids.insert(id.to_string());
+            }
+        }
+    }
+
+    let mut plan_ids = BTreeSet::new();
+    let mut plan_count = 0usize;
+    let mut selected_count = 0usize;
+    for record in decoded_records_from_inspect(&plans) {
+        if record.get("model_artifact_id").and_then(Value::as_str) == Some(artifact_id) {
+            plan_count += 1;
+            if record.get("status").and_then(Value::as_str) == Some("Selected") {
+                selected_count += 1;
+            }
+            if let Some(id) = record.get("plan_trace_id").and_then(Value::as_str) {
+                plan_ids.insert(id.to_string());
+            }
+        }
+    }
+
+    let mut guard_count = 0usize;
+    let mut guard_reject_count = 0usize;
+    for record in decoded_records_from_inspect(&guards) {
+        let Some(plan_trace_id) = record.get("plan_trace_id").and_then(Value::as_str) else {
+            continue;
+        };
+        if !plan_ids.contains(plan_trace_id) {
+            continue;
+        }
+        guard_count += 1;
+        let decision = record.get("decision");
+        if decision
+            .is_some_and(|value| value.as_str() == Some("Reject") || value.get("Reject").is_some())
+        {
+            guard_reject_count += 1;
+        }
+    }
+
+    let mut surprise_count = 0usize;
+    for record in decoded_records_from_inspect(&surprises) {
+        if record
+            .get("prediction_id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| prediction_ids.contains(id))
+        {
+            surprise_count += 1;
+        }
+    }
+
+    if prediction_count == 0 || plan_count == 0 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_PROMOTION_DOWNSTREAM_EVIDENCE_MISSING",
+            "DynamicJEPA artifact promotion requires persisted downstream prediction and plan evidence for the candidate artifact",
+            "rocksdb.dj_predictions,dj_plan_traces",
+            "run held-out replay or live-shadow planning with this artifact before promotion; do not promote from model metrics alone",
+            json!({
+                "artifact_id": artifact_id,
+                "prediction_count": prediction_count,
+                "plan_count": plan_count,
+                "source_of_truth": format!("rocksdb:{}#dj_predictions,dj_plan_traces", dynamicjepa_db.display())
+            }),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+
+    let selected_rate = selected_count as f64 / plan_count as f64;
+    let guard_reject_rate = if guard_count == 0 {
+        0.0
+    } else {
+        guard_reject_count as f64 / guard_count as f64
+    };
+    let surprise_rate = surprise_count as f64 / prediction_count as f64;
+    let score = round_signal(selected_rate - guard_reject_rate - surprise_rate);
+    let evidence_path = dj_dir.join(format!(
+        "artifact-downstream-utility-{}.json",
+        safe_id(label)
+    ));
+    let evidence = json!({
+        "status": "passed",
+        "artifact_id": artifact_id,
+        "downstream_utility_score": score,
+        "components": {
+            "selected_plan_rate": round_signal(selected_rate),
+            "guard_reject_rate": round_signal(guard_reject_rate),
+            "surprise_rate": round_signal(surprise_rate),
+            "prediction_count": prediction_count,
+            "plan_count": plan_count,
+            "guard_decision_count": guard_count,
+            "guard_reject_count": guard_reject_count,
+            "surprise_count": surprise_count,
+        },
+        "source_of_truth": {
+            "predictions": format!("rocksdb:{}#dj_predictions", dynamicjepa_db.display()),
+            "plan_traces": format!("rocksdb:{}#dj_plan_traces", dynamicjepa_db.display()),
+            "guard_decisions": format!("rocksdb:{}#dj_guard_decisions", dynamicjepa_db.display()),
+            "surprise_events": format!("rocksdb:{}#dj_surprise_events", dynamicjepa_db.display()),
+            "evidence": file_sot(&evidence_path),
+        }
+    });
+    write_json_checked(&evidence_path, &evidence)?;
+    read_json(&evidence_path)
+}
+
+fn dynamicjepa_inspect_cf_json(
+    context_graph_bin: &Path,
+    task_root: &Path,
+    dynamicjepa_db: &Path,
+    cf: &str,
+    operation: &'static str,
+) -> Result<Value> {
+    dynamicjepa_json_command(
+        context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "inspect-cf".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--cf".to_string(),
+            cf.to_string(),
+            "--limit".to_string(),
+            "10000".to_string(),
+            "--json".to_string(),
+        ],
+        task_root,
+        operation,
+        Some(file_sot(dynamicjepa_db)),
+    )
+}
+
+fn decoded_records_from_inspect(output: &Value) -> Vec<&Value> {
+    output
+        .pointer("/decoded_records/rows")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    row.pointer("/decoded/record")
+                        .or_else(|| row.get("decoded"))
+                        .or_else(|| row.pointer("/decoded_records/record"))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
 fn validate_dynamicjepa_comparative_promotion(
     context_graph_bin: &Path,
     task_root: &Path,
@@ -14120,7 +15170,7 @@ fn validate_dynamicjepa_comparative_promotion(
 ) -> Result<Value> {
     let candidate_report_path = artifact_root.join("evaluation_report.json");
     let candidate_report: Value = read_json(&candidate_report_path)?;
-    let candidate_utility = dynamicjepa_heldout_utility_score(&candidate_report).ok_or_else(|| {
+    let candidate_heldout_proxy = dynamicjepa_heldout_utility_score(&candidate_report).ok_or_else(|| {
         RealityError::new(
             "RUST_REALITY_DYNAMICJEPA_PROMOTION_UTILITY_MISSING",
             "DynamicJEPA candidate artifact evaluation_report is missing held-out utility metrics",
@@ -14130,6 +15180,27 @@ fn validate_dynamicjepa_comparative_promotion(
             Some(file_sot(&candidate_report_path)),
         )
     })?;
+    let candidate_downstream = dynamicjepa_downstream_utility_from_rows(
+        context_graph_bin,
+        task_root,
+        dynamicjepa_db,
+        artifact_id,
+        dj_dir,
+        "candidate",
+    )?;
+    let candidate_utility = candidate_downstream
+        .get("downstream_utility_score")
+        .and_then(Value::as_f64)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_PROMOTION_DOWNSTREAM_SCORE_MISSING",
+                "DynamicJEPA candidate downstream utility evidence did not contain a finite score",
+                "dynamicjepa.artifact_promotion.downstream_utility_score",
+                "run held-out replay or live-shadow planning for this artifact before promotion",
+                json!({"artifact_id": artifact_id, "downstream_utility": candidate_downstream}),
+                Some(file_sot(dynamicjepa_db)),
+            )
+        })?;
     let artifacts = dynamicjepa_json_command(
         context_graph_bin,
         vec![
@@ -14191,24 +15262,43 @@ fn validate_dynamicjepa_comparative_promotion(
             else {
                 continue;
             };
-            let Some(utility_score) = dynamicjepa_heldout_utility_score(&report) else {
+            let Some(heldout_proxy) = dynamicjepa_heldout_utility_score(&report) else {
+                continue;
+            };
+            let Some(row_artifact_id) = row_artifact_id else {
+                continue;
+            };
+            let downstream = dynamicjepa_downstream_utility_from_rows(
+                context_graph_bin,
+                task_root,
+                dynamicjepa_db,
+                row_artifact_id,
+                dj_dir,
+                &format!("baseline-{}", safe_id(row_artifact_id)),
+            )?;
+            let Some(utility_score) = downstream
+                .get("downstream_utility_score")
+                .and_then(Value::as_f64)
+            else {
                 continue;
             };
             baselines.push(json!({
                 "artifact_id": row_artifact_id,
                 "val_latent_mse": metric,
-                "heldout_utility_score": utility_score,
+                "heldout_proxy_score": heldout_proxy,
+                "downstream_utility_score": utility_score,
+                "downstream_utility": downstream,
                 "evaluation_report": file_sot(&report_path),
             }));
         }
     }
     baselines.sort_by(|left, right| {
         let l = left
-            .get("heldout_utility_score")
+            .get("downstream_utility_score")
             .and_then(Value::as_f64)
             .unwrap_or(f64::NEG_INFINITY);
         let r = right
-            .get("heldout_utility_score")
+            .get("downstream_utility_score")
             .and_then(Value::as_f64)
             .unwrap_or(f64::NEG_INFINITY);
         r.total_cmp(&l)
@@ -14218,18 +15308,20 @@ fn validate_dynamicjepa_comparative_promotion(
         .as_ref()
         .and_then(|baseline| {
             baseline
-                .get("heldout_utility_score")
+                .get("downstream_utility_score")
                 .and_then(Value::as_f64)
         })
         .map(|baseline_score| candidate_utility > baseline_score)
         .unwrap_or(true);
     let summary = json!({
         "status": if passed { "passed" } else { "failed" },
-        "mode": if best_baseline.is_some() { "candidate_beats_active_downstream_proxy_baseline" } else { "initial_artifact_no_active_baseline" },
+        "mode": if best_baseline.is_some() { "candidate_beats_active_downstream_utility_baseline" } else { "initial_artifact_with_downstream_utility_evidence" },
         "candidate": {
             "artifact_id": artifact_id,
             "val_latent_mse": val_latent_mse,
-            "heldout_utility_score": candidate_utility,
+            "heldout_proxy_score": candidate_heldout_proxy,
+            "downstream_utility_score": candidate_utility,
+            "downstream_utility": candidate_downstream,
             "evaluation_report": file_sot(&artifact_root.join("evaluation_report.json")),
         },
         "best_active_baseline": best_baseline,
@@ -14243,9 +15335,9 @@ fn validate_dynamicjepa_comparative_promotion(
     if !passed {
         return Err(RealityError::new(
             "RUST_REALITY_DYNAMICJEPA_PROMOTION_REGRESSION",
-            "DynamicJEPA artifact lifecycle gate rejected a candidate that did not beat the active held-out downstream-utility proxy baseline",
-            "dynamicjepa.artifact_promotion.heldout_utility_score",
-            "keep the active artifact and retrain/evaluate the candidate on held-out SWE attempts with better action contrast, latent cosine, and lower MSE",
+            "DynamicJEPA artifact lifecycle gate rejected a candidate that did not beat the active downstream-utility baseline",
+            "dynamicjepa.artifact_promotion.downstream_utility_score",
+            "keep the active artifact and replay/evaluate the candidate on held-out SWE attempts with fewer guard rejects and surprise events",
             read_json(&evidence_path)?,
             Some(file_sot(&evidence_path)),
         ));
@@ -14460,6 +15552,13 @@ fn action_fields_match(candidate_fields: &Value, observed_action: &Value) -> boo
         "api_contract_delta",
         "dependency_blast_radius",
         "reverse_reference_count",
+        "compiler_semantic_status",
+        "type_resolution_status",
+        "import_resolution_status",
+        "compiler_diagnostic_count",
+        "test_attribution_status",
+        "attributed_test_count",
+        "predicted_verifier_target",
     ];
     for field in HARD_ACTION_CONTROL_FIELDS {
         let Some(observed_value) = observed.get(*field) else {
@@ -14906,7 +16005,14 @@ fn dynamicjepa_swe_events_from_transcript(
                                 "control_flow_delta": ast_semantics.control_flow_delta,
                                 "api_contract_delta": ast_semantics.api_contract_delta,
                                 "dependency_blast_radius": ast_semantics.dependency_blast_radius,
-                                "reverse_reference_count": ast_semantics.reverse_reference_count
+                                "reverse_reference_count": ast_semantics.reverse_reference_count,
+                                "compiler_semantic_status": ast_semantics.compiler_semantic_status,
+                                "type_resolution_status": ast_semantics.type_resolution_status,
+                                "import_resolution_status": ast_semantics.import_resolution_status,
+                                "compiler_diagnostic_count": ast_semantics.compiler_diagnostic_count,
+                                "test_attribution_status": ast_semantics.test_attribution_status,
+                                "attributed_test_count": ast_semantics.attributed_test_count,
+                                "predicted_verifier_target": ast_semantics.predicted_verifier_target
                             },
                             "outcome": {
                                 "next_counter": counter + delta,
@@ -15200,9 +16306,8 @@ fn swe_symbol_bucket(
 
 fn looks_like_source_path(path: &str) -> bool {
     [
-        ".py", ".rs", ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".c", ".cc", ".cpp",
-        ".cxx", ".h", ".hh", ".hpp", ".hxx", ".cs", ".rb", ".php", ".swift", ".kt",
-        ".kts", ".scala",
+        ".py", ".rs", ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".c", ".cc", ".cpp", ".cxx",
+        ".h", ".hh", ".hpp", ".hxx", ".cs", ".rb", ".php", ".swift", ".kt", ".kts", ".scala",
     ]
     .iter()
     .any(|suffix| path.ends_with(suffix))
@@ -17207,6 +18312,19 @@ mod tests {
         (temp, repo)
     }
 
+    fn add_real_rust_crate(repo: &Path) {
+        write_text_checked(
+            &repo.join("Cargo.toml"),
+            "[package]\nname = \"dynamicjepa_semantic_fixture\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\npath = \"src/lib.rs\"\n",
+        )
+        .expect("cargo manifest write");
+        write_text_checked(
+            &repo.join("src/lib.rs"),
+            "pub fn bump(x: i32) -> i32 {\n    x + 1\n}\n",
+        )
+        .expect("rust source write");
+    }
+
     #[test]
     fn dynamicjepa_ast_action_semantics_parse_real_python_edit() {
         let (_temp, repo) = init_real_git_repo();
@@ -17227,12 +18345,69 @@ mod tests {
         assert_eq!(action["ast_symbol_kind"], "function");
         assert_eq!(action["ast_edit_kind"], "function_body");
         assert_eq!(action["ast_touched_node_count"], 1);
-        assert_eq!(action["semantic_provider"], "parser_symbol_graph");
+        assert_eq!(action["semantic_provider"], "compiler_lsp");
         assert_eq!(action["semantic_status"], "analyzed");
+        assert_eq!(action["compiler_semantic_status"], "checked");
+        assert_eq!(action["type_resolution_status"], "unsupported");
+        assert_eq!(action["import_resolution_status"], "unsupported");
+        assert_eq!(action["compiler_diagnostic_count"], 0);
+        assert_eq!(action["test_attribution_status"], "missing");
+        assert_eq!(action["attributed_test_count"], 0);
+        assert_eq!(action["predicted_verifier_target"], "static_check");
         assert_eq!(action["patch_delta_kind"], "return_contract");
         assert_eq!(action["api_contract_delta"], "return_changed");
         assert_eq!(action["symbol_bucket"], "function");
         assert_eq!(action["patch_scope_bucket"], "single_symbol");
+    }
+
+    #[test]
+    fn dynamicjepa_ast_action_semantics_runs_real_rust_cargo_check() {
+        let (_temp, repo) = init_real_git_repo();
+        add_real_rust_crate(&repo);
+        let args = json!({
+            "edits": [{
+                "path": "src/lib.rs",
+                "start_line": 2,
+                "end_line": 2,
+                "replace": "    x + 2\n",
+                "observed_sha256": sha256_file(&repo.join("src/lib.rs")).expect("sha")
+            }]
+        });
+        let action = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+            .expect("rust compiler-backed action semantics");
+        assert_eq!(action["ast_language"], "rust");
+        assert_eq!(action["semantic_provider"], "compiler_lsp");
+        assert_eq!(action["compiler_semantic_status"], "checked");
+        assert_eq!(action["type_resolution_status"], "resolved");
+        assert_eq!(action["import_resolution_status"], "resolved");
+        assert_eq!(action["compiler_diagnostic_count"], 0);
+        assert_eq!(action["test_attribution_status"], "inferred_from_manifest");
+        assert_eq!(action["attributed_test_count"], 1);
+        assert_eq!(action["predicted_verifier_target"], "typecheck");
+        assert_eq!(action["patch_delta_kind"], "api_contract");
+    }
+
+    #[test]
+    fn dynamicjepa_ast_action_semantics_records_real_rust_diagnostics() {
+        let (_temp, repo) = init_real_git_repo();
+        add_real_rust_crate(&repo);
+        let args = json!({
+            "edits": [{
+                "path": "src/lib.rs",
+                "start_line": 2,
+                "end_line": 2,
+                "replace": "    \"bad\"\n",
+                "observed_sha256": sha256_file(&repo.join("src/lib.rs")).expect("sha")
+            }]
+        });
+        let action = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+            .expect("rust compiler diagnostics must be recorded");
+        assert_eq!(action["ast_language"], "rust");
+        assert_eq!(action["semantic_provider"], "compiler_lsp");
+        assert_eq!(action["compiler_semantic_status"], "diagnostics");
+        assert_eq!(action["type_resolution_status"], "unresolved");
+        assert_eq!(action["predicted_verifier_target"], "typecheck");
+        assert!(action["compiler_diagnostic_count"].as_i64().unwrap_or(0) > 0);
     }
 
     #[test]
@@ -17265,6 +18440,13 @@ mod tests {
         assert_eq!(action["patch_delta_kind"], "return_contract");
         assert_eq!(action["dependency_blast_radius"], "local_symbol");
         assert_eq!(action["reverse_reference_count"], 1);
+        if command_exists("go") {
+            assert_eq!(action["semantic_provider"], "compiler_lsp");
+            assert_eq!(action["compiler_semantic_status"], "checked");
+        } else {
+            assert_eq!(action["semantic_provider"], "parser_symbol_graph");
+            assert_eq!(action["compiler_semantic_status"], "toolchain_missing");
+        }
     }
 
     #[test]
