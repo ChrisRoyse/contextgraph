@@ -244,6 +244,267 @@ Mincut ensures no two tasks from the same repo (e.g., two astropy tasks) end up 
 
 ---
 
+## Section 3.5 — Maximal Reward-Signal Capture from Durable Reality
+
+The Docker oracle's pass/fail verdict is **one bit of supervision** per attempt. Durable reality emits *thousands of bits per attempt* — and almost all of them are free or near-free to capture. ME-JEPA-Code is starved for gradient signal during the early corpus; capturing every signal that durable reality already emits multiplies training efficiency. The ContextGraph harness already produces most of these in artifact files (`attempt-summary.json`, `validation.json`, `harness-transitions/*.json`, the shift log, the witness chain) — the work is consuming them, not creating them.
+
+"**Durable**" means: rerunning the same patch in the same environment produces the same observation. Stochastic signals (e.g., walltime under contention, network latency) are still captured but flagged via a determinism check (§3.5.5).
+
+### 3.5.1 Static-analysis signals (free; deterministic; per attempt)
+
+| Signal | Source | Use |
+|---|---|---|
+| Linter/typecheck warnings (count + class distribution) | mypy / Pyright / ruff / clippy / rust-analyzer | aux head: predict warning count + class |
+| Type-annotation completeness | static-pass coverage | scalar feature in panel |
+| Cyclomatic complexity / LOC delta | tree-sitter + radon equivalents | scalar feature |
+| Import-graph BFS depth from touched files | repo-static analysis | blast-radius proxy |
+| Git-blame line age (per touched line) | `git blame` | bug-density prior |
+| Symbol churn (commits touching this symbol) | `git log -L` | refactor-fragility prior |
+| Docstring coverage delta | tree-sitter | intent-clarity proxy |
+
+Aggregated into a new instrument **`E_StaticAnalysis`** (256-d).
+
+### 3.5.2 Runtime / dynamic signals (free; semi-deterministic; per attempt)
+
+| Signal | Source | Use |
+|---|---|---|
+| Per-test wall-clock | `pytest --durations=0` (capture median of 3) | aux head: predict slowdown |
+| Peak RSS, allocation count, syscall histogram | `/usr/bin/time -v`, eBPF tracepoints | regression flagging |
+| Stack-trace text + parsed frames on failure | `pytest --tb=long` | embed → `E_Oracle` extension |
+| Coverage delta (line + branch) before/after | `pytest --cov` | suspicious-fix flagging |
+| Filesystem effects (paths touched) | `inotifywait` during test | hidden-side-effect detection |
+| Network calls during test | `tcpdump` count | flake-source flagging |
+| Process exit codes per test | `pytest` JSON output | distinguish OS signal vs assertion |
+| Determinism check (3 reruns) | run 3× on sampled subset | flake-flag boolean |
+
+Aggregated into a new instrument **`E_Runtime`** (256-d) plus an extension to existing `E_Trace`.
+
+### 3.5.3 Cross-attempt and historical signals
+
+| Signal | Source | Use |
+|---|---|---|
+| Inner-actor reasoning trace | Qwen3.6-27B CoT log per attempt | new instrument **`E_Reasoning`** (384-d) |
+| Outer-optimizer diagnoses | `optimizer_record_recommendation` JSONs | weak supervision label |
+| Adjacent-test impact | run all tests in same module, not just target | per-test outcome vector |
+| Inter-attempt trajectory | `(attempt_n, oracle_pass_prob, ood_score)` series | stored in `CF_MEJEPA_TRAJECTORIES` |
+| **Operator overrides + reasons** | when human accepts/rejects ME-JEPA verdict | **gold-standard label** in `CF_MEJEPA_OPERATOR_OVERRIDES` |
+| Issue-thread evolution | full GitHub issue/PR thread per task | extends `E_Problem` |
+| Reviewer comments on canonical fix | upstream PR review thread | extends `E_CommitMsg` |
+| Cross-task patch similarity graph | AST-diff cosine over corpus | `mejepa-task-graph` edges |
+| Repo health metrics | upstream cadence, CI green-rate, contributor count | scalar features |
+
+### 3.5.4 Counterfactual / synthetic signals
+
+| Signal | Source | Use |
+|---|---|---|
+| Per-hunk pass/fail attribution | sequentially apply each hunk; observe oracle | per-hunk gradient supervision |
+| Latent-perturbation oracle response | jitter `panel[t=1]`; ask EMA target | derivative training signal |
+| Mutation-corpus residual error | hard examples from §3.1 corpus | priority sampling pool |
+| Adjacent-mutation oracle pairs | apply each mutation category to each repo | per-category sensitivity supervision |
+
+### 3.5.5 Updated panel dimensionality
+
+Adding the new instruments expands the panel from **4,096-d to 5,120-d**:
+
+| Instrument family | Original (§2.2) | Expanded |
+|---|---|---|
+| Existing 11 instruments | 4,096 | 4,096 |
+| `E_StaticAnalysis` | — | 256 |
+| `E_Runtime` | — | 256 |
+| `E_Reasoning` | — | 384 |
+| Scalar feature aggregates (BFS depth, blame age, churn, complexity, coverage Δ, repo-health) | — | 128 |
+| **Total** | **4,096** | **5,120** |
+
+Storage impact: ~5 KB per panel × 3 panels × 5,000 attempts ≈ ~75 MB raw uncompressed; ~10 MB on cold tier. Negligible vs. 110 GB total budget (§6.1).
+
+---
+
+## Section 3.6 — Blindspots: What We're Missing and What It Would Unlock
+
+Honest list of capture gaps, ordered by leverage (capability unlocked / capture cost):
+
+### High-leverage blindspots (Phase 0 capture)
+
+1. **Adjacent-test outcomes.** Today we only run the target test; capturing all tests in the same module provides blast-radius supervision. **Unlocks:** per-patch "collateral damage" prediction. **Cost:** ~10-30s additional test time per attempt.
+
+2. **Stack-trace embedding on failure.** `E_Oracle` currently flattens to categorical exception class; full traceback embeddings let the model reason about failure modes. **Unlocks:** failure-mode clustering, root-cause classification. **Cost:** free (parse stderr).
+
+3. **Operator overrides + reasons.** Human accept/reject on ME-JEPA's verdict is gold-standard supervision. Currently logged as text in optimizer JSONs but not folded back as supervised labels. **Unlocks:** gold-tier calibration. **Cost:** schema change in `optimizer_record_recommendation` to capture verdict + reason as structured fields.
+
+4. **Per-hunk pass/fail attribution.** A multi-hunk patch is currently atomic. Sequential application gives `O(hunks)` × supervision per attempt. **Unlocks:** which lines actually mattered. **Cost:** ~5× test runtime; sample 20% of corpus.
+
+5. **Inner-actor reasoning trace.** Qwen's CoT is currently mostly discarded. Capturing where the actor "got stuck" (long pause, retry loops, hedge tokens) gives skill-deficit supervision. **Unlocks:** weak supervision for a "capability gap" head. **Cost:** log structure already exists; needs embedding.
+
+### Medium-leverage blindspots (Phase 2-3)
+
+6. **Static-analysis warnings** (mypy/Pyright/ruff/clippy gradients between hard-fail and silent-pass). **Unlocks:** catching style/type regressions that pass tests today but bite later. **Cost:** minor — already-installed tools.
+
+7. **Issue-thread + reviewer comments.** Today `E_Problem` is the curated SWE-bench statement; the original GitHub issue + PR review threads typically have 5-10× more text and are gold-standard explanation. **Cost:** one GitHub-mining pass per task.
+
+8. **Cross-task patch similarity graph.** Lets transfer learning happen explicitly. **Cost:** O(N²) AST-diff cosines, computed once.
+
+9. **Determinism across reruns.** A test passing 2/3 times is flaky; currently we run once. **Cost:** 3× test time on a sampled subset.
+
+### Lower-leverage but worth capturing
+
+10. Filesystem/network side effects during test execution.
+11. Coverage delta (line/branch) before vs after patch.
+12. Inter-attempt learning curves over retries.
+13. Repo health metrics (commit cadence, CI green-rate, contributor count).
+14. Mutation-test kill rate (expensive; sample 5% of corpus).
+
+### Not capturable in this system (acknowledged)
+
+- **Production behavior** after the patch is merged. SWE-bench runs in a sealed Docker; we never see real deployments. The mutation corpus is our proxy.
+- **Original developer intent.** Why a specific fix shape was chosen vs. a different valid one is sometimes unrecorded. Best proxies: reviewer comments + commit message; both partial.
+- **Long-tail flakiness** that surfaces only under specific scheduler / kernel / CPU-architecture conditions. The Docker oracle masks this.
+
+---
+
+## Section 3.7 — Optimally Using the Captured Signals
+
+### 3.7.1 Multi-objective loss
+
+The base `L_total` (§2.4) is augmented with auxiliary heads:
+
+```
+L_full = L_predict
+       + λ_var · L_variance + λ_cov · L_covariance + λ_inv · L_invariance
+       + α_warn      · L_warnings           # MSE on warning count
+       + α_runtime   · L_runtime            # MSE on log-wall-clock per test
+       + α_rss       · L_memory             # MSE on peak RSS
+       + α_trace     · L_traceback          # contrastive over stack-trace clusters
+       + α_hunk      · L_hunk_attribution   # cross-entropy over per-hunk verdicts
+       + α_adjacent  · L_collateral         # binary CE per adjacent-test outcome
+       + α_reasoning · L_reasoning          # contrastive over CoT embeddings
+       + α_overrides · L_operator_match     # KL between ME-JEPA verdict and operator gold
+```
+
+Defaults: `α_warn=0.5`, `α_runtime=0.3`, `α_rss=0.2`, `α_trace=0.5`, `α_hunk=1.0`, `α_adjacent=0.5`, `α_reasoning=0.3`, `α_overrides=5.0` (operator gold dominates when present).
+
+### 3.7.2 Per-example sampling reweighting
+
+```
+sampling_weight(ex) = base_weight
+                    × (1 + 2 · residual_error_z_score)   # hard-example mining
+                    × (1 + 5 · operator_override_flag)    # gold up-weight
+                    × decay^age_in_days                   # recency-weighted
+```
+
+Weights re-computed weekly during periodic full retrain (§5.4).
+
+### 3.7.3 Counterfactual training (latent perturbations)
+
+For each `panel[t=1]`, sample `K=4` perturbations `panel[t=1] + ε·v` (v unit, ε ∈ {0.01, 0.05, 0.1, 0.2}). Predict each. Supervise against the EMA target. Builds a derivative-of-prediction-w.r.t.-input signal.
+
+### 3.7.4 Active learning loop
+
+When ME-JEPA's conformal set has size > 3 (uncertain) AND OOD score < 0.5 (in-distribution), surface for either (a) operator label, (b) Docker oracle re-run with mutation variants, or (c) adjacent-test re-runs. Adds ~1-2% of corpus per cycle as high-signal supervision.
+
+### 3.7.5 Cross-task transfer learning
+
+Use the patch-similarity graph (§3.5.3) to upweight examples from similar tasks during fine-tuning. Implementation: in mini-batch sampler, when training on task `T`, with probability 0.3 sample from tasks within cosine `> 0.7` of `T`'s patch.
+
+### 3.7.6 Aux-head distillation back into the trunk
+
+Every 1,000 steps, distill aux heads' predictions into the predictor's hidden state via a frozen-target distillation loss. Prevents aux heads becoming detached "specialists" — keeps trunk representation rich.
+
+---
+
+## Section 3.8 — Real-Time Pipeline: Reality-Shift → Online Observe
+
+The reality-shift principle (`docs/ccreality/01b_REALITY_SHIFT_PRINCIPLE.md`) already produces a stream of `(file, before_sha, after_sha, lines_added, lines_removed)` deltas via the PostToolUse Edit hook. ME-JEPA-Code subscribes to this stream so it stays current with reality as fast as reality evolves — closing the loop **see edit → predict → observe outcome → update**.
+
+### 3.8.1 Architecture: shift-log subscriber
+
+```
+PostToolUse Edit hook
+  ↓ writes to
+shift-log (cgreality-shift-log/<session_id>.jsonl)
+  ↓ tailed by
+mejepa-shift-subscriber (Tokio task in context-graph-mcp)
+  ↓ for each shift:
+    1. extract panel[t=1] from after_sha
+       (instruments rerun on touched files; cached by file_sha)
+    2. if test artifacts also shifted (e.g., validation.json):
+         compute panel[t=2] (with E_Oracle from latest test run)
+         call mejepa.observe(panel, oracle_outcome)  # online update
+    3. else:
+         call mejepa.predict(panel[t=1]) and emit prediction immediately
+         (predictions persist into CF_MEJEPA_LIVE_PREDICTIONS)
+    4. write watermark (last shift_id consumed) into CF_MEJEPA_SHIFT_WATERMARK
+```
+
+End-to-end latency target: **shift-log entry → ME-JEPA observation propagated** in **< 5 seconds** for cached-instrument cases, **< 30 seconds** when AST/CFG/DataFlow rebuilds are needed. The instrument cache is keyed by `file_sha`, so unchanged files don't re-extract.
+
+### 3.8.2 Why this matters — feedback loop closure
+
+The outer optimizer (Claude Code) is doing a tight read-edit-test loop. By the time `cargo build` finishes, ME-JEPA already has:
+
+1. A panel for the post-edit state.
+2. A prediction for what tests will pass/fail when run.
+3. An OOD score and conformal set indicating its own confidence.
+
+This means the next outer-optimizer turn can call `mcp__cgreality__mejepa_predict_latest` and get a *current* prediction without waiting for the test to actually run — the same way a compiler can flag a likely error before linking. When the test does run later, the actual oracle becomes gold supervision and `observe()` updates the model.
+
+This closes the gap between "AI agent acts" and "AI agent learns from reality." The agent is no longer working with a stale snapshot of reality; ME-JEPA is **always at most a few seconds behind durable reality** for files the agent has touched.
+
+### 3.8.3 Existing artifact channels (already produced; new consumers)
+
+The ContextGraph harness already produces every signal ME-JEPA-Code needs — we just need new consumers:
+
+| Existing artifact | Existing consumer | New consumer (mejepa-shift-subscriber action) |
+|---|---|---|
+| `harness-transitions/round-NN.json` | optimizer record recommendation | extract `E_Diff` + `E_Witness` |
+| `cgreality-shift-log/*.jsonl` | shift-comparison API | trigger `observe()` per shift |
+| `attempt-summary.json` | optimizer reads | trigger per-attempt panel materialization |
+| `inner-harness-response.json` | optimizer reads | extract Qwen CoT → `E_Reasoning` |
+| `validation.json` | optimizer reads | extract per-test outcomes for `E_Oracle` |
+| Pre/PostToolUse hook payloads | hook log only | extract `before_sha`/`after_sha` for AST diff caching |
+| `agent-tool-transcript.json` | optimizer reads | extract tool-call sequence for `E_Reasoning` extension |
+| Witness chain entries | integrity verify only | already feeds `E_Witness` |
+| Optimizer-record-recommendation JSONs | governance | mine for "diagnoses" weak labels |
+
+**Net effect: every signal the existing system already emits flows into ME-JEPA without re-instrumenting the producers.**
+
+### 3.8.4 Backpressure, durability, restart safety
+
+- The shift log is durable on disk; the subscriber processes at its own pace. If it falls behind (long retraining pause, restart), the log queues; on resume, tail from last-processed offset.
+- Per-shift `observe()` writes are EWC++-regularized so out-of-order or duplicate shifts can't cause catastrophic forgetting.
+- Watermark in `CF_MEJEPA_SHIFT_WATERMARK` records last `shift_id` consumed; restart-safe.
+- If subscriber lag exceeds 500 unprocessed shifts for > 1 minute, raise an alert (pacing mismatch with the inner loop) — operator can pause inner loop or scale the subscriber.
+
+### 3.8.5 New MCP tools
+
+- `mcp__cgreality__mejepa_predict_latest()` → most recent live prediction for the currently-active session/file set.
+- `mcp__cgreality__mejepa_observe_shift(shift_id)` → idempotently triggers consumption of a specific shift now (testing/replay).
+- `mcp__cgreality__mejepa_subscriber_status()` → watermark, lag, error rate, instrument-cache hit rate.
+- `mcp__cgreality__mejepa_capture_audit()` → for a given attempt, returns the *complete signal capture* — every `E_*` instrument value, every aux-head prediction, every counterfactual perturbation tested. Auditability of the full capture surface.
+
+### 3.8.6 Performance budget
+
+| Resource | Budget |
+|---|---|
+| Tokio task workers | 1 dedicated CPU + 512 MB RSS |
+| Instrument cache | 4 GB RAM (LRU; same as §6.1 panel cache) |
+| Shift → observe latency p50 | < 5 seconds |
+| Shift → observe latency p99 | < 30 seconds |
+| Maximum subscriber lag before alert | 500 unprocessed shifts / 1 minute |
+
+### 3.8.7 The end-state: a self-updating reality model
+
+When §3.8 is shipped, the system has the complete loop:
+
+1. **Capture** — every byte the harness produces becomes an `E_*` instrument or aux-head signal (§3.5).
+2. **Predict in real time** — ME-JEPA emits predictions within seconds of any edit (§3.8.1).
+3. **Observe** — when the oracle confirms or refutes the prediction, the model updates online with EWC++ protection (§5.1).
+4. **Self-heal** — drift detection + A/B/C retraining when coverage degrades (§5.2-5.3).
+5. **Compress** — old data goes to colder tiers; chains Merkle-compress (§6).
+
+This is the **operational shape of "AI agent always synced with reality."** No batch retraining cycles, no stale snapshots, no waiting for human review — the model self-tunes as fast as the harness produces durable observations.
+
+---
+
 ## Section 4 — Inference
 
 ### 4.1 Call shape
@@ -446,7 +707,9 @@ If integrity fails, this is a serious issue (possible disk corruption or tamperi
 | Live panel cache (RAM) | 4 GB | LRU |
 | Live panel disk overflow | 20 GB | LRU spill from RAM |
 | Calibration snapshots | 5 GB | retain last 30 |
-| Total disk | ~110 GB | hard quota |
+| Aux signals & operator overrides (§3.5, §3.8) | 2 GB | structured; operator overrides retained indefinitely (gold-tier) |
+| Shift-log subscriber state (§3.8) | 0.5 GB | watermark + per-file instrument cache |
+| Total disk | ~115 GB | hard quota |
 
 Operator can override by setting `CG_MEJEPA_DISK_QUOTA_GB` env var.
 
