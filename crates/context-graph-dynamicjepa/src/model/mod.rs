@@ -1,4 +1,6 @@
-use crate::config::{MlpConfig, PredictorConfig, TargetArchitecture, TrainConfig};
+use crate::config::{
+    MetricQualityGate, MlpConfig, PredictorConfig, TargetArchitecture, TrainConfig,
+};
 use candle_core::{DType, Device, Tensor, Var};
 use candle_nn::{AdamW, Optimizer, ParamsAdamW};
 use context_graph_core::dynamicjepa::{DynamicJepaError, DynamicJepaResult};
@@ -619,7 +621,9 @@ pub fn train_tiny_jepa(
                 });
             }
             let stopping_value = metric_value(&epoch_eval, &config.stopping.metric)?;
-            if stopping_value <= config.stopping.target {
+            if stopping_value <= config.stopping.target
+                && quality_gates_satisfied(&epoch_eval, &config.quality_gates)?
+            {
                 converged = true;
                 break;
             }
@@ -666,6 +670,7 @@ pub fn train_tiny_jepa(
     evaluation.epoch_metrics = epoch_metrics;
     evaluation.parameter_count_trainable = model.parameter_count_trainable();
     let metrics = flatten_metrics(&evaluation)?;
+    enforce_quality_gates(&metrics, &config.quality_gates)?;
     Ok(TrainedTinyJepa {
         tensors: model.tensors(),
         metrics,
@@ -1084,6 +1089,168 @@ fn metric_value(report: &EvaluationReport, metric: &str) -> DynamicJepaResult<f6
             message: format!("stopping metric {metric:?} was not produced by evaluation"),
             remediation: "compile the requested split and use a known metric name".to_string(),
         })
+}
+
+fn quality_gates_satisfied(
+    report: &EvaluationReport,
+    gates: &[MetricQualityGate],
+) -> DynamicJepaResult<bool> {
+    for gate in gates {
+        let value = report_metric_value(report, &gate.metric)?;
+        if !metric_gate_passes(value, gate) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn enforce_quality_gates(
+    metrics: &std::collections::BTreeMap<String, f64>,
+    gates: &[MetricQualityGate],
+) -> DynamicJepaResult<()> {
+    for gate in gates {
+        let value =
+            metrics
+                .get(&gate.metric)
+                .copied()
+                .ok_or_else(|| {
+                    DynamicJepaError::TrainingFailed {
+                training_run_id: uuid::Uuid::nil(),
+                message: format!(
+                    "quality gate metric {:?} was not produced by final evaluation",
+                    gate.metric
+                ),
+                remediation:
+                    "fix the training metric name or add the required metric to evaluation output"
+                        .to_string(),
+            }
+                })?;
+        if !value.is_finite() {
+            return Err(DynamicJepaError::TrainingFailed {
+                training_run_id: uuid::Uuid::nil(),
+                message: format!("quality gate metric {} is not finite: {value}", gate.metric),
+                remediation:
+                    "inspect evaluation_report.json for NaN/Inf and fix the training data or loss"
+                        .to_string(),
+            });
+        }
+        if !metric_gate_passes(value, gate) {
+            return Err(DynamicJepaError::TrainingFailed {
+                training_run_id: uuid::Uuid::nil(),
+                message: format!(
+                    "quality gate failed for {}: value={value:.12} min={} max={}",
+                    gate.metric,
+                    format_optional_bound(gate.min),
+                    format_optional_bound(gate.max)
+                ),
+                remediation:
+                    "do not register the artifact; fix the training config or data until every declared quality gate passes"
+                        .to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn report_metric_value(report: &EvaluationReport, metric: &str) -> DynamicJepaResult<f64> {
+    let value = match metric {
+        "shuffled_target_cosine" => report
+            .shuffled_target_baseline
+            .get("cosine")
+            .copied()
+            .ok_or_else(|| DynamicJepaError::TrainingFailed {
+                training_run_id: uuid::Uuid::nil(),
+                message: "evaluation report is missing shuffled_target_baseline.cosine".to_string(),
+                remediation: "fix evaluation_model output; missing baseline metrics must fail"
+                    .to_string(),
+            })?,
+        "vicreg_variance_per_dim_min" => report.vicreg_variance_per_dim_min,
+        "vicreg_variance_per_dim_mean" => report.vicreg_variance_per_dim_mean,
+        "vicreg_covariance_off_diag_frobenius" => report.vicreg_covariance_off_diag_frobenius,
+        "vicreg_covariance_off_diag_rms" => report.vicreg_covariance_off_diag_rms,
+        "vicreg_covariance_loss_scale" => report.vicreg_covariance_loss_scale,
+        "collapse_diagnostics_computed" => {
+            if report.collapse_diagnostics.computed {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        "collapse_val_var_min" => report.collapse_diagnostics.val_var_min,
+        "collapse_val_var_p25" => report.collapse_diagnostics.val_var_p25,
+        "collapse_val_var_median" => report.collapse_diagnostics.val_var_median,
+        "collapse_val_var_p75" => report.collapse_diagnostics.val_var_p75,
+        "collapse_val_var_max" => report.collapse_diagnostics.val_var_max,
+        "collapse_covar_frob" => report.collapse_diagnostics.covar_frob,
+        "collapse_covar_rms" => report.collapse_diagnostics.covar_rms,
+        "collapse_covar_loss_scale" => report.collapse_diagnostics.covar_loss_scale,
+        "collapse_eff_rank" => report.collapse_diagnostics.eff_rank,
+        "collapse_eff_rank_ratio" => report.collapse_diagnostics.eff_rank_ratio,
+        "collapse_alignment" => report.collapse_diagnostics.alignment,
+        "collapse_uniformity" => report.collapse_diagnostics.uniformity,
+        "collapse_sigreg_kl" => report.collapse_diagnostics.sigreg_kl,
+        "collapse_sigreg_kl_clamped" => {
+            if report.collapse_diagnostics.sigreg_kl_clamped {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        "collapse_latent_collapsed" => {
+            if report.collapse_diagnostics.latent_collapsed {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        "parameter_count_trainable" => report.parameter_count_trainable as f64,
+        _ => {
+            let (split, name) = metric.split_once('_').ok_or_else(|| {
+                DynamicJepaError::TrainingFailed {
+                    training_run_id: uuid::Uuid::nil(),
+                    message: format!(
+                        "quality gate metric {metric:?} must be formatted as <split>_<metric_name> or be a known global metric"
+                    ),
+                    remediation:
+                        "use a produced metric such as val_latent_mse or vicreg_covariance_off_diag_rms"
+                            .to_string(),
+                }
+            })?;
+            report
+                .split_metrics
+                .get(split)
+                .and_then(|metrics| metrics.get(name))
+                .copied()
+                .ok_or_else(|| DynamicJepaError::TrainingFailed {
+                    training_run_id: uuid::Uuid::nil(),
+                    message: format!(
+                        "quality gate metric {metric:?} was not produced by evaluation"
+                    ),
+                    remediation: "compile the requested split and use a known metric name"
+                        .to_string(),
+                })?
+        }
+    };
+    if !value.is_finite() {
+        return Err(DynamicJepaError::TrainingFailed {
+            training_run_id: uuid::Uuid::nil(),
+            message: format!("quality gate metric {metric} is not finite: {value}"),
+            remediation:
+                "inspect evaluation_report.json for NaN/Inf and fix the training data or loss"
+                    .to_string(),
+        });
+    }
+    Ok(value)
+}
+
+fn metric_gate_passes(value: f64, gate: &MetricQualityGate) -> bool {
+    gate.min.is_none_or(|min| value >= min) && gate.max.is_none_or(|max| value <= max)
+}
+
+fn format_optional_bound(value: Option<f64>) -> String {
+    value
+        .map(|value| format!("{value:.12}"))
+        .unwrap_or_else(|| "unset".to_string())
 }
 
 fn first_split_metric(report: &EvaluationReport, metric: &str) -> Option<f64> {

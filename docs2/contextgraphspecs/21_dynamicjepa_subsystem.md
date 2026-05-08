@@ -96,6 +96,7 @@ target panel x' ─▶  (a) f_ξ EMA-target encoder ──▶ z_target
 | `stopping.metric` | string | `<split>_<metric>` form, e.g. `val_latent_mse` |
 | `stopping.target` | f64 | finite, ≥ 0 |
 | `stopping.max_seconds` | u64 | > 0 |
+| `quality_gates[]` | optional list | Each gate names a flattened metric and at least one finite `min` / `max`; gates must pass before early stopping accepts convergence and again before the artifact is registered |
 | `seed` | u64 | RNG seed (set on CUDA device via `device.set_seed`) |
 
 `TrainConfig::canonical_bytes()` (`config.rs:111`) produces the JSON used for `training_config_hash` (SHA-256, persisted on `TrainingRunRecord`).
@@ -112,8 +113,8 @@ target panel x' ─▶  (a) f_ξ EMA-target encoder ──▶ z_target
    - Shuffle train indices with deterministic PRNG keyed by `(seed, epoch)` (`shuffled_epoch_indices`, line 859).
    - For each batch: forward online + target (detached) + predictor; compute MSE + VICReg variance + VICReg covariance; weighted sum; `opt.backward_step`; `model.update_target(config)` (EMA when `EmaEncoder`, no-op when frozen, line 353); `device.synchronize()`.
    - Wall-clock guard: error `TrainingFailed` if `started.elapsed() > stopping.max_seconds`.
-   - Re-evaluate on the `stopping_eval_interval(epochs) = max(1, epochs/50)` cadence (line 773); if `stopping_metric ≤ stopping.target`, break converged.
-8. Final evaluation with collapse diagnostics. If not converged AND final stopping metric > target → `TrainingFailed`.
+   - Re-evaluate on the `stopping_eval_interval(epochs) = max(1, epochs/50)` cadence (line 773); if `stopping_metric ≤ stopping.target` **and every declared `quality_gates[]` bound passes**, break converged.
+8. Final evaluation with collapse diagnostics. If not converged AND final stopping metric > target → `TrainingFailed`. Any declared quality gate that is missing, non-finite, or outside bounds also returns `TrainingFailed` before artifact registration.
 
 Surprise calibration (Phase 8) is computed by `surprise_calibration_report` and `surprise_segment_calibration_reports` (`model/mod.rs:1412, 1454`) at the end of training and stored in `evaluation_report.json` (see §11).
 

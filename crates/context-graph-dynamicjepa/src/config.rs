@@ -11,6 +11,8 @@ pub struct TrainConfig {
     pub optim: OptimConfig,
     pub schedule: ScheduleConfig,
     pub stopping: StoppingConfig,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub quality_gates: Vec<MetricQualityGate>,
     pub seed: u64,
 }
 
@@ -86,6 +88,16 @@ pub struct StoppingConfig {
     pub metric: String,
     pub target: f64,
     pub max_seconds: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MetricQualityGate {
+    pub metric: String,
+    #[serde(default)]
+    pub min: Option<f64>,
+    #[serde(default)]
+    pub max: Option<f64>,
 }
 
 impl TrainConfig {
@@ -221,6 +233,60 @@ impl TrainConfig {
                 "max_seconds must be positive",
                 "set an explicit training time budget",
             ));
+        }
+        for (idx, gate) in self.quality_gates.iter().enumerate() {
+            gate.validate(idx)?;
+        }
+        Ok(())
+    }
+}
+
+impl MetricQualityGate {
+    fn validate(&self, idx: usize) -> DynamicJepaResult<()> {
+        let field = format!("quality_gates[{idx}]");
+        if self.metric.is_empty()
+            || !self
+                .metric
+                .chars()
+                .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_')
+            || !self
+                .metric
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_ascii_lowercase())
+        {
+            return Err(DynamicJepaError::validation(
+                format!("{field}.metric"),
+                format!("quality gate metric {:?} is not a known metric-key shape", self.metric),
+                "use a flattened metric key such as val_latent_mse or vicreg_covariance_off_diag_rms",
+            ));
+        }
+        if self.min.is_none() && self.max.is_none() {
+            return Err(DynamicJepaError::validation(
+                field,
+                "quality gate must declare at least one of min or max",
+                "declare the physical artifact metric bound that must pass before registration",
+            ));
+        }
+        for (bound, value) in [("min", self.min), ("max", self.max)] {
+            if let Some(value) = value {
+                if !value.is_finite() {
+                    return Err(DynamicJepaError::validation(
+                        format!("{field}.{bound}"),
+                        format!("quality gate {bound} must be finite, got {value}"),
+                        "use finite numeric bounds for artifact quality gates",
+                    ));
+                }
+            }
+        }
+        if let (Some(min), Some(max)) = (self.min, self.max) {
+            if min > max {
+                return Err(DynamicJepaError::validation(
+                    field,
+                    format!("quality gate min {min} exceeds max {max}"),
+                    "set min <= max or split the checks into separate gates",
+                ));
+            }
         }
         Ok(())
     }

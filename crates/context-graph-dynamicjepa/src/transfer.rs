@@ -787,6 +787,7 @@ fn transfer_train_config(
             target: config.stopping_target,
             max_seconds: config.max_seconds_per_training,
         },
+        quality_gates: Vec::new(),
         seed,
     };
     train_config.validate()?;
