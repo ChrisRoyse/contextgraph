@@ -4,18 +4,19 @@ use context_graph_core::dynamicjepa::{
 use rocksdb::{WriteBatch, DB};
 use uuid::Uuid;
 
-use crate::dynamicjepa::audit::{AuditStatus, DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
+use crate::dynamicjepa::audit::{AuditStatus, DjAuditRecord};
+use crate::dynamicjepa::audit_witness::write_batch_with_audit_witnesses;
 use crate::dynamicjepa::column_families::{
-    CF_DJ_ADAPTER_REGISTRY, CF_DJ_AUDIT_LOG, CF_DJ_DOMAIN_PACKS, CF_DJ_DOMAIN_PACK_BY_NAME_VERSION,
-    CF_DJ_INSTRUMENT_REGISTRY,
+    CF_DJ_ADAPTER_REGISTRY, CF_DJ_AUDIT_LOG, CF_DJ_AUDIT_WITNESS_CHAIN, CF_DJ_DOMAIN_PACKS,
+    CF_DJ_DOMAIN_PACK_BY_NAME_VERSION, CF_DJ_INSTRUMENT_REGISTRY,
 };
-use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, write_batch};
+use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records};
 use crate::dynamicjepa::encode::{
     decode_plain, encode_plain, encode_record, DYNAMIC_JEPA_STORAGE_VALUE_VERSION,
 };
 use crate::dynamicjepa::keys::{
-    adapter_registry_key, audit_key, domain_pack_storage_uuid, instrument_registry_key,
-    name_version_key, uuid_key,
+    adapter_registry_key, domain_pack_storage_uuid, instrument_registry_key, name_version_key,
+    uuid_key,
 };
 
 pub fn put_domain_pack(db: &DB, record: &DomainPack) -> DynamicJepaResult<Uuid> {
@@ -62,6 +63,7 @@ pub fn put_domain_pack(db: &DB, record: &DomainPack) -> DynamicJepaResult<Uuid> 
             CF_DJ_INSTRUMENT_REGISTRY.to_string(),
             CF_DJ_ADAPTER_REGISTRY.to_string(),
             CF_DJ_AUDIT_LOG.to_string(),
+            CF_DJ_AUDIT_WITNESS_CHAIN.to_string(),
         ],
         content_hashes: vec![record.header.content_hash],
         status: AuditStatus::Ok,
@@ -69,13 +71,7 @@ pub fn put_domain_pack(db: &DB, record: &DomainPack) -> DynamicJepaResult<Uuid> 
         signal_yield: 0,
     };
     audit.validate()?;
-    batch.put_cf(
-        cf(db, CF_DJ_AUDIT_LOG)?,
-        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
-        encode_plain(&audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
-    );
-
-    write_batch(db, batch, "put_domain_pack")?;
+    write_batch_with_audit_witnesses(db, batch, &[&audit], "put_domain_pack")?;
     Ok(domain_uuid)
 }
 

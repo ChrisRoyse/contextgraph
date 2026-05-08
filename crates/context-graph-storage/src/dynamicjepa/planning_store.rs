@@ -4,14 +4,14 @@ use context_graph_core::dynamicjepa::{
 };
 use rocksdb::{WriteBatch, DB};
 
-use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
+use crate::dynamicjepa::audit::DjAuditRecord;
+use crate::dynamicjepa::audit_witness::write_batch_with_audit_witnesses;
 use crate::dynamicjepa::column_families::{
-    CF_DJ_ACTIONS, CF_DJ_AUDIT_LOG, CF_DJ_GUARD_DECISIONS, CF_DJ_PLAN_TRACES, CF_DJ_PREDICTIONS,
+    CF_DJ_ACTIONS, CF_DJ_GUARD_DECISIONS, CF_DJ_PLAN_TRACES, CF_DJ_PREDICTIONS,
     CF_DJ_SKILL_POLICIES,
 };
 use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record, write_batch};
-use crate::dynamicjepa::encode::{encode_plain, encode_record};
-use crate::dynamicjepa::keys::audit_key;
+use crate::dynamicjepa::encode::encode_record;
 
 pub fn put_skill_policy(db: &DB, record: &SkillPolicyRecord) -> DynamicJepaResult<()> {
     put_record(
@@ -130,12 +130,7 @@ pub fn put_plan_batch(
         plan_trace.plan_trace_id.into_bytes(),
         encode_record(plan_trace)?,
     );
-    batch.put_cf(
-        cf(db, CF_DJ_AUDIT_LOG)?,
-        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
-        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
-    );
-    write_batch(db, batch, "put_plan_batch")
+    write_batch_with_audit_witnesses(db, batch, &[audit], "put_plan_batch")
 }
 
 pub fn get_guard_decision(

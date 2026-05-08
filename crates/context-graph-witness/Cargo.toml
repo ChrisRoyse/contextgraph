@@ -1,0 +1,11 @@
+[package]
+name = "context-graph-witness"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Clean-room tamper-evident witness-chain primitives for ContextGraph"
+license.workspace = true
+
+[dependencies]
+sha3 = "0.10"
+thiserror = { workspace = true }

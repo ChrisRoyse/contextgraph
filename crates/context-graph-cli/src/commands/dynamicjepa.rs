@@ -46,19 +46,20 @@ use context_graph_dynamicjepa::{
     PairwiseMiSummary, TrainConfig, MI_AUDIT_MIN_SAMPLE_SIZE, TRANSFER_DEFAULT_BOOTSTRAP_ITERS,
 };
 use context_graph_storage::dynamicjepa::column_families::{
-    CF_DJ_ACTIONS, CF_DJ_ADAPTER_REGISTRY, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG, CF_DJ_BINDINGS,
-    CF_DJ_BINDINGS_BY_ENTITY, CF_DJ_CONSTELLATIONS, CF_DJ_DATASET_SHARDS, CF_DJ_DOMAIN_PACKS,
-    CF_DJ_DOMAIN_PACK_BY_NAME_VERSION, CF_DJ_GUARD_DECISIONS, CF_DJ_INSTRUMENT_READINGS,
-    CF_DJ_INSTRUMENT_REGISTRY, CF_DJ_LATENT_PANELS, CF_DJ_MODEL_ARTIFACTS, CF_DJ_NORMALIZED_STATES,
-    CF_DJ_OUTCOMES, CF_DJ_PAIRWISE_READINGS, CF_DJ_PLAN_TRACES, CF_DJ_PREDICTIONS,
-    CF_DJ_RAW_EVENTS, CF_DJ_SKILL_POLICIES, CF_DJ_SURPRISE_EVENTS, CF_DJ_THRESHOLD_CALIBRATIONS,
-    CF_DJ_TRAINING_RUNS, CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS, CF_DJ_VERIFICATION_RUNS,
-    DJ_CF_NAMES,
+    CF_DJ_ACTIONS, CF_DJ_ADAPTER_REGISTRY, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG,
+    CF_DJ_AUDIT_WITNESS_CHAIN, CF_DJ_BINDINGS, CF_DJ_BINDINGS_BY_ENTITY, CF_DJ_CONSTELLATIONS,
+    CF_DJ_DATASET_SHARDS, CF_DJ_DOMAIN_PACKS, CF_DJ_DOMAIN_PACK_BY_NAME_VERSION,
+    CF_DJ_GUARD_DECISIONS, CF_DJ_INSTRUMENT_READINGS, CF_DJ_INSTRUMENT_REGISTRY,
+    CF_DJ_LATENT_PANELS, CF_DJ_MODEL_ARTIFACTS, CF_DJ_NORMALIZED_STATES, CF_DJ_OUTCOMES,
+    CF_DJ_PAIRWISE_READINGS, CF_DJ_PLAN_TRACES, CF_DJ_PREDICTIONS, CF_DJ_RAW_EVENTS,
+    CF_DJ_SKILL_POLICIES, CF_DJ_SURPRISE_EVENTS, CF_DJ_THRESHOLD_CALIBRATIONS, CF_DJ_TRAINING_RUNS,
+    CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS, CF_DJ_VERIFICATION_RUNS, DJ_CF_NAMES,
 };
 use context_graph_storage::dynamicjepa::keys::{
     adapter_registry_key, domain_pack_storage_uuid, instrument_reading_key,
     instrument_registry_key, name_version_key, uuid_key,
 };
+use context_graph_storage::dynamicjepa::list_audit_witness_entries;
 use context_graph_storage::dynamicjepa::{
     binding_entity_index_exists, get_action, get_adapter_run, get_adapter_spec, get_binding,
     get_constellation, get_dataset_shard, get_domain_pack, get_domain_pack_by_storage_id,
@@ -74,7 +75,7 @@ use context_graph_storage::dynamicjepa::{
     put_dataset_shard_with_audit_batch, put_domain_pack,
     put_panel_with_readings_and_pairwise_batch, put_raw_event_and_adapter_run_started,
     put_threshold_calibrations_with_audit_batch, put_trajectory_with_audit_batch,
-    put_verification_run_with_audit_batch, snapshot_dj_counts,
+    put_verification_run_with_audit_batch, snapshot_dj_counts, verify_audit_witness_chain,
 };
 use context_graph_storage::dynamicjepa::{
     signal_yield_for_operation, AuditStatus, DjAuditRecord, SignalYieldDimensions,
@@ -103,6 +104,8 @@ pub enum DynamicJepaCommands {
     InspectCounts(InspectCountsArgs),
     /// Decode rows from one DynamicJEPA column family.
     InspectCf(InspectCfArgs),
+    /// Verify the cryptographic witness chain for persisted DynamicJEPA audit rows.
+    VerifyAuditWitness(VerifyAuditWitnessArgs),
     /// Ingest a JSONL fixture and run its registered adapter.
     IngestEvent(IngestEventArgs),
     /// Run the registered adapter for one already persisted raw event.
@@ -199,6 +202,7 @@ impl DynamicJepaCommands {
             Self::GetDomain(_) => "dynamicjepa_get_domain",
             Self::InspectCounts(_) => "dynamicjepa_inspect_counts",
             Self::InspectCf(_) => "dynamicjepa_inspect_cf",
+            Self::VerifyAuditWitness(_) => "dynamicjepa_verify_audit_witness",
             Self::IngestEvent(_) => "dynamicjepa_ingest_event",
             Self::RunAdapter(_) => "dynamicjepa_run_adapter",
             Self::MaterializePanel(_) => "dynamicjepa_materialize_panel",
@@ -335,6 +339,25 @@ pub struct InspectCfArgs {
     pub limit: usize,
 
     /// Number of rows to skip.
+    #[arg(long, default_value_t = 0)]
+    pub offset: usize,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct VerifyAuditWitnessArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Maximum verified witness entries to include as evidence.
+    #[arg(long, default_value_t = 20)]
+    pub limit: usize,
+
+    /// Number of verified witness entries to skip.
     #[arg(long, default_value_t = 0)]
     pub offset: usize,
 
@@ -1531,6 +1554,7 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::GetDomain(args) => get_domain(args),
         DynamicJepaCommands::InspectCounts(args) => inspect_counts(args),
         DynamicJepaCommands::InspectCf(args) => inspect_column_family(args),
+        DynamicJepaCommands::VerifyAuditWitness(args) => verify_audit_witness_command(args),
         DynamicJepaCommands::IngestEvent(args) => ingest_event(args),
         DynamicJepaCommands::RunAdapter(args) => run_adapter_command(args),
         DynamicJepaCommands::MaterializePanel(args) => materialize_panel_command(args),
@@ -1909,6 +1933,49 @@ fn inspect_column_family(args: InspectCfArgs) -> DynamicJepaResult<CommandOutcom
             "limit": args.limit,
             "offset": args.offset,
             "decoded_records": decoded_records,
+        }),
+        exit_code: 0,
+    })
+}
+
+fn verify_audit_witness_command(args: VerifyAuditWitnessArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    if args.limit == 0 {
+        return Err(DynamicJepaError::validation(
+            "verify-audit-witness.limit",
+            "--limit must be greater than zero",
+            "request at least one witness row so verification evidence has observable output",
+        ));
+    }
+    let store = open_existing_store(&args.db, "dynamicjepa_verify_audit_witness")?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "verify-audit-witness.db")?;
+    let before_counts = snapshot_dj_counts(db)?;
+    let verification = verify_audit_witness_chain(db)?;
+    let entries = list_audit_witness_entries(db, args.limit, args.offset)?;
+    let after_counts = snapshot_dj_counts(db)?;
+    if before_counts != after_counts {
+        return Err(DynamicJepaError::StorageInvariantViolation {
+            message: format!(
+                "audit witness verification mutated RocksDB counts: before={before_counts:?} after={after_counts:?}"
+            ),
+        });
+    }
+    Ok(CommandOutcome {
+        value: json!({
+            "operation": "dynamicjepa_verify_audit_witness",
+            "status": "ok",
+            "valid": true,
+            "db_path": db_path,
+            "source_of_truth": [CF_DJ_AUDIT_LOG, CF_DJ_AUDIT_WITNESS_CHAIN],
+            "before_counts": before_counts,
+            "after_counts": after_counts,
+            "verification": verification,
+            "limit": args.limit,
+            "offset": args.offset,
+            "decoded_records": {
+                "witness_entries": entries,
+            },
         }),
         exit_code: 0,
     })
@@ -16348,11 +16415,11 @@ fn write_paper_tables(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
     }
     write_text_file(&ctx.paper_tables_dir.join("table_auditability.csv"), &audit)?;
 
-    let mut edges = "domain,edge_index,name,raw_delta,adapter_delta,normalized_delta,transition_delta,audit_delta,evidence_file\n".to_string();
+    let mut edges = "domain,edge_index,name,raw_delta,adapter_delta,normalized_delta,transition_delta,audit_delta,witness_delta,evidence_file\n".to_string();
     for row in &ctx.edge_rows {
         let expected = &row["edge"]["expected_delta"];
         edges.push_str(&format!(
-            "{},{},{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{},{},{}\n",
             csv_escape(row["domain"].as_str().unwrap_or("")),
             row["edge_index"].as_u64().unwrap_or(0),
             csv_escape(row["edge"]["name"].as_str().unwrap_or("")),
@@ -16361,6 +16428,7 @@ fn write_paper_tables(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
             expected[CF_DJ_NORMALIZED_STATES].as_i64().unwrap_or(0),
             expected[CF_DJ_TRANSITIONS].as_i64().unwrap_or(0),
             expected[CF_DJ_AUDIT_LOG].as_i64().unwrap_or(0),
+            expected[CF_DJ_AUDIT_WITNESS_CHAIN].as_i64().unwrap_or(0),
             csv_escape(row["evidence_file"].as_str().unwrap_or("")),
         ));
     }
@@ -17254,6 +17322,9 @@ impl VerificationContext {
             .entry(CF_DJ_VERIFICATION_RUNS.to_string())
             .or_default() += 1;
         *after_counts.entry(CF_DJ_AUDIT_LOG.to_string()).or_default() += 1;
+        *after_counts
+            .entry(CF_DJ_AUDIT_WITNESS_CHAIN.to_string())
+            .or_default() += 1;
         self.actual
             .insert("final_counts".to_string(), json!(after_counts.clone()));
 
@@ -17295,6 +17366,7 @@ impl VerificationContext {
             vec![
                 CF_DJ_VERIFICATION_RUNS.to_string(),
                 CF_DJ_AUDIT_LOG.to_string(),
+                CF_DJ_AUDIT_WITNESS_CHAIN.to_string(),
             ],
             vec![record.header.content_hash],
         )?;
@@ -17374,7 +17446,11 @@ impl VerificationContext {
             object.insert("after_counts".to_string(), json!(final_counts));
             object.insert(
                 "source_of_truth".to_string(),
-                json!([CF_DJ_VERIFICATION_RUNS, CF_DJ_AUDIT_LOG]),
+                json!([
+                    CF_DJ_VERIFICATION_RUNS,
+                    CF_DJ_AUDIT_LOG,
+                    CF_DJ_AUDIT_WITNESS_CHAIN
+                ]),
             );
             object.insert(
                 "decoded_records".to_string(),
@@ -17875,6 +17951,13 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
             .unwrap_or(0)
             + 1,
     );
+    expected_counts.insert(
+        CF_DJ_AUDIT_WITNESS_CHAIN.to_string(),
+        pre_verification_counts["counts"][CF_DJ_AUDIT_WITNESS_CHAIN]
+            .as_u64()
+            .unwrap_or(0)
+            + 1,
+    );
     assert_counts_before_verification(ctx, &pre_verification_counts, &expected_counts)?;
     ctx.expected
         .insert("final_counts".to_string(), json!(expected_counts));
@@ -17982,6 +18065,14 @@ fn run_adapter_edge_cases(ctx: &mut VerificationContext) -> DynamicJepaResult<()
             expectation.audit_delta,
             name,
         )?;
+        assert_delta(
+            ctx,
+            &before,
+            &after,
+            CF_DJ_AUDIT_WITNESS_CHAIN,
+            expectation.audit_delta,
+            name,
+        )?;
         ctx.edges.push(json!({
             "name": name,
             "fixture": path,
@@ -17994,6 +18085,7 @@ fn run_adapter_edge_cases(ctx: &mut VerificationContext) -> DynamicJepaResult<()
                 CF_DJ_NORMALIZED_STATES: expectation.normalized_delta,
                 CF_DJ_TRANSITIONS: expectation.transition_delta,
                 CF_DJ_AUDIT_LOG: expectation.audit_delta,
+                CF_DJ_AUDIT_WITNESS_CHAIN: expectation.audit_delta,
             }
         }));
     }
@@ -18431,7 +18523,8 @@ fn assert_counts_before_verification(
         .ok_or_else(|| ctx.fail("pre-verification inspect-counts missing counts object"))?;
     for (cf, expected_final) in expected_after_verification {
         let mut expected_before = *expected_final;
-        if cf == CF_DJ_VERIFICATION_RUNS || cf == CF_DJ_AUDIT_LOG {
+        if cf == CF_DJ_VERIFICATION_RUNS || cf == CF_DJ_AUDIT_LOG || cf == CF_DJ_AUDIT_WITNESS_CHAIN
+        {
             expected_before = expected_before.saturating_sub(1);
         }
         let actual = counts
@@ -22686,9 +22779,14 @@ fn build_audit(
     status: AuditStatus,
     input_ids: Vec<String>,
     output_ids: Vec<String>,
-    cfs_touched: Vec<String>,
+    mut cfs_touched: Vec<String>,
     content_hashes: Vec<[u8; 32]>,
 ) -> DynamicJepaResult<DjAuditRecord> {
+    if cfs_touched.iter().any(|cf| cf == CF_DJ_AUDIT_LOG)
+        && !cfs_touched.iter().any(|cf| cf == CF_DJ_AUDIT_WITNESS_CHAIN)
+    {
+        cfs_touched.push(CF_DJ_AUDIT_WITNESS_CHAIN.to_string());
+    }
     let timestamp_unix_nanos = now_unix_ms()? as u64 * 1_000_000;
     let record = DjAuditRecord {
         audit_id: Uuid::new_v4(),

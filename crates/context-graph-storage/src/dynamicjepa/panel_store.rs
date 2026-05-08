@@ -5,15 +5,16 @@ use context_graph_core::dynamicjepa::{
 use rocksdb::{WriteBatch, DB};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
+use crate::dynamicjepa::audit::DjAuditRecord;
+use crate::dynamicjepa::audit_witness::write_batch_with_audit_witnesses;
 use crate::dynamicjepa::column_families::{
-    CF_DJ_AUDIT_LOG, CF_DJ_INSTRUMENT_READINGS, CF_DJ_LATENT_PANELS, CF_DJ_PAIRWISE_READINGS,
+    CF_DJ_INSTRUMENT_READINGS, CF_DJ_LATENT_PANELS, CF_DJ_PAIRWISE_READINGS,
 };
 use crate::dynamicjepa::common::{
     cf, count_cf, get_record, list_prefix_records, list_records, put_record, write_batch,
 };
-use crate::dynamicjepa::encode::{encode_plain, encode_record};
-use crate::dynamicjepa::keys::{audit_key, instrument_reading_key, pairwise_reading_key};
+use crate::dynamicjepa::encode::encode_record;
+use crate::dynamicjepa::keys::{instrument_reading_key, pairwise_reading_key};
 
 pub fn put_panel_with_readings_and_pairwise_batch(
     db: &DB,
@@ -55,14 +56,13 @@ pub fn put_panel_with_readings_and_pairwise_batch(
         panel.panel_id.into_bytes(),
         encode_record(panel)?,
     );
-    for audit in audits {
-        batch.put_cf(
-            cf(db, CF_DJ_AUDIT_LOG)?,
-            audit_key(audit.timestamp_unix_nanos, audit.audit_id),
-            encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
-        );
-    }
-    write_batch(db, batch, "put_panel_with_readings_and_pairwise_batch")
+    let audit_refs = audits.iter().collect::<Vec<_>>();
+    write_batch_with_audit_witnesses(
+        db,
+        batch,
+        &audit_refs,
+        "put_panel_with_readings_and_pairwise_batch",
+    )
 }
 
 fn validate_panel_pairwise_batch(

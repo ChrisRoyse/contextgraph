@@ -6,14 +6,14 @@ use context_graph_core::dynamicjepa::{DynamicJepaRecord, DynamicJepaResult};
 use rocksdb::{WriteBatch, DB};
 use uuid::Uuid;
 
-use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
+use crate::dynamicjepa::audit::DjAuditRecord;
+use crate::dynamicjepa::audit_witness::write_batch_with_audit_witnesses;
 use crate::dynamicjepa::column_families::{
-    CF_DJ_ACTIONS, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG, CF_DJ_NORMALIZED_STATES, CF_DJ_OUTCOMES,
-    CF_DJ_RAW_EVENTS, CF_DJ_TRANSITIONS,
+    CF_DJ_ACTIONS, CF_DJ_ADAPTER_RUNS, CF_DJ_NORMALIZED_STATES, CF_DJ_OUTCOMES, CF_DJ_RAW_EVENTS,
+    CF_DJ_TRANSITIONS,
 };
 use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record, write_batch};
-use crate::dynamicjepa::encode::{encode_plain, encode_record};
-use crate::dynamicjepa::keys::audit_key;
+use crate::dynamicjepa::encode::encode_record;
 
 pub fn put_raw_event_and_adapter_run_started(
     db: &DB,
@@ -35,12 +35,7 @@ pub fn put_raw_event_and_adapter_run_started(
         adapter_run.adapter_run_id.as_bytes(),
         encode_record(adapter_run)?,
     );
-    batch.put_cf(
-        cf(db, CF_DJ_AUDIT_LOG)?,
-        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
-        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
-    );
-    write_batch(db, batch, "put_raw_event_and_adapter_run_started")
+    write_batch_with_audit_witnesses(db, batch, &[audit], "put_raw_event_and_adapter_run_started")
 }
 
 pub fn put_adapter_run_success_batch(
@@ -113,14 +108,8 @@ pub fn put_adapter_run_success_with_audits_batch(
         transition.transition_id.into_bytes(),
         encode_record(transition)?,
     );
-    for audit in audits {
-        batch.put_cf(
-            cf(db, CF_DJ_AUDIT_LOG)?,
-            audit_key(audit.timestamp_unix_nanos, audit.audit_id),
-            encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
-        );
-    }
-    write_batch(db, batch, "put_adapter_run_success_batch")
+    let audit_refs = audits.iter().collect::<Vec<_>>();
+    write_batch_with_audit_witnesses(db, batch, &audit_refs, "put_adapter_run_success_batch")
 }
 
 pub fn put_adapter_run_failure_batch(
@@ -136,12 +125,7 @@ pub fn put_adapter_run_failure_batch(
         adapter_run.adapter_run_id.as_bytes(),
         encode_record(adapter_run)?,
     );
-    batch.put_cf(
-        cf(db, CF_DJ_AUDIT_LOG)?,
-        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
-        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
-    );
-    write_batch(db, batch, "put_adapter_run_failure_batch")
+    write_batch_with_audit_witnesses(db, batch, &[audit], "put_adapter_run_failure_batch")
 }
 
 pub fn put_raw_event(db: &DB, record: &RawDomainEvent) -> DynamicJepaResult<()> {

@@ -158,6 +158,27 @@ RuVector is MIT. We never copy code, so the MIT obligations don't apply to our t
 
 ---
 
+## End-goal connection
+
+Per `09_END_GOAL_REVIEW_REPLACEMENT.md`, every Tier 1+2 primitive is a **verification gate** in the function `verify_ai_output(patch, problem, harness_state) -> {OK, FailureMode}`. When that function returns `OK`, no human reviewer is needed because every claim the AI made about its patch has been independently re-verified against a non-AI substrate (cryptographic, statistical, causal, or oracle).
+
+| Tier 1+2 reimplementation | Verification gate it closes |
+|---|---|
+| `crates/context-graph-witness/` | Witness-chain integrity (foundation) |
+| `crates/context-graph-solver/` | Influence attribution (PPR) |
+| `crates/context-graph-sona/` | Auditable behavior provenance |
+| `crates/context-graph-retrieval-diffusion/` | Auditable generation in narrow domains |
+| `crates/context-graph-verified-training/` | Training-step certificate |
+| `crates/context-graph-mincut/` | Calibration-set cleanliness |
+| Stage 0/F certs (built atop witness) | Recall-cert Merkle root |
+| 8/7/5/3-bit tier compression | Lineage cold-storage verifiability |
+| MMR diversity rerank | Citation completeness |
+| Conformal prediction | Calibrated uncertainty |
+| Granger causality | Causal attribution |
+| Matryoshka + Graph RAG | Retrieval scalability under verification |
+
+Sequence the work by **gate-closure priority** (per §09's re-prioritized table), not by individual feature impact. Foundation gates (witness chain, training cert, recall cert) ship first; refinement gates (mincut, MMR, Matryoshka) ship after.
+
 ## Bottom line
 
 Where the agentdb findings doc said "port these 8 ideas in 10-12 days," the RuVector findings doc — under the locked clean-room rule — says **"clean-room reimplement 4 new crates in ~12-16 days, all in our own tree, zero foreign deps."**

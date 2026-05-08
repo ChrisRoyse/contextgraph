@@ -7,6 +7,7 @@ license = "PolyForm-Noncommercial-1.0.0"
 
 [dependencies]
 context-graph-core = { path = "../context-graph-core" }
+context-graph-witness = { path = "../context-graph-witness" }
 # GPU required per constitution (stack.gpu, AP-007)
 context-graph-embeddings = { path = "../context-graph-embeddings", features = ["candle", "cuda"] }
 # GPU batch similarity for multi-space search (ARCH-GPU-06)

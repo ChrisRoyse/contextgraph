@@ -2,12 +2,12 @@ use context_graph_core::dynamicjepa::{DynamicJepaRecord, DynamicJepaResult, Thre
 use rocksdb::{WriteBatch, DB};
 use uuid::Uuid;
 
-use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
-use crate::dynamicjepa::column_families::CF_DJ_AUDIT_LOG;
+use crate::dynamicjepa::audit::DjAuditRecord;
+use crate::dynamicjepa::audit_witness::write_batch_with_audit_witnesses;
 use crate::dynamicjepa::column_families::CF_DJ_THRESHOLD_CALIBRATIONS;
 use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record, write_batch};
-use crate::dynamicjepa::encode::{encode_plain, encode_record};
-use crate::dynamicjepa::keys::{audit_key, threshold_calibration_key};
+use crate::dynamicjepa::encode::encode_record;
+use crate::dynamicjepa::keys::threshold_calibration_key;
 
 pub fn put_threshold_calibration(
     db: &DB,
@@ -57,12 +57,12 @@ pub fn put_threshold_calibrations_with_audit_batch(
             encode_record(record)?,
         );
     }
-    batch.put_cf(
-        cf(db, CF_DJ_AUDIT_LOG)?,
-        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
-        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
-    );
-    write_batch(db, batch, "put_threshold_calibrations_with_audit_batch")
+    write_batch_with_audit_witnesses(
+        db,
+        batch,
+        &[audit],
+        "put_threshold_calibrations_with_audit_batch",
+    )
 }
 
 pub fn list_threshold_calibrations(

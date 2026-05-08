@@ -1069,6 +1069,7 @@ dependencies = [
  "context-graph-embeddings",
  "context-graph-graph-agent",
  "context-graph-storage",
+ "context-graph-witness",
  "dirs",
  "fs2",
  "glob",
@@ -1105,6 +1106,7 @@ dependencies = [
  "context-graph-cuda",
  "context-graph-embeddings",
  "context-graph-test-utils",
+ "context-graph-witness",
  "criterion",
  "dashmap",
  "futures",
@@ -1134,6 +1136,14 @@ dependencies = [
  "rand 0.8.6",
  "tempfile",
  "uuid",
+]
+
+[[package]]
+name = "context-graph-witness"
+version = "0.1.0"
+dependencies = [
+ "sha3",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

@@ -3,11 +3,11 @@ use context_graph_core::dynamicjepa::{
 };
 use rocksdb::{WriteBatch, DB};
 
-use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
-use crate::dynamicjepa::column_families::{CF_DJ_AUDIT_LOG, CF_DJ_SURPRISE_EVENTS};
+use crate::dynamicjepa::audit::DjAuditRecord;
+use crate::dynamicjepa::audit_witness::write_batch_with_audit_witnesses;
+use crate::dynamicjepa::column_families::CF_DJ_SURPRISE_EVENTS;
 use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record, write_batch};
-use crate::dynamicjepa::encode::{encode_plain, encode_record};
-use crate::dynamicjepa::keys::audit_key;
+use crate::dynamicjepa::encode::encode_record;
 
 pub fn put_surprise_event(db: &DB, record: &SurpriseEventRecord) -> DynamicJepaResult<()> {
     put_record(
@@ -31,12 +31,7 @@ pub fn put_surprise_event_with_audit_batch(
         record.surprise_event_id.into_bytes(),
         encode_record(record)?,
     );
-    batch.put_cf(
-        cf(db, CF_DJ_AUDIT_LOG)?,
-        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
-        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
-    );
-    write_batch(db, batch, "put_surprise_event_with_audit_batch")
+    write_batch_with_audit_witnesses(db, batch, &[audit], "put_surprise_event_with_audit_batch")
 }
 
 pub fn get_surprise_event(

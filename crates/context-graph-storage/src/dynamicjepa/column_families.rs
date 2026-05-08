@@ -39,6 +39,7 @@ pub const CF_DJ_SURPRISE_EVENTS: &str = "dj_surprise_events";
 
 pub const CF_DJ_VERIFICATION_RUNS: &str = "dj_verification_runs";
 pub const CF_DJ_AUDIT_LOG: &str = "dj_audit_log";
+pub const CF_DJ_AUDIT_WITNESS_CHAIN: &str = "dj_audit_witness_chain";
 
 pub const DJ_CF_NAMES: &[&str] = &[
     CF_DJ_DOMAIN_PACKS,
@@ -69,6 +70,7 @@ pub const DJ_CF_NAMES: &[&str] = &[
     CF_DJ_SURPRISE_EVENTS,
     CF_DJ_VERIFICATION_RUNS,
     CF_DJ_AUDIT_LOG,
+    CF_DJ_AUDIT_WITNESS_CHAIN,
 ];
 
 pub const DJ_CF_COUNT: usize = DJ_CF_NAMES.len();
@@ -193,5 +195,9 @@ pub fn dj_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
             dj_append_only_cf_options(cache, Some(16)),
         ),
         ColumnFamilyDescriptor::new(CF_DJ_AUDIT_LOG, dj_append_only_cf_options(cache, Some(8))),
+        ColumnFamilyDescriptor::new(
+            CF_DJ_AUDIT_WITNESS_CHAIN,
+            dj_append_only_cf_options(cache, Some(8)),
+        ),
     ]
 }

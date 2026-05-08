@@ -20,9 +20,10 @@ use context_graph_core::dynamicjepa::{
     SURPRISE_EVENT_RECORD_VERSION, TRAINING_RUN_RECORD_VERSION,
 };
 use context_graph_storage::dynamicjepa::column_families::{
-    CF_DJ_ACTIONS, CF_DJ_AUDIT_LOG, CF_DJ_DATASET_SHARDS, CF_DJ_GUARD_DECISIONS,
-    CF_DJ_LATENT_PANELS, CF_DJ_MODEL_ARTIFACTS, CF_DJ_OUTCOMES, CF_DJ_PLAN_TRACES,
-    CF_DJ_PREDICTIONS, CF_DJ_SKILL_POLICIES, CF_DJ_SURPRISE_EVENTS, CF_DJ_TRAINING_RUNS,
+    CF_DJ_ACTIONS, CF_DJ_AUDIT_LOG, CF_DJ_AUDIT_WITNESS_CHAIN, CF_DJ_DATASET_SHARDS,
+    CF_DJ_GUARD_DECISIONS, CF_DJ_LATENT_PANELS, CF_DJ_MODEL_ARTIFACTS, CF_DJ_OUTCOMES,
+    CF_DJ_PLAN_TRACES, CF_DJ_PREDICTIONS, CF_DJ_SKILL_POLICIES, CF_DJ_SURPRISE_EVENTS,
+    CF_DJ_TRAINING_RUNS,
 };
 use context_graph_storage::dynamicjepa::keys::domain_pack_storage_uuid;
 use context_graph_storage::dynamicjepa::{
@@ -2617,9 +2618,14 @@ fn build_audit(
     status: AuditStatus,
     input_ids: Vec<String>,
     output_ids: Vec<String>,
-    cfs_touched: Vec<String>,
+    mut cfs_touched: Vec<String>,
     content_hashes: Vec<[u8; 32]>,
 ) -> DynamicJepaResult<DjAuditRecord> {
+    if cfs_touched.iter().any(|cf| cf == CF_DJ_AUDIT_LOG)
+        && !cfs_touched.iter().any(|cf| cf == CF_DJ_AUDIT_WITNESS_CHAIN)
+    {
+        cfs_touched.push(CF_DJ_AUDIT_WITNESS_CHAIN.to_string());
+    }
     let record = DjAuditRecord {
         audit_id: Uuid::new_v4(),
         timestamp_unix_nanos: now_unix_ms()? as u64 * 1_000_000,

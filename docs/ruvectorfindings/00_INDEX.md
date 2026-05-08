@@ -1,5 +1,7 @@
 # RuVector Findings — Index
 
+> **⭐ End Goal (operator-stated 2026-05-08):** make code review obsolete by making AI-generated patches **self-verifiable against bytes-on-disk reality**. The two-loop reality system (outer = Claude Code optimizer, inner = Qwen3.6-27B + Rust harness on SWE-bench) is in service of building a `verify_ai_output(patch)` function that runs gates over witness chain + training certs + recall certs + source-of-truth SHAs + conformal bounds + Granger attribution + Docker oracle. When `verify_ai_output` returns `Ok`, no human review is needed. **Every primitive in this findings doc set is a verification gate that ladders up to that goal.** Read `09_END_GOAL_REVIEW_REPLACEMENT.md` for the full architecture and the gate-by-gate mapping.
+
 > **🔒 LOCKED 2026-05-08 — Reference-Only, Clean-Room Reimplementation Only**
 >
 > Per operator decision (`memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md`):
@@ -69,6 +71,7 @@ Workspace version: `2.0.5` (per CHANGELOG); npm distribution `ruvector` package;
 | 06 | `06_RISKS_AND_NON_TRANSFERABLE.md` | The honest "don't take these" list — license, build complexity, branding leakage |
 | 07 | `07_GIT_HISTORY_LAST_2_DAYS.md` | The 6 commits in last 2 days + what they tell us about active workstreams (sparse-mario / retrieval diffusion / FastGRNN-gated attention / sm_120-relevant) |
 | 08 | `08_HONEST_SUMMARY.md` | The verdict — read first if you only have 5 minutes |
+| 09 | `09_END_GOAL_REVIEW_REPLACEMENT.md` | **The why.** How every primitive in this doc set ladders up to "no human code review needed." Read this if you want to understand the system's purpose. |
 
 ---
 

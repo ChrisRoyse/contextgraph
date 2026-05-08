@@ -52,8 +52,8 @@ use super::types::{TeleologicalStoreConfig, TeleologicalStoreError, Teleological
 /// RocksDB-backed storage for TeleologicalFingerprints.
 ///
 /// Implements the `TeleologicalMemoryStore` trait with persistent storage
-/// across 101 column families (11 base + 41 teleological + 14 quantized
-/// + 5 code + 2 causal + 28 DynamicJEPA).
+/// across 102 column families (11 base + 41 teleological + 14 quantized
+/// + 5 code + 2 causal + 29 DynamicJEPA).
 ///
 /// # Thread Safety
 ///
@@ -134,7 +134,7 @@ pub struct RocksDbTeleologicalStore {
 impl RocksDbTeleologicalStore {
     /// Open a teleological store at the specified path with default configuration.
     ///
-    /// Creates the database and all 101 column families if they don't exist.
+    /// Creates the database and all 102 column families if they don't exist.
     /// Existing RocksDB LOCK files are inspected for diagnostics only and are
     /// never removed by the store opener.
     pub fn open<P: AsRef<Path>>(path: P) -> TeleologicalStoreResult<Self> {
@@ -385,7 +385,7 @@ impl RocksDbTeleologicalStore {
             return Err(TeleologicalStoreError::OpenFailed {
                 path: path.display().to_string(),
                 message: format!(
-                    "existing RocksDB is missing DynamicJEPA v2 column families: {}; expected {} DynamicJEPA CFs. Rebuild the DB from a v2 bundle instead of relying on create_missing_column_families.",
+                    "existing RocksDB is missing DynamicJEPA v3 column families: {}; expected {} DynamicJEPA CFs. Rebuild the DB from a v3 bundle instead of relying on create_missing_column_families.",
                     missing.join(", "),
                     DJ_CF_NAMES.len()
                 ),

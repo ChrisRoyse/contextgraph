@@ -6,18 +6,14 @@ use super::errors::{CCRealityError, Result};
 use super::helpers::*;
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
-use serde_json::{json, Value};
-use sha3::{
-    digest::{ExtendableOutput, Update, XofReader},
-    Shake256,
+use context_graph_witness::{
+    hex_hash as witness_hex_hash, verify_chain_bytes_with_type_validator, WitnessEntry, HASH_SIZE,
+    WITNESS_ENTRY_SIZE, ZERO_HASH,
 };
+use serde_json::{json, Value};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-
-pub const WITNESS_ENTRY_SIZE: usize = 73;
-const HASH_SIZE: usize = 32;
-const ZERO_HASH: [u8; HASH_SIZE] = [0u8; HASH_SIZE];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WitnessOpType {
@@ -51,50 +47,6 @@ impl WitnessOpType {
             Self::BanditReward => "bandit_reward",
             Self::Autoresearch => "autoresearch",
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WitnessEntry {
-    pub timestamp_unix: u64,
-    pub op_type: u8,
-    pub content_sha256: [u8; HASH_SIZE],
-    pub prev_chain_hash: [u8; HASH_SIZE],
-}
-
-impl WitnessEntry {
-    fn to_bytes(&self) -> [u8; WITNESS_ENTRY_SIZE] {
-        let mut out = [0u8; WITNESS_ENTRY_SIZE];
-        out[0..8].copy_from_slice(&self.timestamp_unix.to_be_bytes());
-        out[8] = self.op_type;
-        out[9..41].copy_from_slice(&self.content_sha256);
-        out[41..73].copy_from_slice(&self.prev_chain_hash);
-        out
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() != WITNESS_ENTRY_SIZE {
-            return Err(CCRealityError::new(
-                "CCREALITY_WITNESS_ENTRY_SIZE_INVALID",
-                "witness entry slice has invalid byte length",
-                "witness_chain.entry_size",
-                "inspect witness-chain.bin for truncation",
-                json!({"expected": WITNESS_ENTRY_SIZE, "actual": bytes.len()}),
-                None,
-            ));
-        }
-        let mut timestamp = [0u8; 8];
-        timestamp.copy_from_slice(&bytes[0..8]);
-        let mut content_sha256 = [0u8; HASH_SIZE];
-        content_sha256.copy_from_slice(&bytes[9..41]);
-        let mut prev_chain_hash = [0u8; HASH_SIZE];
-        prev_chain_hash.copy_from_slice(&bytes[41..73]);
-        Ok(Self {
-            timestamp_unix: u64::from_be_bytes(timestamp),
-            op_type: bytes[8],
-            content_sha256,
-            prev_chain_hash,
-        })
     }
 }
 
@@ -172,8 +124,9 @@ pub async fn optimizer_witness_chain_diff(args: Value) -> Result<Value> {
     let mut entries = Vec::new();
     for idx in since_offset..entry_count {
         let start = idx * WITNESS_ENTRY_SIZE;
-        let entry = WitnessEntry::from_bytes(&bytes[start..start + WITNESS_ENTRY_SIZE])?;
-        entries.push(entry_json(idx as u64, &entry, &hash_entry(&entry)));
+        let entry = WitnessEntry::from_bytes(&bytes[start..start + WITNESS_ENTRY_SIZE])
+            .map_err(|err| witness_error(&path, err))?;
+        entries.push(entry_json(idx as u64, &entry, &entry.chain_hash()));
     }
     Ok(json!({
         "status": "ok",
@@ -196,12 +149,21 @@ fn append_entry(
     }
     let before = verify_chain(path)?;
     let offset = before.entries;
-    let entry = WitnessEntry {
-        timestamp_unix: unix_secs()?,
-        op_type: op_type as u8,
+    let entry = WitnessEntry::new(
+        before.last_chain_hash,
         content_sha256,
-        prev_chain_hash: before.last_chain_hash,
-    };
+        unix_secs()?.checked_mul(1_000_000_000).ok_or_else(|| {
+            CCRealityError::new(
+                "CCREALITY_WITNESS_TIMESTAMP_OVERFLOW",
+                "witness timestamp overflowed nanoseconds conversion",
+                "witness_chain.timestamp_ns",
+                "inspect system clock before recording optimizer audit state",
+                json!({}),
+                None,
+            )
+        })?,
+        op_type as u8,
+    );
     let entry_bytes = entry.to_bytes();
     let mut file = fs::OpenOptions::new()
         .create(true)
@@ -213,7 +175,7 @@ fn append_entry(
     file.sync_all()
         .map_err(|e| fs_error("CCREALITY_WITNESS_SYNC_FAILED", path, e))?;
     let after = verify_chain(path)?;
-    if after.entries != offset + 1 || after.last_chain_hash != hash_entry(&entry) {
+    if after.entries != offset + 1 || after.last_chain_hash != entry.chain_hash() {
         return Err(CCRealityError::new(
             "CCREALITY_WITNESS_READBACK_MISMATCH",
             "witness-chain.bin readback did not preserve appended entry",
@@ -223,7 +185,7 @@ fn append_entry(
                 "path": path.display().to_string(),
                 "expected_entries": offset + 1,
                 "actual_entries": after.entries,
-                "expected_last_chain_hash": chain_hash_hex(&hash_entry(&entry)),
+                "expected_last_chain_hash": chain_hash_hex(&entry.chain_hash()),
                 "actual_last_chain_hash": chain_hash_hex(&after.last_chain_hash),
             }),
             Some(file_sot(path)),
@@ -235,7 +197,8 @@ fn append_entry(
         "entry_size": WITNESS_ENTRY_SIZE,
         "op_type": op_type.as_str(),
         "content_sha256": sha256_hex(&content_sha256),
-        "prev_chain_hash": chain_hash_hex(&entry.prev_chain_hash),
+        "action_hash": chain_hash_hex(&entry.action_hash),
+        "prev_chain_hash": chain_hash_hex(&entry.prev_hash),
         "chain_hash": chain_hash_hex(&after.last_chain_hash),
         "entries": after.entries,
         "source_of_truth": file_sot(path),
@@ -261,43 +224,21 @@ fn verify_chain(path: &Path) -> Result<Verification> {
     if bytes.len() % WITNESS_ENTRY_SIZE != 0 {
         return Err(invalid_chain_length(path, bytes.len()));
     }
-    let mut expected_prev = ZERO_HASH;
+    let verification = verify_chain_bytes_with_type_validator(&bytes, |witness_type| {
+        WitnessOpType::from_u8(witness_type).is_some()
+    })
+    .map_err(|err| witness_error(path, err))?;
     let mut last_op = Value::Null;
     let entries = bytes.len() / WITNESS_ENTRY_SIZE;
     for idx in 0..entries {
         let start = idx * WITNESS_ENTRY_SIZE;
-        let entry = WitnessEntry::from_bytes(&bytes[start..start + WITNESS_ENTRY_SIZE])?;
-        if entry.prev_chain_hash != expected_prev {
-            return Err(CCRealityError::new(
-                "CCREALITY_WITNESS_PREV_HASH_MISMATCH",
-                "witness-chain.bin prev_chain_hash does not match replayed chain hash",
-                "witness_chain.prev_chain_hash",
-                "inspect optimizer writes around the failing offset; the chain may be tampered or truncated",
-                json!({
-                    "path": path.display().to_string(),
-                    "offset": idx,
-                    "expected_prev_chain_hash": chain_hash_hex(&expected_prev),
-                    "actual_prev_chain_hash": chain_hash_hex(&entry.prev_chain_hash),
-                }),
-                Some(file_sot(path)),
-            ));
-        }
-        if WitnessOpType::from_u8(entry.op_type).is_none() {
-            return Err(CCRealityError::new(
-                "CCREALITY_WITNESS_OP_TYPE_UNKNOWN",
-                "witness-chain.bin contains an unknown op_type",
-                "witness_chain.op_type",
-                "upgrade the verifier or inspect the corrupt entry",
-                json!({"path": path.display().to_string(), "offset": idx, "op_type": entry.op_type}),
-                Some(file_sot(path)),
-            ));
-        }
-        expected_prev = hash_entry(&entry);
-        last_op = entry_json(idx as u64, &entry, &expected_prev);
+        let entry = WitnessEntry::from_bytes(&bytes[start..start + WITNESS_ENTRY_SIZE])
+            .map_err(|err| witness_error(path, err))?;
+        last_op = entry_json(idx as u64, &entry, &entry.chain_hash());
     }
     Ok(Verification {
-        entries: entries as u64,
-        last_chain_hash: expected_prev,
+        entries: verification.entries,
+        last_chain_hash: verification.last_chain_hash,
         last_op,
     })
 }
@@ -323,15 +264,6 @@ fn invalid_chain_length(path: &Path, len: usize) -> CCRealityError {
         json!({"path": path.display().to_string(), "len": len, "entry_size": WITNESS_ENTRY_SIZE}),
         Some(file_sot(path)),
     )
-}
-
-fn hash_entry(entry: &WitnessEntry) -> [u8; HASH_SIZE] {
-    let mut hasher = Shake256::default();
-    hasher.update(&entry.to_bytes());
-    let mut reader = hasher.finalize_xof();
-    let mut out = [0u8; HASH_SIZE];
-    XofReader::read(&mut reader, &mut out);
-    out
 }
 
 fn parse_sha256_hex(value: &str) -> Result<[u8; HASH_SIZE]> {
@@ -366,18 +298,69 @@ fn sha256_hex(hash: &[u8; HASH_SIZE]) -> String {
 }
 
 fn chain_hash_hex(hash: &[u8; HASH_SIZE]) -> String {
-    format!("shake256:{}", hex::encode(hash))
+    format!("shake256:{}", witness_hex_hash(hash))
 }
 
 fn entry_json(offset: u64, entry: &WitnessEntry, chain_hash: &[u8; HASH_SIZE]) -> Value {
     json!({
         "offset": offset,
-        "timestamp_unix": entry.timestamp_unix,
-        "op_type": WitnessOpType::from_u8(entry.op_type).map(WitnessOpType::as_str).unwrap_or("unknown"),
-        "content_sha256": sha256_hex(&entry.content_sha256),
-        "prev_chain_hash": chain_hash_hex(&entry.prev_chain_hash),
+        "timestamp_unix": entry.timestamp_ns / 1_000_000_000,
+        "timestamp_ns": entry.timestamp_ns,
+        "op_type": WitnessOpType::from_u8(entry.witness_type).map(WitnessOpType::as_str).unwrap_or("unknown"),
+        "content_sha256": sha256_hex(&entry.action_hash),
+        "action_hash": chain_hash_hex(&entry.action_hash),
+        "prev_chain_hash": chain_hash_hex(&entry.prev_hash),
         "chain_hash": chain_hash_hex(chain_hash),
     })
+}
+
+fn witness_error(path: &Path, err: context_graph_witness::WitnessError) -> CCRealityError {
+    match err {
+        context_graph_witness::WitnessError::EntryLengthInvalid { expected, actual } => {
+            CCRealityError::new(
+                "CCREALITY_WITNESS_ENTRY_SIZE_INVALID",
+                "witness entry slice has invalid byte length",
+                "witness_chain.entry_size",
+                "inspect witness-chain.bin for truncation",
+                json!({"expected": expected, "actual": actual}),
+                Some(file_sot(path)),
+            )
+        }
+        context_graph_witness::WitnessError::ChainLengthInvalid {
+            len,
+            entry_size: _,
+        } => {
+            invalid_chain_length(path, len)
+        }
+        context_graph_witness::WitnessError::PrevHashMismatch {
+            offset,
+            expected_prev_hash,
+            actual_prev_hash,
+        } => CCRealityError::new(
+            "CCREALITY_WITNESS_PREV_HASH_MISMATCH",
+            "witness-chain.bin prev_chain_hash does not match replayed chain hash",
+            "witness_chain.prev_chain_hash",
+            "inspect optimizer writes around the failing offset; the chain may be tampered or truncated",
+            json!({
+                "path": path.display().to_string(),
+                "offset": offset,
+                "expected_prev_chain_hash": chain_hash_hex(&expected_prev_hash),
+                "actual_prev_chain_hash": chain_hash_hex(&actual_prev_hash),
+            }),
+            Some(file_sot(path)),
+        ),
+        context_graph_witness::WitnessError::WitnessTypeRejected {
+            offset,
+            witness_type,
+        } => CCRealityError::new(
+            "CCREALITY_WITNESS_OP_TYPE_UNKNOWN",
+            "witness-chain.bin contains an unknown op_type",
+            "witness_chain.op_type",
+            "upgrade the verifier or inspect the corrupt entry",
+            json!({"path": path.display().to_string(), "offset": offset, "op_type": witness_type}),
+            Some(file_sot(path)),
+        ),
+    }
 }
 
 fn witness_chain_path(runtime_root: &Path, run_id: &str) -> PathBuf {

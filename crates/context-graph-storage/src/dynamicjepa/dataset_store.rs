@@ -3,12 +3,12 @@ use context_graph_core::dynamicjepa::{
 };
 use rocksdb::{WriteBatch, DB};
 
-use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
-use crate::dynamicjepa::column_families::CF_DJ_AUDIT_LOG;
+use crate::dynamicjepa::audit::DjAuditRecord;
+use crate::dynamicjepa::audit_witness::write_batch_with_audit_witnesses;
 use crate::dynamicjepa::column_families::CF_DJ_DATASET_SHARDS;
 use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record, write_batch};
-use crate::dynamicjepa::encode::{encode_plain, encode_record};
-use crate::dynamicjepa::keys::{audit_key, dataset_shard_key};
+use crate::dynamicjepa::encode::encode_record;
+use crate::dynamicjepa::keys::dataset_shard_key;
 
 pub fn put_dataset_shard(db: &DB, record: &DatasetShardRecord) -> DynamicJepaResult<()> {
     put_record(
@@ -32,12 +32,7 @@ pub fn put_dataset_shard_with_audit_batch(
         dataset_shard_key(record.dataset_id, record.shard_id),
         encode_record(record)?,
     );
-    batch.put_cf(
-        cf(db, CF_DJ_AUDIT_LOG)?,
-        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
-        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
-    );
-    write_batch(db, batch, "put_dataset_shard_with_audit_batch")
+    write_batch_with_audit_witnesses(db, batch, &[audit], "put_dataset_shard_with_audit_batch")
 }
 
 pub fn get_dataset_shard(

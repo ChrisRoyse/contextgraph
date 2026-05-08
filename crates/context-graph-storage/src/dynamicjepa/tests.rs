@@ -888,6 +888,7 @@ fn expected_happy_counts() -> BTreeMap<String, u64> {
         (CF_DJ_SURPRISE_EVENTS.to_string(), 1),
         (CF_DJ_VERIFICATION_RUNS.to_string(), 1),
         (CF_DJ_AUDIT_LOG.to_string(), 2),
+        (CF_DJ_AUDIT_WITNESS_CHAIN.to_string(), 2),
     ])
 }
 
@@ -1123,8 +1124,8 @@ fn verification_record(
 
 #[test]
 fn dynamicjepa_phase2_storage_full_state_verification() {
-    assert_eq!(DJ_CF_COUNT, 28);
-    assert_eq!(DJ_CF_NAMES.iter().collect::<BTreeSet<_>>().len(), 28);
+    assert_eq!(DJ_CF_COUNT, 29);
+    assert_eq!(DJ_CF_NAMES.iter().collect::<BTreeSet<_>>().len(), 29);
 
     let evidence_root = root_dir().join("tmp/5090jepa_evidence/phase2/storage_fsv");
     if evidence_root.exists() {
@@ -1170,11 +1171,14 @@ fn dynamicjepa_phase2_storage_full_state_verification() {
     let manual_audit = DjAuditRecord {
         audit_id: uuid(90),
         timestamp_unix_nanos: (TS0 as u64) * 1_000_000 + 1,
-        operation: "phase2_manual_audit".to_string(),
+        operation: "verification_run".to_string(),
         actor: "phase2_storage_fsv".to_string(),
         input_ids: vec![samples.surprise.surprise_event_id.to_string()],
         output_ids: vec![samples.surprise.surprise_event_id.to_string()],
-        cfs_touched: vec![CF_DJ_AUDIT_LOG.to_string()],
+        cfs_touched: vec![
+            CF_DJ_AUDIT_LOG.to_string(),
+            CF_DJ_AUDIT_WITNESS_CHAIN.to_string(),
+        ],
         content_hashes: vec![samples.surprise.header.content_hash],
         status: AuditStatus::Ok,
         verification_run_id: None,

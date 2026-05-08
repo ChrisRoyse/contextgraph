@@ -6,11 +6,12 @@ use rocksdb::{IteratorMode, WriteBatch, DB};
 use uuid::Uuid;
 
 use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
+use crate::dynamicjepa::audit_witness::write_batch_with_audit_witnesses;
 use crate::dynamicjepa::column_families::{CF_DJ_AUDIT_LOG, CF_DJ_VERIFICATION_RUNS};
 use crate::dynamicjepa::common::{
     cf, count_cf, get_record, list_records, storage_error, write_batch,
 };
-use crate::dynamicjepa::encode::{decode_plain, encode_plain, encode_record};
+use crate::dynamicjepa::encode::{decode_plain, encode_record};
 use crate::dynamicjepa::keys::audit_key;
 
 pub fn put_verification_run(db: &DB, record: &VerificationRunRecord) -> DynamicJepaResult<()> {
@@ -35,12 +36,7 @@ pub fn put_verification_run_with_audit_batch(
         record.verification_run_id.into_bytes(),
         encode_record(record)?,
     );
-    batch.put_cf(
-        cf(db, CF_DJ_AUDIT_LOG)?,
-        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
-        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
-    );
-    write_batch(db, batch, "put_verification_run_with_audit_batch")
+    write_batch_with_audit_witnesses(db, batch, &[audit], "put_verification_run_with_audit_batch")
 }
 
 pub fn get_verification_run(
@@ -65,12 +61,7 @@ pub fn count_verification_runs(db: &DB) -> DynamicJepaResult<u64> {
 pub fn put_audit_record(db: &DB, record: &DjAuditRecord) -> DynamicJepaResult<()> {
     record.validate()?;
     let mut batch = rocksdb::WriteBatch::default();
-    batch.put_cf(
-        cf(db, CF_DJ_AUDIT_LOG)?,
-        audit_key(record.timestamp_unix_nanos, record.audit_id),
-        encode_plain(record, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
-    );
-    write_batch(db, batch, "put_audit_record")
+    write_batch_with_audit_witnesses(db, batch, &[record], "put_audit_record")
 }
 
 pub fn get_audit_record(
