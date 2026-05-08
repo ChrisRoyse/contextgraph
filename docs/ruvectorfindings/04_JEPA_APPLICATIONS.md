@@ -2,6 +2,8 @@
 
 > **🔒 Reference-only — clean-room reimplementation.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "Vendor `X`" / "Path-dep `X`" recommendation below is SUPERSEDED. Read each as **"Read RuVector's `X` as inspiration; reimplement the algorithm cleanly in our own crate."** Effort estimates roughly 2-3× the original numbers.
 
+> **🎯 Master plan:** [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md) is the canonical specification for the **code-domain JEPA pack** — ME-JEPA-Code, a reality compiler with 11 instruments (`E_AST`, `E_CFG`, `E_DataFlow`, `E_TypeGraph`, `E_Test`, `E_Trace`, `E_Diff`, `E_Witness`, `E_Oracle`, `E_Problem`, `E_CommitMsg`), a 4,096-d panel, an EMA + VICReg predictor, conformal calibration, OOD detection, and self-healing via EWC++. The targets below describe primitives generically against the JEPA family — for the concrete code-domain pack, defer to doc 09's instruments, training corpus (mutation strategy), and 8-phase build plan. When this doc disagrees with doc 09, doc 09 wins.
+
 Concrete reimplementation targets in the JEPA-family workstreams, with each target citing the RuVector source file to read as inspiration.
 
 References to JEPA docs use `backupdocs/{mejepa,dynamicjepa,5090jepa}/` paths.

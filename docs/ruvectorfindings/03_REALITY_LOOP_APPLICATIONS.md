@@ -2,6 +2,8 @@
 
 > **🔒 Reference-only — clean-room reimplementation.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "Vendor `X`" / "Path-dep `X`" recommendation below is SUPERSEDED. Read each as **"Read RuVector's `X` as inspiration; reimplement the algorithm cleanly in our own crate."** Effort estimates are roughly 2-3× the original numbers — clean-room is more work than path-dep, but the result is fully ours.
 
+> **🎯 Master plan:** [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md) is the canonical end-goal framing — **ME-JEPA-Code is the verifier**, a reality compiler that predicts oracle outcomes from `(code, context)`. Each section below describes a primitive as a *standalone tool for the ccreality optimizer*; in doc 09's framing those same primitives are *inputs/components of ME-JEPA-Code* (the witness chain becomes `E_Witness`, the solver suite powers importance-weighting in mini-batch sampling, sona's μLoRA + EWC++ implements online `observe()`/self-healing, etc.). The "verify_ai_output gates" framing in §3.6 below is SUPERSEDED — gates are input features to ME-JEPA, not standalone gates. When this doc disagrees with doc 09, doc 09 wins.
+
 Concrete reimplementation targets in the ccreality outer-optimizer harness, with each target citing the RuVector source file to read as inspiration.
 
 References to ccreality docs use `docs/ccreality/` paths. Path discipline (CLAUDE.md §8) is honored throughout. Adoption decisions land in `./memory/decisions/` per CLAUDE.md §6.

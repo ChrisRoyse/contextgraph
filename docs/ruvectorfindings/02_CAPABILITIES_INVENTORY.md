@@ -2,6 +2,8 @@
 
 > **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "vendor" / "path-dep" verdict in the summary table at the bottom is SUPERSEDED. Read every such verdict as **"clean-room reimplement the idea behind this crate against the source as read-only inspiration."**
 
+> **🎯 Master plan:** [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md) is the build-ready specification for **ME-JEPA-Code** — the reality compiler whose end goal makes line-by-line code review obsolete. The capabilities below are *inputs and components* of ME-JEPA-Code (e.g., HNSW indexes the panel cache, sona's μLoRA + EWC++ powers self-healing, rvf-crypto's witness chain becomes `E_Witness`), **NOT standalone "verify_ai_output gates."** When this doc disagrees with doc 09, doc 09 wins.
+
 Per-crate catalog of capabilities relevant to ccreality and JEPA. Roughly ordered by load-bearing → specialty. File refs cite `crates/<name>/src/<path>` paths inside the cloned repo at `ruvector/`.
 
 ---

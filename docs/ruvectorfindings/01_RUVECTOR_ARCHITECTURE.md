@@ -2,6 +2,8 @@
 
 > **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — never vendor, path-dep, or npm-depend on RuVector. The architecture below is documented to inform our own clean-room reimplementations, not to enable adoption of their crates.
 
+> **🎯 Master plan:** [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md) is the build-ready specification for **ME-JEPA-Code** — a reality compiler that predicts oracle outcomes from `(code, context)` and replaces line-by-line code review. The architecture below is the *inspirational substrate*; doc 09 is *what we build*. When this doc disagrees with doc 09, doc 09 wins.
+
 ## One-line definition
 
 **RuVector is a 135-crate Rust workspace** that ships a self-learning vector database, a graph engine with Cypher + 8 graph-transformer module families, an attention library with ~50 mechanisms, a local LLM runtime, a single-file `.rvf` cognitive container format with post-quantum signatures and witness chains, an MCP gate for Claude/GPT integration, and dozens of WASM/NAPI/Hailo/FPGA/ESP32 backends.

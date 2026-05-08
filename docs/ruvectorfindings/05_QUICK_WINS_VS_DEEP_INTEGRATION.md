@@ -2,6 +2,8 @@
 
 > **🔒 LOCKED 2026-05-08 — Clean-room reimplementation only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — the tier tables below have been REWRITTEN. All "Vendor `X`" / "Path-dep `X`" effort entries became "Clean-room reimplement `X`" with effort 2-3× the original number. The cloned `ruvector/` tree is read-only inspiration; we never path-dep, never vendor, never npm-depend.
 
+> **🎯 Master plan:** [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md) is the canonical end-goal sequencing — its **8-phase build plan** (Phase 0 mutation corpus → Phase 7 reality-loop integration → Phase 8 evaluation) supersedes the per-tier triage below for the code-domain pack. The triage here is still useful as an *effort estimate cross-check*; sequencing comes from doc 09. When this doc disagrees with doc 09, doc 09 wins.
+
 Effort triage for the reimplementation targets in `03_REALITY_LOOP_APPLICATIONS.md` and `04_JEPA_APPLICATIONS.md`. The shape is more substantive than the agentdb-only triage because RuVector's primitives are richer — but the *effort to reimplement* is comparable to porting from agentdb.
 
 ---

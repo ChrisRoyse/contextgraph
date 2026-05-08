@@ -2,6 +2,8 @@
 
 > **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — we **do not track upstream**. The history snapshot at HEAD `ef5274c2` is the only state we'll ever look at; the "what to track going forward" section below is moot. The doc is preserved as historical record of what was active when the snapshot was read.
 
+> **🎯 Master plan:** [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md) is the canonical build plan. The git-history snapshot below is preserved purely as the *frozen state of the inspirational repo at read-time* (HEAD `ef5274c2`, 2026-05-08); nothing in here is a moving target we ever re-sync. When this doc disagrees with doc 09, doc 09 wins.
+
 You asked me to review git history "for the last 2 days." Unlike agentdb (which only has 2 days of history total, all from 2026-05-06), RuVector is a long-running repo with **2,492 commits** spanning multiple years. The last-2-days slice is a meaningful workstream signal.
 
 ---

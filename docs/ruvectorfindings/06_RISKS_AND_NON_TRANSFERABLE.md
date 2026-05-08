@@ -2,6 +2,8 @@
 
 > **🔒 LOCKED 2026-05-08 — Clean-room reimplementation only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — the Vendor vs path-dep section that originally lived here is OBSOLETE. We do neither. The replacement section ("Clean-room reimplementation discipline") lays out the actual policy.
 
+> **🎯 Master plan:** [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md) §8 ("Open Research Questions") is the canonical risk register for the code-domain pack — generalization across repos, panel dimensionality adequacy, per-language vs unified models, mutation-corpus diversity, novel-API OOD behavior, λ_ewc tuning, private-codebase generalization, cross-cycle disagreement. The risks below are about the *clean-room reimplementation discipline itself* (don't copy code, don't vendor, etc.); doc 09 §8 is about the *system's empirical risks*. Both apply. When this doc disagrees with doc 09, doc 09 wins.
+
 The honest list. Clean-room reimplementation discipline, license-comment requirements, things that look stealable from RuVector but aren't actually a fit, and failure modes once we ship.
 
 ---
