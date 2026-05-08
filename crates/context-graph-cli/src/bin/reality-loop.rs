@@ -25,24 +25,27 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const DEFAULT_RUNTIME_ROOT: &str = "/tmp/contextgraph-rust-reality-loop";
 const DEFAULT_CONTEXT_GRAPH_BIN: &str = "target/debug/context-graph";
-const DEFAULT_MODEL: &str = "qwen3.6:27b";
-const DEFAULT_INNER_MODEL_PATH: &str = "models/qwen3.6-27b/Qwen3.6-27B-UD-Q6_K_XL.gguf";
+const DEFAULT_MODEL: &str = "qwen3-coder:30b-a3b";
+const DEFAULT_INNER_MODEL_PATH: &str =
+    "models/qwen3-coder-30b-a3b/Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf";
 const DEFAULT_INNER_MODEL_PIN_PATH: &str = "config/ccreality_model_pins.json";
-const DEFAULT_INNER_MODEL_PIN_KEY: &str = "qwen3_6_27b_q6_k_xl";
+const DEFAULT_INNER_MODEL_PIN_KEY: &str = "qwen3_coder_30b_a3b_q4_k_xl";
 /// Minimum free GPU VRAM that must remain *during* a per-chat call, after the
 /// inner-actor model is already resident. Sized for steady-state operation: model
 /// weights + KV cache are already allocated, so we only need enough free VRAM for
 /// CUDA driver overhead and bursty allocations during attention. Tightened from
-/// 8192 → 1536 in `eb8a0d10` because the qwen3.6-27b GGUF leaves only ~1.5GB free
-/// once loaded with the full 256K context.
+/// 8192 → 1536 in `eb8a0d10` because the qwen3.6-27b GGUF left only ~1.5GB free
+/// once loaded with the full 256K context. The Qwen3-Coder-30B-A3B-Q4 swap
+/// (2026-05-08) reduced model footprint to ~17.67 GB so this stays adequate.
 const DEFAULT_GPU_MIN_FREE_MB: u64 = 1536;
 /// Minimum free GPU VRAM required *before* the inner-actor model is loaded. The
-/// loop_start preflight uses this. Sized for the model file (~24 GB Q6_K_XL) plus
-/// KV cache headroom. Without this separate threshold, a shared `--gpu-min-free-mb`
-/// of 1536 would let preflight pass on a machine with only 1.5 GB free, then the
-/// model load would CUDA-OOM mid-load. Setting to 25600 (25 GB) means at most ~7 GB
-/// can be held by other GPU consumers when the loop starts.
-const DEFAULT_GPU_PRELOAD_MIN_FREE_MB: u64 = 25600;
+/// loop_start preflight uses this. Sized for the model file (~17.67 GB
+/// Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL) plus KV cache headroom. Without this
+/// separate threshold, a shared `--gpu-min-free-mb` of 1536 would let preflight
+/// pass on a machine with only 1.5 GB free, then the model load would CUDA-OOM
+/// mid-load. Setting to 18432 (18 GB) means at most ~14 GB can be held by other
+/// GPU consumers when the loop starts. (Lowered from 25600 on 2026-05-08 swap.)
+const DEFAULT_GPU_PRELOAD_MIN_FREE_MB: u64 = 18432;
 const DEFAULT_INNER_MIN_CONTEXT_TOKENS: u32 = 128_000;
 const DEFAULT_INNER_MAX_NEW_TOKENS: usize = 8192;
 const DEFAULT_INNER_TEMPERATURE: f32 = 0.0;
@@ -4263,6 +4266,21 @@ fn inner_coding_harness_chat_json(
         //cgreality
         &args.model,
     )?;
+    // Per-attempt wallclock budget: at ~10-25 min/round, a 30-round attempt
+    // can exceed the 1h MCP-stdio idle watchdog before producing any summary.
+    // This budget is checked at the top of each round (post-check, not a
+    // tokio::time::timeout, because harness.chat() is synchronous and likely
+    // holds !Send GGUF FFI handles). A chat call already in progress runs to
+    // completion before the abort fires; the alternative is a watchdog kill
+    // with no attempt-summary.json. Default 7200s (120 min); override via
+    // CGREALITY_PER_ATTEMPT_DEADLINE_SECS. Routes through the existing
+    // forced_stop machinery so attempt-summary.json is still written.
+    let attempt_start = Instant::now();
+    let attempt_deadline_secs: u64 = std::env::var("CGREALITY_PER_ATTEMPT_DEADLINE_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(7200); // default 120 min — at 10-25 min/round, allows 5-12 rounds before clean abort (turn-72 raised from 2700 after empirical observation that 5-round trajectory minimum needs ~90+ min)
+    let attempt_deadline = Duration::from_secs(attempt_deadline_secs);
     let system_prompt = format!(
         "You are a model that can do function calling with the following functions. \
 You are a software repair model inside ContextGraph's Rust reality loop. \
@@ -4332,6 +4350,31 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
                 "error_code": "RUST_REALITY_MAX_ROUNDS_EXCEEDED",
                 "max_rounds_per_attempt_hard_cap": MAX_ROUNDS_PER_ATTEMPT_HARD_CAP,
                 "tool_round_budget": args.agent_tool_rounds,
+            }));
+            break;
+        }
+        // Per-attempt wallclock budget post-check. Mirrors the
+        // MAX_ROUNDS_EXCEEDED forced-stop pattern above. A chat call already
+        // in progress completes before this fires (see attempt_deadline init
+        // for rationale: synchronous chat() + likely !Send GGUF FFI).
+        let elapsed = attempt_start.elapsed();
+        if elapsed >= attempt_deadline {
+            forced_stop = Some((
+                "RUST_REALITY_ATTEMPT_BUDGET_EXCEEDED".to_string(),
+                format!(
+                    "attempt wallclock budget exceeded ({}s >= {}s) before producing a valid candidate patch",
+                    elapsed.as_secs(),
+                    attempt_deadline_secs
+                ),
+                "raise CGREALITY_PER_ATTEMPT_DEADLINE_SECS (default 7200 = 120 min) only after confirming the inner model is making real progress per round; otherwise diagnose why generation is too slow (large prompt, kv-cache pressure, host load)".to_string(),
+            ));
+            forced_stop_round = Some(round);
+            transcript_entries.push(json!({
+                "round": round,
+                "status": "forced_stop",
+                "error_code": "RUST_REALITY_ATTEMPT_BUDGET_EXCEEDED",
+                "elapsed_secs": elapsed.as_secs(),
+                "attempt_deadline_secs": attempt_deadline_secs,
             }));
             break;
         }
@@ -6225,7 +6268,7 @@ fn tool_apply_structured_edit(
     Ok(json!({
         "status": status,
         "tool_name": "apply_structured_edit",
-        "action": "compiled structured edits against real checkout, generated patch preview, then reset workspace to base commit",
+        "action": "candidate patch UPDATED with this structured edit. Workspace reset to base per harness contract — your next open_file_window will return BASE FILE CONTENT (not your edit). The post_edit_window field in this response is the AUTHORITATIVE view of your current candidate. Calling any apply_* tool again REPLACES the current candidate, it does not stack. The current candidate runs in the official Docker eval at end-of-attempt.",
         "patch_preview": patch.as_ref().map(|text| truncate_chars(text, 4000)),
         "patch_sha256": patch.as_ref().map(|text| sha256_text(text)),
         "error_code": top_error_code,
@@ -6319,7 +6362,7 @@ fn tool_apply_line_window_edit(
     Ok(json!({
         "status": status,
         "tool_name": "apply_line_window_edit",
-        "action": "compiled line-window edits against real checkout, generated patch preview, then reset workspace to base commit",
+        "action": "candidate patch UPDATED with this line-window edit. Workspace reset to base per harness contract — your next open_file_window will return BASE FILE CONTENT (not your edit). The post_edit_window field in this response is the AUTHORITATIVE view of your current candidate. Calling any apply_* tool again REPLACES the current candidate, it does not stack. The current candidate runs in the official Docker eval at end-of-attempt.",
         "patch_preview": patch.as_ref().map(|text| truncate_chars(text, 4000)),
         "patch_sha256": patch.as_ref().map(|text| sha256_text(text)),
         "error_code": top_error_code,
@@ -6391,7 +6434,7 @@ fn tool_apply_unified_diff(
     Ok(json!({
         "status": status,
         "tool_name": "apply_unified_diff",
-        "action": "applied unified diff against real checkout, verified observed file hashes, generated normalized candidate patch, then reset workspace to base commit",
+        "action": "candidate patch UPDATED with this unified diff. Workspace reset to base per harness contract — your next open_file_window will return BASE FILE CONTENT (not your edit). The post_edit_window field (if present) is the AUTHORITATIVE view of your current candidate. Calling any apply_* tool again REPLACES the current candidate, it does not stack. The current candidate runs in the official Docker eval at end-of-attempt.",
         "patch_preview": compiled_patch.as_ref().map(|text| truncate_chars(text, 4000)),
         "patch_sha256": compiled_patch.as_ref().map(|text| sha256_text(text)),
         "error_code": top_error_code,
@@ -12582,18 +12625,18 @@ diff --git a/src/example.py b/src/example.py
             pin.expected_sha256, pin.expected_size_bytes, pin.expected_min_context_tokens
         );
         assert_eq!(
-            pin.repo_id, "unsloth/Qwen3.6-27B-GGUF",
+            pin.repo_id, "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
             "pin must reference the official unsloth repository"
         );
-        assert_eq!(pin.filename, "Qwen3.6-27B-UD-Q6_K_XL.gguf");
+        assert_eq!(pin.filename, "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf");
         assert!(
             pin.expected_sha256.starts_with("sha256:"),
             "expected_sha256 must be in `sha256:<hex>` form, got {}",
             pin.expected_sha256
         );
         assert!(
-            pin.expected_size_bytes > 25_000_000_000,
-            "Q6_K_XL GGUF should be ~25.6 GB; got {}",
+            pin.expected_size_bytes > 17_000_000_000,
+            "Q4_K_XL GGUF should be ~17.67 GB; got {}",
             pin.expected_size_bytes
         );
         assert_eq!(pin.expected_min_context_tokens, 128_000);
@@ -12659,9 +12702,9 @@ diff --git a/src/example.py b/src/example.py
         let body = json!({
             "$schema_version": "1",
             "models": {
-                "qwen3_6_27b_q6_k_xl": {
-                    "repo_id": "unsloth/Qwen3.6-27B-GGUF",
-                    "filename": "Qwen3.6-27B-UD-Q6_K_XL.gguf"
+                "qwen3_coder_30b_a3b_q4_k_xl": {
+                    "repo_id": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+                    "filename": "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf"
                 }
             }
         });
@@ -13132,5 +13175,41 @@ GPU-other, 9999, /usr/bin/other, 1024
         // Hard cap must comfortably exceed the deadlock detector window so
         // the deadlock detector can actually fire before the cap kicks in.
         assert!((MAX_ROUNDS_PER_ATTEMPT_HARD_CAP as usize) > REPEATED_ERROR_DEADLOCK_LEN);
+    }
+
+    /// FSV: per-attempt wallclock budget env-var parse contract. Default
+    /// 7200s (120 min) is sized so that at the observed 10-25 min/round generation rate the model has time for 5-12 rounds — enough for read_problem_reality + open_file_window(s) + apply_edit + run_targeted_test before clean abort. Turn-72 raised from 2700 after empirical observation.
+    /// generation rate, an attempt forced-stops cleanly via
+    /// `RUST_REALITY_ATTEMPT_BUDGET_EXCEEDED` before the 1h MCP-stdio idle
+    /// watchdog kills the engine without writing `attempt-summary.json`.
+    /// Garbage env values must fall through to the default rather than
+    /// panicking — the loop must keep running even with a typo'd override.
+    #[test]
+    fn attempt_budget_env_parses_with_sensible_default_edge_fsv() {
+        // unset → default 7200
+        std::env::remove_var("CGREALITY_PER_ATTEMPT_DEADLINE_SECS");
+        let secs: u64 = std::env::var("CGREALITY_PER_ATTEMPT_DEADLINE_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(7200);
+        assert_eq!(secs, 7200, "default must be 7200 (120 min)");
+
+        // set valid → parsed value
+        std::env::set_var("CGREALITY_PER_ATTEMPT_DEADLINE_SECS", "600");
+        let secs: u64 = std::env::var("CGREALITY_PER_ATTEMPT_DEADLINE_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(7200);
+        assert_eq!(secs, 600, "explicit 600 must be honored");
+
+        // garbage → fallback to default (NOT a parse error)
+        std::env::set_var("CGREALITY_PER_ATTEMPT_DEADLINE_SECS", "not-a-number");
+        let secs: u64 = std::env::var("CGREALITY_PER_ATTEMPT_DEADLINE_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(7200);
+        assert_eq!(secs, 7200, "garbage env value must fall through to default");
+
+        std::env::remove_var("CGREALITY_PER_ATTEMPT_DEADLINE_SECS");
     }
 }

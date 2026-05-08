@@ -2,12 +2,12 @@
   "$schema_version": "1",
   "_doc": "Cryptographic pins for the ccreality inner-actor coding-harness model files. The reality-loop binary loads this file at start-up and refuses to load any GGUF whose size or sha256 does not match the active pin entry. New entries must include all six fields; missing fields fail closed. Recompute sha256 deliberately when intentionally upgrading.",
   "models": {
-    "qwen3_6_27b_q6_k_xl": {
-      "description": "Qwen3.6-27B Instruction-Tuned, Unsloth Dynamic Q6_K_XL GGUF (~25.6 GB on-disk, ~22 GB resident on RTX 5090, full 128K context).",
-      "repo_id": "unsloth/Qwen3.6-27B-GGUF",
-      "filename": "Qwen3.6-27B-UD-Q6_K_XL.gguf",
-      "expected_sha256": "sha256:8746881d40f280b1b6b858c656a347c754ed3d9cc8d2e1ad46b3635b87f611f8",
-      "expected_size_bytes": 25636485344,
+    "qwen3_coder_30b_a3b_q4_k_xl": {
+      "description": "Qwen3-Coder-30B-A3B-Instruct, Unsloth Dynamic Q4_K_XL GGUF — Mixture-of-Experts coder-specialized model (30B total params, 3B active per token, ~17.67 GB on-disk). Replaced dense Qwen3.6-27B-Q6_K_XL on 2026-05-08 for ~3-5x speedup at parity coder quality.",
+      "repo_id": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+      "filename": "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf",
+      "expected_sha256": "sha256:2841aa314d916434860cfb8990347528dcdfe5c350dbcb9d1461dbee88ff2533",
+      "expected_size_bytes": 17665334432,
       "expected_min_context_tokens": 128000,
       "expected_identity_substrings": ["qwen3"]
     }
