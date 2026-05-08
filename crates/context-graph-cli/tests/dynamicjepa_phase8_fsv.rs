@@ -362,7 +362,7 @@ fn dynamicjepa_phase8_cli_fsv_real_prediction_plan_surprise() {
         .all(|file| file["equal"].as_bool() == Some(true)));
     evidence.push(json!({"step": "train", "output": train}));
 
-    let row0 = inspect_dataset_row(&db, &dataset_id, &train_shard_id, "0");
+    let row0 = inspect_dataset_row(&db, &dataset_id, &val_shard_id, "0");
     let input_panel_id = row0["decoded_records"]["row"]["input_panel_id"]
         .as_str()
         .expect("input panel id")
@@ -801,8 +801,8 @@ fn dynamicjepa_phase8_cli_fsv_real_prediction_plan_surprise() {
     assert!(rejected >= 2, "expected rejected bounds_check decisions");
     evidence.push(json!({"step": "edge_guard_rejection_evidence", "before": before_guard_edge, "output": guard_plan, "after": after_guard_edge}));
 
-    let val_row = inspect_dataset_row(&db, &dataset_id, &val_shard_id, "0");
-    let far_target_panel_id = val_row["decoded_records"]["row"]["target_panel_id"]
+    let far_row = inspect_dataset_row(&db, &dataset_id, &train_shard_id, "0");
+    let far_target_panel_id = far_row["decoded_records"]["row"]["target_panel_id"]
         .as_str()
         .expect("far target panel id")
         .to_string();
