@@ -1,6 +1,10 @@
 # RuVector Findings — Index
 
-> **⭐ End Goal (operator-stated 2026-05-08):** make code review obsolete by making AI-generated patches **self-verifiable against bytes-on-disk reality**. The two-loop reality system (outer = Claude Code optimizer, inner = Qwen3.6-27B + Rust harness on SWE-bench) is in service of building a `verify_ai_output(patch)` function that runs gates over witness chain + training certs + recall certs + source-of-truth SHAs + conformal bounds + Granger attribution + Docker oracle. When `verify_ai_output` returns `Ok`, no human review is needed. **Every primitive in this findings doc set is a verification gate that ladders up to that goal.** Read `09_END_GOAL_REVIEW_REPLACEMENT.md` for the full architecture and the gate-by-gate mapping.
+> **⭐ End Goal (operator-stated 2026-05-08):** make code review obsolete by making AI-generated patches **self-verifiable against bytes-on-disk reality**. The system being built is a **reality compiler** — ME-JEPA-Code: a Joint Embedding Predictive Architecture that takes (code change + context) and outputs a predicted reality state, calibrated against the SWE-bench Docker oracle. When prediction-vs-oracle correlation crosses ~0.95, no human code review of AI patches is needed.
+>
+> **Read [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md) FIRST.** That is the **build-ready master plan** — a fresh AI agent can pick it up and execute. Every other doc in this set (00-08) is reference material that informs *how* primitives are clean-room reimplemented; doc 09 is *what* gets built and *why*.
+>
+> Doc 09's master plan covers: the reality-compiler architecture, the code-domain instrument set (`E_AST`, `E_CFG`, `E_DataFlow`, `E_TypeGraph`, `E_Test`, `E_Trace`, `E_Diff`, `E_Witness`, `E_Oracle`, `E_Problem`, `E_CommitMsg`), the panel layout (4,096-d), the predictor + EMA target encoder, the SWE-bench Lite mutation corpus (8 categories × 300 tasks = ~2,400 labeled examples), the training procedure (VICReg loss + Huber predict), conformal calibration, OOD detection, self-healing (online learning + EWC++ + drift detection + A/B/C promotion), disk + memory hygiene (tiered 8/7/5/3-bit compression + nightly GC + witness-chain Merkle compression), and an **8-phase build plan** with definitions of done.
 
 > **🔒 LOCKED 2026-05-08 — Reference-Only, Clean-Room Reimplementation Only**
 >
@@ -71,7 +75,7 @@ Workspace version: `2.0.5` (per CHANGELOG); npm distribution `ruvector` package;
 | 06 | `06_RISKS_AND_NON_TRANSFERABLE.md` | The honest "don't take these" list — license, build complexity, branding leakage |
 | 07 | `07_GIT_HISTORY_LAST_2_DAYS.md` | The 6 commits in last 2 days + what they tell us about active workstreams (sparse-mario / retrieval diffusion / FastGRNN-gated attention / sm_120-relevant) |
 | 08 | `08_HONEST_SUMMARY.md` | The verdict — read first if you only have 5 minutes |
-| 09 | `09_END_GOAL_REVIEW_REPLACEMENT.md` | **The why.** How every primitive in this doc set ladders up to "no human code review needed." Read this if you want to understand the system's purpose. |
+| 09 | `09_END_GOAL_REVIEW_REPLACEMENT.md` | **🎯 THE MASTER PLAN — read this first.** Build-ready specification for ME-JEPA-Code (the reality compiler). Architecture, instrument set, mutation corpus, training procedure, self-healing, hygiene, 8-phase build plan with verification protocols. A fresh AI agent picks this up and executes. |
 
 ---
 
@@ -99,11 +103,17 @@ The remainder are individual quality-of-life primitives ranked in `05_QUICK_WINS
 
 ## How to use this doc set
 
-1. Skim `08_HONEST_SUMMARY.md` (5 min).
-2. Read `02_CAPABILITIES_INVENTORY.md` to find a crate by capability.
-3. Decide path-dep vs vendor vs port using `05_QUICK_WINS_VS_DEEP_INTEGRATION.md`.
-4. Read the relevant `03/04 §` for the concrete integration shape.
-5. Sanity-check via `06_RISKS_AND_NON_TRANSFERABLE.md` before committing.
-6. Write the locked decision to `./memory/decisions/ruvector-<dep>.md` per CLAUDE.md §6.
+**For an AI agent picking up the build:**
 
-These docs **complement** the agentdb findings (`docs/agentdbfindings/`); they don't replace them. agentdb's findings cover the *high-level patterns* worth copying. RuVector's findings cover *the canonical Rust implementation* of those same patterns — which is what you actually want as a Rust workspace.
+1. Read `09_END_GOAL_REVIEW_REPLACEMENT.md` top-to-bottom — that's the master plan.
+2. Pick up at the Phase plan (Section 7); execute Phase 0 first.
+3. When implementing a primitive, look it up in `02_CAPABILITIES_INVENTORY.md` for the canonical Rust reference to read.
+4. Sanity-check the locked clean-room rule via `06_RISKS_AND_NON_TRANSFERABLE.md` — never path-dep, never vendor, never npm-depend.
+
+**For a human reviewer / operator:**
+
+1. Skim `08_HONEST_SUMMARY.md` (5 min) for the verdict.
+2. Read `09_END_GOAL_REVIEW_REPLACEMENT.md` Section 0-2 for the architecture, Section 7 for the build plan.
+3. Use `01_RUVECTOR_ARCHITECTURE.md` and `02_CAPABILITIES_INVENTORY.md` as reference when reviewing any specific clean-room reimplementation.
+
+**Important:** docs 03-08 contain earlier framings that talk about "vendor / path-dep" and "verify_ai_output gates." Those framings are SUPERSEDED by doc 09's reality-compiler framing — gates are now *input features* to ME-JEPA, ME-JEPA itself is the verifier. When the supporting docs disagree with doc 09, doc 09 wins.

@@ -1,8 +1,10 @@
 # 08 — Honest Summary
 
-> **🔒 LOCKED 2026-05-08 — Clean-room reimplementation only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "vendor" / "path-dep" / "consume" reference below is SUPERSEDED. Read each as **"clean-room reimplement against the read-only `ruvector/` reference."** The vendor-vs-path-dep table at the end has been replaced with a single "clean-room only" recommendation.
+> **⚠️ This summary is SUPERSEDED by [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md).** Doc 09 is the build-ready master plan; this doc is now mostly a reference catalog of the RuVector primitives that ME-JEPA-Code will draw inspiration from. The "What's genuinely good" list below is the inspiration source set; the "What's not worth taking" list is still valid as a "don't touch" filter.
 
-The 5-minute version. Read this first if you only have time for one of these docs.
+> **🔒 LOCKED 2026-05-08 — Clean-room reimplementation only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "vendor" / "path-dep" / "consume" reference below is SUPERSEDED. Read each as **"clean-room reimplement against the read-only `ruvector/` reference."**
+
+The 5-minute version. Read this for the survey of which RuVector primitives ME-JEPA borrows ideas from. For the actual build plan, jump straight to doc 09.
 
 ---
 

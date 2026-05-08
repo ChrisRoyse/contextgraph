@@ -1613,6 +1613,7 @@ fn register_domain(args: RegisterDomainArgs) -> DynamicJepaResult<CommandOutcome
         CF_DJ_INSTRUMENT_REGISTRY,
         CF_DJ_ADAPTER_REGISTRY,
         CF_DJ_AUDIT_LOG,
+        CF_DJ_AUDIT_WITNESS_CHAIN,
     ];
     let store = open_store(&args.db)?;
     let db = store.dynamicjepa_db();
@@ -1711,6 +1712,7 @@ fn register_domain(args: RegisterDomainArgs) -> DynamicJepaResult<CommandOutcome
             CF_DJ_INSTRUMENT_REGISTRY: inspect_cf(db, CF_DJ_INSTRUMENT_REGISTRY, 20, 0)?,
             CF_DJ_ADAPTER_REGISTRY: inspect_cf(db, CF_DJ_ADAPTER_REGISTRY, 20, 0)?,
             CF_DJ_AUDIT_LOG: inspect_cf(db, CF_DJ_AUDIT_LOG, 20, 0)?,
+            CF_DJ_AUDIT_WITNESS_CHAIN: inspect_cf(db, CF_DJ_AUDIT_WITNESS_CHAIN, 20, 0)?,
         });
 
         let created_ids = json!({
@@ -2140,6 +2142,7 @@ fn materialize_panel_command(args: MaterializePanelArgs) -> DynamicJepaResult<Co
         CF_DJ_PAIRWISE_READINGS,
         CF_DJ_LATENT_PANELS,
         CF_DJ_AUDIT_LOG,
+        CF_DJ_AUDIT_WITNESS_CHAIN,
     ];
     let store = open_store(&args.db)?;
     let db = store.dynamicjepa_db();
@@ -2357,7 +2360,12 @@ fn list_instrument_readings_command(
 
 fn bind_command(args: BindArgs) -> DynamicJepaResult<CommandOutcome> {
     let _json = args.json;
-    let source_cfs = [CF_DJ_BINDINGS, CF_DJ_BINDINGS_BY_ENTITY, CF_DJ_AUDIT_LOG];
+    let source_cfs = [
+        CF_DJ_BINDINGS,
+        CF_DJ_BINDINGS_BY_ENTITY,
+        CF_DJ_AUDIT_LOG,
+        CF_DJ_AUDIT_WITNESS_CHAIN,
+    ];
     let store = open_store(&args.db)?;
     let db = store.dynamicjepa_db();
     let db_path = canonical_existing_path(&args.db, "bind.db")?;
@@ -2585,6 +2593,7 @@ fn compile_trajectories_command(
         CF_DJ_LATENT_PANELS,
         CF_DJ_TRAJECTORIES,
         CF_DJ_AUDIT_LOG,
+        CF_DJ_AUDIT_WITNESS_CHAIN,
     ];
     let store = open_store(&args.db)?;
     let db = store.dynamicjepa_db();
@@ -2849,6 +2858,7 @@ fn compile_dataset_command(args: CompileDatasetArgs) -> DynamicJepaResult<Comman
         CF_DJ_OUTCOMES,
         CF_DJ_DATASET_SHARDS,
         CF_DJ_AUDIT_LOG,
+        CF_DJ_AUDIT_WITNESS_CHAIN,
     ];
     let store = open_store(&args.db)?;
     let db = store.dynamicjepa_db();
@@ -3157,6 +3167,7 @@ fn train_command(args: TrainArgs) -> DynamicJepaResult<CommandOutcome> {
         CF_DJ_TRAINING_RUNS,
         CF_DJ_MODEL_ARTIFACTS,
         CF_DJ_AUDIT_LOG,
+        CF_DJ_AUDIT_WITNESS_CHAIN,
     ];
     let store = open_store(&args.db)?;
     let db = store.dynamicjepa_db();
@@ -3336,6 +3347,7 @@ fn predict_command(args: PredictArgs) -> DynamicJepaResult<CommandOutcome> {
         CF_DJ_ACTIONS,
         CF_DJ_PREDICTIONS,
         CF_DJ_AUDIT_LOG,
+        CF_DJ_AUDIT_WITNESS_CHAIN,
     ];
     let store = open_store(&args.db)?;
     let db = store.dynamicjepa_db();
@@ -3484,6 +3496,7 @@ fn plan_command(args: PlanArgs) -> DynamicJepaResult<CommandOutcome> {
         CF_DJ_CONSTELLATIONS,
         CF_DJ_THRESHOLD_CALIBRATIONS,
         CF_DJ_AUDIT_LOG,
+        CF_DJ_AUDIT_WITNESS_CHAIN,
     ];
     let store = open_store(&args.db)?;
     let db = store.dynamicjepa_db();
@@ -3576,6 +3589,7 @@ fn record_surprise_command(args: RecordSurpriseArgs) -> DynamicJepaResult<Comman
         CF_DJ_LATENT_PANELS,
         CF_DJ_SURPRISE_EVENTS,
         CF_DJ_AUDIT_LOG,
+        CF_DJ_AUDIT_WITNESS_CHAIN,
     ];
     let store = open_store(&args.db)?;
     let db = store.dynamicjepa_db();
@@ -3648,6 +3662,7 @@ fn build_constellation_command(args: BuildConstellationArgs) -> DynamicJepaResul
         CF_DJ_INSTRUMENT_READINGS,
         CF_DJ_CONSTELLATIONS,
         CF_DJ_AUDIT_LOG,
+        CF_DJ_AUDIT_WITNESS_CHAIN,
     ];
     let store = open_store(&args.db)?;
     let db = store.dynamicjepa_db();
@@ -3928,6 +3943,7 @@ fn calibrate_threshold_command(
         CF_DJ_CONSTELLATIONS,
         CF_DJ_THRESHOLD_CALIBRATIONS,
         CF_DJ_AUDIT_LOG,
+        CF_DJ_AUDIT_WITNESS_CHAIN,
     ];
     let store = open_store(&args.db)?;
     let db = store.dynamicjepa_db();
@@ -4090,6 +4106,7 @@ fn recalibrate_threshold_command(
         CF_DJ_CONSTELLATIONS,
         CF_DJ_THRESHOLD_CALIBRATIONS,
         CF_DJ_AUDIT_LOG,
+        CF_DJ_AUDIT_WITNESS_CHAIN,
     ];
     let store = open_store(&args.db)?;
     let db = store.dynamicjepa_db();
@@ -4271,6 +4288,7 @@ fn compute_mc_ratio_command(args: ComputeMcRatioArgs) -> DynamicJepaResult<Comma
         CF_DJ_DOMAIN_PACKS,
         CF_DJ_NORMALIZED_STATES,
         CF_DJ_AUDIT_LOG,
+        CF_DJ_AUDIT_WITNESS_CHAIN,
         CF_DJ_PLAN_TRACES,
     ];
     let store = open_existing_store(&args.db, "dynamicjepa_compute_mc_ratio")?;
@@ -4359,6 +4377,7 @@ fn audit_pairwise_mi_command(args: AuditPairwiseMiArgs) -> DynamicJepaResult<Com
         CF_DJ_INSTRUMENT_READINGS,
         CF_DJ_PAIRWISE_READINGS,
         CF_DJ_AUDIT_LOG,
+        CF_DJ_AUDIT_WITNESS_CHAIN,
     ];
     let store = open_existing_store(&args.db, "dynamicjepa_audit_pairwise_mi")?;
     let db = store.dynamicjepa_db();
