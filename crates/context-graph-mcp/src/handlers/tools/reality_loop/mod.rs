@@ -4,6 +4,7 @@ pub mod alter;
 pub mod analyze;
 pub mod autoresearch;
 pub mod bandit;
+pub mod diversity;
 pub mod errors;
 pub mod helpers;
 pub mod influence;
@@ -11,11 +12,17 @@ pub mod interact;
 pub mod lock;
 pub mod optimizer;
 pub mod path_policy;
+pub mod recommendation_certificate;
 pub mod recommendations;
 pub mod reflexion;
 pub mod schema_validator;
 pub mod shift_log;
 pub mod witness_chain;
+
+#[cfg(test)]
+mod recommendation_recall_active_fsv;
+#[cfg(test)]
+mod recommendation_recall_fsv;
 
 pub use errors::CCRealityError;
 

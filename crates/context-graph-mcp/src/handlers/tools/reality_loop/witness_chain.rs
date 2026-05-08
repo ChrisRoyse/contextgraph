@@ -24,6 +24,7 @@ pub enum WitnessOpType {
     BanditReward = 4,
     Autoresearch = 5,
     InfluenceComputation = 6,
+    RecommendationRecall = 7,
 }
 
 impl WitnessOpType {
@@ -36,6 +37,7 @@ impl WitnessOpType {
             4 => Some(Self::BanditReward),
             5 => Some(Self::Autoresearch),
             6 => Some(Self::InfluenceComputation),
+            7 => Some(Self::RecommendationRecall),
             _ => None,
         }
     }
@@ -49,6 +51,7 @@ impl WitnessOpType {
             Self::BanditReward => "bandit_reward",
             Self::Autoresearch => "autoresearch",
             Self::InfluenceComputation => "influence_computation",
+            Self::RecommendationRecall => "recommendation_recall",
         }
     }
 }
@@ -86,6 +89,19 @@ pub fn append_witness_entry_for_run(
     let path = witness_chain_path(runtime_root, run_id);
     let content_hash = parse_sha256_hex(content_sha256)?;
     append_entry(&path, op_type, content_hash)
+}
+
+pub(super) fn verify_witness_chain_for_run(runtime_root: &Path, run_id: &str) -> Result<Value> {
+    let path = witness_chain_path(runtime_root, run_id);
+    let verification = verify_chain(&path)?;
+    Ok(json!({
+        "valid": true,
+        "entries": verification.entries,
+        "last_chain_hash": chain_hash_hex(&verification.last_chain_hash),
+        "last_op": verification.last_op,
+        "source_of_truth": file_sot(&path),
+        "sha256": if path.is_file() { sha256_file(&path)? } else { "absent".to_string() },
+    }))
 }
 
 pub async fn optimizer_witness_chain_verify(args: Value) -> Result<Value> {

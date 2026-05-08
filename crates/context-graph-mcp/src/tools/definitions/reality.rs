@@ -155,8 +155,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         def(
             "optimizer_recall_recommendations",
-            "Rank persisted optimizer recommendations by alpha*similarity + beta*uplift - gamma*cost.",
-            json!({"type":"object","properties":{"failure_summary":{"type":"string"},"k":{"type":"integer","minimum":1,"maximum":50,"default":5},"alpha":{"type":"number","minimum":0,"default":0.7},"beta":{"type":"number","minimum":0,"default":0.2},"gamma":{"type":"number","minimum":0,"default":0.1}},"required":["failure_summary"],"additionalProperties":false}),
+            "Rank persisted optimizer recommendations with MMR over alpha*similarity + beta*uplift - gamma*cost, then persist and witness the recall audit.",
+            json!({"type":"object","properties":{"failure_summary":{"type":"string"},"k":{"type":"integer","minimum":1,"maximum":50,"default":5},"alpha":{"type":"number","minimum":0,"default":0.7},"beta":{"type":"number","minimum":0,"default":0.2},"gamma":{"type":"number","minimum":0,"default":0.1},"lambda":{"type":"number","minimum":0,"maximum":1,"default":0.7}},"required":["failure_summary"],"additionalProperties":false}),
         ),
         def(
             "optimizer_compute_influence",
