@@ -215,6 +215,7 @@ mod tests {
         let names: BTreeSet<&str> = tools.iter().map(|tool| tool.name.as_str()).collect();
         assert_eq!(tools.len(), reality::definitions().len());
         assert!(names.contains("reality_attempt_summary"));
+        assert!(names.contains("dynamicjepa_reality_for_attempt"));
         assert!(names.contains("optimizer_record_recommendation"));
         assert!(!names.contains("search_graph"));
         assert!(!names.contains("get_memory_neighbors"));

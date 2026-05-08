@@ -266,6 +266,7 @@ impl Handlers {
             tool_names::REALITY_OFFICIAL_REPORT => call_reality_official_report(arguments),
             tool_names::REALITY_PROBLEM_PACKET => call_reality_problem_packet(arguments),
             tool_names::REALITY_SIGNAL => call_reality_signal(arguments),
+            tool_names::DYNAMICJEPA_REALITY_FOR_ATTEMPT => call_dynamicjepa_reality_for_attempt(arguments),
             tool_names::REALITY_FAILURE => call_reality_failure(arguments),
             tool_names::REALITY_TRIGGER_DECISION => call_reality_trigger_decision(arguments),
             tool_names::REALITY_HARNESS_TRANSITIONS => call_reality_harness_transitions(arguments),

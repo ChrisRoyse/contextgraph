@@ -285,6 +285,149 @@ fn reward_compile(ledger: &Path, run_id: &str, input: &Path) -> Output {
     ])
 }
 
+fn record_dynamicjepa_reality(
+    ledger: &Path,
+    root: &Path,
+    run_id: &str,
+    label: &str,
+    panel_count: u64,
+    surprise_count: u64,
+) -> Value {
+    let input = write_dynamicjepa_reality_payload(root, run_id, label, panel_count, surprise_count);
+    stdout_json(&run_context_graph(&[
+        "blackbox",
+        "record",
+        "dynamicjepa-reality",
+        "--ledger",
+        ledger.to_str().expect("ledger path UTF-8"),
+        "--run-id",
+        run_id,
+        "--input",
+        input.to_str().expect("input path UTF-8"),
+        "--agent",
+        AGENT,
+        "--tenant",
+        TENANT,
+    ]))
+}
+
+fn write_dynamicjepa_reality_payload(
+    root: &Path,
+    run_id: &str,
+    label: &str,
+    panel_count: u64,
+    surprise_count: u64,
+) -> PathBuf {
+    assert!(surprise_count <= panel_count);
+    let fixture_dir = root.join(format!("{label}-dynamicjepa-fixture"));
+    fs::create_dir_all(&fixture_dir).expect("create DynamicJEPA fixture dir");
+    let transcript = fixture_dir.join("agent-tool-transcript.json");
+    let mut source_refs = Vec::new();
+    let mut surprise_events = Vec::new();
+    source_refs.push(json!({
+        "kind": "agent_tool_transcript",
+        "source_of_truth": format!("file:{}", transcript.display()),
+        "sha256": "sha256:pending"
+    }));
+    for idx in 0..panel_count {
+        let transition = fixture_dir.join(format!("transition-{idx}.json"));
+        let is_surprise = idx < surprise_count;
+        write_json(
+            &transition,
+            &json!({
+                "record_kind": "contextgraph_harness_transition",
+                "transition_id": format!("{label}-transition-{idx}"),
+                "tool_name": if is_surprise { "apply_line_window_edit" } else { "open_file_window" },
+                "dynamicjepa_mapping": {
+                    "domain_pack_id": "contextgraph_swe_reality_loop_v1",
+                    "state_id": format!("{label}-state-{idx}"),
+                    "action_id": format!("{label}-action-{idx}"),
+                    "outcome_id": format!("{label}-outcome-{idx}"),
+                    "transition_id": format!("{label}-transition-{idx}"),
+                    "surprise_kind": if is_surprise { json!("UnexpectedOutcome") } else { Value::Null }
+                },
+                "outcome": {
+                    "label": if is_surprise { "Harmful" } else { "Useful" },
+                    "utility_delta": if is_surprise { -0.35 } else { 0.25 },
+                    "correction_required": is_surprise
+                },
+                "source_of_truth": format!("file:{}", transition.display())
+            }),
+        );
+        let transition_sha = sha256_file(&transition);
+        source_refs.push(json!({
+            "kind": "harness_transition",
+            "transition_id": format!("{label}-transition-{idx}"),
+            "source_of_truth": format!("file:{}", transition.display()),
+            "sha256": transition_sha
+        }));
+        if is_surprise {
+            surprise_events.push(json!({
+                "event_id": format!("srp-{label}-{idx}"),
+                "kind": "UnexpectedOutcome",
+                "magnitude": 0.35,
+                "transition_id": format!("{label}-transition-{idx}"),
+                "tool_name": "apply_line_window_edit",
+                "tool_family": "edit",
+                "outcome_label": "Harmful",
+                "source_of_truth": format!("file:{}", transition.display())
+            }));
+        }
+    }
+    write_json(
+        &transcript,
+        &json!({
+            "record_kind": "contextgraph_agent_tool_transcript",
+            "executed_tool_calls": panel_count,
+            "entries": []
+        }),
+    );
+    source_refs[0]["sha256"] = json!(sha256_file(&transcript));
+    source_refs.push(json!({
+        "kind": "blackbox_ledger",
+        "source_of_truth": "sqlite:pending#ledger_records",
+        "record_kind": "dynamicjepa_reality"
+    }));
+    let surprise_rate = if panel_count == 0 {
+        0.0
+    } else {
+        ((surprise_count as f64 / panel_count as f64) * 10_000.0).round() / 10_000.0
+    };
+    let projection_accuracy = ((1.0 - surprise_rate) * 10_000.0).round() / 10_000.0;
+    let payload = json!({
+        "record_kind": "dynamicjepa_reality",
+        "schema_version": 1,
+        "run_id": run_id,
+        "attempt": 1,
+        "domain_pack": "contextgraph_swe_reality_loop_v1",
+        "source_mode": "harness_transition_projection",
+        "panel_count": panel_count,
+        "surprise_events": surprise_events,
+        "surprise_event_count": surprise_count,
+        "surprise_candidate_rate": surprise_rate,
+        "prediction_error_l2": Value::Null,
+        "prediction_error_l2_status": {
+            "status": "unavailable",
+            "reason": "test fixture uses physical harness-transition projection records, not a trained DynamicJEPA artifact"
+        },
+        "projection_accuracy": projection_accuracy,
+        "plan_trace_coverage": 1.0,
+        "guard_decisions": [],
+        "source_of_truth_refs": source_refs,
+        "reward_features": {
+            "dynamicjepa_projection_panel_count": panel_count,
+            "dynamicjepa_projection_surprise_count": surprise_count,
+            "dynamicjepa_projection_surprise_rate": surprise_rate,
+            "dynamicjepa_projection_accuracy": projection_accuracy,
+            "dynamicjepa_plan_trace_coverage": 1.0
+        },
+        "recorded_at_unix": 1778210000
+    });
+    let input = root.join(format!("{label}-dynamicjepa-reality.json"));
+    write_json(&input, &payload);
+    input
+}
+
 fn reward_spec(path: &Path) {
     write_json(
         path,
@@ -300,6 +443,23 @@ fn reward_spec(path: &Path) {
                 {"id": "incident_penalty", "feature": "incident_present", "weight": -3.0},
                 {"id": "policy_missing_penalty", "feature": "policy_missing", "weight": -1.0},
                 {"id": "training_value", "feature": "training_value", "weight": 1.0}
+            ]
+        }),
+    );
+}
+
+fn dynamicjepa_reward_spec(path: &Path) {
+    write_json(
+        path,
+        &json!({
+            "reward_spec_schema_version": 1,
+            "reward_id": "dynamicjepa_reward_features_v1",
+            "objective": "prove DynamicJEPA reward features are compiled only from persisted scorecard state",
+            "bounds": {"min": -10.0, "max": 10.0},
+            "components": [
+                {"id": "dj_surprise_rate_penalty", "feature": "dynamicjepa_projection_surprise_rate", "weight": -2.0},
+                {"id": "dj_projection_accuracy_bonus", "feature": "dynamicjepa_projection_accuracy", "weight": 3.0},
+                {"id": "dj_plan_trace_bonus", "feature": "dynamicjepa_plan_trace_coverage", "weight": 1.0}
             ]
         }),
     );
@@ -343,6 +503,16 @@ fn reward_count(ledger: &Path) -> i64 {
         |row| row.get(0),
     )
     .expect("count reward compilations")
+}
+
+fn kind_count(ledger: &Path, kind: &str) -> i64 {
+    let conn = Connection::open(ledger).expect("open ledger");
+    conn.query_row(
+        "SELECT COUNT(*) FROM ledger_records WHERE record_kind = ?1",
+        params![kind],
+        |row| row.get(0),
+    )
+    .expect("count ledger records by kind")
 }
 
 #[test]
@@ -512,5 +682,164 @@ fn reward_compiler_persists_happy_path_and_fails_closed_edges() {
     assert_eq!(
         final_counts.get("reward_compilation").copied().unwrap_or(0),
         1
+    );
+}
+
+#[test]
+fn dynamicjepa_reality_features_are_persisted_scored_and_fail_closed() {
+    let case = new_case();
+    println!(
+        "FSV_DJ_REWARD source_of_truth=sqlite:{}#ledger_records",
+        case.ledger.display()
+    );
+    println!(
+        "FSV_DJ_REWARD BEFORE counts: {:?}",
+        kind_counts(&case.ledger)
+    );
+
+    let happy_run = record_run(
+        &case.ledger,
+        "dynamicjepa reward projection happy path",
+        "medium",
+    );
+    let dj_before = kind_counts(&case.ledger);
+    let dj_record =
+        record_dynamicjepa_reality(&case.ledger, &case.root, &happy_run, "happy-dj", 4, 1);
+    println!(
+        "FSV_DJ_REWARD happy record BEFORE counts={:?} AFTER counts={:?}",
+        dj_before,
+        kind_counts(&case.ledger)
+    );
+    assert_eq!(dj_record["readback"]["status"], "passed");
+    assert_eq!(kind_count(&case.ledger, "dynamicjepa_reality"), 1);
+
+    let score = score_run(&case.ledger, &happy_run);
+    let stored_score = latest_payload(&case.ledger, &happy_run, "scorecard");
+    println!("FSV_DJ_REWARD happy STORED scorecard: {}", stored_score);
+    assert_eq!(
+        score["score_inputs"]["dynamicjepa_reality"]["status"],
+        "present"
+    );
+    assert_eq!(
+        stored_score["score_inputs"]["dynamicjepa_reality"]["reward_features"]
+            ["dynamicjepa_projection_surprise_rate"],
+        0.25
+    );
+    assert_eq!(
+        stored_score["score_inputs"]["dynamicjepa_reality"]["reward_features"]
+            ["dynamicjepa_projection_accuracy"],
+        0.75
+    );
+
+    let spec = case.root.join("dynamicjepa-reward-spec.json");
+    dynamicjepa_reward_spec(&spec);
+    let reward_before = reward_count(&case.ledger);
+    let reward_output = stdout_json(&reward_compile(&case.ledger, &happy_run, &spec));
+    let stored_reward = latest_payload(&case.ledger, &happy_run, "reward_compilation");
+    println!(
+        "FSV_DJ_REWARD happy reward BEFORE reward_count={} AFTER reward_count={} STORED={}",
+        reward_before,
+        reward_count(&case.ledger),
+        stored_reward
+    );
+    assert_eq!(reward_count(&case.ledger), reward_before + 1);
+    assert_eq!(
+        stored_reward["reward_compilation_id"],
+        reward_output["reward_compilation_id"]
+    );
+    assert_eq!(
+        stored_reward["feature_vector"]["dynamicjepa_projection_surprise_rate"]["value"],
+        0.25
+    );
+    assert_eq!(
+        stored_reward["feature_vector"]["dynamicjepa_projection_accuracy"]["value"],
+        0.75
+    );
+    assert_eq!(
+        stored_reward["feature_vector"]["dynamicjepa_plan_trace_coverage"]["value"],
+        1.0
+    );
+    assert_eq!(stored_reward["reward"]["raw"], 2.75);
+
+    let invalid_run = record_run(
+        &case.ledger,
+        "dynamicjepa invalid count mismatch edge",
+        "medium",
+    );
+    let bad_input = write_dynamicjepa_reality_payload(&case.root, &invalid_run, "bad-dj", 2, 1);
+    let mut bad_payload: Value =
+        serde_json::from_slice(&fs::read(&bad_input).expect("read bad payload")).unwrap();
+    bad_payload["surprise_event_count"] = json!(2);
+    write_json(&bad_input, &bad_payload);
+    let before_bad = kind_count(&case.ledger, "dynamicjepa_reality");
+    let bad_error = stderr_json(&run_context_graph(&[
+        "blackbox",
+        "record",
+        "dynamicjepa-reality",
+        "--ledger",
+        case.ledger.to_str().expect("ledger path UTF-8"),
+        "--run-id",
+        &invalid_run,
+        "--input",
+        bad_input.to_str().expect("input path UTF-8"),
+        "--agent",
+        AGENT,
+        "--tenant",
+        TENANT,
+    ]));
+    let after_bad = kind_count(&case.ledger, "dynamicjepa_reality");
+    println!(
+        "FSV_DJ_REWARD edge-invalid BEFORE dynamicjepa_reality_count={} AFTER={} error={}",
+        before_bad, after_bad, bad_error
+    );
+    assert_eq!(bad_error["error_code"], "DYNAMICJEPA_REALITY_INVALID");
+    assert_eq!(before_bad, after_bad);
+
+    let missing_run = record_run(&case.ledger, "dynamicjepa missing record edge", "medium");
+    score_run(&case.ledger, &missing_run);
+    let before_missing_reward = reward_count(&case.ledger);
+    let missing_error = stderr_json(&reward_compile(&case.ledger, &missing_run, &spec));
+    let after_missing_reward = reward_count(&case.ledger);
+    println!(
+        "FSV_DJ_REWARD edge-missing BEFORE reward_count={} AFTER={} error={}",
+        before_missing_reward, after_missing_reward, missing_error
+    );
+    assert_eq!(missing_error["error_code"], "REWARD_FEATURE_NULL");
+    assert_eq!(before_missing_reward, after_missing_reward);
+
+    let max_run = record_run(&case.ledger, "dynamicjepa max surprise edge", "medium");
+    let max_before = kind_counts(&case.ledger);
+    record_dynamicjepa_reality(&case.ledger, &case.root, &max_run, "max-dj", 3, 3);
+    score_run(&case.ledger, &max_run);
+    let max_reward = stdout_json(&reward_compile(&case.ledger, &max_run, &spec));
+    let stored_max_reward = latest_payload(&case.ledger, &max_run, "reward_compilation");
+    println!(
+        "FSV_DJ_REWARD edge-max BEFORE counts={:?} AFTER counts={:?} STORED={}",
+        max_before,
+        kind_counts(&case.ledger),
+        stored_max_reward
+    );
+    assert_eq!(
+        max_reward["feature_vector"]["dynamicjepa_projection_surprise_rate"]["value"],
+        1.0
+    );
+    assert_eq!(
+        stored_max_reward["feature_vector"]["dynamicjepa_projection_accuracy"]["value"],
+        0.0
+    );
+    assert_eq!(stored_max_reward["reward"]["raw"], -1.0);
+
+    let final_counts = kind_counts(&case.ledger);
+    println!("FSV_DJ_REWARD FINAL physical counts: {:?}", final_counts);
+    assert_eq!(
+        final_counts
+            .get("dynamicjepa_reality")
+            .copied()
+            .unwrap_or(0),
+        2
+    );
+    assert_eq!(
+        final_counts.get("reward_compilation").copied().unwrap_or(0),
+        2
     );
 }

@@ -36,6 +36,21 @@
       "id": "training_value",
       "feature": "training_value",
       "weight": 1.0
+    },
+    {
+      "id": "dj_surprise_rate_penalty",
+      "feature": "dynamicjepa_projection_surprise_rate",
+      "weight": -0.5
+    },
+    {
+      "id": "dj_projection_accuracy_bonus",
+      "feature": "dynamicjepa_projection_accuracy",
+      "weight": 1.0
+    },
+    {
+      "id": "dj_plan_trace_bonus",
+      "feature": "dynamicjepa_plan_trace_coverage",
+      "weight": 0.5
     }
   ]
 }

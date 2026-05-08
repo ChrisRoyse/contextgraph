@@ -62,6 +62,17 @@ impl Handlers {
         }
     }
 
+    pub(crate) async fn call_dynamicjepa_reality_for_attempt(
+        &self,
+        id: Option<JsonRpcId>,
+        args: Value,
+    ) -> JsonRpcResponse {
+        match dynamicjepa_reality_for_attempt(args).await {
+            Ok(v) => super::ok(self, id, v),
+            Err(e) => super::err(id, e),
+        }
+    }
+
     pub(crate) async fn call_reality_failure(
         &self,
         id: Option<JsonRpcId>,
@@ -230,6 +241,49 @@ pub async fn reality_signal(args: Value) -> Result<Value> {
     }
     insert_sot(&mut body, &path);
     Ok(body)
+}
+
+pub async fn dynamicjepa_reality_for_attempt(args: Value) -> Result<Value> {
+    let run_id = required_str(&args, "run_id")?;
+    let attempt = required_u64(&args, "attempt")?;
+    let runtime_root = require_active_runtime_root().await?;
+    let task = require_active_target_instance().await?;
+    let dir = attempt_dir(&runtime_root, &run_id, &task, attempt)?;
+    let packet_path = dir.join("reality-signal-packet.json");
+    let packet = read_json(&packet_path)?;
+    let block = packet
+        .get("dynamicjepa_reality")
+        .cloned()
+        .ok_or_else(|| {
+            CCRealityError::new(
+                "CCREALITY_DYNAMICJEPA_REALITY_MISSING",
+                "reality-signal packet is missing dynamicjepa_reality",
+                "reality_signal_packet.dynamicjepa_reality",
+                "rerun the attempt with a reality-loop build that records DynamicJEPA reality before scoring",
+                json!({"packet": packet_path.display().to_string(), "run_id": run_id, "attempt": attempt}),
+                Some(file_sot(&packet_path)),
+            )
+        })?;
+    if block
+        .pointer("/ledger_record/readback/status")
+        .and_then(Value::as_str)
+        != Some("passed")
+    {
+        return Err(CCRealityError::new(
+            "CCREALITY_DYNAMICJEPA_REALITY_READBACK_NOT_PASSED",
+            "dynamicjepa_reality ledger readback did not pass",
+            "dynamicjepa_reality.ledger_record.readback.status",
+            "inspect the BlackBox ledger row before trusting DynamicJEPA reward features",
+            json!({"dynamicjepa_reality": block, "packet": file_sot(&packet_path)}),
+            Some(file_sot(&packet_path)),
+        ));
+    }
+    Ok(json!({
+        "status": "ok",
+        "dynamicjepa_reality": block,
+        "source_of_truth": file_sot(&packet_path),
+        "sha256": sha256_file(&packet_path)?,
+    }))
 }
 
 pub async fn reality_failure(args: Value) -> Result<Value> {
@@ -550,6 +604,7 @@ fn compact_signal(packet: &Value) -> Value {
         "attempt": packet.get("attempt"),
         "outcome_reality": packet.get("outcome_reality"),
         "patch_signals": packet.get("patch_signals"),
+        "dynamicjepa_reality": packet.get("dynamicjepa_reality"),
         "score_reality": packet.get("score_reality"),
         "reinjection_directive": packet.get("reinjection_directive"),
         "source_of_truth": packet.get("source_of_truth")

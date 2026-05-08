@@ -5,8 +5,11 @@ use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use regex::Regex;
 use serde_json::{json, Value};
+use std::collections::HashSet;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 use tokio::process::Command;
 
 impl Handlers {
@@ -111,6 +114,32 @@ pub async fn reality_run_smoke(args: Value) -> Result<Value> {
     Ok(payload)
 }
 
+/// Spawn a fresh attempt and return as soon as the engine has demonstrably
+/// created its run directory. The engine continues running in its own
+/// session (setsid) so that `/mcp reconnect`, MCP singleton-takeover, or any
+/// SIGTERM/SIGKILL aimed at this MCP server does **not** cascade to the
+/// engine.
+///
+/// Root cause of the prior MCP "Connection closed" pattern (2026-05-07):
+/// the previous implementation called `cmd.output().await`, which blocks
+/// the JSON-RPC handler for the full 1–2 hour engine runtime. Claude Code's
+/// stdio MCP transport closes the session long before then, producing
+/// `error -32000: Connection closed`. The engine survived only because the
+/// old MCP got SIGKILL'd (its tokio runtime aborted before `kill_on_drop`
+/// could fire). That accidental survival was load-bearing but fragile.
+///
+/// The fix detaches the engine cleanly:
+///   - `setsid()` via pre_exec — engine becomes its own session leader, so
+///     SIGHUP/SIGTERM aimed at the MCP process group do not reach it.
+///   - stdout/stderr → log files under `<runtime_root>/_engine_logs/` so
+///     diagnostics survive MCP exit and the operator can inspect failures.
+///   - Spawn returns immediately; we then poll `runtime_root` for the new
+///     run directory the engine creates at reality-loop.rs:1578 (right after
+///     parsing/validating the task manifest).
+///   - If the engine exits before creating the run dir, we surface its
+///     stdout/stderr tail via `CCREALITY_INTERACT_ENGINE_EXITED_DURING_STARTUP`.
+///   - If it stays alive but fails to create the run dir within 30s, we
+///     surface its tails via `CCREALITY_INTERACT_ENGINE_NO_RUN_DIR`.
 pub async fn reality_run_attempt(args: Value) -> Result<Value> {
     let task_manifest = required_str(&args, "task_manifest")?;
     let runtime_root = optional_str_strict(&args, "runtime_root")?
@@ -122,17 +151,42 @@ pub async fn reality_run_attempt(args: Value) -> Result<Value> {
     let inner_max_new_tokens = optional_u64_value_strict(&args, "inner_max_new_tokens")?;
     let official = optional_bool_strict(&args, "official_eval", true)?;
     let bin = locate_engine_binary()?;
-    let mut cmd = Command::new(&bin);
+
+    let rr_path = PathBuf::from(&runtime_root);
+    fs::create_dir_all(&rr_path)
+        .map_err(|e| fs_error("CCREALITY_RUNTIME_ROOT_CREATE_FAILED", &rr_path, e))?;
+
+    // Snapshot the existing top-level run directories so we can identify the
+    // brand-new one created by THIS spawn (engine writes <rr>/<loop_id>/).
+    let pre_existing = list_run_dirs(&rr_path)?;
+
+    // Engine logs live under the runtime root so they survive MCP exit and
+    // can be tailed by the operator after the fact.
+    let logs_dir = rr_path.join("_engine_logs");
+    fs::create_dir_all(&logs_dir)
+        .map_err(|e| fs_error("CCREALITY_ENGINE_LOG_DIR_CREATE_FAILED", &logs_dir, e))?;
+    let log_id = format!("attempt-{}-{}", unix_ns()?, std::process::id());
+    let stdout_log = logs_dir.join(format!("{log_id}.stdout.log"));
+    let stderr_log = logs_dir.join(format!("{log_id}.stderr.log"));
+    let stdout_file = std::fs::File::create(&stdout_log)
+        .map_err(|e| fs_error("CCREALITY_ENGINE_STDOUT_LOG_CREATE_FAILED", &stdout_log, e))?;
+    let stderr_file = std::fs::File::create(&stderr_log)
+        .map_err(|e| fs_error("CCREALITY_ENGINE_STDERR_LOG_CREATE_FAILED", &stderr_log, e))?;
+
+    // Use std::process::Command so we own the lifetime end-to-end and avoid
+    // tokio's Child reaper auto-registering the engine. Engine survives
+    // independently after this handler returns.
+    let mut cmd = std::process::Command::new(&bin);
     cmd.arg("attempt")
         .arg("--task-manifest")
-        .arg(task_manifest)
+        .arg(&task_manifest)
         .arg("--runtime-root")
         .arg(&runtime_root)
         .arg("--max-attempts")
         .arg(max_attempts)
         .arg("--model")
-        .arg(model);
-    if let Some(path) = inner_model_path {
+        .arg(&model);
+    if let Some(path) = inner_model_path.as_deref() {
         cmd.arg("--inner-model-path").arg(path);
     }
     if let Some(tokens) = inner_context_tokens {
@@ -144,12 +198,164 @@ pub async fn reality_run_attempt(args: Value) -> Result<Value> {
     if official {
         cmd.arg("--official-eval-each-attempt");
     }
-    cmd.kill_on_drop(true);
-    let out = cmd
-        .output()
-        .await
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::from(stdout_file))
+        .stderr(std::process::Stdio::from(stderr_file));
+
+    // setsid() makes the engine a session leader so it is detached from this
+    // MCP process group. Same pattern as `spawn_daemon_process` in main.rs
+    // (INFRA-H1). pre_exec error → spawn error.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+
+    let mut child = cmd
+        .spawn()
         .map_err(|e| spawn_err("reality_run_attempt", &bin, e))?;
-    engine_output("reality_run_attempt", &bin, out)
+    let pid = child.id();
+
+    // Poll for the engine's new run directory. Engine creates
+    // <runtime_root>/<loop_id>/ at reality-loop.rs:1578 (right after parsing
+    // and validating the task manifest). 30s deadline is generous —
+    // observed startup is well under 5s on this hardware.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut run_id: Option<String> = None;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let stderr_text = std::fs::read_to_string(&stderr_log).unwrap_or_default();
+                let stdout_text = std::fs::read_to_string(&stdout_log).unwrap_or_default();
+                return Err(CCRealityError::new(
+                    "CCREALITY_INTERACT_ENGINE_EXITED_DURING_STARTUP",
+                    format!(
+                        "engine exited before creating its run directory (exit_code={:?})",
+                        status.code()
+                    ),
+                    "reality_run_attempt.startup",
+                    "inspect engine stderr at details.stderr_log; fix the engine and retry",
+                    json!({
+                        "bin": bin.display().to_string(),
+                        "pid": pid,
+                        "exit_code": status.code(),
+                        "runtime_root": runtime_root,
+                        "task_manifest": task_manifest,
+                        "stdout_log": stdout_log.display().to_string(),
+                        "stderr_log": stderr_log.display().to_string(),
+                        "stdout_tail": tail(&stdout_text, 4096),
+                        "stderr_tail": tail(&stderr_text, 4096),
+                    }),
+                    Some(file_sot(&stderr_log)),
+                ));
+            }
+            Ok(None) => {}
+            Err(e) => {
+                return Err(CCRealityError::new(
+                    "CCREALITY_INTERACT_TRY_WAIT_FAILED",
+                    format!("failed to query engine child status: {e}"),
+                    "reality_run_attempt.try_wait",
+                    "inspect host process state; engine pid in details.pid may need manual SIGTERM",
+                    json!({
+                        "pid": pid,
+                        "stdout_log": stdout_log.display().to_string(),
+                        "stderr_log": stderr_log.display().to_string(),
+                        "error": e.to_string(),
+                    }),
+                    Some(file_sot(&stderr_log)),
+                ));
+            }
+        }
+        let current = list_run_dirs(&rr_path)?;
+        if let Some(name) = current.difference(&pre_existing).next() {
+            run_id = Some(name.clone());
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+
+    let Some(run_id) = run_id else {
+        let stderr_text = std::fs::read_to_string(&stderr_log).unwrap_or_default();
+        let stdout_text = std::fs::read_to_string(&stdout_log).unwrap_or_default();
+        return Err(CCRealityError::new(
+            "CCREALITY_INTERACT_ENGINE_NO_RUN_DIR",
+            "engine started but did not create its run directory within 30s",
+            "reality_run_attempt.startup_timeout",
+            "inspect engine stderr at details.stderr_log; engine pid in details.pid may need manual SIGTERM",
+            json!({
+                "bin": bin.display().to_string(),
+                "pid": pid,
+                "runtime_root": runtime_root,
+                "task_manifest": task_manifest,
+                "stdout_log": stdout_log.display().to_string(),
+                "stderr_log": stderr_log.display().to_string(),
+                "stdout_tail": tail(&stdout_text, 4096),
+                "stderr_tail": tail(&stderr_text, 4096),
+            }),
+            Some(file_sot(&stderr_log)),
+        ));
+    };
+
+    // std::process::Child Drop neither waits nor kills — engine survives
+    // this handler returning, this MCP exiting, /mcp reconnect, etc.
+    drop(child);
+
+    let run_dir = rr_path.join(&run_id);
+    Ok(json!({
+        "status": "spawned",
+        "run_id": run_id,
+        "runtime_root": runtime_root,
+        "pid": pid,
+        "model": model,
+        "task_manifest": task_manifest,
+        "stdout_log": stdout_log.display().to_string(),
+        "stderr_log": stderr_log.display().to_string(),
+        "source_of_truth": file_sot(&run_dir),
+        "guidance": "engine runs in background; poll mcp__cgreality__reality_attempt_summary or reality_official_report for progress"
+    }))
+}
+
+/// List top-level directories under runtime_root, excluding the metadata
+/// dirs that are not engine runs (`_engine_logs`, `failures`, `workspaces`,
+/// `cgreality-shift-log`, `cgreality-hook-state`, `claude-code-optimizer`).
+fn list_run_dirs(rr: &Path) -> Result<HashSet<String>> {
+    let mut out = HashSet::new();
+    if !rr.is_dir() {
+        return Ok(out);
+    }
+    for entry in
+        fs::read_dir(rr).map_err(|e| fs_error("CCREALITY_RUNTIME_ROOT_READ_FAILED", rr, e))?
+    {
+        let entry =
+            entry.map_err(|e| fs_error("CCREALITY_RUNTIME_ROOT_ENTRY_READ_FAILED", rr, e))?;
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !is_run_metadata_dir(&name) {
+            out.insert(name);
+        }
+    }
+    Ok(out)
+}
+
+fn is_run_metadata_dir(name: &str) -> bool {
+    matches!(
+        name,
+        "_engine_logs"
+            | "failures"
+            | "workspaces"
+            | "cgreality-shift-log"
+            | "cgreality-hook-state"
+            | "claude-code-optimizer"
+    )
 }
 
 pub async fn reality_run_official_eval(args: Value) -> Result<Value> {

@@ -2403,6 +2403,7 @@ async fn run_reality_loop_stdio() -> Result<()> {
                     tool_names::REALITY_OFFICIAL_REPORT => reality_loop::analyze::reality_official_report(args).await,
                     tool_names::REALITY_PROBLEM_PACKET => reality_loop::analyze::reality_problem_packet(args).await,
                     tool_names::REALITY_SIGNAL => reality_loop::analyze::reality_signal(args).await,
+                    tool_names::DYNAMICJEPA_REALITY_FOR_ATTEMPT => reality_loop::analyze::dynamicjepa_reality_for_attempt(args).await,
                     tool_names::REALITY_FAILURE => reality_loop::analyze::reality_failure(args).await,
                     tool_names::REALITY_TRIGGER_DECISION => reality_loop::analyze::reality_trigger_decision(args).await,
                     tool_names::REALITY_HARNESS_TRANSITIONS => reality_loop::analyze::reality_harness_transitions(args).await,

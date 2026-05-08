@@ -71,6 +71,7 @@ const DEFAULT_SMOKE_RUNTIME_ROOT: &str = "/tmp/cgreality-smoke";
 const DEFAULT_REPLAY_OUTPUT_LABEL: &str = "replay";
 const DATASET_NAME: &str = "princeton-nlp/SWE-bench_Lite";
 const LOCAL_PYTHON_BIN: &str = "python3";
+const DYNAMICJEPA_REALITY_DOMAIN_PACK: &str = "contextgraph_swe_reality_loop_v1";
 #[derive(Parser, Debug, Clone)]
 #[command(name = "reality-loop")]
 #[command(version)]
@@ -1946,6 +1947,38 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             }
         }
 
+        let agent_tool_transcript_path = model_response
+            .pointer("/contextgraph_runtime/agent_tool_transcript")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let dynamicjepa_reality = build_dynamicjepa_reality_for_attempt(
+            &run_id,
+            attempt,
+            agent_tool_transcript_path.as_deref(),
+            &ledger,
+        )?;
+        let dynamicjepa_reality_path = attempt_dir.join("dynamicjepa-reality.json");
+        write_json_checked(&dynamicjepa_reality_path, &dynamicjepa_reality)?;
+        let dynamicjepa_reality_record = blackbox(
+            &context_graph_bin,
+            &[
+                "blackbox",
+                "record",
+                "dynamicjepa-reality",
+                "--ledger",
+                path_str(&ledger),
+                "--run-id",
+                &run_id,
+                "--input",
+                path_str(&dynamicjepa_reality_path),
+                "--agent",
+                "contextgraph_rust_reality_loop",
+                "--model",
+                &args.model,
+            ],
+            &task_root,
+        )?;
+
         // Phase 14 (forward) intervention #4: capture BlackBox score + reward
         // compilation errors as evidence rather than letting `?` propagate them up
         // and terminate the attempt before write_summary / write_optimizer_artifacts /
@@ -2021,10 +2054,6 @@ async fn run(args: AttemptArgs) -> Result<Value> {
         } else {
             None
         };
-        let agent_tool_transcript_path = model_response
-            .pointer("/contextgraph_runtime/agent_tool_transcript")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned);
         let ledger_counts_now = ledger_counts(&ledger)?;
         let reality_signal_packet = build_reality_signal_packet(
             attempt,
@@ -2038,6 +2067,8 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             repeated_patch,
             &model_response,
             agent_tool_transcript_path.as_deref(),
+            &dynamicjepa_reality,
+            &dynamicjepa_reality_record,
             &score,
             reward.as_ref(),
             &ledger_counts_now,
@@ -2086,6 +2117,8 @@ async fn run(args: AttemptArgs) -> Result<Value> {
                 "model_response": model_response,
                 "blackbox_verifier": verifier,
                 "reality_signal_verifier": reality_signal_verifier,
+                "dynamicjepa_reality": dynamicjepa_reality,
+                "dynamicjepa_reality_record": dynamicjepa_reality_record,
                 "score": score,
                 "reward": reward,
                 "ledger_counts": ledger_counts(&ledger)?,
@@ -5665,7 +5698,7 @@ fn build_harness_transition(
         },
         "outcome": outcome,
         "dynamicjepa_mapping": {
-            "domain_pack_id": "contextgraph_swe_reality_loop_v1",
+            "domain_pack_id": DYNAMICJEPA_REALITY_DOMAIN_PACK,
             "state_id": before_state_id,
             "action_id": action_id,
             "outcome_id": outcome_id,
@@ -9323,6 +9356,8 @@ fn build_reality_signal_packet(
     repeated_patch: bool,
     model_response: &Value,
     agent_tool_transcript_path: Option<&str>,
+    dynamicjepa_reality: &Value,
+    dynamicjepa_reality_record: &Value,
     score: &Value,
     reward: Option<&Value>,
     ledger_counts: &BTreeMap<String, i64>,
@@ -9399,6 +9434,14 @@ fn build_reality_signal_packet(
         },
         "tool_grounding": tool_grounding,
         "harness_reality": harness_reality,
+        "dynamicjepa_reality": {
+            "block": dynamicjepa_reality,
+            "ledger_record": dynamicjepa_reality_record,
+            "source_of_truth": {
+                "dynamicjepa_reality_file": optional_file_sot(&attempt_dir.join("dynamicjepa-reality.json")),
+                "blackbox_ledger": dynamicjepa_reality_record.get("source_of_truth")
+            }
+        },
         "tool_reward_signals": tool_reward_signals,
         "score_reality": {
             "score": score,
@@ -9421,6 +9464,7 @@ fn build_reality_signal_packet(
                 "patch_signals.changed_files",
                 "tool_grounding.changed_files_seen_by_tools",
                 "harness_reality.transition_reward_signals",
+                "dynamicjepa_reality.block.reward_features",
                 "tool_reward_signals",
                 "score_reality.reward"
             ],
@@ -9432,7 +9476,9 @@ fn build_reality_signal_packet(
             "attempt_dir": file_sot(attempt_dir),
             "validation": validation.get("source_of_truth"),
             "official_evidence": official_evidence_path,
-            "agent_tool_transcript": agent_tool_transcript_path
+            "agent_tool_transcript": agent_tool_transcript_path,
+            "dynamicjepa_reality": optional_file_sot(&attempt_dir.join("dynamicjepa-reality.json")),
+            "dynamicjepa_reality_ledger": dynamicjepa_reality_record.get("source_of_truth")
         }
     }))
 }
@@ -9453,6 +9499,23 @@ fn compact_reality_signal_packet(packet: &Value) -> Value {
         },
         "tool_grounding": packet.get("tool_grounding"),
         "harness_reality": packet.get("harness_reality"),
+        "dynamicjepa_reality": {
+            "block": {
+                "source_mode": packet.pointer("/dynamicjepa_reality/block/source_mode"),
+                "panel_count": packet.pointer("/dynamicjepa_reality/block/panel_count"),
+                "surprise_event_count": packet.pointer("/dynamicjepa_reality/block/surprise_event_count"),
+                "surprise_candidate_rate": packet.pointer("/dynamicjepa_reality/block/surprise_candidate_rate"),
+                "projection_accuracy": packet.pointer("/dynamicjepa_reality/block/projection_accuracy"),
+                "prediction_error_l2": packet.pointer("/dynamicjepa_reality/block/prediction_error_l2"),
+                "plan_trace_coverage": packet.pointer("/dynamicjepa_reality/block/plan_trace_coverage"),
+                "reward_features": packet.pointer("/dynamicjepa_reality/block/reward_features")
+            },
+            "ledger_record": {
+                "status": packet.pointer("/dynamicjepa_reality/ledger_record/status"),
+                "ledger_sequence": packet.pointer("/dynamicjepa_reality/ledger_record/ledger_sequence"),
+                "readback": packet.pointer("/dynamicjepa_reality/ledger_record/readback/status")
+            }
+        },
         "tool_reward_signals": packet.get("tool_reward_signals"),
         "score_reality": {
             "reward": packet.pointer("/score_reality/reward/reward"),
@@ -9830,6 +9893,279 @@ fn extract_tool_grounding(
         "changed_files_without_tool_read": changed_missing,
         "changed_files_read_before_edit": changed_missing.is_empty(),
         "source_of_truth": file_sot(&transcript_path)
+    }))
+}
+
+fn build_dynamicjepa_reality_for_attempt(
+    run_id: &str,
+    attempt: u64,
+    transcript_path: Option<&str>,
+    ledger: &Path,
+) -> Result<Value> {
+    let Some(path) = transcript_path else {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_TRANSCRIPT_MISSING",
+            "DynamicJEPA reward features require the physical agent tool transcript",
+            "model_response.contextgraph_runtime.agent_tool_transcript",
+            "rerun with the current governed inner harness so every attempt writes an agent_tool_transcript artifact",
+            json!({"run_id": run_id, "attempt": attempt}),
+            Some(sqlite_sot(ledger)),
+        ));
+    };
+    let transcript_path = PathBuf::from(path.strip_prefix("file:").unwrap_or(path));
+    let transcript: Value = read_json(&transcript_path)?;
+    let mut panel_count = 0_u64;
+    let mut surprise_events = Vec::new();
+    let mut guard_decisions = Vec::new();
+    let mut source_refs = vec![json!({
+        "kind": "agent_tool_transcript",
+        "source_of_truth": file_sot(&transcript_path),
+        "sha256": sha256_file(&transcript_path)?,
+    })];
+
+    if let Some(entries) = transcript.get("entries").and_then(Value::as_array) {
+        for entry in entries {
+            if let Some(results) = entry.get("tool_results").and_then(Value::as_array) {
+                for result in results {
+                    let transition_sot =
+                        result
+                            .get("harness_transition")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| {
+                                RealityError::new(
+                                    "RUST_REALITY_DYNAMICJEPA_TRANSITION_REF_MISSING",
+                                    "tool transcript entry was missing the harness transition needed for DynamicJEPA reality",
+                                    "agent_tool_transcript.entries[].tool_results[].harness_transition",
+                                    "rerun with the current Rust reality-loop so every tool call emits a transition artifact",
+                                    json!({"tool_result": result, "transcript": file_sot(&transcript_path)}),
+                                    Some(file_sot(&transcript_path)),
+                                )
+                            })?;
+                    let transition_path = PathBuf::from(
+                        transition_sot
+                            .strip_prefix("file:")
+                            .unwrap_or(transition_sot),
+                    );
+                    let transition: Value = read_json(&transition_path)?;
+                    if transition.get("record_kind").and_then(Value::as_str)
+                        != Some("contextgraph_harness_transition")
+                    {
+                        return Err(RealityError::new(
+                            "RUST_REALITY_DYNAMICJEPA_TRANSITION_KIND_INVALID",
+                            "DynamicJEPA reality transition artifact had the wrong record_kind",
+                            "harness_transition.record_kind",
+                            "inspect transition artifact provenance and rerun the attempt",
+                            json!({
+                                "transition": file_sot(&transition_path),
+                                "record_kind": transition.get("record_kind")
+                            }),
+                            Some(file_sot(&transition_path)),
+                        ));
+                    }
+                    let mapping = transition
+                        .get("dynamicjepa_mapping")
+                        .and_then(Value::as_object)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_MAPPING_MISSING",
+                                "harness transition was missing dynamicjepa_mapping",
+                                "harness_transition.dynamicjepa_mapping",
+                                "regenerate the transition with the current harness before scoring DynamicJEPA reward features",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    let domain_pack = mapping
+                        .get("domain_pack_id")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_DOMAIN_PACK_MISSING",
+                                "dynamicjepa_mapping.domain_pack_id was missing",
+                                "harness_transition.dynamicjepa_mapping.domain_pack_id",
+                                "regenerate the transition with a typed DynamicJEPA domain pack id",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    if domain_pack != DYNAMICJEPA_REALITY_DOMAIN_PACK {
+                        return Err(RealityError::new(
+                            "RUST_REALITY_DYNAMICJEPA_DOMAIN_PACK_MISMATCH",
+                            "dynamicjepa_mapping.domain_pack_id did not match the reality-loop domain pack",
+                            "harness_transition.dynamicjepa_mapping.domain_pack_id",
+                            "do not mix DynamicJEPA domains inside one reality-loop reward record",
+                            json!({
+                                "expected": DYNAMICJEPA_REALITY_DOMAIN_PACK,
+                                "actual": domain_pack,
+                                "transition": file_sot(&transition_path)
+                            }),
+                            Some(file_sot(&transition_path)),
+                        ));
+                    }
+                    let transition_id = mapping
+                        .get("transition_id")
+                        .and_then(Value::as_str)
+                        .or_else(|| transition.get("transition_id").and_then(Value::as_str))
+                        .ok_or_else(|| {
+                            RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_TRANSITION_ID_MISSING",
+                                "dynamicjepa_mapping.transition_id was missing",
+                                "harness_transition.dynamicjepa_mapping.transition_id",
+                                "regenerate the transition with a stable transition_id",
+                                json!({"transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            )
+                        })?;
+                    for (field, value) in [
+                        ("state_id", mapping.get("state_id")),
+                        ("action_id", mapping.get("action_id")),
+                        ("outcome_id", mapping.get("outcome_id")),
+                    ] {
+                        if value
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|item| !item.is_empty())
+                            .is_none()
+                        {
+                            return Err(RealityError::new(
+                                "RUST_REALITY_DYNAMICJEPA_MAPPING_FIELD_MISSING",
+                                "dynamicjepa_mapping was missing a required state/action/outcome id",
+                                format!("harness_transition.dynamicjepa_mapping.{field}"),
+                                "regenerate the transition with complete state/action/outcome ids",
+                                json!({"field": field, "transition": file_sot(&transition_path)}),
+                                Some(file_sot(&transition_path)),
+                            ));
+                        }
+                    }
+
+                    panel_count += 1;
+                    let transition_sha = sha256_file(&transition_path)?;
+                    source_refs.push(json!({
+                        "kind": "harness_transition",
+                        "transition_id": transition_id,
+                        "source_of_truth": file_sot(&transition_path),
+                        "sha256": transition_sha,
+                    }));
+                    let outcome_label = transition
+                        .pointer("/outcome/label")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Unknown");
+                    let surprise_kind = mapping
+                        .get("surprise_kind")
+                        .and_then(Value::as_str)
+                        .filter(|kind| !kind.trim().is_empty());
+                    if surprise_kind.is_some() || outcome_label == "Harmful" {
+                        let utility_delta = transition
+                            .pointer("/outcome/utility_delta")
+                            .and_then(Value::as_f64)
+                            .unwrap_or(0.0);
+                        let tool_family = transition
+                            .pointer("/constellation_signal/tool_family")
+                            .and_then(Value::as_str)
+                            .unwrap_or("unknown_tool_family");
+                        let event_id = format!("srp-{}", short_hash(transition_id));
+                        surprise_events.push(json!({
+                            "event_id": event_id,
+                            "kind": surprise_kind.unwrap_or("HarmfulOutcome"),
+                            "magnitude": round_signal(utility_delta.abs()),
+                            "transition_id": transition_id,
+                            "tool_name": transition.get("tool_name"),
+                            "tool_family": tool_family,
+                            "outcome_label": outcome_label,
+                            "source_of_truth": file_sot(&transition_path),
+                        }));
+                    }
+                    if transition
+                        .pointer("/outcome/correction_required")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+                    {
+                        guard_decisions.push(json!({
+                            "guard": "correction_required",
+                            "decision": "requires_correction",
+                            "transition_id": transition_id,
+                            "tool_name": transition.get("tool_name"),
+                            "outcome_label": outcome_label,
+                            "source_of_truth": file_sot(&transition_path),
+                        }));
+                    }
+                }
+            }
+        }
+    }
+
+    let executed = transcript
+        .get("executed_tool_calls")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_EXECUTED_COUNT_MISSING",
+                "agent tool transcript was missing executed_tool_calls",
+                "agent_tool_transcript.executed_tool_calls",
+                "rerun with the current inner harness so DynamicJEPA coverage can be measured",
+                json!({"transcript": file_sot(&transcript_path)}),
+                Some(file_sot(&transcript_path)),
+            )
+        })?;
+    if panel_count != executed {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_PANEL_COUNT_MISMATCH",
+            "DynamicJEPA panel count did not equal executed tool-call count",
+            "agent_tool_transcript.executed_tool_calls",
+            "inspect missing transition artifacts before scoring this attempt",
+            json!({
+                "executed_tool_calls": executed,
+                "panel_count": panel_count,
+                "transcript": file_sot(&transcript_path)
+            }),
+            Some(file_sot(&transcript_path)),
+        ));
+    }
+    source_refs.push(json!({
+        "kind": "blackbox_ledger",
+        "source_of_truth": sqlite_sot(ledger),
+        "record_kind": "dynamicjepa_reality",
+    }));
+    let surprise_count = surprise_events.len() as u64;
+    let surprise_rate = if panel_count == 0 {
+        0.0
+    } else {
+        round_signal(surprise_count as f64 / panel_count as f64)
+    };
+    let plan_trace_coverage = if executed == 0 {
+        1.0
+    } else {
+        round_signal(panel_count as f64 / executed as f64)
+    };
+    let projection_accuracy = round_signal(1.0 - surprise_rate);
+    Ok(json!({
+        "record_kind": "dynamicjepa_reality",
+        "schema_version": 1,
+        "run_id": run_id,
+        "attempt": attempt,
+        "domain_pack": DYNAMICJEPA_REALITY_DOMAIN_PACK,
+        "source_mode": "harness_transition_projection",
+        "panel_count": panel_count,
+        "surprise_events": surprise_events,
+        "surprise_event_count": surprise_count,
+        "surprise_candidate_rate": surprise_rate,
+        "prediction_error_l2": Value::Null,
+        "prediction_error_l2_status": {
+            "status": "unavailable",
+            "reason": "this attempt has DynamicJEPA harness-transition projections but no trained DynamicJEPA artifact prediction",
+        },
+        "projection_accuracy": projection_accuracy,
+        "plan_trace_coverage": plan_trace_coverage,
+        "guard_decisions": guard_decisions,
+        "source_of_truth_refs": source_refs,
+        "reward_features": {
+            "dynamicjepa_projection_panel_count": panel_count,
+            "dynamicjepa_projection_surprise_count": surprise_count,
+            "dynamicjepa_projection_surprise_rate": surprise_rate,
+            "dynamicjepa_projection_accuracy": projection_accuracy,
+            "dynamicjepa_plan_trace_coverage": plan_trace_coverage,
+        },
+        "recorded_at_unix": unix_secs()?,
     }))
 }
 

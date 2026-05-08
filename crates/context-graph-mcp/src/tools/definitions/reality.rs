@@ -29,6 +29,11 @@ pub fn definitions() -> Vec<ToolDefinition> {
             run_attempt_compact_schema(),
         ),
         def(
+            "dynamicjepa_reality_for_attempt",
+            "Read the persisted DynamicJEPA reality block for an attempt.",
+            run_attempt_schema(),
+        ),
+        def(
             "reality_failure",
             "Read compact failure evidence for an attempt.",
             run_attempt_schema(),

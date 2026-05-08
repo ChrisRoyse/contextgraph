@@ -60,6 +60,7 @@ const RELEASE_GATE_CONNECTOR_ID: &str = "blackbox_release_gate_v1";
 const PACKAGING_CONNECTOR_ID: &str = "blackbox_packaging_v1";
 const RISK_CONNECTOR_ID: &str = "blackbox_risk_v1";
 const REWARD_CONNECTOR_ID: &str = "blackbox_reward_compiler_v1";
+const DYNAMICJEPA_REALITY_CONNECTOR_ID: &str = "blackbox_dynamicjepa_reality_v1";
 const HTTP_SERVER_CONNECTOR_ID: &str = "blackbox_http_server_v1";
 const FIRST_WEDGE_DEMO_CONNECTOR_ID: &str = "blackbox_first_wedge_demo_v1";
 const FSV_PROTOCOL_CONNECTOR_ID: &str = "blackbox_fsv_protocol_v1";
@@ -79,6 +80,7 @@ const RELEASE_GATE_SCHEMA_VERSION: i64 = 1;
 const PILOT_PACKAGE_SCHEMA_VERSION: i64 = 1;
 const RISK_ASSESSMENT_SCHEMA_VERSION: i64 = 1;
 const REWARD_COMPILATION_SCHEMA_VERSION: i64 = 1;
+const DYNAMICJEPA_REALITY_SCHEMA_VERSION: i64 = 1;
 const HTTP_REQUEST_AUDIT_SCHEMA_VERSION: i64 = 1;
 const FIRST_WEDGE_DEMO_SCHEMA_VERSION: i64 = 1;
 const FULL_STATE_VERIFICATION_SCHEMA_VERSION: i64 = 1;
@@ -280,6 +282,9 @@ pub enum RecordCommands {
     /// Record a tool call for an existing run.
     #[command(name = "tool-call")]
     ToolCall(RecordToolCallArgs),
+    /// Record DynamicJEPA reality features for an existing run.
+    #[command(name = "dynamicjepa-reality")]
+    DynamicJepaReality(RecordDynamicJepaRealityArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -479,6 +484,33 @@ pub struct RecordToolCallArgs {
     /// Optional external request id from the called system.
     #[arg(long)]
     pub external_request_id: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct RecordDynamicJepaRealityArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Existing run id.
+    #[arg(long)]
+    pub run_id: String,
+
+    /// JSON file containing the validated DynamicJEPA reality block.
+    #[arg(long)]
+    pub input: PathBuf,
+
+    /// Tenant identifier for local mode.
+    #[arg(long, default_value = "tenant_local")]
+    pub tenant: String,
+
+    /// Agent identifier.
+    #[arg(long, default_value = "agent_unknown")]
+    pub agent: String,
+
+    /// Optional model identifier.
+    #[arg(long)]
+    pub model: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -1638,6 +1670,7 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
             RecordCommands::Step(args) => record_agent_step(args),
             RecordCommands::ModelDecision(args) => record_model_decision(args),
             RecordCommands::ToolCall(args) => record_tool_call(args),
+            RecordCommands::DynamicJepaReality(args) => record_dynamicjepa_reality(args),
         },
         BlackboxCommands::Sdk { action } => match action {
             SdkCommands::Schema(args) => sdk_schema(args),
@@ -4156,6 +4189,646 @@ fn record_tool_call_from_value(
         "record_sha256": append.record_sha256,
         "redaction": append.redaction,
     }))
+}
+
+fn record_dynamicjepa_reality(args: RecordDynamicJepaRealityArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--run-id", &args.run_id)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+
+    let input_text = fs::read_to_string(&args.input)
+        .map_err(|err| BlackboxError::io(&args.input, "read DynamicJEPA reality JSON", err))?;
+    let input_value: Value = serde_json::from_str(&input_text).map_err(|err| {
+        dynamicjepa_reality_invalid(
+            &args.ledger,
+            "$",
+            format!("DynamicJEPA reality input is not valid JSON: {err}"),
+            "write a valid dynamicjepa_reality JSON object and retry",
+        )
+    })?;
+    validate_dynamicjepa_reality_payload(&args.ledger, &input_value, &args.run_id)?;
+
+    let mut conn = open_initialized_ledger(&args.ledger)?;
+    ensure_run_exists_for_tenant(&conn, &args.ledger, &args.run_id, &args.tenant)?;
+    let inspection_before = verify_ledger_integrity(&conn, &args.ledger)?;
+    let record_id = prefixed_id("bbx_rec");
+    let append = append_record(
+        &mut conn,
+        &args.ledger,
+        NewRecord {
+            record_id: record_id.clone(),
+            record_kind: "dynamicjepa_reality".to_string(),
+            tenant_id: args.tenant.clone(),
+            run_id: Some(args.run_id.clone()),
+            step_id: None,
+            actor: actor_json(&args.agent, args.model.as_deref()),
+            payload: input_value.clone(),
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+    let readback = readback_dynamicjepa_reality_append(
+        &conn,
+        &args.ledger,
+        &args.run_id,
+        append.sequence,
+        &append.payload_sha256,
+        &append.record_sha256,
+        inspection_before.record_count,
+    )?;
+
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox record dynamicjepa-reality",
+        "connector": DYNAMICJEPA_REALITY_CONNECTOR_ID,
+        "source_of_truth": source_of_truth(&args.ledger),
+        "record_id": record_id,
+        "record_kind": "dynamicjepa_reality",
+        "run_id": args.run_id,
+        "ledger_sequence": append.sequence,
+        "payload_sha256": append.payload_sha256,
+        "previous_record_sha256": append.previous_record_sha256,
+        "run_chain_sha256": append.run_chain_sha256,
+        "record_sha256": append.record_sha256,
+        "readback": readback,
+    }))
+}
+
+fn validate_dynamicjepa_reality_payload(
+    ledger: &Path,
+    value: &Value,
+    expected_run_id: &str,
+) -> BbxResult<()> {
+    let object = value.as_object().ok_or_else(|| {
+        dynamicjepa_reality_invalid(
+            ledger,
+            "$",
+            "DynamicJEPA reality input must be a JSON object",
+            "write a JSON object with record_kind, schema_version, run_id, attempt, and reward_features",
+        )
+    })?;
+    dynamicjepa_validate_allowed_keys(
+        ledger,
+        object,
+        "$",
+        &[
+            "record_kind",
+            "schema_version",
+            "run_id",
+            "attempt",
+            "domain_pack",
+            "source_mode",
+            "panel_count",
+            "surprise_events",
+            "surprise_event_count",
+            "surprise_candidate_rate",
+            "prediction_error_l2",
+            "prediction_error_l2_status",
+            "projection_accuracy",
+            "plan_trace_coverage",
+            "guard_decisions",
+            "source_of_truth_refs",
+            "reward_features",
+            "recorded_at_unix",
+        ],
+    )?;
+    dynamicjepa_required_str(ledger, object, "$.record_kind").and_then(|record_kind| {
+        if record_kind == "dynamicjepa_reality" {
+            Ok(record_kind)
+        } else {
+            Err(dynamicjepa_reality_invalid(
+                ledger,
+                "$.record_kind",
+                format!("record_kind must be dynamicjepa_reality, found {record_kind:?}"),
+                "record the block through the typed dynamicjepa-reality command",
+            ))
+        }
+    })?;
+    let schema_version = dynamicjepa_required_i64(ledger, object, "$.schema_version")?;
+    if schema_version != DYNAMICJEPA_REALITY_SCHEMA_VERSION {
+        return Err(dynamicjepa_reality_invalid(
+            ledger,
+            "$.schema_version",
+            format!(
+                "schema_version must be {}, found {}",
+                DYNAMICJEPA_REALITY_SCHEMA_VERSION, schema_version
+            ),
+            "regenerate the DynamicJEPA reality block with the current schema version",
+        ));
+    }
+    let run_id = dynamicjepa_required_str(ledger, object, "$.run_id")?;
+    if run_id != expected_run_id {
+        return Err(dynamicjepa_reality_invalid(
+            ledger,
+            "$.run_id",
+            format!("payload run_id {run_id:?} did not match --run-id {expected_run_id:?}"),
+            "record the DynamicJEPA reality block against the same run it was generated from",
+        ));
+    }
+    dynamicjepa_required_i64_nonnegative(ledger, object, "$.attempt")?;
+    dynamicjepa_required_str(ledger, object, "$.domain_pack")?;
+    let source_mode = dynamicjepa_required_str(ledger, object, "$.source_mode")?;
+    if !matches!(
+        source_mode,
+        "harness_transition_projection" | "trained_dynamicjepa_artifact"
+    ) {
+        return Err(dynamicjepa_reality_invalid(
+            ledger,
+            "$.source_mode",
+            format!("unsupported source_mode {source_mode:?}"),
+            "use harness_transition_projection or trained_dynamicjepa_artifact",
+        ));
+    }
+
+    let panel_count = dynamicjepa_required_i64_nonnegative(ledger, object, "$.panel_count")?;
+    let surprise_event_count =
+        dynamicjepa_required_i64_nonnegative(ledger, object, "$.surprise_event_count")?;
+    if surprise_event_count > panel_count {
+        return Err(dynamicjepa_reality_invalid(
+            ledger,
+            "$.surprise_event_count",
+            format!(
+                "surprise_event_count {surprise_event_count} cannot exceed panel_count {panel_count}"
+            ),
+            "derive surprise counts from the physical transition records before appending",
+        ));
+    }
+    let surprise_events = dynamicjepa_required_array(ledger, object, "$.surprise_events")?;
+    if surprise_events.len() as i64 != surprise_event_count {
+        return Err(dynamicjepa_reality_invalid(
+            ledger,
+            "$.surprise_events",
+            format!(
+                "surprise_events length {} did not equal surprise_event_count {}",
+                surprise_events.len(),
+                surprise_event_count
+            ),
+            "write one surprise event object per counted surprise",
+        ));
+    }
+    for (idx, event) in surprise_events.iter().enumerate() {
+        let path = format!("$.surprise_events[{idx}]");
+        let event_object = event.as_object().ok_or_else(|| {
+            dynamicjepa_reality_invalid(
+                ledger,
+                path.clone(),
+                "surprise event must be a JSON object",
+                "write every surprise event as an object with event_id, kind, magnitude, and source_of_truth",
+            )
+        })?;
+        dynamicjepa_required_str(ledger, event_object, &format!("{path}.event_id"))?;
+        dynamicjepa_required_str(ledger, event_object, &format!("{path}.kind"))?;
+        dynamicjepa_required_f64_nonnegative(ledger, event_object, &format!("{path}.magnitude"))?;
+        dynamicjepa_required_str(ledger, event_object, &format!("{path}.source_of_truth"))?;
+    }
+
+    let surprise_candidate_rate =
+        dynamicjepa_required_f64_01(ledger, object, "$.surprise_candidate_rate")?;
+    let expected_surprise_rate = if panel_count == 0 {
+        0.0
+    } else {
+        round_score(surprise_event_count as f64 / panel_count as f64)
+    };
+    dynamicjepa_assert_close(
+        ledger,
+        "$.surprise_candidate_rate",
+        surprise_candidate_rate,
+        expected_surprise_rate,
+    )?;
+    let projection_accuracy = dynamicjepa_required_f64_01(ledger, object, "$.projection_accuracy")?;
+    dynamicjepa_assert_close(
+        ledger,
+        "$.projection_accuracy",
+        projection_accuracy,
+        round_score(1.0 - surprise_candidate_rate),
+    )?;
+    dynamicjepa_required_f64_01(ledger, object, "$.plan_trace_coverage")?;
+
+    let prediction_error = object.get("prediction_error_l2").unwrap_or(&Value::Null);
+    match source_mode {
+        "harness_transition_projection" => {
+            if !prediction_error.is_null() {
+                return Err(dynamicjepa_reality_invalid(
+                    ledger,
+                    "$.prediction_error_l2",
+                    "harness_transition_projection must not claim a trained-model prediction_error_l2",
+                    "write prediction_error_l2=null until a trained DynamicJEPA artifact produced the metric",
+                ));
+            }
+            let status = object
+                .get("prediction_error_l2_status")
+                .and_then(Value::as_object)
+                .ok_or_else(|| {
+                    dynamicjepa_reality_invalid(
+                        ledger,
+                        "$.prediction_error_l2_status",
+                        "projection-mode records must explain why prediction_error_l2 is unavailable",
+                        "include {\"status\":\"unavailable\", \"reason\":\"...\"}",
+                    )
+                })?;
+            let status_value =
+                dynamicjepa_required_str(ledger, status, "$.prediction_error_l2_status.status")?;
+            if status_value != "unavailable" {
+                return Err(dynamicjepa_reality_invalid(
+                    ledger,
+                    "$.prediction_error_l2_status.status",
+                    format!("projection-mode status must be unavailable, found {status_value:?}"),
+                    "use status=unavailable for projection-only records",
+                ));
+            }
+        }
+        "trained_dynamicjepa_artifact" => {
+            let prediction_error = prediction_error.as_f64().ok_or_else(|| {
+                dynamicjepa_reality_invalid(
+                    ledger,
+                    "$.prediction_error_l2",
+                    "trained_dynamicjepa_artifact records require numeric prediction_error_l2",
+                    "record the actual L2 prediction error from DynamicJEPA inference",
+                )
+            })?;
+            if !prediction_error.is_finite() || prediction_error < 0.0 {
+                return Err(dynamicjepa_reality_invalid(
+                    ledger,
+                    "$.prediction_error_l2",
+                    format!("prediction_error_l2 must be finite and non-negative, found {prediction_error}"),
+                    "record a finite non-negative prediction error from the artifact readback",
+                ));
+            }
+        }
+        _ => unreachable!("source_mode validated above"),
+    }
+
+    dynamicjepa_required_array(ledger, object, "$.guard_decisions")?;
+    let source_refs = dynamicjepa_required_array(ledger, object, "$.source_of_truth_refs")?;
+    if source_refs.is_empty() {
+        return Err(dynamicjepa_reality_invalid(
+            ledger,
+            "$.source_of_truth_refs",
+            "source_of_truth_refs must not be empty",
+            "include the transcript, transition files, ledger refs, or DynamicJEPA artifact rows that produced the metrics",
+        ));
+    }
+    for (idx, source_ref) in source_refs.iter().enumerate() {
+        let path = format!("$.source_of_truth_refs[{idx}]");
+        let source_object = source_ref.as_object().ok_or_else(|| {
+            dynamicjepa_reality_invalid(
+                ledger,
+                path.clone(),
+                "source_of_truth_refs entries must be objects",
+                "write every source reference with kind and source_of_truth",
+            )
+        })?;
+        dynamicjepa_required_str(ledger, source_object, &format!("{path}.kind"))?;
+        dynamicjepa_required_str(ledger, source_object, &format!("{path}.source_of_truth"))?;
+    }
+    let reward_features = object
+        .get("reward_features")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            dynamicjepa_reality_invalid(
+                ledger,
+                "$.reward_features",
+                "reward_features object is required",
+                "materialize explicit feature values so reward compilation never derives them from side effects",
+            )
+        })?;
+    dynamicjepa_required_feature_matches(
+        ledger,
+        reward_features,
+        "dynamicjepa_projection_panel_count",
+        panel_count as f64,
+    )?;
+    dynamicjepa_required_feature_matches(
+        ledger,
+        reward_features,
+        "dynamicjepa_projection_surprise_count",
+        surprise_event_count as f64,
+    )?;
+    dynamicjepa_required_feature_matches(
+        ledger,
+        reward_features,
+        "dynamicjepa_projection_surprise_rate",
+        surprise_candidate_rate,
+    )?;
+    dynamicjepa_required_feature_matches(
+        ledger,
+        reward_features,
+        "dynamicjepa_projection_accuracy",
+        projection_accuracy,
+    )?;
+    let plan_trace_coverage = dynamicjepa_required_f64_01(ledger, object, "$.plan_trace_coverage")?;
+    dynamicjepa_required_feature_matches(
+        ledger,
+        reward_features,
+        "dynamicjepa_plan_trace_coverage",
+        plan_trace_coverage,
+    )?;
+    if source_mode == "trained_dynamicjepa_artifact" {
+        let prediction_error = prediction_error.as_f64().unwrap_or(0.0);
+        dynamicjepa_required_feature_matches(
+            ledger,
+            reward_features,
+            "dynamicjepa_prediction_error_l2",
+            prediction_error,
+        )?;
+        dynamicjepa_required_feature_matches(
+            ledger,
+            reward_features,
+            "dynamicjepa_prediction_accuracy",
+            round_score(clamp01(1.0 - prediction_error)),
+        )?;
+    }
+    Ok(())
+}
+
+fn readback_dynamicjepa_reality_append(
+    conn: &Connection,
+    ledger_path: &Path,
+    run_id: &str,
+    sequence: i64,
+    expected_payload_sha256: &str,
+    expected_record_sha256: &str,
+    record_count_before: i64,
+) -> BbxResult<Value> {
+    let inspection_after = verify_ledger_integrity(conn, ledger_path)?;
+    if inspection_after.record_count != record_count_before + 1 {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "DYNAMICJEPA_REALITY_READBACK_MISMATCH",
+            DYNAMICJEPA_REALITY_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.count",
+            format!(
+                "DynamicJEPA reality append expected row count {}, read back {}",
+                record_count_before + 1,
+                inspection_after.record_count
+            ),
+            "inspect the append-only ledger transaction and rerun after fixing SQLite state",
+        ));
+    }
+    let row = inspection_after
+        .records
+        .iter()
+        .find(|record| record.sequence == sequence)
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "DYNAMICJEPA_REALITY_READBACK_MISMATCH",
+                DYNAMICJEPA_REALITY_CONNECTOR_ID,
+                source_of_truth(ledger_path),
+                "ledger_records.sequence",
+                format!("DynamicJEPA reality sequence {sequence} was not readable after append"),
+                "inspect the physical SQLite row and rerun after fixing ledger state",
+            )
+        })?;
+    if row.record_kind != "dynamicjepa_reality"
+        || row.run_id.as_deref() != Some(run_id)
+        || row.hash.get("payload_sha256").and_then(Value::as_str) != Some(expected_payload_sha256)
+        || row.hash.get("record_sha256").and_then(Value::as_str) != Some(expected_record_sha256)
+    {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "DYNAMICJEPA_REALITY_READBACK_MISMATCH",
+            DYNAMICJEPA_REALITY_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.dynamicjepa_reality",
+            "DynamicJEPA reality row readback did not match the appended record identity or hashes",
+            "inspect the physical ledger row before using DJ reward features",
+        ));
+    }
+    Ok(json!({
+        "status": "passed",
+        "source_of_truth": source_of_truth(ledger_path),
+        "ledger_record_count_after_append": inspection_after.record_count,
+        "ledger_tip_sha256_after_append": inspection_after.ledger_tip_sha256,
+        "sequence": row.sequence,
+        "record_kind": row.record_kind,
+        "run_id": row.run_id,
+        "payload_sha256": row.hash["payload_sha256"].clone(),
+        "record_sha256": row.hash["record_sha256"].clone(),
+        "dynamicjepa_reality": row.payload.clone(),
+    }))
+}
+
+fn dynamicjepa_reality_invalid(
+    ledger_path: &Path,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::InvalidInput,
+        "DYNAMICJEPA_REALITY_INVALID",
+        message,
+        Some(source_of_truth(ledger_path)),
+        DYNAMICJEPA_REALITY_CONNECTOR_ID,
+        Some(field_path.into()),
+        remediation,
+    )
+}
+
+fn dynamicjepa_validate_allowed_keys(
+    ledger_path: &Path,
+    object: &Map<String, Value>,
+    field_path: &str,
+    allowed: &[&str],
+) -> BbxResult<()> {
+    for key in object.keys() {
+        if !allowed.contains(&key.as_str()) {
+            return Err(dynamicjepa_reality_invalid(
+                ledger_path,
+                format!("{field_path}.{key}"),
+                format!("unknown DynamicJEPA reality field {key:?}"),
+                format!(
+                    "remove the field or update the typed schema; allowed fields here are {}",
+                    allowed.join(", ")
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn dynamicjepa_required_str<'a>(
+    ledger_path: &Path,
+    object: &'a Map<String, Value>,
+    field_path: &str,
+) -> BbxResult<&'a str> {
+    let key = dynamicjepa_field_key(field_path);
+    object
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            dynamicjepa_reality_invalid(
+                ledger_path,
+                field_path,
+                format!("{field_path} is required and must be a non-empty string"),
+                "write the required string field before recording DynamicJEPA reality",
+            )
+        })
+}
+
+fn dynamicjepa_required_i64(
+    ledger_path: &Path,
+    object: &Map<String, Value>,
+    field_path: &str,
+) -> BbxResult<i64> {
+    let key = dynamicjepa_field_key(field_path);
+    object.get(key).and_then(Value::as_i64).ok_or_else(|| {
+        dynamicjepa_reality_invalid(
+            ledger_path,
+            field_path,
+            format!("{field_path} is required and must be an integer"),
+            "write the required integer field before recording DynamicJEPA reality",
+        )
+    })
+}
+
+fn dynamicjepa_required_i64_nonnegative(
+    ledger_path: &Path,
+    object: &Map<String, Value>,
+    field_path: &str,
+) -> BbxResult<i64> {
+    let value = dynamicjepa_required_i64(ledger_path, object, field_path)?;
+    if value < 0 {
+        return Err(dynamicjepa_reality_invalid(
+            ledger_path,
+            field_path,
+            format!("{field_path} must be non-negative, found {value}"),
+            "write a non-negative integer derived from the source-of-truth transition set",
+        ));
+    }
+    Ok(value)
+}
+
+fn dynamicjepa_required_f64_01(
+    ledger_path: &Path,
+    object: &Map<String, Value>,
+    field_path: &str,
+) -> BbxResult<f64> {
+    let value = dynamicjepa_required_f64(ledger_path, object, field_path)?;
+    if !(0.0..=1.0).contains(&value) {
+        return Err(dynamicjepa_reality_invalid(
+            ledger_path,
+            field_path,
+            format!("{field_path} must be in [0,1], found {value}"),
+            "write a bounded ratio derived from the physical source records",
+        ));
+    }
+    Ok(value)
+}
+
+fn dynamicjepa_required_f64_nonnegative(
+    ledger_path: &Path,
+    object: &Map<String, Value>,
+    field_path: &str,
+) -> BbxResult<f64> {
+    let value = dynamicjepa_required_f64(ledger_path, object, field_path)?;
+    if value < 0.0 {
+        return Err(dynamicjepa_reality_invalid(
+            ledger_path,
+            field_path,
+            format!("{field_path} must be non-negative, found {value}"),
+            "write a finite non-negative magnitude from the source-of-truth record",
+        ));
+    }
+    Ok(value)
+}
+
+fn dynamicjepa_required_f64(
+    ledger_path: &Path,
+    object: &Map<String, Value>,
+    field_path: &str,
+) -> BbxResult<f64> {
+    let key = dynamicjepa_field_key(field_path);
+    let value = object.get(key).and_then(Value::as_f64).ok_or_else(|| {
+        dynamicjepa_reality_invalid(
+            ledger_path,
+            field_path,
+            format!("{field_path} is required and must be numeric"),
+            "write a finite JSON number before recording DynamicJEPA reality",
+        )
+    })?;
+    if !value.is_finite() {
+        return Err(dynamicjepa_reality_invalid(
+            ledger_path,
+            field_path,
+            format!("{field_path} must be finite, found {value}"),
+            "replace NaN or infinite values with a real measured number",
+        ));
+    }
+    Ok(value)
+}
+
+fn dynamicjepa_required_array<'a>(
+    ledger_path: &Path,
+    object: &'a Map<String, Value>,
+    field_path: &str,
+) -> BbxResult<&'a Vec<Value>> {
+    let key = dynamicjepa_field_key(field_path);
+    object.get(key).and_then(Value::as_array).ok_or_else(|| {
+        dynamicjepa_reality_invalid(
+            ledger_path,
+            field_path,
+            format!("{field_path} is required and must be an array"),
+            "write the required array field before recording DynamicJEPA reality",
+        )
+    })
+}
+
+fn dynamicjepa_required_feature_matches(
+    ledger_path: &Path,
+    features: &Map<String, Value>,
+    feature: &str,
+    expected: f64,
+) -> BbxResult<()> {
+    let actual = features.get(feature).and_then(Value::as_f64).ok_or_else(|| {
+        dynamicjepa_reality_invalid(
+            ledger_path,
+            format!("$.reward_features.{feature}"),
+            format!("reward feature {feature} is required and must be numeric"),
+            "materialize the exact feature value before appending so reward compilation never guesses",
+        )
+    })?;
+    if !actual.is_finite() {
+        return Err(dynamicjepa_reality_invalid(
+            ledger_path,
+            format!("$.reward_features.{feature}"),
+            format!("reward feature {feature} must be finite, found {actual}"),
+            "replace NaN or infinite feature values with measured finite values",
+        ));
+    }
+    dynamicjepa_assert_close(
+        ledger_path,
+        format!("$.reward_features.{feature}"),
+        actual,
+        expected,
+    )
+}
+
+fn dynamicjepa_assert_close(
+    ledger_path: &Path,
+    field_path: impl Into<String>,
+    actual: f64,
+    expected: f64,
+) -> BbxResult<()> {
+    let field_path = field_path.into();
+    if (actual - expected).abs() > 0.0001 {
+        return Err(dynamicjepa_reality_invalid(
+            ledger_path,
+            field_path,
+            format!("value {actual} did not match expected {expected} from source counts"),
+            "recompute DynamicJEPA reality directly from the physical transition/source rows",
+        ));
+    }
+    Ok(())
+}
+
+fn dynamicjepa_field_key(field_path: &str) -> &str {
+    field_path
+        .rsplit('.')
+        .next()
+        .unwrap_or(field_path)
+        .trim_start_matches('$')
 }
 
 #[derive(Debug, Clone)]
@@ -13312,6 +13985,32 @@ fn build_scorecard_payload(
         .map(|record| scorecard_record_ref_from_output(ledger_path, "score_input", record))
         .collect::<BbxResult<Vec<_>>>()?;
     let score_input_refs_sha256 = sha256_hex(&canonical_json_bytes(&json!(score_input_refs))?);
+    let dynamicjepa_reality = input_records
+        .iter()
+        .rev()
+        .copied()
+        .find(|record| record.record_kind == "dynamicjepa_reality")
+        .map(|record| {
+            validate_dynamicjepa_reality_payload(ledger_path, &record.payload, run_id)?;
+            scorecard_dynamicjepa_reality_from_record(ledger_path, record)
+        })
+        .transpose()?
+        .unwrap_or_else(|| {
+            json!({
+                "status": "missing",
+                "record_ref": null,
+                "reason": "no dynamicjepa_reality ledger row exists for this run",
+                "required_for_features": [
+                    "dynamicjepa_projection_panel_count",
+                    "dynamicjepa_projection_surprise_count",
+                    "dynamicjepa_projection_surprise_rate",
+                    "dynamicjepa_projection_accuracy",
+                    "dynamicjepa_plan_trace_coverage",
+                    "dynamicjepa_prediction_error_l2",
+                    "dynamicjepa_prediction_accuracy"
+                ]
+            })
+        });
 
     let mut verifier_status_counts = initialized_status_counts();
     let mut policy_counts = BTreeMap::new();
@@ -13521,6 +14220,7 @@ fn build_scorecard_payload(
         "connectors": connectors,
         "average_connector_reliability": round_score(average_connector_reliability),
         "evidence_hash_verification": evidence_hash_verification,
+        "dynamicjepa_reality": dynamicjepa_reality,
         "score_input_refs_sha256": score_input_refs_sha256,
     });
 
@@ -13553,6 +14253,7 @@ fn build_scorecard_payload(
             "basis": [
                 "run scorecards are computed only from physical ledger rows after hash-chain verification",
                 "evidence_packet record_refs must match physical ledger rows before scoring",
+                "DynamicJEPA reward features are read only from persisted dynamicjepa_reality ledger rows",
                 "failed verifier, denied policy, or incident packet sets trust_level=incident",
                 "full tool-call evidence coverage plus passed verifiers is required for verified trust levels",
                 "missing policy on high-risk runs raises risk and reports policy_compliance=policy_missing"
@@ -13565,6 +14266,33 @@ fn build_scorecard_payload(
         },
         "input_record_count": input_records.len(),
         "input_record_refs": score_input_refs,
+    }))
+}
+
+fn scorecard_dynamicjepa_reality_from_record(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+) -> BbxResult<Value> {
+    Ok(json!({
+        "status": "present",
+        "record_ref": scorecard_record_ref_from_output(ledger_path, "dynamicjepa_reality", record)?,
+        "schema_version": record.payload.get("schema_version").cloned().unwrap_or(Value::Null),
+        "run_id": record.payload.get("run_id").cloned().unwrap_or(Value::Null),
+        "attempt": record.payload.get("attempt").cloned().unwrap_or(Value::Null),
+        "domain_pack": record.payload.get("domain_pack").cloned().unwrap_or(Value::Null),
+        "source_mode": record.payload.get("source_mode").cloned().unwrap_or(Value::Null),
+        "panel_count": record.payload.get("panel_count").cloned().unwrap_or(Value::Null),
+        "surprise_event_count": record.payload.get("surprise_event_count").cloned().unwrap_or(Value::Null),
+        "surprise_candidate_rate": record.payload.get("surprise_candidate_rate").cloned().unwrap_or(Value::Null),
+        "projection_accuracy": record.payload.get("projection_accuracy").cloned().unwrap_or(Value::Null),
+        "prediction_error_l2": record.payload.get("prediction_error_l2").cloned().unwrap_or(Value::Null),
+        "prediction_error_l2_status": record.payload.get("prediction_error_l2_status").cloned().unwrap_or(Value::Null),
+        "plan_trace_coverage": record.payload.get("plan_trace_coverage").cloned().unwrap_or(Value::Null),
+        "surprise_events": record.payload.get("surprise_events").cloned().unwrap_or(Value::Null),
+        "guard_decisions": record.payload.get("guard_decisions").cloned().unwrap_or(Value::Null),
+        "source_of_truth_refs": record.payload.get("source_of_truth_refs").cloned().unwrap_or(Value::Null),
+        "reward_features": record.payload.get("reward_features").cloned().unwrap_or(Value::Null),
+        "source": "ledger_records.dynamicjepa_reality",
     }))
 }
 
@@ -13996,6 +14724,41 @@ fn reward_feature_vector(
         scorecard_payload,
         "/score_inputs/policy_decision_counts/denied",
     )?;
+    let dynamicjepa_projection_panel_count = reward_dynamicjepa_feature(
+        ledger_path,
+        scorecard_payload,
+        "dynamicjepa_projection_panel_count",
+    )?;
+    let dynamicjepa_projection_surprise_count = reward_dynamicjepa_feature(
+        ledger_path,
+        scorecard_payload,
+        "dynamicjepa_projection_surprise_count",
+    )?;
+    let dynamicjepa_projection_surprise_rate = reward_dynamicjepa_feature(
+        ledger_path,
+        scorecard_payload,
+        "dynamicjepa_projection_surprise_rate",
+    )?;
+    let dynamicjepa_projection_accuracy = reward_dynamicjepa_feature(
+        ledger_path,
+        scorecard_payload,
+        "dynamicjepa_projection_accuracy",
+    )?;
+    let dynamicjepa_plan_trace_coverage = reward_dynamicjepa_feature(
+        ledger_path,
+        scorecard_payload,
+        "dynamicjepa_plan_trace_coverage",
+    )?;
+    let dynamicjepa_prediction_error_l2 = reward_dynamicjepa_feature(
+        ledger_path,
+        scorecard_payload,
+        "dynamicjepa_prediction_error_l2",
+    )?;
+    let dynamicjepa_prediction_accuracy = reward_dynamicjepa_feature(
+        ledger_path,
+        scorecard_payload,
+        "dynamicjepa_prediction_accuracy",
+    )?;
 
     reward_insert_feature(
         &mut features,
@@ -14129,7 +14892,154 @@ fn reward_feature_vector(
         "/score_inputs.tool_calls_total",
         "tool calls without evidence divided by total tool calls",
     );
+    reward_insert_feature(
+        &mut features,
+        "dynamicjepa_projection_panel_count",
+        dynamicjepa_projection_panel_count,
+        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_projection_panel_count",
+        "number of DynamicJEPA-shaped state/action/outcome panel rows physically recorded for this attempt",
+    );
+    reward_insert_feature(
+        &mut features,
+        "dynamicjepa_projection_surprise_count",
+        dynamicjepa_projection_surprise_count,
+        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_projection_surprise_count",
+        "count of projected DynamicJEPA surprise candidates from physical harness transitions",
+    );
+    reward_insert_feature(
+        &mut features,
+        "dynamicjepa_surprise_events",
+        dynamicjepa_projection_surprise_count,
+        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_projection_surprise_count",
+        "alias for DynamicJEPA projected surprise event count",
+    );
+    reward_insert_feature(
+        &mut features,
+        "dynamicjepa_projection_surprise_rate",
+        dynamicjepa_projection_surprise_rate,
+        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_projection_surprise_rate",
+        "projected surprise candidate count divided by DynamicJEPA panel count",
+    );
+    reward_insert_feature(
+        &mut features,
+        "dynamicjepa_surprise_candidate_rate",
+        dynamicjepa_projection_surprise_rate,
+        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_projection_surprise_rate",
+        "alias for projected surprise candidate rate",
+    );
+    reward_insert_feature(
+        &mut features,
+        "dynamicjepa_projection_accuracy",
+        dynamicjepa_projection_accuracy,
+        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_projection_accuracy",
+        "1 minus projected surprise candidate rate; this is not a trained-model prediction metric",
+    );
+    reward_insert_feature(
+        &mut features,
+        "dynamicjepa_plan_trace_coverage",
+        dynamicjepa_plan_trace_coverage,
+        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_plan_trace_coverage",
+        "ratio of executed tool calls that produced DynamicJEPA-mapped harness transitions",
+    );
+    reward_insert_feature(
+        &mut features,
+        "dynamicjepa_prediction_error_l2",
+        dynamicjepa_prediction_error_l2,
+        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_prediction_error_l2",
+        "actual trained DynamicJEPA prediction L2 error; null for projection-only records",
+    );
+    reward_insert_feature(
+        &mut features,
+        "dynamicjepa_prediction_accuracy",
+        dynamicjepa_prediction_accuracy,
+        "/score_inputs/dynamicjepa_reality/reward_features/dynamicjepa_prediction_accuracy",
+        "1 minus trained DynamicJEPA prediction L2 error, clamped to [0,1]; null unless a trained artifact produced it",
+    );
     Ok(features)
+}
+
+fn reward_dynamicjepa_feature(
+    ledger_path: &Path,
+    scorecard_payload: &Value,
+    feature: &'static str,
+) -> BbxResult<Option<f64>> {
+    let Some(dynamicjepa) = scorecard_payload.pointer("/score_inputs/dynamicjepa_reality") else {
+        return Ok(None);
+    };
+    let status = dynamicjepa
+        .get("status")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            reward_invalid(
+                &source_of_truth(ledger_path),
+                "REWARD_SCORECARD_SCHEMA_DRIFT",
+                "/score_inputs/dynamicjepa_reality/status",
+                "dynamicjepa_reality status is missing from scorecard payload",
+                "rerun scoring so the scorecard includes a typed DynamicJEPA reality status",
+            )
+        })?;
+    match status {
+        "missing" => Ok(None),
+        "present" => {
+            let value = match dynamicjepa.pointer(&format!("/reward_features/{feature}")) {
+                Some(value) => value,
+                None => {
+                    let source_mode = dynamicjepa
+                        .get("source_mode")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    if source_mode == "harness_transition_projection"
+                        && matches!(
+                            feature,
+                            "dynamicjepa_prediction_error_l2" | "dynamicjepa_prediction_accuracy"
+                        )
+                    {
+                        return Ok(None);
+                    }
+                    return Err(reward_invalid(
+                        &source_of_truth(ledger_path),
+                        "REWARD_SCORECARD_SCHEMA_DRIFT",
+                        format!(
+                            "/score_inputs/dynamicjepa_reality/reward_features/{feature}"
+                        ),
+                        format!("dynamicjepa_reality reward feature {feature} is missing"),
+                        "inspect the dynamicjepa_reality ledger row and rerun scoring after fixing malformed state",
+                    ));
+                }
+            };
+            if value.is_null() {
+                return Ok(None);
+            }
+            let number = value.as_f64().ok_or_else(|| {
+                reward_invalid(
+                    &source_of_truth(ledger_path),
+                    "REWARD_SCORECARD_SCHEMA_DRIFT",
+                    format!("/score_inputs/dynamicjepa_reality/reward_features/{feature}"),
+                    format!("dynamicjepa_reality reward feature {feature} must be numeric or null"),
+                    "rerun scoring after fixing malformed dynamicjepa_reality state",
+                )
+            })?;
+            if !number.is_finite() {
+                return Err(reward_invalid(
+                    &source_of_truth(ledger_path),
+                    "REWARD_SCORECARD_SCHEMA_DRIFT",
+                    format!(
+                        "/score_inputs/dynamicjepa_reality/reward_features/{feature}"
+                    ),
+                    format!("dynamicjepa_reality reward feature {feature} must be finite, found {number}"),
+                    "record finite DynamicJEPA feature values before compiling reward",
+                ));
+            }
+            Ok(Some(round_score(number)))
+        }
+        other => Err(reward_invalid(
+            &source_of_truth(ledger_path),
+            "REWARD_SCORECARD_SCHEMA_DRIFT",
+            "/score_inputs/dynamicjepa_reality/status",
+            format!("unsupported dynamicjepa_reality status {other:?}"),
+            "rerun scoring with a supported DynamicJEPA reality status",
+        )),
+    }
 }
 
 fn compile_reward_components(
@@ -14765,6 +15675,15 @@ fn reward_known_features() -> Vec<&'static str> {
         "trust_verified",
         "trust_incident",
         "unverified_tool_call_rate",
+        "dynamicjepa_projection_panel_count",
+        "dynamicjepa_projection_surprise_count",
+        "dynamicjepa_surprise_events",
+        "dynamicjepa_projection_surprise_rate",
+        "dynamicjepa_surprise_candidate_rate",
+        "dynamicjepa_projection_accuracy",
+        "dynamicjepa_plan_trace_coverage",
+        "dynamicjepa_prediction_error_l2",
+        "dynamicjepa_prediction_accuracy",
     ]
 }
 

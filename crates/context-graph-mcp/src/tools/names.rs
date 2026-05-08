@@ -348,6 +348,7 @@ pub const REALITY_ATTEMPT_SUMMARY: &str = "reality_attempt_summary";
 pub const REALITY_OFFICIAL_REPORT: &str = "reality_official_report";
 pub const REALITY_PROBLEM_PACKET: &str = "reality_problem_packet";
 pub const REALITY_SIGNAL: &str = "reality_signal";
+pub const DYNAMICJEPA_REALITY_FOR_ATTEMPT: &str = "dynamicjepa_reality_for_attempt";
 pub const REALITY_FAILURE: &str = "reality_failure";
 pub const REALITY_TRIGGER_DECISION: &str = "reality_trigger_decision";
 pub const REALITY_HARNESS_TRANSITIONS: &str = "reality_harness_transitions";
