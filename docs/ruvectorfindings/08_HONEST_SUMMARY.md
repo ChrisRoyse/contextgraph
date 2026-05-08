@@ -16,15 +16,21 @@ It's the upstream that agentdb is a TypeScript wrapper of.
 
 ---
 
-## What changes if you read RuVector after agentdb
+## What we are actually building (the operator-stated end goal)
 
-agentdb said: "here are 8 good ideas, plan to port them in Rust over ~10 days." RuVector says: **"these ideas are already in Rust here, read them as inspiration and clean-room reimplement against your own design."**
+A **reality compiler** — `ME-JEPA-Code`. A Joint Embedding Predictive Architecture that takes (code change + context) and outputs a predicted reality state, calibrated against the SWE-bench Docker oracle. When prediction-vs-oracle correlation crosses ~0.95, AI-generated patches that pass the compiler don't need human review. **That's the end goal.**
 
-Specifically: the 73-byte SHAKE-256 witness chain that agentdb's findings documented as "port from agentdb" is in fact in `ruvector/crates/rvf/rvf-crypto/src/witness.rs:24` (`ENTRY_SIZE: usize = 73`). agentdb consumed it via `@ruvector/rvf-crypto` npm; we don't consume it any way — we read it as a design reference and write our own.
+The architecture maps onto compiler stages: `E_AST` + `E_CFG` + `E_DataFlow` + `E_TypeGraph` are the front-end (lexer/parser/semantic analysis); the joint panel is the IR; the predictor (6-layer transformer with EMA target encoder + VICReg loss) is the optimization-pass equivalent; the oracle head is codegen; conformal-prediction + Granger + witness-chain integrity wrap it as a fail-closed type-checker.
 
-Same story for SONA (the trajectory + LoRA + EWC++ engine), Thompson Sampling (in `ruvector-solver`'s policy router), MMR (in `ruvector-core::advanced_features::mmr`), the 4-tier cold storage (in `ruvector-temporal-tensor`, but with finer 8/7/5/3-bit quantization), Granger causality (in `ruvector-graph-transformer/temporal.rs`).
+**Three differences from a real compiler:** probabilistic (not deterministic), learned semantics (not declared), failure-mode reversed (fails-open without gates).
 
-We don't port from TS, we don't path-dep against RuVector, we don't vendor. We **clean-room reimplement** in our own crates, with provenance comments citing the inspiration.
+**The training corpus:** a labeled mutation corpus of the 300 SWE-bench Lite tasks. **8 mutation categories × 300 tasks = ~2,400 KNOWN-LABELED examples** with KNOWN oracle outcomes. That's the base training set; live reality-loop attempts add to it continuously.
+
+**Self-healing:** online learning with EWC++ memory protection; drift detection on rolling-window conformal coverage; A/B/C promotion gating on retraining; periodic full retrains.
+
+**Hygiene:** tiered 8/7/5/3-bit storage; nightly GC; witness-chain Merkle compression for old segments; hard disk + RAM quotas.
+
+Full master plan: [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md). 8-phase build plan with definitions of done. A fresh AI agent picks it up and executes.
 
 ---
 
@@ -160,26 +166,25 @@ RuVector is MIT. We never copy code, so the MIT obligations don't apply to our t
 
 ---
 
-## End-goal connection
+## How the primitives in this doc set map onto ME-JEPA-Code
 
-Per `09_END_GOAL_REVIEW_REPLACEMENT.md`, every Tier 1+2 primitive is a **verification gate** in the function `verify_ai_output(patch, problem, harness_state) -> {OK, FailureMode}`. When that function returns `OK`, no human reviewer is needed because every claim the AI made about its patch has been independently re-verified against a non-AI substrate (cryptographic, statistical, causal, or oracle).
+ME-JEPA-Code IS the verifier (per the reality-compiler framing in doc 09). The primitives below are NOT the verifier — they're the **reality-compiler stages**, the **input features**, the **training-corpus tools**, and the **operations infrastructure**. Mapping:
 
-| Tier 1+2 reimplementation | Verification gate it closes |
+| Primitive (clean-room reimplemented) | Role in ME-JEPA-Code |
 |---|---|
-| `crates/context-graph-witness/` | Witness-chain integrity (foundation) |
-| `crates/context-graph-solver/` | Influence attribution (PPR) |
-| `crates/context-graph-sona/` | Auditable behavior provenance |
-| `crates/context-graph-retrieval-diffusion/` | Auditable generation in narrow domains |
-| `crates/context-graph-verified-training/` | Training-step certificate |
-| `crates/context-graph-mincut/` | Calibration-set cleanliness |
-| Stage 0/F certs (built atop witness) | Recall-cert Merkle root |
-| 8/7/5/3-bit tier compression | Lineage cold-storage verifiability |
-| MMR diversity rerank | Citation completeness |
-| Conformal prediction | Calibrated uncertainty |
-| Granger causality | Causal attribution |
-| Matryoshka + Graph RAG | Retrieval scalability under verification |
+| `crates/context-graph-witness/` | `E_Witness` instrument (input feature); audit trail under §6 hygiene; provides the integrity-check gate |
+| `crates/context-graph-solver/` (Forward Push) | Importance-weighting in mini-batch sampling during training |
+| `crates/context-graph-sona/` (μLoRA + EWC++ + REINFORCE) | Online learning subsystem under §5 self-healing |
+| `crates/context-graph-retrieval-diffusion/` | Optional gridworld-style planner; not a verifier component |
+| `crates/context-graph-verified-training/` | Per-gradient-step certificates emitted during ME-JEPA training (training-time audit) |
+| `crates/context-graph-mincut/` | Train/calibration/holdout split (Stoer-Wagner) under §3.4 |
+| 8/7/5/3-bit tier compression | Tiered storage policy under §6.2 hygiene |
+| MMR diversity rerank | Mini-batch sampling diversity under training |
+| Conformal prediction | Calibrated prediction sets at inference (§4.2) |
+| Granger causality | Causal-attestation gate (§5.6 self-healing + Phase 6) |
+| Matryoshka + Graph RAG | Retrieval-scalability for fast panel materialization at inference |
 
-Sequence the work by **gate-closure priority** (per §09's re-prioritized table), not by individual feature impact. Foundation gates (witness chain, training cert, recall cert) ship first; refinement gates (mincut, MMR, Matryoshka) ship after.
+Sequence the work by the **8-phase build plan in doc 09 §7**, not by individual primitive impact. Phase 0 (workspace + corpus) is gating; everything depends on having a labeled mutation corpus first.
 
 ## Bottom line
 
