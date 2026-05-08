@@ -492,7 +492,7 @@ fn write_trained_dynamicjepa_reality_payload(
     payload["prediction_error_l2"] = json!((prediction_error_l2 * 10_000.0).round() / 10_000.0);
     payload["prediction_error_l2_status"] = json!({
         "status": "available",
-        "source": "synthetic real ledger fixture with explicit trained artifact readback rows"
+        "source": "physical test artifact readback rows"
     });
     let prediction_accuracy =
         ((1.0 - prediction_error_l2).clamp(0.0, 1.0) * 10_000.0).round() / 10_000.0;
