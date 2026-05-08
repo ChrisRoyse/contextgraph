@@ -2,7 +2,7 @@ use crate::artifact::{
     compute_artifact_hashes, compute_file_sha256, ensure_clean_run_dir, hex,
     load_artifact_for_inference, verify_artifact_files, ArtifactHashVerification, LoadedArtifact,
 };
-use crate::config::TrainConfig;
+use crate::config::{TargetArchitecture, TrainConfig};
 use crate::model::{train_tiny_jepa, TrainExample};
 use candle_core::{Device, Tensor};
 use context_graph_core::dynamicjepa::{
@@ -745,7 +745,7 @@ pub fn record_surprise(
     }
     let cosine = cosine_f32(&prediction.predicted_next_panel_vec, &observed_vec);
     let error_norm = l2_distance(&prediction.predicted_next_panel_vec, &observed_vec);
-    let threshold = domain.planner_policy.surprise_threshold;
+    let threshold = calibrated_surprise_threshold(&artifact)?;
     if cosine >= threshold {
         return Ok(SurpriseServiceOutcome {
             surprise_event_id: None,
@@ -849,6 +849,78 @@ fn load_inference_artifact(
     })
 }
 
+fn calibrated_surprise_threshold(artifact: &InferenceArtifact) -> DynamicJepaResult<f32> {
+    let report_path = artifact
+        .loaded
+        .registry
+        .artifact_root
+        .join("evaluation_report.json");
+    let bytes = fs::read(&report_path).map_err(|err| DynamicJepaError::Storage {
+        operation: "surprise_calibration.read_evaluation_report".to_string(),
+        cf: "artifact_file".to_string(),
+        message: format!("failed to read {}: {err}", report_path.display()),
+        remediation:
+            "rerun training; record-surprise requires the hashed evaluation_report.json artifact"
+                .to_string(),
+    })?;
+    let report: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|err| DynamicJepaError::TrainingFailed {
+            training_run_id: artifact.loaded.registry.training_run_id.0,
+            message: format!(
+                "failed to parse surprise calibration from {}: {err}",
+                report_path.display()
+            ),
+            remediation:
+                "rerun training; evaluation_report.json must contain strict surprise_calibration"
+                    .to_string(),
+        })?;
+    let calibration =
+        report
+            .get("surprise_calibration")
+            .ok_or_else(|| DynamicJepaError::TrainingFailed {
+                training_run_id: artifact.loaded.registry.training_run_id.0,
+                message: "evaluation_report.json is missing surprise_calibration".to_string(),
+                remediation:
+                    "retrain the artifact with calibrated held-out DynamicJEPA surprise enabled"
+                        .to_string(),
+            })?;
+    if calibration
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        != Some("calibrated")
+    {
+        return Err(DynamicJepaError::TrainingFailed {
+            training_run_id: artifact.loaded.registry.training_run_id.0,
+            message: format!(
+                "artifact surprise calibration is not calibrated: {:?}",
+                calibration.get("status")
+            ),
+            remediation: "compile a val split and retrain before record-surprise or reward use"
+                .to_string(),
+        });
+    }
+    let threshold = calibration
+        .get("threshold_cosine")
+        .and_then(serde_json::Value::as_f64)
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| DynamicJepaError::TrainingFailed {
+            training_run_id: artifact.loaded.registry.training_run_id.0,
+            message: "artifact surprise calibration is missing finite threshold_cosine".to_string(),
+            remediation: "inspect evaluation_report.json and retrain from held-out outcomes"
+                .to_string(),
+        })?;
+    if !(-1.0..=1.0).contains(&threshold) {
+        return Err(DynamicJepaError::TrainingFailed {
+            training_run_id: artifact.loaded.registry.training_run_id.0,
+            message: format!("calibrated threshold_cosine {threshold} is outside [-1,1]"),
+            remediation:
+                "inspect validation cosine calculations; cosine surprise thresholds must be bounded"
+                    .to_string(),
+        });
+    }
+    Ok(threshold as f32)
+}
+
 fn domain_for_artifact(db: &DB, artifact: &ModelArtifactRecord) -> DynamicJepaResult<DomainPack> {
     get_domain_pack(db, &artifact.domain_pack_id, &artifact.domain_pack_version)?.ok_or_else(|| {
         DynamicJepaError::DomainPackNotFound {
@@ -921,13 +993,17 @@ fn encode_panel_vector(
     if artifact.config.model.predictor.ignore_action {
         action.fill(0.0);
     }
-    mlp_forward(
-        &artifact.tensors,
-        "target.encoder",
-        artifact.config.model.encoder.hidden.len() + 1,
-        &flatten_panel_with_action_override(panel, Some(&action))?,
-        artifact.loaded.registry.training_run_id,
-    )
+    let input = flatten_panel_with_action_override(panel, Some(&action))?;
+    match artifact.config.model.target_architecture {
+        TargetArchitecture::EmaEncoder => mlp_forward(
+            &artifact.tensors,
+            "target.encoder",
+            artifact.config.model.encoder.hidden.len() + 1,
+            &input,
+            artifact.loaded.registry.training_run_id,
+        ),
+        TargetArchitecture::FrozenInstrumentProjection => Ok(input),
+    }
 }
 
 fn mlp_forward(

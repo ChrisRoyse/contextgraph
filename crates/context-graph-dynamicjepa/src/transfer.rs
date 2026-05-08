@@ -1,6 +1,6 @@
 use crate::config::{
     LossConfig, MlpConfig, ModelConfig, OptimConfig, PredictorConfig, ScheduleConfig,
-    StoppingConfig, TrainConfig,
+    StoppingConfig, TargetArchitecture, TrainConfig,
 };
 use crate::model::{random_init_tiny_jepa_tensors, train_tiny_jepa, TrainExample};
 use candle_core::Tensor;
@@ -761,6 +761,7 @@ fn transfer_train_config(
                 out_dim: latent_dim,
                 ignore_action,
             },
+            target_architecture: TargetArchitecture::EmaEncoder,
             ema_momentum: 0.99,
         },
         loss: LossConfig {

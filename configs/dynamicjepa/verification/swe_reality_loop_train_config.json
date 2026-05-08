@@ -12,10 +12,11 @@
       "hidden": [
         128
       ],
-      "in_action_dim": 33,
-      "out_dim": 16
+      "in_action_dim": 67,
+      "out_dim": 201
     },
-    "ema_momentum": 0.99
+    "target_architecture": "frozen_instrument_projection",
+    "ema_momentum": 0.0
   },
   "loss": {
     "latent_mse_weight": 1.0,

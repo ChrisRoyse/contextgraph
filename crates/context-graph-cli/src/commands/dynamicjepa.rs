@@ -19929,13 +19929,14 @@ fn execute_instrument(
                 )
             })?;
             validate_instrument_numeric(spec, raw, &inputs[0].0, state.source_event_id)?;
-            match encoding {
-                TimeEncoding::UnixSeconds => vec![(raw / 1000.0) as f32],
+            let encoded = match encoding {
+                TimeEncoding::UnixSeconds => raw / 1000.0,
                 TimeEncoding::FractionalDayOfWeek => {
                     let seconds_in_week = 7.0 * 24.0 * 3600.0;
-                    vec![((raw / 1000.0) % seconds_in_week / seconds_in_week) as f32]
+                    (raw / 1000.0) % seconds_in_week / seconds_in_week
                 }
-            }
+            };
+            vec![normalize_value(encoded, &spec.normalization)? as f32]
         }
     };
     let expected_dim = spec.output_shape.iter().product::<usize>();
@@ -21045,7 +21046,9 @@ fn percentile_linear(values: &[f32], percentile: u8, field: &str) -> DynamicJepa
     let lower = rank.floor() as usize;
     let upper = rank.ceil() as usize;
     let weight = (rank - lower as f64) as f32;
-    let value = sorted[lower] * (1.0 - weight) + sorted[upper] * weight;
+    let value = (sorted[lower] as f64 * (1.0 - weight as f64)
+        + sorted[upper] as f64 * weight as f64) as f32;
+    let value = value.clamp(sorted[0], sorted[sorted.len() - 1]);
     if !value.is_finite() {
         return Err(DynamicJepaError::validation(
             field,

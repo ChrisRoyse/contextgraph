@@ -163,11 +163,11 @@ impl Validate for SurpriseEventRecord {
                 ));
             }
         }
-        if !(0.0..=1.0).contains(&self.threshold) {
+        if !(-1.0..=1.0).contains(&self.threshold) {
             return Err(DynamicJepaError::validation(
                 "SurpriseEventRecord.threshold",
-                "threshold must be in [0,1]",
-                "copy the domain pack surprise threshold",
+                "threshold must be in [-1,1]",
+                "copy the artifact's calibrated cosine surprise threshold",
             ));
         }
         if self.created_at_unix_ms < 0 {

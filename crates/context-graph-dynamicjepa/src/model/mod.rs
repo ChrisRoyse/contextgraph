@@ -1,4 +1,4 @@
-use crate::config::{MlpConfig, PredictorConfig, TrainConfig};
+use crate::config::{MlpConfig, PredictorConfig, TargetArchitecture, TrainConfig};
 use candle_core::{DType, Device, Tensor, Var};
 use candle_nn::{AdamW, Optimizer, ParamsAdamW};
 use context_graph_core::dynamicjepa::{DynamicJepaError, DynamicJepaResult};
@@ -26,6 +26,8 @@ pub struct EpochMetric {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EvaluationReport {
     pub objective_id: String,
+    pub target_architecture: TargetArchitecture,
+    pub surprise_calibration: SurpriseCalibrationReport,
     pub split_metrics: std::collections::BTreeMap<String, std::collections::BTreeMap<String, f64>>,
     pub skipped_row_count: u32,
     pub skipped_reasons: std::collections::BTreeMap<String, u32>,
@@ -39,6 +41,20 @@ pub struct EvaluationReport {
     pub collapse_diagnostics: CollapseDiagnostics,
     pub epoch_metrics: Vec<EpochMetric>,
     pub parameter_count_trainable: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SurpriseCalibrationReport {
+    pub status: String,
+    pub split: String,
+    pub threshold_cosine: f64,
+    pub percentile: f64,
+    pub calibration_set_count: usize,
+    pub cosine_min: f64,
+    pub cosine_p10: f64,
+    pub cosine_median: f64,
+    pub cosine_max: f64,
+    pub false_positive_budget: f64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -249,7 +265,7 @@ impl MlpNetwork {
 
 struct TinyMlpJepa {
     online_encoder: MlpNetwork,
-    target_encoder: MlpNetwork,
+    target_encoder: Option<MlpNetwork>,
     predictor: MlpNetwork,
 }
 
@@ -266,12 +282,6 @@ impl TinyMlpJepa {
             &config.model.encoder,
             device,
         )?;
-        let target_encoder = MlpNetwork::from_encoder_config(
-            "target.encoder",
-            input_dim,
-            &config.model.encoder,
-            device,
-        )?;
         let predictor = MlpNetwork::from_predictor_config(
             "predictor",
             config.model.encoder.out_dim,
@@ -279,7 +289,19 @@ impl TinyMlpJepa {
             &config.model.predictor,
             device,
         )?;
-        target_encoder.set_from(&online_encoder)?;
+        let target_encoder = match config.model.target_architecture {
+            TargetArchitecture::EmaEncoder => {
+                let target_encoder = MlpNetwork::from_encoder_config(
+                    "target.encoder",
+                    input_dim,
+                    &config.model.encoder,
+                    device,
+                )?;
+                target_encoder.set_from(&online_encoder)?;
+                Some(target_encoder)
+            }
+            TargetArchitecture::FrozenInstrumentProjection => None,
+        };
         Ok(Self {
             online_encoder,
             target_encoder,
@@ -301,8 +323,16 @@ impl TinyMlpJepa {
         self.online_encoder.forward(input)
     }
 
-    fn encode_target(&self, target: &Tensor) -> candle_core::Result<Tensor> {
-        self.target_encoder.forward(target)
+    fn encode_target(&self, config: &TrainConfig, target: &Tensor) -> candle_core::Result<Tensor> {
+        match config.model.target_architecture {
+            TargetArchitecture::EmaEncoder => {
+                let Some(target_encoder) = self.target_encoder.as_ref() else {
+                    candle_core::bail!("EMA target encoder is missing");
+                };
+                target_encoder.forward(target)
+            }
+            TargetArchitecture::FrozenInstrumentProjection => Ok(target.clone()),
+        }
     }
 
     fn predict(&self, z: &Tensor, action: &Tensor) -> candle_core::Result<Tensor> {
@@ -311,13 +341,24 @@ impl TinyMlpJepa {
     }
 
     fn ema_update(&self, momentum: f64) -> candle_core::Result<()> {
-        self.target_encoder
-            .ema_update(&self.online_encoder, momentum)
+        let Some(target_encoder) = self.target_encoder.as_ref() else {
+            candle_core::bail!("EMA target encoder is missing");
+        };
+        target_encoder.ema_update(&self.online_encoder, momentum)
+    }
+
+    fn update_target(&self, config: &TrainConfig) -> candle_core::Result<()> {
+        match config.model.target_architecture {
+            TargetArchitecture::EmaEncoder => self.ema_update(config.model.ema_momentum),
+            TargetArchitecture::FrozenInstrumentProjection => Ok(()),
+        }
     }
 
     fn tensors(&self) -> HashMap<String, Tensor> {
         let mut tensors = self.online_encoder.tensors();
-        tensors.extend(self.target_encoder.tensors());
+        if let Some(target_encoder) = &self.target_encoder {
+            tensors.extend(target_encoder.tensors());
+        }
         tensors.extend(self.predictor.tensors());
         tensors
     }
@@ -350,6 +391,17 @@ pub fn train_tiny_jepa(
             domain_pack_id: "dynamicjepa_train".to_string(),
             expected: vec![config.model.predictor.in_action_dim],
             actual: vec![action_dim],
+        });
+    }
+    if matches!(
+        config.model.target_architecture,
+        TargetArchitecture::FrozenInstrumentProjection
+    ) && config.model.predictor.out_dim != target_dim
+    {
+        return Err(DynamicJepaError::PanelShapeMismatch {
+            domain_pack_id: "dynamicjepa_train.frozen_instrument_projection".to_string(),
+            expected: vec![target_dim],
+            actual: vec![config.model.predictor.out_dim],
         });
     }
     validate_examples(examples, input_dim, target_dim, action_dim)?;
@@ -422,6 +474,7 @@ pub fn train_tiny_jepa(
     let model = TinyMlpJepa::new(config, input_dim, action_dim, &device)
         .map_err(|err| training_err(format!("failed to initialize tiny JEPA MLP: {err}")))?;
     let baseline_metrics = evaluate_model(
+        config,
         &model,
         examples,
         &eval_input,
@@ -473,7 +526,7 @@ pub fn train_tiny_jepa(
                 .encode_online(&batch.input)
                 .map_err(|err| training_err(format!("encoder forward failed: {err}")))?;
             let z_target = model
-                .encode_target(&batch.target)
+                .encode_target(config, &batch.target)
                 .map_err(|err| training_err(format!("target encoder forward failed: {err}")))?
                 .detach();
             let z_hat = model
@@ -499,8 +552,8 @@ pub fn train_tiny_jepa(
             opt.backward_step(&loss)
                 .map_err(|err| training_err(format!("AdamW backward_step failed: {err}")))?;
             model
-                .ema_update(config.model.ema_momentum)
-                .map_err(|err| training_err(format!("EMA update failed: {err}")))?;
+                .update_target(config)
+                .map_err(|err| training_err(format!("target branch update failed: {err}")))?;
             device
                 .synchronize()
                 .map_err(|err| training_err(format!("CUDA synchronize failed: {err}")))?;
@@ -542,6 +595,7 @@ pub fn train_tiny_jepa(
             || completed_epoch == config.schedule.epochs;
         if should_eval_stopping {
             let epoch_eval = evaluate_model(
+                config,
                 &model,
                 examples,
                 &eval_input,
@@ -570,6 +624,7 @@ pub fn train_tiny_jepa(
     }
 
     let mut evaluation = evaluate_model(
+        config,
         &model,
         examples,
         &eval_input,
@@ -592,6 +647,7 @@ pub fn train_tiny_jepa(
         });
     }
     evaluation.objective_id = objective_id.to_string();
+    evaluation.target_architecture = config.model.target_architecture.clone();
     let random_init_cosine =
         first_split_metric(&baseline_metrics, "latent_cosine").ok_or_else(|| {
             DynamicJepaError::TrainingFailed {
@@ -892,6 +948,7 @@ fn vicreg_covariance(z: &Tensor) -> candle_core::Result<Tensor> {
 }
 
 fn evaluate_model(
+    config: &TrainConfig,
     model: &TinyMlpJepa,
     examples: &[TrainExample],
     input: &Tensor,
@@ -904,10 +961,10 @@ fn evaluate_model(
         .encode_online(input)
         .map_err(|err| training_err(format!("evaluation encoder forward failed: {err}")))?;
     let z_target = model
-        .encode_target(target)
+        .encode_target(config, target)
         .map_err(|err| training_err(format!("evaluation target forward failed: {err}")))?;
     let z_negative = model
-        .encode_target(negative)
+        .encode_target(config, negative)
         .map_err(|err| training_err(format!("evaluation negative forward failed: {err}")))?;
     let z_hat = model
         .predict(&z_online, action)
@@ -982,6 +1039,8 @@ fn evaluate_model(
         / split_metrics.len().max(1) as f64;
     Ok(EvaluationReport {
         objective_id: String::new(),
+        target_architecture: TargetArchitecture::EmaEncoder,
+        surprise_calibration: surprise_calibration_report(examples, &pred, &target),
         split_metrics,
         skipped_row_count: 0,
         skipped_reasons: std::collections::BTreeMap::new(),
@@ -1161,6 +1220,16 @@ fn flatten_metrics(
         "parameter_count_trainable".to_string(),
         report.parameter_count_trainable as f64,
     );
+    if report.surprise_calibration.status == "calibrated" {
+        out.insert(
+            "surprise_threshold_cosine".to_string(),
+            report.surprise_calibration.threshold_cosine,
+        );
+        out.insert(
+            "surprise_calibration_set_count".to_string(),
+            report.surprise_calibration.calibration_set_count as f64,
+        );
+    }
     Ok(out)
 }
 
@@ -1323,6 +1392,48 @@ fn sorted_quantile(sorted: &[f64], q: f64) -> f64 {
     } else {
         let weight = pos - lo as f64;
         sorted[lo] * (1.0 - weight) + sorted[hi] * weight
+    }
+}
+
+fn surprise_calibration_report(
+    examples: &[TrainExample],
+    pred: &[Vec<f32>],
+    target: &[Vec<f32>],
+) -> SurpriseCalibrationReport {
+    let mut cosines = examples
+        .iter()
+        .enumerate()
+        .filter(|(_, example)| example.split_name == "val")
+        .map(|(idx, _)| cosine(&pred[idx], &target[idx]))
+        .filter(|value| value.is_finite())
+        .collect::<Vec<_>>();
+    cosines.sort_by(f64::total_cmp);
+    if cosines.is_empty() {
+        return SurpriseCalibrationReport {
+            status: "uncalibrated".to_string(),
+            split: "val".to_string(),
+            threshold_cosine: 0.0,
+            percentile: 10.0,
+            calibration_set_count: 0,
+            cosine_min: 0.0,
+            cosine_p10: 0.0,
+            cosine_median: 0.0,
+            cosine_max: 0.0,
+            false_positive_budget: 0.10,
+        };
+    }
+    let p10 = sorted_quantile(&cosines, 0.10);
+    SurpriseCalibrationReport {
+        status: "calibrated".to_string(),
+        split: "val".to_string(),
+        threshold_cosine: p10,
+        percentile: 10.0,
+        calibration_set_count: cosines.len(),
+        cosine_min: *cosines.first().unwrap_or(&f64::NAN),
+        cosine_p10: p10,
+        cosine_median: sorted_quantile(&cosines, 0.50),
+        cosine_max: *cosines.last().unwrap_or(&f64::NAN),
+        false_positive_budget: 0.10,
     }
 }
 

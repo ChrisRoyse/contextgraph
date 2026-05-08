@@ -4373,6 +4373,7 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
     let mut no_tool_after_window_count = 0_u64;
     let mut repeated_navigation_count = 0_u64;
     let mut seen_tool_calls: BTreeMap<String, u64> = BTreeMap::new();
+    let mut dynamicjepa_live_last_panel_id: Option<String> = None;
     // Force-stop bookkeeping: when set, the round loop breaks and the existing
     // post-loop blocked path uses these fields instead of the generic
     // RUST_REALITY_FINAL_EDIT_TOOL_REQUIRED error. Keeps the engine's exit
@@ -4591,6 +4592,13 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
                 "source_of_truth": file_sot(&requested_path)
                 }),
             )?;
+            let pre_action_control = pre_action_dynamicjepa_gate(
+                ctx,
+                &name,
+                &arguments,
+                dynamicjepa_live_last_panel_id.as_deref(),
+                &tool_dir,
+            )?;
             let result = execute_agent_tool_call(ctx, &name, &arguments, &tool_dir)?;
             let result_path = tool_dir.join("tool-result.json");
             write_json_checked(&result_path, &result)?;
@@ -4652,6 +4660,17 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
                 result_status,
                 &tool_dir,
             )?;
+            let live_dynamicjepa = live_ingest_dynamicjepa_transition(
+                ctx,
+                attempt,
+                &harness_transition_path,
+                &tool_dir,
+            )?;
+            if let Some(record) = &live_dynamicjepa {
+                if let Some(panel_id) = record.get("panel_id").and_then(Value::as_str) {
+                    dynamicjepa_live_last_panel_id = Some(panel_id.to_string());
+                }
+            }
             // CONTEXT-BUDGET: tool results are the dominant context-growth driver
             // across rounds. read_problem_reality(compact) can produce 60 KB, and
             // open_file_window/search_repo on large files can be similar. Each
@@ -4689,6 +4708,8 @@ Do not modify tests, fixtures, or benchmark harness files.",        harness.cont
                 "harness_transition_status": harness_transition_readback.get("outcome").and_then(|value| value.get("label")),
                 "status": result_readback.get("status"),
                 "error_code": result_readback.get("error_code"),
+                "dynamicjepa_pre_action_control": pre_action_control,
+                "dynamicjepa_live_ingest": live_dynamicjepa,
                 "blackbox_ledger_evidence": ledger_evidence
             }));
         }
@@ -5517,6 +5538,363 @@ fn tool_call_id(call: &Value, round: u64, index: usize) -> String {
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| format!("tool_round_{round:02}_{index:02}"))
+}
+
+fn pre_action_dynamicjepa_gate(
+    ctx: &AgentToolContext<'_>,
+    name: &str,
+    arguments: &Value,
+    last_panel_id: Option<&str>,
+    tool_dir: &Path,
+) -> Result<Option<Value>> {
+    if !is_final_edit_tool(name) {
+        return Ok(None);
+    }
+    let (Some(dynamicjepa_db), Some(artifact_id)) = (
+        ctx.args.dynamicjepa_db.as_deref(),
+        ctx.args.dynamicjepa_artifact_id.as_deref(),
+    ) else {
+        return Ok(None);
+    };
+    let Some(panel_id) = last_panel_id else {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_PREACTION_PANEL_MISSING",
+            "DynamicJEPA pre-action control refused to execute a workspace mutation before any real prior panel was persisted",
+            "dynamicjepa.pre_action.current_panel_id",
+            "run at least one governed read/navigation transition so the planner has a physical current panel before mutation",
+            json!({"tool_name": name, "arguments": arguments}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    };
+    let observed_action = inferred_dynamicjepa_action_from_tool(name, arguments)?;
+    let plan = dynamicjepa_json_command(
+        ctx.context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "plan".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--artifact-id".to_string(),
+            artifact_id.to_string(),
+            "--panel-id".to_string(),
+            panel_id.to_string(),
+            "--skill-id".to_string(),
+            ctx.args.dynamicjepa_skill_id.clone(),
+            "--json".to_string(),
+        ],
+        ctx.task_root,
+        "dynamicjepa_pre_action_plan",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    let plan_path = tool_dir.join("dynamicjepa-pre-action-plan.json");
+    write_json_checked(&plan_path, &plan)?;
+    let control =
+        validate_dynamicjepa_action_control(&plan, &observed_action, "pre_action", dynamicjepa_db)?;
+    let control = json!({
+        "status": "passed",
+        "mode": "pre_action_hard_gate",
+        "current_panel_id": panel_id,
+        "observed_action": observed_action,
+        "plan": file_sot(&plan_path),
+        "post_action_validator": control,
+        "source_of_truth": format!("rocksdb:{}#dj_plan_traces,dj_guard_decisions", dynamicjepa_db.display()),
+    });
+    let control_path = tool_dir.join("dynamicjepa-pre-action-control.json");
+    write_json_checked(&control_path, &control)?;
+    Ok(Some(read_json(&control_path)?))
+}
+
+fn live_ingest_dynamicjepa_transition(
+    ctx: &AgentToolContext<'_>,
+    attempt: u64,
+    harness_transition_path: &Path,
+    tool_dir: &Path,
+) -> Result<Option<Value>> {
+    let (Some(dynamicjepa_db), Some(_artifact_id)) = (
+        ctx.args.dynamicjepa_db.as_deref(),
+        ctx.args.dynamicjepa_artifact_id.as_deref(),
+    ) else {
+        return Ok(None);
+    };
+    let live_dir = ctx.attempt_dir.join("dynamicjepa-live");
+    create_dir_checked(&live_dir)?;
+    let live_name = tool_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("tool");
+    let mini_transcript_path = live_dir.join(format!("{live_name}-transcript.json"));
+    let mini_transcript = json!({
+        "record_kind": "contextgraph_agent_tool_transcript",
+        "attempt": attempt,
+        "model": ctx.args.model,
+        "entries": [{
+            "round": 0,
+            "status": "dynamicjepa_live_single_transition",
+            "tool_results": [{
+                "harness_transition": file_sot(harness_transition_path),
+            }]
+        }],
+        "executed_tool_calls": 1,
+        "source_of_truth": file_sot(&mini_transcript_path),
+    });
+    write_json_checked(&mini_transcript_path, &mini_transcript)?;
+    let events = dynamicjepa_swe_events_from_transcript(
+        ctx.run_id,
+        attempt,
+        &mini_transcript_path,
+        &mini_transcript,
+    )?;
+    if events.len() != 1 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_LIVE_EVENT_COUNT_MISMATCH",
+            "live DynamicJEPA pre-action ingestion expected exactly one event for one harness transition",
+            "dynamicjepa.live.events",
+            "inspect the live transcript builder before allowing pre-action planning",
+            json!({"event_count": events.len(), "transcript": file_sot(&mini_transcript_path)}),
+            Some(file_sot(&mini_transcript_path)),
+        ));
+    }
+    let event_path = live_dir.join(format!("{live_name}-event.jsonl"));
+    let event_json = serde_json::to_string(&events[0].event).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_LIVE_EVENT_SERIALIZE_FAILED",
+            "live DynamicJEPA event could not be serialized",
+            "dynamicjepa.live.event",
+            "inspect the transition-to-domain mapping code",
+            json!({"error": err.to_string(), "event": events[0].event}),
+            Some(file_sot(&mini_transcript_path)),
+        )
+    })?;
+    write_text_checked(&event_path, &format!("{event_json}\n"))?;
+    let ingest = dynamicjepa_json_command(
+        ctx.context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "ingest-event".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--domain".to_string(),
+            DYNAMICJEPA_REALITY_DOMAIN_PACK.to_string(),
+            "--adapter".to_string(),
+            "json_event".to_string(),
+            "--file".to_string(),
+            path_str(&event_path).to_string(),
+            "--json".to_string(),
+        ],
+        ctx.task_root,
+        "dynamicjepa_live_ingest_event",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    let ingest_path = live_dir.join(format!("{live_name}-ingest.json"));
+    write_json_checked(&ingest_path, &ingest)?;
+    if ingest
+        .pointer("/created_ids/failed_adapter_run_ids")
+        .and_then(Value::as_array)
+        .is_some_and(|items| !items.is_empty())
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_LIVE_INGEST_ADAPTER_FAILED",
+            "live DynamicJEPA ingestion produced failed adapter runs before pre-action planning",
+            "dynamicjepa.live.ingest.failed_adapter_run_ids",
+            "inspect the live event and registered SWE domain pack mapping",
+            json!({"ingest": ingest, "event": file_sot(&event_path)}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+    let transition_ids = required_json_string_array(
+        &ingest,
+        "/created_ids/transition_ids",
+        "dynamicjepa.live.ingest.created_ids.transition_ids",
+        dynamicjepa_db,
+    )?;
+    let action_ids = required_json_string_array(
+        &ingest,
+        "/created_ids/action_ids",
+        "dynamicjepa.live.ingest.created_ids.action_ids",
+        dynamicjepa_db,
+    )?;
+    let outcome_ids = required_json_string_array(
+        &ingest,
+        "/created_ids/outcome_ids",
+        "dynamicjepa.live.ingest.created_ids.outcome_ids",
+        dynamicjepa_db,
+    )?;
+    if transition_ids.len() != 1 || action_ids.len() != 1 || outcome_ids.len() != 1 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_LIVE_INGEST_COUNT_MISMATCH",
+            "live DynamicJEPA ingest did not create exactly one transition/action/outcome",
+            "dynamicjepa.live.ingest.created_ids",
+            "inspect live ingestion output before pre-action planning",
+            json!({"ingest": ingest}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+    let materialized = dynamicjepa_json_command(
+        ctx.context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "materialize-panel".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--transition-id".to_string(),
+            transition_ids[0].clone(),
+            "--json".to_string(),
+        ],
+        ctx.task_root,
+        "dynamicjepa_live_materialize_panel",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    let materialize_path = live_dir.join(format!("{live_name}-materialize.json"));
+    write_json_checked(&materialize_path, &materialized)?;
+    let panel_ids = required_json_string_array(
+        &materialized,
+        "/created_ids/panel_ids",
+        "dynamicjepa.live.materialize.created_ids.panel_ids",
+        dynamicjepa_db,
+    )?;
+    if panel_ids.len() != 1 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_LIVE_PANEL_COUNT_MISMATCH",
+            "live DynamicJEPA materialization did not create exactly one panel",
+            "dynamicjepa.live.materialize.created_ids.panel_ids",
+            "inspect live transition id and latent panel source-of-truth rows",
+            json!({"materialized": materialized}),
+            Some(file_sot(dynamicjepa_db)),
+        ));
+    }
+    let record = json!({
+        "transition_id": events[0].transition_id,
+        "dynamicjepa_transition_id": transition_ids[0],
+        "action_id": action_ids[0],
+        "outcome_id": outcome_ids[0],
+        "panel_id": panel_ids[0],
+        "event": file_sot(&event_path),
+        "ingest": file_sot(&ingest_path),
+        "materialize": file_sot(&materialize_path),
+        "source_of_truth": format!("rocksdb:{}#dj_raw_events,dj_transitions,dj_latent_panels", dynamicjepa_db.display()),
+    });
+    let record_path = live_dir.join(format!("{live_name}-record.json"));
+    write_json_checked(&record_path, &record)?;
+    update_dynamicjepa_live_index(&live_dir, &record)?;
+    Ok(Some(read_json(&record_path)?))
+}
+
+fn update_dynamicjepa_live_index(live_dir: &Path, record: &Value) -> Result<()> {
+    let index_path = live_dir.join("index.json");
+    let mut records = if index_path.exists() {
+        let existing: Value = read_json(&index_path)?;
+        existing
+            .get("records")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    records.push(record.clone());
+    write_json_checked(
+        &index_path,
+        &json!({
+            "record_kind": "dynamicjepa_live_preaction_index",
+            "records": records,
+            "source_of_truth": file_sot(&index_path),
+        }),
+    )
+}
+
+fn inferred_dynamicjepa_action_from_tool(name: &str, arguments: &Value) -> Result<Value> {
+    let paths = dynamicjepa_tool_argument_paths(name, arguments);
+    let patch_bytes = dynamicjepa_tool_argument_patch_bytes(name, arguments)?;
+    let edit_size_bucket = swe_edit_size_bucket(patch_bytes);
+    let path_risk = swe_path_risk(&paths, &[]);
+    let target_path_bucket = swe_path_bucket(&paths, &[]);
+    let delta = match name {
+        "apply_line_window_edit" => 7,
+        "apply_structured_edit" => 6,
+        "apply_unified_diff" if edit_size_bucket == "large" || path_risk == "multiple" => -4,
+        "apply_unified_diff" => 5,
+        _ => 0,
+    };
+    Ok(json!({
+        "delta": delta,
+        "tool_family": swe_tool_family_variant(harness_tool_family(name)),
+        "command_kind": swe_command_kind_variant(name),
+        "edit_size_bucket": edit_size_bucket,
+        "path_risk": path_risk,
+        "target_path_bucket": target_path_bucket,
+        "symbol_bucket": swe_symbol_bucket(name, &paths, &[]),
+        "dependency_layer": swe_dependency_layer(&paths, &[]),
+        "test_target_kind": swe_test_target_kind(name, None, &paths, &[]),
+        "ownership_bucket": swe_ownership_bucket(&paths, &[]),
+    }))
+}
+
+fn dynamicjepa_tool_argument_patch_bytes(name: &str, arguments: &Value) -> Result<i64> {
+    let bytes = match name {
+        "apply_unified_diff" => arguments
+            .get("patch")
+            .and_then(Value::as_str)
+            .map(str::len)
+            .unwrap_or(0),
+        "apply_line_window_edit" | "apply_structured_edit" => arguments
+            .get("edits")
+            .and_then(Value::as_array)
+            .map(|edits| {
+                edits
+                    .iter()
+                    .filter_map(|edit| {
+                        edit.get("replace")
+                            .or_else(|| edit.get("replacement"))
+                            .and_then(Value::as_str)
+                    })
+                    .map(str::len)
+                    .sum::<usize>()
+            })
+            .unwrap_or(0),
+        _ => 0,
+    };
+    i64::try_from(bytes).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_PREACTION_PATCH_SIZE_OVERFLOW",
+            "pre-action DynamicJEPA patch size did not fit the SWE domain schema",
+            "dynamicjepa.pre_action.action.patch_bytes",
+            "inspect the tool arguments before planner gating",
+            json!({"tool_name": name, "bytes": bytes, "error": err.to_string()}),
+            None,
+        )
+    })
+}
+
+fn dynamicjepa_tool_argument_paths(name: &str, arguments: &Value) -> Vec<String> {
+    let mut paths = BTreeSet::new();
+    if let Some(edits) = arguments.get("edits").and_then(Value::as_array) {
+        for edit in edits {
+            if let Some(path) = edit.get("path").and_then(Value::as_str) {
+                paths.insert(path.to_string());
+            }
+        }
+    }
+    if let Some(observed) = arguments.get("observed_files").and_then(Value::as_array) {
+        for item in observed {
+            if let Some(path) = item.get("path").and_then(Value::as_str) {
+                paths.insert(path.to_string());
+            }
+        }
+    }
+    if name == "apply_unified_diff" {
+        if let Some(patch) = arguments.get("patch").and_then(Value::as_str) {
+            for line in patch.lines() {
+                for prefix in ["+++ b/", "--- a/"] {
+                    if let Some(path) = line.strip_prefix(prefix) {
+                        if path != "/dev/null" {
+                            paths.insert(path.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    paths.into_iter().collect()
 }
 
 fn execute_agent_tool_call(
@@ -10979,6 +11357,88 @@ fn validate_dynamicjepa_artifact_lifecycle(
                 Some(file_sot(&evaluation_report_path)),
             )
         })?;
+    let target_architecture = evaluation_report
+        .get("target_architecture")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_TARGET_ARCHITECTURE_MISSING",
+                "DynamicJEPA artifact evaluation_report is missing target_architecture",
+                "artifact.evaluation_report.target_architecture",
+                "retrain with an explicit ME-JEPA target architecture",
+                json!({"artifact_id": artifact_id, "evaluation_report": file_sot(&evaluation_report_path)}),
+                Some(file_sot(&evaluation_report_path)),
+            )
+        })?;
+    if target_architecture != "frozen_instrument_projection" {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_TARGET_ARCHITECTURE_NOT_ME",
+            "DynamicJEPA artifact lifecycle gate rejected an EMA-target artifact for ME-JEPA production use",
+            "artifact.evaluation_report.target_architecture",
+            "retrain with model.target_architecture=frozen_instrument_projection and ema_momentum=0.0",
+            json!({"artifact_id": artifact_id, "target_architecture": target_architecture}),
+            Some(file_sot(&evaluation_report_path)),
+        ));
+    }
+    let surprise_calibration = evaluation_report
+        .get("surprise_calibration")
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SURPRISE_CALIBRATION_MISSING",
+                "DynamicJEPA artifact evaluation_report is missing held-out surprise calibration",
+                "artifact.evaluation_report.surprise_calibration",
+                "retrain with a real val split so model-error surprise has a calibrated threshold",
+                json!({"artifact_id": artifact_id, "evaluation_report": file_sot(&evaluation_report_path)}),
+                Some(file_sot(&evaluation_report_path)),
+            )
+        })?;
+    if surprise_calibration.get("status").and_then(Value::as_str) != Some("calibrated") {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_SURPRISE_UNCALIBRATED",
+            "DynamicJEPA artifact lifecycle gate rejected an artifact without calibrated model-error surprise",
+            "artifact.evaluation_report.surprise_calibration.status",
+            "compile held-out validation rows and retrain before reward or planning use",
+            json!({"artifact_id": artifact_id, "surprise_calibration": surprise_calibration}),
+            Some(file_sot(&evaluation_report_path)),
+        ));
+    }
+    let surprise_threshold = surprise_calibration
+        .get("threshold_cosine")
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SURPRISE_THRESHOLD_INVALID",
+                "DynamicJEPA artifact surprise calibration is missing finite threshold_cosine",
+                "artifact.evaluation_report.surprise_calibration.threshold_cosine",
+                "inspect evaluation_report.json and retrain from held-out outcomes",
+                json!({"artifact_id": artifact_id, "surprise_calibration": surprise_calibration}),
+                Some(file_sot(&evaluation_report_path)),
+            )
+        })?;
+    let calibration_set_count = surprise_calibration
+        .get("calibration_set_count")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_SURPRISE_CALIBRATION_COUNT_MISSING",
+                "DynamicJEPA artifact surprise calibration is missing calibration_set_count",
+                "artifact.evaluation_report.surprise_calibration.calibration_set_count",
+                "retrain with persisted held-out validation rows",
+                json!({"artifact_id": artifact_id, "surprise_calibration": surprise_calibration}),
+                Some(file_sot(&evaluation_report_path)),
+            )
+        })?;
+    if calibration_set_count < 5 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_SURPRISE_CALIBRATION_TOO_SMALL",
+            "DynamicJEPA artifact lifecycle gate rejected a too-small held-out surprise calibration set",
+            "artifact.evaluation_report.surprise_calibration.calibration_set_count",
+            "compile a larger validation split before production use",
+            json!({"artifact_id": artifact_id, "calibration_set_count": calibration_set_count}),
+            Some(file_sot(&evaluation_report_path)),
+        ));
+    }
     let training_run_id = artifact_record
         .get("training_run_id")
         .and_then(Value::as_str)
@@ -11071,6 +11531,22 @@ fn validate_dynamicjepa_artifact_lifecycle(
             Some(file_sot(dynamicjepa_db)),
         ));
     }
+    let corpus_diversity = validate_dynamicjepa_corpus_diversity(
+        context_graph_bin,
+        task_root,
+        dynamicjepa_db,
+        dj_dir,
+        raw_events,
+    )?;
+    let comparative_promotion = validate_dynamicjepa_comparative_promotion(
+        context_graph_bin,
+        task_root,
+        dynamicjepa_db,
+        artifact_id,
+        &artifact_root,
+        val_latent_mse,
+        dj_dir,
+    )?;
     Ok(json!({
         "status": "passed",
         "artifact_id": artifact_id,
@@ -11080,9 +11556,14 @@ fn validate_dynamicjepa_artifact_lifecycle(
             "artifact_age_ms": now_ms.saturating_sub(artifact_created_at),
             "latent_collapsed": latent_collapsed,
             "val_latent_mse": round_signal(val_latent_mse),
+            "target_architecture": target_architecture,
+            "surprise_threshold_cosine": round_signal(surprise_threshold),
+            "surprise_calibration_set_count": calibration_set_count,
             "training_run_status": "Completed",
             "dataset_shards": dataset_shards,
             "raw_events": raw_events,
+            "corpus_diversity": corpus_diversity,
+            "comparative_promotion": comparative_promotion,
             "constellations": constellations,
             "threshold_calibrations": threshold_calibrations
         },
@@ -11110,6 +11591,285 @@ fn required_dynamicjepa_count(counts: &Value, cf_name: &str, dynamicjepa_db: &Pa
                 Some(file_sot(dynamicjepa_db)),
             )
         })
+}
+
+fn validate_dynamicjepa_corpus_diversity(
+    context_graph_bin: &Path,
+    task_root: &Path,
+    dynamicjepa_db: &Path,
+    dj_dir: &Path,
+    raw_events: u64,
+) -> Result<Value> {
+    let limit = raw_events.clamp(1, 10_000).to_string();
+    let actions = dynamicjepa_json_command(
+        context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "inspect-cf".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--cf".to_string(),
+            "dj_actions".to_string(),
+            "--limit".to_string(),
+            limit.clone(),
+            "--json".to_string(),
+        ],
+        task_root,
+        "dynamicjepa_inspect_actions_for_diversity",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    let outcomes = dynamicjepa_json_command(
+        context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "inspect-cf".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--cf".to_string(),
+            "dj_outcomes".to_string(),
+            "--limit".to_string(),
+            limit,
+            "--json".to_string(),
+        ],
+        task_root,
+        "dynamicjepa_inspect_outcomes_for_diversity",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    let evidence_path = dj_dir.join("artifact-corpus-diversity.json");
+    let action_tool_families = unique_dynamicjepa_field_values(&actions, "tool_family");
+    let command_kinds = unique_dynamicjepa_field_values(&actions, "command_kind");
+    let path_buckets = unique_dynamicjepa_field_values(&actions, "target_path_bucket");
+    let dependency_layers = unique_dynamicjepa_field_values(&actions, "dependency_layer");
+    let result_statuses = unique_dynamicjepa_field_values(&outcomes, "result_status");
+    let verifier_statuses = unique_dynamicjepa_field_values(&outcomes, "verifier_status");
+    let error_signatures = unique_dynamicjepa_field_values(&outcomes, "error_signature");
+    let summary = json!({
+        "status": "passed",
+        "source_of_truth": {
+            "actions": format!("rocksdb:{}#dj_actions", dynamicjepa_db.display()),
+            "outcomes": format!("rocksdb:{}#dj_outcomes", dynamicjepa_db.display()),
+            "evidence": file_sot(&evidence_path),
+        },
+        "unique_counts": {
+            "action_tool_family": action_tool_families.len(),
+            "command_kind": command_kinds.len(),
+            "target_path_bucket": path_buckets.len(),
+            "dependency_layer": dependency_layers.len(),
+            "result_status": result_statuses.len(),
+            "verifier_status": verifier_statuses.len(),
+            "error_signature": error_signatures.len(),
+        },
+        "unique_values": {
+            "action_tool_family": action_tool_families,
+            "command_kind": command_kinds,
+            "target_path_bucket": path_buckets,
+            "dependency_layer": dependency_layers,
+            "result_status": result_statuses,
+            "verifier_status": verifier_statuses,
+            "error_signature": error_signatures,
+        },
+    });
+    write_json_checked(&evidence_path, &summary)?;
+    for (field, min, actual) in [
+        (
+            "action_tool_family",
+            3usize,
+            summary
+                .pointer("/unique_counts/action_tool_family")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "command_kind",
+            5usize,
+            summary
+                .pointer("/unique_counts/command_kind")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "target_path_bucket",
+            2usize,
+            summary
+                .pointer("/unique_counts/target_path_bucket")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "dependency_layer",
+            2usize,
+            summary
+                .pointer("/unique_counts/dependency_layer")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "result_status",
+            2usize,
+            summary
+                .pointer("/unique_counts/result_status")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+    ] {
+        if actual < min {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_CORPUS_DIVERSITY_TOO_LOW",
+                "DynamicJEPA artifact lifecycle gate rejected insufficient real SWE-loop corpus diversity",
+                format!("dynamicjepa.corpus_diversity.{field}"),
+                "ingest a broader real attempt corpus before promoting this artifact",
+                json!({"field": field, "minimum_unique": min, "actual_unique": actual, "evidence": file_sot(&evidence_path)}),
+                Some(file_sot(&evidence_path)),
+            ));
+        }
+    }
+    Ok(read_json(&evidence_path)?)
+}
+
+fn unique_dynamicjepa_field_values(command_output: &Value, field: &str) -> Vec<String> {
+    let mut values = BTreeSet::new();
+    if let Some(rows) = command_output
+        .pointer("/decoded_records/rows")
+        .and_then(Value::as_array)
+    {
+        for row in rows {
+            let Some(fields) = row
+                .pointer("/decoded/fields")
+                .or_else(|| row.pointer("/decoded/record/fields"))
+            else {
+                continue;
+            };
+            if let Some(value) = fields.get(field).and_then(field_value_to_plain_json) {
+                if let Some(text) = value.as_str() {
+                    values.insert(text.to_string());
+                }
+            }
+        }
+    }
+    values.into_iter().collect()
+}
+
+fn validate_dynamicjepa_comparative_promotion(
+    context_graph_bin: &Path,
+    task_root: &Path,
+    dynamicjepa_db: &Path,
+    artifact_id: &str,
+    artifact_root: &Path,
+    val_latent_mse: f64,
+    dj_dir: &Path,
+) -> Result<Value> {
+    let artifacts = dynamicjepa_json_command(
+        context_graph_bin,
+        vec![
+            "dynamicjepa".to_string(),
+            "inspect-cf".to_string(),
+            "--db".to_string(),
+            path_str(dynamicjepa_db).to_string(),
+            "--cf".to_string(),
+            "dj_model_artifacts".to_string(),
+            "--limit".to_string(),
+            "1000".to_string(),
+            "--json".to_string(),
+        ],
+        task_root,
+        "dynamicjepa_inspect_artifacts_for_promotion",
+        Some(file_sot(dynamicjepa_db)),
+    )?;
+    let evidence_path = dj_dir.join("artifact-comparative-promotion.json");
+    let mut baselines = Vec::new();
+    if let Some(rows) = artifacts
+        .pointer("/decoded_records/rows")
+        .and_then(Value::as_array)
+    {
+        for row in rows {
+            let Some(decoded) = row.get("decoded") else {
+                continue;
+            };
+            let record = decoded.get("record").unwrap_or(decoded);
+            let row_artifact_id = record.get("artifact_id").and_then(Value::as_str);
+            if row_artifact_id == Some(artifact_id) {
+                continue;
+            }
+            if record.get("domain_pack_id").and_then(Value::as_str)
+                != Some(DYNAMICJEPA_REALITY_DOMAIN_PACK)
+            {
+                continue;
+            }
+            if record.get("status").and_then(Value::as_str) != Some("Active") {
+                continue;
+            }
+            let Some(root) = record.get("artifact_root").and_then(Value::as_str) else {
+                continue;
+            };
+            let report_path = PathBuf::from(root).join("evaluation_report.json");
+            if !report_path.exists() || report_path == artifact_root.join("evaluation_report.json")
+            {
+                continue;
+            }
+            let report: Value = read_json(&report_path)?;
+            if report.get("target_architecture").and_then(Value::as_str)
+                != Some("frozen_instrument_projection")
+            {
+                continue;
+            }
+            let Some(metric) = report
+                .pointer("/split_metrics/val/latent_mse")
+                .and_then(Value::as_f64)
+                .filter(|value| value.is_finite())
+            else {
+                continue;
+            };
+            baselines.push(json!({
+                "artifact_id": row_artifact_id,
+                "val_latent_mse": metric,
+                "evaluation_report": file_sot(&report_path),
+            }));
+        }
+    }
+    baselines.sort_by(|left, right| {
+        let l = left
+            .get("val_latent_mse")
+            .and_then(Value::as_f64)
+            .unwrap_or(f64::INFINITY);
+        let r = right
+            .get("val_latent_mse")
+            .and_then(Value::as_f64)
+            .unwrap_or(f64::INFINITY);
+        l.total_cmp(&r)
+    });
+    let best_baseline = baselines.first().cloned();
+    let passed = best_baseline
+        .as_ref()
+        .and_then(|baseline| baseline.get("val_latent_mse").and_then(Value::as_f64))
+        .map(|baseline_mse| val_latent_mse < baseline_mse)
+        .unwrap_or(true);
+    let summary = json!({
+        "status": if passed { "passed" } else { "failed" },
+        "mode": if best_baseline.is_some() { "candidate_beats_active_baseline" } else { "initial_artifact_no_active_baseline" },
+        "candidate": {
+            "artifact_id": artifact_id,
+            "val_latent_mse": val_latent_mse,
+            "evaluation_report": file_sot(&artifact_root.join("evaluation_report.json")),
+        },
+        "best_active_baseline": best_baseline,
+        "baseline_count": baselines.len(),
+        "source_of_truth": {
+            "artifacts": format!("rocksdb:{}#dj_model_artifacts", dynamicjepa_db.display()),
+            "evidence": file_sot(&evidence_path),
+        },
+    });
+    write_json_checked(&evidence_path, &summary)?;
+    if !passed {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_PROMOTION_REGRESSION",
+            "DynamicJEPA artifact lifecycle gate rejected a candidate that did not beat the active held-out baseline",
+            "dynamicjepa.artifact_promotion.val_latent_mse",
+            "keep the active artifact and retrain/evaluate the candidate on held-out SWE attempts",
+            read_json(&evidence_path)?,
+            Some(file_sot(&evidence_path)),
+        ));
+    }
+    Ok(read_json(&evidence_path)?)
 }
 
 fn validate_dynamicjepa_action_control(
@@ -11263,8 +12023,18 @@ fn action_fields_match(candidate_fields: &Value, observed_action: &Value) -> boo
     let Some(observed) = observed_action.as_object() else {
         return false;
     };
-    for (field, observed_value) in observed {
-        let Some(candidate_value) = candidate.get(field) else {
+    const HARD_ACTION_CONTROL_FIELDS: &[&str] = &[
+        "delta",
+        "tool_family",
+        "command_kind",
+        "edit_size_bucket",
+        "path_risk",
+    ];
+    for field in HARD_ACTION_CONTROL_FIELDS {
+        let Some(observed_value) = observed.get(*field) else {
+            return false;
+        };
+        let Some(candidate_value) = candidate.get(*field) else {
             return false;
         };
         if field_value_to_plain_json(candidate_value) != Some(observed_value.clone()) {
@@ -11514,6 +12284,10 @@ fn dynamicjepa_swe_events_from_transcript(
                     )?;
                     let patch_bytes = transition_patch_size_bytes(&transition)?;
                     let path_risk = swe_path_risk(&changed_files, &observed_paths);
+                    let target_path_bucket = swe_path_bucket(&changed_files, &observed_paths);
+                    let symbol_bucket =
+                        swe_symbol_bucket(tool_name, &changed_files, &observed_paths);
+                    let dependency_layer = swe_dependency_layer(&changed_files, &observed_paths);
                     let result_status = transition
                         .pointer("/observation/status")
                         .and_then(Value::as_str)
@@ -11532,6 +12306,14 @@ fn dynamicjepa_swe_events_from_transcript(
                         .pointer("/outcome/error_code")
                         .or_else(|| transition.pointer("/observation/error_code"))
                         .and_then(Value::as_str);
+                    let error_signature = swe_error_signature(error_code);
+                    let test_target_kind = swe_test_target_kind(
+                        tool_name,
+                        error_code,
+                        &changed_files,
+                        &observed_paths,
+                    );
+                    let ownership_bucket = swe_ownership_bucket(&changed_files, &observed_paths);
                     let outcome_label = transition
                         .pointer("/outcome/label")
                         .and_then(Value::as_str)
@@ -11597,14 +12379,25 @@ fn dynamicjepa_swe_events_from_transcript(
                                 "tool_family": tool_family,
                                 "repo_dirty_state": repo_dirty_state,
                                 "prompt_version": "v1",
-                                "model_id": model_id
+                                "model_id": model_id,
+                                "primary_path_bucket": target_path_bucket,
+                                "symbol_bucket": symbol_bucket,
+                                "dependency_layer": dependency_layer,
+                                "test_target_kind": test_target_kind,
+                                "error_signature": error_signature,
+                                "ownership_bucket": ownership_bucket
                             },
                             "action": {
                                 "delta": delta,
                                 "tool_family": tool_family,
                                 "command_kind": command_kind,
                                 "edit_size_bucket": swe_edit_size_bucket(patch_bytes),
-                                "path_risk": path_risk
+                                "path_risk": path_risk,
+                                "target_path_bucket": target_path_bucket,
+                                "symbol_bucket": symbol_bucket,
+                                "dependency_layer": dependency_layer,
+                                "test_target_kind": test_target_kind,
+                                "ownership_bucket": ownership_bucket
                             },
                             "outcome": {
                                 "next_counter": counter + delta,
@@ -11623,7 +12416,12 @@ fn dynamicjepa_swe_events_from_transcript(
                                 ))?,
                                 "patch_bytes": patch_bytes,
                                 "correction_required": if correction_required { "true" } else { "false" },
-                                "file_risk": path_risk
+                                "file_risk": path_risk,
+                                "error_signature": error_signature,
+                                "symbol_bucket": symbol_bucket,
+                                "dependency_layer": dependency_layer,
+                                "test_target_kind": test_target_kind,
+                                "ownership_bucket": ownership_bucket
                             },
                             "ts_ms": ts_ms,
                             "trajectory_id": format!("{run_id}:attempt-{attempt}"),
@@ -11828,6 +12626,166 @@ fn swe_path_risk(changed_files: &[String], observed_paths: &[String]) -> &'stati
         "source"
     } else {
         "unknown"
+    }
+}
+
+fn swe_path_bucket(changed_files: &[String], observed_paths: &[String]) -> &'static str {
+    let paths = if changed_files.is_empty() {
+        observed_paths
+    } else {
+        changed_files
+    };
+    if paths.is_empty() {
+        return "none";
+    }
+    if paths.len() > 1 {
+        return "multiple";
+    }
+    let path = paths[0].as_str();
+    if path.starts_with("tests/") || path.contains("/tests/") || path.ends_with("_test.py") {
+        "tests"
+    } else if path.ends_with("pyproject.toml")
+        || path.ends_with("setup.py")
+        || path.ends_with("setup.cfg")
+        || path.ends_with("Cargo.toml")
+        || path.ends_with("Cargo.lock")
+    {
+        "config_or_build"
+    } else if path.ends_with(".md") || path.starts_with("docs/") || path.contains("/docs/") {
+        "docs"
+    } else if path.contains("migration") || path.contains("migrations/") {
+        "migrations"
+    } else if path.ends_with(".py")
+        || path.ends_with(".rs")
+        || path.ends_with(".js")
+        || path.ends_with(".ts")
+    {
+        "source"
+    } else {
+        "unknown"
+    }
+}
+
+fn swe_symbol_bucket(
+    tool_name: &str,
+    changed_files: &[String],
+    observed_paths: &[String],
+) -> &'static str {
+    let paths = if changed_files.is_empty() {
+        observed_paths
+    } else {
+        changed_files
+    };
+    if paths.is_empty() {
+        return "none";
+    }
+    if tool_name == "inspect_symbol" {
+        return "function";
+    }
+    let first = paths[0].as_str();
+    if first.starts_with("tests/") || first.contains("/tests/") || first.ends_with("_test.py") {
+        "test_case"
+    } else if first.ends_with("pyproject.toml")
+        || first.ends_with("setup.cfg")
+        || first.ends_with("Cargo.toml")
+    {
+        "config_key"
+    } else if first.ends_with(".py")
+        || first.ends_with(".rs")
+        || first.ends_with(".js")
+        || first.ends_with(".ts")
+    {
+        "module"
+    } else {
+        "unknown"
+    }
+}
+
+fn swe_dependency_layer(changed_files: &[String], observed_paths: &[String]) -> &'static str {
+    let paths = if changed_files.is_empty() {
+        observed_paths
+    } else {
+        changed_files
+    };
+    let Some(path) = paths.first().map(String::as_str) else {
+        return "unknown";
+    };
+    let lower = path.to_ascii_lowercase();
+    if lower.contains("/cli") || lower.contains("bin/") || lower.contains("command") {
+        "cli"
+    } else if lower.contains("handler") || lower.contains("service") || lower.contains("/api") {
+        "api"
+    } else if lower.contains("schema") || lower.contains("model") || lower.contains("record") {
+        "data_model"
+    } else if lower.contains("storage") || lower.contains("rocksdb") || lower.contains("sqlite") {
+        "storage"
+    } else if lower.starts_with("tests/") || lower.contains("/tests/") || lower.contains("harness")
+    {
+        "test_harness"
+    } else if lower.ends_with("toml")
+        || lower.ends_with("json")
+        || lower.ends_with("yaml")
+        || lower.ends_with("yml")
+        || lower.contains("config")
+    {
+        "config"
+    } else {
+        "unknown"
+    }
+}
+
+fn swe_error_signature(error_code: Option<&str>) -> &'static str {
+    let Some(code) = error_code else {
+        return "none";
+    };
+    if code.contains("ASSERT") {
+        "assertion"
+    } else if code.contains("IMPORT") {
+        "import_error"
+    } else if code.contains("PY_COMPILE") || code.contains("SYNTAX") {
+        "syntax_error"
+    } else if code.contains("TIMEOUT") {
+        "timeout"
+    } else if code.contains("COLLECT") {
+        "collection"
+    } else if code.trim().is_empty() {
+        "none"
+    } else {
+        "tool_error"
+    }
+}
+
+fn swe_test_target_kind(
+    tool_name: &str,
+    error_code: Option<&str>,
+    changed_files: &[String],
+    observed_paths: &[String],
+) -> &'static str {
+    if tool_name == "run_official_swe_eval" {
+        return "official_swe";
+    }
+    if tool_name == "run_targeted_test" {
+        return "unit";
+    }
+    if matches!(swe_error_signature(error_code), "collection") {
+        return "collection";
+    }
+    let bucket = swe_path_bucket(changed_files, observed_paths);
+    if bucket == "tests" {
+        "unit"
+    } else {
+        "none"
+    }
+}
+
+fn swe_ownership_bucket(changed_files: &[String], observed_paths: &[String]) -> &'static str {
+    match swe_path_bucket(changed_files, observed_paths) {
+        "none" => "none",
+        "tests" => "tests",
+        "config_or_build" => "build_or_config",
+        "source" | "docs" | "migrations" => "application",
+        "multiple" => "application",
+        _ => "unknown",
     }
 }
 

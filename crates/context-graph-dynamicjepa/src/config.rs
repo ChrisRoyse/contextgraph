@@ -19,7 +19,20 @@ pub struct TrainConfig {
 pub struct ModelConfig {
     pub encoder: MlpConfig,
     pub predictor: PredictorConfig,
+    #[serde(default = "default_target_architecture")]
+    pub target_architecture: TargetArchitecture,
     pub ema_momentum: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetArchitecture {
+    EmaEncoder,
+    FrozenInstrumentProjection,
+}
+
+fn default_target_architecture() -> TargetArchitecture {
+    TargetArchitecture::EmaEncoder
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,14 +131,18 @@ impl TrainConfig {
             &self.model.predictor.hidden,
             self.model.predictor.out_dim,
         )?;
-        if self.model.predictor.out_dim != self.model.encoder.out_dim {
+        if matches!(
+            self.model.target_architecture,
+            TargetArchitecture::EmaEncoder
+        ) && self.model.predictor.out_dim != self.model.encoder.out_dim
+        {
             return Err(DynamicJepaError::validation(
                 "model.predictor.out_dim",
                 format!(
-                    "predictor out_dim {} must equal encoder out_dim {}",
+                    "predictor out_dim {} must equal encoder out_dim {} when target_architecture=ema_encoder",
                     self.model.predictor.out_dim, self.model.encoder.out_dim
                 ),
-                "use matching latent dimensions for encoder and predictor",
+                "use matching latent dimensions for EMA encoder targets; frozen instrument targets are checked against the dataset target dimension at train time",
             ));
         }
         if !(0.0..1.0).contains(&self.model.ema_momentum) {
@@ -136,6 +153,20 @@ impl TrainConfig {
                     self.model.ema_momentum
                 ),
                 "set the EMA momentum from the checked-in tiny train config",
+            ));
+        }
+        if matches!(
+            self.model.target_architecture,
+            TargetArchitecture::FrozenInstrumentProjection
+        ) && self.model.ema_momentum != 0.0
+        {
+            return Err(DynamicJepaError::validation(
+                "model.ema_momentum",
+                format!(
+                    "frozen_instrument_projection requires ema_momentum 0.0, got {}",
+                    self.model.ema_momentum
+                ),
+                "set ema_momentum to 0.0 when target_architecture is frozen_instrument_projection",
             ));
         }
         for (field, value) in [

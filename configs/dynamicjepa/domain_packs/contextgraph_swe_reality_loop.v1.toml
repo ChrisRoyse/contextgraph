@@ -48,6 +48,36 @@ name = "model_id"
 kind = { type = "categorical", variants = ["qwen3_6_27b", "other"] }
 required = true
 
+[[state.fields]]
+name = "primary_path_bucket"
+kind = { type = "categorical", variants = ["none", "source", "tests", "config_or_build", "docs", "migrations", "multiple", "unknown"] }
+required = true
+
+[[state.fields]]
+name = "symbol_bucket"
+kind = { type = "categorical", variants = ["none", "function", "class", "module", "config_key", "test_case", "unknown"] }
+required = true
+
+[[state.fields]]
+name = "dependency_layer"
+kind = { type = "categorical", variants = ["unknown", "cli", "api", "data_model", "storage", "test_harness", "config"] }
+required = true
+
+[[state.fields]]
+name = "test_target_kind"
+kind = { type = "categorical", variants = ["none", "unit", "integration", "official_swe", "collection", "unknown"] }
+required = true
+
+[[state.fields]]
+name = "error_signature"
+kind = { type = "categorical", variants = ["none", "assertion", "import_error", "syntax_error", "timeout", "collection", "tool_error", "unknown"] }
+required = true
+
+[[state.fields]]
+name = "ownership_bucket"
+kind = { type = "categorical", variants = ["none", "application", "tests", "build_or_config", "generated", "unknown"] }
+required = true
+
 [[action.fields]]
 name = "delta"
 kind = { type = "i64" }
@@ -73,6 +103,31 @@ required = true
 [[action.fields]]
 name = "path_risk"
 kind = { type = "categorical", variants = ["none", "source", "tests", "config_or_build", "multiple", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "target_path_bucket"
+kind = { type = "categorical", variants = ["none", "source", "tests", "config_or_build", "docs", "migrations", "multiple", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "symbol_bucket"
+kind = { type = "categorical", variants = ["none", "function", "class", "module", "config_key", "test_case", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "dependency_layer"
+kind = { type = "categorical", variants = ["unknown", "cli", "api", "data_model", "storage", "test_harness", "config"] }
+required = true
+
+[[action.fields]]
+name = "test_target_kind"
+kind = { type = "categorical", variants = ["none", "unit", "integration", "official_swe", "collection", "unknown"] }
+required = true
+
+[[action.fields]]
+name = "ownership_bucket"
+kind = { type = "categorical", variants = ["none", "application", "tests", "build_or_config", "generated", "unknown"] }
 required = true
 
 [[outcome.fields]]
@@ -129,6 +184,31 @@ required = true
 [[outcome.fields]]
 name = "file_risk"
 kind = { type = "categorical", variants = ["none", "source", "tests", "config_or_build", "multiple", "unknown"] }
+required = true
+
+[[outcome.fields]]
+name = "error_signature"
+kind = { type = "categorical", variants = ["none", "assertion", "import_error", "syntax_error", "timeout", "collection", "tool_error", "unknown"] }
+required = true
+
+[[outcome.fields]]
+name = "symbol_bucket"
+kind = { type = "categorical", variants = ["none", "function", "class", "module", "config_key", "test_case", "unknown"] }
+required = true
+
+[[outcome.fields]]
+name = "dependency_layer"
+kind = { type = "categorical", variants = ["unknown", "cli", "api", "data_model", "storage", "test_harness", "config"] }
+required = true
+
+[[outcome.fields]]
+name = "test_target_kind"
+kind = { type = "categorical", variants = ["none", "unit", "integration", "official_swe", "collection", "unknown"] }
+required = true
+
+[[outcome.fields]]
+name = "ownership_bucket"
+kind = { type = "categorical", variants = ["none", "application", "tests", "build_or_config", "generated", "unknown"] }
 required = true
 
 [[outcome.fields]]
@@ -251,6 +331,90 @@ reject_nan = true
 reject_inf = true
 
 [[instruments]]
+id = "state_primary_path_bucket"
+kind = { type = "categorical", variants = ["none", "source", "tests", "config_or_build", "docs", "migrations", "multiple", "unknown"] }
+input_fields = ["state.primary_path_bucket"]
+output_shape = [8]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "state_symbol_bucket"
+kind = { type = "categorical", variants = ["none", "function", "class", "module", "config_key", "test_case", "unknown"] }
+input_fields = ["state.symbol_bucket"]
+output_shape = [7]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "state_dependency_layer"
+kind = { type = "categorical", variants = ["unknown", "cli", "api", "data_model", "storage", "test_harness", "config"] }
+input_fields = ["state.dependency_layer"]
+output_shape = [7]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "state_test_target_kind"
+kind = { type = "categorical", variants = ["none", "unit", "integration", "official_swe", "collection", "unknown"] }
+input_fields = ["state.test_target_kind"]
+output_shape = [6]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "state_error_signature"
+kind = { type = "categorical", variants = ["none", "assertion", "import_error", "syntax_error", "timeout", "collection", "tool_error", "unknown"] }
+input_fields = ["state.error_signature"]
+output_shape = [8]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "state_ownership_bucket"
+kind = { type = "categorical", variants = ["none", "application", "tests", "build_or_config", "generated", "unknown"] }
+input_fields = ["state.ownership_bucket"]
+output_shape = [6]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
 id = "tool_utility_delta"
 kind = { type = "scalar" }
 input_fields = ["action.delta"]
@@ -312,6 +476,76 @@ reject_inf = true
 id = "path_risk"
 kind = { type = "categorical", variants = ["none", "source", "tests", "config_or_build", "multiple", "unknown"] }
 input_fields = ["action.path_risk"]
+output_shape = [6]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_target_path_bucket"
+kind = { type = "categorical", variants = ["none", "source", "tests", "config_or_build", "docs", "migrations", "multiple", "unknown"] }
+input_fields = ["action.target_path_bucket"]
+output_shape = [8]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_symbol_bucket"
+kind = { type = "categorical", variants = ["none", "function", "class", "module", "config_key", "test_case", "unknown"] }
+input_fields = ["action.symbol_bucket"]
+output_shape = [7]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_dependency_layer"
+kind = { type = "categorical", variants = ["unknown", "cli", "api", "data_model", "storage", "test_harness", "config"] }
+input_fields = ["action.dependency_layer"]
+output_shape = [7]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_test_target_kind"
+kind = { type = "categorical", variants = ["none", "unit", "integration", "official_swe", "collection", "unknown"] }
+input_fields = ["action.test_target_kind"]
+output_shape = [6]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_ownership_bucket"
+kind = { type = "categorical", variants = ["none", "application", "tests", "build_or_config", "generated", "unknown"] }
+input_fields = ["action.ownership_bucket"]
 output_shape = [6]
 normalization = { type = "none" }
 required = true
@@ -469,11 +703,81 @@ reject_nan = true
 reject_inf = true
 
 [[instruments]]
+id = "outcome_error_signature"
+kind = { type = "categorical", variants = ["none", "assertion", "import_error", "syntax_error", "timeout", "collection", "tool_error", "unknown"] }
+input_fields = ["outcome.error_signature"]
+output_shape = [8]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "outcome_symbol_bucket"
+kind = { type = "categorical", variants = ["none", "function", "class", "module", "config_key", "test_case", "unknown"] }
+input_fields = ["outcome.symbol_bucket"]
+output_shape = [7]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "outcome_dependency_layer"
+kind = { type = "categorical", variants = ["unknown", "cli", "api", "data_model", "storage", "test_harness", "config"] }
+input_fields = ["outcome.dependency_layer"]
+output_shape = [7]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "outcome_test_target_kind"
+kind = { type = "categorical", variants = ["none", "unit", "integration", "official_swe", "collection", "unknown"] }
+input_fields = ["outcome.test_target_kind"]
+output_shape = [6]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "outcome_ownership_bucket"
+kind = { type = "categorical", variants = ["none", "application", "tests", "build_or_config", "generated", "unknown"] }
+input_fields = ["outcome.ownership_bucket"]
+output_shape = [6]
+normalization = { type = "none" }
+required = true
+pair_kinds = ["cosine"]
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
 id = "transition_time"
-kind = { type = "time", encoding = "unix_seconds" }
+kind = { type = "time", encoding = "fractional_day_of_week" }
 input_fields = ["time.ts_ms"]
 output_shape = [1]
-normalization = { type = "standard_score", mean = 0.0, std = 1000000.0 }
+normalization = { type = "none" }
 required = true
 pair_kinds = ["cosine"]
 version = 1
@@ -495,11 +799,22 @@ version = 1
 "state.repo_dirty_state" = "$.state.repo_dirty_state"
 "state.prompt_version" = "$.state.prompt_version"
 "state.model_id" = "$.state.model_id"
+"state.primary_path_bucket" = "$.state.primary_path_bucket"
+"state.symbol_bucket" = "$.state.symbol_bucket"
+"state.dependency_layer" = "$.state.dependency_layer"
+"state.test_target_kind" = "$.state.test_target_kind"
+"state.error_signature" = "$.state.error_signature"
+"state.ownership_bucket" = "$.state.ownership_bucket"
 "action.delta" = "$.action.delta"
 "action.tool_family" = "$.action.tool_family"
 "action.command_kind" = "$.action.command_kind"
 "action.edit_size_bucket" = "$.action.edit_size_bucket"
 "action.path_risk" = "$.action.path_risk"
+"action.target_path_bucket" = "$.action.target_path_bucket"
+"action.symbol_bucket" = "$.action.symbol_bucket"
+"action.dependency_layer" = "$.action.dependency_layer"
+"action.test_target_kind" = "$.action.test_target_kind"
+"action.ownership_bucket" = "$.action.ownership_bucket"
 "outcome.next_counter" = "$.outcome.next_counter"
 "outcome.outcome_label" = "$.outcome.outcome_label"
 "outcome.result_status" = "$.outcome.result_status"
@@ -510,6 +825,11 @@ version = 1
 "outcome.patch_bytes" = "$.outcome.patch_bytes"
 "outcome.correction_required" = "$.outcome.correction_required"
 "outcome.file_risk" = "$.outcome.file_risk"
+"outcome.error_signature" = "$.outcome.error_signature"
+"outcome.symbol_bucket" = "$.outcome.symbol_bucket"
+"outcome.dependency_layer" = "$.outcome.dependency_layer"
+"outcome.test_target_kind" = "$.outcome.test_target_kind"
+"outcome.ownership_bucket" = "$.outcome.ownership_bucket"
 "outcome.transition_id" = "$.transition_id"
 "time.ts_ms" = "$.ts_ms"
 "entity.trajectory_id" = "$.trajectory_id"
@@ -536,12 +856,14 @@ min_negatives_per_row = 1
 
 [planner_policy]
 candidate_actions = { kind = "enumerated", records = [
-  { delta = -4, tool_family = "workspace_mutation", command_kind = "apply_unified_diff", edit_size_bucket = "large", path_risk = "multiple" },
-  { delta = -2, tool_family = "verification", command_kind = "run_targeted_test", edit_size_bucket = "none", path_risk = "none" },
-  { delta = 0, tool_family = "repository_navigation", command_kind = "list_files", edit_size_bucket = "none", path_risk = "source" },
-  { delta = 2, tool_family = "repository_navigation", command_kind = "search_repo", edit_size_bucket = "none", path_risk = "source" },
-  { delta = 4, tool_family = "repository_navigation", command_kind = "open_file_window", edit_size_bucket = "none", path_risk = "source" },
-  { delta = 7, tool_family = "workspace_mutation", command_kind = "apply_line_window_edit", edit_size_bucket = "small", path_risk = "source" }
+  { delta = -4, tool_family = "workspace_mutation", command_kind = "apply_unified_diff", edit_size_bucket = "large", path_risk = "multiple", target_path_bucket = "multiple", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application" },
+  { delta = -2, tool_family = "verification", command_kind = "run_targeted_test", edit_size_bucket = "none", path_risk = "none", target_path_bucket = "tests", symbol_bucket = "test_case", dependency_layer = "test_harness", test_target_kind = "unit", ownership_bucket = "tests" },
+  { delta = 0, tool_family = "repository_navigation", command_kind = "list_files", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application" },
+  { delta = 2, tool_family = "repository_navigation", command_kind = "search_repo", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application" },
+  { delta = 4, tool_family = "repository_navigation", command_kind = "open_file_window", edit_size_bucket = "none", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application" },
+  { delta = 6, tool_family = "workspace_mutation", command_kind = "apply_structured_edit", edit_size_bucket = "small", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application" },
+  { delta = 7, tool_family = "workspace_mutation", command_kind = "apply_line_window_edit", edit_size_bucket = "small", path_risk = "source", target_path_bucket = "source", symbol_bucket = "function", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application" },
+  { delta = 5, tool_family = "workspace_mutation", command_kind = "apply_unified_diff", edit_size_bucket = "medium", path_risk = "source", target_path_bucket = "source", symbol_bucket = "module", dependency_layer = "unknown", test_target_kind = "none", ownership_bucket = "application" }
 ] }
 guards = ["bounds_check"]
 surprise_threshold = 0.85
@@ -552,17 +874,33 @@ modalities = [
   "repo_dirty_state",
   "prompt_version",
   "model_id",
+  "state_primary_path_bucket",
+  "state_symbol_bucket",
+  "state_dependency_layer",
+  "state_test_target_kind",
+  "state_error_signature",
+  "state_ownership_bucket",
   "action_tool_family",
   "command_kind",
   "edit_size_bucket",
   "path_risk",
+  "action_target_path_bucket",
+  "action_symbol_bucket",
+  "action_dependency_layer",
+  "action_test_target_kind",
+  "action_ownership_bucket",
   "outcome_label",
   "result_status",
   "verifier_status",
   "test_failure_class",
   "incident_code",
   "correction_required",
-  "outcome_file_risk"
+  "outcome_file_risk",
+  "outcome_error_signature",
+  "outcome_symbol_bucket",
+  "outcome_dependency_layer",
+  "outcome_test_target_kind",
+  "outcome_ownership_bucket"
 ]
 require_loo_min = 0.70
 calibration_percentile = 10
