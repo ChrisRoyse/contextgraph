@@ -118,5 +118,5 @@ required_cfs = [
   "dj_trajectories", "dj_dataset_shards",
   "dj_training_runs", "dj_model_artifacts",
   "dj_predictions", "dj_plan_traces", "dj_guard_decisions",
-  "dj_verification_runs", "dj_audit_log"
+  "dj_verification_runs", "dj_audit_log", "dj_audit_witness_chain"
 ]

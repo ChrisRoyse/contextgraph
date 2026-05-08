@@ -1503,7 +1503,8 @@ required_cfs = [
   "dj_training_runs", "dj_model_artifacts",
   "dj_constellations", "dj_threshold_calibrations",
   "dj_predictions", "dj_plan_traces", "dj_guard_decisions",
-  "dj_surprise_events", "dj_verification_runs", "dj_audit_log"
+  "dj_surprise_events", "dj_verification_runs", "dj_audit_log",
+  "dj_audit_witness_chain"
 ]
 expected_trajectory_count = 1
 expected_event_count = 60
