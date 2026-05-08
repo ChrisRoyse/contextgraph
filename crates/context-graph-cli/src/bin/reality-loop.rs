@@ -7621,7 +7621,10 @@ fn dynamicjepa_patch_delta_kind(
     if path_is_test(path) && contains_any(&lower, &["assert", "expect", "should", "pytest"]) {
         return "test_assertion";
     }
-    if edit_kind == "signature" || matches!(symbol_visibility, "public" | "exported") {
+    if edit_kind == "signature"
+        || (matches!(symbol_visibility, "public" | "exported")
+            && contains_any(&lower, &["pub ", "public ", "export "]))
+    {
         return "api_contract";
     }
     if contains_any(
@@ -13681,6 +13684,9 @@ fn validate_dynamicjepa_segmented_surprise_calibration(
         "action.ast_language=python",
         "action.ast_node_kind=function",
         "action.ast_edit_kind=function_body",
+        "action.semantic_status=analyzed",
+        "action.patch_delta_kind=return_contract",
+        "action.dependency_blast_radius=local_symbol",
     ];
     let missing = required_segments
         .iter()
@@ -13876,6 +13882,14 @@ fn validate_dynamicjepa_corpus_diversity(
     let ast_node_kinds = unique_dynamicjepa_field_values(&actions, "ast_node_kind");
     let ast_symbol_kinds = unique_dynamicjepa_field_values(&actions, "ast_symbol_kind");
     let ast_edit_kinds = unique_dynamicjepa_field_values(&actions, "ast_edit_kind");
+    let semantic_providers = unique_dynamicjepa_field_values(&actions, "semantic_provider");
+    let semantic_statuses = unique_dynamicjepa_field_values(&actions, "semantic_status");
+    let symbol_visibilities = unique_dynamicjepa_field_values(&actions, "symbol_visibility");
+    let patch_delta_kinds = unique_dynamicjepa_field_values(&actions, "patch_delta_kind");
+    let control_flow_deltas = unique_dynamicjepa_field_values(&actions, "control_flow_delta");
+    let api_contract_deltas = unique_dynamicjepa_field_values(&actions, "api_contract_delta");
+    let dependency_blast_radii =
+        unique_dynamicjepa_field_values(&actions, "dependency_blast_radius");
     let result_statuses = unique_dynamicjepa_field_values(&outcomes, "result_status");
     let verifier_statuses = unique_dynamicjepa_field_values(&outcomes, "verifier_status");
     let error_signatures = unique_dynamicjepa_field_values(&outcomes, "error_signature");
@@ -13899,6 +13913,13 @@ fn validate_dynamicjepa_corpus_diversity(
             "ast_node_kind": ast_node_kinds.len(),
             "ast_symbol_kind": ast_symbol_kinds.len(),
             "ast_edit_kind": ast_edit_kinds.len(),
+            "semantic_provider": semantic_providers.len(),
+            "semantic_status": semantic_statuses.len(),
+            "symbol_visibility": symbol_visibilities.len(),
+            "patch_delta_kind": patch_delta_kinds.len(),
+            "control_flow_delta": control_flow_deltas.len(),
+            "api_contract_delta": api_contract_deltas.len(),
+            "dependency_blast_radius": dependency_blast_radii.len(),
             "result_status": result_statuses.len(),
             "verifier_status": verifier_statuses.len(),
             "error_signature": error_signatures.len(),
@@ -13916,6 +13937,13 @@ fn validate_dynamicjepa_corpus_diversity(
             "ast_node_kind": ast_node_kinds,
             "ast_symbol_kind": ast_symbol_kinds,
             "ast_edit_kind": ast_edit_kinds,
+            "semantic_provider": semantic_providers,
+            "semantic_status": semantic_statuses,
+            "symbol_visibility": symbol_visibilities,
+            "patch_delta_kind": patch_delta_kinds,
+            "control_flow_delta": control_flow_deltas,
+            "api_contract_delta": api_contract_deltas,
+            "dependency_blast_radius": dependency_blast_radii,
             "result_status": result_statuses,
             "verifier_status": verifier_statuses,
             "error_signature": error_signatures,
@@ -14008,6 +14036,30 @@ fn validate_dynamicjepa_corpus_diversity(
             3usize,
             summary
                 .pointer("/unique_counts/ast_edit_kind")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "semantic_status",
+            2usize,
+            summary
+                .pointer("/unique_counts/semantic_status")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "patch_delta_kind",
+            3usize,
+            summary
+                .pointer("/unique_counts/patch_delta_kind")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        ),
+        (
+            "dependency_blast_radius",
+            2usize,
+            summary
+                .pointer("/unique_counts/dependency_blast_radius")
                 .and_then(Value::as_u64)
                 .unwrap_or(0) as usize,
         ),
@@ -17181,6 +17233,38 @@ mod tests {
         assert_eq!(action["api_contract_delta"], "return_changed");
         assert_eq!(action["symbol_bucket"], "function");
         assert_eq!(action["patch_scope_bucket"], "single_symbol");
+    }
+
+    #[test]
+    fn dynamicjepa_ast_action_semantics_parse_real_go_edit_with_reverse_refs() {
+        let (_temp, repo) = init_real_git_repo();
+        write_text_checked(
+            &repo.join("src/calc.go"),
+            "package main\n\nfunc add(x int) int {\n    return x + 1\n}\n",
+        )
+        .expect("go source write");
+        write_text_checked(
+            &repo.join("src/use.go"),
+            "package main\n\nfunc call() int {\n    return add(2)\n}\n",
+        )
+        .expect("go ref source write");
+        let args = json!({
+            "edits": [{
+                "path": "src/calc.go",
+                "start_line": 4,
+                "end_line": 4,
+                "replace": "    return x + 2\n",
+                "observed_sha256": sha256_file(&repo.join("src/calc.go")).expect("sha")
+            }]
+        });
+        let action = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+            .expect("go parser-backed action semantics");
+        assert_eq!(action["ast_language"], "go");
+        assert_eq!(action["ast_parse_status"], "parsed");
+        assert_eq!(action["ast_node_kind"], "function");
+        assert_eq!(action["patch_delta_kind"], "return_contract");
+        assert_eq!(action["dependency_blast_radius"], "local_symbol");
+        assert_eq!(action["reverse_reference_count"], 1);
     }
 
     #[test]

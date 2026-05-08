@@ -1,22 +1,23 @@
 # Learning Subsystem (Learning-as-UTL)
 
 **Source files covered:**
-- `crates/context-graph-core/src/learner/mod.rs` (1723 lines — UTL primitives, ΔS/ΔC/ΔE/L, M(t), constellations, audit)
-- `crates/context-graph-core/src/learning/mod.rs` (~910 lines — learning events + 5 deterministic UTL signal embedders)
-- `crates/context-graph-core/src/learner_training.rs` (414 lines — matrix-shard datasets compiled from learner CFs)
-- `crates/context-graph-embeddings/src/learner/mod.rs` (1723 lines — E15-E21 specs, calibration manifest, asset preflight, deterministic Phase-0 extractors)
+- `crates/context-graph-core/src/learner/mod.rs` (1322 lines — UTL primitives, ΔS/ΔC/ΔE/L, M(t), constellations, audit)
+- `crates/context-graph-core/src/learning/mod.rs` (910 lines — learning events + 5 deterministic UTL signal embedders)
+- `crates/context-graph-core/src/learner_training.rs` (413 lines — matrix-shard datasets compiled from learner CFs)
+- `crates/context-graph-embeddings/src/learner/mod.rs` (E15-E21 specs, calibration manifest, asset preflight, deterministic Phase-0 extractors)
 - `crates/context-graph-embeddings/fixtures/utl_calibration/{dataset_manifest.json,phase0_synthetic_fixture.json}` (E15-E21 dataset registry + offline FSV fixture)
-- `crates/context-graph-storage/src/teleological/rocksdb_store/learner*.rs`, `learning_events*.rs` (CF persistence)
+- `crates/context-graph-storage/src/teleological/rocksdb_store/learner.rs` (701 lines), `learning.rs` (268 lines), `learner_training.rs` (164 lines) — CF persistence
 - `crates/context-graph-storage/tests/{utl_learner_state_fsv,utl_learner_embedders_fsv}.rs` (full-state verification)
-- `crates/context-graph-mcp/src/handlers/tools/utl_tools.rs` (~2050 lines)
+- `crates/context-graph-mcp/src/handlers/tools/utl_tools.rs` (~2238 lines)
 - `crates/context-graph-mcp/src/handlers/tools/learning_tools.rs` (~2004 lines)
 - `crates/context-graph-mcp/src/handlers/tools/graph_learning_tools.rs` (~1021 lines)
 - `crates/context-graph-mcp/src/handlers/tools/capability_tools.rs` (`get_capability_matrix` reports E1-E14 + E15-E21)
 - `crates/context-graph-mcp/src/tools/definitions/{learning,utl,capability}.rs`
 - `crates/context-graph-cli/src/commands/{learning,utl}.rs`
 - `crates/context-graph-cli/tests/learning_jsonl_export_integration.rs`
+- `crates/context-graph-core/src/weights/mod.rs::select_state_conditioned_weight_profile` (state-conditioned policy selector)
 
-**Cross-links:** [13_teleological_subsystem.md](13_teleological_subsystem.md), [16_training_subsystem.md](16_training_subsystem.md), [17_constellation_subsystem.md](17_constellation_subsystem.md), [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md), [19_camd_dpo_subsystem.md](19_camd_dpo_subsystem.md), [21_dynamicjepa_subsystem.md](21_dynamicjepa_subsystem.md).
+**Cross-links:** [04_storage_layer.md](04_storage_layer.md), [05_embedding_subsystem.md](05_embedding_subsystem.md), [13_teleological_subsystem.md](13_teleological_subsystem.md), [16_training_subsystem.md](16_training_subsystem.md), [17_constellation_subsystem.md](17_constellation_subsystem.md), [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md), [19_camd_dpo_subsystem.md](19_camd_dpo_subsystem.md), [21_dynamicjepa_subsystem.md](21_dynamicjepa_subsystem.md).
 
 ## 1. Scope
 
@@ -25,7 +26,7 @@ The Learning subsystem persists everything that describes **how a learner is cha
 1. **UTL learner state** in `crates/context-graph-core/src/learner/` — learner profiles, observations, state vectors, ΔS/ΔC/ΔE/L computations, M(t) consolidation traces, K_sleep, retrieval logs, goal centroids, audit, learner constellations.
 2. **Learning-as-UTL events** in `crates/context-graph-core/src/learning/` — event-level before/after snapshots with five deterministic learning signals and a feature bundle that is embedded into matrix shards (`CF_LEARNER_TRAINING_DATASETS`).
 
-Content embedders are E1-E14. Learner-state slots E15-E21 carry signal embeddings used for state estimation only — they never enter content fusion / RRF. The full planned namespace is `UTL_PLANNED_TOTAL_EMBEDDERS = 21`, with the actual learner namespace defined by `LEARNER_EMBEDDER_COUNT = 7` (E15-E21). See `crates/context-graph-embeddings/src/learner/mod.rs:25-31`.
+Content embedders are E1-E14. Learner-state slots E15-E21 carry signal embeddings used for state estimation only — they never enter content fusion / RRF. The full planned namespace is `UTL_PLANNED_TOTAL_EMBEDDERS = 21`, with the actual learner namespace defined by `LEARNER_EMBEDDER_COUNT = 7` (E15-E21) (`crates/context-graph-embeddings/src/learner/mod.rs:25-31`). Content topology details are in [05_embedding_subsystem.md](05_embedding_subsystem.md).
 
 ## 2. Constants
 
@@ -95,7 +96,7 @@ Authoritative spec: `crates/context-graph-embeddings/src/learner/mod.rs::Learner
 | E20 | LaBraM EEG foundation model | `eeg` | 768 | `plasticity_window` |
 | E21 | EEGPT artifact-robust EEG model | `eeg_artifact_robust` | 768 | `plasticity_window` |
 
-Note: the capability_matrix MCP tool (`capability_tools.rs:234-243`) lists slots in the same E15-E21 numerical order with shorter labels (`speech_affect`, `face_affect`, `text_affect`, `ppg_hrv`, `eda_stress`, `eeg_plasticity`, `eeg_robust`).
+Note: the capability_matrix MCP tool (`capability_tools.rs:236-243`) lists slots in the same E15-E21 numerical order with shorter labels (`speech_affect`, `face_affect`, `text_affect`, `ppg_hrv`, `eda_stress`, `eeg_plasticity`, `eeg_robust`).
 
 `preflight_learner_assets` (MCP) verifies cached weights + calibration data exist on disk; fails closed unless `allowMissing=true`. Required file groups per slot (constants `REQ_E15_SPEECH`..`REQ_E21_EEG_ROBUST` in `embeddings/learner/mod.rs:483-499`):
 
@@ -215,28 +216,32 @@ Computed by `compute_baseline_learning_signals` (`learning/mod.rs:438`). Trait `
 | ΔS (distances) | `learner/mod.rs:771` | `(max(actual, γ·simulated) + 0.5·exploration_rate).clamp(0,1)` |
 | ΔC | `learner/mod.rs:803` | `outcome_stability + 0.2·gradient_eff + 0.2·hrv + 0.2·panel_agreement − 0.3·contradiction` clamp [0,1]; window capped at 1024; CV stability = `1/(1+cv)`; gradient = slope · scale (default 4.0) |
 | ΔE | `learner/mod.rs:881` | `arousal_01 = (arousal+1)/2`; `inverted_u = 4·a·(1-a)`; `valence_sigmoid = 1/(1+exp(-3·valence))`; `valence_arousal = vs · iu`; `delta_e = plasticity^0.4 · va^0.4 · stress_floor^0.2`; `k_state = sqrt(plasticity) · k_sleep` |
-| L | `learner/mod.rs:908` | `delta_s · delta_c · delta_e` clamp [0,1]; classifies via `classify_learner_state` |
+| L = ΔS·ΔC·ΔE | `learner/mod.rs:908` `compute_utl_l` | `(delta_s · delta_c · delta_e).clamp(0,1)`; classifies via `classify_learner_state` |
 | M(t) update | `learner/mod.rs:967` `update_m_trace` | `retained = previous_m · exp(-elapsed · decay_rate)`; `contribution = L · ΔE · k_sleep`; `m = (retained + contribution).clamp(0,1)`; on retrieval correct: `decay × 0.5`; incorrect: `(decay / 0.7).min(1.0)` |
 | Next review | `learner/mod.rs:1039` `next_review_timestamp` | Solve `m·exp(-Δt·decay) = 0.7`; schedule at `now + 0.9·Δt`; returns `Some(now)` immediately when `m ≤ 0.7` |
 | Transfer T | `learner/mod.rs:1008` `compute_transfer_t` | `exp(-distance / lambda)` clamp [0,1]; lambda must be `> 0` |
 
-## 12. RocksDB Layout (key formats)
+## 12. RocksDB Layout — 13 Learner-State CFs
 
-| CF | Key | Value (bincode) |
-| --- | --- | --- |
-| `CF_LEARNER_PROFILE` | `[learner_id:16]` | `[ver:u8][LearnerProfile]` |
-| `CF_FINGERPRINTS_LEARNER` | `[learner_id:16][session_ts:u64 BE]` | `[ver][LearnerFingerprint]` |
-| `CF_LEARNER_STATE_HISTORY` | `[learner_id:16][session_ts:u64 BE]` | `[ver][LearnerStateVector]` |
-| `CF_LEARNER_M_PER_TRACE` | `[learner_id:16][trace_id:16]` | `[ver][LearnerMTrace]` |
-| `CF_LEARNER_GOAL_STATES` | `[learner_id:16][skill_id:16]` | `[ver][LearnerGoalState]` |
-| `CF_LEARNER_RETRIEVAL_LOG` | `[learner_id:16][trace_id:16][ts:u64 BE]` | `[ver][LearnerRetrievalLog]` |
-| `CF_LEARNER_K_SLEEP` | `[learner_id:16][session_ts:u64 BE]` | `[ver][LearnerKSleep]` |
-| `CF_GOAL_CENTROIDS` | `[skill_id:16][modality:u8]` | `[ver][GoalCentroid]` |
-| `CF_LEARNER_DELTA_LOG` | `[learner_id:16][session_ts:u64 BE]` | `[ver][LearnerDeltaLog]` |
-| `CF_LEARNER_AUDIT` | `[learner_id:16][ts:u64 BE][audit_id:16]` | `[ver][LearnerAuditEntry]` |
-| `CF_LEARNER_CONSTELLATIONS` | `[learner_id:16][selector_kind:u8]` | `[ver][LearnerConstellation]` |
-| `CF_LEARNER_TRAINING_DATASETS` | `[dataset_id:16]` | `[ver][LearnerTrainingDataset]` |
-| `CF_LEARNING_EVENTS` | `[event_id:16]` | `[ver:u8][LearningEvent]` |
+Persistence helpers in `crates/context-graph-storage/src/teleological/rocksdb_store/{learner,learning,learner_training}.rs`. CF constant declarations in `crates/context-graph-storage/src/teleological/column_families.rs:399-492`. All values bincode-serialized with a single version byte prefix.
+
+| CF | Const (line) | Key | Value (bincode) |
+| --- | --- | --- | --- |
+| `learning_events` | `CF_LEARNING_EVENTS` (416) | `[event_id:16]` | `[ver:u8][LearningEvent]` |
+| `learner_profile` | `CF_LEARNER_PROFILE` (422) | `[learner_id:16]` | `[ver][LearnerProfile]` |
+| `learner_constellations` | `CF_LEARNER_CONSTELLATIONS` (428) | `[learner_id:16][selector_kind:u8]` | `[ver][LearnerConstellation]` |
+| `fingerprints_learner` | `CF_FINGERPRINTS_LEARNER` | `[learner_id:16][session_ts:u64 BE]` | `[ver][LearnerFingerprint]` |
+| `learner_m_per_trace` | `CF_LEARNER_M_PER_TRACE` (440) | `[learner_id:16][trace_id:16]` | `[ver][LearnerMTrace]` |
+| `learner_state_history` | `CF_LEARNER_STATE_HISTORY` (446) | `[learner_id:16][session_ts:u64 BE]` | `[ver][LearnerStateVector]` |
+| `learner_goal_states` | `CF_LEARNER_GOAL_STATES` (452) | `[learner_id:16][skill_id:16]` | `[ver][LearnerGoalState]` |
+| `learner_retrieval_log` | `CF_LEARNER_RETRIEVAL_LOG` (458) | `[learner_id:16][trace_id:16][ts:u64 BE]` | `[ver][LearnerRetrievalLog]` |
+| `learner_k_sleep` | `CF_LEARNER_K_SLEEP` (464) | `[learner_id:16][session_ts:u64 BE]` | `[ver][LearnerKSleep]` |
+| `goal_centroids` | `CF_GOAL_CENTROIDS` (470) | `[skill_id:16][modality:u8]` | `[ver][GoalCentroid]` |
+| `learner_delta_log` | `CF_LEARNER_DELTA_LOG` (476) | `[learner_id:16][session_ts:u64 BE]` | `[ver][LearnerDeltaLog]` |
+| `learner_audit` | `CF_LEARNER_AUDIT` (482) | `[learner_id:16][ts:u64 BE][audit_id:16]` | `[ver][LearnerAuditEntry]` |
+| `learner_training_datasets` | `CF_LEARNER_TRAINING_DATASETS` (492) | `[dataset_id:16]` | `[ver][LearnerTrainingDataset]` |
+
+13 learner-state CFs total. The full storage layer (content CFs + indexes) is documented in [04_storage_layer.md](04_storage_layer.md).
 
 ## 13. Learner Training Datasets (`learner_training.rs`)
 
@@ -272,6 +277,8 @@ See [16_training_subsystem.md](16_training_subsystem.md) §5 for the full schema
 
 ### 14.a. UTL Learner-State (18 tools, `definitions/utl.rs`)
 
+Verified count: 18 occurrences of `ToolDefinition::new` in `crates/context-graph-mcp/src/tools/definitions/utl.rs`.
+
 | Tool | Purpose |
 | --- | --- |
 | `register_learner` | Persist `LearnerProfile` to `CF_LEARNER_PROFILE` |
@@ -293,7 +300,9 @@ See [16_training_subsystem.md](16_training_subsystem.md) §5 for the full schema
 | `compile_learner_constellation` | Compile regulated-state baseline from session fingerprints into `CF_LEARNER_CONSTELLATIONS` |
 | `resolve_learner_retrieval_policy` | Read stored learner state; resolve content E1-E14 weight profile (see §15) |
 
-### 14.b. Learning Events (12 tools, `definitions/learning.rs`)
+### 14.b. Learning Events (14 tools, `definitions/learning.rs`)
+
+Verified count: 14 occurrences of `ToolDefinition::new` in `crates/context-graph-mcp/src/tools/definitions/learning.rs`.
 
 | Tool | Purpose |
 | --- | --- |
@@ -316,7 +325,7 @@ See [16_training_subsystem.md](16_training_subsystem.md) §5 for the full schema
 
 `get_capability_matrix` (read-only, no storage mutation) reports:
 - `embedders.contentCount = 14`, `learnerStateCount = 7`, `totalSlots = 21` (`capability_tools.rs:69-71`).
-- Per-slot metadata for E1-E14 and E15-E21 with `primaryTools` mapping (lines 215-244).
+- Per-slot metadata for E1-E14 and E15-E21 with `primaryTools` mapping (lines 217-244).
 - Tool groups: `learner_state_utl` and `learning_events` enumerate the tools above (lines 206-207).
 - Capability records include `state_conditioned_retrieval` (status: `available_when_learner_state_exists`), `learner_measurement` (always available), and `closed_loop_training` (status: `available_when_events_exist`) (lines 248-258).
 - Source-of-truth CF list for the learnerState domain mirrors §12 above (lines 264-269).
@@ -340,9 +349,11 @@ See [16_training_subsystem.md](16_training_subsystem.md) §5 for the full schema
 }
 ```
 
-## 15. State-Conditioned Retrieval Policy (`utl_tools.rs::select_state_conditioned_weight_profile`)
+## 15. State-Conditioned Retrieval Policy
 
-`resolve_learner_retrieval_policy` resolves a content weight profile from persisted learner state. **Does NOT inject E15-E21 into content fusion.** Decision tree on `LearnerStateComponents` (verified by FSV at `utl_tools.rs:2174,2208`):
+`resolve_learner_retrieval_policy` resolves a content weight profile from persisted learner state. **Does NOT inject E15-E21 into content fusion.** The selector lives in `crates/context-graph-core/src/weights/mod.rs::select_state_conditioned_weight_profile` (lines 658-694) and is invoked by both `utl_tools.rs::resolve_learner_retrieval_policy` and the `search_graph` dispatcher in `memory_tools.rs:1736`.
+
+Decision tree on `LearnerStateComponents`:
 
 | Condition | Selected profile |
 | --- | --- |
@@ -351,23 +362,21 @@ See [16_training_subsystem.md](16_training_subsystem.md) §5 for the full schema
 | `valence ≤ -0.30` | `affect_priming` |
 | else | `baseWeightProfile` (default `semantic_search`) |
 
-Allowed `baseWeightProfile` enum (20 values): `semantic_search`, `causal_reasoning`, `code_search`, `fact_checking`, `graph_reasoning`, `temporal_navigation`, `sequence_navigation`, `conversation_history`, `category_weighted`, `typo_tolerant`, `pipeline_stage1_recall`, `pipeline_stage2_scoring`, `pipeline_full`, `balanced`, `multilingual_search`, `long_context`, `translation_finder`, `affect_repair`, `affect_priming`, `affect_neutral`. Fail-fast on unknown base profile or invalid state.
-
-The selector is shared between `resolve_learner_retrieval_policy` and the search dispatcher in `memory_tools.rs:1736` so the same decision applies whether the caller asks for the policy explicitly or implicitly through `search_graph` with a learner_id attached.
+Allowed `baseWeightProfile` enum (20 values): `semantic_search`, `causal_reasoning`, `code_search`, `fact_checking`, `graph_reasoning`, `temporal_navigation`, `sequence_navigation`, `conversation_history`, `category_weighted`, `typo_tolerant`, `pipeline_stage1_recall`, `pipeline_stage2_scoring`, `pipeline_full`, `balanced`, `multilingual_search`, `long_context`, `translation_finder`, `affect_repair`, `affect_priming`, `affect_neutral`. Fail-fast on unknown base profile or invalid state. The selector is FSV-tested at `utl_tools.rs:2174,2208`.
 
 ## 16. Graph-Learning Policy (`graph_learning_tools.rs`)
 
 | Constant | Value | Source |
 | --- | --- | --- |
 | `GRAPH_LEARNING_TASK_PREFIX` | `"graph_learning:"` | `graph_learning_tools.rs:28` |
-| `default_graph_learning_max_scan` | 10000 | `graph_learning_tools.rs:65` |
-| `default_graph_learning_rate` | 0.35 | `graph_learning_tools.rs:67` |
+| `default_graph_learning_max_scan` | 10000 | `graph_learning_tools.rs:1011` |
+| `default_graph_learning_rate` | 0.35 | `graph_learning_tools.rs:1015` |
 
 `record_graph_learning_event` requires `RocksDbTeleologicalStore` and a live `EdgeRepository`; it reads real K-NN/typed edges, rejects missing evidence, derives the learning state from observed edge scores, writes the event, and immediately reads the same RocksDB row back for full-state verification.
 
 `resolve_graph_learning_policy` scans persisted events filtered by `policyScope` (and optionally `sourceMemoryId`), validates embedded graph evidence, aggregates into per-embedder weight deltas + edge-type boosts at `learningRate ∈ [0,1]`, and returns the learned policy. **Errors if matched evidence count < `minEvidence`** rather than falling back to the base policy.
 
-Allowed `graphTool` enum: `get_unified_neighbors` (default), `get_memory_neighbors`, `traverse_graph`.
+Allowed `graphTool` enum: `get_unified_neighbors` (default), `get_memory_neighbors`, `traverse_graph`. Typed-edge schema and contrastive-pair semantics consumed by this policy live in [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md).
 
 ## 17. CLI
 
@@ -401,7 +410,13 @@ All paths default to `--storage` from the `CONTEXT_GRAPH_STORAGE_PATH` env var.
 
 The actual LoRA + projection training math (`Cell<bool>` toggle, Cosine LR schedule, AdamW, multitask heads, per-stage best-checkpoint selection by `score_spread`, hard-negative-scale lessons, prefix matching) lives in [16_training_subsystem.md](16_training_subsystem.md) §4.
 
-## 18. Source Notes
+## 18. Dream Consolidation (NREM/REM)
+
+The dream-consolidation feature is exposed as the `dream-consolidation` skill in the Claude Code harness layer (NREM replay of high-importance patterns via Hebbian learning; REM blind-spot discovery via hyperbolic random walk in the Poincare ball). The Rust core does not implement an in-process dream loop today — the skill is the caller-side trigger. M(t) sleep gating in §11 is the in-tree consolidation primitive: `next_review_timestamp` solves `m·exp(-Δt·decay) = 0.7` and `update_m_trace` factors `k_sleep` into the consolidation contribution. The `LearnerKSleep { k ∈ [0, 5], slow_wave_minutes: u16 }` record (CF `learner_k_sleep`) is where the slow-wave evidence is persisted.
+
+Operator triggers (recommended thresholds): `entropy > 0.7 AND churn > 0.5`. The skill invokes content-side curation tools to merge / forget / boost memories; learner-side it can drive `record_learner_k_sleep` to seed M(t) decay-rate adjustments.
+
+## 19. Source Notes
 
 - `LEARNER_MODALITY_COUNT = 7` (physiological + affect, excluding `SelfReport`); enum has 8 variants. `LearnerProfile::validate` permits `LEARNER_MODALITY_COUNT + 1 = 8` modalities. `LearnerConstellation` rejects more than 7 centroids and refuses `SelfReport`.
 - E15-E21 are signal embedders. They back goal-distance computations and learner state vectors but never participate in content RRF / fusion.
