@@ -1,5 +1,7 @@
 # 07 — Git History & Versioning
 
+> **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — versioning concerns below are mostly moot because we don't track upstream. The git-history snapshot at HEAD `a478ab3` is the only state we'll ever look at.
+
 You asked me to review git history "for the last 2 days" specifically. Here's what I found and what it tells us about the stability of any code you'd port.
 
 ---

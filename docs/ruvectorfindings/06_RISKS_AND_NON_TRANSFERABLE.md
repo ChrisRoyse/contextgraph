@@ -1,80 +1,86 @@
 # 06 — Risks & Non-Transferable Pieces
 
-The honest list. Vendor-vs-path-dep tradeoffs, license considerations, things that look stealable from RuVector but aren't actually a fit, and failure modes once you adopt.
+> **🔒 LOCKED 2026-05-08 — Clean-room reimplementation only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — the Vendor vs path-dep section that originally lived here is OBSOLETE. We do neither. The replacement section ("Clean-room reimplementation discipline") lays out the actual policy.
+
+The honest list. Clean-room reimplementation discipline, license-comment requirements, things that look stealable from RuVector but aren't actually a fit, and failure modes once we ship.
 
 ---
 
-## Vendor vs path-dep — pick once, document it
+## Clean-room reimplementation discipline (the only path)
 
-The two ways to consume RuVector code:
+The locked rule says we never vendor and never path-dep. That leaves clean-room reimplementation: read the RuVector source as inspiration, then write our own implementation in our own crate. Discipline:
 
-### Vendor (copy into ContextGraph tree)
+### What "clean-room" means here
 
-**Pros:**
-- Stable. Your build doesn't depend on `ruvector/` repo state.
-- Auditable. You see exactly what's in your tree.
-- License-clean. The MIT/Apache notices live in your tree where reviewers expect them.
-- Works after `git clean` of `ruvector/`.
+- **No copy-paste.** Not a single line of RuVector source ends up in our tree. If you find yourself wanting to copy, stop and re-read the code until you understand the algorithm well enough to write it from scratch.
+- **Our own naming.** Their `WitnessEntry` becomes our `WitnessEntry` (same name is fine if it describes the same concept), but our field types are ours, our error variants are ours, our crate structure is ours.
+- **Our own dependencies.** They use `sha3` from crates.io? Fine — we use `sha3` too, that's a public Rust crate, not part of the locked rule. They use `@ruvector/sha3-internal`? We don't.
+- **Our own tests.** Don't copy their tests. Write tests that match our use cases.
+- **Our own error types.** Don't copy their `Result` aliases or error enums.
 
-**Cons:**
-- Manual upgrades. When RuVector ships a fix, you re-vendor.
-- Diverges over time. Your vendor copy and upstream will drift.
-- Larger PRs. The vendor commit is hundreds of files.
+### Provenance comments are required
 
-### Path-dep (`Cargo.toml` `path = "../ruvector/crates/..."`)
+Every file in our tree that's inspired by a RuVector file MUST start with a header comment in this form:
 
-**Pros:**
-- Tracks upstream automatically.
-- Smaller commits.
-- Easier to upgrade individual crates.
+```rust
+// Inspired by ruvnet/RuVector crates/<crate>/src/<file>.rs at HEAD ef5274c2 (read 2026-05-08).
+// Clean-room reimplementation; no code copied, no upstream tracking. See
+// memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md
+// for the policy.
+```
 
-**Cons:**
-- Build breaks on upstream churn. RuVector commits multiple times per day; one bad commit upstream breaks `cargo build`.
-- Path-dep across the repo boundary is fragile. CI workers need both repos checked out.
-- The upstream `ruvector/` repo isn't in your `.gitignore` policy. If someone deletes it, your build dies.
-- Some RuVector crates are in workspace `exclude` (e.g., everything under `crates/rvf/*`); path-dep against an excluded sub-workspace requires pointing at the sub-workspace's own `Cargo.toml`, which has its own quirks.
+This is **provenance only** — it cites the inspiration so future agents can find the original. It is NOT a license attribution, because no code was copied.
 
-### Recommendation per crate
+### Where to put the new crates
 
-| Crate | Choice | Why |
-|-------|--------|-----|
-| `rvf-types` + `rvf-crypto` | **Vendor** | Critical-path security; want stability + license-clean inclusion. |
-| `sona` | **Vendor** | Long-running learning state; you don't want upstream churn changing trajectory semantics mid-experiment. |
-| `ruvector-solver` | **Path-dep** | Pure algorithms; upstream improvements are wins, not surprises. |
-| `ruvector-temporal-tensor` | **Path-dep** | Zero-deps crate; minimal churn risk. |
-| `ruvector-mincut` | **Path-dep** | Same. |
-| `ruvector-core::advanced_features::*` | **Path-dep** | Each module is small; track upstream. |
-| `ruvllm_retrieval_diffusion` | **Path-dep** | Brand new (PR #450); will see active churn. Stay current to get bugfixes. |
-| `ruvector-graph-transformer` | **Selective port** | Only the pieces you need (Granger, causal masking) — avoid the full feature-flag surface. |
-| `prime-radiant` | **Vendor if adopted** | Heavy tree; pinning a snapshot keeps your build deterministic. |
-| `ruvector-domain-expansion` | **Path-dep** | Small surface. |
+Default placement:
+
+| Capability | New crate or module |
+|------------|---------------------|
+| Witness chain + signatures | new crate `crates/context-graph-witness/` |
+| Sublinear solvers (PPR, BMSSP, CG) | new crate `crates/context-graph-solver/` |
+| 8/7/5/3-bit tier compression | new module under existing quantization crate |
+| MMR diversity rerank | new module under existing retrieval crate |
+| Training-free retrieval LM + diffuser | new crate `crates/context-graph-retrieval-diffusion/` |
+| Conformal prediction | new module under existing retrieval crate |
+| SONA-style adaptive learner | new crate `crates/context-graph-sona/` |
+| Verified training certificates | new crate `crates/context-graph-verified-training/` |
+| Stoer-Wagner mincut | new crate `crates/context-graph-mincut/` |
+| Granger causality test | new module under existing analysis crate |
+
+Crate naming convention: `context-graph-*`. No `ruv*` or `rvf*` prefixes in our tree.
+
+### Tests that the policy is being followed
+
+Before any PR that adds code under `crates/context-graph-*`, run:
+
+```bash
+# No path-dep on agentdb/ or ruvector/
+! grep -rn 'path.*=.*"\.\./\(agentdb\|ruvector\)' Cargo.toml crates/*/Cargo.toml
+
+# No vendored ruvector/agentdb files
+! find crates -name '*.rs' -exec grep -l '@ruvector\|ruvnet/agentdb' {} \;
+
+# No npm deps from the ruvnet ecosystem
+! grep -E '"(agentdb|ruvector|@ruvector/)' package.json
+
+# Every clean-room file has a provenance header
+for f in $(find crates/context-graph-{witness,solver,sona,...} -name '*.rs'); do
+    head -1 "$f" | grep -q 'Inspired by ruvnet/RuVector' || echo "MISSING PROVENANCE: $f"
+done
+```
+
+If any check fails, the change violates this locked decision.
 
 ---
 
 ## License considerations
 
-RuVector is **MIT** (per `LICENSE` and the README badge). Permissive — code copy + clean-room ports are both fine.
+RuVector is **MIT** per `LICENSE`. Since we never copy code, we never redistribute their code, and the MIT obligations don't apply to our tree.
 
-When vendoring:
+The provenance comments described above are *not required by the MIT license* (we copied nothing) — they exist for our own engineering hygiene, so future agents can find the inspirational source.
 
-- Preserve the MIT `LICENSE` file alongside the vendored code at `vendor/<crate>/LICENSE`.
-- Add a header comment to each vendored file:
-  ```rust
-  // Vendored from https://github.com/ruvnet/RuVector
-  // Source: crates/<crate>/src/<file>.rs at commit ef5274c2
-  // Original: MIT-licensed; see vendor/<crate>/LICENSE
-  ```
-- If you modify the file in your tree, add a second comment line documenting the modification.
-
-When path-dep'ing: less ceremony, but document in your `Cargo.toml`:
-
-```toml
-# Track upstream RuVector at commit ef5274c2 (2026-05-08).
-# Re-pin via `git -C ../ruvector pull && git -C ../ruvector log -1 --oneline`
-ruvector-solver = { path = "../ruvector/crates/ruvector-solver" }
-```
-
-The dependency tree of `ruvector-*` crates can include some non-MIT optional deps (e.g., `argon2` is Apache-2.0). Run `cargo license` after vendoring; surface anything non-MIT/Apache to the operator.
+If the rule ever changes and we *do* copy code, the MIT terms kick in: we'd preserve their `LICENSE` file alongside the copied code, add an attribution header. Until then, no license obligations to RuVector exist.
 
 ---
 

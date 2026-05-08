@@ -1,5 +1,7 @@
 # 08 — Honest Summary
 
+> **🔒 LOCKED 2026-05-08 — Clean-room reimplementation only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "vendor" / "path-dep" / "consume" reference below is SUPERSEDED. Read each as **"clean-room reimplement against the read-only `ruvector/` reference."** The vendor-vs-path-dep table at the end has been replaced with a single "clean-room only" recommendation.
+
 The 5-minute version. Read this first if you only have time for one of these docs.
 
 ---
@@ -14,13 +16,13 @@ It's the upstream that agentdb is a TypeScript wrapper of.
 
 ## What changes if you read RuVector after agentdb
 
-agentdb said: "here are 8 good ideas, plan to port them in Rust over ~10 days." RuVector says: **"these ideas are already in Rust here, vendor or path-dep them in ~7 days."**
+agentdb said: "here are 8 good ideas, plan to port them in Rust over ~10 days." RuVector says: **"these ideas are already in Rust here, read them as inspiration and clean-room reimplement against your own design."**
 
-Specifically: the 73-byte SHAKE-256 witness chain that agentdb's findings documented as "port from agentdb" is in fact in `ruvector/crates/rvf/rvf-crypto/src/witness.rs:24` (`ENTRY_SIZE: usize = 73`). agentdb consumed it via `@ruvector/rvf-crypto` npm package; you can consume it via `Cargo.toml` path-dep.
+Specifically: the 73-byte SHAKE-256 witness chain that agentdb's findings documented as "port from agentdb" is in fact in `ruvector/crates/rvf/rvf-crypto/src/witness.rs:24` (`ENTRY_SIZE: usize = 73`). agentdb consumed it via `@ruvector/rvf-crypto` npm; we don't consume it any way — we read it as a design reference and write our own.
 
 Same story for SONA (the trajectory + LoRA + EWC++ engine), Thompson Sampling (in `ruvector-solver`'s policy router), MMR (in `ruvector-core::advanced_features::mmr`), the 4-tier cold storage (in `ruvector-temporal-tensor`, but with finer 8/7/5/3-bit quantization), Granger causality (in `ruvector-graph-transformer/temporal.rs`).
 
-You don't port. You vendor or path-dep.
+We don't port from TS, we don't path-dep against RuVector, we don't vendor. We **clean-room reimplement** in our own crates, with provenance comments citing the inspiration.
 
 ---
 
@@ -66,14 +68,14 @@ Full list with reasoning is `06_RISKS_AND_NON_TRANSFERABLE.md`.
 
 ## The verdict for ccreality
 
-**Path-dep `ruvector-solver`, vendor `rvf-crypto`, vendor `sona`** — three transplants, ~6-7 days.
+**Clean-room reimplement: a sublinear-solvers crate, a witness-chain crate, a SONA-style adaptive learner crate.** Three new crates, ~12-15 days.
 
 After this sprint:
-- Optimizer's decision stream has a SHAKE-256 witness chain. `optimizer_witness_chain_verify` returns `valid: true` cryptographically.
-- Optimizer can answer "which past attempts most influenced today's failure?" via PPR over the (failure_tag, recommendation) graph in 1 tool call.
-- Optimizer learns across turns via SONA trajectory + REINFORCE + EWC++. The bandit (proposed in `agentdbfindings/03 §2`) sits on top.
+- Optimizer's decision stream has a SHAKE-256 witness chain (in our own `crates/context-graph-witness`). `optimizer_witness_chain_verify` returns `valid: true` cryptographically.
+- Optimizer can answer "which past attempts most influenced today's failure?" via Forward-Push PPR over the (failure_tag, recommendation) graph in 1 tool call (using our own `crates/context-graph-solver`).
+- Optimizer learns across turns via SONA-style trajectory + REINFORCE + EWC++ (in our own `crates/context-graph-sona`). The bandit (proposed in `agentdbfindings/03 §2`) sits on top.
 
-Tier 2 adds ~10 days for `verified_training` certificates per gradient step, MMR + Matryoshka + Graph RAG retrieval, mincut for A/B splits, conformal prediction.
+Tier 2 adds ~24-31 days clean-room for verified_training certificates per gradient step, MMR + Matryoshka + Graph RAG retrieval, mincut for A/B splits, conformal prediction.
 
 Full priority order in `03_REALITY_LOOP_APPLICATIONS.md` and `05_QUICK_WINS_VS_DEEP_INTEGRATION.md`.
 
@@ -81,28 +83,28 @@ Full priority order in `03_REALITY_LOOP_APPLICATIONS.md` and `05_QUICK_WINS_VS_D
 
 ## The verdict for ME-JEPA / DynamicJEPA / 5090jepa
 
-**Vendor `rvf-crypto`, path-dep `ruvllm_retrieval_diffusion`, vendor `sona`** — three transplants, ~7-8 days.
+**Clean-room reimplement: the witness-chain crate (shared with ccreality), a training-free retrieval-LM + diffuser crate, a SONA-style learner (shared with ccreality).** Three new crates, ~12-16 days clean-room.
 
 After this sprint:
-- Every training run + verification run has a cryptographic witness chain. `dynamicjepa verify-witness-chain --run <run_id>` satisfies `5090jepa/00_TASK.md` rules R4 + R5 cryptographically.
-- Gridworld planner head uses `ruvllm_retrieval_diffusion::Diffuser` — training-free, 6.9× over AR baseline. Drop-in.
-- Planner learns across episodes via SONA. EWC++ prevents counter_world ↔ gridworld interference. ReasoningBank surfaces stable patterns as candidate skills.
+- Every training run + verification run has a cryptographic witness chain (in our own crate). `dynamicjepa verify-witness-chain --run <run_id>` satisfies `5090jepa/00_TASK.md` rules R4 + R5 cryptographically.
+- Gridworld planner head uses our own training-free retrieval LM + masked discrete diffuser — design inspired by RuVector's PR #450, 6.9× over AR baseline.
+- Planner learns across episodes via our own SONA-style learner. EWC++ prevents counter_world ↔ gridworld interference. ReasoningBank-style pattern extraction surfaces stable patterns as candidate skills.
 
-Tier 2 adds ~10 days: Stage 0 + Stage F certificates, `verified_training` per-step certificates, PPR for trajectory importance, temporal-tensor cold storage, mincut for leakage check + actor split.
+Tier 2 adds ~19-24 days clean-room: Stage 0 + Stage F certificates, `verified_training`-style per-step certificates, Forward-Push PPR for trajectory importance, 8/7/5/3-bit cold storage, mincut for leakage check + actor split.
 
-Tier 3 (~15 days) is cross-pack transfer + Granger causality + manifold geometry — substantial, defer until Tier 1+2 stable.
+Tier 3 (~30-40 days clean-room) is cross-pack transfer + Granger causality + manifold geometry — substantial, defer until Tier 1+2 stable.
 
 Full priority order in `04_JEPA_APPLICATIONS.md` and `05_QUICK_WINS_VS_DEEP_INTEGRATION.md`.
 
 ---
 
-## The two big takeaways (revised after reading RuVector)
+## The two big takeaways (under the locked clean-room rule)
 
-### 1. agentdb's "port these primitives" reduces to RuVector's "vendor these crates"
+### 1. agentdb's "port from TS" and our "clean-room from Rust" both work — clean-room is more rigor for the same money
 
-The agentdb findings recommended ~10-12 days of Rust port work for Tier 1+2. RuVector findings recommend ~7-8 days of vendor + path-dep for the equivalent capability — but the capability is dramatically richer (8 sublinear solvers vs 1 SolverBandit, full SONA vs simplified bandit, post-quantum signatures vs SHAKE-only, etc.).
+The agentdb findings recommended ~10-12 days of Rust port work for Tier 1+2. The clean-room-against-RuVector path here recommends ~39-50 days for Tier 1+2 — about 3-4× the time, **for substantially richer capability** (8 sublinear solvers vs 1 SolverBandit, full SONA vs simplified bandit, post-quantum signatures vs SHAKE-only, training-free retrieval LM, etc.).
 
-The reduction is because **someone already wrote it**. Specifically, `rvf-crypto` is what `@ruvector/rvf-crypto` is in agentdb's npm dep tree — same code, but exposed as a Rust crate you can vendor instead of a Node module you wrap in NAPI.
+The cost-per-capability is similar between the two paths. What's different is the rigor: RuVector gives us canonical Rust implementations to read, so the algorithms are clearly specified before we write our own. agentdb's TypeScript implementations leave more guesswork in translation.
 
 ### 2. The 2026-05-08 retrieval-diffusion crate is uniquely well-timed for DynamicJEPA
 
@@ -112,27 +114,30 @@ This isn't a hypothetical fit. It's an exact match landing 0 days before you rea
 
 ---
 
-## The vendor-vs-path-dep decision
+## The clean-room-only policy (replaces vendor-vs-path-dep)
 
-Recommended per crate (full reasoning in `06`):
+Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md`, every RuVector primitive we adopt becomes a clean-room reimplementation in our own crate:
 
-| Crate | Choice | Why |
-|-------|--------|-----|
-| `rvf-types` + `rvf-crypto` | Vendor | Critical-path security; want stability + license-clean inclusion. |
-| `sona` | Vendor | Long-running learning state; you don't want upstream churn changing trajectory semantics mid-experiment. |
-| `ruvector-solver` | Path-dep | Pure algorithms; upstream improvements are wins. |
-| `ruvector-temporal-tensor` | Path-dep | Zero-deps crate; minimal churn risk. |
-| `ruvector-mincut` | Path-dep | Same. |
-| `ruvector-core::advanced_features::*` | Path-dep | Each module small; track upstream. |
-| `ruvllm_retrieval_diffusion` | Path-dep | Brand new (PR #450); will see active churn. Stay current for bugfixes. |
-| `ruvector-graph-transformer` | Selective port | Only Granger + causal masking + verified_training. Avoid the full feature surface. |
-| `prime-radiant` (if adopted) | Vendor | Heavy tree; pinning a snapshot keeps your build deterministic. |
+| Inspirational source | Our new crate / module |
+|----------------------|------------------------|
+| `rvf-types` + `rvf-crypto` | `crates/context-graph-witness/` |
+| `sona` | `crates/context-graph-sona/` |
+| `ruvector-solver` (PPR, BMSSP, CG subset) | `crates/context-graph-solver/` |
+| `ruvector-temporal-tensor` | new module under our quantization crate |
+| `ruvector-mincut` (Stoer-Wagner subset) | `crates/context-graph-mincut/` |
+| `ruvector-core::advanced_features::*` | new modules under our retrieval crate |
+| `ruvllm_retrieval_diffusion` | `crates/context-graph-retrieval-diffusion/` |
+| `ruvector-graph-transformer/temporal.rs` (Granger) | new module under our analysis crate |
+| `ruvector-graph-transformer/verified_training.rs` | `crates/context-graph-verified-training/` |
+| `prime-radiant` (sona_tuning subset, if adopted) | new module under `context-graph-sona/` |
+
+Every file in these crates begins with a provenance header comment citing the RuVector source file + commit. No code copied, no path-dep, no npm. Full ownership.
 
 ---
 
-## The license is fine
+## The license is moot
 
-MIT. Permissive. Copy + clean-room ports both fine. When vendoring: preserve the LICENSE file alongside, add per-file attribution headers, run `cargo license` on the resulting tree to surface any non-MIT/Apache transitive deps.
+RuVector is MIT. We never copy code, so the MIT obligations don't apply to our tree. The provenance comments in our source files cite the inspiration but are not required by any license — they exist for our own engineering hygiene.
 
 ---
 
@@ -155,20 +160,20 @@ MIT. Permissive. Copy + clean-room ports both fine. When vendoring: preserve the
 
 ## Bottom line
 
-Where the agentdb findings doc said "port these 8 ideas in 10-12 days," the RuVector findings doc says **"vendor 2 sub-crates + path-dep 6 crates + 500 LOC of glue, in 7-8 days, for substantially more capability."**
+Where the agentdb findings doc said "port these 8 ideas in 10-12 days," the RuVector findings doc — under the locked clean-room rule — says **"clean-room reimplement 4 new crates in ~12-16 days, all in our own tree, zero foreign deps."**
 
-The four highest-leverage transplants:
+The four highest-leverage clean-room reimplementations:
 
-1. **Vendor `rvf-crypto`** — witness chain + post-quantum signatures + lineage + attestation. Two consumers (ccreality + DynamicJEPA). ~2 days.
-2. **Path-dep `ruvector-solver`** — 8 sublinear algorithms with SIMD + audit. ~1 day.
-3. **Vendor `sona`** — full Rust-native trajectory learning + EWC++ + ReasoningBank. ~3-4 days.
-4. **Path-dep `ruvllm_retrieval_diffusion`** — training-free planner head for gridworld. Yesterday's release. ~1-2 days.
+1. **`crates/context-graph-witness/`** — witness chain + ed25519 + lineage + attestation, inspired by `rvf-crypto`. Two consumers (ccreality + DynamicJEPA). ~3-4 days.
+2. **`crates/context-graph-solver/`** — Forward Push + BMSSP + CG, inspired by `ruvector-solver`. ~3-4 days.
+3. **`crates/context-graph-sona/`** — μLoRA + EWC++ + REINFORCE + ReasoningBank, inspired by `crates/sona`. ~5-7 days.
+4. **`crates/context-graph-retrieval-diffusion/`** — training-free retrieval LM + masked diffusion for gridworld planner, inspired by `ruvllm_retrieval_diffusion` (yesterday's PR #450). ~4-5 days.
 
-Total: 7-9 days. After that:
-- ccreality optimizer has cryptographic audit + sublinear-PPR-aware retrieval + REINFORCE-trajectory learning + EWC++ memory.
-- DynamicJEPA gridworld planner is a 6.9× faster training-free retrieval-LM with witness-chain audit.
-- ME-JEPA Stage 0 + Stage F can ship Merkle-rooted certificates built from `rvf-crypto` primitives in 2 more days.
+Total: ~15-20 days clean-room. After that:
+- ccreality optimizer has cryptographic audit + Forward-Push-aware retrieval + REINFORCE-trajectory learning + EWC++ memory — all in our own crates.
+- DynamicJEPA gridworld planner is a training-free retrieval-LM (6.9× design win) with witness-chain audit — in our own crates.
+- ME-JEPA Stage 0 + Stage F can ship Merkle-rooted certificates built from our own `context-graph-witness` primitives in 3-4 more days.
 
-The remaining 50+ candidate transplants in `02` are individually useful but not load-bearing.
+The remaining 50+ candidate primitives in `02` are individually useful but not load-bearing.
 
-The honest summary is: **agentdb is a wrapper, RuVector is the substrate.** When you want the substrate, take it.
+The honest summary is: **agentdb is a wrapper, RuVector is the substrate, we are neither.** We learn from both, ship our own.

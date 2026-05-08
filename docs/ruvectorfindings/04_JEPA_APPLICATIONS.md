@@ -1,14 +1,16 @@
 # 04 — ME-JEPA / DynamicJEPA / 5090jepa Applications
 
-Concrete transplants from the RuVector workspace to the JEPA-family workstreams. Like §03 for ccreality, most are vendor or path-dep rather than port. The story is dramatically richer than the agentdb-only findings: RuVector provides multiple primitives that map directly onto the JEPA spec.
+> **🔒 Reference-only — clean-room reimplementation.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "Vendor `X`" / "Path-dep `X`" recommendation below is SUPERSEDED. Read each as **"Read RuVector's `X` as inspiration; reimplement the algorithm cleanly in our own crate."** Effort estimates roughly 2-3× the original numbers.
+
+Concrete reimplementation targets in the JEPA-family workstreams, with each target citing the RuVector source file to read as inspiration.
 
 References to JEPA docs use `backupdocs/{mejepa,dynamicjepa,5090jepa}/` paths.
 
 ---
 
-## 1. Vendor `crates/rvf/rvf-crypto` for the DynamicJEPA training-run + verification-run audit chain
+## 1. Clean-room reimplement a witness chain crate, inspired by `crates/rvf/rvf-crypto`
 
-**Source crate:** `ruvector/crates/rvf/rvf-crypto/` — same crate as `docs/ruvectorfindings/03 §2` for ccreality. Single vendor, two consumers.
+**Inspirational source crate (read-only reference):** `ruvector/crates/rvf/rvf-crypto/` — same crate as `docs/ruvectorfindings/03 §2` for ccreality. Single clean-room reimplementation, two consumers (the new `crates/context-graph-witness/` serves both).
 
 **JEPA use cases (per `backupdocs/5090jepa/00_TASK.md` rules R4 and R5):**
 
@@ -87,15 +89,15 @@ If you ever train on a TEE-bound machine (operator wants ME-JEPA training to hap
 
 **Effect on FSV:** the `verify-counter-world` and `verify-gridworld` CLI commands (per `backupdocs/5090jepa/13_mcp_and_cli_surface.md`) get a single new step: `verify_witness_chain()`. If it returns `valid: true`, R4 + R5 are satisfied cryptographically. If `false`, you have a structured "chain broke at offset N" diagnostic.
 
-**Effort:** ~2 days (1 day vendor shared with §03 ccreality, 1 day JEPA-specific witness type enum + CLI integration).
+**Effort:** ~3-4 days (3 days clean-room shared with §03 ccreality + 1 day JEPA-specific witness type enum + CLI integration).
 
 **Risk:** low. Vendor already has tests; integration is purely additive.
 
 ---
 
-## 2. Path-dep `ruvector-solver` for trajectory-importance ranking via PPR
+## 2. Clean-room reimplement Forward-Push PPR for trajectory-importance ranking
 
-**Source crate:** `ruvector/crates/ruvector-solver/`.
+**Inspirational source crate (read-only reference):** `ruvector/crates/ruvector-solver/`.
 
 **JEPA use case:**
 
@@ -122,7 +124,7 @@ The training sampler weights samples by `traj_importance`. Predictor focuses on 
 
 **Effect on training quality:** lower variance in held-out loss; faster convergence on dynamics-relevant transitions. Standard PPR-importance sampling result.
 
-**Effort:** 1 day path-dep + graph-builder for `panel_transition_graph` + sampler-weight integration.
+**Effort:** 3-4 days clean-room — Forward Push (~200 LOC) + graph-builder for `panel_transition_graph` + sampler-weight integration. Shared with §03 ccreality §1 if both ship together.
 
 **Risk:** medium. PPR can over-weight high-degree centroid nodes; verify against uniform-sampling baseline before promoting.
 
@@ -130,9 +132,9 @@ The training sampler weights samples by `traj_importance`. Predictor focuses on 
 
 ---
 
-## 3. Vendor `sona` for the DynamicJEPA planner head's online learning
+## 3. Clean-room reimplement a SONA-style adaptive learner for the DynamicJEPA planner head
 
-**Source crate:** `ruvector/crates/sona/`.
+**Inspirational source crate (read-only reference):** `ruvector/crates/sona/`.
 
 **JEPA use case:**
 
@@ -182,15 +184,15 @@ After enough episodes, `sona::ReasoningBank::extract_patterns()` finds clusters 
 ### 3c. Federated coordinator for parallel domain packs
 If ME-JEPA + counter_world + gridworld train concurrently (one RTX 5090, time-sliced), `sona::training::FederatedCoordinator` aggregates the per-pack adapter deltas into a consolidated cross-pack policy. Quality-weighted; high-quality packs dominate.
 
-**ccreality changes:**
-- Vendor or path-dep `crates/sona/`.
-- New module `crates/dynamicjepa-planner/src/sona_integration.rs` — wires SONA into the planner head.
-- Persist SONA state to `<runtime_root>/dynamicjepa/<pack_id>/sona.safetensors` per domain pack (uses `sona::export::SafeTensorsExporter`).
-- New CLI: `dynamicjepa sona-stats --pack <pack_id>` — exposes `SonaStats` for FSV.
+**JEPA changes:**
+- Reuse the `crates/context-graph-sona/` clean-room crate from §03 §3.
+- New module `crates/dynamicjepa-planner/src/sona_integration.rs` — wires our SONA into the planner head.
+- Persist SONA state via `safetensors` (HuggingFace's public Rust crate) to `<runtime_root>/dynamicjepa/<pack_id>/sona.safetensors` per domain pack.
+- New CLI: `dynamicjepa sona-stats --pack <pack_id>` — exposes our `SonaStats` for FSV.
 
 **Effect:** the planner moves from "always exploit predictor argmax" to "learn online which kinds of actions succeed in this domain pack, generalizing across packs without forgetting." Real architectural improvement.
 
-**Effort:** 3-4 days vendor + integration. Most is wiring; SONA's API is small.
+**Effort:** 5-7 days clean-room (shared with §03 §3 if shipped together) + 2 days JEPA-specific integration with the planner head.
 
 **Risk:** medium-high. Reward shaping is critical (`1.0 - verifier_distance` is a starting point); micro-LoRA + EWC++ interact non-trivially with REINFORCE. Validate on counter_world (the canonical "does the plumbing work" pack) before gridworld.
 
@@ -198,9 +200,9 @@ If ME-JEPA + counter_world + gridworld train concurrently (one RTX 5090, time-sl
 
 ---
 
-## 4. Path-dep `ruvector-temporal-tensor` for ME-JEPA panel cold-store
+## 4. Clean-room reimplement 8/7/5/3-bit tier compression for ME-JEPA panel cold-store
 
-**Source crate:** `ruvector/crates/ruvector-temporal-tensor/`.
+**Inspirational source crate (read-only reference):** `ruvector/crates/ruvector-temporal-tensor/`.
 
 **JEPA use case:**
 
@@ -235,7 +237,7 @@ When the predictor needs auxiliary memory ("retrieve similar past panels for att
 
 **Effect:** for ME-JEPA's recruiting corpus (millions of events × dozens of panels each), this is a real storage cost reduction. For 5090jepa demo (small fixtures), it's overkill but free.
 
-**Effort:** 2 days path-dep + tier policy + bit-exact dequant tests.
+**Effort:** 4-5 days clean-room — each tier (8/7/5/3-bit) is a small groupwise symmetric quantizer (~100 LOC each) + tier-policy state machine (~200 LOC) + bit-exact dequant tests. Shared with §03 §5.
 
 **Risk:** medium. JEPA latents can be sensitive to quantization. Test reconstruction error per tier before promoting cold-tier panels into retrieval results.
 
@@ -243,9 +245,9 @@ When the predictor needs auxiliary memory ("retrieve similar past panels for att
 
 ---
 
-## 5. Vendor `crates/rvf/rvf-crypto` certificate machinery for ME-JEPA Stage 0 + Stage F
+## 5. Clean-room reimplement Stage 0 + Stage F certificate machinery, inspired by `crates/rvf/rvf-crypto`
 
-**Source paths:** `ruvector/crates/rvf/rvf-crypto/{lineage.rs, attestation.rs, witness.rs}`.
+**Inspirational source paths (read-only references):** `ruvector/crates/rvf/rvf-crypto/{lineage.rs, attestation.rs, witness.rs}`.
 
 ME-JEPA Stage 0 (`backupdocs/mejepa/04_data_contract_and_privacy_gate.md`) requires a legal gate that records:
 - title document or sale/license document,
@@ -316,7 +318,7 @@ Plus a **Merkle root** over `(trajectory_id, content_sha256)` pairs so any audit
 
 **Effect on compliance:** ME-JEPA's recruiting product gains a strong audit story. Regulator can ask "show me the certificate for placement decision X" → `verify(cert)` returns boolean → if false, the system says so out loud rather than silently degrading.
 
-**Effort:** 2 days (Stage 0 + Stage F + tests).
+**Effort:** 3-4 days clean-room (Stage 0 + Stage F + tests; reuses our `crates/context-graph-witness/` from §1).
 
 **Risk:** low. Cryptographic, append-only, additive.
 
@@ -324,9 +326,9 @@ Plus a **Merkle root** over `(trajectory_id, content_sha256)` pairs so any audit
 
 ---
 
-## 6. Path-dep `ruvector-mincut` for trajectory leakage check + ME-JEPA actor-aware split
+## 6. Clean-room reimplement Stoer-Wagner mincut for trajectory leakage check + ME-JEPA actor-aware split
 
-**Source crate:** `ruvector/crates/ruvector-mincut/`.
+**Inspirational source crate (read-only reference):** `ruvector/crates/ruvector-mincut/`.
 
 ### 6a. DynamicJEPA leakage check
 
@@ -360,15 +362,15 @@ let (train, test) = cut.bipartition(&actor_traj_graph)?;
 
 **Effect:** correct, fast, audit-able train/test splits with formal cut certificates.
 
-**Effort:** 2 days path-dep + graph builders for both use cases.
+**Effort:** 4-5 days clean-room — Stoer-Wagner mincut implementation (~300 LOC) + graph builders for both use cases. Shared with §03 §6.
 
 **Risk:** medium. The graph construction is the actual work — what edge weights mean (shared ancestor, shared actor, shared role-context) determines whether the cut is meaningful.
 
 ---
 
-## 7. Path-dep `ruvector-domain-expansion` for cross-domain-pack skill transfer
+## 7. Clean-room reimplement cross-domain-pack skill transfer, inspired by `ruvector-domain-expansion`
 
-**Source crate:** `ruvector/crates/ruvector-domain-expansion/`.
+**Inspirational source crate (read-only reference):** `ruvector/crates/ruvector-domain-expansion/`.
 
 DynamicJEPA explicitly aims for cross-domain transfer (`backupdocs/dynamicjepa/02_core_thesis.md`). The interface mirrors agentdb's `learning_transfer` API (per `docs/agentdbfindings/04 §12`) but the implementation is Rust-native and ties into the rest of RuVector.
 
@@ -395,9 +397,9 @@ Implementation: project skills' panel exemplars from source pack's instrument sp
 
 ---
 
-## 8. Vendor `ruvector-graph-transformer/temporal.rs` for Granger causality + retrocausal safety in DynamicJEPA
+## 8. Clean-room reimplement Granger causality + retrocausal safety, inspired by `ruvector-graph-transformer/temporal.rs`
 
-**Source path:** `ruvector/crates/ruvector-graph-transformer/src/temporal.rs`.
+**Inspirational source path (read-only reference):** `ruvector/crates/ruvector-graph-transformer/src/temporal.rs`.
 
 ### 8a. Causal masking for the predictor
 
@@ -421,15 +423,15 @@ For sub-second event streams (where panel materialization happens at irregular i
 
 `temporal.rs` includes guards that reject attention attempts crossing the causal boundary. For ME-JEPA Stage F (read-out heads), this prevents the predictor from "seeing" outcome events when computing attention — a real concern when training on placement-quality data where outcomes are recorded after the trajectory.
 
-**Effort:** 3-4 days. The causal masking is path-dep + 1 day; Granger test is a port (~2 days); retrocausal safety is path-dep + 1 day to wire into ME-JEPA Stage F.
+**Effort:** 5-7 days clean-room. Causal masking ~300 LOC; Granger test ~300 LOC; retrocausal-safety guards ~200 LOC. All inspired by `ruvector/crates/ruvector-graph-transformer/src/temporal.rs`.
 
 **Risk:** medium. Granger is sensitive to time-window choice; verify against synthetic data before trusting.
 
 ---
 
-## 9. Vendor `ruvector-graph-transformer/verified_training.rs` for FSV-grade training-step audit
+## 9. Clean-room reimplement FSV-grade training-step audit, inspired by `ruvector-graph-transformer/verified_training.rs`
 
-**Source path:** `ruvector/crates/ruvector-graph-transformer/src/verified_training.rs`.
+**Inspirational source path (read-only reference):** `ruvector/crates/ruvector-graph-transformer/src/verified_training.rs`.
 
 This is the single highest-leverage transplant for `backupdocs/5090jepa/00_TASK.md` rules R3 (no mock data) and R4 (FSV). The crate's `verified_training` produces a `TrainingCertificate` per gradient step with:
 
@@ -463,7 +465,7 @@ write_certificate_to_run_dir(&run_id, &cert)?;
 
 Each certificate ties into `rvf-crypto::witness` so the per-step certificates *also* extend the witness chain. ME-JEPA `09_failure_policy_and_observability.md` requires exactly this kind of provenance.
 
-**Effort:** 3 days vendor + integration with the existing DynamicJEPA training pipeline.
+**Effort:** 5-6 days clean-room implementation. Per-step certificate generation (~400 LOC) + invariant checks (~500 LOC) + integration with existing DynamicJEPA training pipeline.
 
 **Risk:** medium. The "Lipschitz bound" estimate has hyperparameters; calibrate on counter_world before trusting on gridworld or ME-JEPA.
 
@@ -471,9 +473,9 @@ Each certificate ties into `rvf-crypto::witness` so the per-step certificates *a
 
 ---
 
-## 10. Path-dep `ruvllm_retrieval_diffusion` for the DynamicJEPA gridworld planner head
+## 10. Clean-room reimplement training-free retrieval LM + masked discrete diffusion for the DynamicJEPA gridworld planner head
 
-**Source crate:** `ruvector/crates/ruvllm_retrieval_diffusion/`. Latest commit (PR #450, 2026-05-08).
+**Inspirational source crate (read-only reference):** `ruvector/crates/ruvllm_retrieval_diffusion/`. Latest commit (PR #450, 2026-05-08).
 
 **JEPA use case (gridworld_5x5.v1):**
 
@@ -514,7 +516,7 @@ The vocab ≤ 254 limit is too tight. Use `Retriever::generate_fast` (the AR pat
 
 **Effect:** the gridworld planner gains a fast bidirectional candidate-action generator without training. This is *the right primitive* for "given a partially-observed trajectory, what actions complete it best?" — exactly what the planner head needs.
 
-**Effort:** 1-2 days path-dep + corpus encoder.
+**Effort:** 4-5 days clean-room — `Retriever` AR path (~250 LOC) + `Diffuser` masked-diffusion path (~400 LOC) + MaskGIT cosine schedule (~100 LOC) + corpus encoder. The training-free aspect makes this very tractable — no autograd, no backprop, just associative-memory retrieval.
 
 **Risk:** medium. Quality on small-vocab domains is "as good as the corpus" — needs a sufficient set of successful trajectories before the diffuser is useful. Boostrap with random play.
 
@@ -522,7 +524,7 @@ The vocab ≤ 254 limit is too tight. Use `Retriever::generate_fast` (the AR pat
 
 ---
 
-## 11. Read `prime-radiant` + `ruvector-coherence` for ME-JEPA anti-pole / hallucination detection
+## 11. Read `prime-radiant` + `ruvector-coherence` for ME-JEPA anti-pole / hallucination detection ideas
 
 **Source crates:** `ruvector/crates/prime-radiant/`, `ruvector/crates/ruvector-coherence/`.
 
@@ -535,7 +537,7 @@ ME-JEPA's anti-pole compiler (per `backupdocs/mejepa/05_latent_panel_and_schema.
 
 **Verdict:** read before committing. Prime-radiant is a substantial dependency (mincut + sheaf cohomology + GPU); the simpler anti-pole-set design might be enough for ME-JEPA v1.
 
-**Effort:** read 1-2 days; if adopted, ~1 week vendor + integration.
+**Effort:** read 1-2 days; if adopted, ~10-12 days clean-room (sheaf Laplacian math is non-trivial to reimplement faithfully).
 
 **Risk:** high. Sheaf Laplacian math is non-trivial; verify by comparing against simple anti-pole-set baseline.
 
@@ -543,7 +545,7 @@ ME-JEPA's anti-pole compiler (per `backupdocs/mejepa/05_latent_panel_and_schema.
 
 ## 12. Read `ruvector-domain-expansion` + `ruvector-graph-transformer/manifold.rs` for cross-instrument transfer
 
-**Source paths:** `ruvector/crates/ruvector-domain-expansion/src/`, `ruvector/crates/ruvector-graph-transformer/src/manifold.rs`.
+**Inspirational source paths (read-only references):** `ruvector/crates/ruvector-domain-expansion/src/`, `ruvector/crates/ruvector-graph-transformer/src/manifold.rs`.
 
 When ME-JEPA's 19-space panel needs to integrate a new instrument (`Erec6` for, say, geographic mobility), the question is: how do existing trajectories embed in the new joint space?
 
@@ -559,45 +561,48 @@ Combined with `ruvector-domain-expansion` (§7), this gives a principled "absorb
 
 ## Priority order — pick from the top
 
-1. **§1 (rvf-crypto witness chain for training/verification runs)** — vendor; ~2 days; load-bearing for FSV.
-2. **§10 (ruvllm_retrieval_diffusion for gridworld planner)** — path-dep; ~1-2 days; latest active workstream, dramatic speedup story.
-3. **§3 (sona for planner online learning + EWC++ across packs)** — vendor; ~3-4 days; deepens the bandit story; right primitive for cross-pack non-interference.
-4. **§5 (Stage 0 + Stage F certificates)** — vendor (shared with §1); ~2 days; ME-JEPA compliance.
-5. **§9 (verified_training certificates per gradient step)** — vendor; ~3 days; FSV-grade per-step audit.
-6. **§2 (PPR for trajectory importance)** — path-dep; ~1 day; training quality.
-7. **§4 (temporal-tensor cold storage)** — path-dep; ~2 days; storage cost reduction at scale.
-8. **§6 (mincut for leakage check + actor split)** — path-dep; ~2 days; cleaner held-out loss.
-9. **§8 (Granger causality + retrocausal safety)** — port; ~3-4 days; principled "did skill cause uplift?" attribution.
-10. **§7 (cross-pack skill transfer)** — path-dep; ~3 days; counter_world ↔ gridworld smoke.
-11. **§12 (cross-instrument transfer via manifold)** — read; ~5 days if adopted.
-12. **§11 (prime-radiant coherence)** — read; ~1 week if adopted.
+All efforts are **clean-room reimplementation** estimates per the locked rule.
 
-**Tier 1 (§1 + §10 + §3): ~7-8 days.** Witness chain + retrieval-diffusion + SONA. After this sprint:
-- Every training / verification run has cryptographic audit.
-- gridworld planner is a 6.9× faster training-free retrieval-LM.
+1. **§1 (witness chain crate)** — clean-room; ~3-4 days; load-bearing for FSV (R4/R5).
+2. **§10 (training-free retrieval LM + diffuser for gridworld)** — clean-room; ~4-5 days; design-novelty win.
+3. **§3 (sona-style adaptive learner for planner)** — clean-room; ~5-7 days (shared with §03 §3); cross-pack non-interference.
+4. **§5 (Stage 0 + Stage F certificates)** — clean-room; ~3-4 days (reuses §1 crate); ME-JEPA compliance.
+5. **§9 (verified_training certificates per gradient step)** — clean-room; ~5-6 days; FSV-grade per-step audit.
+6. **§2 (PPR for trajectory importance)** — clean-room; ~3-4 days (shared with §03 §1); training quality.
+7. **§4 (8/7/5/3-bit tier compression)** — clean-room; ~4-5 days; storage cost reduction.
+8. **§6 (mincut for leakage + actor split)** — clean-room; ~4-5 days (shared with §03 §6).
+9. **§8 (Granger + retrocausal safety)** — clean-room; ~5-7 days; "did skill cause uplift?" attribution.
+10. **§7 (cross-pack skill transfer)** — clean-room; ~6-7 days.
+11. **§12 (cross-instrument transfer via manifold)** — read; ~10+ days clean-room if adopted.
+12. **§11 (prime-radiant coherence)** — read; ~10-12 days clean-room if adopted.
+
+**Tier 1 (§1 + §10 + §3): ~12-16 days clean-room.** After this sprint:
+- Every training / verification run has cryptographic audit (in our own crate).
+- gridworld planner is a training-free retrieval-LM with the 6.9× speedup story.
 - The planner learns online via REINFORCE-trajectory + EWC++.
+- Zero upstream dependency.
 
-**Tier 2 (§5 + §9 + §2 + §4 + §6): ~10 days.** Compliance certificates + FSV-grade per-step audit + better training quality + cold storage + cleaner splits.
+**Tier 2 (§5 + §9 + §2 + §4 + §6): ~19-24 days clean-room.** Compliance certs + FSV-grade per-step audit + better training quality + cold storage + cleaner splits.
 
-**Tier 3 (§8 + §7 + §12 + §11): ~15+ days.** Deep integrations.
+**Tier 3 (§8 + §7 + §12 + §11): ~30-40+ days clean-room.** Deep integrations.
 
 ---
 
 ## Compared to the agentdb-only proposal
 
-agentdb's findings recommended 8-15+ days of *Rust port* work for JEPA transplants (witness chain, doubly-robust uplift, Stage 0/F certificates, Mincut, PPR). RuVector findings recommend ~17 days of *vendor + path-dep* work for **substantially more capability**:
+agentdb's findings recommended 8-15+ days of *Rust port* work for JEPA transplants. The locked-in clean-room-only path here recommends ~31-40 days of clean-room reimplementation total (Tier 1 + Tier 2) — for **substantially more capability** and zero upstream dependency:
 
-| What agentdb proposes | What RuVector lets you do instead |
-|------------------------|-----------------------------------|
-| Port 73-byte SHAKE-256 witness chain | Vendor `rvf-crypto` (production crate, no_std, ed25519 + ML-DSA-65 + SLH-DSA-128s + lineage + attestation) |
-| Port doubly-robust uplift estimator (NightlyLearner) | Use `sona` REINFORCE + `ruvector-mincut` for cleaner A/B + port Granger from `temporal.rs` |
-| Port Merkle certificates for Stage 0/F | Build from `rvf-crypto` lineage + witness primitives in 150 LOC of glue |
-| Implement PPR for trajectory importance | Path-dep `ruvector-solver::forward_push` |
-| Implement Mincut for leakage check | Path-dep `ruvector-mincut::canonical` |
-| Implement TemporalCompressor 5-tier | Path-dep `ruvector-temporal-tensor` (8/7/5/3-bit, finer-grained, zero deps) |
+| What agentdb proposes | What we do instead, inspired by RuVector |
+|------------------------|------------------------------------------|
+| Port 73-byte SHAKE-256 witness chain | Clean-room reimplement our own `context-graph-witness` (chain + ed25519 + lineage + attestation) — ~3-4 days |
+| Port doubly-robust uplift estimator (NightlyLearner) | Clean-room: SONA REINFORCE + our mincut for A/B + Granger test — ~12-15 days |
+| Port Merkle certificates for Stage 0/F | Clean-room: build certificates atop our witness crate in ~150 LOC of glue — ~3-4 days total |
+| Implement PPR for trajectory importance | Clean-room Forward Push (~200 LOC) shared with §03 — ~3-4 days |
+| Implement Mincut for leakage check | Clean-room Stoer-Wagner — ~4-5 days |
+| Implement TemporalCompressor 5-tier | Clean-room 8/7/5/3-bit groupwise symmetric quant — ~4-5 days |
 | Use ContextSynthesizer narrative | Same — port the heuristic, no transplant needed |
 
-**Net:** RuVector replaces "port multi-thousand LOC" with "vendor 1 sub-crate + 6 path-deps + ~500 LOC of glue."
+**Net:** zero upstream tracking burden, no foreign crates in our build graph, full ownership of every line. The cost is roughly +15-20 days vs the path-dep alternative — accepted per the operator's locked decision.
 
 ---
 
@@ -608,4 +613,4 @@ agentdb's findings recommended 8-15+ days of *Rust port* work for JEPA transplan
 - `backupdocs/mejepa/04_data_contract_and_privacy_gate.md` — directly satisfied by §5.
 - `docs/agentdbfindings/04_JEPA_APPLICATIONS.md` — ideas at the *high level*; this doc is the *implementation level*.
 - `docs/ruvectorfindings/05_QUICK_WINS_VS_DEEP_INTEGRATION.md` — sprint-level effort triage.
-- `docs/ruvectorfindings/06_RISKS_AND_NON_TRANSFERABLE.md` — vendor-vs-path-dep tradeoffs, license considerations.
+- `docs/ruvectorfindings/06_RISKS_AND_NON_TRANSFERABLE.md` — clean-room provenance discipline, license-comment requirements.

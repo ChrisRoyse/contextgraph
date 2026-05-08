@@ -1,8 +1,19 @@
 # AgentDB Findings — Index
 
+> **🔒 LOCKED 2026-05-08 — Reference-Only, Clean-Room Reimplementation Only**
+>
+> Per operator decision (`memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md`):
+> - **Never vendor.** Do not copy any `agentdb/` source files into our tree.
+> - **Never npm-depend.** Do not add `agentdb` or `@ruvector/*` packages to any `package.json`.
+> - **Never path-dep.** The cloned `agentdb/` directory does not appear in our build graph.
+> - **Never track upstream.** No `git pull` of the clone; the snapshot we have is the only one we'll ever look at.
+> - **Reference-only.** Read the code to understand each algorithm; reimplement cleanly in our own crates.
+>
+> This index doc happens to already use "port" / "steal" language that is consistent with this rule. The recommendations below stay valid; just interpret every "steal" as "clean-room reimplement against the cloned read-only reference."
+
 **Date:** 2026-05-08
 **Author:** Claude Code (outer reality-loop optimizer, doing direct research per operator preference)
-**Source repo:** `agentdb/` (cloned this turn from https://github.com/ruvnet/agentdb at HEAD `a478ab3`)
+**Source repo:** `agentdb/` (cloned 2026-05-08 from https://github.com/ruvnet/agentdb at HEAD `a478ab3`; **read-only reference**, NOT a build dependency)
 **Scope:** Full read of `README`, `CHANGELOG`, `package.json`, `src/` (controllers, backends, mcp, services), `examples/`, `simulation/`, `docs/adrs/`, `docs/architecture/`, `docs/research/`. Git history reviewed since 2026-05-06 (entire history — repo was init'd that day).
 **Audience for these docs:** future ccreality optimizer turns + 5090jepa/ME-JEPA fresh agents.
 

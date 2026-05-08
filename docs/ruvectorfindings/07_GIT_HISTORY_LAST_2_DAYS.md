@@ -1,5 +1,7 @@
 # 07 — Git History — Last 2 Days
 
+> **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — we **do not track upstream**. The history snapshot at HEAD `ef5274c2` is the only state we'll ever look at; the "what to track going forward" section below is moot. The doc is preserved as historical record of what was active when the snapshot was read.
+
 You asked me to review git history "for the last 2 days." Unlike agentdb (which only has 2 days of history total, all from 2026-05-06), RuVector is a long-running repo with **2,492 commits** spanning multiple years. The last-2-days slice is a meaningful workstream signal.
 
 ---
@@ -82,9 +84,9 @@ Implication for path-dep: high-cadence with small PRs is *easier* to track than 
 
 ## What the workstream means for ContextGraph
 
-### Direct impact on JEPA: HIGH
+### Direct impact on JEPA: HIGH (as inspiration)
 
-`ruvllm_retrieval_diffusion` is a near-perfect drop-in for the DynamicJEPA gridworld_5x5.v1 planner head, as covered in `04_JEPA_APPLICATIONS.md §10`. The crate landed yesterday. If you path-dep this week, you're tracking a freshly-merged feature; if you wait a month, you're tracking whatever follows it.
+`ruvllm_retrieval_diffusion` is a perfect *design reference* for the DynamicJEPA gridworld_5x5.v1 planner head, as covered in `04_JEPA_APPLICATIONS.md §10`. The crate landed yesterday. We read its source now while it's freshest; we clean-room reimplement the algorithm into our own crate. We do NOT path-dep — the locked rule (`memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md`) forbids it.
 
 ### Direct impact on ccreality: LOW-MEDIUM
 
@@ -98,7 +100,9 @@ If the RuVector team is shipping training-free retrieval LMs, they're betting he
 
 ## What to track going forward
 
-If you path-dep `ruvector/`, watch for:
+**We do not track upstream.** The locked rule (`memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md`) means the snapshot at HEAD `ef5274c2` is our only state. The list below is preserved for historical context only — disregard for adoption decisions.
+
+~~If you path-dep `ruvector/`, watch for:~~
 
 | Signal | What it means |
 |--------|---------------|

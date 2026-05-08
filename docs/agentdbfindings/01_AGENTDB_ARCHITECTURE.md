@@ -1,5 +1,7 @@
 # 01 — AgentDB Architecture (what it actually is)
 
+> **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — never vendor, path-dep, or npm-depend on agentdb. Read this doc to understand the design; reimplement any borrowed primitive cleanly in our own crates.
+
 ## One-line definition
 
 **AgentDB is a single-file `.rvf` cognitive container** — a TypeScript runtime that wraps a Rust HNSW vector engine (`ruvector`), a Thompson-Sampling adaptive solver (`@ruvector/rvf-solver`), and a self-learning trajectory tracker (`@ruvector/sona`), and exposes the result as a sql.js (or better-sqlite3) database with **41 MCP tools**.

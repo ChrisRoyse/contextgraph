@@ -1,5 +1,7 @@
 # 04 — ME-JEPA / DynamicJEPA / 5090jepa Applications
 
+> **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every transplant below is a **clean-room reimplementation** in our own crates, not a vendor or path-dep.
+
 This doc maps agentdb capabilities onto the three JEPA-family workstreams in this repo:
 
 - **DynamicJEPA** — `backupdocs/dynamicjepa/` — the universal world-model protocol (domain pack → instrument panel → predictor → planner/heads).

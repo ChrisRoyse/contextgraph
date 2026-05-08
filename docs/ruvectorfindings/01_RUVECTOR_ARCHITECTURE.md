@@ -1,5 +1,7 @@
 # 01 — RuVector Architecture
 
+> **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — never vendor, path-dep, or npm-depend on RuVector. The architecture below is documented to inform our own clean-room reimplementations, not to enable adoption of their crates.
+
 ## One-line definition
 
 **RuVector is a 135-crate Rust workspace** that ships a self-learning vector database, a graph engine with Cypher + 8 graph-transformer module families, an attention library with ~50 mechanisms, a local LLM runtime, a single-file `.rvf` cognitive container format with post-quantum signatures and witness chains, an MCP gate for Claude/GPT integration, and dozens of WASM/NAPI/Hailo/FPGA/ESP32 backends.
@@ -149,7 +151,7 @@ Workspace builds 100+ crates by default but **excludes**:
 - `crates/ruos-thermal` — Pi 5 thermal supervisor; rejoins workspace when daemon mode + Unix socket protocol land.
 - Several `examples/` directories — `ruvLLM` family, `data`, `delta-behavior`, `edge-net`, `ruvLLM/esp32{,-flash}`.
 
-**Implication for adoption**: if you want `rvf-crypto`, you cannot just `path = "ruvector/crates/rvf/rvf-crypto"` in your `Cargo.toml` if the parent workspace excludes it — you'll need to either (a) point at the sub-workspace's own `Cargo.toml`, (b) vendor the crate directly into your tree, or (c) wait for them to merge it into the main workspace. (b) is simplest.
+**Implication for our clean-room work**: per the locked rule, we never path-dep or vendor any RuVector crate. The fact that `crates/rvf/*` is in workspace `exclude` is informational — it tells us the RuVector team treats `rvf-crypto` as a sub-workspace concern. We read the source from there as inspiration; we reimplement in our own crate.
 
 ## Major sub-systems in detail
 
@@ -200,7 +202,7 @@ These supersede agentdb's `ewcLambda: 1000` default. If you adopted agentdb's de
 
 This is a **`#![cfg_attr(not(feature = "std"), no_std)]`** crate — runs on ESP32-S3, embedded targets, anywhere. Pulls in `rvf-types` for error types. Otherwise self-contained.
 
-If you adopt one thing from RuVector, this is it. ~700 LOC, no_std, drops into ccreality + DynamicJEPA without architectural changes.
+If you reimplement one thing from RuVector inspiration, this is it. ~700 LOC of theirs reads quickly; our clean-room equivalent will be similar size in `crates/context-graph-witness/` (or wherever fits). Drops into ccreality + DynamicJEPA without architectural changes.
 
 ### 4. `ruvector-solver` — sublinear algorithm suite
 

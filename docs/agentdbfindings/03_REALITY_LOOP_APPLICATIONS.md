@@ -1,5 +1,7 @@
 # 03 — Reality-Loop Applications (ccreality)
 
+> **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every transplant below is a **clean-room reimplementation**, not a vendor or path-dep. Effort estimates assume Rust ports against our own crate boundaries.
+
 This is the action doc. Every section is a named, scoped transplant from agentdb to the ccreality outer-optimizer harness, with:
 
 - the agentdb capability being borrowed (with file ref),

@@ -1,5 +1,7 @@
 # 06 — Risks & Non-Transferable Pieces
 
+> **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — the License-risk discussion below is **moot for code copying** because we never copy code. Provenance comments citing the inspirational source file + commit are still required when reimplementing a borrowed idea.
+
 The honest list of what NOT to take from agentdb, what's risky if taken, and what looks tempting but isn't actually a fit. This is the "sanity check before committing" doc.
 
 ---

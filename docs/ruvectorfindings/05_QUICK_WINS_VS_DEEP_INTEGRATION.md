@@ -1,6 +1,8 @@
 # 05 — Quick Wins vs Deep Integration
 
-Effort triage for the transplants in `03_REALITY_LOOP_APPLICATIONS.md` and `04_JEPA_APPLICATIONS.md`. The shape is **dramatically different from the agentdb-equivalent doc** because most items become "vendor or path-dep" rather than "port." Several agentdb-Tier-3 (~3-7 day) items collapse to RuVector-Tier-1 (~1 day path-dep).
+> **🔒 LOCKED 2026-05-08 — Clean-room reimplementation only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — the tier tables below have been REWRITTEN. All "Vendor `X`" / "Path-dep `X`" effort entries became "Clean-room reimplement `X`" with effort 2-3× the original number. The cloned `ruvector/` tree is read-only inspiration; we never path-dep, never vendor, never npm-depend.
+
+Effort triage for the reimplementation targets in `03_REALITY_LOOP_APPLICATIONS.md` and `04_JEPA_APPLICATIONS.md`. The shape is more substantive than the agentdb-only triage because RuVector's primitives are richer — but the *effort to reimplement* is comparable to porting from agentdb.
 
 ---
 
@@ -23,43 +25,41 @@ Effort triage for the transplants in `03_REALITY_LOOP_APPLICATIONS.md` and `04_J
 
 ---
 
-## Tier 1 — Ship this week (S/M effort, ★★★ leverage)
+## Tier 1 — Ship in two weeks (M/L effort, ★★★ leverage)
 
-| # | Transplant | Where | Effort | Leverage | Notes |
-|---|------------|-------|--------|----------|-------|
-| 1.1 | **Vendor `rvf-crypto`** (witness chain + ed25519 + lineage) | shared (ccreality §2 + JEPA §1, §5) | M (2 days) | ★★★ | Single highest-leverage drop-in. ~700 LOC, no_std. Two consumers. |
-| 1.2 | **Path-dep `ruvector-solver`** (PPR + BMSSP + CG) | ccreality §1, JEPA §2 | S (1 day) | ★★★ | Stops you from re-implementing PageRank or Laplacian solve. |
-| 1.3 | **Path-dep `ruvector-temporal-tensor`** (8/7/5/3-bit cold tier) | ccreality §5, JEPA §4 | S (1-2 days) | ★★ | Zero-dep crate, WASM-compatible. |
-| 1.4 | **Path-dep `ruvector-core::advanced_features::mmr`** | ccreality §4a | S (0.5 day) | ★★ | Diversity rerank. Replaces a 50-LOC port. |
-| 1.5 | **Path-dep `ruvllm_retrieval_diffusion`** (gridworld planner) | JEPA §10 | M (1-2 days) | ★★★ | Latest workstream (PR #450, 2026-05-08). 6.9× over AR. |
-| 1.6 | **Path-dep `ruvector-core::advanced_features::conformal_prediction`** (calibrated confidence) | ccreality §4d | S (1 day) | ★★ | Optimizer recommendations gain calibrated confidence intervals. |
+| # | Reimplementation target | Where | Clean-room effort | Leverage | Notes |
+|---|-------------------------|-------|--------------------|----------|-------|
+| 1.1 | **Clean-room `context-graph-witness` crate** (SHAKE-256 73-byte chain + ed25519 + lineage) | shared (ccreality §2 + JEPA §1, §5) | L (3-4 days) | ★★★ | Single highest-leverage. Inspired by `rvf-crypto`. Two consumers. |
+| 1.2 | **Clean-room sublinear-solver subset** (Forward Push + BMSSP + CG) | ccreality §1, JEPA §2 | L (3-4 days) | ★★★ | Inspired by `ruvector-solver`. ~600-800 LOC + tests. |
+| 1.3 | **Clean-room 8/7/5/3-bit tier compressor** | ccreality §5, JEPA §4 | M (2-3 days) | ★★ | Inspired by `ruvector-temporal-tensor`. Zero-dep groupwise quant. |
+| 1.4 | **Clean-room MMR + tests** | ccreality §4a | S (1 day) | ★★ | ~150 LOC + tests. Inspired by `ruvector-core::advanced_features::mmr`. |
+| 1.5 | **Clean-room training-free retrieval LM + diffuser** | JEPA §10 | L (4-5 days) | ★★★ | Inspired by `ruvllm_retrieval_diffusion` (PR #450). Training-free → no autograd. |
+| 1.6 | **Clean-room conformal prediction** | ccreality §4d | M (2 days) | ★★ | Inspired by `ruvector-core::advanced_features::conformal_prediction`. |
 
-**Tier 1 total: ~7-8 days.**
+**Tier 1 total: ~15-19 days clean-room.** (Roughly 2-3× the path-dep estimate; in exchange, zero upstream tracking burden, full ownership of every line.)
 
 After Tier 1:
-- Cryptographic audit chain over optimizer + DynamicJEPA training/verification.
-- PPR / BMSSP / CG for graph-influence ranking and Laplacian solve.
+- Cryptographic audit chain over optimizer + DynamicJEPA training/verification (in our own crate).
+- Forward Push / BMSSP / CG for graph-influence ranking and Laplacian solve.
 - 4-10× cold-tier compression for attempt embeddings + JEPA panel storage.
 - Diverse top-k retrieval over past failures.
-- Training-free retrieval-LM planner head for gridworld (drop-in 6.9× speedup).
+- Training-free retrieval-LM planner head for gridworld (the 6.9× design win).
 - Calibrated confidence intervals on optimizer recommendations.
-
-This is *substantially* more capability than agentdb's Tier 1 in roughly the same time.
 
 ---
 
-## Tier 2 — Ship within two weeks (M/L effort, ★★/★★★ leverage)
+## Tier 2 — Ship within four weeks (L effort, ★★/★★★ leverage)
 
-| # | Transplant | Where | Effort | Leverage | Notes |
-|---|------------|-------|--------|----------|-------|
-| 2.1 | **Vendor `sona`** (ReasoningBank + EWC++ + μLoRA + REINFORCE + 3 loops) | ccreality §3, JEPA §3 | L (3-4 days) | ★★★ | Trajectory-based learning. Drops in below the bandit. Cross-pack non-interference. |
-| 2.2 | **Vendor `verified_training` + `proof_gated`** for FSV-grade per-step training audit | JEPA §9 | L (3 days) | ★★★ | Per-gradient-step certificates with formal/statistical invariants. Fail-closed. |
-| 2.3 | **Stage 0 + Stage F certificates from rvf-crypto primitives** | JEPA §5 | M (2 days) | ★★★ | Real ME-JEPA compliance lift. Builds on Tier 1.1. |
-| 2.4 | **Path-dep `ruvector-mincut`** for leakage check + A/B split | ccreality §6, JEPA §6 | M (2 days) | ★★ | Cleaner A/B comparisons; lower variance in uplift estimates. |
-| 2.5 | **Path-dep `ruvector-core::advanced_features::matryoshka` + `graph_rag`** | ccreality §4b, §4c | M (2 days) | ★★ | Funnel + cascade search; Leiden community detection. |
-| 2.6 | **Port Granger causality test** from `temporal.rs` | JEPA §8b, ccreality §9 | M (2-3 days) | ★★ | Principled "did this cause that?" — useful both for ccreality recommendations and JEPA skill promotions. |
+| # | Reimplementation target | Where | Clean-room effort | Leverage | Notes |
+|---|-------------------------|-------|--------------------|----------|-------|
+| 2.1 | **Clean-room `context-graph-sona` crate** (ReasoningBank + EWC++ + μLoRA + REINFORCE + 3 loops) | ccreality §3, JEPA §3 | L (5-7 days) | ★★★ | Trajectory-based learning. Inspired by `crates/sona/`. Drops in below the bandit. |
+| 2.2 | **Clean-room `verified_training` + `proof_gated`** for FSV-grade per-step training audit | JEPA §9 | L (5-6 days) | ★★★ | Per-gradient-step certificates with formal/statistical invariants. Fail-closed. |
+| 2.3 | **Clean-room Stage 0 + Stage F certificates** | JEPA §5 | M (3-4 days) | ★★★ | Real ME-JEPA compliance lift. Builds on Tier 1.1. |
+| 2.4 | **Clean-room Stoer-Wagner mincut** for leakage check + A/B split | ccreality §6, JEPA §6 | M (3-4 days) | ★★ | Cleaner A/B comparisons; lower variance in uplift estimates. |
+| 2.5 | **Clean-room Matryoshka funnel + Graph RAG (Leiden)** | ccreality §4b, §4c | L (5-6 days) | ★★ | Funnel + cascade search; community detection. |
+| 2.6 | **Clean-room Granger causality test** | JEPA §8b, ccreality §9 | M (3-4 days) | ★★ | Inspired by `temporal.rs` Granger extraction. |
 
-**Tier 2 total: ~14-16 days. Cumulative with Tier 1: ~22-24 days.**
+**Tier 2 total: ~24-31 days clean-room. Cumulative with Tier 1: ~39-50 days.**
 
 After Tier 2:
 - Optimizer is self-improving: SONA + bandit + witness chain + PPR.
@@ -72,16 +72,16 @@ After Tier 2:
 
 ## Tier 3 — Ship as standalone ADR-grade work (L/XL effort, ★★ leverage)
 
-| # | Transplant | Where | Effort | Leverage | Notes |
-|---|------------|-------|--------|----------|-------|
-| 3.1 | **Path-dep `ruvector-domain-expansion`** for cross-pack skill transfer | JEPA §7 | L (3 days) | ★★ | Counter_world ↔ gridworld smoke first; ME-JEPA after. |
-| 3.2 | **Read + selectively port `ruvector-graph-transformer/temporal.rs`** for causal masking + retrocausal safety | JEPA §8a, §8d | L (3-4 days) | ★★ | Most relevant for ME-JEPA Stage F. |
-| 3.3 | **Vendor `prime-radiant` SONA tuning loop** | ccreality §8 | L (3 days) | ★★ | Self-tuning optimizer. Defer until SONA (2.1) is stable. |
-| 3.4 | **Path-dep `ruvector-router-core` + `ruvector-tiny-dancer-core`** for sub-10ms intent dispatch | ccreality §7 | M (2 days) | ★ | Quality-of-life. Low priority. |
-| 3.5 | **Read `prime-radiant` + `ruvector-coherence`** for ME-JEPA anti-pole | JEPA §11 | XL (5-7 days if adopted) | ★★ | Read first; the simpler anti-pole-set design may suffice. |
-| 3.6 | **Read `ruvector-graph-transformer/manifold.rs`** for cross-instrument transfer | JEPA §12 | XL (4-5 days if adopted) | ★★ | Riemannian manifold ops for joint instrument spaces. Substantial; defer. |
+| # | Reimplementation target | Where | Clean-room effort | Leverage | Notes |
+|---|-------------------------|-------|--------------------|----------|-------|
+| 3.1 | **Clean-room cross-pack skill transfer** | JEPA §7 | L (6-7 days) | ★★ | Inspired by `ruvector-domain-expansion`. Counter_world ↔ gridworld smoke first. |
+| 3.2 | **Clean-room causal masking + retrocausal safety** | JEPA §8a, §8d | L (5-7 days) | ★★ | Inspired by `ruvector-graph-transformer/temporal.rs`. ME-JEPA Stage F. |
+| 3.3 | **Clean-room coherence-driven SONA tuning loop** | ccreality §8 | L (5-6 days) | ★★ | Inspired by `prime-radiant/sona_tuning/`. Defer until 2.1 stable. |
+| 3.4 | **Clean-room FastGRNN-style intent router** | ccreality §7 | L (5-6 days) | ★ | Inspired by `ruvector-router-core` + `ruvector-tiny-dancer-core`. Quality-of-life. |
+| 3.5 | **Read `prime-radiant` + `ruvector-coherence` for sheaf-Laplacian coherence** | JEPA §11 | XL (10-12 days if reimplemented) | ★★ | Read first; the simpler anti-pole-set design may suffice. |
+| 3.6 | **Read `ruvector-graph-transformer/manifold.rs`** | JEPA §12 | XL (10+ days if reimplemented) | ★★ | Riemannian manifold ops. Substantial; defer. |
 
-**Tier 3 total: ~20+ days.**
+**Tier 3 total: ~40+ days clean-room.**
 
 Sequence Tier 3 by what's blocking real workstreams. If FSV is the bottleneck → 2.2 + 2.3 first. If JEPA training quality is the bottleneck → 2.1 + 2.6 + 3.1. If ccreality optimizer self-improvement is the bottleneck → 2.1 + 3.3.
 
@@ -104,48 +104,51 @@ Sequence Tier 3 by what's blocking real workstreams. If FSV is the bottleneck �
 
 ---
 
-## Recommended one-week sprint plan
+## Recommended two-week sprint plan
 
-If the operator wants to start tomorrow with maximum leverage and bounded risk:
+If the operator wants to start tomorrow with maximum leverage and bounded risk, **clean-room reimplementing all of Tier 1 takes ~15-19 days, so plan for two weeks not one.**
 
-**Day 1**
-- Vendor `rvf-crypto` (Tier 1.1). Copy `crates/rvf/rvf-types/` + `crates/rvf/rvf-crypto/` into `crates/context-graph-cli/vendor/` with attribution comments + LICENSE preserved.
-- Add `vendor/rvf-crypto = { path = "vendor/rvf-crypto" }` to `Cargo.toml`.
-- Smoke test: build, write 5 witness entries, replay chain, verify, replay again with a tampered byte → reject.
+**Days 1-4 — Witness chain crate (Tier 1.1)**
+- New crate `crates/context-graph-witness/` with our own `WitnessEntry` + `create_witness_chain` + `verify_witness_chain`.
+- Use `sha3` and (optionally) `ed25519-dalek` from crates.io — these are public Rust crates, not RuVector deps.
+- Header comment in each file cites `ruvnet/RuVector crates/rvf/rvf-crypto/src/<file>.rs at HEAD ef5274c2 (read 2026-05-08)`.
+- Tests: write 5 entries, replay chain, verify, replay with a tampered byte → reject.
 
-**Day 2**
-- Path-dep `ruvector-solver` (Tier 1.2). For path-dep, point at the cloned `ruvector/crates/ruvector-solver` (per `01_RUVECTOR_ARCHITECTURE.md` excluded sub-workspace caveats).
-- Wrapper module `crates/context-graph-cli/src/optimizer/solver.rs` + smoke test (PPR over a synthetic 1000-node graph; assert importance vector sums close to 1).
+**Days 5-8 — Sublinear solvers (Tier 1.2)**
+- New crate `crates/context-graph-solver/` with our own Forward Push, BMSSP V-cycle, CG.
+- Inspired by `ruvector/crates/ruvector-solver/src/{forward_push,bmssp,cg}.rs`.
+- Tests: PPR over a synthetic 1000-node graph; importance vector sums close to 1.
 
-**Day 3**
-- Path-dep `ruvector-temporal-tensor` (Tier 1.3) + `ruvector-core::advanced_features::mmr` (Tier 1.4).
-- For temporal-tensor: one-shot smoke — push 1000 frames, dequant, assert reconstruction RMSE within tier expectations.
-- For MMR: replace any current "top-k cosine" call site with MMR rerank; tune lambda on a synthetic case.
+**Days 9-10 — 8/7/5/3-bit tier compressor (Tier 1.3)**
+- New module under existing quantization crate.
+- Inspired by `ruvector/crates/ruvector-temporal-tensor/src/`.
+- Tests: push 1000 frames, dequant, assert reconstruction RMSE within tier expectations.
 
-**Day 4**
-- Path-dep `ruvllm_retrieval_diffusion` (Tier 1.5). Build a tiny corpus from gridworld successful trajectories.
-- Run `Diffuser::diffuse` against masked sequences; assert generation completes successful trajectories.
-- Compare to `Retriever::generate_fast` AR path.
+**Day 11 — MMR (Tier 1.4)**
+- New module ~150 LOC.
+- Inspired by `ruvector/crates/ruvector-core/src/advanced_features/mmr.rs`.
+- Replace any current "top-k cosine" call site with MMR rerank; tune lambda on a synthetic case.
 
-**Day 5**
-- Path-dep `ruvector-core::advanced_features::conformal_prediction` (Tier 1.6).
+**Days 12-15 — Training-free retrieval LM + diffuser (Tier 1.5)**
+- New crate `crates/context-graph-retrieval-diffusion/` with our `Retriever` AR path + `Diffuser` masked-diffusion path + MaskGIT cosine schedule.
+- Inspired by `ruvector/crates/ruvllm_retrieval_diffusion/src/`.
+- Build a tiny corpus from gridworld successful trajectories; assert generation completes successful trajectories.
+
+**Days 16-17 — Conformal prediction (Tier 1.6)**
+- New module ~300 LOC.
+- Inspired by `ruvector/crates/ruvector-core/src/advanced_features/conformal_prediction.rs`.
 - Calibration set = last 100 attempt-summaries with known outcomes.
 - Wire into `optimizer_record_recommendation`'s response shape.
-- Smoke: emit a recommendation, verify the prediction set covers the expected outcome.
 
-**Day 6**
-- Witness chain integration: append entries on every `optimizer_record_*` MCP call.
-- New MCP tool `optimizer_witness_chain_verify` (~80 LOC).
-- Run a full attempt cycle; replay chain at end; assert valid.
-
-**Day 7 — verification**
+**Days 18-19 — verification**
 - Run 1 real reality-loop attempt on a fresh task end-to-end.
 - Verify witness chain.
 - Verify recommendation has a calibrated confidence interval.
-- Verify optimizer made one PPR-influenced retrieval.
-- Write SMAP report to `./memory/decisions/ruvector-tier-1-adopted.md` per CLAUDE.md §6.
+- Verify optimizer made one Forward-Push-influenced retrieval.
+- Run 1 gridworld planner episode through our diffuser.
+- Write SMAP report to `./memory/decisions/ruvector-tier-1-clean-room-adopted.md` per CLAUDE.md §6.
 
-End of sprint: cryptographic audit + sublinear solvers + cold-tier compression + diverse retrieval + training-free planner + calibrated confidence. Six load-bearing primitives, one week.
+End of sprint: cryptographic audit + sublinear solvers + cold-tier compression + diverse retrieval + training-free planner + calibrated confidence — **all in our own crates, zero foreign deps, zero upstream tracking.** Six load-bearing primitives, two weeks.
 
 ---
 
@@ -196,18 +199,18 @@ If any tier doesn't hit its ship signal, surface a high-severity blocker in `./m
 
 ---
 
-## Comparison summary — agentdb vs RuVector roadmaps
+## Comparison summary — agentdb vs RuVector roadmaps (under the locked clean-room rule)
 
-| | agentdb roadmap | RuVector roadmap |
-|--|-----------------|------------------|
-| Tier 1 effort | 3-4 days (Rust port) | 7-8 days (vendor + path-dep) |
-| Tier 1 capability | Bandit + MMR + episode schema + ContextSynthesizer | Witness chain + 8 sublinear solvers + 8/7/5/3-bit cold tier + MMR + retrieval-diffusion planner + conformal CI |
-| Tier 2 effort | 7-8 days | 14-16 days |
-| Tier 2 capability | Bandit wired to 4 decision points + Reflexion query tools + MetadataFilter + witness chain | SONA online learning + verified_training certs + Stage 0/F certs + mincut splits + matryoshka + Graph RAG + Granger |
-| Tier 3 effort | 16-20 days (heavy ports) | 20+ days (mostly reads + selective ports) |
+| | agentdb roadmap | RuVector roadmap (clean-room) |
+|--|-----------------|--------------------------------|
+| Tier 1 effort | 3-4 days (Rust port from TS) | 15-19 days (clean-room from Rust reference) |
+| Tier 1 capability | Bandit + MMR + episode schema + ContextSynthesizer | Witness chain + Forward Push + BMSSP + CG + 8/7/5/3-bit tier compression + MMR + training-free retrieval LM + conformal CI |
+| Tier 2 effort | 7-8 days | 24-31 days clean-room |
+| Tier 2 capability | Bandit wired to 4 decision points + Reflexion query tools + MetadataFilter + witness chain | SONA online learning + verified_training certs + Stage 0/F certs + mincut splits + Matryoshka + Graph RAG + Granger |
+| Tier 3 effort | 16-20 days | 40+ days clean-room |
 | Tier 3 capability | Merkle certs + NightlyLearner + TemporalCompressor + SemanticQueryRouter | Cross-pack transfer + temporal masking + SONA tuning + manifold geometry |
 
-The RuVector path costs ~2× the time but delivers ~5-10× the capability. Mostly because you stop re-implementing primitives and instead consume canonical ones.
+The RuVector clean-room path costs roughly **3-4× the agentdb-port time** but delivers **5-10× the capability** — and zero upstream tracking burden, no foreign crates in our build graph, full ownership of every line. The cost-per-capability is similar; what's different is the rigor of having canonical implementations to read.
 
 ---
 

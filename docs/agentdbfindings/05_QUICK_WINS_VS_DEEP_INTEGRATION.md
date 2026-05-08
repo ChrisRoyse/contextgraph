@@ -1,5 +1,7 @@
 # 05 — Quick Wins vs Deep Integration
 
+> **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — all effort estimates are for **clean-room Rust reimplementation** against the read-only `agentdb/` reference checkout. No vendoring, no path-dep, no npm.
+
 A triage of every transplant proposed in `03_REALITY_LOOP_APPLICATIONS.md` and `04_JEPA_APPLICATIONS.md`, sorted by effort × leverage. Pick from the top down.
 
 ---

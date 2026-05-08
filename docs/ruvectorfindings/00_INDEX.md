@@ -1,8 +1,21 @@
 # RuVector Findings — Index
 
+> **🔒 LOCKED 2026-05-08 — Reference-Only, Clean-Room Reimplementation Only**
+>
+> Per operator decision (`memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md`):
+> - **Never vendor.** Do not copy any `ruvector/` source files into our tree.
+> - **Never path-dep.** Do not add `path = "../ruvector/..."` to any `Cargo.toml`. The cloned tree never appears in our build graph.
+> - **Never npm-depend.** Do not add `ruvector` or `@ruvector/*` packages to any `package.json`.
+> - **Never track upstream.** No `git pull` of the clone; the snapshot at HEAD `ef5274c2` is the only state we'll ever look at.
+> - **Reference-only.** Read the code to understand each algorithm; reimplement cleanly in our own crates with our own naming, error types, and crate boundaries.
+>
+> **All recommendations below that say "Vendor `<crate>`" or "Path-dep `<crate>`" are SUPERSEDED.** Read them as: "Reimplement the idea behind `<crate>` cleanly in our own code, after reading their source as inspiration." Effort estimates roughly **2-3× the original numbers** because clean-room reimplementation is more work than path-dep.
+>
+> Provenance comments in our source files cite their inspirational source file + commit (e.g., `// Inspired by ruvnet/RuVector crates/rvf/rvf-crypto/src/witness.rs at HEAD ef5274c2`). Provenance only — no code copied, no license attribution required.
+
 **Date:** 2026-05-08
 **Author:** Claude Code (outer reality-loop optimizer, doing direct research per operator preference)
-**Source repo:** `ruvector/` (cloned this turn from https://github.com/ruvnet/RuVector at HEAD `ef5274c2`)
+**Source repo:** `ruvector/` (cloned 2026-05-08 from https://github.com/ruvnet/RuVector at HEAD `ef5274c2`; **read-only reference**, NOT a build dependency)
 **Scope:** Cargo workspace audit (135 crates, 2,492 commits, 277 KB README); deep read of `crates/ruvector-core/`, `crates/sona/`, `crates/rvf/rvf-crypto/`, `crates/ruvector-attention/`, `crates/ruvector-graph-transformer/`, `crates/ruvector-solver/`, `crates/ruvector-temporal-tensor/`, `crates/ruvllm/`, `crates/ruvllm_retrieval_diffusion/`, `crates/ruvllm_sparse_attention/`, plus `docs/adr/` (206 ADRs).
 **Audience:** future ccreality optimizer turns + 5090jepa/ME-JEPA fresh agents.
 
@@ -10,15 +23,14 @@
 
 ## TL;DR — what changes if you read RuVector after agentdb
 
-RuVector is the **upstream**. agentdb is a TypeScript wrapper that *consumes* `@ruvector/*` npm packages. This means:
+RuVector is the **upstream** that agentdb wraps. Per the locked rule above, we treat it as **read-only reference** — NOT as a dependency candidate.
 
-- Every "good idea" I flagged from agentdb (SHAKE-256 73-byte witness chain, SolverBandit, NightlyLearner, CausalRecall, MMR, ContextSynthesizer, SONA, ContrastiveTrainer, etc.) **already exists in Rust here**, in production form, with proper tests.
-- The agentdb findings doc said "port to Rust" for ~5 days of work. The RuVector findings replace that with: **vendor or path-dep these crates**, far less work.
-- Where agentdb has a 270-line TypeScript SolverBandit, RuVector has the 312-line `ruvector-solver` Rust crate plus 8 algorithmically distinct sublinear solvers (Neumann, CG, Forward Push, BMSSP multigrid, etc.), Personalized PageRank with budgets, witness audit trails, SIMD acceleration. Same primitive, an order of magnitude more capability.
-- agentdb's Reflexion + SkillLibrary + CausalMemoryGraph are SQL schema + TS controllers. RuVector's are crate-level: `sona` (ReasoningBank, EWC++, micro-LoRA, federated coordinator, training pipeline), `ruvector-graph` (Cypher engine, hyperedges), `ruvector-coherence` (signal quality / hallucination detection), `prime-radiant` (sheaf Laplacian coherence engine, sona_tuning).
-- The 73-byte SHAKE-256 witness chain that I documented as "port from agentdb" is in fact **right here at `crates/rvf/rvf-crypto/src/witness.rs:24` (`ENTRY_SIZE: usize = 73`)** — no_std, ed25519, post-quantum signatures (ML-DSA-65, SLH-DSA-128s), full lineage chain, attestation records.
+- Every "good idea" I flagged from agentdb (SHAKE-256 73-byte witness chain, SolverBandit, NightlyLearner, CausalRecall, MMR, ContextSynthesizer, SONA, ContrastiveTrainer, etc.) **already exists as a working Rust implementation here**. We read those implementations to understand the algorithms; we reimplement cleanly in our own crates.
+- Where agentdb has a 270-line TypeScript SolverBandit, RuVector has the 312-line `ruvector-solver` Rust crate plus 8 algorithmically distinct sublinear solvers (Neumann, CG, Forward Push, BMSSP multigrid, etc.). Same primitives. We borrow the *design*, not the *code*.
+- The 73-byte SHAKE-256 witness chain documented as "port from agentdb" is at `ruvector/crates/rvf/rvf-crypto/src/witness.rs:24` (`ENTRY_SIZE: usize = 73`). We read it; we write our own.
+- agentdb's Reflexion + SkillLibrary + CausalMemoryGraph map onto RuVector's `sona` (ReasoningBank, EWC++, micro-LoRA, federated coordinator, training pipeline), `ruvector-graph`, `ruvector-coherence`, `prime-radiant`. These are *inspirational architecture references*, not dependency candidates.
 
-So the operator's question "give me the same assessment" reframes after reading RuVector: this isn't an idea source, it's a **dependency candidate**. Several primitives could land in your workspace as `Cargo.toml` entries this afternoon.
+The cloned trees stay on disk solely because reading them is faster than reading them on GitHub. They're never wired into `Cargo.toml`, `package.json`, or any build artifact.
 
 ---
 
@@ -60,17 +72,17 @@ Workspace version: `2.0.5` (per CHANGELOG); npm distribution `ruvector` package;
 
 ---
 
-## The four highest-leverage transplants (revised after reading RuVector)
+## The four highest-leverage primitives to clean-room reimplement
 
-1. **Path-dep `ruvector-solver` directly.** Stops you from rolling your own Thompson Sampling bandit OR Neumann/CG/BMSSP solvers. ContextGraph already has matrix-optimizer agent and a need for sublinear solvers; `ruvector-solver` is the canonical implementation. See `03 §1`, `04 §1`.
+1. **A sublinear solver suite (PPR + BMSSP + CG)** — design the algorithms after reading `ruvector/crates/ruvector-solver/src/{forward_push,bmssp,cg}.rs`. Reimplement in our own `crates/context-graph-solver/` (or extend an existing crate). See `03 §1`, `04 §1`.
 
-2. **Path-dep `crates/rvf/rvf-crypto` for witness chains + post-quantum signatures.** Gives you the 73-byte SHAKE-256 chain, ML-DSA-65, SLH-DSA-128s, ed25519 — independent of any other RVF code you don't want. ~700 LOC sub-crate. Drops straight into ccreality optimizer audit + DynamicJEPA training-run audit. See `03 §2`, `04 §2`.
+2. **A 73-byte SHAKE-256 witness chain + ed25519/ML-DSA-65 signing** — design after reading `ruvector/crates/rvf/rvf-crypto/src/{witness,sign,attestation,lineage}.rs`. Reimplement in our own `crates/context-graph-witness/` (or similar). Drops into both ccreality optimizer audit + DynamicJEPA training-run audit. See `03 §2`, `04 §1`.
 
-3. **Vendor or path-dep `crates/sona`** if you want the full ReasoningBank + EWC++ + micro-LoRA + REINFORCE trajectory + 3 learning loops in Rust. This is the closest thing the open-source ecosystem has to "agentdb but in Rust." See `03 §3`, `04 §3`.
+3. **An adaptive learning engine (μLoRA + EWC++ + REINFORCE trajectory + ReasoningBank)** — design after reading `ruvector/crates/sona/src/`. Reimplement in our own `crates/context-graph-sona/`. Closest open-source reference for Rust-native trajectory learning. See `03 §3`, `04 §3`.
 
-4. **Path-dep `ruvector-temporal-tensor`** for the access-pattern-driven 8/7/5/3-bit tier policy compression. Strictly better than your existing PQ-8 path. See `04 §4`.
+4. **Access-pattern-driven 8/7/5/3-bit tier compression** — design after reading `ruvector/crates/ruvector-temporal-tensor/src/`. Reimplement in our own quantization module. Strictly richer than current PQ-8 path. See `04 §4`.
 
-The remainder are individual quality-of-life wins ranked in `05_QUICK_WINS_VS_DEEP_INTEGRATION.md`.
+The remainder are individual quality-of-life primitives ranked in `05_QUICK_WINS_VS_DEEP_INTEGRATION.md`. **Every effort estimate in `05` should be multiplied by 2-3× to convert path-dep estimates into clean-room reimplementation estimates.**
 
 ---
 

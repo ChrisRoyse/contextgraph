@@ -1,5 +1,7 @@
 # 02 — Capabilities Inventory
 
+> **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "steal" / "port" verdict in the table at the bottom of this doc means **clean-room reimplement the idea**, never copy code or path-dep to agentdb's tree.
+
 A capability-by-capability catalog of what agentdb actually offers, with file refs, real algorithm names, and honest assessment of whether it's interesting or filler. Roughly ordered by "load-bearing" → "convenient" → "decorative."
 
 ---

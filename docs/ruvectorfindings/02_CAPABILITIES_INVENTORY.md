@@ -1,5 +1,7 @@
 # 02 — Capabilities Inventory
 
+> **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "vendor" / "path-dep" verdict in the summary table at the bottom is SUPERSEDED. Read every such verdict as **"clean-room reimplement the idea behind this crate against the source as read-only inspiration."**
+
 Per-crate catalog of capabilities relevant to ccreality and JEPA. Roughly ordered by load-bearing → specialty. File refs cite `crates/<name>/src/<path>` paths inside the cloned repo at `ruvector/`.
 
 ---
@@ -539,28 +541,30 @@ NOT in the main workspace `members` (excluded). Sub-crates:
 
 ---
 
-## Summary table — what to take, what to read, what to skip
+## Summary table — what to clean-room reimplement, what to read, what to skip
 
-| Capability | Verdict | Effort to adopt |
-|------------|---------|-----------------|
-| `rvf-crypto` (witness chain + signatures) | **Vendor today** | <1 day |
-| `ruvector-temporal-tensor` | **Path-dep** | 1 day (config) |
-| `ruvector-solver` | **Path-dep** | 1 day (API surface) |
-| `ruvector-mincut` | **Path-dep on use** | 1 day per use |
-| `sona` | **Vendor or path-dep** | 2-3 days (integration) |
-| `ruvector-core` advanced_features (graph_rag, conformal_prediction, mmr, matryoshka, opq) | **Path-dep selectively** | 1 day each |
-| `ruvllm_retrieval_diffusion` | **Path-dep for JEPA planner** | 1-2 days |
-| `ruvector-graph-transformer/temporal.rs` (Granger causality) | **Path-dep for JEPA** | 2 days |
-| `ruvector-graph-transformer/verified_training.rs` | **Read; selectively port** | 3 days |
-| `ruvector-domain-expansion` | **Path-dep when JEPA cross-pack ships** | 2 days |
-| `ruvector-coherence` + `prime-radiant` | **Read; selectively use** | varies |
-| `ruvector-attention` (MLA, sheaf) | **Read for ideas** | n/a |
-| `ruvllm` | **Defer; you have qwen3.6:27b via llama-cpp-2** | n/a |
-| `ruvector-graph` (Cypher) | **Read; you have E5** | n/a |
+All effort estimates are **clean-room Rust reimplementation against the read-only RuVector reference**. No path-dep, no vendoring.
+
+| Capability | Verdict | Clean-room effort |
+|------------|---------|-------------------|
+| `rvf-crypto` witness chain + signatures (SHAKE-256 + ed25519 + ML-DSA-65 + lineage + attestation) | **Reimplement today** | 2-3 days |
+| `ruvector-temporal-tensor` 8/7/5/3-bit tier policy | **Reimplement** | 2-3 days |
+| `ruvector-solver` (Forward Push / BMSSP / CG) | **Reimplement subset** | 3-4 days |
+| `ruvector-mincut` (canonical, parallel, link-cut) | **Reimplement subset** | 2-3 days per use case |
+| `sona` (μLoRA + EWC++ + REINFORCE + ReasoningBank) | **Reimplement** | 5-7 days |
+| `ruvector-core` advanced_features (mmr, matryoshka, graph_rag, conformal_prediction, opq) | **Reimplement selectively** | 2-3 days each |
+| `ruvllm_retrieval_diffusion` (training-free retrieval LM + masked diffusion) | **Reimplement for JEPA planner** | 3-4 days |
+| `ruvector-graph-transformer/temporal.rs` (Granger + causal masking) | **Reimplement for JEPA** | 3-4 days |
+| `ruvector-graph-transformer/verified_training.rs` (per-step certificates) | **Reimplement** | 4-5 days |
+| `ruvector-domain-expansion` (cross-pack transfer) | **Reimplement when JEPA cross-pack ships** | 4-5 days |
+| `ruvector-coherence` + `prime-radiant` (sheaf-Laplacian coherence) | **Read; selectively reimplement** | varies |
+| `ruvector-attention` (MLA, sheaf) | **Read for ideas only** | n/a (you have candle) |
+| `ruvllm` runtime | **Skip; you have qwen3.6 via llama-cpp-2** | n/a |
+| `ruvector-graph` Cypher engine | **Skip; you have E5 causal graph** | n/a |
 | `ruvector-consciousness`, `ruQu`, `nervous-system` | **Skip unless side-quest** | n/a |
 | `ruvector-postgres` | **Skip** | n/a |
 | `agentic-robotics`, `neural-trader`, `thermorust` | **Skip** | n/a |
 
-The verdict-shift from agentdb is dramatic: most "port to Rust" items in the agentdb findings become **`Cargo.toml` line** items here. The only things you still port are pieces too tightly coupled to the rest of RuVector to extract cleanly.
+The Tier 1 + Tier 2 reimplementations together total roughly **17-22 days** of clean-room Rust work — about 2-3× what the path-dep estimates would have been. Worth it: zero upstream tracking burden, no foreign crates in our build graph, full ownership of every line.
 
 Continue to `03_REALITY_LOOP_APPLICATIONS.md` for the named transplants.

@@ -1,14 +1,16 @@
 # 03 — Reality-Loop Applications (ccreality)
 
-Concrete transplants from the RuVector workspace to ccreality. Most of these are dramatically less work than the agentdb equivalents because RuVector's already in Rust. Effort is "path-dep" or "vendor" rather than "port."
+> **🔒 Reference-only — clean-room reimplementation.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "Vendor `X`" / "Path-dep `X`" recommendation below is SUPERSEDED. Read each as **"Read RuVector's `X` as inspiration; reimplement the algorithm cleanly in our own crate."** Effort estimates are roughly 2-3× the original numbers — clean-room is more work than path-dep, but the result is fully ours.
+
+Concrete reimplementation targets in the ccreality outer-optimizer harness, with each target citing the RuVector source file to read as inspiration.
 
 References to ccreality docs use `docs/ccreality/` paths. Path discipline (CLAUDE.md §8) is honored throughout. Adoption decisions land in `./memory/decisions/` per CLAUDE.md §6.
 
 ---
 
-## 1. Path-dep `ruvector-solver` for sublinear graph algorithms
+## 1. Clean-room reimplement a sublinear-solver subset for graph influence ranking
 
-**Source crate:** `ruvector/crates/ruvector-solver/` — 18-file Rust crate with `BMSSP`, `CG`, `Neumann`, `ForwardPush`, `BackwardPush`, `TRUE`, `RandomWalk`, plus router + audit + budget + SIMD.
+**Inspirational source crate (read-only reference):** `ruvector/crates/ruvector-solver/` — 18-file Rust crate with `BMSSP`, `CG`, `Neumann`, `ForwardPush`, `BackwardPush`, `TRUE`, `RandomWalk`, plus router + audit + budget + SIMD.
 
 **ccreality use cases:**
 
@@ -30,13 +32,13 @@ Every `harness-transitions/round-NN.json` is an edge in a tracked graph. Computi
 `ruvector-solver` writes its own audit log (`src/audit.rs`). When integrated into the optimizer's recommendation, the audit becomes a verifiable trace of what the optimizer asked the solver to compute.
 
 **ccreality changes:**
-- Add `ruvector-solver = { path = "../ruvector/crates/ruvector-solver" }` (or vendor) to `crates/context-graph-cli/Cargo.toml`.
-- New module `crates/context-graph-cli/src/optimizer/solver.rs` — wraps `ruvector-solver` + provides ccreality-specific graph-builder helpers.
+- New crate `crates/context-graph-solver/` with our own Forward Push, BMSSP, CG implementations. Header comment cites `ruvnet/RuVector crates/ruvector-solver/src/{forward_push,bmssp,cg}.rs at HEAD ef5274c2` as inspiration; no code copied.
+- New module `crates/context-graph-cli/src/optimizer/influence.rs` — graph-builder helpers + thin wrapper over our `context-graph-solver`.
 - New MCP tool `mcp__cgreality__optimizer_compute_influence(failure_tag, k)` — runs PPR, returns top-k most-influential past attempts.
 
 **Effect on throughput:** when the diagnostician needs "which historical recommendations are most relevant to this failure?", the answer goes from cosine-only ranking to PPR-graph-aware ranking. Empirically PPR over (failure_tag, recommendation, attempt) gives more useful candidates than cosine.
 
-**Effort:** 1 day (path-dep + wrapper module).
+**Effort:** 3-4 days (clean-room implementation of Forward Push + BMSSP + CG, plus tests + the wrapper). 2-3× a path-dep estimate, but the algorithms are well-documented in their inspirational source.
 
 **Risk:** low. Solver is well-tested. The graph-construction is the only ccreality-specific code.
 
@@ -44,19 +46,21 @@ Every `harness-transitions/round-NN.json` is an edge in a tracked graph. Computi
 
 ---
 
-## 2. Vendor `crates/rvf/rvf-crypto` for the witness chain over the optimizer's decision stream
+## 2. Clean-room reimplement a witness chain + signature crate, inspired by `crates/rvf/rvf-crypto`
 
-**Source crate:** `ruvector/crates/rvf/rvf-crypto/` — ~700 LOC, no_std, ed25519 + ML-DSA-65 + SLH-DSA-128s + 73-byte SHAKE-256 witness chain. The agentdb findings doc proposed re-implementing this; here you can vendor it directly.
+**Inspirational source crate (read-only reference):** `ruvector/crates/rvf/rvf-crypto/` — ~700 LOC, no_std, ed25519 + ML-DSA-65 + SLH-DSA-128s + 73-byte SHAKE-256 witness chain. We read it; we reimplement.
 
 **ccreality changes:**
 
-### 2a. Vendor the crate
+### 2a. Clean-room reimplement
 
-Because `crates/rvf/*` is in workspace `exclude`, you can either:
-- **Vendor** — copy `rvf-crypto/` and `rvf-types/` into `crates/context-graph-cli/vendor/` with attribution comments + the MIT LICENSE preserved. Single commit, no upstream version drift.
-- **Path-dep** — `rvf-types = { path = "../ruvector/crates/rvf/rvf-types" }`, `rvf-crypto = { path = "../ruvector/crates/rvf/rvf-crypto" }`. Tracks upstream automatically; risks build breaks on upstream churn.
+Per the locked rule, neither vendor nor path-dep is allowed. Build a new crate `crates/context-graph-witness/` with:
+- Our own `WitnessEntry` struct (same 73-byte layout — `prev_hash 32 + action_hash 32 + timestamp_ns 8 + witness_type 1`).
+- Our own `create_witness_chain` and `verify_witness_chain` functions.
+- Our own SHAKE-256 wrapper (or use `sha3` crate directly — `cargo add sha3` is fine, that's an upstream-of-RuVector public Rust crate, not part of the locked rule).
+- Optional `ed25519` feature using `ed25519-dalek` (again, public Rust crate).
 
-Recommend vendor for a stable optimizer surface.
+Each file's header comment cites `ruvnet/RuVector crates/rvf/rvf-crypto/src/<file>.rs at HEAD ef5274c2 (read 2026-05-08)` as inspiration; no code copied.
 
 ### 2b. Wire the witness chain
 
@@ -107,9 +111,9 @@ For higher-stakes audit, sign each emitted segment with the optimizer's ed25519 
 
 ---
 
-## 3. Vendor `sona` for trajectory-based learning over the optimizer's decision stream
+## 3. Clean-room reimplement a SONA-style adaptive learner
 
-**Source crate:** `ruvector/crates/sona/` — Rust-native ReasoningBank + EWC++ + micro-LoRA + REINFORCE trajectory + 3 learning loops + federated coordinator + safetensors export. Production-grade.
+**Inspirational source crate (read-only reference):** `ruvector/crates/sona/` — Rust-native ReasoningBank + EWC++ + micro-LoRA + REINFORCE trajectory + 3 learning loops + federated coordinator + safetensors export. Production-grade.
 
 **ccreality use case:**
 
@@ -154,14 +158,14 @@ After enough turns, `sona::ReasoningBank::extract_patterns()` returns clusters o
 The optimizer's foreground turn doesn't need to compute gradients. The background loop in `sona::loops::BackgroundLoop` runs on its own thread and consolidates trajectories into LoRA weight updates while the next turn happens.
 
 **ccreality changes:**
-- Vendor `crates/sona/` (or path-dep). Note: `sona` depends on `time_compat.rs` which has a no_std variant; you can build it with `std`.
-- New module `crates/context-graph-cli/src/optimizer/learning.rs` — wraps SONA, exposes a turn-scoped trajectory API.
-- Persist SONA state to `<runtime_root>/claude-code-optimizer/sona.safetensors` between turns (uses `sona::export::SafeTensorsExporter`).
-- New MCP tool `mcp__cgreality__optimizer_apply_learning(decision_ctx, candidate_arms)` — returns a re-ranked list under SONA's micro-LoRA influence.
+- New crate `crates/context-graph-sona/` containing our own clean-room implementation of: `SonaEngine`, `MicroLoRA`, `BaseLoRA`, `EwcPlusPlus`, `TrajectoryBuilder`, `ReasoningBank`, `LoopCoordinator`. Header comment cites `ruvnet/RuVector crates/sona/src/{engine,lora,ewc,trajectory,reasoning_bank,loops}.rs at HEAD ef5274c2` as inspiration; no code copied.
+- New module `crates/context-graph-cli/src/optimizer/learning.rs` — wraps our `context-graph-sona`, exposes a turn-scoped trajectory API.
+- Persist SONA state via `safetensors` (the public Rust crate from HuggingFace, not RuVector's wrapper) to `<runtime_root>/claude-code-optimizer/sona.safetensors` between turns.
+- New MCP tool `mcp__cgreality__optimizer_apply_learning(decision_ctx, candidate_arms)` — returns a re-ranked list under our SONA's micro-LoRA influence.
 
 **Effect on the bandit story:** this *deepens* the `SolverBandit` proposal. The bandit picks arms; SONA's trajectory recording + REINFORCE gradient estimation gives a richer reward signal that re-weights bandit priors over time. Bandit + SONA is strictly better than bandit alone.
 
-**Effort:** 2-3 days vendor + integration. Most of it is wiring; SONA's API is small.
+**Effort:** 5-7 days clean-room reimplementation + integration. Major modules are LoRA forward pass (~200 LOC), EWC++ Fisher info update (~300 LOC), trajectory + REINFORCE (~250 LOC), ReasoningBank pattern clustering (~200 LOC), loop coordinator (~150 LOC). 2-3× vendor estimate, but the math is well-described in their source comments.
 
 **Risk:** medium. SONA is research-grade; verify EWC++ task-boundary detection actually fires on your decision-stream pattern. Run with `RUST_LOG=sona=debug` for the first 50 turns.
 
@@ -169,15 +173,15 @@ The optimizer's foreground turn doesn't need to compute gradients. The backgroun
 
 ---
 
-## 4. Path-dep `ruvector-core` for `mmr`, `matryoshka`, `graph_rag`, `conformal_prediction`
+## 4. Clean-room reimplement `mmr`, `matryoshka`, `graph_rag`, `conformal_prediction`
 
-**Source paths:** `ruvector/crates/ruvector-core/src/advanced_features/{mmr.rs, matryoshka.rs, graph_rag.rs, conformal_prediction.rs}`.
+**Inspirational source paths (read-only references):** `ruvector/crates/ruvector-core/src/advanced_features/{mmr.rs, matryoshka.rs, graph_rag.rs, conformal_prediction.rs}`.
 
 You don't need *all* of `ruvector-core`. You need its pieces. The crate is organized so each `advanced_features/` module is self-contained.
 
 ### 4a. MMR diversity rerank for past-failure queries
 
-Direct replacement for `docs/agentdbfindings/03 §7`'s 50-line port. Path-dep, no port.
+Reimplement the ~50-line greedy in our own retrieval module. Read `ruvector/crates/ruvector-core/src/advanced_features/mmr.rs` for the formula + edge cases.
 
 ### 4b. Matryoshka funnel for the embedder
 ContextGraph already has `Matryoshka128` HNSW indexes. RuVector's `matryoshka.rs` adds the **funnel + cascade modes** — coarse-to-fine search where you start at 128D, prune to top-100, then re-rank with full 1024D. ~3-5× speedup at minimal recall loss.
@@ -230,22 +234,22 @@ let prediction_set = cp.predict_set(&candidate_recommendations, &query)?;
 The `optimizer_record_recommendation` MCP tool can return `{recommendation_id, confidence_interval: 0.9, alternatives_within_set: [...]}` instead of a single point estimate.
 
 **ccreality changes:**
-- `ruvector-core = { path = "../ruvector/crates/ruvector-core", default-features = false, features = ["mmr", "matryoshka", "graph-rag", "conformal"] }` (assuming the upstream gates these).
-- New MCP tool: `mcp__cgreality__attempts_query_with_diversity(failure_summary, k, lambda)` — uses `mmr.rs`.
-- New MCP tool: `mcp__cgreality__attempts_global_patterns(repo_family)` — uses `graph_rag.rs::Community`.
-- `optimizer_record_recommendation` extension: optional `confidence_interval` field — uses `conformal_prediction.rs`.
+- New module `crates/context-graph-cli/src/optimizer/retrieval/{mmr,matryoshka,graph_rag,conformal}.rs` — our clean-room implementations. Header comments cite the inspirational RuVector files.
+- New MCP tool: `mcp__cgreality__attempts_query_with_diversity(failure_summary, k, lambda)` — uses our `mmr.rs`.
+- New MCP tool: `mcp__cgreality__attempts_global_patterns(repo_family)` — uses our `graph_rag.rs::Community`.
+- `optimizer_record_recommendation` extension: optional `confidence_interval` field — uses our `conformal.rs`.
 
 **Effect:** richer retrieval, calibrated confidence, principled global summarization. Each is a 1-day wire.
 
-**Effort:** 1 day each, ~4 days total.
+**Effort:** 2-3 days each, ~8-12 days total. MMR is the smallest; Graph RAG with Leiden community detection is the largest. Sequence by need.
 
 **Risk:** low. All read-only or additive.
 
 ---
 
-## 5. Path-dep `ruvector-temporal-tensor` for cold attempt-summary storage
+## 5. Clean-room reimplement `ruvector-temporal-tensor` 8/7/5/3-bit tier policy
 
-**Source crate:** `ruvector/crates/ruvector-temporal-tensor/`.
+**Inspirational source crate (read-only reference):** `ruvector/crates/ruvector-temporal-tensor/`.
 
 The reality-loop runtime root accumulates attempt summaries indefinitely (every attempt × every task × every harness-transition = many KB of JSON + embeddings). Hot-tier raw f32 embeddings, cold-tier 3-bit quantized. The compressor is zero-deps and WASM-compatible.
 
@@ -280,15 +284,15 @@ let frame_back: Vec<f32> = comp.read_frame(segment, frame_idx)?;
 
 **Effect:** 4-10× storage reduction for attempt embeddings. After 300 task suite × 5 attempts each × 1024D × 4B/value = ~6MB of raw embeddings. With tiering, ~1.5 MB. Trivial absolutely; meaningful if you ever scale to 10K attempt-runs.
 
-**Effort:** 1 day path-dep + tier policy config.
+**Effort:** 2-3 days clean-room implementation. Each tier (8/7/5/3-bit) is a small groupwise symmetric quantizer (~100 LOC); the tier-policy state machine is another ~200 LOC. Tests for round-trip RMSE per tier are essential.
 
 **Risk:** low. The compressor is documented as "zero deps."
 
 ---
 
-## 6. Path-dep `ruvector-mincut` for "split tasks into independent training/eval shards"
+## 6. Clean-room reimplement `ruvector-mincut` for "split tasks into independent training/eval shards"
 
-**Source crate:** `ruvector/crates/ruvector-mincut/`.
+**Inspirational source crate (read-only reference):** `ruvector/crates/ruvector-mincut/`.
 
 ccreality use case: when the NightlyLearner-style consolidation pipeline (`docs/agentdbfindings/03 §6`) wants to A/B test a candidate harness change, it needs to split tasks into treatment vs control without contamination.
 
@@ -305,13 +309,13 @@ let (treatment, control) = cut.bipartition(&task_failure_graph)?;
 
 **Effect:** cleaner A/B comparisons of harness changes. Lower variance in uplift estimates → fewer false-negative rejections of good changes.
 
-**Effort:** 1 day path-dep + graph builder for `task_failure_graph`.
+**Effort:** 3-4 days clean-room — implement Stoer-Wagner mincut (the canonical variant; ~300 LOC) + the graph builder for `task_failure_graph`. Read `ruvector/crates/ruvector-mincut/src/canonical/` for inspiration.
 
 **Risk:** medium. The graph construction is the nontrivial part — what edge weights mean (shared tags, shared embeddings, shared repos, etc.) is your design choice and affects whether the cut is meaningful.
 
 ---
 
-## 7. Path-dep `ruvector-router-core` + `ruvector-tiny-dancer-core` for sub-10ms intent routing
+## 7. Clean-room reimplement a FastGRNN-style intent router
 
 **Source crates:** `ruvector/crates/ruvector-router-core/`, `ruvector/crates/ruvector-tiny-dancer-core/`.
 
@@ -323,7 +327,7 @@ For tools that don't need full strategy evaluation (e.g. `attempts_query_reflexi
 - "Is this a failure-mode query, a success-pattern query, or a global-summary query?" → 3-arm router → dispatch to the right sub-tool.
 - "Is this an exact-recommendation-id lookup or a semantic search?" → 2-arm router → dispatch to direct lookup vs HNSW.
 
-**Effort:** 2 days path-dep + train tiny-dancer on labeled examples (you'd hand-label ~100 example queries as a calibration set).
+**Effort:** 5-6 days clean-room — FastGRNN forward pass + intent embedder + circuit breaker (~600 LOC) plus calibration dataset.
 
 **Risk:** medium. If the router is wrong, queries route to the wrong sub-tool; circuit breaker is in `tiny-dancer-core/src/circuit_breaker.rs` — wires fall-back to the slow path on routing-error rate.
 
@@ -331,9 +335,9 @@ For tools that don't need full strategy evaluation (e.g. `attempts_query_reflexi
 
 ---
 
-## 8. Vendor `prime-radiant`'s SONA tuning loop for self-tuning the optimizer's hyperparameters
+## 8. Clean-room reimplement a coherence-driven SONA-tuning loop, inspired by `prime-radiant`
 
-**Source crate:** `ruvector/crates/prime-radiant/src/sona_tuning/`.
+**Inspirational source crate (read-only reference):** `ruvector/crates/prime-radiant/src/sona_tuning/`.
 
 SONA has knobs (μLoRA rank, EWC lambda, learning rate). Prime-radiant's `sona_tuning/` module has a meta-loop that tunes SONA's hyperparameters against a coherence loss. Drop SONA into ccreality (per §3 above) and prime-radiant's tuning loop becomes "the optimizer's optimizer."
 
@@ -350,7 +354,7 @@ loop_period(every_50_turns) {
 }
 ```
 
-**Effort:** 3 days. Specific to `prime-radiant`'s coherence definition; you may want to substitute "inner-actor correctness rate over the last 50 attempts" as your coherence proxy.
+**Effort:** 5-6 days clean-room. Specific to `prime-radiant`'s coherence definition; substitute "inner-actor correctness rate over the last 50 attempts" as the coherence proxy. Read `ruvector/crates/prime-radiant/src/sona_tuning/` as inspiration.
 
 **Risk:** medium-high. Self-tuning can oscillate. Cap tune frequency (every 50 turns is probably the floor).
 
@@ -358,7 +362,7 @@ loop_period(every_50_turns) {
 
 ---
 
-## 9. Read `ruvector-graph-transformer/temporal.rs` for Granger causality ideas
+## 9. Clean-room reimplement a Granger causality test, inspired by `ruvector-graph-transformer/temporal.rs`
 
 **Source path:** `ruvector/crates/ruvector-graph-transformer/src/temporal.rs`.
 
@@ -374,9 +378,9 @@ Granger causality test: did harness-transition X cause subsequent score-improvem
 
 ---
 
-## 10. Read `ruvllm_retrieval_diffusion` for "training-free retrieval-LM" idea
+## 10. Read `ruvllm_retrieval_diffusion` for the "training-free retrieval-LM" idea
 
-**Source crate:** `ruvector/crates/ruvllm_retrieval_diffusion/`.
+**Inspirational source crate (read-only reference):** `ruvector/crates/ruvllm_retrieval_diffusion/`.
 
 For ccreality, this isn't a direct transplant — the optimizer is opus, not a retrieval-LM. But the *idea* — "given a corpus, retrieve next tokens via associative memory + masked diffusion, no training" — could apply to a sub-task: "given the corpus of past optimizer recommendations, generate a next-token candidate for the *body* of a new recommendation."
 
@@ -386,39 +390,39 @@ This is speculative. Worth keeping in mind as a future research direction, not a
 
 ## Priority order — pick from the top
 
-1. **§2 (rvf-crypto witness chain)** — vendor today; ~2 days; load-bearing for FSV.
-2. **§1 (ruvector-solver PPR + BMSSP)** — path-dep; ~1 day; powers influence ranking and Laplacian solves.
-3. **§3 (sona for trajectory learning)** — vendor; ~3 days; deepens the SolverBandit story.
-4. **§4 (mmr + matryoshka + graph_rag + conformal_prediction)** — path-dep selectively; ~4 days; richer retrieval + calibrated confidence.
-5. **§5 (temporal-tensor cold storage)** — path-dep; ~1 day; storage cost reduction.
-6. **§6 (mincut for A/B splits)** — path-dep; ~1 day; cleaner uplift estimation.
-7. **§9 (Granger causality)** — port the test; ~2 days; principled "did X cause Y?" attribution.
-8. §7 (tiny-dancer routing) — quality-of-life; defer.
-9. §8 (prime-radiant SONA tuning) — defer until §3 is stable.
+All efforts are **clean-room reimplementation** estimates (~2-3× the path-dep numbers in earlier drafts).
+
+1. **§2 (witness chain crate)** — clean-room; ~3 days; load-bearing for FSV.
+2. **§1 (sublinear solvers crate)** — clean-room; ~3-4 days; powers influence ranking and Laplacian solves.
+3. **§3 (sona-style adaptive learner crate)** — clean-room; ~5-7 days; deepens the SolverBandit story.
+4. **§4 (mmr + matryoshka + graph_rag + conformal modules)** — clean-room selectively; ~8-12 days total; richer retrieval + calibrated confidence.
+5. **§5 (temporal-tensor 8/7/5/3-bit tier policy)** — clean-room; ~2-3 days; storage cost reduction.
+6. **§6 (mincut for A/B splits)** — clean-room; ~3-4 days; cleaner uplift estimation.
+7. **§9 (Granger causality test)** — clean-room; ~3-4 days; principled "did X cause Y?" attribution.
+8. §7 (tiny-dancer-style intent router) — quality-of-life; defer.
+9. §8 (coherence-driven SONA tuning) — defer until §3 is stable.
 10. §10 (retrieval-diffusion) — research direction.
 
-**Total Tier 1 (highest priority, §1 + §2 + §3): ~6 days.** All vendor or path-dep. Adds: witness chain, sublinear solvers, trajectory-based learning. After this sprint the optimizer has cryptographic audit + sublinear-PPR-aware diagnosis + REINFORCE-trajectory learning + EWC++ memory.
+**Total Tier 1 (highest priority, §1 + §2 + §3): ~11-14 days clean-room.** Adds: witness chain, sublinear solvers, trajectory-based learning. After this sprint the optimizer has cryptographic audit + sublinear-PPR-aware diagnosis + REINFORCE-trajectory learning + EWC++ memory — all in our own crates with zero upstream dependency.
 
-**Tier 2 (§4 + §5 + §6 + §9): ~8 days.** Quality-of-life that adds up.
+**Tier 2 (§4 + §5 + §6 + §9): ~16-23 days clean-room.** Quality-of-life that adds up.
 
 ---
 
 ## Compared to the agentdb proposal
 
-The agentdb findings recommended ~10-12 days of *Rust port* work for Tier 1+2. RuVector findings recommend ~14 days of *vendor + path-dep* work for the equivalent capability — **but the capability is dramatically richer**:
+The agentdb findings recommended ~10-12 days of *Rust port* work for Tier 1+2. The locked-in clean-room-only path here recommends ~27-37 days of clean-room reimplementation for the equivalent capability — **with substantially richer primitives** and zero upstream dependency:
 
-| What agentdb proposes | What RuVector lets you do instead |
-|------------------------|-----------------------------------|
-| Port 270-LOC SolverBandit (Thompson Sampling) | Vendor `sona` (full ReasoningBank + EWC++ + REINFORCE + 3 loops + federated) AND `ruvector-solver` (8 algos, witness audit, SIMD) |
-| Port 250-LOC SHAKE-256 73-byte witness chain | Vendor `rvf-crypto` (no_std, includes ed25519 + ML-DSA-65 + SLH-DSA-128s + lineage + attestation) |
-| Port 50-LOC MMR | Path-dep `ruvector-core::advanced_features::mmr` (production-tuned) |
-| Port 300-LOC NightlyLearner doubly-robust uplift | Path-dep `ruvector-mincut` for A/B splits + port the Granger test from `graph-transformer/temporal.rs` |
-| Port 250-LOC ContextSynthesizer narrative | Optional — agentdb's narrative was unique to TS; for ccreality reuse the synthesizer pattern unchanged in Rust |
+| What agentdb proposes | What we do instead, inspired by RuVector |
+|------------------------|------------------------------------------|
+| Port 270-LOC SolverBandit (Thompson Sampling) | Clean-room reimplement a SONA-style learner (μLoRA + EWC++ + REINFORCE + ReasoningBank + loops) AND a sublinear-solver crate (Forward Push + BMSSP + CG + audit) — total ~10 days |
+| Port 250-LOC SHAKE-256 73-byte witness chain | Clean-room reimplement our own `context-graph-witness` (SHAKE-256 73-byte chain + ed25519 + lineage + attestation) — ~3 days |
+| Port 50-LOC MMR | Clean-room implement ~150 LOC of MMR + tests — ~1 day |
+| Port 300-LOC NightlyLearner doubly-robust uplift | Clean-room implement Granger test (~300 LOC) + mincut for A/B (~400 LOC) — ~7 days |
+| Port 250-LOC ContextSynthesizer narrative | Same — port the heuristic, no upstream needed |
 | Add Reflexion `critique` field | Same — schema-level, no transplant needed |
 
-**Net:** RuVector replaces "port 1500 LOC" with "vendor 1 sub-crate + 4 path-deps + 300 LOC of glue." Roughly half the effort for substantially more capability.
-
-The trap: vendoring `sona` and `rvf-crypto` ties ContextGraph to RuVector's release cadence + license. See `06_RISKS_AND_NON_TRANSFERABLE.md`.
+**Net:** zero upstream tracking burden, no foreign crates in our build graph, full ownership of every line. The cost is an extra ~15-20 days vs the path-dep alternative. Worth it per the operator's locked decision.
 
 ---
 

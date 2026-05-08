@@ -1,5 +1,7 @@
 # 08 — Honest Summary
 
+> **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "steal" below means **clean-room reimplement**. The `agentdb/` clone is a read-only reference, not a build dependency.
+
 The 5-minute version. Read this first if you only have time for one of these docs.
 
 ---
