@@ -55,7 +55,10 @@ chrono = { workspace = true }
 
 # Hashing and encoding for content hashes
 sha2 = "0.10"
+sha3 = "0.10"
 hex = "0.4"
+rand = { workspace = true }
+rand_distr = { workspace = true }
 
 # Glob pattern matching for file watcher tools
 glob = "0.3"

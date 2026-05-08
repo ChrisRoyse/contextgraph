@@ -380,8 +380,13 @@ fn dynamicjepa_phase8_cli_fsv_real_prediction_plan_surprise() {
         .as_str()
         .expect("target outcome id")
         .to_string();
+    let plan_row = inspect_dataset_row(&db, &dataset_id, &train_shard_id, "0");
+    let plan_input_panel_id = plan_row["decoded_records"]["row"]["input_panel_id"]
+        .as_str()
+        .expect("plan input panel id")
+        .to_string();
     evidence.push(
-        json!({"step": "inspect_prediction_inputs", "row": row0, "target_panel": target_panel}),
+        json!({"step": "inspect_prediction_inputs", "row": row0, "target_panel": target_panel, "plan_row": plan_row}),
     );
 
     let before_predict = run_ok(&["dynamicjepa", "inspect-counts", "--db", &db, "--json"]);
@@ -468,7 +473,7 @@ fn dynamicjepa_phase8_cli_fsv_real_prediction_plan_surprise() {
         "--artifact-id",
         &artifact_id,
         "--panel-id",
-        &input_panel_id,
+        &plan_input_panel_id,
         "--skill-id",
         skill_id,
         "--json",
@@ -620,7 +625,7 @@ fn dynamicjepa_phase8_cli_fsv_real_prediction_plan_surprise() {
         );
         assert_eq!(
             decoded["input_panel_id"].as_str(),
-            Some(input_panel_id.as_str())
+            Some(plan_input_panel_id.as_str())
         );
         assert_eq!(
             decoded["candidate_action_id"].as_str(),

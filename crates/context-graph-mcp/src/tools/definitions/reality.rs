@@ -139,6 +139,36 @@ pub fn definitions() -> Vec<ToolDefinition> {
             json!({"type":"object","properties":{"run_id":{"type":"string"},"attempt":{"type":"integer","minimum":0},"tool_use_id":{"type":"string"},"file_path":{"type":"string"},"before_sha256":{"type":"string"},"after_sha256":{"type":"string"},"lines_added":{"type":"integer","minimum":0},"lines_removed":{"type":"integer","minimum":0},"cargo_check":{"type":"object"},"git_diff_stat":{"type":"string"},"session_id":{"type":"string"}},"required":["run_id","attempt","file_path","before_sha256","after_sha256","lines_added","lines_removed"],"additionalProperties":true}),
         ),
         def(
+            "optimizer_bandit_select",
+            "Select a generic optimizer arm through persisted Thompson sampling.",
+            json!({"type":"object","properties":{"decision_point":{"type":"string"},"context_bucket":{"type":"string"},"arms":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":64},"cost_weight":{"type":"number","minimum":0}},"required":["decision_point","context_bucket","arms"],"additionalProperties":false}),
+        ),
+        def(
+            "optimizer_bandit_record_reward",
+            "Record verified [0,1] reward for a previously selected optimizer arm.",
+            json!({"type":"object","properties":{"decision_point":{"type":"string"},"context_bucket":{"type":"string"},"arm":{"type":"string"},"reward":{"type":"number","minimum":0,"maximum":1},"cost":{"type":"number","minimum":0}},"required":["decision_point","context_bucket","arm","reward"],"additionalProperties":false}),
+        ),
+        def(
+            "optimizer_bandit_state",
+            "Read persisted SolverBandit state from the active run.",
+            json!({"type":"object","properties":{"decision_point":{"type":"string"},"context_bucket":{"type":"string"}},"additionalProperties":false}),
+        ),
+        def(
+            "optimizer_recall_recommendations",
+            "Rank persisted optimizer recommendations by alpha*similarity + beta*uplift - gamma*cost.",
+            json!({"type":"object","properties":{"failure_summary":{"type":"string"},"k":{"type":"integer","minimum":1,"maximum":50,"default":5},"alpha":{"type":"number","minimum":0,"default":0.7},"beta":{"type":"number","minimum":0,"default":0.2},"gamma":{"type":"number","minimum":0,"default":0.1}},"required":["failure_summary"],"additionalProperties":false}),
+        ),
+        def(
+            "optimizer_witness_chain_verify",
+            "Verify the SHAKE-256 optimizer witness chain for a run.",
+            json!({"type":"object","properties":{"run_id":{"type":"string"}},"additionalProperties":false}),
+        ),
+        def(
+            "optimizer_witness_chain_diff",
+            "List optimizer witness-chain entries since an offset.",
+            json!({"type":"object","properties":{"run_id":{"type":"string"},"since_offset":{"type":"integer","minimum":0}},"required":["since_offset"],"additionalProperties":false}),
+        ),
+        def(
             "reality_shift_log",
             "Read ccreality per-session shift log.",
             json!({"type":"object","properties":{"session_id":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500},"since_shift_id":{"type":["string","null"]}},"required":["session_id"],"additionalProperties":false}),
@@ -167,7 +197,27 @@ pub fn definitions() -> Vec<ToolDefinition> {
         def(
             "attempts_history_query",
             "Read recent rows from <run_root>/reality-optimizer/attempts.jsonl.",
-            json!({"type":"object","properties":{"model":{"type":"string"},"instance_id":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100}},"additionalProperties":false}),
+            json!({"type":"object","properties":{"model":{"type":"string"},"instance_id":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"metadata_filter":{"type":"object"}},"additionalProperties":false}),
+        ),
+        def(
+            "attempts_query_reflexion",
+            "Query Reflexion-style attempt episodes with filters and MMR reranking.",
+            json!({"type":"object","properties":{"query":{"type":"string"},"model":{"type":"string"},"instance_id":{"type":"string"},"only_failures":{"type":"boolean"},"only_successes":{"type":"boolean"},"min_reward":{"type":"number"},"tag":{"type":"string"},"outcome_kind":{"type":"string"},"metadata_filter":{"type":"object"},"k":{"type":"integer","minimum":1,"maximum":100,"default":10},"lambda":{"type":"number","minimum":0,"maximum":1,"default":0.7}},"additionalProperties":false}),
+        ),
+        def(
+            "attempts_critique_summary",
+            "Summarize recurring Reflexion critique tags and outcomes.",
+            json!({"type":"object","properties":{"model":{"type":"string"},"instance_id":{"type":"string"},"only_failures":{"type":"boolean"},"only_successes":{"type":"boolean"},"tag":{"type":"string"},"outcome_kind":{"type":"string"},"metadata_filter":{"type":"object"},"limit":{"type":"integer","minimum":1,"maximum":100,"default":20}},"additionalProperties":false}),
+        ),
+        def(
+            "attempts_success_strategies",
+            "List successful attempt strategies from Reflexion fields.",
+            json!({"type":"object","properties":{"model":{"type":"string"},"instance_id":{"type":"string"},"tag":{"type":"string"},"metadata_filter":{"type":"object"},"limit":{"type":"integer","minimum":1,"maximum":100,"default":20}},"additionalProperties":false}),
+        ),
+        def(
+            "attempts_synthesize",
+            "Build a deterministic narrative summary from persisted attempt rows.",
+            json!({"type":"object","properties":{"model":{"type":"string"},"instance_id":{"type":"string"},"only_failures":{"type":"boolean"},"only_successes":{"type":"boolean"},"tag":{"type":"string"},"outcome_kind":{"type":"string"},"metadata_filter":{"type":"object"}},"additionalProperties":false}),
         ),
         def(
             "experiment_registry_propose",

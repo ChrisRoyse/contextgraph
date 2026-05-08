@@ -3,14 +3,18 @@
 pub mod alter;
 pub mod analyze;
 pub mod autoresearch;
+pub mod bandit;
 pub mod errors;
 pub mod helpers;
 pub mod interact;
 pub mod lock;
 pub mod optimizer;
 pub mod path_policy;
+pub mod recommendations;
+pub mod reflexion;
 pub mod schema_validator;
 pub mod shift_log;
+pub mod witness_chain;
 
 pub use errors::CCRealityError;
 

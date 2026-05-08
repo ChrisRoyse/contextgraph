@@ -295,6 +295,9 @@ pub async fn attempts_history_query(args: Value) -> Result<Value> {
     if let Some(task) = optional_str_strict(&args, "instance_id")? {
         rows.retain(|r| r.get("instance_id").and_then(Value::as_str) == Some(task.as_str()));
     }
+    if let Some(filter) = args.get("metadata_filter") {
+        rows = super::reflexion::apply_metadata_filter(rows, filter)?;
+    }
     let limit = optional_u64_strict(&args, "limit", 100)?.min(500) as usize;
     let total = rows.len();
     if rows.len() > limit {

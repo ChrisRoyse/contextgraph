@@ -459,6 +459,17 @@ struct GpuState {
 #[derive(Debug, Clone, Serialize)]
 struct AttemptRecord {
     attempt: u64,
+    task_id: String,
+    task_summary: String,
+    input_excerpt: Option<String>,
+    output_excerpt: Option<String>,
+    critique: Option<String>,
+    reward: f64,
+    success: bool,
+    outcome_kind: String,
+    latency_ms: Option<u64>,
+    tokens_used: Option<u64>,
+    tags: Vec<String>,
     status: String,
     error_code: Option<String>,
     message: Option<String>,
@@ -829,11 +840,34 @@ async fn run_smoke(args: SmokeArgs) -> Result<Value> {
         "schema_version": 1,
         "attempt": 1,
         "task_id": task_id,
+        "task_summary": format!("synthetic smoke {}", args.label),
+        "input_excerpt": "deterministic smoke trigger",
+        "output_excerpt": "deterministic smoke artifacts written",
+        "critique": "smoke happy path passed; artifacts were written and can be replayed",
+        "reward": 0.5,
+        "success": true,
+        "outcome_kind": "smoke_passed",
+        "latency_ms": null,
+        "tokens_used": null,
+        "tags": ["smoke", "validation-passed"],
         "synthetic": true,
         "validation": { "status": "passed", "synthetic": true },
         "official_evidence": null,
         "reality_signal_packet_path": path_str(&signal_path),
         "problem_reality_packet_path": path_str(&problem_path),
+        "reflexion_episode": {
+            "task_id": task_id,
+            "task_summary": format!("synthetic smoke {}", args.label),
+            "input_excerpt": "deterministic smoke trigger",
+            "output_excerpt": "deterministic smoke artifacts written",
+            "critique": "smoke happy path passed; artifacts were written and can be replayed",
+            "reward": 0.5,
+            "success": true,
+            "outcome_kind": "smoke_passed",
+            "latency_ms": null,
+            "tokens_used": null,
+            "tags": ["smoke", "validation-passed"]
+        },
         "source_of_truth": file_sot(&summary_path)
     });
     write_json_checked(&summary_path, &summary)?;
@@ -2109,8 +2143,27 @@ async fn run(args: AttemptArgs) -> Result<Value> {
             &args.model,
         )?;
 
+        let reflexion_reward = normalized_attempt_reward(reward.as_ref(), resolved);
+        let reflexion_success = attempt_success(resolved, &validation);
+        let reflexion_outcome_kind =
+            attempt_outcome_kind(&validation, resolved, repeated_patch, patch_sha.as_deref());
+        let reflexion_tags =
+            attempt_tags(&validation, resolved, repeated_patch, patch_sha.as_deref());
+        let reflexion_critique =
+            attempt_critique(&validation, resolved, repeated_patch, patch_sha.as_deref());
         let attempt_record = AttemptRecord {
             attempt,
+            task_id: task.instance_id.clone(),
+            task_summary: task_summary_for_reflexion(&task),
+            input_excerpt: Some(truncate_chars(&task.problem_statement, 1200)),
+            output_excerpt: model_output_excerpt(&model_response),
+            critique: Some(reflexion_critique),
+            reward: reflexion_reward,
+            success: reflexion_success,
+            outcome_kind: reflexion_outcome_kind,
+            latency_ms: None,
+            tokens_used: None,
+            tags: reflexion_tags,
             status: validation["status"]
                 .as_str()
                 .unwrap_or("unknown")
@@ -2143,6 +2196,7 @@ async fn run(args: AttemptArgs) -> Result<Value> {
                 "dynamicjepa_reality_record": dynamicjepa_reality_record,
                 "score": score,
                 "reward": reward,
+                "reflexion_episode": attempt_record_reflexion_episode(&attempt_record),
                 "ledger_counts": ledger_counts(&ledger)?,
             }),
         )?;
@@ -16984,6 +17038,166 @@ fn extract_reward_scalar(reward: Option<&Value>) -> Option<f64> {
     None
 }
 
+fn normalized_attempt_reward(reward: Option<&Value>, resolved: Option<bool>) -> f64 {
+    if resolved == Some(true) {
+        return 1.0;
+    }
+    extract_reward_scalar(reward).unwrap_or(0.0).clamp(0.0, 1.0)
+}
+
+fn attempt_success(resolved: Option<bool>, validation: &Value) -> bool {
+    resolved == Some(true) || (resolved.is_none() && validation["status"] == "passed")
+}
+
+fn attempt_outcome_kind(
+    validation: &Value,
+    resolved: Option<bool>,
+    repeated_patch: bool,
+    patch_sha: Option<&str>,
+) -> String {
+    if resolved == Some(true) {
+        "official_resolved".to_string()
+    } else if resolved == Some(false) {
+        "official_unresolved".to_string()
+    } else if repeated_patch {
+        "repeated_patch".to_string()
+    } else if patch_sha.is_none() {
+        "no_candidate_patch".to_string()
+    } else if validation["status"] != "passed" {
+        "validation_failed".to_string()
+    } else {
+        "validation_passed_official_not_run".to_string()
+    }
+}
+
+fn attempt_tags(
+    validation: &Value,
+    resolved: Option<bool>,
+    repeated_patch: bool,
+    patch_sha: Option<&str>,
+) -> Vec<String> {
+    let mut tags = BTreeSet::new();
+    match validation["status"].as_str().unwrap_or("unknown") {
+        "passed" => {
+            tags.insert("validation-passed".to_string());
+        }
+        "failed" => {
+            tags.insert("validation-failed".to_string());
+        }
+        other => {
+            tags.insert(format!("validation-{}", safe_id(other)));
+        }
+    }
+    match resolved {
+        Some(true) => {
+            tags.insert("official-resolved".to_string());
+        }
+        Some(false) => {
+            tags.insert("official-unresolved".to_string());
+        }
+        None => {
+            tags.insert("official-not-run".to_string());
+        }
+    }
+    if repeated_patch {
+        tags.insert("repeated-patch".to_string());
+    }
+    if patch_sha.is_none() {
+        tags.insert("no-patch".to_string());
+    }
+    if let Some(code) = validation["error_code"].as_str() {
+        tags.insert(format!("error-{}", safe_id(&code.to_ascii_lowercase())));
+        let lower = code.to_ascii_lowercase();
+        for (needle, tag) in [
+            ("import", "import-error"),
+            ("compile", "compile-error"),
+            ("syntax", "syntax-error"),
+            ("timeout", "timeout"),
+            ("docker", "docker-error"),
+            ("patch", "patch-error"),
+            ("schema", "schema-error"),
+            ("ground", "tool-grounding-error"),
+        ] {
+            if lower.contains(needle) {
+                tags.insert(tag.to_string());
+            }
+        }
+    }
+    tags.into_iter().collect()
+}
+
+fn attempt_critique(
+    validation: &Value,
+    resolved: Option<bool>,
+    repeated_patch: bool,
+    patch_sha: Option<&str>,
+) -> String {
+    let status = validation["status"].as_str().unwrap_or("unknown");
+    let error = validation["error_code"].as_str().unwrap_or("none");
+    let message = validation["message"].as_str().unwrap_or("");
+    let official = match resolved {
+        Some(true) => "official resolved",
+        Some(false) => "official unresolved",
+        None => "official evaluation not run",
+    };
+    let patch_state = if repeated_patch {
+        "repeated patch"
+    } else if patch_sha.is_some() {
+        "new candidate patch"
+    } else {
+        "no candidate patch"
+    };
+    truncate_chars(
+        &format!(
+            "validation_status={status}; error_code={error}; {official}; {patch_state}; message={message}"
+        ),
+        1200,
+    )
+}
+
+fn task_summary_for_reflexion(task: &TaskManifest) -> String {
+    truncate_chars(
+        &format!(
+            "{} repo={} base_commit={} problem={}",
+            task.instance_id, task.repo, task.base_commit, task.problem_statement
+        ),
+        1200,
+    )
+}
+
+fn model_output_excerpt(model_response: &Value) -> Option<String> {
+    for path in [
+        "/final_answer",
+        "/message",
+        "/response",
+        "/raw_response",
+        "/assistant_response",
+    ] {
+        if let Some(text) = model_response.pointer(path).and_then(Value::as_str) {
+            return Some(truncate_chars(text, 1200));
+        }
+    }
+    serde_json::to_string(model_response)
+        .ok()
+        .map(|text| truncate_chars(&text, 1200))
+}
+
+fn attempt_record_reflexion_episode(record: &AttemptRecord) -> Value {
+    json!({
+        "task_id": record.task_id.clone(),
+        "task_summary": record.task_summary.clone(),
+        "input_excerpt": record.input_excerpt.clone(),
+        "output_excerpt": record.output_excerpt.clone(),
+        "critique": record.critique.clone(),
+        "reward": record.reward,
+        "success": record.success,
+        "outcome_kind": record.outcome_kind.clone(),
+        "latency_ms": record.latency_ms,
+        "tokens_used": record.tokens_used,
+        "tags": record.tags.clone(),
+    })
+}
+
 fn extract_official_resolved(record: &AttemptRecord) -> Option<bool> {
     record.resolved
 }
@@ -17029,6 +17243,17 @@ fn write_optimizer_artifacts(
         "instance_id": task.instance_id,
         "repo": task.repo,
         "attempt": record.attempt,
+        "task_id": record.task_id.clone(),
+        "task_summary": record.task_summary.clone(),
+        "input_excerpt": record.input_excerpt.clone(),
+        "output_excerpt": record.output_excerpt.clone(),
+        "critique": record.critique.clone(),
+        "reward": record.reward,
+        "success": record.success,
+        "outcome_kind": record.outcome_kind.clone(),
+        "latency_ms": record.latency_ms,
+        "tokens_used": record.tokens_used,
+        "tags": record.tags.clone(),
         "status": record.status,
         "error_code": record.error_code,
         "patch_sha256": record.patch_sha256,
