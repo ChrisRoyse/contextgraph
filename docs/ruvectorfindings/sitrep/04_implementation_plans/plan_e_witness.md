@@ -22,6 +22,15 @@ Why this is the **highest-priority** next instrument:
 3. **Validates the trait surface**: shipping a second concrete
    instrument (after E_Oracle) is the soonest way to discover trait
    ergonomics issues.
+4. **Already AST-aware-equivalent (per doc 14 §7)**: witness chain
+   entries are already byte-aligned 73-byte units, each one a
+   semantically atomic event (op_class + payload_hash + parent_hash +
+   timestamp). E_Witness does NOT need to route through the multi-
+   language `ast_chunker` — chain entries ARE the atoms. This makes
+   E_Witness the cleanest first instrument-after-E_Oracle to validate
+   the per-chunk-type DDA signal expansion (each chain entry contributes
+   ~7 cross-embedder signals once the chunked panel materializer
+   ships).
 
 ## Deliverables
 

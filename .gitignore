@@ -109,21 +109,8 @@ coverage/
 tarpaulin-report.html
 tarpaulin-report.json
 
-# ML Models (large files - download with scripts/download_models.py)
-# Keep README.md and config files but ignore model weight files
-models/*
-!models/README.md
-!models/models_config.toml
-models/**/*.safetensors
-models/**/*.bin
-models/**/*.pt
-models/**/*.onnx
-models/**/*.h5
-models/**/*.pb
-models/**/*.tflite
-models/**/*.pth
-models/**/*.ckpt
-models/**/*.msgpack
+# Local model artifacts are retired from this repository.
+models/
 
 # Python cache
 __pycache__/

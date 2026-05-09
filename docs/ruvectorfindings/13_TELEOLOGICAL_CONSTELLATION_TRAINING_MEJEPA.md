@@ -70,7 +70,16 @@ The cross-embedder signals are particularly valuable for ME-JEPA's UTML v1.0 ΔK
 
 Phase 0's 2,400-entry mutation corpus (8 categories × 300 tasks) at N=21 produces **2,400 × 231 = 554,400 structured supervisory signals** before any active-learning expansion or live-attempt observation. This is a **231× multiplier** on the apparent corpus size — the same disk-budget gives two orders of magnitude more training signal than the original Phase 0 design contemplated.
 
-Doc 09 §7 Phase 0 DoD specified `total_entries: 2400` as the corpus gate; under DDA the equivalent gate is `total_signals: 554400` with the constraint that signal independence is empirically validated via the §10 risk #3 mutual-information audit.
+**Chunk-level expansion (per doc 14).** With the multi-language `ast_chunker` extended to all 11 supported languages (doc 14 §6 items 1-5), every mutation entry produces ~30-50 AST-perfect atomic chunks (function / class / impl / module-decl level), each independently routable through the embedder ensemble per the doc 14 §4 routing table. Chunk-level DDA at N=21 averages **~7 signals per chunk × ~40 chunks = ~280 chunk-level signals per mutation entry**, in addition to the panel-level 231 signals.
+
+| Aggregation level | Signals per mutation entry | Total over 2,400-entry corpus |
+|---|---|---|
+| Panel-level (one per entry) | 231 (tight) | 554,400 |
+| Chunk-level (~40 chunks per entry) | ~280 | ~672,000 |
+| **Combined per entry** | **~510** | **~1.22 M** |
+| Loose upper bound | ~840 | ~2.0 M |
+
+**Implication for the operator's "fully-labeled data + insane reward signals" framing.** Every chunk-level signal is **automatically labeled** by the entry's known (mutation_category, oracle_verdict, entity_type, language) tuple — no human annotation, no synthetic-data generator, no recursion. **~1.2 M structured supervisory signals from a fixed 2,400-entry corpus is the operational form of "convert anything into insane amounts of data that is fully labeled."** Doc 09 §7 Phase 0 DoD's `total_entries: 2400` corpus gate becomes `total_signals: ~1.22 M` under chunk-level DDA, with the constraint that signal independence is empirically validated via the §10 risk #3 mutual-information audit.
 
 ---
 
@@ -119,7 +128,11 @@ pub struct TctConstellation {
     pub per_category_centroids: BTreeMap<MutationCategory, BTreeMap<EmbedderId, Vec<f32>>>,
     pub per_language_centroids: BTreeMap<(Language, MutationCategory), BTreeMap<EmbedderId, Vec<f32>>>,
     pub outcome_centroids: BTreeMap<OracleOutcome, BTreeMap<EmbedderId, Vec<f32>>>,
-    pub thresholds: BTreeMap<EmbedderId, f32>, // per-embedder τ_m for Gτ
+    // NEW per doc 14: per-(mutation × entity_type × language × embedder) cells for chunk-level Gτ
+    pub per_chunk_type_centroids: BTreeMap<(MutationCategory, EntityType, Language, EmbedderId), Vec<f32>>,
+    pub thresholds: BTreeMap<EmbedderId, f32>, // per-embedder τ_m for Gτ (panel-level)
+    // NEW per doc 14: per-chunk-type τ_m (sharper than panel-level when sample support is sufficient)
+    pub per_chunk_type_thresholds: BTreeMap<(EntityType, EmbedderId), f32>,
     pub corpus_provenance: CorpusProvenance, // SHA-256 of the source corpus + embedder versions
     pub frozen_at: SystemTime,
 }
@@ -127,7 +140,11 @@ pub struct TctConstellation {
 
 **FSV gate**: the constellation is FROZEN — once constructed, never updated except by explicit operator action with provenance. Stored in RocksDB CF `CF_MEJEPA_CONSTELLATION` keyed by version_id.
 
-**Storage**: ~21 embedders × 8 categories × ~768 dims average × 4 bytes f32 ≈ **500 KB total per language**. At 9 languages: ~4.5 MB. Trivial cost; load entirely into VRAM.
+**Per-chunk-type cell math (per doc 14 §5).** With chunk-level routing wired, the per-chunk-type cell count is **8 mutation categories × 13 entity types × 11 languages × 21 embedders = 24,024 cells**. Many cells are sparse by construction (no `interface_declaration` in C — it doesn't exist in the language). Bayesian shrinkage (per §10 risk #5) collapses cells with N < 50 supporting examples to the language-aggregate or entity-aggregate centroid; only cells with sufficient sample support keep their own centroid + threshold.
+
+**Storage (chunk-level expansion)**: ~21 embedders × 8 categories × ~768 dims average × 4 bytes f32 ≈ **500 KB total per language** at the panel level. With per-chunk-type cells: 24,024 cells × ~768 dims × 4 bytes ≈ **74 MB**, comfortably loadable into VRAM. After Bayesian shrinkage on sparse cells, expect ~30 MB persisted. Still trivial cost; load entirely into VRAM at predictor startup.
+
+**Why per-chunk-type centroids matter for verifying agent outputs.** A patch-level verdict tells the operator only "the patch is bad." A per-chunk-type Gτ verdict tells the operator: "the agent's `Function:plus_one` chunk in `crates/foo/src/lib.rs` lines 42-58 fails the `(SubtleFlip, Function, Rust, E7)` centroid by 0.12 below threshold." That is the **per-output verifiability property** the operator's published TCT paper (Royse 2026 §5.3) calls out as absent from scalar-reward alignment — and at chunk granularity it directly addresses the operator's "verify if the agent has done what it says it's done" framing: every chunk the agent emitted is independently re-verifiable by anyone with the frozen embedders + the constellation.
 
 ### 3.2 TCT Phase 2 — Train predictor with geometric-proximity loss
 
@@ -172,28 +189,56 @@ In words: a candidate output `ŷ` passes the constellation guard if and only if 
 **For ME-JEPA-Code**, this is a **fourth gate** added to `MeJepaCompiler::verify(patch)` alongside the existing three (conformal interval, OOD score, L_step health):
 
 ```rust
+pub struct ChunkId {
+    pub file_sha: [u8; 32],
+    pub language: Language,
+    pub entity_type: EntityType,
+    pub line_start: u32,
+    pub line_end: u32,
+    pub parent_chain_hash: [u8; 16],
+}
+
+pub struct GtauViolation {
+    pub embedder: EmbedderId,
+    pub observed_cos: f32,
+    pub threshold: f32,
+    pub violating_chunk: Option<ChunkId>,        // NEW per doc 14: localizes rejection to a chunk
+}
+
 pub enum Verdict {
     Pass {
         confidence_interval: (f32, f32),
         per_test_probabilities: Vec<f32>,
-        gtau_satisfied: bool,                      // NEW: did Gτ pass?
-        gtau_violations: Vec<(EmbedderId, f32, f32)>, // NEW: (embedder, observed_cos, threshold)
+        gtau_satisfied: bool,                      // did Gτ pass?
+        gtau_violations: Vec<GtauViolation>,       // (embedder, observed_cos, threshold, chunk)
     },
-    Fail { ..., gtau_satisfied: bool, gtau_violations: Vec<...> },
+    Fail { ..., gtau_satisfied: bool, gtau_violations: Vec<GtauViolation> },
     OutOfDistribution {
         latent_density: f32,
-        gtau_violations: Vec<(EmbedderId, f32, f32)>, // NEW: which embedders rejected?
+        gtau_violations: Vec<GtauViolation>,        // which (embedder, chunk) pairs rejected?
     },
     Abstain { reason: String },
-    GuardRejected {                                  // NEW VARIANT
+    GuardRejected {                                 // NEW VARIANT
         // Predictor said "Pass" but Gτ rejected it.
         // This is the case the operator paper calls "structurally unverifiable" —
         // the prediction is in the right region of N-1 embedders' space but wrong in at least one.
-        violating_embedders: Vec<(EmbedderId, f32, f32)>,
+        violating_embedders: Vec<GtauViolation>,
         predictor_predicted: PredictorOutput,
+        // NEW per doc 14: when chunk-level Gτ is wired, rejection is localized to specific chunks
+        // (function / class / impl / module-decl), not just the whole patch. The operator can
+        // see EXACTLY which chunk(s) the agent emitted that don't survive geometric verification.
+        violating_chunks: Vec<ChunkId>,
     },
 }
 ```
+
+**Per-chunk localization (per doc 14 §8.1).** With chunk-level Gτ wired, a `GuardRejected` verdict no longer says "this 200-line patch is bad" — it says "the `Function:apply_filter` chunk in `tests/test_units.py` lines 124-167 fails the `(SubtleFlip, Function, Python, E11)` centroid by 0.18 below threshold." The agent (or the operator reviewing the agent's output) can:
+
+1. **Know precisely what failed** — which function, which class, which import block.
+2. **Re-verify independently** — re-run the deterministic O(M·d_max) Gτ test on the persisted chunk panel, no model state needed.
+3. **Repair surgically** — the next outer-loop turn can target only the violating chunks, not re-attempt the whole patch.
+
+This is the operational form of the operator's "verify if the agent has done what it says it's done" framing: **every chunk the agent emitted has its own deterministic geometric verdict, computable by anyone with the frozen embedders + the frozen constellation**, no trust in the agent's self-report required.
 
 The `GuardRejected` variant is the **per-output verifiability property** the operator paper calls out as absent from scalar-reward alignment (RLHF, DPO, Constitutional AI). Each rejection is a **deterministic O(N · d_max) geometric test** the operator (or any other verifier) can independently re-run on the persisted panel.
 

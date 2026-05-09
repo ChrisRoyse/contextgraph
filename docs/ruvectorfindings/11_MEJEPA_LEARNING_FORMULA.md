@@ -58,6 +58,15 @@ For ME-JEPA-Code:
 
 **Implementation reference:** `crates/context-graph-mejepa/predictor.rs::predict()` returns the predicted latent; the existing VICReg-style loss in `loss.rs::vicreg_loss()` already computes the cosine error between predicted and target. New `learning_signal::compute_delta_p()` wraps the result with SNR normalization + exploration bonus + clamp.
 
+**Per-chunk ΔP (per doc 14).** With AST-aware chunking wired (doc 14), each panel materialization is composed of N chunks (function / class / impl / module-decl level, ~30-50 chunks per typical SWE-bench Lite mutation entry). The per-step ΔP becomes a **per-chunk distribution** of cosine errors aggregated by the loss:
+
+```
+ΔP_t = aggregate_per_chunk(ΔP_t_chunk_i for i in 1..N_chunks(panel_t))
+     where aggregate ∈ {mean, max, top-k mean, weighted-by-entity-importance}
+```
+
+The default aggregator is `mean` for stability; `max` is used when the constellation guard (doc 13 §3.3) flags a specific violating chunk so the loss focuses on the worst chunk. **This makes the ΔP signal load-bearing at function/class granularity** instead of being averaged across the whole patch, and it compounds with the ~280 chunk-level signals per mutation entry (per doc 14 §4.1) to give ME-JEPA dense per-chunk gradient signal.
+
 **Empirical anchor.** Career-Taxonomy benchmark validation cosine 0.905 ± 0.044 → ΔP_validation ≈ 0.095, BCa 95% CI [0.861, 0.931] (Royse 2026b §8). For ME-JEPA-Code we expect similar ΔP regimes once Phase 3 training reaches the doc 09 §7 holdout-agreement gate (≥0.75 agreement → ΔP ≤ 0.25 on holdout).
 
 ---

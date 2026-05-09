@@ -22,6 +22,16 @@ Why this is **HIGH priority**:
    replace this.
 3. **Doubles linear-probe gate evidence**: a third concrete instrument
    (after E_Oracle and E_Witness) further validates the trait surface.
+4. **Per-chunk routing via doc 14 multi-language `ast_chunker`**: each
+   tool's diagnostic output (mypy errors at line N, ruff errors at
+   line N, clippy errors at line N, javac errors at line N) is mapped
+   to the **owning AST-perfect chunk** by line-range intersection.
+   E_StaticAnalysis aggregates per-chunk severity histograms instead
+   of per-file totals, so a 3-error type-check failure in one method
+   chunk no longer pollutes the encoding of the 12 other clean
+   methods in the same file. This requires the multi-language
+   `ast_chunker` extension (doc 14 §6 items 1-5) to ship first;
+   until then, E_StaticAnalysis aggregates per-file as a placeholder.
 
 ## Deliverables
 

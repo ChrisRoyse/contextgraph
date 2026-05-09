@@ -744,7 +744,7 @@ fn parse_governed_command(command: &str) -> Result<Vec<String>> {
             "RUST_REALITY_GOVERNED_COMMAND_DENIED",
             "requested command is not in the governed allowlist",
             "arguments.command",
-            "use cargo fmt/check/test/build/clippy, rustfmt, git status/diff/log/show, ollama ps, or nvidia-smi",
+            "use cargo fmt/check/test/build/clippy, rustfmt, git status/diff/log/show, or nvidia-smi",
             json!({"command": command, "argv": argv}),
             None,
         ));
@@ -763,7 +763,6 @@ fn is_command_allowed(argv: &[String]) -> bool {
             argv.get(1).map(String::as_str),
             Some("status" | "diff" | "log" | "show")
         ),
-        Some("ollama") => argv.get(1).map(String::as_str) == Some("ps") && argv.len() == 2,
         Some("nvidia-smi") => true,
         _ => false,
     }

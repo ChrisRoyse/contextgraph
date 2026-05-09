@@ -4,7 +4,6 @@ use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use regex::Regex;
 use serde_json::{json, Value};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 

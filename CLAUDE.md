@@ -16,6 +16,8 @@ ContextGraph is a Rust workspace that ships:
 
 The active workstream is **ME-JEPA-Code** — the predictive reality compiler that takes (code change + context) and outputs a calibrated prediction of what the SWE-bench Docker oracle would say. **Claude Code (you) implements ME-JEPA + the surrounding ContextGraph reality substrate.** Each /loop turn ships one primitive end-to-end with FSV evidence per the `sitrep/` build plan.
 
+**11-language AST-aware atomic chunking (per `docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md`).** The workspace ships tree-sitter parsers for **11 languages**: Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP. The multi-language semantic extractor (`crates/context-graph-cli/src/commands/dynamicjepa.rs`) handles all 11 today; the AST-aware atomic chunker (`crates/context-graph-core/src/memory/ast_chunker.rs`) handles Rust today and is being extended to the remaining 10 as a Phase 1 deliverable. Every code-domain ME-JEPA instrument (E_AST, E_CFG, E_DataFlow, E_TypeGraph, E_Diff, E_Test) consumes AST-perfect chunks bounded by syntactic entities (function, class, impl, module-decl), targeting ~500 non-whitespace characters per Qodo / cAST methodology — never raw text or fixed-size windows.
+
 The full design is in `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md` (master plan), `10_MEJEPA_PIVOT_2026_05_09.md` (post-pivot statement of architecture), and `sitrep/` (canonical status + per-phase explainers + ready-to-execute implementation plans). The legacy `docs/ccreality/` documents (21 files describing the pre-pivot Claude+Qwen two-loop) are retained as historical reference.
 
 ---

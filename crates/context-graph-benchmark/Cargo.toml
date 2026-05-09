@@ -11,10 +11,7 @@ default = []
 # test-utils removed: context-graph-core already has features = ["test-utils"] in [dependencies]
 benchmark-tests = []
 real-embeddings = [
-    "dep:context-graph-embeddings",
-    "dep:context-graph-mcp",
-    "dep:context-graph-graph-agent",
-    "dep:context-graph-causal-agent"
+    "dep:context-graph-embeddings"
 ]
 
 [dependencies]
@@ -54,10 +51,6 @@ md5 = "0.7"
 # Optional: Real embeddings (GPU required)
 context-graph-embeddings = { path = "../context-graph-embeddings", optional = true }
 
-# Graph agent for causal discovery benchmarks
-context-graph-graph-agent = { path = "../context-graph-graph-agent", optional = true }
-context-graph-causal-agent = { path = "../context-graph-causal-agent", optional = true }
-
 # CLI parsing
 clap = { version = "4.5", features = ["derive", "env"] }
 
@@ -66,9 +59,6 @@ criterion = { version = "0.5", features = ["html_reports"] }
 
 # TempDir for benchmark temp storage
 tempfile = "3.10"
-
-# MCP handlers for true MCP benchmark
-context-graph-mcp = { path = "../context-graph-mcp", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -94,10 +84,6 @@ name = "gpu-bench"
 path = "src/bin/gpu_bench.rs"
 
 [[bin]]
-name = "mcp-bench"
-path = "src/bin/mcp_bench.rs"
-
-[[bin]]
 name = "embedder-stress"
 path = "src/bin/embedder_stress.rs"
 
@@ -116,10 +102,6 @@ path = "src/bin/causal_realdata_bench.rs"
 [[bin]]
 name = "temporal-realdata-bench"
 path = "src/bin/temporal_realdata_bench.rs"
-
-[[bin]]
-name = "validation-bench"
-path = "src/bin/validation_bench.rs"
 
 [[bin]]
 name = "sparse-bench"
@@ -197,11 +179,6 @@ name = "embedder-impact-realdata-bench"
 path = "src/bin/embedder_impact_realdata_bench.rs"
 
 [[bin]]
-name = "causal-discovery-mcp-bench"
-path = "src/bin/causal_discovery_mcp_bench.rs"
-required-features = ["real-embeddings"]
-
-[[bin]]
 name = "disk-space-bench"
 path = "src/bin/disk_space_bench.rs"
 
@@ -210,37 +187,8 @@ name = "graph-linking-real-bench"
 path = "src/bin/graph_linking_real_bench.rs"
 
 [[bin]]
-name = "graph-linking-gpu-bench"
-path = "src/bin/graph_linking_gpu_bench.rs"
-required-features = ["real-embeddings"]
-
-[[bin]]
 name = "causal-provenance-bench"
 path = "src/bin/causal_provenance_bench.rs"
-
-[[bin]]
-name = "causal-provenance-e2e-bench"
-path = "src/bin/causal_provenance_e2e_bench.rs"
-
-[[bin]]
-name = "causal-provenance-llm-bench"
-path = "src/bin/causal_provenance_llm_bench.rs"
-required-features = ["real-embeddings"]
-
-[[bin]]
-name = "causal-span-fix-bench"
-path = "src/bin/causal_span_fix_bench.rs"
-required-features = ["real-embeddings"]
-
-[[bin]]
-name = "model-injection-bench"
-path = "src/bin/model_injection_bench.rs"
-required-features = ["real-embeddings"]
-
-[[bin]]
-name = "model-injection-rigorous-bench"
-path = "src/bin/model_injection_rigorous_bench.rs"
-required-features = ["real-embeddings"]
 
 [[bin]]
 name = "spawn-blocking-bench"
@@ -250,19 +198,6 @@ required-features = ["real-embeddings"]
 [[bin]]
 name = "causal-accuracy-bench"
 path = "src/bin/causal_accuracy_bench.rs"
-
-[[bin]]
-name = "causal-e2e-bench"
-path = "src/bin/causal_e2e_bench.rs"
-
-[[bin]]
-name = "causal-perf-bench"
-path = "src/bin/causal_perf_bench.rs"
-
-[[bin]]
-name = "causal-prompt-experiment"
-path = "src/bin/causal_prompt_experiment_bench.rs"
-required-features = ["real-embeddings"]
 
 [[bin]]
 name = "causal-embedding-bench"

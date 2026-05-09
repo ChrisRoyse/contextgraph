@@ -1,6 +1,5 @@
 use super::errors::{CCRealityError, Result};
 use super::helpers::*;
-use super::interact::locate_engine_binary;
 use super::lock::EditLock;
 use super::optimizer;
 use super::path_policy;
@@ -9,9 +8,10 @@ use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use serde_json::{json, Value};
 use std::fs;
-use std::path::{Path, PathBuf};
-use tokio::io::AsyncWriteExt;
-use tokio::process::Command;
+use std::os::unix::process::CommandExt;
+use std::path::{Component, Path};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 impl Handlers {
     pub(crate) async fn call_harness_open_window(
@@ -86,20 +86,7 @@ pub async fn harness_open_window(args: Value) -> Result<Value> {
     path_policy::ensure_path_allowed(&path)?;
     let start = required_u64(&args, "start_line")?;
     let end = required_u64(&args, "end_line")?;
-    spawn_harness_subcommand(
-        "open-window",
-        &[
-            "--path",
-            &path,
-            "--start-line",
-            &start.to_string(),
-            "--end-line",
-            &end.to_string(),
-        ],
-        None,
-        60,
-    )
-    .await
+    open_project_file_window(&project_root()?, &path, start, end)
 }
 
 pub async fn harness_apply_line_window_edit(args: Value) -> Result<Value> {
@@ -137,28 +124,7 @@ pub async fn harness_apply_line_window_edit(args: Value) -> Result<Value> {
         "observed_sha256": observed_sha,
         "replace": replace
     });
-    let _ = root; // root resolved earlier for before_sha; subprocess re-resolves it.
-    let result = spawn_harness_subcommand(
-        "apply-line-window-edit",
-        &[
-            "--tool-dir",
-            tool_dir.to_str().ok_or_else(|| {
-                CCRealityError::new(
-                    "CCREALITY_HARNESS_TOOL_DIR_NON_UTF8",
-                    "tool_dir contains non-UTF-8 bytes",
-                    "alter.tool_dir",
-                    "ensure runtime root paths are valid UTF-8",
-                    json!({"tool_dir": tool_dir.display().to_string()}),
-                    None,
-                )
-            })?,
-            "--timeout-secs",
-            "120",
-        ],
-        Some(&edit),
-        180,
-    )
-    .await?;
+    let result = apply_line_window_edit_direct(&root, &tool_dir, &edit, 120)?;
     let after_sha = sha256_file(&before_path)?;
     let lines_removed = end.saturating_sub(start) + 1;
     let lines_added = replace.lines().count() as u64;
@@ -240,7 +206,6 @@ pub async fn harness_run_command(args: Value) -> Result<Value> {
             )
         })?;
     let tool_dir = attempt_dir.join("claude-code-optimizer/commands");
-    let _ = root;
     let timeout_str = timeout.to_string();
     let tool_dir_str = tool_dir.to_str().ok_or_else(|| {
         CCRealityError::new(
@@ -252,13 +217,7 @@ pub async fn harness_run_command(args: Value) -> Result<Value> {
             None,
         )
     })?;
-    let result = spawn_harness_subcommand(
-        "run-command",
-        &["--tool-dir", tool_dir_str, "--timeout-secs", &timeout_str],
-        Some(&json!({"command": command})),
-        timeout + 30,
-    )
-    .await?;
+    let result = run_governed_command_direct(&root, Path::new(tool_dir_str), &command, timeout)?;
     let output = result
         .pointer("/source_of_truth/output")
         .and_then(Value::as_str)
@@ -377,239 +336,737 @@ pub async fn harness_verify_state(args: Value) -> Result<Value> {
             None,
         )
     })?;
-    spawn_harness_subcommand(
-        "verify-state",
-        &[
-            "--tool-dir",
-            tool_dir_str,
-            "--scope",
-            scope_str,
-            "--label",
-            "mcp",
-        ],
-        None,
-        // verify-state runs cargo fmt+check+test; allow up to 30 minutes wall.
-        1800,
-    )
-    .await
+    verify_project_state_direct(&project_root()?, Path::new(tool_dir_str), "mcp", scope_str)
 }
 
-/// Legacy shim for `reality-loop harness <subcommand>`.
-///
-/// The resolver now fails closed because the 2026-05-09 ME-JEPA pivot removed
-/// the local reality-loop engine. Keeping this shim guarded preserves structured
-/// errors for older clients without allowing stale binaries to run.
-///
-/// Argv carries scalar flags. `stdin_json`, when present, is serialized and
-/// piped to the child's stdin (used for multi-line edit `replace` payloads to
-/// avoid Linux ARG_MAX/quoting hazards — see Linux ARG_MAX 128 KB per single arg).
-///
-/// Subprocess hygiene per tokio docs + Kobzol's process-spawning analysis:
-/// `kill_on_drop(true)` ensures the child dies if our future is cancelled (MCP
-/// shutdown, panic, caller cancel) — no orphan reparented to PID 1. CWD is set
-/// explicitly to the project root so the child's `governed_edit::project_root()`
-/// resolves consistently with our parent's view.
-///
-/// Output contract (matches harness CLI's `harness_dispatch`):
-/// - exit 0 → stdout is a single JSON envelope with `status: "ok"` (returned as `Ok`)
-/// - exit 1 → stdout is a single JSON envelope with `status: "error"` plus the
-///   GovernedEditError-shaped fields; mapped back to `CCRealityError` and returned as `Err`
-/// - exit 2 → clap argv parse failed (covered by spawn-time validation; if we hit
-///   this in practice it's a bug in our caller; surfaced verbatim)
-/// - exit 64+ → infrastructure failure (panic, OOM); stderr tail attached
-async fn spawn_harness_subcommand(
-    subcommand: &str,
-    argv_flags: &[&str],
-    stdin_json: Option<&Value>,
+fn open_project_file_window(
+    project_root: &Path,
+    relative_path: &str,
+    start_line: u64,
+    end_line: u64,
+) -> Result<Value> {
+    if start_line < 1 {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_WINDOW_START_INVALID",
+            "start_line must be at least 1",
+            "arguments.start_line",
+            "open a window using one-indexed inclusive line numbers",
+            json!({"start_line": start_line, "end_line": end_line}),
+            None,
+        ));
+    }
+    if end_line < start_line {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_WINDOW_END_INVALID",
+            "end_line must be greater than or equal to start_line",
+            "arguments.end_line",
+            "open a window using an inclusive range with end_line >= start_line",
+            json!({"start_line": start_line, "end_line": end_line}),
+            None,
+        ));
+    }
+
+    let path = validate_project_relative_path(relative_path, "arguments.path")?;
+    let full_path = project_root.join(&path);
+    ensure_existing_project_file(project_root, &full_path, "arguments.path")?;
+    let text = fs::read_to_string(&full_path)
+        .map_err(|err| fs_error("CCREALITY_HARNESS_WINDOW_READ_FAILED", &full_path, err))?;
+    let spans = line_spans(&text);
+    let total_lines = spans.len() as u64;
+    let capped_end = end_line.min(start_line + 399);
+    let window_text = if spans.is_empty() || start_line > total_lines {
+        String::new()
+    } else {
+        let actual_end = capped_end.min(total_lines);
+        let byte_start = spans[(start_line - 1) as usize].0;
+        let byte_end = spans[(actual_end - 1) as usize].1;
+        text[byte_start..byte_end].to_string()
+    };
+
+    Ok(json!({
+        "status": "ok",
+        "path": path,
+        "start_line": start_line,
+        "end_line": capped_end.min(total_lines.max(start_line)),
+        "requested_end_line": end_line,
+        "total_lines": total_lines,
+        "text": window_text,
+        "sha256": sha256_file(&full_path)?,
+        "source_of_truth": file_sot(&full_path)
+    }))
+}
+
+fn apply_line_window_edit_direct(
+    project_root: &Path,
+    tool_dir: &Path,
+    edit: &Value,
     timeout_secs: u64,
 ) -> Result<Value> {
-    let bin = locate_engine_binary()?;
-    let mut cmd = Command::new(&bin);
-    cmd.arg("harness").arg(subcommand);
-    for flag in argv_flags {
-        cmd.arg(flag);
+    fs::create_dir_all(tool_dir)
+        .map_err(|err| fs_error("CCREALITY_HARNESS_TOOL_DIR_CREATE_FAILED", tool_dir, err))?;
+    let edits_path = tool_dir.join("project-line-window-edits.json");
+    write_json_checked(&edits_path, &vec![edit.clone()])?;
+    let before_status = run_required_process(
+        &["git", "status", "--porcelain"],
+        project_root,
+        timeout_secs,
+        "CCREALITY_HARNESS_PROJECT_STATUS_FAILED",
+        "project.git_status.before_edit",
+    )?;
+
+    let path = required_edit_str(edit, "path", "governed_edits[0]", &edits_path)?;
+    let path = validate_project_relative_path(path, "governed_edits[0].path")?;
+    let start_line =
+        required_edit_u64_at_least(edit, "start_line", 1, "governed_edits[0]", &edits_path)?;
+    let end_line = required_edit_u64_at_least(
+        edit,
+        "end_line",
+        start_line,
+        "governed_edits[0]",
+        &edits_path,
+    )?;
+    if end_line - start_line > 500 {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_EDIT_RANGE_TOO_LARGE",
+            "project edit range is too large",
+            "governed_edits[0].end_line",
+            "split large project edits into smaller line-window edits",
+            json!({"path": path, "start_line": start_line, "end_line": end_line}),
+            Some(file_sot(&edits_path)),
+        ));
     }
-    cmd.kill_on_drop(true);
-    cmd.current_dir(project_root()?);
-    cmd.stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    if stdin_json.is_some() {
-        cmd.stdin(std::process::Stdio::piped());
-    } else {
-        cmd.stdin(std::process::Stdio::null());
-    }
-    let mut child = cmd.spawn().map_err(|e| {
-        CCRealityError::new(
-            "CCREALITY_HARNESS_SUBCOMMAND_SPAWN_FAILED",
-            format!("failed to spawn harness CLI subprocess: {e}"),
-            format!("harness.{subcommand}.spawn"),
-            "the legacy harness CLI is retired; use direct source-of-truth reads and ME-JEPA evidence capture artifacts",
+    let observed_sha256 = normalize_observed_sha(edit, "governed_edits[0]", &edits_path)?;
+    let replace = required_edit_str(edit, "replace", "governed_edits[0]", &edits_path)?;
+    let full_path = project_root.join(&path);
+    ensure_existing_project_file(project_root, &full_path, "governed_edits[0].path")?;
+
+    let before = fs::read_to_string(&full_path)
+        .map_err(|err| fs_error("CCREALITY_HARNESS_EDIT_FILE_READ_FAILED", &full_path, err))?;
+    let actual_sha256 = sha256_file(&full_path)?;
+    if actual_sha256 != observed_sha256 {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_EDIT_SHA_MISMATCH",
+            "project edit observed_sha256 does not match file readback",
+            "governed_edits[0].observed_sha256",
+            "reopen the project file window before editing",
             json!({
-                "subcommand": subcommand,
-                "bin": bin.display().to_string(),
-                "argv_flags": argv_flags,
-                "io_error": e.to_string()
+                "path": path,
+                "expected": observed_sha256,
+                "actual": actual_sha256,
+                "source_of_truth": file_sot(&full_path)
             }),
-            Some(file_sot(&bin)),
-        )
-    })?;
-    if let Some(payload) = stdin_json {
-        let mut stdin_handle = child.stdin.take().ok_or_else(|| {
-            CCRealityError::new(
-                "CCREALITY_HARNESS_SUBCOMMAND_STDIN_UNAVAILABLE",
-                "child stdin was not piped despite request",
-                format!("harness.{subcommand}.stdin"),
-                "this is an MCP-server bug; report it",
-                json!({"subcommand": subcommand}),
-                None,
-            )
-        })?;
-        let bytes = serde_json::to_vec(payload).map_err(|e| {
-            CCRealityError::new(
-                "CCREALITY_HARNESS_SUBCOMMAND_STDIN_SERIALIZE_FAILED",
-                format!("failed to serialize stdin payload as JSON: {e}"),
-                format!("harness.{subcommand}.stdin"),
-                "this is an MCP-server bug; report it",
-                json!({"subcommand": subcommand}),
-                None,
-            )
-        })?;
-        stdin_handle.write_all(&bytes).await.map_err(|e| {
-            CCRealityError::new(
-                "CCREALITY_HARNESS_SUBCOMMAND_STDIN_WRITE_FAILED",
-                format!("failed to write stdin payload: {e}"),
-                format!("harness.{subcommand}.stdin"),
-                "child may have exited before reading stdin; inspect stderr",
-                json!({"subcommand": subcommand, "io_error": e.to_string()}),
-                None,
-            )
-        })?;
-        // Drop the stdin handle so the child sees EOF and proceeds to read_to_string completion.
-        drop(stdin_handle);
+            Some(file_sot(&full_path)),
+        ));
     }
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(timeout_secs),
-        child.wait_with_output(),
-    )
-    .await
-    .map_err(|_| {
-        CCRealityError::new(
-            "CCREALITY_HARNESS_SUBCOMMAND_TIMEOUT",
-            format!("harness CLI subprocess exceeded {timeout_secs}s wallclock"),
-            format!("harness.{subcommand}.timeout"),
-            "raise the per-tool timeout or investigate why the child wedged",
-            json!({"subcommand": subcommand, "timeout_secs": timeout_secs}),
-            None,
-        )
-    })?
-    .map_err(|e| {
-        CCRealityError::new(
-            "CCREALITY_HARNESS_SUBCOMMAND_WAIT_FAILED",
-            format!("failed to await harness CLI subprocess: {e}"),
-            format!("harness.{subcommand}.wait"),
-            "investigate child crash; check OOM, signal delivery, kernel logs",
-            json!({"subcommand": subcommand, "io_error": e.to_string()}),
-            None,
-        )
-    })?;
-    let stdout_text = String::from_utf8(output.stdout).map_err(|e| {
-        CCRealityError::new(
-            "CCREALITY_HARNESS_SUBCOMMAND_STDOUT_UTF8_INVALID",
-            format!("harness CLI stdout was not valid UTF-8: {e}"),
-            format!("harness.{subcommand}.stdout"),
-            "harness CLI bug; inspect the child's stderr for details",
-            json!({"subcommand": subcommand}),
-            None,
-        )
-    })?;
-    let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
-    let stdout_json: Value = if stdout_text.trim().is_empty() {
-        Value::Null
+
+    let spans = line_spans(&before);
+    if spans.is_empty() || end_line as usize > spans.len() {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_EDIT_RANGE_OUT_OF_BOUNDS",
+            "project edit range is outside current file bounds",
+            "governed_edits[0].end_line",
+            "reopen the project file window and use current line numbers",
+            json!({
+                "path": path,
+                "start_line": start_line,
+                "end_line": end_line,
+                "total_lines": spans.len()
+            }),
+            Some(file_sot(&full_path)),
+        ));
+    }
+    let byte_start = spans[(start_line - 1) as usize].0;
+    let byte_end = spans[(end_line - 1) as usize].1;
+    let old_span = &before[byte_start..byte_end];
+    let mut after = String::with_capacity(before.len() + replace.len());
+    after.push_str(&before[..byte_start]);
+    after.push_str(replace);
+    if !replace.ends_with('\n') && byte_end < before.len() {
+        after.push('\n');
+    }
+    after.push_str(&before[byte_end..]);
+    write_text_checked(&full_path, &after)?;
+    let readback = fs::read_to_string(&full_path)
+        .map_err(|err| fs_error("CCREALITY_HARNESS_EDIT_READBACK_FAILED", &full_path, err))?;
+    if readback != after {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_EDIT_READBACK_MISMATCH",
+            "project edit file readback did not match written content",
+            "governed_edits[0].readback",
+            "inspect filesystem durability before continuing",
+            json!({
+                "path": path,
+                "expected_sha256": sha256_text(&after),
+                "actual_sha256": sha256_text(&readback)
+            }),
+            Some(file_sot(&full_path)),
+        ));
+    }
+
+    let applied = vec![json!({
+        "index": 0,
+        "path": path,
+        "start_line": start_line,
+        "end_line": end_line,
+        "before_sha256": sha256_text(&before),
+        "after_sha256": sha256_text(&after),
+        "observed_sha256": observed_sha256,
+        "old_span_sha256": sha256_text(old_span),
+        "replace_sha256": sha256_text(replace),
+        "source_of_truth": file_sot(&full_path)
+    })];
+    let diff = run_required_process(
+        &["git", "diff", "--no-ext-diff", "--binary"],
+        project_root,
+        timeout_secs,
+        "CCREALITY_HARNESS_PROJECT_DIFF_FAILED",
+        "project.git_diff",
+    )?;
+    let diff_path = tool_dir.join("project-diff-after-edit.patch");
+    write_text_checked(
+        &diff_path,
+        diff.get("stdout").and_then(Value::as_str).unwrap_or_default(),
+    )?;
+    let file_readbacks = vec![json!({
+        "path": path,
+        "sha256": sha256_file(&full_path)?,
+        "size_bytes": fs::metadata(&full_path)
+            .map_err(|err| fs_error("CCREALITY_HARNESS_EDIT_METADATA_FAILED", &full_path, err))?
+            .len(),
+        "source_of_truth": file_sot(&full_path)
+    })];
+    let readbacks_path = tool_dir.join("project-file-readbacks-after-edit.json");
+    write_json_checked(&readbacks_path, &file_readbacks)?;
+    let after_status = run_required_process(
+        &["git", "status", "--porcelain"],
+        project_root,
+        timeout_secs,
+        "CCREALITY_HARNESS_PROJECT_STATUS_FAILED",
+        "project.git_status.after_edit",
+    )?;
+    let status_path = tool_dir.join("project-status-after-edit.txt");
+    write_text_checked(
+        &status_path,
+        after_status
+            .get("stdout")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    )?;
+    let result_path = tool_dir.join("project-line-window-edit-result.json");
+    let payload = json!({
+        "record_kind": "contextgraph_governed_project_edit_result",
+        "status": "ok",
+        "action": "edited real ContextGraph project files through in-process line-window edits",
+        "applied_edits": applied,
+        "changed_files": [path],
+        "file_readbacks": file_readbacks,
+        "before_git_status": before_status.get("stdout").cloned().unwrap_or(Value::Null),
+        "after_git_status": after_status.get("stdout").cloned().unwrap_or(Value::Null),
+        "diff_sha256": sha256_file(&diff_path)?,
+        "source_of_truth": {
+            "result": file_sot(&result_path),
+            "edits": file_sot(&edits_path),
+            "diff": file_sot(&diff_path),
+            "file_readbacks": file_sot(&readbacks_path),
+            "git_status": file_sot(&status_path),
+            "project_root": file_sot(project_root)
+        }
+    });
+    write_json_checked(&result_path, &payload)?;
+    let readback: Value = read_json(&result_path)?;
+    if readback != payload {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_EDIT_RESULT_READBACK_MISMATCH",
+            "project edit result artifact readback did not match written payload",
+            "governed_edits.result_readback",
+            "inspect filesystem durability before using edit result",
+            json!({"expected": payload, "actual": readback}),
+            Some(file_sot(&result_path)),
+        ));
+    }
+    Ok(readback)
+}
+
+fn run_governed_command_direct(
+    project_root: &Path,
+    tool_dir: &Path,
+    command: &str,
+    timeout_secs: u64,
+) -> Result<Value> {
+    let argv = parse_governed_command(command)?;
+    fs::create_dir_all(tool_dir)
+        .map_err(|err| fs_error("CCREALITY_HARNESS_TOOL_DIR_CREATE_FAILED", tool_dir, err))?;
+    let result = run_cmd(&argv, project_root, timeout_secs)?;
+    let safe_name = safe_id(command);
+    let output_path = tool_dir.join(format!("project-command-{safe_name}.json"));
+    let payload = json!({
+        "record_kind": "contextgraph_governed_project_command_result",
+        "status": if command_exit_code(&result) == Some(0) { "ok" } else { "failed" },
+        "command": command,
+        "argv": argv,
+        "process": result,
+        "source_of_truth": {
+            "output": file_sot(&output_path),
+            "project_root": file_sot(project_root)
+        }
+    });
+    write_json_checked(&output_path, &payload)?;
+    let readback: Value = read_json(&output_path)?;
+    if readback != payload {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_COMMAND_READBACK_MISMATCH",
+            "project command artifact readback did not match written payload",
+            "governed_command.readback",
+            "inspect filesystem durability before using command result",
+            json!({"expected": payload, "actual": readback}),
+            Some(file_sot(&output_path)),
+        ));
+    }
+    Ok(readback)
+}
+
+fn verify_project_state_direct(
+    project_root: &Path,
+    tool_dir: &Path,
+    label: &str,
+    scope: &str,
+) -> Result<Value> {
+    let verify_dir = tool_dir.join(format!("project-verification-{}", safe_id(label)));
+    let (rustfmt_command, check_command, test_command) = match scope {
+        "mejepa_loop_only" => (
+            "cargo fmt --check -p context-graph-cli",
+            "cargo check -p context-graph-cli --no-default-features --lib",
+            "cargo test -p context-graph-cli --no-default-features --lib -- --skip ignored --test-threads=1",
+        ),
+        "full" => (
+            "cargo fmt --check",
+            "cargo check -p context-graph-cli",
+            "cargo test -p context-graph-cli -- --skip ignored --test-threads=1",
+        ),
+        _ => unreachable!("scope was validated by harness_verify_state"),
+    };
+
+    let rustfmt = run_governed_command_direct(project_root, &verify_dir, rustfmt_command, 120)?;
+    let cargo_check = run_governed_command_direct(project_root, &verify_dir, check_command, 900)?;
+    let cargo_test = run_governed_command_direct(project_root, &verify_dir, test_command, 1200)?;
+    let git_status = run_governed_command_direct(project_root, &verify_dir, "git status --short", 120)?;
+    let git_diff_stat = run_governed_command_direct(project_root, &verify_dir, "git diff --stat", 120)?;
+    let status = if command_exit_code(&rustfmt) == Some(0)
+        && command_exit_code(&cargo_check) == Some(0)
+        && command_exit_code(&cargo_test) == Some(0)
+    {
+        "ok"
     } else {
-        serde_json::from_str(&stdout_text).map_err(|e| {
+        "failed"
+    };
+    let path = verify_dir.join("project-state-verification.json");
+    let payload = json!({
+        "record_kind": "contextgraph_governed_project_state_verification",
+        "status": status,
+        "label": label,
+        "scope": scope,
+        "rustfmt": rustfmt,
+        "cargo_check": cargo_check,
+        "cargo_test": cargo_test,
+        "git_status": git_status,
+        "git_diff_stat": git_diff_stat,
+        "source_of_truth": file_sot(&path)
+    });
+    write_json_checked(&path, &payload)?;
+    let readback: Value = read_json(&path)?;
+    if readback != payload {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_VERIFY_READBACK_MISMATCH",
+            "project state verification readback did not match written payload",
+            "governed_project_verification.readback",
+            "inspect filesystem durability before continuing",
+            json!({"expected": payload, "actual": readback}),
+            Some(file_sot(&path)),
+        ));
+    }
+    if readback.get("status").and_then(Value::as_str) != Some("ok") {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_VERIFY_FAILED",
+            "governed project verification failed",
+            "governed_project_verification",
+            "inspect verification command artifacts and fix compile or test errors",
+            json!({"verification": file_sot(&path)}),
+            Some(file_sot(&path)),
+        ));
+    }
+    Ok(readback)
+}
+
+fn validate_project_relative_path(path: &str, field_path: &str) -> Result<String> {
+    let path = path.trim();
+    if path.is_empty()
+        || path.starts_with('/')
+        || path.contains('\\')
+        || path.contains('\0')
+        || path.contains('\n')
+        || Path::new(path)
+            .components()
+            .any(|part| !matches!(part, Component::Normal(_)))
+    {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_PROJECT_PATH_INVALID",
+            "project path must be repo-relative without traversal, absolute roots, or control characters",
+            field_path,
+            "use a normalized relative path inside the ContextGraph project",
+            json!({"path": path}),
+            None,
+        ));
+    }
+    Ok(path.to_string())
+}
+
+fn ensure_existing_project_file(project_root: &Path, full_path: &Path, field_path: &str) -> Result<()> {
+    let root = project_root
+        .canonicalize()
+        .map_err(|err| fs_error("CCREALITY_HARNESS_PROJECT_ROOT_CANONICALIZE_FAILED", project_root, err))?;
+    let parent = full_path
+        .parent()
+        .ok_or_else(|| {
             CCRealityError::new(
-                "CCREALITY_HARNESS_SUBCOMMAND_STDOUT_JSON_INVALID",
-                format!("harness CLI stdout was not JSON: {e}"),
-                format!("harness.{subcommand}.stdout"),
-                "harness CLI bug; the child must always emit a single JSON document on stdout",
-                json!({
-                    "subcommand": subcommand,
-                    "stdout_preview": tail(&stdout_text, 4096),
-                    "stderr_tail": tail(&stderr_text, 4096),
-                    "exit_code": output.status.code()
-                }),
+                "CCREALITY_HARNESS_PROJECT_PATH_PARENT_MISSING",
+                "project path has no parent directory",
+                field_path,
+                "use a normal project file path",
+                json!({"path": full_path.display().to_string()}),
+                Some(file_sot(full_path)),
+            )
+        })?
+        .canonicalize()
+        .map_err(|err| fs_error("CCREALITY_HARNESS_PROJECT_PATH_CANONICALIZE_FAILED", full_path, err))?;
+    if !parent.starts_with(&root) {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_PROJECT_PATH_ESCAPES_ROOT",
+            "project path resolves outside the project root",
+            field_path,
+            "use a path inside the current ContextGraph checkout",
+            json!({
+                "root": root.display().to_string(),
+                "path": full_path.display().to_string(),
+                "parent": parent.display().to_string()
+            }),
+            Some(file_sot(full_path)),
+        ));
+    }
+    if !full_path.is_file() {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_PROJECT_FILE_MISSING",
+            "requested project file does not exist",
+            field_path,
+            "open or edit a real text file from the project tree",
+            json!({"path": full_path.display().to_string()}),
+            Some(file_sot(full_path)),
+        ));
+    }
+    Ok(())
+}
+
+fn normalize_observed_sha(edit: &Value, field_prefix: &str, source: &Path) -> Result<String> {
+    let value = edit
+        .get("observed_sha256")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            CCRealityError::new(
+                "CCREALITY_HARNESS_EDIT_SHA_MISSING",
+                "project edit must include observed_sha256 from harness_open_window",
+                format!("{field_prefix}.observed_sha256"),
+                "read the file first, then edit against that exact source reality",
+                json!({"edit": edit}),
+                Some(file_sot(source)),
+            )
+        })?;
+    let suffix = value.strip_prefix("sha256:").unwrap_or(value);
+    if suffix.len() == 64 && suffix.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
+        Ok(format!("sha256:{suffix}"))
+    } else {
+        Err(CCRealityError::new(
+            "CCREALITY_HARNESS_EDIT_SHA_FORMAT_INVALID",
+            "project edit observed_sha256 has an unrecognized format",
+            format!("{field_prefix}.observed_sha256"),
+            "observed_sha256 must be 'sha256:<64-hex>' or bare '<64-hex>'",
+            json!({"received": value}),
+            Some(file_sot(source)),
+        ))
+    }
+}
+
+fn required_edit_str<'a>(
+    edit: &'a Value,
+    field: &str,
+    field_prefix: &str,
+    source: &Path,
+) -> Result<&'a str> {
+    edit.get(field)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            CCRealityError::new(
+                "CCREALITY_HARNESS_EDIT_FIELD_MISSING",
+                "required edit field is missing or empty",
+                format!("{field_prefix}.{field}"),
+                "provide all required line-window edit fields",
+                json!({"field": field, "edit": edit}),
+                Some(file_sot(source)),
+            )
+        })
+}
+
+fn required_edit_u64_at_least(
+    edit: &Value,
+    field: &str,
+    minimum: u64,
+    field_prefix: &str,
+    source: &Path,
+) -> Result<u64> {
+    edit.get(field)
+        .and_then(Value::as_u64)
+        .filter(|value| *value >= minimum)
+        .ok_or_else(|| {
+            CCRealityError::new(
+                "CCREALITY_HARNESS_EDIT_FIELD_INVALID",
+                "required numeric edit field is missing or too small",
+                format!("{field_prefix}.{field}"),
+                "use current one-indexed line numbers from harness_open_window",
+                json!({"field": field, "minimum": minimum, "edit": edit}),
+                Some(file_sot(source)),
+            )
+        })
+}
+
+fn parse_governed_command(command: &str) -> Result<Vec<String>> {
+    if command.trim().is_empty()
+        || command.contains('\0')
+        || command.contains('\n')
+        || command.contains("&&")
+        || command.contains("||")
+        || command.contains(';')
+        || command.contains('|')
+        || command.contains('>')
+        || command.contains('<')
+        || command.contains('`')
+        || command.contains("$(")
+    {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_COMMAND_DENIED",
+            "command is empty or contains shell/chaining metacharacters",
+            "arguments.command",
+            "submit one allowlisted command without shell syntax",
+            json!({"command": command}),
+            None,
+        ));
+    }
+    let argv = command
+        .split_whitespace()
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    if argv.is_empty() || !is_command_allowed(&argv) {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_COMMAND_DENIED",
+            "requested command is not in the governed allowlist",
+            "arguments.command",
+            "use cargo fmt/check/test/build/clippy, rustfmt, git status/diff/log/show, or nvidia-smi",
+            json!({"command": command, "argv": argv}),
+            None,
+        ));
+    }
+    Ok(argv)
+}
+
+fn is_command_allowed(argv: &[String]) -> bool {
+    match argv.first().map(String::as_str) {
+        Some("cargo") => matches!(
+            argv.get(1).map(String::as_str),
+            Some("fmt" | "check" | "test" | "build" | "clippy")
+        ),
+        Some("rustfmt") => true,
+        Some("git") => matches!(
+            argv.get(1).map(String::as_str),
+            Some("status" | "diff" | "log" | "show")
+        ),
+        Some("nvidia-smi") => true,
+        _ => false,
+    }
+}
+
+fn run_required_process(
+    args: &[&str],
+    cwd: &Path,
+    timeout: u64,
+    code: &'static str,
+    field_path: &'static str,
+) -> Result<Value> {
+    let command = args.iter().map(|item| item.to_string()).collect::<Vec<_>>();
+    let result = run_cmd(&command, cwd, timeout)?;
+    if command_exit_code(&result) != Some(0) {
+        return Err(CCRealityError::new(
+            code,
+            "required command failed",
+            field_path,
+            "inspect command stdout/stderr before continuing",
+            json!({"process": result}),
+            Some(file_sot(cwd)),
+        ));
+    }
+    Ok(result)
+}
+
+fn run_cmd(command: &[String], cwd: &Path, timeout_secs: u64) -> Result<Value> {
+    if command.is_empty() {
+        return Err(CCRealityError::new(
+            "CCREALITY_HARNESS_PROCESS_COMMAND_EMPTY",
+            "cannot spawn an empty command",
+            "process.command",
+            "provide an argv vector with a program name",
+            json!({}),
+            None,
+        ));
+    }
+    let started = Instant::now();
+    let output_dir = std::env::temp_dir().join(format!(
+        "contextgraph-mcp-harness-run-cmd-{}-{}",
+        std::process::id(),
+        unix_nanos()?
+    ));
+    fs::create_dir_all(&output_dir)
+        .map_err(|err| fs_error("CCREALITY_HARNESS_PROCESS_OUTPUT_DIR_CREATE_FAILED", &output_dir, err))?;
+    let stdout_path = output_dir.join("stdout");
+    let stderr_path = output_dir.join("stderr");
+    let stdout_file = fs::File::create(&stdout_path)
+        .map_err(|err| fs_error("CCREALITY_HARNESS_PROCESS_STDOUT_CREATE_FAILED", &stdout_path, err))?;
+    let stderr_file = fs::File::create(&stderr_path)
+        .map_err(|err| fs_error("CCREALITY_HARNESS_PROCESS_STDERR_CREATE_FAILED", &stderr_path, err))?;
+    let mut process = Command::new(&command[0]);
+    process
+        .args(&command[1..])
+        .current_dir(cwd)
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
+        .process_group(0);
+    let mut child = process.spawn().map_err(|err| {
+        CCRealityError::new(
+            "CCREALITY_HARNESS_PROCESS_SPAWN_FAILED",
+            "failed to spawn child process",
+            "process.spawn",
+            "inspect command path and permissions",
+            json!({"command": command, "cwd": cwd.display().to_string(), "error": err.to_string()}),
+            Some(file_sot(cwd)),
+        )
+    })?;
+    let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+    loop {
+        if child
+            .try_wait()
+            .map_err(|err| {
+                CCRealityError::new(
+                    "CCREALITY_HARNESS_PROCESS_WAIT_FAILED",
+                    "failed while waiting for child process",
+                    "process.wait",
+                    "inspect process state",
+                    json!({"command": command, "error": err.to_string()}),
+                    None,
+                )
+            })?
+            .is_some()
+        {
+            let status = child.wait().map_err(|err| {
+                CCRealityError::new(
+                    "CCREALITY_HARNESS_PROCESS_WAIT_FAILED",
+                    "failed while finalizing child process wait",
+                    "process.wait",
+                    "inspect process state",
+                    json!({"command": command, "error": err.to_string()}),
+                    None,
+                )
+            })?;
+            let stdout = read_process_output(&stdout_path)?;
+            let stderr = read_process_output(&stderr_path)?;
+            let _ = fs::remove_dir_all(&output_dir);
+            return Ok(json!({
+                "command": command,
+                "cwd": cwd.display().to_string(),
+                "exit_code": status.code().unwrap_or(128),
+                "stdout": stdout,
+                "stderr": stderr,
+                "elapsed_ms": started.elapsed().as_millis()
+            }));
+        }
+        if Instant::now() > deadline {
+            let pgid_pid = child.id() as i32;
+            if pgid_pid > 0 {
+                unsafe {
+                    libc::kill(-pgid_pid, libc::SIGTERM);
+                }
+                std::thread::sleep(Duration::from_secs(2));
+                unsafe {
+                    libc::kill(-pgid_pid, libc::SIGKILL);
+                }
+            }
+            let _ = child.wait();
+            let stdout = read_process_output(&stdout_path).unwrap_or_default();
+            let stderr = read_process_output(&stderr_path).unwrap_or_default();
+            let _ = fs::remove_dir_all(&output_dir);
+            return Ok(json!({
+                "command": command,
+                "cwd": cwd.display().to_string(),
+                "exit_code": 124,
+                "stdout": stdout,
+                "stderr": if stderr.is_empty() {
+                    format!("TIMEOUT after {timeout_secs}s")
+                } else {
+                    format!("{stderr}\nTIMEOUT after {timeout_secs}s")
+                },
+                "elapsed_ms": started.elapsed().as_millis()
+            }));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn command_exit_code(value: &Value) -> Option<i64> {
+    value.pointer("/process/exit_code")
+        .or_else(|| value.get("exit_code"))
+        .and_then(Value::as_i64)
+}
+
+fn read_process_output(path: &Path) -> Result<String> {
+    let bytes = fs::read(path)
+        .map_err(|err| fs_error("CCREALITY_HARNESS_PROCESS_OUTPUT_READ_FAILED", path, err))?;
+    Ok(String::from_utf8_lossy(&bytes).to_string())
+}
+
+fn unix_nanos() -> Result<u128> {
+    Ok(SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| {
+            CCRealityError::new(
+                "CCREALITY_HARNESS_TIME_FAILED",
+                "system time was before UNIX_EPOCH",
+                "time",
+                "fix system clock",
+                json!({"error": err.to_string()}),
                 None,
             )
         })?
-    };
-    let exit_code = output.status.code().unwrap_or(-1);
-    if exit_code == 0 {
-        return Ok(stdout_json);
-    }
-    if exit_code == 1 {
-        // Tool-level error: stdout is the GovernedEditError-shaped envelope.
-        // Map fields back to CCRealityError so the JSON-RPC client sees a
-        // first-class MCP error with the same code/message/remediation as
-        // when the call ran in-process.
-        return Err(envelope_to_ccreality(stdout_json, &stderr_text, subcommand));
-    }
-    // Exit 2 = clap parse failure (caller bug). Exit 64+ = infrastructure (panic, OOM).
-    Err(CCRealityError::new(
-        "CCREALITY_HARNESS_SUBCOMMAND_NONZERO_EXIT",
-        format!("harness CLI subprocess exited with non-tool-error code {exit_code}"),
-        format!("harness.{subcommand}.exit"),
-        "exit 2 indicates a bad invocation (MCP-server bug); exit 64+ indicates a child crash (inspect stderr)",
-        json!({
-            "subcommand": subcommand,
-            "exit_code": exit_code,
-            "stdout": stdout_json,
-            "stderr_tail": tail(&stderr_text, 4096)
-        }),
-        None,
-    ))
+        .as_nanos())
 }
 
-fn envelope_to_ccreality(envelope: Value, stderr_text: &str, subcommand: &str) -> CCRealityError {
-    let error_code = envelope
-        .get("error_code")
-        .and_then(Value::as_str)
-        .unwrap_or("CCREALITY_HARNESS_SUBCOMMAND_ERROR_ENVELOPE_MALFORMED")
-        .to_string();
-    let message = envelope
-        .get("message")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| format!("harness CLI returned an error envelope without a message field for subcommand {subcommand}"));
-    let field_path = envelope
-        .get("field_path")
-        .and_then(Value::as_str)
-        .unwrap_or("harness.subcommand")
-        .to_string();
-    let remediation = envelope
-        .get("remediation")
-        .and_then(Value::as_str)
-        .unwrap_or("inspect the harness CLI's structured error envelope on stdout")
-        .to_string();
-    let mut details = envelope.get("details").cloned().unwrap_or(json!({}));
-    if let Value::Object(map) = &mut details {
-        map.insert("subcommand".to_string(), json!(subcommand));
-        let stderr_tail = tail(stderr_text, 4096);
-        if !stderr_tail.is_empty() {
-            map.insert("subprocess_stderr_tail".to_string(), json!(stderr_tail));
-        }
+fn line_spans(text: &str) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut start = 0;
+    for segment in text.split_inclusive('\n') {
+        let end = start + segment.len();
+        spans.push((start, end));
+        start = end;
     }
-    let source_of_truth = envelope
-        .get("source_of_truth")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
-    CCRealityError::new(
-        error_code,
-        message,
-        field_path,
-        remediation,
-        details,
-        source_of_truth,
-    )
+    if start < text.len() {
+        spans.push((start, text.len()));
+    }
+    spans
 }
 
 fn tail(text: &str, limit: usize) -> String {
@@ -620,9 +1077,6 @@ fn tail(text: &str, limit: usize) -> String {
         text.chars().skip(len - limit).collect()
     }
 }
-
-#[allow(dead_code)]
-fn _silence_pathbuf_lint(_p: &PathBuf) {}
 
 fn run_git(args: &[&str]) -> Result<(String, String)> {
     let root = project_root()?;
@@ -671,19 +1125,6 @@ fn changed_files_from_diff(diff: &str) -> Vec<String> {
         .filter_map(|rest| rest.split(" b/").next())
         .map(ToOwned::to_owned)
         .collect()
-}
-
-// `map_governed_error` was removed in the MCP-as-CLI-shim refactor. Errors now
-// arrive as JSON envelopes from the subprocess and are mapped via
-// `envelope_to_ccreality`.
-
-#[allow(dead_code)]
-fn fsync_parent(path: &Path) {
-    if let Some(parent) = path.parent() {
-        if let Ok(dir) = fs::File::open(parent) {
-            let _ = dir.sync_all();
-        }
-    }
 }
 
 #[cfg(test)]

@@ -85,6 +85,8 @@ The shipped LoRA + distillation infrastructure is also *exactly* what UTML v1.0 
 
 Doc 09 §2.2 specifies 14 instruments for the 5,120-d panel (per §3.5.5). Mapping the shipped ensemble onto those slots:
 
+> **AST-aware routing precondition (per doc 14).** Every code-domain instrument below operates on **AST-perfect atomic chunks** produced by the multi-language `crates/context-graph-core/src/memory/ast_chunker.rs`, NOT raw text. Each chunk carries `(language, entity_type, parent_chain, line_start, line_end, sha256)` metadata; a per-chunk-type embedder routing table (doc 14 §4) decides which embedder slots receive which chunks. This means the table below is the *steady-state* mapping after Phase 1 ships the multi-language chunker extension (doc 14 §6 items 1-5, ~10 days of Phase 1 effort). For a typical SWE-bench Lite mutation entry, ~30-50 chunks pass through the ensemble, yielding ~280 chunk-level signals on top of the ~231 panel-level signals (per doc 14 §4.1) — every signal is **fully labeled** with the known oracle outcome, mutation category, entity type, and language.
+
 | Doc 09 instrument | Dim | Existing embedder(s) | Effort |
 |---|---|---|---|
 | **E_AST** | 384 | **E7 Code (Qodo, 1536D)** with linear projection 1536→384, OR a small AST-token transformer fine-tuned on top of E7 | ~2 days (head only) |

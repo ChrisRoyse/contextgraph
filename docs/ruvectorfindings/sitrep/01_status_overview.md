@@ -44,7 +44,9 @@
 | doc 09 Phase 0 | 2,400-entry full corpus generation | — | ⏳ deferred (operational batch, not code) |
 | doc 09 Phase 1 | `Instrument` trait + `InstrumentSlot` enum (15 slots, 5,120-d total per §3.5.5) + `Panel` + `PanelBuilder` (fail-closed dim/finite/double-fill validation, JSON via `serde(try_from)` invariant gate) | `context-graph-mejepa-instruments` | ✅ shipped | 27 tests; `/tmp/contextgraph-mejepa-instruments-fsv/{panel.json, instruments-evidence.json}` |
 | doc 09 Phase 1 | E_Oracle (128-d: pass/fail/skip/error fractions + total + has_exception + 10-class one-hot exception) | `mejepa-instruments::e_oracle` | ✅ shipped | 4 scenarios (`all_pass`, `mixed`, `crash_assertion_error`, `crash_type_error`) on disk + 4 boundary cases |
-| doc 09 Phase 1 | E_AST (384-d, tree-sitter) | — | ⏳ deferred |
+| doc 09 Phase 1 | Multi-language `ast_chunker` extension (Rust shipped today; extend to Python, JS, TS, Go, Java, C, C++, C#, Ruby, PHP per doc 14 §6 items 1-5) | `crates/context-graph-core/src/memory/ast_chunker.rs` (Rust-only today) + `crates/context-graph-cli/src/commands/dynamicjepa.rs` (multi-language semantic extractor already shipped) | partial → ⏳ extension deferred (~10 days) | Rust FSV at `/tmp/contextgraph-rust-ast-chunker-fsv/ast-chunker-evidence.json` |
+| doc 09 Phase 1 | Per-chunk-type embedder routing table (per doc 14 §4) | — | ⏳ deferred (~1 day after multi-language chunker) | — |
+| doc 09 Phase 1 | E_AST (384-d, tree-sitter, consumes multi-language `ast_chunker` chunks per doc 14) | — | ⏳ deferred |
 | doc 09 Phase 1 | E_CFG (256-d) | — | ⏳ deferred |
 | doc 09 Phase 1 | E_DataFlow (256-d) | — | ⏳ deferred |
 | doc 09 Phase 1 | E_TypeGraph (256-d, Pyright/mypy or rust-analyzer) | — | ⏳ deferred |

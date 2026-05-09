@@ -121,6 +121,8 @@ For ME-JEPA-Code, the "context" is the patch + its surrounding state at time t; 
 
 Each instrument is a function `(input_modality) -> latent_vector`. Pre-trained where possible; fine-tuned during ME-JEPA training.
 
+> **AST-perfect chunk consumption (per doc 14 + doc 12).** The code-domain instruments — `E_AST`, `E_CFG`, `E_DataFlow`, `E_TypeGraph`, `E_Diff`, `E_Test` — all consume **AST-perfect atomic chunks** produced by the multi-language `crates/context-graph-core/src/memory/ast_chunker.rs` over the **11 wired tree-sitter parsers** (Rust, Python, JS, TS, Go, Java, C, C++, C#, Ruby, PHP), NOT raw text or fixed-size windows. Each chunk is bounded by a syntactic entity (function, class, impl, module-decl), targets ~500 non-whitespace characters per Qodo / cAST methodology, and carries `(language, entity_type, parent_chain, line_start, line_end, sha256)` metadata. This guarantees parse trees, CFGs, and dataflow chains never split mid-statement — the precondition for `E_AST` / `E_CFG` / `E_DataFlow` producing signal instead of noise. The shipped chunker handles Rust today; doc 14 §6 extends it to all 11 languages as a Phase 1 deliverable.
+
 | Instrument | Input | Output dim | Source |
 |---|---|---|---|
 | `E_AST` | tree-sitter AST of patched files | 384 | new — small transformer over node-token sequence |
@@ -191,6 +193,8 @@ At inference time, applying softmax to the head's logits gives the per-test pass
 ### 3.1 Primary: SWE-bench Lite mutation corpus
 
 The 300 SWE-bench Lite tasks each ship with a known-correct fix. We **deliberately mutate that fix** to generate a labeled training corpus where every example has a known oracle outcome. **8 mutation categories × 300 tasks = ~2,400 labeled examples.**
+
+> **Chunk-level corpus expansion (per doc 14).** Each mutated source goes through the multi-language `ast_chunker` BEFORE entering the corpus. A typical SWE-bench Lite mutation produces ~30-50 AST-perfect chunks; each chunk is independently embeddable through the 21-embedder ensemble, yielding ~7 chunk-level signals per chunk × ~40 chunks = **~280 chunk-level signals per mutation entry**, on top of the panel-level 231 signals (per doc 13 §1.1 at N=21). Total: **~510 fully-labeled supervisory signals per mutation entry** — every signal carries the known oracle outcome, the mutation category, the entity type, and the language, so the labeling is automatic and complete. This is the operational form of the operator's "convert anything into insane amounts of fully-labeled data" framing: the corpus is not 2,400 examples, it is **2,400 × 510 ≈ 1.2 M structured supervisory signals**, all derived deterministically from durable reality.
 
 | # | Category | Mutation strategy | Expected oracle |
 |---|---|---|---|
@@ -913,6 +917,8 @@ context-graph mejepa-corpus stats --corpus ./data/mejepa-corpus
 3. New encoders (E_AST, E_CFG, E_DataFlow, E_TypeGraph, E_Trace, E_Diff, E_Witness, E_Oracle) as small networks trained against the mutation corpus' supervised signals.
 4. Tree-sitter integration for AST, CFG, DataFlow extraction.
 5. Pyright/mypy integration for type-graph extraction (Python tasks); rust-analyzer for Rust tasks.
+6. **Multi-language `ast_chunker` extension (per doc 14 §6 items 1-5).** Extend `crates/context-graph-core/src/memory/ast_chunker.rs` from Rust-only to all 11 wired tree-sitter languages (Rust, Python, JS, TS, Go, Java, C, C++, C#, Ruby, PHP). Reuse DynamicJEPA's per-language node classification (`crates/context-graph-cli/src/commands/dynamicjepa.rs`) so each language's function/class/method/module-decl detection is unified. Output: AST-perfect atomic chunks targeting ~500 non-whitespace characters per Qodo / cAST methodology, with `(language, entity_type, parent_chain, line_start, line_end, sha256, parse_diagnostics)` metadata. **All Phase 1 code-domain instruments (`E_AST`, `E_CFG`, `E_DataFlow`, `E_TypeGraph`, `E_Diff`, `E_Test`) consume these chunks**, not raw text. Effort: ~10 days as part of Phase 1 (per doc 14 §6).
+7. **Per-chunk-type embedder routing table (per doc 14 §4).** A static lookup mapping each `EntityType` to the embedder set most informative for that chunk type — function bodies → E7+E14, function signatures → E1+E10, class definitions → E11+E7, comments → E1+E10, test assertions → E5+E1, etc. Used by the panel materializer to route chunks through the 21-embedder ensemble correctly.
 
 **Definition of done:**
 
