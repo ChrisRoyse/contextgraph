@@ -86,12 +86,12 @@ pub fn mutate_task_source_patch(
     )?;
 
     let changed_paths = parse_changed_paths(official_patch)?;
-    if category == MutationCategory::WrongFile {
-        mutate_wrong_file(task, seed, work_dir.path(), &changed_paths)?;
+    let source_note = if category == MutationCategory::WrongFile {
+        mutate_wrong_file(task, seed, work_dir.path(), &changed_paths)?
     } else {
         apply_official_patch(official_patch, work_dir.path())?;
-        mutate_patched_source(task, category, seed, work_dir.path(), &changed_paths)?;
-    }
+        mutate_patched_source(task, category, seed, work_dir.path(), &changed_paths)?
+    };
 
     let mutated_patch = run_git_capture(
         work_dir.path(),
@@ -110,10 +110,11 @@ pub fn mutate_task_source_patch(
         mutated_patch,
         seed,
         note: format!(
-            "source-backed mutation category={} repo={} base_commit={}",
+            "source-backed mutation category={} repo={} base_commit={} {}",
             category.slug(),
             task.repo,
-            task.base_commit
+            task.base_commit,
+            source_note
         ),
     })
 }
@@ -144,7 +145,7 @@ fn mutate_patched_source(
     seed: u64,
     work_dir: &Path,
     changed_paths: &[String],
-) -> MutationResult<()> {
+) -> MutationResult<String> {
     let candidates = candidate_python_paths(work_dir, changed_paths)?;
     let mut last_error = None;
     for rel in candidates {
@@ -170,8 +171,20 @@ fn mutate_patched_source(
                 continue;
             }
         };
+        let site_note = outcome
+            .mutation_site
+            .as_ref()
+            .map(|site| {
+                format!(
+                    "source_site_offset={} source_site_len={} source_site_note={}",
+                    site.byte_offset, site.byte_length, site.note
+                )
+            })
+            .unwrap_or_else(|| "source_site=none".to_string());
         write_readback(&path, &outcome.mutated_source)?;
-        return Ok(());
+        return Ok(format!(
+            "source_path=file:{rel} candidate_scope=changed_paths_then_tracked_python {site_note}",
+        ));
     }
     Err(MutationError::no_site(
         "source.python_files",
@@ -190,7 +203,7 @@ fn mutate_wrong_file(
     seed: u64,
     work_dir: &Path,
     changed_paths: &[String],
-) -> MutationResult<()> {
+) -> MutationResult<String> {
     let changed = changed_paths.iter().cloned().collect::<BTreeSet<_>>();
     let mut candidates = list_python_files(work_dir)?
         .into_iter()
@@ -234,8 +247,20 @@ fn mutate_wrong_file(
                 continue;
             }
         };
+        let site_note = outcome
+            .mutation_site
+            .as_ref()
+            .map(|site| {
+                format!(
+                    "source_site_offset={} source_site_len={} source_site_note={}",
+                    site.byte_offset, site.byte_length, site.note
+                )
+            })
+            .unwrap_or_else(|| "source_site=none".to_string());
         write_readback(&path, &outcome.mutated_source)?;
-        return Ok(());
+        return Ok(format!(
+            "source_path=file:{rel} candidate_scope=alternate_tracked_python {site_note}",
+        ));
     }
     Err(MutationError::no_site(
         "wrong_file.alternate_python_file",

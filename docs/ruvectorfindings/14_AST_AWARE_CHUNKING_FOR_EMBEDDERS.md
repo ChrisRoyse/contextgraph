@@ -1,24 +1,32 @@
 # 14 — AST-Aware Atomic Chunking for the Embedder Ensemble
 
-> **Operator directive 2026-05-09:** *"we have ast parsers set up for i believe 10 coding languages. we are going to want to set up our embedders to work with these ast parsers to perfectly chunk all code for perfect atomic parsing of code. add all this into the plans as well into all planning docs where needed inside /home/cabdru/contextgraph/docs/ruvectorfindings directory."*
+> **Operator directive 2026-05-09:** *"we have ast parsers set up for i believe 10 coding languages. we are going to want to set up our embedders to work with these ast parsers to perfectly chunk all code for perfect atomic parsing of code. add all this into the plans as well into all planning docs where needed."*
 
 > **Companion docs:**
-> - `12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md` — 21-embedder ensemble inventory
+> - `09_END_GOAL_REVIEW_REPLACEMENT.md` §2.2 — instrument set
+> - `12_EMBEDDER_INTEGRATION.md` — 21-embedder ensemble inventory
 > - `13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md` — TCT/DDA framework
-> - `09_END_GOAL_REVIEW_REPLACEMENT.md` §2.2 — instrument set (E_AST, E_CFG, E_DataFlow, etc.)
+> - `docs2/UTL_v2_embodied.md` — UTML v1.0 (the source theory)
 
 ---
 
 ## 0. Headline
 
-**The ContextGraph workspace already has tree-sitter parsers for 11 languages wired in `crates/context-graph-cli/Cargo.toml`** (Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP). It also has:
+**The repo has 11 wired tree-sitter parsers** (Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP) **plus an existing AST chunker with FSV** (`crates/context-graph-core/src/memory/ast_chunker.rs`, 1216 LOC, currently Rust-only) **plus a multi-language semantic extractor** (`crates/context-graph-cli/src/commands/dynamicjepa.rs`, ~7000 LOC, all 11 languages).
 
-- **`crates/context-graph-core/src/memory/ast_chunker.rs`** (1216 LOC) — cAST-methodology AST-aware chunker targeting ~500-char chunks per Qodo recommendation. **Currently Rust-only** (calls `tree_sitter_rust::LANGUAGE` directly).
-- **`crates/context-graph-cli/src/commands/dynamicjepa.rs`** (~7000 LOC) — multi-language semantic extractor that DOES handle all 11 tree-sitter languages, with per-language symbol/binding/test classification + parse-diagnostics + tooling-evidence harnesses.
+**The gap:** these AST capabilities are not wired to the **21-embedder ensemble** (doc 12). Today the embedders receive raw text/source bytes; they should receive **AST-perfect atomic chunks** so each chunk fits cleanly inside a syntactic boundary (function, struct, class, impl, module-decl) and never splits mid-statement.
 
-**The gap:** these two AST capabilities are not connected to the **embedder ensemble** (doc 12). The 21 embedders today receive raw text/source bytes; they should receive **AST-perfect atomic chunks** so each chunk fits cleanly inside a syntactic boundary (function, struct, class, impl, module-decl) and never splits mid-statement.
+**This doc specifies the integration**: extend `ast_chunker.rs` to all 11 languages, reuse DynamicJEPA's per-language node-classification logic, and route AST-perfect chunks through every relevant embedder (E1, E5, E7, E8, E10, E11, E14 + the new E_AST / E_CFG / E_DataFlow / E_Diff instruments).
 
-**This doc specifies the integration**: extend `ast_chunker.rs` to all 11 languages, reuse DynamicJEPA's per-language node-classification logic, and route AST-perfect chunks through every relevant embedder (E1, E5, E7, E8, E10, E11, E14 + the new E_AST / E_CFG / E_DataFlow / E_Diff instruments) so the panel materialization pipeline gets perfectly-bounded code units.
+**The DDA multiplier (per doc 13 §1).** Naïve whole-file panels yield ~50-200 panel triples per /loop turn. With AST-atomic chunking, the multiplier is the **average chunks-per-file**:
+
+| Average chunks/file | Per-turn panel triples | Per-turn signals at N=21 (×231) | Per day |
+|---:|---:|---:|---:|
+| 5 (small files) | 250-1,000 | 58K-231K | 5.5M-22M |
+| 10 (typical Python/Rust) | 500-2,000 | **115K-462K** | **11M-44M** |
+| 20 (large class-heavy) | 1,000-4,000 | 231K-924K | 22M-89M |
+
+At a typical Python/Rust ratio of ~10 chunks/file, the per-/loop-turn signal yield jumps **~10× over panel-only**. This is the operator's "perfect atomic parsing" — quantified in supervisory yield. Every chunk-level signal is **automatically labeled** by the entry's known `(mutation_category, oracle_verdict, entity_type, language)` tuple.
 
 ---
 
@@ -26,54 +34,79 @@
 
 ### 1.1 Naïve text chunking corrupts code semantics
 
-Most embedder pipelines slice source code by character count or token count. For natural language this is fine — sentence boundaries are loose. For code:
+Most embedder pipelines slice source by character or token count. For natural language this is fine — sentence boundaries are loose. For code:
 
-- A function split mid-body produces a chunk whose embedding represents a half-function — the syntactic context (parameters, return type, signature) is in chunk A, the body in chunk B, neither chunk represents a meaningful semantic unit.
-- A `class Foo:` split from its methods produces a chunk that mentions a class name with no methods, and method-only chunks orphaned from their class definition.
-- An `impl Display for Foo` split from `fn fmt` body is the same problem in Rust.
-- A `function() => ...` arrow function in JS/TS that spans multiple lines is ambiguous; without AST, the chunker doesn't know where it ends.
+- A function split mid-body → chunk A has signature/parameters/return type, chunk B has body. Neither represents a meaningful semantic unit.
+- A `class Foo:` split from its methods → chunk that mentions a class name with no methods, plus method-only chunks orphaned from class definition.
+- An `impl Display for Foo` split from `fn fmt` body — same problem in Rust.
+- A `function() => ...` arrow function in JS/TS spanning multiple lines is ambiguous without AST.
 
-The result: the embedder's similarity space becomes noisy. Two chunks that the human would consider semantically equivalent (because they ARE the same function, just split differently) end up far apart in latent space.
+**Result:** the embedder's similarity space becomes noisy. Two chunks the human would consider semantically equivalent (because they ARE the same function, just split differently) end up far apart in latent space. ME-JEPA's predictor would have to learn to ignore 99% of its input — bad signal-to-noise.
 
-### 1.2 The Qodo / cAST recommendation
+### 1.2 The atomic approach: chunk by AST node, embed each chunk separately
 
-cAST (EMNLP 2025) and Qodo's blog post (`https://www.qodo.ai/blog/rag-for-large-scale-code-repos/`) both empirically establish:
+Tree-sitter gives a *parse tree*. The chunker walks the tree and emits atomic chunks at the **function / method / class / struct / impl-block / module level**:
 
-1. **Target ~500 non-whitespace characters per chunk** for code embeddings (E7 Qodo is trained on this distribution).
-2. **Preserve syntactic boundaries** (functions, structs, impls, classes) — never split a function in the middle of its body.
+```rust
+pub enum EntityType {
+    Function, Method, Class, Struct, Module, Impl, Trait,
+    TestFunction, Import, CommentBlock, Docstring,
+    // ... etc
+}
+```
+
+Each chunk has: source text (the lines it spans), signature, abbreviated definition (when source is too long), relevant imports, AST-node hash (deterministic identifier), byte/line range, file hash (provenance back to source-of-truth SHA chain).
+
+**For ME-JEPA's panel materialization, each AST chunk is a separate panel input.** A 500-line file with 20 functions becomes 20 panel inputs. A 3-line edit to one function produces:
+
+- 1 changed chunk (the edited function) → `panel[t=0]` (pre-edit) and `panel[t=1]` (post-edit) at full 14-embedder × 105-signal resolution
+- 19 unchanged chunks → unchanged panels (cached)
+
+**ME-JEPA sees the delta exactly where it happened**, with full embedder resolution on the changed chunk and zero noise from the other 19.
+
+### 1.3 The Qodo / cAST recommendation
+
+cAST (EMNLP 2025) and Qodo's blog (`https://www.qodo.ai/blog/rag-for-large-scale-code-repos/`) empirically establish:
+
+1. **Target ~500 non-whitespace characters per chunk** (E7 Qodo is trained on this distribution).
+2. **Preserve syntactic boundaries** — never split a function in the middle of its body.
 3. **Prepend context** (file path, scope chain, surrounding imports) so the chunk is interpretable in isolation.
-4. **Include parent class/struct definition** with each method chunk so the method's `self` context is explicit.
+4. **Include parent class/struct definition** with each method chunk so `self` context is explicit.
 
-The shipped `ast_chunker.rs` already implements all four points for Rust. The work in this doc is **multi-language extension** — apply the same logic to the 10 other tree-sitter parsers we already have.
+The shipped `ast_chunker.rs` already implements all four for Rust. This doc's work is **multi-language extension** — apply the same logic to the 10 other tree-sitter parsers we already have.
 
-### 1.3 Atomic parsing for ME-JEPA-Code's instruments
+### 1.4 Atomic parsing for ME-JEPA-Code's instruments
 
-For ME-JEPA-Code's E_AST / E_CFG / E_DataFlow / E_TypeGraph / E_Diff instruments to work correctly:
+For E_AST / E_CFG / E_DataFlow / E_TypeGraph / E_Diff to work correctly:
 
-- **E_AST** must encode the AST node-token sequence for each chunk. AST-perfect chunking guarantees the parse tree fits inside the chunk; non-AST chunking produces partial parse trees that misrepresent the code.
-- **E_CFG** computes basic-block control flow within each chunk. A chunk that splits mid-function has an artificial CFG boundary that doesn't reflect the actual program flow.
+- **E_AST** must encode the AST node-token sequence per chunk. AST-perfect chunking guarantees the parse tree fits inside the chunk; non-AST produces partial parse trees that misrepresent code.
+- **E_CFG** computes basic-block control flow within each chunk. A chunk that splits mid-function has an artificial CFG boundary not reflecting actual program flow.
 - **E_DataFlow** tracks def-use chains. Variables defined in chunk A and used in chunk B produce broken def-use edges in non-AST chunking.
-- **E_Diff** computes diff edges across chunk pairs. AST-perfect chunks let diff operate on syntactic units (added function, modified body, deleted method) instead of on text-line ranges.
+- **E_Diff** computes diff edges across chunk pairs. AST-perfect chunks let diff operate on syntactic units (added function, modified body, deleted method) instead of text-line ranges.
 
 Without AST-perfect chunking, these instruments produce noise; with it, they produce signal.
 
 ---
 
-## 2. The 11 language matrix (current state)
+## 2. The 11-language matrix (current state)
 
-| Language | tree-sitter crate | DynamicJEPA semantic extractor | E7 code-embedder chunker (`ast_chunker.rs`) | E_AST instrument (Phase 1) |
-|---|---|---|---|---|
-| Rust | `tree-sitter-rust` 0.23 | ✅ shipped | ✅ shipped | ⏳ deferred |
-| Python | `tree-sitter-python` 0.23.6 | ✅ shipped | ❌ not extended | ⏳ deferred |
-| JavaScript | `tree-sitter-javascript` 0.23.1 | ✅ shipped | ❌ not extended | ⏳ deferred |
-| TypeScript / TSX | `tree-sitter-typescript` 0.23.2 | ✅ shipped | ❌ not extended | ⏳ deferred |
-| Go | `tree-sitter-go` 0.23.4 | ✅ shipped | ❌ not extended | ⏳ deferred |
-| Java | `tree-sitter-java` 0.23.5 | ✅ shipped | ❌ not extended | ⏳ deferred |
-| C | `tree-sitter-c` 0.23.4 | ✅ shipped | ❌ not extended | ⏳ deferred |
-| C++ | `tree-sitter-cpp` 0.23.4 | ✅ shipped | ❌ not extended | ⏳ deferred |
-| C# | `tree-sitter-c-sharp` 0.23.5 | ✅ shipped | ❌ not extended | ⏳ deferred |
-| Ruby | `tree-sitter-ruby` 0.23.1 | ✅ shipped | ❌ not extended | ⏳ deferred |
-| PHP | `tree-sitter-php` 0.23.11 | ✅ shipped | ❌ not extended | ⏳ deferred |
+Per `crates/context-graph-cli/Cargo.toml` and `crates/context-graph-core/Cargo.toml`:
+
+| Slot | Language | tree-sitter crate | Version | Compiler/LSP backed | DynamicJEPA extractor | E7 chunker (`ast_chunker.rs`) |
+|---|---|---|---|---|---|---|
+| L1 | Rust | `tree-sitter-rust` | 0.23 | rustc / rust-analyzer | ✅ shipped | ✅ shipped |
+| L2 | Python | `tree-sitter-python` | 0.23.6 | Pyright / mypy / py_compile | ✅ shipped | ❌ not extended |
+| L3 | JavaScript | `tree-sitter-javascript` | 0.23.1 | node / tsc | ✅ shipped | ❌ not extended |
+| L4 | TypeScript | `tree-sitter-typescript` | 0.23.2 | tsc (`--noEmit`) | ✅ shipped | ❌ not extended |
+| L5 | Go | `tree-sitter-go` | 0.23.4 | `go build` (TBD wired) | ✅ shipped | ❌ not extended |
+| L6 | Java | `tree-sitter-java` | 0.23.5 | `javac` | ✅ shipped | ❌ not extended |
+| L7 | C | `tree-sitter-c` | 0.23.4 | gcc/clang via `compile_commands.json` | ✅ shipped | ❌ not extended |
+| L8 | C++ | `tree-sitter-cpp` | 0.23.4 | g++/clang++ | ✅ shipped | ❌ not extended |
+| L9 | C# | `tree-sitter-c-sharp` | 0.23.5 | `dotnet build` | ✅ shipped | ❌ not extended |
+| L10 | Ruby | `tree-sitter-ruby` | 0.23.1 | `ruby -c` | ✅ shipped | ❌ not extended |
+| L11 | PHP | `tree-sitter-php` | 0.23.11 | (TBD wired) | ✅ shipped | ❌ not extended |
+
+**Cross-language mandate alignment** (per `memory/decisions/2026-05-09--single-loop-claude-code-actor-mejepa-data-factory.md`): the 9 explicit "supported languages" in the operator directive (Python, Rust, C, C++, Java, C#, JS, TS, Ruby) are all wired. Go and PHP are bonus coverage.
 
 **The work**: extend `ast_chunker.rs` from 1 language to 11; reuse DynamicJEPA's per-language node classification (already shipped) so we don't reinvent function/struct/class detection per language.
 
@@ -83,56 +116,80 @@ Without AST-perfect chunking, these instruments produce noise; with it, they pro
 
 ### 3.1 Per-language entity types
 
-Every language's AST has language-specific node types that correspond to "atomic" chunkable units. The DynamicJEPA extractor in `dynamicjepa.rs` already classifies these per language. Mapping to the doc 09 `EntityType` enum (currently in `ast_chunker.rs::EntityType`):
+Every language's AST has language-specific node types corresponding to "atomic" chunkable units. DynamicJEPA already classifies these per language. Mapping to the generic `EntityType` enum:
 
 | Generic EntityType | Rust | Python | JS/TS | Go | Java | C/C++ | C# | Ruby | PHP |
 |---|---|---|---|---|---|---|---|---|---|
 | Function | `function_item` | `function_definition` | `function_declaration`, `arrow_function`, `method_definition` | `function_declaration`, `method_declaration` | `method_declaration` | `function_definition` | `method_declaration` | `method`, `singleton_method` | `function_definition` |
 | Class | `struct_item`, `enum_item` | `class_definition` | `class_declaration` | `type_declaration` (struct) | `class_declaration` | `class_specifier`, `struct_specifier` | `class_declaration`, `record_declaration` | `class`, `module` | `class_declaration` |
-| Trait/Interface | `trait_item` | `protocol_definition` (3.12+) | `interface_declaration` (TS) | `interface_type` | `interface_declaration` | (none — virtual class) | `interface_declaration` | (mixin) | `interface_declaration` |
+| Trait/Interface | `trait_item` | `protocol_definition` (3.12+) | `interface_declaration` (TS) | `interface_type` | `interface_declaration` | (none) | `interface_declaration` | (mixin) | `interface_declaration` |
 | Impl/Method-block | `impl_item` | (inside class) | (inside class) | (receiver method) | (inside class) | (inside class) | (inside class) | (inside class) | (inside class) |
 | Module | `mod_item` | `module` | `program`, `module` | `package_clause` | `package_declaration` | `namespace_definition` | `namespace_declaration` | `module` | `namespace_definition` |
-| Test function | `function_item` w/ `#[test]` | `def test_*`, `class TestX` | `it()`, `test()`, `describe()` | `func TestX` | `@Test` annotation | (none — separate file) | `[Test]`, `[Fact]` attribute | `it` (RSpec), `def test_*` (Minitest) | `function test*`, `@test` PHPDoc |
+| Test function | `function_item` w/ `#[test]` | `def test_*`, `class TestX` | `it()`, `test()`, `describe()` | `func TestX` | `@Test` annotation | (separate file) | `[Test]`, `[Fact]` attribute | `it` (RSpec), `def test_*` (Minitest) | `function test*`, `@test` PHPDoc |
 | Import | `use_declaration` | `import_statement`, `import_from_statement` | `import_statement` | `import_declaration` | `import_declaration` | `preproc_include` | `using_directive` | `require`, `require_relative` | `namespace_use_declaration` |
 
 ### 3.2 The chunk boundary algorithm
 
 For each language, the chunker walks the AST and produces chunks that:
 
-1. **Start at an AST entity boundary** (function, class, struct, etc. — never mid-statement).
+1. **Start at an AST entity boundary** (function, class, struct — never mid-statement).
 2. **End at an AST entity boundary** of the same nesting level.
-3. **Target ~500 non-whitespace characters** per chunk. If a single function exceeds the target, emit it as one chunk anyway (don't split mid-function). If multiple small functions can be combined to approach the target, group adjacent siblings under the same parent.
+3. **Target ~500 non-whitespace characters**. If a single function exceeds, emit it as one chunk (don't split mid-function). If multiple small functions can be combined to approach the target, group adjacent siblings under the same parent.
 4. **Prepend context**: file path + scope chain (e.g. `crates/foo/src/lib.rs::mod bar::impl Baz::`) + relevant imports.
 5. **Include parent definition**: a method chunk includes its class/struct signature line at the top (Qodo recommendation).
 6. **Tag with metadata**: `{language, entity_type, parent_chain, line_start, line_end, sha256, parse_diagnostics}`.
 
-The shipped `ast_chunker.rs` already implements steps 1-6 for Rust. The `chunk()` function at `ast_chunker.rs:262` is the entry point. The work is to:
+The shipped Rust chunker (`AstCodeChunker::new_rust(...)` at `ast_chunker.rs:262`) implements steps 1-6. Per-language extension:
+
 - Add per-language `set_language()` calls (one match arm per language).
-- Add per-language node-type matchers to the existing `EntityType` enum machinery.
-- Reuse DynamicJEPA's `semantic_extract_tree_sitter_source_facts` (`dynamicjepa.rs:6400`+) classification logic so each language's "function-like" node-type strings are unified.
+- Add per-language node-type matchers to existing `EntityType` enum machinery.
+- Reuse DynamicJEPA's `semantic_extract_tree_sitter_source_facts` (`dynamicjepa.rs:6400`+) classification logic.
 
 ### 3.3 Failure modes the chunker MUST handle
 
 Per CLAUDE.md "no mocks, fail-closed errors":
 
 - **Parse error in source**: emit `AstChunkerError::ParseFailed` with first 32 ERROR/MISSING node diagnostics (already implemented). Never silently fall back to text chunking.
-- **Unsupported language**: emit `AstChunkerError::UnsupportedExtension`. The 11-language matrix above is exhaustive; anything else is rejected.
+- **Unsupported language**: emit `AstChunkerError::UnsupportedExtension`. The 11-language matrix is exhaustive; anything else rejected.
 - **Empty source**: emit `AstChunkerError::EmptySource`. No empty chunks.
-- **Mixed-language file** (e.g. `.html` with embedded JS, or PHP with embedded HTML): emit `AstChunkerError::MixedLanguageNotSupported` for now; future work could route per-block to per-language chunkers.
-- **Chunk exceeds 4× target**: emit a warning diagnostic but produce the chunk (large auto-generated files happen). Downstream embedders may truncate.
+- **Mixed-language file** (`.html` with embedded JS, PHP with embedded HTML): emit `AstChunkerError::MixedLanguageNotSupported` for now; future work could route per-block.
+- **Chunk exceeds 4× target**: emit warning diagnostic but produce chunk (large auto-generated files happen). Downstream embedders may truncate.
 
 ---
 
-## 4. Embedder routing — which embedder gets which AST chunk
+## 4. How AST chunks feed each ME-JEPA instrument
 
-The 21-embedder ensemble (doc 12) doesn't all want the same chunks. AST-aware routing matches each chunk to the embedders for which it's most informative:
+Doc 09 §2.2 lists 14 ME-JEPA instruments. Mapping AST-chunk granularity onto each:
+
+| Instrument | AST role | Chunk-level computation |
+|---|---|---|
+| `E_AST` | Direct: encode AST node sequence of the chunk | Tree-sitter walk → token sequence → small transformer |
+| `E_CFG` | Build CFG over chunk's basic blocks (within function/method scope) | Within-chunk control flow (branches, loops, returns) |
+| `E_DataFlow` | Def-use chains within chunk's variable scope | Variable lifetimes within function/method |
+| `E_TypeGraph` | Type-graph node induced by the chunk (signatures, return types, struct fields) | Pyright/mypy/rustc/javac per-chunk type info |
+| `E_Test` | Tests covering this chunk specifically | Pytest collection / cargo test / JUnit @Test discovery → reverse map to chunk |
+| `E_Trace` | Per-chunk execution trace (function entry/exit, line hits, value snapshots) | When `pytest --trace` / `cargo test -- --nocapture` runs, line hits map to chunk |
+| `E_Diff` | AST-diff between pre-edit and post-edit chunk | Tree-sitter walk over `(pre, post)` → diff edges (added/removed/modified nodes) |
+| `E_Witness` | Witness-chain entries pertaining to chunk's edits | Per-chunk SHA in chain (already byte-aligned 73-byte units; no chunker needed) |
+| `E_Oracle` | Per-chunk pass/fail attribution (per §3.6 #4 hunk-attribution) | Sequential application: which chunks' edits flipped which test outcomes |
+| `E_Problem` | Whole-task issue text (shared across all chunks for this attempt) | Reuse E1 on issue body; same panel slot for every chunk |
+| `E_CommitMsg` | Whole-commit message (shared) | Reuse E1; same panel slot across chunks |
+| `E_StaticAnalysis` | Per-chunk linter/typecheck warnings | mypy/Pyright/ruff/clippy outputs reverse-mapped to chunk via line-range |
+| `E_Runtime` | Per-chunk runtime stats (walltime, RSS, allocations) | `pytest --durations` / `cargo bench` / `valgrind` per-chunk |
+| `E_Reasoning` | Per-chunk agent reasoning trace (why did the agent edit THIS chunk) | Claude Code's tool-use sequence reverse-mapped to chunk SHA |
+
+**Key insight:** every instrument either operates *natively* at chunk granularity (E_AST, E_CFG, E_DataFlow, E_Diff, E_Trace), or has its global signal *reverse-mapped* back to the affected chunk (E_Test, E_Oracle, E_StaticAnalysis, E_Runtime, E_Reasoning), or is *shared* across chunks for a given attempt (E_Problem, E_CommitMsg).
+
+### 4.1 Embedder routing per chunk type
+
+The 21-embedder ensemble doesn't all want the same chunks. AST-aware routing matches each chunk to embedders for which it's most informative:
 
 | Chunk type | Routed to | Why |
 |---|---|---|
-| **Function/method body** | E7 Code (Qodo, 1536D) + E14 BGE-M3 (multilingual, 8192-token context) | Code embedders trained on function-bodies; multilingual coverage |
-| **Function signature alone** | E1 Semantic (e5-large-v2) + E10 Contextual (e5-base-v2) | Signatures are short natural-language-like strings |
-| **Test function** | E1 Semantic + E7 Code | Test functions are interpreted both as code (E7) and as natural-language descriptions of intent (E1, on docstring + name) |
-| **Class/struct definition** | E11 Kepler (RoBERTa+TransE knowledge graph) + E7 Code | Type-graph reasoning (E11) + structural code (E7) |
+| **Function/method body** | E7 Code (Qodo, 1536D) + E14 BGE-M3 (multilingual, 8192-token) | Code embedders trained on function-bodies; multilingual coverage |
+| **Function signature alone** | E1 Semantic + E10 Contextual | Signatures are short natural-language-like strings |
+| **Test function** | E1 Semantic + E7 Code | Tests interpreted both as code (E7) and as natural-language descriptions (E1, on docstring + name) |
+| **Class/struct definition** | E11 Kepler (RoBERTa+TransE KG) + E7 Code | Type-graph reasoning (E11) + structural code (E7) |
 | **Module/namespace declaration** | E1 Semantic + E8 Graph (sentence-level e5-large-v2) | High-level semantic + graph context |
 | **Import/use statement** | E11 Kepler (entity graph) + E13 SPLADE v3 (sparse keyword) | Imports are entity references; sparse retrieval finds related modules |
 | **Comment block** | E1 Semantic + E10 Contextual | Pure natural language |
@@ -145,19 +202,13 @@ The 21-embedder ensemble (doc 12) doesn't all want the same chunks. AST-aware ro
 
 **Implementation**: each chunk produced by `ast_chunker` carries an `EntityType` tag; the panel materializer routes chunks to embedders based on this tag using a lookup table.
 
-### 4.1 Cross-embedder DDA per chunk
-
-Per doc 13 §1, every chunk routed to N=K embedders produces `K + (K choose 2)` structured signals. For a typical function chunk routed to E7 + E14 + E1 (3 embedders), that's 3 + 3 = **6 signals per chunk**. For a class definition routed to E11 + E7 + E14 + E1 (4), that's 4 + 6 = **10 signals per chunk**.
-
-A typical SWE-bench Lite Phase 0 mutation produces ~30-50 chunks across the patched files. At ~7 signals per chunk × 40 chunks = **~280 chunk-level signals per mutation entry**, multiplied by the panel-level signals (doc 13 §1.1: 231 at N=21) to give the full DDA budget.
-
 ---
 
-## 5. The constellation per chunk-type (extends doc 13 §3.1)
+## 5. The constellation per chunk-type (extends doc 13 §2.1)
 
 TCT Phase 1 (constellation construction) becomes per-chunk-type when AST-aware routing is wired:
 
-```
+```rust
 TctConstellation_AST_aware {
     centroids: BTreeMap<(MutationCategory, EntityType, Language, EmbedderId), Vec<f32>>,
     thresholds: BTreeMap<(EntityType, EmbedderId), f32>,
@@ -165,13 +216,148 @@ TctConstellation_AST_aware {
 }
 ```
 
-That's `8 mutation categories × 13 entity types × 11 languages × 21 embedders = 24,024 cells`. Many cells will be sparse (no `interface_declaration` in C — it doesn't exist). The Bayesian shrinkage from doc 13 §10 risk #5 handles sparsity.
+**Cell count math:**
+
+- Panel level: 14 embedders × 8 mutation categories × 9 languages = **1,008 cells** at file granularity.
+- Chunk level: 8 categories × 13 entity types × 11 languages × 21 embedders = **24,024 cells**. Many cells will be sparse (no `interface_declaration` in C — it doesn't exist). The Bayesian shrinkage from doc 13 §10 handles sparsity.
+- After Bayesian shrinkage: ~30 MB persisted.
 
 The result: a patch in Python that modifies a `class_definition` is verified against the centroid for `(KnownGood, Class, Python, E11_Kepler)` etc., not against a generic per-mutation-category centroid. **This dramatically tightens the Gτ verification** because each chunk-type has its own learned region in each embedder's space.
 
+### 5.1 Per-chunk runtime guard
+
+`Gτ` at AST-chunk granularity:
+
+```
+Gτ(chunk; CP) = 𝟙[
+  ∀m: cos(φ_m(chunk_post), centroid_m^{KnownGood, language, node_type})
+       ≥ τ_m^{node_type}
+]
+```
+
+The cosine threshold `τ_m` can also be **per-node-type**: a tighter threshold for critical structures (Class, Module — fewer should pass) and a looser threshold for common structures (Function — more variety).
+
+When `Gτ` rejects a chunk, the typed error includes the chunk's AST-node-type and the failed modalities — a dense, structural debugging signal:
+
+```
+MEJEPA_INFER_CONSTELLATION_VIOLATION {
+  chunk_id: "fn_id_abc123",
+  node_type: Function,
+  language: Python,
+  failed_modalities: [E5, E7],          // causal direction wrong AND code structure wrong
+  cosine_distances: { E5: 0.71, E7: 0.68, ... },
+  taus_required: { E5: 0.85, E7: 0.85, ... }
+}
+```
+
+This is **per-output verifiability** at AST-node precision.
+
 ---
 
-## 6. Implementation roadmap (AST chunker extension + embedder routing)
+## 6. Cross-chunk pair signals + module-level guard
+
+DDA's 91/210 cross-embedder pair signals (doc 12 §6) become *much more diagnostic* at AST granularity:
+
+| Pair | Per-chunk meaning | High-leverage example |
+|---|---|---|
+| (E1 semantic, E7 code) | "Does the function's docstring match the function's code?" | Catches AI patches where the docstring lies about the function |
+| (E5 causal, E7 code) | "Does the predicted cause→effect direction match the AST diff *of this function*?" | Catches confused causal claims at function granularity |
+| (E7 code, E11 kepler) | "Does this function call the entities the dependency graph says are reachable *from this scope*?" | Catches ImportError / NameError before runtime, per-function |
+| (E1 semantic, E14 multilingual) | "Does the function survive translation through the multilingual head?" | Catches language-specific overfitting at function granularity |
+| (E6 sparse, E13 splade) | "Do two independent sparse encoders agree on keyword salience *in this function*?" | Catches AI patches that hallucinate function names *here specifically* |
+| (E9 HDC, E12 late_interaction) | "Robust signature × token-precision agreement *for this function*" | Catches typo-induced regressions per function |
+| (E10 contextual, E8 graph) | "Static-analysis warnings × type-graph structure *for this function*" | Catches type errors before compiler runs, per-function |
+
+**Cross-chunk pair signals** (new at AST granularity): for two chunks `c_i, c_j`, compute `cos(φ_m(c_i), φ_m(c_j))` for each embedder. This captures:
+
+- **"Does the new function fit with its sibling functions?"** — high cosine across E1, E7, E11 means new chunk integrates with its module.
+- **"Is the new chunk an outlier?"** — low cosine in some embedders relative to siblings → potential regression.
+
+### 6.1 Module-level cross-chunk guard
+
+A single function passing `Gτ` is necessary but not sufficient. The **module-level constellation** checks all chunks together:
+
+```
+Gτ_module(chunks; CP_module) = 𝟙[
+  ∀m: cos(φ_m(centroid_of_chunks), centroid_m^{KnownGood, module}) ≥ τ_m^{module}
+]
+```
+
+This catches "individually-OK functions that don't make sense together" — the integration-level bugs that per-function checks miss.
+
+### 6.2 Cross-embedder DDA per chunk
+
+Per doc 13 §1, every chunk routed to N=K embedders produces `K + (K choose 2)` structured signals. A typical function chunk routed to E7 + E14 + E1 (3 embedders) → 3 + 3 = **6 signals per chunk**. A class definition routed to E11 + E7 + E14 + E1 (4) → 4 + 6 = **10 signals per chunk**.
+
+A typical SWE-bench Lite Phase 0 mutation produces ~30-50 chunks across patched files. At ~7 signals per chunk × 40 chunks = **~280 chunk-level signals per mutation entry**, multiplied by panel-level signals (doc 13 §1: 231 at N=21) to give the full DDA budget of ~510 signals per entry.
+
+---
+
+## 7. Why this is structurally critical for ME-JEPA
+
+### 7.1 ΔS sharpening (UTML v1.0 §III)
+
+ΔS = `1 − cosine(predictor_output, target)` is a single number per panel. At whole-file granularity, that number is dominated by unchanged code. At AST-chunk granularity, ΔS *directly measures* the semantic distance between predicted and actual chunk panels — the loss signal goes from "noisy" to "sharp."
+
+### 7.2 ΔK improvement (UTML v1.0 §IV)
+
+The `cos_align(g_t, ḡ_prior)` term is more meaningful when gradients are computed per chunk: a gradient that helps Function-A representations should align with prior gradients on similar Function-A patterns. Cross-chunk-type gradient alignment is the deeper cousin of NTK alignment (Atanasov 2021).
+
+### 7.3 ΔΞ verification (UTML v1.0 §VI)
+
+The `predictor_redundancy` term in ΔΞ is computed via pairwise MI across panel slots. At AST granularity, redundancy detection is much sharper: if E5 and E7 always agree on "same-shape function with same-shape control flow," then their pair signal is redundant and one of them can be down-weighted.
+
+### 7.4 Consolidation M(t) at chunk granularity (UTML v1.0 §VII)
+
+Each chunk is a separate consolidation event. EWC++ Fisher importance is per-parameter × per-chunk-type, not per-file. This protects parameters important for Class chunks without preventing learning on Function chunks.
+
+### 7.5 The "perfect atomic parsing" claim — formalized
+
+The operator's "perfect atomic parsing of code" reduces to:
+
+```
+For any code change C in language L:
+  C decomposes into AST chunks {c_1, c_2, ..., c_k}
+    where each c_i has {EntityType, signature, source, AST_hash, file_provenance}.
+  Each c_i produces a 14-embedder panel of fixed dimension.
+  Each panel produces a 105-signal supervisory vector.
+  ME-JEPA's predictor + Gτ guard + verify() API operate at chunk granularity.
+  The verdict for C is a structured {chunks: [(chunk_id, verdict)]} list,
+    not a single bool.
+```
+
+**This is what makes ME-JEPA's verdict diagnosable rather than opaque.** Operators inspecting a refused patch see *exactly which functions/classes failed which embedder constellations* — not "the patch is bad."
+
+---
+
+## 8. Doc 13 §3.3 Verdict updated for AST granularity
+
+`Verdict::GuardRejected` now includes `violating_chunks: Vec<ChunkId>` so rejection is localized to specific functions/classes/impl-blocks/module-decls, not just the whole patch. This is the chunk-level form spec'd in doc 13 §2.3:
+
+### 8.1 Per-chunk localization in practice
+
+With chunk-level Gτ wired, a `GuardRejected` no longer says "this 200-line patch is bad" — it says: "the `Function:apply_filter` chunk in `tests/test_units.py` lines 124-167 fails the `(SubtleFlip, Function, Python, E11)` centroid by 0.18 below threshold."
+
+The agent (or the operator reviewing the agent's output) can:
+
+1. **Know precisely what failed** — which function, which class, which import block.
+2. **Re-verify independently** — re-run the deterministic O(M·d_max) Gτ test on the persisted chunk panel, no model state needed.
+3. **Repair surgically** — the next outer-loop turn can target only the violating chunks, not re-attempt the whole patch.
+
+This is the operational form of the operator's "verify if the agent has done what it says it's done" framing: **every chunk the agent emitted has its own deterministic geometric verdict, computable by anyone with the frozen embedders + the frozen constellation**, no trust in the agent's self-report required.
+
+---
+
+## 9. Implementation roadmap
+
+### 9.1 What's already shipped
+
+- ✅ 11 tree-sitter parsers wired in `context-graph-cli` and `context-graph-core`.
+- ✅ Rust AST chunker (`AstCodeChunker::new_rust`) with FSV at `target/contextgraph-rust-ast-chunker-fsv/ast-chunker-evidence.json`.
+- ✅ Python AST mutation operators (`crates/context-graph-mejepa-corpus/src/`).
+- ✅ Per-language symbol-identity rules per doc 09 §3.1: Rust `function_item` inside `impl_item` → Method; Python `function_definition` inside `class_definition` → method; JS/TS binding-site naming for arrow functions; C declarator-aware extraction; C++ template/namespace; Java JUnit annotations; C# operator-overload identity; Ruby DSL methods.
+
+### 9.2 What ships next
 
 | # | Item | Effort | Dependency | Status |
 |---|---|---|---|---|
@@ -181,83 +367,108 @@ The result: a patch in Python that modifies a `class_definition` is verified aga
 | 4 | Per-language node-type classifier (C/C++, C#, Ruby, PHP) | ~4 days | (1) | new |
 | 5 | Cross-language test harness — chunk every real-Python / real-Rust / real-Go fixture and assert chunk boundaries align with AST entity boundaries | ~2 days | (2)(3)(4) | new |
 | 6 | Embedder router: chunk → embedder set based on EntityType | ~1 day | (1) | new |
-| 7 | `Instrument` trait wrapper that consumes chunks (per doc 12 §9 item #1) | ~1 day | (6) | new |
-| 8 | Per-chunk-type constellation centroid construction | ~2 days | (5) + (6) + Phase 0 corpus | new |
-| 9 | Per-chunk-type Gτ verification | ~1 day | (8) | new |
-| 10 | E_AST instrument as AST-token-sequence transformer over chunks | ~3 days | (1) | per existing plan |
-| 11 | E_CFG + E_DataFlow as graph-attention over per-chunk control/data graphs | ~5 days | (10) | per existing plan |
-| 12 | E_Diff as AST-diff-edge encoder over chunk-pairs | ~2 days | (10) | per existing plan |
-| 13 | Real-data FSV harness — SHA-pinned chunk boundaries persisted per fixture | ~1 day | (5) | new |
+| 7 | `Instrument` trait wrapper that consumes chunks (per doc 12 §11 item #1) | ~1 day | (6) | new |
+| 8 | Per-language test extraction (pytest collection / cargo test / JUnit / RSpec → chunk reverse-map) | ~2 days/language | (1) | partial |
+| 9 | Per-language compiler/LSP backed type evidence (Pyright/mypy, rustc, javac, dotnet, tsc, ruby -c, gcc/clang) | ~2-3 days/language; some shipped | (1) | partial |
+| 10 | `mejepa_compute_panel(file_path, chunk_filter)` MCP tool: per-chunk panel materialization | ~2 days | (1) | new |
+| 11 | Per-AST-node-type constellation centroids (24,024 cells with Bayesian shrinkage) at Phase 0 finalization | ~3 days | corpus across all languages, (10) | new |
+| 12 | Per-chunk `Gτ` guard with chunk-id-typed error variants | ~3 days | (11) | new |
+| 13 | Module-level cross-chunk constellation (the integration-test analog) | ~3 days | (11) | new |
+| 14 | E_AST instrument as AST-token-sequence transformer over chunks | ~3 days | (1) | per existing plan |
+| 15 | E_CFG + E_DataFlow as graph-attention over per-chunk control/data graphs | ~5 days | (14) | per existing plan |
+| 16 | E_Diff as AST-diff-edge encoder over chunk-pairs | ~5 days | (14) | per existing plan |
+| 17 | E_Trace per-chunk: pytest `--trace` / cargo `--nocapture` parsing → reverse-map to chunk SHA | ~5 days | (1) + per-language test extraction | deferred |
+| 18 | E_Reasoning per-chunk: Claude Code tool-use sequence → chunk SHA reverse-map | ~3 days | (1) + harness shift-log | deferred |
+| 19 | Real-data FSV harness — SHA-pinned chunk boundaries persisted per fixture | ~1 day | (5) | new |
 
-**Total AST-extension work: ~27 days**, slotting into Phase 1 (instruments) and Phase 0 (corpus). The bulk is per-language extension (items 2-4 = ~8 days).
+**Total AST-extension work: ~50-70 days for full per-AST-chunk integration across all 11 languages.** Sequence by language priority: Python first (already deepest), Rust second, then C/C++/Java/C#/JS/TS/Ruby/Go/PHP per operator preference. The bulk is per-language extension (items 2-4 = ~8 days).
+
+### 9.3 Phase-plan integration with doc 09
+
+Doc 09 Phase 1 (instruments) should be re-scoped to include AST-atomic granularity from the start:
+
+- **Phase 1 deliverable update:** instruments operate at AST-chunk granularity, not whole-file. Each instrument has a `compute_for_chunk(chunk: &CodeChunk) -> Latent` method.
+- **Phase 0 corpus update:** mutation operators run at chunk granularity (mutate one function within a file, not the whole file). Current Python mutation operators already do this; extending to all languages follows the same pattern.
+- **Phase 4 verify() update:** `mejepa_verify(patch)` decomposes the patch into AST chunks, runs `Gτ` per chunk + module-level cross-chunk guard, returns a typed verdict with chunk-id provenance for every gate failure.
 
 ---
 
-## 7. What this changes in earlier docs
+## 10. What this changes in earlier docs
 
 | Earlier doc | Change |
 |---|---|
-| **Doc 09 §2.2 instrument set** | E_AST / E_CFG / E_DataFlow / E_Diff explicitly consume AST-perfect chunks from the multi-language `ast_chunker`. E_Test consumes test-function chunks specifically. |
-| **Doc 09 §3.1 mutation corpus** | Mutation operators (KnownGood, SubtleFlip, OffByOne, ...) now produce **chunked** mutated source — the mutation is applied to the original source, then re-chunked through `ast_chunker`. The (panel_t1, panel_t2) pair is a chunk-level diff. |
+| **Doc 09 §2.2 instrument set** | E_AST / E_CFG / E_DataFlow / E_Diff / E_Test explicitly consume AST-perfect chunks from multi-language `ast_chunker`. |
+| **Doc 09 §3.1 mutation corpus** | Mutation operators now produce **chunked** mutated source — mutation applied to original source, then re-chunked. The (panel_t1, panel_t2) pair is a chunk-level diff. |
 | **Doc 09 §7 Phase 1 deliverables** | Add: "extend `ast_chunker.rs` from Rust-only to all 11 supported languages; produce AST-perfect atomic chunks for every panel materialization." |
-| **Doc 11 §2 ΔP** | Per-chunk ΔP becomes the load-bearing measurement: instead of one ΔP per panel, there are N ΔP values per panel (one per chunk), aggregated by the loss. |
+| **Doc 10 §C cross-language mandate** | Note that 11 parsers are wired and the chunker dispatches per-language. |
+| **Doc 11 §2 ΔP / L_step** | Per-chunk ΔP becomes load-bearing: instead of one ΔP per panel, there are N ΔP values per panel (one per chunk), aggregated by the loss. L_step computed per chunk, not per file. |
 | **Doc 12 §3 instrument-mapping** | All "thin head on existing embedder" entries now route through the multi-language chunker first. E_AST as `Qodo + AST-token-transformer` becomes `Qodo + AST-token-transformer over multi-language chunks`. |
-| **Doc 13 §3.1 constellation** | Per-class centroid construction is now per (mutation_category × entity_type × language × embedder) — 24,024 cells (with Bayesian shrinkage on sparse cells). |
-| **Doc 13 §3.3 Verdict** | `Verdict::GuardRejected` includes `violating_chunk: Option<ChunkId>` so rejection is localized to a specific function/class, not just the whole patch. |
-| **Doc 13 §1.3 signal budget** | Adjusted: at AST-aware chunking with ~40 chunks per mutation × ~7 signals per chunk = ~280 chunk-level signals + the panel-level 231 = **~510 signals per mutation entry** (loose upper bound ~840). |
-| **`specs/implementation-plan.md` E_Witness row** | E_Witness chunks the witness chain entries (already byte-aligned 73-byte units) — no AST chunker needed for E_Witness specifically; it's already atomic. |
-| **`specs/implementation-plan.md` E_StaticAnalysis row** | The static-analysis aggregator routes per-language tool output (mypy/Pyright for Python, ruff for Python, clippy for Rust, javac for Java, etc.) and aggregates per chunk via the chunk's line-range. |
-| **CLAUDE.md §1** | The 11-language matrix becomes part of the project description: "ContextGraph supports atomic AST chunking and per-language semantic extraction for Python, Rust, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, and PHP." |
+| **Doc 12 §2 signal yield** | Update from "50-200 panel triples per /loop turn" to "500-2,000 chunk-level triples per /loop turn at typical 10 chunks/file ratio." |
+| **Doc 13 §2.1 constellation** | Per-class centroid construction is now per `(mutation_category × entity_type × language × embedder)` — 24,024 cells with Bayesian shrinkage on sparse cells. |
+| **Doc 13 §2.3 Verdict** | `Verdict::GuardRejected` includes `violating_chunks: Vec<ChunkId>` so rejection is localized to specific functions/classes. |
+| **Doc 13 §1.3 signal budget** | Adjusted: ~40 chunks per mutation × ~7 signals per chunk = ~280 chunk-level signals + panel-level 231 = **~510 signals per mutation entry** (loose upper bound ~840). |
+| **Sitrep `04_implementation_plans/plan_e_witness.md`** | E_Witness chunks the witness chain entries (already byte-aligned 73-byte units) — no AST chunker needed for E_Witness specifically; it's already atomic. |
+| **Sitrep `04_implementation_plans/plan_e_static_analysis.md`** | The static-analysis aggregator routes per-language tool output and aggregates per chunk via line-range. |
+| **CLAUDE.md §1** | The 11-language matrix becomes part of the project description. |
+
+### 10.1 Memory decisions to update
+
+- `memory/decisions/2026-05-09--single-loop-claude-code-actor-mejepa-data-factory.md` — append "AST-atomic chunking via 11 wired tree-sitter parsers is part of the cross-language mandate; see doc 14."
+- `memory/decisions/2026-05-09--multi-embedder-utml-integration-post-qwen.md` — append "Embedders operate at AST-chunk granularity (per-function/method/class/struct/impl-block/module), multiplying signal yield by ~10× over whole-file embedding."
 
 ---
 
-## 8. Why this unlocks new critical capabilities
+## 11. Why this unlocks new critical capabilities
 
-### 8.1 Per-function (not per-file) verification
+### 11.1 Per-function (not per-file) verification
 
-Today, `MeJepaCompiler::verify(patch)` operates at the patch level — pass or fail. With AST-aware chunking, verification operates at the **function/method/class level** — a patch that modifies 5 functions yields 5 separate Pass/Fail/GuardRejected verdicts, one per chunk. The reviewer (or automation) can localize disagreement to a specific syntactic unit.
+Today, `MeJepaCompiler::verify(patch)` operates at the patch level — pass or fail. With AST-aware chunking, verification operates at the **function/method/class level** — a patch that modifies 5 functions yields 5 separate Pass/Fail/GuardRejected verdicts. The reviewer (or automation) can localize disagreement to a specific syntactic unit.
 
-### 8.2 Cross-language transfer becomes structurally tractable
+### 11.2 Cross-language transfer becomes structurally tractable
 
 Per-language constellation centroids let ME-JEPA learn that "a Python `class_definition` for a test class" and "a Java `class_declaration` annotated `@Test`" are the SAME entity-type at the cross-language level. This is the structural foundation for the doc 10 Section C cross-language mandate — Python-trained patterns transfer to Rust, Java, etc. through the shared EntityType taxonomy.
 
-### 8.3 Real-Python / real-Rust FSV becomes deterministic
+### 11.3 Real-Python / real-Rust FSV becomes deterministic
 
-Per CLAUDE.md "no mocks, real data only", FSV harnesses that test the chunker can use **real source files** from the SWE-bench Lite repos as fixtures. The chunk boundaries are AST-aligned, so they're stable across reruns — chunk SHAs are deterministic per (file content, language, ast_chunker version).
+Per CLAUDE.md "no mocks, real data only", FSV harnesses can use **real source files** from SWE-bench Lite repos as fixtures. Chunk boundaries are AST-aligned, so they're stable across reruns — chunk SHAs are deterministic per `(file content, language, ast_chunker version)`.
 
-### 8.4 ME-JEPA training amplifies via DDA at the chunk level
+### 11.4 ME-JEPA training amplifies via DDA at the chunk level
 
-Per doc 13 §1.3, naïve panel-level DDA at N=21 is 231 signals per input. **Chunk-level DDA at ~40 chunks × 7 signals = 280 chunk-level signals** in addition. Combined: ~510 supervisory signals per mutation entry — over 2× the panel-level number. This is the operational meaning of "perfect atomic parsing" for the operator's "insane amount of reward signals" framing (per doc 13 §7.5.2).
+Per doc 13 §1.3, naïve panel-level DDA at N=21 is 231 signals per input. **Chunk-level DDA at ~40 chunks × 7 signals = 280 chunk-level signals** in addition. Combined: ~510 supervisory signals per mutation entry — over 2× the panel-level number. This is the operational meaning of "perfect atomic parsing" for the operator's "insane amount of reward signals" framing.
 
-### 8.5 The reality-loop's edit/test cycle produces denser supervision
+### 11.5 The reality-loop's edit/test cycle produces denser supervision
 
-Every Edit tool call by Claude Code in the outer loop touches one or more chunks. The shift-log subscriber (doc 09 §3.8) routes the edit through the multi-language chunker, identifies which chunks changed, and produces a per-chunk delta panel. ME-JEPA's online observe receives one supervision sample per **changed chunk**, not per file. A typical edit-2-functions-in-1-file produces 2 chunk-level training examples instead of 1 file-level one.
-
----
-
-## 9. Risks (AST-chunking specific)
-
-1. **tree-sitter grammar version skew across languages**: each language's grammar version evolves independently. Pin all 11 grammars to current versions in `Cargo.toml` (already done). Document the skew strategy: bump one language at a time; re-fit per-language chunk fixtures after each bump.
-2. **Per-language node-type vocabulary drift**: tree-sitter sometimes renames node types between major versions (e.g. `class_body` → `class_block`). The per-language classifier must be defensive — match on the new and old names during the transition. DynamicJEPA's existing extractor has examples of this defensive pattern.
-3. **Mixed-language files** (templating engines, embedded SQL/HTML, JSX-with-embedded-CSS): out of scope for first-pass; reject with explicit error. Future work could route per-block.
-4. **Chunk-boundary instability under re-formatting**: a `cargo fmt` or `prettier` run reformats source without changing semantics; chunk SHAs will differ. Mitigation: chunk SHAs are computed on **AST node IDs**, not raw text, so reformatting is invisible to the chunker.
-5. **Per-language testing burden**: 11 languages × ~10 entity types × multiple edge cases = a large test surface. Plan for ~30-40 fixture files per language (real source extracted from SWE-bench Lite + DynamicJEPA test fixtures + Phase 0 mutation outputs).
-6. **Constellation cell sparsity**: 24,024 cells in the per-(mutation × entity × language × embedder) constellation. Many cells under-supported. Mitigation: Bayesian shrinkage to language-aggregate or entity-aggregate when per-cell N < 50.
+Every Edit tool call by Claude Code in the outer loop touches one or more chunks. The shift-log subscriber (doc 09 §3.8) routes the edit through the multi-language chunker, identifies which chunks changed, and produces a per-chunk delta panel. ME-JEPA's online observe receives one supervision sample per **changed chunk**, not per file. A typical edit-2-functions-in-1-file produces 2 chunk-level training examples instead of 1 file-level.
 
 ---
 
-## 10. Falsification
+## 12. Risks (AST-chunking specific)
 
-The framework is falsifiable. Specific falsifications:
-
-1. **AST-perfect chunks are not better than fixed-size text chunks for E7 code embeddings**: ablation comparing both on a mutation-corpus retrieval task shows no top-k MRR improvement. → The Qodo / cAST recommendation may not transfer to ME-JEPA's specific use case; default back to text chunking with a smaller chunk size.
-2. **Per-chunk-type constellations don't outperform per-mutation-category constellations**: ablation with vs without entity-type stratification shows no Gτ false-positive-rate improvement. → Drop entity-type stratification; aggregate to mutation-category × language.
-3. **Cross-language transfer doesn't materialize from shared EntityType taxonomy**: a model trained only on Python doesn't predict Rust patches better than baseline. → The shared taxonomy is a noise predictor, not a signal predictor; treat languages as independent.
-4. **DynamicJEPA's per-language classification doesn't generalize to ME-JEPA's mutation-applied source**: chunks produced from mutated source have different node-type distributions than chunks from clean source. → Re-fit DynamicJEPA's classifier on mutated-source fixtures.
+1. **tree-sitter grammar version skew** — each language's grammar evolves independently. Pin all 11 grammars in `Cargo.toml` (already done). Document skew strategy: bump one language at a time; re-fit per-language chunk fixtures after each bump.
+2. **Per-language node-type vocabulary drift** — tree-sitter sometimes renames node types between major versions (`class_body` → `class_block`). Per-language classifier must be defensive — match new and old names during transition. DynamicJEPA's existing extractor has examples of this defensive pattern.
+3. **Mixed-language files** (templating engines, embedded SQL/HTML, JSX-with-embedded-CSS) — out of scope for first-pass; reject with explicit error. Future work could route per-block.
+4. **Chunk-boundary instability under re-formatting** — `cargo fmt` or `prettier` reformats source without changing semantics; chunk SHAs would differ. Mitigation: chunk SHAs computed on **AST node IDs**, not raw text, so reformatting is invisible.
+5. **Per-language testing burden** — 11 languages × ~10 entity types × multiple edge cases = large test surface. Plan ~30-40 fixture files per language (real source extracted from SWE-bench Lite + DynamicJEPA test fixtures + Phase 0 mutation outputs).
+6. **Constellation cell sparsity** — 24,024 cells. Many under-supported. Mitigation: Bayesian shrinkage to language-aggregate or entity-aggregate when per-cell N < 50.
 
 ---
 
-## 11. The integration with TCT/DDA/ME-JEPA in one diagram
+## 13. Falsification
+
+The framework is **falsifiable**. Specific scenarios:
+
+1. **AST-perfect chunks are not better than fixed-size text chunks** for E7 code embeddings — ablation comparing both on a mutation-corpus retrieval task shows no top-k MRR improvement. **Falsifies if** linear-probe accuracy on AST-chunk panels is ≥10pp below whole-file panels on the same task. → Default back to text chunking with smaller chunk size; consider merging tiny chunks via existing `merge_small_chunks` function.
+2. **Per-AST-node-type constellations don't outperform per-mutation-category constellations** — ablation with vs without entity-type stratification shows no Gτ false-positive-rate improvement. → Drop entity-type stratification; aggregate to mutation-category × language.
+3. **Cross-language transfer doesn't materialize from shared EntityType taxonomy** — a model trained only on Python doesn't predict Rust patches better than baseline. → Shared taxonomy is noise predictor; treat languages as independent.
+4. **DynamicJEPA's per-language classification doesn't generalize to ME-JEPA's mutation-applied source** — chunks from mutated source have different node-type distributions than clean source. → Re-fit DynamicJEPA's classifier on mutated-source fixtures.
+5. **Module-level cross-chunk guard adds no value over per-chunk Gτ** — single-chunk passes already correlate with whole-module passes. → Skip module-level guard.
+6. **Cross-language chunker generalization is too costly** — extending to 9 languages takes >50 days. → Sequence by priority (Python ✓, Rust ✓, C/C++ next, then Java/C#, then JS/TS/Ruby/Go/PHP).
+
+If any falsification holds, the relevant section gets `status: superseded`.
+
+---
+
+## 14. The integration with TCT/DDA/ME-JEPA in one diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -267,11 +478,11 @@ The framework is falsifiable. Specific falsifications:
 │                                                                              │
 │  N chunks, each tagged with (EntityType, Language, parent_chain, sha256)     │
 │                                                                              │
-│  ↓ per-chunk routing (doc 14 §4)                                             │
+│  ↓ per-chunk routing (doc 14 §4.1)                                           │
 │                                                                              │
 │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────┐ │
 │  │ E7 Qodo    │  │ E14 BGE-M3 │  │ E11 Kepler │  │ E1 Semantic│  │ ... 17 │ │
-│  │ (1536D)    │  │ (1024D ML) │  │ (768D KG)  │  │ (1024D)    │  │ more    │ │
+│  │ (1536D)    │  │ (1024D ML) │  │ (768D KG)  │  │ (1024D)    │  │ more   │ │
 │  └────────────┘  └────────────┘  └────────────┘  └────────────┘  └────────┘ │
 │                                                                              │
 │  ↓ panel materialization (doc 12)                                            │
@@ -287,7 +498,7 @@ The framework is falsifiable. Specific falsifications:
 │                                                                              │
 │  MeJepaCompiler::verify(patch) -> Verdict {                                  │
 │      Pass / Fail / OOD / Abstain / GuardRejected,                            │
-│      gtau_per_chunk: BTreeMap<ChunkId, GtauResult>,    ← NEW per doc 14      │
+│      gtau_per_chunk: BTreeMap<ChunkId, GtauResult>,    ← per doc 14          │
 │      conformal_interval, confidence,                                          │
 │  }                                                                            │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -295,16 +506,27 @@ The framework is falsifiable. Specific falsifications:
 
 ---
 
+## 15. One-paragraph summary
+
+The repo has **11 tree-sitter parsers wired** plus an **existing AST chunker with FSV** plus a **multi-language semantic extractor** already handling all 11 languages. By feeding ATOMIC AST chunks (function / method / class / struct / impl-block / module — not raw line splits) through the **21 frozen embedders** from doc 12, every code change produces panel triples *at the AST-node granularity*. This makes `panel[t=1] − panel[t=0]` a delta over the AST itself, not a delta over "the file got bigger by 12 lines." DDA's 105/231 signals/input applies per AST chunk rather than per file — multiplying supervisory yield by ~10× to ~50K-200K signals per /loop turn, ~5M-20M per day per Claude Code instance. Per-AST-node-type constellation centroids (24,024 cells = 8 mutation categories × 13 entity types × 11 languages × 21 embedders, with Bayesian shrinkage on sparse cells) sharpen the runtime guard `Gτ` to *per-function precision*. The verify() API decomposes any patch into AST chunks, runs Gτ per chunk + module-level cross-chunk guard, and returns a structured verdict listing exactly which chunk(s) failed which embedder constellation(s) — turning ME-JEPA's verdict from "the patch is bad" into a structural diagnostic at AST-node precision. **This is the "perfect atomic parsing" the operator demanded — quantified and grounded in the existing tree-sitter infrastructure.**
+
+---
+
 ## See also
 
 - AST chunker (Rust-only today, extend to all 11): `crates/context-graph-core/src/memory/ast_chunker.rs`
+- AST chunker FSV: `crates/context-graph-core/examples/ast_chunker_fsv.rs`
 - Multi-language semantic extractor (already 11-language): `crates/context-graph-cli/src/commands/dynamicjepa.rs`
 - Python lexer (Phase 0 mutation operator support): `crates/context-graph-mejepa-corpus/src/python_lex.rs`
+- 11 tree-sitter parser dependencies: `crates/context-graph-cli/Cargo.toml`
 - Master plan: `09_END_GOAL_REVIEW_REPLACEMENT.md`
 - Pivot architecture: `10_MEJEPA_PIVOT_2026_05_09.md`
 - UTML v1.0 learning formula: `11_MEJEPA_LEARNING_FORMULA.md`
-- 21-embedder integration: `12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md`
+- 21-embedder integration: `12_EMBEDDER_INTEGRATION.md`
 - TCT/DDA framework: `13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md`
 - cAST methodology: https://arxiv.org/html/2506.15655v1
 - Qodo code-embeddings best practices: https://www.qodo.ai/blog/rag-for-large-scale-code-repos/
 - Source theory: `docs2/UTL_v2_embodied.md` (UTML v1.0 — JEPA Edition)
+- Locked decisions:
+  - `memory/decisions/2026-05-09--multi-embedder-utml-integration-post-qwen.md`
+  - `memory/decisions/2026-05-09--single-loop-claude-code-actor-mejepa-data-factory.md`

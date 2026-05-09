@@ -114,6 +114,7 @@ struct GeneratedEntry {
     category: MutationCategory,
     bucket: String,
     patch_path: String,
+    mutation_note: String,
     patch_sha256: String,
     oracle_verdict_sha256: String,
     oracle_all_passed: bool,
@@ -274,6 +275,7 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
                 .cloned()
                 .ok_or("selected task missing split bucket")?,
             patch_path: patch_path_rel.display().to_string(),
+            mutation_note: patch_outcome.note.clone(),
             patch_sha256,
             oracle_verdict_sha256,
             oracle_all_passed: verdict.all_passed(),
@@ -345,6 +347,7 @@ fn verify(args: VerifyArgs) -> CliResult<()> {
     }
     let mutation_cf_count = store.count_cf(CF_MEJEPA_MUTATION_CORPUS)?;
     let verdict_cf_count = store.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?;
+    let expected_full_entries = index.split_assignments.len() * MutationCategory::all().len();
     if mutation_cf_count != index.entries.len() {
         failures.push(json!({
             "error": "mutation column-family count mismatch",
@@ -366,6 +369,9 @@ fn verify(args: VerifyArgs) -> CliResult<()> {
             "store": store_path.display().to_string(),
         },
         "entry_count": index.entries.len(),
+        "task_manifest_count": index.split_assignments.len(),
+        "expected_full_phase0_entries": expected_full_entries,
+        "full_phase0_complete": index.entries.len() == expected_full_entries,
         "mutation_cf_count": mutation_cf_count,
         "verdict_cf_count": verdict_cf_count,
         "failures": failures,
@@ -643,12 +649,16 @@ fn write_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> 
         };
         *by_oracle.entry(key.to_string()).or_default() += 1;
     }
+    let expected_full_entries = index.split_assignments.len() * MutationCategory::all().len();
     let stats = json!({
         "source_of_truth": {
             "index": output.join("index.json").display().to_string(),
             "store": resolve_corpus_path(output, &index.store_path)?.display().to_string(),
         },
         "total_entries": index.entries.len(),
+        "task_manifest_count": index.split_assignments.len(),
+        "expected_full_phase0_entries": expected_full_entries,
+        "full_phase0_complete": index.entries.len() == expected_full_entries,
         "by_category": by_category,
         "by_oracle": by_oracle,
         "mutation_cf_count": store.count_cf(CF_MEJEPA_MUTATION_CORPUS)?,
