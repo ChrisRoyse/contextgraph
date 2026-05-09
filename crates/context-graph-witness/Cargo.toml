@@ -15,3 +15,10 @@ zeroize = { version = "1.7", optional = true }
 [features]
 default = []
 ed25519 = ["dep:ed25519-dalek", "dep:zeroize"]
+
+[dev-dependencies]
+serde_json = "1.0"
+
+[[example]]
+name = "ed25519_fsv"
+required-features = ["ed25519"]

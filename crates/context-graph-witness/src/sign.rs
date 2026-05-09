@@ -27,9 +27,9 @@
 // has a stable code (`code()` method) for telemetry. No silent
 // fallback, no "best-effort" verification.
 
-use crate::{shake256_32, HASH_SIZE};
+use crate::{shake256_32, WitnessEntry, HASH_SIZE, WITNESS_ENTRY_SIZE};
 use ed25519_dalek::{
-    Signature, Signer, SigningKey, Verifier, VerifyingKey, PUBLIC_KEY_LENGTH, SECRET_KEY_LENGTH,
+    Signature, Signer, SigningKey, VerifyingKey, PUBLIC_KEY_LENGTH, SECRET_KEY_LENGTH,
     SIGNATURE_LENGTH,
 };
 use thiserror::Error;
@@ -57,10 +57,22 @@ pub enum SignError {
     PublicKeyMalformed,
     #[error("signature bytes did not parse as a valid ed25519 signature")]
     SignatureMalformed,
+    #[error("public key is a weak ed25519 key")]
+    PublicKeyWeak,
     #[error("ed25519 verification rejected the signature for this segment")]
     VerificationFailed,
     #[error("public key in codec did not match expected public key")]
     PublicKeyMismatch,
+    #[error("witness segment is empty")]
+    SegmentEmpty,
+    #[error("witness segment length invalid: len={len} entry_size={entry_size}")]
+    SegmentLengthInvalid { len: usize, entry_size: usize },
+    #[error("witness segment prev hash mismatch at offset={offset}")]
+    SegmentPrevHashMismatch {
+        offset: usize,
+        expected_prev_hash: [u8; HASH_SIZE],
+        actual_prev_hash: [u8; HASH_SIZE],
+    },
 }
 
 impl SignError {
@@ -71,8 +83,12 @@ impl SignError {
             Self::CodecLengthInvalid { .. } => "WITNESS_SIGNATURE_CODEC_LENGTH_INVALID",
             Self::PublicKeyMalformed => "WITNESS_PUBKEY_MALFORMED",
             Self::SignatureMalformed => "WITNESS_SIGNATURE_MALFORMED",
+            Self::PublicKeyWeak => "WITNESS_PUBKEY_WEAK",
             Self::VerificationFailed => "WITNESS_SIGNATURE_VERIFICATION_FAILED",
             Self::PublicKeyMismatch => "WITNESS_SIGNATURE_PUBKEY_MISMATCH",
+            Self::SegmentEmpty => "WITNESS_SIGNATURE_SEGMENT_EMPTY",
+            Self::SegmentLengthInvalid { .. } => "WITNESS_SIGNATURE_SEGMENT_LENGTH_INVALID",
+            Self::SegmentPrevHashMismatch { .. } => "WITNESS_SIGNATURE_SEGMENT_PREV_HASH_MISMATCH",
         }
     }
 }
@@ -109,16 +125,16 @@ impl WitnessKeypair {
         self.verifying.to_bytes()
     }
 
-    /// Sign one segment. The segment may be any length (typically a
-    /// concatenation of one or more 73-byte witness entries). Returns
-    /// the 96-byte codec.
-    pub fn sign_segment(&self, segment: &[u8]) -> [u8; SIGNATURE_CODEC_SIZE] {
-        let digest = digest_for_segment(self.public_key_bytes(), segment);
+    /// Sign one segment. The segment must be a non-empty concatenation of
+    /// one or more internally linked 73-byte witness entries. Returns the
+    /// 96-byte codec.
+    pub fn sign_segment(&self, segment: &[u8]) -> Result<[u8; SIGNATURE_CODEC_SIZE], SignError> {
+        let digest = digest_for_segment(self.public_key_bytes(), segment)?;
         let signature = self.signing.sign(&digest);
         let mut codec = [0u8; SIGNATURE_CODEC_SIZE];
         codec[0..PUBLIC_KEY_LENGTH].copy_from_slice(&self.public_key_bytes());
         codec[PUBLIC_KEY_LENGTH..].copy_from_slice(&signature.to_bytes());
-        codec
+        Ok(codec)
     }
 }
 
@@ -145,6 +161,7 @@ impl std::fmt::Debug for WitnessKeypair {
 /// public key should additionally compare `codec[..32]` against the
 /// expected key (helper: `verify_segment_with_expected_pubkey`).
 pub fn verify_segment(segment: &[u8], codec: &[u8]) -> Result<(), SignError> {
+    validate_segment(segment)?;
     if codec.len() != SIGNATURE_CODEC_SIZE {
         return Err(SignError::CodecLengthInvalid {
             expected: SIGNATURE_CODEC_SIZE,
@@ -158,10 +175,13 @@ pub fn verify_segment(segment: &[u8], codec: &[u8]) -> Result<(), SignError> {
 
     let verifying =
         VerifyingKey::from_bytes(&pk_bytes).map_err(|_| SignError::PublicKeyMalformed)?;
+    if verifying.is_weak() {
+        return Err(SignError::PublicKeyWeak);
+    }
     let signature = Signature::from_bytes(&sig_bytes);
-    let digest = digest_for_segment(pk_bytes, segment);
+    let digest = digest_for_segment(pk_bytes, segment)?;
     verifying
-        .verify(&digest, &signature)
+        .verify_strict(&digest, &signature)
         .map_err(|_| SignError::VerificationFailed)
 }
 
@@ -194,13 +214,53 @@ pub fn verify_segment_with_expected_pubkey(
 
 /// Compute the SHAKE-256 hash that gets signed. Exposed publicly so
 /// independent verifiers can recompute it without depending on this
-/// crate's signing code.
-pub fn digest_for_segment(public_key: [u8; PUBLIC_KEY_LENGTH], segment: &[u8]) -> [u8; HASH_SIZE] {
+/// crate's signing code. Fails closed unless `segment` is a non-empty,
+/// internally linked witness segment.
+pub fn digest_for_segment(
+    public_key: [u8; PUBLIC_KEY_LENGTH],
+    segment: &[u8],
+) -> Result<[u8; HASH_SIZE], SignError> {
+    validate_segment(segment)?;
     let mut buf = Vec::with_capacity(DOMAIN_TAG.len() + PUBLIC_KEY_LENGTH + segment.len());
     buf.extend_from_slice(DOMAIN_TAG);
     buf.extend_from_slice(&public_key);
     buf.extend_from_slice(segment);
-    shake256_32(&buf)
+    Ok(shake256_32(&buf))
+}
+
+fn validate_segment(segment: &[u8]) -> Result<(), SignError> {
+    if segment.is_empty() {
+        return Err(SignError::SegmentEmpty);
+    }
+    if segment.len() % WITNESS_ENTRY_SIZE != 0 {
+        return Err(SignError::SegmentLengthInvalid {
+            len: segment.len(),
+            entry_size: WITNESS_ENTRY_SIZE,
+        });
+    }
+    let entry_count = segment.len() / WITNESS_ENTRY_SIZE;
+    let mut previous: Option<WitnessEntry> = None;
+    for offset in 0..entry_count {
+        let start = offset * WITNESS_ENTRY_SIZE;
+        let entry = WitnessEntry::from_bytes(&segment[start..start + WITNESS_ENTRY_SIZE]).map_err(
+            |_| SignError::SegmentLengthInvalid {
+                len: segment.len(),
+                entry_size: WITNESS_ENTRY_SIZE,
+            },
+        )?;
+        if let Some(previous_entry) = &previous {
+            let expected_prev_hash = previous_entry.chain_hash();
+            if entry.prev_hash != expected_prev_hash {
+                return Err(SignError::SegmentPrevHashMismatch {
+                    offset,
+                    expected_prev_hash,
+                    actual_prev_hash: entry.prev_hash,
+                });
+            }
+        }
+        previous = Some(entry);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -225,7 +285,7 @@ mod tests {
     fn roundtrip_sign_then_verify() {
         let kp = WitnessKeypair::from_seed(&fixed_seed(0xAB)).unwrap();
         let segment = make_segment();
-        let codec = kp.sign_segment(&segment);
+        let codec = kp.sign_segment(&segment).unwrap();
         verify_segment(&segment, &codec).expect("verification must pass");
     }
 
@@ -246,8 +306,8 @@ mod tests {
     fn rejects_tampered_segment_byte() {
         let kp = WitnessKeypair::from_seed(&fixed_seed(0x42)).unwrap();
         let mut segment = make_segment();
-        let codec = kp.sign_segment(&segment);
-        segment[5] ^= 0x01;
+        let codec = kp.sign_segment(&segment).unwrap();
+        segment[WITNESS_ENTRY_SIZE + HASH_SIZE] ^= 0x01;
         let err = verify_segment(&segment, &codec).expect_err("tamper must reject");
         assert_eq!(err.code(), "WITNESS_SIGNATURE_VERIFICATION_FAILED");
     }
@@ -256,7 +316,7 @@ mod tests {
     fn rejects_tampered_signature_byte() {
         let kp = WitnessKeypair::from_seed(&fixed_seed(0x99)).unwrap();
         let segment = make_segment();
-        let mut codec = kp.sign_segment(&segment);
+        let mut codec = kp.sign_segment(&segment).unwrap();
         codec[PUBLIC_KEY_LENGTH + 5] ^= 0x01;
         let err = verify_segment(&segment, &codec).expect_err("tampered sig must reject");
         assert_eq!(err.code(), "WITNESS_SIGNATURE_VERIFICATION_FAILED");
@@ -267,7 +327,7 @@ mod tests {
         let kp_a = WitnessKeypair::from_seed(&fixed_seed(0xAA)).unwrap();
         let kp_b = WitnessKeypair::from_seed(&fixed_seed(0xBB)).unwrap();
         let segment = make_segment();
-        let mut codec = kp_a.sign_segment(&segment);
+        let mut codec = kp_a.sign_segment(&segment).unwrap();
         // Splice B's pubkey on top of A's signature; verification fails
         // because the digest is recomputed with B's pubkey but the
         // signature was made over A's pubkey-bound digest.
@@ -281,7 +341,7 @@ mod tests {
         let kp = WitnessKeypair::from_seed(&fixed_seed(0x55)).unwrap();
         let other = WitnessKeypair::from_seed(&fixed_seed(0x66)).unwrap();
         let segment = make_segment();
-        let codec = kp.sign_segment(&segment);
+        let codec = kp.sign_segment(&segment).unwrap();
         let err = verify_segment_with_expected_pubkey(&segment, &codec, &other.public_key_bytes())
             .expect_err("pin mismatch must reject");
         assert_eq!(err.code(), "WITNESS_SIGNATURE_PUBKEY_MISMATCH");
@@ -291,7 +351,7 @@ mod tests {
     fn pinned_pubkey_accepts_when_matched() {
         let kp = WitnessKeypair::from_seed(&fixed_seed(0x77)).unwrap();
         let segment = make_segment();
-        let codec = kp.sign_segment(&segment);
+        let codec = kp.sign_segment(&segment).unwrap();
         verify_segment_with_expected_pubkey(&segment, &codec, &kp.public_key_bytes())
             .expect("matching pin must accept");
     }
@@ -307,7 +367,7 @@ mod tests {
     fn signature_codec_size_is_96() {
         let kp = WitnessKeypair::from_seed(&fixed_seed(0x10)).unwrap();
         let segment = make_segment();
-        let codec = kp.sign_segment(&segment);
+        let codec = kp.sign_segment(&segment).unwrap();
         assert_eq!(codec.len(), SIGNATURE_CODEC_SIZE);
         assert_eq!(SIGNATURE_CODEC_SIZE, 96);
     }
@@ -316,28 +376,45 @@ mod tests {
     fn rejects_wrong_length_pinned_pubkey() {
         let segment = make_segment();
         let kp = WitnessKeypair::from_seed(&fixed_seed(0x21)).unwrap();
-        let codec = kp.sign_segment(&segment);
+        let codec = kp.sign_segment(&segment).unwrap();
         let err = verify_segment_with_expected_pubkey(&segment, &codec, &[0u8; 16])
             .expect_err("short pubkey must error");
         assert_eq!(err.code(), "WITNESS_PUBKEY_LENGTH_INVALID");
     }
 
     #[test]
-    fn verifies_empty_segment() {
-        // Edge case: an empty segment is a valid input (signs the digest
-        // of just the domain tag + pubkey). Useful for "sign a checkpoint
-        // marker" patterns where the segment IS the public key plus tag.
+    fn rejects_empty_segment() {
         let kp = WitnessKeypair::from_seed(&fixed_seed(0x33)).unwrap();
-        let codec = kp.sign_segment(&[]);
-        verify_segment(&[], &codec).expect("empty segment must verify");
+        let err = kp.sign_segment(&[]).expect_err("empty segment must error");
+        assert_eq!(err.code(), "WITNESS_SIGNATURE_SEGMENT_EMPTY");
+    }
+
+    #[test]
+    fn rejects_truncated_segment() {
+        let kp = WitnessKeypair::from_seed(&fixed_seed(0x34)).unwrap();
+        let err = kp
+            .sign_segment(&[0u8; WITNESS_ENTRY_SIZE - 1])
+            .expect_err("truncated segment must error");
+        assert_eq!(err.code(), "WITNESS_SIGNATURE_SEGMENT_LENGTH_INVALID");
+    }
+
+    #[test]
+    fn rejects_broken_internal_segment_link() {
+        let kp = WitnessKeypair::from_seed(&fixed_seed(0x35)).unwrap();
+        let mut segment = make_segment();
+        segment[WITNESS_ENTRY_SIZE] ^= 0x01;
+        let err = kp
+            .sign_segment(&segment)
+            .expect_err("broken segment link must error");
+        assert_eq!(err.code(), "WITNESS_SIGNATURE_SEGMENT_PREV_HASH_MISMATCH");
     }
 
     #[test]
     fn digest_is_deterministic_per_pubkey_and_segment() {
         let kp = WitnessKeypair::from_seed(&fixed_seed(0x44)).unwrap();
         let segment = make_segment();
-        let d1 = digest_for_segment(kp.public_key_bytes(), &segment);
-        let d2 = digest_for_segment(kp.public_key_bytes(), &segment);
+        let d1 = digest_for_segment(kp.public_key_bytes(), &segment).unwrap();
+        let d2 = digest_for_segment(kp.public_key_bytes(), &segment).unwrap();
         assert_eq!(d1, d2);
     }
 }
