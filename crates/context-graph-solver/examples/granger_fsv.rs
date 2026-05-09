@@ -87,6 +87,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => e.code(),
         Ok(_) => "UNEXPECTED_OK",
     };
+    let too_short_for_df_code = match granger_test(
+        &[1.0, 2.0, 3.0, 4.0],
+        &[4.0, 3.0, 2.0, 1.0],
+        GrangerConfig { lag: 1 },
+    ) {
+        Err(e) => e.code(),
+        Ok(_) => "UNEXPECTED_OK",
+    };
+    let invalid_f_code = match f_distribution_upper_tail(f64::NAN, 1, 1) {
+        Err(e) => e.code(),
+        Ok(_) => "UNEXPECTED_OK",
+    };
 
     // Sanity: I_x(a, b) at endpoints equals known values.
     let beta_at_zero = regularized_incomplete_beta(0.0, 2.0, 3.0)?;
@@ -144,6 +156,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "boundary_nan_rejected": {
             "expected_code": "CGSOLVER_INVALID_INPUT",
             "actual_code": nan_code,
+        },
+        "boundary_too_short_for_df_rejected": {
+            "expected_code": "CGSOLVER_INVALID_INPUT",
+            "actual_code": too_short_for_df_code,
+        },
+        "boundary_nan_f_statistic_rejected": {
+            "expected_code": "CGSOLVER_INVALID_INPUT",
+            "actual_code": invalid_f_code,
         },
     });
 
