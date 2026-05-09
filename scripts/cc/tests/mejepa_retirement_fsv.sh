@@ -38,12 +38,12 @@ test ! -f "crates/context-graph-cli/src/bin/reality-loop.rs"
 test ! -d "vendor/llama-cpp-sys-2-0.1.145"
 log "PASS: reality-loop source and vendored llama.cpp patch are absent"
 
-if rg -n "llama-cpp-2|llama_cpp_2|vendor/llama-cpp-sys-2" Cargo.toml crates/context-graph-cli crates/context-graph-mcp --glob '!target' >"${OUT}/llama-active-references.txt"; then
+if rg -n "llama-cpp-2|llama_cpp_2|vendor/llama-cpp-sys-2" Cargo.toml crates/context-graph-cli crates/context-graph-mcp crates/context-graph-causal-agent crates/context-graph-graph-agent --glob '!target' >"${OUT}/llama-active-references.txt"; then
   log "FAIL: active build manifests still reference llama-cpp-2"
   cat "${OUT}/llama-active-references.txt" | tee -a "${OUT}/run.log"
   exit 1
 fi
-log "PASS: active CLI/MCP build manifests do not reference llama-cpp-2"
+log "PASS: active CLI/MCP/agent build surface does not reference llama-cpp-2"
 
 log "--- Trigger: build ME-JEPA/CLI library without default CUDA surface ---"
 capture "cargo-check-cli-lib" cargo check -p context-graph-cli --no-default-features --lib --quiet

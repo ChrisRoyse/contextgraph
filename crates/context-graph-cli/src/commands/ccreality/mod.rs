@@ -359,7 +359,7 @@ fn latest_active_attempt() -> CCResult<(String, u64)> {
             "CCREALITY_CLI_ACTIVE_ROOT_MISSING",
             "active runtime root does not exist on disk",
             "active_runtime_root",
-            "run reality-loop smoke or attempt before recording a transition",
+            "legacy reality-loop attempts are retired; provide explicit run_id and attempt or use ME-JEPA evidence capture",
             json!({"runtime_root": runtime_root.display().to_string()}),
             Some(file_sot(&runtime_root_file)),
         ));
@@ -375,7 +375,7 @@ fn latest_active_attempt() -> CCResult<(String, u64)> {
             "CCREALITY_CLI_ATTEMPT_DIR_MISSING",
             "no attempt directory was found for the active target",
             "active_runtime_root.attempts",
-            "run reality-loop smoke or attempt before recording a transition",
+            "legacy reality-loop attempts are retired; provide explicit run_id and attempt or use ME-JEPA evidence capture",
             json!({"runtime_root": runtime_root.display().to_string(), "run_id": run_id, "target": target}),
             Some(file_sot(&runtime_root)),
         ));
@@ -440,7 +440,7 @@ fn latest_run_id(runtime_root: &Path) -> CCResult<String> {
                 "CCREALITY_CLI_RUN_DIR_MISSING",
                 "no run directory was found under the active runtime root",
                 "runtime_root.runs",
-                "run reality-loop smoke or attempt before recording a transition",
+                "legacy reality-loop attempts are retired; provide explicit run_id and attempt or use ME-JEPA evidence capture",
                 json!({"runtime_root": runtime_root.display().to_string()}),
                 Some(file_sot(runtime_root)),
             )
@@ -685,7 +685,7 @@ fn read_trimmed_string(path: &Path, error_code: &'static str) -> CCResult<String
             error_code,
             format!("failed to read cgreality cache file: {e}"),
             "cgreality.cache_file",
-            "run reality-loop smoke or attempt before recording a transition",
+            "legacy reality-loop attempts are retired; provide explicit run_id and attempt or use ME-JEPA evidence capture",
             json!({"path": path.display().to_string()}),
             Some(file_sot(path)),
         )
@@ -696,7 +696,7 @@ fn read_trimmed_string(path: &Path, error_code: &'static str) -> CCResult<String
             "CCREALITY_CLI_CACHE_FILE_EMPTY",
             "cgreality cache file is empty",
             "cgreality.cache_file",
-            "run reality-loop smoke or attempt before recording a transition",
+            "legacy reality-loop attempts are retired; provide explicit run_id and attempt or use ME-JEPA evidence capture",
             json!({"path": path.display().to_string()}),
             Some(file_sot(path)),
         ))
