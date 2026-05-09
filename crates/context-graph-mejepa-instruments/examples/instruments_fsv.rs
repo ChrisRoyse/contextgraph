@@ -1,8 +1,10 @@
 // Manual Full State Verification for the Phase 1 instruments scaffolding.
 //
 // Sources of truth on disk:
-//   /tmp/contextgraph-mejepa-instruments-fsv/panel.json     — full 5,120-d panel
-//   /tmp/contextgraph-mejepa-instruments-fsv/oracle_*.json  — per-verdict input
+//   /tmp/contextgraph-mejepa-instruments-fsv/panel.json       — full 5,120-d panel
+//   /tmp/contextgraph-mejepa-instruments-fsv/oracle_*.json    — per-verdict input
+//   /tmp/contextgraph-mejepa-instruments-fsv/witness_chain.bin — canonical witness bytes
+//   /tmp/contextgraph-mejepa-instruments-fsv/static_*.json     — static-analysis input/vector
 //   /tmp/contextgraph-mejepa-instruments-fsv/instruments-evidence.json
 //
 // Plan:
@@ -13,9 +15,14 @@
 //      d. crash (TypeError raised)
 //   2. Encode each via EOracleInstrument; write the OracleVerdict + 128-d
 //      encoded vector to disk; re-read and verify byte-equal.
-//   3. Build a panel via PanelBuilder, set the EOracle slot from scenario (a),
-//      verify panel.slot(EOracle) is byte-exact and the rest is zero.
-//   4. Verify per-slot extents in the panel layout sum to PANEL_DIM = 5_120.
+//   3. Build a real two-entry witness chain, verify it through E_Witness,
+//      write raw bytes and encoded vector, then re-read both from disk.
+//   4. Build a real static-analysis source/diagnostic input, encode it,
+//      write source-of-truth JSON and vector, then re-read both from disk.
+//   5. Build a panel via PanelBuilder, set EOracle + EWitness +
+//      EStaticAnalysis, verify filled slots are byte-exact and all other
+//      slots are zero.
+//   6. Verify per-slot extents in the panel layout sum to PANEL_DIM = 5_120.
 //   5. Boundary cases:
 //      a. Empty no-exception oracle rejects MEJEPA_INSTRUMENTS_INVALID_INPUT
 //      b. Empty test_id rejects MEJEPA_INSTRUMENTS_INVALID_INPUT
@@ -25,11 +32,13 @@
 //      f. Empty panel build rejects MEJEPA_INSTRUMENTS_INVALID_INPUT
 //      g. Malformed persisted panel rejects on readback/deserialization
 
-use context_graph_mejepa_instruments::e_oracle::PerTestOutcome;
 use context_graph_mejepa_instruments::{
-    EOracleInstrument, ExceptionClass, Instrument, InstrumentSlot, OracleVerdict, Panel,
-    PanelBuilder, TestOutcome, PANEL_DIM,
+    Diagnostic, DiagnosticSeverity, EOracleInstrument, EStaticAnalysisInstrument,
+    EWitnessInstrument, ExceptionClass, Instrument, InstrumentSlot, OracleVerdict, Panel,
+    PanelBuilder, PerTestOutcome, StaticAnalysisInput, TestOutcome, WitnessChainInput,
+    CANONICAL_WITNESS_FORMAT_VERSION, PANEL_DIM,
 };
+use context_graph_witness::{WitnessEntry, HASH_SIZE, WITNESS_ENTRY_SIZE, ZERO_HASH};
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -53,6 +62,19 @@ fn write_text_checked(path: &Path, text: &str) -> FsvResult<()> {
     ensure(
         &format!("byte readback must match write at {}", path.display()),
         readback == text,
+    )?;
+    Ok(())
+}
+
+fn write_bytes_checked(path: &Path, bytes: &[u8]) -> FsvResult<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, bytes)?;
+    let readback = fs::read(path)?;
+    ensure(
+        &format!("byte readback must match write at {}", path.display()),
+        readback == bytes,
     )?;
     Ok(())
 }
@@ -110,6 +132,39 @@ fn verdict_crash(class: ExceptionClass) -> OracleVerdict {
     }
 }
 
+fn two_entry_witness_chain() -> Vec<u8> {
+    let first = WitnessEntry::new(ZERO_HASH, [1u8; HASH_SIZE], 100, 1);
+    let second = WitnessEntry::new(first.chain_hash(), [2u8; HASH_SIZE], 250, 2);
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&first.to_bytes());
+    bytes.extend_from_slice(&second.to_bytes());
+    bytes
+}
+
+fn static_analysis_input() -> StaticAnalysisInput {
+    StaticAnalysisInput {
+        source_text: "import math\n\n\ndef add(a: int, b: int) -> int:\n    # synthetic branch\n    if a > b:\n        return a + b\n    return b + a\n"
+            .to_string(),
+        diagnostics: vec![
+            Diagnostic {
+                tool: "ruff".to_string(),
+                severity: DiagnosticSeverity::Warning,
+                category: "F401".to_string(),
+                line: 1,
+                column: 8,
+            },
+            Diagnostic {
+                tool: "pyright".to_string(),
+                severity: DiagnosticSeverity::Info,
+                category: "reportUnusedImport".to_string(),
+                line: 1,
+                column: 8,
+            },
+        ],
+        churn_30d: Some(7),
+    }
+}
+
 fn encode_and_persist(
     evidence_root: &Path,
     label: &str,
@@ -137,6 +192,87 @@ fn encode_and_persist(
         "all_passed": verdict.all_passed(),
         "passes": true,
     }))
+}
+
+fn encode_witness_and_persist(evidence_root: &Path) -> FsvResult<(Value, Vec<f32>)> {
+    let inst = EWitnessInstrument;
+    let chain_bytes = two_entry_witness_chain();
+    ensure(
+        "witness chain length must be two canonical entries",
+        chain_bytes.len() == 2 * WITNESS_ENTRY_SIZE,
+    )?;
+    let chain_path = evidence_root.join("witness_chain.bin");
+    write_bytes_checked(&chain_path, &chain_bytes)?;
+    let readback_chain = fs::read(&chain_path)?;
+    let input = WitnessChainInput {
+        format_version: CANONICAL_WITNESS_FORMAT_VERSION,
+        chain_bytes: readback_chain,
+    };
+    let encoded = inst.encode(&input)?;
+    ensure(
+        "E_Witness encoded length must equal slot dim",
+        encoded.len() == inst.output_dim(),
+    )?;
+    let encoded_path = evidence_root.join("witness_encoded.json");
+    write_text_checked(&encoded_path, &serde_json::to_string_pretty(&encoded)?)?;
+    let readback_encoded: Vec<f32> = serde_json::from_str(&fs::read_to_string(&encoded_path)?)?;
+    ensure(
+        "E_Witness encoded vector must survive JSON readback",
+        readback_encoded == encoded,
+    )?;
+    Ok((
+        json!({
+            "source_of_truth": {
+                "chain_bytes_path": chain_path.display().to_string(),
+                "encoded_path": encoded_path.display().to_string(),
+            },
+            "chain_len": input.chain_bytes.len(),
+            "entry_count": input.chain_bytes.len() / WITNESS_ENTRY_SIZE,
+            "encoded_dim": encoded.len(),
+            "encoded_first_16": encoded[..16],
+            "passes": true,
+        }),
+        encoded,
+    ))
+}
+
+fn encode_static_and_persist(evidence_root: &Path) -> FsvResult<(Value, Vec<f32>)> {
+    let inst = EStaticAnalysisInstrument;
+    let input = static_analysis_input();
+    let input_path = evidence_root.join("static_analysis_input.json");
+    write_text_checked(&input_path, &serde_json::to_string_pretty(&input)?)?;
+    let readback_input: StaticAnalysisInput =
+        serde_json::from_str(&fs::read_to_string(&input_path)?)?;
+    ensure(
+        "StaticAnalysisInput must survive JSON readback",
+        readback_input == input,
+    )?;
+    let encoded = inst.encode(&readback_input)?;
+    ensure(
+        "E_StaticAnalysis encoded length must equal slot dim",
+        encoded.len() == inst.output_dim(),
+    )?;
+    let encoded_path = evidence_root.join("static_analysis_encoded.json");
+    write_text_checked(&encoded_path, &serde_json::to_string_pretty(&encoded)?)?;
+    let readback_encoded: Vec<f32> = serde_json::from_str(&fs::read_to_string(&encoded_path)?)?;
+    ensure(
+        "E_StaticAnalysis encoded vector must survive JSON readback",
+        readback_encoded == encoded,
+    )?;
+    Ok((
+        json!({
+            "source_of_truth": {
+                "input_path": input_path.display().to_string(),
+                "encoded_path": encoded_path.display().to_string(),
+            },
+            "diagnostic_count": input.diagnostics.len(),
+            "source_line_count": input.source_text.lines().count(),
+            "encoded_dim": encoded.len(),
+            "encoded_first_16": encoded[..16],
+            "passes": true,
+        }),
+        encoded,
+    ))
 }
 
 fn boundary_empty_test_id() -> FsvResult<Value> {
@@ -344,6 +480,80 @@ fn boundary_malformed_panel_readback(evidence_root: &Path) -> FsvResult<Value> {
     }))
 }
 
+fn boundary_empty_witness() -> FsvResult<Value> {
+    let inst = EWitnessInstrument;
+    let input = WitnessChainInput {
+        format_version: CANONICAL_WITNESS_FORMAT_VERSION,
+        chain_bytes: vec![],
+    };
+    let result = inst.encode(&input);
+    ensure(
+        "empty witness chain must reject",
+        matches!(&result, Err(e) if e.code() == "MEJEPA_INSTRUMENTS_INVALID_INPUT"),
+    )?;
+    Ok(json!({
+        "before_state": {
+            "format_version": CANONICAL_WITNESS_FORMAT_VERSION,
+            "chain_bytes_len": 0,
+        },
+        "after_state": {
+            "encoded_vector_written": false,
+        },
+        "expected_code": "MEJEPA_INSTRUMENTS_INVALID_INPUT",
+        "actual_code": result.err().map(|e| e.code()),
+        "passes": true,
+    }))
+}
+
+fn boundary_tampered_witness() -> FsvResult<Value> {
+    let inst = EWitnessInstrument;
+    let mut chain = two_entry_witness_chain();
+    chain[WITNESS_ENTRY_SIZE] ^= 0x7f;
+    let result = inst.encode(&WitnessChainInput {
+        format_version: CANONICAL_WITNESS_FORMAT_VERSION,
+        chain_bytes: chain,
+    });
+    ensure(
+        "tampered witness chain must reject",
+        matches!(&result, Err(e) if e.code() == "MEJEPA_INSTRUMENTS_INVALID_INPUT"),
+    )?;
+    Ok(json!({
+        "before_state": {
+            "entry_count": 2,
+            "tampered_byte_offset": WITNESS_ENTRY_SIZE,
+        },
+        "after_state": {
+            "encoded_vector_written": false,
+        },
+        "expected_code": "MEJEPA_INSTRUMENTS_INVALID_INPUT",
+        "actual_code": result.err().map(|e| e.code()),
+        "passes": true,
+    }))
+}
+
+fn boundary_static_bad_line() -> FsvResult<Value> {
+    let inst = EStaticAnalysisInstrument;
+    let mut input = static_analysis_input();
+    input.diagnostics[0].line = 9999;
+    let result = inst.encode(&input);
+    ensure(
+        "static-analysis diagnostic outside source range must reject",
+        matches!(&result, Err(e) if e.code() == "MEJEPA_INSTRUMENTS_INVALID_INPUT"),
+    )?;
+    Ok(json!({
+        "before_state": {
+            "source_line_count": input.source_text.lines().count(),
+            "diagnostic_0_line": 9999,
+        },
+        "after_state": {
+            "encoded_vector_written": false,
+        },
+        "expected_code": "MEJEPA_INSTRUMENTS_INVALID_INPUT",
+        "actual_code": result.err().map(|e| e.code()),
+        "passes": true,
+    }))
+}
+
 fn main() -> FsvResult<()> {
     let evidence_root = PathBuf::from("/tmp/contextgraph-mejepa-instruments-fsv");
     if evidence_root.exists() {
@@ -366,10 +576,14 @@ fn main() -> FsvResult<()> {
         &inst,
         &verdict_crash(ExceptionClass::TypeError),
     )?;
+    let (witness_scenario, witness_encoded) = encode_witness_and_persist(&evidence_root)?;
+    let (static_scenario, static_encoded) = encode_static_and_persist(&evidence_root)?;
 
     // Panel assembly + on-disk verification.
     let mut pb = PanelBuilder::new();
     pb.set_from_instrument(&inst, &verdict_all_pass())?;
+    pb.set_slot(InstrumentSlot::EWitness, &witness_encoded)?;
+    pb.set_slot(InstrumentSlot::EStaticAnalysis, &static_encoded)?;
     let panel = pb.build()?;
     ensure(
         "panel data length must equal PANEL_DIM",
@@ -380,14 +594,37 @@ fn main() -> FsvResult<()> {
         panel.is_filled(InstrumentSlot::EOracle),
     )?;
     ensure(
+        "EWitness slot must be filled",
+        panel.is_filled(InstrumentSlot::EWitness),
+    )?;
+    ensure(
+        "EStaticAnalysis slot must be filled",
+        panel.is_filled(InstrumentSlot::EStaticAnalysis),
+    )?;
+    ensure(
+        "EWitness slot must be byte-exact",
+        panel.slot(InstrumentSlot::EWitness) == witness_encoded.as_slice(),
+    )?;
+    ensure(
+        "EStaticAnalysis slot must be byte-exact",
+        panel.slot(InstrumentSlot::EStaticAnalysis) == static_encoded.as_slice(),
+    )?;
+    let filled_slots = [
+        InstrumentSlot::EOracle,
+        InstrumentSlot::EWitness,
+        InstrumentSlot::EStaticAnalysis,
+    ];
+    ensure(
         "non-filled slots must be zero in panel data",
         panel
             .data()
             .iter()
             .enumerate()
             .filter(|(idx, _)| {
-                let (off, dim) = InstrumentSlot::EOracle.extent();
-                *idx < off || *idx >= off + dim
+                !filled_slots.iter().any(|slot| {
+                    let (off, dim) = slot.extent();
+                    *idx >= off && *idx < off + dim
+                })
             })
             .all(|(_, x)| *x == 0.0),
     )?;
@@ -418,6 +655,8 @@ fn main() -> FsvResult<()> {
             "mixed": scenario_b,
             "crash_assertion_error": scenario_c,
             "crash_type_error": scenario_d,
+            "witness": witness_scenario,
+            "static_analysis": static_scenario,
         },
         "panel_source_of_truth": panel_path.display().to_string(),
         "boundaries": {
@@ -425,6 +664,9 @@ fn main() -> FsvResult<()> {
             "empty_test_id": boundary_empty_test_id()?,
             "wrong_dim": boundary_wrong_dim()?,
             "invalid_runtime": boundary_invalid_runtime()?,
+            "empty_witness": boundary_empty_witness()?,
+            "tampered_witness": boundary_tampered_witness()?,
+            "static_bad_line": boundary_static_bad_line()?,
             "nan_in_set_slot": boundary_nan()?,
             "double_fill": boundary_double_fill()?,
             "empty_panel_build": boundary_empty_panel_build()?,

@@ -7,6 +7,8 @@ description = "Clean-room ME-JEPA-Code mutation corpus generator (Phase 0 mutati
 license.workspace = true
 
 [dependencies]
+context-graph-mejepa-instruments = { path = "../context-graph-mejepa-instruments" }
+rocksdb = "0.22"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -1,8 +1,10 @@
 # Doc 09 Phase 0 — Workspace + Mutation Corpus Generation
 
 > **Estimated effort (per doc 09 §7):** 5-7 days.
-> **Status (2026-05-09):** PARTIAL — operators + split shipped; Docker oracle
-> + RocksDB CFs + full corpus generation deferred.
+> **Status (2026-05-09):** PARTIAL — operators, split, strict
+> command/Docker oracle wrapper, pytest-report parser, and crate-local
+> RocksDB oracle store shipped; official SWE-bench Docker batch and full
+> 2,400-entry generation deferred.
 
 ## Goal
 
@@ -33,9 +35,10 @@ Phase 0 is the **bottleneck**.
 2. **8 mutation engines**, each in its own module per §3.1 row table.
 3. **Docker oracle wrapper** that runs each mutated patch against the
    official SWE-bench evaluator and persists `(mutated_patch,
-   oracle_verdict)` tuples.
+   oracle_verdict)` tuples. The local wrapper/parser is shipped; the
+   official SWE-bench image batch is still operationally deferred.
 4. **RocksDB column families** `CF_MEJEPA_MUTATION_CORPUS` and
-   `CF_MEJEPA_ORACLE_VERDICTS`.
+   `CF_MEJEPA_ORACLE_VERDICTS` (crate-local `OracleStore` shipped).
 
 ## Definition of Done (per doc 09 §7)
 
@@ -98,43 +101,50 @@ tests pass. Evidence at `/tmp/contextgraph-mejepa-corpus-fsv/`.
 - `Instrument` trait (in `mejepa-instruments`) consumes
   `OracleVerdict` from the corpus.
 
+### 4. Strict oracle wrapper + RocksDB source-of-truth store
+
+- `context-graph-mejepa-corpus::oracle` exposes:
+  - `run_command_json_oracle(...)` — finite timeout, accepted exit-code
+    allowlist, stale-report rejection, stdout/stderr tail in errors.
+  - `run_docker_json_oracle(...)` — validates Docker daemon access,
+    bind mounts, network/read-only-root options, then delegates to the
+    same report-file source-of-truth parser.
+  - `parse_pytest_json_report(...)` — strict pytest JSON parser that
+    cross-checks summary counts against the tests array and rejects
+    malformed/truncated/stale reports.
+  - `OracleStore` — RocksDB store with
+    `CF_MEJEPA_MUTATION_CORPUS` and `CF_MEJEPA_ORACLE_VERDICTS`, keyed
+    by `(task_id, mutation_category)`.
+- FSV:
+  - Trigger: real `python3 -m pytest` synthetic project with expected
+    1 pass / 1 fail / 1 skip.
+  - Source of truth: `/tmp/contextgraph-mejepa-corpus-fsv/oracle/pytest-report.json`
+    plus the RocksDB CFs under `/tmp/contextgraph-mejepa-corpus-fsv/oracle/rocksdb`.
+  - Readback: the FSV reopens RocksDB and scans both CFs.
+  - Evidence: `/tmp/contextgraph-mejepa-corpus-fsv/oracle-evidence.json`.
+
 ## What's deferred (⏳)
 
-### A. Docker oracle wrapper (highest priority remaining)
-
-- New module `crates/context-graph-mejepa-corpus/src/oracle.rs`
-  (~200-300 LOC).
-- Subprocess wrapper that invokes the SWE-bench Docker evaluator
-  (image `swebench/sweb.eval.x86_64.<task>:latest` per the SWE-bench
-  Lite runbook).
-- Per-test pass/fail JSON parser (pytest --json output).
-- Persistence to `CF_MEJEPA_ORACLE_VERDICTS`.
-- Integration with the corpus generation pipeline so each
-  `(task_id, mutation_category, mutated_source)` tuple produces a
-  verdict.
+### A. Official SWE-bench Docker image oracle run
 
 **Why deferred:** environment-dependent. Requires:
 - Docker daemon access (operator's hardware).
 - Pulling SWE-bench Lite images (network + disk).
 - Multi-minute oracle runs per task × 2400 tasks = many hours of
   serial work, more in parallel.
-- Cannot be tested in a single turn without long wait.
+- The local wrapper was FSV-tested with a real pytest trigger, but the
+  official SWE-bench task images were not pulled or run in this pass.
 
 **Blocker history:**
 `memory/blockers/agent-72-coordinator--docker-permission-denied-blocks-official-eval.md`
 was marked resolved per the runbook in 2026-05-07. Still env-dependent.
 
-### B. RocksDB column families
+### B. Storage-crate integration
 
-- `CF_MEJEPA_MUTATION_CORPUS` keyed by
-  `(task_id, mutation_category) → mutated_source_blob`.
-- `CF_MEJEPA_ORACLE_VERDICTS` keyed by
-  `(task_id, mutation_category) → OracleVerdict`.
-- Wire into `crates/context-graph-storage`.
-
-**Why deferred:** depends on Docker oracle wrapper (the writer side).
-Schema-only stub possible without oracle, but adds little value
-without writes.
+- The crate-local `OracleStore` and CF schema are shipped and FSV-tested.
+- If ME-JEPA corpus rows need to live in the shared production
+  `context-graph-storage` database, wire these CFs into that store's
+  global descriptor set and migration/open path.
 
 ### C. Full 2,400-entry corpus generation
 
@@ -150,30 +160,32 @@ once items A and B ship.
 
 ## Critical path within Phase 0
 
-1. **Docker oracle wrapper** (item A) — gates everything else.
-2. **RocksDB CFs** (item B) — required to persist what (A) produces.
-3. **Full corpus generation** (item C) — operational; runs on demand
-   once (A) + (B) work.
+1. **Official SWE-bench Docker image run** (item A) — gates real labels.
+2. **Full corpus generation** (item C) — operational; runs on demand
+   once official images are present.
+3. **Optional storage-crate wiring** (item B) — needed only if the corpus
+   must share the main production RocksDB rather than the crate-local
+   oracle DB.
 
 ## Dependencies
 
 - ✅ `context-graph-mejepa-corpus` mutation operators
 - ✅ `context-graph-mincut` (Stoer-Wagner) for split
 - ✅ `context-graph-witness` (witness-chain entries per attempt)
-- ⏳ Docker daemon + SWE-bench Lite test fixtures locally
-- ⏳ `context-graph-storage` extension for new CFs
+- ✅ Docker daemon available locally during hardening (`docker version`
+  returned server 29.4.1)
+- ⏳ SWE-bench Lite Docker images/test fixtures locally for official
+  evaluator runs
+- ⏳ optional `context-graph-storage` extension for shared production CFs
 
 ## Implementation order (recommended next 3 turns)
 
-**Turn 1**: Ship Docker oracle wrapper as a synchronous primitive
-that takes `(task_id, mutated_source)` and returns `OracleVerdict`.
-Fail-closed errors for missing Docker, network failures, image-pull
-failures. Real Docker test against ONE real SWE-bench Lite task to
-verify happy path.
+**Turn 1**: Pull/prepare the official SWE-bench Lite Docker images and
+run the shipped wrapper against ONE real task image to validate the
+official evaluator contract.
 
 **Turn 2**: Wire the wrapper into `corpus::generate_swe_bench_mutation_corpus`.
-Add the RocksDB CFs + persistence layer. Verify against 5 tasks ×
-8 categories = 40 entries (1.7% of full corpus).
+Verify against 5 tasks × 8 categories = 40 entries (1.7% of full corpus).
 
 **Turn 3**: Run the full 300-task generation as an operational batch.
 Verify the doc-09 DoD: total_entries=2400, by_category=300 each,

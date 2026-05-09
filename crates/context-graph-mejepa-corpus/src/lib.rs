@@ -38,6 +38,7 @@ mod compile_error;
 mod delete_test_call;
 mod known_good;
 mod off_by_one;
+pub mod oracle;
 mod over_engineer;
 mod prng;
 mod python_lex;

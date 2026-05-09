@@ -1093,6 +1093,8 @@ dependencies = [
 name = "context-graph-mejepa-corpus"
 version = "0.1.0"
 dependencies = [
+ "context-graph-mejepa-instruments",
+ "rocksdb",
  "serde",
  "serde_json",
  "sha2",
@@ -1106,6 +1108,7 @@ dependencies = [
 name = "context-graph-mejepa-instruments"
 version = "0.1.0"
 dependencies = [
+ "context-graph-witness",
  "serde",
  "serde_json",
  "tempfile",

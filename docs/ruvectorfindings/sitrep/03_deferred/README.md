@@ -7,9 +7,9 @@ Per-item deep-dives for everything that has NOT yet shipped on
 
 ### Phases (doc 09)
 
-- `phases/phase0.md` — Phase 0 remaining (Docker oracle, RocksDB CFs,
-  full corpus generation).
-- `phases/phase1.md` — Phase 1 remaining (13 of 14 instruments,
+- `phases/phase0.md` — Phase 0 remaining (official SWE-bench Docker
+  image batch, full corpus generation, optional shared-storage wiring).
+- `phases/phase1.md` — Phase 1 remaining (11 of 14 instruments,
   tree-sitter / Pyright integration).
 - `phases/phase2.md` — Phase 2 (panel materializer, predictor, frozen
   target readback, VICReg loss, oracle head).
@@ -61,12 +61,13 @@ Tier 2.4 mincut    ─> Phase 0 split leakage proof (✅ shipped)
 The `04_implementation_plans/` directory holds ready-to-execute plans
 for the 5 highest-priority deferred items. Order:
 
-1. **E_Witness** (`plan_e_witness.md`) — pure-Rust, ~1.5 days,
-   validates trait surface.
-2. **E_StaticAnalysis** (`plan_e_static_analysis.md`) — pure-Rust,
-   ~2 days, scalar feature aggregates.
-3. **Phase 0 Docker oracle** (`plan_phase0_docker_oracle.md`) — gates
-   the full corpus generation.
+1. **Phase 0 official SWE-bench Docker batch** (`plan_phase0_docker_oracle.md`)
+   — local wrapper/parser/store are shipped; now validate against official
+   task images and generate real labels.
+2. **E_Test + E_Problem + E_CommitMsg** — reuse the existing E1 embedder
+   path for the next three Phase 1 slots.
+3. **E_Diff / E_AST scaffold** — tree-sitter-derived deterministic
+   encoders before trained replacements.
 4. **Phase 2 predictor** (`plan_phase2_predictor.md`) — the biggest
    single item; needs candle CUDA.
 5. **Phase 6 storage wiring** (`plan_phase6_storage_wiring.md`) —

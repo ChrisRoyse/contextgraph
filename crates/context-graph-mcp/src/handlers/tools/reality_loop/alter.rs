@@ -206,7 +206,6 @@ pub async fn harness_run_command(args: Value) -> Result<Value> {
             )
         })?;
     let tool_dir = attempt_dir.join("claude-code-optimizer/commands");
-    let timeout_str = timeout.to_string();
     let tool_dir_str = tool_dir.to_str().ok_or_else(|| {
         CCRealityError::new(
             "CCREALITY_HARNESS_TOOL_DIR_NON_UTF8",

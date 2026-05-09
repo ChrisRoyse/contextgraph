@@ -38,11 +38,11 @@
 | doc 05 Tier 3.6 | Manifold geometry / Riemannian | — | ⏳ deferred (XL effort) |
 | doc 05 Tier 4 | (defer/skip pile) — `ruvector-attention`, `ruvllm`, `ruvector-graph` Cypher, `ruvector-postgres`, `ruvector-consciousness`, `ruQu`, FPGA, Hailo, ESP32-S3 | — | 🚫 not in scope |
 | doc 09 Phase 0 | 8 mutation operators (KnownGood, SubtleFlip, OffByOne, SwapVariable, DeleteTestCall, WrongFile, OverEngineer, CompileError) | `context-graph-mejepa-corpus` | ✅ shipped | 50 tests; `python3 py_compile`-driven FSV at `/tmp/contextgraph-mejepa-corpus-fsv/{generated_sources/*.py, pyc/*.pyc, mejepa-corpus-evidence.json}` |
-| doc 09 Phase 0 | Corpus train/calibration/holdout split (repo-atomic, LPT bin-pack + lowest-current/target ratio) | `mejepa-corpus::split` | ✅ shipped | `/tmp/contextgraph-mejepa-corpus-fsv/{split-evidence.json, split-assignments.json}` (300 tasks across 25 repos) |
-| doc 09 Phase 0 | Docker oracle wrapper | — | ⏳ deferred (requires SWE-bench env + multi-minute oracle runs) |
-| doc 09 Phase 0 | RocksDB CFs `CF_MEJEPA_MUTATION_CORPUS` + `CF_MEJEPA_ORACLE_VERDICTS` | — | ⏳ deferred (depends on Docker oracle) |
+| doc 09 Phase 0 | Corpus train/calibration/holdout split (repo-atomic, LPT bin-pack + lowest-current/target ratio) | `mejepa-corpus::split` | ✅ shipped | `/tmp/contextgraph-mejepa-corpus-fsv/{split-evidence.json, split-assignments.json}` (300 tasks across 12 repos) |
+| doc 09 Phase 0 | Command + Docker oracle wrapper (report-file SoT, timeout, stale-report rejection, strict pytest JSON parser) | `context-graph-mejepa-corpus::oracle` | ✅ wrapper shipped; official SWE-bench image batch deferred | real `python3 -m pytest` FSV + parser boundaries at `/tmp/contextgraph-mejepa-corpus-fsv/oracle-evidence.json` |
+| doc 09 Phase 0 | RocksDB CFs `CF_MEJEPA_MUTATION_CORPUS` + `CF_MEJEPA_ORACLE_VERDICTS` | `mejepa-corpus::oracle::OracleStore` | ✅ shipped (crate-local store) | writes, flushes, reopens, scans both CFs in `/tmp/contextgraph-mejepa-corpus-fsv/oracle-evidence.json` |
 | doc 09 Phase 0 | 2,400-entry full corpus generation | — | ⏳ deferred (operational batch, not code) |
-| doc 09 Phase 1 | `Instrument` trait + `InstrumentSlot` enum (15 slots, 5,120-d total per §3.5.5) + `Panel` + `PanelBuilder` (fail-closed dim/finite/double-fill validation, JSON via `serde(try_from)` invariant gate) | `context-graph-mejepa-instruments` | ✅ shipped | 27 tests; `/tmp/contextgraph-mejepa-instruments-fsv/{panel.json, instruments-evidence.json}` |
+| doc 09 Phase 1 | `Instrument` trait + `InstrumentSlot` enum (15 slots, 5,120-d total per §3.5.5) + `Panel` + `PanelBuilder` (fail-closed dim/finite/double-fill validation, JSON via `serde(try_from)` invariant gate) | `context-graph-mejepa-instruments` | ✅ shipped | 40 tests; `/tmp/contextgraph-mejepa-instruments-fsv/{panel.json, instruments-evidence.json}` |
 | doc 09 Phase 1 | E_Oracle (128-d: pass/fail/skip/error fractions + total + has_exception + 10-class one-hot exception) | `mejepa-instruments::e_oracle` | ✅ shipped | 4 scenarios (`all_pass`, `mixed`, `crash_assertion_error`, `crash_type_error`) on disk + 4 boundary cases |
 | doc 09 Phase 1 | Multi-language `ast_chunker` extension (Rust shipped today; extend to Python, JS, TS, Go, Java, C, C++, C#, Ruby, PHP per doc 14 §6 items 1-5) | `crates/context-graph-core/src/memory/ast_chunker.rs` (Rust-only today) + `crates/context-graph-cli/src/commands/dynamicjepa.rs` (multi-language semantic extractor already shipped) | partial → ⏳ extension deferred (~10 days) | Rust FSV at `/tmp/contextgraph-rust-ast-chunker-fsv/ast-chunker-evidence.json` |
 | doc 09 Phase 1 | Per-chunk-type embedder routing table (per doc 14 §4) | — | ⏳ deferred (~1 day after multi-language chunker) | — |
@@ -53,10 +53,10 @@
 | doc 09 Phase 1 | E_Test (384-d, reuse E1) | — | ⏳ deferred |
 | doc 09 Phase 1 | E_Trace (512-d, sequence transformer) | — | ⏳ deferred |
 | doc 09 Phase 1 | E_Diff (256-d, AST diff edges) | — | ⏳ deferred |
-| doc 09 Phase 1 | E_Witness (256-d, witness chain entry sequence encoder) | — | ⏳ deferred (highest-leverage next; pure-Rust, no external deps) |
+| doc 09 Phase 1 | E_Witness (256-d, verified 73-byte witness chain entry encoder) | `mejepa-instruments::e_witness` | ✅ shipped | raw witness bytes + encoded slot in `/tmp/contextgraph-mejepa-instruments-fsv/`; empty/truncated/tampered/version edge cases |
 | doc 09 Phase 1 | E_Problem (1024-d, reuse E1) | — | ⏳ deferred |
 | doc 09 Phase 1 | E_CommitMsg (384-d, reuse E1) | — | ⏳ deferred |
-| doc 09 Phase 1 | E_StaticAnalysis (256-d, mypy/Pyright/ruff/clippy aggregates) | — | ⏳ deferred |
+| doc 09 Phase 1 | E_StaticAnalysis (256-d, linter/typechecker diagnostic + source-shape aggregates) | `mejepa-instruments::e_static_analysis` | ✅ shipped | static-analysis input + encoded slot in `/tmp/contextgraph-mejepa-instruments-fsv/`; blank source/control/bad-line edge cases |
 | doc 09 Phase 1 | E_Runtime (256-d, walltime/RSS/coverage/network aggregates) | — | ⏳ deferred |
 | doc 09 Phase 1 | E_Reasoning (384-d, AI agent reasoning trace — Claude Code / external agents / human reviewers — + reflexion; post-pivot 2026-05-09 the source broadens beyond Qwen CoT) | — | ⏳ deferred |
 | doc 09 Phase 1 | Scalars (128-d, BFS depth + blame age + churn + coverage Δ + repo-health) | — | ⏳ deferred |
@@ -71,7 +71,7 @@
 | doc 09 Phase 6 | Tiered storage backend + nightly GC + Merkle compression + quota enforcement | partial (tier compression primitive shipped Tier 1.3 above) | tier-compression done; storage wiring + GC scheduler deferred |
 | doc 09 Phase 7 | `mejepa-shift-subscriber` Tokio task + reality-loop integration + MCP tools (`mejepa_predict` / `mejepa_verify` / `mejepa_observe`) | — | ⏳ deferred (~5-7 days est) |
 | doc 09 Phase 8 | Evaluation against ≥0.95 prediction-oracle correlation end-goal | — | ⏳ deferred (ongoing) |
-| doc 09 §3.5 | E_StaticAnalysis instrument | — | ⏳ deferred (sub-Phase-1) |
+| doc 09 §3.5 | E_StaticAnalysis instrument | `mejepa-instruments::e_static_analysis` | ✅ shipped |
 | doc 09 §3.5 | E_Runtime instrument | — | ⏳ deferred (sub-Phase-1) |
 | doc 09 §3.5 | E_Reasoning instrument | — | ⏳ deferred (sub-Phase-1) |
 | doc 09 §3.6 | Adjacent-test outcomes | — | ⏳ deferred |
@@ -79,15 +79,15 @@
 | doc 09 §3.6 | Operator overrides + reasons | — | ⏳ deferred (gold-standard supervision channel) |
 | doc 09 §3.6 | Per-hunk pass/fail attribution | — | ⏳ deferred |
 | doc 09 §3.6 | Inner-actor reasoning trace | — | ⏳ deferred |
-| doc 09 §3.6 #15-21 | Witness-chain preflight signal, DynamicJEPA reality-readback gate, format-manifest schema-version migration, Reflexion outputs, bandit-arm trajectories, atomic-write durability fence for `observe()`, schema-validator integration | partial (preflight + atomic-write + schema-validator already in `context-graph-mcp`) | wiring into `E_Witness` deferred |
+| doc 09 §3.6 #15-21 | Witness-chain preflight signal, DynamicJEPA reality-readback gate, format-manifest schema-version migration, Reflexion outputs, bandit-arm trajectories, atomic-write durability fence for `observe()`, schema-validator integration | partial (E_Witness encoder + preflight/atomic-write/schema-validator primitives shipped) | broader reality-loop wiring deferred |
 | doc 09 §3.7 | Multi-objective aux-head loss + counterfactual training + active learning + cross-task transfer + aux-head distillation | — | ⏳ deferred (~5-7 days est) |
 | doc 09 §3.8 | Real-time `mejepa-shift-subscriber` Tokio task in `context-graph-mcp` | — | ⏳ deferred |
 
 ## Test totals (2026-05-09)
 
-**207 tests across 6 ME-JEPA-foundation crates pass:**
-- `context-graph-mejepa-corpus`: 50
-- `context-graph-mejepa-instruments`: 27
+**227 tests across 6 ME-JEPA-foundation crates pass:**
+- `context-graph-mejepa-corpus`: 57
+- `context-graph-mejepa-instruments`: 40
 - `context-graph-tier-compression`: 24
 - `context-graph-solver`: 58
 - `context-graph-witness`: 30
@@ -97,9 +97,9 @@
 
 - `/tmp/contextgraph-tier1-fsv/` — MMR, conformal, ed25519
 - `/tmp/contextgraph-tier2-fsv/` — mincut, Granger, cert, causal-mask
-- `/tmp/contextgraph-mejepa-corpus-fsv/` — mutation operators + split + py_compile artifacts
+- `/tmp/contextgraph-mejepa-corpus-fsv/` — mutation operators + split + oracle report/RocksDB evidence + py_compile artifacts
 - `/tmp/contextgraph-tier-compression-fsv/` — 4 quantized blobs (8/7/5/3-bit) + boundary cases
-- `/tmp/contextgraph-mejepa-instruments-fsv/` — full 5,120-d panel + 4 oracle scenarios + 4 boundary cases
+- `/tmp/contextgraph-mejepa-instruments-fsv/` — full 5,120-d panel + E_Oracle/E_Witness/E_StaticAnalysis inputs, encoded slots, and boundary cases
 
 ## Session reports (chronological)
 
@@ -110,20 +110,18 @@
 - `memory/reports/session-2026-05-09b--phase0-corpus-split-wrapper.md`
 - `memory/reports/session-2026-05-09c--tier1.3-tier-compression.md`
 - `memory/reports/session-2026-05-09d--phase1-instruments-scaffolding.md`
+- `memory/reports/session-2026-05-09--phase0-phase1-hardening.md`
 
 ## Highest-leverage next primitives (recommended)
 
-1. **E_Witness instrument (256-d)** — sequence encoder over the existing
-   73-byte witness chain entries from `context-graph-witness`. Pure-Rust,
-   no external deps. ~300 LOC. Closes the §3.6 #15-21 gap from doc 09.
-2. **E_StaticAnalysis instrument (256-d)** — operates on linter / typecheck
-   / complexity / coverage scalar features doc 09 §3.5.1 enumerates.
-   Pure-Rust math; inputs are scalar features the harness can extract from
-   already-installed tools (mypy, ruff). ~250 LOC.
-3. **doc 09 Phase 0 Docker oracle wrapper** — required to close Phase 0.
-   Environment-dependent (needs SWE-bench Docker daemon + multi-minute
-   oracle runs); not feasible in a single turn. Use a follow-up turn for
-   the operational batch.
+1. **doc 09 Phase 0 full corpus generation** — run the official
+   SWE-bench Lite Docker image batch now that the local wrapper/parser/store
+   exists. This is operationally heavy: 300 tasks × 8 categories.
+2. **E_Test + E_Problem + E_CommitMsg** — reuse the existing E1 path for
+   test descriptions, problem text, and commit text. These are the next
+   lowest-risk Phase 1 instruments after the three concrete pure-Rust slots.
+3. **E_Diff / E_AST scaffold** — deterministic tree-sitter-derived
+   hashed-feature encoders first, then trained replacements during Phase 3.
 4. **doc 05 Tier 2.5 Matryoshka + Graph RAG (Leiden)** — bounded ~2-3
    days; clean-room math; touches no external systems.
 5. **doc 09 Phase 6 storage wiring** — wire the shipped

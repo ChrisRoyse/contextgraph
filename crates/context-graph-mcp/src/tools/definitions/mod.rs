@@ -1,6 +1,6 @@
 //! Tool definitions for the MCP surface.
 //!
-//! The current default registry exposes 145 tools, including the 39-tool
+//! The current default registry exposes 144 tools, including the 39-tool
 //! DynamicJEPA MCP surface. The
 //! ccreality tool surface is listed separately in reality-loop mode.
 
@@ -37,7 +37,7 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(145);
+    let mut tools = Vec::with_capacity(144);
 
     // Capability discovery tools (1) - compact map of embedders, CFs, and tools
     tools.extend(capability::definitions());
@@ -63,7 +63,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Causal tools (4) - E5 Priority 1 enhancement
     tools.extend(causal::definitions());
 
-    // Causal discovery tools (2) - E5 LLM-based relationship discovery
+    // Causal discovery tools (retired local model surface).
     tools.extend(causal_discovery::definitions());
 
     // Keyword tools (1) - E6 keyword search enhancement
@@ -72,7 +72,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Code tools (1) - E7 code search enhancement
     tools.extend(code::definitions());
 
-    // Graph tools (2 base, +2 LLM) - E8 upgrade (Phase 4)
+    // Graph tools (deterministic graph read/query surface)
     tools.extend(graph::definitions());
 
     // Robustness tools (1) - E9 typo-tolerant search
@@ -117,7 +117,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Contrastive pair tools (4) - Phase 3 miner + read surface
     tools.extend(contrastive::definitions());
 
-    // Typed-edge training tools (4) - Phase 4 (F1/F2/F4 + list)
+    // Typed-edge training tools (3) - Phase 4 (F1/F2/F4 + list)
     tools.extend(typed_edges::definitions());
 
     // DynamicJEPA tools (39) - 5090jepa MCP surface through Phase 6.
@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
-        assert_eq!(tools.len(), 145);
+        assert_eq!(tools.len(), 144);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         let len_before = names.len();
@@ -192,7 +192,7 @@ mod tests {
         assert_eq!(utl::definitions().len(), 18);
         assert_eq!(constellation::definitions().len(), 6);
         assert_eq!(contrastive::definitions().len(), 4);
-        assert_eq!(typed_edges::definitions().len(), 4);
+        assert_eq!(typed_edges::definitions().len(), 3);
         assert_eq!(dynamicjepa::definitions().len(), 39);
         assert_eq!(graph::definitions().len(), 2);
         assert_eq!(causal_discovery::definitions().len(), 0);

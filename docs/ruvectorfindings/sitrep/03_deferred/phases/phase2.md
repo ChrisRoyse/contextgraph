@@ -2,7 +2,8 @@
 
 > **Estimated effort (per doc 09 §7):** 7-10 days.
 > **Status (2026-05-09):** DEFERRED — depends on Phase 1 instruments
-> being shippable (currently 1 of 14).
+> being shippable (currently 3 of 14: E_Oracle, E_Witness,
+> E_StaticAnalysis).
 
 ## Goal
 

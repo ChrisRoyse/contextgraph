@@ -35,8 +35,6 @@ use crate::protocol::{JsonRpcId, JsonRpcResponse};
 const DEFAULT_EXPORT_MAX_EDGES: usize = 10_000;
 const HARD_MAX_EXPORT_EDGES: usize = 1_000_000;
 const HARD_MAX_DERIVE_PAIRS: usize = 1_000_000;
-const DEFAULT_VALIDATE_MAX_EDGES: usize = 100;
-const HARD_MAX_VALIDATE_EDGES: usize = 10_000;
 const DEFAULT_LIST_LIMIT: usize = 100;
 const HARD_MAX_LIST_LIMIT: usize = 1_000;
 

@@ -1,33 +1,32 @@
 # Implementation Plans — Ready-To-Execute
 
-Five ready-to-execute plans for the highest-priority deferred items as
-of 2026-05-09. Each plan includes deliverables, definition of done,
-test plan, design notes, and an explicit "fresh-agent recipe" for
-picking up the work.
+Ready-to-execute plans for high-priority deferred items as of
+2026-05-09. `plan_e_witness.md`, `plan_e_static_analysis.md`, and the
+local wrapper/store portion of `plan_phase0_docker_oracle.md` have now
+shipped; those files are retained as design history and for the
+remaining official SWE-bench batch work.
 
 ## Files
 
 | Plan | Priority | Effort | Crate / Module |
 |---|---|---|---|
-| `plan_e_witness.md` | **HIGHEST** | ~1.5 days | `context-graph-mejepa-instruments/src/e_witness.rs` |
-| `plan_e_static_analysis.md` | HIGH | ~2 days | `context-graph-mejepa-instruments/src/e_static_analysis.rs` |
-| `plan_phase0_docker_oracle.md` | HIGH | ~3-5 days | `context-graph-mejepa-corpus/src/oracle.rs` |
+| `plan_e_witness.md` | ✅ shipped | design history | `context-graph-mejepa-instruments/src/e_witness.rs` |
+| `plan_e_static_analysis.md` | ✅ shipped | design history | `context-graph-mejepa-instruments/src/e_static_analysis.rs` |
+| `plan_phase0_docker_oracle.md` | HIGH | official image batch remains | `context-graph-mejepa-corpus/src/oracle.rs` |
 | `plan_phase2_predictor.md` | MEDIUM | ~7-10 days | `context-graph-mejepa/` (new crate) |
 | `plan_phase6_storage_wiring.md` | MEDIUM | ~3-5 days | `context-graph-mejepa-storage/` (new crate) |
 
 ## Order rationale
 
-1. **E_Witness first** — pure-Rust, validates the trait surface with a
-   second concrete instrument (after E_Oracle), unblocks no other work.
-   Self-contained; ~300 LOC + tests + FSV.
+1. **Phase 0 official SWE-bench Docker batch** — local wrapper/parser/store
+   are shipped; now pull/run the official task images and persist real
+   `OracleVerdict` rows per `(task_id, mutation_category)`.
 
-2. **E_StaticAnalysis next** — same trait surface, pure-Rust scalar
-   feature aggregates, no external dependencies. Doubles the linear-
-   probe gate evidence base.
+2. **E_Test + E_Problem + E_CommitMsg** — not yet covered by a dedicated
+   plan file; reuse the E1 embedder path for three low-risk Phase 1 slots.
 
-3. **Phase 0 Docker oracle** — gates the full corpus generation. Without
-   real `OracleVerdict` per `(task_id, mutation_category)`, Phase 1
-   instrument linear-probe gate cannot pass.
+3. **E_Diff / E_AST scaffold** — tree-sitter-derived deterministic
+   encoders before trained replacements.
 
 4. **Phase 2 predictor** — the biggest single work item. Needs candle
    0.9.2-alpha sm_120a CUDA, ~7-10 days, but unblocks Phases 3..8.

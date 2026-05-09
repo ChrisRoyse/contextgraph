@@ -20,8 +20,11 @@ and what the primitive enables downstream.
   (`context-graph-mejepa-corpus`).
 - `phase0_corpus_split.md` — repo-atomic train/cal/holdout split
   (`context-graph-mejepa-corpus::split`).
+- `phase0_oracle_and_store.md` — command/Docker oracle wrapper + strict
+  pytest report parser + RocksDB oracle store (`context-graph-mejepa-corpus::oracle`).
 - `phase1_scaffolding_and_e_oracle.md` — `Instrument` trait + `Panel` +
-  `EOracleInstrument` (`context-graph-mejepa-instruments`).
+  `EOracleInstrument`, `EWitnessInstrument`, and
+  `EStaticAnalysisInstrument` (`context-graph-mejepa-instruments`).
 
 ## How to add a new shipped-primitive entry
 

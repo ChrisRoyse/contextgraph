@@ -2,8 +2,9 @@
 
 > **Estimated effort (per doc 09 §7):** 10-14 days.
 > **Status (2026-05-09):** PARTIAL — `Instrument` trait + `Panel` +
-> `PanelBuilder` + `EOracleInstrument` shipped (1 of 14 instruments).
-> 13 instruments deferred.
+> `PanelBuilder` + `EOracleInstrument` + `EWitnessInstrument` +
+> `EStaticAnalysisInstrument` shipped (3 of 14 instruments). 11
+> instruments deferred.
 
 ## Goal
 
@@ -89,9 +90,35 @@ context-graph mejepa-instruments verify --corpus ./data/mejepa-corpus
 - dims 16..128: zero padding reserved for future stack-trace embedding
   extension per §3.5.
 
-27 unit tests + FSV at `/tmp/contextgraph-mejepa-instruments-fsv/`.
+### EWitnessInstrument (2 of 14, `src/e_witness.rs`)
 
-## What's deferred (⏳ — 13 instruments + tree-sitter integration)
+256-d deterministic encoder over canonical 73-byte witness-chain
+entries from `context-graph-witness`.
+
+- Validates `format_version == CANONICAL_WITNESS_FORMAT_VERSION`.
+- Rejects empty, truncated, oversized, tampered, or chain-link-invalid
+  byte sources before emitting any vector.
+- Calls `verify_chain_bytes(...)` and decodes entries before feature
+  aggregation.
+- Emits action/prev/last-chain-hash features, witness-type histogram,
+  monotonic timestamp flag, duration feature, and final-entry features.
+
+### EStaticAnalysisInstrument (3 of 14, `src/e_static_analysis.rs`)
+
+256-d deterministic encoder over static-analysis source-of-truth input:
+source text, linter/typechecker diagnostics, and churn.
+
+- Rejects whitespace-only source text, NUL/control-containing analyzer
+  identifiers, excessive diagnostic volume, and diagnostics whose
+  one-based line number falls outside the analyzed source.
+- Encodes severity histogram, tool/category hash bins, diagnostic
+  position aggregates, source size, clean-run marker, churn marker, and
+  deterministic tail features.
+
+40 unit tests + strict Clippy + FSV at
+`/tmp/contextgraph-mejepa-instruments-fsv/`.
+
+## What's deferred (⏳ — 11 instruments + tree-sitter integration)
 
 ### Instruments by group
 
@@ -104,11 +131,11 @@ context-graph mejepa-instruments verify --corpus ./data/mejepa-corpus
 | E_Test | 384 | reuse E1 on test-fn natural-language descriptions | ~1 day | low (existing E1 path) |
 | E_Trace | 512 | new — sequence transformer over `(fn_id, line_no, val_hash)` events | ~3 days | low (needs runtime trace capture) |
 | E_Diff | 256 | new — graph attention over diff-edge events | ~2 days | medium |
-| **E_Witness** | 256 | new — sequence transformer over 73-byte chain entries | **~1.5 days** | **HIGHEST** (pure-Rust, no external deps; data already produced) |
+| ✅ E_Witness | 256 | deterministic verified encoder over 73-byte chain entries | shipped 2026-05-09 | — |
 | ✅ E_Oracle | 128 | one-hot test outcomes + categorical exception classes | shipped 2026-05-09 | — |
 | E_Problem | 1024 | reuse E1 on SWE-bench problem text | ~1 day | low (existing E1) |
 | E_CommitMsg | 384 | reuse E1 on commit text | ~1 day | low (existing E1) |
-| **E_StaticAnalysis** | 256 | new — scalar feature aggregates (mypy/Pyright/ruff/clippy warnings, complexity, blame age, etc.) | **~2 days** | **HIGH** (pure-Rust math; inputs from already-installed tools) |
+| ✅ E_StaticAnalysis | 256 | deterministic scalar/source-shape diagnostic encoder | shipped 2026-05-09 | — |
 | E_Runtime | 256 | new — wall-clock + RSS + coverage + network signal aggregates | ~2 days | medium |
 | E_Reasoning | 384 | new — agent-CoT + reflexion-trace encoder (sources: outer-loop conversation transcripts, optimizer recommendation JSONs, reflexion notes; agent-agnostic post-2026-05-09 pivot) | ~2 days | medium |
 | Scalars | 128 | aggregates: BFS depth, blame age, churn, coverage Δ, repo-health | ~1 day | low (after Phase-0 Docker oracle ships actual signals) |
@@ -125,24 +152,19 @@ context-graph mejepa-instruments verify --corpus ./data/mejepa-corpus
 The trait + Panel scaffold is the keystone — once it shipped, all 14
 instruments can be developed independently. The recommended order is:
 
-1. **E_Witness** (highest priority) — pure-Rust, operates on data we
-   already produce, validates the trait surface end-to-end with a
-   second concrete instrument. ~1.5 days.
-2. **E_StaticAnalysis** — pure-Rust scalar aggregates; doesn't need
-   neural training. ~2 days.
-3. **E_Test, E_Problem, E_CommitMsg** — reuse existing E1 path; bounded
+1. **E_Test, E_Problem, E_CommitMsg** — reuse existing E1 path; bounded
    wrapper code. ~3 days combined.
-4. **E_Diff** — bounded scope; needs a tree-sitter dep but the
+2. **E_Diff** — bounded scope; needs a tree-sitter dep but the
    encoder is graph attention over a small edge set. ~2 days.
-5. **E_AST, E_CFG, E_DataFlow** — biggest tree-sitter-based encoders;
+3. **E_AST, E_CFG, E_DataFlow** — biggest tree-sitter-based encoders;
    need a small transformer or graph-attention network. ~9 days
    combined.
-6. **E_TypeGraph** — needs Pyright subprocess integration. ~3 days.
-7. **E_Trace** — needs runtime trace capture from a real test run.
+4. **E_TypeGraph** — needs Pyright subprocess integration. ~3 days.
+5. **E_Trace** — needs runtime trace capture from a real test run.
    Depends on Phase 0 Docker oracle. ~3 days.
-8. **E_Runtime, E_Reasoning** — depend on doc 09 §3.5 signal capture
+6. **E_Runtime, E_Reasoning** — depend on doc 09 §3.5 signal capture
    actually being wired into the harness. ~4 days combined.
-9. **Scalars** — last; depends on the per-task aggregate signals being
+7. **Scalars** — last; depends on the per-task aggregate signals being
    present in the corpus. ~1 day.
 
 ## Dependencies
@@ -157,24 +179,18 @@ instruments can be developed independently. The recommended order is:
 
 ## Implementation order (recommended next 5+ turns)
 
-**Turn 1**: E_Witness (256-d). Pure-Rust sequence encoder over the
-73-byte witness chain. ~300 LOC + tests + FSV.
-
-**Turn 2**: E_StaticAnalysis (256-d). Scalar feature aggregates.
-~300 LOC + tests + FSV.
-
-**Turn 3**: E_Test + E_Problem + E_CommitMsg. Reuse E1; thin wrappers.
+**Turn 1**: E_Test + E_Problem + E_CommitMsg. Reuse E1; thin wrappers.
 ~300 LOC across all three + tests + FSV.
 
-**Turn 4**: E_AST scaffold (without trained weights) — produces
+**Turn 2**: E_AST scaffold (without trained weights) — produces
 deterministic output via hashed-feature approximation. Allows
 downstream phases to compile against real `E_AST::encode` signatures.
 Real neural network deferred to Phase 3 training.
 
-**Turn 5**: E_CFG, E_DataFlow, E_Diff scaffolds (same pattern as
+**Turn 3**: E_CFG, E_DataFlow, E_Diff scaffolds (same pattern as
 E_AST: hashed-feature deterministic outputs).
 
-**Turn 6+**: E_Trace, E_TypeGraph, E_Runtime, E_Reasoning, Scalars
+**Turn 4+**: E_Trace, E_TypeGraph, E_Runtime, E_Reasoning, Scalars
 (each requires upstream signal capture in Phase 0 Docker oracle).
 
 ## Notes
@@ -197,4 +213,5 @@ E_AST: hashed-feature deterministic outputs).
   `../../04_implementation_plans/plan_e_witness.md`,
   `plan_e_static_analysis.md`
 - Session report:
-  `memory/reports/session-2026-05-09d--phase1-instruments-scaffolding.md`
+  `memory/reports/session-2026-05-09d--phase1-instruments-scaffolding.md`,
+  `memory/reports/session-2026-05-09--phase0-phase1-hardening.md`

@@ -1,13 +1,13 @@
-# Phase 1 Scaffolding + E_Oracle Instrument
+# Phase 1 Scaffolding + E_Oracle + E_Witness + E_StaticAnalysis
 
 > **Shipped:** 2026-05-09
 > **Crate:** `crates/context-graph-mejepa-instruments/`
-> **Tests:** 27 passing
+> **Tests:** 40 passing
 > **FSV evidence:** `/tmp/contextgraph-mejepa-instruments-fsv/`
 
 ## What this primitive does
 
-The Phase 1 trait surface + the first concrete instrument:
+The Phase 1 trait surface + the first three concrete instruments:
 
 1. **`Instrument` trait** — uniform interface every E_* instrument
    implements:
@@ -46,6 +46,16 @@ The Phase 1 trait surface + the first concrete instrument:
    - dims 16..128: zero padding reserved for future stack-trace
      embedding extension per §3.5.
 
+6. **`EWitnessInstrument`** (2 of 14) — 256-d output over canonical
+   73-byte witness-chain entries from `context-graph-witness`.
+   It verifies linked chain bytes before encoding and rejects empty,
+   truncated, oversized, tampered, or wrong-version chains.
+
+7. **`EStaticAnalysisInstrument`** (3 of 14) — 256-d output over source
+   text plus linter/typechecker diagnostic rows. It rejects blank
+   source, bad diagnostic identifiers, excessive diagnostic volume, and
+   diagnostic locations outside the analyzed source.
+
 ## Why it matters
 
 The trait + Panel scaffold is the keystone of Phase 1. Once it shipped,
@@ -53,9 +63,11 @@ all 14 instruments can be developed independently against a stable
 contract. The 5,120-d panel layout per doc 09 §3.5.5 is now byte-precise
 and tested.
 
-E_Oracle is the easiest of the 14 instruments to implement (no neural
-network, no external integration) and serves as a worked example for
-the next 13.
+E_Oracle was the easiest instrument to implement. E_Witness and
+E_StaticAnalysis harden the scaffold with two additional real signal
+types: provenance bytes and analyzer findings. Together they prove the
+panel can carry multiple independently verified slots instead of only
+the oracle label.
 
 ## Implementation notes
 
@@ -72,6 +84,20 @@ the next 13.
 - Control-character rejection in exception class names.
 - `runtime_ms < -1.0` rejection.
 
+### E_Witness safety
+- Uses the existing witness source of truth: 73-byte entries from
+  `context-graph-witness`.
+- Calls `verify_chain_bytes(...)` before feature aggregation.
+- Rejects empty/truncated/tampered chains and unsupported format
+  versions with `MEJEPA_INSTRUMENTS_INVALID_INPUT`.
+
+### E_StaticAnalysis safety
+- Source text must be non-empty and parser-facing UTF-8 without NULs.
+- Diagnostic tool/category fields must be non-empty single-line strings.
+- Diagnostic lines are one-based and must fit the supplied source text.
+- Clean analyzer runs are represented explicitly rather than as missing
+  evidence.
+
 ### serde fail-closed
 `Panel` uses `#[serde(try_from = "PanelSerde", into = "PanelSerde")]`.
 The `PanelSerde` struct accepts `(data, filled_mask)` from disk; the
@@ -87,16 +113,26 @@ direct `Panel::try_new(...)` call with infinity values, which exercises
 the actual non-finite path.
 
 ### FSV at /tmp/contextgraph-mejepa-instruments-fsv/
-- 27 unit tests including `panel_deserialization_rejects_malformed_source_of_truth`.
-- E_Oracle round-trip: 100 synthetic `OracleVerdict` samples produce
-  128-d vectors; recomputed-on-read matches initial encoding bit-for-bit.
+- 40 unit tests including malformed panel readback, witness-chain
+  tamper/version/empty checks, and static-analysis bad-source/bad-line
+  checks.
+- E_Oracle scenarios: all-pass, mixed pass/fail/skip/error,
+  AssertionError crash, TypeError crash.
+- E_Witness scenario: raw witness chain bytes at
+  `/tmp/contextgraph-mejepa-instruments-fsv/witness_chain.bin` plus
+  encoded 256-d vector readback.
+- E_StaticAnalysis scenario: analyzer input JSON plus encoded 256-d
+  vector readback.
+- Panel scenario: E_Oracle + E_Witness + E_StaticAnalysis are filled in
+  one 5,120-d panel, read back from JSON, and all unfilled slots are
+  checked as zero.
 
 ## What this enables downstream
 
-- **All 13 remaining instruments** in Phase 1 — implement against the
+- **All 11 remaining instruments** in Phase 1 — implement against the
   trait surface. Implementation order detailed in `phase1.md`:
-  E_Witness (highest priority) → E_StaticAnalysis → E_Test/E_Problem/
-  E_CommitMsg (E1 reuse) → E_Diff → E_AST/E_CFG/E_DataFlow →
+  E_Test/E_Problem/E_CommitMsg (E1 reuse) → E_Diff →
+  E_AST/E_CFG/E_DataFlow →
   E_TypeGraph → E_Trace/E_Runtime/E_Reasoning → Scalars.
 - **Phase 2 panel materializer** (Sub-phase 2.A) — calls
   `PanelBuilder::set_from_instrument` for each shipped instrument when
@@ -107,7 +143,6 @@ the actual non-finite path.
 
 - Spec: `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md §2.2,
   §3.5, §7`
-- Phase 1 deferred (13 instruments): `03_deferred/phases/phase1.md`
-- Highest-priority next: `04_implementation_plans/plan_e_witness.md`
-- Source: `crates/context-graph-mejepa-instruments/src/{lib,e_oracle,tests}.rs`
+- Phase 1 deferred (11 instruments): `03_deferred/phases/phase1.md`
+- Source: `crates/context-graph-mejepa-instruments/src/{lib,e_oracle,e_witness,e_static_analysis,tests}.rs`
 - Memory entry: `memory/reports/session-2026-05-09d--phase1-instruments-scaffolding.md`

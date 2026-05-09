@@ -3,8 +3,6 @@
 //! Per E8 upgrade specification (Phase 4), these DTOs support:
 //! - search_connections: Find memories connected to a given concept
 //! - get_graph_path: Multi-hop graph traversal between memories
-//! - discover_graph_relationships: LLM-based relationship discovery
-//! - validate_graph_link: Single-pair LLM validation
 //!
 //! Constitution References:
 //! - ARCH-15: Uses asymmetric E8 with separate source/target encodings

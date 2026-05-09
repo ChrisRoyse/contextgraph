@@ -65,13 +65,6 @@ struct ProcessResult {
     elapsed_ms: u128,
 }
 
-#[derive(Debug, Clone)]
-struct PathPolicy {
-    source: PathBuf,
-    allow: Vec<String>,
-    deny: Vec<String>,
-}
-
 pub fn project_root() -> Result<PathBuf> {
     let root = std::env::current_dir().map_err(|err| {
         GovernedEditError::new(
@@ -103,12 +96,9 @@ pub fn project_root() -> Result<PathBuf> {
 /// the harness tools integrate with `git apply --check` and assume project-relative
 /// paths; absolute paths or `..` would error downstream regardless.
 ///
-/// Path discipline (don't touch `.env`, `swebench/**`, `tests/oracle_**`, reward
-/// specs, verifiers) is now BEHAVIORAL, documented in CLAUDE.md §8 and
-/// `./memory/context/constraints.md`.
-///
-/// `load_path_policy` and the `PathPolicy` struct remain available for tests but
-/// are no longer invoked by `validate_governed_path`.
+/// Path discipline (don't touch unrelated sensitive files) is now behavioral and
+/// documented outside this helper. The helper only enforces project-relative
+/// filesystem invariants required by the edit/readback implementation.
 pub fn validate_governed_path(path: &str) -> Result<String> {
     validate_relative_path(path)
 }
@@ -559,38 +549,6 @@ pub fn verify_project_state(
     Ok(readback)
 }
 
-fn load_path_policy() -> Result<PathPolicy> {
-    let policy_path = std::env::var("CGREALITY_GOVERNED_PATHS").map_err(|err| {
-        GovernedEditError::new(
-            "RUST_REALITY_GOVERNED_POLICY_ENV_MISSING",
-            "CGREALITY_GOVERNED_PATHS is required for governed path validation",
-            "env.CGREALITY_GOVERNED_PATHS",
-            "set CGREALITY_GOVERNED_PATHS to a JSON policy file with allow and deny arrays",
-            json!({"error": err.to_string()}),
-            None,
-        )
-    })?;
-    let source = PathBuf::from(policy_path);
-    let value: Value = read_json(&source)?;
-    let allow = string_array(&value, "allow", &source)?;
-    let deny = string_array(&value, "deny", &source)?;
-    if allow.is_empty() {
-        return Err(GovernedEditError::new(
-            "RUST_REALITY_GOVERNED_POLICY_ALLOW_EMPTY",
-            "governed path policy allow list is empty",
-            "policy.allow",
-            "add at least one explicit allow pattern",
-            json!({"policy": file_sot(&source)}),
-            Some(file_sot(&source)),
-        ));
-    }
-    Ok(PathPolicy {
-        source,
-        allow,
-        deny,
-    })
-}
-
 fn validate_relative_path(path: &str) -> Result<String> {
     let path = path.trim();
     if path.is_empty()
@@ -612,66 +570,6 @@ fn validate_relative_path(path: &str) -> Result<String> {
         ));
     }
     Ok(path.to_string())
-}
-
-fn path_matches(pattern: &str, path: &str) -> bool {
-    let pattern = pattern.trim();
-    if pattern == path || pattern == "**" || pattern == "*" {
-        return true;
-    }
-    glob_parts_match(pattern.as_bytes(), path.as_bytes())
-}
-
-fn glob_parts_match(pattern: &[u8], path: &[u8]) -> bool {
-    let (mut p, mut s, mut star, mut match_index) = (0_usize, 0_usize, None, 0_usize);
-    while s < path.len() {
-        if p < pattern.len() && (pattern[p] == path[s] || pattern[p] == b'?') {
-            p += 1;
-            s += 1;
-        } else if p < pattern.len() && pattern[p] == b'*' {
-            star = Some(p);
-            match_index = s;
-            p += 1;
-        } else if let Some(star_pos) = star {
-            p = star_pos + 1;
-            match_index += 1;
-            s = match_index;
-        } else {
-            return false;
-        }
-    }
-    while p < pattern.len() && pattern[p] == b'*' {
-        p += 1;
-    }
-    p == pattern.len()
-}
-
-fn string_array(value: &Value, field: &str, source: &Path) -> Result<Vec<String>> {
-    let array = value.get(field).and_then(Value::as_array).ok_or_else(|| {
-        GovernedEditError::new(
-            "RUST_REALITY_GOVERNED_POLICY_FIELD_INVALID",
-            "governed path policy field must be an array",
-            format!("policy.{field}"),
-            "write policy JSON as {\"allow\":[...],\"deny\":[...]}",
-            json!({"field": field, "policy": value}),
-            Some(file_sot(source)),
-        )
-    })?;
-    let mut out = Vec::new();
-    for (index, item) in array.iter().enumerate() {
-        let Some(pattern) = item.as_str() else {
-            return Err(GovernedEditError::new(
-                "RUST_REALITY_GOVERNED_POLICY_PATTERN_INVALID",
-                "governed path policy patterns must be strings",
-                format!("policy.{field}[{index}]"),
-                "replace non-string policy entries with glob-like path patterns",
-                json!({"field": field, "index": index, "value": item}),
-                Some(file_sot(source)),
-            ));
-        };
-        out.push(pattern.to_string());
-    }
-    Ok(out)
 }
 
 fn ensure_inside_root(project_root: &Path, path: &Path, field_path: &str) -> Result<()> {
@@ -1316,20 +1214,18 @@ mod tests {
 
     #[test]
     #[serial]
-    fn governed_path_policy_blocks_secret_and_traversal() {
-        let (_temp, _root, policy) = init_real_governed_git_repo();
-        let _guard = EnvGuard::set("CGREALITY_GOVERNED_PATHS", &policy);
-        let secret = validate_governed_path(".env").expect_err(".env blocked");
+    fn governed_path_validation_allows_project_relative_paths_and_blocks_traversal() {
+        let secret = validate_governed_path(".env").expect(".env is a valid relative path");
         let traversal = validate_governed_path("../Cargo.toml").expect_err("traversal blocked");
         let source = validate_governed_path("crates/context-graph-cli/src/bin/reality-loop.rs")
             .expect("source path allowed");
         eprintln!(
-            "PATH_POLICY secret={} traversal={} allowed={}",
-            serde_json::to_string_pretty(&secret).unwrap(),
+            "PATH_VALIDATION secret={} traversal={} allowed={}",
+            secret,
             serde_json::to_string_pretty(&traversal).unwrap(),
             source
         );
-        assert_eq!(secret.error_code, "RUST_REALITY_GOVERNED_PATH_DENIED");
+        assert_eq!(secret, ".env");
         assert_eq!(
             traversal.error_code,
             "RUST_REALITY_GOVERNED_PROJECT_PATH_INVALID"
@@ -1338,14 +1234,11 @@ mod tests {
 
     #[test]
     #[serial]
-    fn governed_path_policy_errors_when_policy_env_missing() {
+    fn governed_path_validation_does_not_require_policy_env() {
         let _guard = EnvGuard::remove("CGREALITY_GOVERNED_PATHS");
-        let err = validate_governed_path("Cargo.toml").expect_err("missing env must fail");
-        eprintln!(
-            "MISSING_POLICY error={}",
-            serde_json::to_string_pretty(&err).unwrap()
-        );
-        assert_eq!(err.error_code, "RUST_REALITY_GOVERNED_POLICY_ENV_MISSING");
+        let source = validate_governed_path("Cargo.toml").expect("policy env is not required");
+        eprintln!("PATH_VALIDATION_NO_POLICY allowed={source}");
+        assert_eq!(source, "Cargo.toml");
     }
 
     #[test]

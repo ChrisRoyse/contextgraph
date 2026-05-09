@@ -11,7 +11,6 @@
 //! - `create_test_handlers()` - Real RocksDB + Real GPU embeddings, returns `(Handlers, TempDir)`
 //! - `create_test_handlers_with_rocksdb_store_access()` - Same + exposed store ref for FSV
 //! - `create_test_handlers_with_real_embeddings()` - Alias for create_test_handlers()
-//! - `create_test_handlers_with_real_embeddings_store_access()` - Alias for store access variant
 //!
 //! # TempDir Lifecycle
 //!
@@ -186,7 +185,7 @@ static SHARED_READONLY_HANDLERS: OnceCell<(Arc<Handlers>, Arc<TempDir>)> = OnceC
 ///
 /// - Tests that write memories (`store_memory`, `merge_memories`, etc.)
 /// - Tests that inspect RocksDB state after writes
-/// - Tests that use `create_test_handlers_with_real_embeddings_store_access`
+/// - Tests that directly inspect RocksDB state after writes
 pub(crate) async fn shared_readonly_handlers() -> Arc<Handlers> {
     let (handlers, _tempdir) = SHARED_READONLY_HANDLERS
         .get_or_init(|| async {
@@ -299,51 +298,6 @@ pub(crate) async fn create_test_handlers_with_real_embeddings() -> (Handlers, Te
     (handlers, tempdir)
 }
 
-/// Create test handlers with REAL embeddings and exposed store reference for FSV assertions.
-///
-/// Same as `create_test_handlers_with_real_embeddings()` but also returns a direct
-/// reference to the teleological store for Full State Verification assertions.
-///
-/// # Returns
-///
-/// `(Handlers, Arc<dyn TeleologicalMemoryStore>, TempDir)`
-/// - Handlers instance for dispatching MCP requests
-/// - Direct reference to the store for FSV assertions (verify data was persisted)
-/// - TempDir that MUST be kept alive for the duration of the test
-pub(crate) async fn create_test_handlers_with_real_embeddings_store_access(
-) -> (Handlers, Arc<dyn TeleologicalMemoryStore>, TempDir) {
-    let tempdir = TempDir::new().expect("Failed to create temp directory for FSV test");
-    let db_path = tempdir
-        .path()
-        .join("test_rocksdb_fsv_real_embeddings_store");
-
-    // Open RocksDB store
-    let rocksdb_store = RocksDbTeleologicalStore::open(&db_path)
-        .expect("Failed to open RocksDbTeleologicalStore in FSV test");
-
-    let (handlers, teleological_store) = create_handlers_from_store(rocksdb_store).await;
-
-    (handlers, teleological_store, tempdir)
-}
-
-/// Create test handlers with REAL RocksDB, REAL embeddings, and graph linking enabled.
-///
-/// This uses the production non-LLM handler constructor because graph learning
-/// needs EdgeRepository/BackgroundGraphBuilder, not graph-agent LLM services.
-pub(crate) async fn create_test_handlers_with_graph_edges_store_access(
-) -> (Handlers, Arc<dyn TeleologicalMemoryStore>, TempDir) {
-    let tempdir = TempDir::new().expect("Failed to create temp directory for graph FSV test");
-    let db_path = tempdir.path().join("test_rocksdb_graph_learning");
-
-    let rocksdb_store = RocksDbTeleologicalStore::open(&db_path)
-        .expect("Failed to open RocksDbTeleologicalStore in graph FSV test");
-
-    let (handlers, teleological_store) =
-        create_handlers_from_store_with_graph_edges(rocksdb_store).await;
-
-    (handlers, teleological_store, tempdir)
-}
-
 async fn create_handlers_from_store(
     rocksdb_store: RocksDbTeleologicalStore,
 ) -> (Handlers, Arc<dyn TeleologicalMemoryStore>) {
@@ -375,34 +329,6 @@ async fn create_handlers_from_store(
         )
         .expect("Default cluster manager should always succeed in tests")
     };
-
-    (handlers, teleological_store)
-}
-
-async fn create_handlers_from_store_with_graph_edges(
-    rocksdb_store: RocksDbTeleologicalStore,
-) -> (Handlers, Arc<dyn TeleologicalMemoryStore>) {
-    let db_arc = rocksdb_store.db_arc();
-    let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(rocksdb_store);
-    let multi_array_provider = get_warm_loaded_provider().await;
-    let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
-    let edge_repository = EdgeRepository::new(db_arc);
-    let graph_builder = Arc::new(BackgroundGraphBuilder::new(
-        edge_repository.clone(),
-        Arc::clone(&teleological_store),
-        Arc::clone(&multi_array_provider),
-        GraphBuilderConfig::default(),
-    ));
-
-    let handlers = Handlers::without_llm(
-        Arc::clone(&teleological_store),
-        multi_array_provider,
-        layer_status_provider,
-        edge_repository,
-        graph_builder,
-        Arc::new(context_graph_embeddings::provider::NoOpCausalHintProvider),
-    )
-    .expect("Default cluster manager should always succeed in graph tests");
 
     (handlers, teleological_store)
 }

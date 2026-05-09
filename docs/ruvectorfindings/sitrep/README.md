@@ -58,13 +58,14 @@ sitrep/
 │   ├── tier1_3_tier_compression.md           # 8/7/5/3-bit groupwise quantization
 │   ├── phase0_mutation_operators.md          # 8 mutation categories
 │   ├── phase0_corpus_split.md                # repo-atomic train/cal/holdout split
-│   └── phase1_scaffolding_and_e_oracle.md    # Instrument trait + Panel + E_Oracle
+│   ├── phase0_oracle_and_store.md            # command/Docker oracle + RocksDB store
+│   └── phase1_scaffolding_and_e_oracle.md    # Instrument trait + Panel + E_Oracle/E_Witness/E_StaticAnalysis
 ├── 03_deferred/                              # detail per deferred primitive
 │   ├── README.md
 │   ├── tier_remaining.md                     # doc 05 Tier 1.5, 1.2 BMSSP, 2.1, 2.2, 2.5, 3.1, 3.3-3.6
 │   └── phases/                               # detail per doc-09 phase (0..8)
-│       ├── phase0.md                         # Phase 0 remaining (Docker, RocksDB CFs, full corpus gen)
-│       ├── phase1.md                         # Phase 1 remaining instruments (13 of 14)
+│       ├── phase0.md                         # Phase 0 remaining (official SWE-bench batch + full corpus gen)
+│       ├── phase1.md                         # Phase 1 remaining instruments (11 of 14)
 │       ├── phase2.md                         # Phase 2 — panel + predictor + frozen targets + VICReg
 │       ├── phase3.md                         # Phase 3 — training loop + AdamW + per-step certs
 │       ├── phase4.md                         # Phase 4 — inference + conformal calibration + OOD
@@ -74,8 +75,8 @@ sitrep/
 │       └── phase8.md                         # Phase 8 — evaluation against end goal
 └── 04_implementation_plans/                  # ready-to-execute plans for the next 5 primitives
     ├── README.md
-    ├── plan_e_witness.md                     # next-priority instrument
-    ├── plan_e_static_analysis.md
+    ├── plan_e_witness.md                     # now shipped; retained for design history
+    ├── plan_e_static_analysis.md             # now shipped; retained for design history
     ├── plan_phase0_docker_oracle.md
     ├── plan_phase2_predictor.md
     └── plan_phase6_storage_wiring.md
@@ -95,14 +96,16 @@ sitrep/
 
 ## High-level state (as of 2026-05-09)
 
-- **207 tests pass** across 6 ME-JEPA-foundation crates.
+- **227 tests pass** across 6 ME-JEPA-foundation crates.
 - **Doc 05 Tiers**: Tier-1 mostly complete (1.1, 1.2 partial, 1.3, 1.4,
   1.6); Tier-2 partial (2.3, 2.4, 2.6 shipped; 2.1, 2.2, 2.5 deferred);
   Tier-3 partial (3.2 shipped; 3.1, 3.3-3.6 deferred); Tier-4 not in
   scope.
-- **Doc 09 Phases**: Phase 0 partial (mutation operators + split shipped;
-  Docker oracle + RocksDB + full corpus gen deferred); Phase 1 just
-  started (trait + Panel + E_Oracle shipped; 13 instruments deferred);
+- **Doc 09 Phases**: Phase 0 partial (mutation operators + split +
+  command/Docker oracle wrapper + crate-local RocksDB oracle store shipped;
+  official SWE-bench image batch + full corpus gen deferred); Phase 1
+  partial (trait + Panel + E_Oracle + E_Witness + E_StaticAnalysis
+  shipped; 11 instruments deferred);
   Phases 2-8 fully deferred.
 
 ## How to use this directory

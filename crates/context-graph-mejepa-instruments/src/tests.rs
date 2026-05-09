@@ -5,7 +5,12 @@
 use super::e_oracle::{
     EOracleInstrument, ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome,
 };
+use super::e_static_analysis::{
+    Diagnostic, DiagnosticSeverity, EStaticAnalysisInstrument, StaticAnalysisInput,
+};
+use super::e_witness::{EWitnessInstrument, WitnessChainInput, CANONICAL_WITNESS_FORMAT_VERSION};
 use super::*;
+use context_graph_witness::{WitnessEntry, HASH_SIZE, ZERO_HASH};
 
 fn verdict_all_pass(n: usize) -> OracleVerdict {
     OracleVerdict {
@@ -18,6 +23,15 @@ fn verdict_all_pass(n: usize) -> OracleVerdict {
             .collect(),
         exception: None,
     }
+}
+
+fn two_entry_witness_chain() -> Vec<u8> {
+    let first = WitnessEntry::new(ZERO_HASH, [1u8; HASH_SIZE], 100, 1);
+    let second = WitnessEntry::new(first.chain_hash(), [2u8; HASH_SIZE], 250, 2);
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&first.to_bytes());
+    bytes.extend_from_slice(&second.to_bytes());
+    bytes
 }
 
 #[test]
@@ -197,6 +211,116 @@ fn e_oracle_output_dim_is_128() {
 }
 
 #[test]
+fn e_witness_encodes_verified_chain() {
+    let inst = EWitnessInstrument;
+    let input = WitnessChainInput {
+        format_version: CANONICAL_WITNESS_FORMAT_VERSION,
+        chain_bytes: two_entry_witness_chain(),
+    };
+    let v = inst.encode(&input).unwrap();
+    assert_eq!(v.len(), InstrumentSlot::EWitness.dim());
+    assert!(v.iter().all(|x| x.is_finite()));
+    assert!(v[0] > 0.0);
+    assert!(v[132 + 1] > 0.0);
+    assert!(v[132 + 2] > 0.0);
+}
+
+#[test]
+fn e_witness_rejects_empty_or_tampered_chain() {
+    let inst = EWitnessInstrument;
+    let empty = WitnessChainInput {
+        format_version: CANONICAL_WITNESS_FORMAT_VERSION,
+        chain_bytes: vec![],
+    };
+    let err = inst.encode(&empty).unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+
+    let mut tampered = two_entry_witness_chain();
+    tampered[context_graph_witness::WITNESS_ENTRY_SIZE] ^= 0x7f;
+    let err = inst
+        .encode(&WitnessChainInput {
+            format_version: CANONICAL_WITNESS_FORMAT_VERSION,
+            chain_bytes: tampered,
+        })
+        .unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+}
+
+#[test]
+fn e_witness_rejects_legacy_format_without_conversion() {
+    let inst = EWitnessInstrument;
+    let err = inst
+        .encode(&WitnessChainInput {
+            format_version: CANONICAL_WITNESS_FORMAT_VERSION + 1,
+            chain_bytes: two_entry_witness_chain(),
+        })
+        .unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+}
+
+#[test]
+fn e_static_analysis_encodes_diagnostics_and_shape() {
+    let inst = EStaticAnalysisInstrument;
+    let input = StaticAnalysisInput {
+        source_text:
+            "import math\n\n\ndef compute(x):\n    if x > 1:\n        return x + 1\n    return 0\n"
+                .into(),
+        diagnostics: vec![
+            Diagnostic {
+                tool: "ruff".into(),
+                severity: DiagnosticSeverity::Warning,
+                category: "F401".into(),
+                line: 1,
+                column: 1,
+            },
+            Diagnostic {
+                tool: "pyright".into(),
+                severity: DiagnosticSeverity::Error,
+                category: "reportGeneralTypeIssues".into(),
+                line: 5,
+                column: 12,
+            },
+        ],
+        churn_30d: Some(42),
+    };
+    let v = inst.encode(&input).unwrap();
+    assert_eq!(v.len(), InstrumentSlot::EStaticAnalysis.dim());
+    assert!(v.iter().all(|x| x.is_finite()));
+    assert!(v[0] > 0.0, "error severity histogram must be populated");
+    assert!(v[1] > 0.0, "warning severity histogram must be populated");
+    assert!(v[64] > 0.0, "LOC feature must be populated");
+    assert!(v[192] > 0.0, "churn feature must be populated");
+}
+
+#[test]
+fn e_static_analysis_rejects_invalid_source_and_diagnostic_lines() {
+    let inst = EStaticAnalysisInstrument;
+    let err = inst
+        .encode(&StaticAnalysisInput {
+            source_text: " \n\t".into(),
+            diagnostics: vec![],
+            churn_30d: None,
+        })
+        .unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+
+    let err = inst
+        .encode(&StaticAnalysisInput {
+            source_text: "x = 1\n".into(),
+            diagnostics: vec![Diagnostic {
+                tool: "ruff".into(),
+                severity: DiagnosticSeverity::Error,
+                category: "E999".into(),
+                line: 99,
+                column: 1,
+            }],
+            churn_30d: None,
+        })
+        .unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+}
+
+#[test]
 fn e_oracle_all_pass_yields_pass_count_one() {
     let inst = EOracleInstrument;
     let v = inst.encode(&verdict_all_pass(10)).unwrap();
@@ -209,12 +333,12 @@ fn e_oracle_all_pass_yields_pass_count_one() {
     assert_eq!(v[4], 10.0); // total count
     assert_eq!(v[5], 0.0); // has_exception
                            // No exception → no one-hot bit set.
-    for i in 6..16 {
-        assert_eq!(v[i], 0.0);
+    for value in v.iter().take(16).skip(6) {
+        assert_eq!(*value, 0.0);
     }
     // Padding zero.
-    for i in 16..128 {
-        assert_eq!(v[i], 0.0);
+    for value in v.iter().take(128).skip(16) {
+        assert_eq!(*value, 0.0);
     }
 }
 
@@ -277,8 +401,8 @@ fn e_oracle_exception_sets_one_hot_bit() {
     assert_eq!(v[6 + assertion_idx], 1.0);
     // No other one-hot bit set.
     let mut hot_count = 0;
-    for i in 6..16 {
-        if v[i] == 1.0 {
+    for value in v.iter().take(16).skip(6) {
+        if *value == 1.0 {
             hot_count += 1;
         }
     }

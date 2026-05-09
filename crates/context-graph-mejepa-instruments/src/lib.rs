@@ -25,6 +25,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod e_oracle;
+pub mod e_static_analysis;
+pub mod e_witness;
 
 pub type InstrumentResult<T> = Result<T, InstrumentError>;
 
@@ -453,4 +455,8 @@ fn slot_bit(slot: InstrumentSlot) -> u16 {
 #[path = "tests.rs"]
 mod instrument_tests;
 
-pub use e_oracle::{EOracleInstrument, ExceptionClass, OracleVerdict, TestOutcome};
+pub use e_oracle::{EOracleInstrument, ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome};
+pub use e_static_analysis::{
+    Diagnostic, DiagnosticSeverity, EStaticAnalysisInstrument, StaticAnalysisInput,
+};
+pub use e_witness::{EWitnessInstrument, WitnessChainInput, CANONICAL_WITNESS_FORMAT_VERSION};
