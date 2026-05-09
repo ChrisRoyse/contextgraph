@@ -120,10 +120,19 @@ struct LinearLayer {
 }
 
 impl LinearLayer {
-    fn new(in_dim: usize, out_dim: usize, device: &Device) -> candle_core::Result<Self> {
+    fn new(
+        in_dim: usize,
+        out_dim: usize,
+        device: &Device,
+        rng: &mut DeterministicInitRng,
+    ) -> candle_core::Result<Self> {
         let scale = (2.0f32 / in_dim.max(1) as f32).sqrt();
+        let weight_values = (0..out_dim * in_dim)
+            .map(|_| rng.normal_f32(0.0, scale))
+            .collect::<Vec<_>>();
+        let weight = Tensor::from_vec(weight_values, (out_dim, in_dim), device)?;
         Ok(Self {
-            weight: Var::randn(0f32, scale, (out_dim, in_dim), device)?,
+            weight: Var::from_tensor(&weight)?,
             bias: Var::zeros(out_dim, DType::F32, device)?,
         })
     }
@@ -169,13 +178,14 @@ impl MlpNetwork {
         tensor_prefix: &'static str,
         dims: &[usize],
         device: &Device,
+        rng: &mut DeterministicInitRng,
     ) -> candle_core::Result<Self> {
         if dims.len() < 2 {
             candle_core::bail!("MLP requires at least input and output dimensions")
         }
         let layers = dims
             .windows(2)
-            .map(|pair| LinearLayer::new(pair[0], pair[1], device))
+            .map(|pair| LinearLayer::new(pair[0], pair[1], device, rng))
             .collect::<candle_core::Result<Vec<_>>>()?;
         Ok(Self {
             layers,
@@ -188,12 +198,13 @@ impl MlpNetwork {
         input_dim: usize,
         config: &MlpConfig,
         device: &Device,
+        rng: &mut DeterministicInitRng,
     ) -> candle_core::Result<Self> {
         let mut dims = Vec::with_capacity(config.hidden.len() + 2);
         dims.push(input_dim);
         dims.extend(config.hidden.iter().copied());
         dims.push(config.out_dim);
-        Self::from_dims(tensor_prefix, &dims, device)
+        Self::from_dims(tensor_prefix, &dims, device, rng)
     }
 
     fn from_predictor_config(
@@ -202,12 +213,13 @@ impl MlpNetwork {
         action_dim: usize,
         config: &PredictorConfig,
         device: &Device,
+        rng: &mut DeterministicInitRng,
     ) -> candle_core::Result<Self> {
         let mut dims = Vec::with_capacity(config.hidden.len() + 2);
         dims.push(latent_dim + action_dim);
         dims.extend(config.hidden.iter().copied());
         dims.push(config.out_dim);
-        Self::from_dims(tensor_prefix, &dims, device)
+        Self::from_dims(tensor_prefix, &dims, device, rng)
     }
 
     fn forward(&self, input: &Tensor) -> candle_core::Result<Tensor> {
@@ -280,12 +292,15 @@ impl TinyMlpJepa {
         input_dim: usize,
         action_dim: usize,
         device: &Device,
+        init_seed: u64,
     ) -> candle_core::Result<Self> {
+        let mut rng = DeterministicInitRng::new(init_seed);
         let online_encoder = MlpNetwork::from_encoder_config(
             "online.encoder",
             input_dim,
             &config.model.encoder,
             device,
+            &mut rng,
         )?;
         let predictor = MlpNetwork::from_predictor_config(
             "predictor",
@@ -293,6 +308,7 @@ impl TinyMlpJepa {
             action_dim,
             &config.model.predictor,
             device,
+            &mut rng,
         )?;
         let target_encoder = match config.model.target_architecture {
             TargetArchitecture::EmaEncoder => {
@@ -301,6 +317,7 @@ impl TinyMlpJepa {
                     input_dim,
                     &config.model.encoder,
                     device,
+                    &mut rng,
                 )?;
                 target_encoder.set_from(&online_encoder)?;
                 Some(target_encoder)
@@ -366,6 +383,46 @@ impl TinyMlpJepa {
         }
         tensors.extend(self.predictor.tensors());
         tensors
+    }
+}
+
+struct DeterministicInitRng {
+    state: u64,
+    spare_normal: Option<f32>,
+}
+
+impl DeterministicInitRng {
+    fn new(seed: u64) -> Self {
+        Self {
+            state: seed ^ 0xD1B5_4A32_D192_ED03,
+            spare_normal: None,
+        }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    fn uniform_open01(&mut self) -> f64 {
+        ((self.next_u64() >> 11) as f64 + 0.5) / ((1u64 << 53) as f64)
+    }
+
+    fn normal_f32(&mut self, mean: f32, std: f32) -> f32 {
+        if let Some(value) = self.spare_normal.take() {
+            return mean + std * value;
+        }
+        let u1 = self.uniform_open01().max(f64::MIN_POSITIVE);
+        let u2 = self.uniform_open01();
+        let radius = (-2.0 * u1.ln()).sqrt();
+        let theta = std::f64::consts::TAU * u2;
+        let z0 = radius * theta.cos();
+        let z1 = radius * theta.sin();
+        self.spare_normal = Some(z1 as f32);
+        mean + std * z0 as f32
     }
 }
 
@@ -476,7 +533,7 @@ pub fn train_tiny_jepa(
         "eval_negative_panels",
     )?;
 
-    let model = TinyMlpJepa::new(config, input_dim, action_dim, &device)
+    let model = TinyMlpJepa::new(config, input_dim, action_dim, &device, config.seed)
         .map_err(|err| training_err(format!("failed to initialize tiny JEPA MLP: {err}")))?;
     let baseline_metrics = evaluate_model(
         config,
@@ -703,7 +760,7 @@ pub fn random_init_tiny_jepa_tensors(
         .set_seed(seed)
         .map_err(|err| training_err(format!("failed to seed CUDA RNG: {err}")))?;
     cuda_warmup(&device)?;
-    let model = TinyMlpJepa::new(config, input_dim, action_dim, &device).map_err(|err| {
+    let model = TinyMlpJepa::new(config, input_dim, action_dim, &device, seed).map_err(|err| {
         training_err(format!(
             "failed to initialize random-init tiny JEPA MLP: {err}"
         ))
@@ -1108,6 +1165,7 @@ fn enforce_quality_gates(
     metrics: &std::collections::BTreeMap<String, f64>,
     gates: &[MetricQualityGate],
 ) -> DynamicJepaResult<()> {
+    let mut failures = Vec::new();
     for gate in gates {
         let value =
             metrics
@@ -1135,21 +1193,36 @@ fn enforce_quality_gates(
             });
         }
         if !metric_gate_passes(value, gate) {
-            return Err(DynamicJepaError::TrainingFailed {
-                training_run_id: uuid::Uuid::nil(),
-                message: format!(
-                    "quality gate failed for {}: value={value:.12} min={} max={}",
-                    gate.metric,
-                    format_optional_bound(gate.min),
-                    format_optional_bound(gate.max)
-                ),
-                remediation:
-                    "do not register the artifact; fix the training config or data until every declared quality gate passes"
-                        .to_string(),
-            });
+            failures.push(format!(
+                "{} value={value:.12} min={} max={}",
+                gate.metric,
+                format_optional_bound(gate.min),
+                format_optional_bound(gate.max)
+            ));
         }
     }
-    Ok(())
+    if failures.is_empty() {
+        return Ok(());
+    }
+    Err(DynamicJepaError::TrainingFailed {
+        training_run_id: uuid::Uuid::nil(),
+        message: format!(
+            "quality gates failed: {}; final_metrics={}",
+            failures.join("; "),
+            format_metric_snapshot(metrics)
+        ),
+        remediation:
+            "do not register the artifact; fix the training config or data until every declared quality gate passes"
+                .to_string(),
+    })
+}
+
+fn format_metric_snapshot(metrics: &std::collections::BTreeMap<String, f64>) -> String {
+    metrics
+        .iter()
+        .map(|(key, value)| format!("{key}={value:.12}"))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn report_metric_value(report: &EvaluationReport, metric: &str) -> DynamicJepaResult<f64> {
