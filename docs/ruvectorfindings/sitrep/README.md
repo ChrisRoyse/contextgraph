@@ -57,7 +57,7 @@ sitrep/
 │   ├── tier3_causal_mask.md                  # MaskStrategy + retrocausal-safety guard + MCP root-cause fix
 │   ├── tier1_3_tier_compression.md           # 8/7/5/3-bit groupwise quantization
 │   ├── phase0_mutation_operators.md          # 8 mutation categories
-│   ├── phase0_corpus_split.md                # repo-atomic train/cal/holdout split
+│   ├── phase0_corpus_split.md                # exact 240/30/30 split + repo-atomic diagnostic split
 │   ├── phase0_oracle_and_store.md            # command/Docker oracle + RocksDB store
 │   └── phase1_scaffolding_and_e_oracle.md    # Instrument trait + Panel + E_Oracle/E_Witness/E_StaticAnalysis
 ├── 03_deferred/                              # detail per deferred primitive
@@ -96,15 +96,16 @@ sitrep/
 
 ## High-level state (as of 2026-05-09)
 
-- **229 tests pass** across 6 ME-JEPA-foundation crates.
+- **251 tests pass** across 6 ME-JEPA-foundation crates.
 - **Doc 05 Tiers**: Tier-1 mostly complete (1.1, 1.2 partial, 1.3, 1.4,
   1.6); Tier-2 partial (2.3, 2.4, 2.6 shipped; 2.1, 2.2, 2.5 deferred);
   Tier-3 partial (3.2 shipped; 3.1, 3.3-3.6 deferred); Tier-4 not in
   scope.
-- **Doc 09 Phases**: Phase 0 partial (mutation operators + split +
-  command/Docker oracle wrapper + crate-local RocksDB oracle store + official
-  one-task SWE-bench Lite gold smoke/cache-hygiene check shipped; full
-  corpus generation deferred); Phase 1
+- **Doc 09 Phases**: Phase 0 partial (mutation operators + exact
+  instance-atomic 240/30/30 split, repo-atomic diagnostic split,
+  command/Docker oracle wrapper, official SWE-bench Lite oracle bridge,
+  manifest-metadata preflight, and crate-local RocksDB oracle store
+  shipped; full 2,400-entry corpus generation deferred); Phase 1
   partial (trait + Panel + E_Oracle + E_Witness + E_StaticAnalysis
   shipped; 11 instruments deferred);
   Phases 2-8 fully deferred.

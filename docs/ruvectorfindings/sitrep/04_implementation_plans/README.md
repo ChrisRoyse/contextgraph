@@ -2,9 +2,9 @@
 
 Ready-to-execute plans for high-priority deferred items as of
 2026-05-09. `plan_e_witness.md`, `plan_e_static_analysis.md`, and the
-local wrapper/store portion of `plan_phase0_docker_oracle.md` have now
-shipped; those files are retained as design history and for the
-remaining official SWE-bench batch work.
+local wrapper/store/SWE-bench bridge portions of
+`plan_phase0_docker_oracle.md` have now shipped; those files are
+retained as design history and for the remaining full corpus batch work.
 
 ## Files
 
@@ -12,15 +12,16 @@ remaining official SWE-bench batch work.
 |---|---|---|---|
 | `plan_e_witness.md` | ✅ shipped | design history | `context-graph-mejepa-instruments/src/e_witness.rs` |
 | `plan_e_static_analysis.md` | ✅ shipped | design history | `context-graph-mejepa-instruments/src/e_static_analysis.rs` |
-| `plan_phase0_docker_oracle.md` | HIGH | official image batch remains | `context-graph-mejepa-corpus/src/oracle.rs` |
+| `plan_phase0_docker_oracle.md` | HIGH | full corpus batch remains | `context-graph-mejepa-corpus/src/oracle.rs` + `src/swebench.rs` |
 | `plan_phase2_predictor.md` | MEDIUM | ~7-10 days | `context-graph-mejepa/` (new crate) |
 | `plan_phase6_storage_wiring.md` | MEDIUM | ~3-5 days | `context-graph-mejepa-storage/` (new crate) |
 
 ## Order rationale
 
-1. **Phase 0 official SWE-bench Docker batch** — local wrapper/parser/store
-   are shipped; now pull/run the official task images and persist real
-   `OracleVerdict` rows per `(task_id, mutation_category)`.
+1. **Phase 0 full SWE-bench corpus batch** — local wrapper/parser/store,
+   official one-task gold/custom bridge, and manifest metadata preflight
+   are shipped; now generate and persist real `OracleVerdict` rows per
+   `(task_id, mutation_category)`.
 
 2. **E_Test + E_Problem + E_CommitMsg** — not yet covered by a dedicated
    plan file; reuse the E1 embedder path for three low-risk Phase 1 slots.

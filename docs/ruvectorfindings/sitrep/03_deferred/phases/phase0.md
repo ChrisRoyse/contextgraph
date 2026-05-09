@@ -80,22 +80,27 @@ context-graph mejepa-corpus stats --corpus ./data/mejepa-corpus
 | 8 | CompileError | ✅ | append one of three syntax errors (unclosed paren / missing colon / invalid def signature) |
 
 Real-Python `python3 py_compile` FSV asserts each operator's output
-parses (or, for CompileError, intentionally fails to parse). 50 unit
-tests pass. Evidence at `/tmp/contextgraph-mejepa-corpus-fsv/`.
+parses (or, for CompileError, intentionally fails to parse). The
+operator subset remains part of the 81-test corpus crate suite.
+Evidence at `/tmp/contextgraph-mejepa-corpus-fsv/`.
 
-### 2. Repo-atomic train/calibration/holdout split (`mejepa-corpus::split`)
+### 2. Train/calibration/holdout split (`mejepa-corpus::split`)
 
-- `split_corpus(entries, config) -> SplitReport` with
-  Fisher-Yates-shuffle + LPT pre-sort by descending repo size +
-  lowest-current/target-ratio greedy bin-pack.
-- Repo-atomic: every task in a given repo lands in the same bucket.
-- `cross_cut_weights(report) -> [f64; 3]` provides the closed-form
-  leakage check: total weight of edges crossing each pair of buckets in
-  the "tasks share a repo" graph. All zero ⇔ leakage-free.
-- 300-task synthetic SWE-bench-shaped FSV at
+- `SplitMode::InstanceAtomic` is the default active split for corpus
+  generation and produces exact `[240,30,30]` train/cal/holdout buckets
+  on the real 300-task Lite manifest set.
+- `assert_no_test_patch_leakage` verifies every task has a checked-in
+  `official_test_patch_sha256` and no identical test-patch SHA crosses
+  buckets. Current FSV confirms 300 unique official test-patch hashes.
+- `SplitMode::RepoAtomic` remains as the no-shared-repo diagnostic mode:
+  every task in a given repo lands in the same bucket and
+  `cross_cut_weights(report) == [0,0,0]`.
+- Repo-atomic cannot hit exact 80/10/10 on current Lite because the
+  corpus has only 12 repos with `django/django=114` and `sympy/sympy=77`;
+  current diagnostic readback is `[195,77,28]`.
+- FSV evidence:
   `/tmp/contextgraph-mejepa-corpus-fsv/{split-evidence.json,
-  split-assignments.json}` produces 76.3 / 13.3 / 10.3% bucket sizes
-  (within 4pp of 80/10/10 targets) with cross_cut_weights = [0,0,0].
+  split-assignments.json, split-repo-atomic-assignments.json}`.
 
 ### 3. Workspace integration
 
@@ -137,6 +142,9 @@ tests pass. Evidence at `/tmp/contextgraph-mejepa-corpus-fsv/`.
   `/home/cabdru/.cache/contextgraph-swebench/venv/bin/python` with
   `swebench==4.1.0`; it loads `princeton-nlp/SWE-bench_Lite:test` as
   exactly 300 instances matching `tasks/swebench-lite/*.json`.
+- Preflight now compares every checked-in manifest against the official
+  dataset for repo, base commit, problem-statement SHA, oracle-patch SHA,
+  official-test-patch SHA, FAIL_TO_PASS list, and PASS_TO_PASS count.
 - Official remote image naming is
   `swebench/sweb.eval.x86_64.<instance_id_lower_with___replaced_by__1776_>:latest`.
   Example: `sympy__sympy-20590` →
@@ -145,16 +153,21 @@ tests pass. Evidence at `/tmp/contextgraph-mejepa-corpus-fsv/`.
   `predictions_path=gold` run: `sympy__sympy-20590`, resolved=true.
   Evidence:
   `/tmp/contextgraph-swebench-lite-fsv/gold-smoke-evidence.json`.
+- The Rust bridge runs the same task in gold and custom JSONL modes,
+  parses 22 per-test rows into `OracleVerdict`, and round-trips the
+  verdict through RocksDB. Evidence:
+  `/tmp/contextgraph-mejepa-corpus-fsv/swebench-oracle-evidence.json`.
 - Physical SWE-bench Docker cache state is exactly one expected image,
   zero unexpected SWE-bench images, and zero duplicate SWE-bench image ids
   or duplicate per-instance tags.
   Evidence:
   `/tmp/contextgraph-swebench-lite-fsv/image-status-evidence.json`.
 
-**Why still deferred:** the 2,400-entry operational batch has not been
-run. It should pull/use additional official task images only for the
-current batch slice, not pre-cache all 300 as a readiness gate, then
-persist every `(mutation, oracle)` tuple.
+**Why still deferred:** the full 2,400-entry operational batch has not
+been run. The one-task official evaluator path is proven; remaining
+work is breadth plus the generation CLI loop that emits one JSONL
+prediction per mutated patch and persists every `(mutation, oracle)`
+tuple.
 
 **Blocker history:**
 `memory/blockers/agent-72-coordinator--docker-permission-denied-blocks-official-eval.md`
@@ -203,10 +216,10 @@ once items A and B ship.
 
 ## Implementation order (recommended next 3 turns)
 
-**Turn 1**: Pull/prepare the official SWE-bench Lite Docker images and
-run the shipped wrapper against ONE real task image to validate the
-official evaluator contract. **Status:** one official gold smoke has
-passed for `sympy__sympy-20590`; remaining work is breadth.
+**Turn 1**: Pull/prepare one official SWE-bench Lite Docker image and
+run the shipped wrapper against it to validate the official evaluator
+contract. **Status:** complete for `sympy__sympy-20590` in both gold and
+custom JSONL modes; remaining work is breadth.
 
 **Turn 2**: Wire the wrapper into `corpus::generate_swe_bench_mutation_corpus`.
 Verify against 5 tasks × 8 categories = 40 entries (1.7% of full corpus).

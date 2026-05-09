@@ -26,10 +26,14 @@
 // multiple — e.g. `SubtleFlip` may find 7 boolean operators; the seed picks
 // one. `KnownGood` ignores the seed entirely.
 //
-// Out of scope this turn (per `memory/context/mejepa-implementation-initiative.md`):
-//   - Docker oracle wrapper (depends on full SWE-bench Lite environment).
-//   - `CF_MEJEPA_MUTATION_CORPUS` + `CF_MEJEPA_ORACLE_VERDICTS` RocksDB CFs.
-//   - 2,400-entry full corpus generation (operational, not code).
+// Shipped alongside the operators:
+//   - strict command/Docker oracle wrappers and official SWE-bench Lite bridge;
+//   - crate-local RocksDB source-of-truth CFs for mutations and verdicts;
+//   - split helpers for repo-atomic diagnostic splits and exact
+//     instance-atomic 80/10/10 splits guarded by official test-patch SHA checks.
+//
+// Still operationally out of scope for this library entrypoint:
+//   - the full 2,400-entry corpus generation batch (300 Lite tasks × 8 categories).
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

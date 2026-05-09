@@ -38,10 +38,11 @@
 | doc 05 Tier 3.6 | Manifold geometry / Riemannian | — | ⏳ deferred (XL effort) |
 | doc 05 Tier 4 | (defer/skip pile) — `ruvector-attention`, `ruvllm`, `ruvector-graph` Cypher, `ruvector-postgres`, `ruvector-consciousness`, `ruQu`, FPGA, Hailo, ESP32-S3 | — | 🚫 not in scope |
 | doc 09 Phase 0 | 8 mutation operators (KnownGood, SubtleFlip, OffByOne, SwapVariable, DeleteTestCall, WrongFile, OverEngineer, CompileError) | `context-graph-mejepa-corpus` | ✅ shipped | 50 tests; `python3 py_compile`-driven FSV at `/tmp/contextgraph-mejepa-corpus-fsv/{generated_sources/*.py, pyc/*.pyc, mejepa-corpus-evidence.json}` |
-| doc 09 Phase 0 | Corpus train/calibration/holdout split (repo-atomic, LPT bin-pack + lowest-current/target ratio) | `mejepa-corpus::split` | ✅ shipped | `/tmp/contextgraph-mejepa-corpus-fsv/{split-evidence.json, split-assignments.json}` (300 tasks across 12 repos) |
-| doc 09 Phase 0 | Command + Docker oracle wrapper (report-file SoT, timeout, stale-report rejection, strict pytest JSON parser) | `context-graph-mejepa-corpus::oracle` + `scripts/swebench_lite_ops.py` | ✅ wrapper + official one-task smoke shipped; full corpus batch deferred | real `python3 -m pytest` FSV + official SWE-bench Lite gold smoke/cache-hygiene evidence at `/tmp/contextgraph-swebench-lite-fsv/` |
+| doc 09 Phase 0 | Corpus train/calibration/holdout split — `SplitMode::InstanceAtomic` (default, achieves clean 240/30/30 on Lite) + `SplitMode::RepoAtomic` (repo-leakage-free, structurally bounded to [195,77,28] on Lite because django=38% / sympy=25.7%) + `assert_no_test_patch_leakage` helper | `mejepa-corpus::split` | ✅ shipped 2026-05-09e | both modes verified at `/tmp/contextgraph-mejepa-corpus-fsv/split-evidence.json` (`instance_atomic.bucket_sizes=[240,30,30]`, `repo_atomic.bucket_sizes=[195,77,28]`, `instance_atomic.achieves_80_10_10=true`); two new tests lock in the dataset-shape constraint |
+| doc 09 Phase 0 | Command + Docker oracle wrapper (report-file SoT, timeout, stale-report rejection, strict pytest JSON parser) | `context-graph-mejepa-corpus::oracle` + `scripts/swebench_lite_ops.py` | ✅ shipped | real `python3 -m pytest` FSV + official SWE-bench Lite gold smoke/cache-hygiene evidence at `/tmp/contextgraph-swebench-lite-fsv/` |
+| doc 09 Phase 0 | **SWE-bench Lite harness oracle bridge** — `run_swebench_lite_oracle(config)` invokes `python -m swebench.harness.run_evaluation` for ONE instance (gold or custom mode), parses per-instance `report.json`, converts FAIL_TO_PASS/PASS_TO_PASS/FAIL_TO_FAIL/PASS_TO_FAIL → `OracleVerdict`, fails-closed on missing/unresolved/non-applied; Docker-name-safe run_id validator (catches `+`/punctuation up front) | `context-graph-mejepa-corpus::swebench` | ✅ shipped 2026-05-09e | 18 unit tests + end-to-end FSV against real `swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest` Docker image: `resolved=true`, 22 per-test rows all Pass, 23.7s gold + 23.0s custom, RocksDB round-trip identical at `/tmp/contextgraph-mejepa-corpus-fsv/swebench-oracle-evidence.json` |
 | doc 09 Phase 0 | RocksDB CFs `CF_MEJEPA_MUTATION_CORPUS` + `CF_MEJEPA_ORACLE_VERDICTS` | `mejepa-corpus::oracle::OracleStore` | ✅ shipped (crate-local store) | writes, flushes, reopens, scans both CFs in `/tmp/contextgraph-mejepa-corpus-fsv/oracle-evidence.json` |
-| doc 09 Phase 0 | 2,400-entry full corpus generation | — | ⏳ deferred (operational batch; pull task images on demand, do not pre-cache all 300 unless intentionally running a batch) |
+| doc 09 Phase 0 | 2,400-entry full corpus generation (8 mutation categories × 300 instances, diff-aware mutation → predictions JSONL → SWE-bench harness → OracleStore loop) + `mejepa-corpus generate/verify` CLI | — | ⏳ deferred (next turn — bridge ready; needs HF gold-patch loader + diff-aware mutation operators + CLI scaffolding) |
 | doc 09 Phase 1 | `Instrument` trait + `InstrumentSlot` enum (15 slots, 5,120-d total per §3.5.5) + `Panel` + `PanelBuilder` (fail-closed dim/finite/double-fill validation, JSON via `serde(try_from)` invariant gate) | `context-graph-mejepa-instruments` | ✅ shipped | 40 tests; `/tmp/contextgraph-mejepa-instruments-fsv/{panel.json, instruments-evidence.json}` |
 | doc 09 Phase 1 | E_Oracle (128-d: pass/fail/skip/error fractions + total + has_exception + 10-class one-hot exception) | `mejepa-instruments::e_oracle` | ✅ shipped | 4 scenarios (`all_pass`, `mixed`, `crash_assertion_error`, `crash_type_error`) on disk + 4 boundary cases |
 | doc 09 Phase 1 | Multi-language `ast_chunker` extension (Rust shipped today; extend to Python, JS, TS, Go, Java, C, C++, C#, Ruby, PHP per doc 14 §6 items 1-5) | `crates/context-graph-core/src/memory/ast_chunker.rs` (Rust-only today) + `crates/context-graph-cli/src/commands/dynamicjepa.rs` (multi-language semantic extractor already shipped) | partial → ⏳ extension deferred (~10 days) | Rust FSV at `/tmp/contextgraph-rust-ast-chunker-fsv/ast-chunker-evidence.json` |
@@ -83,10 +84,10 @@
 | doc 09 §3.7 | Multi-objective aux-head loss + counterfactual training + active learning + cross-task transfer + aux-head distillation | — | ⏳ deferred (~5-7 days est) |
 | doc 09 §3.8 | Real-time `mejepa-shift-subscriber` Tokio task in `context-graph-mcp` | — | ⏳ deferred |
 
-## Test totals (2026-05-09)
+## Test totals (2026-05-09e)
 
-**229 tests across 6 ME-JEPA-foundation crates pass:**
-- `context-graph-mejepa-corpus`: 59
+**251 tests across 6 ME-JEPA-foundation crates pass:**
+- `context-graph-mejepa-corpus`: 81 (+22: 18 SWE-bench bridge unit tests + 4 split-mode tests)
 - `context-graph-mejepa-instruments`: 40
 - `context-graph-tier-compression`: 24
 - `context-graph-solver`: 58
@@ -97,7 +98,8 @@
 
 - `/tmp/contextgraph-tier1-fsv/` — MMR, conformal, ed25519
 - `/tmp/contextgraph-tier2-fsv/` — mincut, Granger, cert, causal-mask
-- `/tmp/contextgraph-mejepa-corpus-fsv/` — mutation operators + split + oracle report/RocksDB evidence + py_compile artifacts
+- `/tmp/contextgraph-mejepa-corpus-fsv/` — mutation operators + split (both modes) + oracle report/RocksDB evidence + py_compile artifacts
+- `/tmp/contextgraph-mejepa-corpus-fsv/swebench-oracle-evidence.json` — **end-to-end SWE-bench harness oracle bridge** for `sympy__sympy-20590` (gold + custom modes both `resolved=true`, 22 per-test rows all Pass, RocksDB round-trip identical)
 - `/tmp/contextgraph-swebench-lite-fsv/` — official SWE-bench Lite preflight, cache hygiene, and one-task gold smoke (`sympy__sympy-20590`)
 - `/tmp/contextgraph-tier-compression-fsv/` — 4 quantized blobs (8/7/5/3-bit) + boundary cases
 - `/tmp/contextgraph-mejepa-instruments-fsv/` — full 5,120-d panel + E_Oracle/E_Witness/E_StaticAnalysis inputs, encoded slots, and boundary cases
@@ -112,12 +114,14 @@
 - `memory/reports/session-2026-05-09c--tier1.3-tier-compression.md`
 - `memory/reports/session-2026-05-09d--phase1-instruments-scaffolding.md`
 - `memory/reports/session-2026-05-09--phase0-phase1-hardening.md`
+- `memory/reports/session-2026-05-09e--phase0-swebench-bridge-and-split-fix.md`
 
 ## Highest-leverage next primitives (recommended)
 
 1. **doc 09 Phase 0 full corpus generation** — run the official
-   SWE-bench Lite Docker oracle batch now that the wrapper/parser/store and
-   one-task official smoke exist. Keep the local SWE-bench cache clean:
+   SWE-bench Lite Docker oracle batch now that the wrapper/parser/store,
+   manifest metadata preflight, and one-task gold/custom bridge exist.
+   Keep the local SWE-bench cache clean:
    one smoke image is expected now; additional task images should be pulled
    only for the batch being run.
 2. **E_Test + E_Problem + E_CommitMsg** — reuse the existing E1 path for

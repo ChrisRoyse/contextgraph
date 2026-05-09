@@ -2,7 +2,7 @@
 
 > **Shipped:** 2026-05-09
 > **Crate:** `crates/context-graph-mejepa-corpus/`
-> **Tests:** included in 59 `context-graph-mejepa-corpus` tests
+> **Tests:** included in 81 `context-graph-mejepa-corpus` tests
 > **FSV evidence:** `/tmp/contextgraph-mejepa-corpus-fsv/oracle-evidence.json`;
 > official SWE-bench Lite ops evidence at
 > `/tmp/contextgraph-swebench-lite-fsv/`
@@ -24,10 +24,15 @@ path Phase 0 was missing:
 - `OracleStore` opens RocksDB with `mejepa_mutation_corpus` and
   `mejepa_oracle_verdicts` column families and persists/read-backs rows
   keyed by `(task_id, mutation_category)`.
+- `swebench::run_swebench_lite_oracle(...)` invokes the official
+  `python -m swebench.harness.run_evaluation` entry point for one Lite
+  instance in gold or custom-prediction mode, then parses the per-instance
+  `report.json` source of truth into `OracleVerdict`.
 - `scripts/swebench_lite_ops.py` verifies the official SWE-bench Lite
   environment around this wrapper: isolated official harness import,
-  300-instance dataset/readback, Docker Desktop access, corrected remote
-  image naming, local image inventory, and one official gold smoke.
+  300-instance dataset/readback, checked-in manifest metadata hashes,
+  Docker Desktop access, corrected remote image naming, local image
+  inventory, and one official gold smoke.
 
 ## Why it matters
 
@@ -98,7 +103,10 @@ Current readback:
 - Preflight:
   `/tmp/contextgraph-swebench-lite-fsv/preflight-evidence.json`
   confirms 300 official dataset rows match 300 checked-in task
-  manifests and Docker Desktop is reachable.
+  manifests, Docker Desktop is reachable, and every checked-in manifest
+  matches the official dataset for repo, base commit, problem statement
+  hash, oracle patch hash, official test patch hash, FAIL_TO_PASS list,
+  and PASS_TO_PASS count.
 - Image status:
   `/tmp/contextgraph-swebench-lite-fsv/image-status-evidence.json`
   confirms exactly one expected SWE-bench image is present locally, no
@@ -108,6 +116,11 @@ Current readback:
   `/tmp/contextgraph-swebench-lite-fsv/gold-smoke-evidence.json`
   confirms `sympy__sympy-20590` runs through the official harness with
   `predictions_path=gold`, applies the gold patch, and resolves.
+- Rust bridge FSV:
+  `/tmp/contextgraph-mejepa-corpus-fsv/swebench-oracle-evidence.json`
+  confirms the same real Docker image resolves in both gold and custom
+  JSONL modes, converts 22 per-test rows into `OracleVerdict`, and
+  round-trips the verdict through RocksDB.
 
 Important naming correction:
 
@@ -126,6 +139,8 @@ Boundary cases covered by `scripts/swebench_lite_ops.py`:
   (`SWEBENCH_UNKNOWN_INSTANCE_ID`).
 - `preflight --tasks-dir <empty-dir>` rejects incomplete task manifests
   (`SWEBENCH_TASK_MANIFEST_COUNT_MISMATCH`).
+- Preflight rejects any checked-in manifest whose metadata differs from
+  the official dataset (`SWEBENCH_TASK_MANIFEST_METADATA_MISMATCH`).
 
 Cache policy:
 
@@ -151,4 +166,6 @@ Cache policy:
 - Phase: `../03_deferred/phases/phase0.md`
 - Implementation plan: `../04_implementation_plans/plan_phase0_docker_oracle.md`
 - Source: `crates/context-graph-mejepa-corpus/src/oracle.rs`
+- SWE-bench bridge source: `crates/context-graph-mejepa-corpus/src/swebench.rs`
 - FSV example: `crates/context-graph-mejepa-corpus/examples/oracle_fsv.rs`
+- SWE-bench FSV example: `crates/context-graph-mejepa-corpus/examples/swebench_oracle_fsv.rs`

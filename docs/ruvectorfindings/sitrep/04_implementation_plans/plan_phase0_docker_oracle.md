@@ -5,20 +5,21 @@
 > **Crate / module:** `crates/context-graph-mejepa-corpus/src/oracle.rs`
 > **Status update 2026-05-09:** local command runner, Docker invocation
 > builder, strict pytest JSON parser, crate-local RocksDB `OracleStore`,
-> and official SWE-bench Lite preflight/gold-smoke ops script shipped.
-> One official Lite image (`sympy__sympy-20590`) was pulled and passed
-> `predictions_path=gold`; the local SWE-bench cache now intentionally
-> contains only that expected image with no duplicates. The 2,400-entry
-> operational corpus batch remains.
+> official SWE-bench Lite preflight/gold-smoke ops script, manifest
+> metadata verifier, and Rust SWE-bench oracle bridge shipped. One
+> official Lite image (`sympy__sympy-20590`) was pulled and passed both
+> `predictions_path=gold` and custom JSONL bridge FSV; the local
+> SWE-bench cache now intentionally contains only that expected image
+> with no duplicates. The 2,400-entry operational corpus batch remains.
 
 ## Goal
 
-Ship a synchronous Rust primitive around the already-shipped
+Use the already-shipped synchronous Rust primitives
 `run_command_json_oracle(...)`, `run_docker_json_oracle(...)`,
-`parse_pytest_json_report(...)`, and `OracleStore` APIs so a corpus
-generation CLI can:
+`parse_pytest_json_report(...)`, `swebench::run_swebench_lite_oracle(...)`,
+and `OracleStore` APIs so a corpus generation CLI can:
 
-1. Runs the upstream SWE-bench Lite Docker evaluator against a mutated
+1. Run the upstream SWE-bench Lite Docker evaluator against a mutated
    patch.
 2. Parses pytest-style JSON output from the report file source of truth.
 3. Returns a structured `OracleVerdict` per `OracleVerdict` schema (✅
@@ -37,7 +38,8 @@ gating dependency for everything else.
    `parse_pytest_json_report`, and `OracleStore`.
 
 2. ✅ Operational preflight that invokes the official SWE-bench harness
-   and checks Docker/image-cache state: `scripts/swebench_lite_ops.py`.
+   and checks Docker/image-cache state plus checked-in manifest
+   metadata: `scripts/swebench_lite_ops.py`.
    Remote image naming follows the official `TestSpec.instance_image_key`
    rule: lower-case instance id and replace `__` with `_1776_`, e.g.
    `sympy__sympy-20590` →
@@ -45,6 +47,11 @@ gating dependency for everything else.
    The cache-hygiene gate expects only the images required for the
    current smoke or batch slice; it fails on stale or duplicate
    SWE-bench images.
+
+   Preflight also compares each checked-in `tasks/swebench-lite/*.json`
+   manifest against the official dataset for repo, base commit, problem
+   statement hash, gold patch hash, official test patch hash,
+   FAIL_TO_PASS list, and PASS_TO_PASS count.
 
 3. ✅ pytest JSON output parser (`pytest --json-report --json-report-file=...`):
    ```json
@@ -60,26 +67,37 @@ gating dependency for everything else.
 4. ✅ RocksDB CFs keyed by `(task_id, mutation_category)`:
    `CF_MEJEPA_MUTATION_CORPUS` and `CF_MEJEPA_ORACLE_VERDICTS`.
 
-5. ✅ Fail-closed errors for:
+5. ✅ `crates/context-graph-mejepa-corpus/src/swebench.rs`:
+   `run_swebench_lite_oracle` invokes the official harness for one
+   instance in gold or custom-prediction mode, parses the per-instance
+   `report.json` source of truth, converts the SWE-bench status maps
+   into `OracleVerdict`, and fails closed on unresolved, missing patch,
+   bad run id, missing artifacts, or incomplete per-test status.
+
+6. ✅ Fail-closed errors for:
    - Docker daemon unavailable (`MEJEPA_ORACLE_COMMAND_FAILED`).
    - Image pull failure / image not found.
    - Subprocess timeout (`MEJEPA_ORACLE_TIMEOUT`).
    - JSON parse failure (`MEJEPA_ORACLE_JSON_PARSE`).
    - Empty/stale/mismatched reports (`MEJEPA_ORACLE_REPORT_INVALID` or
      `MEJEPA_ORACLE_INVALID_INPUT`).
+   - SWE-bench bridge failures (`MEJEPA_SWEBENCH_*` error codes).
 
-6. ⏳ Operational corpus generation command: `cargo run --release -p
+7. ⏳ Operational corpus generation command: `cargo run --release -p
    context-graph-mejepa-corpus -- generate --output ./data/mejepa-corpus`.
 
-7. ⏳ Verify mode: `cargo run … -- verify --corpus ./data/mejepa-corpus`
+8. ⏳ Verify mode: `cargo run ... -- verify --corpus ./data/mejepa-corpus`
    re-runs the oracle on a 5% sample and confirms verdicts match.
 
 ## Definition of Done
 
-- Official SWE-bench Lite harness gold smoke passes for ONE real task
+- Official SWE-bench Lite harness gold smoke passes for one real task
   image. Current evidence:
   `/tmp/contextgraph-swebench-lite-fsv/gold-smoke-evidence.json`
   (`sympy__sympy-20590`, resolved=true).
+- Rust bridge runs the same task in gold and custom JSONL modes and
+  persists/read-backs the verdict. Current evidence:
+  `/tmp/contextgraph-mejepa-corpus-fsv/swebench-oracle-evidence.json`.
 - 5-task × 8-category = 40-entry batch run completes.
 - Verify mode catches a tampered verdict (modify a row in RocksDB,
   re-run verify, expect mismatch error).
@@ -94,6 +112,8 @@ python3 scripts/swebench_lite_ops.py preflight
 # expected:
 #   dataset_count: 300
 #   task_manifest_count: 300
+#   manifest_metadata.checked_count: 300
+#   manifest_metadata.unique_official_test_patch_sha256: 300
 #   Docker Desktop reachable
 #   exactly the expected SWE-bench image(s) are physically present
 #   no stale or duplicate SWE-bench image refs exist
@@ -106,14 +126,21 @@ python3 scripts/swebench_lite_ops.py gold-smoke --instance-id sympy__sympy-20590
 #   official image present in docker image inspect
 #   cache_status.swebench_image_count: 1
 
-# 5-task batch
-context-graph mejepa-corpus generate --tasks 5 --output /tmp/corpus-smoke
+# Current Rust bridge FSV
+cargo run -p context-graph-mejepa-corpus --example swebench_oracle_fsv
+# expected:
+#   gold_run.after_state.instance_report.resolved: true
+#   custom_run.after_state.instance_report.resolved: true
+#   rocksdb_round_trip.matches: true
+
+# Target 5-task batch, after generate CLI ships
+cargo run --release -p context-graph-mejepa-corpus -- generate --tasks 5 --output /tmp/corpus-smoke
 # expected:
 #   entries: 40 (5 tasks * 8 categories)
 #   verdicts persisted to CF_MEJEPA_ORACLE_VERDICTS
 
-# Full run (operational batch)
-context-graph mejepa-corpus generate --output ./data/mejepa-corpus
+# Target full run, after generate CLI ships
+cargo run --release -p context-graph-mejepa-corpus -- generate --output ./data/mejepa-corpus
 # expected (after several hours):
 #   entries: 2400
 #   leakage_check: PASS
@@ -121,27 +148,24 @@ context-graph mejepa-corpus generate --output ./data/mejepa-corpus
 
 ## Design notes
 
-### Subprocess invocation
+### Official harness invocation
 
 ```rust
-let output = std::process::Command::new("docker")
-    .args(&["run", "--rm",
-            "-v", &format!("{}:/workspace/patch", patch_path),
-            &format!("swebench/sweb.eval.x86_64.{}:latest",
-                     task_id.to_lowercase().replace("__", "_1776_")),
-            "/workspace/patch/mutated.py"])
-    .output()
-    .map_err(|e| OracleError::DockerInvocationFailed(e.to_string()))?;
-
-if !output.status.success() {
-    return Err(OracleError::DockerNonZeroExit {
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        exit_code: output.status.code().unwrap_or(-1),
-    });
-}
+let verdict = run_swebench_lite_oracle(SwebenchLiteOracleConfig {
+    instance_id,
+    mode: SwebenchPredictionMode::Custom { predictions_path },
+    run_id,
+    report_dir,
+    python_bin,
+    dataset_name: "princeton-nlp/SWE-bench_Lite",
+    split: "test",
+    namespace: "swebench",
+    max_workers: 1,
+    timeout,
+})?;
 ```
 
-### JSON parsing
+### JSON parsing layers
 
 ```rust
 #[derive(Deserialize)]
@@ -181,6 +205,12 @@ fn pytest_to_verdict(report: PytestJsonReport) -> OracleVerdict {
     }
 }
 ```
+
+The direct pytest parser remains useful for local synthetic oracle FSV.
+The SWE-bench bridge parses the official per-instance `report.json`
+status maps and converts `FAIL_TO_PASS`, `PASS_TO_PASS`,
+`FAIL_TO_FAIL`, and `PASS_TO_FAIL` entries into a single
+`OracleVerdict`.
 
 ### Timeout handling
 
@@ -242,16 +272,19 @@ A 10-way parallel run on a 64GB+ machine completes 2,400 entries in
 3. Run one official gold smoke:
    `python3 scripts/swebench_lite_ops.py gold-smoke --instance-id
    sympy__sympy-20590`.
-4. Add CF to `context-graph-storage` via the existing CF migration
-   pattern.
-5. Run 5-task × 8-category batch to verify persistence.
-6. Pull only the next batch slice's needed images, or let the official
+4. Run the Rust bridge FSV:
+   `cargo run -p context-graph-mejepa-corpus --example swebench_oracle_fsv`.
+5. Implement the `generate` CLI loop around `run_swebench_lite_oracle`.
+6. Add CF to `context-graph-storage` via the existing CF migration
+   pattern only if the corpus must share the production store.
+7. Run 5-task × 8-category batch to verify persistence.
+8. Pull only the next batch slice's needed images, or let the official
    harness pull them during generation. Do not pre-cache all 300 unless
    the operator intentionally trades disk for throughput.
-7. Run full 300-task generation as operational batch.
-8. Verify Phase 0 §7 DoD numbers.
-9. Update `01_status_overview.md` and `02_shipped/phase0_*.md`.
-10. End-of-turn SAMP report.
+9. Run full 300-task generation as operational batch.
+10. Verify Phase 0 §7 DoD numbers.
+11. Update `01_status_overview.md` and `02_shipped/phase0_*.md`.
+12. End-of-turn SAMP report.
 
 ## See also
 

@@ -1,35 +1,56 @@
-# Phase 0 Repo-Atomic Corpus Split (Tier 1.4 / 2.4)
+# Phase 0 Corpus Split (Tier 1.4 / 2.4)
 
 > **Shipped:** 2026-05-09
 > **Module:** `crates/context-graph-mejepa-corpus/src/split.rs`
-> **Tests:** 22 passing
-> **FSV evidence:** `/tmp/contextgraph-mejepa-corpus-fsv/{split-evidence.json, split-assignments.json}`
+> **Tests:** included in 81 `context-graph-mejepa-corpus` tests
+> **FSV evidence:** `/tmp/contextgraph-mejepa-corpus-fsv/{split-evidence.json, split-assignments.json, split-repo-atomic-assignments.json}`
 
 ## What this primitive does
 
-Repo-atomic train/calibration/holdout split of a corpus of `(task_id,
-repo_id, ...)` entries with a closed-form leakage proof.
+Train/calibration/holdout split of the checked-in 300-task SWE-bench
+Lite corpus with two explicit modes:
+
+- `SplitMode::InstanceAtomic` is the default for Phase 0 corpus
+  generation. It assigns whole task instances independently and reaches
+  the clean 80/10/10 target exactly on Lite: `[240, 30, 30]`.
+- `SplitMode::RepoAtomic` is retained as the no-shared-repo diagnostic
+  mode. On the real Lite distribution it produces `[195, 77, 28]`
+  because the repo groups are too skewed for exact 80/10/10 without
+  splitting repos.
 
 API:
 - `split_corpus(entries: &[CorpusEntry], config: SplitConfig) ->
   SplitReport` — produces deterministic train/cal/holdout assignments
-  where every task in a given repo lands in the same bucket.
+  using the selected mode.
 - `cross_cut_weights(report: &SplitReport) -> [f64; 3]` — returns the
   total weight of edges crossing each bucket pair in the
-  "tasks share a repo" graph. All zero ⇔ provably leakage-free.
+  "tasks share a repo" graph. All zero ⇔ no repo-level cross-bucket
+  edges in `RepoAtomic` mode.
+- `assert_no_test_patch_leakage(...)` — checks the source-of-truth
+  `official_test_patch_sha256` values and fails closed if an instance is
+  missing a hash or if the same test-patch hash crosses buckets.
 
 ## Why it matters
 
-Without repo-atomicity, training on `astropy.io.fits.tests.test_a` and
-holdout `astropy.io.fits.tests.test_b` gives the predictor information
-about the repo's shared imports, fixtures, conftest.py, and code style
-that biases the holdout-agreement metric upward. Doc 05 §1.4 and §2.4
-require the split to be repo-atomic; doc 09 §7 makes the
-cross_cut_weights = [0,0,0] proof part of the Phase 0 DoD.
+Doc 09 requires a clean held-out gate for Phase 4/8. The original
+repo-atomic interpretation removes repo-level leakage, but the real
+Lite distribution has only 12 repos and two dominant groups:
+`django/django=114` and `sympy/sympy=77`. That makes exact 80/10/10
+mathematically unattainable if whole repos are indivisible.
+
+The current contract therefore separates the two invariants instead of
+hiding the tradeoff:
+
+- Active corpus generation uses `InstanceAtomic` to satisfy the required
+  240/30/30 train/cal/holdout sizes and verifies no exact test-patch SHA
+  crosses buckets.
+- Audits can still run `RepoAtomic` when the question is "could this
+  metric be inflated by shared repo context?" The evidence records the
+  unavoidable `[195, 77, 28]` shape for that stricter mode.
 
 ## Implementation notes
 
-### Algorithm
+### RepoAtomic algorithm
 1. Group entries by `repo_id`.
 2. **LPT pre-sort**: sort repo-groups by descending size (longest-
    processing-time-first heuristic for bin-packing).
@@ -54,18 +75,36 @@ for each `(u, v)`, increment `cross_cut[bucket_pair(assign[u],
 assign[v])]`. Repo-atomicity guarantees every edge has both endpoints
 in the same bucket → all three cross-cut weights are exactly 0.
 
+### InstanceAtomic algorithm
+
+1. Sort task ids deterministically after a seeded SplitMix64 shuffle.
+2. Compute target counts by rounded target fractions.
+3. Assign exactly `train`, `calibration`, and `holdout` counts.
+4. Run `assert_no_test_patch_leakage` against the manifest
+   `official_test_patch_sha256` map so duplicate or missing test patches
+   cannot silently make an instance-level split unsafe.
+
 ### Linter's invariant additions
 - Duplicate `task_id` rejection at split entry (would have produced
   silently inconsistent assignments).
 - Whitespace-only string validation on `task_id` and `repo_id`.
 
 ### FSV at /tmp/contextgraph-mejepa-corpus-fsv/
-- `split-evidence.json` — synthetic 300-task SWE-bench-shaped corpus
-  (300 tasks across 30 repos with realistic repo-size skew). Bucket
-  sizes 76.3% / 13.3% / 10.3% (within 4 percentage points of the
-  80/10/10 target). cross_cut_weights = [0, 0, 0] confirmed.
-- `split-assignments.json` — full per-task bucket assignment for
-  reproducibility. Same seed produces bit-identical assignments.
+- `split-evidence.json` — real checked-in 300-task SWE-bench Lite
+  manifest corpus. It records `instance_atomic.bucket_sizes=[240,30,30]`,
+  `instance_atomic.achieves_80_10_10=true`,
+  `official_test_patch_sha256_count=300`,
+  `unique_official_test_patch_sha256_count=300`, and
+  `test_patch_sha_leakage_check_passed=true`.
+- `split-assignments.json` — active instance-atomic per-task bucket
+  assignment for reproducibility.
+- `split-repo-atomic-assignments.json` — diagnostic repo-atomic
+  assignment. It records `repo_atomic.bucket_sizes=[195,77,28]` and
+  `cross_cut_weights=[0,0,0]`.
+
+Boundary cases include empty corpus, duplicate task id, bad fractions,
+single-repo repo-atomic degeneracy, missing test-patch hash, and
+duplicate test-patch hash across buckets.
 
 ### Real bug caught by FSV
 The 1-ULP JSON round-trip issue: `0.10333333333333333` ↔

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,7 @@ def probe_python_env(venv: Path, dataset_name: str, split: str, timeout: int) ->
     python = python_bin(venv)
     ensure_file(python, "SWEBENCH_VENV_PYTHON_MISSING", "SWE-bench venv Python")
     snippet = r"""
+import hashlib
 import json
 import logging
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -50,6 +52,33 @@ import docker
 import swebench
 from datasets import load_dataset
 ds = load_dataset(DATASET_NAME, split=SPLIT)
+
+def parse_json_list(value):
+    if isinstance(value, str):
+        parsed = json.loads(value)
+    elif value is None:
+        parsed = []
+    else:
+        parsed = value
+    if not isinstance(parsed, list):
+        raise TypeError(f"expected list-like SWE-bench test field, got {type(value).__name__}")
+    return parsed
+
+def sha256_prefixed(text):
+    return "sha256:" + hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+rows = []
+for row in ds:
+    rows.append({
+        "instance_id": row["instance_id"],
+        "repo": row["repo"],
+        "base_commit": row["base_commit"],
+        "problem_statement_sha256": sha256_prefixed(row.get("problem_statement", "")),
+        "oracle_patch_sha256": sha256_prefixed(row.get("patch", "")),
+        "official_test_patch_sha256": sha256_prefixed(row.get("test_patch", "")),
+        "fail_to_pass": parse_json_list(row.get("FAIL_TO_PASS")),
+        "pass_to_pass_count": len(parse_json_list(row.get("PASS_TO_PASS"))),
+    })
 print(json.dumps({
     "swebench_version": getattr(swebench, "__version__", "unknown"),
     "datasets_version": datasets.__version__,
@@ -58,11 +87,12 @@ print(json.dumps({
     "split": SPLIT,
     "count": len(ds),
     "ids": [row["instance_id"] for row in ds],
+    "rows": rows,
 }, sort_keys=True))
 """.replace("DATASET_NAME", repr(dataset_name)).replace("SPLIT", repr(split))
     env = os.environ.copy()
     env.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
-    result = run([str(python), "-c", snippet], timeout=timeout, env=env, stdout_limit=120000)
+    result = run([str(python), "-c", snippet], timeout=timeout, env=env, stdout_limit=1000000)
     payload = parse_json_tail(result)
     if payload["count"] != EXPECTED_LITE_COUNT:
         raise SwebenchOpsError(
@@ -71,7 +101,112 @@ print(json.dumps({
             "Verify the dataset name/split and Hugging Face cache.",
             payload,
         )
-    return {"probe": result.to_json(), "payload": payload}
+    official_rows = payload.pop("rows")
+    payload["rows_count"] = len(official_rows)
+    payload["rows_sha256"] = sha256_prefixed(
+        json.dumps(official_rows, sort_keys=True, separators=(",", ":"))
+    )
+    payload["rows_sample"] = [official_rows[0], official_rows[-1]]
+    probe = result.to_json()
+    probe["stdout_tail"] = "<official dataset probe JSON parsed; full rows summarized by rows_sha256>"
+    return {"probe": probe, "payload": payload, "official_rows": official_rows}
+
+
+def sha256_prefixed(text: str) -> str:
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def verify_manifest_metadata(
+    manifests: dict[str, dict[str, Any]],
+    official_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    official_by_id = {row["instance_id"]: row for row in official_rows}
+    mismatches: list[dict[str, Any]] = []
+    seen_test_patch_shas: set[str] = set()
+    seen_oracle_patch_shas: set[str] = set()
+
+    for instance_id, manifest in sorted(manifests.items()):
+        official = official_by_id.get(instance_id)
+        if official is None:
+            mismatches.append({"instance_id": instance_id, "field": "<missing-official-row>"})
+            continue
+
+        expected = {
+            "repo": official["repo"],
+            "base_commit": official["base_commit"],
+            "problem_statement_sha256": official["problem_statement_sha256"],
+            "oracle_patch_sha256": official["oracle_patch_sha256"],
+            "official_test_patch_sha256": official["official_test_patch_sha256"],
+            "fail_to_pass": official["fail_to_pass"],
+            "pass_to_pass_count": official["pass_to_pass_count"],
+        }
+        actual = {
+            "repo": manifest.get("repo"),
+            "base_commit": manifest.get("base_commit"),
+            "problem_statement_sha256": sha256_prefixed(manifest.get("problem_statement", "")),
+            "oracle_patch_sha256": manifest.get("oracle_patch_sha256"),
+            "official_test_patch_sha256": manifest.get("official_test_patch_sha256"),
+            "fail_to_pass": manifest.get("fail_to_pass"),
+            "pass_to_pass_count": manifest.get("pass_to_pass_count"),
+        }
+        for field, expected_value in expected.items():
+            actual_value = actual[field]
+            if actual_value != expected_value:
+                mismatches.append({
+                    "instance_id": instance_id,
+                    "field": field,
+                    "actual": actual_value,
+                    "expected": expected_value,
+                })
+
+        test_sha = manifest.get("official_test_patch_sha256")
+        oracle_sha = manifest.get("oracle_patch_sha256")
+        if not isinstance(test_sha, str) or not test_sha.startswith("sha256:"):
+            mismatches.append({
+                "instance_id": instance_id,
+                "field": "official_test_patch_sha256",
+                "actual": test_sha,
+                "expected": "sha256:<64 lowercase hex chars>",
+            })
+        else:
+            seen_test_patch_shas.add(test_sha)
+        if not isinstance(oracle_sha, str) or not oracle_sha.startswith("sha256:"):
+            mismatches.append({
+                "instance_id": instance_id,
+                "field": "oracle_patch_sha256",
+                "actual": oracle_sha,
+                "expected": "sha256:<64 lowercase hex chars>",
+            })
+        else:
+            seen_oracle_patch_shas.add(oracle_sha)
+
+    if mismatches:
+        raise SwebenchOpsError(
+            "SWEBENCH_TASK_MANIFEST_METADATA_MISMATCH",
+            f"{len(mismatches)} checked-in SWE-bench Lite manifest fields differ from the official dataset",
+            "Regenerate tasks/swebench-lite from the official dataset; do not edit manifests by hand.",
+            {"mismatches_sample": mismatches[:20], "mismatch_count": len(mismatches)},
+        )
+
+    if len(seen_test_patch_shas) != len(manifests):
+        raise SwebenchOpsError(
+            "SWEBENCH_TEST_PATCH_SHA_COLLISION",
+            "official_test_patch_sha256 is not unique across checked-in Lite manifests",
+            "Use repo-atomic splitting or regenerate manifests from the official dataset before instance-atomic splitting.",
+            {
+                "manifest_count": len(manifests),
+                "unique_official_test_patch_sha256": len(seen_test_patch_shas),
+            },
+        )
+
+    return {
+        "checked_count": len(manifests),
+        "unique_official_test_patch_sha256": len(seen_test_patch_shas),
+        "unique_oracle_patch_sha256": len(seen_oracle_patch_shas),
+        "problem_statement_hashes_checked": len(manifests),
+        "fail_to_pass_lists_checked": len(manifests),
+        "passes": True,
+    }
 
 
 def check_remote_manifest(ref: str, timeout: int) -> dict[str, Any]:
@@ -110,6 +245,8 @@ def command_preflight(args: Any) -> dict[str, Any]:
                 "manifest_count": len(manifest_ids),
             },
         )
+    official_rows = python_probe.pop("official_rows")
+    manifest_metadata = verify_manifest_metadata(manifests, official_rows)
     sample_image = official_image_ref(args.sample_task, args.namespace, args.arch, args.tag)
     status = cache_status(expected_ids(args), args.namespace, args.arch, args.tag)
     if args.require_clean_cache:
@@ -133,6 +270,7 @@ def command_preflight(args: Any) -> dict[str, Any]:
             "dataset_last_id": python_probe["payload"]["ids"][-1],
             "sample_image": sample_image,
             "remote_manifest": check_remote_manifest(sample_image, args.timeout),
+            "manifest_metadata": manifest_metadata,
             "docker": docker_overview(args.timeout),
             "cache_status": status,
         },

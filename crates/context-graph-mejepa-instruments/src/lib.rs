@@ -9,9 +9,13 @@
 //     into the panel.
 //   - `Panel` and `PanelBuilder` — a fail-closed 5,120-d joint embedding
 //     assembled from individual instrument outputs with dim validation.
-//   - `e_oracle::EOracleInstrument` — first concrete instrument
-//     (one-hot test-outcome counts + categorical exception class). 128-d
-//     output. The other 13 instruments are deferred to follow-up turns.
+//   - `e_oracle::EOracleInstrument` — test-outcome + exception-class encoder.
+//   - `e_witness::EWitnessInstrument` — verified witness-chain encoder.
+//   - `e_static_analysis::EStaticAnalysisInstrument` — linter/type/source
+//     signal encoder.
+//     The remaining 11 instruments are not silently zero-filled by this crate;
+//     callers must fill only slots backed by real source-of-truth inputs and
+//     use `PanelBuilder::require_slots` for phase-specific gates.
 //
 // Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md`
 // — clean-room. No upstream code copied.
@@ -24,9 +28,16 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod e_code;
 pub mod e_oracle;
+pub mod e_reasoning;
+pub mod e_runtime;
+pub mod e_scalars;
 pub mod e_static_analysis;
+pub mod e_text;
+pub mod e_trace;
 pub mod e_witness;
+mod features;
 
 pub type InstrumentResult<T> = Result<T, InstrumentError>;
 
@@ -455,8 +466,17 @@ fn slot_bit(slot: InstrumentSlot) -> u16 {
 #[path = "tests.rs"]
 mod instrument_tests;
 
+pub use e_code::{
+    CodeInstrumentInput, DiffInstrumentInput, EAstInstrument, ECfgInstrument, EDataFlowInstrument,
+    EDiffInstrument, ETypeGraphInstrument,
+};
 pub use e_oracle::{EOracleInstrument, ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome};
+pub use e_reasoning::{EReasoningInstrument, ReasoningEvent, ReasoningInput};
+pub use e_runtime::{ERuntimeInstrument, RuntimeInput};
+pub use e_scalars::{ScalarInput, ScalarsInstrument};
 pub use e_static_analysis::{
     Diagnostic, DiagnosticSeverity, EStaticAnalysisInstrument, StaticAnalysisInput,
 };
+pub use e_text::{ECommitMsgInstrument, EProblemInstrument, ETestInstrument, TextInstrumentInput};
+pub use e_trace::{ETraceInstrument, TraceEvent, TraceEventKind, TraceInput};
 pub use e_witness::{EWitnessInstrument, WitnessChainInput, CANONICAL_WITNESS_FORMAT_VERSION};

@@ -18,7 +18,8 @@ and what the primitive enables downstream.
   (`context-graph-tier-compression`).
 - `phase0_mutation_operators.md` — 8 mutation categories
   (`context-graph-mejepa-corpus`).
-- `phase0_corpus_split.md` — repo-atomic train/cal/holdout split
+- `phase0_corpus_split.md` — exact 240/30/30 instance-atomic split plus
+  repo-atomic no-repo-leak diagnostic split
   (`context-graph-mejepa-corpus::split`).
 - `phase0_oracle_and_store.md` — command/Docker oracle wrapper + strict
   pytest report parser + RocksDB oracle store (`context-graph-mejepa-corpus::oracle`).

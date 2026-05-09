@@ -61,9 +61,10 @@ Tier 2.4 mincut    ─> Phase 0 split leakage proof (✅ shipped)
 The `04_implementation_plans/` directory holds ready-to-execute plans
 for the 5 highest-priority deferred items. Order:
 
-1. **Phase 0 official SWE-bench Docker batch** (`plan_phase0_docker_oracle.md`)
-   — local wrapper/parser/store are shipped; now validate against official
-   task images and generate real labels.
+1. **Phase 0 full SWE-bench corpus batch** (`plan_phase0_docker_oracle.md`)
+   — one official task image, gold/custom harness bridge, manifest
+   metadata preflight, parser, and store are shipped; now run the
+   remaining generation breadth and persist real labels.
 2. **E_Test + E_Problem + E_CommitMsg** — reuse the existing E1 embedder
    path for the next three Phase 1 slots.
 3. **E_Diff / E_AST scaffold** — tree-sitter-derived deterministic

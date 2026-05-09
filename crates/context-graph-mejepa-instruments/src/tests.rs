@@ -2,12 +2,23 @@
 // crate::e_oracle (EOracleInstrument). Real synthetic OracleVerdict
 // inputs; no mocks.
 
+use super::e_code::{
+    CodeInstrumentInput, DiffInstrumentInput, EAstInstrument, ECfgInstrument, EDataFlowInstrument,
+    EDiffInstrument, ETypeGraphInstrument,
+};
 use super::e_oracle::{
     EOracleInstrument, ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome,
 };
+use super::e_reasoning::{EReasoningInstrument, ReasoningEvent, ReasoningInput};
+use super::e_runtime::{ERuntimeInstrument, RuntimeInput};
+use super::e_scalars::{ScalarInput, ScalarsInstrument};
 use super::e_static_analysis::{
     Diagnostic, DiagnosticSeverity, EStaticAnalysisInstrument, StaticAnalysisInput,
 };
+use super::e_text::{
+    ECommitMsgInstrument, EProblemInstrument, ETestInstrument, TextInstrumentInput,
+};
+use super::e_trace::{ETraceInstrument, TraceEvent, TraceEventKind, TraceInput};
 use super::e_witness::{EWitnessInstrument, WitnessChainInput, CANONICAL_WITNESS_FORMAT_VERSION};
 use super::*;
 use context_graph_witness::{WitnessEntry, HASH_SIZE, ZERO_HASH};
@@ -318,6 +329,264 @@ fn e_static_analysis_rejects_invalid_source_and_diagnostic_lines() {
         })
         .unwrap_err();
     assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+}
+
+fn sample_code_input() -> CodeInstrumentInput {
+    CodeInstrumentInput {
+        language: "python".into(),
+        path: "pkg/module.py".into(),
+        source: "from math import sqrt\n\nclass Solver:\n    def compute(self, value: int) -> int:\n        if value > 3:\n            return value + 1\n        return 0\n".into(),
+    }
+}
+
+fn sample_diff_input() -> DiffInstrumentInput {
+    DiffInstrumentInput {
+        language: "python".into(),
+        path: "pkg/module.py".into(),
+        before_source: "def compute(value: int) -> int:\n    return value\n".into(),
+        after_source: "def compute(value: int) -> int:\n    if value > 3:\n        return value + 1\n    return 0\n".into(),
+    }
+}
+
+fn sample_text_input(kind: &str) -> TextInstrumentInput {
+    TextInstrumentInput {
+        text: format!("real SWE-bench {kind} text with assert behavior and expected output"),
+        source_id: format!("sympy__sympy-20590::{kind}"),
+        language: Some("python".into()),
+    }
+}
+
+fn sample_trace_input() -> TraceInput {
+    TraceInput {
+        events: vec![
+            TraceEvent {
+                function_id: "pkg.module.compute".into(),
+                line: 3,
+                value_hash: "sha256:1111".into(),
+                timestamp_ms: 10,
+                kind: TraceEventKind::FunctionEnter,
+            },
+            TraceEvent {
+                function_id: "pkg.module.compute".into(),
+                line: 5,
+                value_hash: "sha256:2222".into(),
+                timestamp_ms: 12,
+                kind: TraceEventKind::LineHit,
+            },
+        ],
+    }
+}
+
+fn sample_runtime_input() -> RuntimeInput {
+    RuntimeInput {
+        wall_time_ms: 125,
+        peak_rss_bytes: 64 * 1024 * 1024,
+        exit_code: 0,
+        timed_out: false,
+        coverage_percent: Some(83.5),
+        network_events: 0,
+        filesystem_writes: 12,
+    }
+}
+
+fn sample_reasoning_input() -> ReasoningInput {
+    ReasoningInput {
+        task_id: "sympy__sympy-20590".into(),
+        transcript: "I inspected the failing test, edited the Symbol slots path, and verified the oracle output.".into(),
+        events: vec![ReasoningEvent {
+            actor: "claude-code".into(),
+            event_type: "edit".into(),
+            text: "patched the function that controls slot inheritance".into(),
+        }],
+    }
+}
+
+fn sample_scalar_input() -> ScalarInput {
+    ScalarInput {
+        bfs_depth: 4,
+        blame_age_days: 120,
+        churn_lines_30d: 18,
+        coverage_delta: 3.5,
+        repo_health_score: 0.91,
+        files_touched: 2,
+        hunks_touched: 3,
+    }
+}
+
+fn sample_static_input() -> StaticAnalysisInput {
+    StaticAnalysisInput {
+        source_text: sample_code_input().source,
+        diagnostics: vec![Diagnostic {
+            tool: "ruff".into(),
+            severity: DiagnosticSeverity::Warning,
+            category: "F401".into(),
+            line: 1,
+            column: 1,
+        }],
+        churn_30d: Some(18),
+    }
+}
+
+#[test]
+fn remaining_phase1_instruments_encode_real_typed_inputs() {
+    let code = sample_code_input();
+    let diff = sample_diff_input();
+    let cases: Vec<(InstrumentSlot, Vec<f32>)> = vec![
+        (InstrumentSlot::EAst, EAstInstrument.encode(&code).unwrap()),
+        (InstrumentSlot::ECfg, ECfgInstrument.encode(&code).unwrap()),
+        (
+            InstrumentSlot::EDataFlow,
+            EDataFlowInstrument.encode(&code).unwrap(),
+        ),
+        (
+            InstrumentSlot::ETypeGraph,
+            ETypeGraphInstrument.encode(&code).unwrap(),
+        ),
+        (
+            InstrumentSlot::ETest,
+            ETestInstrument.encode(&sample_text_input("test")).unwrap(),
+        ),
+        (
+            InstrumentSlot::ETrace,
+            ETraceInstrument.encode(&sample_trace_input()).unwrap(),
+        ),
+        (
+            InstrumentSlot::EDiff,
+            EDiffInstrument.encode(&diff).unwrap(),
+        ),
+        (
+            InstrumentSlot::EProblem,
+            EProblemInstrument
+                .encode(&sample_text_input("problem"))
+                .unwrap(),
+        ),
+        (
+            InstrumentSlot::ECommitMsg,
+            ECommitMsgInstrument
+                .encode(&sample_text_input("commit"))
+                .unwrap(),
+        ),
+        (
+            InstrumentSlot::ERuntime,
+            ERuntimeInstrument.encode(&sample_runtime_input()).unwrap(),
+        ),
+        (
+            InstrumentSlot::EReasoning,
+            EReasoningInstrument
+                .encode(&sample_reasoning_input())
+                .unwrap(),
+        ),
+        (
+            InstrumentSlot::Scalars,
+            ScalarsInstrument.encode(&sample_scalar_input()).unwrap(),
+        ),
+    ];
+
+    for (slot, vector) in cases {
+        assert_eq!(vector.len(), slot.dim(), "{slot:?}");
+        assert!(vector.iter().all(|v| v.is_finite()), "{slot:?}");
+        assert!(vector.iter().any(|v| *v != 0.0), "{slot:?}");
+    }
+}
+
+#[test]
+fn code_instruments_reject_recovered_or_unsupported_ast_sources() {
+    let mut invalid = sample_code_input();
+    invalid.source = "def broken(:\n    return 1\n".into();
+    let err = EAstInstrument.encode(&invalid).unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+    assert!(err.to_string().contains("parse"));
+
+    let mut unsupported = sample_code_input();
+    unsupported.language = "ruby".into();
+    let err = ECfgInstrument.encode(&unsupported).unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+}
+
+#[test]
+fn runtime_trace_reasoning_and_scalars_reject_missing_or_invalid_state() {
+    let err = ETraceInstrument
+        .encode(&TraceInput { events: vec![] })
+        .unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+
+    let mut runtime = sample_runtime_input();
+    runtime.coverage_percent = Some(120.0);
+    let err = ERuntimeInstrument.encode(&runtime).unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+
+    let mut reasoning = sample_reasoning_input();
+    reasoning.transcript = " \n".into();
+    let err = EReasoningInstrument.encode(&reasoning).unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+
+    let mut scalars = sample_scalar_input();
+    scalars.repo_health_score = 1.25;
+    let err = ScalarsInstrument.encode(&scalars).unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+}
+
+#[test]
+fn full_phase1_panel_can_require_all_15_slots() {
+    let mut builder = PanelBuilder::new();
+    let code = sample_code_input();
+    builder.set_from_instrument(&EAstInstrument, &code).unwrap();
+    builder.set_from_instrument(&ECfgInstrument, &code).unwrap();
+    builder
+        .set_from_instrument(&EDataFlowInstrument, &code)
+        .unwrap();
+    builder
+        .set_from_instrument(&ETypeGraphInstrument, &code)
+        .unwrap();
+    builder
+        .set_from_instrument(&ETestInstrument, &sample_text_input("test"))
+        .unwrap();
+    builder
+        .set_from_instrument(&ETraceInstrument, &sample_trace_input())
+        .unwrap();
+    builder
+        .set_from_instrument(&EDiffInstrument, &sample_diff_input())
+        .unwrap();
+    builder
+        .set_from_instrument(
+            &EWitnessInstrument,
+            &WitnessChainInput {
+                format_version: CANONICAL_WITNESS_FORMAT_VERSION,
+                chain_bytes: two_entry_witness_chain(),
+            },
+        )
+        .unwrap();
+    builder
+        .set_from_instrument(&EOracleInstrument, &verdict_all_pass(2))
+        .unwrap();
+    builder
+        .set_from_instrument(&EProblemInstrument, &sample_text_input("problem"))
+        .unwrap();
+    builder
+        .set_from_instrument(&ECommitMsgInstrument, &sample_text_input("commit"))
+        .unwrap();
+    builder
+        .set_from_instrument(&EStaticAnalysisInstrument, &sample_static_input())
+        .unwrap();
+    builder
+        .set_from_instrument(&ERuntimeInstrument, &sample_runtime_input())
+        .unwrap();
+    builder
+        .set_from_instrument(&EReasoningInstrument, &sample_reasoning_input())
+        .unwrap();
+    builder
+        .set_from_instrument(&ScalarsInstrument, &sample_scalar_input())
+        .unwrap();
+    builder.require_slots(&InstrumentSlot::all()).unwrap();
+    let panel = builder.build().unwrap();
+    assert_eq!(panel.data().len(), PANEL_DIM);
+    for slot in InstrumentSlot::all() {
+        assert!(panel.is_filled(slot), "slot not filled: {slot:?}");
+        assert!(
+            panel.slot(slot).iter().any(|value| *value != 0.0),
+            "slot all zero: {slot:?}"
+        );
+    }
 }
 
 #[test]

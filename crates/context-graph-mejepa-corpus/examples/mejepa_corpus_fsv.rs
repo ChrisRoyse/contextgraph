@@ -5,6 +5,7 @@
 //   - /tmp/contextgraph-mejepa-corpus-fsv/generated_sources/*.py
 //   - /tmp/contextgraph-mejepa-corpus-fsv/pyc/*.pyc
 //   - /tmp/contextgraph-mejepa-corpus-fsv/split-assignments.json
+//   - /tmp/contextgraph-mejepa-corpus-fsv/split-repo-atomic-assignments.json
 //   - /tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json
 //
 // The example fails closed. It asserts every invariant before writing
@@ -15,14 +16,14 @@
 use context_graph_mejepa_corpus::{
     apply_mutation,
     split::{
-        cross_cut_weights, split_corpus, split_is_leakage_free, CorpusEntry, SplitConfig,
-        SplitMode, TaskAssignment,
+        assert_no_test_patch_leakage, cross_cut_weights, split_corpus, split_is_leakage_free,
+        CorpusEntry, SplitConfig, SplitMode, TaskAssignment,
     },
     MutationCategory, MutationConfig, MutationOutcome, MutationSite,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::Debug;
 use std::fs::{self, File};
 use std::io::Write;
@@ -50,11 +51,14 @@ fn required_site(label: &str, outcome: &MutationOutcome) -> FsvResult<MutationSi
 
 fn main() -> FsvResult<()> {
     let evidence_root = PathBuf::from("/tmp/contextgraph-mejepa-corpus-fsv");
-    if evidence_root.exists() {
-        fs::remove_dir_all(&evidence_root)?;
-    }
     let generated_root = evidence_root.join("generated_sources");
     let pyc_root = evidence_root.join("pyc");
+    if generated_root.exists() {
+        fs::remove_dir_all(&generated_root)?;
+    }
+    if pyc_root.exists() {
+        fs::remove_dir_all(&pyc_root)?;
+    }
     fs::create_dir_all(&generated_root)?;
     fs::create_dir_all(&pyc_root)?;
 
@@ -363,23 +367,23 @@ def alt_helper(name: str) -> int:
 }
 
 fn split_fsv(evidence_root: &Path) -> FsvResult<Value> {
-    let (corpus, tasks_dir) = build_split_real_corpus()?;
+    let (corpus, tasks_dir, test_patch_sha_by_task) = build_split_real_corpus()?;
     let total = corpus.len();
-    // The historical FSV asserts the repo-atomic invariants
-    // (leakage_check + zero cross_cut_weights). We pin the mode explicitly
-    // so the post-2026-05-09 InstanceAtomic default does not break the
-    // historical assertions.
     let split_config_repo_atomic = SplitConfig {
         mode: SplitMode::RepoAtomic,
         ..SplitConfig::default()
     };
-    let report = split_corpus(&corpus, split_config_repo_atomic).map_err(|err| {
+    let repo_report = split_corpus(&corpus, split_config_repo_atomic).map_err(|err| {
         format!("split_corpus(default 80/10/10 over {total} real task manifests) failed: {err:?}")
     })?;
 
-    require_eq("split assignment count", &total, &report.assignments.len())?;
+    require_eq(
+        "repo-atomic split assignment count",
+        &total,
+        &repo_report.assignments.len(),
+    )?;
     let task_ids_in: HashSet<&str> = corpus.iter().map(|entry| entry.task_id.as_str()).collect();
-    let task_ids_out: HashSet<&str> = report
+    let task_ids_out: HashSet<&str> = repo_report
         .assignments
         .iter()
         .map(|assignment| assignment.task_id.as_str())
@@ -393,29 +397,68 @@ fn split_fsv(evidence_root: &Path) -> FsvResult<Value> {
     require_eq(
         "split bucket sizes sum",
         &total,
-        &report.bucket_sizes.iter().sum::<usize>(),
+        &repo_report.bucket_sizes.iter().sum::<usize>(),
     )?;
     require(
-        report.bucket_sizes.iter().all(|size| *size > 0),
+        repo_report.bucket_sizes.iter().all(|size| *size > 0),
         "split must produce non-empty train/calibration/holdout buckets",
     )?;
-    require(report.leakage_check_passed, "split leakage_check_passed")?;
     require(
-        split_is_leakage_free(&report),
+        repo_report.leakage_check_passed,
+        "repo-atomic split leakage_check_passed",
+    )?;
+    require(
+        split_is_leakage_free(&repo_report),
         "split_is_leakage_free must confirm zero cross-bucket repo edges",
     )?;
-    let cross_weights = cross_cut_weights(&report);
+    let cross_weights = cross_cut_weights(&repo_report);
     require_eq("split cross-cut weights", &[0.0, 0.0, 0.0], &cross_weights)?;
 
+    let repo_assignments_path = evidence_root.join("split-repo-atomic-assignments.json");
+    let repo_assignments_text = serde_json::to_string_pretty(&repo_report.assignments)?;
+    let repo_assignments_sha256 =
+        write_text_checked(&repo_assignments_path, &repo_assignments_text)?;
+    let repo_assignments_readback_text = fs::read_to_string(&repo_assignments_path)?;
+    let repo_assignments_readback: Vec<TaskAssignment> =
+        serde_json::from_str(&repo_assignments_readback_text)?;
+    require_eq(
+        "repo-atomic assignments JSON readback",
+        &repo_report.assignments,
+        &repo_assignments_readback,
+    )?;
+
+    let instance_config = SplitConfig {
+        mode: SplitMode::InstanceAtomic,
+        ..SplitConfig::default()
+    };
+    let instance_report = split_corpus(&corpus, instance_config).map_err(|err| {
+        format!("instance-atomic split over {total} real task manifests failed: {err:?}")
+    })?;
+    require_eq(
+        "instance-atomic bucket sizes",
+        &[240, 30, 30],
+        &instance_report.bucket_sizes,
+    )?;
+    require(
+        instance_report.leakage_check_passed,
+        "instance-atomic split leakage_check_passed",
+    )?;
+    assert_no_test_patch_leakage(&instance_report.assignments, |task_id| {
+        test_patch_sha_by_task.get(task_id).map(String::as_str)
+    })
+    .map_err(|err| -> Box<dyn std::error::Error> {
+        format!("instance-atomic official_test_patch_sha256 leakage check failed: {err}").into()
+    })?;
+
     let assignments_path = evidence_root.join("split-assignments.json");
-    let assignments_text = serde_json::to_string_pretty(&report.assignments)?;
+    let assignments_text = serde_json::to_string_pretty(&instance_report.assignments)?;
     let assignments_sha256 = write_text_checked(&assignments_path, &assignments_text)?;
     let assignments_readback_text = fs::read_to_string(&assignments_path)?;
     let assignments_readback: Vec<TaskAssignment> =
         serde_json::from_str(&assignments_readback_text)?;
     require_eq(
-        "split assignments JSON readback",
-        &report.assignments,
+        "instance-atomic assignments JSON readback",
+        &instance_report.assignments,
         &assignments_readback,
     )?;
     let assignments_unique_task_ids: HashSet<&str> = assignments_readback
@@ -499,38 +542,85 @@ fn split_fsv(evidence_root: &Path) -> FsvResult<Value> {
         SplitConfig::default(),
         "MEJEPA_CORPUS_INVALID_INPUT",
     )?;
+    let missing_test_patch_sha_case = test_patch_leakage_boundary_case(
+        "missing_test_patch_sha",
+        &instance_report.assignments,
+        &BTreeMap::new(),
+        "MEJEPA_CORPUS_INVALID_INPUT",
+    )?;
+    let duplicate_sha_by_task: BTreeMap<String, String> = instance_report
+        .assignments
+        .iter()
+        .map(|assignment| {
+            (
+                assignment.task_id.clone(),
+                "sha256:duplicate-test-patch".to_string(),
+            )
+        })
+        .collect();
+    let duplicate_test_patch_sha_case = test_patch_leakage_boundary_case(
+        "duplicate_test_patch_sha_cross_bucket",
+        &instance_report.assignments,
+        &duplicate_sha_by_task,
+        "MEJEPA_CORPUS_OPERATOR_FAILED",
+    )?;
+    let unique_test_patch_sha_count = test_patch_sha_by_task
+        .values()
+        .collect::<HashSet<_>>()
+        .len();
 
     Ok(json!({
         "source_of_truth": {
             "assignments_json": assignments_path.display().to_string(),
             "assignments_sha256": assignments_sha256,
+            "repo_atomic_assignments_json": repo_assignments_path.display().to_string(),
+            "repo_atomic_assignments_sha256": repo_assignments_sha256,
             "assignments_readback": {
                 "byte_length": assignments_readback_text.len(),
                 "row_count": assignments_readback.len(),
                 "unique_task_ids": assignments_unique_task_ids.len(),
             },
             "task_manifest_dir": tasks_dir.display().to_string(),
+            "official_test_patch_sha256_source": "tasks/swebench-lite/*.json:official_test_patch_sha256",
         },
         "corpus_size": total,
-        "repo_count": report.repo_assignments.len(),
-        "bucket_sizes": report.bucket_sizes,
-        "bucket_fractions": report.bucket_fractions,
-        "cross_cut_weights": cross_weights,
-        "leakage_check_passed": report.leakage_check_passed,
+        "repo_atomic": {
+            "mode": "repo_atomic",
+            "repo_count": repo_report.repo_assignments.len(),
+            "bucket_sizes": repo_report.bucket_sizes,
+            "bucket_fractions": repo_report.bucket_fractions,
+            "cross_cut_weights": cross_weights,
+            "leakage_check_passed": repo_report.leakage_check_passed,
+        },
+        "instance_atomic": {
+            "mode": "instance_atomic",
+            "bucket_sizes": instance_report.bucket_sizes,
+            "bucket_fractions": instance_report.bucket_fractions,
+            "achieves_80_10_10": instance_report.bucket_sizes == [240, 30, 30],
+            "leakage_check_passed": instance_report.leakage_check_passed,
+            "test_patch_sha_leakage_check_passed": true,
+            "official_test_patch_sha256_count": test_patch_sha_by_task.len(),
+            "unique_official_test_patch_sha256_count": unique_test_patch_sha_count,
+        },
         "edge_cases": {
             "empty_corpus": empty_case,
             "single_repo_degenerate_split_repo_atomic": single_repo_case,
             "fraction_sum_not_one": bad_fraction_case,
             "duplicate_task_id": duplicate_task_case,
             "whitespace_repo_id": whitespace_repo_case,
+            "missing_test_patch_sha": missing_test_patch_sha_case,
+            "duplicate_test_patch_sha_cross_bucket": duplicate_test_patch_sha_case,
         },
         "passes": true,
     }))
 }
 
-fn build_split_real_corpus() -> FsvResult<(Vec<CorpusEntry>, PathBuf)> {
-    let tasks_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tasks/swebench-lite");
+fn build_split_real_corpus() -> FsvResult<(Vec<CorpusEntry>, PathBuf, BTreeMap<String, String>)> {
+    let tasks_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tasks/swebench-lite")
+        .canonicalize()?;
     let mut entries = Vec::new();
+    let mut test_patch_sha_by_task = BTreeMap::new();
     for dir_entry in fs::read_dir(&tasks_dir)? {
         let dir_entry = dir_entry?;
         let path = dir_entry.path();
@@ -547,17 +637,78 @@ fn build_split_real_corpus() -> FsvResult<(Vec<CorpusEntry>, PathBuf)> {
             .get("repo")
             .and_then(Value::as_str)
             .ok_or_else(|| format!("task manifest missing repo: {}", path.display()))?;
+        let test_patch_sha = manifest
+            .get("official_test_patch_sha256")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                format!(
+                    "task manifest missing official_test_patch_sha256: {}",
+                    path.display()
+                )
+            })?;
+        require(
+            test_patch_sha.starts_with("sha256:"),
+            &format!(
+                "official_test_patch_sha256 must be prefixed with sha256: in {}",
+                path.display()
+            ),
+        )?;
         entries.push(CorpusEntry {
             task_id: instance_id.to_string(),
             repo: repo.to_string(),
         });
+        test_patch_sha_by_task.insert(instance_id.to_string(), test_patch_sha.to_string());
     }
     entries.sort_by(|a, b| a.task_id.cmp(&b.task_id));
     require(
         !entries.is_empty(),
         &format!("no task manifests found under {}", tasks_dir.display()),
     )?;
-    Ok((entries, tasks_dir))
+    require_eq(
+        "test_patch_sha_by_task count",
+        &entries.len(),
+        &test_patch_sha_by_task.len(),
+    )?;
+    Ok((entries, tasks_dir, test_patch_sha_by_task))
+}
+
+fn test_patch_leakage_boundary_case(
+    name: &str,
+    assignments: &[TaskAssignment],
+    sha_by_task: &BTreeMap<String, String>,
+    expected_code: &str,
+) -> FsvResult<Value> {
+    let before_state = json!({
+        "name": name,
+        "assignment_count": assignments.len(),
+        "sha_map_count": sha_by_task.len(),
+        "unique_sha_count": sha_by_task.values().collect::<HashSet<_>>().len(),
+    });
+    let after_state = match assert_no_test_patch_leakage(assignments, |task_id| {
+        sha_by_task.get(task_id).map(String::as_str)
+    }) {
+        Err(error) => {
+            require_eq(name, &expected_code, &error.code())?;
+            json!({
+                "result": "error",
+                "code": error.code(),
+                "message": error.to_string(),
+            })
+        }
+        Ok(()) => {
+            return Err(format!(
+                "boundary case {name} unexpectedly passed test-patch leakage check"
+            )
+            .into());
+        }
+    };
+    Ok(json!({
+        "before_state": before_state,
+        "after_state": after_state,
+        "expected_code": expected_code,
+        "actual_code": after_state["code"],
+        "passes": true,
+    }))
 }
 
 fn split_boundary_case(

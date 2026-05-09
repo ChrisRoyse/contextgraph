@@ -141,8 +141,8 @@ Doc 09's 8-phase plan (Phase 0..8) is **largely unchanged**. The pivot affects f
 
 | Phase | Doc 09 status | Pivot impact |
 |---|---|---|
-| 0 — Mutation corpus + Docker oracle | partial (operators + split shipped; Docker oracle deferred) | unchanged. The mutation corpus is the primary corpus; live-attempt corpus from Qwen is dropped. |
-| 1 — Instruments (14 of 14) | partial (1 of 14 shipped) | unchanged. `E_Reasoning` is still planned, but its source becomes "any agent reasoning trace" not "Qwen CoT specifically." |
+| 0 — Mutation corpus + Docker oracle | partial (operators, split, command/Docker oracle wrapper, RocksDB store, manifest preflight, and one-task official SWE-bench bridge shipped; full 2,400-entry batch deferred) | unchanged. The mutation corpus is the primary corpus; live-attempt corpus from Qwen is dropped. |
+| 1 — Instruments (14 core instruments + scalar slot) | partial (`E_Oracle`, `E_Witness`, `E_StaticAnalysis`, Panel/scaffolding shipped; 11 instruments + Scalars deferred) | unchanged. `E_Reasoning` is still planned, but its source becomes "any agent reasoning trace" not "Qwen CoT specifically." |
 | 2 — Predictor + frozen instrument targets + VICReg + oracle head | deferred | unchanged except target-side collapse is prevented structurally, not by EMA. |
 | 3 — Training loop + per-step certs | deferred | unchanged. |
 | 4 — Conformal calibration + OOD + verify() API | deferred | unchanged. The verify() API is now THE primary inference path (no LLM-gate framing). |
@@ -161,9 +161,9 @@ The clean-room primitives shipped in `crates/context-graph-*` are all ME-JEPA-re
 |---|---|---|
 | `context-graph-witness` | ✅ shipped | provenance for ME-JEPA training data + per-step certs |
 | `context-graph-solver` | ✅ partial (PPR + CG + MMR + conformal) | Phase 4 conformal calibration; PPR for §3.5.3 cross-attempt similarity |
-| `context-graph-mincut` | ✅ shipped | Phase 0 leakage-free corpus split |
-| `context-graph-mejepa-corpus` | ✅ partial (operators + split shipped) | Phase 0 |
-| `context-graph-mejepa-instruments` | ✅ partial (1 of 14 shipped) | Phase 1 |
+| `context-graph-mincut` | ✅ shipped | Phase 0 repo-atomic diagnostic leakage proof |
+| `context-graph-mejepa-corpus` | ✅ partial (operators, split, oracle/store, one-task SWE-bench bridge shipped) | Phase 0 |
+| `context-graph-mejepa-instruments` | ✅ partial (E_Oracle, E_Witness, E_StaticAnalysis shipped) | Phase 1 |
 | `context-graph-tier-compression` | ✅ shipped | Phase 6 |
 | `context-graph-storage` | ✅ in production | RocksDB CFs for panels + checkpoints + observe state |
 | `context-graph-mcp` | ✅ in production | MCP entry point for ME-JEPA tools |

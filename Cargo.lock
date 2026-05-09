@@ -1113,6 +1113,8 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 1.0.69",
+ "tree-sitter",
+ "tree-sitter-python",
 ]
 
 [[package]]
