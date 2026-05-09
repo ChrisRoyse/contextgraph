@@ -24224,13 +24224,7 @@ fn open_existing_store(
     operation: &str,
 ) -> DynamicJepaResult<RocksDbTeleologicalStore> {
     validate_bundle_schema_for_db_path(path)?;
-    if !path.exists() {
-        return Err(DynamicJepaError::validation(
-            format!("{operation}.db"),
-            format!("DB path does not exist: {}", path.display()),
-            "run the command that creates the RocksDB source of truth before inspecting it; inspection never creates DB paths",
-        ));
-    }
+    preflight_existing_rocksdb(path, operation)?;
     let config = TeleologicalStoreConfig {
         create_if_missing: false,
         create_missing_column_families: false,
@@ -24244,6 +24238,39 @@ fn open_existing_store(
             remediation: "verify the DB path is a complete existing source-of-truth RocksDB and no active process owns the RocksDB lock".to_string(),
         }
     })
+}
+
+fn preflight_existing_rocksdb(path: &Path, operation: &str) -> DynamicJepaResult<()> {
+    if !path.exists() {
+        return Err(DynamicJepaError::validation(
+            format!("{operation}.db"),
+            format!("DB path does not exist: {}", path.display()),
+            "run the command that creates the RocksDB source of truth before inspecting it; inspection never creates DB paths",
+        ));
+    }
+    if !path.is_dir() {
+        return Err(DynamicJepaError::Storage {
+            operation: operation.to_string(),
+            cf: "rocksdb".to_string(),
+            message: format!("DB path exists but is not a directory: {}", path.display()),
+            remediation:
+                "point --db at the RocksDB directory produced by a DynamicJEPA write command"
+                    .to_string(),
+        });
+    }
+    let current = path.join("CURRENT");
+    if !current.is_file() {
+        return Err(DynamicJepaError::Storage {
+            operation: operation.to_string(),
+            cf: "rocksdb".to_string(),
+            message: format!(
+                "DB path exists but is not a complete RocksDB source of truth: missing {}",
+                current.display()
+            ),
+            remediation: "do not inspect partial or failed-open RocksDB directories; recreate the DB with the mutating command that owns this source of truth".to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn validate_bundle_schema_for_db_path(db_path: &Path) -> DynamicJepaResult<()> {
