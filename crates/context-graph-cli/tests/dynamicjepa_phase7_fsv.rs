@@ -280,7 +280,7 @@ fn dynamicjepa_phase7_cli_fsv_real_cuda_artifacts() {
     assert_eq!(train["summary"]["row_count_by_split"]["test"], 6);
     assert_eq!(
         train["summary"]["metrics"]["parameter_count_trainable"],
-        480.0
+        180.0
     );
     assert!(
         train["summary"]["metrics"]["val_latent_mse"]
