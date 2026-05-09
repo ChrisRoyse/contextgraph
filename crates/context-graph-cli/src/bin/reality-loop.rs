@@ -9517,7 +9517,7 @@ fn ast_ruby_node_kind(node: tree_sitter::Node<'_>, source: &str, path: &str) -> 
                 "method"
             }
         }
-        "class" | "module" => "class",
+        "class" | "module" if node.is_named() => "class",
         "require" | "require_relative" => "import",
         "call" | "command" => {
             if ast_ruby_call_is_test_dsl(node, source, path) {

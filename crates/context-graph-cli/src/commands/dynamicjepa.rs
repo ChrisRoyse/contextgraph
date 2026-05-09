@@ -7185,7 +7185,7 @@ fn semantic_ruby_ast_node_kind(
                 "method"
             }
         }
-        "class" | "module" => "class",
+        "class" | "module" if node.is_named() => "class",
         "require" | "require_relative" => "import",
         "call" | "command" => {
             if semantic_ruby_call_is_test_dsl(node, source, path) {
@@ -26960,6 +26960,12 @@ module.exports.load = function(config) {
         assert!(minitest_symbols.contains(&("CalculatorTest", "class")));
         assert!(minitest_symbols.contains(&("test_adds", "test")));
         assert!(minitest_symbols.contains(&("helper_value", "method")));
+        assert!(
+            !minitest_symbols
+                .iter()
+                .any(|(name, _)| name.starts_with("anonymous@")),
+            "Ruby keyword tokens must not become anonymous class symbols"
+        );
 
         let temp = tempfile::tempdir().expect("tempdir");
         let evidence_path = temp.path().join("ruby-semantic-fsv.json");
