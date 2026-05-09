@@ -115,12 +115,7 @@ fn configure_cuda_toolchain(config: &mut Config) {
         .unwrap_or_else(|_| "/usr/local/cuda-13.2".to_string());
     let nvcc = env::var("CMAKE_CUDA_COMPILER")
         .or_else(|_| env::var("CUDACXX"))
-        .unwrap_or_else(|_| {
-            Path::new(&cuda_root)
-                .join("bin/nvcc")
-                .display()
-                .to_string()
-        });
+        .unwrap_or_else(|_| Path::new(&cuda_root).join("bin/nvcc").display().to_string());
     let arch = env::var("CMAKE_CUDA_ARCHITECTURES").unwrap_or_else(|_| "120a-real".to_string());
 
     let nvcc_path = Path::new(&nvcc);

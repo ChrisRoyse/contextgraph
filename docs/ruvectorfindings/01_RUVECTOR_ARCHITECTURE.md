@@ -1,5 +1,7 @@
 # 01 — RuVector Architecture
 
+> **🔁 PIVOT 2026-05-09:** the inner-actor LLM is retired; ContextGraph is now a single-outer-loop system around Claude Code, capturing all durable reality signals as ME-JEPA training data. See [`10_MEJEPA_PIVOT_2026_05_09.md`](./10_MEJEPA_PIVOT_2026_05_09.md) and [`11_MEJEPA_LEARNING_FORMULA.md`](./11_MEJEPA_LEARNING_FORMULA.md). Any LLM-runtime references below (ruvllm, qwen, llama-cpp) are historical — ME-JEPA is non-generative.
+
 > **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — never vendor, path-dep, or npm-depend on RuVector. The architecture below is documented to inform our own clean-room reimplementations, not to enable adoption of their crates.
 
 > **🎯 Master plan:** [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md) is the build-ready specification for **ME-JEPA-Code** — a reality compiler that predicts oracle outcomes from `(code, context)` and replaces line-by-line code review. The architecture below is the *inspirational substrate*; doc 09 is *what we build*. **Doc 09 §3.5–§3.8** specifies maximal reward-signal capture from durable reality (static-analysis + runtime + cross-attempt + counterfactual signals → expanded 5,120-d panel), the blindspots we'd unlock by capturing them, the multi-objective loss + counterfactual training that uses them, and a real-time shift-log subscriber that feeds reality back into ME-JEPA in < 5 s p50 / < 30 s p99. When this doc disagrees with doc 09, doc 09 wins.
@@ -360,7 +362,7 @@ Latest npm published:               ruvector  (versioned independently per crate
 | MCP server | context-graph-mcp | mcp-gate, mcp-brain, mcp-brain-server |
 | Audit | CF_AUDIT_LOG | rvf-crypto witness chain (73-byte SHAKE-256) + lineage + attestation + ed25519 + ML-DSA-65 |
 | Single-file format | — | `.rvf` cognitive container |
-| LLM runtime | external (qwen3.6:27b via GGUF for inner actor) | ruvllm (Metal/CUDA/WebGPU built-in) |
+| LLM runtime | **N/A post-2026-05-09 pivot** (inner-actor LLM retired; ME-JEPA is non-generative — predictor only) | ruvllm (irrelevant to ME-JEPA; reference-only — see doc 10) |
 | Domains | SWE-bench harness + DynamicJEPA design | recruiting via cognitum-one, dna, scipix, neural-trader, agentic-robotics, etc. |
 
 ContextGraph is **purpose-built** for one workstream (the reality loop + DynamicJEPA). RuVector is **infrastructure** that sits underneath many workstreams. They're complementary; the pieces of RuVector that fit ContextGraph's purpose are exactly what these findings docs surface.

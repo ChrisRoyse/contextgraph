@@ -1,6 +1,14 @@
 # Implementation Status Snapshot — 2026-05-09
 
-> **Cross-doc canonical status table.** All 10 ruvectorfindings docs (00-09)
+> **🔁 PIVOT 2026-05-09:** The system is now a single outer reality loop around
+> Claude Code, capturing all durable signals as ME-JEPA training data. Inner-actor
+> LLM (Qwen, Hermes) retired; ~62 GB of disk freed. See
+> [`../10_MEJEPA_PIVOT_2026_05_09.md`](../10_MEJEPA_PIVOT_2026_05_09.md) and
+> [`../11_MEJEPA_LEARNING_FORMULA.md`](../11_MEJEPA_LEARNING_FORMULA.md). Claude
+> Code is now the patch producer for SWE-bench Lite 300 (sequentially); ME-JEPA
+> trains on the captured (panel, oracle) tuples + the Phase 0 mutation corpus.
+
+> **Cross-doc canonical status table.** All 12 ruvectorfindings docs (00-11)
 > link here for the current shipped state. Update this file when crates ship,
 > not the body docs.
 
@@ -48,7 +56,7 @@
 | doc 09 Phase 1 | E_CommitMsg (384-d, reuse E1) | — | ⏳ deferred |
 | doc 09 Phase 1 | E_StaticAnalysis (256-d, mypy/Pyright/ruff/clippy aggregates) | — | ⏳ deferred |
 | doc 09 Phase 1 | E_Runtime (256-d, walltime/RSS/coverage/network aggregates) | — | ⏳ deferred |
-| doc 09 Phase 1 | E_Reasoning (384-d, Qwen CoT + reflexion) | — | ⏳ deferred |
+| doc 09 Phase 1 | E_Reasoning (384-d, AI agent reasoning trace — Claude Code / external agents / human reviewers — + reflexion; post-pivot 2026-05-09 the source broadens beyond Qwen CoT) | — | ⏳ deferred |
 | doc 09 Phase 1 | Scalars (128-d, BFS depth + blame age + churn + coverage Δ + repo-health) | — | ⏳ deferred |
 | doc 09 Phase 2 | Panel materializer (panel[t=0..2]) | — | ⏳ deferred (~7-10 days est) |
 | doc 09 Phase 2 | 6-layer transformer predictor (hidden 1024, 8 heads) | — | ⏳ deferred |

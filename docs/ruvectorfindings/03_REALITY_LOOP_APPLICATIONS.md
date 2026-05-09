@@ -1,4 +1,6 @@
-# 03 — Reality-Loop Applications (ccreality)
+# 03 — Reality-Loop Applications (ccreality — historical framing)
+
+> **🔁 PIVOT 2026-05-09:** This doc was written when the architecture was "outer Claude + inner Qwen". Post-pivot, there is one reality loop only — Claude Code in the outer position; ME-JEPA is the predictor; the loop's purpose is training-data capture for ME-JEPA. References to "inner actor", "inner-actor correctness", and "inner-harness-response" are now obsolete; replace with "outer-loop agent" and "Claude Code's edit/test cycle". See [`10_MEJEPA_PIVOT_2026_05_09.md`](./10_MEJEPA_PIVOT_2026_05_09.md). The clean-room primitives discussed below remain valid as ME-JEPA infrastructure.
 
 > **🔒 Reference-only — clean-room reimplementation.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "Vendor `X`" / "Path-dep `X`" recommendation below is SUPERSEDED. Read each as **"Read RuVector's `X` as inspiration; reimplement the algorithm cleanly in our own crate."** Effort estimates are roughly 2-3× the original numbers — clean-room is more work than path-dep, but the result is fully ours.
 

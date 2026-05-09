@@ -1,18 +1,44 @@
-# SITREP — ContextGraph / ME-JEPA-Code Implementation State
+# SITREP — ME-JEPA-Code Implementation State
+
+> **🔁 PIVOT 2026-05-09 — single reality loop, Claude Code is the SWE-bench actor, ME-JEPA is the product.**
+> Read [`../10_MEJEPA_PIVOT_2026_05_09.md`](../10_MEJEPA_PIVOT_2026_05_09.md) and
+> [`../11_MEJEPA_LEARNING_FORMULA.md`](../11_MEJEPA_LEARNING_FORMULA.md) before this sitrep. The
+> two-loop "outer Claude + inner Qwen" architecture is **superseded**. There is now ONE reality
+> loop, around Claude Code, and its sole purpose is generating training data for ME-JEPA.
+> Sitrep status entries that still mention "Qwen CoT" / "inner-actor CoT" / "qwen3.6-27b" are
+> either historical (kept for audit) or queued for re-framing as "AI agent reasoning trace"
+> (Claude Code, external agents, human reviewers).
 
 > **Source of truth** for what's shipped, what's deferred, and what to build
-> next across the ContextGraph workspace and the ME-JEPA-Code reality
-> compiler. Updated 2026-05-09.
+> next across the ContextGraph workspace toward the ME-JEPA-Code reality
+> predictor. Updated 2026-05-09.
 
 ## Master plan reference
 
-The 10 ruvectorfindings docs (`00_INDEX.md` … `09_END_GOAL_REVIEW_REPLACEMENT.md`)
-together specify the system. **Doc 09 is the build-ready master plan**;
-docs 00-08 are reference material for *how* the primitives are clean-room
-reimplemented.
+The 12 ruvectorfindings docs (`00_INDEX.md` … `11_MEJEPA_LEARNING_FORMULA.md`)
+together specify the system, in this priority order:
+
+1. **`10_MEJEPA_PIVOT_2026_05_09.md`** — current operating contract (single loop, Claude Code
+   is the actor, cross-language mandate, self-healing protocol, /loop.md refactor directive,
+   UTL v2.0 learning formula reference).
+2. **`11_MEJEPA_LEARNING_FORMULA.md`** — operational specification of UTL v2.0
+   `L = ΔS × ΔC × ΔE` for per-example training weighting + sampling + consolidation.
+3. **`09_END_GOAL_REVIEW_REPLACEMENT.md`** — build-ready master plan (instruments, panel,
+   predictor, EMA, VICReg, oracle head, conformal calibration, OOD, hygiene, 8-phase plan).
+   Sections that reference Qwen / inner-actor are re-framed by doc 10.
+4. **Docs 00-08** — reference material for *how* primitives are clean-room reimplemented.
 
 This `sitrep/` directory tracks the implementation state of doc 09's
-8 phases plus doc 05's 3 tiers, file-by-file.
+8 phases plus doc 05's 3 tiers, file-by-file, post-pivot.
+
+## The three operator questions ME-JEPA must answer (verbatim 2026-05-09)
+
+1. Does what the AI said it did **EXIST**? (claim ↔ source-of-truth SHA chain)
+2. Does it **WORK** as intended? (predicted oracle ↔ actual oracle)
+3. How is it actually **IMPACTING REALITY**? (predicted side-effects ↔ observed shifts)
+
+Every shipped primitive and every deferred plan in this sitrep ladders up to one of these three
+questions for ANY supported language (Python, Rust, C, C++, Java, C#, JS, TS, Ruby).
 
 ## Directory layout
 
