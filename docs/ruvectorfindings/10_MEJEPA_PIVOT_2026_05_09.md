@@ -31,7 +31,7 @@ The **inner-actor LLM** (Qwen3.6-27B / Hermes-2-Pro) is removed from the system.
 
 **In scope:**
 
-- ✅ ME-JEPA-Code as designed in doc 09 §2-§7 (panel + 6-layer transformer predictor + EMA target + VICReg loss + oracle head + conformal calibration + OOD detection)
+- ✅ ME-JEPA-Code as designed in doc 09 §2-§7 (panel + predictor + frozen instrument targets + VICReg loss + oracle head + conformal calibration + OOD detection)
 - ✅ The 14 instruments (`E_AST`, `E_CFG`, `E_DataFlow`, `E_TypeGraph`, `E_Test`, `E_Trace`, `E_Diff`, `E_Witness`, `E_Oracle`, `E_Problem`, `E_CommitMsg`, `E_StaticAnalysis`, `E_Runtime`, `E_Reasoning`)
 - ✅ The 5,120-d panel and the predictor architecture
 - ✅ Training corpus: Phase 0's mutation corpus (8 categories × 300 SWE-bench Lite tasks = 2,400 labeled examples) PLUS live observations from Claude Code's outer-loop work (each /loop turn's edit-and-test cycle produces (panel, oracle) tuples ME-JEPA observes)
@@ -73,9 +73,9 @@ Doc 09 §3.8's `mejepa-shift-subscriber` consumes these artifacts and feeds ME-J
 
 - `models/qwen3-coder-30b-a3b/` (17 GB) — deleted 2026-05-09
 - `models/hermes-2-pro/` (4.8 GB) — deleted 2026-05-09
-- `vendor/llama-cpp-sys-2-0.1.145/` (23 MB) + CMake / nvcc CUDA template OOM — kept for now (`reality-loop` binary still references it), but flagged as **dead code that should be deleted in a future refactor turn** since its only purpose was hosting the Qwen GGUF.
-- `crates/context-graph-cli/src/bin/reality-loop.rs` — uses Qwen-specific code paths and is now a no-op binary; queued for removal pending a follow-up cleanup.
-- `crates/context-graph-causal-agent/src/llm/mod.rs` — also LLM-coupled; queued for removal or refactor onto ME-JEPA.
+- `vendor/llama-cpp-sys-2-0.1.145/` (vendored llama.cpp native build patch) — **removed in the 2026-05-09 hardening pass**.
+- `crates/context-graph-cli/src/bin/reality-loop.rs` — Qwen-specific engine binary — **removed in the 2026-05-09 hardening pass**.
+- `crates/context-graph-causal-agent/src/llm/` and `crates/context-graph-graph-agent/src/llm/` — Hermes/Qwen local-LLM hosts — **removed in the 2026-05-09 hardening pass**.
 
 The MCP-side `mcp__cgreality__reality_run_attempt` tool had a fire-and-forget refactor (see `memory/decisions/agent-111-coordinator--reality-run-attempt-fire-and-forget.md`). With Qwen removed, the tool itself can be retired and replaced with `mcp__cgreality__mejepa_*` tools (per doc 09 §3.8.5 + §7's Phase 7 plan).
 
@@ -114,7 +114,7 @@ The MCP-side `mcp__cgreality__reality_run_attempt` tool had a fire-and-forget re
 │                                                                        │
 │  Predictor: panel[t=0..1] → predicted panel[t=2]                      │
 │  Loss: L_predict + λ_var L_var + λ_inv L_inv + λ_cov L_cov + aux heads│
-│  Update rule: VICReg + EMA target encoder (τ=0.996)                   │
+│  Target: frozen instrument panel read back from durable reality        │
 │                                                                        │
 │  Self-healing: §5 EWC++ + drift detection + A/B/C promotion           │
 │  Storage: §6 tiered 8/7/5/3-bit panel store + Merkle DAG checkpoint   │
@@ -143,7 +143,7 @@ Doc 09's 8-phase plan (Phase 0..8) is **largely unchanged**. The pivot affects f
 |---|---|---|
 | 0 — Mutation corpus + Docker oracle | partial (operators + split shipped; Docker oracle deferred) | unchanged. The mutation corpus is the primary corpus; live-attempt corpus from Qwen is dropped. |
 | 1 — Instruments (14 of 14) | partial (1 of 14 shipped) | unchanged. `E_Reasoning` is still planned, but its source becomes "any agent reasoning trace" not "Qwen CoT specifically." |
-| 2 — Predictor + EMA + VICReg + oracle head | deferred | unchanged. |
+| 2 — Predictor + frozen instrument targets + VICReg + oracle head | deferred | unchanged except target-side collapse is prevented structurally, not by EMA. |
 | 3 — Training loop + per-step certs | deferred | unchanged. |
 | 4 — Conformal calibration + OOD + verify() API | deferred | unchanged. The verify() API is now THE primary inference path (no LLM-gate framing). |
 | 5 — Self-healing + EWC++ + drift detection | deferred | **simplified.** Drift now solely tracks reality-vs-prediction agreement on outer-loop-generated examples. No "actor-distribution-shift" because there's no inner actor. |
@@ -169,15 +169,16 @@ The clean-room primitives shipped in `crates/context-graph-*` are all ME-JEPA-re
 | `context-graph-mcp` | ✅ in production | MCP entry point for ME-JEPA tools |
 | `context-graph-embeddings` | ✅ in production | E1/E5/E7/etc. that some instruments wrap |
 
-**Queued for removal** (LLM-coupled, no longer in scope):
+**Removed in the 2026-05-09 hardening pass** (LLM-coupled, no longer in scope):
 
 - `crates/context-graph-cli/src/bin/reality-loop.rs` (Qwen GGUF host)
-- `crates/context-graph-causal-agent/src/llm/mod.rs` (Hermes GGUF host)
-- `vendor/llama-cpp-sys-2-0.1.145/` (only consumer is the above two)
-- `[patch.crates-io] llama-cpp-sys-2` entry in workspace `Cargo.toml`
-- All `qwen3-coder` / `hermes-2-pro` references in documentation, configs, model paths
+- `crates/context-graph-causal-agent/src/llm/` and `src/service/` (Hermes GGUF host + scheduler)
+- `crates/context-graph-graph-agent/src/llm/` and `src/service/` (Hermes-backed graph discovery)
+- Legacy local-LLM examples/tests in the causal/graph agent crates
+- `vendor/llama-cpp-sys-2-0.1.145/` (only consumer was the removed local-LLM surface)
+- `[patch.crates-io] llama-cpp-sys-2` and active `llama-cpp-2` manifest entries
 
-These are not mass-deleted in this turn (operator authorized cleanup of *data*, not source-code refactor). A follow-up turn should retire them.
+The remaining `llm` Cargo feature names are fail-closed compatibility gates; enabling them emits a compile-time retirement error instead of compiling a fallback.
 
 ---
 
@@ -205,8 +206,8 @@ The Stop hook contract — every turn must call `optimizer_record_recommendation
 | `tasks/swebench-lite/*.json` | KEEP — these are still the corpus task list for Phase 0 mutation generation. The "champion attempt" framing is dropped; manifests now define training-corpus tasks. |
 | `memory/decisions/agent-77-...inner-actor-model-swap...md` | KEEP, mark `status: superseded`. Don't delete (SMAP rule 8: "Resolved blockers stay; superseded decisions stay"). |
 | `memory/blockers/agent-72-coordinator--docker-permission-denied-blocks-official-eval.md` | KEEP at `status: resolved`. Docker oracle is still needed for Phase 0 corpus generation, just not for inner-actor live attempts. |
-| `crates/context-graph-cli/src/bin/reality-loop.rs` | KEEP for now; queued for retirement. |
-| `vendor/llama-cpp-sys-2-0.1.145/` | KEEP for now; queued for retirement after `reality-loop.rs` retires. |
+| `crates/context-graph-cli/src/bin/reality-loop.rs` | REMOVED 2026-05-09. |
+| `vendor/llama-cpp-sys-2-0.1.145/` | REMOVED 2026-05-09. |
 | Doc 09 §3.2 ("live reality-loop attempts" as secondary corpus) | KEEP, but re-frame: live attempts come from Claude Code's outer-loop work, not from a separate inner LLM. |
 | Doc 09 §3.6 #5 ("Inner-actor reasoning trace") | KEEP, but rename to "AI agent reasoning trace" — Claude Code's CoT (or any agent's CoT) feeds `E_Reasoning`. |
 

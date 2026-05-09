@@ -1,4 +1,4 @@
-15m # ME-JEPA Outer Reality Loop
+# ME-JEPA Outer Reality Loop
 
 You are Claude Code, the **outer reality-loop attempt-driver AND ME-JEPA implementer** for the ContextGraph project. There is no inner LLM. You produce the patches; the deterministic reality substrate (witness chain, shift log, Docker oracle, file SHAs) records the consequences; ME-JEPA-Code is the predictive model being trained on that reality stream.
 
@@ -53,7 +53,7 @@ Ship one ME-JEPA primitive end-to-end per `sitrep/04_implementation_plans/`. Hig
 1. `plan_e_witness.md` — E_Witness instrument (~1.5 days)
 2. `plan_e_static_analysis.md` — E_StaticAnalysis instrument (~2 days)
 3. `plan_phase0_docker_oracle.md` — Phase 0 Docker oracle wrapper (~3-5 days, gates full corpus generation)
-4. `plan_phase2_predictor.md` — Phase 2 predictor + EMA + VICReg (~7-10 days)
+4. `plan_phase2_predictor.md` — Phase 2 predictor + frozen instrument targets + VICReg (~7-10 days)
 5. `plan_phase6_storage_wiring.md` — Phase 6 storage tiering wiring (~3-5 days)
 
 Deliverable per turn: code + tests + FSV evidence + sitrep update. Verify with `cargo build --release -p <crate>` + `cargo test -p <crate>` + `cargo clippy -p <crate>`. No mock data; real synthetic inputs only; fail-closed errors.
@@ -116,7 +116,7 @@ L_step = ΔP × ΔK × ΔΩ × ΔΞ                  all factors clamped to [0, 
 | **ΔΩ** (Optimizer-state health) | `(effective_plasticity)^0.4 × (landscape_health)^0.4 × (stability_floor)^0.2`. Catches loss of plasticity (Sutton 2024), sharp minima (SAM), Goodhart catastrophe. |
 | **ΔΞ** (Representational non-collapse — **the ML-native term, no biological analogue**) | `(1−target_collapse)^0.5 × (1−predictor_redundancy)^0.3 × (1−constellation_violation)^0.2`. **For ME-JEPA: target_collapse = 0 by construction** because instruments are frozen externally-defined deterministic functions — no learnable parameters, no possible collapse. |
 
-**The structural advantage**: ME-JEPA is — to our knowledge — the first JEPA-class system structurally immune to target-encoder collapse, because its target panel is produced by frozen externally-defined instruments (E_AST, E_CFG, E_Oracle, E_Witness, ...) rather than by an EMA copy of a learnable encoder. Every other JEPA (I-JEPA, V-JEPA, V-JEPA 2, DINO, BYOL) defends ΔΞ on the target side with regularizers that can be defeated. ME-JEPA defends it on the target side with **zero parameters and zero regularization**. Predictor-side ΔΞ defenses (VICReg + pairwise MI audit + constellation guard + negative-action ablation falsifier) catch residual degeneracy.
+**The structural advantage**: ME-JEPA is structurally immune to target-encoder collapse, because its target panel is produced by frozen externally-defined instruments (E_AST, E_CFG, E_Oracle, E_Witness, ...) rather than by an EMA copy of a learnable encoder. Other JEPA-style systems defend target-side collapse with asymmetry or regularizers; ME-JEPA defends it on the target side with **zero trainable target parameters**. Predictor-side ΔΞ defenses (VICReg + pairwise MI audit + constellation guard + negative-action ablation falsifier) catch residual degeneracy.
 
 **Per-example sampling weight** (used by §3.7.2 hard-example mining + active-learning loops):
 

@@ -36,7 +36,7 @@ Shipped (clean-room, MCP-callable, FSV-covered):
 
 Not shipped (this doc's scope is the build plan to ship them):
 
-- ME-JEPA-Code itself: instruments (`E_AST` / `E_CFG` / `E_DataFlow` / `E_TypeGraph` / `E_Test` / `E_Trace` / `E_Diff` / `E_Witness` / `E_Oracle` / `E_Problem` / `E_CommitMsg` + §3.5 `E_StaticAnalysis` / `E_Runtime` / `E_Reasoning`), 5,120-d panel materializer, 6-layer transformer predictor, EMA target encoder, VICReg loss, oracle head.
+- ME-JEPA-Code itself: instruments (`E_AST` / `E_CFG` / `E_DataFlow` / `E_TypeGraph` / `E_Test` / `E_Trace` / `E_Diff` / `E_Witness` / `E_Oracle` / `E_Problem` / `E_CommitMsg` + §3.5 `E_StaticAnalysis` / `E_Runtime` / `E_Reasoning`), 5,120-d panel materializer, predictor, frozen instrument target panel, VICReg loss, oracle head.
 - §3.1 Phase 0 mutation corpus generator (~2,400 labeled examples × 8 categories × 300 tasks).
 - §3.7 multi-objective aux-head loss + counterfactual training + active-learning loop + cross-task transfer + aux-head distillation.
 - §3.8 real-time pipeline: `mejepa-shift-subscriber` Tokio task that consumes the existing harness shift log + artifacts and triggers `mejepa.observe()` in < 5 s p50.
@@ -60,7 +60,7 @@ Live operational concern: the active runtime root's `claude-code-optimizer/witne
 | Parser → AST | AST instrument `E_AST` | encode AST nodes via tree-sitter + transformer over node-token sequence |
 | Semantic analysis | Type-graph instrument `E_TypeGraph` + DataFlow `E_DataFlow` | static analysis (Pyright/mypy for Python; rust-analyzer for Rust) → graph attention |
 | Intermediate representation | The **panel** — joint embedding of all instruments | concatenated projection of all `E_*` outputs into a single tensor |
-| Optimization passes | The **predictor** moves panel-at-time-t → panel-at-time-t+1 in latent space | small transformer trained with VICReg loss against an EMA target encoder |
+| Optimization passes | The **predictor** moves panel-at-time-t → panel-at-time-t+1 in latent space | small transformer trained with VICReg loss against frozen instrument targets read from durable reality |
 | Code generation | The **predicted reality state** — predicted oracle outcome, predicted execution trace, predicted side-effect set | a head on top of the predictor's output panel that maps to the oracle's signal-space |
 | Linker | Cross-reference of claim-graph ↔ source-graph ↔ context-graph ↔ witness chain | provenance-binding lookups by content hash |
 | Type-checker | Predictor-vs-target distance: "does predicted reality match claimed reality?" | conformal-prediction set + Granger attestation |
@@ -110,10 +110,10 @@ When all four hold, no human review is needed. When any fails, the failure mode 
 A JEPA learns to predict latent representations of unobserved targets from observed contexts. Three components:
 
 1. **Context encoder** `f_θ`: encodes the observed context into a latent.
-2. **Target encoder** `f_ξ`: encodes the masked target into a latent. Weights `ξ` are an exponential moving average (EMA) of `θ`. Frozen during loss computation.
-3. **Predictor** `g_φ`: takes the context latent + a positional/conditional cue and predicts the target latent.
+2. **Target panel** `y`: the masked target encoded by frozen, externally-defined instruments. In ME-JEPA this is not a learnable EMA encoder.
+3. **Predictor** `g_φ`: takes the context latent + a positional/conditional cue and predicts the target panel latent.
 
-Loss: `||g_φ(f_θ(x_context)) - f_ξ(x_target)||²` plus VICReg regularization (variance + invariance + covariance) to prevent collapse.
+Loss: `||g_φ(f_θ(x_context)) - y_target||²` plus VICReg regularization (variance + invariance + covariance) to prevent predictor-side collapse.
 
 For ME-JEPA-Code, the "context" is the patch + its surrounding state at time t; the "target" is the oracle-observable state at time t+1 (after running the patch).
 
@@ -156,14 +156,14 @@ Storage: panels persist in RocksDB CF `CF_MEJEPA_PANELS`, keyed by `(attempt_id,
 Input: `(panel[t=0], panel[t=1])` concatenated → 8,192-d.
 Architecture: 6-layer transformer, hidden dim 1,024, 8 heads, GeLU activations, residual + layer-norm. Output: predicted `panel[t=2]` — 4,096-d.
 
-EMA target encoder: same architecture as the context encoder; weights updated via `ξ ← τ ξ + (1 - τ) θ` with `τ = 0.996` per V-JEPA standard.
+Target: the readback panel from frozen instruments at `panel[t=2]`. There is no learnable target encoder; target-side collapse is prevented structurally.
 
 Loss:
 ```
 L_total = L_predict + λ_var · L_variance + λ_cov · L_covariance + λ_inv · L_invariance
 ```
 where:
-- `L_predict = ||g_φ(f_θ(context)) - f_ξ(target)||²` (Huber loss, δ=1)
+- `L_predict = ||g_φ(f_θ(context)) - y_target||²` (Huber loss, δ=1)
 - VICReg variance term: enforces per-dim std > γ on a batch
 - VICReg covariance term: penalizes off-diagonal covariance
 - VICReg invariance: redundancy term tying context and target latents
@@ -353,7 +353,7 @@ Aggregated into a new instrument **`E_Runtime`** (256-d) plus an extension to ex
 | Signal | Source | Use |
 |---|---|---|
 | Per-hunk pass/fail attribution | sequentially apply each hunk; observe oracle | per-hunk gradient supervision |
-| Latent-perturbation oracle response | jitter `panel[t=1]`; ask EMA target | derivative training signal |
+| Latent-perturbation oracle response | jitter `panel[t=1]`; compare prediction against frozen target readback | derivative training signal |
 | Mutation-corpus residual error | hard examples from §3.1 corpus | priority sampling pool |
 | Adjacent-mutation oracle pairs | apply each mutation category to each repo | per-category sensitivity supervision |
 
@@ -471,7 +471,7 @@ Weights re-computed weekly during periodic full retrain (§5.4).
 
 ### 3.7.3 Counterfactual training (latent perturbations)
 
-For each `panel[t=1]`, sample `K=4` perturbations `panel[t=1] + ε·v` (v unit, ε ∈ {0.01, 0.05, 0.1, 0.2}). Predict each. Supervise against the EMA target. Builds a derivative-of-prediction-w.r.t.-input signal.
+For each `panel[t=1]`, sample `K=4` perturbations `panel[t=1] + ε·v` (v unit, ε ∈ {0.01, 0.05, 0.1, 0.2}). Predict each. Supervise against the frozen target readback. Builds a derivative-of-prediction-w.r.t.-input signal.
 
 ### 3.7.4 Active learning loop
 
@@ -668,21 +668,18 @@ This is the "the predictor doesn't recognize this kind of input" signal. Critica
 
 ### 5.1 Online learning with EWC++ protection
 
-Every reality-loop attempt produces a new `(panel, oracle_outcome)` pair. The ME-JEPA serves predictions AND is updated online:
+Every outer-loop Claude Code edit/test cycle produces a new `(panel, oracle_outcome)` pair. The ME-JEPA serves predictions AND is updated online:
 
 ```rust
 fn observe(&mut self, panel: &Panel, oracle_outcome: &OracleOutcome) -> Result<()> {
-    // 1. Compute Fisher information for current (θ, ξ) on this example.
+    // 1. Compute Fisher information for current θ on this example.
     let fisher = self.ewc.update_fisher_online(&panel, &oracle_outcome);
 
     // 2. Take a small SGD step on the new example, regularized by the EWC term:
     //    L_total = L_predict + λ_ewc · sum_over_old_tasks(F_i · (θ_i - θ_i*)²)
     let loss = self.predictor.step(panel, oracle_outcome, λ_ewc = self.ewc.current_lambda());
 
-    // 3. Update the EMA target encoder.
-    self.target_encoder.ema_update(&self.predictor, τ = 0.996);
-
-    // 4. Detect if this is a new task boundary (per sona's automatic detection).
+    // 3. Detect if this is a new task boundary (per sona's automatic detection).
     if self.ewc.detect_task_boundary() {
         self.ewc.snapshot_current_task();
     }
@@ -933,14 +930,14 @@ context-graph mejepa-instruments verify --corpus ./data/mejepa-corpus
 #   ...
 ```
 
-### Phase 2 — Panel + predictor + target encoder (~7-10 days)
+### Phase 2 — Panel + predictor + frozen target readback (~7-10 days)
 
 **Deliverables:**
 
 1. New crate `crates/context-graph-mejepa/` with the JEPA architecture.
 2. Panel materialization: given a task + a patch attempt, produce `panel[t=0], panel[t=1], panel[t=2]`.
 3. Predictor (6-layer transformer, hidden 1024, 8 heads).
-4. EMA target encoder (same architecture, frozen-with-EMA-update).
+4. Frozen target-readback adapter over `panel[t=2]` instrument outputs.
 5. VICReg loss implementation.
 6. Oracle head on top of predictor's output.
 
