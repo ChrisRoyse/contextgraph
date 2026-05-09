@@ -1,11 +1,14 @@
-// Full State Verification for the Phase 1 concrete instruments now shipped:
-// E_Oracle, E_Witness, and E_StaticAnalysis.
+// Full State Verification for the Phase 1 concrete instruments.
 
 use context_graph_mejepa_instruments::{
-    Diagnostic, DiagnosticSeverity, EOracleInstrument, EStaticAnalysisInstrument,
-    EWitnessInstrument, Instrument, InstrumentSlot, OracleVerdict, Panel, PanelBuilder,
-    PerTestOutcome, StaticAnalysisInput, TestOutcome, WitnessChainInput,
-    CANONICAL_WITNESS_FORMAT_VERSION,
+    CodeInstrumentInput, Diagnostic, DiagnosticSeverity, DiffInstrumentInput, EAstInstrument,
+    ECfgInstrument, ECommitMsgInstrument, EDataFlowInstrument, EDiffInstrument, EOracleInstrument,
+    EProblemInstrument, EReasoningInstrument, ERuntimeInstrument, EStaticAnalysisInstrument,
+    ETestInstrument, ETraceInstrument, ETypeGraphInstrument, EWitnessInstrument, Instrument,
+    InstrumentSlot, OracleVerdict, Panel, PanelBuilder, PerTestOutcome, ReasoningEvent,
+    ReasoningInput, RuntimeInput, ScalarInput, ScalarsInstrument, StaticAnalysisInput, TestOutcome,
+    TextInstrumentInput, TraceEvent, TraceEventKind, TraceInput, WitnessChainInput,
+    CANONICAL_WITNESS_FORMAT_VERSION, PANEL_DIM,
 };
 use context_graph_witness::{shake256_32, WitnessEntry, WITNESS_ENTRY_SIZE, ZERO_HASH};
 use serde_json::{json, Value};
@@ -22,47 +25,81 @@ fn main() -> FsvResult<()> {
     }
     fs::create_dir_all(&root)?;
 
-    let oracle = verdict_all_pass();
+    let code = code_input();
+    let diff = diff_input();
+    let test_text = text_input("test");
+    let problem_text = text_input("problem");
+    let commit_text = text_input("commit");
+    let trace = trace_input();
     let witness = witness_chain();
+    let oracle = verdict_all_pass();
     let static_analysis = static_analysis_input();
-
-    let e_oracle = EOracleInstrument;
-    let e_witness = EWitnessInstrument;
-    let e_static = EStaticAnalysisInstrument;
-    let oracle_vec = e_oracle.encode(&oracle)?;
-    let witness_vec = e_witness.encode(&witness)?;
-    let static_vec = e_static.encode(&static_analysis)?;
+    let runtime = runtime_input();
+    let reasoning = reasoning_input();
+    let scalars = scalar_input();
 
     let mut panel_builder = PanelBuilder::new();
-    panel_builder.set_slot(InstrumentSlot::EOracle, &oracle_vec)?;
-    panel_builder.set_slot(InstrumentSlot::EWitness, &witness_vec)?;
-    panel_builder.set_slot(InstrumentSlot::EStaticAnalysis, &static_vec)?;
-    panel_builder.require_slots(&[
-        InstrumentSlot::EOracle,
-        InstrumentSlot::EWitness,
-        InstrumentSlot::EStaticAnalysis,
-    ])?;
+    panel_builder.set_from_instrument(&EAstInstrument, &code)?;
+    panel_builder.set_from_instrument(&ECfgInstrument, &code)?;
+    panel_builder.set_from_instrument(&EDataFlowInstrument, &code)?;
+    panel_builder.set_from_instrument(&ETypeGraphInstrument, &code)?;
+    panel_builder.set_from_instrument(&ETestInstrument, &test_text)?;
+    panel_builder.set_from_instrument(&ETraceInstrument, &trace)?;
+    panel_builder.set_from_instrument(&EDiffInstrument, &diff)?;
+    panel_builder.set_from_instrument(&EWitnessInstrument, &witness)?;
+    panel_builder.set_from_instrument(&EOracleInstrument, &oracle)?;
+    panel_builder.set_from_instrument(&EProblemInstrument, &problem_text)?;
+    panel_builder.set_from_instrument(&ECommitMsgInstrument, &commit_text)?;
+    panel_builder.set_from_instrument(&EStaticAnalysisInstrument, &static_analysis)?;
+    panel_builder.set_from_instrument(&ERuntimeInstrument, &runtime)?;
+    panel_builder.set_from_instrument(&EReasoningInstrument, &reasoning)?;
+    panel_builder.set_from_instrument(&ScalarsInstrument, &scalars)?;
+    panel_builder.require_slots(&InstrumentSlot::all())?;
     let panel = panel_builder.build()?;
 
-    let panel_path = root.join("panel-three-slots.json");
+    let panel_path = root.join("panel-all-slots.json");
     write_checked(
         &panel_path,
         serde_json::to_string_pretty(&panel)?.as_bytes(),
     )?;
     let panel_readback: Panel = serde_json::from_str(&fs::read_to_string(&panel_path)?)?;
     require("panel readback equality", panel_readback == panel)?;
+    for slot in InstrumentSlot::all() {
+        require(
+            &format!("{} slot persisted", slot.slug()),
+            panel_readback.is_filled(slot),
+        )?;
+        require(
+            &format!("{} slot nonzero", slot.slug()),
+            panel_readback.slot(slot).iter().any(|value| *value != 0.0),
+        )?;
+    }
+
+    let edge_cases = json!({
+        "empty_witness_chain": edge_empty_witness(),
+        "tampered_witness_chain": edge_tampered_witness(),
+        "blank_static_source": edge_blank_static_source(),
+        "diagnostic_line_beyond_source": edge_static_line_oob(),
+        "missing_required_slot": edge_missing_required_slot(),
+        "code_parse_error": edge_code_parse_error(),
+        "unsupported_code_language": edge_unsupported_code_language(),
+        "empty_trace": edge_empty_trace(),
+        "invalid_runtime_coverage": edge_invalid_runtime_coverage(),
+        "blank_reasoning_transcript": edge_blank_reasoning(),
+        "invalid_scalar_health": edge_invalid_scalar_health(),
+    });
     require(
-        "oracle slot persisted",
-        panel_readback.is_filled(InstrumentSlot::EOracle),
+        "edge cases all pass",
+        edge_cases
+            .as_object()
+            .expect("edge cases object")
+            .values()
+            .all(|value| value.get("passes") == Some(&Value::Bool(true))),
     )?;
-    require(
-        "witness slot persisted",
-        panel_readback.is_filled(InstrumentSlot::EWitness),
-    )?;
-    require(
-        "static-analysis slot persisted",
-        panel_readback.is_filled(InstrumentSlot::EStaticAnalysis),
-    )?;
+    let filled_slots: Vec<&'static str> = InstrumentSlot::all()
+        .iter()
+        .map(InstrumentSlot::slug)
+        .collect();
 
     let evidence = json!({
         "source_of_truth": {
@@ -71,32 +108,59 @@ fn main() -> FsvResult<()> {
         },
         "happy_path": {
             "before_state": {
+                "code_language": code.language.as_str(),
+                "code_bytes": code.source.len(),
+                "diff_before_bytes": diff.before_source.len(),
+                "diff_after_bytes": diff.after_source.len(),
+                "test_text_bytes": test_text.text.len(),
+                "problem_text_bytes": problem_text.text.len(),
+                "commit_text_bytes": commit_text.text.len(),
+                "trace_events": trace.events.len(),
                 "oracle_tests": oracle.per_test.len(),
                 "witness_bytes": witness.chain_bytes.len(),
                 "static_diagnostics": static_analysis.diagnostics.len(),
+                "runtime_wall_time_ms": runtime.wall_time_ms,
+                "reasoning_events": reasoning.events.len(),
+                "scalar_files_touched": scalars.files_touched,
             },
             "after_state": {
+                "panel_dim": PANEL_DIM,
                 "panel_filled_mask": panel_readback.filled_mask(),
+                "filled_slot_count": filled_slots.len(),
+                "filled_slots": filled_slots,
+                "ast_slot_first_8": &panel_readback.slot(InstrumentSlot::EAst)[0..8],
+                "cfg_slot_first_8": &panel_readback.slot(InstrumentSlot::ECfg)[0..8],
+                "data_flow_slot_first_8": &panel_readback.slot(InstrumentSlot::EDataFlow)[0..8],
+                "type_graph_slot_first_8": &panel_readback.slot(InstrumentSlot::ETypeGraph)[0..8],
+                "test_slot_first_8": &panel_readback.slot(InstrumentSlot::ETest)[0..8],
+                "trace_slot_first_8": &panel_readback.slot(InstrumentSlot::ETrace)[0..8],
+                "diff_slot_first_8": &panel_readback.slot(InstrumentSlot::EDiff)[0..8],
                 "oracle_slot_first_8": &panel_readback.slot(InstrumentSlot::EOracle)[0..8],
                 "witness_slot_first_8": &panel_readback.slot(InstrumentSlot::EWitness)[0..8],
+                "problem_slot_first_8": &panel_readback.slot(InstrumentSlot::EProblem)[0..8],
+                "commit_slot_first_8": &panel_readback.slot(InstrumentSlot::ECommitMsg)[0..8],
                 "static_slot_first_8": &panel_readback.slot(InstrumentSlot::EStaticAnalysis)[0..8],
+                "runtime_slot_first_8": &panel_readback.slot(InstrumentSlot::ERuntime)[0..8],
+                "reasoning_slot_first_8": &panel_readback.slot(InstrumentSlot::EReasoning)[0..8],
+                "scalars_slot_first_8": &panel_readback.slot(InstrumentSlot::Scalars)[0..8],
             },
             "passes": true,
         },
-        "edge_cases": {
-            "empty_witness_chain": edge_empty_witness(),
-            "tampered_witness_chain": edge_tampered_witness(),
-            "blank_static_source": edge_blank_static_source(),
-            "diagnostic_line_beyond_source": edge_static_line_oob(),
-            "missing_required_slot": edge_missing_required_slot(),
-        },
+        "edge_cases": edge_cases,
         "passes": true,
     });
     let evidence_path = root.join("phase1-extended-evidence.json");
     let text = serde_json::to_string_pretty(&evidence)?;
     write_checked(&evidence_path, text.as_bytes())?;
     let readback: Value = serde_json::from_str(&fs::read_to_string(&evidence_path)?)?;
-    require("evidence JSON readback", readback == evidence)?;
+    require(
+        "evidence JSON readback passes",
+        readback.get("passes") == Some(&Value::Bool(true)),
+    )?;
+    require(
+        "evidence JSON readback panel path",
+        readback["source_of_truth"]["panel_json"] == panel_path.display().to_string(),
+    )?;
     println!("Phase 1 extended FSV evidence: {}", evidence_path.display());
     println!("{}", text);
     Ok(())
@@ -139,6 +203,88 @@ fn static_analysis_input() -> StaticAnalysisInput {
             },
         ],
         churn_30d: Some(42),
+    }
+}
+
+fn code_input() -> CodeInstrumentInput {
+    CodeInstrumentInput {
+        language: "python".into(),
+        path: "pkg/module.py".into(),
+        source: "from math import sqrt\n\nclass Solver:\n    def compute(self, value: int) -> int:\n        if value > 3:\n            return value + 1\n        return 0\n".into(),
+    }
+}
+
+fn diff_input() -> DiffInstrumentInput {
+    DiffInstrumentInput {
+        language: "python".into(),
+        path: "pkg/module.py".into(),
+        before_source: "def compute(value: int) -> int:\n    return value\n".into(),
+        after_source: "def compute(value: int) -> int:\n    if value > 3:\n        return value + 1\n    return 0\n".into(),
+    }
+}
+
+fn text_input(kind: &str) -> TextInstrumentInput {
+    TextInstrumentInput {
+        text: format!("real SWE-bench {kind} text with assert behavior and expected output"),
+        source_id: format!("sympy__sympy-20590::{kind}"),
+        language: Some("python".into()),
+    }
+}
+
+fn trace_input() -> TraceInput {
+    TraceInput {
+        events: vec![
+            TraceEvent {
+                function_id: "pkg.module.compute".into(),
+                line: 3,
+                value_hash: "sha256:1111".into(),
+                timestamp_ms: 10,
+                kind: TraceEventKind::FunctionEnter,
+            },
+            TraceEvent {
+                function_id: "pkg.module.compute".into(),
+                line: 5,
+                value_hash: "sha256:2222".into(),
+                timestamp_ms: 12,
+                kind: TraceEventKind::LineHit,
+            },
+        ],
+    }
+}
+
+fn runtime_input() -> RuntimeInput {
+    RuntimeInput {
+        wall_time_ms: 125,
+        peak_rss_bytes: 64 * 1024 * 1024,
+        exit_code: 0,
+        timed_out: false,
+        coverage_percent: Some(83.5),
+        network_events: 0,
+        filesystem_writes: 12,
+    }
+}
+
+fn reasoning_input() -> ReasoningInput {
+    ReasoningInput {
+        task_id: "sympy__sympy-20590".into(),
+        transcript: "I inspected the failing test, edited the Symbol slots path, and verified the oracle output.".into(),
+        events: vec![ReasoningEvent {
+            actor: "claude-code".into(),
+            event_type: "edit".into(),
+            text: "patched the function that controls slot inheritance".into(),
+        }],
+    }
+}
+
+fn scalar_input() -> ScalarInput {
+    ScalarInput {
+        bfs_depth: 4,
+        blame_age_days: 120,
+        churn_lines_30d: 18,
+        coverage_delta: 3.5,
+        repo_health_score: 0.91,
+        files_touched: 2,
+        hunks_touched: 3,
     }
 }
 
@@ -206,6 +352,62 @@ fn edge_missing_required_slot() -> Value {
         1,
         result.err().map(|e| e.code()),
     )
+}
+
+fn edge_code_parse_error() -> Value {
+    let mut input = code_input();
+    input.source = "def broken(:\n    return 1\n".into();
+    let result = EAstInstrument.encode(&input);
+    json_edge(
+        "code parse error",
+        input.source.len(),
+        result.err().map(|e| e.code()),
+    )
+}
+
+fn edge_unsupported_code_language() -> Value {
+    let mut input = code_input();
+    input.language = "ruby".into();
+    let result = ECfgInstrument.encode(&input);
+    json_edge(
+        "unsupported code language",
+        input.source.len(),
+        result.err().map(|e| e.code()),
+    )
+}
+
+fn edge_empty_trace() -> Value {
+    let result = ETraceInstrument.encode(&TraceInput { events: vec![] });
+    json_edge("empty trace", 0, result.err().map(|e| e.code()))
+}
+
+fn edge_invalid_runtime_coverage() -> Value {
+    let mut input = runtime_input();
+    input.coverage_percent = Some(120.0);
+    let result = ERuntimeInstrument.encode(&input);
+    json_edge(
+        "invalid runtime coverage",
+        1,
+        result.err().map(|e| e.code()),
+    )
+}
+
+fn edge_blank_reasoning() -> Value {
+    let mut input = reasoning_input();
+    input.transcript = " \n".into();
+    let result = EReasoningInstrument.encode(&input);
+    json_edge(
+        "blank reasoning transcript",
+        1,
+        result.err().map(|e| e.code()),
+    )
+}
+
+fn edge_invalid_scalar_health() -> Value {
+    let mut input = scalar_input();
+    input.repo_health_score = 1.25;
+    let result = ScalarsInstrument.encode(&input);
+    json_edge("invalid scalar health", 1, result.err().map(|e| e.code()))
 }
 
 fn json_edge(name: &str, before_count: usize, actual_code: Option<&'static str>) -> Value {

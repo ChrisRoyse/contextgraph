@@ -1093,6 +1093,7 @@ dependencies = [
 name = "context-graph-mejepa-corpus"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "context-graph-mejepa-instruments",
  "rocksdb",
  "serde",

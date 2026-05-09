@@ -44,6 +44,7 @@ mod known_good;
 mod off_by_one;
 pub mod oracle;
 mod over_engineer;
+pub mod patch_mutation;
 mod prng;
 mod python_lex;
 pub mod split;
