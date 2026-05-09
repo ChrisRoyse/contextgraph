@@ -270,6 +270,7 @@ pub fn run_swebench_lite_oracle(
     config: &SwebenchOracleConfig,
 ) -> OracleResult<SwebenchOracleResult> {
     validate_config(config)?;
+    verify_python_docker_sdk_available(&config.venv_python, config.overall_timeout)?;
 
     let predictions_jsonl_path = if matches!(config.mode, SwebenchPredictionMode::Custom(_)) {
         Some(write_predictions_jsonl(config)?)
@@ -392,6 +393,7 @@ pub fn run_swebench_lite_oracle_batch(
     config: &SwebenchBatchOracleConfig,
 ) -> OracleResult<SwebenchBatchOracleResult> {
     validate_batch_config(config)?;
+    verify_python_docker_sdk_available(&config.venv_python, config.overall_timeout)?;
     let predictions_jsonl_path = write_batch_predictions_jsonl(config)?;
     let command = build_batch_harness_command(config, &predictions_jsonl_path);
 
@@ -840,13 +842,91 @@ fn read_or_create_timeout_report(
             "ensure the harness artifact directory is writable so timeout verdicts can be resumed",
         )
     })?;
-    Ok(report_text)
+    let readback = fs::read_to_string(instance_report_path).map_err(|err| {
+        OracleError::io(
+            instance_report_path,
+            err.to_string(),
+            "filesystem readback after timeout report write failed; check the disk",
+        )
+    })?;
+    if readback != report_text {
+        return Err(OracleError::io(
+            instance_report_path,
+            "timeout report readback did not match what we wrote",
+            "investigate the filesystem for partial writes or concurrent writers",
+        ));
+    }
+    Ok(readback)
 }
 
 fn test_output_contains_timeout(test_output: &str) -> bool {
     test_output
         .lines()
         .any(|line| line.trim_start().starts_with("Timeout error:"))
+}
+
+const PYTHON_DOCKER_SDK_PREFLIGHT: &str = r#"
+import os
+import stat
+import sys
+
+try:
+    import docker
+
+    client = docker.from_env()
+    client.ping()
+    print("docker_sdk_ping=ok")
+except Exception as exc:
+    print(f"docker_sdk_ping=failed type={type(exc).__name__} error={exc!r}", file=sys.stderr)
+    print(f"uid={os.getuid()} gid={os.getgid()} groups={os.getgroups()}", file=sys.stderr)
+    docker_host = os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock")
+    print(f"DOCKER_HOST={docker_host}", file=sys.stderr)
+    if docker_host in ("", "unix:///var/run/docker.sock"):
+        sock = "/var/run/docker.sock"
+        try:
+            st = os.stat(sock)
+            print(
+                "docker_sock="
+                f"mode={oct(stat.S_IMODE(st.st_mode))} uid={st.st_uid} gid={st.st_gid}",
+                file=sys.stderr,
+            )
+        except Exception as sock_exc:
+            print(f"docker_sock_stat_failed={sock_exc!r}", file=sys.stderr)
+    raise SystemExit(2)
+"#;
+
+fn verify_python_docker_sdk_available(venv_python: &Path, timeout: Duration) -> OracleResult<()> {
+    let mut command = Command::new(venv_python);
+    command
+        .args(["-c", PYTHON_DOCKER_SDK_PREFLIGHT])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    configure_child_process_group(&mut command);
+    let child = command.spawn().map_err(|err| {
+        OracleError::command_failed(
+            venv_python.display().to_string(),
+            format!("failed to spawn Python Docker SDK preflight: {err}"),
+            "install the SWE-bench harness venv before invoking the Docker oracle",
+        )
+    })?;
+    let output = wait_with_timeout_interruptible(
+        child,
+        timeout.min(Duration::from_secs(30)),
+        "docker-sdk",
+        None,
+    )?;
+    if !output.status.success() {
+        return Err(OracleError::command_failed(
+            "docker-sdk",
+            format!(
+                "Python Docker SDK preflight failed; stdout_tail={}; stderr_tail={}",
+                tail_text(&output.stdout),
+                tail_text(&output.stderr),
+            ),
+            "ensure the current process can access the Docker daemon socket; in WSL refresh docker group membership or run the corpus command through `sg docker -c`",
+        ));
+    }
+    Ok(())
 }
 
 /// Best-effort scan of a SWE-bench `test_output.txt` for the dominant
