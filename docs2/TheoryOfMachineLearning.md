@@ -1,4 +1,4 @@
-# The Unified Theory of Machine Learning, v1.0 — JEPA Edition
+# The Theory of Machine Learning, v1.0 — JEPA Edition
 
 **A first-principles framework for how *machines* actually learn, designed around audited, collapse-immune Joint-Embedding Predictive Architectures (ME-JEPA), grounded in measurement-bound deep learning, verified-execution provenance, and the ContextGraph Reality Loop.**
 
