@@ -156,7 +156,8 @@ pub fn verify_segment(segment: &[u8], codec: &[u8]) -> Result<(), SignError> {
     let mut sig_bytes = [0u8; SIGNATURE_LENGTH];
     sig_bytes.copy_from_slice(&codec[PUBLIC_KEY_LENGTH..]);
 
-    let verifying = VerifyingKey::from_bytes(&pk_bytes).map_err(|_| SignError::PublicKeyMalformed)?;
+    let verifying =
+        VerifyingKey::from_bytes(&pk_bytes).map_err(|_| SignError::PublicKeyMalformed)?;
     let signature = Signature::from_bytes(&sig_bytes);
     let digest = digest_for_segment(pk_bytes, segment);
     verifying
