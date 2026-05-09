@@ -3,7 +3,7 @@
 > **Operator directive 2026-05-09:** *"since we are no longer using the local model that frees up all of our gpu vram. this system has a number of multi embedder systems and like 30 embedders hooked up. we could load any of them or improve the learning embedders with the new utl theory and somehow integrate all of that into this system. review all of that and if anything could be optimally used put it all in the docs."*
 
 > **Companion docs:**
-> - `09_END_GOAL_REVIEW_REPLACEMENT.md` — master plan (instruments, panel, predictor, EMA, VICReg, oracle head)
+> - `09_END_GOAL_REVIEW_REPLACEMENT.md` — master plan (instruments, panel, predictor, frozen target readback, VICReg, oracle head)
 > - `10_MEJEPA_PIVOT_2026_05_09.md` — post-pivot single-outer-loop architecture
 > - `11_MEJEPA_LEARNING_FORMULA.md` — UTML v1.0 four-factor formula
 
@@ -60,9 +60,9 @@ The shipped LoRA + distillation infrastructure is also *exactly* what UTML v1.0 
 | `data.rs` | Training pair structures + DataLoader | corpus ingestion |
 | `loss.rs` | InfoNCE + directional + separation + soft-label losses | predictor-side ΔP loss |
 | `optimizer.rs` | AdamW with warmup + cosine decay | Phase 3 optimizer (already specified in doc 09) |
-| `trainer.rs` | Training loop with **momentum encoder** | EMA target encoder analog (UTML §VIII — "future-self prior") |
+| `trainer.rs` | Training loop with **momentum/teacher utilities** | reusable optimizer scaffolding only; ME-JEPA targets still come from frozen instrument readback |
 | `evaluation.rs` | Directional accuracy, MRR, AUC | Phase 4 evaluation harness |
-| `distillation.rs` | **Online LLM→embedder teaching loop** with EMA τ + quality gate | UTML §VII consolidation: replaces the LLM-driver with the **Docker oracle as teacher** |
+| `distillation.rs` | Online embedder teaching loop with EMA-style quality gates | optional consolidation utility; Docker oracle/readback remains the teacher signal |
 | `lora.rs` | LoRA adapters (rank, alpha, dropout) — applies to query/key/value | UTML §V.1 effective_plasticity intervention: continual backprop via low-rank updates |
 | `multitask.rs` | DirectionLabel + MechanismLabel auxiliary heads | doc 09 §3.7 multi-objective auxiliary heads |
 | `pipeline.rs` | End-to-end training pipeline | Phase 3 training loop |
@@ -126,7 +126,7 @@ Post-pivot (2026-05-09):
 |---|---|---|
 | Embedder ensemble (21 weights, bf16) | ~14 GB | core panel-materialization pipeline |
 | ME-JEPA predictor (6-layer transformer, hidden 1024, 8 heads, bf16) | ~3 GB | Phase 2 |
-| EMA target encoder (same arch as predictor) | ~3 GB | Phase 2 |
+| Frozen target-readback buffers | <1 GB | Phase 2; target panels are persisted instrument outputs, not a second trainable model |
 | Activation memory (batch 64) | ~5 GB | Phase 3 forward+backward |
 | Optimizer state (AdamW) | ~2 GB | per-param momentum + variance |
 | LoRA adapters (rank 32, all 21 embedders) | ~0.5 GB | Phase 5 self-healing fine-tuning |
@@ -289,7 +289,7 @@ The predictor architecture (6-layer transformer) is independent of the embedder 
 
 ### 8.4 Phase 5 (self-healing) — shipped infrastructure becomes operational
 
-LoRA adapters + distillation + multitask + EMA momentum encoder are all in tree. Phase 5 becomes wiring (and the EWC++ Fisher matrix), not green-field implementation.
+LoRA adapters + distillation + multitask + momentum-style utilities are all in tree. Phase 5 becomes wiring (and the EWC++ Fisher matrix), not green-field implementation.
 
 ### 8.5 Cross-language Section-C mandate — directly satisfied by E14 BGE-M3
 
@@ -313,7 +313,7 @@ Multilingual coverage at no additional model-training cost. Pyright/mypy/rustc/j
 | 10 | E_StaticAnalysis (pure-Rust scalar aggregates) | ~2 days | none | planned per `plan_e_static_analysis.md` |
 | 11 | E_Runtime (pure-Rust scalar aggregates) | ~2 days | none | new |
 | 12 | E_Reasoning as E17 AffectText on agent CoT | ~2 days | (1) | new |
-| 13 | Predictor + EMA + VICReg + Oracle head (Phase 2) | ~7-10 days | all instruments | per `plan_phase2_predictor.md` |
+| 13 | Predictor + frozen target readback + VICReg + Oracle head (Phase 2) | ~7-10 days | all instruments | per `plan_phase2_predictor.md` |
 | 14 | UTML v1.0 L_step computation per training cert | ~2 days | (13) | per doc 11 §11 |
 | 15 | LoRA self-healing wiring (Phase 5) | ~3 days | shipped LoRA + (13) | accelerated |
 | 16 | Distillation-based online observe (Phase 5) | ~2 days | shipped distillation + (13) | accelerated |
@@ -328,7 +328,7 @@ Multilingual coverage at no additional model-training cost. Pyright/mypy/rustc/j
 ## 10. Risks (specific to embedder integration)
 
 1. **Embedder model versioning drift**: each embedder pins to a specific HuggingFace revision. If a model is updated upstream, the embedding space shifts. Pin SHA-256 digests in `models_config.toml`. ME-JEPA's predicted-vs-target distance is calibrated per (embedder_version, panel_version) pair.
-2. **VRAM allocation contention**: simultaneous loading of all 21 embedders + the predictor + EMA target + LoRA adapters + activation memory must stay under 29 GB. Lazy-load learner-state embedders (E15-E21) on demand if budget tightens.
+2. **VRAM allocation contention**: simultaneous loading of all 21 embedders + the predictor + target-readback buffers + LoRA adapters + activation memory must stay under 29 GB. Lazy-load learner-state embedders (E15-E21) on demand if budget tightens.
 3. **Cross-embedder coherence brittle on small corpora**: the embedder_coherence term in §5.1 needs ≥1,000 training examples before NN sets become statistically meaningful. Default to `embedder_coherence = 0.5` (neutral) for the first 1k corpus entries.
 4. **E17 AffectText calibration on AI conversation transcripts**: the model was trained on natural language, not LLM/agent transcripts. AffectText's outputs may need recalibration on a held-out set of 100-500 outer-loop conversation samples before the agent_state_score becomes reliable.
 5. **LoRA adapter explosion**: 21 embedders × N LoRA adapters per embedder (one per task or per language) could grow large. Cap at 1 base LoRA + ≤4 task-specific delta-LoRAs per embedder; merge older ones via SVD compression.

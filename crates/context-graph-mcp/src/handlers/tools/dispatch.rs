@@ -118,15 +118,9 @@ impl Handlers {
             tool_names::SEARCH_EFFECTS => call_search_effects(arguments),
             tool_names::GET_CAUSAL_CHAIN => call_get_causal_chain(arguments),
             tool_names::SEARCH_CAUSAL_RELATIONSHIPS => call_search_causal_relationships(arguments),
-            // Causal discovery tools (LLM)
-            tool_names::TRIGGER_CAUSAL_DISCOVERY => call_trigger_causal_discovery(arguments),
-            tool_names::GET_CAUSAL_DISCOVERY_STATUS => call_get_causal_discovery_status(arguments),
             // Graph tools (E8)
             tool_names::SEARCH_CONNECTIONS => call_search_connections(arguments),
             tool_names::GET_GRAPH_PATH => call_get_graph_path(arguments),
-            // Graph discovery tools (LLM)
-            tool_names::DISCOVER_GRAPH_RELATIONSHIPS => call_discover_graph_relationships(arguments),
-            tool_names::VALIDATE_GRAPH_LINK => call_validate_graph_link(arguments),
             // Keyword tools (E6)
             tool_names::SEARCH_BY_KEYWORDS => call_search_by_keywords(arguments),
             // Code tools (E7)
@@ -277,11 +271,6 @@ impl Handlers {
             tool_names::REALITY_COMPARE_ATTEMPTS => call_reality_compare_attempts(arguments),
             tool_names::REALITY_AUDIT_TRAIL => call_reality_audit_trail(arguments),
             tool_names::REALITY_REPLAY_ARTIFACT => call_reality_replay_artifact(arguments),
-            tool_names::REALITY_RUN_ATTEMPT => call_reality_run_attempt(arguments),
-            tool_names::REALITY_RUN_SMOKE => call_reality_run_smoke(arguments),
-            tool_names::REALITY_RUN_OFFICIAL_EVAL => call_reality_run_official_eval(arguments),
-            tool_names::REALITY_RUN_TARGETED_TEST => call_reality_run_targeted_test(arguments),
-            tool_names::REALITY_RECOMPILE_REWARD => call_reality_recompile_reward(arguments),
             tool_names::REALITY_QUERY_LEDGER => call_reality_query_ledger(arguments),
             tool_names::HARNESS_OPEN_WINDOW => call_harness_open_window(arguments),
             tool_names::HARNESS_APPLY_LINE_WINDOW_EDIT => call_harness_apply_line_window_edit(arguments),

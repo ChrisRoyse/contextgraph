@@ -340,7 +340,7 @@ L_step = ΔP × ΔK × ΔΩ × ΔΞ           all factors clamped to [0, 1]
 
 ### Why ME-JEPA structurally wins on ΔΞ
 
-Every other JEPA-class system (I-JEPA, V-JEPA, V-JEPA 2, DINO, BYOL, SimSiam) has a *learnable* target encoder defended only by regularizers (stop-gradient, EMA momentum schedule, VICReg, Barlow Twins, contrastive negatives). All of those defenses can be defeated by a sufficiently expressive student/teacher pair, by miscalibrated hyperparameters, or by a degenerate data distribution.
+The common self-supervised target-encoder pattern in I-JEPA / V-JEPA / BYOL-style systems uses a learnable or momentum target path defended by asymmetry, stop-gradient, EMA schedules, or regularizers. Those defenses are empirical rather than structural: a sufficiently expressive student/teacher pair, miscalibrated hyperparameters, or a degenerate data distribution can still collapse predictor behavior.
 
 ME-JEPA's target representation is produced by **frozen externally-defined instruments** (E_AST, E_CFG, E_Oracle, E_Witness, ...) — deterministic functions with **zero trainable parameters**. They cannot drift. They cannot collapse. There is no gradient flowing through them, ever. This makes `ΔΞ.target_collapse = 0` a **structural guarantee**, not a regularizer that can be defeated. To our knowledge, ME-JEPA is the first JEPA in the literature with this property.
 
@@ -578,7 +578,7 @@ mutation categories AND across all supported languages on the holdout split. Tha
 |---|---|
 | §0 TL;DR | Re-anchored on single-loop framing; UTML v1.0 four-factor formula referenced (see Section B). |
 | §1 Reality compiler analogy | Unchanged; the analogy stays. |
-| §2 Architecture (instruments, panel, predictor, EMA, VICReg) | Unchanged. |
+| §2 Architecture (instruments, panel, predictor, frozen target readback, VICReg) | Unchanged. |
 | §3 Training corpus | §3.1 mutation corpus unchanged; §3.2 live attempts re-framed as Claude-Code-driven, not Qwen-driven. §3.3 synthetic adversarials unchanged. §3.4 split unchanged. |
 | §3.5 Reward-signal capture | Unchanged — ALL 21 capture surfaces still apply, sourced from Claude Code's reality artifacts. |
 | §3.6 Blindspots | "Inner-actor reasoning trace" item retitled "AI agent reasoning trace" (Claude Code's CoT, or any agent's). |

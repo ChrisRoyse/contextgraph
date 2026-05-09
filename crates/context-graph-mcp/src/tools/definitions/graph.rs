@@ -1,8 +1,6 @@
-//! Graph tool definitions (search_connections, get_graph_path, discover_graph_relationships, validate_graph_link).
+//! Graph tool definitions.
 //!
 //! E8 Upgrade (Phase 4): Leverage asymmetric E8 embeddings for graph reasoning.
-//!
-//! Graph Discovery (LLM-based): Uses context-graph-graph-agent for relationship detection.
 //!
 //! Constitution Compliance:
 //! - ARCH-15: Uses asymmetric E8 with separate source/target encodings
@@ -12,10 +10,10 @@ use crate::tools::types::ToolDefinition;
 use serde_json::json;
 
 /// Returns graph tool definitions.
-/// Without `llm` feature: 2 tools (search_connections, get_graph_path).
-/// With `llm` feature: 4 tools (+ discover_graph_relationships, validate_graph_link).
+/// Local LLM graph discovery was retired in the ME-JEPA pivot, so this surface
+/// only exposes deterministic graph read/traversal tools.
 pub fn definitions() -> Vec<ToolDefinition> {
-    let tools = vec![
+    vec![
         // search_connections - Find connected memories
         ToolDefinition::new(
             "search_connections",
@@ -115,109 +113,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false
             }),
         ),
-    ];
-
-    #[cfg(feature = "llm")]
-    {
-        let mut tools = tools;
-
-        // discover_graph_relationships - LLM-based relationship discovery
-        tools.push(ToolDefinition::new(
-            "discover_graph_relationships",
-            "Discover graph relationships between memories using LLM analysis with asymmetric E8 embeddings. \
-             Uses the graph-agent with shared CausalDiscoveryLLM (Qwen2.5-3B) for relationship detection. \
-             Supports 20 relationship types across 4 domains: Code (imports, calls, implements), \
-             Legal (cites, overrules, interprets), Academic (cites, applies, extends), General. \
-             Returns discovered relationships with confidence scores, categories, and directions.",
-            json!({
-                "type": "object",
-                "required": ["memory_ids"],
-                "properties": {
-                    "memory_ids": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "format": "uuid"
-                        },
-                        "description": "UUIDs of memories to analyze for relationships (2-50).",
-                        "minItems": 2,
-                        "maxItems": 50
-                    },
-                    "relationship_types": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "enum": [
-                                "contains", "scoped_by",
-                                "depends_on", "imports", "requires",
-                                "references", "cites", "interprets", "distinguishes",
-                                "implements", "complies_with", "fulfills",
-                                "extends", "modifies", "supersedes", "overrules",
-                                "calls", "applies", "used_by"
-                            ]
-                        },
-                        "description": "Filter to specific relationship types. Omit to discover all types."
-                    },
-                    "min_confidence": {
-                        "type": "number",
-                        "description": "Minimum confidence threshold for discovered relationships (0-1, default: 0.7).",
-                        "default": 0.7,
-                        "minimum": 0,
-                        "maximum": 1
-                    },
-                    "batch_size": {
-                        "type": "integer",
-                        "description": "Maximum number of candidate pairs to analyze (1-100, default: 50).",
-                        "default": 50,
-                        "minimum": 1,
-                        "maximum": 100
-                    }
-                },
-                "additionalProperties": false
-            }),
-        ));
-        // validate_graph_link - Single-pair LLM validation
-        tools.push(ToolDefinition::new(
-            "validate_graph_link",
-            "Validate a proposed graph link between two memories using LLM analysis with asymmetric E8 embeddings. \
-             Uses the graph-agent with shared CausalDiscoveryLLM (Qwen2.5-3B) for validation. \
-             Supports 20 relationship types across Code, Legal, Academic, and General domains. \
-             Returns validation result with confidence score, detected relationship type, category, and direction.",
-            json!({
-                "type": "object",
-                "required": ["source_id", "target_id"],
-                "properties": {
-                    "source_id": {
-                        "type": "string",
-                        "format": "uuid",
-                        "description": "UUID of the source memory (the one that 'points to')."
-                    },
-                    "target_id": {
-                        "type": "string",
-                        "format": "uuid",
-                        "description": "UUID of the target memory (the one that 'is pointed to')."
-                    },
-                    "expected_relationship_type": {
-                        "type": "string",
-                        "enum": [
-                            "contains", "scoped_by",
-                            "depends_on", "imports", "requires",
-                            "references", "cites", "interprets", "distinguishes",
-                            "implements", "complies_with", "fulfills",
-                            "extends", "modifies", "supersedes", "overrules",
-                            "calls", "applies", "used_by"
-                        ],
-                        "description": "Expected relationship type to validate. Omit to detect any relationship."
-                    }
-                },
-                "additionalProperties": false
-            }),
-        ));
-        tools
-    }
-
-    #[cfg(not(feature = "llm"))]
-    tools
+    ]
 }
 
 #[cfg(test)]
@@ -227,9 +123,6 @@ mod tests {
     #[test]
     fn test_definitions_exist_with_required_fields() {
         let tools = definitions();
-        #[cfg(feature = "llm")]
-        assert_eq!(tools.len(), 4);
-        #[cfg(not(feature = "llm"))]
         assert_eq!(tools.len(), 2);
         let search = tools
             .iter()

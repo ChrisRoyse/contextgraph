@@ -11,8 +11,8 @@ Per-item deep-dives for everything that has NOT yet shipped on
   full corpus generation).
 - `phases/phase1.md` — Phase 1 remaining (13 of 14 instruments,
   tree-sitter / Pyright integration).
-- `phases/phase2.md` — Phase 2 (panel materializer, predictor, EMA
-  target encoder, VICReg loss, oracle head).
+- `phases/phase2.md` — Phase 2 (panel materializer, predictor, frozen
+  target readback, VICReg loss, oracle head).
 - `phases/phase3.md` — Phase 3 (AdamW training loop, per-step certs,
   holdout-agreement gate ≥0.75).
 - `phases/phase4.md` — Phase 4 (verify() API, conformal calibration,

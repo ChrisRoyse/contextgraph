@@ -1,4 +1,4 @@
-# Plan: Phase 2 — Panel Materializer + Predictor + EMA + VICReg
+# Plan: Phase 2 — Panel Materializer + Predictor + Frozen Targets + VICReg
 
 > **Priority:** MEDIUM (biggest single work item; ~7-10 days).
 > **Effort:** ~7-10 days.
@@ -11,7 +11,7 @@ Ship the entire Phase 2 deliverable per doc 09 §2.3-§2.5 + §7:
 - Panel materializer producing `panel[t=0]`, `panel[t=1]`, `panel[t=2]`
   given `(task_id, patch_id)`.
 - Context encoder `f_θ` (6-layer transformer, hidden 1024, 8 heads).
-- EMA target encoder `f_ξ` with τ = 0.996.
+- Frozen target-readback adapter over `panel[t=2]` instrument outputs.
 - Predictor `g_φ` mapping `panel[t=0..1] -> predicted panel[t=2]`.
 - VICReg loss: variance + invariance + covariance.
 - Oracle head: `Linear<5120, num_tests + 1>` mapping the predicted
@@ -26,7 +26,8 @@ under 50 ms/batch with VRAM <8 GB.
 1. New crate `crates/context-graph-mejepa/`.
 2. Sub-modules:
    - `panel.rs` — panel materialization from `(task_id, patch_id)`.
-   - `encoder.rs` — `ContextEncoder f_θ` + `TargetEncoder f_ξ`.
+   - `encoder.rs` — `ContextEncoder f_θ`.
+   - `target_readback.rs` — read/validate persisted `panel[t=2]` targets.
    - `predictor.rs` — `Predictor g_φ` (6-layer transformer).
    - `oracle_head.rs` — `OracleHead`.
    - `loss.rs` — `vicreg_loss(...)`.
@@ -82,7 +83,7 @@ Time steps:
 Panels persist to `CF_MEJEPA_PANELS` keyed by
 `(attempt_id, time_step)`. Reuse `PanelBuilder::set_from_instrument`.
 
-### Sub-phase 2.B: Context encoder + EMA target encoder (~2 days)
+### Sub-phase 2.B: Context encoder + frozen target readback (~2 days)
 
 ```rust
 pub struct ContextEncoder {
@@ -90,23 +91,19 @@ pub struct ContextEncoder {
     norm: LayerNorm,
 }
 
-pub struct TargetEncoder {
-    inner: ContextEncoder,            // EMA shadow of f_θ
+pub struct TargetReadback {
+    panels_cf: RocksPanelStore,
 }
 
-impl TargetEncoder {
-    pub fn ema_update(&mut self, source: &ContextEncoder, tau: f32) {
-        // ξ ← τ ξ + (1 - τ) θ, applied per-parameter
-    }
-    pub fn forward_no_grad(&self, x: &Tensor) -> Tensor {
-        candle::no_grad(|| self.inner.forward(x))
+impl TargetReadback {
+    pub fn load_t2(&self, attempt_id: &AttemptId) -> Result<Tensor> {
+        // Read panel[t=2] from the source-of-truth store and validate shape/finite values.
     }
 }
 ```
 
-Both share architecture (6 layers, hidden 1024, 8 heads, GeLU,
-pre-LN). EMA target encoder freezes its parameters from the gradient
-graph and updates via the rule outside.
+The target is not a learned encoder output. It is the readback of
+frozen, externally-defined instruments after the real trigger has run.
 
 ### Sub-phase 2.C: Predictor (~2 days)
 
@@ -128,7 +125,7 @@ likely `input = 5120 * 2 = 10240` and `output = 5120`.
 ```rust
 pub fn vicreg_loss(
     predicted_t2: &Tensor,        // [batch, 5120] from predictor
-    real_t2: &Tensor,              // [batch, 5120] from EMA target encoder
+    real_t2: &Tensor,              // [batch, 5120] from frozen target readback
     config: VicRegConfig,
 ) -> Tensor {
     let l_predict = huber_loss(predicted_t2, real_t2, delta=1.0);
@@ -179,7 +176,7 @@ Dry-run: assemble random panels, run forward, check:
    train on diverse subset, evaluate on held-out repos.
 2. **5,120-d panels expressive enough?**: if test-agreement plateaus
    <0.95, increase to 8,192 at 2× compute cost.
-3. **Memory footprint at batch 64**: predictor + 2× encoders + VICReg
+3. **Memory footprint at batch 64**: predictor + context encoder + VICReg
    activations should fit under 8 GB at batch 64 on 32 GB VRAM RTX 5090;
    monitor during dry-run.
 

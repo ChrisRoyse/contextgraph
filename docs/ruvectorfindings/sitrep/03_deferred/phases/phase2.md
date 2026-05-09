@@ -1,4 +1,4 @@
-# Doc 09 Phase 2 — Panel + Predictor + Target Encoder
+# Doc 09 Phase 2 — Panel + Predictor + Frozen Target Readback
 
 > **Estimated effort (per doc 09 §7):** 7-10 days.
 > **Status (2026-05-09):** DEFERRED — depends on Phase 1 instruments
@@ -22,9 +22,9 @@ patch, run predictor → predicted panel[t=2], read off the
 `E_Oracle` slice from the predicted panel, return predicted-pass
 probability."
 
-Without a working predictor, ME-JEPA can't make predictions; without
-the EMA target encoder + VICReg loss, the predictor collapses to
-trivial constant outputs.
+Without a working predictor, ME-JEPA can't make predictions. Without
+frozen target readback + VICReg loss, the predictor has no auditable
+source of truth and can collapse to trivial constant outputs.
 
 ## Deliverables (per doc 09 §7)
 
@@ -38,9 +38,9 @@ trivial constant outputs.
    `panel[t=2]` → 4,096-d (the doc says 4,096; with the §3.5
    expansion the predictor's output is the 5,120-d panel — verify the
    doc's intended dim during implementation).
-4. **EMA target encoder**: same architecture as the context encoder;
-   weights updated via `ξ ← τ ξ + (1 - τ) θ` with `τ = 0.996` per
-   V-JEPA standard.
+4. **Frozen target readback**: `panel[t=2]` is materialized by the same
+   externally-defined instruments that build the input panel, then read
+   back as the target. There is no learnable target encoder.
 5. **VICReg loss**: variance + invariance + covariance terms;
    defaults `λ_var = 25`, `λ_cov = 1`, `λ_inv = 25`, `γ = 1`.
 6. **Oracle head** on top of predictor output:
@@ -82,11 +82,12 @@ Given an attempt's `(task_id, patch_id)`:
 Storage in RocksDB CF `CF_MEJEPA_PANELS`, keyed by
 `(attempt_id, time_step)`.
 
-### B. Context encoder `f_θ` and target encoder `f_ξ`
+### B. Context encoder `f_θ` and frozen target readback
 
-Both are the same architecture; `f_ξ` is an EMA shadow of `f_θ`.
-Frozen during loss computation (`f_ξ.weights.requires_grad = false`,
-update via the EMA rule outside the gradient).
+`f_θ` encodes the observed context. The target is the already-persisted
+`panel[t=2]` read back from `CF_MEJEPA_PANELS` after the Docker oracle
+and instruments have run. This makes target-side collapse impossible by
+construction: no target parameters exist.
 
 ### C. Predictor `g_φ`
 
@@ -100,7 +101,7 @@ L_total = L_predict + λ_var * L_variance + λ_cov * L_covariance
                     + λ_inv * L_invariance
 ```
 
-Where `L_predict = HuberLoss(g_φ(f_θ(context)), f_ξ(target), δ=1)`.
+Where `L_predict = HuberLoss(g_φ(f_θ(context)), y_target, δ=1)`.
 
 VICReg terms prevent collapse:
 - **Variance**: per-dim std must exceed `γ` on a batch.
@@ -140,7 +141,7 @@ What needs to be built:
 2. Phase 0 Docker oracle must ship so `E_Oracle` slot of `panel[t=2]`
    is populated with real verdicts.
 3. THEN Phase 2 itself: panel materializer → context encoder →
-   predictor → target encoder → loss.
+   predictor → frozen target readback → loss.
 4. Dry-run gate: forward pass produces finite loss at batch 64 on
    RTX 5090.
 
@@ -159,7 +160,7 @@ from the corpus; produce panel[t=0..2] using the shipped instruments
 + deferred-but-stubbed instruments. Persist to `CF_MEJEPA_PANELS`.
 ~2 days.
 
-**Sub-phase 2.B**: encoder + EMA target. ~2 days.
+**Sub-phase 2.B**: context encoder + frozen target-readback adapter. ~2 days.
 
 **Sub-phase 2.C**: predictor (6-layer transformer). ~2 days.
 
@@ -176,7 +177,7 @@ from the corpus; produce panel[t=0..2] using the shipped instruments
    plateaus below 0.95, increase to 8,192-d at the cost of doubled
    compute.
 3. **Memory footprint at batch 64**: RTX 5090 has 32 GB VRAM. The
-   predictor + 2× encoders + VICReg activations should fit under
+   predictor + context encoder + VICReg activations should fit under
    8 GB at batch 64; monitor during dry-run.
 
 ## See also

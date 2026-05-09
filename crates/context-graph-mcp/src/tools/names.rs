@@ -52,13 +52,6 @@ pub const GET_CAUSAL_CHAIN: &str = "get_causal_chain";
 /// Returns LLM-generated descriptions linked to source memories.
 pub const SEARCH_CAUSAL_RELATIONSHIPS: &str = "search_causal_relationships";
 
-// ========== CAUSAL DISCOVERY TOOLS (LLM-based causal analysis) ==========
-/// Manually trigger causal discovery agent to analyze memories.
-/// Uses Qwen2.5 LLM for causal analysis with GBNF grammar constraints.
-pub const TRIGGER_CAUSAL_DISCOVERY: &str = "trigger_causal_discovery";
-/// Get status and statistics of the causal discovery agent.
-pub const GET_CAUSAL_DISCOVERY_STATUS: &str = "get_causal_discovery_status";
-
 // ========== MAINTENANCE TOOLS (Data repair and cleanup) ==========
 /// Repair corrupted causal relationships by removing entries that fail deserialization.
 /// Scans CF_CAUSAL_RELATIONSHIPS and deletes truncated/corrupted entries.
@@ -67,13 +60,6 @@ pub const REPAIR_CAUSAL_RELATIONSHIPS: &str = "repair_causal_relationships";
 // ========== GRAPH TOOLS (E8 Upgrade - Phase 4) ==========
 pub const SEARCH_CONNECTIONS: &str = "search_connections";
 pub const GET_GRAPH_PATH: &str = "get_graph_path";
-
-// ========== GRAPH DISCOVERY TOOLS (LLM-based relationship discovery) ==========
-/// Discover graph relationships between memories using LLM analysis.
-/// Uses the graph-agent with CausalDiscoveryLLM for relationship detection.
-pub const DISCOVER_GRAPH_RELATIONSHIPS: &str = "discover_graph_relationships";
-/// Validate a proposed graph link between two memories using LLM analysis.
-pub const VALIDATE_GRAPH_LINK: &str = "validate_graph_link";
 
 // ========== KEYWORD TOOLS (E6 Keyword Search Enhancement) ==========
 pub const SEARCH_BY_KEYWORDS: &str = "search_by_keywords";
@@ -363,11 +349,6 @@ pub const REALITY_HARNESS_TRANSITIONS: &str = "reality_harness_transitions";
 pub const REALITY_COMPARE_ATTEMPTS: &str = "reality_compare_attempts";
 pub const REALITY_AUDIT_TRAIL: &str = "reality_audit_trail";
 pub const REALITY_REPLAY_ARTIFACT: &str = "reality_replay_artifact";
-pub const REALITY_RUN_ATTEMPT: &str = "reality_run_attempt";
-pub const REALITY_RUN_SMOKE: &str = "reality_run_smoke";
-pub const REALITY_RUN_OFFICIAL_EVAL: &str = "reality_run_official_eval";
-pub const REALITY_RUN_TARGETED_TEST: &str = "reality_run_targeted_test";
-pub const REALITY_RECOMPILE_REWARD: &str = "reality_recompile_reward";
 pub const REALITY_QUERY_LEDGER: &str = "reality_query_ledger";
 pub const HARNESS_OPEN_WINDOW: &str = "harness_open_window";
 pub const HARNESS_APPLY_LINE_WINDOW_EDIT: &str = "harness_apply_line_window_edit";

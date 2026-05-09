@@ -6,8 +6,8 @@
 ## Goal
 
 Phase 3 trains the predictor `g_φ` and the context encoder `f_θ` against
-the mutation corpus. The output is a checkpoint pair `(f_θ.bin, g_φ.bin,
-f_ξ.bin)` that satisfies the doc 09 §7 holdout-agreement gate:
+the mutation corpus. The output is a checkpoint pair `(f_θ.bin, g_φ.bin)`
+plus a frozen-target provenance manifest that satisfies the doc 09 §7 holdout-agreement gate:
 **predicted-oracle vs. real-oracle agreement ≥ 0.75 on the 10% holdout
 within 10 epochs in under 12 hours on an RTX 5090.**
 
@@ -34,7 +34,7 @@ load-bearing for Phase 4 — every later phase blocks on this gate.
    `weight_decay=0.05`, `β₁=0.9`, `β₂=0.95`).
 3. **Per-step training certificate** persisted to
    `CF_MEJEPA_TRAIN_CERTS` (per doc 04 §9). Each cert binds the step
-   index, batch corpus_ids, loss components, gradient norm, EMA τ, and
+   index, batch corpus_ids, loss components, gradient norm, target-panel SHA, and
    parent witness chain hash.
 4. **Witness-chain entry per epoch** to
    `crates/context-graph-witness/CF_WITNESS_CHAIN`, allowing offline
@@ -54,7 +54,7 @@ load-bearing for Phase 4 — every later phase blocks on this gate.
 - Per-step certs verifiable: random-sample 100 certs, recompute the
   Merkle root, match the persisted root.
 - Witness chain reproducible: replay the chain off-line and arrive at
-  the same `θ`, `ξ`, `φ` checkpoints.
+   the same `θ`, `φ` checkpoints and target-panel hashes.
 
 ## Verification protocol (per doc 09 §7)
 
@@ -92,9 +92,8 @@ struct TrainingCert {
     batch_corpus_ids: Vec<TaskId>,           // for offline replay
     loss_components: LossBreakdown,           // L_predict, L_var, L_cov, L_inv
     grad_norm: f32,
-    tau: f32,                                 // EMA decay this step
+    target_panel_sha: [u8; 32],               // hash of readback panel[t=2] batch
     theta_sha: [u8; 32],                      // hash of f_θ params after step
-    xi_sha: [u8; 32],                         // hash of f_ξ params after step
     phi_sha: [u8; 32],                        // hash of g_φ params after step
     parent_witness_hash: [u8; 32],            // chain to previous step
     self_hash: [u8; 32],                      // SHAKE-256 of all-of-the-above
@@ -136,7 +135,7 @@ OR (epochs > max_epochs) OR (grad_norm > 10.0)
 ## Critical path within Phase 3
 
 1. AdamW with cosine decay — straightforward.
-2. Forward + backward + EMA update wired to candle 0.9.2-alpha sm_120a.
+2. Forward + backward wired to candle 0.9.2-alpha sm_120a, with frozen target readback validated before loss computation.
 3. Per-step cert emission — borrows from `context-graph-witness/cert.rs`
    (already shipped for the Stage 0 + Stage F + Merkle workflow).
 4. Holdout eval scheduling.
@@ -145,7 +144,7 @@ OR (epochs > max_epochs) OR (grad_norm > 10.0)
 
 ## Dependencies
 
-- ⏳ Phase 2 predictor + EMA target encoder shipped.
+- ⏳ Phase 2 predictor + frozen target-readback adapter shipped.
 - ⏳ Phase 0 full corpus generated (2,400 entries with oracle verdicts).
 - ⏳ Repo-atomic train/cal/holdout split with cross_cut_weights = [0,0,0]
   (✅ shipped in Phase 0 split wrapper).
@@ -182,9 +181,9 @@ holdout-agreement gate. ~1-2 days (mostly compute time).
    cost of recomputation; bf16 mixed precision halves wall-clock with
    minimal accuracy loss. If still too slow, reduce panel dim
    temporarily.
-4. **EMA drift**: the EMA τ=0.996 means the target encoder follows the
-   context encoder with ~250-step lag. If the loss diverges, drop τ to
-   0.99 to tighten the coupling.
+4. **Target-readback drift**: if the target-panel schema or instrument versions change mid-run,
+   historical targets become incomparable. Training certificates must bind target-panel schema,
+   instrument versions, and panel hashes so the run fails closed instead of mixing schemas.
 
 ## See also
 

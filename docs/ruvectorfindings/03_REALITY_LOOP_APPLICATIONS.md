@@ -1,10 +1,10 @@
 # 03 — Reality-Loop Applications (ccreality — historical framing)
 
-> **🔁 PIVOT 2026-05-09:** This doc was written when the architecture was "outer Claude + inner Qwen". Post-pivot, there is one reality loop only — Claude Code in the outer position; ME-JEPA is the predictor; the loop's purpose is training-data capture for ME-JEPA. References to "inner actor", "inner-actor correctness", and "inner-harness-response" are now obsolete; replace with "outer-loop agent" and "Claude Code's edit/test cycle". See [`10_MEJEPA_PIVOT_2026_05_09.md`](./10_MEJEPA_PIVOT_2026_05_09.md). The clean-room primitives discussed below remain valid as ME-JEPA infrastructure.
+> **🔁 PIVOT 2026-05-09:** This doc was written when the architecture was "outer Claude + inner Qwen". Post-pivot, there is one reality loop only — Claude Code in the outer position; ME-JEPA is the predictor; the loop's purpose is training-data capture for ME-JEPA. References to "inner actor", "inner-actor correctness", and legacy inner-attempt response files are now obsolete; replace with "outer-loop agent" and "Claude Code's edit/test cycle". See [`10_MEJEPA_PIVOT_2026_05_09.md`](./10_MEJEPA_PIVOT_2026_05_09.md). The clean-room primitives discussed below remain valid as ME-JEPA infrastructure.
 
 > **🔒 Reference-only — clean-room reimplementation.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "Vendor `X`" / "Path-dep `X`" recommendation below is SUPERSEDED. Read each as **"Read RuVector's `X` as inspiration; reimplement the algorithm cleanly in our own crate."** Effort estimates are roughly 2-3× the original numbers — clean-room is more work than path-dep, but the result is fully ours.
 
-> **🎯 Master plan:** [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md) is the canonical end-goal framing — **ME-JEPA-Code is the verifier**, a reality compiler that predicts oracle outcomes from `(code, context)`. Each section below describes a primitive as a *standalone tool for the ccreality optimizer*; in doc 09's framing those same primitives are *inputs/components of ME-JEPA-Code* (the witness chain becomes `E_Witness`, the solver suite powers importance-weighting in mini-batch sampling, sona's μLoRA + EWC++ implements online `observe()`/self-healing, etc.). The "verify_ai_output gates" framing in §3.6 below is SUPERSEDED — gates are input features to ME-JEPA, not standalone gates. **Doc 09 §3.5–§3.8** specifies the optimizer-side reality-shift consumer: every artifact the ccreality harness already produces (`harness-transitions/*.json`, `cgreality-shift-log/*.jsonl`, `attempt-summary.json`, `validation.json`, `inner-harness-response.json`, witness-chain entries, Pre/PostToolUse hook payloads) flows into the `mejepa-shift-subscriber` Tokio task in `context-graph-mcp` which extracts `E_Diff` / `E_Witness` / `E_Reasoning` / `E_Oracle` and calls `mejepa.observe(panel, oracle_outcome)` end-to-end in < 5 s p50 / < 30 s p99 — closing the loop *see edit → predict → observe outcome → update*. When this doc disagrees with doc 09, doc 09 wins.
+> **🎯 Master plan:** [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md) is the canonical end-goal framing — **ME-JEPA-Code is the verifier**, a reality compiler that predicts oracle outcomes from `(code, context)`. Each section below describes a primitive as a *standalone tool for the ccreality optimizer*; in doc 09's framing those same primitives are *inputs/components of ME-JEPA-Code* (the witness chain becomes `E_Witness`, the solver suite powers importance-weighting in mini-batch sampling, sona's μLoRA + EWC++ implements online `observe()`/self-healing, etc.). The "verify_ai_output gates" framing in §3.6 below is SUPERSEDED — gates are input features to ME-JEPA, not standalone gates. **Doc 09 §3.5–§3.8** specifies the optimizer-side reality-shift consumer: every artifact the ccreality harness already produces (`harness-transitions/*.json`, `cgreality-shift-log/*.jsonl`, `attempt-summary.json`, `validation.json`, witness-chain entries, Pre/PostToolUse hook payloads, optimizer recommendations, conversation transcripts) flows into the `mejepa-shift-subscriber` Tokio task in `context-graph-mcp` which extracts `E_Diff` / `E_Witness` / `E_Reasoning` / `E_Oracle` and calls `mejepa.observe(panel, oracle_outcome)` end-to-end in < 5 s p50 / < 30 s p99 — closing the loop *see edit → predict → observe outcome → update*. When this doc disagrees with doc 09, doc 09 wins.
 
 Concrete reimplementation targets in the ccreality outer-optimizer harness, with each target citing the RuVector source file to read as inspiration.
 
@@ -153,7 +153,7 @@ For higher-stakes audit, sign each emitted segment with the optimizer's ed25519 
 
 **ccreality use case:**
 
-The optimizer makes ~6 categorical decisions per turn (per `docs/agentdbfindings/03 §2`). Each decision has a context, an action, and an eventual reward (the inner-actor's `correctness` score). This is exactly the data flow SONA's `QueryTrajectory` captures.
+The optimizer makes ~6 categorical decisions per turn (per `docs/agentdbfindings/03 §2`). Each decision has a context, an action, and an eventual reward (the oracle/readback outcome of Claude Code's edit/test cycle). This is exactly the data flow SONA's `QueryTrajectory` captures.
 
 ```rust
 use sona::{SonaEngine, SonaConfig, EwcConfig};
@@ -390,7 +390,7 @@ loop_period(every_50_turns) {
 }
 ```
 
-**Effort:** 5-6 days clean-room. Specific to `prime-radiant`'s coherence definition; substitute "inner-actor correctness rate over the last 50 attempts" as the coherence proxy. Read `ruvector/crates/prime-radiant/src/sona_tuning/` as inspiration.
+**Effort:** 5-6 days clean-room. Specific to `prime-radiant`'s coherence definition; substitute "ME-JEPA prediction-vs-oracle calibration over the last 50 outer-loop examples" as the coherence proxy. Read `ruvector/crates/prime-radiant/src/sona_tuning/` as inspiration.
 
 **Risk:** medium-high. Self-tuning can oscillate. Cap tune frequency (every 50 turns is probably the floor).
 

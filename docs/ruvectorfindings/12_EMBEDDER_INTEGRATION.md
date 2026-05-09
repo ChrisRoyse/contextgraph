@@ -170,7 +170,7 @@ low-ΔE state (high stress, low HRV coherence), defer the review to a higher-ΔE
 | Hermes-2-Pro Q6_K | ~5 GB | **0 (deleted)** | Per `decisions/...single-loop...md` |
 | 14 content embedders (E1-E14) hard-warm | 0 (cold) | **~12.5 GB** | Now keep all warm-loaded simultaneously |
 | 7 learner-state embedders (E15-E21) on demand | 0 | ~3-5 GB on demand | Loaded only during human review cycles |
-| ME-JEPA training (Phase 3+) | 0 | ~5-10 GB | Predictor + EMA target + activations + gradients |
+| ME-JEPA training (Phase 3+) | 0 | ~5-10 GB | Predictor + frozen target-readback buffers + activations + gradients |
 | **Total active simultaneously** | ~27 GB (Qwen + Hermes only) | **~22 GB (embedders + ME-JEPA)** | **~5-10 GB headroom on 32 GB RTX 5090** |
 
 **Net: the entire RTX 5090 is now usable for embedder + ME-JEPA + headroom.** Previously
@@ -392,7 +392,7 @@ their own MCP tool — `compute_signal_set` returns the full vector.
 ### 7.2 What this changes about the training-data story
 
 Pre-pivot framing: "Inner Qwen produces patches; ME-JEPA learns to predict their oracle
-outcome."
+outcome." This framing is retired.
 
 Post-pivot + DDA framing: "Every Claude Code action — every edit, every test, every
 recommendation — produces 105 structured supervisory signals. Per-day yield at /loop

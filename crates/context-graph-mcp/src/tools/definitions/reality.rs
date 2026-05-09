@@ -64,31 +64,6 @@ pub fn definitions() -> Vec<ToolDefinition> {
             json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
         ),
         def(
-            "reality_run_attempt",
-            "Retired: local inner reality-loop attempts fail closed after the ME-JEPA pivot.",
-            json!({"type":"object","properties":{"task_manifest":{"type":"string"},"runtime_root":{"type":"string"},"max_attempts":{"type":"integer","minimum":1,"default":1},"official_eval":{"type":"boolean","default":true},"model":{"type":"string"},"inner_model_path":{"type":"string"},"inner_context_tokens":{"type":"integer","minimum":1},"inner_max_new_tokens":{"type":"integer","minimum":1}},"required":["task_manifest"],"additionalProperties":false}),
-        ),
-        def(
-            "reality_run_smoke",
-            "Retired: local reality-loop smoke fails closed after the ME-JEPA pivot.",
-            json!({"type":"object","properties":{"runtime_root":{"type":"string"},"label":{"type":"string"},"session_id":{"type":"string"}},"additionalProperties":false}),
-        ),
-        def(
-            "reality_run_official_eval",
-            "Run official evaluation for an existing attempt.",
-            run_attempt_schema(),
-        ),
-        def(
-            "reality_run_targeted_test",
-            "Run one targeted test for an attempt.",
-            json!({"type":"object","properties":{"run_id":{"type":"string"},"attempt":{"type":"integer","minimum":0},"test_id":{"type":"string"},"timeout_secs":{"type":"integer","minimum":1,"maximum":1800}},"required":["run_id","attempt","test_id"],"additionalProperties":false}),
-        ),
-        def(
-            "reality_recompile_reward",
-            "Replay an attempt signal packet after reward changes.",
-            run_attempt_schema(),
-        ),
-        def(
             "reality_query_ledger",
             "Run a constrained read-only BlackBox ledger query.",
             json!({"type":"object","properties":{"run_id":{"type":"string"},"where":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}},"required":["run_id","where"],"additionalProperties":false}),

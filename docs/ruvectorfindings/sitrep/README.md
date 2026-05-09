@@ -28,7 +28,7 @@ together specify the system, in this priority order:
    Includes the per-step training certificate format, edge-case audit, and implementation
    roadmap aligned with doc 09 phases.
 3. **`09_END_GOAL_REVIEW_REPLACEMENT.md`** — build-ready master plan (instruments, panel,
-   predictor, EMA, VICReg, oracle head, conformal calibration, OOD, hygiene, 8-phase plan).
+   predictor, frozen target readback, VICReg, oracle head, conformal calibration, OOD, hygiene, 8-phase plan).
    Sections that reference Qwen / inner-actor are re-framed by doc 10.
 4. **Docs 00-08** — reference material for *how* primitives are clean-room reimplemented.
 
@@ -65,7 +65,7 @@ sitrep/
 │   └── phases/                               # detail per doc-09 phase (0..8)
 │       ├── phase0.md                         # Phase 0 remaining (Docker, RocksDB CFs, full corpus gen)
 │       ├── phase1.md                         # Phase 1 remaining instruments (13 of 14)
-│       ├── phase2.md                         # Phase 2 — panel + predictor + EMA + VICReg
+│       ├── phase2.md                         # Phase 2 — panel + predictor + frozen targets + VICReg
 │       ├── phase3.md                         # Phase 3 — training loop + AdamW + per-step certs
 │       ├── phase4.md                         # Phase 4 — inference + conformal calibration + OOD
 │       ├── phase5.md                         # Phase 5 — self-healing operations

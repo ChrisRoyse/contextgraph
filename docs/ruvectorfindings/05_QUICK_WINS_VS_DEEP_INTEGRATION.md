@@ -107,7 +107,7 @@ Sequence Tier 3 by what's blocking real workstreams. If FSV is the bottleneck â†
 | # | Item | Why deferred |
 |---|------|--------------|
 | 4.1 | `ruvector-attention` Flash/MLA/Mamba/sheaf | You have your own candle CUDA path on RTX 5090; no sm_120 kernels in `ruvector-attention`. Read for ideas. |
-| 4.2 | `ruvllm` runtime | You have qwen3.6:27b via llama-cpp-2. Switching is a project; no immediate benefit. |
+| 4.2 | `ruvllm` runtime | Local LLM runtime is retired post-pivot. Do not replace llama-cpp with another GGUF host. |
 | 4.3 | `ruvector-graph` Cypher engine | ContextGraph has its own E5 causal graph. Replacing it is a project, not a transplant. |
 | 4.4 | `ruvector-postgres` extension | ContextGraph uses RocksDB, not Postgres. |
 | 4.5 | `ruvector-consciousness`, `ruQu`, `nervous-system` | Research-grade. Not on critical path for ccreality or JEPA v1. |
@@ -156,7 +156,7 @@ If the operator wants to start tomorrow with maximum leverage and bounded risk, 
 - Wire into `optimizer_record_recommendation`'s response shape.
 
 **Days 18-19 â€” verification**
-- Run 1 real reality-loop attempt on a fresh task end-to-end.
+- Run 1 real ME-JEPA outer-loop evidence capture on a fresh task end-to-end.
 - Verify witness chain.
 - Verify recommendation has a calibrated confidence interval.
 - Verify optimizer made one Forward-Push-influenced retrieval.

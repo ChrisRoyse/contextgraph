@@ -5,14 +5,14 @@
 > **Source theory:** `docs2/UTL_v2_embodied.md` — **Unified Theory of Machine Learning v1.0 (JEPA Edition)**, the ML-native rewrite of the earlier embodied/biological framework. UTML v1.0 keeps the multiplicative-gate philosophy but has **four** ML-native factors instead of three; the new fourth factor (ΔΞ — representational non-collapse) is the term v2.0's biological framework cannot motivate but every modern self-supervised system requires.
 
 > **Companion docs:**
-> - `09_END_GOAL_REVIEW_REPLACEMENT.md` — master plan (panel + predictor + EMA + VICReg + verify)
+> - `09_END_GOAL_REVIEW_REPLACEMENT.md` — master plan (panel + predictor + frozen target readback + VICReg + verify)
 > - `10_MEJEPA_PIVOT_2026_05_09.md` — post-pivot architecture (single outer loop, no inner LLM)
 
 ---
 
 ## 0. The headline
 
-**ME-JEPA-Code is structurally collapse-immune on the target side**, by construction, because its target panel is produced by **frozen externally-defined instruments** (E_AST, E_CFG, E_Oracle, E_Witness, ...) — not by a learnable EMA encoder. This makes `ΔΞ.target_collapse = 0 by construction` — a property no other JEPA in the literature has, to our knowledge (UTML §6.2; Royse 2026b §6.3). Every other JEPA (I-JEPA, V-JEPA, V-JEPA 2, DINO, BYOL) defends ΔΞ on the target side with regularizers that can be defeated; ME-JEPA defends it with **zero parameters and zero regularization**.
+**ME-JEPA-Code is structurally collapse-immune on the target side**, by construction, because its target panel is produced by **frozen externally-defined instruments** (E_AST, E_CFG, E_Oracle, E_Witness, ...) — not by a learnable EMA encoder. This makes `ΔΞ.target_collapse = 0 by construction` for the target panel. Learnable-target JEPA/BYOL-style systems defend ΔΞ on the target side with asymmetry or regularizers; ME-JEPA defends the target side with **zero trainable target parameters**.
 
 This is *the* central architectural point of the system. The training-time optimizer only needs to defend ΔΞ on the **predictor** side (VICReg variance/covariance + pairwise mutual-information audit + constellation guard), which is a much smaller problem.
 
@@ -155,7 +155,7 @@ In every joint-embedding self-supervised system, there's a trivial fixed point o
 
 Existing partial defenses (all on the *predictor* side):
 - Stop-gradient (BYOL — Grill et al. 2020; SimSiam — Chen & He 2021)
-- EMA target encoder asymmetry (BYOL, DINO, I-JEPA, V-JEPA)
+- momentum/target-encoder asymmetry (BYOL, DINO, I-JEPA, V-JEPA)
 - VICReg variance + invariance + covariance (Bardes et al. 2022)
 - Barlow Twins cross-correlation toward identity (Zbontar et al. 2021)
 - Contrastive negatives (SimCLR, MoCo) — obviates collapse but reintroduces negative-mining complexity

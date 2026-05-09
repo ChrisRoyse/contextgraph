@@ -60,7 +60,7 @@
 | doc 09 Phase 1 | Scalars (128-d, BFS depth + blame age + churn + coverage Δ + repo-health) | — | ⏳ deferred |
 | doc 09 Phase 2 | Panel materializer (panel[t=0..2]) | — | ⏳ deferred (~7-10 days est) |
 | doc 09 Phase 2 | 6-layer transformer predictor (hidden 1024, 8 heads) | — | ⏳ deferred |
-| doc 09 Phase 2 | EMA target encoder (τ=0.996) | — | ⏳ deferred |
+| doc 09 Phase 2 | Frozen target-readback adapter over `panel[t=2]` instrument outputs | — | ⏳ deferred |
 | doc 09 Phase 2 | VICReg loss (variance + invariance + covariance) | — | ⏳ deferred |
 | doc 09 Phase 2 | Oracle head | — | ⏳ deferred |
 | doc 09 Phase 3 | Training loop + AdamW + per-step training certificates + holdout eval | — | ⏳ deferred (~5-7 days est) |

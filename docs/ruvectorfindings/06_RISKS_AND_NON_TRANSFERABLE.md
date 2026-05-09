@@ -128,17 +128,17 @@ If the rule ever changes and we *do* copy code, the MIT terms kick in: we'd pres
 
 ### B. The `ruvllm` LLM runtime
 
-**Why it looks tempting:** Rust-native GGUF loader, Metal + CUDA + WebGPU kernels, BitNet, MoE, paged attention, TurboQuant — built-in alternative to llama-cpp-2.
+**Why it looks tempting:** Rust-native GGUF loader, Metal + CUDA + WebGPU kernels, BitNet, MoE, paged attention, TurboQuant — a built-in alternative to the retired llama-cpp-2 surface.
 
 **Why don't take it:**
 
 1. **No sm_120 kernels.** `ruvllm` uses candle for CUDA; candle doesn't ship sm_120 kernels by default. Your existing custom CUDA path in ContextGraph compiles native `sm_120a` cubin (per CLAUDE.md §3 5090jepa env). Switching to ruvllm regresses performance until someone writes the sm_120 kernels — and that's *your* job, not RuVector's.
 
-2. **Different runtime model.** `ruvllm` is built around GGUF + paged attention + a serving layer. Your inner-actor invocation is a much simpler "load model once, generate, exit" pattern. You'd be importing complexity you don't need.
+2. **Different runtime model.** `ruvllm` is built around GGUF + paged attention + a serving layer. ME-JEPA is non-generative; adding a replacement generator would reintroduce the dead inner-loop failure mode.
 
 3. **Active development churn.** PR #450 was merged 2026-05-08 with new attention crates; the runtime layer evolves fast. Pinning vs tracking is a real ongoing cost.
 
-**Defer.** If you ever need a Rust-native serving layer for, say, a verifier-prompt LLM, revisit. The inner actor stays on llama-cpp-2.
+**Skip.** If a future design needs generative summaries, isolate them as optional evidence sources outside ME-JEPA's fail-closed verifier path. Do not rebuild an inner actor.
 
 ---
 
@@ -187,7 +187,7 @@ Domain-specific. Safe to ignore.
 
 **Why don't blindly adopt:**
 
-1. **It's a hosted service.** Adding `pi.ruv.io` to ContextGraph's MCP gate means your reality-loop now depends on someone else's deployed service. CLAUDE.md §11.9 says "never use any HTTP API directly (no curl, wget, fetch)." This rule was written for the inner actor's Docker eval, but the spirit applies: the optimizer's substrate should be local.
+1. **It's a hosted service.** Adding `pi.ruv.io` to ContextGraph's MCP gate means your reality loop now depends on someone else's deployed service. CLAUDE.md §11.9 says "never use any HTTP API directly (no curl, wget, fetch)." The verifier substrate should stay local and inspectable.
 
 2. **Differential privacy noise.** Their embeddings are noised at ε=1.0. For an optimizer making decisions about harness changes, noised retrieval might be fine, but for FSV-grade evidence linkage, it isn't.
 

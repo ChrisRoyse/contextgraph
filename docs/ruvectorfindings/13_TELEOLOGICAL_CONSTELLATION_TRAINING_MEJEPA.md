@@ -8,7 +8,7 @@
 > - `09_END_GOAL_REVIEW_REPLACEMENT.md` — master plan
 > - `10_MEJEPA_PIVOT_2026_05_09.md` — single-outer-loop architecture
 > - `11_MEJEPA_LEARNING_FORMULA.md` — UTML v1.0 four-factor formula
-> - `12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md` — 21-embedder ensemble inventory + integration map
+> - `12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md` and `12_EMBEDDER_INTEGRATION.md` — 21-embedder ensemble inventory + integration map
 
 ---
 

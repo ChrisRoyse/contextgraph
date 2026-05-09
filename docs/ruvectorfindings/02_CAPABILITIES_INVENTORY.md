@@ -1,10 +1,10 @@
 # 02 — Capabilities Inventory
 
-> **🔁 PIVOT 2026-05-09:** The single-outer-loop architecture supersedes references below to the LLM inner-actor / Qwen / llama-cpp / `inner-harness-response.json`. ME-JEPA is non-generative. The `E_Reasoning` instrument now sources from generic agent-reasoning artifacts (Claude Code conversation transcripts, `optimizer_record_recommendation` JSONs, reflexion notes), not from a Qwen GGUF. See [`10_MEJEPA_PIVOT_2026_05_09.md`](./10_MEJEPA_PIVOT_2026_05_09.md) and [`11_MEJEPA_LEARNING_FORMULA.md`](./11_MEJEPA_LEARNING_FORMULA.md).
+> **🔁 PIVOT 2026-05-09:** The single-outer-loop architecture supersedes references below to the LLM inner-actor / Qwen / llama-cpp / legacy inner-attempt artifacts. ME-JEPA is non-generative. The `E_Reasoning` instrument now sources from generic agent-reasoning artifacts (Claude Code conversation transcripts, `optimizer_record_recommendation` JSONs, reflexion notes), not from a Qwen GGUF. See [`10_MEJEPA_PIVOT_2026_05_09.md`](./10_MEJEPA_PIVOT_2026_05_09.md) and [`11_MEJEPA_LEARNING_FORMULA.md`](./11_MEJEPA_LEARNING_FORMULA.md).
 
 > **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "vendor" / "path-dep" verdict in the summary table at the bottom is SUPERSEDED. Read every such verdict as **"clean-room reimplement the idea behind this crate against the source as read-only inspiration."**
 
-> **🎯 Master plan:** [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md) is the build-ready specification for **ME-JEPA-Code** — the reality compiler whose end goal makes line-by-line code review obsolete. The capabilities below are *inputs and components* of ME-JEPA-Code (e.g., HNSW indexes the panel cache, sona's μLoRA + EWC++ powers self-healing, rvf-crypto's witness chain becomes `E_Witness`), **NOT standalone "verify_ai_output gates."** **Doc 09 §3.5–§3.8** extends the panel from 4,096-d → 5,120-d with `E_StaticAnalysis` / `E_Runtime` / `E_Reasoning` instruments, defines a multi-objective loss with aux heads (warnings, runtime, RSS, traceback, hunk-attribution, adjacent-test, operator-override), and specifies a real-time shift-log subscriber (`mejepa-shift-subscriber`) that consumes existing harness artifacts (`harness-transitions/*.json`, `cgreality-shift-log/*.jsonl`, `validation.json`, `inner-harness-response.json`, hook payloads) and propagates each reality shift into ME-JEPA via `observe()` in < 5 s p50 / < 30 s p99 — every existing capability in this inventory either feeds an instrument, an aux head, or the subscriber pipeline. When this doc disagrees with doc 09, doc 09 wins.
+> **🎯 Master plan:** [`09_END_GOAL_REVIEW_REPLACEMENT.md`](./09_END_GOAL_REVIEW_REPLACEMENT.md) is the build-ready specification for **ME-JEPA-Code** — the reality compiler whose end goal makes line-by-line code review obsolete. The capabilities below are *inputs and components* of ME-JEPA-Code (e.g., HNSW indexes the panel cache, sona's μLoRA + EWC++ powers self-healing, rvf-crypto's witness chain becomes `E_Witness`), **NOT standalone "verify_ai_output gates."** **Doc 09 §3.5–§3.8** extends the panel from 4,096-d → 5,120-d with `E_StaticAnalysis` / `E_Runtime` / `E_Reasoning` instruments, defines a multi-objective loss with aux heads (warnings, runtime, RSS, traceback, hunk-attribution, adjacent-test, operator-override), and specifies a real-time shift-log subscriber (`mejepa-shift-subscriber`) that consumes existing outer-loop artifacts (`harness-transitions/*.json`, `cgreality-shift-log/*.jsonl`, `validation.json`, hook payloads, witness-chain entries, optimizer recommendations) and propagates each reality shift into ME-JEPA via `observe()` in < 5 s p50 / < 30 s p99 — every existing capability in this inventory either feeds an instrument, an aux head, or the subscriber pipeline. When this doc disagrees with doc 09, doc 09 wins.
 
 Per-crate catalog of capabilities relevant to ccreality and JEPA. Roughly ordered by load-bearing → specialty. File refs cite `crates/<name>/src/<path>` paths inside the cloned repo at `ruvector/`.
 
@@ -26,7 +26,7 @@ Not implemented yet:
 
 - BMSSP/multigrid (the V-cycle multigrid path is intentionally pending; no fake "wrap CG and call it multigrid").
 - Solver router + persisted audit rows for non-influence solver calls.
-- ME-JEPA-Code itself: code-domain instruments (`E_AST`, `E_CFG`, `E_DataFlow`, `E_TypeGraph`, `E_StaticAnalysis`, `E_Runtime`, `E_Reasoning`, etc.), 5,120-d panel materialization, predictor + EMA target encoder + VICReg loss, Phase 0 mutation corpus generator, conformal calibration, OOD detection, online `observe()`, EWC++ self-healing, A/B/C drift promotion.
+- ME-JEPA-Code itself: code-domain instruments (`E_AST`, `E_CFG`, `E_DataFlow`, `E_TypeGraph`, `E_StaticAnalysis`, `E_Runtime`, `E_Reasoning`, etc.), 5,120-d panel materialization, predictor + frozen instrument target readback + VICReg loss, Phase 0 mutation corpus generator, conformal calibration, OOD detection, online `observe()`, EWC++ self-healing, A/B/C drift promotion.
 - §3.8 real-time pipeline: `mejepa-shift-subscriber` Tokio task is not started.
 - Aux heads (warnings, runtime, RSS, traceback, hunk-attribution, adjacent-test, reasoning, operator-overrides) are not started.
 - SONA/EWC++ adaptive-learning crate, temporal-tensor 8/7/5/3-bit tiering, Stoer-Wagner mincut, retrieval diffusion, Granger causality test, and verified-training-certificate machinery are still pending.
@@ -254,7 +254,7 @@ Not implemented yet:
 ### F.5 Bindings
 - WASM (`ruvector-attention-wasm`), NAPI (`ruvector-attention-node`), CLI, unified-WASM bundle.
 
-**Verdict:** read for ideas; you have your own candle CUDA path on RTX 5090. Specifically interesting modules: **MLA** for KV-cache compression on inner-actor model serving; **sheaf attention** for graph-structured trajectories in DynamicJEPA.
+**Verdict:** read for ideas; you have your own candle CUDA path on RTX 5090. Specifically interesting modules: **MLA** as a general attention-compression reference and **sheaf attention** for graph-structured trajectories in DynamicJEPA. Do not rebuild an inner-actor model server.
 
 ---
 
@@ -414,7 +414,7 @@ Sub-10ms intent routing without LLM call. Used internally to route requests to a
 - **`claude_flow/`** — claude-flow hooks.
 - **`hub/`** — HuggingFace Hub integration.
 
-**Verdict:** alternative to llama-cpp-2 if you ever want a Rust-native replacement for the qwen3.6:27b GGUF inner-actor runtime. **Doesn't have sm_120-specific kernels** — uses candle generically; you still own the sm_120a CUDA work for the inner actor. But for non-inner-actor LLM calls (verifier prompts, reasoning bank summaries), this is a viable substitute.
+**Verdict:** not in scope post-pivot. ME-JEPA is non-generative and the inner GGUF actor is retired. Read `ruvllm` only for implementation ideas that help frozen embedder serving or non-generative tensor plumbing; do not add a replacement local LLM runtime.
 
 ---
 
@@ -586,7 +586,7 @@ All effort estimates are **clean-room Rust reimplementation against the read-onl
 | `ruvector-domain-expansion` (cross-pack transfer) | **Reimplement when JEPA cross-pack ships** | 4-5 days |
 | `ruvector-coherence` + `prime-radiant` (sheaf-Laplacian coherence) | **Read; selectively reimplement** | varies |
 | `ruvector-attention` (MLA, sheaf) | **Read for ideas only** | n/a (you have candle) |
-| `ruvllm` runtime | **Skip; you have qwen3.6 via llama-cpp-2** | n/a |
+| `ruvllm` runtime | **Skip; local LLM runtime retired** | n/a |
 | `ruvector-graph` Cypher engine | **Skip; you have E5 causal graph** | n/a |
 | `ruvector-consciousness`, `ruQu`, `nervous-system` | **Skip unless side-quest** | n/a |
 | `ruvector-postgres` | **Skip** | n/a |

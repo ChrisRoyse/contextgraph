@@ -1,7 +1,7 @@
 //! Tool definitions for the MCP surface.
 //!
-//! The current default registry exposes 149 tools with the `llm` feature and
-//! 145 without it, including the 39-tool DynamicJEPA MCP surface. The
+//! The current default registry exposes 145 tools, including the 39-tool
+//! DynamicJEPA MCP surface. The
 //! ccreality tool surface is listed separately in reality-loop mode.
 
 pub(crate) mod capability;
@@ -37,7 +37,7 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(149);
+    let mut tools = Vec::with_capacity(145);
 
     // Capability discovery tools (1) - compact map of embedders, CFs, and tools
     tools.extend(capability::definitions());
@@ -144,9 +144,6 @@ mod tests {
     #[test]
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
-        #[cfg(feature = "llm")]
-        assert_eq!(tools.len(), 149);
-        #[cfg(not(feature = "llm"))]
         assert_eq!(tools.len(), 145);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
@@ -197,17 +194,8 @@ mod tests {
         assert_eq!(contrastive::definitions().len(), 4);
         assert_eq!(typed_edges::definitions().len(), 4);
         assert_eq!(dynamicjepa::definitions().len(), 39);
-        // Audit-12 TST-H2 FIX: graph and causal_discovery are LLM-gated, must be tested
-        #[cfg(feature = "llm")]
-        {
-            assert_eq!(graph::definitions().len(), 4); // 2 base + 2 LLM
-            assert_eq!(causal_discovery::definitions().len(), 2);
-        }
-        #[cfg(not(feature = "llm"))]
-        {
-            assert_eq!(graph::definitions().len(), 2);
-            assert_eq!(causal_discovery::definitions().len(), 0);
-        }
+        assert_eq!(graph::definitions().len(), 2);
+        assert_eq!(causal_discovery::definitions().len(), 0);
     }
 
     #[test]
