@@ -1,0 +1,15 @@
+[package]
+name = "context-graph-mejepa-instruments"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Clean-room ME-JEPA-Code Phase 1 instruments + 5,120-d panel scaffolding for ContextGraph"
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.10"

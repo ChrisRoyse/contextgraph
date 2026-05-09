@@ -6356,9 +6356,12 @@ fn semantic_extract_tree_sitter_source_facts(
     })?;
     let root = tree.root_node();
     if root.has_error() {
+        let diagnostics = semantic_tree_sitter_parse_diagnostics(root, source);
         return Err(DynamicJepaError::VerificationFailed {
             test_name: "dynamicjepa_semantic_index".to_string(),
-            message: format!("tree-sitter {language} parse reported syntax errors in {path}"),
+            message: format!(
+                "tree-sitter {language} parse reported syntax errors in {path}; diagnostics={diagnostics}"
+            ),
             evidence_path: path.to_string(),
         });
     }
@@ -6511,7 +6514,14 @@ fn semantic_ast_node_kind_for_language(
             _ => "unknown",
         },
         "javascript" | "typescript" | "tsx" => match kind {
-            "function_declaration" | "generator_function_declaration" | "arrow_function" => {
+            "function_declaration"
+            | "generator_function_declaration"
+            | "function_expression"
+            | "function"
+            | "generator_function"
+            | "arrow_function"
+                if semantic_javascript_function_name(node, source).is_some() =>
+            {
                 if semantic_path_is_test(path)
                     || semantic_ast_node_name_for_language(language, node, source)
                         .is_some_and(|name| name.starts_with("test"))
@@ -6535,10 +6545,7 @@ fn semantic_ast_node_kind_for_language(
         },
         "go" => match kind {
             "function_declaration" => {
-                if semantic_path_is_test(path)
-                    || semantic_ast_node_name(node, source)
-                        .is_some_and(|name| name.starts_with("Test"))
-                {
+                if semantic_go_function_is_test_entrypoint(path, node, source) {
                     "test"
                 } else {
                     "function"
@@ -6707,6 +6714,34 @@ fn semantic_cpp_template_node_kind(node: tree_sitter::Node<'_>, source: &str) ->
     "unknown"
 }
 
+fn semantic_go_function_is_test_entrypoint(
+    path: &str,
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> bool {
+    if node.kind() != "function_declaration" || !semantic_go_path_is_test_file(path) {
+        return false;
+    }
+    semantic_ast_node_name(node, source).is_some_and(|name| semantic_go_test_entrypoint_name(&name))
+}
+
+fn semantic_go_test_entrypoint_name(name: &str) -> bool {
+    semantic_go_test_entrypoint_suffix(name, "Test")
+        || semantic_go_test_entrypoint_suffix(name, "Benchmark")
+        || semantic_go_test_entrypoint_suffix(name, "Fuzz")
+        || name.starts_with("Example")
+}
+
+fn semantic_go_test_entrypoint_suffix(name: &str, prefix: &str) -> bool {
+    let Some(suffix) = name.strip_prefix(prefix) else {
+        return false;
+    };
+    suffix
+        .chars()
+        .next()
+        .is_some_and(|ch| !ch.is_ascii_lowercase())
+}
+
 fn semantic_cpp_function_is_method(node: tree_sitter::Node<'_>, source: &str) -> bool {
     if semantic_has_ancestor_any(
         node,
@@ -6801,7 +6836,151 @@ fn semantic_ast_node_name_for_language(
         "cpp" => {
             semantic_cpp_node_name(node, source).or_else(|| semantic_ast_node_name(node, source))
         }
+        "javascript" | "typescript" | "tsx" => semantic_javascript_node_name(node, source),
         _ => semantic_ast_node_name(node, source),
+    }
+}
+
+fn semantic_javascript_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    match node.kind() {
+        "function_declaration" | "generator_function_declaration" => node
+            .child_by_field_name("name")
+            .and_then(|child| semantic_javascript_binding_identifier(child, source))
+            .or_else(|| semantic_javascript_export_default_name(node)),
+        "function_expression" | "function" | "generator_function" | "arrow_function" => {
+            semantic_javascript_function_name(node, source)
+        }
+        "method_definition" => node
+            .child_by_field_name("name")
+            .and_then(|child| semantic_javascript_binding_identifier(child, source)),
+        "class_declaration" => node
+            .child_by_field_name("name")
+            .and_then(|child| semantic_javascript_binding_identifier(child, source)),
+        _ => node
+            .child_by_field_name("name")
+            .and_then(|child| semantic_javascript_binding_identifier(child, source)),
+    }
+}
+
+fn semantic_javascript_function_name(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> Option<String> {
+    if matches!(
+        node.kind(),
+        "function_declaration"
+            | "generator_function_declaration"
+            | "function_expression"
+            | "function"
+            | "generator_function"
+    ) {
+        if let Some(name) = node
+            .child_by_field_name("name")
+            .and_then(|child| semantic_javascript_binding_identifier(child, source))
+        {
+            return Some(name);
+        }
+    }
+
+    let mut current = node.parent();
+    while let Some(candidate) = current {
+        match candidate.kind() {
+            "variable_declarator" if semantic_javascript_value_contains(candidate, node) => {
+                if let Some(name) = candidate
+                    .child_by_field_name("name")
+                    .and_then(|child| semantic_javascript_binding_identifier(child, source))
+                {
+                    return Some(name);
+                }
+            }
+            "assignment_expression" if semantic_javascript_right_contains(candidate, node) => {
+                if let Some(name) = candidate
+                    .child_by_field_name("left")
+                    .and_then(|child| semantic_javascript_assignment_binding_name(child, source))
+                {
+                    return Some(name);
+                }
+            }
+            "pair" if semantic_javascript_value_contains(candidate, node) => {
+                if let Some(name) = candidate
+                    .child_by_field_name("key")
+                    .and_then(|child| semantic_javascript_binding_identifier(child, source))
+                {
+                    return Some(name);
+                }
+            }
+            "export_statement" => {
+                if let Some(name) = semantic_javascript_export_default_name(candidate) {
+                    return Some(name);
+                }
+            }
+            _ => {}
+        }
+        current = candidate.parent();
+    }
+    None
+}
+
+fn semantic_javascript_value_contains(
+    candidate: tree_sitter::Node<'_>,
+    node: tree_sitter::Node<'_>,
+) -> bool {
+    candidate
+        .child_by_field_name("value")
+        .is_some_and(|value| semantic_node_contains(value, node))
+}
+
+fn semantic_javascript_right_contains(
+    candidate: tree_sitter::Node<'_>,
+    node: tree_sitter::Node<'_>,
+) -> bool {
+    candidate
+        .child_by_field_name("right")
+        .is_some_and(|right| semantic_node_contains(right, node))
+}
+
+fn semantic_node_contains(container: tree_sitter::Node<'_>, node: tree_sitter::Node<'_>) -> bool {
+    container.start_byte() <= node.start_byte() && container.end_byte() >= node.end_byte()
+}
+
+fn semantic_javascript_export_default_name(node: tree_sitter::Node<'_>) -> Option<String> {
+    let mut current = Some(node);
+    while let Some(candidate) = current {
+        if candidate.kind() == "export_statement" {
+            return Some("default".to_string());
+        }
+        current = candidate.parent();
+    }
+    None
+}
+
+fn semantic_javascript_assignment_binding_name(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> Option<String> {
+    semantic_javascript_binding_identifier(node, source).or_else(|| match node.kind() {
+        "member_expression" => node
+            .child_by_field_name("property")
+            .and_then(|child| semantic_javascript_binding_identifier(child, source)),
+        _ => None,
+    })
+}
+
+fn semantic_javascript_binding_identifier(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> Option<String> {
+    match node.kind() {
+        "identifier"
+        | "property_identifier"
+        | "private_property_identifier"
+        | "shorthand_property_identifier"
+        | "shorthand_property_identifier_pattern" => node
+            .utf8_text(source.as_bytes())
+            .ok()
+            .map(|text| text.trim().trim_start_matches('#').to_string())
+            .filter(|text| !text.is_empty()),
+        _ => None,
     }
 }
 
@@ -6974,13 +7153,7 @@ fn semantic_ast_symbol_visibility(
                 }
             })
             .unwrap_or("unknown"),
-        "javascript" | "typescript" | "tsx" => {
-            if node_text.trim_start().starts_with("export ") || node_text.contains("\nexport ") {
-                "exported"
-            } else {
-                "public"
-            }
-        }
+        "javascript" | "typescript" | "tsx" => semantic_javascript_symbol_visibility(node, source),
         "java" | "csharp" | "php" => {
             if node_text.contains(" private ") || node_text.trim_start().starts_with("private ") {
                 "private"
@@ -7005,6 +7178,25 @@ fn semantic_ast_symbol_visibility(
         }
         "cpp" => semantic_cpp_symbol_visibility(node, source),
         _ => "unknown",
+    }
+}
+
+fn semantic_javascript_symbol_visibility(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> &'static str {
+    let mut current = Some(node);
+    while let Some(candidate) = current {
+        if candidate.kind() == "export_statement" {
+            return "exported";
+        }
+        current = candidate.parent();
+    }
+    let node_text = semantic_node_text(node, source);
+    if node_text.trim_start().starts_with("export ") || node_text.contains("\nexport ") {
+        "exported"
+    } else {
+        "public"
     }
 }
 
@@ -7089,6 +7281,82 @@ fn semantic_c_visibility_text(node: tree_sitter::Node<'_>, source: &str) -> Stri
 
 fn semantic_node_text(node: tree_sitter::Node<'_>, source: &str) -> String {
     node.utf8_text(source.as_bytes()).unwrap_or("").to_string()
+}
+
+fn semantic_tree_sitter_parse_diagnostics(
+    root: tree_sitter::Node<'_>,
+    source: &str,
+) -> Value {
+    let mut diagnostics = Vec::new();
+    semantic_collect_parse_diagnostics(root, source, &mut diagnostics);
+    if diagnostics.is_empty() {
+        diagnostics.push(semantic_parse_diagnostic_for_node(root, source));
+    }
+    Value::Array(diagnostics)
+}
+
+fn semantic_collect_parse_diagnostics(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+    diagnostics: &mut Vec<Value>,
+) {
+    if diagnostics.len() >= 32 {
+        return;
+    }
+    if node.is_error() || node.is_missing() {
+        diagnostics.push(semantic_parse_diagnostic_for_node(node, source));
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if diagnostics.len() >= 32 {
+            break;
+        }
+        if child.has_error() || child.is_error() || child.is_missing() {
+            semantic_collect_parse_diagnostics(child, source, diagnostics);
+        }
+    }
+}
+
+fn semantic_parse_diagnostic_for_node(node: tree_sitter::Node<'_>, source: &str) -> Value {
+    let start = node.start_position();
+    let end = node.end_position();
+    json!({
+        "kind": node.kind(),
+        "is_error": node.is_error(),
+        "is_missing": node.is_missing(),
+        "start_byte": node.start_byte(),
+        "end_byte": node.end_byte(),
+        "start_line": start.row + 1,
+        "start_column": start.column,
+        "end_line": end.row + 1,
+        "end_column": end.column,
+        "excerpt": semantic_line_excerpt_at_byte(source, node.start_byte()),
+    })
+}
+
+fn semantic_line_excerpt_at_byte(source: &str, byte: usize) -> String {
+    if source.is_empty() {
+        return String::new();
+    }
+    let byte = semantic_floor_char_boundary(source, byte.min(source.len()));
+    let line_start = source[..byte].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+    let line_end = source[byte..]
+        .find('\n')
+        .map(|idx| byte + idx)
+        .unwrap_or(source.len());
+    source
+        .get(line_start..line_end)
+        .unwrap_or("")
+        .chars()
+        .take(160)
+        .collect()
+}
+
+fn semantic_floor_char_boundary(source: &str, mut byte: usize) -> usize {
+    while byte > 0 && !source.is_char_boundary(byte) {
+        byte -= 1;
+    }
+    byte
 }
 
 fn semantic_callee_text(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {

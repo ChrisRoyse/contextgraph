@@ -7616,6 +7616,17 @@ fn dynamicjepa_run_language_semantic_tool(
                     repo_root.to_path_buf(),
                     "typescript_tsc",
                 )
+            } else if command_exists("tsc") {
+                (
+                    Some(vec![
+                        "tsc".to_string(),
+                        "--noEmit".to_string(),
+                        "--pretty".to_string(),
+                        "false".to_string(),
+                    ]),
+                    repo_root.to_path_buf(),
+                    "typescript_tsc",
+                )
             } else {
                 (
                     None,
@@ -7705,6 +7716,44 @@ fn dynamicjepa_run_language_semantic_tool(
     };
 
     let Some(command) = command else {
+        if matches!(language, "javascript" | "typescript" | "tsx")
+            && kind == "typescript_toolchain_missing"
+        {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_TYPESCRIPT_TOOLCHAIN_MISSING",
+                "DynamicJEPA JavaScript/TypeScript compiler semantics require tsc; parser-only fallback is refused",
+                "dynamicjepa.action.compiler_lsp.typescript.toolchain",
+                "install TypeScript locally under node_modules/.bin/tsc or on PATH before using JavaScript/TypeScript source for ME-JEPA action control",
+                json!({
+                    "language": language,
+                    "path": rel_target,
+                    "required_tool": "tsc",
+                    "toolchain_kind": kind,
+                    "PATH": std::env::var_os("PATH")
+                        .map(|value| value.to_string_lossy().to_string())
+                        .unwrap_or_default(),
+                }),
+                Some(file_sot(target)),
+            ));
+        }
+        if language == "go" && kind == "go_toolchain_missing" {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_GO_TOOLCHAIN_MISSING",
+                "DynamicJEPA Go compiler semantics require the go toolchain; parser-only fallback is refused",
+                "dynamicjepa.action.compiler_lsp.go.toolchain",
+                "install Go on PATH before using Go source for ME-JEPA action control",
+                json!({
+                    "language": language,
+                    "path": rel_target,
+                    "required_tool": "go",
+                    "toolchain_kind": kind,
+                    "PATH": std::env::var_os("PATH")
+                        .map(|value| value.to_string_lossy().to_string())
+                        .unwrap_or_default(),
+                }),
+                Some(file_sot(target)),
+            ));
+        }
         if language == "java" && kind == "java_toolchain_missing" {
             return Err(RealityError::new(
                 "RUST_REALITY_DYNAMICJEPA_JAVA_TOOLCHAIN_MISSING",
@@ -8382,7 +8431,7 @@ fn dynamicjepa_test_attribution_for_path(
     language: &'static str,
     ranges: &[(usize, usize, u32)],
 ) -> Result<SweTestAttributionEvidence> {
-    if path_is_test(path) {
+    if path_is_test(path) || (language == "go" && go_path_is_test_file(path)) {
         return Ok(SweTestAttributionEvidence {
             status: "inferred_from_path",
             test_count: 1,
@@ -8777,9 +8826,17 @@ fn ast_node_kind_for_language(
             _ => "unknown",
         },
         "javascript" | "typescript" | "tsx" => match kind {
-            "function_declaration" | "generator_function_declaration" | "arrow_function" => {
+            "function_declaration"
+            | "generator_function_declaration"
+            | "function_expression"
+            | "function"
+            | "generator_function"
+            | "arrow_function"
+                if ast_javascript_function_name(node, source).is_some() =>
+            {
                 if path_is_test(path)
-                    || ast_node_name(node, source).is_some_and(|name| name.starts_with("test"))
+                    || ast_node_name_for_language(language, node, source)
+                        .is_some_and(|name| name.starts_with("test"))
                 {
                     "test"
                 } else {
@@ -8796,9 +8853,7 @@ fn ast_node_kind_for_language(
         },
         "go" => match kind {
             "function_declaration" => {
-                if path_is_test(path)
-                    || ast_node_name(node, source).is_some_and(|name| name.starts_with("Test"))
-                {
+                if go_function_is_test_entrypoint(path, node, source) {
                     "test"
                 } else {
                     "function"
@@ -8954,6 +9009,34 @@ fn ast_cpp_template_node_kind(node: tree_sitter::Node<'_>, source: &str) -> &'st
     "unknown"
 }
 
+fn go_function_is_test_entrypoint(
+    path: &str,
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> bool {
+    if node.kind() != "function_declaration" || !go_path_is_test_file(path) {
+        return false;
+    }
+    ast_node_name(node, source).is_some_and(|name| go_test_entrypoint_name(&name))
+}
+
+fn go_test_entrypoint_name(name: &str) -> bool {
+    go_test_entrypoint_suffix(name, "Test")
+        || go_test_entrypoint_suffix(name, "Benchmark")
+        || go_test_entrypoint_suffix(name, "Fuzz")
+        || name.starts_with("Example")
+}
+
+fn go_test_entrypoint_suffix(name: &str, prefix: &str) -> bool {
+    let Some(suffix) = name.strip_prefix(prefix) else {
+        return false;
+    };
+    suffix
+        .chars()
+        .next()
+        .is_some_and(|ch| !ch.is_ascii_lowercase())
+}
+
 fn ast_cpp_function_is_method(node: tree_sitter::Node<'_>, source: &str) -> bool {
     if ast_has_ancestor_any(
         node,
@@ -9027,10 +9110,153 @@ fn ast_node_name_for_language(
     node: tree_sitter::Node<'_>,
     source: &str,
 ) -> Option<String> {
-    if language == "cpp" {
-        ast_cpp_node_name(node, source).or_else(|| ast_node_name(node, source))
-    } else {
-        ast_node_name(node, source)
+    match language {
+        "cpp" => ast_cpp_node_name(node, source).or_else(|| ast_node_name(node, source)),
+        "javascript" | "typescript" | "tsx" => ast_javascript_node_name(node, source),
+        _ => ast_node_name(node, source),
+    }
+}
+
+fn ast_javascript_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    match node.kind() {
+        "function_declaration" | "generator_function_declaration" => node
+            .child_by_field_name("name")
+            .and_then(|child| ast_javascript_binding_identifier(child, source))
+            .or_else(|| ast_javascript_export_default_name(node)),
+        "function_expression" | "function" | "generator_function" | "arrow_function" => {
+            ast_javascript_function_name(node, source)
+        }
+        "method_definition" => node
+            .child_by_field_name("name")
+            .and_then(|child| ast_javascript_binding_identifier(child, source)),
+        "class_declaration" => node
+            .child_by_field_name("name")
+            .and_then(|child| ast_javascript_binding_identifier(child, source)),
+        _ => node
+            .child_by_field_name("name")
+            .and_then(|child| ast_javascript_binding_identifier(child, source)),
+    }
+}
+
+fn ast_javascript_function_name(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> Option<String> {
+    if matches!(
+        node.kind(),
+        "function_declaration"
+            | "generator_function_declaration"
+            | "function_expression"
+            | "function"
+            | "generator_function"
+    ) {
+        if let Some(name) = node
+            .child_by_field_name("name")
+            .and_then(|child| ast_javascript_binding_identifier(child, source))
+        {
+            return Some(name);
+        }
+    }
+
+    let mut current = node.parent();
+    while let Some(candidate) = current {
+        match candidate.kind() {
+            "variable_declarator" if ast_javascript_value_contains(candidate, node) => {
+                if let Some(name) = candidate
+                    .child_by_field_name("name")
+                    .and_then(|child| ast_javascript_binding_identifier(child, source))
+                {
+                    return Some(name);
+                }
+            }
+            "assignment_expression" if ast_javascript_right_contains(candidate, node) => {
+                if let Some(name) = candidate
+                    .child_by_field_name("left")
+                    .and_then(|child| ast_javascript_assignment_binding_name(child, source))
+                {
+                    return Some(name);
+                }
+            }
+            "pair" if ast_javascript_value_contains(candidate, node) => {
+                if let Some(name) = candidate
+                    .child_by_field_name("key")
+                    .and_then(|child| ast_javascript_binding_identifier(child, source))
+                {
+                    return Some(name);
+                }
+            }
+            "export_statement" => {
+                if let Some(name) = ast_javascript_export_default_name(candidate) {
+                    return Some(name);
+                }
+            }
+            _ => {}
+        }
+        current = candidate.parent();
+    }
+    None
+}
+
+fn ast_javascript_value_contains(
+    candidate: tree_sitter::Node<'_>,
+    node: tree_sitter::Node<'_>,
+) -> bool {
+    candidate
+        .child_by_field_name("value")
+        .is_some_and(|value| ast_node_contains(value, node))
+}
+
+fn ast_javascript_right_contains(
+    candidate: tree_sitter::Node<'_>,
+    node: tree_sitter::Node<'_>,
+) -> bool {
+    candidate
+        .child_by_field_name("right")
+        .is_some_and(|right| ast_node_contains(right, node))
+}
+
+fn ast_node_contains(container: tree_sitter::Node<'_>, node: tree_sitter::Node<'_>) -> bool {
+    container.start_byte() <= node.start_byte() && container.end_byte() >= node.end_byte()
+}
+
+fn ast_javascript_export_default_name(node: tree_sitter::Node<'_>) -> Option<String> {
+    let mut current = Some(node);
+    while let Some(candidate) = current {
+        if candidate.kind() == "export_statement" {
+            return Some("default".to_string());
+        }
+        current = candidate.parent();
+    }
+    None
+}
+
+fn ast_javascript_assignment_binding_name(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> Option<String> {
+    ast_javascript_binding_identifier(node, source).or_else(|| match node.kind() {
+        "member_expression" => node
+            .child_by_field_name("property")
+            .and_then(|child| ast_javascript_binding_identifier(child, source)),
+        _ => None,
+    })
+}
+
+fn ast_javascript_binding_identifier(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> Option<String> {
+    match node.kind() {
+        "identifier"
+        | "property_identifier"
+        | "private_property_identifier"
+        | "shorthand_property_identifier"
+        | "shorthand_property_identifier_pattern" => node
+            .utf8_text(source.as_bytes())
+            .ok()
+            .map(|text| text.trim().trim_start_matches('#').to_string())
+            .filter(|text| !text.is_empty()),
+        _ => None,
     }
 }
 
@@ -9179,13 +9405,7 @@ fn ast_symbol_visibility(
                 "private"
             }
         }
-        "javascript" | "typescript" | "tsx" => {
-            if node_text.trim_start().starts_with("export ") || node_text.contains("\nexport ") {
-                "exported"
-            } else {
-                "public"
-            }
-        }
+        "javascript" | "typescript" | "tsx" => ast_javascript_symbol_visibility(node, source),
         "java" | "csharp" | "php" => {
             if node_text.contains(" private ") || node_text.trim_start().starts_with("private ") {
                 "private"
@@ -9210,6 +9430,25 @@ fn ast_symbol_visibility(
         }
         "cpp" => ast_cpp_symbol_visibility(node, source),
         _ => "unknown",
+    }
+}
+
+fn ast_javascript_symbol_visibility(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> &'static str {
+    let mut current = Some(node);
+    while let Some(candidate) = current {
+        if candidate.kind() == "export_statement" {
+            return "exported";
+        }
+        current = candidate.parent();
+    }
+    let node_text = node.utf8_text(source.as_bytes()).unwrap_or("");
+    if node_text.trim_start().starts_with("export ") || node_text.contains("\nexport ") {
+        "exported"
+    } else {
+        "public"
     }
 }
 
@@ -9567,8 +9806,9 @@ fn dynamicjepa_ast_edit_kind_for_range(
 }
 
 fn path_is_test(path: &str) -> bool {
-    path.starts_with("tests/")
-        || path.contains("/tests/")
+    let normalized = path.replace('\\', "/");
+    normalized.starts_with("tests/")
+        || normalized.contains("/tests/")
         || path.ends_with("_test.py")
         || path.ends_with(".test.js")
         || path.ends_with(".spec.js")
@@ -9577,6 +9817,12 @@ fn path_is_test(path: &str) -> bool {
         || path.ends_with(".test.tsx")
         || path.ends_with(".spec.tsx")
         || java_path_is_test(path)
+}
+
+fn go_path_is_test_file(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    let file_name = normalized.rsplit('/').next().unwrap_or(&normalized);
+    file_name.ends_with("_test.go") && !file_name.starts_with('_') && !file_name.starts_with('.')
 }
 
 fn java_path_is_test(path: &str) -> bool {
