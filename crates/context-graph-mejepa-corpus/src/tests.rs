@@ -382,6 +382,37 @@ fn json_round_trips_outcome() {
 }
 
 #[test]
+fn subtle_flip_skips_python_type_annotation_arrow() {
+    // Regression: `->` must NOT be picked up as a `>` candidate. The only
+    // remaining candidate in this snippet is the `==` inside the body.
+    let src = "def predict(x: int) -> bool:\n    return x == 1\n";
+    let outcome = apply_mutation(MutationCategory::SubtleFlip, src, MutationConfig::default()).unwrap();
+    let site = outcome.mutation_site.unwrap();
+    assert_eq!(site.original_text, "==");
+    assert!(!outcome.mutated_source.contains("-< bool"));
+}
+
+#[test]
+fn subtle_flip_skips_bitshift_operators() {
+    // Regression: `<<` and `>>` must not surface as single-char `<`/`>`.
+    let src = "MASK = 1 << 4\nSHIFT = 8 >> 2\nflag = MASK == SHIFT\n";
+    let outcome = apply_mutation(MutationCategory::SubtleFlip, src, MutationConfig::default()).unwrap();
+    let site = outcome.mutation_site.unwrap();
+    assert_eq!(site.original_text, "==", "only `==` should be a candidate, not `<<`/`>>`");
+}
+
+#[test]
+fn off_by_one_skips_fractional_part_of_floats() {
+    // Regression: `3.14` must NOT yield `14` as a candidate.
+    let src = "PI = 3.14\nN = 7\n";
+    let outcome = apply_mutation(MutationCategory::OffByOne, src, MutationConfig::default()).unwrap();
+    let site = outcome.mutation_site.unwrap();
+    assert_eq!(site.original_text, "7");
+    assert!(!outcome.mutated_source.contains("3.15"));
+    assert!(!outcome.mutated_source.contains("3.13"));
+}
+
+#[test]
 fn applying_mutation_site_yields_byte_exact_replacement() {
     let outcome = apply_mutation(
         MutationCategory::OffByOne,

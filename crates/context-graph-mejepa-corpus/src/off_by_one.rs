@@ -109,8 +109,13 @@ fn find_candidates(source: &str) -> Vec<Candidate> {
         }
 
         if c.is_ascii_digit() {
-            // Reject if preceded by an identifier byte (e.g. `var2`, `_3`).
-            let prev_ok = i == 0 || !is_word_byte(bytes[i - 1]);
+            // Reject if preceded by an identifier byte (e.g. `var2`, `_3`)
+            // OR by a `.` (fractional part of a float like `3.14`).
+            let prev_byte = if i == 0 { None } else { Some(bytes[i - 1]) };
+            let prev_ok = match prev_byte {
+                None => true,
+                Some(b) => !is_word_byte(b) && b != b'.',
+            };
             // Find run end.
             let mut j = i;
             while j < n && bytes[j].is_ascii_digit() {

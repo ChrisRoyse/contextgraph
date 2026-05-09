@@ -155,9 +155,14 @@ fn find_candidates(source: &str) -> Vec<Candidate> {
             }
         }
 
-        // Single-char `<` and `>`. Skip `<<`/`>>` (already handled above for
-        // `<=`/`>=`; these would be Python bitshift `<<`/`>>` if present).
-        if c == b'<' && bytes.get(i + 1).copied() != Some(b'<') {
+        // Single-char `<` and `>`. Skip:
+        //   - `<<` / `>>` (Python bitshift) — check both neighbors.
+        //   - `->` (Python type-annotation arrow) — `>` preceded by `-`.
+        //   - `<-` (not Python, defensive) — `<` preceded by anything; only
+        //     guarded against `<<` here since `<-` does not occur.
+        let prev_byte = if i == 0 { None } else { Some(bytes[i - 1]) };
+        let next_byte = bytes.get(i + 1).copied();
+        if c == b'<' && next_byte != Some(b'<') && prev_byte != Some(b'<') {
             candidates.push(Candidate {
                 byte_offset: i,
                 byte_length: 1,
@@ -168,7 +173,11 @@ fn find_candidates(source: &str) -> Vec<Candidate> {
             i += 1;
             continue;
         }
-        if c == b'>' && bytes.get(i + 1).copied() != Some(b'>') {
+        if c == b'>'
+            && next_byte != Some(b'>')
+            && prev_byte != Some(b'>')
+            && prev_byte != Some(b'-')
+        {
             candidates.push(Candidate {
                 byte_offset: i,
                 byte_length: 1,
