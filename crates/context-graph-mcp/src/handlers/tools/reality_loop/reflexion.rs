@@ -410,22 +410,28 @@ fn resolve_field<'a>(row: &'a Value, path: &str) -> Option<&'a Value> {
 
 fn matches_filter(actual: Option<&Value>, expected: &Value) -> Result<bool> {
     if let Some(obj) = expected.as_object() {
+        if obj.is_empty() {
+            return Err(filter_error("$empty", expected));
+        }
         for (op, rhs) in obj {
-            match op.as_str() {
-                "$eq" => return Ok(actual == Some(rhs)),
-                "$ne" => return Ok(actual != Some(rhs)),
-                "$gt" => return compare_numbers(actual, rhs, |a, b| a > b),
-                "$gte" => return compare_numbers(actual, rhs, |a, b| a >= b),
-                "$lt" => return compare_numbers(actual, rhs, |a, b| a < b),
-                "$lte" => return compare_numbers(actual, rhs, |a, b| a <= b),
-                "$contains" => return Ok(contains_value(actual, rhs)),
+            let matches = match op.as_str() {
+                "$eq" => actual == Some(rhs),
+                "$ne" => actual != Some(rhs),
+                "$gt" => compare_numbers(actual, rhs, |a, b| a > b)?,
+                "$gte" => compare_numbers(actual, rhs, |a, b| a >= b)?,
+                "$lt" => compare_numbers(actual, rhs, |a, b| a < b)?,
+                "$lte" => compare_numbers(actual, rhs, |a, b| a <= b)?,
+                "$contains" => contains_value(actual, rhs),
                 "$in" => {
                     let Some(items) = rhs.as_array() else {
                         return Err(filter_error("$in", rhs));
                     };
-                    return Ok(items.iter().any(|item| actual == Some(item)));
+                    items.iter().any(|item| actual == Some(item))
                 }
                 _ => return Err(filter_error(op, rhs)),
+            };
+            if !matches {
+                return Ok(false);
             }
         }
         Ok(true)
@@ -520,6 +526,19 @@ mod tests {
     }
 
     #[test]
+    fn metadata_filter_applies_all_operators() {
+        let rows = vec![
+            json!({"instance_id":"low","reward":0.2}),
+            json!({"instance_id":"match","reward":0.9}),
+            json!({"instance_id":"high","reward":1.2}),
+        ];
+        let filtered = apply_metadata_filter(rows, &json!({"reward":{"$gte":0.8,"$lte":1.0}}))
+            .expect("filter");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0]["instance_id"], json!("match"));
+    }
+
+    #[test]
     fn token_similarity_is_deterministic() {
         let a = token_similarity("import error missing module", "missing import module");
         let b = token_similarity("import error missing module", "timeout docker failure");
@@ -530,6 +549,13 @@ mod tests {
     fn invalid_metadata_operator_fails() {
         let err = apply_metadata_filter(vec![json!({"a":1})], &json!({"a":{"$regex":"."}}))
             .expect_err("invalid op");
+        assert_eq!(err.error_code, "CCREALITY_METADATA_FILTER_OPERATOR_INVALID");
+    }
+
+    #[test]
+    fn empty_metadata_operator_object_fails() {
+        let err = apply_metadata_filter(vec![json!({"a":1})], &json!({"a":{}}))
+            .expect_err("empty operator object");
         assert_eq!(err.error_code, "CCREALITY_METADATA_FILTER_OPERATOR_INVALID");
     }
 }
