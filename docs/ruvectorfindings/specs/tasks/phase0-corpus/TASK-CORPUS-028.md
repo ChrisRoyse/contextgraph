@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-028" version="1.0">
 <metadata>
   <title>mejepa-corpus stats Subcommand (read-only inspector)</title>
-  <status>ready</status>
+  <status>complete</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `mejepa-corpus stats --corpus <path>` (bin/mejepa-corpus.rs) — opens the `OracleStore`, prints CF entry counts (`CF_MEJEPA_MUTATION_CORPUS`, `CF_MEJEPA_ORACLE_VERDICTS`), groups index entries by bucket (Train/Calibration/Holdout) and category (8 doc-09 §3.1 categories), and emits a `oracle_all_passed` summary per category. Read-only — never opens RocksDB write handles. Output asserted by FSV in the test suite.
+  </implementation_state>
   <layer>surface</layer>
   <sequence>28</sequence>
   <implements>

@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-024" version="1.0">
 <metadata>
   <title>mejepa_corpus_fsv Example Binary (FSV harness with py_compile)</title>
-  <status>ready</status>
+  <status>complete</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `examples/mejepa_corpus_fsv.rs` (53-LOC main + helpers) — invokes the operator suite through `apply_mutation`, writes evidence JSON to `/tmp/contextgraph-mejepa-corpus-fsv/`, and calls `python -m py_compile` on each mutated source per the FSV protocol introduced in commit `b6b4810c`. Sister harnesses also shipped: `oracle_fsv.rs`, `oracle_store_fsv.rs`, `swebench_oracle_fsv.rs` — five total under `examples/`.
+  </implementation_state>
   <layer>logic</layer>
   <sequence>24</sequence>
   <implements>

@@ -19,10 +19,10 @@
 | UTML | 12 | 11 | 10 | 100% |
 | INFERENCE | 20 | 4 | 14 | 100% |
 | TCT | 15 | 7 | 12 | 100% |
-| SELF-HEALING | 20 | 7 | (pending generation) | TBD |
+| SELF-HEALING | 20 | 7 | 19 | 100% |
 | HYGIENE | 10 | 12 | (pending generation) | TBD |
-| SHIFT-SUBSCRIBER | 18 | 10 | (pending generation) | TBD |
-| EVALUATION | 20 | 5 | (pending generation) | TBD |
+| SHIFT-SUBSCRIBER | 18 | 10 | 14 (subscriber) + 7 (MCP tools) = 21 | 100% |
+| EVALUATION | 20 | 5 | 17 | 100% |
 | **TOTAL** | **211** | **107** | **TBD** | TBD |
 
 This matrix is automatically updated by atomic-task-generator agents as they emit task specs. Each phase task generator writes a per-domain coverage table into this file.
@@ -806,9 +806,204 @@ These are NOT EMBEDDERS-domain gaps — they are surface tools owned by downstre
 
 **TCT coverage: 15/15 functional REQs + 7/7 technical components + 13/13 edge cases + 7/7 error states + 25,788/25,788 cells (panel-level + per-chunk-type) = 12 tasks; layer ordering Foundation (2) → Logic (8) → Surface (2); critical path TASK-TCT-001 → TASK-TCT-002 → TASK-TCT-003 → TASK-TCT-004 → TASK-TCT-005 → TASK-TCT-006 → TASK-TCT-008 → TASK-TCT-012 (~5 days end-to-end after Phase 0 corpus + ≥18 embedders + ≥12 panel slots ship).**
 
-### SELF-HEALING — pending generation
+### Domain: SELF-HEALING
+
+> **19 tasks generated** in `./phase5-self-healing/`. Foundation: 5 (TASK-HEAL-001..005). Logic: 10 (TASK-HEAL-006..015). Surface: 4 (TASK-HEAL-016..019). Coverage: 100% across 20 REQ-HEAL-NN + 7 TECH-SELF-HEALING component contracts. Crate: `crates/context-graph-mejepa/` (`src/heal/` sub-module + `bin/mejepa-heal-drill.rs` + `examples/phase5_self_healing_fsv.rs`). Reuses shipped `crates/context-graph-witness` (chain integrity + ed25519 + legacy reconcile + repair) and `crates/context-graph-embeddings/src/training/{lora.rs, distillation.rs}` (LoRA + distillation infra) — never reinvented.
+
+#### Functional REQ → Task mapping
+
+| Functional REQ | Title | Layer | Task ID(s) | Status |
+|---|---|---|---|---|
+| REQ-HEAL-01 | observe() signature + EWC-regularized SGD | foundation/logic | TASK-HEAL-001, TASK-HEAL-006, TASK-HEAL-008 | ready |
+| REQ-HEAL-02 | EwcPlusPlus methods (update_fisher_online, detect_task_boundary, snapshot, current_lambda, ewc_penalty) | foundation/logic | TASK-HEAL-001, TASK-HEAL-006 | ready |
+| REQ-HEAL-03 | DriftDetector + rolling 1,000-window + severity table + 3-window hysteresis | foundation/logic | TASK-HEAL-002, TASK-HEAL-007 | ready |
+| REQ-HEAL-04 | AbcPromoter retrain_and_promote (3-mode + holdout gate + ModelPromote witness entry) | foundation/logic | TASK-HEAL-003, TASK-HEAL-009 | ready |
+| REQ-HEAL-05 | schedule_full_retrain every 10,000 obs + 0.02 floor | logic | TASK-HEAL-011 | ready |
+| REQ-HEAL-06 | continuous_calibration_if_due sliding 1,000-example window τ + σ² recompute | logic | TASK-HEAL-012 | ready |
+| REQ-HEAL-07 | Witness chain integrity check (chain.len() % 73 + replay; halt + restore on break) | logic | TASK-HEAL-013 | ready |
+| REQ-HEAL-08 | LoRA refresh on plasticity collapse (rank=32 epochs=10; frozen-base byte-equal invariant) | logic | TASK-HEAL-014 | ready |
+| REQ-HEAL-09 | Distillation-based observe (InfoNCE + EMA τ=0.996 + signal_clarity quality_gate) | logic | TASK-HEAL-015 | ready |
+| REQ-HEAL-10 | UTML regulate-state-first cycle (ASSESS → REGULATE → OBSERVE → COMPUTE → CLASSIFY → INTERVENE → EVALUATE) | logic | TASK-HEAL-008 | ready |
+| REQ-HEAL-11 | Drift events surface (journal + blocker + status_change + recommendation) | logic | TASK-HEAL-007, TASK-HEAL-008 | ready |
+| REQ-HEAL-12 | Promotion witness-chain entry (ModelPromote, ed25519 signed; SEC-MEJEPA-03) | logic | TASK-HEAL-009 | ready |
+| REQ-HEAL-13 | signal_clarity multiplicative gating (skip below threshold OR weight proportionally) | logic | TASK-HEAL-008, TASK-HEAL-015 | ready |
+| REQ-HEAL-14 | HealError taxonomy (12 variants + .code() SCREAMING_SNAKE) | foundation | TASK-HEAL-004 | ready |
+| REQ-HEAL-15 | mejepa-heal-drill CLI + 5 FSV evidence files (mode 0o600 per SEC-MEJEPA-07) | surface | TASK-HEAL-018, TASK-HEAL-019 | ready |
+| REQ-HEAL-16 | Real-data tests only (no mocks) | logic/surface | TASK-HEAL-008, TASK-HEAL-009, TASK-HEAL-018, TASK-HEAL-019 | ready |
+| REQ-HEAL-17 | mcp__cgreality__mejepa_heal_status MCP tool (read-only HealStatus snapshot) | surface | TASK-HEAL-016 | ready |
+| REQ-HEAL-18 | mcp__cgreality__mejepa_rollback_to MCP tool (operator-only; ModelRollback witness entry) | logic/surface | TASK-HEAL-010, TASK-HEAL-017 | ready |
+| REQ-HEAL-19 | Performance budgets (observe p50&lt;5s, A/B/C promotion &lt;60min on RTX 5090) | logic/surface | TASK-HEAL-008, TASK-HEAL-009, TASK-HEAL-018 | ready |
+| REQ-HEAL-20 | Cross-cutting with SHIFT-SUBSCRIBER (CF_MEJEPA_SHIFT_WATERMARK exactly-once) | logic | TASK-HEAL-008 | ready |
+
+#### Tech component → Task mapping
+
+| Tech component (TECH-SELF-HEALING) | Layer | Task ID(s) | Notes |
+|---|---|---|---|
+| SelfHealingPipeline | foundation/logic | TASK-HEAL-004, TASK-HEAL-008, TASK-HEAL-011, TASK-HEAL-012, TASK-HEAL-013 | top-level orchestrator + observe + scheduler hooks |
+| EwcPlusPlus | foundation/logic | TASK-HEAL-001, TASK-HEAL-006 | online Fisher + λ ramp + boundary detector |
+| DriftDetector | foundation/logic | TASK-HEAL-002, TASK-HEAL-007 | rolling 1,000-window + 3-window hysteresis |
+| AbcPromoter | foundation/logic | TASK-HEAL-003, TASK-HEAL-009, TASK-HEAL-010 | retrain_and_promote + rollback_to (operator-only) |
+| LoraRefresher | foundation/logic | TASK-HEAL-004, TASK-HEAL-014 | wraps shipped crates/context-graph-embeddings/src/training/lora.rs |
+| OnlineDistiller | foundation/logic | TASK-HEAL-004, TASK-HEAL-015 | wraps shipped crates/context-graph-embeddings/src/training/distillation.rs |
+| ChainIntegrityChecker | foundation/logic | TASK-HEAL-004, TASK-HEAL-013 | wraps shipped crates/context-graph-witness chain replay + legacy reconcile + repair |
+| CalibrationWriter (TECH data model) | foundation/logic | TASK-HEAL-004, TASK-HEAL-012 | sliding window + τ + σ² recompute |
+| HealDrillCli | surface | TASK-HEAL-018, TASK-HEAL-019 | binary + master FSV harness |
+| McpHealStatusTool | surface | TASK-HEAL-016 | mcp__cgreality__mejepa_heal_status |
+| McpRollbackTool | surface | TASK-HEAL-017 | mcp__cgreality__mejepa_rollback_to (operator-only) |
+
+#### Cross-cutting foundation tasks (no single REQ owner)
+
+| Tech component | Layer | Task ID | Notes |
+|---|---|---|---|
+| HealError taxonomy + .code() SCREAMING_SNAKE registry | foundation | TASK-HEAL-004 | 12 variants per data_models HealError; consumed by every other task |
+| HealReport + IntegrityViolationKind + CriticalBugKind enums | foundation | TASK-HEAL-004 | ModeWinner, holdout payloads, integrity break kinds |
+| HealStatus snapshot + StatusChange + PromotionLockState | foundation | TASK-HEAL-004 | exposed via mcp_heal_status tool |
+| RocksDB CFs (FISHER_SNAPSHOTS, DRIFT_WINDOW, DRIFT_HISTORY, HEAL_REPORTS, ACTIVE_POINTERS, CALIBRATION_HISTORY) | foundation | TASK-HEAL-005 | persistence schema |
+
+#### Edge-case coverage
+
+| Edge case | Description | Task ID(s) |
+|---|---|---|
+| EC-HEAL-04 | Cold-start drift detector window &lt; 1,000 → WarmupNotReady | TASK-HEAL-007 |
+| EC-HEAL-05 | NaN mid-Mode-B retrain → BatchNan + lock release | TASK-HEAL-009 |
+| EC-HEAL-06 | Grid-search w_A=1 result → A_unchanged informational | TASK-HEAL-009 |
+| EC-HEAL-07 | 10,000-obs interval lands during in-flight A/B/C → defer next interval | TASK-HEAL-011 |
+| EC-HEAL-08 | Legacy first-entry prev_hash mismatch → witness_chain_legacy::reconcile | TASK-HEAL-013 |
+| EC-HEAL-09 | Multiple embedders need refresh → serialize by ΔK; cap concurrent at 1 | TASK-HEAL-014; σ² non-monotone TASK-HEAL-012 |
+| EC-HEAL-10 | No oracle ground truth → signal_clarity=0 → skip; no pseudo-teacher | TASK-HEAL-015 |
+| EC-HEAL-11 | REGULATE priority: stability_floor → effective_plasticity → constellation → predictor_redundancy → landscape | TASK-HEAL-008 |
+| EC-HEAL-12 | Concurrent drift mid-promotion → lock held; new drift journaled but no second retrain | TASK-HEAL-009 |
+| EC-HEAL-13 | Crash between witness entry + active-pointer update → recovery via latest ModelPromote replay | TASK-HEAL-009, TASK-HEAL-010 |
+| EC-HEAL-14 | Operator rollback target weights_sha already GC'd → MEJEPA_HEAL_ROLLBACK_TARGET_GONE | TASK-HEAL-010, TASK-HEAL-017 |
+| EC-HEAL-15 | Batched-mode resume from stale watermark → exactly-once shift re-processing | TASK-HEAL-008 |
+
+#### Error-state coverage
+
+| Error code | Variant | Task ID |
+|---|---|---|
+| MEJEPA_OBSERVE_BATCH_NAN | BatchNan | TASK-HEAL-008, TASK-HEAL-012, TASK-HEAL-015 |
+| MEJEPA_OBSERVE_DRIFT_DETECTED | DriftDetected | TASK-HEAL-007, TASK-HEAL-008 |
+| MEJEPA_OBSERVE_INTEGRITY_VIOLATION | IntegrityViolation | TASK-HEAL-013, TASK-HEAL-010, TASK-HEAL-017 |
+| MEJEPA_RETRAIN_HOLDOUT_REGRESSION | HoldoutRegression | TASK-HEAL-009 |
+| MEJEPA_RETRAIN_QUOTA_EXCEEDED | QuotaExceeded | TASK-HEAL-009 |
+| MEJEPA_HEAL_FISHER_RANK_DEFICIENT | FisherRankDeficient | TASK-HEAL-006, TASK-HEAL-018 |
+| MEJEPA_HEAL_LORA_REFRESH_FAIL | LoraRefreshFail | TASK-HEAL-014 |
+| MEJEPA_HEAL_PROMOTION_DEADLOCK | PromotionDeadlock | TASK-HEAL-009, TASK-HEAL-010, TASK-HEAL-017 |
+| MEJEPA_CALIBRATION_INSUFFICIENT_SAMPLES | ConformalInsufficientSamples | TASK-HEAL-012 |
+| MEJEPA_HEAL_CRITICAL_BUG_TARGET_COLLAPSE_NONZERO | CriticalBug { TargetCollapseNonZero } | TASK-HEAL-008 |
+| MEJEPA_HEAL_ROLLBACK_TARGET_GONE | RollbackTargetGone | TASK-HEAL-010, TASK-HEAL-017 |
+| MEJEPA_HEAL_FSV_INCOMPLETE | FsvIncomplete | TASK-HEAL-019 |
+
+#### Uncovered items
+
+(none — all 20 REQ-HEAL-NN, all 7 TECH-SELF-HEALING component contracts, all 12 EC-HEAL-NN edge cases, all 12 error states have at least one task; layer ordering Foundation (5) → Logic (10) → Surface (4) preserved; dependency DAG acyclic per `./phase5-self-healing/_index.md` §Dependency DAG; no task references files from later tasks per Iron Rule.)
+
+**SELF-HEALING coverage: 20/20 functional REQs + 7/7 technical components + 12/12 edge cases + 12/12 error states = 19 tasks; layer ordering Foundation (5) → Logic (10) → Surface (4); critical path TASK-HEAL-001 → 004 → 005 → 006 → 008 → 009 → 018 → 019 (~5–7 days end-to-end after Phase 2 Predictor + Phase 3 Training loop + Phase 4a RealityPrediction surfaces ship).**
+
 ### HYGIENE — pending generation
-### SHIFT-SUBSCRIBER — pending generation
+
+### Domain: SHIFT-SUBSCRIBER
+
+> **21 tasks generated total** across two sibling phase directories:
+> - `./phase7-shift-subscriber/` — 14 tasks (TASK-SHIFT-001..014); covers the Tokio subscriber, watermark CF, lag monitor, instrument cache, process_shift body, run() task, replay policy, latency profiler, shift-subscriber FSV.
+> - `./phase7-mcp-tools/` — 7 tasks (TASK-MCP-001..007); covers the 5 new `mcp__cgreality__mejepa_*` MCP handlers + retired-tool fail-closed FSV.
+>
+> Layer split (combined): Foundation 6 (TASK-SHIFT-001..006 + TASK-MCP-001) → Logic 13 (TASK-SHIFT-007..012 + TASK-MCP-002..006) → Surface 2 (TASK-SHIFT-013, TASK-MCP-007).
+>
+> Coverage: 100% across 18 REQ-SHIFT-NN + 10 TECH-SHIFT-SUBSCRIBER components + all NFR-SHIFT-NN + all error states.
+
+#### Functional REQ → Task mapping
+
+| Functional REQ | Title | Layer | Task ID(s) | Status |
+|---|---|---|---|---|
+| REQ-SHIFT-01 | Single Tokio task; 1 CPU + 512 MB RSS | foundation/logic | TASK-SHIFT-001, TASK-SHIFT-005, TASK-SHIFT-010 | ready |
+| REQ-SHIFT-02 | Restart-safe at-least-once delivery; watermark CF; sync=true | foundation/logic | TASK-SHIFT-002, TASK-SHIFT-004, TASK-SHIFT-008, TASK-SHIFT-010 | ready |
+| REQ-SHIFT-03 | Lag-alert monitor; emit once per Idle→Active transition | logic | TASK-SHIFT-009, TASK-SHIFT-010 | ready |
+| REQ-SHIFT-04 | Per-shift panel materialization (15 slots × 5,120-d) | logic | TASK-SHIFT-006, TASK-SHIFT-007 | ready |
+| REQ-SHIFT-05 | Predict-only path persists to CF_MEJEPA_LIVE_PREDICTIONS | logic | TASK-SHIFT-007, TASK-MCP-003 (read side) | ready |
+| REQ-SHIFT-06 | Observe path on oracle-attached shifts (L_step gated) | logic | TASK-SHIFT-007 | ready |
+| REQ-SHIFT-07 | 5 MCP tools registered under `mcp__cgreality__mejepa_*` | foundation/logic | TASK-MCP-001 (skeleton) + TASK-MCP-002 (verify) + TASK-MCP-003 (predict_latest) + TASK-MCP-004 (observe_shift) + TASK-MCP-005 (subscriber_status) + TASK-MCP-006 (capture_audit) | ready |
+| REQ-SHIFT-08 | Instrument cache LRU keyed by (file_sha, slot, code_version); 4 GB RAM budget | logic | TASK-SHIFT-006 | ready |
+| REQ-SHIFT-09 | Persistence-vs-update separation (BR-SHIFT-04) | logic | TASK-SHIFT-007 | ready |
+| REQ-SHIFT-10 | `mejepa_capture_audit` returns full signal capture | logic | TASK-MCP-006 (handler) + TASK-SHIFT-002 (CaptureAuditBundle carrier) | ready |
+| REQ-SHIFT-11 | `mejepa_observe_shift` idempotent replay | logic | TASK-MCP-004 (MCP shim) + TASK-SHIFT-007 (process_shift idempotent overwrite) + TASK-SHIFT-011 (ReplayWatermarkPolicy::DoNotAdvance) | ready |
+| REQ-SHIFT-12 | `mejepa_subscriber_status` snapshot fields | logic | TASK-MCP-005 (handler) + TASK-SHIFT-002 (SubscriberMetrics) + TASK-SHIFT-008 (WatermarkReader) + TASK-SHIFT-009 (lag-alert state machine) | ready |
+| REQ-SHIFT-13 | Retired surfaces fail-closed CCREALITY_ENGINE_RETIRED | foundation/surface | TASK-SHIFT-003 (retired-shim contract) + TASK-MCP-001 (regression guard) + TASK-MCP-007 (FSV regression test on 5 aliases) | ready |
+| REQ-SHIFT-14 | Failure-mode taxonomy (SubscriberError variants) | foundation | TASK-SHIFT-002, TASK-SHIFT-003 | ready |
+| REQ-SHIFT-15 | Phase 7 DoD verify CLI | surface | TASK-SHIFT-014 | ready |
+| REQ-SHIFT-16 | Performance budgets (p50/p99 per tool) | logic/surface | TASK-SHIFT-012 (latency profiler) + TASK-MCP-003/005/006 (per-tool latency assertions) + TASK-SHIFT-013 + TASK-MCP-007 (FSV harnesses) | ready |
+| REQ-SHIFT-17 | Configurable knobs (`MeJepaShiftSubscriberConfig`) | foundation | TASK-SHIFT-001, TASK-SHIFT-005 | ready |
+| REQ-SHIFT-18 | Provenance metadata in every persisted record | foundation/logic | TASK-SHIFT-002, TASK-SHIFT-007, TASK-MCP-002 (verify echoes provenance), TASK-MCP-006 (capture_audit echoes embedder_versions + frozen_at) | ready |
+
+#### Technical component → Task mapping
+
+| TECH-SHIFT-SUBSCRIBER component | Layer | Task ID(s) | Notes |
+|---|---|---|---|
+| ShiftSubscriber struct + new() | foundation/logic | TASK-SHIFT-001, TASK-SHIFT-005, TASK-SHIFT-007 | Arc-wrapped collaborators; trait-driven |
+| ShiftSubscriber::run | logic | TASK-SHIFT-010 | Tokio task entry; supervisor + retry |
+| ShiftSubscriber::process_shift | logic | TASK-SHIFT-007 | the heart of the subscriber |
+| ShiftSubscriber::materialize_slot | logic | TASK-SHIFT-007 | spawn_blocking + cache + missing-slot policy |
+| WatermarkWriter (write/read/read_all) | foundation/logic | TASK-SHIFT-004, TASK-SHIFT-008 | sync=true; monotonicity guard |
+| ShiftLogTail (tail/poll/discover/rotation) | logic | TASK-SHIFT-005 | inode-aware; line-buffered |
+| InstrumentCache (LRU + RAM budget) | logic | TASK-SHIFT-006 | 4 GB cap; resize hot |
+| MejepaPredictLatestHandler | logic | TASK-MCP-001 (skeleton), TASK-MCP-003 (body) | CF prefix scan; limit clamp |
+| MejepaObserveShiftHandler | logic | TASK-MCP-001 (skeleton), TASK-MCP-004 (body) | ULID validation + replay channel |
+| MejepaSubscriberStatusHandler | logic | TASK-MCP-001 (skeleton), TASK-MCP-005 (body) | atomic snapshot + watermark CF read |
+| MejepaCaptureAuditHandler | logic | TASK-MCP-001 (skeleton), TASK-MCP-006 (body) | 4-CF read + paginate + canonicalize floats |
+| MejepaVerifyHandler | logic | TASK-MCP-001 (skeleton), TASK-MCP-002 (body) | path-canon + dispatch to MeJepaCompiler::verify (SPEC-INFERENCE owned body) |
+| RetiredSurfaceHandler (reality_run_attempt + reality_alter_*) | foundation/surface | TASK-SHIFT-003 (existing fail-closed) + TASK-MCP-007 (FSV regression on 5 aliases) | locked CCREALITY_ENGINE_RETIRED |
+
+#### Edge case / NFR / error state coverage
+
+| Coverage item | Task ID(s) |
+|---|---|
+| EC-SHIFT-04 (cache hit p50 budget) | TASK-SHIFT-006, TASK-SHIFT-013 |
+| EC-SHIFT-05 (L_step strict ≥ 0.05) | TASK-SHIFT-007 |
+| EC-SHIFT-06 (SIGKILL recoverability) | TASK-SHIFT-010 |
+| EC-SHIFT-10 (panic supervisor) | TASK-SHIFT-010 |
+| EC-SHIFT-11 (empty session known=false) | TASK-MCP-003 |
+| EC-SHIFT-12 (replay-on-replay idempotent) | TASK-MCP-004, TASK-SHIFT-011 |
+| ERR-SHIFT-01..ERR-SHIFT-08 (all 8 error states) | TASK-SHIFT-002, TASK-SHIFT-003, TASK-MCP-002..006 (per-tool structured errors) |
+| NFR-SHIFT-01..02 (subscriber p50/p99) | TASK-SHIFT-012, TASK-SHIFT-013 |
+| NFR-SHIFT-03 (predict_latest p50 < 50 ms) | TASK-MCP-003 |
+| NFR-SHIFT-04 (subscriber_status p50 < 50 ms) | TASK-MCP-005 |
+| NFR-SHIFT-05 (capture_audit p50 < 100 ms) | TASK-MCP-006 |
+| NFR-SHIFT-06 (restart-safe at-least-once delivery) | TASK-SHIFT-010 |
+| NFR-SHIFT-07 (backpressure tolerance) | TASK-SHIFT-009, TASK-SHIFT-010 |
+| NFR-SHIFT-08 (RSS / cache RAM ≤ 4 GB) | TASK-SHIFT-006 |
+| NFR-SHIFT-09 (path canonicalization at MCP boundary) | TASK-MCP-002 |
+| NFR-SHIFT-10 (FSV evidence files mode 0o600) | TASK-SHIFT-013, TASK-MCP-007 |
+| TC-SHIFT-08 (5 tools register + reject extras) | TASK-MCP-001, TASK-MCP-007 |
+| TC-SHIFT-09 (retired tool fail-closed) | TASK-MCP-007 |
+| TC-SHIFT-11 (10 concurrent observe_shift → 1 row, 10 replay certs) | TASK-MCP-004 |
+| TC-SHIFT-12 (subscriber_status reports task-dead honestly) | TASK-MCP-005 |
+
+#### Cross-cutting foundation tasks (no single REQ owner)
+
+| Tech component | Layer | Task ID | Notes |
+|---|---|---|---|
+| `MEJEPA_TOOL_NAMES` registry + dispatch | foundation | TASK-MCP-001 | locked `mcp__cgreality__mejepa_*` namespace |
+| `mejepa/traits.rs` carrier types (PatchBundle, TaskContext, VerifyVerdict, ProvenanceBundle, RealityPrediction, ReplayRequest, CaptureAuditBundle re-exports) | foundation | TASK-MCP-002, TASK-MCP-003, TASK-MCP-004, TASK-MCP-005, TASK-MCP-006 | extended progressively across each MCP task; opaque to MCP, owned by SPEC-INFERENCE / sister phase carriers |
+| `audit_assembler.rs` (assemble + paginate + canonicalize_floats + nearest_neighbors) | logic | TASK-MCP-006 | split out of capture_audit.rs to keep <500 LOC |
+
+#### Cross-phase dependencies (out from MCP-TOOLS into sister phase)
+
+| MCP task | Depends on (sister phase) | Reason |
+|---|---|---|
+| TASK-MCP-001 | TASK-SHIFT-003 | retired-surface fail-closed contract must already exist |
+| TASK-MCP-002 | TASK-SHIFT-007 | subscriber metrics snapshot for `subscriber_state` field |
+| TASK-MCP-003 | TASK-SHIFT-007 | CF_MEJEPA_LIVE_PREDICTIONS writer (single-source-of-truth `session_id_hash6` helper) |
+| TASK-MCP-004 | TASK-SHIFT-007, TASK-SHIFT-011 | SubscriberIndex + ReplayWatermarkPolicy::DoNotAdvance + ReplayRequest channel |
+| TASK-MCP-005 | TASK-SHIFT-002, TASK-SHIFT-008 | SubscriberMetrics types + WatermarkReader |
+| TASK-MCP-006 | TASK-SHIFT-002, TASK-SHIFT-007 | CaptureAuditBundle carrier + 4-CF writer paths |
+| TASK-MCP-007 | TASK-SHIFT-013 | sister FSV harness pattern + FsvFixture builder; also writes a roll-up at sister evidence dir |
+
+#### Uncovered items
+
+(none — all 18 REQ-SHIFT-NN, all 10 TECH-SHIFT-SUBSCRIBER component contracts, all 13 EC-SHIFT-NN edge cases, all 10 NFR-SHIFT-NN budgets, all 8 ERR-SHIFT-NN error states, all 5 new `mcp__cgreality__mejepa_*` tools and the 5 retired aliases have at least one task; layer ordering Foundation → Logic → Surface preserved across both sibling phase directories; dependency DAG acyclic (TASK-MCP-001 fans out to TASK-MCP-002..006, all five fan into TASK-MCP-007, plus the cross-phase edges into phase7-shift-subscriber); no task references files from later tasks per Iron Rule.)
+
+**SHIFT-SUBSCRIBER coverage: 18/18 functional REQs + 10/10 technical components + 13/13 edge cases + 10/10 NFRs + 8/8 error states + 5/5 new MCP tools + 5/5 retired-alias regression guards = 21 tasks (14 subscriber + 7 MCP-tools); critical path TASK-SHIFT-001 → TASK-SHIFT-002 → TASK-SHIFT-007 → TASK-SHIFT-010 → TASK-SHIFT-013 in sister phase, plus TASK-MCP-001 → (TASK-MCP-002..006 batch-parallel) → TASK-MCP-007 in this phase.**
+
 ### EVALUATION — pending generation
 
 ---

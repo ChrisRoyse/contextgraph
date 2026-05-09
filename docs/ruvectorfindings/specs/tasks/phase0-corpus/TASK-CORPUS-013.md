@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-013" version="1.0">
 <metadata>
   <title>SubtleFlip + OffByOne Mutation Operators (Python)</title>
-  <status>ready</status>
+  <status>complete</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `subtle_flip.rs` (235 LOC — invert `==`/`!=`, `<`/`>`, `<=`/`>=`, `and`/`or`, `is`/`is not`; skips Python `->` arrow, `<<`/`>>`, and float-fraction `.5` literals — real bug found by FSV in commit 828a1133) and `off_by_one.rs` (120 LOC — adds ±1 to one numeric literal; integer-only, ignores fractional parts after the `0.5` regression in commit `828a1133`). python_lex mask wired so neither operator picks targets inside string literals or comments. Tests + FSV pass.
+  </implementation_state>
   <layer>logic</layer>
   <sequence>13</sequence>
   <implements>

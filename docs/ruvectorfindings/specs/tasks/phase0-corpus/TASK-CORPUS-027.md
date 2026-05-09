@@ -4,7 +4,11 @@
 <task_spec id="TASK-CORPUS-027" version="1.0">
 <metadata>
   <title>mejepa-corpus verify Subcommand (5% Docker re-run + JSON diff)</title>
-  <status>ready</status>
+  <status>partial</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `mejepa-corpus verify --corpus <path>` (bin/mejepa-corpus.rs:303+) — re-reads `index.json`, validates the `complete: true` flag, opens the `OracleStore`, and re-hashes every `patch_path` (under the corpus dir) against `entry.patch_sha256`, reporting any mismatch as a JSON failure record. Duplicate-key detection over (`task_id`, `category`) pairs included.
+    Pending: a `--sample-fraction <0.0..=1.0>` flag that re-runs `run_swebench_lite_oracle` against a deterministic 5% sample of stored entries and produces a per-test JSON diff vs. the stored verdict — the spec deliverable for this task. Without it, `verify` is a SHA cross-check only and cannot detect verdict drift caused by upstream Docker image changes.
+  </implementation_state>
   <layer>surface</layer>
   <sequence>27</sequence>
   <implements>

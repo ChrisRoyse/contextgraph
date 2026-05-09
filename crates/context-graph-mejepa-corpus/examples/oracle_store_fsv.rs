@@ -2,9 +2,12 @@
 
 use context_graph_mejepa_corpus::oracle::{
     parse_pytest_json_report, run_docker_json_oracle, DockerMount, DockerOracleConfig, OracleStore,
-    CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS,
+    CF_MEJEPA_CORPUS_PROVENANCE, CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS,
 };
-use context_graph_mejepa_corpus::{apply_mutation, MutationCategory, MutationConfig};
+use context_graph_mejepa_corpus::{
+    apply_mutation, compute_corpus_sha256, CorpusProvenance, CorpusProvenanceRow, Language,
+    MutationCategory, MutationConfig, MEJEPA_CORPUS_VERSION_V1, MEJEPA_EMBEDDER_VERSION_V1,
+};
 use context_graph_mejepa_instruments::{OracleVerdict, PerTestOutcome, TestOutcome};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -37,41 +40,80 @@ fn main() -> FsvResult<()> {
     }"#;
     let verdict = parse_pytest_json_report(pytest_json)?;
 
-    store.put_mutation(task_id, category, &mutation_outcome)?;
-    store.put_verdict(task_id, category, &verdict)?;
+    let patch_sha256 = sha256_text(&mutation_outcome.mutated_source);
+    let verdict_sha256 = sha256_json_value(&serde_json::to_value(&verdict)?);
+    let corpus_sha256 = compute_corpus_sha256(&[CorpusProvenanceRow {
+        task_id: task_id.to_string(),
+        category,
+        patch_sha256: patch_sha256.clone(),
+        oracle_verdict_sha256: verdict_sha256.clone(),
+    }])?;
+    let provenance = CorpusProvenance {
+        corpus_version: MEJEPA_CORPUS_VERSION_V1.to_string(),
+        embedder_version: MEJEPA_EMBEDDER_VERSION_V1.to_string(),
+        generated_at_unix_ms: 1,
+        generator_version: "oracle_store_fsv".to_string(),
+        seed: 0,
+        languages: vec![Language::Python],
+        task_manifest_count: 1,
+        mutation_count: 1,
+        mutation_categories: vec![category],
+        source_patch_mode: "synthetic-source".to_string(),
+        split_mode: "instance_atomic".to_string(),
+        corpus_sha256,
+        complete: true,
+    };
+    store.put_corpus_row(task_id, category, &mutation_outcome, &verdict)?;
+    store.put_provenance(&provenance)?;
     store.flush()?;
+    let corpus_row_readback = store
+        .get_corpus_row(task_id, category)?
+        .expect("corpus row");
     let mutation_readback = store
         .get_mutation(task_id, category)?
         .expect("mutation row");
     let verdict_readback = store.get_verdict(task_id, category)?.expect("verdict row");
+    let provenance_readback = store
+        .get_provenance(MEJEPA_CORPUS_VERSION_V1, MEJEPA_EMBEDDER_VERSION_V1)?
+        .expect("provenance row");
     require(
         "mutation source readback",
         mutation_readback == mutation_outcome,
     )?;
     require("oracle verdict readback", verdict_readback == verdict)?;
+    require(
+        "atomic corpus row readback",
+        corpus_row_readback == (mutation_outcome.clone(), verdict.clone()),
+    )?;
+    require("provenance readback", provenance_readback == provenance)?;
     let after_counts = cf_counts(&store)?;
     let mutation_rows = store.scan_cf_json(CF_MEJEPA_MUTATION_CORPUS)?;
     let verdict_rows = store.scan_cf_json(CF_MEJEPA_ORACLE_VERDICTS)?;
+    let provenance_rows = store.scan_cf_json(CF_MEJEPA_CORPUS_PROVENANCE)?;
 
     let evidence = json!({
         "source_of_truth": {
             "rocksdb_path": db_path.display().to_string(),
             "mutation_cf": CF_MEJEPA_MUTATION_CORPUS,
             "verdict_cf": CF_MEJEPA_ORACLE_VERDICTS,
+            "provenance_cf": CF_MEJEPA_CORPUS_PROVENANCE,
         },
         "happy_path": {
             "before_state": before_counts,
             "trigger": {
                 "task_id": task_id,
                 "category": category.slug(),
-                "mutated_source_sha256": sha256_text(mutated_source),
+                "mutated_source_sha256": patch_sha256,
                 "pytest_json_sha256": sha256_text(pytest_json),
+                "verdict_sha256": verdict_sha256,
             },
             "after_state": {
                 "cf_counts": after_counts,
                 "mutation_rows": mutation_rows,
                 "verdict": verdict_readback,
                 "verdict_rows": verdict_rows,
+                "provenance": provenance_readback,
+                "provenance_rows": provenance_rows,
             },
             "passes": true,
         },
@@ -106,6 +148,12 @@ fn edge_report(raw: &str) -> Value {
 }
 
 fn edge_invalid_key(store: &OracleStore) -> Value {
+    let mutation = apply_mutation(
+        MutationCategory::KnownGood,
+        "def add(a, b):\n    return a + b\n",
+        MutationConfig::default(),
+    )
+    .expect("known-good mutation");
     let verdict = OracleVerdict {
         per_test: vec![PerTestOutcome {
             test_id: "tests/test_add.py::test_add_two_numbers".into(),
@@ -114,7 +162,7 @@ fn edge_invalid_key(store: &OracleStore) -> Value {
         }],
         exception: None,
     };
-    let result = store.put_verdict("bad|task", MutationCategory::KnownGood, &verdict);
+    let result = store.put_corpus_row("bad|task", MutationCategory::KnownGood, &mutation, &verdict);
     let actual = result.err().map(|e| e.code());
     json!({
         "before_state": { "task_id": "bad|task" },
@@ -153,7 +201,11 @@ fn edge_docker_missing_command(root: &std::path::Path) -> Value {
 
 fn cf_counts(store: &OracleStore) -> FsvResult<Value> {
     let mut out = serde_json::Map::new();
-    for cf_name in [CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS] {
+    for cf_name in [
+        CF_MEJEPA_MUTATION_CORPUS,
+        CF_MEJEPA_ORACLE_VERDICTS,
+        CF_MEJEPA_CORPUS_PROVENANCE,
+    ] {
         let count = store.count_cf(cf_name)?;
         out.insert(cf_name.to_string(), json!(count));
     }
@@ -162,6 +214,10 @@ fn cf_counts(store: &OracleStore) -> FsvResult<Value> {
 
 fn sha256_text(text: &str) -> String {
     format!("sha256:{:x}", Sha256::digest(text.as_bytes()))
+}
+
+fn sha256_json_value(value: &Value) -> String {
+    sha256_text(&serde_json::to_string(value).expect("JSON value serialises"))
 }
 
 fn require(label: &str, condition: bool) -> FsvResult<()> {

@@ -4,7 +4,11 @@
 <task_spec id="TASK-CORPUS-009" version="1.0">
 <metadata>
   <title>Docker Run-ID Validator (validate_run_id)</title>
-  <status>ready</status>
+  <status>partial</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped (functionally): `validate_oracle_config` in `swebench.rs:552-581` enforces non-empty run_id, ASCII alphanumeric first character, and the `[a-zA-Z0-9_.-]` alphabet — exactly matching Docker's container-name regex. The validator was added after a real bug found by FSV (commit 15522841): `+` was rejected by Docker's container-name regex during a previous run.
+    Pending: extract into a standalone `pub fn validate_run_id(run_id: &str) -> OracleResult<()>` so it can be unit-tested independently of `SwebenchOracleConfig`, and replace the generic `OracleError::InvalidInput` raise path with the dedicated typed `OracleError::DockerRunIdUnsafe { run_id, character, position }` variant (depends on TASK-CORPUS-001 extension).
+  </implementation_state>
   <layer>foundation</layer>
   <sequence>9</sequence>
   <implements>

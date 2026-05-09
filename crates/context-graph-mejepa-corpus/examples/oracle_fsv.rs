@@ -13,10 +13,12 @@
 
 use context_graph_mejepa_corpus::oracle::{
     parse_pytest_json_report, run_command_json_oracle, CommandOracleConfig, OracleStore,
-    CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS,
+    CF_MEJEPA_CORPUS_PROVENANCE, CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS,
 };
 use context_graph_mejepa_corpus::{
-    apply_mutation, MutationCategory, MutationConfig, MutationOutcome,
+    apply_mutation, compute_corpus_sha256, CorpusProvenance, CorpusProvenanceRow, Language,
+    MutationCategory, MutationConfig, MutationOutcome, MEJEPA_CORPUS_VERSION_V1,
+    MEJEPA_EMBEDDER_VERSION_V1,
 };
 use context_graph_mejepa_instruments::{OracleVerdict, TestOutcome};
 use serde_json::{json, Value};
@@ -53,6 +55,14 @@ fn sha256_file(path: &Path) -> FsvResult<String> {
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
     Ok(format!("sha256:{:x}", hasher.finalize()))
+}
+
+fn sha256_text(text: &str) -> String {
+    format!("sha256:{:x}", Sha256::digest(text.as_bytes()))
+}
+
+fn sha256_json_value(value: &Value) -> String {
+    sha256_text(&serde_json::to_string(value).expect("JSON value serialises"))
 }
 
 fn pytest_plugin() -> &'static str {
@@ -154,8 +164,31 @@ fn store_and_reopen(
 ) -> FsvResult<Value> {
     {
         let store = OracleStore::open(db_path)?;
-        store.put_mutation(task_id, MutationCategory::KnownGood, mutation)?;
-        store.put_verdict(task_id, MutationCategory::KnownGood, verdict)?;
+        let patch_sha256 = sha256_text(&mutation.mutated_source);
+        let verdict_sha256 = sha256_json_value(&serde_json::to_value(verdict)?);
+        let corpus_sha256 = compute_corpus_sha256(&[CorpusProvenanceRow {
+            task_id: task_id.to_string(),
+            category: MutationCategory::KnownGood,
+            patch_sha256,
+            oracle_verdict_sha256: verdict_sha256,
+        }])?;
+        let provenance = CorpusProvenance {
+            corpus_version: MEJEPA_CORPUS_VERSION_V1.to_string(),
+            embedder_version: MEJEPA_EMBEDDER_VERSION_V1.to_string(),
+            generated_at_unix_ms: 1,
+            generator_version: "oracle_fsv".to_string(),
+            seed: 0,
+            languages: vec![Language::Python],
+            task_manifest_count: 1,
+            mutation_count: 1,
+            mutation_categories: vec![MutationCategory::KnownGood],
+            source_patch_mode: "synthetic-source".to_string(),
+            split_mode: "instance_atomic".to_string(),
+            corpus_sha256,
+            complete: true,
+        };
+        store.put_corpus_row(task_id, MutationCategory::KnownGood, mutation, verdict)?;
+        store.put_provenance(&provenance)?;
         store.flush()?;
     }
 
@@ -166,6 +199,12 @@ fn store_and_reopen(
     let verdict_readback = reopened
         .get_verdict(task_id, MutationCategory::KnownGood)?
         .ok_or("oracle verdict row missing after reopen")?;
+    let corpus_row_readback = reopened
+        .get_corpus_row(task_id, MutationCategory::KnownGood)?
+        .ok_or("atomic corpus row missing after reopen")?;
+    let provenance_readback = reopened
+        .get_provenance(MEJEPA_CORPUS_VERSION_V1, MEJEPA_EMBEDDER_VERSION_V1)?
+        .ok_or("provenance row missing after reopen")?;
     ensure(
         "mutation row must survive RocksDB reopen",
         mutation_readback == *mutation,
@@ -174,18 +213,27 @@ fn store_and_reopen(
         "oracle verdict row must survive RocksDB reopen",
         verdict_readback == *verdict,
     )?;
+    ensure(
+        "atomic corpus row must survive RocksDB reopen",
+        corpus_row_readback == (mutation.clone(), verdict.clone()),
+    )?;
     let mutation_count = reopened.count_cf(CF_MEJEPA_MUTATION_CORPUS)?;
     let verdict_count = reopened.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?;
+    let provenance_count = reopened.count_cf(CF_MEJEPA_CORPUS_PROVENANCE)?;
     ensure("mutation CF count must be 1", mutation_count == 1)?;
     ensure("oracle verdict CF count must be 1", verdict_count == 1)?;
+    ensure("provenance CF count must be 1", provenance_count == 1)?;
     Ok(json!({
         "rocksdb_path": db_path.display().to_string(),
         "counts_after_reopen": {
             CF_MEJEPA_MUTATION_CORPUS: mutation_count,
             CF_MEJEPA_ORACLE_VERDICTS: verdict_count,
+            CF_MEJEPA_CORPUS_PROVENANCE: provenance_count,
         },
         "mutation_rows": reopened.scan_cf_json(CF_MEJEPA_MUTATION_CORPUS)?,
         "verdict_rows": reopened.scan_cf_json(CF_MEJEPA_ORACLE_VERDICTS)?,
+        "provenance": provenance_readback,
+        "provenance_rows": reopened.scan_cf_json(CF_MEJEPA_CORPUS_PROVENANCE)?,
         "passes": true,
     }))
 }
@@ -259,6 +307,11 @@ fn boundary_stale_report(root: &Path) -> FsvResult<Value> {
 
 fn boundary_bad_store_key(db_path: &Path) -> FsvResult<Value> {
     let store = OracleStore::open(db_path)?;
+    let mutation = apply_mutation(
+        MutationCategory::KnownGood,
+        "def add(a, b):\n    return a + b\n",
+        MutationConfig::default(),
+    )?;
     let verdict = OracleVerdict {
         per_test: vec![context_graph_mejepa_instruments::PerTestOutcome {
             test_id: "tests/test_key.py::test_ok".to_string(),
@@ -267,7 +320,7 @@ fn boundary_bad_store_key(db_path: &Path) -> FsvResult<Value> {
         }],
         exception: None,
     };
-    let result = store.put_verdict("bad|task", MutationCategory::KnownGood, &verdict);
+    let result = store.put_corpus_row("bad|task", MutationCategory::KnownGood, &mutation, &verdict);
     ensure(
         "bad RocksDB task key must reject",
         matches!(&result, Err(e) if e.code() == "MEJEPA_ORACLE_INVALID_INPUT"),

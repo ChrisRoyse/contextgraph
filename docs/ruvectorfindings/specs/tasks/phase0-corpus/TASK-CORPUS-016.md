@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-016" version="1.0">
 <metadata>
   <title>apply_mutation Dispatcher + apply_site Validator</title>
-  <status>ready</status>
+  <status>complete</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `apply_mutation` dispatcher (lib.rs:231-267) — empty-input check, `ensure_parseable_python` gate, per-category branch, `WrongFile` alternate_source check, then delegates to `apply_site` (lib.rs:271-335) which enforces UTF-8 character-boundary alignment, `byte_offset + byte_length` overflow check, range-against-source-len check, and `original_text == &source[range]` equality before splicing in `replacement_text`.
+  </implementation_state>
   <layer>logic</layer>
   <sequence>16</sequence>
   <implements>

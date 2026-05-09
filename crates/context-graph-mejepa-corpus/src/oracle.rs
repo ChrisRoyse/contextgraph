@@ -15,17 +15,24 @@ use std::time::{Duration, Instant};
 use context_graph_mejepa_instruments::{
     ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome,
 };
-use rocksdb::{ColumnFamily, ColumnFamilyDescriptor, Direction, IteratorMode, Options, DB};
+use rocksdb::{
+    ColumnFamily, ColumnFamilyDescriptor, Direction, IteratorMode, Options, WriteBatch, DB,
+};
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::{MutationCategory, MutationOutcome};
+use crate::{CorpusProvenance, MutationCategory, MutationOutcome};
 
 pub type OracleResult<T> = Result<T, OracleError>;
 
 pub const CF_MEJEPA_MUTATION_CORPUS: &str = "mejepa_mutation_corpus";
 pub const CF_MEJEPA_ORACLE_VERDICTS: &str = "mejepa_oracle_verdicts";
-pub const MEJEPA_ORACLE_CFS: &[&str] = &[CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS];
+pub const CF_MEJEPA_CORPUS_PROVENANCE: &str = "mejepa_corpus_provenance";
+pub const MEJEPA_ORACLE_CFS: &[&str] = &[
+    CF_MEJEPA_MUTATION_CORPUS,
+    CF_MEJEPA_ORACLE_VERDICTS,
+    CF_MEJEPA_CORPUS_PROVENANCE,
+];
 
 #[derive(Debug, Error)]
 pub enum OracleError {
@@ -351,14 +358,15 @@ impl OracleStore {
         Ok(Self { db })
     }
 
-    pub fn put_mutation(
+    pub fn put_corpus_row(
         &self,
         task_id: &str,
         category: MutationCategory,
         outcome: &MutationOutcome,
+        verdict: &OracleVerdict,
     ) -> OracleResult<()> {
         let key = corpus_key(task_id, category)?;
-        let bytes = serde_json::to_vec(outcome).map_err(|err| {
+        let mutation_bytes = serde_json::to_vec(outcome).map_err(|err| {
             OracleError::store(
                 "serialize",
                 CF_MEJEPA_MUTATION_CORPUS,
@@ -366,16 +374,33 @@ impl OracleStore {
                 "ensure MutationOutcome remains JSON-serializable",
             )
         })?;
-        self.db
-            .put_cf(self.cf(CF_MEJEPA_MUTATION_CORPUS)?, key.as_bytes(), bytes)
-            .map_err(|err| {
-                OracleError::store(
-                    "put",
-                    CF_MEJEPA_MUTATION_CORPUS,
-                    err.to_string(),
-                    "inspect RocksDB write permissions and disk capacity",
-                )
-            })
+        let verdict_bytes = serde_json::to_vec(verdict).map_err(|err| {
+            OracleError::store(
+                "serialize",
+                CF_MEJEPA_ORACLE_VERDICTS,
+                err.to_string(),
+                "ensure OracleVerdict remains JSON-serializable",
+            )
+        })?;
+        let mut batch = WriteBatch::default();
+        batch.put_cf(
+            self.cf(CF_MEJEPA_MUTATION_CORPUS)?,
+            key.as_bytes(),
+            mutation_bytes,
+        );
+        batch.put_cf(
+            self.cf(CF_MEJEPA_ORACLE_VERDICTS)?,
+            key.as_bytes(),
+            verdict_bytes,
+        );
+        self.db.write(batch).map_err(|err| {
+            OracleError::store(
+                "write_batch",
+                "<corpus_row>",
+                err.to_string(),
+                "inspect RocksDB write permissions, WAL state, and disk capacity",
+            )
+        })
     }
 
     pub fn get_mutation(
@@ -409,31 +434,35 @@ impl OracleStore {
         Ok(Some(outcome))
     }
 
-    pub fn put_verdict(
+    pub fn get_corpus_row(
         &self,
         task_id: &str,
         category: MutationCategory,
-        verdict: &OracleVerdict,
-    ) -> OracleResult<()> {
-        let key = corpus_key(task_id, category)?;
-        let bytes = serde_json::to_vec(verdict).map_err(|err| {
-            OracleError::store(
-                "serialize",
-                CF_MEJEPA_ORACLE_VERDICTS,
-                err.to_string(),
-                "ensure OracleVerdict remains JSON-serializable",
-            )
-        })?;
-        self.db
-            .put_cf(self.cf(CF_MEJEPA_ORACLE_VERDICTS)?, key.as_bytes(), bytes)
-            .map_err(|err| {
-                OracleError::store(
-                    "put",
-                    CF_MEJEPA_ORACLE_VERDICTS,
-                    err.to_string(),
-                    "inspect RocksDB write permissions and disk capacity",
-                )
-            })
+    ) -> OracleResult<Option<(MutationOutcome, OracleVerdict)>> {
+        let mutation = self.get_mutation(task_id, category)?;
+        let verdict = self.get_verdict(task_id, category)?;
+        match (mutation, verdict) {
+            (Some(mutation), Some(verdict)) => Ok(Some((mutation, verdict))),
+            (None, None) => Ok(None),
+            (Some(_), None) => Err(OracleError::store(
+                "get_corpus_row",
+                "<corpus_row>",
+                format!(
+                    "partial corpus row for task_id={task_id} category={}; mutation exists but verdict is missing",
+                    category.slug()
+                ),
+                "never write mutation/verdict separately; rebuild this corpus with put_corpus_row",
+            )),
+            (None, Some(_)) => Err(OracleError::store(
+                "get_corpus_row",
+                "<corpus_row>",
+                format!(
+                    "partial corpus row for task_id={task_id} category={}; verdict exists but mutation is missing",
+                    category.slug()
+                ),
+                "never write mutation/verdict separately; rebuild this corpus with put_corpus_row",
+            )),
+        }
     }
 
     pub fn get_verdict(
@@ -465,6 +494,128 @@ impl OracleStore {
             )
         })?;
         Ok(Some(verdict))
+    }
+
+    pub fn iter_corpus_rows(
+        &self,
+    ) -> OracleResult<Vec<(String, MutationCategory, MutationOutcome, OracleVerdict)>> {
+        let cf = self.cf(CF_MEJEPA_MUTATION_CORPUS)?;
+        let mut rows = Vec::new();
+        for item in self.db.iterator_cf(cf, IteratorMode::Start) {
+            let (key, mutation_bytes) = item.map_err(|err| {
+                OracleError::store(
+                    "iterate",
+                    CF_MEJEPA_MUTATION_CORPUS,
+                    err.to_string(),
+                    "inspect RocksDB iterator state and column-family health",
+                )
+            })?;
+            let key_text = String::from_utf8(key.to_vec()).map_err(|err| {
+                OracleError::store(
+                    "decode_key",
+                    CF_MEJEPA_MUTATION_CORPUS,
+                    err.to_string(),
+                    "only use UTF-8 ME-JEPA corpus keys",
+                )
+            })?;
+            let (task_id, category) = parse_corpus_key(&key_text)?;
+            let mutation = serde_json::from_slice(&mutation_bytes).map_err(|err| {
+                OracleError::store(
+                    "deserialize",
+                    CF_MEJEPA_MUTATION_CORPUS,
+                    err.to_string(),
+                    "do not mutate persisted ME-JEPA mutation records outside this API",
+                )
+            })?;
+            let verdict = self.get_verdict(&task_id, category)?.ok_or_else(|| {
+                OracleError::store(
+                    "iter_corpus_rows",
+                    "<corpus_row>",
+                    format!(
+                        "verdict row missing for mutation key task_id={task_id} category={}",
+                        category.slug()
+                    ),
+                    "rebuild this corpus because mutation/verdict rows must be atomic",
+                )
+            })?;
+            rows.push((task_id, category, mutation, verdict));
+        }
+        Ok(rows)
+    }
+
+    pub fn put_provenance(&self, provenance: &CorpusProvenance) -> OracleResult<()> {
+        provenance.validate().map_err(|err| {
+            OracleError::store(
+                "validate",
+                CF_MEJEPA_CORPUS_PROVENANCE,
+                format!("{err} ({})", err.code()),
+                "compute complete corpus provenance before writing it",
+            )
+        })?;
+        if self
+            .get_provenance(&provenance.corpus_version, &provenance.embedder_version)?
+            .is_some()
+        {
+            return Err(OracleError::store(
+                "put",
+                CF_MEJEPA_CORPUS_PROVENANCE,
+                format!(
+                    "provenance already exists for corpus_version={} embedder_version={}",
+                    provenance.corpus_version, provenance.embedder_version
+                ),
+                "write provenance exactly once after successful corpus generation",
+            ));
+        }
+        let key = provenance_key(&provenance.corpus_version, &provenance.embedder_version)?;
+        let bytes = serde_json::to_vec(provenance).map_err(|err| {
+            OracleError::store(
+                "serialize",
+                CF_MEJEPA_CORPUS_PROVENANCE,
+                err.to_string(),
+                "ensure CorpusProvenance remains JSON-serializable",
+            )
+        })?;
+        self.db
+            .put_cf(self.cf(CF_MEJEPA_CORPUS_PROVENANCE)?, key.as_bytes(), bytes)
+            .map_err(|err| {
+                OracleError::store(
+                    "put",
+                    CF_MEJEPA_CORPUS_PROVENANCE,
+                    err.to_string(),
+                    "inspect RocksDB write permissions and disk capacity",
+                )
+            })
+    }
+
+    pub fn get_provenance(
+        &self,
+        corpus_version: &str,
+        embedder_version: &str,
+    ) -> OracleResult<Option<CorpusProvenance>> {
+        let key = provenance_key(corpus_version, embedder_version)?;
+        let Some(bytes) = self
+            .db
+            .get_cf(self.cf(CF_MEJEPA_CORPUS_PROVENANCE)?, key.as_bytes())
+            .map_err(|err| {
+                OracleError::store(
+                    "get",
+                    CF_MEJEPA_CORPUS_PROVENANCE,
+                    err.to_string(),
+                    "inspect RocksDB read permissions and column-family health",
+                )
+            })?
+        else {
+            return Ok(None);
+        };
+        let provenance = serde_json::from_slice(&bytes).map_err(|err| {
+            OracleError::store(
+                "deserialize",
+                CF_MEJEPA_CORPUS_PROVENANCE,
+                err.to_string(),
+                "do not mutate persisted ME-JEPA provenance records outside this API",
+            )
+        })?;
+        Ok(Some(provenance))
     }
 
     pub fn count_cf(&self, cf_name: &'static str) -> OracleResult<usize> {
@@ -1178,6 +1329,53 @@ fn corpus_key(task_id: &str, category: MutationCategory) -> OracleResult<String>
     Ok(format!("{}|{}", task_id, category.slug()))
 }
 
+fn parse_corpus_key(key: &str) -> OracleResult<(String, MutationCategory)> {
+    let mut parts = key.split('|');
+    let task_id = parts.next().ok_or_else(|| {
+        OracleError::store(
+            "decode_key",
+            "<corpus_row>",
+            "corpus key missing task id",
+            "only use corpus keys generated by OracleStore",
+        )
+    })?;
+    let category_slug = parts.next().ok_or_else(|| {
+        OracleError::store(
+            "decode_key",
+            "<corpus_row>",
+            "corpus key missing category",
+            "only use corpus keys generated by OracleStore",
+        )
+    })?;
+    if parts.next().is_some() {
+        return Err(OracleError::store(
+            "decode_key",
+            "<corpus_row>",
+            format!("corpus key contains too many separators: {key:?}"),
+            "only use corpus keys generated by OracleStore",
+        ));
+    }
+    validate_key_part("task_id", task_id)?;
+    let category = MutationCategory::all()
+        .into_iter()
+        .find(|category| category.slug() == category_slug)
+        .ok_or_else(|| {
+            OracleError::store(
+                "decode_key",
+                "<corpus_row>",
+                format!("unknown mutation category in corpus key: {category_slug:?}"),
+                "only use canonical MutationCategory slugs in corpus keys",
+            )
+        })?;
+    Ok((task_id.to_string(), category))
+}
+
+fn provenance_key(corpus_version: &str, embedder_version: &str) -> OracleResult<String> {
+    validate_key_part("corpus_version", corpus_version)?;
+    validate_key_part("embedder_version", embedder_version)?;
+    Ok(format!("{corpus_version}|{embedder_version}"))
+}
+
 fn validate_key_part(field: &'static str, value: &str) -> OracleResult<()> {
     if value.trim().is_empty() {
         return Err(OracleError::invalid(
@@ -1211,7 +1409,10 @@ fn _iterator_mode_from_prefix(prefix: &[u8]) -> IteratorMode<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{apply_mutation, MutationConfig};
+    use crate::{
+        apply_mutation, compute_corpus_sha256, CorpusProvenance, CorpusProvenanceRow, Language,
+        MutationConfig, MEJEPA_CORPUS_VERSION_V1, MEJEPA_EMBEDDER_VERSION_V1,
+    };
     use std::ffi::OsStr;
 
     const REPORT: &str = r#"{
@@ -1319,7 +1520,7 @@ mod tests {
     }
 
     #[test]
-    fn oracle_store_persists_mutation_and_verdict_cfs() {
+    fn oracle_store_persists_atomic_corpus_row_and_provenance_cf() {
         let temp = tempfile::tempdir().unwrap();
         let store = OracleStore::open(temp.path()).unwrap();
         let outcome = apply_mutation(
@@ -1336,16 +1537,46 @@ mod tests {
             }],
             exception: None,
         };
+        let patch_sha256 =
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let verdict_sha256 =
+            "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let corpus_sha256 = compute_corpus_sha256(&[CorpusProvenanceRow {
+            task_id: "synthetic-task-001".to_string(),
+            category: MutationCategory::KnownGood,
+            patch_sha256: patch_sha256.to_string(),
+            oracle_verdict_sha256: verdict_sha256.to_string(),
+        }])
+        .unwrap();
+        let provenance = CorpusProvenance {
+            corpus_version: MEJEPA_CORPUS_VERSION_V1.to_string(),
+            embedder_version: MEJEPA_EMBEDDER_VERSION_V1.to_string(),
+            generated_at_unix_ms: 1,
+            generator_version: "test".to_string(),
+            seed: 0,
+            languages: vec![Language::Python],
+            task_manifest_count: 1,
+            mutation_count: 1,
+            mutation_categories: vec![MutationCategory::KnownGood],
+            source_patch_mode: "source-backed".to_string(),
+            split_mode: "instance_atomic".to_string(),
+            corpus_sha256,
+            complete: true,
+        };
         store
-            .put_mutation("synthetic-task-001", MutationCategory::KnownGood, &outcome)
+            .put_corpus_row(
+                "synthetic-task-001",
+                MutationCategory::KnownGood,
+                &outcome,
+                &verdict,
+            )
             .unwrap();
-        store
-            .put_verdict("synthetic-task-001", MutationCategory::KnownGood, &verdict)
-            .unwrap();
+        store.put_provenance(&provenance).unwrap();
         store.flush().unwrap();
 
         assert_eq!(store.count_cf(CF_MEJEPA_MUTATION_CORPUS).unwrap(), 1);
         assert_eq!(store.count_cf(CF_MEJEPA_ORACLE_VERDICTS).unwrap(), 1);
+        assert_eq!(store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE).unwrap(), 1);
         assert_eq!(
             store
                 .get_mutation("synthetic-task-001", MutationCategory::KnownGood)
@@ -1358,6 +1589,13 @@ mod tests {
                 .unwrap(),
             Some(verdict)
         );
+        assert_eq!(
+            store
+                .get_provenance(MEJEPA_CORPUS_VERSION_V1, MEJEPA_EMBEDDER_VERSION_V1)
+                .unwrap(),
+            Some(provenance)
+        );
+        assert_eq!(store.iter_corpus_rows().unwrap().len(), 1);
     }
 
     #[test]
@@ -1372,8 +1610,14 @@ mod tests {
             }],
             exception: None,
         };
+        let outcome = apply_mutation(
+            MutationCategory::KnownGood,
+            "def add(a, b):\n    return a + b\n",
+            MutationConfig::default(),
+        )
+        .unwrap();
         let err = store
-            .put_verdict("bad|task", MutationCategory::KnownGood, &verdict)
+            .put_corpus_row("bad|task", MutationCategory::KnownGood, &outcome, &verdict)
             .unwrap_err();
         assert_eq!(err.code(), "MEJEPA_ORACLE_INVALID_INPUT");
     }

@@ -4,7 +4,11 @@
 <task_spec id="TASK-CORPUS-026" version="1.0">
 <metadata>
   <title>mejepa-corpus generate Subcommand (clap parse + SIGINT trap + complete=false on interrupt)</title>
-  <status>ready</status>
+  <status>partial</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: clap-parsed `mejepa-corpus generate` subcommand in `bin/mejepa-corpus.rs:43-73, 139-301` exposing `--output`, `--tasks-dir`, `--venv-python`, `--instance-id` (multi), `--category` (multi), `--max-tasks`, `--repo-cache-dir`, `--source-work-root`, `--run-id-prefix`, `--instance-timeout-secs`, `--overall-timeout-secs`. Source-backed patch generation pipeline (commits b6b4810c, 3f46ff78) builds canonical mutated patches before invoking the Docker oracle. The on-disk `index.json` writes `complete: false` initially and only flips to `complete: true` after the last entry — fail-closed per REQ-CORPUS-16.
+    Pending: SIGINT trap (`ctrlc::set_handler` or `tokio::signal::ctrl_c`) so an operator-initiated `^C` mid-batch leaves `complete: false` permanently and prints the partial-progress summary, plus a graceful-shutdown unit test that verifies the trap behaviour without spawning Docker.
+  </implementation_state>
   <layer>surface</layer>
   <sequence>26</sequence>
   <implements>

@@ -4,7 +4,11 @@
 <task_spec id="TASK-CORPUS-021" version="1.0">
 <metadata>
   <title>OracleStore: open / put_corpus_row (atomic WriteBatch) / get_corpus_row / iter_corpus_rows</title>
-  <status>ready</status>
+  <status>partial</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `OracleStore::open(path)`, `put_mutation`, `get_mutation`, `put_verdict`, `get_verdict`, `count_cf`, `scan_cf_json`, `flush` (oracle.rs:318-525) — all keyed `<task_id>|<category_slug>` over the two named CFs.
+    Pending: a single atomic `put_corpus_row` (or `put_mutation_and_verdict_and_provenance`) that uses `rocksdb::WriteBatch` to write all three CFs in one transaction so a crash mid-task can never leave a mutation with no verdict (or vice versa). Current CLI calls `put_mutation` + `flush` + `put_verdict` + `flush` separately — durable but not crash-atomic. Also pending: `iter_corpus_rows` cursor-style API for stats / verify subcommands once the 3rd CF lands.
+  </implementation_state>
   <layer>logic</layer>
   <sequence>21</sequence>
   <implements>

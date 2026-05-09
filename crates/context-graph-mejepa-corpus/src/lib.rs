@@ -37,6 +37,7 @@
 // depending on mutation sites being present in added diff lines.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 mod compile_error;
@@ -62,6 +63,9 @@ mod wrong_file;
 mod corpus_tests;
 
 pub type MutationResult<T> = Result<T, MutationError>;
+
+pub const MEJEPA_CORPUS_VERSION_V1: &str = "phase0-corpus-v1";
+pub const MEJEPA_EMBEDDER_VERSION_V1: &str = "mejepa-embedder-v1";
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum MutationError {
@@ -131,6 +135,180 @@ impl MutationError {
             remediation,
         }
     }
+}
+
+/// Phase 0 currently mutates Python SWE-bench Lite tasks. Other languages must
+/// fail closed until language-specific operators and oracle fixtures exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Language {
+    Python,
+}
+
+impl Language {
+    pub fn slug(self) -> &'static str {
+        match self {
+            Self::Python => "python",
+        }
+    }
+
+    pub fn parse_slug(value: &str) -> MutationResult<Self> {
+        match value {
+            "python" => Ok(Self::Python),
+            other => Err(MutationError::invalid(
+                "languages",
+                format!(
+                    "unsupported Phase 0 mutation language {other:?}; only `python` is implemented"
+                ),
+                "generate per-language operators and oracle fixtures before enabling this language",
+            )),
+        }
+    }
+}
+
+/// Stable row material used to compute the finalized corpus hash. The hash is
+/// over task/category plus persisted patch and verdict hashes, not over a
+/// transient CLI return value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CorpusProvenanceRow {
+    pub task_id: String,
+    pub category: MutationCategory,
+    pub patch_sha256: String,
+    pub oracle_verdict_sha256: String,
+}
+
+/// Final corpus-level provenance persisted after all mutation+verdict rows have
+/// been written and read back from RocksDB.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CorpusProvenance {
+    pub corpus_version: String,
+    pub embedder_version: String,
+    pub generated_at_unix_ms: u128,
+    pub generator_version: String,
+    pub seed: u64,
+    pub languages: Vec<Language>,
+    pub task_manifest_count: usize,
+    pub mutation_count: usize,
+    pub mutation_categories: Vec<MutationCategory>,
+    pub source_patch_mode: String,
+    pub split_mode: String,
+    pub corpus_sha256: String,
+    pub complete: bool,
+}
+
+impl CorpusProvenance {
+    pub fn validate(&self) -> MutationResult<()> {
+        if self.corpus_version.trim().is_empty() {
+            return Err(MutationError::invalid(
+                "corpus_version",
+                "corpus_version is empty",
+                "set an explicit immutable corpus schema/version identifier",
+            ));
+        }
+        if self.embedder_version.trim().is_empty() {
+            return Err(MutationError::invalid(
+                "embedder_version",
+                "embedder_version is empty",
+                "record the frozen embedder or signal schema version used for this corpus",
+            ));
+        }
+        if self.generator_version.trim().is_empty() {
+            return Err(MutationError::invalid(
+                "generator_version",
+                "generator_version is empty",
+                "record the generator package version or git revision",
+            ));
+        }
+        if self.languages.is_empty() {
+            return Err(MutationError::invalid(
+                "languages",
+                "languages is empty",
+                "record every source language represented in the corpus",
+            ));
+        }
+        if self
+            .languages
+            .iter()
+            .any(|language| *language != Language::Python)
+        {
+            return Err(MutationError::invalid(
+                "languages",
+                "Phase 0 provenance contains a language without implemented mutation operators",
+                "enable only python until language-specific operators are complete",
+            ));
+        }
+        if self.mutation_count == 0 {
+            return Err(MutationError::invalid(
+                "mutation_count",
+                "mutation_count is zero",
+                "persist at least one mutation+verdict row before writing provenance",
+            ));
+        }
+        if !is_plain_sha256_hex(&self.corpus_sha256) {
+            return Err(MutationError::invalid(
+                "corpus_sha256",
+                format!(
+                    "corpus_sha256 must be 64 lowercase hex characters, got {:?}",
+                    self.corpus_sha256
+                ),
+                "compute provenance with compute_corpus_sha256",
+            ));
+        }
+        Ok(())
+    }
+}
+
+pub fn compute_corpus_sha256(rows: &[CorpusProvenanceRow]) -> MutationResult<String> {
+    if rows.is_empty() {
+        return Err(MutationError::invalid(
+            "rows",
+            "cannot compute corpus hash for zero rows",
+            "finalize provenance only after the corpus contains mutation+verdict rows",
+        ));
+    }
+    let mut sorted = rows.to_vec();
+    sorted.sort_by(|a, b| {
+        a.task_id
+            .cmp(&b.task_id)
+            .then_with(|| a.category.slug().cmp(b.category.slug()))
+    });
+    let mut hasher = Sha256::new();
+    for row in sorted {
+        validate_hash_field("patch_sha256", &row.patch_sha256)?;
+        validate_hash_field("oracle_verdict_sha256", &row.oracle_verdict_sha256)?;
+        hasher.update(row.task_id.as_bytes());
+        hasher.update([0]);
+        hasher.update(row.category.slug().as_bytes());
+        hasher.update([0]);
+        hasher.update(row.patch_sha256.as_bytes());
+        hasher.update([0]);
+        hasher.update(row.oracle_verdict_sha256.as_bytes());
+        hasher.update([0xff]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn validate_hash_field(field: &'static str, value: &str) -> MutationResult<()> {
+    let raw = value.strip_prefix("sha256:").unwrap_or(value);
+    if is_plain_sha256_hex(raw) {
+        Ok(())
+    } else {
+        Err(MutationError::invalid(
+            field,
+            format!("{field} must be sha256:<64 hex> or 64 lowercase hex, got {value:?}"),
+            "store content-addressed hashes produced by the corpus generator",
+        ))
+    }
+}
+
+fn is_plain_sha256_hex(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .as_bytes()
+            .iter()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// One of the eight mutation categories per doc 09 §3.1.

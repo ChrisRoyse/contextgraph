@@ -4,7 +4,11 @@
 <task_spec id="TASK-CORPUS-023" version="1.0">
 <metadata>
   <title>generate_swe_bench_mutation_corpus Library Entry Point</title>
-  <status>ready</status>
+  <status>partial</status>
+  <implementation_state as_of="2026-05-09">
+    The end-to-end orchestration is shipped, BUT it lives inline in `bin/mejepa-corpus.rs::generate` (lines 139-301), not as a reusable library entry. That CLI function: loads task manifests from `tasks/swebench-lite/`, loads official patches via the venv Python, runs `split_corpus` in InstanceAtomic mode, builds source-backed mutated patches via `mutate_task_source_patch` (commits b6b4810c / 3f46ff78), opens the `OracleStore`, and for each (task × category) pair writes the mutation, runs `run_swebench_lite_oracle`, writes the verdict, and updates the on-disk `index.json` (with `complete: false` until the last entry is written, then `complete: true`).
+    Pending: extract this into a public `generate_swe_bench_mutation_corpus(config) -> CorpusResult<CorpusReport>` function in `lib.rs` so non-CLI callers (Phase 3 training loop, Phase 8 evaluation harness) can drive it programmatically. Also pending: integrating the future `CorpusProvenance` write path (TASK-CORPUS-022) once 007/008 land.
+  </implementation_state>
   <layer>logic</layer>
   <sequence>23</sequence>
   <implements>

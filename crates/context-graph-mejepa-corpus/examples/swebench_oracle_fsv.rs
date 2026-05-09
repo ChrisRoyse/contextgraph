@@ -29,14 +29,20 @@
 // CI without Docker but shouts loudly when run in an environment that
 // claims to satisfy the preconditions but does not.
 
-use context_graph_mejepa_corpus::oracle::{OracleStore, CF_MEJEPA_ORACLE_VERDICTS};
+use context_graph_mejepa_corpus::oracle::{
+    OracleStore, CF_MEJEPA_CORPUS_PROVENANCE, CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS,
+};
 use context_graph_mejepa_corpus::swebench::{
     parse_swebench_instance_report, run_swebench_lite_oracle, swebench_report_to_verdict,
     SwebenchOracleConfig, SwebenchOracleResult, SwebenchPredictionMode,
 };
-use context_graph_mejepa_corpus::{MutationCategory, MutationOutcome};
+use context_graph_mejepa_corpus::{
+    compute_corpus_sha256, CorpusProvenance, CorpusProvenanceRow, Language, MutationCategory,
+    MutationOutcome, MEJEPA_CORPUS_VERSION_V1, MEJEPA_EMBEDDER_VERSION_V1,
+};
 use context_graph_mejepa_instruments::{OracleVerdict, TestOutcome};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -94,6 +100,14 @@ fn write_evidence(path: &Path, payload: &Value) -> FsvResult<()> {
         return Err(format!("evidence readback mismatch at {}", path.display()).into());
     }
     Ok(())
+}
+
+fn sha256_text(text: &str) -> String {
+    format!("sha256:{:x}", Sha256::digest(text.as_bytes()))
+}
+
+fn sha256_json_value(value: &Value) -> String {
+    sha256_text(&serde_json::to_string(value).expect("JSON value serialises"))
 }
 
 fn smoke_image_ref(instance_id: &str) -> String {
@@ -242,23 +256,75 @@ fn run_gold() -> FsvResult<Value> {
         ),
         mutation_site: None,
     };
-    store.put_mutation(SMOKE_INSTANCE, MutationCategory::KnownGood, &mutation)?;
-    store.put_verdict(SMOKE_INSTANCE, MutationCategory::KnownGood, &result.verdict)?;
+    let patch_sha256 = sha256_text(&mutation.mutated_source);
+    let verdict_sha256 = sha256_json_value(&serde_json::to_value(&result.verdict)?);
+    let corpus_sha256 = compute_corpus_sha256(&[CorpusProvenanceRow {
+        task_id: SMOKE_INSTANCE.to_string(),
+        category: MutationCategory::KnownGood,
+        patch_sha256,
+        oracle_verdict_sha256: verdict_sha256,
+    }])?;
+    let provenance = CorpusProvenance {
+        corpus_version: MEJEPA_CORPUS_VERSION_V1.to_string(),
+        embedder_version: MEJEPA_EMBEDDER_VERSION_V1.to_string(),
+        generated_at_unix_ms: 1,
+        generator_version: "swebench_oracle_fsv".to_string(),
+        seed: 0,
+        languages: vec![Language::Python],
+        task_manifest_count: 1,
+        mutation_count: 1,
+        mutation_categories: vec![MutationCategory::KnownGood],
+        source_patch_mode: "swebench-gold".to_string(),
+        split_mode: "instance_atomic".to_string(),
+        corpus_sha256,
+        complete: true,
+    };
+    store.put_corpus_row(
+        SMOKE_INSTANCE,
+        MutationCategory::KnownGood,
+        &mutation,
+        &result.verdict,
+    )?;
+    store.put_provenance(&provenance)?;
     store.flush()?;
     drop(store);
 
     let store2 = OracleStore::open(&store_root)?;
-    let count = store2.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?;
+    let mutation_count = store2.count_cf(CF_MEJEPA_MUTATION_CORPUS)?;
+    let verdict_count = store2.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?;
+    let provenance_count = store2.count_cf(CF_MEJEPA_CORPUS_PROVENANCE)?;
     ensure(
         "OracleStore CF_MEJEPA_ORACLE_VERDICTS count == 1",
-        count == 1,
+        verdict_count == 1,
+    )?;
+    ensure(
+        "OracleStore CF_MEJEPA_MUTATION_CORPUS count == 1",
+        mutation_count == 1,
+    )?;
+    ensure(
+        "OracleStore CF_MEJEPA_CORPUS_PROVENANCE count == 1",
+        provenance_count == 1,
     )?;
     let read_back: Option<OracleVerdict> =
         store2.get_verdict(SMOKE_INSTANCE, MutationCategory::KnownGood)?;
     let read_back = read_back.ok_or("verdict missing after RocksDB reopen")?;
+    let corpus_row = store2
+        .get_corpus_row(SMOKE_INSTANCE, MutationCategory::KnownGood)?
+        .ok_or("atomic corpus row missing after RocksDB reopen")?;
+    let provenance_readback = store2
+        .get_provenance(MEJEPA_CORPUS_VERSION_V1, MEJEPA_EMBEDDER_VERSION_V1)?
+        .ok_or("provenance missing after RocksDB reopen")?;
     ensure(
         "verdict round-trip through RocksDB == original verdict",
         read_back == result.verdict,
+    )?;
+    ensure(
+        "atomic corpus row round-trip through RocksDB == original row",
+        corpus_row == (mutation.clone(), result.verdict.clone()),
+    )?;
+    ensure(
+        "provenance round-trip through RocksDB == original provenance",
+        provenance_readback == provenance,
     )?;
     drop(store2);
 
@@ -292,6 +358,12 @@ fn run_gold() -> FsvResult<Value> {
             "patch_path": result.artifacts.patch,
         },
         "rocksdb_store_path": store_root,
+        "rocksdb_counts": {
+            CF_MEJEPA_MUTATION_CORPUS: mutation_count,
+            CF_MEJEPA_ORACLE_VERDICTS: verdict_count,
+            CF_MEJEPA_CORPUS_PROVENANCE: provenance_count,
+        },
+        "provenance": provenance_readback,
         "rocksdb_round_trip_verdict_matches": true,
     }))
 }

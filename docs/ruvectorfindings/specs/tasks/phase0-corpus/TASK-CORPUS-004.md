@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-004" version="1.0">
 <metadata>
   <title>MutationConfig + MutationSite + MutationOutcome Types</title>
-  <status>ready</status>
+  <status>complete</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `MutationConfig { seed: u64, alternate_source: Option<String> }`, `MutationOutcome { category, mutated_source, seed, mutation_site }`, `MutationSite { byte_offset, byte_length, original_text, replacement_text, note }` (lib.rs:196–223). UTF-8 boundary + range guards on `apply_site` (lib.rs:271–335). `MutationOutcome` skips serializing `mutation_site` when `None`. Round-trip and apply-site tests in `tests.rs`.
+  </implementation_state>
   <layer>foundation</layer>
   <sequence>4</sequence>
   <implements>

@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-014" version="1.0">
 <metadata>
   <title>SwapVariable + DeleteTestCall Mutation Operators (Python)</title>
-  <status>ready</status>
+  <status>complete</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `swap_variable.rs` (247 LOC — picks an in-scope local identifier and renames to another in-scope identifier, both gated by python_lex so it never targets string/comment text) and `delete_test_call.rs` (251 LOC — deletes one assertion call statement in a way that preserves the surrounding indentation block). Tests + FSV pass.
+  </implementation_state>
   <layer>logic</layer>
   <sequence>14</sequence>
   <implements>

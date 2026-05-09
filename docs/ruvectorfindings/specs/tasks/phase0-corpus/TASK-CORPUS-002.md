@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-002" version="1.0">
 <metadata>
   <title>Language Enum + 11-Language Gate</title>
-  <status>ready</status>
+  <status>pending</status>
+  <implementation_state as_of="2026-05-09">
+    Not yet shipped. Phase 0 is Python-only today; every operator and the python_lex gate are hard-coded to Python. The 11-language tree-sitter chunker exists separately under `crates/context-graph-core/src/memory/ast_chunker.rs` (Rust-only today, expanding to the other 10 languages as Phase 1 deliverable per CLAUDE.md), but the corpus generator stays Python-only until non-Python operators land.
+  </implementation_state>
   <layer>foundation</layer>
   <sequence>2</sequence>
   <implements>

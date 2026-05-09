@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use context_graph_mejepa_corpus::oracle::{
-    OracleStore, CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS,
+    OracleStore, CF_MEJEPA_CORPUS_PROVENANCE, CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS,
 };
 use context_graph_mejepa_corpus::patch_mutation::PatchMutationOutcome;
 use context_graph_mejepa_corpus::source_patch::{
@@ -12,7 +12,10 @@ use context_graph_mejepa_corpus::split::{
 use context_graph_mejepa_corpus::swebench::{
     run_swebench_lite_oracle, SwebenchOracleConfig, SwebenchPrediction, SwebenchPredictionMode,
 };
-use context_graph_mejepa_corpus::{MutationCategory, MutationOutcome};
+use context_graph_mejepa_corpus::{
+    compute_corpus_sha256, CorpusProvenance, CorpusProvenanceRow, Language, MutationCategory,
+    MutationOutcome, MEJEPA_CORPUS_VERSION_V1, MEJEPA_EMBEDDER_VERSION_V1,
+};
 use context_graph_mejepa_instruments::OracleVerdict;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -22,6 +25,10 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 
 type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
@@ -55,6 +62,10 @@ struct GenerateArgs {
     instance_ids: Vec<String>,
     #[arg(long = "category")]
     categories: Vec<String>,
+    #[arg(long = "language", value_delimiter = ',', default_value = "python")]
+    languages: Vec<String>,
+    #[arg(long, default_value_t = 0)]
+    seed: u64,
     #[arg(long)]
     max_tasks: Option<usize>,
     #[arg(
@@ -76,6 +87,19 @@ struct GenerateArgs {
 struct VerifyArgs {
     #[arg(long)]
     corpus: PathBuf,
+    #[arg(long, default_value_t = 0.05)]
+    sample_fraction: f64,
+    #[arg(
+        long,
+        default_value = "/home/cabdru/.cache/contextgraph-swebench/venv/bin/python"
+    )]
+    venv_python: PathBuf,
+    #[arg(long, default_value = "mejepa-corpus-verify")]
+    run_id_prefix: String,
+    #[arg(long, default_value_t = 1800)]
+    instance_timeout_secs: u64,
+    #[arg(long, default_value_t = 3600)]
+    overall_timeout_secs: u64,
 }
 
 #[derive(Parser, Debug)]
@@ -97,11 +121,21 @@ struct TaskManifest {
 #[serde(deny_unknown_fields)]
 struct CorpusIndex {
     schema_version: u32,
+    #[serde(default = "default_corpus_version")]
+    corpus_version: String,
+    #[serde(default = "default_embedder_version")]
+    embedder_version: String,
     #[serde(default)]
     complete: bool,
     generated_at_unix_ms: u128,
+    #[serde(default)]
+    seed: u64,
+    #[serde(default)]
+    languages: Vec<Language>,
     tasks_dir: String,
     store_path: String,
+    #[serde(default)]
+    corpus_sha256: Option<String>,
     entries: Vec<GeneratedEntry>,
     split_assignments: Vec<TaskAssignment>,
 }
@@ -139,6 +173,8 @@ fn main() -> CliResult<()> {
 fn generate(args: GenerateArgs) -> CliResult<()> {
     validate_generate_args(&args)?;
     let categories = parse_categories(&args.categories)?;
+    let languages = parse_languages(&args.languages)?;
+    let interrupted = install_shutdown_flag()?;
     let manifests = load_task_manifests(&args.tasks_dir)?;
     let selected = select_manifests(&manifests, &args.instance_ids, args.max_tasks)?;
     let patch_by_task = load_official_patches(
@@ -199,7 +235,7 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
             )
         })?;
         for category in &categories {
-            let seed = stable_seed(&manifest.instance_id, *category);
+            let seed = stable_seed(args.seed, &manifest.instance_id, *category);
             let outcome = mutate_task_source_patch(
                 &SourcePatchTask {
                     instance_id: manifest.instance_id.clone(),
@@ -235,16 +271,28 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
 
     let mut index = CorpusIndex {
         schema_version: 1,
+        corpus_version: MEJEPA_CORPUS_VERSION_V1.to_string(),
+        embedder_version: MEJEPA_EMBEDDER_VERSION_V1.to_string(),
         complete: false,
         generated_at_unix_ms: unix_ms(),
+        seed: args.seed,
+        languages: languages.clone(),
         tasks_dir: args.tasks_dir.display().to_string(),
         store_path: store_path_rel.display().to_string(),
+        corpus_sha256: None,
         entries: Vec::new(),
         split_assignments: split.assignments.clone(),
     };
     write_index(&args.output, &index)?;
 
     for planned in &planned_mutations {
+        if interrupted.load(Ordering::SeqCst) {
+            write_index(&args.output, &index)?;
+            return Err(
+                "generation interrupted by SIGINT before starting next corpus row; index remains complete=false"
+                    .into(),
+            );
+        }
         let manifest = &planned.manifest;
         let patch_outcome = &planned.outcome;
         let category = patch_outcome.category;
@@ -258,11 +306,8 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
             seed,
             mutation_site: None,
         };
-        store.put_mutation(&manifest.instance_id, category, &mutation)?;
-        store.flush()?;
-
         let verdict = run_oracle_for_patch(&args, manifest, category, patch_outcome)?;
-        store.put_verdict(&manifest.instance_id, category, &verdict)?;
+        store.put_corpus_row(&manifest.instance_id, category, &mutation, &verdict)?;
         store.flush()?;
         let oracle_verdict_sha256 = sha256_json_value(&serde_json::to_value(&verdict)?);
 
@@ -285,8 +330,21 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
         index.entries.push(entry);
         write_index(&args.output, &index)?;
     }
+    let provenance = build_provenance(&index)?;
+    store.put_provenance(&provenance)?;
+    store.flush()?;
+    let stored_provenance = store
+        .get_provenance(&index.corpus_version, &index.embedder_version)?
+        .ok_or("provenance row missing immediately after RocksDB write")?;
+    if stored_provenance != provenance {
+        return Err("provenance readback mismatch immediately after RocksDB write".into());
+    }
+    index.corpus_sha256 = Some(provenance.corpus_sha256.clone());
     index.complete = true;
-    write_stats_json(&args.output, &index, &store)?;
+    write_stats_json(
+        &args.output,
+        &build_stats_json(&args.output, &index, &store)?,
+    )?;
     write_index(&args.output, &index)?;
     println!(
         "{}",
@@ -301,11 +359,28 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
 }
 
 fn verify(args: VerifyArgs) -> CliResult<()> {
+    validate_verify_args(&args)?;
     let index = read_index(&args.corpus)?;
     validate_complete_index(&index)?;
     let store_path = resolve_corpus_path(&args.corpus, &index.store_path)?;
     let store = OracleStore::open(&store_path)?;
+    let provenance = store
+        .get_provenance(&index.corpus_version, &index.embedder_version)?
+        .ok_or_else(|| {
+            format!(
+                "missing provenance row for corpus_version={} embedder_version={}",
+                index.corpus_version, index.embedder_version
+            )
+        })?;
+    let expected_provenance = build_provenance(&index)?;
     let mut failures = Vec::new();
+    if provenance != expected_provenance {
+        failures.push(json!({
+            "error": "provenance mismatch",
+            "expected": expected_provenance.clone(),
+            "actual": provenance.clone(),
+        }));
+    }
     let mut seen = BTreeSet::new();
     for entry in &index.entries {
         let key = format!("{}|{}", entry.task_id, entry.category.slug());
@@ -323,15 +398,11 @@ fn verify(args: VerifyArgs) -> CliResult<()> {
                 "actual": actual_hash,
             }));
         }
-        match store.get_mutation(&entry.task_id, entry.category)? {
-            Some(mutation) if sha256_text(&mutation.mutated_source) == entry.patch_sha256 => {}
-            Some(_) => {
-                failures.push(json!({"key": key, "error": "RocksDB mutation hash mismatch"}))
-            }
-            None => failures.push(json!({"key": key, "error": "missing RocksDB mutation row"})),
-        }
-        match store.get_verdict(&entry.task_id, entry.category)? {
-            Some(verdict) => {
+        match store.get_corpus_row(&entry.task_id, entry.category)? {
+            Some((mutation, verdict)) => {
+                if sha256_text(&mutation.mutated_source) != entry.patch_sha256 {
+                    failures.push(json!({"key": key, "error": "RocksDB mutation hash mismatch"}));
+                }
                 let actual = sha256_json_value(&serde_json::to_value(&verdict)?);
                 if actual != entry.oracle_verdict_sha256 {
                     failures.push(json!({
@@ -342,11 +413,13 @@ fn verify(args: VerifyArgs) -> CliResult<()> {
                     }));
                 }
             }
-            None => failures.push(json!({"key": key, "error": "missing RocksDB verdict row"})),
+            None => failures.push(json!({"key": key, "error": "missing RocksDB corpus row"})),
         }
     }
     let mutation_cf_count = store.count_cf(CF_MEJEPA_MUTATION_CORPUS)?;
     let verdict_cf_count = store.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?;
+    let provenance_cf_count = store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE)?;
+    let iterated_corpus_rows = store.iter_corpus_rows()?;
     let expected_full_entries = index.split_assignments.len() * MutationCategory::all().len();
     if mutation_cf_count != index.entries.len() {
         failures.push(json!({
@@ -362,18 +435,72 @@ fn verify(args: VerifyArgs) -> CliResult<()> {
             "actual": verdict_cf_count,
         }));
     }
+    if provenance_cf_count != 1 {
+        failures.push(json!({
+            "error": "provenance column-family count mismatch",
+            "expected": 1,
+            "actual": provenance_cf_count,
+        }));
+    }
+    if iterated_corpus_rows.len() != index.entries.len() {
+        failures.push(json!({
+            "error": "iterated atomic corpus row count mismatch",
+            "expected": index.entries.len(),
+            "actual": iterated_corpus_rows.len(),
+        }));
+    }
+    let mut oracle_sample = Vec::new();
+    let mut oracle_sample_count = 0usize;
+    let oracle_sample_skipped_due_to_local_failures = !failures.is_empty();
+    if !oracle_sample_skipped_due_to_local_failures {
+        let sampled_entries = deterministic_sample(
+            &index.entries,
+            args.sample_fraction,
+            provenance.corpus_sha256.as_str(),
+        )?;
+        oracle_sample_count = sampled_entries.len();
+        for entry in &sampled_entries {
+            let fresh_verdict = run_oracle_for_entry(&args, entry)?;
+            let fresh_hash = sha256_json_value(&serde_json::to_value(&fresh_verdict)?);
+            let matches_persisted = fresh_hash == entry.oracle_verdict_sha256;
+            if !matches_persisted {
+                failures.push(json!({
+                    "key": format!("{}|{}", entry.task_id, entry.category.slug()),
+                    "error": "fresh oracle sample hash mismatch",
+                    "expected": entry.oracle_verdict_sha256,
+                    "actual": fresh_hash,
+                }));
+            }
+            oracle_sample.push(json!({
+                "task_id": entry.task_id,
+                "category": entry.category.slug(),
+                "persisted_oracle_verdict_sha256": entry.oracle_verdict_sha256,
+                "fresh_oracle_verdict_sha256": fresh_hash,
+                "persisted_all_passed": entry.oracle_all_passed,
+                "fresh_all_passed": fresh_verdict.all_passed(),
+                "matches_persisted": matches_persisted,
+            }));
+        }
+    }
     let passes = failures.is_empty();
     let evidence = json!({
         "source_of_truth": {
             "index": args.corpus.join("index.json").display().to_string(),
             "store": store_path.display().to_string(),
+            "provenance_cf": CF_MEJEPA_CORPUS_PROVENANCE,
         },
+        "corpus_sha256": provenance.corpus_sha256,
         "entry_count": index.entries.len(),
         "task_manifest_count": index.split_assignments.len(),
         "expected_full_phase0_entries": expected_full_entries,
         "full_phase0_complete": index.entries.len() == expected_full_entries,
         "mutation_cf_count": mutation_cf_count,
         "verdict_cf_count": verdict_cf_count,
+        "provenance_cf_count": provenance_cf_count,
+        "sample_fraction": args.sample_fraction,
+        "oracle_sample_count": oracle_sample_count,
+        "oracle_sample_skipped_due_to_local_failures": oracle_sample_skipped_due_to_local_failures,
+        "oracle_sample": oracle_sample,
         "failures": failures,
         "passes": passes,
     });
@@ -394,8 +521,8 @@ fn stats(args: StatsArgs) -> CliResult<()> {
     validate_complete_index(&index)?;
     let store_path = resolve_corpus_path(&args.corpus, &index.store_path)?;
     let store = OracleStore::open(&store_path)?;
-    write_stats_json(&args.corpus, &index, &store)?;
-    println!("{}", fs::read_to_string(args.corpus.join("stats.json"))?);
+    let stats = build_stats_json(&args.corpus, &index, &store)?;
+    println!("{}", serde_json::to_string_pretty(&stats)?);
     Ok(())
 }
 
@@ -404,6 +531,36 @@ fn validate_generate_args(args: &GenerateArgs) -> CliResult<()> {
         return Err(format!(
             "SWE-bench venv python does not exist: {}",
             args.venv_python.display()
+        )
+        .into());
+    }
+    if args.instance_timeout_secs == 0 || args.overall_timeout_secs < args.instance_timeout_secs {
+        return Err(
+            "timeouts invalid: require overall_timeout_secs >= instance_timeout_secs > 0".into(),
+        );
+    }
+    if args.run_id_prefix.trim().is_empty() {
+        return Err("run_id_prefix must be non-empty".into());
+    }
+    validate_docker_run_id_component(&args.run_id_prefix)?;
+    Ok(())
+}
+
+fn validate_verify_args(args: &VerifyArgs) -> CliResult<()> {
+    if !args.venv_python.is_file() {
+        return Err(format!(
+            "SWE-bench venv python does not exist: {}",
+            args.venv_python.display()
+        )
+        .into());
+    }
+    if !(args.sample_fraction.is_finite()
+        && args.sample_fraction > 0.0
+        && args.sample_fraction <= 1.0)
+    {
+        return Err(format!(
+            "sample_fraction must be finite and in the interval (0, 1], got {}",
+            args.sample_fraction
         )
         .into());
     }
@@ -542,11 +699,38 @@ fn parse_categories(values: &[String]) -> CliResult<Vec<MutationCategory>> {
     values.iter().map(|value| parse_category(value)).collect()
 }
 
+fn parse_languages(values: &[String]) -> CliResult<Vec<Language>> {
+    if values.is_empty() {
+        return Err("at least one --language must be provided; Phase 0 supports `python`".into());
+    }
+    let mut languages = values
+        .iter()
+        .map(|value| {
+            Language::parse_slug(value).map_err(|err| -> Box<dyn std::error::Error> {
+                format!("{err} ({})", err.code()).into()
+            })
+        })
+        .collect::<CliResult<Vec<_>>>()?;
+    languages.sort_by_key(|language| language.slug());
+    languages.dedup();
+    Ok(languages)
+}
+
 fn parse_category(value: &str) -> CliResult<MutationCategory> {
     MutationCategory::all()
         .into_iter()
         .find(|category| category.slug() == value)
         .ok_or_else(|| format!("unknown mutation category `{value}`").into())
+}
+
+fn install_shutdown_flag() -> CliResult<Arc<AtomicBool>> {
+    let interrupted = Arc::new(AtomicBool::new(false));
+    let handler_flag = Arc::clone(&interrupted);
+    ctrlc::set_handler(move || {
+        handler_flag.store(true, Ordering::SeqCst);
+    })
+    .map_err(|err| format!("failed to install SIGINT handler: {err}"))?;
+    Ok(interrupted)
 }
 
 fn write_mutated_patch(
@@ -585,6 +769,42 @@ fn run_oracle_for_patch(
         manifest.instance_id.clone(),
         run_id,
         args.output.join("swebench-runs"),
+        args.venv_python.clone(),
+        SwebenchPredictionMode::Custom(prediction),
+    );
+    config.instance_timeout = Duration::from_secs(args.instance_timeout_secs);
+    config.overall_timeout = Duration::from_secs(args.overall_timeout_secs);
+    let result = run_swebench_lite_oracle(&config)?;
+    Ok(result.verdict)
+}
+
+fn run_oracle_for_entry(args: &VerifyArgs, entry: &GeneratedEntry) -> CliResult<OracleVerdict> {
+    let patch_path = resolve_corpus_path(&args.corpus, &entry.patch_path)?;
+    let patch_text = fs::read_to_string(&patch_path)?;
+    if sha256_text(&patch_text) != entry.patch_sha256 {
+        return Err(format!(
+            "cannot re-run oracle sample for {}|{} because patch hash changed on disk",
+            entry.task_id,
+            entry.category.slug()
+        )
+        .into());
+    }
+    let prediction = SwebenchPrediction {
+        instance_id: entry.task_id.clone(),
+        model_name_or_path: format!("mejepa-verify-{}", entry.category.slug()),
+        model_patch: patch_text,
+    };
+    let run_id = docker_run_id(&format!(
+        "{}-{}-{}-{}",
+        args.run_id_prefix,
+        entry.task_id,
+        entry.category.slug(),
+        unix_ms()
+    ))?;
+    let mut config = SwebenchOracleConfig::defaults_for(
+        entry.task_id.clone(),
+        run_id,
+        args.corpus.join("swebench-verify-runs"),
         args.venv_python.clone(),
         SwebenchPredictionMode::Custom(prediction),
     );
@@ -635,13 +855,15 @@ fn resolve_corpus_path(corpus: &Path, stored_path: &str) -> CliResult<PathBuf> {
     Ok(corpus.join(path))
 }
 
-fn write_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> CliResult<()> {
+fn build_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> CliResult<Value> {
     let mut by_category = BTreeMap::<String, usize>::new();
+    let mut by_bucket = BTreeMap::<String, usize>::new();
     let mut by_oracle = BTreeMap::<String, usize>::new();
     for entry in &index.entries {
         *by_category
             .entry(entry.category.slug().to_string())
             .or_default() += 1;
+        *by_bucket.entry(entry.bucket.clone()).or_default() += 1;
         let key = if entry.oracle_all_passed {
             "pass"
         } else {
@@ -650,22 +872,145 @@ fn write_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> 
         *by_oracle.entry(key.to_string()).or_default() += 1;
     }
     let expected_full_entries = index.split_assignments.len() * MutationCategory::all().len();
-    let stats = json!({
+    let provenance = store.get_provenance(&index.corpus_version, &index.embedder_version)?;
+    let leakage_failures = split_leakage_failures(index);
+    let leakage_passes = leakage_failures.is_empty();
+    Ok(json!({
         "source_of_truth": {
             "index": output.join("index.json").display().to_string(),
             "store": resolve_corpus_path(output, &index.store_path)?.display().to_string(),
         },
+        "provenance": provenance,
         "total_entries": index.entries.len(),
         "task_manifest_count": index.split_assignments.len(),
         "expected_full_phase0_entries": expected_full_entries,
         "full_phase0_complete": index.entries.len() == expected_full_entries,
         "by_category": by_category,
+        "by_bucket": by_bucket,
         "by_oracle": by_oracle,
         "mutation_cf_count": store.count_cf(CF_MEJEPA_MUTATION_CORPUS)?,
         "verdict_cf_count": store.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?,
-        "passes": true,
-    });
-    write_json_checked(&output.join("stats.json"), &stats)
+        "provenance_cf_count": store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE)?,
+        "leakage_check": {
+            "failures": leakage_failures,
+            "passes": leakage_passes,
+        },
+        "passes": leakage_passes,
+    }))
+}
+
+fn write_stats_json(output: &Path, stats: &Value) -> CliResult<()> {
+    write_json_checked(&output.join("stats.json"), stats)
+}
+
+fn build_provenance(index: &CorpusIndex) -> CliResult<CorpusProvenance> {
+    let rows = index
+        .entries
+        .iter()
+        .map(|entry| CorpusProvenanceRow {
+            task_id: entry.task_id.clone(),
+            category: entry.category,
+            patch_sha256: entry.patch_sha256.clone(),
+            oracle_verdict_sha256: entry.oracle_verdict_sha256.clone(),
+        })
+        .collect::<Vec<_>>();
+    let corpus_sha256 = compute_corpus_sha256(&rows).map_err(|err| {
+        format!(
+            "failed to compute corpus provenance hash: {err} ({})",
+            err.code()
+        )
+    })?;
+    let mut categories = index
+        .entries
+        .iter()
+        .map(|entry| entry.category)
+        .collect::<Vec<_>>();
+    categories.sort_by_key(|category| category.slug());
+    categories.dedup();
+    let languages = if index.languages.is_empty() {
+        vec![Language::Python]
+    } else {
+        index.languages.clone()
+    };
+    let provenance = CorpusProvenance {
+        corpus_version: index.corpus_version.clone(),
+        embedder_version: index.embedder_version.clone(),
+        generated_at_unix_ms: index.generated_at_unix_ms,
+        generator_version: env!("CARGO_PKG_VERSION").to_string(),
+        seed: index.seed,
+        languages,
+        task_manifest_count: index.split_assignments.len(),
+        mutation_count: index.entries.len(),
+        mutation_categories: categories,
+        source_patch_mode: "source-backed".to_string(),
+        split_mode: "instance_atomic".to_string(),
+        corpus_sha256,
+        complete: true,
+    };
+    provenance
+        .validate()
+        .map_err(|err| format!("invalid corpus provenance: {err} ({})", err.code()))?;
+    Ok(provenance)
+}
+
+fn deterministic_sample<'a>(
+    entries: &'a [GeneratedEntry],
+    sample_fraction: f64,
+    corpus_sha256: &str,
+) -> CliResult<Vec<&'a GeneratedEntry>> {
+    if entries.is_empty() {
+        return Err("cannot sample zero corpus entries".into());
+    }
+    let count = ((entries.len() as f64) * sample_fraction).ceil() as usize;
+    let count = count.clamp(1, entries.len());
+    let mut keyed = entries
+        .iter()
+        .map(|entry| {
+            let digest = Sha256::digest(
+                format!(
+                    "{}|{}|{}",
+                    corpus_sha256,
+                    entry.task_id,
+                    entry.category.slug()
+                )
+                .as_bytes(),
+            );
+            (digest.to_vec(), entry)
+        })
+        .collect::<Vec<_>>();
+    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(keyed
+        .into_iter()
+        .take(count)
+        .map(|(_, entry)| entry)
+        .collect())
+}
+
+fn split_leakage_failures(index: &CorpusIndex) -> Vec<Value> {
+    let mut bucket_by_task = BTreeMap::<&str, &str>::new();
+    let mut failures = Vec::new();
+    for assignment in &index.split_assignments {
+        if let Some(previous) =
+            bucket_by_task.insert(assignment.task_id.as_str(), assignment.bucket.slug())
+        {
+            if previous != assignment.bucket.slug() {
+                failures.push(json!({
+                    "task_id": assignment.task_id.clone(),
+                    "first_bucket": previous,
+                    "second_bucket": assignment.bucket.slug(),
+                }));
+            }
+        }
+    }
+    failures
+}
+
+fn default_corpus_version() -> String {
+    MEJEPA_CORPUS_VERSION_V1.to_string()
+}
+
+fn default_embedder_version() -> String {
+    MEJEPA_EMBEDDER_VERSION_V1.to_string()
 }
 
 fn write_json_checked(path: &Path, value: &Value) -> CliResult<()> {
@@ -690,8 +1035,9 @@ fn write_text_checked(path: &Path, text: &str) -> CliResult<()> {
     Ok(())
 }
 
-fn stable_seed(task_id: &str, category: MutationCategory) -> u64 {
-    let digest = Sha256::digest(format!("{}|{}", task_id, category.slug()).as_bytes());
+fn stable_seed(global_seed: u64, task_id: &str, category: MutationCategory) -> u64 {
+    let digest =
+        Sha256::digest(format!("{}|{}|{}", global_seed, task_id, category.slug()).as_bytes());
     u64::from_le_bytes(digest[0..8].try_into().expect("slice has 8 bytes"))
 }
 

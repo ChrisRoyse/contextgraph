@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-019" version="1.0">
 <metadata>
   <title>extract_exception_class Regex Helper</title>
-  <status>ready</status>
+  <status>complete</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `extract_exception_class(text) -> Option<ExceptionClass>` in `swebench.rs:525` — regex over the 10 ExceptionClass slugs the `EOracleInstrument` reports (per the doc-09 §3.5.5 panel slot mapping). Exercised by both `swebench_report_to_verdict` and the FSV.
+  </implementation_state>
   <layer>logic</layer>
   <sequence>19</sequence>
   <implements>

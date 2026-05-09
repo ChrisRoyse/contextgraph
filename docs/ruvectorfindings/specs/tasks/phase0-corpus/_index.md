@@ -6,11 +6,40 @@
 
 Implements all 16 functional REQ-CORPUS-NN requirements (cross-linked in `../_traceability.md` under `### CORPUS`) and all 8 component contracts in `../../technical/TECH-CORPUS.md`. Foundation → Logic → Surface ordering is enforced; no task references files created by a later task.
 
-**Implementation state callout** (per TECH-CORPUS `<implementation_state>`):
-- Shipped: 8 Python operators (KnownGood/SubtleFlip/OffByOne/SwapVariable/DeleteTestCall/WrongFile/OverEngineer/CompileError); split helper (InstanceAtomic + RepoAtomic); one-instance Docker bridge (gold + custom modes); RocksDB CFs; CLI scaffolding; FSV harnesses; Docker run-id validator; tree-sitter-python input gate.
-- Pending: full 300×8 batch generation; CF_MEJEPA_CORPUS_PROVENANCE write path; SIGINT trap; `--sample-fraction` flag wiring on `verify`; per-language operators for the 10 deferred languages (separate phase).
+**Implementation state callout (refreshed 2026-05-09 against `crates/context-graph-mejepa-corpus/`).** This pass walked the source tree (`lib.rs`, `oracle.rs`, `swebench.rs`, `split.rs`, `python_lex.rs`, `prng.rs`, the eight operator modules, `patch_mutation.rs`, `source_patch.rs`, `source_patch_support.rs`, `bin/mejepa-corpus.rs`, `examples/*.rs`, `tests.rs`, `split_tests.rs`) and the contributing commit chain (`acc6f78c`, `3f46ff78`, `b6b4810c`, `d0053100`, `6f72a02e`, `15522841`, `1c45fdce`, `bf11c350`, `be0773b4`, `7cc42eec`, `828a1133`, `d039544d`, `24450e43`).
 
-Tasks below cover BOTH the shipped slice (verification + extension tasks) AND the pending work. Each shipped-slice task includes a `verify-shipped-state` verification step in addition to delivering net-new value (provenance hooks, FSV evidence updates, etc.). Net-new tasks are clearly marked as such.
+- **Shipped foundations** (verified-by-grep, not just claimed):
+  - `MutationCategory` with all 8 variants, `all() -> [Self; 8]`, `slug()`, `#[serde(rename_all = "snake_case")]` (lib.rs:139–191).
+  - `MutationConfig`, `MutationSite`, `MutationOutcome`, `apply_mutation`, `apply_site` (lib.rs).
+  - 3-variant `MutationError` (`InvalidInput` / `NoMutationSite` / `OperatorFailed`) with `code()` mapping (lib.rs:66–134).
+  - 7-variant generic `OracleError` shared by both the local command/Docker wrappers and the SWE-bench bridge (oracle.rs:31–177).
+  - `SwebenchOracleConfig`, `SwebenchPrediction`, `SwebenchPredictionMode`, `SwebenchInstanceReport`, `SwebenchOracleArtifacts`, `SwebenchOracleResult`, `run_swebench_lite_oracle`, `parse_swebench_instance_report`, `swebench_report_to_verdict`, `extract_exception_class`, `wait_with_timeout` (swebench.rs / oracle.rs).
+  - Docker-name-safe run_id validator inline in `validate_oracle_config` enforcing `[a-zA-Z0-9._-]` and ASCII alphanumeric-only first character (swebench.rs:552–581).
+  - `SplitConfig`, `SplitMode { InstanceAtomic, RepoAtomic }`, `SplitReport`, `TaskAssignment`, `CorpusEntry` (split.rs); `split_corpus`, `assert_no_test_patch_leakage`, `split_is_leakage_free` shipped; LPT bin-pack + SplitMix64 shuffle wired.
+  - `OracleStore` over RocksDB with two named CFs `CF_MEJEPA_MUTATION_CORPUS` + `CF_MEJEPA_ORACLE_VERDICTS`, plus `put_mutation`/`get_mutation`/`put_verdict`/`get_verdict`/`count_cf`/`scan_cf_json`/`flush` (oracle.rs:318–525).
+  - `SplitMix64` PRNG (prng.rs).
+  - `ensure_parseable_python` tree-sitter-backed gate + lexical token mask (python_lex.rs).
+  - All eight mutation operators: `known_good`, `subtle_flip`, `off_by_one`, `swap_variable`, `delete_test_call`, `wrong_file`, `over_engineer`, `compile_error`.
+  - Source-backed patch generation pipeline (`patch_mutation.rs`, `source_patch.rs`, `source_patch_support.rs`) for the batch CLI — adds the structural ability to mutate canonical fix sources even when the official diff has no `+` lines suitable for in-line operator targets (commits `b6b4810c`, `3f46ff78`).
+  - CLI subcommands `generate` / `verify` / `stats` (bin/mejepa-corpus.rs).
+  - Five FSV examples: `mejepa_corpus_fsv.rs`, `split_fsv.rs`, `oracle_fsv.rs`, `oracle_store_fsv.rs`, `swebench_oracle_fsv.rs` (examples/).
+  - End-to-end Docker FSV against `swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest` in both gold and custom prediction modes (memory: project_phase0_mejepa_mutation_corpus.md, 2026-05-09e).
+  - 81 mejepa-corpus crate tests passing (per memory entry 2026-05-09e); `cargo build --release -p context-graph-mejepa-corpus` green.
+
+- **Pending against this Level-4 spec set:**
+  - `MutationError::LeakageDetected` variant and `MEJEPA_CORPUS_LEAKAGE_DETECTED` code (TASK-CORPUS-001).
+  - `OracleError::DockerRunIdUnsafe` variant and `MEJEPA_CORPUS_DOCKER_RUN_ID_UNSAFE` code (TASK-CORPUS-001 / TASK-CORPUS-009 — validator exists, but raises generic `InvalidInput` rather than the dedicated typed variant).
+  - `MutationCategory::from_slug` reverse helper (TASK-CORPUS-001).
+  - `Language` enum + 11-language gate (TASK-CORPUS-002 — Phase 0 is Python-only today; the enum is needed before any non-Python operator lands).
+  - OracleVerdict re-export from the corpus crate's public surface (TASK-CORPUS-003 — instruments crate exports it; corpus consumers currently import from instruments directly).
+  - `CorpusProvenance` record + `CF_MEJEPA_CORPUS_PROVENANCE` (3rd CF) + `OracleStore::put_provenance` (TASK-CORPUS-007, TASK-CORPUS-008, TASK-CORPUS-022).
+  - `OracleStore::put_mutation_and_verdict` atomic WriteBatch (TASK-CORPUS-021 — current code uses two separate writes + flush, so a crash mid-task can leave a mutation with no verdict).
+  - Library entry `generate_swe_bench_mutation_corpus` reusable from a non-CLI caller (TASK-CORPUS-023 — logic currently lives inline in `bin/mejepa-corpus.rs::generate`).
+  - SIGINT trap in the CLI generate subcommand (TASK-CORPUS-026).
+  - `--sample-fraction` flag on the verify subcommand (TASK-CORPUS-027).
+  - Full 300-instance × 8-category batch run against the Docker oracle (operational deliverable; primitive plumbing is shipped and proven on one instance).
+
+Tasks below cover BOTH the shipped slice (verification-only or extension tasks) AND the pending work. Each shipped-slice task includes a `verify-shipped-state` step in addition to delivering net-new value (provenance hooks, FSV evidence updates, etc.). Net-new tasks are clearly marked.
 
 ## Dependency Graph
 
@@ -139,91 +168,89 @@ graph TD
 
 | Task | Status | Completed | Verified |
 |---|---|---|---|
-| TASK-CORPUS-001 | ⏳ ready | — | — |
-| TASK-CORPUS-002 | ⏳ ready | — | — |
-| TASK-CORPUS-003 | ⏳ ready | — | — |
-| TASK-CORPUS-004 | ⏳ ready | — | — |
-| TASK-CORPUS-005 | ⏳ ready | — | — |
-| TASK-CORPUS-006 | ⏳ ready | — | — |
-| TASK-CORPUS-007 | ⏳ ready | — | — |
-| TASK-CORPUS-008 | ⏳ ready | — | — |
-| TASK-CORPUS-009 | ⏳ ready | — | — |
-| TASK-CORPUS-010 | ⏳ ready | — | — |
-| TASK-CORPUS-011 | ⏳ ready | — | — |
-| TASK-CORPUS-012 | ⏳ ready | — | — |
-| TASK-CORPUS-013 | ⏳ ready | — | — |
-| TASK-CORPUS-014 | ⏳ ready | — | — |
-| TASK-CORPUS-015 | ⏳ ready | — | — |
-| TASK-CORPUS-016 | ⏳ ready | — | — |
-| TASK-CORPUS-017 | ⏳ ready | — | — |
-| TASK-CORPUS-018 | ⏳ ready | — | — |
-| TASK-CORPUS-019 | ⏳ ready | — | — |
-| TASK-CORPUS-020 | ⏳ ready | — | — |
-| TASK-CORPUS-021 | ⏳ ready | — | — |
-| TASK-CORPUS-022 | ⏳ ready | — | — |
-| TASK-CORPUS-023 | ⏳ ready | — | — |
-| TASK-CORPUS-024 | ⏳ ready | — | — |
-| TASK-CORPUS-025 | ⏳ ready | — | — |
-| TASK-CORPUS-026 | ⏳ ready | — | — |
-| TASK-CORPUS-027 | ⏳ ready | — | — |
-| TASK-CORPUS-028 | ⏳ ready | — | — |
+| TASK-CORPUS-001 | 🟡 partial | core MutationCategory + 3 MutationError + 7 OracleError variants shipped | LeakageDetected + DockerRunIdUnsafe + from_slug + slug/code unit tests pending |
+| TASK-CORPUS-002 | ⏳ pending | — | Language enum not yet introduced (Phase 0 is Python-only today) |
+| TASK-CORPUS-003 | ⏳ pending | OracleVerdict reachable from `context-graph-mejepa-instruments::OracleVerdict` | corpus crate does not yet re-export it |
+| TASK-CORPUS-004 | ✅ complete | MutationConfig/MutationSite/MutationOutcome shipped (lib.rs:196–223) | matches spec; round-trip tests in `tests.rs` |
+| TASK-CORPUS-005 | ✅ complete | SplitConfig/SplitMode/SplitReport/TaskAssignment/CorpusEntry shipped (split.rs) | leakage_check_passed + LPT pre-sort + SplitMix64 shuffle verified |
+| TASK-CORPUS-006 | ✅ complete | SwebenchOracleConfig/Prediction/Mode/InstanceReport/Artifacts/Result shipped (swebench.rs:51–215) | gold + custom mode FSV against real Docker image |
+| TASK-CORPUS-007 | ⏳ pending | CorpusEntry exists for split.rs (task→bucket mapping) | full CorpusProvenance record (sha + operator + run_id + timestamp) not yet defined |
+| TASK-CORPUS-008 | 🟡 partial | 2 of 3 CFs shipped: CF_MEJEPA_MUTATION_CORPUS + CF_MEJEPA_ORACLE_VERDICTS (oracle.rs:26–28) | CF_MEJEPA_CORPUS_PROVENANCE pending |
+| TASK-CORPUS-009 | 🟡 partial | run_id validator inline in `validate_oracle_config` (swebench.rs:552–581) | uses generic `OracleError::InvalidInput`; dedicated `DockerRunIdUnsafe` variant pending |
+| TASK-CORPUS-010 | 🟡 partial | `ensure_parseable_python` shipped (python_lex.rs); used by every operator | LexicalMask helper API + standalone unit tests for the mask shape pending |
+| TASK-CORPUS-011 | ✅ complete | SplitMix64 shipped (prng.rs:1–50) | `pick_index_or_fail` helper used by 4 operators + split |
+| TASK-CORPUS-012 | ✅ complete | KnownGood + WrongFile shipped (known_good.rs, wrong_file.rs) | tests + FSV pass |
+| TASK-CORPUS-013 | ✅ complete | SubtleFlip + OffByOne shipped (subtle_flip.rs, off_by_one.rs) | python_lex mask wired; `->` / `<<` / `>>` / float-fraction guards in place |
+| TASK-CORPUS-014 | ✅ complete | SwapVariable + DeleteTestCall shipped (swap_variable.rs, delete_test_call.rs) | tests + FSV pass |
+| TASK-CORPUS-015 | ✅ complete | OverEngineer + CompileError shipped (over_engineer.rs, compile_error.rs) | tests + FSV pass |
+| TASK-CORPUS-016 | ✅ complete | apply_mutation + apply_site shipped (lib.rs:231–335) | UTF-8 boundary + range guards; original_text equality enforced |
+| TASK-CORPUS-017 | ✅ complete | split_corpus + assert_no_test_patch_leakage + split_is_leakage_free shipped (split.rs:294–620) | 80/10/10 LPT + leakage cross-check; 50 unit tests + FSV |
+| TASK-CORPUS-018 | ✅ complete | parse_swebench_instance_report + swebench_report_to_verdict shipped (swebench.rs:303–522) | grading.py FAIL_TO_PASS / PASS_TO_PASS / FAIL_TO_FAIL / PASS_TO_FAIL semantics |
+| TASK-CORPUS-019 | ✅ complete | extract_exception_class shipped (swebench.rs:525) | regex over the 10 ExceptionClass slugs |
+| TASK-CORPUS-020 | ✅ complete | run_swebench_lite_oracle + wait_with_timeout shipped (swebench.rs:215–301, oracle.rs) | end-to-end Docker FSV against sympy_1776_sympy-20590 (gold + custom) |
+| TASK-CORPUS-021 | 🟡 partial | OracleStore::put_mutation + put_verdict + flush shipped (oracle.rs:354–520) | atomic `put_mutation_and_verdict` WriteBatch combining both into one transaction pending |
+| TASK-CORPUS-022 | ⏳ pending | — | depends on TASK-CORPUS-007 + TASK-CORPUS-008 |
+| TASK-CORPUS-023 | 🟡 partial | end-to-end orchestration shipped inline in `bin/mejepa-corpus.rs::generate` | reusable library entry `generate_swe_bench_mutation_corpus` pending (logic still lives in CLI main) |
+| TASK-CORPUS-024 | ✅ complete | examples/mejepa_corpus_fsv.rs shipped | FSV evidence at /tmp/contextgraph-mejepa-corpus-fsv/ |
+| TASK-CORPUS-025 | ✅ complete | examples/split_fsv.rs shipped | split-evidence.json + split-assignments.json under /tmp |
+| TASK-CORPUS-026 | 🟡 partial | CLI generate subcommand shipped + source-backed patch generation pipeline (commits b6b4810c, 3f46ff78) | SIGINT trap pending |
+| TASK-CORPUS-027 | 🟡 partial | CLI verify subcommand shipped (re-hashes patch + compares against index) | --sample-fraction flag pending |
+| TASK-CORPUS-028 | ✅ complete | CLI stats subcommand shipped (entries-by-bucket / entries-by-category / store CF counts) | output asserted by FSV |
 
-**Progress: 0/28 tasks (0%)**
+**Progress: 16/28 complete (57%) · 8 partial · 4 pending**
+
+End-to-end primitive plumbing for the corpus generator is shipped and proven on one instance via Docker FSV. The remaining 12 tasks split into provenance plumbing (007, 008, 022), error-taxonomy hardening (001 LeakageDetected/DockerRunIdUnsafe, 009 typed variant, 023 library entry, 021 atomic WriteBatch), CLI ergonomics (026 SIGINT, 027 sample-fraction), the multi-language pivot (002), and a stylistic re-export (003).
 
 ## Status legend
 
-- ⏳ ready — Can be started now (dependencies met)
-- 🔄 in_progress — Currently being worked on
-- ✅ complete — Finished and verified
-- ⛔ blocked — Waiting on dependencies
-- ❌ failed — Needs revision
+- ⏳ pending — Not yet started; dependencies may or may not be met.
+- 🟡 partial — Core deliverable shipped end-to-end; some sub-requirements (typed error variants, helper API surface, atomic WriteBatch, etc.) deferred.
+- 🔄 in_progress — Currently being worked on.
+- ✅ complete — Finished and verified against the spec.
+- ⛔ blocked — Waiting on dependencies.
+- ❌ failed — Needs revision.
 
 ## Coverage
 
 This phase covers all 16 REQ-CORPUS-NN requirements. See `../_traceability.md` `### CORPUS` for the per-REQ → task mapping.
 
-| REQ | Covered by tasks |
-|---|---|
-| REQ-CORPUS-01 (generate function) | 023, 026 |
-| REQ-CORPUS-02 (8 mutation operators) | 010, 011, 012, 013, 014, 015, 016 |
-| REQ-CORPUS-03 (run_swebench_lite_oracle) | 020 |
-| REQ-CORPUS-04 (verdict mapping) | 018 |
-| REQ-CORPUS-05 (run_id validation) | 009 |
-| REQ-CORPUS-06 (split_corpus) | 005, 017 |
-| REQ-CORPUS-07 (assert_no_test_patch_leakage) | 017 |
-| REQ-CORPUS-08 (RocksDB CFs) | 008, 021 |
-| REQ-CORPUS-09 (CLI subcommands) | 026, 027, 028 |
-| REQ-CORPUS-10 (FSV examples) | 024, 025 |
-| REQ-CORPUS-11 (ensure_parseable_python) | 010 |
-| REQ-CORPUS-12 (CorpusProvenance) | 007, 022 |
-| REQ-CORPUS-13 (Language enum) | 002 |
-| REQ-CORPUS-14 (timeouts) | 020 |
-| REQ-CORPUS-15 (verify subcommand) | 027 |
-| REQ-CORPUS-16 (fail-closed complete flag) | 023, 026 |
+| REQ | Covered by tasks | State |
+|---|---|---|
+| REQ-CORPUS-01 (generate function) | 023, 026 | 🟡 partial — CLI surface shipped; reusable library entry pending |
+| REQ-CORPUS-02 (8 mutation operators) | 010, 011, 012, 013, 014, 015, 016 | ✅ complete |
+| REQ-CORPUS-03 (run_swebench_lite_oracle) | 020 | ✅ complete |
+| REQ-CORPUS-04 (verdict mapping) | 018 | ✅ complete |
+| REQ-CORPUS-05 (run_id validation) | 009 | 🟡 partial — validator shipped; typed `DockerRunIdUnsafe` error variant pending |
+| REQ-CORPUS-06 (split_corpus) | 005, 017 | ✅ complete |
+| REQ-CORPUS-07 (assert_no_test_patch_leakage) | 017 | ✅ complete |
+| REQ-CORPUS-08 (RocksDB CFs) | 008, 021 | 🟡 partial — 2 of 3 CFs shipped; atomic WriteBatch pending |
+| REQ-CORPUS-09 (CLI subcommands) | 026, 027, 028 | 🟡 partial — generate/verify/stats shipped; SIGINT + --sample-fraction pending |
+| REQ-CORPUS-10 (FSV examples) | 024, 025 | ✅ complete (5 example binaries shipped) |
+| REQ-CORPUS-11 (ensure_parseable_python) | 010 | ✅ complete |
+| REQ-CORPUS-12 (CorpusProvenance) | 007, 022 | ⏳ pending |
+| REQ-CORPUS-13 (Language enum) | 002 | ⏳ pending — Phase 0 stays Python-only until non-Python operators land |
+| REQ-CORPUS-14 (timeouts) | 020 | ✅ complete |
+| REQ-CORPUS-15 (verify subcommand) | 027 | 🟡 partial — verify shipped; --sample-fraction pending |
+| REQ-CORPUS-16 (fail-closed complete flag) | 023, 026 | ✅ complete (CLI writes `complete: false` then sets to true after the last entry) |
 
-## Critical path
+## Critical path (remaining)
+
+The shipped slice already executes the original critical path `001 → 004 → 010 → 016 → 023 → 026` end-to-end. The **remaining** critical path to "fully spec-aligned Phase 0" is:
 
 ```
-001 → 004 → 010 → 016 → 023 → 026
+001 (LeakageDetected + DockerRunIdUnsafe) → 007 → 008 (3rd CF) → 021 (WriteBatch) → 022 → 023 (library entry) → 026 (SIGINT) → 027 (--sample-fraction)
 ```
 
-(Foundation error taxonomy → mutation types → Python lex → mutation dispatcher → batch entry point → CLI generate.)
+(Provenance plumbing → atomic store → reusable library entry → CLI ergonomics.)
 
 ## Parallel opportunities
 
-- **Batch 1 (foundation, parallel):** 001, 002, 003 (no inter-deps)
-- **Batch 2 (foundation, after 001):** 004, 005, 008, 009 (parallel)
-- **Batch 3 (foundation, after 001+002):** 007 (single)
-- **Batch 4 (foundation, after 001+003):** 006 (single)
-- **Batch 5 (logic, after 004):** 010, 011 (parallel; 011 has no deps on 010)
-- **Batch 6 (mutation operators, parallel after 010+011):** 012, 013, 014, 015 (all parallel; share 010+011 deps)
-- **Batch 7 (logic, after batch 6):** 016 (single)
-- **Batch 8 (logic, parallel):** 017 (after 005+011), 018 (after 003+006), 019 (after 003), 021 (after 007+008)
-- **Batch 9 (logic, after 018+019+009+006):** 020 (oracle invoker)
-- **Batch 10 (logic, after 021+007):** 022
-- **Batch 11 (logic, after 016+017+020+021+022):** 023
-- **Batch 12 (logic, parallel):** 024 (after 023), 025 (after 017)
-- **Batch 13 (surface):** 026, 027, 028 (sequenced; 026 deepest)
+- **Batch 1 (foundation, parallel):** 001 (extension), 002, 003 — no inter-deps; all three ship independently.
+- **Batch 2 (foundation, after 001 extension):** 007, 008 (3rd CF) — parallel.
+- **Batch 3 (logic, after 008+007):** 021 (atomic WriteBatch), 022 (provenance) — parallel.
+- **Batch 4 (logic, after 021+022):** 023 (library entry).
+- **Batch 5 (surface, after 023):** 026 (SIGINT trap), 027 (--sample-fraction) — parallel.
+- **Optional (anywhere):** 009 typed variant + 023 library entry can be picked up in parallel with batches 2–4 since they only depend on already-shipped code.
 
 ## Reality-boundary discipline
 
@@ -244,3 +271,6 @@ The Docker oracle bridge (TASK-CORPUS-020) READS swebench Python harness output 
 - Constitution: `../../constitution.md`
 - Spec-authoring framework: `/home/cabdru/contextgraph/docs2/prdtospec.md`
 - Phase traceability matrix: `../_traceability.md` (`### CORPUS` section)
+- Source tree: `crates/context-graph-mejepa-corpus/src/`
+- FSV examples: `crates/context-graph-mejepa-corpus/examples/`
+- Memory entries: `project_phase0_mejepa_mutation_corpus.md` (auto-memory index)

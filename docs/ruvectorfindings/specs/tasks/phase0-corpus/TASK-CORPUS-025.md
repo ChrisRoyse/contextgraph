@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-025" version="1.0">
 <metadata>
   <title>split_fsv Example Binary (Split Helpers FSV Harness)</title>
-  <status>ready</status>
+  <status>complete</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `examples/split_fsv.rs` — calls `split_corpus` and `assert_no_test_patch_leakage`, writes `split-evidence.json` and `split-assignments.json` to `/tmp/contextgraph-mejepa-corpus-fsv/`. Memory-recorded results (project_phase0_mejepa_mutation_corpus.md, 2026-05-09b): 25 repos × 300 tasks → 76.3/13.3/10.3 cross-cut weights all 0; InstanceAtomic mode on Lite achieves clean [240, 30, 30].
+  </implementation_state>
   <layer>logic</layer>
   <sequence>25</sequence>
   <implements>

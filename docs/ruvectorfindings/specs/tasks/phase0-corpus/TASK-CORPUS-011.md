@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-011" version="1.0">
 <metadata>
   <title>SplitMix64 PRNG helper (prng::pick_index_or_fail / prng::next_u64)</title>
-  <status>ready</status>
+  <status>complete</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `prng.rs` exposes `SplitMix64` and `pick_index_or_fail` (re-exported as `pub use prng::SplitMix64;` in `lib.rs:337`). Used by `subtle_flip`, `off_by_one`, `swap_variable`, `delete_test_call`, `over_engineer`, `compile_error`, and the splitter shuffle. Determinism asserted via repeated identical-seed tests.
+  </implementation_state>
   <layer>logic</layer>
   <sequence>11</sequence>
   <implements>

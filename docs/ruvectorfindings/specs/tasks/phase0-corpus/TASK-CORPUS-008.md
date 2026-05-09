@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-008" version="1.0">
 <metadata>
   <title>RocksDB CF Descriptors: CF_MEJEPA_MUTATION_CORPUS / CF_MEJEPA_ORACLE_VERDICTS / CF_MEJEPA_CORPUS_PROVENANCE</title>
-  <status>ready</status>
+  <status>partial</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `CF_MEJEPA_MUTATION_CORPUS` and `CF_MEJEPA_ORACLE_VERDICTS` const names + `MEJEPA_ORACLE_CFS` slice + descriptors registered through `OracleStore::open` (oracle.rs:26-28, 318-353). Pending: 3rd CF descriptor `CF_MEJEPA_CORPUS_PROVENANCE` (and the `MEJEPA_ORACLE_CFS` slice extension) for the provenance write path that TASK-CORPUS-022 depends on.
+  </implementation_state>
   <layer>foundation</layer>
   <sequence>8</sequence>
   <implements>

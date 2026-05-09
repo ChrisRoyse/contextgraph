@@ -1,0 +1,349 @@
+# TASK-EVAL-017 — FSV harness writing 16 evidence files at /tmp/contextgraph-mejepa-evaluation-fsv/
+
+```xml
+<task_spec id="TASK-EVAL-017" version="1.0">
+
+<metadata>
+  <title>Implement FSV harness in `crates/context-graph-mejepa/examples/eval_fsv.rs` writing all 16 evidence files at `/tmp/contextgraph-mejepa-evaluation-fsv/` with mode 0o600 + re-read-and-assert</title>
+  <status>blocked</status>
+  <layer>surface</layer>
+  <sequence>17</sequence>
+  <implements>
+    <item ref="REQ-EVAL-15">Phase 8 DoD CLI command verified end-to-end</item>
+    <item ref="REQ-EVAL-16">Performance budget verified (&lt; 30 min p50 wall-clock recorded in latency-evidence.json)</item>
+    <item ref="REQ-EVAL-17">Determinism — byte-equal canonical bytes across 3 invocations on identical fixture</item>
+    <item ref="constitution#fsv_protocol">re-read-and-assert mandatory; mode 0o600; real data only</item>
+    <item ref="testing_requirements[fsv_evidence_paths]">/tmp/contextgraph-mejepa-evaluation-fsv/{holdout-eval,weekly-report,active-learning-queue,ship-gate,patch-similarity-graph,regression,ood,q1q2q3,state-transfer,aux-head-distillation,open-research-questions,leakage-check,bayesian-shrinkage,provenance,latency,mcp-roundtrip}.json</item>
+  </implements>
+  <depends_on>
+    <task_ref>TASK-EVAL-013</task_ref><!-- mejepa_eval_run + ship_gate_status MCP -->
+    <task_ref>TASK-EVAL-014</task_ref><!-- active_learning queue + label MCP -->
+    <task_ref>TASK-EVAL-016</task_ref><!-- eval-run + eval-build-graph CLI subcommands -->
+  </depends_on>
+  <estimated_complexity>high</estimated_complexity>
+  <estimated_files>2 created (eval_fsv.rs + fsv_fixtures.rs); 1 modified (Cargo.toml [[example]] entry)</estimated_files>
+</metadata>
+
+<context>
+This task lands the **canonical FSV harness** for the EVALUATION domain — a `cargo run --release --example eval_fsv` binary that writes all 16 documented evidence files to `/tmp/contextgraph-mejepa-evaluation-fsv/`, each with mode 0o600, each re-read-and-asserted before reporting success. Per `&lt;fsv_protocol&gt;` real data only — no mock embedders, real RocksDB writes (in-memory ephemeral CFs), real fixture corpus seeded with deterministic SplitMix64. Trait collaborators (predictor, ood detector, gtau checker, e_diff embedder, corpus appender) use the test trait impls established in TASK-EVAL-004, 010, 011 (deterministic outputs from real inputs).
+
+The 16 evidence files are listed verbatim in TECH-EVALUATION (and SPEC-EVALUATION testing_requirements) — each captures one slice of the eval pipeline:
+
+1. `holdout-eval-evidence.json` — `EvalReport` core slice (overall_correlation, per_category, per_language, per_cell sample).
+2. `weekly-report.json` — copy of the report at canonical filename for sanity check.
+3. `active-learning-queue.json` — 1 enqueued (signal_value &gt; 0.6) + 1 OOD-rejected escalation + queue snapshot per TECH-EVALUATION.
+4. `ship-gate-evidence.json` — passing case + 8 failing cases (one per condition) + regression case.
+5. `patch-similarity-graph.json` — 3-task fixture; expected 3 edges with cosines.
+6. `regression-evidence.json` — synthesized 3-pct drop on (subtle_flip, typescript) cell; expected `MEJEPA_EVAL_SHIP_GATE_REGRESSION` blocker.
+7. `ood-evidence.json` — per-language OOD AUC + 4-week drift fixture.
+8. `q1q2q3-evidence.json` — 1 panel passing all 3 + 1 panel failing each; rolled-up rates.
+9. `state-transfer-evidence.json` — Wasserstein-1 + M(t) on synthetic holdout/live + train_certs.
+10. `aux-head-distillation-evidence.json` — synthetic train_certs with 3 heads in consensus + 2 diverged.
+11. `open-research-questions.json` — 8 seeded entries with mitigation_state=Active.
+12. `leakage-check-evidence.json` — 1 passing case + 1 violating case (duplicate task across train+holdout) → expected `MEJEPA_EVAL_HOLDOUT_LEAKAGE`.
+13. `bayesian-shrinkage-evidence.json` — synthetic 5-sample (over_engineer, ruby) cell shrunk to ruby-aggregate.
+14. `provenance-evidence.json` — corpus_sha, model_weights_sha, calibration_version, constellation_version, code_version, holdout_split_sha all populated and consistent across the report.
+15. `latency-evidence.json` — wall-clock for full eval + build_patch_similarity_graph; assert &lt; 30-min budget headroom.
+16. `mcp-roundtrip-evidence.json` — MCP-call EvalReport vs in-process-call EvalReport; SHA-256 of canonical bytes equal.
+</context>
+
+<input_context_files>
+  <file purpose="canonical_authority">docs/ruvectorfindings/specs/constitution.md (fsv_protocol; testing_requirements fsv_evidence_paths)</file>
+  <file purpose="functional_spec">docs/ruvectorfindings/specs/functional/SPEC-EVALUATION.md (REQ-EVAL-15..17; AC-EVAL-* + EC-EVAL-* fixture cases)</file>
+  <file purpose="technical_spec">docs/ruvectorfindings/specs/technical/TECH-EVALUATION.md (16 evidence files listed verbatim; testing_requirements section)</file>
+  <file purpose="prior_task">TASK-EVAL-013, TASK-EVAL-014 (MCP), TASK-EVAL-016 (CLI)</file>
+  <file purpose="cross_domain_pattern">crates/context-graph-mejepa-corpus/examples/mejepa_corpus_fsv.rs (FSV harness pattern from Phase 0)</file>
+  <file purpose="cross_domain_pattern">crates/context-graph-mejepa-shift-subscriber/examples/shift_subscriber_fsv.rs (Phase 7 FSV harness pattern)</file>
+</input_context_files>
+
+<prerequisites>
+  <check>TASK-EVAL-013, 014, 016 shipped: MCP tools + CLI subcommands callable</check>
+  <check>Test trait impls available from prior tasks (predictor, e_diff, gtau, ood, corpus_appender)</check>
+  <check>`tempfile` workspace dev-dep available for ephemeral RocksDB</check>
+  <check>`anyhow` workspace dev-dep available for harness errors</check>
+</prerequisites>
+
+<scope>
+  <in_scope>
+    - Create `crates/context-graph-mejepa/examples/eval_fsv.rs` — main harness binary:
+      ```rust
+      #[tokio::main]
+      async fn main() -&gt; anyhow::Result&lt;()&gt; {
+          let evidence_dir = std::path::Path::new("/tmp/contextgraph-mejepa-evaluation-fsv/");
+          std::fs::create_dir_all(evidence_dir)?;
+          let fixture = build_fsv_fixture()?;
+          let runner = build_eval_runner_with_test_traits(&fixture).await?;
+
+          // 16 writers (each writes one evidence file with mode 0o600)
+          write_holdout_eval_evidence(evidence_dir, &runner, &fixture)?;
+          write_weekly_report_evidence(evidence_dir, &runner, &fixture)?;
+          write_active_learning_queue_evidence(evidence_dir, &runner, &fixture)?;
+          write_ship_gate_evidence(evidence_dir, &runner, &fixture)?;
+          write_patch_similarity_graph_evidence(evidence_dir, &runner, &fixture)?;
+          write_regression_evidence(evidence_dir, &runner, &fixture)?;
+          write_ood_evidence(evidence_dir, &runner, &fixture)?;
+          write_q1q2q3_evidence(evidence_dir, &runner, &fixture)?;
+          write_state_transfer_evidence(evidence_dir, &runner, &fixture)?;
+          write_aux_head_distillation_evidence(evidence_dir, &runner, &fixture)?;
+          write_open_research_questions_evidence(evidence_dir, &runner, &fixture)?;
+          write_leakage_check_evidence(evidence_dir, &runner, &fixture)?;
+          write_bayesian_shrinkage_evidence(evidence_dir, &runner, &fixture)?;
+          write_provenance_evidence(evidence_dir, &runner, &fixture)?;
+          write_latency_evidence(evidence_dir, &runner, &fixture)?;
+          write_mcp_roundtrip_evidence(evidence_dir, &runner, &fixture).await?;
+
+          assert_re_read_invariants(evidence_dir)?;
+          println!("FSV-OK: evaluation");
+          Ok(())
+      }
+      ```
+    - Create `crates/context-graph-mejepa/examples/fsv_fixtures.rs` — `FsvFixture` builder + helpers:
+      - `pub struct FsvFixture { rocksdb: tempfile::TempDir, holdout: HoldoutDataset, calibration: CalibrationDataset, corpus: Corpus, predictor: Arc<TestPredictor>, ... }`
+      - `pub fn build_fsv_fixture() -&gt; anyhow::Result&lt;FsvFixture&gt;` — synthesizes:
+        - 240 holdout panels (30 per language × 8 languages of the 11; 3 unsupported intentionally short to test EmptyHoldoutLanguage path)
+        - 60 calibration panels
+        - 100 live predictions (≥ 100 → state_transfer enabled)
+        - 1000 train_certs with synthetic ΔΩ × ΔΞ
+        - 3-task corpus for graph build
+        - 2-week prior report fixture for regression detection
+        - Synthetic OOD panels per language (≥ 50 each)
+        - SplitMix64 seeded; identical fixture across runs
+    - Each `write_*_evidence` helper:
+      1. Constructs the slice (e.g., calls `runner.run_holdout_eval(7, true)`, captures specific fields)
+      2. Serializes via `serde_json::to_vec_pretty` with sorted keys (BTreeMap-backed)
+      3. Writes to `evidence_dir.join(filename)` with mode `0o600` via `std::os::unix::fs::OpenOptionsExt::mode(0o600)` (cfg(unix); fallback warning on non-Unix)
+      4. Returns `Result<(), anyhow::Error>`
+    - `fn assert_re_read_invariants(dir: &Path) -&gt; anyhow::Result<()>`:
+      - For each of the 16 filenames:
+        1. Assert file exists
+        2. Assert mode bits `& 0o777 == 0o600` (Unix only)
+        3. Assert file is parseable as JSON (deserialize roundtrip)
+        4. Per-file invariants:
+           - holdout-eval-evidence: `overall_correlation` finite + clamped [-1, 1]
+           - weekly-report: filename matches `mejepa-weekly-report-YYYY-MM-DD.json` pattern
+           - active-learning-queue: at least 1 entry with signal_value ≥ 0.6; at least 1 escalation
+           - ship-gate-evidence: includes both passing AND failing case payloads
+           - patch-similarity-graph: edge_count ≥ 1; cosines ≥ 0.7
+           - regression: contains `MEJEPA_EVAL_SHIP_GATE_REGRESSION` blocker
+           - ood: per-language AUC entries finite [0, 1]
+           - q1q2q3: q1 + q2 + q3 all finite [0, 1]
+           - state-transfer: T finite [0, 1]; m_t_estimate finite [0, 1]
+           - aux-head-distillation: 3 in consensus + 2 diverged
+           - open-research-questions: exactly 8 entries Q1..Q8
+           - leakage-check: contains `MEJEPA_EVAL_HOLDOUT_LEAKAGE` failure case
+           - bayesian-shrinkage: contains `(over_engineer, ruby)` shrunk note
+           - provenance: all 6 SHA/version fields present and non-empty
+           - latency: wall_clock_seconds finite ≤ 1800.0 (30-min budget)
+           - mcp-roundtrip: in_process_hash == mcp_hash (SHA-256 byte-equal)
+      - Failure of any assertion exits non-zero
+    - Add **determinism test**: 3 invocations of the harness produce byte-equal `holdout-eval-evidence.json` (modulo `report_date` and `wall_clock_seconds` fields stripped)
+    - Add `[[example]]` entries to `crates/context-graph-mejepa/Cargo.toml`:
+      ```toml
+      [[example]]
+      name = "eval_fsv"
+      path = "examples/eval_fsv.rs"
+
+      [[example]]
+      name = "fsv_fixtures"  # not strictly an example, but co-located helper
+      path = "examples/fsv_fixtures.rs"
+      ```
+      Actually `fsv_fixtures.rs` is included as a `mod` from `eval_fsv.rs` (no separate example bin), per the SHIFT-013 pattern.
+  </in_scope>
+  <out_of_scope>
+    - Production weights — test trait impls are deterministic stand-ins per TECH-EVALUATION testing pattern
+    - Real Docker oracle — fixture pre-populates CF_MEJEPA_ORACLE_VERDICTS
+    - Real Phase 7 shift-subscriber — fixture pre-populates CF_MEJEPA_LIVE_PREDICTIONS with 100 entries
+    - Real candle-cuda — test E_Diff encoder produces deterministic embeddings via SHA-256-based PRG
+    - The `verify` CLI from TASK-SHIFT-014 (Phase 7 FSV — separate harness)
+  </out_of_scope>
+</scope>
+
+<definition_of_done>
+  <signatures>
+    <signature file="crates/context-graph-mejepa/examples/eval_fsv.rs">
+use std::path::Path;
+
+#[tokio::main]
+async fn main() -&gt; anyhow::Result&lt;()&gt;;
+
+fn build_fsv_fixture() -&gt; anyhow::Result&lt;FsvFixture&gt;;
+async fn build_eval_runner_with_test_traits(fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;EvalRunner&gt;;
+
+fn write_holdout_eval_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+fn write_weekly_report_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+fn write_active_learning_queue_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+fn write_ship_gate_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+fn write_patch_similarity_graph_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+fn write_regression_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+fn write_ood_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+fn write_q1q2q3_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+fn write_state_transfer_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+fn write_aux_head_distillation_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+fn write_open_research_questions_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+fn write_leakage_check_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+fn write_bayesian_shrinkage_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+fn write_provenance_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+fn write_latency_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+async fn write_mcp_roundtrip_evidence(dir: &amp;Path, runner: &amp;EvalRunner, fix: &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;;
+
+fn assert_re_read_invariants(dir: &amp;Path) -&gt; anyhow::Result&lt;()&gt;;
+    </signature>
+  </signatures>
+  <constraints>
+    - All 16 files written with mode 0o600 (Unix); cfg-gated; non-Unix prints stderr warning per SEC-MEJEPA-07
+    - Re-read-and-assert is mandatory per `&lt;fsv_protocol&gt;`; binary exits non-zero on any assertion failure
+    - JSON serialization deterministic via `serde_json::to_vec_pretty` with BTreeMap-backed maps + sorted keys
+    - Synthetic ULIDs use a counted SplitMix64 PRNG so the fixture is byte-stable across runs
+    - Determinism test: 3 invocations produce byte-equal `holdout-eval-evidence.json` (modulo wall-clock-stripped fields)
+    - Real RocksDB writes via `tempfile::TempDir` (NOT in-memory mock) — exercises the real CF persistence path
+    - File length budget: `eval_fsv.rs` &lt; 500 lines; split helpers into `fsv_fixtures.rs` if needed
+    - The 16th file `mcp-roundtrip-evidence.json` requires bringing up an in-process MCP server stub OR mocking the JSON-RPC layer; for v1 we test in-process EvalRunner vs MCP-handler-call-as-function-call equivalence (NOT a separate server process); both produce a serialized EvalReport whose `hash_for_determinism()` MUST be byte-equal
+    - Total wall-clock for the FSV harness MUST be &lt; 5 min on RTX 5090 (so it can run on every release-build CI)
+  </constraints>
+  <verification>
+    - `cargo run --release --example eval_fsv -p context-graph-mejepa` exits 0
+    - All 16 evidence files present at `/tmp/contextgraph-mejepa-evaluation-fsv/`
+    - Each file has mode 0o600 on Unix
+    - Each file deserializes cleanly as JSON
+    - Each file passes its documented per-file invariant check
+    - 3 invocations produce byte-equal stripped output (determinism)
+    - Total wall-clock &lt; 5 min on RTX 5090 hardware
+    - Stdout last line == `FSV-OK: evaluation`
+    - cargo clippy clean
+  </verification>
+</definition_of_done>
+
+<pseudo_code>
+crates/context-graph-mejepa/examples/eval_fsv.rs:
+  #[tokio::main]
+  async fn main() -&gt; anyhow::Result&lt;()&gt; {
+      let evidence_dir = std::path::Path::new("/tmp/contextgraph-mejepa-evaluation-fsv/");
+      std::fs::create_dir_all(evidence_dir)?;
+      let fixture = build_fsv_fixture()?;
+      let runner = build_eval_runner_with_test_traits(&fixture).await?;
+
+      let writers: Vec&lt;(&amp;str, Box&lt;dyn FnOnce(&amp;Path, &amp;EvalRunner, &amp;FsvFixture) -&gt; anyhow::Result&lt;()&gt;&gt;)&gt; = vec![
+          ("holdout-eval-evidence.json", Box::new(write_holdout_eval_evidence)),
+          ("weekly-report.json",         Box::new(write_weekly_report_evidence)),
+          // ... 14 more ...
+      ];
+      for (name, w) in writers { w(evidence_dir, &runner, &fixture)?; }
+
+      // mcp-roundtrip is async
+      write_mcp_roundtrip_evidence(evidence_dir, &runner, &fixture).await?;
+
+      assert_re_read_invariants(evidence_dir)?;
+      println!("FSV-OK: evaluation");
+      Ok(())
+  }
+
+  fn write_with_mode_0o600(path: &Path, bytes: &[u8]) -&gt; anyhow::Result&lt;()&gt; {
+      use std::fs::OpenOptions;
+      let mut opts = OpenOptions::new();
+      opts.create(true).write(true).truncate(true);
+      #[cfg(unix)]
+      {
+          use std::os::unix::fs::OpenOptionsExt;
+          opts.mode(0o600);
+      }
+      let mut file = opts.open(path)?;
+      use std::io::Write;
+      file.write_all(bytes)?;
+      Ok(())
+  }
+
+  fn assert_re_read_invariants(dir: &Path) -&gt; anyhow::Result&lt;()&gt; {
+      let required = [
+          "holdout-eval-evidence.json", "weekly-report.json",
+          "active-learning-queue.json", "ship-gate-evidence.json",
+          "patch-similarity-graph.json", "regression-evidence.json",
+          "ood-evidence.json", "q1q2q3-evidence.json",
+          "state-transfer-evidence.json", "aux-head-distillation-evidence.json",
+          "open-research-questions.json", "leakage-check-evidence.json",
+          "bayesian-shrinkage-evidence.json", "provenance-evidence.json",
+          "latency-evidence.json", "mcp-roundtrip-evidence.json",
+      ];
+      for f in required {
+          let path = dir.join(f);
+          let meta = std::fs::metadata(&path)?;
+          #[cfg(unix)]
+          {
+              use std::os::unix::fs::PermissionsExt;
+              anyhow::ensure!(meta.permissions().mode() & 0o777 == 0o600,
+                  "evidence file {f} not 0o600");
+          }
+          let bytes = std::fs::read(&path)?;
+          let v: serde_json::Value = serde_json::from_slice(&bytes)?;
+          // per-file invariants
+          match f {
+              "holdout-eval-evidence.json" =&gt; {
+                  let oc = v.get("overall_correlation").and_then(|x| x.as_f64()).unwrap_or(f64::NAN);
+                  anyhow::ensure!(oc.is_finite() && (-1.0..=1.0).contains(&oc), "overall_correlation invalid");
+              }
+              "open-research-questions.json" =&gt; {
+                  let arr = v.as_array().ok_or_else(|| anyhow::anyhow!("not array"))?;
+                  anyhow::ensure!(arr.len() == 8, "expected exactly 8 research questions");
+              }
+              "regression-evidence.json" =&gt; {
+                  let s = v.to_string();
+                  anyhow::ensure!(s.contains("MEJEPA_EVAL_SHIP_GATE_REGRESSION"), "missing regression blocker");
+              }
+              "leakage-check-evidence.json" =&gt; {
+                  let s = v.to_string();
+                  anyhow::ensure!(s.contains("MEJEPA_EVAL_HOLDOUT_LEAKAGE"), "missing leakage failure case");
+              }
+              "mcp-roundtrip-evidence.json" =&gt; {
+                  let in_proc = v.get("in_process_hash").and_then(|x| x.as_str()).unwrap_or("");
+                  let mcp = v.get("mcp_hash").and_then(|x| x.as_str()).unwrap_or("");
+                  anyhow::ensure!(!in_proc.is_empty() && in_proc == mcp, "mcp roundtrip hash mismatch");
+              }
+              "latency-evidence.json" =&gt; {
+                  let secs = v.get("wall_clock_seconds").and_then(|x| x.as_f64()).unwrap_or(f64::NAN);
+                  anyhow::ensure!(secs.is_finite() && secs &lt;= 1800.0, "wall_clock exceeds 30-min budget");
+              }
+              _ =&gt; {}
+          }
+      }
+      Ok(())
+  }
+</pseudo_code>
+
+<files_to_create>
+  <file path="crates/context-graph-mejepa/examples/eval_fsv.rs">FSV harness binary writing 16 evidence files + assert_re_read_invariants</file>
+  <file path="crates/context-graph-mejepa/examples/fsv_fixtures.rs">FsvFixture builder + 240-panel holdout + 100-live + train_certs + 3-task corpus + 2-week prior report + helpers (mod-included from eval_fsv.rs)</file>
+</files_to_create>
+
+<files_to_modify>
+  <file path="crates/context-graph-mejepa/Cargo.toml">add `[[example]] name = "eval_fsv" path = "examples/eval_fsv.rs"`; add `anyhow`, `tempfile` to [dev-dependencies] if not already present</file>
+</files_to_modify>
+
+<validation_criteria>
+  <criterion>cargo run --release --example eval_fsv -p context-graph-mejepa exits 0</criterion>
+  <criterion>16 evidence files present at /tmp/contextgraph-mejepa-evaluation-fsv/</criterion>
+  <criterion>Each file mode 0o600 on Unix</criterion>
+  <criterion>Each file deserializes cleanly as JSON</criterion>
+  <criterion>holdout-eval-evidence.overall_correlation finite [-1, 1]</criterion>
+  <criterion>open-research-questions.json has exactly 8 entries</criterion>
+  <criterion>regression-evidence.json contains MEJEPA_EVAL_SHIP_GATE_REGRESSION</criterion>
+  <criterion>leakage-check-evidence.json contains MEJEPA_EVAL_HOLDOUT_LEAKAGE failure case</criterion>
+  <criterion>ship-gate-evidence.json includes both passing AND failing case payloads</criterion>
+  <criterion>state-transfer-evidence.json T and m_t_estimate finite [0, 1]</criterion>
+  <criterion>aux-head-distillation-evidence.json has 3 in_consensus + 2 diverged</criterion>
+  <criterion>provenance-evidence.json has all 6 SHA/version fields populated</criterion>
+  <criterion>latency-evidence.json wall_clock_seconds &lt; 1800</criterion>
+  <criterion>mcp-roundtrip in-process and MCP hashes byte-equal</criterion>
+  <criterion>3 invocations produce byte-equal stripped output (determinism)</criterion>
+  <criterion>Total wall-clock &lt; 5 min on RTX 5090</criterion>
+  <criterion>Stdout last line == FSV-OK: evaluation</criterion>
+</validation_criteria>
+
+<test_commands>
+  <command>cargo build --release --example eval_fsv -p context-graph-mejepa</command>
+  <command>cargo run --release --example eval_fsv -p context-graph-mejepa</command>
+  <command>ls -la /tmp/contextgraph-mejepa-evaluation-fsv/</command>
+  <command>for f in /tmp/contextgraph-mejepa-evaluation-fsv/*.json; do stat -c '%a %n' "$f"; done</command>
+  <command>cargo clippy --release --example eval_fsv -p context-graph-mejepa -- -D warnings</command>
+</test_commands>
+
+</task_spec>
+```

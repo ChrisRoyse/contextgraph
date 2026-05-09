@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-003" version="1.0">
 <metadata>
   <title>OracleVerdict / ExceptionClass / PerTestOutcome / TestOutcome Re-Export</title>
-  <status>ready</status>
+  <status>pending</status>
+  <implementation_state as_of="2026-05-09">
+    Not yet shipped. The instruments crate exposes the canonical types via `pub use e_oracle::{EOracleInstrument, ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome};` (`crates/context-graph-mejepa-instruments/src/lib.rs:475`), and the corpus crate currently imports them directly (e.g. `use context_graph_mejepa_instruments::{ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome};` in `oracle.rs:15` and `swebench.rs:36`). A re-export from the corpus crate's `lib.rs` so downstream consumers can write `use context_graph_mejepa_corpus::OracleVerdict;` is still pending.
+  </implementation_state>
   <layer>foundation</layer>
   <sequence>3</sequence>
   <implements>

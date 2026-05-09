@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-015" version="1.0">
 <metadata>
   <title>OverEngineer + CompileError Mutation Operators (Python)</title>
-  <status>ready</status>
+  <status>complete</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `over_engineer.rs` (39 LOC — appends an unused helper function deterministically named off the seed; oracle expected to PASS) and `compile_error.rs` (44 LOC — introduces a single-character Python syntax error after the python_lex parse gate confirms the input was valid; oracle expected to FAIL at parse). Tests + FSV pass.
+  </implementation_state>
   <layer>logic</layer>
   <sequence>15</sequence>
   <implements>

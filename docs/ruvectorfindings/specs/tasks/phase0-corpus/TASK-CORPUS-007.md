@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-007" version="1.0">
 <metadata>
   <title>CorpusProvenance + GeneratedEntry + CorpusIndex Types</title>
-  <status>ready</status>
+  <status>pending</status>
+  <implementation_state as_of="2026-05-09">
+    Partial scaffolding: `CorpusEntry { task_id, repo }` exists in `split.rs` (used by the splitter as a task→bucket mapping input). `CorpusIndex` + `GeneratedEntry` records are defined privately in `bin/mejepa-corpus.rs:96-123` covering schema_version / complete / generated_at_unix_ms / tasks_dir / store_path / entries / split_assignments + per-entry SHAs. The full `CorpusProvenance` record (corpus_sha, operator_id, run_id, generator_version, dataset_name + split, mutation_seeds, source repo commit, language, ISO-8601 timestamp) is NOT yet defined as a public type in `lib.rs`, and is NOT persisted into a third RocksDB column family — both pending.
+  </implementation_state>
   <layer>foundation</layer>
   <sequence>7</sequence>
   <implements>

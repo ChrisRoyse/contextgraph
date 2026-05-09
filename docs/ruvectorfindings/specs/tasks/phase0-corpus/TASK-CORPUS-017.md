@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-017" version="1.0">
 <metadata>
   <title>split_corpus + assert_no_test_patch_leakage</title>
-  <status>ready</status>
+  <status>complete</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `split_corpus(entries, config) -> SplitResult<SplitReport>` in `split.rs:294-475` — InstanceAtomic (default) places every instance independently into the lowest-current-ratio bucket, RepoAtomic assigns whole repos to one bucket using LPT pre-sort + SplitMix64 shuffle. `assert_no_test_patch_leakage(assignments, sha_lookup)` (split.rs:484-512) reports a `LeakageDetected`-shaped error (currently re-using `OracleError`-style payload) when the same test_patch SHA lands in multiple buckets. `split_is_leakage_free(report)` (split.rs:618) used as a Stoer-Wagner-mincut-backed cross-check. 50 unit tests + FSV at `/tmp/contextgraph-mejepa-corpus-fsv/{split-evidence.json,split-assignments.json}`.
+  </implementation_state>
   <layer>logic</layer>
   <sequence>17</sequence>
   <implements>

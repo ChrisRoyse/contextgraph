@@ -4,7 +4,11 @@
 <task_spec id="TASK-CORPUS-001" version="1.0">
 <metadata>
   <title>Error Taxonomy + MutationCategory Enum</title>
-  <status>ready</status>
+  <status>partial</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `MutationCategory` (8 variants, `all() -> [Self; 8]`, `slug()`, `#[serde(rename_all = "snake_case")]`); `MutationError` with 3 variants (`InvalidInput`, `NoMutationSite`, `OperatorFailed`) + `code()` mapping; `OracleError` with 7 variants + `code()` mapping. See `crates/context-graph-mejepa-corpus/src/lib.rs:66-191` and `oracle.rs:31-177`.
+    Pending: add `MutationError::LeakageDetected` variant + `MEJEPA_CORPUS_LEAKAGE_DETECTED` code; add `OracleError::DockerRunIdUnsafe` variant + `MEJEPA_CORPUS_DOCKER_RUN_ID_UNSAFE` code (validator already exists inline at `swebench.rs:552-581` but raises generic `InvalidInput`); add `MutationCategory::from_slug` reverse helper; add `error_codes_match_taxonomy` + `mutation_category_slug_round_trip` unit tests.
+  </implementation_state>
   <layer>foundation</layer>
   <sequence>1</sequence>
   <implements>

@@ -4,7 +4,11 @@
 <task_spec id="TASK-CORPUS-010" version="1.0">
 <metadata>
   <title>python_lex: ensure_parseable_python + mask_python (LexicalMask)</title>
-  <status>ready</status>
+  <status>partial</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: tree-sitter-backed `ensure_parseable_python(source, field) -> MutationResult<()>` in `python_lex.rs` (called by `apply_mutation` and by every operator that consumes Python source). The lex module also drives the triple-quote / f-string-aware mask wired into `subtle_flip`, `off_by_one`, `swap_variable`, `delete_test_call`, `over_engineer` — confirmed at the operator-call sites (commit `7cc42eec`, `828a1133`, `be0773b4`).
+    Pending: a public, named `LexicalMask` API (the current mask is a private implementation detail consumed via helpers like `python_lex::is_string_or_comment`); plus the standalone unit tests for the mask shape (e.g. `mask_excludes_triple_quoted_strings`, `mask_excludes_fstring_format_specs`) demanded by the spec.
+  </implementation_state>
   <layer>logic</layer>
   <sequence>10</sequence>
   <implements>

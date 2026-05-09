@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-022" version="1.0">
 <metadata>
   <title>build_corpus_provenance + Provenance Verifier (re-derives corpus_sha)</title>
-  <status>ready</status>
+  <status>pending</status>
+  <implementation_state as_of="2026-05-09">
+    Not yet shipped. Depends on TASK-CORPUS-007 (CorpusProvenance type) and TASK-CORPUS-008 (`CF_MEJEPA_CORPUS_PROVENANCE` 3rd CF) — both also pending. `bin/mejepa-corpus.rs::generate` does compute per-entry SHAs (`patch_sha256`, `oracle_verdict_sha256` in `CorpusIndex::entries`) and writes them to `index.json`, so the per-row content addresses already exist; the missing piece is the corpus-wide provenance record (Merkle-style `corpus_sha` over the per-row SHAs + operator + run_id + generator_version + dataset/split + ISO-8601 timestamp), the verifier that re-derives `corpus_sha` from the CFs, and the `OracleStore::put_provenance`/`get_provenance` accessors.
+  </implementation_state>
   <layer>logic</layer>
   <sequence>22</sequence>
   <implements>

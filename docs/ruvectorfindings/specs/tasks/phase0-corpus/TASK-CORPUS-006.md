@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-006" version="1.0">
 <metadata>
   <title>SwebenchOracleConfig + SwebenchInstanceReport + SwebenchOracleResult Types</title>
-  <status>ready</status>
+  <status>complete</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `SwebenchPrediction`, `SwebenchPredictionMode { Gold, Custom(SwebenchPrediction) }`, `SwebenchOracleConfig` (with `instance_timeout`, `overall_timeout`, `dataset_name`, `split`, `namespace`, `venv_python`, `run_root`), `TransitionBucket`, `TestsStatus`, `SwebenchInstanceReport`, `SwebenchOracleArtifacts`, `SwebenchOracleResult` (swebench.rs:51–215). `SwebenchOracleConfig::defaults_for` aligns with `scripts/swebench_lite_ops.py`. Real Docker FSV against `swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest` (gold + custom modes).
+  </implementation_state>
   <layer>foundation</layer>
   <sequence>6</sequence>
   <implements>

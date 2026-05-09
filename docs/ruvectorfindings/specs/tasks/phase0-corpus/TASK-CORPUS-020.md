@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-020" version="1.0">
 <metadata>
   <title>run_swebench_lite_oracle + wait_with_timeout</title>
-  <status>ready</status>
+  <status>complete</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `run_swebench_lite_oracle(config) -> OracleResult<SwebenchOracleResult>` (swebench.rs:215-301) — validates config (including run_id alphabet), writes the predictions JSONL when `Custom`, spawns the venv Python process invoking `python -m swebench.harness.run_evaluation`, applies `wait_with_timeout` (oracle.rs) for `overall_timeout`, locates the per-instance `report.json` under `<run_root>/logs/run_evaluation/<run_id>/<artifact_namespace>/<instance_id>/report.json`, parses, converts via `swebench_report_to_verdict`, returns the verdict + the `SwebenchOracleArtifacts` paths (predictions JSONL, run-evaluation log dir, instance log dir, instance report path). Real Docker FSV gold-mode 23.7s → resolved=true 22-tests-all-pass; custom-mode 23.0s identical.
+  </implementation_state>
   <layer>logic</layer>
   <sequence>20</sequence>
   <implements>

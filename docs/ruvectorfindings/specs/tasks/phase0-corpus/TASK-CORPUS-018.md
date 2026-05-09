@@ -4,7 +4,10 @@
 <task_spec id="TASK-CORPUS-018" version="1.0">
 <metadata>
   <title>parse_swebench_instance_report + swebench_report_to_verdict</title>
-  <status>ready</status>
+  <status>complete</status>
+  <implementation_state as_of="2026-05-09">
+    Shipped: `parse_swebench_instance_report(report_path) -> OracleResult<SwebenchInstanceReport>` (swebench.rs:303) and `swebench_report_to_verdict(report, status_text) -> OracleResult<OracleVerdict>` (swebench.rs:392) — convert the SWE-bench `tests_status` buckets (FAIL_TO_PASS / PASS_TO_PASS / FAIL_TO_FAIL / PASS_TO_FAIL each with `success` and `failure` lists) per the canonical `swebench/harness/grading.py::get_eval_report` semantics into per-test `PerTestOutcome` rows + the cumulative `OracleVerdict.all_passed` flag. Pytest xfail/xpass handling kept in sync with `parse_pytest_json_report` per commit 24450e43. End-to-end FSV against `swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest` confirms 22-tests-all-pass round-trip identical between gold and custom modes.
+  </implementation_state>
   <layer>logic</layer>
   <sequence>18</sequence>
   <implements>
