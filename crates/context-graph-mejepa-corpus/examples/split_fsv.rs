@@ -36,8 +36,11 @@ fn main() -> FsvResult<()> {
 
     require_eq("assignment count", &total, &report.assignments.len())?;
     let task_ids_in: HashSet<&str> = corpus.iter().map(|e| e.task_id.as_str()).collect();
-    let task_ids_out: HashSet<&str> =
-        report.assignments.iter().map(|a| a.task_id.as_str()).collect();
+    let task_ids_out: HashSet<&str> = report
+        .assignments
+        .iter()
+        .map(|a| a.task_id.as_str())
+        .collect();
     require_eq("assigned task_id set", &task_ids_in, &task_ids_out)?;
     require_eq(
         "bucket size total",

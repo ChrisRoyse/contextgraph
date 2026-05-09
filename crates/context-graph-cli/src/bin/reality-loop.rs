@@ -7754,6 +7754,243 @@ fn dynamicjepa_run_language_semantic_tool(
     })
 }
 
+fn dynamicjepa_c_compile_command_from_database(
+    repo_root: &Path,
+    rel_target: &str,
+) -> Result<(Vec<String>, PathBuf)> {
+    let compile_commands_path = repo_root.join("compile_commands.json");
+    if !compile_commands_path.is_file() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_C_COMPILE_COMMANDS_MISSING",
+            "DynamicJEPA C compiler semantics require compile_commands.json; parser-only or guessed gcc flags are refused",
+            "dynamicjepa.action.compiler_lsp.c.compile_commands",
+            "generate compile_commands.json for the C repair repository before ME-JEPA action control",
+            json!({"path": rel_target, "compile_commands": file_sot(&compile_commands_path)}),
+            Some(file_sot(repo_root)),
+        ));
+    }
+    let compile_commands = read_json(&compile_commands_path)?;
+    let entries = compile_commands.as_array().ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_C_COMPILE_COMMANDS_SCHEMA_INVALID",
+            "C compile_commands.json must be a JSON array",
+            "dynamicjepa.action.compiler_lsp.c.compile_commands",
+            "regenerate the compilation database in Clang JSON Compilation Database format",
+            json!({"compile_commands": file_sot(&compile_commands_path)}),
+            Some(file_sot(&compile_commands_path)),
+        )
+    })?;
+    let mut matches = Vec::new();
+    for (idx, entry) in entries.iter().enumerate() {
+        let Some(file_value) = entry.get("file").and_then(Value::as_str) else {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_C_COMPILE_COMMAND_FILE_MISSING",
+                "C compile_commands entry is missing the required file field",
+                "dynamicjepa.action.compiler_lsp.c.compile_commands[].file",
+                "regenerate compile_commands.json with a file path for every C translation unit",
+                json!({"entry_index": idx, "compile_commands": file_sot(&compile_commands_path)}),
+                Some(file_sot(&compile_commands_path)),
+            ));
+        };
+        if dynamicjepa_c_compile_command_file_matches(file_value, rel_target, repo_root) {
+            matches.push((idx, entry, file_value));
+        }
+    }
+    if matches.len() != 1 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_C_COMPILE_COMMAND_NOT_UNIQUE",
+            "C compiler semantics require exactly one compile_commands entry for the edited translation unit",
+            "dynamicjepa.action.compiler_lsp.c.compile_commands[].file",
+            "ensure the C compilation database has one structured command for the edited file",
+            json!({
+                "path": rel_target,
+                "match_count": matches.len(),
+                "matched_entry_indexes": matches.iter().map(|(idx, _, _)| *idx).collect::<Vec<_>>(),
+                "compile_commands": file_sot(&compile_commands_path),
+            }),
+            Some(file_sot(&compile_commands_path)),
+        ));
+    }
+    let (_, entry, file_value) = matches[0];
+    let directory = entry
+        .get("directory")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_C_COMPILE_COMMAND_DIRECTORY_MISSING",
+                "C compile_commands entry is missing the required directory field",
+                "dynamicjepa.action.compiler_lsp.c.compile_commands[].directory",
+                "regenerate compile_commands.json with the compiler working directory",
+                json!({"path": rel_target, "compile_commands": file_sot(&compile_commands_path)}),
+                Some(file_sot(&compile_commands_path)),
+            )
+        })?;
+    let original_dir = PathBuf::from(directory);
+    let cwd = dynamicjepa_c_compile_command_snapshot_cwd(repo_root, rel_target, file_value, &original_dir)?;
+    let arguments = entry.get("arguments").and_then(Value::as_array).ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_C_COMPILE_COMMAND_ARGUMENTS_MISSING",
+            "C compiler semantics require structured compile_commands arguments; shell command strings are refused",
+            "dynamicjepa.action.compiler_lsp.c.compile_commands[].arguments",
+            "regenerate compile_commands.json with argv-style arguments so ME-JEPA can exec without shell parsing",
+            json!({"path": rel_target, "compile_commands": file_sot(&compile_commands_path)}),
+            Some(file_sot(&compile_commands_path)),
+        )
+    })?;
+    let original_root = dynamicjepa_c_compile_command_original_root(file_value, rel_target);
+    let mut argv = Vec::new();
+    for (arg_idx, argument) in arguments.iter().enumerate() {
+        let arg = argument.as_str().ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_C_COMPILE_COMMAND_ARGUMENT_NON_STRING",
+                "C compile_commands arguments must all be strings",
+                "dynamicjepa.action.compiler_lsp.c.compile_commands[].arguments[]",
+                "regenerate compile_commands.json with string argv entries",
+                json!({"path": rel_target, "argument_index": arg_idx}),
+                Some(file_sot(&compile_commands_path)),
+            )
+        })?;
+        argv.push(dynamicjepa_rewrite_c_compile_arg_for_snapshot(
+            arg,
+            rel_target,
+            file_value,
+            original_root.as_deref(),
+            repo_root,
+        ));
+    }
+    if argv.is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_C_COMPILE_COMMAND_EMPTY",
+            "C compile_commands entry had an empty arguments array",
+            "dynamicjepa.action.compiler_lsp.c.compile_commands[].arguments",
+            "regenerate compile_commands.json with the compiler executable and arguments",
+            json!({"path": rel_target}),
+            Some(file_sot(&compile_commands_path)),
+        ));
+    }
+    if !argv.iter().any(|arg| arg == "-fsyntax-only") {
+        argv.push("-fsyntax-only".to_string());
+    }
+    Ok((argv, cwd))
+}
+
+fn dynamicjepa_c_compile_command_file_matches(
+    file_value: &str,
+    rel_target: &str,
+    repo_root: &Path,
+) -> bool {
+    let normalized = file_value.replace('\\', "/");
+    if Path::new(file_value)
+        .strip_prefix(repo_root)
+        .ok()
+        .map(|path| path.to_string_lossy().replace('\\', "/") == rel_target)
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    normalized == rel_target || normalized.ends_with(&format!("/{rel_target}"))
+}
+
+fn dynamicjepa_c_compile_command_original_root(
+    file_value: &str,
+    rel_target: &str,
+) -> Option<PathBuf> {
+    let normalized = file_value.replace('\\', "/");
+    let suffix = format!("/{rel_target}");
+    let prefix = normalized.strip_suffix(&suffix)?;
+    if prefix.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(prefix))
+    }
+}
+
+fn dynamicjepa_c_compile_command_snapshot_cwd(
+    repo_root: &Path,
+    rel_target: &str,
+    file_value: &str,
+    original_dir: &Path,
+) -> Result<PathBuf> {
+    if !original_dir.is_absolute() {
+        return Ok(repo_root.join(original_dir));
+    }
+    let Some(original_root) = dynamicjepa_c_compile_command_original_root(file_value, rel_target)
+    else {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_C_COMPILE_COMMAND_ABSOLUTE_CWD_UNMAPPED",
+            "C compile_commands entry used an absolute directory that could not be mapped into the semantic snapshot",
+            "dynamicjepa.action.compiler_lsp.c.compile_commands[].directory",
+            "emit compile_commands paths under the source root or use relative directories for C action control",
+            json!({"path": rel_target, "directory": path_str(original_dir), "file": file_value}),
+            Some(file_sot(repo_root)),
+        ));
+    };
+    let suffix = original_dir.strip_prefix(&original_root).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_C_COMPILE_COMMAND_CWD_OUTSIDE_ROOT",
+            "C compile_commands directory is outside the source root inferred from the file entry",
+            "dynamicjepa.action.compiler_lsp.c.compile_commands[].directory",
+            "emit C compile_commands entries whose directory and file share the same source root",
+            json!({
+                "path": rel_target,
+                "directory": path_str(original_dir),
+                "file": file_value,
+                "inferred_original_root": path_str(&original_root),
+                "error": err.to_string(),
+            }),
+            Some(file_sot(repo_root)),
+        )
+    })?;
+    Ok(repo_root.join(suffix))
+}
+
+fn dynamicjepa_rewrite_c_compile_arg_for_snapshot(
+    arg: &str,
+    rel_target: &str,
+    file_value: &str,
+    original_root: Option<&Path>,
+    repo_root: &Path,
+) -> String {
+    if dynamicjepa_c_compile_command_file_matches(arg, rel_target, repo_root) || arg == file_value {
+        return rel_target.to_string();
+    }
+    if let Some(include_path) = arg.strip_prefix("-I") {
+        if Path::new(include_path).is_absolute() {
+            return format!(
+                "-I{}",
+                path_str(&dynamicjepa_rewrite_c_absolute_path_for_snapshot(
+                    include_path,
+                    original_root,
+                    repo_root,
+                ))
+            );
+        }
+    }
+    if Path::new(arg).is_absolute() {
+        return path_str(&dynamicjepa_rewrite_c_absolute_path_for_snapshot(
+            arg,
+            original_root,
+            repo_root,
+        ))
+        .to_string();
+    }
+    arg.to_string()
+}
+
+fn dynamicjepa_rewrite_c_absolute_path_for_snapshot(
+    path: &str,
+    original_root: Option<&Path>,
+    repo_root: &Path,
+) -> PathBuf {
+    let path = Path::new(path);
+    if let Some(original_root) = original_root {
+        if let Ok(suffix) = path.strip_prefix(original_root) {
+            return repo_root.join(suffix);
+        }
+    }
+    path.to_path_buf()
+}
+
 fn command_exists(name: &str) -> bool {
     std::env::var_os("PATH")
         .and_then(|paths| {
@@ -8644,6 +8881,158 @@ fn ast_c_contains_function_declarator(node: tree_sitter::Node<'_>) -> bool {
     let mut cursor = node.walk();
     node.children(&mut cursor)
         .any(ast_c_contains_function_declarator)
+}
+
+fn ast_cpp_node_kind(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
+    match node.kind() {
+        "function_definition" | "function_declarator" => {
+            if ast_cpp_function_is_method(node, source) {
+                "method"
+            } else {
+                "function"
+            }
+        }
+        "field_declaration" => {
+            if ast_descendant_has_kind(node, "function_declarator") {
+                "method"
+            } else {
+                "assignment"
+            }
+        }
+        "class_specifier" | "struct_specifier" | "enum_specifier" | "union_specifier" => "class",
+        "namespace_definition" | "translation_unit" => "module",
+        "preproc_include" | "using_declaration" | "using_directive" | "alias_declaration" => {
+            "import"
+        }
+        "call_expression" => "call",
+        "declaration" | "init_declarator" | "assignment_expression" => "assignment",
+        "template_declaration" => ast_cpp_template_node_kind(node, source),
+        _ => "unknown",
+    }
+}
+
+fn ast_cpp_template_node_kind(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        let kind = ast_cpp_node_kind(child, source);
+        if kind != "unknown" && kind != "import" {
+            return kind;
+        }
+    }
+    "unknown"
+}
+
+fn ast_cpp_function_is_method(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    if ast_has_ancestor_any(node, &["class_specifier", "struct_specifier", "field_declaration"]) {
+        return true;
+    }
+    let text = node.utf8_text(source.as_bytes()).unwrap_or("");
+    let Some((qualifier, _)) = text.rsplit_once("::") else {
+        return false;
+    };
+    let qualifier = qualifier
+        .split(|ch: char| !is_identifier_char(ch))
+        .filter(|part| !part.is_empty())
+        .last()
+        .unwrap_or("");
+    !qualifier.is_empty()
+        && (source_contains_type_declaration(source, "class", qualifier)
+            || source_contains_type_declaration(source, "struct", qualifier)
+            || source_contains_type_declaration(source, "union", qualifier))
+}
+
+fn source_contains_type_declaration(source: &str, keyword: &str, name: &str) -> bool {
+    source.match_indices(keyword).any(|(idx, _)| {
+        let after_keyword = idx + keyword.len();
+        source[after_keyword..]
+            .trim_start()
+            .strip_prefix(name)
+            .is_some_and(|rest| rest.chars().next().is_none_or(|ch| !is_identifier_char(ch)))
+    })
+}
+
+fn ast_has_ancestor_any(node: tree_sitter::Node<'_>, kinds: &[&str]) -> bool {
+    let mut current = node.parent();
+    while let Some(candidate) = current {
+        if kinds.iter().any(|kind| candidate.kind() == *kind) {
+            return true;
+        }
+        current = candidate.parent();
+    }
+    false
+}
+
+fn ast_descendant_has_kind(node: tree_sitter::Node<'_>, kind: &str) -> bool {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if child.kind() == kind || ast_descendant_has_kind(child, kind) {
+            return true;
+        }
+    }
+    false
+}
+
+fn ast_node_name_for_language(
+    language: &'static str,
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> Option<String> {
+    if language == "cpp" {
+        ast_cpp_node_name(node, source).or_else(|| ast_node_name(node, source))
+    } else {
+        ast_node_name(node, source)
+    }
+}
+
+fn ast_cpp_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    match node.kind() {
+        "function_definition" | "declaration" | "field_declaration" | "init_declarator" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                if matches!(
+                    child.kind(),
+                    "function_declarator" | "init_declarator" | "qualified_identifier"
+                ) {
+                    if let Some(name) = ast_cpp_node_name(child, source) {
+                        return Some(name);
+                    }
+                }
+            }
+            None
+        }
+        "function_declarator"
+        | "reference_declarator"
+        | "pointer_declarator"
+        | "parenthesized_declarator" => node
+            .child_by_field_name("declarator")
+            .and_then(|child| ast_cpp_node_name(child, source))
+            .or_else(|| {
+                let mut cursor = node.walk();
+                for child in node.named_children(&mut cursor) {
+                    if let Some(name) = ast_cpp_node_name(child, source) {
+                        return Some(name);
+                    }
+                }
+                None
+            }),
+        "qualified_identifier" => {
+            let mut cursor = node.walk();
+            let mut last = None;
+            for child in node.named_children(&mut cursor) {
+                if let Some(name) = ast_cpp_node_name(child, source) {
+                    last = Some(name);
+                }
+            }
+            last
+        }
+        "identifier" | "field_identifier" | "type_identifier" | "destructor_name"
+        | "operator_name" => node
+            .utf8_text(source.as_bytes())
+            .ok()
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty()),
+        _ => None,
+    }
 }
 
 fn ast_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {

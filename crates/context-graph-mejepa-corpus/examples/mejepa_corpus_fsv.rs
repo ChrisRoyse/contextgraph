@@ -13,11 +13,12 @@
 // cases. CompileError is the only case expected to fail Python compilation.
 
 use context_graph_mejepa_corpus::{
+    apply_mutation,
     split::{
         cross_cut_weights, split_corpus, split_is_leakage_free, CorpusEntry, SplitConfig,
         SplitReport,
     },
-    apply_mutation, MutationCategory, MutationConfig, MutationOutcome, MutationSite,
+    MutationCategory, MutationConfig, MutationOutcome, MutationSite,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -368,11 +369,7 @@ fn split_fsv(evidence_root: &Path) -> FsvResult<Value> {
         format!("split_corpus(default 80/10/10 over {total} synthetic tasks) failed: {err:?}")
     })?;
 
-    require_eq(
-        "split assignment count",
-        &total,
-        &report.assignments.len(),
-    )?;
+    require_eq("split assignment count", &total, &report.assignments.len())?;
     let task_ids_in: HashSet<&str> = corpus.iter().map(|entry| entry.task_id.as_str()).collect();
     let task_ids_out: HashSet<&str> = report
         .assignments
@@ -398,13 +395,9 @@ fn split_fsv(evidence_root: &Path) -> FsvResult<Value> {
     require(
         split_is_leakage_free(&report),
         "split_is_leakage_free must confirm zero cross-bucket repo edges",
-    );
-    let cross_weights = cross_cut_weights(&report);
-    require_eq(
-        "split cross-cut weights",
-        &[0.0, 0.0, 0.0],
-        &cross_weights,
     )?;
+    let cross_weights = cross_cut_weights(&report);
+    require_eq("split cross-cut weights", &[0.0, 0.0, 0.0], &cross_weights)?;
 
     let csv_path = evidence_root.join("split-assignments.csv");
     let csv_text = split_assignments_csv(&report);
@@ -566,11 +559,19 @@ fn read_split_assignments_csv(path: &Path, expected: &SplitReport) -> FsvResult<
         &lines.next(),
     )?;
     let rows: Vec<&str> = lines.collect();
-    require_eq("split CSV row count", &expected.assignments.len(), &rows.len())?;
+    require_eq(
+        "split CSV row count",
+        &expected.assignments.len(),
+        &rows.len(),
+    )?;
     let mut task_ids = HashSet::with_capacity(rows.len());
     for (row, expected_assignment) in rows.iter().zip(&expected.assignments) {
         let parts: Vec<&str> = row.split(',').collect();
-        require_eq(&format!("split CSV row shape: {row}"), &3usize, &parts.len())?;
+        require_eq(
+            &format!("split CSV row shape: {row}"),
+            &3usize,
+            &parts.len(),
+        )?;
         require_eq(
             &format!("split CSV task_id: {row}"),
             &expected_assignment.task_id.as_str(),
@@ -586,7 +587,10 @@ fn read_split_assignments_csv(path: &Path, expected: &SplitReport) -> FsvResult<
             &expected_assignment.bucket.slug(),
             &parts[2],
         )?;
-        require(task_ids.insert(parts[0]), "split CSV task IDs must be unique");
+        require(
+            task_ids.insert(parts[0]),
+            "split CSV task IDs must be unique",
+        );
     }
     Ok(json!({
         "row_count": rows.len(),
