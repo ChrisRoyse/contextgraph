@@ -229,7 +229,8 @@ Per doc 09 §1.3, the **end state** is when `predicted_oracle_pass > 0.95` with 
 - Operator contract: `CLAUDE.md §11` (rewritten in the same commit as this doc)
 - Sitrep: `sitrep/01_status_overview.md`, `sitrep/02_shipped/*`, `sitrep/03_deferred/*`, `sitrep/04_implementation_plans/*`
 - Disk-cleanup record: this file's "Migration checklist" section is the authoritative log of what was deleted.
-- UTL v2.0 source: `/home/cabdru/contextgraph/docs2/UTL_v2_embodied.md`
+- UTML v1.0 source theory: `/home/cabdru/contextgraph/docs2/UTL_v2_embodied.md` (rewritten 2026-05-09 from "UTL v2.0 — Embodied Edition" into the ML-native "UTML v1.0 — JEPA Edition" with four factors `L_step = ΔP · ΔK · ΔΩ · ΔΞ`)
+- ME-JEPA learning-formula operationalization: `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md`
 - Locked decisions: `memory/decisions/2026-05-09--single-loop-claude-code-actor-mejepa-data-factory.md`, `memory/decisions/2026-05-09--utl-v2-mejepa-learning-formula.md`
 
 ---
@@ -279,8 +280,9 @@ ME-JEPA.
                 │   Stand-alone reality predictor          │
                 │   (runs SEPARATE from any LLM)           │
                 │                                          │
-                │   Trains under L = ΔS × ΔC × ΔE          │
-                │   (UTL v2.0; see Section B below)        │
+                │   Trains under L_step =                   │
+                │     ΔP × ΔK × ΔΩ × ΔΞ                    │
+                │   (UTML v1.0 — see doc 11 + Section B)   │
                 │                                          │
                 │   Self-healing: drift → retrain → A/B/C  │
                 │   Self-learning: every observe() updates │
@@ -318,138 +320,59 @@ with turns. Bigger benchmarks come after SWE-bench Lite 300 is exhausted.
 
 ---
 
-## Section B — Learning formula: UTL v2.0 → ME-JEPA (locked 2026-05-09)
+## Section B — Learning formula: UTML v1.0 → ME-JEPA (locked 2026-05-09)
 
-The Unified Theory of Learning v2.0 (`docs2/UTL_v2_embodied.md`) is the **canonical learning
-formula for ME-JEPA**. Each peer-reviewed-grounded human-physiology term maps to a measurable
-AI/ML signal. The multiplicative gating preserves UTL's "any factor at zero zeroes the whole
-product" property — critical for self-healing, because it forces the model to **not learn**
-when its own internal state is corrupted.
+> **Canonical learning-formula doc:** [`11_MEJEPA_LEARNING_FORMULA.md`](./11_MEJEPA_LEARNING_FORMULA.md). This section is a brief summary; doc 11 is the full operationalization.
 
-### The mapped equation
+The source theory `docs2/UTL_v2_embodied.md` was rewritten on 2026-05-09 from the embodied/biological **UTL v2.0** to the ML-native **UTML v1.0 (Unified Theory of Machine Learning — JEPA Edition)**. The rewrite changed the formula structurally — UTML v1.0 is **four** multiplicative factors, not three:
 
 ```
-L_ME-JEPA(t) = ΔS(t) × ΔC(t) × ΔE(t)         all factors clamped to [0, 1]
+L_step = ΔP × ΔK × ΔΩ × ΔΞ           all factors clamped to [0, 1]
 ```
 
-| Symbol | UTL v2.0 meaning | ME-JEPA mapping |
+| Symbol | UTML v1.0 meaning | ME-JEPA mapping |
 |---|---|---|
-| **L** | Per-moment learning efficiency | Training-signal strength right now: how much this `(panel, oracle_verdict)` pair should move the model |
-| **ΔS** | Surprise: prediction error | `\|oracle_predicted − oracle_actual\|` (gold) OR `γ · \|oracle_predicted − oracle_simulated\|` (counterfactual rollouts via panel perturbation; γ ≈ 0.7) |
-| **ΔC** | Coherence: integrates with prior knowledge | Prediction stability + gradient direction agreement + **multi-embedder coherence** (E1–E13 cross-space neighbor agreement using the existing embeddings crate) |
-| **ΔE** | Embodiment: state permits the update to stick | Plasticity-window × signal-clarity × drift-floor (geometric weighting, any subcomponent at 0 zeros ΔE) |
+| **ΔP** | Predictive error in latent space (JEPA-native) | `1 − cosine(g_φ(f_θ(panel_t01)), f_target(panel_t2))` normalized by gradient SNR. Frozen instruments produce f_target. |
+| **ΔK** | Knowledge coherence | `0.5·cos_align(g_t, ḡ_prior) + 0.3·(1−fisher_violation) + 0.2·(1−ECE)`. Catches catastrophic forgetting + Fisher-protected EWC++ + calibration drift. |
+| **ΔΩ** | Optimizer-state health (the ML "embodiment") | `(effective_plasticity)^0.4 · (landscape_health)^0.4 · (stability_floor)^0.2`. Sutton 2024 plasticity loss + SAM sharpness + Goodhart guard. |
+| **ΔΞ** | **Representational non-collapse — the ML-native term, no biological analogue** | `(1 − target_collapse)^0.5 · (1 − predictor_redundancy)^0.3 · (1 − constellation_violation)^0.2`. **For ME-JEPA: target_collapse = 0 by construction** (frozen instruments). |
 
-### Detailed sub-formulas
+### Why ME-JEPA structurally wins on ΔΞ
 
-```
-ΔS = min(1.0,
-         max(|oracle_predicted − oracle_actual|,
-             γ · |oracle_predicted − oracle_simulated|)
-         + 0.5 · exploration_rate)
-       γ ≈ 0.7 (UTL v2.0 mental-rehearsal coefficient — counterfactual
-                  rollouts contribute ~70% as much as gold supervision)
+Every other JEPA-class system (I-JEPA, V-JEPA, V-JEPA 2, DINO, BYOL, SimSiam) has a *learnable* target encoder defended only by regularizers (stop-gradient, EMA momentum schedule, VICReg, Barlow Twins, contrastive negatives). All of those defenses can be defeated by a sufficiently expressive student/teacher pair, by miscalibrated hyperparameters, or by a degenerate data distribution.
 
-ΔC = min(1.0,
-         1/(1 + CV_recent_predictions)
-         + 0.3 · gradient_effectiveness
-         + 0.2 · embedder_coherence)
-       embedder_coherence uses the existing 13-embedder system
-       (E1–E13 in crates/context-graph-embeddings/)
+ME-JEPA's target representation is produced by **frozen externally-defined instruments** (E_AST, E_CFG, E_Oracle, E_Witness, ...) — deterministic functions with **zero trainable parameters**. They cannot drift. They cannot collapse. There is no gradient flowing through them, ever. This makes `ΔΞ.target_collapse = 0` a **structural guarantee**, not a regularizer that can be defeated. To our knowledge, ME-JEPA is the first JEPA in the literature with this property.
 
-ΔE = (plasticity_window)^0.4
-     · (signal_clarity)^0.4
-     · (drift_floor)^0.2
+Predictor-side ΔΞ (the trainable `g_φ` can still degenerate even with frozen targets) is defended with four independent diagnostics: VICReg variance/covariance regularization, pairwise mutual-information audit, constellation+Gτ guard, and the negative-action ablation falsifier. Doc 11 §5.3 has the full breakdown.
 
-       plasticity_window:  0.0 frozen | 0.6 standard online | 0.85 cosine+EWC
-                          | 1.0 scheduled offline retrain (analog of theta sleep)
-       signal_clarity:     1.0 gold oracle | 0.6 operator override | 0.3 heuristic
-                          | 0.1 weak/noisy
-       drift_floor:        1.0 in-dist | 0.4 moderate drift (trigger A/B/C)
-                          | 0.1 severe drift (refuse, full retrain)
-```
+### Coaching order
 
-### Consolidation integral M(t)
+**Regulate ΔΩ and ΔΞ first** (the substrate problem); only then adjust ΔP or ΔK (the signal problem). Trying to fix prediction error by curriculum tweaks while the latent has collapsed (ΔΞ low) or while plasticity is gone (ΔΩ low) is wasted compute — the system *cannot* improve on a degenerate substrate. Doc 11 §9 has the full training cycle including learning-state classification (Stuck / Optimizer-Dysregulated / Latent-Collapsing / Confused / Optimal / Mastery / Dissipating).
+
+### Reward and consolidation
 
 ```
-M_ME-JEPA(t) = ∫₀ᵗ L(τ) · ΔE(τ) · k(τ) · e^(−(t−τ)/τ_decay(τ)) dτ
-
-       k(τ) = 1.0  during online observe() updates (the §3.8 subscriber)
-       k(τ) = 3–5× during scheduled offline retrain windows (analog of slow-wave sleep)
+Reward         = 0.6 · calibrated_confidence + 0.4 · mean(L_step · ΔΞ)
+M(t)           = ∫₀ᵗ L_step(τ) · ΔΞ(τ) · k_replay(τ) · e^(−(t−τ)/τ_decay(τ)) dτ
+performance_deploy = M(t) · T(train, deploy)         # state-transfer (UTML §VIII.b)
 ```
 
-### State-transfer T (cross-language / cross-project)
+The integrand `L_step · ΔΞ` enforces that updates which don't preserve representational integrity contribute zero to either reward or consolidation, regardless of how good their loss looked. This is the ML-native "dissipation" gate — the failure mode where training loss falls but validation generalization gap widens.
 
-```
-T(SWE-bench-Lite, target_project) = exp(−d(state_train, state_deploy) / λ)
-performance_deploy = M_ME-JEPA(t) · T(SWE-bench-Lite, target_project)
+### Falsification criteria (UTML v1.0 §XIII)
 
-       d = distance over (language, repo_size, test_density,
-                          dependency_graph_depth, coverage_pattern)
-       λ ≈ 1.5 default. Tighter for high-stakes (production code).
-                Looser for prototypes / scratch repos.
-```
+The formula is falsifiable. The strongest falsifications:
 
-State-transfer is what makes the cross-language / cross-project mandate (Section C) achievable.
-SWE-bench Lite is mostly Python; deployment must work on Rust, C, C++, Java, C#, JS, TS, Ruby
-too. Train across the realistic deployment-state distribution from day one — *stress-inoculation
-training* in UTL parlance — not Python-only.
+1. ΔΞ proxies (predictor variance, pairwise MI redundancy, constellation violation rate) uncorrelated with downstream generalization, holding ΔP/ΔK/ΔΩ constant.
+2. A self-supervised system with a learnable target encoder achieving structural collapse-immunity without a regularizer (would reduce ME-JEPA's structural advantage to a quantitative one).
+3. Flat minima not generalizing better in JEPA-class systems, contradicting SAM (Foret et al. 2021).
+4. Gradient signal-to-noise ratio uncorrelated with generalization, contradicting Liu et al. 2020.
+5. Target-encoder collapse benign at scale — a JEPA driven into the trivial fixed point still producing useful downstream representations.
+6. Audit-substrate-grounded ME-JEPA run that reports high L_step and high M but fails on a freshly generated SWE-bench Lite holdout task.
 
-### Reward signal (for the data-factory optimizer)
+If any of these is disconfirmed by well-powered replication, UTML must be revised and the formula's instantiation in ME-JEPA's training pipeline must be updated.
 
-```
-Reward = 0.6 · prediction_oracle_correlation + 0.4 · mean(L · ΔE)
-```
-
-Claude Code (the data-factory operator) maximizes this reward by improving the capture machinery
-(instruments, hooks, shift-log, witness chain) so ME-JEPA gets richer L per attempt at higher ΔE.
-
-### Learning states (UTL v2.0 §XII, mapped)
-
-| Pattern | Learning state | Action |
-|---|---|---|
-| L < 0.1 for 3+ steps, ΔE > 0.4 | **Stuck** (path problem) | Prune or change architecture |
-| L < 0.1 for 3+ steps, ΔE < 0.4 | **Dysregulated** (state problem) | Regulate first: pause online updates, run drift detection, retrain if needed |
-| L < 0.3 | **Confused** | Improve coverage; reduce challenge temporarily |
-| 0.3 ≤ L < 0.7 | **Optimal** | Continue |
-| L ≥ 0.7 | **Mastery / Boring** | Increase challenge (harder mutation categories, harder benchmarks, broader languages) |
-| mean(L) > 0.3 but ΔM(24h)/mean(L) < 0.2 | **Dissipating** (consolidation problem) | Increase k(τ): trigger offline retrain window |
-
-**Coaching order (UTL v2.0 §VIII):** regulate ΔE first, then adjust ΔS / ΔC. Increasing the
-training challenge while ΔE is low wastes signal.
-
-### Pruning rule
-
-```
-prune learning path if (L < 0.1 for 3+ steps) AND (ΔE > 0.4 throughout)
-```
-
-If ΔE was low, the diagnosis is **bad model state, not bad data path**. Pruning a path because
-the model was dysregulated when it saw it teaches the wrong lesson.
-
-### Confidence calibration (gated by ΔE_mean)
-
-```
-calibrated_confidence = raw_conf · prediction_oracle_correlation
-                       · gate_agreement · evidence_factor · ΔE_mean
-clamped to [0.10, 0.95]
-```
-
-Confidence formed in a dysregulated model state is not trusted to the same degree as confidence
-formed when the model is healthy.
-
-### Falsification criteria (UTL v2.0 §XI.6 discipline)
-
-This formula is **falsifiable**. Any of these would invalidate it:
-
-1. **Drift-floor proxies (KL divergence, embedding shift) uncorrelated with ME-JEPA prediction
-   degradation**, holding ΔS and ΔC constant. → drop the drift_floor term.
-2. **Counterfactual / latent-perturbation rollouts producing zero gradient benefit** vs. gold-only
-   training in a controlled comparison. → the γ ≈ 0.7 mental-rehearsal coefficient is misapplied.
-3. **Capability_target_vector having zero effect** on convergence rate vs. history-only
-   prediction. → drop the future-self prior.
-
-If any falsification holds, the corresponding sub-formula gets `status: superseded` in
-`memory/decisions/` and a new file describes the corrected version.
+For full operational details (per-example sampling weight, per-step training certificate format, edge-case audit, implementation roadmap), see [`11_MEJEPA_LEARNING_FORMULA.md`](./11_MEJEPA_LEARNING_FORMULA.md).
 
 ---
 
@@ -495,31 +418,45 @@ This is what makes ME-JEPA usable for *any dynamic project*, not just SWE-bench 
 
 Operator directive: *"it is very important this system is self healing and self learning."*
 
-Per UTL v2.0 §VIII coaching cycle, mapped to ME-JEPA:
+Per UTML v1.0 §IX training cycle (the ML-native rewrite of UTL v2.0's coaching cycle), mapped to ME-JEPA:
 
 ```
-1. ASSESS STATE: compute current ΔE_model.
+1. ASSESS: measure ΔΩ (optimizer-state health) AND ΔΞ (representational non-collapse) FIRST.
    ↓
-2. REGULATE if ΔE < 0.4 (state intervention before content):
-   - Drift severe (drift_floor < 0.4)?
-       → pause inference, trigger A/B/C retrain (doc 09 §5.3)
-   - Plasticity collapsed (LR too low or grad explosion)?
-       → reset LR schedule
-   - Signal clarity too low (mostly weak labels)?
-       → reweight batch toward gold-supervised examples
+2. REGULATE if ΔΩ < 0.4 or ΔΞ < 0.4 (state intervention before content):
+   - ΔΩ.effective_plasticity collapsed (dormant ReLU units, low-rank weight drift)?
+       → continual backprop (Sutton 2024), selective dormant-unit re-initialization
+   - ΔΩ.landscape_health bad (sharp minima, gradient norm out of soft band)?
+       → SAM perturbation tightening, LR cosine-anneal restart
+   - ΔΩ.stability_floor → 0 (NaN, validation rising, Goodhart catastrophe)?
+       → halt, rollback to last good checkpoint, surface blocker
+   - ΔΞ.predictor_redundancy high (panel slots collapsing into each other)?
+       → bump VICReg variance/covariance coefficients, refit constellation
+   - ΔΞ.constellation_violation_rate high?
+       → re-fit constellation centroids on fresh deterministic-walk data
+   - (ΔΞ.target_collapse is locked at 0 by construction; if it's nonzero
+      something has accidentally made an instrument trainable — fix the bug)
    ↓
-3. OBSERVE: ΔS (oracle prediction error), ΔC (multi-embedder agreement)
+3. OBSERVE: ΔP (latent-space prediction error normalized by SNR), ΔK (gradient alignment + Fisher protection + ECE)
    ↓
-4. COMPUTE: L = ΔS × ΔC × ΔE
+4. COMPUTE: L_step = ΔP × ΔK × ΔΩ × ΔΞ
    ↓
-5. CLASSIFY: which learning state is the model in (Section B table)?
+5. CLASSIFY: which learning state is the model in?
+   - L_step < 0.1 for N steps, ΔΩ > 0.4, ΔΞ > 0.4 → Stuck (curriculum-prune)
+   - L_step < 0.1, ΔΩ < 0.4 → Optimizer-Dysregulated (regulate ΔΩ first)
+   - L_step < 0.1, ΔΞ < 0.4 → Latent-Collapsing (regulate ΔΞ first)
+   - L_step < 0.3 → Confused
+   - 0.3 ≤ L_step < 0.7 → Optimal
+   - L_step ≥ 0.7 → Boring / Mastery (advance curriculum)
+   - mean(L_step) > 0.3 but ΔM/mean(L_step) < 0.2 → Dissipating (consolidation problem)
    ↓
-6. INTERVENE: adjust either CONTENT (more data, harder mutations) or STATE
-   (drift correction, retrain) depending on which signal is low
+6. INTERVENE: regulate substrate (ΔΩ / ΔΞ), then adjust content (ΔP / ΔK), per state.
    ↓
-7. EVALUATE: did L improve? Did M (consolidation) hold over the 24h window?
+7. EVALUATE: did L_step improve? Did M (validation/holdout) hold over the next eval window?
    ↓ (return to step 1)
 ```
+
+**Coaching order (UTML §IX):** regulate ΔΩ and ΔΞ before adjusting ΔP or ΔK. Trying to fix prediction error by curriculum tweaks while the latent has collapsed is wasted compute — the system *cannot* improve on a degenerate substrate.
 
 ### Self-healing components (already specified in doc 09)
 
@@ -622,7 +559,7 @@ Replacing the original "Operator's immediate priorities" list with the extended 
 4. **Wire the reality loop's shift-log subscriber** to `mejepa.observe()` (doc 09 §3.8) so every
    Claude Code turn's reality artifacts feed training.
 5. **Implement self-healing per Section D** — drift detection + A/B/C promotion + EWC++ + the
-   UTL v2.0 coaching cycle.
+   UTML v1.0 training cycle (regulate ΔΩ and ΔΞ before adjusting ΔP/ΔK).
 6. **Stand up cross-language calibration** — conformal calibration set stratified across all
    supported languages.
 7. **Make `mcp__cgreality__mejepa_verify`** the primary inference path so any agent or human can
@@ -638,7 +575,7 @@ mutation categories AND across all supported languages on the holdout split. Tha
 
 | Doc 09 section | Pivot impact (this doc) |
 |---|---|
-| §0 TL;DR | Re-anchored on single-loop framing; UTL v2.0 formula referenced. |
+| §0 TL;DR | Re-anchored on single-loop framing; UTML v1.0 four-factor formula referenced (see Section B). |
 | §1 Reality compiler analogy | Unchanged; the analogy stays. |
 | §2 Architecture (instruments, panel, predictor, EMA, VICReg) | Unchanged. |
 | §3 Training corpus | §3.1 mutation corpus unchanged; §3.2 live attempts re-framed as Claude-Code-driven, not Qwen-driven. §3.3 synthetic adversarials unchanged. §3.4 split unchanged. |
@@ -647,10 +584,10 @@ mutation categories AND across all supported languages on the holdout split. Tha
 | §3.7 Optimal use of signals | Unchanged. |
 | §3.8 Real-time pipeline (shift-log subscriber) | Unchanged — this is the binding API between the reality loop and ME-JEPA. |
 | §4 Inference + calibration + OOD | Unchanged. `verify()` is now the primary path. |
-| §5 Self-healing | **Augmented by Section D above** — UTL v2.0 coaching cycle is the operating procedure; §5.1–§5.6 components are unchanged but called from the cycle. |
+| §5 Self-healing | **Augmented by Section D above** — UTML v1.0 training cycle is the operating procedure (assess ΔΩ + ΔΞ first, regulate state before content); §5.1–§5.6 components are unchanged but called from the cycle. |
 | §6 Hygiene | Unchanged. |
 | §7 Phase plan | Unchanged in structure; live-attempt corpus in Phase 5+ comes from Claude Code, not Qwen. |
 | §8 Open research questions | Unchanged. |
 | §9 Why clean-room | Unchanged. |
 | §10 Cross-references | Add this doc 10 as the canonical pivot reference. |
-| §11 One-line summary | Reframe: "ME-JEPA-Code is the deliverable; the single reality loop around Claude Code is its data factory; UTL v2.0 (`L = ΔS × ΔC × ΔE`) is its learning formula; the end state is no human code review for AI patches." |
+| §11 One-line summary | Reframe: "ME-JEPA-Code is the deliverable; the single reality loop around Claude Code is its data factory; UTML v1.0 (`L_step = ΔP · ΔK · ΔΩ · ΔΞ` with target_collapse = 0 by construction) is its learning formula; the end state is no human code review for AI patches." |

@@ -101,43 +101,38 @@ ME-JEPA must become **self-healing** (online observe + EWC++ + drift detection +
 
 ---
 
-## 3. The UTL-v2 learning formula for ME-JEPA
+## 3. The UTML v1.0 learning formula for ME-JEPA
 
-Per `docs2/UTL_v2_embodied.md`, durable learning requires three multiplicative factors: **Surprise × Coherence × Embodiment**. ME-JEPA's training signal optimization adopts this directly:
-
-```
-L_mejepa(panel, oracle) = ΔS × ΔC × ΔE             clamped to [0,1]
-```
-
-| Symbol | Meaning for ME-JEPA | How it's measured |
-|---|---|---|
-| **ΔS** (Surprise) | Per-example prediction error: how unexpected was the oracle outcome given the panel? | `1 - cosine(predicted_panel_t2, real_panel_t2)` clamped to [0,1] |
-| **ΔC** (Coherence) | How well the example integrates with prior corpus structure | `1 - distance_to_nearest_centroid(panel) / max_intra_cluster_distance` clamped to [0,1] |
-| **ΔE** (Embodiment) | Whether the model is in a state where the update can stick | `(plasticity_window)^0.4 × (drift_floor)^0.4 × (gradient_floor)^0.2` |
-
-Mapping to ME-JEPA-specific operationalizations:
-
-- **plasticity_window** ∈ [0, 1]: 1.0 if recently EWC++-Fisher-stable; 0.5 if drift detector borderline; 0.2 if mid-fine-tune cycle.
-- **drift_floor** ∈ [0, 1]: 1.0 if conformal coverage is in [0.88, 0.92]; degrades as coverage drifts outside; 0.0 if the model is currently in the "rollback in progress" state.
-- **gradient_floor** ∈ [0, 1]: 1.0 if `grad_norm < 1.0`; 0.5 if `grad_norm in [1, 5]`; 0.0 if `grad_norm > 10` (gradient explosion — drop the example).
-
-**Per-example sampling weight** (used by the §3.7.2 hard-example mining and active-learning loops):
+Per `docs2/UTL_v2_embodied.md` (the **Unified Theory of Machine Learning v1.0 — JEPA Edition**, the ML-native rewrite of the earlier embodied/biological framework), durable learning requires **four** multiplicative factors. The full operationalization is in [`docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md`](../docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md):
 
 ```
-sampling_weight(ex) = base_weight × L_mejepa(ex) × (1 + 5·operator_override_flag) × decay^age_in_days
+L_step = ΔP × ΔK × ΔΩ × ΔΞ                  all factors clamped to [0, 1]
 ```
 
-This selects examples that are *informative* (high ΔS), *coherent with what's already known* (high ΔC), AND *consolidatable* (high ΔE). Examples that fail any of the three are deferred — they may be flake artifacts (low ΔE), nonsense (low ΔC), or noise (low ΔS).
+| Symbol | Meaning for ME-JEPA |
+|---|---|
+| **ΔP** (Predictive error, latent-space) | `1 − cosine(g_φ(f_θ(panel_t01)), f_target(panel_t2))` normalized by gradient SNR. JEPA-native — predicts in representation space, not output space. |
+| **ΔK** (Knowledge coherence) | `0.5·cos_align(g_t, ḡ_prior) + 0.3·(1−fisher_violation) + 0.2·(1−ECE)`. Catches catastrophic forgetting + Fisher-protected EWC++ updates + calibration drift. |
+| **ΔΩ** (Optimizer-state health) | `(effective_plasticity)^0.4 × (landscape_health)^0.4 × (stability_floor)^0.2`. Catches loss of plasticity (Sutton 2024), sharp minima (SAM), Goodhart catastrophe. |
+| **ΔΞ** (Representational non-collapse — **the ML-native term, no biological analogue**) | `(1−target_collapse)^0.5 × (1−predictor_redundancy)^0.3 × (1−constellation_violation)^0.2`. **For ME-JEPA: target_collapse = 0 by construction** because instruments are frozen externally-defined deterministic functions — no learnable parameters, no possible collapse. |
 
-**Consolidation** (Phase 5 online observe + periodic full retrain) maps to the M(t) integral from UTL §VI:
+**The structural advantage**: ME-JEPA is — to our knowledge — the first JEPA-class system structurally immune to target-encoder collapse, because its target panel is produced by frozen externally-defined instruments (E_AST, E_CFG, E_Oracle, E_Witness, ...) rather than by an EMA copy of a learnable encoder. Every other JEPA (I-JEPA, V-JEPA, V-JEPA 2, DINO, BYOL) defends ΔΞ on the target side with regularizers that can be defeated. ME-JEPA defends it on the target side with **zero parameters and zero regularization**. Predictor-side ΔΞ defenses (VICReg + pairwise MI audit + constellation guard + negative-action ablation falsifier) catch residual degeneracy.
+
+**Per-example sampling weight** (used by §3.7.2 hard-example mining + active-learning loops):
 
 ```
-M(t) = ∫₀ᵗ L_mejepa(τ) · ΔE(τ) · k(τ) · e^(−(t−τ)/τ_decay(τ)) dτ
+sampling_weight(ex) = base_weight · L_step(ex) · (1 + 5·operator_override_flag) · decay^age_in_days
 ```
 
-Where `k(τ)` is the multiplier from a periodic-full-retrain step (~3-5× the online-observe gain on the same example) and `τ_decay` is short for unconsolidated traces (hours/days) and long once a memory is integrated (weeks/months).
+**Consolidation integral** (Phase 5 online observe + periodic full retrain, from UTML §VII):
 
-The new doc `11_MEJEPA_LEARNING_FORMULA.md` (to be written next turn) will fully expand this with implementation references.
+```
+M(t) = ∫₀ᵗ L_step(τ) · ΔΞ(τ) · k_replay(τ) · e^(−(t−τ)/τ_decay(τ)) dτ
+```
+
+The product `L_step · ΔΞ` is critical: a step with ΔΞ ≈ 0 (collapsed latent) cannot consolidate anything, even if the gradient update happens.
+
+**Coaching order (do not violate):** regulate ΔΩ and ΔΞ *before* adjusting ΔP or ΔK. Trying to fix prediction error by curriculum tweaks while the latent has collapsed is wasted compute — the system *cannot* improve on a degenerate latent.
 
 ---
 

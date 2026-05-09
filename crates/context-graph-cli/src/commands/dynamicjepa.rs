@@ -7188,7 +7188,9 @@ fn semantic_ruby_ast_node_kind(
         "class" | "module" if node.is_named() => "class",
         "require" | "require_relative" => "import",
         "call" | "command" => {
-            if semantic_ruby_call_is_test_dsl(node, source, path) {
+            if semantic_ruby_call_is_require(node, source) {
+                "import"
+            } else if semantic_ruby_call_is_test_dsl(node, source, path) {
                 "test"
             } else {
                 "call"
@@ -7201,6 +7203,12 @@ fn semantic_ruby_ast_node_kind(
 
 fn semantic_ruby_method_is_test(node: tree_sitter::Node<'_>, source: &str) -> bool {
     semantic_ast_node_name(node, source).is_some_and(|name| name.starts_with("test_"))
+}
+
+fn semantic_ruby_call_is_require(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    semantic_ruby_callee_name(node, source)
+        .as_deref()
+        .is_some_and(|callee| matches!(callee, "require" | "require_relative"))
 }
 
 fn semantic_ruby_call_is_test_dsl(node: tree_sitter::Node<'_>, source: &str, path: &str) -> bool {
@@ -26928,6 +26936,22 @@ module.exports.load = function(config) {
         println!(
             "AFTER ruby semantic-index state: rspec_symbols={:?} minitest_symbols={:?} rspec_calls={:?} minitest_calls={:?}",
             rspec.symbols, minitest.symbols, rspec.calls, minitest.calls
+        );
+        assert!(
+            rspec
+                .imports
+                .iter()
+                .any(|import| import.get("import").and_then(Value::as_str)
+                    == Some("require_relative \"../lib/calculator\"")),
+            "Ruby require_relative must be persisted as an import edge"
+        );
+        assert!(
+            minitest
+                .imports
+                .iter()
+                .any(|import| import.get("import").and_then(Value::as_str)
+                    == Some("require \"minitest/autorun\"")),
+            "Ruby require must be persisted as an import edge"
         );
 
         let rspec_symbols = rspec

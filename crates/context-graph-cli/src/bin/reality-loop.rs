@@ -9520,7 +9520,9 @@ fn ast_ruby_node_kind(node: tree_sitter::Node<'_>, source: &str, path: &str) -> 
         "class" | "module" if node.is_named() => "class",
         "require" | "require_relative" => "import",
         "call" | "command" => {
-            if ast_ruby_call_is_test_dsl(node, source, path) {
+            if ast_ruby_call_is_require(node, source) {
+                "import"
+            } else if ast_ruby_call_is_test_dsl(node, source, path) {
                 "test"
             } else {
                 "call"
@@ -9598,6 +9600,12 @@ fn ast_ruby_callee_is_test_dsl(callee: &str) -> bool {
             | "xexample"
             | "pending"
     )
+}
+
+fn ast_ruby_call_is_require(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    ast_ruby_callee_name(node, source)
+        .as_deref()
+        .is_some_and(|callee| matches!(callee, "require" | "require_relative"))
 }
 
 fn ast_ruby_callee_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
