@@ -394,10 +394,11 @@ async fn dynamicjepa_phase9_mcp_full_state_verification_inner() {
     let root = repo_root();
     let evidence_dir = root.join("tmp/5090jepa_evidence/phase9");
     fs::create_dir_all(&evidence_dir).expect("create Phase 9 evidence dir");
-    let run_root = evidence_dir.join("mcp_phase9_fsv_runtime");
-    if run_root.exists() {
-        fs::remove_dir_all(&run_root).expect("remove previous Phase 9 runtime evidence");
-    }
+    let run_root = evidence_dir.join(format!(
+        "mcp_phase9_fsv_runtime_{}_{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
     fs::create_dir_all(&run_root).expect("create Phase 9 runtime evidence dir");
 
     let db_path = run_root.join("dynamicjepa_phase9_mcp_rocksdb");
