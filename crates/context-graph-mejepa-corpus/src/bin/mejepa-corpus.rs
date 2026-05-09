@@ -86,6 +86,8 @@ struct GenerateArgs {
     overall_timeout_secs: u64,
     #[arg(long, default_value_t = 4)]
     oracle_workers: usize,
+    #[arg(long, default_value_t = false)]
+    resume_incomplete: bool,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -149,6 +151,8 @@ struct SmokeArgs {
     overall_timeout_secs: u64,
     #[arg(long, default_value_t = 4)]
     oracle_workers: usize,
+    #[arg(long, default_value_t = false)]
+    resume_incomplete: bool,
     #[arg(long, default_value_t = 0.25)]
     sample_fraction: f64,
     #[arg(long, default_value_t = 900.0)]
@@ -230,6 +234,11 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
     let categories = parse_categories(&args.categories)?;
     let languages =
         parse_languages(&args.languages).map_err(|err| format!("{err} ({})", err.code()))?;
+    if args.resume_incomplete {
+        ensure_resume_directory_ready(&args.output)?;
+    } else {
+        ensure_output_directory_ready(&args.output)?;
+    }
     let interrupted = install_shutdown_flag()?;
     let manifests = load_task_manifests(&args.tasks_dir)?;
     let selected = select_manifests(&manifests, &args.instance_ids, args.max_tasks)?;
@@ -282,32 +291,47 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
         })
         .collect::<BTreeMap<_, _>>();
 
-    ensure_output_directory_ready(&args.output)?;
     fs::create_dir_all(&args.output)?;
     let store_path_rel = PathBuf::from("oracle-store");
     let store_path = args.output.join(&store_path_rel);
     let store = OracleStore::open(&store_path)?;
-
-    let mut index = CorpusIndex {
-        schema_version: 1,
-        corpus_version: MEJEPA_CORPUS_VERSION_V1.to_string(),
-        embedder_version: MEJEPA_EMBEDDER_VERSION_V1.to_string(),
-        complete: false,
-        generated_at_unix_ms: unix_ms(),
-        seed: args.seed,
-        languages: languages.clone(),
-        tasks_dir: args.tasks_dir.display().to_string(),
-        store_path: store_path_rel.display().to_string(),
-        corpus_sha256: None,
-        entries: Vec::new(),
-        split_assignments: split.assignments.clone(),
+    let mut index = if args.resume_incomplete {
+        let existing = read_index(&args.output)?;
+        validate_resume_index(
+            &existing,
+            &args,
+            &languages,
+            &split.assignments,
+            &store_path_rel,
+        )?;
+        existing
+    } else {
+        CorpusIndex {
+            schema_version: 1,
+            corpus_version: MEJEPA_CORPUS_VERSION_V1.to_string(),
+            embedder_version: MEJEPA_EMBEDDER_VERSION_V1.to_string(),
+            complete: false,
+            generated_at_unix_ms: unix_ms(),
+            seed: args.seed,
+            languages: languages.clone(),
+            tasks_dir: args.tasks_dir.display().to_string(),
+            store_path: store_path_rel.display().to_string(),
+            corpus_sha256: None,
+            entries: Vec::new(),
+            split_assignments: split.assignments.clone(),
+        }
     };
+    let mut completed_keys = validate_resume_rows(&args.output, &index, &store)?;
     write_index(&args.output, &index)?;
 
     for category in &categories {
         let mut pending = Vec::with_capacity(selected.len());
         let mut predictions = Vec::with_capacity(selected.len());
         for manifest in &selected {
+            let row_key = corpus_row_key(&manifest.instance_id, *category);
+            if completed_keys.contains(&row_key) {
+                continue;
+            }
             if interrupted.load(Ordering::SeqCst) {
                 write_index(&args.output, &index)?;
                 return Err(
@@ -363,6 +387,9 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
                 patch_sha256,
                 mutation,
             ));
+        }
+        if predictions.is_empty() {
+            continue;
         }
 
         let mut batch_config = SwebenchBatchOracleConfig::defaults_for(
@@ -420,6 +447,7 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
                 oracle_per_test_count: verdict.per_test.len(),
             };
             index.entries.push(entry);
+            completed_keys.insert(corpus_row_key(&manifest.instance_id, *category));
             write_index(&args.output, &index)?;
         }
     }
@@ -788,6 +816,7 @@ fn smoke(args: SmokeArgs) -> CliResult<()> {
         instance_timeout_secs: args.instance_timeout_secs,
         overall_timeout_secs: args.overall_timeout_secs,
         oracle_workers: args.oracle_workers,
+        resume_incomplete: args.resume_incomplete,
     };
     let verify_args = VerifyArgs {
         corpus: args.output.clone(),
@@ -1058,6 +1087,7 @@ fn validate_smoke_args(args: &SmokeArgs) -> CliResult<()> {
         instance_timeout_secs: args.instance_timeout_secs,
         overall_timeout_secs: args.overall_timeout_secs,
         oracle_workers: args.oracle_workers,
+        resume_incomplete: args.resume_incomplete,
     })?;
     validate_verify_args(&VerifyArgs {
         corpus: args.output.clone(),
@@ -1143,6 +1173,134 @@ fn ensure_output_directory_ready(output: &Path) -> CliResult<()> {
         .into());
     }
     Ok(())
+}
+
+fn ensure_resume_directory_ready(output: &Path) -> CliResult<()> {
+    if !output.is_dir() {
+        return Err(format!(
+            "resume output directory does not exist or is not a directory: {}",
+            output.display()
+        )
+        .into());
+    }
+    let index_path = output.join("index.json");
+    if !index_path.is_file() {
+        return Err(format!(
+            "resume requires an existing incomplete index at {}",
+            index_path.display()
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn validate_resume_index(
+    index: &CorpusIndex,
+    args: &GenerateArgs,
+    languages: &[Language],
+    split_assignments: &[TaskAssignment],
+    store_path_rel: &Path,
+) -> CliResult<()> {
+    if index.complete {
+        return Err("cannot resume a corpus whose index is already complete=true".into());
+    }
+    if index.schema_version != 1 {
+        return Err(format!(
+            "cannot resume unsupported corpus index schema_version={}",
+            index.schema_version
+        )
+        .into());
+    }
+    if index.corpus_version != MEJEPA_CORPUS_VERSION_V1 {
+        return Err(format!(
+            "cannot resume corpus_version={} with generator corpus_version={}",
+            index.corpus_version, MEJEPA_CORPUS_VERSION_V1
+        )
+        .into());
+    }
+    if index.embedder_version != MEJEPA_EMBEDDER_VERSION_V1 {
+        return Err(format!(
+            "cannot resume embedder_version={} with generator embedder_version={}",
+            index.embedder_version, MEJEPA_EMBEDDER_VERSION_V1
+        )
+        .into());
+    }
+    if index.seed != args.seed {
+        return Err(format!(
+            "cannot resume with different seed: index={} args={}",
+            index.seed, args.seed
+        )
+        .into());
+    }
+    if index.languages != languages {
+        return Err(format!(
+            "cannot resume with different languages: index={:?} args={:?}",
+            index.languages, languages
+        )
+        .into());
+    }
+    if index.tasks_dir != args.tasks_dir.display().to_string() {
+        return Err(format!(
+            "cannot resume with different tasks_dir: index={} args={}",
+            index.tasks_dir,
+            args.tasks_dir.display()
+        )
+        .into());
+    }
+    if index.store_path != store_path_rel.display().to_string() {
+        return Err(format!(
+            "cannot resume with different store_path: index={} expected={}",
+            index.store_path,
+            store_path_rel.display()
+        )
+        .into());
+    }
+    if index.corpus_sha256.is_some() {
+        return Err("incomplete resume index must not already have corpus_sha256".into());
+    }
+    if index.split_assignments != split_assignments {
+        return Err("cannot resume because split assignments changed".into());
+    }
+    Ok(())
+}
+
+fn validate_resume_rows(
+    output: &Path,
+    index: &CorpusIndex,
+    store: &OracleStore,
+) -> CliResult<BTreeSet<String>> {
+    let mut keys = BTreeSet::new();
+    for entry in &index.entries {
+        let key = corpus_row_key(&entry.task_id, entry.category);
+        if !keys.insert(key.clone()) {
+            return Err(format!("cannot resume duplicate index row: {key}").into());
+        }
+        let patch_path = resolve_corpus_path(output, &entry.patch_path)?;
+        let patch_text = fs::read_to_string(&patch_path)?;
+        let patch_hash = sha256_text(&patch_text);
+        if patch_hash != entry.patch_sha256 {
+            return Err(format!(
+                "cannot resume because patch hash changed for {key}: expected {} actual {}",
+                entry.patch_sha256, patch_hash
+            )
+            .into());
+        }
+        let (mutation, verdict) = store
+            .get_corpus_row(&entry.task_id, entry.category)?
+            .ok_or_else(|| format!("cannot resume because RocksDB row is missing for {key}"))?;
+        if sha256_text(&mutation.mutated_source) != entry.patch_sha256 {
+            return Err(format!("cannot resume because mutation hash mismatches for {key}").into());
+        }
+        let verdict_hash = sha256_json_value(&serde_json::to_value(&verdict)?);
+        if verdict_hash != entry.oracle_verdict_sha256 {
+            return Err(format!(
+                "cannot resume because verdict hash mismatches for {key}: expected {} actual {}",
+                entry.oracle_verdict_sha256, verdict_hash
+            )
+            .into());
+        }
+    }
+    Ok(keys)
 }
 
 fn load_task_manifests(tasks_dir: &Path) -> CliResult<Vec<TaskManifest>> {
@@ -1589,6 +1747,10 @@ fn stable_seed(global_seed: u64, task_id: &str, category: MutationCategory) -> u
     let digest =
         Sha256::digest(format!("{}|{}|{}", global_seed, task_id, category.slug()).as_bytes());
     u64::from_le_bytes(digest[0..8].try_into().expect("slice has 8 bytes"))
+}
+
+fn corpus_row_key(task_id: &str, category: MutationCategory) -> String {
+    format!("{}|{}", task_id, category.slug())
 }
 
 fn sha256_text(text: &str) -> String {
