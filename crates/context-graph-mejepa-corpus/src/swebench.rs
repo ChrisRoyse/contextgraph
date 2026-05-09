@@ -874,21 +874,10 @@ fn validate_config(config: &SwebenchOracleConfig) -> OracleResult<()> {
                 "supply a non-empty unified diff or use SwebenchPredictionMode::Gold",
             ));
         }
-        if !prediction.model_patch.is_ascii()
-            && !prediction
-                .model_patch
-                .chars()
-                .all(|c| !c.is_control() || c == '\n' || c == '\r' || c == '\t')
-        {
-            // model_patch is encoded as a string in JSONL; reject control bytes
-            // other than the standard whitespace set so the harness JSON parser
-            // receives well-formed input.
-            return Err(OracleError::invalid(
-                "config.mode.prediction.model_patch",
-                "model_patch contains disallowed control characters",
-                "strip non-printable bytes (other than \\n, \\r, \\t) before predicting",
-            ));
-        }
+        validate_model_patch_text(
+            "config.mode.prediction.model_patch",
+            &prediction.model_patch,
+        )?;
     }
     Ok(())
 }
@@ -937,6 +926,7 @@ fn validate_batch_config(config: &SwebenchBatchOracleConfig) -> OracleResult<()>
                 "supply a non-empty unified diff for every prediction",
             ));
         }
+        validate_model_patch_text("prediction.model_patch", &prediction.model_patch)?;
     }
     let first = config
         .predictions
@@ -1002,6 +992,23 @@ fn validate_model_name(name: &str) -> OracleResult<()> {
             "prediction.model_name_or_path",
             "model_name_or_path must not contain control characters or path separators",
             "use ASCII alphanumerics + hyphens + underscores",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_model_patch_text(field: &'static str, model_patch: &str) -> OracleResult<()> {
+    if model_patch
+        .chars()
+        .any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t')
+    {
+        // model_patch is encoded as a string in JSONL; reject control bytes
+        // other than the standard whitespace set so the harness JSON parser
+        // receives well-formed input.
+        return Err(OracleError::invalid(
+            field,
+            "model_patch contains disallowed control characters",
+            "strip non-printable bytes (other than \\n, \\r, \\t) before predicting",
         ));
     }
     Ok(())
@@ -1700,6 +1707,46 @@ mod tests {
             }),
         );
         let err = validate_config(&cfg).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_ORACLE_INVALID_INPUT");
+    }
+
+    #[test]
+    fn validate_config_rejects_ascii_control_bytes_in_patch() {
+        let cfg = SwebenchOracleConfig::defaults_for(
+            "sympy__sympy-20590",
+            "rid",
+            std::env::temp_dir().join("nope"),
+            std::env::temp_dir().join("nope-py"),
+            SwebenchPredictionMode::Custom(SwebenchPrediction {
+                instance_id: "sympy__sympy-20590".to_string(),
+                model_name_or_path: "test".to_string(),
+                model_patch: "diff --git a b\n+\u{0001}\n".to_string(),
+            }),
+        );
+        let err = validate_config(&cfg).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_ORACLE_INVALID_INPUT");
+    }
+
+    #[test]
+    fn validate_batch_config_checks_every_patch_for_control_bytes() {
+        let cfg = SwebenchBatchOracleConfig::defaults_for(
+            vec![
+                SwebenchPrediction {
+                    instance_id: "sympy__sympy-20590".to_string(),
+                    model_name_or_path: "test".to_string(),
+                    model_patch: "diff --git a b\n+print('ok')\n".to_string(),
+                },
+                SwebenchPrediction {
+                    instance_id: "django__django-12286".to_string(),
+                    model_name_or_path: "test".to_string(),
+                    model_patch: "diff --git a b\n+\u{0001}\n".to_string(),
+                },
+            ],
+            "rid",
+            std::env::temp_dir().join("nope"),
+            std::env::temp_dir().join("nope-py"),
+        );
+        let err = validate_batch_config(&cfg).unwrap_err();
         assert_eq!(err.code(), "MEJEPA_ORACLE_INVALID_INPUT");
     }
 
