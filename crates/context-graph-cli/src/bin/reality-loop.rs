@@ -6813,7 +6813,7 @@ fn dynamicjepa_ast_semantics_for_path(
         "cpp" => tree_sitter_cpp::LANGUAGE.into(),
         "csharp" => tree_sitter_c_sharp::LANGUAGE.into(),
         "ruby" => tree_sitter_ruby::LANGUAGE.into(),
-        "php" => tree_sitter_php::LANGUAGE_PHP_ONLY.into(),
+        "php" => tree_sitter_php::LANGUAGE_PHP.into(),
         _ => unreachable!("language is constrained by swe_ast_language_for_path"),
     };
     parser.set_language(&language_fn).map_err(|err| {
@@ -7414,6 +7414,9 @@ fn dynamicjepa_compiler_lsp_semantics_for_path(
     ));
     create_dir_checked(&snapshot_root)?;
     copy_dynamicjepa_semantic_repo_snapshot(repo_dir, &snapshot_root)?;
+    if matches!(language, "typescript" | "tsx") {
+        link_dynamicjepa_typescript_node_modules(repo_dir, &snapshot_root, path)?;
+    }
     let snapshot_target = snapshot_root.join(path);
     if let Some(after) = after_source {
         write_text_checked(&snapshot_target, after)?;
@@ -7471,6 +7474,73 @@ fn dynamicjepa_compiler_lsp_semantics_for_path(
         dynamicjepa_run_language_semantic_tool(&snapshot_root, &snapshot_target, language)?;
     let _ = fs::remove_dir_all(&snapshot_root);
     Ok(evidence)
+}
+
+fn link_dynamicjepa_typescript_node_modules(
+    repo_root: &Path,
+    snapshot_root: &Path,
+    path: &str,
+) -> Result<()> {
+    let source = repo_root.join("node_modules");
+    let tsc = source.join(".bin/tsc");
+    if !tsc.is_file() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_TYPESCRIPT_TOOLCHAIN_MISSING",
+            "DynamicJEPA TypeScript compiler semantics require project-local node_modules/.bin/tsc; parser-only or global fallback is refused",
+            "dynamicjepa.action.compiler_lsp.typescript.toolchain",
+            "run the repository's package install step so node_modules/.bin/tsc exists before TypeScript ME-JEPA action control",
+            json!({
+                "language": "typescript",
+                "path": path,
+                "required_tool": "node_modules/.bin/tsc",
+                "package_json": repo_root.join("package.json").display().to_string(),
+            }),
+            Some(file_sot(&repo_root.join("package.json"))),
+        ));
+    }
+    let target = snapshot_root.join("node_modules");
+    if target.exists() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_TYPESCRIPT_NODE_MODULES_CONFLICT",
+            "TypeScript semantic snapshot already contained node_modules before dependency linking",
+            "dynamicjepa.action.compiler_lsp.typescript.snapshot",
+            "inspect snapshot construction; node_modules should be linked exactly once",
+            json!({"snapshot_node_modules": path_str(&target)}),
+            Some(file_sot(snapshot_root)),
+        ));
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&source, &target).map_err(|err| {
+            fs_error(
+                "RUST_REALITY_DYNAMICJEPA_TYPESCRIPT_NODE_MODULES_LINK_FAILED",
+                &target,
+                err,
+            )
+        })?;
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_dir(&source, &target).map_err(|err| {
+            fs_error(
+                "RUST_REALITY_DYNAMICJEPA_TYPESCRIPT_NODE_MODULES_LINK_FAILED",
+                &target,
+                err,
+            )
+        })?;
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_TYPESCRIPT_NODE_MODULES_LINK_UNSUPPORTED",
+            "TypeScript semantic snapshots require directory linking for node_modules on this platform",
+            "dynamicjepa.action.compiler_lsp.typescript.snapshot",
+            "run TypeScript ME-JEPA action control on a platform with supported directory symlinks",
+            json!({"snapshot_node_modules": path_str(&target)}),
+            Some(file_sot(&source)),
+        ));
+    }
+    Ok(())
 }
 
 fn copy_dynamicjepa_semantic_repo_snapshot(src: &Path, dst: &Path) -> Result<()> {
@@ -7604,7 +7674,28 @@ fn dynamicjepa_run_language_semantic_tool(
                 (None, repo_root.to_path_buf(), "python_toolchain_missing")
             }
         }
-        "javascript" | "typescript" | "tsx" => {
+        "typescript" | "tsx" => {
+            let local_tsc = repo_root.join("node_modules/.bin/tsc");
+            if local_tsc.is_file() {
+                (
+                    Some(vec![
+                        path_str(&local_tsc).to_string(),
+                        "--noEmit".to_string(),
+                        "--pretty".to_string(),
+                        "false".to_string(),
+                    ]),
+                    repo_root.to_path_buf(),
+                    "typescript_tsc",
+                )
+            } else {
+                (
+                    None,
+                    repo_root.to_path_buf(),
+                    "typescript_toolchain_missing",
+                )
+            }
+        }
+        "javascript" => {
             let local_tsc = repo_root.join("node_modules/.bin/tsc");
             if local_tsc.exists() {
                 (
@@ -7682,17 +7773,17 @@ fn dynamicjepa_run_language_semantic_tool(
             }
         }
         "csharp" => {
-            let has_project = dynamicjepa_repo_contains_suffix(repo_root, ".sln")?
-                || dynamicjepa_repo_contains_suffix(repo_root, ".csproj")?;
-            if command_exists("dotnet") && has_project {
+            let build_target = dynamicjepa_csharp_build_target(repo_root)?;
+            if command_exists("dotnet") {
                 (
                     Some(vec![
                         "dotnet".to_string(),
                         "build".to_string(),
-                        "--no-restore".to_string(),
+                        build_target,
+                        "--nologo".to_string(),
                     ]),
                     repo_root.to_path_buf(),
-                    "dotnet_build",
+                    "csharp_dotnet_build",
                 )
             } else {
                 (None, repo_root.to_path_buf(), "csharp_toolchain_missing")
@@ -7773,6 +7864,25 @@ fn dynamicjepa_run_language_semantic_tool(
                 Some(file_sot(target)),
             ));
         }
+        if language == "ruby" && kind == "ruby_toolchain_missing" {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_RUBY_TOOLCHAIN_MISSING",
+                "DynamicJEPA Ruby compiler semantics require ruby -c; parser-only fallback is refused",
+                "dynamicjepa.action.compiler_lsp.ruby.toolchain",
+                "install the Ruby CLI on PATH before using Ruby source for ME-JEPA action control",
+                json!({
+                    "language": language,
+                    "path": rel_target,
+                    "required_tool": "ruby",
+                    "required_check": "ruby -c",
+                    "toolchain_kind": kind,
+                    "PATH": std::env::var_os("PATH")
+                        .map(|value| value.to_string_lossy().to_string())
+                        .unwrap_or_default(),
+                }),
+                Some(file_sot(target)),
+            ));
+        }
         if language == "php" && kind == "php_toolchain_missing" {
             return Err(RealityError::new(
                 "RUST_REALITY_DYNAMICJEPA_PHP_TOOLCHAIN_MISSING",
@@ -7784,6 +7894,24 @@ fn dynamicjepa_run_language_semantic_tool(
                     "path": rel_target,
                     "required_tool": "php",
                     "required_check": "php -l",
+                    "toolchain_kind": kind,
+                    "PATH": std::env::var_os("PATH")
+                        .map(|value| value.to_string_lossy().to_string())
+                        .unwrap_or_default(),
+                }),
+                Some(file_sot(target)),
+            ));
+        }
+        if language == "csharp" && kind == "csharp_toolchain_missing" {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_CSHARP_TOOLCHAIN_MISSING",
+                "DynamicJEPA C# compiler semantics require dotnet; parser-only fallback is refused",
+                "dynamicjepa.action.compiler_lsp.csharp.toolchain",
+                "install a .NET SDK with dotnet on PATH before using C# source for ME-JEPA action control",
+                json!({
+                    "language": language,
+                    "path": rel_target,
+                    "required_tool": "dotnet",
                     "toolchain_kind": kind,
                     "PATH": std::env::var_os("PATH")
                         .map(|value| value.to_string_lossy().to_string())
@@ -8555,6 +8683,7 @@ fn dynamicjepa_repo_has_test_manifest(repo_dir: &Path, language: &'static str) -
         }
         "go" => dynamicjepa_repo_contains_suffix(repo_dir, "_test.go").unwrap_or(false),
         "java" => repo_dir.join("pom.xml").exists() || repo_dir.join("build.gradle").exists(),
+        "csharp" => dynamicjepa_csharp_build_target(repo_dir).is_ok(),
         "ruby" => repo_dir.join("spec").is_dir() || repo_dir.join("test").is_dir(),
         _ => repo_dir.join("tests").is_dir() || repo_dir.join("test").is_dir(),
     }
@@ -8604,6 +8733,117 @@ fn dynamicjepa_repo_contains_suffix(repo_dir: &Path, suffix: &str) -> Result<boo
         }
     }
     Ok(false)
+}
+
+fn dynamicjepa_csharp_build_target(repo: &Path) -> Result<String> {
+    let mut solutions = Vec::new();
+    let mut projects = Vec::new();
+    dynamicjepa_collect_csharp_build_targets(repo, repo, &mut solutions, &mut projects)?;
+    solutions.sort();
+    projects.sort();
+
+    if solutions.len() == 1 {
+        return Ok(solutions[0].clone());
+    }
+    if solutions.len() > 1 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_CSHARP_BUILD_TARGET_AMBIGUOUS",
+            "DynamicJEPA C# compiler semantics require exactly one solution build target",
+            "dynamicjepa.action.compiler_lsp.csharp.build_target",
+            "provide one .sln/.slnx or remove ambiguity before ME-JEPA action control",
+            json!({"solutions": solutions, "projects": projects, "repo_root": file_sot(repo)}),
+            Some(file_sot(repo)),
+        ));
+    }
+    if projects.len() == 1 {
+        return Ok(projects[0].clone());
+    }
+    if projects.len() > 1 {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_CSHARP_BUILD_TARGET_AMBIGUOUS",
+            "DynamicJEPA C# compiler semantics require one .sln/.slnx or exactly one .csproj",
+            "dynamicjepa.action.compiler_lsp.csharp.build_target",
+            "add a solution file or specify a single-project C# repository before ME-JEPA action control",
+            json!({"solutions": solutions, "projects": projects, "repo_root": file_sot(repo)}),
+            Some(file_sot(repo)),
+        ));
+    }
+    Err(RealityError::new(
+        "RUST_REALITY_DYNAMICJEPA_CSHARP_BUILD_TARGET_MISSING",
+        "DynamicJEPA C# compiler semantics require a real .sln, .slnx, or .csproj build target",
+        "dynamicjepa.action.compiler_lsp.csharp.build_target",
+        "create or restore the C# project/solution file before ME-JEPA action control",
+        json!({"repo_root": file_sot(repo)}),
+        Some(file_sot(repo)),
+    ))
+}
+
+fn dynamicjepa_collect_csharp_build_targets(
+    repo: &Path,
+    dir: &Path,
+    solutions: &mut Vec<String>,
+    projects: &mut Vec<String>,
+) -> Result<()> {
+    for entry in fs::read_dir(dir).map_err(|err| {
+        fs_error(
+            "RUST_REALITY_DYNAMICJEPA_CSHARP_BUILDTARGET_READDIR_FAILED",
+            dir,
+            err,
+        )
+    })? {
+        let entry = entry.map_err(|err| {
+            fs_error(
+                "RUST_REALITY_DYNAMICJEPA_CSHARP_BUILDTARGET_DIRENTRY_FAILED",
+                dir,
+                err,
+            )
+        })?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if matches!(
+            name.as_str(),
+            ".git" | "target" | "node_modules" | "bin" | "obj" | ".vs"
+        ) {
+            continue;
+        }
+        let file_type = entry.file_type().map_err(|err| {
+            fs_error(
+                "RUST_REALITY_DYNAMICJEPA_CSHARP_BUILDTARGET_FILETYPE_FAILED",
+                &path,
+                err,
+            )
+        })?;
+        if file_type.is_dir() {
+            dynamicjepa_collect_csharp_build_targets(repo, &path, solutions, projects)?;
+        } else if file_type.is_file() {
+            let rel = path.strip_prefix(repo).map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_DYNAMICJEPA_CSHARP_BUILDTARGET_RELATIVE_FAILED",
+                    "DynamicJEPA C# build target discovery could not derive a repo-relative path",
+                    "dynamicjepa.action.compiler_lsp.csharp.build_target",
+                    "run action control against a stable repository root",
+                    json!({"path": file_sot(&path), "repo_root": file_sot(repo), "error": err.to_string()}),
+                    Some(file_sot(&path)),
+                )
+            })?;
+            let rel = rel.to_string_lossy().replace('\\', "/");
+            if rel.ends_with(".sln") || rel.ends_with(".slnx") {
+                solutions.push(rel);
+            } else if rel.ends_with(".csproj") {
+                projects.push(rel);
+            }
+        } else {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_CSHARP_BUILDTARGET_SPECIAL_FILE_REFUSED",
+                "DynamicJEPA C# build target discovery refused a non-file, non-directory repository entry",
+                "dynamicjepa.action.compiler_lsp.csharp.build_target",
+                "replace symlink/special build entries with real files before ME-JEPA action control",
+                json!({"path": file_sot(&path)}),
+                Some(file_sot(&path)),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn parse_unified_diff_old_range(line: &str, path: &str) -> Result<(u32, u32)> {
@@ -8929,7 +9169,8 @@ fn ast_node_kind_for_language(
             "source_file" => "module",
             _ => "unknown",
         },
-        "javascript" | "typescript" | "tsx" => match kind {
+        "typescript" | "tsx" => ast_typescript_node_kind(node, source, path),
+        "javascript" => match kind {
             "function_declaration"
             | "generator_function_declaration"
             | "function_expression"
@@ -9007,7 +9248,7 @@ fn ast_node_kind_for_language(
             | "operator_declaration"
             | "conversion_operator_declaration" => {
                 if path_is_test(path)
-                    || csharp_method_has_test_attribute(node, source)
+                    || ast_csharp_method_has_test_attribute(node, source)
                     || ast_node_name_for_language(language, node, source)
                         .is_some_and(|name| name.starts_with("Test") || name.starts_with("test"))
                 {
@@ -9069,6 +9310,67 @@ fn ast_node_kind_for_language(
         },
         _ => "unknown",
     }
+}
+
+fn ast_typescript_node_kind(node: tree_sitter::Node<'_>, source: &str, path: &str) -> &'static str {
+    match node.kind() {
+        "export_statement" | "lexical_declaration" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                let kind = ast_typescript_node_kind(child, source, path);
+                if matches!(kind, "function" | "test" | "class" | "interface" | "type") {
+                    return kind;
+                }
+            }
+            if node.kind() == "lexical_declaration" {
+                "assignment"
+            } else {
+                "unknown"
+            }
+        }
+        "function_declaration"
+        | "generator_function_declaration"
+        | "function_expression"
+        | "function"
+        | "generator_function"
+        | "arrow_function"
+            if !ast_typescript_nested_function_node(node)
+                && ast_typescript_function_name(node, source).is_some() =>
+        {
+            if path_is_test(path)
+                || ast_typescript_node_name(node, source)
+                    .is_some_and(|name| name.starts_with("test"))
+            {
+                "test"
+            } else {
+                "function"
+            }
+        }
+        "method_definition" => "method",
+        "class_declaration" | "abstract_class_declaration" => "class",
+        "interface_declaration" => "interface",
+        "type_alias_declaration" => "type",
+        "import_statement" => "import",
+        "call_expression" => "call",
+        "assignment_expression" | "variable_declarator" | "type_annotation" => "assignment",
+        "program" => "module",
+        _ => "unknown",
+    }
+}
+
+fn ast_typescript_nested_function_node(node: tree_sitter::Node<'_>) -> bool {
+    if !matches!(node.kind(), "function" | "generator_function") {
+        return false;
+    }
+    node.parent().is_some_and(|parent| {
+        matches!(
+            parent.kind(),
+            "function_declaration"
+                | "generator_function_declaration"
+                | "function_expression"
+                | "generator_function"
+        )
+    })
 }
 
 fn ast_c_node_kind(node: tree_sitter::Node<'_>) -> &'static str {
@@ -9142,6 +9444,286 @@ fn ast_cpp_template_node_kind(node: tree_sitter::Node<'_>, source: &str) -> &'st
         }
     }
     "unknown"
+}
+
+fn ast_nearest_ruby_test_node<'a>(
+    node: tree_sitter::Node<'a>,
+    source: &str,
+    path: &str,
+) -> Option<tree_sitter::Node<'a>> {
+    let mut current = Some(node);
+    while let Some(candidate) = current {
+        if ast_ruby_node_kind(candidate, source, path) == "test" {
+            return Some(candidate);
+        }
+        current = candidate.parent();
+    }
+    None
+}
+
+fn ast_ruby_node_kind(node: tree_sitter::Node<'_>, source: &str, path: &str) -> &'static str {
+    match node.kind() {
+        "method" | "singleton_method" => {
+            if ast_node_name(node, source).is_some_and(|name| name.starts_with("test_")) {
+                "test"
+            } else {
+                "method"
+            }
+        }
+        "class" | "module" => "class",
+        "require" | "require_relative" => "import",
+        "call" | "command" => {
+            if ast_ruby_call_is_test_dsl(node, source, path) {
+                "test"
+            } else {
+                "call"
+            }
+        }
+        "assignment" | "operator_assignment" => "assignment",
+        "program" => "module",
+        _ => "unknown",
+    }
+}
+
+fn ast_ruby_call_is_test_dsl(node: tree_sitter::Node<'_>, source: &str, path: &str) -> bool {
+    let Some(callee) = ast_ruby_callee_name(node, source) else {
+        return false;
+    };
+    if !ast_ruby_callee_is_test_dsl(&callee) {
+        return false;
+    }
+    ast_ruby_path_is_test(path)
+        || ast_ruby_call_receiver_is_rspec(node, source)
+        || ast_ruby_has_test_dsl_ancestor(node, source)
+}
+
+fn ast_ruby_has_test_dsl_ancestor(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    let mut current = node.parent();
+    while let Some(candidate) = current {
+        if matches!(candidate.kind(), "call" | "command")
+            && ast_ruby_callee_name(candidate, source)
+                .as_deref()
+                .is_some_and(ast_ruby_callee_is_test_dsl)
+        {
+            return true;
+        }
+        current = candidate.parent();
+    }
+    false
+}
+
+fn ast_ruby_call_receiver_is_rspec(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    node.child_by_field_name("receiver")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+        .is_some_and(|receiver| {
+            let receiver = receiver.trim();
+            receiver == "RSpec" || receiver.ends_with("::RSpec")
+        })
+}
+
+fn ast_ruby_callee_is_test_dsl(callee: &str) -> bool {
+    matches!(
+        callee,
+        "describe"
+            | "context"
+            | "feature"
+            | "scenario"
+            | "example_group"
+            | "shared_context"
+            | "shared_examples"
+            | "shared_examples_for"
+            | "it"
+            | "specify"
+            | "example"
+            | "test"
+            | "it_behaves_like"
+            | "it_should_behave_like"
+            | "fdescribe"
+            | "fcontext"
+            | "fit"
+            | "fspecify"
+            | "fexample"
+            | "focus"
+            | "xdescribe"
+            | "xcontext"
+            | "xit"
+            | "xspecify"
+            | "xexample"
+            | "pending"
+    )
+}
+
+fn ast_ruby_callee_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    node.child_by_field_name("method")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+        .or_else(|| ast_first_identifier_text(node, source))
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn ast_ruby_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    match node.kind() {
+        "call" | "command" => ast_ruby_callee_name(node, source),
+        _ => None,
+    }
+}
+
+fn ast_ruby_path_is_test(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    normalized.starts_with("spec/")
+        || normalized.contains("/spec/")
+        || normalized.starts_with("test/")
+        || normalized.contains("/test/")
+        || normalized.ends_with("_spec.rb")
+        || normalized.ends_with("_test.rb")
+}
+
+fn php_function_or_method_is_test(node: tree_sitter::Node<'_>, source: &str, path: &str) -> bool {
+    let name_marks_test = ast_php_node_name(node, source)
+        .is_some_and(|name| name.starts_with("test") || name.starts_with("it_"));
+    name_marks_test || php_node_has_test_metadata(node, source, path)
+}
+
+fn php_call_is_pest_test(node: tree_sitter::Node<'_>, source: &str, path: &str) -> bool {
+    if !php_path_is_test(path) {
+        return false;
+    }
+    ast_php_callee_name(node, source)
+        .as_deref()
+        .is_some_and(|callee| matches!(callee, "it" | "test"))
+}
+
+fn ast_php_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    match node.kind() {
+        "function_call_expression"
+        | "member_call_expression"
+        | "nullsafe_member_call_expression"
+        | "scoped_call_expression"
+        | "object_creation_expression" => ast_php_callee_name(node, source),
+        _ => node
+            .child_by_field_name("name")
+            .and_then(|child| ast_php_identifier_text(child, source)),
+    }
+}
+
+fn ast_php_callee_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    match node.kind() {
+        "function_call_expression" => node
+            .child_by_field_name("function")
+            .and_then(|child| ast_php_identifier_text(child, source)),
+        "member_call_expression" | "nullsafe_member_call_expression" | "scoped_call_expression" => {
+            node.child_by_field_name("name")
+                .and_then(|child| ast_php_identifier_text(child, source))
+        }
+        "object_creation_expression" => ast_php_first_named_identifier_text(node, source),
+        _ => None,
+    }
+}
+
+fn ast_php_identifier_text(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    if !matches!(
+        node.kind(),
+        "name" | "qualified_name" | "fully_qualified_name" | "relative_scope"
+    ) {
+        return None;
+    }
+    node.utf8_text(source.as_bytes())
+        .ok()
+        .map(|text| {
+            text.trim()
+                .trim_start_matches('\\')
+                .rsplit('\\')
+                .next()
+                .unwrap_or("")
+                .to_string()
+        })
+        .filter(|text| !text.is_empty())
+}
+
+fn ast_php_first_named_identifier_text(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if let Some(text) = ast_php_identifier_text(child, source) {
+            return Some(text);
+        }
+        if let Some(text) = ast_php_first_named_identifier_text(child, source) {
+            return Some(text);
+        }
+    }
+    None
+}
+
+fn php_node_has_test_metadata(node: tree_sitter::Node<'_>, source: &str, path: &str) -> bool {
+    if node
+        .child_by_field_name("attributes")
+        .is_some_and(|attributes| php_attribute_list_contains_test(attributes, source))
+    {
+        return true;
+    }
+    php_path_is_test(path) && php_leading_doc_comment_marks_test(node, source)
+}
+
+fn php_attribute_list_contains_test(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    if node.kind() == "attribute"
+        && php_attribute_simple_name(node, source)
+            .as_deref()
+            .is_some_and(|name| name == "Test")
+    {
+        return true;
+    }
+    let mut cursor = node.walk();
+    let found = node
+        .children(&mut cursor)
+        .any(|child| php_attribute_list_contains_test(child, source));
+    found
+}
+
+fn php_attribute_simple_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    let mut cursor = node.walk();
+    let raw = node
+        .named_children(&mut cursor)
+        .find(|child| matches!(child.kind(), "name" | "qualified_name"))
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())?;
+    let without_args = raw.split('(').next().unwrap_or(raw);
+    let simple = without_args
+        .rsplit('\\')
+        .next()
+        .unwrap_or(without_args)
+        .trim()
+        .trim_end_matches("Attribute");
+    (!simple.is_empty()).then(|| simple.to_string())
+}
+
+fn php_leading_doc_comment_marks_test(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    let before = source.get(..node.start_byte()).unwrap_or("");
+    let Some(comment_start) = before.rfind("/**") else {
+        return false;
+    };
+    let leading = &before[comment_start..];
+    if leading.contains("*/") && !leading.trim_end().ends_with("*/") {
+        return false;
+    }
+    leading.split_whitespace().any(|token| token == "@test")
+}
+
+fn php_path_is_test(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    let file_name = normalized.rsplit('/').next().unwrap_or(&normalized);
+    normalized.starts_with("tests/")
+        || normalized.contains("/tests/")
+        || normalized.starts_with("test/")
+        || normalized.contains("/test/")
+        || normalized.starts_with("spec/")
+        || normalized.contains("/spec/")
+        || file_name.ends_with("Test.php")
+        || file_name.ends_with("TestCase.php")
+        || file_name.ends_with(".test.php")
+        || file_name.ends_with(".spec.php")
+        || file_name.ends_with(".pest.php")
 }
 
 fn go_function_is_test_entrypoint(path: &str, node: tree_sitter::Node<'_>, source: &str) -> bool {
@@ -9244,7 +9826,10 @@ fn ast_node_name_for_language(
     match language {
         "csharp" => ast_csharp_node_name(node, source).or_else(|| ast_node_name(node, source)),
         "cpp" => ast_cpp_node_name(node, source).or_else(|| ast_node_name(node, source)),
-        "javascript" | "typescript" | "tsx" => ast_javascript_node_name(node, source),
+        "typescript" | "tsx" => ast_typescript_node_name(node, source),
+        "javascript" => ast_javascript_node_name(node, source),
+        "ruby" => ast_ruby_node_name(node, source).or_else(|| ast_node_name(node, source)),
+        "php" => ast_php_node_name(node, source).or_else(|| ast_node_name(node, source)),
         _ => ast_node_name(node, source),
     }
 }
@@ -9266,9 +9851,17 @@ fn ast_csharp_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<Str
             .child_by_field_name("type")
             .and_then(|child| child.utf8_text(source.as_bytes()).ok())
             .map(|target| format!("operator {}", target.trim())),
-        "operator_declaration" => Some("operator".to_string()),
+        "operator_declaration" => ast_csharp_operator_name(node, source),
         _ => None,
     }
+}
+
+fn ast_csharp_operator_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    node.child_by_field_name("operator")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+        .map(str::trim)
+        .filter(|operator| !operator.is_empty())
+        .map(|operator| format!("operator {operator}"))
 }
 
 fn ast_csharp_method_has_test_attribute(node: tree_sitter::Node<'_>, source: &str) -> bool {
@@ -9279,10 +9872,11 @@ fn ast_csharp_method_has_test_attribute(node: tree_sitter::Node<'_>, source: &st
         return false;
     }
     let mut cursor = node.walk();
-    node.children(&mut cursor).any(|child| {
+    let found = node.children(&mut cursor).any(|child| {
         matches!(child.kind(), "attribute_list" | "attribute")
             && ast_csharp_tree_has_test_attribute(child, source)
-    })
+    });
+    found
 }
 
 fn ast_csharp_tree_has_test_attribute(node: tree_sitter::Node<'_>, source: &str) -> bool {
@@ -9294,8 +9888,10 @@ fn ast_csharp_tree_has_test_attribute(node: tree_sitter::Node<'_>, source: &str)
         return true;
     }
     let mut cursor = node.walk();
-    node.children(&mut cursor)
-        .any(|child| ast_csharp_tree_has_test_attribute(child, source))
+    let found = node
+        .children(&mut cursor)
+        .any(|child| ast_csharp_tree_has_test_attribute(child, source));
+    found
 }
 
 fn ast_csharp_attribute_simple_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
@@ -9345,6 +9941,29 @@ fn ast_descendant_field_text(
         }
     }
     None
+}
+
+fn ast_typescript_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    match node.kind() {
+        "interface_declaration"
+        | "type_alias_declaration"
+        | "class_declaration"
+        | "abstract_class_declaration"
+        | "method_definition" => node
+            .child_by_field_name("name")
+            .and_then(|child| ast_javascript_binding_identifier(child, source)),
+        "function_declaration"
+        | "generator_function_declaration"
+        | "function_expression"
+        | "function"
+        | "generator_function"
+        | "arrow_function" => ast_typescript_function_name(node, source),
+        _ => ast_javascript_node_name(node, source),
+    }
+}
+
+fn ast_typescript_function_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    ast_javascript_function_name(node, source)
 }
 
 fn ast_javascript_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
@@ -9472,6 +10091,7 @@ fn ast_javascript_assignment_binding_name(
 fn ast_javascript_binding_identifier(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
     match node.kind() {
         "identifier"
+        | "type_identifier"
         | "property_identifier"
         | "private_property_identifier"
         | "shorthand_property_identifier"
@@ -9631,7 +10251,7 @@ fn ast_symbol_visibility(
         }
         "javascript" | "typescript" | "tsx" => ast_javascript_symbol_visibility(node, source),
         "csharp" => ast_csharp_symbol_visibility(node, source),
-        "java" | "php" => {
+        "java" => {
             if node_text.contains(" private ") || node_text.trim_start().starts_with("private ") {
                 "private"
             } else if node_text.contains(" protected ")
@@ -9646,6 +10266,7 @@ fn ast_symbol_visibility(
                 "unknown"
             }
         }
+        "php" => ast_php_symbol_visibility(node, source),
         "c" => {
             let visibility_text = ast_c_visibility_text(node, source);
             if visibility_text.trim_start().starts_with("static ")
@@ -9658,6 +10279,32 @@ fn ast_symbol_visibility(
             }
         }
         "cpp" => ast_cpp_symbol_visibility(node, source),
+        _ => "unknown",
+    }
+}
+
+fn ast_php_symbol_visibility(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "visibility_modifier" {
+            if let Ok(text) = child.utf8_text(source.as_bytes()) {
+                return match text.trim() {
+                    "private" => "private",
+                    "protected" => "protected",
+                    "public" => "public",
+                    _ => "unknown",
+                };
+            }
+        }
+    }
+    match node.kind() {
+        "function_definition"
+        | "method_declaration"
+        | "function_call_expression"
+        | "class_declaration"
+        | "interface_declaration"
+        | "trait_declaration"
+        | "enum_declaration" => "public",
         _ => "unknown",
     }
 }
@@ -9723,10 +10370,7 @@ fn ast_csharp_symbol_visibility(node: tree_sitter::Node<'_>, source: &str) -> &'
     }
 }
 
-fn ast_csharp_direct_modifiers(
-    node: tree_sitter::Node<'_>,
-    source: &str,
-) -> BTreeSet<String> {
+fn ast_csharp_direct_modifiers(node: tree_sitter::Node<'_>, source: &str) -> BTreeSet<String> {
     let mut modifiers = BTreeSet::new();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -9825,7 +10469,12 @@ fn ast_symbol_kind_for_node_kind(node_kind: &str) -> &'static str {
         "function" => "function",
         "method" => "method",
         "class" => "class",
+        "interface" => "class",
+        "type" => "class",
         "test" => "test_case",
+        "property" => "property",
+        "event" => "event",
+        "delegate" => "delegate",
         "module" => "module",
         "import" | "assignment" | "call" => "module",
         "config" => "config_key",
@@ -10100,20 +10749,44 @@ fn path_is_test(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
     normalized.starts_with("tests/")
         || normalized.contains("/tests/")
-        || path.ends_with("_test.py")
-        || path.ends_with(".test.js")
-        || path.ends_with(".spec.js")
-        || path.ends_with(".test.ts")
-        || path.ends_with(".spec.ts")
-        || path.ends_with(".test.tsx")
-        || path.ends_with(".spec.tsx")
+        || normalized.starts_with("test/")
+        || normalized.contains("/test/")
+        || normalized.ends_with("_test.py")
+        || normalized.ends_with(".test.js")
+        || normalized.ends_with(".spec.js")
+        || normalized.ends_with(".test.ts")
+        || normalized.ends_with(".spec.ts")
+        || normalized.ends_with(".test.tsx")
+        || normalized.ends_with(".spec.tsx")
         || java_path_is_test(path)
+        || csharp_path_is_test(path)
+        || ast_ruby_path_is_test(path)
+        || php_path_is_test(path)
 }
 
 fn go_path_is_test_file(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
     let file_name = normalized.rsplit('/').next().unwrap_or(&normalized);
     file_name.ends_with("_test.go") && !file_name.starts_with('_') && !file_name.starts_with('.')
+}
+
+fn csharp_path_is_test(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    let file_name = normalized.rsplit('/').next().unwrap_or(&normalized);
+    file_name.ends_with(".cs")
+        && (normalized.starts_with("tests/")
+            || normalized.contains("/tests/")
+            || normalized.starts_with("test/")
+            || normalized.contains("/test/")
+            || normalized.contains(".Tests/")
+            || normalized.contains(".Test/")
+            || normalized.contains(".UnitTests/")
+            || normalized.contains(".IntegrationTests/")
+            || file_name.ends_with("Tests.cs")
+            || file_name.ends_with("Test.cs")
+            || file_name.ends_with("TestCase.cs")
+            || file_name.starts_with("Test")
+            || file_name.contains(".Tests."))
 }
 
 fn java_path_is_test(path: &str) -> bool {
@@ -20095,6 +20768,69 @@ mod tests {
         dynamicjepa_ast_semantic_node("java", node, source, path)
     }
 
+    fn csharp_semantic_for_source(path: &str, source: &str, needle: &str) -> AstSemanticNode {
+        let mut parser = tree_sitter::Parser::new();
+        let language: tree_sitter::Language = tree_sitter_c_sharp::LANGUAGE.into();
+        parser
+            .set_language(&language)
+            .expect("csharp parser linked");
+        let tree = parser.parse(source, None).expect("C# syntax tree");
+        let root = tree.root_node();
+        assert!(
+            !root.has_error(),
+            "synthetic C# fixture must parse cleanly: {source}"
+        );
+        let start = source.find(needle).expect("needle in C# source");
+        let end = start + needle.len();
+        let node = root
+            .descendant_for_byte_range(start, end)
+            .expect("AST node for C# needle");
+        dynamicjepa_ast_semantic_node("csharp", node, source, path)
+    }
+
+    fn ruby_semantic_for_source(path: &str, source: &str, needle: &str) -> AstSemanticNode {
+        let mut parser = tree_sitter::Parser::new();
+        let language: tree_sitter::Language = tree_sitter_ruby::LANGUAGE.into();
+        parser.set_language(&language).expect("ruby parser linked");
+        let tree = parser.parse(source, None).expect("Ruby syntax tree");
+        let root = tree.root_node();
+        assert!(
+            !root.has_error(),
+            "synthetic Ruby fixture must parse cleanly: {source}"
+        );
+        let start = source.find(needle).expect("needle in Ruby source");
+        let end = start + needle.len();
+        let node = root
+            .descendant_for_byte_range(start, end)
+            .expect("AST node for Ruby needle");
+        dynamicjepa_ast_semantic_node("ruby", node, source, path)
+    }
+
+    fn add_real_csharp_project(repo: &Path) {
+        write_text_checked(
+            &repo.join("App.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n    <ImplicitUsings>enable</ImplicitUsings>\n    <Nullable>enable</Nullable>\n  </PropertyGroup>\n</Project>\n",
+        )
+        .expect("C# csproj write");
+        write_text_checked(
+            &repo.join("src/Calculator.cs"),
+            "namespace Demo;\n\npublic class Calculator {\n    public int Add(int left, int right) {\n        return left + right;\n    }\n}\n",
+        )
+        .expect("C# source write");
+    }
+
+    fn csharp_action_args_for_calculator(repo: &Path, replacement: &str) -> Value {
+        json!({
+            "edits": [{
+                "path": "src/Calculator.cs",
+                "start_line": 5,
+                "end_line": 5,
+                "replace": replacement,
+                "observed_sha256": sha256_file(&repo.join("src/Calculator.cs")).expect("sha")
+            }]
+        })
+    }
+
     fn javascript_semantic_for_source(path: &str, source: &str, needle: &str) -> AstSemanticNode {
         let mut parser = tree_sitter::Parser::new();
         let language: tree_sitter::Language = tree_sitter_javascript::LANGUAGE.into();
@@ -20113,6 +20849,35 @@ mod tests {
             .descendant_for_byte_range(start, end)
             .expect("AST node for JavaScript needle");
         dynamicjepa_ast_semantic_node("javascript", node, source, path)
+    }
+
+    fn typescript_semantic_for_source(
+        path: &str,
+        language_tag: &'static str,
+        source: &str,
+        needle: &str,
+    ) -> AstSemanticNode {
+        let mut parser = tree_sitter::Parser::new();
+        let language: tree_sitter::Language = match language_tag {
+            "typescript" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
+            other => panic!("unsupported TypeScript test language: {other}"),
+        };
+        parser
+            .set_language(&language)
+            .expect("typescript parser linked");
+        let tree = parser.parse(source, None).expect("typescript syntax tree");
+        let root = tree.root_node();
+        assert!(
+            !root.has_error(),
+            "synthetic TypeScript fixture must parse cleanly: {source}"
+        );
+        let start = source.find(needle).expect("needle in TypeScript source");
+        let end = start + needle.len();
+        let node = root
+            .descendant_for_byte_range(start, end)
+            .expect("AST node for TypeScript needle");
+        dynamicjepa_ast_semantic_node(language_tag, node, source, path)
     }
 
     #[test]
@@ -20243,14 +21008,14 @@ mod tests {
             inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args);
         if !command_exists("go") {
             let err = action_result.expect_err("missing Go toolchain must fail closed");
-            println!("AFTER Go missing-toolchain state: {err}");
+            println!("AFTER Go missing-toolchain state: {err:?}");
             assert_eq!(
                 err.error_code,
                 "RUST_REALITY_DYNAMICJEPA_GO_TOOLCHAIN_MISSING"
             );
             assert!(
-                err.to_string().contains("parser-only fallback is refused"),
-                "unexpected Go missing-toolchain error: {err}"
+                err.message.contains("parser-only fallback is refused"),
+                "unexpected Go missing-toolchain error: {err:?}"
             );
             return;
         }
@@ -20767,6 +21532,351 @@ mod tests {
     }
 
     #[test]
+    fn dynamicjepa_csharp_ast_preserves_operator_symbols_and_slnx_targets() {
+        let source = r#"
+namespace Demo;
+
+public readonly struct Vector {
+    public int X { get; }
+
+    public Vector(int x) { X = x; }
+
+    public static Vector operator +(Vector left, Vector right) =>
+        new Vector(left.X + right.X);
+
+    public static explicit operator int(Vector value) => value.X;
+}
+"#;
+        println!(
+            "BEFORE C# operator action semantic state: path_is_test={}, source_len={}",
+            path_is_test("src/Demo/Vector.cs"),
+            source.len()
+        );
+        let plus = csharp_semantic_for_source("src/Demo/Vector.cs", source, "left.X + right.X");
+        let conversion = csharp_semantic_for_source("src/Demo/Vector.cs", source, "value.X");
+        println!(
+            "AFTER C# operator action semantic state: plus={:?} conversion={:?}",
+            plus, conversion
+        );
+        assert_eq!(plus.node_kind, "method");
+        assert_eq!(plus.symbol_kind, "method");
+        assert_eq!(plus.symbol_name.as_deref(), Some("operator +"));
+        assert_eq!(plus.visibility, "public");
+        assert_eq!(conversion.node_kind, "method");
+        assert_eq!(conversion.symbol_kind, "method");
+        assert_eq!(conversion.symbol_name.as_deref(), Some("operator int"));
+        assert_eq!(conversion.visibility, "public");
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        create_dir_checked(&repo).expect("create C# slnx repo");
+        write_text_checked(&repo.join("App.slnx"), "\n").expect("write C# slnx");
+        write_text_checked(&repo.join("App.csproj"), "<Project />\n").expect("write C# csproj");
+        let selected = dynamicjepa_csharp_build_target(&repo).expect("select slnx build target");
+        println!("AFTER C# slnx action build-target selected: {selected}");
+        assert_eq!(selected, "App.slnx");
+    }
+
+    #[test]
+    fn dynamicjepa_csharp_action_semantics_require_real_dotnet_or_record_checked_state() {
+        let (_temp, repo) = init_real_git_repo();
+        add_real_csharp_project(&repo);
+        let original_source =
+            fs::read_to_string(repo.join("src/Calculator.cs")).expect("read C# source");
+        let expected_after_source =
+            "namespace Demo;\n\npublic class Calculator {\n    public int Add(int left, int right) {\n        return left + right + 1;\n    }\n}\n";
+        let args = csharp_action_args_for_calculator(&repo, "        return left + right + 1;\n");
+        println!(
+            "BEFORE C# action state: dotnet_present={}, build_target={:?}, source={}",
+            command_exists("dotnet"),
+            dynamicjepa_csharp_build_target(&repo),
+            original_source
+        );
+        let evidence_root = PathBuf::from("/tmp/contextgraph-csharp-action-fsv");
+        create_dir_checked(&evidence_root).expect("create C# action FSV root");
+        let evidence_path = evidence_root.join("csharp-action-fsv.json");
+        if command_exists("dotnet") {
+            let action =
+                inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+                    .expect("C# compiler-backed action semantics");
+            write_json_checked(
+                &evidence_path,
+                &json!({
+                    "source_of_truth": file_sot(&evidence_path),
+                    "action": action,
+                    "repo_source_readback": fs::read_to_string(repo.join("src/Calculator.cs"))
+                        .expect("read C# repo source after"),
+                }),
+            )
+            .expect("write C# action FSV evidence");
+            let readback: Value = read_json(&evidence_path).expect("read C# action FSV evidence");
+            println!(
+                "READBACK C# action checked state: {}",
+                serde_json::to_string_pretty(&readback).expect("serialize C# action readback")
+            );
+            let action = readback.get("action").expect("action evidence");
+            assert_eq!(action["ast_language"], "csharp");
+            assert_eq!(action["ast_parse_status"], "parsed");
+            assert_eq!(action["ast_node_kind"], "method");
+            assert_eq!(action["semantic_provider"], "compiler_lsp");
+            assert_eq!(action["compiler_semantic_status"], "checked");
+            assert_eq!(action["predicted_verifier_target"], "typecheck");
+        } else {
+            let err = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+                .expect_err("missing dotnet must fail closed for C# action semantics");
+            println!("AFTER C# action missing-toolchain state: {err:?}");
+            assert_eq!(
+                err.error_code,
+                "RUST_REALITY_DYNAMICJEPA_CSHARP_TOOLCHAIN_MISSING"
+            );
+            assert_eq!(
+                err.field_path,
+                "dynamicjepa.action.compiler_lsp.csharp.toolchain"
+            );
+            let source_of_truth = err
+                .source_of_truth
+                .as_deref()
+                .expect("C# missing-toolchain error must name source-of-truth file");
+            let snapshot_path = source_of_truth
+                .strip_prefix("file:")
+                .map(PathBuf::from)
+                .expect("C# missing-toolchain source-of-truth must be a local file");
+            let snapshot_readback =
+                fs::read_to_string(&snapshot_path).expect("read C# snapshot source-of-truth");
+            write_json_checked(
+                &evidence_path,
+                &json!({
+                    "source_of_truth": file_sot(&evidence_path),
+                    "error_code": err.error_code,
+                    "field_path": err.field_path,
+                    "snapshot_source": file_sot(&snapshot_path),
+                    "snapshot_readback": snapshot_readback,
+                    "repo_source_readback": fs::read_to_string(repo.join("src/Calculator.cs"))
+                        .expect("read C# repo source after failed action"),
+                }),
+            )
+            .expect("write C# missing-dotnet FSV evidence");
+            let readback: Value =
+                read_json(&evidence_path).expect("read C# missing-dotnet evidence");
+            println!(
+                "READBACK C# missing-toolchain source-of-truth: {}",
+                serde_json::to_string_pretty(&readback)
+                    .expect("serialize C# missing-dotnet readback")
+            );
+            assert_eq!(
+                readback["snapshot_readback"]
+                    .as_str()
+                    .expect("snapshot readback string"),
+                expected_after_source
+            );
+            assert_eq!(
+                readback["repo_source_readback"]
+                    .as_str()
+                    .expect("repo source readback string"),
+                original_source
+            );
+        }
+    }
+
+    #[test]
+    fn dynamicjepa_csharp_action_fails_closed_on_parser_errors() {
+        let (_temp, repo) = init_real_git_repo();
+        add_real_csharp_project(&repo);
+        let broken_source = "namespace Demo;\n\npublic class Broken {\n    public void Oops( {\n        Console.WriteLine(\"broken\");\n    }\n}\n";
+        write_text_checked(&repo.join("src/Calculator.cs"), broken_source)
+            .expect("write broken C# source");
+        let args = csharp_action_args_for_calculator(
+            &repo,
+            "        Console.WriteLine(\"still broken\");\n",
+        );
+        println!(
+            "BEFORE C# parse-error state: source={}",
+            fs::read_to_string(repo.join("src/Calculator.cs")).expect("read broken C# source")
+        );
+        let err = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+            .expect_err("C# parser errors must fail before compiler semantic extraction");
+        println!("AFTER C# parse-error state: {err:?}");
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_DYNAMICJEPA_AST_PARSE_SYNTAX_ERROR"
+        );
+        assert_eq!(err.field_path, "dynamicjepa.action.ast_parse_status");
+        assert_eq!(
+            fs::read_to_string(repo.join("src/Calculator.cs"))
+                .expect("read broken C# source after failed action"),
+            broken_source
+        );
+    }
+
+    #[test]
+    fn dynamicjepa_ruby_action_ast_recognizes_test_dsl_and_paths() {
+        let rspec_source = "require_relative \"../lib/calculator\"\n\nRSpec.describe Calculator do\n  it \"adds\" do\n    expect(Calculator.add(2, 2)).to eq(4)\n  end\nend\n";
+        let minitest_source = "require \"minitest/autorun\"\n\nclass CalculatorTest < Minitest::Test\n  def test_adds\n    assert_equal 4, Calculator.add(2, 2)\n  end\n\n  def helper_value\n    4\n  end\nend\n";
+        println!(
+            "BEFORE Ruby action AST state: spec_path_is_test={} test_path_is_test={} lib_path_is_test={}",
+            path_is_test("spec/calculator_spec.rb"),
+            path_is_test("test/calculator_test.rb"),
+            path_is_test("lib/calculator.rb")
+        );
+
+        let describe =
+            ruby_semantic_for_source("spec/calculator_spec.rb", rspec_source, "RSpec.describe");
+        let example =
+            ruby_semantic_for_source("spec/calculator_spec.rb", rspec_source, "Calculator.add");
+        let test_method =
+            ruby_semantic_for_source("test/calculator_test.rb", minitest_source, "assert_equal");
+        let helper =
+            ruby_semantic_for_source("test/calculator_test.rb", minitest_source, "helper_value");
+        println!(
+            "AFTER Ruby action AST state: describe={:?} example={:?} test_method={:?} helper={:?}",
+            describe, example, test_method, helper
+        );
+
+        assert_eq!(describe.node_kind, "test");
+        assert_eq!(describe.symbol_kind, "test_case");
+        assert_eq!(describe.symbol_name.as_deref(), Some("describe"));
+        assert_eq!(example.node_kind, "test");
+        assert_eq!(example.symbol_name.as_deref(), Some("it"));
+        assert_eq!(test_method.node_kind, "test");
+        assert_eq!(test_method.symbol_name.as_deref(), Some("test_adds"));
+        assert_eq!(helper.node_kind, "method");
+        assert_eq!(helper.symbol_name.as_deref(), Some("helper_value"));
+        assert!(path_is_test("spec/calculator_spec.rb"));
+        assert!(path_is_test("test/calculator_test.rb"));
+        assert!(!path_is_test("lib/calculator.rb"));
+    }
+
+    #[test]
+    fn dynamicjepa_ast_action_semantics_parse_real_ruby_spec_edit_with_ruby_c() {
+        let (_temp, repo) = init_real_git_repo();
+        let ruby_source =
+            "class Calculator\n  def self.add(left, right)\n    left + right\n  end\nend\n";
+        let spec_source = "require_relative \"../lib/calculator\"\n\nRSpec.describe Calculator do\n  it \"adds\" do\n    expect(Calculator.add(2, 2)).to eq(4)\n  end\nend\n";
+        let expected_after_source = "require_relative \"../lib/calculator\"\n\nRSpec.describe Calculator do\n  it \"adds\" do\n    expect(Calculator.add(2, 2)).to eq(5)\n  end\nend\n";
+        write_text_checked(&repo.join("lib/calculator.rb"), ruby_source)
+            .expect("Ruby source write");
+        write_text_checked(&repo.join("spec/calculator_spec.rb"), spec_source)
+            .expect("Ruby spec write");
+        let args = json!({
+            "edits": [{
+                "path": "spec/calculator_spec.rb",
+                "start_line": 5,
+                "end_line": 5,
+                "replace": "    expect(Calculator.add(2, 2)).to eq(5)\n",
+                "observed_sha256": sha256_file(&repo.join("spec/calculator_spec.rb")).expect("sha")
+            }]
+        });
+        println!(
+            "BEFORE Ruby action state: ruby_present={} spec_path_is_test={} spec_source={}",
+            command_exists("ruby"),
+            path_is_test("spec/calculator_spec.rb"),
+            fs::read_to_string(repo.join("spec/calculator_spec.rb")).expect("read Ruby spec")
+        );
+
+        let action_result =
+            inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args);
+        if !command_exists("ruby") {
+            let err = action_result.expect_err("missing Ruby toolchain must fail closed");
+            println!("AFTER Ruby missing-toolchain state: {err:?}");
+            assert_eq!(
+                err.error_code,
+                "RUST_REALITY_DYNAMICJEPA_RUBY_TOOLCHAIN_MISSING"
+            );
+            let source_of_truth = err
+                .source_of_truth
+                .as_deref()
+                .expect("Ruby missing-toolchain error must name source-of-truth file");
+            let snapshot_path = source_of_truth
+                .strip_prefix("file:")
+                .map(PathBuf::from)
+                .expect("Ruby missing-toolchain source-of-truth must be a local file");
+            let snapshot_readback =
+                fs::read_to_string(&snapshot_path).expect("read Ruby snapshot source-of-truth");
+            println!(
+                "READBACK Ruby missing-toolchain source-of-truth: path={} source={}",
+                snapshot_path.display(),
+                snapshot_readback
+            );
+            assert_eq!(snapshot_readback, expected_after_source);
+            assert_eq!(
+                fs::read_to_string(repo.join("spec/calculator_spec.rb"))
+                    .expect("read Ruby repo source after failed action"),
+                spec_source,
+                "candidate compiler snapshot must not mutate the source repo"
+            );
+            return;
+        }
+
+        let action = action_result.expect("Ruby compiler-backed action semantics");
+        let evidence_path = repo.join("ruby-action-fsv.json");
+        let evidence = json!({
+            "source_of_truth": file_sot(&evidence_path),
+            "action": action,
+            "spec_readback": fs::read_to_string(repo.join("spec/calculator_spec.rb"))
+                .expect("read Ruby spec after"),
+            "lib_readback": fs::read_to_string(repo.join("lib/calculator.rb"))
+                .expect("read Ruby lib after"),
+        });
+        write_json_checked(&evidence_path, &evidence).expect("write Ruby action FSV evidence");
+        let readback: Value = read_json(&evidence_path).expect("read Ruby action FSV evidence");
+        println!(
+            "AFTER Ruby action semantic readback: {}",
+            serde_json::to_string_pretty(&readback).expect("serialize Ruby readback")
+        );
+
+        let action = readback.get("action").expect("action evidence");
+        assert_eq!(action["ast_language"], "ruby");
+        assert_eq!(action["ast_parse_status"], "parsed");
+        assert_eq!(action["ast_node_kind"], "test");
+        assert_eq!(action["ast_symbol_kind"], "test_case");
+        assert_eq!(action["ast_edit_kind"], "function_body");
+        assert_eq!(action["semantic_provider"], "compiler_lsp");
+        assert_eq!(action["compiler_semantic_status"], "checked");
+        assert_eq!(action["test_attribution_status"], "inferred_from_path");
+        assert_eq!(action["attributed_test_count"], 1);
+        assert_eq!(action["predicted_verifier_target"], "static_check");
+        assert_eq!(action["patch_delta_kind"], "test_assertion");
+        assert_eq!(
+            readback["spec_readback"].as_str().expect("spec text"),
+            spec_source,
+            "Ruby action semantics must only mutate the compiler snapshot"
+        );
+    }
+
+    #[test]
+    fn dynamicjepa_ast_action_semantics_ruby_parse_errors_fail_closed() {
+        let (_temp, repo) = init_real_git_repo();
+        let broken_source = "class Broken\n  def call\n    value =\n  end\nend\n";
+        write_text_checked(&repo.join("lib/broken.rb"), broken_source).expect("Ruby write");
+        let args = json!({
+            "edits": [{
+                "path": "lib/broken.rb",
+                "start_line": 3,
+                "end_line": 3,
+                "replace": "    value = 1\n",
+                "observed_sha256": sha256_file(&repo.join("lib/broken.rb")).expect("sha")
+            }]
+        });
+        println!(
+            "BEFORE Ruby parse-error state: source={}",
+            fs::read_to_string(repo.join("lib/broken.rb")).expect("read broken Ruby")
+        );
+        let err = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+            .expect_err("Ruby syntax errors must fail closed before semantic extraction");
+        println!("AFTER Ruby parse-error state: {err:?}");
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_DYNAMICJEPA_AST_PARSE_SYNTAX_ERROR"
+        );
+        assert_eq!(err.field_path, "dynamicjepa.action.ast_parse_status");
+        assert_eq!(
+            fs::read_to_string(repo.join("lib/broken.rb")).expect("read broken Ruby after"),
+            broken_source,
+            "Ruby parse-error action must not mutate the source repo"
+        );
+    }
+
+    #[test]
     fn dynamicjepa_javascript_ast_uses_binding_symbols_and_export_visibility() {
         let source = r#"
 export const double = (x) => {
@@ -20809,6 +21919,136 @@ const tools = {
         assert_eq!(run.visibility, "public");
         assert_eq!(stop.symbol_name.as_deref(), Some("stop"));
         assert_eq!(stop.visibility, "public");
+    }
+
+    #[test]
+    fn dynamicjepa_typescript_ast_uses_tsx_dialect_and_binding_symbols() {
+        let ts_source = r#"
+export interface CalculatorOptions {
+    seed: number;
+}
+
+export type UserId = string & { readonly brand: unique symbol };
+
+export const double = (x: number): number => {
+    return x * 2;
+};
+
+export const plusOne = function(value: number): number {
+    return value + 1;
+};
+
+export default function(): number {
+    return double(3);
+}
+"#;
+        let tsx_source = r#"
+declare namespace JSX {
+    type Element = unknown;
+    interface IntrinsicElements {
+        div: { className?: string };
+        span: {};
+    }
+}
+
+export const Widget = ({ name }: { name: string }): JSX.Element => (
+    <div className="widget"><span>{name}</span></div>
+);
+"#;
+        println!(
+            "BEFORE typescript action semantic state: ts_len={} tsx_len={} tsx_language={:?}",
+            ts_source.len(),
+            tsx_source.len(),
+            swe_ast_language_for_path("src/App.tsx")
+        );
+        assert_eq!(swe_ast_language_for_path("src/App.tsx"), Some("tsx"));
+
+        let interface =
+            typescript_semantic_for_source("src/math.ts", "typescript", ts_source, "seed");
+        let type_alias =
+            typescript_semantic_for_source("src/math.ts", "typescript", ts_source, "UserId");
+        let double =
+            typescript_semantic_for_source("src/math.ts", "typescript", ts_source, "x * 2");
+        let plus_one =
+            typescript_semantic_for_source("src/math.ts", "typescript", ts_source, "value + 1");
+        let default_export =
+            typescript_semantic_for_source("src/math.ts", "typescript", ts_source, "double(3)");
+        let widget = typescript_semantic_for_source("src/App.tsx", "tsx", tsx_source, "{name}");
+        println!(
+            "AFTER typescript action semantic state: interface={:?} type={:?} double={:?} plus_one={:?} default_export={:?} widget={:?}",
+            interface, type_alias, double, plus_one, default_export, widget
+        );
+
+        assert_eq!(interface.node_kind, "interface");
+        assert_eq!(interface.symbol_kind, "class");
+        assert_eq!(interface.symbol_name.as_deref(), Some("CalculatorOptions"));
+        assert_eq!(interface.visibility, "exported");
+        assert_eq!(type_alias.node_kind, "type");
+        assert_eq!(type_alias.symbol_kind, "class");
+        assert_eq!(type_alias.symbol_name.as_deref(), Some("UserId"));
+        assert_eq!(type_alias.visibility, "exported");
+        assert_eq!(double.node_kind, "function");
+        assert_eq!(double.symbol_kind, "function");
+        assert_eq!(double.symbol_name.as_deref(), Some("double"));
+        assert_eq!(double.visibility, "exported");
+        assert_eq!(plus_one.symbol_name.as_deref(), Some("plusOne"));
+        assert_eq!(plus_one.visibility, "exported");
+        assert_eq!(default_export.node_kind, "function");
+        assert_eq!(default_export.symbol_kind, "function");
+        assert_eq!(default_export.symbol_name.as_deref(), Some("default"));
+        assert_eq!(default_export.visibility, "exported");
+        assert_eq!(widget.node_kind, "function");
+        assert_eq!(widget.symbol_name.as_deref(), Some("Widget"));
+        assert_eq!(widget.visibility, "exported");
+    }
+
+    #[test]
+    fn dynamicjepa_typescript_action_fails_closed_without_local_tsc() {
+        let (_temp, repo) = init_real_git_repo();
+        write_text_checked(
+            &repo.join("package.json"),
+            "{\"private\":true,\"devDependencies\":{\"typescript\":\"latest\"}}\n",
+        )
+        .expect("package write");
+        write_text_checked(
+            &repo.join("tsconfig.json"),
+            "{\"compilerOptions\":{\"target\":\"ES2022\",\"module\":\"ESNext\",\"strict\":true,\"noEmit\":true},\"include\":[\"src/**/*.ts\"]}\n",
+        )
+        .expect("tsconfig write");
+        write_text_checked(
+            &repo.join("src/math.ts"),
+            "export const double = (x: number): number => x * 2;\n",
+        )
+        .expect("TypeScript source write");
+        let args = json!({
+            "edits": [{
+                "path": "src/math.ts",
+                "start_line": 1,
+                "end_line": 1,
+                "replace": "export const double = (x: number): number => x * 3;\n",
+                "observed_sha256": sha256_file(&repo.join("src/math.ts")).expect("sha")
+            }]
+        });
+        println!(
+            "BEFORE typescript missing-toolchain action state: local_tsc_exists={} source={}",
+            repo.join("node_modules/.bin/tsc").is_file(),
+            fs::read_to_string(repo.join("src/math.ts")).expect("read TypeScript source")
+        );
+        let err = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+            .expect_err("TypeScript action semantics must fail closed without local tsc");
+        println!("AFTER typescript missing-toolchain action state: {err:?}");
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_DYNAMICJEPA_TYPESCRIPT_TOOLCHAIN_MISSING"
+        );
+        assert_eq!(
+            err.field_path,
+            "dynamicjepa.action.compiler_lsp.typescript.toolchain"
+        );
+        assert_eq!(
+            fs::read_to_string(repo.join("src/math.ts")).expect("read source after"),
+            "export const double = (x: number): number => x * 2;\n"
+        );
     }
 
     #[test]

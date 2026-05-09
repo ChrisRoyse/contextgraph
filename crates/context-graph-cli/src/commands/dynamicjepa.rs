@@ -5590,7 +5590,7 @@ fn semantic_csharp_build_target(repo: &Path) -> DynamicJepaResult<String> {
         return Err(DynamicJepaError::VerificationFailed {
             test_name: "dynamicjepa_semantic_index".to_string(),
             message: format!(
-                "C# semantic index requires exactly one solution build target; found multiple .sln files: {:?}",
+                "C# semantic index requires exactly one solution build target; found multiple .sln/.slnx files: {:?}",
                 solutions
             ),
             evidence_path: repo.display().to_string(),
@@ -5601,7 +5601,7 @@ fn semantic_csharp_build_target(repo: &Path) -> DynamicJepaResult<String> {
         return Err(DynamicJepaError::VerificationFailed {
             test_name: "dynamicjepa_semantic_index".to_string(),
             message: format!(
-                "C# semantic index requires one .sln or exactly one .csproj; found multiple .csproj files and no solution: {:?}",
+                "C# semantic index requires one .sln/.slnx or exactly one .csproj; found multiple .csproj files and no solution: {:?}",
                 projects
             ),
             evidence_path: repo.display().to_string(),
@@ -5609,7 +5609,8 @@ fn semantic_csharp_build_target(repo: &Path) -> DynamicJepaResult<String> {
     } else {
         return Err(DynamicJepaError::VerificationFailed {
             test_name: "dynamicjepa_semantic_index".to_string(),
-            message: "C# semantic index requires a real .sln or .csproj build target".to_string(),
+            message: "C# semantic index requires a real .sln, .slnx, or .csproj build target"
+                .to_string(),
             evidence_path: repo.display().to_string(),
         });
     };
@@ -5667,7 +5668,7 @@ fn semantic_collect_csharp_build_targets(
                 })?
                 .to_string_lossy()
                 .replace('\\', "/");
-            if rel.ends_with(".sln") {
+            if rel.ends_with(".sln") || rel.ends_with(".slnx") {
                 solutions.push(rel);
             } else if rel.ends_with(".csproj") {
                 projects.push(rel);
@@ -6196,7 +6197,6 @@ fn semantic_run_language_batch_check(
                     "dotnet".to_string(),
                     "build".to_string(),
                     build_target,
-                    "--no-restore".to_string(),
                     "--nologo".to_string(),
                 ],
                 repo,
@@ -6390,6 +6390,15 @@ fn semantic_extract_tree_sitter_source_facts(
     language: &str,
     source: &str,
 ) -> DynamicJepaResult<SemanticSourceExtraction> {
+    if language == "tsx" && source.trim().is_empty() {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: format!(
+                "tree-sitter tsx parse refused empty or whitespace-only source in {path}; no semantic facts can be reality-grounded"
+            ),
+            evidence_path: path.to_string(),
+        });
+    }
     let grammar = semantic_tree_sitter_language(language).ok_or_else(|| {
         DynamicJepaError::VerificationFailed {
             test_name: "dynamicjepa_semantic_index".to_string(),
@@ -6440,7 +6449,7 @@ fn semantic_tree_sitter_language(language: &str) -> Option<tree_sitter::Language
         "cpp" => tree_sitter_cpp::LANGUAGE.into(),
         "csharp" => tree_sitter_c_sharp::LANGUAGE.into(),
         "ruby" => tree_sitter_ruby::LANGUAGE.into(),
-        "php" => tree_sitter_php::LANGUAGE_PHP_ONLY.into(),
+        "php" => tree_sitter_php::LANGUAGE_PHP.into(),
         _ => return None,
     })
 }
@@ -6504,7 +6513,7 @@ fn semantic_walk_tree_sitter_node(
                     "node_kind": node.kind(),
                 }));
             } else {
-                let callee = semantic_callee_text(node, source)
+                let callee = semantic_callee_text_for_language(language, node, source)
                     .unwrap_or_else(|| semantic_node_text(node, source).trim().to_string());
                 extraction.calls.push(json!({
                     "path": path,
@@ -6677,20 +6686,7 @@ fn semantic_ast_node_kind_for_language(
             _ => "unknown",
         },
         "ruby" => semantic_ruby_ast_node_kind(node, source, path),
-        "php" => match kind {
-            "function_definition" => "function",
-            "method_declaration" => "method",
-            "class_declaration"
-            | "interface_declaration"
-            | "trait_declaration"
-            | "enum_declaration" => "class",
-            "namespace_use_declaration" | "require_expression" | "include_expression" => "import",
-            "function_call_expression"
-            | "member_call_expression"
-            | "object_creation_expression" => "call",
-            "assignment_expression" | "variable_name" => "assignment",
-            _ => "unknown",
-        },
+        "php" => semantic_php_ast_node_kind(node, source, path),
         _ => "unknown",
     }
 }
@@ -6809,10 +6805,11 @@ fn semantic_typescript_ast_node_kind(
         | "function"
         | "generator_function"
         | "arrow_function"
-            if semantic_javascript_function_name(node, source).is_some() =>
+            if !semantic_typescript_nested_function_node(node)
+                && semantic_typescript_function_name(node, source).is_some() =>
         {
             if semantic_path_is_test(path)
-                || semantic_javascript_node_name(node, source)
+                || semantic_typescript_node_name(node, source)
                     .is_some_and(|name| name.starts_with("test"))
             {
                 "test"
@@ -6832,6 +6829,21 @@ fn semantic_typescript_ast_node_kind(
         | "type_annotation" => "assignment",
         _ => "unknown",
     }
+}
+
+fn semantic_typescript_nested_function_node(node: tree_sitter::Node<'_>) -> bool {
+    if !matches!(node.kind(), "function" | "generator_function") {
+        return false;
+    }
+    node.parent().is_some_and(|parent| {
+        matches!(
+            parent.kind(),
+            "function_declaration"
+                | "generator_function_declaration"
+                | "function_expression"
+                | "generator_function"
+        )
+    })
 }
 
 fn semantic_cpp_function_is_method(node: tree_sitter::Node<'_>, source: &str) -> bool {
@@ -6931,9 +6943,220 @@ fn semantic_ast_node_name_for_language(
         "ruby" => {
             semantic_ruby_node_name(node, source).or_else(|| semantic_ast_node_name(node, source))
         }
-        "javascript" | "typescript" | "tsx" => semantic_javascript_node_name(node, source),
+        "php" => {
+            semantic_php_node_name(node, source).or_else(|| semantic_ast_node_name(node, source))
+        }
+        "typescript" | "tsx" => semantic_typescript_node_name(node, source),
+        "javascript" => semantic_javascript_node_name(node, source),
         _ => semantic_ast_node_name(node, source),
     }
+}
+
+fn semantic_php_ast_node_kind(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+    path: &str,
+) -> &'static str {
+    match node.kind() {
+        "function_definition" => {
+            if semantic_php_function_or_method_is_test(node, source, path) {
+                "test"
+            } else {
+                "function"
+            }
+        }
+        "method_declaration" => {
+            if semantic_php_function_or_method_is_test(node, source, path) {
+                "test"
+            } else {
+                "method"
+            }
+        }
+        "class_declaration"
+        | "interface_declaration"
+        | "trait_declaration"
+        | "enum_declaration" => "class",
+        "namespace_use_declaration" | "require_expression" | "include_expression" => "import",
+        "function_call_expression" if semantic_php_call_is_pest_test(node, source, path) => "test",
+        "function_call_expression"
+        | "member_call_expression"
+        | "nullsafe_member_call_expression"
+        | "scoped_call_expression"
+        | "object_creation_expression" => "call",
+        "assignment_expression"
+        | "augmented_assignment_expression"
+        | "reference_assignment_expression"
+        | "property_declaration"
+        | "static_variable_declaration"
+        | "function_static_declaration"
+        | "const_declaration" => "assignment",
+        _ => "unknown",
+    }
+}
+
+fn semantic_php_function_or_method_is_test(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+    path: &str,
+) -> bool {
+    let name_marks_test = semantic_php_node_name(node, source)
+        .is_some_and(|name| name.starts_with("test") || name.starts_with("it_"));
+    name_marks_test || semantic_php_node_has_test_metadata(node, source, path)
+}
+
+fn semantic_php_node_has_test_metadata(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+    path: &str,
+) -> bool {
+    if node
+        .child_by_field_name("attributes")
+        .is_some_and(|attributes| semantic_php_attribute_list_contains_test(attributes, source))
+    {
+        return true;
+    }
+    semantic_php_path_is_test(path) && semantic_php_leading_doc_comment_marks_test(node, source)
+}
+
+fn semantic_php_attribute_list_contains_test(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    if node.kind() == "attribute"
+        && semantic_php_attribute_simple_name(node, source)
+            .as_deref()
+            .is_some_and(semantic_php_attribute_is_test)
+    {
+        return true;
+    }
+    let mut cursor = node.walk();
+    let found = node
+        .children(&mut cursor)
+        .any(|child| semantic_php_attribute_list_contains_test(child, source));
+    found
+}
+
+fn semantic_php_attribute_simple_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    let mut cursor = node.walk();
+    let raw = node
+        .named_children(&mut cursor)
+        .find(|child| matches!(child.kind(), "name" | "qualified_name"))
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())?;
+    let without_args = raw.split('(').next().unwrap_or(raw);
+    let simple = without_args
+        .rsplit('\\')
+        .next()
+        .unwrap_or(without_args)
+        .trim()
+        .trim_end_matches("Attribute");
+    (!simple.is_empty()).then(|| simple.to_string())
+}
+
+fn semantic_php_attribute_is_test(name: &str) -> bool {
+    name == "Test"
+}
+
+fn semantic_php_leading_doc_comment_marks_test(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    let before = source.get(..node.start_byte()).unwrap_or("");
+    let Some(comment_start) = before.rfind("/**") else {
+        return false;
+    };
+    let leading = &before[comment_start..];
+    if leading.contains("*/") && !leading.trim_end().ends_with("*/") {
+        return false;
+    }
+    leading.split_whitespace().any(|token| token == "@test")
+}
+
+fn semantic_php_call_is_pest_test(node: tree_sitter::Node<'_>, source: &str, path: &str) -> bool {
+    semantic_php_path_is_test(path)
+        && semantic_php_callee_name(node, source)
+            .as_deref()
+            .is_some_and(|callee| matches!(callee, "test" | "it"))
+}
+
+fn semantic_php_path_is_test(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    let file_name = normalized.rsplit('/').next().unwrap_or(&normalized);
+    normalized.starts_with("tests/")
+        || normalized.contains("/tests/")
+        || normalized.starts_with("test/")
+        || normalized.contains("/test/")
+        || normalized.starts_with("spec/")
+        || normalized.contains("/spec/")
+        || file_name.ends_with("Test.php")
+        || file_name.ends_with(".test.php")
+        || file_name.ends_with(".spec.php")
+}
+
+fn semantic_php_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    match node.kind() {
+        "function_call_expression"
+        | "member_call_expression"
+        | "nullsafe_member_call_expression"
+        | "scoped_call_expression"
+        | "object_creation_expression" => semantic_php_callee_name(node, source),
+        _ => node
+            .child_by_field_name("name")
+            .and_then(|child| semantic_php_identifier_text(child, source)),
+    }
+}
+
+fn semantic_php_callee_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    match node.kind() {
+        "function_call_expression" => node
+            .child_by_field_name("function")
+            .and_then(|child| semantic_php_identifier_text(child, source)),
+        "member_call_expression" | "nullsafe_member_call_expression" | "scoped_call_expression" => {
+            node.child_by_field_name("name")
+                .and_then(|child| semantic_php_identifier_text(child, source))
+        }
+        "object_creation_expression" => semantic_php_first_named_identifier_text(node, source),
+        _ => None,
+    }
+}
+
+fn semantic_php_identifier_text(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    if !matches!(
+        node.kind(),
+        "name" | "qualified_name" | "fully_qualified_name" | "relative_scope"
+    ) {
+        return None;
+    }
+    node.utf8_text(source.as_bytes())
+        .ok()
+        .map(|text| {
+            text.trim()
+                .trim_start_matches('\\')
+                .rsplit('\\')
+                .next()
+                .unwrap_or("")
+                .to_string()
+        })
+        .filter(|text| !text.is_empty())
+}
+
+fn semantic_php_first_named_identifier_text(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if let Some(text) = semantic_php_identifier_text(child, source) {
+            return Some(text);
+        }
+        if let Some(text) = semantic_php_first_named_identifier_text(child, source) {
+            return Some(text);
+        }
+    }
+    None
+}
+
+fn semantic_php_node_has_type_annotation(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    if node.child_by_field_name("type").is_some()
+        || node.child_by_field_name("return_type").is_some()
+    {
+        return true;
+    }
+    matches!(node.kind(), "property_declaration" | "const_declaration")
+        && semantic_node_text(node, source).contains(':')
 }
 
 fn semantic_ruby_ast_node_kind(
@@ -7049,6 +7272,29 @@ fn semantic_ruby_callee_name(node: tree_sitter::Node<'_>, source: &str) -> Optio
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .map(ToOwned::to_owned)
+}
+
+fn semantic_typescript_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    match node.kind() {
+        "interface_declaration"
+        | "type_alias_declaration"
+        | "class_declaration"
+        | "abstract_class_declaration"
+        | "method_definition" => node
+            .child_by_field_name("name")
+            .and_then(|child| semantic_javascript_binding_identifier(child, source)),
+        "function_declaration"
+        | "generator_function_declaration"
+        | "function_expression"
+        | "function"
+        | "generator_function"
+        | "arrow_function" => semantic_typescript_function_name(node, source),
+        _ => semantic_javascript_node_name(node, source),
+    }
+}
+
+fn semantic_typescript_function_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    semantic_javascript_function_name(node, source)
 }
 
 fn semantic_javascript_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
@@ -7179,6 +7425,7 @@ fn semantic_javascript_binding_identifier(
 ) -> Option<String> {
     match node.kind() {
         "identifier"
+        | "type_identifier"
         | "property_identifier"
         | "private_property_identifier"
         | "shorthand_property_identifier"
@@ -7267,9 +7514,17 @@ fn semantic_csharp_node_name(node: tree_sitter::Node<'_>, source: &str) -> Optio
             .child_by_field_name("type")
             .and_then(|child| child.utf8_text(source.as_bytes()).ok())
             .map(|target| format!("operator {}", target.trim())),
-        "operator_declaration" => Some("operator".to_string()),
+        "operator_declaration" => semantic_csharp_operator_name(node, source),
         _ => None,
     }
+}
+
+fn semantic_csharp_operator_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    node.child_by_field_name("operator")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+        .map(str::trim)
+        .filter(|operator| !operator.is_empty())
+        .map(|operator| format!("operator {operator}"))
 }
 
 fn semantic_csharp_method_has_test_attribute(node: tree_sitter::Node<'_>, source: &str) -> bool {
@@ -7424,7 +7679,7 @@ fn semantic_ast_symbol_visibility(
         "typescript" | "tsx" => semantic_typescript_symbol_visibility(node, source),
         "javascript" => semantic_javascript_symbol_visibility(node, source),
         "csharp" => semantic_csharp_symbol_visibility(node, source),
-        "java" | "php" => {
+        "java" => {
             if node_text.contains(" private ") || node_text.trim_start().starts_with("private ") {
                 "private"
             } else if node_text.contains(" public ")
@@ -7435,6 +7690,7 @@ fn semantic_ast_symbol_visibility(
                 "unknown"
             }
         }
+        "php" => semantic_php_symbol_visibility(node, source),
         "c" => {
             let visibility_text = semantic_c_visibility_text(node, source);
             if visibility_text.trim_start().starts_with("static ")
@@ -7447,6 +7703,32 @@ fn semantic_ast_symbol_visibility(
             }
         }
         "cpp" => semantic_cpp_symbol_visibility(node, source),
+        _ => "unknown",
+    }
+}
+
+fn semantic_php_symbol_visibility(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "visibility_modifier" {
+            if let Ok(text) = child.utf8_text(source.as_bytes()) {
+                return match text.trim() {
+                    "private" => "private",
+                    "protected" => "protected",
+                    "public" => "public",
+                    _ => "unknown",
+                };
+            }
+        }
+    }
+    match node.kind() {
+        "function_definition"
+        | "method_declaration"
+        | "function_call_expression"
+        | "class_declaration"
+        | "interface_declaration"
+        | "trait_declaration"
+        | "enum_declaration" => "public",
         _ => "unknown",
     }
 }
@@ -7702,6 +7984,17 @@ fn semantic_floor_char_boundary(source: &str, mut byte: usize) -> usize {
     byte
 }
 
+fn semantic_callee_text_for_language(
+    language: &str,
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> Option<String> {
+    match language {
+        "php" => semantic_php_callee_name(node, source),
+        _ => semantic_callee_text(node, source),
+    }
+}
+
 fn semantic_callee_text(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
     node.child_by_field_name("function")
         .and_then(|child| child.utf8_text(source.as_bytes()).ok())
@@ -7742,9 +8035,10 @@ fn semantic_node_has_type_annotation(
                 "declaration" | "init_declarator" | "parameter_declaration" | "field_declaration"
             ) && !semantic_c_contains_function_declarator(node)
         }
-        "python" | "typescript" | "tsx" | "cpp" | "java" | "php" => {
+        "python" | "typescript" | "tsx" | "cpp" | "java" => {
             text.contains(':') || text.contains("->")
         }
+        "php" => semantic_php_node_has_type_annotation(node, source),
         "csharp" => matches!(
             node.kind(),
             "variable_declaration"
@@ -7779,8 +8073,8 @@ fn semantic_path_is_test(path: &str) -> bool {
         || semantic_java_path_is_test(path)
         || semantic_csharp_path_is_test(path)
         || semantic_ruby_path_is_test(path)
+        || semantic_php_path_is_test(path)
         || normalized.ends_with("_test.rb")
-        || normalized.ends_with("Test.php")
 }
 
 fn semantic_ruby_path_is_test(path: &str) -> bool {
@@ -26565,6 +26859,610 @@ module.exports.load = function(config) {
         );
     }
 
+    #[test]
+    fn ruby_semantic_extraction_recognizes_minitest_rspec_and_persists_readback() {
+        let rspec_source = "require_relative \"../lib/calculator\"\n\nRSpec.describe Calculator do\n  it \"adds\" do\n    expect(Calculator.add(2, 2)).to eq(4)\n  end\nend\n";
+        let minitest_source = "require \"minitest/autorun\"\n\nclass CalculatorTest < Minitest::Test\n  def test_adds\n    assert_equal 4, Calculator.add(2, 2)\n  end\n\n  def helper_value\n    4\n  end\nend\n";
+        println!(
+            "BEFORE ruby semantic-index state: spec_path_is_test={} test_path_is_test={} lib_path_is_test={}",
+            semantic_path_is_test("spec/calculator_spec.rb"),
+            semantic_path_is_test("test/calculator_test.rb"),
+            semantic_path_is_test("lib/calculator.rb")
+        );
+
+        let rspec = semantic_extract_source_facts("spec/calculator_spec.rb", "ruby", rspec_source)
+            .expect("valid RSpec Ruby AST");
+        let minitest =
+            semantic_extract_source_facts("test/calculator_test.rb", "ruby", minitest_source)
+                .expect("valid Minitest Ruby AST");
+        println!(
+            "AFTER ruby semantic-index state: rspec_symbols={:?} minitest_symbols={:?} rspec_calls={:?} minitest_calls={:?}",
+            rspec.symbols, minitest.symbols, rspec.calls, minitest.calls
+        );
+
+        let rspec_symbols = rspec
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?,
+                    symbol.get("semantic_kind")?.as_str()?,
+                ))
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(rspec_symbols.contains(&("describe", "test")));
+        assert!(rspec_symbols.contains(&("it", "test")));
+        assert!(
+            !rspec_symbols.iter().any(|(name, _)| *name == "RSpec"),
+            "RSpec receiver must not become the persisted Ruby test symbol"
+        );
+
+        let minitest_symbols = minitest
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?,
+                    symbol.get("semantic_kind")?.as_str()?,
+                ))
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(minitest_symbols.contains(&("CalculatorTest", "class")));
+        assert!(minitest_symbols.contains(&("test_adds", "test")));
+        assert!(minitest_symbols.contains(&("helper_value", "method")));
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let evidence_path = temp.path().join("ruby-semantic-fsv.json");
+        let source_root = temp.path().join("repo");
+        let rspec_path = source_root.join("spec/calculator_spec.rb");
+        let minitest_path = source_root.join("test/calculator_test.rb");
+        fs::create_dir_all(rspec_path.parent().expect("rspec parent"))
+            .expect("create RSpec source dir");
+        fs::create_dir_all(minitest_path.parent().expect("minitest parent"))
+            .expect("create Minitest source dir");
+        fs::write(&rspec_path, rspec_source).expect("write RSpec source");
+        fs::write(&minitest_path, minitest_source).expect("write Minitest source");
+        let rspec_readback = fs::read_to_string(&rspec_path).expect("read RSpec source");
+        let minitest_readback = fs::read_to_string(&minitest_path).expect("read Minitest source");
+        let fsv = json!({
+            "source_of_truth": {
+                "evidence": file_sot_string(&evidence_path),
+                "rspec_source": file_sot_string(&rspec_path),
+                "minitest_source": file_sot_string(&minitest_path),
+            },
+            "rspec_sha256": hex_bytes(&sha256(rspec_readback.as_bytes())),
+            "minitest_sha256": hex_bytes(&sha256(minitest_readback.as_bytes())),
+            "rspec_symbols": semantic_extract_source_facts("spec/calculator_spec.rb", "ruby", &rspec_readback)
+                .expect("valid RSpec AST from disk").symbols,
+            "minitest_symbols": semantic_extract_source_facts("test/calculator_test.rb", "ruby", &minitest_readback)
+                .expect("valid Minitest AST from disk").symbols,
+            "path_cases": {
+                "spec/calculator_spec.rb": semantic_path_is_test("spec/calculator_spec.rb"),
+                "test/calculator_test.rb": semantic_path_is_test("test/calculator_test.rb"),
+                "lib/calculator.rb": semantic_path_is_test("lib/calculator.rb"),
+            }
+        });
+        write_json_file(&evidence_path, &fsv).expect("write Ruby semantic FSV evidence");
+        let readback = read_json_file(&evidence_path).expect("read Ruby semantic FSV evidence");
+        println!(
+            "READBACK ruby semantic-index FSV state: {}",
+            serde_json::to_string_pretty(&readback).expect("serialize Ruby semantic readback")
+        );
+        assert_eq!(readback, fsv);
+    }
+
+    #[test]
+    fn ruby_semantic_extraction_fails_closed_with_diagnostics_on_parse_errors() {
+        let err = semantic_extract_source_facts(
+            "lib/broken.rb",
+            "ruby",
+            "class Broken\n  def call\n    value =\n  end\nend\n",
+        )
+        .expect_err("Ruby syntax errors must not produce a semantic index");
+        println!("AFTER ruby parse-error state: {err}");
+        assert_eq!(err.code(), "VERIFICATION_FAILED");
+        assert!(
+            err.to_string().contains("diagnostics="),
+            "parse errors must include structured diagnostics: {err}"
+        );
+    }
+
+    #[test]
+    fn typescript_semantic_extraction_uses_tsx_dialect_and_binding_symbols() {
+        let ts_source = r#"
+export interface CalculatorOptions {
+    seed: number;
+}
+
+export type UserId = string & { readonly brand: unique symbol };
+
+export const double = (x: number): number => x * 2;
+export const plusOne = function(value: number): number {
+    return value + 1;
+};
+
+export default function(): number {
+    return double(3);
+}
+"#;
+        let tsx_source = r#"
+declare namespace JSX {
+    type Element = unknown;
+    interface IntrinsicElements {
+        div: { className?: string };
+        span: {};
+    }
+}
+
+export const Widget = ({ name }: { name: string }): JSX.Element => (
+    <div className="widget"><span>{name}</span></div>
+);
+"#;
+        println!(
+            "BEFORE typescript semantic-index state: ts_len={} tsx_len={} tsx_language={:?}",
+            ts_source.len(),
+            tsx_source.len(),
+            semantic_language_for_path_and_source("src/App.tsx", tsx_source)
+        );
+        assert_eq!(
+            semantic_language_for_path_and_source("src/App.tsx", tsx_source),
+            Some("tsx")
+        );
+
+        let ts = semantic_extract_source_facts("src/math.ts", "typescript", ts_source)
+            .expect("valid TypeScript AST");
+        let tsx =
+            semantic_extract_source_facts("src/App.tsx", "tsx", tsx_source).expect("valid TSX AST");
+        println!(
+            "AFTER typescript semantic-index state: ts_symbols={:?} tsx_symbols={:?}",
+            ts.symbols, tsx.symbols
+        );
+
+        let ts_symbols = ts
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?.to_string(),
+                    symbol.get("semantic_kind")?.as_str()?.to_string(),
+                    symbol.get("visibility")?.as_str()?.to_string(),
+                ))
+            })
+            .collect::<BTreeSet<_>>();
+        for expected in [
+            ("CalculatorOptions", "interface", "exported"),
+            ("UserId", "type", "exported"),
+            ("double", "function", "exported"),
+            ("plusOne", "function", "exported"),
+            ("default", "function", "exported"),
+        ] {
+            assert!(
+                ts_symbols.contains(&(
+                    expected.0.to_string(),
+                    expected.1.to_string(),
+                    expected.2.to_string()
+                )),
+                "missing TypeScript symbol {expected:?}; got {ts_symbols:?}"
+            );
+        }
+        let ts_symbol_names = ts_symbols
+            .iter()
+            .map(|(name, _, _)| name.as_str())
+            .collect::<BTreeSet<_>>();
+        for parameter_name in ["x", "value"] {
+            assert!(
+                !ts_symbol_names.contains(parameter_name),
+                "parameter {parameter_name} must not be persisted as a TypeScript function symbol"
+            );
+        }
+
+        let tsx_symbols = tsx
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?.to_string(),
+                    symbol.get("semantic_kind")?.as_str()?.to_string(),
+                    symbol.get("visibility")?.as_str()?.to_string(),
+                ))
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(tsx_symbols.contains(&(
+            "Widget".to_string(),
+            "function".to_string(),
+            "exported".to_string()
+        )));
+        assert!(
+            !tsx_symbols.iter().any(|(name, _, _)| name == "name"),
+            "destructured prop name must not become the TSX function symbol"
+        );
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        let ts_path = repo.join("src/math.ts");
+        let tsx_path = repo.join("src/App.tsx");
+        let evidence_path = temp.path().join("typescript-semantic-fsv.json");
+        fs::create_dir_all(ts_path.parent().expect("source parent"))
+            .expect("create TypeScript source dir");
+        fs::write(&ts_path, ts_source).expect("write TypeScript source");
+        fs::write(&tsx_path, tsx_source).expect("write TSX source");
+        let ts_readback = fs::read_to_string(&ts_path).expect("read TypeScript source");
+        let tsx_readback = fs::read_to_string(&tsx_path).expect("read TSX source");
+        let evidence = json!({
+            "source_of_truth": {
+                "evidence": file_sot_string(&evidence_path),
+                "typescript_source": file_sot_string(&ts_path),
+                "tsx_source": file_sot_string(&tsx_path),
+            },
+            "typescript_sha256": hex_bytes(&sha256(ts_readback.as_bytes())),
+            "tsx_sha256": hex_bytes(&sha256(tsx_readback.as_bytes())),
+            "typescript_symbols": semantic_extract_source_facts("src/math.ts", "typescript", &ts_readback)
+                .expect("valid TypeScript AST from disk").symbols,
+            "tsx_symbols": semantic_extract_source_facts("src/App.tsx", "tsx", &tsx_readback)
+                .expect("valid TSX AST from disk").symbols,
+        });
+        write_json_file(&evidence_path, &evidence).expect("write TypeScript semantic FSV evidence");
+        let readback =
+            read_json_file(&evidence_path).expect("read TypeScript semantic FSV evidence");
+        println!(
+            "READBACK typescript semantic-index FSV state: {}",
+            serde_json::to_string_pretty(&readback).expect("serialize TypeScript readback")
+        );
+        assert_eq!(readback, evidence);
+    }
+
+    #[test]
+    fn typescript_semantic_index_requires_project_local_tsc() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(repo.join("src")).expect("create TypeScript repo");
+        fs::write(repo.join("package.json"), "{\"private\":true}\n").expect("write package");
+        fs::write(
+            repo.join("src/index.ts"),
+            "export const value: number = 1;\n",
+        )
+        .expect("write TypeScript source");
+        println!(
+            "BEFORE typescript toolchain state: local_tsc_exists={} package_json={}",
+            repo.join("node_modules/.bin/tsc").is_file(),
+            fs::read_to_string(repo.join("package.json")).expect("read package")
+        );
+        let err = semantic_require_language_toolchain("typescript", &repo)
+            .expect_err("TypeScript semantic index must fail closed without local tsc");
+        println!("AFTER typescript missing-toolchain state: {err}");
+        assert_eq!(err.code(), "VERIFICATION_FAILED");
+        assert!(
+            err.to_string().contains("node_modules/.bin/tsc"),
+            "unexpected TypeScript toolchain error: {err}"
+        );
+        assert_eq!(
+            fs::read_to_string(repo.join("src/index.ts")).expect("read source after"),
+            "export const value: number = 1;\n"
+        );
+    }
+
+    #[test]
+    fn tsx_semantic_extraction_fails_closed_for_empty_source() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        let source_path = repo.join("src/Empty.tsx");
+        fs::create_dir_all(source_path.parent().expect("source parent"))
+            .expect("create TSX source dir");
+        fs::write(&source_path, " \n\t").expect("write empty TSX source");
+        let before = fs::read_to_string(&source_path).expect("read TSX before");
+        println!(
+            "BEFORE tsx empty-source state: source_path={} bytes={} content={before:?}",
+            source_path.display(),
+            before.len()
+        );
+
+        let err = semantic_extract_source_facts("src/Empty.tsx", "tsx", &before)
+            .expect_err("empty TSX source must fail closed");
+        let after = fs::read_to_string(&source_path).expect("read TSX after");
+        println!(
+            "AFTER tsx empty-source state: error={err} bytes={} content={after:?}",
+            after.len()
+        );
+
+        assert_eq!(err.code(), "VERIFICATION_FAILED");
+        assert!(
+            err.to_string().contains("empty or whitespace-only"),
+            "unexpected empty TSX error: {err}"
+        );
+        assert_eq!(
+            after, before,
+            "empty-source extraction must not mutate source"
+        );
+    }
+
+    #[test]
+    fn tsx_semantic_extraction_fails_closed_with_diagnostics_on_parse_errors() {
+        let broken = r#"
+declare namespace JSX { interface IntrinsicElements { div: {}; span: {}; } }
+
+export const Broken = (): JSX.Element => (
+    <div><span>broken</div>
+);
+"#;
+        println!(
+            "BEFORE tsx parse-error state: source_len={} language={:?}",
+            broken.len(),
+            semantic_language_for_path_and_source("src/Broken.tsx", broken)
+        );
+        let err = semantic_extract_source_facts("src/Broken.tsx", "tsx", broken)
+            .expect_err("invalid TSX syntax must not produce a semantic index");
+        println!("AFTER tsx parse-error state: {err}");
+        assert_eq!(err.code(), "VERIFICATION_FAILED");
+        assert!(
+            err.to_string().contains("diagnostics="),
+            "parse errors must include structured diagnostics: {err}"
+        );
+    }
+
+    #[test]
+    fn tsx_semantic_extraction_uses_named_function_once_without_token_fallback() {
+        let source = r#"
+declare namespace JSX {
+    type Element = unknown;
+    interface IntrinsicElements {
+        div: {};
+    }
+}
+
+type Props = { name: string };
+
+export function Panel(props: Props): JSX.Element {
+    return <div>{props.name}</div>;
+}
+"#;
+        println!(
+            "BEFORE tsx named-function state: source_len={} language={:?}",
+            source.len(),
+            semantic_language_for_path_and_source("src/Panel.tsx", source)
+        );
+        let extraction = semantic_extract_source_facts("src/Panel.tsx", "tsx", source)
+            .expect("valid TSX named function AST");
+        let names = extraction
+            .symbols
+            .iter()
+            .filter_map(|symbol| symbol.get("name").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+        println!(
+            "AFTER tsx named-function state: symbols={:?}",
+            extraction.symbols
+        );
+
+        assert_eq!(
+            names.iter().filter(|name| **name == "Panel").count(),
+            1,
+            "TSX named function should be represented by exactly one symbol"
+        );
+        assert!(
+            !names.contains(&"default"),
+            "TSX function keyword token must not become a fallback default symbol"
+        );
+    }
+
+    #[test]
+    fn php_semantic_extraction_uses_full_php_grammar_and_test_constructs() {
+        let source = r#"<?php
+declare(strict_types=1);
+
+namespace Acme\Tests;
+
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\TestCase;
+
+require_once __DIR__ . '/../src/Calculator.php';
+
+final class CalculatorTest extends TestCase
+{
+    public function add(int $left, int $right): int
+    {
+        return $left + $right;
+    }
+
+    private function helper(): int
+    {
+        return $this->add(1, 1);
+    }
+
+    public function testAdds(): void
+    {
+        self::assertSame(4, $this->add(2, 2));
+    }
+
+    #[Test]
+    public function canSubtract(): void
+    {
+        $service = new CalculatorTest();
+        self::assertSame(0, $service->add(1, -1));
+    }
+}
+
+test('pest addition', function (): void {
+    expect((new CalculatorTest())->add(2, 3))->toBe(5);
+});
+
+it('supports pest it blocks', function (): void {
+    expect(true)->toBeTrue();
+});
+?>
+<section><?= (new CalculatorTest())->add(1, 2); ?></section>
+"#;
+        println!(
+            "BEFORE php semantic-index state: source_len={} path_is_test={}",
+            source.len(),
+            semantic_path_is_test("tests/Unit/CalculatorTest.php")
+        );
+        let extraction =
+            semantic_extract_source_facts("tests/Unit/CalculatorTest.php", "php", source)
+                .expect("valid PHP AST");
+        println!(
+            "AFTER php semantic-index state: symbols={:?}, calls={:?}, dataflow={:?}",
+            extraction.symbols, extraction.calls, extraction.dataflow_edges
+        );
+
+        let symbols = extraction
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?.to_string(),
+                    symbol.get("semantic_kind")?.as_str()?.to_string(),
+                    symbol.get("visibility")?.as_str()?.to_string(),
+                ))
+            })
+            .collect::<BTreeSet<_>>();
+        for expected in [
+            ("CalculatorTest", "class", "public"),
+            ("add", "method", "public"),
+            ("helper", "method", "private"),
+            ("testAdds", "test", "public"),
+            ("canSubtract", "test", "public"),
+            ("test", "test", "public"),
+            ("it", "test", "public"),
+        ] {
+            assert!(
+                symbols.contains(&(
+                    expected.0.to_string(),
+                    expected.1.to_string(),
+                    expected.2.to_string()
+                )),
+                "missing PHP symbol {expected:?}; got {symbols:?}"
+            );
+        }
+        assert!(
+            !symbols
+                .iter()
+                .any(|(name, kind, _)| name == "$service" && kind == "method"),
+            "PHP variables must not be recorded as callable symbols"
+        );
+
+        let callees = extraction
+            .calls
+            .iter()
+            .filter_map(|call| call.get("callee_expr").and_then(Value::as_str))
+            .collect::<BTreeSet<_>>();
+        for expected in ["assertSame", "add", "expect", "toBe", "toBeTrue"] {
+            assert!(
+                callees.contains(expected),
+                "missing PHP call {expected}; got {callees:?}"
+            );
+        }
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source_path = temp.path().join("repo/tests/Unit/CalculatorTest.php");
+        let evidence_path = temp.path().join("php-semantic-fsv.json");
+        fs::create_dir_all(source_path.parent().expect("PHP source parent"))
+            .expect("create PHP source dir");
+        fs::write(&source_path, source).expect("write PHP source");
+        let source_readback = fs::read_to_string(&source_path).expect("read PHP source");
+        let disk_extraction =
+            semantic_extract_source_facts("tests/Unit/CalculatorTest.php", "php", &source_readback)
+                .expect("valid PHP AST from disk source");
+        let evidence = json!({
+            "source_of_truth": {
+                "evidence": file_sot_string(&evidence_path),
+                "php_source": file_sot_string(&source_path),
+            },
+            "php_sha256": hex_bytes(&sha256(source_readback.as_bytes())),
+            "symbols": disk_extraction.symbols,
+            "calls": disk_extraction.calls,
+            "imports": disk_extraction.imports,
+            "dataflow_edges": disk_extraction.dataflow_edges,
+        });
+        write_json_file(&evidence_path, &evidence).expect("write PHP semantic FSV evidence");
+        let readback = read_json_file(&evidence_path).expect("read PHP semantic FSV evidence");
+        println!(
+            "READBACK php semantic-index FSV state: {}",
+            serde_json::to_string_pretty(&readback).expect("serialize PHP semantic readback")
+        );
+        assert_eq!(readback, evidence);
+    }
+
+    #[test]
+    fn php_semantic_extraction_handles_edge_cases_and_fail_closed_tooling() {
+        let empty = "";
+        println!(
+            "EDGE empty BEFORE php semantic-index state: source_len={}",
+            empty.len()
+        );
+        let empty_extraction =
+            semantic_extract_source_facts("src/empty.php", "php", empty).expect("empty PHP file");
+        println!(
+            "EDGE empty AFTER php semantic-index state: symbols={} calls={} dataflow={}",
+            empty_extraction.symbols.len(),
+            empty_extraction.calls.len(),
+            empty_extraction.dataflow_edges.len()
+        );
+        assert!(empty_extraction.symbols.is_empty());
+
+        let mixed = "<html><?php function rendered(): string { return 'ok'; } ?></html>";
+        println!(
+            "EDGE mixed BEFORE php semantic-index state: source_len={} contains_php_tag={}",
+            mixed.len(),
+            mixed.contains("<?php")
+        );
+        let mixed_extraction =
+            semantic_extract_source_facts("resources/views/page.php", "php", mixed)
+                .expect("mixed PHP/HTML must parse with full PHP grammar");
+        println!(
+            "EDGE mixed AFTER php semantic-index state: symbols={:?}",
+            mixed_extraction.symbols
+        );
+        assert!(mixed_extraction.symbols.iter().any(|symbol| {
+            symbol.get("name").and_then(Value::as_str) == Some("rendered")
+                && symbol.get("semantic_kind").and_then(Value::as_str) == Some("function")
+        }));
+
+        let invalid = "<?php function broken( {";
+        println!(
+            "EDGE invalid BEFORE php semantic-index state: source_len={} source={}",
+            invalid.len(),
+            invalid
+        );
+        let err = semantic_extract_source_facts("src/Broken.php", "php", invalid)
+            .expect_err("PHP syntax errors must not produce a semantic index");
+        println!("EDGE invalid AFTER php semantic-index state: {err}");
+        assert_eq!(err.code(), "VERIFICATION_FAILED");
+        assert!(
+            err.to_string().contains("diagnostics="),
+            "PHP parse errors must include structured diagnostics: {err}"
+        );
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).expect("create PHP repo");
+        fs::write(repo.join("index.php"), "<?php echo 'ok';\n").expect("write PHP source");
+        println!(
+            "EDGE toolchain BEFORE php semantic-index state: php_on_path={} source={}",
+            command_exists_on_path("php"),
+            fs::read_to_string(repo.join("index.php")).expect("read PHP source before")
+        );
+        if command_exists_on_path("php") {
+            let evidence_dir = temp.path().join("evidence");
+            fs::create_dir_all(&evidence_dir).expect("create PHP evidence dir");
+            let evidence = semantic_run_language_batch_check("php", &repo, &evidence_dir)
+                .expect("real php -l must pass when php CLI is installed");
+            println!(
+                "EDGE toolchain AFTER php semantic-index state: {}",
+                serde_json::to_string_pretty(&evidence).expect("serialize PHP lint evidence")
+            );
+            assert_eq!(evidence["check_count"].as_u64(), Some(1));
+        } else {
+            let err = semantic_require_language_toolchain("php", &repo)
+                .expect_err("missing PHP CLI must fail closed");
+            println!("EDGE toolchain AFTER php semantic-index state: {err}");
+            assert_eq!(err.code(), "VERIFICATION_FAILED");
+            assert!(err.to_string().contains("php"));
+        }
+        assert_eq!(
+            fs::read_to_string(repo.join("index.php")).expect("read PHP source after"),
+            "<?php echo 'ok';\n"
+        );
+    }
+
     fn local_file_sot_path(sot: &str) -> PathBuf {
         let Some(path) = sot.strip_prefix("file:") else {
             panic!("expected local file source-of-truth URL, got {sot}");
@@ -26857,15 +27755,166 @@ public class CalculatorTests {
                 Some((
                     symbol.get("name")?.as_str()?,
                     symbol.get("semantic_kind")?.as_str()?,
+                    symbol.get("visibility")?.as_str()?,
                 ))
             })
             .collect::<BTreeSet<_>>();
-        assert!(symbols.contains(&("CalculatorTests", "class")));
-        assert!(symbols.contains(&("Changed", "delegate")));
-        assert!(symbols.contains(&("Updated", "event")));
-        assert!(symbols.contains(&("Total", "property")));
-        assert!(symbols.contains(&("this[]", "property")));
-        assert!(symbols.contains(&("TestAdds", "test")));
+        assert!(symbols.contains(&("CalculatorTests", "class", "public")));
+        assert!(symbols.contains(&("Changed", "delegate", "public")));
+        assert!(symbols.contains(&("Updated", "event", "public")));
+        assert!(symbols.contains(&("Total", "property", "public")));
+        assert!(symbols.contains(&("this[]", "property", "public")));
+        assert!(symbols.contains(&("TestAdds", "test", "public")));
+    }
+
+    #[test]
+    fn csharp_semantic_extraction_recognizes_framework_test_attributes() {
+        let source = r#"
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NUnit.Framework;
+using Xunit;
+
+namespace Demo;
+
+public class CalculatorSpec {
+    [Fact]
+    public void AddsFact() { Assert.True(true); }
+
+    [Theory]
+    [InlineData(4)]
+    public void AddsTheory(int expected) { Assert.Equal(expected, 2 + 2); }
+
+    [TestMethod]
+    public void AddsMstest() { Assert.AreEqual(4, 2 + 2); }
+
+    [TestCase(4)]
+    public void AddsNunit(int expected) { Assert.That(2 + 2, Is.EqualTo(expected)); }
+
+    public void HelperOnly() { }
+}
+"#;
+        println!(
+            "BEFORE csharp attribute semantic state: path_is_test={}, source_len={}",
+            semantic_path_is_test("src/Demo/CalculatorSpec.cs"),
+            source.len()
+        );
+        let extraction =
+            semantic_extract_source_facts("src/Demo/CalculatorSpec.cs", "csharp", source)
+                .expect("valid C# AST");
+        println!(
+            "AFTER csharp attribute semantic state: symbols={:?}",
+            extraction.symbols
+        );
+        let symbols = extraction
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?,
+                    symbol.get("semantic_kind")?.as_str()?,
+                    symbol.get("visibility")?.as_str()?,
+                ))
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(symbols.contains(&("CalculatorSpec", "class", "public")));
+        assert!(symbols.contains(&("AddsFact", "test", "public")));
+        assert!(symbols.contains(&("AddsTheory", "test", "public")));
+        assert!(symbols.contains(&("AddsMstest", "test", "public")));
+        assert!(symbols.contains(&("AddsNunit", "test", "public")));
+        assert!(symbols.contains(&("HelperOnly", "method", "public")));
+        assert!(
+            !semantic_path_is_test("src/Demo/CalculatorSpec.cs"),
+            "attribute fixture must prove annotation detection without path-based test classification"
+        );
+    }
+
+    #[test]
+    fn csharp_semantic_extraction_preserves_operator_symbols_with_fsv_readback() {
+        let source = r#"
+namespace Demo;
+
+public readonly struct Vector {
+    public int X { get; }
+
+    public Vector(int x) { X = x; }
+
+    public static Vector operator +(Vector left, Vector right) =>
+        new Vector(left.X + right.X);
+
+    public static explicit operator int(Vector value) => value.X;
+}
+"#;
+        println!(
+            "BEFORE csharp operator semantic state: path_is_test={}, source_len={}",
+            semantic_path_is_test("src/Demo/Vector.cs"),
+            source.len()
+        );
+        let extraction = semantic_extract_source_facts("src/Demo/Vector.cs", "csharp", source)
+            .expect("valid C# operator AST");
+        println!(
+            "AFTER csharp operator semantic state: symbols={:?}",
+            extraction.symbols
+        );
+        let symbols = extraction
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?,
+                    symbol.get("semantic_kind")?.as_str()?,
+                    symbol.get("visibility")?.as_str()?,
+                ))
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(symbols.contains(&("Vector", "class", "public")));
+        assert!(symbols.contains(&("X", "property", "public")));
+        assert!(symbols.contains(&("operator +", "method", "public")));
+        assert!(symbols.contains(&("operator int", "method", "public")));
+        assert!(
+            !symbols
+                .iter()
+                .any(|(name, semantic_kind, _)| *name == "operator" && *semantic_kind == "method"),
+            "C# operator overloads must include the overload token in the symbol identity"
+        );
+
+        let evidence_root = PathBuf::from("/tmp/contextgraph-csharp-semantic-fsv");
+        fs::create_dir_all(evidence_root.join("src/Demo"))
+            .expect("create C# semantic FSV source dir");
+        let source_path = evidence_root.join("src/Demo/Vector.cs");
+        let evidence_path = evidence_root.join("csharp-semantic-fsv.json");
+        fs::write(&source_path, source).expect("write C# source-of-truth");
+        let disk_source = fs::read_to_string(&source_path).expect("read C# source-of-truth");
+        let disk_extraction =
+            semantic_extract_source_facts("src/Demo/Vector.cs", "csharp", &disk_source)
+                .expect("valid C# AST from disk source");
+        let fsv = json!({
+            "source_of_truth": {
+                "evidence": file_sot_string(&evidence_path),
+                "source": file_sot_string(&source_path),
+            },
+            "source_readback_sha256": hex_bytes(&sha256(disk_source.as_bytes())),
+            "symbols": disk_extraction.symbols,
+            "calls": disk_extraction.calls,
+            "dataflow_edges": disk_extraction.dataflow_edges,
+            "type_facts": disk_extraction.type_facts,
+        });
+        write_json_file(&evidence_path, &fsv).expect("write C# semantic FSV evidence");
+        let readback = read_json_file(&evidence_path).expect("read C# semantic FSV evidence");
+        println!(
+            "READBACK csharp semantic-index FSV state: {}",
+            serde_json::to_string_pretty(&readback).expect("serialize C# semantic readback")
+        );
+        assert_eq!(readback, fsv);
+        let readback_symbols = readback
+            .get("symbols")
+            .and_then(Value::as_array)
+            .expect("symbols array");
+        assert!(readback_symbols
+            .iter()
+            .any(|symbol| symbol.get("name").and_then(Value::as_str) == Some("operator +")));
+        assert!(readback_symbols
+            .iter()
+            .any(|symbol| symbol.get("name").and_then(Value::as_str) == Some("operator int")));
     }
 
     #[test]
@@ -26903,6 +27952,15 @@ public class CalculatorTests {
         let selected_solution =
             semantic_csharp_build_target(&solution).expect("solution has precedence");
         assert_eq!(selected_solution, "App.sln");
+
+        let slnx_solution = temp.path().join("slnx-solution");
+        fs::create_dir(&slnx_solution).expect("create slnx solution repo");
+        fs::write(slnx_solution.join("App.slnx"), "\n").expect("write slnx");
+        fs::write(slnx_solution.join("App.csproj"), "<Project />\n").expect("write csproj");
+        let selected_slnx =
+            semantic_csharp_build_target(&slnx_solution).expect("slnx solution has precedence");
+        println!("AFTER csharp slnx-target selected: {selected_slnx}");
+        assert_eq!(selected_slnx, "App.slnx");
 
         let multiple_projects = temp.path().join("multiple-projects");
         fs::create_dir(&multiple_projects).expect("create multi project repo");
