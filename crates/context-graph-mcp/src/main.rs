@@ -69,6 +69,7 @@ use server::TransportMode;
 /// TASK-INTEG-019: Simple argument parsing without external dependencies.
 /// TASK-EMB-WARMUP: Added warm_first flag for blocking model warmup at startup.
 /// TASK-DAEMON: Added daemon mode for shared MCP server across multiple terminals.
+#[derive(Debug)]
 struct CliArgs {
     /// Path to configuration file
     config_path: Option<PathBuf>,
@@ -108,7 +109,15 @@ impl CliArgs {
     /// TASK-INTEG-019: Manual parsing without clap to keep binary small.
     /// Supports: --config, --transport, --port, --bind, --help, -h, --version, -V, --warm-first, --no-warm, --daemon, --daemon-port
     fn parse() -> Result<Self> {
-        let args: Vec<String> = env::args().collect();
+        Self::parse_from(env::args())
+    }
+
+    fn parse_from<I, S>(args: I) -> Result<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let args: Vec<String> = args.into_iter().map(Into::into).collect();
         let mut cli = CliArgs {
             config_path: None,
             transport: None,
@@ -167,14 +176,7 @@ impl CliArgs {
                     if i >= args.len() {
                         return Err(anyhow::anyhow!("Missing value for --port"));
                     }
-                    if let Ok(port) = args[i].parse::<u16>() {
-                        cli.port = Some(port);
-                    } else {
-                        return Err(anyhow::anyhow!(
-                            "Invalid --port value '{}': must be a valid port number (1-65535)",
-                            args[i]
-                        ));
-                    }
+                    cli.port = Some(parse_port_number("--port", &args[i])?);
                 }
                 "--bind" => {
                     i += 1;
@@ -201,15 +203,8 @@ impl CliArgs {
                     if i >= args.len() {
                         return Err(anyhow::anyhow!("Missing value for --daemon-port"));
                     }
-                    if let Ok(port) = args[i].parse::<u16>() {
-                        cli.daemon_port = port;
-                        cli.explicit_daemon_port = true;
-                    } else {
-                        return Err(anyhow::anyhow!(
-                            "Invalid --daemon-port value '{}': must be a valid port number (1-65535)",
-                            args[i]
-                        ));
-                    }
+                    cli.daemon_port = parse_port_number("--daemon-port", &args[i])?;
+                    cli.explicit_daemon_port = true;
                 }
                 "--daemon-server-only" => {
                     // Internal flag: this process IS the headless daemon.
@@ -228,6 +223,93 @@ impl CliArgs {
         }
 
         Ok(cli)
+    }
+}
+
+fn parse_port_number(source: &str, value: &str) -> Result<u16> {
+    let port = value.parse::<u16>().map_err(|e| {
+        anyhow::anyhow!(
+            "Invalid {source} value '{value}': must be a valid port number (1-65535): {e}"
+        )
+    })?;
+    if port == 0 {
+        return Err(anyhow::anyhow!(
+            "Invalid {source} value '{value}': must be a valid port number (1-65535)"
+        ));
+    }
+    Ok(port)
+}
+
+#[cfg(test)]
+mod cli_arg_tests {
+    use super::*;
+    use std::ffi::OsString;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvRestore {
+        key: &'static str,
+        old: Option<OsString>,
+    }
+
+    impl EnvRestore {
+        fn set(key: &'static str, value: &str) -> Self {
+            let old = env::var_os(key);
+            env::set_var(key, value);
+            Self { key, old }
+        }
+    }
+
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            if let Some(old) = &self.old {
+                env::set_var(self.key, old);
+            } else {
+                env::remove_var(self.key);
+            }
+        }
+    }
+
+    #[test]
+    fn cli_parse_rejects_zero_ports() {
+        let err = CliArgs::parse_from(["context-graph-mcp", "--port", "0"])
+            .expect_err("--port 0 must fail closed");
+        assert!(err.to_string().contains("1-65535"));
+
+        let err = CliArgs::parse_from(["context-graph-mcp", "--daemon-port", "0"])
+            .expect_err("--daemon-port 0 must fail closed");
+        assert!(err.to_string().contains("1-65535"));
+    }
+
+    #[test]
+    fn cli_parse_rejects_unknown_argument() {
+        let err = CliArgs::parse_from(["context-graph-mcp", "--mystery"])
+            .expect_err("unknown args must fail closed");
+        assert!(err.to_string().contains("Unknown argument '--mystery'"));
+    }
+
+    #[test]
+    fn daemon_port_env_rejects_invalid_values() {
+        let _lock = ENV_LOCK.lock().expect("env test lock");
+        let cli = CliArgs::parse_from(["context-graph-mcp"]).expect("default cli args");
+
+        let invalid = EnvRestore::set("CONTEXT_GRAPH_DAEMON_PORT", "not-a-port");
+        let err = determine_daemon_port(&cli).expect_err("invalid env port must fail closed");
+        assert!(err.to_string().contains("CONTEXT_GRAPH_DAEMON_PORT"));
+        drop(invalid);
+
+        let zero = EnvRestore::set("CONTEXT_GRAPH_DAEMON_PORT", "0");
+        let err = determine_daemon_port(&cli).expect_err("zero env port must fail closed");
+        assert!(err.to_string().contains("1-65535"));
+        drop(zero);
+
+        let valid = EnvRestore::set("CONTEXT_GRAPH_DAEMON_PORT", "4010");
+        assert_eq!(
+            determine_daemon_port(&cli).expect("valid daemon port"),
+            4010
+        );
+        drop(valid);
     }
 }
 
@@ -401,10 +483,9 @@ fn apply_overrides(config: &mut Config, cli: &CliArgs) -> Result<()> {
         info!("CLI override: tcp_port = {}", port);
         config.mcp.tcp_port = port;
     } else if let Ok(port_str) = env::var("CONTEXT_GRAPH_TCP_PORT") {
-        if let Ok(port) = port_str.parse::<u16>() {
-            info!("ENV override: tcp_port = {}", port);
-            config.mcp.tcp_port = port;
-        }
+        let port = parse_port_number("CONTEXT_GRAPH_TCP_PORT", &port_str)?;
+        info!("ENV override: tcp_port = {}", port);
+        config.mcp.tcp_port = port;
     }
 
     // Override bind address from CLI
@@ -564,21 +645,19 @@ fn determine_daemon_mode(cli: &CliArgs) -> bool {
 }
 
 /// Determine daemon port from CLI and environment.
-fn determine_daemon_port(cli: &CliArgs) -> u16 {
+fn determine_daemon_port(cli: &CliArgs) -> Result<u16> {
     // CLI --daemon-port takes highest priority
     if cli.explicit_daemon_port {
-        return cli.daemon_port;
+        return Ok(cli.daemon_port);
     }
 
     // Environment variable is second priority
     if let Ok(port_env) = env::var("CONTEXT_GRAPH_DAEMON_PORT") {
-        if let Ok(port) = port_env.parse::<u16>() {
-            return port;
-        }
+        return parse_port_number("CONTEXT_GRAPH_DAEMON_PORT", &port_env);
     }
 
     // Default: 3100 (aligned with .mcp.json convention)
-    3100
+    Ok(3100)
 }
 
 // ============================================================================
@@ -2623,7 +2702,7 @@ async fn async_main() -> Result<()> {
 
     // TASK-DAEMON: Check if daemon mode is enabled
     let daemon_mode = determine_daemon_mode(&cli);
-    let daemon_port = determine_daemon_port(&cli);
+    let daemon_port = determine_daemon_port(&cli)?;
 
     // SRV-M3 FIX: Resolve database path using the SAME function as McpServer::new().
     // Previously used `PathBuf::from(&config.storage.path)` which diverges from the

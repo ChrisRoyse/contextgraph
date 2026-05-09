@@ -29,6 +29,19 @@
 // Fail-closed everywhere. Length mismatches, NaN scores, retrocausal attempts,
 // invalid window sizes — all return SolverError::InvalidInput with a specific
 // remediation. No silent fallback to "Strict if invalid window".
+//
+// Non-finite handling — INPUT vs OUTPUT asymmetry (deliberate):
+//   - apply_mask_to_scores  : INPUT scores must be finite (NaN OR ±INFINITY
+//                             both reject with CGSOLVER_NUMERICAL_INVARIANT).
+//                             It is the ONLY function that writes NEG_INFINITY,
+//                             and only into positions the boolean mask marks
+//                             forbidden.
+//   - softmax_row           : tolerates NEG_INFINITY (treats it as 0 weight,
+//                             exactly fail-closed) but still rejects +INFINITY
+//                             and NaN. This is what makes the
+//                             apply-mask-then-softmax pipeline valid: the only
+//                             non-finite value softmax_row will see is the
+//                             NEG_INFINITY that apply_mask_to_scores wrote.
 
 use crate::error::{SolverError, SolverResult};
 use serde::{Deserialize, Serialize};
@@ -167,6 +180,13 @@ pub fn apply_mask_to_scores(scores: &mut [f32], mask: &[bool], n: usize) -> Solv
 /// `strategy`. This is the explicit fail-closed check callers run BEFORE
 /// reading off an attention weight at a specific position when they did not
 /// pre-mask the score matrix.
+///
+/// Use case: per-cell auditing or sparse spot checks (e.g. a single
+/// query/key pair surfaced from a verifier trace). For BULK masking over an
+/// N×N score matrix, prefer `apply_mask_to_scores` — calling this in an
+/// O(N²) loop duplicates work that the bulk path does in one pass and
+/// produces an error per offending cell rather than masking them to
+/// NEG_INFINITY.
 ///
 /// Returns Ok(()) if attendance is permitted; otherwise CGSOLVER_INVALID_INPUT
 /// with `field = "attention_position"` and a message naming the offending
