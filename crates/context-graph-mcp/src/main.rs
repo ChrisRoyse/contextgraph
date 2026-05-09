@@ -82,6 +82,8 @@ struct CliArgs {
     bind_address: Option<String>,
     /// Show help
     help: bool,
+    /// Show version
+    version: bool,
     // L3 FIX: warm_first field removed — determine_warm_first() uses only no_warm + env var.
     // Default is true (block until warm). --warm-first flag just clears no_warm.
     /// Skip model warmup entirely (--no-warm)
@@ -104,8 +106,8 @@ impl CliArgs {
     /// Parse CLI arguments.
     ///
     /// TASK-INTEG-019: Manual parsing without clap to keep binary small.
-    /// Supports: --config, --transport, --port, --bind, --help, -h, --warm-first, --no-warm, --daemon, --daemon-port
-    fn parse() -> Self {
+    /// Supports: --config, --transport, --port, --bind, --help, -h, --version, -V, --warm-first, --no-warm, --daemon, --daemon-port
+    fn parse() -> Result<Self> {
         let args: Vec<String> = env::args().collect();
         let mut cli = CliArgs {
             config_path: None,
@@ -114,6 +116,7 @@ impl CliArgs {
             port: None,
             bind_address: None,
             help: false,
+            version: false,
             no_warm: false,
             daemon: false,
             daemon_port: 3100, // Default daemon port (aligned with .mcp.json)
@@ -127,46 +130,58 @@ impl CliArgs {
                 "--help" | "-h" => {
                     cli.help = true;
                 }
+                "--version" | "-V" => {
+                    cli.version = true;
+                }
                 "--config" => {
                     i += 1;
-                    if i < args.len() {
-                        cli.config_path = Some(PathBuf::from(&args[i]));
+                    if i >= args.len() {
+                        return Err(anyhow::anyhow!("Missing value for --config"));
                     }
+                    cli.config_path = Some(PathBuf::from(&args[i]));
                 }
                 "--transport" => {
                     i += 1;
-                    if i < args.len() {
-                        cli.transport = Some(args[i].clone());
+                    if i >= args.len() {
+                        return Err(anyhow::anyhow!("Missing value for --transport"));
                     }
+                    cli.transport = Some(args[i].clone());
                 }
                 "--mode" => {
                     i += 1;
-                    if i < args.len() {
-                        match args[i].as_str() {
-                            "default" | "reality-loop" => cli.mode = args[i].clone(),
-                            other => {
-                                eprintln!("[E_CLI_MODE_001] Invalid --mode value '{}': must be default or reality-loop", other);
-                                cli.help = true;
-                            }
+                    if i >= args.len() {
+                        return Err(anyhow::anyhow!("Missing value for --mode"));
+                    }
+                    match args[i].as_str() {
+                        "default" | "reality-loop" => cli.mode = args[i].clone(),
+                        other => {
+                            return Err(anyhow::anyhow!(
+                                "Invalid --mode value '{}': must be default or reality-loop",
+                                other
+                            ));
                         }
                     }
                 }
                 "--port" => {
                     i += 1;
-                    if i < args.len() {
-                        if let Ok(port) = args[i].parse::<u16>() {
-                            cli.port = Some(port);
-                        } else {
-                            eprintln!("[E_CLI_PORT_001] Invalid --port value '{}': must be a valid port number (1-65535)", args[i]);
-                            cli.help = true;
-                        }
+                    if i >= args.len() {
+                        return Err(anyhow::anyhow!("Missing value for --port"));
+                    }
+                    if let Ok(port) = args[i].parse::<u16>() {
+                        cli.port = Some(port);
+                    } else {
+                        return Err(anyhow::anyhow!(
+                            "Invalid --port value '{}': must be a valid port number (1-65535)",
+                            args[i]
+                        ));
                     }
                 }
                 "--bind" => {
                     i += 1;
-                    if i < args.len() {
-                        cli.bind_address = Some(args[i].clone());
+                    if i >= args.len() {
+                        return Err(anyhow::anyhow!("Missing value for --bind"));
                     }
+                    cli.bind_address = Some(args[i].clone());
                 }
                 "--warm-first" => {
                     // Explicit opt-in to default behavior. Useful to override --no-warm when both are passed.
@@ -183,14 +198,17 @@ impl CliArgs {
                 "--daemon-port" => {
                     // TASK-DAEMON: Custom daemon port
                     i += 1;
-                    if i < args.len() {
-                        if let Ok(port) = args[i].parse::<u16>() {
-                            cli.daemon_port = port;
-                            cli.explicit_daemon_port = true;
-                        } else {
-                            eprintln!("[E_CLI_PORT_003] Invalid --daemon-port value '{}': must be a valid port number (1-65535)", args[i]);
-                            cli.help = true;
-                        }
+                    if i >= args.len() {
+                        return Err(anyhow::anyhow!("Missing value for --daemon-port"));
+                    }
+                    if let Ok(port) = args[i].parse::<u16>() {
+                        cli.daemon_port = port;
+                        cli.explicit_daemon_port = true;
+                    } else {
+                        return Err(anyhow::anyhow!(
+                            "Invalid --daemon-port value '{}': must be a valid port number (1-65535)",
+                            args[i]
+                        ));
                     }
                 }
                 "--daemon-server-only" => {
@@ -200,16 +218,16 @@ impl CliArgs {
                     cli.daemon = true;
                 }
                 arg => {
-                    eprintln!(
-                        "WARNING: Unknown argument '{}' — ignoring. Use --help for usage.",
+                    return Err(anyhow::anyhow!(
+                        "Unknown argument '{}'. Use --help for usage.",
                         arg
-                    );
+                    ));
                 }
             }
             i += 1;
         }
 
-        cli
+        Ok(cli)
     }
 }
 
@@ -231,6 +249,7 @@ OPTIONS:
     --no-warm            Skip blocking warmup (embeddings fail until background load completes)
     --daemon             Share one server across multiple terminals (RECOMMENDED)
     --daemon-port <PORT> Daemon TCP port (default: 3100)
+    --version, -V        Show version and exit
     --help, -h           Show this help message
 
 ENVIRONMENT VARIABLES:
@@ -2523,10 +2542,14 @@ async fn write_jsonrpc_line<W: tokio::io::AsyncWrite + Unpin>(
 
 async fn async_main() -> Result<()> {
     // Parse CLI arguments first (before logging init so --help works cleanly)
-    let cli = CliArgs::parse();
+    let cli = CliArgs::parse()?;
 
     if cli.help {
         print_help();
+        return Ok(());
+    }
+    if cli.version {
+        eprintln!("context-graph-mcp {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
     crate::tools::set_reality_loop_mode(cli.mode == "reality-loop");

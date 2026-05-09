@@ -34,11 +34,10 @@ impl MerkleLeaf {
 
     /// Hash of the leaf with domain-separation tag and id binding.
     pub(crate) fn hash(&self) -> [u8; HASH_SIZE] {
-        let mut buf = Vec::with_capacity(MERKLE_LEAF_TAG.len() + self.id.len() + 1 + HASH_SIZE);
+        let mut buf = Vec::with_capacity(MERKLE_LEAF_TAG.len() + 8 + self.id.len() + HASH_SIZE);
         buf.extend_from_slice(MERKLE_LEAF_TAG);
-        buf.push(0u8);
+        buf.extend_from_slice(&(self.id.len() as u64).to_be_bytes());
         buf.extend_from_slice(self.id.as_bytes());
-        buf.push(0u8);
         buf.extend_from_slice(&self.content_hash);
         shake256_32(&buf)
     }
@@ -75,7 +74,7 @@ impl MerkleTree {
         levels.push(leaves.iter().map(MerkleLeaf::hash).collect());
         while levels.last().expect("at least one level").len() > 1 {
             let prev = levels.last().expect("at least one level");
-            let mut next: Vec<[u8; HASH_SIZE]> = Vec::with_capacity((prev.len() + 1) / 2);
+            let mut next: Vec<[u8; HASH_SIZE]> = Vec::with_capacity(prev.len().div_ceil(2));
             for chunk in prev.chunks(2) {
                 let left = chunk[0];
                 let right = if chunk.len() == 2 { chunk[1] } else { chunk[0] };
@@ -146,7 +145,7 @@ impl MerkleTree {
         let mut current = leaf.hash();
         let mut cursor = proof.index;
         for sibling in &proof.siblings {
-            let (left, right) = if cursor % 2 == 0 {
+            let (left, right) = if cursor.is_multiple_of(2) {
                 (current, *sibling)
             } else {
                 (*sibling, current)
@@ -173,7 +172,7 @@ fn expected_proof_length(leaf_count: usize) -> usize {
     let mut levels = 0usize;
     let mut size = leaf_count;
     while size > 1 {
-        size = (size + 1) / 2;
+        size = size.div_ceil(2);
         levels += 1;
     }
     levels

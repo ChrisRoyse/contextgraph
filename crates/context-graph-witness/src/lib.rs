@@ -142,7 +142,7 @@ pub fn verify_chain_bytes_with_type_validator<F>(
 where
     F: FnMut(u8) -> bool,
 {
-    if bytes.len() % WITNESS_ENTRY_SIZE != 0 {
+    if !bytes.len().is_multiple_of(WITNESS_ENTRY_SIZE) {
         return Err(WitnessError::ChainLengthInvalid {
             len: bytes.len(),
             entry_size: WITNESS_ENTRY_SIZE,

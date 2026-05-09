@@ -234,7 +234,7 @@ fn validate_segment(segment: &[u8]) -> Result<(), SignError> {
     if segment.is_empty() {
         return Err(SignError::SegmentEmpty);
     }
-    if segment.len() % WITNESS_ENTRY_SIZE != 0 {
+    if !segment.len().is_multiple_of(WITNESS_ENTRY_SIZE) {
         return Err(SignError::SegmentLengthInvalid {
             len: segment.len(),
             entry_size: WITNESS_ENTRY_SIZE,

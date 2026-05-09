@@ -2,8 +2,10 @@
 // Writes JSON evidence to disk under /tmp/contextgraph-tier2-fsv/.
 
 use context_graph_mincut::{stoer_wagner, weights_from_edges, StoerWagnerConfig};
-use std::fs;
-use std::path::PathBuf;
+use serde_json::Value;
+use std::fs::{self, File};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let evidence_root = PathBuf::from("/tmp/contextgraph-tier2-fsv");
@@ -88,6 +90,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cut_paper_again = stoer_wagner(&weights_paper, 8, StoerWagnerConfig::default())?;
     let deterministic = cut_paper == cut_paper_again;
 
+    require_close("paper_fig_1.cut_weight", cut_paper.cut_weight, 4.0, 1e-9)?;
+    require_close("dumbbell.cut_weight", cut_dumbbell.cut_weight, 1.0, 1e-9)?;
+    require_close(
+        "balanced_clusters.cut_weight",
+        cut_clusters.cut_weight,
+        2.0,
+        1e-9,
+    )?;
+    require_eq(
+        "boundary_disconnected_graph.error_code",
+        disconnected_code,
+        "MINCUT_GRAPH_DISCONNECTED",
+    )?;
+    require_eq(
+        "boundary_negative_weight.error_code",
+        neg_code,
+        "MINCUT_WEIGHT_INVALID",
+    )?;
+    require_eq(
+        "boundary_too_small_graph.error_code",
+        too_small_code,
+        "MINCUT_GRAPH_TOO_SMALL",
+    )?;
+    require_eq(
+        "boundary_oob_edge.error_code",
+        oob_edge_code,
+        "MINCUT_EDGE_ENDPOINT_OUT_OF_BOUNDS",
+    )?;
+    require_eq(
+        "boundary_self_loop_edge.error_code",
+        self_loop_edge_code,
+        "MINCUT_SELF_LOOP_EDGE",
+    )?;
+    require("deterministic_across_runs", deterministic)?;
+
     let evidence = serde_json::json!({
         "case_stoer_wagner_paper_fig_1": {
             "expected_cut_weight": 4.0,
@@ -169,11 +206,63 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let path = evidence_root.join("mincut-evidence.json");
-    fs::write(&path, serde_json::to_string_pretty(&evidence)?)?;
-    let readback_text = fs::read_to_string(&path)?;
-    let readback: serde_json::Value = serde_json::from_str(&readback_text)?;
-    assert_eq!(readback, evidence);
+    let readback = write_json_evidence_readback(&path, &evidence)?;
     println!("Mincut FSV evidence: {}", path.display());
     println!("{}", serde_json::to_string_pretty(&readback)?);
     Ok(())
+}
+
+fn write_json_evidence_readback(
+    path: &Path,
+    evidence: &Value,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    let text = serde_json::to_string_pretty(evidence)?;
+    let mut file = File::create(path)?;
+    file.write_all(text.as_bytes())?;
+    file.sync_all()?;
+    drop(file);
+    let readback_text = fs::read_to_string(path)?;
+    let readback: Value = serde_json::from_str(&readback_text)?;
+    require("evidence_json_readback_matches", readback == *evidence)?;
+    Ok(readback)
+}
+
+fn require(label: &str, condition: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if condition {
+        Ok(())
+    } else {
+        Err(io::Error::new(io::ErrorKind::Other, format!("{label} expected true")).into())
+    }
+}
+
+fn require_eq<T>(label: &str, actual: T, expected: T) -> Result<(), Box<dyn std::error::Error>>
+where
+    T: PartialEq + std::fmt::Debug,
+{
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("{label} expected {expected:?}, got {actual:?}"),
+        )
+        .into())
+    }
+}
+
+fn require_close(
+    label: &str,
+    actual: f64,
+    expected: f64,
+    tolerance: f64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if (actual - expected).abs() <= tolerance {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("{label} expected {expected} +/- {tolerance}, got {actual}"),
+        )
+        .into())
+    }
 }

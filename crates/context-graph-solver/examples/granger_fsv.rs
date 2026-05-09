@@ -4,8 +4,10 @@
 use context_graph_solver::{
     f_distribution_upper_tail, granger_test, regularized_incomplete_beta, GrangerConfig,
 };
-use std::fs;
-use std::path::PathBuf;
+use serde_json::Value;
+use std::fs::{self, File};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 fn splitmix64(mut z: u64) -> u64 {
     z = z.wrapping_add(0x9E3779B97F4A7C15);
@@ -102,6 +104,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Sanity: I_x(a, b) at endpoints equals known values.
     let beta_at_zero = regularized_incomplete_beta(0.0, 2.0, 3.0)?;
     let beta_at_one = regularized_incomplete_beta(1.0, 2.0, 3.0)?;
+
+    require("x_causes_y.p_value", report_a.p_value < 1e-6)?;
+    require("independent_series.p_value", report_b.p_value > 0.01)?;
+    require("reverse_direction.p_value", report_c.p_value > 0.01)?;
+    require_close("f_distribution.F_2_30_at_3p32", f_2_30_at_3p32, 0.05, 0.005)?;
+    require_close(
+        "f_distribution.F_1_100_at_3p94",
+        f_1_100_at_3p94,
+        0.05,
+        0.01,
+    )?;
+    require_eq(
+        "boundary_zero_lag.error_code",
+        zero_lag_code,
+        "CGSOLVER_INVALID_INPUT",
+    )?;
+    require_eq(
+        "boundary_length_mismatch.error_code",
+        len_mismatch_code,
+        "CGSOLVER_INVALID_INPUT",
+    )?;
+    require_eq(
+        "boundary_nan.error_code",
+        nan_code,
+        "CGSOLVER_INVALID_INPUT",
+    )?;
+    require_eq(
+        "boundary_too_short_for_df.error_code",
+        too_short_for_df_code,
+        "CGSOLVER_INVALID_INPUT",
+    )?;
+    require_eq(
+        "boundary_nan_f_statistic.error_code",
+        invalid_f_code,
+        "CGSOLVER_INVALID_INPUT",
+    )?;
+    require_eq("regularized_beta.zero", beta_at_zero, 0.0)?;
+    require_eq("regularized_beta.one", beta_at_one, 1.0)?;
 
     let evidence = serde_json::json!({
         "case_x_causes_y_strong": {
@@ -209,11 +249,63 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let path = evidence_root.join("granger-evidence.json");
-    fs::write(&path, serde_json::to_string_pretty(&evidence)?)?;
-    let readback_text = fs::read_to_string(&path)?;
-    let readback: serde_json::Value = serde_json::from_str(&readback_text)?;
-    assert_eq!(readback, evidence);
+    let readback = write_json_evidence_readback(&path, &evidence)?;
     println!("Granger FSV evidence: {}", path.display());
     println!("{}", serde_json::to_string_pretty(&readback)?);
     Ok(())
+}
+
+fn write_json_evidence_readback(
+    path: &Path,
+    evidence: &Value,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    let text = serde_json::to_string_pretty(evidence)?;
+    let mut file = File::create(path)?;
+    file.write_all(text.as_bytes())?;
+    file.sync_all()?;
+    drop(file);
+    let readback_text = fs::read_to_string(path)?;
+    let readback: Value = serde_json::from_str(&readback_text)?;
+    require("evidence_json_readback_matches", readback == *evidence)?;
+    Ok(readback)
+}
+
+fn require(label: &str, condition: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if condition {
+        Ok(())
+    } else {
+        Err(io::Error::new(io::ErrorKind::Other, format!("{label} expected true")).into())
+    }
+}
+
+fn require_eq<T>(label: &str, actual: T, expected: T) -> Result<(), Box<dyn std::error::Error>>
+where
+    T: PartialEq + std::fmt::Debug,
+{
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("{label} expected {expected:?}, got {actual:?}"),
+        )
+        .into())
+    }
+}
+
+fn require_close(
+    label: &str,
+    actual: f64,
+    expected: f64,
+    tolerance: f64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if (actual - expected).abs() <= tolerance {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("{label} expected {expected} +/- {tolerance}, got {actual}"),
+        )
+        .into())
+    }
 }

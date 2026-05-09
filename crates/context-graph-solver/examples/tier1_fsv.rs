@@ -6,9 +6,9 @@ use context_graph_solver::{
     mmr_select, mmr_select_with_matrix, ConformalConfig, ConformalPredictor, MmrConfig,
     NonconformityMeasure,
 };
-use std::fs;
-use std::io;
-use std::path::PathBuf;
+use std::fs::{self, File};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let evidence_root = PathBuf::from("/tmp/contextgraph-tier1-fsv");
@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let path = evidence_root.join("solver-tier1-evidence.json");
     let evidence_text = serde_json::to_string_pretty(&combined)?;
-    fs::write(&path, &evidence_text)?;
+    write_bytes_durable(&path, evidence_text.as_bytes())?;
     let evidence_back = fs::read_to_string(&path)?;
     require_eq(
         "evidence_readback.sha_equivalent_text",
@@ -48,6 +48,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Solver Tier-1 FSV evidence: {}", path.display());
     println!("{}", serde_json::to_string_pretty(&combined)?);
+    Ok(())
+}
+
+fn write_bytes_durable(path: &Path, bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = File::create(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
     Ok(())
 }
 

@@ -558,11 +558,11 @@ fn project_root() -> CCResult<PathBuf> {
 /// of staleness) caused recurring `CCREALITY_WITNESS_OP_TYPE_UNKNOWN`
 /// hook errors when the debug binary was older than the release MCP
 /// that wrote new op_types into the witness chain. There is intentionally
-/// no implicit debug fallback: local-dev callers must set `CGREALITY_MCP_BIN`
-/// explicitly so missing configured builds fail closed.
+/// no inferred debug/release fallback: local-dev callers must set
+/// `CGREALITY_MCP_BIN` explicitly or update `.mcp.json`.
 fn mcp_binary(root: &Path) -> CCResult<PathBuf> {
-    if let Ok(override_path) = env::var("CGREALITY_MCP_BIN") {
-        let path = PathBuf::from(override_path);
+    if let Some(override_path) = env::var_os("CGREALITY_MCP_BIN") {
+        let path = normalize_program_path(root, PathBuf::from(override_path));
         return validate_mcp_binary(&path, "mcp.binary.override", Some(file_sot(&path)));
     }
 
@@ -601,17 +601,20 @@ fn mcp_binary(root: &Path) -> CCResult<PathBuf> {
                 Some(file_sot(&config_path)),
             )
         })?;
-    let path = PathBuf::from(command);
-    let path = if path.is_absolute() {
-        path
-    } else {
-        root.join(path)
-    };
+    let path = normalize_program_path(root, PathBuf::from(command));
     validate_mcp_binary(
         &path,
         "mcpServers.cgreality.command",
         Some(file_sot(&config_path)),
     )
+}
+
+fn normalize_program_path(root: &Path, path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        path
+    } else {
+        root.join(path)
+    }
 }
 
 fn validate_mcp_binary(
@@ -754,6 +757,22 @@ mod tests {
         }
     }
 
+    fn write_mcp_config(root: &Path, command: &Path) {
+        fs::create_dir_all(root).expect("create root");
+        fs::write(
+            root.join(".mcp.json"),
+            serde_json::json!({
+                "mcpServers": {
+                    "cgreality": {
+                        "command": command.display().to_string()
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .expect("write .mcp.json");
+    }
+
     struct EnvGuard {
         key: &'static str,
         old: Option<String>,
@@ -814,16 +833,17 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn mcp_binary_uses_release_binary_as_default_source_of_truth() {
+    fn mcp_binary_uses_mcp_json_command_as_source_of_truth() {
         let _env = EnvGuard::unset("CGREALITY_MCP_BIN");
-        let root = temp_root("mcp-release");
-        let release = root.join("target/release/context-graph-mcp");
+        let root = temp_root("mcp-json");
+        let configured = root.join("target/release/context-graph-mcp");
         let debug = root.join("target/debug/context-graph-mcp");
-        write_executable(&release);
+        write_executable(&configured);
         write_executable(&debug);
+        write_mcp_config(&root, &configured);
 
-        let selected = mcp_binary(&root).expect("release MCP binary selected");
-        assert_eq!(selected, release);
+        let selected = mcp_binary(&root).expect("configured MCP binary selected");
+        assert_eq!(selected, configured);
 
         fs::remove_dir_all(root).expect("cleanup temp root");
     }
@@ -833,17 +853,20 @@ mod tests {
     fn mcp_binary_fails_closed_instead_of_falling_back_to_debug() {
         let _env = EnvGuard::unset("CGREALITY_MCP_BIN");
         let root = temp_root("mcp-no-debug-fallback");
+        let configured = root.join("target/release/context-graph-mcp");
         let debug = root.join("target/debug/context-graph-mcp");
         write_executable(&debug);
+        write_mcp_config(&root, &configured);
 
         let err = mcp_binary(&root).expect_err("debug fallback must be explicit");
         assert_eq!(err["error_code"], "CCREALITY_CLI_MCP_BINARY_MISSING");
-        assert_eq!(err["details"]["release_exists"], false);
-        assert_eq!(err["details"]["debug_exists"], true);
         assert_eq!(
-            err["source_of_truth"],
-            file_sot(&root.join("target/release/context-graph-mcp"))
+            err["field_path"],
+            serde_json::json!("mcpServers.cgreality.command")
         );
+        assert_eq!(err["details"]["exists"], false);
+        assert_eq!(err["details"]["is_executable"], false);
+        assert_eq!(err["source_of_truth"], file_sot(&root.join(".mcp.json")));
 
         fs::remove_dir_all(root).expect("cleanup temp root");
     }

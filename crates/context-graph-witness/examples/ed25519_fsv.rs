@@ -6,9 +6,9 @@ use context_graph_witness::{
     sign::{verify_segment, verify_segment_with_expected_pubkey, WitnessKeypair},
     verify_chain_bytes, WitnessEntry, HASH_SIZE, WITNESS_ENTRY_SIZE, ZERO_HASH,
 };
-use std::fs;
-use std::io;
-use std::path::PathBuf;
+use std::fs::{self, File};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let evidence_root = PathBuf::from("/tmp/contextgraph-tier1-fsv");
@@ -51,9 +51,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let segment_path = evidence_root.join("witness-segment.bin");
     let codec_path = evidence_root.join("witness-segment.sig");
     let pubkey_path = evidence_root.join("witness-segment.pub");
-    fs::write(&segment_path, &segment)?;
-    fs::write(&codec_path, codec)?;
-    fs::write(&pubkey_path, kp.public_key_bytes())?;
+    write_bytes_durable(&segment_path, &segment)?;
+    write_bytes_durable(&codec_path, &codec)?;
+    write_bytes_durable(&pubkey_path, &kp.public_key_bytes())?;
 
     let segment_back = fs::read(&segment_path)?;
     let codec_back = fs::read(&codec_path)?;
@@ -194,7 +194,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let path = evidence_root.join("witness-ed25519-evidence.json");
-    fs::write(&path, serde_json::to_string_pretty(&evidence)?)?;
+    write_bytes_durable(&path, serde_json::to_string_pretty(&evidence)?.as_bytes())?;
     let evidence_back: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
     require_eq(
         "evidence_readback.chain_entries",
@@ -205,6 +205,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     println!("Witness ed25519 FSV evidence: {}", path.display());
     println!("{}", serde_json::to_string_pretty(&evidence)?);
+    Ok(())
+}
+
+fn write_bytes_durable(path: &Path, bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = File::create(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
     Ok(())
 }
 

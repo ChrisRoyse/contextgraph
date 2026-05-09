@@ -1,3 +1,9 @@
+// Inspired by ruvnet/RuVector crates/ruvector-graph-transformer/src/temporal.rs
+// at HEAD ef5274c2 (read 2026-05-08).
+// Clean-room reimplementation; no code copied, no upstream tracking. See
+// memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md
+// for the policy.
+
 use super::*;
 
 #[test]

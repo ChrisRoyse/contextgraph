@@ -8,8 +8,10 @@ use context_graph_witness::{
     },
     WitnessEntry, HASH_SIZE, ZERO_HASH,
 };
-use std::fs;
-use std::path::PathBuf;
+use serde_json::Value;
+use std::fs::{self, File};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let evidence_root = PathBuf::from("/tmp/contextgraph-tier2-fsv");
@@ -104,14 +106,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Persist Stage 0 cert + Stage F cert components to disk.
     let stage0_chain_path = evidence_root.join("stage0-witness-chain.bin");
-    fs::write(&stage0_chain_path, &stage0.witness_chain_segment)?;
-    let stage0_back = fs::read(&stage0_chain_path)?;
+    let stage0_back = write_bytes_readback(&stage0_chain_path, &stage0.witness_chain_segment)?;
     let stage0_chain_roundtrip = stage0_back == stage0.witness_chain_segment;
 
     let trajectory_root_path = evidence_root.join("readout-trajectory-root.bin");
-    fs::write(&trajectory_root_path, readout.trajectory_root)?;
-    let trajectory_root_back = fs::read(&trajectory_root_path)?;
+    let trajectory_root_back =
+        write_bytes_readback(&trajectory_root_path, &readout.trajectory_root)?;
     let trajectory_root_roundtrip = trajectory_root_back == readout.trajectory_root;
+
+    require_eq("stage0.chain_entries", stage0_report.entries, 1)?;
+    require_eq("readout.chain_entries", readout_report.entries, 1)?;
+    require_eq(
+        "stage0.boundary_tampered_artifact.error_code",
+        tampered_code,
+        "CERT_MANIFEST_HASH_MISMATCH",
+    )?;
+    require_eq(
+        "stage0.boundary_tampered_corpus.error_code",
+        tampered_corpus_code,
+        "CERT_MANIFEST_HASH_MISMATCH",
+    )?;
+    require_eq(
+        "stage0.boundary_tampered_policy.error_code",
+        tampered_policy_code,
+        "CERT_MANIFEST_HASH_MISMATCH",
+    )?;
+    require_eq(
+        "stage0.boundary_wrong_action_hash.error_code",
+        wrong_stage0_chain_code,
+        "CERT_MANIFEST_HASH_MISMATCH",
+    )?;
+    require_eq(
+        "readout.boundary_wrong_leaf.error_code",
+        wrong_leaf_code,
+        "CERT_MERKLE_PROOF_REJECTED",
+    )?;
+    require_eq(
+        "readout.boundary_wrong_action_hash.error_code",
+        wrong_readout_chain_code,
+        "CERT_MANIFEST_HASH_MISMATCH",
+    )?;
+    require(
+        "stage0.disk_roundtrip_chain_bytes_match",
+        stage0_chain_roundtrip,
+    )?;
+    require(
+        "readout.disk_roundtrip_root_bytes_match",
+        trajectory_root_roundtrip,
+    )?;
 
     let evidence = serde_json::json!({
         "stage0": {
@@ -206,10 +248,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let path = evidence_root.join("witness-cert-evidence.json");
-    fs::write(&path, serde_json::to_string_pretty(&evidence)?)?;
-    let readback_text = fs::read_to_string(&path)?;
-    let readback: serde_json::Value = serde_json::from_str(&readback_text)?;
-    assert_eq!(readback, evidence);
+    let readback = write_json_evidence_readback(&path, &evidence)?;
     println!("Witness cert FSV evidence: {}", path.display());
     println!("{}", serde_json::to_string_pretty(&readback)?);
     Ok(())
@@ -222,4 +261,50 @@ fn hex(bytes: &[u8]) -> String {
         write!(&mut s, "{byte:02x}").unwrap();
     }
     s
+}
+
+fn write_bytes_readback(path: &Path, bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut file = File::create(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    drop(file);
+    Ok(fs::read(path)?)
+}
+
+fn write_json_evidence_readback(
+    path: &Path,
+    evidence: &Value,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    let text = serde_json::to_string_pretty(evidence)?;
+    let mut file = File::create(path)?;
+    file.write_all(text.as_bytes())?;
+    file.sync_all()?;
+    drop(file);
+    let readback_text = fs::read_to_string(path)?;
+    let readback: Value = serde_json::from_str(&readback_text)?;
+    require("evidence_json_readback_matches", readback == *evidence)?;
+    Ok(readback)
+}
+
+fn require(label: &str, condition: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if condition {
+        Ok(())
+    } else {
+        Err(io::Error::new(io::ErrorKind::Other, format!("{label} expected true")).into())
+    }
+}
+
+fn require_eq<T>(label: &str, actual: T, expected: T) -> Result<(), Box<dyn std::error::Error>>
+where
+    T: PartialEq + std::fmt::Debug,
+{
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("{label} expected {expected:?}, got {actual:?}"),
+        )
+        .into())
+    }
 }

@@ -159,7 +159,7 @@ pub fn granger_test(y: &[f64], x: &[f64], config: GrangerConfig) -> SolverResult
                 "choose a smaller lag",
             )
         })?;
-    let df_den = n.checked_sub(unrestricted_params).unwrap_or(0);
+    let df_den = n.saturating_sub(unrestricted_params);
     if df_den == 0 {
         return Err(SolverError::invalid(
             "series",
@@ -457,11 +457,11 @@ fn ln_gamma(x: f64) -> f64 {
     let coefs = [
         676.520_368_121_885_1,
         -1_259.139_216_722_402_8,
-        771.323_428_777_653_13,
-        -176.615_029_162_140_59,
+        771.323_428_777_653_1,
+        -176.615_029_162_140_6,
         12.507_343_278_686_905,
         -0.138_571_095_265_720_12,
-        9.984_369_578_019_571_6e-6,
+        9.984_369_578_019_572e-6,
         1.505_632_735_149_311_6e-7,
     ];
     let g = 7.0;
@@ -471,7 +471,7 @@ fn ln_gamma(x: f64) -> f64 {
         return (pi / (pi * x).sin()).ln() - ln_gamma(1.0 - x);
     }
     let x = x - 1.0;
-    let mut a = 0.999_999_999_999_809_93;
+    let mut a = 0.999_999_999_999_809_9;
     let t = x + g + 0.5;
     for (i, c) in coefs.iter().enumerate() {
         a += c / (x + (i as f64 + 1.0));

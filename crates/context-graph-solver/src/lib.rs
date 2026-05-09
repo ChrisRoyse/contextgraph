@@ -3,6 +3,7 @@
 // memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md
 // for the policy.
 
+pub mod causal_mask;
 pub mod cg;
 pub mod conformal;
 pub mod csr;
@@ -11,6 +12,9 @@ pub mod granger;
 pub mod mmr;
 pub mod pagerank;
 
+pub use causal_mask::{
+    apply_mask_to_scores, build_causal_mask, retrocausal_safety_check, softmax_row, MaskStrategy,
+};
 pub use cg::{ConjugateGradientConfig, ConjugateGradientReport, ConjugateGradientSolver};
 pub use conformal::{
     ConformalConfig, ConformalPredictor, ConformalReport, NonconformityMeasure, PredictionSet,
