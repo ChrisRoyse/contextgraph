@@ -3,15 +3,22 @@
 > **Priority:** HIGH (gates full corpus generation).
 > **Effort:** ~3-5 days (code) + multi-hour operational batch.
 > **Crate / module:** `crates/context-graph-mejepa-corpus/src/oracle.rs`
+> **Status update 2026-05-09:** local command runner, Docker invocation
+> builder, strict pytest JSON parser, and crate-local RocksDB
+> `OracleStore` shipped. Remaining work is official SWE-bench image smoke
+> tests, generation/verify CLI wiring, and the 2,400-entry operational
+> batch.
 
 ## Goal
 
-Ship a synchronous Rust primitive `run_oracle(task_id, mutated_source)
--> Result<OracleVerdict>` that:
+Ship a synchronous Rust primitive around the already-shipped
+`run_command_json_oracle(...)`, `run_docker_json_oracle(...)`,
+`parse_pytest_json_report(...)`, and `OracleStore` APIs so a corpus
+generation CLI can:
 
 1. Runs the upstream SWE-bench Lite Docker evaluator against a mutated
    patch.
-2. Parses pytest-style JSON output.
+2. Parses pytest-style JSON output from the report file source of truth.
 3. Returns a structured `OracleVerdict` per `OracleVerdict` schema (✅
    shipped from Phase 1 E_Oracle work).
 4. Persists the result to `CF_MEJEPA_ORACLE_VERDICTS` (RocksDB CF).
@@ -23,19 +30,15 @@ gating dependency for everything else.
 
 ## Deliverables
 
-1. `crates/context-graph-mejepa-corpus/src/oracle.rs` (~200-300 LOC):
-   ```rust
-   pub fn run_oracle(
-       task_id: &TaskId,
-       mutated_source: &str,
-   ) -> Result<OracleVerdict, OracleError>;
-   ```
+1. ✅ `crates/context-graph-mejepa-corpus/src/oracle.rs`:
+   `run_command_json_oracle`, `run_docker_json_oracle`,
+   `parse_pytest_json_report`, and `OracleStore`.
 
-2. Subprocess wrapper that invokes the SWE-bench Docker evaluator.
+2. ⏳ CLI integration that invokes the SWE-bench Docker evaluator.
    Image naming convention per the SWE-bench Lite runbook:
    `swebench/sweb.eval.x86_64.<task_id_lowercased>:latest`.
 
-3. pytest JSON output parser (`pytest --json-report --json-report-file=...`):
+3. ✅ pytest JSON output parser (`pytest --json-report --json-report-file=...`):
    ```json
    {
      "summary": { "passed": 12, "failed": 1, "skipped": 0, "errors": 0, "total": 13 },
@@ -46,16 +49,16 @@ gating dependency for everything else.
    }
    ```
 
-4. RocksDB CF: `CF_MEJEPA_ORACLE_VERDICTS` keyed by
-   `(task_id, mutation_category) → OracleVerdict_json_blob`.
+4. ✅ RocksDB CFs keyed by `(task_id, mutation_category)`:
+   `CF_MEJEPA_MUTATION_CORPUS` and `CF_MEJEPA_ORACLE_VERDICTS`.
 
-5. Fail-closed errors for:
-   - Docker daemon unavailable (`OracleError::DockerUnavailable`).
+5. ✅ Fail-closed errors for:
+   - Docker daemon unavailable (`MEJEPA_ORACLE_COMMAND_FAILED`).
    - Image pull failure / image not found.
-   - Subprocess timeout (configurable, default 600s).
-   - JSON parse failure.
-   - Empty test count (could indicate setup failure rather than
-     real "0 tests").
+   - Subprocess timeout (`MEJEPA_ORACLE_TIMEOUT`).
+   - JSON parse failure (`MEJEPA_ORACLE_JSON_PARSE`).
+   - Empty/stale/mismatched reports (`MEJEPA_ORACLE_REPORT_INVALID` or
+     `MEJEPA_ORACLE_INVALID_INPUT`).
 
 6. Operational batch script: `cargo run --release -p
    context-graph-mejepa-corpus -- generate --output ./data/mejepa-corpus`.
