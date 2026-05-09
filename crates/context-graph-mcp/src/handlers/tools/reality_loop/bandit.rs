@@ -624,10 +624,8 @@ fn arm_stats_to_json(stats: &ArmStats) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::sync::{Mutex, MutexGuard};
+    use std::sync::MutexGuard;
     use tempfile::TempDir;
-
-    static RUNTIME_LOCK: Mutex<()> = Mutex::new(());
 
     struct TestRuntime {
         _tmp: TempDir,
@@ -639,7 +637,9 @@ mod tests {
     }
 
     fn setup_runtime() -> TestRuntime {
-        let guard = RUNTIME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = super::super::TEST_RUNTIME_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().expect("tempdir");
         let run_id = "run-bandit".to_string();
         let run_root = tmp.path().join(&run_id);
@@ -666,6 +666,8 @@ mod tests {
                 .join(".cache/cgreality/active_runtime_root");
             if let Some(orig) = &self._orig_active {
                 std::fs::write(active_path, orig).ok();
+            } else {
+                std::fs::remove_file(active_path).ok();
             }
         }
     }

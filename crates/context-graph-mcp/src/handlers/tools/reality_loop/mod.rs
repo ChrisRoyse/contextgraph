@@ -34,6 +34,9 @@ mod witness_chain_fsv;
 #[cfg(test)]
 mod witness_chain_repair_fsv;
 
+#[cfg(test)]
+pub(crate) static TEST_RUNTIME_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub use errors::CCRealityError;
 
 use crate::handlers::Handlers;

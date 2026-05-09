@@ -4,10 +4,8 @@ use context_graph_witness::WITNESS_ENTRY_SIZE;
 use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::MutexGuard;
 use tempfile::TempDir;
-
-static RUNTIME_LOCK: Mutex<()> = Mutex::new(());
 
 struct TestRuntime {
     _tmp: TempDir,
@@ -20,7 +18,9 @@ struct TestRuntime {
 }
 
 fn setup_runtime() -> TestRuntime {
-    let guard = RUNTIME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = super::TEST_RUNTIME_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let tmp = tempfile::tempdir().expect("tmpdir");
     let runtime_root = tmp.path().join("runtime-root");
     let run_id = "run-optimizer".to_string();
@@ -53,9 +53,13 @@ impl Drop for TestRuntime {
         let target_path = cache_dir.join("active_target_instance");
         if let Some(orig) = &self._orig_active {
             fs::write(&active_path, orig).ok();
+        } else {
+            fs::remove_file(&active_path).ok();
         }
         if let Some(orig) = &self._orig_target {
             fs::write(&target_path, orig).ok();
+        } else {
+            fs::remove_file(&target_path).ok();
         }
     }
 }
