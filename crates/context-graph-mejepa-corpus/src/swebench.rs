@@ -27,8 +27,9 @@
 //     during this implementation).
 //   - `docs/ruvectorfindings/sitrep/04_implementation_plans/plan_phase0_docker_oracle.md`.
 
-use std::collections::BTreeSet;
-use std::fs;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -36,6 +37,7 @@ use std::time::{Duration, Instant};
 use context_graph_mejepa_instruments::{
     ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome,
 };
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -198,6 +200,50 @@ pub struct SwebenchOracleResult {
     pub duration_ms: u128,
 }
 
+#[derive(Debug, Clone)]
+pub struct SwebenchBatchOracleConfig {
+    pub predictions: Vec<SwebenchPrediction>,
+    pub run_id: String,
+    pub run_root: PathBuf,
+    pub venv_python: PathBuf,
+    pub dataset_name: String,
+    pub split: String,
+    pub namespace: String,
+    pub instance_timeout: Duration,
+    pub overall_timeout: Duration,
+    pub max_workers: usize,
+}
+
+impl SwebenchBatchOracleConfig {
+    pub fn defaults_for(
+        predictions: Vec<SwebenchPrediction>,
+        run_id: impl Into<String>,
+        run_root: impl Into<PathBuf>,
+        venv_python: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            predictions,
+            run_id: run_id.into(),
+            run_root: run_root.into(),
+            venv_python: venv_python.into(),
+            dataset_name: "princeton-nlp/SWE-bench_Lite".to_string(),
+            split: "test".to_string(),
+            namespace: "swebench".to_string(),
+            instance_timeout: Duration::from_secs(1800),
+            overall_timeout: Duration::from_secs(3600),
+            max_workers: 4,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SwebenchBatchOracleResult {
+    pub verdicts: BTreeMap<String, OracleVerdict>,
+    pub command: Vec<String>,
+    pub duration_ms: u128,
+    pub predictions_jsonl: PathBuf,
+}
+
 // ---------- public API ----------
 
 /// Run the official SWE-bench Lite harness for ONE instance and return a
@@ -240,20 +286,51 @@ pub fn run_swebench_lite_oracle(
     })?;
 
     let started = Instant::now();
-    let mut cmd = Command::new(&command[0]);
-    cmd.args(&command[1..])
-        .current_dir(&config.run_root)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let child = cmd.spawn().map_err(|err| {
-        OracleError::command_failed(
-            command[0].clone(),
-            format!("failed to spawn swebench harness: {err}"),
-            "verify swebench venv python path and PATH; do not modify .env to bypass",
+    let output = {
+        let mut harness_lock = acquire_swebench_harness_lock()?;
+        harness_lock.set_len(0).map_err(|err| {
+            OracleError::io(
+                "/tmp/contextgraph-mejepa-corpus-swebench-harness.lock",
+                err.to_string(),
+                "ensure /tmp is writable so the SWE-bench Docker harness lock can reset ownership",
+            )
+        })?;
+        writeln!(
+            harness_lock,
+            "pid={} run_id={} instance_id={}",
+            std::process::id(),
+            config.run_id,
+            config.instance_id
         )
-    })?;
-    let output = wait_with_timeout(child, config.overall_timeout, "swebench-harness")?;
+        .map_err(|err| {
+            OracleError::io(
+                "/tmp/contextgraph-mejepa-corpus-swebench-harness.lock",
+                err.to_string(),
+                "ensure /tmp is writable so the SWE-bench Docker harness lock can record ownership",
+            )
+        })?;
+        harness_lock.sync_all().map_err(|err| {
+            OracleError::io(
+                "/tmp/contextgraph-mejepa-corpus-swebench-harness.lock",
+                err.to_string(),
+                "ensure /tmp is writable so the SWE-bench Docker harness lock can sync ownership",
+            )
+        })?;
+        let mut cmd = Command::new(&command[0]);
+        cmd.args(&command[1..])
+            .current_dir(&config.run_root)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let child = cmd.spawn().map_err(|err| {
+            OracleError::command_failed(
+                command[0].clone(),
+                format!("failed to spawn swebench harness: {err}"),
+                "verify swebench venv python path and PATH; do not modify .env to bypass",
+            )
+        })?;
+        wait_with_timeout(child, config.overall_timeout, "swebench-harness")?
+    };
     let duration_ms = started.elapsed().as_millis();
     if !output.status.success() {
         return Err(OracleError::command_failed(
@@ -296,6 +373,158 @@ pub fn run_swebench_lite_oracle(
         command,
         duration_ms,
     })
+}
+
+pub fn run_swebench_lite_oracle_batch(
+    config: &SwebenchBatchOracleConfig,
+) -> OracleResult<SwebenchBatchOracleResult> {
+    validate_batch_config(config)?;
+    let predictions_jsonl_path = write_batch_predictions_jsonl(config)?;
+    let command = build_batch_harness_command(config, &predictions_jsonl_path);
+
+    fs::create_dir_all(&config.run_root).map_err(|err| {
+        OracleError::io(
+            &config.run_root,
+            err.to_string(),
+            "ensure the run_root parent directory is writable",
+        )
+    })?;
+
+    let started = Instant::now();
+    let output = {
+        let mut harness_lock = acquire_swebench_harness_lock()?;
+        harness_lock.set_len(0).map_err(|err| {
+            OracleError::io(
+                "/tmp/contextgraph-mejepa-corpus-swebench-harness.lock",
+                err.to_string(),
+                "ensure /tmp is writable so the SWE-bench Docker harness lock can reset ownership",
+            )
+        })?;
+        writeln!(
+            harness_lock,
+            "pid={} run_id={} batch_size={}",
+            std::process::id(),
+            config.run_id,
+            config.predictions.len()
+        )
+        .map_err(|err| {
+            OracleError::io(
+                "/tmp/contextgraph-mejepa-corpus-swebench-harness.lock",
+                err.to_string(),
+                "ensure /tmp is writable so the SWE-bench Docker harness lock can record ownership",
+            )
+        })?;
+        harness_lock.sync_all().map_err(|err| {
+            OracleError::io(
+                "/tmp/contextgraph-mejepa-corpus-swebench-harness.lock",
+                err.to_string(),
+                "ensure /tmp is writable so the SWE-bench Docker harness lock can sync ownership",
+            )
+        })?;
+        let mut cmd = Command::new(&command[0]);
+        cmd.args(&command[1..])
+            .current_dir(&config.run_root)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let child = cmd.spawn().map_err(|err| {
+            OracleError::command_failed(
+                command[0].clone(),
+                format!("failed to spawn swebench batch harness: {err}"),
+                "verify swebench venv python path and PATH; do not modify .env to bypass",
+            )
+        })?;
+        wait_with_timeout(child, config.overall_timeout, "swebench-harness")?
+    };
+    let duration_ms = started.elapsed().as_millis();
+    if !output.status.success() {
+        return Err(OracleError::command_failed(
+            "swebench-harness".to_string(),
+            format!(
+                "exit_code={}, stdout_tail={}, stderr_tail={}",
+                output.status.code().unwrap_or(-1),
+                tail_text(&output.stdout),
+                tail_text(&output.stderr),
+            ),
+            "inspect harness output and Docker daemon state; fix root cause before retrying",
+        ));
+    }
+
+    let mut verdicts = BTreeMap::new();
+    let model_name = batch_model_name(config)?;
+    for prediction in &config.predictions {
+        let instance_dir = config
+            .run_root
+            .join("logs")
+            .join("run_evaluation")
+            .join(&config.run_id)
+            .join(model_name)
+            .join(&prediction.instance_id);
+        let instance_report_path = instance_dir.join("report.json");
+        let test_output_path = instance_dir.join("test_output.txt");
+        let report_text = fs::read_to_string(&instance_report_path).map_err(|err| {
+            OracleError::io(
+                &instance_report_path,
+                err.to_string(),
+                "ensure the batch harness wrote per-instance report.json before reading the verdict",
+            )
+        })?;
+        let instance_report =
+            parse_swebench_instance_report(&prediction.instance_id, &report_text)?;
+        let test_output_text = fs::read_to_string(&test_output_path).map_err(|err| {
+            OracleError::io(
+                &test_output_path,
+                err.to_string(),
+                "ensure the batch harness produced test_output.txt for exception-class extraction",
+            )
+        })?;
+        let exception_hint = extract_exception_class(&test_output_text);
+        let verdict = swebench_report_to_verdict(&instance_report, exception_hint)?;
+        verdicts.insert(prediction.instance_id.clone(), verdict);
+    }
+
+    if verdicts.len() != config.predictions.len() {
+        return Err(OracleError::report_invalid(
+            "batch.verdicts",
+            format!(
+                "batch verdict count mismatch: expected {} got {}",
+                config.predictions.len(),
+                verdicts.len()
+            ),
+            "inspect batch harness artifacts for missing per-instance reports",
+        ));
+    }
+
+    Ok(SwebenchBatchOracleResult {
+        verdicts,
+        command,
+        duration_ms,
+        predictions_jsonl: predictions_jsonl_path,
+    })
+}
+
+fn acquire_swebench_harness_lock() -> OracleResult<File> {
+    let path = Path::new("/tmp/contextgraph-mejepa-corpus-swebench-harness.lock");
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(|err| {
+            OracleError::io(
+                path,
+                err.to_string(),
+                "ensure /tmp is writable so corpus jobs can coordinate SWE-bench Docker harness access",
+            )
+        })?;
+    file.lock_exclusive().map_err(|err| {
+        OracleError::io(
+            path,
+            err.to_string(),
+            "wait for or clear the stale SWE-bench Docker harness lock only after confirming no corpus job is running",
+        )
+    })?;
+    Ok(file)
 }
 
 /// Parse the JSON text of a SWE-bench per-instance `report.json` file.
@@ -664,6 +893,71 @@ fn validate_config(config: &SwebenchOracleConfig) -> OracleResult<()> {
     Ok(())
 }
 
+fn validate_batch_config(config: &SwebenchBatchOracleConfig) -> OracleResult<()> {
+    if config.predictions.is_empty() {
+        return Err(OracleError::invalid(
+            "config.predictions",
+            "batch oracle requires at least one prediction",
+            "build one prediction per SWE-bench instance before invoking the batch harness",
+        ));
+    }
+    if config.max_workers == 0 {
+        return Err(OracleError::invalid(
+            "config.max_workers",
+            "max_workers must be > 0",
+            "use at least one SWE-bench worker",
+        ));
+    }
+    let model_name = batch_model_name(config)?;
+    let mut seen = BTreeSet::new();
+    for prediction in &config.predictions {
+        validate_instance_id(&prediction.instance_id)?;
+        validate_model_name(&prediction.model_name_or_path)?;
+        if prediction.model_name_or_path != model_name {
+            return Err(OracleError::invalid(
+                "prediction.model_name_or_path",
+                "all predictions in one batch must share one model_name_or_path",
+                "batch by mutation category so artifacts are namespaced deterministically",
+            ));
+        }
+        if !seen.insert(prediction.instance_id.clone()) {
+            return Err(OracleError::invalid(
+                "prediction.instance_id",
+                format!(
+                    "duplicate prediction for instance_id `{}`",
+                    prediction.instance_id
+                ),
+                "deduplicate predictions before invoking the batch harness",
+            ));
+        }
+        if prediction.model_patch.is_empty() {
+            return Err(OracleError::invalid(
+                "prediction.model_patch",
+                format!("model_patch is empty for `{}`", prediction.instance_id),
+                "supply a non-empty unified diff for every prediction",
+            ));
+        }
+    }
+    let first = config
+        .predictions
+        .first()
+        .expect("non-empty predictions checked above")
+        .clone();
+    let single = SwebenchOracleConfig {
+        instance_id: first.instance_id.clone(),
+        mode: SwebenchPredictionMode::Custom(first),
+        run_id: config.run_id.clone(),
+        run_root: config.run_root.clone(),
+        venv_python: config.venv_python.clone(),
+        dataset_name: config.dataset_name.clone(),
+        split: config.split.clone(),
+        namespace: config.namespace.clone(),
+        instance_timeout: config.instance_timeout,
+        overall_timeout: config.overall_timeout,
+    };
+    validate_config(&single)
+}
+
 fn validate_instance_id(instance_id: &str) -> OracleResult<()> {
     if instance_id.trim() != instance_id || instance_id.is_empty() {
         return Err(OracleError::invalid(
@@ -792,6 +1086,65 @@ fn write_predictions_jsonl(config: &SwebenchOracleConfig) -> OracleResult<PathBu
     Ok(path)
 }
 
+fn write_batch_predictions_jsonl(config: &SwebenchBatchOracleConfig) -> OracleResult<PathBuf> {
+    fs::create_dir_all(&config.run_root).map_err(|err| {
+        OracleError::io(
+            &config.run_root,
+            err.to_string(),
+            "ensure the run_root parent directory is writable",
+        )
+    })?;
+    let path = config
+        .run_root
+        .join(format!("predictions-{}.jsonl", config.run_id));
+    let mut text = String::new();
+    for prediction in &config.predictions {
+        let mut json = serde_json::Map::new();
+        json.insert(
+            "instance_id".to_string(),
+            Value::String(prediction.instance_id.clone()),
+        );
+        json.insert(
+            "model_name_or_path".to_string(),
+            Value::String(prediction.model_name_or_path.clone()),
+        );
+        json.insert(
+            "model_patch".to_string(),
+            Value::String(prediction.model_patch.clone()),
+        );
+        text.push_str(&serde_json::to_string(&Value::Object(json)).map_err(|err| {
+            OracleError::json_parse(
+                path.display().to_string(),
+                err.to_string(),
+                "a batch prediction record failed to serialise; this is an internal defect",
+            )
+        })?);
+        text.push('\n');
+    }
+    fs::write(&path, &text).map_err(|err| {
+        OracleError::io(
+            &path,
+            err.to_string(),
+            "ensure the batch predictions JSONL path is writable",
+        )
+    })?;
+    let readback = fs::read_to_string(&path).map_err(|err| {
+        OracleError::io(
+            &path,
+            err.to_string(),
+            "filesystem readback after batch predictions write failed; check the disk",
+        )
+    })?;
+    if readback != text {
+        return Err(OracleError::io(
+            &path,
+            "batch predictions JSONL readback did not match what we wrote",
+            "investigate the filesystem for partial writes or concurrent writers",
+        ));
+    }
+    Ok(path)
+}
+
 fn build_harness_command(config: &SwebenchOracleConfig, predictions_path_arg: &str) -> Vec<String> {
     vec![
         config.venv_python.display().to_string(),
@@ -820,6 +1173,61 @@ fn build_harness_command(config: &SwebenchOracleConfig, predictions_path_arg: &s
         "--report_dir".to_string(),
         config.run_root.display().to_string(),
     ]
+}
+
+fn build_batch_harness_command(
+    config: &SwebenchBatchOracleConfig,
+    predictions_jsonl_path: &Path,
+) -> Vec<String> {
+    let mut command = vec![
+        config.venv_python.display().to_string(),
+        "-m".to_string(),
+        "swebench.harness.run_evaluation".to_string(),
+        "--dataset_name".to_string(),
+        config.dataset_name.clone(),
+        "--split".to_string(),
+        config.split.clone(),
+        "--predictions_path".to_string(),
+        predictions_jsonl_path.display().to_string(),
+        "--max_workers".to_string(),
+        config.max_workers.to_string(),
+        "--instance_ids".to_string(),
+    ];
+    command.extend(
+        config
+            .predictions
+            .iter()
+            .map(|prediction| prediction.instance_id.clone()),
+    );
+    command.extend([
+        "--run_id".to_string(),
+        config.run_id.clone(),
+        "--timeout".to_string(),
+        config.instance_timeout.as_secs().to_string(),
+        "--cache_level".to_string(),
+        "instance".to_string(),
+        "--clean".to_string(),
+        "False".to_string(),
+        "--namespace".to_string(),
+        config.namespace.clone(),
+        "--report_dir".to_string(),
+        config.run_root.display().to_string(),
+    ]);
+    command
+}
+
+fn batch_model_name(config: &SwebenchBatchOracleConfig) -> OracleResult<&str> {
+    config
+        .predictions
+        .first()
+        .map(|prediction| prediction.model_name_or_path.as_str())
+        .ok_or_else(|| {
+            OracleError::invalid(
+                "config.predictions",
+                "batch oracle requires at least one prediction",
+                "build one prediction per SWE-bench instance before invoking the batch harness",
+            )
+        })
 }
 
 fn locate_artifacts(

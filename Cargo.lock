@@ -1115,6 +1115,7 @@ dependencies = [
  "clap",
  "context-graph-mejepa-instruments",
  "ctrlc",
+ "fs2",
  "rocksdb",
  "serde",
  "serde_json",

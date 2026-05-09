@@ -10,7 +10,8 @@ use context_graph_mejepa_corpus::split::{
     assert_no_test_patch_leakage, split_corpus, CorpusEntry, SplitConfig, SplitMode, TaskAssignment,
 };
 use context_graph_mejepa_corpus::swebench::{
-    run_swebench_lite_oracle, SwebenchOracleConfig, SwebenchPrediction, SwebenchPredictionMode,
+    run_swebench_lite_oracle, run_swebench_lite_oracle_batch, SwebenchBatchOracleConfig,
+    SwebenchOracleConfig, SwebenchPrediction, SwebenchPredictionMode,
 };
 use context_graph_mejepa_corpus::{
     compute_corpus_sha256, parse_languages, CorpusProvenance, CorpusProvenanceRow, Language,
@@ -46,6 +47,7 @@ enum CommandKind {
     Verify(VerifyArgs),
     Stats(StatsArgs),
     Smoke(SmokeArgs),
+    Merge(MergeArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -82,6 +84,8 @@ struct GenerateArgs {
     instance_timeout_secs: u64,
     #[arg(long, default_value_t = 3600)]
     overall_timeout_secs: u64,
+    #[arg(long, default_value_t = 4)]
+    oracle_workers: usize,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -143,12 +147,24 @@ struct SmokeArgs {
     instance_timeout_secs: u64,
     #[arg(long, default_value_t = 3600)]
     overall_timeout_secs: u64,
+    #[arg(long, default_value_t = 4)]
+    oracle_workers: usize,
     #[arg(long, default_value_t = 0.25)]
     sample_fraction: f64,
     #[arg(long, default_value_t = 900.0)]
     max_generate_secs_per_entry: f64,
     #[arg(long, default_value_t = 900.0)]
     max_verify_secs_per_sample: f64,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct MergeArgs {
+    #[arg(long)]
+    output: PathBuf,
+    #[arg(long = "shard")]
+    shards: Vec<PathBuf>,
+    #[arg(long, default_value_t = false)]
+    allow_partial: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -205,6 +221,7 @@ fn main() -> CliResult<()> {
         CommandKind::Verify(args) => verify(args),
         CommandKind::Stats(args) => stats(args),
         CommandKind::Smoke(args) => smoke(args),
+        CommandKind::Merge(args) => merge(args),
     }
 }
 
@@ -287,14 +304,10 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
     };
     write_index(&args.output, &index)?;
 
-    for manifest in &selected {
-        let official_patch = patch_by_task.get(&manifest.instance_id).ok_or_else(|| {
-            format!(
-                "official dataset patch missing after loader for {}",
-                manifest.instance_id
-            )
-        })?;
-        for category in &categories {
+    for category in &categories {
+        let mut pending = Vec::with_capacity(selected.len());
+        let mut predictions = Vec::with_capacity(selected.len());
+        for manifest in &selected {
             if interrupted.load(Ordering::SeqCst) {
                 write_index(&args.output, &index)?;
                 return Err(
@@ -302,6 +315,12 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
                         .into(),
                 );
             }
+            let official_patch = patch_by_task.get(&manifest.instance_id).ok_or_else(|| {
+                format!(
+                    "official dataset patch missing after loader for {}",
+                    manifest.instance_id
+                )
+            })?;
             let seed = stable_seed(args.seed, &manifest.instance_id, *category);
             let patch_outcome = mutate_task_source_patch(
                 &SourcePatchTask {
@@ -332,7 +351,43 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
                 seed,
                 mutation_site: None,
             };
-            let verdict = run_oracle_for_patch(&args, manifest, *category, &patch_outcome)?;
+            predictions.push(SwebenchPrediction {
+                instance_id: manifest.instance_id.clone(),
+                model_name_or_path: format!("mejepa-{}", category.slug()),
+                model_patch: patch_outcome.mutated_patch.clone(),
+            });
+            pending.push((
+                manifest.clone(),
+                patch_outcome,
+                patch_path_rel,
+                patch_sha256,
+                mutation,
+            ));
+        }
+
+        let mut batch_config = SwebenchBatchOracleConfig::defaults_for(
+            predictions,
+            docker_run_id(&format!("{}-{}", args.run_id_prefix, category.slug()))?,
+            args.output.join("swebench-runs"),
+            args.venv_python.clone(),
+        );
+        batch_config.instance_timeout = Duration::from_secs(args.instance_timeout_secs);
+        batch_config.overall_timeout = Duration::from_secs(args.overall_timeout_secs);
+        batch_config.max_workers = args.oracle_workers;
+        let batch_result = run_swebench_lite_oracle_batch(&batch_config)?;
+
+        for (manifest, patch_outcome, patch_path_rel, patch_sha256, mutation) in pending {
+            let verdict = batch_result
+                .verdicts
+                .get(&manifest.instance_id)
+                .cloned()
+                .ok_or_else(|| {
+                    format!(
+                        "batch oracle did not return verdict for {}|{}",
+                        manifest.instance_id,
+                        category.slug()
+                    )
+                })?;
             store.put_corpus_row(&manifest.instance_id, *category, &mutation, &verdict)?;
             store.flush()?;
             let (stored_mutation, stored_verdict) = store
@@ -564,6 +619,151 @@ fn stats(args: StatsArgs) -> CliResult<()> {
     Ok(())
 }
 
+fn merge(args: MergeArgs) -> CliResult<()> {
+    if args.shards.is_empty() {
+        return Err("merge requires at least one --shard".into());
+    }
+    ensure_output_directory_ready(&args.output)?;
+    fs::create_dir_all(&args.output)?;
+    let store_path_rel = PathBuf::from("oracle-store");
+    let store_path = args.output.join(&store_path_rel);
+    let store = OracleStore::open(&store_path)?;
+
+    let mut merged_index: Option<CorpusIndex> = None;
+    let mut entries = Vec::<GeneratedEntry>::new();
+    let mut seen = BTreeSet::<String>::new();
+    for shard in &args.shards {
+        let shard_index = read_index(shard)?;
+        validate_complete_index(&shard_index)?;
+        let shard_store_path = resolve_corpus_path(shard, &shard_index.store_path)?;
+        let shard_store = OracleStore::open(&shard_store_path)?;
+        if let Some(existing) = &merged_index {
+            validate_merge_compatible(existing, &shard_index, shard)?;
+        } else {
+            let index = CorpusIndex {
+                schema_version: shard_index.schema_version,
+                corpus_version: shard_index.corpus_version.clone(),
+                embedder_version: shard_index.embedder_version.clone(),
+                complete: false,
+                generated_at_unix_ms: unix_ms(),
+                seed: shard_index.seed,
+                languages: shard_index.languages.clone(),
+                tasks_dir: shard_index.tasks_dir.clone(),
+                store_path: store_path_rel.display().to_string(),
+                corpus_sha256: None,
+                entries: Vec::new(),
+                split_assignments: shard_index.split_assignments.clone(),
+            };
+            write_index(&args.output, &index)?;
+            merged_index = Some(index);
+        }
+
+        for entry in &shard_index.entries {
+            let key = format!("{}|{}", entry.task_id, entry.category.slug());
+            if !seen.insert(key.clone()) {
+                return Err(format!("duplicate merged corpus row key: {key}").into());
+            }
+            let source_patch_path = resolve_corpus_path(shard, &entry.patch_path)?;
+            let patch_text = fs::read_to_string(&source_patch_path)?;
+            let patch_hash = sha256_text(&patch_text);
+            if patch_hash != entry.patch_sha256 {
+                return Err(format!(
+                    "shard patch hash mismatch for {key}: expected {} actual {}",
+                    entry.patch_sha256, patch_hash
+                )
+                .into());
+            }
+            let (mutation, verdict) = shard_store
+                .get_corpus_row(&entry.task_id, entry.category)?
+                .ok_or_else(|| format!("shard RocksDB row missing for {key}"))?;
+            if sha256_text(&mutation.mutated_source) != entry.patch_sha256 {
+                return Err(format!("shard mutation hash mismatch for {key}").into());
+            }
+            let verdict_hash = sha256_json_value(&serde_json::to_value(&verdict)?);
+            if verdict_hash != entry.oracle_verdict_sha256 {
+                return Err(format!(
+                    "shard verdict hash mismatch for {key}: expected {} actual {}",
+                    entry.oracle_verdict_sha256, verdict_hash
+                )
+                .into());
+            }
+            let destination_patch_path = resolve_corpus_path(&args.output, &entry.patch_path)?;
+            write_text_checked(&destination_patch_path, &patch_text)?;
+            store.put_corpus_row(&entry.task_id, entry.category, &mutation, &verdict)?;
+            store.flush()?;
+            let (stored_mutation, stored_verdict) = store
+                .get_corpus_row(&entry.task_id, entry.category)?
+                .ok_or_else(|| {
+                    format!("merged RocksDB row missing immediately after write for {key}")
+                })?;
+            if stored_mutation != mutation || stored_verdict != verdict {
+                return Err(format!("merged RocksDB row readback mismatch for {key}").into());
+            }
+            entries.push(entry.clone());
+            if let Some(index) = &mut merged_index {
+                index.entries = entries.clone();
+                write_index(&args.output, index)?;
+            }
+        }
+    }
+
+    let mut index = merged_index.ok_or("merge produced no index")?;
+    let task_order = index
+        .split_assignments
+        .iter()
+        .enumerate()
+        .map(|(position, assignment)| (assignment.task_id.clone(), position))
+        .collect::<BTreeMap<_, _>>();
+    entries.sort_by_key(|entry| {
+        (
+            task_order
+                .get(&entry.task_id)
+                .copied()
+                .unwrap_or(usize::MAX),
+            category_position(entry.category),
+        )
+    });
+    index.entries = entries;
+    let expected_entries = index.split_assignments.len() * MutationCategory::all().len();
+    if !args.allow_partial && index.entries.len() != expected_entries {
+        write_index(&args.output, &index)?;
+        return Err(format!(
+            "merged corpus is partial: entries={} expected_full_phase0_entries={expected_entries}; pass --allow-partial only for smoke/debug merges",
+            index.entries.len()
+        )
+        .into());
+    }
+    let provenance = build_provenance(&index)?;
+    store.put_provenance(&provenance)?;
+    store.flush()?;
+    let stored_provenance = store
+        .get_provenance(&index.corpus_version, &index.embedder_version)?
+        .ok_or("merged provenance row missing immediately after RocksDB write")?;
+    if stored_provenance != provenance {
+        return Err("merged provenance readback mismatch immediately after RocksDB write".into());
+    }
+    index.corpus_sha256 = Some(provenance.corpus_sha256.clone());
+    index.complete = true;
+    write_stats_json(
+        &args.output,
+        &build_stats_json(&args.output, &index, &store)?,
+    )?;
+    write_index(&args.output, &index)?;
+    let evidence = json!({
+        "status": "merged",
+        "entries": index.entries.len(),
+        "expected_full_phase0_entries": expected_entries,
+        "full_phase0_complete": index.entries.len() == expected_entries,
+        "index": args.output.join("index.json"),
+        "store": store_path,
+        "shards": args.shards,
+        "corpus_sha256": provenance.corpus_sha256,
+    });
+    write_json_checked(&args.output.join("merge-evidence.json"), &evidence)?;
+    println!("{}", serde_json::to_string_pretty(&evidence)?);
+    Ok(())
+}
+
 fn smoke(args: SmokeArgs) -> CliResult<()> {
     validate_smoke_args(&args)?;
     let task_limit = args.max_tasks.or({
@@ -587,6 +787,7 @@ fn smoke(args: SmokeArgs) -> CliResult<()> {
         run_id_prefix: args.run_id_prefix.clone(),
         instance_timeout_secs: args.instance_timeout_secs,
         overall_timeout_secs: args.overall_timeout_secs,
+        oracle_workers: args.oracle_workers,
     };
     let verify_args = VerifyArgs {
         corpus: args.output.clone(),
@@ -791,6 +992,7 @@ fn finish_smoke(
             "languages": args.languages,
             "seed": args.seed,
             "sample_fraction": args.sample_fraction,
+            "oracle_workers": args.oracle_workers,
             "max_generate_secs_per_entry": args.max_generate_secs_per_entry,
             "max_verify_secs_per_sample": args.max_verify_secs_per_sample,
         },
@@ -855,6 +1057,7 @@ fn validate_smoke_args(args: &SmokeArgs) -> CliResult<()> {
         run_id_prefix: args.run_id_prefix.clone(),
         instance_timeout_secs: args.instance_timeout_secs,
         overall_timeout_secs: args.overall_timeout_secs,
+        oracle_workers: args.oracle_workers,
     })?;
     validate_verify_args(&VerifyArgs {
         corpus: args.output.clone(),
@@ -882,6 +1085,9 @@ fn validate_generate_args(args: &GenerateArgs) -> CliResult<()> {
     }
     if args.run_id_prefix.trim().is_empty() {
         return Err("run_id_prefix must be non-empty".into());
+    }
+    if args.oracle_workers == 0 {
+        return Err("oracle_workers must be > 0".into());
     }
     validate_docker_run_id_component(&args.run_id_prefix)?;
     Ok(())
@@ -1070,36 +1276,6 @@ fn write_mutated_patch(
     Ok((path, relative_path))
 }
 
-fn run_oracle_for_patch(
-    args: &GenerateArgs,
-    manifest: &TaskManifest,
-    category: MutationCategory,
-    outcome: &PatchMutationOutcome,
-) -> CliResult<OracleVerdict> {
-    let prediction = SwebenchPrediction {
-        instance_id: manifest.instance_id.clone(),
-        model_name_or_path: format!("mejepa-{}", category.slug()),
-        model_patch: outcome.mutated_patch.clone(),
-    };
-    let run_id = docker_run_id(&format!(
-        "{}-{}-{}",
-        args.run_id_prefix,
-        manifest.instance_id,
-        category.slug()
-    ))?;
-    let mut config = SwebenchOracleConfig::defaults_for(
-        manifest.instance_id.clone(),
-        run_id,
-        args.output.join("swebench-runs"),
-        args.venv_python.clone(),
-        SwebenchPredictionMode::Custom(prediction),
-    );
-    config.instance_timeout = Duration::from_secs(args.instance_timeout_secs);
-    config.overall_timeout = Duration::from_secs(args.overall_timeout_secs);
-    let result = run_swebench_lite_oracle(&config)?;
-    Ok(result.verdict)
-}
-
 fn run_oracle_for_entry(args: &VerifyArgs, entry: &GeneratedEntry) -> CliResult<OracleVerdict> {
     let patch_path = resolve_corpus_path(&args.corpus, &entry.patch_path)?;
     let patch_text = fs::read_to_string(&patch_path)?;
@@ -1156,6 +1332,50 @@ fn validate_complete_index(index: &CorpusIndex) -> CliResult<()> {
         return Err("corpus index has zero entries; this is not valid corpus evidence".into());
     }
     Ok(())
+}
+
+fn validate_merge_compatible(
+    expected: &CorpusIndex,
+    actual: &CorpusIndex,
+    shard: &Path,
+) -> CliResult<()> {
+    if actual.schema_version != expected.schema_version {
+        return Err(format!("shard {} has incompatible schema_version", shard.display()).into());
+    }
+    if actual.corpus_version != expected.corpus_version {
+        return Err(format!("shard {} has incompatible corpus_version", shard.display()).into());
+    }
+    if actual.embedder_version != expected.embedder_version {
+        return Err(format!(
+            "shard {} has incompatible embedder_version",
+            shard.display()
+        )
+        .into());
+    }
+    if actual.seed != expected.seed {
+        return Err(format!("shard {} has incompatible seed", shard.display()).into());
+    }
+    if actual.languages != expected.languages {
+        return Err(format!("shard {} has incompatible languages", shard.display()).into());
+    }
+    if actual.tasks_dir != expected.tasks_dir {
+        return Err(format!("shard {} has incompatible tasks_dir", shard.display()).into());
+    }
+    if actual.split_assignments != expected.split_assignments {
+        return Err(format!(
+            "shard {} has incompatible split assignments",
+            shard.display()
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn category_position(category: MutationCategory) -> usize {
+    MutationCategory::all()
+        .iter()
+        .position(|candidate| *candidate == category)
+        .unwrap_or(usize::MAX)
 }
 
 fn resolve_corpus_path(corpus: &Path, stored_path: &str) -> CliResult<PathBuf> {
