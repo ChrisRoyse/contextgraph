@@ -4914,11 +4914,23 @@ fn build_semantic_index_command(args: BuildSemanticIndexArgs) -> DynamicJepaResu
             )?,
         );
     }
+    let mut typescript_family_evidence: Option<Value> = None;
     for language in languages
         .iter()
         .filter(|language| language.as_str() != "rust")
     {
-        let evidence = semantic_run_language_batch_check(language, &args.repo, &evidence_dir)?;
+        let evidence = if matches!(language.as_str(), "typescript" | "tsx") {
+            if let Some(evidence) = &typescript_family_evidence {
+                evidence.clone()
+            } else {
+                let evidence =
+                    semantic_run_language_batch_check("typescript", &args.repo, &evidence_dir)?;
+                typescript_family_evidence = Some(evidence.clone());
+                evidence
+            }
+        } else {
+            semantic_run_language_batch_check(language, &args.repo, &evidence_dir)?
+        };
         tool_evidence.insert(format!("{language}_batch_semantics"), evidence);
     }
 
@@ -5509,8 +5521,8 @@ fn semantic_run_required(
         return Err(DynamicJepaError::VerificationFailed {
             test_name: "dynamicjepa_semantic_index".to_string(),
             message: format!(
-                "compiler/LSP command {label} failed with exit_code={exit_code}; stderr_tail={:?}",
-                evidence["stderr_tail"]
+                "compiler/LSP command {label} failed with exit_code={exit_code}; stdout_tail={:?}; stderr_tail={:?}",
+                evidence["stdout_tail"], evidence["stderr_tail"]
             ),
             evidence_path: evidence_dir.display().to_string(),
         });
@@ -6589,7 +6601,8 @@ fn semantic_ast_node_kind_for_language(
             | "function"
             | "generator_function"
             | "arrow_function"
-                if semantic_javascript_function_name(node, source).is_some() =>
+                if semantic_javascript_should_index_function_node(node)
+                    && semantic_javascript_function_name(node, source).is_some() =>
             {
                 if semantic_path_is_test(path)
                     || semantic_ast_node_name_for_language(language, node, source)
@@ -7372,6 +7385,19 @@ fn semantic_javascript_function_name(node: tree_sitter::Node<'_>, source: &str) 
         current = candidate.parent();
     }
     None
+}
+
+fn semantic_javascript_should_index_function_node(node: tree_sitter::Node<'_>) -> bool {
+    if node.kind() != "function" {
+        return true;
+    }
+
+    !node.parent().is_some_and(|parent| {
+        matches!(
+            parent.kind(),
+            "function_expression" | "generator_function" | "generator_function_expression"
+        )
+    })
 }
 
 fn semantic_javascript_value_contains(
@@ -26801,6 +26827,30 @@ module.exports.load = function(config) {
             "public".to_string()
         )));
 
+        let mut function_symbol_counts = BTreeMap::new();
+        for symbol in &extraction.symbols {
+            if symbol.get("semantic_kind").and_then(|kind| kind.as_str()) == Some("function") {
+                let name = symbol
+                    .get("name")
+                    .and_then(|name| name.as_str())
+                    .expect("function symbol name");
+                *function_symbol_counts
+                    .entry(name.to_string())
+                    .or_insert(0usize) += 1;
+            }
+        }
+        println!(
+            "AFTER javascript semantic-index dedupe state: {:?}",
+            function_symbol_counts
+        );
+        for name in ["double", "plusOne", "run", "stop", "load"] {
+            assert_eq!(
+                function_symbol_counts.get(name).copied(),
+                Some(1),
+                "JavaScript binding {name} must be indexed exactly once"
+            );
+        }
+
         let symbol_names = symbols
             .iter()
             .map(|(name, _, _)| name.as_str())
@@ -27923,13 +27973,20 @@ public readonly struct Vector {
 
         let missing = temp.path().join("missing");
         fs::create_dir(&missing).expect("create missing repo");
+        println!(
+            "BEFORE csharp missing-target state: files={:?}",
+            fs::read_dir(&missing)
+                .expect("read missing repo")
+                .map(|entry| entry.expect("entry").file_name())
+                .collect::<Vec<_>>()
+        );
         let missing_err =
             semantic_csharp_build_target(&missing).expect_err("missing build target must fail");
         println!("AFTER csharp missing-target state: {missing_err}");
         assert_eq!(missing_err.code(), "VERIFICATION_FAILED");
         assert!(missing_err
             .to_string()
-            .contains("requires a real .sln or .csproj"));
+            .contains("requires a real .sln, .slnx, or .csproj"));
 
         let single = temp.path().join("single");
         fs::create_dir(&single).expect("create single repo");
@@ -27957,6 +28014,13 @@ public readonly struct Vector {
         fs::create_dir(&slnx_solution).expect("create slnx solution repo");
         fs::write(slnx_solution.join("App.slnx"), "\n").expect("write slnx");
         fs::write(slnx_solution.join("App.csproj"), "<Project />\n").expect("write csproj");
+        println!(
+            "BEFORE csharp slnx-target state: files={:?}",
+            fs::read_dir(&slnx_solution)
+                .expect("read slnx repo")
+                .map(|entry| entry.expect("entry").file_name())
+                .collect::<Vec<_>>()
+        );
         let selected_slnx =
             semantic_csharp_build_target(&slnx_solution).expect("slnx solution has precedence");
         println!("AFTER csharp slnx-target selected: {selected_slnx}");
@@ -27966,6 +28030,13 @@ public readonly struct Vector {
         fs::create_dir(&multiple_projects).expect("create multi project repo");
         fs::write(multiple_projects.join("App.csproj"), "<Project />\n").expect("write app csproj");
         fs::write(multiple_projects.join("Lib.csproj"), "<Project />\n").expect("write lib csproj");
+        println!(
+            "BEFORE csharp multi-project state: files={:?}",
+            fs::read_dir(&multiple_projects)
+                .expect("read multi-project repo")
+                .map(|entry| entry.expect("entry").file_name())
+                .collect::<Vec<_>>()
+        );
         let multi_project_err = semantic_csharp_build_target(&multiple_projects)
             .expect_err("multiple csproj files without solution must fail");
         println!("AFTER csharp multi-project state: {multi_project_err}");
@@ -27976,6 +28047,13 @@ public readonly struct Vector {
         fs::create_dir(&multiple_solutions).expect("create multi solution repo");
         fs::write(multiple_solutions.join("App.sln"), "\n").expect("write app sln");
         fs::write(multiple_solutions.join("Lib.sln"), "\n").expect("write lib sln");
+        println!(
+            "BEFORE csharp multi-solution state: files={:?}",
+            fs::read_dir(&multiple_solutions)
+                .expect("read multi-solution repo")
+                .map(|entry| entry.expect("entry").file_name())
+                .collect::<Vec<_>>()
+        );
         let multi_solution_err = semantic_csharp_build_target(&multiple_solutions)
             .expect_err("multiple solutions must fail");
         println!("AFTER csharp multi-solution state: {multi_solution_err}");

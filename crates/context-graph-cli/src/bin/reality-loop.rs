@@ -9088,6 +9088,21 @@ fn dynamicjepa_ast_semantic_node(
     source: &str,
     path: &str,
 ) -> AstSemanticNode {
+    if language == "csharp" {
+        if let Some(operator_node) = ast_nearest_self_or_ancestor_any(
+            node,
+            &["operator_declaration", "conversion_operator_declaration"],
+        ) {
+            let node_kind = ast_node_kind_for_language(language, operator_node, source, path);
+            return AstSemanticNode {
+                node_kind,
+                symbol_kind: ast_symbol_kind_for_node_kind(node_kind),
+                node_start_line: operator_node.start_position().row as u32 + 1,
+                symbol_name: ast_node_name_for_language(language, operator_node, source),
+                visibility: ast_symbol_visibility(language, operator_node, source),
+            };
+        }
+    }
     if language == "ruby" {
         if let Some(test_node) = ast_nearest_ruby_test_node(node, source, path) {
             return AstSemanticNode {
@@ -9096,6 +9111,18 @@ fn dynamicjepa_ast_semantic_node(
                 node_start_line: test_node.start_position().row as u32 + 1,
                 symbol_name: ast_node_name_for_language(language, test_node, source),
                 visibility: ast_symbol_visibility(language, test_node, source),
+            };
+        }
+    }
+    if matches!(language, "typescript" | "tsx") {
+        if let Some(owner) = ast_nearest_typescript_owner_node(node, source, path) {
+            let node_kind = ast_typescript_node_kind(owner, source, path);
+            return AstSemanticNode {
+                node_kind,
+                symbol_kind: ast_symbol_kind_for_node_kind(node_kind),
+                node_start_line: owner.start_position().row as u32 + 1,
+                symbol_name: ast_typescript_node_name(owner, source),
+                visibility: ast_symbol_visibility(language, owner, source),
             };
         }
     }
@@ -9177,7 +9204,8 @@ fn ast_node_kind_for_language(
             | "function"
             | "generator_function"
             | "arrow_function"
-                if ast_javascript_function_name(node, source).is_some() =>
+                if ast_javascript_should_index_function_node(node)
+                    && ast_javascript_function_name(node, source).is_some() =>
             {
                 if path_is_test(path)
                     || ast_node_name_for_language(language, node, source)
@@ -9371,6 +9399,25 @@ fn ast_typescript_nested_function_node(node: tree_sitter::Node<'_>) -> bool {
                 | "generator_function"
         )
     })
+}
+
+fn ast_nearest_typescript_owner_node<'tree>(
+    node: tree_sitter::Node<'tree>,
+    source: &str,
+    path: &str,
+) -> Option<tree_sitter::Node<'tree>> {
+    let mut current = Some(node);
+    while let Some(candidate) = current {
+        let kind = ast_typescript_node_kind(candidate, source, path);
+        if matches!(
+            kind,
+            "function" | "test" | "method" | "class" | "interface" | "type"
+        ) {
+            return Some(candidate);
+        }
+        current = candidate.parent();
+    }
+    None
 }
 
 fn ast_c_node_kind(node: tree_sitter::Node<'_>) -> &'static str {
@@ -10043,6 +10090,19 @@ fn ast_javascript_function_name(node: tree_sitter::Node<'_>, source: &str) -> Op
     None
 }
 
+fn ast_javascript_should_index_function_node(node: tree_sitter::Node<'_>) -> bool {
+    if node.kind() != "function" {
+        return true;
+    }
+
+    !node.parent().is_some_and(|parent| {
+        matches!(
+            parent.kind(),
+            "function_expression" | "generator_function" | "generator_function_expression"
+        )
+    })
+}
+
 fn ast_javascript_value_contains(
     candidate: tree_sitter::Node<'_>,
     node: tree_sitter::Node<'_>,
@@ -10427,6 +10487,20 @@ fn ast_nearest_ancestor_any<'a>(
     kinds: &[&str],
 ) -> Option<tree_sitter::Node<'a>> {
     let mut current = node.parent();
+    while let Some(candidate) = current {
+        if kinds.iter().any(|kind| candidate.kind() == *kind) {
+            return Some(candidate);
+        }
+        current = candidate.parent();
+    }
+    None
+}
+
+fn ast_nearest_self_or_ancestor_any<'a>(
+    node: tree_sitter::Node<'a>,
+    kinds: &[&str],
+) -> Option<tree_sitter::Node<'a>> {
+    let mut current = Some(node);
     while let Some(candidate) = current {
         if kinds.iter().any(|kind| candidate.kind() == *kind) {
             return Some(candidate);
@@ -21829,7 +21903,7 @@ public readonly struct Vector {
         assert_eq!(action["ast_parse_status"], "parsed");
         assert_eq!(action["ast_node_kind"], "test");
         assert_eq!(action["ast_symbol_kind"], "test_case");
-        assert_eq!(action["ast_edit_kind"], "function_body");
+        assert_eq!(action["ast_edit_kind"], "test_case");
         assert_eq!(action["semantic_provider"], "compiler_lsp");
         assert_eq!(action["compiler_semantic_status"], "checked");
         assert_eq!(action["test_attribution_status"], "inferred_from_path");
