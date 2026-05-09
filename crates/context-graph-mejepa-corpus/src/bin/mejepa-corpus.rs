@@ -1480,7 +1480,7 @@ fn pull_one_image(image: &str, timeout: Duration) -> Value {
     let started = Instant::now();
     let mut command = Command::new("docker");
     command
-        .args(["pull", image])
+        .args(["pull", "--quiet", image])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     configure_child_process_group(&mut command);
