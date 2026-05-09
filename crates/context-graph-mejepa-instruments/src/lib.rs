@@ -18,8 +18,8 @@
 //
 // Fail-closed everywhere: empty input, dim mismatch on `set_slot`,
 // non-finite input or output, slot-already-filled, panel-build with no
-// slots, etc. all return `MEJEPA_INSTRUMENTS_INVALID_INPUT` or
-// `_NUMERICAL_INVARIANT`.
+// slots, malformed persisted panel state, etc. all return
+// `MEJEPA_INSTRUMENTS_INVALID_INPUT` or `_NUMERICAL_INVARIANT`.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -36,7 +36,9 @@ pub enum InstrumentError {
         message: String,
         remediation: &'static str,
     },
-    #[error("instrument numerical invariant failed at {field}: {message}; remediation: {remediation}")]
+    #[error(
+        "instrument numerical invariant failed at {field}: {message}; remediation: {remediation}"
+    )]
     NumericalInvariant {
         field: &'static str,
         message: String,
@@ -79,6 +81,8 @@ impl InstrumentError {
 
 /// Total dimension of the joint embedding panel. Per doc 09 §3.5.5.
 pub const PANEL_DIM: usize = 5_120;
+const SLOT_COUNT: usize = 15;
+const VALID_FILLED_MASK: u16 = (1u16 << SLOT_COUNT) - 1;
 
 /// Named instrument slots in the panel. Dim and offset per slot are fixed
 /// across every panel; the table below MUST match `Self::layout()` exactly.
@@ -220,14 +224,33 @@ pub trait Instrument {
 /// One panel of the joint embedding. Materialized via `PanelBuilder` so
 /// dim mismatches and double-fills surface fail-closed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "PanelSerde", into = "PanelSerde")]
 pub struct Panel {
-    pub data: Vec<f32>,
+    data: Vec<f32>,
     /// Bitmask: bit `i` (in `InstrumentSlot::all()` order) is set iff
     /// that slot was filled by `set_slot`. Bits not set are zero-filled.
-    pub filled_mask: u16,
+    filled_mask: u16,
 }
 
 impl Panel {
+    /// Construct a panel from persisted or externally assembled state.
+    /// This is the only public constructor so every panel instance keeps
+    /// the same invariants that `PanelBuilder` enforces.
+    pub fn try_new(data: Vec<f32>, filled_mask: u16) -> InstrumentResult<Self> {
+        validate_panel_parts(&data, filled_mask)?;
+        Ok(Self { data, filled_mask })
+    }
+
+    /// Full 5,120-d panel data.
+    pub fn data(&self) -> &[f32] {
+        &self.data
+    }
+
+    /// Filled-slot bitmask in `InstrumentSlot::all()` order.
+    pub fn filled_mask(&self) -> u16 {
+        self.filled_mask
+    }
+
     /// View the slice belonging to a slot.
     pub fn slot(&self, slot: InstrumentSlot) -> &[f32] {
         let (offset, dim) = slot.extent();
@@ -238,6 +261,30 @@ impl Panel {
     pub fn is_filled(&self, slot: InstrumentSlot) -> bool {
         let bit = slot_bit(slot);
         self.filled_mask & bit != 0
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PanelSerde {
+    data: Vec<f32>,
+    filled_mask: u16,
+}
+
+impl From<Panel> for PanelSerde {
+    fn from(panel: Panel) -> Self {
+        Self {
+            data: panel.data,
+            filled_mask: panel.filled_mask,
+        }
+    }
+}
+
+impl TryFrom<PanelSerde> for Panel {
+    type Error = InstrumentError;
+
+    fn try_from(value: PanelSerde) -> Result<Self, Self::Error> {
+        Self::try_new(value.data, value.filled_mask)
     }
 }
 
@@ -303,11 +350,7 @@ impl PanelBuilder {
 
     /// Convenience: encode `input` via `instrument` and write the result
     /// into the matching slot.
-    pub fn set_from_instrument<I, In>(
-        &mut self,
-        instrument: &I,
-        input: &In,
-    ) -> InstrumentResult<()>
+    pub fn set_from_instrument<I, In>(&mut self, instrument: &I, input: &In) -> InstrumentResult<()>
     where
         I: Instrument<Input = In>,
     {
@@ -328,18 +371,24 @@ impl PanelBuilder {
     }
 
     /// Finalize the panel. Zero-filled slots remain zero; the `filled_mask`
-    /// records which slots were explicitly set.
-    pub fn build(self) -> Panel {
-        Panel {
-            data: self.data,
-            filled_mask: self.filled_mask,
-        }
+    /// records which slots were explicitly set. Building with no filled
+    /// slots is rejected because it is indistinguishable from missing
+    /// instrument evidence.
+    pub fn build(self) -> InstrumentResult<Panel> {
+        Panel::try_new(self.data, self.filled_mask)
     }
 
     /// Optional check: assert each of `required_slots` is filled. Errors
     /// fail-closed listing the first missing slot. Use this when building
     /// `panel[t=2]` per doc 09 §2.3, where every slot is expected.
     pub fn require_slots(&self, required_slots: &[InstrumentSlot]) -> InstrumentResult<()> {
+        if required_slots.is_empty() {
+            return Err(InstrumentError::invalid(
+                "required_slots",
+                "required slot list is empty",
+                "pass at least one required slot or skip require_slots explicitly",
+            ));
+        }
         for slot in required_slots {
             let bit = slot_bit(*slot);
             if self.filled_mask & bit == 0 {
@@ -352,6 +401,44 @@ impl PanelBuilder {
         }
         Ok(())
     }
+}
+
+fn validate_panel_parts(data: &[f32], filled_mask: u16) -> InstrumentResult<()> {
+    if data.len() != PANEL_DIM {
+        return Err(InstrumentError::invalid(
+            "panel.data",
+            format!(
+                "panel data length {} does not match PANEL_DIM {PANEL_DIM}",
+                data.len()
+            ),
+            "persist and read exactly PANEL_DIM f32 values for every ME-JEPA panel",
+        ));
+    }
+    if filled_mask == 0 {
+        return Err(InstrumentError::invalid(
+            "panel.filled_mask",
+            "panel has no filled instrument slots",
+            "fill at least one instrument slot before persisting a panel",
+        ));
+    }
+    let unknown_bits = filled_mask & !VALID_FILLED_MASK;
+    if unknown_bits != 0 {
+        return Err(InstrumentError::invalid(
+            "panel.filled_mask",
+            format!("filled_mask contains unknown slot bits: 0x{unknown_bits:04x}"),
+            "clear bits outside InstrumentSlot::all() before persisting a panel",
+        ));
+    }
+    for (i, value) in data.iter().enumerate() {
+        if !value.is_finite() {
+            return Err(InstrumentError::invariant(
+                "panel.data",
+                format!("panel.data[{i}] is non-finite: {value}"),
+                "do not persist NaN/Inf in ME-JEPA panels",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn slot_bit(slot: InstrumentSlot) -> u16 {

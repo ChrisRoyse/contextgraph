@@ -4845,18 +4845,32 @@ fn build_semantic_index_command(args: BuildSemanticIndexArgs) -> DynamicJepaResu
     let languages = if requested_languages.is_empty() {
         detected_languages.clone()
     } else {
+        let mut selected = BTreeSet::new();
         for language in &requested_languages {
-            if !detected_languages.contains(language) {
-                return Err(DynamicJepaError::VerificationFailed {
-                    test_name: "dynamicjepa_semantic_index".to_string(),
-                    message: format!(
-                        "requested language {language} was not present in repository source files"
-                    ),
-                    evidence_path: evidence_dir.display().to_string(),
-                });
+            if language == "typescript" {
+                let mut matched = false;
+                for dialect in ["typescript", "tsx"] {
+                    if detected_languages.contains(dialect) {
+                        selected.insert(dialect.to_string());
+                        matched = true;
+                    }
+                }
+                if matched {
+                    continue;
+                }
+            } else if detected_languages.contains(language) {
+                selected.insert(language.clone());
+                continue;
             }
+            return Err(DynamicJepaError::VerificationFailed {
+                test_name: "dynamicjepa_semantic_index".to_string(),
+                message: format!(
+                    "requested language {language} was not present in repository source files"
+                ),
+                evidence_path: evidence_dir.display().to_string(),
+            });
         }
-        requested_languages
+        selected
     };
     for language in &languages {
         semantic_require_language_toolchain(language, &args.repo)?;
@@ -5910,9 +5924,15 @@ fn semantic_language_for_path(path: &str) -> Option<&'static str> {
         Some("rust")
     } else if path.ends_with(".py") {
         Some("python")
-    } else if path.ends_with(".ts") || path.ends_with(".tsx") {
+    } else if path.ends_with(".tsx") {
+        Some("tsx")
+    } else if path.ends_with(".ts") || path.ends_with(".mts") || path.ends_with(".cts") {
         Some("typescript")
-    } else if path.ends_with(".js") || path.ends_with(".jsx") || path.ends_with(".mjs") {
+    } else if path.ends_with(".js")
+        || path.ends_with(".jsx")
+        || path.ends_with(".mjs")
+        || path.ends_with(".cjs")
+    {
         Some("javascript")
     } else if path.ends_with(".go") {
         Some("go")
@@ -5982,6 +6002,27 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| haystack.contains(needle))
 }
 
+fn semantic_typescript_tsc(repo: &Path) -> DynamicJepaResult<String> {
+    let local = repo.join("node_modules/.bin/tsc");
+    if !local.is_file() {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: "TypeScript semantic indexing requires project-local node_modules/.bin/tsc; parser-only or global fallback is refused".to_string(),
+            evidence_path: repo
+                .join("package.json")
+                .display()
+                .to_string(),
+        });
+    }
+    local.to_str().map(ToOwned::to_owned).ok_or_else(|| {
+        DynamicJepaError::validation(
+            "semantic-index.typescript.local_tsc",
+            format!("local tsc path is not valid UTF-8: {}", local.display()),
+            "install TypeScript at a UTF-8 path before semantic indexing",
+        )
+    })
+}
+
 fn is_identifier_char(ch: char) -> bool {
     ch == '_' || ch.is_ascii_alphanumeric()
 }
@@ -6008,7 +6049,14 @@ fn semantic_require_language_toolchain(language: &str, repo: &Path) -> DynamicJe
                 vec!["pyright"]
             }
         }
-        "typescript" | "javascript" => {
+        "typescript" | "tsx" => {
+            if repo.join("node_modules/.bin/tsc").is_file() {
+                Vec::new()
+            } else {
+                vec!["node_modules/.bin/tsc"]
+            }
+        }
+        "javascript" => {
             if repo.join("node_modules/.bin/tsc").exists() || command_exists_on_path("tsc") {
                 Vec::new()
             } else {
@@ -6095,12 +6143,22 @@ fn semantic_run_language_batch_check(
             evidence_dir,
             "python_pyright",
         ),
-        "typescript" | "javascript" => {
+        "typescript" | "tsx" => {
+            let local = semantic_typescript_tsc(repo)?;
+            semantic_run_required(
+                &[local.as_str(), "--noEmit", "--pretty", "false"],
+                repo,
+                None,
+                evidence_dir,
+                "typescript_tsc",
+            )
+        }
+        "javascript" => {
             let local = repo.join("node_modules/.bin/tsc");
             if local.exists() {
                 let local = local.to_str().ok_or_else(|| {
                     DynamicJepaError::validation(
-                        "semantic-index.typescript.local_tsc",
+                        "semantic-index.javascript.local_tsc",
                         format!("local tsc path is not valid UTF-8: {}", local.display()),
                         "install tsc at a UTF-8 path before semantic indexing",
                     )
@@ -6399,7 +6457,8 @@ fn semantic_walk_tree_sitter_node(
     let mut active_symbol = current_symbol.to_string();
     let line = node.start_position().row + 1;
     match semantic_kind {
-        "function" | "method" | "class" | "test" | "property" | "event" | "delegate" => {
+        "function" | "method" | "class" | "interface" | "type" | "test" | "property" | "event"
+        | "delegate" => {
             let name = semantic_ast_node_name_for_language(language, node, source)
                 .unwrap_or_else(|| format!("anonymous@{path}:{line}"));
             active_symbol = name.clone();
@@ -6414,7 +6473,7 @@ fn semantic_walk_tree_sitter_node(
                 "visibility": semantic_ast_symbol_visibility(language, node, source),
                 "source_hash": hex_bytes(&sha256(semantic_node_text(node, source).as_bytes())),
             }));
-            if semantic_kind == "class" {
+            if matches!(semantic_kind, "class" | "interface" | "type") {
                 extraction.type_facts.push(json!({
                     "path": path,
                     "language": language,
@@ -6513,7 +6572,8 @@ fn semantic_ast_node_kind_for_language(
             "assignment" | "augmented_assignment" | "typed_parameter" => "assignment",
             _ => "unknown",
         },
-        "javascript" | "typescript" | "tsx" => match kind {
+        "typescript" | "tsx" => semantic_typescript_ast_node_kind(node, source, path),
+        "javascript" => match kind {
             "function_declaration"
             | "generator_function_declaration"
             | "function_expression"
@@ -6590,9 +6650,11 @@ fn semantic_ast_node_kind_for_language(
             "method_declaration"
             | "constructor_declaration"
             | "local_function_statement"
+            | "destructor_declaration"
             | "operator_declaration"
             | "conversion_operator_declaration" => {
                 if semantic_path_is_test(path)
+                    || semantic_csharp_method_has_test_attribute(node, source)
                     || semantic_ast_node_name_for_language(language, node, source)
                         .is_some_and(|name| name.starts_with("Test") || name.starts_with("test"))
                 {
@@ -6614,14 +6676,7 @@ fn semantic_ast_node_kind_for_language(
             "variable_declaration" | "assignment_expression" | "field_declaration" => "assignment",
             _ => "unknown",
         },
-        "ruby" => match kind {
-            "method" | "singleton_method" => "method",
-            "class" | "module" => "class",
-            "require" | "require_relative" => "import",
-            "call" | "command" => "call",
-            "assignment" | "operator_assignment" => "assignment",
-            _ => "unknown",
-        },
+        "ruby" => semantic_ruby_ast_node_kind(node, source, path),
         "php" => match kind {
             "function_definition" => "function",
             "method_declaration" => "method",
@@ -6742,6 +6797,43 @@ fn semantic_go_test_entrypoint_suffix(name: &str, prefix: &str) -> bool {
         .is_some_and(|ch| !ch.is_ascii_lowercase())
 }
 
+fn semantic_typescript_ast_node_kind(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+    path: &str,
+) -> &'static str {
+    match node.kind() {
+        "function_declaration"
+        | "generator_function_declaration"
+        | "function_expression"
+        | "function"
+        | "generator_function"
+        | "arrow_function"
+            if semantic_javascript_function_name(node, source).is_some() =>
+        {
+            if semantic_path_is_test(path)
+                || semantic_javascript_node_name(node, source)
+                    .is_some_and(|name| name.starts_with("test"))
+            {
+                "test"
+            } else {
+                "function"
+            }
+        }
+        "method_definition" => "method",
+        "class_declaration" | "abstract_class_declaration" => "class",
+        "interface_declaration" => "interface",
+        "type_alias_declaration" => "type",
+        "import_statement" => "import",
+        "call_expression" => "call",
+        "assignment_expression"
+        | "lexical_declaration"
+        | "variable_declarator"
+        | "type_annotation" => "assignment",
+        _ => "unknown",
+    }
+}
+
 fn semantic_cpp_function_is_method(node: tree_sitter::Node<'_>, source: &str) -> bool {
     if semantic_has_ancestor_any(
         node,
@@ -6836,9 +6928,127 @@ fn semantic_ast_node_name_for_language(
         "cpp" => {
             semantic_cpp_node_name(node, source).or_else(|| semantic_ast_node_name(node, source))
         }
+        "ruby" => {
+            semantic_ruby_node_name(node, source).or_else(|| semantic_ast_node_name(node, source))
+        }
         "javascript" | "typescript" | "tsx" => semantic_javascript_node_name(node, source),
         _ => semantic_ast_node_name(node, source),
     }
+}
+
+fn semantic_ruby_ast_node_kind(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+    path: &str,
+) -> &'static str {
+    match node.kind() {
+        "method" | "singleton_method" => {
+            if semantic_ruby_method_is_test(node, source) {
+                "test"
+            } else {
+                "method"
+            }
+        }
+        "class" | "module" => "class",
+        "require" | "require_relative" => "import",
+        "call" | "command" => {
+            if semantic_ruby_call_is_test_dsl(node, source, path) {
+                "test"
+            } else {
+                "call"
+            }
+        }
+        "assignment" | "operator_assignment" => "assignment",
+        _ => "unknown",
+    }
+}
+
+fn semantic_ruby_method_is_test(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    semantic_ast_node_name(node, source).is_some_and(|name| name.starts_with("test_"))
+}
+
+fn semantic_ruby_call_is_test_dsl(node: tree_sitter::Node<'_>, source: &str, path: &str) -> bool {
+    let Some(callee) = semantic_ruby_callee_name(node, source) else {
+        return false;
+    };
+    if !semantic_ruby_callee_is_test_dsl(&callee) {
+        return false;
+    }
+    semantic_ruby_path_is_test(path)
+        || semantic_ruby_call_receiver_is_rspec(node, source)
+        || semantic_ruby_has_test_dsl_ancestor(node, source)
+}
+
+fn semantic_ruby_has_test_dsl_ancestor(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    let mut current = node.parent();
+    while let Some(candidate) = current {
+        if matches!(candidate.kind(), "call" | "command")
+            && semantic_ruby_callee_name(candidate, source)
+                .as_deref()
+                .is_some_and(semantic_ruby_callee_is_test_dsl)
+        {
+            return true;
+        }
+        current = candidate.parent();
+    }
+    false
+}
+
+fn semantic_ruby_call_receiver_is_rspec(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    node.child_by_field_name("receiver")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+        .is_some_and(|receiver| {
+            let receiver = receiver.trim();
+            receiver == "RSpec" || receiver.ends_with("::RSpec")
+        })
+}
+
+fn semantic_ruby_callee_is_test_dsl(callee: &str) -> bool {
+    matches!(
+        callee,
+        "describe"
+            | "context"
+            | "feature"
+            | "scenario"
+            | "example_group"
+            | "shared_context"
+            | "shared_examples"
+            | "shared_examples_for"
+            | "it"
+            | "specify"
+            | "example"
+            | "test"
+            | "it_behaves_like"
+            | "it_should_behave_like"
+            | "fdescribe"
+            | "fcontext"
+            | "fit"
+            | "fspecify"
+            | "fexample"
+            | "focus"
+            | "xdescribe"
+            | "xcontext"
+            | "xit"
+            | "xspecify"
+            | "xexample"
+            | "pending"
+    )
+}
+
+fn semantic_ruby_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    match node.kind() {
+        "call" | "command" => semantic_ruby_callee_name(node, source),
+        _ => None,
+    }
+}
+
+fn semantic_ruby_callee_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    node.child_by_field_name("method")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+        .or_else(|| semantic_first_identifier_text(node, source))
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 fn semantic_javascript_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
@@ -6862,10 +7072,7 @@ fn semantic_javascript_node_name(node: tree_sitter::Node<'_>, source: &str) -> O
     }
 }
 
-fn semantic_javascript_function_name(
-    node: tree_sitter::Node<'_>,
-    source: &str,
-) -> Option<String> {
+fn semantic_javascript_function_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
     if matches!(
         node.kind(),
         "function_declaration"
@@ -7065,6 +7272,67 @@ fn semantic_csharp_node_name(node: tree_sitter::Node<'_>, source: &str) -> Optio
     }
 }
 
+fn semantic_csharp_method_has_test_attribute(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    if !matches!(
+        node.kind(),
+        "method_declaration" | "local_function_statement" | "constructor_declaration"
+    ) {
+        return false;
+    }
+    let mut cursor = node.walk();
+    let found = node.children(&mut cursor).any(|child| {
+        matches!(child.kind(), "attribute_list" | "attribute")
+            && semantic_csharp_tree_has_test_attribute(child, source)
+    });
+    found
+}
+
+fn semantic_csharp_tree_has_test_attribute(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    if node.kind() == "attribute"
+        && semantic_csharp_attribute_simple_name(node, source)
+            .as_deref()
+            .is_some_and(semantic_csharp_attribute_is_test)
+    {
+        return true;
+    }
+    let mut cursor = node.walk();
+    let found = node
+        .children(&mut cursor)
+        .any(|child| semantic_csharp_tree_has_test_attribute(child, source));
+    found
+}
+
+fn semantic_csharp_attribute_simple_name(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> Option<String> {
+    let raw = node
+        .child_by_field_name("name")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())?;
+    let without_generic = raw.split('<').next().unwrap_or(raw);
+    let simple = without_generic
+        .rsplit(|ch| matches!(ch, '.' | ':'))
+        .next()
+        .unwrap_or(without_generic)
+        .trim()
+        .trim_end_matches("Attribute");
+    (!simple.is_empty()).then(|| simple.to_string())
+}
+
+fn semantic_csharp_attribute_is_test(name: &str) -> bool {
+    matches!(
+        name,
+        "Fact"
+            | "Theory"
+            | "Test"
+            | "TestCase"
+            | "TestCaseSource"
+            | "TestMethod"
+            | "DataTestMethod"
+            | "STATestMethod"
+    )
+}
+
 fn semantic_descendant_field_text(
     node: tree_sitter::Node<'_>,
     descendant_kind: &str,
@@ -7153,8 +7421,10 @@ fn semantic_ast_symbol_visibility(
                 }
             })
             .unwrap_or("unknown"),
-        "javascript" | "typescript" | "tsx" => semantic_javascript_symbol_visibility(node, source),
-        "java" | "csharp" | "php" => {
+        "typescript" | "tsx" => semantic_typescript_symbol_visibility(node, source),
+        "javascript" => semantic_javascript_symbol_visibility(node, source),
+        "csharp" => semantic_csharp_symbol_visibility(node, source),
+        "java" | "php" => {
             if node_text.contains(" private ") || node_text.trim_start().starts_with("private ") {
                 "private"
             } else if node_text.contains(" public ")
@@ -7200,6 +7470,24 @@ fn semantic_javascript_symbol_visibility(
     }
 }
 
+fn semantic_typescript_symbol_visibility(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> &'static str {
+    let mut current = Some(node);
+    while let Some(candidate) = current {
+        let text = semantic_node_text(candidate, source);
+        if candidate.kind() == "export_statement"
+            || text.trim_start().starts_with("export ")
+            || text.contains("\nexport ")
+        {
+            return "exported";
+        }
+        current = candidate.parent();
+    }
+    "public"
+}
+
 fn semantic_cpp_symbol_visibility(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
     let node_text = semantic_node_text(node, source);
     if node_text.trim_start().starts_with("static ") || node_text.contains("\nstatic ") {
@@ -7238,6 +7526,64 @@ fn semantic_cpp_symbol_visibility(node: tree_sitter::Node<'_>, source: &str) -> 
         }
     }
     visibility
+}
+
+fn semantic_csharp_symbol_visibility(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
+    let modifiers = semantic_csharp_direct_modifiers(node, source);
+    if modifiers.iter().any(|modifier| modifier == "public") {
+        return "public";
+    }
+    if modifiers.iter().any(|modifier| modifier == "private") {
+        return "private";
+    }
+    if modifiers.iter().any(|modifier| modifier == "protected") {
+        return "protected";
+    }
+    if modifiers.iter().any(|modifier| modifier == "internal") {
+        return "internal";
+    }
+    if semantic_nearest_ancestor_any(node, &["interface_declaration"]).is_some()
+        && node.kind() != "interface_declaration"
+    {
+        return "public";
+    }
+    if matches!(
+        node.kind(),
+        "class_declaration"
+            | "interface_declaration"
+            | "struct_declaration"
+            | "enum_declaration"
+            | "record_declaration"
+    ) {
+        return "internal";
+    }
+    if semantic_nearest_ancestor_any(
+        node,
+        &[
+            "class_declaration",
+            "struct_declaration",
+            "record_declaration",
+        ],
+    )
+    .is_some()
+    {
+        "private"
+    } else {
+        "internal"
+    }
+}
+
+fn semantic_csharp_direct_modifiers(node: tree_sitter::Node<'_>, source: &str) -> BTreeSet<String> {
+    let mut modifiers = BTreeSet::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "modifier" {
+            if let Ok(text) = child.utf8_text(source.as_bytes()) {
+                modifiers.insert(text.trim().to_ascii_lowercase());
+            }
+        }
+    }
+    modifiers
 }
 
 fn semantic_nearest_ancestor_any<'a>(
@@ -7283,10 +7629,7 @@ fn semantic_node_text(node: tree_sitter::Node<'_>, source: &str) -> String {
     node.utf8_text(source.as_bytes()).unwrap_or("").to_string()
 }
 
-fn semantic_tree_sitter_parse_diagnostics(
-    root: tree_sitter::Node<'_>,
-    source: &str,
-) -> Value {
+fn semantic_tree_sitter_parse_diagnostics(root: tree_sitter::Node<'_>, source: &str) -> Value {
     let mut diagnostics = Vec::new();
     semantic_collect_parse_diagnostics(root, source, &mut diagnostics);
     if diagnostics.is_empty() {
@@ -7426,7 +7769,7 @@ fn semantic_path_is_test(path: &str) -> bool {
         || normalized.contains("/tests/")
         || normalized.contains("/test/")
         || normalized.ends_with("_test.py")
-        || normalized.ends_with("_test.go")
+        || semantic_go_path_is_test_file(path)
         || normalized.ends_with(".test.js")
         || normalized.ends_with(".spec.js")
         || normalized.ends_with(".test.ts")
@@ -7435,16 +7778,43 @@ fn semantic_path_is_test(path: &str) -> bool {
         || normalized.ends_with(".spec.tsx")
         || semantic_java_path_is_test(path)
         || semantic_csharp_path_is_test(path)
+        || semantic_ruby_path_is_test(path)
         || normalized.ends_with("_test.rb")
         || normalized.ends_with("Test.php")
+}
+
+fn semantic_ruby_path_is_test(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    normalized.starts_with("spec/")
+        || normalized.contains("/spec/")
+        || normalized.starts_with("test/")
+        || normalized.contains("/test/")
+        || normalized.ends_with("_spec.rb")
+        || normalized.ends_with("_test.rb")
+}
+
+fn semantic_go_path_is_test_file(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    let file_name = normalized.rsplit('/').next().unwrap_or(&normalized);
+    file_name.ends_with("_test.go") && !file_name.starts_with('_') && !file_name.starts_with('.')
 }
 
 fn semantic_csharp_path_is_test(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
     let file_name = normalized.rsplit('/').next().unwrap_or(&normalized);
     file_name.ends_with(".cs")
-        && (file_name.ends_with("Tests.cs")
+        && (normalized.starts_with("tests/")
+            || normalized.contains("/tests/")
+            || normalized.starts_with("test/")
+            || normalized.contains("/test/")
+            || normalized.contains(".Tests/")
+            || normalized.contains(".Test/")
+            || normalized.contains(".UnitTests/")
+            || normalized.contains(".IntegrationTests/")
+            || file_name.ends_with("Tests.cs")
             || file_name.ends_with("Test.cs")
+            || file_name.ends_with("TestCase.cs")
+            || file_name.starts_with("Test")
             || file_name.contains(".Tests."))
 }
 
@@ -26066,6 +26436,135 @@ int classifyWidget() {
         assert!(stderr_sot_path.is_file());
     }
 
+    #[test]
+    fn javascript_semantic_extraction_uses_binding_symbols_and_export_visibility() {
+        let source = r#"
+export const double = (x) => {
+    return x * 2;
+};
+
+export const plusOne = function(value) {
+    return value + 1;
+};
+
+const tools = {
+    run: (input) => input + 1,
+    stop: function(reason) {
+        return reason.length;
+    }
+};
+
+module.exports.load = function(config) {
+    return plusOne(config.count);
+};
+"#;
+        println!(
+            "BEFORE javascript semantic-index state: source_len={} path_is_test={}",
+            source.len(),
+            semantic_path_is_test("src/math.js")
+        );
+        let extraction = semantic_extract_source_facts("src/math.js", "javascript", source)
+            .expect("valid JavaScript AST");
+        println!(
+            "AFTER javascript semantic-index state: symbols={:?}, calls={:?}",
+            extraction.symbols, extraction.calls
+        );
+
+        let symbols = extraction
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?.to_string(),
+                    symbol.get("semantic_kind")?.as_str()?.to_string(),
+                    symbol.get("visibility")?.as_str()?.to_string(),
+                ))
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(symbols.contains(&(
+            "double".to_string(),
+            "function".to_string(),
+            "exported".to_string()
+        )));
+        assert!(symbols.contains(&(
+            "plusOne".to_string(),
+            "function".to_string(),
+            "exported".to_string()
+        )));
+        assert!(symbols.contains(&(
+            "run".to_string(),
+            "function".to_string(),
+            "public".to_string()
+        )));
+        assert!(symbols.contains(&(
+            "stop".to_string(),
+            "function".to_string(),
+            "public".to_string()
+        )));
+        assert!(symbols.contains(&(
+            "load".to_string(),
+            "function".to_string(),
+            "public".to_string()
+        )));
+
+        let symbol_names = symbols
+            .iter()
+            .map(|(name, _, _)| name.as_str())
+            .collect::<BTreeSet<_>>();
+        for parameter_name in ["x", "value", "input", "reason", "config"] {
+            assert!(
+                !symbol_names.contains(parameter_name),
+                "parameter {parameter_name} must not be persisted as a function symbol"
+            );
+        }
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        let source_path = repo.join("src/math.js");
+        let evidence_path = temp.path().join("javascript-semantic-fsv.json");
+        fs::create_dir_all(source_path.parent().expect("source parent"))
+            .expect("create JavaScript source dir");
+        fs::write(&source_path, source).expect("write JavaScript source");
+        let source_readback = fs::read_to_string(&source_path).expect("read JavaScript source");
+        let disk_extraction =
+            semantic_extract_source_facts("src/math.js", "javascript", &source_readback)
+                .expect("valid JavaScript AST from disk source");
+        let evidence = json!({
+            "source_of_truth": {
+                "evidence": file_sot_string(&evidence_path),
+                "source": file_sot_string(&source_path),
+            },
+            "source_readback_sha256": hex_bytes(&sha256(source_readback.as_bytes())),
+            "symbols": disk_extraction.symbols,
+            "calls": disk_extraction.calls,
+            "dataflow_edges": disk_extraction.dataflow_edges,
+        });
+        write_json_file(&evidence_path, &evidence).expect("write JavaScript semantic FSV evidence");
+        let readback =
+            read_json_file(&evidence_path).expect("read JavaScript semantic FSV evidence");
+        println!(
+            "READBACK javascript semantic-index FSV state: {}",
+            serde_json::to_string_pretty(&readback).expect("serialize JavaScript readback")
+        );
+        assert_eq!(readback, evidence);
+    }
+
+    #[test]
+    fn javascript_semantic_extraction_fails_closed_with_diagnostics_on_parse_errors() {
+        let err = semantic_extract_source_facts(
+            "src/broken.js",
+            "javascript",
+            "export const broken = (value) => {\n  return value +\n",
+        )
+        .expect_err("JavaScript syntax errors must not produce a semantic index");
+        println!("AFTER javascript parse-error state: {err}");
+        assert_eq!(err.code(), "VERIFICATION_FAILED");
+        assert!(
+            err.to_string().contains("diagnostics="),
+            "parse errors must include structured diagnostics: {err}"
+        );
+    }
+
     fn local_file_sot_path(sot: &str) -> PathBuf {
         let Some(path) = sot.strip_prefix("file:") else {
             panic!("expected local file source-of-truth URL, got {sot}");
@@ -26074,6 +26573,103 @@ int classifyWidget() {
             panic!("local file source-of-truth URL must include a path");
         }
         PathBuf::from(path)
+    }
+
+    #[test]
+    fn go_semantic_extraction_recognizes_only_go_test_entrypoints() {
+        let source = "package calc_test\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {}\nfunc BenchmarkAdd(b *testing.B) {}\nfunc FuzzAdd(f *testing.F) {}\nfunc ExampleAdd() {}\nfunc helper(t *testing.T) {}\nfunc Testhelper(t *testing.T) {}\n";
+        println!(
+            "BEFORE go semantic-index state: path_is_test={} source_len={}",
+            semantic_path_is_test("src/calc_test.go"),
+            source.len()
+        );
+        let test_file = semantic_extract_source_facts("src/calc_test.go", "go", source)
+            .expect("valid Go AST from test file");
+        let production_file = semantic_extract_source_facts("src/calc.go", "go", source)
+            .expect("valid Go AST from production file");
+        println!(
+            "AFTER go semantic-index state: test_symbols={:?} production_symbols={:?}",
+            test_file.symbols, production_file.symbols
+        );
+
+        let test_kinds = test_file
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?,
+                    symbol.get("semantic_kind")?.as_str()?,
+                ))
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(test_kinds.contains(&("TestAdd", "test")));
+        assert!(test_kinds.contains(&("BenchmarkAdd", "test")));
+        assert!(test_kinds.contains(&("FuzzAdd", "test")));
+        assert!(test_kinds.contains(&("ExampleAdd", "test")));
+        assert!(test_kinds.contains(&("helper", "function")));
+        assert!(test_kinds.contains(&("Testhelper", "function")));
+
+        let production_kinds = production_file
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?,
+                    symbol.get("semantic_kind")?.as_str()?,
+                ))
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(production_kinds.contains(&("TestAdd", "function")));
+        assert!(production_kinds.contains(&("BenchmarkAdd", "function")));
+        assert!(production_kinds.contains(&("FuzzAdd", "function")));
+        assert!(production_kinds.contains(&("ExampleAdd", "function")));
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let evidence_path = temp.path().join("go-semantic-fsv.json");
+        let source_root = temp.path().join("repo");
+        let source_path = source_root.join("src/calc_test.go");
+        fs::create_dir_all(source_path.parent().expect("go source parent"))
+            .expect("create Go source dir");
+        fs::write(&source_path, source).expect("write Go source");
+        let disk_source = fs::read_to_string(&source_path).expect("read Go source from disk");
+        let disk_extraction = semantic_extract_source_facts("src/calc_test.go", "go", &disk_source)
+            .expect("valid Go AST from disk source");
+        let fsv = json!({
+            "source_of_truth": {
+                "evidence": file_sot_string(&evidence_path),
+                "go_source": file_sot_string(&source_path),
+            },
+            "test_file_symbols": disk_extraction.symbols,
+            "test_file_calls": disk_extraction.calls,
+            "test_file_dataflow_edges": disk_extraction.dataflow_edges,
+            "path_cases": {
+                "src/calc_test.go": semantic_path_is_test("src/calc_test.go"),
+                "src/_hidden_test.go": semantic_path_is_test("src/_hidden_test.go"),
+                "src/.hidden_test.go": semantic_path_is_test("src/.hidden_test.go"),
+                "src/calc.go": semantic_path_is_test("src/calc.go"),
+            }
+        });
+        write_json_file(&evidence_path, &fsv).expect("write Go semantic FSV evidence");
+        let readback = read_json_file(&evidence_path).expect("read Go semantic FSV evidence");
+        println!(
+            "READBACK go semantic-index FSV state: {}",
+            serde_json::to_string_pretty(&readback).expect("serialize Go semantic readback")
+        );
+        assert_eq!(readback, fsv);
+        let path_cases = readback
+            .get("path_cases")
+            .and_then(Value::as_object)
+            .expect("path_cases readback");
+        assert_eq!(path_cases.get("src/calc_test.go"), Some(&Value::Bool(true)));
+        assert_eq!(
+            path_cases.get("src/_hidden_test.go"),
+            Some(&Value::Bool(false))
+        );
+        assert_eq!(
+            path_cases.get("src/.hidden_test.go"),
+            Some(&Value::Bool(false))
+        );
+        assert_eq!(path_cases.get("src/calc.go"), Some(&Value::Bool(false)));
     }
 
     #[test]

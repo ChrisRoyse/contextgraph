@@ -6838,12 +6838,13 @@ fn dynamicjepa_ast_semantics_for_path(
     })?;
     let root = tree.root_node();
     if root.has_error() {
+        let diagnostics = ast_parse_diagnostics(root, &source);
         return Err(RealityError::new(
             "RUST_REALITY_DYNAMICJEPA_AST_PARSE_SYNTAX_ERROR",
             "DynamicJEPA AST action semantics refused a source file with tree-sitter syntax errors",
             "dynamicjepa.action.ast_parse_status",
             "fix or exclude syntactically invalid source before training or pre-action control; parser-backed semantics must not be guessed",
-            json!({"language": language, "path": repo_relative_path}),
+            json!({"language": language, "path": repo_relative_path, "diagnostics": diagnostics}),
             Some(file_sot(&source_path)),
         ));
     }
@@ -7764,6 +7765,25 @@ fn dynamicjepa_run_language_semantic_tool(
                     "language": language,
                     "path": rel_target,
                     "required_tool": "javac",
+                    "toolchain_kind": kind,
+                    "PATH": std::env::var_os("PATH")
+                        .map(|value| value.to_string_lossy().to_string())
+                        .unwrap_or_default(),
+                }),
+                Some(file_sot(target)),
+            ));
+        }
+        if language == "php" && kind == "php_toolchain_missing" {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_PHP_TOOLCHAIN_MISSING",
+                "DynamicJEPA PHP compiler semantics require php -l; parser-only fallback is refused",
+                "dynamicjepa.action.compiler_lsp.php.toolchain",
+                "install the PHP CLI binary on PATH before using PHP source for ME-JEPA action control",
+                json!({
+                    "language": language,
+                    "path": rel_target,
+                    "required_tool": "php",
+                    "required_check": "php -l",
                     "toolchain_kind": kind,
                     "PATH": std::env::var_os("PATH")
                         .map(|value| value.to_string_lossy().to_string())
@@ -8727,6 +8747,79 @@ fn ast_significant_byte_range(
     (significant_start < significant_end).then_some((significant_start, significant_end))
 }
 
+fn ast_parse_diagnostics(root: tree_sitter::Node<'_>, source: &str) -> Value {
+    let mut diagnostics = Vec::new();
+    ast_collect_parse_diagnostics(root, source, &mut diagnostics);
+    if diagnostics.is_empty() {
+        diagnostics.push(ast_parse_diagnostic_for_node(root, source));
+    }
+    Value::Array(diagnostics)
+}
+
+fn ast_collect_parse_diagnostics(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+    diagnostics: &mut Vec<Value>,
+) {
+    if diagnostics.len() >= 32 {
+        return;
+    }
+    if node.is_error() || node.is_missing() {
+        diagnostics.push(ast_parse_diagnostic_for_node(node, source));
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if diagnostics.len() >= 32 {
+            break;
+        }
+        if child.has_error() || child.is_error() || child.is_missing() {
+            ast_collect_parse_diagnostics(child, source, diagnostics);
+        }
+    }
+}
+
+fn ast_parse_diagnostic_for_node(node: tree_sitter::Node<'_>, source: &str) -> Value {
+    let start = node.start_position();
+    let end = node.end_position();
+    json!({
+        "kind": node.kind(),
+        "is_error": node.is_error(),
+        "is_missing": node.is_missing(),
+        "start_byte": node.start_byte(),
+        "end_byte": node.end_byte(),
+        "start_line": start.row + 1,
+        "start_column": start.column,
+        "end_line": end.row + 1,
+        "end_column": end.column,
+        "excerpt": ast_line_excerpt_at_byte(source, node.start_byte()),
+    })
+}
+
+fn ast_line_excerpt_at_byte(source: &str, byte: usize) -> String {
+    if source.is_empty() {
+        return String::new();
+    }
+    let byte = ast_floor_char_boundary(source, byte.min(source.len()));
+    let line_start = source[..byte].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+    let line_end = source[byte..]
+        .find('\n')
+        .map(|idx| byte + idx)
+        .unwrap_or(source.len());
+    source
+        .get(line_start..line_end)
+        .unwrap_or("")
+        .chars()
+        .take(160)
+        .collect()
+}
+
+fn ast_floor_char_boundary(source: &str, mut byte: usize) -> usize {
+    while byte > 0 && !source.is_char_boundary(byte) {
+        byte -= 1;
+    }
+    byte
+}
+
 fn byte_to_one_based_line(source: &str, byte_offset: usize) -> Result<u32> {
     let mut line = 1u32;
     for (idx, byte) in source.bytes().enumerate() {
@@ -8755,6 +8848,17 @@ fn dynamicjepa_ast_semantic_node(
     source: &str,
     path: &str,
 ) -> AstSemanticNode {
+    if language == "ruby" {
+        if let Some(test_node) = ast_nearest_ruby_test_node(node, source, path) {
+            return AstSemanticNode {
+                node_kind: "test",
+                symbol_kind: ast_symbol_kind_for_node_kind("test"),
+                node_start_line: test_node.start_position().row as u32 + 1,
+                symbol_name: ast_node_name_for_language(language, test_node, source),
+                visibility: ast_symbol_visibility(language, test_node, source),
+            };
+        }
+    }
     let mut current = Some(node);
     while let Some(candidate) = current {
         let node_kind = ast_node_kind_for_language(language, candidate, source, path);
@@ -8896,39 +9000,70 @@ fn ast_node_kind_for_language(
         "c" => ast_c_node_kind(node),
         "cpp" => ast_cpp_node_kind(node, source),
         "csharp" => match kind {
-            "method_declaration" | "constructor_declaration" => "method",
+            "method_declaration"
+            | "constructor_declaration"
+            | "local_function_statement"
+            | "destructor_declaration"
+            | "operator_declaration"
+            | "conversion_operator_declaration" => {
+                if path_is_test(path)
+                    || csharp_method_has_test_attribute(node, source)
+                    || ast_node_name_for_language(language, node, source)
+                        .is_some_and(|name| name.starts_with("Test") || name.starts_with("test"))
+                {
+                    "test"
+                } else {
+                    "method"
+                }
+            }
             "class_declaration"
             | "interface_declaration"
             | "struct_declaration"
             | "enum_declaration"
             | "record_declaration" => "class",
+            "property_declaration" | "indexer_declaration" => "property",
+            "event_declaration" | "event_field_declaration" => "event",
+            "delegate_declaration" => "delegate",
             "using_directive" => "import",
             "invocation_expression" | "object_creation_expression" => "call",
             "variable_declaration" | "assignment_expression" | "field_declaration" => "assignment",
             "compilation_unit" => "module",
             _ => "unknown",
         },
-        "ruby" => match kind {
-            "method" | "singleton_method" => "method",
-            "class" | "module" => "class",
-            "require" | "require_relative" => "import",
-            "call" | "command" => "call",
-            "assignment" | "operator_assignment" => "assignment",
-            "program" => "module",
-            _ => "unknown",
-        },
+        "ruby" => ast_ruby_node_kind(node, source, path),
         "php" => match kind {
-            "function_definition" => "function",
-            "method_declaration" => "method",
+            "function_definition" => {
+                if php_function_or_method_is_test(node, source, path) {
+                    "test"
+                } else {
+                    "function"
+                }
+            }
+            "method_declaration" => {
+                if php_function_or_method_is_test(node, source, path) {
+                    "test"
+                } else {
+                    "method"
+                }
+            }
             "class_declaration"
             | "interface_declaration"
             | "trait_declaration"
             | "enum_declaration" => "class",
             "namespace_use_declaration" | "require_expression" | "include_expression" => "import",
+            "function_call_expression" if php_call_is_pest_test(node, source, path) => "test",
             "function_call_expression"
             | "member_call_expression"
+            | "nullsafe_member_call_expression"
+            | "scoped_call_expression"
             | "object_creation_expression" => "call",
-            "assignment_expression" | "variable_name" => "assignment",
+            "assignment_expression"
+            | "augmented_assignment_expression"
+            | "reference_assignment_expression"
+            | "property_declaration"
+            | "static_variable_declaration"
+            | "function_static_declaration"
+            | "const_declaration" => "assignment",
             "program" => "module",
             _ => "unknown",
         },
@@ -9009,11 +9144,7 @@ fn ast_cpp_template_node_kind(node: tree_sitter::Node<'_>, source: &str) -> &'st
     "unknown"
 }
 
-fn go_function_is_test_entrypoint(
-    path: &str,
-    node: tree_sitter::Node<'_>,
-    source: &str,
-) -> bool {
+fn go_function_is_test_entrypoint(path: &str, node: tree_sitter::Node<'_>, source: &str) -> bool {
     if node.kind() != "function_declaration" || !go_path_is_test_file(path) {
         return false;
     }
@@ -9111,10 +9242,109 @@ fn ast_node_name_for_language(
     source: &str,
 ) -> Option<String> {
     match language {
+        "csharp" => ast_csharp_node_name(node, source).or_else(|| ast_node_name(node, source)),
         "cpp" => ast_cpp_node_name(node, source).or_else(|| ast_node_name(node, source)),
         "javascript" | "typescript" | "tsx" => ast_javascript_node_name(node, source),
         _ => ast_node_name(node, source),
     }
+}
+
+fn ast_csharp_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    if let Some(name) = node
+        .child_by_field_name("name")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+        .map(ToOwned::to_owned)
+    {
+        return Some(name);
+    }
+    match node.kind() {
+        "event_field_declaration" | "field_declaration" => {
+            ast_descendant_field_text(node, "variable_declarator", "name", source)
+        }
+        "indexer_declaration" => Some("this[]".to_string()),
+        "conversion_operator_declaration" => node
+            .child_by_field_name("type")
+            .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+            .map(|target| format!("operator {}", target.trim())),
+        "operator_declaration" => Some("operator".to_string()),
+        _ => None,
+    }
+}
+
+fn ast_csharp_method_has_test_attribute(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    if !matches!(
+        node.kind(),
+        "method_declaration" | "local_function_statement" | "constructor_declaration"
+    ) {
+        return false;
+    }
+    let mut cursor = node.walk();
+    node.children(&mut cursor).any(|child| {
+        matches!(child.kind(), "attribute_list" | "attribute")
+            && ast_csharp_tree_has_test_attribute(child, source)
+    })
+}
+
+fn ast_csharp_tree_has_test_attribute(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    if node.kind() == "attribute"
+        && ast_csharp_attribute_simple_name(node, source)
+            .as_deref()
+            .is_some_and(ast_csharp_attribute_is_test)
+    {
+        return true;
+    }
+    let mut cursor = node.walk();
+    node.children(&mut cursor)
+        .any(|child| ast_csharp_tree_has_test_attribute(child, source))
+}
+
+fn ast_csharp_attribute_simple_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    let raw = node
+        .child_by_field_name("name")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())?;
+    let without_generic = raw.split('<').next().unwrap_or(raw);
+    let simple = without_generic
+        .rsplit(|ch| matches!(ch, '.' | ':'))
+        .next()
+        .unwrap_or(without_generic)
+        .trim()
+        .trim_end_matches("Attribute");
+    (!simple.is_empty()).then(|| simple.to_string())
+}
+
+fn ast_csharp_attribute_is_test(name: &str) -> bool {
+    matches!(
+        name,
+        "Fact"
+            | "Theory"
+            | "Test"
+            | "TestCase"
+            | "TestCaseSource"
+            | "TestMethod"
+            | "DataTestMethod"
+            | "STATestMethod"
+    )
+}
+
+fn ast_descendant_field_text(
+    node: tree_sitter::Node<'_>,
+    descendant_kind: &str,
+    field_name: &str,
+    source: &str,
+) -> Option<String> {
+    if node.kind() == descendant_kind {
+        return node
+            .child_by_field_name(field_name)
+            .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+            .map(ToOwned::to_owned);
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if let Some(value) = ast_descendant_field_text(child, descendant_kind, field_name, source) {
+            return Some(value);
+        }
+    }
+    None
 }
 
 fn ast_javascript_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
@@ -9138,10 +9368,7 @@ fn ast_javascript_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option
     }
 }
 
-fn ast_javascript_function_name(
-    node: tree_sitter::Node<'_>,
-    source: &str,
-) -> Option<String> {
+fn ast_javascript_function_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
     if matches!(
         node.kind(),
         "function_declaration"
@@ -9242,10 +9469,7 @@ fn ast_javascript_assignment_binding_name(
     })
 }
 
-fn ast_javascript_binding_identifier(
-    node: tree_sitter::Node<'_>,
-    source: &str,
-) -> Option<String> {
+fn ast_javascript_binding_identifier(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
     match node.kind() {
         "identifier"
         | "property_identifier"
@@ -9406,9 +9630,14 @@ fn ast_symbol_visibility(
             }
         }
         "javascript" | "typescript" | "tsx" => ast_javascript_symbol_visibility(node, source),
-        "java" | "csharp" | "php" => {
+        "csharp" => ast_csharp_symbol_visibility(node, source),
+        "java" | "php" => {
             if node_text.contains(" private ") || node_text.trim_start().starts_with("private ") {
                 "private"
+            } else if node_text.contains(" protected ")
+                || node_text.trim_start().starts_with("protected ")
+            {
+                "protected"
             } else if node_text.contains(" public ")
                 || node_text.trim_start().starts_with("public ")
             {
@@ -9433,10 +9662,7 @@ fn ast_symbol_visibility(
     }
 }
 
-fn ast_javascript_symbol_visibility(
-    node: tree_sitter::Node<'_>,
-    source: &str,
-) -> &'static str {
+fn ast_javascript_symbol_visibility(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
     let mut current = Some(node);
     while let Some(candidate) = current {
         if candidate.kind() == "export_statement" {
@@ -9450,6 +9676,67 @@ fn ast_javascript_symbol_visibility(
     } else {
         "public"
     }
+}
+
+fn ast_csharp_symbol_visibility(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
+    let modifiers = ast_csharp_direct_modifiers(node, source);
+    if modifiers.iter().any(|modifier| modifier == "public") {
+        return "public";
+    }
+    if modifiers.iter().any(|modifier| modifier == "private") {
+        return "private";
+    }
+    if modifiers.iter().any(|modifier| modifier == "protected") {
+        return "protected";
+    }
+    if modifiers.iter().any(|modifier| modifier == "internal") {
+        return "internal";
+    }
+    if ast_nearest_ancestor_any(node, &["interface_declaration"]).is_some()
+        && node.kind() != "interface_declaration"
+    {
+        return "public";
+    }
+    if matches!(
+        node.kind(),
+        "class_declaration"
+            | "interface_declaration"
+            | "struct_declaration"
+            | "enum_declaration"
+            | "record_declaration"
+    ) {
+        return "internal";
+    }
+    if ast_nearest_ancestor_any(
+        node,
+        &[
+            "class_declaration",
+            "struct_declaration",
+            "record_declaration",
+        ],
+    )
+    .is_some()
+    {
+        "private"
+    } else {
+        "internal"
+    }
+}
+
+fn ast_csharp_direct_modifiers(
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> BTreeSet<String> {
+    let mut modifiers = BTreeSet::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "modifier" {
+            if let Ok(text) = child.utf8_text(source.as_bytes()) {
+                modifiers.insert(text.trim().to_ascii_lowercase());
+            }
+        }
+    }
+    modifiers
 }
 
 fn ast_cpp_symbol_visibility(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
@@ -9793,6 +10080,10 @@ fn dynamicjepa_ast_edit_kind_for_range(
         "function" | "method" => "function_body",
         "class" if edit_start_line <= node_start_line => "signature",
         "class" => "class_body",
+        "property" if edit_start_line <= node_start_line => "signature",
+        "property" => "property_body",
+        "event" => "event_declaration",
+        "delegate" => "signature",
         "import" => "import_section",
         "call" => "call_site",
         "assignment" => "assignment",
@@ -19804,6 +20095,26 @@ mod tests {
         dynamicjepa_ast_semantic_node("java", node, source, path)
     }
 
+    fn javascript_semantic_for_source(path: &str, source: &str, needle: &str) -> AstSemanticNode {
+        let mut parser = tree_sitter::Parser::new();
+        let language: tree_sitter::Language = tree_sitter_javascript::LANGUAGE.into();
+        parser
+            .set_language(&language)
+            .expect("javascript parser linked");
+        let tree = parser.parse(source, None).expect("javascript syntax tree");
+        let root = tree.root_node();
+        assert!(
+            !root.has_error(),
+            "synthetic JavaScript fixture must parse cleanly: {source}"
+        );
+        let start = source.find(needle).expect("needle in JavaScript source");
+        let end = start + needle.len();
+        let node = root
+            .descendant_for_byte_range(start, end)
+            .expect("AST node for JavaScript needle");
+        dynamicjepa_ast_semantic_node("javascript", node, source, path)
+    }
+
     #[test]
     fn dynamicjepa_ast_action_semantics_parse_real_python_edit() {
         let (_temp, repo) = init_real_git_repo();
@@ -19893,6 +20204,11 @@ mod tests {
     fn dynamicjepa_ast_action_semantics_parse_real_go_edit_with_reverse_refs() {
         let (_temp, repo) = init_real_git_repo();
         write_text_checked(
+            &repo.join("go.mod"),
+            "module example.com/dynamicjepa\n\ngo 1.22\n",
+        )
+        .expect("go module write");
+        write_text_checked(
             &repo.join("src/calc.go"),
             "package main\n\nfunc add(x int) int {\n    return x + 1\n}\n",
         )
@@ -19902,6 +20218,11 @@ mod tests {
             "package main\n\nfunc call() int {\n    return add(2)\n}\n",
         )
         .expect("go ref source write");
+        write_text_checked(
+            &repo.join("src/calc_test.go"),
+            "package main\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {\n    if add(2) != 3 {\n        t.Fatalf(\"bad add\")\n    }\n}\n",
+        )
+        .expect("go test source write");
         let args = json!({
             "edits": [{
                 "path": "src/calc.go",
@@ -19911,21 +20232,125 @@ mod tests {
                 "observed_sha256": sha256_file(&repo.join("src/calc.go")).expect("sha")
             }]
         });
-        let action = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
-            .expect("go parser-backed action semantics");
+        println!(
+            "BEFORE Go action state: go_toolchain={}, go_mod={}, source={}, test_source={}",
+            command_exists("go"),
+            fs::read_to_string(repo.join("go.mod")).expect("read go.mod"),
+            fs::read_to_string(repo.join("src/calc.go")).expect("read Go source"),
+            fs::read_to_string(repo.join("src/calc_test.go")).expect("read Go test source")
+        );
+        let action_result =
+            inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args);
+        if !command_exists("go") {
+            let err = action_result.expect_err("missing Go toolchain must fail closed");
+            println!("AFTER Go missing-toolchain state: {err}");
+            assert_eq!(
+                err.error_code,
+                "RUST_REALITY_DYNAMICJEPA_GO_TOOLCHAIN_MISSING"
+            );
+            assert!(
+                err.to_string().contains("parser-only fallback is refused"),
+                "unexpected Go missing-toolchain error: {err}"
+            );
+            return;
+        }
+        let action = action_result.expect("go compiler-backed action semantics");
+        println!("AFTER Go action semantic state: {action}");
         assert_eq!(action["ast_language"], "go");
         assert_eq!(action["ast_parse_status"], "parsed");
         assert_eq!(action["ast_node_kind"], "function");
         assert_eq!(action["patch_delta_kind"], "return_contract");
         assert_eq!(action["dependency_blast_radius"], "local_symbol");
         assert_eq!(action["reverse_reference_count"], 1);
-        if command_exists("go") {
-            assert_eq!(action["semantic_provider"], "compiler_lsp");
-            assert_eq!(action["compiler_semantic_status"], "checked");
-        } else {
-            assert_eq!(action["semantic_provider"], "parser_symbol_graph");
-            assert_eq!(action["compiler_semantic_status"], "toolchain_missing");
+        assert_eq!(action["semantic_provider"], "compiler_lsp");
+        assert_eq!(action["compiler_semantic_status"], "checked");
+        assert_eq!(action["type_resolution_status"], "resolved");
+        assert_eq!(action["import_resolution_status"], "resolved");
+        assert_eq!(action["test_attribution_status"], "inferred_from_manifest");
+        assert_eq!(action["attributed_test_count"], 1);
+    }
+
+    #[test]
+    fn dynamicjepa_ast_action_go_test_entrypoints_are_name_and_file_specific() {
+        let source = "package calc_test\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {}\nfunc BenchmarkAdd(b *testing.B) {}\nfunc FuzzAdd(f *testing.F) {}\nfunc ExampleAdd() {}\nfunc helper(t *testing.T) {}\nfunc Testhelper(t *testing.T) {}\n";
+        let mut parser = tree_sitter::Parser::new();
+        let language: tree_sitter::Language = tree_sitter_go::LANGUAGE.into();
+        parser.set_language(&language).expect("set Go parser");
+        let tree = parser.parse(source, None).expect("parse Go source");
+        let root = tree.root_node();
+        assert!(!root.has_error(), "Go test-entrypoint fixture must parse");
+
+        let mut cursor = root.walk();
+        let mut test_file_kinds = BTreeMap::new();
+        let mut prod_file_kinds = BTreeMap::new();
+        for node in root.named_children(&mut cursor) {
+            if node.kind() != "function_declaration" {
+                continue;
+            }
+            let test_semantic =
+                dynamicjepa_ast_semantic_node("go", node, source, "src/calc_test.go");
+            let prod_semantic = dynamicjepa_ast_semantic_node("go", node, source, "src/calc.go");
+            let name = test_semantic.symbol_name.clone().expect("Go function name");
+            test_file_kinds.insert(name.clone(), test_semantic.node_kind);
+            prod_file_kinds.insert(name, prod_semantic.node_kind);
         }
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source_path = temp.path().join("src/calc_test.go");
+        let evidence_path = temp.path().join("go-action-ast-fsv.json");
+        write_text_checked(&source_path, source).expect("write Go test-entrypoint source");
+        let fsv = json!({
+            "source_of_truth": {
+                "go_source": file_sot(&source_path),
+                "evidence": file_sot(&evidence_path),
+            },
+            "test_file_kinds": test_file_kinds,
+            "production_file_kinds": prod_file_kinds,
+        });
+        write_json_checked(&evidence_path, &fsv).expect("write Go action AST FSV evidence");
+        let readback: Value = read_json(&evidence_path).expect("read Go action AST FSV evidence");
+        println!(
+            "READBACK Go action AST FSV state: {}",
+            serde_json::to_string_pretty(&readback).expect("serialize Go action FSV")
+        );
+        assert_eq!(readback, fsv);
+
+        let test_file = readback
+            .get("test_file_kinds")
+            .and_then(Value::as_object)
+            .expect("test_file_kinds readback");
+        assert_eq!(
+            test_file.get("TestAdd").and_then(Value::as_str),
+            Some("test")
+        );
+        assert_eq!(
+            test_file.get("BenchmarkAdd").and_then(Value::as_str),
+            Some("test")
+        );
+        assert_eq!(
+            test_file.get("FuzzAdd").and_then(Value::as_str),
+            Some("test")
+        );
+        assert_eq!(
+            test_file.get("ExampleAdd").and_then(Value::as_str),
+            Some("test")
+        );
+        assert_eq!(
+            test_file.get("helper").and_then(Value::as_str),
+            Some("function")
+        );
+        assert_eq!(
+            test_file.get("Testhelper").and_then(Value::as_str),
+            Some("function")
+        );
+        let prod_file = readback
+            .get("production_file_kinds")
+            .and_then(Value::as_object)
+            .expect("production_file_kinds readback");
+        assert_eq!(
+            prod_file.get("TestAdd").and_then(Value::as_str),
+            Some("function")
+        );
     }
 
     #[test]
@@ -20339,6 +20764,51 @@ mod tests {
                 "candidate compiler snapshot must not mutate the source repo"
             );
         }
+    }
+
+    #[test]
+    fn dynamicjepa_javascript_ast_uses_binding_symbols_and_export_visibility() {
+        let source = r#"
+export const double = (x) => {
+    return x * 2;
+};
+
+export const plusOne = function(value) {
+    return value + 1;
+};
+
+const tools = {
+    run: (input) => input + 1,
+    stop: function(reason) {
+        return reason.length;
+    }
+};
+"#;
+        println!(
+            "BEFORE javascript action semantic state: source_len={} path_is_test={}",
+            source.len(),
+            path_is_test("src/math.js")
+        );
+
+        let double = javascript_semantic_for_source("src/math.js", source, "x * 2");
+        let plus_one = javascript_semantic_for_source("src/math.js", source, "value + 1");
+        let run = javascript_semantic_for_source("src/math.js", source, "input + 1");
+        let stop = javascript_semantic_for_source("src/math.js", source, "reason.length");
+        println!(
+            "AFTER javascript action semantic state: double={:?} plus_one={:?} run={:?} stop={:?}",
+            double, plus_one, run, stop
+        );
+
+        assert_eq!(double.node_kind, "function");
+        assert_eq!(double.symbol_kind, "function");
+        assert_eq!(double.symbol_name.as_deref(), Some("double"));
+        assert_eq!(double.visibility, "exported");
+        assert_eq!(plus_one.symbol_name.as_deref(), Some("plusOne"));
+        assert_eq!(plus_one.visibility, "exported");
+        assert_eq!(run.symbol_name.as_deref(), Some("run"));
+        assert_eq!(run.visibility, "public");
+        assert_eq!(stop.symbol_name.as_deref(), Some("stop"));
+        assert_eq!(stop.visibility, "public");
     }
 
     #[test]

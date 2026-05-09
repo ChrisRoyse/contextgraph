@@ -17,16 +17,19 @@
 //      verify panel.slot(EOracle) is byte-exact and the rest is zero.
 //   4. Verify per-slot extents in the panel layout sum to PANEL_DIM = 5_120.
 //   5. Boundary cases:
-//      a. Empty test_id rejects MEJEPA_INSTRUMENTS_INVALID_INPUT
-//      b. Wrong dim into set_slot rejects MEJEPA_INSTRUMENTS_INVALID_INPUT
-//      c. NaN in set_slot rejects MEJEPA_INSTRUMENTS_NUMERICAL_INVARIANT
-//      d. Double-fill rejects MEJEPA_INSTRUMENTS_INVALID_INPUT
+//      a. Empty no-exception oracle rejects MEJEPA_INSTRUMENTS_INVALID_INPUT
+//      b. Empty test_id rejects MEJEPA_INSTRUMENTS_INVALID_INPUT
+//      c. Wrong dim into set_slot rejects MEJEPA_INSTRUMENTS_INVALID_INPUT
+//      d. NaN in set_slot rejects MEJEPA_INSTRUMENTS_NUMERICAL_INVARIANT
+//      e. Double-fill rejects MEJEPA_INSTRUMENTS_INVALID_INPUT
+//      f. Empty panel build rejects MEJEPA_INSTRUMENTS_INVALID_INPUT
+//      g. Malformed persisted panel rejects on readback/deserialization
 
+use context_graph_mejepa_instruments::e_oracle::PerTestOutcome;
 use context_graph_mejepa_instruments::{
     EOracleInstrument, ExceptionClass, Instrument, InstrumentSlot, OracleVerdict, Panel,
     PanelBuilder, TestOutcome, PANEL_DIM,
 };
-use context_graph_mejepa_instruments::e_oracle::PerTestOutcome;
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -121,7 +124,10 @@ fn encode_and_persist(
         encoded.len() == inst.output_dim(),
     )?;
     let e_json = serde_json::to_string_pretty(&encoded)?;
-    write_text_checked(&evidence_root.join(format!("{label}_encoded.json")), &e_json)?;
+    write_text_checked(
+        &evidence_root.join(format!("{label}_encoded.json")),
+        &e_json,
+    )?;
     Ok(json!({
         "label": label,
         "input_path": evidence_root.join(format!("{label}_input.json")).display().to_string(),
@@ -149,6 +155,42 @@ fn boundary_empty_test_id() -> FsvResult<Value> {
         matches!(&result, Err(e) if e.code() == "MEJEPA_INSTRUMENTS_INVALID_INPUT"),
     )?;
     Ok(json!({
+        "before_state": {
+            "per_test": [{
+                "test_id": "",
+                "outcome": "pass",
+                "runtime_ms": 1,
+            }],
+            "exception": null,
+        },
+        "after_state": {
+            "encoded_vector_written": false,
+        },
+        "expected_code": "MEJEPA_INSTRUMENTS_INVALID_INPUT",
+        "actual_code": result.err().map(|e| e.code()),
+        "passes": true,
+    }))
+}
+
+fn boundary_empty_verdict() -> FsvResult<Value> {
+    let inst = EOracleInstrument;
+    let verdict = OracleVerdict {
+        per_test: vec![],
+        exception: None,
+    };
+    let result = inst.encode(&verdict);
+    ensure(
+        "empty no-exception oracle verdict must reject",
+        matches!(&result, Err(e) if e.code() == "MEJEPA_INSTRUMENTS_INVALID_INPUT"),
+    )?;
+    Ok(json!({
+        "before_state": {
+            "per_test_len": 0,
+            "exception": null,
+        },
+        "after_state": {
+            "encoded_vector_written": false,
+        },
         "expected_code": "MEJEPA_INSTRUMENTS_INVALID_INPUT",
         "actual_code": result.err().map(|e| e.code()),
         "passes": true,
@@ -163,6 +205,43 @@ fn boundary_wrong_dim() -> FsvResult<Value> {
         matches!(&result, Err(e) if e.code() == "MEJEPA_INSTRUMENTS_INVALID_INPUT"),
     )?;
     Ok(json!({
+        "before_state": {
+            "slot": InstrumentSlot::EOracle.slug(),
+            "input_vector_len": 64,
+            "expected_vector_len": InstrumentSlot::EOracle.dim(),
+        },
+        "after_state": {
+            "slot_written": false,
+        },
+        "expected_code": "MEJEPA_INSTRUMENTS_INVALID_INPUT",
+        "actual_code": result.err().map(|e| e.code()),
+        "passes": true,
+    }))
+}
+
+fn boundary_invalid_runtime() -> FsvResult<Value> {
+    let inst = EOracleInstrument;
+    let verdict = OracleVerdict {
+        per_test: vec![PerTestOutcome {
+            test_id: "tests/test_runtime.py::test_negative_runtime".into(),
+            outcome: TestOutcome::Pass,
+            runtime_ms: -2,
+        }],
+        exception: None,
+    };
+    let result = inst.encode(&verdict);
+    ensure(
+        "runtime_ms < -1 must reject",
+        matches!(&result, Err(e) if e.code() == "MEJEPA_INSTRUMENTS_INVALID_INPUT"),
+    )?;
+    Ok(json!({
+        "before_state": {
+            "test_id": "tests/test_runtime.py::test_negative_runtime",
+            "runtime_ms": -2,
+        },
+        "after_state": {
+            "encoded_vector_written": false,
+        },
         "expected_code": "MEJEPA_INSTRUMENTS_INVALID_INPUT",
         "actual_code": result.err().map(|e| e.code()),
         "passes": true,
@@ -179,6 +258,15 @@ fn boundary_nan() -> FsvResult<Value> {
         matches!(&result, Err(e) if e.code() == "MEJEPA_INSTRUMENTS_NUMERICAL_INVARIANT"),
     )?;
     Ok(json!({
+        "before_state": {
+            "slot": InstrumentSlot::EOracle.slug(),
+            "input_vector_len": 128,
+            "non_finite_index": 0,
+            "non_finite_value": "NaN",
+        },
+        "after_state": {
+            "slot_written": false,
+        },
         "expected_code": "MEJEPA_INSTRUMENTS_NUMERICAL_INVARIANT",
         "actual_code": result.err().map(|e| e.code()),
         "passes": true,
@@ -194,8 +282,64 @@ fn boundary_double_fill() -> FsvResult<Value> {
         matches!(&result, Err(e) if e.code() == "MEJEPA_INSTRUMENTS_INVALID_INPUT"),
     )?;
     Ok(json!({
+        "before_state": {
+            "slot": InstrumentSlot::EOracle.slug(),
+            "first_write_succeeded": true,
+            "attempted_second_write": true,
+        },
+        "after_state": {
+            "second_write_succeeded": false,
+        },
         "expected_code": "MEJEPA_INSTRUMENTS_INVALID_INPUT",
         "actual_code": result.err().map(|e| e.code()),
+        "passes": true,
+    }))
+}
+
+fn boundary_empty_panel_build() -> FsvResult<Value> {
+    let pb = PanelBuilder::new();
+    let result = pb.build();
+    ensure(
+        "building a panel with no filled slots must reject",
+        matches!(&result, Err(e) if e.code() == "MEJEPA_INSTRUMENTS_INVALID_INPUT"),
+    )?;
+    Ok(json!({
+        "before_state": {
+            "filled_mask": 0,
+            "data_len": PANEL_DIM,
+        },
+        "after_state": {
+            "panel_written": false,
+        },
+        "expected_code": "MEJEPA_INSTRUMENTS_INVALID_INPUT",
+        "actual_code": result.err().map(|e| e.code()),
+        "passes": true,
+    }))
+}
+
+fn boundary_malformed_panel_readback(evidence_root: &Path) -> FsvResult<Value> {
+    let malformed_path = evidence_root.join("malformed-panel.json");
+    let malformed = json!({
+        "data": vec![0.0_f32; PANEL_DIM - 1],
+        "filled_mask": 1,
+    });
+    write_text_checked(&malformed_path, &serde_json::to_string_pretty(&malformed)?)?;
+    let readback = fs::read_to_string(&malformed_path)?;
+    let result = serde_json::from_str::<Panel>(&readback);
+    ensure(
+        "malformed persisted panel must reject during readback",
+        result.is_err(),
+    )?;
+    Ok(json!({
+        "source_of_truth": malformed_path.display().to_string(),
+        "before_state": {
+            "data_len": PANEL_DIM - 1,
+            "filled_mask": 1,
+        },
+        "after_state": {
+            "deserialized": false,
+        },
+        "error": result.err().map(|e| e.to_string()),
         "passes": true,
     }))
 }
@@ -226,10 +370,10 @@ fn main() -> FsvResult<()> {
     // Panel assembly + on-disk verification.
     let mut pb = PanelBuilder::new();
     pb.set_from_instrument(&inst, &verdict_all_pass())?;
-    let panel = pb.build();
+    let panel = pb.build()?;
     ensure(
         "panel data length must equal PANEL_DIM",
-        panel.data.len() == PANEL_DIM,
+        panel.data().len() == PANEL_DIM,
     )?;
     ensure(
         "EOracle slot must be filled",
@@ -238,7 +382,7 @@ fn main() -> FsvResult<()> {
     ensure(
         "non-filled slots must be zero in panel data",
         panel
-            .data
+            .data()
             .iter()
             .enumerate()
             .filter(|(idx, _)| {
@@ -277,10 +421,14 @@ fn main() -> FsvResult<()> {
         },
         "panel_source_of_truth": panel_path.display().to_string(),
         "boundaries": {
+            "empty_verdict": boundary_empty_verdict()?,
             "empty_test_id": boundary_empty_test_id()?,
             "wrong_dim": boundary_wrong_dim()?,
+            "invalid_runtime": boundary_invalid_runtime()?,
             "nan_in_set_slot": boundary_nan()?,
             "double_fill": boundary_double_fill()?,
+            "empty_panel_build": boundary_empty_panel_build()?,
+            "malformed_panel_readback": boundary_malformed_panel_readback(&evidence_root)?,
         },
         "passes": true,
     });
@@ -289,7 +437,10 @@ fn main() -> FsvResult<()> {
     let text = serde_json::to_string_pretty(&evidence)?;
     write_text_checked(&evidence_path, &text)?;
 
-    println!("Phase 1 instruments FSV evidence: {}", evidence_path.display());
+    println!(
+        "Phase 1 instruments FSV evidence: {}",
+        evidence_path.display()
+    );
     println!("{}", text);
     Ok(())
 }

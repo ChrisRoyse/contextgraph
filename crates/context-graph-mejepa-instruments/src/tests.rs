@@ -2,7 +2,9 @@
 // crate::e_oracle (EOracleInstrument). Real synthetic OracleVerdict
 // inputs; no mocks.
 
-use super::e_oracle::{EOracleInstrument, ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome};
+use super::e_oracle::{
+    EOracleInstrument, ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome,
+};
 use super::*;
 
 fn verdict_all_pass(n: usize) -> OracleVerdict {
@@ -90,7 +92,8 @@ fn panel_builder_set_slot_rejects_non_finite() {
 #[test]
 fn panel_builder_set_slot_rejects_double_fill() {
     let mut pb = PanelBuilder::new();
-    pb.set_slot(InstrumentSlot::EOracle, &vec![0.0_f32; 128]).unwrap();
+    pb.set_slot(InstrumentSlot::EOracle, &vec![0.0_f32; 128])
+        .unwrap();
     let err = pb
         .set_slot(InstrumentSlot::EOracle, &vec![1.0_f32; 128])
         .unwrap_err();
@@ -98,23 +101,24 @@ fn panel_builder_set_slot_rejects_double_fill() {
 }
 
 #[test]
-fn panel_zero_filled_when_no_slots_set() {
+fn panel_builder_build_rejects_when_no_slots_set() {
     let pb = PanelBuilder::new();
-    let panel = pb.build();
-    assert_eq!(panel.data.len(), PANEL_DIM);
-    assert!(panel.data.iter().all(|x| *x == 0.0));
-    assert_eq!(panel.filled_mask, 0);
+    let err = pb.build().unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
 }
 
 #[test]
 fn panel_filled_mask_records_which_slots_were_set() {
     let mut pb = PanelBuilder::new();
-    pb.set_slot(InstrumentSlot::EOracle, &vec![0.0_f32; 128]).unwrap();
-    pb.set_slot(InstrumentSlot::ETest, &vec![1.0_f32; 384]).unwrap();
-    let panel = pb.build();
+    pb.set_slot(InstrumentSlot::EOracle, &vec![0.0_f32; 128])
+        .unwrap();
+    pb.set_slot(InstrumentSlot::ETest, &vec![1.0_f32; 384])
+        .unwrap();
+    let panel = pb.build().unwrap();
     assert!(panel.is_filled(InstrumentSlot::EOracle));
     assert!(panel.is_filled(InstrumentSlot::ETest));
     assert!(!panel.is_filled(InstrumentSlot::EAst));
+    assert_ne!(panel.filled_mask(), 0);
 }
 
 #[test]
@@ -122,24 +126,67 @@ fn panel_slot_view_returns_correct_slice() {
     let mut pb = PanelBuilder::new();
     let v: Vec<f32> = (0..128).map(|i| i as f32).collect();
     pb.set_slot(InstrumentSlot::EOracle, &v).unwrap();
-    let panel = pb.build();
+    let panel = pb.build().unwrap();
     assert_eq!(panel.slot(InstrumentSlot::EOracle), v.as_slice());
 }
 
 #[test]
 fn panel_builder_require_slots_errors_on_unfilled() {
     let pb = PanelBuilder::new();
-    let err = pb
-        .require_slots(&[InstrumentSlot::EOracle])
-        .unwrap_err();
+    let err = pb.require_slots(&[InstrumentSlot::EOracle]).unwrap_err();
     assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
 }
 
 #[test]
 fn panel_builder_require_slots_passes_when_filled() {
     let mut pb = PanelBuilder::new();
-    pb.set_slot(InstrumentSlot::EOracle, &vec![0.0_f32; 128]).unwrap();
+    pb.set_slot(InstrumentSlot::EOracle, &vec![0.0_f32; 128])
+        .unwrap();
     pb.require_slots(&[InstrumentSlot::EOracle]).unwrap();
+}
+
+#[test]
+fn panel_builder_require_slots_rejects_empty_required_list() {
+    let pb = PanelBuilder::new();
+    let err = pb.require_slots(&[]).unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+}
+
+#[test]
+fn panel_deserialization_rejects_malformed_source_of_truth() {
+    let wrong_dim = serde_json::json!({
+        "data": vec![0.0_f32; PANEL_DIM - 1],
+        "filled_mask": 1u16,
+    });
+    let err = serde_json::from_value::<Panel>(wrong_dim).unwrap_err();
+    assert!(err.to_string().contains("panel data length"));
+
+    let zero_mask = serde_json::json!({
+        "data": vec![0.0_f32; PANEL_DIM],
+        "filled_mask": 0u16,
+    });
+    let err = serde_json::from_value::<Panel>(zero_mask).unwrap_err();
+    assert!(err.to_string().contains("no filled instrument slots"));
+
+    let invalid_mask = serde_json::json!({
+        "data": vec![0.0_f32; PANEL_DIM],
+        "filled_mask": 0x8000u16,
+    });
+    let err = serde_json::from_value::<Panel>(invalid_mask).unwrap_err();
+    assert!(err.to_string().contains("unknown slot bits"));
+
+    // Non-finite values cannot be carried by JSON (the spec rejects NaN /
+    // Infinity), so we exercise the validation path through Panel::try_new
+    // directly rather than via serde_json::from_value.
+    let mut non_finite_values = vec![0.0_f32; PANEL_DIM];
+    non_finite_values[17] = f32::INFINITY;
+    let err = Panel::try_new(non_finite_values, 1u16).unwrap_err();
+    assert!(
+        err.to_string().to_lowercase().contains("non-finite")
+            || err.code() == "MEJEPA_INSTRUMENTS_NUMERICAL_INVARIANT"
+            || err.code() == "MEJEPA_INSTRUMENTS_INVALID_INPUT",
+        "unexpected error for non-finite Panel::try_new: {err:?}"
+    );
 }
 
 #[test]
@@ -161,7 +208,7 @@ fn e_oracle_all_pass_yields_pass_count_one() {
     assert_eq!(v[3], 0.0); // error
     assert_eq!(v[4], 10.0); // total count
     assert_eq!(v[5], 0.0); // has_exception
-    // No exception → no one-hot bit set.
+                           // No exception → no one-hot bit set.
     for i in 6..16 {
         assert_eq!(v[i], 0.0);
     }
@@ -211,7 +258,10 @@ fn e_oracle_mixed_outcomes_yield_distribution_shaped_counts() {
     assert!((v[3] - 0.2).abs() < 1e-6); // 1/5 error
     assert_eq!(v[4], 5.0);
     let sum: f32 = v[0..4].iter().sum();
-    assert!((sum - 1.0).abs() < 1e-6, "outcome distribution must sum to 1");
+    assert!(
+        (sum - 1.0).abs() < 1e-6,
+        "outcome distribution must sum to 1"
+    );
 }
 
 #[test]
@@ -257,16 +307,14 @@ fn e_oracle_each_exception_class_lands_in_distinct_one_hot_bit() {
 }
 
 #[test]
-fn e_oracle_no_tests_no_exception_yields_all_zero_first_six_dims() {
+fn e_oracle_rejects_no_tests_no_exception() {
     let inst = EOracleInstrument;
     let verdict = OracleVerdict {
         per_test: vec![],
         exception: None,
     };
-    let v = inst.encode(&verdict).unwrap();
-    for i in 0..6 {
-        assert_eq!(v[i], 0.0);
-    }
+    let err = inst.encode(&verdict).unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
 }
 
 #[test]
@@ -285,12 +333,55 @@ fn e_oracle_rejects_empty_test_id() {
 }
 
 #[test]
+fn e_oracle_rejects_whitespace_or_control_character_test_id() {
+    let inst = EOracleInstrument;
+    for bad_id in ["   ", "tests/test_x.py::test_a\nnext"] {
+        let verdict = OracleVerdict {
+            per_test: vec![PerTestOutcome {
+                test_id: bad_id.to_string(),
+                outcome: TestOutcome::Pass,
+                runtime_ms: 1,
+            }],
+            exception: None,
+        };
+        let err = inst.encode(&verdict).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+    }
+}
+
+#[test]
+fn e_oracle_rejects_invalid_runtime_sentinel() {
+    let inst = EOracleInstrument;
+    let verdict = OracleVerdict {
+        per_test: vec![PerTestOutcome {
+            test_id: "tests/test_x.py::test_a".into(),
+            outcome: TestOutcome::Pass,
+            runtime_ms: -2,
+        }],
+        exception: None,
+    };
+    let err = inst.encode(&verdict).unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+}
+
+#[test]
+fn e_oracle_rejects_schema_drift_on_verdict_json() {
+    let drifted = serde_json::json!({
+        "per_test": [],
+        "exception": "other",
+        "unexpected": "schema drift",
+    });
+    let err = serde_json::from_value::<OracleVerdict>(drifted).unwrap_err();
+    assert!(err.to_string().contains("unknown field"));
+}
+
+#[test]
 fn e_oracle_set_via_panel_builder_round_trips_through_slot_view() {
     let inst = EOracleInstrument;
     let verdict = verdict_all_pass(7);
     let mut pb = PanelBuilder::new();
     pb.set_from_instrument(&inst, &verdict).unwrap();
-    let panel = pb.build();
+    let panel = pb.build().unwrap();
     let slot_view = panel.slot(InstrumentSlot::EOracle);
     assert_eq!(slot_view.len(), 128);
     assert_eq!(slot_view[0], 1.0);
@@ -319,7 +410,7 @@ fn json_round_trips_panel_and_verdict() {
     let verdict = verdict_all_pass(2);
     let mut pb = PanelBuilder::new();
     pb.set_from_instrument(&inst, &verdict).unwrap();
-    let panel = pb.build();
+    let panel = pb.build().unwrap();
     let json = serde_json::to_string(&panel).unwrap();
     let back: Panel = serde_json::from_str(&json).unwrap();
     assert_eq!(back, panel);
