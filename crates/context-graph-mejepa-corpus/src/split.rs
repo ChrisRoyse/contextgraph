@@ -506,7 +506,10 @@ pub fn assert_no_test_patch_leakage<'a>(
                 return Err(MutationError::leakage_detected(
                     sha,
                     vec![
-                        (existing_task.to_string(), existing_bucket.slug().to_string()),
+                        (
+                            existing_task.to_string(),
+                            existing_bucket.slug().to_string(),
+                        ),
                         (
                             assignment.task_id.clone(),
                             assignment.bucket.slug().to_string(),

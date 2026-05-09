@@ -50,13 +50,14 @@ pub use context_graph_mejepa_instruments::{
 
 mod compile_error;
 mod delete_test_call;
+pub mod generate;
 mod known_good;
 mod off_by_one;
 pub mod oracle;
 mod over_engineer;
 pub mod patch_mutation;
 mod prng;
-mod python_lex;
+pub mod python_lex;
 pub mod source_patch;
 mod source_patch_support;
 pub mod split;
@@ -65,6 +66,11 @@ mod swap_variable;
 pub mod swebench;
 mod util;
 mod wrong_file;
+
+pub use generate::{
+    generate_swe_bench_mutation_corpus, generate_swe_bench_mutation_corpus_with_oracle,
+    CorpusReport, MejepaCorpusError, Oracle, SwebenchDockerOracle,
+};
 
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -327,7 +333,11 @@ impl CorpusProvenance {
                 "record every source language represented in the corpus",
             ));
         }
-        if self.languages.iter().any(|language| !language.is_supported()) {
+        if self
+            .languages
+            .iter()
+            .any(|language| !language.is_supported())
+        {
             return Err(MutationError::invalid(
                 "languages",
                 "Phase 0 provenance contains a language without implemented mutation operators",
@@ -383,6 +393,157 @@ pub fn compute_corpus_sha256(rows: &[CorpusProvenanceRow]) -> MutationResult<Str
         hasher.update([0xff]);
     }
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+pub fn build_corpus_provenance(
+    store: &crate::oracle::OracleStore,
+    embedder_version: &str,
+    code_version: &str,
+    language_set: &[Language],
+) -> MutationResult<CorpusProvenance> {
+    if embedder_version.trim().is_empty() {
+        return Err(MutationError::invalid(
+            "embedder_version",
+            "embedder_version is empty",
+            "record the frozen embedder or signal schema version used for this corpus",
+        ));
+    }
+    if code_version.trim().is_empty() {
+        return Err(MutationError::invalid(
+            "code_version",
+            "code_version is empty",
+            "pass the current generator version or git revision",
+        ));
+    }
+    if language_set.is_empty() {
+        return Err(MutationError::invalid(
+            "language_set",
+            "language_set is empty",
+            "record at least Language::Python for Phase 0 corpora",
+        ));
+    }
+    if language_set.iter().any(|language| !language.is_supported()) {
+        return Err(MutationError::invalid(
+            "language_set",
+            "unsupported language present in provenance request",
+            "drop unsupported languages; current supported set: [python]",
+        ));
+    }
+    let rows = store.iter_corpus_rows().map_err(|err| {
+        MutationError::op_failed(
+            "oracle_store",
+            format!(
+                "failed to iterate corpus rows while building provenance: {err} ({})",
+                err.code()
+            ),
+            "inspect the RocksDB corpus store before finalizing provenance",
+        )
+    })?;
+    let mut provenance_rows = Vec::with_capacity(rows.len());
+    let mut task_ids = std::collections::BTreeSet::new();
+    let mut categories = Vec::new();
+    for (task_id, category, outcome, verdict) in rows {
+        task_ids.insert(task_id.clone());
+        categories.push(category);
+        provenance_rows.push(CorpusProvenanceRow {
+            task_id,
+            category,
+            patch_sha256: sha256_text(&outcome.mutated_source),
+            oracle_verdict_sha256: sha256_json_value(&serde_json::to_value(&verdict).map_err(
+                |err| {
+                    MutationError::op_failed(
+                        "oracle_verdict",
+                        format!("failed to serialize oracle verdict for provenance: {err}"),
+                        "ensure OracleVerdict remains JSON-serializable",
+                    )
+                },
+            )?),
+        });
+    }
+    categories.sort_by_key(|category| category.slug());
+    categories.dedup();
+    let provenance = CorpusProvenance {
+        corpus_version: MEJEPA_CORPUS_VERSION_V1.to_string(),
+        embedder_version: embedder_version.to_string(),
+        generated_at_unix_ms: unix_ms_lossy(),
+        generator_version: code_version.to_string(),
+        seed: 0,
+        languages: language_set.to_vec(),
+        task_manifest_count: task_ids.len(),
+        mutation_count: provenance_rows.len(),
+        mutation_categories: categories,
+        source_patch_mode: "source-backed".to_string(),
+        split_mode: "instance_atomic".to_string(),
+        corpus_sha256: compute_corpus_sha256(&provenance_rows)?,
+        complete: true,
+    };
+    provenance.validate()?;
+    Ok(provenance)
+}
+
+pub fn finalize_provenance(
+    store: &crate::oracle::OracleStore,
+    embedder_version: &str,
+    code_version: &str,
+    language_set: &[Language],
+) -> MutationResult<CorpusProvenance> {
+    let provenance = build_corpus_provenance(store, embedder_version, code_version, language_set)?;
+    store.put_provenance(&provenance).map_err(|err| {
+        MutationError::op_failed(
+            "provenance",
+            format!("failed to write provenance row: {err} ({})", err.code()),
+            "inspect RocksDB provenance column family and regenerate into a fresh output directory",
+        )
+    })?;
+    Ok(provenance)
+}
+
+pub fn verify_provenance_consistent(
+    store: &crate::oracle::OracleStore,
+    expected: &CorpusProvenance,
+) -> MutationResult<()> {
+    let derived = build_corpus_provenance(
+        store,
+        &expected.embedder_version,
+        &expected.generator_version,
+        &expected.languages,
+    )?;
+    if derived.mutation_count != expected.mutation_count {
+        return Err(MutationError::invalid(
+            "mutation_count",
+            format!(
+                "provenance mutation_count={} but current store has {} rows",
+                expected.mutation_count, derived.mutation_count
+            ),
+            "inspect the mutation and verdict column families for drift",
+        ));
+    }
+    if derived.corpus_sha256 != expected.corpus_sha256 {
+        return Err(MutationError::invalid(
+            "corpus_sha256",
+            format!(
+                "provenance corpus_sha256={} but current store derives {}",
+                expected.corpus_sha256, derived.corpus_sha256
+            ),
+            "inspect the corpus store for tampering or partial writes",
+        ));
+    }
+    Ok(())
+}
+
+fn sha256_text(text: &str) -> String {
+    format!("sha256:{:x}", Sha256::digest(text.as_bytes()))
+}
+
+fn sha256_json_value(value: &serde_json::Value) -> String {
+    sha256_text(&serde_json::to_string(value).expect("JSON value serialises"))
+}
+
+fn unix_ms_lossy() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
 }
 
 fn validate_hash_field(field: &'static str, value: &str) -> MutationResult<()> {

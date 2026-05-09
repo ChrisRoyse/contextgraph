@@ -8,23 +8,23 @@
 
 use crate::{MutationError, MutationResult};
 
-pub(crate) fn ensure_parseable_python(source: &str, field: &'static str) -> MutationResult<()> {
+pub fn ensure_parseable_python(source: &str, field: &'static str) -> MutationResult<()> {
     let _ = parse_python(source, field)?;
     Ok(())
 }
 
-pub(crate) fn python_code_mask(source: &str) -> MutationResult<Vec<bool>> {
+pub fn python_code_mask(source: &str) -> MutationResult<Vec<bool>> {
     Ok(mask_python(source)?.code_by_byte)
 }
 
-pub(crate) fn mask_python(source: &str) -> MutationResult<LexicalMask> {
+pub fn mask_python(source: &str) -> MutationResult<LexicalMask> {
     let tree = parse_python(source, "source")?;
     let mut mask = vec![true; source.len()];
     mask_non_code_nodes(tree.root_node(), source, &mut mask);
     Ok(LexicalMask { code_by_byte: mask })
 }
 
-pub(crate) fn range_is_code(mask: &[bool], start: usize, len: usize) -> bool {
+pub fn range_is_code(mask: &[bool], start: usize, len: usize) -> bool {
     start
         .checked_add(len)
         .and_then(|end| mask.get(start..end))
@@ -33,16 +33,16 @@ pub(crate) fn range_is_code(mask: &[bool], start: usize, len: usize) -> bool {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LexicalMask {
+pub struct LexicalMask {
     code_by_byte: Vec<bool>,
 }
 
 impl LexicalMask {
-    pub(crate) fn is_code(&self, byte_offset: usize) -> bool {
+    pub fn is_code(&self, byte_offset: usize) -> bool {
         self.code_by_byte.get(byte_offset).copied().unwrap_or(false)
     }
 
-    pub(crate) fn is_code_range(&self, start: usize, end: usize) -> bool {
+    pub fn is_code_range(&self, start: usize, end: usize) -> bool {
         if start > end {
             return false;
         }
@@ -52,7 +52,7 @@ impl LexicalMask {
             .unwrap_or(false)
     }
 
-    pub(crate) fn iter_code_chars<'a>(
+    pub fn iter_code_chars<'a>(
         &'a self,
         source: &'a str,
     ) -> impl Iterator<Item = (usize, char)> + 'a {

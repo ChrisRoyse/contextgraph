@@ -32,6 +32,84 @@ fn category_all_returns_eight_in_canonical_order() {
 }
 
 #[test]
+fn mutation_category_slug_round_trip() {
+    for category in MutationCategory::all() {
+        assert_eq!(MutationCategory::from_slug(category.slug()), Some(category));
+    }
+    assert_eq!(MutationCategory::from_slug("unknown"), None);
+}
+
+#[test]
+fn error_codes_match_taxonomy() {
+    assert_eq!(
+        MutationError::invalid("field", "message", "remediation").code(),
+        "MEJEPA_CORPUS_INVALID_INPUT"
+    );
+    assert_eq!(
+        MutationError::no_site("field", "message", "remediation").code(),
+        "MEJEPA_CORPUS_NO_MUTATION_SITE"
+    );
+    assert_eq!(
+        MutationError::op_failed("field", "message", "remediation").code(),
+        "MEJEPA_CORPUS_OPERATOR_FAILED"
+    );
+    assert_eq!(
+        MutationError::leakage_detected(
+            "sha256:duplicate",
+            vec![("task-a".to_string(), "train".to_string())]
+        )
+        .code(),
+        "MEJEPA_CORPUS_LEAKAGE_DETECTED"
+    );
+    let docker =
+        crate::oracle::OracleError::docker_run_id_unsafe("bad+run", '+', 3, "use [A-Za-z0-9_.-]");
+    assert_eq!(docker.code(), "MEJEPA_CORPUS_DOCKER_RUN_ID_UNSAFE");
+}
+
+#[test]
+fn language_enum_slug_round_trip() {
+    let languages = Language::all();
+    assert_eq!(languages.len(), 11);
+    assert_eq!(languages[0], Language::Rust);
+    assert_eq!(languages[1], Language::Python);
+    for language in languages {
+        assert_eq!(Language::from_slug(language.slug()), Some(language));
+    }
+    assert_eq!(Language::from_slug("lua"), None);
+}
+
+#[test]
+fn language_parse_rejects_unknown_and_unsupported() {
+    let accepted = parse_languages(&["python".to_string()]).unwrap();
+    assert_eq!(accepted, vec![Language::Python]);
+
+    let unknown = parse_languages(&["lua".to_string()]).unwrap_err();
+    assert_eq!(unknown.code(), "MEJEPA_CORPUS_INVALID_INPUT");
+    assert!(unknown.to_string().contains("unknown language slug"));
+
+    let unsupported = parse_languages(&["rust".to_string()]).unwrap_err();
+    assert_eq!(unsupported.code(), "MEJEPA_CORPUS_INVALID_INPUT");
+    assert!(unsupported
+        .to_string()
+        .contains("current supported set: [python]"));
+}
+
+#[test]
+fn oracle_verdict_reexport_round_trip() {
+    let verdict = OracleVerdict {
+        per_test: vec![PerTestOutcome {
+            test_id: "tests/test_reexport.py::test_ok".to_string(),
+            outcome: TestOutcome::Pass,
+            runtime_ms: 1,
+        }],
+        exception: Some(ExceptionClass::AssertionError),
+    };
+    let text = serde_json::to_string(&verdict).unwrap();
+    let readback: OracleVerdict = serde_json::from_str(&text).unwrap();
+    assert_eq!(readback, verdict);
+}
+
+#[test]
 fn known_good_echoes_input_with_no_site() {
     let outcome = apply_mutation(
         MutationCategory::KnownGood,

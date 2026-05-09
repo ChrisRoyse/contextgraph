@@ -29,7 +29,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -45,9 +45,10 @@ enum CommandKind {
     Generate(GenerateArgs),
     Verify(VerifyArgs),
     Stats(StatsArgs),
+    Smoke(SmokeArgs),
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 struct GenerateArgs {
     #[arg(long)]
     output: PathBuf,
@@ -83,7 +84,7 @@ struct GenerateArgs {
     overall_timeout_secs: u64,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 struct VerifyArgs {
     #[arg(long)]
     corpus: PathBuf,
@@ -102,10 +103,52 @@ struct VerifyArgs {
     overall_timeout_secs: u64,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 struct StatsArgs {
     #[arg(long)]
     corpus: PathBuf,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct SmokeArgs {
+    #[arg(long)]
+    output: PathBuf,
+    #[arg(long, default_value = "tasks/swebench-lite")]
+    tasks_dir: PathBuf,
+    #[arg(
+        long,
+        default_value = "/home/cabdru/.cache/contextgraph-swebench/venv/bin/python"
+    )]
+    venv_python: PathBuf,
+    #[arg(long = "instance-id")]
+    instance_ids: Vec<String>,
+    #[arg(long = "category")]
+    categories: Vec<String>,
+    #[arg(long = "language", value_delimiter = ',', default_value = "python")]
+    languages: Vec<String>,
+    #[arg(long, default_value_t = 0)]
+    seed: u64,
+    #[arg(long)]
+    max_tasks: Option<usize>,
+    #[arg(
+        long,
+        default_value = "/home/cabdru/.cache/contextgraph-mejepa-corpus/repos"
+    )]
+    repo_cache_dir: PathBuf,
+    #[arg(long, default_value = "/tmp/contextgraph-mejepa-corpus-source-work")]
+    source_work_root: PathBuf,
+    #[arg(long, default_value = "mejepa-corpus-smoke")]
+    run_id_prefix: String,
+    #[arg(long, default_value_t = 1800)]
+    instance_timeout_secs: u64,
+    #[arg(long, default_value_t = 3600)]
+    overall_timeout_secs: u64,
+    #[arg(long, default_value_t = 0.25)]
+    sample_fraction: f64,
+    #[arg(long, default_value_t = 900.0)]
+    max_generate_secs_per_entry: f64,
+    #[arg(long, default_value_t = 900.0)]
+    max_verify_secs_per_sample: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -167,13 +210,15 @@ fn main() -> CliResult<()> {
         CommandKind::Generate(args) => generate(args),
         CommandKind::Verify(args) => verify(args),
         CommandKind::Stats(args) => stats(args),
+        CommandKind::Smoke(args) => smoke(args),
     }
 }
 
 fn generate(args: GenerateArgs) -> CliResult<()> {
     validate_generate_args(&args)?;
     let categories = parse_categories(&args.categories)?;
-    let languages = parse_languages(&args.languages)?;
+    let languages =
+        parse_languages(&args.languages).map_err(|err| format!("{err} ({})", err.code()))?;
     let interrupted = install_shutdown_flag()?;
     let manifests = load_task_manifests(&args.tasks_dir)?;
     let selected = select_manifests(&manifests, &args.instance_ids, args.max_tasks)?;
@@ -309,6 +354,17 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
         let verdict = run_oracle_for_patch(&args, manifest, category, patch_outcome)?;
         store.put_corpus_row(&manifest.instance_id, category, &mutation, &verdict)?;
         store.flush()?;
+        let (stored_mutation, stored_verdict) = store
+            .get_corpus_row(&manifest.instance_id, category)?
+            .ok_or("corpus row missing immediately after RocksDB write")?;
+        if stored_mutation != mutation || stored_verdict != verdict {
+            return Err(format!(
+                "corpus row readback mismatch for {}|{} immediately after RocksDB write",
+                manifest.instance_id,
+                category.slug()
+            )
+            .into());
+        }
         let oracle_verdict_sha256 = sha256_json_value(&serde_json::to_value(&verdict)?);
 
         let entry = GeneratedEntry {
@@ -526,6 +582,309 @@ fn stats(args: StatsArgs) -> CliResult<()> {
     Ok(())
 }
 
+fn smoke(args: SmokeArgs) -> CliResult<()> {
+    validate_smoke_args(&args)?;
+    let task_limit = args.max_tasks.or({
+        if args.instance_ids.is_empty() {
+            Some(1)
+        } else {
+            None
+        }
+    });
+    let generate_args = GenerateArgs {
+        output: args.output.clone(),
+        tasks_dir: args.tasks_dir.clone(),
+        venv_python: args.venv_python.clone(),
+        instance_ids: args.instance_ids.clone(),
+        categories: args.categories.clone(),
+        languages: args.languages.clone(),
+        seed: args.seed,
+        max_tasks: task_limit,
+        repo_cache_dir: args.repo_cache_dir.clone(),
+        source_work_root: args.source_work_root.clone(),
+        run_id_prefix: args.run_id_prefix.clone(),
+        instance_timeout_secs: args.instance_timeout_secs,
+        overall_timeout_secs: args.overall_timeout_secs,
+    };
+    let verify_args = VerifyArgs {
+        corpus: args.output.clone(),
+        sample_fraction: args.sample_fraction,
+        venv_python: args.venv_python.clone(),
+        run_id_prefix: format!("{}-verify", args.run_id_prefix),
+        instance_timeout_secs: args.instance_timeout_secs,
+        overall_timeout_secs: args.overall_timeout_secs,
+    };
+
+    let mut failures = Vec::<Value>::new();
+    let generate_started = Instant::now();
+    if let Err(err) = generate(generate_args) {
+        failures.push(json!({
+            "phase": "generate",
+            "error": err.to_string(),
+        }));
+        return finish_smoke(args, failures, generate_started.elapsed(), None, None);
+    }
+    let generate_elapsed = generate_started.elapsed();
+
+    let verify_started = Instant::now();
+    if let Err(err) = verify(verify_args) {
+        failures.push(json!({
+            "phase": "verify",
+            "error": err.to_string(),
+        }));
+    }
+    let verify_elapsed = verify_started.elapsed();
+
+    let verify_evidence = read_optional_json(&args.output.join("verify-evidence.json"));
+    finish_smoke(
+        args,
+        failures,
+        generate_elapsed,
+        Some(verify_elapsed),
+        verify_evidence,
+    )
+}
+
+fn finish_smoke(
+    args: SmokeArgs,
+    mut failures: Vec<Value>,
+    generate_elapsed: Duration,
+    verify_elapsed: Option<Duration>,
+    verify_evidence: Option<Value>,
+) -> CliResult<()> {
+    let index = read_index(&args.output).ok();
+    let mut stats_json = None;
+    let mut stats_error = None;
+    let mut store_path = None;
+    if let Some(index) = &index {
+        match resolve_corpus_path(&args.output, &index.store_path).and_then(|path| {
+            let store = OracleStore::open(&path)?;
+            let stats = build_stats_json(&args.output, index, &store)?;
+            Ok((path, stats))
+        }) {
+            Ok((path, stats)) => {
+                store_path = Some(path);
+                if stats.get("passes").and_then(Value::as_bool) != Some(true) {
+                    failures.push(json!({
+                        "phase": "stats",
+                        "error": "stats leakage/source-of-truth check did not pass",
+                        "stats": stats,
+                    }));
+                }
+                stats_json = Some(stats);
+            }
+            Err(err) => {
+                let message = err.to_string();
+                stats_error = Some(message.clone());
+                failures.push(json!({
+                    "phase": "stats",
+                    "error": message,
+                }));
+            }
+        }
+    }
+
+    let entry_count = index.as_ref().map(|index| index.entries.len()).unwrap_or(0);
+    let task_count = index
+        .as_ref()
+        .map(|index| {
+            index
+                .entries
+                .iter()
+                .map(|entry| entry.task_id.as_str())
+                .collect::<BTreeSet<_>>()
+                .len()
+        })
+        .unwrap_or(0);
+    let category_count = index
+        .as_ref()
+        .map(|index| {
+            index
+                .entries
+                .iter()
+                .map(|entry| entry.category.slug())
+                .collect::<BTreeSet<_>>()
+                .len()
+        })
+        .unwrap_or(0);
+    let generate_secs = duration_secs(generate_elapsed);
+    let verify_secs = verify_elapsed.map(duration_secs);
+    let generate_secs_per_entry = if entry_count == 0 {
+        None
+    } else {
+        Some(generate_secs / entry_count as f64)
+    };
+    if let Some(avg) = generate_secs_per_entry {
+        if avg > args.max_generate_secs_per_entry {
+            failures.push(json!({
+                "phase": "performance",
+                "metric": "generate_secs_per_entry",
+                "actual": avg,
+                "max_allowed": args.max_generate_secs_per_entry,
+            }));
+        }
+    }
+    let oracle_sample_count = verify_evidence
+        .as_ref()
+        .and_then(|value| value.get("oracle_sample_count"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    if let (Some(total), true) = (verify_secs, oracle_sample_count > 0) {
+        let per_sample = total / oracle_sample_count as f64;
+        if per_sample > args.max_verify_secs_per_sample {
+            failures.push(json!({
+                "phase": "performance",
+                "metric": "verify_secs_per_oracle_sample",
+                "actual": per_sample,
+                "max_allowed": args.max_verify_secs_per_sample,
+            }));
+        }
+    }
+
+    let zero_per_test_entries = index
+        .as_ref()
+        .map(|index| {
+            index
+                .entries
+                .iter()
+                .filter(|entry| entry.oracle_per_test_count == 0)
+                .map(|entry| {
+                    json!({
+                        "task_id": entry.task_id,
+                        "category": entry.category.slug(),
+                        "exception": entry.oracle_exception,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let known_good_failures = index
+        .as_ref()
+        .map(|index| {
+            index
+                .entries
+                .iter()
+                .filter(|entry| entry.category == MutationCategory::KnownGood)
+                .filter(|entry| !entry.oracle_all_passed)
+                .map(|entry| {
+                    json!({
+                        "task_id": entry.task_id,
+                        "oracle_exception": entry.oracle_exception,
+                        "oracle_per_test_count": entry.oracle_per_test_count,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if !known_good_failures.is_empty() {
+        failures.push(json!({
+            "phase": "accuracy",
+            "error": "known_good mutation did not pass the SWE-bench oracle",
+            "entries": known_good_failures,
+        }));
+    }
+
+    let passes = failures.is_empty();
+    let evidence_path = args.output.join("smoke-evidence.json");
+    let evidence = json!({
+        "passes": passes,
+        "source_of_truth": {
+            "index": args.output.join("index.json").display().to_string(),
+            "store": store_path.as_ref().map(|path| path.display().to_string()),
+            "verify_evidence": args.output.join("verify-evidence.json").display().to_string(),
+            "stats_json": args.output.join("stats.json").display().to_string(),
+            "smoke_evidence": evidence_path.display().to_string(),
+        },
+        "phase0_language_scope": {
+            "full_corpus_language": "python",
+            "requires_all_ast_languages_before_full_corpus": false,
+            "reason": "SWE-bench Lite and the Phase 0 mutation/oracle path are Python-only; non-Python language enum variants fail closed until their operators and fixtures exist."
+        },
+        "config": {
+            "tasks_dir": args.tasks_dir,
+            "requested_instance_ids": args.instance_ids,
+            "defaulted_max_tasks": args.max_tasks.is_none(),
+            "max_tasks": args.max_tasks,
+            "categories": args.categories,
+            "languages": args.languages,
+            "seed": args.seed,
+            "sample_fraction": args.sample_fraction,
+            "max_generate_secs_per_entry": args.max_generate_secs_per_entry,
+            "max_verify_secs_per_sample": args.max_verify_secs_per_sample,
+        },
+        "coverage": {
+            "task_count": task_count,
+            "category_count": category_count,
+            "entry_count": entry_count,
+            "zero_per_test_entries": zero_per_test_entries,
+            "known_good_failures": known_good_failures,
+        },
+        "performance": {
+            "generate_secs": generate_secs,
+            "verify_secs": verify_secs,
+            "generate_secs_per_entry": generate_secs_per_entry,
+            "verify_oracle_sample_count": oracle_sample_count,
+            "verify_secs_per_oracle_sample": verify_secs.and_then(|secs| {
+                if oracle_sample_count == 0 {
+                    None
+                } else {
+                    Some(secs / oracle_sample_count as f64)
+                }
+            }),
+            "estimated_full_phase0_entries": 300 * MutationCategory::all().len(),
+            "estimated_full_phase0_generate_secs_from_smoke": generate_secs_per_entry
+                .map(|per_entry| per_entry * (300 * MutationCategory::all().len()) as f64),
+        },
+        "verify_evidence": verify_evidence,
+        "stats": stats_json,
+        "stats_error": stats_error,
+        "failures": failures,
+    });
+    write_json_checked(&evidence_path, &evidence)?;
+    if !passes {
+        return Err(format!(
+            "smoke failed; evidence written to {}",
+            evidence_path.display()
+        )
+        .into());
+    }
+    println!("{}", serde_json::to_string_pretty(&evidence)?);
+    Ok(())
+}
+
+fn validate_smoke_args(args: &SmokeArgs) -> CliResult<()> {
+    if args.max_generate_secs_per_entry <= 0.0 || !args.max_generate_secs_per_entry.is_finite() {
+        return Err("max_generate_secs_per_entry must be finite and > 0".into());
+    }
+    if args.max_verify_secs_per_sample <= 0.0 || !args.max_verify_secs_per_sample.is_finite() {
+        return Err("max_verify_secs_per_sample must be finite and > 0".into());
+    }
+    validate_generate_args(&GenerateArgs {
+        output: args.output.clone(),
+        tasks_dir: args.tasks_dir.clone(),
+        venv_python: args.venv_python.clone(),
+        instance_ids: args.instance_ids.clone(),
+        categories: args.categories.clone(),
+        languages: args.languages.clone(),
+        seed: args.seed,
+        max_tasks: args.max_tasks,
+        repo_cache_dir: args.repo_cache_dir.clone(),
+        source_work_root: args.source_work_root.clone(),
+        run_id_prefix: args.run_id_prefix.clone(),
+        instance_timeout_secs: args.instance_timeout_secs,
+        overall_timeout_secs: args.overall_timeout_secs,
+    })?;
+    validate_verify_args(&VerifyArgs {
+        corpus: args.output.clone(),
+        sample_fraction: args.sample_fraction,
+        venv_python: args.venv_python.clone(),
+        run_id_prefix: format!("{}-verify", args.run_id_prefix),
+        instance_timeout_secs: args.instance_timeout_secs,
+        overall_timeout_secs: args.overall_timeout_secs,
+    })?;
+    Ok(())
+}
+
 fn validate_generate_args(args: &GenerateArgs) -> CliResult<()> {
     if !args.venv_python.is_file() {
         return Err(format!(
@@ -700,7 +1059,8 @@ fn parse_categories(values: &[String]) -> CliResult<Vec<MutationCategory>> {
 }
 
 fn parse_category(value: &str) -> CliResult<MutationCategory> {
-    MutationCategory::from_slug(value).ok_or_else(|| format!("unknown mutation category `{value}`").into())
+    MutationCategory::from_slug(value)
+        .ok_or_else(|| format!("unknown mutation category `{value}`").into())
 }
 
 fn install_shutdown_flag() -> CliResult<Arc<AtomicBool>> {
@@ -997,6 +1357,10 @@ fn write_json_checked(path: &Path, value: &Value) -> CliResult<()> {
     write_text_checked(path, &serde_json::to_string_pretty(value)?)
 }
 
+fn read_optional_json(path: &Path) -> Option<Value> {
+    serde_json::from_str(&fs::read_to_string(path).ok()?).ok()
+}
+
 fn write_text_checked(path: &Path, text: &str) -> CliResult<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -1013,6 +1377,10 @@ fn write_text_checked(path: &Path, text: &str) -> CliResult<()> {
         return Err(format!("readback mismatch after writing {}", path.display()).into());
     }
     Ok(())
+}
+
+fn duration_secs(duration: Duration) -> f64 {
+    duration.as_secs_f64()
 }
 
 fn stable_seed(global_seed: u64, task_id: &str, category: MutationCategory) -> u64 {
