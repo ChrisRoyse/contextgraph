@@ -97,6 +97,12 @@ context-graph-core = { path = "crates/context-graph-core" }
 context-graph-embeddings = { path = "crates/context-graph-embeddings" }
 context-graph-cuda = { path = "crates/context-graph-cuda" }
 
+[patch.crates-io]
+# Local patch for llama-cpp-sys-2 0.1.145.
+# Root cause fixed: upstream build.rs overwrites CMAKE_BUILD_PARALLEL_LEVEL
+# with host CPU count, which forces gmake/nvcc to over-parallelize and OOM.
+llama-cpp-sys-2 = { path = "vendor/llama-cpp-sys-2-0.1.145" }
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
