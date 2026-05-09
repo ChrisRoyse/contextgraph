@@ -2,8 +2,9 @@ use clap::{Parser, Subcommand};
 use context_graph_mejepa_corpus::oracle::{
     OracleStore, CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS,
 };
-use context_graph_mejepa_corpus::patch_mutation::{
-    mutate_unified_diff, PatchMutationConfig, PatchMutationOutcome,
+use context_graph_mejepa_corpus::patch_mutation::PatchMutationOutcome;
+use context_graph_mejepa_corpus::source_patch::{
+    mutate_task_source_patch, SourcePatchConfig, SourcePatchTask,
 };
 use context_graph_mejepa_corpus::split::{
     assert_no_test_patch_leakage, split_corpus, CorpusEntry, SplitConfig, SplitMode, TaskAssignment,
@@ -56,14 +57,19 @@ struct GenerateArgs {
     categories: Vec<String>,
     #[arg(long)]
     max_tasks: Option<usize>,
+    #[arg(
+        long,
+        default_value = "/home/cabdru/.cache/contextgraph-mejepa-corpus/repos"
+    )]
+    repo_cache_dir: PathBuf,
+    #[arg(long, default_value = "/tmp/contextgraph-mejepa-corpus-source-work")]
+    source_work_root: PathBuf,
     #[arg(long, default_value = "mejepa-corpus")]
     run_id_prefix: String,
     #[arg(long, default_value_t = 1800)]
     instance_timeout_secs: u64,
     #[arg(long, default_value_t = 3600)]
     overall_timeout_secs: u64,
-    #[arg(long)]
-    alternate_wrong_file_path: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -82,6 +88,7 @@ struct StatsArgs {
 struct TaskManifest {
     instance_id: String,
     repo: String,
+    base_commit: String,
     official_test_patch_sha256: String,
     oracle_patch_sha256: String,
 }
@@ -141,6 +148,10 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
             .collect::<Vec<_>>()
             .as_slice(),
     )?;
+    let source_patch_config = SourcePatchConfig {
+        repo_cache_dir: args.repo_cache_dir.clone(),
+        work_root: args.source_work_root.clone(),
+    };
     let split_entries = manifests
         .iter()
         .map(|manifest| CorpusEntry {
@@ -188,17 +199,20 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
         })?;
         for category in &categories {
             let seed = stable_seed(&manifest.instance_id, *category);
-            let outcome = mutate_unified_diff(
+            let outcome = mutate_task_source_patch(
+                &SourcePatchTask {
+                    instance_id: manifest.instance_id.clone(),
+                    repo: manifest.repo.clone(),
+                    base_commit: manifest.base_commit.clone(),
+                },
                 *category,
                 official_patch,
-                PatchMutationConfig {
-                    seed,
-                    alternate_path: args.alternate_wrong_file_path.clone(),
-                },
+                seed,
+                &source_patch_config,
             )
             .map_err(|err| {
                 format!(
-                    "failed to mutate official patch for task={} category={}: {} ({})",
+                    "failed to build source-backed patch for task={} category={}: {} ({})",
                     manifest.instance_id,
                     category.slug(),
                     err,

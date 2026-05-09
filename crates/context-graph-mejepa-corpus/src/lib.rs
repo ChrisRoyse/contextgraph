@@ -32,8 +32,9 @@
 //   - split helpers for repo-atomic diagnostic splits and exact
 //     instance-atomic 80/10/10 splits guarded by official test-patch SHA checks.
 //
-// Still operationally out of scope for this library entrypoint:
-//   - the full 2,400-entry corpus generation batch (300 Lite tasks × 8 categories).
+// The batch CLI now builds source-backed patches before invoking the Docker
+// oracle, so the 300 Lite tasks × 8 categories corpus can be generated without
+// depending on mutation sites being present in added diff lines.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -47,6 +48,8 @@ mod over_engineer;
 pub mod patch_mutation;
 mod prng;
 mod python_lex;
+pub mod source_patch;
+mod source_patch_support;
 pub mod split;
 mod subtle_flip;
 mod swap_variable;
