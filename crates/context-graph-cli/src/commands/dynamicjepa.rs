@@ -5903,13 +5903,22 @@ fn semantic_language_for_path(path: &str) -> Option<&'static str> {
         Some("go")
     } else if path.ends_with(".java") {
         Some("java")
-    } else if path.ends_with(".c") || path.ends_with(".h") {
+    } else if path.ends_with(".c") {
+        Some("c")
+    } else if path.ends_with(".h") {
         Some("c")
     } else if path.ends_with(".cc")
         || path.ends_with(".cpp")
         || path.ends_with(".cxx")
         || path.ends_with(".hpp")
         || path.ends_with(".hh")
+        || path.ends_with(".hxx")
+        || path.ends_with(".h++")
+        || path.ends_with(".ipp")
+        || path.ends_with(".inl")
+        || path.ends_with(".tpp")
+        || path.ends_with(".txx")
+        || path.ends_with(".ixx")
     {
         Some("cpp")
     } else if path.ends_with(".cs") {
@@ -5921,6 +5930,37 @@ fn semantic_language_for_path(path: &str) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+fn semantic_language_for_path_and_source(path: &str, source: &str) -> Option<&'static str> {
+    if path.ends_with(".h") && semantic_source_contains_cpp_only_syntax(source) {
+        return Some("cpp");
+    }
+    semantic_language_for_path(path)
+}
+
+fn semantic_source_contains_cpp_only_syntax(source: &str) -> bool {
+    let compact = source.replace('\n', " ");
+    contains_any(
+        &compact,
+        &[
+            "namespace ",
+            "template <",
+            "template<",
+            "class ",
+            "std::",
+            "using namespace ",
+            "public:",
+            "private:",
+            "protected:",
+            "constexpr ",
+            "nullptr",
+            "noexcept",
+            "override",
+            "typename ",
+            "operator ",
+        ],
+    ) || source.contains("::")
 }
 
 fn semantic_require_language_toolchain(language: &str, repo: &Path) -> DynamicJepaResult<()> {

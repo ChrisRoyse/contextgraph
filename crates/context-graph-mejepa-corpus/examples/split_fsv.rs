@@ -195,7 +195,7 @@ fn build_synthetic_corpus() -> Vec<CorpusEntry> {
         ("scikit-learn__scikit-learn", 28),
         ("sphinx-doc__sphinx", 19),
         ("sqlfluff__sqlfluff", 12),
-        ("sympy__sympy", 75),
+        ("sympy__sympy", 55),
         ("hpcugent__easybuild-easyconfigs", 4),
         ("conan-io__conan", 5),
         ("scrapy", 5),

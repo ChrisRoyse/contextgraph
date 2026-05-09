@@ -7826,7 +7826,12 @@ fn dynamicjepa_c_compile_command_from_database(
             )
         })?;
     let original_dir = PathBuf::from(directory);
-    let cwd = dynamicjepa_c_compile_command_snapshot_cwd(repo_root, rel_target, file_value, &original_dir)?;
+    let cwd = dynamicjepa_c_compile_command_snapshot_cwd(
+        repo_root,
+        rel_target,
+        file_value,
+        &original_dir,
+    )?;
     let arguments = entry.get("arguments").and_then(Value::as_array).ok_or_else(|| {
         RealityError::new(
             "RUST_REALITY_DYNAMICJEPA_C_COMPILE_COMMAND_ARGUMENTS_MISSING",
@@ -8276,16 +8281,19 @@ fn compile_command_argv_for_snapshot(
     })?;
     let repo_relative = compile_command_repo_relative_file(repo_root, entry, idx)?;
     let snapshot_file = repo_root.join(&repo_relative);
-    let arguments = entry.get("arguments").and_then(Value::as_array).ok_or_else(|| {
-        RealityError::new(
-            "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_ARGUMENTS_MISSING",
-            "compile_commands.json C++ entries must include structured arguments",
-            "dynamicjepa.action.compiler_lsp.compile_commands[].arguments",
-            "regenerate compile_commands.json with argv-style arguments arrays",
-            json!({"entry_index": idx, "file": file_value}),
-            Some(file_sot(repo_root)),
-        )
-    })?;
+    let arguments = entry
+        .get("arguments")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_ARGUMENTS_MISSING",
+                "compile_commands.json C++ entries must include structured arguments",
+                "dynamicjepa.action.compiler_lsp.compile_commands[].arguments",
+                "regenerate compile_commands.json with argv-style arguments arrays",
+                json!({"entry_index": idx, "file": file_value}),
+                Some(file_sot(repo_root)),
+            )
+        })?;
     let mut argv = Vec::new();
     for argument in arguments {
         let value = argument.as_str().ok_or_else(|| {
@@ -8923,7 +8931,10 @@ fn ast_cpp_template_node_kind(node: tree_sitter::Node<'_>, source: &str) -> &'st
 }
 
 fn ast_cpp_function_is_method(node: tree_sitter::Node<'_>, source: &str) -> bool {
-    if ast_has_ancestor_any(node, &["class_specifier", "struct_specifier", "field_declaration"]) {
+    if ast_has_ancestor_any(
+        node,
+        &["class_specifier", "struct_specifier", "field_declaration"],
+    ) {
         return true;
     }
     let text = node.utf8_text(source.as_bytes()).unwrap_or("");
