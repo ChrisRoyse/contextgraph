@@ -116,11 +116,11 @@ where
                 let mut max_sim: f64 = 0.0;
                 for chosen in &selected {
                     let sim = similarity(idx, chosen.index);
-                    if !sim.is_finite() {
+                    if !sim.is_finite() || !(0.0..=1.0).contains(&sim) {
                         return Err(SolverError::invalid(
                             "similarity",
                             format!(
-                                "MMR similarity closure must return a finite value (similarity({idx},{}) = {sim})",
+                                "MMR similarity closure must return a finite value in [0.0, 1.0] (similarity({idx},{}) = {sim})",
                                 chosen.index
                             ),
                             "ensure similarity returns a value in [0.0, 1.0]",
@@ -177,6 +177,15 @@ pub fn select_with_matrix(
             ),
             "pass exactly relevances.len() * relevances.len() values",
         ));
+    }
+    for (idx, sim) in similarities.iter().enumerate() {
+        if !sim.is_finite() || !(0.0..=1.0).contains(sim) {
+            return Err(SolverError::invalid(
+                "similarities",
+                format!("similarity matrix values must be finite and in [0.0, 1.0] (index {idx} = {sim})"),
+                "normalize similarities before calling MMR",
+            ));
+        }
     }
     select(relevances, config, |i, j| similarities[i * n + j])
 }
@@ -342,6 +351,34 @@ mod tests {
     }
 
     #[test]
+    fn rejects_similarity_below_zero() {
+        let err = select(
+            &[0.5, 0.5],
+            MmrConfig {
+                lambda: 0.5,
+                limit: 2,
+            },
+            |_, _| -0.01,
+        )
+        .expect_err("negative similarity must error");
+        assert_eq!(err.code(), "CGSOLVER_INVALID_INPUT");
+    }
+
+    #[test]
+    fn rejects_similarity_above_one() {
+        let err = select(
+            &[0.5, 0.5],
+            MmrConfig {
+                lambda: 0.5,
+                limit: 2,
+            },
+            |_, _| 1.01,
+        )
+        .expect_err("similarity above 1 must error");
+        assert_eq!(err.code(), "CGSOLVER_INVALID_INPUT");
+    }
+
+    #[test]
     fn rejects_wrong_shape_similarity_matrix() {
         let err = select_with_matrix(
             &[0.5, 0.5],
@@ -352,6 +389,20 @@ mod tests {
             },
         )
         .expect_err("wrong shape must error");
+        assert_eq!(err.code(), "CGSOLVER_INVALID_INPUT");
+    }
+
+    #[test]
+    fn rejects_out_of_range_similarity_matrix_value_even_if_limit_one() {
+        let err = select_with_matrix(
+            &[0.5, 0.4],
+            &[1.0, 1.2, 0.2, 1.0],
+            MmrConfig {
+                lambda: 1.0,
+                limit: 1,
+            },
+        )
+        .expect_err("matrix values outside [0,1] must error");
         assert_eq!(err.code(), "CGSOLVER_INVALID_INPUT");
     }
 

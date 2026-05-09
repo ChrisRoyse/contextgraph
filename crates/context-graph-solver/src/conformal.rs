@@ -27,10 +27,10 @@ pub enum NonconformityMeasure {
     /// Use the raw distance as the non-conformity score.
     /// Higher distance = more non-conforming (further from the truth).
     Distance,
-    /// Use `1.0 / (1.0 + rank)` where rank is the candidate's 0-based position
-    /// in the descending-relevance ordering for the query. Lower-ranked
-    /// candidates score higher (more non-conforming).
-    InverseRank,
+    /// Use the candidate's 0-based rank in the descending-relevance ordering
+    /// for the query. Rank 0 is most conforming; larger ranks are less
+    /// conforming.
+    Rank,
     /// Use `distance / (median_calibration_distance + epsilon)`. Robust to
     /// different distance scales across queries; recommended when calibration
     /// queries have heterogeneous distance distributions.
@@ -133,7 +133,7 @@ impl ConformalPredictor {
 
     /// Calibrate from raw distances (one per held-out calibration example).
     /// `Distance` and `NormalizedDistance` measures both consume distances;
-    /// `InverseRank` requires calibration via `calibrate_with_ranks`.
+    /// `Rank` requires calibration via `calibrate_with_ranks`.
     pub fn calibrate_distances(&mut self, distances: &[f64]) -> SolverResult<ConformalReport> {
         if distances.is_empty() {
             return Err(SolverError::invalid(
@@ -158,10 +158,10 @@ impl ConformalPredictor {
                 .iter()
                 .map(|d| d / (median + f64::EPSILON))
                 .collect(),
-            NonconformityMeasure::InverseRank => {
+            NonconformityMeasure::Rank => {
                 return Err(SolverError::invalid(
                     "calibration",
-                    "InverseRank measure requires calibration via calibrate_with_ranks",
+                    "Rank measure requires calibration via calibrate_with_ranks",
                     "call calibrate_with_ranks(ranks) instead of calibrate_distances",
                 ))
             }
@@ -171,13 +171,13 @@ impl ConformalPredictor {
     }
 
     /// Calibrate from per-example ranks (0-based, ascending = better).
-    /// Required for `InverseRank` measure.
+    /// Required for `Rank` measure.
     pub fn calibrate_with_ranks(&mut self, ranks: &[usize]) -> SolverResult<ConformalReport> {
-        if !matches!(self.config.measure, NonconformityMeasure::InverseRank) {
+        if !matches!(self.config.measure, NonconformityMeasure::Rank) {
             return Err(SolverError::invalid(
                 "calibration",
                 format!(
-                    "calibrate_with_ranks is only valid for InverseRank measure; got {:?}",
+                    "calibrate_with_ranks is only valid for Rank measure; got {:?}",
                     self.config.measure
                 ),
                 "call calibrate_distances or change the measure",
@@ -190,7 +190,7 @@ impl ConformalPredictor {
                 "supply ranks from a held-out calibration sample",
             ));
         }
-        let scores: Vec<f64> = ranks.iter().map(|r| 1.0 / (1.0 + *r as f64)).collect();
+        let scores: Vec<f64> = ranks.iter().map(|rank| *rank as f64).collect();
         self.median_calibration_distance = None;
         self.finalize_calibration(scores)
     }
@@ -221,7 +221,7 @@ impl ConformalPredictor {
 
     /// Return the prediction set at the calibrated threshold for one query.
     /// `distances[i]` is the distance from the query to candidate `i`. Length
-    /// must match `relevances` if `InverseRank` is used (relevances are used
+    /// must match `relevances` if `Rank` is used (relevances are used
     /// to derive rank order); for `Distance` and `NormalizedDistance`,
     /// `relevances` is ignored (pass `None`).
     pub fn predict_set(
@@ -257,11 +257,11 @@ impl ConformalPredictor {
                     .map(|d| d / (median + f64::EPSILON))
                     .collect()
             }
-            NonconformityMeasure::InverseRank => {
+            NonconformityMeasure::Rank => {
                 let relevances = relevances.ok_or_else(|| {
                     SolverError::invalid(
                         "predict_set",
-                        "InverseRank measure requires relevances at inference time",
+                        "Rank measure requires relevances at inference time",
                         "pass Some(&relevances) of the same length as distances",
                     )
                 })?;
@@ -276,7 +276,7 @@ impl ConformalPredictor {
                         "pass parallel slices of the same length",
                     ));
                 }
-                inverse_rank_scores(relevances)
+                rank_scores(relevances)?
             }
         };
 
@@ -331,10 +331,10 @@ impl ConformalPredictor {
                         .expect("median set during calibration");
                     d / (median + f64::EPSILON)
                 }
-                NonconformityMeasure::InverseRank => {
+                NonconformityMeasure::Rank => {
                     return Err(SolverError::invalid(
                         "empirical_coverage",
-                        "InverseRank coverage requires per-example ranks; not supported here",
+                        "Rank coverage requires per-example ranks; not supported here",
                         "use Distance or NormalizedDistance for coverage diagnostics",
                     ))
                 }
@@ -347,9 +347,19 @@ impl ConformalPredictor {
     }
 }
 
-fn inverse_rank_scores(relevances: &[f64]) -> Vec<f64> {
+fn rank_scores(relevances: &[f64]) -> SolverResult<Vec<f64>> {
+    for (idx, score) in relevances.iter().enumerate() {
+        if !score.is_finite() {
+            return Err(SolverError::invalid(
+                "relevances",
+                format!("rank relevances must be finite (index {idx} = {score})"),
+                "filter out NaN/Inf candidates before rank-based conformal prediction",
+            ));
+        }
+    }
     // Sort indices by descending relevance for rank assignment; produce
-    // 0-based ranks; map to 1/(1+rank).
+    // 0-based ranks as nonconformity scores. Rank 0 is best / most
+    // conforming, and larger ranks are progressively less conforming.
     let mut order: Vec<usize> = (0..relevances.len()).collect();
     order.sort_by(|a, b| {
         relevances[*b]
@@ -360,7 +370,7 @@ fn inverse_rank_scores(relevances: &[f64]) -> Vec<f64> {
     for (rank, idx) in order.into_iter().enumerate() {
         ranks[idx] = rank;
     }
-    ranks.into_iter().map(|r| 1.0 / (1.0 + r as f64)).collect()
+    Ok(ranks.into_iter().map(|rank| rank as f64).collect())
 }
 
 fn median_of(values: &[f64]) -> f64 {
@@ -459,35 +469,40 @@ mod tests {
     }
 
     #[test]
-    fn inverse_rank_calibration_path() {
+    fn rank_calibration_path() {
         let mut predictor = ConformalPredictor::new(ConformalConfig {
             alpha: 0.5,
-            measure: NonconformityMeasure::InverseRank,
+            measure: NonconformityMeasure::Rank,
         })
         .unwrap();
-        // Calibration ranks: rank 0 → score 1.0, rank 1 → 0.5, rank 4 → 0.2,
-        // rank 9 → 0.1. Sorted ascending: 0.1, 0.2, 0.5, 1.0.
-        // alpha=0.5, k = ceil(5 * 0.5) = 3; threshold = 0.5.
+        // Calibration ranks are already nonconformity scores: lower rank is
+        // better. Sorted ascending: 0, 1, 4, 9.
+        // alpha=0.5, k = ceil(5 * 0.5) = 3; threshold = 4.
         let report = predictor.calibrate_with_ranks(&[0, 1, 4, 9]).unwrap();
-        assert!((report.threshold - 0.5).abs() < 1e-9);
+        assert!((report.threshold - 4.0).abs() < 1e-9);
     }
 
     #[test]
-    fn inverse_rank_predict_uses_relevances() {
+    fn rank_predict_uses_relevances_with_correct_polarity() {
         let mut predictor = ConformalPredictor::new(ConformalConfig {
             alpha: 0.5,
-            measure: NonconformityMeasure::InverseRank,
+            measure: NonconformityMeasure::Rank,
         })
         .unwrap();
-        predictor.calibrate_with_ranks(&[0, 1, 4, 9]).unwrap();
+        predictor.calibrate_with_ranks(&[0, 1, 2, 3]).unwrap();
         // 4 candidates with these relevances → ranks 2,0,3,1 →
-        // scores 1/3, 1, 1/4, 1/2.
+        // scores 2,0,3,1.
         let relevances = vec![0.3, 0.9, 0.1, 0.5];
         let set = predictor
             .predict_set(&[0.0, 0.0, 0.0, 0.0], Some(&relevances))
             .unwrap();
-        // threshold = 0.5; candidates with score <= 0.5: ranks 2,3,1 (idx 0,2,3).
-        assert_eq!(set.indices, vec![0, 2, 3]);
+        // alpha=0.5, k = ceil(5 * 0.5) = 3; threshold = 2.
+        // Include the three strongest candidates and exclude only the weakest.
+        assert_eq!(set.indices, vec![0, 1, 3]);
+        assert!(
+            set.indices.contains(&1),
+            "top-ranked candidate must be included"
+        );
     }
 
     #[test]
