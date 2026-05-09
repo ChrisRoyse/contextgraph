@@ -1004,7 +1004,134 @@ These are NOT EMBEDDERS-domain gaps — they are surface tools owned by downstre
 
 **SHIFT-SUBSCRIBER coverage: 18/18 functional REQs + 10/10 technical components + 13/13 edge cases + 10/10 NFRs + 8/8 error states + 5/5 new MCP tools + 5/5 retired-alias regression guards = 21 tasks (14 subscriber + 7 MCP-tools); critical path TASK-SHIFT-001 → TASK-SHIFT-002 → TASK-SHIFT-007 → TASK-SHIFT-010 → TASK-SHIFT-013 in sister phase, plus TASK-MCP-001 → (TASK-MCP-002..006 batch-parallel) → TASK-MCP-007 in this phase.**
 
-### EVALUATION — pending generation
+### Domain: EVALUATION
+
+> **17 tasks generated** in `./phase8-evaluation/`. Foundation: 3 (TASK-EVAL-001..003). Logic: 9 (TASK-EVAL-004..012). Surface: 5 (TASK-EVAL-013..017). Coverage: 100% across 20 REQ-EVAL-NN + 5 TECH-EVALUATION components + all NFR-EVAL-NN + all error states + all 4 MCP tools + Phase 8 DoD CLI.
+>
+> **Cross-domain handoffs:**
+> - TCT spec (Phase 4b) hosts Gτ threshold calibration; this domain READS via TASK-EVAL-007.
+> - SELF-HEALING (Phase 5) hosts drift detection + A/B/C retrain; this domain WRITES `ship_gate_failures` consumed read-only by Phase 5.
+> - TRAINING (Phase 3) hosts mini-batch sampler; this domain WRITES CF_MEJEPA_TASK_GRAPH consumed read-only by Phase 3.
+> - SHIFT-SUBSCRIBER (Phase 7) writes CF_MEJEPA_LIVE_PREDICTIONS + CF_MEJEPA_ORACLE_VERDICTS; this domain READS via TASK-EVAL-011 (state-transfer T) + TASK-EVAL-012 (Q3 F1). When Phase 7 not shipped, both degrade to None and ship gate skips Q3 condition.
+
+#### Functional REQ → Task mapping
+
+| Functional REQ | Title | Layer | Task ID(s) | Status |
+|---|---|---|---|---|
+| REQ-EVAL-01 | EvalRunner impl block (run_holdout_eval, check_ship_gate, enqueue_uncertain, build_patch_similarity_graph) | foundation/logic | TASK-EVAL-002, TASK-EVAL-004, TASK-EVAL-008, TASK-EVAL-009, TASK-EVAL-010 | ready |
+| REQ-EVAL-02 | EvalReport struct shape + invariants | foundation | TASK-EVAL-001 | ready |
+| REQ-EVAL-03 | 8-condition ship-gate AND | logic | TASK-EVAL-008 | blocked |
+| REQ-EVAL-04 | Week-over-week regression detection (RegressionCheck on EvalReport) | logic | TASK-EVAL-008 (consumer), TASK-EVAL-012 (producer) | blocked |
+| REQ-EVAL-05 | ActiveLearningQueue + label methods | foundation/logic/surface | TASK-EVAL-002, TASK-EVAL-009, TASK-EVAL-014 | blocked |
+| REQ-EVAL-06 | Active-learning corpus growth ≥ 1% target | logic/surface | TASK-EVAL-009, TASK-EVAL-015 | blocked |
+| REQ-EVAL-07 | build_patch_similarity_graph + idempotency | logic/surface | TASK-EVAL-010, TASK-EVAL-016 (CLI eval-build-graph) | blocked |
+| REQ-EVAL-08 | MCP tool surface (4 tools) | surface | TASK-EVAL-013 (eval_run + ship_gate_status), TASK-EVAL-014 (active_learning_queue + active_learning_label) | blocked |
+| REQ-EVAL-09 | State-transfer T diagnostic + drift_severity_history | logic/surface | TASK-EVAL-011, TASK-EVAL-015 | blocked |
+| REQ-EVAL-10 | Per-language OOD AUC + 4-week drift + per-language conformal coverage drift + per-language Gτ stratification | logic | TASK-EVAL-005, TASK-EVAL-006, TASK-EVAL-007 | blocked |
+| REQ-EVAL-11 | Q1/Q2/Q3 rollup | logic | TASK-EVAL-012 | blocked |
+| REQ-EVAL-12 | Aux-head distillation summary | logic | TASK-EVAL-011 | blocked |
+| REQ-EVAL-13 | Fail-closed error taxonomy + .code() | foundation | TASK-EVAL-002 | ready |
+| REQ-EVAL-14 | Holdout split leakage check on every run | logic | TASK-EVAL-004 | blocked |
+| REQ-EVAL-15 | Phase 8 DoD CLI command | surface | TASK-EVAL-016, TASK-EVAL-017 | blocked |
+| REQ-EVAL-16 | Performance budgets (< 30 min p50) | surface | TASK-EVAL-016, TASK-EVAL-017 | blocked |
+| REQ-EVAL-17 | Determinism (byte-equal modulo report_date) | foundation/surface | TASK-EVAL-001, TASK-EVAL-017 | ready |
+| REQ-EVAL-18 | Provenance binding (corpus_sha, model_weights_sha, calibration_version, constellation_version, code_version, holdout_split_sha) | foundation/surface | TASK-EVAL-001, TASK-EVAL-015 | blocked |
+| REQ-EVAL-19 | Open-research-question tracking (8 entries Q1..Q8) | foundation/surface | TASK-EVAL-001, TASK-EVAL-015 | blocked |
+| REQ-EVAL-20 | Bayesian shrinkage for under-sampled cells | logic | TASK-EVAL-012 | blocked |
+
+#### Technical component → Task mapping
+
+| TECH-EVALUATION component | Layer | Task ID(s) | Notes |
+|---|---|---|---|
+| EvalRunner struct + new() + run_holdout_eval | logic | TASK-EVAL-004 | leakage + per-panel forward + Pearson correlations + Bayesian shrinkage entry-point |
+| EvalRunner::check_ship_gate | logic | TASK-EVAL-008 | 8-condition AND + week-over-week regression |
+| EvalRunner::enqueue_uncertain + apply_active_learning_label + auto_route_top_n_per_day | logic | TASK-EVAL-009 | OOD escalation routing + capacity eviction + 3 label methods |
+| EvalRunner::build_patch_similarity_graph | logic | TASK-EVAL-010 | E_Diff cosines + top-k=32 + threshold 0.7 + idempotent on corpus_sha |
+| EvalRunner::compute_q1_pass_rate + compute_q3_f1 + compute_q3_macro_mean | logic | TASK-EVAL-012 | Q1 chain replay; Q3 F1 over predicted vs observed side-effect set |
+| EvalRunner::compute_state_transfer_diagnostic | logic | TASK-EVAL-011 | Wasserstein-1 sliced + M(t) geometric mean + lambda |
+| EvalRunner::compute_aux_head_distillation_summary | logic | TASK-EVAL-011 | reads CF_MEJEPA_TRAIN_CERTS distillation steps |
+| EvalRunner::compute_conformal_coverage_per_language | logic | TASK-EVAL-005 | ±2% band check |
+| EvalRunner::compute_ood_auc_per_language + detect_ood_drift_per_language | logic | TASK-EVAL-006 | trapezoidal AUC + 4-week drift |
+| EvalRunner::compute_gtau_pass_rate_per_language | logic | TASK-EVAL-007 | read-only consumption of TCT |
+| EvalRunner::compute_regression_check + apply_bayesian_shrinkage_to_cells | logic | TASK-EVAL-012 | RegressionCheck construction + shrinkage_applied Vec |
+| EvalReport (try_new + serialize_canonical + hash_for_determinism) | foundation | TASK-EVAL-001 | NaN/Inf rejection + map size validation + SHA-256 of canonical bytes |
+| ShipGateThresholds + ShipGateStatus | foundation | TASK-EVAL-001 | constitution-pinned defaults |
+| ActiveLearningQueueState + ActiveLearningQueueEntry + ActiveLearningLabel + LabelProvenance | foundation | TASK-EVAL-002 | BinaryHeap by signal_value descending; capacity 10K |
+| PatchGraph + PatchGraphEdge | foundation | TASK-EVAL-002 | adjacency map + similar_tasks read-side query |
+| EvalError + QueueError + GraphError (.code() + .log_context()) | foundation | TASK-EVAL-002 | 17/4/5 SCREAMING_SNAKE-tagged variants |
+| EvalConfig + 18 knobs + validate() | foundation | TASK-EVAL-002 | constitution-pinned defaults |
+| RocksDB CF descriptors (8 owned + 5 borrowed) + serializers + key builders | foundation | TASK-EVAL-003 | bincode round-trip; deterministic keys; CF_MEJEPA_EVAL_REPORTS / CF_MEJEPA_TASK_GRAPH(+_HISTORY) / CF_MEJEPA_ACTIVE_LEARNING_QUEUE/LABELS/EVICTIONS / CF_MEJEPA_OOD_ESCALATIONS / CF_MEJEPA_RESEARCH_QUESTIONS / CF_MEJEPA_MODEL_PROMOTIONS |
+| WeeklyReportWriter (write_weekly_report + carry-forward research questions + drift_severity_history + model_promotion_history) | surface | TASK-EVAL-015 | data/mejepa-eval/mejepa-weekly-report-YYYY-MM-DD.json mode 0o600 + persist-fail fallback to /tmp/ |
+| MCP tool handlers (mejepa_eval_run + mejepa_eval_ship_gate_status + mejepa_active_learning_queue + mejepa_active_learning_label) | surface | TASK-EVAL-013, TASK-EVAL-014 | additionalProperties:false; SCREAMING_SNAKE-tagged errors |
+| CLI subcommands (eval-run + eval-build-graph) | surface | TASK-EVAL-016 | exit codes 0/1/2; single-line stdout JSON |
+| FSV harness (16 evidence files) | surface | TASK-EVAL-017 | mode 0o600; re-read-and-assert; determinism across 3 invocations |
+
+#### Edge case / error state coverage
+
+| Coverage item | Task ID(s) |
+|---|---|
+| EC-EVAL-01 (empty holdout) | TASK-EVAL-004 (EvalRunner::new EmptyHoldout) |
+| EC-EVAL-02 (NaN in EvalReport field) | TASK-EVAL-001 (try_new validates) + TASK-EVAL-008 (defensive ship gate) |
+| EC-EVAL-03 (corpus_sha changed mid-week) | TASK-EVAL-012 (RegressionCheck::CorpusShaChanged) + TASK-EVAL-008 (skips regression check) |
+| EC-EVAL-04 (capacity overflow eviction) | TASK-EVAL-009 (CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS audit row) |
+| EC-EVAL-05 (live data < 100 → state_transfer None) | TASK-EVAL-011, TASK-EVAL-008 (Q3 conditional skip) |
+| EC-EVAL-06 (missing language in stated_alpha map) | TASK-EVAL-005 (MissingProvenance) |
+| EC-EVAL-07 (Bayesian shrinkage applied + flagged) | TASK-EVAL-012 (apply_bayesian_shrinkage_to_cells + shrinkage_applied) + TASK-EVAL-008 (skips shrunk cells) |
+| EC-EVAL-08 (auto-route Docker rerun knob) | TASK-EVAL-009 (auto_route_top_n_per_day) + TASK-EVAL-016 (CLI flag) |
+| AC-EVAL-01-* (weekly report DoD scenarios) | TASK-EVAL-015, TASK-EVAL-016, TASK-EVAL-017 |
+| AC-EVAL-02-* (8 ship-gate failure scenarios) | TASK-EVAL-008 (each condition independently testable) |
+| AC-EVAL-03-* (regression detection scenarios) | TASK-EVAL-012, TASK-EVAL-008 |
+| AC-EVAL-04-* (active-learning scenarios) | TASK-EVAL-009, TASK-EVAL-014 |
+| AC-EVAL-05-* (cross-task transfer scenarios) | TASK-EVAL-010 |
+| AC-EVAL-06-* (MCP tool scenarios) | TASK-EVAL-013, TASK-EVAL-014 |
+| AC-EVAL-07-* (CLI scenarios) | TASK-EVAL-016 |
+| AC-EVAL-08-* (Bayesian shrinkage scenarios) | TASK-EVAL-012 |
+| AC-EVAL-09-* (state-transfer scenarios) | TASK-EVAL-011 |
+| ERR-EVAL-01..ERR-EVAL-17 (all 17 EvalError variants) | TASK-EVAL-002 (taxonomy declared) + each consuming task wires the error path |
+| NFR-EVAL-01 (correlation accuracy ≥ 0.95) | TASK-EVAL-008 (ship-gate threshold), TASK-EVAL-017 (FSV asserts) |
+| NFR-EVAL-02 (eval pipeline p50 < 30 min) | TASK-EVAL-016 (CLI timeout), TASK-EVAL-013 (MCP timeout), TASK-EVAL-017 (latency-evidence.json) |
+| NFR-EVAL-03 (build_patch_similarity_graph < 30 min) | TASK-EVAL-010 (rayon par + idempotency), TASK-EVAL-017 (FSV asserts) |
+| NFR-EVAL-04 (ship-gate decisions deterministic) | TASK-EVAL-008, TASK-EVAL-017 (3-invocation determinism test) |
+| NFR-EVAL-05 (active-learning queue mutation atomic) | TASK-EVAL-009 (transactional rollback on corpus-append fail) |
+| NFR-EVAL-06 (path canonicalization at MCP boundary) | TASK-EVAL-013, TASK-EVAL-014 |
+| NFR-EVAL-07 (operator_id input validation) | TASK-EVAL-014 (reject empty + control chars + over 256) |
+| NFR-EVAL-08 (FSV evidence files mode 0o600) | TASK-EVAL-017 |
+| NFR-EVAL-09 (storage budget — EvalReport ≤ 1 MiB; bincode preferred) | TASK-EVAL-001 (REPORT_TOO_LARGE), TASK-EVAL-003 (bincode serializers) |
+| TC-EVAL-* (integration test cases) | TASK-EVAL-017 (FSV) |
+
+#### Cross-cutting foundation tasks (no single REQ owner)
+
+| Tech component | Layer | Task ID | Notes |
+|---|---|---|---|
+| 17 public eval enums + structs (MutationCategory, ResearchQuestionId, MitigationState, DriftSeverity, ModelMode, SplitMode, LabelMethod, ConformalHealthEntry, ActiveLearningSummary, DriftSeverityEntry, ModelPromotionEntry, StateTransferDiagnostic, AuxHeadDistillationSummary, OpenResearchQuestionStatus, CellDelta, RegressionCheck, ShipGateThresholds, ShipGateStatus) | foundation | TASK-EVAL-001 | re-exported from src/eval/types.rs |
+| seed_initial_research_questions() (8 entries Q1..Q8 from doc 09 §8) | foundation | TASK-EVAL-001 | mitigation_state=Active on first run |
+| OodEscalation struct (CF_MEJEPA_OOD_ESCALATIONS value type) | foundation | TASK-EVAL-003 | consumed by TASK-EVAL-009 (OOD route) |
+| compute_pearson_correlation + compute_bayesian_shrinkage helpers | logic | TASK-EVAL-004 | extracted to src/eval/correlation.rs; consumed by 005, 006, 007, 012 |
+| CorpusAppender trait declaration | logic | TASK-EVAL-009 | SPEC-CORPUS implements; this domain only declares the interface |
+| EDiffEncoder trait declaration | logic | TASK-EVAL-010 | SPEC-INSTRUMENTS implements; this domain only declares the interface |
+| TrainCert read-side struct | logic | TASK-EVAL-011 | bincode-compatible read-side mirror of SPEC-TRAINING's writer |
+| SideEffect read-side struct | logic | TASK-EVAL-012 | minimal shape compatible with SPEC-INSTRUMENTS / SPEC-CORPUS canonical |
+| FsvFixture builder + 240-panel + 100-live + train_certs + 3-task corpus + 2-week prior report | surface | TASK-EVAL-017 | deterministic SplitMix64-seeded; reusable across all 16 writers |
+
+#### Cross-phase dependencies (out from EVALUATION into other phases)
+
+| EVAL task | Depends on (other phase) | Reason |
+|---|---|---|
+| TASK-EVAL-001 | TASK-INFER-001 (Language, OracleOutcome, EmbedderId, ChunkId, TaskId) + TASK-CORPUS-003 (MutationCategory re-export) | shared types from Phase 4a + Phase 0 |
+| TASK-EVAL-004 | TASK-INFER-003 (MeJepaCompiler::compile) + TASK-CORPUS-017 (assert_no_test_patch_leakage) | run_holdout_eval delegates to compile + leakage check |
+| TASK-EVAL-005 | TASK-INFER-010 (CalibrationStore::stated_alpha_for_language) | per-language stated alpha |
+| TASK-EVAL-006 | TASK-INFER-006 (OodDetector) + TASK-CORPUS-*** (synthetic OOD panels per language) | per-language AUC |
+| TASK-EVAL-007 | Phase 4b (ConstellationGuard::gtau_test) | read-only Gτ verdicts |
+| TASK-EVAL-009 | TASK-INFER-005 (ConformalSet) + TASK-INFER-006 (OodDetector) + SPEC-CORPUS (CorpusAppender impl) | enqueue + label + corpus row append |
+| TASK-EVAL-010 | TASK-INSTR-*** (E_Diff slot encoder) + TASK-CORPUS-007 (Corpus iterator + corpus_sha) | pairwise cosines |
+| TASK-EVAL-011 | Phase 3 (CF_MEJEPA_TRAIN_CERTS populated) + Phase 7 (CF_MEJEPA_LIVE_PREDICTIONS, optional) | aux-head + state-transfer |
+| TASK-EVAL-012 | Phase 4a Gates 5+6 + WitnessChainReader (verify_chain_bytes) + Phase 7 (observed side-effect sets, optional) | Q1 chain replay + Q3 F1 |
+
+#### Uncovered items
+
+(none — all 20 REQ-EVAL-NN, all 5 TECH-EVALUATION component contracts, all 8 EC-EVAL-NN edge cases, all 9 NFR-EVAL-NN budgets, all 17 ERR-EVAL-NN error states, all 4 `mcp__cgreality__mejepa_*` MCP tools, the Phase 8 DoD CLI, and the FSV harness have at least one task; layer ordering Foundation (3) → Logic (9) → Surface (5) preserved; dependency DAG acyclic (TASK-EVAL-001 → 002 → 003 → 004 → 005/006/007 → 008; 010, 011 depend only on 001/002/003 + cross-phase predecessors; 012 depends on 001/002/010/011; 013 → 008; 014 → 009; 015 → 008/011/012; 016 → 010/015; 017 → 013/014/016); no task references files from later tasks per Iron Rule.)
+
+**EVALUATION coverage: 20/20 functional REQs + 5/5 technical components + 8/8 edge cases + 9/9 NFRs + 17/17 error states + 4/4 MCP tools + Phase 8 DoD CLI + 16-file FSV harness = 17 tasks (3 foundation + 9 logic + 5 surface); critical path TASK-EVAL-001 → 002 → 003 → 004 → 012 → 008 → 015 → 016 → 017; anchor scheduling on TASK-EVAL-004 once Phase 4a `MeJepaCompiler::compile` is callable on synthetic holdout subset.**
 
 ---
 

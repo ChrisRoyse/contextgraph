@@ -13,8 +13,8 @@ use context_graph_mejepa_corpus::swebench::{
     run_swebench_lite_oracle, SwebenchOracleConfig, SwebenchPrediction, SwebenchPredictionMode,
 };
 use context_graph_mejepa_corpus::{
-    compute_corpus_sha256, CorpusProvenance, CorpusProvenanceRow, Language, MutationCategory,
-    MutationOutcome, MEJEPA_CORPUS_VERSION_V1, MEJEPA_EMBEDDER_VERSION_V1,
+    compute_corpus_sha256, parse_languages, CorpusProvenance, CorpusProvenanceRow, Language,
+    MutationCategory, MutationOutcome, MEJEPA_CORPUS_VERSION_V1, MEJEPA_EMBEDDER_VERSION_V1,
 };
 use context_graph_mejepa_instruments::OracleVerdict;
 use serde::{Deserialize, Serialize};
@@ -699,28 +699,8 @@ fn parse_categories(values: &[String]) -> CliResult<Vec<MutationCategory>> {
     values.iter().map(|value| parse_category(value)).collect()
 }
 
-fn parse_languages(values: &[String]) -> CliResult<Vec<Language>> {
-    if values.is_empty() {
-        return Err("at least one --language must be provided; Phase 0 supports `python`".into());
-    }
-    let mut languages = values
-        .iter()
-        .map(|value| {
-            Language::parse_slug(value).map_err(|err| -> Box<dyn std::error::Error> {
-                format!("{err} ({})", err.code()).into()
-            })
-        })
-        .collect::<CliResult<Vec<_>>>()?;
-    languages.sort_by_key(|language| language.slug());
-    languages.dedup();
-    Ok(languages)
-}
-
 fn parse_category(value: &str) -> CliResult<MutationCategory> {
-    MutationCategory::all()
-        .into_iter()
-        .find(|category| category.slug() == value)
-        .ok_or_else(|| format!("unknown mutation category `{value}`").into())
+    MutationCategory::from_slug(value).ok_or_else(|| format!("unknown mutation category `{value}`").into())
 }
 
 fn install_shutdown_flag() -> CliResult<Arc<AtomicBool>> {

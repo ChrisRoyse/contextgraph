@@ -81,6 +81,15 @@ pub enum OracleError {
         message: String,
         remediation: &'static str,
     },
+    #[error(
+        "oracle Docker run_id is unsafe at position {position}: {run_id:?} contains {character:?}; remediation: {remediation}"
+    )]
+    DockerRunIdUnsafe {
+        run_id: String,
+        character: char,
+        position: usize,
+        remediation: &'static str,
+    },
 }
 
 impl OracleError {
@@ -93,6 +102,7 @@ impl OracleError {
             Self::JsonParse { .. } => "MEJEPA_ORACLE_JSON_PARSE",
             Self::ReportInvalid { .. } => "MEJEPA_ORACLE_REPORT_INVALID",
             Self::Store { .. } => "MEJEPA_ORACLE_STORE",
+            Self::DockerRunIdUnsafe { .. } => "MEJEPA_CORPUS_DOCKER_RUN_ID_UNSAFE",
         }
     }
 
@@ -178,6 +188,20 @@ impl OracleError {
             operation,
             cf,
             message: message.into(),
+            remediation,
+        }
+    }
+
+    pub(crate) fn docker_run_id_unsafe(
+        run_id: impl Into<String>,
+        character: char,
+        position: usize,
+        remediation: &'static str,
+    ) -> Self {
+        Self::DockerRunIdUnsafe {
+            run_id: run_id.into(),
+            character,
+            position,
             remediation,
         }
     }

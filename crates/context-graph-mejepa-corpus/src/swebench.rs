@@ -562,19 +562,19 @@ fn validate_config(config: &SwebenchOracleConfig) -> OracleResult<()> {
     let mut chars = config.run_id.chars();
     let first = chars.next().expect("non-empty (checked above)");
     if !first.is_ascii_alphanumeric() {
-        return Err(OracleError::invalid(
-            "config.run_id",
-            "run_id must start with an ASCII alphanumeric character",
+        return Err(OracleError::docker_run_id_unsafe(
+            config.run_id.clone(),
+            first,
+            0,
             "Docker container-name regex is [a-zA-Z0-9][a-zA-Z0-9_.-]+",
         ));
     }
-    for c in std::iter::once(first).chain(chars) {
+    for (position, c) in std::iter::once(first).chain(chars).enumerate() {
         if !(c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-') {
-            return Err(OracleError::invalid(
-                "config.run_id",
-                format!(
-                    "run_id contains disallowed character `{c}`; allowed alphabet is [a-zA-Z0-9_.-]",
-                ),
+            return Err(OracleError::docker_run_id_unsafe(
+                config.run_id.clone(),
+                c,
+                position,
                 "Docker container-name regex is [a-zA-Z0-9][a-zA-Z0-9_.-]+; do not use `+`, `:`, `/`, spaces, or any other punctuation",
             ));
         }
@@ -1246,7 +1246,7 @@ mod tests {
             )
         };
         let err = validate_config(&cfg).unwrap_err();
-        assert_eq!(err.code(), "MEJEPA_ORACLE_INVALID_INPUT");
+        assert_eq!(err.code(), "MEJEPA_CORPUS_DOCKER_RUN_ID_UNSAFE");
     }
 
     #[test]
@@ -1262,7 +1262,7 @@ mod tests {
             )
         };
         let err = validate_config(&cfg).unwrap_err();
-        assert_eq!(err.code(), "MEJEPA_ORACLE_INVALID_INPUT");
+        assert_eq!(err.code(), "MEJEPA_CORPUS_DOCKER_RUN_ID_UNSAFE");
     }
 
     #[test]

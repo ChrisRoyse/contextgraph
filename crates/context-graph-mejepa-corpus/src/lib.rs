@@ -40,6 +40,14 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+/// Re-export of the canonical oracle verdict types defined by
+/// `context-graph-mejepa-instruments`. Per the CORPUS integration contract,
+/// this crate consumes and persists those upstream schemas; it does not
+/// redefine them.
+pub use context_graph_mejepa_instruments::{
+    ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome,
+};
+
 mod compile_error;
 mod delete_test_call;
 mod known_good;
@@ -89,6 +97,11 @@ pub enum MutationError {
         message: String,
         remediation: &'static str,
     },
+    #[error("mutation corpus leakage detected for test_patch sha {sha}: {collisions:?}")]
+    LeakageDetected {
+        sha: String,
+        collisions: Vec<(String, String)>,
+    },
 }
 
 impl MutationError {
@@ -97,6 +110,7 @@ impl MutationError {
             Self::InvalidInput { .. } => "MEJEPA_CORPUS_INVALID_INPUT",
             Self::NoMutationSite { .. } => "MEJEPA_CORPUS_NO_MUTATION_SITE",
             Self::OperatorFailed { .. } => "MEJEPA_CORPUS_OPERATOR_FAILED",
+            Self::LeakageDetected { .. } => "MEJEPA_CORPUS_LEAKAGE_DETECTED",
         }
     }
 
@@ -135,6 +149,16 @@ impl MutationError {
             remediation,
         }
     }
+
+    pub(crate) fn leakage_detected(
+        sha: impl Into<String>,
+        collisions: Vec<(String, String)>,
+    ) -> Self {
+        Self::LeakageDetected {
+            sha: sha.into(),
+            collisions,
+        }
+    }
 }
 
 /// Phase 0 currently mutates Python SWE-bench Lite tasks. Other languages must
@@ -142,28 +166,103 @@ impl MutationError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Language {
+    Rust,
     Python,
+    JavaScript,
+    TypeScript,
+    Go,
+    Java,
+    C,
+    Cpp,
+    CSharp,
+    Ruby,
+    Php,
 }
 
 impl Language {
-    pub fn slug(self) -> &'static str {
+    pub const fn all() -> [Self; 11] {
+        [
+            Self::Rust,
+            Self::Python,
+            Self::JavaScript,
+            Self::TypeScript,
+            Self::Go,
+            Self::Java,
+            Self::C,
+            Self::Cpp,
+            Self::CSharp,
+            Self::Ruby,
+            Self::Php,
+        ]
+    }
+
+    pub const fn slug(self) -> &'static str {
         match self {
+            Self::Rust => "rust",
             Self::Python => "python",
+            Self::JavaScript => "javascript",
+            Self::TypeScript => "typescript",
+            Self::Go => "go",
+            Self::Java => "java",
+            Self::C => "c",
+            Self::Cpp => "cpp",
+            Self::CSharp => "c_sharp",
+            Self::Ruby => "ruby",
+            Self::Php => "php",
         }
     }
 
-    pub fn parse_slug(value: &str) -> MutationResult<Self> {
+    pub fn from_slug(value: &str) -> Option<Self> {
         match value {
-            "python" => Ok(Self::Python),
-            other => Err(MutationError::invalid(
-                "languages",
-                format!(
-                    "unsupported Phase 0 mutation language {other:?}; only `python` is implemented"
-                ),
-                "generate per-language operators and oracle fixtures before enabling this language",
-            )),
+            "rust" => Some(Self::Rust),
+            "python" => Some(Self::Python),
+            "javascript" => Some(Self::JavaScript),
+            "typescript" => Some(Self::TypeScript),
+            "go" => Some(Self::Go),
+            "java" => Some(Self::Java),
+            "c" => Some(Self::C),
+            "cpp" => Some(Self::Cpp),
+            "c_sharp" => Some(Self::CSharp),
+            "ruby" => Some(Self::Ruby),
+            "php" => Some(Self::Php),
+            _ => None,
         }
     }
+
+    pub const fn is_supported(self) -> bool {
+        matches!(self, Self::Python)
+    }
+}
+
+pub fn parse_languages(raw: &[String]) -> MutationResult<Vec<Language>> {
+    if raw.is_empty() {
+        return Err(MutationError::invalid(
+            "languages",
+            "at least one language slug is required",
+            "pass `python`; current supported set: [python]",
+        ));
+    }
+    let mut out = Vec::with_capacity(raw.len());
+    for value in raw {
+        let language = Language::from_slug(value).ok_or_else(|| {
+            MutationError::invalid(
+                "languages",
+                format!("unknown language slug `{value}`"),
+                "use one of: rust, python, javascript, typescript, go, java, c, cpp, c_sharp, ruby, php; current supported set: [python]",
+            )
+        })?;
+        if !language.is_supported() {
+            return Err(MutationError::invalid(
+                "languages",
+                format!("language `{}` is not yet supported", language.slug()),
+                "drop unsupported languages; current supported set: [python]",
+            ));
+        }
+        if !out.contains(&language) {
+            out.push(language);
+        }
+    }
+    Ok(out)
 }
 
 /// Stable row material used to compute the finalized corpus hash. The hash is
@@ -228,11 +327,7 @@ impl CorpusProvenance {
                 "record every source language represented in the corpus",
             ));
         }
-        if self
-            .languages
-            .iter()
-            .any(|language| *language != Language::Python)
-        {
+        if self.languages.iter().any(|language| !language.is_supported()) {
             return Err(MutationError::invalid(
                 "languages",
                 "Phase 0 provenance contains a language without implemented mutation operators",
@@ -365,6 +460,12 @@ impl MutationCategory {
             Self::OverEngineer => "over_engineer",
             Self::CompileError => "compile_error",
         }
+    }
+
+    pub fn from_slug(slug: &str) -> Option<Self> {
+        Self::all()
+            .into_iter()
+            .find(|category| category.slug() == slug)
     }
 }
 

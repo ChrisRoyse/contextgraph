@@ -485,7 +485,7 @@ pub fn assert_no_test_patch_leakage<'a>(
     assignments: &[TaskAssignment],
     test_patch_sha_for: impl Fn(&str) -> Option<&'a str>,
 ) -> MutationResult<()> {
-    let mut sha_to_bucket: BTreeMap<&'a str, SplitBucket> = BTreeMap::new();
+    let mut sha_to_assignment: BTreeMap<&'a str, (&str, SplitBucket)> = BTreeMap::new();
     for assignment in assignments {
         let Some(sha) = test_patch_sha_for(&assignment.task_id) else {
             return Err(MutationError::invalid(
@@ -497,18 +497,21 @@ pub fn assert_no_test_patch_leakage<'a>(
                 "supply a SHA for every task before invoking the check",
             ));
         };
-        match sha_to_bucket.get(sha) {
+        match sha_to_assignment.get(sha) {
             None => {
-                sha_to_bucket.insert(sha, assignment.bucket);
+                sha_to_assignment.insert(sha, (assignment.task_id.as_str(), assignment.bucket));
             }
-            Some(existing) if *existing == assignment.bucket => {}
-            Some(_) => {
-                return Err(MutationError::op_failed(
-                    "split.test_patch_leakage",
-                    format!(
-                        "test_patch SHA `{sha}` appears in multiple buckets; instance-atomic split must be unique-per-task",
-                    ),
-                    "investigate the manifest for duplicate test_patch SHAs across tasks",
+            Some((_, existing_bucket)) if *existing_bucket == assignment.bucket => {}
+            Some((existing_task, existing_bucket)) => {
+                return Err(MutationError::leakage_detected(
+                    sha,
+                    vec![
+                        (existing_task.to_string(), existing_bucket.slug().to_string()),
+                        (
+                            assignment.task_id.clone(),
+                            assignment.bucket.slug().to_string(),
+                        ),
+                    ],
                 ));
             }
         }

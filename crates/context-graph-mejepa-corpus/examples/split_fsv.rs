@@ -228,7 +228,7 @@ fn main() -> FsvResult<()> {
         "duplicate_test_patch_sha_cross_bucket",
         &instance_report.assignments,
         &duplicate_sha_by_task,
-        "MEJEPA_CORPUS_OPERATOR_FAILED",
+        "MEJEPA_CORPUS_LEAKAGE_DETECTED",
     )?;
 
     let unique_test_patch_sha_count = test_patch_sha_by_task

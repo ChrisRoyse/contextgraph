@@ -188,7 +188,8 @@ fn assert_no_test_patch_leakage_rejects_collision() {
     let res = assert_no_test_patch_leakage(&report.assignments, |_| Some("dupe-sha"));
     // Expect failure unless every task ended up in the same bucket (which
     // doesn't happen with InstanceAtomic 80/10/10).
-    assert!(res.is_err());
+    let err = res.unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_CORPUS_LEAKAGE_DETECTED");
 }
 
 #[test]

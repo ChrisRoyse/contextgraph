@@ -14,10 +14,14 @@ pub(crate) fn ensure_parseable_python(source: &str, field: &'static str) -> Muta
 }
 
 pub(crate) fn python_code_mask(source: &str) -> MutationResult<Vec<bool>> {
+    Ok(mask_python(source)?.code_by_byte)
+}
+
+pub(crate) fn mask_python(source: &str) -> MutationResult<LexicalMask> {
     let tree = parse_python(source, "source")?;
     let mut mask = vec![true; source.len()];
     mask_non_code_nodes(tree.root_node(), source, &mut mask);
-    Ok(mask)
+    Ok(LexicalMask { code_by_byte: mask })
 }
 
 pub(crate) fn range_is_code(mask: &[bool], start: usize, len: usize) -> bool {
@@ -26,6 +30,36 @@ pub(crate) fn range_is_code(mask: &[bool], start: usize, len: usize) -> bool {
         .and_then(|end| mask.get(start..end))
         .map(|items| items.iter().all(|is_code| *is_code))
         .unwrap_or(false)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LexicalMask {
+    code_by_byte: Vec<bool>,
+}
+
+impl LexicalMask {
+    pub(crate) fn is_code(&self, byte_offset: usize) -> bool {
+        self.code_by_byte.get(byte_offset).copied().unwrap_or(false)
+    }
+
+    pub(crate) fn is_code_range(&self, start: usize, end: usize) -> bool {
+        if start > end {
+            return false;
+        }
+        self.code_by_byte
+            .get(start..end)
+            .map(|items| items.iter().all(|is_code| *is_code))
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn iter_code_chars<'a>(
+        &'a self,
+        source: &'a str,
+    ) -> impl Iterator<Item = (usize, char)> + 'a {
+        source
+            .char_indices()
+            .filter(move |(offset, _)| self.is_code(*offset))
+    }
 }
 
 fn parse_python(source: &str, field: &'static str) -> MutationResult<tree_sitter::Tree> {
@@ -220,5 +254,31 @@ mod tests {
         assert!(!range_is_code(&mask, align, 1));
         assert!(!range_is_code(&mask, literal_width, 2));
         assert!(range_is_code(&mask, nested_width, "width".len()));
+    }
+
+    #[test]
+    fn lexical_mask_api_masks_triple_quotes_and_exposes_code_chars() {
+        let src = "'''x == y'''\nvalue = 42\n";
+        let mask = mask_python(src).unwrap();
+        let string_eq = src.find("==").unwrap();
+        let value = src.find("value").unwrap();
+        assert!(!mask.is_code_range(string_eq, string_eq + 2));
+        assert!(mask.is_code_range(value, value + "value".len()));
+        let code = mask
+            .iter_code_chars(src)
+            .map(|(_, ch)| ch)
+            .collect::<String>();
+        assert!(code.contains("value = 42"));
+        assert!(!code.contains("x == y"));
+    }
+
+    #[test]
+    fn lexical_mask_excludes_fstring_format_specs() {
+        let src = "value = 7\nwidth = 4\ntext = f\"{value:>{width}}\"\n";
+        let mask = mask_python(src).unwrap();
+        let literal_arrow = src.find(":>").unwrap() + 1;
+        let nested_width = src.rfind("width").unwrap();
+        assert!(!mask.is_code(literal_arrow));
+        assert!(mask.is_code_range(nested_width, nested_width + "width".len()));
     }
 }
