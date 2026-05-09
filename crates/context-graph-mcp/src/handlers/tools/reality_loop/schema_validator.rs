@@ -104,7 +104,7 @@ mod tests {
         let root = repo_root();
         let schema_path = root.join("config/ccreality_recommendation_schema.json");
         let sample_path =
-            root.join("docs/ccreality/phase-05-config-files/sample_recommendation.json");
+            root.join("backupdocs/ccreality/phase-05-config-files/sample_recommendation.json");
         let schema: Value =
             serde_json::from_str(&fs::read_to_string(&schema_path).expect("schema file"))
                 .expect("schema json");
@@ -124,7 +124,7 @@ mod tests {
         let root = repo_root();
         let schema_path = root.join("config/ccreality_recommendation_schema.json");
         let sample_path =
-            root.join("docs/ccreality/phase-05-config-files/sample_recommendation.json");
+            root.join("backupdocs/ccreality/phase-05-config-files/sample_recommendation.json");
         let schema: Value =
             serde_json::from_str(&fs::read_to_string(&schema_path).expect("schema file"))
                 .expect("schema json");
@@ -154,7 +154,7 @@ mod tests {
         let root = repo_root();
         let schema_path = root.join("config/ccreality_recommendation_schema.json");
         let sample_path =
-            root.join("docs/ccreality/phase-05-config-files/sample_recommendation.json");
+            root.join("backupdocs/ccreality/phase-05-config-files/sample_recommendation.json");
         let schema: Value =
             serde_json::from_str(&fs::read_to_string(&schema_path).expect("schema file"))
                 .expect("schema json");
@@ -180,7 +180,7 @@ mod tests {
         let root = repo_root();
         let schema_path = root.join("config/ccreality_recommendation_schema.json");
         let sample_path =
-            root.join("docs/ccreality/phase-05-config-files/sample_recommendation.json");
+            root.join("backupdocs/ccreality/phase-05-config-files/sample_recommendation.json");
         let schema: Value =
             serde_json::from_str(&fs::read_to_string(&schema_path).expect("schema file"))
                 .expect("schema json");

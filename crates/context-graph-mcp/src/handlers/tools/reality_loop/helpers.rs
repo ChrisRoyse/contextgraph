@@ -3,6 +3,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs;
+use std::io::ErrorKind;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -314,16 +315,29 @@ pub fn write_json_checked(path: &Path, value: &impl Serialize) -> Result<()> {
 }
 
 pub fn write_text_checked(path: &Path, text: &str) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| fs_error("CCREALITY_DIR_CREATE_FAILED", parent, e))?;
-    }
-    let mut file =
-        fs::File::create(path).map_err(|e| fs_error("CCREALITY_FILE_CREATE_FAILED", path, e))?;
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).map_err(|e| fs_error("CCREALITY_DIR_CREATE_FAILED", parent, e))?;
+    let (tmp_path, mut file) = create_temp_sibling_file(path)?;
     file.write_all(text.as_bytes())
-        .map_err(|e| fs_error("CCREALITY_FILE_WRITE_FAILED", path, e))?;
+        .map_err(|e| fs_error("CCREALITY_FILE_WRITE_FAILED", &tmp_path, e))?;
     file.sync_all()
-        .map_err(|e| fs_error("CCREALITY_FILE_SYNC_FAILED", path, e))?;
+        .map_err(|e| fs_error("CCREALITY_FILE_SYNC_FAILED", &tmp_path, e))?;
+    drop(file);
+    let temp_readback = fs::read_to_string(&tmp_path)
+        .map_err(|e| fs_error("CCREALITY_FILE_READBACK_FAILED", &tmp_path, e))?;
+    if temp_readback != text {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(CCRealityError::new(
+            "CCREALITY_FILE_READBACK_MISMATCH",
+            "temporary file readback did not match written content",
+            "filesystem.readback",
+            "inspect filesystem durability before continuing",
+            json!({"path": tmp_path.display().to_string(), "expected_sha256": sha256_text(text), "actual_sha256": sha256_text(&temp_readback)}),
+            Some(file_sot(&tmp_path)),
+        ));
+    }
+    fs::rename(&tmp_path, path).map_err(|e| fs_error("CCREALITY_FILE_RENAME_FAILED", path, e))?;
+    sync_dir(parent, "CCREALITY_PARENT_DIR_SYNC_FAILED")?;
     let readback = fs::read_to_string(path)
         .map_err(|e| fs_error("CCREALITY_FILE_READBACK_FAILED", path, e))?;
     if readback != text {
@@ -337,6 +351,58 @@ pub fn write_text_checked(path: &Path, text: &str) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+fn create_temp_sibling_file(path: &Path) -> Result<(PathBuf, fs::File)> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            CCRealityError::new(
+                "CCREALITY_FILE_NAME_INVALID",
+                "artifact path does not have a valid UTF-8 file name",
+                "artifact.path",
+                "write artifacts to a normal file path with a UTF-8 file name",
+                json!({"path": path.display().to_string()}),
+                Some(file_sot(path)),
+            )
+        })?;
+    for attempt in 0..1000u32 {
+        let candidate = parent.join(format!(
+            ".{file_name}.{}.{}.tmp",
+            std::process::id(),
+            attempt
+        ));
+        match fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&candidate)
+        {
+            Ok(file) => return Ok((candidate, file)),
+            Err(err) if err.kind() == ErrorKind::AlreadyExists => continue,
+            Err(err) => {
+                return Err(fs_error(
+                    "CCREALITY_TEMP_FILE_PROBE_FAILED",
+                    &candidate,
+                    err,
+                ));
+            }
+        }
+    }
+    Err(CCRealityError::new(
+        "CCREALITY_TEMP_FILE_EXHAUSTED",
+        "could not allocate a unique temporary artifact path",
+        "artifact.temp_path",
+        "inspect stale temporary files in the artifact directory",
+        json!({"path": path.display().to_string()}),
+        Some(file_sot(parent)),
+    ))
+}
+
+fn sync_dir(path: &Path, code: &'static str) -> Result<()> {
+    let dir = fs::File::open(path).map_err(|e| fs_error(code, path, e))?;
+    dir.sync_all().map_err(|e| fs_error(code, path, e))
 }
 
 pub fn sha256_file(path: &Path) -> Result<String> {
