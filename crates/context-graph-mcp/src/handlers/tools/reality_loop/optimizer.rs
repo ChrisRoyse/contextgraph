@@ -2,7 +2,9 @@ use super::errors::Result;
 use super::helpers::*;
 use super::schema_validator::RecommendationValidator;
 use super::shift_log::{append_shift, ShiftRecord};
-use super::witness_chain::{append_witness_entry_for_run, WitnessOpType};
+use super::witness_chain::{
+    append_witness_entry_for_run, verify_witness_chain_for_run, WitnessOpType,
+};
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use serde_json::{json, Value};
@@ -51,6 +53,7 @@ pub async fn optimizer_record_decision(args: Value) -> Result<Value> {
     let session = required_str(&args, "claude_session_id").or_else(|_| session_id(&args))?;
     let runtime_root = require_active_runtime_root().await?;
     let task = require_active_target_instance().await?;
+    let witness_preflight = verify_witness_chain_for_run(&runtime_root, &run_id)?;
     let attempt_dir = attempt_dir(&runtime_root, &run_id, &task, attempt)?;
     let optimizer_dir = attempt_dir.join("claude-code-optimizer");
     fs::create_dir_all(&optimizer_dir)
@@ -108,6 +111,7 @@ pub async fn optimizer_record_decision(args: Value) -> Result<Value> {
         "sha256": sha256_file(&path)?,
         "ledger_record_id": ledger_append.get("record_id").cloned().unwrap_or(Value::Null),
         "ledger_append": ledger_append,
+        "witness_preflight": witness_preflight,
         "witness_append": witness_append,
         "shift_id": shift.shift_id,
         "source_of_truth": file_sot(&path)
@@ -126,6 +130,7 @@ pub async fn optimizer_record_recommendation(args: Value) -> Result<Value> {
     let turn = required_u64(&args, "turn_number")?;
     let runtime_root = require_active_runtime_root().await?;
     let task = require_active_target_instance().await?;
+    let witness_preflight = verify_witness_chain_for_run(&runtime_root, &run_id)?;
     let attempt_dir = attempt_dir(&runtime_root, &run_id, &task, attempt)?;
     let optimizer_dir = attempt_dir.join("claude-code-optimizer");
     fs::create_dir_all(&optimizer_dir)
@@ -171,6 +176,7 @@ pub async fn optimizer_record_recommendation(args: Value) -> Result<Value> {
         "sha256": sha256_file(&path)?,
         "ledger_record_id": ledger_append.get("record_id").cloned().unwrap_or(Value::Null),
         "ledger_append": ledger_append,
+        "witness_preflight": witness_preflight,
         "witness_append": witness_append,
         "shift_id": shift.shift_id,
         "source_of_truth": file_sot(&path)
@@ -185,6 +191,7 @@ pub async fn optimizer_record_harness_transition(
     let attempt = required_u64(&args, "attempt")?;
     let runtime_root = require_active_runtime_root().await?;
     let task = require_active_target_instance().await?;
+    let witness_preflight = verify_witness_chain_for_run(&runtime_root, &run_id)?;
     let dir = attempt_dir(&runtime_root, &run_id, &task, attempt)?;
     let path = write_harness_transition(&dir, &args)?;
     let round = read_json(&path)?
@@ -223,6 +230,7 @@ pub async fn optimizer_record_harness_transition(
         "transition_path": file_sot(&path),
         "round": round,
         "shift_id": shift_id,
+        "witness_preflight": witness_preflight,
         "witness_append": witness_append,
         "source_of_truth": file_sot(&path)
     }))

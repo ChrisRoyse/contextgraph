@@ -13,7 +13,9 @@
 
 use super::errors::{CCRealityError, Result};
 use super::helpers::*;
-use super::witness_chain::{append_witness_entry_for_run, WitnessOpType};
+use super::witness_chain::{
+    append_witness_entry_for_run, verify_witness_chain_for_run, WitnessOpType,
+};
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use context_graph_solver::{CsrMatrix, ForwardPushConfig, ForwardPushSolver, MatrixKind};
@@ -89,6 +91,7 @@ pub(crate) fn compute_influence_for_run(
     .map_err(solver_error)?;
 
     let run_root = runtime_root.join(run_id);
+    let witness_preflight = verify_witness_chain_for_run(runtime_root, run_id)?;
     let attempts_path = run_root.join("reality-optimizer").join("attempts.jsonl");
     let attempts = read_attempt_records(&attempts_path)?;
     let mut recommendation_paths = Vec::new();
@@ -152,6 +155,7 @@ pub(crate) fn compute_influence_for_run(
         },
         "top_attempts": top_attempts,
         "top_recommendations": top_recommendations,
+        "witness_preflight": witness_preflight,
         "created_at_unix": unix_secs()?
     }))?;
     let audit_path = next_influence_audit_path(&run_root)?;
@@ -932,6 +936,18 @@ mod tests {
         write_json_checked(&path, &payload).expect("write recommendation");
     }
 
+    fn write_corrupt_witness_chain(runtime_root: &Path, run_id: &str) -> PathBuf {
+        let path = runtime_root
+            .join(run_id)
+            .join("claude-code-optimizer")
+            .join("witness-chain.bin");
+        fs::create_dir_all(path.parent().expect("witness parent")).expect("witness parent");
+        let mut bytes = vec![0u8; WITNESS_ENTRY_SIZE];
+        bytes[0] = 0x7f;
+        fs::write(&path, bytes).expect("write corrupt witness");
+        path
+    }
+
     fn base_rows() -> Vec<Value> {
         vec![
             json!({
@@ -1117,6 +1133,33 @@ mod tests {
     }
 
     #[test]
+    fn influence_corrupt_witness_preflight_fails_before_audit_write() {
+        let (_tmp, runtime_root, run_id) = seed_runtime();
+        write_attempts(&runtime_root, &run_id, &base_rows());
+        write_recommendation(&runtime_root, &run_id, "task-a", 1, 1, "import-error");
+        write_recommendation(&runtime_root, &run_id, "task-c", 2, 1, "import-error");
+        let witness_path = write_corrupt_witness_chain(&runtime_root, &run_id);
+        let before_audits = audit_count(&runtime_root, &run_id);
+        let before_witness_sha = sha256_file(&witness_path).expect("before witness sha");
+        let err = compute_influence_for_run(
+            &runtime_root,
+            &run_id,
+            &json!({"failure_tag": "import-error", "k": 2}),
+        )
+        .expect_err("corrupt witness must fail before audit");
+        let after_audits = audit_count(&runtime_root, &run_id);
+        let after_witness_sha = sha256_file(&witness_path).expect("after witness sha");
+        println!(
+            "EDGE_CORRUPT_WITNESS_PREFLIGHT before_audits={before_audits} after_audits={after_audits} before_witness_sha={before_witness_sha} after_witness_sha={after_witness_sha} error_code={}",
+            err.error_code
+        );
+        assert_eq!(err.error_code, "CCREALITY_WITNESS_PREV_HASH_MISMATCH");
+        assert_eq!(before_audits, 0);
+        assert_eq!(after_audits, 0);
+        assert_eq!(before_witness_sha, after_witness_sha);
+    }
+
+    #[test]
     #[ignore = "writes persistent manual FSV evidence under target/; run explicitly"]
     fn influence_manual_fsv_persists_target_evidence() {
         let evidence_root =
@@ -1197,6 +1240,46 @@ mod tests {
         .expect_err("orphan recommendation edge case");
         let orphan_after = audit_count(&runtime_root, orphan_run);
 
+        let corrupt_witness_run = "run-corrupt-witness";
+        fs::create_dir_all(
+            runtime_root
+                .join(corrupt_witness_run)
+                .join("reality-optimizer"),
+        )
+        .expect("corrupt witness optimizer dir");
+        write_attempts(&runtime_root, corrupt_witness_run, &base_rows());
+        write_recommendation(
+            &runtime_root,
+            corrupt_witness_run,
+            "task-a",
+            1,
+            1,
+            "import-error",
+        );
+        write_recommendation(
+            &runtime_root,
+            corrupt_witness_run,
+            "task-c",
+            2,
+            1,
+            "import-error",
+        );
+        let corrupt_witness_path = write_corrupt_witness_chain(&runtime_root, corrupt_witness_run);
+        let corrupt_witness_before = json!({
+            "audit_count": audit_count(&runtime_root, corrupt_witness_run),
+            "witness_sha256": sha256_file(&corrupt_witness_path).unwrap(),
+        });
+        let corrupt_witness_err = compute_influence_for_run(
+            &runtime_root,
+            corrupt_witness_run,
+            &json!({"failure_tag": "import-error"}),
+        )
+        .expect_err("corrupt witness edge case");
+        let corrupt_witness_after = json!({
+            "audit_count": audit_count(&runtime_root, corrupt_witness_run),
+            "witness_sha256": sha256_file(&corrupt_witness_path).unwrap(),
+        });
+
         let evidence = json!({
             "schema_version": 1,
             "record_kind": "ccreality_optimizer_influence_manual_fsv_evidence",
@@ -1233,6 +1316,16 @@ mod tests {
                     "name": "orphan_recommendation",
                     "before": {"audit_count": orphan_before},
                     "after": {"audit_count": orphan_after, "error_code": orphan_err.error_code, "source_of_truth": orphan_err.source_of_truth}
+                },
+                {
+                    "name": "corrupt_witness_preflight",
+                    "before": corrupt_witness_before,
+                    "after": {
+                        "audit_count": corrupt_witness_after["audit_count"],
+                        "witness_sha256": corrupt_witness_after["witness_sha256"],
+                        "error_code": corrupt_witness_err.error_code,
+                        "source_of_truth": corrupt_witness_err.source_of_truth,
+                    }
                 }
             ]
         });
@@ -1267,6 +1360,12 @@ mod tests {
             );
             assert_eq!(edge["before"]["audit_count"], json!(0));
             assert_eq!(edge["after"]["audit_count"], json!(0));
+            if edge["name"] == json!("corrupt_witness_preflight") {
+                assert_eq!(
+                    edge["before"]["witness_sha256"],
+                    edge["after"]["witness_sha256"]
+                );
+            }
         }
     }
 }

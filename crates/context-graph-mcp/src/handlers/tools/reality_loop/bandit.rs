@@ -5,7 +5,9 @@
 
 use super::errors::{CCRealityError, Result};
 use super::helpers::*;
-use super::witness_chain::{append_witness_entry_for_run, WitnessOpType};
+use super::witness_chain::{
+    append_witness_entry_for_run, verify_witness_chain_for_run, WitnessOpType,
+};
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use rand_distr::{Beta, Distribution};
@@ -205,6 +207,7 @@ pub async fn optimizer_bandit_select(args: Value) -> Result<Value> {
         return Err(invalid_f64("cost_weight", args.get("cost_weight")));
     }
     let active = active_bandit_context().await?;
+    let witness_preflight = verify_witness_chain_for_run(&active.runtime_root, &active.run_id)?;
     let mut state = load_or_init_state(&active.path)?;
     let unix = unix_secs()?;
     let ctx = context_key(&decision_point, &context_bucket);
@@ -286,6 +289,7 @@ pub async fn optimizer_bandit_select(args: Value) -> Result<Value> {
             })
         }).collect::<Vec<_>>(),
         "state_sha256": state_sha256,
+        "witness_preflight": witness_preflight,
         "witness_append": witness_append,
         "source_of_truth": file_sot(&active.path),
         "readback": {
@@ -318,6 +322,7 @@ pub async fn optimizer_bandit_record_reward(args: Value) -> Result<Value> {
         }
     }
     let active = active_bandit_context().await?;
+    let witness_preflight = verify_witness_chain_for_run(&active.runtime_root, &active.run_id)?;
     let mut state = load_state_required(&active.path)?;
     let ctx = context_key(&decision_point, &context_bucket);
     let arm_stats = state
@@ -378,6 +383,7 @@ pub async fn optimizer_bandit_record_reward(args: Value) -> Result<Value> {
         "arm": arm,
         "stats": arm_stats_to_json(stats),
         "state_sha256": state_sha256,
+        "witness_preflight": witness_preflight,
         "witness_append": witness_append,
         "source_of_truth": file_sot(&active.path),
         "readback": {
@@ -627,13 +633,16 @@ mod tests {
         _tmp: TempDir,
         _orig_active: Option<String>,
         _guard: MutexGuard<'static, ()>,
+        runtime_root: PathBuf,
+        run_id: String,
         path: PathBuf,
     }
 
     fn setup_runtime() -> TestRuntime {
         let guard = RUNTIME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().expect("tempdir");
-        let run_root = tmp.path().join("run-bandit");
+        let run_id = "run-bandit".to_string();
+        let run_root = tmp.path().join(&run_id);
         std::fs::create_dir_all(run_root.join("reality-optimizer")).expect("optimizer dir");
         let cache_dir = dirs::home_dir().unwrap().join(".cache/cgreality");
         std::fs::create_dir_all(&cache_dir).expect("cache dir");
@@ -644,6 +653,8 @@ mod tests {
             _tmp: tmp,
             _orig_active: orig_active,
             _guard: guard,
+            runtime_root: run_root.parent().expect("runtime root").to_path_buf(),
+            run_id,
             path: run_root.join("reality-optimizer/solver-bandit.json"),
         }
     }
@@ -657,6 +668,19 @@ mod tests {
                 std::fs::write(active_path, orig).ok();
             }
         }
+    }
+
+    fn write_corrupt_witness_chain(rt: &TestRuntime) -> PathBuf {
+        let path = rt
+            .runtime_root
+            .join(&rt.run_id)
+            .join("claude-code-optimizer")
+            .join("witness-chain.bin");
+        std::fs::create_dir_all(path.parent().expect("witness parent")).expect("witness parent");
+        let mut bytes = vec![0u8; context_graph_witness::WITNESS_ENTRY_SIZE];
+        bytes[0] = 0x7f;
+        std::fs::write(&path, bytes).expect("write corrupt witness");
+        path
     }
 
     #[tokio::test]
@@ -721,5 +745,64 @@ mod tests {
         let raw: SolverBanditState =
             serde_json::from_str(&std::fs::read_to_string(&rt.path).unwrap()).unwrap();
         assert!(raw.contexts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn select_corrupt_witness_preflight_fails_without_state_file() {
+        let rt = setup_runtime();
+        let witness_path = write_corrupt_witness_chain(&rt);
+        let before_witness_sha = sha256_file(&witness_path).expect("before witness sha");
+        let before_state_exists = rt.path.exists();
+        let err = optimizer_bandit_select(json!({
+            "decision_point": "next_prompt_delta",
+            "context_bucket": "validation-failed",
+            "arms": ["tighten-grounding", "rerun-tests"]
+        }))
+        .await
+        .expect_err("corrupt witness must fail before state write");
+        let after_state_exists = rt.path.exists();
+        let after_witness_sha = sha256_file(&witness_path).expect("after witness sha");
+        println!(
+            "BANDIT_EDGE_CORRUPT_SELECT before_state_exists={before_state_exists} after_state_exists={after_state_exists} before_witness_sha={before_witness_sha} after_witness_sha={after_witness_sha} error_code={}",
+            err.error_code
+        );
+        assert_eq!(err.error_code, "CCREALITY_WITNESS_PREV_HASH_MISMATCH");
+        assert!(!before_state_exists);
+        assert!(!after_state_exists);
+        assert_eq!(before_witness_sha, after_witness_sha);
+    }
+
+    #[tokio::test]
+    async fn reward_corrupt_witness_preflight_preserves_existing_state() {
+        let rt = setup_runtime();
+        let selected = optimizer_bandit_select(json!({
+            "decision_point": "next_prompt_delta",
+            "context_bucket": "validation-failed",
+            "arms": ["tighten-grounding", "rerun-tests"]
+        }))
+        .await
+        .expect("select");
+        let arm = selected["selected_arm"].as_str().unwrap().to_string();
+        let before_state_sha = sha256_file(&rt.path).expect("before state sha");
+        let witness_path = write_corrupt_witness_chain(&rt);
+        let before_witness_sha = sha256_file(&witness_path).expect("before witness sha");
+        let err = optimizer_bandit_record_reward(json!({
+            "decision_point": "next_prompt_delta",
+            "context_bucket": "validation-failed",
+            "arm": arm,
+            "reward": 0.75,
+            "cost": 12.0
+        }))
+        .await
+        .expect_err("corrupt witness must fail before reward write");
+        let after_state_sha = sha256_file(&rt.path).expect("after state sha");
+        let after_witness_sha = sha256_file(&witness_path).expect("after witness sha");
+        println!(
+            "BANDIT_EDGE_CORRUPT_REWARD before_state_sha={before_state_sha} after_state_sha={after_state_sha} before_witness_sha={before_witness_sha} after_witness_sha={after_witness_sha} error_code={}",
+            err.error_code
+        );
+        assert_eq!(err.error_code, "CCREALITY_WITNESS_PREV_HASH_MISMATCH");
+        assert_eq!(before_state_sha, after_state_sha);
+        assert_eq!(before_witness_sha, after_witness_sha);
     }
 }
