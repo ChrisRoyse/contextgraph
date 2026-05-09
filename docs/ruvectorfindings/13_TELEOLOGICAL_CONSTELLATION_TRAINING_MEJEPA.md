@@ -287,6 +287,99 @@ This is the **5-term ΔK** that uses DDA's full signal capacity. Each of the new
 
 ---
 
+## 7.5 The agent-output verification loop (operator's primary use case)
+
+> **Operator framing 2026-05-09:** *"this would be able to convert anything into insane amounts of data that is fully labeled and should be able to give the me jepa everything it needs to predict reality if the system is working in reality or not and also verify if the agent has done what it says its done to verify and validate the agents outputs and verify they are working in reality or not. with all of this information we will be able to derive an insane amount of reward signals that can all be used to train and optimize the me jepa."*
+
+This is the **load-bearing application** of TCT/DDA for the system's stated end goal: **verify that what the AI agent claims to have done actually happened, and that the result actually works in reality.** Doc 10's "three questions ME-JEPA must answer" are precisely the three things TCT-ME-JEPA verifies:
+
+| Operator's question | TCT/DDA verifier |
+|---|---|
+| **(1) Does what the AI said it did EXIST?** | `MeJepaCompiler::verify(claim, post_state_panel)` runs Gτ on the post-state panel against the claim's predicted post-state centroid. If the agent claims "I added function `foo` to `bar.py`", the post-state panel's E_AST slot must satisfy Gτ against the centroid of "panel-with-function-foo-in-bar". A mismatch → `Verdict::GuardRejected` flagging the embedders that disagree. |
+| **(2) Does it WORK as intended?** | The Phase 0 mutation corpus + Phase 4 conformal calibration produce per-test pass-probability predictions. Gτ on the predicted-Pass centroid AND the conformal interval AND the L_step health gate must all agree → `Verdict::Pass`. Disagreement on any → escalate to Docker oracle (active-learning loop). |
+| **(3) How is it actually IMPACTING REALITY?** | The shift-log subscriber (doc 09 §3.8) captures every file delta, witness chain entry, test outcome. The DDA signal budget gives **231-462 distinct measurements** of how reality changed. Predicted-vs-observed comparison on each axis = a per-axis impact verification. |
+
+### 7.5.1 The agent-claim verification flow
+
+```
+Agent (Claude Code) emits a claim:
+  "I edited file X.py at lines 45-52, added function `parse_widget`,
+   running tests should now pass test_widget_parsing."
+
+ME-JEPA-Code receives:
+  - Pre-state panel from before the claimed edit (file SHA = pre_sha)
+  - Post-state panel from after the claimed edit (file SHA = post_sha)
+  - Claim graph: ((added, function, parse_widget, X.py:45-52),
+                  (predicted_passes, test, test_widget_parsing))
+
+Verification:
+  Step 1 — DOES IT EXIST:
+    - Compute observed_post_panel = embed_all_21(post_state)
+    - Compute predicted_post_panel_from_claim = predict_panel_from_claim(claim)
+    - Run Gτ(observed_post_panel; CP_for_claim_class)
+    - If any embedder rejects → CLAIM_DOES_NOT_MATCH_REALITY error with
+      per-embedder diagnostics. Reward signal: agent's claim was false.
+
+  Step 2 — DOES IT WORK:
+    - g_φ(panel[t=0..1]) → predicted_panel_t2
+    - Gτ(predicted_panel_t2; CP_Pass) — does the predictor think it'll pass?
+    - Conformal interval: is uncertainty narrow enough?
+    - L_step health: is the prediction made under healthy ΔP/ΔK/ΔΩ/ΔΞ?
+    - If all green → Verdict::Pass with conformal interval; reward signal:
+      agent's claim is verified-true.
+
+  Step 3 — IMPACT ON REALITY:
+    - Compare observed_post_panel vs predicted_post_panel across all 21 embedders
+    - Each axis where they disagree is a captured "reality surprise" — a
+      labeled training example saying "the agent's claim about this slot
+      was off by X under embedder E_i". This becomes ME-JEPA training data
+      for the next round.
+
+Every verification produces:
+  - 21 per-embedder verifications (each is a labeled (claim_aspect, observed)
+    tuple)
+  - 210 cross-embedder agreement scores (each is a labeled coherence signal)
+  - 1 Gτ pass/fail vector per claim aspect
+  - 1 conformal-interval-vs-actual oracle outcome (when oracle re-runs
+    happen, i.e. ~5% sample for active learning)
+```
+
+### 7.5.2 Reward signal density
+
+For a single agent-claim verification, the system generates:
+
+| Reward signal | Count | Use |
+|---|---|---|
+| Per-embedder claim-vs-reality cosine | 21 | direct ΔP signal per embedder for "did the claim match what's observed?" |
+| Per-embedder Gτ violation distance | 21 | how far below threshold each embedder rejected (graded penalty) |
+| Cross-embedder agreement on observed panel | 210 | ΔK signal for "is the observed reality coherent?" |
+| Cross-embedder agreement on predicted panel | 210 | ΔΞ signal for predictor representation health |
+| Gτ pass/fail per claim aspect | varies (1-N per claim) | binary supervised reward |
+| Conformal interval vs actual oracle (when sampled) | 1 boolean | calibration anchor (sparse but gold-standard) |
+| Per-test predicted-vs-actual outcome | 5-50 | direct supervision per test in the test suite |
+| Side-effect prediction-vs-observed | 1-20 | files modified, env vars set, network calls made, etc. |
+
+**Aggregate per single agent-claim verification: 470-540 distinct reward signals.** Across the SWE-bench Lite 300 and ~10 attempts per task, the steady-state corpus accumulates **hundreds of millions of labeled supervisory signals** — without any LLM in the loop, without any human labels beyond the ground-truth Docker oracle on a 5% sample.
+
+This is the **operational realization** of the operator's "insane amount of reward signals from durable reality" framing: every single Edit/Write tool call by Claude Code produces a panel update, every panel update produces 231-462 DDA signals, every claim the agent makes about its own work produces another 470-540 verification signals when checked. The system **converts every byte of reality into hundreds of labeled training examples**.
+
+### 7.5.3 Why this makes "no human code review needed" structurally defensible
+
+When an agent submits a patch with `MeJepaCompiler::verify(patch).Verdict::Pass{ confidence_interval: [0.96, 0.99], gtau_satisfied: true, gtau_violations: [], per_test_probabilities: [...] }`, the human reviewer's role is reduced to:
+
+1. **Spot-checking the calibration**: is ME-JEPA's claimed 0.97 pass probability empirically validated on similar past patches? (One-time question, answered by §4 evaluation.)
+2. **Auditing the constellation provenance**: was CP constructed from a corpus the reviewer trusts? (One-time question, answered by Royse 2026 §5.1's frozen-centroid provenance.)
+3. **Re-running Gτ if suspicious**: the deterministic O(N · d_max) test takes <100ms on the persisted panel. A reviewer can re-verify the geometric proof without retraining anything.
+
+What the human reviewer **does NOT** do anymore:
+- Read the patch line-by-line for correctness — Gτ already verified the post-state panel sits in the Pass region of all 21 embedder spaces.
+- Re-run the tests manually — the per-test pass-probability vector + (occasional) Docker oracle confirmation already covers this.
+- Reason about side effects — the predicted side-effect set vs observed shift-log delta already covers this.
+
+The role of the human shifts from "verifier" to "occasional spot-checker of the verifier-of-the-verifier." Per the source paper's framing, the per-output verifiability via Gτ is what makes this structurally different from RLHF/DPO/Constitutional AI: those approaches verify only the *training* of the policy; TCT-ME-JEPA verifies *each output* against a deterministic, replayable geometric test.
+
+---
+
 ## 8. Why this unlocks new critical capabilities
 
 ### 8.1 Per-output verifiability for AI-generated patches
