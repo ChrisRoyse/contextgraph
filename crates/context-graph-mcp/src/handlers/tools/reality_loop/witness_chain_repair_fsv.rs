@@ -64,6 +64,49 @@ fn witness_repair_audit_count(runtime_root: &Path, run_id: &str) -> usize {
         .count()
 }
 
+fn active_runtime_for_fsv(test_name: &str) -> (PathBuf, String) {
+    let active_path = dirs::home_dir()
+        .expect("home")
+        .join(".cache/cgreality/active_runtime_root");
+    let raw = fs::read_to_string(&active_path).unwrap_or_else(|err| {
+        panic!(
+            "{test_name}: failed to read active runtime root at {}: {err}",
+            active_path.display()
+        )
+    });
+    let runtime_root = PathBuf::from(raw.trim());
+    let run_id = latest_run_id(&runtime_root).unwrap_or_else(|err| {
+        panic!(
+            "{test_name}: failed to scan active runtime root {} from {}: {err}",
+            runtime_root.display(),
+            active_path.display()
+        )
+    });
+    let Some(run_id) = run_id else {
+        panic!(
+            "{test_name}: active runtime root {} from {} contains no run directories; entries={}",
+            runtime_root.display(),
+            active_path.display(),
+            runtime_entries_for_debug(&runtime_root)
+        );
+    };
+    (runtime_root, run_id)
+}
+
+fn runtime_entries_for_debug(runtime_root: &Path) -> String {
+    let entries = match fs::read_dir(runtime_root) {
+        Ok(entries) => entries,
+        Err(err) => return format!("<read_dir failed: {err}>"),
+    };
+    let mut names = entries
+        .filter_map(std::result::Result::ok)
+        .take(32)
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect::<Vec<_>>();
+    names.sort();
+    format!("{names:?}")
+}
+
 #[test]
 fn legacy_layout_is_reported_explicitly() {
     let (_tmp, runtime_root, run_id) = seed_runtime("run-legacy-detect");
@@ -318,14 +361,8 @@ fn run_manual_edge_cases(target: &Path) -> Value {
 fn witness_repair_active_runtime_legacy_chain() {
     let expected_sha =
         std::env::var("CG_EXPECTED_LEGACY_WITNESS_SHA256").expect("expected legacy sha env");
-    let active_path = dirs::home_dir()
-        .expect("home")
-        .join(".cache/cgreality/active_runtime_root");
-    let raw = fs::read_to_string(&active_path).expect("active runtime root");
-    let runtime_root = PathBuf::from(raw.trim());
-    let run_id = latest_run_id(&runtime_root)
-        .expect("latest run")
-        .expect("active run id");
+    let (runtime_root, run_id) =
+        active_runtime_for_fsv("witness_repair_active_runtime_legacy_chain");
     let path = witness_path(&runtime_root, &run_id);
     let before_sha = sha256_file(&path).expect("before sha");
     assert_eq!(before_sha, expected_sha);
@@ -371,14 +408,7 @@ fn witness_repair_active_runtime_legacy_chain() {
 #[test]
 #[ignore = "reads active ccreality runtime witness chain and writes verification evidence"]
 fn witness_active_runtime_chain_verifies() {
-    let active_path = dirs::home_dir()
-        .expect("home")
-        .join(".cache/cgreality/active_runtime_root");
-    let raw = fs::read_to_string(&active_path).expect("active runtime root");
-    let runtime_root = PathBuf::from(raw.trim());
-    let run_id = latest_run_id(&runtime_root)
-        .expect("latest run")
-        .expect("active run id");
+    let (runtime_root, run_id) = active_runtime_for_fsv("witness_active_runtime_chain_verifies");
     let path = witness_path(&runtime_root, &run_id);
     let verification = verify_witness_chain_for_run(&runtime_root, &run_id).expect("active verify");
     let evidence = json!({

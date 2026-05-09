@@ -55,8 +55,6 @@ pub enum SignError {
     CodecLengthInvalid { expected: usize, actual: usize },
     #[error("public key bytes did not parse as a valid ed25519 point")]
     PublicKeyMalformed,
-    #[error("signature bytes did not parse as a valid ed25519 signature")]
-    SignatureMalformed,
     #[error("public key is a weak ed25519 key")]
     PublicKeyWeak,
     #[error("ed25519 verification rejected the signature for this segment")]
@@ -76,13 +74,14 @@ pub enum SignError {
 }
 
 impl SignError {
+    /// Stable telemetry code for this error variant. Codes are part of the
+    /// public API contract for downstream observability tooling.
     pub fn code(&self) -> &'static str {
         match self {
             Self::SeedLengthInvalid { .. } => "WITNESS_SEED_LENGTH_INVALID",
             Self::PublicKeyLengthInvalid { .. } => "WITNESS_PUBKEY_LENGTH_INVALID",
             Self::CodecLengthInvalid { .. } => "WITNESS_SIGNATURE_CODEC_LENGTH_INVALID",
             Self::PublicKeyMalformed => "WITNESS_PUBKEY_MALFORMED",
-            Self::SignatureMalformed => "WITNESS_SIGNATURE_MALFORMED",
             Self::PublicKeyWeak => "WITNESS_PUBKEY_WEAK",
             Self::VerificationFailed => "WITNESS_SIGNATURE_VERIFICATION_FAILED",
             Self::PublicKeyMismatch => "WITNESS_SIGNATURE_PUBKEY_MISMATCH",
@@ -121,6 +120,8 @@ impl WitnessKeypair {
         Ok(Self { signing, verifying })
     }
 
+    /// Return the 32-byte ed25519 public key. Safe to log, persist, or
+    /// transmit; never carries any secret material.
     pub fn public_key_bytes(&self) -> [u8; PUBLIC_KEY_LENGTH] {
         self.verifying.to_bytes()
     }
@@ -129,10 +130,11 @@ impl WitnessKeypair {
     /// one or more internally linked 73-byte witness entries. Returns the
     /// 96-byte codec.
     pub fn sign_segment(&self, segment: &[u8]) -> Result<[u8; SIGNATURE_CODEC_SIZE], SignError> {
-        let digest = digest_for_segment(self.public_key_bytes(), segment)?;
+        let pk = self.public_key_bytes();
+        let digest = digest_for_segment(pk, segment)?;
         let signature = self.signing.sign(&digest);
         let mut codec = [0u8; SIGNATURE_CODEC_SIZE];
-        codec[0..PUBLIC_KEY_LENGTH].copy_from_slice(&self.public_key_bytes());
+        codec[0..PUBLIC_KEY_LENGTH].copy_from_slice(&pk);
         codec[PUBLIC_KEY_LENGTH..].copy_from_slice(&signature.to_bytes());
         Ok(codec)
     }

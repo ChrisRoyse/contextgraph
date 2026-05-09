@@ -7,6 +7,7 @@ use context_graph_solver::{
     NonconformityMeasure,
 };
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,7 +26,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let path = evidence_root.join("solver-tier1-evidence.json");
-    fs::write(&path, serde_json::to_string_pretty(&combined)?)?;
+    let evidence_text = serde_json::to_string_pretty(&combined)?;
+    fs::write(&path, &evidence_text)?;
+    let evidence_back = fs::read_to_string(&path)?;
+    require_eq(
+        "evidence_readback.sha_equivalent_text",
+        evidence_back.as_str(),
+        evidence_text.as_str(),
+    )?;
+    let evidence_json: serde_json::Value = serde_json::from_str(&evidence_back)?;
+    require(
+        evidence_json["mmr"]["case_jaccard_lambda_030"]["actual_order"]
+            == serde_json::json!([0, 2]),
+        "evidence_readback.mmr.case_jaccard_lambda_030.actual_order expected [0,2]",
+    )?;
+    require(
+        evidence_json["conformal"]["case_rank_nonconformity"]["top_ranked_candidate_included"]
+            == serde_json::json!(true),
+        "evidence_readback.conformal.rank.top_ranked_candidate_included expected true",
+    )?;
 
     println!("Solver Tier-1 FSV evidence: {}", path.display());
     println!("{}", serde_json::to_string_pretty(&combined)?);
@@ -50,6 +69,12 @@ fn run_mmr_fsv() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         },
         |i, j| jaccard_words(texts[i], texts[j]),
     )?;
+    let case_one_order = case_one.iter().map(|s| s.index).collect::<Vec<_>>();
+    require_eq(
+        "mmr.case_jaccard_lambda_030.order",
+        case_one_order.as_slice(),
+        &[0usize, 2],
+    )?;
 
     // Synthetic case 2: matrix-based MMR with deterministic identity sims.
     // Pure relevance ordering at λ=1.0.
@@ -66,6 +91,12 @@ fn run_mmr_fsv() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
             lambda: 1.0,
             limit: 4,
         },
+    )?;
+    let case_two_order = case_two.iter().map(|s| s.index).collect::<Vec<_>>();
+    require_eq(
+        "mmr.case_matrix_lambda_100.order",
+        case_two_order.as_slice(),
+        &[1usize, 2, 0, 3],
     )?;
 
     // Synthetic case 3: lambda=0.0 with sim matrix — picks the lowest-index
@@ -85,6 +116,12 @@ fn run_mmr_fsv() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
             limit: 2,
         },
     )?;
+    let case_three_order = case_three.iter().map(|s| s.index).collect::<Vec<_>>();
+    require_eq(
+        "mmr.case_pure_diversity_lambda_000.order",
+        case_three_order.as_slice(),
+        &[0usize, 2],
+    )?;
 
     // Boundary 1: lambda < 0 → CGSOLVER_INVALID_INPUT.
     let bad_lambda = mmr_select(
@@ -99,6 +136,11 @@ fn run_mmr_fsv() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         Err(e) => e.code(),
         Ok(_) => "UNEXPECTED_OK",
     };
+    require_eq(
+        "mmr.boundary_negative_lambda.error_code",
+        &bad_lambda_code,
+        &"CGSOLVER_INVALID_INPUT",
+    )?;
 
     // Boundary 2: limit=0 → empty result.
     let zero_limit = mmr_select(
@@ -109,6 +151,7 @@ fn run_mmr_fsv() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         },
         |_, _| 0.0,
     )?;
+    require_eq("mmr.boundary_limit_zero.len", &zero_limit.len(), &0usize)?;
 
     // Boundary 3: NaN relevance → CGSOLVER_INVALID_INPUT.
     let bad_rel = mmr_select(
@@ -123,6 +166,11 @@ fn run_mmr_fsv() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         Err(e) => e.code(),
         Ok(_) => "UNEXPECTED_OK",
     };
+    require_eq(
+        "mmr.boundary_nan_relevance.error_code",
+        &bad_rel_code,
+        &"CGSOLVER_INVALID_INPUT",
+    )?;
 
     // Boundary 4: similarity outside [0,1] → CGSOLVER_INVALID_INPUT.
     let bad_similarity = mmr_select(
@@ -137,20 +185,25 @@ fn run_mmr_fsv() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         Err(e) => e.code(),
         Ok(_) => "UNEXPECTED_OK",
     };
+    require_eq(
+        "mmr.boundary_similarity_above_one.error_code",
+        &bad_similarity_code,
+        &"CGSOLVER_INVALID_INPUT",
+    )?;
 
     Ok(serde_json::json!({
         "case_jaccard_lambda_030": {
             "expected_order": [0usize, 2],
-            "actual_order": case_one.iter().map(|s| s.index).collect::<Vec<_>>(),
+            "actual_order": case_one_order,
             "diversity_penalty_for_pick_2": case_one[1].diversity_penalty,
         },
         "case_matrix_lambda_100": {
             "expected_order": [1usize, 2, 0, 3],
-            "actual_order": case_two.iter().map(|s| s.index).collect::<Vec<_>>(),
+            "actual_order": case_two_order,
         },
         "case_pure_diversity_lambda_000": {
             "expected_order": [0usize, 2],
-            "actual_order": case_three.iter().map(|s| s.index).collect::<Vec<_>>(),
+            "actual_order": case_three_order,
         },
         "boundary_negative_lambda": {
             "expected_code": "CGSOLVER_INVALID_INPUT",
@@ -181,6 +234,22 @@ fn run_conformal_fsv() -> Result<serde_json::Value, Box<dyn std::error::Error>> 
     let calib1 = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
     let report1 = p1.calibrate_distances(&calib1)?;
     let pred1 = p1.predict_set(&[0.05, 0.5, 0.99, 1.5, 0.85], None)?;
+    require_close(
+        "conformal.distance.threshold",
+        report1.threshold,
+        1.0,
+        1e-12,
+    )?;
+    require_eq(
+        "conformal.distance.quantile_rank",
+        &report1.quantile_rank,
+        &10usize,
+    )?;
+    require_eq(
+        "conformal.distance.predicted_indices",
+        pred1.indices.as_slice(),
+        &[0usize, 1, 2, 4],
+    )?;
 
     // Synthetic case 2: empirical coverage on a held-out sample.
     // Calibration and test from the same synthetic distribution → coverage
@@ -197,6 +266,10 @@ fn run_conformal_fsv() -> Result<serde_json::Value, Box<dyn std::error::Error>> 
         .map(|i| (((i + 200) as f64 * 1234.5).sin().abs()).fract())
         .collect();
     let cov2 = p2.empirical_coverage(&test2)?;
+    require(
+        (cov2 - 0.9).abs() < 0.05,
+        format!("conformal.empirical_coverage expected 0.9 +/- 0.05, got {cov2}"),
+    )?;
 
     // Boundary 1: uncalibrated → fail-closed CGSOLVER_INVALID_INPUT.
     let p3 = ConformalPredictor::new(ConformalConfig::default())?;
@@ -205,6 +278,11 @@ fn run_conformal_fsv() -> Result<serde_json::Value, Box<dyn std::error::Error>> 
         Err(e) => e.code(),
         Ok(_) => "UNEXPECTED_OK",
     };
+    require_eq(
+        "conformal.boundary_uncalibrated_predict.error_code",
+        &bad_uncal_code,
+        &"CGSOLVER_INVALID_INPUT",
+    )?;
 
     // Boundary 2: alpha=0 → CGSOLVER_INVALID_INPUT.
     let bad_alpha = ConformalPredictor::new(ConformalConfig {
@@ -215,6 +293,11 @@ fn run_conformal_fsv() -> Result<serde_json::Value, Box<dyn std::error::Error>> 
         Err(e) => e.code(),
         Ok(_) => "UNEXPECTED_OK",
     };
+    require_eq(
+        "conformal.boundary_alpha_zero.error_code",
+        &bad_alpha_code,
+        &"CGSOLVER_INVALID_INPUT",
+    )?;
 
     // Boundary 3: NormalizedDistance handles heterogeneous scales.
     // Calibration {1,2,4,8} → median 3 → normalized {1/3, 2/3, 4/3, 8/3}.
@@ -224,6 +307,12 @@ fn run_conformal_fsv() -> Result<serde_json::Value, Box<dyn std::error::Error>> 
         measure: NonconformityMeasure::NormalizedDistance,
     })?;
     let report4 = p4.calibrate_distances(&[1.0, 2.0, 4.0, 8.0])?;
+    require_close(
+        "conformal.normalized_distance.threshold",
+        report4.threshold,
+        4.0_f64 / 3.0,
+        1e-9,
+    )?;
 
     // Synthetic case 4: rank nonconformity. Rank 0 is the best candidate
     // and must be included when threshold allows the top three ranks.
@@ -233,6 +322,16 @@ fn run_conformal_fsv() -> Result<serde_json::Value, Box<dyn std::error::Error>> 
     })?;
     let report5 = p5.calibrate_with_ranks(&[0, 1, 2, 3])?;
     let pred5 = p5.predict_set(&[0.0, 0.0, 0.0, 0.0], Some(&[0.3, 0.9, 0.1, 0.5]))?;
+    require_close("conformal.rank.threshold", report5.threshold, 2.0, 1e-12)?;
+    require_eq(
+        "conformal.rank.predicted_indices",
+        pred5.indices.as_slice(),
+        &[0usize, 1, 3],
+    )?;
+    require(
+        pred5.indices.contains(&1),
+        "conformal.rank.top_ranked_candidate_included expected true",
+    )?;
 
     Ok(serde_json::json!({
         "case_distance_alpha_010": {
@@ -288,4 +387,34 @@ fn jaccard_words(a: &str, b: &str) -> f64 {
     } else {
         inter / union
     }
+}
+
+fn require(condition: bool, message: impl Into<String>) -> Result<(), Box<dyn std::error::Error>> {
+    if condition {
+        Ok(())
+    } else {
+        Err(io::Error::new(io::ErrorKind::Other, message.into()).into())
+    }
+}
+
+fn require_eq<T>(label: &str, actual: &T, expected: &T) -> Result<(), Box<dyn std::error::Error>>
+where
+    T: PartialEq + std::fmt::Debug + ?Sized,
+{
+    require(
+        actual == expected,
+        format!("{label} expected {expected:?}, got {actual:?}"),
+    )
+}
+
+fn require_close(
+    label: &str,
+    actual: f64,
+    expected: f64,
+    tolerance: f64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    require(
+        (actual - expected).abs() <= tolerance,
+        format!("{label} expected {expected} +/- {tolerance}, got {actual}"),
+    )
 }

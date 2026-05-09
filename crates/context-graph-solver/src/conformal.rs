@@ -37,11 +37,13 @@ pub enum NonconformityMeasure {
     NormalizedDistance,
 }
 
+/// Configuration for the split conformal predictor.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ConformalConfig {
     /// Target miscoverage rate. With α=0.1 the empirical coverage on
     /// calibration-distributed test points should be at least 90%.
     pub alpha: f64,
+    /// Choice of nonconformity measure used in calibration AND inference.
     pub measure: NonconformityMeasure,
 }
 
@@ -52,13 +54,6 @@ impl Default for ConformalConfig {
             measure: NonconformityMeasure::Distance,
         }
     }
-}
-
-/// One calibration example: an actual oracle outcome and the model's
-/// non-conformity score for that outcome, given the calibration query.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct CalibrationScore {
-    pub score: f64,
 }
 
 /// Result of the calibration step. Holds the threshold used to decide
@@ -123,10 +118,13 @@ impl ConformalPredictor {
         })
     }
 
+    /// Return the configuration used to construct this predictor.
     pub fn config(&self) -> ConformalConfig {
         self.config
     }
 
+    /// Return `true` after a successful calibration call. Predictions are
+    /// fail-closed before this returns `true`.
     pub fn is_calibrated(&self) -> bool {
         self.threshold.is_some()
     }
@@ -302,23 +300,35 @@ impl ConformalPredictor {
     pub fn empirical_coverage(&self, truth_distances: &[f64]) -> SolverResult<f64> {
         let threshold = self.threshold.ok_or_else(|| {
             SolverError::invalid(
-                "empirical_coverage",
+                "calibration",
                 "predictor not calibrated; call calibrate_distances or calibrate_with_ranks first",
                 "calibrate before measuring coverage",
             )
         })?;
+        // Reject Rank measure up front: empirical_coverage consumes raw
+        // truth distances and has no per-example rank to score against.
+        // Lifting this check above the iteration makes the function shape
+        // "validate, then iterate" instead of "iterate, validate per element."
+        if matches!(self.config.measure, NonconformityMeasure::Rank) {
+            return Err(SolverError::invalid(
+                "measure",
+                "Rank coverage requires per-example ranks; not supported here",
+                "use Distance or NormalizedDistance for coverage diagnostics",
+            ));
+        }
         if truth_distances.is_empty() {
             return Err(SolverError::invalid(
-                "empirical_coverage",
+                "truth_distances",
                 "need at least one example to measure coverage",
                 "supply at least one truth-distance sample",
             ));
         }
+        let median = self.median_calibration_distance;
         let mut covered = 0usize;
         for d in truth_distances {
             if !d.is_finite() || *d < 0.0 {
                 return Err(SolverError::invalid(
-                    "empirical_coverage",
+                    "truth_distances",
                     format!("truth distance {d} is not a non-negative finite value"),
                     "filter or clip non-finite or negative distances",
                 ));
@@ -326,18 +336,10 @@ impl ConformalPredictor {
             let score = match self.config.measure {
                 NonconformityMeasure::Distance => *d,
                 NonconformityMeasure::NormalizedDistance => {
-                    let median = self
-                        .median_calibration_distance
-                        .expect("median set during calibration");
-                    d / (median + f64::EPSILON)
+                    let m = median.expect("median set during calibration");
+                    d / (m + f64::EPSILON)
                 }
-                NonconformityMeasure::Rank => {
-                    return Err(SolverError::invalid(
-                        "empirical_coverage",
-                        "Rank coverage requires per-example ranks; not supported here",
-                        "use Distance or NormalizedDistance for coverage diagnostics",
-                    ))
-                }
+                NonconformityMeasure::Rank => unreachable!("Rank rejected above"),
             };
             if score <= threshold {
                 covered += 1;

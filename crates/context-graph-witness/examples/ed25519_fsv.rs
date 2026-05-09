@@ -7,6 +7,7 @@ use context_graph_witness::{
     verify_chain_bytes, WitnessEntry, HASH_SIZE, WITNESS_ENTRY_SIZE, ZERO_HASH,
 };
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -62,6 +63,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let roundtrip_pubkey_match = pubkey_back == kp.public_key_bytes().as_slice();
     verify_segment(&segment_back, &codec_back)?;
     verify_segment_with_expected_pubkey(&segment_back, &codec_back, &pubkey_back)?;
+    require("roundtrip.segment_match", roundtrip_segment_match)?;
+    require("roundtrip.codec_match", roundtrip_codec_match)?;
+    require("roundtrip.pubkey_match", roundtrip_pubkey_match)?;
 
     // Boundary 1a: tampered prev_hash byte (entry 0's prev_hash slot) →
     // chain-integrity gate fires FIRST, before ed25519. Either gate is
@@ -72,6 +76,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => e.code(),
         Ok(_) => "UNEXPECTED_OK",
     };
+    require_eq(
+        "boundary_tampered_prev_hash_byte_chain_gate.error_code",
+        tamper_prev_code,
+        "WITNESS_SIGNATURE_SEGMENT_PREV_HASH_MISMATCH",
+    )?;
 
     // Boundary 1b: tampered byte in the LAST entry's action_hash (offset 178).
     // Chain-integrity gate cannot detect this (no successor to compare against),
@@ -83,6 +92,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => e.code(),
         Ok(_) => "UNEXPECTED_OK",
     };
+    require_eq(
+        "boundary_tampered_last_action_hash_ed25519_gate.error_code",
+        tamper_last_code,
+        "WITNESS_SIGNATURE_VERIFICATION_FAILED",
+    )?;
 
     // Boundary 2: tampered signature byte → ed25519 fail-closed.
     let mut bad_codec = codec;
@@ -91,6 +105,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => e.code(),
         Ok(_) => "UNEXPECTED_OK",
     };
+    require_eq(
+        "boundary_tampered_signature_byte.error_code",
+        tampered_sig_code,
+        "WITNESS_SIGNATURE_VERIFICATION_FAILED",
+    )?;
 
     // Boundary 3: pin to a different pubkey → fail-closed.
     let other = WitnessKeypair::from_seed(&[0xAAu8; 32])?;
@@ -100,6 +119,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => e.code(),
         Ok(_) => "UNEXPECTED_OK",
     };
+    require_eq(
+        "boundary_pinned_pubkey_mismatch.error_code",
+        pin_mismatch_code,
+        "WITNESS_SIGNATURE_PUBKEY_MISMATCH",
+    )?;
 
     // Boundary 4: short seed (16 bytes) → fail-closed.
     let bad_seed = WitnessKeypair::from_seed(&[0u8; 16]);
@@ -107,6 +131,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => e.code(),
         Ok(_) => "UNEXPECTED_OK",
     };
+    require_eq(
+        "boundary_short_seed.error_code",
+        bad_seed_code,
+        "WITNESS_SEED_LENGTH_INVALID",
+    )?;
+    require_eq("segment_bytes.len", segment.len(), WITNESS_ENTRY_SIZE * 3)?;
+    require_eq("codec.len", codec.len(), 96usize)?;
 
     let evidence = serde_json::json!({
         "chain_verify": {
@@ -164,6 +195,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let path = evidence_root.join("witness-ed25519-evidence.json");
     fs::write(&path, serde_json::to_string_pretty(&evidence)?)?;
+    let evidence_back: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
+    require_eq(
+        "evidence_readback.chain_entries",
+        evidence_back["chain_verify"]["entries"]
+            .as_u64()
+            .unwrap_or_default(),
+        3,
+    )?;
     println!("Witness ed25519 FSV evidence: {}", path.display());
     println!("{}", serde_json::to_string_pretty(&evidence)?);
     Ok(())
@@ -176,4 +215,27 @@ fn hex(bytes: &[u8]) -> String {
         write!(&mut s, "{byte:02x}").unwrap();
     }
     s
+}
+
+fn require(label: &str, condition: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if condition {
+        Ok(())
+    } else {
+        Err(io::Error::new(io::ErrorKind::Other, format!("{label} expected true")).into())
+    }
+}
+
+fn require_eq<T>(label: &str, actual: T, expected: T) -> Result<(), Box<dyn std::error::Error>>
+where
+    T: PartialEq + std::fmt::Debug,
+{
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("{label} expected {expected:?}, got {actual:?}"),
+        )
+        .into())
+    }
 }

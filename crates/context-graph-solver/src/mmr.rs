@@ -28,6 +28,8 @@ pub struct MmrConfig {
 }
 
 impl Default for MmrConfig {
+    /// Default: λ=0.5 (balanced relevance/diversity), limit=10 (typical
+    /// retrieval k for human-readable result lists).
     fn default() -> Self {
         Self {
             lambda: 0.5,
@@ -136,10 +138,11 @@ where
             let mmr_score =
                 config.lambda * relevances[idx] - (1.0 - config.lambda) * diversity_penalty;
 
-            // Stable tiebreaker: prefer lower index.
-            let take = mmr_score > best.mmr_score
-                || (mmr_score == best.mmr_score && idx < best.index)
-                || best.mmr_score == f64::NEG_INFINITY;
+            // Stable tiebreaker: prefer lower index. The first iteration
+            // always takes (NEG_INFINITY < any finite mmr_score given
+            // validated inputs above), so no sentinel clause is needed.
+            let take =
+                mmr_score > best.mmr_score || (mmr_score == best.mmr_score && idx < best.index);
             if take {
                 best_pos = pos;
                 best = MmrSelection {

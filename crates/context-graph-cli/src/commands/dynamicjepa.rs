@@ -24270,6 +24270,55 @@ fn preflight_existing_rocksdb(path: &Path, operation: &str) -> DynamicJepaResult
             remediation: "do not inspect partial or failed-open RocksDB directories; recreate the DB with the mutating command that owns this source of truth".to_string(),
         });
     }
+    let current_text = fs::read_to_string(&current).map_err(|err| DynamicJepaError::Storage {
+        operation: operation.to_string(),
+        cf: "rocksdb".to_string(),
+        message: format!(
+            "DB path has a CURRENT file but it could not be read: {}: {err}",
+            current.display()
+        ),
+        remediation: "inspect the RocksDB CURRENT pointer and recreate the DB if the source-of-truth manifest cannot be read".to_string(),
+    })?;
+    let manifest_name = current_text.trim();
+    let manifest_fragment = Path::new(manifest_name);
+    if manifest_name.is_empty()
+        || !manifest_name.starts_with("MANIFEST-")
+        || manifest_fragment.components().count() != 1
+        || manifest_fragment.file_name().and_then(|name| name.to_str()) != Some(manifest_name)
+    {
+        return Err(DynamicJepaError::Storage {
+            operation: operation.to_string(),
+            cf: "rocksdb".to_string(),
+            message: format!(
+                "DB path has an invalid RocksDB CURRENT manifest pointer: {} -> {:?}",
+                current.display(),
+                manifest_name
+            ),
+            remediation: "CURRENT must contain one MANIFEST-* file name in the DB directory; recreate the DB rather than inspecting partial state".to_string(),
+        });
+    }
+    let manifest = path.join(manifest_name);
+    let manifest_metadata = fs::metadata(&manifest).map_err(|err| DynamicJepaError::Storage {
+        operation: operation.to_string(),
+        cf: "rocksdb".to_string(),
+        message: format!(
+            "DB path CURRENT points at a missing/unreadable manifest: {} -> {}: {err}",
+            current.display(),
+            manifest.display()
+        ),
+        remediation: "do not inspect partial RocksDB directories; recreate the DB with the mutating command that owns this source of truth".to_string(),
+    })?;
+    if !manifest_metadata.is_file() || manifest_metadata.len() == 0 {
+        return Err(DynamicJepaError::Storage {
+            operation: operation.to_string(),
+            cf: "rocksdb".to_string(),
+            message: format!(
+                "DB path CURRENT points at an invalid manifest file: {}",
+                manifest.display()
+            ),
+            remediation: "RocksDB CURRENT must point at a non-empty MANIFEST-* file; recreate the DB from the owning mutating command".to_string(),
+        });
+    }
     Ok(())
 }
 
@@ -24927,6 +24976,102 @@ pub fn add_two(x: i32) -> i32 {
         assert_eq!(
             fs::read_to_string(&output).expect("read existing output"),
             "{}\n"
+        );
+    }
+
+    #[test]
+    fn rocksdb_preflight_rejects_regular_file_source_of_truth() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("not-a-db");
+        fs::write(&db_path, b"not rocksdb").expect("write file");
+
+        let err = preflight_existing_rocksdb(&db_path, "dynamicjepa_test_preflight")
+            .expect_err("regular file must not pass RocksDB preflight");
+
+        assert_eq!(err.code(), "STORAGE");
+        assert!(
+            err.to_string().contains("not a directory"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(fs::read(&db_path).expect("read file"), b"not rocksdb");
+    }
+
+    #[test]
+    fn rocksdb_preflight_rejects_missing_current_manifest_pointer() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("partial-db");
+        fs::create_dir(&db_path).expect("create partial db");
+
+        let err = preflight_existing_rocksdb(&db_path, "dynamicjepa_test_preflight")
+            .expect_err("directory without CURRENT must not pass RocksDB preflight");
+
+        assert_eq!(err.code(), "STORAGE");
+        assert!(
+            err.to_string().contains("missing"),
+            "unexpected error: {err}"
+        );
+        assert!(!db_path.join("CURRENT").exists());
+    }
+
+    #[test]
+    fn rocksdb_preflight_rejects_invalid_current_manifest_pointer() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("partial-db");
+        fs::create_dir(&db_path).expect("create partial db");
+        fs::write(db_path.join("CURRENT"), "../MANIFEST-000001\n").expect("write CURRENT");
+
+        let err = preflight_existing_rocksdb(&db_path, "dynamicjepa_test_preflight")
+            .expect_err("path-traversing CURRENT pointer must not pass RocksDB preflight");
+
+        assert_eq!(err.code(), "STORAGE");
+        assert!(
+            err.to_string()
+                .contains("invalid RocksDB CURRENT manifest pointer"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            fs::read_to_string(db_path.join("CURRENT")).expect("read CURRENT"),
+            "../MANIFEST-000001\n"
+        );
+    }
+
+    #[test]
+    fn rocksdb_preflight_rejects_current_pointing_to_missing_manifest() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("partial-db");
+        fs::create_dir(&db_path).expect("create partial db");
+        fs::write(db_path.join("CURRENT"), "MANIFEST-000001\n").expect("write CURRENT");
+
+        let err = preflight_existing_rocksdb(&db_path, "dynamicjepa_test_preflight")
+            .expect_err("CURRENT without referenced MANIFEST must not pass RocksDB preflight");
+
+        assert_eq!(err.code(), "STORAGE");
+        assert!(
+            err.to_string().contains("missing/unreadable manifest"),
+            "unexpected error: {err}"
+        );
+        assert!(!db_path.join("MANIFEST-000001").exists());
+    }
+
+    #[test]
+    fn rocksdb_preflight_accepts_current_pointing_to_nonempty_manifest() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("rocksdb-like");
+        fs::create_dir(&db_path).expect("create db dir");
+        fs::write(db_path.join("CURRENT"), "MANIFEST-000001\n").expect("write CURRENT");
+        fs::write(db_path.join("MANIFEST-000001"), b"version-edit-log-bytes")
+            .expect("write manifest");
+
+        preflight_existing_rocksdb(&db_path, "dynamicjepa_test_preflight")
+            .expect("non-empty manifest pointer should pass preflight");
+
+        assert_eq!(
+            fs::read_to_string(db_path.join("CURRENT")).expect("read CURRENT"),
+            "MANIFEST-000001\n"
+        );
+        assert_eq!(
+            fs::read(db_path.join("MANIFEST-000001")).expect("read manifest"),
+            b"version-edit-log-bytes"
         );
     }
 }
