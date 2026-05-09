@@ -19,7 +19,7 @@ use context_graph_storage::dynamicjepa::column_families::{
     CF_DJ_DOMAIN_PACKS, CF_DJ_GUARD_DECISIONS, CF_DJ_LATENT_PANELS, CF_DJ_MODEL_ARTIFACTS,
     CF_DJ_OUTCOMES, CF_DJ_PAIRWISE_READINGS, CF_DJ_PLAN_TRACES, CF_DJ_PREDICTIONS,
     CF_DJ_RAW_EVENTS, CF_DJ_SKILL_POLICIES, CF_DJ_SURPRISE_EVENTS, CF_DJ_TRAINING_RUNS,
-    CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS,
+    CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS, DJ_CF_COUNT,
 };
 use context_graph_storage::dynamicjepa::{
     inspect_cf, inspect_cf_key, put_raw_event_and_adapter_run_started, snapshot_dj_counts,
@@ -293,7 +293,7 @@ fn seed_started_adapter_run(db_path: &Path) -> String {
     let audit = DjAuditRecord {
         audit_id: Uuid::new_v4(),
         timestamp_unix_nanos: 1_700_100_000_000_000_000,
-        operation: "mcp_phase9_seed_started_adapter_run".to_string(),
+        operation: "ingest_event".to_string(),
         actor: "mcp_phase9_fsv_test".to_string(),
         input_ids: vec![raw_event.source_uri.clone()],
         output_ids: vec![event_id.to_string(), adapter_run_id.to_string()],
@@ -308,7 +308,7 @@ fn seed_started_adapter_run(db_path: &Path) -> String {
         ],
         status: AuditStatus::Ok,
         verification_run_id: None,
-        signal_yield: 0,
+        signal_yield: 1,
     };
     put_raw_event_and_adapter_run_started(db, &raw_event, &adapter_run, &audit)
         .expect("persist seeded started adapter run");
@@ -1360,7 +1360,7 @@ async fn dynamicjepa_phase9_mcp_full_state_verification_inner() {
             .as_array()
             .expect("dynamic source of truth")
             .len(),
-        28
+        DJ_CF_COUNT
     );
     evidence.push(json!({"step": "capability_matrix_dynamicjepa_runtime", "output": capability}));
     drop(capability_handlers);
