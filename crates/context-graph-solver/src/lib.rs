@@ -4,11 +4,19 @@
 // for the policy.
 
 pub mod cg;
+pub mod conformal;
 pub mod csr;
 pub mod error;
+pub mod mmr;
 pub mod pagerank;
 
 pub use cg::{ConjugateGradientConfig, ConjugateGradientReport, ConjugateGradientSolver};
+pub use conformal::{
+    ConformalConfig, ConformalPredictor, ConformalReport, NonconformityMeasure, PredictionSet,
+};
 pub use csr::{CsrMatrix, MatrixKind};
 pub use error::{SolverError, SolverResult};
+pub use mmr::{
+    select as mmr_select, select_with_matrix as mmr_select_with_matrix, MmrConfig, MmrSelection,
+};
 pub use pagerank::{ForwardPushConfig, ForwardPushReport, ForwardPushSolver, RankedNode};
