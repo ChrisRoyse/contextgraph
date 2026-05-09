@@ -74,8 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Boundary 2: mismatched lengths reject.
-    let len_mismatch_code = match granger_test(&[1.0, 2.0, 3.0], &[1.0], GrangerConfig { lag: 1 })
-    {
+    let len_mismatch_code = match granger_test(&[1.0, 2.0, 3.0], &[1.0], GrangerConfig { lag: 1 }) {
         Err(e) => e.code(),
         Ok(_) => "UNEXPECTED_OK",
     };
@@ -146,30 +145,75 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "passes": beta_at_zero == 0.0 && beta_at_one == 1.0,
         },
         "boundary_zero_lag_rejected": {
-            "expected_code": "CGSOLVER_INVALID_INPUT",
-            "actual_code": zero_lag_code,
+            "before": {
+                "lag": 0,
+                "series_len_y": y_a.len(),
+                "series_len_x": x_a.len(),
+                "expected_mutation": "none",
+            },
+            "after": {
+                "expected_code": "CGSOLVER_INVALID_INPUT",
+                "actual_code": zero_lag_code,
+            },
         },
         "boundary_length_mismatch_rejected": {
-            "expected_code": "CGSOLVER_INVALID_INPUT",
-            "actual_code": len_mismatch_code,
+            "before": {
+                "lag": 1,
+                "series_len_y": 3,
+                "series_len_x": 1,
+                "expected_mutation": "none",
+            },
+            "after": {
+                "expected_code": "CGSOLVER_INVALID_INPUT",
+                "actual_code": len_mismatch_code,
+            },
         },
         "boundary_nan_rejected": {
-            "expected_code": "CGSOLVER_INVALID_INPUT",
-            "actual_code": nan_code,
+            "before": {
+                "lag": 1,
+                "series_len_y": nan_y.len(),
+                "series_len_x": nan_x.len(),
+                "contains_nan": true,
+                "expected_mutation": "none",
+            },
+            "after": {
+                "expected_code": "CGSOLVER_INVALID_INPUT",
+                "actual_code": nan_code,
+            },
         },
         "boundary_too_short_for_df_rejected": {
-            "expected_code": "CGSOLVER_INVALID_INPUT",
-            "actual_code": too_short_for_df_code,
+            "before": {
+                "lag": 1,
+                "series_len_y": 4,
+                "series_len_x": 4,
+                "minimum_required_raw_observations": 5,
+                "expected_mutation": "none",
+            },
+            "after": {
+                "expected_code": "CGSOLVER_INVALID_INPUT",
+                "actual_code": too_short_for_df_code,
+            },
         },
         "boundary_nan_f_statistic_rejected": {
-            "expected_code": "CGSOLVER_INVALID_INPUT",
-            "actual_code": invalid_f_code,
+            "before": {
+                "f_statistic": "NaN",
+                "df_num": 1,
+                "df_den": 1,
+                "expected_mutation": "none",
+            },
+            "after": {
+                "expected_code": "CGSOLVER_INVALID_INPUT",
+                "actual_code": invalid_f_code,
+            },
         },
     });
 
     let path = evidence_root.join("granger-evidence.json");
     fs::write(&path, serde_json::to_string_pretty(&evidence)?)?;
+    let readback_text = fs::read_to_string(&path)?;
+    let readback: serde_json::Value = serde_json::from_str(&readback_text)?;
+    assert_eq!(readback, evidence);
     println!("Granger FSV evidence: {}", path.display());
-    println!("{}", serde_json::to_string_pretty(&evidence)?);
+    println!("{}", serde_json::to_string_pretty(&readback)?);
     Ok(())
 }

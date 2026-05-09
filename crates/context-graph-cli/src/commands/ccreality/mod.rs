@@ -549,21 +549,109 @@ fn project_root() -> CCResult<PathBuf> {
     ))
 }
 
+/// Resolve the MCP binary the CLI shells out to.
+///
+/// Priority order: operator override first, otherwise the command in
+/// `.mcp.json` (which Claude Code itself spawns).
+///
+/// The previous default (`target/debug/context-graph-mcp` regardless
+/// of staleness) caused recurring `CCREALITY_WITNESS_OP_TYPE_UNKNOWN`
+/// hook errors when the debug binary was older than the release MCP
+/// that wrote new op_types into the witness chain. There is intentionally
+/// no implicit debug fallback: local-dev callers must set `CGREALITY_MCP_BIN`
+/// explicitly so missing configured builds fail closed.
 fn mcp_binary(root: &Path) -> CCResult<PathBuf> {
-    let path = env::var("CGREALITY_MCP_BIN")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| root.join("target/debug/context-graph-mcp"));
-    if path.is_file() {
-        Ok(path)
+    if let Ok(override_path) = env::var("CGREALITY_MCP_BIN") {
+        let path = PathBuf::from(override_path);
+        return validate_mcp_binary(&path, "mcp.binary.override", Some(file_sot(&path)));
+    }
+
+    let config_path = root.join(".mcp.json");
+    let config_text = fs::read_to_string(&config_path).map_err(|e| {
+        ccreality_error(
+            "CCREALITY_CLI_MCP_CONFIG_READ_FAILED",
+            format!("failed to read .mcp.json: {e}"),
+            "mcp.config",
+            "restore .mcp.json or set CGREALITY_MCP_BIN explicitly",
+            json!({"path": config_path.display().to_string()}),
+            Some(file_sot(&config_path)),
+        )
+    })?;
+    let config: Value = serde_json::from_str(&config_text).map_err(|e| {
+        ccreality_error(
+            "CCREALITY_CLI_MCP_CONFIG_JSON_INVALID",
+            format!(".mcp.json is not valid JSON: {e}"),
+            "mcp.config",
+            "fix .mcp.json or set CGREALITY_MCP_BIN explicitly",
+            json!({"path": config_path.display().to_string()}),
+            Some(file_sot(&config_path)),
+        )
+    })?;
+    let command = config
+        .pointer("/mcpServers/cgreality/command")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            ccreality_error(
+                "CCREALITY_CLI_MCP_CONFIG_COMMAND_MISSING",
+                ".mcp.json does not define mcpServers.cgreality.command",
+                "mcpServers.cgreality.command",
+                "set the cgreality MCP command in .mcp.json or set CGREALITY_MCP_BIN explicitly",
+                json!({"path": config_path.display().to_string()}),
+                Some(file_sot(&config_path)),
+            )
+        })?;
+    let path = PathBuf::from(command);
+    let path = if path.is_absolute() {
+        path
     } else {
-        Err(ccreality_error(
-            "CCREALITY_CLI_MCP_BINARY_MISSING",
-            "context-graph-mcp binary is missing",
-            "mcp.binary",
-            "run cargo build -p context-graph-mcp --bin context-graph-mcp",
-            json!({"path": path.display().to_string()}),
-            Some(file_sot(&path)),
-        ))
+        root.join(path)
+    };
+    validate_mcp_binary(
+        &path,
+        "mcpServers.cgreality.command",
+        Some(file_sot(&config_path)),
+    )
+}
+
+fn validate_mcp_binary(
+    path: &Path,
+    field_path: &'static str,
+    source_of_truth: Option<String>,
+) -> CCResult<PathBuf> {
+    if is_executable_file(path) {
+        return Ok(path.to_path_buf());
+    }
+    Err(ccreality_error(
+        "CCREALITY_CLI_MCP_BINARY_MISSING",
+        "configured context-graph-mcp binary is missing or not executable",
+        field_path,
+        "build the configured MCP binary; do not rely on a different profile fallback",
+        json!({
+            "path": path.display().to_string(),
+            "exists": path.exists(),
+            "is_file": path.is_file(),
+            "is_executable": is_executable_file(path),
+        }),
+        source_of_truth,
+    ))
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        match fs::metadata(path) {
+            Ok(metadata) => metadata.permissions().mode() & 0o111 != 0,
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        true
     }
 }
 
@@ -654,6 +742,47 @@ mod tests {
         ))
     }
 
+    fn write_executable(path: &Path) {
+        fs::create_dir_all(path.parent().expect("binary parent")).expect("create binary dir");
+        fs::write(path, b"#!/bin/sh\nexit 0\n").expect("write binary placeholder");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = fs::metadata(path).expect("metadata").permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(path, permissions).expect("chmod executable");
+        }
+    }
+
+    struct EnvGuard {
+        key: &'static str,
+        old: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn unset(key: &'static str) -> Self {
+            let old = env::var(key).ok();
+            env::remove_var(key);
+            Self { key, old }
+        }
+
+        fn set(key: &'static str, value: &Path) -> Self {
+            let old = env::var(key).ok();
+            env::set_var(key, value);
+            Self { key, old }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(old) = &self.old {
+                env::set_var(self.key, old);
+            } else {
+                env::remove_var(self.key);
+            }
+        }
+    }
+
     #[test]
     fn latest_run_id_ignores_hook_state_metadata_dir() {
         let root = temp_root("latest-run");
@@ -681,5 +810,76 @@ mod tests {
             assert!(is_runtime_metadata_dir(name), "{name} should be metadata");
         }
         assert!(!is_runtime_metadata_dir("smoke-1778012709"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn mcp_binary_uses_release_binary_as_default_source_of_truth() {
+        let _env = EnvGuard::unset("CGREALITY_MCP_BIN");
+        let root = temp_root("mcp-release");
+        let release = root.join("target/release/context-graph-mcp");
+        let debug = root.join("target/debug/context-graph-mcp");
+        write_executable(&release);
+        write_executable(&debug);
+
+        let selected = mcp_binary(&root).expect("release MCP binary selected");
+        assert_eq!(selected, release);
+
+        fs::remove_dir_all(root).expect("cleanup temp root");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn mcp_binary_fails_closed_instead_of_falling_back_to_debug() {
+        let _env = EnvGuard::unset("CGREALITY_MCP_BIN");
+        let root = temp_root("mcp-no-debug-fallback");
+        let debug = root.join("target/debug/context-graph-mcp");
+        write_executable(&debug);
+
+        let err = mcp_binary(&root).expect_err("debug fallback must be explicit");
+        assert_eq!(err["error_code"], "CCREALITY_CLI_MCP_BINARY_MISSING");
+        assert_eq!(err["details"]["release_exists"], false);
+        assert_eq!(err["details"]["debug_exists"], true);
+        assert_eq!(
+            err["source_of_truth"],
+            file_sot(&root.join("target/release/context-graph-mcp"))
+        );
+
+        fs::remove_dir_all(root).expect("cleanup temp root");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn mcp_binary_accepts_explicit_override() {
+        let root = temp_root("mcp-override");
+        let override_bin = root.join("custom/context-graph-mcp");
+        write_executable(&override_bin);
+        let _env = EnvGuard::set("CGREALITY_MCP_BIN", &override_bin);
+
+        let selected = mcp_binary(&root).expect("explicit override selected");
+        assert_eq!(selected, override_bin);
+
+        fs::remove_dir_all(root).expect("cleanup temp root");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn mcp_binary_rejects_non_executable_override_with_physical_details() {
+        let root = temp_root("mcp-bad-override");
+        let override_bin = root.join("custom/context-graph-mcp");
+        fs::create_dir_all(override_bin.parent().expect("binary parent"))
+            .expect("create override dir");
+        fs::write(&override_bin, b"not executable\n").expect("write non-executable file");
+        let _env = EnvGuard::set("CGREALITY_MCP_BIN", &override_bin);
+
+        let err = mcp_binary(&root).expect_err("non-executable override must reject");
+        assert_eq!(err["error_code"], "CCREALITY_CLI_MCP_BINARY_MISSING");
+        assert_eq!(err["details"]["exists"], true);
+        assert_eq!(err["details"]["is_file"], true);
+        #[cfg(unix)]
+        assert_eq!(err["details"]["is_executable"], false);
+        assert_eq!(err["source_of_truth"], file_sot(&override_bin));
+
+        fs::remove_dir_all(root).expect("cleanup temp root");
     }
 }

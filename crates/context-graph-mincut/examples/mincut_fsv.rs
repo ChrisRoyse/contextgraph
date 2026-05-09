@@ -56,13 +56,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cut_clusters = stoer_wagner(&weights_clusters, 6, StoerWagnerConfig::default())?;
 
     // Boundary 1: disconnected graph rejects.
-    let weights_disconnected =
-        weights_from_edges(4, [(0, 1, 1.0), (2, 3, 1.0)].iter().copied())?;
-    let disconnected_code = match stoer_wagner(&weights_disconnected, 4, StoerWagnerConfig::default())
-    {
-        Err(e) => e.code(),
-        Ok(_) => "UNEXPECTED_OK",
-    };
+    let weights_disconnected = weights_from_edges(4, [(0, 1, 1.0), (2, 3, 1.0)].iter().copied())?;
+    let disconnected_code =
+        match stoer_wagner(&weights_disconnected, 4, StoerWagnerConfig::default()) {
+            Err(e) => e.code(),
+            Ok(_) => "UNEXPECTED_OK",
+        };
 
     // Boundary 2: negative weight rejects.
     let weights_negative = vec![0.0, -1.0, -1.0, 0.0];
@@ -86,8 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Determinism: re-run and assert identical result.
-    let cut_paper_again =
-        stoer_wagner(&weights_paper, 8, StoerWagnerConfig::default())?;
+    let cut_paper_again = stoer_wagner(&weights_paper, 8, StoerWagnerConfig::default())?;
     let deterministic = cut_paper == cut_paper_again;
 
     let evidence = serde_json::json!({
@@ -113,31 +111,69 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "passes": (cut_clusters.cut_weight - 2.0).abs() < 1e-9,
         },
         "boundary_disconnected_graph_rejected": {
-            "expected_code": "MINCUT_GRAPH_DISCONNECTED",
-            "actual_code": disconnected_code,
+            "before": {
+                "n": 4,
+                "edges": [[0, 1, 1.0], [2, 3, 1.0]],
+                "expected_mutation": "none",
+            },
+            "after": {
+                "expected_code": "MINCUT_GRAPH_DISCONNECTED",
+                "actual_code": disconnected_code,
+            },
         },
         "boundary_negative_weight_rejected": {
-            "expected_code": "MINCUT_WEIGHT_INVALID",
-            "actual_code": neg_code,
+            "before": {
+                "n": 2,
+                "weights": weights_negative,
+                "expected_mutation": "none",
+            },
+            "after": {
+                "expected_code": "MINCUT_WEIGHT_INVALID",
+                "actual_code": neg_code,
+            },
         },
         "boundary_too_small_graph_rejected": {
-            "expected_code": "MINCUT_GRAPH_TOO_SMALL",
-            "actual_code": too_small_code,
+            "before": {
+                "n": 1,
+                "weights": [0.0],
+                "expected_mutation": "none",
+            },
+            "after": {
+                "expected_code": "MINCUT_GRAPH_TOO_SMALL",
+                "actual_code": too_small_code,
+            },
         },
         "boundary_oob_edge_rejected": {
-            "expected_code": "MINCUT_EDGE_ENDPOINT_OUT_OF_BOUNDS",
-            "actual_code": oob_edge_code,
+            "before": {
+                "n": 3,
+                "edges": [[0, 3, 1.0]],
+                "expected_mutation": "none",
+            },
+            "after": {
+                "expected_code": "MINCUT_EDGE_ENDPOINT_OUT_OF_BOUNDS",
+                "actual_code": oob_edge_code,
+            },
         },
         "boundary_self_loop_edge_rejected": {
-            "expected_code": "MINCUT_SELF_LOOP_EDGE",
-            "actual_code": self_loop_edge_code,
+            "before": {
+                "n": 3,
+                "edges": [[1, 1, 1.0]],
+                "expected_mutation": "none",
+            },
+            "after": {
+                "expected_code": "MINCUT_SELF_LOOP_EDGE",
+                "actual_code": self_loop_edge_code,
+            },
         },
         "deterministic_across_runs": deterministic,
     });
 
     let path = evidence_root.join("mincut-evidence.json");
     fs::write(&path, serde_json::to_string_pretty(&evidence)?)?;
+    let readback_text = fs::read_to_string(&path)?;
+    let readback: serde_json::Value = serde_json::from_str(&readback_text)?;
+    assert_eq!(readback, evidence);
     println!("Mincut FSV evidence: {}", path.display());
-    println!("{}", serde_json::to_string_pretty(&evidence)?);
+    println!("{}", serde_json::to_string_pretty(&readback)?);
     Ok(())
 }
