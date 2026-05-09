@@ -20,9 +20,13 @@ together specify the system, in this priority order:
 
 1. **`10_MEJEPA_PIVOT_2026_05_09.md`** — current operating contract (single loop, Claude Code
    is the actor, cross-language mandate, self-healing protocol, /loop.md refactor directive,
-   UTL v2.0 learning formula reference).
-2. **`11_MEJEPA_LEARNING_FORMULA.md`** — operational specification of UTL v2.0
-   `L = ΔS × ΔC × ΔE` for per-example training weighting + sampling + consolidation.
+   UTML v1.0 learning formula reference; the central architectural claim is that ME-JEPA's
+   frozen externally-defined instruments make `ΔΞ.target_collapse = 0` by construction —
+   a property no other JEPA in the literature has).
+2. **`11_MEJEPA_LEARNING_FORMULA.md`** — operational specification of UTML v1.0's four-factor
+   `L_step = ΔP × ΔK × ΔΩ × ΔΞ` for per-example training weighting + sampling + consolidation.
+   Includes the per-step training certificate format, edge-case audit, and implementation
+   roadmap aligned with doc 09 phases.
 3. **`09_END_GOAL_REVIEW_REPLACEMENT.md`** — build-ready master plan (instruments, panel,
    predictor, EMA, VICReg, oracle head, conformal calibration, OOD, hygiene, 8-phase plan).
    Sections that reference Qwen / inner-actor are re-framed by doc 10.

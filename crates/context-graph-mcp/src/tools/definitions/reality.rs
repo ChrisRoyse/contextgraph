@@ -65,12 +65,12 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         def(
             "reality_run_attempt",
-            "Spawn reality-loop attempt.",
+            "Retired: local inner reality-loop attempts fail closed after the ME-JEPA pivot.",
             json!({"type":"object","properties":{"task_manifest":{"type":"string"},"runtime_root":{"type":"string"},"max_attempts":{"type":"integer","minimum":1,"default":1},"official_eval":{"type":"boolean","default":true},"model":{"type":"string"},"inner_model_path":{"type":"string"},"inner_context_tokens":{"type":"integer","minimum":1},"inner_max_new_tokens":{"type":"integer","minimum":1}},"required":["task_manifest"],"additionalProperties":false}),
         ),
         def(
             "reality_run_smoke",
-            "Spawn reality-loop smoke.",
+            "Retired: local reality-loop smoke fails closed after the ME-JEPA pivot.",
             json!({"type":"object","properties":{"runtime_root":{"type":"string"},"label":{"type":"string"},"session_id":{"type":"string"}},"additionalProperties":false}),
         ),
         def(
@@ -121,7 +121,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         def(
             "harness_verify_state",
             "Run governed rustfmt/check/test verification.",
-            json!({"type":"object","properties":{"scope":{"type":"string","enum":["reality_loop_only","full"],"default":"reality_loop_only"}},"additionalProperties":false}),
+            json!({"type":"object","properties":{"scope":{"type":"string","enum":["mejepa_loop_only","reality_loop_only","full"],"default":"mejepa_loop_only"}},"additionalProperties":false}),
         ),
         def(
             "optimizer_record_decision",

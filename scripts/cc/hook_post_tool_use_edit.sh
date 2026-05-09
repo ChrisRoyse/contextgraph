@@ -78,7 +78,7 @@ CARGO_STATUS=""
 CARGO_STDERR_TAIL=""
 if [[ "${REL_PATH}" == crates/context-graph-cli/* && "${REL_PATH}" == *.rs ]]; then
   CARGO_ERR="$(mktemp /tmp/cgreality-cargo-check-XXXXXX.stderr)"
-  if (cd "${ROOT}" && timeout 60 cargo check -p context-graph-cli --bin reality-loop --quiet 2>"${CARGO_ERR}"); then
+  if (cd "${ROOT}" && timeout 60 cargo check -p context-graph-cli --no-default-features --lib --quiet 2>"${CARGO_ERR}"); then
     CARGO_STATUS="PASS"
   else
     CARGO_STATUS="FAIL"
@@ -115,7 +115,7 @@ if TRANSITION_JSON="$(timeout 30 "${CLI_BIN}" ccreality record-harness-transitio
     SHIFT_ID="$(jq -r '.shift_id // ""' <<<"${TRANSITION_JSON}")"
     CTX="Post-edit reality: file=${REL_PATH} before_sha=${BEFORE_SHA} after_sha=${AFTER_SHA}. Lines added=${LINES_ADDED} removed=${LINES_REMOVED}. Diff stat: ${DIFF_STAT}. Harness transition: ${TRANSITION_PATH}. Shift id: ${SHIFT_ID}."
     if [ -n "${CARGO_STATUS}" ]; then
-      CTX="${CTX} cargo check -p context-graph-cli --bin reality-loop: ${CARGO_STATUS}."
+      CTX="${CTX} cargo check -p context-graph-cli --no-default-features --lib: ${CARGO_STATUS}."
     fi
     cgreality_emit_additional_context "PostToolUse" "${CTX}"
     cgreality_log_event "PostToolUseEditRecorded" "$(jq -nc --arg path "${REL_PATH}" --arg before_sha "${BEFORE_SHA}" --arg after_sha "${AFTER_SHA}" --arg transition_path "${TRANSITION_PATH}" --arg shift_id "${SHIFT_ID}" '{path: $path, before_sha256: $before_sha, after_sha256: $after_sha, transition_path: $transition_path, shift_id: $shift_id}')"

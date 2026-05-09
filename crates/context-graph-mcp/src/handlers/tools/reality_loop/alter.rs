@@ -341,13 +341,13 @@ pub async fn harness_git_status(_args: Value) -> Result<Value> {
 pub async fn harness_verify_state(args: Value) -> Result<Value> {
     let scope_str = match optional_str_strict(&args, "scope")?.as_deref() {
         Some("full") => "full",
-        Some("reality_loop_only") | None => "reality_loop_only",
+        Some("mejepa_loop_only") | Some("reality_loop_only") | None => "mejepa_loop_only",
         Some(other) => {
             return Err(CCRealityError::new(
                 "CCREALITY_HARNESS_VERIFY_SCOPE_INVALID",
                 format!("unsupported harness verification scope '{other}'"),
                 "arguments.scope",
-                "use scope=\"reality_loop_only\" or scope=\"full\"",
+                "use scope=\"mejepa_loop_only\" or scope=\"full\"",
                 json!({"scope": other}),
                 None,
             ));
@@ -394,11 +394,11 @@ pub async fn harness_verify_state(args: Value) -> Result<Value> {
     .await
 }
 
-/// Spawn `target/release/reality-loop harness <subcommand> <args...>` as a fresh
-/// subprocess. The CLI binary is re-resolved via `locate_engine_binary()` on every
-/// call, so harness rebuilds (`cargo build --release`) take effect on the *next*
-/// MCP tool invocation without restarting the MCP server. This is the entire
-/// point of the MCP-as-CLI-shim refactor.
+/// Legacy shim for `reality-loop harness <subcommand>`.
+///
+/// The resolver now fails closed because the 2026-05-09 ME-JEPA pivot removed
+/// the local reality-loop engine. Keeping this shim guarded preserves structured
+/// errors for older clients without allowing stale binaries to run.
 ///
 /// Argv carries scalar flags. `stdin_json`, when present, is serialized and
 /// piped to the child's stdin (used for multi-line edit `replace` payloads to
@@ -443,7 +443,7 @@ async fn spawn_harness_subcommand(
             "CCREALITY_HARNESS_SUBCOMMAND_SPAWN_FAILED",
             format!("failed to spawn harness CLI subprocess: {e}"),
             format!("harness.{subcommand}.spawn"),
-            "ensure target/release/reality-loop is built (cargo build --release -p context-graph-cli --bin reality-loop) and the path resolves",
+            "the legacy harness CLI is retired; use direct source-of-truth reads and ME-JEPA evidence capture artifacts",
             json!({
                 "subcommand": subcommand,
                 "bin": bin.display().to_string(),

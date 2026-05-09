@@ -51,7 +51,7 @@ pub type Result<T> = std::result::Result<T, GovernedEditError>;
 
 #[derive(Debug, Clone, Copy)]
 pub enum VerifyScope {
-    RealityLoopOnly,
+    MejepaLoopOnly,
     Full,
 }
 
@@ -491,19 +491,15 @@ pub fn verify_project_state(
     let verify_dir = tool_dir.join(format!("project-verification-{}", safe_id(label)));
     create_dir_checked(&verify_dir)?;
     let rustfmt_command = match scope {
-        VerifyScope::RealityLoopOnly => {
-            "rustfmt --edition 2021 --check crates/context-graph-cli/src/bin/reality-loop.rs"
-        }
+        VerifyScope::MejepaLoopOnly => "cargo fmt --check -p context-graph-cli",
         VerifyScope::Full => "cargo fmt --check",
     };
     let check_command = match scope {
-        VerifyScope::RealityLoopOnly => "cargo check -p context-graph-cli --bin reality-loop",
+        VerifyScope::MejepaLoopOnly => "cargo check -p context-graph-cli --no-default-features --lib",
         VerifyScope::Full => "cargo check -p context-graph-cli",
     };
     let test_command = match scope {
-        VerifyScope::RealityLoopOnly => {
-            "cargo test -p context-graph-cli --bin reality-loop -- --skip ignored --test-threads=1"
-        }
+        VerifyScope::MejepaLoopOnly => "cargo test -p context-graph-cli --no-default-features --lib -- --skip ignored --test-threads=1",
         VerifyScope::Full => "cargo test -p context-graph-cli -- --skip ignored --test-threads=1",
     };
 
@@ -526,7 +522,7 @@ pub fn verify_project_state(
         "status": status,
         "label": label,
         "scope": match scope {
-            VerifyScope::RealityLoopOnly => "reality_loop_only",
+            VerifyScope::MejepaLoopOnly => "mejepa_loop_only",
             VerifyScope::Full => "full",
         },
         "rustfmt": rustfmt,

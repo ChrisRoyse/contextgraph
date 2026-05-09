@@ -56,10 +56,9 @@ zip = "7.2.0"
 rusqlite = { version = "0.32", features = ["bundled"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 dirs = "5"
-llama-cpp-2 = { workspace = true, features = ["cuda"] }
-# Required by reality-loop / governed_edit for process_group(0) + libc::kill on
-# spawned child processes (docker/python/cargo/git). Prevents grandchild leaks
-# (notably Docker containers) when the engine SIGKILLs a timed-out child.
+# Required by governed_edit for process_group(0) + libc::kill on spawned child
+# processes (docker/python/cargo/git). Prevents grandchild leaks when a timed
+# out child has descendants.
 libc = "0.2"
 
 # Logging

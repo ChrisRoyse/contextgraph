@@ -1,15 +1,8 @@
-//! Graph relationship discovery agent using local LLM.
+//! Graph relationship utilities for ContextGraph.
 //!
-//! This crate provides LLM-based graph relationship discovery for the
-//! context-graph system. It mirrors the architecture of `context-graph-causal-agent`
-//! but focuses on structural relationships (imports, dependencies, references, etc.)
-//! rather than causal relationships.
-//!
-//! # Architecture
-//!
-//! The graph agent shares the Hermes-2-Pro-Mistral-7B LLM with the causal agent via `Arc`,
-//! avoiding duplicate VRAM usage. It uses the same ChatML prompt format with
-//! different system prompts for graph relationship detection.
+//! The local LLM graph-discovery backend was removed in the 2026-05-09
+//! ME-JEPA pivot. This crate now contains deterministic graph candidate
+//! scanning, graph relationship data types, and E8 activation helpers.
 //!
 //! # E8 Dimension Change
 //!
@@ -20,7 +13,7 @@
 //!
 //! # Content Domains
 //!
-//! The agent supports 4 content domains:
+//! The scanner supports 4 content domains:
 //! - **Code**: Programming code, APIs, software documentation
 //! - **Legal**: Cases, statutes, contracts, regulations
 //! - **Academic**: Research papers, studies, citations
@@ -28,7 +21,7 @@
 //!
 //! # Relationship Types
 //!
-//! The agent detects 20 relationship types (19 + None) across 6 categories:
+//! The type system tracks 20 relationship types (19 + None) across 6 categories:
 //!
 //! **Containment**: contains, scoped_by
 //! **Dependency**: depends_on, imports, requires
@@ -40,60 +33,29 @@
 //! # Pipeline Flow
 //!
 //! ```text
-//! Memories -> Scanner -> Candidates -> LLM Analysis -> Activator -> Graph Edges
-//!               |            |              |              |
-//!           Heuristics   E1 Similarity  Hermes-2-Pro   E8 1024D
+//! Memories -> Scanner -> Candidates -> Activator -> Graph Edges
+//!               |            |              |
+//!           Heuristics   E1 Similarity   E8 1024D
 //! ```
-//!
-//! # Usage
-//!
-//! ```rust,no_run
-//! use std::sync::Arc;
-//! use context_graph_graph_agent::{GraphDiscoveryService, GraphDiscoveryConfig};
-//! use context_graph_causal_agent::CausalDiscoveryLLM;
-//!
-//! async fn example() {
-//!     // Create shared LLM (from causal-agent)
-//!     let llm = Arc::new(CausalDiscoveryLLM::new().unwrap());
-//!     llm.load().await.unwrap();
-//!
-//!     // Create graph discovery service
-//!     let service = GraphDiscoveryService::new(llm);
-//!
-//!     // Run discovery cycle
-//!     // let result = service.run_discovery_cycle(&memories).await?;
-//! }
-//! ```
+
+#[cfg(feature = "llm")]
+compile_error!("The local LLM graph backend was retired on 2026-05-09. Use ME-JEPA evidence capture instead.");
 
 pub mod activator;
 pub mod error;
-#[cfg(feature = "llm")]
-pub mod llm;
 pub mod scanner;
-#[cfg(feature = "llm")]
-pub mod service;
-#[cfg(all(feature = "test-utils", feature = "llm"))]
-pub mod stubs;
 pub mod types;
 
 // Re-exports for convenience
 pub use activator::{ActivationStats, ActivatorConfig, E8Activator, GraphEdge, GraphStorage};
 pub use error::{GraphAgentError, GraphAgentResult};
-#[cfg(feature = "llm")]
-pub use llm::{prompt::GraphPromptBuilder, GraphRelationshipLLM};
 pub use scanner::{MemoryScanner, ScannerConfig};
 // Shared types from core (no LLM required).
 pub use context_graph_core::types::{DiscoveryCycleResult, ServiceStatus};
-#[cfg(feature = "llm")]
-pub use service::{GraphDiscoveryConfig, GraphDiscoveryService};
 pub use types::{
     ContentDomain, DomainMarkers, GraphAnalysisResult, GraphCandidate, GraphLinkDirection,
     GraphMarkers, MemoryForGraphAnalysis, RelationshipCategory, RelationshipType,
 };
-
-// Test utilities require the LLM-backed service type they construct.
-#[cfg(all(feature = "test-utils", feature = "llm"))]
-pub use stubs::create_stub_graph_discovery_service;
 
 /// E8 embedding dimension (upgraded from 384 to 1024).
 ///

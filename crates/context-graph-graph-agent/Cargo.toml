@@ -4,17 +4,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Graph relationship discovery agent using local LLM"
+description = "Graph relationship scanning and E8 activation utilities"
 
 [features]
 default = []
-# Enable LLM backend for graph discovery (propagates to causal-agent).
-# Without this feature, LLM module and service are not compiled.
-llm = ["context-graph-causal-agent/llm"]
-# Enable CUDA acceleration via llama-cpp-2 (RTX 5090 optimized)
-cuda = ["llm", "context-graph-causal-agent/cuda"]
-# Test utilities. Stub constructors are compiled only when both `test-utils`
-# and `llm` are enabled because they construct the LLM-backed service type.
+llm = []
+cuda = []
 test-utils = []
 
 [dependencies]
@@ -36,8 +31,6 @@ context-graph-storage = { path = "../context-graph-storage" }
 context-graph-embeddings = { path = "../context-graph-embeddings" }
 context-graph-causal-agent = { path = "../context-graph-causal-agent" }
 
-# Note: graph-agent uses CausalDiscoveryLLM from causal-agent (no direct llama-cpp-2 dependency)
-
 # Async utilities
 parking_lot = "0.12"
 
@@ -46,15 +39,3 @@ tokio-test = "0.4"
 tempfile = "3"
 tracing-subscriber = "0.3"
 context-graph-test-utils = { path = "../context-graph-test-utils" }
-
-[[example]]
-name = "benchmark_graph"
-required-features = ["llm"]
-
-[[example]]
-name = "benchmark_graph_code"
-required-features = ["llm"]
-
-[[example]]
-name = "benchmark_graph_multi"
-required-features = ["llm"]

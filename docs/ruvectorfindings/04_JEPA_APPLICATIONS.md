@@ -1,6 +1,6 @@
 # 04 — ME-JEPA / DynamicJEPA / 5090jepa Applications
 
-> **🔁 PIVOT 2026-05-09:** ME-JEPA-Code is now the SOLE deliverable. DynamicJEPA + 5090jepa references in this doc are sibling-domain illustrations of the JEPA pattern; this project's focus is exclusively the code-domain pack. See [`10_MEJEPA_PIVOT_2026_05_09.md`](./10_MEJEPA_PIVOT_2026_05_09.md) and [`11_MEJEPA_LEARNING_FORMULA.md`](./11_MEJEPA_LEARNING_FORMULA.md) (UTL-v2-derived per-example weighting `L = ΔS × ΔC × ΔE`).
+> **🔁 PIVOT 2026-05-09:** ME-JEPA-Code is now the SOLE deliverable. DynamicJEPA + 5090jepa references in this doc are sibling-domain illustrations of the JEPA pattern; this project's focus is exclusively the code-domain pack. See [`10_MEJEPA_PIVOT_2026_05_09.md`](./10_MEJEPA_PIVOT_2026_05_09.md) and [`11_MEJEPA_LEARNING_FORMULA.md`](./11_MEJEPA_LEARNING_FORMULA.md) (UTML v1.0-derived per-example weighting `L_step = ΔP × ΔK × ΔΩ × ΔΞ`; ΔΞ.target_collapse = 0 by construction because ME-JEPA's targets come from frozen externally-defined instruments — a structural advantage no other JEPA in the literature has).
 
 > **🔒 Reference-only — clean-room reimplementation.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — every "Vendor `X`" / "Path-dep `X`" recommendation below is SUPERSEDED. Read each as **"Read RuVector's `X` as inspiration; reimplement the algorithm cleanly in our own crate."** Effort estimates roughly 2-3× the original numbers.
 

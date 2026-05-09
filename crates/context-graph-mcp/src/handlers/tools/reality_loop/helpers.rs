@@ -66,7 +66,7 @@ pub async fn require_active_runtime_root() -> Result<PathBuf> {
             "CCREALITY_NO_ACTIVE_RUNTIME_ROOT",
             "no active runtime root has been recorded",
             "active_runtime_root",
-            "run reality-loop smoke or attempt first",
+            "the legacy reality-loop runner is retired; use ME-JEPA evidence capture artifacts instead",
             json!({}),
             None,
         )
@@ -79,7 +79,7 @@ pub async fn require_active_target_instance() -> Result<String> {
             "CCREALITY_NO_ACTIVE_TARGET_INSTANCE",
             "no active target instance has been recorded",
             "active_target_instance",
-            "run reality-loop smoke or attempt first",
+            "the legacy reality-loop runner is retired; use the current SWE-bench task/corpus identifier instead",
             json!({}),
             None,
         )

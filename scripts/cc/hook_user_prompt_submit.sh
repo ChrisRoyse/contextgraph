@@ -57,7 +57,7 @@ if [ -n "${SESSION_ID}" ] && [ -n "${RUNTIME_ROOT}" ] && [ -d "${RUNTIME_ROOT}" 
 fi
 
 if [ "${#CTX_PARTS[@]}" -eq 0 ]; then
-  CTX="No active reality-loop attempt to drip. Call mcp__cgreality__reality_run_smoke or mcp__cgreality__reality_run_attempt to produce source-of-truth artifacts."
+  CTX="No active ME-JEPA evidence context found. The legacy reality-loop drip path is retired; continue one Claude Code outer-loop increment and verify source-of-truth artifacts directly."
 else
   CTX="$(printf '%s\n\n' "${CTX_PARTS[@]}")"
 fi

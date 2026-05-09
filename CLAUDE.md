@@ -10,8 +10,8 @@ When this file conflicts with anything else, this file wins. When two parts of t
 
 ContextGraph is a Rust workspace that ships:
 
-- **`context-graph-mcp`** — the MCP (Model Context Protocol) server. Speaks JSON-RPC over stdio to Claude Code, exposes the `mcp__cgreality__*` tool family, owns the path-policy + edit-lock + ledger + shift-log machinery, and shells out to the engine binary for harness writes.
-- **`context-graph-cli`** — the harness engine. Performs governed file edits, runs cargo / pytest / Docker oracle subprocesses, exposes a `harness <subcommand>` interface that the MCP server fork/execs (the "MCP→CLI shim" — commits 4072dcf3 / d48102e6, 2026-05-07). The legacy `target/release/reality-loop` binary that hosted the Qwen3.6-27B inner-actor is **retired post-2026-05-09 pivot** (see `docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md`); it remains in the source tree pending a follow-up cleanup turn but is no longer invoked.
+- **`context-graph-mcp`** — the MCP (Model Context Protocol) server. Speaks JSON-RPC over stdio to Claude Code, exposes the `mcp__cgreality__*` tool family, owns path-policy + edit-lock + ledger + shift-log machinery, and now fails closed on retired local reality-loop runner calls.
+- **`context-graph-cli`** — the CLI surface for ContextGraph harness support, DynamicJEPA commands, governed readback helpers, and ME-JEPA implementation work. The legacy `reality-loop` binary that hosted the Qwen3.6-27B inner actor was removed in the 2026-05-09 ME-JEPA hardening pass.
 - **Other crates**: storage, embedding pipelines, benchmark fixtures, ME-JEPA primitives (`context-graph-mejepa-corpus`, `context-graph-mejepa-instruments`, `context-graph-tier-compression`, `context-graph-mincut`, `context-graph-witness`, `context-graph-solver`). See `crates/`.
 
 The active workstream is **ME-JEPA-Code** — the predictive reality compiler that takes (code change + context) and outputs a calibrated prediction of what the SWE-bench Docker oracle would say. **Claude Code (you) implements ME-JEPA + the surrounding ContextGraph reality substrate.** Each /loop turn ships one primitive end-to-end with FSV evidence per the `sitrep/` build plan.
@@ -325,7 +325,7 @@ These wrap subsets of the iteration procedure for targeted use:
 
 Two refactors structurally enforce that operator `/mcp` reconnects MUST NOT be on the critical path:
 
-- **MCP→CLI shim** (commits 4072dcf3 / d48102e6): the four MCP harness write tools shell out to `target/release/reality-loop harness <subcommand>` as fresh subprocesses. Changes to `crates/context-graph-cli/**` propagate to the next MCP call automatically — no `/mcp` reconnect.
+- **Retired MCP→CLI shim** (commits 4072dcf3 / d48102e6): the old harness write tools used to shell out through `target/release/reality-loop harness <subcommand>`. That binary is removed. Old run/edit entrypoints must fail closed with `CCREALITY_ENGINE_RETIRED` rather than spawning stale target artifacts.
 - **MCP singleton takeover** (turn 39): `run_reality_loop_stdio()` acquires a flock on `~/.cache/cgreality/reality-loop-stdio.lock` at startup; if a previous reality-loop MCP holds the lock, the new MCP SIGTERM(2s)→SIGKILL evicts and reclaims. `/mcp reconnect` is structurally safe — no zombies.
 
 `/mcp reconnect` is still required for changes to MCP-protocol-layer code (`crates/context-graph-mcp/src/handlers/`, `protocol.rs`, `tools/`, `main.rs`). Surface in `remaining_risks` when a `changed` recommendation touches these.

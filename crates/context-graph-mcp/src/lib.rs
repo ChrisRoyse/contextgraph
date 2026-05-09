@@ -3,6 +3,9 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::result_large_err)]
 
+#[cfg(feature = "llm")]
+compile_error!("The MCP local LLM feature was retired on 2026-05-09. Use ME-JEPA evidence capture instead.");
+
 //! Context Graph MCP Server Library
 //!
 //! JSON-RPC 2.0 server implementing the Model Context Protocol (MCP)

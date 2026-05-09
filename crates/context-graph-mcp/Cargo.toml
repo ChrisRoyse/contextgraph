@@ -82,9 +82,8 @@ context-graph-graph-agent = { path = "../context-graph-graph-agent", features = 
 [features]
 # GPU-first architecture: CUDA is REQUIRED (RTX 5090 / Blackwell)
 # No fallback stubs - system fails fast if CUDA unavailable
-default = ["cuda", "llm"]
+default = ["cuda"]
 candle = ["context-graph-embeddings/candle"]
-# LLM feature enables CausalDiscoveryLLM + GraphDiscoveryService (~500MB of llama-cpp-2)
-# Without this: binary ~80MB, LLM-based tools unavailable (causal/graph discovery)
-llm = ["context-graph-causal-agent/llm", "context-graph-graph-agent/llm"]
-cuda = ["context-graph-cuda/cuda", "context-graph-embeddings/cuda", "context-graph-storage/cuda", "context-graph-causal-agent/cuda", "candle"]
+# Retired 2026-05-09: enabling this feature fails closed at compile time.
+llm = []
+cuda = ["context-graph-cuda/cuda", "context-graph-embeddings/cuda", "context-graph-storage/cuda", "candle"]

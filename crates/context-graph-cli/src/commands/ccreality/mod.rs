@@ -154,7 +154,7 @@ async fn record_harness_transition(args: RecordHarnessTransitionArgs) -> CCResul
         json!({
             "status": args.cargo_status,
             "stderr_tail": args.cargo_stderr_tail,
-            "command": "cargo check -p context-graph-cli --bin reality-loop"
+            "command": "cargo check -p context-graph-cli --no-default-features --lib"
         })
     };
 

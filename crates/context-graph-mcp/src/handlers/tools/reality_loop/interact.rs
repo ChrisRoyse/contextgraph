@@ -525,44 +525,26 @@ fn validate_ledger_where(where_clause: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
-/// Locate the reality-loop CLI binary. Prefers release over debug so that the
-/// MCP server picks up production rebuilds without needing path-specific config.
-/// Operator override via `CGREALITY_REALITY_LOOP_BIN` always wins.
+/// The local `reality-loop` engine was retired in the 2026-05-09 ME-JEPA pivot.
 ///
-/// Made `pub(super)` so the harness-write tools in `alter.rs` can shell out
-/// through the same binary-resolution path as `interact.rs` engine spawns.
+/// Keep this resolver as a fail-closed boundary for old MCP tools. Returning a
+/// structured error is safer than accidentally spawning a stale binary left in
+/// `target/` from an earlier build.
 pub(super) fn locate_engine_binary() -> Result<PathBuf> {
-    if let Ok(env_bin) = std::env::var("CGREALITY_REALITY_LOOP_BIN") {
-        let bin = PathBuf::from(env_bin);
-        if !bin.is_file() {
-            return Err(CCRealityError::new(
-                "CCREALITY_ENGINE_BINARY_MISSING",
-                "CGREALITY_REALITY_LOOP_BIN points to a missing file",
-                "engine.binary",
-                "fix or unset CGREALITY_REALITY_LOOP_BIN",
-                json!({"path": bin.display().to_string()}),
-                Some(file_sot(&bin)),
-            ));
-        }
-        return Ok(bin);
-    }
     let root = project_root()?;
     let release = root.join("target/release/reality-loop");
-    if release.is_file() {
-        return Ok(release);
-    }
     let debug = root.join("target/debug/reality-loop");
-    if debug.is_file() {
-        return Ok(debug);
-    }
     Err(CCRealityError::new(
-        "CCREALITY_ENGINE_BINARY_MISSING",
-        "neither target/release/reality-loop nor target/debug/reality-loop exists",
+        "CCREALITY_ENGINE_RETIRED",
+        "the local reality-loop engine and inner LLM actor are retired",
         "engine.binary",
-        "run cargo build --release -p context-graph-cli --bin reality-loop",
+        "use the single outer Claude Code loop and ME-JEPA evidence capture path; do not spawn stale reality-loop binaries",
         json!({
+            "retired_on": "2026-05-09",
+            "reason": "ME-JEPA pivot removed the local llama/Qwen/Hermes inner loop",
             "release_path": release.display().to_string(),
-            "debug_path": debug.display().to_string()
+            "debug_path": debug.display().to_string(),
+            "env_override_ignored": std::env::var("CGREALITY_REALITY_LOOP_BIN").ok()
         }),
         Some(file_sot(&release)),
     ))

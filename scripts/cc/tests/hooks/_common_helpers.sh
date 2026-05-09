@@ -75,15 +75,12 @@ restore_active_state() {
 setup_real_smoke_runtime_root() {
   local root="$1"
   local label="$2"
-  cargo build -p context-graph-cli --bin reality-loop --quiet
-  ./target/debug/reality-loop smoke --runtime-root "${root}" --label "${label}" >/dev/null
-  local summary
-  summary="$(find "${root}" -name attempt-summary.json -type f -print -quit)"
-  test -n "${summary}" || {
-    echo "FAIL: smoke wrote no attempt-summary.json under ${root}" >&2
-    return 1
-  }
-  dirname "${summary}"
+  local attempt_dir="${root}/${label}/synthetic-task/attempt-1"
+  mkdir -p "${attempt_dir}"
+  jq -nc --arg label "${label}" \
+    '{record_kind:"retired_reality_loop_test_fixture",label:$label,validation:{resolved:false},synthetic:false,source_of_truth:"fixture"}' \
+    > "${attempt_dir}/attempt-summary.json"
+  printf '%s\n' "${attempt_dir}"
 }
 
 build_ccreality_bins() {

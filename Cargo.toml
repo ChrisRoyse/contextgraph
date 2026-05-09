@@ -87,21 +87,10 @@ rand_distr = "0.4"
 candle-core = { version = "0.10.2", features = ["cuda"] }
 candle-nn = { version = "0.10.2", features = ["cuda"] }
 
-# GPU/ML - llama.cpp bindings for GGUF model inference (LLM agents)
-# Using llama-cpp-2 for grammar-constrained generation (GBNF)
-# Supports CUDA for RTX 5090 Blackwell architecture
-llama-cpp-2 = "0.1"
-
 # Internal crates
 context-graph-core = { path = "crates/context-graph-core" }
 context-graph-embeddings = { path = "crates/context-graph-embeddings" }
 context-graph-cuda = { path = "crates/context-graph-cuda" }
-
-[patch.crates-io]
-# Local patch for llama-cpp-sys-2 0.1.145.
-# Root cause fixed: upstream build.rs overwrites CMAKE_BUILD_PARALLEL_LEVEL
-# with host CPU count, which forces gmake/nvcc to over-parallelize and OOM.
-llama-cpp-sys-2 = { path = "vendor/llama-cpp-sys-2-0.1.145" }
 
 [profile.release]
 lto = "thin"
