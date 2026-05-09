@@ -2468,8 +2468,7 @@ fn collect_examples(
             }
             let action = panel_action_vector(&input_panel)?;
             let target_panel = flatten_panel_with_action_override(&target_panel, Some(&action))?;
-            let negative_panel =
-                flatten_panel_with_action_override(&negative_panel, Some(&action))?;
+            let negative_panel = flatten_panel(&negative_panel)?;
             examples.push(TrainExample {
                 split_name: shard.split_name.clone(),
                 input_panel: flatten_panel(&input_panel)?,
