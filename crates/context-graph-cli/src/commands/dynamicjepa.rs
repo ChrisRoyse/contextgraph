@@ -5740,7 +5740,13 @@ fn semantic_run_compile_commands_batch_check(
             .get("directory")
             .and_then(Value::as_str)
             .map(PathBuf::from)
-            .unwrap_or_else(|| repo.to_path_buf());
+            .ok_or_else(|| {
+                DynamicJepaError::validation(
+                    "semantic-index.compile_commands.directory",
+                    format!("compile_commands entry {idx} is missing directory"),
+                    "regenerate the compilation database with compiler working directories for every translation unit",
+                )
+            })?;
         let cwd = if directory.is_absolute() {
             directory
         } else {
@@ -5766,7 +5772,16 @@ fn semantic_run_compile_commands_batch_check(
             })?;
             argv.push(value.to_string());
         }
-        argv.push("-fsyntax-only".to_string());
+        if argv.is_empty() {
+            return Err(DynamicJepaError::validation(
+                "semantic-index.compile_commands.arguments",
+                format!("compile_commands entry {idx} contains an empty arguments array"),
+                "regenerate compile_commands.json with compiler argv entries",
+            ));
+        }
+        if !argv.iter().any(|arg| arg == "-fsyntax-only") {
+            argv.push("-fsyntax-only".to_string());
+        }
         let label = format!("{language}_syntax_{}", safe_filename(&repo_relative));
         let evidence = semantic_run_required_owned(&argv, &cwd, None, evidence_dir, &label)?;
         checks.push(json!({
@@ -6647,8 +6662,10 @@ fn semantic_c_contains_function_declarator(node: tree_sitter::Node<'_>) -> bool 
         return true;
     }
     let mut cursor = node.walk();
-    node.children(&mut cursor)
-        .any(semantic_c_contains_function_declarator)
+    let found = node
+        .children(&mut cursor)
+        .any(semantic_c_contains_function_declarator);
+    found
 }
 
 fn semantic_cpp_ast_node_kind(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
@@ -7050,8 +7067,10 @@ fn semantic_first_child_kind<'a>(
     kind: &str,
 ) -> Option<tree_sitter::Node<'a>> {
     let mut cursor = node.walk();
-    node.named_children(&mut cursor)
-        .find(|child| child.kind() == kind)
+    let found = node
+        .named_children(&mut cursor)
+        .find(|child| child.kind() == kind);
+    found
 }
 
 fn semantic_c_visibility_text(node: tree_sitter::Node<'_>, source: &str) -> String {
@@ -7187,12 +7206,13 @@ fn semantic_java_method_has_test_annotation(node: tree_sitter::Node<'_>, source:
         return false;
     }
     let mut cursor = node.walk();
-    node.children(&mut cursor).any(|child| {
+    let found = node.children(&mut cursor).any(|child| {
         matches!(
             child.kind(),
             "modifiers" | "annotation" | "marker_annotation"
         ) && semantic_java_tree_has_test_annotation(child, source)
-    })
+    });
+    found
 }
 
 fn semantic_java_tree_has_test_annotation(node: tree_sitter::Node<'_>, source: &str) -> bool {
@@ -7206,8 +7226,10 @@ fn semantic_java_tree_has_test_annotation(node: tree_sitter::Node<'_>, source: &
         return true;
     }
     let mut cursor = node.walk();
-    node.children(&mut cursor)
-        .any(|child| semantic_java_tree_has_test_annotation(child, source))
+    let found = node
+        .children(&mut cursor)
+        .any(|child| semantic_java_tree_has_test_annotation(child, source));
+    found
 }
 
 fn semantic_java_annotation_simple_name(text: &str) -> Option<&str> {
@@ -25760,8 +25782,10 @@ int classifyWidget() {
             .pointer("/checks/0/evidence/stderr_path")
             .and_then(Value::as_str)
             .expect("stderr source of truth");
-        let stdout = fs::read(stdout_path).expect("read stdout evidence");
-        let stderr = fs::read(stderr_path).expect("read stderr evidence");
+        let stdout_sot_path = local_file_sot_path(stdout_path);
+        let stderr_sot_path = local_file_sot_path(stderr_path);
+        let stdout = fs::read(&stdout_sot_path).expect("read stdout evidence");
+        let stderr = fs::read(&stderr_sot_path).expect("read stderr evidence");
         eprintln!(
             "READBACK_STATE stdout_path={} stdout_bytes={} stderr_path={} stderr_bytes={}",
             stdout_path,
@@ -25770,8 +25794,18 @@ int classifyWidget() {
             stderr.len()
         );
         assert_eq!(evidence["check_count"].as_u64(), Some(1));
-        assert!(Path::new(stdout_path).is_file());
-        assert!(Path::new(stderr_path).is_file());
+        assert!(stdout_sot_path.is_file());
+        assert!(stderr_sot_path.is_file());
+    }
+
+    fn local_file_sot_path(sot: &str) -> PathBuf {
+        let Some(path) = sot.strip_prefix("file:") else {
+            panic!("expected local file source-of-truth URL, got {sot}");
+        };
+        if path.is_empty() {
+            panic!("local file source-of-truth URL must include a path");
+        }
+        PathBuf::from(path)
     }
 
     #[test]
@@ -25833,6 +25867,52 @@ int classifyWidget() {
             .collect::<BTreeSet<_>>();
         assert!(annotated_kinds.contains(&("SmokeCheck", "class")));
         assert!(annotated_kinds.contains(&("computes", "test")));
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let evidence_path = temp.path().join("java-semantic-fsv.json");
+        let source_root = temp.path().join("repo");
+        let surefire_path = source_root.join("src/test/java/com/acme/CalculatorTests.java");
+        let annotated_path = source_root.join("src/main/java/com/acme/SmokeCheck.java");
+        fs::create_dir_all(surefire_path.parent().expect("surefire parent"))
+            .expect("create surefire source dir");
+        fs::create_dir_all(annotated_path.parent().expect("annotated parent"))
+            .expect("create annotated source dir");
+        fs::write(&surefire_path, surefire_source).expect("write surefire source");
+        fs::write(&annotated_path, nonstandard_source).expect("write annotated source");
+        let surefire_disk_source =
+            fs::read_to_string(&surefire_path).expect("read surefire source from disk");
+        let annotated_disk_source =
+            fs::read_to_string(&annotated_path).expect("read annotated source from disk");
+        let surefire_disk = semantic_extract_source_facts(
+            "src/test/java/com/acme/CalculatorTests.java",
+            "java",
+            &surefire_disk_source,
+        )
+        .expect("valid Java AST from disk surefire source");
+        let annotated_disk = semantic_extract_source_facts(
+            "src/main/java/com/acme/SmokeCheck.java",
+            "java",
+            &annotated_disk_source,
+        )
+        .expect("valid Java AST from disk annotated source");
+        let fsv = json!({
+            "source_of_truth": {
+                "evidence": file_sot_string(&evidence_path),
+                "surefire_source": file_sot_string(&surefire_path),
+                "annotation_source": file_sot_string(&annotated_path),
+            },
+            "surefire_symbols": surefire_disk.symbols,
+            "annotation_symbols": annotated_disk.symbols,
+            "surefire_calls": surefire_disk.calls,
+            "annotation_calls": annotated_disk.calls,
+        });
+        write_json_file(&evidence_path, &fsv).expect("write Java semantic FSV evidence");
+        let readback = read_json_file(&evidence_path).expect("read Java semantic FSV evidence");
+        println!(
+            "READBACK java semantic-index FSV state: {}",
+            serde_json::to_string_pretty(&readback).expect("serialize Java semantic readback")
+        );
+        assert_eq!(readback, fsv);
 
         for path in [
             "src/test/java/com/acme/Utility.java",

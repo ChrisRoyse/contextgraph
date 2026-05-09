@@ -47,15 +47,29 @@ pub fn build_map() -> HashMap<String, usize> {
 }
 "#;
     let invalid_source = "pub fn broken() {\n    let value = ;\n}\n";
-    let tiny_source = "impl Unit {\n    pub fn id(&self) -> usize { 1 }\n}\n";
+    let method_source = r#"
+pub struct Unit {
+    value: usize,
+}
+
+impl Unit {
+    pub fn id(&self) -> usize {
+        self.value
+    }
+
+    pub fn plus_one(&self) -> usize {
+        self.value + 1
+    }
+}
+"#;
     let empty_source = "   \n\t";
 
     let happy_path = sources.join("happy.rs");
     let invalid_path = sources.join("invalid.rs");
-    let tiny_path = sources.join("tiny_impl.rs");
+    let method_path = sources.join("method_split.rs");
     write_text_checked(&happy_path, happy_source)?;
     write_text_checked(&invalid_path, invalid_source)?;
-    write_text_checked(&tiny_path, tiny_source)?;
+    write_text_checked(&method_path, method_source)?;
 
     let happy_rustc = rustc_check(&happy_path, &rustc_out.join("happy.rmeta"))?;
     ensure(
@@ -66,6 +80,11 @@ pub fn build_map() -> HashMap<String, usize> {
     ensure(
         "invalid source must fail rustc as independent syntax source of truth",
         invalid_rustc["success"].as_bool() == Some(false),
+    )?;
+    let method_rustc = rustc_check(&method_path, &rustc_out.join("method_split.rmeta"))?;
+    ensure(
+        "method split source must compile under rustc before chunking",
+        method_rustc["success"].as_bool() == Some(true),
     )?;
 
     let happy_case = chunk_success_case(
@@ -90,10 +109,10 @@ pub fn build_map() -> HashMap<String, usize> {
     )?;
     let method_split_case = chunk_success_case(
         "method_split",
-        tiny_source,
-        &tiny_path,
+        method_source,
+        &method_path,
         AstChunkConfig {
-            max_size: 40,
+            max_size: 60,
             min_size: 1,
             ..AstChunkConfig::default()
         },
@@ -120,6 +139,7 @@ pub fn build_map() -> HashMap<String, usize> {
         "rustc_checks": {
             "happy": happy_rustc,
             "invalid": invalid_rustc,
+            "method_split": method_rustc,
         },
     });
 

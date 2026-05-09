@@ -6861,8 +6861,13 @@ fn dynamicjepa_ast_semantics_for_path(
             .1
             .min(source.len())
             .max(start.saturating_add(1).min(source.len()));
-        let end = end_exclusive.saturating_sub(1).max(start);
-        let node = root.descendant_for_byte_range(start, end).unwrap_or(root);
+        let (node_start, node_end_exclusive) =
+            ast_significant_byte_range(&source, start, end_exclusive)
+                .unwrap_or((start, end_exclusive));
+        let node_end = node_end_exclusive.saturating_sub(1).max(node_start);
+        let node = root
+            .descendant_for_byte_range(node_start, node_end)
+            .unwrap_or(root);
         let semantic = dynamicjepa_ast_semantic_node(language, node, &source, repo_relative_path);
         node_kinds.insert(semantic.node_kind);
         symbol_kinds.insert(semantic.symbol_kind);
@@ -7769,7 +7774,7 @@ fn dynamicjepa_c_compile_command_from_database(
             Some(file_sot(repo_root)),
         ));
     }
-    let compile_commands = read_json(&compile_commands_path)?;
+    let compile_commands: Value = read_json(&compile_commands_path)?;
     let entries = compile_commands.as_array().ok_or_else(|| {
         RealityError::new(
             "RUST_REALITY_DYNAMICJEPA_C_COMPILE_COMMANDS_SCHEMA_INVALID",
@@ -8137,7 +8142,7 @@ fn dynamicjepa_run_cpp_compile_commands_semantic_tool(
             Some(file_sot(repo_root)),
         ));
     }
-    let compile_commands = read_json(&compile_commands_path)?;
+    let compile_commands: Value = read_json(&compile_commands_path)?;
     let entries = compile_commands.as_array().ok_or_else(|| {
         RealityError::new(
             "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_SCHEMA_INVALID",
@@ -8656,6 +8661,23 @@ fn line_range_to_byte_range(
     Ok((start_byte, end_byte.max(start_byte), start_line as u32))
 }
 
+fn ast_significant_byte_range(
+    source: &str,
+    start: usize,
+    end_exclusive: usize,
+) -> Option<(usize, usize)> {
+    let bytes = source.as_bytes();
+    let mut significant_start = start.min(bytes.len());
+    let mut significant_end = end_exclusive.min(bytes.len()).max(significant_start);
+    while significant_start < significant_end && bytes[significant_start].is_ascii_whitespace() {
+        significant_start += 1;
+    }
+    while significant_end > significant_start && bytes[significant_end - 1].is_ascii_whitespace() {
+        significant_end -= 1;
+    }
+    (significant_start < significant_end).then_some((significant_start, significant_end))
+}
+
 fn byte_to_one_based_line(source: &str, byte_offset: usize) -> Result<u32> {
     let mut line = 1u32;
     for (idx, byte) in source.bytes().enumerate() {
@@ -8887,8 +8909,10 @@ fn ast_c_contains_function_declarator(node: tree_sitter::Node<'_>) -> bool {
         return true;
     }
     let mut cursor = node.walk();
-    node.children(&mut cursor)
-        .any(ast_c_contains_function_declarator)
+    let found = node
+        .children(&mut cursor)
+        .any(ast_c_contains_function_declarator);
+    found
 }
 
 fn ast_cpp_node_kind(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
@@ -9247,8 +9271,10 @@ fn ast_first_child_kind<'a>(
     kind: &str,
 ) -> Option<tree_sitter::Node<'a>> {
     let mut cursor = node.walk();
-    node.named_children(&mut cursor)
-        .find(|child| child.kind() == kind)
+    let found = node
+        .named_children(&mut cursor)
+        .find(|child| child.kind() == kind);
+    found
 }
 
 fn ast_c_visibility_text(node: tree_sitter::Node<'_>, source: &str) -> String {
@@ -9579,12 +9605,13 @@ fn java_method_has_test_annotation(node: tree_sitter::Node<'_>, source: &str) ->
         return false;
     }
     let mut cursor = node.walk();
-    node.children(&mut cursor).any(|child| {
+    let found = node.children(&mut cursor).any(|child| {
         matches!(
             child.kind(),
             "modifiers" | "annotation" | "marker_annotation"
         ) && java_tree_has_test_annotation(child, source)
-    })
+    });
+    found
 }
 
 fn java_tree_has_test_annotation(node: tree_sitter::Node<'_>, source: &str) -> bool {
@@ -9598,8 +9625,10 @@ fn java_tree_has_test_annotation(node: tree_sitter::Node<'_>, source: &str) -> b
         return true;
     }
     let mut cursor = node.walk();
-    node.children(&mut cursor)
-        .any(|child| java_tree_has_test_annotation(child, source))
+    let found = node
+        .children(&mut cursor)
+        .any(|child| java_tree_has_test_annotation(child, source));
+    found
 }
 
 fn java_annotation_simple_name(text: &str) -> Option<&str> {
@@ -19476,6 +19505,41 @@ mod tests {
         .expect("C compile_commands write");
     }
 
+    fn add_real_cpp_project(repo: &Path) {
+        write_text_checked(
+            &repo.join("include/accumulator.h"),
+            "#pragma once\n#include <algorithm>\n\nnamespace demo {\nclass Accumulator {\n    int total_;\npublic:\n    explicit Accumulator(int seed) : total_(seed) {}\n    int add(int value) {\n        total_ += value;\n        return std::max(total_, value);\n    }\nprivate:\n    void reset() { total_ = 0; }\n};\n}\n",
+        )
+        .expect("C++ header write");
+        write_text_checked(
+            &repo.join("src/main.cpp"),
+            "#include \"accumulator.h\"\n\nint main() {\n    demo::Accumulator acc(2);\n    return acc.add(2) == 4 ? 0 : 1;\n}\n",
+        )
+        .expect("C++ source write");
+        let compile_commands = json!([{
+            "directory": path_str(repo),
+            "file": path_str(&repo.join("src/main.cpp")),
+            "arguments": [
+                "g++",
+                "-std=c++17",
+                "-Iinclude",
+                "-c",
+                path_str(&repo.join("src/main.cpp")),
+                "-o",
+                "main.o"
+            ]
+        }]);
+        write_text_checked(
+            &repo.join("compile_commands.json"),
+            &format!(
+                "{}\n",
+                serde_json::to_string_pretty(&compile_commands)
+                    .expect("serialize C++ compile commands")
+            ),
+        )
+        .expect("C++ compile_commands write");
+    }
+
     fn java_semantic_for_source(path: &str, source: &str, needle: &str) -> AstSemanticNode {
         let mut parser = tree_sitter::Parser::new();
         let language: tree_sitter::Language = tree_sitter_java::LANGUAGE.into();
@@ -19687,7 +19751,7 @@ mod tests {
 
         let err = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
             .expect_err("C action semantics must fail closed without compile_commands.json");
-        println!("AFTER C missing compile_commands error state: {err}");
+        println!("AFTER C missing compile_commands error state: {err:?}");
 
         assert_eq!(
             err.error_code,
@@ -19704,6 +19768,196 @@ mod tests {
     }
 
     #[test]
+    fn dynamicjepa_ast_action_semantics_parse_real_cpp_header_with_compile_commands_fsv() {
+        let (_temp, repo) = init_real_git_repo();
+        add_real_cpp_project(&repo);
+        let args = json!({
+            "edits": [{
+                "path": "include/accumulator.h",
+                "start_line": 9,
+                "end_line": 9,
+                "replace": "    int add(int value) {\n",
+                "observed_sha256": sha256_file(&repo.join("include/accumulator.h")).expect("sha")
+            }]
+        });
+        println!(
+            "BEFORE C++ action state: compile_commands={}, header={}",
+            fs::read_to_string(repo.join("compile_commands.json"))
+                .expect("read C++ compile commands"),
+            fs::read_to_string(repo.join("include/accumulator.h")).expect("read C++ header")
+        );
+
+        let action = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+            .expect("C++ compiler-backed action semantics");
+        let evidence_path = repo.join("cpp-action-fsv.json");
+        let evidence = json!({
+            "source_of_truth": file_sot(&evidence_path),
+            "action": action,
+            "header_readback": fs::read_to_string(repo.join("include/accumulator.h")).expect("read C++ header after"),
+            "compile_commands_readback": fs::read_to_string(repo.join("compile_commands.json")).expect("read C++ compile_commands after"),
+        });
+        write_json_checked(&evidence_path, &evidence).expect("write C++ action FSV evidence");
+        let readback: Value = read_json(&evidence_path).expect("read C++ action FSV evidence");
+        println!(
+            "AFTER C++ action semantic readback: {}",
+            serde_json::to_string_pretty(&readback).expect("serialize C++ readback")
+        );
+
+        let action = readback.get("action").expect("action evidence");
+        assert_eq!(action["ast_language"], "cpp");
+        assert_eq!(action["ast_parse_status"], "parsed");
+        assert_eq!(action["ast_node_kind"], "method");
+        assert_eq!(action["ast_symbol_kind"], "method");
+        assert_eq!(action["ast_edit_kind"], "signature");
+        assert_eq!(action["symbol_visibility"], "public");
+        assert_eq!(action["semantic_provider"], "compiler_lsp_compile_commands");
+        assert_eq!(action["semantic_status"], "analyzed");
+        assert_eq!(action["compiler_semantic_status"], "checked");
+        assert_eq!(action["type_resolution_status"], "resolved");
+        assert_eq!(action["import_resolution_status"], "resolved");
+        assert_eq!(action["compiler_diagnostic_count"], 0);
+        assert_eq!(action["predicted_verifier_target"], "typecheck");
+        assert_eq!(action["symbol_bucket"], "function");
+        assert_eq!(
+            readback["header_readback"].as_str().expect("header text"),
+            "#pragma once\n#include <algorithm>\n\nnamespace demo {\nclass Accumulator {\n    int total_;\npublic:\n    explicit Accumulator(int seed) : total_(seed) {}\n    int add(int value) {\n        total_ += value;\n        return std::max(total_, value);\n    }\nprivate:\n    void reset() { total_ = 0; }\n};\n}\n"
+        );
+    }
+
+    #[test]
+    fn dynamicjepa_ast_action_semantics_cpp_fails_closed_without_compile_commands() {
+        let (_temp, repo) = init_real_git_repo();
+        write_text_checked(
+            &repo.join("include/accumulator.h"),
+            "class Accumulator {\npublic:\n    int add(int value) { return value + 1; }\n};\n",
+        )
+        .expect("C++ header write");
+        let args = json!({
+            "edits": [{
+                "path": "include/accumulator.h",
+                "start_line": 3,
+                "end_line": 3,
+                "replace": "    int add(int value) { return value + 2; }\n",
+                "observed_sha256": sha256_file(&repo.join("include/accumulator.h")).expect("sha")
+            }]
+        });
+        println!(
+            "BEFORE C++ missing compile_commands state: compile_commands_exists={}, header={}",
+            repo.join("compile_commands.json").exists(),
+            fs::read_to_string(repo.join("include/accumulator.h")).expect("read C++ header")
+        );
+
+        let err = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+            .expect_err("C++ action semantics must fail closed without compile_commands.json");
+        println!("AFTER C++ missing compile_commands error state: {err:?}");
+
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_MISSING"
+        );
+        assert_eq!(
+            err.field_path,
+            "dynamicjepa.action.compiler_lsp.compile_commands"
+        );
+        assert_eq!(
+            fs::read_to_string(repo.join("include/accumulator.h")).expect("read C++ header after"),
+            "class Accumulator {\npublic:\n    int add(int value) { return value + 1; }\n};\n"
+        );
+    }
+
+    #[test]
+    fn dynamicjepa_ast_action_semantics_cpp_refuses_shell_command_compile_commands() {
+        let (_temp, repo) = init_real_git_repo();
+        add_real_cpp_project(&repo);
+        let command_compile_commands = json!([{
+            "directory": path_str(&repo),
+            "file": path_str(&repo.join("src/main.cpp")),
+            "command": format!(
+                "g++ -std=c++17 -Iinclude -c {} -o main.o",
+                path_str(&repo.join("src/main.cpp"))
+            )
+        }]);
+        write_text_checked(
+            &repo.join("compile_commands.json"),
+            &format!(
+                "{}\n",
+                serde_json::to_string_pretty(&command_compile_commands)
+                    .expect("serialize command compile_commands")
+            ),
+        )
+        .expect("C++ shell command compile_commands write");
+        let args = json!({
+            "edits": [{
+                "path": "include/accumulator.h",
+                "start_line": 9,
+                "end_line": 9,
+                "replace": "    int add(int value) {\n",
+                "observed_sha256": sha256_file(&repo.join("include/accumulator.h")).expect("sha")
+            }]
+        });
+        println!(
+            "BEFORE C++ shell compile_commands state: compile_commands={}, header={}",
+            fs::read_to_string(repo.join("compile_commands.json"))
+                .expect("read C++ shell compile commands"),
+            fs::read_to_string(repo.join("include/accumulator.h")).expect("read C++ header")
+        );
+
+        let err = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+            .expect_err("C++ action semantics must refuse shell command compile_commands");
+        println!(
+            "AFTER C++ shell compile_commands error state: {err:?}; compile_commands={}",
+            fs::read_to_string(repo.join("compile_commands.json"))
+                .expect("read C++ shell compile_commands after")
+        );
+
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_SHELL_COMMAND_REFUSED"
+        );
+        assert_eq!(
+            err.field_path,
+            "dynamicjepa.action.compiler_lsp.compile_commands[].command"
+        );
+        assert_eq!(
+            fs::read_to_string(repo.join("include/accumulator.h")).expect("read C++ header after"),
+            "#pragma once\n#include <algorithm>\n\nnamespace demo {\nclass Accumulator {\n    int total_;\npublic:\n    explicit Accumulator(int seed) : total_(seed) {}\n    int add(int value) {\n        total_ += value;\n        return std::max(total_, value);\n    }\nprivate:\n    void reset() { total_ = 0; }\n};\n}\n"
+        );
+    }
+
+    #[test]
+    fn dynamicjepa_ast_action_semantics_cpp_fails_closed_on_parser_errors() {
+        let (_temp, repo) = init_real_git_repo();
+        write_text_checked(
+            &repo.join("include/broken.h"),
+            "class Broken {\npublic:\n    int add(\n};\n",
+        )
+        .expect("broken C++ header write");
+        let args = json!({
+            "edits": [{
+                "path": "include/broken.h",
+                "start_line": 3,
+                "end_line": 3,
+                "replace": "    int add(\n",
+                "observed_sha256": sha256_file(&repo.join("include/broken.h")).expect("sha")
+            }]
+        });
+        println!(
+            "BEFORE C++ parse-error state: header={}",
+            fs::read_to_string(repo.join("include/broken.h")).expect("read broken C++ header")
+        );
+
+        let err = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+            .expect_err("C++ parser errors must fail before compiler semantic extraction");
+        println!("AFTER C++ parse-error state: {err:?}");
+
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_DYNAMICJEPA_AST_PARSE_SYNTAX_ERROR"
+        );
+        assert_eq!(err.field_path, "dynamicjepa.action.ast_parse_status");
+    }
+
+    #[test]
     fn dynamicjepa_java_ast_recognizes_standard_test_files_and_annotations() {
         let surefire_source = "package com.acme;\n\nimport org.junit.jupiter.api.Test;\n\nclass CalculatorTests {\n    @Test\n    void adds() {\n        assertEquals(4, 2 + 2);\n    }\n}\n";
         println!(
@@ -19714,11 +19968,11 @@ mod tests {
         let surefire = java_semantic_for_source(
             "src/test/java/com/acme/CalculatorTests.java",
             surefire_source,
-            "assertEquals",
+            "void adds",
         );
         println!("AFTER java surefire semantic state: {:?}", surefire);
         assert_eq!(surefire.node_kind, "test");
-        assert_eq!(surefire.symbol_kind, "test");
+        assert_eq!(surefire.symbol_kind, "test_case");
         assert_eq!(surefire.symbol_name.as_deref(), Some("adds"));
 
         let nonstandard_source = "package com.acme;\n\nclass SmokeCheck {\n    @org.junit.jupiter.params.ParameterizedTest(name = \"case {0}\")\n    void computes() {\n        verifyReality();\n    }\n}\n";
@@ -19730,11 +19984,11 @@ mod tests {
         let annotated = java_semantic_for_source(
             "src/main/java/com/acme/SmokeCheck.java",
             nonstandard_source,
-            "verifyReality",
+            "void computes",
         );
         println!("AFTER java annotation semantic state: {:?}", annotated);
         assert_eq!(annotated.node_kind, "test");
-        assert_eq!(annotated.symbol_kind, "test");
+        assert_eq!(annotated.symbol_kind, "test_case");
         assert_eq!(annotated.symbol_name.as_deref(), Some("computes"));
 
         for path in [
@@ -19758,11 +20012,10 @@ mod tests {
     #[test]
     fn dynamicjepa_java_action_semantics_require_real_javac_or_record_checked_state() {
         let (_temp, repo) = init_real_git_repo();
-        write_text_checked(
-            &repo.join("src/main/java/com/acme/Calc.java"),
-            "package com.acme;\n\npublic class Calc {\n    public int inc(int x) {\n        return x + 1;\n    }\n}\n",
-        )
-        .expect("java source write");
+        let java_source = "package com.acme;\n\npublic class Calc {\n    public int inc(int x) {\n        return x + 1;\n    }\n}\n";
+        let expected_after_source = "package com.acme;\n\npublic class Calc {\n    public int inc(int x) {\n        return x + 2;\n    }\n}\n";
+        write_text_checked(&repo.join("src/main/java/com/acme/Calc.java"), java_source)
+            .expect("java source write");
         let args = json!({
             "edits": [{
                 "path": "src/main/java/com/acme/Calc.java",
@@ -19783,6 +20036,22 @@ mod tests {
                 inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
                     .expect("java compiler-backed action semantics");
             println!("AFTER java action checked state: {action}");
+            let evidence_path = repo.join("java-action-fsv.json");
+            write_json_checked(
+                &evidence_path,
+                &json!({
+                    "source_of_truth": file_sot(&evidence_path),
+                    "action": action,
+                    "repo_source_readback": fs::read_to_string(repo.join("src/main/java/com/acme/Calc.java"))
+                        .expect("read Java repo source after"),
+                }),
+            )
+            .expect("write Java action FSV evidence");
+            let readback: Value = read_json(&evidence_path).expect("read Java action FSV evidence");
+            println!(
+                "READBACK java action checked state: {}",
+                serde_json::to_string_pretty(&readback).expect("serialize Java action readback")
+            );
             assert_eq!(action["ast_language"], "java");
             assert_eq!(action["ast_parse_status"], "parsed");
             assert_eq!(action["ast_node_kind"], "method");
@@ -19792,7 +20061,7 @@ mod tests {
         } else {
             let err = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
                 .expect_err("missing javac must fail closed for Java action semantics");
-            println!("AFTER java action missing-toolchain state: {err}");
+            println!("AFTER java action missing-toolchain state: {err:?}");
             assert_eq!(
                 err.error_code,
                 "RUST_REALITY_DYNAMICJEPA_JAVA_TOOLCHAIN_MISSING"
@@ -19800,6 +20069,28 @@ mod tests {
             assert_eq!(
                 err.field_path,
                 "dynamicjepa.action.compiler_lsp.java.toolchain"
+            );
+            let source_of_truth = err
+                .source_of_truth
+                .as_deref()
+                .expect("Java missing-toolchain error must name source-of-truth file");
+            let snapshot_path = source_of_truth
+                .strip_prefix("file:")
+                .map(PathBuf::from)
+                .expect("Java missing-toolchain source-of-truth must be a local file");
+            let snapshot_readback =
+                fs::read_to_string(&snapshot_path).expect("read Java snapshot source-of-truth");
+            println!(
+                "READBACK java missing-toolchain source-of-truth: path={} source={}",
+                snapshot_path.display(),
+                snapshot_readback
+            );
+            assert_eq!(snapshot_readback, expected_after_source);
+            assert_eq!(
+                fs::read_to_string(repo.join("src/main/java/com/acme/Calc.java"))
+                    .expect("read Java repo source after failed action"),
+                java_source,
+                "candidate compiler snapshot must not mutate the source repo"
             );
         }
     }

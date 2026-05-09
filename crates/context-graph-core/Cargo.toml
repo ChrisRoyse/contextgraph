@@ -29,8 +29,8 @@ sha2 = "0.10"
 
 # tree-sitter for AST-based code chunking (E7 Fine-Tuning Plan Phase 1)
 # Uses cAST methodology: divide-and-combine with ~500 char target chunks
-# Using 0.23 versions for ABI compatibility
-tree-sitter = "0.23"
+# Runtime 0.26 accepts newer grammar ABI versions such as C# language ABI 15.
+tree-sitter = "0.26"
 tree-sitter-rust = "0.23"
 
 # Real HNSW implementation - NO FALLBACKS
