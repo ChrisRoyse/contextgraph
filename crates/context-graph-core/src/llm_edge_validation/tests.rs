@@ -14,7 +14,7 @@ fn sample_validation(verdict: LLMVerdict) -> LLMEdgeValidation {
         confidence: 0.87,
         rationale: "LLM determined the link is direct cause-effect.".into(),
         auto_derived_weight: 0.55,
-        validator_version: "Hermes-2-Pro-Mistral-7B-Q5_K_M@2026-04-14".into(),
+        validator_version: "external-validator@2026-04-14".into(),
         prompt_hash: [0xABu8; 32],
     }
 }

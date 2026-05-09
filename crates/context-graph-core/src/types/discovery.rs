@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 
 /// Result of a single discovery cycle (shared between causal and graph agents).
 ///
-/// Both `CausalDiscoveryService` and `GraphDiscoveryService` produce this
+/// Discovery and graph analysis services produce this
 /// identical result type from their `run_discovery_cycle()` methods.
 #[derive(Debug, Clone)]
 pub struct DiscoveryCycleResult {

@@ -525,7 +525,9 @@ fn apply_line_window_edit_direct(
     let diff_path = tool_dir.join("project-diff-after-edit.patch");
     write_text_checked(
         &diff_path,
-        diff.get("stdout").and_then(Value::as_str).unwrap_or_default(),
+        diff.get("stdout")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
     )?;
     let file_readbacks = vec![json!({
         "path": path,
@@ -649,8 +651,10 @@ fn verify_project_state_direct(
     let rustfmt = run_governed_command_direct(project_root, &verify_dir, rustfmt_command, 120)?;
     let cargo_check = run_governed_command_direct(project_root, &verify_dir, check_command, 900)?;
     let cargo_test = run_governed_command_direct(project_root, &verify_dir, test_command, 1200)?;
-    let git_status = run_governed_command_direct(project_root, &verify_dir, "git status --short", 120)?;
-    let git_diff_stat = run_governed_command_direct(project_root, &verify_dir, "git diff --stat", 120)?;
+    let git_status =
+        run_governed_command_direct(project_root, &verify_dir, "git status --short", 120)?;
+    let git_diff_stat =
+        run_governed_command_direct(project_root, &verify_dir, "git diff --stat", 120)?;
     let status = if command_exit_code(&rustfmt) == Some(0)
         && command_exit_code(&cargo_check) == Some(0)
         && command_exit_code(&cargo_test) == Some(0)
@@ -720,10 +724,18 @@ fn validate_project_relative_path(path: &str, field_path: &str) -> Result<String
     Ok(path.to_string())
 }
 
-fn ensure_existing_project_file(project_root: &Path, full_path: &Path, field_path: &str) -> Result<()> {
-    let root = project_root
-        .canonicalize()
-        .map_err(|err| fs_error("CCREALITY_HARNESS_PROJECT_ROOT_CANONICALIZE_FAILED", project_root, err))?;
+fn ensure_existing_project_file(
+    project_root: &Path,
+    full_path: &Path,
+    field_path: &str,
+) -> Result<()> {
+    let root = project_root.canonicalize().map_err(|err| {
+        fs_error(
+            "CCREALITY_HARNESS_PROJECT_ROOT_CANONICALIZE_FAILED",
+            project_root,
+            err,
+        )
+    })?;
     let parent = full_path
         .parent()
         .ok_or_else(|| {
@@ -737,7 +749,13 @@ fn ensure_existing_project_file(project_root: &Path, full_path: &Path, field_pat
             )
         })?
         .canonicalize()
-        .map_err(|err| fs_error("CCREALITY_HARNESS_PROJECT_PATH_CANONICALIZE_FAILED", full_path, err))?;
+        .map_err(|err| {
+            fs_error(
+                "CCREALITY_HARNESS_PROJECT_PATH_CANONICALIZE_FAILED",
+                full_path,
+                err,
+            )
+        })?;
     if !parent.starts_with(&root) {
         return Err(CCRealityError::new(
             "CCREALITY_HARNESS_PROJECT_PATH_ESCAPES_ROOT",
@@ -932,14 +950,29 @@ fn run_cmd(command: &[String], cwd: &Path, timeout_secs: u64) -> Result<Value> {
         std::process::id(),
         unix_nanos()?
     ));
-    fs::create_dir_all(&output_dir)
-        .map_err(|err| fs_error("CCREALITY_HARNESS_PROCESS_OUTPUT_DIR_CREATE_FAILED", &output_dir, err))?;
+    fs::create_dir_all(&output_dir).map_err(|err| {
+        fs_error(
+            "CCREALITY_HARNESS_PROCESS_OUTPUT_DIR_CREATE_FAILED",
+            &output_dir,
+            err,
+        )
+    })?;
     let stdout_path = output_dir.join("stdout");
     let stderr_path = output_dir.join("stderr");
-    let stdout_file = fs::File::create(&stdout_path)
-        .map_err(|err| fs_error("CCREALITY_HARNESS_PROCESS_STDOUT_CREATE_FAILED", &stdout_path, err))?;
-    let stderr_file = fs::File::create(&stderr_path)
-        .map_err(|err| fs_error("CCREALITY_HARNESS_PROCESS_STDERR_CREATE_FAILED", &stderr_path, err))?;
+    let stdout_file = fs::File::create(&stdout_path).map_err(|err| {
+        fs_error(
+            "CCREALITY_HARNESS_PROCESS_STDOUT_CREATE_FAILED",
+            &stdout_path,
+            err,
+        )
+    })?;
+    let stderr_file = fs::File::create(&stderr_path).map_err(|err| {
+        fs_error(
+            "CCREALITY_HARNESS_PROCESS_STDERR_CREATE_FAILED",
+            &stderr_path,
+            err,
+        )
+    })?;
     let mut process = Command::new(&command[0]);
     process
         .args(&command[1..])
@@ -1028,7 +1061,8 @@ fn run_cmd(command: &[String], cwd: &Path, timeout_secs: u64) -> Result<Value> {
 }
 
 fn command_exit_code(value: &Value) -> Option<i64> {
-    value.pointer("/process/exit_code")
+    value
+        .pointer("/process/exit_code")
         .or_else(|| value.get("exit_code"))
         .and_then(Value::as_i64)
 }

@@ -77,15 +77,6 @@ impl Handlers {
             }
         };
 
-        // E5 causal model health: report whether LoRA trained weights are loaded.
-        // Without trained weights, the causal gate is non-functional.
-        #[cfg(feature = "llm")]
-        let e5_lora_loaded = self
-            .causal_model
-            .as_ref()
-            .map(|m| m.has_trained_weights())
-            .unwrap_or(false);
-        #[cfg(not(feature = "llm"))]
         let e5_lora_loaded = false;
 
         self.tool_result(

@@ -109,24 +109,6 @@ impl Handlers {
             .unwrap_or(false);
         let dynamicjepa = dynamicjepa_runtime_state(store)?;
 
-        #[cfg(feature = "llm")]
-        let llm_loaded = self
-            .causal_discovery_llm
-            .as_ref()
-            .map(|llm| llm.is_loaded())
-            .unwrap_or(false);
-        #[cfg(not(feature = "llm"))]
-        let llm_loaded = false;
-
-        #[cfg(feature = "llm")]
-        let e5_lora_loaded = self
-            .causal_model
-            .as_ref()
-            .map(|m| m.has_trained_weights())
-            .unwrap_or(false);
-        #[cfg(not(feature = "llm"))]
-        let e5_lora_loaded = false;
-
         Ok(json!({
             "storage": {
                 "backend": self.teleological_store.backend_type().to_string(),
@@ -157,9 +139,9 @@ impl Handlers {
                 "learnerAudit": store.count_learner_audit_entries().await.map_err(|e| format!("count_learner_audit_entries failed: {e}"))?
             },
             "models": {
-                "llmFeatureCompiled": cfg!(feature = "llm"),
-                "causalDiscoveryLlmLoaded": llm_loaded,
-                "e5CausalLoraLoaded": e5_lora_loaded,
+                "localDiscoveryRetired": true,
+                "causalDiscoveryLoaded": false,
+                "e5CausalLoraLoaded": false,
                 "codeStoreAvailable": self.code_store.is_some(),
                 "codeEmbeddingProviderAvailable": self.code_embedding_provider.is_some(),
                 "edgeRepositoryAvailable": self.edge_repository.is_some(),
@@ -205,8 +187,7 @@ fn tool_groups() -> Value {
         {"group": "provenance_curation", "tools": ["merge_concepts", "forget_concept", "boost_importance", "get_audit_trail", "get_merge_history", "get_provenance_chain"]},
         {"group": "learner_state_utl", "tools": ["register_learner", "record_session_observation", "compute_delta_s", "compute_delta_c", "compute_delta_e", "compute_L", "get_learner_M", "next_review_for_trace", "list_learner_embedders", "preflight_learner_assets", "count_learner_state", "get_learner_state", "record_learner_k_sleep", "record_learner_retrieval", "upsert_goal_centroid", "get_goal_distance", "compile_learner_constellation", "resolve_learner_retrieval_policy"]},
         {"group": "learning_events", "tools": ["record_learning_event", "record_graph_learning_event", "list_learning_events", "get_learning_event", "count_learning_events", "list_learning_signal_embedders", "compute_learning_signals", "embed_learning_event_signals", "estimate_learning_outcome", "resolve_graph_learning_policy", "export_learner_training_dataset", "list_learner_training_datasets", "get_learner_training_dataset", "count_learner_training_datasets"]},
-        {"group": "training_factories", "tools": ["export_training_corpus", "list_training_records", "get_training_record", "count_training_records", "compile_constellation", "list_constellations", "get_constellation", "score_against_constellation", "derive_constellation", "delete_constellation", "mine_contrastive_pairs", "list_contrastive_pairs", "get_contrastive_pair", "count_contrastive_pairs", "export_typed_edges_corpus", "derive_anomalies_from_edges", "validate_low_confidence_edges", "list_typed_edge_records"]},
-        {"group": "llm_gated", "tools": ["trigger_causal_discovery", "get_causal_discovery_status", "discover_graph_relationships", "validate_graph_link", "validate_low_confidence_edges"]},
+        {"group": "training_factories", "tools": ["export_training_corpus", "list_training_records", "get_training_record", "count_training_records", "compile_constellation", "list_constellations", "get_constellation", "score_against_constellation", "derive_constellation", "delete_constellation", "mine_contrastive_pairs", "list_contrastive_pairs", "get_contrastive_pair", "count_contrastive_pairs", "export_typed_edges_corpus", "derive_anomalies_from_edges", "list_typed_edge_records"]},
         {"group": "dynamicjepa", "tools": dynamicjepa_tool_names()},
         {"group": "daemon_files_maintenance", "tools": ["daemon_status", "list_watched_files", "get_file_watcher_stats", "delete_file_content", "reconcile_files", "repair_causal_relationships"]}
     ])
@@ -221,7 +202,7 @@ fn content_embedders() -> Value {
         {"slot": "E5", "name": "causal_asymmetric", "role": "cause/effect direction", "primaryTools": ["search_causes", "search_effects", "get_causal_chain", "search_causal_relationships"]},
         {"slot": "E6", "name": "keyword_sparse", "role": "lexical sparse recall", "primaryTools": ["search_by_keywords", "search_graph"]},
         {"slot": "E7", "name": "code_shape", "role": "code intent and structure", "primaryTools": ["search_code"]},
-        {"slot": "E8", "name": "graph_relational", "role": "typed graph relation direction", "primaryTools": ["search_connections", "get_graph_path", "discover_graph_relationships"]},
+        {"slot": "E8", "name": "graph_relational", "role": "typed graph relation direction", "primaryTools": ["search_connections", "get_graph_path"]},
         {"slot": "E9", "name": "hdc_robust", "role": "typo and corruption robustness", "primaryTools": ["search_robust", "search_cross_embedder_anomalies"]},
         {"slot": "E10", "name": "paraphrase_multimodal", "role": "paraphrase agreement", "primaryTools": ["compare_embedder_views", "search_cross_embedder_anomalies"]},
         {"slot": "E11", "name": "entity_transe", "role": "entity relationship inference", "primaryTools": ["extract_entities", "search_by_entities", "infer_relationship", "find_related_entities", "get_entity_graph"]},
@@ -252,10 +233,9 @@ fn capability_records() -> Value {
         {"id": "graph_learning_policy", "status": "available_when_graph_edges_and_graph_learning_events_exist", "tools": ["record_graph_learning_event", "resolve_graph_learning_policy", "get_unified_neighbors"], "sourceOfTruth": ["embedder_edges", "typed_edges", "learning_events"]},
         {"id": "constellation_alignment", "status": "available_when_memory_corpus_exists", "tools": ["compile_constellation", "derive_constellation", "score_against_constellation", "compile_learner_constellation"], "sourceOfTruth": ["constellations", "constellation_by_selector", "learner_constellations"]},
         {"id": "contrastive_anomaly_curriculum", "status": "available_when_edges_or_memory_exist", "tools": ["mine_contrastive_pairs", "derive_anomalies_from_edges", "list_contrastive_pairs", "count_contrastive_pairs"], "sourceOfTruth": ["contrastive_pairs", "contrastive_by_kind", "contrastive_by_anchor", "typed_edge_records"]},
-        {"id": "typed_edge_training", "status": "available_when_graph_edges_exist", "tools": ["export_typed_edges_corpus", "list_typed_edge_records", "validate_low_confidence_edges"], "sourceOfTruth": ["typed_edge_records", "typed_edge_validations"]},
+        {"id": "typed_edge_training", "status": "available_when_graph_edges_exist", "tools": ["export_typed_edges_corpus", "list_typed_edge_records"], "sourceOfTruth": ["typed_edge_records"]},
         {"id": "dynamicjepa_world_modeling", "status": "available", "tools": dynamicjepa_tool_names(), "sourceOfTruth": DJ_CF_NAMES},
         {"id": "provenance_audit", "status": "available", "tools": ["get_audit_trail", "get_merge_history", "get_provenance_chain"], "sourceOfTruth": ["audit_log", "audit_by_target", "merge_history", "embedding_registry"]},
-        {"id": "llm_graph_causal_discovery", "status": "llm_gated", "tools": ["trigger_causal_discovery", "discover_graph_relationships", "validate_graph_link", "validate_low_confidence_edges"], "sourceOfTruth": ["causal_relationships", "causal_by_source", "typed_edge_validations"]}
     ])
 }
 

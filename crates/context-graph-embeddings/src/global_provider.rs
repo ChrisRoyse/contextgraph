@@ -354,7 +354,7 @@ pub fn get_warm_causal_model() -> EmbeddingResult<Arc<CausalModel>> {
 
 /// Get the GraphModel from the global warm provider.
 ///
-/// This provides direct access to the E8 GraphModel for use by GraphDiscoveryService.
+/// This provides direct access to the E8 GraphModel for deterministic graph activation.
 /// The model is already loaded and ready for use.
 ///
 /// # Returns
@@ -366,7 +366,7 @@ pub fn get_warm_causal_model() -> EmbeddingResult<Arc<CausalModel>> {
 ///
 /// ```rust,ignore
 /// let graph_model = get_warm_graph_model()?;
-/// let service = GraphDiscoveryService::with_models(llm, graph_model, config);
+/// let graph_model = get_warm_graph_model()?;
 /// ```
 pub fn get_warm_graph_model() -> EmbeddingResult<Arc<GraphModel>> {
     let slot = GLOBAL_WARM_PROVIDER.get().ok_or_else(|| EmbeddingError::InternalError {

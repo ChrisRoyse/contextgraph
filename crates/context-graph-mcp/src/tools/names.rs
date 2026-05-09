@@ -242,16 +242,13 @@ pub const GET_CONTRASTIVE_PAIR: &str = "get_contrastive_pair";
 /// Count stored contrastive pairs, optionally filtered by anomaly kind.
 pub const COUNT_CONTRASTIVE_PAIRS: &str = "count_contrastive_pairs";
 
-// ========== TYPED-EDGE TRAINING TOOLS (Phase 4 — F1/F2/F4) ==========
+// ========== TYPED-EDGE TRAINING TOOLS (Phase 4 — F1/F2) ==========
 /// Export typed edges as `TypedEdgeTrainingRecord`s persisted to
 /// `CF_TYPED_EDGE_RECORDS`.
 pub const EXPORT_TYPED_EDGES_CORPUS: &str = "export_typed_edges_corpus";
 /// Derive anomaly pairs directly from typed-edge classifications and persist
 /// them to `CF_CONTRASTIVE_PAIRS` (F2).
 pub const DERIVE_ANOMALIES_FROM_EDGES: &str = "derive_anomalies_from_edges";
-/// Run LLM validation on typed edges whose auto-derived weight is below the
-/// configured ceiling and persist verdicts to `CF_TYPED_EDGE_VALIDATIONS` (F4).
-pub const VALIDATE_LOW_CONFIDENCE_EDGES: &str = "validate_low_confidence_edges";
 /// List composite keys (`source`, `target`, `edge_type`) currently stored in
 /// `CF_TYPED_EDGE_RECORDS` with optional full-record hydration.
 pub const LIST_TYPED_EDGE_RECORDS: &str = "list_typed_edge_records";

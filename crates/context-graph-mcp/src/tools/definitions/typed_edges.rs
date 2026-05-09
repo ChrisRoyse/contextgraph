@@ -1,15 +1,12 @@
 //! Typed-edge training-data tool definitions (Phase 4).
 //!
-//! Four MCP tool schemas backing the typed-edges training-data factory:
+//! Three MCP tool schemas backing the typed-edges training-data factory:
 //! - `export_typed_edges_corpus` — emit a `TypedEdgeTrainingRecord` per typed
 //!   edge into `CF_TYPED_EDGE_RECORDS` with optional content / source_metadata
 //!   / mechanism_type / LLM-validation joins.
 //! - `derive_anomalies_from_edges` — classify typed edges into anomaly kinds
 //!   and persist matching pairs into `CF_CONTRASTIVE_PAIRS` (reuses the
 //!   contrastive-pair write path).
-//! - `validate_low_confidence_edges` — LLM-gated: run the graph-agent on
-//!   typed edges whose auto-derived weight is below a ceiling and persist
-//!   verdicts into `CF_TYPED_EDGE_VALIDATIONS`.
 //! - `list_typed_edge_records` — paginated read view of
 //!   `CF_TYPED_EDGE_RECORDS` with optional full-record hydration.
 //!
@@ -128,42 +125,6 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
-            "validate_low_confidence_edges",
-            "Run the graph-agent LLM on typed edges whose auto-derived weight \
-             is below weightCeiling and persist each verdict as an \
-             LLMEdgeValidation row in CF_TYPED_EDGE_VALIDATIONS. Skips edges \
-             that already have a validation row (idempotent). When the 'llm' \
-             feature is disabled or the graph-agent's LLM is not loaded, the \
-             tool returns { status: 'skipped' } with a reason. Optional \
-             sessionFilter restricts walked edges to those whose source's \
-             SourceMetadata.session_id matches.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "weightCeiling": {
-                        "type": "number",
-                        "minimum": 0.0,
-                        "maximum": 1.0,
-                        "default": 0.60,
-                        "description": "Only edges with weight < weightCeiling are eligible for LLM validation."
-                    },
-                    "maxEdges": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 10000,
-                        "default": 100,
-                        "description": "Hard cap on the number of edges validated in one run. Default 100 to bound LLM cost."
-                    },
-                    "sessionFilter": {
-                        "type": "string",
-                        "description": "Optional session id. When set, only edges whose source's SourceMetadata.session_id matches are validated."
-                    }
-                },
-                "required": [],
-                "additionalProperties": false
-            }),
-        ),
-        ToolDefinition::new(
             "list_typed_edge_records",
             "Paginated read view of CF_TYPED_EDGE_RECORDS. Returns composite \
              keys (source_memory_id, target_memory_id, edge_type, edge_type_name) \
@@ -203,13 +164,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn emits_four_tool_definitions() {
+    fn emits_three_tool_definitions() {
         let tools = definitions();
-        assert_eq!(tools.len(), 4);
+        assert_eq!(tools.len(), 3);
         let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"export_typed_edges_corpus"));
         assert!(names.contains(&"derive_anomalies_from_edges"));
-        assert!(names.contains(&"validate_low_confidence_edges"));
         assert!(names.contains(&"list_typed_edge_records"));
     }
 

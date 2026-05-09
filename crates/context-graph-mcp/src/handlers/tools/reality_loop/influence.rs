@@ -254,7 +254,7 @@ fn read_attempt_records(path: &Path) -> Result<BTreeMap<AttemptKey, AttemptRecor
             "CCREALITY_INFLUENCE_ATTEMPTS_MISSING",
             "attempts.jsonl is missing from the optimizer state directory",
             "attempts.path",
-            "run a real reality-loop attempt so the engine writes attempts.jsonl",
+            "record ME-JEPA outer-loop evidence so attempts.jsonl exists",
             json!({"path": path.display().to_string()}),
             Some(file_sot(path)),
         ));
@@ -314,7 +314,7 @@ fn read_attempt_records(path: &Path) -> Result<BTreeMap<AttemptKey, AttemptRecor
             "CCREALITY_INFLUENCE_ATTEMPTS_EMPTY",
             "attempts.jsonl contains no attempt rows",
             "attempts.rows",
-            "run a real reality-loop attempt before computing influence",
+            "record ME-JEPA outer-loop evidence before computing influence",
             json!({"path": path.display().to_string()}),
             Some(file_sot(path)),
         ));

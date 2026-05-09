@@ -328,7 +328,7 @@ fn test_6_2_embedding_hint_provenance_serde() {
 
     let provenance = EmbeddingHintProvenance {
         hint_applied: true,
-        llm_model: Some("Hermes-2-Pro".to_string()),
+        llm_model: Some("external-validator".to_string()),
         static_cause_markers: 3,
         static_effect_markers: 2,
         llm_cause_markers: 1,
@@ -344,7 +344,7 @@ fn test_6_2_embedding_hint_provenance_serde() {
     let json = serde_json::to_string(&provenance).unwrap();
     assert!(json.contains("\"hint_applied\":true"));
     assert!(json.contains("\"llm_cause_markers\":1"));
-    assert!(json.contains("\"Hermes-2-Pro\""));
+    assert!(json.contains("\"external-validator\""));
     println!("  Serialized: {} bytes", json.len());
 
     // Roundtrip

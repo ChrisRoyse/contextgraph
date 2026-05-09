@@ -71,7 +71,7 @@ fn test_scanner_finds_code_candidates() {
 
     // Two code memories with similar embeddings (should cluster)
     let mem_a = make_memory(
-        "use crate::graph_agent; impl GraphDiscoveryService for Agent { fn discover() {} }",
+        "use crate::graph_agent; impl GraphAnalysis for Agent { fn discover() {} }",
         unit_vec(1024, 1.0),
     );
     let mem_b = make_memory(

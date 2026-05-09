@@ -552,7 +552,7 @@ The ContextGraph harness already produces every signal ME-JEPA-Code needs — we
 - The shift log is durable on disk; the subscriber processes at its own pace. If it falls behind (long retraining pause, restart), the log queues; on resume, tail from last-processed offset.
 - Per-shift `observe()` writes are EWC++-regularized so out-of-order or duplicate shifts can't cause catastrophic forgetting.
 - Watermark in `CF_MEJEPA_SHIFT_WATERMARK` records last `shift_id` consumed; restart-safe.
-- If subscriber lag exceeds 500 unprocessed shifts for > 1 minute, raise an alert (pacing mismatch with the inner loop) — operator can pause inner loop or scale the subscriber.
+- If subscriber lag exceeds 500 unprocessed shifts for > 1 minute, raise an alert (pacing mismatch with the outer loop) — operator can pause outer-loop ingestion or scale the subscriber.
 
 ### 3.8.5 New MCP tools
 
@@ -1071,20 +1071,20 @@ context-graph mejepa-stress --entries 10000 --duration 7d
 #   quota_violations: 0 (after GC)
 ```
 
-### Phase 7 — Reality-loop integration (~5-7 days)
+### Phase 7 — Outer-loop ME-JEPA integration (~5-7 days)
 
 **Deliverables:**
 
-1. Wire the existing reality-loop's `mcp__cgreality__reality_run_attempt` to call `MeJepaCompiler::observe()` after every attempt, feeding the panel + oracle verdict back into the model.
-2. Wire the `cc-reality-harness-editor` agent (or its successor) to call `MeJepaCompiler::verify()` before suggesting a patch acceptance.
+1. Wire Claude Code's outer-loop evidence capture to call `MeJepaCompiler::observe()` after every candidate patch/test/oracle event, feeding the panel + source-of-truth verdict back into the model.
+2. Wire the `cc-reality-harness-editor` agent (or its successor) to call `MeJepaCompiler::verify()` before suggesting patch acceptance.
 3. New MCP tools: `mejepa_predict`, `mejepa_verify`, `mejepa_observe` (latter mostly internal; exposed for testing).
 4. Update CLAUDE.md §11 to reflect the integration.
 
 **Definition of done:**
 
-- End-to-end: 1 fresh SWE-bench task runs through the inner loop; attempt produces a patch; ME-JEPA's verify() agrees with the actual Docker oracle outcome at ≥85% on the holdout slice.
-- Observation pipeline back-feeds the corpus; one new corpus entry per attempt.
-- Witness chain spans both the reality-loop's existing chain and the new ME-JEPA chain (one shared chain, segregated by witness_type).
+- End-to-end: 1 fresh SWE-bench task runs through Claude Code's outer loop; a candidate patch is tested; ME-JEPA's `verify()` agrees with the actual Docker oracle outcome at ≥85% on the holdout slice.
+- Observation pipeline back-feeds the corpus; one new corpus entry per candidate patch/test/oracle event.
+- Witness chain spans outer-loop evidence and ME-JEPA predictions in one shared chain, segregated by `witness_type`.
 
 **Verification:**
 

@@ -516,7 +516,7 @@ async fn main() {
             confidence: 0.83 + 0.01 * i as f32,
             rationale: rationale.to_string(),
             auto_derived_weight: edge.weight(),
-            validator_version: "Hermes-2-Pro-Mistral-7B-Q5_K_M@2026-04-14-demo".into(),
+            validator_version: "external-validator@2026-04-14-demo".into(),
             prompt_hash: [i as u8; 32],
         };
         store

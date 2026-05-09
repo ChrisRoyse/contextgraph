@@ -11,7 +11,7 @@
 //!
 //! # Model Details
 //! - Model: Qodo/Qodo-Embed-1-1.5B
-//! - Architecture: Qwen2 (28 layers, 1536 hidden dim, GQA)
+//! - Architecture: extended-context code embedding model (28 layers, 1536 hidden dim, GQA)
 //! - Native Dimension: 1536D
 //! - Location: /home/cabdru/contextgraph/models/code-1536
 //!
@@ -671,7 +671,7 @@ async fn test_qodo_embed_comprehensive_verification() -> EmbeddingResult<()> {
     println!("║  Model:         Qodo-Embed-1-1.5B                            ║");
     println!("║  Path:          {}             ║", MODEL_PATH);
     println!("║  Dimension:     1536D (native, no projection)                ║");
-    println!("║  Architecture:  Qwen2 (28 layers, GQA, SwiGLU)               ║");
+    println!("║  Architecture:  Code embedder (28 layers, GQA, SwiGLU)       ║");
     println!("║  Status:        FULLY OPERATIONAL                            ║");
     println!("╚══════════════════════════════════════════════════════════════╝\n");
 

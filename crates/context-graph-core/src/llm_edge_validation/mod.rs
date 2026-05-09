@@ -44,7 +44,7 @@ pub struct LLMEdgeValidation {
     /// Edge weight at the moment of validation (so drift from the auto-derived
     /// embedder ensemble can be audited later).
     pub auto_derived_weight: f32,
-    /// Validator model tag, e.g. `"Hermes-2-Pro-Mistral-7B-Q5_K_M@2026-04-14"`.
+    /// Validator model tag or external validator version.
     pub validator_version: String,
     /// SHA-256 of the prompt actually sent to the LLM. Reproducibility hook —
     /// any change in the prompt template is detectable as a drift in this

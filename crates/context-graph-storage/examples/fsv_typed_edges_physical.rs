@@ -281,7 +281,7 @@ async fn main() {
         confidence: 0.87,
         rationale: "Both memories describe the same topic".into(),
         auto_derived_weight: e5.weight(),
-        validator_version: "Hermes-2-Pro-Mistral-7B@2026-04-14".into(),
+        validator_version: "external-validator@2026-04-14".into(),
         prompt_hash: [0x42; 32],
     };
     store

@@ -29,7 +29,6 @@
 mod dynamicjepa_tools;
 mod error_codes;
 mod initialize;
-mod mcp_protocol_e2e_test;
 mod search_periodic_test;
 mod tcp_transport_integration;
 mod tools_call;
@@ -44,10 +43,6 @@ use context_graph_core::monitoring::{LayerStatusProvider, StubLayerStatusProvide
 use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore};
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use context_graph_storage::{BackgroundGraphBuilder, EdgeRepository, GraphBuilderConfig};
-
-// GRAPH-AGENT: Import stub for testing (enabled via test-utils feature in dev-dependencies)
-#[cfg(feature = "llm")]
-use context_graph_graph_agent::create_stub_graph_discovery_service;
 
 use context_graph_embeddings::{
     get_warm_provider, initialize_global_warm_provider, is_warm_initialized, warm_status_message,
@@ -315,7 +310,6 @@ pub(crate) async fn create_test_handlers_with_real_embeddings() -> (Handlers, Te
 /// - Handlers instance for dispatching MCP requests
 /// - Direct reference to the store for FSV assertions (verify data was persisted)
 /// - TempDir that MUST be kept alive for the duration of the test
-#[cfg(feature = "llm")]
 pub(crate) async fn create_test_handlers_with_real_embeddings_store_access(
 ) -> (Handlers, Arc<dyn TeleologicalMemoryStore>, TempDir) {
     let tempdir = TempDir::new().expect("Failed to create temp directory for FSV test");
@@ -336,7 +330,6 @@ pub(crate) async fn create_test_handlers_with_real_embeddings_store_access(
 ///
 /// This uses the production non-LLM handler constructor because graph learning
 /// needs EdgeRepository/BackgroundGraphBuilder, not graph-agent LLM services.
-#[cfg(feature = "llm")]
 pub(crate) async fn create_test_handlers_with_graph_edges_store_access(
 ) -> (Handlers, Arc<dyn TeleologicalMemoryStore>, TempDir) {
     let tempdir = TempDir::new().expect("Failed to create temp directory for graph FSV test");
@@ -354,7 +347,6 @@ pub(crate) async fn create_test_handlers_with_graph_edges_store_access(
 async fn create_handlers_from_store(
     rocksdb_store: RocksDbTeleologicalStore,
 ) -> (Handlers, Arc<dyn TeleologicalMemoryStore>) {
-    #[cfg(not(feature = "llm"))]
     let db_arc = rocksdb_store.db_arc();
 
     let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(rocksdb_store);
@@ -364,22 +356,6 @@ async fn create_handlers_from_store(
     let multi_array_provider = get_warm_loaded_provider().await;
     let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
 
-    #[cfg(feature = "llm")]
-    let handlers = {
-        // GRAPH-AGENT: Create stub service with unloaded LLM.
-        // Calls to graph discovery methods will return Err(LlmNotInitialized).
-        let graph_discovery_service = create_stub_graph_discovery_service();
-
-        Handlers::with_defaults(
-            Arc::clone(&teleological_store),
-            multi_array_provider,
-            layer_status_provider,
-            graph_discovery_service,
-        )
-        .expect("Default cluster manager should always succeed in tests")
-    };
-
-    #[cfg(not(feature = "llm"))]
     let handlers = {
         let edge_repository = EdgeRepository::new(db_arc);
         let graph_builder = Arc::new(BackgroundGraphBuilder::new(
@@ -397,13 +373,12 @@ async fn create_handlers_from_store(
             graph_builder,
             Arc::new(context_graph_embeddings::provider::NoOpCausalHintProvider),
         )
-        .expect("Default cluster manager should always succeed in no-LLM tests")
+        .expect("Default cluster manager should always succeed in tests")
     };
 
     (handlers, teleological_store)
 }
 
-#[cfg(feature = "llm")]
 async fn create_handlers_from_store_with_graph_edges(
     rocksdb_store: RocksDbTeleologicalStore,
 ) -> (Handlers, Arc<dyn TeleologicalMemoryStore>) {

@@ -115,7 +115,7 @@ pub enum InstrumentSlot {
     EStaticAnalysis,
     /// `E_Runtime` — wall-clock / RSS / coverage / network signal aggregates. 256-d.
     ERuntime,
-    /// `E_Reasoning` — Qwen CoT / reflexion-trace encoder. 384-d.
+    /// `E_Reasoning` — reasoning/reflexion-trace encoder. 384-d.
     EReasoning,
     /// Scalar feature aggregates: BFS depth, blame age, churn, coverage Δ,
     /// repo-health metrics. 128-d. Per doc 09 §3.5.5.

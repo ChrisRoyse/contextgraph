@@ -39,9 +39,9 @@ use uuid::Uuid;
 ///
 /// ```ignore
 /// let provenance = LLMProvenance {
-///     model_name: "Hermes-2-Pro-Mistral-7B.Q5_K_M.gguf".to_string(),
-///     model_version: "Q5_K_M".to_string(),
-///     quantization: "Q5_K_M".to_string(),
+///     model_name: "external-validator".to_string(),
+///     model_version: "validator-version".to_string(),
+///     quantization: "none".to_string(),
 ///     temperature: 0.0,
 ///     max_tokens: 512,
 ///     prompt_template_hash: "a1b2c3...".to_string(),
@@ -52,7 +52,7 @@ use uuid::Uuid;
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LLMProvenance {
-    /// Model display name (e.g., "Hermes-2-Pro-Mistral-7B.Q5_K_M.gguf")
+    /// Model or validator display name.
     pub model_name: String,
 
     /// Version tag or file hash of the model

@@ -42,12 +42,12 @@ test ! -e "target/debug/reality-loop"
 test ! -e "target/release/reality-loop"
 log "PASS: reality-loop source, vendored llama.cpp, model pins, model directory, and stale target binaries are absent"
 
-if rg -n "llama-cpp-2|llama_cpp_2|vendor/llama-cpp-sys-2|reality_run_attempt|reality_run_smoke|reality_run_official_eval|reality_run_targeted_test|reality_recompile_reward" Cargo.toml Cargo.lock crates/context-graph-cli crates/context-graph-mcp/src/tools crates/context-graph-mcp/src/handlers/tools/dispatch.rs crates/context-graph-mcp/src/handlers/tools/reality_loop crates/context-graph-benchmark scripts/cc config --glob '!target/**' --glob '!scripts/cc/tests/mejepa_retirement_fsv.sh' >"${OUT}/retired-active-references.txt"; then
+if rg -n "llama-cpp-2|llama_cpp_2|vendor/llama-cpp-sys-2|reality_run_attempt|reality_run_smoke|reality_run_official_eval|reality_run_targeted_test|reality_recompile_reward|validate_low_confidence_edges" Cargo.toml Cargo.lock crates/context-graph-cli crates/context-graph-mcp/src/tools crates/context-graph-mcp/src/handlers/tools/dispatch.rs crates/context-graph-mcp/src/handlers/tools/reality_loop crates/context-graph-benchmark scripts/cc config .claude/agents --glob '!target/**' --glob '!scripts/cc/tests/mejepa_retirement_fsv.sh' >"${OUT}/retired-active-references.txt"; then
   log "FAIL: active build/tooling surface still references retired local LLM or runner symbols"
   cat "${OUT}/retired-active-references.txt" | tee -a "${OUT}/run.log"
   exit 1
 fi
-if rg -n "CausalDiscoveryLLM|GraphDiscoveryService|Hermes|GGUF|ollama" crates/context-graph-cli crates/context-graph-mcp/src/tools crates/context-graph-mcp/src/handlers/tools/reality_loop crates/context-graph-benchmark scripts/cc config --glob '!target/**' --glob '!scripts/cc/tests/mejepa_retirement_fsv.sh' >"${OUT}/retired-runtime-references.txt"; then
+if rg -n "CausalDiscoveryLLM|GraphDiscoveryService|Hermes|Qwen|qwen|GGUF|ollama" crates/context-graph-cli crates/context-graph-mcp/src/tools crates/context-graph-mcp/src/handlers/tools/reality_loop crates/context-graph-benchmark scripts/cc config --glob '!target/**' --glob '!scripts/cc/tests/mejepa_retirement_fsv.sh' >"${OUT}/retired-runtime-references.txt"; then
   log "FAIL: active runtime/tooling surface still references retired local LLM runtime symbols"
   cat "${OUT}/retired-runtime-references.txt" | tee -a "${OUT}/run.log"
   exit 1

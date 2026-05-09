@@ -19,10 +19,6 @@ use context_graph_core::clustering::{ClusterError, MultiSpaceClusterManager};
 use context_graph_core::memory::{CodeEmbeddingProvider, CodeStorage};
 use context_graph_core::monitoring::LayerStatusProvider;
 use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore};
-#[cfg(feature = "llm")]
-use context_graph_embeddings::models::CausalModel;
-#[cfg(feature = "llm")]
-use context_graph_graph_agent::GraphDiscoveryService;
 use context_graph_storage::{BackgroundGraphBuilder, EdgeRepository};
 
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
@@ -83,19 +79,10 @@ pub struct Handlers {
     pub(in crate::handlers) graph_builder: Option<Arc<BackgroundGraphBuilder>>,
 
     // =========================================================================
-    // Graph Discovery Agent (LLM-based relationship discovery)
-    // =========================================================================
-    /// Graph discovery service for LLM-based relationship detection.
-    /// Only available when `llm` feature is enabled.
-    /// Uses shared CausalDiscoveryLLM (~6GB VRAM for Qwen2.5-3B).
-    #[cfg(feature = "llm")]
-    pub(in crate::handlers) graph_discovery_service: Option<Arc<GraphDiscoveryService>>,
-
-    // =========================================================================
     // Causal Hint Provider (CAUSAL-HINT Phase 5)
     // =========================================================================
     /// Causal hint provider for E5 embedding enhancement.
-    /// Optional - uses LLM to analyze content for causal nature during store_memory.
+    /// Optional - currently uses the no-op provider after local discovery retirement.
     /// CAUSAL-HINT Phase 5: Provides direction hints to E5 embedder.
     pub(in crate::handlers) causal_hint_provider:
         Option<Arc<dyn context_graph_embeddings::provider::CausalHintProvider>>,
@@ -107,21 +94,6 @@ pub struct Handlers {
     /// Session-scoped: cleared when the server restarts.
     /// Accessible by name from search_graph's weightProfile, get_unified_neighbors, etc.
     pub(in crate::handlers) custom_profiles: Arc<RwLock<HashMap<String, [f32; 14]>>>,
-
-    // =========================================================================
-    // Inline Causal Discovery (INLINE-CAUSAL)
-    // =========================================================================
-    /// Causal Discovery LLM for inline multi-relationship extraction during store_memory.
-    /// When present, extract_causal_relationships() is called on every store_memory content
-    /// to discover and persist CausalRelationship records inline with the 14-embedder pipeline.
-    #[cfg(feature = "llm")]
-    pub(in crate::handlers) causal_discovery_llm:
-        Option<Arc<context_graph_causal_agent::CausalDiscoveryLLM>>,
-
-    /// CausalModel (E5) for generating asymmetric cause/effect embeddings.
-    /// Used by inline causal extraction to embed each discovered relationship.
-    #[cfg(feature = "llm")]
-    pub(in crate::handlers) causal_model: Option<Arc<CausalModel>>,
 
     // =========================================================================
     // Daemon State (Multi-agent observability)
@@ -143,104 +115,10 @@ impl Handlers {
     /// # Errors
     ///
     /// Returns `ClusterError` if default cluster manager initialization fails.
-    #[cfg(feature = "llm")]
-    #[allow(dead_code)] // Used by tests and benchmarks, not binary main
-    pub fn with_defaults(
-        teleological_store: Arc<dyn TeleologicalMemoryStore>,
-        multi_array_provider: Arc<dyn MultiArrayEmbeddingProvider>,
-        layer_status_provider: Arc<dyn LayerStatusProvider>,
-        graph_discovery_service: Arc<GraphDiscoveryService>,
-    ) -> Result<Self, ClusterError> {
-        info!("Creating Handlers with_defaults");
-
-        let cluster_manager = MultiSpaceClusterManager::with_defaults()?;
-
-        Ok(Self {
-            teleological_store,
-            multi_array_provider,
-            layer_status_provider,
-            cluster_manager: Arc::new(RwLock::new(cluster_manager)),
-            session_sequence_counter: Arc::new(AtomicU64::new(0)),
-            current_session_id: Arc::new(RwLock::new(None)),
-            code_store: None,
-            code_embedding_provider: None,
-            edge_repository: None,
-            graph_builder: None,
-            graph_discovery_service: Some(graph_discovery_service),
-            causal_hint_provider: Some(Arc::new(
-                context_graph_embeddings::provider::NoOpCausalHintProvider,
-            )),
-            custom_profiles: Arc::new(RwLock::new(HashMap::new())),
-            causal_discovery_llm: None,
-            causal_model: None,
-            daemon_state: None,
-            auto_consolidation_status: Arc::new(TokioRwLock::new(
-                crate::handlers::tools::consolidation::AutoConsolidationStatus::default(),
-            )),
-        })
-    }
-
-    /// Create handlers with graph discovery and inline causal extraction enabled.
+    /// Create handlers after local discovery actor retirement.
     ///
-    /// GRAPH-AGENT: Constructor for graph linking with LLM-based relationship discovery.
-    /// INLINE-CAUSAL: Also enables inline causal relationship extraction during store_memory.
-    ///
-    /// # Arguments
-    /// * `teleological_store` - Store for TeleologicalFingerprint
-    /// * `multi_array_provider` - 13-embedding generator
-    /// * `layer_status_provider` - Provider for layer status information
-    /// * `edge_repository` - Edge repository for K-NN graph edges and typed edges
-    /// * `graph_builder` - Background graph builder for K-NN construction
-    /// * `graph_discovery_service` - REQUIRED LLM-based graph relationship discovery
-    /// * `causal_hint_provider` - REQUIRED LLM-based causal hint provider for E5 enhancement
-    /// * `causal_discovery_llm` - Shared LLM for inline multi-relationship extraction
-    /// * `causal_model` - E5 CausalModel for asymmetric cause/effect embeddings
-    #[cfg(feature = "llm")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_graph_discovery(
-        teleological_store: Arc<dyn TeleologicalMemoryStore>,
-        multi_array_provider: Arc<dyn MultiArrayEmbeddingProvider>,
-        layer_status_provider: Arc<dyn LayerStatusProvider>,
-        edge_repository: EdgeRepository,
-        graph_builder: Arc<BackgroundGraphBuilder>,
-        graph_discovery_service: Arc<GraphDiscoveryService>,
-        causal_hint_provider: Arc<dyn context_graph_embeddings::provider::CausalHintProvider>,
-        causal_discovery_llm: Arc<context_graph_causal_agent::CausalDiscoveryLLM>,
-        causal_model: Arc<CausalModel>,
-    ) -> Result<Self, ClusterError> {
-        info!("Creating Handlers with graph discovery, causal hints, and inline causal extraction - NO FALLBACKS");
-
-        let cluster_manager = MultiSpaceClusterManager::with_defaults()?;
-
-        Ok(Self {
-            teleological_store,
-            multi_array_provider,
-            layer_status_provider,
-            cluster_manager: Arc::new(RwLock::new(cluster_manager)),
-            session_sequence_counter: Arc::new(AtomicU64::new(0)),
-            current_session_id: Arc::new(RwLock::new(None)),
-            code_store: None,
-            code_embedding_provider: None,
-            edge_repository: Some(edge_repository),
-            graph_builder: Some(graph_builder),
-            graph_discovery_service: Some(graph_discovery_service),
-            causal_hint_provider: Some(causal_hint_provider),
-            custom_profiles: Arc::new(RwLock::new(HashMap::new())),
-            causal_discovery_llm: Some(causal_discovery_llm),
-            causal_model: Some(causal_model),
-            daemon_state: None,
-            auto_consolidation_status: Arc::new(TokioRwLock::new(
-                crate::handlers::tools::consolidation::AutoConsolidationStatus::default(),
-            )),
-        })
-    }
-
-    /// Create handlers without LLM features.
-    ///
-    /// Used when LLM loading fails at runtime or when `llm` feature is disabled.
-    /// LLM-dependent tools (trigger_causal_discovery, discover_graph_relationships,
-    /// validate_graph_link) will return errors at call time.
-    /// All other 52 tools remain fully operational.
+    /// Graph linking remains deterministic. Causal hints use the injected provider,
+    /// which is currently the no-op provider from `context-graph-embeddings`.
     pub fn without_llm(
         teleological_store: Arc<dyn TeleologicalMemoryStore>,
         multi_array_provider: Arc<dyn MultiArrayEmbeddingProvider>,
@@ -264,14 +142,8 @@ impl Handlers {
             code_embedding_provider: None,
             edge_repository: Some(edge_repository),
             graph_builder: Some(graph_builder),
-            #[cfg(feature = "llm")]
-            graph_discovery_service: None,
             causal_hint_provider: Some(causal_hint_provider),
             custom_profiles: Arc::new(RwLock::new(HashMap::new())),
-            #[cfg(feature = "llm")]
-            causal_discovery_llm: None,
-            #[cfg(feature = "llm")]
-            causal_model: None,
             daemon_state: None,
             auto_consolidation_status: Arc::new(TokioRwLock::new(
                 crate::handlers::tools::consolidation::AutoConsolidationStatus::default(),
@@ -314,19 +186,6 @@ impl Handlers {
     /// The graph builder queues fingerprints on store_memory and builds K-NN edges in batches.
     pub fn graph_builder(&self) -> Option<&Arc<BackgroundGraphBuilder>> {
         self.graph_builder.as_ref()
-    }
-
-    // =========================================================================
-    // Graph Discovery Agent Accessors (GRAPH-AGENT)
-    // =========================================================================
-
-    /// Get the graph discovery service if LLM is loaded.
-    ///
-    /// Returns None when LLM failed to load at startup (graceful degradation).
-    /// LLM-dependent tools should return an error to the caller when this is None.
-    #[cfg(feature = "llm")]
-    pub fn graph_discovery_service(&self) -> Option<&Arc<GraphDiscoveryService>> {
-        self.graph_discovery_service.as_ref()
     }
 
     // =========================================================================

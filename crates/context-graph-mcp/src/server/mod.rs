@@ -48,8 +48,6 @@ pub enum TransportMode {
 use context_graph_core::config::Config;
 use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore};
 
-#[cfg(feature = "llm")]
-use context_graph_embeddings::{get_warm_causal_model, get_warm_graph_model};
 use context_graph_embeddings::{
     get_warm_provider, initialize_global_warm_provider, is_warm_initialized, warm_status_message,
     GpuConfig, ProductionMultiArrayProvider,
@@ -57,18 +55,9 @@ use context_graph_embeddings::{
 
 // REAL implementations - NO STUBS
 use crate::adapters::LazyMultiArrayProvider;
-#[cfg(feature = "llm")]
-use crate::adapters::LlmCausalHintProvider;
-#[cfg(feature = "llm")]
-use context_graph_embeddings::provider::CausalHintProvider;
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 // TASK-GRAPHLINK: EdgeRepository and BackgroundGraphBuilder for K-NN graph linking
 use context_graph_storage::{BackgroundGraphBuilder, EdgeRepository, GraphBuilderConfig};
-// GRAPH-AGENT: LLM-based relationship discovery (requires `llm` feature)
-#[cfg(feature = "llm")]
-use context_graph_causal_agent::CausalDiscoveryLLM;
-#[cfg(feature = "llm")]
-use context_graph_graph_agent::{GraphDiscoveryConfig, GraphDiscoveryService};
 
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
@@ -556,128 +545,14 @@ impl McpServer {
         );
 
         // ==========================================================================
-        // 3b. LLM Initialization (requires `llm` feature)
+        // 3b. Local model discovery retirement
         // ==========================================================================
-        // When `llm` feature is enabled (default): Load CausalDiscoveryLLM + GraphDiscoveryService
-        // When `llm` feature is disabled: Create Handlers without LLM (graph/causal tools unavailable)
-
-        #[cfg(feature = "llm")]
+        // The local discovery actor was retired on 2026-05-09. MCP always uses
+        // deterministic graph linking and a no-op causal hint provider here.
         let handlers = {
-            // GRAPH-AGENT: Try to initialize LLM for graph/causal discovery.
-            // If LLM fails to load (VRAM exhausted, model corrupted, driver issue),
-            // fall back gracefully to without_llm mode — 52 non-LLM tools still work.
-            let llm_result: Result<_> = async {
-                info!("GRAPH-AGENT: Initializing CausalDiscoveryLLM (Hermes-2-Pro-Mistral-7B)");
-                let llm = CausalDiscoveryLLM::new().map_err(|e| {
-                    anyhow::anyhow!("Failed to create CausalDiscoveryLLM: {}", e)
-                })?;
-
-                info!("Loading CausalDiscoveryLLM into VRAM (~6GB)...");
-                llm.load().await.map_err(|e| {
-                    anyhow::anyhow!("Failed to load CausalDiscoveryLLM: {}", e)
-                })?;
-                info!("CausalDiscoveryLLM loaded successfully (~6GB VRAM)");
-
-                let shared_llm = Arc::new(llm);
-
-                // MODEL-INJECTION: Get GraphModel from warm provider for E8 embeddings
-                let graph_model = {
-                    let max_wait = std::time::Duration::from_secs(180);
-                    let poll_interval = std::time::Duration::from_millis(500);
-                    let start = std::time::Instant::now();
-
-                    loop {
-                        match get_warm_graph_model() {
-                            Ok(model) => break model,
-                            Err(e) => {
-                                let elapsed = start.elapsed();
-                                if elapsed >= max_wait {
-                                    return Err(anyhow::anyhow!(
-                                        "Timed out waiting for GraphModel after {:.1}s: {}",
-                                        elapsed.as_secs_f64(), e
-                                    ));
-                                }
-                                if elapsed.as_millis() < 600 || elapsed.as_secs().is_multiple_of(10) {
-                                    info!(
-                                        "Waiting for warm provider to be ready ({:.1}s elapsed): {}",
-                                        elapsed.as_secs_f64(), e
-                                    );
-                                }
-                                tokio::time::sleep(poll_interval).await;
-                            }
-                        }
-                    }
-                };
-                info!("GraphModel obtained from warm provider - E8 embeddings ready");
-
-                let graph_discovery_config = GraphDiscoveryConfig::default();
-                let graph_discovery_service = Arc::new(GraphDiscoveryService::with_models(
-                    Arc::clone(&shared_llm),
-                    graph_model,
-                    graph_discovery_config,
-                ));
-
-                let causal_model = get_warm_causal_model().map_err(|e| {
-                    anyhow::anyhow!("Failed to get CausalModel: {}", e)
-                })?;
-                info!("CausalModel obtained from warm provider - E5 embeddings ready");
-
-                let causal_llm_for_inline = Arc::clone(&shared_llm);
-
-                info!("CAUSAL-HINT: Creating LlmCausalHintProvider (2s timeout for GPU inference)");
-                let causal_hint_provider: Arc<dyn CausalHintProvider> =
-                    Arc::new(LlmCausalHintProvider::new(
-                        shared_llm,
-                        LlmCausalHintProvider::DEFAULT_TIMEOUT_MS,
-                    ));
-
-                Ok((graph_discovery_service, causal_hint_provider, causal_llm_for_inline, causal_model))
-            }.await;
-
-            match llm_result {
-                Ok((
-                    graph_discovery_service,
-                    causal_hint_provider,
-                    causal_llm_for_inline,
-                    causal_model,
-                )) => {
-                    info!("Creating Handlers with graph discovery, causal hints, and inline causal extraction");
-                    Handlers::with_graph_discovery(
-                        Arc::clone(&teleological_store),
-                        lazy_provider,
-                        layer_status_provider,
-                        edge_repository,
-                        Arc::clone(&graph_builder),
-                        graph_discovery_service,
-                        causal_hint_provider,
-                        causal_llm_for_inline,
-                        causal_model,
-                    )?
-                }
-                Err(e) => {
-                    warn!(
-                        "LLM loading failed, falling back to non-LLM mode. \
-                         3 LLM tools (causal_discovery, graph_discovery, validate_graph_link) unavailable. \
-                         52 other tools still operational. Error: {}",
-                        e
-                    );
-                    warn!("NoOpCausalHintProvider active — E5 causal embeddings use marker-only detection (reduced quality).");
-                    Handlers::without_llm(
-                        Arc::clone(&teleological_store),
-                        lazy_provider,
-                        layer_status_provider,
-                        edge_repository,
-                        Arc::clone(&graph_builder),
-                        Arc::new(context_graph_embeddings::provider::NoOpCausalHintProvider),
-                    )?
-                }
-            }
-        };
-
-        #[cfg(not(feature = "llm"))]
-        let handlers = {
-            warn!("LLM feature disabled - E5 causal embeddings use marker-only detection (reduced quality). \
-                   Graph/causal discovery tools unavailable.");
+            warn!(
+                "Local discovery actor retired - E5 causal embeddings use marker-only detection."
+            );
             Handlers::without_llm(
                 Arc::clone(&teleological_store),
                 lazy_provider,

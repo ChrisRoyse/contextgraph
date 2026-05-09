@@ -140,7 +140,7 @@ impl ModelId {
     /// Returns the maximum input token count for this model.
     ///
     /// # Returns
-    /// - Code (Qodo-Embed): 32768 tokens (Qwen2's extended context)
+    /// - Code embedder: 32768 tokens (extended context)
     /// - Causal (nomic-embed): 512 tokens (capped from 8192 for causal use)
     /// - Multimodal (e5-base-v2): 512 tokens (BERT tokenizer)
     /// - Most others: 512 tokens
@@ -148,7 +148,7 @@ impl ModelId {
     #[must_use]
     pub const fn max_tokens(&self) -> usize {
         match self {
-            Self::Code => 32768,     // Qodo-Embed-1-1.5B (Qwen2) supports 32K context
+            Self::Code => 32768,     // Code embedder supports 32K context
             Self::Causal => 512,     // nomic-embed-text-v1.5 (capped from 8192)
             Self::Contextual => 512, // EMB-1 FIX: e5-base-v2 uses BERT tokenizer (512), not CLIP (77)
             Self::TemporalRecent
@@ -172,7 +172,7 @@ impl ModelId {
             Self::Semantic => TokenizerFamily::BertWordpiece, // e5 uses BERT tokenizer
             Self::Causal => TokenizerFamily::BertWordpiece,   // nomic-embed uses BERT tokenizer
             Self::Sparse => TokenizerFamily::BertWordpiece,   // SPLADE uses BERT
-            Self::Code => TokenizerFamily::BertWordpiece, // Qodo-Embed-1-1.5B uses Qwen2 BPE — mapped to BertWordpiece for enum simplicity (loads its own tokenizer)
+            Self::Code => TokenizerFamily::BertWordpiece, // Code embedder loads its own tokenizer; enum maps it to BertWordpiece for simplicity.
             Self::Graph => TokenizerFamily::BertWordpiece, // MiniLM uses BERT
             Self::Contextual => TokenizerFamily::BertWordpiece, // EMB-1 FIX: e5-base-v2 uses BERT, not CLIP
             Self::Entity => TokenizerFamily::BertWordpiece,     // all-MiniLM uses BERT

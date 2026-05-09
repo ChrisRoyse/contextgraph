@@ -62,7 +62,7 @@ candle-core = { workspace = true, optional = true }
 candle-nn = { workspace = true, optional = true }
 
 # HuggingFace tokenizers for BERT-based models
-# Version 0.22+ required for Qwen2 tokenizer.json format compatibility
+# Version 0.22+ required for modern tokenizer.json format compatibility
 tokenizers = { version = "0.22", optional = true }
 
 # SafeTensors for loading pre-trained weights (AP-007 compliant - no stub data)

@@ -495,7 +495,9 @@ pub fn verify_project_state(
         VerifyScope::Full => "cargo fmt --check",
     };
     let check_command = match scope {
-        VerifyScope::MejepaLoopOnly => "cargo check -p context-graph-cli --no-default-features --lib",
+        VerifyScope::MejepaLoopOnly => {
+            "cargo check -p context-graph-cli --no-default-features --lib"
+        }
         VerifyScope::Full => "cargo check -p context-graph-cli",
     };
     let test_command = match scope {

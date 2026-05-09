@@ -251,7 +251,7 @@ async fn active_attempts_path() -> Result<PathBuf> {
             "CCREALITY_REFLEXION_NO_ACTIVE_RUN",
             "no active run under the runtime root",
             "active_run",
-            "run reality-loop attempt or smoke before querying attempts",
+            "record ME-JEPA outer-loop evidence before querying attempts",
             json!({"runtime_root": runtime_root.display().to_string()}),
             Some(file_sot(&runtime_root)),
         )
@@ -268,7 +268,7 @@ fn read_attempt_rows(path: &Path) -> Result<Vec<Value>> {
             "CCREALITY_REFLEXION_ATTEMPTS_MISSING",
             "attempts.jsonl is missing from the optimizer state directory",
             "attempts.path",
-            "run a real reality-loop attempt so the engine writes attempts.jsonl",
+            "record ME-JEPA outer-loop evidence so attempts.jsonl exists",
             json!({"path": path.display().to_string()}),
             Some(file_sot(path)),
         ));

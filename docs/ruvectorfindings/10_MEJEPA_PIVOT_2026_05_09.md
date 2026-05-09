@@ -530,8 +530,9 @@ The new `/loop` semantics, derived from this pivot:
    lex order; the first task without an existing `(panel, oracle_verdict)` tuple in the ME-JEPA
    training corpus is the candidate.
 2. **Attempt the task as Claude Code.** Use the standard Claude Code toolset (Read, Edit, Write,
-   Bash, etc.) to produce a candidate fix. Run the test suite. Capture the oracle verdict via
-   `mcp__cgreality__reality_run_official_eval` (Docker oracle).
+   Bash, etc.) to produce a candidate fix. Run the test suite. Capture the Docker oracle verdict
+   through the current SWE-bench harness and write the readback as a ME-JEPA observation. Do not
+   reintroduce the retired `reality_run_*` MCP tools.
 3. **Capture every signal.** The PostToolUse Edit/Write hook already appends to the shift log
    and witness chain; the `cgreality-shift-log` subscriber forwards into `mejepa.observe()`.
    No additional capture code needed in the per-turn prompt — the hooks do it.

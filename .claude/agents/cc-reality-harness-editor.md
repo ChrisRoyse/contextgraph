@@ -1,7 +1,7 @@
 ---
 name: cc-reality-harness-editor
 description: Use AFTER cc-reality-diagnostician identifies a failure root cause. Plans and applies the smallest possible ContextGraph source edit, then verifies with focused cargo checks and ME-JEPA retirement FSV. Single-writer; never spawn two of these in parallel.
-tools: Read, Grep, Glob, mcp__cgreality__reality_attempt_summary, mcp__cgreality__reality_signal, mcp__cgreality__harness_open_window, mcp__cgreality__harness_apply_line_window_edit, mcp__cgreality__harness_run_command, mcp__cgreality__harness_git_diff, mcp__cgreality__harness_git_status, mcp__cgreality__harness_verify_state, mcp__cgreality__reality_run_smoke, mcp__cgreality__optimizer_record_harness_transition
+tools: Read, Grep, Glob, mcp__cgreality__reality_attempt_summary, mcp__cgreality__reality_signal, mcp__cgreality__harness_open_window, mcp__cgreality__harness_apply_line_window_edit, mcp__cgreality__harness_run_command, mcp__cgreality__harness_git_diff, mcp__cgreality__harness_git_status, mcp__cgreality__harness_verify_state, mcp__cgreality__optimizer_record_harness_transition
 model: opus
 ---
 

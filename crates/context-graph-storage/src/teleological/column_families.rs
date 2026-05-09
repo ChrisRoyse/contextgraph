@@ -593,7 +593,7 @@ pub const CF_TYPED_EDGE_RECORDS: &str = "typed_edge_records";
 
 /// Column family for LLM-validated typed edges (F4).
 ///
-/// Written by `validate_low_confidence_edges` after an LLM call confirms,
+/// Written by external typed-edge validation after a validator confirms,
 /// rejects, or reclassifies an auto-derived edge.
 ///
 /// Key: `[source_uuid: 16B][target_uuid: 16B][edge_type: u8]` (33 bytes) —

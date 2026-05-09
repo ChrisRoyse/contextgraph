@@ -100,7 +100,7 @@ pub struct LLMValidationSummary {
     pub confidence: f32,
     /// 1-3 sentence rationale from the grammar-constrained LLM output.
     pub rationale: String,
-    /// Validator tag (e.g. `"Hermes-2-Pro-Mistral-7B-Q5_K_M@2026-04-14"`).
+    /// Validator tag or external validator version.
     pub validator_version: String,
 }
 

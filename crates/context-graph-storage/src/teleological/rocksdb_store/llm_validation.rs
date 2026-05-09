@@ -202,7 +202,7 @@ pub fn decode_llm_edge_validation(bytes: &[u8]) -> CoreResult<LLMEdgeValidation>
         bytes,
         LLM_EDGE_VALIDATION_VERSION,
         "LLMEdgeValidation",
-        "re-run validate_low_confidence_edges",
+        "rerun typed-edge validation import",
     )
 }
 

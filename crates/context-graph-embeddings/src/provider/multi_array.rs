@@ -518,7 +518,7 @@ impl GraphDualEmbedderAdapter {
 
     /// Get the underlying GraphModel.
     ///
-    /// This method exposes the model for use by GraphDiscoveryService.
+    /// This method exposes the graph model for deterministic graph activation.
     fn model(&self) -> Arc<GraphModel> {
         Arc::clone(&self.model)
     }
@@ -969,7 +969,7 @@ impl ProductionMultiArrayProvider {
     // MODEL ACCESSOR METHODS
     // =========================================================================
     // These methods expose the underlying models for use by discovery services.
-    // Per Root Cause Fix Plan: GraphDiscoveryService and CausalDiscoveryService
+    // Per Root Cause Fix Plan: graph and causal activation services
     // need direct access to GraphModel and CausalModel for embedding operations.
 
     /// Get the underlying CausalModel for E5 embeddings.
@@ -988,7 +988,7 @@ impl ProductionMultiArrayProvider {
     /// Get the underlying GraphModel for E8 embeddings.
     ///
     /// This method exposes the GraphModel used internally by E8 embeddings
-    /// for use by GraphDiscoveryService. The model is already loaded and
+    /// for use by graph activation. The model is already loaded and
     /// ready for use.
     ///
     /// # Returns

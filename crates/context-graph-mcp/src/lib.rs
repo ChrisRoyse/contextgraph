@@ -11,7 +11,9 @@
 //! This library exposes the handlers and protocol types for integration testing.
 
 #[cfg(feature = "llm")]
-compile_error!("The MCP local LLM feature was retired on 2026-05-09. Use ME-JEPA evidence capture instead.");
+compile_error!(
+    "The MCP local LLM feature was retired on 2026-05-09. Use ME-JEPA evidence capture instead."
+);
 
 pub mod adapters;
 pub mod handlers;

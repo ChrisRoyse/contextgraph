@@ -6,7 +6,7 @@
 //! # Architecture
 //!
 //! ```text
-//! LLM (Hermes 2 Pro) ──> Training Pairs ──> DataLoader
+//! External validator ──> Training Pairs ──> DataLoader
 //!                                               │
 //!                                         ┌─────┴─────┐
 //!                                         │  Trainer   │

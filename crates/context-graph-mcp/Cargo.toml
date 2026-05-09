@@ -24,8 +24,6 @@ context-graph-storage = { path = "../context-graph-storage" }
 context-graph-witness = { path = "../context-graph-witness" }
 context-graph-solver = { path = "../context-graph-solver" }
 context-graph-cli = { path = "../context-graph-cli", default-features = false }
-context-graph-causal-agent = { path = "../context-graph-causal-agent" }
-context-graph-graph-agent = { path = "../context-graph-graph-agent" }
 
 # Async runtime
 tokio = { workspace = true }
@@ -76,9 +74,6 @@ tokio-test = "0.4"
 tempfile = "3.10"
 # Enable test-utils for stubs access in tests (AP-007 compliant)
 context-graph-core = { path = "../context-graph-core", features = ["test-utils"] }
-# Enable test-utils for graph-agent stubs in tests
-context-graph-graph-agent = { path = "../context-graph-graph-agent", features = ["test-utils"] }
-
 [features]
 # GPU-first architecture: CUDA is REQUIRED (RTX 5090 / Blackwell)
 # No fallback stubs - system fails fast if CUDA unavailable

@@ -16,7 +16,9 @@
 //! ```
 
 #[cfg(feature = "llm")]
-compile_error!("The local LLM causal backend was retired on 2026-05-09. Use ME-JEPA evidence capture instead.");
+compile_error!(
+    "The local LLM causal backend was retired on 2026-05-09. Use ME-JEPA evidence capture instead."
+);
 
 pub mod activator;
 pub mod error;
