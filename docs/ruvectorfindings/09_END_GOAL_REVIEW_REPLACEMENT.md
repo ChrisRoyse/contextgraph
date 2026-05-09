@@ -884,18 +884,19 @@ This section is the **direct hand-off**: an AI agent picks up here and executes 
 
 **Deliverables:**
 
-1. New crate `crates/context-graph-mejepa-corpus/` with `generate_swe_bench_mutation_corpus()` per Section 3.1. Status: crate exists; full generate CLI remains pending.
+1. New crate `crates/context-graph-mejepa-corpus/` with `generate_swe_bench_mutation_corpus()` per Section 3.1. Status: crate exists; `mejepa-corpus generate/verify/stats` CLI is shipped and Docker-FSVed on `sympy__sympy-20590` for `known_good` + `over_engineer`; the full 300-task x 8-category operational batch remains pending.
 2. Mutation engines for all 8 categories per Section 3.1, each in its own module. Status: shipped for Python source, fail-closed, parser-backed, byte-verified, and FSV-backed.
 3. Python train/calibration/holdout split helper with repo-atomic leakage checks. Status: shipped in `split.rs`; physical evidence is produced separately by `cargo run --release -p context-graph-mejepa-corpus --example split_fsv`.
-4. Docker oracle wrapper that runs each mutation against the official SWE-bench evaluator and persists `(mutated_patch, oracle_verdict)` tuples. Status: pending.
-5. RocksDB column families: `CF_MEJEPA_MUTATION_CORPUS`, `CF_MEJEPA_ORACLE_VERDICTS`. Status: pending after oracle schema lands.
+4. Docker oracle wrapper that runs each mutation against the official SWE-bench evaluator and persists `(mutated_patch, oracle_verdict)` tuples. Status: shipped for one-instance official SWE-bench Lite runs through `run_swebench_lite_oracle`; full batch execution remains pending.
+5. RocksDB column families: `CF_MEJEPA_MUTATION_CORPUS`, `CF_MEJEPA_ORACLE_VERDICTS`. Status: shipped; `verify` now compares patch hashes, exact verdict hashes, and CF counts against `index.json`.
 
 **Definition of done:**
 
 - `cargo run --release -p context-graph-mejepa-corpus -- generate --output ./data/mejepa-corpus` produces 2,400 entries across 300 tasks × 8 categories.
 - All entries verifiable: `cargo run --release -p context-graph-mejepa-corpus -- verify --corpus ./data/mejepa-corpus` re-runs the oracle on a 5% sample and confirms matching verdicts.
 - Stoer-Wagner mincut split (see Phase 1.4) produces train/calibration/holdout splits with no shared-task leakage.
-- Until the full generator and oracle wrapper land, the local Python mutation source-of-truth command is `cargo run --release -p context-graph-mejepa-corpus --example mejepa_corpus_fsv`; it must write `/tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json` and that file must show all mutation cases passing, expected py_compile outcomes, and explicit before/after boundary states. The split source-of-truth command is `cargo run --release -p context-graph-mejepa-corpus --example split_fsv`; it must write `/tmp/contextgraph-mejepa-corpus-fsv/split-evidence.json` and `/tmp/contextgraph-mejepa-corpus-fsv/split-assignments.json`, then re-read them and show zero cross-cut leakage weights.
+- Current batch-CLI FSV source of truth: `cargo run -p context-graph-mejepa-corpus --bin mejepa-corpus -- generate --output /tmp/contextgraph-mejepa-corpus-cli-fsv --instance-id sympy__sympy-20590 --category known_good --category over_engineer --run-id-prefix mejepaCliFsv`, followed by `verify` and `stats`. The evidence must show `index.complete=true`, `entries=2`, relative patch/store paths, `mutation_cf_count=2`, `verdict_cf_count=2`, and both SWE-bench aggregate reports resolved.
+- Until the full 300-task batch lands, the local Python mutation source-of-truth command is `cargo run --release -p context-graph-mejepa-corpus --example mejepa_corpus_fsv`; it must write `/tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json` and that file must show all mutation cases passing, expected py_compile outcomes, and explicit before/after boundary states. The split source-of-truth command is `cargo run --release -p context-graph-mejepa-corpus --example split_fsv`; it must write `/tmp/contextgraph-mejepa-corpus-fsv/split-evidence.json` and `/tmp/contextgraph-mejepa-corpus-fsv/split-assignments.json`, then re-read them and show zero cross-cut leakage weights.
 
 **Verification:**
 
@@ -912,11 +913,11 @@ context-graph mejepa-corpus stats --corpus ./data/mejepa-corpus
 
 **Deliverables:**
 
-1. New crate `crates/context-graph-mejepa-instruments/` with each `E_*` instrument as a module.
-2. Pre-trained encoders where applicable (E_Test, E_Problem, E_CommitMsg reuse `E1` from existing context-graph-embedding).
-3. New encoders (E_AST, E_CFG, E_DataFlow, E_TypeGraph, E_Trace, E_Diff, E_Witness, E_Oracle) as small networks trained against the mutation corpus' supervised signals.
-4. Tree-sitter integration for AST, CFG, DataFlow extraction.
-5. Pyright/mypy integration for type-graph extraction (Python tasks); rust-analyzer for Rust tasks.
+1. New crate `crates/context-graph-mejepa-instruments/` with each `E_*` instrument as a module. Status: shipped with all 15 panel slots represented by deterministic typed encoders.
+2. Pre-trained encoder replacements where applicable (E_Test, E_Problem, E_CommitMsg reuse `E1` from existing context-graph-embedding). Status: deferred as neural replacement; deterministic text encoders are shipped now.
+3. New encoders (E_AST, E_CFG, E_DataFlow, E_TypeGraph, E_Trace, E_Diff, E_Witness, E_Oracle) as small networks trained against the mutation corpus' supervised signals. Status: deterministic typed encoders shipped now; trained neural replacements remain Phase 3+ work.
+4. Tree-sitter integration for AST, CFG, DataFlow extraction. Status: Python tree-sitter integration shipped in `e_code.rs`; multi-language chunker integration remains deferred.
+5. Pyright/mypy integration for type-graph extraction (Python tasks); rust-analyzer for Rust tasks. Status: deferred; current `E_TypeGraph` is source-shape/type-hint deterministic encoding, not a Pyright/rust-analyzer evidence path.
 6. **Multi-language `ast_chunker` extension (per doc 14 §6 items 1-5).** Extend `crates/context-graph-core/src/memory/ast_chunker.rs` from Rust-only to all 11 wired tree-sitter languages (Rust, Python, JS, TS, Go, Java, C, C++, C#, Ruby, PHP). Reuse DynamicJEPA's per-language node classification (`crates/context-graph-cli/src/commands/dynamicjepa.rs`) so each language's function/class/method/module-decl detection is unified. Output: AST-perfect atomic chunks targeting ~500 non-whitespace characters per Qodo / cAST methodology, with `(language, entity_type, parent_chain, line_start, line_end, sha256, parse_diagnostics)` metadata. **All Phase 1 code-domain instruments (`E_AST`, `E_CFG`, `E_DataFlow`, `E_TypeGraph`, `E_Diff`, `E_Test`) consume these chunks**, not raw text. Effort: ~10 days as part of Phase 1 (per doc 14 §6).
 7. **Per-chunk-type embedder routing table (per doc 14 §4).** A static lookup mapping each `EntityType` to the embedder set most informative for that chunk type — function bodies → E7+E14, function signatures → E1+E10, class definitions → E11+E7, comments → E1+E10, test assertions → E5+E1, etc. Used by the panel materializer to route chunks through the 21-embedder ensemble correctly.
 

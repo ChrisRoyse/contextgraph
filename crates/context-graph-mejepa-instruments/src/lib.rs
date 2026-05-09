@@ -13,9 +13,11 @@
 //   - `e_witness::EWitnessInstrument` — verified witness-chain encoder.
 //   - `e_static_analysis::EStaticAnalysisInstrument` — linter/type/source
 //     signal encoder.
-//     The remaining 11 instruments are not silently zero-filled by this crate;
-//     callers must fill only slots backed by real source-of-truth inputs and
-//     use `PanelBuilder::require_slots` for phase-specific gates.
+//   - `e_code`, `e_text`, `e_trace`, `e_runtime`, `e_reasoning`, and
+//     `e_scalars` — deterministic typed encoders for the remaining panel
+//     slots. These are real source-of-truth encoders, not silent zero-fill
+//     placeholders; neural/embedder-backed replacements can ship later behind
+//     the same fail-closed trait contract.
 //
 // Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md`
 // — clean-room. No upstream code copied.

@@ -97,7 +97,7 @@ meaning_compression_ratio = 231 signals / 50 KB
 
 This is **orthogonal** to (and multiplicative with) the existing tier-compression primitive (`crates/context-graph-tier-compression` ✅ shipped — 8/7/5/3-bit groupwise quantization on f32 vectors). Tier compression compresses the *bytes* of the panel; meaning compression compresses the *raw input* into structured signals.
 
-**Implication for the Phase 6 disk-budget table** (in doc 09 §3.8 / sitrep `phase6.md`):
+**Implication for the Phase 6 disk-budget table** (in doc 09 §3.8 / `specs/implementation-plan.md`):
 
 | Compression layer | Compresses what | Ratio | Storage class |
 |---|---|---|---|
@@ -517,6 +517,5 @@ The end goal of doc 09 §1.3 — `predicted_oracle_pass > 0.95` with calibrated 
 - Pivot architecture: `10_MEJEPA_PIVOT_2026_05_09.md`
 - UTML v1.0 learning formula: `11_MEJEPA_LEARNING_FORMULA.md`
 - 21-embedder integration: `12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md`
-- Sitrep status: `sitrep/01_status_overview.md`
-- Implementation plans: `sitrep/04_implementation_plans/`
+- Specs/status: `specs/_README.md` and `specs/implementation-plan.md`
 - Source theory backbone: `docs2/UTL_v2_embodied.md` (UTML v1.0 — JEPA Edition)

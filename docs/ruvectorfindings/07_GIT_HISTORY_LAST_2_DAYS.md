@@ -1,6 +1,6 @@
 # 07 — Git History — Last 2 Days
 
-> **🔁 PIVOT 2026-05-09:** Historical snapshot of upstream RuVector at HEAD `ef5274c2`. Preserved unchanged. ME-JEPA-Code's path forward is in [`10_MEJEPA_PIVOT_2026_05_09.md`](./10_MEJEPA_PIVOT_2026_05_09.md), [`11_MEJEPA_LEARNING_FORMULA.md`](./11_MEJEPA_LEARNING_FORMULA.md), and [`sitrep/`](./sitrep/).
+> **🔁 PIVOT 2026-05-09:** Historical snapshot of upstream RuVector at HEAD `ef5274c2`. Preserved unchanged. ME-JEPA-Code's path forward is in [`10_MEJEPA_PIVOT_2026_05_09.md`](./10_MEJEPA_PIVOT_2026_05_09.md), [`11_MEJEPA_LEARNING_FORMULA.md`](./11_MEJEPA_LEARNING_FORMULA.md), and [`specs/implementation-plan.md`](./specs/implementation-plan.md). The legacy `sitrep/` tree was removed in commit `6f72a02e`.
 
 > **🔒 Reference-only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — we **do not track upstream**. The history snapshot at HEAD `ef5274c2` is the only state we'll ever look at; the "what to track going forward" section below is moot. The doc is preserved as historical record of what was active when the snapshot was read.
 

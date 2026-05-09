@@ -321,7 +321,7 @@ Per doc 12 §8 implementation roadmap:
 
 | Quarter | Deliverable | Capability unlocked |
 |---|---|---|
-| Q1 (current) | Memory decisions + docs 10-13 + sitrep updated | Operating contract clarified; UTML v1.0 + TCT/DDA + 105-signal capability locked in |
+| Q1 (current) | Memory decisions + docs 10-13 + specs updated | Operating contract clarified; UTML v1.0 + TCT/DDA + 105-signal capability locked in |
 | Q2 | Pairwise-MI audit + `mejepa_compute_panel`/`mejepa_compute_signal_set` MCP tools + cross-language Phase 0 corpus | DDA tightness measured; per-input panel + 105-signal vector callable from agents |
 | Q3 | Phase 1-3 instruments + predictor + constellation-aware training | ME-JEPA produces calibrated predictions on the held-out mutation corpus |
 | Q4 | Phase 4 `mejepa_verify` MCP tool + `Gτ` guard | Universal agent verifier callable; "verify what the AI did" capability live |

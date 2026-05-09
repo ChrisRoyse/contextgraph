@@ -384,7 +384,7 @@ constellations* — not "the patch is bad."
   chunks/file ratio."
 - `13_UNIVERSAL_AGENT_VERIFICATION.md` §2 — update verifier to operate at chunk
   granularity; verdict structure becomes `{chunks: [(chunk_id, verdict)]}`.
-- `sitrep/01_status_overview.md` — add Phase 1 line items for per-language chunker
+- `specs/implementation-plan.md` — add Phase 1 line items for per-language chunker
   generalization (currently shows only Python and Rust as having AST infrastructure
   shipped).
 

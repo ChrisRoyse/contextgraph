@@ -19,7 +19,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -90,6 +90,8 @@ struct TaskManifest {
 #[serde(deny_unknown_fields)]
 struct CorpusIndex {
     schema_version: u32,
+    #[serde(default)]
+    complete: bool,
     generated_at_unix_ms: u128,
     tasks_dir: String,
     store_path: String,
@@ -112,6 +114,12 @@ struct GeneratedEntry {
     oracle_per_test_count: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PlannedMutation {
+    manifest: TaskManifest,
+    outcome: PatchMutationOutcome,
+}
+
 fn main() -> CliResult<()> {
     match Cli::parse().command {
         CommandKind::Generate(args) => generate(args),
@@ -122,10 +130,7 @@ fn main() -> CliResult<()> {
 
 fn generate(args: GenerateArgs) -> CliResult<()> {
     validate_generate_args(&args)?;
-    ensure_output_directory_ready(&args.output)?;
-    fs::create_dir_all(&args.output)?;
-    let store_path = args.output.join("oracle-store");
-    let store = OracleStore::open(&store_path)?;
+    let categories = parse_categories(&args.categories)?;
     let manifests = load_task_manifests(&args.tasks_dir)?;
     let selected = select_manifests(&manifests, &args.instance_ids, args.max_tasks)?;
     let patch_by_task = load_official_patches(
@@ -136,7 +141,6 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
             .collect::<Vec<_>>()
             .as_slice(),
     )?;
-    let categories = parse_categories(&args.categories)?;
     let split_entries = manifests
         .iter()
         .map(|manifest| CorpusEntry {
@@ -174,16 +178,7 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
         })
         .collect::<BTreeMap<_, _>>();
 
-    let mut index = CorpusIndex {
-        schema_version: 1,
-        generated_at_unix_ms: unix_ms(),
-        tasks_dir: args.tasks_dir.display().to_string(),
-        store_path: store_path.display().to_string(),
-        entries: Vec::new(),
-        split_assignments: split.assignments.clone(),
-    };
-    write_index(&args.output, &index)?;
-
+    let mut planned_mutations = Vec::new();
     for manifest in &selected {
         let official_patch = patch_by_task.get(&manifest.instance_id).ok_or_else(|| {
             format!(
@@ -193,7 +188,7 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
         })?;
         for category in &categories {
             let seed = stable_seed(&manifest.instance_id, *category);
-            let patch_outcome = mutate_unified_diff(
+            let outcome = mutate_unified_diff(
                 *category,
                 official_patch,
                 PatchMutationConfig {
@@ -210,43 +205,73 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
                     err.code()
                 )
             })?;
-            let patch_path =
-                write_mutated_patch(&args.output, &manifest.instance_id, &patch_outcome)?;
-            let patch_sha256 = sha256_text(&patch_outcome.mutated_patch);
-            let mutation = MutationOutcome {
-                category: *category,
-                mutated_source: patch_outcome.mutated_patch.clone(),
-                seed,
-                mutation_site: None,
-            };
-            store.put_mutation(&manifest.instance_id, *category, &mutation)?;
-            store.flush()?;
-
-            let verdict = run_oracle_for_patch(&args, manifest, *category, &patch_outcome)?;
-            store.put_verdict(&manifest.instance_id, *category, &verdict)?;
-            store.flush()?;
-            let oracle_verdict_sha256 = sha256_json_value(&serde_json::to_value(&verdict)?);
-
-            let entry = GeneratedEntry {
-                task_id: manifest.instance_id.clone(),
-                repo: manifest.repo.clone(),
-                category: *category,
-                bucket: bucket_by_task
-                    .get(&manifest.instance_id)
-                    .cloned()
-                    .ok_or("selected task missing split bucket")?,
-                patch_path: patch_path.display().to_string(),
-                patch_sha256,
-                oracle_verdict_sha256,
-                oracle_all_passed: verdict.all_passed(),
-                oracle_exception: verdict.exception.map(|class| class.slug().to_string()),
-                oracle_per_test_count: verdict.per_test.len(),
-            };
-            index.entries.push(entry);
-            write_index(&args.output, &index)?;
+            planned_mutations.push(PlannedMutation {
+                manifest: manifest.clone(),
+                outcome,
+            });
         }
     }
+
+    ensure_output_directory_ready(&args.output)?;
+    fs::create_dir_all(&args.output)?;
+    let store_path_rel = PathBuf::from("oracle-store");
+    let store_path = args.output.join(&store_path_rel);
+    let store = OracleStore::open(&store_path)?;
+
+    let mut index = CorpusIndex {
+        schema_version: 1,
+        complete: false,
+        generated_at_unix_ms: unix_ms(),
+        tasks_dir: args.tasks_dir.display().to_string(),
+        store_path: store_path_rel.display().to_string(),
+        entries: Vec::new(),
+        split_assignments: split.assignments.clone(),
+    };
+    write_index(&args.output, &index)?;
+
+    for planned in &planned_mutations {
+        let manifest = &planned.manifest;
+        let patch_outcome = &planned.outcome;
+        let category = patch_outcome.category;
+        let seed = patch_outcome.seed;
+        let (_patch_path, patch_path_rel) =
+            write_mutated_patch(&args.output, &manifest.instance_id, patch_outcome)?;
+        let patch_sha256 = sha256_text(&patch_outcome.mutated_patch);
+        let mutation = MutationOutcome {
+            category,
+            mutated_source: patch_outcome.mutated_patch.clone(),
+            seed,
+            mutation_site: None,
+        };
+        store.put_mutation(&manifest.instance_id, category, &mutation)?;
+        store.flush()?;
+
+        let verdict = run_oracle_for_patch(&args, manifest, category, patch_outcome)?;
+        store.put_verdict(&manifest.instance_id, category, &verdict)?;
+        store.flush()?;
+        let oracle_verdict_sha256 = sha256_json_value(&serde_json::to_value(&verdict)?);
+
+        let entry = GeneratedEntry {
+            task_id: manifest.instance_id.clone(),
+            repo: manifest.repo.clone(),
+            category,
+            bucket: bucket_by_task
+                .get(&manifest.instance_id)
+                .cloned()
+                .ok_or("selected task missing split bucket")?,
+            patch_path: patch_path_rel.display().to_string(),
+            patch_sha256,
+            oracle_verdict_sha256,
+            oracle_all_passed: verdict.all_passed(),
+            oracle_exception: verdict.exception.map(|class| class.slug().to_string()),
+            oracle_per_test_count: verdict.per_test.len(),
+        };
+        index.entries.push(entry);
+        write_index(&args.output, &index)?;
+    }
+    index.complete = true;
     write_stats_json(&args.output, &index, &store)?;
+    write_index(&args.output, &index)?;
     println!(
         "{}",
         serde_json::to_string_pretty(&json!({
@@ -261,7 +286,9 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
 
 fn verify(args: VerifyArgs) -> CliResult<()> {
     let index = read_index(&args.corpus)?;
-    let store = OracleStore::open(Path::new(&index.store_path))?;
+    validate_complete_index(&index)?;
+    let store_path = resolve_corpus_path(&args.corpus, &index.store_path)?;
+    let store = OracleStore::open(&store_path)?;
     let mut failures = Vec::new();
     let mut seen = BTreeSet::new();
     for entry in &index.entries {
@@ -269,7 +296,8 @@ fn verify(args: VerifyArgs) -> CliResult<()> {
         if !seen.insert(key.clone()) {
             failures.push(json!({"key": key, "error": "duplicate index entry"}));
         }
-        let patch_text = fs::read_to_string(&entry.patch_path)?;
+        let patch_path = resolve_corpus_path(&args.corpus, &entry.patch_path)?;
+        let patch_text = fs::read_to_string(&patch_path)?;
         let actual_hash = sha256_text(&patch_text);
         if actual_hash != entry.patch_sha256 {
             failures.push(json!({
@@ -321,7 +349,7 @@ fn verify(args: VerifyArgs) -> CliResult<()> {
     let evidence = json!({
         "source_of_truth": {
             "index": args.corpus.join("index.json").display().to_string(),
-            "store": index.store_path,
+            "store": store_path.display().to_string(),
         },
         "entry_count": index.entries.len(),
         "mutation_cf_count": mutation_cf_count,
@@ -343,7 +371,9 @@ fn verify(args: VerifyArgs) -> CliResult<()> {
 
 fn stats(args: StatsArgs) -> CliResult<()> {
     let index = read_index(&args.corpus)?;
-    let store = OracleStore::open(Path::new(&index.store_path))?;
+    validate_complete_index(&index)?;
+    let store_path = resolve_corpus_path(&args.corpus, &index.store_path)?;
+    let store = OracleStore::open(&store_path)?;
     write_stats_json(&args.corpus, &index, &store)?;
     println!("{}", fs::read_to_string(args.corpus.join("stats.json"))?);
     Ok(())
@@ -503,12 +533,15 @@ fn write_mutated_patch(
     output: &Path,
     task_id: &str,
     outcome: &PatchMutationOutcome,
-) -> CliResult<PathBuf> {
+) -> CliResult<(PathBuf, PathBuf)> {
+    let relative_path = PathBuf::from("mutations")
+        .join(task_id)
+        .join(format!("{}.patch", outcome.category.slug()));
     let dir = output.join("mutations").join(task_id);
     fs::create_dir_all(&dir)?;
-    let path = dir.join(format!("{}.patch", outcome.category.slug()));
+    let path = output.join(&relative_path);
     write_text_checked(&path, &outcome.mutated_patch)?;
-    Ok(path)
+    Ok((path, relative_path))
 }
 
 fn run_oracle_for_patch(
@@ -551,6 +584,37 @@ fn read_index(corpus: &Path) -> CliResult<CorpusIndex> {
     )?)?)
 }
 
+fn validate_complete_index(index: &CorpusIndex) -> CliResult<()> {
+    if !index.complete {
+        return Err(
+            "corpus index is incomplete; rerun generate into a fresh output directory".into(),
+        );
+    }
+    if index.entries.is_empty() {
+        return Err("corpus index has zero entries; this is not valid corpus evidence".into());
+    }
+    Ok(())
+}
+
+fn resolve_corpus_path(corpus: &Path, stored_path: &str) -> CliResult<PathBuf> {
+    let path = Path::new(stored_path);
+    if path.is_absolute() {
+        return Err(format!(
+            "corpus index path must be relative but was absolute: {stored_path}; regenerate the corpus with this CLI so verification cannot read stale external state"
+        )
+        .into());
+    }
+    for component in path.components() {
+        if matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        ) {
+            return Err(format!("corpus index path escapes the corpus root: {stored_path}").into());
+        }
+    }
+    Ok(corpus.join(path))
+}
+
 fn write_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> CliResult<()> {
     let mut by_category = BTreeMap::<String, usize>::new();
     let mut by_oracle = BTreeMap::<String, usize>::new();
@@ -568,7 +632,7 @@ fn write_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> 
     let stats = json!({
         "source_of_truth": {
             "index": output.join("index.json").display().to_string(),
-            "store": index.store_path,
+            "store": resolve_corpus_path(output, &index.store_path)?.display().to_string(),
         },
         "total_entries": index.entries.len(),
         "by_category": by_category,

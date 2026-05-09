@@ -96,7 +96,7 @@ Doc 09 §2.2 specifies 14 instruments for the 5,120-d panel (per §3.5.5). Mappi
 | **E_Test** | 384 | **E1 Semantic (e5-large-v2)** on test-fn natural-language descriptions | ~1 day (E1 reuse) |
 | **E_Trace** | 512 | **E2/E3/E4 temporal embedders** + sequence-transformer over `(fn_id, line_no, val_hash)` events | ~3 days |
 | **E_Diff** | 256 | **E7 Code (Qodo)** with diff-edge encoder | ~2 days |
-| **E_Witness** | 256 | **E10 Contextual (e5-base-v2)** on the 73-byte SHAKE-256 chain entries (sequence transformer) — already plan_e_witness.md is in sitrep | ~1.5 days (per existing plan) |
+| **E_Witness** | 256 | **E10 Contextual (e5-base-v2)** on the 73-byte SHAKE-256 chain entries (sequence transformer) — deterministic encoder shipped; neural replacement tracked in specs | ~1.5 days (per existing plan) |
 | **E_Oracle** | 128 | ✅ shipped (`crates/context-graph-mejepa-instruments/src/e_oracle.rs`) | done |
 | **E_Problem** | 1024 | **E1 Semantic** on SWE-bench problem text | ~1 day |
 | **E_CommitMsg** | 384 | **E1 Semantic** on commit text | ~1 day |
@@ -279,7 +279,7 @@ for shift in cgreality_shift_log_tail() {
 
 ### 8.1 Phase 1 (instruments) — 25 days vs ~35 days
 
-8 of 14 instruments become thin heads on existing embedders (~1-3 days each). 3 are pure-Rust scalar aggregates already in the sitrep plan. 3 are net-new (E_AST/E_CFG/E_DataFlow tree-sitter integrations).
+8 of 14 instruments become thin heads on existing embedders (~1-3 days each). 3 are pure-Rust scalar aggregates tracked in `specs/implementation-plan.md`. 3 are net-new (E_AST/E_CFG/E_DataFlow tree-sitter integrations).
 
 ### 8.2 Phase 2 (predictor) — unchanged ~7-10 days
 
@@ -343,7 +343,7 @@ Multilingual coverage at no additional model-training cost. Pyright/mypy/rustc/j
 - **Doc 09 §3.4 holdout split**: unchanged.
 - **Doc 09 §5.1 online observe + EWC++**: augmented — the shipped LoRA + distillation infrastructure provides the per-embedder fine-tuning path; EWC++ Fisher matrix sits on top.
 - **Doc 11 §13 implementation roadmap**: replaced with the 19-item table in §9 above.
-- **Sitrep `04_implementation_plans/plan_phase2_predictor.md`**: the Phase 2 predictor scope is unchanged but its inputs come from the embedder ensemble's panel; update plan when picking up.
+- **`specs/implementation-plan.md` Phase 2 predictor section**: the Phase 2 predictor scope is unchanged but its inputs come from the embedder ensemble's panel; update plan when picking up.
 
 ---
 

@@ -1,6 +1,6 @@
 # 05 — Quick Wins vs Deep Integration
 
-> **🔁 PIVOT 2026-05-09:** The "qwen3.6:27b via llama-cpp-2" entry in the 4.2 row is now N/A — the inner-actor LLM is retired. Skip any LLM-runtime-related rows for current planning. ME-JEPA priorities live in [`sitrep/04_implementation_plans/`](./sitrep/04_implementation_plans/), not here. See [`10_MEJEPA_PIVOT_2026_05_09.md`](./10_MEJEPA_PIVOT_2026_05_09.md).
+> **🔁 PIVOT 2026-05-09:** The "qwen3.6:27b via llama-cpp-2" entry in the 4.2 row is now N/A — the inner-actor LLM is retired. Skip any LLM-runtime-related rows for current planning. ME-JEPA priorities live in [`specs/implementation-plan.md`](./specs/implementation-plan.md), not here; the legacy `sitrep/` tree was removed in commit `6f72a02e`. See [`10_MEJEPA_PIVOT_2026_05_09.md`](./10_MEJEPA_PIVOT_2026_05_09.md).
 
 > **🔒 LOCKED 2026-05-08 — Clean-room reimplementation only.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md` — the tier tables below have been REWRITTEN. All "Vendor `X`" / "Path-dep `X`" effort entries became "Clean-room reimplement `X`" with effort 2-3× the original number. The cloned `ruvector/` tree is read-only inspiration; we never path-dep, never vendor, never npm-depend.
 

@@ -38,7 +38,7 @@ The **inner-actor LLM** (Qwen3.6-27B / Hermes-2-Pro) is removed from the system.
 - ✅ §3.5 reward-signal capture from durable reality (static-analysis, runtime, cross-attempt, counterfactual)
 - ✅ §3.8 real-time pipeline: Tokio shift-log subscriber consuming the harness's existing artifact channels
 - ✅ §5 self-healing (online observe + EWC++ + drift detection + A/B/C promotion)
-- ✅ The ContextGraph deterministic reality substrate (witness chain, ed25519 segment signatures, Stage 0/F/Merkle certs, Stoer-Wagner mincut, Granger F-test, conformal predictor, MMR, tier compression — all already shipped per `sitrep/01_status_overview.md`)
+- ✅ The ContextGraph deterministic reality substrate (witness chain, ed25519 segment signatures, Stage 0/F/Merkle certs, Stoer-Wagner mincut, Granger F-test, conformal predictor, MMR, tier compression — tracked in doc 09 plus the specs tree; the legacy `sitrep/` tree was removed in commit `6f72a02e`)
 
 ---
 
@@ -141,8 +141,8 @@ Doc 09's 8-phase plan (Phase 0..8) is **largely unchanged**. The pivot affects f
 
 | Phase | Doc 09 status | Pivot impact |
 |---|---|---|
-| 0 — Mutation corpus + Docker oracle | partial (operators, split, command/Docker oracle wrapper, RocksDB store, manifest preflight, and one-task official SWE-bench bridge shipped; full 2,400-entry batch deferred) | unchanged. The mutation corpus is the primary corpus; live-attempt corpus from Qwen is dropped. |
-| 1 — Instruments (14 core instruments + scalar slot) | partial (`E_Oracle`, `E_Witness`, `E_StaticAnalysis`, Panel/scaffolding shipped; 11 instruments + Scalars deferred) | unchanged. `E_Reasoning` is still planned, but its source becomes "any agent reasoning trace" not "Qwen CoT specifically." |
+| 0 — Mutation corpus + Docker oracle | partial (operators, split, command/Docker oracle wrapper, RocksDB store, manifest preflight, one-task official SWE-bench bridge, and `mejepa-corpus generate/verify/stats` CLI shipped; two-category real-Docker FSV for `sympy__sympy-20590` shipped; full 300-task x 8-category batch deferred) | unchanged. The mutation corpus is the primary corpus; live-attempt corpus from Qwen is dropped. |
+| 1 — Instruments (14 core instruments + scalar slot) | partial but no longer "11 missing": all 15 panel slots have deterministic typed encoders + all-slot FSV; neural/embedder-backed replacements, multi-language AST chunk routing, Pyright/rust-analyzer evidence, and linear-probe quality gate deferred | unchanged. `E_Reasoning` is sourced from generic agent-reasoning artifacts, not Qwen CoT specifically. |
 | 2 — Predictor + frozen instrument targets + VICReg + oracle head | deferred | unchanged except target-side collapse is prevented structurally, not by EMA. |
 | 3 — Training loop + per-step certs | deferred | unchanged. |
 | 4 — Conformal calibration + OOD + verify() API | deferred | unchanged. The verify() API is now THE primary inference path (no LLM-gate framing). |
@@ -162,8 +162,8 @@ The clean-room primitives shipped in `crates/context-graph-*` are all ME-JEPA-re
 | `context-graph-witness` | ✅ shipped | provenance for ME-JEPA training data + per-step certs |
 | `context-graph-solver` | ✅ partial (PPR + CG + MMR + conformal) | Phase 4 conformal calibration; PPR for §3.5.3 cross-attempt similarity |
 | `context-graph-mincut` | ✅ shipped | Phase 0 repo-atomic diagnostic leakage proof |
-| `context-graph-mejepa-corpus` | ✅ partial (operators, split, oracle/store, one-task SWE-bench bridge shipped) | Phase 0 |
-| `context-graph-mejepa-instruments` | ✅ partial (E_Oracle, E_Witness, E_StaticAnalysis shipped) | Phase 1 |
+| `context-graph-mejepa-corpus` | ✅ partial (operators, split, oracle/store, one-task SWE-bench bridge, and batch CLI shipped; full 300x8 corpus run pending) | Phase 0 |
+| `context-graph-mejepa-instruments` | ✅ partial (all 15 deterministic typed encoders + all-slot Panel FSV shipped; neural/deep integrations pending) | Phase 1 |
 | `context-graph-tier-compression` | ✅ shipped | Phase 6 |
 | `context-graph-storage` | ✅ in production | RocksDB CFs for panels + checkpoints + observe state |
 | `context-graph-mcp` | ✅ in production | MCP entry point for ME-JEPA tools |
@@ -228,7 +228,7 @@ Per doc 09 §1.3, the **end state** is when `predicted_oracle_pass > 0.95` with 
 
 - Master plan: `09_END_GOAL_REVIEW_REPLACEMENT.md` (still authoritative; sections that mention Qwen/inner-actor are re-framed by this doc)
 - Operator contract: `CLAUDE.md §11` (rewritten in the same commit as this doc)
-- Sitrep: `sitrep/01_status_overview.md`, `sitrep/02_shipped/*`, `sitrep/03_deferred/*`, `sitrep/04_implementation_plans/*`
+- Specs/status: `specs/_README.md`, `specs/constitution.md`, and doc 09 §7. The legacy `sitrep/` tree was removed in commit `6f72a02e`; do not cite it as live status.
 - Disk-cleanup record: this file's "Migration checklist" section is the authoritative log of what was deleted.
 - UTML v1.0 source theory: `/home/cabdru/contextgraph/docs2/UTL_v2_embodied.md` (rewritten 2026-05-09 from "UTL v2.0 — Embodied Edition" into the ML-native "UTML v1.0 — JEPA Edition" with four factors `L_step = ΔP · ΔK · ΔΩ · ΔΞ`)
 - ME-JEPA learning-formula operationalization: `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md`

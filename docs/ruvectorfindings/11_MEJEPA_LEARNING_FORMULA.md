@@ -466,7 +466,6 @@ UTML v1.0 is the rigorous ML rewrite of the embodied-learning UTL-v2 framework. 
 - Source theory: `docs2/UTL_v2_embodied.md` (UTML v1.0 — JEPA Edition)
 - Master plan: `09_END_GOAL_REVIEW_REPLACEMENT.md` §3.4 (training procedure), §3.7 (multi-objective loss), §5 (self-healing)
 - Pivot architecture: `10_MEJEPA_PIVOT_2026_05_09.md`
-- Sitrep status: `sitrep/01_status_overview.md`
-- Implementation plans: `sitrep/04_implementation_plans/plan_phase2_predictor.md` (where ΔP computation lives) + Phase 3 plan (where ΔK / ΔΩ / ΔΞ integrate)
+- Specs/status: `specs/_README.md` and `specs/implementation-plan.md` (Phase 2 predictor + Phase 3 ΔP / ΔK / ΔΩ / ΔΞ integration)
 - ContextGraph Reality Loop white paper: Royse (2026a) — UTML §XII canonical reference for the audit substrate as physical M(t)
 - Dynamic / ME-JEPA paper: Royse (2026b) — the structural collapse-immunity claim with multi-seed evidence

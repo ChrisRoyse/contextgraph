@@ -205,8 +205,8 @@ The result: a patch in Python that modifies a `class_definition` is verified aga
 | **Doc 13 §3.1 constellation** | Per-class centroid construction is now per (mutation_category × entity_type × language × embedder) — 24,024 cells (with Bayesian shrinkage on sparse cells). |
 | **Doc 13 §3.3 Verdict** | `Verdict::GuardRejected` includes `violating_chunk: Option<ChunkId>` so rejection is localized to a specific function/class, not just the whole patch. |
 | **Doc 13 §1.3 signal budget** | Adjusted: at AST-aware chunking with ~40 chunks per mutation × ~7 signals per chunk = ~280 chunk-level signals + the panel-level 231 = **~510 signals per mutation entry** (loose upper bound ~840). |
-| **Sitrep `04_implementation_plans/plan_e_witness.md`** | E_Witness chunks the witness chain entries (already byte-aligned 73-byte units) — no AST chunker needed for E_Witness specifically; it's already atomic. |
-| **Sitrep `04_implementation_plans/plan_e_static_analysis.md`** | The static-analysis aggregator routes per-language tool output (mypy/Pyright for Python, ruff for Python, clippy for Rust, javac for Java, etc.) and aggregates per chunk via the chunk's line-range. |
+| **`specs/implementation-plan.md` E_Witness row** | E_Witness chunks the witness chain entries (already byte-aligned 73-byte units) — no AST chunker needed for E_Witness specifically; it's already atomic. |
+| **`specs/implementation-plan.md` E_StaticAnalysis row** | The static-analysis aggregator routes per-language tool output (mypy/Pyright for Python, ruff for Python, clippy for Rust, javac for Java, etc.) and aggregates per chunk via the chunk's line-range. |
 | **CLAUDE.md §1** | The 11-language matrix becomes part of the project description: "ContextGraph supports atomic AST chunking and per-language semantic extraction for Python, Rust, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, and PHP." |
 
 ---

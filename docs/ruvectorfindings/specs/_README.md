@@ -1,0 +1,110 @@
+# ME-JEPA-Code Specs — Master Index
+
+> **Spec hierarchy authority** per `/home/cabdru/contextgraph/docs2/prdtospec.md`:
+> Level 1 Constitution → Level 2 Functional Specs → Level 3 Technical Specs → Level 4 Task Specs → Level 5 Context (active session memory).
+>
+> Source-of-truth design docs live at `/home/cabdru/contextgraph/docs/ruvectorfindings/{09,10,11,12,13,14}*.md`. The specs in this directory are the **executable blueprint** for implementing those design docs end-to-end.
+
+**Date:** 2026-05-09
+**Spec version:** 1.0.0
+**Project:** ME-JEPA-Code (the Reality Compiler)
+**Mission:** Make `prediction_oracle_correlation ≥ 0.95` stably across all 8 mutation categories AND all supported languages → human code review of AI-generated patches becomes statistically unjustified.
+
+---
+
+## Reading order
+
+1. **`constitution.md`** — immutable rules. Read first; never violate.
+2. **`implementation-plan.md`** — phase-ordered execution roadmap referencing every spec by ID.
+3. **`functional/_index.md`** — Level 2 functional specs (what to build), one per domain.
+4. **`technical/_index.md`** — Level 3 technical specs (how to build), one per functional spec.
+5. **`tasks/_index.md`** — Level 4 task graph (atomic, ordered, sequential implementation units).
+6. **`tasks/_traceability.md`** — coverage matrix proving every spec item has a task.
+
+---
+
+## Domain map (13 functional+technical pairs)
+
+Each domain has one functional spec (SPEC-`<DOMAIN>`), one technical spec (TECH-`<DOMAIN>`), and one or more task specs (TASK-`<DOMAIN>`-NNN). Domains are phase-aligned per `09_END_GOAL_REVIEW_REPLACEMENT.md §7` and the post-pivot doc 10 §F priorities.
+
+| # | Domain | Phase | Effort | Status (post-`sitrep/` removal in commit `6f72a02e`) |
+|---|---|---|---|---|
+| 1 | **CORPUS** — Phase 0 mutation corpus + Docker oracle bridge + RocksDB CFs + train/calib/holdout split | 0 | ~5-7 days | partial: 8 mutation operators ✅, split helper ✅, Python lex ✅, Rust/Python parser harness ✅, one-task SWE-bench bridge ✅, `mejepa-corpus generate/verify/stats` CLI ✅ with one-instance/two-category Docker FSV; full 300-task x 8-category batch deferred |
+| 2 | **AST-CHUNKING** — Multi-language AST-perfect atomic chunker (11 languages) | 1 (item 6) | ~10 days | partial: Rust chunker ✅; Python/JS/TS/Go/Java/C/C++/C#/Ruby/PHP extension deferred |
+| 3 | **EMBEDDERS** — `Instrument` trait wrapper around 21-embedder ensemble + per-chunk-type routing table | 1 | ~5 days | E1-E14 + E15-E21 ✅ shipped (`crates/context-graph-embeddings/`); Instrument-trait wrappers + routing table deferred |
+| 4 | **INSTRUMENTS** — 14 instruments (E_AST, E_CFG, E_DataFlow, E_TypeGraph, E_Test, E_Trace, E_Diff, E_Witness, E_Oracle, E_Problem, E_CommitMsg, E_StaticAnalysis, E_Runtime, E_Reasoning) + scalar slot + Panel/PanelBuilder | 1 | ~25 days incl. embedder reuse | partial: all 15 deterministic typed encoders ✅, Panel + PanelBuilder ✅, all-slot FSV ✅; neural/embedder-backed replacements, multi-language chunk routing, Pyright/rust-analyzer evidence, and linear-probe quality gate deferred |
+| 5 | **PREDICTOR** — 6-layer transformer + frozen target readback + VICReg loss + Oracle head | 2 | ~7-10 days | deferred |
+| 6 | **TRAINING** — AdamW + cosine decay + UTML L_step + per-step training certificate + sampler | 3 | ~5-7 days | deferred |
+| 7 | **UTML-FORMULA** — ΔP / ΔK / ΔΩ / ΔΞ computation + sampling reweighting + consolidation integral M(t) | 3 (cross-cutting) | ~5 days | deferred |
+| 8 | **INFERENCE** — `MeJepaCompiler::compile()` and `::verify()` API + conformal calibration + OOD detection | 4 | ~3-5 days | deferred |
+| 9 | **TCT-CONSTELLATION** — Per-(category × entity × language × embedder) centroid construction + Gτ guard + GuardRejected verdict | 4 (cross-cutting) | ~5 days | deferred |
+| 10 | **SELF-HEALING** — Online observe() + EWC++ + drift detection + A/B/C promotion + continual backprop | 5 | ~5-7 days | deferred |
+| 11 | **HYGIENE** — Tier compression integration + Stoer-Wagner mincut splits + Merkle compression + nightly GC + quota enforcement | 6 | ~3-5 days | partial: tier-compression crate ✅, mincut crate ✅; integration deferred |
+| 12 | **SHIFT-SUBSCRIBER** — Tokio task tailing cgreality-shift-log → mejepa.observe() + watermark CF + new MCP tools (mejepa_predict_latest, mejepa_observe_shift, mejepa_subscriber_status, mejepa_capture_audit, mejepa_verify) | 7 | ~5-7 days | deferred |
+| 13 | **EVALUATION** — Holdout split evaluation + per-language stratification + ≥0.95 ship gate + active learning loop | 8 | ongoing | deferred |
+
+**Total estimated effort:** ~85 days of fresh implementation + ~10 days for the embedder integration shortcut + ongoing Phase 8.
+
+---
+
+## Spec ID conventions
+
+Per `prdtospec.md §2.1`, every requirement uses `[REQ-<DOMAIN>-NN]` for traceability.
+
+| Prefix | Meaning |
+|---|---|
+| `REQ-CORPUS-NN` | Phase 0 corpus requirements |
+| `REQ-AST-NN` | AST chunking requirements |
+| `REQ-EMBED-NN` | Embedder ensemble integration requirements |
+| `REQ-INSTR-NN` | Instrument requirements |
+| `REQ-PRED-NN` | Predictor requirements |
+| `REQ-TRAIN-NN` | Training loop requirements |
+| `REQ-UTML-NN` | UTML formula requirements |
+| `REQ-INFER-NN` | Inference / verify() requirements |
+| `REQ-TCT-NN` | Constellation / Gτ guard requirements |
+| `REQ-HEAL-NN` | Self-healing requirements |
+| `REQ-HYG-NN` | Storage hygiene requirements |
+| `REQ-SHIFT-NN` | Shift subscriber + MCP tool requirements |
+| `REQ-EVAL-NN` | Evaluation requirements |
+
+| Prefix | Meaning |
+|---|---|
+| `TASK-CORPUS-NNN` | Phase 0 corpus tasks (sequence numbers) |
+| `TASK-AST-NNN` | AST chunking tasks |
+| `TASK-EMBED-NNN` | Embedder integration tasks |
+| `TASK-INSTR-NNN` | Instrument tasks |
+| `TASK-PRED-NNN` | Predictor tasks |
+| `TASK-TRAIN-NNN` | Training loop tasks |
+| `TASK-UTML-NNN` | UTML computation tasks |
+| `TASK-INFER-NNN` | Inference tasks |
+| `TASK-TCT-NNN` | TCT constellation tasks |
+| `TASK-HEAL-NNN` | Self-healing tasks |
+| `TASK-HYG-NNN` | Storage hygiene tasks |
+| `TASK-SHIFT-NNN` | Shift subscriber tasks |
+| `TASK-EVAL-NNN` | Evaluation tasks |
+
+---
+
+## Quality gates
+
+Per `prdtospec.md §6.2`, four gates protect the spec → implementation pipeline:
+
+1. **SPEC_REVIEW** (before task generation) — all functional+technical specs reviewed for ambiguity, completeness, traceability.
+2. **TASK_REVIEW** (after task generation) — task graph acyclic, layer-ordered (foundation → logic → surface), atomic, definitions of done with exact signatures.
+3. **DESIGN_REVIEW** (before implementation) — pseudo-code matches tech spec, follows constitution.
+4. **CODE_REVIEW** (after task completion) — code follows constitution, all tests pass, signatures match definition_of_done.
+
+---
+
+## Cross-references
+
+- **Master plan:** `../09_END_GOAL_REVIEW_REPLACEMENT.md`
+- **Post-pivot architecture:** `../10_MEJEPA_PIVOT_2026_05_09.md`
+- **UTML v1.0 learning formula:** `../11_MEJEPA_LEARNING_FORMULA.md`
+- **21-embedder ensemble:** `../12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md`
+- **TCT framework:** `../13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md`
+- **Multi-language AST chunking:** `../14_AST_EMBEDDER_ATOMIC_CHUNKING.md`
+- **Capability claim synthesis:** `../13_UNIVERSAL_AGENT_VERIFICATION.md`
+- **Operator role:** `/home/cabdru/contextgraph/CLAUDE.md §11`
+- **SMAP shared mind protocol:** `/home/cabdru/leapablememory/docs2/SHARED-MIND-AGENT-PROTOCOL.md`
+- **Spec authoring framework:** `/home/cabdru/contextgraph/docs2/prdtospec.md`
