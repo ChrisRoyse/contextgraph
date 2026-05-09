@@ -4,8 +4,8 @@
 > **Status (2026-05-09):** PARTIAL — operators, split, strict
 > command/Docker oracle wrapper, pytest-report parser, and crate-local
 > RocksDB oracle store shipped; official SWE-bench Lite preflight and
-> one-task gold smoke now pass; full image set and 2,400-entry generation
-> remain deferred.
+> one-task gold smoke/cache-hygiene checks now pass; 2,400-entry generation
+> remains deferred.
 
 ## Goal
 
@@ -37,8 +37,8 @@ Phase 0 is the **bottleneck**.
 3. **Docker oracle wrapper** that runs each mutated patch against the
    official SWE-bench evaluator and persists `(mutated_patch,
    oracle_verdict)` tuples. The local wrapper/parser is shipped; one
-   official gold smoke passes; the full official image/corpus batch is
-   still operationally deferred.
+   official gold smoke passes; the full corpus batch is still
+   operationally deferred.
 4. **RocksDB column families** `CF_MEJEPA_MUTATION_CORPUS` and
    `CF_MEJEPA_ORACLE_VERDICTS` (crate-local `OracleStore` shipped).
 
@@ -127,7 +127,7 @@ tests pass. Evidence at `/tmp/contextgraph-mejepa-corpus-fsv/`.
 
 ## What's deferred (⏳)
 
-### A. Official SWE-bench Docker image oracle run
+### A. Official SWE-bench Docker oracle batch
 
 **Current FSV state (2026-05-09):**
 - Docker Desktop is reachable from WSL through the `desktop-linux`
@@ -145,14 +145,16 @@ tests pass. Evidence at `/tmp/contextgraph-mejepa-corpus-fsv/`.
   `predictions_path=gold` run: `sympy__sympy-20590`, resolved=true.
   Evidence:
   `/tmp/contextgraph-swebench-lite-fsv/gold-smoke-evidence.json`.
-- Physical Docker image state is currently 1 present / 299 missing.
+- Physical SWE-bench Docker cache state is exactly one expected image,
+  zero unexpected SWE-bench images, and zero duplicate SWE-bench image ids
+  or duplicate per-instance tags.
   Evidence:
   `/tmp/contextgraph-swebench-lite-fsv/image-status-evidence.json`.
 
-**Why still deferred:** the full 300-image / 2,400-entry operational
-batch has not been run. It requires pulling or building the remaining
-299 official images, then running 300 tasks × 8 mutation categories and
-persisting every `(mutation, oracle)` tuple.
+**Why still deferred:** the 2,400-entry operational batch has not been
+run. It should pull/use additional official task images only for the
+current batch slice, not pre-cache all 300 as a readiness gate, then
+persist every `(mutation, oracle)` tuple.
 
 **Blocker history:**
 `memory/blockers/agent-72-coordinator--docker-permission-denied-blocks-official-eval.md`
@@ -179,7 +181,7 @@ once items A and B ship.
 
 ## Critical path within Phase 0
 
-1. **Official SWE-bench Docker image run** (item A) — gates real labels.
+1. **Official SWE-bench Docker oracle batch** (item A) — gates real labels.
 2. **Full corpus generation** (item C) — operational; runs on demand
    once official images are present.
 3. **Optional storage-crate wiring** (item B) — needed only if the corpus
@@ -195,8 +197,8 @@ once items A and B ship.
   returned Docker Desktop 29.4.1, x86_64, 30 CPUs, ~110GiB memory)
 - ✅ One official SWE-bench Lite image/test fixture locally and verified
   with `predictions_path=gold`
-- ⏳ Remaining 299 SWE-bench Lite Docker images/test fixtures locally
-  for full official evaluator runs
+- ⏳ Registry/network/storage capacity for on-demand SWE-bench Lite image
+  pulls during batch generation
 - ⏳ optional `context-graph-storage` extension for shared production CFs
 
 ## Implementation order (recommended next 3 turns)

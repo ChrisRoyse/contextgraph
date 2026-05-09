@@ -16,7 +16,7 @@ use context_graph_mejepa_corpus::{
     apply_mutation,
     split::{
         cross_cut_weights, split_corpus, split_is_leakage_free, CorpusEntry, SplitConfig,
-        TaskAssignment,
+        SplitMode, TaskAssignment,
     },
     MutationCategory, MutationConfig, MutationOutcome, MutationSite,
 };
@@ -365,7 +365,15 @@ def alt_helper(name: str) -> int:
 fn split_fsv(evidence_root: &Path) -> FsvResult<Value> {
     let (corpus, tasks_dir) = build_split_real_corpus()?;
     let total = corpus.len();
-    let report = split_corpus(&corpus, SplitConfig::default()).map_err(|err| {
+    // The historical FSV asserts the repo-atomic invariants
+    // (leakage_check + zero cross_cut_weights). We pin the mode explicitly
+    // so the post-2026-05-09 InstanceAtomic default does not break the
+    // historical assertions.
+    let split_config_repo_atomic = SplitConfig {
+        mode: SplitMode::RepoAtomic,
+        ..SplitConfig::default()
+    };
+    let report = split_corpus(&corpus, split_config_repo_atomic).map_err(|err| {
         format!("split_corpus(default 80/10/10 over {total} real task manifests) failed: {err:?}")
     })?;
 
@@ -427,10 +435,18 @@ fn split_fsv(evidence_root: &Path) -> FsvResult<Value> {
             repo: "solo".to_string(),
         })
         .collect();
+    // The "all 50 tasks share one repo" case is a degenerate-input failure
+    // ONLY under repo-atomic, where assigning the whole repo to one bucket
+    // leaves the other two empty. Under InstanceAtomic the same input
+    // legitimately produces [40,5,5]. Pin RepoAtomic to keep this as a
+    // failing boundary case.
     let single_repo_case = split_boundary_case(
-        "single_repo_degenerate_split",
+        "single_repo_degenerate_split_repo_atomic",
         &single_repo,
-        SplitConfig::default(),
+        SplitConfig {
+            mode: SplitMode::RepoAtomic,
+            ..SplitConfig::default()
+        },
         "MEJEPA_CORPUS_INVALID_INPUT",
     )?;
     let bad_fraction_case = split_boundary_case(
@@ -441,6 +457,7 @@ fn split_fsv(evidence_root: &Path) -> FsvResult<Value> {
             calibration_fraction: 0.2,
             holdout_fraction: 0.2,
             seed: 0,
+            ..SplitConfig::default()
         },
         "MEJEPA_CORPUS_INVALID_INPUT",
     )?;
@@ -502,7 +519,7 @@ fn split_fsv(evidence_root: &Path) -> FsvResult<Value> {
         "leakage_check_passed": report.leakage_check_passed,
         "edge_cases": {
             "empty_corpus": empty_case,
-            "single_repo_degenerate_split": single_repo_case,
+            "single_repo_degenerate_split_repo_atomic": single_repo_case,
             "fraction_sum_not_one": bad_fraction_case,
             "duplicate_task_id": duplicate_task_case,
             "whitespace_repo_id": whitespace_repo_case,

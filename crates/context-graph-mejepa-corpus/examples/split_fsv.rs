@@ -10,7 +10,7 @@
 // real checked-in SWE-bench Lite task manifests under tasks/swebench-lite.
 
 use context_graph_mejepa_corpus::split::{
-    cross_cut_weights, split_corpus, split_is_leakage_free, CorpusEntry, SplitConfig,
+    cross_cut_weights, split_corpus, split_is_leakage_free, CorpusEntry, SplitConfig, SplitMode,
     TaskAssignment,
 };
 use serde_json::{json, Value};
@@ -31,7 +31,13 @@ fn main() -> FsvResult<()> {
     let corpus_json = serde_json::to_string_pretty(&corpus)?;
     let corpus_sha256 = sha256_text(&corpus_json);
     let total = corpus.len();
-    let config = SplitConfig::default();
+    // The FSV's primary verifies the RepoAtomic invariants (no cross-bucket
+    // repo edges) using the existing assertions. The new default is
+    // InstanceAtomic; we verify that mode separately below.
+    let config = SplitConfig {
+        mode: SplitMode::RepoAtomic,
+        ..SplitConfig::default()
+    };
     let report = split_corpus(&corpus, config)
         .map_err(|e| -> Box<dyn std::error::Error> { format!("split_corpus error: {e}").into() })?;
 
@@ -105,9 +111,12 @@ fn main() -> FsvResult<()> {
         })
         .collect();
     let single_repo_case = split_boundary_case(
-        "single_repo_degenerate",
+        "single_repo_degenerate_repo_atomic",
         &single_repo,
-        SplitConfig::default(),
+        SplitConfig {
+            mode: SplitMode::RepoAtomic,
+            ..SplitConfig::default()
+        },
         "MEJEPA_CORPUS_INVALID_INPUT",
     )?;
     let bad_fractions_case = split_boundary_case(
@@ -118,6 +127,7 @@ fn main() -> FsvResult<()> {
             calibration_fraction: 0.2,
             holdout_fraction: 0.2,
             seed: 0,
+            ..SplitConfig::default()
         },
         "MEJEPA_CORPUS_INVALID_INPUT",
     )?;
@@ -142,6 +152,43 @@ fn main() -> FsvResult<()> {
     )?;
 
     let repo_to_bucket = repo_bucket_map(&report.assignments);
+
+    // ---- Phase 0 dataset-shape report: InstanceAtomic mode (post-2026-05-09 default) ----
+    //
+    // RepoAtomic on Lite cannot reach 80/10/10 because django=38% / sympy=25.7%.
+    // InstanceAtomic achieves the requested 80/10/10 by placing each task
+    // independently. Every instance has its own test_patch SHA, so this is
+    // leakage-free at the test-evaluation level.
+    let instance_config = SplitConfig {
+        mode: SplitMode::InstanceAtomic,
+        ..SplitConfig::default()
+    };
+    let instance_report =
+        split_corpus(&corpus, instance_config).map_err(|e| -> Box<dyn std::error::Error> {
+            format!("instance-atomic split error: {e}").into()
+        })?;
+    let instance_target_train = (instance_config.train_fraction * total as f64).round() as usize;
+    let instance_target_cal =
+        (instance_config.calibration_fraction * total as f64).round() as usize;
+    let instance_target_hold = total.saturating_sub(instance_target_train + instance_target_cal);
+    require_eq(
+        "instance-atomic bucket sizes",
+        &[
+            instance_target_train,
+            instance_target_cal,
+            instance_target_hold,
+        ],
+        &instance_report.bucket_sizes,
+    )?;
+    require(
+        instance_report.leakage_check_passed,
+        "instance-atomic leakage_check_passed must be true",
+    )?;
+    require(
+        instance_report.repo_assignments.is_empty(),
+        "instance-atomic produces no per-repo assignments",
+    )?;
+
     let evidence = json!({
         "source_of_truth": {
             "evidence_json": evidence_root.join("split-evidence.json").display().to_string(),
@@ -151,15 +198,27 @@ fn main() -> FsvResult<()> {
         },
         "input_corpus_sha256": corpus_sha256,
         "corpus_size": total,
-        "repo_count": report.repo_assignments.len(),
-        "bucket_sizes": report.bucket_sizes,
-        "bucket_fractions": report.bucket_fractions,
-        "cross_cut_weights": cross_cut_weights,
-        "leakage_check_passed": report.leakage_check_passed,
-        "repo_to_bucket": repo_to_bucket,
+        "repo_atomic": {
+            "mode": "repo_atomic",
+            "repo_count": report.repo_assignments.len(),
+            "bucket_sizes": report.bucket_sizes,
+            "bucket_fractions": report.bucket_fractions,
+            "cross_cut_weights": cross_cut_weights,
+            "leakage_check_passed": report.leakage_check_passed,
+            "repo_to_bucket": repo_to_bucket,
+            "note_on_dataset_shape": "300 tasks across 12 repos with django=38% and sympy=25.7%; 240/30/30 unattainable via whole-repo atomicity",
+        },
+        "instance_atomic": {
+            "mode": "instance_atomic",
+            "bucket_sizes": instance_report.bucket_sizes,
+            "bucket_fractions": instance_report.bucket_fractions,
+            "leakage_check_passed": instance_report.leakage_check_passed,
+            "achieves_80_10_10": instance_report.bucket_sizes == [240, 30, 30],
+            "note_on_leakage": "each SWE-bench Lite instance has a unique test_patch SHA so per-task placement is leakage-free at the test-evaluation level; use assert_no_test_patch_leakage with the test_patch SHA map for an explicit second-line check",
+        },
         "edge_cases": {
             "empty_corpus": empty_case,
-            "single_repo_degenerate": single_repo_case,
+            "single_repo_degenerate_repo_atomic": single_repo_case,
             "fractions_sum_1_1": bad_fractions_case,
             "duplicate_task_id": duplicate_task_case,
         },

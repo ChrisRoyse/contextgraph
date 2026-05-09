@@ -89,7 +89,11 @@ impl OracleError {
         }
     }
 
-    fn invalid(field: &'static str, message: impl Into<String>, remediation: &'static str) -> Self {
+    pub(crate) fn invalid(
+        field: &'static str,
+        message: impl Into<String>,
+        remediation: &'static str,
+    ) -> Self {
         Self::InvalidInput {
             field,
             message: message.into(),
@@ -97,7 +101,11 @@ impl OracleError {
         }
     }
 
-    fn io(path: impl AsRef<Path>, message: impl Into<String>, remediation: &'static str) -> Self {
+    pub(crate) fn io(
+        path: impl AsRef<Path>,
+        message: impl Into<String>,
+        remediation: &'static str,
+    ) -> Self {
         Self::Io {
             path: path.as_ref().display().to_string(),
             message: message.into(),
@@ -105,7 +113,7 @@ impl OracleError {
         }
     }
 
-    fn command_failed(
+    pub(crate) fn command_failed(
         program: impl Into<String>,
         message: impl Into<String>,
         remediation: &'static str,
@@ -117,7 +125,7 @@ impl OracleError {
         }
     }
 
-    fn timeout(
+    pub(crate) fn timeout(
         program: impl Into<String>,
         message: impl Into<String>,
         remediation: &'static str,
@@ -129,7 +137,7 @@ impl OracleError {
         }
     }
 
-    fn json_parse(
+    pub(crate) fn json_parse(
         path: impl Into<String>,
         message: impl Into<String>,
         remediation: &'static str,
@@ -141,7 +149,7 @@ impl OracleError {
         }
     }
 
-    fn report_invalid(
+    pub(crate) fn report_invalid(
         field: &'static str,
         message: impl Into<String>,
         remediation: &'static str,
@@ -153,7 +161,7 @@ impl OracleError {
         }
     }
 
-    fn store(
+    pub(crate) fn store(
         operation: &'static str,
         cf: &'static str,
         message: impl Into<String>,
@@ -786,7 +794,7 @@ fn validate_docker_config(config: &DockerOracleConfig) -> OracleResult<()> {
     Ok(())
 }
 
-fn wait_with_timeout(
+pub(crate) fn wait_with_timeout(
     mut child: std::process::Child,
     timeout: Duration,
     program: &str,
@@ -1188,7 +1196,7 @@ fn validate_key_part(field: &'static str, value: &str) -> OracleResult<()> {
     Ok(())
 }
 
-fn tail_text(bytes: &[u8]) -> String {
+pub(crate) fn tail_text(bytes: &[u8]) -> String {
     let text = String::from_utf8_lossy(bytes);
     let mut chars = text.chars().rev().take(2048).collect::<Vec<_>>();
     chars.reverse();

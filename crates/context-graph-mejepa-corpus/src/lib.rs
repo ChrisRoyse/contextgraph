@@ -45,6 +45,7 @@ mod python_lex;
 pub mod split;
 mod subtle_flip;
 mod swap_variable;
+pub mod swebench;
 mod util;
 mod wrong_file;
 

@@ -102,8 +102,9 @@ sitrep/
   Tier-3 partial (3.2 shipped; 3.1, 3.3-3.6 deferred); Tier-4 not in
   scope.
 - **Doc 09 Phases**: Phase 0 partial (mutation operators + split +
-  command/Docker oracle wrapper + crate-local RocksDB oracle store shipped;
-  official SWE-bench image batch + full corpus gen deferred); Phase 1
+  command/Docker oracle wrapper + crate-local RocksDB oracle store + official
+  one-task SWE-bench Lite gold smoke/cache-hygiene check shipped; full
+  corpus generation deferred); Phase 1
   partial (trait + Panel + E_Oracle + E_Witness + E_StaticAnalysis
   shipped; 11 instruments deferred);
   Phases 2-8 fully deferred.

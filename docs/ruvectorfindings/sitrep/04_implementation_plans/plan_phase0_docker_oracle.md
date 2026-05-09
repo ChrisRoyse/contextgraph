@@ -7,8 +7,9 @@
 > builder, strict pytest JSON parser, crate-local RocksDB `OracleStore`,
 > and official SWE-bench Lite preflight/gold-smoke ops script shipped.
 > One official Lite image (`sympy__sympy-20590`) was pulled and passed
-> `predictions_path=gold`; 299 Lite images and the 2,400-entry operational
-> corpus batch remain.
+> `predictions_path=gold`; the local SWE-bench cache now intentionally
+> contains only that expected image with no duplicates. The 2,400-entry
+> operational corpus batch remains.
 
 ## Goal
 
@@ -36,11 +37,14 @@ gating dependency for everything else.
    `parse_pytest_json_report`, and `OracleStore`.
 
 2. ✅ Operational preflight that invokes the official SWE-bench harness
-   and checks Docker/image state: `scripts/swebench_lite_ops.py`.
+   and checks Docker/image-cache state: `scripts/swebench_lite_ops.py`.
    Remote image naming follows the official `TestSpec.instance_image_key`
    rule: lower-case instance id and replace `__` with `_1776_`, e.g.
    `sympy__sympy-20590` →
    `swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest`.
+   The cache-hygiene gate expects only the images required for the
+   current smoke or batch slice; it fails on stale or duplicate
+   SWE-bench images.
 
 3. ✅ pytest JSON output parser (`pytest --json-report --json-report-file=...`):
    ```json
@@ -91,7 +95,8 @@ python3 scripts/swebench_lite_ops.py preflight
 #   dataset_count: 300
 #   task_manifest_count: 300
 #   Docker Desktop reachable
-#   image_status present/missing counts are physically read from Docker
+#   exactly the expected SWE-bench image(s) are physically present
+#   no stale or duplicate SWE-bench image refs exist
 
 # Official gold smoke
 python3 scripts/swebench_lite_ops.py gold-smoke --instance-id sympy__sympy-20590
@@ -99,6 +104,7 @@ python3 scripts/swebench_lite_ops.py gold-smoke --instance-id sympy__sympy-20590
 #   resolved_instances: 1
 #   instance_report.sympy__sympy-20590.resolved: true
 #   official image present in docker image inspect
+#   cache_status.swebench_image_count: 1
 
 # 5-task batch
 context-graph mejepa-corpus generate --tasks 5 --output /tmp/corpus-smoke
@@ -216,11 +222,11 @@ A 10-way parallel run on a 64GB+ machine completes 2,400 entries in
 1. **Docker daemon permission denied**: blocker resolved 2026-05-07
    per `memory/blockers/agent-72-coordinator--docker-permission-denied-blocks-official-eval.md`.
    Re-verify on each fresh environment.
-2. **SWE-bench Lite image pull from public registry slow**: pre-pull
-   all 300 images in advance with
-   `python3 scripts/swebench_lite_ops.py pull-images`. Current FSV:
-   1 present / 299 missing at
-   `/tmp/contextgraph-swebench-lite-fsv/image-status-evidence.json`.
+2. **SWE-bench Lite image pull from public registry slow**: pull only
+   the task images needed for the current smoke or batch slice with
+   `python3 scripts/swebench_lite_ops.py pull-images --instance-ids ...`.
+   Current FSV keeps exactly one expected SWE-bench image in local cache
+   at `/tmp/contextgraph-swebench-lite-fsv/image-status-evidence.json`.
 3. **Test fixtures non-deterministic** (e.g., random-seed tests): pin
    `PYTHONHASHSEED=0` in the Docker entry-point.
 4. **Subprocess timeout false-positives** on slow machines: 600s
@@ -239,8 +245,9 @@ A 10-way parallel run on a 64GB+ machine completes 2,400 entries in
 4. Add CF to `context-graph-storage` via the existing CF migration
    pattern.
 5. Run 5-task × 8-category batch to verify persistence.
-6. Pull remaining 299 images or let the official harness pull them during
-   generation, depending on disk budget and parallelism.
+6. Pull only the next batch slice's needed images, or let the official
+   harness pull them during generation. Do not pre-cache all 300 unless
+   the operator intentionally trades disk for throughput.
 7. Run full 300-task generation as operational batch.
 8. Verify Phase 0 §7 DoD numbers.
 9. Update `01_status_overview.md` and `02_shipped/phase0_*.md`.

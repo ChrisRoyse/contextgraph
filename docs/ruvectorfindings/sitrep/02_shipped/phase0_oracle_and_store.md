@@ -88,7 +88,8 @@ Source of truth:
 - Official dataset: `princeton-nlp/SWE-bench_Lite:test`, read by the
   official `swebench==4.1.0` harness.
 - Checked-in task manifests: `tasks/swebench-lite/*.json`.
-- Docker image inventory: `docker images` / `docker image inspect`.
+- Docker image inventory and cache hygiene: `docker images` /
+  `docker image inspect`.
 - Official gold-smoke artifacts under
   `/tmp/contextgraph-swebench-lite-fsv/gold-smoke/`.
 
@@ -100,7 +101,9 @@ Current readback:
   manifests and Docker Desktop is reachable.
 - Image status:
   `/tmp/contextgraph-swebench-lite-fsv/image-status-evidence.json`
-  confirms 1 official Lite image present and 299 missing locally.
+  confirms exactly one expected SWE-bench image is present locally, no
+  unexpected SWE-bench images exist, and no duplicate SWE-bench image ids
+  or duplicate per-instance tags exist.
 - Gold smoke:
   `/tmp/contextgraph-swebench-lite-fsv/gold-smoke-evidence.json`
   confirms `sympy__sympy-20590` runs through the official harness with
@@ -116,12 +119,23 @@ Important naming correction:
 
 Boundary cases covered by `scripts/swebench_lite_ops.py`:
 
-- `image-status --require-all` rejects while 299 official images are
-  missing (`SWEBENCH_LOCAL_IMAGES_MISSING`).
+- `image-status --require-clean --expected-instance-ids` can reject a
+  non-empty SWE-bench cache when zero images are expected
+  (`SWEBENCH_CACHE_NOT_CLEAN`).
 - `gold-smoke --instance-id bogus__task-1` rejects unknown task ids
   (`SWEBENCH_UNKNOWN_INSTANCE_ID`).
 - `preflight --tasks-dir <empty-dir>` rejects incomplete task manifests
   (`SWEBENCH_TASK_MANIFEST_COUNT_MISMATCH`).
+
+Cache policy:
+
+- Do **not** pre-pull all 300 official Lite images as a readiness gate.
+  Keep only the image needed for the current smoke or batch slice.
+- For the current ready state, the only expected SWE-bench image is
+  `swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest`.
+- Extra images are not treated as harmless: stale or duplicate
+  SWE-bench images fail the cache-hygiene check so they cannot confuse
+  the harness or waste Docker Desktop storage.
 
 ## What this enables downstream
 
