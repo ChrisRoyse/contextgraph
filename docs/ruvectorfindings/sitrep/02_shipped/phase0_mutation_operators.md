@@ -83,8 +83,9 @@ that change indentation are explicitly out-of-scope.
 
 ## What this enables downstream
 
-- **Phase 0 corpus generation** — once Docker oracle ships, runs each
-  of 300 tasks × 8 operators = 2,400 entries.
+- **Phase 0 corpus generation** — the local oracle wrapper/store now
+  exists; the remaining official SWE-bench batch runs each of 300 tasks
+  × 8 operators = 2,400 entries.
 - **Phase 1 instrument linear-probe gate** — uses the labeled
   mutations to measure latent-separation accuracy.
 - **Phase 3 training** — direct consumer.
@@ -94,7 +95,7 @@ that change indentation are explicitly out-of-scope.
 ## See also
 
 - Spec: `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md §3.1`
-- Phase 0 deferred items: `03_deferred/phases/phase0.md` (Docker oracle
-  + RocksDB CFs + full corpus gen)
+- Phase 0 deferred items: `03_deferred/phases/phase0.md` (official
+  SWE-bench image batch + full corpus gen)
 - Phase 0 split partner: `phase0_corpus_split.md`
 - Source: `crates/context-graph-mejepa-corpus/src/{known_good,subtle_flip,off_by_one,swap_variable,delete_test_call,wrong_file,over_engineer,compile_error,python_lex,prng}.rs`

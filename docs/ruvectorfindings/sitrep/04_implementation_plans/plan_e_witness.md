@@ -4,6 +4,7 @@
 > **Effort:** ~1.5 days.
 > **Crate / module:** `crates/context-graph-mejepa-instruments/src/e_witness.rs`
 > **Output dim:** 256 (slot 7 of 15 per `InstrumentSlot::layout()`).
+> **Status update 2026-05-09:** shipped. Retained as design history.
 
 ## Goal
 

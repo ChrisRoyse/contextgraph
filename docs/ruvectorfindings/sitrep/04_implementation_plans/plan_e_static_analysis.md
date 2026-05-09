@@ -4,6 +4,7 @@
 > **Effort:** ~2 days.
 > **Crate / module:** `crates/context-graph-mejepa-instruments/src/e_static_analysis.rs`
 > **Output dim:** 256 (slot 12 of 15).
+> **Status update 2026-05-09:** shipped. Retained as design history.
 
 ## Goal
 

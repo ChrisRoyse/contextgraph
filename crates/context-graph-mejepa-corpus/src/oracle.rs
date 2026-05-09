@@ -556,7 +556,7 @@ fn parse_pytest_json_value(root: &Value) -> OracleResult<OracleVerdict> {
     })?;
 
     let mut per_test = Vec::with_capacity(tests.len());
-    let mut counts = [0usize; 4];
+    let mut raw_counts = [0usize; 6];
     let mut exception = top_level_exception(root);
     for (idx, test) in tests.iter().enumerate() {
         let test_obj = test.as_object().ok_or_else(|| {
@@ -589,8 +589,8 @@ fn parse_pytest_json_value(root: &Value) -> OracleResult<OracleVerdict> {
                     "write pytest outcome strings for every node",
                 )
             })?;
-        let outcome = parse_outcome(outcome_text, idx)?;
-        counts[outcome_index(outcome)] += 1;
+        let (outcome, raw_kind) = parse_outcome(outcome_text, idx)?;
+        raw_counts[raw_kind.index()] += 1;
 
         if outcome == TestOutcome::Error && exception.is_none() {
             exception = exception_from_json_fragment(test.get("longrepr"))
@@ -616,11 +616,32 @@ fn parse_pytest_json_value(root: &Value) -> OracleResult<OracleVerdict> {
             "write a complete report and parse only after the runner closes the file",
         ));
     }
-    validate_summary_count(summary, "passed", counts[0])?;
-    validate_summary_count(summary, "failed", counts[1])?;
-    validate_summary_count(summary, "skipped", counts[2])?;
-    validate_summary_count(summary, "errors", counts[3])?;
-    validate_summary_count(summary, "error", counts[3])?;
+    validate_summary_count(
+        summary,
+        "passed",
+        raw_counts[PytestOutcomeKind::Passed.index()],
+    )?;
+    validate_summary_count(
+        summary,
+        "failed",
+        raw_counts[PytestOutcomeKind::Failed.index()],
+    )?;
+    validate_summary_count(
+        summary,
+        "skipped",
+        raw_counts[PytestOutcomeKind::Skipped.index()],
+    )?;
+    validate_error_summary_count(summary, raw_counts[PytestOutcomeKind::Error.index()])?;
+    validate_summary_count(
+        summary,
+        "xfailed",
+        raw_counts[PytestOutcomeKind::XFailed.index()],
+    )?;
+    validate_summary_count(
+        summary,
+        "xpassed",
+        raw_counts[PytestOutcomeKind::XPassed.index()],
+    )?;
 
     let summary_errors = optional_summary_usize(summary, "errors")?
         .or(optional_summary_usize(summary, "error")?)
@@ -893,26 +914,42 @@ fn docker_mount_arg(mount: &DockerMount) -> OracleResult<String> {
     Ok(arg)
 }
 
-fn parse_outcome(text: &str, idx: usize) -> OracleResult<TestOutcome> {
+#[derive(Clone, Copy)]
+enum PytestOutcomeKind {
+    Passed,
+    Failed,
+    Skipped,
+    Error,
+    XFailed,
+    XPassed,
+}
+
+impl PytestOutcomeKind {
+    fn index(self) -> usize {
+        match self {
+            Self::Passed => 0,
+            Self::Failed => 1,
+            Self::Skipped => 2,
+            Self::Error => 3,
+            Self::XFailed => 4,
+            Self::XPassed => 5,
+        }
+    }
+}
+
+fn parse_outcome(text: &str, idx: usize) -> OracleResult<(TestOutcome, PytestOutcomeKind)> {
     match text {
-        "passed" | "pass" => Ok(TestOutcome::Pass),
-        "failed" | "fail" | "xpassed" => Ok(TestOutcome::Fail),
-        "skipped" | "skip" | "xfailed" => Ok(TestOutcome::Skip),
-        "error" | "errored" => Ok(TestOutcome::Error),
+        "passed" | "pass" => Ok((TestOutcome::Pass, PytestOutcomeKind::Passed)),
+        "failed" | "fail" => Ok((TestOutcome::Fail, PytestOutcomeKind::Failed)),
+        "skipped" | "skip" => Ok((TestOutcome::Skip, PytestOutcomeKind::Skipped)),
+        "xfailed" => Ok((TestOutcome::Skip, PytestOutcomeKind::XFailed)),
+        "xpassed" => Ok((TestOutcome::Fail, PytestOutcomeKind::XPassed)),
+        "error" | "errored" => Ok((TestOutcome::Error, PytestOutcomeKind::Error)),
         other => Err(OracleError::report_invalid(
             "tests[i].outcome",
             format!("tests[{idx}] has unsupported outcome {other:?}"),
             "normalize runner outcomes to passed/failed/skipped/error before parsing",
         )),
-    }
-}
-
-fn outcome_index(outcome: TestOutcome) -> usize {
-    match outcome {
-        TestOutcome::Pass => 0,
-        TestOutcome::Fail => 1,
-        TestOutcome::Skip => 2,
-        TestOutcome::Error => 3,
     }
 }
 
@@ -986,6 +1023,46 @@ fn validate_summary_count(summary: &Value, key: &'static str, actual: usize) -> 
             return Err(OracleError::report_invalid(
                 "summary",
                 format!("summary.{key}={expected} but tests array counted {actual}"),
+                "fix the report producer or parse only complete runner output",
+            ));
+        }
+    } else if actual > 0 {
+        return Err(OracleError::report_invalid(
+            "summary",
+            format!("summary.{key} is missing but tests array counted {actual}"),
+            "write complete per-outcome summary counts for every non-zero pytest outcome",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_error_summary_count(summary: &Value, actual: usize) -> OracleResult<()> {
+    let errors = optional_summary_usize(summary, "errors")?;
+    let error = optional_summary_usize(summary, "error")?;
+    if errors.is_none() && error.is_none() {
+        if actual > 0 {
+            return Err(OracleError::report_invalid(
+                "summary",
+                format!("summary.error/errors is missing but tests array counted {actual}"),
+                "write the pytest collection/error count under error or errors",
+            ));
+        }
+        return Ok(());
+    }
+    if let Some(expected) = errors {
+        if expected != actual {
+            return Err(OracleError::report_invalid(
+                "summary",
+                format!("summary.errors={expected} but tests array counted {actual}"),
+                "fix the report producer or parse only complete runner output",
+            ));
+        }
+    }
+    if let Some(expected) = error {
+        if expected != actual {
+            return Err(OracleError::report_invalid(
+                "summary",
+                format!("summary.error={expected} but tests array counted {actual}"),
                 "fix the report producer or parse only complete runner output",
             ));
         }
@@ -1153,6 +1230,38 @@ mod tests {
     fn rejects_mismatched_summary_counts() {
         let bad = REPORT.replace("\"passed\": 1", "\"passed\": 2");
         let err = parse_pytest_json_report(&bad).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_ORACLE_REPORT_INVALID");
+    }
+
+    #[test]
+    fn validates_raw_pytest_xfail_xpass_summary_counts() {
+        let report = r#"{
+          "summary": {"passed": 1, "xfailed": 1, "xpassed": 1, "total": 3},
+          "tests": [
+            {"nodeid": "tests/test_x.py::test_pass", "outcome": "passed", "call": {"duration": 0.001}},
+            {"nodeid": "tests/test_x.py::test_xfail", "outcome": "xfailed", "call": {"duration": 0.001}},
+            {"nodeid": "tests/test_x.py::test_xpass", "outcome": "xpassed", "call": {"duration": 0.001}}
+          ]
+        }"#;
+        let verdict = parse_pytest_json_report(report).unwrap();
+        assert_eq!(verdict.per_test[0].outcome, TestOutcome::Pass);
+        assert_eq!(verdict.per_test[1].outcome, TestOutcome::Skip);
+        assert_eq!(verdict.per_test[2].outcome, TestOutcome::Fail);
+
+        let bad = report.replace("\"xfailed\": 1", "\"xfailed\": 2");
+        let err = parse_pytest_json_report(&bad).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_ORACLE_REPORT_INVALID");
+    }
+
+    #[test]
+    fn rejects_missing_nonzero_summary_bucket() {
+        let report = r#"{
+          "summary": {"total": 1},
+          "tests": [
+            {"nodeid": "tests/test_x.py::test_pass", "outcome": "passed", "call": {"duration": 0.001}}
+          ]
+        }"#;
+        let err = parse_pytest_json_report(report).unwrap_err();
         assert_eq!(err.code(), "MEJEPA_ORACLE_REPORT_INVALID");
     }
 
