@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (5, 6, 1.0),
         (6, 7, 3.0),
     ];
-    let weights_paper = weights_from_edges(8, edges_paper.iter().copied());
+    let weights_paper = weights_from_edges(8, edges_paper.iter().copied())?;
     let cut_paper = stoer_wagner(&weights_paper, 8, StoerWagnerConfig::default())?;
 
     // Case 2: dumbbell graph — mincut should isolate at the bridge of weight 1.
@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (3, 5, 10.0),
         (4, 5, 10.0),
     ];
-    let weights_dumbbell = weights_from_edges(6, edges_dumbbell.iter().copied());
+    let weights_dumbbell = weights_from_edges(6, edges_dumbbell.iter().copied())?;
     let cut_dumbbell = stoer_wagner(&weights_dumbbell, 6, StoerWagnerConfig::default())?;
 
     // Case 3: balanced clusters — three-edge weak link between two K3s.
@@ -52,11 +52,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (1, 4, 0.5),
         (2, 5, 0.5),
     ];
-    let weights_clusters = weights_from_edges(6, edges_clusters.iter().copied());
+    let weights_clusters = weights_from_edges(6, edges_clusters.iter().copied())?;
     let cut_clusters = stoer_wagner(&weights_clusters, 6, StoerWagnerConfig::default())?;
 
     // Boundary 1: disconnected graph rejects.
-    let weights_disconnected = weights_from_edges(4, [(0, 1, 1.0), (2, 3, 1.0)].iter().copied());
+    let weights_disconnected =
+        weights_from_edges(4, [(0, 1, 1.0), (2, 3, 1.0)].iter().copied())?;
     let disconnected_code = match stoer_wagner(&weights_disconnected, 4, StoerWagnerConfig::default())
     {
         Err(e) => e.code(),
@@ -72,6 +73,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Boundary 3: graph with 1 vertex rejects.
     let too_small_code = match stoer_wagner(&[0.0], 1, StoerWagnerConfig::default()) {
+        Err(e) => e.code(),
+        Ok(_) => "UNEXPECTED_OK",
+    };
+    let oob_edge_code = match weights_from_edges(3, [(0, 3, 1.0)].iter().copied()) {
+        Err(e) => e.code(),
+        Ok(_) => "UNEXPECTED_OK",
+    };
+    let self_loop_edge_code = match weights_from_edges(3, [(1, 1, 1.0)].iter().copied()) {
         Err(e) => e.code(),
         Ok(_) => "UNEXPECTED_OK",
     };
@@ -114,6 +123,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "boundary_too_small_graph_rejected": {
             "expected_code": "MINCUT_GRAPH_TOO_SMALL",
             "actual_code": too_small_code,
+        },
+        "boundary_oob_edge_rejected": {
+            "expected_code": "MINCUT_EDGE_ENDPOINT_OUT_OF_BOUNDS",
+            "actual_code": oob_edge_code,
+        },
+        "boundary_self_loop_edge_rejected": {
+            "expected_code": "MINCUT_SELF_LOOP_EDGE",
+            "actual_code": self_loop_edge_code,
         },
         "deterministic_across_runs": deterministic,
     });

@@ -67,9 +67,10 @@ pub struct GrangerReport {
 }
 
 /// Test whether `x` Granger-causes `y` at the given lag.
-/// Both series must have the same length and at least `2 * lag + 2`
-/// observations so the unrestricted regression is identifiable
-/// (`n_observations - 2*lag - 1 ≥ 1`).
+/// Both series must have the same length and at least `3 * lag + 2`
+/// raw observations. After dropping the first `lag` rows, this leaves
+/// `n_observations >= 2*lag + 2`, so the unrestricted regression has
+/// positive residual degrees of freedom.
 pub fn granger_test(
     y: &[f64],
     x: &[f64],
@@ -91,11 +92,20 @@ pub fn granger_test(
         ));
     }
     let t = y.len();
-    let min_required = 2 * lag + 2;
+    let min_required = lag
+        .checked_mul(3)
+        .and_then(|v| v.checked_add(2))
+        .ok_or_else(|| {
+            SolverError::invalid(
+                "lag",
+                format!("lag {lag} is too large to compute required observation count"),
+                "choose a smaller lag",
+            )
+        })?;
     if t < min_required {
         return Err(SolverError::invalid(
             "series",
-            format!("Granger requires ≥ 2*lag+2 = {min_required} observations; got {t}"),
+            format!("Granger requires ≥ 3*lag+2 = {min_required} observations; got {t}"),
             "supply a longer time series or reduce lag",
         ));
     }
@@ -143,7 +153,17 @@ pub fn granger_test(
     let ssr_unrestricted = ssr(&design_u, n, cols_u, &response, &beta_u);
 
     let df_num = p;
-    let df_den = if n > 2 * p + 1 { n - 2 * p - 1 } else { 0 };
+    let unrestricted_params = p
+        .checked_mul(2)
+        .and_then(|v| v.checked_add(1))
+        .ok_or_else(|| {
+            SolverError::invalid(
+                "lag",
+                format!("lag {p} is too large to compute unrestricted parameter count"),
+                "choose a smaller lag",
+            )
+        })?;
+    let df_den = n.checked_sub(unrestricted_params).unwrap_or(0);
     if df_den == 0 {
         return Err(SolverError::invalid(
             "series",
@@ -154,10 +174,30 @@ pub fn granger_test(
         ));
     }
 
-    let numerator = (ssr_restricted - ssr_unrestricted).max(0.0) / df_num as f64;
+    let ssr_delta = ssr_restricted - ssr_unrestricted;
+    let tolerance = 1.0e-10 * (1.0 + ssr_restricted.abs().max(ssr_unrestricted.abs()));
+    if ssr_delta < -tolerance {
+        return Err(SolverError::invariant(
+            "OLS",
+            format!(
+                "unrestricted SSR exceeded restricted SSR by {}; restricted={}, unrestricted={}",
+                -ssr_delta, ssr_restricted, ssr_unrestricted
+            ),
+            "check the design matrix conditioning and input stationarity",
+        ));
+    }
+    let numerator = ssr_delta.max(0.0) / df_num as f64;
     let denom = ssr_unrestricted / df_den as f64;
-    let f_statistic = if denom <= 0.0 {
-        // Unrestricted residuals are zero: perfect fit. F → ∞; p-value 0.
+    let f_statistic = if denom == 0.0 {
+        if numerator == 0.0 {
+            return Err(SolverError::invariant(
+                "OLS",
+                "restricted and unrestricted residuals are both exactly zero; F statistic is undefined",
+                "use a less degenerate series or add noise before testing",
+            ));
+        }
+        // Unrestricted residuals are exactly zero and restricted residuals are not:
+        // perfect incremental fit. F → ∞; p-value 0.
         f64::INFINITY
     } else {
         numerator / denom
@@ -288,8 +328,19 @@ pub fn f_distribution_upper_tail(
     df_num: usize,
     df_den: usize,
 ) -> SolverResult<f64> {
+    if df_num == 0 || df_den == 0 {
+        return Err(SolverError::invalid(
+            "degrees_of_freedom",
+            format!("F distribution requires positive degrees of freedom; got ({df_num}, {df_den})"),
+            "pass positive numerator and denominator degrees of freedom",
+        ));
+    }
     if f.is_nan() {
-        return Ok(f64::NAN);
+        return Err(SolverError::invalid(
+            "f",
+            "F statistic is NaN",
+            "check upstream regression residuals before computing a p-value",
+        ));
     }
     if f.is_infinite() {
         return Ok(0.0);
@@ -311,8 +362,19 @@ pub fn f_distribution_upper_tail(
 /// continued-fraction iteration does not converge within
 /// `BETACF_MAX_ITER` steps.
 pub fn regularized_incomplete_beta(x: f64, a: f64, b: f64) -> SolverResult<f64> {
-    if !(0.0..=1.0).contains(&x) || a <= 0.0 || b <= 0.0 {
-        return Ok(f64::NAN);
+    if !x.is_finite() || !(0.0..=1.0).contains(&x) {
+        return Err(SolverError::invalid(
+            "x",
+            format!("regularized incomplete beta requires finite x in [0,1]; got {x}"),
+            "clamp or reject invalid probability inputs before calling",
+        ));
+    }
+    if !a.is_finite() || !b.is_finite() || a <= 0.0 || b <= 0.0 {
+        return Err(SolverError::invalid(
+            "shape",
+            format!("regularized incomplete beta requires positive finite a,b; got ({a}, {b})"),
+            "pass positive finite shape parameters",
+        ));
     }
     if x == 0.0 {
         return Ok(0.0);
@@ -451,7 +513,16 @@ mod tests {
     #[test]
     fn rejects_insufficient_observations() {
         let err = granger_test(&[1.0, 2.0, 3.0], &[1.0, 2.0, 3.0], GrangerConfig { lag: 2 })
-            .expect_err("3 < 2*2+2 must error");
+            .expect_err("3 < 3*2+2 must error");
+        assert_eq!(err.code(), "CGSOLVER_INVALID_INPUT");
+    }
+
+    #[test]
+    fn rejects_raw_observation_count_that_cannot_leave_df_denominator() {
+        let y = [1.0, 2.0, 3.0, 4.0];
+        let x = [4.0, 3.0, 2.0, 1.0];
+        let err = granger_test(&y, &x, GrangerConfig { lag: 1 })
+            .expect_err("4 raw observations leaves zero denominator df");
         assert_eq!(err.code(), "CGSOLVER_INVALID_INPUT");
     }
 
@@ -569,15 +640,35 @@ mod tests {
             (p - 0.05).abs() < 0.01,
             "F(1,100) at 3.94 should be ~0.05; got {p}"
         );
-        // Edge: f=NaN propagates as NaN.
-        let p_nan = f_distribution_upper_tail(f64::NAN, 1, 1).unwrap();
-        assert!(p_nan.is_nan(), "NaN must propagate; got {p_nan}");
+        let nan_err = f_distribution_upper_tail(f64::NAN, 1, 1).expect_err("NaN must error");
+        assert_eq!(nan_err.code(), "CGSOLVER_INVALID_INPUT");
+        let df_err = f_distribution_upper_tail(1.0, 0, 1).expect_err("df=0 must error");
+        assert_eq!(df_err.code(), "CGSOLVER_INVALID_INPUT");
         // Edge: f=+∞ → upper-tail probability is 0.
         let p_inf = f_distribution_upper_tail(f64::INFINITY, 1, 1).unwrap();
         assert_eq!(p_inf, 0.0);
         // Edge: f=0 → upper-tail probability is 1.
         let p_zero = f_distribution_upper_tail(0.0, 1, 1).unwrap();
         assert_eq!(p_zero, 1.0);
+    }
+
+    #[test]
+    fn incomplete_beta_rejects_invalid_inputs() {
+        let err =
+            regularized_incomplete_beta(f64::NAN, 2.0, 3.0).expect_err("NaN x must error");
+        assert_eq!(err.code(), "CGSOLVER_INVALID_INPUT");
+        let err = regularized_incomplete_beta(0.5, 0.0, 3.0)
+            .expect_err("non-positive shape must error");
+        assert_eq!(err.code(), "CGSOLVER_INVALID_INPUT");
+    }
+
+    #[test]
+    fn granger_rejects_degenerate_zero_residual_models() {
+        let y = [1.0, 1.0, 1.0, 1.0, 1.0];
+        let x = [2.0, 2.0, 2.0, 2.0, 2.0];
+        let err = granger_test(&y, &x, GrangerConfig { lag: 1 })
+            .expect_err("both models fit constant series exactly");
+        assert_eq!(err.code(), "CGSOLVER_NUMERICAL_INVARIANT");
     }
 
     #[test]

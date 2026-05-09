@@ -41,6 +41,14 @@ pub enum MincutError {
     GraphTooSmall { got: usize },
     #[error("weight matrix is not square: rows={rows} cols={cols}")]
     NonSquareMatrix { rows: usize, cols: usize },
+    #[error("weight matrix size overflow for n={n}")]
+    MatrixSizeOverflow { n: usize },
+    #[error("symmetry tolerance must be finite and non-negative, got {tolerance}")]
+    InvalidSymmetryTolerance { tolerance: f64 },
+    #[error("edge endpoint out of bounds: edge=({i},{j}) n={n}")]
+    EdgeEndpointOutOfBounds { i: usize, j: usize, n: usize },
+    #[error("self-loop edge rejected at vertex {v}: weight={weight}")]
+    SelfLoopEdge { v: usize, weight: f64 },
     #[error("weight matrix has non-finite or negative entry at ({i},{j}): {value}")]
     NegativeOrNonFiniteWeight { i: usize, j: usize, value: f64 },
     #[error("weight matrix is not symmetric at ({i},{j}): w[{i},{j}]={a} != w[{j},{i}]={b}")]
@@ -61,6 +69,10 @@ impl MincutError {
         match self {
             Self::GraphTooSmall { .. } => "MINCUT_GRAPH_TOO_SMALL",
             Self::NonSquareMatrix { .. } => "MINCUT_NON_SQUARE_MATRIX",
+            Self::MatrixSizeOverflow { .. } => "MINCUT_MATRIX_SIZE_OVERFLOW",
+            Self::InvalidSymmetryTolerance { .. } => "MINCUT_INVALID_SYMMETRY_TOLERANCE",
+            Self::EdgeEndpointOutOfBounds { .. } => "MINCUT_EDGE_ENDPOINT_OUT_OF_BOUNDS",
+            Self::SelfLoopEdge { .. } => "MINCUT_SELF_LOOP_EDGE",
             Self::NegativeOrNonFiniteWeight { .. } => "MINCUT_WEIGHT_INVALID",
             Self::AsymmetricEdge { .. } => "MINCUT_ASYMMETRIC_EDGE",
             Self::SelfLoopNonZero { .. } => "MINCUT_SELF_LOOP_NONZERO",
@@ -111,7 +123,15 @@ pub fn stoer_wagner(
     if n < 2 {
         return Err(MincutError::GraphTooSmall { got: n });
     }
-    if weights.len() != n * n {
+    if !config.symmetry_tolerance.is_finite() || config.symmetry_tolerance < 0.0 {
+        return Err(MincutError::InvalidSymmetryTolerance {
+            tolerance: config.symmetry_tolerance,
+        });
+    }
+    let expected_len = n
+        .checked_mul(n)
+        .ok_or(MincutError::MatrixSizeOverflow { n })?;
+    if weights.len() != expected_len {
         return Err(MincutError::NonSquareMatrix {
             rows: weights.len() / n.max(1),
             cols: n,
@@ -176,7 +196,7 @@ pub fn stoer_wagner(
         // Track last two vertices added in MA order: prev_last, last.
         let mut prev_last = start;
         let mut last = start;
-        let mut prev_last_set = false;
+        let mut cut_weight_phase = 0.0;
 
         // Number of active vertices remaining is n - phase, we already
         // placed `start`, so we add (n - phase - 1) more.
@@ -194,8 +214,8 @@ pub fn stoer_wagner(
             }
             let chosen = best_v.expect("at least one candidate before final vertex");
             prev_last = last;
-            prev_last_set = true;
             last = chosen;
+            cut_weight_phase = best_w;
             in_set[chosen] = true;
             for j in 0..n {
                 if active[j] && !in_set[j] {
@@ -204,18 +224,8 @@ pub fn stoer_wagner(
             }
         }
 
-        // Cut-of-the-phase: weights_to_set[last] is the sum of edges
-        // between last and S \ {last} (S grew until last was added).
-        // But weights_to_set[last] was overwritten when last entered S;
-        // we must recompute the sum from the matrix instead.
-        // Edges from `last` to all other active vertices (which are
-        // S \ {last}) sum to the cut weight separating last from rest.
-        let mut cut_weight_phase = 0.0;
-        for j in 0..n {
-            if active[j] && j != last {
-                cut_weight_phase += mat[last * n + j];
-            }
-        }
+        // Cut-of-the-phase: at the moment `last` was selected, `best_w`
+        // was the sum of edges from `last` to S \ {last}.
 
         // The "small side" of THIS phase's cut is the singleton {last},
         // expanded to all original vertices merged into `last`.
@@ -233,14 +243,6 @@ pub fn stoer_wagner(
             best_large_side = large;
             best_small_side.sort_unstable();
             best_phase = phase;
-        }
-
-        if !prev_last_set {
-            // Only one active vertex was present besides start (n=2 phase=0).
-            // prev_last == last == start; just merge `last` into `start`'s
-            // partner. With n=2 the "merge" is a no-op since the next loop
-            // exits.
-            prev_last = start;
         }
 
         // Merge `last` into `prev_last`: combine member lists, sum row+col,
@@ -281,21 +283,55 @@ pub fn stoer_wagner(
     })
 }
 
-/// Convenience: build a symmetric weight matrix from an iterator of edges
-/// `(i, j, weight)` over `n` vertices. Caller-provided edges accumulate
-/// (parallel edges' weights sum).
-pub fn weights_from_edges<I>(n: usize, edges: I) -> Vec<f64>
+/// Build a symmetric weight matrix from `(i, j, weight)` edges over `n`
+/// vertices. Caller-provided parallel edges accumulate. Invalid endpoints,
+/// self-loops, negative weights, non-finite weights, and accumulation
+/// overflow are rejected instead of silently dropping graph structure.
+pub fn weights_from_edges<I>(n: usize, edges: I) -> Result<Vec<f64>, MincutError>
 where
     I: IntoIterator<Item = (usize, usize, f64)>,
 {
-    let mut w = vec![0.0; n * n];
-    for (i, j, weight) in edges {
-        if i < n && j < n && i != j {
-            w[i * n + j] += weight;
-            w[j * n + i] += weight;
-        }
+    if n < 2 {
+        return Err(MincutError::GraphTooSmall { got: n });
     }
-    w
+    let len = n
+        .checked_mul(n)
+        .ok_or(MincutError::MatrixSizeOverflow { n })?;
+    let mut w = vec![0.0; len];
+    for (i, j, weight) in edges {
+        if i >= n || j >= n {
+            return Err(MincutError::EdgeEndpointOutOfBounds { i, j, n });
+        }
+        if i == j {
+            return Err(MincutError::SelfLoopEdge { v: i, weight });
+        }
+        if !weight.is_finite() || weight < 0.0 {
+            return Err(MincutError::NegativeOrNonFiniteWeight {
+                i,
+                j,
+                value: weight,
+            });
+        }
+        let forward = w[i * n + j] + weight;
+        let reverse = w[j * n + i] + weight;
+        if !forward.is_finite() {
+            return Err(MincutError::NegativeOrNonFiniteWeight {
+                i,
+                j,
+                value: forward,
+            });
+        }
+        if !reverse.is_finite() {
+            return Err(MincutError::NegativeOrNonFiniteWeight {
+                i: j,
+                j: i,
+                value: reverse,
+            });
+        }
+        w[i * n + j] = forward;
+        w[j * n + i] = reverse;
+    }
+    Ok(w)
 }
 
 #[cfg(test)]
@@ -341,6 +377,20 @@ mod tests {
     }
 
     #[test]
+    fn rejects_invalid_symmetry_tolerance() {
+        let weights = vec![0.0, 1.0, 1.0, 0.0];
+        let err = stoer_wagner(
+            &weights,
+            2,
+            StoerWagnerConfig {
+                symmetry_tolerance: f64::NAN,
+            },
+        )
+        .expect_err("NaN tolerance must error");
+        assert_eq!(err.code(), "MINCUT_INVALID_SYMMETRY_TOLERANCE");
+    }
+
+    #[test]
     fn rejects_self_loop() {
         let weights = vec![1.0, 1.0, 1.0, 0.0];
         let err = stoer_wagner(&weights, 2, StoerWagnerConfig::default())
@@ -376,7 +426,7 @@ mod tests {
             (5, 6, 1.0),
             (6, 7, 3.0),
         ];
-        let weights = weights_from_edges(8, edges.iter().copied());
+        let weights = weights_from_edges(8, edges.iter().copied()).unwrap();
         let cut = stoer_wagner(&weights, 8, StoerWagnerConfig::default()).unwrap();
         assert_eq!(cut.cut_weight, 4.0);
         assert_eq!(cut.small_side.len() + cut.large_side.len(), 8);
@@ -397,7 +447,7 @@ mod tests {
             (3, 5, 10.0),
             (4, 5, 10.0),
         ];
-        let weights = weights_from_edges(6, edges.iter().copied());
+        let weights = weights_from_edges(6, edges.iter().copied()).unwrap();
         let cut = stoer_wagner(&weights, 6, StoerWagnerConfig::default()).unwrap();
         assert_eq!(cut.cut_weight, 1.0);
         let mut combined: Vec<usize> = cut
@@ -432,7 +482,7 @@ mod tests {
     fn rejects_disconnected_graph() {
         // Two components: {0,1} and {2,3}. Mincut weight = 0.
         let edges = [(0, 1, 1.0), (2, 3, 1.0)];
-        let weights = weights_from_edges(4, edges.iter().copied());
+        let weights = weights_from_edges(4, edges.iter().copied()).unwrap();
         let err = stoer_wagner(&weights, 4, StoerWagnerConfig::default())
             .expect_err("disconnected graph must error");
         assert_eq!(err.code(), "MINCUT_GRAPH_DISCONNECTED");
@@ -449,7 +499,7 @@ mod tests {
             (3, 5, 1.0),
             (4, 5, 1.0),
         ];
-        let weights = weights_from_edges(6, edges.iter().copied());
+        let weights = weights_from_edges(6, edges.iter().copied()).unwrap();
         let a = stoer_wagner(&weights, 6, StoerWagnerConfig::default()).unwrap();
         let b = stoer_wagner(&weights, 6, StoerWagnerConfig::default()).unwrap();
         assert_eq!(a, b);
@@ -457,10 +507,33 @@ mod tests {
 
     #[test]
     fn weights_from_edges_accumulates_parallel() {
-        let w = weights_from_edges(3, [(0, 1, 1.0), (0, 1, 2.5), (1, 2, 0.5)].iter().copied());
+        let w =
+            weights_from_edges(3, [(0, 1, 1.0), (0, 1, 2.5), (1, 2, 0.5)].iter().copied())
+                .unwrap();
         assert_eq!(w[0 * 3 + 1], 3.5);
         assert_eq!(w[1 * 3 + 0], 3.5);
         assert_eq!(w[1 * 3 + 2], 0.5);
+    }
+
+    #[test]
+    fn weights_from_edges_rejects_out_of_bounds_endpoint() {
+        let err = weights_from_edges(3, [(0, 3, 1.0)].iter().copied())
+            .expect_err("out-of-bounds edge must error");
+        assert_eq!(err.code(), "MINCUT_EDGE_ENDPOINT_OUT_OF_BOUNDS");
+    }
+
+    #[test]
+    fn weights_from_edges_rejects_self_loop() {
+        let err = weights_from_edges(3, [(1, 1, 1.0)].iter().copied())
+            .expect_err("self-loop edge must error");
+        assert_eq!(err.code(), "MINCUT_SELF_LOOP_EDGE");
+    }
+
+    #[test]
+    fn weights_from_edges_rejects_invalid_weight() {
+        let err = weights_from_edges(3, [(0, 1, f64::INFINITY)].iter().copied())
+            .expect_err("non-finite edge must error");
+        assert_eq!(err.code(), "MINCUT_WEIGHT_INVALID");
     }
 
     #[test]
@@ -480,7 +553,7 @@ mod tests {
             (1, 4, 0.5),
             (2, 5, 0.5),
         ];
-        let weights = weights_from_edges(6, edges.iter().copied());
+        let weights = weights_from_edges(6, edges.iter().copied()).unwrap();
         let cut = stoer_wagner(&weights, 6, StoerWagnerConfig::default()).unwrap();
         // The minimum cut weight should be 2.0 (1 + 0.5 + 0.5).
         assert!(
