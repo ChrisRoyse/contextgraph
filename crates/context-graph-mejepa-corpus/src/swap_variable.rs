@@ -14,21 +14,21 @@
 //      first definition line (so we don't rename the definition itself,
 //      just one downstream USE) and replace it with `replacement`.
 //
-// Comments + same-line string literals are skipped (state machine identical
-// to subtle_flip / off_by_one).
+// Comments and Python string literals are skipped by the shared lexical mask.
 //
 // This intentionally produces ONE rename, not a global rename — global
 // renames typically still type-check, while a single-site rename creates
 // the shape of bug we want the predictor to learn about.
 
-use crate::prng::SplitMix64;
+use crate::prng::{pick_index_or_fail, SplitMix64};
+use crate::python_lex::{python_code_mask, range_is_code};
 use crate::{MutationError, MutationResult, MutationSite};
 
 const PYTHON_KEYWORDS: &[&str] = &[
-    "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class",
-    "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if",
-    "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try",
-    "while", "with", "yield", "self", "cls",
+    "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue",
+    "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import",
+    "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while",
+    "with", "yield", "self", "cls",
 ];
 
 #[derive(Debug, Clone)]
@@ -39,8 +39,16 @@ struct VarDef {
     def_line_end_offset: usize,
 }
 
+#[derive(Debug, Clone)]
+struct SwapCandidate {
+    target_idx: usize,
+    usage_offset: usize,
+    replacement_indices: Vec<usize>,
+}
+
 pub(crate) fn apply(source: &str, seed: u64) -> MutationResult<MutationSite> {
-    let defs = collect_var_defs(source);
+    let code_mask = python_code_mask(source);
+    let defs = collect_var_defs(source, &code_mask);
     if defs.len() < 2 {
         return Err(MutationError::no_site(
             "var_defs",
@@ -51,50 +59,34 @@ pub(crate) fn apply(source: &str, seed: u64) -> MutationResult<MutationSite> {
             "supply source with at least two `name = ...` assignments",
         ));
     }
-    let mut rng = SplitMix64::new(seed);
-    let target_idx = rng
-        .pick_index(defs.len())
-        .ok_or_else(|| MutationError::op_failed(
-            "rng",
-            "pick_index returned None for non-empty defs",
-            "internal error",
-        ))?;
-    let target = &defs[target_idx];
-    let mut replacement_idx = rng
-        .pick_index(defs.len())
-        .ok_or_else(|| MutationError::op_failed(
-            "rng",
-            "pick_index returned None for non-empty defs",
-            "internal error",
-        ))?;
-    if replacement_idx == target_idx {
-        replacement_idx = (replacement_idx + 1) % defs.len();
-    }
-    let replacement = &defs[replacement_idx];
-
-    let usage_offset = find_first_usage_after(source, &target.name, target.def_line_end_offset)
-        .ok_or_else(|| MutationError::no_site(
+    let candidates = collect_swap_candidates(source, &code_mask, &defs);
+    if candidates.is_empty() {
+        return Err(MutationError::no_site(
             "var_usage",
-            format!(
-                "no word-boundaried usage of `{}` found after its definition (offset {})",
-                target.name, target.def_line_end_offset
-            ),
-            "supply source where the variable is referenced after its definition",
-        ))?;
+            "no variable usage had a different previously-defined replacement",
+            "supply source where at least two local variables are defined before a downstream use",
+        ));
+    }
+    let mut rng = SplitMix64::new(seed);
+    let candidate_idx = pick_index_or_fail(&mut rng, candidates.len())?;
+    let candidate = &candidates[candidate_idx];
+    let replacement_slot = pick_index_or_fail(&mut rng, candidate.replacement_indices.len())?;
+    let target = &defs[candidate.target_idx];
+    let replacement = &defs[candidate.replacement_indices[replacement_slot]];
 
     Ok(MutationSite {
-        byte_offset: usage_offset,
+        byte_offset: candidate.usage_offset,
         byte_length: target.name.len(),
         original_text: target.name.clone(),
         replacement_text: replacement.name.clone(),
         note: format!(
-            "swap_variable: usage of `{}` at byte {usage_offset} renamed to `{}`",
-            target.name, replacement.name
+            "swap_variable: usage of `{}` at byte {} renamed to previously-defined `{}`",
+            target.name, candidate.usage_offset, replacement.name
         ),
     })
 }
 
-fn collect_var_defs(source: &str) -> Vec<VarDef> {
+fn collect_var_defs(source: &str, code_mask: &[bool]) -> Vec<VarDef> {
     let bytes = source.as_bytes();
     let n = bytes.len();
     let mut defs: Vec<VarDef> = Vec::new();
@@ -107,11 +99,16 @@ fn collect_var_defs(source: &str) -> Vec<VarDef> {
             line_end += 1;
         }
         let line = &source[line_start..line_end];
-        if let Some((name, _eq_pos)) = parse_assignment_line(line) {
-            if !PYTHON_KEYWORDS.contains(&name)
-                && !name.starts_with("__")
-                && !seen.contains(name)
-            {
+        if !line_starts_in_code(source, code_mask, line_start, line_end) {
+            line_start = line_end + 1;
+            continue;
+        }
+        if let Some((name, eq_pos)) = parse_assignment_line(line) {
+            if !range_is_code(code_mask, line_start, eq_pos + 1) {
+                line_start = line_end + 1;
+                continue;
+            }
+            if !PYTHON_KEYWORDS.contains(&name) && !name.starts_with("__") && !seen.contains(name) {
                 seen.insert(name.to_string());
                 defs.push(VarDef {
                     name: name.to_string(),
@@ -122,6 +119,41 @@ fn collect_var_defs(source: &str) -> Vec<VarDef> {
         line_start = line_end + 1;
     }
     defs
+}
+
+fn collect_swap_candidates(
+    source: &str,
+    code_mask: &[bool],
+    defs: &[VarDef],
+) -> Vec<SwapCandidate> {
+    defs.iter()
+        .enumerate()
+        .filter_map(|(target_idx, target)| {
+            let usage_offset = find_first_usage_after(
+                source,
+                code_mask,
+                &target.name,
+                target.def_line_end_offset,
+            )?;
+            let replacement_indices = defs
+                .iter()
+                .enumerate()
+                .filter(|(idx, replacement)| {
+                    *idx != target_idx && replacement.def_line_end_offset <= usage_offset
+                })
+                .map(|(idx, _)| idx)
+                .collect::<Vec<_>>();
+            if replacement_indices.is_empty() {
+                None
+            } else {
+                Some(SwapCandidate {
+                    target_idx,
+                    usage_offset,
+                    replacement_indices,
+                })
+            }
+        })
+        .collect()
 }
 
 /// Parse `<indent><name> = ...` assignment headers. Returns Some((name, eq_pos))
@@ -164,41 +196,19 @@ fn parse_assignment_line(line: &str) -> Option<(&str, usize)> {
     Some((name, i))
 }
 
-fn find_first_usage_after(source: &str, name: &str, after_offset: usize) -> Option<usize> {
+fn find_first_usage_after(
+    source: &str,
+    code_mask: &[bool],
+    name: &str,
+    after_offset: usize,
+) -> Option<usize> {
     let bytes = source.as_bytes();
     let name_bytes = name.as_bytes();
     let n = bytes.len();
     let nl = name_bytes.len();
     let mut i = after_offset;
-    let mut in_string: Option<u8> = None;
-    let mut in_comment = false;
     while i + nl <= n {
-        let c = bytes[i];
-        if in_comment {
-            if c == b'\n' {
-                in_comment = false;
-            }
-            i += 1;
-            continue;
-        }
-        if let Some(quote) = in_string {
-            if c == b'\\' && i + 1 < n {
-                i += 2;
-                continue;
-            }
-            if c == quote {
-                in_string = None;
-            }
-            i += 1;
-            continue;
-        }
-        if c == b'#' {
-            in_comment = true;
-            i += 1;
-            continue;
-        }
-        if c == b'"' || c == b'\'' {
-            in_string = Some(c);
+        if !range_is_code(code_mask, i, nl) {
             i += 1;
             continue;
         }
@@ -212,6 +222,20 @@ fn find_first_usage_after(source: &str, name: &str, after_offset: usize) -> Opti
         i += 1;
     }
     None
+}
+
+fn line_starts_in_code(
+    source: &str,
+    code_mask: &[bool],
+    line_start: usize,
+    line_end: usize,
+) -> bool {
+    let bytes = source.as_bytes();
+    let mut i = line_start;
+    while i < line_end && (bytes[i] == b' ' || bytes[i] == b'\t') {
+        i += 1;
+    }
+    i < line_end && code_mask.get(i).copied().unwrap_or(false)
 }
 
 fn is_ident_start(b: u8) -> bool {

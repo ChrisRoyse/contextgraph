@@ -1,3 +1,5 @@
+use crate::{MutationError, MutationResult};
+
 // SplitMix64 PRNG. Same algorithm used by `granger_fsv.rs` for synthetic
 // Box-Muller samples; identical state machine here so corpus generation is
 // byte-exact reproducible across builds. SplitMix64 is in the public domain
@@ -35,4 +37,14 @@ impl SplitMix64 {
             Some((self.next_u64() as usize) % len)
         }
     }
+}
+
+pub(crate) fn pick_index_or_fail(rng: &mut SplitMix64, len: usize) -> MutationResult<usize> {
+    rng.pick_index(len).ok_or_else(|| {
+        MutationError::op_failed(
+            "rng",
+            "SplitMix64::pick_index returned None despite non-empty candidates",
+            "internal error; report",
+        )
+    })
 }

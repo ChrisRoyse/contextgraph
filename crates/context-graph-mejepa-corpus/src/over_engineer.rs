@@ -13,34 +13,27 @@
 // `replacement_text` is the helper block (with leading `\n\n`).
 
 use crate::prng::SplitMix64;
+use crate::util::append_insertion_offset;
 use crate::{MutationResult, MutationSite};
 
 pub(crate) fn apply(source: &str, seed: u64) -> MutationResult<MutationSite> {
     let mut rng = SplitMix64::new(seed);
-    let suffix_id = rng.next_u64() & 0xFFFFFF; // 24-bit hex tag
+    // 48-bit hex tag. 24-bit hits 50% birthday collision around ~4,820 helpers,
+    // which is below plausible Phase-1 corpus populations once re-rolls + multi-
+    // helper-per-task scenarios stack. 48-bit pushes the same threshold to
+    // ~19.7M helpers, comfortably above any realistic corpus.
+    let suffix_id = rng.next_u64() & 0xFFFF_FFFF_FFFF;
     let helper = format!(
-        "\n\ndef _unused_helper_{suffix_id:06x}() -> None:\n    \"\"\"Auto-generated dead helper for OverEngineer mutation.\"\"\"\n    return None\n"
+        "\n\ndef _unused_helper_{suffix_id:012x}() -> None:\n    \"\"\"Auto-generated dead helper for OverEngineer mutation.\"\"\"\n    return None\n"
     );
-    let insert_at = trailing_newline_offset(source);
+    let insert_at = append_insertion_offset(source);
     Ok(MutationSite {
         byte_offset: insert_at,
         byte_length: 0,
         original_text: String::new(),
         replacement_text: helper,
         note: format!(
-            "over_engineer: appended unused helper `_unused_helper_{suffix_id:06x}` at byte {insert_at}"
+            "over_engineer: appended unused helper `_unused_helper_{suffix_id:012x}` at byte {insert_at}"
         ),
     })
-}
-
-/// Return the byte offset at which we should splice the helper. We splice
-/// BEFORE any single trailing `\n` (or at the very end if the source has no
-/// trailing newline) so the helper ends with its own `\n` and we don't
-/// produce a doubled newline at EOF.
-fn trailing_newline_offset(source: &str) -> usize {
-    if source.ends_with('\n') {
-        source.len() - 1
-    } else {
-        source.len()
-    }
 }

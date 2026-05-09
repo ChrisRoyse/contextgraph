@@ -1113,8 +1113,11 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 1.0.69",
+ "tree-sitter",
+ "tree-sitter-python",
 ]
 
 [[package]]

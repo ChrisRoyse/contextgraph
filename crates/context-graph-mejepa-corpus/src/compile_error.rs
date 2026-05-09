@@ -15,6 +15,7 @@
 // `byte_length` = 0; `replacement_text` = the syntax-error snippet.
 
 use crate::prng::SplitMix64;
+use crate::util::append_insertion_offset;
 use crate::{MutationResult, MutationSite};
 
 pub(crate) fn apply(source: &str, seed: u64) -> MutationResult<MutationSite> {
@@ -32,7 +33,7 @@ pub(crate) fn apply(source: &str, seed: u64) -> MutationResult<MutationSite> {
         2 => "invalid_def_signature",
         _ => "unknown",
     };
-    let insert_at = trailing_offset(source);
+    let insert_at = append_insertion_offset(source);
     Ok(MutationSite {
         byte_offset: insert_at,
         byte_length: 0,
@@ -40,12 +41,4 @@ pub(crate) fn apply(source: &str, seed: u64) -> MutationResult<MutationSite> {
         replacement_text: snippet.to_string(),
         note: format!("compile_error: appended {label} variant at byte {insert_at}"),
     })
-}
-
-fn trailing_offset(source: &str) -> usize {
-    if source.ends_with('\n') {
-        source.len() - 1
-    } else {
-        source.len()
-    }
 }

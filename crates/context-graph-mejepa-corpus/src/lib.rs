@@ -40,8 +40,10 @@ mod known_good;
 mod off_by_one;
 mod over_engineer;
 mod prng;
+mod python_lex;
 mod subtle_flip;
 mod swap_variable;
+mod util;
 mod wrong_file;
 
 #[cfg(test)]
@@ -58,7 +60,9 @@ pub enum MutationError {
         message: String,
         remediation: &'static str,
     },
-    #[error("mutation operator could not find a site at {field}: {message}; remediation: {remediation}")]
+    #[error(
+        "mutation operator could not find a site at {field}: {message}; remediation: {remediation}"
+    )]
     NoMutationSite {
         field: &'static str,
         message: String,
@@ -225,6 +229,7 @@ pub fn apply_mutation(
             "supply the canonical fix's source text",
         ));
     }
+    python_lex::ensure_parseable_python(primary_source, "primary_source")?;
     let site = match category {
         MutationCategory::KnownGood => {
             return known_good::apply(primary_source, config.seed);
@@ -241,12 +246,13 @@ pub fn apply_mutation(
                     "pass the path/content of a different but structurally-similar file",
                 )
             })?;
+            python_lex::ensure_parseable_python(alternate, "alternate_source")?;
             return wrong_file::apply(primary_source, alternate, config.seed);
         }
         MutationCategory::OverEngineer => over_engineer::apply(primary_source, config.seed)?,
         MutationCategory::CompileError => compile_error::apply(primary_source, config.seed)?,
     };
-    Ok(apply_site(category, primary_source, config.seed, site))
+    apply_site(category, primary_source, config.seed, site)
 }
 
 /// Apply a previously-located `MutationSite` to `source`, returning the
@@ -256,17 +262,65 @@ fn apply_site(
     source: &str,
     seed: u64,
     site: MutationSite,
-) -> MutationOutcome {
-    let mut buf = String::with_capacity(source.len() + site.replacement_text.len());
+) -> MutationResult<MutationOutcome> {
+    let end = site
+        .byte_offset
+        .checked_add(site.byte_length)
+        .ok_or_else(|| {
+            MutationError::op_failed(
+                "mutation_site",
+                format!(
+                    "site offset {} + length {} overflowed usize",
+                    site.byte_offset, site.byte_length
+                ),
+                "report the operator that produced the invalid site",
+            )
+        })?;
+    if site.byte_offset > source.len() || end > source.len() {
+        return Err(MutationError::op_failed(
+            "mutation_site",
+            format!(
+                "site range {}..{} is outside source length {}",
+                site.byte_offset,
+                end,
+                source.len()
+            ),
+            "report the operator that produced the invalid site",
+        ));
+    }
+    if !source.is_char_boundary(site.byte_offset) || !source.is_char_boundary(end) {
+        return Err(MutationError::op_failed(
+            "mutation_site",
+            format!(
+                "site range {}..{} does not align to UTF-8 character boundaries",
+                site.byte_offset, end
+            ),
+            "report the operator that produced the invalid site",
+        ));
+    }
+    let actual = &source[site.byte_offset..end];
+    if actual != site.original_text {
+        return Err(MutationError::op_failed(
+            "mutation_site.original_text",
+            format!(
+                "site original_text {:?} did not match source bytes {:?} at {}..{}",
+                site.original_text, actual, site.byte_offset, end
+            ),
+            "report the operator that produced the invalid site",
+        ));
+    }
+
+    let mut buf =
+        String::with_capacity(source.len() - site.byte_length + site.replacement_text.len());
     buf.push_str(&source[..site.byte_offset]);
     buf.push_str(&site.replacement_text);
-    buf.push_str(&source[site.byte_offset + site.byte_length..]);
-    MutationOutcome {
+    buf.push_str(&source[end..]);
+    Ok(MutationOutcome {
         category,
         mutated_source: buf,
         seed,
         mutation_site: Some(site),
-    }
+    })
 }
 
 pub use prng::SplitMix64;

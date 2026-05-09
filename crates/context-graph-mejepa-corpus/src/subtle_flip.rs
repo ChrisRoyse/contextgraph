@@ -8,12 +8,11 @@
 //   ` and ` ↔ ` or `   (word-boundaried)
 //   ` True` ↔ ` False` (word-boundaried, for top-level assignments)
 //
-// Comments (`# ...`) and same-line single/double-quoted string literals are
-// skipped (no flips inside them — that would just break the corpus entry's
-// docstring instead of the program logic). Triple-quoted strings are NOT
-// detected; tests should avoid placing flip candidates inside docstrings.
+// Comments and Python string literals (including common prefixes and triple
+// quotes) are skipped; mutation sites must come from executable source text.
 
-use crate::prng::SplitMix64;
+use crate::prng::{pick_index_or_fail, SplitMix64};
+use crate::python_lex::{python_code_mask, range_is_code};
 use crate::{MutationError, MutationResult, MutationSite};
 
 #[derive(Debug, Clone)]
@@ -35,13 +34,7 @@ pub(crate) fn apply(source: &str, seed: u64) -> MutationResult<MutationSite> {
         ));
     }
     let mut rng = SplitMix64::new(seed);
-    let pick = rng.pick_index(candidates.len()).ok_or_else(|| {
-        MutationError::op_failed(
-            "rng",
-            "SplitMix64::pick_index returned None despite non-empty candidates",
-            "internal error; report",
-        )
-    })?;
+    let pick = pick_index_or_fail(&mut rng, candidates.len())?;
     let chosen = &candidates[pick];
     let original_text = source
         .get(chosen.byte_offset..chosen.byte_offset + chosen.byte_length)
@@ -65,46 +58,20 @@ pub(crate) fn apply(source: &str, seed: u64) -> MutationResult<MutationSite> {
 
 fn find_candidates(source: &str) -> Vec<Candidate> {
     let bytes = source.as_bytes();
+    let code_mask = python_code_mask(source);
     let n = bytes.len();
     let mut candidates = Vec::new();
     let mut i = 0;
-    let mut in_string: Option<u8> = None; // Some(b'"') or Some(b'\'')
-    let mut in_comment = false;
 
     while i < n {
+        if !code_mask[i] {
+            i += 1;
+            continue;
+        }
         let c = bytes[i];
 
-        if in_comment {
-            if c == b'\n' {
-                in_comment = false;
-            }
-            i += 1;
-            continue;
-        }
-        if let Some(quote) = in_string {
-            if c == b'\\' && i + 1 < n {
-                i += 2;
-                continue;
-            }
-            if c == quote {
-                in_string = None;
-            }
-            i += 1;
-            continue;
-        }
-        if c == b'#' {
-            in_comment = true;
-            i += 1;
-            continue;
-        }
-        if c == b'"' || c == b'\'' {
-            in_string = Some(c);
-            i += 1;
-            continue;
-        }
-
         // Two-char ops: `==`, `!=`, `<=`, `>=`
-        if i + 1 < n {
+        if i + 1 < n && range_is_code(&code_mask, i, 2) {
             let pair = &bytes[i..i + 2];
             match pair {
                 b"==" => {
@@ -192,48 +159,48 @@ fn find_candidates(source: &str) -> Vec<Candidate> {
         // Word-boundary keywords. We use the surrounding bytes to verify the
         // match isn't inside a longer identifier. ASCII-only check is fine
         // because Python keywords are ASCII.
-        if let Some(cand) = match_keyword(bytes, i, b"and", " and ", "( and ", " and ", "subtle_flip: and -> or") {
+        if let Some(len) = match_keyword(bytes, i, b"and") {
             candidates.push(Candidate {
-                byte_offset: cand.0,
-                byte_length: cand.1,
+                byte_offset: i,
+                byte_length: len,
                 original: "and",
                 replacement: "or",
                 note: "subtle_flip: and -> or",
             });
-            i = cand.0 + cand.1;
+            i += len;
             continue;
         }
-        if let Some(cand) = match_keyword(bytes, i, b"or", " or ", "( or ", " or ", "subtle_flip: or -> and") {
+        if let Some(len) = match_keyword(bytes, i, b"or") {
             candidates.push(Candidate {
-                byte_offset: cand.0,
-                byte_length: cand.1,
+                byte_offset: i,
+                byte_length: len,
                 original: "or",
                 replacement: "and",
                 note: "subtle_flip: or -> and",
             });
-            i = cand.0 + cand.1;
+            i += len;
             continue;
         }
-        if let Some(cand) = match_keyword(bytes, i, b"True", " True", "(True)", " True", "subtle_flip: True -> False") {
+        if let Some(len) = match_keyword(bytes, i, b"True") {
             candidates.push(Candidate {
-                byte_offset: cand.0,
-                byte_length: cand.1,
+                byte_offset: i,
+                byte_length: len,
                 original: "True",
                 replacement: "False",
                 note: "subtle_flip: True -> False",
             });
-            i = cand.0 + cand.1;
+            i += len;
             continue;
         }
-        if let Some(cand) = match_keyword(bytes, i, b"False", " False", "(False)", " False", "subtle_flip: False -> True") {
+        if let Some(len) = match_keyword(bytes, i, b"False") {
             candidates.push(Candidate {
-                byte_offset: cand.0,
-                byte_length: cand.1,
+                byte_offset: i,
+                byte_length: len,
                 original: "False",
                 replacement: "True",
                 note: "subtle_flip: False -> True",
             });
-            i = cand.0 + cand.1;
+            i += len;
             continue;
         }
 
@@ -242,23 +209,11 @@ fn find_candidates(source: &str) -> Vec<Candidate> {
     candidates
 }
 
-/// Match a Python-style word-boundaried keyword at byte offset `i`.
-/// Returns Some((offset, length)) on a match, where (offset == i) and length
-/// is the keyword's byte-length. Word boundary: previous and following byte
-/// (if present) must be non-word (NOT `[A-Za-z0-9_]`).
-///
-/// The extra `_*` parameters are ignored (legacy from earlier API); kept
-/// for stability of call sites in this module.
-#[allow(clippy::too_many_arguments)]
-fn match_keyword(
-    bytes: &[u8],
-    i: usize,
-    keyword: &[u8],
-    _ctx_with_spaces: &str,
-    _ctx_in_parens: &str,
-    _ctx_at_eol: &str,
-    _note: &str,
-) -> Option<(usize, usize)> {
+/// Match a Python-style word-boundaried keyword at byte offset `i`. Returns
+/// `Some(keyword.len())` on a match, `None` otherwise. Word boundary:
+/// previous and following byte (if present) must be non-word
+/// (NOT `[A-Za-z0-9_]`).
+fn match_keyword(bytes: &[u8], i: usize, keyword: &[u8]) -> Option<usize> {
     let kw_len = keyword.len();
     if i + kw_len > bytes.len() {
         return None;
@@ -269,7 +224,7 @@ fn match_keyword(
     let prev_ok = i == 0 || !is_word_byte(bytes[i - 1]);
     let next_ok = i + kw_len == bytes.len() || !is_word_byte(bytes[i + kw_len]);
     if prev_ok && next_ok {
-        Some((i, kw_len))
+        Some(kw_len)
     } else {
         None
     }
