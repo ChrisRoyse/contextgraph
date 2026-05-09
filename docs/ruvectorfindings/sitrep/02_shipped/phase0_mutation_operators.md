@@ -26,8 +26,9 @@ labeled data.
 
 ## Why it matters
 
-These eight categories span the realistic distribution of bugs the
-inner repair actor (Qwen3.6-27b) faces. KnownGood is the negative
+These eight categories span the realistic distribution of bugs that
+appear in real-world Python patches (whether produced by Claude Code,
+external AI agents, or human reviewers). KnownGood is the negative
 control. SubtleFlip and OffByOne capture the most common LLM-emitted
 patches that flip semantics. SwapVariable tests scope analysis.
 DeleteTestCall tests test-modification awareness. WrongFile tests

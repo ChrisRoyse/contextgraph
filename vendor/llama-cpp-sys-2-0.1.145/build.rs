@@ -92,6 +92,88 @@ fn configure_cmake_parallelism() {
     println!("cargo:warning=llama-cpp-sys-2 CMAKE_BUILD_PARALLEL_LEVEL={level}");
 }
 
+fn parse_nvcc_release(output: &str) -> Option<(u32, u32)> {
+    let release = output.split("release ").nth(1)?;
+    let version = release
+        .split(|ch: char| !(ch.is_ascii_digit() || ch == '.'))
+        .next()?;
+    let mut parts = version.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().unwrap_or("0").parse().ok()?;
+    Some((major, minor))
+}
+
+fn configure_cuda_toolchain(config: &mut Config) {
+    println!("cargo:rerun-if-env-changed=CUDA_HOME");
+    println!("cargo:rerun-if-env-changed=CUDA_PATH");
+    println!("cargo:rerun-if-env-changed=CUDACXX");
+    println!("cargo:rerun-if-env-changed=CMAKE_CUDA_COMPILER");
+    println!("cargo:rerun-if-env-changed=CMAKE_CUDA_ARCHITECTURES");
+
+    let cuda_root = env::var("CUDA_PATH")
+        .or_else(|_| env::var("CUDA_HOME"))
+        .unwrap_or_else(|_| "/usr/local/cuda-13.2".to_string());
+    let nvcc = env::var("CMAKE_CUDA_COMPILER")
+        .or_else(|_| env::var("CUDACXX"))
+        .unwrap_or_else(|_| {
+            Path::new(&cuda_root)
+                .join("bin/nvcc")
+                .display()
+                .to_string()
+        });
+    let arch = env::var("CMAKE_CUDA_ARCHITECTURES").unwrap_or_else(|_| "120a-real".to_string());
+
+    let nvcc_path = Path::new(&nvcc);
+    if !nvcc_path.is_file() {
+        panic!(
+            "CUDA-enabled llama.cpp build requires an nvcc executable; CMAKE_CUDA_COMPILER/CUDACXX resolved to {}",
+            nvcc_path.display()
+        );
+    }
+    let version = Command::new(nvcc_path)
+        .arg("--version")
+        .output()
+        .unwrap_or_else(|err| {
+            panic!(
+                "failed to execute CUDA compiler {}: {err}",
+                nvcc_path.display()
+            )
+        });
+    if !version.status.success() {
+        panic!(
+            "CUDA compiler {} --version failed with status {:?}",
+            nvcc_path.display(),
+            version.status.code()
+        );
+    }
+    let version_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&version.stdout),
+        String::from_utf8_lossy(&version.stderr)
+    );
+    let (major, minor) = parse_nvcc_release(&version_text).unwrap_or_else(|| {
+        panic!(
+            "failed to parse CUDA compiler release from {} --version output: {}",
+            nvcc_path.display(),
+            version_text.trim()
+        )
+    });
+    if (major, minor) < (12, 8) {
+        panic!(
+            "CUDA compiler {} is release {major}.{minor}; llama.cpp Blackwell builds require CUDA >= 12.8",
+            nvcc_path.display()
+        );
+    }
+
+    env::set_var("CUDACXX", &nvcc);
+    config.define("CUDAToolkit_ROOT", &cuda_root);
+    config.define("CMAKE_CUDA_COMPILER", &nvcc);
+    config.define("CMAKE_CUDA_ARCHITECTURES", &arch);
+    println!(
+        "cargo:warning=llama-cpp-sys-2 CUDA_ROOT={cuda_root} CMAKE_CUDA_COMPILER={nvcc} CMAKE_CUDA_ARCHITECTURES={arch}"
+    );
+}
+
 fn extract_lib_names(out_dir: &Path, build_shared_libs: bool, target_os: &TargetOs) -> Vec<String> {
     let lib_pattern = match target_os {
         TargetOs::Windows(_) => "*.lib",
@@ -811,6 +893,7 @@ fn main() {
     }
 
     if cfg!(feature = "cuda") {
+        configure_cuda_toolchain(&mut config);
         config.define("GGML_CUDA", "ON");
 
         if cfg!(feature = "cuda-no-vmm") {
@@ -839,7 +922,9 @@ fn main() {
     config
         .profile(&profile)
         .very_verbose(std::env::var("CMAKE_VERBOSE").is_ok()) // Not verbose by default
-        .always_configure(false);
+        // Toolchain-sensitive CUDA builds must not reuse a half-configured
+        // CMake directory after a failed compiler probe.
+        .always_configure(true);
 
     let build_dir = config.build();
 

@@ -123,7 +123,7 @@ useful in a Phase 4.5+ "RAG-augmented verify" mode.
 > Priority: low. NOT in doc 09 critical path.
 
 Routes tool calls based on predicted utility. Useful for the inner
-actor (Qwen3.6-27b), not the outer optimizer or ME-JEPA.
+actor (retired post-2026-05-09 pivot), not the outer optimizer or ME-JEPA. Now obsolete entirely.
 
 ### §3.5 Causal counterfactual reasoning
 

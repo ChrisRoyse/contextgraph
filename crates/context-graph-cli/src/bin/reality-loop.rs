@@ -21724,7 +21724,7 @@ public readonly struct Vector {
                     "error_code": err.error_code,
                     "field_path": err.field_path,
                     "snapshot_source": file_sot(&snapshot_path),
-                    "snapshot_readback": snapshot_readback,
+                    "snapshot_readback": snapshot_readback.clone(),
                     "repo_source_readback": fs::read_to_string(repo.join("src/Calculator.cs"))
                         .expect("read C# repo source after failed action"),
                 }),

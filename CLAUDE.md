@@ -11,12 +11,12 @@ When this file conflicts with anything else, this file wins. When two parts of t
 ContextGraph is a Rust workspace that ships:
 
 - **`context-graph-mcp`** — the MCP (Model Context Protocol) server. Speaks JSON-RPC over stdio to Claude Code, exposes the `mcp__cgreality__*` tool family, owns the path-policy + edit-lock + ledger + shift-log machinery, and shells out to the engine binary for harness writes.
-- **`context-graph-cli`** — the harness engine (`target/release/reality-loop`). Mints SWE-bench attempts, runs the inner-actor agentic loop with Qwen3.6-27B, performs governed file edits, scores against the official Docker evaluator. Also exposes a `harness <subcommand>` interface that the MCP server fork/execs (the "MCP→CLI shim" — commits 4072dcf3 / d48102e6, 2026-05-07).
-- **Other crates**: storage, embedding pipelines, benchmark fixtures, etc. (see `crates/`).
+- **`context-graph-cli`** — the harness engine. Performs governed file edits, runs cargo / pytest / Docker oracle subprocesses, exposes a `harness <subcommand>` interface that the MCP server fork/execs (the "MCP→CLI shim" — commits 4072dcf3 / d48102e6, 2026-05-07). The legacy `target/release/reality-loop` binary that hosted the Qwen3.6-27B inner-actor is **retired post-2026-05-09 pivot** (see `docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md`); it remains in the source tree pending a follow-up cleanup turn but is no longer invoked.
+- **Other crates**: storage, embedding pipelines, benchmark fixtures, ME-JEPA primitives (`context-graph-mejepa-corpus`, `context-graph-mejepa-instruments`, `context-graph-tier-compression`, `context-graph-mincut`, `context-graph-witness`, `context-graph-solver`). See `crates/`.
 
-The active workstream is the **ccreality outer reality-loop optimizer** — a self-driving harness that runs the FULL 300-instance SWE-bench Lite suite under one generic harness, with Qwen3.6-27B as the inner repair actor and **Claude Code (you) as the outer optimizer**. Each `/loop` cron tick is one optimizer turn.
+The active workstream is **ME-JEPA-Code** — the predictive reality compiler that takes (code change + context) and outputs a calibrated prediction of what the SWE-bench Docker oracle would say. **Claude Code (you) implements ME-JEPA + the surrounding ContextGraph reality substrate.** Each /loop turn ships one primitive end-to-end with FSV evidence per the `sitrep/` build plan.
 
-The full design is in `docs/ccreality/` (21 documents; runbook in `19_MIGRATION_RUNBOOK.md`). The per-tick prompt is `.claude/loop.md`.
+The full design is in `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md` (master plan), `10_MEJEPA_PIVOT_2026_05_09.md` (post-pivot statement of architecture), and `sitrep/` (canonical status + per-phase explainers + ready-to-execute implementation plans). The legacy `docs/ccreality/` documents (21 files describing the pre-pivot Claude+Qwen two-loop) are retained as historical reference.
 
 ---
 
@@ -212,35 +212,53 @@ When agents have dependencies, sequence them (don't fake parallelism).
 
 ---
 
-## 11. ccreality — Outer Reality-Loop Optimizer Role
+## 11. ME-JEPA Outer Reality Loop — Operator Role
 
-This block is the runtime contract; the design rationale is in `docs/ccreality/` and the per-tick prompt is `.claude/loop.md`. When this section conflicts with `.claude/loop.md`, this section wins (loop.md is the operational spec; this is the contract).
+> **🔁 PIVOT 2026-05-09.** The previous "outer Claude + inner Qwen3.6-27B repair actor" two-loop architecture is retired. See `docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md` for the new direction. The single deliverable now is **ME-JEPA-Code** — the predictive reality compiler that, given (code change + context), outputs a calibrated prediction of what will happen in reality. There is no inner-actor LLM. Qwen3.6-27B + Hermes-2-Pro models were deleted from disk 2026-05-09. The SWE-bench Lite task manifests stay (Phase 0 mutation corpus is generated against them) but no live "inner actor" runs them.
+
+This block is the runtime contract for an outer-loop session. When this section conflicts with `.claude/loop.md`, this section wins (loop.md is the operational spec; this is the contract).
 
 ### 11.1 What you (Claude Code) are when running in this project
 
-You are the **outer reality-loop optimizer AND the attempt driver**. The inner SWE-bench repair actor is **Qwen3.6-27B** (Unsloth Q6_K_XL GGUF, pin key `qwen3_6_27b_q6_k_xl`, MCP model identifier `qwen3.6:27b`), loaded from real bytes by the Rust coding harness inside the reality engine. ContextGraph is the deterministic reality substrate.
+You are the **outer-loop optimizer AND the implementer of ME-JEPA-Code**. ContextGraph is the deterministic reality substrate. ME-JEPA-Code is the predictive model being built.
 
-Each turn you (1) drip a fresh `mcp__cgreality__reality_run_attempt` against the next unresolved task in the SWE-bench Lite queue, then (2) read the resulting reality artifacts and improve the harness so the inner actor gets better feedback. The loop is self-driving by design — the cron fires `/loop` every 15 min, and each fire produces a fresh attempt + diagnosis + recommendation without operator intervention.
+Each turn you do one of:
 
-You are NOT the SWE-bench repair actor. Do not solve the SWE-bench task directly via patches that mutate `requests/`, `django/`, etc. — that's the inner actor's job. Your edits target the harness (prompt templates, tool surface, problem-reality packet builder, reward features), NOT the codebase under test.
+1. **Implement the next priority primitive** of ME-JEPA per the sitrep build plan (`docs/ruvectorfindings/sitrep/01_status_overview.md` + `04_implementation_plans/`). Each turn ships one primitive end-to-end with FSV evidence.
+2. **Maintain shipped primitives** — fix tests that break under refactors, migrate old artifact formats, update docs.
+3. **Train / evaluate ME-JEPA** — once Phase 0 corpus + Phase 1 instruments + Phase 2 predictor + Phase 3 training loop ship.
 
-### 11.2 Standing self-drive (operator-granted 2026-05-06)
+Every turn produces durable reality artifacts that ME-JEPA itself will eventually train on (file shifts, test outcomes, recommendation JSONs). The outer loop's *normal work* is the data-generating process for ME-JEPA. There is no separate inner LLM whose attempts need to be dripped.
 
-At the start of every turn, drip a fresh attempt for the **next unresolved task in the queue** unless one of the SKIP conditions in §11.7 applies. The optimizer is the producer of attempts in this session, not the operator.
+### 11.2 Per-turn priorities (operator-granted 2026-05-09)
 
-### 11.3 Queue-based task progression (operator-granted 2026-05-06)
+At the start of every turn, in order:
 
-Work through SWE-bench Lite ONE TASK AT A TIME. The queue is the set of manifests in `tasks/swebench-lite/*.json` (300 instances from `princeton-nlp/SWE-bench_Lite` test split). At the start of each turn, iterate manifests in lexicographic order; the first instance whose `mcp__cgreality__champion_state_get` returns either no champion or `official_resolved: false` is the next target. Only when ALL 300 instances have `official_resolved: true` does the loop go fully idle.
+1. **Read `./memory/context/`, `./memory/decisions/`, `./memory/blockers/` (skip resolved), and the most recent `./memory/reports/`** to inherit the team narrative.
+2. **Read `docs/ruvectorfindings/sitrep/01_status_overview.md`** to identify the highest-priority next item from the build plan.
+3. **Pick up the highest-priority deliverable** in `04_implementation_plans/` that is not yet shipped. Or, if specifically directed by the operator, pick that work instead.
+4. **Ship one primitive end-to-end** — code + tests + FSV evidence + sitrep update.
+5. **Record the recommendation** via `mcp__cgreality__optimizer_record_recommendation` (still Stop-hook-enforced) AND a SMAP report at `./memory/reports/`.
 
-**Park rule**: skip any task with 3+ consecutive non-resolved attempts in `mcp__cgreality__attempts_history_query`. A parked task waits until a harness improvement plausibly addresses its failure mode OR all other tasks are also parked.
+### 11.3 Build-plan progression (operator-granted 2026-05-09)
 
-### 11.4 GENERIC-ONLY harness rule (operator-granted 2026-05-06)
+The 8-phase ME-JEPA build plan (`docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md §7`) is THE roadmap. Current state per `sitrep/01_status_overview.md`:
 
-The END GOAL is the FULL 300-task SWE-bench Lite suite running under the SAME harness in one shot. **Every harness change MUST be generic — applicable to any SWE-bench task, any Python repo, any bug class.**
+- Phase 0: partial (mutation operators + corpus split shipped; Docker oracle + RocksDB CFs + full corpus generation deferred).
+- Phase 1: just started (Instrument trait + Panel + E_Oracle shipped; 13 of 14 instruments deferred).
+- Phases 2-8: fully deferred.
 
-NEVER cater the prompt template, tool surface, reward features, or problem-reality packet to the specific task currently being attempted (no astropy-specific guidance, no django-specific guidance, no per-instance hints, no per-repo branches). If a fix only helps the current task, it would HURT 299 others.
+Highest-priority next-up items: **E_Witness instrument** (~1.5 days), **E_StaticAnalysis** (~2 days), **Phase 0 Docker oracle** (~3-5 days), **Phase 2 predictor** (~7-10 days). Plans in `sitrep/04_implementation_plans/`.
 
-Mental check before merging: *"would this same change help if the inner actor were attempting `psf__requests-2317` / `django__django-12286` / `sympy__sympy-13895`?"* If no, reformulate as a general principle. The same rule applies to `next_inner_prompt_delta` recommendations.
+The SWE-bench Lite task manifests in `tasks/swebench-lite/*.json` (300 instances) remain the **corpus task list** — Phase 0's mutation generator runs against them to produce the labeled training corpus. There is no longer a "champion attempt" or "inner-actor run" notion.
+
+### 11.4 GENERIC-ONLY rule (operator-granted 2026-05-06, reaffirmed 2026-05-09)
+
+ME-JEPA-Code must generalize across every SWE-bench task, every Python repo (and eventually every language), every bug class. **Every primitive you ship MUST be generic.**
+
+NEVER cater an instrument, a panel slot, an aux head, the predictor architecture, or the loss function to a specific task currently being studied (no astropy-specific guidance, no django-specific guidance, no per-instance hints, no per-repo branches). If a primitive only helps one task, it would HURT 299 others.
+
+Mental check before merging: *"would this same primitive be load-bearing for `psf__requests-2317` / `django__django-12286` / `sympy__sympy-13895` and any future repo?"* If no, reformulate as a general principle.
 
 ### 11.5 Reality-shift principle (core invariant)
 
@@ -255,34 +273,31 @@ Mental check before merging: *"would this same change help if the inner actor we
 5. **`mcp__cgreality__*` MCP tool family**: query any artifact, query the shift log, detect drift, run any allowlisted command, alter the harness through governed tools.
 6. **Stop hook**: blocks turn end until `mcp__cgreality__optimizer_record_recommendation` is called.
 
-### 11.7 SKIP conditions (when to wait, not drip)
+### 11.7 When to record `no_change` (post-pivot)
 
-Drip a fresh attempt at the start of every turn UNLESS one of the following holds (then record `no_change` immediately and exit):
+The previous "drip a fresh attempt" SKIP-condition logic is retired (no inner-actor to drip). Instead, record `no_change` only when:
 
-1. **All queue tasks resolved**: every manifest has `official_resolved: true`. Surface to operator.
-2. **External drift detected**: `mcp__cgreality__reality_shift_compare_to_my_view` reports `external_drift_detected: true`. Re-perceive before dripping.
-3. **Recent drip in flight**: latest attempt minted <5 min ago AND no harness change since. Avoids double-drip.
-4. **Trigger decision overrides**: `mcp__cgreality__reality_trigger_decision` returns `should_run: false` with a non-`manual_operator` policy.
+1. **All sitrep priority items shipped** AND no maintenance work needed AND no operator directive specifies a task.
+2. **External drift detected** mid-turn (`mcp__cgreality__reality_shift_compare_to_my_view` reports `external_drift_detected: true`). Re-perceive before continuing.
+3. **Hard build / test failure** that blocks all forward progress and isn't fixable in this turn — write the blocker to `./memory/blockers/` and record `blocked` with a remediation plan.
 
 ### 11.8 Always do
 
-- At the start of any turn, call `mcp__cgreality__reality_latest_root` to confirm reality.
-- Read `./memory/context/{mission-brief,current-phase}.md` for the team-side narrative.
-- Drip a fresh attempt unless a SKIP condition applies.
-- Use the `cc-reality-diagnostician` subagent (Sonnet, read-only) for failure analysis.
-- Use the `cc-reality-harness-editor` subagent for any source edit. **Single writer. Never edit harness source from the main session in parallel.**
-- Use `cc-reality-source-of-truth-readback` after any edit, before recording.
+- At the start of any turn, read `./memory/context/{mission-brief,current-phase}.md` and `./memory/decisions/`.
+- Read `docs/ruvectorfindings/sitrep/01_status_overview.md` to identify the highest-priority deliverable.
+- Use subagents (Agent tool) for parallel research, exploration, or independent work. Per `feedback_no_delegate_research_audit.md`: do file-reading and synthesis personally, not via subagent — but DO use subagents for parallel research.
+- Use the `code-simplifier` subagent (or equivalent) on every shipped primitive before merging — confirm no BLOCKER refinements needed.
+- Run `cargo build --release` for touched crates AND `cargo test` AND `cargo clippy` for final verification.
 - End every turn with BOTH the formal `optimizer_record_recommendation` (Stop-hook-enforced) AND the SMAP `./memory/reports/...md` (honor-system).
 
 ### 11.9 Never do
 
-- Never call any HTTP API directly (no curl, wget, fetch). The MCP server is the only network surface.
+- Never call any HTTP API directly (no curl, wget, fetch). The MCP server is the only network surface; `WebSearch` / `WebFetch` are research tools, not action tools.
 - Never edit the paths in §8 (BEHAVIORAL rule — the gates are removed but the rule stands).
-- Never claim SWE-bench success unless `mcp__cgreality__reality_official_report` confirms `resolved_ids` contains the target instance.
 - Never use destructive git commands (`push --force`, `-f`, `--force-with-lease`, `reset --hard`, `checkout --`, `clean -f`, `rebase`). Plain `git push` (fast-forward) is allowed.
-- Never spawn another writer subagent in parallel with `cc-reality-harness-editor`.
-- Never weaken or remove a verifier or hook that legitimately blocked you. Edit the harness; or surface the rule to the operator. Do not bypass.
-- Cap each turn at ONE harness-editor invocation.
+- Never weaken or remove a verifier or hook that legitimately blocked you. Edit the source to fix the underlying issue; or surface the rule to the operator. Do not bypass.
+- Never reintroduce the inner-actor LLM (Qwen, Hermes, Ollama, llama.cpp-based generative inference) without explicit operator authorization — the pivot is intentional.
+- Never use mock data in tests; never write tests that pass when the project is in a broken state. Per operator: real data only, fail-closed errors, robust error logging.
 
 ### 11.10 Model policy
 
@@ -315,26 +330,32 @@ Two refactors structurally enforce that operator `/mcp` reconnects MUST NOT be o
 
 `/mcp reconnect` is still required for changes to MCP-protocol-layer code (`crates/context-graph-mcp/src/handlers/`, `protocol.rs`, `tools/`, `main.rs`). Surface in `remaining_risks` when a `changed` recommendation touches these.
 
-### 11.13 Artifact layout
+### 11.13 Artifact layout (post-pivot)
+
+The legacy `<runtime_root>/<task_id>/qwen3.6-27b/attempts/...` artifact tree is retired (it described the inner-actor's per-attempt outputs). Going forward, ME-JEPA artifacts land under explicit RocksDB column families and the existing `./memory/` SMAP tree:
 
 ```
-<runtime_root>/<task_id>/qwen3.6-27b/attempts/attempt-NNNNNN/
-  problem-reality-packet.json
-  reality-signal-packet.json
-  attempt-summary.json
-  agent-tool-transcript.json
-  validation.json
-  inner-model-readback.json
-  inner-harness-response.json
-  official-evidence/<instance>.json
-  agent-tools/round-NN-MM-<tool>/
-  harness-transitions/round-NN.json
-  trigger-decision.json
-  claude-code-optimizer/
-    recommendation-turn-NN.json
-    decision-turn-NN.json
-    commands/<unix>-<command>.json
+crates/context-graph-storage/<rocksdb-instance>/
+  CF_MEJEPA_PANELS                  # (attempt_id, time_step) -> tier-compressed panel
+  CF_MEJEPA_PANEL_META              # tier, access_count_30d, created_at, last_accessed
+  CF_MEJEPA_WEIGHT_BLOBS            # theta_sha -> weight blob (deduplicated)
+  CF_MEJEPA_TRAIN_CERTS             # step -> training cert header (Merkle root)
+  CF_MEJEPA_ORACLE_VERDICTS         # (task_id, mutation_category) -> OracleVerdict
+  CF_MEJEPA_MUTATION_CORPUS         # (task_id, mutation_category) -> mutated_source
+  CF_MEJEPA_LIVE_PREDICTIONS        # session_id -> latest live verify() outputs
+  CF_MEJEPA_SHIFT_WATERMARK         # last shift_id consumed by §3.8 subscriber
+
+./memory/
+  context/, decisions/, discoveries/, handoff/, journal/, blockers/, patterns/, reports/
+
+docs/ruvectorfindings/sitrep/
+  01_status_overview.md             # canonical status table
+  02_shipped/                       # per-shipped-primitive deep dives
+  03_deferred/phases/phase{0..8}.md # per-phase explainers
+  04_implementation_plans/          # ready-to-execute plans
 ```
+
+The legacy `harness-transitions/`, `attempt-summary.json`, `official-evidence/`, etc. paths are no longer produced. The shift-log (`/tmp/contextgraph-rust-reality-loop/cgreality-shift-log/<session>.jsonl`) **is still in use** and is the primary input to Phase 7's `mejepa-shift-subscriber`.
 
 Source-of-truth file paths in your output should always start with `file:` (or `sqlite:` / `git:`).
 

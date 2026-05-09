@@ -110,7 +110,7 @@ context-graph mejepa-instruments verify --corpus ./data/mejepa-corpus
 | E_CommitMsg | 384 | reuse E1 on commit text | ~1 day | low (existing E1) |
 | **E_StaticAnalysis** | 256 | new — scalar feature aggregates (mypy/Pyright/ruff/clippy warnings, complexity, blame age, etc.) | **~2 days** | **HIGH** (pure-Rust math; inputs from already-installed tools) |
 | E_Runtime | 256 | new — wall-clock + RSS + coverage + network signal aggregates | ~2 days | medium |
-| E_Reasoning | 384 | new — Qwen CoT + reflexion-trace encoder | ~2 days | medium |
+| E_Reasoning | 384 | new — agent-CoT + reflexion-trace encoder (sources: outer-loop conversation transcripts, optimizer recommendation JSONs, reflexion notes; agent-agnostic post-2026-05-09 pivot) | ~2 days | medium |
 | Scalars | 128 | aggregates: BFS depth, blame age, churn, coverage Δ, repo-health | ~1 day | low (after Phase-0 Docker oracle ships actual signals) |
 
 ### Tree-sitter / Pyright integration

@@ -8,7 +8,7 @@
 
 Phase 5 keeps the trained predictor calibrated against a moving reality.
 As the harness improves, the corpus grows; as Python repos drift, panel
-distributions shift; as inner-actor patches change, the verifier's
+distributions shift; as outer-loop agents (Claude Code, external AI agents) refine their patch styles, the verifier's
 input space shifts. Phase 5 closes the feedback loop:
 
 1. Detect drift between predicted-oracle and real-oracle agreement on
@@ -28,8 +28,8 @@ on the 2,400-entry corpus. A frozen verifier will drift as:
 
 - New SWE-bench tasks land (the corpus grows beyond 300 tasks).
 - Python language evolves (3.11 → 3.13 features in test fixtures).
-- Inner-actor patches change distribution (Qwen3.6-27b improves over
-  time, producing different panel-shapes).
+- Outer-loop agent patches change distribution (Claude Code or external
+  agents update their reasoning style, producing different panel-shapes).
 
 Without Phase 5, the predictor's calibrated coverage decays from 0.90 →
 0.70 → ... silently. Phase 5 catches the decay and fine-tunes back.

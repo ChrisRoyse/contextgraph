@@ -1,8 +1,12 @@
 # 09 — The End Goal: A Reality Compiler (ME-JEPA)
 
+> **🔁 PIVOT 2026-05-09 — read [`10_MEJEPA_PIVOT_2026_05_09.md`](./10_MEJEPA_PIVOT_2026_05_09.md) FIRST.** The inner-actor LLM (Qwen3.6-27B / Hermes-2-Pro) has been removed from the system. Sections of this doc that reference Qwen / inner-actor / live-attempt-driven training are re-framed by doc 10. Doc 10 is the canonical statement of the new architecture; this doc remains authoritative for the compiler analogy, instrument set, panel layout, predictor design, training procedure, conformal calibration, OOD detection, self-healing, hygiene, and 8-phase build plan — none of which depend on the inner-actor LLM.
+
 > **Build-ready specification for an AI agent.** This is the master plan for the ContextGraph reality system. Read top-to-bottom; pick up at the Phase plan and execute. All earlier docs (01-08) are reference material that informs *how* the components are implemented; this doc is *what* gets built and *why*.
 
-> **Operator framing, 2026-05-08:** *"the ultimate goal of this system and Main focus is to develop a system that makes it so that coders don't need to review code anymore since they are reviewing that what the ai said actually exists in reality... the me jepa is what predicts reality. this is what is going to be responsible for reviewing essentially and verifying/validating it... we need a truth system that can predict that code is good and working as intended... does what the ai says it did exist and does it work as the ai says it does or does it work as its intended to? how is it actually impacting reality itself."*
+> **Operator framing, 2026-05-08 (reaffirmed 2026-05-09):** *"the ultimate goal of this system and Main focus is to develop a system that makes it so that coders don't need to review code anymore since they are reviewing that what the ai said actually exists in reality... the me jepa is what predicts reality. this is what is going to be responsible for reviewing essentially and verifying/validating it... we need a truth system that can predict that code is good and working as intended... does what the ai says it did exist and does it work as the ai says it does or does it work as its intended to? how is it actually impacting reality itself."*
+
+> **Operator's pivot directive, 2026-05-09:** *"we aren't building anymore the reality loop around qwen... ultimately what we need to focus on is the me jepa. the me jepa is what predicts reality... this runs separate from the llm. everything needs to be focused on the me jepa."*
 
 > **Operator's compiler analogy, 2026-05-08:** *"would this almost be like a compiler but it almost compiles reality itself?"* — yes; the structure of the system maps cleanly onto compiler stages. This doc is anchored on that framing.
 
@@ -233,9 +237,9 @@ The physical source of truth for current Java parser/action hardening is the Jav
 
 The physical source of truth for current C# parser/action hardening is `/tmp/contextgraph-csharp-semantic-fsv/csharp-semantic-fsv.json` plus `/tmp/contextgraph-csharp-action-fsv/csharp-action-fsv.json` when the action test runs. The semantic-index FSV writes real C# source with overloaded and conversion operators, re-reads the source from disk, extracts symbols, writes evidence JSON, and re-reads it before asserting `operator +` and `operator int`. The live action FSV writes a real SDK-style `.csproj` and source file, applies the candidate edit only to the compiler snapshot, and either records checked `dotnet build` evidence or, on hosts without `dotnet`, re-reads the snapshot path named in the fail-closed error to prove the candidate after-source exists while the repository source remains unchanged.
 
-**Current JavaScript/TypeScript AST parser harness state (2026-05-09):** JavaScript and TypeScript `E_AST` extraction uses binding-site symbol identity for assigned functions. Arrow functions and function expressions derive their symbol from the enclosing `variable_declarator`, `assignment_expression`, object `pair`, or named function node; parameter names are never accepted as function symbols. Nested tree-sitter keyword nodes under a `function_expression` do not create duplicate persisted function symbols, so one source binding maps to one semantic symbol. Export visibility is ancestor-aware, so `export const fn = (...) => ...` and `export const fn = function (...) { ... }` persist as `visibility: exported` even though the function node text does not include the `export` keyword. Anonymous default exports are named `default`; anonymous unbound callbacks do not mint top-level function symbols. Tree-sitter parser recovery now reports structured diagnostics instead of a generic syntax-error string.
+**Current JavaScript/TypeScript AST parser harness state (2026-05-09):** JavaScript and TypeScript `E_AST` extraction uses binding-site symbol identity for assigned functions. Arrow functions and function expressions derive their symbol from the enclosing `variable_declarator`, `assignment_expression`, object `pair`, or named function node; parameter names are never accepted as function symbols. TypeScript `.tsx` uses the TSX tree-sitter dialect, while `.ts`, `.mts`, and `.cts` use the TypeScript dialect; requesting `--language typescript` includes both detected TypeScript-family dialects. TypeScript interfaces and type aliases are first-class type-graph symbols. Nested tree-sitter keyword nodes under a `function_expression` do not create duplicate persisted function symbols, so one source binding maps to one semantic symbol. Export visibility is ancestor-aware, so `export const fn = (...) => ...` and `export const fn = function (...) { ... }` persist as `visibility: exported` even though the function node text does not include the `export` keyword. Anonymous default exports are named `default`; anonymous unbound callbacks do not mint top-level function symbols. TypeScript live action attribution climbs from inner expressions to the nearest semantic owner before emitting `E_AST` action features. Tree-sitter parser recovery now reports structured diagnostics instead of a generic syntax-error string.
 
-The physical source of truth for current JavaScript parser/action hardening is the JavaScript FSV stdout and evidence emitted by targeted `context-graph-cli` tests plus the manual semantic-index CLI run. The semantic-index test writes real JavaScript source and `javascript-semantic-fsv.json`, then re-reads it before asserting that `double`, `plusOne`, `run`, `stop`, and `load` exist while `x`, `value`, `input`, `reason`, and `config` do not. The live action AST test descends from edited expression spans back to the real JavaScript binding and verifies exported/public visibility. The CLI semantic-index path requires real TypeScript tooling for JavaScript/TypeScript repository checks; missing `tsc` is a hard failure rather than parser-only evidence.
+The physical source of truth for current JavaScript parser/action hardening is the JavaScript FSV stdout and evidence emitted by targeted `context-graph-cli` tests plus the manual semantic-index CLI run. The semantic-index test writes real JavaScript source and `javascript-semantic-fsv.json`, then re-reads it before asserting that `double`, `plusOne`, `run`, `stop`, and `load` exist while `x`, `value`, `input`, `reason`, and `config` do not. The live action AST test descends from edited expression spans back to the real JavaScript binding and verifies exported/public visibility. The physical source of truth for current TypeScript parser/action hardening is `/tmp/contextgraph-ts-fsv-20260509/happy/semantic-index-fixed.json` plus the sibling `.evidence/` directory and the direct edge-case command logs under `/tmp/contextgraph-ts-fsv-20260509/{missing-toolchain,invalid-syntax,empty-tsx}/direct.stdout`. The happy-path readback contains `tsx` and `typescript`, no parameter symbols, no duplicate symbols, and real project-local `node_modules/.bin/tsc --noEmit --pretty false` evidence. Missing local `tsc`, invalid TypeScript syntax, and empty TSX all fail closed with output absent and evidence/log state preserved.
 
 **Current Ruby AST parser harness state (2026-05-09):** Ruby `E_AST`/`E_Test` extraction treats RSpec example-group and example DSL calls (`describe`, `context`, `it`, `specify`, focused/skipped variants, shared examples) plus Minitest `test_` methods as first-class test signals. The live action extractor now uses Ruby `spec/`, `test/`, `_spec.rb`, and `_test.rb` paths for action attribution and patch-delta classification, so spec expectation edits become test-assertion features rather than production-method features. Ruby DSL call symbols are resolved from the call's `method` field, not the receiver, so `RSpec.describe` persists as `describe` rather than `RSpec`. Ruby live action semantics require `ruby -c` and fail closed with `RUST_REALITY_DYNAMICJEPA_RUBY_TOOLCHAIN_MISSING` if the Ruby CLI is unavailable.
 
@@ -263,13 +267,15 @@ crate context-graph-mejepa-corpus {
 }
 ```
 
-### 3.2 Secondary: live reality-loop attempts
+### 3.2 Secondary: live outer-loop observations
 
-In addition to the static mutation corpus, **every reality-loop attempt** (whether the patch comes from Claude, Qwen, hand-written, or any future model) produces another labeled example: the harness extracts panels + the oracle verdicts, and they enter the corpus.
+In addition to the static mutation corpus, **every edit-and-test cycle the outer reality loop performs** produces another labeled example: the §3.8 shift-log subscriber extracts panels around each edit + the oracle verdict from the subsequent test run, and they enter the corpus.
 
-This is what makes ME-JEPA evolve: every Claude attempt, every Qwen attempt (if we keep the local model), every retry — they all become training data.
+This is what makes ME-JEPA evolve: every Claude Code edit, every external-agent patch, every CI run, every retry — they all become training data.
 
-The corpus growth rate: ~5 attempts per task × 300 tasks × 1 reality-loop run per week = ~1,500 new examples per week beyond the static base set.
+Per the 2026-05-09 pivot (doc 10), there is no separate inner-actor LLM. The outer loop is Claude Code (or any AI agent doing /loop turns) plus the deterministic ContextGraph reality substrate. The patches come from the outer loop's normal work, not from a dedicated inner LLM.
+
+The corpus growth rate scales with outer-loop activity: a single Claude Code session typically produces 5-50 (panel[t=0..2], oracle) tuples per hour from its normal edit/test cycle. After the §3.8 shift-log subscriber is wired, accumulation is automatic and observation latency is < 5 s p50.
 
 ### 3.3 Tertiary: synthetic adversarial perturbations
 
@@ -332,7 +338,7 @@ Aggregated into a new instrument **`E_Runtime`** (256-d) plus an extension to ex
 
 | Signal | Source | Use |
 |---|---|---|
-| Inner-actor reasoning trace | Qwen3.6-27B CoT log per attempt | new instrument **`E_Reasoning`** (384-d) |
+| Outer-loop agent reasoning trace | any AI agent's CoT log produced during outer-loop work (Claude Code conversation transcript, recommendation JSONs, reflexion notes) | new instrument **`E_Reasoning`** (384-d) |
 | Outer-optimizer diagnoses | `optimizer_record_recommendation` JSONs | weak supervision label |
 | Adjacent-test impact | run all tests in same module, not just target | per-test outcome vector |
 | Inter-attempt trajectory | `(attempt_n, oracle_pass_prob, ood_score)` series | stored in `CF_MEJEPA_TRAJECTORIES` |
@@ -382,7 +388,7 @@ Honest list of capture gaps, ordered by leverage (capability unlocked / capture 
 
 4. **Per-hunk pass/fail attribution.** A multi-hunk patch is currently atomic. Sequential application gives `O(hunks)` × supervision per attempt. **Unlocks:** which lines actually mattered. **Cost:** ~5× test runtime; sample 20% of corpus.
 
-5. **Inner-actor reasoning trace.** Qwen's CoT is currently mostly discarded. Capturing where the actor "got stuck" (long pause, retry loops, hedge tokens) gives skill-deficit supervision. **Unlocks:** weak supervision for a "capability gap" head. **Cost:** log structure already exists; needs embedding.
+5. **Outer-loop agent reasoning trace.** The CoT of whichever agent is producing patches in the outer loop (Claude Code, an external AI agent, or a human operator's notes) is currently mostly discarded. Capturing where the agent "got stuck" (long pause, retry loops, hedge tokens, repeated edits to the same file) gives skill-deficit supervision. **Unlocks:** weak supervision for a "capability gap" head. **Cost:** log structure already exists in optimizer recommendation JSONs + conversation transcripts; needs embedding. (Note 2026-05-09: the previous Qwen-specific inner-actor framing is retired per pivot doc 10; reasoning sources are now agent-agnostic.)
 
 ### Medium-leverage blindspots (Phase 2-3)
 
@@ -412,7 +418,7 @@ These are signals the *already-shipped* infrastructure produces but ME-JEPA-Code
 
 17. **Format-manifest schema-version migration** — the chain has multiple historical encodings; `witness_chain_format.rs` documents the canonical, `witness_chain_legacy.rs` reconciles older entries. ME-JEPA's `E_Witness` instrument MUST version-track its decoder, or vectors will silently drift across the migration. **Unlocks:** stable `E_Witness` features across format generations. **Cost:** add `format_version` field to `E_Witness` config; reject mixed-version batches without explicit conversion.
 
-18. **Reflexion handler outputs** (`reflexion.rs`) — already produces structured "lessons learned" records the inner actor cites. Currently consumed by the optimizer; not consumed by `E_Reasoning`. **Unlocks:** richer `E_Reasoning` than just CoT — captures the actor's *self-judgment* about which prior failure modes are recurring. **Cost:** wire `reflexion.rs` outputs into `E_Reasoning` materialization.
+18. **Reflexion handler outputs** (`reflexion.rs`) — already produces structured "lessons learned" records the outer-loop agent (or any reasoning agent) cites. Currently consumed by the optimizer; not consumed by `E_Reasoning`. **Unlocks:** richer `E_Reasoning` than just CoT — captures the agent's *self-judgment* about which prior failure modes are recurring. **Cost:** wire `reflexion.rs` outputs into `E_Reasoning` materialization.
 
 19. **Bandit-arm selection trajectories** (`bandit.rs`) — the multi-armed bandit picks among candidate actions/skills with witnessed audit rows. The arm-selection trajectory is itself a sequence reward signal: which arms paid off, which didn't, which the bandit converged on. **Unlocks:** ME-JEPA can predict *which skill* the bandit will pick before it does, and `α_overrides`-equivalent supervision when the bandit's pick disagrees with ME-JEPA's prediction. **Cost:** consume the bandit's already-witnessed arm-selection record.
 
@@ -528,7 +534,7 @@ The ContextGraph harness already produces every signal ME-JEPA-Code needs — we
 | `harness-transitions/round-NN.json` | optimizer record recommendation | extract `E_Diff` + `E_Witness` |
 | `cgreality-shift-log/*.jsonl` | shift-comparison API | trigger `observe()` per shift |
 | `attempt-summary.json` | optimizer reads | trigger per-attempt panel materialization |
-| `inner-harness-response.json` | optimizer reads | extract Qwen CoT → `E_Reasoning` |
+| outer-loop conversation transcript + recommendation JSONs | optimizer reads | extract agent CoT → `E_Reasoning` (legacy `inner-harness-response.json` no longer produced post-2026-05-09 pivot; replaced by Claude Code conversation transcripts and `optimizer_record_recommendation` JSONs) |
 | `validation.json` | optimizer reads | extract per-test outcomes for `E_Oracle` |
 | Pre/PostToolUse hook payloads | hook log only | extract `before_sha`/`after_sha` for AST diff caching |
 | `agent-tool-transcript.json` | optimizer reads | extract tool-call sequence for `E_Reasoning` extension |
@@ -1080,12 +1086,14 @@ context-graph mejepa-stress --entries 10000 --duration 7d
 **Verification:**
 
 ```bash
-context-graph reality-loop end-to-end --task astropy__astropy-12907
+# Post-pivot 2026-05-09: there is no inner-actor `reality-loop` binary.
+# Verification instead exercises ME-JEPA directly on a candidate patch.
+context-graph mejepa-verify --task astropy__astropy-12907 --patch ./candidate.patch
 # expected:
-#   inner_actor_attempt: completed
-#   me_jepa_verify_verdict: APPROVE or ESCALATE
-#   me_jepa_predicts_match_oracle: true (or explicitly false with reason)
-#   corpus_entry_added: 1
+#   panel_materialization: completed in <1 s (E_AST/E_CFG/E_DataFlow/... all populated)
+#   me_jepa_verify_verdict: Pass{interval, per_test_probs} | Fail{...} | OutOfDistribution{...} | Abstain{...}
+#   me_jepa_predicts_match_oracle: true (compared against Docker oracle on a 5% sample for active-learning)
+#   corpus_entry_added: 1 (panel + oracle verdict persisted to CF_MEJEPA_PANELS)
 #   total_corpus_size: previous + 1
 ```
 
@@ -1147,7 +1155,7 @@ We READ RuVector's `crates/sona/`, `crates/rvf/rvf-crypto/`, `crates/ruvector-te
 - **Auto-memory:** `~/.claude/projects/-home-cabdru/contextgraph/memory/project_end_goal_verifiable_ai_code.md` — cross-session.
 - **Sister doc (agentdb):** `docs/agentdbfindings/09_END_GOAL_REVIEW_REPLACEMENT.md` — short mirror; treats agentdb-derived ideas as inspiration sources.
 - **Findings:** `docs/ruvectorfindings/{02,03,04,05}.md` — primitives, applications, triage. **Read these for the *inspirations*; this doc 09 is the *plan*.**
-- **ccreality two-loop architecture:** `docs/ccreality/01_ARCHITECTURE.md` — the existing Claude+Qwen reality loop. Phase 7 reuses this loop's outputs as ME-JEPA's training data (live attempts).
+- **ccreality two-loop architecture (historical):** `docs/ccreality/01_ARCHITECTURE.md` documents the previous Claude+Qwen two-loop. **Superseded 2026-05-09** by the ME-JEPA pivot (`10_MEJEPA_PIVOT_2026_05_09.md`). The outer-loop primitives (witness chain, shift log, optimizer recommendation JSONs, governed file edits) remain authoritative; the inner-actor LLM components are retired. Phase 7 now consumes outer-loop artifacts (Claude Code edits + Docker oracle test runs) as ME-JEPA training data — no separate inner-actor LLM is involved.
 - **Existing JEPA design:** `backupdocs/dynamicjepa/` (universal world-model protocol), `backupdocs/mejepa/` (recruiting-domain ME-JEPA), `backupdocs/5090jepa/` (RTX 5090 demo plan). ME-JEPA-Code is a domain pack ("code_correctness.v1") within the dynamicjepa runtime — see `backupdocs/dynamicjepa/02_core_thesis.md` for the universal-runtime story; this doc specializes it for code.
 - **5090jepa rules:** `backupdocs/5090jepa/00_TASK.md` R3 (no mock data), R4 (FSV mandatory), R5 (trigger-outcome verification mandatory) — directly satisfied by every Phase verification protocol above.
 
