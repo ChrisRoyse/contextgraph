@@ -568,9 +568,9 @@ The end goal of doc 09 §1.3 — `predicted_oracle_pass > 0.95` with calibrated 
 - UTML v1.0 learning formula: `11_MEJEPA_LEARNING_FORMULA.md`
 - 21-embedder integration: `12_EMBEDDER_INTEGRATION.md`
 - AST-aware chunking: `14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md`
-- Sitrep status: `sitrep/01_status_overview.md`
-- Implementation plans: `sitrep/04_implementation_plans/`
-- Source theory backbone: `docs2/UTL_v2_embodied.md` (UTML v1.0 — JEPA Edition)
+- Spec status/roadmap: `specs/_README.md` + `specs/implementation-plan.md`
+- Task graph: `specs/tasks/_index.md` + `specs/tasks/_traceability.md`
+- Source theory backbone: `docs2/TheoryOfMachineLearning.md` (UTML v1.0 — JEPA Edition)
 - Royse, C. (2026a). *ContextGraph Reality Loop*. ResearchGate DOI 10.13140/RG.2.2.16013.91366.
 - Royse, C. (2026b). *Dynamic / ME-JEPA*. ResearchGate DOI 10.13140/RG.2.2.28485.41446.
 - Locked decisions:

@@ -6,7 +6,7 @@
 > - `09_END_GOAL_REVIEW_REPLACEMENT.md` §2.2 — instrument set
 > - `12_EMBEDDER_INTEGRATION.md` — 21-embedder ensemble inventory
 > - `13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md` — TCT/DDA framework
-> - `docs2/UTL_v2_embodied.md` — UTML v1.0 (the source theory)
+> - `docs2/TheoryOfMachineLearning.md` — UTML v1.0 (the source theory)
 
 ---
 
@@ -526,7 +526,7 @@ The repo has **11 tree-sitter parsers wired** plus an **existing AST chunker wit
 - TCT/DDA framework: `13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md`
 - cAST methodology: https://arxiv.org/html/2506.15655v1
 - Qodo code-embeddings best practices: https://www.qodo.ai/blog/rag-for-large-scale-code-repos/
-- Source theory: `docs2/UTL_v2_embodied.md` (UTML v1.0 — JEPA Edition)
+- Source theory: `docs2/TheoryOfMachineLearning.md` (UTML v1.0 — JEPA Edition)
 - Locked decisions:
   - `memory/decisions/2026-05-09--multi-embedder-utml-integration-post-qwen.md`
   - `memory/decisions/2026-05-09--single-loop-claude-code-actor-mejepa-data-factory.md`

@@ -733,7 +733,9 @@ impl MemoryStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "test-utils")]
     use crate::memory::{HookType, MemorySource};
+    #[cfg(feature = "test-utils")]
     use crate::types::fingerprint::SemanticFingerprint;
     use tempfile::tempdir;
 

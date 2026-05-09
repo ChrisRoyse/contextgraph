@@ -21,9 +21,9 @@
   <source_documents>
     <source type="design">docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md §2.2 (instrument inventory), §2.3 (panel time-step protocol), §3.5 (E_StaticAnalysis / E_Runtime / E_Reasoning), §3.5.5 (5,120-d panel layout)</source>
     <source type="design">docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md §A (single-loop architecture; no inner-actor LLM)</source>
-    <source type="design">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §3 (instrument-embedder mapping)</source>
+    <source type="design">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §3 (instrument-embedder mapping)</source>
     <source type="design">docs/ruvectorfindings/13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md §3.4 (frozen-instrument three-role property)</source>
-    <source type="design">docs/ruvectorfindings/14_AST_EMBEDDER_ATOMIC_CHUNKING.md §3.2, §4 (AST-perfect chunk consumption)</source>
+    <source type="design">docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md §3.2, §4 (AST-perfect chunk consumption)</source>
     <source type="constitution">docs/ruvectorfindings/specs/constitution.md (utml_v1_invariants, anti_patterns frozen-instrument rule, failure_taxonomy)</source>
     <source type="shipped_code">crates/context-graph-mejepa-instruments/src/{lib.rs, e_oracle.rs, e_witness.rs, e_static_analysis.rs}</source>
     <source type="empirical_fsv">/tmp/contextgraph-mejepa-instruments-fsv/{panel.json, e_oracle_*.json, e_witness_*.json, e_static_analysis_*.json}</source>

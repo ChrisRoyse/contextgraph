@@ -40,7 +40,7 @@ use context_graph_mejepa_instruments::{
 };
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::oracle::{
     configure_child_process_group, tail_text, wait_with_timeout_interruptible, OracleError,
@@ -360,13 +360,12 @@ pub fn run_swebench_lite_oracle(
     }
 
     let artifacts = locate_artifacts(config, predictions_jsonl_path.clone())?;
-    let report_text = fs::read_to_string(&artifacts.instance_report).map_err(|err| {
-        OracleError::io(
-            &artifacts.instance_report,
-            err.to_string(),
-            "ensure the harness wrote per-instance report.json before reading the verdict",
-        )
-    })?;
+    let report_text = read_or_create_timeout_report(
+        &config.instance_id,
+        &artifacts.instance_report,
+        &artifacts.test_output,
+        config.instance_timeout,
+    )?;
     let instance_report = parse_swebench_instance_report(&config.instance_id, &report_text)?;
 
     let test_output_text = fs::read_to_string(&artifacts.test_output).map_err(|err| {
@@ -481,13 +480,12 @@ pub fn run_swebench_lite_oracle_batch(
             .join(&prediction.instance_id);
         let instance_report_path = instance_dir.join("report.json");
         let test_output_path = instance_dir.join("test_output.txt");
-        let report_text = fs::read_to_string(&instance_report_path).map_err(|err| {
-            OracleError::io(
-                &instance_report_path,
-                err.to_string(),
-                "ensure the batch harness wrote per-instance report.json before reading the verdict",
-            )
-        })?;
+        let report_text = read_or_create_timeout_report(
+            &prediction.instance_id,
+            &instance_report_path,
+            &test_output_path,
+            config.instance_timeout,
+        )?;
         let instance_report =
             parse_swebench_instance_report(&prediction.instance_id, &report_text)?;
         let test_output_text = fs::read_to_string(&test_output_path).map_err(|err| {
@@ -764,6 +762,91 @@ pub fn swebench_report_to_verdict(
         per_test,
         exception,
     })
+}
+
+fn read_or_create_timeout_report(
+    instance_id: &str,
+    instance_report_path: &Path,
+    test_output_path: &Path,
+    timeout: Duration,
+) -> OracleResult<String> {
+    match fs::read_to_string(instance_report_path) {
+        Ok(report_text) => return Ok(report_text),
+        Err(report_err) if report_err.kind() != std::io::ErrorKind::NotFound => {
+            return Err(OracleError::io(
+                instance_report_path,
+                report_err.to_string(),
+                "ensure the harness report path is readable before reading the verdict",
+            ));
+        }
+        Err(_) => {}
+    }
+
+    let test_output = fs::read_to_string(test_output_path).map_err(|err| {
+        OracleError::io(
+            test_output_path,
+            err.to_string(),
+            "missing report.json can only be classified when the harness wrote test_output.txt",
+        )
+    })?;
+    if !test_output_contains_timeout(&test_output) {
+        return Err(OracleError::io(
+            instance_report_path,
+            "per-instance report.json missing and test_output.txt does not contain the SWE-bench timeout marker",
+            "inspect run_instance.log; the harness failed before producing a classifiable oracle artifact",
+        ));
+    }
+
+    let timeout_test_id = format!("{instance_id}::__swebench_timeout__");
+    let report = json!({
+        instance_id: {
+            "patch_is_None": false,
+            "patch_exists": true,
+            "patch_successfully_applied": true,
+            "resolved": false,
+            "tests_status": {
+                "FAIL_TO_PASS": {
+                    "success": [],
+                    "failure": [timeout_test_id],
+                },
+                "PASS_TO_PASS": {
+                    "success": [],
+                    "failure": [],
+                },
+                "FAIL_TO_FAIL": {
+                    "success": [],
+                    "failure": [],
+                },
+                "PASS_TO_FAIL": {
+                    "success": [],
+                    "failure": [],
+                },
+            },
+            "contextgraph_timeout_synthetic": true,
+            "contextgraph_timeout_seconds": timeout.as_secs(),
+        }
+    });
+    let report_text = serde_json::to_string_pretty(&report).map_err(|err| {
+        OracleError::report_invalid(
+            "timeout_report",
+            err.to_string(),
+            "ensure the synthetic timeout report remains JSON-serializable",
+        )
+    })?;
+    fs::write(instance_report_path, &report_text).map_err(|err| {
+        OracleError::io(
+            instance_report_path,
+            err.to_string(),
+            "ensure the harness artifact directory is writable so timeout verdicts can be resumed",
+        )
+    })?;
+    Ok(report_text)
+}
+
+fn test_output_contains_timeout(test_output: &str) -> bool {
+    test_output
+        .lines()
+        .any(|line| line.trim_start().starts_with("Timeout error:"))
 }
 
 /// Best-effort scan of a SWE-bench `test_output.txt` for the dominant
@@ -1282,7 +1365,6 @@ fn locate_artifacts(
 
     for (path, label) in [
         (&overall_report, "overall report"),
-        (&instance_report, "per-instance report.json"),
         (&run_log, "run_instance.log"),
         (&test_output, "test_output.txt"),
     ] {
@@ -1641,6 +1723,52 @@ mod tests {
         let report = parse_swebench_instance_report("sympy__sympy-20590", text).unwrap();
         let err = swebench_report_to_verdict(&report, None).unwrap_err();
         assert_eq!(err.code(), "MEJEPA_ORACLE_REPORT_INVALID");
+    }
+
+    #[test]
+    fn missing_report_with_timeout_output_persists_timeout_verdict() {
+        let temp = tempfile::tempdir().unwrap();
+        let instance_dir = temp.path().join("django__django-15789");
+        fs::create_dir_all(&instance_dir).unwrap();
+        let report_path = instance_dir.join("report.json");
+        let test_output_path = instance_dir.join("test_output.txt");
+        fs::write(
+            &test_output_path,
+            "Traceback elided\nTimeout error: 1800 seconds exceeded.\n",
+        )
+        .unwrap();
+
+        let report_text = read_or_create_timeout_report(
+            "django__django-15789",
+            &report_path,
+            &test_output_path,
+            Duration::from_secs(1800),
+        )
+        .unwrap();
+
+        assert!(report_path.is_file());
+        let persisted_text = fs::read_to_string(&report_path).unwrap();
+        assert_eq!(report_text, persisted_text);
+        let raw: Value = serde_json::from_str(&persisted_text).unwrap();
+        assert_eq!(
+            raw["django__django-15789"]["contextgraph_timeout_synthetic"],
+            true
+        );
+        assert_eq!(
+            raw["django__django-15789"]["contextgraph_timeout_seconds"],
+            1800
+        );
+
+        let report =
+            parse_swebench_instance_report("django__django-15789", &persisted_text).unwrap();
+        let verdict = swebench_report_to_verdict(&report, None).unwrap();
+        assert_eq!(verdict.exception, Some(ExceptionClass::Other));
+        assert_eq!(verdict.per_test.len(), 1);
+        assert_eq!(
+            verdict.per_test[0].test_id,
+            "django__django-15789::__swebench_timeout__"
+        );
+        assert_eq!(verdict.per_test[0].outcome, TestOutcome::Fail);
     }
 
     #[test]

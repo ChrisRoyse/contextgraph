@@ -1,8 +1,8 @@
 # 11 — ME-JEPA Learning Formula (UTML v1.0 Adaptation)
 
-> **Operator directive 2026-05-09:** *"look at `/home/cabdru/contextgraph/docs2/UTL_v2_embodied.md` you can use this to formulate a learning formula for the ME JEPA system."*
+> **Operator directive 2026-05-09:** *"look at `/home/cabdru/contextgraph/docs2/TheoryOfMachineLearning.md` you can use this to formulate a learning formula for the ME JEPA system."*
 
-> **Source theory:** `docs2/UTL_v2_embodied.md` — **Unified Theory of Machine Learning v1.0 (JEPA Edition)**, the ML-native rewrite of the earlier embodied/biological framework. UTML v1.0 keeps the multiplicative-gate philosophy but has **four** ML-native factors instead of three; the new fourth factor (ΔΞ — representational non-collapse) is the term v2.0's biological framework cannot motivate but every modern self-supervised system requires.
+> **Source theory:** `docs2/TheoryOfMachineLearning.md` — **Unified Theory of Machine Learning v1.0 (JEPA Edition)**, the ML-native rewrite of the earlier embodied/biological framework. UTML v1.0 keeps the multiplicative-gate philosophy but has **four** ML-native factors instead of three; the new fourth factor (ΔΞ — representational non-collapse) is the term v2.0's biological framework cannot motivate but every modern self-supervised system requires.
 
 > **Companion docs:**
 > - `09_END_GOAL_REVIEW_REPLACEMENT.md` — master plan (panel + predictor + frozen target readback + VICReg + verify)
@@ -97,7 +97,7 @@ For ME-JEPA-Code, the Fisher matrix is computed against the heldout 30-task vali
 
 A model whose Expected Calibration Error is rising during training is one whose update is fluent on the loss but incoherent on its reported confidence — a leading indicator of overfitting / Goodhart-style reward hacking (Gao et al. 2022) / latent space subtly rearranging in ways the predictor doesn't yet reflect.
 
-ECE replaces UTL-v2's HRV-coherence term: it's the ML-native "internal-state coherence" measurement.
+ECE replaces the earlier embodied-learning coherence proxy: it is the ML-native "internal-state coherence" measurement.
 
 **Implementation:** Phase 4's conformal calibration produces ECE as a side-output. Reuse it for the ΔK term.
 
@@ -238,7 +238,7 @@ This integrates UTML's L_step into the doc 09 §3.7.2 sampling reweighting mecha
 M(t) = ∫₀ᵗ L_step(τ) · ΔΞ(τ) · k_replay(τ) · e^(−(t−τ)/τ_decay(τ)) dτ
 ```
 
-The product **`L_step(τ) · ΔΞ(τ)` is critical**: a step with ΔΞ ≈ 0 (collapsed latent) cannot consolidate anything, even if the gradient update happens. This is the ML version of UTL-v2's "dissipation" failure mode (UTML §VII.1).
+The product **`L_step(τ) · ΔΞ(τ)` is critical**: a step with ΔΞ ≈ 0 (collapsed latent) cannot consolidate anything, even if the gradient update happens. This is the ML version of the earlier embodied-learning "dissipation" failure mode (UTML §VII.1).
 
 | Component | UTML default | Map to ME-JEPA |
 |---|---|---|
@@ -263,13 +263,13 @@ In words: high in-update L_step, but cumulative consolidation gain is less than 
 
 ME-JEPA writes every persisted artifact — prompt, model response, candidate patch, per-attempt evidence, audit row — into an append-only ledger byte-equal-readback verified before influencing the next decision (Royse 2026a §7). The 25 RocksDB column families plus the BlackBoxFix SQLite ledger together comprise a **physical** M(t) — the consolidation tensor of the system, persisted on disk, structurally separate from the writer that produces it. M(t) here is not a mathematical abstraction; it is a queryable substrate.
 
-This is the most direct ML analogue of UTL-v2's "memory function of sleep": durable, append-only, retrievable, separately verifiable.
+This is the most direct ML analogue of the earlier embodied-learning "memory function of sleep": durable, append-only, retrievable, separately verifiable.
 
 ---
 
 ## 8. State-transfer T (train → deploy gap)
 
-UTML §VIII.b. The ML analogue of UTL-v2's surgeon-in-simulator-vs-OR transfer problem:
+UTML §VIII.b. The ML analogue of the earlier embodied-learning surgeon-in-simulator-vs-OR transfer problem:
 
 ```
 T(train, deploy) = exp(−d(P_train, P_deploy) / λ)
@@ -450,7 +450,7 @@ For ME-JEPA-Code's `MeJepaCompiler::verify(patch)` API, the calibrated_confidenc
 
 ## 14. Why this is the right formula for ME-JEPA-Code
 
-UTML v1.0 is the rigorous ML rewrite of the embodied-learning UTL-v2 framework. Choosing it over the simpler three-term form gives ME-JEPA-Code:
+UTML v1.0 is the rigorous ML rewrite of the earlier embodied-learning framework. Choosing it over the simpler three-term form gives ME-JEPA-Code:
 
 1. **Structural collapse-immunity made measurable.** ΔΞ.target_collapse = 0 by construction is the *quantification* of why ME-JEPA's frozen-instrument architecture is the right design — and the formula makes the property visible in every per-step training certificate.
 2. **Self-healing properties tied to specific signals.** When `ΔΩ < 0.4`, the system needs continual backprop. When `ΔΞ < 0.4`, the system needs constellation re-fit. The formula tells you *which intervention* to run, not just "retrain something".
@@ -463,7 +463,7 @@ UTML v1.0 is the rigorous ML rewrite of the embodied-learning UTL-v2 framework. 
 
 ## See also
 
-- Source theory: `docs2/UTL_v2_embodied.md` (UTML v1.0 — JEPA Edition)
+- Source theory: `docs2/TheoryOfMachineLearning.md` (UTML v1.0 — JEPA Edition)
 - Master plan: `09_END_GOAL_REVIEW_REPLACEMENT.md` §3.4 (training procedure), §3.7 (multi-objective loss), §5 (self-healing)
 - Pivot architecture: `10_MEJEPA_PIVOT_2026_05_09.md`
 - Specs/status: `specs/_README.md` and `specs/implementation-plan.md` (Phase 2 predictor + Phase 3 ΔP / ΔK / ΔΩ / ΔΞ integration)

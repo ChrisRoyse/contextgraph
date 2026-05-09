@@ -34,7 +34,7 @@
   <file purpose="functional_spec">docs/ruvectorfindings/specs/functional/SPEC-UTML.md (US-UTML-04; AC-UTML-04-01..04; EC-UTML-03, EC-UTML-10)</file>
   <file purpose="technical_spec">docs/ruvectorfindings/specs/technical/TECH-UTML.md (component DeltaOmega — compute_delta_omega + sub-functions)</file>
   <file purpose="design_doc">docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md §5</file>
-  <file purpose="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §5.3 (E17 AffectText)</file>
+  <file purpose="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §5.3 (E17 AffectText)</file>
   <file purpose="prior_tasks">TASK-UTML-001.md</file>
 </input_context_files>
 

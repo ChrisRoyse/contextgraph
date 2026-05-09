@@ -203,6 +203,14 @@ pub struct CodeChunk {
     pub metadata: CodeChunkMetadata,
 }
 
+struct ChunkBuildContext<'a> {
+    file_path: &'a str,
+    imports: &'a [String],
+    scope_chain: &'a [String],
+    parent_def: Option<&'a str>,
+    inside_impl: bool,
+}
+
 /// AST-based code chunker following cAST methodology.
 ///
 /// # Algorithm (per cAST paper)
@@ -345,15 +353,14 @@ impl AstCodeChunker {
 
         // Case 1: Node fits in a single chunk
         if size <= self.config.max_size && self.is_chunkable_node(node) {
-            if let Some(chunk) = self.node_to_chunk(
-                node,
-                source,
+            let context = ChunkBuildContext {
                 file_path,
                 imports,
                 scope_chain,
                 parent_def,
                 inside_impl,
-            ) {
+            };
+            if let Some(chunk) = self.node_to_chunk(node, source, &context) {
                 chunks.push(chunk);
                 return;
             }
@@ -401,22 +408,18 @@ impl AstCodeChunker {
         &self,
         node: &Node,
         source: &str,
-        file_path: &str,
-        imports: &[String],
-        scope_chain: &[String],
-        parent_def: Option<&str>,
-        inside_impl: bool,
+        context: &ChunkBuildContext<'_>,
     ) -> Option<CodeChunk> {
         let code = source[node.start_byte()..node.end_byte()].to_string();
-        let entity_type = EntityType::from_rust_node_kind(node.kind(), inside_impl);
+        let entity_type = EntityType::from_rust_node_kind(node.kind(), context.inside_impl);
 
         // Extract signature for functions/methods
         let entity_signature = self.extract_signature(node, source);
 
         let metadata = CodeChunkMetadata {
-            file_path: file_path.to_string(),
+            file_path: context.file_path.to_string(),
             language: self.language_name.clone(),
-            scope_chain: scope_chain.to_vec(),
+            scope_chain: context.scope_chain.to_vec(),
             entity_type,
             entity_signature,
             start_line: node.start_position().row as u32 + 1, // 1-based
@@ -425,12 +428,12 @@ impl AstCodeChunker {
             end_byte: node.end_byte(),
             non_whitespace_chars: self.non_whitespace_size(node, source),
             imports: if self.config.include_imports {
-                self.filter_relevant_imports(&code, imports)
+                self.filter_relevant_imports(&code, context.imports)
             } else {
                 vec![]
             },
             parent_definition: if self.config.include_parent_context {
-                parent_def.map(|s| s.to_string())
+                context.parent_def.map(|s| s.to_string())
             } else {
                 None
             },

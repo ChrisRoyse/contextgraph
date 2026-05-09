@@ -29,7 +29,7 @@ Aux-head distillation (doc 09 §3.7.6) prevents aux heads from becoming detached
   <file purpose="functional_spec">docs/ruvectorfindings/specs/functional/SPEC-TRAINING.md (US-TRAIN-08; AC-TRAIN-08-01..03; BR-TRAIN-08; EC-TRAIN-13)</file>
   <file purpose="technical_spec">docs/ruvectorfindings/specs/technical/TECH-TRAINING.md (architecture_diagram LDIST; trainer.train_one_epoch step 4p)</file>
   <file purpose="design_doc">docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md §3.7.6</file>
-  <file purpose="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §6 (signal_clarity)</file>
+  <file purpose="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §6 (signal_clarity)</file>
   <file purpose="shipped_code">crates/context-graph-embeddings/src/training/distillation.rs (REUSED; quality_gate semantics)</file>
   <file purpose="prior_tasks">TASK-TRAIN-004 (AuxHeadEnsemble forward path)</file>
 </input_context_files>

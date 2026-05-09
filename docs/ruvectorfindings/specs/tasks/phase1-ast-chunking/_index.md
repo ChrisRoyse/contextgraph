@@ -203,7 +203,7 @@ Per `../_traceability.md`, the AST-CHUNKING domain has 15 functional REQs and 8 
 - Functional spec: `../../functional/SPEC-AST-CHUNKING.md`
 - Technical spec: `../../technical/TECH-AST-CHUNKING.md`
 - Constitution:   `../../constitution.md`
-- Roadmap source: `../../14_AST_EMBEDDER_ATOMIC_CHUNKING.md` §6 (13-item roadmap)
+- Roadmap source: `../../14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md` §6 (13-item roadmap)
 - Traceability:   `../_traceability.md`
 - Master DAG:     `../_index.md`
 - Shipped Rust chunker (source of truth): `crates/context-graph-core/src/memory/ast_chunker.rs`

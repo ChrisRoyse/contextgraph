@@ -26,7 +26,7 @@
     <source type="design">docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md §7 Phase 2 deliverables + DoD</source>
     <source type="design">docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md §5.2 (target-side structural collapse-immunity — frozen externally-defined instruments; ΔΞ.target_collapse = 0 by construction)</source>
     <source type="design">docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md §5.3 (predictor-side defenses: VICReg + pairwise MI audit + constellation Gτ + negative-action ablation)</source>
-    <source type="design">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §4 (RTX 5090 VRAM budget table: 14 GB embedders + 3 GB predictor + 5 GB activations + 2 GB AdamW + 1 GB KV/scratch ≈ 28-29 GB)</source>
+    <source type="design">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §4 (RTX 5090 VRAM budget table: 14 GB embedders + 3 GB predictor + 5 GB activations + 2 GB AdamW + 1 GB KV/scratch ≈ 28-29 GB)</source>
     <source type="constitution">docs/ruvectorfindings/specs/constitution.md (utml_v1_invariants rule 2; anti_patterns "no learnable target encoder"; failure_taxonomy MEJEPA_OBSERVE_BATCH_NAN; performance_budgets predictor_forward_p50 &lt; 50 ms)</source>
     <source type="prd">user request 2026-05-09: write SPEC-PREDICTOR + TECH-PREDICTOR for the trainable transformer + frozen target adapter + VICReg loss + Oracle head</source>
   </source_documents>

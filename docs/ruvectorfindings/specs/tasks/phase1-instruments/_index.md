@@ -268,5 +268,5 @@ Every functional REQ-INSTR-NN (23 total) and every component contract (17 total)
 - Master traceability: `../_traceability.md`
 - Predecessor phase: `../phase1-ast-chunking/_index.md` (AST chunker; consumed by code-domain instruments)
 - Successor phase: `../phase2-predictor/` (consumes panels)
-- Architectural sources: `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md` §2.2, §2.3, §3.5.5; `docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md` §3; `docs/ruvectorfindings/14_AST_EMBEDDER_ATOMIC_CHUNKING.md` §3.2 §4
+- Architectural sources: `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md` §2.2, §2.3, §3.5.5; `docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md` §3; `docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md` §3.2 §4
 - Memory: `memory/project_phase0_mejepa_mutation_corpus.md` (2026-05-09d shipped-state snapshot; 27 unit tests + FSV evidence paths)

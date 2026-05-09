@@ -43,7 +43,7 @@ CFG extraction is per-language: tree-sitter block-statement maps yield basic blo
   <file purpose="shipped_implementation">crates/context-graph-mejepa-instruments/src/e_code.rs (current deterministic encoder)</file>
   <file purpose="frozen_guard">crates/context-graph-mejepa-instruments/src/frozen_hook.rs (TASK-INSTR-004)</file>
   <file purpose="ast_chunker_facade">crates/context-graph-core/src/memory/ast_chunker/ (TASK-AST-022)</file>
-  <file purpose="design_doc_embedders">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §3 row E_CFG</file>
+  <file purpose="design_doc_embedders">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §3 row E_CFG</file>
 </input_context_files>
 
 <prerequisites>

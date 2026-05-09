@@ -13,9 +13,9 @@
     <doc>docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md (master plan)</doc>
     <doc>docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md (post-pivot architecture)</doc>
     <doc>docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md (UTML v1.0 four-factor formula)</doc>
-    <doc>docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md (21-embedder ensemble)</doc>
+    <doc>docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md (21-embedder ensemble)</doc>
     <doc>docs/ruvectorfindings/13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md (TCT framework)</doc>
-    <doc>docs/ruvectorfindings/14_AST_EMBEDDER_ATOMIC_CHUNKING.md (multi-language AST chunking)</doc>
+    <doc>docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md (multi-language AST chunking)</doc>
     <doc>CLAUDE.md §11 (operator role + reality-loop contract)</doc>
     <doc>memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md</doc>
   </governing_directives>
@@ -82,9 +82,9 @@ docs/ruvectorfindings/
   09_END_GOAL_REVIEW_REPLACEMENT.md        # master plan
   10_MEJEPA_PIVOT_2026_05_09.md            # post-pivot architecture
   11_MEJEPA_LEARNING_FORMULA.md            # UTML v1.0
-  12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md   # 21-embedder map
+  12_EMBEDDER_INTEGRATION.md   # 21-embedder map
   13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md  # TCT
-  14_AST_EMBEDDER_ATOMIC_CHUNKING.md       # multi-language AST chunking
+  14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md       # multi-language AST chunking
   specs/
     constitution.md                         # THIS FILE (Level 1)
     _README.md                              # master index + phase roadmap

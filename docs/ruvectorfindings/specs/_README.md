@@ -101,10 +101,10 @@ Per `prdtospec.md §6.2`, four gates protect the spec → implementation pipelin
 - **Master plan:** `../09_END_GOAL_REVIEW_REPLACEMENT.md`
 - **Post-pivot architecture:** `../10_MEJEPA_PIVOT_2026_05_09.md`
 - **UTML v1.0 learning formula:** `../11_MEJEPA_LEARNING_FORMULA.md`
-- **21-embedder ensemble:** `../12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md`
+- **21-embedder ensemble:** `../12_EMBEDDER_INTEGRATION.md`
 - **TCT framework:** `../13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md`
-- **Multi-language AST chunking:** `../14_AST_EMBEDDER_ATOMIC_CHUNKING.md`
-- **Capability claim synthesis:** `../13_UNIVERSAL_AGENT_VERIFICATION.md`
+- **Multi-language AST chunking:** `../14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md`
+- **Capability claim synthesis:** `../09_END_GOAL_REVIEW_REPLACEMENT.md` + `../10_MEJEPA_PIVOT_2026_05_09.md` + `../13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md`
 - **Operator role:** `/home/cabdru/contextgraph/CLAUDE.md §11`
 - **SMAP shared mind protocol:** `/home/cabdru/leapablememory/docs2/SHARED-MIND-AGENT-PROTOCOL.md`
 - **Spec authoring framework:** `/home/cabdru/contextgraph/docs2/prdtospec.md`

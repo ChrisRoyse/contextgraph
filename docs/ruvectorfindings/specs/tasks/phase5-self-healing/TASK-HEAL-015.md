@@ -39,7 +39,7 @@ shipped per `_index.md` Reuse note (`crates/context-graph-embeddings/src/trainin
   <file purpose="canonical_authority">docs/ruvectorfindings/specs/constitution.md (`<failure_taxonomy>` MEJEPA_OBSERVE_BATCH_NAN; `<anti_patterns>` no `unwrap_or(0.5)` fallback)</file>
   <file purpose="functional_spec">docs/ruvectorfindings/specs/functional/SPEC-SELF-HEALING.md (REQ-HEAL-09, REQ-HEAL-13; BR-HEAL-05; AC-HEAL-10-01..03; EC-HEAL-10; ERR-HEAL-01; TC-HEAL-10)</file>
   <file purpose="technical_spec">docs/ruvectorfindings/specs/technical/TECH-SELF-HEALING.md (component_contracts OnlineDistiller::consume 4-step body; data_models OnlineDistiller fields)</file>
-  <file purpose="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §6 (LoRA + distillation as ΔK/ΔΞ/ΔΩ instrumentation), §8 (distillation_loop with EMA τ=0.996), §11 item 16 (distillation-based online observe wiring)</file>
+  <file purpose="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §6 (LoRA + distillation as ΔK/ΔΞ/ΔΩ instrumentation), §8 (distillation_loop with EMA τ=0.996), §11 item 16 (distillation-based online observe wiring)</file>
   <file purpose="design_doc">docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md §D (signal_clarity gating locked verbatim)</file>
   <file purpose="prior_task">TASK-HEAL-004 (HealError, OnlineDistiller struct, DistillStep enum)</file>
   <file purpose="prior_task">TASK-HEAL-005 (CF_MEJEPA_HEAL_REPORTS for DistillStep persistence; CF_MEJEPA_PANELS read path)</file>
@@ -142,7 +142,7 @@ pub struct DistillEvidence {
     </signature>
   </signatures>
   <constraints>
-    - DELEGATE to shipped `context_graph_embeddings::training::distillation::DistillationTrainer::distill_step` (NEVER reinvent — already shipped per `_index.md` Reuse note + `12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md` §8 verbatim)
+    - DELEGATE to shipped `context_graph_embeddings::training::distillation::DistillationTrainer::distill_step` (NEVER reinvent — already shipped per `_index.md` Reuse note + `12_EMBEDDER_INTEGRATION.md` §8 verbatim)
     - signal_clarity gating is MANDATORY per BR-HEAL-05; never silently bypass even when quality_gate=false (gate=false means "proceed but still apply multiplicative gradient weighting"; gate=true means "skip below threshold")
     - signal_clarity multiplicatively gates the gradient: `embedder.backward(loss * signal_clarity)` — NOT a binary skip-or-process; the magnitude of the update scales with clarity
     - EMA τ=0.996 (production); the form is `w ← τ * w + (1 - τ) * w_after_grad` exactly (verified at synthetic τ=0.5)

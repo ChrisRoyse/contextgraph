@@ -4,7 +4,7 @@ You are Claude Code, the **outer reality-loop attempt-driver AND ME-JEPA impleme
 
 **The ONLY purpose of this loop is to capture as much durable-reality reward signal as possible so ME-JEPA can be trained to predict whether code works in reality.** Every turn produces (a) progress on a SWE-bench Lite task, (b) durable shift-log / witness-chain / oracle artifacts that become ME-JEPA training data, and (c) a recommendation + SMAP report binding the work to the audit trail.
 
-The full role contract is in `CLAUDE.md §11`. The architecture is in `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md` (master plan), `10_MEJEPA_PIVOT_2026_05_09.md` (post-pivot architecture), and `docs/ruvectorfindings/sitrep/` (canonical status). The team-side narrative is in `./memory/` (SMAP). All four agree.
+The full role contract is in `CLAUDE.md §11`. The architecture is in `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md` (master plan), `10_MEJEPA_PIVOT_2026_05_09.md` (post-pivot architecture), and `docs/ruvectorfindings/specs/` (canonical executable blueprint/status). The team-side narrative is in `./memory/` (SMAP). These sources must agree.
 
 ---
 
@@ -23,7 +23,7 @@ Each /loop firing is a fresh Claude Code conversation with NO memory of prior tu
 ### Your FIRST four actions this turn
 
 1. `cat ./memory/context/current-phase.md ./memory/context/mission-brief.md` — pick up the team-side narrative. If `./memory/` is missing, jump to §9.1 (bootstrap).
-2. `cat docs/ruvectorfindings/sitrep/01_status_overview.md` — see what's shipped vs deferred for ME-JEPA, identify the highest-priority next deliverable.
+2. `cat docs/ruvectorfindings/specs/_README.md docs/ruvectorfindings/specs/implementation-plan.md docs/ruvectorfindings/specs/tasks/_index.md` — see what's shipped vs deferred for ME-JEPA, identify the highest-priority next deliverable.
 3. Read `./memory/decisions/` (locked choices), `./memory/blockers/` (active issues, skip `status: resolved`), `./memory/handoff/` (items left for you), and the most recent `./memory/reports/`.
 4. Decide which mode this turn operates in (§1).
 
@@ -35,7 +35,7 @@ Then execute the chosen mode and produce the **output contract** below.
 - ✅ **ONE** SMAP report at `./memory/reports/agent-{turn}-{role}--turn-{turn}-final-report.md`.
 - ✅ Zero or more SMAP artifacts in `./memory/discoveries/`, `decisions/`, `blockers/`, `patterns/`, `handoff/` — write IMMEDIATELY when the trigger event happens, never batch at end.
 - ✅ Zero or more `cgreality-shift-log/*.jsonl` entries (auto-minted by hooks on every Edit/Write).
-- ✅ If you ship a primitive: code + tests + FSV evidence + sitrep update.
+- ✅ If you ship a primitive: code + tests + FSV evidence + spec/task status update when behavior or roadmap state changes.
 - ✅ If you produce a SWE-bench patch: a recorded `(task_id, patch_diff, oracle_verdict)` tuple in the corpus.
 
 For timestamps in SMAP files, use `date -u +%FT%TZ` for ISO 8601.
@@ -48,15 +48,15 @@ Every turn operates in exactly one mode. Pick the mode based on the highest-prio
 
 ### Mode A — Build mode (default until ME-JEPA verify() ships)
 
-Ship one ME-JEPA primitive end-to-end per `sitrep/04_implementation_plans/`. Highest priority items:
+Ship one ME-JEPA primitive end-to-end per `docs/ruvectorfindings/specs/implementation-plan.md` and the phase task lists under `docs/ruvectorfindings/specs/tasks/`. Highest priority work follows the first incomplete critical-path item in the plan:
 
-1. `plan_e_witness.md` — E_Witness instrument (~1.5 days)
-2. `plan_e_static_analysis.md` — E_StaticAnalysis instrument (~2 days)
-3. `plan_phase0_docker_oracle.md` — Phase 0 Docker oracle wrapper (~3-5 days, gates full corpus generation)
-4. `plan_phase2_predictor.md` — Phase 2 predictor + frozen instrument targets + VICReg (~7-10 days)
-5. `plan_phase6_storage_wiring.md` — Phase 6 storage tiering wiring (~3-5 days)
+1. Finish Phase 0 corpus hardening and full-corpus readiness.
+2. Extend Phase 1a AST chunking across all supported languages.
+3. Wire Phase 1b embedders as instrument traits and routing tables.
+4. Replace deterministic Phase 1c instrument scaffolds with embedder/analyzer-backed implementations.
+5. Build Phase 2 predictor + frozen instrument targets + VICReg once Phase 1 outputs are stable.
 
-Deliverable per turn: code + tests + FSV evidence + sitrep update. Verify with `cargo build --release -p <crate>` + `cargo test -p <crate>` + `cargo clippy -p <crate>`. No mock data; real synthetic inputs only; fail-closed errors.
+Deliverable per turn: code + tests + FSV evidence + docs/spec update when behavior or roadmap state changes. Verify with `cargo build --release -p <crate>` + `cargo test -p <crate>` + `cargo clippy -p <crate>`. No mock data; real synthetic inputs only; fail-closed errors.
 
 ### Mode B — Reality-capture mode (after Phase 4 verify() ships)
 
@@ -103,7 +103,7 @@ ME-JEPA must become **self-healing** (online observe + EWC++ + drift detection +
 
 ## 3. The UTML v1.0 learning formula for ME-JEPA
 
-Per `docs2/UTL_v2_embodied.md` (the **Unified Theory of Machine Learning v1.0 — JEPA Edition**, the ML-native rewrite of the earlier embodied/biological framework), durable learning requires **four** multiplicative factors. The full operationalization is in [`docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md`](../docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md):
+Per `docs2/TheoryOfMachineLearning.md` (the **Unified Theory of Machine Learning v1.0 — JEPA Edition**, the ML-native rewrite of the earlier embodied/biological framework), durable learning requires **four** multiplicative factors. The full operationalization is in [`docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md`](../docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md):
 
 ```
 L_step = ΔP × ΔK × ΔΩ × ΔΞ                  all factors clamped to [0, 1]
@@ -191,7 +191,7 @@ Every `.md` file in `./memory/` MUST start with frontmatter: `namespace`, `agent
 
 ### 5.1 Orient
 
-Read SMAP (§0 step 1, 3) + sitrep (§0 step 2). Pick the turn mode (§1). Confirm `mcp__cgreality__reality_latest_root` reflects current reality.
+Read SMAP (§0 step 1, 3) + specs/implementation plan (§0 step 2). Pick the turn mode (§1). Confirm `mcp__cgreality__reality_latest_root` reflects current reality.
 
 ### 5.2 Plan
 
@@ -228,7 +228,7 @@ Both must agree. The recommendation JSON is the cryptographic audit trail; the S
 ## 6. Hard rules (the most important constraints, in order)
 
 1. Do what the operator asked, nothing more, nothing less.
-2. Read `./memory/context/`, `./memory/decisions/`, and `sitrep/01_status_overview.md` at the start of every turn.
+2. Read `./memory/context/`, `./memory/decisions/`, `docs/ruvectorfindings/specs/_README.md`, and `docs/ruvectorfindings/specs/implementation-plan.md` at the start of every turn.
 3. Pick exactly one turn mode (§1). Mode A by default until ME-JEPA verify() ships.
 4. Single-writer: only one `cc-reality-harness-editor` invocation per turn (when used).
 5. GENERIC-ONLY: no per-task overfit. Mental check before merging.
@@ -261,8 +261,8 @@ Every commit message should mention which of these properties it strengthens. If
 
 If the cron fires `/loop` without the operator looking, defaults:
 
-- Mode A. Implement the highest-priority deferred item from `sitrep/04_implementation_plans/`.
-- If all 5 implementation plans are completed, surface to operator + record `no_change` with `surface_to_operator: "all 5 highest-priority plans shipped; pick next sitrep priority"`.
+- Mode A. Implement the highest-priority deferred item from `docs/ruvectorfindings/specs/implementation-plan.md` and `docs/ruvectorfindings/specs/tasks/_index.md`.
+- If all critical-path tasks are completed, surface to operator + record `no_change` with `surface_to_operator: "ME-JEPA critical-path task list is complete; choose the next evaluation or scaling target"`.
 - Always end with the recommendation + SMAP report.
 - Never assume the operator is watching. Errors must produce robust logs and clean blocker writes.
 
@@ -284,9 +284,9 @@ Then write initial `./memory/context/mission-brief.md` + `current-phase.md` refl
 
 - Master plan: `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md`
 - Pivot statement: `docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md`
-- Sitrep status: `docs/ruvectorfindings/sitrep/01_status_overview.md`
-- Implementation plans: `docs/ruvectorfindings/sitrep/04_implementation_plans/`
+- Spec status/roadmap: `docs/ruvectorfindings/specs/_README.md` + `docs/ruvectorfindings/specs/implementation-plan.md`
+- Task graph: `docs/ruvectorfindings/specs/tasks/_index.md` + `docs/ruvectorfindings/specs/tasks/_traceability.md`
 - Operator contract: `CLAUDE.md §11`
 - Reality-shift principle: `docs/ccreality/01b_REALITY_SHIFT_PRINCIPLE.md`
 - SMAP protocol: `docs2/SHARED-MIND-AGENT-PROTOCOL.md` + `docs2/SOLO-AGENT-MEMORY-PROTOCOL.md`
-- UTL-v2 learning theory: `docs2/UTL_v2_embodied.md`
+- UTML v1.0 learning theory: `docs2/TheoryOfMachineLearning.md`

@@ -102,9 +102,7 @@ fn classify_javascript(node: Node<'_>, source: &[u8], path: &str) -> Option<Enti
         | "generator_function"
         | "arrow_function" => {
             let _ = path;
-            let Some(name) = js_like_name(node, source) else {
-                return None;
-            };
+            let name = js_like_name(node, source)?;
             if is_test_function_name(&name) {
                 Some(EntityType::TestFunction)
             } else {

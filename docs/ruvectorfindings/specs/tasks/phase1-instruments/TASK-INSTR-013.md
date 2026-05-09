@@ -38,7 +38,7 @@ Per `MAX_TRACE_EVENTS = 1_000_000` constant.
   <file purpose="technical_spec">docs/ruvectorfindings/specs/technical/TECH-INSTRUMENTS.md (component_contracts ETraceInstrument)</file>
   <file purpose="shipped_implementation">crates/context-graph-mejepa-instruments/src/e_trace.rs</file>
   <file purpose="frozen_guard">crates/context-graph-mejepa-instruments/src/frozen_hook.rs</file>
-  <file purpose="design_doc_embedders">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §3 row E_Trace</file>
+  <file purpose="design_doc_embedders">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §3 row E_Trace</file>
 </input_context_files>
 
 <prerequisites>

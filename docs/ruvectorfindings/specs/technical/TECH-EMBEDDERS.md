@@ -14,9 +14,9 @@
   <implements_spec>SPEC-EMBEDDERS v1.0</implements_spec>
   <governing_docs>
     <doc>docs/ruvectorfindings/specs/constitution.md</doc>
-    <doc>docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md</doc>
     <doc>docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md</doc>
-    <doc>docs/ruvectorfindings/14_AST_EMBEDDER_ATOMIC_CHUNKING.md</doc>
+    <doc>docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md</doc>
+    <doc>docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md</doc>
   </governing_docs>
 </metadata>
 

@@ -19,9 +19,9 @@
     <spec_ref>TECH-EMBEDDERS</spec_ref>
   </related_specs>
   <source_documents>
-    <source type="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md</source>
     <source type="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md</source>
-    <source type="design_doc">docs/ruvectorfindings/14_AST_EMBEDDER_ATOMIC_CHUNKING.md §4</source>
+    <source type="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md</source>
+    <source type="design_doc">docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md §4</source>
     <source type="design_doc">docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md §2.2 §3.5.5</source>
     <source type="design_doc">docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md (post-pivot architecture)</source>
     <source type="design_doc">docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md (UTML L_step)</source>

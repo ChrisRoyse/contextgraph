@@ -5,7 +5,7 @@
 > SPEC-AST-CHUNKING.md`) defines WHAT. Conflicts resolve per `constitution.md`
 > `<spec_authority_order>`.
 >
-> **Authority sources:** doc 14 (`14_AST_EMBEDDER_ATOMIC_CHUNKING.md`), doc 14
+> **Authority sources:** doc 14 (`14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md`), doc 14
 > companion (`14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md`), doc 09 §2.2 + §3.1, the
 > shipped Rust chunker at `crates/context-graph-core/src/memory/ast_chunker.rs`
 > (1216 LOC, the source of truth for current state), the existing 11-language

@@ -333,6 +333,7 @@ impl Memory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "test-utils")]
     use crate::types::fingerprint::SemanticFingerprint;
 
     // Helper to create valid test fingerprint (TEST ONLY)

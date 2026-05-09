@@ -31,7 +31,7 @@
   <file purpose="functional_spec">docs/ruvectorfindings/specs/functional/SPEC-UTML.md (US-UTML-03; AC-UTML-03-01..03; ERR-UTML-07; EC-UTML-02)</file>
   <file purpose="technical_spec">docs/ruvectorfindings/specs/technical/TECH-UTML.md (component DeltaK — compute_delta_k + update_grad_ema)</file>
   <file purpose="design_doc">docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md §4</file>
-  <file purpose="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §5.1 (embedder_coherence)</file>
+  <file purpose="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §5.1 (embedder_coherence)</file>
   <file purpose="prior_tasks">TASK-UTML-001.md (UtmlError shipped)</file>
 </input_context_files>
 

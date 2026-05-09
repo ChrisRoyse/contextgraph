@@ -387,7 +387,7 @@ ME-JEPA-Code's predictor sits on top of 21 already-built embedders, fine-tuned v
 - UTML v1.0 learning formula: `11_MEJEPA_LEARNING_FORMULA.md`
 - TCT three-phase + universal verifier: `13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md`
 - AST-aware chunk routing: `14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md`
-- Source theory: `docs2/UTL_v2_embodied.md` (UTML v1.0 — JEPA Edition)
+- Source theory: `docs2/TheoryOfMachineLearning.md` (UTML v1.0 — JEPA Edition)
 - Royse, C. (2026a). *ContextGraph Reality Loop*. ResearchGate DOI 10.13140/RG.2.2.16013.91366.
 - Royse, C. (2026b). *Dynamic / ME-JEPA*. ResearchGate DOI 10.13140/RG.2.2.28485.41446.
 - Royse, C. (2026c). *Teleological Constellation Training: Multi-Modal Embedding Decomposition as Meaning Compression for Identity-Locked Generation and a Third Path Around the Data Wall*. ResearchGate DOI 10.13140/RG.2.2.24370.57288.

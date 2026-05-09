@@ -192,5 +192,5 @@ Every functional REQ-PRED-NN (18 total) and every component contract (6 total) m
 - Master traceability: `../_traceability.md`
 - Predecessor phase: `../phase1-instruments/_index.md` (15-slot Panel + Instrument trait consumed here)
 - Successor phase: `../phase3-training/_index.md` (consumes vicreg_loss + LossOutputs + trainable_parameters; not yet authored)
-- Architectural sources: `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md` §2.4 (predictor architecture), §2.5 (Oracle head), §3.5.5 (panel layout 5,120-d), §7 (Phase 2 DoD); `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md` §5.2 (target-side collapse-immunity), §5.3 (predictor-side defenses); `docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md` §4 (VRAM budget table)
+- Architectural sources: `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md` §2.4 (predictor architecture), §2.5 (Oracle head), §3.5.5 (panel layout 5,120-d), §7 (Phase 2 DoD); `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md` §5.2 (target-side collapse-immunity), §5.3 (predictor-side defenses); `docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md` §4 (VRAM budget table)
 - Memory: `memory/project_phase0_mejepa_mutation_corpus.md` (most recent shipped-state snapshot)

@@ -2,7 +2,7 @@
 
 > **Phase 1b** wraps the existing 21-embedder ensemble (E1-E21) shipped in `crates/context-graph-embeddings/` behind the unified `Instrument` trait + per-chunk-type routing table + LoRA adapter scaffolding + VRAM budget enforcement. New crate: `crates/context-graph-mejepa-embedders/`.
 
-**Authority:** `../../constitution.md` overrides. Spec sources: `../../functional/SPEC-EMBEDDERS.md`, `../../technical/TECH-EMBEDDERS.md`, `docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md` §3-§4.
+**Authority:** `../../constitution.md` overrides. Spec sources: `../../functional/SPEC-EMBEDDERS.md`, `../../technical/TECH-EMBEDDERS.md`, `docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md` §3-§4.
 
 ---
 
@@ -191,7 +191,7 @@ TASK-EMBED-020 → TASK-EMBED-023
 
 - Domain spec (functional): `../../functional/SPEC-EMBEDDERS.md`
 - Domain spec (technical): `../../technical/TECH-EMBEDDERS.md`
-- Doc 12: `docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md`
+- Doc 12: `docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md`
 - Master DAG: `../_index.md`
 - Traceability matrix: `../_traceability.md` (EMBEDDERS section updated by this phase)
 - Spec-authoring framework: `/home/cabdru/contextgraph/docs2/prdtospec.md`

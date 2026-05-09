@@ -359,7 +359,7 @@ fn stats_from_chunks(chunks: &[AstChunk], source: &str) -> InstrumentResult<Code
 fn count_words(source: &str, words: &[&str]) -> usize {
     source
         .split(|ch: char| !(ch == '_' || ch.is_ascii_alphanumeric()))
-        .filter(|token| words.iter().any(|word| *token == *word))
+        .filter(|token| words.contains(token))
         .count()
 }
 

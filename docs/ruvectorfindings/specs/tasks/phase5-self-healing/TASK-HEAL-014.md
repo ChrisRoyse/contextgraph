@@ -39,7 +39,7 @@ infrastructure is already shipped per `_index.md` Reuse note.
   <file purpose="canonical_authority">docs/ruvectorfindings/specs/constitution.md (`<failure_taxonomy>` MEJEPA_HEAL_LORA_REFRESH_FAIL; `<utml_v1_invariants>` ΔΩ.effective_plasticity component)</file>
   <file purpose="functional_spec">docs/ruvectorfindings/specs/functional/SPEC-SELF-HEALING.md (REQ-HEAL-08; AC-HEAL-09-01..03; EC-HEAL-09; ERR-HEAL-07; BR-HEAL-06)</file>
   <file purpose="technical_spec">docs/ruvectorfindings/specs/technical/TECH-SELF-HEALING.md (component_contracts LoraRefresher::refresh 7-step body; data_models LoraRefresher)</file>
-  <file purpose="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §6, §8 (LoRA self-healing wiring; refresh_lora_adapter contract)</file>
+  <file purpose="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §6, §8 (LoRA self-healing wiring; refresh_lora_adapter contract)</file>
   <file purpose="prior_task">TASK-HEAL-004 (HealError, LoraRefresher struct, LoraRefreshReport)</file>
   <file purpose="prior_task">TASK-HEAL-005 (CF_MEJEPA_HEAL_REPORTS for LoraRefreshReport persistence)</file>
   <file purpose="prior_task">TASK-HEAL-008 (SelfHealingPipeline::regulate_substrate dispatches to refresh on plasticity&lt;0.4)</file>
@@ -151,7 +151,7 @@ pub struct LoraRefreshEvidence {
     </signature>
   </signatures>
   <constraints>
-    - DELEGATE to shipped `context_graph_embeddings::training::lora::LoraTrainer::fine_tune` (NEVER reinvent — already shipped per `_index.md` Reuse note + `12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md` §6 verbatim)
+    - DELEGATE to shipped `context_graph_embeddings::training::lora::LoraTrainer::fine_tune` (NEVER reinvent — already shipped per `_index.md` Reuse note + `12_EMBEDDER_INTEGRATION.md` §6 verbatim)
     - BR-HEAL-06 frozen-base byte-equality invariant is HARD: pre_base_sha == post_base_sha; violation → Err(LoraRefreshFail), NEVER a soft warning
     - Default LoRA config: rank=32, alpha=16.0, dropout=0.1, epochs=10, lr=1e-4, target_modules=["query","key","value"] (per technical spec data_models)
     - VRAM cap: refresh_multiple_serial caps concurrent at 1 (no tokio::spawn parallelism); priority queue is a sorted Vec by ΔK contribution descending

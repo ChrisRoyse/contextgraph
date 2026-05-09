@@ -31,7 +31,7 @@ a 14th EntityType variant breaks the build until routed.
 <input_context_files>
   <file purpose="data_model_spec">docs/ruvectorfindings/specs/technical/TECH-AST-CHUNKING.md#data_models (EmbedderRoutingTable model)</file>
   <file purpose="component_contract">docs/ruvectorfindings/specs/technical/TECH-AST-CHUNKING.md#component_contracts (EmbedderRouter)</file>
-  <file purpose="routing_source">docs/ruvectorfindings/14_AST_EMBEDDER_ATOMIC_CHUNKING.md §4 (per-chunk-type routing table)</file>
+  <file purpose="routing_source">docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md §4 (per-chunk-type routing table)</file>
   <file purpose="embedder_id_placeholder">crates/context-graph-core/src/memory/ast_chunker/types.rs (EmbedderId placeholder type alias from TASK-AST-003)</file>
 </input_context_files>
 

@@ -1084,7 +1084,7 @@ fn terminate_child_process_group(child: &mut Child, program: &str) -> OracleResu
     {
         let process_group = format!("-{}", child.id());
         let term_status = Command::new("kill")
-            .args(["-TERM", &process_group])
+            .args(["-TERM", "--", &process_group])
             .status()
             .map_err(|err| {
                 OracleError::command_failed(
@@ -1114,7 +1114,7 @@ fn terminate_child_process_group(child: &mut Child, program: &str) -> OracleResu
             thread::sleep(Duration::from_millis(25));
         }
         let kill_status = Command::new("kill")
-            .args(["-KILL", &process_group])
+            .args(["-KILL", "--", &process_group])
             .status()
             .map_err(|err| {
                 OracleError::command_failed(

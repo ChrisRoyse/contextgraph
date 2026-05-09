@@ -14,11 +14,11 @@ ContextGraph is a Rust workspace that ships:
 - **`context-graph-cli`** — the CLI surface for ContextGraph harness support, DynamicJEPA commands, governed readback helpers, and ME-JEPA implementation work. The legacy `reality-loop` binary that hosted the Qwen3.6-27B inner actor was removed in the 2026-05-09 ME-JEPA hardening pass.
 - **Other crates**: storage, embedding pipelines, benchmark fixtures, ME-JEPA primitives (`context-graph-mejepa-corpus`, `context-graph-mejepa-instruments`, `context-graph-tier-compression`, `context-graph-mincut`, `context-graph-witness`, `context-graph-solver`). See `crates/`.
 
-The active workstream is **ME-JEPA-Code** — the predictive reality compiler that takes (code change + context) and outputs a calibrated prediction of what the SWE-bench Docker oracle would say. **Claude Code (you) implements ME-JEPA + the surrounding ContextGraph reality substrate.** Each /loop turn ships one primitive end-to-end with FSV evidence per the `sitrep/` build plan.
+The active workstream is **ME-JEPA-Code** — the predictive reality compiler that takes (code change + context) and outputs a calibrated prediction of what the SWE-bench Docker oracle would say. **Claude Code (you) implements ME-JEPA + the surrounding ContextGraph reality substrate.** Each /loop turn ships one primitive end-to-end with FSV evidence per `docs/ruvectorfindings/specs/implementation-plan.md` and the task graph under `docs/ruvectorfindings/specs/tasks/`.
 
 **11-language AST-aware atomic chunking (per `docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md`).** The workspace ships tree-sitter parsers for **11 languages**: Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP. The multi-language semantic extractor (`crates/context-graph-cli/src/commands/dynamicjepa.rs`) handles all 11 today; the AST-aware atomic chunker (`crates/context-graph-core/src/memory/ast_chunker.rs`) handles Rust today and is being extended to the remaining 10 as a Phase 1 deliverable. Every code-domain ME-JEPA instrument (E_AST, E_CFG, E_DataFlow, E_TypeGraph, E_Diff, E_Test) consumes AST-perfect chunks bounded by syntactic entities (function, class, impl, module-decl), targeting ~500 non-whitespace characters per Qodo / cAST methodology — never raw text or fixed-size windows.
 
-The full design is in `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md` (master plan), `10_MEJEPA_PIVOT_2026_05_09.md` (post-pivot statement of architecture), and `sitrep/` (canonical status + per-phase explainers + ready-to-execute implementation plans). The legacy `docs/ccreality/` documents (21 files describing the pre-pivot Claude+Qwen two-loop) are retained as historical reference.
+The full design is in `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md` (master plan), `10_MEJEPA_PIVOT_2026_05_09.md` (post-pivot statement of architecture), and `docs/ruvectorfindings/specs/` (canonical executable blueprint, status, roadmap, and task graph). The legacy `docs/ccreality/` documents (21 files describing the pre-pivot Claude+Qwen two-loop) are retained as historical reference.
 
 ---
 
@@ -226,7 +226,7 @@ You are the **outer-loop optimizer AND the implementer of ME-JEPA-Code**. Contex
 
 Each turn you do one of:
 
-1. **Implement the next priority primitive** of ME-JEPA per the sitrep build plan (`docs/ruvectorfindings/sitrep/01_status_overview.md` + `04_implementation_plans/`). Each turn ships one primitive end-to-end with FSV evidence.
+1. **Implement the next priority primitive** of ME-JEPA per `docs/ruvectorfindings/specs/implementation-plan.md` and the task graph in `docs/ruvectorfindings/specs/tasks/`. Each turn ships one primitive end-to-end with FSV evidence.
 2. **Maintain shipped primitives** — fix tests that break under refactors, migrate old artifact formats, update docs.
 3. **Train / evaluate ME-JEPA** — once Phase 0 corpus + Phase 1 instruments + Phase 2 predictor + Phase 3 training loop ship.
 
@@ -237,20 +237,20 @@ Every turn produces durable reality artifacts that ME-JEPA itself will eventuall
 At the start of every turn, in order:
 
 1. **Read `./memory/context/`, `./memory/decisions/`, `./memory/blockers/` (skip resolved), and the most recent `./memory/reports/`** to inherit the team narrative.
-2. **Read `docs/ruvectorfindings/sitrep/01_status_overview.md`** to identify the highest-priority next item from the build plan.
-3. **Pick up the highest-priority deliverable** in `04_implementation_plans/` that is not yet shipped. Or, if specifically directed by the operator, pick that work instead.
-4. **Ship one primitive end-to-end** — code + tests + FSV evidence + sitrep update.
+2. **Read `docs/ruvectorfindings/specs/_README.md`, `docs/ruvectorfindings/specs/implementation-plan.md`, and `docs/ruvectorfindings/specs/tasks/_index.md`** to identify the highest-priority next item from the build plan.
+3. **Pick up the highest-priority incomplete deliverable** in the phase-ordered task graph. Or, if specifically directed by the operator, pick that work instead.
+4. **Ship one primitive end-to-end** — code + tests + FSV evidence + spec/task update when behavior or roadmap state changes.
 5. **Record the recommendation** via `mcp__cgreality__optimizer_record_recommendation` (still Stop-hook-enforced) AND a SMAP report at `./memory/reports/`.
 
 ### 11.3 Build-plan progression (operator-granted 2026-05-09)
 
-The 8-phase ME-JEPA build plan (`docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md §7`) is THE roadmap. Current state per `sitrep/01_status_overview.md`:
+The 8-phase ME-JEPA build plan (`docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md §7`) is THE roadmap. Current state lives in `docs/ruvectorfindings/specs/_README.md` and `docs/ruvectorfindings/specs/implementation-plan.md`:
 
-- Phase 0: partial (mutation operators + corpus split shipped; Docker oracle + RocksDB CFs + full corpus generation deferred).
-- Phase 1: just started (Instrument trait + Panel + E_Oracle shipped; 13 of 14 instruments deferred).
+- Phase 0: partial (mutation operators, corpus split, RocksDB CFs, one-task SWE-bench bridge, and corpus CLI shipped; full 300x8 run and language expansion still pending).
+- Phase 1: partial (Instrument trait, Panel, E_Oracle/E_Witness/E_StaticAnalysis, and deterministic typed encoders shipped; embedder/analyzer-backed replacements and multi-language routing still pending).
 - Phases 2-8: fully deferred.
 
-Highest-priority next-up items: **E_Witness instrument** (~1.5 days), **E_StaticAnalysis** (~2 days), **Phase 0 Docker oracle** (~3-5 days), **Phase 2 predictor** (~7-10 days). Plans in `sitrep/04_implementation_plans/`.
+Highest-priority next-up items come from the critical path in `specs/implementation-plan.md`: finish Phase 0 corpus hardening/full-corpus readiness, extend AST chunking across supported languages, wire embedder instrument wrappers/routing, replace deterministic instrument scaffolds with embedder/analyzer-backed implementations, then build the Phase 2 predictor.
 
 The SWE-bench Lite task manifests in `tasks/swebench-lite/*.json` (300 instances) remain the **corpus task list** — Phase 0's mutation generator runs against them to produce the labeled training corpus. There is no longer a "champion attempt" or "inner-actor run" notion.
 
@@ -279,14 +279,14 @@ Mental check before merging: *"would this same primitive be load-bearing for `ps
 
 The previous "drip a fresh attempt" SKIP-condition logic is retired (no inner-actor to drip). Instead, record `no_change` only when:
 
-1. **All sitrep priority items shipped** AND no maintenance work needed AND no operator directive specifies a task.
+1. **All ME-JEPA spec/task priority items shipped** AND no maintenance work needed AND no operator directive specifies a task.
 2. **External drift detected** mid-turn (`mcp__cgreality__reality_shift_compare_to_my_view` reports `external_drift_detected: true`). Re-perceive before continuing.
 3. **Hard build / test failure** that blocks all forward progress and isn't fixable in this turn — write the blocker to `./memory/blockers/` and record `blocked` with a remediation plan.
 
 ### 11.8 Always do
 
 - At the start of any turn, read `./memory/context/{mission-brief,current-phase}.md` and `./memory/decisions/`.
-- Read `docs/ruvectorfindings/sitrep/01_status_overview.md` to identify the highest-priority deliverable.
+- Read `docs/ruvectorfindings/specs/_README.md`, `docs/ruvectorfindings/specs/implementation-plan.md`, and `docs/ruvectorfindings/specs/tasks/_index.md` to identify the highest-priority deliverable.
 - Use subagents (Agent tool) for parallel research, exploration, or independent work. Per `feedback_no_delegate_research_audit.md`: do file-reading and synthesis personally, not via subagent — but DO use subagents for parallel research.
 - Use the `code-simplifier` subagent (or equivalent) on every shipped primitive before merging — confirm no BLOCKER refinements needed.
 - Run `cargo build --release` for touched crates AND `cargo test` AND `cargo clippy` for final verification.
@@ -350,11 +350,12 @@ crates/context-graph-storage/<rocksdb-instance>/
 ./memory/
   context/, decisions/, discoveries/, handoff/, journal/, blockers/, patterns/, reports/
 
-docs/ruvectorfindings/sitrep/
-  01_status_overview.md             # canonical status table
-  02_shipped/                       # per-shipped-primitive deep dives
-  03_deferred/phases/phase{0..8}.md # per-phase explainers
-  04_implementation_plans/          # ready-to-execute plans
+docs/ruvectorfindings/specs/
+  _README.md                        # canonical status and spec reading order
+  implementation-plan.md            # phase-ordered roadmap
+  functional/                       # Level 2 requirements
+  technical/                        # Level 3 design contracts
+  tasks/                            # Level 4 atomic task graph + traceability
 ```
 
 The legacy `harness-transitions/`, `attempt-summary.json`, `official-evidence/`, etc. paths are no longer produced. The shift-log (`/tmp/contextgraph-rust-reality-loop/cgreality-shift-log/<session>.jsonl`) **is still in use** and is the primary input to Phase 7's `mejepa-shift-subscriber`.
@@ -367,7 +368,7 @@ Source-of-truth file paths in your output should always start with `file:` (or `
 
 1. Do what the operator asked, nothing more, nothing less.
 2. Read `./memory/context/` and `./memory/decisions/` at the start of every turn.
-3. Drip a fresh attempt unless a §11.7 SKIP applies.
+3. Work the highest-priority incomplete ME-JEPA task unless a §11.7 no-change/blocked condition applies.
 4. Single-writer rule: only `cc-reality-harness-editor` performs harness source edits, one invocation per turn.
 5. GENERIC-ONLY: no per-task overfit. Mental check before merging (§11.4).
 6. No HTTP. No destructive git. No editing the §8 deny set.

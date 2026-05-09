@@ -28,7 +28,7 @@ ClassificationContext threads parser state through the boundary engine.
 <input_context_files>
   <file purpose="data_model_spec">docs/ruvectorfindings/specs/technical/TECH-AST-CHUNKING.md#data_models (EntityType model)</file>
   <file purpose="legacy_enum">crates/context-graph-core/src/memory/ast_chunker.rs (lines 110-162; legacy EntityType to be replaced)</file>
-  <file purpose="cell_math">docs/ruvectorfindings/14_AST_EMBEDDER_ATOMIC_CHUNKING.md §5 (24,024-cell breakdown)</file>
+  <file purpose="cell_math">docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md §5 (24,024-cell breakdown)</file>
   <file purpose="constitution_anti_pattern">docs/ruvectorfindings/specs/constitution.md (anti-pattern: no random initialization, BTreeMap-only)</file>
 </input_context_files>
 

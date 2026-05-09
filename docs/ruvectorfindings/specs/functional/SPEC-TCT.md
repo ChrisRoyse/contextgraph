@@ -24,8 +24,8 @@
   </related_specs>
   <source_documents>
     <source type="design">docs/ruvectorfindings/13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md (FULL — primary reference; §1 DDA math, §2 three-phase protocol, §3 ΔΞ diagnostic #3, §5 reward formula, §7 implementation roadmap, §10 risks)</source>
-    <source type="design">docs/ruvectorfindings/13_UNIVERSAL_AGENT_VERIFICATION.md (capability synthesis: agent-output verification flow, reward-signal density per claim)</source>
-    <source type="design">docs/ruvectorfindings/14_AST_EMBEDDER_ATOMIC_CHUNKING.md §5 (per-chunk-type centroids; cross-chunk constellation), §8.1 (per-chunk localization for GuardRejected)</source>
+    <source type="design">docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md + docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md (capability synthesis: agent-output verification flow, reward-signal density per claim)</source>
+    <source type="design">docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md §5 (per-chunk-type centroids; cross-chunk constellation), §8.1 (per-chunk localization for GuardRejected)</source>
     <source type="design">docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md §5.3 (predictor-side ΔΞ defenses; constellation guard as 3rd diagnostic)</source>
     <source type="design">docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md §3.7 (multi-objective loss surface that L_constellation_centroid extends)</source>
     <source type="constitution">docs/ruvectorfindings/specs/constitution.md (&lt;tct_invariants&gt;, &lt;failure_taxonomy&gt; rules MEJEPA_INFER_CONSTELLATION_VIOLATION + MEJEPA_INFER_GTAU_STALE_CONSTELLATION, &lt;security_requirements&gt; rule SEC-MEJEPA-04, &lt;performance_budgets&gt; single_prediction_latency_p50)</source>

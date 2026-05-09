@@ -40,7 +40,7 @@ never reconstructable. Maximum 10K events per `MAX_REASONING_EVENTS` constant.
   <file purpose="technical_spec">docs/ruvectorfindings/specs/technical/TECH-INSTRUMENTS.md (component_contracts EReasoningInstrument; data_models ReasoningInput, ReasoningEvent; security note)</file>
   <file purpose="shipped_implementation">crates/context-graph-mejepa-instruments/src/e_reasoning.rs</file>
   <file purpose="frozen_guard">crates/context-graph-mejepa-instruments/src/frozen_hook.rs</file>
-  <file purpose="design_doc_embedders">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §3 row E_Reasoning</file>
+  <file purpose="design_doc_embedders">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §3 row E_Reasoning</file>
 </input_context_files>
 
 <prerequisites>

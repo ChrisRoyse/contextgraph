@@ -239,4 +239,4 @@ Every functional REQ-HEAL-NN (20 total) and every component contract (7 in TECH-
 - Constitution: `../../constitution.md` (`<utml_v1_invariants>`, `<failure_taxonomy>`, `<performance_budgets>`)
 - Master traceability: `../_traceability.md`
 - Cross-cutting consumer: `../phase4-inference/_index.md` (RealityPrediction.confidence consumer); `../phase4-tct-constellation/_index.md` (refit trigger); `../utml-learning-formula/_index.md` (per-step training cert window producer); `../phase7-shift-subscriber/` (sole observe() caller); `../phase6-hygiene/` (CF_MEJEPA_WEIGHT_BLOBS GC)
-- Architectural sources: `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md` §5; `docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md` Section D; `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md` §9, §10; `docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md` §6, §8, §11
+- Architectural sources: `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md` §5; `docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md` Section D; `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md` §9, §10; `docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md` §6, §8, §11

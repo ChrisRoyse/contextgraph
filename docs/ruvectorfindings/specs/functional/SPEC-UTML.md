@@ -23,8 +23,8 @@
   <source_documents>
     <source type="design_doc">docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md (canonical formula)</source>
     <source type="design_doc">docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md §B, §D (pivot architecture + UTML cycle)</source>
-    <source type="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §5.1, §5.2, §5.3 (cross-embedder ΔK/ΔΞ; E17 agent_state_score)</source>
-    <source type="design_doc">docs2/UTL_v2_embodied.md (UTML v1.0 source theory; Royse 2026 §I-§XIV)</source>
+    <source type="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §5.1, §5.2, §5.3 (cross-embedder ΔK/ΔΞ; E17 agent_state_score)</source>
+    <source type="design_doc">docs2/TheoryOfMachineLearning.md (UTML v1.0 source theory; Royse 2026 §I-§XIV)</source>
     <source type="constitution">docs/ruvectorfindings/specs/constitution.md (utml_v1_invariants block)</source>
   </source_documents>
 </metadata>
@@ -369,7 +369,7 @@ outputs (Phases 4, 5, 7). This spec is the contract between those phases.
     <criterion id="AC-UTML-10-02">
       <given>ΔΞ(τ) ≈ 0 (collapsed latent at step τ)</given>
       <when>M(t) integrand is evaluated</when>
-      <then>L_step(τ)·ΔΞ(τ) ≈ 0; that step contributes nothing to M(t); enforces UTL-v2 "dissipation" gate</then>
+      <then>L_step(τ)·ΔΞ(τ) ≈ 0; that step contributes nothing to M(t); enforces the UTML v1.0 non-collapse consolidation gate</then>
     </criterion>
     <criterion id="AC-UTML-10-03">
       <given>mean(L_step) over window &gt; 0.3 AND ΔM over equivalent eval window / mean(L_step) &lt; 0.2</given>

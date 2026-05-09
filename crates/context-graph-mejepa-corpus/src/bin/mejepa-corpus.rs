@@ -23,9 +23,9 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
-use std::process::{Child, Command, Output, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Mutex,
@@ -34,6 +34,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
+const IMAGE_PREP_LOG_DIR: &str = "/tmp/contextgraph-mejepa-image-prep-logs";
+const LOG_TAIL_BYTES: u64 = 64 * 1024;
 
 #[derive(Parser, Debug)]
 #[command(version, about = "ME-JEPA Phase 0 corpus generation and verification")]
@@ -1478,35 +1480,99 @@ fn pull_images_bounded(
 
 fn pull_one_image(image: &str, timeout: Duration) -> Value {
     let started = Instant::now();
+    let logs = match pull_log_paths(image) {
+        Ok(logs) => logs,
+        Err(error) => {
+            return json!({
+                "image": image,
+                "success": false,
+                "exit_code": null,
+                "duration_secs": duration_secs(started.elapsed()),
+                "error": error.to_string(),
+            });
+        }
+    };
     let mut command = Command::new("docker");
+    let stdout_file = match File::create(&logs.stdout) {
+        Ok(file) => file,
+        Err(error) => {
+            return json!({
+                "image": image,
+                "success": false,
+                "exit_code": null,
+                "duration_secs": duration_secs(started.elapsed()),
+                "stdout_log": logs.stdout,
+                "stderr_log": logs.stderr,
+                "error": format!("failed to create docker pull stdout log: {error}"),
+            });
+        }
+    };
+    let stderr_file = match File::create(&logs.stderr) {
+        Ok(file) => file,
+        Err(error) => {
+            return json!({
+                "image": image,
+                "success": false,
+                "exit_code": null,
+                "duration_secs": duration_secs(started.elapsed()),
+                "stdout_log": logs.stdout,
+                "stderr_log": logs.stderr,
+                "error": format!("failed to create docker pull stderr log: {error}"),
+            });
+        }
+    };
     command
         .args(["pull", "--quiet", image])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file));
     configure_child_process_group(&mut command);
     let result = command
         .spawn()
         .map_err(|err| format!("failed to spawn docker pull: {err}"))
         .and_then(|child| {
-            wait_for_child_timeout(child, timeout, "docker pull").map_err(|err| err.to_string())
+            wait_for_child_status(child, timeout, "docker pull").map_err(|err| err.to_string())
         });
+    let stdout_tail = tail_file(&logs.stdout);
+    let stderr_tail = tail_file(&logs.stderr);
     match result {
-        Ok(output) => json!({
+        Ok(status) => json!({
             "image": image,
-            "success": output.status.success(),
-            "exit_code": output.status.code(),
+            "success": status.success(),
+            "exit_code": status.code(),
             "duration_secs": duration_secs(started.elapsed()),
-            "stdout_tail": tail_bytes(&output.stdout),
-            "stderr_tail": tail_bytes(&output.stderr),
+            "stdout_log": logs.stdout,
+            "stderr_log": logs.stderr,
+            "stdout_tail": stdout_tail.unwrap_or_else(|err| format!("<failed to read stdout log: {err}>")),
+            "stderr_tail": stderr_tail.unwrap_or_else(|err| format!("<failed to read stderr log: {err}>")),
         }),
         Err(error) => json!({
             "image": image,
             "success": false,
             "exit_code": null,
             "duration_secs": duration_secs(started.elapsed()),
+            "stdout_log": logs.stdout,
+            "stderr_log": logs.stderr,
+            "stdout_tail": stdout_tail.unwrap_or_else(|err| format!("<failed to read stdout log: {err}>")),
+            "stderr_tail": stderr_tail.unwrap_or_else(|err| format!("<failed to read stderr log: {err}>")),
             "error": error,
         }),
     }
+}
+
+#[derive(Debug, Clone)]
+struct PullLogPaths {
+    stdout: PathBuf,
+    stderr: PathBuf,
+}
+
+fn pull_log_paths(image: &str) -> CliResult<PullLogPaths> {
+    let digest = format!("{:x}", Sha256::digest(image.as_bytes()));
+    let base = Path::new(IMAGE_PREP_LOG_DIR);
+    fs::create_dir_all(base)?;
+    Ok(PullLogPaths {
+        stdout: base.join(format!("docker-pull-{digest}.stdout.log")),
+        stderr: base.join(format!("docker-pull-{digest}.stderr.log")),
+    })
 }
 
 fn configure_child_process_group(command: &mut Command) {
@@ -1517,19 +1583,21 @@ fn configure_child_process_group(command: &mut Command) {
     }
 }
 
-fn wait_for_child_timeout(mut child: Child, timeout: Duration, label: &str) -> CliResult<Output> {
+fn wait_for_child_status(
+    mut child: Child,
+    timeout: Duration,
+    label: &str,
+) -> CliResult<ExitStatus> {
     let started = Instant::now();
     loop {
-        if child.try_wait()?.is_some() {
-            return Ok(child.wait_with_output()?);
+        if let Some(status) = child.try_wait()? {
+            return Ok(status);
         }
         if started.elapsed() >= timeout {
             terminate_child_process_group(&mut child)?;
-            let output = child.wait_with_output()?;
+            let _ = child.wait()?;
             return Err(format!(
-                "{label} timed out after {timeout:?}; stdout_tail={}; stderr_tail={}",
-                tail_bytes(&output.stdout),
-                tail_bytes(&output.stderr)
+                "{label} timed out after {timeout:?}; process group was terminated and reaped",
             )
             .into());
         }
@@ -1542,7 +1610,7 @@ fn terminate_child_process_group(child: &mut Child) -> CliResult<()> {
     {
         let process_group = format!("-{}", child.id());
         let term = Command::new("kill")
-            .args(["-TERM", &process_group])
+            .args(["-TERM", "--", &process_group])
             .status()?;
         if !term.success() {
             let _ = child.kill();
@@ -1555,7 +1623,7 @@ fn terminate_child_process_group(child: &mut Child) -> CliResult<()> {
             thread::sleep(Duration::from_millis(25));
         }
         let kill = Command::new("kill")
-            .args(["-KILL", &process_group])
+            .args(["-KILL", "--", &process_group])
             .status()?;
         if !kill.success() {
             let _ = child.kill();
@@ -1618,6 +1686,16 @@ fn tail_bytes(bytes: &[u8]) -> String {
     let mut lines = text.lines().rev().take(20).collect::<Vec<_>>();
     lines.reverse();
     lines.join("\n")
+}
+
+fn tail_file(path: &Path) -> CliResult<String> {
+    let mut file = File::open(path)?;
+    let len = file.metadata()?.len();
+    let start = len.saturating_sub(LOG_TAIL_BYTES);
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(tail_bytes(&bytes))
 }
 
 fn validate_verify_args(args: &VerifyArgs) -> CliResult<()> {
@@ -2307,4 +2385,152 @@ fn unix_ms() -> u128 {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock before UNIX_EPOCH")
         .as_millis()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn wait_for_child_status_handles_large_file_backed_output() -> CliResult<()> {
+        let dir = tempfile::tempdir()?;
+        let stdout_path = dir.path().join("large-child.stdout.log");
+        let stderr_path = dir.path().join("large-child.stderr.log");
+
+        println!(
+            "FSV_BEFORE large_output stdout_exists={} stderr_exists={}",
+            stdout_path.exists(),
+            stderr_path.exists()
+        );
+
+        let stdout_file = File::create(&stdout_path)?;
+        let stderr_file = File::create(&stderr_path)?;
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg(
+                "i=0; while [ \"$i\" -lt 20000 ]; do \
+                 printf 'stdout-%05d xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\n' \"$i\"; \
+                 printf 'stderr-%05d yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\n' \"$i\" >&2; \
+                 i=$((i+1)); \
+                 done",
+            )
+            .stdout(Stdio::from(stdout_file))
+            .stderr(Stdio::from(stderr_file));
+        configure_child_process_group(&mut command);
+
+        let status = wait_for_child_status(
+            command.spawn()?,
+            Duration::from_secs(10),
+            "large-output-fsv",
+        )?;
+        assert!(status.success());
+
+        let stdout_len = fs::metadata(&stdout_path)?.len();
+        let stderr_len = fs::metadata(&stderr_path)?.len();
+        let stdout_tail = tail_file(&stdout_path)?;
+        let stderr_tail = tail_file(&stderr_path)?;
+
+        println!(
+            "FSV_AFTER large_output stdout_path={} stdout_bytes={} stdout_tail_has_last={} stderr_path={} stderr_bytes={} stderr_tail_has_last={}",
+            stdout_path.display(),
+            stdout_len,
+            stdout_tail.contains("stdout-19999"),
+            stderr_path.display(),
+            stderr_len,
+            stderr_tail.contains("stderr-19999")
+        );
+
+        assert!(stdout_len > LOG_TAIL_BYTES);
+        assert!(stderr_len > LOG_TAIL_BYTES);
+        assert!(stdout_tail.contains("stdout-19999"));
+        assert!(stderr_tail.contains("stderr-19999"));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn wait_for_child_status_times_out_and_reaps_child() -> CliResult<()> {
+        let dir = tempfile::tempdir()?;
+        let pid_path = dir.path().join("sleeping-child.pid");
+
+        println!(
+            "FSV_BEFORE timeout pid_file_exists={} pid_file={}",
+            pid_path.exists(),
+            pid_path.display()
+        );
+
+        let script = format!("printf '%s' $$ > {}; sleep 30", pid_path.display());
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg(script)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        configure_child_process_group(&mut command);
+        let child = command.spawn()?;
+
+        let pid_ready_started = Instant::now();
+        while !pid_path.exists() {
+            if pid_ready_started.elapsed() > Duration::from_secs(2) {
+                return Err(format!("child did not write pid file {}", pid_path.display()).into());
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        let pid = fs::read_to_string(&pid_path)?.trim().parse::<u32>()?;
+        let proc_path = PathBuf::from(format!("/proc/{pid}"));
+
+        let error = wait_for_child_status(child, Duration::from_millis(50), "timeout-fsv")
+            .expect_err("sleeping child must time out");
+        let proc_wait_started = Instant::now();
+        while proc_path.exists() && proc_wait_started.elapsed() < Duration::from_secs(2) {
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        println!(
+            "FSV_AFTER timeout pid={} proc_path={} proc_exists={} error={}",
+            pid,
+            proc_path.display(),
+            proc_path.exists(),
+            error
+        );
+
+        assert!(error.to_string().contains("timed out"));
+        assert!(!proc_path.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn pull_log_paths_are_deterministic_and_content_addressed() -> CliResult<()> {
+        let image = "swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest";
+        let before = pull_log_paths(image)?;
+        let after = pull_log_paths(image)?;
+
+        println!(
+            "FSV_BEFORE log_paths stdout={} stderr={}",
+            before.stdout.display(),
+            before.stderr.display()
+        );
+        println!(
+            "FSV_AFTER log_paths same_stdout={} same_stderr={} parent_exists={}",
+            before.stdout == after.stdout,
+            before.stderr == after.stderr,
+            before.stdout.parent().is_some_and(Path::exists)
+        );
+
+        assert_eq!(before.stdout, after.stdout);
+        assert_eq!(before.stderr, after.stderr);
+        assert!(before.stdout.starts_with(IMAGE_PREP_LOG_DIR));
+        assert!(before.stderr.starts_with(IMAGE_PREP_LOG_DIR));
+        assert_ne!(before.stdout, before.stderr);
+        let stdout_name = before
+            .stdout
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or("stdout log path has no valid file name")?;
+        assert!(stdout_name.starts_with("docker-pull-"));
+        assert!(!stdout_name.contains(':'));
+        Ok(())
+    }
 }

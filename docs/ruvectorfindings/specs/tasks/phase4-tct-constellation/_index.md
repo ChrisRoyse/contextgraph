@@ -186,5 +186,5 @@ Every functional REQ-TCT-NN (15 total) and every component contract (7 in TECH-T
 - Master traceability: `../_traceability.md`
 - Cross-cutting consumer: `../phase4-inference/_index.md` (Gate 7 ConstellationGuardRejected); `../phase3-training/` (L_constellation_centroid loss surface integrator); `../utml-learning-formula/` (constellation_violation_rate ΔΞ consumer)
 - Successor phase: `../phase5-self-healing/` (rolling-window refit trigger)
-- Architectural sources: `docs/ruvectorfindings/13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md` (FULL); `docs/ruvectorfindings/14_AST_EMBEDDER_ATOMIC_CHUNKING.md` §5, §8.1; `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md` §5.3
+- Architectural sources: `docs/ruvectorfindings/13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md` (FULL); `docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md` §5, §8.1; `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md` §5.3
 - Paper provenance: Royse, C. (April 2026). *Teleological Constellation Training: Multi-Modal Embedding Decomposition...* DOI 10.13140/RG.2.2.24370.57288

@@ -28,7 +28,7 @@
   <source_documents>
     <source type="design">docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md §3.8.1 (architecture), §3.8.2 (feedback loop closure), §3.8.3 (existing artifact channels), §3.8.4 (backpressure / durability / restart safety), §3.8.5 (new MCP tools), §3.8.6 (performance budget), §3.8.7 (self-updating reality model end-state), §7 Phase 7 (DoD + verification command)</source>
     <source type="design">docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md §F priorities #1, #2, #4, #6, #7 (capture every signal, primary inference path, real-time pipeline binding API), §13 (artifact layout post-pivot)</source>
-    <source type="design">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §7 (per-shift latency breakdown ~80 ms with full ensemble)</source>
+    <source type="design">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §7 (per-shift latency breakdown ~80 ms with full ensemble)</source>
     <source type="constitution">docs/ruvectorfindings/specs/constitution.md (`<reality_loop_contract>` rule on subscriber latency, `<performance_budgets>` shift_subscriber_observe_latency_p50/p99 rows, `<failure_taxonomy>` MEJEPA_OBSERVE_BATCH_NAN, MEJEPA_OBSERVE_INTEGRITY_VIOLATION, CCREALITY_ENGINE_RETIRED, `<coding_standards>` mcp_tool_namespace_lock, `<anti_patterns>` no reintroduction of reality_run_attempt)</source>
     <source type="design">docs/ccreality/01b_REALITY_SHIFT_PRINCIPLE.md (existing shift-log producer — read-only authority; the subscriber consumes its `cgreality-shift-log/<session_id>.jsonl` output verbatim)</source>
     <source type="memory">memory/decisions/2026-05-09--single-loop-claude-code-actor-mejepa-data-factory.md (every outer-loop turn is a training tuple; subscriber is the binding API)</source>

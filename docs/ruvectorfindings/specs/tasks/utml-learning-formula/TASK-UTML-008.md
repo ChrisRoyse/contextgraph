@@ -29,7 +29,7 @@ embedder_coherence (doc 12 §5.1) is one of the four ΔK sub-components. Across 
 <input_context_files>
   <file purpose="functional_spec">docs/ruvectorfindings/specs/functional/SPEC-UTML.md (US-UTML-03; AC-UTML-03-03; EC-UTML-11; AC-UTML-05-03)</file>
   <file purpose="technical_spec">docs/ruvectorfindings/specs/technical/TECH-UTML.md (component EmbedderCoherence)</file>
-  <file purpose="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §5.1 (cross-embedder Jaccard)</file>
+  <file purpose="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §5.1 (cross-embedder Jaccard)</file>
   <file purpose="instrument_panel">crates/context-graph-mejepa-instruments/src/lib.rs (Panel struct)</file>
   <file purpose="prior_tasks">TASK-UTML-001..007</file>
 </input_context_files>

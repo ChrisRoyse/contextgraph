@@ -42,7 +42,7 @@ MEJEPA_INFER_INSTRUMENT_MISSING.
   <file purpose="shipped_implementation">crates/context-graph-mejepa-instruments/src/e_code.rs</file>
   <file purpose="frozen_guard">crates/context-graph-mejepa-instruments/src/frozen_hook.rs (TASK-INSTR-004)</file>
   <file purpose="ast_chunker_facade">crates/context-graph-core/src/memory/ast_chunker/ (TASK-AST-022)</file>
-  <file purpose="design_doc_embedders">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §3 row E_DataFlow</file>
+  <file purpose="design_doc_embedders">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §3 row E_DataFlow</file>
 </input_context_files>
 
 <prerequisites>

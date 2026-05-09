@@ -4,7 +4,7 @@
 > Level 3 technical spec (`docs/ruvectorfindings/specs/technical/TECH-AST-CHUNKING.md`)
 > defines HOW. Conflicts resolve per `constitution.md` `<spec_authority_order>`.
 >
-> **Authority sources:** doc 14 (`14_AST_EMBEDDER_ATOMIC_CHUNKING.md`), doc 14 companion
+> **Authority sources:** doc 14 (`14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md`), doc 14 companion
 > (`14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md`), doc 09 §2.2 + §3.1 (instrument set + per-
 > language harness state), `crates/context-graph-core/src/memory/ast_chunker.rs:262`
 > (shipped Rust chunker, the source of truth for current state), and
@@ -28,10 +28,10 @@
     <spec_ref>SPEC-TCT-CONSTELLATION</spec_ref>
   </related_specs>
   <source_documents>
-    <source type="design">docs/ruvectorfindings/14_AST_EMBEDDER_ATOMIC_CHUNKING.md</source>
+    <source type="design">docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md</source>
     <source type="design">docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md</source>
     <source type="design">docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md (§2.2 instrument set, §3.1 per-language harness state)</source>
-    <source type="design">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md (21-embedder routing)</source>
+    <source type="design">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md (21-embedder routing)</source>
     <source type="design">docs/ruvectorfindings/13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md (per-chunk-type constellations)</source>
     <source type="constitution">docs/ruvectorfindings/specs/constitution.md (anti-pattern: no raw-text chunking; failure_taxonomy: MEJEPA_CHUNKER_*)</source>
     <source type="implementation_reference">crates/context-graph-core/src/memory/ast_chunker.rs (Rust chunker, 1216 LOC, the shipped baseline)</source>

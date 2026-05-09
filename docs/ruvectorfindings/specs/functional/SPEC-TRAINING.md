@@ -29,7 +29,7 @@
     <source type="design_doc">docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md §6 (per-example sampling_weight)</source>
     <source type="design_doc">docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md §7 (consolidation integral M(t))</source>
     <source type="design_doc">docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md §11 (per-step training certificate schema)</source>
-    <source type="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION_INTO_MEJEPA.md §6 (LoRA + distillation + AdamW + InfoNCE training infra shipped at crates/context-graph-embeddings/src/training/)</source>
+    <source type="design_doc">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md §6 (LoRA + distillation + AdamW + InfoNCE training infra shipped at crates/context-graph-embeddings/src/training/)</source>
     <source type="constitution">docs/ruvectorfindings/specs/constitution.md (utml_v1_invariants, failure_taxonomy, performance_budgets blocks)</source>
   </source_documents>
 </metadata>
