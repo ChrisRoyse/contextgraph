@@ -10,19 +10,25 @@ References to JEPA docs use `backupdocs/{mejepa,dynamicjepa,5090jepa}/` paths.
 
 ---
 
-## Current JEPA implementation state (updated 2026-05-08)
+## Current JEPA implementation state (updated 2026-05-08, post commits c18c694e → a9ca688e)
 
 Done:
 
 - DynamicJEPA has a RocksDB audit witness chain (`dj_audit_witness_chain`) backed by `context-graph-witness`.
 - `dynamicjepa verify-audit-witness` verifies audit rows against witness entries without mutating RocksDB counts.
 - `context-graph-solver` provides reusable Forward-Push PPR and CG primitives.
+- **`optimizer_compute_influence` MCP tool** (c18c694e) wraps Forward-Push PPR with witnessed audit rows. The trajectory-importance-sampler MCP path is now ~80% there — the JEPA-side panel-transition graph builder is the remaining gap; the solver call + witness audit + cert path is shipped.
+- **MMR diversity rerank** (f6ffeaeb) shipped in `optimizer_recall_recommendations` — directly applicable to JEPA training-corpus retrieval (avoid sampling near-duplicates during fine-tuning).
+- **`recommendation_certificate.rs`** produces verifiable recall certs — this *is* the Merkle recall certificate referenced in earlier doc framings, now reframed as an aux signal feeding ME-JEPA's training-data lineage.
+- **Witness-chain preflight + repair + atomic writes** (bfcc060e, 33daf95b, a9ca688e): the §5.6 chain-integrity check is now per-write, not just nightly; legacy reconciliation handles mixed-format chains; `write_text_checked` underpins crash-safe `observe()` writes for the future ME-JEPA online-learning path.
 
 Pending:
 
-- JEPA trajectory-importance sampler is not wired to `context-graph-solver`.
-- ME-JEPA-Code Phase 0 mutation corpus, code-domain instruments, 4,096-d panels, predictor, conformal calibration, OOD, and self-healing are not implemented.
-- Retrieval diffusion, SONA planner integration, Stage 0/F certs, verified training certs, mincut, Granger, and tiered panel storage remain pending.
+- JEPA trajectory-importance sampler's *graph-builder* side (panel-transition → CSR matrix) — the solver path to call PPR is shipped.
+- ME-JEPA-Code Phase 0 mutation corpus, code-domain instruments (incl. §3.5 additions `E_StaticAnalysis` / `E_Runtime` / `E_Reasoning`), 5,120-d panels, predictor, conformal calibration, OOD, and self-healing are not implemented.
+- §3.8 real-time pipeline: `mejepa-shift-subscriber` Tokio task is 0% started.
+- Aux heads (warnings, runtime, RSS, traceback, hunk-attribution, adjacent-test, reasoning, operator-overrides) are 0% started.
+- Retrieval diffusion, SONA planner integration, Stage 0/F certs, verified training certs, Stoer-Wagner mincut, Granger, and tiered panel storage remain pending.
 
 ---
 

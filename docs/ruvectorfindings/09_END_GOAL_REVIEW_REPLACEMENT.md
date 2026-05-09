@@ -20,12 +20,29 @@ Key system properties:
 - **Auditable.** Every training step has a certificate; every prediction has a confidence interval; every input file has a SHA chain back to its origin.
 - **Clean-room owned.** Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md`, every line is ours; no foreign Rust crates, no npm dependencies on the ruvnet ecosystem.
 
-**Current implementation snapshot (2026-05-08):**
+**Current implementation snapshot (2026-05-08, post commits c18c694e → a9ca688e):**
 
-- The witness-chain substrate exists (`context-graph-witness`) and is wired into ccreality optimizer files and DynamicJEPA audit rows.
-- The solver substrate exists in part (`context-graph-solver`): Forward-Push PPR + Conjugate Gradient + CSR validation + manual FSV evidence.
-- The actual ME-JEPA-Code pipeline in this doc has **not** shipped yet: no mutation corpus, code-domain instruments, 4,096-d panels, predictor, conformal calibration, OOD gate, self-healing loop, or reality-loop verify integration.
-- BMSSP/multigrid is deliberately still pending; no fallback wrapper is allowed.
+Shipped (clean-room, MCP-callable, FSV-covered):
+
+- **`crates/context-graph-witness/`** — 73-byte SHAKE-256 witness entries, chain hashing, verification, canonical format manifest (`witness_chain_format.rs`), legacy reconciliation (`witness_chain_legacy.rs`), repair tooling + repair FSV (`witness_chain_repair.rs`, `witness_chain_repair_fsv.rs`), atomic durability via `write_text_checked` (`witness_chain_io.rs`). Wired into ccreality optimizer files + DynamicJEPA audit rows.
+- **`crates/context-graph-solver/`** — weighted Forward-Push PPR + Conjugate Gradient + CSR validation + fail-closed structured errors + manual FSV evidence.
+- **`optimizer_compute_influence` MCP tool** (`influence.rs`, c18c694e) — Forward-Push PPR over the attempt-influence graph with witnessed audit rows.
+- **MMR diversity rerank** (`diversity.rs`, f6ffeaeb) wired into `optimizer_recall_recommendations`; produces verifiable `recommendation_certificate.rs` recall certs.
+- **Witness-chain preflight on every write** (bfcc060e) — bandit / influence / optimizer writes verify chain integrity before appending; the §5.6 nightly chain-integrity check has been promoted to a per-write fail-closed gate (`optimizer_preflight_fsv.rs`).
+
+Not shipped (this doc's scope is the build plan to ship them):
+
+- ME-JEPA-Code itself: instruments (`E_AST` / `E_CFG` / `E_DataFlow` / `E_TypeGraph` / `E_Test` / `E_Trace` / `E_Diff` / `E_Witness` / `E_Oracle` / `E_Problem` / `E_CommitMsg` + §3.5 `E_StaticAnalysis` / `E_Runtime` / `E_Reasoning`), 5,120-d panel materializer, 6-layer transformer predictor, EMA target encoder, VICReg loss, oracle head.
+- §3.1 Phase 0 mutation corpus generator (~2,400 labeled examples × 8 categories × 300 tasks).
+- §3.7 multi-objective aux-head loss + counterfactual training + active-learning loop + cross-task transfer + aux-head distillation.
+- §3.8 real-time pipeline: `mejepa-shift-subscriber` Tokio task that consumes the existing harness shift log + artifacts and triggers `mejepa.observe()` in < 5 s p50.
+- §4 conformal calibration + OOD detection + verify API.
+- §5 online `observe()` + EWC++ + drift detection + A/B/C promotion + periodic full retrain + chain-integrity verifier.
+- §6 tiered 8/7/5/3-bit storage + Stoer-Wagner mincut splits + Merkle compression of old chain segments + nightly GC.
+- BMSSP/multigrid V-cycle (deliberately pending; no wrapper-as-multigrid allowed).
+- SONA (μLoRA + EWC++ + REINFORCE + ReasoningBank), retrieval diffusion, Granger causality test, verified-training certificates.
+
+Live operational concern: the active runtime root's `claude-code-optimizer/witness-chain.bin` has surfaced `CCREALITY_WITNESS_PREV_HASH_MISMATCH` at offset 0 (actual `prev_hash` is non-zero where canonical format requires all-zero for the first entry). The shipped repair + legacy-reconciliation tooling is the remediation path; the corruption pre-dates this turn's edits and should be repaired before the next reality-loop attempt depends on the optimizer chain.
 
 ---
 
@@ -353,11 +370,32 @@ Honest list of capture gaps, ordered by leverage (capability unlocked / capture 
 13. Repo health metrics (commit cadence, CI green-rate, contributor count).
 14. Mutation-test kill rate (expensive; sample 5% of corpus).
 
+### Critical blindspots from the current implementation state (added 2026-05-08)
+
+These are signals the *already-shipped* infrastructure produces but ME-JEPA-Code is not currently planned to consume. Adding them is high-leverage because the producer side already works:
+
+15. **Witness-chain preflight pass/fail/repair signal** — every bandit/influence/optimizer write now preflights chain integrity (`optimizer_preflight_fsv.rs`). Each preflight result (passed / failed / repaired-by-tooling) is durable evidence about pipeline health, not just per-attempt code health. **Unlocks:** ME-JEPA learns to predict pipeline-integrity regressions, not just oracle outcomes — distinguishes "patch is wrong" from "harness is broken." **Cost:** free; just consume `witness_chain_fsv.rs` outputs.
+
+16. **DynamicJEPA reality-readback gate** — `analyze.rs` already emits ~12 distinct `CCREALITY_DYNAMICJEPA_*` error codes that verify DynamicJEPA reality has been recorded before scoring (e.g., `CCREALITY_DYNAMICJEPA_LEDGER_ROW_MISSING`, `CCREALITY_DYNAMICJEPA_PACKET_PAYLOAD_HASH_MISMATCH`). Each failure mode is a typed signal about which substrate failed. **Unlocks:** typed-failure-mode supervision for an aux head that distinguishes "test failed" from "infrastructure failed." **Cost:** schema is already there; just plumb into `E_Oracle` extension.
+
+17. **Format-manifest schema-version migration** — the chain has multiple historical encodings; `witness_chain_format.rs` documents the canonical, `witness_chain_legacy.rs` reconciles older entries. ME-JEPA's `E_Witness` instrument MUST version-track its decoder, or vectors will silently drift across the migration. **Unlocks:** stable `E_Witness` features across format generations. **Cost:** add `format_version` field to `E_Witness` config; reject mixed-version batches without explicit conversion.
+
+18. **Reflexion handler outputs** (`reflexion.rs`) — already produces structured "lessons learned" records the inner actor cites. Currently consumed by the optimizer; not consumed by `E_Reasoning`. **Unlocks:** richer `E_Reasoning` than just CoT — captures the actor's *self-judgment* about which prior failure modes are recurring. **Cost:** wire `reflexion.rs` outputs into `E_Reasoning` materialization.
+
+19. **Bandit-arm selection trajectories** (`bandit.rs`) — the multi-armed bandit picks among candidate actions/skills with witnessed audit rows. The arm-selection trajectory is itself a sequence reward signal: which arms paid off, which didn't, which the bandit converged on. **Unlocks:** ME-JEPA can predict *which skill* the bandit will pick before it does, and `α_overrides`-equivalent supervision when the bandit's pick disagrees with ME-JEPA's prediction. **Cost:** consume the bandit's already-witnessed arm-selection record.
+
+20. **Atomic-write durability fence for `observe()`** — `write_text_checked` in `witness_chain_io.rs` provides crash-safe write-or-nothing semantics for chain bytes. ME-JEPA's planned `observe()` aux-head writes need the same primitive — without it, a crash mid-update can leave the model with half-applied EWC++ Fisher updates. **Unlocks:** crash safety for online learning. **Cost:** reuse the existing primitive; don't invent a parallel one.
+
+21. **Schema-validator integration** (`schema_validator.rs`) — every reality-loop tool input is JSON-validated before processing. ME-JEPA's panel ingestion + aux-signal ingestion must plug into the same validator with their own schemas. **Unlocks:** fail-closed input rejection for malformed panels (a panel with NaN floats or wrong dim should be rejected, not silently used). **Cost:** add panel-schema + aux-signal-schema definitions; route through existing validator.
+
+22. **Recall-cert provenance chain** — `recommendation_certificate.rs` produces a Merkle-root cert binding each recall to its evidence set. ME-JEPA's training-data lineage should record which recall-certs sourced each training example so retrains can re-verify the chain back to durable bytes. **Unlocks:** end-to-end provenance from "this gradient step" → "this recall cert" → "this set of past attempts" → "this chain offset." **Cost:** add `recall_cert_root` field to per-step training certificate.
+
 ### Not capturable in this system (acknowledged)
 
 - **Production behavior** after the patch is merged. SWE-bench runs in a sealed Docker; we never see real deployments. The mutation corpus is our proxy.
 - **Original developer intent.** Why a specific fix shape was chosen vs. a different valid one is sometimes unrecorded. Best proxies: reviewer comments + commit message; both partial.
 - **Long-tail flakiness** that surfaces only under specific scheduler / kernel / CPU-architecture conditions. The Docker oracle masks this.
+- **Out-of-process operator decisions** (operator running `git` outside the harness, manual file edits via non-Claude editors). External drift detection (`reality_shift_compare_to_my_view`) flags these, but the *intent* behind them is not capturable.
 
 ---
 

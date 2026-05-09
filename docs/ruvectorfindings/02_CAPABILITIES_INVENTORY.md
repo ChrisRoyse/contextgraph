@@ -8,19 +8,26 @@ Per-crate catalog of capabilities relevant to ccreality and JEPA. Roughly ordere
 
 ---
 
-## Current ContextGraph implementation state (updated 2026-05-08)
+## Current ContextGraph implementation state (updated 2026-05-08, post commits c18c694e → a9ca688e)
 
 Implemented in our tree:
 
 - `crates/context-graph-witness/`: clean-room 73-byte SHAKE-256 witness entry layout, chain hashing, verification, and unit tests.
-- ccreality optimizer witness chain: file source of truth `<runtime_root>/<run_id>/claude-code-optimizer/witness-chain.bin`, verify/diff tools, append/readback on optimizer writes.
+- ccreality optimizer witness chain: file source of truth `<runtime_root>/<run_id>/claude-code-optimizer/witness-chain.bin`, verify/diff tools, append/readback on optimizer writes; **+ witness-chain preflight FSV** (`witness_chain_fsv.rs`) **+ legacy reconciliation** (`witness_chain_legacy.rs`) **+ canonical format manifest** (`witness_chain_format.rs`) **+ repair tooling + repair FSV** (`witness_chain_repair.rs`, `witness_chain_repair_fsv.rs`) **+ atomic `write_text_checked` durability** (`witness_chain_io.rs`) — bandit / influence / optimizer writes preflight chain integrity before appending.
 - DynamicJEPA audit witness chain: RocksDB CF `dj_audit_witness_chain`, atomic audit+witness writes via `WriteBatch`, CLI `dynamicjepa verify-audit-witness`, and tamper FSV.
 - `crates/context-graph-solver/`: clean-room weighted Forward-Push PPR, validated Conjugate Gradient, CSR validation, fail-closed structured errors, and manual FSV example.
+- **`optimizer_compute_influence` MCP tool** (`influence.rs`, c18c694e): wires Forward-Push PPR over the attempt-influence graph; produces ranked influence list + witnessed recall audits.
+- **MMR diversity rerank** (`diversity.rs`, f6ffeaeb) wired into `optimizer_recall_recommendations` with witnessed audits and `recommendation_certificate` for verifiable recall.
+- **`optimizer_preflight_fsv.rs`** — preflight verifier for chain integrity at write-time (the §5.6 chain-integrity check moved from "nightly only" to "every-write").
 
 Not implemented yet:
 
-- BMSSP/multigrid, solver router/audit persistence, `optimizer_compute_influence` MCP integration, JEPA trajectory sampler integration.
-- SONA/EWC++, temporal tensor tiering, mincut, conformal prediction, retrieval diffusion, Granger, verified training certificates, and ME-JEPA-Code mutation corpus.
+- BMSSP/multigrid (the V-cycle multigrid path is intentionally pending; no fake "wrap CG and call it multigrid").
+- Solver router + persisted audit rows for non-influence solver calls.
+- ME-JEPA-Code itself: code-domain instruments (`E_AST`, `E_CFG`, `E_DataFlow`, `E_TypeGraph`, `E_StaticAnalysis`, `E_Runtime`, `E_Reasoning`, etc.), 5,120-d panel materialization, predictor + EMA target encoder + VICReg loss, Phase 0 mutation corpus generator, conformal calibration, OOD detection, online `observe()`, EWC++ self-healing, A/B/C drift promotion.
+- §3.8 real-time pipeline: `mejepa-shift-subscriber` Tokio task is not started.
+- Aux heads (warnings, runtime, RSS, traceback, hunk-attribution, adjacent-test, reasoning, operator-overrides) are not started.
+- SONA/EWC++ adaptive-learning crate, temporal-tensor 8/7/5/3-bit tiering, Stoer-Wagner mincut, retrieval diffusion, Granger causality test, and verified-training-certificate machinery are still pending.
 
 ---
 

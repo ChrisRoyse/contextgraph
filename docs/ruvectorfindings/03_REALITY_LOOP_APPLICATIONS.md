@@ -10,7 +10,7 @@ References to ccreality docs use `docs/ccreality/` paths. Path discipline (CLAUD
 
 ---
 
-## Current ccreality implementation state (updated 2026-05-08)
+## Current ccreality implementation state (updated 2026-05-08, post commits c18c694e → a9ca688e)
 
 Done:
 
@@ -18,13 +18,19 @@ Done:
 - MCP tools `optimizer_witness_chain_verify` and `optimizer_witness_chain_diff` exist.
 - Bandit/optimizer writes append witness entries and read back the source-of-truth file.
 - `context-graph-solver` exists with weighted Forward-Push PPR + CG + CSR validation and manual FSV evidence.
+- **`optimizer_compute_influence` MCP tool shipped** (c18c694e, `influence.rs`): Forward-Push PPR over attempt-influence graph; produces ranked influence list + persisted audit row; witness-chain preflight before write.
+- **`optimizer_recall_recommendations` MMR rerank shipped** (f6ffeaeb, `diversity.rs`): MMR(λ, normalized(α·similarity + β·uplift − γ·latency_cost), token-Jaccard redundancy) over recall candidates; witnessed recall audits via `recommendation_certificate.rs` produce verifiable recall certs.
+- **Witness-chain preflight on every write** (bfcc060e): bandit / influence / optimizer writes verify chain integrity *before* appending — the §5.6 nightly chain-integrity check has been promoted to a per-write fail-closed gate.
+- **Witness-chain legacy reconciliation + canonical format manifest** (33daf95b): mixed-format chains coexist during the migration; `witness_chain_format.rs` documents the canonical encoding; `witness_chain_legacy.rs` reconciles older entries.
+- **Witness-chain repair tooling + FSV** (`witness_chain_repair.rs`, `witness_chain_repair_fsv.rs`): when chain integrity fails (e.g., `CCREALITY_WITNESS_PREV_HASH_MISMATCH` at offset 0 from a corrupted first entry), the repair path can reconstruct a valid prefix; integrity-tested by FSV.
+- **Atomic `write_text_checked`** (a9ca688e, `witness_chain_io.rs`): durable, no-torn-write semantics for chain appends; underpins ME-JEPA's planned `observe()` writes too.
+- **`optimizer_preflight_fsv.rs`** — every preflight verification result is itself a signal (succeeded / failed / repaired) that ME-JEPA can consume as a pipeline-determinism feature.
 
 Pending:
 
-- `optimizer_compute_influence(failure_tag, k)` is not wired yet.
-- BMSSP/multigrid is not implemented.
-- Solver calls are not yet persisted as optimizer audit rows beyond the manual FSV evidence.
-- SONA/EWC++ and the richer retrieval/conformal/mincut/Granger modules are still pending.
+- BMSSP/multigrid is not implemented (intentionally — no fake wrappers).
+- ME-JEPA-Code itself: instruments + panels + predictor + mutation corpus + aux heads + counterfactual training + active-learning loop + `mejepa-shift-subscriber` are 0% started.
+- SONA/EWC++ adaptive learner, temporal-tensor tiering, mincut, retrieval diffusion, Granger, verified-training certs are still pending.
 
 ---
 

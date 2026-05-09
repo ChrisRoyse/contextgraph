@@ -8,17 +8,22 @@ The honest list. Clean-room reimplementation discipline, license-comment require
 
 ---
 
-## Current implementation state (updated 2026-05-08)
+## Current implementation state (updated 2026-05-08, post commits c18c694e → a9ca688e)
 
-The clean-room policy has already been applied to two foundations:
+The clean-room policy has been applied to:
 
-- `crates/context-graph-witness/` implements the witness-chain core and is wired into ccreality optimizer files plus DynamicJEPA audit witness rows.
-- `crates/context-graph-solver/` implements weighted Forward-Push PPR and Conjugate Gradient. Every new solver Rust file has the required provenance header.
+- `crates/context-graph-witness/` — witness-chain core + canonical format manifest + legacy reconciliation + repair tooling + atomic durability primitives. Wired into ccreality optimizer files, DynamicJEPA audit witness rows, and per-write preflight.
+- `crates/context-graph-solver/` — weighted Forward-Push PPR + Conjugate Gradient + CSR validation. Provenance headers on every Rust file.
+- **`optimizer_compute_influence` MCP tool** (c18c694e) — Forward-Push PPR over attempt-influence graph; persists audit row; preflights chain integrity before write.
+- **MMR diversity rerank** (`diversity.rs`, f6ffeaeb) — wired into `optimizer_recall_recommendations` with witnessed recall audits via `recommendation_certificate.rs`.
+- **Witness-chain preflight on every write** (bfcc060e) — bandit / influence / optimizer writes verify chain integrity before appending; `optimizer_preflight_fsv.rs` covers the FSV.
+
+**Live operational concern observed 2026-05-08:** the runtime root's `claude-code-optimizer/witness-chain.bin` has surfaced `CCREALITY_WITNESS_PREV_HASH_MISMATCH` at offset 0 (actual `prev_hash` is non-zero where the canonical first entry must be all-zero). This indicates either pre-canonical-format chain bytes still on disk OR a partial-write recovery scenario. The shipped repair tooling (`witness_chain_repair.rs` + `witness_chain_repair_fsv.rs`) is the remediation path; legacy reconciliation (`witness_chain_legacy.rs`) is the migration path. Surface in operator notes before the next reality-loop attempt.
 
 Remaining policy-sensitive work:
 
 - Do not add BMSSP by wrapping CG and calling it multigrid. It must be a real clean-room V-cycle implementation or remain explicitly pending.
-- Do not wire `optimizer_compute_influence` until it records solver inputs/outputs as source-of-truth evidence.
+- ME-JEPA-Code's instruments / panel materializer / predictor / mutation-corpus generator / aux heads / `mejepa-shift-subscriber` (doc 09 §3.5–§3.8) — every clean-room file MUST start with the standard provenance header citing the inspirational RuVector source.
 - Keep checking for forbidden `agentdb`/`ruvector` path deps and npm deps before each merge.
 
 ---
