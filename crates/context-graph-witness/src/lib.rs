@@ -9,6 +9,14 @@ use sha3::{
 };
 use thiserror::Error;
 
+pub mod cert;
+
+pub use cert::{
+    compute_artifact_manifest_hash, compute_readout_binding_hash, compute_stage0_binding_hash,
+    ArtifactRef, CertError, MerkleLeaf, MerkleProof, MerkleTree, ReadoutCertificate,
+    Stage0Certificate, MERKLE_LEAF_TAG, MERKLE_NODE_TAG,
+};
+
 #[cfg(feature = "ed25519")]
 pub mod sign;
 

@@ -1,0 +1,14 @@
+[package]
+name = "context-graph-mincut"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Clean-room global minimum-cut primitives for ContextGraph"
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = "1.0"
