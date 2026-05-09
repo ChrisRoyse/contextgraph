@@ -174,6 +174,11 @@ pub fn definitions() -> Vec<ToolDefinition> {
             json!({"type":"object","properties":{"run_id":{"type":"string"},"since_offset":{"type":"integer","minimum":0}},"required":["since_offset"],"additionalProperties":false}),
         ),
         def(
+            "optimizer_witness_chain_repair_legacy",
+            "Explicitly reconcile a pre-canonical optimizer witness chain into the canonical layout after SHA-256 confirmation.",
+            json!({"type":"object","properties":{"run_id":{"type":"string"},"expected_legacy_sha256":{"type":"string","pattern":"^(sha256:)?[0-9a-fA-F]{64}$"}},"required":["expected_legacy_sha256"],"additionalProperties":false}),
+        ),
+        def(
             "reality_shift_log",
             "Read ccreality per-session shift log.",
             json!({"type":"object","properties":{"session_id":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500},"since_shift_id":{"type":["string","null"]}},"required":["session_id"],"additionalProperties":false}),

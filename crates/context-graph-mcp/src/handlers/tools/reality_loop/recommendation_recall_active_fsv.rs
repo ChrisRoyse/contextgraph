@@ -29,7 +29,10 @@ fn recall_manual_active_runtime_reads_real_recommendations() {
     let after = audit_count(&runtime_root, &run_id);
     let result = match outcome {
         Ok(result) => result,
-        Err(err) if err.error_code == "CCREALITY_WITNESS_PREV_HASH_MISMATCH" => {
+        Err(err)
+            if err.error_code == "CCREALITY_WITNESS_PREV_HASH_MISMATCH"
+                || err.error_code == "CCREALITY_WITNESS_LEGACY_LAYOUT_DETECTED" =>
+        {
             println!(
                 "RECALL_REAL_RUNTIME_FAIL_CLOSED run_id={run_id} before_audits={before} after_audits={after} error_code={} source_of_truth={:?}",
                 err.error_code, err.source_of_truth

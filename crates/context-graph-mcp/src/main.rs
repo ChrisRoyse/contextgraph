@@ -2432,6 +2432,7 @@ async fn run_reality_loop_stdio() -> Result<()> {
                     tool_names::OPTIMIZER_COMPUTE_INFLUENCE => reality_loop::influence::optimizer_compute_influence(args).await,
                     tool_names::OPTIMIZER_WITNESS_CHAIN_VERIFY => reality_loop::witness_chain::optimizer_witness_chain_verify(args).await,
                     tool_names::OPTIMIZER_WITNESS_CHAIN_DIFF => reality_loop::witness_chain::optimizer_witness_chain_diff(args).await,
+                    tool_names::OPTIMIZER_WITNESS_CHAIN_REPAIR_LEGACY => reality_loop::witness_chain_repair::optimizer_witness_chain_repair_legacy(args).await,
                     tool_names::REALITY_SHIFT_LOG => reality_loop::shift_log::reality_shift_log(args).await,
                     tool_names::REALITY_SHIFT_COMPARE_TO_MY_VIEW => reality_loop::shift_log::reality_shift_compare_to_my_view(args).await,
                     // Phase 15: autoresearch engine

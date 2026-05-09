@@ -18,11 +18,19 @@ pub mod reflexion;
 pub mod schema_validator;
 pub mod shift_log;
 pub mod witness_chain;
+mod witness_chain_format;
+mod witness_chain_io;
+mod witness_chain_legacy;
+pub mod witness_chain_repair;
 
 #[cfg(test)]
 mod recommendation_recall_active_fsv;
 #[cfg(test)]
 mod recommendation_recall_fsv;
+#[cfg(test)]
+mod witness_chain_fsv;
+#[cfg(test)]
+mod witness_chain_repair_fsv;
 
 pub use errors::CCRealityError;
 

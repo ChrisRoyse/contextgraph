@@ -385,6 +385,7 @@ pub const OPTIMIZER_RECALL_RECOMMENDATIONS: &str = "optimizer_recall_recommendat
 pub const OPTIMIZER_COMPUTE_INFLUENCE: &str = "optimizer_compute_influence";
 pub const OPTIMIZER_WITNESS_CHAIN_VERIFY: &str = "optimizer_witness_chain_verify";
 pub const OPTIMIZER_WITNESS_CHAIN_DIFF: &str = "optimizer_witness_chain_diff";
+pub const OPTIMIZER_WITNESS_CHAIN_REPAIR_LEGACY: &str = "optimizer_witness_chain_repair_legacy";
 pub const REALITY_SHIFT_LOG: &str = "reality_shift_log";
 pub const REALITY_SHIFT_COMPARE_TO_MY_VIEW: &str = "reality_shift_compare_to_my_view";
 // Phase 15: autoresearch engine

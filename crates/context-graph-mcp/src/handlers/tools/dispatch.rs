@@ -299,6 +299,7 @@ impl Handlers {
             tool_names::OPTIMIZER_COMPUTE_INFLUENCE => call_optimizer_compute_influence(arguments),
             tool_names::OPTIMIZER_WITNESS_CHAIN_VERIFY => call_optimizer_witness_chain_verify(arguments),
             tool_names::OPTIMIZER_WITNESS_CHAIN_DIFF => call_optimizer_witness_chain_diff(arguments),
+            tool_names::OPTIMIZER_WITNESS_CHAIN_REPAIR_LEGACY => call_optimizer_witness_chain_repair_legacy(arguments),
             tool_names::REALITY_SHIFT_LOG => call_reality_shift_log(arguments),
             tool_names::REALITY_SHIFT_COMPARE_TO_MY_VIEW => call_reality_shift_compare_to_my_view(arguments),
             // Phase 15: autoresearch engine

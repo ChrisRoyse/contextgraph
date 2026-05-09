@@ -4,6 +4,9 @@
 
 use super::errors::{CCRealityError, Result};
 use super::helpers::*;
+use super::witness_chain_format::{ensure_canonical_format_manifest, read_format_manifest_status};
+use super::witness_chain_io::{read_chain_bytes, sync_parent_dir, with_chain_lock};
+use super::witness_chain_legacy::verify_legacy_chain_bytes_with_type_validator;
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use context_graph_witness::{
@@ -12,7 +15,7 @@ use context_graph_witness::{
 };
 use serde_json::{json, Value};
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,10 +28,11 @@ pub enum WitnessOpType {
     Autoresearch = 5,
     InfluenceComputation = 6,
     RecommendationRecall = 7,
+    WitnessRepair = 8,
 }
 
 impl WitnessOpType {
-    fn from_u8(value: u8) -> Option<Self> {
+    pub(super) fn from_u8(value: u8) -> Option<Self> {
         match value {
             0 => Some(Self::Decision),
             1 => Some(Self::Recommendation),
@@ -38,11 +42,12 @@ impl WitnessOpType {
             5 => Some(Self::Autoresearch),
             6 => Some(Self::InfluenceComputation),
             7 => Some(Self::RecommendationRecall),
+            8 => Some(Self::WitnessRepair),
             _ => None,
         }
     }
 
-    fn as_str(self) -> &'static str {
+    pub(super) fn as_str(self) -> &'static str {
         match self {
             Self::Decision => "decision",
             Self::Recommendation => "recommendation",
@@ -52,6 +57,7 @@ impl WitnessOpType {
             Self::Autoresearch => "autoresearch",
             Self::InfluenceComputation => "influence_computation",
             Self::RecommendationRecall => "recommendation_recall",
+            Self::WitnessRepair => "witness_repair",
         }
     }
 }
@@ -78,6 +84,17 @@ impl Handlers {
             Err(e) => super::err(id, e),
         }
     }
+
+    pub(crate) async fn call_optimizer_witness_chain_repair_legacy(
+        &self,
+        id: Option<JsonRpcId>,
+        args: Value,
+    ) -> JsonRpcResponse {
+        match super::witness_chain_repair::optimizer_witness_chain_repair_legacy(args).await {
+            Ok(v) => super::ok(self, id, v),
+            Err(e) => super::err(id, e),
+        }
+    }
 }
 
 pub fn append_witness_entry_for_run(
@@ -99,6 +116,7 @@ pub(super) fn verify_witness_chain_for_run(runtime_root: &Path, run_id: &str) ->
         "entries": verification.entries,
         "last_chain_hash": chain_hash_hex(&verification.last_chain_hash),
         "last_op": verification.last_op,
+        "format_manifest": read_format_manifest_status(&path)?,
         "source_of_truth": file_sot(&path),
         "sha256": if path.is_file() { sha256_file(&path)? } else { "absent".to_string() },
     }))
@@ -115,6 +133,7 @@ pub async fn optimizer_witness_chain_verify(args: Value) -> Result<Value> {
         "entries": verification.entries,
         "last_chain_hash": chain_hash_hex(&verification.last_chain_hash),
         "last_op": verification.last_op,
+        "format_manifest": read_format_manifest_status(&path)?,
         "source_of_truth": file_sot(&path),
         "sha256": if path.is_file() { sha256_file(&path)? } else { "absent".to_string() },
     }))
@@ -162,11 +181,16 @@ fn append_entry(
     op_type: WitnessOpType,
     content_sha256: [u8; HASH_SIZE],
 ) -> Result<Value> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| fs_error("CCREALITY_WITNESS_DIR_CREATE_FAILED", parent, e))?;
-    }
+    with_chain_lock(path, || append_entry_locked(path, op_type, content_sha256))
+}
+
+fn append_entry_locked(
+    path: &Path,
+    op_type: WitnessOpType,
+    content_sha256: [u8; HASH_SIZE],
+) -> Result<Value> {
     let before = verify_chain(path)?;
+    let format_manifest = ensure_canonical_format_manifest(path)?;
     let offset = before.entries;
     let entry = WitnessEntry::new(
         before.last_chain_hash,
@@ -193,6 +217,7 @@ fn append_entry(
         .map_err(|e| fs_error("CCREALITY_WITNESS_APPEND_FAILED", path, e))?;
     file.sync_all()
         .map_err(|e| fs_error("CCREALITY_WITNESS_SYNC_FAILED", path, e))?;
+    sync_parent_dir(path, "CCREALITY_WITNESS_PARENT_SYNC_FAILED")?;
     let after = verify_chain(path)?;
     if after.entries != offset + 1 || after.last_chain_hash != entry.chain_hash() {
         return Err(CCRealityError::new(
@@ -220,6 +245,7 @@ fn append_entry(
         "prev_chain_hash": chain_hash_hex(&entry.prev_hash),
         "chain_hash": chain_hash_hex(&after.last_chain_hash),
         "entries": after.entries,
+        "format_manifest": format_manifest,
         "source_of_truth": file_sot(path),
     }))
 }
@@ -232,6 +258,17 @@ struct Verification {
 }
 
 fn verify_chain(path: &Path) -> Result<Verification> {
+    match verify_chain_canonical(path) {
+        Ok(verification) => Ok(verification),
+        Err(canonical_err) => match detect_legacy_layout(path) {
+            Ok(Some(legacy)) => Err(legacy_layout_detected_error(path, canonical_err, legacy)),
+            Ok(None) => Err(canonical_err),
+            Err(_) => Err(canonical_err),
+        },
+    }
+}
+
+fn verify_chain_canonical(path: &Path) -> Result<Verification> {
     if !path.exists() {
         return Ok(Verification {
             entries: 0,
@@ -262,19 +299,46 @@ fn verify_chain(path: &Path) -> Result<Verification> {
     })
 }
 
-fn read_chain_bytes(path: &Path) -> Result<Vec<u8>> {
+fn detect_legacy_layout(
+    path: &Path,
+) -> Result<Option<super::witness_chain_legacy::LegacyVerification>> {
     if !path.exists() {
-        return Ok(Vec::new());
+        return Ok(None);
     }
-    let mut file =
-        fs::File::open(path).map_err(|e| fs_error("CCREALITY_WITNESS_READ_FAILED", path, e))?;
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
-        .map_err(|e| fs_error("CCREALITY_WITNESS_READ_FAILED", path, e))?;
-    Ok(bytes)
+    let bytes = read_chain_bytes(path)?;
+    if bytes.is_empty() || bytes.len() % WITNESS_ENTRY_SIZE != 0 {
+        return Ok(None);
+    }
+    match verify_legacy_chain_bytes_with_type_validator(&bytes, Some(path), unix_secs()?, |ty| {
+        WitnessOpType::from_u8(ty).is_some()
+    }) {
+        Ok(legacy) => Ok(Some(legacy)),
+        Err(_) => Ok(None),
+    }
 }
 
-fn invalid_chain_length(path: &Path, len: usize) -> CCRealityError {
+fn legacy_layout_detected_error(
+    path: &Path,
+    canonical_err: CCRealityError,
+    legacy: super::witness_chain_legacy::LegacyVerification,
+) -> CCRealityError {
+    CCRealityError::new(
+        "CCREALITY_WITNESS_LEGACY_LAYOUT_DETECTED",
+        "witness-chain.bin is valid under the pre-canonical legacy layout, but not under the canonical context-graph-witness layout",
+        "witness_chain.layout",
+        "run optimizer_witness_chain_repair_legacy with the current witness-chain SHA-256; do not append new optimizer evidence until repair succeeds",
+        json!({
+            "legacy_entries": legacy.entries,
+            "legacy_last_chain_hash": chain_hash_hex(&legacy.last_legacy_chain_hash),
+            "translated_canonical_last_chain_hash": chain_hash_hex(&legacy.last_canonical_chain_hash),
+            "legacy_last_op": legacy.last_op,
+            "canonical_error": canonical_err.into_value(),
+        }),
+        Some(file_sot(path)),
+    )
+}
+
+pub(super) fn invalid_chain_length(path: &Path, len: usize) -> CCRealityError {
     CCRealityError::new(
         "CCREALITY_WITNESS_LENGTH_INVALID",
         "witness-chain.bin length is not divisible by WITNESS_ENTRY_SIZE",
@@ -285,7 +349,7 @@ fn invalid_chain_length(path: &Path, len: usize) -> CCRealityError {
     )
 }
 
-fn parse_sha256_hex(value: &str) -> Result<[u8; HASH_SIZE]> {
+pub(super) fn parse_sha256_hex(value: &str) -> Result<[u8; HASH_SIZE]> {
     let raw = value.strip_prefix("sha256:").unwrap_or(value);
     let bytes = hex::decode(raw).map_err(|err| {
         CCRealityError::new(
@@ -316,7 +380,7 @@ fn sha256_hex(hash: &[u8; HASH_SIZE]) -> String {
     format!("sha256:{}", hex::encode(hash))
 }
 
-fn chain_hash_hex(hash: &[u8; HASH_SIZE]) -> String {
+pub(super) fn chain_hash_hex(hash: &[u8; HASH_SIZE]) -> String {
     format!("shake256:{}", witness_hex_hash(hash))
 }
 
@@ -333,7 +397,10 @@ fn entry_json(offset: u64, entry: &WitnessEntry, chain_hash: &[u8; HASH_SIZE]) -
     })
 }
 
-fn witness_error(path: &Path, err: context_graph_witness::WitnessError) -> CCRealityError {
+pub(super) fn witness_error(
+    path: &Path,
+    err: context_graph_witness::WitnessError,
+) -> CCRealityError {
     match err {
         context_graph_witness::WitnessError::EntryLengthInvalid { expected, actual } => {
             CCRealityError::new(
@@ -405,69 +472,4 @@ async fn active_witness_chain_path(args: &Value) -> Result<PathBuf> {
         })?,
     };
     Ok(witness_chain_path(&runtime_root, &run_id))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    fn content_hash(byte: u8) -> String {
-        format!("sha256:{}", hex::encode([byte; HASH_SIZE]))
-    }
-
-    #[test]
-    fn append_and_verify_chain_reads_physical_bytes() {
-        let tmp = TempDir::new().expect("tmp");
-        let path = tmp.path().join("witness-chain.bin");
-        append_entry(
-            &path,
-            WitnessOpType::Decision,
-            parse_sha256_hex(&content_hash(1)).unwrap(),
-        )
-        .expect("append1");
-        append_entry(
-            &path,
-            WitnessOpType::Recommendation,
-            parse_sha256_hex(&content_hash(2)).unwrap(),
-        )
-        .expect("append2");
-        let bytes = std::fs::read(&path).expect("physical chain");
-        assert_eq!(bytes.len(), WITNESS_ENTRY_SIZE * 2);
-        let verification = verify_chain(&path).expect("verify");
-        assert_eq!(verification.entries, 2);
-        assert_ne!(verification.last_chain_hash, ZERO_HASH);
-    }
-
-    #[test]
-    fn truncated_chain_errors() {
-        let tmp = TempDir::new().expect("tmp");
-        let path = tmp.path().join("witness-chain.bin");
-        std::fs::write(&path, [1u8; 7]).expect("write corrupt");
-        let err = verify_chain(&path).expect_err("must fail");
-        assert_eq!(err.error_code, "CCREALITY_WITNESS_LENGTH_INVALID");
-    }
-
-    #[test]
-    fn tampered_prev_hash_errors() {
-        let tmp = TempDir::new().expect("tmp");
-        let path = tmp.path().join("witness-chain.bin");
-        append_entry(
-            &path,
-            WitnessOpType::Decision,
-            parse_sha256_hex(&content_hash(1)).unwrap(),
-        )
-        .expect("append1");
-        append_entry(
-            &path,
-            WitnessOpType::Recommendation,
-            parse_sha256_hex(&content_hash(2)).unwrap(),
-        )
-        .expect("append2");
-        let mut bytes = std::fs::read(&path).expect("read");
-        bytes[WITNESS_ENTRY_SIZE + 41] ^= 0x7f;
-        std::fs::write(&path, bytes).expect("tamper");
-        let err = verify_chain(&path).expect_err("must fail");
-        assert_eq!(err.error_code, "CCREALITY_WITNESS_PREV_HASH_MISMATCH");
-    }
 }
