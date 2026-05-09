@@ -43,7 +43,8 @@ pub mod store;
 pub mod watcher;
 
 pub use ast_chunker::{
-    AstChunkConfig, AstChunkerError, AstCodeChunker, CodeChunk, CodeChunkMetadata, EntityType,
+    AstChunkConfig, AstChunkerError, AstCodeChunker, AstParseDiagnostic, CodeChunk,
+    CodeChunkMetadata, EntityType,
 };
 pub use capture::{
     CaptureError, EmbedderError, EmbeddingProvider, MemoryCaptureService,

@@ -41,6 +41,7 @@ mod off_by_one;
 mod over_engineer;
 mod prng;
 mod python_lex;
+pub mod split;
 mod subtle_flip;
 mod swap_variable;
 mod util;

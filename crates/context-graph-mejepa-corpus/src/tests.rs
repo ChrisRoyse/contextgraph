@@ -59,6 +59,13 @@ fn invalid_python_input_is_rejected_before_mutation() {
     )
     .unwrap_err();
     assert_eq!(err.code(), "MEJEPA_CORPUS_INVALID_INPUT");
+    let message = err.to_string();
+    assert!(message.contains("line="), "missing line detail: {message}");
+    assert!(
+        message.contains("byte_range="),
+        "missing byte detail: {message}"
+    );
+    assert!(message.contains("snippet="), "missing snippet: {message}");
 }
 
 #[test]
@@ -142,6 +149,24 @@ fn subtle_flip_skips_triple_quoted_docstrings() {
 }
 
 #[test]
+fn subtle_flip_skips_f_string_format_spec_alignment() {
+    let src = "value = int(\"3\")\nprint(f\"{value:>10}\")\n";
+    let err =
+        apply_mutation(MutationCategory::SubtleFlip, src, MutationConfig::default()).unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_CORPUS_NO_MUTATION_SITE");
+}
+
+#[test]
+fn subtle_flip_keeps_f_string_expression_code_visible() {
+    let src = "left = int(\"1\")\nright = int(\"2\")\nprint(f\"{left == right:>10}\")\n";
+    let outcome =
+        apply_mutation(MutationCategory::SubtleFlip, src, MutationConfig::default()).unwrap();
+    let site = outcome.mutation_site.unwrap();
+    assert_eq!(site.original_text, "==");
+    assert!(!outcome.mutated_source.contains("{left == right:<10}"));
+}
+
+#[test]
 fn off_by_one_perturbs_an_integer_literal() {
     let outcome = apply_mutation(
         MutationCategory::OffByOne,
@@ -189,6 +214,14 @@ fn off_by_one_rejects_source_with_only_floats() {
 #[test]
 fn off_by_one_skips_numbers_in_triple_quoted_strings() {
     let src = "def noop():\n    '''version 123'''\n    return None\n";
+    let err =
+        apply_mutation(MutationCategory::OffByOne, src, MutationConfig::default()).unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_CORPUS_NO_MUTATION_SITE");
+}
+
+#[test]
+fn off_by_one_skips_f_string_format_width_literals() {
+    let src = "value = int(\"3\")\nprint(f\"{value:>10}\")\n";
     let err =
         apply_mutation(MutationCategory::OffByOne, src, MutationConfig::default()).unwrap_err();
     assert_eq!(err.code(), "MEJEPA_CORPUS_NO_MUTATION_SITE");
@@ -275,8 +308,12 @@ fn swap_variable_rejects_when_target_has_no_downstream_usage() {
 #[test]
 fn swap_variable_sees_usage_inside_f_string_replacement_field() {
     let src = "left = \"a\"\nright = \"b\"\nprint(f\"{left}-{right}\")\n";
-    let outcome =
-        apply_mutation(MutationCategory::SwapVariable, src, MutationConfig::default()).unwrap();
+    let outcome = apply_mutation(
+        MutationCategory::SwapVariable,
+        src,
+        MutationConfig::default(),
+    )
+    .unwrap();
     let site = outcome.mutation_site.unwrap();
     assert!(site.original_text == "left" || site.original_text == "right");
     assert_ne!(site.original_text, site.replacement_text);
@@ -285,6 +322,24 @@ fn swap_variable_sees_usage_inside_f_string_replacement_field() {
     assert!(
         site.byte_offset > src.find("f\"").unwrap(),
         "usage should be inside the f-string replacement field"
+    );
+}
+
+#[test]
+fn swap_variable_sees_nested_f_string_format_replacement_field() {
+    let src = "width = 10\nvalue = 3\nprint(f\"{value:>{width}}\")\n";
+    let outcome = apply_mutation(
+        MutationCategory::SwapVariable,
+        src,
+        MutationConfig::default(),
+    )
+    .unwrap();
+    let site = outcome.mutation_site.unwrap();
+    assert!(site.original_text == "width" || site.original_text == "value");
+    assert_ne!(site.original_text, site.replacement_text);
+    assert!(
+        site.byte_offset > src.find("f\"").unwrap(),
+        "usage should be inside the f-string"
     );
 }
 
@@ -322,8 +377,12 @@ fn delete_test_call_removes_one_assertion_line() {
 #[test]
 fn delete_test_call_preserves_syntax_for_only_statement_body() {
     let src = "def test_one():\n    assert True\n";
-    let outcome =
-        apply_mutation(MutationCategory::DeleteTestCall, src, MutationConfig::default()).unwrap();
+    let outcome = apply_mutation(
+        MutationCategory::DeleteTestCall,
+        src,
+        MutationConfig::default(),
+    )
+    .unwrap();
     assert_eq!(outcome.mutated_source, "def test_one():\n    pass\n");
 }
 

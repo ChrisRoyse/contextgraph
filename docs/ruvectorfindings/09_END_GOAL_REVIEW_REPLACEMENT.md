@@ -209,6 +209,10 @@ This is the **base training set**. It's KNOWN-LABELED, FIXED-SIZE (~2,400 exampl
 
 **Why this works:** ME-JEPA learns to predict reality from `(code, context)`. Category 1 teaches "this kind of input → PASS." Categories 2-6, 8 teach "this kind of input → FAIL with these specific failure modes." Category 7 teaches "structural variation around correct doesn't change PASS." The diversity is what makes the predictor generalize beyond one syntactic shape.
 
+**Current Python harness state (2026-05-09):** `crates/context-graph-mejepa-corpus` now ships the Phase-0 Python mutation operators behind a parser-backed input gate. Every non-empty primary source is parsed by `tree-sitter-python`; `root.has_error()` is a hard `MEJEPA_CORPUS_INVALID_INPUT`, not a warning. Candidate scanners share one Python lexical mask so comments, ordinary strings, triple-quoted docstrings, prefixed strings, and f-string literal text are not mutation sites. F-string replacement fields are exposed as code because Python treats those fields as expressions, which is required for `swap_variable` to see real runtime variable references. Mutation application verifies byte-range bounds, UTF-8 boundaries, and `original_text` readback before producing output; a bad operator site returns `MEJEPA_CORPUS_OPERATOR_FAILED`.
+
+The physical source of truth for the current Python harness is `/tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json`, produced by `cargo run --release -p context-graph-mejepa-corpus --example mejepa_corpus_fsv`. That FSV writes every generated Python source to disk, re-reads it, hashes it, and separately runs `python3 -m py_compile` against each output. Expected-good mutations (`known_good`, `subtle_flip`, `off_by_one`, `swap_variable`, `delete_test_call`, `wrong_file`, `over_engineer`) must produce `.pyc` evidence; `compile_error` must fail `py_compile` with the expected syntax error and no `.pyc`. Boundary cases record explicit before/after state and expected error codes.
+
 **Generation pipeline (Phase 0 deliverable):**
 
 ```rust
@@ -845,16 +849,18 @@ This section is the **direct hand-off**: an AI agent picks up here and executes 
 
 **Deliverables:**
 
-1. New crate `crates/context-graph-mejepa-corpus/` with `generate_swe_bench_mutation_corpus()` per Section 3.1.
-2. Mutation engines for all 8 categories per Section 3.1, each in its own module.
-3. Docker oracle wrapper that runs each mutation against the official SWE-bench evaluator and persists `(mutated_patch, oracle_verdict)` tuples.
-4. RocksDB column families: `CF_MEJEPA_MUTATION_CORPUS`, `CF_MEJEPA_ORACLE_VERDICTS`.
+1. New crate `crates/context-graph-mejepa-corpus/` with `generate_swe_bench_mutation_corpus()` per Section 3.1. Status: crate exists; full generate CLI remains pending.
+2. Mutation engines for all 8 categories per Section 3.1, each in its own module. Status: shipped for Python source, fail-closed, parser-backed, byte-verified, and FSV-backed.
+3. Python train/calibration/holdout split helper with repo-atomic leakage checks. Status: shipped in `split.rs`; physical evidence is produced separately by `cargo run --release -p context-graph-mejepa-corpus --example split_fsv`.
+4. Docker oracle wrapper that runs each mutation against the official SWE-bench evaluator and persists `(mutated_patch, oracle_verdict)` tuples. Status: pending.
+5. RocksDB column families: `CF_MEJEPA_MUTATION_CORPUS`, `CF_MEJEPA_ORACLE_VERDICTS`. Status: pending after oracle schema lands.
 
 **Definition of done:**
 
 - `cargo run --release -p context-graph-mejepa-corpus -- generate --output ./data/mejepa-corpus` produces 2,400 entries across 300 tasks × 8 categories.
 - All entries verifiable: `cargo run --release -p context-graph-mejepa-corpus -- verify --corpus ./data/mejepa-corpus` re-runs the oracle on a 5% sample and confirms matching verdicts.
 - Stoer-Wagner mincut split (see Phase 1.4) produces train/calibration/holdout splits with no shared-task leakage.
+- Until the full generator and oracle wrapper land, the local Python mutation source-of-truth command is `cargo run --release -p context-graph-mejepa-corpus --example mejepa_corpus_fsv`; it must write `/tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json` and that file must show all mutation cases passing, expected py_compile outcomes, and explicit before/after boundary states. The split source-of-truth command is `cargo run --release -p context-graph-mejepa-corpus --example split_fsv`; it must write `/tmp/contextgraph-mejepa-corpus-fsv/split-evidence.json` and `/tmp/contextgraph-mejepa-corpus-fsv/split-assignments.csv`, then re-read them and show zero cross-cut leakage weights.
 
 **Verification:**
 

@@ -6760,7 +6760,7 @@ fn dynamicjepa_ast_semantics_for_path(
             predicted_verifier_target: "static_check",
         });
     }
-    let Some(language) = swe_ast_language_for_path(repo_relative_path) else {
+    let Some(path_language) = swe_ast_language_for_path(repo_relative_path) else {
         if swe_path_risk(&[repo_relative_path.to_string()], &[]) == "source" {
             return Err(RealityError::new(
                 "RUST_REALITY_DYNAMICJEPA_AST_UNSUPPORTED_SOURCE_LANGUAGE",
@@ -6785,6 +6785,8 @@ fn dynamicjepa_ast_semantics_for_path(
             Some(file_sot(&source_path)),
         )
     })?;
+    let language =
+        swe_ast_language_for_path_and_source(repo_relative_path, &source).unwrap_or(path_language);
     let ranges =
         dynamicjepa_ast_byte_ranges_for_path(tool_name, arguments, repo_relative_path, &source)?;
     if ranges.is_empty() {
@@ -6977,7 +6979,9 @@ fn swe_ast_language_for_path(path: &str) -> Option<&'static str> {
         Some("go")
     } else if path.ends_with(".java") {
         Some("java")
-    } else if path.ends_with(".c") || path.ends_with(".h") {
+    } else if path.ends_with(".c") {
+        Some("c")
+    } else if path.ends_with(".h") {
         Some("c")
     } else if path.ends_with(".cc")
         || path.ends_with(".cpp")
@@ -6985,6 +6989,12 @@ fn swe_ast_language_for_path(path: &str) -> Option<&'static str> {
         || path.ends_with(".hpp")
         || path.ends_with(".hh")
         || path.ends_with(".hxx")
+        || path.ends_with(".h++")
+        || path.ends_with(".ipp")
+        || path.ends_with(".inl")
+        || path.ends_with(".tpp")
+        || path.ends_with(".txx")
+        || path.ends_with(".ixx")
     {
         Some("cpp")
     } else if path.ends_with(".cs") {
@@ -6996,6 +7006,37 @@ fn swe_ast_language_for_path(path: &str) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+fn swe_ast_language_for_path_and_source(path: &str, source: &str) -> Option<&'static str> {
+    if path.ends_with(".h") && source_contains_cpp_only_syntax(source) {
+        return Some("cpp");
+    }
+    swe_ast_language_for_path(path)
+}
+
+fn source_contains_cpp_only_syntax(source: &str) -> bool {
+    let compact = source.replace('\n', " ");
+    contains_any(
+        &compact,
+        &[
+            "namespace ",
+            "template <",
+            "template<",
+            "class ",
+            "std::",
+            "using namespace ",
+            "public:",
+            "private:",
+            "protected:",
+            "constexpr ",
+            "nullptr",
+            "noexcept",
+            "override",
+            "typename ",
+            "operator ",
+        ],
+    ) || source.contains("::")
 }
 
 fn dynamicjepa_ast_byte_ranges_for_path(
@@ -7509,6 +7550,9 @@ fn dynamicjepa_run_language_semantic_tool(
         )
     })?;
     let rel_target = rel_target.to_string_lossy().replace('\\', "/");
+    if language == "cpp" {
+        return dynamicjepa_run_cpp_compile_commands_semantic_tool(repo_root, &rel_target);
+    }
     let (command, cwd, kind): (Option<Vec<String>>, PathBuf, &'static str) = match language {
         "rust" => {
             if command_exists("cargo") && repo_root.join("Cargo.toml").exists() {
@@ -7602,34 +7646,8 @@ fn dynamicjepa_run_language_semantic_tool(
             }
         }
         "c" => {
-            if command_exists("gcc") {
-                (
-                    Some(vec![
-                        "gcc".to_string(),
-                        "-fsyntax-only".to_string(),
-                        rel_target.clone(),
-                    ]),
-                    repo_root.to_path_buf(),
-                    "gcc_syntax",
-                )
-            } else {
-                (None, repo_root.to_path_buf(), "c_toolchain_missing")
-            }
-        }
-        "cpp" => {
-            if command_exists("g++") {
-                (
-                    Some(vec![
-                        "g++".to_string(),
-                        "-fsyntax-only".to_string(),
-                        rel_target.clone(),
-                    ]),
-                    repo_root.to_path_buf(),
-                    "gpp_syntax",
-                )
-            } else {
-                (None, repo_root.to_path_buf(), "cpp_toolchain_missing")
-            }
+            let (argv, cwd) = dynamicjepa_c_compile_command_from_database(repo_root, &rel_target)?;
+            (Some(argv), cwd, "c_compile_commands_syntax")
         }
         "ruby" => {
             if command_exists("ruby") {
@@ -7682,6 +7700,24 @@ fn dynamicjepa_run_language_semantic_tool(
     };
 
     let Some(command) = command else {
+        if language == "java" && kind == "java_toolchain_missing" {
+            return Err(RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_JAVA_TOOLCHAIN_MISSING",
+                "DynamicJEPA Java compiler semantics require javac; parser-only fallback is refused",
+                "dynamicjepa.action.compiler_lsp.java.toolchain",
+                "install a JDK with javac on PATH before using Java source for ME-JEPA action control",
+                json!({
+                    "language": language,
+                    "path": rel_target,
+                    "required_tool": "javac",
+                    "toolchain_kind": kind,
+                    "PATH": std::env::var_os("PATH")
+                        .map(|value| value.to_string_lossy().to_string())
+                        .unwrap_or_default(),
+                }),
+                Some(file_sot(target)),
+            ));
+        }
         return Ok(SweCompilerSemanticEvidence {
             semantic_provider: "parser_symbol_graph",
             compiler_semantic_status: if kind == "unsupported_language" {
@@ -7842,6 +7878,252 @@ fn dynamicjepa_predicted_verifier_target(
         "python" | "ruby" | "php" | "javascript" => "static_check",
         _ => "unknown",
     }
+}
+
+fn dynamicjepa_run_cpp_compile_commands_semantic_tool(
+    repo_root: &Path,
+    rel_target: &str,
+) -> Result<SweCompilerSemanticEvidence> {
+    let compile_commands_path = repo_root.join("compile_commands.json");
+    if !compile_commands_path.is_file() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_MISSING",
+            "C++ compiler/LSP semantic extraction requires compile_commands.json; parser-only C++ evidence is refused",
+            "dynamicjepa.action.compiler_lsp.compile_commands",
+            "generate a compilation database for the real C++ repository before ME-JEPA action control",
+            json!({"target": rel_target, "repo_root": path_str(repo_root)}),
+            Some(file_sot(repo_root)),
+        ));
+    }
+    let compile_commands = read_json(&compile_commands_path)?;
+    let entries = compile_commands.as_array().ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_SCHEMA_INVALID",
+            "compile_commands.json must be a JSON array for C++ compiler semantic extraction",
+            "dynamicjepa.action.compiler_lsp.compile_commands",
+            "regenerate compile_commands.json using CMake/Ninja/Bear with structured arguments",
+            json!({"compile_commands": file_sot(&compile_commands_path)}),
+            Some(file_sot(&compile_commands_path)),
+        )
+    })?;
+
+    let target_is_header = is_cpp_header_path(rel_target);
+    let mut selected = Vec::new();
+    for (idx, entry) in entries.iter().enumerate() {
+        let repo_relative = compile_command_repo_relative_file(repo_root, entry, idx)?;
+        if swe_ast_language_for_path(&repo_relative) != Some("cpp") {
+            continue;
+        }
+        if repo_relative == rel_target || target_is_header {
+            selected.push((idx, repo_relative, entry));
+        }
+    }
+    if selected.is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_TARGET_MISSING",
+            "compile_commands.json did not contain a C++ translation unit capable of checking the edited target",
+            "dynamicjepa.action.compiler_lsp.compile_commands.target",
+            "include the edited C++ file or at least one C++ translation unit for header edits in compile_commands.json",
+            json!({"target": rel_target, "compile_commands": file_sot(&compile_commands_path)}),
+            Some(file_sot(&compile_commands_path)),
+        ));
+    }
+
+    let mut combined_output = String::new();
+    let mut diagnostic_count = 0i64;
+    let mut status = "checked";
+    for (idx, repo_relative, entry) in selected {
+        let (argv, cwd) = compile_command_argv_for_snapshot(repo_root, entry, idx)?;
+        let result = run_cmd(&argv, &cwd, 60)?;
+        let output = format!("{}\n{}", result.stdout, result.stderr);
+        combined_output.push_str(&format!(
+            "\n--- compile_commands[{idx}] {repo_relative} exit={} ---\n{}",
+            result.exit_code, output
+        ));
+        let diagnostics = dynamicjepa_compiler_diagnostic_count("cpp", &result, &output);
+        diagnostic_count = diagnostic_count.saturating_add(diagnostics);
+        if result.exit_code != 0 {
+            status = "diagnostics";
+        }
+    }
+
+    Ok(SweCompilerSemanticEvidence {
+        semantic_provider: "compiler_lsp_compile_commands",
+        compiler_semantic_status: status,
+        type_resolution_status: dynamicjepa_type_resolution_status("cpp", status, &combined_output),
+        import_resolution_status: dynamicjepa_import_resolution_status(
+            "cpp",
+            status,
+            &combined_output,
+        ),
+        diagnostic_count: diagnostic_count.min(10_000),
+        predicted_verifier_target: dynamicjepa_predicted_verifier_target(
+            "cpp",
+            status,
+            diagnostic_count,
+        ),
+    })
+}
+
+fn compile_command_repo_relative_file(
+    repo_root: &Path,
+    entry: &Value,
+    idx: usize,
+) -> Result<String> {
+    let file_value = entry.get("file").and_then(Value::as_str).ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_FILE_MISSING",
+            "compile_commands.json entry is missing file",
+            "dynamicjepa.action.compiler_lsp.compile_commands[].file",
+            "regenerate compile_commands.json with file paths for every C++ translation unit",
+            json!({"entry_index": idx, "entry": entry}),
+            Some(file_sot(repo_root)),
+        )
+    })?;
+    let file_path = Path::new(file_value);
+    if file_path.is_absolute() {
+        if let Ok(rel) = file_path.strip_prefix(repo_root) {
+            return Ok(rel.to_string_lossy().replace('\\', "/"));
+        }
+        if let Some(rel) = rebase_absolute_compile_command_path(repo_root, file_path) {
+            return Ok(rel);
+        }
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_FILE_OUTSIDE_SNAPSHOT",
+            "compile_commands.json entry points outside the semantic snapshot and could not be rebased",
+            "dynamicjepa.action.compiler_lsp.compile_commands[].file",
+            "regenerate compile_commands.json with repo-relative paths or paths rooted in the checked snapshot",
+            json!({"entry_index": idx, "file": file_value, "repo_root": path_str(repo_root)}),
+            Some(file_sot(repo_root)),
+        ));
+    }
+    let normalized = file_value.replace('\\', "/");
+    if repo_root.join(&normalized).exists() {
+        Ok(normalized)
+    } else {
+        Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_FILE_MISSING_ON_DISK",
+            "compile_commands.json entry references a file that does not exist in the semantic snapshot",
+            "dynamicjepa.action.compiler_lsp.compile_commands[].file",
+            "regenerate compile_commands.json after refreshing the checkout",
+            json!({"entry_index": idx, "file": file_value, "repo_root": path_str(repo_root)}),
+            Some(file_sot(repo_root)),
+        ))
+    }
+}
+
+fn compile_command_argv_for_snapshot(
+    repo_root: &Path,
+    entry: &Value,
+    idx: usize,
+) -> Result<(Vec<String>, PathBuf)> {
+    if entry.get("command").and_then(Value::as_str).is_some() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_SHELL_COMMAND_REFUSED",
+            "C++ compiler semantic extraction refuses shell command strings in compile_commands.json",
+            "dynamicjepa.action.compiler_lsp.compile_commands[].command",
+            "regenerate compile_commands.json with structured arguments arrays",
+            json!({"entry_index": idx}),
+            Some(file_sot(repo_root)),
+        ));
+    }
+    let file_value = entry.get("file").and_then(Value::as_str).ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_FILE_MISSING",
+            "compile_commands.json entry is missing file",
+            "dynamicjepa.action.compiler_lsp.compile_commands[].file",
+            "regenerate compile_commands.json with file paths for every C++ translation unit",
+            json!({"entry_index": idx, "entry": entry}),
+            Some(file_sot(repo_root)),
+        )
+    })?;
+    let repo_relative = compile_command_repo_relative_file(repo_root, entry, idx)?;
+    let snapshot_file = repo_root.join(&repo_relative);
+    let arguments = entry.get("arguments").and_then(Value::as_array).ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_ARGUMENTS_MISSING",
+            "compile_commands.json C++ entries must include structured arguments",
+            "dynamicjepa.action.compiler_lsp.compile_commands[].arguments",
+            "regenerate compile_commands.json with argv-style arguments arrays",
+            json!({"entry_index": idx, "file": file_value}),
+            Some(file_sot(repo_root)),
+        )
+    })?;
+    let mut argv = Vec::new();
+    for argument in arguments {
+        let value = argument.as_str().ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_ARGUMENT_NON_STRING",
+                "compile_commands.json C++ argument was not a string",
+                "dynamicjepa.action.compiler_lsp.compile_commands[].arguments[]",
+                "regenerate compile_commands.json with string argv entries",
+                json!({"entry_index": idx, "argument": argument}),
+                Some(file_sot(repo_root)),
+            )
+        })?;
+        let rebased = if value == file_value || value.replace('\\', "/") == repo_relative {
+            path_str(&snapshot_file).to_string()
+        } else if Path::new(value).is_absolute() {
+            rebase_absolute_compile_command_path(repo_root, Path::new(value))
+                .map(|rel| path_str(&repo_root.join(rel)).to_string())
+                .unwrap_or_else(|| value.to_string())
+        } else {
+            value.to_string()
+        };
+        argv.push(rebased);
+    }
+    if argv.is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_DYNAMICJEPA_CPP_COMPILE_COMMANDS_ARGUMENTS_EMPTY",
+            "compile_commands.json C++ entry had an empty arguments array",
+            "dynamicjepa.action.compiler_lsp.compile_commands[].arguments",
+            "regenerate compile_commands.json with compiler argv entries",
+            json!({"entry_index": idx}),
+            Some(file_sot(repo_root)),
+        ));
+    }
+    if !argv.iter().any(|arg| arg == "-fsyntax-only") {
+        argv.push("-fsyntax-only".to_string());
+    }
+    let cwd = entry
+        .get("directory")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .filter(|path| !path.is_absolute() || path.starts_with(repo_root))
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                repo_root.join(path)
+            }
+        })
+        .unwrap_or_else(|| repo_root.to_path_buf());
+    Ok((argv, cwd))
+}
+
+fn rebase_absolute_compile_command_path(repo_root: &Path, absolute: &Path) -> Option<String> {
+    let components = absolute
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(value) => value.to_str().map(ToOwned::to_owned),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for start in 0..components.len() {
+        let rel = components[start..].join("/");
+        if repo_root.join(&rel).exists() {
+            return Some(rel);
+        }
+    }
+    None
+}
+
+fn is_cpp_header_path(path: &str) -> bool {
+    [
+        ".h", ".hh", ".hpp", ".hxx", ".h++", ".ipp", ".inl", ".tpp", ".txx", ".ixx",
+    ]
+    .iter()
+    .any(|suffix| path.ends_with(suffix))
 }
 
 fn dynamicjepa_test_attribution_for_path(
@@ -8165,7 +8447,7 @@ fn dynamicjepa_ast_semantic_node(
                 node_kind,
                 symbol_kind: ast_symbol_kind_for_node_kind(node_kind),
                 node_start_line: candidate.start_position().row as u32 + 1,
-                symbol_name: ast_node_name(candidate, source),
+                symbol_name: ast_node_name_for_language(language, candidate, source),
                 visibility: ast_symbol_visibility(language, candidate, source),
             };
         }
@@ -8269,6 +8551,7 @@ fn ast_node_kind_for_language(
         "java" => match kind {
             "method_declaration" | "constructor_declaration" => {
                 if path_is_test(path)
+                    || java_method_has_test_annotation(node, source)
                     || ast_node_name(node, source).is_some_and(|name| name.starts_with("test"))
                 {
                     "test"
@@ -8288,17 +8571,8 @@ fn ast_node_kind_for_language(
             "program" => "module",
             _ => "unknown",
         },
-        "c" | "cpp" => match kind {
-            "function_definition" | "function_declarator" => "function",
-            "class_specifier" | "struct_specifier" | "enum_specifier" | "union_specifier" => {
-                "class"
-            }
-            "preproc_include" | "using_declaration" | "using_directive" => "import",
-            "call_expression" => "call",
-            "declaration" | "init_declarator" | "assignment_expression" => "assignment",
-            "translation_unit" => "module",
-            _ => "unknown",
-        },
+        "c" => ast_c_node_kind(node),
+        "cpp" => ast_cpp_node_kind(node, source),
         "csharp" => match kind {
             "method_declaration" | "constructor_declaration" => "method",
             "class_declaration"
@@ -8340,7 +8614,46 @@ fn ast_node_kind_for_language(
     }
 }
 
+fn ast_c_node_kind(node: tree_sitter::Node<'_>) -> &'static str {
+    match node.kind() {
+        "function_definition" => "function",
+        "function_declarator" if !ast_has_ancestor_kind(node, "function_definition") => "function",
+        "declaration" if ast_c_contains_function_declarator(node) => "function",
+        "preproc_function_def" | "preproc_def" => "function",
+        "struct_specifier" | "enum_specifier" | "union_specifier"
+            if ast_c_compound_specifier_declares_body(node) =>
+        {
+            "class"
+        }
+        "preproc_include" => "import",
+        "call_expression" => "call",
+        "declaration" | "init_declarator" | "assignment_expression" => "assignment",
+        "translation_unit" => "module",
+        _ => "unknown",
+    }
+}
+
+fn ast_c_compound_specifier_declares_body(node: tree_sitter::Node<'_>) -> bool {
+    node.child_by_field_name("body").is_some()
+}
+
+fn ast_c_contains_function_declarator(node: tree_sitter::Node<'_>) -> bool {
+    if node.kind() == "function_declarator" {
+        return true;
+    }
+    let mut cursor = node.walk();
+    node.children(&mut cursor)
+        .any(ast_c_contains_function_declarator)
+}
+
 fn ast_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    if matches!(node.kind(), "function_definition" | "function_declarator") {
+        if let Some(declarator) = node.child_by_field_name("declarator") {
+            if let Some(name) = ast_first_identifier_text(declarator, source) {
+                return Some(name.to_owned());
+            }
+        }
+    }
     node.child_by_field_name("name")
         .and_then(|child| child.utf8_text(source.as_bytes()).ok())
         .or_else(|| ast_first_identifier_text(node, source))
@@ -8437,7 +8750,18 @@ fn ast_symbol_visibility(
                 "unknown"
             }
         }
-        "c" | "cpp" => {
+        "c" => {
+            let visibility_text = ast_c_visibility_text(node, source);
+            if visibility_text.trim_start().starts_with("static ")
+                || visibility_text.contains("\nstatic ")
+                || visibility_text.contains(" static ")
+            {
+                "private"
+            } else {
+                "public"
+            }
+        }
+        "cpp" => {
             if node_text.trim_start().starts_with("static ") || node_text.contains("\nstatic ") {
                 "private"
             } else {
@@ -8446,6 +8770,23 @@ fn ast_symbol_visibility(
         }
         _ => "unknown",
     }
+}
+
+fn ast_c_visibility_text(node: tree_sitter::Node<'_>, source: &str) -> String {
+    let mut current = Some(node);
+    while let Some(candidate) = current {
+        if matches!(
+            candidate.kind(),
+            "function_definition" | "declaration" | "preproc_function_def" | "preproc_def"
+        ) {
+            return candidate
+                .utf8_text(source.as_bytes())
+                .unwrap_or("")
+                .to_string();
+        }
+        current = candidate.parent();
+    }
+    node.utf8_text(source.as_bytes()).unwrap_or("").to_string()
 }
 
 fn ast_symbol_kind_for_node_kind(node_kind: &str) -> &'static str {
@@ -8730,6 +9071,77 @@ fn path_is_test(path: &str) -> bool {
         || path.ends_with(".spec.ts")
         || path.ends_with(".test.tsx")
         || path.ends_with(".spec.tsx")
+        || java_path_is_test(path)
+}
+
+fn java_path_is_test(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    if normalized.starts_with("src/test/java/")
+        || normalized.contains("/src/test/java/")
+        || normalized.starts_with("src/it/java/")
+        || normalized.contains("/src/it/java/")
+    {
+        return true;
+    }
+
+    let file_name = normalized.rsplit('/').next().unwrap_or(&normalized);
+    file_name.ends_with(".java")
+        && (file_name.starts_with("Test")
+            || file_name.ends_with("Test.java")
+            || file_name.ends_with("Tests.java")
+            || file_name.ends_with("TestCase.java")
+            || file_name.starts_with("IT")
+            || file_name.ends_with("IT.java")
+            || file_name.ends_with("ITCase.java"))
+}
+
+fn java_method_has_test_annotation(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    if node.kind() != "method_declaration" {
+        return false;
+    }
+    let mut cursor = node.walk();
+    node.children(&mut cursor).any(|child| {
+        matches!(
+            child.kind(),
+            "modifiers" | "annotation" | "marker_annotation"
+        ) && java_tree_has_test_annotation(child, source)
+    })
+}
+
+fn java_tree_has_test_annotation(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    if matches!(node.kind(), "annotation" | "marker_annotation")
+        && node
+            .utf8_text(source.as_bytes())
+            .ok()
+            .and_then(java_annotation_simple_name)
+            .is_some_and(java_annotation_is_test)
+    {
+        return true;
+    }
+    let mut cursor = node.walk();
+    node.children(&mut cursor)
+        .any(|child| java_tree_has_test_annotation(child, source))
+}
+
+fn java_annotation_simple_name(text: &str) -> Option<&str> {
+    let trimmed = text.trim_start();
+    let after_at = trimmed.strip_prefix('@')?;
+    let end = after_at
+        .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_' || ch == '.'))
+        .unwrap_or(after_at.len());
+    let qualified = &after_at[..end];
+    if qualified.is_empty() {
+        None
+    } else {
+        Some(qualified.rsplit('.').next().unwrap_or(qualified))
+    }
+}
+
+fn java_annotation_is_test(name: &str) -> bool {
+    matches!(
+        name,
+        "Test" | "ParameterizedTest" | "RepeatedTest" | "TestFactory" | "TestTemplate"
+    )
 }
 
 fn swe_patch_intent_bucket(tool_name: &str, patch_bytes: i64, path_risk: &str) -> &'static str {
@@ -18550,6 +18962,24 @@ mod tests {
         .expect("rust source write");
     }
 
+    fn java_semantic_for_source(path: &str, source: &str, needle: &str) -> AstSemanticNode {
+        let mut parser = tree_sitter::Parser::new();
+        let language: tree_sitter::Language = tree_sitter_java::LANGUAGE.into();
+        parser.set_language(&language).expect("java parser linked");
+        let tree = parser.parse(source, None).expect("java syntax tree");
+        let root = tree.root_node();
+        assert!(
+            !root.has_error(),
+            "synthetic Java fixture must parse cleanly: {source}"
+        );
+        let start = source.find(needle).expect("needle in Java source");
+        let end = start + needle.len();
+        let node = root
+            .descendant_for_byte_range(start, end)
+            .expect("AST node for Java needle");
+        dynamicjepa_ast_semantic_node("java", node, source, path)
+    }
+
     #[test]
     fn dynamicjepa_ast_action_semantics_parse_real_python_edit() {
         let (_temp, repo) = init_real_git_repo();
@@ -18671,6 +19101,107 @@ mod tests {
         } else {
             assert_eq!(action["semantic_provider"], "parser_symbol_graph");
             assert_eq!(action["compiler_semantic_status"], "toolchain_missing");
+        }
+    }
+
+    #[test]
+    fn dynamicjepa_java_ast_recognizes_standard_test_files_and_annotations() {
+        let surefire_source = "package com.acme;\n\nimport org.junit.jupiter.api.Test;\n\nclass CalculatorTests {\n    @Test\n    void adds() {\n        assertEquals(4, 2 + 2);\n    }\n}\n";
+        println!(
+            "BEFORE java surefire state: path_is_test={}, source_len={}",
+            path_is_test("src/test/java/com/acme/CalculatorTests.java"),
+            surefire_source.len()
+        );
+        let surefire = java_semantic_for_source(
+            "src/test/java/com/acme/CalculatorTests.java",
+            surefire_source,
+            "assertEquals",
+        );
+        println!("AFTER java surefire semantic state: {:?}", surefire);
+        assert_eq!(surefire.node_kind, "test");
+        assert_eq!(surefire.symbol_kind, "test");
+        assert_eq!(surefire.symbol_name.as_deref(), Some("adds"));
+
+        let nonstandard_source = "package com.acme;\n\nclass SmokeCheck {\n    @org.junit.jupiter.params.ParameterizedTest(name = \"case {0}\")\n    void computes() {\n        verifyReality();\n    }\n}\n";
+        println!(
+            "BEFORE java annotation state: path_is_test={}, source_len={}",
+            path_is_test("src/main/java/com/acme/SmokeCheck.java"),
+            nonstandard_source.len()
+        );
+        let annotated = java_semantic_for_source(
+            "src/main/java/com/acme/SmokeCheck.java",
+            nonstandard_source,
+            "verifyReality",
+        );
+        println!("AFTER java annotation semantic state: {:?}", annotated);
+        assert_eq!(annotated.node_kind, "test");
+        assert_eq!(annotated.symbol_kind, "test");
+        assert_eq!(annotated.symbol_name.as_deref(), Some("computes"));
+
+        for path in [
+            "src/test/java/com/acme/Utility.java",
+            "src/test/java/com/acme/TestCalculator.java",
+            "src/test/java/com/acme/CalculatorTest.java",
+            "src/test/java/com/acme/CalculatorTests.java",
+            "src/test/java/com/acme/CalculatorTestCase.java",
+            "src/it/java/com/acme/ITCalculator.java",
+            "src/it/java/com/acme/CalculatorIT.java",
+            "src/it/java/com/acme/CalculatorITCase.java",
+        ] {
+            assert!(path_is_test(path), "standard Java test path missed: {path}");
+        }
+        assert!(
+            !path_is_test("src/main/java/com/acme/Calculator.java"),
+            "production Java source must not be classified as a test"
+        );
+    }
+
+    #[test]
+    fn dynamicjepa_java_action_semantics_require_real_javac_or_record_checked_state() {
+        let (_temp, repo) = init_real_git_repo();
+        write_text_checked(
+            &repo.join("src/main/java/com/acme/Calc.java"),
+            "package com.acme;\n\npublic class Calc {\n    public int inc(int x) {\n        return x + 1;\n    }\n}\n",
+        )
+        .expect("java source write");
+        let args = json!({
+            "edits": [{
+                "path": "src/main/java/com/acme/Calc.java",
+                "start_line": 5,
+                "end_line": 5,
+                "replace": "        return x + 2;\n",
+                "observed_sha256": sha256_file(&repo.join("src/main/java/com/acme/Calc.java")).expect("sha")
+            }]
+        });
+        println!(
+            "BEFORE java action state: javac_present={}, source={}",
+            command_exists("javac"),
+            fs::read_to_string(repo.join("src/main/java/com/acme/Calc.java"))
+                .expect("read Java source")
+        );
+        if command_exists("javac") {
+            let action =
+                inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+                    .expect("java compiler-backed action semantics");
+            println!("AFTER java action checked state: {action}");
+            assert_eq!(action["ast_language"], "java");
+            assert_eq!(action["ast_parse_status"], "parsed");
+            assert_eq!(action["ast_node_kind"], "method");
+            assert_eq!(action["semantic_provider"], "compiler_lsp");
+            assert_eq!(action["compiler_semantic_status"], "checked");
+            assert_eq!(action["predicted_verifier_target"], "typecheck");
+        } else {
+            let err = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+                .expect_err("missing javac must fail closed for Java action semantics");
+            println!("AFTER java action missing-toolchain state: {err}");
+            assert_eq!(
+                err.error_code,
+                "RUST_REALITY_DYNAMICJEPA_JAVA_TOOLCHAIN_MISSING"
+            );
+            assert_eq!(
+                err.field_path,
+                "dynamicjepa.action.compiler_lsp.java.toolchain"
+            );
         }
     }
 

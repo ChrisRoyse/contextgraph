@@ -9,6 +9,26 @@
 use crate::{MutationError, MutationResult};
 
 pub(crate) fn ensure_parseable_python(source: &str, field: &'static str) -> MutationResult<()> {
+    let _ = parse_python(source, field)?;
+    Ok(())
+}
+
+pub(crate) fn python_code_mask(source: &str) -> MutationResult<Vec<bool>> {
+    let tree = parse_python(source, "source")?;
+    let mut mask = vec![true; source.len()];
+    mask_non_code_nodes(tree.root_node(), source, &mut mask);
+    Ok(mask)
+}
+
+pub(crate) fn range_is_code(mask: &[bool], start: usize, len: usize) -> bool {
+    start
+        .checked_add(len)
+        .and_then(|end| mask.get(start..end))
+        .map(|items| items.iter().all(|is_code| *is_code))
+        .unwrap_or(false)
+}
+
+fn parse_python(source: &str, field: &'static str) -> MutationResult<tree_sitter::Tree> {
     let mut parser = tree_sitter::Parser::new();
     let language: tree_sitter::Language = tree_sitter_python::LANGUAGE.into();
     parser.set_language(&language).map_err(|err| {
@@ -26,221 +46,143 @@ pub(crate) fn ensure_parseable_python(source: &str, field: &'static str) -> Muta
         )
     })?;
     if tree.root_node().has_error() {
+        let detail = first_parse_error(tree.root_node(), source)
+            .unwrap_or_else(|| "first_error=<unavailable>".to_string());
         return Err(MutationError::invalid(
             field,
-            "tree-sitter-python reported syntax errors in mutation input",
+            format!("tree-sitter-python reported syntax errors in mutation input; {detail}"),
             "supply syntactically valid Python source before applying Phase-0 mutations",
         ));
     }
-    Ok(())
+    Ok(tree)
 }
 
-pub(crate) fn python_code_mask(source: &str) -> Vec<bool> {
-    let bytes = source.as_bytes();
-    let mut mask = vec![true; bytes.len()];
-    let mut i = 0usize;
-
-    while i < bytes.len() {
-        if let Some(string_start) = prefixed_string_at(bytes, i) {
-            let end = string_end(
-                bytes,
-                string_start.quote_idx,
-                string_start.quote,
-                string_start.triple,
-            );
-            for item in mask.iter_mut().take(end).skip(i) {
-                *item = false;
-            }
-            if string_start.is_f_string {
-                mark_fstring_replacement_fields(bytes, string_start, end, &mut mask);
-            }
-            i = end.max(i + 1);
-            continue;
+fn mask_non_code_nodes(node: tree_sitter::Node<'_>, source: &str, mask: &mut [bool]) {
+    match node.kind() {
+        "comment" => {
+            set_mask_range(mask, node.start_byte(), node.end_byte(), false);
         }
-
-        if bytes[i] == b'#' {
-            let mut j = i;
-            while j < bytes.len() && bytes[j] != b'\n' {
-                mask[j] = false;
-                j += 1;
-            }
-            i = j.max(i + 1);
-            continue;
+        "string" => {
+            set_mask_range(mask, node.start_byte(), node.end_byte(), false);
+            mark_interpolations(node, source, mask);
+            return;
         }
-
-        i += 1;
+        _ => {}
     }
 
-    mask
-}
-
-pub(crate) fn range_is_code(mask: &[bool], start: usize, len: usize) -> bool {
-    start
-        .checked_add(len)
-        .and_then(|end| mask.get(start..end))
-        .map(|items| items.iter().all(|is_code| *is_code))
-        .unwrap_or(false)
-}
-
-#[derive(Debug, Clone, Copy)]
-struct StringStart {
-    quote_idx: usize,
-    quote: u8,
-    triple: bool,
-    is_f_string: bool,
-}
-
-fn prefixed_string_at(bytes: &[u8], i: usize) -> Option<StringStart> {
-    if i >= bytes.len() {
-        return None;
-    }
-    if is_quote(bytes[i]) {
-        let triple = is_triple_quote(bytes, i, bytes[i]);
-        return Some(StringStart {
-            quote_idx: i,
-            quote: bytes[i],
-            triple,
-            is_f_string: false,
-        });
-    }
-    if i > 0 && is_ident_continue(bytes[i - 1]) {
-        return None;
-    }
-
-    for prefix_len in [2usize, 1usize] {
-        let quote_idx = i.checked_add(prefix_len)?;
-        if quote_idx >= bytes.len() || !is_quote(bytes[quote_idx]) {
-            continue;
-        }
-        if is_valid_string_prefix(&bytes[i..quote_idx]) {
-            let quote = bytes[quote_idx];
-            let triple = is_triple_quote(bytes, quote_idx, quote);
-            let is_f_string = bytes[i..quote_idx].iter().any(|b| *b == b'f' || *b == b'F');
-            return Some(StringStart {
-                quote_idx,
-                quote,
-                triple,
-                is_f_string,
-            });
-        }
-    }
-    None
-}
-
-fn mark_fstring_replacement_fields(
-    bytes: &[u8],
-    string_start: StringStart,
-    string_end: usize,
-    mask: &mut [bool],
-) {
-    let quote_len = if string_start.triple { 3 } else { 1 };
-    let mut i = string_start.quote_idx + quote_len;
-    let content_end = string_end.saturating_sub(quote_len);
-    while i < content_end {
-        match bytes[i] {
-            b'{' if bytes.get(i + 1) == Some(&b'{') => i += 2,
-            b'}' if bytes.get(i + 1) == Some(&b'}') => i += 2,
-            b'{' => {
-                let end = mark_replacement_expr(bytes, i + 1, content_end, mask);
-                i = end;
-            }
-            b'\\' if !string_start.triple && i + 1 < content_end => i += 2,
-            _ => i += 1,
-        }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        mask_non_code_nodes(child, source, mask);
     }
 }
 
-fn mark_replacement_expr(bytes: &[u8], start: usize, limit: usize, mask: &mut [bool]) -> usize {
-    let mut depth = 1usize;
-    let mut i = start;
-    while i < limit {
-        if let Some(string_start) = prefixed_string_at(bytes, i) {
-            let end = string_end(
-                bytes,
-                string_start.quote_idx,
-                string_start.quote,
-                string_start.triple,
-            )
-            .min(limit);
-            for item in mask.iter_mut().take(end).skip(i) {
-                *item = false;
-            }
-            i = end.max(i + 1);
-            continue;
+fn mark_interpolations(node: tree_sitter::Node<'_>, source: &str, mask: &mut [bool]) {
+    if matches!(node.kind(), "interpolation" | "format_expression") {
+        mark_interpolation_expression(node, source, mask);
+        if let Some(format_specifier) = node.child_by_field_name("format_specifier") {
+            mark_interpolations(format_specifier, source, mask);
         }
-        match bytes[i] {
-            b'#' => {
-                while i < limit && bytes[i] != b'\n' {
-                    i += 1;
-                }
-            }
-            b'{' => {
-                mask[i] = true;
-                depth += 1;
-                i += 1;
-            }
-            b'}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return i + 1;
-                }
-                mask[i] = true;
-                i += 1;
-            }
-            _ => {
-                mask[i] = true;
-                i += 1;
+        return;
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        mark_interpolations(child, source, mask);
+    }
+}
+
+fn mark_interpolation_expression(node: tree_sitter::Node<'_>, source: &str, mask: &mut [bool]) {
+    let Some(expression) = node.child_by_field_name("expression") else {
+        return;
+    };
+    set_mask_range(mask, expression.start_byte(), expression.end_byte(), true);
+    remask_nested_non_code(expression, source, mask);
+}
+
+fn remask_nested_non_code(node: tree_sitter::Node<'_>, source: &str, mask: &mut [bool]) {
+    match node.kind() {
+        "comment" => {
+            set_mask_range(mask, node.start_byte(), node.end_byte(), false);
+            return;
+        }
+        "string" => {
+            set_mask_range(mask, node.start_byte(), node.end_byte(), false);
+            mark_interpolations(node, source, mask);
+            return;
+        }
+        _ => {}
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        remask_nested_non_code(child, source, mask);
+    }
+}
+
+fn set_mask_range(mask: &mut [bool], start: usize, end: usize, value: bool) {
+    let bounded_end = end.min(mask.len());
+    if start >= bounded_end {
+        return;
+    }
+    for item in &mut mask[start..bounded_end] {
+        *item = value;
+    }
+}
+
+fn first_parse_error(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    let error_node = first_error_node(node)?;
+    let start = error_node.start_byte();
+    let end = error_node.end_byte();
+    let position = error_node.start_position();
+    let snippet = source_line_snippet(source, start);
+    Some(format!(
+        "kind={}, missing={}, line={}, column={}, byte_range={}..{}, snippet={:?}",
+        error_node.kind(),
+        error_node.is_missing(),
+        position.row + 1,
+        position.column + 1,
+        start,
+        end,
+        snippet
+    ))
+}
+
+fn first_error_node(node: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    if node.is_error() || node.is_missing() {
+        return Some(node);
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.has_error() {
+            if let Some(found) = first_error_node(child) {
+                return Some(found);
             }
         }
     }
-    limit
-}
-
-fn string_end(bytes: &[u8], quote_idx: usize, quote: u8, triple: bool) -> usize {
-    if triple {
-        let mut j = quote_idx + 3;
-        while j + 2 < bytes.len() {
-            if bytes[j] == quote && bytes[j + 1] == quote && bytes[j + 2] == quote {
-                return j + 3;
-            }
-            j += 1;
-        }
-        return bytes.len();
+    if node.has_error() {
+        Some(node)
+    } else {
+        None
     }
+}
 
-    let mut j = quote_idx + 1;
-    while j < bytes.len() {
-        match bytes[j] {
-            b'\\' if j + 1 < bytes.len() => j += 2,
-            b'\n' => return j,
-            b if b == quote => return j + 1,
-            _ => j += 1,
-        }
+fn source_line_snippet(source: &str, byte_offset: usize) -> String {
+    let bounded = byte_offset.min(source.len());
+    let line_start = source[..bounded]
+        .rfind('\n')
+        .map(|idx| idx + 1)
+        .unwrap_or(0);
+    let line_end = source[bounded..]
+        .find('\n')
+        .map(|idx| bounded + idx)
+        .unwrap_or(source.len());
+    let mut line = source[line_start..line_end].replace('\t', "\\t");
+    const MAX_SNIPPET_CHARS: usize = 160;
+    if line.chars().count() > MAX_SNIPPET_CHARS {
+        line = line.chars().take(MAX_SNIPPET_CHARS).collect::<String>();
+        line.push_str("...");
     }
-    bytes.len()
-}
-
-fn is_valid_string_prefix(prefix: &[u8]) -> bool {
-    let lowered = prefix
-        .iter()
-        .map(|b| b.to_ascii_lowercase())
-        .collect::<Vec<_>>();
-    matches!(
-        lowered.as_slice(),
-        b"r" | b"u" | b"b" | b"f" | b"br" | b"rb" | b"fr" | b"rf"
-    )
-}
-
-fn is_triple_quote(bytes: &[u8], quote_idx: usize, quote: u8) -> bool {
-    bytes.get(quote_idx..quote_idx + 3) == Some([quote, quote, quote].as_slice())
-}
-
-fn is_quote(b: u8) -> bool {
-    b == b'\'' || b == b'"'
-}
-
-fn is_ident_continue(b: u8) -> bool {
-    b == b'_' || b.is_ascii_alphanumeric()
+    line
 }
 
 #[cfg(test)]
@@ -250,7 +192,7 @@ mod tests {
     #[test]
     fn masks_comments_and_keeps_newline_code() {
         let src = "x = 1 # y == 2\nz = 3\n";
-        let mask = python_code_mask(src);
+        let mask = python_code_mask(src).unwrap();
         let comment = src.find('#').unwrap();
         assert!(!mask[comment]);
         assert!(mask[src.find('\n').unwrap()]);
@@ -260,10 +202,23 @@ mod tests {
     #[test]
     fn masks_prefixed_and_triple_quoted_strings() {
         let src = "a = r\"x == y\"\nb = f'''value {x > y}'''\nc = 1\n";
-        let mask = python_code_mask(src);
+        let mask = python_code_mask(src).unwrap();
         assert!(!range_is_code(&mask, src.find("==").unwrap(), 2));
         assert!(!range_is_code(&mask, src.find("value").unwrap(), 5));
         assert!(range_is_code(&mask, src.find('>').unwrap(), 1));
         assert!(range_is_code(&mask, src.find("c = 1").unwrap(), 5));
+    }
+
+    #[test]
+    fn masks_fstring_format_spec_literals_but_keeps_nested_replacement_fields() {
+        let src =
+            "width = 10\nvalue = 3\nfixed = f\"{value:>10}\"\nnested = f\"{value:>{width}}\"\n";
+        let mask = python_code_mask(src).unwrap();
+        let align = src.find(":>").unwrap() + 1;
+        let literal_width = src.find(">10").unwrap() + 1;
+        let nested_width = src.rfind("width").unwrap();
+        assert!(!range_is_code(&mask, align, 1));
+        assert!(!range_is_code(&mask, literal_width, 2));
+        assert!(range_is_code(&mask, nested_width, "width".len()));
     }
 }

@@ -24,12 +24,18 @@ use std::path::Path;
 use thiserror::Error;
 use tree_sitter::{Node, Parser};
 
+const MAX_PARSE_DIAGNOSTICS: usize = 32;
+
 /// Errors that can occur during AST-based code chunking.
 #[derive(Debug, Error)]
 pub enum AstChunkerError {
     /// Failed to parse the source code with tree-sitter.
-    #[error("Failed to parse source code: {reason}")]
-    ParseFailed { reason: String },
+    #[error("Failed to parse Rust source {file_path}: {reason}; diagnostics: {diagnostics:?}")]
+    ParseFailed {
+        file_path: String,
+        reason: String,
+        diagnostics: Vec<AstParseDiagnostic>,
+    },
 
     /// Failed to set the tree-sitter language.
     #[error("Failed to set language for parser: {language}")]
@@ -42,6 +48,31 @@ pub enum AstChunkerError {
     /// Unsupported file extension.
     #[error("Unsupported file extension: {extension}")]
     UnsupportedExtension { extension: String },
+}
+
+/// Byte-precise tree-sitter parse diagnostic captured before failing closed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AstParseDiagnostic {
+    /// Tree-sitter node kind, commonly `ERROR` or the missing token kind.
+    pub kind: String,
+    /// True when this diagnostic comes from a tree-sitter `ERROR` node.
+    pub is_error: bool,
+    /// True when this diagnostic comes from a tree-sitter recovered `MISSING` node.
+    pub is_missing: bool,
+    /// Start byte in the source.
+    pub start_byte: usize,
+    /// End byte in the source.
+    pub end_byte: usize,
+    /// 1-based start line.
+    pub start_line: u32,
+    /// 0-based start column.
+    pub start_column: u32,
+    /// 1-based end line.
+    pub end_line: u32,
+    /// 0-based end column.
+    pub end_column: u32,
+    /// Line-level excerpt around the diagnostic.
+    pub excerpt: String,
 }
 
 /// Configuration for AST-based code chunking.
@@ -111,8 +142,9 @@ pub enum EntityType {
 
 impl EntityType {
     /// Convert from tree-sitter node kind (Rust).
-    fn from_rust_node_kind(kind: &str) -> Self {
+    fn from_rust_node_kind(kind: &str, parent_kind: Option<&str>) -> Self {
         match kind {
+            "function_item" if parent_kind == Some("impl_item") => EntityType::Method,
             "function_item" => EntityType::Function,
             "impl_item" => EntityType::Impl,
             "struct_item" => EntityType::Struct,
@@ -242,18 +274,28 @@ impl AstCodeChunker {
             .parser
             .parse(source, None)
             .ok_or_else(|| AstChunkerError::ParseFailed {
+                file_path: file_path.to_string(),
                 reason: "tree-sitter returned None".to_string(),
+                diagnostics: Vec::new(),
             })?;
 
         let root = tree.root_node();
 
-        // Check for parse errors
+        // FAIL FAST: tree-sitter is error-tolerant and can recover by inserting
+        // ERROR/MISSING nodes. ME-JEPA cannot train on recovered trees as if
+        // they were reality-grounded ASTs.
         if root.has_error() {
-            // Still proceed, but log that there are syntax errors
-            tracing::warn!(
-                "Source file {} has syntax errors, chunking may be imprecise",
-                file_path
+            let diagnostics = parse_diagnostics(root, source);
+            tracing::error!(
+                file_path,
+                diagnostics = ?diagnostics,
+                "Rust AST chunking failed closed because tree-sitter reported syntax errors"
             );
+            return Err(AstChunkerError::ParseFailed {
+                file_path: file_path.to_string(),
+                reason: "tree-sitter produced ERROR or MISSING nodes".to_string(),
+                diagnostics,
+            });
         }
 
         // Extract imports
@@ -268,6 +310,7 @@ impl AstCodeChunker {
             &imports,
             &mut vec![], // scope chain
             None,        // parent definition
+            None,        // parent node kind
             &mut raw_chunks,
         );
 
@@ -290,6 +333,7 @@ impl AstCodeChunker {
         imports: &[String],
         scope_chain: &mut Vec<String>,
         parent_def: Option<&str>,
+        parent_kind: Option<&str>,
         chunks: &mut Vec<CodeChunk>,
     ) {
         let size = self.non_whitespace_size(node, source);
@@ -301,9 +345,15 @@ impl AstCodeChunker {
 
         // Case 1: Node fits in a single chunk
         if size <= self.config.max_size && self.is_chunkable_node(node) {
-            if let Some(chunk) =
-                self.node_to_chunk(node, source, file_path, imports, scope_chain, parent_def)
-            {
+            if let Some(chunk) = self.node_to_chunk(
+                node,
+                source,
+                file_path,
+                imports,
+                scope_chain,
+                parent_def,
+                parent_kind,
+            ) {
                 chunks.push(chunk);
                 return;
             }
@@ -335,6 +385,7 @@ impl AstCodeChunker {
                     imports,
                     scope_chain,
                     new_parent.as_deref(),
+                    Some(node.kind()),
                     chunks,
                 );
 
@@ -354,9 +405,10 @@ impl AstCodeChunker {
         imports: &[String],
         scope_chain: &[String],
         parent_def: Option<&str>,
+        parent_kind: Option<&str>,
     ) -> Option<CodeChunk> {
         let code = source[node.start_byte()..node.end_byte()].to_string();
-        let entity_type = EntityType::from_rust_node_kind(node.kind());
+        let entity_type = EntityType::from_rust_node_kind(node.kind(), parent_kind);
 
         // Extract signature for functions/methods
         let entity_signature = self.extract_signature(node, source);
@@ -644,6 +696,81 @@ impl AstCodeChunker {
     }
 }
 
+fn parse_diagnostics(root: Node<'_>, source: &str) -> Vec<AstParseDiagnostic> {
+    let mut diagnostics = Vec::new();
+    collect_parse_diagnostics(root, source, &mut diagnostics);
+    if diagnostics.is_empty() {
+        diagnostics.push(diagnostic_for_node(root, source));
+    }
+    diagnostics
+}
+
+fn collect_parse_diagnostics(
+    node: Node<'_>,
+    source: &str,
+    diagnostics: &mut Vec<AstParseDiagnostic>,
+) {
+    if diagnostics.len() >= MAX_PARSE_DIAGNOSTICS {
+        return;
+    }
+
+    if node.is_error() || node.is_missing() {
+        diagnostics.push(diagnostic_for_node(node, source));
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if diagnostics.len() >= MAX_PARSE_DIAGNOSTICS {
+            break;
+        }
+        if child.has_error() || child.is_missing() || child.is_error() {
+            collect_parse_diagnostics(child, source, diagnostics);
+        }
+    }
+}
+
+fn diagnostic_for_node(node: Node<'_>, source: &str) -> AstParseDiagnostic {
+    let start = node.start_position();
+    let end = node.end_position();
+    AstParseDiagnostic {
+        kind: node.kind().to_string(),
+        is_error: node.is_error(),
+        is_missing: node.is_missing(),
+        start_byte: node.start_byte(),
+        end_byte: node.end_byte(),
+        start_line: start.row as u32 + 1,
+        start_column: start.column as u32,
+        end_line: end.row as u32 + 1,
+        end_column: end.column as u32,
+        excerpt: line_excerpt_at_byte(source, node.start_byte()),
+    }
+}
+
+fn line_excerpt_at_byte(source: &str, byte: usize) -> String {
+    if source.is_empty() {
+        return String::new();
+    }
+    let byte = floor_char_boundary(source, byte.min(source.len()));
+    let line_start = source[..byte].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+    let line_end = source[byte..]
+        .find('\n')
+        .map(|idx| byte + idx)
+        .unwrap_or(source.len());
+    source
+        .get(line_start..line_end)
+        .unwrap_or("")
+        .chars()
+        .take(160)
+        .collect()
+}
+
+fn floor_char_boundary(source: &str, mut byte: usize) -> usize {
+    while byte > 0 && !source.is_char_boundary(byte) {
+        byte -= 1;
+    }
+    byte
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -730,6 +857,78 @@ pub fn large_function(input: &str) -> Result<String, Error> {
 
         let result = chunker.chunk("   \n\t  ", "test.rs");
         assert!(matches!(result, Err(AstChunkerError::EmptySource)));
+    }
+
+    #[test]
+    fn test_invalid_rust_fails_closed_with_diagnostics() {
+        let mut chunker = AstCodeChunker::default_rust().unwrap();
+        let broken = "pub fn broken() {\n    let value = ;\n}\n";
+
+        let result = chunker.chunk(broken, "broken.rs");
+        match result {
+            Err(AstChunkerError::ParseFailed {
+                file_path,
+                reason,
+                diagnostics,
+            }) => {
+                println!("=== INVALID RUST DIAGNOSTICS ===");
+                println!("file_path: {file_path}");
+                println!("reason: {reason}");
+                println!("diagnostics: {diagnostics:?}");
+                println!("=== END ===");
+                assert_eq!(file_path, "broken.rs");
+                assert!(reason.contains("ERROR") || reason.contains("MISSING"));
+                assert!(
+                    diagnostics.iter().any(|d| d.is_error || d.is_missing),
+                    "diagnostics must include at least one ERROR or MISSING node"
+                );
+                assert!(
+                    diagnostics.iter().any(|d| d.start_line >= 2),
+                    "diagnostics should point at or after the broken assignment"
+                );
+            }
+            other => panic!("invalid Rust must fail closed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_impl_functions_are_tagged_as_methods_when_split() {
+        let config = AstChunkConfig {
+            max_size: 40,
+            min_size: 1,
+            ..AstChunkConfig::default()
+        };
+        let mut chunker = AstCodeChunker::new_rust(config).unwrap();
+        let code = r#"
+pub struct Worker {
+    count: usize,
+}
+
+impl Worker {
+    pub fn run(&self) -> usize {
+        self.count
+    }
+}
+"#;
+
+        let chunks = chunker.chunk(code, "worker.rs").expect("valid Rust chunks");
+        println!("=== METHOD ENTITY TYPES ===");
+        for chunk in &chunks {
+            println!(
+                "entity={:?} lines={}-{} code={:?}",
+                chunk.metadata.entity_type,
+                chunk.metadata.start_line,
+                chunk.metadata.end_line,
+                chunk.code
+            );
+        }
+        println!("=== END ===");
+        assert!(
+            chunks
+                .iter()
+                .any(|chunk| chunk.metadata.entity_type == EntityType::Method),
+            "function_item inside impl_item must be tagged as Method"
+        );
     }
 
     #[test]

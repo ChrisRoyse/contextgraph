@@ -5563,6 +5563,115 @@ fn semantic_run_source_file_checks(
     }))
 }
 
+fn semantic_csharp_build_target(repo: &Path) -> DynamicJepaResult<String> {
+    let mut solutions = Vec::new();
+    let mut projects = Vec::new();
+    semantic_collect_csharp_build_targets(repo, repo, &mut solutions, &mut projects)?;
+    solutions.sort();
+    projects.sort();
+
+    let selected = if solutions.len() == 1 {
+        solutions[0].clone()
+    } else if solutions.len() > 1 {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: format!(
+                "C# semantic index requires exactly one solution build target; found multiple .sln files: {:?}",
+                solutions
+            ),
+            evidence_path: repo.display().to_string(),
+        });
+    } else if projects.len() == 1 {
+        projects[0].clone()
+    } else if projects.len() > 1 {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: format!(
+                "C# semantic index requires one .sln or exactly one .csproj; found multiple .csproj files and no solution: {:?}",
+                projects
+            ),
+            evidence_path: repo.display().to_string(),
+        });
+    } else {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "dynamicjepa_semantic_index".to_string(),
+            message: "C# semantic index requires a real .sln or .csproj build target".to_string(),
+            evidence_path: repo.display().to_string(),
+        });
+    };
+
+    Ok(selected)
+}
+
+fn semantic_collect_csharp_build_targets(
+    repo: &Path,
+    dir: &Path,
+    solutions: &mut Vec<String>,
+    projects: &mut Vec<String>,
+) -> DynamicJepaResult<()> {
+    for entry in fs::read_dir(dir).map_err(|err| DynamicJepaError::Storage {
+        operation: "semantic_index.csharp.read_dir".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to read {}: {err}", dir.display()),
+        remediation: "ensure the C# repository is readable before semantic indexing".to_string(),
+    })? {
+        let entry = entry.map_err(|err| DynamicJepaError::Storage {
+            operation: "semantic_index.csharp.read_dir_entry".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to inspect {}: {err}", dir.display()),
+            remediation: "ensure the C# repository is readable before semantic indexing"
+                .to_string(),
+        })?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if matches!(
+            name.as_str(),
+            ".git" | "target" | "node_modules" | "bin" | "obj" | ".vs"
+        ) {
+            continue;
+        }
+        let file_type = entry.file_type().map_err(|err| DynamicJepaError::Storage {
+            operation: "semantic_index.csharp.file_type".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to inspect {}: {err}", path.display()),
+            remediation: "ensure the C# repository contains regular files/directories".to_string(),
+        })?;
+        if file_type.is_dir() {
+            semantic_collect_csharp_build_targets(repo, &path, solutions, projects)?;
+        } else if file_type.is_file() {
+            let rel = path
+                .strip_prefix(repo)
+                .map_err(|err| {
+                    DynamicJepaError::validation(
+                        "semantic-index.csharp.build_target",
+                        format!(
+                            "failed to derive repo-relative C# build target for {}: {err}",
+                            path.display()
+                        ),
+                        "run semantic-index against a stable repository root",
+                    )
+                })?
+                .to_string_lossy()
+                .replace('\\', "/");
+            if rel.ends_with(".sln") {
+                solutions.push(rel);
+            } else if rel.ends_with(".csproj") {
+                projects.push(rel);
+            }
+        } else {
+            return Err(DynamicJepaError::VerificationFailed {
+                test_name: "dynamicjepa_semantic_index".to_string(),
+                message: format!(
+                    "non-regular C# repository entry refused: {}",
+                    path.display()
+                ),
+                evidence_path: path.display().to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn semantic_run_java_batch_check(repo: &Path, evidence_dir: &Path) -> DynamicJepaResult<Value> {
     let files = semantic_source_files_for_language(repo, "java")?;
     let classes_dir = evidence_dir.join("java_classes");
@@ -5854,10 +5963,10 @@ fn semantic_require_language_toolchain(language: &str, repo: &Path) -> DynamicJe
             }
         }
         "c" => {
-            if command_exists_on_path("gcc") && repo.join("compile_commands.json").exists() {
+            if repo.join("compile_commands.json").exists() {
                 Vec::new()
             } else {
-                vec!["gcc", "compile_commands.json"]
+                vec!["compile_commands.json"]
             }
         }
         "cpp" => {
@@ -5868,11 +5977,14 @@ fn semantic_require_language_toolchain(language: &str, repo: &Path) -> DynamicJe
             }
         }
         "csharp" => {
-            if command_exists_on_path("dotnet") {
-                Vec::new()
-            } else {
-                vec!["dotnet"]
+            let mut missing = Vec::new();
+            if !command_exists_on_path("dotnet") {
+                missing.push("dotnet");
             }
+            if missing.is_empty() {
+                let _ = semantic_csharp_build_target(repo)?;
+            }
+            missing
         }
         "ruby" => {
             if command_exists_on_path("ruby") {
@@ -5952,13 +6064,22 @@ fn semantic_run_language_batch_check(
         ),
         "java" => semantic_run_java_batch_check(repo, evidence_dir),
         "c" | "cpp" => semantic_run_compile_commands_batch_check(language, repo, evidence_dir),
-        "csharp" => semantic_run_required(
-            &["dotnet", "build", "--no-restore"],
-            repo,
-            None,
-            evidence_dir,
-            "csharp_dotnet_build",
-        ),
+        "csharp" => {
+            let build_target = semantic_csharp_build_target(repo)?;
+            semantic_run_required_owned(
+                &[
+                    "dotnet".to_string(),
+                    "build".to_string(),
+                    build_target,
+                    "--no-restore".to_string(),
+                    "--nologo".to_string(),
+                ],
+                repo,
+                None,
+                evidence_dir,
+                "csharp_dotnet_build",
+            )
+        }
         "ruby" => {
             semantic_run_source_file_checks(language, repo, evidence_dir, "ruby", &["-c"], &[])
         }
@@ -6208,8 +6329,8 @@ fn semantic_walk_tree_sitter_node(
     let mut active_symbol = current_symbol.to_string();
     let line = node.start_position().row + 1;
     match semantic_kind {
-        "function" | "method" | "class" | "test" => {
-            let name = semantic_ast_node_name(node, source)
+        "function" | "method" | "class" | "test" | "property" | "event" | "delegate" => {
+            let name = semantic_ast_node_name_for_language(language, node, source)
                 .unwrap_or_else(|| format!("anonymous@{path}:{line}"));
             active_symbol = name.clone();
             extraction.symbols.push(json!({
@@ -6325,7 +6446,7 @@ fn semantic_ast_node_kind_for_language(
         "javascript" | "typescript" | "tsx" => match kind {
             "function_declaration" | "generator_function_declaration" | "arrow_function" => {
                 if semantic_path_is_test(path)
-                    || semantic_ast_node_name(node, source)
+                    || semantic_ast_node_name_for_language(language, node, source)
                         .is_some_and(|name| name.starts_with("test"))
                 {
                     "test"
@@ -6369,6 +6490,7 @@ fn semantic_ast_node_kind_for_language(
         "java" => match kind {
             "method_declaration" | "constructor_declaration" => {
                 if semantic_path_is_test(path)
+                    || semantic_java_method_has_test_annotation(node, source)
                     || semantic_ast_node_name(node, source)
                         .is_some_and(|name| name.starts_with("test"))
                 {
@@ -6388,7 +6510,8 @@ fn semantic_ast_node_kind_for_language(
             }
             _ => "unknown",
         },
-        "c" | "cpp" => match kind {
+        "c" => semantic_c_ast_node_kind(node),
+        "cpp" => match kind {
             "function_definition" | "function_declarator" => "function",
             "class_specifier" | "struct_specifier" | "enum_specifier" | "union_specifier" => {
                 "class"
@@ -6399,12 +6522,28 @@ fn semantic_ast_node_kind_for_language(
             _ => "unknown",
         },
         "csharp" => match kind {
-            "method_declaration" | "constructor_declaration" => "method",
+            "method_declaration"
+            | "constructor_declaration"
+            | "local_function_statement"
+            | "operator_declaration"
+            | "conversion_operator_declaration" => {
+                if semantic_path_is_test(path)
+                    || semantic_ast_node_name_for_language(language, node, source)
+                        .is_some_and(|name| name.starts_with("Test") || name.starts_with("test"))
+                {
+                    "test"
+                } else {
+                    "method"
+                }
+            }
             "class_declaration"
             | "interface_declaration"
             | "struct_declaration"
             | "enum_declaration"
             | "record_declaration" => "class",
+            "property_declaration" | "indexer_declaration" => "property",
+            "event_declaration" | "event_field_declaration" => "event",
+            "delegate_declaration" => "delegate",
             "using_directive" => "import",
             "invocation_expression" | "object_creation_expression" => "call",
             "variable_declaration" | "assignment_expression" | "field_declaration" => "assignment",
@@ -6436,11 +6575,108 @@ fn semantic_ast_node_kind_for_language(
     }
 }
 
+fn semantic_c_ast_node_kind(node: tree_sitter::Node<'_>) -> &'static str {
+    match node.kind() {
+        "function_definition" => "function",
+        "function_declarator" if !semantic_has_ancestor_kind(node, "function_definition") => {
+            "function"
+        }
+        "preproc_function_def" | "preproc_def" => "function",
+        "struct_specifier" | "enum_specifier" | "union_specifier"
+            if semantic_c_compound_specifier_declares_body(node) =>
+        {
+            "class"
+        }
+        "preproc_include" => "import",
+        "call_expression" => "call",
+        "declaration" if semantic_c_contains_function_declarator(node) => "unknown",
+        "declaration" | "init_declarator" | "assignment_expression" => "assignment",
+        _ => "unknown",
+    }
+}
+
+fn semantic_c_compound_specifier_declares_body(node: tree_sitter::Node<'_>) -> bool {
+    node.child_by_field_name("body").is_some()
+}
+
+fn semantic_c_contains_function_declarator(node: tree_sitter::Node<'_>) -> bool {
+    if node.kind() == "function_declarator" {
+        return true;
+    }
+    let mut cursor = node.walk();
+    node.children(&mut cursor)
+        .any(semantic_c_contains_function_declarator)
+}
+
 fn semantic_ast_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    if matches!(node.kind(), "function_definition" | "function_declarator") {
+        if let Some(declarator) = node.child_by_field_name("declarator") {
+            if let Some(name) = semantic_first_identifier_text(declarator, source) {
+                return Some(name.to_owned());
+            }
+        }
+    }
     node.child_by_field_name("name")
         .and_then(|child| child.utf8_text(source.as_bytes()).ok())
         .or_else(|| semantic_first_identifier_text(node, source))
         .map(ToOwned::to_owned)
+}
+
+fn semantic_ast_node_name_for_language(
+    language: &str,
+    node: tree_sitter::Node<'_>,
+    source: &str,
+) -> Option<String> {
+    if language == "csharp" {
+        semantic_csharp_node_name(node, source).or_else(|| semantic_ast_node_name(node, source))
+    } else {
+        semantic_ast_node_name(node, source)
+    }
+}
+
+fn semantic_csharp_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    if let Some(name) = node
+        .child_by_field_name("name")
+        .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+        .map(ToOwned::to_owned)
+    {
+        return Some(name);
+    }
+    match node.kind() {
+        "event_field_declaration" | "field_declaration" => {
+            semantic_descendant_field_text(node, "variable_declarator", "name", source)
+        }
+        "indexer_declaration" => Some("this[]".to_string()),
+        "conversion_operator_declaration" => node
+            .child_by_field_name("type")
+            .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+            .map(|target| format!("operator {}", target.trim())),
+        "operator_declaration" => Some("operator".to_string()),
+        _ => None,
+    }
+}
+
+fn semantic_descendant_field_text(
+    node: tree_sitter::Node<'_>,
+    descendant_kind: &str,
+    field_name: &str,
+    source: &str,
+) -> Option<String> {
+    if node.kind() == descendant_kind {
+        return node
+            .child_by_field_name(field_name)
+            .and_then(|child| child.utf8_text(source.as_bytes()).ok())
+            .map(ToOwned::to_owned);
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if let Some(value) =
+            semantic_descendant_field_text(child, descendant_kind, field_name, source)
+        {
+            return Some(value);
+        }
+    }
+    None
 }
 
 fn semantic_first_identifier_text<'a>(
@@ -6526,7 +6762,18 @@ fn semantic_ast_symbol_visibility(
                 "unknown"
             }
         }
-        "c" | "cpp" => {
+        "c" => {
+            let visibility_text = semantic_c_visibility_text(node, source);
+            if visibility_text.trim_start().starts_with("static ")
+                || visibility_text.contains("\nstatic ")
+                || visibility_text.contains(" static ")
+            {
+                "private"
+            } else {
+                "public"
+            }
+        }
+        "cpp" => {
             if node_text.trim_start().starts_with("static ") || node_text.contains("\nstatic ") {
                 "private"
             } else {
@@ -6535,6 +6782,20 @@ fn semantic_ast_symbol_visibility(
         }
         _ => "unknown",
     }
+}
+
+fn semantic_c_visibility_text(node: tree_sitter::Node<'_>, source: &str) -> String {
+    let mut current = Some(node);
+    while let Some(candidate) = current {
+        if matches!(
+            candidate.kind(),
+            "function_definition" | "declaration" | "preproc_function_def" | "preproc_def"
+        ) {
+            return semantic_node_text(candidate, source);
+        }
+        current = candidate.parent();
+    }
+    semantic_node_text(node, source)
 }
 
 fn semantic_node_text(node: tree_sitter::Node<'_>, source: &str) -> String {
@@ -6575,9 +6836,24 @@ fn semantic_node_has_type_annotation(
 ) -> bool {
     let text = semantic_node_text(node, source);
     match language {
-        "python" | "typescript" | "tsx" | "c" | "cpp" | "csharp" | "java" | "php" => {
+        "c" => {
+            matches!(
+                node.kind(),
+                "declaration" | "init_declarator" | "parameter_declaration" | "field_declaration"
+            ) && !semantic_c_contains_function_declarator(node)
+        }
+        "python" | "typescript" | "tsx" | "cpp" | "java" | "php" => {
             text.contains(':') || text.contains("->")
         }
+        "csharp" => matches!(
+            node.kind(),
+            "variable_declaration"
+                | "field_declaration"
+                | "property_declaration"
+                | "event_declaration"
+                | "event_field_declaration"
+                | "delegate_declaration"
+        ),
         "rust" => text.contains(':') || text.contains("->"),
         "go" => matches!(
             node.kind(),
@@ -6588,20 +6864,101 @@ fn semantic_node_has_type_annotation(
 }
 
 fn semantic_path_is_test(path: &str) -> bool {
-    path.starts_with("tests/")
-        || path.contains("/tests/")
-        || path.ends_with("_test.py")
-        || path.ends_with("_test.go")
-        || path.ends_with(".test.js")
-        || path.ends_with(".spec.js")
-        || path.ends_with(".test.ts")
-        || path.ends_with(".spec.ts")
-        || path.ends_with(".test.tsx")
-        || path.ends_with(".spec.tsx")
-        || path.ends_with("Test.java")
-        || path.ends_with("Tests.cs")
-        || path.ends_with("_test.rb")
-        || path.ends_with("Test.php")
+    let normalized = path.replace('\\', "/");
+    normalized.starts_with("tests/")
+        || normalized.contains("/tests/")
+        || normalized.contains("/test/")
+        || normalized.ends_with("_test.py")
+        || normalized.ends_with("_test.go")
+        || normalized.ends_with(".test.js")
+        || normalized.ends_with(".spec.js")
+        || normalized.ends_with(".test.ts")
+        || normalized.ends_with(".spec.ts")
+        || normalized.ends_with(".test.tsx")
+        || normalized.ends_with(".spec.tsx")
+        || semantic_java_path_is_test(path)
+        || semantic_csharp_path_is_test(path)
+        || normalized.ends_with("_test.rb")
+        || normalized.ends_with("Test.php")
+}
+
+fn semantic_csharp_path_is_test(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    let file_name = normalized.rsplit('/').next().unwrap_or(&normalized);
+    file_name.ends_with(".cs")
+        && (file_name.ends_with("Tests.cs")
+            || file_name.ends_with("Test.cs")
+            || file_name.contains(".Tests."))
+}
+
+fn semantic_java_path_is_test(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    if normalized.starts_with("src/test/java/")
+        || normalized.contains("/src/test/java/")
+        || normalized.starts_with("src/it/java/")
+        || normalized.contains("/src/it/java/")
+    {
+        return true;
+    }
+
+    let file_name = normalized.rsplit('/').next().unwrap_or(&normalized);
+    file_name.ends_with(".java")
+        && (file_name.starts_with("Test")
+            || file_name.ends_with("Test.java")
+            || file_name.ends_with("Tests.java")
+            || file_name.ends_with("TestCase.java")
+            || file_name.starts_with("IT")
+            || file_name.ends_with("IT.java")
+            || file_name.ends_with("ITCase.java"))
+}
+
+fn semantic_java_method_has_test_annotation(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    if node.kind() != "method_declaration" {
+        return false;
+    }
+    let mut cursor = node.walk();
+    node.children(&mut cursor).any(|child| {
+        matches!(
+            child.kind(),
+            "modifiers" | "annotation" | "marker_annotation"
+        ) && semantic_java_tree_has_test_annotation(child, source)
+    })
+}
+
+fn semantic_java_tree_has_test_annotation(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    if matches!(node.kind(), "annotation" | "marker_annotation")
+        && node
+            .utf8_text(source.as_bytes())
+            .ok()
+            .and_then(semantic_java_annotation_simple_name)
+            .is_some_and(semantic_java_annotation_is_test)
+    {
+        return true;
+    }
+    let mut cursor = node.walk();
+    node.children(&mut cursor)
+        .any(|child| semantic_java_tree_has_test_annotation(child, source))
+}
+
+fn semantic_java_annotation_simple_name(text: &str) -> Option<&str> {
+    let trimmed = text.trim_start();
+    let after_at = trimmed.strip_prefix('@')?;
+    let end = after_at
+        .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_' || ch == '.'))
+        .unwrap_or(after_at.len());
+    let qualified = &after_at[..end];
+    if qualified.is_empty() {
+        None
+    } else {
+        Some(qualified.rsplit('.').next().unwrap_or(qualified))
+    }
+}
+
+fn semantic_java_annotation_is_test(name: &str) -> bool {
+    matches!(
+        name,
+        "Test" | "ParameterizedTest" | "RepeatedTest" | "TestFactory" | "TestTemplate"
+    )
 }
 
 fn command_exists_on_path(name: &str) -> bool {
@@ -24937,6 +25294,103 @@ pub fn add_two(x: i32) -> i32 {
     fn rust_semantic_extraction_fails_closed_on_parse_errors() {
         let err = semantic_extract_source_facts("src/lib.rs", "rust", "pub fn broken(")
             .expect_err("syntax errors must not produce a semantic index");
+        assert_eq!(err.code(), "VERIFICATION_FAILED");
+        assert!(
+            err.to_string().contains("parse reported syntax errors"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn java_semantic_extraction_recognizes_standard_tests_and_junit_annotations() {
+        let surefire_source = "package com.acme;\n\nimport org.junit.jupiter.api.Test;\n\nclass CalculatorTests {\n    @Test\n    void adds() {\n        assertEquals(4, 2 + 2);\n    }\n}\n";
+        println!(
+            "BEFORE java semantic-index surefire state: path_is_test={}, source_len={}",
+            semantic_path_is_test("src/test/java/com/acme/CalculatorTests.java"),
+            surefire_source.len()
+        );
+        let surefire = semantic_extract_source_facts(
+            "src/test/java/com/acme/CalculatorTests.java",
+            "java",
+            surefire_source,
+        )
+        .expect("valid Java AST");
+        println!(
+            "AFTER java semantic-index surefire state: symbols={:?}, calls={:?}",
+            surefire.symbols, surefire.calls
+        );
+        let surefire_kinds = surefire
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?,
+                    symbol.get("semantic_kind")?.as_str()?,
+                ))
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(surefire_kinds.contains(&("CalculatorTests", "class")));
+        assert!(surefire_kinds.contains(&("adds", "test")));
+
+        let nonstandard_source = "package com.acme;\n\nclass SmokeCheck {\n    @org.junit.jupiter.params.ParameterizedTest(name = \"case {0}\")\n    void computes() {\n        verifyReality();\n    }\n}\n";
+        println!(
+            "BEFORE java semantic-index annotation state: path_is_test={}, source_len={}",
+            semantic_path_is_test("src/main/java/com/acme/SmokeCheck.java"),
+            nonstandard_source.len()
+        );
+        let annotated = semantic_extract_source_facts(
+            "src/main/java/com/acme/SmokeCheck.java",
+            "java",
+            nonstandard_source,
+        )
+        .expect("valid Java AST");
+        println!(
+            "AFTER java semantic-index annotation state: symbols={:?}, calls={:?}",
+            annotated.symbols, annotated.calls
+        );
+        let annotated_kinds = annotated
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?,
+                    symbol.get("semantic_kind")?.as_str()?,
+                ))
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(annotated_kinds.contains(&("SmokeCheck", "class")));
+        assert!(annotated_kinds.contains(&("computes", "test")));
+
+        for path in [
+            "src/test/java/com/acme/Utility.java",
+            "src/test/java/com/acme/TestCalculator.java",
+            "src/test/java/com/acme/CalculatorTest.java",
+            "src/test/java/com/acme/CalculatorTests.java",
+            "src/test/java/com/acme/CalculatorTestCase.java",
+            "src/it/java/com/acme/ITCalculator.java",
+            "src/it/java/com/acme/CalculatorIT.java",
+            "src/it/java/com/acme/CalculatorITCase.java",
+        ] {
+            assert!(
+                semantic_path_is_test(path),
+                "standard Java test path missed: {path}"
+            );
+        }
+        assert!(
+            !semantic_path_is_test("src/main/java/com/acme/Calculator.java"),
+            "production Java source must not be classified as a test"
+        );
+    }
+
+    #[test]
+    fn java_semantic_extraction_fails_closed_on_parse_errors() {
+        let err = semantic_extract_source_facts(
+            "src/test/java/com/acme/BrokenTest.java",
+            "java",
+            "package com.acme;\nclass BrokenTest { @Test void broken( }\n",
+        )
+        .expect_err("Java syntax errors must not produce a semantic index");
+        println!("AFTER java parse-error state: {err}");
         assert_eq!(err.code(), "VERIFICATION_FAILED");
         assert!(
             err.to_string().contains("parse reported syntax errors"),

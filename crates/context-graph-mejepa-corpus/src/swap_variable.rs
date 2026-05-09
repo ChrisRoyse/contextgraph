@@ -47,7 +47,7 @@ struct SwapCandidate {
 }
 
 pub(crate) fn apply(source: &str, seed: u64) -> MutationResult<MutationSite> {
-    let code_mask = python_code_mask(source);
+    let code_mask = python_code_mask(source)?;
     let defs = collect_var_defs(source, &code_mask);
     if defs.len() < 2 {
         return Err(MutationError::no_site(

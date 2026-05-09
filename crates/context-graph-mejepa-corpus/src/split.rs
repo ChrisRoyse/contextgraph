@@ -8,22 +8,23 @@
 //   Mincut ensures no two tasks from the same repo (e.g., two astropy tasks)
 //   end up in different splits — that's the leakage failure mode."
 //
-// Algorithm (see RATIONALE block at the bottom of the file for the
-// Stoer-Wagner relationship):
+// This helper enforces that invariant directly at the repo-assignment layer
+// and records a read-side cross-cut check. It does not claim to run the
+// workspace `context-graph-mincut` solver; the full oracle-backed corpus
+// generator should wire that solver in when Phase 0 generation is complete.
+//
+// Algorithm:
 //
 //   1. Validate config (fractions sum to 1.0 ± 1e-9, non-negative).
 //   2. Group tasks by repo. Sort repo IDs lexicographically for
 //      determinism. SplitMix64-shuffle the repo order using `seed`.
-//   3. Bin-pack each repo (atomically — every task in a repo goes to the
-//      same bucket) into whichever bucket has the largest remaining
-//      capacity (target_count - current_count).
-//   4. Verify the leakage invariant: for each repo, every task assigned to
-//      it must be in the SAME bucket. Stoer-Wagner mincut between any two
-//      buckets in the resulting (task, repo) bipartite graph would have
-//      weight zero by construction.
-//   5. Optionally re-run Stoer-Wagner on a synthetic test graph to provide
-//      an independent verification (callers that want "an actual mincut
-//      ran on this corpus" can use `verify_split_via_mincut`).
+//   3. Reject duplicate task IDs and empty/whitespace-only identifiers,
+//      because split outputs are source-of-truth records keyed by task_id.
+//   4. Bin-pack each repo atomically (every task in a repo goes to the
+//      same bucket) into whichever bucket is most behind its proportional
+//      schedule (`current_count / target_count`).
+//   5. Re-read the resulting task assignments with `cross_cut_weights` for
+//      an independent no-shared-repo-across-buckets check.
 //
 // Fail-closed: empty corpus, fractions that don't sum to 1, fractions
 // that produce zero-target buckets, NaN fractions, repos so large they
@@ -32,7 +33,7 @@
 use crate::prng::SplitMix64;
 use crate::{MutationError, MutationResult};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One row of the corpus index: the SWE-bench task identifier and its
 /// owning repo. Multiple tasks share a single repo in SWE-bench Lite (e.g.,
@@ -81,7 +82,7 @@ impl SplitBucket {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SplitReport {
     /// One row per input entry, in input order.
     pub assignments: Vec<TaskAssignment>,
@@ -129,27 +130,53 @@ pub fn split_corpus(entries: &[CorpusEntry], config: SplitConfig) -> MutationRes
     // 1. Group tasks by repo. BTreeMap for deterministic iteration order
     //    keyed by repo ID.
     let mut repo_tasks: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    let mut seen_task_ids = BTreeSet::<&str>::new();
     for (idx, entry) in entries.iter().enumerate() {
-        if entry.task_id.is_empty() {
+        if entry.task_id.trim().is_empty() {
             return Err(MutationError::invalid(
                 "entries[i].task_id",
-                format!("entries[{idx}].task_id is empty"),
+                format!("entries[{idx}].task_id is empty or whitespace-only"),
                 "every CorpusEntry must have a non-empty task_id",
             ));
         }
-        if entry.repo.is_empty() {
+        if entry.task_id.trim() != entry.task_id {
+            return Err(MutationError::invalid(
+                "entries[i].task_id",
+                format!("entries[{idx}].task_id has leading or trailing whitespace"),
+                "supply canonical task IDs without ambiguous surrounding whitespace",
+            ));
+        }
+        if !seen_task_ids.insert(entry.task_id.as_str()) {
+            return Err(MutationError::invalid(
+                "entries[i].task_id",
+                format!("entries[{idx}].task_id `{}` is duplicated", entry.task_id),
+                "deduplicate the corpus index before producing train/calibration/holdout splits",
+            ));
+        }
+        if entry.repo.trim().is_empty() {
             return Err(MutationError::invalid(
                 "entries[i].repo",
-                format!("entries[{idx}].repo is empty"),
+                format!("entries[{idx}].repo is empty or whitespace-only"),
                 "every CorpusEntry must have a non-empty repo identifier",
+            ));
+        }
+        if entry.repo.trim() != entry.repo {
+            return Err(MutationError::invalid(
+                "entries[i].repo",
+                format!("entries[{idx}].repo has leading or trailing whitespace"),
+                "supply canonical repo IDs without ambiguous surrounding whitespace",
             ));
         }
         repo_tasks.entry(entry.repo.clone()).or_default().push(idx);
     }
     let mut repos: Vec<String> = repo_tasks.keys().cloned().collect();
 
-    // 2. Seed-driven shuffle of the repo order. Using a Fisher-Yates pass
-    //    over `repos` with SplitMix64 for byte-exact determinism.
+    // 2. Seed-driven shuffle of the repo order, then a stable LPT
+    //    (longest-processing-time) sort by descending task count. The
+    //    shuffle drives variance across seeds; the LPT pre-sort tightens
+    //    the bin-pack drift toward the 4/3-OPT bound on the resulting
+    //    bucket sizes. The shuffle remains the deterministic tie-breaker
+    //    among equal-size repos.
     let mut rng = SplitMix64::new(config.seed);
     if repos.len() >= 2 {
         for i in (1..repos.len()).rev() {
@@ -157,6 +184,7 @@ pub fn split_corpus(entries: &[CorpusEntry], config: SplitConfig) -> MutationRes
             repos.swap(i, j);
         }
     }
+    repos.sort_by(|a, b| repo_tasks[b].len().cmp(&repo_tasks[a].len()));
 
     // 3. Compute target task counts per bucket and bin-pack repos.
     let total = entries.len();
@@ -165,7 +193,6 @@ pub fn split_corpus(entries: &[CorpusEntry], config: SplitConfig) -> MutationRes
     let target_hold = total.saturating_sub(target_train + target_cal);
     let targets = [target_train, target_cal, target_hold];
 
-    // capacity[k] = target_k - current_k (initially = target_k).
     let mut current = [0usize; 3];
     let bucket_kinds = [
         SplitBucket::Train,
@@ -176,28 +203,33 @@ pub fn split_corpus(entries: &[CorpusEntry], config: SplitConfig) -> MutationRes
 
     for repo in &repos {
         let task_count = repo_tasks[repo].len();
-        // Pick the bucket with the LARGEST remaining capacity (target -
-        // current). This keeps each bucket's count close to its target
-        // even when repos vary in size.
+        // Pick the bucket whose `current/target` ratio is currently the
+        // lowest — i.e. the bucket most behind its proportional schedule.
+        // This balances all three buckets even when repos are large enough
+        // to overshoot small bucket targets in one step. Buckets with
+        // `targets[k] == 0` are never picked (operator wanted them empty).
         let mut best_idx = 0usize;
-        let mut best_remaining = isize::MIN;
-        for (k, kind) in bucket_kinds.iter().enumerate() {
-            let _ = kind;
-            let remaining = targets[k] as isize - current[k] as isize;
-            if remaining > best_remaining {
-                best_remaining = remaining;
+        let mut best_ratio = f64::INFINITY;
+        for k in 0..3 {
+            let ratio = if targets[k] == 0 {
+                f64::INFINITY
+            } else {
+                current[k] as f64 / targets[k] as f64
+            };
+            if ratio < best_ratio {
+                best_ratio = ratio;
                 best_idx = k;
             }
         }
-        if best_remaining < 0 && current.iter().sum::<usize>() < total {
-            // All buckets are over-full; should not happen unless repo sizes
-            // dominate the target. Pick the bucket with the largest target
-            // to absorb the overflow; fail-closed if the overflow leaves
-            // any bucket empty later (we re-check at the end).
-            let max_target_idx = (0..3)
-                .max_by_key(|k| targets[*k])
-                .expect("3-element max always exists");
-            best_idx = max_target_idx;
+        if !best_ratio.is_finite() {
+            // Every targets[k] == 0. validate_fractions rejects sum==0,
+            // so this is unreachable from a well-formed config; fail-
+            // closed defensively.
+            return Err(MutationError::op_failed(
+                "split.bin_pack",
+                "no bucket has a positive target; cannot place any repo",
+                "set at least one fraction > 0",
+            ));
         }
         current[best_idx] += task_count;
         repo_to_bucket.insert(repo.clone(), bucket_kinds[best_idx]);
@@ -206,14 +238,13 @@ pub fn split_corpus(entries: &[CorpusEntry], config: SplitConfig) -> MutationRes
     // 4. Materialise assignments + verify leakage invariant.
     let mut assignments: Vec<TaskAssignment> = Vec::with_capacity(entries.len());
     for entry in entries {
-        let bucket = repo_to_bucket
-            .get(&entry.repo)
-            .copied()
-            .ok_or_else(|| MutationError::op_failed(
+        let bucket = repo_to_bucket.get(&entry.repo).copied().ok_or_else(|| {
+            MutationError::op_failed(
                 "repo_to_bucket",
                 format!("repo `{}` was not assigned a bucket", entry.repo),
                 "internal error; report",
-            ))?;
+            )
+        })?;
         assignments.push(TaskAssignment {
             task_id: entry.task_id.clone(),
             repo: entry.repo.clone(),
@@ -221,6 +252,13 @@ pub fn split_corpus(entries: &[CorpusEntry], config: SplitConfig) -> MutationRes
         });
     }
     let leakage_check_passed = verify_no_repo_leakage(&assignments);
+    if !leakage_check_passed {
+        return Err(MutationError::op_failed(
+            "split.leakage_check",
+            "split assigned at least one repo to multiple buckets",
+            "report split_corpus; repo-level atomic assignment invariant was violated",
+        ));
+    }
 
     // 5. Reject splits where any bucket is empty (degenerate case that
     //    would break downstream calibration / holdout evaluation).
@@ -288,8 +326,7 @@ fn validate_fractions(config: &SplitConfig) -> MutationResult<()> {
             ));
         }
     }
-    let sum =
-        config.train_fraction + config.calibration_fraction + config.holdout_fraction;
+    let sum = config.train_fraction + config.calibration_fraction + config.holdout_fraction;
     if (sum - 1.0).abs() > 1e-9 {
         return Err(MutationError::invalid(
             "split_config",
@@ -322,17 +359,11 @@ fn verify_no_repo_leakage(assignments: &[TaskAssignment]) -> bool {
 // ============================================================================
 //
 // `split_corpus` already enforces "no repo crosses a split boundary" by
-// construction (atomic per-repo assignment). For an independent check that
-// matches the doc 09 §3.4 framing — "Stoer-Wagner mincut ensures no
-// shared-task leakage" — `verify_split_via_mincut` builds the
-// task-similarity graph (edge weight = 1.0 between tasks in the same repo)
-// and asserts the cross-bucket cut weight is zero for every pair of
-// buckets. This is the second-line check: if it ever fails on output that
-// `split_corpus` produced, `split_corpus` itself has a bug.
-//
-// The graph for SWE-bench Lite (~300 tasks) is small enough that the
-// dense O(V^3) Stoer-Wagner from `context-graph-mincut` runs in a few
-// hundred milliseconds.
+// construction (atomic per-repo assignment). `cross_cut_weights` provides an
+// independent read-side check over the task-similarity graph (edge weight =
+// 1.0 between tasks in the same repo) and asserts the cross-bucket cut weight
+// is zero for every pair of buckets. This is the second-line check: if it ever
+// fails on output that `split_corpus` produced, `split_corpus` itself has a bug.
 
 /// For each unordered pair of buckets, compute the total weight of edges
 /// crossing that boundary in the "tasks share a repo" graph. Returns
@@ -364,6 +395,12 @@ pub fn cross_cut_weights(report: &SplitReport) -> [f64; 3] {
         pair(&by_bucket[0], &by_bucket[2]),
         pair(&by_bucket[1], &by_bucket[2]),
     ]
+}
+
+pub fn split_is_leakage_free(report: &SplitReport) -> bool {
+    cross_cut_weights(report)
+        .iter()
+        .all(|weight| *weight == 0.0)
 }
 
 #[cfg(test)]

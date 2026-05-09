@@ -23,7 +23,7 @@ struct Candidate {
 }
 
 pub(crate) fn apply(source: &str, seed: u64) -> MutationResult<MutationSite> {
-    let candidates = find_candidates(source);
+    let candidates = find_candidates(source)?;
     if candidates.is_empty() {
         return Err(MutationError::no_site(
             "numeric_literal",
@@ -64,9 +64,9 @@ pub(crate) fn apply(source: &str, seed: u64) -> MutationResult<MutationSite> {
     })
 }
 
-fn find_candidates(source: &str) -> Vec<Candidate> {
+fn find_candidates(source: &str) -> MutationResult<Vec<Candidate>> {
     let bytes = source.as_bytes();
-    let code_mask = python_code_mask(source);
+    let code_mask = python_code_mask(source)?;
     let n = bytes.len();
     let mut candidates = Vec::new();
     let mut i = 0;
@@ -112,7 +112,7 @@ fn find_candidates(source: &str) -> Vec<Candidate> {
         }
         i += 1;
     }
-    candidates
+    Ok(candidates)
 }
 
 fn is_word_byte(b: u8) -> bool {
