@@ -199,12 +199,6 @@ struct GeneratedEntry {
     oracle_per_test_count: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PlannedMutation {
-    manifest: TaskManifest,
-    outcome: PatchMutationOutcome,
-}
-
 fn main() -> CliResult<()> {
     match Cli::parse().command {
         CommandKind::Generate(args) => generate(args),
@@ -271,43 +265,6 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
         })
         .collect::<BTreeMap<_, _>>();
 
-    let mut planned_mutations = Vec::new();
-    for manifest in &selected {
-        let official_patch = patch_by_task.get(&manifest.instance_id).ok_or_else(|| {
-            format!(
-                "official dataset patch missing after loader for {}",
-                manifest.instance_id
-            )
-        })?;
-        for category in &categories {
-            let seed = stable_seed(args.seed, &manifest.instance_id, *category);
-            let outcome = mutate_task_source_patch(
-                &SourcePatchTask {
-                    instance_id: manifest.instance_id.clone(),
-                    repo: manifest.repo.clone(),
-                    base_commit: manifest.base_commit.clone(),
-                },
-                *category,
-                official_patch,
-                seed,
-                &source_patch_config,
-            )
-            .map_err(|err| {
-                format!(
-                    "failed to build source-backed patch for task={} category={}: {} ({})",
-                    manifest.instance_id,
-                    category.slug(),
-                    err,
-                    err.code()
-                )
-            })?;
-            planned_mutations.push(PlannedMutation {
-                manifest: manifest.clone(),
-                outcome,
-            });
-        }
-    }
-
     ensure_output_directory_ready(&args.output)?;
     fs::create_dir_all(&args.output)?;
     let store_path_rel = PathBuf::from("oracle-store");
@@ -330,61 +287,86 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
     };
     write_index(&args.output, &index)?;
 
-    for planned in &planned_mutations {
-        if interrupted.load(Ordering::SeqCst) {
-            write_index(&args.output, &index)?;
-            return Err(
-                "generation interrupted by SIGINT before starting next corpus row; index remains complete=false"
-                    .into(),
-            );
-        }
-        let manifest = &planned.manifest;
-        let patch_outcome = &planned.outcome;
-        let category = patch_outcome.category;
-        let seed = patch_outcome.seed;
-        let (_patch_path, patch_path_rel) =
-            write_mutated_patch(&args.output, &manifest.instance_id, patch_outcome)?;
-        let patch_sha256 = sha256_text(&patch_outcome.mutated_patch);
-        let mutation = MutationOutcome {
-            category,
-            mutated_source: patch_outcome.mutated_patch.clone(),
-            seed,
-            mutation_site: None,
-        };
-        let verdict = run_oracle_for_patch(&args, manifest, category, patch_outcome)?;
-        store.put_corpus_row(&manifest.instance_id, category, &mutation, &verdict)?;
-        store.flush()?;
-        let (stored_mutation, stored_verdict) = store
-            .get_corpus_row(&manifest.instance_id, category)?
-            .ok_or("corpus row missing immediately after RocksDB write")?;
-        if stored_mutation != mutation || stored_verdict != verdict {
-            return Err(format!(
-                "corpus row readback mismatch for {}|{} immediately after RocksDB write",
-                manifest.instance_id,
-                category.slug()
+    for manifest in &selected {
+        let official_patch = patch_by_task.get(&manifest.instance_id).ok_or_else(|| {
+            format!(
+                "official dataset patch missing after loader for {}",
+                manifest.instance_id
             )
-            .into());
-        }
-        let oracle_verdict_sha256 = sha256_json_value(&serde_json::to_value(&verdict)?);
+        })?;
+        for category in &categories {
+            if interrupted.load(Ordering::SeqCst) {
+                write_index(&args.output, &index)?;
+                return Err(
+                    "generation interrupted by SIGINT before starting next corpus row; index remains complete=false"
+                        .into(),
+                );
+            }
+            let seed = stable_seed(args.seed, &manifest.instance_id, *category);
+            let patch_outcome = mutate_task_source_patch(
+                &SourcePatchTask {
+                    instance_id: manifest.instance_id.clone(),
+                    repo: manifest.repo.clone(),
+                    base_commit: manifest.base_commit.clone(),
+                },
+                *category,
+                official_patch,
+                seed,
+                &source_patch_config,
+            )
+            .map_err(|err| {
+                format!(
+                    "failed to build source-backed patch for task={} category={}: {} ({})",
+                    manifest.instance_id,
+                    category.slug(),
+                    err,
+                    err.code()
+                )
+            })?;
+            let (_patch_path, patch_path_rel) =
+                write_mutated_patch(&args.output, &manifest.instance_id, &patch_outcome)?;
+            let patch_sha256 = sha256_text(&patch_outcome.mutated_patch);
+            let mutation = MutationOutcome {
+                category: *category,
+                mutated_source: patch_outcome.mutated_patch.clone(),
+                seed,
+                mutation_site: None,
+            };
+            let verdict = run_oracle_for_patch(&args, manifest, *category, &patch_outcome)?;
+            store.put_corpus_row(&manifest.instance_id, *category, &mutation, &verdict)?;
+            store.flush()?;
+            let (stored_mutation, stored_verdict) = store
+                .get_corpus_row(&manifest.instance_id, *category)?
+                .ok_or("corpus row missing immediately after RocksDB write")?;
+            if stored_mutation != mutation || stored_verdict != verdict {
+                return Err(format!(
+                    "corpus row readback mismatch for {}|{} immediately after RocksDB write",
+                    manifest.instance_id,
+                    category.slug()
+                )
+                .into());
+            }
+            let oracle_verdict_sha256 = sha256_json_value(&serde_json::to_value(&verdict)?);
 
-        let entry = GeneratedEntry {
-            task_id: manifest.instance_id.clone(),
-            repo: manifest.repo.clone(),
-            category,
-            bucket: bucket_by_task
-                .get(&manifest.instance_id)
-                .cloned()
-                .ok_or("selected task missing split bucket")?,
-            patch_path: patch_path_rel.display().to_string(),
-            mutation_note: patch_outcome.note.clone(),
-            patch_sha256,
-            oracle_verdict_sha256,
-            oracle_all_passed: verdict.all_passed(),
-            oracle_exception: verdict.exception.map(|class| class.slug().to_string()),
-            oracle_per_test_count: verdict.per_test.len(),
-        };
-        index.entries.push(entry);
-        write_index(&args.output, &index)?;
+            let entry = GeneratedEntry {
+                task_id: manifest.instance_id.clone(),
+                repo: manifest.repo.clone(),
+                category: *category,
+                bucket: bucket_by_task
+                    .get(&manifest.instance_id)
+                    .cloned()
+                    .ok_or("selected task missing split bucket")?,
+                patch_path: patch_path_rel.display().to_string(),
+                mutation_note: patch_outcome.note.clone(),
+                patch_sha256,
+                oracle_verdict_sha256,
+                oracle_all_passed: verdict.all_passed(),
+                oracle_exception: verdict.exception.map(|class| class.slug().to_string()),
+                oracle_per_test_count: verdict.per_test.len(),
+            };
+            index.entries.push(entry);
+            write_index(&args.output, &index)?;
+        }
     }
     let provenance = build_provenance(&index)?;
     store.put_provenance(&provenance)?;
