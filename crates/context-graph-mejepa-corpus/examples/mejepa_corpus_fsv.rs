@@ -27,6 +27,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fmt::Debug;
 use std::fs::{self, File};
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -61,6 +62,9 @@ fn main() -> FsvResult<()> {
     }
     fs::create_dir_all(&generated_root)?;
     fs::create_dir_all(&pyc_root)?;
+    fs::set_permissions(&evidence_root, fs::Permissions::from_mode(0o700))?;
+    fs::set_permissions(&generated_root, fs::Permissions::from_mode(0o700))?;
+    fs::set_permissions(&pyc_root, fs::Permissions::from_mode(0o700))?;
 
     let py_source = "\
 import math
@@ -846,6 +850,7 @@ fn write_text_checked(path: &Path, text: &str) -> FsvResult<String> {
     file.write_all(text.as_bytes())?;
     file.sync_all()?;
     drop(file);
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
     if let Some(parent) = path.parent() {
         File::open(parent)?.sync_all()?;
     }

@@ -44,7 +44,9 @@
 //! assert!(output.is_within_latency_target()); // <30ms
 //! ```
 
-use std::path::PathBuf;
+use std::fs::File;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -63,7 +65,7 @@ use context_graph_core::types::fingerprint::{
 use context_graph_core::weights::{E11_ENTITY_ENABLED, TEMPORAL_EMBEDDERS_ENABLED};
 
 use crate::config::GpuConfig;
-use crate::error::EmbeddingResult;
+use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::models::pretrained::{CausalModel, ContextualModel, GraphModel};
 use crate::models::DefaultModelFactory;
 use crate::traits::{EmbeddingModel, ModelFactory, SingleModelConfig};
@@ -700,45 +702,142 @@ pub struct ProductionMultiArrayProvider {
     e13_splade: Arc<dyn SparseEmbedder>,
     /// E14: BGE-M3 Dense embedder (XLM-RoBERTa-Large, 1024D CLS-pooled).
     ///
-    /// Populated on provider construction when `./models/bge-m3-dense/` contains
-    /// the BAAI/bge-m3 snapshot. If the weights are absent, this field holds a
-    /// zero-vector adapter that logs a startup warning and emits `vec![0.0; 1024]`
-    /// so downstream consumers see a shape-stable fingerprint without
-    /// silently claiming the multilingual head is live.
+    /// Populated on provider construction from `./models/bge-m3-dense/`.
+    /// Missing BAAI/bge-m3 assets are fatal so E14 cannot silently disappear.
     e14_bge_m3_dense: Arc<dyn SingleEmbedder>,
 
     /// Model IDs for tracking
     model_ids: [String; NUM_EMBEDDERS],
 }
 
-/// Zero-vector E14 embedder used when BGE-M3 weights are not present on disk.
-/// Emits an empty Vec so fusion paths treat E14 as inactive (pre-Phase-A-
-/// equivalent). **Not a silent fallback**: the provider constructor emits
-/// a WARN-level tracing event at startup announcing the missing snapshot
-/// and degraded mode, so operators are loudly informed.
-struct E14ZeroAdapter;
+const E14_REQUIRED_FILES: [&str; 3] = ["config.json", "model.safetensors", "tokenizer.json"];
+const MAX_SAFETENSORS_HEADER_BYTES: u64 = 100 * 1024 * 1024;
 
-#[async_trait]
-impl SingleEmbedder for E14ZeroAdapter {
-    fn dimension(&self) -> usize {
-        E14_DIM
+fn ensure_bge_m3_assets(models_dir: &Path) -> EmbeddingResult<PathBuf> {
+    let bge_dir = models_dir.join(ModelId::BgeM3Dense.directory_name());
+    let mut failures = Vec::new();
+
+    for file in E14_REQUIRED_FILES {
+        let path = bge_dir.join(file);
+        match path.metadata() {
+            Ok(metadata) if !metadata.is_file() => {
+                failures.push(format!("{} is not a regular file", path.display()));
+            }
+            Ok(metadata) if metadata.len() == 0 => {
+                failures.push(format!("{} is empty", path.display()));
+            }
+            Ok(_) => {}
+            Err(err) => {
+                failures.push(format!(
+                    "{} is missing or unreadable: {err}",
+                    path.display()
+                ));
+            }
+        }
     }
 
-    fn model_id(&self) -> &str {
-        "bge_m3_dense_zero_adapter"
+    if failures.is_empty() {
+        for file in ["config.json", "tokenizer.json"] {
+            let path = bge_dir.join(file);
+            if let Err(err) = validate_json_asset(&path) {
+                failures.push(err);
+            }
+        }
+        if let Err(err) = validate_safetensors_header(&bge_dir.join("model.safetensors")) {
+            failures.push(err);
+        }
     }
 
-    async fn embed(&self, _content: &str) -> CoreResult<Vec<f32>> {
-        // Empty vec signals "inactive" to fusion paths; they treat it identically
-        // to a pre-Phase-A legacy record (no E14 contribution in scoring).
-        Ok(Vec::new())
+    if failures.is_empty() {
+        return Ok(bge_dir);
     }
 
-    fn is_ready(&self) -> bool {
-        // Always "ready" — ready to emit an empty vec. Downstream paths must
-        // treat the empty vec as the inactive signal.
-        true
+    let repo = ModelId::BgeM3Dense.model_repo().unwrap_or("BAAI/bge-m3");
+    let message = format!(
+        "[EMB-E003] E14_BGE_M3_DENSE_ASSET_INVALID: BGE-M3 dense head cannot be initialized.\n  Model: {:?}\n  Repository: {repo}\n  Model directory: {}\n  Required files: {:?}\n  Asset failures: {:?}\n  Remediation: download the full Hugging Face snapshot into the model directory before constructing ProductionMultiArrayProvider.",
+        ModelId::BgeM3Dense,
+        bge_dir.display(),
+        E14_REQUIRED_FILES,
+        failures
+    );
+    tracing::error!(
+        target: "context_graph_embeddings::provider",
+        bge_dir = %bge_dir.display(),
+        failures = ?failures,
+        "{message}"
+    );
+    Err(EmbeddingError::ConfigError { message })
+}
+
+fn validate_json_asset(path: &Path) -> Result<(), String> {
+    let data = std::fs::read_to_string(path)
+        .map_err(|err| format!("{} cannot be read as UTF-8 JSON: {err}", path.display()))?;
+    let value = serde_json::from_str::<serde_json::Value>(&data)
+        .map_err(|err| format!("{} is not valid JSON: {err}", path.display()))?;
+    if !value.is_object() {
+        return Err(format!("{} JSON root is not an object", path.display()));
     }
+    Ok(())
+}
+
+fn validate_safetensors_header(path: &Path) -> Result<(), String> {
+    let mut file = File::open(path).map_err(|err| {
+        format!(
+            "{} cannot be opened for SafeTensors validation: {err}",
+            path.display()
+        )
+    })?;
+    let mut header_len_bytes = [0u8; 8];
+    file.read_exact(&mut header_len_bytes).map_err(|err| {
+        format!(
+            "{} cannot read SafeTensors header length: {err}",
+            path.display()
+        )
+    })?;
+    let header_len = u64::from_le_bytes(header_len_bytes);
+    if header_len == 0 || header_len > MAX_SAFETENSORS_HEADER_BYTES {
+        return Err(format!(
+            "{} has invalid SafeTensors header length: {header_len}",
+            path.display()
+        ));
+    }
+    let metadata_len = file
+        .metadata()
+        .map_err(|err| format!("{} metadata unavailable: {err}", path.display()))?
+        .len();
+    if metadata_len < 8 + header_len {
+        return Err(format!(
+            "{} is truncated: file size {metadata_len} is smaller than 8-byte prefix plus {header_len}-byte SafeTensors header",
+            path.display()
+        ));
+    }
+
+    let mut header = vec![0u8; header_len as usize];
+    file.read_exact(&mut header)
+        .map_err(|err| format!("{} cannot read SafeTensors header: {err}", path.display()))?;
+    let value = serde_json::from_slice::<serde_json::Value>(&header).map_err(|err| {
+        format!(
+            "{} SafeTensors header is not valid JSON: {err}",
+            path.display()
+        )
+    })?;
+    let Some(object) = value.as_object() else {
+        return Err(format!(
+            "{} SafeTensors header root is not an object",
+            path.display()
+        ));
+    };
+    let tensor_count = object
+        .keys()
+        .filter(|key| key.as_str() != "__metadata__")
+        .count();
+    if tensor_count == 0 {
+        return Err(format!(
+            "{} SafeTensors header contains no tensor entries",
+            path.display()
+        ));
+    }
+    Ok(())
 }
 
 impl ProductionMultiArrayProvider {
@@ -769,11 +868,11 @@ impl ProductionMultiArrayProvider {
     /// ).await?;
     /// ```
     pub async fn new(models_dir: PathBuf, gpu_config: GpuConfig) -> EmbeddingResult<Self> {
+        let bge_dir = ensure_bge_m3_assets(&models_dir)?;
         let factory = DefaultModelFactory::new(models_dir.clone(), gpu_config);
         let config = SingleModelConfig::cuda_fp16();
 
-        // Create all E1-E13 models using the factory; E14 is handled below so
-        // it can degrade to an explicit zero adapter when the snapshot is absent.
+        // Create all E1-E14 models using the factory.
         // NOTE: E5 (Causal) is created directly for dual embedding support (ARCH-15)
         let e1_model = factory.create_model(ModelId::Semantic, &config)?;
         let e2_model = factory.create_model(ModelId::TemporalRecent, &config)?;
@@ -876,42 +975,22 @@ impl ProductionMultiArrayProvider {
         let e13_splade: Arc<dyn SparseEmbedder> =
             Arc::new(SparseEmbedderAdapter::new(e13_model, ModelId::Splade));
 
-        // E14: BGE-M3 Dense — load only when the snapshot is present on disk.
-        // The model files total ~2.3 GB. If they're missing we log a WARN and
-        // install a zero-vector adapter so fingerprints keep their 14-slot
-        // shape without claiming the multilingual head is live.
-        let bge_dir = models_dir.join("bge-m3-dense");
-        let bge_weights_present = bge_dir.join("model.safetensors").is_file()
-            && bge_dir.join("tokenizer.json").is_file()
-            && bge_dir.join("config.json").is_file();
-        let e14_bge_m3_dense: Arc<dyn SingleEmbedder> = if bge_weights_present {
-            tracing::info!(
-                target: "context_graph_embeddings::provider",
-                bge_dir = %bge_dir.display(),
-                "Loading E14 BGE-M3 Dense (multilingual, 8k context)"
-            );
-            let e14_model = factory.create_model(ModelId::BgeM3Dense, &config)?;
-            e14_model.load().await?;
-            tracing::info!(
-                target: "context_graph_embeddings::provider",
-                "E14 BGE-M3 Dense loaded — multilingual head active"
-            );
-            Arc::new(DenseEmbedderAdapter::new(
-                e14_model,
-                ModelId::BgeM3Dense,
-                E14_DIM,
-            ))
-        } else {
-            tracing::warn!(
-                target: "context_graph_embeddings::provider",
-                bge_dir = %bge_dir.display(),
-                "E14 BGE-M3 Dense snapshot NOT FOUND at {}. E14 will emit empty \
-                 vectors (multilingual/long-context features are OFF). \
-                 To enable: download `BAAI/bge-m3` into that directory and restart.",
-                bge_dir.display()
-            );
-            Arc::new(E14ZeroAdapter)
-        };
+        tracing::info!(
+            target: "context_graph_embeddings::provider",
+            bge_dir = %bge_dir.display(),
+            "Loading E14 BGE-M3 Dense (multilingual, 8k context)"
+        );
+        let e14_model = factory.create_model(ModelId::BgeM3Dense, &config)?;
+        e14_model.load().await?;
+        tracing::info!(
+            target: "context_graph_embeddings::provider",
+            "E14 BGE-M3 Dense loaded; multilingual head active"
+        );
+        let e14_bge_m3_dense: Arc<dyn SingleEmbedder> = Arc::new(DenseEmbedderAdapter::new(
+            e14_model,
+            ModelId::BgeM3Dense,
+            E14_DIM,
+        ));
 
         let model_ids = [
             ModelId::Semantic.as_str().to_string(),
@@ -1151,10 +1230,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                 let c = content_owned.clone();
                 async move { e13.embed_sparse(&c).await }
             }),
-            // E14: BGE-M3 Dense — 1024D multilingual. When weights are missing
-            // the adapter returns an empty Vec and fusion paths treat E14 as
-            // inactive; when weights are present this emits the real
-            // CLS-pooled XLM-RoBERTa-Large vector.
+            // E14: BGE-M3 Dense — 1024D multilingual CLS-pooled XLM-RoBERTa-Large vector.
             Self::timed_embed("E14_BgeM3Dense", {
                 let c = content_owned.clone();
                 async move { e14.embed(&c).await }
@@ -1209,8 +1285,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             e11_entity: e11_vec,
             e12_late_interaction: e12_tokens,
             e13_splade: e13_sparse,
-            // E14 BGE-M3 Dense: multilingual CLS-pooled vector, or empty when
-            // weights were not present on disk at startup (loud WARN emitted).
+            // E14 BGE-M3 Dense: multilingual CLS-pooled vector.
             e14_bge_m3_dense: e14_vec,
         };
 
@@ -1436,8 +1511,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             e11_entity: e11_vec,
             e12_late_interaction: e12_tokens,
             e13_splade: e13_sparse,
-            // E14 BGE-M3 Dense: multilingual CLS-pooled vector, or empty when
-            // weights were not present on disk at startup (loud WARN emitted).
+            // E14 BGE-M3 Dense: multilingual CLS-pooled vector.
             e14_bge_m3_dense: e14_vec,
         };
 
@@ -1934,6 +2008,76 @@ mod tests {
             "bge_m3_dense",
         ];
         assert_eq!(ids.len(), NUM_EMBEDDERS);
+    }
+
+    #[test]
+    fn e14_asset_preflight_fails_closed_when_snapshot_is_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        let bge_dir = temp.path().join("bge-m3-dense");
+
+        println!(
+            "BEFORE: bge_dir_exists={} required_files={:?}",
+            bge_dir.exists(),
+            E14_REQUIRED_FILES
+        );
+        let result = ensure_bge_m3_assets(temp.path());
+        println!(
+            "AFTER: result={result:?} bge_dir_exists={}",
+            bge_dir.exists()
+        );
+
+        let err = result.expect_err("missing E14 snapshot must fail closed");
+        match err {
+            EmbeddingError::ConfigError { message } => {
+                assert!(message.contains("E14_BGE_M3_DENSE_ASSET_INVALID"));
+                assert!(message.contains("model.safetensors"));
+                assert!(message.contains("tokenizer.json"));
+                assert!(message.contains("config.json"));
+            }
+            other => panic!("expected ConfigError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn e14_asset_preflight_inspects_complete_snapshot_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let bge_dir = temp.path().join("bge-m3-dense");
+        std::fs::create_dir_all(&bge_dir).unwrap();
+        std::fs::write(
+            bge_dir.join("config.json"),
+            br#"{"model_type":"xlm-roberta"}"#,
+        )
+        .unwrap();
+        std::fs::write(bge_dir.join("tokenizer.json"), br#"{"version":"1.0"}"#).unwrap();
+        write_minimal_safetensors(&bge_dir.join("model.safetensors"));
+
+        let before: Vec<_> = E14_REQUIRED_FILES
+            .iter()
+            .map(|file| (file, bge_dir.join(file).metadata().unwrap().len()))
+            .collect();
+        println!("BEFORE: asset_sizes={before:?}");
+
+        let result = ensure_bge_m3_assets(temp.path()).unwrap();
+        let after: Vec<_> = E14_REQUIRED_FILES
+            .iter()
+            .map(|file| (file, bge_dir.join(file).metadata().unwrap().len()))
+            .collect();
+        println!("AFTER: result={} asset_sizes={after:?}", result.display());
+
+        assert_eq!(result, bge_dir);
+        assert!(after.iter().all(|(_, len)| *len > 0));
+    }
+
+    fn write_minimal_safetensors(path: &std::path::Path) {
+        use std::io::Write;
+
+        let header = br#"{"weight":{"dtype":"F32","shape":[1],"data_offsets":[0,4]}}"#;
+        let mut file = std::fs::File::create(path).unwrap();
+        file.write_all(&(header.len() as u64).to_le_bytes())
+            .unwrap();
+        file.write_all(header).unwrap();
+        file.write_all(&0.0f32.to_le_bytes()).unwrap();
+        file.sync_all().unwrap();
     }
 
     // =========================================================================

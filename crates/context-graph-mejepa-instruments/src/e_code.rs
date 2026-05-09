@@ -295,7 +295,8 @@ fn map_chunker_error(err: AstChunkerError) -> InstrumentError {
         AstChunkerError::EmptySource
         | AstChunkerError::MixedLanguage { .. }
         | AstChunkerError::ParseFailed { .. }
-        | AstChunkerError::LanguageSetFailed { .. } => "input.source",
+        | AstChunkerError::LanguageSetFailed { .. }
+        | AstChunkerError::RoutingMissing { .. } => "input.source",
     };
     InstrumentError::invalid(
         field,
@@ -333,12 +334,18 @@ fn stats_from_chunks(chunks: &[AstChunk], source: &str) -> InstrumentResult<Code
             | EntityType::TraitOrInterface
             | EntityType::Impl => stats.class_count += 1,
             EntityType::Import => stats.import_count += 1,
-            EntityType::Module | EntityType::Namespace | EntityType::CommentBlock | EntityType::Docstring => {}
+            EntityType::Module
+            | EntityType::Namespace
+            | EntityType::CommentBlock
+            | EntityType::Docstring => {}
         }
     }
     stats.branch_count = count_words(source, &["if", "else", "match", "case", "switch"]);
     stats.loop_count = count_words(source, &["for", "while", "loop", "foreach"]);
-    stats.call_count = source.matches('(').count().saturating_sub(stats.function_count);
+    stats.call_count = source
+        .matches('(')
+        .count()
+        .saturating_sub(stats.function_count);
     stats.assignment_count = source.matches('=').count();
     stats.identifier_count = source
         .split(|ch: char| !(ch == '_' || ch.is_ascii_alphanumeric()))
@@ -352,7 +359,7 @@ fn stats_from_chunks(chunks: &[AstChunk], source: &str) -> InstrumentResult<Code
 fn count_words(source: &str, words: &[&str]) -> usize {
     source
         .split(|ch: char| !(ch == '_' || ch.is_ascii_alphanumeric()))
-        .filter(|token| words.iter().any(|word| token == *word))
+        .filter(|token| words.iter().any(|word| *token == *word))
         .count()
 }
 

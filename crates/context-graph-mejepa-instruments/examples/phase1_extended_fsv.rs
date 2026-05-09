@@ -14,6 +14,7 @@ use context_graph_witness::{shake256_32, WitnessEntry, WITNESS_ENTRY_SIZE, ZERO_
 use serde_json::{json, Value};
 use std::fs::{self, File};
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
@@ -24,6 +25,7 @@ fn main() -> FsvResult<()> {
         fs::remove_dir_all(&root)?;
     }
     fs::create_dir_all(&root)?;
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
 
     let code = code_input();
     let diff = diff_input();
@@ -425,6 +427,7 @@ fn write_checked(path: &Path, bytes: &[u8]) -> FsvResult<()> {
     file.write_all(bytes)?;
     file.sync_all()?;
     drop(file);
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
     if let Some(parent) = path.parent() {
         File::open(parent)?.sync_all()?;
     }

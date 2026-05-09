@@ -524,8 +524,17 @@ fn code_instruments_accept_real_multilanguage_ast_sources() {
     ];
     for input in sources {
         let output = EAstInstrument.encode(&input).unwrap();
-        assert_eq!(output.len(), InstrumentSlot::EAst.dim(), "{}", input.language);
-        assert!(output.iter().any(|value| *value != 0.0), "{}", input.language);
+        assert_eq!(
+            output.len(),
+            InstrumentSlot::EAst.dim(),
+            "{}",
+            input.language
+        );
+        assert!(
+            output.iter().any(|value| *value != 0.0),
+            "{}",
+            input.language
+        );
     }
 }
 

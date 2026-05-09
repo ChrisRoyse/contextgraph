@@ -8,6 +8,9 @@ pub(crate) fn classify_node(
     source: &[u8],
     path: &str,
 ) -> Option<EntityType> {
+    if !node.is_named() {
+        return None;
+    }
     let kind = node.kind();
     if is_doc_comment(node, source) {
         return Some(EntityType::Docstring);
@@ -48,7 +51,8 @@ pub(crate) fn node_name(language: Language, node: Node<'_>, source: &[u8]) -> Op
 fn classify_rust(node: Node<'_>, source: &[u8], path: &str) -> Option<EntityType> {
     match node.kind() {
         "function_item" => {
-            if is_test_path(path) || has_rust_test_attribute(node, source) {
+            let _ = path;
+            if has_rust_test_attribute(node, source) {
                 Some(EntityType::TestFunction)
             } else if has_ancestor(node, "impl_item") || has_ancestor(node, "trait_item") {
                 Some(EntityType::Method)
@@ -69,12 +73,15 @@ fn classify_rust(node: Node<'_>, source: &[u8], path: &str) -> Option<EntityType
 fn classify_python(node: Node<'_>, source: &[u8], path: &str) -> Option<EntityType> {
     match node.kind() {
         "function_definition" => {
-            if is_test_path(path)
-                || generic_name(node, source).is_some_and(|name| name.starts_with("test"))
-            {
+            let _ = path;
+            if has_ancestor(node, "class_definition") {
+                if generic_name(node, source).is_some_and(|name| is_test_function_name(&name)) {
+                    Some(EntityType::TestFunction)
+                } else {
+                    Some(EntityType::Method)
+                }
+            } else if generic_name(node, source).is_some_and(|name| is_test_function_name(&name)) {
                 Some(EntityType::TestFunction)
-            } else if has_ancestor(node, "class_definition") {
-                Some(EntityType::Method)
             } else {
                 Some(EntityType::Function)
             }
@@ -88,14 +95,17 @@ fn classify_python(node: Node<'_>, source: &[u8], path: &str) -> Option<EntityTy
 
 fn classify_javascript(node: Node<'_>, source: &[u8], path: &str) -> Option<EntityType> {
     match node.kind() {
-        "function_declaration" | "generator_function_declaration" | "function_expression"
-        | "function" | "generator_function" | "arrow_function" => {
-            if js_like_name(node, source).is_none() {
+        "function_declaration"
+        | "generator_function_declaration"
+        | "function_expression"
+        | "function"
+        | "generator_function"
+        | "arrow_function" => {
+            let _ = path;
+            let Some(name) = js_like_name(node, source) else {
                 return None;
-            }
-            if is_test_path(path)
-                || js_like_name(node, source).is_some_and(|name| name.starts_with("test"))
-            {
+            };
+            if is_test_function_name(&name) {
                 Some(EntityType::TestFunction)
             } else {
                 Some(EntityType::Function)
@@ -140,9 +150,9 @@ fn classify_go(node: Node<'_>, source: &[u8], path: &str) -> Option<EntityType> 
 fn classify_java(node: Node<'_>, source: &[u8], path: &str) -> Option<EntityType> {
     match node.kind() {
         "method_declaration" | "constructor_declaration" => {
-            if is_test_path(path)
-                || source_text(node, source).contains("@Test")
-                || generic_name(node, source).is_some_and(|name| name.starts_with("test"))
+            let _ = path;
+            if source_text(node, source).contains("@Test")
+                || generic_name(node, source).is_some_and(|name| is_test_function_name(&name))
             {
                 Some(EntityType::TestFunction)
             } else {
@@ -150,7 +160,9 @@ fn classify_java(node: Node<'_>, source: &[u8], path: &str) -> Option<EntityType
             }
         }
         "class_declaration" | "record_declaration" => Some(EntityType::Class),
-        "interface_declaration" | "annotation_type_declaration" => Some(EntityType::TraitOrInterface),
+        "interface_declaration" | "annotation_type_declaration" => {
+            Some(EntityType::TraitOrInterface)
+        }
         "enum_declaration" => Some(EntityType::Enum),
         "package_declaration" => Some(EntityType::Namespace),
         "import_declaration" => Some(EntityType::Import),
@@ -194,12 +206,15 @@ fn classify_cpp(node: Node<'_>, source: &[u8]) -> Option<EntityType> {
 
 fn classify_csharp(node: Node<'_>, source: &[u8], path: &str) -> Option<EntityType> {
     match node.kind() {
-        "method_declaration" | "constructor_declaration" | "local_function_statement"
-        | "destructor_declaration" | "operator_declaration" | "conversion_operator_declaration" => {
-            if is_test_path(path)
-                || source_text(node, source).contains("[Test")
-                || csharp_name(node, source)
-                    .is_some_and(|name| name.starts_with("Test") || name.starts_with("test"))
+        "method_declaration"
+        | "constructor_declaration"
+        | "local_function_statement"
+        | "destructor_declaration"
+        | "operator_declaration"
+        | "conversion_operator_declaration" => {
+            let _ = path;
+            if source_text(node, source).contains("[Test")
+                || csharp_name(node, source).is_some_and(|name| is_test_function_name(&name))
             {
                 Some(EntityType::TestFunction)
             } else {
@@ -210,7 +225,9 @@ fn classify_csharp(node: Node<'_>, source: &[u8], path: &str) -> Option<EntityTy
         "struct_declaration" => Some(EntityType::Struct),
         "interface_declaration" => Some(EntityType::TraitOrInterface),
         "enum_declaration" => Some(EntityType::Enum),
-        "namespace_declaration" | "file_scoped_namespace_declaration" => Some(EntityType::Namespace),
+        "namespace_declaration" | "file_scoped_namespace_declaration" => {
+            Some(EntityType::Namespace)
+        }
         "using_directive" => Some(EntityType::Import),
         _ => None,
     }
@@ -228,7 +245,9 @@ fn classify_ruby(node: Node<'_>, source: &[u8], path: &str) -> Option<EntityType
         "class" => Some(EntityType::Class),
         "module" => Some(EntityType::Module),
         "require" | "require_relative" => Some(EntityType::Import),
-        "call" | "command" if is_ruby_test_dsl(node, source, path) => Some(EntityType::TestFunction),
+        "call" | "command" if is_ruby_test_dsl(node, source, path) => {
+            Some(EntityType::TestFunction)
+        }
         _ => None,
     }
 }
@@ -276,7 +295,10 @@ fn js_like_name(node: Node<'_>, source: &[u8]) -> Option<String> {
     generic_name(node, source).or_else(|| {
         let mut current = node.parent();
         while let Some(parent) = current {
-            if matches!(parent.kind(), "variable_declarator" | "assignment_expression" | "pair") {
+            if matches!(
+                parent.kind(),
+                "variable_declarator" | "assignment_expression" | "pair"
+            ) {
                 if let Some(name) = parent
                     .child_by_field_name("name")
                     .or_else(|| parent.child_by_field_name("left"))
@@ -311,7 +333,13 @@ fn ruby_name(node: Node<'_>, source: &[u8]) -> Option<String> {
 fn php_name(node: Node<'_>, source: &[u8]) -> Option<String> {
     node.child_by_field_name("name")
         .and_then(|child| text(child, source))
-        .map(|name| name.trim_start_matches('\\').rsplit('\\').next().unwrap_or("").to_string())
+        .map(|name| {
+            name.trim_start_matches('\\')
+                .rsplit('\\')
+                .next()
+                .unwrap_or("")
+                .to_string()
+        })
 }
 
 fn go_type_entity(node: Node<'_>, source: &[u8]) -> Option<EntityType> {
@@ -329,18 +357,46 @@ fn is_go_test(path: &str, node: Node<'_>, source: &[u8]) -> bool {
     if !path.ends_with("_test.go") {
         return false;
     }
-    generic_name(node, source).is_some_and(|name| {
-        ["Test", "Benchmark", "Fuzz"].iter().any(|prefix| {
-            name.strip_prefix(prefix)
-                .and_then(|suffix| suffix.chars().next())
-                .is_some_and(|ch| !ch.is_ascii_lowercase())
-        }) || name.starts_with("Example")
+    let Some(name) = generic_name(node, source) else {
+        return false;
+    };
+    if name.starts_with("Example") {
+        return true;
+    }
+    let node_text = source_text(node, source);
+    if !(node_text.contains("*testing.T")
+        || node_text.contains("*testing.B")
+        || node_text.contains("*testing.F"))
+    {
+        return false;
+    }
+    ["Test", "Benchmark", "Fuzz"].iter().any(|prefix| {
+        name.strip_prefix(prefix)
+            .and_then(|suffix| suffix.chars().next())
+            .is_some_and(|ch| !ch.is_ascii_lowercase())
     })
+}
+
+fn is_test_function_name(name: &str) -> bool {
+    is_test_prefix(name, "test") || is_test_prefix(name, "Test")
+}
+
+fn is_test_prefix(name: &str, prefix: &str) -> bool {
+    let Some(suffix) = name.strip_prefix(prefix) else {
+        return false;
+    };
+    suffix.is_empty()
+        || suffix.starts_with('_')
+        || suffix
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit())
 }
 
 fn is_php_test(node: Node<'_>, source: &[u8], path: &str) -> bool {
     let path_marks = is_test_path(path) || path.ends_with("Test.php") || path.contains(".test.");
-    php_name(node, source).is_some_and(|name| name.starts_with("test") || name.starts_with("it_"))
+    php_name(node, source)
+        .is_some_and(|name| is_test_function_name(&name) || name.starts_with("it_"))
         || (path_marks && source_text(node, source).contains("@test"))
 }
 
@@ -349,13 +405,18 @@ fn is_ruby_test_dsl(node: Node<'_>, source: &[u8], path: &str) -> bool {
         return false;
     };
     is_test_path(path)
-        && matches!(name.as_str(), "describe" | "context" | "it" | "specify" | "test")
+        && matches!(
+            name.as_str(),
+            "describe" | "context" | "it" | "specify" | "test"
+        )
 }
 
 fn is_python_docstring(language: Language, node: Node<'_>) -> bool {
     language == Language::Python
         && node.kind() == "expression_statement"
-        && node.named_child(0).is_some_and(|child| child.kind() == "string")
+        && node
+            .named_child(0)
+            .is_some_and(|child| child.kind() == "string")
         && node.parent().is_some_and(|parent| {
             matches!(parent.kind(), "module" | "block") && parent.named_child(0) == Some(node)
         })
