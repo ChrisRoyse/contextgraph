@@ -85,8 +85,8 @@
 
 ## Test totals (2026-05-09)
 
-**227 tests across 6 ME-JEPA-foundation crates pass:**
-- `context-graph-mejepa-corpus`: 57
+**229 tests across 6 ME-JEPA-foundation crates pass:**
+- `context-graph-mejepa-corpus`: 59
 - `context-graph-mejepa-instruments`: 40
 - `context-graph-tier-compression`: 24
 - `context-graph-solver`: 58

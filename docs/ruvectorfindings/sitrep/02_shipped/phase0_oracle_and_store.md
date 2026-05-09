@@ -2,7 +2,7 @@
 
 > **Shipped:** 2026-05-09
 > **Crate:** `crates/context-graph-mejepa-corpus/`
-> **Tests:** included in 57 `context-graph-mejepa-corpus` tests
+> **Tests:** included in 59 `context-graph-mejepa-corpus` tests
 > **FSV evidence:** `/tmp/contextgraph-mejepa-corpus-fsv/oracle-evidence.json`
 
 ## What this primitive does

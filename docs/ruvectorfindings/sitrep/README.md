@@ -96,7 +96,7 @@ sitrep/
 
 ## High-level state (as of 2026-05-09)
 
-- **227 tests pass** across 6 ME-JEPA-foundation crates.
+- **229 tests pass** across 6 ME-JEPA-foundation crates.
 - **Doc 05 Tiers**: Tier-1 mostly complete (1.1, 1.2 partial, 1.3, 1.4,
   1.6); Tier-2 partial (2.3, 2.4, 2.6 shipped; 2.1, 2.2, 2.5 deferred);
   Tier-3 partial (3.2 shipped; 3.1, 3.3-3.6 deferred); Tier-4 not in
