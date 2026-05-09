@@ -498,9 +498,35 @@ fn code_instruments_reject_recovered_or_unsupported_ast_sources() {
     assert!(err.to_string().contains("parse"));
 
     let mut unsupported = sample_code_input();
-    unsupported.language = "ruby".into();
+    unsupported.language = "kotlin".into();
     let err = ECfgInstrument.encode(&unsupported).unwrap_err();
     assert_eq!(err.code(), "MEJEPA_INSTRUMENTS_INVALID_INPUT");
+}
+
+#[test]
+fn code_instruments_accept_real_multilanguage_ast_sources() {
+    let sources = [
+        CodeInstrumentInput {
+            language: "rust".into(),
+            path: "src/lib.rs".into(),
+            source: "pub fn add(a: i32, b: i32) -> i32 { a + b }\n".into(),
+        },
+        CodeInstrumentInput {
+            language: "javascript".into(),
+            path: "src/add.js".into(),
+            source: "export function add(a, b) { return a + b; }\n".into(),
+        },
+        CodeInstrumentInput {
+            language: "go".into(),
+            path: "calc/add.go".into(),
+            source: "package calc\n\nfunc Add(a int, b int) int { return a + b }\n".into(),
+        },
+    ];
+    for input in sources {
+        let output = EAstInstrument.encode(&input).unwrap();
+        assert_eq!(output.len(), InstrumentSlot::EAst.dim(), "{}", input.language);
+        assert!(output.iter().any(|value| *value != 0.0), "{}", input.language);
+    }
 }
 
 #[test]

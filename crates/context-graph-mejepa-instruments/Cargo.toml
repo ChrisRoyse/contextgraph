@@ -7,12 +7,11 @@ description = "Clean-room ME-JEPA-Code Phase 1 instruments + 5,120-d panel scaff
 license.workspace = true
 
 [dependencies]
+context-graph-core = { path = "../context-graph-core" }
 context-graph-witness = { path = "../context-graph-witness" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tree-sitter = "0.26"
-tree-sitter-python = "0.23.6"
 
 [dev-dependencies]
 tempfile = "3.10"

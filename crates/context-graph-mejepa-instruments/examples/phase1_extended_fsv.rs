@@ -367,7 +367,7 @@ fn edge_code_parse_error() -> Value {
 
 fn edge_unsupported_code_language() -> Value {
     let mut input = code_input();
-    input.language = "ruby".into();
+    input.language = "kotlin".into();
     let result = ECfgInstrument.encode(&input);
     json_edge(
         "unsupported code language",

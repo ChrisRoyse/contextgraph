@@ -32,6 +32,7 @@
 //! ```
 
 pub mod ast_chunker;
+pub mod ast;
 pub mod capture;
 pub mod chunker;
 pub mod code_capture;
@@ -45,6 +46,12 @@ pub mod watcher;
 pub use ast_chunker::{
     AstChunkConfig, AstChunkerError, AstCodeChunker, AstParseDiagnostic, CodeChunk,
     CodeChunkMetadata, EntityType,
+};
+pub use ast::{
+    chunk as chunk_ast_source, chunk_path as chunk_ast_path, route_to_embedders, AstChunk,
+    AstChunkOptions, AstChunkerError as MultiAstChunkerError, EmbedderId,
+    EntityType as AstEntityType, Language as AstLanguage,
+    ParseDiagnostic as MultiAstParseDiagnostic,
 };
 pub use capture::{
     CaptureError, EmbedderError, EmbeddingProvider, MemoryCaptureService,

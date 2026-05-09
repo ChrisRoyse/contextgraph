@@ -1,8 +1,10 @@
+use context_graph_core::memory::ast::{
+    chunk_with_options, AstChunk, AstChunkOptions, AstChunkerError, EntityType, Language,
+};
 use serde::{Deserialize, Serialize};
-use tree_sitter::{Node, Parser};
 
 use crate::features::{
-    add_hashed_pair, add_hashed_token_features, bounded_ratio, fnv1a64, normalize_l2,
+    add_hashed_pair, add_hashed_token_features, bounded_ratio, normalize_l2,
     validate_finite_output, validate_single_line, validate_text_field,
 };
 use crate::{Instrument, InstrumentError, InstrumentResult, InstrumentSlot};
@@ -66,7 +68,7 @@ impl Instrument for EAstInstrument {
     }
 
     fn encode(&self, input: &Self::Input) -> InstrumentResult<Vec<f32>> {
-        let stats = parse_python_code(input)?;
+        let stats = parse_code(input)?;
         encode_code(input, &stats, InstrumentSlot::EAst, "ast")
     }
 }
@@ -79,7 +81,7 @@ impl Instrument for ECfgInstrument {
     }
 
     fn encode(&self, input: &Self::Input) -> InstrumentResult<Vec<f32>> {
-        let stats = parse_python_code(input)?;
+        let stats = parse_code(input)?;
         encode_code(input, &stats, InstrumentSlot::ECfg, "cfg")
     }
 }
@@ -92,7 +94,7 @@ impl Instrument for EDataFlowInstrument {
     }
 
     fn encode(&self, input: &Self::Input) -> InstrumentResult<Vec<f32>> {
-        let stats = parse_python_code(input)?;
+        let stats = parse_code(input)?;
         encode_code(input, &stats, InstrumentSlot::EDataFlow, "data_flow")
     }
 }
@@ -105,7 +107,7 @@ impl Instrument for ETypeGraphInstrument {
     }
 
     fn encode(&self, input: &Self::Input) -> InstrumentResult<Vec<f32>> {
-        let stats = parse_python_code(input)?;
+        let stats = parse_code(input)?;
         encode_code(input, &stats, InstrumentSlot::ETypeGraph, "type_graph")
     }
 }
@@ -129,8 +131,8 @@ impl Instrument for EDiffInstrument {
             path: input.path.clone(),
             source: input.after_source.clone(),
         };
-        let before_stats = parse_python_code(&before)?;
-        let after_stats = parse_python_code(&after)?;
+        let before_stats = parse_code(&before)?;
+        let after_stats = parse_code(&after)?;
         let mut out = vec![0.0_f32; InstrumentSlot::EDiff.dim()];
         out[0] = signed_delta(after_stats.node_count, before_stats.node_count, 10_000.0);
         out[1] = signed_delta(
@@ -209,16 +211,7 @@ fn validate_code_input(input: &CodeInstrumentInput) -> InstrumentResult<()> {
             "chunk large files before encoding E_AST/E_CFG/E_DataFlow/E_TypeGraph",
         ));
     }
-    if input.language != "python" {
-        return Err(InstrumentError::invalid(
-            "input.language",
-            format!(
-                "language `{}` is not implemented by this Phase 1 code instrument",
-                input.language
-            ),
-            "route non-Python languages through their language-specific tree-sitter instrument before filling this slot",
-        ));
-    }
+    parse_language(&input.language)?;
     Ok(())
 }
 
@@ -250,66 +243,117 @@ fn validate_diff_input(input: &DiffInstrumentInput) -> InstrumentResult<()> {
             "only fill E_Diff when a real source change exists",
         ));
     }
+    if input.before_source.len() > MAX_SOURCE_BYTES {
+        return Err(InstrumentError::invalid(
+            "input.before_source",
+            format!(
+                "source is {} bytes; max supported bytes is {MAX_SOURCE_BYTES}",
+                input.before_source.len()
+            ),
+            "chunk large files before encoding E_Diff",
+        ));
+    }
+    if input.after_source.len() > MAX_SOURCE_BYTES {
+        return Err(InstrumentError::invalid(
+            "input.after_source",
+            format!(
+                "source is {} bytes; max supported bytes is {MAX_SOURCE_BYTES}",
+                input.after_source.len()
+            ),
+            "chunk large files before encoding E_Diff",
+        ));
+    }
+    parse_language(&input.language)?;
     Ok(())
 }
 
-fn parse_python_code(input: &CodeInstrumentInput) -> InstrumentResult<CodeStats> {
+fn parse_code(input: &CodeInstrumentInput) -> InstrumentResult<CodeStats> {
     validate_code_input(input)?;
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_python::LANGUAGE.into())
-        .map_err(|err| {
-            InstrumentError::invalid(
-                "tree_sitter_python",
-                format!("failed to initialise Python parser: {err}"),
-                "pin compatible tree-sitter and tree-sitter-python crate versions",
-            )
-        })?;
-    let tree = parser.parse(&input.source, None).ok_or_else(|| {
+    let language = parse_language(&input.language)?;
+    let chunks = chunk_with_options(
+        input.source.as_bytes(),
+        language,
+        &AstChunkOptions::for_path(&input.path),
+    )
+    .map_err(map_chunker_error)?;
+    stats_from_chunks(&chunks, &input.source)
+}
+
+fn parse_language(language: &str) -> InstrumentResult<Language> {
+    Language::from_slug(language).map_err(|err| {
         InstrumentError::invalid(
-            "input.source",
-            "tree-sitter returned no parse tree",
-            "preserve the source text and rerun parser diagnostics",
+            "input.language",
+            format!("{}: {err}", err.code()),
+            "use one of the canonical 11 AST languages before filling code instruments",
         )
-    })?;
-    let root = tree.root_node();
-    if root.has_error() {
-        let diagnostic = first_error_node(root, &input.source)
-            .unwrap_or_else(|| "tree contains parse recovery error".to_string());
+    })
+}
+
+fn map_chunker_error(err: AstChunkerError) -> InstrumentError {
+    let field = match &err {
+        AstChunkerError::UnsupportedLanguage { .. } => "input.language",
+        AstChunkerError::EmptySource
+        | AstChunkerError::MixedLanguage { .. }
+        | AstChunkerError::ParseFailed { .. }
+        | AstChunkerError::LanguageSetFailed { .. } => "input.source",
+    };
+    InstrumentError::invalid(
+        field,
+        format!("{}: {err}", err.code()),
+        "fix the source, language, or parser configuration before encoding code instruments; recovered ASTs are never encoded",
+    )
+}
+
+fn stats_from_chunks(chunks: &[AstChunk], source: &str) -> InstrumentResult<CodeStats> {
+    if chunks.is_empty() {
         return Err(InstrumentError::invalid(
             "input.source",
-            diagnostic,
-            "fix the source syntax before encoding code instruments; do not encode recovered ASTs",
+            "AST chunker returned zero chunks for non-empty source",
+            "treat zero emitted chunks as a chunker invariant violation and inspect parser evidence",
         ));
     }
-    let mut stats = CodeStats::default();
-    walk_node(root, 0, &mut stats);
+    let mut stats = CodeStats {
+        node_count: chunks.len(),
+        named_node_count: chunks.len(),
+        max_depth: chunks
+            .iter()
+            .map(|chunk| chunk.parent_chain.len() + 1)
+            .max()
+            .unwrap_or(1),
+        ..CodeStats::default()
+    };
+    for chunk in chunks {
+        match chunk.entity_type {
+            EntityType::Function | EntityType::Method | EntityType::TestFunction => {
+                stats.function_count += 1
+            }
+            EntityType::Class
+            | EntityType::Struct
+            | EntityType::Enum
+            | EntityType::TraitOrInterface
+            | EntityType::Impl => stats.class_count += 1,
+            EntityType::Import => stats.import_count += 1,
+            EntityType::Module | EntityType::Namespace | EntityType::CommentBlock | EntityType::Docstring => {}
+        }
+    }
+    stats.branch_count = count_words(source, &["if", "else", "match", "case", "switch"]);
+    stats.loop_count = count_words(source, &["for", "while", "loop", "foreach"]);
+    stats.call_count = source.matches('(').count().saturating_sub(stats.function_count);
+    stats.assignment_count = source.matches('=').count();
+    stats.identifier_count = source
+        .split(|ch: char| !(ch == '_' || ch.is_ascii_alphanumeric()))
+        .filter(|token| !token.is_empty())
+        .count();
+    stats.type_hint_count = source.matches(':').count() + source.matches("->").count();
+    stats.return_count = count_words(source, &["return", "yield"]);
     Ok(stats)
 }
 
-fn walk_node(node: Node<'_>, depth: usize, stats: &mut CodeStats) {
-    stats.node_count += 1;
-    if node.is_named() {
-        stats.named_node_count += 1;
-    }
-    stats.max_depth = stats.max_depth.max(depth);
-    match node.kind() {
-        "function_definition" => stats.function_count += 1,
-        "class_definition" => stats.class_count += 1,
-        "if_statement" | "conditional_expression" | "match_statement" => stats.branch_count += 1,
-        "for_statement" | "while_statement" => stats.loop_count += 1,
-        "call" => stats.call_count += 1,
-        "assignment" | "augmented_assignment" => stats.assignment_count += 1,
-        "identifier" => stats.identifier_count += 1,
-        "type" | "typed_parameter" | "type_alias_statement" => stats.type_hint_count += 1,
-        "return_statement" => stats.return_count += 1,
-        "import_statement" | "import_from_statement" => stats.import_count += 1,
-        _ => {}
-    }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        walk_node(child, depth + 1, stats);
-    }
+fn count_words(source: &str, words: &[&str]) -> usize {
+    source
+        .split(|ch: char| !(ch == '_' || ch.is_ascii_alphanumeric()))
+        .filter(|token| words.iter().any(|word| token == *word))
+        .count()
 }
 
 fn encode_code(
@@ -340,41 +384,6 @@ fn encode_code(
     Ok(out)
 }
 
-fn first_error_node(root: Node<'_>, source: &str) -> Option<String> {
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        if node.is_error() || node.is_missing() {
-            let start = node.start_position();
-            let range = node.byte_range();
-            let snippet = source
-                .get(range.clone())
-                .unwrap_or("")
-                .chars()
-                .take(80)
-                .collect::<String>();
-            return Some(format!(
-                "parse recovery node kind={} line={} column={} byte_range={}..{} snippet={:?}",
-                node.kind(),
-                start.row + 1,
-                start.column + 1,
-                range.start,
-                range.end,
-                snippet
-            ));
-        }
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            stack.push(child);
-        }
-    }
-    None
-}
-
 fn signed_delta(after: usize, before: usize, denom: f32) -> f32 {
     ((after as f32 - before as f32) / denom).clamp(-1.0, 1.0)
-}
-
-#[allow(dead_code)]
-fn stable_source_hash(source: &str) -> u64 {
-    fnv1a64(source.as_bytes())
 }
