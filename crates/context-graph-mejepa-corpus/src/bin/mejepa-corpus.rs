@@ -25,11 +25,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Output, Stdio};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc, Mutex,
 };
+use std::thread;
 use std::time::{Duration, Instant};
 
 type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
@@ -48,6 +49,8 @@ enum CommandKind {
     Stats(StatsArgs),
     Smoke(SmokeArgs),
     Merge(MergeArgs),
+    PrepareImages(PrepareImagesArgs),
+    Cleanup(CleanupArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -71,6 +74,8 @@ struct GenerateArgs {
     seed: u64,
     #[arg(long)]
     max_tasks: Option<usize>,
+    #[arg(long, default_value_t = 0)]
+    skip_tasks: usize,
     #[arg(
         long,
         default_value = "/home/cabdru/.cache/contextgraph-mejepa-corpus/repos"
@@ -136,6 +141,8 @@ struct SmokeArgs {
     seed: u64,
     #[arg(long)]
     max_tasks: Option<usize>,
+    #[arg(long, default_value_t = 0)]
+    skip_tasks: usize,
     #[arg(
         long,
         default_value = "/home/cabdru/.cache/contextgraph-mejepa-corpus/repos"
@@ -171,6 +178,38 @@ struct MergeArgs {
     allow_partial: bool,
 }
 
+#[derive(Parser, Debug, Clone)]
+struct PrepareImagesArgs {
+    #[arg(long)]
+    evidence: PathBuf,
+    #[arg(long, default_value = "tasks/swebench-lite")]
+    tasks_dir: PathBuf,
+    #[arg(long = "instance-id")]
+    instance_ids: Vec<String>,
+    #[arg(long)]
+    max_tasks: Option<usize>,
+    #[arg(long, default_value_t = 0)]
+    skip_tasks: usize,
+    #[arg(long, default_value = "swebench")]
+    namespace: String,
+    #[arg(long, default_value_t = 6)]
+    parallel: usize,
+    #[arg(long, default_value_t = 1800)]
+    pull_timeout_secs: u64,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct CleanupArgs {
+    #[arg(long)]
+    corpus: PathBuf,
+    #[arg(long, default_value = "swebench")]
+    namespace: String,
+    #[arg(long, default_value_t = false)]
+    execute: bool,
+    #[arg(long, default_value_t = false)]
+    remove_containers: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct TaskManifest {
     instance_id: String,
@@ -199,6 +238,8 @@ struct CorpusIndex {
     store_path: String,
     #[serde(default)]
     corpus_sha256: Option<String>,
+    #[serde(default)]
+    selected_task_ids: Vec<String>,
     entries: Vec<GeneratedEntry>,
     split_assignments: Vec<TaskAssignment>,
 }
@@ -226,6 +267,8 @@ fn main() -> CliResult<()> {
         CommandKind::Stats(args) => stats(args),
         CommandKind::Smoke(args) => smoke(args),
         CommandKind::Merge(args) => merge(args),
+        CommandKind::PrepareImages(args) => prepare_images(args),
+        CommandKind::Cleanup(args) => cleanup(args),
     }
 }
 
@@ -241,7 +284,16 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
     }
     let interrupted = install_shutdown_flag()?;
     let manifests = load_task_manifests(&args.tasks_dir)?;
-    let selected = select_manifests(&manifests, &args.instance_ids, args.max_tasks)?;
+    let selected = select_manifests(
+        &manifests,
+        &args.instance_ids,
+        args.skip_tasks,
+        args.max_tasks,
+    )?;
+    let selected_task_ids = selected
+        .iter()
+        .map(|manifest| manifest.instance_id.clone())
+        .collect::<Vec<_>>();
     let patch_by_task = load_official_patches(
         &args.venv_python,
         selected
@@ -303,6 +355,7 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
             &languages,
             &split.assignments,
             &store_path_rel,
+            &selected_task_ids,
         )?;
         existing
     } else {
@@ -317,10 +370,14 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
             tasks_dir: args.tasks_dir.display().to_string(),
             store_path: store_path_rel.display().to_string(),
             corpus_sha256: None,
+            selected_task_ids: selected_task_ids.clone(),
             entries: Vec::new(),
             split_assignments: split.assignments.clone(),
         }
     };
+    if index.selected_task_ids.is_empty() {
+        index.selected_task_ids = selected_task_ids.clone();
+    }
     let mut completed_keys = validate_resume_rows(&args.output, &index, &store)?;
     write_index(&args.output, &index)?;
 
@@ -401,6 +458,7 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
         batch_config.instance_timeout = Duration::from_secs(args.instance_timeout_secs);
         batch_config.overall_timeout = Duration::from_secs(args.overall_timeout_secs);
         batch_config.max_workers = args.oracle_workers;
+        batch_config.interrupt_flag = Some(Arc::clone(&interrupted));
         let batch_result = run_swebench_lite_oracle_batch(&batch_config)?;
 
         for (manifest, patch_outcome, patch_path_rel, patch_sha256, mutation) in pending {
@@ -647,6 +705,205 @@ fn stats(args: StatsArgs) -> CliResult<()> {
     Ok(())
 }
 
+fn prepare_images(args: PrepareImagesArgs) -> CliResult<()> {
+    validate_prepare_images_args(&args)?;
+    let manifests = load_task_manifests(&args.tasks_dir)?;
+    let selected = select_manifests(
+        &manifests,
+        &args.instance_ids,
+        args.skip_tasks,
+        args.max_tasks,
+    )?;
+    let selected_task_ids = selected
+        .iter()
+        .map(|manifest| manifest.instance_id.clone())
+        .collect::<Vec<_>>();
+    let target_images = selected_task_ids
+        .iter()
+        .map(|task_id| swebench_instance_image_ref(&args.namespace, task_id))
+        .collect::<CliResult<Vec<_>>>()?;
+    let docker_df_before = docker_stdout(&["system", "df"])?;
+    let local_images_before = docker_stdout(&["images", "--format", "{{.Repository}}:{{.Tag}}"])?;
+    let local_images_before = local_images_before
+        .lines()
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    let missing = target_images
+        .iter()
+        .filter(|image| !local_images_before.contains(*image))
+        .cloned()
+        .collect::<Vec<_>>();
+    let started = Instant::now();
+    let pull_results = pull_images_bounded(
+        missing.clone(),
+        args.parallel,
+        Duration::from_secs(args.pull_timeout_secs),
+    )?;
+    let docker_df_after = docker_stdout(&["system", "df"])?;
+    let local_images_after = docker_stdout(&["images", "--format", "{{.Repository}}:{{.Tag}}"])?;
+    let local_images_after = local_images_after
+        .lines()
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    let missing_after = target_images
+        .iter()
+        .filter(|image| !local_images_after.contains(*image))
+        .cloned()
+        .collect::<Vec<_>>();
+    let failures = pull_results
+        .iter()
+        .filter(|result| result.get("success").and_then(Value::as_bool) != Some(true))
+        .cloned()
+        .collect::<Vec<_>>();
+    let passes = missing_after.is_empty() && failures.is_empty();
+    let evidence = json!({
+        "source_of_truth": {
+            "tasks_dir": args.tasks_dir.display().to_string(),
+            "docker": "docker images --format {{.Repository}}:{{.Tag}}",
+        },
+        "namespace": args.namespace,
+        "parallel": args.parallel,
+        "pull_timeout_secs": args.pull_timeout_secs,
+        "selected_task_count": selected_task_ids.len(),
+        "selected_task_ids": selected_task_ids,
+        "target_image_count": target_images.len(),
+        "target_images": target_images,
+        "missing_before_count": missing.len(),
+        "missing_before": missing,
+        "pull_results": pull_results,
+        "missing_after_count": missing_after.len(),
+        "missing_after": missing_after,
+        "duration_secs": duration_secs(started.elapsed()),
+        "docker_system_df_before": docker_df_before,
+        "docker_system_df_after": docker_df_after,
+        "passes": passes,
+    });
+    write_json_checked(&args.evidence, &evidence)?;
+    if !passes {
+        return Err(format!(
+            "SWE-bench image preparation failed; evidence written to {}",
+            args.evidence.display()
+        )
+        .into());
+    }
+    println!("{}", serde_json::to_string_pretty(&evidence)?);
+    Ok(())
+}
+
+fn cleanup(args: CleanupArgs) -> CliResult<()> {
+    validate_cleanup_args(&args)?;
+    let index = read_index(&args.corpus)?;
+    validate_complete_index(&index)?;
+    let task_ids = index
+        .entries
+        .iter()
+        .map(|entry| entry.task_id.clone())
+        .collect::<BTreeSet<_>>();
+    if task_ids.is_empty() {
+        return Err("cleanup target corpus has no task ids".into());
+    }
+    let target_images = task_ids
+        .iter()
+        .map(|task_id| swebench_instance_image_ref(&args.namespace, task_id))
+        .collect::<CliResult<BTreeSet<_>>>()?;
+    let docker_df_before = docker_stdout(&["system", "df"])?;
+    let local_images_before = docker_stdout(&["images", "--format", "{{.Repository}}:{{.Tag}}"])?;
+    let local_images_before = local_images_before
+        .lines()
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    let present_before = target_images
+        .intersection(&local_images_before)
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut removed_containers = Vec::<Value>::new();
+    let mut active_containers = Vec::<Value>::new();
+    if args.remove_containers {
+        for row in docker_stdout(&[
+            "ps",
+            "-a",
+            "--format",
+            "{{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}",
+        ])?
+        .lines()
+        {
+            let parts = row.splitn(4, '\t').collect::<Vec<_>>();
+            if parts.len() != 4 || !target_images.contains(parts[1]) {
+                continue;
+            }
+            let container = json!({
+                "id": parts[0],
+                "image": parts[1],
+                "status": parts[2],
+                "name": parts[3],
+            });
+            if parts[2] == "Up" || parts[2].starts_with("Up ") {
+                active_containers.push(container);
+            } else if args.execute {
+                docker_status(&["rm", parts[0]])?;
+                removed_containers.push(container);
+            } else {
+                removed_containers.push(container);
+            }
+        }
+    }
+    if !active_containers.is_empty() {
+        return Err(format!(
+            "refusing cleanup while SWE-bench target containers are running: {}",
+            serde_json::to_string_pretty(&active_containers)?
+        )
+        .into());
+    }
+
+    let mut removed_images = Vec::<String>::new();
+    if args.execute {
+        for image in &present_before {
+            docker_status(&["rmi", image.as_str()])?;
+            removed_images.push(image.clone());
+        }
+    }
+
+    let docker_df_after = docker_stdout(&["system", "df"])?;
+    let local_images_after = docker_stdout(&["images", "--format", "{{.Repository}}:{{.Tag}}"])?;
+    let local_images_after = local_images_after
+        .lines()
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    let present_after = target_images
+        .intersection(&local_images_after)
+        .cloned()
+        .collect::<Vec<_>>();
+    if args.execute && !present_after.is_empty() {
+        return Err(format!(
+            "cleanup did not remove all target images; remaining={present_after:?}"
+        )
+        .into());
+    }
+    let cleanup_passes = !args.execute || present_after.is_empty();
+
+    let evidence = json!({
+        "source_of_truth": {
+            "index": args.corpus.join("index.json").display().to_string(),
+            "docker": "docker images --format {{.Repository}}:{{.Tag}}",
+        },
+        "mode": if args.execute { "executed" } else { "dry_run" },
+        "namespace": args.namespace,
+        "task_count": task_ids.len(),
+        "target_image_count": target_images.len(),
+        "target_images_present_before": present_before,
+        "target_images_present_after": present_after,
+        "removed_images": removed_images,
+        "remove_containers": args.remove_containers,
+        "target_containers_removed_or_would_remove": removed_containers,
+        "docker_system_df_before": docker_df_before,
+        "docker_system_df_after": docker_df_after,
+        "passes": cleanup_passes,
+    });
+    write_json_checked(&args.corpus.join("cleanup-evidence.json"), &evidence)?;
+    println!("{}", serde_json::to_string_pretty(&evidence)?);
+    Ok(())
+}
+
 fn merge(args: MergeArgs) -> CliResult<()> {
     if args.shards.is_empty() {
         return Err("merge requires at least one --shard".into());
@@ -679,6 +936,7 @@ fn merge(args: MergeArgs) -> CliResult<()> {
                 tasks_dir: shard_index.tasks_dir.clone(),
                 store_path: store_path_rel.display().to_string(),
                 corpus_sha256: None,
+                selected_task_ids: Vec::new(),
                 entries: Vec::new(),
                 split_assignments: shard_index.split_assignments.clone(),
             };
@@ -751,6 +1009,12 @@ fn merge(args: MergeArgs) -> CliResult<()> {
             category_position(entry.category),
         )
     });
+    index.selected_task_ids = entries
+        .iter()
+        .map(|entry| entry.task_id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
     index.entries = entries;
     let expected_entries = index.split_assignments.len() * MutationCategory::all().len();
     if !args.allow_partial && index.entries.len() != expected_entries {
@@ -810,6 +1074,7 @@ fn smoke(args: SmokeArgs) -> CliResult<()> {
         languages: args.languages.clone(),
         seed: args.seed,
         max_tasks: task_limit,
+        skip_tasks: args.skip_tasks,
         repo_cache_dir: args.repo_cache_dir.clone(),
         source_work_root: args.source_work_root.clone(),
         run_id_prefix: args.run_id_prefix.clone(),
@@ -1081,6 +1346,7 @@ fn validate_smoke_args(args: &SmokeArgs) -> CliResult<()> {
         languages: args.languages.clone(),
         seed: args.seed,
         max_tasks: args.max_tasks,
+        skip_tasks: args.skip_tasks,
         repo_cache_dir: args.repo_cache_dir.clone(),
         source_work_root: args.source_work_root.clone(),
         run_id_prefix: args.run_id_prefix.clone(),
@@ -1119,8 +1385,239 @@ fn validate_generate_args(args: &GenerateArgs) -> CliResult<()> {
     if args.oracle_workers == 0 {
         return Err("oracle_workers must be > 0".into());
     }
+    if args.max_tasks == Some(0) {
+        return Err("max_tasks must be > 0 when provided".into());
+    }
+    if args.skip_tasks > 0 && !args.instance_ids.is_empty() {
+        return Err("skip_tasks cannot be combined with explicit --instance-id selection".into());
+    }
     validate_docker_run_id_component(&args.run_id_prefix)?;
     Ok(())
+}
+
+fn validate_prepare_images_args(args: &PrepareImagesArgs) -> CliResult<()> {
+    validate_docker_namespace(&args.namespace, "prepare-images namespace")?;
+    if args.parallel == 0 {
+        return Err("prepare-images parallel must be > 0".into());
+    }
+    if args.pull_timeout_secs == 0 {
+        return Err("prepare-images pull_timeout_secs must be > 0".into());
+    }
+    if args.max_tasks == Some(0) {
+        return Err("prepare-images max_tasks must be > 0 when provided".into());
+    }
+    if args.skip_tasks > 0 && !args.instance_ids.is_empty() {
+        return Err("prepare-images skip_tasks cannot be combined with --instance-id".into());
+    }
+    Ok(())
+}
+
+fn validate_cleanup_args(args: &CleanupArgs) -> CliResult<()> {
+    validate_docker_namespace(&args.namespace, "cleanup namespace")
+}
+
+fn validate_docker_namespace(namespace: &str, field: &'static str) -> CliResult<()> {
+    if namespace.trim().is_empty() {
+        return Err(format!("{field} must be non-empty").into());
+    }
+    if namespace
+        .chars()
+        .any(|ch| ch.is_control() || ch.is_whitespace())
+    {
+        return Err(format!("{field} cannot contain whitespace or control characters").into());
+    }
+    if namespace.contains("..") || namespace.starts_with('/') {
+        return Err(format!("{field} must be a Docker namespace, not a path").into());
+    }
+    Ok(())
+}
+
+fn pull_images_bounded(
+    images: Vec<String>,
+    parallel: usize,
+    timeout: Duration,
+) -> CliResult<Vec<Value>> {
+    if images.is_empty() {
+        return Ok(Vec::new());
+    }
+    let images = Arc::new(images);
+    let cursor = Arc::new(AtomicUsize::new(0));
+    let results = Arc::new(Mutex::new(Vec::new()));
+    let worker_count = parallel.min(images.len());
+    let mut handles = Vec::with_capacity(worker_count);
+    for _ in 0..worker_count {
+        let images = Arc::clone(&images);
+        let cursor = Arc::clone(&cursor);
+        let results = Arc::clone(&results);
+        handles.push(thread::spawn(move || loop {
+            let index = cursor.fetch_add(1, Ordering::SeqCst);
+            let Some(image) = images.get(index) else {
+                break;
+            };
+            let result = pull_one_image(image, timeout);
+            let mut guard = results.lock().expect("image-prep result mutex poisoned");
+            guard.push(result);
+        }));
+    }
+    for handle in handles {
+        handle
+            .join()
+            .map_err(|_| "image preparation worker thread panicked")?;
+    }
+    let mut results = Arc::try_unwrap(results)
+        .map_err(|_| "image preparation results still have live references")?
+        .into_inner()
+        .map_err(|_| "image preparation result mutex poisoned")?;
+    results.sort_by(|a, b| {
+        a.get("image")
+            .and_then(Value::as_str)
+            .cmp(&b.get("image").and_then(Value::as_str))
+    });
+    Ok(results)
+}
+
+fn pull_one_image(image: &str, timeout: Duration) -> Value {
+    let started = Instant::now();
+    let mut command = Command::new("docker");
+    command
+        .args(["pull", image])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    configure_child_process_group(&mut command);
+    let result = command
+        .spawn()
+        .map_err(|err| format!("failed to spawn docker pull: {err}"))
+        .and_then(|child| {
+            wait_for_child_timeout(child, timeout, "docker pull").map_err(|err| err.to_string())
+        });
+    match result {
+        Ok(output) => json!({
+            "image": image,
+            "success": output.status.success(),
+            "exit_code": output.status.code(),
+            "duration_secs": duration_secs(started.elapsed()),
+            "stdout_tail": tail_bytes(&output.stdout),
+            "stderr_tail": tail_bytes(&output.stderr),
+        }),
+        Err(error) => json!({
+            "image": image,
+            "success": false,
+            "exit_code": null,
+            "duration_secs": duration_secs(started.elapsed()),
+            "error": error,
+        }),
+    }
+}
+
+fn configure_child_process_group(command: &mut Command) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+}
+
+fn wait_for_child_timeout(mut child: Child, timeout: Duration, label: &str) -> CliResult<Output> {
+    let started = Instant::now();
+    loop {
+        if child.try_wait()?.is_some() {
+            return Ok(child.wait_with_output()?);
+        }
+        if started.elapsed() >= timeout {
+            terminate_child_process_group(&mut child)?;
+            let output = child.wait_with_output()?;
+            return Err(format!(
+                "{label} timed out after {timeout:?}; stdout_tail={}; stderr_tail={}",
+                tail_bytes(&output.stdout),
+                tail_bytes(&output.stderr)
+            )
+            .into());
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn terminate_child_process_group(child: &mut Child) -> CliResult<()> {
+    #[cfg(unix)]
+    {
+        let process_group = format!("-{}", child.id());
+        let term = Command::new("kill")
+            .args(["-TERM", &process_group])
+            .status()?;
+        if !term.success() {
+            let _ = child.kill();
+        }
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(2) {
+            if child.try_wait()?.is_some() {
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+        let kill = Command::new("kill")
+            .args(["-KILL", &process_group])
+            .status()?;
+        if !kill.success() {
+            let _ = child.kill();
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        child.kill()?;
+        Ok(())
+    }
+}
+
+fn swebench_instance_image_ref(namespace: &str, instance_id: &str) -> CliResult<String> {
+    let (owner, rest) = instance_id
+        .split_once("__")
+        .ok_or_else(|| format!("invalid SWE-bench instance_id for image cleanup: {instance_id}"))?;
+    if owner.is_empty() || rest.is_empty() {
+        return Err(
+            format!("invalid SWE-bench instance_id for image cleanup: {instance_id}").into(),
+        );
+    }
+    Ok(format!(
+        "{namespace}/sweb.eval.x86_64.{owner}_1776_{rest}:latest"
+    ))
+}
+
+fn docker_stdout(args: &[&str]) -> CliResult<String> {
+    let output = Command::new("docker").args(args).output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "docker {} failed: status={:?} stdout_tail={} stderr_tail={}",
+            args.join(" "),
+            output.status.code(),
+            tail_bytes(&output.stdout),
+            tail_bytes(&output.stderr),
+        )
+        .into());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn docker_status(args: &[&str]) -> CliResult<()> {
+    let output = Command::new("docker").args(args).output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "docker {} failed: status={:?} stdout_tail={} stderr_tail={}",
+            args.join(" "),
+            output.status.code(),
+            tail_bytes(&output.stdout),
+            tail_bytes(&output.stderr),
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn tail_bytes(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    let mut lines = text.lines().rev().take(20).collect::<Vec<_>>();
+    lines.reverse();
+    lines.join("\n")
 }
 
 fn validate_verify_args(args: &VerifyArgs) -> CliResult<()> {
@@ -1200,6 +1697,7 @@ fn validate_resume_index(
     languages: &[Language],
     split_assignments: &[TaskAssignment],
     store_path_rel: &Path,
+    selected_task_ids: &[String],
 ) -> CliResult<()> {
     if index.complete {
         return Err("cannot resume a corpus whose index is already complete=true".into());
@@ -1260,6 +1758,14 @@ fn validate_resume_index(
     }
     if index.split_assignments != split_assignments {
         return Err("cannot resume because split assignments changed".into());
+    }
+    if !index.selected_task_ids.is_empty() && index.selected_task_ids != selected_task_ids {
+        return Err(format!(
+            "cannot resume with different task selection: index has {} task ids, args select {} task ids",
+            index.selected_task_ids.len(),
+            selected_task_ids.len()
+        )
+        .into());
     }
     Ok(())
 }
@@ -1324,8 +1830,12 @@ fn load_task_manifests(tasks_dir: &Path) -> CliResult<Vec<TaskManifest>> {
 fn select_manifests(
     manifests: &[TaskManifest],
     instance_ids: &[String],
+    skip_tasks: usize,
     max_tasks: Option<usize>,
 ) -> CliResult<Vec<TaskManifest>> {
+    if skip_tasks > 0 && !instance_ids.is_empty() {
+        return Err("skip_tasks cannot be combined with explicit --instance-id selection".into());
+    }
     let selected = if instance_ids.is_empty() {
         manifests.to_vec()
     } else {
@@ -1347,6 +1857,7 @@ fn select_manifests(
     };
     let selected = selected
         .into_iter()
+        .skip(skip_tasks)
         .take(max_tasks.unwrap_or(usize::MAX))
         .collect::<Vec<_>>();
     if selected.is_empty() {
@@ -1582,6 +2093,8 @@ fn build_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> 
         },
         "provenance": provenance,
         "total_entries": index.entries.len(),
+        "selected_task_count": index.selected_task_ids.len(),
+        "selected_task_ids": &index.selected_task_ids,
         "task_manifest_count": index.split_assignments.len(),
         "expected_full_phase0_entries": expected_full_entries,
         "full_phase0_complete": index.entries.len() == expected_full_entries,

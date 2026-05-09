@@ -32,6 +32,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{atomic::AtomicBool, Arc};
 use std::time::{Duration, Instant};
 
 use context_graph_mejepa_instruments::{
@@ -41,7 +42,10 @@ use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::oracle::{tail_text, wait_with_timeout, OracleError, OracleResult};
+use crate::oracle::{
+    configure_child_process_group, tail_text, wait_with_timeout_interruptible, OracleError,
+    OracleResult,
+};
 
 // ---------- public configuration types ----------
 
@@ -115,6 +119,7 @@ pub struct SwebenchOracleConfig {
     pub namespace: String,
     pub instance_timeout: Duration,
     pub overall_timeout: Duration,
+    pub interrupt_flag: Option<Arc<AtomicBool>>,
 }
 
 impl SwebenchOracleConfig {
@@ -136,6 +141,7 @@ impl SwebenchOracleConfig {
             namespace: "swebench".to_string(),
             instance_timeout: Duration::from_secs(1800),
             overall_timeout: Duration::from_secs(3600),
+            interrupt_flag: None,
         }
     }
 }
@@ -212,6 +218,7 @@ pub struct SwebenchBatchOracleConfig {
     pub instance_timeout: Duration,
     pub overall_timeout: Duration,
     pub max_workers: usize,
+    pub interrupt_flag: Option<Arc<AtomicBool>>,
 }
 
 impl SwebenchBatchOracleConfig {
@@ -232,6 +239,7 @@ impl SwebenchBatchOracleConfig {
             instance_timeout: Duration::from_secs(1800),
             overall_timeout: Duration::from_secs(3600),
             max_workers: 4,
+            interrupt_flag: None,
         }
     }
 }
@@ -321,6 +329,7 @@ pub fn run_swebench_lite_oracle(
             .current_dir(&config.run_root)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        configure_child_process_group(&mut cmd);
 
         let child = cmd.spawn().map_err(|err| {
             OracleError::command_failed(
@@ -329,7 +338,12 @@ pub fn run_swebench_lite_oracle(
                 "verify swebench venv python path and PATH; do not modify .env to bypass",
             )
         })?;
-        wait_with_timeout(child, config.overall_timeout, "swebench-harness")?
+        wait_with_timeout_interruptible(
+            child,
+            config.overall_timeout,
+            "swebench-harness",
+            config.interrupt_flag.as_deref(),
+        )?
     };
     let duration_ms = started.elapsed().as_millis();
     if !output.status.success() {
@@ -426,6 +440,7 @@ pub fn run_swebench_lite_oracle_batch(
             .current_dir(&config.run_root)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        configure_child_process_group(&mut cmd);
         let child = cmd.spawn().map_err(|err| {
             OracleError::command_failed(
                 command[0].clone(),
@@ -433,7 +448,12 @@ pub fn run_swebench_lite_oracle_batch(
                 "verify swebench venv python path and PATH; do not modify .env to bypass",
             )
         })?;
-        wait_with_timeout(child, config.overall_timeout, "swebench-harness")?
+        wait_with_timeout_interruptible(
+            child,
+            config.overall_timeout,
+            "swebench-harness",
+            config.interrupt_flag.as_deref(),
+        )?
     };
     let duration_ms = started.elapsed().as_millis();
     if !output.status.success() {
@@ -944,6 +964,7 @@ fn validate_batch_config(config: &SwebenchBatchOracleConfig) -> OracleResult<()>
         namespace: config.namespace.clone(),
         instance_timeout: config.instance_timeout,
         overall_timeout: config.overall_timeout,
+        interrupt_flag: config.interrupt_flag.clone(),
     };
     validate_config(&single)
 }

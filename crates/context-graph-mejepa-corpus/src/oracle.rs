@@ -8,7 +8,8 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Output, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -60,6 +61,12 @@ pub enum OracleError {
         message: String,
         remediation: &'static str,
     },
+    #[error("oracle command interrupted for {program}: {message}; remediation: {remediation}")]
+    Interrupted {
+        program: String,
+        message: String,
+        remediation: &'static str,
+    },
     #[error("oracle JSON parse failed at {path}: {message}; remediation: {remediation}")]
     JsonParse {
         path: String,
@@ -99,6 +106,7 @@ impl OracleError {
             Self::Io { .. } => "MEJEPA_ORACLE_IO",
             Self::CommandFailed { .. } => "MEJEPA_ORACLE_COMMAND_FAILED",
             Self::Timeout { .. } => "MEJEPA_ORACLE_TIMEOUT",
+            Self::Interrupted { .. } => "MEJEPA_ORACLE_INTERRUPTED",
             Self::JsonParse { .. } => "MEJEPA_ORACLE_JSON_PARSE",
             Self::ReportInvalid { .. } => "MEJEPA_ORACLE_REPORT_INVALID",
             Self::Store { .. } => "MEJEPA_ORACLE_STORE",
@@ -148,6 +156,18 @@ impl OracleError {
         remediation: &'static str,
     ) -> Self {
         Self::Timeout {
+            program: program.into(),
+            message: message.into(),
+            remediation,
+        }
+    }
+
+    pub(crate) fn interrupted(
+        program: impl Into<String>,
+        message: impl Into<String>,
+        remediation: &'static str,
+    ) -> Self {
+        Self::Interrupted {
             program: program.into(),
             message: message.into(),
             remediation,
@@ -275,6 +295,7 @@ pub fn run_command_json_oracle(config: &CommandOracleConfig) -> OracleResult<Ora
         validate_env_pair(key, value)?;
         command.env(key, value);
     }
+    configure_child_process_group(&mut command);
 
     let child = command.spawn().map_err(|err| {
         OracleError::command_failed(
@@ -969,11 +990,28 @@ fn validate_docker_config(config: &DockerOracleConfig) -> OracleResult<()> {
     Ok(())
 }
 
+pub(crate) fn configure_child_process_group(command: &mut Command) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+}
+
 pub(crate) fn wait_with_timeout(
-    mut child: std::process::Child,
+    child: Child,
     timeout: Duration,
     program: &str,
-) -> OracleResult<std::process::Output> {
+) -> OracleResult<Output> {
+    wait_with_timeout_interruptible(child, timeout, program, None)
+}
+
+pub(crate) fn wait_with_timeout_interruptible(
+    mut child: Child,
+    timeout: Duration,
+    program: &str,
+    interrupted: Option<&AtomicBool>,
+) -> OracleResult<Output> {
     let started = Instant::now();
     loop {
         if child
@@ -995,8 +1033,31 @@ pub(crate) fn wait_with_timeout(
                 )
             });
         }
+        if interrupted
+            .map(|flag| flag.load(Ordering::SeqCst))
+            .unwrap_or(false)
+        {
+            terminate_child_process_group(&mut child, program)?;
+            let output = child.wait_with_output().map_err(|err| {
+                OracleError::interrupted(
+                    program,
+                    format!("interrupted and failed to collect output: {err}"),
+                    "rerun the corpus command after confirming no stale SWE-bench containers remain",
+                )
+            })?;
+            return Err(OracleError::interrupted(
+                program,
+                format!(
+                    "interrupted after {:?}; stdout_tail={}; stderr_tail={}",
+                    started.elapsed(),
+                    tail_text(&output.stdout),
+                    tail_text(&output.stderr),
+                ),
+                "rerun the corpus command with --resume-incomplete or use a fresh shard output after inspecting the partial index",
+            ));
+        }
         if started.elapsed() >= timeout {
-            let _ = child.kill();
+            terminate_child_process_group(&mut child, program)?;
             let output = child.wait_with_output().map_err(|err| {
                 OracleError::timeout(
                     program,
@@ -1015,6 +1076,67 @@ pub(crate) fn wait_with_timeout(
             ));
         }
         thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn terminate_child_process_group(child: &mut Child, program: &str) -> OracleResult<()> {
+    #[cfg(unix)]
+    {
+        let process_group = format!("-{}", child.id());
+        let term_status = Command::new("kill")
+            .args(["-TERM", &process_group])
+            .status()
+            .map_err(|err| {
+                OracleError::command_failed(
+                    program,
+                    format!("failed to send SIGTERM to process group {process_group}: {err}"),
+                    "inspect OS process state; retry after cleaning stale oracle subprocesses",
+                )
+            })?;
+        if !term_status.success() {
+            let _ = child.kill();
+        }
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(2) {
+            if child
+                .try_wait()
+                .map_err(|err| {
+                    OracleError::command_failed(
+                        program,
+                        format!("failed while polling terminated process group: {err}"),
+                        "inspect OS process state; retry after cleaning stale oracle subprocesses",
+                    )
+                })?
+                .is_some()
+            {
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+        let kill_status = Command::new("kill")
+            .args(["-KILL", &process_group])
+            .status()
+            .map_err(|err| {
+                OracleError::command_failed(
+                    program,
+                    format!("failed to send SIGKILL to process group {process_group}: {err}"),
+                    "inspect OS process state; retry after cleaning stale oracle subprocesses",
+                )
+            })?;
+        if !kill_status.success() {
+            let _ = child.kill();
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        child.kill().map_err(|err| {
+            OracleError::command_failed(
+                program,
+                format!("failed to terminate child process: {err}"),
+                "inspect OS process state; retry after cleaning stale oracle subprocesses",
+            )
+        })
     }
 }
 
@@ -1042,6 +1164,7 @@ fn verify_docker_available(timeout: Duration) -> OracleResult<()> {
         .args(["version", "--format", "{{.Server.Version}}"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    configure_child_process_group(&mut command);
     let child = command.spawn().map_err(|err| {
         OracleError::command_failed(
             "docker",
@@ -1661,6 +1784,55 @@ mod tests {
         };
         let err = run_command_json_oracle(&config).unwrap_err();
         assert_eq!(err.code(), "MEJEPA_ORACLE_TIMEOUT");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn timeout_kills_child_process_group() {
+        let marker = format!("contextgraph_timeout_child_{}", std::process::id());
+        let mut command = Command::new("bash");
+        command
+            .args(["-c", &format!("exec -a {marker} sleep 30")])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        configure_child_process_group(&mut command);
+        let child = command.spawn().unwrap();
+        let err = wait_with_timeout(child, Duration::from_millis(50), "timeout-test").unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_ORACLE_TIMEOUT");
+        thread::sleep(Duration::from_millis(100));
+        let output = Command::new("pgrep")
+            .args(["-f", &format!("^{marker}")])
+            .output()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&output.stdout).trim().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn interrupt_kills_child_process_group() {
+        let marker = format!("contextgraph_interrupt_child_{}", std::process::id());
+        let interrupted = AtomicBool::new(true);
+        let mut command = Command::new("bash");
+        command
+            .args(["-c", &format!("exec -a {marker} sleep 30")])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        configure_child_process_group(&mut command);
+        let child = command.spawn().unwrap();
+        let err = wait_with_timeout_interruptible(
+            child,
+            Duration::from_secs(30),
+            "interrupt-test",
+            Some(&interrupted),
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_ORACLE_INTERRUPTED");
+        thread::sleep(Duration::from_millis(100));
+        let output = Command::new("pgrep")
+            .args(["-f", &format!("^{marker}")])
+            .output()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&output.stdout).trim().is_empty());
     }
 
     fn _assert_os_str_send_sync(_: &OsStr) {}
