@@ -9,3 +9,9 @@ license.workspace = true
 [dependencies]
 sha3 = "0.10"
 thiserror = { workspace = true }
+ed25519-dalek = { version = "2.1", optional = true, default-features = false, features = ["std", "zeroize"] }
+zeroize = { version = "1.7", optional = true }
+
+[features]
+default = []
+ed25519 = ["dep:ed25519-dalek", "dep:zeroize"]

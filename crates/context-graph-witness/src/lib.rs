@@ -9,6 +9,15 @@ use sha3::{
 };
 use thiserror::Error;
 
+#[cfg(feature = "ed25519")]
+pub mod sign;
+
+#[cfg(feature = "ed25519")]
+pub use sign::{
+    digest_for_segment, verify_segment, verify_segment_with_expected_pubkey, SignError,
+    WitnessKeypair, DOMAIN_TAG, SIGNATURE_CODEC_SIZE,
+};
+
 pub const HASH_SIZE: usize = 32;
 pub const WITNESS_ENTRY_SIZE: usize = 73;
 pub const ZERO_HASH: [u8; HASH_SIZE] = [0u8; HASH_SIZE];
