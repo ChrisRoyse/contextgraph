@@ -9150,15 +9150,71 @@ fn ast_symbol_visibility(
                 "public"
             }
         }
-        "cpp" => {
-            if node_text.trim_start().starts_with("static ") || node_text.contains("\nstatic ") {
-                "private"
-            } else {
-                "public"
-            }
-        }
+        "cpp" => ast_cpp_symbol_visibility(node, source),
         _ => "unknown",
     }
+}
+
+fn ast_cpp_symbol_visibility(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
+    let node_text = node.utf8_text(source.as_bytes()).unwrap_or("");
+    if node_text.trim_start().starts_with("static ") || node_text.contains("\nstatic ") {
+        return "private";
+    }
+    let Some(class_node) = ast_nearest_ancestor_any(node, &["class_specifier", "struct_specifier"])
+    else {
+        return "public";
+    };
+    let mut visibility = if class_node.kind() == "struct_specifier" {
+        "public"
+    } else {
+        "private"
+    };
+    let target_start = node.start_byte();
+    let body = class_node
+        .child_by_field_name("body")
+        .or_else(|| ast_first_child_kind(class_node, "field_declaration_list"));
+    if let Some(body) = body {
+        let mut cursor = body.walk();
+        for child in body.named_children(&mut cursor) {
+            if child.start_byte() >= target_start {
+                break;
+            }
+            if child.kind() == "access_specifier" {
+                let text = child.utf8_text(source.as_bytes()).unwrap_or("").trim();
+                visibility = if text.starts_with("public") {
+                    "public"
+                } else if text.starts_with("protected") {
+                    "protected"
+                } else {
+                    "private"
+                };
+            }
+        }
+    }
+    visibility
+}
+
+fn ast_nearest_ancestor_any<'a>(
+    node: tree_sitter::Node<'a>,
+    kinds: &[&str],
+) -> Option<tree_sitter::Node<'a>> {
+    let mut current = node.parent();
+    while let Some(candidate) = current {
+        if kinds.iter().any(|kind| candidate.kind() == *kind) {
+            return Some(candidate);
+        }
+        current = candidate.parent();
+    }
+    None
+}
+
+fn ast_first_child_kind<'a>(
+    node: tree_sitter::Node<'a>,
+    kind: &str,
+) -> Option<tree_sitter::Node<'a>> {
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .find(|child| child.kind() == kind)
 }
 
 fn ast_c_visibility_text(node: tree_sitter::Node<'_>, source: &str) -> String {

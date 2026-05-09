@@ -391,7 +391,7 @@ fn split_fsv(evidence_root: &Path) -> FsvResult<Value> {
         report.bucket_sizes.iter().all(|size| *size > 0),
         "split must produce non-empty train/calibration/holdout buckets",
     )?;
-    require(report.leakage_check_passed, "split leakage_check_passed");
+    require(report.leakage_check_passed, "split leakage_check_passed")?;
     require(
         split_is_leakage_free(&report),
         "split_is_leakage_free must confirm zero cross-bucket repo edges",
@@ -590,7 +590,7 @@ fn read_split_assignments_csv(path: &Path, expected: &SplitReport) -> FsvResult<
         require(
             task_ids.insert(parts[0]),
             "split CSV task IDs must be unique",
-        );
+        )?;
     }
     Ok(json!({
         "row_count": rows.len(),

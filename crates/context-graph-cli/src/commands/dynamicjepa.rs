@@ -5860,7 +5860,11 @@ fn semantic_collect_source_files_inner(
                 })?
                 .to_string_lossy()
                 .replace('\\', "/");
-            if let Some(language) = semantic_language_for_path(&rel) {
+            if semantic_language_for_path(&rel).is_some() {
+                let source = read_text_file(&path, "semantic-index.source_file")?;
+                let Some(language) = semantic_language_for_path_and_source(&rel, &source) else {
+                    continue;
+                };
                 out.push(SemanticSourceFile {
                     path: rel,
                     language: language.to_string(),
@@ -25299,6 +25303,78 @@ pub fn add_two(x: i32) -> i32 {
             err.to_string().contains("parse reported syntax errors"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn c_semantic_extraction_is_declarator_aware() {
+        let source = r#"
+#define CG_SCALE(x) ((x) * 2)
+struct Point {
+    int x;
+    int y;
+};
+int add(int left, int right);
+
+static int helper(int value) {
+    return CG_SCALE(value);
+}
+
+int add(int left, int right) {
+    struct Point p = {left, right};
+    return helper(p.x + p.y);
+}
+"#;
+        let extraction =
+            semantic_extract_source_facts("src/math_util.c", "c", source).expect("valid C AST");
+
+        let symbol_pairs = extraction
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?,
+                    symbol.get("kind")?.as_str()?,
+                    symbol.get("visibility")?.as_str()?,
+                ))
+            })
+            .collect::<Vec<_>>();
+        println!("C semantic extraction symbols after: {symbol_pairs:?}");
+
+        let helper_symbols = symbol_pairs
+            .iter()
+            .filter(|(name, _, _)| *name == "helper")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            helper_symbols.len(),
+            1,
+            "function_definition must not be duplicated by its nested function_declarator"
+        );
+        assert_eq!(helper_symbols[0].2, "private");
+        assert!(symbol_pairs
+            .iter()
+            .any(|(name, kind, _)| *name == "CG_SCALE" && *kind == "preproc_function_def"));
+
+        let point_declarations = symbol_pairs
+            .iter()
+            .filter(|(name, kind, _)| *name == "Point" && *kind == "struct_specifier")
+            .count();
+        assert_eq!(
+            point_declarations, 1,
+            "struct Point type uses must not be recorded as fresh type declarations"
+        );
+
+        let prototype_dataflow = extraction.dataflow_edges.iter().any(|edge| {
+            edge.get("line").and_then(Value::as_u64) == Some(7)
+                && edge.get("edge_kind").and_then(Value::as_str) == Some("declaration")
+        });
+        assert!(
+            !prototype_dataflow,
+            "function prototypes are symbol declarations, not dataflow edges"
+        );
+        assert!(extraction.type_facts.iter().any(|fact| {
+            fact.get("fact_kind").and_then(Value::as_str) == Some("annotated_binding")
+                && fact.get("line").and_then(Value::as_u64) == Some(14)
+        }));
     }
 
     #[test]
