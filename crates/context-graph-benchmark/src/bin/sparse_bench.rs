@@ -17,9 +17,12 @@
 //!   --synthetic --num-documents 100 --num-queries 20
 //! ```
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+#[cfg(feature = "real-embeddings")]
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
+#[cfg(feature = "real-embeddings")]
 use std::time::Instant;
 
 use anyhow::Result;

@@ -3,8 +3,9 @@
 > **Estimated effort (per doc 09 §7):** 5-7 days.
 > **Status (2026-05-09):** PARTIAL — operators, split, strict
 > command/Docker oracle wrapper, pytest-report parser, and crate-local
-> RocksDB oracle store shipped; official SWE-bench Docker batch and full
-> 2,400-entry generation deferred.
+> RocksDB oracle store shipped; official SWE-bench Lite preflight and
+> one-task gold smoke now pass; full image set and 2,400-entry generation
+> remain deferred.
 
 ## Goal
 
@@ -35,8 +36,9 @@ Phase 0 is the **bottleneck**.
 2. **8 mutation engines**, each in its own module per §3.1 row table.
 3. **Docker oracle wrapper** that runs each mutated patch against the
    official SWE-bench evaluator and persists `(mutated_patch,
-   oracle_verdict)` tuples. The local wrapper/parser is shipped; the
-   official SWE-bench image batch is still operationally deferred.
+   oracle_verdict)` tuples. The local wrapper/parser is shipped; one
+   official gold smoke passes; the full official image/corpus batch is
+   still operationally deferred.
 4. **RocksDB column families** `CF_MEJEPA_MUTATION_CORPUS` and
    `CF_MEJEPA_ORACLE_VERDICTS` (crate-local `OracleStore` shipped).
 
@@ -127,13 +129,30 @@ tests pass. Evidence at `/tmp/contextgraph-mejepa-corpus-fsv/`.
 
 ### A. Official SWE-bench Docker image oracle run
 
-**Why deferred:** environment-dependent. Requires:
-- Docker daemon access (operator's hardware).
-- Pulling SWE-bench Lite images (network + disk).
-- Multi-minute oracle runs per task × 2400 tasks = many hours of
-  serial work, more in parallel.
-- The local wrapper was FSV-tested with a real pytest trigger, but the
-  official SWE-bench task images were not pulled or run in this pass.
+**Current FSV state (2026-05-09):**
+- Docker Desktop is reachable from WSL through the `desktop-linux`
+  context; preflight evidence:
+  `/tmp/contextgraph-swebench-lite-fsv/preflight-evidence.json`.
+- The isolated official SWE-bench harness lives at
+  `/home/cabdru/.cache/contextgraph-swebench/venv/bin/python` with
+  `swebench==4.1.0`; it loads `princeton-nlp/SWE-bench_Lite:test` as
+  exactly 300 instances matching `tasks/swebench-lite/*.json`.
+- Official remote image naming is
+  `swebench/sweb.eval.x86_64.<instance_id_lower_with___replaced_by__1776_>:latest`.
+  Example: `sympy__sympy-20590` →
+  `swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest`.
+- One official image is pulled locally and passed a real official
+  `predictions_path=gold` run: `sympy__sympy-20590`, resolved=true.
+  Evidence:
+  `/tmp/contextgraph-swebench-lite-fsv/gold-smoke-evidence.json`.
+- Physical Docker image state is currently 1 present / 299 missing.
+  Evidence:
+  `/tmp/contextgraph-swebench-lite-fsv/image-status-evidence.json`.
+
+**Why still deferred:** the full 300-image / 2,400-entry operational
+batch has not been run. It requires pulling or building the remaining
+299 official images, then running 300 tasks × 8 mutation categories and
+persisting every `(mutation, oracle)` tuple.
 
 **Blocker history:**
 `memory/blockers/agent-72-coordinator--docker-permission-denied-blocks-official-eval.md`
@@ -172,17 +191,20 @@ once items A and B ship.
 - ✅ `context-graph-mejepa-corpus` mutation operators
 - ✅ `context-graph-mincut` (Stoer-Wagner) for split
 - ✅ `context-graph-witness` (witness-chain entries per attempt)
-- ✅ Docker daemon available locally during hardening (`docker version`
-  returned server 29.4.1)
-- ⏳ SWE-bench Lite Docker images/test fixtures locally for official
-  evaluator runs
+- ✅ Docker daemon available locally during hardening (`docker info`
+  returned Docker Desktop 29.4.1, x86_64, 30 CPUs, ~110GiB memory)
+- ✅ One official SWE-bench Lite image/test fixture locally and verified
+  with `predictions_path=gold`
+- ⏳ Remaining 299 SWE-bench Lite Docker images/test fixtures locally
+  for full official evaluator runs
 - ⏳ optional `context-graph-storage` extension for shared production CFs
 
 ## Implementation order (recommended next 3 turns)
 
 **Turn 1**: Pull/prepare the official SWE-bench Lite Docker images and
 run the shipped wrapper against ONE real task image to validate the
-official evaluator contract.
+official evaluator contract. **Status:** one official gold smoke has
+passed for `sympy__sympy-20590`; remaining work is breadth.
 
 **Turn 2**: Wire the wrapper into `corpus::generate_swe_bench_mutation_corpus`.
 Verify against 5 tasks × 8 categories = 40 entries (1.7% of full corpus).

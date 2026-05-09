@@ -3,7 +3,9 @@
 > **Shipped:** 2026-05-09
 > **Crate:** `crates/context-graph-mejepa-corpus/`
 > **Tests:** included in 59 `context-graph-mejepa-corpus` tests
-> **FSV evidence:** `/tmp/contextgraph-mejepa-corpus-fsv/oracle-evidence.json`
+> **FSV evidence:** `/tmp/contextgraph-mejepa-corpus-fsv/oracle-evidence.json`;
+> official SWE-bench Lite ops evidence at
+> `/tmp/contextgraph-swebench-lite-fsv/`
 
 ## What this primitive does
 
@@ -22,6 +24,10 @@ path Phase 0 was missing:
 - `OracleStore` opens RocksDB with `mejepa_mutation_corpus` and
   `mejepa_oracle_verdicts` column families and persists/read-backs rows
   keyed by `(task_id, mutation_category)`.
+- `scripts/swebench_lite_ops.py` verifies the official SWE-bench Lite
+  environment around this wrapper: isolated official harness import,
+  300-instance dataset/readback, Docker Desktop access, corrected remote
+  image naming, local image inventory, and one official gold smoke.
 
 ## Why it matters
 
@@ -71,10 +77,56 @@ Boundary cases covered:
 - stale report path rejects before command execution
 - bad RocksDB task key rejects without a write
 
+## Official SWE-bench Lite operational FSV
+
+The official harness is installed in an isolated venv at
+`/home/cabdru/.cache/contextgraph-swebench/venv`. The global Python
+environment is not treated as a dependency.
+
+Source of truth:
+
+- Official dataset: `princeton-nlp/SWE-bench_Lite:test`, read by the
+  official `swebench==4.1.0` harness.
+- Checked-in task manifests: `tasks/swebench-lite/*.json`.
+- Docker image inventory: `docker images` / `docker image inspect`.
+- Official gold-smoke artifacts under
+  `/tmp/contextgraph-swebench-lite-fsv/gold-smoke/`.
+
+Current readback:
+
+- Preflight:
+  `/tmp/contextgraph-swebench-lite-fsv/preflight-evidence.json`
+  confirms 300 official dataset rows match 300 checked-in task
+  manifests and Docker Desktop is reachable.
+- Image status:
+  `/tmp/contextgraph-swebench-lite-fsv/image-status-evidence.json`
+  confirms 1 official Lite image present and 299 missing locally.
+- Gold smoke:
+  `/tmp/contextgraph-swebench-lite-fsv/gold-smoke-evidence.json`
+  confirms `sympy__sympy-20590` runs through the official harness with
+  `predictions_path=gold`, applies the gold patch, and resolves.
+
+Important naming correction:
+
+- Official remote image tags replace `__` with `_1776_`:
+  `sympy__sympy-20590` maps to
+  `swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest`.
+  The earlier double-underscore tag shape is not the remote Docker Hub
+  name.
+
+Boundary cases covered by `scripts/swebench_lite_ops.py`:
+
+- `image-status --require-all` rejects while 299 official images are
+  missing (`SWEBENCH_LOCAL_IMAGES_MISSING`).
+- `gold-smoke --instance-id bogus__task-1` rejects unknown task ids
+  (`SWEBENCH_UNKNOWN_INSTANCE_ID`).
+- `preflight --tasks-dir <empty-dir>` rejects incomplete task manifests
+  (`SWEBENCH_TASK_MANIFEST_COUNT_MISMATCH`).
+
 ## What this enables downstream
 
-- The official SWE-bench Docker evaluator can be plugged into the same
-  wrapper without changing the parser/store contract.
+- The official SWE-bench Docker evaluator can be invoked and checked
+  repeatably before the full corpus batch runs.
 - Phase 0 generation can persist `(mutation, oracle_verdict)` tuples as
   physical data rather than transient process output.
 - Phase 2 panel materialization can treat oracle verdicts as a stable

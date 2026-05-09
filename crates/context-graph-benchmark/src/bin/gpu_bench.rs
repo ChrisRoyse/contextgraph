@@ -13,11 +13,16 @@
 //!     - Models loaded in ./models directory
 //!     - ~16GB VRAM for all 13 models
 
+#[cfg(feature = "real-embeddings")]
 use std::collections::HashMap;
+#[cfg(feature = "real-embeddings")]
 use std::io::Write;
+#[cfg(feature = "real-embeddings")]
 use std::time::Instant;
+#[cfg(feature = "real-embeddings")]
 use uuid::Uuid;
 
+#[cfg(feature = "real-embeddings")]
 use context_graph_core::types::fingerprint::SemanticFingerprint;
 
 // Test corpus - diverse topics for meaningful clustering
@@ -368,10 +373,12 @@ async fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(feature = "real-embeddings")]
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     context_graph_benchmark::util::cosine_similarity_raw(a, b)
 }
 
+#[cfg(feature = "real-embeddings")]
 fn multi_space_similarity(a: &SemanticFingerprint, b: &SemanticFingerprint) -> f32 {
     // Weighted combination of semantic embedders (per CLAUDE.md categories)
     // SEMANTIC: E1, E5, E6, E7, E10, E12, E13 (weight 1.0)
@@ -385,6 +392,7 @@ fn multi_space_similarity(a: &SemanticFingerprint, b: &SemanticFingerprint) -> f
     0.35 * e1_sim + 0.25 * e5_sim + 0.25 * e7_sim + 0.15 * e10_sim
 }
 
+#[cfg(feature = "real-embeddings")]
 fn cluster_embeddings(embeddings: &HashMap<Uuid, Vec<f32>>, k: usize) -> HashMap<Uuid, usize> {
     use rand::prelude::*;
     use rand_chacha::ChaCha8Rng;
@@ -453,6 +461,7 @@ fn cluster_embeddings(embeddings: &HashMap<Uuid, Vec<f32>>, k: usize) -> HashMap
     assignments
 }
 
+#[cfg(feature = "real-embeddings")]
 fn compute_purity(documents: &[(Uuid, String, usize)], clusters: &HashMap<Uuid, usize>) -> f64 {
     // Map cluster -> topic -> count
     let mut cluster_topics: HashMap<usize, HashMap<usize, usize>> = HashMap::new();

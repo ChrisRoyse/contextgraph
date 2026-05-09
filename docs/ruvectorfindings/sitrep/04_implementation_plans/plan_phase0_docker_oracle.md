@@ -4,10 +4,11 @@
 > **Effort:** ~3-5 days (code) + multi-hour operational batch.
 > **Crate / module:** `crates/context-graph-mejepa-corpus/src/oracle.rs`
 > **Status update 2026-05-09:** local command runner, Docker invocation
-> builder, strict pytest JSON parser, and crate-local RocksDB
-> `OracleStore` shipped. Remaining work is official SWE-bench image smoke
-> tests, generation/verify CLI wiring, and the 2,400-entry operational
-> batch.
+> builder, strict pytest JSON parser, crate-local RocksDB `OracleStore`,
+> and official SWE-bench Lite preflight/gold-smoke ops script shipped.
+> One official Lite image (`sympy__sympy-20590`) was pulled and passed
+> `predictions_path=gold`; 299 Lite images and the 2,400-entry operational
+> corpus batch remain.
 
 ## Goal
 
@@ -34,9 +35,12 @@ gating dependency for everything else.
    `run_command_json_oracle`, `run_docker_json_oracle`,
    `parse_pytest_json_report`, and `OracleStore`.
 
-2. ⏳ CLI integration that invokes the SWE-bench Docker evaluator.
-   Image naming convention per the SWE-bench Lite runbook:
-   `swebench/sweb.eval.x86_64.<task_id_lowercased>:latest`.
+2. ✅ Operational preflight that invokes the official SWE-bench harness
+   and checks Docker/image state: `scripts/swebench_lite_ops.py`.
+   Remote image naming follows the official `TestSpec.instance_image_key`
+   rule: lower-case instance id and replace `__` with `_1776_`, e.g.
+   `sympy__sympy-20590` →
+   `swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest`.
 
 3. ✅ pytest JSON output parser (`pytest --json-report --json-report-file=...`):
    ```json
@@ -60,16 +64,18 @@ gating dependency for everything else.
    - Empty/stale/mismatched reports (`MEJEPA_ORACLE_REPORT_INVALID` or
      `MEJEPA_ORACLE_INVALID_INPUT`).
 
-6. Operational batch script: `cargo run --release -p
+6. ⏳ Operational corpus generation command: `cargo run --release -p
    context-graph-mejepa-corpus -- generate --output ./data/mejepa-corpus`.
 
-7. Verify mode: `cargo run … -- verify --corpus ./data/mejepa-corpus`
+7. ⏳ Verify mode: `cargo run … -- verify --corpus ./data/mejepa-corpus`
    re-runs the oracle on a 5% sample and confirms verdicts match.
 
 ## Definition of Done
 
-- `run_oracle` returns valid `OracleVerdict` for ONE real
-  SWE-bench Lite task (e.g., `astropy__astropy-12907`) end-to-end.
+- Official SWE-bench Lite harness gold smoke passes for ONE real task
+  image. Current evidence:
+  `/tmp/contextgraph-swebench-lite-fsv/gold-smoke-evidence.json`
+  (`sympy__sympy-20590`, resolved=true).
 - 5-task × 8-category = 40-entry batch run completes.
 - Verify mode catches a tampered verdict (modify a row in RocksDB,
   re-run verify, expect mismatch error).
@@ -79,13 +85,20 @@ gating dependency for everything else.
 ## Verification protocol
 
 ```bash
-# Smoke test
-context-graph mejepa-corpus run-oracle-smoke \
-    --task astropy__astropy-12907 \
-    --mutation-category subtle_flip
+# Official harness/Docker preflight
+python3 scripts/swebench_lite_ops.py preflight
 # expected:
-#   verdict: { pass: 4, fail: 8, skip: 0, error: 0, total: 12, exception_class: AssertionError }
-#   wall_clock_ms: <300_000
+#   dataset_count: 300
+#   task_manifest_count: 300
+#   Docker Desktop reachable
+#   image_status present/missing counts are physically read from Docker
+
+# Official gold smoke
+python3 scripts/swebench_lite_ops.py gold-smoke --instance-id sympy__sympy-20590
+# expected:
+#   resolved_instances: 1
+#   instance_report.sympy__sympy-20590.resolved: true
+#   official image present in docker image inspect
 
 # 5-task batch
 context-graph mejepa-corpus generate --tasks 5 --output /tmp/corpus-smoke
@@ -108,7 +121,8 @@ context-graph mejepa-corpus generate --output ./data/mejepa-corpus
 let output = std::process::Command::new("docker")
     .args(&["run", "--rm",
             "-v", &format!("{}:/workspace/patch", patch_path),
-            &format!("swebench/sweb.eval.x86_64.{}:latest", task_id.to_lowercase()),
+            &format!("swebench/sweb.eval.x86_64.{}:latest",
+                     task_id.to_lowercase().replace("__", "_1776_")),
             "/workspace/patch/mutated.py"])
     .output()
     .map_err(|e| OracleError::DockerInvocationFailed(e.to_string()))?;
@@ -203,7 +217,10 @@ A 10-way parallel run on a 64GB+ machine completes 2,400 entries in
    per `memory/blockers/agent-72-coordinator--docker-permission-denied-blocks-official-eval.md`.
    Re-verify on each fresh environment.
 2. **SWE-bench Lite image pull from public registry slow**: pre-pull
-   all 300 images in advance via `docker pull` script.
+   all 300 images in advance with
+   `python3 scripts/swebench_lite_ops.py pull-images`. Current FSV:
+   1 present / 299 missing at
+   `/tmp/contextgraph-swebench-lite-fsv/image-status-evidence.json`.
 3. **Test fixtures non-deterministic** (e.g., random-seed tests): pin
    `PYTHONHASHSEED=0` in the Docker entry-point.
 4. **Subprocess timeout false-positives** on slow machines: 600s
@@ -211,18 +228,23 @@ A 10-way parallel run on a 64GB+ machine completes 2,400 entries in
 
 ## Fresh-agent recipe
 
-1. Verify Docker installed: `docker --version` should succeed.
-2. Pull one image: `docker pull
-   swebench/sweb.eval.x86_64.astropy__astropy-12907:latest`.
-3. Implement `oracle.rs` with subprocess wrapper.
+1. Verify Docker + official harness + Lite manifests:
+   `python3 scripts/swebench_lite_ops.py preflight`.
+2. Pull one image, using the official remote-name transform:
+   `python3 scripts/swebench_lite_ops.py pull-images --instance-ids
+   sympy__sympy-20590`.
+3. Run one official gold smoke:
+   `python3 scripts/swebench_lite_ops.py gold-smoke --instance-id
+   sympy__sympy-20590`.
 4. Add CF to `context-graph-storage` via the existing CF migration
    pattern.
-5. Run smoke test against ONE real task to verify happy path.
-6. Run 5-task batch to verify persistence.
-7. Run full 300-task generation as operational batch (overnight).
+5. Run 5-task × 8-category batch to verify persistence.
+6. Pull remaining 299 images or let the official harness pull them during
+   generation, depending on disk budget and parallelism.
+7. Run full 300-task generation as operational batch.
 8. Verify Phase 0 §7 DoD numbers.
 9. Update `01_status_overview.md` and `02_shipped/phase0_*.md`.
-10. End-of-turn SMAP report.
+10. End-of-turn SAMP report.
 
 ## See also
 
