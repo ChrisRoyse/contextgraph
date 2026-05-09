@@ -4,7 +4,7 @@
 // Sources of truth:
 //   - /tmp/contextgraph-mejepa-corpus-fsv/generated_sources/*.py
 //   - /tmp/contextgraph-mejepa-corpus-fsv/pyc/*.pyc
-//   - /tmp/contextgraph-mejepa-corpus-fsv/split-assignments.csv
+//   - /tmp/contextgraph-mejepa-corpus-fsv/split-assignments.json
 //   - /tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json
 //
 // The example fails closed. It asserts every invariant before writing
@@ -16,7 +16,7 @@ use context_graph_mejepa_corpus::{
     apply_mutation,
     split::{
         cross_cut_weights, split_corpus, split_is_leakage_free, CorpusEntry, SplitConfig,
-        SplitReport,
+        TaskAssignment,
     },
     MutationCategory, MutationConfig, MutationOutcome, MutationSite,
 };
@@ -290,7 +290,7 @@ def alt_helper(name: str) -> int:
             "evidence_json": evidence_root.join("mejepa-corpus-evidence.json").display().to_string(),
             "generated_python_sources": generated_root.display().to_string(),
             "generated_python_bytecode": pyc_root.display().to_string(),
-            "split_assignments_csv": evidence_root.join("split-assignments.csv").display().to_string(),
+            "split_assignments_json": evidence_root.join("split-assignments.json").display().to_string(),
             "generated_source_checks": source_checks,
         },
         "input_source_sha256": sha256_text(py_source),
@@ -363,10 +363,10 @@ def alt_helper(name: str) -> int:
 }
 
 fn split_fsv(evidence_root: &Path) -> FsvResult<Value> {
-    let corpus = build_split_synthetic_corpus();
+    let (corpus, tasks_dir) = build_split_real_corpus()?;
     let total = corpus.len();
     let report = split_corpus(&corpus, SplitConfig::default()).map_err(|err| {
-        format!("split_corpus(default 80/10/10 over {total} synthetic tasks) failed: {err:?}")
+        format!("split_corpus(default 80/10/10 over {total} real task manifests) failed: {err:?}")
     })?;
 
     require_eq("split assignment count", &total, &report.assignments.len())?;
@@ -399,10 +399,21 @@ fn split_fsv(evidence_root: &Path) -> FsvResult<Value> {
     let cross_weights = cross_cut_weights(&report);
     require_eq("split cross-cut weights", &[0.0, 0.0, 0.0], &cross_weights)?;
 
-    let csv_path = evidence_root.join("split-assignments.csv");
-    let csv_text = split_assignments_csv(&report);
-    let csv_sha256 = write_text_checked(&csv_path, &csv_text)?;
-    let csv_readback = read_split_assignments_csv(&csv_path, &report)?;
+    let assignments_path = evidence_root.join("split-assignments.json");
+    let assignments_text = serde_json::to_string_pretty(&report.assignments)?;
+    let assignments_sha256 = write_text_checked(&assignments_path, &assignments_text)?;
+    let assignments_readback_text = fs::read_to_string(&assignments_path)?;
+    let assignments_readback: Vec<TaskAssignment> =
+        serde_json::from_str(&assignments_readback_text)?;
+    require_eq(
+        "split assignments JSON readback",
+        &report.assignments,
+        &assignments_readback,
+    )?;
+    let assignments_unique_task_ids: HashSet<&str> = assignments_readback
+        .iter()
+        .map(|assignment| assignment.task_id.as_str())
+        .collect();
 
     let empty_case = split_boundary_case(
         "empty_corpus",
@@ -474,9 +485,14 @@ fn split_fsv(evidence_root: &Path) -> FsvResult<Value> {
 
     Ok(json!({
         "source_of_truth": {
-            "csv_path": csv_path.display().to_string(),
-            "csv_sha256": csv_sha256,
-            "csv_readback": csv_readback,
+            "assignments_json": assignments_path.display().to_string(),
+            "assignments_sha256": assignments_sha256,
+            "assignments_readback": {
+                "byte_length": assignments_readback_text.len(),
+                "row_count": assignments_readback.len(),
+                "unique_task_ids": assignments_unique_task_ids.len(),
+            },
+            "task_manifest_dir": tasks_dir.display().to_string(),
         },
         "corpus_size": total,
         "repo_count": report.repo_assignments.len(),
@@ -495,108 +511,36 @@ fn split_fsv(evidence_root: &Path) -> FsvResult<Value> {
     }))
 }
 
-fn build_split_synthetic_corpus() -> Vec<CorpusEntry> {
-    let plan: &[(&str, usize)] = &[
-        ("astropy", 22),
-        ("django", 40),
-        ("flask", 4),
-        ("matplotlib", 18),
-        ("mwaskom__seaborn", 6),
-        ("pallets__click", 3),
-        ("psf__requests", 6),
-        ("pvlib__pvlib-python", 4),
-        ("pydata__xarray", 12),
-        ("pydicom__pydicom", 5),
-        ("pylint-dev__astroid", 5),
-        ("pylint-dev__pylint", 13),
-        ("pyvista__pyvista", 4),
-        ("scikit-learn__scikit-learn", 28),
-        ("sphinx-doc__sphinx", 19),
-        ("sqlfluff__sqlfluff", 12),
-        ("sympy__sympy", 75),
-        ("hpcugent__easybuild-easyconfigs", 4),
-        ("conan-io__conan", 5),
-        ("scrapy", 5),
-        ("requests-toolbelt", 3),
-        ("pytest-dev__pytest", 12),
-        ("celery", 4),
-        ("paramiko", 3),
-        ("redis-py", 8),
-    ];
-    let total: usize = plan.iter().map(|(_, count)| count).sum();
-    assert_eq!(total, 300);
-    let mut entries = Vec::with_capacity(total);
-    for (repo, count) in plan {
-        for idx in 0..*count {
-            entries.push(CorpusEntry {
-                task_id: format!("{repo}__task-{idx:04}"),
-                repo: (*repo).to_string(),
-            });
+fn build_split_real_corpus() -> FsvResult<(Vec<CorpusEntry>, PathBuf)> {
+    let tasks_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tasks/swebench-lite");
+    let mut entries = Vec::new();
+    for dir_entry in fs::read_dir(&tasks_dir)? {
+        let dir_entry = dir_entry?;
+        let path = dir_entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
         }
+        let text = fs::read_to_string(&path)?;
+        let manifest: Value = serde_json::from_str(&text)?;
+        let instance_id = manifest
+            .get("instance_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("task manifest missing instance_id: {}", path.display()))?;
+        let repo = manifest
+            .get("repo")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("task manifest missing repo: {}", path.display()))?;
+        entries.push(CorpusEntry {
+            task_id: instance_id.to_string(),
+            repo: repo.to_string(),
+        });
     }
-    entries
-}
-
-fn split_assignments_csv(report: &SplitReport) -> String {
-    let mut out = String::from("task_id,repo,bucket\n");
-    for assignment in &report.assignments {
-        out.push_str(&format!(
-            "{},{},{}\n",
-            assignment.task_id,
-            assignment.repo,
-            assignment.bucket.slug()
-        ));
-    }
-    out
-}
-
-fn read_split_assignments_csv(path: &Path, expected: &SplitReport) -> FsvResult<Value> {
-    let text = fs::read_to_string(path)?;
-    let mut lines = text.lines();
-    require_eq(
-        "split CSV header",
-        &Some("task_id,repo,bucket"),
-        &lines.next(),
+    entries.sort_by(|a, b| a.task_id.cmp(&b.task_id));
+    require(
+        !entries.is_empty(),
+        &format!("no task manifests found under {}", tasks_dir.display()),
     )?;
-    let rows: Vec<&str> = lines.collect();
-    require_eq(
-        "split CSV row count",
-        &expected.assignments.len(),
-        &rows.len(),
-    )?;
-    let mut task_ids = HashSet::with_capacity(rows.len());
-    for (row, expected_assignment) in rows.iter().zip(&expected.assignments) {
-        let parts: Vec<&str> = row.split(',').collect();
-        require_eq(
-            &format!("split CSV row shape: {row}"),
-            &3usize,
-            &parts.len(),
-        )?;
-        require_eq(
-            &format!("split CSV task_id: {row}"),
-            &expected_assignment.task_id.as_str(),
-            &parts[0],
-        )?;
-        require_eq(
-            &format!("split CSV repo: {row}"),
-            &expected_assignment.repo.as_str(),
-            &parts[1],
-        )?;
-        require_eq(
-            &format!("split CSV bucket: {row}"),
-            &expected_assignment.bucket.slug(),
-            &parts[2],
-        )?;
-        require(
-            task_ids.insert(parts[0]),
-            "split CSV task IDs must be unique",
-        )?;
-    }
-    Ok(json!({
-        "row_count": rows.len(),
-        "unique_task_ids": task_ids.len(),
-        "byte_length": text.len(),
-    }))
+    Ok((entries, tasks_dir))
 }
 
 fn split_boundary_case(
@@ -606,10 +550,12 @@ fn split_boundary_case(
     expected_code: &str,
 ) -> FsvResult<Value> {
     let repos: HashSet<&str> = entries.iter().map(|entry| entry.repo.as_str()).collect();
+    let entries_json = serde_json::to_string(entries)?;
     let before = json!({
         "name": name,
         "entries": entries.len(),
         "repos": repos.len(),
+        "entries_sha256": sha256_text(&entries_json),
         "config": config,
     });
     let after = match split_corpus(entries, config) {

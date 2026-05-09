@@ -6,7 +6,8 @@
 //
 // This example fails closed. It writes assignment/evidence files durably,
 // re-reads them, hashes them, reconstructs the assignment state from disk,
-// and records before/after state for boundary cases.
+// and records before/after state for boundary cases. The happy path uses the
+// real checked-in SWE-bench Lite task manifests under tasks/swebench-lite.
 
 use context_graph_mejepa_corpus::split::{
     cross_cut_weights, split_corpus, split_is_leakage_free, CorpusEntry, SplitConfig,
@@ -26,7 +27,7 @@ fn main() -> FsvResult<()> {
     let evidence_root = PathBuf::from("/tmp/contextgraph-mejepa-corpus-fsv");
     fs::create_dir_all(&evidence_root)?;
 
-    let corpus = build_synthetic_corpus();
+    let (corpus, tasks_dir) = build_real_corpus()?;
     let corpus_json = serde_json::to_string_pretty(&corpus)?;
     let corpus_sha256 = sha256_text(&corpus_json);
     let total = corpus.len();
@@ -146,6 +147,7 @@ fn main() -> FsvResult<()> {
             "evidence_json": evidence_root.join("split-evidence.json").display().to_string(),
             "assignments_json": assignments_path.display().to_string(),
             "assignments_sha256": assignments_sha256,
+            "task_manifest_dir": tasks_dir.display().to_string(),
         },
         "input_corpus_sha256": corpus_sha256,
         "corpus_size": total,
@@ -167,8 +169,19 @@ fn main() -> FsvResult<()> {
     let evidence_path = evidence_root.join("split-evidence.json");
     let evidence_text = serde_json::to_string_pretty(&evidence)?;
     let evidence_sha256 = write_text_checked(&evidence_path, &evidence_text)?;
+    // Disk-vs-memory equality is already enforced byte-for-byte by
+    // `write_text_checked` (it reads back and compares the bytes). We
+    // additionally re-parse the file as JSON to confirm it is structurally
+    // valid, but we deliberately do NOT compare the parsed `Value` with the
+    // in-memory `Value` because f64 → JSON-text → f64 round-trip can shift
+    // the bit-pattern by 1 ULP for some values (e.g. `0.10333333333333333`).
+    // The on-disk text is the authoritative record; the byte equality
+    // already proved we wrote what we intended.
     let evidence_readback: Value = serde_json::from_str(&fs::read_to_string(&evidence_path)?)?;
-    require_eq("evidence JSON readback", &evidence, &evidence_readback)?;
+    require(
+        evidence_readback.is_object(),
+        "evidence file must parse to a JSON object",
+    )?;
 
     println!("Split FSV evidence: {}", evidence_path.display());
     println!("Split assignments JSON: {}", assignments_path.display());
@@ -177,46 +190,36 @@ fn main() -> FsvResult<()> {
     Ok(())
 }
 
-fn build_synthetic_corpus() -> Vec<CorpusEntry> {
-    let plan: &[(&str, usize)] = &[
-        ("astropy", 22),
-        ("django", 40),
-        ("flask", 4),
-        ("matplotlib", 18),
-        ("mwaskom__seaborn", 6),
-        ("pallets__click", 3),
-        ("psf__requests", 6),
-        ("pvlib__pvlib-python", 4),
-        ("pydata__xarray", 12),
-        ("pydicom__pydicom", 5),
-        ("pylint-dev__astroid", 5),
-        ("pylint-dev__pylint", 13),
-        ("pyvista__pyvista", 4),
-        ("scikit-learn__scikit-learn", 28),
-        ("sphinx-doc__sphinx", 19),
-        ("sqlfluff__sqlfluff", 12),
-        ("sympy__sympy", 55),
-        ("hpcugent__easybuild-easyconfigs", 4),
-        ("conan-io__conan", 5),
-        ("scrapy", 5),
-        ("requests-toolbelt", 3),
-        ("pytest-dev__pytest", 12),
-        ("celery", 4),
-        ("paramiko", 3),
-        ("redis-py", 8),
-    ];
-    let total: usize = plan.iter().map(|(_, c)| c).sum();
-    assert_eq!(total, 300);
-    let mut entries = Vec::with_capacity(total);
-    for (repo, count) in plan {
-        for i in 0..*count {
-            entries.push(CorpusEntry {
-                task_id: format!("{repo}__task-{i:04}"),
-                repo: (*repo).to_string(),
-            });
+fn build_real_corpus() -> FsvResult<(Vec<CorpusEntry>, PathBuf)> {
+    let tasks_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tasks/swebench-lite");
+    let mut entries = Vec::new();
+    for dir_entry in fs::read_dir(&tasks_dir)? {
+        let dir_entry = dir_entry?;
+        let path = dir_entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
         }
+        let text = fs::read_to_string(&path)?;
+        let manifest: Value = serde_json::from_str(&text)?;
+        let instance_id = manifest
+            .get("instance_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("task manifest missing instance_id: {}", path.display()))?;
+        let repo = manifest
+            .get("repo")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("task manifest missing repo: {}", path.display()))?;
+        entries.push(CorpusEntry {
+            task_id: instance_id.to_string(),
+            repo: repo.to_string(),
+        });
     }
-    entries
+    entries.sort_by(|a, b| a.task_id.cmp(&b.task_id));
+    require(
+        !entries.is_empty(),
+        &format!("no task manifests found under {}", tasks_dir.display()),
+    )?;
+    Ok((entries, tasks_dir))
 }
 
 fn split_boundary_case(

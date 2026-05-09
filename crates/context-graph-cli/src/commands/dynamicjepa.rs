@@ -5963,6 +5963,14 @@ fn semantic_source_contains_cpp_only_syntax(source: &str) -> bool {
     ) || source.contains("::")
 }
 
+fn contains_any(haystack: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| haystack.contains(needle))
+}
+
+fn is_identifier_char(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
+}
+
 fn semantic_require_language_toolchain(language: &str, repo: &Path) -> DynamicJepaResult<()> {
     let missing = match language {
         "rust" => {
@@ -6555,16 +6563,7 @@ fn semantic_ast_node_kind_for_language(
             _ => "unknown",
         },
         "c" => semantic_c_ast_node_kind(node),
-        "cpp" => match kind {
-            "function_definition" | "function_declarator" => "function",
-            "class_specifier" | "struct_specifier" | "enum_specifier" | "union_specifier" => {
-                "class"
-            }
-            "preproc_include" | "using_declaration" | "using_directive" => "import",
-            "call_expression" => "call",
-            "declaration" | "init_declarator" | "assignment_expression" => "assignment",
-            _ => "unknown",
-        },
+        "cpp" => semantic_cpp_ast_node_kind(node, source),
         "csharp" => match kind {
             "method_declaration"
             | "constructor_declaration"
@@ -6652,6 +6651,113 @@ fn semantic_c_contains_function_declarator(node: tree_sitter::Node<'_>) -> bool 
         .any(semantic_c_contains_function_declarator)
 }
 
+fn semantic_cpp_ast_node_kind(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
+    match node.kind() {
+        "function_definition" | "function_declarator" => {
+            if semantic_cpp_function_is_method(node, source) {
+                "method"
+            } else {
+                "function"
+            }
+        }
+        "field_declaration" => {
+            if semantic_descendant_has_kind(node, "function_declarator") {
+                "method"
+            } else {
+                "assignment"
+            }
+        }
+        "class_specifier" | "struct_specifier" | "enum_specifier" | "union_specifier" => "class",
+        "namespace_definition" | "translation_unit" => "module",
+        "preproc_include" | "using_declaration" | "using_directive" | "alias_declaration" => {
+            "import"
+        }
+        "call_expression" => "call",
+        "declaration" | "init_declarator" | "assignment_expression" => "assignment",
+        "template_declaration" => semantic_cpp_template_node_kind(node, source),
+        _ => "unknown",
+    }
+}
+
+fn semantic_cpp_template_node_kind(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        let kind = semantic_cpp_ast_node_kind(child, source);
+        if kind != "unknown" && kind != "import" {
+            return kind;
+        }
+    }
+    "unknown"
+}
+
+fn semantic_cpp_function_is_method(node: tree_sitter::Node<'_>, source: &str) -> bool {
+    if semantic_has_ancestor_any(
+        node,
+        &["class_specifier", "struct_specifier", "field_declaration"],
+    ) {
+        return true;
+    }
+    let text = node.utf8_text(source.as_bytes()).unwrap_or("");
+    let Some((qualifier, _)) = text.rsplit_once("::") else {
+        return false;
+    };
+    let qualifier = qualifier
+        .split(|ch: char| !is_identifier_char(ch))
+        .filter(|part| !part.is_empty())
+        .last()
+        .unwrap_or("");
+    !qualifier.is_empty()
+        && (semantic_source_contains_type_declaration(source, "class", qualifier)
+            || semantic_source_contains_type_declaration(source, "struct", qualifier)
+            || semantic_source_contains_type_declaration(source, "union", qualifier))
+}
+
+fn semantic_source_contains_type_declaration(source: &str, keyword: &str, name: &str) -> bool {
+    source.match_indices(keyword).any(|(idx, _)| {
+        if idx > 0
+            && source[..idx]
+                .chars()
+                .next_back()
+                .is_some_and(is_identifier_char)
+        {
+            return false;
+        }
+        let after_keyword = idx + keyword.len();
+        let rest = &source[after_keyword..];
+        if !rest
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_whitespace())
+        {
+            return false;
+        }
+        rest.trim_start()
+            .strip_prefix(name)
+            .is_some_and(|tail| tail.chars().next().is_none_or(|ch| !is_identifier_char(ch)))
+    })
+}
+
+fn semantic_has_ancestor_any(node: tree_sitter::Node<'_>, kinds: &[&str]) -> bool {
+    let mut current = node.parent();
+    while let Some(candidate) = current {
+        if kinds.iter().any(|kind| candidate.kind() == *kind) {
+            return true;
+        }
+        current = candidate.parent();
+    }
+    false
+}
+
+fn semantic_descendant_has_kind(node: tree_sitter::Node<'_>, kind: &str) -> bool {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if child.kind() == kind || semantic_descendant_has_kind(child, kind) {
+            return true;
+        }
+    }
+    false
+}
+
 fn semantic_ast_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
     if matches!(node.kind(), "function_definition" | "function_declarator") {
         if let Some(declarator) = node.child_by_field_name("declarator") {
@@ -6671,10 +6777,73 @@ fn semantic_ast_node_name_for_language(
     node: tree_sitter::Node<'_>,
     source: &str,
 ) -> Option<String> {
-    if language == "csharp" {
-        semantic_csharp_node_name(node, source).or_else(|| semantic_ast_node_name(node, source))
-    } else {
-        semantic_ast_node_name(node, source)
+    match language {
+        "csharp" => {
+            semantic_csharp_node_name(node, source).or_else(|| semantic_ast_node_name(node, source))
+        }
+        "cpp" => {
+            semantic_cpp_node_name(node, source).or_else(|| semantic_ast_node_name(node, source))
+        }
+        _ => semantic_ast_node_name(node, source),
+    }
+}
+
+fn semantic_cpp_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    match node.kind() {
+        "template_declaration"
+        | "function_definition"
+        | "declaration"
+        | "field_declaration"
+        | "init_declarator" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                if matches!(
+                    child.kind(),
+                    "function_declarator"
+                        | "init_declarator"
+                        | "qualified_identifier"
+                        | "class_specifier"
+                        | "struct_specifier"
+                ) {
+                    if let Some(name) = semantic_cpp_node_name(child, source) {
+                        return Some(name);
+                    }
+                }
+            }
+            None
+        }
+        "function_declarator"
+        | "reference_declarator"
+        | "pointer_declarator"
+        | "parenthesized_declarator" => node
+            .child_by_field_name("declarator")
+            .and_then(|child| semantic_cpp_node_name(child, source))
+            .or_else(|| {
+                let mut cursor = node.walk();
+                for child in node.named_children(&mut cursor) {
+                    if let Some(name) = semantic_cpp_node_name(child, source) {
+                        return Some(name);
+                    }
+                }
+                None
+            }),
+        "qualified_identifier" => {
+            let mut cursor = node.walk();
+            let mut last = None;
+            for child in node.named_children(&mut cursor) {
+                if let Some(name) = semantic_cpp_node_name(child, source) {
+                    last = Some(name);
+                }
+            }
+            last
+        }
+        "identifier" | "field_identifier" | "type_identifier" | "destructor_name"
+        | "operator_name" => node
+            .utf8_text(source.as_bytes())
+            .ok()
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty()),
+        _ => None,
     }
 }
 
@@ -6817,15 +6986,72 @@ fn semantic_ast_symbol_visibility(
                 "public"
             }
         }
-        "cpp" => {
-            if node_text.trim_start().starts_with("static ") || node_text.contains("\nstatic ") {
-                "private"
-            } else {
-                "public"
-            }
-        }
+        "cpp" => semantic_cpp_symbol_visibility(node, source),
         _ => "unknown",
     }
+}
+
+fn semantic_cpp_symbol_visibility(node: tree_sitter::Node<'_>, source: &str) -> &'static str {
+    let node_text = semantic_node_text(node, source);
+    if node_text.trim_start().starts_with("static ") || node_text.contains("\nstatic ") {
+        return "private";
+    }
+    let Some(class_node) =
+        semantic_nearest_ancestor_any(node, &["class_specifier", "struct_specifier"])
+    else {
+        return "public";
+    };
+    let mut visibility = if class_node.kind() == "struct_specifier" {
+        "public"
+    } else {
+        "private"
+    };
+    let target_start = node.start_byte();
+    let body = class_node
+        .child_by_field_name("body")
+        .or_else(|| semantic_first_child_kind(class_node, "field_declaration_list"));
+    if let Some(body) = body {
+        let mut cursor = body.walk();
+        for child in body.named_children(&mut cursor) {
+            if child.start_byte() >= target_start {
+                break;
+            }
+            if child.kind() == "access_specifier" {
+                let text = child.utf8_text(source.as_bytes()).unwrap_or("").trim();
+                visibility = if text.starts_with("public") {
+                    "public"
+                } else if text.starts_with("protected") {
+                    "protected"
+                } else {
+                    "private"
+                };
+            }
+        }
+    }
+    visibility
+}
+
+fn semantic_nearest_ancestor_any<'a>(
+    node: tree_sitter::Node<'a>,
+    kinds: &[&str],
+) -> Option<tree_sitter::Node<'a>> {
+    let mut current = node.parent();
+    while let Some(candidate) = current {
+        if kinds.iter().any(|kind| candidate.kind() == *kind) {
+            return Some(candidate);
+        }
+        current = candidate.parent();
+    }
+    None
+}
+
+fn semantic_first_child_kind<'a>(
+    node: tree_sitter::Node<'a>,
+    kind: &str,
+) -> Option<tree_sitter::Node<'a>> {
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .find(|child| child.kind() == kind)
 }
 
 fn semantic_c_visibility_text(node: tree_sitter::Node<'_>, source: &str) -> String {
@@ -25418,6 +25644,137 @@ int add(int left, int right) {
     }
 
     #[test]
+    fn cpp_semantic_extraction_handles_methods_templates_and_visibility() {
+        let source = r#"
+class Widget {
+public:
+    template <typename T>
+    int apply(T value) {
+        return value + 1;
+    }
+
+private:
+    int hidden() {
+        return 0;
+    }
+};
+
+int Widget::apply(int value) {
+    return value + 2;
+}
+
+namespace helpers {
+int free_function() {
+    return 1;
+}
+}
+
+int classifyWidget() {
+    return helpers::free_function();
+}
+"#;
+        let extraction =
+            semantic_extract_source_facts("src/widget.cpp", "cpp", source).expect("valid C++ AST");
+        let symbols = extraction
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?,
+                    symbol.get("semantic_kind")?.as_str()?,
+                    symbol.get("visibility")?.as_str()?,
+                ))
+            })
+            .collect::<BTreeSet<_>>();
+        println!("C++ semantic extraction symbols after: {symbols:?}");
+
+        assert!(symbols.contains(&("Widget", "class", "public")));
+        assert!(
+            symbols.contains(&("apply", "method", "public")),
+            "template method declaration must keep the real method name and public visibility"
+        );
+        assert!(
+            symbols.contains(&("hidden", "method", "private")),
+            "class default/private access section must be reflected"
+        );
+        assert!(
+            symbols.contains(&("free_function", "function", "public")),
+            "namespace free function must not be classified as a method"
+        );
+        assert!(
+            symbols.contains(&("classifyWidget", "function", "public")),
+            "identifier text containing `class` must not trigger method classification"
+        );
+        assert_eq!(
+            semantic_language_for_path_and_source("include/widget.h", source),
+            Some("cpp"),
+            ".h files containing C++-only syntax must enter the C++ parser path"
+        );
+    }
+
+    #[test]
+    fn cpp_semantic_compile_commands_writes_real_evidence_files() {
+        if !command_exists_on_path("g++") {
+            panic!("g++ is required for C++ semantic FSV");
+        }
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        let src = repo.join("src");
+        let evidence_dir = temp.path().join("evidence");
+        fs::create_dir_all(&src).expect("create src");
+        fs::create_dir_all(&evidence_dir).expect("create evidence");
+        fs::write(
+            src.join("main.cpp"),
+            "#include <iostream>\nint add(int a, int b) { return a + b; }\nint main() { std::cout << add(2, 2) << '\\n'; }\n",
+        )
+        .expect("write C++ source");
+        let compile_commands = json!([{
+            "directory": repo.display().to_string(),
+            "file": "src/main.cpp",
+            "arguments": ["g++", "-std=c++17", "-c", "src/main.cpp", "-o", "main.o"]
+        }]);
+        fs::write(
+            repo.join("compile_commands.json"),
+            serde_json::to_vec_pretty(&compile_commands).expect("serialize compile_commands"),
+        )
+        .expect("write compile_commands");
+
+        eprintln!(
+            "BEFORE_STATE repo={} source_exists={} compile_commands_exists={}",
+            repo.display(),
+            src.join("main.cpp").is_file(),
+            repo.join("compile_commands.json").is_file()
+        );
+        let evidence = semantic_run_compile_commands_batch_check("cpp", &repo, &evidence_dir)
+            .expect("real g++ syntax check must pass");
+        eprintln!(
+            "AFTER_STATE compile_evidence={}",
+            serde_json::to_string_pretty(&evidence).expect("serialize evidence")
+        );
+
+        let stdout_path = evidence
+            .pointer("/checks/0/evidence/stdout_path")
+            .and_then(Value::as_str)
+            .expect("stdout source of truth");
+        let stderr_path = evidence
+            .pointer("/checks/0/evidence/stderr_path")
+            .and_then(Value::as_str)
+            .expect("stderr source of truth");
+        let stdout = fs::read(stdout_path).expect("read stdout evidence");
+        let stderr = fs::read(stderr_path).expect("read stderr evidence");
+        eprintln!(
+            "READBACK_STATE stdout_path={} stdout_bytes={} stderr_path={} stderr_bytes={}",
+            stdout_path,
+            stdout.len(),
+            stderr_path,
+            stderr.len()
+        );
+        assert_eq!(evidence["check_count"].as_u64(), Some(1));
+        assert!(Path::new(stdout_path).is_file());
+        assert!(Path::new(stderr_path).is_file());
+    }
+
+    #[test]
     fn java_semantic_extraction_recognizes_standard_tests_and_junit_annotations() {
         let surefire_source = "package com.acme;\n\nimport org.junit.jupiter.api.Test;\n\nclass CalculatorTests {\n    @Test\n    void adds() {\n        assertEquals(4, 2 + 2);\n    }\n}\n";
         println!(
@@ -25512,6 +25869,116 @@ int add(int left, int right) {
             err.to_string().contains("parse reported syntax errors"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn csharp_semantic_extraction_captures_members_and_test_paths() {
+        let source = r#"
+namespace Demo {
+using System;
+
+public delegate void Changed(int value);
+
+public class CalculatorTests {
+    public event EventHandler Updated;
+
+    public int Total { get; private set; }
+
+    public int this[int index] {
+        get { return index; }
+    }
+
+    public int TestAdds() {
+        return 2 + 2;
+    }
+}
+}
+"#;
+        println!(
+            "BEFORE csharp semantic-index state: path_is_test={}, source_len={}",
+            semantic_path_is_test("tests/CalculatorTests.cs"),
+            source.len()
+        );
+        let extraction =
+            semantic_extract_source_facts("tests/CalculatorTests.cs", "csharp", source)
+                .expect("valid C# AST");
+        println!(
+            "AFTER csharp semantic-index state: symbols={:?}, calls={:?}",
+            extraction.symbols, extraction.calls
+        );
+        let symbols = extraction
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                Some((
+                    symbol.get("name")?.as_str()?,
+                    symbol.get("semantic_kind")?.as_str()?,
+                ))
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(symbols.contains(&("CalculatorTests", "class")));
+        assert!(symbols.contains(&("Changed", "delegate")));
+        assert!(symbols.contains(&("Updated", "event")));
+        assert!(symbols.contains(&("Total", "property")));
+        assert!(symbols.contains(&("this[]", "property")));
+        assert!(symbols.contains(&("TestAdds", "test")));
+    }
+
+    #[test]
+    fn csharp_build_target_selection_is_unambiguous_and_fail_closed() {
+        let temp = tempfile::tempdir().expect("tempdir");
+
+        let missing = temp.path().join("missing");
+        fs::create_dir(&missing).expect("create missing repo");
+        let missing_err =
+            semantic_csharp_build_target(&missing).expect_err("missing build target must fail");
+        println!("AFTER csharp missing-target state: {missing_err}");
+        assert_eq!(missing_err.code(), "VERIFICATION_FAILED");
+        assert!(missing_err
+            .to_string()
+            .contains("requires a real .sln or .csproj"));
+
+        let single = temp.path().join("single");
+        fs::create_dir(&single).expect("create single repo");
+        fs::write(single.join("App.csproj"), "<Project />\n").expect("write csproj");
+        println!(
+            "BEFORE csharp single-target state: files={:?}",
+            fs::read_dir(&single)
+                .expect("read single repo")
+                .map(|entry| entry.expect("entry").file_name())
+                .collect::<Vec<_>>()
+        );
+        let selected = semantic_csharp_build_target(&single).expect("single csproj selected");
+        println!("AFTER csharp single-target selected: {selected}");
+        assert_eq!(selected, "App.csproj");
+
+        let solution = temp.path().join("solution");
+        fs::create_dir(&solution).expect("create solution repo");
+        fs::write(solution.join("App.sln"), "\n").expect("write sln");
+        fs::write(solution.join("App.csproj"), "<Project />\n").expect("write csproj");
+        let selected_solution =
+            semantic_csharp_build_target(&solution).expect("solution has precedence");
+        assert_eq!(selected_solution, "App.sln");
+
+        let multiple_projects = temp.path().join("multiple-projects");
+        fs::create_dir(&multiple_projects).expect("create multi project repo");
+        fs::write(multiple_projects.join("App.csproj"), "<Project />\n").expect("write app csproj");
+        fs::write(multiple_projects.join("Lib.csproj"), "<Project />\n").expect("write lib csproj");
+        let multi_project_err = semantic_csharp_build_target(&multiple_projects)
+            .expect_err("multiple csproj files without solution must fail");
+        println!("AFTER csharp multi-project state: {multi_project_err}");
+        assert_eq!(multi_project_err.code(), "VERIFICATION_FAILED");
+        assert!(multi_project_err.to_string().contains("multiple .csproj"));
+
+        let multiple_solutions = temp.path().join("multiple-solutions");
+        fs::create_dir(&multiple_solutions).expect("create multi solution repo");
+        fs::write(multiple_solutions.join("App.sln"), "\n").expect("write app sln");
+        fs::write(multiple_solutions.join("Lib.sln"), "\n").expect("write lib sln");
+        let multi_solution_err = semantic_csharp_build_target(&multiple_solutions)
+            .expect_err("multiple solutions must fail");
+        println!("AFTER csharp multi-solution state: {multi_solution_err}");
+        assert_eq!(multi_solution_err.code(), "VERIFICATION_FAILED");
+        assert!(multi_solution_err.to_string().contains("multiple .sln"));
     }
 
     #[test]

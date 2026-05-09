@@ -142,9 +142,9 @@ pub enum EntityType {
 
 impl EntityType {
     /// Convert from tree-sitter node kind (Rust).
-    fn from_rust_node_kind(kind: &str, parent_kind: Option<&str>) -> Self {
+    fn from_rust_node_kind(kind: &str, inside_impl: bool) -> Self {
         match kind {
-            "function_item" if parent_kind == Some("impl_item") => EntityType::Method,
+            "function_item" if inside_impl => EntityType::Method,
             "function_item" => EntityType::Function,
             "impl_item" => EntityType::Impl,
             "struct_item" => EntityType::Struct,
@@ -310,7 +310,7 @@ impl AstCodeChunker {
             &imports,
             &mut vec![], // scope chain
             None,        // parent definition
-            None,        // parent node kind
+            false,       // inside impl
             &mut raw_chunks,
         );
 
@@ -333,7 +333,7 @@ impl AstCodeChunker {
         imports: &[String],
         scope_chain: &mut Vec<String>,
         parent_def: Option<&str>,
-        parent_kind: Option<&str>,
+        inside_impl: bool,
         chunks: &mut Vec<CodeChunk>,
     ) {
         let size = self.non_whitespace_size(node, source);
@@ -352,7 +352,7 @@ impl AstCodeChunker {
                 imports,
                 scope_chain,
                 parent_def,
-                parent_kind,
+                inside_impl,
             ) {
                 chunks.push(chunk);
                 return;
@@ -385,7 +385,7 @@ impl AstCodeChunker {
                     imports,
                     scope_chain,
                     new_parent.as_deref(),
-                    Some(node.kind()),
+                    inside_impl || node.kind() == "impl_item" || child.kind() == "impl_item",
                     chunks,
                 );
 
@@ -405,10 +405,10 @@ impl AstCodeChunker {
         imports: &[String],
         scope_chain: &[String],
         parent_def: Option<&str>,
-        parent_kind: Option<&str>,
+        inside_impl: bool,
     ) -> Option<CodeChunk> {
         let code = source[node.start_byte()..node.end_byte()].to_string();
-        let entity_type = EntityType::from_rust_node_kind(node.kind(), parent_kind);
+        let entity_type = EntityType::from_rust_node_kind(node.kind(), inside_impl);
 
         // Extract signature for functions/methods
         let entity_signature = self.extract_signature(node, source);

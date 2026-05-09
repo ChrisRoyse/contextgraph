@@ -8954,11 +8954,26 @@ fn ast_cpp_function_is_method(node: tree_sitter::Node<'_>, source: &str) -> bool
 
 fn source_contains_type_declaration(source: &str, keyword: &str, name: &str) -> bool {
     source.match_indices(keyword).any(|(idx, _)| {
+        if idx > 0
+            && source[..idx]
+                .chars()
+                .next_back()
+                .is_some_and(is_identifier_char)
+        {
+            return false;
+        }
         let after_keyword = idx + keyword.len();
-        source[after_keyword..]
-            .trim_start()
+        let rest = &source[after_keyword..];
+        if !rest
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_whitespace())
+        {
+            return false;
+        }
+        rest.trim_start()
             .strip_prefix(name)
-            .is_some_and(|rest| rest.chars().next().is_none_or(|ch| !is_identifier_char(ch)))
+            .is_some_and(|tail| tail.chars().next().is_none_or(|ch| !is_identifier_char(ch)))
     })
 }
 
@@ -8997,12 +9012,20 @@ fn ast_node_name_for_language(
 
 fn ast_cpp_node_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
     match node.kind() {
-        "function_definition" | "declaration" | "field_declaration" | "init_declarator" => {
+        "template_declaration"
+        | "function_definition"
+        | "declaration"
+        | "field_declaration"
+        | "init_declarator" => {
             let mut cursor = node.walk();
             for child in node.named_children(&mut cursor) {
                 if matches!(
                     child.kind(),
-                    "function_declarator" | "init_declarator" | "qualified_identifier"
+                    "function_declarator"
+                        | "init_declarator"
+                        | "qualified_identifier"
+                        | "class_specifier"
+                        | "struct_specifier"
                 ) {
                     if let Some(name) = ast_cpp_node_name(child, source) {
                         return Some(name);
@@ -17229,7 +17252,8 @@ fn swe_symbol_bucket(
 fn looks_like_source_path(path: &str) -> bool {
     [
         ".py", ".rs", ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".c", ".cc", ".cpp", ".cxx",
-        ".h", ".hh", ".hpp", ".hxx", ".cs", ".rb", ".php", ".swift", ".kt", ".kts", ".scala",
+        ".h", ".hh", ".hpp", ".hxx", ".h++", ".ipp", ".inl", ".tpp", ".txx", ".ixx", ".cs", ".rb",
+        ".php", ".swift", ".kt", ".kts", ".scala",
     ]
     .iter()
     .any(|suffix| path.ends_with(suffix))
@@ -19418,6 +19442,40 @@ mod tests {
         .expect("rust source write");
     }
 
+    fn add_real_c_project(repo: &Path) {
+        write_text_checked(
+            &repo.join("include/math_util.h"),
+            "#ifndef MATH_UTIL_H\n#define MATH_UTIL_H\n\n#define CG_SCALE(x) ((x) * 2)\n\nstruct Point {\n    int x;\n    int y;\n};\n\nint add(int left, int right);\n\n#endif\n",
+        )
+        .expect("C header write");
+        write_text_checked(
+            &repo.join("src/math_util.c"),
+            "#include \"math_util.h\"\n\nstatic int helper(int value) {\n    return CG_SCALE(value);\n}\n\nint add(int left, int right) {\n    struct Point p = {left, right};\n    return helper(p.x + p.y);\n}\n",
+        )
+        .expect("C source write");
+        let compile_commands = json!([{
+            "directory": path_str(repo),
+            "file": path_str(&repo.join("src/math_util.c")),
+            "arguments": [
+                "gcc",
+                "-Iinclude",
+                "-c",
+                "src/math_util.c",
+                "-o",
+                "math_util.o"
+            ]
+        }]);
+        write_text_checked(
+            &repo.join("compile_commands.json"),
+            &format!(
+                "{}\n",
+                serde_json::to_string_pretty(&compile_commands)
+                    .expect("serialize C compile commands")
+            ),
+        )
+        .expect("C compile_commands write");
+    }
+
     fn java_semantic_for_source(path: &str, source: &str, needle: &str) -> AstSemanticNode {
         let mut parser = tree_sitter::Parser::new();
         let language: tree_sitter::Language = tree_sitter_java::LANGUAGE.into();
@@ -19558,6 +19616,91 @@ mod tests {
             assert_eq!(action["semantic_provider"], "parser_symbol_graph");
             assert_eq!(action["compiler_semantic_status"], "toolchain_missing");
         }
+    }
+
+    #[test]
+    fn dynamicjepa_ast_action_semantics_parse_real_c_edit_with_compile_commands() {
+        let (_temp, repo) = init_real_git_repo();
+        add_real_c_project(&repo);
+        let args = json!({
+            "edits": [{
+                "path": "src/math_util.c",
+                "start_line": 9,
+                "end_line": 9,
+                "replace": "    return helper(p.x + p.y + 1);\n",
+                "observed_sha256": sha256_file(&repo.join("src/math_util.c")).expect("sha")
+            }]
+        });
+        println!(
+            "BEFORE C action state: compile_commands={}, source={}",
+            fs::read_to_string(repo.join("compile_commands.json"))
+                .expect("read C compile commands"),
+            fs::read_to_string(repo.join("src/math_util.c")).expect("read C source")
+        );
+
+        let action = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+            .expect("C compiler-backed action semantics");
+        println!("AFTER C action semantic state: {action}");
+
+        assert_eq!(action["ast_language"], "c");
+        assert_eq!(action["ast_parse_status"], "parsed");
+        assert_eq!(action["ast_node_kind"], "function");
+        assert_eq!(action["ast_symbol_kind"], "function");
+        assert_eq!(action["ast_edit_kind"], "function_body");
+        assert_eq!(action["symbol_visibility"], "public");
+        assert_eq!(action["semantic_provider"], "compiler_lsp");
+        assert_eq!(action["semantic_status"], "analyzed");
+        assert_eq!(action["compiler_semantic_status"], "checked");
+        assert_eq!(action["type_resolution_status"], "resolved");
+        assert_eq!(action["import_resolution_status"], "resolved");
+        assert_eq!(action["compiler_diagnostic_count"], 0);
+        assert_eq!(action["predicted_verifier_target"], "typecheck");
+        assert_eq!(action["patch_delta_kind"], "return_contract");
+        assert_eq!(
+            fs::read_to_string(repo.join("src/math_util.c")).expect("read C source after"),
+            "#include \"math_util.h\"\n\nstatic int helper(int value) {\n    return CG_SCALE(value);\n}\n\nint add(int left, int right) {\n    struct Point p = {left, right};\n    return helper(p.x + p.y);\n}\n"
+        );
+    }
+
+    #[test]
+    fn dynamicjepa_ast_action_semantics_c_fails_closed_without_compile_commands() {
+        let (_temp, repo) = init_real_git_repo();
+        write_text_checked(
+            &repo.join("src/math_util.c"),
+            "int add(int left, int right) {\n    return left + right;\n}\n",
+        )
+        .expect("C source write");
+        let args = json!({
+            "edits": [{
+                "path": "src/math_util.c",
+                "start_line": 2,
+                "end_line": 2,
+                "replace": "    return left + right + 1;\n",
+                "observed_sha256": sha256_file(&repo.join("src/math_util.c")).expect("sha")
+            }]
+        });
+        println!(
+            "BEFORE C missing compile_commands state: compile_commands_exists={}, source={}",
+            repo.join("compile_commands.json").exists(),
+            fs::read_to_string(repo.join("src/math_util.c")).expect("read C source")
+        );
+
+        let err = inferred_dynamicjepa_action_from_tool(&repo, "apply_line_window_edit", &args)
+            .expect_err("C action semantics must fail closed without compile_commands.json");
+        println!("AFTER C missing compile_commands error state: {err}");
+
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_DYNAMICJEPA_C_COMPILE_COMMANDS_MISSING"
+        );
+        assert_eq!(
+            err.field_path,
+            "dynamicjepa.action.compiler_lsp.c.compile_commands"
+        );
+        assert_eq!(
+            fs::read_to_string(repo.join("src/math_util.c")).expect("read C source after"),
+            "int add(int left, int right) {\n    return left + right;\n}\n"
+        );
     }
 
     #[test]
