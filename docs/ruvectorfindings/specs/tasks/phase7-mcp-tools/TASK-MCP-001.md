@@ -65,55 +65,36 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — REQUIRES REWORK
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Drift summary:** This task body assumes a sub-module tree at `crates/context-graph-mcp/src/handlers/tools/mejepa/` (with sibling files `verify.rs`, `predict_latest.rs`, `observe_shift.rs`, `subscriber_status.rs`, `capture_audit.rs`, plus `mod.rs` + `schemas.rs`). The codebase took a different path: **MCP tools live in a flat file** at `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs`, and three of the shipped handlers (`mejepa_load_learner_state`, `mejepa_routing_lookup`, `mejepa_vram_budget_report`) actually live in `crates/context-graph-mcp/src/handlers/tools/embedder_tools.rs`.
+> **Codebase reality table:** see `_index.md` in this directory for the full audit table (ground truth as of 2026-05-11). What follows is THIS task's scope-specific drift.
 
-**Actual file locations (verified 2026-05-10):**
+**Original assumption (2026-05-09 author):** create a `crates/context-graph-mcp/src/handlers/tools/mejepa/` sub-module tree with `mod.rs`, `schemas.rs`, and 5 sibling handler files; register 5 tool names.
 
-- `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` — flat file (not a directory) containing 5 handlers: `call_mejepa_verify` (~76), `call_mejepa_predict_latest` (~151), `call_mejepa_constellation_inspect` (~222), `call_mejepa_heal_status` (~273), `call_mejepa_rollback_to` (~308).
-- `crates/context-graph-mcp/src/handlers/tools/embedder_tools.rs` — contains 3 more shipped handlers: `call_mejepa_load_learner_state` (~1753), `call_mejepa_routing_lookup` (~1795), `call_mejepa_vram_budget_report` (~1817).
-- `crates/context-graph-mcp/src/tools/names.rs` — `MEJEPA_*` name constants live here.
-- The `crates/context-graph-mcp/src/handlers/tools/mejepa/` directory **does not exist**.
+**What actually exists (verified by `ls`/`grep` 2026-05-11):**
+- The sub-module tree was NEVER created. MCP tool handlers live in flat files: `mejepa_tools.rs` (838 lines, 5 handlers), `mejepa_hygiene_tools.rs` (106 lines, 3 Phase 6 handlers), `embedder_tools.rs` (3 more handlers ~1753-1840).
+- Tool name constants in `crates/context-graph-mcp/src/tools/names.rs:96-114` hold the **fully-namespaced wire string** (e.g. `MEJEPA_PREDICT_LATEST = "mcp__cgreality__mejepa_predict_latest"`) — there is NO separate dispatcher prefix added at runtime.
+- Tool DEFINITIONS (JSON-Schema) live in `crates/context-graph-mcp/src/tools/definitions/mejepa.rs` (149 lines).
+- 8 mejepa MCP tools already SHIPPED (5 in `mejepa_tools.rs` + 3 in `embedder_tools.rs`); 3 Phase 6 hygiene tools shipped in `mejepa_hygiene_tools.rs`.
+- `crates/context-graph-mcp/src/handlers/tools/reality_loop/retired.rs` does NOT exist; `CCREALITY_ENGINE_RETIRED` literal absent everywhere in the MCP source. Retired-name calls today fall through to the dispatcher's unknown-tool branch — a regression against constitution `<mcp_tool_namespace_lock>`.
 
-**MEJEPA MCP tools — SHIPPED (8) vs PENDING (10):**
+**Decided scope for this task (Occam's-razor, operator-approvable):**
+1. Add 3 NEW const tool names to `crates/context-graph-mcp/src/tools/names.rs`: `MEJEPA_OBSERVE_SHIFT`, `MEJEPA_SUBSCRIBER_STATUS`, `MEJEPA_CAPTURE_AUDIT`. Each constant value is the FULL wire name (e.g. `"mcp__cgreality__mejepa_observe_shift"`). Match the established pattern at lines 96-114.
+2. Add 3 NEW schema builder functions to `crates/context-graph-mcp/src/tools/definitions/mejepa.rs`. Every schema MUST include `"additionalProperties": false` recursively on all nested objects. Wire each into the existing `mejepa_tool_definitions()` enumerator.
+3. Add 3 stub dispatcher arms to `crates/context-graph-mcp/src/handlers/tools/dispatch.rs` (after line 218): `tool_names::MEJEPA_OBSERVE_SHIFT => call_mejepa_observe_shift(arguments),` etc. Each `call_*` is implemented as a handler function in `mejepa_tools.rs` that returns a structured `MEJEPA_TOOL_STUB_NOT_WIRED` error pending TASK-MCP-{004,005,006}.
+4. Add a retired-name intercept BEFORE the unknown-tool fall-through in `dispatch.rs`. Match the set: `mcp__cgreality__reality_run_attempt`, `mcp__cgreality__reality_alter_file`, `mcp__cgreality__reality_alter_run`, `mcp__cgreality__reality_alter_apply`, `mcp__cgreality__reality_drip_attempt`. Emit `CCREALITY_ENGINE_RETIRED` with payload `{"attempted_tool": "<name>", "message": "tool retired in 2026-05-09 ME-JEPA pivot; use mcp__cgreality__mejepa_*"}`. NEVER spawn `target/release/reality-loop`. NEVER alias to a new name.
+5. Args DTOs (`ObserveShiftArgs`, `SubscriberStatusArgs`, `CaptureAuditArgs`) declared inline at top of `mejepa_tools.rs` with `#[serde(rename_all = "camelCase", deny_unknown_fields)]` matching the existing pattern at line 32-69.
+6. SessionId contract: any new tool consuming `session_id` MUST use the hex-32 → `[u8; 16]` decoder pattern from `mejepa_tools.rs:169-185` (validate length=32 + all-hex + decode_to_slice). The SPEC's "up to 64 chars UTF-8" is stale; trust the code.
 
-SHIPPED (already in tree):
-- `mejepa_verify`
-- `mejepa_predict_latest`
-- `mejepa_constellation_inspect`
-- `mejepa_heal_status`
-- `mejepa_rollback_to`
-- `mejepa_load_learner_state`
-- `mejepa_routing_lookup`
-- `mejepa_vram_budget_report`
+**Out-of-scope (explicit):** the actual handler bodies (TASK-MCP-{002,003,004,005,006} own those); FSV roundtrip evidence (TASK-MCP-007); refactoring the 8 SHIPPED handlers into a sub-module tree (would touch ~838 lines and risk regression — defer until operator-approved).
 
-PENDING (Phase 6 hygiene + Phase 7 shift-subscriber + Phase 8 evaluation):
-- `mejepa_observe_shift` (Phase 7 shift-subscriber wiring)
-- `mejepa_subscriber_status` (Phase 7)
-- `mejepa_capture_audit` (Phase 7)
-- `mejepa_gc_run` (Phase 6 hygiene)
-- `mejepa_quota_status` (Phase 6)
-- `mejepa_witness_compress` (Phase 6)
-- `mejepa_eval_run` (Phase 8)
-- `mejepa_eval_ship_gate_status` (Phase 8)
-- `mejepa_active_learning_queue` (Phase 8)
-- `mejepa_active_learning_label` (Phase 8)
+**Files this task touches:**
+- `crates/context-graph-mcp/src/tools/names.rs` (3 new const lines)
+- `crates/context-graph-mcp/src/tools/definitions/mejepa.rs` (3 new schema builders + enumerator extension)
+- `crates/context-graph-mcp/src/handlers/tools/dispatch.rs` (3 new arms + retired-name intercept)
+- `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` (3 new stub `call_*` functions returning `MEJEPA_TOOL_STUB_NOT_WIRED`; if file >1500 lines after this addition, split in a follow-up task)
 
-**Specific path discrepancies in this task body:**
-
-- `<files_to_create>` paths (`crates/context-graph-mcp/src/handlers/tools/mejepa/{mod,schemas,verify,predict_latest,observe_shift,subscriber_status,capture_audit}.rs`) — wrong, the sub-module tree was never created.
-- `<signature file="crates/context-graph-mcp/src/handlers/tools/mejepa/...">` — every file path under that prefix is non-existent.
-- `MEJEPA_TOOL_NAMES` constant slice (5 names) — partially correct as a target list, but 2 of those 5 (`verify`, `predict_latest`) are already wired into `mejepa_tools.rs` without the sub-module structure.
-- Tool count "5 mejepa_* tool stubs" understates the post-pivot reality — there are now **18 planned mejepa_* tools** (8 shipped + 10 pending) across Phase 6/7/8.
-- Test names (e.g., `mejepa::test_tools_list_enumerates_all_5`) reference a non-existent `mejepa::` module; tests for the shipped tools live elsewhere.
-
-**Recommended rework before implementing:**
-
-1. Decide whether to (a) keep the flat-file structure and add 3 missing Phase 7 tools (`observe_shift`, `subscriber_status`, `capture_audit`) as new functions in `mejepa_tools.rs`, or (b) refactor into the sub-module tree and migrate the 8 shipped handlers. Operator confirmation required.
-2. Rewrite `<scope>`, `<files_to_create>`, `<signatures>`, and `<verification>` blocks to match the chosen target structure.
-3. Expand `<implements>` to cover the 10 pending tools (Phase 6 hygiene + Phase 8 eval), not only the 5 originally specified.
-4. Update REQ-SHIFT-07 reference count from "Five new MCP tools" to the post-pivot reality.
+**FSV for this task:** unit tests covering (a) `tools/list` enumerates the 3 new names with their schemas; (b) every new schema has `additionalProperties: false` recursively; (c) every retired name in the intercept set returns `CCREALITY_ENGINE_RETIRED`; (d) every stub handler returns `MEJEPA_TOOL_STUB_NOT_WIRED` (no panic).
 
 ---
 
