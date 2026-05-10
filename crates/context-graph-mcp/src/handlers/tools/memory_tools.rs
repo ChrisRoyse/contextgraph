@@ -16,13 +16,11 @@
 //!
 //! Temporal embedders (E2-E4) are POST-RETRIEVAL only per ARCH-25, AP-73.
 //!
-//! # E5 Causal Asymmetric Similarity (ARCH-15, AP-77)
+//! # E5 Causal Retirement
 //!
-//! For causal queries ("why", "what happens"), asymmetric E5 reranking is applied:
-//! - Direction detection: Detects if query seeks causes or effects
-//! - Asymmetric vectors: Uses `query.e5_as_cause` vs `doc.e5_as_effect` (or reverse)
-//! - Direction modifiers: cause→effect (1.2x), effect→cause (0.8x)
-//! - Auto-profile selection: Causal queries auto-select "causal_reasoning" profile
+//! E5 causal was an unfinished experimental embedder and is retired. Search may still
+//! use active embedders and optional lexical query expansion, but E5 vectors, E5 HNSW
+//! indexes, causal hints, and asymmetric E5 reranking are rejected fail-closed.
 
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -1600,15 +1598,22 @@ impl Handlers {
         let use_conversation_context = conversation_context.is_some() && anchor_to_current_turn;
 
         // =========================================================================
-        // E5 CAUSAL ASYMMETRIC PARAMETERS (ARCH-15, AP-77)
+        // RETIRED E5 CAUSAL PARAMETERS
         // =========================================================================
 
-        // Parse enableAsymmetricE5 (default: true)
-        // When enabled, asymmetric E5 reranking is applied for causal queries
+        // Parse enableAsymmetricE5 (default: false). Passing true is rejected
+        // because E5 causal is retired and must not be used by ME-JEPA/search.
         let enable_asymmetric_e5 = args
             .get("enableAsymmetricE5")
             .and_then(|v| v.as_bool())
-            .unwrap_or(true);
+            .unwrap_or(false);
+        if enable_asymmetric_e5 {
+            return self.tool_error_typed(
+                id,
+                ToolErrorKind::Validation,
+                "enableAsymmetricE5=true is not supported because E5 causal is retired and disabled",
+            );
+        }
 
         // Parse causalDirection (auto, cause, effect, none)
         // - auto: Auto-detect from query text (default)
@@ -1639,12 +1644,13 @@ impl Handlers {
             _ => detect_causal_query_intent(query),
         };
 
-        // Log causal detection for debugging/monitoring
+        // Log causal detection for debugging/monitoring. This no longer enables
+        // E5 scoring; it only supports optional lexical query expansion.
         if causal_direction != CausalDirection::Unknown {
             info!(
                 direction = %causal_direction,
                 query_preview = %query.chars().take(100).collect::<String>(),
-                "Causal query detected - asymmetric E5 reranking will be applied"
+                "Causal language detected; E5 causal is retired, no E5 reranking will be applied"
             );
         }
 
@@ -1750,20 +1756,13 @@ impl Handlers {
         };
 
         // Build search options with multi-space parameters
-        // For causal queries, over-fetch candidates to allow for reranking
-        let fetch_multiplier =
-            if enable_asymmetric_e5 && causal_direction != CausalDirection::Unknown {
-                3 // Fetch 3x candidates for asymmetric reranking
-            } else {
-                1
-            };
-        let fetch_top_k = top_k * fetch_multiplier;
+        let fetch_top_k = top_k;
 
         let mut options = TeleologicalSearchOptions::quick(fetch_top_k)
             .with_min_similarity(min_similarity)
             .with_strategy(strategy)
             .with_rerank(enable_rerank)
-            .with_causal_direction(causal_direction); // ARCH-15, AP-77: Thread direction to retrieval
+            .with_causal_direction(CausalDirection::Unknown); // E5 retired: never route storage through E5.
 
         // Map weight profile to synergy weights for cross-embedder correlation boost
         if let Some(sw) = match effective_weight_profile.as_deref() {
@@ -1969,33 +1968,9 @@ impl Handlers {
                 // =========================================================================
                 // PHASE 2: ASYMMETRIC E5 RERANKING
                 // =========================================================================
-                // Apply asymmetric E5 similarity for causal queries
-                // Per ARCH-15 and AP-77: E5 Causal MUST use asymmetric similarity
+                // E5 causal is retired; asymmetric E5 reranking is intentionally disabled.
 
-                let asymmetric_applied = if enable_asymmetric_e5
-                    && causal_direction != CausalDirection::Unknown
-                    && !results.is_empty()
-                {
-                    // Get E5 weight from the effective profile (default to 0.10 for causal_reasoning)
-                    let e5_weight = get_e5_causal_weight(
-                        effective_weight_profile
-                            .as_deref()
-                            .unwrap_or("causal_reasoning"),
-                    );
-
-                    info!(
-                        results_count = results.len(),
-                        causal_direction = %causal_direction,
-                        e5_weight = e5_weight,
-                        "Applying asymmetric E5 reranking"
-                    );
-
-                    apply_asymmetric_e5_reranking(&mut results, &query_embedding, causal_direction);
-                    apply_direction_aware_reranking(&mut results, causal_direction);
-                    true
-                } else {
-                    false
-                };
+                let asymmetric_applied = false;
 
                 // =========================================================================
                 // PHASE 4: COLBERT LATE INTERACTION RERANKING
@@ -2376,6 +2351,7 @@ impl Handlers {
                 response["causal"] = json!({
                     "direction": format!("{}", causal_direction),
                     "asymmetricE5Applied": asymmetric_applied,
+                    "e5Retired": true,
                     "colbertApplied": colbert_applied,
                     "queryExpanded": search_query != query
                 });

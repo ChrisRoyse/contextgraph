@@ -43,6 +43,22 @@ impl Handlers {
         JsonRpcResponse::success(id, json!({ "tools": tools }))
     }
 
+    pub(crate) async fn call_e5_retired_tool(
+        &self,
+        id: Option<JsonRpcId>,
+        _arguments: serde_json::Value,
+        tool_name: &str,
+    ) -> JsonRpcResponse {
+        JsonRpcResponse::error(
+            id,
+            error_codes::INVALID_PARAMS,
+            format!(
+                "{} is unavailable because the E5 causal embedder is retired and disabled",
+                tool_name
+            ),
+        )
+    }
+
     pub(crate) async fn handle_tools_call(
         &self,
         id: Option<JsonRpcId>,
@@ -113,11 +129,11 @@ impl Handlers {
             tool_names::GET_SESSION_TIMELINE => call_get_session_timeline(arguments),
             tool_names::TRAVERSE_MEMORY_CHAIN => call_traverse_memory_chain(arguments),
             tool_names::COMPARE_SESSION_STATES => call_compare_session_states(arguments),
-            // Causal tools (E5)
-            tool_names::SEARCH_CAUSES => call_search_causes(arguments),
-            tool_names::SEARCH_EFFECTS => call_search_effects(arguments),
-            tool_names::GET_CAUSAL_CHAIN => call_get_causal_chain(arguments),
-            tool_names::SEARCH_CAUSAL_RELATIONSHIPS => call_search_causal_relationships(arguments),
+            // Causal tools (E5 retired)
+            tool_names::SEARCH_CAUSES => call_e5_retired_tool(arguments, tool_names::SEARCH_CAUSES),
+            tool_names::SEARCH_EFFECTS => call_e5_retired_tool(arguments, tool_names::SEARCH_EFFECTS),
+            tool_names::GET_CAUSAL_CHAIN => call_e5_retired_tool(arguments, tool_names::GET_CAUSAL_CHAIN),
+            tool_names::SEARCH_CAUSAL_RELATIONSHIPS => call_e5_retired_tool(arguments, tool_names::SEARCH_CAUSAL_RELATIONSHIPS),
             // Graph tools (E8)
             tool_names::SEARCH_CONNECTIONS => call_search_connections(arguments),
             tool_names::GET_GRAPH_PATH => call_get_graph_path(arguments),

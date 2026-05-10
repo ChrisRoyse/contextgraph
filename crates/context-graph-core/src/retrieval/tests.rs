@@ -8,6 +8,7 @@ use crate::traits::TeleologicalMemoryStore;
 use crate::types::fingerprint::{
     SemanticFingerprint, SparseVector, TeleologicalFingerprint, NUM_EMBEDDERS,
 };
+use crate::weights::E5_CAUSAL_ENABLED;
 use std::time::Duration;
 
 /// Create a fingerprint with non-zero semantic embeddings.
@@ -191,16 +192,28 @@ async fn test_full_query_flow_with_stub_data() {
 #[tokio::test]
 async fn test_embedding_space_mask_all() {
     let mask = EmbeddingSpaceMask::ALL;
-    assert_eq!(mask.active_count(), NUM_EMBEDDERS);
+    let expected_active = if E5_CAUSAL_ENABLED {
+        NUM_EMBEDDERS
+    } else {
+        NUM_EMBEDDERS - 1
+    };
+    assert_eq!(mask.active_count(), expected_active);
     assert!(mask.includes_splade());
     assert!(mask.includes_late_interaction());
 
     for i in 0..NUM_EMBEDDERS {
-        assert!(mask.is_active(i), "Space {} should be active", i);
+        if !E5_CAUSAL_ENABLED && i == 4 {
+            assert!(!mask.is_active(i), "Retired E5 space should be inactive");
+        } else {
+            assert!(mask.is_active(i), "Space {} should be active", i);
+        }
     }
 
     // Presets
-    assert_eq!(EmbeddingSpaceMask::ALL_DENSE.active_count(), 11);
+    assert_eq!(
+        EmbeddingSpaceMask::ALL_DENSE.active_count(),
+        if E5_CAUSAL_ENABLED { 11 } else { 10 }
+    );
     assert_eq!(EmbeddingSpaceMask::SEMANTIC_ONLY.active_count(), 1);
     assert_eq!(EmbeddingSpaceMask::TEXT_CORE.active_count(), 3);
 }

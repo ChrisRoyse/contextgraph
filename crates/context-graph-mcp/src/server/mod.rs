@@ -423,7 +423,9 @@ impl McpServer {
                 info!("Background model loading started...");
 
                 // Initialize global warm provider from the resolved source of truth.
-                match initialize_global_warm_provider_with_models_dir(models_dir_clone.clone()).await {
+                match initialize_global_warm_provider_with_models_dir(models_dir_clone.clone())
+                    .await
+                {
                     Ok(()) => {
                         // Global provider initialized, get it
                         match get_warm_provider() {
@@ -1108,12 +1110,18 @@ impl McpServer {
 
         if let Ok(env_path) = std::env::var("CONTEXTGRAPH_MODELS_ROOT") {
             let path = PathBuf::from(env_path);
-            info!("Using models path from CONTEXTGRAPH_MODELS_ROOT: {:?}", path);
+            info!(
+                "Using models path from CONTEXTGRAPH_MODELS_ROOT: {:?}",
+                path
+            );
             return path;
         }
 
         let phase1b_registry_path = PathBuf::from("/mnt/d/cabdru/contextgraph/models");
-        if phase1b_registry_path.join("mejepa_models_config.toml").is_file() {
+        if phase1b_registry_path
+            .join("mejepa_models_config.toml")
+            .is_file()
+        {
             info!(
                 "Using Phase-1b ME-JEPA model registry path: {:?}",
                 phase1b_registry_path

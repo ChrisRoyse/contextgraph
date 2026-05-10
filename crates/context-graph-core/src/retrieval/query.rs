@@ -1,7 +1,7 @@
 //! Query types for multi-embedding search.
 //!
 //! This module provides the core query configuration for searching across
-//! the 13 embedding spaces defined in `SemanticFingerprint`.
+//! the active embedding spaces defined in `SemanticFingerprint`.
 //!
 //! # Performance Targets (constitution.yaml)
 //! - Total latency: <60ms @ 1M memories
@@ -45,7 +45,7 @@ pub struct MultiEmbeddingQuery {
     pub query_text: String,
 
     /// Which embedding spaces to search (bitmask).
-    /// Default: ALL (0x1FFF = all 13 spaces)
+    /// Default: ALL active spaces (E5 causal is retired unless explicitly re-enabled in code).
     pub active_spaces: EmbeddingSpaceMask,
 
     /// Per-space weight overrides [0.0, 1.0].
@@ -402,17 +402,32 @@ mod tests {
     #[test]
     fn test_embedding_space_mask_all() {
         let mask = EmbeddingSpaceMask::ALL;
-        assert_eq!(mask.active_count(), NUM_EMBEDDERS);
+        let expected_active = if E5_CAUSAL_ENABLED {
+            NUM_EMBEDDERS
+        } else {
+            NUM_EMBEDDERS - 1
+        };
+        assert_eq!(mask.active_count(), expected_active);
         for i in 0..NUM_EMBEDDERS {
-            assert!(mask.is_active(i), "Space {} should be active", i);
+            if !E5_CAUSAL_ENABLED && i == 4 {
+                assert!(!mask.is_active(i), "Retired E5 space should be inactive");
+            } else {
+                assert!(mask.is_active(i), "Space {} should be active", i);
+            }
         }
-        println!("[VERIFIED] EmbeddingSpaceMask::ALL has 14 active spaces");
+        println!("[VERIFIED] EmbeddingSpaceMask::ALL excludes retired spaces");
     }
 
     #[test]
     fn test_embedding_space_mask_presets() {
-        assert_eq!(EmbeddingSpaceMask::ALL.active_count(), NUM_EMBEDDERS);
-        assert_eq!(EmbeddingSpaceMask::ALL_DENSE.active_count(), 11);
+        let expected_all = if E5_CAUSAL_ENABLED {
+            NUM_EMBEDDERS
+        } else {
+            NUM_EMBEDDERS - 1
+        };
+        let expected_dense = if E5_CAUSAL_ENABLED { 11 } else { 10 };
+        assert_eq!(EmbeddingSpaceMask::ALL.active_count(), expected_all);
+        assert_eq!(EmbeddingSpaceMask::ALL_DENSE.active_count(), expected_dense);
         assert_eq!(EmbeddingSpaceMask::SEMANTIC_ONLY.active_count(), 1);
         assert_eq!(EmbeddingSpaceMask::TEXT_CORE.active_count(), 3);
         assert_eq!(EmbeddingSpaceMask::SPLADE_ONLY.active_count(), 1);
@@ -421,9 +436,14 @@ mod tests {
         assert!(EmbeddingSpaceMask::ALL.includes_splade());
         assert!(EmbeddingSpaceMask::ALL.includes_late_interaction());
         assert!(EmbeddingSpaceMask::ALL.is_active(13));
+        assert_eq!(EmbeddingSpaceMask::ALL.is_active(4), E5_CAUSAL_ENABLED);
         assert!(!EmbeddingSpaceMask::ALL_DENSE.includes_splade());
         assert!(!EmbeddingSpaceMask::ALL_DENSE.includes_late_interaction());
         assert!(EmbeddingSpaceMask::ALL_DENSE.is_active(13));
+        assert_eq!(
+            EmbeddingSpaceMask::ALL_DENSE.is_active(4),
+            E5_CAUSAL_ENABLED
+        );
 
         println!("[VERIFIED] All EmbeddingSpaceMask presets have correct counts");
     }

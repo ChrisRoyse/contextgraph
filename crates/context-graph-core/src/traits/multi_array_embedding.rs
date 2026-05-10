@@ -61,7 +61,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::time::Duration;
 
-use crate::error::CoreResult;
+use crate::error::{CoreError, CoreResult};
 use crate::types::fingerprint::{SemanticFingerprint, SparseVector, NUM_EMBEDDERS};
 
 /// Output from multi-array embedding generation.
@@ -1340,7 +1340,7 @@ mod tests {
         assert_eq!(dims[1], 512, "E2 temporal-recent should be 512D");
         assert_eq!(dims[2], 512, "E3 temporal-periodic should be 512D");
         assert_eq!(dims[3], 512, "E4 temporal-positional should be 512D");
-        assert_eq!(dims[4], 768, "E5 causal should be 768D");
+        assert_eq!(dims[4], 0, "E5 causal is retired/disabled");
         assert_eq!(dims[5], 0, "E6 sparse should be 0 (variable)");
         assert_eq!(dims[6], 1536, "E7 code should be 1536D");
         assert_eq!(

@@ -14,11 +14,12 @@
 //!
 //! # Category Weights (from constitution)
 //!
-//! - Semantic (E1, E5, E6, E7, E10, E12, E13, E14): weight 1.0
+//! - Semantic (E1, E6, E7, E10, E12, E13, E14): weight 1.0
+//! - Retired (E5): weight 0.0
 //! - Temporal (E2, E3, E4): weight 0.0 (excluded)
 //! - Relational (E8, E11): weight 0.5
 //! - Structural (E9): weight 0.5
-//! - MAX_WEIGHTED_AGREEMENT = 8*1.0 + 2*0.5 + 1*0.5 = 9.5 (post-E14)
+//! - MAX_WEIGHTED_AGREEMENT = 7*1.0 + 2*0.5 + 1*0.5 = 8.5
 
 use serde::{Deserialize, Serialize};
 
@@ -45,7 +46,7 @@ pub const SPACE_WEIGHTS: [f32; 14] = [
     0.0, // E2: Temporal Recent (excluded)
     0.0, // E3: Temporal Periodic (excluded)
     0.0, // E4: Temporal Positional (excluded)
-    1.0, // E5: Causal - cause/effect
+    0.0, // E5: Causal retired/disabled
     1.0, // E6: Sparse - sparse terms
     1.0, // E7: Code - code structure
     0.5, // E8: Graph (Relational)
@@ -57,8 +58,8 @@ pub const SPACE_WEIGHTS: [f32; 14] = [
     1.0, // E14: BGE-M3 dense (Semantic/Style)
 ];
 
-/// Total weight sum for normalization: 8*1.0 + 2*0.5 + 1*0.5 = 9.5
-pub const TOTAL_WEIGHT: f32 = 9.5;
+/// Total weight sum for normalization: 7*1.0 + 2*0.5 + 1*0.5 = 8.5
+pub const TOTAL_WEIGHT: f32 = 8.5;
 
 /// Per-space threshold values for all 14 embedding spaces.
 ///
@@ -465,11 +466,11 @@ mod tests {
         assert_eq!(SPACE_WEIGHTS[1], 0.0); // E2 Temporal Recent (excluded)
         assert_eq!(SPACE_WEIGHTS[2], 0.0); // E3 Temporal Periodic (excluded)
         assert_eq!(SPACE_WEIGHTS[3], 0.0); // E4 Temporal Positional (excluded)
-        assert_eq!(SPACE_WEIGHTS[4], 1.0); // E5 Causal
+        assert_eq!(SPACE_WEIGHTS[4], 0.0); // E5 Causal retired
         assert_eq!(SPACE_WEIGHTS[7], 0.5); // E8 Graph (Relational)
         assert_eq!(SPACE_WEIGHTS[8], 0.5); // E9 Hdc (Structural)
         assert_eq!(SPACE_WEIGHTS[10], 0.5); // E11 Entity (Relational)
-        assert!((TOTAL_WEIGHT - 9.5).abs() < f32::EPSILON);
+        assert!((TOTAL_WEIGHT - 8.5).abs() < f32::EPSILON);
     }
 
     #[test]

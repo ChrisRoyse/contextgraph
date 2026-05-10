@@ -83,12 +83,26 @@ mod cuda_impl {
     ///
     /// Priority:
     /// 1. CONTEXT_GRAPH_MODELS_PATH environment variable
-    /// 2. ./models relative to current directory
+    /// 2. CONTEXTGRAPH_MODELS_ROOT environment variable
+    /// 3. Canonical local model registry path used by this workspace
+    /// 4. ./models relative to current directory
     fn resolve_models_dir() -> PathBuf {
         if let Ok(path) = std::env::var("CONTEXT_GRAPH_MODELS_PATH") {
             let p = PathBuf::from(&path);
             tracing::info!("Using models path from CONTEXT_GRAPH_MODELS_PATH: {:?}", p);
             return p;
+        }
+
+        if let Ok(path) = std::env::var("CONTEXTGRAPH_MODELS_ROOT") {
+            let p = PathBuf::from(&path);
+            tracing::info!("Using models path from CONTEXTGRAPH_MODELS_ROOT: {:?}", p);
+            return p;
+        }
+
+        let canonical = PathBuf::from("/mnt/d/cabdru/contextgraph/models");
+        if canonical.join("mejepa_models_config.toml").is_file() {
+            tracing::info!("Using canonical ME-JEPA models path: {:?}", canonical);
+            return canonical;
         }
 
         // Default: ./models relative to current directory
@@ -320,7 +334,7 @@ pub fn is_warm_initialized() -> bool {
 /// - "Not initialized"
 /// - "Initialization in progress"
 /// - "Initialization failed: <error>"
-/// - "Ready (14 models warm)"
+/// - "Ready (active models warm; E5 retired)"
 pub fn warm_status_message() -> String {
     match GLOBAL_WARM_PROVIDER.get() {
         None => "Not initialized".to_string(),
@@ -328,7 +342,7 @@ pub fn warm_status_message() -> String {
             match slot.try_read() {
                 Ok(guard) => {
                     if guard.provider.is_some() {
-                        "Ready (14 models warm)".to_string()
+                        "Ready (active models warm; E5 retired)".to_string()
                     } else if let Some(ref err) = guard.init_error {
                         format!("Initialization failed: {}", err)
                     } else {

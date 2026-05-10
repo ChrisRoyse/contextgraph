@@ -9,7 +9,7 @@
 //! - E1 (semantic): Dense semantic similarity - foundation
 //! - E11 (entity): Entity knowledge via KEPLER - finds "Diesel" when searching "database"
 //! - E7 (code): Code patterns - finds `tokio::spawn` when searching for "async runtime"
-//! - E5 (causal): Cause-effect chains - finds "migration broke production"
+//! - E5 (causal): retired and disabled
 //!
 //! Sometimes the best perspective isn't E1. These tools let agents choose.
 //!
@@ -124,6 +124,14 @@ impl Handlers {
                     &format!("Serialization: {}", e),
                 ),
             };
+        }
+        if matches!(embedder_id, EmbedderId::E5) && !context_graph_core::weights::E5_CAUSAL_ENABLED
+        {
+            return self.tool_error_typed(
+                id,
+                ToolErrorKind::Validation,
+                "E5 causal embedder is retired and disabled; choose an active embedder",
+            );
         }
 
         info!(
@@ -356,6 +364,14 @@ impl Handlers {
                 );
             }
         };
+        if matches!(embedder_id, EmbedderId::E5) && !context_graph_core::weights::E5_CAUSAL_ENABLED
+        {
+            return self.tool_error_typed(
+                id,
+                ToolErrorKind::Validation,
+                "E5 causal embedder is retired and disabled; choose an active embedder",
+            );
+        }
 
         // Auto-populate cluster manager from storage if empty (e.g. after MCP restart).
         // parking_lot::RwLockReadGuard is !Send — must drop before .await
@@ -562,6 +578,15 @@ impl Handlers {
             };
 
         let embedder_ids = request.embedder_ids();
+        if !context_graph_core::weights::E5_CAUSAL_ENABLED
+            && embedder_ids.iter().any(|eid| matches!(eid, EmbedderId::E5))
+        {
+            return self.tool_error_typed(
+                id,
+                ToolErrorKind::Validation,
+                "E5 causal embedder is retired and disabled; compare only active embedders",
+            );
+        }
 
         info!(
             embedders = ?request.embedders,
@@ -1273,6 +1298,13 @@ impl Handlers {
 
         // Convert to weight array and validate
         let weights = request.to_weight_array();
+        if !context_graph_core::weights::E5_CAUSAL_ENABLED && weights[4] > 0.0 {
+            return self.tool_error_typed(
+                id,
+                ToolErrorKind::Validation,
+                "E5 causal embedder is retired and disabled; custom E5 weight must be 0.0",
+            );
+        }
         if let Err(e) = context_graph_core::weights::validate_weights(&weights) {
             error!(error = %e, "create_weight_profile: Weight validation failed");
             return self.tool_error(id, &format!("Invalid weights: {}", e));
@@ -1402,6 +1434,15 @@ impl Handlers {
         };
         let high_idx = high_eid.to_index();
         let low_idx = low_eid.to_index();
+        if !context_graph_core::weights::E5_CAUSAL_ENABLED
+            && (matches!(high_eid, EmbedderId::E5) || matches!(low_eid, EmbedderId::E5))
+        {
+            return self.tool_error_typed(
+                id,
+                ToolErrorKind::Validation,
+                "E5 causal embedder is retired and disabled; select active embedders for anomaly search",
+            );
+        }
 
         info!(
             query = %request.query,

@@ -80,7 +80,8 @@ use super::types::TeleologicalStoreError;
 use context_graph_core::code::CodeQueryType;
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
 use context_graph_core::weights::{
-    apply_e11_disable, get_effective_weight_profile, validate_weights, E11_ENTITY_ENABLED,
+    apply_e11_disable, apply_e5_retirement, get_effective_weight_profile, validate_weights,
+    E11_ENTITY_ENABLED, E5_CAUSAL_ENABLED,
 };
 
 // =============================================================================
@@ -94,8 +95,9 @@ use crate::teleological::schema::fingerprint_key;
 use rocksdb::DB;
 
 /// Maximum number of HNSW-capable embedders queried in multi-space search.
-/// E1, E2, E3, E4, E5, E7, E8, E9, E10, E11 = 10 embedders.
-const MULTI_SPACE_MAX_EMBEDDERS: usize = 10;
+/// E1, E2, E3, E4, E7, E8, E9, E10, E11 = 9 embedders.
+/// E5 is retired and must not be queried.
+const MULTI_SPACE_MAX_EMBEDDERS: usize = 9;
 
 // =============================================================================
 // SPAWN_BLOCKING SYNC FUNCTIONS
@@ -137,7 +139,8 @@ fn get_query_vector_for_embedder(
         1 => Some(&query.e2_temporal_recent),     // E2 Temporal Recent
         2 => Some(&query.e3_temporal_periodic),   // E3 Temporal Periodic
         3 => Some(&query.e4_temporal_positional), // E4 Temporal Positional
-        4 => Some(query.e5_active_vector()),      // E5 Causal
+        4 if E5_CAUSAL_ENABLED => Some(query.e5_active_vector()), // E5 Causal
+        4 => None,                                // E5 retired/disabled
         5 => None,                                // E6 Sparse (NOT HNSW)
         6 => Some(&query.e7_code),                // E7 Code
         7 => Some(query.e8_active_vector()),      // E8 Graph
@@ -273,6 +276,13 @@ fn search_filtered_multi_space_sync(
             return Err(CoreError::ValidationError {
                 field: "embedder_indices".to_string(),
                 message: format!("Embedder index {} out of range (0-13)", idx),
+            });
+        }
+        if idx == 4 && !E5_CAUSAL_ENABLED {
+            return Err(CoreError::ValidationError {
+                field: "embedder_indices".to_string(),
+                message: "E5 causal embedder is retired and disabled; select an active embedder"
+                    .to_string(),
             });
         }
 
@@ -664,46 +674,47 @@ fn search_multi_space_sync(
         }
     }
 
-    // E5 Causal — direction-aware HNSW retrieval (Gap 1 fix)
-    // When causal direction is known, query the directional HNSW index:
-    //   Cause-seeking: query E5CausalEffect with cause vector (find memories whose effect matches our cause)
-    //   Effect-seeking: query E5CausalCause with effect vector (find memories whose cause matches our effect)
-    //   Unknown: legacy E5Causal with active vector
-    let (e5_hnsw_idx, e5_query_vec) = match options.causal_direction {
-        CausalDirection::Cause => (EmbedderIndex::E5CausalEffect, query.get_e5_as_cause()),
-        CausalDirection::Effect => (EmbedderIndex::E5CausalCause, query.get_e5_as_effect()),
-        _ => (EmbedderIndex::E5Causal, query.e5_active_vector()),
-    };
-    if let Some(e5_index) = index_registry.get(e5_hnsw_idx) {
-        match e5_index.search(e5_query_vec, k, None) {
-            Ok(e5_candidates) => {
-                let e5_ranked: Vec<(Uuid, f32)> = e5_candidates
-                    .into_iter()
-                    .filter(|(id, _)| {
-                        options.include_deleted || !is_soft_deleted_sync(soft_deleted, id)
-                    })
-                    .map(|(id, dist)| (id, hnsw_distance_to_similarity(dist)))
-                    .collect();
+    // E5 retired/disabled: do not touch E5 HNSW indexes or empty E5 query vectors.
+    if E5_CAUSAL_ENABLED && weights[4] > 0.0 {
+        let (e5_hnsw_idx, e5_query_vec) = match options.causal_direction {
+            CausalDirection::Cause => (EmbedderIndex::E5CausalEffect, query.get_e5_as_cause()),
+            CausalDirection::Effect => (EmbedderIndex::E5CausalCause, query.get_e5_as_effect()),
+            _ => (EmbedderIndex::E5Causal, query.e5_active_vector()),
+        };
+        if let Some(e5_index) = index_registry.get(e5_hnsw_idx) {
+            match e5_index.search(e5_query_vec, k, None) {
+                Ok(e5_candidates) => {
+                    let e5_ranked: Vec<(Uuid, f32)> = e5_candidates
+                        .into_iter()
+                        .filter(|(id, _)| {
+                            options.include_deleted || !is_soft_deleted_sync(soft_deleted, id)
+                        })
+                        .map(|(id, dist)| (id, hnsw_distance_to_similarity(dist)))
+                        .collect();
 
-                if !e5_ranked.is_empty() && weights[4] > 0.0 {
-                    embedder_rankings.push(EmbedderRanking::new("E5", weights[4], e5_ranked));
+                    if !e5_ranked.is_empty() {
+                        embedder_rankings.push(EmbedderRanking::new("E5", weights[4], e5_ranked));
+                    }
+                }
+                Err(e) => {
+                    degraded_embedders.push("E5");
+                    error!(
+                        index = ?e5_hnsw_idx,
+                        error = %e,
+                        "E5 HNSW search failed in multi-space"
+                    );
+                    return Err(CoreError::IndexError(format!(
+                        "E5 HNSW search failed: {}",
+                        e
+                    )));
                 }
             }
-            Err(e) => {
-                degraded_embedders.push("E5");
-                error!(
-                    index = ?e5_hnsw_idx,
-                    error = %e,
-                    "E5 HNSW search failed in multi-space — degraded results"
-                );
-            }
+        } else if !matches!(options.causal_direction, CausalDirection::Unknown) {
+            return Err(CoreError::IndexError(format!(
+                "Direction-aware E5 HNSW index {:?} not found",
+                e5_hnsw_idx
+            )));
         }
-    } else if !matches!(options.causal_direction, CausalDirection::Unknown) {
-        warn!(
-            direction = ?options.causal_direction,
-            index = ?e5_hnsw_idx,
-            "Direction-aware E5 HNSW index not found in registry; falling back to no E5 results"
-        );
     }
 
     // E7 Code
@@ -1011,37 +1022,31 @@ fn search_pipeline_sync(
         return Err(CoreError::IndexError("E1 Semantic index not found".into()));
     }
 
-    // E5 Causal — direction-aware HNSW retrieval for pipeline search (Gap 1 fix).
-    // STOR-L5: Cross-pair retrieval — cause vector queries effect index and vice versa.
-    // See multi-space search comment above for full explanation of why this is intentional.
-    let (e5_pipeline_idx, e5_pipeline_vec) = match options.causal_direction {
-        CausalDirection::Cause => (EmbedderIndex::E5CausalEffect, query.get_e5_as_cause()),
-        CausalDirection::Effect => (EmbedderIndex::E5CausalCause, query.get_e5_as_effect()),
-        _ => (EmbedderIndex::E5Causal, query.e5_active_vector()),
-    };
-    if let Some(e5_index) = index_registry.get(e5_pipeline_idx) {
-        match e5_index.search(e5_pipeline_vec, recall_k / 2, None) {
-            Ok(e5_candidates) => {
-                let e5_count = e5_candidates.len();
-                candidate_ids.extend(e5_candidates.into_iter().map(|(id, _)| id));
-                debug!(
-                    "Stage 1: E5 Causal ({:?}) returned {} additional candidates",
-                    e5_pipeline_idx, e5_count
-                );
-            }
-            Err(e) => {
-                warn!(
-                    "Stage 1: E5 Causal search failed: {}, continuing without E5 candidates",
-                    e
-                );
-            }
+    // E5 retired/disabled: pipeline recall must not query E5 indexes.
+    if E5_CAUSAL_ENABLED && weights[4] > 0.0 {
+        let (e5_pipeline_idx, e5_pipeline_vec) = match options.causal_direction {
+            CausalDirection::Cause => (EmbedderIndex::E5CausalEffect, query.get_e5_as_cause()),
+            CausalDirection::Effect => (EmbedderIndex::E5CausalCause, query.get_e5_as_effect()),
+            _ => (EmbedderIndex::E5Causal, query.e5_active_vector()),
+        };
+        if let Some(e5_index) = index_registry.get(e5_pipeline_idx) {
+            let e5_candidates = e5_index
+                .search(e5_pipeline_vec, recall_k / 2, None)
+                .map_err(|e| {
+                    CoreError::IndexError(format!("Stage 1 E5 Causal search failed: {}", e))
+                })?;
+            let e5_count = e5_candidates.len();
+            candidate_ids.extend(e5_candidates.into_iter().map(|(id, _)| id));
+            debug!(
+                "Stage 1: E5 Causal ({:?}) returned {} additional candidates",
+                e5_pipeline_idx, e5_count
+            );
+        } else if !matches!(options.causal_direction, CausalDirection::Unknown) {
+            return Err(CoreError::IndexError(format!(
+                "Direction-aware E5 HNSW index {:?} not found",
+                e5_pipeline_idx
+            )));
         }
-    } else if !matches!(options.causal_direction, CausalDirection::Unknown) {
-        warn!(
-            direction = ?options.causal_direction,
-            index = ?e5_pipeline_idx,
-            "Direction-aware E5 HNSW index not found in registry; falling back to no E5 candidates"
-        );
     }
 
     // E7 Code
@@ -1388,6 +1393,13 @@ fn search_pipeline_sync(
 fn resolve_weights_sync(options: &TeleologicalSearchOptions) -> CoreResult<[f32; 14]> {
     // Step 1: Resolve base weights (custom_weights overrides weight_profile)
     let mut weights = if let Some(custom) = &options.custom_weights {
+        if !E5_CAUSAL_ENABLED && custom[4] > 0.0 {
+            return Err(CoreError::ValidationError {
+                field: "customWeights.E5".to_string(),
+                message: "E5 causal embedder is retired and disabled; customWeights.E5 must be 0.0"
+                    .to_string(),
+            });
+        }
         // Validate custom weights - FAIL FAST on invalid input
         validate_weights(custom).map_err(|e| {
             error!(
@@ -1424,6 +1436,12 @@ fn resolve_weights_sync(options: &TeleologicalSearchOptions) -> CoreResult<[f32;
             }
         }
     };
+
+    // Apply E5 retirement to ALL non-custom/default weight sources. Custom weights
+    // with E5 > 0 fail above so callers cannot silently ask for retired behavior.
+    if !E5_CAUSAL_ENABLED {
+        apply_e5_retirement(&mut weights);
+    }
 
     // Apply E11 disable to ALL weight sources (custom, named, default)
     if !E11_ENTITY_ENABLED {

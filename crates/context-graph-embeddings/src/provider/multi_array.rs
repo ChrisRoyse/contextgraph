@@ -57,8 +57,8 @@ use context_graph_core::traits::{
     SingleEmbedder, SparseEmbedder, TokenEmbedder,
 };
 use context_graph_core::types::fingerprint::{
-    SemanticFingerprint, SparseVector, E11_DIM, E12_TOKEN_DIM, E14_DIM, E1_DIM, E2_DIM, E3_DIM,
-    E4_DIM, E7_DIM, E9_DIM, NUM_EMBEDDERS,
+    SemanticFingerprint, SparseVector, E10_DIM, E11_DIM, E12_TOKEN_DIM, E14_DIM, E1_DIM, E2_DIM,
+    E3_DIM, E4_DIM, E7_DIM, E8_DIM, E9_DIM, NUM_EMBEDDERS,
 };
 use context_graph_core::weights::{
     E11_ENTITY_ENABLED, E5_CAUSAL_ENABLED, TEMPORAL_EMBEDDERS_ENABLED,

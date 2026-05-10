@@ -460,14 +460,14 @@ mod tests {
             -1.0,
         );
 
-        // Known direction: non-zero
+        // Known direction still returns the retired/no-signal sentinel while E5 is disabled.
         let cause_sim = compute_similarity_for_space_with_direction(
             Embedder::Causal,
             &query,
             &memory,
             CausalDirection::Cause,
         );
-        assert!(cause_sim > 0.0 && cause_sim <= 1.0);
+        assert_eq!(cause_sim, -1.0);
 
         // Non-E5 embedders ignore direction
         query.e1_semantic = vec![1.0; 1024];

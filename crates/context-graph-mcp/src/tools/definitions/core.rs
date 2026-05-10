@@ -107,7 +107,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "causalHints": {
                         "type": "boolean",
                         "default": false,
-                        "description": "When true, ask the LLM causal-hint provider for E5 hints before batch embedding. False still computes E5 embeddings without LLM hints."
+                        "description": "Retired. E5 causal hints are disabled; passing true is rejected."
                     }
                 },
                 "required": ["items"],
@@ -136,15 +136,14 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false
             }),
         ),
-        // search_graph - semantic search with E5 causal and E10 paraphrase asymmetric similarity (ARCH-15, AP-77)
+        // search_graph - semantic search across active embedders. E5 causal is retired.
         ToolDefinition::new(
             "search_graph",
-            "Search the knowledge graph using multi-space semantic similarity across 14 embedders. \
+            "Search the knowledge graph using multi-space semantic similarity across active embedders. \
              Supports temporal search via E2 (recency), E3 (periodicity), E4 (sequence) — \
              use temporal_navigation profile or set E2/E3/E4 independently via customWeights. \
-             For causal queries ('why', 'what happens'), automatically applies \
-             asymmetric E5 similarity with direction modifiers (cause→effect 1.2x, \
-             effect→cause 0.8x). Returns nodes matching the query with relevance scores.",
+             E5 causal is retired and disabled; causal E5 reranking requests are rejected. \
+             Returns nodes matching the query with relevance scores.",
             json!({
                 "type": "object",
                 "properties": {
@@ -213,7 +212,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                             "E2":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Temporal recency — find memories stored near a given time" },
                             "E3":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Temporal periodicity — find memories matching time-of-day or day-of-week patterns" },
                             "E4":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Temporal sequence — find memories near the same position in a conversation" },
-                            "E5":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Causal relationships (cause→effect)" },
+                            "E5":  { "type": "number", "minimum": 0, "maximum": 0, "description": "Retired and disabled; must be 0" },
                             "E6":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Sparse keyword matching" },
                             "E7":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Code pattern similarity" },
                             "E8":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Graph structure (imports, dependencies)" },
@@ -251,8 +250,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "enableAsymmetricE5": {
                         "type": "boolean",
-                        "default": true,
-                        "description": "Enable asymmetric E5 causal reranking for detected causal queries"
+                        "default": false,
+                        "description": "Retired. E5 causal reranking is disabled; passing true is rejected."
                     },
                     "causalDirection": {
                         "type": "string",

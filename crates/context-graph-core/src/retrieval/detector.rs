@@ -14,7 +14,6 @@ use chrono::{DateTime, Utc};
 use std::time::Duration;
 use uuid::Uuid;
 
-use crate::embeddings::category::category_for;
 use crate::teleological::Embedder;
 use crate::types::fingerprint::SemanticFingerprint;
 
@@ -24,12 +23,13 @@ use super::multi_space::MultiSpaceSimilarity;
 
 /// Check if an embedder is used for divergence detection.
 ///
-/// Only SEMANTIC category embedders are used for divergence detection per ARCH-10.
-/// Returns true for: Semantic, Causal, Sparse, Code, Multimodal, LateInteraction, KeywordSplade
+/// Only active semantic embedders are used for divergence detection per ARCH-10.
+/// E5/Causal is retired and excluded.
+/// Returns true for: Semantic, Sparse, Code, Contextual, LateInteraction, KeywordSplade, BgeM3Dense
 /// Returns false for: TemporalRecent, TemporalPeriodic, TemporalPositional, Graph, Entity, Hdc
 #[inline]
 pub fn is_divergence_space(embedder: Embedder) -> bool {
-    category_for(embedder).used_for_divergence_detection()
+    DIVERGENCE_SPACES.contains(&embedder)
 }
 
 /// A recent memory for divergence checking.
@@ -72,9 +72,9 @@ impl RecentMemory {
 ///
 /// # Category-Aware Detection (ARCH-10)
 ///
-/// Only SEMANTIC embedding spaces are checked for divergence:
-/// - Semantic (E1), Causal (E5), Sparse (E6), Code (E7)
-/// - Multimodal (E10), LateInteraction (E12), KeywordSplade (E13)
+/// Only active SEMANTIC embedding spaces are checked for divergence:
+/// - Semantic (E1), Sparse (E6), Code (E7)
+/// - Contextual (E10), LateInteraction (E12), KeywordSplade (E13), BGE-M3 (E14)
 ///
 /// These spaces are IGNORED (AP-63):
 /// - Temporal (E2-E4): Time-based features, not topic indicators
@@ -245,13 +245,13 @@ mod tests {
     fn test_semantic_is_divergence_space() {
         // All semantic embedders should return true
         assert!(is_divergence_space(Embedder::Semantic));
-        assert!(is_divergence_space(Embedder::Causal));
+        assert!(!is_divergence_space(Embedder::Causal));
         assert!(is_divergence_space(Embedder::Sparse));
         assert!(is_divergence_space(Embedder::Code));
         assert!(is_divergence_space(Embedder::Contextual));
         assert!(is_divergence_space(Embedder::LateInteraction));
         assert!(is_divergence_space(Embedder::KeywordSplade));
-        println!("[PASS] All 7 semantic embedders return true for is_divergence_space");
+        println!("[PASS] Active semantic embedders return true and retired E5 returns false");
     }
 
     #[test]
