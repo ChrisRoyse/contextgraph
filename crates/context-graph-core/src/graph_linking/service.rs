@@ -41,7 +41,9 @@ pub struct GraphLinkServiceConfig {
     /// EdgeBuilder configuration.
     pub edge_builder: EdgeBuilderConfig,
     /// Which embedders to build K-NN graphs for.
-    /// Default: [0, 4, 6, 7, 9, 10] = E1, E5, E7, E8, E10, E11
+    /// Default: [0, 6, 7, 9, 13] = E1, E7, E8, E10, E14.
+    /// E5 is retired and E11 is disabled; sparse/late-interaction embedders
+    /// use specialized indexes outside this K-NN graph path.
     pub active_embedders: Vec<u8>,
 }
 
@@ -50,8 +52,8 @@ impl Default for GraphLinkServiceConfig {
         Self {
             nn_descent: NnDescentConfig::default(),
             edge_builder: EdgeBuilderConfig::default(),
-            // Build K-NN graphs for semantic embedders (not temporal)
-            active_embedders: vec![0, 4, 6, 7, 9, 10], // E1, E5, E7, E8, E10, E11
+            // Build K-NN graphs for active dense semantic/code/graph embedders (not temporal).
+            active_embedders: vec![0, 6, 7, 9, 13], // E1, E7, E8, E10, E14
         }
     }
 }
@@ -453,6 +455,20 @@ mod tests {
         let service = GraphLinkService::with_defaults();
         assert!(!service.is_built());
         assert_eq!(service.typed_edge_count(), 0);
+    }
+
+    #[test]
+    fn test_default_active_embedders_exclude_retired_slots() {
+        let config = GraphLinkServiceConfig::default();
+        assert_eq!(config.active_embedders, vec![0, 6, 7, 9, 13]);
+        assert!(
+            !config.active_embedders.contains(&4),
+            "E5 must stay retired"
+        );
+        assert!(
+            !config.active_embedders.contains(&10),
+            "E11 must stay disabled"
+        );
     }
 
     #[test]

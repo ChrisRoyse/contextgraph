@@ -44,7 +44,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -77,7 +77,9 @@ pub struct GraphBuilderConfig {
     pub min_batch_size: usize,
 
     /// Which embedders to build K-NN graphs for.
-    /// Default: [0, 4, 6, 7, 9, 10] = E1, E5, E7, E8, E10, E11
+    /// Default: [0, 6, 7, 9, 13] = E1, E7, E8, E10, E14.
+    /// E5 is retired and E11 is disabled; sparse/late-interaction embedders
+    /// use specialized indexes outside this K-NN graph path.
     pub active_embedders: Vec<u8>,
 
     /// K neighbors per node in K-NN graph.
@@ -99,7 +101,7 @@ impl Default for GraphBuilderConfig {
             batch_interval_secs: 60,
             max_batch_size: 1000,
             min_batch_size: 10,
-            active_embedders: vec![0, 4, 6, 7, 9, 10], // E1, E5, E7, E8, E10, E11
+            active_embedders: vec![0, 6, 7, 9, 13], // E1, E7, E8, E10, E14
             k: 20,
             min_weighted_agreement: 2.5,
             process_on_max: true,
@@ -169,6 +171,10 @@ pub struct BackgroundGraphBuilder {
     /// Flag to stop the background worker.
     running: Arc<AtomicBool>,
 
+    /// Wakes the worker immediately during shutdown instead of waiting for the
+    /// batch interval sleep to expire.
+    shutdown_notify: Arc<Notify>,
+
     /// Stats tracking.
     stats: Arc<Mutex<BuilderStats>>,
 }
@@ -216,6 +222,7 @@ impl BackgroundGraphBuilder {
             config,
             pending_queue: Arc::new(Mutex::new(VecDeque::new())),
             running: Arc::new(AtomicBool::new(false)),
+            shutdown_notify: Arc::new(Notify::new()),
             stats: Arc::new(Mutex::new(BuilderStats::default())),
         }
     }
@@ -771,6 +778,7 @@ impl BackgroundGraphBuilder {
         }
 
         let this = Arc::clone(&self);
+        let shutdown_notify = Arc::clone(&self.shutdown_notify);
         let interval = Duration::from_secs(self.config.batch_interval_secs);
 
         tokio::spawn(async move {
@@ -780,8 +788,10 @@ impl BackgroundGraphBuilder {
             );
 
             while this.running.load(Ordering::SeqCst) {
-                // Sleep for interval
-                tokio::time::sleep(interval).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(interval) => {}
+                    _ = shutdown_notify.notified() => {}
+                }
 
                 if !this.running.load(Ordering::SeqCst) {
                     break;
@@ -816,6 +826,7 @@ impl BackgroundGraphBuilder {
     pub fn stop(&self) {
         info!("Stopping background graph builder worker");
         self.running.store(false, Ordering::SeqCst);
+        self.shutdown_notify.notify_waiters();
     }
 
     /// Check if the worker is running.
@@ -835,6 +846,15 @@ mod tests {
         assert_eq!(config.max_batch_size, 1000);
         assert_eq!(config.min_batch_size, 10);
         assert_eq!(config.k, 20);
+        assert_eq!(config.active_embedders, vec![0, 6, 7, 9, 13]);
+        assert!(
+            !config.active_embedders.contains(&4),
+            "E5 must stay retired"
+        );
+        assert!(
+            !config.active_embedders.contains(&10),
+            "E11 must stay disabled"
+        );
         assert!((config.min_weighted_agreement - 2.5).abs() < 0.01);
     }
 
