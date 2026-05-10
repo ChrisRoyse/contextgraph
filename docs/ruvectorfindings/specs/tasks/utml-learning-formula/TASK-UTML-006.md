@@ -67,25 +67,19 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — TASK PARTIALLY SUPERSEDED (CRITICAL SEMANTIC DRIFT)
+## 📋 2026-05-10 STATE AUDIT — RESOLVED BY HARDENING PASS
 
-**Status: PARTIALLY SUPERSEDED with CRITICAL SEMANTIC DRIFT.** Host crate `context-graph-mejepa-train` exists.
+**Status: RESOLVED.** Host crate `context-graph-mejepa-train` exists, and the critical `target_collapse == 0.0` invariant is now enforced at `crates/context-graph-mejepa-train/src/learning_signal.rs::compute_delta_xi`.
 
 **Shipped (grep evidence):**
 
-- `compute_delta_xi(c: DeltaXiComponents) -> Result<f32, UtmlError>` — `src/learning_signal.rs` L184. Current body at L185-L188:
-  ```
-  mean_checked("delta_xi", [c.target_collapse, c.predictor_collapse, c.redundancy_mi])
-  ```
-  **CRITICAL DRIFT:** task title specifies `(1−tc)^0.5 · (1−red)^0.3 · (1−viol)^0.2` with a HARD `target_collapse == 0.0` assertion (`MEJEPA_INSTRUMENT_GRADIENT_LEAK` on violation). The shipped form does NOT include the hard assertion. This is the constitution `target_collapse_zero` invariant — failure to enforce here lets gradient leakage from the EMA target encoder go undetected. The shipped body also fails to apply the (1−x)^w power weighting; it is unweighted mean.
+- `compute_delta_xi(c: DeltaXiComponents) -> Result<f32, UtmlError>` now rejects non-finite and non-zero `target_collapse` with `UtmlErrorCode::MejepaInstrumentGradientLeak`, mapped to `TrainerErrorCode::MejepaInstrumentGradientLeak` / `MEJEPA_INSTRUMENT_GRADIENT_LEAK`.
+- The healthy path computes `(1.0 - target_collapse)^0.5 * (1.0 - predictor_collapse)^0.3 * (1.0 - redundancy_mi)^0.2`, clamped to `[0,1]`.
 - `DeltaXiComponents` carrier — `src/learning_signal.rs` L90.
+- Regression tests cover known-value multiplicative formula, `target_collapse=0.001`, and `target_collapse=NaN`.
+- `train_edge_cases_fsv` proves the leak is rejected before training-cert construction/write and source-of-truth cert count remains unchanged.
 
-**NOT FOUND:**
-
-- Explicit `target_collapse == 0.0` guard that emits `UTML_INSTRUMENT_GRADIENT_LEAK` or `MEJEPA_INSTRUMENT_GRADIENT_LEAK`.
-- The `(1−tc)^0.5 · (1−red)^0.3 · (1−viol)^0.2` power-weighted product.
-
-**Direction for future agents:** This is a SAFETY-CRITICAL gap. Replace the shipped body to enforce the hard assertion (`if tc != 0.0 { fail }`) BEFORE computing the product — gradient leakage from the EMA target is the single failure mode that silently corrupts ME-JEPA training. Add `UtmlErrorCode::InstrumentGradientLeak` if missing, then ship the power-weighted product. Add a fail-test that constructs `target_collapse = 1e-12` and asserts the function errors.
+**FSV evidence:** `/tmp/contextgraph-mejepa-train-fsv/edge-case-evidence.json` and `/tmp/contextgraph-mejepa-train-fsv/utml-l-step-evidence.json`; summary in `docs/ruvectorfindings/15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`.
 
 ---
 
@@ -94,7 +88,7 @@ After implementation:
 
 <metadata>
   <title>compute_delta_xi (target_collapse, predictor_redundancy, constellation_violation_rate) returning (1−tc)^0.5 · (1−red)^0.3 · (1−viol)^0.2 with hard target_collapse==0.0 assertion (MEJEPA_INSTRUMENT_GRADIENT_LEAK on violation)</title>
-  <status>blocked</status>
+  <status>completed</status>
   <layer>logic</layer>
   <sequence>6</sequence>
   <implements>

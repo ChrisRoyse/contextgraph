@@ -1,6 +1,6 @@
 # TECH-AST-CHUNKING — Multi-Language AST-Perfect Atomic Chunker (Technical Spec)
 
-> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 1 status.
+> **📊 2026-05-10 HARDENING STATUS:** OPERATIONAL via `context_graph_core::memory::ast` — 11-language chunking FSV passed with source-of-truth readback. The older `AstCodeChunker` type remains Rust-only and is now compatibility/deprecation work. Remaining technical work: reformat-invariant AST-node-ID hash audit, stale-consumer migration, and chunk-level TCT integration. See `../implementation-plan.md` and `../../15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`.
 
 > **Level 3 (technical spec).** Defines HOW to implement SPEC-AST-CHUNKING. The
 > companion Level 2 functional spec (`docs/ruvectorfindings/specs/functional/
@@ -21,7 +21,7 @@
 
 <metadata>
   <title>Multi-Language AST-Perfect Atomic Chunker — Implementation</title>
-  <status>partial</status>
+  <status>operational_compatibility_caveat</status>
   <owner>cc-reality (outer-loop optimizer); ME-JEPA Phase 1, build-plan item 6</owner>
   <created_date>2026-05-09</created_date>
   <last_updated>2026-05-10</last_updated>

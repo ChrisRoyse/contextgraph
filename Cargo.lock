@@ -1125,6 +1125,7 @@ dependencies = [
  "clap",
  "context-graph-cuda",
  "context-graph-embeddings",
+ "context-graph-mejepa-cf",
  "context-graph-mejepa-instruments",
  "context-graph-mejepa-tct",
  "context-graph-witness",
@@ -1138,6 +1139,10 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
 ]
+
+[[package]]
+name = "context-graph-mejepa-cf"
+version = "0.1.0"
 
 [[package]]
 name = "context-graph-mejepa-corpus"
@@ -1172,6 +1177,28 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "toml",
+ "tracing",
+]
+
+[[package]]
+name = "context-graph-mejepa-hygiene"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "chrono",
+ "context-graph-mejepa-cf",
+ "context-graph-tier-compression",
+ "context-graph-witness",
+ "dashmap",
+ "fs2",
+ "hex",
+ "parking_lot",
+ "rocksdb",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
  "tracing",
 ]
 

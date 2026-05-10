@@ -120,10 +120,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
             "properties": {
                 "requestedCount": {"type": "integer"},
                 "storedCount": {"type": "integer"},
-                "embedderCount": {"type": "integer"},
-                "activeEmbedderCount": {"type": "integer"},
-                "storageSlotCount": {"type": "integer"},
-                "disabledEmbedders": {"type": "array", "items": {"type": "string"}},
+                "embedderCount": {"type": "integer", "description": "Alias for activeEmbedderCount; excludes retired/disabled slots."},
+                "activeEmbedderCount": {"type": "integer", "description": "Number of active embedders that produced usable vectors."},
+                "storageSlotCount": {"type": "integer", "description": "Persisted TeleologicalFingerprint slot count, including disabled compatibility slots."},
+                "disabledEmbedders": {"type": "array", "items": {"type": "string"}, "description": "Storage slots intentionally disabled for active search/training."},
                 "items": {"type": "array"}
             }
         })),

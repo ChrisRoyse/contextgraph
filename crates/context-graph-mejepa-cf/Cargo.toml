@@ -1,0 +1,9 @@
+[package]
+name = "context-graph-mejepa-cf"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Canonical ME-JEPA RocksDB column family names"
+license.workspace = true
+
+[dependencies]

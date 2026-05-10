@@ -1,0 +1,101 @@
+//! Canonical ME-JEPA RocksDB column-family names.
+//!
+//! This crate is intentionally dependency-free so ME-JEPA runtime, hygiene,
+//! MCP, and training crates can share CF names without cycles or string drift.
+
+pub const CF_MEJEPA_FISHER_SNAPSHOTS: &str = "CF_MEJEPA_FISHER_SNAPSHOTS";
+pub const CF_MEJEPA_DRIFT_WINDOW: &str = "CF_MEJEPA_DRIFT_WINDOW";
+pub const CF_MEJEPA_DRIFT_HISTORY: &str = "CF_MEJEPA_DRIFT_HISTORY";
+pub const CF_MEJEPA_HEAL_REPORTS: &str = "CF_MEJEPA_HEAL_REPORTS";
+pub const CF_MEJEPA_DISTILL_STEPS: &str = "CF_MEJEPA_DISTILL_STEPS";
+pub const CF_MEJEPA_ACTIVE_POINTERS: &str = "CF_MEJEPA_ACTIVE_POINTERS";
+pub const CF_MEJEPA_CALIBRATION_HISTORY: &str = "CF_MEJEPA_CALIBRATION_HISTORY";
+pub const CF_MEJEPA_WEIGHT_BLOBS: &str = "CF_MEJEPA_WEIGHT_BLOBS";
+pub const CF_MEJEPA_SHIFT_WATERMARK: &str = "CF_MEJEPA_SHIFT_WATERMARK";
+pub const CF_MEJEPA_TRAIN_CERTS: &str = "CF_MEJEPA_TRAIN_CERTS";
+pub const CF_MEJEPA_LIVE_PREDICTIONS: &str = "CF_MEJEPA_LIVE_PREDICTIONS";
+pub const CF_MEJEPA_ORACLE_VERDICTS: &str = "CF_MEJEPA_ORACLE_VERDICTS";
+
+pub const CF_MEJEPA_MUTATION_CORPUS: &str = "CF_MEJEPA_MUTATION_CORPUS";
+pub const CF_MEJEPA_LIVE_ATTEMPT_CORPUS: &str = "CF_MEJEPA_LIVE_ATTEMPT_CORPUS";
+pub const CF_MEJEPA_PANEL_META: &str = "CF_MEJEPA_PANEL_META";
+pub const CF_MEJEPA_QUOTA_STATE: &str = "CF_MEJEPA_QUOTA_STATE";
+pub const CF_MEJEPA_WEIGHT_BLOBS_META: &str = "CF_MEJEPA_WEIGHT_BLOBS_META";
+pub const CF_MEJEPA_WITNESS_CHAIN: &str = "CF_MEJEPA_WITNESS_CHAIN";
+pub const CF_MEJEPA_WITNESS_SEGMENT_META: &str = "CF_MEJEPA_WITNESS_SEGMENT_META";
+pub const CF_MEJEPA_PANEL_CACHE: &str = "CF_MEJEPA_PANEL_CACHE";
+pub const CF_MEJEPA_PANEL_DISK_OVERFLOW: &str = "CF_MEJEPA_PANEL_DISK_OVERFLOW";
+pub const CF_MEJEPA_AUX_SIGNALS_OVERRIDES: &str = "CF_MEJEPA_AUX_SIGNALS_OVERRIDES";
+pub const CF_MEJEPA_GC_HISTORY: &str = "CF_MEJEPA_GC_HISTORY";
+
+pub const SELF_HEALING_CFS: &[&str] = &[
+    CF_MEJEPA_FISHER_SNAPSHOTS,
+    CF_MEJEPA_DRIFT_WINDOW,
+    CF_MEJEPA_DRIFT_HISTORY,
+    CF_MEJEPA_HEAL_REPORTS,
+    CF_MEJEPA_DISTILL_STEPS,
+    CF_MEJEPA_ACTIVE_POINTERS,
+    CF_MEJEPA_CALIBRATION_HISTORY,
+];
+
+pub const SELF_HEALING_REFERENCED_CFS: &[&str] = &[
+    CF_MEJEPA_FISHER_SNAPSHOTS,
+    CF_MEJEPA_DRIFT_WINDOW,
+    CF_MEJEPA_DRIFT_HISTORY,
+    CF_MEJEPA_HEAL_REPORTS,
+    CF_MEJEPA_DISTILL_STEPS,
+    CF_MEJEPA_ACTIVE_POINTERS,
+    CF_MEJEPA_CALIBRATION_HISTORY,
+    CF_MEJEPA_WEIGHT_BLOBS,
+    CF_MEJEPA_SHIFT_WATERMARK,
+    CF_MEJEPA_TRAIN_CERTS,
+];
+
+pub const INFER_CFS: &[&str] = &[
+    CF_MEJEPA_CALIBRATION_HISTORY,
+    CF_MEJEPA_LIVE_PREDICTIONS,
+    CF_MEJEPA_ORACLE_VERDICTS,
+    CF_MEJEPA_TRAIN_CERTS,
+];
+
+pub const HYGIENE_CFS: &[&str] = &[
+    CF_MEJEPA_MUTATION_CORPUS,
+    CF_MEJEPA_LIVE_ATTEMPT_CORPUS,
+    CF_MEJEPA_PANEL_META,
+    CF_MEJEPA_QUOTA_STATE,
+    CF_MEJEPA_WEIGHT_BLOBS,
+    CF_MEJEPA_WEIGHT_BLOBS_META,
+    CF_MEJEPA_WITNESS_CHAIN,
+    CF_MEJEPA_WITNESS_SEGMENT_META,
+    CF_MEJEPA_PANEL_CACHE,
+    CF_MEJEPA_PANEL_DISK_OVERFLOW,
+    CF_MEJEPA_CALIBRATION_HISTORY,
+    CF_MEJEPA_AUX_SIGNALS_OVERRIDES,
+    CF_MEJEPA_SHIFT_WATERMARK,
+    CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_GC_HISTORY,
+];
+
+pub fn all_hygiene_referenced_cfs() -> Vec<&'static str> {
+    let mut names = SELF_HEALING_REFERENCED_CFS.to_vec();
+    for cf in INFER_CFS.iter().chain(HYGIENE_CFS.iter()) {
+        if !names.contains(cf) {
+            names.push(*cf);
+        }
+    }
+    names
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_duplicate_hygiene_cfs() {
+        let names = all_hygiene_referenced_cfs();
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(names.len(), sorted.len());
+    }
+}

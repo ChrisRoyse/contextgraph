@@ -573,7 +573,7 @@ impl Handlers {
                 // Build response, including rationale if provided
                 let mut response = json!({
                     "fingerprintId": fingerprint_id.to_string(),
-                    "embedderCount": NUM_EMBEDDERS,
+                    "embedderCount": active_embedder_count(),
                     "activeEmbedderCount": active_embedder_count(),
                     "storageSlotCount": NUM_EMBEDDERS,
                     "disabledEmbedders": disabled_embedder_names(),
@@ -804,7 +804,7 @@ impl Handlers {
             json!({
                 "requestedCount": item_response.len(),
                 "storedCount": stored_ids.len(),
-                "embedderCount": NUM_EMBEDDERS,
+                "embedderCount": active_embedder_count(),
                 "activeEmbedderCount": active_embedder_count(),
                 "storageSlotCount": NUM_EMBEDDERS,
                 "disabledEmbedders": disabled_embedder_names(),

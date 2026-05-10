@@ -7,42 +7,21 @@ use serde::{Deserialize, Serialize};
 use crate::heal::drift::{DriftSample, DriftSeverity};
 use crate::heal::errors::HealError;
 
-pub const CF_MEJEPA_FISHER_SNAPSHOTS: &str = "CF_MEJEPA_FISHER_SNAPSHOTS";
-pub const CF_MEJEPA_DRIFT_WINDOW: &str = "CF_MEJEPA_DRIFT_WINDOW";
-pub const CF_MEJEPA_DRIFT_HISTORY: &str = "CF_MEJEPA_DRIFT_HISTORY";
-pub const CF_MEJEPA_HEAL_REPORTS: &str = "CF_MEJEPA_HEAL_REPORTS";
-pub const CF_MEJEPA_DISTILL_STEPS: &str = "CF_MEJEPA_DISTILL_STEPS";
-pub const CF_MEJEPA_ACTIVE_POINTERS: &str = "CF_MEJEPA_ACTIVE_POINTERS";
-pub const CF_MEJEPA_CALIBRATION_HISTORY: &str = "CF_MEJEPA_CALIBRATION_HISTORY";
-pub const CF_MEJEPA_WEIGHT_BLOBS: &str = "CF_MEJEPA_WEIGHT_BLOBS";
-pub const CF_MEJEPA_SHIFT_WATERMARK: &str = "CF_MEJEPA_SHIFT_WATERMARK";
-pub const CF_MEJEPA_TRAIN_CERTS: &str = "CF_MEJEPA_TRAIN_CERTS";
+pub use context_graph_mejepa_cf::{
+    CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_CALIBRATION_HISTORY, CF_MEJEPA_DISTILL_STEPS,
+    CF_MEJEPA_DRIFT_HISTORY, CF_MEJEPA_DRIFT_WINDOW, CF_MEJEPA_FISHER_SNAPSHOTS,
+    CF_MEJEPA_HEAL_REPORTS, CF_MEJEPA_SHIFT_WATERMARK, CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_WEIGHT_BLOBS,
+};
 
 pub fn all_self_healing_cf_names() -> [&'static str; 7] {
-    [
-        CF_MEJEPA_FISHER_SNAPSHOTS,
-        CF_MEJEPA_DRIFT_WINDOW,
-        CF_MEJEPA_DRIFT_HISTORY,
-        CF_MEJEPA_HEAL_REPORTS,
-        CF_MEJEPA_DISTILL_STEPS,
-        CF_MEJEPA_ACTIVE_POINTERS,
-        CF_MEJEPA_CALIBRATION_HISTORY,
-    ]
+    context_graph_mejepa_cf::SELF_HEALING_CFS
+        .try_into()
+        .expect("SELF_HEALING_CFS length is fixed at 7")
 }
 
 pub fn all_referenced_cf_names() -> Vec<&'static str> {
-    vec![
-        CF_MEJEPA_FISHER_SNAPSHOTS,
-        CF_MEJEPA_DRIFT_WINDOW,
-        CF_MEJEPA_DRIFT_HISTORY,
-        CF_MEJEPA_HEAL_REPORTS,
-        CF_MEJEPA_DISTILL_STEPS,
-        CF_MEJEPA_ACTIVE_POINTERS,
-        CF_MEJEPA_CALIBRATION_HISTORY,
-        CF_MEJEPA_WEIGHT_BLOBS,
-        CF_MEJEPA_SHIFT_WATERMARK,
-        CF_MEJEPA_TRAIN_CERTS,
-    ]
+    context_graph_mejepa_cf::SELF_HEALING_REFERENCED_CFS.to_vec()
 }
 
 pub fn encode_fisher_snapshot_key(boundary_step: u64) -> [u8; 8] {

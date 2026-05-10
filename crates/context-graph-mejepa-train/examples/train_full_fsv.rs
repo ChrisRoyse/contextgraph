@@ -118,12 +118,15 @@ fn write_0600(
     value: &serde_json::Value,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let path = path.as_ref();
-    fs::write(path, serde_json::to_vec_pretty(value)?)?;
+    let bytes = serde_json::to_vec_pretty(value)?;
+    fs::write(path, &bytes)?;
     let mut perms = fs::metadata(path)?.permissions();
     perms.set_mode(0o600);
     fs::set_permissions(path, perms)?;
     assert_eq!(fs::metadata(path)?.permissions().mode() & 0o777, 0o600);
-    let reread: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
-    assert_eq!(&reread, value);
+    let readback = fs::read(path)?;
+    assert_eq!(readback, bytes);
+    let reread: serde_json::Value = serde_json::from_slice(&readback)?;
+    assert!(reread.is_object());
     Ok(())
 }

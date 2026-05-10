@@ -7,6 +7,7 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UtmlErrorCode {
     InvalidSignal,
+    MejepaInstrumentGradientLeak,
     NonFinite,
     OutOfRange,
 }
@@ -28,6 +29,7 @@ impl UtmlError {
     pub fn code(&self) -> &'static str {
         match self.code {
             UtmlErrorCode::InvalidSignal => "UTML_INVALID_SIGNAL",
+            UtmlErrorCode::MejepaInstrumentGradientLeak => "MEJEPA_INSTRUMENT_GRADIENT_LEAK",
             UtmlErrorCode::NonFinite => "UTML_NON_FINITE",
             UtmlErrorCode::OutOfRange => "UTML_OUT_OF_RANGE",
         }
@@ -44,11 +46,14 @@ impl std::error::Error for UtmlError {}
 
 impl From<UtmlError> for TrainerError {
     fn from(value: UtmlError) -> Self {
-        TrainerError::new(
-            TrainerErrorCode::MejepaTrainConfigInvalid,
-            format!("{}: {}", value.code(), value.message),
-        )
-        .with_context(json!({"utml_code": value.code()}))
+        let trainer_code = match value.code {
+            UtmlErrorCode::MejepaInstrumentGradientLeak => {
+                TrainerErrorCode::MejepaInstrumentGradientLeak
+            }
+            _ => TrainerErrorCode::MejepaTrainConfigInvalid,
+        };
+        TrainerError::new(trainer_code, format!("{}: {}", value.code(), value.message))
+            .with_context(json!({"utml_code": value.code()}))
     }
 }
 
@@ -182,10 +187,46 @@ pub fn compute_delta_omega(c: DeltaOmegaComponents) -> Result<f32, UtmlError> {
 }
 
 pub fn compute_delta_xi(c: DeltaXiComponents) -> Result<f32, UtmlError> {
-    mean_checked(
-        "delta_xi",
-        [c.target_collapse, c.predictor_collapse, c.redundancy_mi],
-    )
+    if !c.target_collapse.is_finite() {
+        return Err(UtmlError::new(
+            UtmlErrorCode::MejepaInstrumentGradientLeak,
+            format!(
+                "ME-JEPA target_collapse must be 0.0 by construction; got {}",
+                c.target_collapse
+            ),
+        ));
+    }
+    if c.target_collapse != 0.0 {
+        return Err(UtmlError::new(
+            UtmlErrorCode::MejepaInstrumentGradientLeak,
+            format!(
+                "ME-JEPA target_collapse must be 0.0 by construction; instrument has gradient flow; target_collapse={}, predictor_collapse={}, redundancy_mi={}",
+                c.target_collapse, c.predictor_collapse, c.redundancy_mi
+            ),
+        ));
+    }
+    for (name, value) in [
+        ("predictor_collapse", c.predictor_collapse),
+        ("redundancy_mi", c.redundancy_mi),
+    ] {
+        if !value.is_finite() {
+            return Err(UtmlError::new(
+                UtmlErrorCode::NonFinite,
+                format!("delta_xi {name} is non-finite"),
+            ));
+        }
+        if !(0.0..=1.0).contains(&value) {
+            return Err(UtmlError::new(
+                UtmlErrorCode::OutOfRange,
+                format!("delta_xi {name}={value} outside [0,1]"),
+            ));
+        }
+    }
+    Ok(clamp01(
+        (1.0 - c.target_collapse).powf(0.5)
+            * (1.0 - c.predictor_collapse).powf(0.3)
+            * (1.0 - c.redundancy_mi).powf(0.2),
+    ))
 }
 
 pub fn compute_l_step(
@@ -309,5 +350,39 @@ mod tests {
         let forced = sampling_weight(0.2, true, 0.0, 0.995);
         assert_eq!(regular, 0.2);
         assert_eq!(forced, 1.2);
+    }
+
+    #[test]
+    fn delta_xi_uses_multiplicative_non_collapse_formula() {
+        let value = compute_delta_xi(DeltaXiComponents {
+            target_collapse: 0.0,
+            predictor_collapse: 0.1,
+            redundancy_mi: 0.05,
+        })
+        .unwrap();
+        let expected = 1.0f32 * 0.9f32.powf(0.3) * 0.95f32.powf(0.2);
+        assert!((value - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn delta_xi_fails_closed_on_target_collapse() {
+        let err = compute_delta_xi(DeltaXiComponents {
+            target_collapse: 0.001,
+            predictor_collapse: 0.0,
+            redundancy_mi: 0.0,
+        })
+        .unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INSTRUMENT_GRADIENT_LEAK");
+    }
+
+    #[test]
+    fn delta_xi_fails_closed_on_nan_target_collapse() {
+        let err = compute_delta_xi(DeltaXiComponents {
+            target_collapse: f32::NAN,
+            predictor_collapse: 0.0,
+            redundancy_mi: 0.0,
+        })
+        .unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INSTRUMENT_GRADIENT_LEAK");
     }
 }

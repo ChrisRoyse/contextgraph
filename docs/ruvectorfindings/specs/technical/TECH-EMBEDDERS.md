@@ -1,6 +1,6 @@
 # TECH-EMBEDDERS — Technical Specification
 
-> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 1 status.
+> **📊 2026-05-10 HARDENING STATUS:** CONTROL SURFACE HARDENED / NEURAL FORWARD PENDING. Current code verifies real artifact digests, active/retired policy, VRAM budget, E17 calibration, and AST routing coverage; it does not yet instantiate every per-embedder neural forward wrapper. E5 and E11 are retired/disabled and must not appear in active routing. See `../implementation-plan.md` and `../../15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`.
 
 > **Level 3 (technical spec).** Implements `SPEC-EMBEDDERS` (functional). Defines HOW the 21-embedder ensemble is wrapped, routed, budgeted, and fine-tuned. Constitution (Level 1) wins on conflict. Functional spec (Level 2) wins over this on conflict.
 
@@ -9,7 +9,7 @@
 
 <metadata>
   <title>EMBEDDERS — Technical Implementation</title>
-  <status>partial</status>
+  <status>control_surface_hardened_forward_pending</status>
   <owner>ME-JEPA Phase 1 working group</owner>
   <created_date>2026-05-09</created_date>
   <last_updated>2026-05-10</last_updated>
@@ -45,10 +45,10 @@ flowchart TD
 
   subgraph Embedders["21 EmbedderInstrument wrappers"]
     E1[E1 Semantic 1024]
-    E5[E5 Causal 768<br/>+ LoRA E5]
+    E5[E5 Causal 768<br/>RETIRED / disabled]
     E7[E7 Code 1536]
     E10[E10 Contextual 768]
-    E11[E11 Kepler 768<br/>+ LoRA E11]
+    E11[E11 Kepler 768<br/>RETIRED / disabled]
     E13[E13 Splade 1536]
     E14[E14 BGE-M3 1024<br/>+ LoRA E14]
     EOther["E2-E4 / E6 / E8-E9 / E12<br/>(content)"]

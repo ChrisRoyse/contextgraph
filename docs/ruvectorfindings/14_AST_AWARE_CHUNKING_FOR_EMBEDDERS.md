@@ -1,6 +1,6 @@
 # 14 — AST-Aware Atomic Chunking for the Embedder Ensemble
 
-> **📊 2026-05-10 STATUS UPDATE — §9 implementation roadmap remains the active forward edge for Phase 1a.** Confirmed today: `crates/context-graph-core/src/memory/ast_chunker.rs` (~1216 LOC) is **still Rust-only** — single language load `tree_sitter_rust::LANGUAGE` at line 235; no language dispatch for Python/JS/TS/Go/Java/C/C++/C#/Ruby/PHP. The 11-language semantic extractor in `crates/context-graph-cli/src/commands/dynamicjepa.rs` is shipped and operational, but its node-classification logic has not yet been factored into `ast_chunker.rs` for chunk-level use. **All §9.2 items 1-19 (REQ-AST-01..13) remain PENDING.** Per-AST-node-type constellations + chunk-level `Gτ` (§5, §6, §8) are gated on this Phase 1a deliverable. The 24,024-cell constellation math, per-chunk-type embedder routing table (§4.1), and chunk-id-typed `GuardRejected` variant (§8.1) are all design-locked but unimplemented. Once the chunker ships, the ~10× signal-yield multiplier becomes operational and `crates/context-graph-mejepa-instruments/`'s code-domain instruments (E_AST, E_CFG, E_DataFlow, E_TypeGraph, E_Diff, E_Test) can flip from deterministic typed-encoder placeholders to chunk-routed embedder-backed implementations.
+> **📊 2026-05-10 HARDENING STATUS — Phase 1a operational path shipped.** The older `crates/context-graph-core/src/memory/ast_chunker.rs::AstCodeChunker` remains Rust-only, but the current operational Phase 1a path is now `context_graph_core::memory::ast`: 11-language tree-sitter chunking with typed `Language`/`EntityType`, AST parse diagnostics, SHA-256 chunk IDs, per-chunk embedder routing sets, and fail-closed error codes. Manual FSV passed through `cargo run -p context-graph-core --example ast_chunker_multilang_fsv`, with evidence at `/tmp/contextgraph-ast-chunker-multilang-fsv/aggregate-evidence.json`. Edge cases prove fail-closed behavior for empty source, invalid syntax, and mixed PHP/HTML. Remaining Phase 1a work is convergence/deprecation of the legacy Rust-only `AstCodeChunker`, reformat-invariant AST-node-ID SHA auditing, and wiring chunk-level TCT/`GuardRejected` localization into inference.
 
 > **Operator directive 2026-05-09:** *"we have ast parsers set up for i believe 10 coding languages. we are going to want to set up our embedders to work with these ast parsers to perfectly chunk all code for perfect atomic parsing of code. add all this into the plans as well into all planning docs where needed."*
 
@@ -14,11 +14,11 @@
 
 ## 0. Headline
 
-**The repo has 11 wired tree-sitter parsers** (Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP) **plus an existing AST chunker with FSV** (`crates/context-graph-core/src/memory/ast_chunker.rs`, 1216 LOC, currently Rust-only) **plus a multi-language semantic extractor** (`crates/context-graph-cli/src/commands/dynamicjepa.rs`, ~7000 LOC, all 11 languages).
+**The repo has 11 wired tree-sitter parsers** (Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP), a legacy Rust-only `AstCodeChunker`, and a new FSV-proven multi-language chunking API in `context_graph_core::memory::ast`.
 
-**The gap:** these AST capabilities are not wired to the **21-embedder ensemble** (doc 12). Today the embedders receive raw text/source bytes; they should receive **AST-perfect atomic chunks** so each chunk fits cleanly inside a syntactic boundary (function, struct, class, impl, module-decl) and never splits mid-statement.
+**The remaining gap:** chunking and routing are now operational, but the embedders are not yet executing full neural forward passes per chunk. Today the Phase 1b FSV proves artifact integrity, VRAM budget, active/retired policy, and routing coverage; the next deep integration is actual model-backed per-chunk embedding and chunk-level TCT.
 
-**This doc specifies the integration**: extend `ast_chunker.rs` to all 11 languages, reuse DynamicJEPA's per-language node-classification logic, and route AST-perfect chunks through every relevant embedder (E1, E5, E7, E8, E10, E11, E14 + the new E_AST / E_CFG / E_DataFlow / E_Diff instruments).
+**This doc specifies the integration**: use the new `memory::ast` API as the canonical chunking path, converge/deprecate the older Rust-only `AstCodeChunker`, and route AST-perfect chunks through active embedders (E1, E7, E8, E10, E12, E13, E14 plus deterministic/custom E2/E3/E4/E6/E9 where relevant; E5/E11 are retired).
 
 **The DDA multiplier (per doc 13 §1).** Naïve whole-file panels yield ~50-200 panel triples per /loop turn. With AST-atomic chunking, the multiplier is the **average chunks-per-file**:
 
@@ -96,21 +96,21 @@ Per `crates/context-graph-cli/Cargo.toml` and `crates/context-graph-core/Cargo.t
 
 | Slot | Language | tree-sitter crate | Version | Compiler/LSP backed | DynamicJEPA extractor | E7 chunker (`ast_chunker.rs`) |
 |---|---|---|---|---|---|---|
-| L1 | Rust | `tree-sitter-rust` | 0.23 | rustc / rust-analyzer | ✅ shipped | ✅ shipped |
-| L2 | Python | `tree-sitter-python` | 0.23.6 | Pyright / mypy / py_compile | ✅ shipped | ❌ not extended |
-| L3 | JavaScript | `tree-sitter-javascript` | 0.23.1 | node / tsc | ✅ shipped | ❌ not extended |
-| L4 | TypeScript | `tree-sitter-typescript` | 0.23.2 | tsc (`--noEmit`) | ✅ shipped | ❌ not extended |
-| L5 | Go | `tree-sitter-go` | 0.23.4 | `go build` (TBD wired) | ✅ shipped | ❌ not extended |
-| L6 | Java | `tree-sitter-java` | 0.23.5 | `javac` | ✅ shipped | ❌ not extended |
-| L7 | C | `tree-sitter-c` | 0.23.4 | gcc/clang via `compile_commands.json` | ✅ shipped | ❌ not extended |
-| L8 | C++ | `tree-sitter-cpp` | 0.23.4 | g++/clang++ | ✅ shipped | ❌ not extended |
-| L9 | C# | `tree-sitter-c-sharp` | 0.23.5 | `dotnet build` | ✅ shipped | ❌ not extended |
-| L10 | Ruby | `tree-sitter-ruby` | 0.23.1 | `ruby -c` | ✅ shipped | ❌ not extended |
-| L11 | PHP | `tree-sitter-php` | 0.23.11 | (TBD wired) | ✅ shipped | ❌ not extended |
+| L1 | Rust | `tree-sitter-rust` | 0.23 | rustc / rust-analyzer | ✅ shipped | ✅ shipped via `memory::ast` |
+| L2 | Python | `tree-sitter-python` | 0.23.6 | Pyright / mypy / py_compile | ✅ shipped | ✅ shipped via `memory::ast` |
+| L3 | JavaScript | `tree-sitter-javascript` | 0.23.1 | node / tsc | ✅ shipped | ✅ shipped via `memory::ast` |
+| L4 | TypeScript | `tree-sitter-typescript` | 0.23.2 | tsc (`--noEmit`) | ✅ shipped | ✅ shipped via `memory::ast` |
+| L5 | Go | `tree-sitter-go` | 0.23.4 | `go test` in FSV | ✅ shipped | ✅ shipped via `memory::ast` |
+| L6 | Java | `tree-sitter-java` | 0.23.5 | `javac` | ✅ shipped | ✅ shipped via `memory::ast` |
+| L7 | C | `tree-sitter-c` | 0.23.4 | gcc/clang via `compile_commands.json` | ✅ shipped | ✅ shipped via `memory::ast` |
+| L8 | C++ | `tree-sitter-cpp` | 0.23.4 | g++/clang++ | ✅ shipped | ✅ shipped via `memory::ast` |
+| L9 | C# | `tree-sitter-c-sharp` | 0.23.5 | `dotnet build` | ✅ shipped | ✅ shipped via `memory::ast` |
+| L10 | Ruby | `tree-sitter-ruby` | 0.23.1 | `ruby -c` | ✅ shipped | ✅ shipped via `memory::ast` |
+| L11 | PHP | `tree-sitter-php` | 0.23.11 | `php -l` in FSV | ✅ shipped | ✅ shipped via `memory::ast` |
 
 **Cross-language mandate alignment** (per `memory/decisions/2026-05-09--single-loop-claude-code-actor-mejepa-data-factory.md`): the 9 explicit "supported languages" in the operator directive (Python, Rust, C, C++, Java, C#, JS, TS, Ruby) are all wired. Go and PHP are bonus coverage.
 
-**The work**: extend `ast_chunker.rs` from 1 language to 11; reuse DynamicJEPA's per-language node classification (already shipped) so we don't reinvent function/struct/class detection per language.
+**The remaining work**: make `memory::ast` the single canonical chunker path, update any stale `AstCodeChunker::new_rust` consumers, add reformat-invariance audits, and wire the produced chunk IDs into per-chunk TCT and `GuardRejected` diagnostics.
 
 ---
 
@@ -191,12 +191,12 @@ The 21-embedder ensemble doesn't all want the same chunks. AST-aware routing mat
 | **Function/method body** | E7 Code (Qodo, 1536D) + E14 BGE-M3 (multilingual, 8192-token) | Code embedders trained on function-bodies; multilingual coverage |
 | **Function signature alone** | E1 Semantic + E10 Contextual | Signatures are short natural-language-like strings |
 | **Test function** | E1 Semantic + E7 Code | Tests interpreted both as code (E7) and as natural-language descriptions (E1, on docstring + name) |
-| **Class/struct definition** | E11 Kepler (RoBERTa+TransE KG) + E7 Code | Type-graph reasoning (E11) + structural code (E7) |
+| **Class/struct definition** | E8 Graph + E7 Code + E14 BGE-M3 | Active replacement for retired E11: graph context + structural code + multilingual semantics |
 | **Module/namespace declaration** | E1 Semantic + E8 Graph (sentence-level e5-large-v2) | High-level semantic + graph context |
-| **Import/use statement** | E11 Kepler (entity graph) + E13 SPLADE v3 (sparse keyword) | Imports are entity references; sparse retrieval finds related modules |
+| **Import/use statement** | E8 Graph + E13 SPLADE v3 (sparse keyword) + E14 BGE-M3 | Active replacement for retired E11: graph context, sparse retrieval, multilingual semantics |
 | **Comment block** | E1 Semantic + E10 Contextual | Pure natural language |
 | **Docstring** | E1 Semantic + E10 Contextual | Pure natural language |
-| **Test assertion line** | E5 Causal (cause-effect) + E1 Semantic | Assertions encode causal expectations |
+| **Test assertion line** | E7 Code + E1 Semantic + E10 Contextual | Active replacement for retired E5: code structure plus semantic/contextual assertion meaning |
 | **Diff hunk** | E_Diff (new, doc 09) + E7 Code | Diff is structural code change |
 | **AST node-token sequence** | E_AST (new, doc 09) | The AST IS the input |
 | **CFG basic blocks** | E_CFG (new, doc 09) | The CFG IS the input |
@@ -263,8 +263,8 @@ DDA's 91/210 cross-embedder pair signals (doc 12 §6) become *much more diagnost
 | Pair | Per-chunk meaning | High-leverage example |
 |---|---|---|
 | (E1 semantic, E7 code) | "Does the function's docstring match the function's code?" | Catches AI patches where the docstring lies about the function |
-| (E5 causal, E7 code) | "Does the predicted cause→effect direction match the AST diff *of this function*?" | Catches confused causal claims at function granularity |
-| (E7 code, E11 kepler) | "Does this function call the entities the dependency graph says are reachable *from this scope*?" | Catches ImportError / NameError before runtime, per-function |
+| (E7 code, E10 contextual) | "Does the predicted effect description match the AST diff *of this function*?" | Active replacement for retired E5 causal checks; catches confused diff explanations at function granularity |
+| (E7 code, E8 graph) | "Does this function call the entities the dependency graph says are reachable *from this scope*?" | Active replacement for retired E11; catches ImportError / NameError before runtime, per-function |
 | (E1 semantic, E14 multilingual) | "Does the function survive translation through the multilingual head?" | Catches language-specific overfitting at function granularity |
 | (E6 sparse, E13 splade) | "Do two independent sparse encoders agree on keyword salience *in this function*?" | Catches AI patches that hallucinate function names *here specifically* |
 | (E9 HDC, E12 late_interaction) | "Robust signature × token-precision agreement *for this function*" | Catches typo-induced regressions per function |

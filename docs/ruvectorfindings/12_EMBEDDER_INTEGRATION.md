@@ -1,6 +1,6 @@
 # 12 — Embedder Integration into ME-JEPA (TCT/DDA + UTML substrate)
 
-> **📊 2026-05-10 STATUS UPDATE — §11 implementation roadmap is partially shipped.** Items 13 (Predictor + frozen target + VICReg + Oracle head — Phase 2), 14 (UTML v1.0 L_step computation per training cert — Phase 3), 15 (LoRA self-healing wiring — Phase 5), and 16 (Distillation-based online observe — Phase 5) are now SHIPPED. `crates/context-graph-mejepa-embedders/` ships: 21-embedder enum (with E5 retired post-2026-05-10), SHA-256 manifest digest, VRAM budget gate, E17 calibration cert, and routing wrapper over the core AST table (11 langs × 13 entities). **Pending**: items 1-12 (per-embedder `Instrument`-trait wrappers backed by real HuggingFace model loads — `crates/context-graph-mejepa-embedders/` is currently a validation/control surface only), items 17-18 (cross-embedder coherence and predictor-collapse score wiring into ΔK / ΔΞ), item 19 (E17 AffectText on agent CoT for ΔΩ_outer), item 20 (`mejepa_audit_pairwise_mi` MCP tool). Note: E5 Causal embedder was retired 2026-05-10 (commits `7a718785` and `77cd98c5`); the embedder list is now effectively 20 once E5 is removed from the production rotation. The conceptual architecture and DDA-counting math of this doc remain authoritative.
+> **📊 2026-05-10 HARDENING STATUS — §11 implementation roadmap is partially shipped.** Items 13 (Predictor + frozen target + VICReg + Oracle head — Phase 2), 14 (UTML v1.0 L_step computation per training cert — Phase 3), 15 (LoRA self-healing wiring — Phase 5), and 16 (Distillation-based online observe — Phase 5) are now SHIPPED. `crates/context-graph-mejepa-embedders/` ships and FSV-verifies: 21 declared enum slots, **E5 and E11 retired/disabled**, 19 active required registrations, 12 active content embedders, SHA-256 safetensors manifest digest verification, VRAM budget gate, E17 calibration cert, and routing wrapper over the core AST table (11 languages × 13 entity types = 143 rows). **Pending / critical blindspot:** items 1-12 as actual neural per-embedder forward wrappers. The current crate proves real artifact integrity and routing policy, but it does not yet run every embedder's neural forward pass. Items 17-18 (cross-embedder coherence and predictor-collapse score wiring into ΔK / ΔΞ), item 19 (E17 AffectText on agent CoT for ΔΩ_outer), and item 20 (`mejepa_audit_pairwise_mi` MCP tool) remain pending. Current FSV ledger: [`15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`](./15_PHASE_1_5_HARDENING_FSV_2026_05_10.md).
 
 > **Operator directive 2026-05-09:** *"since we are no longer using the local model that frees up all of our gpu vram. this system has a number of multi embedder systems and like 30 embedders hooked up. we could load any of them or improve the learning embedders with the new utl theory and somehow integrate all of that into this system."*
 
@@ -15,7 +15,7 @@
 
 ## 0. Headline
 
-> **2026-05-10 reconciliation note.** This doc references the "21-embedder ensemble" throughout. As of 2026-05-10, **E5 Causal has been retired** (commits `7a718785` retiring E5 across core/embeddings/mcp, then `77cd98c5` fail-closed retirement across storage + MCP validation). The declared enum in `crates/context-graph-mejepa-embedders/src/embedder_id.rs` still has 21 variants for ABI stability, but the **active production rotation is 20 embedders** (E1-E4, E6-E14 + E15-E21). DDA signal-count math below uses N=20 in practice; "N=21" formulas are upper-bound theoretical. Read every "N=21" / "21-embedder ensemble" reference below as "21 declared, 20 active".
+> **2026-05-10 reconciliation note.** This doc references the "21-embedder ensemble" throughout. The declared enum in `crates/context-graph-mejepa-embedders/src/embedder_id.rs` still has 21 variants for ABI stability, but **E5 Causal and E11 Kepler are retired/disabled** and are intentionally excluded from `required_registrations()` and `content()`. The active production rotation is 19 embedders total: 12 active content embedders (E1-E4, E6-E10, E12-E14) plus 7 learner-state embedders (E15-E21). DDA signal-count math below uses N=19 in practice unless explicitly talking about the declared upper-bound enum. Any route, task, or doc paragraph that still treats E5/E11 as active is stale and should be updated to active replacements or fail closed.
 
 **The 21-embedder ensemble + the LoRA / distillation / multitask training infrastructure in `crates/context-graph-embeddings/` is ~70% of what doc 09 specifies as ME-JEPA-Code's Phase 1-5 implementation.** With Qwen3.6-27B retired (-22 GB VRAM, -1.5 GB Hermes), there is **~28-29 GB free on the RTX 5090** — enough to host every weight in the ensemble simultaneously, plus the predictor + activations + LoRA adapters.
 
@@ -31,7 +31,7 @@ The shipped LoRA + distillation infrastructure is *exactly* what UTML v1.0 §V.1
 
 ## 1. The 21-embedder ensemble inventory
 
-`crates/context-graph-embeddings/` ships **21 embedders** — 14 production content embedders (E1-E14) + 7 learner-state embedders (E15-E21). Total disk ~19 GB. Typical VRAM footprint when all loaded as bf16: **~14-18 GB** (much smaller than disk because most disk weight is fp32).
+`crates/context-graph-embeddings/` defines **21 embedder slots** — 14 historical production content embedders (E1-E14) + 7 learner-state embedders (E15-E21). As of 2026-05-10, **E5 and E11 are retired**, so the active production set is 12 content embedders + 7 learner-state embedders. Total disk remains model-config dependent; the FSV config currently verifies 19 active registrations and 12 active content loads.
 
 ### 1.1 Production content embedders (E1-E14, ~12.5 GB VRAM)
 
@@ -41,18 +41,18 @@ The shipped LoRA + distillation infrastructure is *exactly* what UTML v1.0 §V.1
 | **E2** | TemporalRecent | exp-decay basis | 512 | yes (custom) | Labeller for `E_Trace` recency features |
 | **E3** | TemporalPeriodic | Fourier basis | 512 | yes (custom) | Labeller for build/test cycle phase |
 | **E4** | TemporalPositional | sinusoidal basis | 512 | yes (custom) | Labeller for within-attempt position |
-| **E5** | Causal | `nomic-ai/nomic-embed-text-v1.5` | 768 | **yes (LoRA stages 1-3)** | Labeller for `E_Diff` cause→effect; runtime guard on hunk-attribution |
+| **E5** | Causal | `nomic-ai/nomic-embed-text-v1.5` | 768 | retired | **Retired/disabled**. Do not route active ME-JEPA panels through E5; stale E5 routes must fail closed or be replaced by active code/semantic/contextual routes. |
 | **E6** | Sparse | `naver/splade-cocondenser` | 30K→1536 | inference | Sparse retrieval, anti-collapse signal, keyword salience |
 | **E7** | Code | **`Qodo/Qodo-Embed-1-1.5B`** | **1536** | inference | **THE primary code instrument** — `E_AST` / `E_CFG` / `E_DataFlow` / `E_Diff` source |
 | **E8** | Graph | `intfloat/e5-large-v2` (graph use) | 1024 | inference | `E_TypeGraph` text + symbol relationships |
 | **E9** | HDC | hyperdimensional 10K-bit | 10K→1024 | yes (custom) | Typo-resistant signature; ΔΞ adversarial-perturbation signal |
 | **E10** | Contextual | `intfloat/e5-base-v2` | 768 | inference | `E_StaticAnalysis` warning clusters; paraphrase |
-| **E11** | Kepler | RoBERTa-base + TransE on Wikidata5M | 768 | **yes** | **`E_TypeGraph` candidate** (knowledge-graph embedder) — entity / dependency-graph signal |
+| **E11** | Kepler | RoBERTa-base + TransE on Wikidata5M | 768 | retired | **Retired/disabled**. Do not route active ME-JEPA panels through E11; type/entity signal must come from active graph/code/static-analysis replacements until a successor is verified. |
 | **E12** | LateInteraction | `colbert-ir/colbertv2.0` | 128/token | inference | Token-level fine-grained re-rank; per-line edits |
 | **E13** | Splade v3 | sparse v3 head | 30K | inference | Stage-1 recall in 5-stage pipeline |
 | **E14** | BgeM3Dense | **`BAAI/bge-m3` (XLM-RoBERTa-Large)** | 1024 | **yes** | **Multilingual + 8192-token context** — direct candidate for cross-language SWE-bench Lite |
 
-**Trainable subset:** E5 + E11 + E14 plus the four custom (E2/E3/E4/E9) embedders all have shipped fine-tune pipelines under `crates/context-graph-embeddings/src/training/`.
+**Trainable subset reality:** E14 plus the custom E2/E3/E4/E9 embedders remain relevant to the active set. Any E5/E11 fine-tune pipeline is historical unless the retired slots are explicitly reactivated through a new FSV-backed decision.
 
 ### 1.2 Learner-state embedders (E15-E21, ~3-5 GB VRAM, on-demand)
 
@@ -82,13 +82,13 @@ For a corpus of `n` raw inputs projected through `N` frozen, approximately-indep
 
 | Stack | N | per-input signals (tight) | Per /loop turn (50-200 inputs) | Per day (96 turns) |
 |---|---:|---:|---:|---:|
-| Production E1-E14 | 14 | **105** (14 + 91) | 5,250-21,000 | 504K-2M |
-| Full E1-E21 | 21 | **231** (21 + 210) | 11,550-46,200 | 1.1M-4.4M |
-| Loose upper bound at N=21 | 21 | 462 (21 + 441) | 23K-92K | 2.2M-8.8M |
+| Active content set (E1-E4, E6-E10, E12-E14) | 12 | **78** (12 + 66) | 3,900-15,600 | 374K-1.5M |
+| Active all-set (content + E15-E21 learner-state) | 19 | **190** (19 + 171) | 9,500-38,000 | 912K-3.6M |
+| Declared upper-bound enum (E1-E21, includes retired E5/E11) | 21 | 231 (21 + 210) | 11,550-46,200 | 1.1M-4.4M |
 
 **Tightness caveat:** Royse 2026c flags this as a *constructive upper bound* whose tightness depends on a pairwise mutual-information audit (`mejepa_audit_pairwise_mi`). UTML v1.0 §VI.3 wires this audit into ME-JEPA's `ΔΞ.predictor_redundancy` term — redundant pairs are detected and down-weighted.
 
-**Per Phase 0 corpus**: 2,400 mutation entries × 231 panel signals = **554,400 structured signals**. With AST-aware chunk routing (~40 chunks × ~7 signals = 280 chunk-level signals per entry, doc 14 §1.3): combined **~1.22 M signals per corpus**, every one labeled by the entry's known (mutation_category, oracle_verdict, entity_type, language) tuple. **No human annotation, no synthetic generator, no recursion.**
+**Per Phase 0 corpus at the active N=19 set**: 2,400 mutation entries × 190 panel signals = **456,000 structured panel signals**. With AST-aware chunk routing (~40 chunks × ~7 signals = 280 chunk-level signals per entry, doc 14 §1.3): combined **~1.13 M signals per corpus**, every one labeled by the entry's known (mutation_category, oracle_verdict, entity_type, language) tuple. **No human annotation, no synthetic generator, no recursion.**
 
 ---
 
@@ -102,8 +102,8 @@ Doc 09 §2.2 specifies 14 instruments for the 5,120-d panel (per §3.5.5). Mappi
 |---|---:|---|---|
 | **E_AST** | 384 | **E7 Code (Qodo, 1536D)** + linear projection 1536→384 | ~2 days |
 | **E_CFG** | 256 | **E8 Graph** + tree-sitter CFG extraction with graph-attention head | ~3 days |
-| **E_DataFlow** | 256 | **E11 Kepler** + def-use edge extraction with graph-attention head | ~3 days |
-| **E_TypeGraph** | 256 | **E11 Kepler** (perfect fit) + Pyright/mypy lattice | ~3 days |
+| **E_DataFlow** | 256 | Active replacement path: E7 Code + E8 Graph + static def-use extraction; retired E11 must not be used until reactivated by FSV | ~3 days |
+| **E_TypeGraph** | 256 | Active replacement path: E8 Graph + compiler/LSP lattice + E14 multilingual semantics; retired E11 must not be used until reactivated by FSV | ~3 days |
 | **E_Test** | 384 | **E1 Semantic** on test-fn natural-language descriptions | ~1 day |
 | **E_Trace** | 512 | **E2/E3/E4** + sequence-transformer over `(fn_id, line_no, val_hash)` events | ~3 days |
 | **E_Diff** | 256 | **E7 Code** with diff-edge encoder | ~2 days |

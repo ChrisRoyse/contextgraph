@@ -1,6 +1,6 @@
 # SPEC-EMBEDDERS — Functional Specification
 
-> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 1 status.
+> **📊 2026-05-10 HARDENING STATUS:** CONTROL SURFACE HARDENED / NEURAL FORWARD PENDING. `crates/context-graph-mejepa-embedders` FSV verifies schema v1 model config, 21 declared slots, E5/E11 retired, 19 active required registrations, 12 active content embedders, SHA-256 safetensors digests, VRAM budget, E17 calibration, and 143 AST routing rows. It does **not** yet prove actual neural forward execution for each embedder. See `../implementation-plan.md` and `../../15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`.
 
 > **Level 2 (functional spec).** Defines WHAT the EMBEDDERS domain must do. For HOW, see `specs/technical/TECH-EMBEDDERS.md`. Constitution (Level 1) wins on conflict.
 
@@ -9,7 +9,7 @@
 
 <metadata>
   <title>EMBEDDERS — 21-Embedder Ensemble Wrapped Behind the Instrument Trait</title>
-  <status>partial</status>
+  <status>control_surface_hardened_forward_pending</status>
   <owner>ME-JEPA Phase 1 working group (cc-reality outer-loop optimizer)</owner>
   <created_date>2026-05-09</created_date>
   <last_updated>2026-05-10</last_updated>
@@ -36,7 +36,9 @@
 </metadata>
 
 <overview>
-The EMBEDDERS domain wraps the existing 21-embedder ensemble (E1-E21) shipped in
+**2026-05-10 implementation note:** the declared enum still has 21 slots, but E5 and E11 are retired/disabled. Active required registrations are E1-E4, E6-E10, E12-E21. Digest/VRAM/routing evidence is not equivalent to neural forward evidence; the `EmbedderForward` wrappers remain required.
+
+The EMBEDDERS domain wraps the existing 21-slot embedder ensemble (E1-E21) shipped in
 `crates/context-graph-embeddings/` behind a unified `Instrument` trait, defines the
 per-chunk-type routing table that maps `EntityType` to the active embedder set,
 enforces a hard ~29 GB VRAM budget on the RTX 5090, and supplies the LoRA-based

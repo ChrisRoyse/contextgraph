@@ -551,7 +551,7 @@ These are NOT EMBEDDERS-domain gaps — they are surface tools owned by downstre
 | REQ-UTML-02 | compute_delta_p (cosine error + SNR norm + exploration + γ + per-chunk aggregation) | logic | TASK-UTML-003 | ready |
 | REQ-UTML-03 | compute_delta_k (cos_align + fisher_violation + ECE + embedder_coherence) | logic | TASK-UTML-004, TASK-UTML-008 (embedder_coherence) | ready |
 | REQ-UTML-04 | compute_delta_omega (plasticity^0.4 · landscape^0.4 · stability^0.1 · agent_state^0.1) | logic | TASK-UTML-005 | ready |
-| REQ-UTML-05 | compute_delta_xi (target_collapse asserted == 0; predictor_redundancy; constellation_violation_rate) | logic | TASK-UTML-006 | ready |
+| REQ-UTML-05 | compute_delta_xi (target_collapse asserted == 0; predictor_redundancy; constellation_violation_rate) | logic | TASK-UTML-006 | complete |
 | REQ-UTML-06 | sampling_weight = base · L_step · (1+5·override) · 0.995^age; drop&lt;0.05; force&gt;1.0 | logic | TASK-UTML-007 | ready |
 | REQ-UTML-07 | Per-step training certificate + hash chain (cross-spec; cert struct here, chain logic in TASK-TRAIN-009) | foundation / logic | TASK-UTML-001 (struct), TASK-TRAIN-009 (emit + chain) | ready |
 | REQ-UTML-08 | UTML cycle classifier (7 states; coaching-order priority) | logic | TASK-UTML-009 | ready |

@@ -1,6 +1,6 @@
 # Technical Specification — UTML v1.0 Four-Factor Learning Formula Implementation
 
-> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 3 status.
+> **📊 2026-05-10 HARDENING STATUS:** PARTIAL / SAFETY-HARDENED. The shipped `learning_signal.rs` now matches the critical ΔΞ invariant in this spec: `target_collapse` must be exactly `0.0`, non-zero/non-finite values fail closed with `MEJEPA_INSTRUMENT_GRADIENT_LEAK`, and the non-collapse score is multiplicative. The remaining formula blindspot is ΔP/ΔK/ΔΩ semantic reconciliation: the shipped carriers are simplified operational signals, while this spec still describes richer weighted/cosine/Fisher/ECE/plasticity forms. Pairwise MI audit, continual-backprop dormant-unit intervention, and state-transfer `T` remain pending. See `../implementation-plan.md` and `../../15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`.
 
 > **Level 3 (technical, *how* to build).** Implements `SPEC-UTML.md`. Subordinate to `specs/constitution.md`. When this spec conflicts with the constitution or with `SPEC-UTML.md`, the higher-level document wins per `<spec_authority_order>`.
 

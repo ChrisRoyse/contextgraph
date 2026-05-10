@@ -3,10 +3,10 @@
 > **Phase-ordered execution roadmap.** Translates the 8-phase build plan in `09_END_GOAL_REVIEW_REPLACEMENT.md §7` (re-framed by `10_MEJEPA_PIVOT_2026_05_09.md`) into a concrete sequence of spec-IDs and task-IDs. **Every entry references a Level 2 functional spec, a Level 3 technical spec, and a Level 4 task list.**
 
 **Date:** 2026-05-10 (status refresh; spec body authored 2026-05-09)
-**Spec version:** 1.0.1
+**Spec version:** 1.0.2
 **Authority:** `constitution.md §spec_authority_order` and `09_END_GOAL_REVIEW_REPLACEMENT.md §7` Phase plan.
 
-> **2026-05-10 status snapshot.** Phases 0 (corpus), 1c (instrument scaffolds), 2 (predictor), 3 (training), 4a (inference), 4b (TCT), and 5 (self-healing) are SHIPPED end-to-end with FSV evidence. Phase 1a (multi-language `ast_chunker.rs` extension), Phase 1b (per-embedder `Instrument` wrappers backed by real model loads), Phase 6 (storage hygiene operations), Phase 7 (shift subscriber Tokio task), and Phase 8 (evaluation harness against ≥0.95 gate) are the active forward edge. The Phase Summary table below has been refreshed; per-phase deliverable status is in §"Per-phase deliverable table".
+> **2026-05-10 hardening snapshot.** Phases 1-5 have been manually re-verified with source-of-truth readbacks; evidence and blindspots are captured in `../15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`. Phase 1a is operational via the new 11-language `context_graph_core::memory::ast` API; legacy `AstCodeChunker` remains Rust-only and is now compatibility/deprecation work. Phase 1b is hardened for model artifact integrity, active/retired policy, VRAM, calibration, and routing; actual neural per-embedder forward wrappers remain a critical deep-integration item. Phases 1c, 2, 3, 4a, 4b, and 5 are SHIPPED with FSV evidence. `compute_delta_xi` now fails closed on target-collapse leaks with `MEJEPA_INSTRUMENT_GRADIENT_LEAK`. Phase 6 (storage hygiene operations), Phase 7 (shift subscriber Tokio task), Phase 8 (evaluation harness against ≥0.95 gate), neural embedder forward wrappers, and chunk-level TCT are the active forward edge.
 
 ---
 
@@ -15,12 +15,12 @@
 | Phase | Domain(s) | Effort | Parallelizable? | Status (2026-05-10) |
 |---|---|---|---|---|
 | 0 | CORPUS | ~5-7 days | partially (mutation operators are independent) | partial — operators+split+oracle bridge+CLI shipped; full 300×8 batch run pending; non-Python operators pending |
-| 1a | AST-CHUNKING | ~10 days | yes (per-language extension is parallel) | partial — Rust chunker shipped; multi-language extension of `ast_chunker.rs` (REQ-AST-01..13) pending; semantic extractor for all 11 languages already exists in `dynamicjepa.rs` |
-| 1b | EMBEDDERS | ~5 days | yes (per-embedder Instrument trait wrappers are parallel) | partial — 21-embedder enum, manifest digest, VRAM gate, routing wrapper shipped; per-embedder `Instrument` wrappers with real model loads (REQ-EMBED-02..11) pending |
-| 1c | INSTRUMENTS | ~15 days | partially (instruments depend on AST + embedders + chunker; each instrument is then independent) | partial — all 15 panel slots have deterministic encoders + Panel/PanelBuilder/PanelStore + linear-probe gate shipped; 11 of 14 are placeholders awaiting embedder/analyzer-backed replacements |
+| 1a | AST-CHUNKING | ~10 days | yes (per-language extension is parallel) | **operational / hardened** — new `context_graph_core::memory::ast` API chunks all 11 languages with FSV; legacy `AstCodeChunker` is still Rust-only and should converge to or be replaced by the new API |
+| 1b | EMBEDDERS | ~5 days | yes (per-embedder Instrument trait wrappers are parallel) | **control surface hardened / deep forward pending** — 21 declared slots, 19 active registrations, E5/E11 retired, digest verification, VRAM gate, E17 calibration, and 143-row routing FSV shipped; actual neural `EmbedderForward`/`Instrument` wrappers remain pending |
+| 1c | INSTRUMENTS | ~15 days | partially (instruments depend on AST + embedders + chunker; each instrument is then independent) | **shipped scaffold / semantic heads pending** — all 15 panel slots have deterministic encoders + Panel/PanelBuilder/PanelStore + linear-probe gate shipped; embedder/analyzer-backed replacements remain capability work |
 | 2 | PREDICTOR | ~7-10 days | no (sequential: panel → predictor → frozen target → VICReg → Oracle head) | **shipped** — `MeJepaPredictor`, `VICRegLoss`, `OracleHead`, `FrozenTargetAdapter` in `crates/context-graph-mejepa/`; `predictor_fsv` example |
 | 3 | TRAINING | ~5-7 days | yes (training loop scaffolding parallels training-cert + sampler) | **shipped** — `Trainer` + AdamW + cosine LR + `BatchSampler` + `TrainingCertificate` chain + holdout eval + LoRA wiring + distillation in `crates/context-graph-mejepa-train/`; 5 FSV examples |
-| 3+ | UTML-FORMULA | ~5 days | yes (ΔP, ΔK, ΔΩ, ΔΞ are independent computations) | partial — 4 deltas + L_step computation + sampling reweighting shipped in `learning_signal.rs`; pairwise MI audit (REQ-UTML-06), continual-backprop (REQ-UTML-07), state-transfer T detector (REQ-UTML-08) pending |
+| 3+ | UTML-FORMULA | ~5 days | yes (ΔP, ΔK, ΔΩ, ΔΞ are independent computations) | partial / safety-hardened — 4 deltas + L_step computation + sampling reweighting shipped in `learning_signal.rs`; `compute_delta_xi` now enforces `target_collapse == 0.0` and multiplicative non-collapse; remaining semantic work is reconciling simplified ΔP/ΔK/ΔΩ carriers with the full doc-11 formulas plus pairwise MI audit (REQ-UTML-06), continual-backprop (REQ-UTML-07), state-transfer T detector (REQ-UTML-08) |
 | 4a | INFERENCE | ~3-5 days | no (sequential: verify() → conformal → OOD) | **shipped** — `MeJepaCompiler::{compile, verify, observe}` + conformal + OOD + `Verdict` enum; `mcp__cgreality__mejepa_verify` MCP tool live; `inference_fsv` example |
 | 4b | TCT-CONSTELLATION | ~5 days | yes (centroid construction parallels Gτ guard + GuardRejected verdict) | **shipped** — full `TctConstellation` + `Gτ` + `Verdict::GuardRejected` + Bayesian shrinkage + freshness check + threshold calibrator in `crates/context-graph-mejepa-tct/`; `mcp__cgreality__mejepa_constellation_inspect` MCP tool live |
 | 5 | SELF-HEALING | ~5-7 days | partially (drift detection parallels EWC++; A/B/C promotion is sequential) | **shipped** — 16-module `heal/` tree + `mejepa-heal-drill` binary + 6 RocksDB CFs + `mcp__cgreality__mejepa_heal_status` and `mejepa_rollback_to` MCP tools live |
@@ -39,10 +39,10 @@ The longest dependency chain — bottlenecks if not built in this order:
 ```
 Phase 0 corpus generator (CORPUS)
    ↓ produces (panel[t=0..2], oracle_verdict) tuples
-Phase 1a AST chunker extension (AST-CHUNKING)
+Phase 1a AST chunker (AST-CHUNKING)
    ↓ produces AST-perfect chunks for all 11 languages
-Phase 1b Instrument trait wrappers (EMBEDDERS)
-   ↓ unifies the 21 embedders behind one trait
+Phase 1b Embedder registry/routing (EMBEDDERS)
+   ↓ validates real artifacts, retired-slot policy, VRAM budget, and chunk routing
 Phase 1c Instruments (INSTRUMENTS)
    ↓ produces 14 instruments + Panel materializer
 Phase 2 Predictor + frozen target (PREDICTOR)
@@ -79,22 +79,22 @@ Phase 5 (self-healing) and Phase 6 (hygiene) are operational gates that run AFTE
 
 | Deliverable | Spec ref | Status |
 |---|---|---|
-| Refactor `EntityType` to language-tagged enum | REQ-AST-01 | new |
-| Per-language node-type classifier reusing DynamicJEPA logic (Python, JS/TS, Go, Java, C/C++, C#, Ruby, PHP) | REQ-AST-02..09 | new |
-| Cross-language test harness: chunk every fixture; assert AST entity boundaries | REQ-AST-10 | new |
-| FSV: SHA-pinned chunk boundaries persisted per fixture | REQ-AST-11 | new |
-| Mixed-language refusal (HTML+JS, PHP+HTML) with MEJEPA_CHUNKER_MIXED_LANGUAGE | REQ-AST-12 | new |
-| Reformat-invariant chunk SHAs (computed on AST node IDs, not raw text) | REQ-AST-13 | new |
+| Refactor `EntityType` to language-tagged enum | REQ-AST-01 | ✅ shipped in `context_graph_core::memory::ast` as typed `Language` + `EntityType`; old `AstCodeChunker` compatibility path remains Rust-only |
+| Per-language node-type classifier reusing DynamicJEPA logic (Python, JS/TS, Go, Java, C/C++, C#, Ruby, PHP) | REQ-AST-02..09 | ✅ shipped operationally for all 11 languages via `memory::ast::{classify, chunk_with_options}`; FSVed with real compiler/linter toolchain checks |
+| Cross-language test harness: chunk every fixture; assert AST entity boundaries | REQ-AST-10 | ✅ shipped via `cargo run -p context-graph-core --example ast_chunker_multilang_fsv` |
+| FSV: SHA-pinned chunk boundaries persisted per fixture | REQ-AST-11 | ✅ shipped; evidence at `/tmp/contextgraph-ast-chunker-multilang-fsv/aggregate-evidence.json` and per-language dirs |
+| Mixed-language refusal (HTML+JS, PHP+HTML) with MEJEPA_CHUNKER_MIXED_LANGUAGE | REQ-AST-12 | ✅ shipped; PHP/HTML mixed-language edge case readback passes |
+| Reformat-invariant chunk SHAs (computed on AST node IDs, not raw text) | REQ-AST-13 | partial — chunk SHA is persisted and verified today; a separate reformat-invariance audit over equivalent AST node IDs is still needed |
 
 ### Phase 1b — Embedder Instrument trait wrappers (EMBEDDERS)
 
 | Deliverable | Spec ref | Status |
 |---|---|---|
 | `Instrument` trait + `InstrumentSlot` enum (15 slots summing to 5,120-d panel) | REQ-EMBED-01 | ✅ shipped (Phase 1 scaffolding) |
-| Per-embedder Instrument-trait wrapper (E1, E5, E7, E8, E10, E11, E14 used in panel) | REQ-EMBED-02..08 | new |
-| Per-chunk-type embedder routing table (function → E7+E14, class → E11+E7, comment → E1+E10, etc.) | REQ-EMBED-09 | new |
-| Lazy-load policy for E15-E21 learner-state embedders (VRAM headroom) | REQ-EMBED-10 | new |
-| FSV: `embedder_routing_fsv` writes per-chunk-type route table + asserts all 11 languages × 13 entity types covered | REQ-EMBED-11 | new |
+| Per-embedder Instrument-trait wrapper (E1, E7, E8, E10, E12, E13, E14 active content set; E5/E11 retired) | REQ-EMBED-02..08 | pending deep integration — real model files are digest-verified, but actual neural forward wrappers are not complete |
+| Per-chunk-type embedder routing table (function → E7+E14, class → active replacements, comment → E1+E10, etc.) | REQ-EMBED-09 | ✅ shipped for active embedders; 143 routing rows FSVed; all E5/E11 routes fail closed or are rewritten |
+| Lazy-load policy for E15-E21 learner-state embedders (VRAM headroom) | REQ-EMBED-10 | ✅ shipped for explicit learner-state loads; E17 requires calibration cert before scoring |
+| FSV: `embedder_routing_fsv` writes per-chunk-type route table + asserts all 11 languages × 13 entity types covered | REQ-EMBED-11 | ✅ shipped via `embedders_fsv`; evidence at `/mnt/d/contextgraph/fsv/contextgraph-mejepa-embedders-fsv/embedders_fsv_evidence.json` |
 
 ### Phase 1c — 14 instruments + Panel/PanelBuilder (INSTRUMENTS)
 
@@ -141,12 +141,12 @@ Phase 5 (self-healing) and Phase 6 (hygiene) are operational gates that run AFTE
 | `compute_delta_p(predicted, target, snr, exploration_bonus)` | REQ-UTML-01 | ✅ shipped (`learning_signal.rs`) |
 | `compute_delta_k(grad, ema_grad, fisher, ece, embedder_coherence)` | REQ-UTML-02 | ✅ shipped |
 | `compute_delta_omega(plasticity, landscape, stability, agent_state)` | REQ-UTML-03 | ✅ shipped |
-| `compute_delta_xi(target_collapse, redundancy, violation)` (target_collapse always 0) | REQ-UTML-04 | ✅ shipped |
+| `compute_delta_xi(target_collapse, redundancy, violation)` (target_collapse always 0) | REQ-UTML-04 | ✅ shipped and hardened — non-zero/non-finite target collapse fails closed with `MEJEPA_INSTRUMENT_GRADIENT_LEAK`; formula is multiplicative non-collapse |
 | EMA running mean of recent batch gradients | REQ-UTML-05 | ✅ shipped |
 | Pairwise MI audit job persisting `pairwise_mi_matrix.csv` | REQ-UTML-06 | pending |
 | Continual-backprop dormant-unit re-init (ΔΩ.effective_plasticity intervention) | REQ-UTML-07 | pending — Phase 5 `regulate.rs` is the integration point |
 | State-transfer T detector for active-learning trigger | REQ-UTML-08 | pending |
-| FSV: 100 synthetic examples spanning ΔP/ΔK/ΔΩ/ΔΞ corner cases; verify L_step matches expected envelope | REQ-UTML-09 | ✅ shipped via `train_edge_cases_fsv` |
+| FSV: 100 synthetic examples spanning ΔP/ΔK/ΔΩ/ΔΞ corner cases; verify L_step matches expected envelope | REQ-UTML-09 | ✅ shipped via `train_edge_cases_fsv`; target-collapse leak edge proves no training cert is written on invariant violation |
 
 ### Phase 4a — Inference + conformal + OOD (INFERENCE) — **SHIPPED**
 
@@ -188,7 +188,7 @@ Phase 5 (self-healing) and Phase 6 (hygiene) are operational gates that run AFTE
 | Witness-chain integrity check every 10,000 attempts | REQ-HEAL-07 | ✅ shipped (`heal/integrity.rs`) |
 | LoRA adapter refresh on ΔΩ.effective_plasticity collapse | REQ-HEAL-08 | ✅ shipped (`heal/lora_refresh.rs`) |
 | Distillation-based online observe (reuses crates/context-graph-embeddings/src/training/distillation.rs) | REQ-HEAL-09 | ✅ shipped (`heal/distill.rs`) |
-| FSV: synthetic drift drill detects within 1,000 observations + promotes Mode B/C only on holdout win | REQ-HEAL-10 | ✅ shipped — `mejepa-heal-drill` binary + `phase5_self_healing_fsv` example; happy-path drill detected hard drift at 700 obs, mode winner C, exit_code 0 |
+| FSV: synthetic drift drill detects within 1,000 observations + promotes Mode B/C only on holdout win | REQ-HEAL-10 | ✅ shipped — `mejepa-heal-drill` binary + `phase5_self_healing_fsv` example; hard/soft/catastrophic drills detect at 700 obs, mode winner C, evidence files mode `0600`; invalid max-observations edge exits with `MEJEPA_HEAL_INVALID_STATE` and creates no output root |
 
 ### Phase 6 — Disk + memory hygiene (HYGIENE)
 
@@ -251,3 +251,4 @@ Each phase's task list lives under `tasks/<phase>/TASK-<DOMAIN>-NNN.md`. The `ta
 | Date | Revision | Author | Notes |
 |---|---|---|---|
 | 2026-05-09 | v1.0.0 initial | Claude Code (outer-loop optimizer) | First full plan covering all 8 phases × 13 domains |
+| 2026-05-10 | v1.0.2 hardening refresh | Codex | Updated Phase 1-5 status after manual FSV; documented `ΔΞ.target_collapse` fail-closed fix, embedder forward blindspot, and AST compatibility caveat |

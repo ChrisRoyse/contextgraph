@@ -1,6 +1,6 @@
 # SPEC-AST-CHUNKING — Multi-Language AST-Perfect Atomic Chunker (Functional Spec)
 
-> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 1 status.
+> **📊 2026-05-10 HARDENING STATUS:** OPERATIONAL via `context_graph_core::memory::ast` — 11-language chunking FSV passed with source-of-truth evidence at `/tmp/contextgraph-ast-chunker-multilang-fsv/aggregate-evidence.json`. Compatibility caveat: the older `AstCodeChunker` API remains Rust-only and should converge to the new API or be deprecated. Remaining work: reformat-invariant AST-node-ID SHA audit and chunk-level TCT localization. See `../implementation-plan.md` and `../../15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`.
 
 > **Level 2 (functional spec).** Defines WHAT the chunker must do. The companion
 > Level 3 technical spec (`docs/ruvectorfindings/specs/technical/TECH-AST-CHUNKING.md`)
@@ -19,7 +19,7 @@
 
 <metadata>
   <title>Multi-Language AST-Perfect Atomic Chunker</title>
-  <status>partial</status>
+  <status>operational_compatibility_caveat</status>
   <owner>cc-reality (outer-loop optimizer); ME-JEPA Phase 1, build-plan item 6</owner>
   <created_date>2026-05-09</created_date>
   <last_updated>2026-05-10</last_updated>
@@ -36,12 +36,15 @@
     <source type="design">docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md (21-embedder routing)</source>
     <source type="design">docs/ruvectorfindings/13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md (per-chunk-type constellations)</source>
     <source type="constitution">docs/ruvectorfindings/specs/constitution.md (anti-pattern: no raw-text chunking; failure_taxonomy: MEJEPA_CHUNKER_*)</source>
-    <source type="implementation_reference">crates/context-graph-core/src/memory/ast_chunker.rs (Rust chunker, 1216 LOC, the shipped baseline)</source>
+    <source type="implementation_reference">crates/context-graph-core/src/memory/ast/mod.rs (11-language operational chunker, FSV-backed)</source>
+    <source type="implementation_reference">crates/context-graph-core/src/memory/ast_chunker.rs (legacy Rust-only compatibility chunker)</source>
     <source type="implementation_reference">crates/context-graph-cli/src/commands/dynamicjepa.rs (existing 11-language node-classification at line ~6400)</source>
   </source_documents>
 </metadata>
 
 <overview>
+**2026-05-10 implementation note:** this spec's requested uniform 11-language chunker now exists as `context_graph_core::memory::ast`; older paragraphs that say the chunker "must be extended from 1 language to 11" are historical for the legacy `AstCodeChunker` path.
+
 The ME-JEPA-Code reality compiler must convert source code into atomic semantic units
 before any code-domain instrument (E_AST, E_CFG, E_DataFlow, E_TypeGraph, E_Diff,
 E_Test) or code-routed content embedder (E1, E5, E7, E8, E10, E11, E13, E14) consumes

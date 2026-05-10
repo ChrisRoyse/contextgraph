@@ -12,16 +12,11 @@ use crate::error::MejepaInferError;
 use crate::ood;
 use crate::types::EmbedderId;
 
-pub const CF_MEJEPA_CALIBRATION_HISTORY: &str = "CF_MEJEPA_CALIBRATION_HISTORY";
-pub const CF_MEJEPA_LIVE_PREDICTIONS: &str = "CF_MEJEPA_LIVE_PREDICTIONS";
-pub const CF_MEJEPA_ORACLE_VERDICTS: &str = "CF_MEJEPA_ORACLE_VERDICTS";
-pub const CF_MEJEPA_TRAIN_CERTS: &str = "CF_MEJEPA_TRAIN_CERTS";
-pub const MEJEPA_INFER_CFS: &[&str] = &[
-    CF_MEJEPA_CALIBRATION_HISTORY,
-    CF_MEJEPA_LIVE_PREDICTIONS,
-    CF_MEJEPA_ORACLE_VERDICTS,
+pub use context_graph_mejepa_cf::{
+    CF_MEJEPA_CALIBRATION_HISTORY, CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_ORACLE_VERDICTS,
     CF_MEJEPA_TRAIN_CERTS,
-];
+};
+pub const MEJEPA_INFER_CFS: &[&str] = context_graph_mejepa_cf::INFER_CFS;
 
 #[derive(Clone)]
 pub struct CalibrationStore {

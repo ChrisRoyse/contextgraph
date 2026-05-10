@@ -1,6 +1,6 @@
 # Phase 4b — TCT-CONSTELLATION Task Index
 
-> **📊 2026-05-10 STATUS — SHIPPED.** Full `TctConstellation` + builder + `Gτ` guard + `Verdict::GuardRejected` + Bayesian shrinkage + freshness check + per-embedder threshold calibrator in `crates/context-graph-mejepa-tct/`. MCP tool `mcp__cgreality__mejepa_constellation_inspect` live. `tct_fsv` example. Per-chunk-type centroids and chunk-level Gτ pending Phase 1a multi-language chunker. Authoritative status: ../../implementation-plan.md Phase 4b.
+> **📊 2026-05-10 STATUS — SHIPPED AT PANEL LEVEL.** Full `TctConstellation` + builder + `Gτ` guard + `Verdict::GuardRejected` + Bayesian shrinkage + freshness check + per-embedder threshold calibrator in `crates/context-graph-mejepa-tct/`. MCP tool `mcp__cgreality__mejepa_constellation_inspect` live. `tct_fsv` example passed with RocksDB readback. Per-chunk-type centroids and chunk-level Gτ are pending integration with the now-shipped `context_graph_core::memory::ast` chunk IDs. Authoritative status: ../../implementation-plan.md Phase 4b.
 
 > **Level 4.** Atomic task specifications for the **TCT-CONSTELLATION domain** (Phase 4b cross-cutting: frozen multi-modal centroid set CP, Bayesian shrinkage, threshold calibration, deterministic Gτ guard, L_constellation_centroid hinge primitive, MCP inspector). Authority order: `../../constitution.md` (Level 1) > `../../functional/SPEC-TCT.md` (Level 2) > `../../technical/TECH-TCT.md` (Level 3) > this file (Level 4). Each task is one conceptual change shippable end-to-end with FSV evidence per `docs2/prdtospec.md` §4.
 

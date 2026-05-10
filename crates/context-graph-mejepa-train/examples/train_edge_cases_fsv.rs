@@ -46,10 +46,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let before_leak = count_cf(&db, CF_MEJEPA_TRAIN_CERTS)?;
-    let mut leak_cert = cert(0, 0.5)?;
-    let leak_err = writer
-        .emit(&mut leak_cert)
-        .expect_err("target collapse must fail");
+    let leak_err = compute_l_step(
+        DeltaPComponents {
+            oracle_disagreement: 0.1,
+            prediction_residual: 0.1,
+            uncertainty: 0.1,
+        },
+        DeltaKComponents::default(),
+        DeltaOmegaComponents::default(),
+        DeltaXiComponents {
+            target_collapse: 0.5,
+            predictor_collapse: 0.0,
+            redundancy_mi: 0.0,
+        },
+    )
+    .expect_err("target collapse must fail before cert construction");
     let after_leak = count_cf(&db, CF_MEJEPA_TRAIN_CERTS)?;
 
     let before_chain_count = after_leak;
@@ -86,7 +97,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             {
                 "name": "target_collapse_rejected_before_write",
                 "before": {"train_cert_count": before_leak},
-                "action": "emit cert with target_collapse=0.5",
+                "action": "compute_l_step with target_collapse=0.5",
                 "error_code": leak_err.code(),
                 "after": {"train_cert_count": after_leak}
             },

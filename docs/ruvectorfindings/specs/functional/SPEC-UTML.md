@@ -1,6 +1,6 @@
 # Functional Specification — UTML v1.0 Four-Factor Learning Formula
 
-> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 3 status.
+> **📊 2026-05-10 HARDENING STATUS:** PARTIAL / SAFETY-HARDENED. `compute_delta_p/k/omega/xi`, `compute_l_step`, sampling reweighting, training certs, and edge-case FSV are shipped. `compute_delta_xi` now enforces `target_collapse == 0.0` exactly and returns `MEJEPA_INSTRUMENT_GRADIENT_LEAK` on non-zero/non-finite target collapse before cert write. The remaining formula blindspot is ΔP/ΔK/ΔΩ semantic reconciliation: the shipped carriers are simplified operational signals, while this spec still describes richer weighted/cosine/Fisher/ECE/plasticity forms. Pairwise MI audit, continual-backprop dormant-unit intervention, and state-transfer `T` remain pending. See `../implementation-plan.md` and `../../15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`.
 
 > **Level 2 (functional, *what* to build).** Subordinate to `specs/constitution.md` and the `<utml_v1_invariants>` block therein. When this functional spec conflicts with the constitution, the constitution wins. Implementation details (exact Rust signatures, file layout, persistence schema) live in `specs/technical/TECH-UTML.md`.
 

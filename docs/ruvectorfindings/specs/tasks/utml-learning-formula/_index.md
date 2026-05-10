@@ -1,6 +1,6 @@
 # utml-learning-formula — UTML v1.0 Task Index
 
-> **📊 2026-05-10 STATUS — partial.** `compute_delta_p`, `compute_delta_k`, `compute_delta_omega`, `compute_delta_xi`, `compute_l_step` shipped in `crates/context-graph-mejepa-train/src/learning_signal.rs`. `BatchSampler` with `sampling_weight` reweighting + EMA running gradient mean shipped. Per-step training certificate with all 4 UTML factors shipped. Pairwise MI audit (REQ-UTML-06), continual-backprop dormant-unit re-init (REQ-UTML-07), and state-transfer T detector (REQ-UTML-08) pending. Authoritative status: ../../implementation-plan.md Phase 3+.
+> **📊 2026-05-10 HARDENING STATUS — partial / safety-hardened.** `compute_delta_p`, `compute_delta_k`, `compute_delta_omega`, `compute_delta_xi`, `compute_l_step` shipped in `crates/context-graph-mejepa-train/src/learning_signal.rs`. `compute_delta_xi` now enforces `target_collapse == 0.0` and fails closed with `MEJEPA_INSTRUMENT_GRADIENT_LEAK`; TASK-UTML-006 is complete. `BatchSampler` with `sampling_weight` reweighting + EMA running gradient mean shipped. Per-step training certificate with all 4 UTML factors shipped. Remaining work: reconcile simplified ΔP/ΔK/ΔΩ carriers with the full formulas, pairwise MI audit (REQ-UTML-06), continual-backprop dormant-unit re-init (REQ-UTML-07), and state-transfer T detector (REQ-UTML-08). Authoritative status: ../../implementation-plan.md Phase 3+.
 
 > **Level 4.** Atomic task specifications for the **UTML domain** (cross-cutting Phase 3 sub-track: four-factor learning signal `L_step = ΔP × ΔK × ΔΩ × ΔΞ`, sampling weight, training certificate, cycle classifier, consolidation integral M(t), state-transfer T). Authority order: `../../constitution.md` (Level 1) > `../../functional/SPEC-UTML.md` (Level 2) > `../../technical/TECH-UTML.md` (Level 3) > this file (Level 4). Each task is one conceptual change shippable end-to-end with FSV evidence per `docs2/prdtospec.md` §4.
 
@@ -83,7 +83,7 @@ graph TD
 | 3 | TASK-UTML-003 | `compute_delta_p` + per-chunk aggregation | logic | TASK-UTML-001 | blocked |
 | 4 | TASK-UTML-004 | `compute_delta_k` + `update_grad_ema` | logic | TASK-UTML-001 | blocked |
 | 5 | TASK-UTML-005 | `compute_delta_omega` + sub-functions (plasticity / landscape / stability / agent_state) | logic | TASK-UTML-001 | blocked |
-| 6 | TASK-UTML-006 | `compute_delta_xi` (CRITICAL `target_collapse == 0.0` assert) | logic | TASK-UTML-001 | blocked |
+| 6 | TASK-UTML-006 | `compute_delta_xi` (CRITICAL `target_collapse == 0.0` assert) | logic | TASK-UTML-001 | complete |
 | 7 | TASK-UTML-007 | `compute_l_step` + `sampling_weight` + drop/force gates | logic | TASK-UTML-003..006 | blocked |
 | 8 | TASK-UTML-008 | EmbedderCoherence + pairwise-MI audit job | logic | TASK-UTML-007 | blocked |
 | 9 | TASK-UTML-009 | UtmlClassifier (7 states) + prune_decision + Consolidation M(t) + StateTransfer T + continual-backprop dormant-unit re-init | logic | TASK-UTML-007, TASK-UTML-008, TASK-UTML-002 | blocked |
