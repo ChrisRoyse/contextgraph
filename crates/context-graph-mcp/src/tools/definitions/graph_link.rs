@@ -40,7 +40,7 @@ fn get_memory_neighbors_definition() -> ToolDefinition {
                     "minimum": 0,
                     "maximum": 12,
                     "default": 0,
-                    "description": "Embedder space to search (0=E1 semantic, 4=E5 causal, 6=E7 code, 7=E8 graph, 9=E10 paraphrase, 10=E11 entity)"
+                    "description": "Embedder space to search (0=E1 semantic, 6=E7 code, 7=E8 graph, 9=E10 paraphrase, 10=E11 entity). E5 causal is retired and disabled."
                 },
                 "top_k": {
                     "type": "integer",
@@ -184,11 +184,11 @@ fn traverse_graph_definition() -> ToolDefinition {
 fn get_unified_neighbors_definition() -> ToolDefinition {
     ToolDefinition::new(
         "get_unified_neighbors",
-        "Find neighbors using Weighted RRF fusion across all 14 embedders, providing a unified \
+        "Find neighbors using Weighted RRF fusion across active embedders, providing a unified \
          view where neighbors are ranked by how consistently multiple embedders agree they are \
-         related. Unlike get_memory_neighbors (single embedder), this shows what ALL embedders \
+         related. Unlike get_memory_neighbors (single embedder), this shows what active embedders \
          agree on. Per ARCH-21: Uses Weighted RRF, not weighted sum. Per AP-60: Temporal \
-         embedders (E2-E4) are excluded from semantic fusion.",
+         embedders (E2-E4) are excluded from semantic fusion. E5 causal is retired and fixed at zero weight.",
         json!({
             "type": "object",
             "required": ["memory_id"],
@@ -244,7 +244,7 @@ fn get_unified_neighbors_definition() -> ToolDefinition {
                         "E2":  { "type": "number", "minimum": 0, "maximum": 1 },
                         "E3":  { "type": "number", "minimum": 0, "maximum": 1 },
                         "E4":  { "type": "number", "minimum": 0, "maximum": 1 },
-                        "E5":  { "type": "number", "minimum": 0, "maximum": 1 },
+                        "E5":  { "type": "number", "minimum": 0, "maximum": 0, "description": "Retired and disabled; must be 0" },
                         "E6":  { "type": "number", "minimum": 0, "maximum": 1 },
                         "E7":  { "type": "number", "minimum": 0, "maximum": 1 },
                         "E8":  { "type": "number", "minimum": 0, "maximum": 1 },
@@ -262,7 +262,7 @@ fn get_unified_neighbors_definition() -> ToolDefinition {
                     "description": "Embedders to exclude from fusion (their weight becomes 0, remaining renormalized).",
                     "items": {
                         "type": "string",
-                        "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14"]
+                        "enum": ["E1", "E2", "E3", "E4", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14"]
                     }
                 },
                 "learning_policy": {

@@ -1,10 +1,11 @@
-//! Causal tool definitions (search_causes, get_causal_chain).
+//! Retired causal tool definitions (search_causes, get_causal_chain).
 //!
-//! E5 Priority 1 Enhancement: Leverage asymmetric E5 embeddings for causal reasoning.
+//! E5 causal was an unfinished experimental embedder and is retired. These tools
+//! remain listed only to return explicit fail-closed errors for legacy callers.
 //!
 //! Constitution Compliance:
-//! - ARCH-15: Uses asymmetric E5 with separate cause/effect encodings
-//! - AP-77: Direction modifiers: cause→effect=1.2, effect→cause=0.8
+//! - No active MCP tool may route ME-JEPA/search through E5.
+//! - Legacy callers receive a direct retired-E5 error instead of fallback behavior.
 
 use crate::tools::types::ToolDefinition;
 use serde_json::json;
@@ -15,10 +16,9 @@ pub fn definitions() -> Vec<ToolDefinition> {
         // search_causal_relationships - Search LLM-generated causal descriptions with provenance
         ToolDefinition::new(
             "search_causal_relationships",
-            "Search for causal relationships using E5 asymmetric similarity. \
-             Returns LLM-generated 1-3 paragraph descriptions explaining causal mechanisms, \
-             with full provenance linking to source memories. Use for understanding causal \
-             relationships with rich explanations and evidence.",
+            "Retired. The E5 causal relationship search backend is disabled and this tool \
+             fails closed with an explicit retired-E5 error. Use active ME-JEPA/retrieval \
+             evidence paths instead.",
             json!({
                 "type": "object",
                 "required": ["query"],
@@ -66,7 +66,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "multiEmbedder": {
                         "type": "boolean",
-                        "description": "Enable multi-embedder search for maximum accuracy (default: false). Uses E1+E5+E8+E11 with consensus scoring. Requires direction to be 'cause' or 'effect'.",
+                        "description": "Retired with the E5 causal backend. Passing this cannot enable E5.",
                         "default": false
                     },
                     "minConsensus": {
@@ -85,10 +85,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "e5Weight": {
                         "type": "number",
-                        "description": "E5 causal weight in multi-embedder mode (0-1, default: 0.35).",
-                        "default": 0.35,
+                        "description": "Retired and disabled; must be 0.",
+                        "default": 0,
                         "minimum": 0,
-                        "maximum": 1
+                        "maximum": 0
                     },
                     "e8Weight": {
                         "type": "number",
@@ -111,9 +111,9 @@ pub fn definitions() -> Vec<ToolDefinition> {
         // search_causes - Abductive reasoning to find likely causes
         ToolDefinition::new(
             "search_causes",
-            "Abductive reasoning to find likely causes of observed effects. \
-             Uses asymmetric E5 similarity with 0.8x effect→cause dampening (per AP-77). \
-             Returns ranked causes with abductive scores. Use for \"why did X happen?\" queries.",
+            "Retired. The E5 abductive causal search backend is disabled and this tool \
+             fails closed with an explicit retired-E5 error. Use active ME-JEPA/retrieval \
+             evidence paths instead.",
             json!({
                 "type": "object",
                 "required": ["query"],
@@ -149,7 +149,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "searchScope": {
                         "type": "string",
                         "enum": ["memories", "relationships", "all"],
-                        "description": "Search scope: 'memories' (fingerprint HNSW, default), 'relationships' (CF_CAUSAL_RELATIONSHIPS E5 brute-force), or 'all' (both merged by score).",
+                        "description": "Retired with the E5 backend. Kept only for legacy schema compatibility.",
                         "default": "memories"
                     },
                     "strategy": {
@@ -171,9 +171,9 @@ pub fn definitions() -> Vec<ToolDefinition> {
         // search_effects - Find effects/consequences of a cause
         ToolDefinition::new(
             "search_effects",
-            "Find effects/consequences of a given cause using E5 asymmetric embeddings. \
-             Uses 1.2x cause→effect boost (per AP-77) for forward causal reasoning. \
-             Returns ranked effects with predictive scores. Use for \"what will X cause?\" queries.",
+            "Retired. The E5 predictive causal search backend is disabled and this tool \
+             fails closed with an explicit retired-E5 error. Use active ME-JEPA/retrieval \
+             evidence paths instead.",
             json!({
                 "type": "object",
                 "required": ["query"],
@@ -209,7 +209,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "searchScope": {
                         "type": "string",
                         "enum": ["memories", "relationships", "all"],
-                        "description": "Search scope: 'memories' (fingerprint HNSW, default), 'relationships' (CF_CAUSAL_RELATIONSHIPS E5 brute-force), or 'all' (both merged by score).",
+                        "description": "Retired with the E5 backend. Kept only for legacy schema compatibility.",
                         "default": "memories"
                     },
                     "strategy": {
@@ -231,9 +231,9 @@ pub fn definitions() -> Vec<ToolDefinition> {
         // get_causal_chain - Build transitive causal chains
         ToolDefinition::new(
             "get_causal_chain",
-            "Build and visualize transitive causal chains from an anchor point. \
-             Iteratively searches for causally-related memories using asymmetric E5 similarity. \
-             Applies hop attenuation (0.9^hop) for chain scoring. Use for causal path visualization.",
+            "Retired. The E5 causal-chain traversal backend is disabled and this tool \
+             fails closed with an explicit retired-E5 error. Use active ME-JEPA/retrieval \
+             evidence paths instead.",
             json!({
                 "type": "object",
                 "required": ["anchorId"],
@@ -283,14 +283,14 @@ mod tests {
     fn test_definitions_exist_with_required_fields() {
         let tools = definitions();
         assert_eq!(tools.len(), 4);
-        // All mention E5 or asymmetric
+        // All legacy causal tools must identify the retired backend.
         for tool in &tools {
-            assert!(tool.description.contains("asymmetric") || tool.description.contains("E5"));
+            assert!(tool.description.contains("Retired") && tool.description.contains("E5"));
         }
         let causes = tools.iter().find(|t| t.name == "search_causes").unwrap();
-        assert!(causes.description.contains("AP-77") || causes.description.contains("0.8"));
+        assert!(causes.description.contains("fails closed"));
         let chain = tools.iter().find(|t| t.name == "get_causal_chain").unwrap();
-        assert!(chain.description.contains("attenuation") || chain.description.contains("0.9"));
+        assert!(chain.description.contains("fails closed"));
     }
 
     #[test]

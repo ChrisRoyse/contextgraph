@@ -1,7 +1,7 @@
 //! Training data export tool definitions.
 //!
 //! Exposes `export_training_corpus`, which iterates stored memories, assembles
-//! a full `TrainingRecord` per memory (14 embeddings, 91 cross-correlations,
+//! a full `TrainingRecord` per memory (active embeddings, cross-correlations,
 //! 6D group alignments, edges, causal labels, etc.), and persists the result
 //! into `CF_TRAINING_RECORDS` in the existing RocksDB store.
 //!
@@ -17,11 +17,11 @@ pub fn definitions() -> Vec<ToolDefinition> {
             "export_training_corpus",
             "Export memories as fully-labeled training records persisted to the \
          CF_TRAINING_RECORDS column family. Each record bundles the memory's \
-         content, all 14 embedding vectors (dense + sparse + token-level), a \
-         14D topic profile, 91 synergy-weighted cross-correlations, 6D group \
+         content, active embedding vectors (dense + sparse + token-level; E5 retired), a \
+         14-slot topic profile with E5 zeroed, synergy-weighted cross-correlations, 6D group \
          alignments, outgoing typed edges, K-NN neighbors per embedder, and \
          LLM-discovered causal relationships. Optionally embeds a Tucker-1 \
-         decomposition of the 14x14x1024 interaction tensor when \
+         decomposition of the active interaction tensor when \
          includeTuckerCore=true (Phase 4, CPU). Records can be read back via \
          `list_training_record_ids` / `get_training_record` at the storage \
          layer. Output is binary (bincode + version byte); no external files.",
@@ -48,7 +48,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "includeEmbeddings": {
                         "type": "boolean",
                         "default": true,
-                        "description": "Include dense embedding vectors (E1/E2/E3/E4/E5/E7/E8/E9/E10/E11/E14) in each record. ~50KB/record when true."
+                        "description": "Include active dense embedding vectors (E1/E2/E3/E4/E7/E8/E9/E10/E11/E14) in each record. E5 is retired and omitted."
                     },
                     "includeSparseVectors": {
                         "type": "boolean",
@@ -83,7 +83,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "includeTuckerCore": {
                         "type": "boolean",
                         "default": false,
-                        "description": "Phase-4 Tucker-1 decomposition of the 14x14x1024 embedding interaction tensor at ranks (4, 4, 128). CPU-only streaming HOSVD; adds roughly 18KB per record and a few ms of compute. Off by default because of the cost."
+                        "description": "Phase-4 Tucker-1 decomposition of the active embedding interaction tensor at ranks (4, 4, 128). CPU-only streaming HOSVD; adds roughly 18KB per record and a few ms of compute. Off by default because of the cost."
                     },
                     "clearExisting": {
                         "type": "boolean",
@@ -144,7 +144,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "includeVectors": {
                         "type": "boolean",
                         "default": false,
-                        "description": "When true, include e1/e2/e3/e4/e5/e7/e8/e9/e10/e11 dense arrays and e6/e13 sparse arrays in response."
+                        "description": "When true, include active dense arrays (e1/e2/e3/e4/e7/e8/e9/e10/e11) and e6/e13 sparse arrays in response. E5 is retired and omitted."
                     },
                     "includeTokenEmbeddings": {
                         "type": "boolean",

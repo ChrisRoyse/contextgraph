@@ -61,7 +61,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Sequence tools (4) - E4 integration
     tools.extend(sequence::definitions());
 
-    // Causal tools (4) - E5 Priority 1 enhancement
+    // Causal tools (4) - retired E5 surface; handlers fail closed for legacy callers.
     tools.extend(causal::definitions());
 
     // Causal discovery tools (retired local model surface).
@@ -82,7 +82,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Entity tools (6) - E11 integration
     tools.extend(entity::definitions());
 
-    // Embedder-first search tools (7) - Constitution v6.3 + NAV-GAP tools
+    // Embedder-first search tools (7) - active embedder surfaces; E5 is retired.
     tools.extend(embedder::definitions());
 
     // E12/E13 standalone search tools (2)

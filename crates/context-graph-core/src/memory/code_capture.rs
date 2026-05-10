@@ -92,7 +92,7 @@ pub type CodeCaptureResult<T> = Result<T, CodeCaptureError>;
 /// - ARCH-01: "TeleologicalArray is atomic - all 13 embeddings or nothing"
 /// - ARCH-05: "All 13 embedders required - missing = fatal"
 /// - E7 (V_correctness) provides code-specific patterns
-/// - Other embedders (E1 semantic, E5 causal, etc.) provide context
+/// - Other active embedders (E1 semantic, E7 code, E14 multilingual, etc.) provide context
 #[async_trait]
 pub trait CodeEmbeddingProvider: Send + Sync {
     /// Embed code content into a full 13-embedding SemanticFingerprint.

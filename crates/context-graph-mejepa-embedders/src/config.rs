@@ -70,7 +70,7 @@ impl ModelsConfig {
                 return Err(EmbedError::invalid(
                     "ModelsConfig.embedders",
                     format!("duplicate registration for {}", reg.embedder),
-                    "register each E1-E21 slot exactly once",
+                    "register each active E1-E21 slot exactly once; E5 is retired",
                 ));
             }
         }
