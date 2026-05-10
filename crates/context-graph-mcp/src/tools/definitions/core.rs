@@ -54,7 +54,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             "store_memories",
-            "Store a validated batch of memory nodes through the same 14-content-embedder pipeline. The batch is all-or-error for fingerprint/content/source-metadata/embedding-version/audit readback: if any required write or verification fails, stored fingerprints are hard-deleted and the tool returns an error.",
+            "Store a validated batch of memory nodes through the active embedder pipeline while preserving the 14-slot fingerprint storage contract. The batch is all-or-error for fingerprint/content/source-metadata/embedding-version/audit readback: if any required write or verification fails, stored fingerprints are hard-deleted and the tool returns an error.",
             json!({
                 "type": "object",
                 "properties": {
@@ -121,14 +121,18 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "requestedCount": {"type": "integer"},
                 "storedCount": {"type": "integer"},
                 "embedderCount": {"type": "integer"},
+                "activeEmbedderCount": {"type": "integer"},
+                "storageSlotCount": {"type": "integer"},
+                "disabledEmbedders": {"type": "array", "items": {"type": "string"}},
                 "items": {"type": "array"}
             }
         })),
         // get_memetic_status - get system state and metrics
         ToolDefinition::new(
             "get_memetic_status",
-            "Get current system status including fingerprint count, number of embedders (14), \
-             storage backend and size, and layer status from LayerStatusProvider.",
+            "Get current system status including fingerprint count, active embedder count, \
+             14-slot storage count, disabled embedder slots, storage backend and size, and \
+             layer status from LayerStatusProvider.",
             json!({
                 "type": "object",
                 "properties": {},

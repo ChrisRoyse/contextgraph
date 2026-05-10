@@ -131,9 +131,9 @@ impl McpServer {
     ///
     /// TASK-S001: Creates TeleologicalMemoryStore and MultiArrayEmbeddingProvider.
     /// TASK-S004: Uses REAL implementations - RocksDbTeleologicalStore.
-    /// TASK-EMB-WARMUP: When `warm_first` is true, blocks until all 14 embedding models
-    /// are loaded into VRAM before returning. This ensures embedding operations are
-    /// available immediately when the server starts accepting requests.
+    /// TASK-EMB-WARMUP: When `warm_first` is true, blocks until all active embedding
+    /// models are loaded into VRAM before returning. This ensures embedding operations
+    /// are available immediately when the server starts accepting requests.
     ///
     /// # Arguments
     ///
@@ -291,13 +291,13 @@ impl McpServer {
         let edge_repository_for_builder = edge_repository.clone();
 
         // ==========================================================================
-        // 2. REAL MultiArrayEmbeddingProvider - 13 GPU-accelerated embedders
+        // 2. REAL MultiArrayEmbeddingProvider - active GPU-accelerated embedders
         // ==========================================================================
         // TASK-EMB-016: Use global warm provider singleton
         // TASK-EMB-WARMUP: Support blocking and background warmup modes
         //
         // The global warm provider ensures:
-        // - All 13 models are loaded ONCE at startup into VRAM
+        // - Active models are loaded ONCE at startup into VRAM
         // - Tests and production code use the SAME warm models
         // - No cold loading overhead in tests or runtime
         //
@@ -332,7 +332,12 @@ impl McpServer {
                     let mut slot = multi_array_provider.write().await;
                     *slot = Some(provider);
                     models_loading.store(false, Ordering::SeqCst);
-                    info!("Using global warm provider - all 14 models ready (no loading delay)");
+                    info!(
+                        active_embedder_count = context_graph_core::weights::active_embedder_count(),
+                        storage_slot_count = context_graph_core::types::fingerprint::NUM_EMBEDDERS,
+                        disabled_embedders = ?context_graph_core::weights::disabled_embedder_names(),
+                        "Using global warm provider - active embedding models ready (no loading delay)"
+                    );
                 }
                 Err(e) => {
                     error!(
@@ -356,7 +361,7 @@ impl McpServer {
             None
         } else if warm_first {
             // TASK-EMB-WARMUP: BLOCKING warmup mode
-            // Block startup until all 14 models are loaded into VRAM
+            // Block startup until all active models are loaded into VRAM.
             info!(
                 "warm_first=true: Blocking startup until embedding models are loaded into VRAM..."
             );
@@ -374,7 +379,12 @@ impl McpServer {
                             let mut slot = multi_array_provider.write().await;
                             *slot = Some(provider);
                             models_loading.store(false, Ordering::SeqCst);
-                            info!("SUCCESS: All 14 embedding models loaded into VRAM and ready");
+                            info!(
+                                active_embedder_count = context_graph_core::weights::active_embedder_count(),
+                                storage_slot_count = context_graph_core::types::fingerprint::NUM_EMBEDDERS,
+                                disabled_embedders = ?context_graph_core::weights::disabled_embedder_names(),
+                                "SUCCESS: Active embedding models loaded into VRAM and ready"
+                            );
                         }
                         Err(e) => {
                             error!(
@@ -550,7 +560,10 @@ impl McpServer {
         };
 
         info!(
-            "MCP Server initialization complete - TeleologicalFingerprint mode with 14 embeddings"
+            active_embedder_count = context_graph_core::weights::active_embedder_count(),
+            storage_slot_count = context_graph_core::types::fingerprint::NUM_EMBEDDERS,
+            disabled_embedders = ?context_graph_core::weights::disabled_embedder_names(),
+            "MCP Server initialization complete - TeleologicalFingerprint 14-slot storage with active embedder routing"
         );
 
         // TASK-INTEG-018: Create connection semaphore from config

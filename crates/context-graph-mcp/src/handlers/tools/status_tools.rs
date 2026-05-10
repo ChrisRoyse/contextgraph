@@ -4,6 +4,9 @@ use serde_json::json;
 use tracing::error;
 
 use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
+use context_graph_core::weights::{
+    active_embedder_count, disabled_embedder_names, E11_ENTITY_ENABLED, E5_CAUSAL_ENABLED,
+};
 
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
@@ -15,7 +18,7 @@ impl Handlers {
     ///
     /// Returns system status including:
     /// - Fingerprint count from TeleologicalMemoryStore
-    /// - Number of embedders (14)
+    /// - Active embedder count and storage slot count
     /// - Storage backend and size
     /// - Layer status from LayerStatusProvider
     pub(crate) async fn call_get_memetic_status(&self, id: Option<JsonRpcId>) -> JsonRpcResponse {
@@ -83,7 +86,10 @@ impl Handlers {
             id,
             json!({
                 "fingerprintCount": fingerprint_count,
-                "embedderCount": NUM_EMBEDDERS,
+                "embedderCount": active_embedder_count(),
+                "activeEmbedderCount": active_embedder_count(),
+                "storageSlotCount": NUM_EMBEDDERS,
+                "disabledEmbedders": disabled_embedder_names(),
                 "storageBackend": self.teleological_store.backend_type().to_string(),
                 "storageSizeBytes": self.teleological_store.storage_size_bytes(),
                 "layers": {
@@ -94,7 +100,13 @@ impl Handlers {
                 },
                 "e5CausalModel": {
                     "loraLoaded": e5_lora_loaded,
-                    "causalGateFunctional": e5_lora_loaded
+                    "causalGateFunctional": e5_lora_loaded,
+                    "enabled": E5_CAUSAL_ENABLED,
+                    "status": "retired_disabled"
+                },
+                "e11EntityModel": {
+                    "enabled": E11_ENTITY_ENABLED,
+                    "status": "disabled_until_verified_code_symbol_entity_embedder"
                 }
             }),
         )

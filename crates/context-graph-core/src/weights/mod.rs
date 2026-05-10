@@ -60,6 +60,25 @@ pub const E11_ENTITY_ENABLED: bool = false;
 /// for old fingerprints, but do not load, score, or route new work through it.
 pub const E5_CAUSAL_ENABLED: bool = false;
 
+/// Number of embedding slots that actively participate in current scoring,
+/// clustering, and ME-JEPA routing.
+pub fn active_embedder_count() -> usize {
+    NUM_EMBEDDERS - disabled_embedder_names().len()
+}
+
+/// Storage slots that remain addressable for backwards-compatible persisted
+/// fingerprints but must not be loaded, scored, clustered, or routed.
+pub fn disabled_embedder_names() -> Vec<&'static str> {
+    let mut disabled = Vec::new();
+    if !E5_CAUSAL_ENABLED {
+        disabled.push("E5");
+    }
+    if !E11_ENTITY_ENABLED {
+        disabled.push("E11");
+    }
+    disabled
+}
+
 /// Weight profile error types.
 ///
 /// Provides detailed context for FAIL FAST error handling.

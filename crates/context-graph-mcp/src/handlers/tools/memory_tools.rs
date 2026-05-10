@@ -38,7 +38,9 @@ use context_graph_core::types::fingerprint::{
     SemanticFingerprint, TeleologicalFingerprint, NUM_EMBEDDERS,
 };
 use context_graph_core::types::{SourceMetadata, SourceType};
-use context_graph_core::weights::select_state_conditioned_weight_profile;
+use context_graph_core::weights::{
+    active_embedder_count, disabled_embedder_names, select_state_conditioned_weight_profile,
+};
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use uuid::Uuid;
 
@@ -572,6 +574,9 @@ impl Handlers {
                 let mut response = json!({
                     "fingerprintId": fingerprint_id.to_string(),
                     "embedderCount": NUM_EMBEDDERS,
+                    "activeEmbedderCount": active_embedder_count(),
+                    "storageSlotCount": NUM_EMBEDDERS,
+                    "disabledEmbedders": disabled_embedder_names(),
                     "embeddingLatencyMs": embedding_output.total_latency.as_millis()
                 });
 
@@ -800,6 +805,9 @@ impl Handlers {
                 "requestedCount": item_response.len(),
                 "storedCount": stored_ids.len(),
                 "embedderCount": NUM_EMBEDDERS,
+                "activeEmbedderCount": active_embedder_count(),
+                "storageSlotCount": NUM_EMBEDDERS,
+                "disabledEmbedders": disabled_embedder_names(),
                 "causalHintsRequested": causal_hints_enabled,
                 "causalRelationshipExtraction": "deferred_to_trigger_causal_discovery",
                 "embeddingLatencyMs": embedding_elapsed_ms,

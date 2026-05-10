@@ -48,6 +48,21 @@ async fn test_tools_call_get_memetic_status() {
         parsed_text.get("embedderCount").is_some(),
         "Response must contain embedderCount"
     );
+    assert_eq!(
+        parsed_text["embedderCount"],
+        json!(context_graph_core::weights::active_embedder_count()),
+        "embedderCount must report active embedders, not disabled storage slots"
+    );
+    assert_eq!(
+        parsed_text["storageSlotCount"],
+        json!(context_graph_core::types::fingerprint::NUM_EMBEDDERS),
+        "storageSlotCount must preserve the 14-slot fingerprint contract"
+    );
+    assert_eq!(
+        parsed_text["disabledEmbedders"],
+        json!(context_graph_core::weights::disabled_embedder_names()),
+        "status must expose retired/disabled slots"
+    );
     assert!(
         parsed_text.get("layers").is_some(),
         "Response must contain layers"
