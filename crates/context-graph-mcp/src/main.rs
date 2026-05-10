@@ -882,6 +882,57 @@ impl Drop for PidFileGuard {
     }
 }
 
+struct DaemonPidMarker {
+    path: PathBuf,
+    pid: u32,
+}
+
+impl DaemonPidMarker {
+    fn create() -> Result<Self> {
+        let path = context_graph_paths::mcp_daemon_pid_marker_path()
+            .map_err(|e| anyhow::anyhow!("Failed to resolve daemon PID marker path: {}", e))?;
+        let pid = std::process::id();
+        fs::write(&path, format!("{pid}\n")).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to write daemon PID marker {}: {}",
+                path.display(),
+                e
+            )
+        })?;
+        Ok(Self { path, pid })
+    }
+}
+
+impl Drop for DaemonPidMarker {
+    fn drop(&mut self) {
+        let expected = format!("{}\n", self.pid);
+        match fs::read_to_string(&self.path) {
+            Ok(current) if current == expected => {
+                if let Err(e) = fs::remove_file(&self.path) {
+                    warn!(
+                        error = %e,
+                        pid_path = %self.path.display(),
+                        "E_DAEMON_PID_MARKER_CLEANUP: Failed to remove daemon PID marker"
+                    );
+                }
+            }
+            Ok(_) => {
+                debug!(
+                    pid_path = %self.path.display(),
+                    "Daemon PID marker changed; not removing newer marker"
+                );
+            }
+            Err(e) => {
+                debug!(
+                    error = %e,
+                    pid_path = %self.path.display(),
+                    "Daemon PID marker already absent during cleanup"
+                );
+            }
+        }
+    }
+}
+
 /// Check if a healthy, responsive daemon is running on the specified port.
 ///
 /// Performs a full JSON-RPC round-trip (tools/list) to verify the daemon
@@ -2710,6 +2761,7 @@ async fn async_main() -> Result<()> {
         } else {
             None
         };
+        let _daemon_pid_marker = DaemonPidMarker::create()?;
 
         // Create server
         let server = server::McpServer::new(config, warm_first).await?;

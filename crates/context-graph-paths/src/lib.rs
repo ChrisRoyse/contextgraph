@@ -88,6 +88,10 @@ pub fn cgreality_singleton_lock_path() -> Result<PathBuf> {
     ensure_subdir("state/locks").map(|dir| dir.join("reality-loop-stdio.lock"))
 }
 
+pub fn mcp_daemon_pid_marker_path() -> Result<PathBuf> {
+    ensure_subdir("state/locks").map(|dir| dir.join("context-graph-daemon.pid"))
+}
+
 pub fn mejepa_corpus_repo_cache_dir() -> Result<PathBuf> {
     ensure_subdir("cache/mejepa-corpus/repos")
 }
