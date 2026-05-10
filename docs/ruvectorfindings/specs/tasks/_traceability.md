@@ -1,5 +1,7 @@
 # Traceability Matrix — Spec → Task Coverage
 
+> **📊 2026-05-10 STATUS.** Live REQ status by phase: ../implementation-plan.md "Per-phase deliverable table"; live spec status: ../functional/_index.md and ../technical/_index.md. This traceability matrix is design-locked (REQ-to-task mapping); status is tracked in the indexes.
+
 > **Most common failure: missing requirements.** This matrix proves every functional+technical spec item has a task. Empty "Task ID" column = INCOMPLETE task generation per `prdtospec.md` §4.4.
 
 **Authority:** `../constitution.md` overrides. Traceability is enforced as a Quality Gate (TASK_REVIEW per `prdtospec.md` §6.2) before task execution.

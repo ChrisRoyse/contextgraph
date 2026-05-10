@@ -1,5 +1,7 @@
 # TECH-EVALUATION — ME-JEPA-Code Phase 8 Evaluation, Ship Gate, Active Learning (Implementation)
 
+> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 8 status.
+
 > **Level 3 — Technical Specification.** Implements `SPEC-EVALUATION.md`. Defines HOW the evaluation domain (Phase 8) is built. Conflicts with constitution / functional spec resolve to those.
 
 ```xml
@@ -7,9 +9,9 @@
 
 <metadata>
   <title>ME-JEPA-Code Phase 8 Evaluation — Implementation</title>
-  <status>draft</status>
+  <status>partial</status>
   <owner>Phase 8 ME-JEPA implementation team</owner>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-EVALUATION</spec_ref>
     <spec_ref>SPEC-CORPUS</spec_ref>

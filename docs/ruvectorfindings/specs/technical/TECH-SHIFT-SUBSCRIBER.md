@@ -9,9 +9,9 @@
 
 <metadata>
   <title>ME-JEPA-Code Shift-Log Subscriber + Phase 7 MCP Tool Surface — Implementation</title>
-  <status>draft</status>
+  <status>partial</status>
   <owner>Phase 7 ME-JEPA implementation team</owner>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-SHIFT-SUBSCRIBER</spec_ref>
     <spec_ref>SPEC-INSTRUMENTS</spec_ref>
