@@ -1137,7 +1137,10 @@ impl McpServer {
             std::fs::create_dir_all(path)?;
         }
         if !path.is_dir() {
-            anyhow::bail!("storage path exists but is not a directory: {}", path.display());
+            anyhow::bail!(
+                "storage path exists but is not a directory: {}",
+                path.display()
+            );
         }
         Ok(())
     }

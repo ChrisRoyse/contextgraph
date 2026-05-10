@@ -55,6 +55,8 @@ pub enum MejepaCorpusError {
     Mutation(#[from] MutationError),
     #[error("{0}")]
     Oracle(#[from] OracleError),
+    #[error("{0}")]
+    Path(#[from] context_graph_paths::PathError),
     #[error("corpus I/O failed at {context}: {source}")]
     Io {
         context: String,
@@ -71,6 +73,7 @@ impl MejepaCorpusError {
         match self {
             Self::Mutation(err) => err.code(),
             Self::Oracle(err) => err.code(),
+            Self::Path(err) => err.code,
             Self::Io { .. } => "MEJEPA_CORPUS_IO",
             Self::UnsupportedLanguage(_) => "MEJEPA_CHUNKER_UNSUPPORTED_LANGUAGE",
             Self::Json { .. } => "MEJEPA_CORPUS_JSON",
@@ -163,7 +166,7 @@ pub fn generate_swe_bench_mutation_corpus_with_oracle<O: Oracle>(
         output_root: output_root.to_path_buf(),
         venv_python: default_venv_python(),
         repo_cache_dir: default_repo_cache_dir(),
-        source_work_root: PathBuf::from("/tmp/contextgraph-mejepa-corpus-source-work"),
+        source_work_root: context_graph_paths::mejepa_corpus_source_work_root()?,
         run_id_prefix: "mejepa-corpus-lib".to_string(),
         categories: if categories.is_empty() {
             MutationCategory::all().to_vec()
@@ -187,15 +190,34 @@ fn generate_with_config<O: Oracle>(
     oracle: &O,
 ) -> Result<CorpusReport, MejepaCorpusError> {
     validate_languages(&config.languages)?;
-    if !config.venv_python.is_file() {
+    let output_root =
+        context_graph_paths::require_under_data_root(&config.output_root, "generate.output_root")?;
+    let venv_python =
+        context_graph_paths::require_under_data_root(&config.venv_python, "generate.venv_python")?;
+    let repo_cache_dir = context_graph_paths::require_under_data_root(
+        &config.repo_cache_dir,
+        "generate.repo_cache_dir",
+    )?;
+    let source_work_root = context_graph_paths::require_under_data_root(
+        &config.source_work_root,
+        "generate.source_work_root",
+    )?;
+    if !venv_python.is_file() {
         return Err(io_error(
-            &config.venv_python,
+            &venv_python,
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "SWE-bench venv python missing",
             ),
         ));
     }
+    let config = GeneratorConfig {
+        output_root,
+        venv_python,
+        repo_cache_dir,
+        source_work_root,
+        ..config.clone()
+    };
     ensure_fresh_output(&config.output_root)?;
     fs::create_dir_all(&config.output_root)
         .map_err(|source| io_error(&config.output_root, source))?;
@@ -282,7 +304,7 @@ fn generate_with_config<O: Oracle>(
                 })?;
         for category in &config.categories {
             let result = generate_one_row(
-                config,
+                &config,
                 oracle,
                 manifest,
                 *category,
@@ -719,11 +741,14 @@ fn json_error(context: impl Into<String>) -> impl FnOnce(serde_json::Error) -> M
 }
 
 fn default_venv_python() -> PathBuf {
-    PathBuf::from("/home/cabdru/.cache/contextgraph-swebench/venv/bin/python")
+    context_graph_paths::ensure_subdir("cache/contextgraph-swebench")
+        .expect("ContextGraph D-backed SWE-bench cache root must be available")
+        .join("venv/bin/python")
 }
 
 fn default_repo_cache_dir() -> PathBuf {
-    PathBuf::from("/home/cabdru/.cache/contextgraph-mejepa-corpus/repos")
+    context_graph_paths::mejepa_corpus_repo_cache_dir()
+        .expect("ContextGraph D-backed ME-JEPA corpus repo cache must be available")
 }
 
 #[cfg(test)]

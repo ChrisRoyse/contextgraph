@@ -581,7 +581,9 @@ impl Handlers {
             );
         }
         if !context_graph_core::weights::E11_ENTITY_ENABLED
-            && embedder_ids.iter().any(|eid| matches!(eid, EmbedderId::E11))
+            && embedder_ids
+                .iter()
+                .any(|eid| matches!(eid, EmbedderId::E11))
         {
             error!(
                 embedders = ?request.embedders,

@@ -950,7 +950,11 @@ impl ProductionMultiArrayProvider {
         let e11_entity: Arc<dyn SingleEmbedder> = if E11_ENTITY_ENABLED {
             let e11_model = factory.create_model(ModelId::Kepler, &config)?;
             e11_model.load().await?;
-            Arc::new(DenseEmbedderAdapter::new(e11_model, ModelId::Kepler, E11_DIM))
+            Arc::new(DenseEmbedderAdapter::new(
+                e11_model,
+                ModelId::Kepler,
+                E11_DIM,
+            ))
         } else {
             Arc::new(DisabledDenseEmbedder::new(
                 E11_DISABLED_MODEL_ID,

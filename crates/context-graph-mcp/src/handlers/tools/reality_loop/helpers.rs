@@ -41,16 +41,17 @@ pub async fn read_active_runtime_root() -> Result<Option<PathBuf>> {
 }
 
 pub async fn read_active_target_instance() -> Result<Option<String>> {
-    let path = context_graph_paths::cgreality_cache_file("active_target_instance").map_err(|e| {
-        CCRealityError::new(
-            e.code,
-            e.message,
-            "active_target_instance.path",
-            e.remediation,
-            json!({"data_root_env": context_graph_paths::ENV_DATA_ROOT}),
-            None,
-        )
-    })?;
+    let path =
+        context_graph_paths::cgreality_cache_file("active_target_instance").map_err(|e| {
+            CCRealityError::new(
+                e.code,
+                e.message,
+                "active_target_instance.path",
+                e.remediation,
+                json!({"data_root_env": context_graph_paths::ENV_DATA_ROOT}),
+                None,
+            )
+        })?;
     if !path.is_file() {
         return Ok(None);
     }

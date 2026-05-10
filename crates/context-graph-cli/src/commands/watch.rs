@@ -101,12 +101,22 @@ pub async fn handle_watch(args: WatchArgs) -> i32 {
         }
     };
 
-    // Setup database path - use env var or default to ./contextgraph_data
+    // Setup database path under the D-backed durable data root.
     let db_path = args.db_path.clone().unwrap_or_else(|| {
         std::env::var("CONTEXT_GRAPH_DATA_DIR")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("./contextgraph_data"))
+            .unwrap_or_else(|_| {
+                context_graph_paths::durable_storage_path()
+                    .expect("ContextGraph D-backed storage root must be available")
+            })
     });
+    let db_path = match context_graph_paths::require_under_data_root(&db_path, "watch.db_path") {
+        Ok(path) => path,
+        Err(error) => {
+            error!(error = %error, "Invalid watch database path");
+            return 1;
+        }
+    };
 
     info!(db_path = ?db_path, "Using database path");
 

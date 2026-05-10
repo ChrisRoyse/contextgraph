@@ -20,11 +20,7 @@ pub struct PathError {
 }
 
 impl PathError {
-    fn new(
-        code: &'static str,
-        message: impl Into<String>,
-        remediation: &'static str,
-    ) -> Self {
+    fn new(code: &'static str, message: impl Into<String>, remediation: &'static str) -> Self {
         Self {
             code,
             message: message.into(),
@@ -187,7 +183,10 @@ fn validate_relative_path(path: &Path, label: &'static str) -> Result<()> {
     if path.as_os_str().is_empty() || path.is_absolute() {
         return Err(PathError::new(
             "CONTEXTGRAPH_RELATIVE_PATH_INVALID",
-            format!("{label} must be a non-empty relative path: {}", path.display()),
+            format!(
+                "{label} must be a non-empty relative path: {}",
+                path.display()
+            ),
             "use a relative path below the ContextGraph data root",
         ));
     }
@@ -230,7 +229,10 @@ fn make_absolute(path: &Path) -> Result<PathBuf> {
     env::current_dir().map(|cwd| cwd.join(path)).map_err(|err| {
         PathError::new(
             "CONTEXTGRAPH_CURRENT_DIR_UNREADABLE",
-            format!("failed to resolve current directory for {}: {err}", path.display()),
+            format!(
+                "failed to resolve current directory for {}: {err}",
+                path.display()
+            ),
             "run from a readable working directory or pass an absolute D-backed path",
         )
     })

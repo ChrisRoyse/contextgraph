@@ -78,10 +78,7 @@ struct GenerateArgs {
     max_tasks: Option<usize>,
     #[arg(long, default_value_t = 0)]
     skip_tasks: usize,
-    #[arg(
-        long,
-        default_value = "/mnt/d/contextgraph/cache/mejepa-corpus/repos"
-    )]
+    #[arg(long, default_value = "/mnt/d/contextgraph/cache/mejepa-corpus/repos")]
     repo_cache_dir: PathBuf,
     #[arg(
         long,
@@ -150,10 +147,7 @@ struct SmokeArgs {
     max_tasks: Option<usize>,
     #[arg(long, default_value_t = 0)]
     skip_tasks: usize,
-    #[arg(
-        long,
-        default_value = "/mnt/d/contextgraph/cache/mejepa-corpus/repos"
-    )]
+    #[arg(long, default_value = "/mnt/d/contextgraph/cache/mejepa-corpus/repos")]
     repo_cache_dir: PathBuf,
     #[arg(
         long,
@@ -1259,8 +1253,7 @@ fn smoke(mut args: SmokeArgs) -> CliResult<()> {
     args.output = require_durable_path(&args.output, "smoke.output")?;
     args.venv_python = require_durable_path(&args.venv_python, "smoke.venv_python")?;
     args.repo_cache_dir = require_durable_path(&args.repo_cache_dir, "smoke.repo_cache_dir")?;
-    args.source_work_root =
-        require_durable_path(&args.source_work_root, "smoke.source_work_root")?;
+    args.source_work_root = require_durable_path(&args.source_work_root, "smoke.source_work_root")?;
     validate_smoke_args(&args)?;
     let task_limit = args.max_tasks.or({
         if args.instance_ids.is_empty() {
@@ -1573,8 +1566,7 @@ fn validate_smoke_args(args: &SmokeArgs) -> CliResult<()> {
 }
 
 fn require_durable_path(path: &Path, field: &'static str) -> CliResult<PathBuf> {
-    context_graph_paths::require_under_data_root(path, field)
-        .map_err(|err| err.to_string().into())
+    context_graph_paths::require_under_data_root(path, field).map_err(|err| err.to_string().into())
 }
 
 fn validate_generate_args(args: &GenerateArgs) -> CliResult<()> {

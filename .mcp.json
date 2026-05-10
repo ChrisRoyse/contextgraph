@@ -10,7 +10,11 @@
       ],
       "env": {
         "CONTEXTGRAPH_ROOT": "/home/cabdru/contextgraph",
-        "CGREALITY_RUNTIME_ROOT_HINT": "/home/cabdru/.cache/cgreality/active_runtime_root",
+        "CONTEXTGRAPH_DATA_ROOT": "/mnt/d/contextgraph",
+        "CONTEXT_GRAPH_STORAGE_PATH": "/mnt/d/contextgraph/storage/contextgraph-rocksdb",
+        "CONTEXT_GRAPH_DB_PATH": "/mnt/d/contextgraph/storage/contextgraph-rocksdb",
+        "CGREALITY_CACHE_DIR": "/mnt/d/contextgraph/state/cgreality",
+        "CGREALITY_RUNTIME_ROOT_HINT": "/mnt/d/contextgraph/state/cgreality/active_runtime_root",
         "CGREALITY_GOVERNED_PATHS": "/home/cabdru/contextgraph/config/ccreality_governed_paths.json",
         "CGREALITY_RECOMMENDATION_SCHEMA": "/home/cabdru/contextgraph/config/ccreality_recommendation_schema.json",
         "RUST_LOG": "cgreality=info,context_graph_mcp=info"
