@@ -14,15 +14,15 @@
 //! - 9.0+ (Hopper): Thread block cluster features
 //! - 12.0 (RTX 5090): Full support with Blackwell optimizations
 //!
-//! # Graceful Degradation
+//! # Fail-Closed GPU Checks
 //!
-//! On unsupported GPUs, `is_enabled()` returns `false` and partition
-//! methods return `None`. This is NOT an error - the system works
-//! without partitioning, just without dedicated SM allocation.
+//! Unsupported GPUs, invalid configuration, or failed CUDA device-attribute
+//! queries return errors. Phase 1/Phase 1b must not silently continue with
+//! degraded GPU behavior.
 
 use crate::error::{CudaError, CudaResult};
 use crate::safe::device::GpuDevice;
-use tracing::{info, warn};
+use tracing::info;
 
 // ============================================================================
 // CONSTANTS (Constitution: 70% inference / 30% background)
@@ -131,24 +131,19 @@ impl GreenContextsConfig {
 /// Returns `true` if the device's compute capability meets the minimum
 /// requirement (default: 7.0 for Volta+).
 ///
-/// # Graceful Degradation
-///
-/// This function NEVER fails. On older GPUs, it simply returns `false`.
-/// This is intentional - Green Contexts are an optimization, not a requirement.
-///
 /// # Example
 ///
 /// ```ignore
 /// use context_graph_cuda::{GpuDevice, context::should_enable_green_contexts};
 ///
 /// let device = GpuDevice::new(0)?;
-/// if should_enable_green_contexts(&device) {
+/// if should_enable_green_contexts(&device)? {
 ///     println!("Green Contexts available!");
 /// } else {
 ///     println!("Running without GPU partitioning");
 /// }
 /// ```
-pub fn should_enable_green_contexts(device: &GpuDevice) -> bool {
+pub fn should_enable_green_contexts(device: &GpuDevice) -> CudaResult<bool> {
     should_enable_green_contexts_with_config(device, &GreenContextsConfig::default())
 }
 
@@ -159,29 +154,30 @@ pub fn should_enable_green_contexts(device: &GpuDevice) -> bool {
 pub fn should_enable_green_contexts_with_config(
     device: &GpuDevice,
     config: &GreenContextsConfig,
-) -> bool {
-    let (major, minor) = device.compute_capability();
+) -> CudaResult<bool> {
+    let (major, minor) = device.compute_capability()?;
     let (req_major, req_minor) = config.min_compute_capability;
+    let gpu_name = device.name()?;
 
     let supported = major > req_major || (major == req_major && minor >= req_minor);
 
     if supported {
         info!(
-            gpu_name = %device.name(),
+            gpu_name = %gpu_name,
             compute = format!("{}.{}", major, minor),
             required = format!("{}.{}", req_major, req_minor),
             "Green Contexts ENABLED: compute capability meets requirements"
         );
     } else {
         info!(
-            gpu_name = %device.name(),
+            gpu_name = %gpu_name,
             compute = format!("{}.{}", major, minor),
             required = format!("{}.{}", req_major, req_minor),
-            "Green Contexts NOT AVAILABLE: compute capability below requirements (graceful degradation active)"
+            "Green Contexts unavailable: compute capability below requirements"
         );
     }
 
-    supported
+    Ok(supported)
 }
 
 // ============================================================================
@@ -249,7 +245,7 @@ impl GreenContext {
 /// Green Contexts manager for GPU SM partitioning.
 ///
 /// Manages inference (70%) and background (30%) GPU partitions per constitution.
-/// Auto-detects GPU capability and gracefully degrades on unsupported hardware.
+/// Auto-detects GPU capability and fails closed on unsupported hardware.
 ///
 /// # Lifecycle
 ///
@@ -264,7 +260,7 @@ impl GreenContext {
 /// use context_graph_cuda::{GpuDevice, context::{GreenContexts, GreenContextsConfig}};
 ///
 /// let device = GpuDevice::new(0)?;
-/// let gc = GreenContexts::new(&device, GreenContextsConfig::default());
+/// let gc = GreenContexts::new(&device, GreenContextsConfig::default())?;
 ///
 /// if gc.is_enabled() {
 ///     if let Some(inference) = gc.inference_context() {
@@ -272,8 +268,6 @@ impl GreenContext {
 ///             inference.percentage() * 100.0,
 ///             inference.sm_count());
 ///     }
-/// } else {
-///     println!("Running without partitioning");
 /// }
 /// ```
 #[derive(Debug)]
@@ -298,7 +292,7 @@ impl GreenContexts {
     /// Create a new Green Contexts manager.
     ///
     /// Auto-detects GPU capability and creates partitions if supported.
-    /// On unsupported GPUs, returns a manager with `is_enabled() = false`.
+    /// Unsupported GPUs and invalid configuration fail closed.
     ///
     /// # Arguments
     ///
@@ -309,30 +303,30 @@ impl GreenContexts {
     ///
     /// ```ignore
     /// let device = GpuDevice::new(0)?;
-    /// let gc = GreenContexts::new(&device, GreenContextsConfig::default());
+    /// let gc = GreenContexts::new(&device, GreenContextsConfig::default())?;
     /// ```
-    pub fn new(device: &GpuDevice, config: GreenContextsConfig) -> Self {
+    pub fn new(device: &GpuDevice, config: GreenContextsConfig) -> CudaResult<Self> {
         // Validate config first
-        if let Err(e) = config.validate() {
-            warn!(error = %e, "Invalid GreenContextsConfig, disabling");
-            return Self::disabled(config);
-        }
+        config.validate()?;
 
         // Check capability
-        if !should_enable_green_contexts_with_config(device, &config) {
-            return Self::disabled(config);
+        if !should_enable_green_contexts_with_config(device, &config)? {
+            let (major, minor) = device.compute_capability()?;
+            return Err(CudaError::InvalidConfig(format!(
+                "Green Contexts require compute capability {}.{}, got {}.{}",
+                config.min_compute_capability.0, config.min_compute_capability.1, major, minor
+            )));
         }
 
-        // Get total SM count (estimated based on compute capability)
-        let total_sm_count = Self::estimate_sm_count(device);
+        // Query the real SM count from the CUDA driver. Hardcoded estimates hide
+        // driver/device mismatches and are not acceptable for Phase 1b preflight.
+        let total_sm_count = device.multiprocessor_count()?;
 
         if total_sm_count < MIN_SMS_FOR_PARTITIONING {
-            info!(
-                sm_count = total_sm_count,
-                min_required = MIN_SMS_FOR_PARTITIONING,
-                "Too few SMs for partitioning, disabling Green Contexts"
-            );
-            return Self::disabled(config);
+            return Err(CudaError::InvalidConfig(format!(
+                "Green Contexts require at least {} SMs, got {}",
+                MIN_SMS_FOR_PARTITIONING, total_sm_count
+            )));
         }
 
         // Calculate partition sizes
@@ -352,7 +346,7 @@ impl GreenContexts {
             "Green Contexts partitions created"
         );
 
-        Self {
+        Ok(Self {
             config,
             enabled: true,
             total_sm_count,
@@ -368,10 +362,11 @@ impl GreenContexts {
                 sm_count: background_sms,
                 active: true,
             }),
-        }
+        })
     }
 
     /// Create a disabled Green Contexts manager.
+    #[cfg(test)]
     fn disabled(config: GreenContextsConfig) -> Self {
         Self {
             config,
@@ -379,34 +374,6 @@ impl GreenContexts {
             total_sm_count: 0,
             inference: None,
             background: None,
-        }
-    }
-
-    /// Estimate SM count based on GPU compute capability.
-    ///
-    /// CUDA-L1: Uses a hardcoded lookup table mapping (major, minor) to SM counts.
-    /// This is a known limitation — only covers flagship SKUs. Non-flagship GPUs
-    /// (RTX 4070, 3060, etc.) fall through to the default of 0 SMs, which disables
-    /// Green Contexts. The proper fix is `cuDeviceGetAttribute(MULTIPROCESSOR_COUNT)`
-    /// but that requires a live CUDA context at initialization time.
-    fn estimate_sm_count(device: &GpuDevice) -> u32 {
-        let (major, minor) = device.compute_capability();
-        match (major, minor) {
-            // Blackwell (RTX 50 series)
-            (12, _) => 170, // RTX 5090: ~170 SMs (21,760 cores / 128)
-            // Ada Lovelace (RTX 40 series)
-            (8, 9) => 128, // RTX 4090: 128 SMs
-            (8, 6) => 84,  // RTX 4080: 76-84 SMs
-            // Hopper
-            (9, 0) => 132, // H100: 132 SMs
-            // Ampere
-            (8, 0) => 108, // A100: 108 SMs
-            // Turing
-            (7, 5) => 72, // RTX 2080 Ti: 68 SMs
-            // Volta
-            (7, 0) => 80, // V100: 80 SMs
-            // Fallback: conservative estimate
-            _ => 32,
         }
     }
 
@@ -634,10 +601,12 @@ mod tests {
     fn test_green_contexts_with_real_gpu() {
         let device = GpuDevice::new(0).expect("GPU required for this test");
         let config = GreenContextsConfig::default();
-        let gc = GreenContexts::new(&device, config);
+        let (major, _) = device
+            .compute_capability()
+            .expect("compute capability query failed");
 
-        let (major, _) = device.compute_capability();
         if major >= 7 {
+            let gc = GreenContexts::new(&device, config).expect("Green Contexts creation failed");
             // Should be enabled on Volta+ GPUs
             assert!(
                 gc.is_enabled(),
@@ -664,10 +633,10 @@ mod tests {
                 background.sm_count()
             );
         } else {
-            // Older GPU - should gracefully degrade
+            // Older GPU must fail closed.
             assert!(
-                !gc.is_enabled(),
-                "Green Contexts should be disabled on pre-Volta GPU"
+                GreenContexts::new(&device, config).is_err(),
+                "Green Contexts should fail closed on pre-Volta GPU"
             );
         }
     }
@@ -675,7 +644,9 @@ mod tests {
     #[test]
     fn test_green_contexts_rtx5090() {
         let device = GpuDevice::new(0).expect("GPU required");
-        let (major, minor) = device.compute_capability();
+        let (major, minor) = device
+            .compute_capability()
+            .expect("compute capability query failed");
 
         // Only run on RTX 5090
         if major != 12 || minor != 0 {
@@ -686,7 +657,8 @@ mod tests {
             return;
         }
 
-        let gc = GreenContexts::new(&device, GreenContextsConfig::default());
+        let gc = GreenContexts::new(&device, GreenContextsConfig::default())
+            .expect("Green Contexts creation failed");
 
         assert!(
             gc.is_enabled(),
@@ -720,19 +692,18 @@ mod tests {
     }
 
     #[test]
-    fn test_graceful_degradation() {
+    fn test_green_contexts_fail_closed() {
         let device = GpuDevice::new(0).expect("GPU required");
 
-        // Invalid config should result in disabled manager, not panic
+        // Impossible compute requirements should fail closed.
         let invalid_config = GreenContextsConfig {
             min_compute_capability: (99, 0), // No GPU has this
             inference_partition: 0.7,
             background_partition: 0.3,
         };
-        let gc = GreenContexts::new(&device, invalid_config);
         assert!(
-            !gc.is_enabled(),
-            "Should gracefully disable with impossible requirements"
+            GreenContexts::new(&device, invalid_config).is_err(),
+            "Should fail closed with impossible requirements"
         );
 
         // Very high partition sum should be caught by validation
@@ -741,10 +712,9 @@ mod tests {
             inference_partition: 0.8,
             background_partition: 0.5, // Sum = 1.3
         };
-        let gc = GreenContexts::new(&device, bad_config);
         assert!(
-            !gc.is_enabled(),
-            "Should disable with invalid partition sum"
+            GreenContexts::new(&device, bad_config).is_err(),
+            "Should fail closed with invalid partition sum"
         );
     }
 }

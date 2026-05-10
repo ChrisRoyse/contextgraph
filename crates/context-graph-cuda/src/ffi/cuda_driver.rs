@@ -69,6 +69,9 @@ pub const CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X: CUdevice_attribute = 2;
 /// Warp size in threads.
 pub const CU_DEVICE_ATTRIBUTE_WARP_SIZE: CUdevice_attribute = 10;
 
+/// Number of streaming multiprocessors on the device.
+pub const CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT: CUdevice_attribute = 16;
+
 // =============================================================================
 // FFI DECLARATIONS
 // =============================================================================

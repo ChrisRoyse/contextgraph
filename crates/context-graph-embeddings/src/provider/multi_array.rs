@@ -44,8 +44,6 @@
 //! assert!(output.is_within_latency_target()); // <30ms
 //! ```
 
-use std::fs::File;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -710,8 +708,7 @@ pub struct ProductionMultiArrayProvider {
     model_ids: [String; NUM_EMBEDDERS],
 }
 
-const E14_REQUIRED_FILES: [&str; 3] = ["config.json", "model.safetensors", "tokenizer.json"];
-const MAX_SAFETENSORS_HEADER_BYTES: u64 = 100 * 1024 * 1024;
+const E14_REQUIRED_FILES: [&str; 3] = ["config.json", "pytorch_model.bin", "tokenizer.json"];
 
 fn ensure_bge_m3_assets(models_dir: &Path) -> EmbeddingResult<PathBuf> {
     let bge_dir = models_dir.join(ModelId::BgeM3Dense.directory_name());
@@ -743,9 +740,6 @@ fn ensure_bge_m3_assets(models_dir: &Path) -> EmbeddingResult<PathBuf> {
                 failures.push(err);
             }
         }
-        if let Err(err) = validate_safetensors_header(&bge_dir.join("model.safetensors")) {
-            failures.push(err);
-        }
     }
 
     if failures.is_empty() {
@@ -776,66 +770,6 @@ fn validate_json_asset(path: &Path) -> Result<(), String> {
         .map_err(|err| format!("{} is not valid JSON: {err}", path.display()))?;
     if !value.is_object() {
         return Err(format!("{} JSON root is not an object", path.display()));
-    }
-    Ok(())
-}
-
-fn validate_safetensors_header(path: &Path) -> Result<(), String> {
-    let mut file = File::open(path).map_err(|err| {
-        format!(
-            "{} cannot be opened for SafeTensors validation: {err}",
-            path.display()
-        )
-    })?;
-    let mut header_len_bytes = [0u8; 8];
-    file.read_exact(&mut header_len_bytes).map_err(|err| {
-        format!(
-            "{} cannot read SafeTensors header length: {err}",
-            path.display()
-        )
-    })?;
-    let header_len = u64::from_le_bytes(header_len_bytes);
-    if header_len == 0 || header_len > MAX_SAFETENSORS_HEADER_BYTES {
-        return Err(format!(
-            "{} has invalid SafeTensors header length: {header_len}",
-            path.display()
-        ));
-    }
-    let metadata_len = file
-        .metadata()
-        .map_err(|err| format!("{} metadata unavailable: {err}", path.display()))?
-        .len();
-    if metadata_len < 8 + header_len {
-        return Err(format!(
-            "{} is truncated: file size {metadata_len} is smaller than 8-byte prefix plus {header_len}-byte SafeTensors header",
-            path.display()
-        ));
-    }
-
-    let mut header = vec![0u8; header_len as usize];
-    file.read_exact(&mut header)
-        .map_err(|err| format!("{} cannot read SafeTensors header: {err}", path.display()))?;
-    let value = serde_json::from_slice::<serde_json::Value>(&header).map_err(|err| {
-        format!(
-            "{} SafeTensors header is not valid JSON: {err}",
-            path.display()
-        )
-    })?;
-    let Some(object) = value.as_object() else {
-        return Err(format!(
-            "{} SafeTensors header root is not an object",
-            path.display()
-        ));
-    };
-    let tensor_count = object
-        .keys()
-        .filter(|key| key.as_str() != "__metadata__")
-        .count();
-    if tensor_count == 0 {
-        return Err(format!(
-            "{} SafeTensors header contains no tensor entries",
-            path.display()
-        ));
     }
     Ok(())
 }
@@ -2030,7 +1964,7 @@ mod tests {
         match err {
             EmbeddingError::ConfigError { message } => {
                 assert!(message.contains("E14_BGE_M3_DENSE_ASSET_INVALID"));
-                assert!(message.contains("model.safetensors"));
+                assert!(message.contains("pytorch_model.bin"));
                 assert!(message.contains("tokenizer.json"));
                 assert!(message.contains("config.json"));
             }
@@ -2049,7 +1983,11 @@ mod tests {
         )
         .unwrap();
         std::fs::write(bge_dir.join("tokenizer.json"), br#"{"version":"1.0"}"#).unwrap();
-        write_minimal_safetensors(&bge_dir.join("model.safetensors"));
+        std::fs::write(
+            bge_dir.join("pytorch_model.bin"),
+            b"real-bge-m3-weight-header",
+        )
+        .unwrap();
 
         let before: Vec<_> = E14_REQUIRED_FILES
             .iter()
@@ -2067,19 +2005,6 @@ mod tests {
         assert_eq!(result, bge_dir);
         assert!(after.iter().all(|(_, len)| *len > 0));
     }
-
-    fn write_minimal_safetensors(path: &std::path::Path) {
-        use std::io::Write;
-
-        let header = br#"{"weight":{"dtype":"F32","shape":[1],"data_offsets":[0,4]}}"#;
-        let mut file = std::fs::File::create(path).unwrap();
-        file.write_all(&(header.len() as u64).to_le_bytes())
-            .unwrap();
-        file.write_all(header).unwrap();
-        file.write_all(&0.0f32.to_le_bytes()).unwrap();
-        file.sync_all().unwrap();
-    }
-
     // =========================================================================
     // E4 INSTRUCTION FIX VERIFICATION TESTS
     // =========================================================================

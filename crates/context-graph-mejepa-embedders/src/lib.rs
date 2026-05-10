@@ -27,7 +27,10 @@ pub use digest::{
     digest_file_sha256, digest_manifest_for_embedder, verify_registration_digest, FileDigest,
 };
 pub use embedder_id::{EmbedderId, EmbedderKind};
-pub use ensemble::{Ensemble, EnsembleStatus, LoadedEmbedder};
+pub use ensemble::{
+    verify_all_registration_digests, verify_content_registrations, Ensemble, EnsembleStatus,
+    LoadedEmbedder,
+};
 pub use error::{EmbedError, EmbedResult};
 pub use routing::{route_for_entity_type, routing_coverage};
 pub use types::{

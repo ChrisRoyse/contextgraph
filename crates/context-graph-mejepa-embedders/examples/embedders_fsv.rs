@@ -1,7 +1,7 @@
 use context_graph_mejepa_embedders::{
     agent_state_score, digest_manifest_for_embedder, query_vram_budget, routing_coverage,
-    verify_registration_digest, EmbedError, EmbedderId, EmbedderKind, EmbedderRegistration,
-    Ensemble, ModelsConfig, VramBudget,
+    verify_all_registration_digests, verify_registration_digest, EmbedError, EmbedderId,
+    EmbedderKind, EmbedderRegistration, Ensemble, ModelsConfig, VramBudget,
 };
 use serde_json::{json, Value};
 use std::fs::{self, File};
@@ -56,10 +56,22 @@ fn main() -> FsvResult<()> {
         "config_exists": config_path.exists(),
     });
     let config_after = match ModelsConfig::load(&config_path) {
-        Ok(config) => json!({
-            "passes": true,
-            "registration_count": config.embedders.len(),
-        }),
+        Ok(config) => match verify_all_registration_digests(&config) {
+            Ok(loaded) => json!({
+                "passes": true,
+                "registration_count": config.embedders.len(),
+                "digest_verified_count": loaded.len(),
+                "learner_state_verified_count": EmbedderId::learner_state()
+                    .iter()
+                    .filter(|id| loaded.contains_key(id))
+                    .count(),
+            }),
+            Err(err) => json!({
+                "passes": false,
+                "registration_count": config.embedders.len(),
+                "error": err_json(&err),
+            }),
+        },
         Err(err) => json!({
             "passes": false,
             "error": err_json(&err),
@@ -92,7 +104,8 @@ fn main() -> FsvResult<()> {
             .all(|case| case["observed_expected_failure"] == Value::Bool(true)),
     )?;
 
-    let phase_ready = load_content_after["passes"] == Value::Bool(true);
+    let phase_ready = config_after["passes"] == Value::Bool(true)
+        && load_content_after["passes"] == Value::Bool(true);
     let evidence = json!({
         "source_of_truth": {
             "root": root.display().to_string(),
@@ -170,6 +183,7 @@ fn edge_digest_mismatch(root: &Path) -> FsvResult<Value> {
     let files = vec!["model.safetensors".to_string()];
     let (actual_manifest, file_digests) =
         digest_manifest_for_embedder(EmbedderId::E1, &edge_root, &files)?;
+    let configured_manifest_sha256 = "1".repeat(64);
     let reg = EmbedderRegistration {
         embedder: EmbedderId::E1,
         name: "semantic".into(),
@@ -178,7 +192,7 @@ fn edge_digest_mismatch(root: &Path) -> FsvResult<Value> {
         repo: Some("local/edge".into()),
         dimension: EmbedderId::E1.dimension(),
         weight_files: files,
-        manifest_sha256: "0".repeat(64),
+        manifest_sha256: configured_manifest_sha256.clone(),
     };
     let result = match verify_registration_digest(&reg) {
         Ok(_) => json!({"observed_expected_failure": false}),
@@ -187,7 +201,7 @@ fn edge_digest_mismatch(root: &Path) -> FsvResult<Value> {
                 "path": weight_path.display().to_string(),
                 "actual_manifest_sha256": actual_manifest,
                 "file_digests": file_digests,
-                "configured_manifest_sha256": "0".repeat(64),
+                "configured_manifest_sha256": configured_manifest_sha256,
             },
             "after_state": {"code": err.code(), "message": err.to_string()},
             "observed_expected_failure": err.code() == "MEJEPA_EMBED_DIGEST_MISMATCH",

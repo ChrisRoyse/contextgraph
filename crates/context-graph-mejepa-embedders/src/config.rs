@@ -2,7 +2,7 @@ use crate::embedder_id::{EmbedderId, EmbedderKind};
 use crate::error::{EmbedError, EmbedResult};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Component, Path};
 
 pub const MODELS_CONFIG_SCHEMA_VERSION: u16 = 1;
 
@@ -149,12 +149,37 @@ impl EmbedderRegistration {
                         "point to the real model directory on D:",
                     ));
                 }
+                if self
+                    .repo
+                    .as_deref()
+                    .is_none_or(|repo| repo.trim().is_empty())
+                {
+                    return Err(EmbedError::invalid(
+                        "EmbedderRegistration.repo",
+                        format!(
+                            "{} pretrained registration repo/source is empty",
+                            self.embedder
+                        ),
+                        "record the upstream model repository, DOI, or official source URL",
+                    ));
+                }
                 if self.weight_files.is_empty() {
                     return Err(EmbedError::invalid(
                         "EmbedderRegistration.weight_files",
                         format!("{} has no pinned weight files", self.embedder),
-                        "list every safetensors shard needed to load this embedder",
+                        "list every required model artifact needed to load this embedder",
                     ));
+                }
+                let mut seen_files = BTreeSet::new();
+                for file in &self.weight_files {
+                    validate_relative_weight_file(file)?;
+                    if !seen_files.insert(file) {
+                        return Err(EmbedError::invalid(
+                            "EmbedderRegistration.weight_files",
+                            format!("{} declares duplicate weight file {file}", self.embedder),
+                            "deduplicate the pinned artifact list before generating the manifest",
+                        ));
+                    }
                 }
                 validate_sha256(
                     "EmbedderRegistration.manifest_sha256",
@@ -171,11 +196,36 @@ fn validate_sha256(field: &'static str, value: &str) -> EmbedResult<()> {
         || !value
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        || value.bytes().all(|byte| byte == b'0')
     {
         return Err(EmbedError::invalid(
             field,
-            format!("expected 64 lowercase hex chars, got {value:?}"),
+            format!("expected non-zero 64 lowercase hex chars, got {value:?}"),
             "write a real lowercase SHA-256 digest",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_relative_weight_file(value: &str) -> EmbedResult<()> {
+    let path = Path::new(value);
+    if value.trim().is_empty() || path.is_absolute() {
+        return Err(EmbedError::invalid(
+            "EmbedderRegistration.weight_files",
+            format!("weight file path must be non-empty and relative, got {value:?}"),
+            "store artifact paths relative to the model directory",
+        ));
+    }
+    if path.components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
+        return Err(EmbedError::invalid(
+            "EmbedderRegistration.weight_files",
+            format!("weight file path may not escape the model directory: {value:?}"),
+            "remove parent-directory or absolute path components from the artifact pin",
         ));
     }
     Ok(())
@@ -216,10 +266,10 @@ mod tests {
     }
 
     #[test]
-    fn repository_example_config_matches_schema() {
+    fn repository_example_config_is_template_only() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../config/models_config.toml.example");
-        let config = ModelsConfig::load(path).unwrap();
-        assert_eq!(config.embedders.len(), 21);
+        let err = ModelsConfig::load(path).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_EMBED_INVALID_INPUT");
     }
 }

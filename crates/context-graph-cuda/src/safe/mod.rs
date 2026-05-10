@@ -29,5 +29,5 @@ pub use device::GpuDevice;
 /// ```
 pub fn gpu_memory_usage_percent() -> crate::error::CudaResult<f32> {
     let device = GpuDevice::new(0)?;
-    Ok(device.memory_usage_percent())
+    device.memory_usage_percent()
 }

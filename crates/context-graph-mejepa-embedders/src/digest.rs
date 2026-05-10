@@ -173,7 +173,7 @@ mod tests {
             manifest_sha256: manifest,
         };
         verify_registration_digest(&reg).unwrap();
-        reg.manifest_sha256 = "0".repeat(64);
+        reg.manifest_sha256 = "1".repeat(64);
         assert_eq!(
             verify_registration_digest(&reg).unwrap_err().code(),
             "MEJEPA_EMBED_DIGEST_MISMATCH"

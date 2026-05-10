@@ -40,12 +40,22 @@ pub fn query_vram_budget(budget: VramBudget) -> EmbedResult<VramBudgetReport> {
             remediation:
                 "fix CUDA context creation before running cuMemGetInfo_v2-backed budget checks",
         })?;
-    let (major, minor) = device.compute_capability();
+    let (major, minor) = device
+        .compute_capability()
+        .map_err(|err| EmbedError::GpuUnavailable {
+            message: format!("{err}"),
+            remediation:
+                "fix CUDA device-attribute access before running compute-capability checks",
+        })?;
+    let gpu_name = device.name().map_err(|err| EmbedError::GpuUnavailable {
+        message: format!("{err}"),
+        remediation: "fix CUDA device-name access before loading embedders",
+    })?;
     let report = VramBudgetReport {
         required_bytes: budget.required_bytes,
         free_bytes: free as u64,
         total_bytes: total as u64,
-        gpu_name: device.name(),
+        gpu_name,
         compute_capability: format!("{major}.{minor}"),
         passes: (free as u64) >= budget.required_bytes,
     };

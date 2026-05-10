@@ -1,7 +1,7 @@
 //! Green Contexts GPU partitioning module.
 //!
 //! Provides 70% inference / 30% background SM partitioning for RTX 5090+.
-//! Gracefully degrades on older GPUs without partitioning support.
+//! Fails closed on older GPUs or failed CUDA device-attribute checks.
 
 pub mod green_contexts;
 

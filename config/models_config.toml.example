@@ -1,7 +1,8 @@
 # Phase 1b ME-JEPA embedder registry schema.
-# Copy this structure into the real operator-owned models_config.toml and replace
-# every manifest_sha256 with the SHA-256 manifest produced from the actual files.
-# Production code refuses to load missing files or mismatched digests.
+# This file is a template and is intentionally rejected by the production loader
+# until every REPLACE_WITH_REAL_SHA256 is replaced by a real digest produced from
+# the actual D: files. Production code refuses placeholders, missing files, path
+# traversal, and digest mismatches.
 
 schema_version = 1
 
@@ -13,7 +14,7 @@ path = "/mnt/d/cabdru/contextgraph/models/semantic"
 repo = "intfloat/e5-large-v2"
 dimension = 1024
 weight_files = ["model.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e2]
 embedder = "e2"
@@ -49,11 +50,11 @@ manifest_sha256 = ""
 embedder = "e5"
 name = "causal"
 kind = "content_pretrained"
-path = "/mnt/d/cabdru/contextgraph/models/causal"
+path = "/mnt/d/cabdru/contextgraph/models/causal-nomic"
 repo = "nomic-ai/nomic-embed-text-v1.5"
 dimension = 768
 weight_files = ["model.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e6]
 embedder = "e6"
@@ -63,7 +64,7 @@ path = "/mnt/d/cabdru/contextgraph/models/sparse"
 repo = "naver/splade-cocondenser-ensembledistil"
 dimension = 1536
 weight_files = ["model.safetensors", "sparse_projection.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e7]
 embedder = "e7"
@@ -73,17 +74,17 @@ path = "/mnt/d/cabdru/contextgraph/models/code-1536"
 repo = "Qodo/Qodo-Embed-1-1.5B"
 dimension = 1536
 weight_files = ["model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e8]
 embedder = "e8"
 name = "graph"
 kind = "content_pretrained"
-path = "/mnt/d/cabdru/contextgraph/models/graph"
+path = "/mnt/d/cabdru/contextgraph/models/semantic"
 repo = "intfloat/e5-large-v2"
 dimension = 1024
 weight_files = ["model.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e9]
 embedder = "e9"
@@ -99,11 +100,11 @@ manifest_sha256 = ""
 embedder = "e10"
 name = "contextual"
 kind = "content_pretrained"
-path = "/mnt/d/cabdru/contextgraph/models/contextual"
+path = "/mnt/d/cabdru/contextgraph/models/contextual-e5-base"
 repo = "intfloat/e5-base-v2"
 dimension = 768
-weight_files = ["model.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+weight_files = ["KEPLERforKE.pt", "KEPLERforNLP.pt", "dict.txt"]
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e11]
 embedder = "e11"
@@ -112,8 +113,8 @@ kind = "content_pretrained"
 path = "/mnt/d/cabdru/contextgraph/models/kepler"
 repo = "THU-KEG/KEPLER-Wiki5M-KE"
 dimension = 768
-weight_files = ["model.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+weight_files = ["pytorch_model.bin"]
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e12]
 embedder = "e12"
@@ -123,7 +124,7 @@ path = "/mnt/d/cabdru/contextgraph/models/late-interaction"
 repo = "colbert-ir/colbertv2.0"
 dimension = 128
 weight_files = ["model.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e13]
 embedder = "e13"
@@ -133,7 +134,7 @@ path = "/mnt/d/cabdru/contextgraph/models/splade-v3"
 repo = "prithivida/Splade_PP_en_v1"
 dimension = 1536
 weight_files = ["model.safetensors", "sparse_projection.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e14]
 embedder = "e14"
@@ -143,74 +144,74 @@ path = "/mnt/d/cabdru/contextgraph/models/bge-m3-dense"
 repo = "BAAI/bge-m3"
 dimension = 1024
 weight_files = ["model.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e15]
 embedder = "e15"
 name = "affect_speech"
 kind = "learner_state"
 path = "/mnt/d/cabdru/contextgraph/models/learner-state/affect-speech"
-repo = "msp-dim/wav2vec2-large"
+repo = "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim"
 dimension = 1024
-weight_files = ["model.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+weight_files = ["model.safetensors", "preprocessor_config.json"]
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e16]
 embedder = "e16"
 name = "affect_face"
 kind = "learner_state"
 path = "/mnt/d/cabdru/contextgraph/models/learner-state/affect-face"
-repo = "OpenFace-3.0+MTL-local"
+repo = "github:CMU-MultiComp-Lab/OpenFace-3.0 + hf:nutPace/openface_weights"
 dimension = 512
-weight_files = ["model.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+weight_files = ["OpenFace/interface.py", "OpenFace/model/MLT.py", "OpenFace/weights/Alignment_RetinaFace.pth", "OpenFace/weights/Landmark_98.pkl", "OpenFace/weights/MTL_backbone.pth"]
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e17]
 embedder = "e17"
 name = "affect_text"
 kind = "learner_state"
 path = "/mnt/d/cabdru/contextgraph/models/learner-state/affect-text"
-repo = "MiniLM-L6-v2+EmoBank-local"
+repo = "sentence-transformers/all-MiniLM-L6-v2"
 dimension = 384
-weight_files = ["model.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+weight_files = ["model.safetensors", "tokenizer.json"]
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e18]
 embedder = "e18"
 name = "ppg"
 kind = "learner_state"
 path = "/mnt/d/cabdru/contextgraph/models/learner-state/ppg"
-repo = "PaPaGei/ppg-foundation"
+repo = "zenodo:10.5281/zenodo.13983110 + github:Nokia-Bell-Labs/papagei-foundation-model"
 dimension = 512
-weight_files = ["model.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+weight_files = ["config.json", "papagei_s.pt"]
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e19]
 embedder = "e19"
 name = "eda"
 kind = "learner_state"
 path = "/mnt/d/cabdru/contextgraph/models/learner-state/eda"
-repo = "WESAD/eda-stress-head"
+repo = "official:WESAD University of Siegen + local real-data stress-head training"
 dimension = 64
-weight_files = ["model.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+weight_files = ["config.json", "wesad_cnn.safetensors"]
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e20]
 embedder = "e20"
 name = "eeg"
 kind = "learner_state"
 path = "/mnt/d/cabdru/contextgraph/models/learner-state/eeg"
-repo = "LaBraM/eeg-foundation"
+repo = "braindecode/labram-pretrained"
 dimension = 768
 weight_files = ["model.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e21]
 embedder = "e21"
 name = "eeg_artifact_robust"
 kind = "learner_state"
 path = "/mnt/d/cabdru/contextgraph/models/learner-state/eeg-robust"
-repo = "EEGPT/eeg-artifact-robust"
+repo = "braindecode/eegpt-pretrained"
 dimension = 768
 weight_files = ["model.safetensors"]
-manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+manifest_sha256 = "REPLACE_WITH_REAL_SHA256"

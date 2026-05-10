@@ -18,7 +18,7 @@ use crate::ffi::cuda_driver::{
     cuCtxCreate_v2, cuCtxDestroy_v2, cuCtxSetCurrent, cuDeviceGet, cuDeviceGetAttribute,
     cuDeviceGetName, cuInit, cuMemGetInfo_v2, CUcontext, CUdevice, CUDA_ERROR_INVALID_DEVICE,
     CUDA_ERROR_NO_DEVICE, CUDA_SUCCESS, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
-    CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
+    CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT,
 };
 use std::ffi::CStr;
 use std::ptr;
@@ -51,8 +51,8 @@ static CUDA_INIT_RESULT: AtomicI32 = AtomicI32::new(CUDA_SUCCESS);
 ///
 /// fn main() -> Result<(), context_graph_cuda::CudaError> {
 ///     let device = GpuDevice::new(0)?;
-///     println!("GPU: {}", device.name());
-///     let (major, minor) = device.compute_capability();
+///     println!("GPU: {}", device.name()?);
+///     let (major, minor) = device.compute_capability()?;
 ///     println!("Compute capability: {}.{}", major, minor);
 ///     let (free, total) = device.memory_info()?;
 ///     println!("Memory: {} free / {} total", free, total);
@@ -152,28 +152,78 @@ impl GpuDevice {
     ///
     /// RTX 5090 returns `(12, 0)`.
     /// RTX 4090 returns `(8, 9)`.
-    #[must_use]
-    pub fn compute_capability(&self) -> (u32, u32) {
+    pub fn compute_capability(&self) -> CudaResult<(u32, u32)> {
         let mut major: i32 = 0;
         let mut minor: i32 = 0;
 
         // SAFETY: device is valid, pointers are valid
-        unsafe {
+        let major_result = unsafe {
             cuDeviceGetAttribute(
                 &mut major,
                 CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
                 self.device,
-            );
+            )
+        };
+        if major_result != CUDA_SUCCESS {
+            return Err(CudaError::DeviceInitError(format!(
+                "cuDeviceGetAttribute(COMPUTE_CAPABILITY_MAJOR) failed for device {}: error code {}",
+                self.ordinal, major_result
+            )));
+        }
+
+        // SAFETY: device is valid, pointers are valid
+        let minor_result = unsafe {
             cuDeviceGetAttribute(
                 &mut minor,
                 CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
                 self.device,
-            );
+            )
+        };
+        if minor_result != CUDA_SUCCESS {
+            return Err(CudaError::DeviceInitError(format!(
+                "cuDeviceGetAttribute(COMPUTE_CAPABILITY_MINOR) failed for device {}: error code {}",
+                self.ordinal, minor_result
+            )));
         }
 
-        // Convert to unsigned; negative values would indicate error but we
-        // saturate to 0 rather than panic
-        (major.max(0) as u32, minor.max(0) as u32)
+        if major < 0 || minor < 0 {
+            return Err(CudaError::DeviceInitError(format!(
+                "cuDeviceGetAttribute returned negative compute capability {}.{} for device {}",
+                major, minor, self.ordinal
+            )));
+        }
+
+        Ok((major as u32, minor as u32))
+    }
+
+    /// Get the number of streaming multiprocessors.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if CUDA cannot report `CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT`.
+    pub fn multiprocessor_count(&self) -> CudaResult<u32> {
+        let mut count: i32 = 0;
+        // SAFETY: device is valid, pointer is valid
+        let result = unsafe {
+            cuDeviceGetAttribute(
+                &mut count,
+                CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT,
+                self.device,
+            )
+        };
+        if result != CUDA_SUCCESS {
+            return Err(CudaError::DeviceInitError(format!(
+                "cuDeviceGetAttribute(MULTIPROCESSOR_COUNT) failed for device {}: error code {}",
+                self.ordinal, result
+            )));
+        }
+        if count <= 0 {
+            return Err(CudaError::DeviceInitError(format!(
+                "cuDeviceGetAttribute(MULTIPROCESSOR_COUNT) returned invalid count {} for device {}",
+                count, self.ordinal
+            )));
+        }
+        Ok(count as u32)
     }
 
     /// Get device name.
@@ -181,8 +231,7 @@ impl GpuDevice {
     /// # Example
     ///
     /// Returns "NVIDIA GeForce RTX 5090" or similar.
-    #[must_use]
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> CudaResult<String> {
         // 256 bytes is sufficient for any CUDA device name
         let mut name_buf = [0i8; 256];
 
@@ -191,12 +240,15 @@ impl GpuDevice {
             unsafe { cuDeviceGetName(name_buf.as_mut_ptr(), name_buf.len() as i32, self.device) };
 
         if result != CUDA_SUCCESS {
-            return format!("GPU {} (name query failed)", self.ordinal);
+            return Err(CudaError::DeviceInitError(format!(
+                "cuDeviceGetName failed for device {}: error code {}",
+                self.ordinal, result
+            )));
         }
 
         // SAFETY: cuDeviceGetName null-terminates the string
         let c_str = unsafe { CStr::from_ptr(name_buf.as_ptr()) };
-        c_str.to_string_lossy().into_owned()
+        Ok(c_str.to_string_lossy().into_owned())
     }
 
     /// Get memory info (free_bytes, total_bytes).
@@ -248,8 +300,6 @@ impl GpuDevice {
     /// # Returns
     ///
     /// A value between 0.0 (no memory used) and 1.0 (fully utilized).
-    /// Returns 0.0 if memory info cannot be retrieved.
-    ///
     /// # Example
     ///
     /// ```ignore
@@ -257,15 +307,16 @@ impl GpuDevice {
     /// let usage = device.memory_usage_percent();
     /// println!("GPU memory usage: {:.1}%", usage * 100.0);
     /// ```
-    #[must_use]
-    pub fn memory_usage_percent(&self) -> f32 {
-        match self.memory_info() {
-            Ok((free, total)) if total > 0 => {
-                let used = total - free;
-                (used as f64 / total as f64) as f32
-            }
-            _ => 0.0, // Return 0 if we can't get memory info
+    pub fn memory_usage_percent(&self) -> CudaResult<f32> {
+        let (free, total) = self.memory_info()?;
+        if total == 0 {
+            return Err(CudaError::MemoryError(format!(
+                "cuMemGetInfo_v2 returned zero total memory for device {}",
+                self.ordinal
+            )));
         }
+        let used = total - free;
+        Ok((used as f64 / total as f64) as f32)
     }
 }
 
@@ -314,12 +365,14 @@ mod tests {
         let device = GpuDevice::new(0).expect("GPU device creation failed");
 
         // Verify name is populated
-        let name = device.name();
+        let name = device.name().expect("device name query failed");
         assert!(!name.is_empty(), "Device name should not be empty");
         println!("Device name: {}", name);
 
         // Verify compute capability
-        let (major, minor) = device.compute_capability();
+        let (major, minor) = device
+            .compute_capability()
+            .expect("compute capability query failed");
         assert!(
             major >= 8,
             "Expected compute capability >= 8.x, got {}.{}",
@@ -419,6 +472,9 @@ mod tests {
         assert_eq!(d2.ordinal(), 0);
 
         // Names should match (same physical device)
-        assert_eq!(d1.name(), d2.name());
+        assert_eq!(
+            d1.name().expect("d1 name query failed"),
+            d2.name().expect("d2 name query failed")
+        );
     }
 }
