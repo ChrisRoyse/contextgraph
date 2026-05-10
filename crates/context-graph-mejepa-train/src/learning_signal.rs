@@ -198,7 +198,7 @@ pub fn compute_l_step(
     let delta_k = compute_delta_k(k)?;
     let delta_omega = compute_delta_omega(o)?;
     let delta_xi = compute_delta_xi(x)?;
-    let l_step = clamp01(0.35 * delta_p + 0.25 * delta_k + 0.20 * delta_omega + 0.20 * delta_xi);
+    let l_step = clamp01(delta_p * delta_k * delta_omega * delta_xi);
     let signal = LearningSignal {
         delta_p,
         delta_k,
@@ -300,7 +300,7 @@ mod tests {
         )
         .unwrap();
         assert!((sig.delta_p - 0.5).abs() < 1e-6);
-        assert!((sig.l_step - 0.175).abs() < 1e-6);
+        assert_eq!(sig.l_step, 0.0);
     }
 
     #[test]

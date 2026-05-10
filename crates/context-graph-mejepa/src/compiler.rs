@@ -388,10 +388,22 @@ impl MeJepaCompiler {
         })
     }
 
-    pub fn observe(&self) -> Result<(), MejepaInferError> {
-        Err(MejepaInferError::FeatureDisabled {
-            feature: "self-healing".to_string(),
-        })
+    pub fn observe(
+        &self,
+        pipeline: &mut crate::heal::SelfHealingPipeline,
+        panel: &Panel,
+        oracle_outcome: &crate::types::OracleOutcome,
+        signal_clarity: f32,
+        witness_chain_offset_in: u64,
+        session_id: &str,
+    ) -> Result<crate::heal::ObserveOutput, crate::heal::HealError> {
+        pipeline.observe(
+            panel,
+            oracle_outcome,
+            signal_clarity,
+            witness_chain_offset_in,
+            session_id,
+        )
     }
 
     pub fn constellation_version_id(&self) -> Option<String> {

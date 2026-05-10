@@ -88,7 +88,8 @@ pub struct ModelWitnessEvent {
 impl WitnessChainAppender {
     pub fn new(chain_path: PathBuf) -> Result<Self, HealError> {
         if let Some(parent) = chain_path.parent() {
-            fs::create_dir_all(parent).map_err(|err| HealError::io("create_dir_all", parent, err))?;
+            fs::create_dir_all(parent)
+                .map_err(|err| HealError::io("create_dir_all", parent, err))?;
         }
         if !chain_path.exists() {
             fs::write(&chain_path, []).map_err(|err| HealError::io("write", &chain_path, err))?;
@@ -110,7 +111,8 @@ impl WitnessChainAppender {
         action.update(weights_sha);
         action.update(evaluation_summary_sha);
         let action_hash: [u8; 32] = action.finalize().into();
-        let bytes = fs::read(&self.chain_path).map_err(|err| HealError::io("read", &self.chain_path, err))?;
+        let bytes = fs::read(&self.chain_path)
+            .map_err(|err| HealError::io("read", &self.chain_path, err))?;
         let prev = if bytes.is_empty() {
             ZERO_HASH
         } else {
@@ -183,7 +185,11 @@ pub fn verify(
             if let Ok(mut status) = status.lock() {
                 status.status_change = StatusChange::Paused;
             }
-            write_smap_blocker_critical("witness chain integrity failed", &kind, checker.rollback_target.as_ref())?;
+            write_smap_blocker_critical(
+                "witness chain integrity failed",
+                &kind,
+                checker.rollback_target.as_ref(),
+            )?;
             Err(HealError::IntegrityViolation { kind })
         }
     }
@@ -304,10 +310,12 @@ fn map_witness_kind(err: &WitnessError) -> IntegrityViolationKind {
             expected_prev_hash: *expected_prev_hash,
             actual_prev_hash: *actual_prev_hash,
         },
-        WitnessError::EntryLengthInvalid { actual, expected } => IntegrityViolationKind::WrongSize {
-            actual: *actual as u64,
-            expected_modulo: *expected as u64,
-        },
+        WitnessError::EntryLengthInvalid { actual, expected } => {
+            IntegrityViolationKind::WrongSize {
+                actual: *actual as u64,
+                expected_modulo: *expected as u64,
+            }
+        }
         WitnessError::WitnessTypeRejected { offset, .. } => IntegrityViolationKind::BrokenAt {
             offset: *offset,
             expected_prev_hash: [0; 32],
@@ -330,8 +338,12 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("chain.bin");
         let mut appender = WitnessChainAppender::new(path.clone()).unwrap();
-        appender.append_model_event("ModelPromote", [1; 32], [2; 32]).unwrap();
-        appender.append_model_event("ModelRollback", [3; 32], [4; 32]).unwrap();
+        appender
+            .append_model_event("ModelPromote", [1; 32], [2; 32])
+            .unwrap();
+        appender
+            .append_model_event("ModelRollback", [3; 32], [4; 32])
+            .unwrap();
         let storage = HealRocksStore::open(temp.path().join("db")).unwrap();
         let mut checker = ChainIntegrityChecker::try_new(path).unwrap();
         let status = Arc::new(Mutex::new(HealStatus::default()));

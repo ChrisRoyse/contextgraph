@@ -267,6 +267,8 @@ mod tests {
         let err = HealError::FeatureDisabled;
         assert!(err.to_string().contains("MEJEPA_HEAL_FEATURE_DISABLED"));
         let as_error: &dyn std::error::Error = &err;
-        assert!(as_error.to_string().contains("MEJEPA_HEAL_FEATURE_DISABLED"));
+        assert!(as_error
+            .to_string()
+            .contains("MEJEPA_HEAL_FEATURE_DISABLED"));
     }
 }

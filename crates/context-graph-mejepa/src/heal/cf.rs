@@ -11,18 +11,20 @@ pub const CF_MEJEPA_FISHER_SNAPSHOTS: &str = "CF_MEJEPA_FISHER_SNAPSHOTS";
 pub const CF_MEJEPA_DRIFT_WINDOW: &str = "CF_MEJEPA_DRIFT_WINDOW";
 pub const CF_MEJEPA_DRIFT_HISTORY: &str = "CF_MEJEPA_DRIFT_HISTORY";
 pub const CF_MEJEPA_HEAL_REPORTS: &str = "CF_MEJEPA_HEAL_REPORTS";
+pub const CF_MEJEPA_DISTILL_STEPS: &str = "CF_MEJEPA_DISTILL_STEPS";
 pub const CF_MEJEPA_ACTIVE_POINTERS: &str = "CF_MEJEPA_ACTIVE_POINTERS";
 pub const CF_MEJEPA_CALIBRATION_HISTORY: &str = "CF_MEJEPA_CALIBRATION_HISTORY";
 pub const CF_MEJEPA_WEIGHT_BLOBS: &str = "CF_MEJEPA_WEIGHT_BLOBS";
 pub const CF_MEJEPA_SHIFT_WATERMARK: &str = "CF_MEJEPA_SHIFT_WATERMARK";
 pub const CF_MEJEPA_TRAIN_CERTS: &str = "CF_MEJEPA_TRAIN_CERTS";
 
-pub fn all_self_healing_cf_names() -> [&'static str; 6] {
+pub fn all_self_healing_cf_names() -> [&'static str; 7] {
     [
         CF_MEJEPA_FISHER_SNAPSHOTS,
         CF_MEJEPA_DRIFT_WINDOW,
         CF_MEJEPA_DRIFT_HISTORY,
         CF_MEJEPA_HEAL_REPORTS,
+        CF_MEJEPA_DISTILL_STEPS,
         CF_MEJEPA_ACTIVE_POINTERS,
         CF_MEJEPA_CALIBRATION_HISTORY,
     ]
@@ -34,6 +36,7 @@ pub fn all_referenced_cf_names() -> Vec<&'static str> {
         CF_MEJEPA_DRIFT_WINDOW,
         CF_MEJEPA_DRIFT_HISTORY,
         CF_MEJEPA_HEAL_REPORTS,
+        CF_MEJEPA_DISTILL_STEPS,
         CF_MEJEPA_ACTIVE_POINTERS,
         CF_MEJEPA_CALIBRATION_HISTORY,
         CF_MEJEPA_WEIGHT_BLOBS,
@@ -68,6 +71,10 @@ pub fn encode_drift_history_key(timestamp_seconds: i64) -> [u8; 8] {
 
 pub fn encode_heal_report_key(timestamp_seconds: i64) -> [u8; 8] {
     timestamp_seconds.to_be_bytes()
+}
+
+pub fn encode_distill_step_key(timestamp_nanos: i64) -> [u8; 8] {
+    timestamp_nanos.to_be_bytes()
 }
 
 pub fn encode_active_pointer_key(name: &str) -> Result<Vec<u8>, HealError> {
@@ -184,6 +191,12 @@ pub fn cf_retention_descriptor(cf_name: &str) -> Option<RetentionPolicy> {
             byte_capped_gb: None,
             single_row_per_key: false,
         }),
+        CF_MEJEPA_DISTILL_STEPS => Some(RetentionPolicy {
+            time_capped_days: Some(30),
+            count_capped: None,
+            byte_capped_gb: None,
+            single_row_per_key: false,
+        }),
         CF_MEJEPA_ACTIVE_POINTERS => Some(RetentionPolicy {
             time_capped_days: None,
             count_capped: Some(3),
@@ -231,6 +244,6 @@ mod tests {
         let names = all_referenced_cf_names();
         assert!(names.contains(&CF_MEJEPA_WEIGHT_BLOBS));
         assert!(names.contains(&CF_MEJEPA_SHIFT_WATERMARK));
-        assert_eq!(names.len(), 9);
+        assert_eq!(names.len(), 10);
     }
 }

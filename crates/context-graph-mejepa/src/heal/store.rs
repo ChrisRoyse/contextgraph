@@ -9,7 +9,7 @@ use crate::heal::cf::{
     CF_MEJEPA_DRIFT_HISTORY, CF_MEJEPA_DRIFT_WINDOW, CF_MEJEPA_FISHER_SNAPSHOTS,
     CF_MEJEPA_TRAIN_CERTS,
 };
-use crate::heal::cf::{DriftHistoryRecord, encode_value};
+use crate::heal::cf::{encode_value, DriftHistoryRecord};
 use crate::heal::drift::{DriftHistoryStore, DriftSample, DriftStore};
 use crate::heal::errors::HealError;
 use crate::heal::ewc::{SnapshotStore, TaskSnapshot};
@@ -57,7 +57,12 @@ impl HealRocksStore {
         self.db.clone()
     }
 
-    pub fn put_cf_readback(&self, cf_name: &str, key: &[u8], value: &[u8]) -> Result<(), HealError> {
+    pub fn put_cf_readback(
+        &self,
+        cf_name: &str,
+        key: &[u8],
+        value: &[u8],
+    ) -> Result<(), HealError> {
         let cf = self.cf(cf_name)?;
         self.db.put_cf(cf, key, value)?;
         let readback = self.db.get_cf(cf, key)?.ok_or_else(|| {
@@ -66,7 +71,7 @@ impl HealRocksStore {
                 format!("missing row after put in {cf_name}"),
             )
         })?;
-        if readback.as_ref() != value {
+        if readback.as_slice() != value {
             return Err(HealError::invalid(
                 "heal_store.readback",
                 format!("readback mismatch in {cf_name}"),
@@ -86,6 +91,15 @@ impl HealRocksStore {
             count += 1;
         }
         Ok(count)
+    }
+
+    pub fn scan_cf_values(&self, cf_name: &str) -> Result<Vec<Vec<u8>>, HealError> {
+        let mut values = Vec::new();
+        for item in self.db.iterator_cf(self.cf(cf_name)?, IteratorMode::Start) {
+            let (_key, value) = item?;
+            values.push(value.to_vec());
+        }
+        Ok(values)
     }
 
     pub fn latest_train_cert_means(
@@ -135,12 +149,34 @@ impl HealRocksStore {
 }
 
 impl SnapshotStore for HealRocksStore {
-    fn persist_task_snapshot(&self, snapshot: &TaskSnapshot) -> Result<(), HealError> {
-        self.put_cf_readback(
-            CF_MEJEPA_FISHER_SNAPSHOTS,
-            &encode_fisher_snapshot_key(snapshot.boundary_step),
-            &encode_value(snapshot)?,
-        )
+    fn replace_task_snapshots(&self, snapshots: &[TaskSnapshot]) -> Result<(), HealError> {
+        let cf = self.cf(CF_MEJEPA_FISHER_SNAPSHOTS)?;
+        let existing = self
+            .db
+            .iterator_cf(cf, IteratorMode::Start)
+            .map(|item| item.map(|(key, _value)| key.to_vec()))
+            .collect::<Result<Vec<_>, _>>()?;
+        for key in existing {
+            self.db.delete_cf(cf, key)?;
+        }
+        for snapshot in snapshots {
+            self.put_cf_readback(
+                CF_MEJEPA_FISHER_SNAPSHOTS,
+                &encode_fisher_snapshot_key(snapshot.boundary_step),
+                &encode_value(snapshot)?,
+            )?;
+        }
+        let count = self.count_cf(CF_MEJEPA_FISHER_SNAPSHOTS)? as usize;
+        if count != snapshots.len() {
+            return Err(HealError::invalid(
+                "heal_store.fisher_snapshot_retention",
+                format!(
+                    "expected {} persisted snapshots, got {count}",
+                    snapshots.len()
+                ),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -188,7 +224,33 @@ mod tests {
         store
             .put_cf_readback(CF_MEJEPA_WEIGHT_BLOBS, b"k", b"v")
             .unwrap();
-        assert_eq!(store.get_cf(CF_MEJEPA_WEIGHT_BLOBS, b"k").unwrap(), Some(b"v".to_vec()));
+        assert_eq!(
+            store.get_cf(CF_MEJEPA_WEIGHT_BLOBS, b"k").unwrap(),
+            Some(b"v".to_vec())
+        );
         assert_eq!(store.count_cf(CF_MEJEPA_WEIGHT_BLOBS).unwrap(), 1);
+    }
+
+    #[test]
+    fn replace_task_snapshots_matches_persisted_source_of_truth() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = HealRocksStore::open(temp.path()).unwrap();
+        let first = (0..7)
+            .map(|idx| {
+                TaskSnapshot::try_new(
+                    vec![idx as f32],
+                    vec![1.0],
+                    idx,
+                    [idx as u8; 32],
+                    idx as i64,
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        store.replace_task_snapshots(&first).unwrap();
+        assert_eq!(store.count_cf(CF_MEJEPA_FISHER_SNAPSHOTS).unwrap(), 7);
+        let retained = first[2..].to_vec();
+        store.replace_task_snapshots(&retained).unwrap();
+        assert_eq!(store.count_cf(CF_MEJEPA_FISHER_SNAPSHOTS).unwrap(), 5);
     }
 }

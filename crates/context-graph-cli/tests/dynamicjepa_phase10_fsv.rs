@@ -76,12 +76,6 @@ fn phase10_verify_commands_persist_real_verification_rows() {
     assert_eq!(counter["after_counts"]["dj_verification_runs"], 1);
     assert_eq!(counter["after_counts"]["dj_surprise_events"], 1);
 
-    let gridworld = run_verify_command(&root, &run_root, "verify-gridworld", "gridworld_5x5");
-    assert_eq!(gridworld["status"], "ok");
-    assert_eq!(gridworld["summary"]["split_counts"]["train"], 4977);
-    assert_eq!(gridworld["after_counts"]["dj_verification_runs"], 1);
-    assert_eq!(gridworld["after_counts"]["dj_surprise_events"], 0);
-
     let career = run_verify_command(
         &root,
         &run_root,
@@ -97,7 +91,6 @@ fn phase10_verify_commands_persist_real_verification_rows() {
 
     for (domain, value, expected_edges) in [
         ("counter_world", counter, 3usize),
-        ("gridworld_5x5", gridworld, 3usize),
         ("career_taxonomy", career, 5usize),
     ] {
         let db_path = run_root.join(format!("{domain}_rocksdb"));
@@ -132,5 +125,50 @@ fn phase10_verify_commands_persist_real_verification_rows() {
                 "missing edge {edge_idx} evidence file for {domain}"
             );
         }
+    }
+}
+
+#[test]
+#[ignore = "runs the full 8,000-event gridworld verifier and trains a real model; run explicitly with --ignored when validating the heavy gridworld FSV path"]
+fn phase10_verify_gridworld_full_real_fsv() {
+    let root = repo_root();
+    let run_root = root.join("tmp/5090jepa_evidence/phase10/gridworld_full_runtime");
+    if run_root.exists() {
+        fs::remove_dir_all(&run_root).expect("remove previous gridworld phase10 runtime");
+    }
+    fs::create_dir_all(&run_root).expect("create gridworld phase10 runtime");
+
+    let gridworld = run_verify_command(&root, &run_root, "verify-gridworld", "gridworld_5x5");
+    assert_eq!(gridworld["status"], "ok");
+    assert_eq!(gridworld["summary"]["split_counts"]["train"], 4977);
+    assert_eq!(gridworld["after_counts"]["dj_verification_runs"], 1);
+    assert_eq!(gridworld["after_counts"]["dj_surprise_events"], 0);
+
+    let db_path = run_root.join("gridworld_5x5_rocksdb");
+    let counts = run_ok(&[
+        "dynamicjepa",
+        "inspect-counts",
+        "--db",
+        db_path.to_str().expect("db path utf8"),
+        "--json",
+    ]);
+    assert_eq!(count(&counts, "dj_verification_runs"), 1);
+    assert_eq!(count(&counts, "dj_model_artifacts"), 1);
+    let evidence_dir = root.join(
+        gridworld["evidence_dir"]
+            .as_str()
+            .expect("verification evidence_dir"),
+    );
+    assert!(
+        evidence_dir.join("verification_run_record.json").exists(),
+        "missing gridworld verification evidence"
+    );
+    for edge_idx in 0..3 {
+        assert!(
+            evidence_dir
+                .join(format!("edge_{edge_idx:02}.json"))
+                .exists(),
+            "missing gridworld edge {edge_idx} evidence file"
+        );
     }
 }

@@ -7,6 +7,7 @@ use std::time::Instant;
 use candle_core::{DType, Device};
 use clap::{Parser, Subcommand};
 use context_graph_mejepa::fsv_writer;
+use context_graph_mejepa::heal::{run_heal_drill, HealDrillArgs, InjectDrift, FSV_ROOT};
 use context_graph_mejepa::panel_source::{self, PanelBatchView};
 use context_graph_mejepa::{
     build_deterministic_compiler, open_infer_rocksdb, CalibrationStore, ForwardPassEvidence,
@@ -27,6 +28,7 @@ struct Cli {
 enum Command {
     Train(TrainArgs),
     InferTest(InferTestArgs),
+    HealDrill(HealDrillCliArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -41,6 +43,20 @@ struct TrainArgs {
     corpus: Option<PathBuf>,
     #[arg(long)]
     output: Option<PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+struct HealDrillCliArgs {
+    #[arg(long, value_enum, default_value = "hard")]
+    inject_drift: InjectDrift,
+    #[arg(long, default_value = FSV_ROOT)]
+    output_fsv: PathBuf,
+    #[arg(long, default_value_t = 5000)]
+    max_observations: u64,
+    #[arg(long, default_value_t = 42)]
+    seed: u64,
+    #[arg(long, default_value_t = 60)]
+    rtx_5090_budget_min: u64,
 }
 
 #[derive(Debug)]
@@ -83,6 +99,23 @@ fn main() -> ExitCode {
             Err(err) => {
                 eprintln!("{err}");
                 ExitCode::from(4)
+            }
+        },
+        Command::HealDrill(args) => match run_heal_drill(HealDrillArgs {
+            inject_drift: args.inject_drift,
+            output_fsv: args.output_fsv,
+            max_observations: args.max_observations,
+            seed: args.seed,
+            rtx_5090_budget_min: args.rtx_5090_budget_min,
+        }) {
+            Ok(summary) => {
+                println!("{}", serde_json::to_string_pretty(&summary).unwrap());
+                ExitCode::from(summary.exit_code as u8)
+            }
+            Err(err) => {
+                err.log_context(file!());
+                eprintln!("{}: {err}", err.code());
+                ExitCode::from(1)
             }
         },
         Command::Train(args) => match run_dry_run(&args) {

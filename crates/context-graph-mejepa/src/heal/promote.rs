@@ -1,12 +1,13 @@
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use rocksdb::IteratorMode;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::heal::cf::{
-    ActivePointerValue, CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_HEAL_REPORTS,
-    CF_MEJEPA_WEIGHT_BLOBS, encode_active_pointer_key, encode_heal_report_key, encode_value,
+    encode_active_pointer_key, encode_heal_report_key, encode_value, ActivePointerValue,
+    CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_HEAL_REPORTS, CF_MEJEPA_WEIGHT_BLOBS,
 };
 use crate::heal::errors::HealError;
 use crate::heal::integrity::WitnessChainAppender;
@@ -342,10 +343,8 @@ impl AbcPromoter {
     ) -> Result<HealReport, HealError> {
         let holder = format!("pid:{}:phase5-promotion", std::process::id());
         {
-            let mut guard = lock.lock().map_err(|_| {
-                HealError::PromotionDeadlock {
-                    holder: "poisoned".to_string(),
-                }
+            let mut guard = lock.lock().map_err(|_| HealError::PromotionDeadlock {
+                holder: "poisoned".to_string(),
             })?;
             if let Some(existing) = &guard.held_by {
                 return Err(HealError::PromotionDeadlock {
@@ -388,18 +387,35 @@ impl AbcPromoter {
         }
         let started = Instant::now();
         let theta_a = sha_weights(current_weights);
-        storage.put_cf_readback(CF_MEJEPA_WEIGHT_BLOBS, &theta_a, &weights_to_bytes(current_weights))?;
+        storage.put_cf_readback(
+            CF_MEJEPA_WEIGHT_BLOBS,
+            &theta_a,
+            &weights_to_bytes(current_weights),
+        )?;
         let mode_a = evaluate_holdout(&holdout, 0.0, theta_a, calibration_version)?;
         let mode_b_weights = train_mode_b(current_weights, &holdout);
         let theta_b = sha_weights(&mode_b_weights);
-        storage.put_cf_readback(CF_MEJEPA_WEIGHT_BLOBS, &theta_b, &weights_to_bytes(&mode_b_weights))?;
+        storage.put_cf_readback(
+            CF_MEJEPA_WEIGHT_BLOBS,
+            &theta_b,
+            &weights_to_bytes(&mode_b_weights),
+        )?;
         let mut gate = self.gate;
         gate.oracle_agreement_floor = mode_a.oracle_agreement;
         gate.ood_kl_ceiling = mode_a.ood_distribution_kl;
         let mode_b = evaluate_holdout(&holdout, 0.18, theta_b, calibration_version)?;
-        let (mode_c_weights, mode_c) = self.best_ensemble(&holdout, theta_a, theta_b, calibration_version)?;
-        let (winner, winner_sha, winner_blob, winner_eval) =
-            choose_winner(&gate, &mode_a, &mode_b, &mode_c, theta_b, theta_a, &mode_b_weights, current_weights)?;
+        let (mode_c_weights, mode_c) =
+            self.best_ensemble(&holdout, theta_a, theta_b, calibration_version)?;
+        let (winner, winner_sha, winner_blob, winner_eval) = choose_winner(
+            &gate,
+            &mode_a,
+            &mode_b,
+            &mode_c,
+            theta_b,
+            theta_a,
+            &mode_b_weights,
+            current_weights,
+        )?;
         if !winner.is_promoted() {
             return Err(HealError::HoldoutRegression {
                 mode_a_score: mode_a,
@@ -416,10 +432,16 @@ impl AbcPromoter {
             mode_c_weights,
             calibration_version,
         )?;
-        let witness_offset = witness_chain.append_model_event("ModelPromote", winner_sha, eval_summary_sha)?;
-        let active = ActivePointerValue::try_new(winner_sha.to_vec(), chrono::Utc::now().timestamp())?;
+        let witness_offset =
+            witness_chain.append_model_event("ModelPromote", winner_sha, eval_summary_sha)?;
+        let active =
+            ActivePointerValue::try_new(winner_sha.to_vec(), chrono::Utc::now().timestamp())?;
         let active_key = encode_active_pointer_key("active_weights")?;
-        storage.put_cf_readback(CF_MEJEPA_ACTIVE_POINTERS, &active_key, &encode_value(&active)?)?;
+        storage.put_cf_readback(
+            CF_MEJEPA_ACTIVE_POINTERS,
+            &active_key,
+            &encode_value(&active)?,
+        )?;
         let report = HealReport {
             mode_winner: winner,
             mode_a_score: mode_a.clone(),
@@ -471,7 +493,9 @@ impl AbcPromoter {
             let eval = evaluate_holdout(holdout, lift, sha.finalize().into(), calibration_version)?;
             if best
                 .as_ref()
-                .map(|(_, old): &((f32, f32), HoldoutEval)| eval.oracle_agreement > old.oracle_agreement)
+                .map(|(_, old): &((f32, f32), HoldoutEval)| {
+                    eval.oracle_agreement > old.oracle_agreement
+                })
                 .unwrap_or(true)
             {
                 best = Some(((w_a, w_b), eval));
@@ -487,28 +511,39 @@ impl AbcPromoter {
         witness_chain: &mut WitnessChainAppender,
         lock: Arc<Mutex<PromotionLockState>>,
     ) -> Result<RollbackEvidence, HealError> {
-        let _guard = acquire_operator_lock(lock)?;
-        let target_sha = witness_chain
-            .weights_sha_at_offset(target_witness_chain_offset)?
-            .ok_or_else(|| HealError::RollbackTargetGone {
-                theta_sha: [0; 32],
-                gced_at: 0,
+        {
+            let mut guard = lock.lock().map_err(|_| HealError::PromotionDeadlock {
+                holder: "poisoned".to_string(),
             })?;
-        let blob = storage
-            .get_cf(CF_MEJEPA_WEIGHT_BLOBS, &target_sha)?
-            .ok_or(HealError::RollbackTargetGone {
+            if let Some(holder) = &guard.held_by {
+                return Err(HealError::PromotionDeadlock {
+                    holder: holder.clone(),
+                });
+            }
+            guard.held_by = Some(format!("pid:{}:rollback", std::process::id()));
+            guard.acquired_at = chrono::Utc::now().timestamp();
+            guard.trigger_reason = Some(TriggerReason::OperatorTriggered);
+        }
+        let target_sha = weights_sha_at_offset_from_reports(&storage, target_witness_chain_offset)?;
+        let blob = storage.get_cf(CF_MEJEPA_WEIGHT_BLOBS, &target_sha)?.ok_or(
+            HealError::RollbackTargetGone {
                 theta_sha: target_sha,
                 gced_at: 0,
-            })?;
+            },
+        )?;
         storage.put_cf_readback(CF_MEJEPA_WEIGHT_BLOBS, &target_sha, &blob)?;
         let eval_sha = sha_bytes(&blob);
         let new_offset = witness_chain.append_model_event("ModelRollback", target_sha, eval_sha)?;
-        let active = ActivePointerValue::try_new(target_sha.to_vec(), chrono::Utc::now().timestamp())?;
+        let active =
+            ActivePointerValue::try_new(target_sha.to_vec(), chrono::Utc::now().timestamp())?;
         storage.put_cf_readback(
             CF_MEJEPA_ACTIVE_POINTERS,
             &encode_active_pointer_key("active_weights")?,
             &encode_value(&active)?,
         )?;
+        *lock.lock().map_err(|_| HealError::PromotionDeadlock {
+            holder: "poisoned".to_string(),
+        })? = PromotionLockState::default();
         Ok(RollbackEvidence {
             target_witness_chain_offset,
             rolled_back_to: target_sha,
@@ -521,19 +556,28 @@ impl AbcPromoter {
     }
 }
 
-fn acquire_operator_lock(
-    lock: Arc<Mutex<PromotionLockState>>,
-) -> Result<std::sync::MutexGuard<'static, PromotionLockState>, HealError> {
-    let leaked: &'static Mutex<PromotionLockState> = Box::leak(Box::new(lock.lock().unwrap().clone().into()));
-    leaked.lock().map_err(|_| HealError::PromotionDeadlock {
-        holder: "poisoned".to_string(),
-    })
-}
-
-impl From<PromotionLockState> for Mutex<PromotionLockState> {
-    fn from(value: PromotionLockState) -> Self {
-        Mutex::new(value)
+fn weights_sha_at_offset_from_reports(
+    storage: &HealRocksStore,
+    target_witness_chain_offset: u64,
+) -> Result<[u8; 32], HealError> {
+    let db = storage.db();
+    let cf = db.cf_handle(CF_MEJEPA_HEAL_REPORTS).ok_or_else(|| {
+        HealError::invalid(
+            "abc_promoter.rollback.report_cf",
+            format!("missing column family {CF_MEJEPA_HEAL_REPORTS}"),
+        )
+    })?;
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let (_key, value) = item?;
+        let report: HealReport = bincode::deserialize(&value)?;
+        if report.witness_chain_offset == target_witness_chain_offset {
+            return Ok(report.weights_sha_winner);
+        }
     }
+    Err(HealError::RollbackTargetGone {
+        theta_sha: [0; 32],
+        gced_at: 0,
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -565,7 +609,12 @@ fn choose_winner(
 ) -> Result<(ModeWinner, [u8; 32], Vec<u8>, HoldoutEval), HealError> {
     let mut candidates = Vec::new();
     if gate.passes(mode_b) {
-        candidates.push((ModeWinner::B, theta_b, weights_to_bytes(mode_b_weights), mode_b.clone()));
+        candidates.push((
+            ModeWinner::B,
+            theta_b,
+            weights_to_bytes(mode_b_weights),
+            mode_b.clone(),
+        ));
     }
     if gate.passes(mode_c) && mode_c.oracle_agreement > mode_a.oracle_agreement {
         let mut blob = Vec::new();
@@ -626,7 +675,13 @@ fn train_mode_b(current: &[f32], holdout: &HoldoutDataset) -> Vec<f32> {
         .examples
         .iter()
         .enumerate()
-        .map(|(idx, ex)| if ex.predicted.contains(&ex.actual) { 0.0001 } else { 0.002 + idx as f32 * 1e-7 })
+        .map(|(idx, ex)| {
+            if ex.predicted.contains(&ex.actual) {
+                0.0001
+            } else {
+                0.002 + idx as f32 * 1e-7
+            }
+        })
         .sum::<f32>();
     current
         .iter()
@@ -699,5 +754,57 @@ mod tests {
     fn promoter_rejects_bad_grid_step() {
         assert!(AbcPromoter::try_new(0.1, PromotionGate::default()).is_ok());
         assert!(AbcPromoter::try_new(0.0, PromotionGate::default()).is_err());
+    }
+
+    #[test]
+    fn rollback_uses_persisted_heal_report_source_of_truth() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = HealRocksStore::open(temp.path().join("db")).unwrap();
+        let chain_path = temp.path().join("chain.bin");
+        let mut witness_chain = WitnessChainAppender::new(chain_path.clone()).unwrap();
+        let holdout = HoldoutDataset::try_new(
+            (0..50)
+                .map(|idx| HoldoutExample {
+                    predicted: vec![OracleOutcome::Pass],
+                    actual: if idx % 5 == 0 {
+                        OracleOutcome::Fail
+                    } else {
+                        OracleOutcome::Pass
+                    },
+                    ood_score: 0.05,
+                })
+                .collect(),
+            [9; 32],
+        )
+        .unwrap();
+        let lock = std::sync::Arc::new(std::sync::Mutex::new(PromotionLockState::default()));
+        let mut promoter = AbcPromoter::try_new(0.1, PromotionGate::default()).unwrap();
+        let report = promoter
+            .retrain_and_promote(
+                TriggerReason::DriftHard,
+                &[0.1; 16],
+                storage.clone(),
+                &mut witness_chain,
+                holdout,
+                lock.clone(),
+                "calibration-v1",
+            )
+            .unwrap();
+        assert_eq!(report.witness_chain_offset, 0);
+
+        let mut restarted_witness_chain = WitnessChainAppender::new(chain_path).unwrap();
+        let mut restarted_promoter = AbcPromoter::try_new(0.1, PromotionGate::default()).unwrap();
+        let rollback = restarted_promoter
+            .rollback_to(
+                report.witness_chain_offset,
+                storage.clone(),
+                &mut restarted_witness_chain,
+                lock,
+            )
+            .unwrap();
+        assert_eq!(rollback.target_witness_chain_offset, 0);
+        assert_eq!(rollback.rolled_back_to, report.weights_sha_winner);
+        assert_eq!(rollback.new_witness_chain_offset, 1);
+        assert_eq!(storage.count_cf(CF_MEJEPA_ACTIVE_POINTERS).unwrap(), 1);
     }
 }

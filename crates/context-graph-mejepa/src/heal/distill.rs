@@ -3,7 +3,7 @@ use std::sync::Arc;
 use context_graph_mejepa_instruments::Panel;
 use serde::{Deserialize, Serialize};
 
-use crate::heal::cf::{CF_MEJEPA_HEAL_REPORTS, encode_heal_report_key, encode_value};
+use crate::heal::cf::{encode_distill_step_key, encode_value, CF_MEJEPA_DISTILL_STEPS};
 use crate::heal::errors::HealError;
 use crate::heal::store::HealRocksStore;
 use crate::types::OracleOutcome;
@@ -31,10 +31,12 @@ impl OnlineDistiller {
         info_nce_temperature: f32,
     ) -> Result<Self, HealError> {
         if !ema_tau.is_finite() || ema_tau <= 0.0 || ema_tau >= 1.0 {
-            return Err(HealError::invalid("distiller.ema_tau", "tau must be in (0,1)"));
+            return Err(HealError::invalid(
+                "distiller.ema_tau",
+                "tau must be in (0,1)",
+            ));
         }
-        if !signal_clarity_threshold.is_finite()
-            || !(0.0..=1.0).contains(&signal_clarity_threshold)
+        if !signal_clarity_threshold.is_finite() || !(0.0..=1.0).contains(&signal_clarity_threshold)
         {
             return Err(HealError::invalid(
                 "distiller.signal_clarity_threshold",
@@ -154,7 +156,7 @@ pub fn consume(
     let mut total_loss = 0.0f32;
     let mut pre_norm = 0.0f32;
     let mut post_norm = 0.0f32;
-    for embedder in active_embedders {
+    for embedder in &mut *active_embedders {
         if embedder.weights.is_empty() || embedder.weights.iter().any(|v| !v.is_finite()) {
             return Err(HealError::invalid(
                 "distill.embedder.weights",
@@ -162,7 +164,11 @@ pub fn consume(
             ));
         }
         let student_score = embedder.weights.iter().sum::<f32>() / embedder.weights.len() as f32;
-        let loss = info_nce_loss(student_score + panel_mean, teacher_score, distiller.info_nce_temperature);
+        let loss = info_nce_loss(
+            student_score + panel_mean,
+            teacher_score,
+            distiller.info_nce_temperature,
+        );
         let after_grad = embedder
             .weights
             .iter()
@@ -184,9 +190,10 @@ pub fn consume(
         ema_tau: distiller.ema_tau,
         frozen_at,
     };
+    let key = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
     storage.put_cf_readback(
-        CF_MEJEPA_HEAL_REPORTS,
-        &encode_heal_report_key(frozen_at),
+        CF_MEJEPA_DISTILL_STEPS,
+        &encode_distill_step_key(key),
         &encode_value(&step)?,
     )?;
     Ok(step)
@@ -210,7 +217,10 @@ pub fn ema_update_in_place(
         ));
     }
     if !tau.is_finite() || tau <= 0.0 || tau >= 1.0 {
-        return Err(HealError::invalid("distill.ema_tau", "tau must be in (0,1)"));
+        return Err(HealError::invalid(
+            "distill.ema_tau",
+            "tau must be in (0,1)",
+        ));
     }
     for (student, after) in w_student.iter_mut().zip(w_after_grad) {
         if !student.is_finite() || !after.is_finite() {

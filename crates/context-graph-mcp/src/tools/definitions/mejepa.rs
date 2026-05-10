@@ -68,5 +68,41 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 }
             }),
         ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_HEAL_STATUS,
+            "Inspect the persisted ME-JEPA Phase 5 self-healing RocksDB source of truth: CF counts, active pointers, and latest heal report metadata. Refuses to guess dbPath unless CONTEXTGRAPH_MEJEPA_HEAL_DB is set.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Self-healing RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_HEAL_DB is required."
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_ROLLBACK_TO,
+            "Rollback ME-JEPA active weights to a previously promoted witness-chain offset. The target must exist in CF_MEJEPA_HEAL_REPORTS and the weight blob must exist in CF_MEJEPA_WEIGHT_BLOBS; otherwise the tool fails closed.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["targetWitnessChainOffset", "witnessChainPath"],
+                "properties": {
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Self-healing RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_HEAL_DB is required."
+                    },
+                    "witnessChainPath": {
+                        "type": "string"
+                    },
+                    "targetWitnessChainOffset": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                }
+            }),
+        ),
     ]
 }

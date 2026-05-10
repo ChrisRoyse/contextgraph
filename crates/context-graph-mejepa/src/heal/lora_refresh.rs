@@ -5,7 +5,7 @@ use context_graph_embeddings::training::lora::LoraConfig;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::heal::cf::{CF_MEJEPA_HEAL_REPORTS, encode_heal_report_key, encode_value};
+use crate::heal::cf::{encode_heal_report_key, encode_value, CF_MEJEPA_HEAL_REPORTS};
 use crate::heal::errors::HealError;
 use crate::heal::store::HealRocksStore;
 
@@ -90,7 +90,10 @@ impl CorpusSlice {
             return Err(HealError::invalid("corpus_slice", "must contain samples"));
         }
         if source.trim().is_empty() {
-            return Err(HealError::invalid("corpus_slice.source", "source must be non-empty"));
+            return Err(HealError::invalid(
+                "corpus_slice.source",
+                "source must be non-empty",
+            ));
         }
         Ok(Self {
             sample_hashes,

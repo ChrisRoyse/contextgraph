@@ -37,7 +37,10 @@ impl FisherMatrix {
         if diagonal.is_empty() {
             return Err(HealError::invalid("fisher.diagonal", "must be non-empty"));
         }
-        if diagonal.iter().any(|value| !value.is_finite() || *value < 0.0) {
+        if diagonal
+            .iter()
+            .any(|value| !value.is_finite() || *value < 0.0)
+        {
             return Err(HealError::invalid(
                 "fisher.diagonal",
                 "all entries must be finite and non-negative",
@@ -85,7 +88,10 @@ impl TaskSnapshot {
             ));
         }
         if theta_star.is_empty() {
-            return Err(HealError::invalid("task_snapshot.theta", "theta must be non-empty"));
+            return Err(HealError::invalid(
+                "task_snapshot.theta",
+                "theta must be non-empty",
+            ));
         }
         if theta_star.iter().any(|value| !value.is_finite()) {
             return Err(HealError::invalid(
@@ -168,7 +174,10 @@ impl EwcPlusPlus {
             return Err(HealError::invalid("ewc.predictor_dim", "must be > 0"));
         }
         if !initial_lambda.is_finite() || !max_lambda.is_finite() {
-            return Err(HealError::invalid("ewc.lambda", "lambda values must be finite"));
+            return Err(HealError::invalid(
+                "ewc.lambda",
+                "lambda values must be finite",
+            ));
         }
         if initial_lambda < 1.0 || max_lambda < initial_lambda {
             return Err(HealError::invalid(
@@ -213,8 +222,8 @@ impl EwcPlusPlus {
         }
         let mut delta_sq_sum = 0.0f32;
         for (fisher, g) in self.fisher_matrix.diagonal.iter_mut().zip(grad) {
-            let next = (1.0 - DEFAULT_FISHER_EMA_DECAY) * *fisher
-                + DEFAULT_FISHER_EMA_DECAY * g * g;
+            let next =
+                (1.0 - DEFAULT_FISHER_EMA_DECAY) * *fisher + DEFAULT_FISHER_EMA_DECAY * g * g;
             delta_sq_sum += (next - *fisher).powi(2);
             *fisher = next;
         }
@@ -251,7 +260,8 @@ impl EwcPlusPlus {
             self.boundary_detector.loss_running_var = 1.0;
         } else {
             let diff = current_loss - old_mean;
-            self.boundary_detector.loss_running_mean = decay * old_mean + (1.0 - decay) * current_loss;
+            self.boundary_detector.loss_running_mean =
+                decay * old_mean + (1.0 - decay) * current_loss;
             self.boundary_detector.loss_running_var =
                 (decay * self.boundary_detector.loss_running_var + (1.0 - decay) * diff * diff)
                     .max(1e-6);
@@ -260,8 +270,9 @@ impl EwcPlusPlus {
             + curvature.abs() * 0.01)
             / self.boundary_detector.loss_running_var.sqrt();
         self.boundary_detector.hessian_trace_estimator.last_estimate = curvature;
-        self.boundary_detector.hessian_trace_estimator.last_update_step =
-            self.fisher_matrix.step_count;
+        self.boundary_detector
+            .hessian_trace_estimator
+            .last_update_step = self.fisher_matrix.step_count;
         if z >= self.boundary_detector.boundary_threshold {
             self.boundary_detector.consecutive_above_threshold += 1;
         } else {
@@ -280,7 +291,11 @@ impl EwcPlusPlus {
         if predictor_params.len() != self.predictor_dim {
             return Err(HealError::invalid(
                 "ewc.predictor_params",
-                format!("params len {} != dim {}", predictor_params.len(), self.predictor_dim),
+                format!(
+                    "params len {} != dim {}",
+                    predictor_params.len(),
+                    self.predictor_dim
+                ),
             ));
         }
         if self.task_snapshots.len() >= 9 && self.fisher_rank() < self.predictor_dim {
@@ -300,7 +315,7 @@ impl EwcPlusPlus {
         self.merge_snapshots_on_overflow()?;
         self.lambda = (self.initial_lambda * (1.0 + self.task_snapshots.len() as f32 * 0.25))
             .min(self.max_lambda);
-        store.persist_task_snapshot(&snapshot)?;
+        store.replace_task_snapshots(&self.task_snapshots)?;
         Ok(snapshot)
     }
 
@@ -313,7 +328,11 @@ impl EwcPlusPlus {
         if theta_flat.len() != self.predictor_dim {
             return Err(HealError::invalid(
                 "ewc.theta_flat",
-                format!("theta len {} != dim {}", theta_flat.len(), self.predictor_dim),
+                format!(
+                    "theta len {} != dim {}",
+                    theta_flat.len(),
+                    self.predictor_dim
+                ),
             ));
         }
         let mut penalty = 0.0f32;
@@ -410,8 +429,11 @@ pub struct EwcFsvEvidence {
 pub trait PredictorGradAccessor {
     fn param_count(&self) -> usize;
     fn parameters_flat(&self) -> Vec<f32>;
-    fn gradients_for(&self, panel: &Panel, oracle_outcome: &OracleOutcome)
-        -> Result<Vec<f32>, HealError>;
+    fn gradients_for(
+        &self,
+        panel: &Panel,
+        oracle_outcome: &OracleOutcome,
+    ) -> Result<Vec<f32>, HealError>;
     fn apply_gradient(&mut self, gradient: &[f32], learning_rate: f32) -> Result<(), HealError>;
 }
 
@@ -420,7 +442,7 @@ pub trait HessianTraceProbe {
 }
 
 pub trait SnapshotStore {
-    fn persist_task_snapshot(&self, snapshot: &TaskSnapshot) -> Result<(), HealError>;
+    fn replace_task_snapshots(&self, snapshots: &[TaskSnapshot]) -> Result<(), HealError>;
 }
 
 #[derive(Debug, Clone, Default)]
@@ -429,8 +451,8 @@ pub struct MemorySnapshotStore {
 }
 
 impl SnapshotStore for MemorySnapshotStore {
-    fn persist_task_snapshot(&self, snapshot: &TaskSnapshot) -> Result<(), HealError> {
-        self.snapshots.lock().unwrap().push(snapshot.clone());
+    fn replace_task_snapshots(&self, snapshots: &[TaskSnapshot]) -> Result<(), HealError> {
+        *self.snapshots.lock().unwrap() = snapshots.to_vec();
         Ok(())
     }
 }
@@ -451,7 +473,7 @@ fn validate_finite_vec(field: &str, values: &[f32]) -> Result<(), HealError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use context_graph_mejepa_instruments::{PANEL_DIM, Panel};
+    use context_graph_mejepa_instruments::{Panel, PANEL_DIM};
 
     struct TestPredictor {
         params: Vec<f32>,
@@ -475,11 +497,17 @@ mod tests {
             if self.grad_nan {
                 Ok(vec![f32::NAN; self.params.len()])
             } else {
-                Ok((0..self.params.len()).map(|idx| 0.1 + idx as f32 * 0.001).collect())
+                Ok((0..self.params.len())
+                    .map(|idx| 0.1 + idx as f32 * 0.001)
+                    .collect())
             }
         }
 
-        fn apply_gradient(&mut self, gradient: &[f32], learning_rate: f32) -> Result<(), HealError> {
+        fn apply_gradient(
+            &mut self,
+            gradient: &[f32],
+            learning_rate: f32,
+        ) -> Result<(), HealError> {
             for (p, g) in self.params.iter_mut().zip(gradient) {
                 *p -= learning_rate * *g;
             }
@@ -539,7 +567,8 @@ mod tests {
         };
         let store = MemorySnapshotStore::default();
         for idx in 0..10 {
-            ewc.update_fisher_online(&panel(), &OracleOutcome::Pass, &pred).unwrap();
+            ewc.update_fisher_online(&panel(), &OracleOutcome::Pass, &pred)
+                .unwrap();
             assert!(ewc.detect_task_boundary(10.0 + idx as f32, &pred).unwrap());
             ewc.snapshot_current_task(&pred.parameters_flat(), [idx as u8; 32], &store)
                 .unwrap();

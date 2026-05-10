@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::heal::cf::{DriftHistoryRecord, encode_drift_history_key, encode_drift_window_key};
+use crate::heal::cf::DriftHistoryRecord;
 use crate::heal::errors::HealError;
 use crate::types::OracleOutcome;
 
@@ -410,12 +410,8 @@ impl DriftSurface for SmapDriftSurface {
             HealError::io("create_dir_all", self.memory_root.join("journal"), err)
         })?;
         let ts = chrono::Utc::now();
-        let slug = format!(
-            "{}--mejepa-drift-{:?}.md",
-            ts.format("%Y-%m-%d"),
-            severity
-        )
-        .to_lowercase();
+        let slug =
+            format!("{}--mejepa-drift-{:?}.md", ts.format("%Y-%m-%d"), severity).to_lowercase();
         let path = self.memory_root.join("journal").join(slug);
         let body = format!(
             "---\nnamespace: journal\ncreated: {}\nupdated: {}\nstatus: active\ntags: mejepa, phase5, drift\n---\n\n# ME-JEPA Drift Event\n\nseverity: {:?}\nempirical_coverage: {:.6}\n",
@@ -429,12 +425,9 @@ impl DriftSurface for SmapDriftSurface {
             fs::create_dir_all(self.memory_root.join("blockers")).map_err(|err| {
                 HealError::io("create_dir_all", self.memory_root.join("blockers"), err)
             })?;
-            let path = self.memory_root.join("blockers").join(format!(
-                "{}--mejepa-drift-{:?}.md",
-                ts.format("%Y-%m-%d"),
-                severity
-            )
-            .to_lowercase());
+            let path = self.memory_root.join("blockers").join(
+                format!("{}--mejepa-drift-{:?}.md", ts.format("%Y-%m-%d"), severity).to_lowercase(),
+            );
             let sev = if severity == DriftSeverity::Catastrophic {
                 "critical"
             } else {
@@ -483,14 +476,6 @@ impl DriftHistoryStore for MemoryDriftStore {
     }
 }
 
-pub(crate) fn drift_sample_key(offset: u64) -> [u8; 8] {
-    encode_drift_window_key(offset)
-}
-
-pub(crate) fn drift_history_key(timestamp_seconds: i64) -> [u8; 8] {
-    encode_drift_history_key(timestamp_seconds)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -532,7 +517,10 @@ mod tests {
         for i in 0..10 {
             detector.push(sample(i < 8, i), &store).unwrap();
         }
-        assert_eq!(detector.detect_drift(&store, &surface).unwrap(), DriftSeverity::Hard);
+        assert_eq!(
+            detector.detect_drift(&store, &surface).unwrap(),
+            DriftSeverity::Hard
+        );
         assert_eq!(store.history.lock().unwrap().len(), 1);
     }
 

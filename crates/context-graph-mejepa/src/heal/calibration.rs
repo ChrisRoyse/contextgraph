@@ -3,8 +3,8 @@ use std::collections::VecDeque;
 use serde::{Deserialize, Serialize};
 
 use crate::heal::cf::{
-    ActivePointerValue, CF_MEJEPA_ACTIVE_POINTERS, encode_active_pointer_key,
-    encode_calibration_history_key, encode_value,
+    encode_active_pointer_key, encode_calibration_history_key, encode_value, ActivePointerValue,
+    CF_MEJEPA_ACTIVE_POINTERS,
 };
 use crate::heal::errors::HealError;
 use crate::heal::pipeline::SelfHealingPipeline;
@@ -68,7 +68,10 @@ impl HealCalibrationRecord {
         num_samples: usize,
     ) -> Result<Self, HealError> {
         if !tau.is_finite() || !(0.0..=1.0).contains(&tau) {
-            return Err(HealError::invalid("calibration_record.tau", "tau must be in [0,1]"));
+            return Err(HealError::invalid(
+                "calibration_record.tau",
+                "tau must be in [0,1]",
+            ));
         }
         if !sigma_squared.is_finite() || sigma_squared <= 0.0 {
             return Err(HealError::invalid(
@@ -212,10 +215,16 @@ pub fn compute_conformal_tau(scores: &[f32], alpha: f32) -> Result<f32, HealErro
         });
     }
     if !alpha.is_finite() || alpha <= 0.0 || alpha >= 1.0 {
-        return Err(HealError::invalid("calibration.alpha", "alpha must be in (0,1)"));
+        return Err(HealError::invalid(
+            "calibration.alpha",
+            "alpha must be in (0,1)",
+        ));
     }
     let mut sorted = scores.to_vec();
-    if sorted.iter().any(|value| !value.is_finite() || !(0.0..=1.0).contains(value)) {
+    if sorted
+        .iter()
+        .any(|value| !value.is_finite() || !(0.0..=1.0).contains(value))
+    {
         return Err(HealError::invalid(
             "calibration.scores",
             "scores must be finite in [0,1]",

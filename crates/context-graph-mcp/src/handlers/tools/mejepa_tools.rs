@@ -2,8 +2,13 @@
 
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use context_graph_mejepa::heal::{
+    all_referenced_cf_names, decode_value, encode_active_pointer_key, AbcPromoter,
+    ActivePointerValue, HealReport, HealRocksStore, PromotionGate, PromotionLockState,
+    WitnessChainAppender, CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_HEAL_REPORTS,
+};
 use context_graph_mejepa::{
     build_deterministic_compiler, open_infer_rocksdb, CalibrationStore, MeJepaInferConfig,
     PatchBundle, RocksDbInferStore, TaskContext,
@@ -21,6 +26,7 @@ use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use crate::tools::names as tool_names;
 
 const ENV_TCT_DB: &str = "CONTEXTGRAPH_MEJEPA_TCT_DB";
+const ENV_HEAL_DB: &str = "CONTEXTGRAPH_MEJEPA_HEAL_DB";
 const ENV_ALLOW_DETERMINISTIC_VERIFY: &str = "CONTEXTGRAPH_MEJEPA_ALLOW_DETERMINISTIC_VERIFY";
 
 #[derive(Debug, Deserialize)]
@@ -46,6 +52,20 @@ struct ConstellationInspectRequest {
     db_path: Option<PathBuf>,
     version_id: Option<String>,
     runtime_embedder_versions: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct HealStatusRequest {
+    db_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RollbackToRequest {
+    db_path: Option<PathBuf>,
+    witness_chain_path: PathBuf,
+    target_witness_chain_offset: u64,
 }
 
 fn default_limit() -> u32 {
@@ -249,6 +269,171 @@ impl Handlers {
             }
         }
     }
+
+    pub(crate) async fn call_mejepa_heal_status(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: HealStatusRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_HEAL_STATUS
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_heal_db_path(request.db_path) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_heal_status(&db_path) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => {
+                err.log_context(file!());
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Storage,
+                    &format!("{}: {err}", err.code()),
+                )
+            }
+        }
+    }
+
+    pub(crate) async fn call_mejepa_rollback_to(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: RollbackToRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_ROLLBACK_TO
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_heal_db_path(request.db_path) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_rollback_to(
+            &db_path,
+            request.witness_chain_path,
+            request.target_witness_chain_offset,
+        ) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => {
+                err.log_context(file!());
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("{}: {err}", err.code()),
+                )
+            }
+        }
+    }
+}
+
+fn resolve_heal_db_path(input: Option<PathBuf>) -> Result<PathBuf, String> {
+    match input {
+        Some(path) => Ok(path),
+        None => match std::env::var(ENV_HEAL_DB) {
+            Ok(path) => Ok(PathBuf::from(path)),
+            Err(std::env::VarError::NotPresent) => Err(format!(
+                "dbPath or {ENV_HEAL_DB} is required; refusing to guess a self-healing database path"
+            )),
+            Err(err) => Err(format!("{ENV_HEAL_DB} must be readable UTF-8: {err}")),
+        },
+    }
+}
+
+fn run_heal_status(
+    db_path: &std::path::Path,
+) -> Result<serde_json::Value, context_graph_mejepa::heal::HealError> {
+    let store = HealRocksStore::open(db_path)?;
+    let cf_counts = all_referenced_cf_names()
+        .iter()
+        .map(|cf| Ok(((*cf).to_string(), store.count_cf(cf)?)))
+        .collect::<Result<std::collections::BTreeMap<_, _>, context_graph_mejepa::heal::HealError>>(
+        )?;
+    let mut active_pointers = std::collections::BTreeMap::new();
+    for name in [
+        "active_weights",
+        "active_calibration",
+        "active_constellation",
+    ] {
+        if let Some(bytes) =
+            store.get_cf(CF_MEJEPA_ACTIVE_POINTERS, &encode_active_pointer_key(name)?)?
+        {
+            let value: ActivePointerValue = decode_value(&bytes)?;
+            active_pointers.insert(
+                name.to_string(),
+                json!({
+                    "thetaShaOrVersionHex": hex::encode(value.theta_sha_or_version),
+                    "frozenAt": value.frozen_at
+                }),
+            );
+        }
+    }
+    let latest_report = store
+        .scan_cf_values(CF_MEJEPA_HEAL_REPORTS)?
+        .into_iter()
+        .map(|bytes| decode_value::<HealReport>(&bytes))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .max_by_key(|report| report.witness_chain_offset)
+        .map(|report| {
+            json!({
+                "modeWinner": report.mode_winner,
+                "weightsShaWinner": hex::encode(report.weights_sha_winner),
+                "evaluationSummarySha": hex::encode(report.evaluation_summary_sha),
+                "witnessChainOffset": report.witness_chain_offset,
+                "promotionLatencySeconds": report.promotion_latency_seconds,
+                "statusChange": report.status_change,
+                "triggerReason": report.trigger_reason
+            })
+        });
+    Ok(json!({
+        "dbPath": db_path,
+        "cfCounts": cf_counts,
+        "activePointers": active_pointers,
+        "latestHealReport": latest_report
+    }))
+}
+
+fn run_rollback_to(
+    db_path: &std::path::Path,
+    witness_chain_path: PathBuf,
+    target_witness_chain_offset: u64,
+) -> Result<serde_json::Value, context_graph_mejepa::heal::HealError> {
+    let store = HealRocksStore::open(db_path)?;
+    let mut witness_chain = WitnessChainAppender::new(witness_chain_path.clone())?;
+    let lock = Arc::new(Mutex::new(PromotionLockState::default()));
+    let mut promoter = AbcPromoter::try_new(0.1, PromotionGate::default())?;
+    let evidence = promoter.rollback_to(
+        target_witness_chain_offset,
+        store.clone(),
+        &mut witness_chain,
+        lock,
+    )?;
+    Ok(json!({
+        "targetWitnessChainOffset": evidence.target_witness_chain_offset,
+        "rolledBackTo": hex::encode(evidence.rolled_back_to),
+        "newWitnessChainOffset": evidence.new_witness_chain_offset,
+        "dbPath": db_path,
+        "witnessChainPath": witness_chain_path
+    }))
 }
 
 fn resolve_tct_db_path(input: Option<PathBuf>) -> Result<PathBuf, String> {
