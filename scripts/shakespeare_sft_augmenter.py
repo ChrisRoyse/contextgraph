@@ -99,6 +99,8 @@ DAEMON_HOST = "127.0.0.1"
 DAEMON_PORT = 3100
 SCRIPT_DIR = Path(__file__).resolve().parent
 ENSURE_DAEMON_SH = SCRIPT_DIR / "ensure_daemon.sh"
+DATA_ROOT = Path(os.environ.get("CONTEXTGRAPH_DATA_ROOT", "/mnt/d/contextgraph"))
+DAEMON_PIDFILE = DATA_ROOT / "state" / "locks" / "context-graph-daemon.pid"
 TRAINING_DIR = Path(os.path.expanduser("~/.contextgraph/training"))
 
 # Generation config
@@ -1821,7 +1823,7 @@ def port_is_listening(port: int, host: str = DAEMON_HOST, timeout: float = 1.0) 
 
 def stop_daemon(*, timeout_s: float = 30.0) -> None:
     """Gracefully stop the daemon by killing the pidfile's PID. Fail-fast if still up."""
-    pidfile = Path("/tmp/context-graph-daemon.pid")
+    pidfile = DAEMON_PIDFILE
     if not port_is_listening(DAEMON_PORT):
         log(f"daemon already down (port {DAEMON_PORT} not listening)")
         return
@@ -2935,7 +2937,7 @@ def main() -> int:
         else:
             if port_is_listening(DAEMON_PORT):
                 die(f"daemon is listening on {DAEMON_PORT}; stop it manually "
-                    f"(kill $(cat /tmp/context-graph-daemon.pid)) or rerun with --auto-daemon.")
+                    f"(kill $(cat {DAEMON_PIDFILE})) or rerun with --auto-daemon.")
         # Build the child argv: same script, same args, plus --internal-phase.
         child_cmd = [
             sys.executable,

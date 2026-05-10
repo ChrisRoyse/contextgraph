@@ -41,7 +41,9 @@ INFERENCE_HOST = "127.0.0.1"
 INFERENCE_PORT = 8766
 SCRIPT_DIR = Path(__file__).resolve().parent
 ENSURE_DAEMON_SH = SCRIPT_DIR / "ensure_daemon.sh"
-DAEMON_PIDFILE = "/tmp/context-graph-daemon.pid"
+DATA_ROOT = Path(os.environ.get("CONTEXTGRAPH_DATA_ROOT", "/mnt/d/contextgraph"))
+DAEMON_PIDFILE = str(DATA_ROOT / "state" / "locks" / "context-graph-daemon.pid")
+DAEMON_LOG = str(DATA_ROOT / "logs" / "context-graph-daemon.log")
 
 # Shakespeare style anchor — stored constellation over ALL 313 sonnet memories,
 # compiled 2026-04-15 and persisted in CF_CONSTELLATIONS. The guard scores
@@ -239,7 +241,7 @@ class ServiceSupervisor:
         if not self._can_heal():
             logger(f"[supervisor] REFUSED heal — {len(self._heal_history)} attempts in last "
                    f"{self.HEAL_WINDOW_S}s exceeds flap threshold {self.MAX_HEALS_PER_WINDOW}. "
-                   f"Operator must investigate /tmp/context-graph-daemon.log.")
+                   f"Operator must investigate {DAEMON_LOG}.")
             return False
         self._record_heal()
         if not ENSURE_DAEMON_SH.is_file():
@@ -280,7 +282,7 @@ class ServiceSupervisor:
             if not self.heal_daemon(logger):
                 raise RuntimeError(
                     f"Daemon on {DAEMON_HOST}:{DAEMON_PORT} unreachable after heal attempt. "
-                    f"Run: {ENSURE_DAEMON_SH}  (see /tmp/context-graph-daemon.log)"
+                    f"Run: {ENSURE_DAEMON_SH}  (see {DAEMON_LOG})"
                 )
         logger("[supervisor] startup probe — inference server on 8766")
         ok, detail = self.probe_inference()
@@ -1159,7 +1161,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "kind": "guard_infrastructure",
                 "message": str(e),
                 "action": "Daemon or inference server unreachable. Watchdog will attempt heal. "
-                          "Retry in ~30s, or inspect /tmp/context-graph-daemon.log.",
+                          f"Retry in ~30s, or inspect {DAEMON_LOG}.",
             }})
         except GuardSchemaError as e:
             sys.stderr.write(f"[dashboard] guard schema error: {e}\n")

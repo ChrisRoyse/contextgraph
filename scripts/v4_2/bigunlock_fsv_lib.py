@@ -21,11 +21,12 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
+DATA_ROOT = Path(os.environ.get("CONTEXTGRAPH_DATA_ROOT", "/mnt/d/contextgraph"))
 DEFAULT_MCP = ROOT / "target/debug/context-graph-mcp"
 DEFAULT_MODELS = ROOT / "models"
 DEFAULT_CALIBRATION = ROOT / "data/utl_calibration"
 DEFAULT_GO_EMOTIONS = DEFAULT_CALIBRATION / "go_emotions/go_emotions_sample.jsonl"
-DEFAULT_SHAKESPEARE_DB = ROOT / "tmp/shakespeare_full_fsv_db_20260428_timeout_044230"
+DEFAULT_SHAKESPEARE_DB = DATA_ROOT / "storage" / "contextgraph-rocksdb"
 DEFAULT_REPORT_DIR = Path("~/.contextgraph/reports").expanduser()
 DEFAULT_RUN_ROOT = Path("~/.contextgraph/experiments/bigunlock").expanduser()
 

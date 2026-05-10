@@ -21,6 +21,7 @@ Exit codes:
 """
 from __future__ import annotations
 import argparse
+import os
 import signal
 import subprocess
 import sys
@@ -41,7 +42,8 @@ WHITELIST_CMDS = {
     # to whitelist something add its exact /proc/<pid>/comm here, e.g. "Xorg"
 }
 # Filesystem
-LOGFILE = Path("/tmp/vram_watchdog.log")
+DATA_ROOT = Path(os.environ.get("CONTEXTGRAPH_DATA_ROOT", "/mnt/d/contextgraph"))
+LOGFILE = DATA_ROOT / "logs" / "vram_watchdog.log"
 MAX_LOG_BYTES = 10 * 1024 * 1024
 LOG_BACKUPS = 3
 
@@ -58,6 +60,7 @@ def log(msg: str, level: str = "INFO") -> None:
     line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [{level}] vram_watchdog: {msg}"
     print(line, file=sys.stderr, flush=True)
     try:
+        LOGFILE.parent.mkdir(parents=True, exist_ok=True)
         rotate_log_if_needed(LOGFILE, MAX_LOG_BYTES, LOG_BACKUPS)
         with LOGFILE.open("a") as f:
             f.write(line + "\n")
