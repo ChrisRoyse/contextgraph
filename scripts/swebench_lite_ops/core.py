@@ -11,10 +11,10 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SWEBENCH_ROOT = Path("/home/cabdru/.cache/contextgraph-swebench/SWE-bench")
-DEFAULT_SWEBENCH_VENV = Path("/home/cabdru/.cache/contextgraph-swebench/venv")
+DEFAULT_SWEBENCH_ROOT = Path("/mnt/d/contextgraph/cache/contextgraph-swebench/SWE-bench")
+DEFAULT_SWEBENCH_VENV = Path("/mnt/d/contextgraph/cache/contextgraph-swebench/venv")
 DEFAULT_TASKS_DIR = REPO_ROOT / "tasks" / "swebench-lite"
-DEFAULT_EVIDENCE_ROOT = Path("/tmp/contextgraph-swebench-lite-fsv")
+DEFAULT_EVIDENCE_ROOT = Path("/mnt/d/contextgraph/swebench-artifacts/swebench-lite-fsv")
 DEFAULT_DATASET = "princeton-nlp/SWE-bench_Lite"
 DEFAULT_SPLIT = "test"
 DEFAULT_SMOKE_TASK = "sympy__sympy-20590"
