@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 pub const BYTES_PER_GB: u64 = 1024 * 1024 * 1024;
 pub const DEFAULT_TOTAL_QUOTA_BYTES: u64 = 115 * BYTES_PER_GB;
+const DEFAULT_CATEGORY_BUDGET_TOTAL_BYTES: u64 =
+    (5 + 50 + 10 + 20 + 4 + 20 + 5 + 2) * BYTES_PER_GB + (BYTES_PER_GB / 2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -64,7 +66,11 @@ impl StorageCategory {
 
     pub fn budget_bytes(self, total_quota_bytes: u64) -> u64 {
         let numerator = self.budget_bytes_default() as u128 * total_quota_bytes as u128;
-        (numerator / DEFAULT_TOTAL_QUOTA_BYTES as u128).max(1) as u64
+        (numerator / DEFAULT_CATEGORY_BUDGET_TOTAL_BYTES as u128).max(1) as u64
+    }
+
+    pub fn quota_evictable(self) -> bool {
+        !matches!(self, Self::WitnessChains)
     }
 
     pub fn cf_names(self) -> &'static [&'static str] {

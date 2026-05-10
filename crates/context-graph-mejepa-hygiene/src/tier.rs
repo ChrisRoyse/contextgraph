@@ -82,9 +82,30 @@ pub fn decode_from_tier(bytes: &[u8], tier: Tier) -> OpsResult<Vec<f32>> {
         Tier::Hot => raw_f32_values(bytes),
         Tier::Warm | Tier::Cool | Tier::Cold => {
             let blob = context_graph_tier_compression::deserialize(bytes)?;
+            let expected = compressed_bits_for_tier(tier).ok_or_else(|| {
+                OpsError::invalid("tier", format!("tier {tier:?} is not a CGTC tier"))
+            })?;
+            if blob.bits != expected {
+                return Err(OpsError::invalid(
+                    "tier_blob.bits",
+                    format!(
+                        "metadata tier {tier:?} expects {:?}, blob contains {:?}",
+                        expected, blob.bits
+                    ),
+                ));
+            }
             Ok(context_graph_tier_compression::decode(&blob)?)
         }
         Tier::Frozen => crate::tier_frozen::decode_frozen(bytes),
+    }
+}
+
+fn compressed_bits_for_tier(tier: Tier) -> Option<context_graph_tier_compression::BitWidth> {
+    match tier {
+        Tier::Warm => Some(context_graph_tier_compression::BitWidth::Seven),
+        Tier::Cool => Some(context_graph_tier_compression::BitWidth::Five),
+        Tier::Cold => Some(context_graph_tier_compression::BitWidth::Three),
+        Tier::Hot | Tier::Frozen => None,
     }
 }
 
@@ -109,14 +130,22 @@ fn raw_f32_values(bytes: &[u8]) -> OpsResult<Vec<f32>> {
     if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
         return Err(OpsError::invalid(
             "hot_blob",
-            format!("hot tier blob length must be non-zero multiple of 4, got {}", bytes.len()),
+            format!(
+                "hot tier blob length must be non-zero multiple of 4, got {}",
+                bytes.len()
+            ),
         ));
     }
     let mut out = Vec::with_capacity(bytes.len() / 4);
     for chunk in bytes.chunks_exact(4) {
-        let value = f32::from_le_bytes(chunk.try_into().expect("chunks_exact length"));
+        let mut raw = [0u8; 4];
+        raw.copy_from_slice(chunk);
+        let value = f32::from_le_bytes(raw);
         if !value.is_finite() {
-            return Err(OpsError::invalid("hot_blob", "hot tier blob contains NaN/Inf"));
+            return Err(OpsError::invalid(
+                "hot_blob",
+                "hot tier blob contains NaN/Inf",
+            ));
         }
         out.push(value);
     }

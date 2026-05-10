@@ -1,9 +1,11 @@
 // Inspired by ruvnet/RuVector at HEAD ef5274c2 (clean-room reimplementation).
 
+use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use dashmap::DashMap;
+use fs2::FileExt;
 use parking_lot::Mutex;
 use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, DB};
 
@@ -130,10 +132,11 @@ pub fn quota_bytes_from_env() -> OpsResult<u64> {
 }
 
 pub fn cf<'a>(db: &'a DB, cf_name: &str) -> OpsResult<&'a rocksdb::ColumnFamily> {
-    db.cf_handle(cf_name)
-        .ok_or_else(|| OpsError::new(OpsErrorKind::MissingColumnFamily {
+    db.cf_handle(cf_name).ok_or_else(|| {
+        OpsError::new(OpsErrorKind::MissingColumnFamily {
             cf_name: cf_name.to_string(),
-        }))
+        })
+    })
 }
 
 pub fn ensure_cf(db: &DB, cf_name: &str) -> OpsResult<()> {
@@ -166,11 +169,19 @@ pub fn decode_meta_key(key: &[u8]) -> OpsResult<EntryId> {
         }));
     }
     let cf_name = std::str::from_utf8(&key[4..4 + cf_len])
-        .map_err(|err| OpsError::new(OpsErrorKind::CorruptMetadata {
-            key_hex: hex::encode(key),
-            detail: format!("CF name is not UTF-8: {err}"),
-        }))?
+        .map_err(|err| {
+            OpsError::new(OpsErrorKind::CorruptMetadata {
+                key_hex: hex::encode(key),
+                detail: format!("CF name is not UTF-8: {err}"),
+            })
+        })?
         .to_string();
+    if key.len() == 4 + cf_len {
+        return Err(OpsError::new(OpsErrorKind::CorruptMetadata {
+            key_hex: hex::encode(key),
+            detail: "metadata key has empty row key".to_string(),
+        }));
+    }
     Ok(EntryId::new(cf_name, key[4 + cf_len..].to_vec()))
 }
 
@@ -260,4 +271,31 @@ pub fn count_and_bytes_cf(db: &DB, cf_name: &str) -> OpsResult<(u64, u64)> {
         bytes += value.len() as u64;
     }
     Ok((count, bytes))
+}
+
+pub fn open_exclusive_lock(path: &Path) -> OpsResult<std::fs::File> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| OpsError::io("create_dir_all", parent, err))?;
+    }
+    let mut options = OpenOptions::new();
+    options.create(true).truncate(false).read(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let lock = options
+        .open(path)
+        .map_err(|err| OpsError::io("open", path, err))?;
+    lock.try_lock_exclusive().map_err(|err| {
+        OpsError::new(OpsErrorKind::Lock {
+            path: path.to_path_buf(),
+            detail: err.to_string(),
+        })
+    })?;
+    Ok(lock)
+}
+
+pub fn operation_lock_path(archive_root: &Path, operation: &str) -> PathBuf {
+    archive_root.join(".locks").join(format!("{operation}.lock"))
 }

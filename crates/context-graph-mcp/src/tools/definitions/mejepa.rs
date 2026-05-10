@@ -104,5 +104,46 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 }
             }),
         ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_GC_RUN,
+            "Run the Phase 6 ME-JEPA hygiene GC against a real RocksDB source of truth: tier demotion, compaction, quota enforcement, checkpoint/calibration retention, witness compression, witness verification, and CF_MEJEPA_GC_HISTORY readback.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["dbPath", "archiveRoot"],
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "archiveRoot": {"type": "string"}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_QUOTA_STATUS,
+            "Read Phase 6 ME-JEPA quota status by scanning real RocksDB column families and witness archive files. No cached counters are trusted.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["dbPath", "archiveRoot"],
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "archiveRoot": {"type": "string"}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_WITNESS_COMPRESS,
+            "Compress eligible old ME-JEPA witness-chain segments into Merkle-root entries, persist archives to archiveRoot, and verify chain integrity by readback.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["dbPath", "archiveRoot"],
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "archiveRoot": {"type": "string"},
+                    "segmentSize": {"type": "integer", "minimum": 1, "default": 1024},
+                    "minAgeDays": {"type": "integer", "minimum": 0, "default": 1}
+                }
+            }),
+        ),
     ]
 }

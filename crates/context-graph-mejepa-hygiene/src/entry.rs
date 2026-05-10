@@ -32,7 +32,7 @@ pub struct EntryAccessFrequency {
 impl EntryAccessFrequency {
     pub fn new(score: f32, last_read_unix: i64, read_count: u64) -> Self {
         Self {
-            score: score.clamp(0.0, 1.0),
+            score,
             last_read_unix,
             read_count,
         }
@@ -67,6 +67,8 @@ pub struct HygieneEntryMeta {
 }
 
 impl HygieneEntryMeta {
+    pub const MAX_TRANSITION_LOG_ENTRIES: usize = 512;
+
     pub fn new(
         entry_id: EntryId,
         category: StorageCategory,
@@ -96,11 +98,40 @@ impl HygieneEntryMeta {
         if self.entry_id.key.is_empty() {
             return Err("entry_id.key must be non-empty".to_string());
         }
+        if StorageCategory::from_cf(&self.entry_id.cf_name) != Some(self.category) {
+            return Err(format!(
+                "metadata category {:?} does not own CF {}",
+                self.category, self.entry_id.cf_name
+            ));
+        }
         if !self.frequency.score.is_finite() || !(0.0..=1.0).contains(&self.frequency.score) {
             return Err(format!(
                 "frequency.score must be finite in [0,1], got {}",
                 self.frequency.score
             ));
+        }
+        if self.updated_unix < self.created_unix {
+            return Err(format!(
+                "updated_unix {} is before created_unix {}",
+                self.updated_unix, self.created_unix
+            ));
+        }
+        if self.transition_log.len() > Self::MAX_TRANSITION_LOG_ENTRIES {
+            return Err(format!(
+                "transition_log length {} exceeds cap {}",
+                self.transition_log.len(),
+                Self::MAX_TRANSITION_LOG_ENTRIES
+            ));
+        }
+        for (idx, transition) in self.transition_log.iter().enumerate() {
+            if transition.reason.is_empty() {
+                return Err(format!("transition_log[{idx}].reason must be non-empty"));
+            }
+            if transition.reason.chars().any(char::is_control) {
+                return Err(format!(
+                    "transition_log[{idx}].reason contains a control character"
+                ));
+            }
         }
         Ok(())
     }

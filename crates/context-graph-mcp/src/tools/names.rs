@@ -106,6 +106,12 @@ pub const MEJEPA_CONSTELLATION_INSPECT: &str = "mcp__cgreality__mejepa_constella
 pub const MEJEPA_HEAL_STATUS: &str = "mcp__cgreality__mejepa_heal_status";
 /// Phase 5 operator-locked rollback to a promoted witness-chain offset.
 pub const MEJEPA_ROLLBACK_TO: &str = "mcp__cgreality__mejepa_rollback_to";
+/// Phase 6 nightly hygiene GC orchestrator.
+pub const MEJEPA_GC_RUN: &str = "mcp__cgreality__mejepa_gc_run";
+/// Phase 6 quota source-of-truth readback.
+pub const MEJEPA_QUOTA_STATUS: &str = "mcp__cgreality__mejepa_quota_status";
+/// Phase 6 old witness-chain Merkle compression.
+pub const MEJEPA_WITNESS_COMPRESS: &str = "mcp__cgreality__mejepa_witness_compress";
 // ========== TEMPORAL TOOLS (E2/E3 Integration) ==========
 // Temporal search with E2/E3 boost applied POST-retrieval per ARCH-25.
 pub const SEARCH_RECENT: &str = "search_recent";

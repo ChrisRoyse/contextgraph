@@ -81,9 +81,7 @@ impl OpsError {
             OpsErrorKind::QuotaExceeded { .. } => "MEJEPA_HYGIENE_QUOTA_EXCEEDED",
             OpsErrorKind::QuotaUnrecoverable { .. } => "MEJEPA_HYGIENE_QUOTA_UNRECOVERABLE",
             OpsErrorKind::WitnessChainBroken { .. } => "MEJEPA_HYGIENE_WITNESS_BROKEN",
-            OpsErrorKind::WitnessArchiveInvalid { .. } => {
-                "MEJEPA_HYGIENE_WITNESS_ARCHIVE_INVALID"
-            }
+            OpsErrorKind::WitnessArchiveInvalid { .. } => "MEJEPA_HYGIENE_WITNESS_ARCHIVE_INVALID",
             OpsErrorKind::Io { .. } => "MEJEPA_HYGIENE_IO",
             OpsErrorKind::RocksDb { .. } => "MEJEPA_HYGIENE_ROCKSDB",
             OpsErrorKind::Json { .. } => "MEJEPA_HYGIENE_JSON",

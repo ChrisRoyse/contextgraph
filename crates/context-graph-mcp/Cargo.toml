@@ -28,6 +28,7 @@ context-graph-solver = { path = "../context-graph-solver" }
 context-graph-cli = { path = "../context-graph-cli", default-features = false }
 context-graph-mejepa-embedders = { path = "../context-graph-mejepa-embedders" }
 context-graph-mejepa = { path = "../context-graph-mejepa" }
+context-graph-mejepa-hygiene = { path = "../context-graph-mejepa-hygiene" }
 context-graph-mejepa-tct = { path = "../context-graph-mejepa-tct" }
 
 # Async runtime

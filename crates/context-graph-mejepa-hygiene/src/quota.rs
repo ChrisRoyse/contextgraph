@@ -1,18 +1,18 @@
 // Inspired by ruvnet/RuVector at HEAD ef5274c2 (clean-room reimplementation).
 
-use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
 use rocksdb::WriteBatch;
 
 use crate::categories::StorageCategory;
-use crate::entry::EntryId;
 use crate::error::{OpsError, OpsErrorKind, OpsResult};
 use crate::quota_types::{EvictionCandidate, QuotaStateRecord};
 use crate::reports::{EvictionRecord, QuotaCategoryStatus, QuotaEvictionReport, QuotaStatus};
-use crate::storage::{cf, count_and_bytes_cf, list_meta, meta_key, put_readback, read_meta, scan_cf, HygieneEnv};
-use crate::tier::Tier;
+use crate::storage::{
+    cf, count_and_bytes_cf, list_meta, meta_key, open_exclusive_lock, operation_lock_path,
+    put_readback, read_meta, HygieneEnv,
+};
 
 const UNRECOVERABLE_PREFIX: &[u8] = b"unrecoverable:";
 const LAST_REPORT_KEY: &[u8] = b"last_quota_report";
@@ -50,6 +50,8 @@ pub fn quota_status(env: &HygieneEnv) -> OpsResult<QuotaStatus> {
 }
 
 pub fn quota_check_and_evict(env: &HygieneEnv) -> OpsResult<QuotaEvictionReport> {
+    let _lock = open_exclusive_lock(&operation_lock_path(&env.config.archive_root, "quota"))?;
+    clear_recoverable_states(env)?;
     let before = quota_status(env)?;
     if let Some(category) = before.unrecoverable_categories.first().copied() {
         let row = before
@@ -111,14 +113,18 @@ pub fn quota_check_and_evict(env: &HygieneEnv) -> OpsResult<QuotaEvictionReport>
     Ok(report)
 }
 
-fn collect_candidates(env: &HygieneEnv, category: StorageCategory) -> OpsResult<Vec<EvictionCandidate>> {
+fn collect_candidates(
+    env: &HygieneEnv,
+    category: StorageCategory,
+) -> OpsResult<Vec<EvictionCandidate>> {
+    if !category.quota_evictable() {
+        return Ok(Vec::new());
+    }
     let mut candidates = Vec::new();
-    let mut seen = BTreeSet::new();
     for meta in list_meta(&env.config.db)? {
         if meta.category != category || meta.corrupt {
             continue;
         }
-        seen.insert((meta.entry_id.cf_name.clone(), meta.entry_id.key.clone()));
         candidates.push(EvictionCandidate {
             entry_id: meta.entry_id.clone(),
             category,
@@ -128,22 +134,6 @@ fn collect_candidates(env: &HygieneEnv, category: StorageCategory) -> OpsResult<
             gold: meta.gold,
             last_read_unix: meta.frequency.last_read_unix,
         });
-    }
-    for cf_name in category.cf_names() {
-        for (key, value) in scan_cf(&env.config.db, cf_name)? {
-            if seen.contains(&(cf_name.to_string(), key.clone())) {
-                continue;
-            }
-            candidates.push(EvictionCandidate {
-                entry_id: EntryId::new(*cf_name, key),
-                category,
-                size_bytes: value.len() as u64,
-                score: 0.0,
-                tier: Tier::Frozen,
-                gold: false,
-                last_read_unix: 0,
-            });
-        }
     }
     Ok(candidates)
 }
@@ -155,14 +145,17 @@ fn delete_candidate(env: &HygieneEnv, candidate: &EvictionCandidate) -> OpsResul
         &candidate.entry_id.key,
     );
     batch.delete_cf(
-        cf(&env.config.db, context_graph_mejepa_cf::CF_MEJEPA_PANEL_META)?,
+        cf(
+            &env.config.db,
+            context_graph_mejepa_cf::CF_MEJEPA_PANEL_META,
+        )?,
         meta_key(&candidate.entry_id),
     );
     env.config.db.write(batch)?;
-    let value = env
-        .config
-        .db
-        .get_cf(cf(&env.config.db, &candidate.entry_id.cf_name)?, &candidate.entry_id.key)?;
+    let value = env.config.db.get_cf(
+        cf(&env.config.db, &candidate.entry_id.cf_name)?,
+        &candidate.entry_id.key,
+    )?;
     if value.is_some() {
         return Err(OpsError::invalid(
             "quota.evict_readback",
@@ -206,10 +199,64 @@ fn is_unrecoverable(env: &HygieneEnv, category: StorageCategory) -> OpsResult<bo
         .config
         .db
         .get_cf(
-            cf(&env.config.db, context_graph_mejepa_cf::CF_MEJEPA_QUOTA_STATE)?,
+            cf(
+                &env.config.db,
+                context_graph_mejepa_cf::CF_MEJEPA_QUOTA_STATE,
+            )?,
             unrecoverable_key(category),
         )?
         .is_some())
+}
+
+fn clear_recoverable_states(env: &HygieneEnv) -> OpsResult<()> {
+    let mut batch = WriteBatch::default();
+    let mut changed = false;
+    let quota_cf = cf(
+        &env.config.db,
+        context_graph_mejepa_cf::CF_MEJEPA_QUOTA_STATE,
+    )?;
+    for category in StorageCategory::all() {
+        if !is_unrecoverable(env, category)? {
+            continue;
+        }
+        let mut used = 0u64;
+        for cf_name in category.cf_names() {
+            used = used.saturating_add(count_and_bytes_cf(&env.config.db, cf_name)?.1);
+        }
+        if category == StorageCategory::WitnessChains {
+            used = used.saturating_add(archive_dir_size(&env.config.archive_root)?);
+        }
+        if used <= category.budget_bytes(env.config.total_quota_bytes) {
+            batch.delete_cf(quota_cf, unrecoverable_key(category));
+            changed = true;
+        }
+    }
+    if changed {
+        env.config.db.write(batch)?;
+        for category in StorageCategory::all() {
+            let key = unrecoverable_key(category);
+            let value = env.config.db.get_cf(quota_cf, &key)?;
+            if value.is_some() {
+                let mut used = 0u64;
+                for cf_name in category.cf_names() {
+                    used = used.saturating_add(count_and_bytes_cf(&env.config.db, cf_name)?.1);
+                }
+                if category == StorageCategory::WitnessChains {
+                    used = used.saturating_add(archive_dir_size(&env.config.archive_root)?);
+                }
+                if used <= category.budget_bytes(env.config.total_quota_bytes) {
+                    return Err(OpsError::invalid(
+                        "quota.unrecoverable_readback",
+                        format!(
+                            "stale unrecoverable state remained for {} after clear",
+                            category.as_str()
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn unrecoverable_key(category: StorageCategory) -> Vec<u8> {
@@ -226,8 +273,14 @@ fn archive_dir_size(path: &Path) -> OpsResult<u64> {
     for entry in fs::read_dir(path).map_err(|err| OpsError::io("read_dir", path, err))? {
         let entry = entry.map_err(|err| OpsError::io("read_dir_entry", path, err))?;
         let meta = entry
-            .metadata()
+            .symlink_metadata()
             .map_err(|err| OpsError::io("metadata", entry.path(), err))?;
+        if meta.file_type().is_symlink() {
+            return Err(OpsError::invalid(
+                "archive_root",
+                format!("archive tree contains symlink {}", entry.path().display()),
+            ));
+        }
         if meta.is_dir() {
             total = total.saturating_add(archive_dir_size(&entry.path())?);
         } else {
