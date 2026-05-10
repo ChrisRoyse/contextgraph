@@ -51,3 +51,7 @@ path = "examples/train_holdout_eval_fsv.rs"
 [[example]]
 name = "train_full_fsv"
 path = "examples/train_full_fsv.rs"
+
+[[example]]
+name = "train_edge_cases_fsv"
+path = "examples/train_edge_cases_fsv.rs"

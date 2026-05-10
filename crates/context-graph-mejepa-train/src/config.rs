@@ -210,7 +210,13 @@ impl TrainingConfig {
                 format!("failed to read config {}: {err}", path.display()),
             )
         })?;
-        let cfg: Self = toml::from_slice(&bytes)?;
+        let text = std::str::from_utf8(&bytes).map_err(|err| {
+            TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                format!("TOML config is not UTF-8: {err}"),
+            )
+        })?;
+        let cfg: Self = toml::from_str(text)?;
         cfg.validate()?;
         Ok(cfg)
     }
@@ -227,8 +233,10 @@ mod tests {
 
     #[test]
     fn invalid_lr_fails_closed() {
-        let mut cfg = TrainingConfig::default();
-        cfg.lr = -1.0;
+        let cfg = TrainingConfig {
+            lr: -1.0,
+            ..TrainingConfig::default()
+        };
         let err = cfg.validate().unwrap_err();
         assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
     }
@@ -241,4 +249,3 @@ mod tests {
         assert_eq!(cfg, decoded);
     }
 }
-

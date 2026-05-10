@@ -56,7 +56,7 @@ mod off_by_one;
 pub mod oracle;
 mod over_engineer;
 pub mod patch_mutation;
-mod prng;
+pub mod prng;
 pub mod python_lex;
 pub mod source_patch;
 mod source_patch_support;

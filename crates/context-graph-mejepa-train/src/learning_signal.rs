@@ -2,6 +2,7 @@ use crate::error::{TrainerError, TrainerErrorCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UtmlErrorCode {
@@ -32,6 +33,14 @@ impl UtmlError {
         }
     }
 }
+
+impl fmt::Display for UtmlError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.code(), self.message)
+    }
+}
+
+impl std::error::Error for UtmlError {}
 
 impl From<UtmlError> for TrainerError {
     fn from(value: UtmlError) -> Self {

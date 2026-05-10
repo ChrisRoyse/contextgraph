@@ -1176,6 +1176,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "context-graph-mejepa-train"
+version = "0.1.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "chrono",
+ "clap",
+ "context-graph-embeddings",
+ "context-graph-mejepa",
+ "context-graph-mejepa-corpus",
+ "context-graph-mejepa-instruments",
+ "context-graph-mincut",
+ "context-graph-witness",
+ "ed25519-dalek",
+ "hex",
+ "rocksdb",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sha3",
+ "tempfile",
+ "thiserror 1.0.69",
+ "toml",
+ "tracing",
+]
+
+[[package]]
 name = "context-graph-mincut"
 version = "0.1.0"
 dependencies = [
