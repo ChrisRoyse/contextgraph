@@ -4,11 +4,12 @@
 # Idempotent: safe to call repeatedly, only starts if needed.
 
 PORT=3100
-STORAGE="/home/cabdru/contextgraph/contextgraph_data"
+DATA_ROOT="${CONTEXTGRAPH_DATA_ROOT:-/mnt/d/contextgraph}"
+STORAGE="${CONTEXT_GRAPH_STORAGE_PATH:-${DATA_ROOT}/storage/contextgraph-rocksdb}"
 MODELS="/home/cabdru/contextgraph/models"
 BINARY="/home/cabdru/contextgraph/target/release/context-graph-mcp"
-LOGFILE="/tmp/context-graph-daemon.log"
-PIDFILE="/tmp/context-graph-daemon.pid"
+LOGFILE="${DATA_ROOT}/logs/context-graph-daemon.log"
+PIDFILE="${DATA_ROOT}/state/locks/context-graph-daemon.pid"
 MAX_WAIT=300  # 5 minutes max wait for startup
 MAX_LOG_BYTES=$((10 * 1024 * 1024))
 LOG_BACKUPS=3
@@ -58,9 +59,12 @@ if [ ! -x "$BINARY" ]; then
     exit 1
 fi
 
+mkdir -p "$(dirname "$LOGFILE")" "$(dirname "$PIDFILE")" "$STORAGE"
+
 # Start daemon
 echo "[ensure_daemon] Starting context-graph daemon on port $PORT..." >&2
 rotate_log_if_needed "$LOGFILE"
+CONTEXTGRAPH_DATA_ROOT="$DATA_ROOT" \
 CONTEXT_GRAPH_STORAGE_PATH="$STORAGE" \
 CONTEXT_GRAPH_MODELS_PATH="$MODELS" \
 RUST_LOG=warn \

@@ -16,10 +16,11 @@
 set -u
 
 REPO=/home/cabdru/contextgraph
+DATA_ROOT="${CONTEXTGRAPH_DATA_ROOT:-/mnt/d/contextgraph}"
 BIN="$REPO/target/release/context-graph-mcp"
-PIDFILE="/tmp/context-graph-daemon.pid"
-DAEMON_LOG="/tmp/cg-daemon.log"
-WATCHDOG_LOG="/tmp/vram_watchdog.log"
+PIDFILE="${DATA_ROOT}/state/locks/context-graph-daemon.pid"
+DAEMON_LOG="${DATA_ROOT}/logs/cg-daemon.log"
+WATCHDOG_LOG="${DATA_ROOT}/logs/vram_watchdog.log"
 PHASE_B_OUT="$HOME/.contextgraph/training/shakespeare_stylistic_tags.jsonl"
 MAX_WAIT=300   # seconds to wait for daemon to bind 3100
 
@@ -30,6 +31,7 @@ fail() { printf "\033[31m[fail]\033[0m %s\n" "$*"; exit 1; }
 echo "=== Context Graph pipeline restart ==="
 echo "time: $(date -Iseconds)"
 echo ""
+mkdir -p "$(dirname "$PIDFILE")" "$(dirname "$DAEMON_LOG")" "$(dirname "$WATCHDOG_LOG")" "${DATA_ROOT}/storage/contextgraph-rocksdb"
 
 # --- 1. Phase B output present ---
 if [ ! -f "$PHASE_B_OUT" ]; then
@@ -65,7 +67,7 @@ fi
 for f in "$PIDFILE" \
          "$REPO/.claude-flow/daemon.pid" \
          "$REPO/.claude/scheduled_tasks.lock" \
-         "$REPO/contextgraph_data/mcp.pid"; do
+         "${DATA_ROOT}/storage/contextgraph-rocksdb/mcp.pid"; do
   [ -f "$f" ] || continue
   pid=$(head -c 32 "$f" 2>/dev/null | grep -oE '^[0-9]+' | head -1 || true)
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
@@ -96,7 +98,7 @@ else
   [ -x "$BIN" ] || fail "binary not found or not executable: $BIN"
   echo "[restart] launching daemon (detached via setsid) — model load takes 30-60s..."
   cd "$REPO"
-  setsid bash -c "RUST_LOG=info exec \"$BIN\" --daemon-server-only --daemon-port 3100 > \"$DAEMON_LOG\" 2>&1" < /dev/null >/dev/null 2>&1 &
+  setsid bash -c "CONTEXTGRAPH_DATA_ROOT=\"$DATA_ROOT\" CONTEXT_GRAPH_STORAGE_PATH=\"${DATA_ROOT}/storage/contextgraph-rocksdb\" RUST_LOG=info exec \"$BIN\" --daemon-server-only --daemon-port 3100 > \"$DAEMON_LOG\" 2>&1" < /dev/null >/dev/null 2>&1 &
   sleep 1
   # Recover actual daemon PID from setsid child via pgrep
   DPID=$(pgrep -f 'context-graph-mcp --daemon-server-only --daemon-port 3100' | head -1)
