@@ -20,7 +20,8 @@ integration) depends on this foundation being correct.
 
 1. Context Graph daemon running on `127.0.0.1:3100`:
    ```bash
-   CONTEXT_GRAPH_STORAGE_PATH=/home/cabdru/contextgraph/contextgraph_data \
+   CONTEXTGRAPH_DATA_ROOT=/mnt/d/contextgraph \
+   CONTEXT_GRAPH_STORAGE_PATH=/mnt/d/contextgraph/storage/contextgraph-rocksdb \
      ./target/release/context-graph-mcp --daemon-server-only --daemon-port 3100
    ```
 
