@@ -95,9 +95,9 @@ impl McpServer {
 
         // Create separate storage path for file watcher's MemoryStore
         // Uses a subdirectory to avoid RocksDB column family conflicts with main teleological store
-        let base_db_path = Self::resolve_storage_path(&self.config);
+        let base_db_path = Self::resolve_storage_path(&self.config)?;
         let watcher_db_path = base_db_path.join("watcher_memory");
-        Self::ensure_directory_exists(&watcher_db_path);
+        Self::ensure_directory_exists(&watcher_db_path)?;
 
         // Create memory store in separate directory
         let memory_store = Arc::new(MemoryStore::new(&watcher_db_path).map_err(|e| {

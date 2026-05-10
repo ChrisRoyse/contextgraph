@@ -5,11 +5,11 @@
 //!
 //! ## Philosophy
 //!
-//! Each embedder sees the knowledge graph from a unique perspective:
+//! Each active embedder sees the knowledge graph from a unique perspective:
 //! - E1 (semantic): Dense semantic similarity - foundation
-//! - E11 (entity): Entity knowledge via KEPLER - finds "Diesel" when searching "database"
 //! - E7 (code): Code patterns - finds `tokio::spawn` when searching for "async runtime"
 //! - E5 (causal): retired and disabled
+//! - E11 (entity): disabled until a verified code-symbol entity embedder exists
 //!
 //! Sometimes the best perspective isn't E1. These tools let agents choose.
 //!
@@ -34,6 +34,7 @@ use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
 
 /// Maximum number of custom weight profiles to prevent unbounded HashMap growth.
 const MAX_CUSTOM_PROFILES: usize = 1_000;
+const E11_DISABLED_TOOL_MESSAGE: &str = "E11 entity embedder is disabled because the available Kepler assets are incomplete/incompatible with the runtime and no verified code-symbol entity replacement has been installed; choose an active embedder";
 
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
@@ -99,31 +100,14 @@ impl Handlers {
 
         let embedder_index = embedder_id.to_index();
 
-        // E11-DISABLE: Return empty results when E11 is disabled.
-        // The HNSW index rejects zero-norm query vectors (STOR-M1), so searching
-        // E11 when disabled would error. Return a clear message instead.
         if matches!(embedder_id, EmbedderId::E11)
             && !context_graph_core::weights::E11_ENTITY_ENABLED
         {
-            info!(
+            error!(
                 embedder = %request.embedder,
-                "search_by_embedder: E11 is disabled (E11_ENTITY_ENABLED=false), returning empty results"
+                "search_by_embedder: rejected disabled E11 request"
             );
-            let response = SearchByEmbedderResponse {
-                embedder: request.embedder.clone(),
-                embedder_finds: format!("{} (DISABLED)", embedder_id.finds()),
-                results: Vec::new(),
-                total_searched: 0,
-                search_time_ms: start.elapsed().as_millis() as u64,
-            };
-            return match serde_json::to_value(&response) {
-                Ok(v) => self.tool_result(id, v),
-                Err(e) => self.tool_error_typed(
-                    id,
-                    ToolErrorKind::Execution,
-                    &format!("Serialization: {}", e),
-                ),
-            };
+            return self.tool_error_typed(id, ToolErrorKind::Validation, E11_DISABLED_TOOL_MESSAGE);
         }
         if matches!(embedder_id, EmbedderId::E5) && !context_graph_core::weights::E5_CAUSAL_ENABLED
         {
@@ -372,6 +356,15 @@ impl Handlers {
                 "E5 causal embedder is retired and disabled; choose an active embedder",
             );
         }
+        if matches!(embedder_id, EmbedderId::E11)
+            && !context_graph_core::weights::E11_ENTITY_ENABLED
+        {
+            error!(
+                embedder = %request.embedder,
+                "get_embedder_clusters: rejected disabled E11 request"
+            );
+            return self.tool_error_typed(id, ToolErrorKind::Validation, E11_DISABLED_TOOL_MESSAGE);
+        }
 
         // Auto-populate cluster manager from storage if empty (e.g. after MCP restart).
         // parking_lot::RwLockReadGuard is !Send — must drop before .await
@@ -587,6 +580,15 @@ impl Handlers {
                 "E5 causal embedder is retired and disabled; compare only active embedders",
             );
         }
+        if !context_graph_core::weights::E11_ENTITY_ENABLED
+            && embedder_ids.iter().any(|eid| matches!(eid, EmbedderId::E11))
+        {
+            error!(
+                embedders = ?request.embedders,
+                "compare_embedder_views: rejected disabled E11 request"
+            );
+            return self.tool_error_typed(id, ToolErrorKind::Validation, E11_DISABLED_TOOL_MESSAGE);
+        }
 
         info!(
             embedders = ?request.embedders,
@@ -611,25 +613,6 @@ impl Handlers {
 
         for embedder_id in &embedder_ids {
             let embedder_index = embedder_id.to_index();
-
-            // E11-DISABLE: When E11 is disabled, its embedding is a zero vector.
-            // The HNSW index correctly rejects zero-norm queries (STOR-M1), so
-            // skip E11 search entirely and return 0 results for it.
-            if matches!(embedder_id, EmbedderId::E11)
-                && !context_graph_core::weights::E11_ENTITY_ENABLED
-            {
-                debug!(
-                    embedder = ?embedder_id,
-                    "compare_embedder_views: E11 disabled, returning empty results"
-                );
-                all_memory_sets.push(HashSet::new());
-                rankings.push(EmbedderRanking {
-                    embedder: format!("{:?}", embedder_id),
-                    finds: format!("{} (DISABLED)", embedder_id.finds()),
-                    results: Vec::new(),
-                });
-                continue;
-            }
 
             let mut options = TeleologicalSearchOptions::quick(request.top_k)
                 .with_strategy(SearchStrategy::E1Only)

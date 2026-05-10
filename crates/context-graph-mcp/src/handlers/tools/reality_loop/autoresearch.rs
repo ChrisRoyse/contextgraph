@@ -602,10 +602,10 @@ mod tests {
         ).expect("write attempts");
 
         // Point cgreality cache files at this runtime
-        let cache_dir = dirs::home_dir().unwrap().join(".cache/cgreality");
-        std::fs::create_dir_all(&cache_dir).ok();
-        let active_path = cache_dir.join("active_runtime_root");
-        let target_path = cache_dir.join("active_target_instance");
+        let active_path =
+            context_graph_paths::cgreality_cache_file("active_runtime_root").expect("active path");
+        let target_path = context_graph_paths::cgreality_cache_file("active_target_instance")
+            .expect("target path");
         let orig_active = std::fs::read_to_string(&active_path).ok();
         let orig_target = std::fs::read_to_string(&target_path).ok();
         std::fs::write(&active_path, runtime_root.to_string_lossy().as_bytes()).expect("active");
@@ -622,9 +622,10 @@ mod tests {
 
     impl Drop for TestRuntime {
         fn drop(&mut self) {
-            let cache_dir = dirs::home_dir().unwrap().join(".cache/cgreality");
-            let active_path = cache_dir.join("active_runtime_root");
-            let target_path = cache_dir.join("active_target_instance");
+            let active_path = context_graph_paths::cgreality_cache_file("active_runtime_root")
+                .expect("active path");
+            let target_path = context_graph_paths::cgreality_cache_file("active_target_instance")
+                .expect("target path");
             if let Some(orig) = &self._orig_active {
                 std::fs::write(&active_path, orig).ok();
             } else {

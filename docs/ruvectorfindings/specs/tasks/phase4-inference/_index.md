@@ -1,5 +1,7 @@
 # Phase 4a — INFERENCE Task Index
 
+> **📊 2026-05-10 STATUS — SHIPPED.** `MeJepaCompiler::{compile, compile_with_panel, verify, observe}` + conformal interval + OOD detection + `Verdict::{Pass, Fail, OutOfDistribution, Abstain, GuardRejected}` in `crates/context-graph-mejepa/`. MCP tool `mcp__cgreality__mejepa_verify` live. `inference_fsv` example. Authoritative status: ../../implementation-plan.md Phase 4a.
+
 > **Level 4.** Atomic task specifications for the **INFERENCE domain** (Phase 4a: `MeJepaCompiler::compile/verify`, conformal calibration, OOD detection, ΔΩ × ΔΞ multiplicative gating, 7-gate verify ladder, MCP tools, CLI). Authority order: `../../constitution.md` (Level 1) > `../../functional/SPEC-INFERENCE.md` (Level 2) > `../../technical/TECH-INFERENCE.md` (Level 3) > this file (Level 4). Each task is one conceptual change shippable end-to-end with FSV evidence per `docs2/prdtospec.md` §4.
 
 ## Phase scope

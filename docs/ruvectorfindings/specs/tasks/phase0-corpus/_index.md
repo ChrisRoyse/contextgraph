@@ -1,5 +1,7 @@
 # Phase 0 — CORPUS Task Index
 
+> **📊 2026-05-10 STATUS — partial.** Python operators+split+oracle bridge+CLI shipped (`crates/context-graph-mejepa-corpus/`); full 300×8 batch run + 10 non-Python language operators pending. Authoritative status: ../../implementation-plan.md Phase 0.
+
 > **Level 4.** Atomic task specifications for the **CORPUS domain** (Phase 0: SWE-bench Lite mutation corpus + Docker oracle bridge + RocksDB CFs + train/calibration/holdout split). Authority order: `../../constitution.md` (Level 1) > `../../functional/SPEC-CORPUS.md` (Level 2) > `../../technical/TECH-CORPUS.md` (Level 3) > this file (Level 4). Each task is one conceptual change shippable end-to-end with FSV evidence per `docs2/prdtospec.md` §4.
 
 ## Phase scope

@@ -2,7 +2,7 @@
 # Helpers for ccreality hook unit tests.
 set -euo pipefail
 
-CGREALITY_CACHE="${CGREALITY_CACHE_DIR:-${HOME}/.cache/cgreality}"
+CGREALITY_CACHE="${CGREALITY_CACHE_DIR:-/mnt/d/contextgraph/state/cgreality}"
 ACTIVE_ROOT_FILE="${CGREALITY_CACHE}/active_runtime_root"
 ACTIVE_TARGET_FILE="${CGREALITY_CACHE}/active_target_instance"
 

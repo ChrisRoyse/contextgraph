@@ -9,10 +9,16 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub async fn read_active_runtime_root() -> Result<Option<PathBuf>> {
-    let Some(home) = dirs::home_dir() else {
-        return Ok(None);
-    };
-    let path = home.join(".cache/cgreality/active_runtime_root");
+    let path = context_graph_paths::cgreality_cache_file("active_runtime_root").map_err(|e| {
+        CCRealityError::new(
+            e.code,
+            e.message,
+            "active_runtime_root.path",
+            e.remediation,
+            json!({"data_root_env": context_graph_paths::ENV_DATA_ROOT}),
+            None,
+        )
+    })?;
     if !path.is_file() {
         return Ok(None);
     }
@@ -21,7 +27,7 @@ pub async fn read_active_runtime_root() -> Result<Option<PathBuf>> {
             "CCREALITY_ACTIVE_ROOT_READ_FAILED",
             format!("failed to read active runtime root: {e}"),
             "active_runtime_root.path",
-            "ensure ~/.cache/cgreality is readable",
+            "ensure /mnt/d/contextgraph/state/cgreality is readable",
             json!({"path": path.display().to_string()}),
             Some(file_sot(&path)),
         )
@@ -35,10 +41,16 @@ pub async fn read_active_runtime_root() -> Result<Option<PathBuf>> {
 }
 
 pub async fn read_active_target_instance() -> Result<Option<String>> {
-    let Some(home) = dirs::home_dir() else {
-        return Ok(None);
-    };
-    let path = home.join(".cache/cgreality/active_target_instance");
+    let path = context_graph_paths::cgreality_cache_file("active_target_instance").map_err(|e| {
+        CCRealityError::new(
+            e.code,
+            e.message,
+            "active_target_instance.path",
+            e.remediation,
+            json!({"data_root_env": context_graph_paths::ENV_DATA_ROOT}),
+            None,
+        )
+    })?;
     if !path.is_file() {
         return Ok(None);
     }
@@ -47,7 +59,7 @@ pub async fn read_active_target_instance() -> Result<Option<String>> {
             "CCREALITY_ACTIVE_INSTANCE_READ_FAILED",
             format!("failed to read active target instance: {e}"),
             "active_target_instance.path",
-            "ensure ~/.cache/cgreality is readable",
+            "ensure /mnt/d/contextgraph/state/cgreality is readable",
             json!({"path": path.display().to_string()}),
             Some(file_sot(&path)),
         )

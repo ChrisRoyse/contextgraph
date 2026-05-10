@@ -6,23 +6,23 @@
 
 ---
 
-## Spec inventory (13 functional specs)
+## Spec inventory (13 functional specs) — **status refreshed 2026-05-10**
 
-| ID | File | Phase | Status | REQ count |
+| ID | File | Phase | Status (2026-05-10) | REQ count |
 |---|---|---|---|---|
-| SPEC-CORPUS | [SPEC-CORPUS.md](./SPEC-CORPUS.md) | 0 | partial | 16 |
-| SPEC-AST-CHUNKING | [SPEC-AST-CHUNKING.md](./SPEC-AST-CHUNKING.md) | 1a | partial | 15 |
-| SPEC-EMBEDDERS | [SPEC-EMBEDDERS.md](./SPEC-EMBEDDERS.md) | 1b | partial | 12 |
-| SPEC-INSTRUMENTS | [SPEC-INSTRUMENTS.md](./SPEC-INSTRUMENTS.md) | 1c | partial | 23 |
-| SPEC-PREDICTOR | [SPEC-PREDICTOR.md](./SPEC-PREDICTOR.md) | 2 | deferred | 18 |
-| SPEC-TRAINING | [SPEC-TRAINING.md](./SPEC-TRAINING.md) | 3 | deferred | 12 |
-| SPEC-UTML | [SPEC-UTML.md](./SPEC-UTML.md) | 3 (cross-cutting) | deferred | 12 |
-| SPEC-INFERENCE | [SPEC-INFERENCE.md](./SPEC-INFERENCE.md) | 4a | deferred | 20 |
-| SPEC-TCT | [SPEC-TCT.md](./SPEC-TCT.md) | 4b (cross-cutting) | deferred | 15 |
-| SPEC-SELF-HEALING | [SPEC-SELF-HEALING.md](./SPEC-SELF-HEALING.md) | 5 | deferred | 20 |
-| SPEC-HYGIENE | [SPEC-HYGIENE.md](./SPEC-HYGIENE.md) | 6 | partial | 10 |
-| SPEC-SHIFT-SUBSCRIBER | [SPEC-SHIFT-SUBSCRIBER.md](./SPEC-SHIFT-SUBSCRIBER.md) | 7 | deferred | 18 |
-| SPEC-EVALUATION | [SPEC-EVALUATION.md](./SPEC-EVALUATION.md) | 8 | deferred | 20 |
+| SPEC-CORPUS | [SPEC-CORPUS.md](./SPEC-CORPUS.md) | 0 | partial — Python operators+split+oracle bridge+CLI shipped; 300×8 batch + 10 non-Python langs pending | 16 |
+| SPEC-AST-CHUNKING | [SPEC-AST-CHUNKING.md](./SPEC-AST-CHUNKING.md) | 1a | partial — Rust chunker shipped; multi-language extension of `ast_chunker.rs` pending | 15 |
+| SPEC-EMBEDDERS | [SPEC-EMBEDDERS.md](./SPEC-EMBEDDERS.md) | 1b | partial — 21-embedder enum + manifest + VRAM gate + routing wrapper shipped; per-embedder `Instrument` wrappers with real model loads pending | 12 |
+| SPEC-INSTRUMENTS | [SPEC-INSTRUMENTS.md](./SPEC-INSTRUMENTS.md) | 1c | partial — all 15 panel slots have deterministic encoders + Panel/PanelBuilder/PanelStore + linear-probe gate shipped; 11 of 14 are placeholders awaiting embedder/analyzer-backed replacements | 23 |
+| SPEC-PREDICTOR | [SPEC-PREDICTOR.md](./SPEC-PREDICTOR.md) | 2 | **shipped** — `MeJepaPredictor` + VICReg + OracleHead + FrozenTargetAdapter + `predictor_fsv` | 18 |
+| SPEC-TRAINING | [SPEC-TRAINING.md](./SPEC-TRAINING.md) | 3 | **shipped** — Trainer + AdamW + cosine LR + sampler + cert chain + holdout eval + LoRA + distill; 5 FSV examples | 12 |
+| SPEC-UTML | [SPEC-UTML.md](./SPEC-UTML.md) | 3 (cross-cutting) | partial — 4 deltas + L_step + sampling reweighting shipped; pairwise MI / continual-backprop / state-transfer T pending | 12 |
+| SPEC-INFERENCE | [SPEC-INFERENCE.md](./SPEC-INFERENCE.md) | 4a | **shipped** — `MeJepaCompiler::{compile, verify, observe}` + conformal + OOD + Verdict enum + `mejepa_verify` MCP tool | 20 |
+| SPEC-TCT | [SPEC-TCT.md](./SPEC-TCT.md) | 4b (cross-cutting) | **shipped** — full TctConstellation + Gτ + GuardRejected + shrinkage + freshness + calibrator + `mejepa_constellation_inspect` MCP tool | 15 |
+| SPEC-SELF-HEALING | [SPEC-SELF-HEALING.md](./SPEC-SELF-HEALING.md) | 5 | **shipped** — 16-module `heal/` tree + `mejepa-heal-drill` binary + 6 RocksDB CFs + `mejepa_heal_status`/`mejepa_rollback_to` MCP tools | 20 |
+| SPEC-HYGIENE | [SPEC-HYGIENE.md](./SPEC-HYGIENE.md) | 6 | partial — tier-compression + mincut crates shipped; CF integration / Merkle compression / nightly GC / quota / `me_jepa::ops::*` MCP tools pending | 10 |
+| SPEC-SHIFT-SUBSCRIBER | [SPEC-SHIFT-SUBSCRIBER.md](./SPEC-SHIFT-SUBSCRIBER.md) | 7 | partial — `reality_shift_log` infra + `mejepa_predict_latest` MCP tool shipped; Tokio subscriber loop + watermark CF consumer + `mejepa_observe_shift`/`mejepa_subscriber_status`/`mejepa_capture_audit` pending | 18 |
+| SPEC-EVALUATION | [SPEC-EVALUATION.md](./SPEC-EVALUATION.md) | 8 | partial — holdout-eval harness shipped; per-language stratification, ≥0.95 ship gate, active-learning loop, cross-task transfer, weekly report pending | 20 |
 
 **Total:** 211 numbered requirements across 13 domains.
 

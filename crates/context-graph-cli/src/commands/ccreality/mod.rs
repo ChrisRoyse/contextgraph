@@ -660,19 +660,30 @@ fn is_executable_file(path: &Path) -> bool {
 
 fn cache_file(name: &str) -> CCResult<PathBuf> {
     if let Ok(cache_dir) = env::var("CGREALITY_CACHE_DIR") {
-        return Ok(PathBuf::from(cache_dir).join(name));
+        let path = PathBuf::from(&cache_dir).join(name);
+        let path = context_graph_paths::require_under_data_root(&path, "CGREALITY_CACHE_DIR")
+            .map_err(|e| {
+                ccreality_error(
+                    e.code,
+                    e.message,
+                    "env.CGREALITY_CACHE_DIR",
+                    e.remediation,
+                    json!({"cache_dir": cache_dir, "name": name}),
+                    None,
+                )
+            })?;
+        return Ok(path);
     }
-    let home = dirs::home_dir().ok_or_else(|| {
+    context_graph_paths::cgreality_cache_file(name).map_err(|e| {
         ccreality_error(
-            "CCREALITY_CLI_HOME_DIR_MISSING",
-            "could not determine home directory",
-            "dirs.home_dir",
-            "set CGREALITY_CACHE_DIR explicitly",
-            json!({}),
+            e.code,
+            e.message,
+            "cgreality.cache_file",
+            e.remediation,
+            json!({"name": name, "data_root_env": context_graph_paths::ENV_DATA_ROOT}),
             None,
         )
-    })?;
-    Ok(home.join(".cache/cgreality").join(name))
+    })
 }
 
 fn read_trimmed_path(path: &Path, error_code: &'static str) -> CCResult<PathBuf> {

@@ -1,5 +1,7 @@
 # Phase 5 — SELF-HEALING Task Index
 
+> **📊 2026-05-10 STATUS — SHIPPED.** 16-module `heal/` tree (drift, ewc, promote, full_retrain, integrity, lora_refresh, calibration, distill, regulate, pipeline, drill, store, cf, fsv, etc.) in `crates/context-graph-mejepa/`. `mejepa-heal-drill` binary with happy/soft/hard/catastrophic injection. RocksDB CFs `CF_MEJEPA_FISHER_SNAPSHOTS`/`DRIFT_WINDOW`/`DRIFT_HISTORY`/`HEAL_REPORTS`/`DISTILL_STEPS`/`ACTIVE_POINTERS` persisted. MCP tools `mcp__cgreality__mejepa_heal_status` + `mejepa_rollback_to` live. Authoritative status: ../../implementation-plan.md Phase 5.
+
 > **Level 4.** Atomic task specifications for the **SELF-HEALING domain** (Phase 5: online observe with EWC++, drift detection, A/B/C retrain promotion, periodic full retrain, continuous calibration, witness-chain integrity check, LoRA adapter refresh, distillation-based online observe). Authority order: `../../constitution.md` (Level 1) > `../../functional/SPEC-SELF-HEALING.md` (Level 2) > `../../technical/TECH-SELF-HEALING.md` (Level 3) > this file (Level 4). Each task is one conceptual change shippable end-to-end with FSV evidence per `docs2/prdtospec.md` §4.
 
 ## Phase scope

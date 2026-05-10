@@ -1,5 +1,7 @@
 # SPEC-INSTRUMENTS — ME-JEPA-Code Instruments + 5,120-d Panel
 
+> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 1 status.
+
 > **Level 2 — Functional Specification.** Defines WHAT the instruments domain must do, not HOW. Implementation details live in `TECH-INSTRUMENTS.md`. Conflicts with the constitution resolve to the constitution.
 
 ```xml
@@ -7,10 +9,10 @@
 
 <metadata>
   <title>ME-JEPA-Code Instruments + 5,120-d Panel</title>
-  <status>draft</status>
+  <status>partial</status>
   <owner>Phase 1 ME-JEPA implementation team (Claude Code outer optimizer)</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-CORPUS</spec_ref>            <!-- Phase 0 mutation corpus + oracle bridge -->
     <spec_ref>SPEC-AST-CHUNKING</spec_ref>      <!-- 11-language AST-perfect chunker (doc 14) -->

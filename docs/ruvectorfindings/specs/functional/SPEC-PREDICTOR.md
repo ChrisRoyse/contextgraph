@@ -1,5 +1,7 @@
 # SPEC-PREDICTOR — ME-JEPA-Code Predictor + Frozen Target + VICReg + Oracle Head
 
+> **📊 2026-05-10 STATUS:** SHIPPED — see ../implementation-plan.md for the full Phase 2 status.
+
 > **Level 2 — Functional Specification.** Defines WHAT the Phase 2 predictor domain must do, not HOW. Implementation details live in `TECH-PREDICTOR.md`. Conflicts with the constitution resolve to the constitution; conflicts with `<utml_v1_invariants>` rule 2 (`ΔΞ.target_collapse = 0 by construction`) resolve to that rule.
 
 ```xml
@@ -7,10 +9,10 @@
 
 <metadata>
   <title>ME-JEPA-Code Predictor + Frozen Target Readback + VICReg Loss + Oracle Head</title>
-  <status>draft</status>
+  <status>shipped</status>
   <owner>Phase 2 ME-JEPA implementation team (Claude Code outer optimizer)</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-INSTRUMENTS</spec_ref>      <!-- supplies the 5,120-d Panel + frozen Instrument trait -->
     <spec_ref>SPEC-EMBEDDERS</spec_ref>        <!-- 21-embedder ensemble, frozen during predictor training -->

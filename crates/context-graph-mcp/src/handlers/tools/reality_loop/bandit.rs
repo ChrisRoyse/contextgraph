@@ -644,9 +644,8 @@ mod tests {
         let run_id = "run-bandit".to_string();
         let run_root = tmp.path().join(&run_id);
         std::fs::create_dir_all(run_root.join("reality-optimizer")).expect("optimizer dir");
-        let cache_dir = dirs::home_dir().unwrap().join(".cache/cgreality");
-        std::fs::create_dir_all(&cache_dir).expect("cache dir");
-        let active_path = cache_dir.join("active_runtime_root");
+        let active_path =
+            context_graph_paths::cgreality_cache_file("active_runtime_root").expect("active path");
         let orig_active = std::fs::read_to_string(&active_path).ok();
         std::fs::write(&active_path, tmp.path().to_string_lossy().as_bytes()).expect("active");
         TestRuntime {
@@ -661,9 +660,8 @@ mod tests {
 
     impl Drop for TestRuntime {
         fn drop(&mut self) {
-            let active_path = dirs::home_dir()
-                .unwrap()
-                .join(".cache/cgreality/active_runtime_root");
+            let active_path = context_graph_paths::cgreality_cache_file("active_runtime_root")
+                .expect("active path");
             if let Some(orig) = &self._orig_active {
                 std::fs::write(active_path, orig).ok();
             } else {

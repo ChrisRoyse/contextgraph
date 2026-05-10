@@ -1364,23 +1364,10 @@ async fn kill_stale_standalone_holder(db_path: &Path) -> bool {
 
 /// Compute the lockfile path for the reality-loop stdio singleton.
 ///
-/// Returns `$HOME/.cache/cgreality/reality-loop-stdio.lock` (consistent with
-/// the existing `~/.cache/cgreality/active_runtime_root` location used by
-/// CGREALITY_RUNTIME_ROOT_HINT). Errors out loudly if HOME is unset rather
-/// than silently falling back to /tmp (which would create cross-user
-/// collisions on shared hosts).
+/// Returns the D-backed cgreality singleton lock path.
 #[cfg(unix)]
 fn reality_loop_singleton_lock_path() -> Result<PathBuf> {
-    let home = std::env::var("HOME").map_err(|e| {
-        anyhow::anyhow!(
-            "HOME env var is required to compute the reality-loop singleton lock path: {}",
-            e
-        )
-    })?;
-    Ok(PathBuf::from(home)
-        .join(".cache")
-        .join("cgreality")
-        .join("reality-loop-stdio.lock"))
+    context_graph_paths::cgreality_singleton_lock_path().map_err(Into::into)
 }
 
 /// Read /proc/PID/cmdline as a space-joined string.
@@ -2649,7 +2636,7 @@ async fn async_main() -> Result<()> {
     // server's resolve_storage_path() when config path is empty or env var is set.
     // The guard prevents multiple processes from opening the same RocksDB,
     // which causes corruption if one is killed mid-compaction.
-    let db_path = server::McpServer::resolve_storage_path(&config);
+    let db_path = server::McpServer::resolve_storage_path(&config)?;
     let uses_rocksdb = config.storage.backend == "rocksdb";
 
     // ==================================================================

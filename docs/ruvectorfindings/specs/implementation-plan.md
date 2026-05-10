@@ -202,19 +202,19 @@ Phase 5 (self-healing) and Phase 6 (hygiene) are operational gates that run AFTE
 | `me_jepa::ops::*` MCP-callable: gc_run_nightly, quota_check_and_evict, heal_detect_drift, heal_retrain_if_needed, witness_compress_old_segments, witness_verify_integrity, tier_demote, tier_promote | REQ-HYG-06 | new |
 | FSV: 10,000-entry stress corpus → nightly GC keeps disk ≤ 110 GB | REQ-HYG-07 | new |
 
-### Phase 7 — Shift subscriber + MCP tools (SHIFT-SUBSCRIBER)
+### Phase 7 — Shift subscriber + MCP tools (SHIFT-SUBSCRIBER) — **PARTIAL**
 
 | Deliverable | Spec ref | Status |
 |---|---|---|
-| Tokio task tailing `cgreality-shift-log/<session_id>.jsonl`; per-shift instrument cache keyed by file_sha | REQ-SHIFT-01 | new |
-| Watermark CF (CF_MEJEPA_SHIFT_WATERMARK) records last shift_id consumed; restart-safe | REQ-SHIFT-02 | new |
-| Per-shift latency: p50 &lt; 5s; p99 &lt; 30s; subscriber-lag alert &gt; 500 unprocessed shifts / 1 minute | REQ-SHIFT-03 | new |
-| `mcp__cgreality__mejepa_predict_latest()` MCP tool | REQ-SHIFT-04 | new |
-| `mcp__cgreality__mejepa_observe_shift(shift_id)` MCP tool | REQ-SHIFT-05 | new |
-| `mcp__cgreality__mejepa_subscriber_status()` MCP tool | REQ-SHIFT-06 | new |
-| `mcp__cgreality__mejepa_capture_audit(attempt_id)` MCP tool | REQ-SHIFT-07 | new |
-| Backpressure + durability: log queues; on resume, tail from last-processed offset | REQ-SHIFT-08 | new |
-| FSV: synthetic shift stream end-to-end latency profiled; persistence verified | REQ-SHIFT-09 | new |
+| Tokio task tailing `cgreality-shift-log/<session_id>.jsonl`; per-shift instrument cache keyed by file_sha | REQ-SHIFT-01 | pending |
+| Watermark CF (CF_MEJEPA_SHIFT_WATERMARK) records last shift_id consumed; restart-safe | REQ-SHIFT-02 | partial — `CF_MEJEPA_SHIFT_WATERMARK` declared and persisted via heal pipeline; subscriber consumer pending |
+| Per-shift latency: p50 &lt; 5s; p99 &lt; 30s; subscriber-lag alert &gt; 500 unprocessed shifts / 1 minute | REQ-SHIFT-03 | pending |
+| `mcp__cgreality__mejepa_predict_latest()` MCP tool | REQ-SHIFT-04 | ✅ shipped (`crates/context-graph-mcp/src/tools/names.rs:102` + `mejepa_tools.rs::call_mejepa_predict_latest`) |
+| `mcp__cgreality__mejepa_observe_shift(shift_id)` MCP tool | REQ-SHIFT-05 | pending |
+| `mcp__cgreality__mejepa_subscriber_status()` MCP tool | REQ-SHIFT-06 | pending |
+| `mcp__cgreality__mejepa_capture_audit(attempt_id)` MCP tool | REQ-SHIFT-07 | pending |
+| Backpressure + durability: log queues; on resume, tail from last-processed offset | REQ-SHIFT-08 | partial — `reality_shift_log` reader/writer in `crates/context-graph-mcp/src/handlers/tools/reality_loop/shift_log.rs` provides durable on-disk JSONL log; consumer-side resume pending |
+| FSV: synthetic shift stream end-to-end latency profiled; persistence verified | REQ-SHIFT-09 | pending |
 
 ### Phase 8 — Evaluation against ≥0.95 (EVALUATION)
 

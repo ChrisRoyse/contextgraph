@@ -1,5 +1,7 @@
 # Phase 1a — AST Chunking Task Index
 
+> **📊 2026-05-10 STATUS — partial.** Rust chunker shipped at `crates/context-graph-core/src/memory/ast_chunker.rs:235`; multi-language extension to all 11 tree-sitter languages (Python/JS/TS/Go/Java/C/C++/C#/Ruby/PHP) pending. Authoritative status: ../../implementation-plan.md Phase 1a.
+
 > **2026-05-10 repo audit update:** Phase 1 is no longer greenfield. The current multi-language AST chunker exists in `crates/context-graph-core/src/memory/ast/` and is wired into ME-JEPA code instruments. Treat the 22 task files as audit/hardening tasks against that implementation.
 
 ## Occam Answer

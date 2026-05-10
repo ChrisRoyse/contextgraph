@@ -65,9 +65,8 @@ fn witness_repair_audit_count(runtime_root: &Path, run_id: &str) -> usize {
 }
 
 fn active_runtime_for_fsv(test_name: &str) -> (PathBuf, String) {
-    let active_path = dirs::home_dir()
-        .expect("home")
-        .join(".cache/cgreality/active_runtime_root");
+    let active_path =
+        context_graph_paths::cgreality_cache_file("active_runtime_root").expect("active path");
     let raw = fs::read_to_string(&active_path).unwrap_or_else(|err| {
         panic!(
             "{test_name}: failed to read active runtime root at {}: {err}",

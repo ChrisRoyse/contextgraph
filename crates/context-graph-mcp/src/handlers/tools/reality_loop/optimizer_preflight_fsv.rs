@@ -27,10 +27,10 @@ fn setup_runtime() -> TestRuntime {
     let task_id = "psf__requests-2317".to_string();
     fs::create_dir_all(runtime_root.join(&run_id).join(&task_id).join("attempt-1"))
         .expect("attempt dir");
-    let cache_dir = dirs::home_dir().unwrap().join(".cache/cgreality");
-    fs::create_dir_all(&cache_dir).expect("cache dir");
-    let active_path = cache_dir.join("active_runtime_root");
-    let target_path = cache_dir.join("active_target_instance");
+    let active_path =
+        context_graph_paths::cgreality_cache_file("active_runtime_root").expect("active path");
+    let target_path =
+        context_graph_paths::cgreality_cache_file("active_target_instance").expect("target path");
     let orig_active = fs::read_to_string(&active_path).ok();
     let orig_target = fs::read_to_string(&target_path).ok();
     fs::write(&active_path, runtime_root.to_string_lossy().as_bytes()).expect("active");
@@ -48,9 +48,10 @@ fn setup_runtime() -> TestRuntime {
 
 impl Drop for TestRuntime {
     fn drop(&mut self) {
-        let cache_dir = dirs::home_dir().unwrap().join(".cache/cgreality");
-        let active_path = cache_dir.join("active_runtime_root");
-        let target_path = cache_dir.join("active_target_instance");
+        let active_path =
+            context_graph_paths::cgreality_cache_file("active_runtime_root").expect("active path");
+        let target_path = context_graph_paths::cgreality_cache_file("active_target_instance")
+            .expect("target path");
         if let Some(orig) = &self._orig_active {
             fs::write(&active_path, orig).ok();
         } else {

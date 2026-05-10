@@ -1,5 +1,7 @@
 # Phase 1b — EMBEDDERS Task Index (Level 4 atomic tasks)
 
+> **📊 2026-05-10 STATUS — partial.** 21-embedder enum + manifest digest + VRAM budget gate + routing wrapper shipped (`crates/context-graph-mejepa-embedders/`); per-embedder `Instrument`-trait wrappers backed by real HuggingFace model loads pending (REQ-EMBED-02..11). E5 retired post-2026-05-10 (commits 7a718785 / 77cd98c5). Authoritative status: ../../implementation-plan.md Phase 1b.
+
 > **Phase 1b** wraps the existing 21-embedder ensemble (E1-E21) shipped in `crates/context-graph-embeddings/` behind the unified `Instrument` trait + per-chunk-type routing table + LoRA adapter scaffolding + VRAM budget enforcement. New crate: `crates/context-graph-mejepa-embedders/`.
 
 **Authority:** `../../constitution.md` overrides. Spec sources: `../../functional/SPEC-EMBEDDERS.md`, `../../technical/TECH-EMBEDDERS.md`, `docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md` §3-§4.

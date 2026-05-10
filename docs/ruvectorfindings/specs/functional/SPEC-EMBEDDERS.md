@@ -1,5 +1,7 @@
 # SPEC-EMBEDDERS — Functional Specification
 
+> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 1 status.
+
 > **Level 2 (functional spec).** Defines WHAT the EMBEDDERS domain must do. For HOW, see `specs/technical/TECH-EMBEDDERS.md`. Constitution (Level 1) wins on conflict.
 
 ```xml
@@ -7,10 +9,10 @@
 
 <metadata>
   <title>EMBEDDERS — 21-Embedder Ensemble Wrapped Behind the Instrument Trait</title>
-  <status>draft</status>
+  <status>partial</status>
   <owner>ME-JEPA Phase 1 working group (cc-reality outer-loop optimizer)</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-INSTRUMENTS</spec_ref>
     <spec_ref>SPEC-AST-CHUNKING</spec_ref>

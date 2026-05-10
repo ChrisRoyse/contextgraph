@@ -1,5 +1,7 @@
 # phase3-training — Phase 3 Training Loop Task Index
 
+> **📊 2026-05-10 STATUS — SHIPPED.** Full `Trainer` + AdamW + cosine LR + `BatchSampler` + `TrainingCertificate` hash chain + holdout eval + `LoRAWiring` + distillation in `crates/context-graph-mejepa-train/`. 5 FSV examples (`train_smoke_fsv`, `train_full_fsv`, `train_holdout_eval_fsv`, `train_cert_chain_fsv`, `train_edge_cases_fsv`). Authoritative status: ../../implementation-plan.md Phase 3.
+
 > **Level 4.** Atomic task specifications for the **TRAINING domain** (Phase 3: AdamW + multi-objective loss + per-step training certificate + BatchSampler + holdout evaluation + counterfactual + cross-task transfer + aux distillation + per-epoch witness + checkpoint + LoRA wiring + CLI + FSV). Authority order: `../../constitution.md` (Level 1) > `../../functional/SPEC-TRAINING.md` (Level 2) > `../../technical/TECH-TRAINING.md` (Level 3) > this file (Level 4). Each task is one conceptual change shippable end-to-end with FSV evidence per `docs2/prdtospec.md` §4.
 
 ## Phase scope

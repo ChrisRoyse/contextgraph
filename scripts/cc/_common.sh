@@ -2,7 +2,7 @@
 # Shared helpers for ccreality Claude Code hooks.
 set -euo pipefail
 
-CGREALITY_CACHE="${CGREALITY_CACHE_DIR:-${HOME}/.cache/cgreality}"
+CGREALITY_CACHE="${CGREALITY_CACHE_DIR:-/mnt/d/contextgraph/state/cgreality}"
 RUNTIME_ROOT_FILE="${CGREALITY_CACHE}/active_runtime_root"
 TARGET_INSTANCE_FILE="${CGREALITY_CACHE}/active_target_instance"
 CONTEXTGRAPH_ROOT_RESOLVED="${CONTEXTGRAPH_ROOT:-${CLAUDE_PROJECT_DIR:-/home/cabdru/contextgraph}}"

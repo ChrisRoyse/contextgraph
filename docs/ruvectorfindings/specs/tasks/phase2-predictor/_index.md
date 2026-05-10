@@ -1,5 +1,7 @@
 # Phase 2 — PREDICTOR Task Index
 
+> **📊 2026-05-10 STATUS — SHIPPED.** `MeJepaPredictor` (6-layer transformer) + `VICRegLoss` + `OracleHead` + `FrozenTargetAdapter` + `predictor_fsv` example all in `crates/context-graph-mejepa/`. CUDA-only (RTX 5090 sm_120). Authoritative status: ../../implementation-plan.md Phase 2.
+
 > **Level 4.** Atomic task specifications for the **PREDICTOR domain** (Phase 2: 6-layer transformer + Oracle head + frozen target adapter + VICReg loss + DoD CLI). Authority order: `../../constitution.md` (Level 1) > `../../functional/SPEC-PREDICTOR.md` (Level 2) > `../../technical/TECH-PREDICTOR.md` (Level 3) > this file (Level 4). Each task is one conceptual change shippable end-to-end with FSV evidence per `docs2/prdtospec.md` §4.
 
 ## Phase scope

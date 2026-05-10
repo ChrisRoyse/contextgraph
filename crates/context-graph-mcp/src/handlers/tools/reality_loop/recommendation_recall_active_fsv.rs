@@ -8,9 +8,8 @@ use std::path::PathBuf;
 #[test]
 #[ignore = "appends a recall audit to the active ccreality runtime root; run manually"]
 fn recall_manual_active_runtime_reads_real_recommendations() {
-    let active_path = dirs::home_dir()
-        .expect("home")
-        .join(".cache/cgreality/active_runtime_root");
+    let active_path =
+        context_graph_paths::cgreality_cache_file("active_runtime_root").expect("active path");
     let raw = fs::read_to_string(&active_path).expect("active runtime root");
     let runtime_root = PathBuf::from(raw.trim());
     let run_id = latest_run_id(&runtime_root)

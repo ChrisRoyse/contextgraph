@@ -34,7 +34,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
-const IMAGE_PREP_LOG_DIR: &str = "/tmp/contextgraph-mejepa-image-prep-logs";
 const LOG_TAIL_BYTES: u64 = 64 * 1024;
 
 #[derive(Parser, Debug)]
@@ -64,7 +63,7 @@ struct GenerateArgs {
     tasks_dir: PathBuf,
     #[arg(
         long,
-        default_value = "/home/cabdru/.cache/contextgraph-swebench/venv/bin/python"
+        default_value = "/mnt/d/contextgraph/cache/contextgraph-swebench/venv/bin/python"
     )]
     venv_python: PathBuf,
     #[arg(long = "instance-id")]
@@ -81,10 +80,13 @@ struct GenerateArgs {
     skip_tasks: usize,
     #[arg(
         long,
-        default_value = "/home/cabdru/.cache/contextgraph-mejepa-corpus/repos"
+        default_value = "/mnt/d/contextgraph/cache/mejepa-corpus/repos"
     )]
     repo_cache_dir: PathBuf,
-    #[arg(long, default_value = "/tmp/contextgraph-mejepa-corpus-source-work")]
+    #[arg(
+        long,
+        default_value = "/mnt/d/contextgraph/work/mejepa-corpus/source-work"
+    )]
     source_work_root: PathBuf,
     #[arg(long, default_value = "mejepa-corpus")]
     run_id_prefix: String,
@@ -108,7 +110,7 @@ struct VerifyArgs {
     sample_keys: Vec<String>,
     #[arg(
         long,
-        default_value = "/home/cabdru/.cache/contextgraph-swebench/venv/bin/python"
+        default_value = "/mnt/d/contextgraph/cache/contextgraph-swebench/venv/bin/python"
     )]
     venv_python: PathBuf,
     #[arg(long, default_value = "mejepa-corpus-verify")]
@@ -133,7 +135,7 @@ struct SmokeArgs {
     tasks_dir: PathBuf,
     #[arg(
         long,
-        default_value = "/home/cabdru/.cache/contextgraph-swebench/venv/bin/python"
+        default_value = "/mnt/d/contextgraph/cache/contextgraph-swebench/venv/bin/python"
     )]
     venv_python: PathBuf,
     #[arg(long = "instance-id")]
@@ -150,10 +152,13 @@ struct SmokeArgs {
     skip_tasks: usize,
     #[arg(
         long,
-        default_value = "/home/cabdru/.cache/contextgraph-mejepa-corpus/repos"
+        default_value = "/mnt/d/contextgraph/cache/mejepa-corpus/repos"
     )]
     repo_cache_dir: PathBuf,
-    #[arg(long, default_value = "/tmp/contextgraph-mejepa-corpus-source-work")]
+    #[arg(
+        long,
+        default_value = "/mnt/d/contextgraph/work/mejepa-corpus/source-work"
+    )]
     source_work_root: PathBuf,
     #[arg(long, default_value = "mejepa-corpus-smoke")]
     run_id_prefix: String,

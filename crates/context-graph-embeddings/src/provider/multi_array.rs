@@ -885,8 +885,6 @@ impl ProductionMultiArrayProvider {
         let e10_contextual_model =
             ContextualModel::new(&models_dir.join("contextual"), config.clone())?;
 
-        // E11: Use KEPLER (RoBERTa-base + TransE) for entity embeddings
-        let e11_model = factory.create_model(ModelId::Kepler, &config)?;
         let e12_model = factory.create_model(ModelId::LateInteraction, &config)?;
         let e13_model = factory.create_model(ModelId::Splade, &config)?;
 
@@ -903,7 +901,11 @@ impl ProductionMultiArrayProvider {
         e8_graph_model.load().await?; // E8 loaded directly for dual embedding
         e9_model.load().await?;
         e10_contextual_model.load().await?; // E10 loaded directly for dual embedding
-        e11_model.load().await?;
+        if E11_ENTITY_ENABLED {
+            tracing::info!("Loading E11 Kepler entity model");
+        } else {
+            tracing::info!("E11 Kepler disabled; not loading fairseq checkpoint assets");
+        }
         e12_model.load().await?;
         e13_model.load().await?;
 
@@ -945,11 +947,17 @@ impl ProductionMultiArrayProvider {
         let e10_contextual: Arc<ContextualDualEmbedderAdapter> =
             Arc::new(ContextualDualEmbedderAdapter::new(e10_contextual_model));
 
-        let e11_entity: Arc<dyn SingleEmbedder> = Arc::new(DenseEmbedderAdapter::new(
-            e11_model,
-            ModelId::Kepler,
-            E11_DIM,
-        ));
+        let e11_entity: Arc<dyn SingleEmbedder> = if E11_ENTITY_ENABLED {
+            let e11_model = factory.create_model(ModelId::Kepler, &config)?;
+            e11_model.load().await?;
+            Arc::new(DenseEmbedderAdapter::new(e11_model, ModelId::Kepler, E11_DIM))
+        } else {
+            Arc::new(DisabledDenseEmbedder::new(
+                E11_DISABLED_MODEL_ID,
+                E11_DIM,
+                E11_DISABLED_REASON,
+            ))
+        };
         let e12_late_interaction: Arc<dyn TokenEmbedder> = Arc::new(TokenEmbedderAdapter::new(
             e12_model,
             ModelId::LateInteraction,
@@ -987,7 +995,11 @@ impl ProductionMultiArrayProvider {
             // MED-18 FIX: E10 production model is ContextualModel (intfloat/e5-base-v2),
             // not CLIP as ModelId::Contextual suggests. Report the actual model identity.
             "contextual".to_string(),
-            ModelId::Kepler.as_str().to_string(), // E11: KEPLER (was Entity/MiniLM)
+            if E11_ENTITY_ENABLED {
+                ModelId::Kepler.as_str().to_string()
+            } else {
+                E11_DISABLED_MODEL_ID.to_string()
+            },
             ModelId::LateInteraction.as_str().to_string(),
             ModelId::Splade.as_str().to_string(),
             ModelId::BgeM3Dense.as_str().to_string(), // E14: BGE-M3 dense head
@@ -1777,7 +1789,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         ]
     }
 
-    /// Check if all 14 embedders are initialized and ready.
+    /// Check if all required active embedders are initialized and ready.
     fn is_ready(&self) -> bool {
         self.e1_semantic.is_ready()
             && self.e2_temporal_recent.is_ready()
@@ -1788,7 +1800,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             && self.e8_graph.is_ready()
             && self.e9_hdc.is_ready()
             && self.e10_contextual.is_ready()
-            && self.e11_entity.is_ready()
+            && (!E11_ENTITY_ENABLED || self.e11_entity.is_ready())
             && self.e12_late_interaction.is_ready()
             && self.e13_splade.is_ready()
             && self.e14_bge_m3_dense.is_ready()
@@ -1807,7 +1819,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             self.e8_graph.is_ready(),
             self.e9_hdc.is_ready(),
             self.e10_contextual.is_ready(),
-            self.e11_entity.is_ready(),
+            !E11_ENTITY_ENABLED || self.e11_entity.is_ready(),
             self.e12_late_interaction.is_ready(),
             self.e13_splade.is_ready(),
             self.e14_bge_m3_dense.is_ready(),
@@ -1830,10 +1842,11 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
     /// Efficient E11 embedding without running all embedders.
     ///
     /// Returns E11 entity embedding (768D).
-    /// Returns zero vector when `E11_ENTITY_ENABLED` is false (no model inference).
+    /// Fails when `E11_ENTITY_ENABLED` is false; bulk fingerprint generation
+    /// gates the disabled slot out separately with zero weight.
     async fn embed_e11_only(&self, content: &str) -> CoreResult<Vec<f32>> {
         if !E11_ENTITY_ENABLED {
-            return Ok(vec![0.0f32; E11_DIM]);
+            return Err(CoreError::Internal(E11_DISABLED_REASON.to_string()));
         }
         if content.is_empty() {
             return Err(CoreError::ValidationError {

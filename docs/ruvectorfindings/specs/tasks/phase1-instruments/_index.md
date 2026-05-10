@@ -1,5 +1,7 @@
 # Phase 1c — INSTRUMENTS Task Index
 
+> **📊 2026-05-10 STATUS — partial.** All 15 panel slots have deterministic typed encoders + Panel/PanelBuilder/PanelStore + JSON envelope + frozen-hook + linear-probe quality gate shipped (`crates/context-graph-mejepa-instruments/`); 11 of 14 instruments are placeholders awaiting embedder/analyzer-backed replacements (E_Oracle, E_Witness, E_StaticAnalysis are first-class today). Authoritative status: ../../implementation-plan.md Phase 1c.
+
 > **Level 4.** Atomic task specifications for the **INSTRUMENTS domain** (Phase 1c: 14 named instruments + Scalars aggregator + Panel/PanelBuilder, summing to the 5,120-d panel). Authority order: `../../constitution.md` (Level 1) > `../../functional/SPEC-INSTRUMENTS.md` (Level 2) > `../../technical/TECH-INSTRUMENTS.md` (Level 3) > this file (Level 4). Each task is one conceptual change shippable end-to-end with FSV evidence per `docs2/prdtospec.md` §4.
 
 ## Phase scope

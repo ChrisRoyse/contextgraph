@@ -15,6 +15,8 @@
 
 ## 0. Headline
 
+> **2026-05-10 reconciliation note.** This doc references the "21-embedder ensemble" throughout. As of 2026-05-10, **E5 Causal has been retired** (commits `7a718785` retiring E5 across core/embeddings/mcp, then `77cd98c5` fail-closed retirement across storage + MCP validation). The declared enum in `crates/context-graph-mejepa-embedders/src/embedder_id.rs` still has 21 variants for ABI stability, but the **active production rotation is 20 embedders** (E1-E4, E6-E14 + E15-E21). DDA signal-count math below uses N=20 in practice; "N=21" formulas are upper-bound theoretical. Read every "N=21" / "21-embedder ensemble" reference below as "21 declared, 20 active".
+
 **The 21-embedder ensemble + the LoRA / distillation / multitask training infrastructure in `crates/context-graph-embeddings/` is ~70% of what doc 09 specifies as ME-JEPA-Code's Phase 1-5 implementation.** With Qwen3.6-27B retired (-22 GB VRAM, -1.5 GB Hermes), there is **~28-29 GB free on the RTX 5090** — enough to host every weight in the ensemble simultaneously, plus the predictor + activations + LoRA adapters.
 
 Two consequences:

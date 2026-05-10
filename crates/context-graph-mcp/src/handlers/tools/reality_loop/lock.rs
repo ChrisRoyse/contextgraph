@@ -143,18 +143,16 @@ impl Drop for EditLock {
 }
 
 fn lock_path() -> Result<PathBuf> {
-    Ok(dirs::home_dir()
-        .ok_or_else(|| {
-            CCRealityError::new(
-                "CCREALITY_HOME_DIR_MISSING",
-                "no home directory; cannot place edit lock",
-                "process.env.HOME",
-                "set HOME",
-                json!({}),
-                None,
-            )
-        })?
-        .join(".cache/cgreality/edit_lock"))
+    context_graph_paths::cgreality_cache_file("edit_lock").map_err(|e| {
+        CCRealityError::new(
+            e.code,
+            e.message,
+            "cgreality.edit_lock",
+            e.remediation,
+            json!({"data_root_env": context_graph_paths::ENV_DATA_ROOT}),
+            None,
+        )
+    })
 }
 
 #[cfg(test)]

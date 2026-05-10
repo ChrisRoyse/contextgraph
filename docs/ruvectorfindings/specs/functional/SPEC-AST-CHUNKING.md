@@ -1,5 +1,7 @@
 # SPEC-AST-CHUNKING — Multi-Language AST-Perfect Atomic Chunker (Functional Spec)
 
+> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 1 status.
+
 > **Level 2 (functional spec).** Defines WHAT the chunker must do. The companion
 > Level 3 technical spec (`docs/ruvectorfindings/specs/technical/TECH-AST-CHUNKING.md`)
 > defines HOW. Conflicts resolve per `constitution.md` `<spec_authority_order>`.
@@ -17,10 +19,10 @@
 
 <metadata>
   <title>Multi-Language AST-Perfect Atomic Chunker</title>
-  <status>draft</status>
+  <status>partial</status>
   <owner>cc-reality (outer-loop optimizer); ME-JEPA Phase 1, build-plan item 6</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-EMBEDDERS</spec_ref>
     <spec_ref>SPEC-INSTRUMENTS</spec_ref>
