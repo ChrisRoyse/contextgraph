@@ -2,14 +2,14 @@
 
 use super::helpers::*;
 use context_graph_embeddings::{
-    ModelId, QuantizationMethod, StoredQuantizedFingerprint, MAX_QUANTIZED_SIZE_BYTES,
-    STORAGE_VERSION,
+    storage::NUM_EMBEDDERS, ModelId, QuantizationMethod, StoredQuantizedFingerprint,
+    MAX_QUANTIZED_SIZE_BYTES, STORAGE_VERSION,
 };
 use uuid::Uuid;
 
-/// Test creating fingerprint with all 13 embeddings succeeds.
+/// Test creating fingerprint with all production embeddings succeeds.
 #[test]
-fn test_create_fingerprint_with_all_13_embeddings() {
+fn test_create_fingerprint_with_all_embeddings() {
     let id = Uuid::new_v4();
     let embeddings = create_test_embeddings_with_deterministic_data(42);
     let topic_profile = create_topic_profile(42);
@@ -23,11 +23,15 @@ fn test_create_fingerprint_with_all_13_embeddings() {
         fp.version, STORAGE_VERSION,
         "Version must match STORAGE_VERSION"
     );
-    assert_eq!(fp.embeddings.len(), 13, "Must have exactly 13 embeddings");
+    assert_eq!(
+        fp.embeddings.len(),
+        NUM_EMBEDDERS,
+        "Must have exactly one embedding per production slot"
+    );
     assert_eq!(
         fp.topic_profile.len(),
-        13,
-        "Topic profile must have 13 dimensions"
+        NUM_EMBEDDERS,
+        "Topic profile must have one dimension per production slot"
     );
     assert_eq!(fp.content_hash, content_hash, "Content hash must match");
     assert!(!fp.deleted, "New fingerprint should not be deleted");
@@ -36,7 +40,10 @@ fn test_create_fingerprint_with_all_13_embeddings() {
         "New fingerprint should have zero access count"
     );
 
-    println!("[PASS] Created fingerprint with all 13 embeddings");
+    println!(
+        "[PASS] Created fingerprint with all {} embeddings",
+        NUM_EMBEDDERS
+    );
 }
 
 /// Test that missing any single embedding panics.
@@ -94,11 +101,10 @@ fn test_embeddings_have_correct_quantization_methods() {
         create_content_hash(42),
     );
 
-    // Verify each embedder uses Constitution-correct method
-    for i in 0..13u8 {
-        let model_id = ModelId::try_from(i).expect("Valid model index");
+    // Verify each production slot uses Constitution-correct method.
+    for (i, model_id) in ModelId::production().iter().copied().enumerate() {
         let expected_method = QuantizationMethod::for_model_id(model_id);
-        let actual_method = fp.get_embedding(i).method;
+        let actual_method = fp.get_embedding(i as u8).method;
         assert_eq!(
             actual_method, expected_method,
             "Embedder {} should use {:?}, got {:?}",
@@ -110,7 +116,10 @@ fn test_embeddings_have_correct_quantization_methods() {
         fp.validate_quantization_methods(),
         "All quantization methods should be valid"
     );
-    println!("[PASS] All 13 embeddings have correct quantization methods");
+    println!(
+        "[PASS] All {} embeddings have correct quantization methods",
+        NUM_EMBEDDERS
+    );
 }
 
 /// Test topic_profile is stored correctly.
@@ -156,8 +165,9 @@ fn test_estimated_size_within_bounds() {
     // Should be reasonable (> 1KB for all that data)
     assert!(
         size > 1000,
-        "Estimated size {} seems too small for 13 embeddings",
-        size
+        "Estimated size {} seems too small for {} embeddings",
+        size,
+        NUM_EMBEDDERS
     );
 
     println!("[PASS] Estimated size {} bytes is within bounds", size);

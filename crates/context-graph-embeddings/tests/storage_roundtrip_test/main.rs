@@ -1,14 +1,14 @@
 //! Storage Roundtrip Tests - Comprehensive Verification of Store/Retrieve Integrity
 //!
 //! This test file verifies:
-//! 1. StoredQuantizedFingerprint creation with all 13 embeddings
+//! 1. StoredQuantizedFingerprint creation with all 14 production embeddings
 //! 2. Serialization/deserialization roundtrip preserves all data exactly
 //! 3. IndexEntry creation and cosine similarity calculations
 //! 4. EmbedderQueryResult and MultiSpaceQueryResult creation
 //! 5. RRF formula calculations match Constitution k=60
 //!
 //! # CRITICAL INVARIANTS
-//! - All 13 embeddings MUST be present (panic otherwise)
+//! - All 14 production embeddings MUST be present (panic otherwise)
 //! - RRF formula: 1/(60 + rank) for each space
 //! - Cosine similarity in range [-1.0, 1.0]
 //! - Score-based filters at 0.55 threshold

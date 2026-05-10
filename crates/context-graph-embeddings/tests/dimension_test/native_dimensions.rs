@@ -1,13 +1,13 @@
-//! Native dimension tests for all 13 embedder models.
+//! Native dimension tests for all embedder models.
 //!
 //! Tests that each model's native (raw) dimension matches the Constitution.
 
 use context_graph_embeddings::{
     dimensions::{
-        native_dimension_by_index, CAUSAL_NATIVE, CODE_NATIVE, ENTITY_NATIVE, GRAPH_NATIVE,
-        HDC_NATIVE, LATE_INTERACTION_NATIVE, MULTIMODAL_NATIVE, NATIVE_DIMENSIONS, SEMANTIC_NATIVE,
-        SPARSE_NATIVE, SPLADE_NATIVE, TEMPORAL_PERIODIC_NATIVE, TEMPORAL_POSITIONAL_NATIVE,
-        TEMPORAL_RECENT_NATIVE,
+        native_dimension_by_index, BGE_M3_DENSE_NATIVE, CAUSAL_NATIVE, CODE_NATIVE, ENTITY_NATIVE,
+        GRAPH_NATIVE, HDC_NATIVE, KEPLER_NATIVE, LATE_INTERACTION_NATIVE, MULTIMODAL_NATIVE,
+        NATIVE_DIMENSIONS, SEMANTIC_NATIVE, SPARSE_NATIVE, SPLADE_NATIVE, TEMPORAL_PERIODIC_NATIVE,
+        TEMPORAL_POSITIONAL_NATIVE, TEMPORAL_RECENT_NATIVE,
     },
     ModelId,
 };
@@ -172,6 +172,31 @@ fn test_e13_splade_native_dimension() {
     assert_eq!(SPLADE_NATIVE, 30522, "SPLADE_NATIVE constant mismatch");
 }
 
+/// Test production KEPLER native dimension.
+#[test]
+fn test_kepler_native_dimension() {
+    assert_eq!(
+        ModelId::Kepler.dimension(),
+        768,
+        "Kepler: expected native dimension 768"
+    );
+    assert_eq!(KEPLER_NATIVE, 768, "KEPLER_NATIVE constant mismatch");
+}
+
+/// Test E14 BGE-M3 dense native dimension.
+#[test]
+fn test_e14_bge_m3_dense_native_dimension() {
+    assert_eq!(
+        ModelId::BgeM3Dense.dimension(),
+        1024,
+        "E14 BgeM3Dense: expected native dimension 1024"
+    );
+    assert_eq!(
+        BGE_M3_DENSE_NATIVE, 1024,
+        "BGE_M3_DENSE_NATIVE constant mismatch"
+    );
+}
+
 /// Test ALL native dimensions match expected values in one sweep.
 /// FAIL FAST: Any single mismatch panics with details.
 #[test]
@@ -184,7 +209,10 @@ fn test_all_native_dimensions_match_constitution() {
             model_id, expected_dim, actual_dim
         );
     }
-    println!("[PASS] All 13 native dimensions match Constitution");
+    println!(
+        "[PASS] All {} native dimensions match Constitution",
+        EXPECTED_NATIVE_DIMS.len()
+    );
 }
 
 /// Test NATIVE_DIMENSIONS array matches ModelId::dimension() for all models.

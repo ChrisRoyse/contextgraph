@@ -17,6 +17,7 @@ use context_graph_embeddings::quantization::{
     QuantizationMetadata, QuantizationMethod, QuantizedEmbedding,
 };
 use context_graph_embeddings::storage::{StoredQuantizedFingerprint, NUM_EMBEDDERS};
+use context_graph_embeddings::ModelId;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -357,33 +358,34 @@ fn test_single_nonzero_byte_checksum_valid() {
 // STORED FINGERPRINT VALIDATION TESTS
 // =============================================================================
 
-/// Helper: Create valid test embeddings for 13 models
+/// Helper: Create valid test embeddings for all production models.
 fn create_valid_embeddings() -> HashMap<u8, QuantizedEmbedding> {
     let mut map = HashMap::new();
-    for i in 0..13u8 {
-        let (method, dim, data_len) = match i {
-            0 | 4 | 6 | 9 => (QuantizationMethod::PQ8, 1024, 8),
-            1 | 2 | 3 | 7 | 10 => (QuantizationMethod::Float8E4M3, 512, 512),
-            8 => (QuantizationMethod::Binary, 10000, 1250),
-            5 | 12 => (QuantizationMethod::SparseNative, 30522, 100),
-            11 => (QuantizationMethod::TokenPruning, 128, 64),
-            _ => unreachable!(),
+    for (slot, model_id) in ModelId::production().iter().copied().enumerate() {
+        let method = QuantizationMethod::for_model_id(model_id);
+        let dim = model_id.dimension();
+        let data_len = match method {
+            QuantizationMethod::PQ8 => 8,
+            QuantizationMethod::Float8E4M3 => dim,
+            QuantizationMethod::Binary => dim.div_ceil(8),
+            QuantizationMethod::SparseNative => 100,
+            QuantizationMethod::TokenPruning => 64,
         };
 
         // Fill with non-zero data to avoid fake detection
         let data: Vec<u8> = (0..data_len)
-            .map(|j| ((i as usize * 17 + j) % 256) as u8)
+            .map(|j| ((slot * 17 + j) % 256) as u8)
             .collect();
 
         map.insert(
-            i,
+            slot as u8,
             QuantizedEmbedding {
                 method,
                 original_dim: dim,
                 data,
                 metadata: match method {
                     QuantizationMethod::PQ8 => QuantizationMetadata::PQ8 {
-                        codebook_id: i as u32,
+                        codebook_id: slot as u32,
                         num_subvectors: 8,
                     },
                     QuantizationMethod::Float8E4M3 => QuantizationMetadata::Float8 {
@@ -404,6 +406,7 @@ fn create_valid_embeddings() -> HashMap<u8, QuantizedEmbedding> {
             },
         );
     }
+    assert_eq!(map.len(), NUM_EMBEDDERS);
     map
 }
 
@@ -420,7 +423,10 @@ fn test_valid_fingerprint_creation() {
     assert_eq!(fp.embeddings.len(), NUM_EMBEDDERS);
     assert!(validate_checksum(&fp.content_hash));
 
-    eprintln!("[VERIFIED] Valid fingerprint created with all 13 embeddings");
+    eprintln!(
+        "[VERIFIED] Valid fingerprint created with all {} embeddings",
+        NUM_EMBEDDERS
+    );
 }
 
 /// Test: Missing embedder causes panic (AP-007 compliance)

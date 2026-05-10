@@ -40,6 +40,10 @@ pub mod e_text;
 pub mod e_trace;
 pub mod e_witness;
 mod features;
+pub mod frozen_hook;
+pub mod linear_probe;
+pub mod materialize;
+pub mod panel_json;
 
 pub type InstrumentResult<T> = Result<T, InstrumentError>;
 
@@ -59,6 +63,14 @@ pub enum InstrumentError {
         message: String,
         remediation: &'static str,
     },
+    #[error(
+        "frozen instrument target violation at {field}: {message}; remediation: {remediation}"
+    )]
+    FrozenViolation {
+        field: &'static str,
+        message: String,
+        remediation: &'static str,
+    },
 }
 
 impl InstrumentError {
@@ -66,6 +78,7 @@ impl InstrumentError {
         match self {
             Self::InvalidInput { .. } => "MEJEPA_INSTRUMENTS_INVALID_INPUT",
             Self::NumericalInvariant { .. } => "MEJEPA_INSTRUMENTS_NUMERICAL_INVARIANT",
+            Self::FrozenViolation { .. } => "MEJEPA_INSTR_FROZEN_VIOLATION",
         }
     }
 
@@ -92,6 +105,18 @@ impl InstrumentError {
             remediation,
         }
     }
+
+    pub(crate) fn frozen_violation(
+        field: &'static str,
+        message: impl Into<String>,
+        remediation: &'static str,
+    ) -> Self {
+        Self::FrozenViolation {
+            field,
+            message: message.into(),
+            remediation,
+        }
+    }
 }
 
 /// Total dimension of the joint embedding panel. Per doc 09 §3.5.5.
@@ -101,7 +126,7 @@ const VALID_FILLED_MASK: u16 = (1u16 << SLOT_COUNT) - 1;
 
 /// Named instrument slots in the panel. Dim and offset per slot are fixed
 /// across every panel; the table below MUST match `Self::layout()` exactly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InstrumentSlot {
     /// `E_AST` — tree-sitter AST encoder. 384-d.
@@ -482,3 +507,12 @@ pub use e_static_analysis::{
 pub use e_text::{ECommitMsgInstrument, EProblemInstrument, ETestInstrument, TextInstrumentInput};
 pub use e_trace::{ETraceInstrument, TraceEvent, TraceEventKind, TraceInput};
 pub use e_witness::{EWitnessInstrument, WitnessChainInput, CANONICAL_WITNESS_FORMAT_VERSION};
+pub use frozen_hook::{hash_f32s, FrozenGuard, FrozenSnapshot};
+pub use linear_probe::{
+    assert_probe_passes, train_linear_probe, ProbeReport, LINEAR_PROBE_MIN_ACCURACY,
+};
+pub use materialize::{
+    active_slots, materialize_panel, vectors_from_panel, zero_slots, MaterializedPanel,
+    PanelVectorInput, TimeStep,
+};
+pub use panel_json::{PanelEnvelope, PanelProvenance, PANEL_JSON_SCHEMA_VERSION};

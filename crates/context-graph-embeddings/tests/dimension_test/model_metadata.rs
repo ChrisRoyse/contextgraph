@@ -37,7 +37,9 @@ fn test_model_id_repr_order() {
         "LateInteraction should be 11"
     );
     assert_eq!(ModelId::Splade as u8, 12, "Splade should be 12");
-    println!("[PASS] ModelId repr(u8) values match E1-E13 order");
+    assert_eq!(ModelId::Kepler as u8, 13, "Kepler should be 13");
+    assert_eq!(ModelId::BgeM3Dense as u8, 14, "BgeM3Dense should be 14");
+    println!("[PASS] ModelId repr(u8) values match current 15-variant order");
 }
 
 /// Test is_custom() classification.
@@ -82,8 +84,8 @@ fn test_custom_models_count() {
 
     let pretrained_count: usize = ModelId::pretrained().count();
     assert_eq!(
-        pretrained_count, 10,
-        "Expected 10 pretrained models, got {}",
+        pretrained_count, 11,
+        "Expected 11 pretrained models, got {}",
         pretrained_count
     );
 
@@ -92,5 +94,5 @@ fn test_custom_models_count() {
         MODEL_COUNT,
         "Custom + pretrained should equal MODEL_COUNT"
     );
-    println!("[PASS] 4 custom + 10 pretrained = 14 total models");
+    println!("[PASS] 4 custom + 11 pretrained = 15 total models");
 }

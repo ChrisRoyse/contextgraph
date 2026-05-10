@@ -1,7 +1,7 @@
 //! Edge Case Tests
 
 use super::helpers::*;
-use context_graph_embeddings::{IndexEntry, StoredQuantizedFingerprint};
+use context_graph_embeddings::{storage::NUM_EMBEDDERS, IndexEntry, StoredQuantizedFingerprint};
 use uuid::Uuid;
 
 /// Test get_embedding panics for invalid index.
@@ -93,7 +93,7 @@ fn test_multiple_roundtrips_no_drift() {
         "Purpose vector drifted"
     );
 
-    for i in 0..13u8 {
+    for i in 0..NUM_EMBEDDERS as u8 {
         let orig_data = &original.get_embedding(i).data;
         let curr_data = &current.get_embedding(i).data;
         assert_eq!(

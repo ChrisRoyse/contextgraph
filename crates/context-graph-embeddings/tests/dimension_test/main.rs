@@ -1,4 +1,4 @@
-//! Integration tests for all 13 embedder dimension validations.
+//! Integration tests for all embedder dimension validations.
 //!
 //! FAIL FAST: Any dimension mismatch is a critical error requiring immediate fix.
 //! NO FALLBACKS: All assertions must match Constitution exactly.
@@ -21,7 +21,7 @@
 //! | E12 LateInteraction | 128 | 128 | TokenPruning |
 //! | E13 Splade | 30522 | 1536 | SparseNative |
 //!
-//! TOTAL_DIMENSION = 11648
+//! TOTAL_DIMENSION = 13056
 
 mod aggregate_dimensions;
 mod comprehensive;

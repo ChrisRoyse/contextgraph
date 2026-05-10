@@ -1,14 +1,15 @@
-//! Compile-time dimension constants for the 14-model embedding pipeline.
+//! Compile-time dimension constants for the embedding pipeline.
 //!
 //! These constants define the exact dimensions used throughout the embedding pipeline:
 //! - Native dimensions: Raw model output sizes
 //! - Projected dimensions: Target sizes for Multi-Array Storage
-//! - TOTAL_DIMENSION: Sum of all projected dimensions (12032D)
+//! - TOTAL_DIMENSION: Sum of all projected dimensions for `ModelId::all()` (13056D)
 //!
 //! # Multi-Array Storage
 //!
-//! All 14 embeddings are stored SEPARATELY at their native dimensions.
-//! The 14-embedding array IS the teleological vector (Royse 2026).
+//! Production storage has 14 active slots from `ModelId::production()`.
+//! `ModelId::all()` has 15 variants because it retains the deprecated
+//! `Entity` variant beside production `Kepler`.
 //!
 //! # Usage
 //!
@@ -16,10 +17,10 @@
 //! use context_graph_embeddings::types::dimensions;
 //!
 //! // Total dimension for memory calculations
-//! assert_eq!(dimensions::TOTAL_DIMENSION, 12032);
+//! assert_eq!(dimensions::TOTAL_DIMENSION, 13056);
 //!
 //! // Compile-time validation
-//! const _: () = assert!(dimensions::TOTAL_DIMENSION == 12032);
+//! const _: () = assert!(dimensions::TOTAL_DIMENSION == 13056);
 //! ```
 
 mod aggregates;

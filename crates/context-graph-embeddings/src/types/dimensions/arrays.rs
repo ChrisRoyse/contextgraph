@@ -1,4 +1,4 @@
-//! Static arrays containing dimension information for all 14 models.
+//! Static arrays containing dimension information for all 15 `ModelId::all()` variants.
 
 use super::aggregates::MODEL_COUNT;
 use super::constants::{

@@ -1,14 +1,14 @@
-//! Projected dimension tests for all 13 embedder models.
+//! Projected dimension tests for all embedder models.
 //!
 //! Tests that each model's projected dimension (used for Multi-Array Storage)
 //! matches the Constitution.
 
 use context_graph_embeddings::{
     dimensions::{
-        projected_dimension_by_index, CAUSAL, CODE, CODE_NATIVE, ENTITY, GRAPH, HDC, HDC_NATIVE,
-        LATE_INTERACTION, MULTIMODAL, PROJECTED_DIMENSIONS, SEMANTIC, SPARSE, SPARSE_NATIVE,
-        SPLADE, SPLADE_NATIVE, TEMPORAL_PERIODIC, TEMPORAL_POSITIONAL, TEMPORAL_RECENT,
-        TOTAL_DIMENSION,
+        projected_dimension_by_index, BGE_M3_DENSE, CAUSAL, CODE, CODE_NATIVE, ENTITY, GRAPH, HDC,
+        HDC_NATIVE, KEPLER, LATE_INTERACTION, MULTIMODAL, PROJECTED_DIMENSIONS, SEMANTIC, SPARSE,
+        SPARSE_NATIVE, SPLADE, SPLADE_NATIVE, TEMPORAL_PERIODIC, TEMPORAL_POSITIONAL,
+        TEMPORAL_RECENT, TOTAL_DIMENSION,
     },
     ModelId,
 };
@@ -190,6 +190,31 @@ fn test_e13_splade_projected_dimension() {
     );
 }
 
+/// Test production KEPLER projected dimension (E11 production replacement).
+#[test]
+fn test_kepler_projected_dimension() {
+    assert_eq!(
+        ModelId::Kepler.projected_dimension(),
+        768,
+        "Kepler: expected projected dimension 768"
+    );
+    assert_eq!(KEPLER, 768, "KEPLER projected constant mismatch");
+}
+
+/// Test E14 BGE-M3 dense projected dimension.
+#[test]
+fn test_e14_bge_m3_dense_projected_dimension() {
+    assert_eq!(
+        ModelId::BgeM3Dense.projected_dimension(),
+        1024,
+        "E14 BgeM3Dense: expected projected dimension 1024"
+    );
+    assert_eq!(
+        BGE_M3_DENSE, 1024,
+        "BGE_M3_DENSE projected constant mismatch"
+    );
+}
+
 /// Test ALL projected dimensions match expected values in one sweep.
 /// FAIL FAST: Any single mismatch panics with details.
 #[test]
@@ -202,7 +227,10 @@ fn test_all_projected_dimensions_match_constitution() {
             model_id, expected_dim, actual_dim
         );
     }
-    println!("[PASS] All 13 projected dimensions match Constitution");
+    println!(
+        "[PASS] All {} projected dimensions match Constitution",
+        EXPECTED_PROJECTED_DIMS.len()
+    );
 }
 
 /// Test PROJECTED_DIMENSIONS array consistency.

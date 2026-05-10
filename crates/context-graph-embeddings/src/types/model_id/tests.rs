@@ -4,7 +4,7 @@ use super::*;
 use std::path::{Path, PathBuf};
 
 #[test]
-fn test_all_returns_14_variants() {
+fn test_all_returns_15_variants() {
     // 15 variants since E14 BgeM3Dense joined Entity + Kepler + E1-E13.
     assert_eq!(ModelId::all().len(), 15);
 }
@@ -204,7 +204,7 @@ fn test_custom_model_no_repo() {
 }
 
 #[test]
-fn test_production_returns_13_variants() {
+fn test_production_returns_14_variants() {
     // EMB-M2: production() must return exactly NUM_EMBEDDERS (14) models after E14.
     let prod = ModelId::production();
     assert_eq!(prod.len(), 14, "production() must return 14 models");

@@ -115,10 +115,10 @@ mod edge_case_tests {
         println!("\n=== EDGE CASE 2: PASSED ===\n");
     }
 
-    /// EDGE CASE 3: All 14 ModelId variants are exhaustively covered
+    /// EDGE CASE 3: All 15 ModelId variants are exhaustively covered
     ///
     /// Trigger: Iterate through ModelId::all() and call for_model_id()
-    /// Expected Outcome: Each of 14 variants returns a valid QuantizationMethod
+    /// Expected Outcome: Each of 15 variants returns a valid QuantizationMethod
     #[test]
     fn edge_case_3_all_model_ids_exhaustive() {
         println!("\n=== EDGE CASE 3: Exhaustive ModelId Coverage ===");
@@ -127,7 +127,7 @@ mod edge_case_tests {
         let all_models = ModelId::all();
         println!("BEFORE STATE:");
         println!("  - ModelId::all() returns {} variants", all_models.len());
-        println!("  - Expected: 14 variants (E1-E13 + Kepler)");
+        println!("  - Expected: 15 variants (E1-E13 + Kepler + BgeM3Dense)");
 
         // Constitution mapping reference:
         let expected_mappings = [
@@ -165,6 +165,7 @@ mod edge_case_tests {
             ),
             (ModelId::Splade, QuantizationMethod::SparseNative, "E13"),
             (ModelId::Kepler, QuantizationMethod::PQ8, "Kepler"),
+            (ModelId::BgeM3Dense, QuantizationMethod::PQ8, "E14"),
         ];
 
         // EXECUTE & VERIFY each mapping
@@ -186,7 +187,7 @@ mod edge_case_tests {
 
         // AFTER STATE
         println!("\nAFTER STATE:");
-        println!("  - All 14 ModelId variants tested");
+        println!("  - All 15 ModelId variants tested");
         println!("  - Each returned expected QuantizationMethod");
 
         // PHYSICAL VERIFICATION - count by method type

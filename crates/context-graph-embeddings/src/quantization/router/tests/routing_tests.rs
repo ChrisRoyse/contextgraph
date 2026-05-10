@@ -29,7 +29,7 @@ fn test_router_default() {
 fn test_all_model_ids_have_method() {
     let router = QuantizationRouter::new();
 
-    // Verify all 13 ModelIds return a valid method (no panic)
+    // Verify all ModelIds return a valid method (no panic)
     for model_id in ModelId::all() {
         let method = router.method_for(*model_id);
         // Just verify it doesn't panic and returns something
@@ -45,6 +45,11 @@ fn test_all_model_ids_have_method() {
     assert_eq!(router.method_for(ModelId::Code), QuantizationMethod::PQ8);
     assert_eq!(
         router.method_for(ModelId::Contextual),
+        QuantizationMethod::PQ8
+    );
+    assert_eq!(router.method_for(ModelId::Kepler), QuantizationMethod::PQ8);
+    assert_eq!(
+        router.method_for(ModelId::BgeM3Dense),
         QuantizationMethod::PQ8
     );
 
@@ -102,6 +107,8 @@ fn test_can_quantize() {
     assert!(router.can_quantize(ModelId::Causal));
     assert!(router.can_quantize(ModelId::Code));
     assert!(router.can_quantize(ModelId::Contextual));
+    assert!(router.can_quantize(ModelId::Kepler));
+    assert!(router.can_quantize(ModelId::BgeM3Dense));
 
     // Float8: IMPLEMENTED
     assert!(router.can_quantize(ModelId::TemporalRecent));

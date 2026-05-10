@@ -17,15 +17,15 @@ fn test_first_offset_is_zero() {
 /// Test last offset + dimension equals TOTAL_DIMENSION.
 #[test]
 fn test_last_offset_plus_dimension_equals_total() {
-    let last_index = MODEL_COUNT - 1; // 12
+    let last_index = MODEL_COUNT - 1;
     let last_offset = offset_by_index(last_index);
     let last_dim = projected_dimension_by_index(last_index);
     let computed_total = last_offset + last_dim;
 
     assert_eq!(
         computed_total, TOTAL_DIMENSION,
-        "offset[12] + dim[12] ({} + {}) = {} != TOTAL_DIMENSION ({})",
-        last_offset, last_dim, computed_total, TOTAL_DIMENSION
+        "offset[{}] + dim[{}] ({} + {}) = {} != TOTAL_DIMENSION ({})",
+        last_index, last_index, last_offset, last_dim, computed_total, TOTAL_DIMENSION
     );
     println!("[PASS] Last offset + last dimension = TOTAL_DIMENSION");
 }
@@ -86,7 +86,7 @@ fn test_key_offsets() {
     // E6 Sparse: 2560 + 768 = 3328
     assert_eq!(offset_by_index(5), 3328, "E6 offset should be 3328");
 
-    // E13 Splade: 11264 - 1536 = 9728 (E11 Entity at legacy 384D)
+    // E13 Splade follows the legacy Entity slot in ModelId::all().
     assert_eq!(offset_by_index(12), 9728, "E13 offset should be 9728");
 
     println!("[PASS] Key offsets verified");

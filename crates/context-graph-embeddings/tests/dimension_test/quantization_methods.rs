@@ -1,4 +1,4 @@
-//! Quantization method tests for all 13 embedder models.
+//! Quantization method tests for all embedder models.
 //!
 //! Tests that each model uses the correct quantization method as specified
 //! in the Constitution.
@@ -7,7 +7,7 @@ use context_graph_embeddings::{ModelId, QuantizationMethod};
 
 use super::constants::EXPECTED_QUANTIZATION;
 
-/// Test PQ8 models: E1, E5, E7, E10.
+/// Test PQ8 models: E1, E5, E7, E10, production Kepler, and E14.
 #[test]
 fn test_pq8_models() {
     let pq8_models = [
@@ -15,6 +15,8 @@ fn test_pq8_models() {
         (ModelId::Causal, "E5"),
         (ModelId::Code, "E7"),
         (ModelId::Contextual, "E10"),
+        (ModelId::Kepler, "Kepler"),
+        (ModelId::BgeM3Dense, "E14"),
     ];
 
     for (model_id, label) in pq8_models {
@@ -26,7 +28,7 @@ fn test_pq8_models() {
             model_id
         );
     }
-    println!("[PASS] All PQ8 models (E1, E5, E7, E10) verified");
+    println!("[PASS] All PQ8 models (E1, E5, E7, E10, Kepler, E14) verified");
 }
 
 /// Test Float8E4M3 models: E2, E3, E4, E8, E11.
@@ -103,7 +105,10 @@ fn test_all_quantization_methods_match_constitution() {
             model_id, expected_method, actual_method
         );
     }
-    println!("[PASS] All 13 quantization methods match Constitution");
+    println!(
+        "[PASS] All {} quantization methods match Constitution",
+        EXPECTED_QUANTIZATION.len()
+    );
 }
 
 /// Test compression ratios match Constitution specifications.

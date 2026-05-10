@@ -1,4 +1,4 @@
-//! Native and projected dimension constants for the 13-model embedding pipeline.
+//! Native and projected dimension constants for the embedding pipeline.
 //!
 //! This module defines the exact dimensions for each model in the ensemble:
 //! - Native dimensions: Raw model output sizes

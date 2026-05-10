@@ -1,6 +1,6 @@
 //! Aggregate dimensions and compile-time validation.
 //!
-//! This module defines the total dimension for the 14-model Multi-Array Storage.
+//! This module defines the total dimension for all `ModelId::all()` variants.
 
 use super::constants::{
     BGE_M3_DENSE, CAUSAL, CODE, ENTITY, GRAPH, HDC, KEPLER, LATE_INTERACTION, MULTIMODAL, SEMANTIC,

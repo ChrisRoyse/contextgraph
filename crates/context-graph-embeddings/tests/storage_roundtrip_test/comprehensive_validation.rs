@@ -2,7 +2,8 @@
 
 use super::helpers::*;
 use context_graph_embeddings::{
-    EmbedderQueryResult, IndexEntry, MultiSpaceQueryResult, StoredQuantizedFingerprint,
+    storage::NUM_EMBEDDERS, EmbedderQueryResult, IndexEntry, MultiSpaceQueryResult,
+    StoredQuantizedFingerprint,
 };
 use uuid::Uuid;
 
@@ -11,7 +12,7 @@ use uuid::Uuid;
 fn test_comprehensive_storage_roundtrip_validation() {
     println!("=== COMPREHENSIVE STORAGE ROUNDTRIP VALIDATION ===\n");
 
-    // 1. Create fingerprint with all 13 embeddings
+    // 1. Create fingerprint with all production embeddings
     let id = Uuid::new_v4();
     let embeddings = create_test_embeddings_with_deterministic_data(123);
     let topic_profile = create_topic_profile(123);
@@ -19,8 +20,15 @@ fn test_comprehensive_storage_roundtrip_validation() {
 
     let original = StoredQuantizedFingerprint::new(id, embeddings, topic_profile, content_hash);
 
-    assert_eq!(original.embeddings.len(), 13, "Must have 13 embeddings");
-    println!("[1/7] Created fingerprint with all 13 embeddings");
+    assert_eq!(
+        original.embeddings.len(),
+        NUM_EMBEDDERS,
+        "Must have one embedding per production slot"
+    );
+    println!(
+        "[1/7] Created fingerprint with all {} embeddings",
+        NUM_EMBEDDERS
+    );
 
     // 2. Verify JSON roundtrip
     let json = serde_json::to_string(&original).expect("JSON serialize");
@@ -67,7 +75,10 @@ fn test_comprehensive_storage_roundtrip_validation() {
     println!("[6/6] MultiSpaceQueryResult RRF aggregation verified");
 
     println!("\n=== ALL STORAGE ROUNDTRIP VALIDATIONS PASSED ===");
-    println!("  - 13 embeddings with correct quantization methods");
+    println!(
+        "  - {} embeddings with correct quantization methods",
+        NUM_EMBEDDERS
+    );
     println!("  - JSON roundtrip: {} bytes", json.len());
     println!("  - Bincode roundtrip: {} bytes", bincode_bytes.len());
     println!("  - IndexEntry norm/cosine similarity verified");

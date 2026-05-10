@@ -4,7 +4,7 @@
 //!
 //! # Key Verifications
 //! - RRF formula: 1/(k + rank + 1) where k=60 (1-indexed, consistent with core fusion)
-//! - 13 embedder spaces (E1-E13)
+//! - 14 production embedder spaces (E1-E14)
 //! - Purpose vector weighting
 //! - FAIL FAST on invalid inputs
 //!
@@ -141,7 +141,7 @@ fn test_rrf_sum_multiple_ranks() {
 fn test_embedder_query_result_creation() {
     let id = Uuid::new_v4();
 
-    for embedder_idx in 0..13u8 {
+    for embedder_idx in 0..NUM_EMBEDDERS as u8 {
         let result = EmbedderQueryResult::from_similarity(id, embedder_idx, 0.75, 0);
 
         assert_eq!(result.id, id);
@@ -150,7 +150,10 @@ fn test_embedder_query_result_creation() {
         assert_eq!(result.rank, 0);
     }
 
-    eprintln!("[VERIFIED] EmbedderQueryResult creation for all 13 embedders");
+    eprintln!(
+        "[VERIFIED] EmbedderQueryResult creation for all {} embedders",
+        NUM_EMBEDDERS
+    );
 }
 
 /// Test: Distance is 1 - similarity for cosine metric
@@ -234,19 +237,19 @@ fn test_multi_space_result_aggregation() {
     );
 }
 
-/// Test: All 13 embedders contributing
+/// Test: All production embedders contributing
 #[test]
-fn test_multi_space_all_13_embedders() {
+fn test_multi_space_all_embedders() {
     let id = Uuid::new_v4();
-    let results: Vec<EmbedderQueryResult> = (0..13)
+    let results: Vec<EmbedderQueryResult> = (0..NUM_EMBEDDERS)
         .map(|i| EmbedderQueryResult::from_similarity(id, i as u8, 0.9 - i as f32 * 0.05, i))
         .collect();
 
     let multi = MultiSpaceQueryResult::from_embedder_results(id, &results);
 
-    assert_eq!(multi.embedder_count, 13);
+    assert_eq!(multi.embedder_count, NUM_EMBEDDERS);
 
-    // All 13 similarities should be non-NaN
+    // All production similarities should be non-NaN
     for (idx, sim) in multi.embedder_similarities.iter().enumerate() {
         assert!(
             !sim.is_nan(),
@@ -255,16 +258,19 @@ fn test_multi_space_all_13_embedders() {
         );
     }
 
-    // RRF score should be sum of 1/(61+i) for i=0..12 (1-indexed)
-    let expected_rrf: f32 = (0..13).map(|i| 1.0 / (61.0 + i as f32)).sum();
+    // RRF score should be sum of 1/(61+i) for all production embedders (1-indexed)
+    let expected_rrf: f32 = (0..NUM_EMBEDDERS).map(|i| 1.0 / (61.0 + i as f32)).sum();
     assert!(
         (multi.rrf_score - expected_rrf).abs() < 1e-5,
-        "RRF with all 13: expected {:.6}, got {:.6}",
+        "RRF with all embedders: expected {:.6}, got {:.6}",
         expected_rrf,
         multi.rrf_score
     );
 
-    eprintln!("[VERIFIED] All 13 embedders: rrf={:.6}", multi.rrf_score);
+    eprintln!(
+        "[VERIFIED] All {} embedders: rrf={:.6}",
+        NUM_EMBEDDERS, multi.rrf_score
+    );
 }
 
 /// Test: Weighted similarity calculation
@@ -415,12 +421,12 @@ fn test_embedder_query_result_json_roundtrip() {
     eprintln!("[VERIFIED] EmbedderQueryResult JSON roundtrip");
 }
 
-/// Test: MultiSpaceQueryResult JSON roundtrip (with all 13 embedders to avoid NaN serialization issues)
+/// Test: MultiSpaceQueryResult JSON roundtrip (with all embedders to avoid NaN serialization issues)
 #[test]
 fn test_multi_space_query_result_json_roundtrip() {
     let id = Uuid::new_v4();
-    // Use all 13 embedders to avoid NaN serialization issues (NaN doesn't roundtrip in JSON)
-    let results: Vec<EmbedderQueryResult> = (0..13)
+    // Use all embedders to avoid NaN serialization issues (NaN doesn't roundtrip in JSON)
+    let results: Vec<EmbedderQueryResult> = (0..NUM_EMBEDDERS)
         .map(|i| EmbedderQueryResult::from_similarity(id, i as u8, 0.90 - i as f32 * 0.05, i))
         .collect();
     let original = MultiSpaceQueryResult::from_embedder_results(id, &results);
@@ -432,8 +438,8 @@ fn test_multi_space_query_result_json_roundtrip() {
     assert_eq!(original.embedder_count, restored.embedder_count);
     assert!((original.rrf_score - restored.rrf_score).abs() < f32::EPSILON);
 
-    // Check embedder_similarities array (all non-NaN since we populated all 13)
-    for i in 0..13 {
+    // Check embedder_similarities array (all non-NaN since we populated all embedders)
+    for i in 0..NUM_EMBEDDERS {
         assert!(
             (original.embedder_similarities[i] - restored.embedder_similarities[i]).abs()
                 < f32::EPSILON,
@@ -451,12 +457,12 @@ fn test_multi_space_query_result_json_roundtrip() {
 // CONSTANT VERIFICATION TESTS
 // =============================================================================
 
-/// Test: NUM_EMBEDDERS constant equals 13
+/// Test: NUM_EMBEDDERS constant equals the production storage slot count.
 #[test]
 fn test_num_embedders_constant() {
-    assert_eq!(NUM_EMBEDDERS, 13);
+    assert_eq!(NUM_EMBEDDERS, 14);
     eprintln!(
-        "[VERIFIED] NUM_EMBEDDERS = {} (13-model pipeline)",
+        "[VERIFIED] NUM_EMBEDDERS = {} (production storage slots)",
         NUM_EMBEDDERS
     );
 }
@@ -495,7 +501,7 @@ fn test_edge_case_single_result_aggregation() {
     assert!((multi.weighted_similarity - 0.88).abs() < f32::EPSILON);
 
     // Other embedders should be NaN
-    for i in 0..13 {
+    for i in 0..NUM_EMBEDDERS {
         if i != 7 {
             assert!(multi.embedder_similarities[i].is_nan());
         }
@@ -532,8 +538,8 @@ fn test_edge_case_maximum_rank() {
 fn test_edge_case_all_embedders_same_rank() {
     let id = Uuid::new_v4();
 
-    // All 13 embedders return this document at rank 0 with varying similarities
-    let results: Vec<EmbedderQueryResult> = (0..13)
+    // All production embedders return this document at rank 0 with varying similarities.
+    let results: Vec<EmbedderQueryResult> = (0..NUM_EMBEDDERS)
         .map(|i| {
             let sim = 0.5 + (i as f32 * 0.03); // 0.50 to 0.86
             EmbedderQueryResult::from_similarity(id, i as u8, sim, 0)
@@ -542,8 +548,8 @@ fn test_edge_case_all_embedders_same_rank() {
 
     let multi = MultiSpaceQueryResult::from_embedder_results(id, &results);
 
-    // All embedders at rank 0: RRF = 13 × 1/61
-    let expected_rrf = 13.0 / 61.0;
+    // All embedders at rank 0: RRF = NUM_EMBEDDERS × 1/61
+    let expected_rrf = NUM_EMBEDDERS as f32 / 61.0;
     assert!(
         (multi.rrf_score - expected_rrf).abs() < 1e-6,
         "Expected RRF {:.6}, got {:.6}",
@@ -551,8 +557,11 @@ fn test_edge_case_all_embedders_same_rank() {
         multi.rrf_score
     );
 
-    // Weighted similarity = average of 0.50..0.86
-    let expected_weighted: f32 = (0..13).map(|i| 0.5 + i as f32 * 0.03).sum::<f32>() / 13.0;
+    // Weighted similarity = average of the per-embedder synthetic similarities.
+    let expected_weighted: f32 = (0..NUM_EMBEDDERS)
+        .map(|i| 0.5 + i as f32 * 0.03)
+        .sum::<f32>()
+        / NUM_EMBEDDERS as f32;
     assert!(
         (multi.weighted_similarity - expected_weighted).abs() < 1e-6,
         "Expected weighted {:.6}, got {:.6}",
@@ -561,8 +570,8 @@ fn test_edge_case_all_embedders_same_rank() {
     );
 
     eprintln!(
-        "[EDGE CASE 3] All 13 at rank 0: rrf={:.4}, weighted={:.4}",
-        multi.rrf_score, multi.weighted_similarity
+        "[EDGE CASE 3] All {} at rank 0: rrf={:.4}, weighted={:.4}",
+        NUM_EMBEDDERS, multi.rrf_score, multi.weighted_similarity
     );
 }
 
@@ -633,12 +642,12 @@ fn test_rrf_converges_to_zero() {
 /// Test: RRF sum is bounded
 #[test]
 fn test_rrf_sum_bounded() {
-    // Maximum possible RRF: all 13 embedders at rank 0
-    let max_rrf = 13.0 / 61.0; // ≈ 0.2131
+    // Maximum possible RRF: all production embedders at rank 0
+    let max_rrf = NUM_EMBEDDERS as f32 / 61.0;
 
     // Verify this bound
     let id = Uuid::new_v4();
-    let results: Vec<EmbedderQueryResult> = (0..13)
+    let results: Vec<EmbedderQueryResult> = (0..NUM_EMBEDDERS)
         .map(|i| EmbedderQueryResult::from_similarity(id, i as u8, 0.99, 0))
         .collect();
     let multi = MultiSpaceQueryResult::from_embedder_results(id, &results);
@@ -764,7 +773,10 @@ fn test_full_state_verification_summary() {
     eprintln!("========================================");
     eprintln!("RRF Constants:");
     eprintln!("  - RRF_K = {} (Constitution: 60)", RRF_K);
-    eprintln!("  - NUM_EMBEDDERS = {} (13-model pipeline)", NUM_EMBEDDERS);
+    eprintln!(
+        "  - NUM_EMBEDDERS = {} (production storage slots)",
+        NUM_EMBEDDERS
+    );
     eprintln!();
     eprintln!("RRF Formula Verified:");
     eprintln!("  - RRF(d) = Σᵢ wᵢ / (k + rankᵢ(d) + 1) [1-indexed]");
@@ -773,11 +785,15 @@ fn test_full_state_verification_summary() {
     eprintln!("Edge Cases Verified:");
     eprintln!("  1. Single result aggregation");
     eprintln!("  2. Maximum rank handling");
-    eprintln!("  3. All 13 embedders at same rank");
+    eprintln!("  3. All production embedders at same rank");
     eprintln!();
     eprintln!("Properties Verified:");
     eprintln!("  - RRF monotonically decreases with rank");
     eprintln!("  - RRF converges to 0 as rank → ∞");
-    eprintln!("  - Max RRF bounded at 13/61 ≈ 0.213");
+    eprintln!(
+        "  - Max RRF bounded at {}/61 ≈ {:.3}",
+        NUM_EMBEDDERS,
+        NUM_EMBEDDERS as f32 / 61.0
+    );
     eprintln!("========================================\n");
 }

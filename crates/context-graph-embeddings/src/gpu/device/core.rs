@@ -129,13 +129,24 @@ fn init_success(device: Device) -> Result<&'static Device, candle_core::Error> {
 
 /// Handle GPU initialization failure with detailed error logging.
 fn init_failure(e: candle_core::Error) -> Result<&'static Device, candle_core::Error> {
-    let msg = e.to_string();
+    let raw_msg = e.to_string();
+    let msg = format!(
+        "{raw_msg}\n\
+         GPU runtime access check failed for CUDA device 0. This build targets RTX 5090 / Blackwell \
+         compute capability 12.0 and has no CPU fallback.\n\
+         Required manual checks:\n\
+         - Run `nvidia-smi` from this WSL shell. If it reports \"GPU access blocked by the operating system\", \
+           fix Windows/WSL GPU access before rerunning.\n\
+         - Verify `/usr/lib/wsl/lib/nvidia-smi` is visible in WSL and that the Windows NVIDIA driver supports WSL CUDA.\n\
+         - Verify CUDA toolkit availability with `nvcc --version`.\n\
+         - `CUDA_COMPUTE_CAP=120` only fixes build-time architecture detection; it does not provide runtime GPU access."
+    );
     let _ = GPU_AVAILABLE.set(false);
     let _ = INIT_RESULT.set(Err(msg.clone()));
 
     // ROBUST ERROR LOGGING - provide actionable information
     tracing::error!("=== GPU Initialization FAILED ===");
-    tracing::error!("Error: {}", msg);
+    tracing::error!("Error: {}", raw_msg);
     tracing::error!("");
     tracing::error!("This crate REQUIRES a CUDA-capable GPU. NO CPU FALLBACK.");
     tracing::error!("");
@@ -150,8 +161,9 @@ fn init_failure(e: candle_core::Error) -> Result<&'static Device, candle_core::E
     tracing::error!("");
     tracing::error!("Target hardware: RTX 5090 (32GB VRAM, Compute 12.0)");
     tracing::error!("Minimum hardware: Any CUDA GPU with Compute 6.0+");
+    tracing::error!("Detailed failure:\n{}", msg);
 
-    Err(e)
+    Err(candle_core::Error::Msg(msg))
 }
 
 #[cfg(test)]

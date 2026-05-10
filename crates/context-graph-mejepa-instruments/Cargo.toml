@@ -11,6 +11,7 @@ context-graph-core = { path = "../context-graph-core" }
 context-graph-witness = { path = "../context-graph-witness" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = "0.10"
 thiserror = { workspace = true }
 
 [dev-dependencies]

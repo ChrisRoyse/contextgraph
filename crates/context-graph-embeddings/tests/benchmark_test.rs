@@ -4,8 +4,9 @@
 //!
 //! # Key Verifications
 //! - Storage size targets (~17KB quantized fingerprint)
-//! - Model count: 13 embedders
-//! - Dimension totals: 11648D
+//! - Production storage slots: 14 embedders
+//! - ModelId count: 15 variants (legacy Entity plus production Kepler and E14 BGE-M3)
+//! - Dimension totals: 13056D
 //! - Quantization method assignments per Constitution
 //! - Memory estimate calculations
 //!
@@ -73,20 +74,20 @@ fn test_storage_version() {
 // DIMENSION BENCHMARK TESTS
 // =============================================================================
 
-/// Test: Total dimension is 12032 (14 models: E1-E13 + Kepler)
+/// Test: Total dimension is 13056 (ModelId::all: E1-E13 + Kepler + BGE-M3)
 #[test]
 fn test_total_dimension_benchmark() {
-    assert_eq!(TOTAL_DIMENSION, 12032);
+    assert_eq!(TOTAL_DIMENSION, 13056);
     eprintln!("[BENCHMARK] Total dimension: {}D", TOTAL_DIMENSION);
 }
 
-/// Test: Model count is 14 (13 pipeline + Kepler), NUM_EMBEDDERS is 13 (weight slots E1-E13)
+/// Test: Model count is 15 (all variants), NUM_EMBEDDERS is 14 (production storage slots)
 #[test]
 fn test_model_count_benchmark() {
-    assert_eq!(MODEL_COUNT, 14);
-    assert_eq!(NUM_EMBEDDERS, 13);
+    assert_eq!(MODEL_COUNT, 15);
+    assert_eq!(NUM_EMBEDDERS, 14);
     eprintln!(
-        "[BENCHMARK] Model count: {}, Embedder weight slots: {}",
+        "[BENCHMARK] ModelId count: {}, production storage slots: {}",
         MODEL_COUNT, NUM_EMBEDDERS
     );
 }
@@ -102,7 +103,7 @@ fn test_projected_dimensions_sum() {
     );
 }
 
-/// Test: All dimension arrays have length 13
+/// Test: All dimension arrays have length MODEL_COUNT.
 #[test]
 fn test_dimension_arrays_length() {
     assert_eq!(PROJECTED_DIMENSIONS.len(), MODEL_COUNT);
@@ -157,6 +158,8 @@ fn test_quantization_method_assignments() {
         (ModelId::Entity, QuantizationMethod::Float8E4M3),
         (ModelId::LateInteraction, QuantizationMethod::TokenPruning),
         (ModelId::Splade, QuantizationMethod::SparseNative),
+        (ModelId::Kepler, QuantizationMethod::PQ8),
+        (ModelId::BgeM3Dense, QuantizationMethod::PQ8),
     ];
 
     for (model_id, expected_method) in expected_methods {
@@ -168,7 +171,10 @@ fn test_quantization_method_assignments() {
         );
     }
 
-    eprintln!("[BENCHMARK] All 13 quantization method assignments verified");
+    eprintln!(
+        "[BENCHMARK] All {} quantization method assignments verified",
+        ModelId::all().len()
+    );
 }
 
 /// Test: Quantization compression ratios
@@ -231,7 +237,7 @@ fn test_memory_estimates_reasonable() {
 #[test]
 fn test_total_vram_estimate() {
     // Constitution: stack.gpu.total_vram = 32GB
-    // All 13 models should fit within 28GB (leave 4GB for ops)
+    // All 14 production models should fit within 28GB (leave 4GB for ops)
     let _max_total_vram_gb = 28.0;
 
     // Rough estimate: sum of dimensions * 4 bytes * overhead
@@ -259,31 +265,24 @@ fn test_total_vram_estimate() {
 fn create_benchmark_embeddings() -> HashMap<u8, QuantizedEmbedding> {
     let mut map = HashMap::new();
 
-    // Sizes based on Constitution quantization methods
-    let configs = vec![
-        // (index, method, original_dim, quantized_data_size)
-        (0, QuantizationMethod::PQ8, 1024, 8), // E1: PQ8
-        (1, QuantizationMethod::Float8E4M3, 512, 512), // E2: Float8
-        (2, QuantizationMethod::Float8E4M3, 512, 512), // E3: Float8
-        (3, QuantizationMethod::Float8E4M3, 512, 512), // E4: Float8
-        (4, QuantizationMethod::PQ8, 768, 8),  // E5: PQ8
-        (5, QuantizationMethod::SparseNative, 30522, 500), // E6: Sparse (~500 nnz * 2)
-        (6, QuantizationMethod::PQ8, 1536, 8), // E7: PQ8 (Qodo-Embed 1536D)
-        (7, QuantizationMethod::Float8E4M3, 1024, 1024), // E8: Float8 (e5-large-v2 1024D)
-        (8, QuantizationMethod::Binary, 10000, 1250), // E9: Binary (10K bits / 8)
-        (9, QuantizationMethod::PQ8, 768, 8),  // E10: PQ8
-        (10, QuantizationMethod::Float8E4M3, 768, 768), // E11: Float8 (KEPLER 768D)
-        (11, QuantizationMethod::TokenPruning, 128, 256), // E12: TokenPruning
-        (12, QuantizationMethod::SparseNative, 30522, 500), // E13: Sparse
-    ];
+    // Sizes based on production slot order and canonical quantization methods.
+    for (idx, model_id) in ModelId::production().iter().copied().enumerate() {
+        let method = QuantizationMethod::for_model_id(model_id);
+        let dim = model_id.dimension();
+        let data_size = match method {
+            QuantizationMethod::PQ8 => 8,
+            QuantizationMethod::Float8E4M3 => dim,
+            QuantizationMethod::Binary => dim.div_ceil(8),
+            QuantizationMethod::SparseNative => 500,
+            QuantizationMethod::TokenPruning => 256,
+        };
 
-    for (idx, method, dim, data_size) in configs {
         let data: Vec<u8> = (0..data_size)
             .map(|j| ((idx as usize * 17 + j) % 256) as u8)
             .collect();
 
         map.insert(
-            idx,
+            idx as u8,
             QuantizedEmbedding {
                 method,
                 original_dim: dim,
@@ -312,6 +311,7 @@ fn create_benchmark_embeddings() -> HashMap<u8, QuantizedEmbedding> {
         );
     }
 
+    assert_eq!(map.len(), NUM_EMBEDDERS);
     map
 }
 
@@ -357,7 +357,7 @@ fn test_fingerprint_size_breakdown() {
     let mut total_embedding_data = 0usize;
     let mut breakdown = String::new();
 
-    for idx in 0..13u8 {
+    for idx in 0..NUM_EMBEDDERS as u8 {
         if let Some(qe) = embeddings.get(&idx) {
             let size = qe.data.len();
             total_embedding_data += size;
@@ -384,7 +384,7 @@ fn test_fingerprint_size_breakdown() {
     );
     eprintln!(
         "            Total estimate: {} bytes",
-        total_embedding_data + fixed_overhead + 13 * 40
+        total_embedding_data + fixed_overhead + NUM_EMBEDDERS * 40
     );
 }
 
@@ -464,7 +464,7 @@ fn test_rrf_calculation_timing() {
     let id = Uuid::new_v4();
 
     // Create test results
-    let results: Vec<EmbedderQueryResult> = (0..13)
+    let results: Vec<EmbedderQueryResult> = (0..NUM_EMBEDDERS)
         .map(|i| EmbedderQueryResult::from_similarity(id, i as u8, 0.9 - i as f32 * 0.05, i))
         .collect();
 
@@ -476,8 +476,8 @@ fn test_rrf_calculation_timing() {
 
     let avg_ns = elapsed.as_nanos() / iterations as u128;
     eprintln!(
-        "[BENCHMARK] RRF calculation (13 contributions): {} iterations in {:?}",
-        iterations, elapsed
+        "[BENCHMARK] RRF calculation ({} contributions): {} iterations in {:?}",
+        NUM_EMBEDDERS, iterations, elapsed
     );
     eprintln!("            Average: {} ns/op", avg_ns);
 
@@ -531,25 +531,23 @@ fn test_edge_case_maximum_size_fingerprint() {
     );
 }
 
-/// Edge Case 2: Minimum size fingerprint (all PQ8)
+/// Edge Case 2: Minimum size fingerprint with valid per-slot methods
 #[test]
 fn test_edge_case_minimum_size_fingerprint() {
-    let mut embeddings = HashMap::new();
+    let mut embeddings = create_benchmark_embeddings();
 
-    // All embedders use PQ8 (smallest)
-    for idx in 0..13u8 {
-        embeddings.insert(
-            idx,
-            QuantizedEmbedding {
-                method: QuantizationMethod::PQ8,
-                original_dim: 768,
-                data: vec![0x00; 8], // Minimal PQ8 data
-                metadata: QuantizationMetadata::PQ8 {
-                    codebook_id: idx as u32,
-                    num_subvectors: 8,
-                },
-            },
-        );
+    // Shrink payloads while preserving the canonical method for every slot.
+    for (idx, qe) in embeddings.iter_mut() {
+        qe.data = match qe.method {
+            QuantizationMethod::PQ8 => vec![0x00; 8],
+            QuantizationMethod::Float8E4M3 => vec![0x00; 1],
+            QuantizationMethod::Binary => vec![0x00; 1],
+            QuantizationMethod::SparseNative => vec![0x00; 1],
+            QuantizationMethod::TokenPruning => vec![0x00; 1],
+        };
+        if let QuantizationMetadata::PQ8 { codebook_id, .. } = &mut qe.metadata {
+            *codebook_id = *idx as u32;
+        }
     }
 
     let fp =
@@ -559,7 +557,7 @@ fn test_edge_case_minimum_size_fingerprint() {
     // Note: Even with minimal embeddings, metadata adds overhead
     // So size might still be > MIN_QUANTIZED_SIZE_BYTES
     eprintln!(
-        "[EDGE CASE 2] Minimal PQ8 fingerprint: {} bytes (min required: {})",
+        "[EDGE CASE 2] Minimal valid-method fingerprint: {} bytes (min required: {})",
         size, MIN_QUANTIZED_SIZE_BYTES
     );
 }
@@ -613,20 +611,21 @@ fn test_edge_case_concurrent_creation() {
 /// Test: All Constitution constants are consistent
 #[test]
 fn test_constitution_constants_consistency() {
-    // NUM_EMBEDDERS from storage module (13 weight slots: E1-E13)
-    assert_eq!(NUM_EMBEDDERS, 13);
+    // NUM_EMBEDDERS from storage module (14 production storage slots)
+    assert_eq!(NUM_EMBEDDERS, 14);
 
-    // MODEL_COUNT from dimensions module (14 models: E1-E13 + Kepler)
-    assert_eq!(MODEL_COUNT, 14);
+    // MODEL_COUNT from dimensions module (15 ModelId variants, including legacy Entity)
+    assert_eq!(MODEL_COUNT, 15);
 
-    // MODEL_COUNT = NUM_EMBEDDERS + 1 (Kepler is production E11, shares weight slot 10)
+    // MODEL_COUNT = NUM_EMBEDDERS + 1 because legacy Entity remains addressable.
     assert_eq!(MODEL_COUNT, NUM_EMBEDDERS + 1);
 
-    // TOTAL_DIMENSION (14 models including Kepler 768D)
-    assert_eq!(TOTAL_DIMENSION, 12032);
+    // TOTAL_DIMENSION (all 15 ModelId variants including BGE-M3 Dense)
+    assert_eq!(TOTAL_DIMENSION, 13056);
 
     eprintln!("[BENCHMARK] Constitution constants verified:");
-    eprintln!("  NUM_EMBEDDERS = MODEL_COUNT = {}", NUM_EMBEDDERS);
+    eprintln!("  NUM_EMBEDDERS = {}", NUM_EMBEDDERS);
+    eprintln!("  MODEL_COUNT = {}", MODEL_COUNT);
     eprintln!("  RRF_K = {}", RRF_K);
     eprintln!("  TOTAL_DIMENSION = {}", TOTAL_DIMENSION);
 }
@@ -655,15 +654,15 @@ fn test_full_state_verification_summary() {
     eprintln!("  - Projected dims: {:?}", PROJECTED_DIMENSIONS);
     eprintln!();
     eprintln!("Quantization Methods:");
-    eprintln!("  - PQ8: E1, E5, E7, E10 (128:1 compression)");
-    eprintln!("  - Float8: E2, E3, E4, E8, E11 (4:1 compression)");
+    eprintln!("  - PQ8: E1, E5, E7, E10, Kepler, E14 (32:1 target)");
+    eprintln!("  - Float8: E2, E3, E4, E8, legacy Entity (4:1 compression)");
     eprintln!("  - Binary: E9 (32:1 compression)");
     eprintln!("  - Sparse: E6, E13 (native sparse)");
     eprintln!("  - TokenPruning: E12 (2:1 compression)");
     eprintln!();
     eprintln!("Edge Cases Verified:");
     eprintln!("  1. Maximum size fingerprint (large sparse)");
-    eprintln!("  2. Minimum size fingerprint (all PQ8)");
+    eprintln!("  2. Minimum size fingerprint (valid per-slot methods)");
     eprintln!("  3. Concurrent creation (4 threads)");
     eprintln!("========================================\n");
 }

@@ -62,6 +62,7 @@ impl TryFrom<&str> for ModelId {
             "LateInteraction" => Ok(Self::LateInteraction),
             "Splade" | "SPLADE" => Ok(Self::Splade),
             "Kepler" | "KEPLER" => Ok(Self::Kepler),
+            "BgeM3Dense" | "BGE_M3_Dense" | "BgeM3_Dense" | "bge_m3_dense" => Ok(Self::BgeM3Dense),
             _ => Err("Invalid ModelId string"),
         }
     }

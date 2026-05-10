@@ -2,7 +2,7 @@
 
 use super::helpers::*;
 use context_graph_embeddings::{
-    EmbedderQueryResult, MultiSpaceQueryResult, StoredQuantizedFingerprint,
+    storage::NUM_EMBEDDERS, EmbedderQueryResult, MultiSpaceQueryResult, StoredQuantizedFingerprint,
 };
 use uuid::Uuid;
 
@@ -36,7 +36,7 @@ fn test_json_roundtrip_fingerprint() {
         "Embeddings count mismatch"
     );
 
-    for i in 0..13u8 {
+    for i in 0..NUM_EMBEDDERS as u8 {
         let orig_emb = original.get_embedding(i);
         let rest_emb = restored.get_embedding(i);
         assert_eq!(
@@ -87,7 +87,11 @@ fn test_bincode_roundtrip_fingerprint() {
         "ID mismatch after bincode roundtrip"
     );
     assert_eq!(restored.version, original.version, "Version mismatch");
-    assert_eq!(restored.embeddings.len(), 13, "Must have 13 embeddings");
+    assert_eq!(
+        restored.embeddings.len(),
+        NUM_EMBEDDERS,
+        "Must have one embedding per production slot"
+    );
     assert_eq!(
         restored.topic_profile, original.topic_profile,
         "Topic profile mismatch"
@@ -98,7 +102,7 @@ fn test_bincode_roundtrip_fingerprint() {
     );
 
     // Verify embedding data integrity
-    for i in 0..13u8 {
+    for i in 0..NUM_EMBEDDERS as u8 {
         let orig_data = &original.get_embedding(i).data;
         let rest_data = &restored.get_embedding(i).data;
         assert_eq!(
@@ -153,7 +157,7 @@ fn test_multi_space_query_result_roundtrip() {
     assert!((restored.rrf_score - original.rrf_score).abs() < f32::EPSILON);
 
     // Check embedder similarities including NaN handling
-    for i in 0..13 {
+    for i in 0..NUM_EMBEDDERS {
         let orig = original.embedder_similarities[i];
         let rest = restored.embedder_similarities[i];
         if orig.is_nan() {

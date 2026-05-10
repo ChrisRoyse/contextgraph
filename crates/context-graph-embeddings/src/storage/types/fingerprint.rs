@@ -112,6 +112,29 @@ impl StoredQuantizedFingerprint {
             }
         }
 
+        // FAIL FAST: the stored method for each production slot must match the
+        // canonical quantization assignment. This prevents a malformed
+        // fingerprint from passing construction and only failing later at query
+        // or dequantization time.
+        for idx in 0..NUM_EMBEDDERS as u8 {
+            let model_id = ModelId::production()
+                .get(idx as usize)
+                .copied()
+                .expect("NUM_EMBEDDERS must match ModelId::production()");
+            let expected = QuantizationMethod::for_model_id(model_id);
+            let actual = embeddings
+                .get(&idx)
+                .expect("all indices must be present after length/range validation")
+                .method;
+            if actual != expected {
+                panic!(
+                    "CONSTRUCTION ERROR: Embedder slot {} ({:?}) has quantization method {:?}, expected {:?}. \
+                     This indicates a corrupted fingerprint or quantization routing bug.",
+                    idx, model_id, actual, expected
+                );
+            }
+        }
+
         let now = chrono::Utc::now().timestamp_millis();
 
         Self {
