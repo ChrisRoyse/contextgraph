@@ -32,6 +32,7 @@ context-graph-mejepa-tct = { path = "../context-graph-mejepa-tct" }
 
 # Async runtime
 tokio = { workspace = true }
+axum = "0.8"
 
 # Serialization
 serde = { workspace = true }

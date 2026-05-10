@@ -28,7 +28,7 @@ impl Default for ServerConfig {
 /// Supports stdio (default), TCP, and SSE transports.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct McpConfig {
-    /// Transport type: "stdio", "tcp", or "sse"
+    /// Transport type: "stdio", "tcp", "http", or "sse"
     #[serde(default = "default_transport")]
     pub transport: String,
 
@@ -50,14 +50,14 @@ pub struct McpConfig {
     #[serde(default = "default_tcp_port")]
     pub tcp_port: u16,
 
-    /// SSE port number (default: 3101)
-    /// Only used when transport = "sse"
+    /// SSE/Streamable HTTP port number (default: 3101)
+    /// Used when transport = "sse" or "http"
     /// TASK-42: Added for SSE transport support
     #[serde(default = "default_sse_port")]
     pub sse_port: u16,
 
-    /// Maximum concurrent TCP/SSE connections (default: 32)
-    /// Used when transport = "tcp" or "sse"
+    /// Maximum concurrent TCP/SSE/HTTP connections (default: 32)
+    /// Used when transport = "tcp", "sse", or "http"
     #[serde(default = "default_max_connections")]
     pub max_connections: usize,
 }
@@ -118,13 +118,13 @@ impl McpConfig {
     ///
     /// # Validation Rules
     ///
-    /// - `transport`: Must be "stdio", "tcp", or "sse" (case-insensitive)
+    /// - `transport`: Must be "stdio", "tcp", "http", or "sse" (case-insensitive)
     /// - `max_payload_size`: Must be > 0
     /// - `request_timeout`: Must be > 0
-    /// - `bind_address`: Must be non-empty when transport = "tcp" or "sse"
+    /// - `bind_address`: Must be non-empty when transport = "tcp", "http", or "sse"
     /// - `tcp_port`: Must be in valid range (1-65535) when transport = "tcp"
-    /// - `sse_port`: Must be in valid range (1-65535) when transport = "sse"
-    /// - `max_connections`: Must be > 0 when transport = "tcp" or "sse"
+    /// - `sse_port`: Must be in valid range (1-65535) when transport = "http" or "sse"
+    /// - `max_connections`: Must be > 0 when transport = "tcp", "http", or "sse"
     ///
     /// # Errors
     ///
@@ -132,11 +132,15 @@ impl McpConfig {
     pub fn validate(&self) -> crate::error::CoreResult<()> {
         use crate::error::CoreError;
 
-        // Validate transport type (TASK-42: Added "sse")
+        // Validate transport type (TASK-42: Added "sse"; 2026-05-10 added Streamable HTTP)
         let transport_lower = self.transport.to_lowercase();
-        if transport_lower != "stdio" && transport_lower != "tcp" && transport_lower != "sse" {
+        if transport_lower != "stdio"
+            && transport_lower != "tcp"
+            && transport_lower != "http"
+            && transport_lower != "sse"
+        {
             return Err(CoreError::ConfigError(format!(
-                "McpConfig validation failed: transport must be 'stdio', 'tcp', or 'sse', got '{}'",
+                "McpConfig validation failed: transport must be 'stdio', 'tcp', 'http', or 'sse', got '{}'",
                 self.transport
             )));
         }
@@ -182,12 +186,13 @@ impl McpConfig {
             }
         }
 
-        // SSE-specific validation (TASK-42)
-        if transport_lower == "sse" {
+        // Streamable HTTP/SSE validation. Both use sse_port as the configured
+        // HTTP port to preserve the existing config shape.
+        if transport_lower == "sse" || transport_lower == "http" {
             // Validate bind_address
             if self.bind_address.trim().is_empty() {
                 return Err(CoreError::ConfigError(
-                    "McpConfig validation failed: bind_address must be non-empty for SSE transport"
+                    "McpConfig validation failed: bind_address must be non-empty for HTTP/SSE transport"
                         .to_string(),
                 ));
             }
@@ -195,7 +200,7 @@ impl McpConfig {
             // Validate sse_port (u16 is already 0-65535, but 0 is reserved)
             if self.sse_port == 0 {
                 return Err(CoreError::ConfigError(
-                    "McpConfig validation failed: sse_port must be in range 1-65535, got 0"
+                    "McpConfig validation failed: sse_port must be in range 1-65535 for HTTP/SSE transport, got 0"
                         .to_string(),
                 ));
             }
@@ -203,7 +208,7 @@ impl McpConfig {
             // Validate max_connections
             if self.max_connections == 0 {
                 return Err(CoreError::ConfigError(
-                    "McpConfig validation failed: max_connections must be > 0 for SSE transport"
+                    "McpConfig validation failed: max_connections must be > 0 for HTTP/SSE transport"
                         .to_string(),
                 ));
             }

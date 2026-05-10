@@ -6,6 +6,7 @@ fn run_mcp(args: &[&str]) -> Output {
         .args(args)
         .env_remove("CONTEXT_GRAPH_TRANSPORT")
         .env_remove("CONTEXT_GRAPH_TCP_PORT")
+        .env_remove("CONTEXT_GRAPH_HTTP_PORT")
         .env_remove("CONTEXT_GRAPH_BIND_ADDRESS")
         .env_remove("CONTEXT_GRAPH_DAEMON_PORT")
         .env_remove("CONTEXT_GRAPH_DAEMON");
@@ -14,7 +15,7 @@ fn run_mcp(args: &[&str]) -> Output {
 
 #[test]
 fn cli_rejects_zero_ports_before_startup() {
-    for args in [["--port", "0"], ["--daemon-port", "0"]] {
+    for args in [["--port", "0"], ["--daemon-port", "0"], ["--http-port", "0"]] {
         let output = run_mcp(&args);
         let stderr = String::from_utf8_lossy(&output.stderr);
 
@@ -49,6 +50,7 @@ fn cli_rejects_missing_argument_values_before_startup() {
         ["--mode"],
         ["--port"],
         ["--daemon-port"],
+        ["--http-port"],
     ] {
         let output = run_mcp(&args);
         let stderr = String::from_utf8_lossy(&output.stderr);

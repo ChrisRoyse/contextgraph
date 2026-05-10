@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/tmp/contextgraph-mejepa-embedders-fsv");
+    let root = context_graph_paths::ensure_subdir("fsv/contextgraph-mejepa-embedders-fsv")?;
     if root.exists() {
         fs::remove_dir_all(&root)?;
     }

@@ -6,7 +6,7 @@
 #   1. Verifies Phase B output is still present on disk (ext4 survives reboot)
 #   2. Verifies earlyoom + sysctl hardening is active
 #   3. Cleans any stale PID/lock files (survives crash path too)
-#   4. Starts daemon; blocks until listening on 3100 (max 5 min)
+#   4. Starts daemon; blocks until listening on 3100 and HTTP 3101 (max 5 min)
 #   5. Starts vram_watchdog in background
 #   6. Prints a one-line READY / NOT-READY verdict
 #
@@ -20,6 +20,7 @@ DATA_ROOT="${CONTEXTGRAPH_DATA_ROOT:-/mnt/d/contextgraph}"
 BIN="$REPO/target/release/context-graph-mcp"
 MODE="${CONTEXT_GRAPH_MCP_MODE:-reality-loop}"
 MODELS="${CONTEXT_GRAPH_MODELS_PATH:-/mnt/d/cabdru/contextgraph/models}"
+HTTP_PORT="${CONTEXT_GRAPH_HTTP_PORT:-3101}"
 PIDFILE="${DATA_ROOT}/state/locks/context-graph-daemon.pid"
 DAEMON_LOG="${DATA_ROOT}/logs/cg-daemon.log"
 WATCHDOG_LOG="${DATA_ROOT}/logs/vram_watchdog.log"
@@ -80,9 +81,15 @@ for f in "$PIDFILE" \
   fi
 done
 
+daemon_ready() {
+  ss -lnt 2>/dev/null | grep -q ':3100 ' || return 1
+  ss -lnt 2>/dev/null | grep -q ":${HTTP_PORT} " || return 1
+  curl -fsS -H "Accept: application/json" "http://127.0.0.1:${HTTP_PORT}/healthz" >/dev/null 2>&1
+}
+
 # --- 4. Daemon already listening? ---
-if ss -lnt 2>/dev/null | grep -q ':3100 '; then
-  ok "daemon already listening on 3100"
+if daemon_ready; then
+  ok "daemon already listening on 3100 and HTTP ${HTTP_PORT}"
 else
   # Kill any zombie daemon processes that aren't listening
   if pgrep -f 'context-graph-mcp --daemon' >/dev/null; then
@@ -100,7 +107,7 @@ else
   [ -x "$BIN" ] || fail "binary not found or not executable: $BIN"
   echo "[restart] launching daemon (detached via setsid) — model load takes 30-60s..."
   cd "$REPO"
-  setsid bash -c "CONTEXTGRAPH_DATA_ROOT=\"$DATA_ROOT\" CONTEXT_GRAPH_STORAGE_PATH=\"${DATA_ROOT}/storage/contextgraph-rocksdb\" CONTEXT_GRAPH_DB_PATH=\"${DATA_ROOT}/storage/contextgraph-rocksdb\" CONTEXT_GRAPH_MODELS_PATH=\"$MODELS\" RUST_LOG=info exec \"$BIN\" --mode \"$MODE\" --daemon-server-only --daemon-port 3100 > \"$DAEMON_LOG\" 2>&1" < /dev/null >/dev/null 2>&1 &
+  setsid bash -c "CONTEXTGRAPH_DATA_ROOT=\"$DATA_ROOT\" CONTEXT_GRAPH_STORAGE_PATH=\"${DATA_ROOT}/storage/contextgraph-rocksdb\" CONTEXT_GRAPH_DB_PATH=\"${DATA_ROOT}/storage/contextgraph-rocksdb\" CONTEXT_GRAPH_MODELS_PATH=\"$MODELS\" RUST_LOG=info exec \"$BIN\" --mode \"$MODE\" --daemon-server-only --daemon-port 3100 --http-port \"$HTTP_PORT\" > \"$DAEMON_LOG\" 2>&1" < /dev/null >/dev/null 2>&1 &
   sleep 1
   # Recover actual daemon PID from setsid child via pgrep
   DPID=$(pgrep -f 'context-graph-mcp .*--daemon-server-only .*--daemon-port 3100' | head -1)
@@ -110,11 +117,11 @@ else
   echo "$DPID" > "$PIDFILE"
   echo "[restart] daemon pid=$DPID (session-detached)"
 
-  # Wait for LISTEN
+  # Wait for LISTEN and HTTP health
   elapsed=0
   while [ $elapsed -lt $MAX_WAIT ]; do
-    if ss -lnt 2>/dev/null | grep -q ':3100 '; then
-      ok "daemon listening on 3100 after ${elapsed}s (pid=$DPID)"
+    if daemon_ready; then
+      ok "daemon listening on 3100 and HTTP ${HTTP_PORT} after ${elapsed}s (pid=$DPID)"
       break
     fi
     if ! kill -0 "$DPID" 2>/dev/null; then
@@ -125,7 +132,7 @@ else
     echo "[restart]   still loading... ${elapsed}s"
   done
   if [ $elapsed -ge $MAX_WAIT ]; then
-    fail "daemon did not bind 3100 within ${MAX_WAIT}s — check $DAEMON_LOG"
+    fail "daemon did not become ready on 3100 and HTTP ${HTTP_PORT} within ${MAX_WAIT}s — check $DAEMON_LOG"
   fi
 fi
 

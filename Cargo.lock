@@ -1077,6 +1077,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axum",
  "chrono",
  "context-graph-cli",
  "context-graph-core",
@@ -1164,6 +1165,7 @@ dependencies = [
  "context-graph-core",
  "context-graph-cuda",
  "context-graph-embeddings",
+ "context-graph-paths",
  "serde",
  "serde_json",
  "sha2",

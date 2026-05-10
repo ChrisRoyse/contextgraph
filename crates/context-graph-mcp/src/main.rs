@@ -7,6 +7,7 @@
 //!
 //! - stdio: Standard input/output (default)
 //! - tcp: TCP socket transport for networked deployments
+//! - http: Streamable HTTP transport for reconnect-capable MCP clients
 //!
 //! # Usage
 //!
@@ -79,6 +80,8 @@ struct CliArgs {
     mode: String,
     /// TCP port override (--port)
     port: Option<u16>,
+    /// Streamable HTTP port override (--http-port)
+    http_port: Option<u16>,
     /// TCP bind address override (--bind)
     bind_address: Option<String>,
     /// Show help
@@ -123,6 +126,7 @@ impl CliArgs {
             transport: None,
             mode: "default".to_string(),
             port: None,
+            http_port: None,
             bind_address: None,
             help: false,
             version: false,
@@ -177,6 +181,13 @@ impl CliArgs {
                         return Err(anyhow::anyhow!("Missing value for --port"));
                     }
                     cli.port = Some(parse_port_number("--port", &args[i])?);
+                }
+                "--http-port" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err(anyhow::anyhow!("Missing value for --http-port"));
+                    }
+                    cli.http_port = Some(parse_port_number("--http-port", &args[i])?);
                 }
                 "--bind" => {
                     i += 1;
@@ -250,9 +261,10 @@ USAGE:
 
 OPTIONS:
     --config <PATH>      Path to configuration file
-    --transport <MODE>   Transport mode: stdio (default) or tcp
+    --transport <MODE>   Transport mode: stdio (default), tcp, or http
     --mode <MODE>        MCP server mode: default or reality-loop
     --port <PORT>        TCP port (only used with --transport tcp)
+    --http-port <PORT>   Streamable HTTP port (default: 3101)
     --bind <ADDRESS>     TCP bind address (default: 127.0.0.1)
     --warm-first         Block startup until active embedding models are loaded into VRAM (default)
     --no-warm            Skip blocking warmup (embeddings fail until background load completes)
@@ -307,6 +319,9 @@ EXAMPLES:
     # Run with TCP transport on default port (3100)
     context-graph-mcp --transport tcp
 
+    # Run with Streamable HTTP transport on default port (3101)
+    context-graph-mcp --transport http
+
     # Run with TCP transport on custom port
     context-graph-mcp --transport tcp --port 4000
 
@@ -331,19 +346,20 @@ fn determine_transport_mode(cli: &CliArgs, config: &Config) -> Result<TransportM
         return match transport_lower.as_str() {
             "stdio" => Ok(TransportMode::Stdio),
             "tcp" => Ok(TransportMode::Tcp),
+            "http" | "streamable-http" => Ok(TransportMode::Http),
             "sse" => {
-                error!("FATAL: SSE transport is not supported. Use 'stdio' or 'tcp'.");
+                error!("FATAL: SSE transport is not supported. Use 'stdio', 'tcp', or 'http'.");
                 Err(anyhow::anyhow!(
-                    "SSE transport is not supported. Use 'stdio' or 'tcp'."
+                    "SSE transport is not supported. Use 'stdio', 'tcp', or 'http'."
                 ))
             }
             _ => {
                 error!(
-                    "FATAL: Invalid transport '{}' from CLI. Must be 'stdio' or 'tcp'.",
+                    "FATAL: Invalid transport '{}' from CLI. Must be 'stdio', 'tcp', or 'http'.",
                     transport
                 );
                 Err(anyhow::anyhow!(
-                    "Invalid transport '{}'. Must be 'stdio' or 'tcp'.",
+                    "Invalid transport '{}'. Must be 'stdio', 'tcp', or 'http'.",
                     transport
                 ))
             }
@@ -356,19 +372,20 @@ fn determine_transport_mode(cli: &CliArgs, config: &Config) -> Result<TransportM
         return match transport_lower.as_str() {
             "stdio" => Ok(TransportMode::Stdio),
             "tcp" => Ok(TransportMode::Tcp),
+            "http" | "streamable-http" => Ok(TransportMode::Http),
             "sse" => {
-                error!("FATAL: SSE transport is not supported. Use 'stdio' or 'tcp'.");
+                error!("FATAL: SSE transport is not supported. Use 'stdio', 'tcp', or 'http'.");
                 Err(anyhow::anyhow!(
-                    "SSE transport is not supported. Use 'stdio' or 'tcp'."
+                    "SSE transport is not supported. Use 'stdio', 'tcp', or 'http'."
                 ))
             }
             _ => {
                 error!(
-                    "FATAL: Invalid CONTEXT_GRAPH_TRANSPORT='{}'. Must be 'stdio' or 'tcp'.",
+                    "FATAL: Invalid CONTEXT_GRAPH_TRANSPORT='{}'. Must be 'stdio', 'tcp', or 'http'.",
                     transport
                 );
                 Err(anyhow::anyhow!(
-                    "Invalid CONTEXT_GRAPH_TRANSPORT='{}'. Must be 'stdio' or 'tcp'.",
+                    "Invalid CONTEXT_GRAPH_TRANSPORT='{}'. Must be 'stdio', 'tcp', or 'http'.",
                     transport
                 ))
             }
@@ -380,24 +397,40 @@ fn determine_transport_mode(cli: &CliArgs, config: &Config) -> Result<TransportM
     match transport_lower.as_str() {
         "stdio" => Ok(TransportMode::Stdio),
         "tcp" => Ok(TransportMode::Tcp),
+        "http" | "streamable-http" => Ok(TransportMode::Http),
         "sse" => {
-            error!("FATAL: SSE transport is not supported. Use 'stdio' or 'tcp'.");
+            error!("FATAL: SSE transport is not supported. Use 'stdio', 'tcp', or 'http'.");
             Err(anyhow::anyhow!(
-                "SSE transport is not supported. Use 'stdio' or 'tcp'."
+                "SSE transport is not supported. Use 'stdio', 'tcp', or 'http'."
             ))
         }
         _ => {
             // This should not happen if Config::validate() passed, but FAIL FAST anyway
             error!(
-                "FATAL: Invalid transport '{}' in config. Must be 'stdio' or 'tcp'.",
+                "FATAL: Invalid transport '{}' in config. Must be 'stdio', 'tcp', or 'http'.",
                 config.mcp.transport
             );
             Err(anyhow::anyhow!(
-                "Invalid transport '{}' in config. Must be 'stdio' or 'tcp'.",
+                "Invalid transport '{}' in config. Must be 'stdio', 'tcp', or 'http'.",
                 config.mcp.transport
             ))
         }
     }
+}
+
+fn determine_http_port(cli: &CliArgs, config: &Config) -> Result<u16> {
+    if let Some(port) = cli.http_port {
+        return Ok(port);
+    }
+    if let Ok(port_str) = env::var("CONTEXT_GRAPH_HTTP_PORT") {
+        return parse_port_number("CONTEXT_GRAPH_HTTP_PORT", &port_str);
+    }
+    if config.mcp.sse_port == 0 {
+        return Err(anyhow::anyhow!(
+            "Invalid MCP Streamable HTTP port 0 from config.mcp.sse_port"
+        ));
+    }
+    Ok(config.mcp.sse_port)
 }
 
 /// Apply CLI/env overrides to config.
@@ -2040,6 +2073,7 @@ async fn start_daemon_server(
 #[cfg(unix)]
 async fn spawn_daemon_process(
     daemon_port: u16,
+    http_port: u16,
     config_path: Option<&Path>,
     warm_first: bool,
     mode: &str,
@@ -2058,6 +2092,8 @@ async fn spawn_daemon_process(
     cmd.arg("--daemon-server-only");
     cmd.arg("--daemon-port");
     cmd.arg(daemon_port.to_string());
+    cmd.arg("--http-port");
+    cmd.arg(http_port.to_string());
 
     if let Some(path) = config_path {
         cmd.arg("--config");
@@ -2636,6 +2672,7 @@ async fn async_main() -> Result<()> {
     // TASK-DAEMON: Check if daemon mode is enabled
     let daemon_mode = determine_daemon_mode(&cli);
     let daemon_port = determine_daemon_port(&cli)?;
+    let http_port = determine_http_port(&cli, &config)?;
 
     // SRV-M3 FIX: Resolve database path using the SAME function as McpServer::new().
     // Previously used `PathBuf::from(&config.storage.path)` which diverges from the
@@ -2685,9 +2722,10 @@ async fn async_main() -> Result<()> {
         }
 
         info!(
-            "Headless daemon server PID {} running on port {}",
+            "Headless daemon server PID {} running on TCP port {} and HTTP port {}",
             std::process::id(),
-            daemon_port
+            daemon_port,
+            http_port
         );
 
         // Run until signal
@@ -2716,10 +2754,18 @@ async fn async_main() -> Result<()> {
             }
         };
 
+        let mut transport_error: Option<anyhow::Error> = None;
         tokio::select! {
             result = server.run_tcp() => {
                 if let Err(e) = result {
                     error!("Headless daemon TCP server crashed: {}", e);
+                    transport_error = Some(anyhow::anyhow!("Headless daemon TCP server crashed: {}", e));
+                }
+            }
+            result = server.run_streamable_http(http_port) => {
+                if let Err(e) = result {
+                    error!("Headless daemon Streamable HTTP server crashed: {}", e);
+                    transport_error = Some(anyhow::anyhow!("Headless daemon Streamable HTTP server crashed: {}", e));
                 }
             }
             _ = shutdown_signal => {
@@ -2742,6 +2788,9 @@ async fn async_main() -> Result<()> {
         }
 
         info!("Headless daemon exiting");
+        if let Some(error) = transport_error {
+            return Err(error);
+        }
         return Ok(());
     }
 
@@ -2817,6 +2866,7 @@ async fn async_main() -> Result<()> {
             {
                 match spawn_daemon_process(
                     daemon_port,
+                    http_port,
                     cli.config_path.as_deref(),
                     warm_first,
                     &cli.mode,
@@ -3037,6 +3087,20 @@ async fn async_main() -> Result<()> {
                     result = server.run_tcp() => {
                         if let Err(e) = result {
                             error!("Server run_tcp() returned error: {}", e);
+                        }
+                    }
+                    _ = shutdown_signal => {}
+                }
+            }
+            TransportMode::Http => {
+                info!(
+                    "MCP Server initialized, starting Streamable HTTP transport on port {}",
+                    http_port
+                );
+                tokio::select! {
+                    result = server.run_streamable_http(http_port) => {
+                        if let Err(e) = result {
+                            error!("Server run_streamable_http() returned error: {}", e);
                         }
                     }
                     _ = shutdown_signal => {}

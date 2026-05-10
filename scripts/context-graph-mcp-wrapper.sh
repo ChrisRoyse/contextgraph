@@ -6,6 +6,7 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BINARY="/home/cabdru/contextgraph/target/release/context-graph-mcp"
 MODE="${CONTEXT_GRAPH_MCP_MODE:-reality-loop}"
+DAEMON_PORT="${CONTEXT_GRAPH_DAEMON_PORT:-3100}"
 
 # Ensure daemon is running (idempotent, blocks until ready)
 "$SCRIPT_DIR/ensure_daemon.sh"
@@ -15,4 +16,4 @@ if [ $? -ne 0 ]; then
 fi
 
 # Launch the stdio MCP client that connects to the daemon
-exec "$BINARY" --mode "$MODE" --daemon --daemon-port 3100
+exec "$BINARY" --mode "$MODE" --daemon --daemon-port "$DAEMON_PORT"

@@ -39,14 +39,14 @@ fn test_pretrained_repo() {
 
 #[test]
 fn test_model_path() {
-    let base = Path::new("/home/cabdru/contextgraph/models");
+    let base = Path::new("/mnt/d/cabdru/contextgraph/models");
     assert_eq!(
         ModelId::Semantic.model_path(base),
-        PathBuf::from("/home/cabdru/contextgraph/models/semantic")
+        PathBuf::from("/mnt/d/cabdru/contextgraph/models/semantic")
     );
     assert_eq!(
         ModelId::LateInteraction.model_path(base),
-        PathBuf::from("/home/cabdru/contextgraph/models/late-interaction")
+        PathBuf::from("/mnt/d/cabdru/contextgraph/models/late-interaction")
     );
 }
 

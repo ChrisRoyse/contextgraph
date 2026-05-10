@@ -12,6 +12,7 @@
 //!
 //! NO BACKWARDS COMPATIBILITY with stubs. FAIL FAST with clear errors.
 
+pub mod http_transport;
 pub mod transport;
 mod watchers;
 
@@ -43,6 +44,10 @@ pub enum TransportMode {
     /// TCP socket transport.
     /// Used for network-based MCP clients and remote deployments.
     Tcp,
+
+    /// Streamable HTTP transport.
+    /// Used by reconnect-capable MCP clients such as Claude Code HTTP servers.
+    Http,
 }
 
 use context_graph_core::config::Config;
@@ -1159,9 +1164,11 @@ mod tests {
     fn test_transport_mode_debug() {
         let stdio = TransportMode::Stdio;
         let tcp = TransportMode::Tcp;
+        let http = TransportMode::Http;
 
         assert_eq!(format!("{:?}", stdio), "Stdio");
         assert_eq!(format!("{:?}", tcp), "Tcp");
+        assert_eq!(format!("{:?}", http), "Http");
     }
 
     /// Test TransportMode Clone.
@@ -1189,8 +1196,10 @@ mod tests {
     fn test_transport_mode_equality() {
         assert_eq!(TransportMode::Stdio, TransportMode::Stdio);
         assert_eq!(TransportMode::Tcp, TransportMode::Tcp);
+        assert_eq!(TransportMode::Http, TransportMode::Http);
         assert_ne!(TransportMode::Stdio, TransportMode::Tcp);
         assert_ne!(TransportMode::Tcp, TransportMode::Stdio);
+        assert_ne!(TransportMode::Http, TransportMode::Stdio);
     }
 
     /// Test TransportMode Default (should be Stdio).
@@ -1288,6 +1297,7 @@ mod tests {
         let result = match mode {
             TransportMode::Stdio => "stdio",
             TransportMode::Tcp => "tcp",
+            TransportMode::Http => "http",
         };
 
         assert_eq!(result, "tcp");

@@ -71,6 +71,18 @@ fn test_mcp_config_validates_tcp_transport() {
 }
 
 #[test]
+fn test_mcp_config_validates_http_transport() {
+    let config = McpConfig {
+        transport: "http".to_string(),
+        bind_address: "127.0.0.1".to_string(),
+        sse_port: 3101,
+        max_connections: 64,
+        ..Default::default()
+    };
+    assert!(config.validate().is_ok(), "http transport must validate");
+}
+
+#[test]
 fn test_mcp_config_validates_transport_case_insensitive() {
     // Test uppercase
     let config_upper = McpConfig {
@@ -99,24 +111,23 @@ fn test_mcp_config_validates_transport_case_insensitive() {
 #[test]
 fn test_mcp_config_rejects_invalid_transport() {
     let config = McpConfig {
-        transport: "http".to_string(),
+        transport: "websocket".to_string(),
         ..Default::default()
     };
     let result = config.validate();
     assert!(
         result.is_err(),
-        "Invalid transport 'http' must fail validation"
+        "Invalid transport 'websocket' must fail validation"
     );
 
     let err_msg = result.unwrap_err().to_string();
-    // TASK-42: Updated to include 'sse' transport
     assert!(
-        err_msg.contains("transport must be 'stdio', 'tcp', or 'sse'"),
+        err_msg.contains("transport must be 'stdio', 'tcp', 'http', or 'sse'"),
         "Error must explain valid transport types, got: {}",
         err_msg
     );
     assert!(
-        err_msg.contains("http"),
+        err_msg.contains("websocket"),
         "Error must include the invalid value, got: {}",
         err_msg
     );
