@@ -1193,14 +1193,14 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                 let c = content_owned.clone();
                 async move { e10.embed_dual(&c).await }
             }),
-            // E11: Skip GPU inference when disabled (KEPLER non-discriminating, 0.96-0.98 cosine).
+            // E11 disabled: produce no vector; active topology gates the slot out.
             Self::timed_embed("E11_Entity", {
                 let c = content_owned.clone();
                 async move {
                     if E11_ENTITY_ENABLED {
                         e11.embed(&c).await
                     } else {
-                        Ok(vec![0.0f32; E11_DIM])
+                        Ok(Vec::new())
                     }
                 }
             }),
@@ -1413,14 +1413,14 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                 let c = content_owned.clone();
                 async move { e10.embed_dual(&c).await }
             }),
-            // E11: Skip GPU inference when disabled (KEPLER non-discriminating).
+            // E11 disabled: produce no vector; active topology gates the slot out.
             Self::timed_embed("E11_Entity", {
                 let c = content_owned.clone();
                 async move {
                     if E11_ENTITY_ENABLED {
                         e11.embed(&c).await
                     } else {
-                        Ok(vec![0.0f32; E11_DIM])
+                        Ok(Vec::new())
                     }
                 }
             }),
@@ -1653,14 +1653,14 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                             let c = content.clone();
                             async move { e10.embed_dual(&c).await }
                         }),
-                        // E11: Skip GPU inference when disabled (matches embed_all/embed_all_with_metadata).
+                        // E11 disabled: produce no vector; active topology gates the slot out.
                         Self::timed_embed("E11_Entity", {
                             let c = content.clone();
                             async move {
                                 if E11_ENTITY_ENABLED {
                                     e11.embed(&c).await
                                 } else {
-                                    Ok(vec![0.0f32; E11_DIM])
+                                    Ok(Vec::new())
                                 }
                             }
                         }),
@@ -1766,7 +1766,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             E8_DIM,
             E9_DIM,
             E10_DIM,
-            E11_DIM,
+            if E11_ENTITY_ENABLED { E11_DIM } else { 0 },
             E12_TOKEN_DIM,
             0, // E13 sparse
             E14_DIM,
@@ -1847,7 +1847,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
     ///
     /// Returns E11 entity embedding (768D).
     /// Fails when `E11_ENTITY_ENABLED` is false; bulk fingerprint generation
-    /// gates the disabled slot out separately with zero weight.
+    /// stores the disabled slot as empty and gates it out before scoring.
     async fn embed_e11_only(&self, content: &str) -> CoreResult<Vec<f32>> {
         if !E11_ENTITY_ENABLED {
             return Err(CoreError::Internal(E11_DISABLED_REASON.to_string()));

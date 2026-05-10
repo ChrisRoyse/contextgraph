@@ -25,7 +25,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
-use context_graph_core::weights::E11_ENTITY_ENABLED;
+use context_graph_core::weights::{E11_ENTITY_ENABLED, E5_CAUSAL_ENABLED};
 
 use crate::column_families::{cf_names, get_all_column_family_descriptors};
 use crate::dynamicjepa::column_families::DJ_CF_NAMES;
@@ -324,6 +324,16 @@ impl RocksDbTeleologicalStore {
                 if raw_fp_count > 0 {
                     use crate::teleological::indexes::{EmbedderIndex, EmbedderIndexOps};
                     let has_empty = store.index_registry.iter().any(|(embedder, index)| {
+                        if !E5_CAUSAL_ENABLED
+                            && matches!(
+                                *embedder,
+                                EmbedderIndex::E5Causal
+                                    | EmbedderIndex::E5CausalCause
+                                    | EmbedderIndex::E5CausalEffect
+                            )
+                        {
+                            return false;
+                        }
                         if !E11_ENTITY_ENABLED && *embedder == EmbedderIndex::E11Entity {
                             return false;
                         }
@@ -433,9 +443,19 @@ impl RocksDbTeleologicalStore {
 
         // 3. Check HNSW index sizes vs live fingerprint count.
         // E2/E3/E4 HNSW indexes are now populated (temporal first-class fusion).
-        // Skip E11 when E11_ENTITY_ENABLED=false (KEPLER non-discriminating).
+        // Skip retired/disabled slots so consistency checks reflect active topology.
         for (embedder, index) in self.index_registry.iter() {
             use crate::teleological::indexes::EmbedderIndex;
+            if !E5_CAUSAL_ENABLED
+                && matches!(
+                    *embedder,
+                    EmbedderIndex::E5Causal
+                        | EmbedderIndex::E5CausalCause
+                        | EmbedderIndex::E5CausalEffect
+                )
+            {
+                continue;
+            }
             if !E11_ENTITY_ENABLED && *embedder == EmbedderIndex::E11Entity {
                 continue;
             }

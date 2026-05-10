@@ -18,6 +18,7 @@ use super::constants::{
 use super::slice::EmbeddingSlice;
 use crate::teleological::Embedder;
 use crate::types::fingerprint::SparseVector;
+use crate::weights::E11_ENTITY_ENABLED;
 
 /// Type alias for specification alignment.
 ///
@@ -694,6 +695,11 @@ impl SemanticFingerprint {
         let e10_complete = self.e10_multimodal_paraphrase.len() == E10_DIM
             && self.e10_multimodal_as_context.len() == E10_DIM;
 
+        // E11 check: disabled E11 may be empty; legacy/full fingerprints may
+        // still carry a correctly-shaped E11 vector that is gated out elsewhere.
+        let e11_complete =
+            self.e11_entity.len() == E11_DIM || (!E11_ENTITY_ENABLED && self.e11_entity.is_empty());
+
         self.e1_semantic.len() == E1_DIM
             && self.e2_temporal_recent.len() == E2_DIM
             && self.e3_temporal_periodic.len() == E3_DIM
@@ -703,7 +709,7 @@ impl SemanticFingerprint {
             && e8_complete
             && self.e9_hdc.len() == E9_DIM
             && e10_complete
-            && self.e11_entity.len() == E11_DIM
+            && e11_complete
             && self.e14_bge_m3_dense.len() == E14_DIM
     }
 

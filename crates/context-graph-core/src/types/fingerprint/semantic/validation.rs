@@ -12,6 +12,7 @@ use super::constants::{
 };
 use super::fingerprint::{SemanticFingerprint, ValidationError};
 use crate::teleological::Embedder;
+use crate::weights::E11_ENTITY_ENABLED;
 
 impl SemanticFingerprint {
     /// Validate all embeddings have correct dimensions (fail-fast).
@@ -354,6 +355,9 @@ impl SemanticFingerprint {
 
     /// Validate E11 entity embedding (768D dense, KEPLER).
     fn validate_e11(&self) -> Result<(), ValidationError> {
+        if !E11_ENTITY_ENABLED && self.e11_entity.is_empty() {
+            return Ok(());
+        }
         if self.e11_entity.len() != E11_DIM {
             return Err(ValidationError::DimensionMismatch {
                 embedder: Embedder::Entity,

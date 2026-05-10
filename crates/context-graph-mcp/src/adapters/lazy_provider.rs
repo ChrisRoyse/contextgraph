@@ -13,7 +13,7 @@ use context_graph_core::error::{CoreError, CoreResult};
 use context_graph_core::traits::{
     EmbeddingMetadata, MultiArrayEmbeddingOutput, MultiArrayEmbeddingProvider,
 };
-use context_graph_core::types::fingerprint::{E11_DIM, NUM_EMBEDDERS};
+use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
 use context_graph_core::weights::E11_ENTITY_ENABLED;
 
 /// Lazy wrapper for MultiArrayEmbeddingProvider that allows immediate MCP startup.
@@ -287,10 +287,13 @@ impl MultiArrayEmbeddingProvider for LazyMultiArrayProvider {
     }
 
     /// Audit-7 MCP-H1 FIX: Override embed_e11_only to delegate to real provider.
-    /// Returns zero vector when E11 is disabled (no model inference).
+    /// Fails closed when E11 is disabled; direct E11 calls must not synthesize a
+    /// placeholder vector.
     async fn embed_e11_only(&self, content: &str) -> CoreResult<Vec<f32>> {
         if !E11_ENTITY_ENABLED {
-            return Ok(vec![0.0f32; E11_DIM]);
+            return Err(CoreError::Internal(
+                "E11 Kepler embedder is disabled; direct E11 embedding is unavailable".to_string(),
+            ));
         }
         if self.loading.load(Ordering::SeqCst) {
             return Err(CoreError::Internal(

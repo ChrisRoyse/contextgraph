@@ -51,6 +51,7 @@ use crate::embeddings::category::category_for;
 use crate::embeddings::config::get_dimension;
 use crate::teleological::Embedder;
 use crate::types::SemanticFingerprint;
+use crate::weights::{E11_ENTITY_ENABLED, E5_CAUSAL_ENABLED};
 
 use super::birch::{birch_defaults, BIRCHParams, BIRCHTree};
 use super::cluster::Cluster;
@@ -91,6 +92,19 @@ const MAX_EMBEDDINGS_PER_SPACE: usize = 50_000;
 /// Prevents unbounded growth of the topics HashMap. If a new topic would
 /// exceed this limit, it is silently skipped.
 const MAX_TOPICS: usize = 10_000;
+
+/// Whether a space participates in live clustering/topic synthesis.
+///
+/// Retired/disabled embedders remain addressable in persisted fingerprints for
+/// backward compatibility, but they must not influence new clusters or topics.
+#[inline]
+fn cluster_embedder_enabled(embedder: Embedder) -> bool {
+    match embedder {
+        Embedder::Causal => E5_CAUSAL_ENABLED,
+        Embedder::Entity => E11_ENTITY_ENABLED,
+        _ => true,
+    }
+}
 
 // =============================================================================
 // ManagerParams
@@ -376,6 +390,14 @@ impl MultiSpaceClusterManager {
         // Insert into each space's BIRCH tree
         for (i, embedder) in Embedder::all().enumerate() {
             let embedding = &embeddings[i];
+            if !cluster_embedder_enabled(embedder) {
+                tracing::debug!(
+                    embedder = ?embedder,
+                    vector_dim = embedding.len(),
+                    "Skipping disabled embedder during cluster insert"
+                );
+                continue;
+            }
             let expected_dim = get_dimension(embedder);
 
             // Validate dimension
@@ -458,6 +480,10 @@ impl MultiSpaceClusterManager {
         let mut per_space_clusters: [usize; 14] = [0; 14];
 
         for (i, embedder) in Embedder::all().enumerate() {
+            if !cluster_embedder_enabled(embedder) {
+                self.spaces[i].updates_since_recluster = 0;
+                continue;
+            }
             let state = &mut self.spaces[i];
 
             // Get space-specific params to check min_cluster_size
@@ -797,6 +823,9 @@ impl MultiSpaceClusterManager {
         let mut mem_clusters: HashMap<Uuid, HashMap<Embedder, i32>> = HashMap::new();
 
         for (i, embedder) in Embedder::all().enumerate() {
+            if !cluster_embedder_enabled(embedder) {
+                continue;
+            }
             for (memory_id, membership) in &self.spaces[i].memberships {
                 mem_clusters
                     .entry(*memory_id)
@@ -824,6 +853,7 @@ impl MultiSpaceClusterManager {
         // saying "everything is the same" is not evidence of topical agreement.
         let space_cluster_counts: HashMap<Embedder, usize> = Embedder::all()
             .enumerate()
+            .filter(|(_, embedder)| cluster_embedder_enabled(*embedder))
             .map(|(i, embedder)| {
                 let non_noise_clusters: HashSet<i32> = self.spaces[i]
                     .memberships
@@ -1104,6 +1134,9 @@ impl MultiSpaceClusterManager {
 
         let mut weighted = 0.0f32;
         for embedder in Embedder::all() {
+            if !cluster_embedder_enabled(embedder) {
+                continue;
+            }
             // Skip spaces that produced only 1 cluster — they provide zero
             // discriminative power (every pair would trivially "agree").
             if !discriminating_spaces.contains(&embedder) {
@@ -1134,6 +1167,9 @@ impl MultiSpaceClusterManager {
 
         let mut strengths = [0.0f32; 14];
         for embedder in Embedder::all() {
+            if !cluster_embedder_enabled(embedder) {
+                continue;
+            }
             let mut counts: HashMap<i32, usize> = HashMap::new();
             for mem_id in members {
                 if let Some(clusters) = mem_clusters.get(mem_id) {
@@ -1174,6 +1210,9 @@ impl MultiSpaceClusterManager {
     ) -> HashMap<Embedder, i32> {
         let mut result = HashMap::new();
         for embedder in Embedder::all() {
+            if !cluster_embedder_enabled(embedder) {
+                continue;
+            }
             let mut counts: HashMap<i32, usize> = HashMap::new();
             for mem_id in members {
                 if let Some(clusters) = mem_clusters.get(mem_id) {
@@ -1218,6 +1257,12 @@ impl MultiSpaceClusterManager {
         let mut strengths = [0.0f32; 14];
 
         for (i, &cluster_idx) in cluster_indices.iter().enumerate() {
+            let Some(embedder) = Embedder::from_index(i) else {
+                continue;
+            };
+            if !cluster_embedder_enabled(embedder) {
+                continue;
+            }
             if cluster_idx >= 0 {
                 // Use 1.0 strength for being in a cluster
                 // Could be refined to use membership probability from BIRCH
@@ -1852,14 +1897,24 @@ mod tests {
         assert_eq!(insert_result.memory_id, memory_id);
         assert_eq!(manager.total_memories(), 1);
 
-        // All cluster indices should be valid (>= 0) after BIRCH insert
+        // Active cluster indices should be valid (>= 0) after BIRCH insert.
+        // Retired/disabled embedders remain at -1 and must not influence topics.
         for (i, &idx) in insert_result.cluster_indices.iter().enumerate() {
-            assert!(
-                idx >= 0,
-                "Cluster index for space {} should be >= 0, got {}",
-                i,
-                idx
-            );
+            let embedder = Embedder::from_index(i).unwrap();
+            if cluster_embedder_enabled(embedder) {
+                assert!(
+                    idx >= 0,
+                    "Cluster index for active space {} should be >= 0, got {}",
+                    i,
+                    idx
+                );
+            } else {
+                assert_eq!(
+                    idx, -1,
+                    "Cluster index for disabled space {} should stay -1, got {}",
+                    i, idx
+                );
+            }
         }
 
         println!(
@@ -2237,13 +2292,19 @@ mod tests {
         let embeddings = create_test_embeddings(0.5);
         manager.insert(memory_id, &embeddings).unwrap();
 
-        // Now all should be 1
+        // Active spaces should be 1; disabled spaces stay at 0 because they are
+        // intentionally gated out of clustering.
         let status = manager.updates_status();
         for update in &status {
+            let expected = if cluster_embedder_enabled(update.embedder) {
+                1
+            } else {
+                0
+            };
             assert_eq!(
-                update.updates_since_recluster, 1,
-                "{:?} should have 1 update",
-                update.embedder
+                update.updates_since_recluster, expected,
+                "{:?} should have {} update(s)",
+                update.embedder, expected
             );
         }
 
@@ -2326,9 +2387,14 @@ mod tests {
 
         let result = manager.insert(memory_id, &embeddings).unwrap();
 
-        // Single memory should be assigned to cluster in all spaces
+        // Single memory should be assigned to clusters in active spaces only.
         for (i, &idx) in result.cluster_indices.iter().enumerate() {
-            assert!(idx >= 0, "Space {} should have cluster >= 0", i);
+            let embedder = Embedder::from_index(i).unwrap();
+            if cluster_embedder_enabled(embedder) {
+                assert!(idx >= 0, "Active space {} should have cluster >= 0", i);
+            } else {
+                assert_eq!(idx, -1, "Disabled space {} should stay unclustered", i);
+            }
         }
 
         println!("[PASS] test_edge_case_single_memory_all_spaces");

@@ -6,11 +6,22 @@ use tracing::{debug, warn};
 use uuid::Uuid;
 
 use context_graph_core::types::fingerprint::{SemanticFingerprint, TeleologicalFingerprint};
-use context_graph_core::weights::E11_ENTITY_ENABLED;
+use context_graph_core::weights::{E11_ENTITY_ENABLED, E5_CAUSAL_ENABLED};
 
 use crate::teleological::indexes::{EmbedderIndex, EmbedderIndexOps, IndexError};
 
 use super::store::RocksDbTeleologicalStore;
+
+#[inline]
+fn hnsw_embedder_enabled(embedder: EmbedderIndex) -> bool {
+    match embedder {
+        EmbedderIndex::E5Causal | EmbedderIndex::E5CausalCause | EmbedderIndex::E5CausalEffect => {
+            E5_CAUSAL_ENABLED
+        }
+        EmbedderIndex::E11Entity => E11_ENTITY_ENABLED,
+        _ => true,
+    }
+}
 
 impl RocksDbTeleologicalStore {
     /// Add fingerprint to per-embedder HNSW indexes for O(log n) search.
@@ -41,9 +52,9 @@ impl RocksDbTeleologicalStore {
         // Add to all HNSW-capable dense embedder indexes.
         // E2/E3/E4 temporal indexes are now populated for first-class fusion participation.
         // Weight profiles control whether they contribute to scoring (0.0 = excluded).
-        // Skip E11 when disabled — KEPLER produces near-identical vectors (0.96-0.98 cosine).
+        // Skip retired/disabled slots instead of indexing sentinel vectors.
         for embedder in EmbedderIndex::all_hnsw() {
-            if !E11_ENTITY_ENABLED && embedder == EmbedderIndex::E11Entity {
+            if !hnsw_embedder_enabled(embedder) {
                 continue;
             }
             if let Some(index) = self.index_registry.get(embedder) {
