@@ -190,17 +190,14 @@ impl Handlers {
             .map(|v| v as f32)
             .unwrap_or(DEFAULT_E8_WEIGHT);
 
-        // E11-DISABLE: Override e11Weight to 0.0 when E11 is disabled.
-        // Without this, user-provided e11Weight dilutes RRF fusion scores
-        // because E11 contributes zero-scored results (zero embedding).
-        let e11_weight = if !context_graph_core::weights::E11_ENTITY_ENABLED {
-            0.0
-        } else {
-            args.get("e11Weight")
-                .and_then(|v| v.as_f64())
-                .map(|v| v as f32)
-                .unwrap_or(DEFAULT_E11_WEIGHT)
-        };
+        let e11_weight = args
+            .get("e11Weight")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32)
+            .unwrap_or(DEFAULT_E11_WEIGHT);
+        if !context_graph_core::weights::E11_ENTITY_ENABLED && e11_weight > 0.0 {
+            return self.tool_error(id, "E11 entity embedder is disabled; e11Weight must be 0.0");
+        }
 
         // Parse minimum consensus threshold for multi-embedder search
         // CD-M2 FIX: Reject out-of-range instead of silent clamping (Audit-11 SB-8 pattern)
@@ -245,15 +242,16 @@ impl Handlers {
 
             // Generate all embeddings in parallel
             // E1: semantic, E5: causal dual, E8: graph dual, E11: entity
+            if !context_graph_core::weights::E11_ENTITY_ENABLED && e11_weight > 0.0 {
+                return self.tool_error(
+                    id,
+                    "E11 entity embedder is disabled; multi-embedder causal search cannot use E11",
+                );
+            }
             let e1_result = self.multi_array_provider.embed_e1_only(query).await;
             let e5_result = self.multi_array_provider.embed_e5_dual(query).await;
             let e8_result = self.multi_array_provider.embed_e8_dual(query).await;
-            // E11: returns zeros when disabled (no model inference)
-            let e11_result = if context_graph_core::weights::E11_ENTITY_ENABLED {
-                self.multi_array_provider.embed_e11_only(query).await
-            } else {
-                Ok(vec![0.0f32; context_graph_core::types::E11_DIM])
-            };
+            let e11_result = self.multi_array_provider.embed_e11_only(query).await;
 
             let e1_embedding = match e1_result {
                 Ok(e) => e,

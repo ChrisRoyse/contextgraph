@@ -59,6 +59,22 @@ impl Handlers {
         )
     }
 
+    pub(crate) async fn call_e11_disabled_tool(
+        &self,
+        id: Option<JsonRpcId>,
+        _arguments: serde_json::Value,
+        tool_name: &str,
+    ) -> JsonRpcResponse {
+        JsonRpcResponse::error(
+            id,
+            error_codes::INVALID_PARAMS,
+            format!(
+                "{} is unavailable because E11 entity/Kepler is disabled: the available assets are incomplete/incompatible with the runtime, and no verified code-symbol entity replacement has been installed",
+                tool_name
+            ),
+        )
+    }
+
     pub(crate) async fn handle_tools_call(
         &self,
         id: Option<JsonRpcId>,
@@ -88,6 +104,20 @@ impl Handlers {
 
         let tool_name = crate::tools::aliases::resolve_alias(raw_tool_name);
         let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
+
+        if !context_graph_core::weights::E11_ENTITY_ENABLED
+            && matches!(
+                tool_name,
+                tool_names::EXTRACT_ENTITIES
+                    | tool_names::SEARCH_BY_ENTITIES
+                    | tool_names::INFER_RELATIONSHIP
+                    | tool_names::FIND_RELATED_ENTITIES
+                    | tool_names::VALIDATE_KNOWLEDGE
+                    | tool_names::GET_ENTITY_GRAPH
+            )
+        {
+            return self.call_e11_disabled_tool(id, arguments, tool_name).await;
+        }
 
         debug!(
             "Calling tool: {} with arguments: {:?}{}",
