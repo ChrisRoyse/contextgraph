@@ -1,10 +1,16 @@
 # TASK-AST-010 — Implement `LanguageDispatcher` (Language → tree-sitter parser)
 
+> **2026-05-10 current-state audit:** Treat this document as an audit/hardening task for the existing implementation, not greenfield scaffolding. Canonical Phase 1 source is `crates/context-graph-core/src/memory/ast/{mod.rs,classify.rs,routing.rs,tests.rs}` with ME-JEPA consumer `crates/context-graph-mejepa-instruments/src/e_code.rs`. The old Rust-only `crates/context-graph-core/src/memory/ast_chunker.rs` still exists but is legacy and must not be extended as the multi-language source of truth. Any lower reference to `src/memory/ast_chunker/<submodule>.rs`, `dynamicjepa.rs`, compatibility shims, or "create new" scaffolding language is superseded by this audit note. Verify and harden the existing canonical files instead of creating parallel modules unless the repo audit proves a file is genuinely missing.
+>
+> **No fallbacks / no backwards compatibility:** Keep one canonical API: `context_graph_core::memory::ast::{chunk, chunk_path, chunk_with_options, Language, EntityType, AstChunk, ParseDiagnostic, AstChunkerError}`. Unsupported language, empty input, mixed language, routing gaps, invalid UTF-8, or Tree-sitter `ERROR`/`MISSING` nodes must return a typed error with actionable context; never silently route to raw-text chunks or mock data.
+>
+> **Mandatory Full State Verification:** Define the source of truth for the task (Rust source file, JSON evidence file, RocksDB CF, or ME-JEPA panel file), run the logic, then perform a separate readback from that source of truth. Print before/after system state for happy path and 3 edge cases: empty source, invalid syntax, and mixed/unsupported language. Evidence must include actual chunks/routes/diagnostics read from disk or storage after execution, not only function return values.
+
 ```xml
 <task_spec id="TASK-AST-010" version="1.0">
 <metadata>
   <title>Implement parser_for_language — exhaustive Language → tree_sitter::Parser dispatch</title>
-  <status>blocked</status>
+  <status>audit-hardening</status>
   <layer>logic</layer>
   <sequence>10</sequence>
   <implements>
@@ -71,7 +77,7 @@ chunker entry point taking a `is_tsx: bool` flag (per TECH-AST-CHUNKING.md tsx_d
 
 <definition_of_done>
   <signatures>
-    <signature file="crates/context-graph-core/src/memory/ast_chunker/dispatch.rs">
+    <signature file="crates/context-graph-core/src/memory/ast/mod.rs">
       use tree_sitter::{Language as TsLanguage, Parser};
       use super::{AstChunkerError, Language};
 
@@ -93,7 +99,7 @@ chunker entry point taking a `is_tsx: bool` flag (per TECH-AST-CHUNKING.md tsx_d
 
   <verification>
     - `cargo build --release -p context-graph-core` succeeds
-    - `cargo test -p context-graph-core memory::ast_chunker::dispatch` all 12 tests pass
+    - `cargo test -p context-graph-core memory::ast::dispatch` all 12 tests pass
     - Each Language variant produces a Parser that successfully parses a minimal source for
       that language (e.g. Rust `fn f() {}`, Python `def f(): pass`, Go `package main`)
     - `cargo clippy -p context-graph-core --all-targets -- -D warnings` clean
@@ -190,11 +196,11 @@ dispatch.rs:
 </pseudo_code>
 
 <files_to_create>
-  <file path="crates/context-graph-core/src/memory/ast_chunker/dispatch.rs">parser_for_language + parser_for_typescript_tsx + 12 unit tests</file>
+  <file path="crates/context-graph-core/src/memory/ast/mod.rs">parser_for_language + parser_for_typescript_tsx + 12 unit tests</file>
 </files_to_create>
 
 <files_to_modify>
-  <file path="crates/context-graph-core/src/memory/ast_chunker/mod.rs">Add `pub mod dispatch;` + `pub use dispatch::{parser_for_language, parser_for_typescript_tsx};`</file>
+  <file path="crates/context-graph-core/src/memory/ast/mod.rs">Add `pub mod dispatch;` + `pub use dispatch::{parser_for_language, parser_for_typescript_tsx};`</file>
 </files_to_modify>
 
 <validation_criteria>
@@ -207,7 +213,7 @@ dispatch.rs:
 
 <test_commands>
   <command>cargo build --release -p context-graph-core</command>
-  <command>cargo test -p context-graph-core memory::ast_chunker::dispatch</command>
+  <command>cargo test -p context-graph-core memory::ast::dispatch</command>
   <command>cargo clippy -p context-graph-core --all-targets -- -D warnings</command>
 </test_commands>
 </task_spec>

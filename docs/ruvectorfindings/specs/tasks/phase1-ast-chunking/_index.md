@@ -1,210 +1,104 @@
-# Phase 1a — AST-CHUNKING Task Index
+# Phase 1a — AST Chunking Task Index
 
-> **Phase 1a — multi-language AST-perfect atomic chunker.** Extends the shipped Rust-only chunker (`crates/context-graph-core/src/memory/ast_chunker.rs`, 1216 LOC) to all 11 tree-sitter languages: Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP. Implements `SPEC-AST-CHUNKING.md` (15 functional requirements) per `TECH-AST-CHUNKING.md` (8 component contracts).
->
-> **Authority:** `../../constitution.md` overrides. `../_traceability.md` proves 100% coverage.
+> **2026-05-10 repo audit update:** Phase 1 is no longer greenfield. The current multi-language AST chunker exists in `crates/context-graph-core/src/memory/ast/` and is wired into ME-JEPA code instruments. Treat the 22 task files as audit/hardening tasks against that implementation.
 
----
+## Occam Answer
 
-## Overview
+Do not create a second `ast_chunker/` directory module. The simple correct path is to harden the existing canonical module, align all callers and docs to it, delete or isolate stale legacy surfaces when they block correctness, and verify behavior through persisted evidence. The old Rust-only `crates/context-graph-core/src/memory/ast_chunker.rs` still exists, but it is legacy and must not be extended as the Phase 1 multi-language source of truth.
 
-- **Total tasks:** 22
-- **Foundation layer:** 5 tasks (TASK-AST-001..005)
-- **Logic layer:** 14 tasks (TASK-AST-006..019)
-- **Surface layer:** 3 tasks (TASK-AST-020..022)
-- **Estimated walltime:** ~12 days end-to-end (per doc 14 §6 13-item roadmap, items 1-6 + 13)
-- **Crate touched:** `crates/context-graph-core` (extension, not new crate)
-- **Output module path:** `crates/context-graph-core/src/memory/ast_chunker/` (directory module replacing the single 1216-LOC file)
+## Canonical State
 
----
+- **Canonical AST module:** `crates/context-graph-core/src/memory/ast/{mod.rs,classify.rs,routing.rs,tests.rs}`
+- **Public API:** `context_graph_core::memory::ast::{chunk, chunk_path, chunk_with_options, AstChunkOptions, Language, EntityType, AstChunk, ParseDiagnostic, AstChunkerError}`
+- **Languages:** `rust`, `python`, `javascript`, `typescript`, `go`, `java`, `c`, `cpp`, `csharp`, `ruby`, `php`
+- **Entity types:** `Function`, `Method`, `Class`, `Struct`, `Enum`, `TraitOrInterface`, `Impl`, `Module`, `Namespace`, `TestFunction`, `Import`, `CommentBlock`, `Docstring`
+- **Routing:** `crates/context-graph-core/src/memory/ast/routing.rs` maps `EntityType` and special routing keys to `EmbedderId::E1..E21` or direct instruments. Missing routes are typed failures, not defaults.
+- **ME-JEPA consumer:** `crates/context-graph-mejepa-instruments/src/e_code.rs` already imports the canonical AST API and must keep failing closed on parse/chunk/routing errors.
+- **Phase 0 real corpus source:** `/tmp/contextgraph-mejepa-corpus-prod-merged-normalized-20260509`
+- **Phase 0 verification evidence:** `verify-evidence.json` in that corpus passed with 2400 entries and RocksDB CF counts `2400/2400/1`.
+- **Phase 0 final corpus SHA:** `f5a413eadbb1fa08f7fa51fd05c704eebe7ba51789c3ac0194592825dc2dae33`
 
-## Dependency DAG
+## Best-Practice Notes
 
-```mermaid
-graph TD
-    subgraph Foundation [Foundation Layer]
-        T001[TASK-AST-001<br/>Language enum]
-        T002[TASK-AST-002<br/>EntityType + ClassificationContext]
-        T003[TASK-AST-003<br/>AstChunk + ParseDiagnostic + serde]
-        T004[TASK-AST-004<br/>AstChunkerError taxonomy]
-        T005[TASK-AST-005<br/>EmbedderRoutingTable]
-    end
+- Tree-sitter represents parse recovery through `ERROR` and `MISSING` nodes; those must be surfaced as diagnostics and fail closed, not chunked as partially valid source. See [Tree-sitter query syntax: special nodes](https://tree-sitter.github.io/tree-sitter/using-parsers/queries/1-syntax.html) and [tree-sitter parse](https://tree-sitter.github.io/tree-sitter/cli/parse.html).
+- Classifiers should be grounded in grammar node types/fields, not fragile text scans. Tree-sitter publishes structured node type metadata via `node-types.json`; use it when adding or auditing language coverage. See [Tree-sitter static node types](https://tree-sitter.github.io/tree-sitter/using-parsers/6-static-node-types).
+- Structure-aware chunking is the right strategy for downstream RAG/ME-JEPA use: preserve syntactic units, split large AST units recursively when needed, and merge related siblings only when size limits require it. The cAST paper reports gains from AST-respecting chunks over line-based chunks for retrieval and SWE-bench generation. See [cAST on arXiv](https://arxiv.org/abs/2506.15655).
 
-    subgraph Logic [Logic Layer]
-        T006[TASK-AST-006<br/>compute_chunk_sha256<br/>reformat-invariant]
-        T007[TASK-AST-007<br/>ChunkBoundaryEngine<br/>process_node + merge_small]
-        T008[TASK-AST-008<br/>ParseDiagnosticCollector]
-        T009[TASK-AST-009<br/>MixedLanguageDetector]
-        T010[TASK-AST-010<br/>LanguageDispatcher]
-        T011[TASK-AST-011<br/>Python classifier]
-        T012[TASK-AST-012<br/>JavaScript classifier]
-        T013[TASK-AST-013<br/>TypeScript classifier<br/>incl TSX dialect]
-        T014[TASK-AST-014<br/>Go classifier]
-        T015[TASK-AST-015<br/>Java classifier]
-        T016[TASK-AST-016<br/>C classifier]
-        T017[TASK-AST-017<br/>C++ classifier]
-        T018[TASK-AST-018<br/>C# classifier]
-        T019[TASK-AST-019<br/>Ruby classifier]
-    end
+## Non-Negotiables
 
-    subgraph Surface [Surface Layer]
-        T020[TASK-AST-020<br/>PHP classifier]
-        T021[TASK-AST-021<br/>chunk facade<br/>+ cross-lang test harness]
-        T022[TASK-AST-022<br/>Per-language FSV harnesses x11]
-    end
+- **No backwards compatibility work.** Do not preserve stale APIs just to keep old imports alive. Update callers to the canonical API or fail fast with actionable errors.
+- **No fallbacks.** Unsupported language, empty input, mixed language, invalid UTF-8, Tree-sitter `ERROR`/`MISSING`, and routing gaps must return typed errors with enough context to debug.
+- **No mock data in verification.** Use real `samplecode/` files, real Phase 0 corpus artifacts, real parser/toolchain checks, and persisted JSON/RocksDB evidence.
+- **Determinism required.** Output ordering is source order; route sets and serialized maps must be deterministic (`BTreeSet`/ordered data structures).
+- **Fail loudly.** Every failure path should include language, path, reason, and diagnostics or command stdout/stderr where applicable.
 
-    T001 --> T003
-    T001 --> T004
-    T002 --> T003
-    T002 --> T005
-    T003 --> T006
-    T003 --> T007
-    T003 --> T008
-    T004 --> T007
-    T004 --> T008
-    T004 --> T009
-    T004 --> T010
-    T005 --> T021
-    T006 --> T021
-    T007 --> T021
-    T008 --> T021
-    T009 --> T021
-    T010 --> T011
-    T010 --> T012
-    T010 --> T013
-    T010 --> T014
-    T010 --> T015
-    T010 --> T016
-    T010 --> T017
-    T010 --> T018
-    T010 --> T019
-    T010 --> T020
-    T011 --> T021
-    T012 --> T021
-    T013 --> T021
-    T014 --> T021
-    T015 --> T021
-    T016 --> T021
-    T017 --> T021
-    T018 --> T021
-    T019 --> T021
-    T020 --> T021
-    T021 --> T022
+## Task Status
+
+| Task | Current focus | Canonical file(s) | Status |
+|---|---|---|---|
+| TASK-AST-001 | `Language` enum and slug/path parsing | `ast/mod.rs` | Implemented; audit/harden |
+| TASK-AST-002 | `EntityType` and classification context | `ast/mod.rs`, `ast/classify.rs` | Implemented; audit/harden |
+| TASK-AST-003 | `AstChunk`, `ParseDiagnostic`, serde shape | `ast/mod.rs` | Implemented; audit/harden |
+| TASK-AST-004 | `AstChunkerError` typed failures/codes | `ast/mod.rs`, `ast/routing.rs`, `e_code.rs` | Implemented; audit/harden |
+| TASK-AST-005 | Embedder routing table | `ast/routing.rs` | Implemented; audit/harden |
+| TASK-AST-006 | Reformat-invariant chunk hash | `ast/mod.rs::structural_sha256` | Implemented; audit/harden |
+| TASK-AST-007 | Boundary walk/chunk emission | `ast/mod.rs::walk_and_emit`, `build_chunk` | Implemented; needs size/merge audit |
+| TASK-AST-008 | Parse diagnostics | `ast/mod.rs::parse_diagnostics` | Implemented; audit/harden |
+| TASK-AST-009 | Mixed-language rejection | `ast/mod.rs::detect_mixed_language` | Implemented; audit/harden |
+| TASK-AST-010 | Language -> parser dispatch | `ast/mod.rs::tree_sitter_language` | Implemented; audit/harden |
+| TASK-AST-011 | Python classifier | `ast/classify.rs` | Implemented; audit/harden |
+| TASK-AST-012 | JavaScript classifier | `ast/classify.rs` | Implemented; audit/harden |
+| TASK-AST-013 | TypeScript/TSX classifier | `ast/classify.rs`, `tree_sitter_language` | Implemented; audit/harden |
+| TASK-AST-014 | Go classifier | `ast/classify.rs` | Implemented; audit/harden |
+| TASK-AST-015 | Java classifier | `ast/classify.rs` | Implemented; audit/harden |
+| TASK-AST-016 | C classifier | `ast/classify.rs` | Implemented; audit/harden |
+| TASK-AST-017 | C++ classifier | `ast/classify.rs` | Implemented; audit/harden |
+| TASK-AST-018 | C# classifier | `ast/classify.rs` | Implemented; audit/harden |
+| TASK-AST-019 | Ruby classifier | `ast/classify.rs` | Implemented; audit/harden |
+| TASK-AST-020 | PHP classifier | `ast/classify.rs` | Implemented; audit/harden |
+| TASK-AST-021 | Canonical facade + integration | `ast/mod.rs`, `e_code.rs`, `ast/tests.rs` | Implemented; audit/harden |
+| TASK-AST-022 | FSV harnesses and persisted evidence | `examples/ast_chunker_multilang_fsv.rs`, `examples/swebench_ast_fsv.rs`, `mejepa-instruments/examples/ast_embedder_smoke_fsv.rs` | Implemented; audit/harden |
+
+## Current Evidence Commands
+
+Run these from `/home/cabdru/contextgraph` after touching Phase 1:
+
+```bash
+cargo test -p context-graph-core memory::ast::tests
+cargo test -p context-graph-mejepa-instruments
+cargo run -p context-graph-core --example ast_chunker_multilang_fsv
+cargo run -p context-graph-core --example swebench_ast_fsv
+cargo run -p context-graph-mejepa-instruments --example ast_embedder_smoke_fsv
 ```
 
----
+Required persisted evidence paths:
 
-## Execution Order
+- `/tmp/contextgraph-ast-chunker-multilang-fsv/aggregate-evidence.json`
+- `/tmp/contextgraph-swebench-ast-fsv/swebench-ast-evidence.json`
+- `/tmp/contextgraph-mejepa-ast-embedder-smoke-fsv/ast-embedder-smoke-evidence.json`
 
-| #  | Task ID         | Title                                                  | Layer      | Depends On                              | Status   |
-|----|-----------------|--------------------------------------------------------|------------|-----------------------------------------|----------|
-| 1  | TASK-AST-001    | `Language` enum (11 variants, `#[non_exhaustive]`)     | foundation | —                                       | Ready    |
-| 2  | TASK-AST-002    | `EntityType` (13 variants) + `ClassificationContext`   | foundation | —                                       | Ready    |
-| 3  | TASK-AST-003    | `AstChunk` + `ParseDiagnostic` + serde                 | foundation | 001, 002                                | Blocked  |
-| 4  | TASK-AST-004    | `AstChunkerError` taxonomy (5 variants)                | foundation | 001                                     | Blocked  |
-| 5  | TASK-AST-005    | `EmbedderRoutingTable` per `EntityType`                | foundation | 002                                     | Blocked  |
-| 6  | TASK-AST-006    | `compute_chunk_sha256` (AST-node-id hashing)           | logic      | 003                                     | Blocked  |
-| 7  | TASK-AST-007    | `ChunkBoundaryEngine` (`process_node` + `merge_small`) | logic      | 003, 004                                | Blocked  |
-| 8  | TASK-AST-008    | `ParseDiagnosticCollector` (BFS, cap 32)               | logic      | 003, 004                                | Blocked  |
-| 9  | TASK-AST-009    | `MixedLanguageDetector` (PHP+HTML / JS+HTML)           | logic      | 004                                     | Blocked  |
-| 10 | TASK-AST-010    | `LanguageDispatcher` (parser_for_language)             | logic      | 001, 004                                | Blocked  |
-| 11 | TASK-AST-011    | Python entity classifier                               | logic      | 002, 010                                | Blocked  |
-| 12 | TASK-AST-012    | JavaScript entity classifier                           | logic      | 002, 010                                | Blocked  |
-| 13 | TASK-AST-013    | TypeScript / TSX entity classifier                     | logic      | 002, 010, 012                           | Blocked  |
-| 14 | TASK-AST-014    | Go entity classifier                                   | logic      | 002, 010                                | Blocked  |
-| 15 | TASK-AST-015    | Java entity classifier                                 | logic      | 002, 010                                | Blocked  |
-| 16 | TASK-AST-016    | C entity classifier (declarator-aware)                 | logic      | 002, 010                                | Blocked  |
-| 17 | TASK-AST-017    | C++ entity classifier                                  | logic      | 002, 010, 016                           | Blocked  |
-| 18 | TASK-AST-018    | C# entity classifier                                   | logic      | 002, 010                                | Blocked  |
-| 19 | TASK-AST-019    | Ruby entity classifier                                 | logic      | 002, 010                                | Blocked  |
-| 20 | TASK-AST-020    | PHP entity classifier                                  | surface    | 002, 010                                | Blocked  |
-| 21 | TASK-AST-021    | `chunk` facade + cross-lang test harness               | surface    | 005, 006, 007, 008, 009, 011..020       | Blocked  |
-| 22 | TASK-AST-022    | Per-language FSV harnesses (x11) + reformat-invariance | surface    | 021                                     | Blocked  |
+## Full State Verification Contract
 
----
+Every task must end with FSV:
 
-## Status Legend
+1. **Define source of truth.** Name the actual file/database/table/JSON/RocksDB CF/panel where the result is stored.
+2. **Execute and inspect.** Run the logic, then perform an independent readback from the source of truth. Do not rely only on function return values.
+3. **Happy path.** Use real source files or real Phase 0 corpus data. Verify expected chunks, routes, diagnostics, and persisted bytes.
+4. **Three edge cases.** Print before and after system state for `empty_source`, `invalid_syntax`, and `mixed_language_or_unsupported_language`.
+5. **Evidence log.** Persist and print actual stored data: chunk rows, `sha256`, line spans, `entity_type`, route sets, diagnostics, and command stdout/stderr on failures.
 
-- Ready    — All dependencies satisfied; can start now.
-- Blocked  — Waiting on a dependency.
-- Active   — Currently being worked on.
-- Done     — Completed and FSV-verified.
-- Failed   — Needs revision.
+## Parallel Batches
 
----
+- **Audit batch A:** TASK-AST-001..010 can be checked together because they share `ast/mod.rs` and `ast/routing.rs`.
+- **Audit batch B:** TASK-AST-011..020 can be checked as one classifier audit because the current implementation consolidates classifiers in `ast/classify.rs`.
+- **Audit batch C:** TASK-AST-021..022 should run after A/B because they validate the public facade, ME-JEPA integration, real corpus path, and evidence readback.
 
-## Critical Path
-
-```
-TASK-AST-001 → TASK-AST-002 → TASK-AST-003 → TASK-AST-007 → TASK-AST-021 → TASK-AST-022
-```
-
-Length: 6 sequential nodes. Other foundation/logic tasks parallelize off the critical path.
-
----
-
-## Parallel batches
-
-- **Batch F0** (parallel, no deps):              TASK-AST-001, TASK-AST-002
-- **Batch F1** (depends on F0):                  TASK-AST-003, TASK-AST-004, TASK-AST-005
-- **Batch L0** (depends on F1):                  TASK-AST-006, TASK-AST-007, TASK-AST-008, TASK-AST-009, TASK-AST-010
-- **Batch L1 — per-language classifiers** (parallel, all depend on TASK-AST-002 + TASK-AST-010):
-  - TASK-AST-011 Python
-  - TASK-AST-012 JavaScript
-  - TASK-AST-014 Go
-  - TASK-AST-015 Java
-  - TASK-AST-016 C
-  - TASK-AST-018 C#
-  - TASK-AST-019 Ruby
-  - TASK-AST-020 PHP
-- **Batch L2** (depends on L1 siblings):         TASK-AST-013 TypeScript (after JS), TASK-AST-017 C++ (after C)
-- **Batch S0** (depends on all logic):           TASK-AST-021 facade + cross-lang harness
-- **Batch S1** (depends on facade):              TASK-AST-022 11x FSV binaries
-
----
-
-## Coverage hint
-
-Per `../_traceability.md`, the AST-CHUNKING domain has 15 functional REQs and 8 technical components. These 22 tasks cover all of them with explicit traceability:
-
-| REQ ID    | Task ID(s)                                  |
-|-----------|---------------------------------------------|
-| REQ-AST-01 | TASK-AST-001, TASK-AST-010, TASK-AST-021   |
-| REQ-AST-02 | TASK-AST-003, TASK-AST-007, TASK-AST-021   |
-| REQ-AST-03 | TASK-AST-002                                |
-| REQ-AST-04 | TASK-AST-006                                |
-| REQ-AST-05 | TASK-AST-007                                |
-| REQ-AST-06 | TASK-AST-005, TASK-AST-021                 |
-| REQ-AST-07 | TASK-AST-022                                |
-| REQ-AST-08 | TASK-AST-008, TASK-AST-021                 |
-| REQ-AST-09 | TASK-AST-001, TASK-AST-010                 |
-| REQ-AST-10 | TASK-AST-021                                |
-| REQ-AST-11 | TASK-AST-009                                |
-| REQ-AST-12 | TASK-AST-011..020                           |
-| REQ-AST-13 | TASK-AST-021, TASK-AST-022                 |
-| REQ-AST-14 | TASK-AST-021                                |
-| REQ-AST-15 | TASK-AST-022                                |
-
----
-
-## Notes for executors
-
-1. **Reuse existing code aggressively.** The shipped Rust chunker at `crates/context-graph-core/src/memory/ast_chunker.rs` is the algorithmic source-of-truth. Per-language classifier logic should be ported from `crates/context-graph-cli/src/commands/dynamicjepa.rs:6400+` (multi-language semantic extractor already covers all 11 languages).
-2. **Files under 500 lines (constitution `<file_organization>`).** The current 1216-LOC `ast_chunker.rs` exceeds this; the Phase 1a refactor splits into a directory module `ast_chunker/{mod,types,error,language,classifier/{rust,python,javascript,typescript,go,java,c,cpp,csharp,ruby,php},hash,boundary,diagnostics,mixed_lang,dispatch,router}.rs`.
-3. **REQ-AST-14 backwards compat:** the existing `AstCodeChunker::new_rust` + `chunk(&str, &str)` API stays intact and is implemented in terms of the new uniform `chunk(&[u8], Language)` API. Existing tests must pass unchanged.
-4. **Determinism:** all maps/sets are `BTreeMap`/`BTreeSet`; chunk emission order is source-order (line_start ascending); no `HashMap`/`HashSet` in chunker output paths.
-5. **Anti-pattern `Architecture/no raw-text chunking`** is absolute. ParseFailed is the only response to ERROR/MISSING; never text-fallback.
-6. **GENERIC-ONLY** (constitution `<anti_patterns>`): every classifier must work for every file in its language, not specific repos. No per-task hints.
-
----
-
-## Cross-references
+## Cross-References
 
 - Functional spec: `../../functional/SPEC-AST-CHUNKING.md`
 - Technical spec: `../../technical/TECH-AST-CHUNKING.md`
-- Constitution:   `../../constitution.md`
-- Roadmap source: `../../14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md` §6 (13-item roadmap)
-- Traceability:   `../_traceability.md`
-- Master DAG:     `../_index.md`
-- Shipped Rust chunker (source of truth): `crates/context-graph-core/src/memory/ast_chunker.rs`
-- DynamicJEPA per-language semantic extractor: `crates/context-graph-cli/src/commands/dynamicjepa.rs:6400+`
+- Constitution: `../../constitution.md`
+- Roadmap source: `../../14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md`
+- Traceability: `../_traceability.md`
+- Master DAG: `../_index.md`
+- Recent implementation commits: `63acaa1a phase1(mejepa): 11-language AST chunker + rewire code instruments`, `acc6f78c phase1(mejepa): embedder routing API + 21-embedder enum + spec/task tree + E14 fail-closed`

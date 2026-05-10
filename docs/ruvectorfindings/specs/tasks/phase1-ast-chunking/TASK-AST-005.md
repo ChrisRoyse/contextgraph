@@ -1,10 +1,16 @@
 # TASK-AST-005 — Implement `EmbedderRoutingTable` (per-EntityType static lookup)
 
+> **2026-05-10 current-state audit:** Treat this document as an audit/hardening task for the existing implementation, not greenfield scaffolding. Canonical Phase 1 source is `crates/context-graph-core/src/memory/ast/{mod.rs,classify.rs,routing.rs,tests.rs}` with ME-JEPA consumer `crates/context-graph-mejepa-instruments/src/e_code.rs`. The old Rust-only `crates/context-graph-core/src/memory/ast_chunker.rs` still exists but is legacy and must not be extended as the multi-language source of truth. Any lower reference to `src/memory/ast_chunker/<submodule>.rs`, `dynamicjepa.rs`, compatibility shims, or "create new" scaffolding language is superseded by this audit note. Verify and harden the existing canonical files instead of creating parallel modules unless the repo audit proves a file is genuinely missing.
+>
+> **No fallbacks / no backwards compatibility:** Keep one canonical API: `context_graph_core::memory::ast::{chunk, chunk_path, chunk_with_options, Language, EntityType, AstChunk, ParseDiagnostic, AstChunkerError}`. Unsupported language, empty input, mixed language, routing gaps, invalid UTF-8, or Tree-sitter `ERROR`/`MISSING` nodes must return a typed error with actionable context; never silently route to raw-text chunks or mock data.
+>
+> **Mandatory Full State Verification:** Define the source of truth for the task (Rust source file, JSON evidence file, RocksDB CF, or ME-JEPA panel file), run the logic, then perform a separate readback from that source of truth. Print before/after system state for happy path and 3 edge cases: empty source, invalid syntax, and mixed/unsupported language. Evidence must include actual chunks/routes/diagnostics read from disk or storage after execution, not only function return values.
+
 ```xml
 <task_spec id="TASK-AST-005" version="1.0">
 <metadata>
   <title>Implement EmbedderRoutingTable — compile-time exhaustive route_to_embedders</title>
-  <status>blocked</status>
+  <status>audit-hardening</status>
   <layer>foundation</layer>
   <sequence>5</sequence>
   <implements>
@@ -32,12 +38,12 @@ a 14th EntityType variant breaks the build until routed.
   <file purpose="data_model_spec">docs/ruvectorfindings/specs/technical/TECH-AST-CHUNKING.md#data_models (EmbedderRoutingTable model)</file>
   <file purpose="component_contract">docs/ruvectorfindings/specs/technical/TECH-AST-CHUNKING.md#component_contracts (EmbedderRouter)</file>
   <file purpose="routing_source">docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md §4 (per-chunk-type routing table)</file>
-  <file purpose="embedder_id_placeholder">crates/context-graph-core/src/memory/ast_chunker/types.rs (EmbedderId placeholder type alias from TASK-AST-003)</file>
+  <file purpose="embedder_id">crates/context-graph-core/src/memory/ast/routing.rs (EmbedderId enum E1..E21 and routing table)</file>
 </input_context_files>
 
 <prerequisites>
   <check>TASK-AST-002 complete: EntityType (13 variants) available</check>
-  <check>TASK-AST-003 complete: EmbedderId placeholder type alias available</check>
+  <check>EmbedderId enum and routing table are available in crates/context-graph-core/src/memory/ast/routing.rs</check>
 </prerequisites>
 
 <scope>
@@ -61,7 +67,7 @@ a 14th EntityType variant breaks the build until routed.
 
 <definition_of_done>
   <signatures>
-    <signature file="crates/context-graph-core/src/memory/ast_chunker/router.rs">
+    <signature file="crates/context-graph-core/src/memory/ast/routing.rs">
       use std::collections::BTreeSet;
       use super::{EntityType, EmbedderId};
 
@@ -100,7 +106,7 @@ a 14th EntityType variant breaks the build until routed.
 
   <verification>
     - `cargo build --release -p context-graph-core` succeeds
-    - `cargo test -p context-graph-core memory::ast_chunker::router` all 14 tests pass
+    - `cargo test -p context-graph-core memory::ast::router` all 14 tests pass
       (13 per-variant + 1 totality test ensuring every variant maps to non-empty set)
     - Removing or renaming any EntityType variant breaks the build (compile-time check)
     - `cargo clippy -p context-graph-core --all-targets -- -D warnings` clean
@@ -176,11 +182,11 @@ router.rs:
 </pseudo_code>
 
 <files_to_create>
-  <file path="crates/context-graph-core/src/memory/ast_chunker/router.rs">EmbedderId constants + route_to_embedders + 8 unit tests</file>
+  <file path="crates/context-graph-core/src/memory/ast/routing.rs">EmbedderId constants + route_to_embedders + 8 unit tests</file>
 </files_to_create>
 
 <files_to_modify>
-  <file path="crates/context-graph-core/src/memory/ast_chunker/mod.rs">Add `pub mod router;` + `pub use router::route_to_embedders;`</file>
+  <file path="crates/context-graph-core/src/memory/ast/mod.rs">Add `pub mod router;` + `pub use router::route_to_embedders;`</file>
 </files_to_modify>
 
 <validation_criteria>
@@ -193,7 +199,7 @@ router.rs:
 
 <test_commands>
   <command>cargo build --release -p context-graph-core</command>
-  <command>cargo test -p context-graph-core memory::ast_chunker::router</command>
+  <command>cargo test -p context-graph-core memory::ast::router</command>
   <command>cargo clippy -p context-graph-core --all-targets -- -D warnings</command>
 </test_commands>
 </task_spec>

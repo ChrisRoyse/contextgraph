@@ -6,7 +6,7 @@
   <title>parse_swebench_instance_report + swebench_report_to_verdict</title>
   <status>complete</status>
   <implementation_state as_of="2026-05-09">
-    Shipped: `parse_swebench_instance_report(report_path) -> OracleResult<SwebenchInstanceReport>` (swebench.rs:303) and `swebench_report_to_verdict(report, status_text) -> OracleResult<OracleVerdict>` (swebench.rs:392) — convert the SWE-bench `tests_status` buckets (FAIL_TO_PASS / PASS_TO_PASS / FAIL_TO_FAIL / PASS_TO_FAIL each with `success` and `failure` lists) per the canonical `swebench/harness/grading.py::get_eval_report` semantics into per-test `PerTestOutcome` rows + the cumulative `OracleVerdict.all_passed` flag. Pytest xfail/xpass handling kept in sync with `parse_pytest_json_report` per commit 24450e43. End-to-end FSV against `swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest` confirms 22-tests-all-pass round-trip identical between gold and custom modes.
+    Shipped: `parse_swebench_instance_report(report_path) -> OracleResult<SwebenchInstanceReport>` (swebench.rs) and `swebench_report_to_verdict(report, exception_hint) -> OracleResult<OracleVerdict>` (swebench.rs) — convert the SWE-bench `tests_status` buckets (FAIL_TO_PASS / PASS_TO_PASS / FAIL_TO_FAIL / PASS_TO_FAIL each with `success` and `failure` lists) per the canonical `swebench/harness/grading.py::get_eval_report` semantics into per-test `PerTestOutcome` rows + the cumulative `OracleVerdict.all_passed` flag. `exception_hint` is retained for API compatibility but intentionally excluded from the persisted canonical verdict hash because raw `test_output.txt` rendering can differ across equivalent unresolved runs; the durable source of truth is structured `report.json` / `tests_status`. End-to-end FSV against `swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest` confirms round-trip behavior, and production verification targeted `sympy__sympy-13146|wrong_file` after this normalization fix.
   </implementation_state>
   <layer>logic</layer>
   <sequence>18</sequence>
@@ -64,22 +64,23 @@ state and locks the 11-fixture test matrix (TC-CORPUS-04).
       1. If `patch_is_none || !patch_exists ||
          !patch_successfully_applied`:
          - per_test = vec![]
-         - exception = exception_hint.or(Some(Other))
+         - exception = Some(Other)
          - resolved = report.resolved
       2. Else (tests ran):
          - For each test_id in F2P.success: PerTestOutcome { id, Pass }
          - For each test_id in F2P.failure: PerTestOutcome { id, Fail }
          - For each test_id in P2P.success: PerTestOutcome { id, Pass }
          - For each test_id in P2P.failure: PerTestOutcome { id, Fail }
-         - For each test_id in F2F.success: PerTestOutcome { id, Pass }   // unexpected pass — skip-or-error per harness
-         - For each test_id in F2F.failure: PerTestOutcome { id, Fail }
-         - For each test_id in P2F.success: PerTestOutcome { id, Pass }   // unexpected pass
-         - For each test_id in P2F.failure: PerTestOutcome { id, Fail }
-         - exception = exception_hint
+         - For each test_id in F2F.success: PerTestOutcome { id, Fail }   // stayed failing
+         - For each test_id in F2F.failure: PerTestOutcome { id, Pass }   // transitioned to passing
+         - For each test_id in P2F.success: PerTestOutcome { id, Fail }   // transitioned to failing
+         - For each test_id in P2F.failure: PerTestOutcome { id, Pass }   // stayed passing
+         - exception = None unless this is a deterministic ContextGraph timeout report
          - resolved = report.resolved
-    - Per BR-CORPUS-02: when the harness ran past patch-application
-      and produced typed failure output (exception_hint
-      `Some(specific)`), prefer the specific class over `Other`.
+    - Per the 2026-05-09 production root-cause fix: when the harness
+      ran past patch application, use structured `tests_status` as the
+      canonical verdict and do not hash `test_output.txt`-scraped
+      exception hints. Raw log exception hints remain diagnostic only.
     - Add 11 unit tests covering all 8 transition quadrants + 3
       patch-failure cases (TC-CORPUS-04).
   </in_scope>
@@ -111,9 +112,9 @@ state and locks the 11-fixture test matrix (TC-CORPUS-04).
     - The function MUST NOT silently fall back to text parsing
       when report.json is missing — that's the caller's error
       (`MEJEPA_ORACLE_IO`).
-    - PerTestOutcome.test_id uniqueness is preserved in the
-      same order the harness emits (success then failure within
-      each transition bucket).
+    - PerTestOutcome.test_id uniqueness is preserved and the persisted
+      verdict is sorted by test id so equivalent SWE-bench runs hash
+      identically.
     - `runtime_seconds` field is populated by the caller
       (TASK-CORPUS-020); this function leaves it 0.0 since the
       report.json doesn't carry runtime.
@@ -145,7 +146,7 @@ pub fn parse_swebench_instance_report(instance_id: &amp;str, text: &amp;str) -&g
 
 pub fn swebench_report_to_verdict(report: &amp;SwebenchInstanceReport, hint: Option&lt;ExceptionClass&gt;) -&gt; OracleResult&lt;OracleVerdict&gt; {
     let patch_failed = report.patch_is_none || !report.patch_exists || !report.patch_successfully_applied;
-    let exception = if patch_failed { hint.or(Some(ExceptionClass::Other)) } else { hint };
+    let exception = if patch_failed { Some(ExceptionClass::Other) } else { None };
     let per_test = if patch_failed { vec![] } else if let Some(ts) = &amp;report.tests_status {
         let mut out = vec![];
         for id in &amp;ts.fail_to_pass.success { out.push(PerTestOutcome { test_id: id.clone(), outcome: TestOutcome::Pass }); }
@@ -153,7 +154,7 @@ pub fn swebench_report_to_verdict(report: &amp;SwebenchInstanceReport, hint: Opt
         // ... 6 more loops covering P2P/F2F/P2F success+failure
         out
     } else { vec![] };
-    Ok(OracleVerdict { per_test, exception, resolved: report.resolved, runtime_seconds: 0.0 })
+    Ok(OracleVerdict { per_test, exception })
 }
 </pseudo_code>
 
@@ -169,7 +170,7 @@ pub fn swebench_report_to_verdict(report: &amp;SwebenchInstanceReport, hint: Opt
   <criterion>11 transition/patch-failure fixtures all map correctly per grading.py</criterion>
   <criterion>parse rejects multi-key root (EC-CORPUS-07)</criterion>
   <criterion>parse rejects mismatched instance_id</criterion>
-  <criterion>BR-CORPUS-02: hint preferred over Other when present</criterion>
+  <criterion>Raw test_output exception hints are not included in the canonical persisted verdict hash</criterion>
 </validation_criteria>
 
 <test_commands>

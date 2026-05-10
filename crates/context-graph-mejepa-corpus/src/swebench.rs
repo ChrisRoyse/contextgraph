@@ -369,16 +369,7 @@ pub fn run_swebench_lite_oracle(
     )?;
     let instance_report = parse_swebench_instance_report(&config.instance_id, &report_text)?;
 
-    let test_output_text = fs::read_to_string(&artifacts.test_output).map_err(|err| {
-        OracleError::io(
-            &artifacts.test_output,
-            err.to_string(),
-            "ensure the harness produced test_output.txt for exception-class extraction",
-        )
-    })?;
-    let exception_hint = extract_exception_class(&test_output_text);
-
-    let verdict = swebench_report_to_verdict(&instance_report, exception_hint)?;
+    let verdict = swebench_report_to_verdict(&instance_report, None)?;
 
     Ok(SwebenchOracleResult {
         instance_report,
@@ -490,15 +481,7 @@ pub fn run_swebench_lite_oracle_batch(
         )?;
         let instance_report =
             parse_swebench_instance_report(&prediction.instance_id, &report_text)?;
-        let test_output_text = fs::read_to_string(&test_output_path).map_err(|err| {
-            OracleError::io(
-                &test_output_path,
-                err.to_string(),
-                "ensure the batch harness produced test_output.txt for exception-class extraction",
-            )
-        })?;
-        let exception_hint = extract_exception_class(&test_output_text);
-        let verdict = swebench_report_to_verdict(&instance_report, exception_hint)?;
+        let verdict = swebench_report_to_verdict(&instance_report, None)?;
         verdicts.insert(prediction.instance_id.clone(), verdict);
     }
 
@@ -636,11 +619,13 @@ pub fn parse_swebench_instance_report(
 ///     and zero per_test rows (the harness produces an empty tests_status).
 ///   - patch_is_None or patch_exists=false → exception=Other and zero per_test
 ///     rows.
-///   - exception_hint (parsed from test_output.txt) is preferred over the
-///     synthetic Other when the harness ran but reported failures.
+///   - exception_hint is retained for API compatibility but is intentionally
+///     not part of the canonical verdict. The durable source of truth is the
+///     structured SWE-bench report; raw test_output text is diagnostic output
+///     and can vary across equivalent failed runs.
 pub fn swebench_report_to_verdict(
     report: &SwebenchInstanceReport,
-    exception_hint: Option<ExceptionClass>,
+    _exception_hint: Option<ExceptionClass>,
 ) -> OracleResult<OracleVerdict> {
     if report.patch_is_none {
         return Ok(OracleVerdict {
@@ -751,19 +736,37 @@ pub fn swebench_report_to_verdict(
     // Stable order so persisted verdicts compare cleanly.
     per_test.sort_by(|a, b| a.test_id.cmp(&b.test_id));
 
-    let any_failure = per_test
-        .iter()
-        .any(|t| matches!(t.outcome, TestOutcome::Fail));
-    let exception = if any_failure {
-        Some(exception_hint.unwrap_or(ExceptionClass::Other))
+    Ok(normalize_swebench_oracle_verdict(OracleVerdict {
+        per_test,
+        exception: None,
+    }))
+}
+
+/// Normalize a SWE-bench-derived verdict to the stable, structured signal.
+///
+/// `tests_status` already contains the pass/fail state for each relevant test.
+/// Exception classes scraped from raw pytest logs are not stable enough for the
+/// persisted corpus hash: two equivalent unresolved runs can differ only in how
+/// pytest renders the same underlying failure. Keep exception set only for
+/// runner-level failures that have no per-test rows, and for deterministic
+/// ContextGraph timeout reports.
+pub fn normalize_swebench_oracle_verdict(mut verdict: OracleVerdict) -> OracleVerdict {
+    if verdict.per_test.is_empty() {
+        if verdict.exception.is_some() {
+            verdict.exception = Some(ExceptionClass::Other);
+        }
+        return verdict;
+    }
+
+    let has_synthetic_timeout = verdict.per_test.iter().any(|test| {
+        test.outcome == TestOutcome::Fail && test.test_id.ends_with("::__swebench_timeout__")
+    });
+    verdict.exception = if has_synthetic_timeout {
+        Some(ExceptionClass::Other)
     } else {
         None
     };
-
-    Ok(OracleVerdict {
-        per_test,
-        exception,
-    })
+    verdict
 }
 
 fn read_or_create_timeout_report(
@@ -1661,14 +1664,14 @@ mod tests {
     }
 
     #[test]
-    fn parses_unresolved_report_and_maps_failures_with_exception() {
+    fn parses_unresolved_report_and_maps_failures_without_log_exception() {
         let report =
             parse_swebench_instance_report("sympy__sympy-20590", sample_unresolved_report())
                 .unwrap();
         assert!(!report.resolved);
         let verdict =
             swebench_report_to_verdict(&report, Some(ExceptionClass::AssertionError)).unwrap();
-        assert_eq!(verdict.exception, Some(ExceptionClass::AssertionError));
+        assert_eq!(verdict.exception, None);
         assert_eq!(verdict.per_test.len(), 3);
         let pass = verdict
             .per_test

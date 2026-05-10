@@ -1,10 +1,16 @@
 # TASK-AST-015 — Implement Java entity classifier
 
+> **2026-05-10 current-state audit:** Treat this document as an audit/hardening task for the existing implementation, not greenfield scaffolding. Canonical Phase 1 source is `crates/context-graph-core/src/memory/ast/{mod.rs,classify.rs,routing.rs,tests.rs}` with ME-JEPA consumer `crates/context-graph-mejepa-instruments/src/e_code.rs`. The old Rust-only `crates/context-graph-core/src/memory/ast_chunker.rs` still exists but is legacy and must not be extended as the multi-language source of truth. Any lower reference to `src/memory/ast_chunker/<submodule>.rs`, `dynamicjepa.rs`, compatibility shims, or "create new" scaffolding language is superseded by this audit note. Verify and harden the existing canonical files instead of creating parallel modules unless the repo audit proves a file is genuinely missing.
+>
+> **No fallbacks / no backwards compatibility:** Keep one canonical API: `context_graph_core::memory::ast::{chunk, chunk_path, chunk_with_options, Language, EntityType, AstChunk, ParseDiagnostic, AstChunkerError}`. Unsupported language, empty input, mixed language, routing gaps, invalid UTF-8, or Tree-sitter `ERROR`/`MISSING` nodes must return a typed error with actionable context; never silently route to raw-text chunks or mock data.
+>
+> **Mandatory Full State Verification:** Define the source of truth for the task (Rust source file, JSON evidence file, RocksDB CF, or ME-JEPA panel file), run the logic, then perform a separate readback from that source of truth. Print before/after system state for happy path and 3 edge cases: empty source, invalid syntax, and mixed/unsupported language. Evidence must include actual chunks/routes/diagnostics read from disk or storage after execution, not only function return values.
+
 ```xml
 <task_spec id="TASK-AST-015" version="1.0">
 <metadata>
   <title>Implement Java classifier — @Test/@ParameterizedTest/@RepeatedTest detection + Maven/Gradle dirs</title>
-  <status>blocked</status>
+  <status>audit-hardening</status>
   <layer>logic</layer>
   <sequence>15</sequence>
   <implements>
@@ -28,8 +34,8 @@ file-path hint that the chunker does NOT use directly — that's the caller's re
 </context>
 
 <input_context_files>
-  <file purpose="entity_type">crates/context-graph-core/src/memory/ast_chunker/entity_type.rs</file>
-  <file purpose="boundary_hooks">crates/context-graph-core/src/memory/ast_chunker/boundary.rs</file>
+  <file purpose="entity_type">crates/context-graph-core/src/memory/ast/mod.rs</file>
+  <file purpose="boundary_hooks">crates/context-graph-core/src/memory/ast/mod.rs</file>
   <file purpose="reference_classifier">crates/context-graph-cli/src/commands/dynamicjepa.rs (search "java" / "method_declaration" near line 6400)</file>
   <file purpose="node_kind_matrix">docs/ruvectorfindings/specs/technical/TECH-AST-CHUNKING.md#data_models (PerLanguageNodeKindTable.java)</file>
   <file purpose="testfn_rules">docs/ruvectorfindings/specs/functional/SPEC-AST-CHUNKING.md (REQ-AST-12 Java rule)</file>
@@ -41,7 +47,7 @@ file-path hint that the chunker does NOT use directly — that's the caller's re
 
 <scope>
   <in_scope>
-    - Module: `crates/context-graph-core/src/memory/ast_chunker/classifier/java.rs`
+    - Module: `crates/context-graph-core/src/memory/ast/classify.rs`
     - `pub fn hooks() -> LanguageHooks`
     - classify:
       method_declaration → TestFunction if has JUnit annotation; else Method (always — Java methods
@@ -76,9 +82,9 @@ file-path hint that the chunker does NOT use directly — that's the caller's re
 
 <definition_of_done>
   <signatures>
-    <signature file="crates/context-graph-core/src/memory/ast_chunker/classifier/java.rs">
+    <signature file="crates/context-graph-core/src/memory/ast/classify.rs">
       use tree_sitter::Node;
-      use crate::memory::ast_chunker::{ClassificationContext, EntityType, LanguageHooks};
+      use crate::memory::ast::{ClassificationContext, EntityType, LanguageHooks};
 
       pub fn hooks() -> LanguageHooks { /* ... */ }
       pub fn classify(node: &Node<'_>, source: &[u8], ctx: &ClassificationContext) -> EntityType { /* ... */ }
@@ -109,7 +115,7 @@ file-path hint that the chunker does NOT use directly — that's the caller's re
 
   <verification>
     - `cargo build --release -p context-graph-core` succeeds
-    - `cargo test -p context-graph-core memory::ast_chunker::classifier::java` ≥10 tests pass
+    - `cargo test -p context-graph-core memory::ast::classifier::java` ≥10 tests pass
     - `class A { @Test void m() {} }` → method m is TestFunction
     - `class A { @ParameterizedTest void m() {} }` → TestFunction
     - `class A { void m() {} }` → Method (no annotation)
@@ -171,11 +177,11 @@ classifier/java.rs:
 </pseudo_code>
 
 <files_to_create>
-  <file path="crates/context-graph-core/src/memory/ast_chunker/classifier/java.rs">Java classifier + JUnit annotation detection + 10 unit tests</file>
+  <file path="crates/context-graph-core/src/memory/ast/classify.rs">Java classifier + JUnit annotation detection + 10 unit tests</file>
 </files_to_create>
 
 <files_to_modify>
-  <file path="crates/context-graph-core/src/memory/ast_chunker/classifier/mod.rs">Add `pub mod java;`</file>
+  <file path="crates/context-graph-core/src/memory/ast/classify.rs">Add `pub mod java;`</file>
 </files_to_modify>
 
 <validation_criteria>
@@ -190,7 +196,7 @@ classifier/java.rs:
 
 <test_commands>
   <command>cargo build --release -p context-graph-core</command>
-  <command>cargo test -p context-graph-core memory::ast_chunker::classifier::java</command>
+  <command>cargo test -p context-graph-core memory::ast::classifier::java</command>
   <command>cargo clippy -p context-graph-core --all-targets -- -D warnings</command>
 </test_commands>
 </task_spec>

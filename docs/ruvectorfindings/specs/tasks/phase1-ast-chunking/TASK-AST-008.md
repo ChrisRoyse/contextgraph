@@ -1,10 +1,16 @@
 # TASK-AST-008 — Implement `ParseDiagnosticCollector` (BFS, cap 32)
 
+> **2026-05-10 current-state audit:** Treat this document as an audit/hardening task for the existing implementation, not greenfield scaffolding. Canonical Phase 1 source is `crates/context-graph-core/src/memory/ast/{mod.rs,classify.rs,routing.rs,tests.rs}` with ME-JEPA consumer `crates/context-graph-mejepa-instruments/src/e_code.rs`. The old Rust-only `crates/context-graph-core/src/memory/ast_chunker.rs` still exists but is legacy and must not be extended as the multi-language source of truth. Any lower reference to `src/memory/ast_chunker/<submodule>.rs`, `dynamicjepa.rs`, compatibility shims, or "create new" scaffolding language is superseded by this audit note. Verify and harden the existing canonical files instead of creating parallel modules unless the repo audit proves a file is genuinely missing.
+>
+> **No fallbacks / no backwards compatibility:** Keep one canonical API: `context_graph_core::memory::ast::{chunk, chunk_path, chunk_with_options, Language, EntityType, AstChunk, ParseDiagnostic, AstChunkerError}`. Unsupported language, empty input, mixed language, routing gaps, invalid UTF-8, or Tree-sitter `ERROR`/`MISSING` nodes must return a typed error with actionable context; never silently route to raw-text chunks or mock data.
+>
+> **Mandatory Full State Verification:** Define the source of truth for the task (Rust source file, JSON evidence file, RocksDB CF, or ME-JEPA panel file), run the logic, then perform a separate readback from that source of truth. Print before/after system state for happy path and 3 edge cases: empty source, invalid syntax, and mixed/unsupported language. Evidence must include actual chunks/routes/diagnostics read from disk or storage after execution, not only function return values.
+
 ```xml
 <task_spec id="TASK-AST-008" version="1.0">
 <metadata>
   <title>Implement parse_diagnostics — BFS over root, capped at MAX_PARSE_DIAGNOSTICS</title>
-  <status>blocked</status>
+  <status>audit-hardening</status>
   <layer>logic</layer>
   <sequence>8</sequence>
   <implements>
@@ -29,7 +35,7 @@ This task generalizes it: language-agnostic BFS over `Node`, no per-language bra
 <input_context_files>
   <file purpose="component_contract">docs/ruvectorfindings/specs/technical/TECH-AST-CHUNKING.md#component_contracts (ParseDiagnosticCollector)</file>
   <file purpose="legacy_implementation">crates/context-graph-core/src/memory/ast_chunker.rs (search for `parse_diagnostics(` — the shipped helper)</file>
-  <file purpose="cap_constant">crates/context-graph-core/src/memory/ast_chunker/types.rs (MAX_PARSE_DIAGNOSTICS = 32 from TASK-AST-003)</file>
+  <file purpose="cap_constant">crates/context-graph-core/src/memory/ast/mod.rs (MAX_PARSE_DIAGNOSTICS = 32 from TASK-AST-003)</file>
 </input_context_files>
 
 <prerequisites>
@@ -61,7 +67,7 @@ This task generalizes it: language-agnostic BFS over `Node`, no per-language bra
 
 <definition_of_done>
   <signatures>
-    <signature file="crates/context-graph-core/src/memory/ast_chunker/diagnostics.rs">
+    <signature file="crates/context-graph-core/src/memory/ast/mod.rs">
       use tree_sitter::Node;
       use super::{ParseDiagnostic, MAX_PARSE_DIAGNOSTICS};
 
@@ -85,7 +91,7 @@ This task generalizes it: language-agnostic BFS over `Node`, no per-language bra
 
   <verification>
     - `cargo build --release -p context-graph-core` succeeds
-    - `cargo test -p context-graph-core memory::ast_chunker::diagnostics` all pass (≥4 tests)
+    - `cargo test -p context-graph-core memory::ast::diagnostics` all pass (≥4 tests)
     - Synthetic broken Rust (`fn foo( {}` — unclosed paren) produces ≥1 diagnostic
     - Cap test: synthetic source with >32 errors → exactly 32 diagnostics
     - excerpt test: byte offset in a multi-byte-utf-8 line returns valid UTF-8 string
@@ -190,11 +196,11 @@ diagnostics.rs:
 </pseudo_code>
 
 <files_to_create>
-  <file path="crates/context-graph-core/src/memory/ast_chunker/diagnostics.rs">parse_diagnostics + excerpt_around_byte + 4 unit tests</file>
+  <file path="crates/context-graph-core/src/memory/ast/mod.rs">parse_diagnostics + excerpt_around_byte + 4 unit tests</file>
 </files_to_create>
 
 <files_to_modify>
-  <file path="crates/context-graph-core/src/memory/ast_chunker/mod.rs">Add `pub mod diagnostics;` + `pub use diagnostics::parse_diagnostics;`</file>
+  <file path="crates/context-graph-core/src/memory/ast/mod.rs">Add `pub mod diagnostics;` + `pub use diagnostics::parse_diagnostics;`</file>
 </files_to_modify>
 
 <validation_criteria>
@@ -208,7 +214,7 @@ diagnostics.rs:
 
 <test_commands>
   <command>cargo build --release -p context-graph-core</command>
-  <command>cargo test -p context-graph-core memory::ast_chunker::diagnostics</command>
+  <command>cargo test -p context-graph-core memory::ast::diagnostics</command>
   <command>cargo clippy -p context-graph-core --all-targets -- -D warnings</command>
 </test_commands>
 </task_spec>

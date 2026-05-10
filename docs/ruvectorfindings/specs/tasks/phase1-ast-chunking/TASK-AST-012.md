@@ -1,10 +1,16 @@
 # TASK-AST-012 — Implement JavaScript entity classifier
 
+> **2026-05-10 current-state audit:** Treat this document as an audit/hardening task for the existing implementation, not greenfield scaffolding. Canonical Phase 1 source is `crates/context-graph-core/src/memory/ast/{mod.rs,classify.rs,routing.rs,tests.rs}` with ME-JEPA consumer `crates/context-graph-mejepa-instruments/src/e_code.rs`. The old Rust-only `crates/context-graph-core/src/memory/ast_chunker.rs` still exists but is legacy and must not be extended as the multi-language source of truth. Any lower reference to `src/memory/ast_chunker/<submodule>.rs`, `dynamicjepa.rs`, compatibility shims, or "create new" scaffolding language is superseded by this audit note. Verify and harden the existing canonical files instead of creating parallel modules unless the repo audit proves a file is genuinely missing.
+>
+> **No fallbacks / no backwards compatibility:** Keep one canonical API: `context_graph_core::memory::ast::{chunk, chunk_path, chunk_with_options, Language, EntityType, AstChunk, ParseDiagnostic, AstChunkerError}`. Unsupported language, empty input, mixed language, routing gaps, invalid UTF-8, or Tree-sitter `ERROR`/`MISSING` nodes must return a typed error with actionable context; never silently route to raw-text chunks or mock data.
+>
+> **Mandatory Full State Verification:** Define the source of truth for the task (Rust source file, JSON evidence file, RocksDB CF, or ME-JEPA panel file), run the logic, then perform a separate readback from that source of truth. Print before/after system state for happy path and 3 edge cases: empty source, invalid syntax, and mixed/unsupported language. Evidence must include actual chunks/routes/diagnostics read from disk or storage after execution, not only function return values.
+
 ```xml
 <task_spec id="TASK-AST-012" version="1.0">
 <metadata>
   <title>Implement JavaScript entity classifier — function expressions / arrows / method_definition</title>
-  <status>blocked</status>
+  <status>audit-hardening</status>
   <layer>logic</layer>
   <sequence>12</sequence>
   <implements>
@@ -30,8 +36,8 @@ JavaScript is harder than Python because:
 </context>
 
 <input_context_files>
-  <file purpose="entity_type">crates/context-graph-core/src/memory/ast_chunker/entity_type.rs (TASK-AST-002)</file>
-  <file purpose="boundary_hooks">crates/context-graph-core/src/memory/ast_chunker/boundary.rs (LanguageHooks struct)</file>
+  <file purpose="entity_type">crates/context-graph-core/src/memory/ast/mod.rs (TASK-AST-002)</file>
+  <file purpose="boundary_hooks">crates/context-graph-core/src/memory/ast/mod.rs (LanguageHooks struct)</file>
   <file purpose="reference_classifier">crates/context-graph-cli/src/commands/dynamicjepa.rs (search for "javascript" / "function_declaration" near line 6400)</file>
   <file purpose="node_kind_matrix">docs/ruvectorfindings/specs/technical/TECH-AST-CHUNKING.md#data_models (PerLanguageNodeKindTable.javascript)</file>
   <file purpose="testfn_rules">docs/ruvectorfindings/specs/functional/SPEC-AST-CHUNKING.md (REQ-AST-12 JS rules)</file>
@@ -43,7 +49,7 @@ JavaScript is harder than Python because:
 
 <scope>
   <in_scope>
-    - Module: `crates/context-graph-core/src/memory/ast_chunker/classifier/javascript.rs`
+    - Module: `crates/context-graph-core/src/memory/ast/classify.rs`
     - `pub fn hooks() -> LanguageHooks`
     - classify dispatch:
       function_declaration | function_expression | generator_function_declaration | arrow_function
@@ -77,9 +83,9 @@ JavaScript is harder than Python because:
 
 <definition_of_done>
   <signatures>
-    <signature file="crates/context-graph-core/src/memory/ast_chunker/classifier/javascript.rs">
+    <signature file="crates/context-graph-core/src/memory/ast/classify.rs">
       use tree_sitter::Node;
-      use crate::memory::ast_chunker::{ClassificationContext, EntityType, LanguageHooks};
+      use crate::memory::ast::{ClassificationContext, EntityType, LanguageHooks};
 
       pub fn hooks() -> LanguageHooks { /* ... */ }
       pub fn classify(node: &Node<'_>, source: &[u8], ctx: &ClassificationContext) -> EntityType { /* ... */ }
@@ -109,7 +115,7 @@ JavaScript is harder than Python because:
 
   <verification>
     - `cargo build --release -p context-graph-core` succeeds
-    - `cargo test -p context-graph-core memory::ast_chunker::classifier::javascript` ≥10 tests pass
+    - `cargo test -p context-graph-core memory::ast::classifier::javascript` ≥10 tests pass
     - Test fixtures: `function f() {}` (Function), `const g = () => 0` (Function with name "g"),
       `class C { m() {} }` (Class + Method), `it("x", () => {})` (TestFunction),
       `describe("x", () => {...})` body lambdas yield TestFunctions, `/** doc */ function f(){}` (Docstring + Function),
@@ -183,11 +189,11 @@ classifier/javascript.rs:
 </pseudo_code>
 
 <files_to_create>
-  <file path="crates/context-graph-core/src/memory/ast_chunker/classifier/javascript.rs">JS classifier hooks + TEST_DSL_NAMES + binding-site name resolution + 10 unit tests</file>
+  <file path="crates/context-graph-core/src/memory/ast/classify.rs">JS classifier hooks + TEST_DSL_NAMES + binding-site name resolution + 10 unit tests</file>
 </files_to_create>
 
 <files_to_modify>
-  <file path="crates/context-graph-core/src/memory/ast_chunker/classifier/mod.rs">Add `pub mod javascript;`</file>
+  <file path="crates/context-graph-core/src/memory/ast/classify.rs">Add `pub mod javascript;`</file>
 </files_to_modify>
 
 <validation_criteria>
@@ -200,7 +206,7 @@ classifier/javascript.rs:
 
 <test_commands>
   <command>cargo build --release -p context-graph-core</command>
-  <command>cargo test -p context-graph-core memory::ast_chunker::classifier::javascript</command>
+  <command>cargo test -p context-graph-core memory::ast::classifier::javascript</command>
   <command>cargo clippy -p context-graph-core --all-targets -- -D warnings</command>
 </test_commands>
 </task_spec>
