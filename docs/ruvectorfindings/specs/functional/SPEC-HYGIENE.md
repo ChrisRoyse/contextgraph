@@ -1,5 +1,7 @@
 # SPEC-HYGIENE — ME-JEPA-Code Disk and Memory Hygiene (Phase 6)
 
+> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 6 status.
+
 > **Level 2 — Functional Specification.** Defines WHAT the hygiene domain (Phase 6) must do, not HOW. Implementation lives in `TECH-HYGIENE.md`. Conflicts with the constitution resolve to the constitution.
 
 ```xml
@@ -7,10 +9,10 @@
 
 <metadata>
   <title>ME-JEPA-Code Disk and Memory Hygiene (`me_jepa::ops::*` — tier compression, mincut splits, witness-chain Merkle compression, nightly GC, hard quota enforcement)</title>
-  <status>draft</status>
+  <status>partial</status>
   <owner>Phase 6 ME-JEPA implementation team (Claude Code outer optimizer)</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-CORPUS</spec_ref>           <!-- Phase 0 mutation corpus + RocksDB CFs (CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS) consumes the same hard quota -->
     <spec_ref>SPEC-INSTRUMENTS</spec_ref>      <!-- Phase 1 panels persisted to CF_MEJEPA_PANELS / CF_MEJEPA_PANEL_META; tiered storage applies to panel cache + disk overflow -->

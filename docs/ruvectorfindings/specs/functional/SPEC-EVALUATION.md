@@ -1,5 +1,7 @@
 # SPEC-EVALUATION — ME-JEPA-Code Phase 8 Holdout Evaluation, Ship Gate, Active Learning
 
+> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 8 status.
+
 > **Level 2 — Functional Specification.** Defines WHAT the evaluation domain (Phase 8) must do, not HOW. Implementation details live in `TECH-EVALUATION.md`. Conflicts with the constitution resolve to the constitution.
 
 ```xml
@@ -7,10 +9,10 @@
 
 <metadata>
   <title>ME-JEPA-Code Phase 8 Holdout Evaluation, ≥0.95 Ship Gate, Active Learning, Cross-Task Transfer, Weekly Report</title>
-  <status>draft</status>
+  <status>partial</status>
   <owner>Phase 8 ME-JEPA implementation team (Claude Code outer optimizer)</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-CORPUS</spec_ref>            <!-- Phase 0 holdout split + per-language stratification -->
     <spec_ref>SPEC-INSTRUMENTS</spec_ref>       <!-- Phase 1 panel substrate (E_Oracle ground truth) -->

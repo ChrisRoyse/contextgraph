@@ -1288,6 +1288,13 @@ impl Handlers {
                 "E5 causal embedder is retired and disabled; custom E5 weight must be 0.0",
             );
         }
+        if !context_graph_core::weights::E11_ENTITY_ENABLED && weights[10] > 0.0 {
+            return self.tool_error_typed(
+                id,
+                ToolErrorKind::Validation,
+                "E11 entity embedder is disabled; custom E11 weight must be 0.0",
+            );
+        }
         if let Err(e) = context_graph_core::weights::validate_weights(&weights) {
             error!(error = %e, "create_weight_profile: Weight validation failed");
             return self.tool_error(id, &format!("Invalid weights: {}", e));
@@ -1425,6 +1432,16 @@ impl Handlers {
                 ToolErrorKind::Validation,
                 "E5 causal embedder is retired and disabled; select active embedders for anomaly search",
             );
+        }
+        if !context_graph_core::weights::E11_ENTITY_ENABLED
+            && (matches!(high_eid, EmbedderId::E11) || matches!(low_eid, EmbedderId::E11))
+        {
+            error!(
+                high = %request.high_embedder,
+                low = %request.low_embedder,
+                "search_cross_embedder_anomalies: rejected disabled E11 request"
+            );
+            return self.tool_error_typed(id, ToolErrorKind::Validation, E11_DISABLED_TOOL_MESSAGE);
         }
 
         info!(

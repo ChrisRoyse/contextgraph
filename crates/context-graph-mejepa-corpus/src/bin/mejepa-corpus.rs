@@ -291,7 +291,12 @@ fn main() -> CliResult<()> {
     }
 }
 
-fn generate(args: GenerateArgs) -> CliResult<()> {
+fn generate(mut args: GenerateArgs) -> CliResult<()> {
+    args.output = require_durable_path(&args.output, "generate.output")?;
+    args.venv_python = require_durable_path(&args.venv_python, "generate.venv_python")?;
+    args.repo_cache_dir = require_durable_path(&args.repo_cache_dir, "generate.repo_cache_dir")?;
+    args.source_work_root =
+        require_durable_path(&args.source_work_root, "generate.source_work_root")?;
     validate_generate_args(&args)?;
     let categories = parse_categories(&args.categories)?;
     let languages =
@@ -556,7 +561,9 @@ fn generate(args: GenerateArgs) -> CliResult<()> {
     Ok(())
 }
 
-fn verify(args: VerifyArgs) -> CliResult<()> {
+fn verify(mut args: VerifyArgs) -> CliResult<()> {
+    args.corpus = require_durable_path(&args.corpus, "verify.corpus")?;
+    args.venv_python = require_durable_path(&args.venv_python, "verify.venv_python")?;
     validate_verify_args(&args)?;
     let index = read_index(&args.corpus)?;
     validate_complete_index(&index)?;
@@ -716,7 +723,8 @@ fn verify(args: VerifyArgs) -> CliResult<()> {
     Ok(())
 }
 
-fn stats(args: StatsArgs) -> CliResult<()> {
+fn stats(mut args: StatsArgs) -> CliResult<()> {
+    args.corpus = require_durable_path(&args.corpus, "stats.corpus")?;
     let index = read_index(&args.corpus)?;
     validate_complete_index(&index)?;
     let store_path = resolve_corpus_path(&args.corpus, &index.store_path)?;
@@ -728,6 +736,7 @@ fn stats(args: StatsArgs) -> CliResult<()> {
 
 fn prepare_images(args: PrepareImagesArgs) -> CliResult<()> {
     validate_prepare_images_args(&args)?;
+    let evidence_path = require_durable_path(&args.evidence, "prepare_images.evidence")?;
     let manifests = load_task_manifests(&args.tasks_dir)?;
     let selected = select_manifests(
         &manifests,
@@ -799,11 +808,11 @@ fn prepare_images(args: PrepareImagesArgs) -> CliResult<()> {
         "docker_system_df_after": docker_df_after,
         "passes": passes,
     });
-    write_json_checked(&args.evidence, &evidence)?;
+    write_json_checked(&evidence_path, &evidence)?;
     if !passes {
         return Err(format!(
             "SWE-bench image preparation failed; evidence written to {}",
-            args.evidence.display()
+            evidence_path.display()
         )
         .into());
     }
@@ -811,7 +820,8 @@ fn prepare_images(args: PrepareImagesArgs) -> CliResult<()> {
     Ok(())
 }
 
-fn cleanup(args: CleanupArgs) -> CliResult<()> {
+fn cleanup(mut args: CleanupArgs) -> CliResult<()> {
+    args.corpus = require_durable_path(&args.corpus, "cleanup.corpus")?;
     validate_cleanup_args(&args)?;
     let index = read_index(&args.corpus)?;
     validate_complete_index(&index)?;
@@ -925,7 +935,8 @@ fn cleanup(args: CleanupArgs) -> CliResult<()> {
     Ok(())
 }
 
-fn merge(args: MergeArgs) -> CliResult<()> {
+fn merge(mut args: MergeArgs) -> CliResult<()> {
+    args.output = require_durable_path(&args.output, "merge.output")?;
     if args.shards.is_empty() {
         return Err("merge requires at least one --shard".into());
     }
@@ -1077,7 +1088,9 @@ fn merge(args: MergeArgs) -> CliResult<()> {
     Ok(())
 }
 
-fn normalize(args: NormalizeArgs) -> CliResult<()> {
+fn normalize(mut args: NormalizeArgs) -> CliResult<()> {
+    args.corpus = require_durable_path(&args.corpus, "normalize.corpus")?;
+    args.output = require_durable_path(&args.output, "normalize.output")?;
     validate_normalize_args(&args)?;
     let source_index = read_index(&args.corpus)?;
     validate_complete_index(&source_index)?;
@@ -1242,7 +1255,12 @@ fn normalize(args: NormalizeArgs) -> CliResult<()> {
     Ok(())
 }
 
-fn smoke(args: SmokeArgs) -> CliResult<()> {
+fn smoke(mut args: SmokeArgs) -> CliResult<()> {
+    args.output = require_durable_path(&args.output, "smoke.output")?;
+    args.venv_python = require_durable_path(&args.venv_python, "smoke.venv_python")?;
+    args.repo_cache_dir = require_durable_path(&args.repo_cache_dir, "smoke.repo_cache_dir")?;
+    args.source_work_root =
+        require_durable_path(&args.source_work_root, "smoke.source_work_root")?;
     validate_smoke_args(&args)?;
     let task_limit = args.max_tasks.or({
         if args.instance_ids.is_empty() {
@@ -1554,6 +1572,11 @@ fn validate_smoke_args(args: &SmokeArgs) -> CliResult<()> {
     Ok(())
 }
 
+fn require_durable_path(path: &Path, field: &'static str) -> CliResult<PathBuf> {
+    context_graph_paths::require_under_data_root(path, field)
+        .map_err(|err| err.to_string().into())
+}
+
 fn validate_generate_args(args: &GenerateArgs) -> CliResult<()> {
     if !args.venv_python.is_file() {
         return Err(format!(
@@ -1769,8 +1792,7 @@ struct PullLogPaths {
 
 fn pull_log_paths(image: &str) -> CliResult<PullLogPaths> {
     let digest = format!("{:x}", Sha256::digest(image.as_bytes()));
-    let base = Path::new(IMAGE_PREP_LOG_DIR);
-    fs::create_dir_all(base)?;
+    let base = context_graph_paths::mejepa_image_prep_log_dir()?;
     Ok(PullLogPaths {
         stdout: base.join(format!("docker-pull-{digest}.stdout.log")),
         stderr: base.join(format!("docker-pull-{digest}.stderr.log")),
@@ -2750,6 +2772,7 @@ mod tests {
         let image = "swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest";
         let before = pull_log_paths(image)?;
         let after = pull_log_paths(image)?;
+        let log_root = context_graph_paths::mejepa_image_prep_log_dir()?;
 
         println!(
             "FSV_BEFORE log_paths stdout={} stderr={}",
@@ -2765,8 +2788,8 @@ mod tests {
 
         assert_eq!(before.stdout, after.stdout);
         assert_eq!(before.stderr, after.stderr);
-        assert!(before.stdout.starts_with(IMAGE_PREP_LOG_DIR));
-        assert!(before.stderr.starts_with(IMAGE_PREP_LOG_DIR));
+        assert!(before.stdout.starts_with(&log_root));
+        assert!(before.stderr.starts_with(&log_root));
         assert_ne!(before.stdout, before.stderr);
         let stdout_name = before
             .stdout

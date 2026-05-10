@@ -1,5 +1,7 @@
 # Technical Specification — UTML v1.0 Four-Factor Learning Formula Implementation
 
+> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 3 status.
+
 > **Level 3 (technical, *how* to build).** Implements `SPEC-UTML.md`. Subordinate to `specs/constitution.md`. When this spec conflicts with the constitution or with `SPEC-UTML.md`, the higher-level document wins per `<spec_authority_order>`.
 
 ```xml
@@ -7,10 +9,10 @@
 
 <metadata>
   <title>UTML v1.0 Implementation: compute_delta_p / _k / _omega / _xi, L_step, sampling, certificates, classifier</title>
-  <status>draft</status>
+  <status>partial</status>
   <owner>ME-JEPA Training Team / Phase 3 (cross-cutting)</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <implements_specs>
     <spec_ref>SPEC-UTML</spec_ref>
   </implements_specs>

@@ -1,5 +1,7 @@
 # Functional Specification — Phase 3 Training Loop (AdamW + Multi-Objective Loss + Per-Step Certs)
 
+> **📊 2026-05-10 STATUS:** SHIPPED — see ../implementation-plan.md for the full Phase 3 status.
+
 > **Level 2 (functional, *what* to build).** Subordinate to `specs/constitution.md` and the `<utml_v1_invariants>`, `<failure_taxonomy>`, `<performance_budgets>` blocks therein. When this functional spec conflicts with the constitution, the constitution wins. Implementation details (exact Rust signatures, file layout, persistence schema) live in `specs/technical/TECH-TRAINING.md`. This spec is the contract between the Phase 3 training loop and the Phase 1 instrument substrate, the Phase 2 predictor + frozen target panel, the cross-cutting UTML formula (`SPEC-UTML`), the cross-cutting TCT constellation guard (`SPEC-TCT`), and the Phase 4 inference / Phase 5 self-healing surfaces.
 
 ```xml
@@ -7,10 +9,10 @@
 
 <metadata>
   <title>Phase 3 Training Loop — AdamW + Multi-Objective Loss + Per-Step Certificates + BatchSampler + Holdout Evaluation</title>
-  <status>draft</status>
+  <status>shipped</status>
   <owner>ME-JEPA Training Team / Phase 3</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-UTML (per-step L_step, sampling_weight, training cert schema)</spec_ref>
     <spec_ref>SPEC-PHASE2-PREDICTOR (predictor + frozen target panel produced by Phase 2)</spec_ref>

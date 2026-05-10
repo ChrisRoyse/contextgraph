@@ -1,5 +1,7 @@
 # SPEC-INFERENCE — ME-JEPA-Code Inference, Conformal Calibration, OOD Detection
 
+> **📊 2026-05-10 STATUS:** SHIPPED — see ../implementation-plan.md for the full Phase 4a status.
+
 > **Level 2 — Functional Specification.** Defines WHAT the inference domain (Phase 4a) must do, not HOW. Implementation details live in `TECH-INFERENCE.md`. Conflicts with the constitution resolve to the constitution.
 
 ```xml
@@ -7,10 +9,10 @@
 
 <metadata>
   <title>ME-JEPA-Code Inference + Conformal Calibration + OOD Detection (`MeJepaCompiler::compile/verify`)</title>
-  <status>draft</status>
+  <status>shipped</status>
   <owner>Phase 4a ME-JEPA implementation team (Claude Code outer optimizer)</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-INSTRUMENTS</spec_ref>      <!-- Phase 1 panel substrate -->
     <spec_ref>SPEC-AST-CHUNKING</spec_ref>     <!-- 11-language chunker -->

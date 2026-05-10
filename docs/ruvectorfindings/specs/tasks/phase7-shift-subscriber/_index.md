@@ -1,5 +1,7 @@
 # Phase 7 — Shift-Subscriber Task Index
 
+> **📊 2026-05-10 STATUS — partial.** `reality_shift_log` reader/writer infrastructure + `mcp__cgreality__mejepa_predict_latest` shipped (`crates/context-graph-mcp/src/handlers/tools/reality_loop/shift_log.rs`). Tokio subscriber loop tailing the shift log into `mejepa.observe()`, watermark CF consumer, and `mejepa_observe_shift`/`mejepa_subscriber_status`/`mejepa_capture_audit` MCP tools (REQ-SHIFT-01..09 minus 04) pending. Authoritative status: ../../implementation-plan.md Phase 7.
+
 > **Domain:** SHIFT-SUBSCRIBER (Phase 7 — Tokio shift-log subscriber + watermark + cross-cutting wiring)
 >
 > **Authority:**

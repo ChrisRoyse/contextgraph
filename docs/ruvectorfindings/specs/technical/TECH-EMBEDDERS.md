@@ -1,5 +1,7 @@
 # TECH-EMBEDDERS — Technical Specification
 
+> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 1 status.
+
 > **Level 3 (technical spec).** Implements `SPEC-EMBEDDERS` (functional). Defines HOW the 21-embedder ensemble is wrapped, routed, budgeted, and fine-tuned. Constitution (Level 1) wins on conflict. Functional spec (Level 2) wins over this on conflict.
 
 ```xml
@@ -7,10 +9,10 @@
 
 <metadata>
   <title>EMBEDDERS — Technical Implementation</title>
-  <status>draft</status>
+  <status>partial</status>
   <owner>ME-JEPA Phase 1 working group</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <implements_spec>SPEC-EMBEDDERS v1.0</implements_spec>
   <governing_docs>
     <doc>docs/ruvectorfindings/specs/constitution.md</doc>

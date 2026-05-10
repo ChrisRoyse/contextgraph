@@ -1,5 +1,7 @@
 # TECH-PREDICTOR — ME-JEPA-Code Predictor + Frozen Target + VICReg + Oracle Head (Implementation)
 
+> **📊 2026-05-10 STATUS:** SHIPPED — see ../implementation-plan.md for the full Phase 2 status.
+
 > **Level 3 — Technical Specification.** Implements `SPEC-PREDICTOR.md`. Defines HOW the trainable transformer + frozen target adapter + VICReg loss + Oracle head are built. Conflicts with constitution / functional spec resolve to those.
 
 ```xml
@@ -7,9 +9,9 @@
 
 <metadata>
   <title>ME-JEPA-Code Predictor + Frozen Target Readback + VICReg Loss + Oracle Head — Implementation</title>
-  <status>draft</status>
+  <status>shipped</status>
   <owner>Phase 2 ME-JEPA implementation team</owner>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-PREDICTOR</spec_ref>
     <spec_ref>SPEC-INSTRUMENTS</spec_ref>

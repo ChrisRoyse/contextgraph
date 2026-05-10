@@ -1,5 +1,7 @@
 # Phase 6 — HYGIENE Task Index
 
+> **📊 2026-05-10 STATUS — partial.** `context-graph-tier-compression` (8/7/5/3-bit on-disk format) and `context-graph-mincut` (Stoer-Wagner) crates shipped; CF integration into ME-JEPA panel storage, witness-chain Merkle compression of >90d segments, nightly GC, 115 GB hard quota with emergency eviction, and `me_jepa::ops::*` MCP wrappers (REQ-HYG-03..07) still pending. Authoritative status: ../../implementation-plan.md Phase 6.
+
 > **Level 4.** Atomic task specifications for the **HYGIENE domain** (Phase 6: tier compression integration, Stoer-Wagner mincut leakage scoring, witness-chain Merkle compression, nightly 8-step GC pass, hard quota enforcement, `me_jepa::ops::*` MCP-callable interface). Authority order: `../../constitution.md` (Level 1) > `../../functional/SPEC-HYGIENE.md` (Level 2) > `../../technical/TECH-HYGIENE.md` (Level 3) > this file (Level 4). Each task is one conceptual change shippable end-to-end with FSV evidence per `docs2/prdtospec.md` §4.
 
 ## Phase scope

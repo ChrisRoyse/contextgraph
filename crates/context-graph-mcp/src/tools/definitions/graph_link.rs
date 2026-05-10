@@ -250,7 +250,7 @@ fn get_unified_neighbors_definition() -> ToolDefinition {
                         "E8":  { "type": "number", "minimum": 0, "maximum": 1 },
                         "E9":  { "type": "number", "minimum": 0, "maximum": 1 },
                         "E10": { "type": "number", "minimum": 0, "maximum": 1 },
-                        "E11": { "type": "number", "minimum": 0, "maximum": 1 },
+                            "E11": { "type": "number", "minimum": 0, "maximum": 0, "description": "Disabled; must be 0 until a verified code-symbol entity embedder is installed" },
                         "E12": { "type": "number", "minimum": 0, "maximum": 1 },
                         "E13": { "type": "number", "minimum": 0, "maximum": 1 },
                         "E14": { "type": "number", "minimum": 0, "maximum": 1, "description": "BGE-M3 Dense — multilingual 1024-D CLS-pooled (XLM-RoBERTa-Large, 8192-token context)" }
@@ -262,7 +262,7 @@ fn get_unified_neighbors_definition() -> ToolDefinition {
                     "description": "Embedders to exclude from fusion (their weight becomes 0, remaining renormalized).",
                     "items": {
                         "type": "string",
-                        "enum": ["E1", "E2", "E3", "E4", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14"]
+                            "enum": ["E1", "E2", "E3", "E4", "E6", "E7", "E8", "E9", "E10", "E12", "E13", "E14"]
                     }
                 },
                 "learning_policy": {

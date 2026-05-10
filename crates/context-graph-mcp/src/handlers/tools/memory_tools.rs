@@ -1377,6 +1377,20 @@ impl Handlers {
                         weights[i] = val as f32;
                     }
                 }
+                if !context_graph_core::weights::E5_CAUSAL_ENABLED && weights[4] > 0.0 {
+                    return self.tool_error_typed(
+                        id,
+                        ToolErrorKind::Validation,
+                        "E5 causal embedder is retired and disabled; customWeights.E5 must be 0.0",
+                    );
+                }
+                if !E11_ENTITY_ENABLED && weights[10] > 0.0 {
+                    return self.tool_error_typed(
+                        id,
+                        ToolErrorKind::Validation,
+                        "E11 entity embedder is disabled; customWeights.E11 must be 0.0",
+                    );
+                }
                 Some(weights)
             }
             None => None,
@@ -1808,6 +1822,20 @@ impl Handlers {
         // GAP-1: Explicit custom weights override everything (including custom profiles)
         // HIGH-08 FIX: Validate weights BEFORE applying (AP-NAV-02)
         if let Some(weights) = custom_weights {
+            if !context_graph_core::weights::E5_CAUSAL_ENABLED && weights[4] > 0.0 {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    "E5 causal embedder is retired and disabled; customWeights.E5 must be 0.0",
+                );
+            }
+            if !E11_ENTITY_ENABLED && weights[10] > 0.0 {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    "E11 entity embedder is disabled; customWeights.E11 must be 0.0",
+                );
+            }
             if let Err(e) = context_graph_core::weights::validate_weights(&weights) {
                 error!(error = %e, "search_graph: invalid custom weights");
                 return self.tool_error(id, &format!("Invalid custom weights: {}", e));
@@ -2407,23 +2435,23 @@ impl Handlers {
                         SearchStrategy::MultiSpace => {
                             // E2(1), E3(2), E4(3) are weight-gated in search_multi_space_sync
                             // E6(5) participates in scoring (not HNSW recall) when weight > 0
-                            let mut indices = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 13];
+                            let mut indices = vec![0, 1, 2, 3, 5, 6, 7, 8, 9, 13];
                             let label = if E11_ENTITY_ENABLED {
                                 indices.push(10);
-                                "E1+E2*+E3*+E4*+E5+E6+E7+E8+E9+E10+E11+E14 RRF fusion (* = weight-gated)"
+                                "E1+E2*+E3*+E4*+E6+E7+E8+E9+E10+E11+E14 RRF fusion (* = weight-gated)"
                             } else {
-                                "E1+E2*+E3*+E4*+E5+E6+E7+E8+E9+E10+E14 RRF fusion (* = weight-gated, E11 disabled)"
+                                "E1+E2*+E3*+E4*+E6+E7+E8+E9+E10+E14 RRF fusion (* = weight-gated, E5 retired, E11 disabled)"
                             };
                             (indices, label)
                         }
                         SearchStrategy::Pipeline => {
                             // E6(5) participates in Stage 2 scoring when weight > 0
-                            let mut indices = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 13];
+                            let mut indices = vec![0, 1, 2, 3, 5, 6, 7, 8, 9, 13];
                             let label = if E11_ENTITY_ENABLED {
                                 indices.push(10);
-                                "E13 recall -> E1+E2*+E3*+E4*+E5+E6+E7+E8+E9+E10+E11+E14 RRF scoring (* = weight-gated)"
+                                "E13 recall -> E1+E2*+E3*+E4*+E6+E7+E8+E9+E10+E11+E14 RRF scoring (* = weight-gated)"
                             } else {
-                                "E13 recall -> E1+E2*+E3*+E4*+E5+E6+E7+E8+E9+E10+E14 RRF scoring (* = weight-gated, E11 disabled)"
+                                "E13 recall -> E1+E2*+E3*+E4*+E6+E7+E8+E9+E10+E14 RRF scoring (* = weight-gated, E5 retired, E11 disabled)"
                             };
                             (indices, label)
                         }

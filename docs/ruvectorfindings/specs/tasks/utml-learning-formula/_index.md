@@ -1,5 +1,7 @@
 # utml-learning-formula — UTML v1.0 Task Index
 
+> **📊 2026-05-10 STATUS — partial.** `compute_delta_p`, `compute_delta_k`, `compute_delta_omega`, `compute_delta_xi`, `compute_l_step` shipped in `crates/context-graph-mejepa-train/src/learning_signal.rs`. `BatchSampler` with `sampling_weight` reweighting + EMA running gradient mean shipped. Per-step training certificate with all 4 UTML factors shipped. Pairwise MI audit (REQ-UTML-06), continual-backprop dormant-unit re-init (REQ-UTML-07), and state-transfer T detector (REQ-UTML-08) pending. Authoritative status: ../../implementation-plan.md Phase 3+.
+
 > **Level 4.** Atomic task specifications for the **UTML domain** (cross-cutting Phase 3 sub-track: four-factor learning signal `L_step = ΔP × ΔK × ΔΩ × ΔΞ`, sampling weight, training certificate, cycle classifier, consolidation integral M(t), state-transfer T). Authority order: `../../constitution.md` (Level 1) > `../../functional/SPEC-UTML.md` (Level 2) > `../../technical/TECH-UTML.md` (Level 3) > this file (Level 4). Each task is one conceptual change shippable end-to-end with FSV evidence per `docs2/prdtospec.md` §4.
 
 ## Phase scope

@@ -1,5 +1,7 @@
 # SPEC-SELF-HEALING — ME-JEPA-Code Self-Healing Operations (Phase 5)
 
+> **📊 2026-05-10 STATUS:** SHIPPED — see ../implementation-plan.md for the full Phase 5 status.
+
 > **Level 2 — Functional Specification.** Defines WHAT the self-healing domain (Phase 5) must do, not HOW. Implementation details live in `TECH-SELF-HEALING.md`. Conflicts with the constitution resolve to the constitution per `<spec_authority_order>`.
 
 ```xml
@@ -7,10 +9,10 @@
 
 <metadata>
   <title>ME-JEPA-Code Self-Healing — Online observe() with EWC++, Drift Detection, A/B/C Retrain Promotion, Periodic Full Retrain, Continuous Calibration, Witness-Chain Integrity, LoRA Refresh on Plasticity Collapse, Distillation-Based Online Update</title>
-  <status>draft</status>
+  <status>shipped</status>
   <owner>Phase 5 ME-JEPA implementation team (Claude Code outer optimizer)</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-INSTRUMENTS</spec_ref>      <!-- Phase 1 panel substrate -->
     <spec_ref>SPEC-EMBEDDERS</spec_ref>        <!-- 21-embedder substrate; LoRA/distillation infrastructure -->

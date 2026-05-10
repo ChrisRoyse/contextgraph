@@ -1,5 +1,7 @@
 # SPEC-SHIFT-SUBSCRIBER — ME-JEPA-Code Real-Time Reality-Shift → Online Observe Pipeline (Phase 7)
 
+> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 7 status.
+
 > **Level 2 — Functional Specification.** Defines WHAT the shift-subscriber domain (Phase 7) must do, not HOW. Implementation details live in `TECH-SHIFT-SUBSCRIBER.md`. Conflicts with the constitution resolve to the constitution.
 
 ```xml
@@ -7,10 +9,10 @@
 
 <metadata>
   <title>ME-JEPA-Code Shift-Log Subscriber + Phase 7 MCP Tool Surface</title>
-  <status>draft</status>
+  <status>partial</status>
   <owner>Phase 7 ME-JEPA implementation team (Claude Code outer optimizer)</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-INSTRUMENTS</spec_ref>      <!-- Phase 1 panel substrate; the 15-slot panel materialized per shift -->
     <spec_ref>SPEC-AST-CHUNKING</spec_ref>     <!-- 11-language chunker invoked when a shift changes a source file -->

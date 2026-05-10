@@ -218,7 +218,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                             "E8":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Graph structure (imports, dependencies)" },
                             "E9":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Noise-robust matching (typo tolerant)" },
                             "E10": { "type": "number", "minimum": 0, "maximum": 1, "description": "Paraphrase/multimodal similarity" },
-                            "E11": { "type": "number", "minimum": 0, "maximum": 1, "description": "Named entity matching" },
+                            "E11": { "type": "number", "minimum": 0, "maximum": 0, "description": "Disabled; must be 0 until a verified code-symbol entity embedder is installed" },
                             "E12": { "type": "number", "minimum": 0, "maximum": 1, "description": "ColBERT reranking (stage only, weight 0)" },
                             "E13": { "type": "number", "minimum": 0, "maximum": 1, "description": "SPLADE recall (stage only, weight 0)" },
                             "E14": { "type": "number", "minimum": 0, "maximum": 1, "description": "BGE-M3 Dense — multilingual 1024-D CLS-pooled (XLM-RoBERTa-Large, 8192-token context)" }
@@ -230,7 +230,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "description": "Embedders to exclude from fusion (their weight becomes 0, remaining renormalized).",
                         "items": {
                             "type": "string",
-                            "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14"]
+                            "enum": ["E1", "E2", "E3", "E4", "E6", "E7", "E8", "E9", "E10", "E12", "E13", "E14"]
                         }
                     },
                     "useQuantizedPrefilter": {

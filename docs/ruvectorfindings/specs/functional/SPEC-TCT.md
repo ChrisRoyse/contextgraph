@@ -1,5 +1,7 @@
 # SPEC-TCT — Teleological Constellation Training + Gτ Guard
 
+> **📊 2026-05-10 STATUS:** SHIPPED — see ../implementation-plan.md for the full Phase 4b status.
+
 > **Level 2 — Functional Specification.** Defines WHAT the TCT-CONSTELLATION domain (Phase 4b cross-cutting) must do, not HOW. Implementation details live in `TECH-TCT.md`. Conflicts with the constitution resolve to the constitution. Conflicts with `SPEC-UTML.md` (which consumes `constellation_violation_rate` as a ΔΞ component) resolve in favor of this spec for **what** the rate is and how Gτ produces it; SPEC-UTML retains authority over how the rate is consumed inside the L_step formula.
 
 ```xml
@@ -7,10 +9,10 @@
 
 <metadata>
   <title>Teleological Constellation Training + Gτ Guard (Phase 4b cross-cutting)</title>
-  <status>draft</status>
+  <status>shipped</status>
   <owner>Phase 4b ME-JEPA implementation team (Claude Code outer optimizer)</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-CORPUS</spec_ref>            <!-- Phase 0 mutation corpus + Docker oracle bridge; supplies labeled panel triples for centroid construction -->
     <spec_ref>SPEC-AST-CHUNKING</spec_ref>      <!-- 11-language AST-perfect chunker; supplies (entity_type, language, parent_chain_hash, line_start, line_end, file_sha) per chunk -->

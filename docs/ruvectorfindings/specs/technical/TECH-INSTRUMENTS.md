@@ -1,5 +1,7 @@
 # TECH-INSTRUMENTS — ME-JEPA-Code Instruments + 5,120-d Panel (Implementation)
 
+> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 1 status.
+
 > **Level 3 — Technical Specification.** Implements `SPEC-INSTRUMENTS.md`. Defines HOW the instruments + panel are built. Conflicts with constitution / functional spec resolve to those.
 
 ```xml
@@ -7,9 +9,9 @@
 
 <metadata>
   <title>ME-JEPA-Code Instruments + 5,120-d Panel — Implementation</title>
-  <status>draft</status>
+  <status>partial</status>
   <owner>Phase 1 ME-JEPA implementation team</owner>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-INSTRUMENTS</spec_ref>
     <spec_ref>SPEC-AST-CHUNKING</spec_ref>

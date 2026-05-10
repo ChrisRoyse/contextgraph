@@ -1,5 +1,7 @@
 # Phase 7 — MCP Tools Task Index
 
+> **📊 2026-05-10 STATUS — partial.** Live ME-JEPA MCP tools: `mejepa_verify`, `mejepa_predict_latest`, `mejepa_constellation_inspect`, `mejepa_heal_status`, `mejepa_rollback_to`, `mejepa_load_learner_state`, `mejepa_routing_lookup`, `mejepa_vram_budget_report`. Pending: `mejepa_observe_shift`, `mejepa_subscriber_status`, `mejepa_capture_audit`, `mejepa_gc_run`, `mejepa_quota_status`, `mejepa_witness_compress`, `mejepa_eval_run`, `mejepa_eval_ship_gate_status`, `mejepa_active_learning_queue`, `mejepa_active_learning_label`. Authoritative status: ../../implementation-plan.md Phase 7.
+
 > **Domain:** SHIFT-SUBSCRIBER (Phase 7 — 5 new `mcp__cgreality__mejepa_*` MCP tools)
 >
 > **Authority:**

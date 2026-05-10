@@ -1,5 +1,7 @@
 # TECH-CORPUS — ME-JEPA Phase 0 Mutation Corpus + Docker Oracle Bridge (Technical Spec)
 
+> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 0 status.
+
 > **Level 3.** Captures **HOW** to build the Phase 0 corpus domain. Implements the requirements
 > in `../functional/SPEC-CORPUS.md`. When this spec conflicts with the constitution or with
 > SPEC-CORPUS, the higher-authority document wins per `constitution.md` §spec_authority_order.
@@ -9,9 +11,9 @@
 
 <metadata>
   <title>ME-JEPA Phase 0 Corpus Implementation</title>
-  <status>draft</status>
+  <status>partial</status>
   <owner>cc-reality-optimizer (Claude Code outer loop)</owner>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-CORPUS (Level 2 — what to build)</spec_ref>
     <spec_ref>SPEC-CONSTITUTION (Level 1 — immutable rules)</spec_ref>

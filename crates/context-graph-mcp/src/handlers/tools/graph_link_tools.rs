@@ -1022,6 +1022,20 @@ impl Handlers {
                     w[i] = val as f32;
                 }
             }
+            if !context_graph_core::weights::E5_CAUSAL_ENABLED && w[4] > 0.0 {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    "E5 causal embedder is retired and disabled; custom_weights.E5 must be 0.0",
+                );
+            }
+            if !context_graph_core::weights::E11_ENTITY_ENABLED && w[10] > 0.0 {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    "E11 entity embedder is disabled; custom_weights.E11 must be 0.0",
+                );
+            }
             // Validate weights
             if let Err(e) = context_graph_core::weights::validate_weights(&w) {
                 error!(error = %e, "get_unified_neighbors: Invalid custom weights");

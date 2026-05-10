@@ -1,5 +1,7 @@
 # Functional Specification — UTML v1.0 Four-Factor Learning Formula
 
+> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 3 status.
+
 > **Level 2 (functional, *what* to build).** Subordinate to `specs/constitution.md` and the `<utml_v1_invariants>` block therein. When this functional spec conflicts with the constitution, the constitution wins. Implementation details (exact Rust signatures, file layout, persistence schema) live in `specs/technical/TECH-UTML.md`.
 
 ```xml
@@ -7,10 +9,10 @@
 
 <metadata>
   <title>UTML v1.0 Four-Factor Learning Formula (L_step = ΔP × ΔK × ΔΩ × ΔΞ)</title>
-  <status>draft</status>
+  <status>partial</status>
   <owner>ME-JEPA Training Team / Phase 3 (cross-cutting)</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-PHASE3-TRAINING (training loop host)</spec_ref>
     <spec_ref>SPEC-PHASE2-PREDICTOR (produces predicted latent)</spec_ref>

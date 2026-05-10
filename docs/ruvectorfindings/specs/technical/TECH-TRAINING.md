@@ -1,5 +1,7 @@
 # Technical Specification — Phase 3 Training Loop Implementation
 
+> **📊 2026-05-10 STATUS:** SHIPPED — see ../implementation-plan.md for the full Phase 3 status.
+
 > **Level 3 (technical, *how* to build).** Implements `SPEC-TRAINING.md`. Subordinate to `specs/constitution.md` and `SPEC-UTML` / `TECH-UTML`. When this spec conflicts with the constitution or with `SPEC-TRAINING.md`, the higher-level document wins per `<spec_authority_order>`.
 
 ```xml
@@ -7,10 +9,10 @@
 
 <metadata>
   <title>Phase 3 Training Loop Implementation: Trainer + AdamW + Multi-Objective Loss + BatchSampler + Certificates + Holdout Evaluation</title>
-  <status>draft</status>
+  <status>shipped</status>
   <owner>ME-JEPA Training Team / Phase 3</owner>
   <created_date>2026-05-09</created_date>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <implements_specs>
     <spec_ref>SPEC-TRAINING</spec_ref>
   </implements_specs>

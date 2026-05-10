@@ -1,5 +1,7 @@
 # Phase 8 — EVALUATION Task Index
 
+> **📊 2026-05-10 STATUS — partial.** Holdout-eval harness shipped (`train_holdout_eval_fsv` example); per-language stratification, ≥0.95 ship gate, active-learning loop (REQ-EVAL-04), patch-similarity-graph cross-task transfer (REQ-EVAL-05), aux-head distillation back to trunk (REQ-EVAL-06), and weekly evaluation report (REQ-EVAL-07) pending. Authoritative status: ../../implementation-plan.md Phase 8.
+
 > **Level 4.** Atomic task specifications for the **EVALUATION domain** (Phase 8: holdout evaluation, ≥0.95 ship gate, per-language stratification, active learning, cross-task transfer, weekly report). Authority order: `../../constitution.md` (Level 1) > `../../functional/SPEC-EVALUATION.md` (Level 2) > `../../technical/TECH-EVALUATION.md` (Level 3) > this file (Level 4). Each task is one conceptual change shippable end-to-end with FSV evidence per `docs2/prdtospec.md` §4.
 
 ## Phase scope
