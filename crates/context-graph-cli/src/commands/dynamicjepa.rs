@@ -19284,7 +19284,7 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
         compact_command_output(&trajectories),
     );
 
-    let (dataset_id, train_shard_id, val_shard_id, split_counts) =
+    let (dataset_id, _train_shard_id, val_shard_id, test_shard_id, split_counts) =
         compile_all_splits_for_verification(ctx)?;
     let expected_splits = expected_split_counts(&parsed_domain_pack.verification_policy)?;
     assert_split_counts(ctx, &split_counts, &expected_splits)?;
@@ -19354,17 +19354,17 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
     );
 
     let row0 = run_ok_step(
-        "inspect_train_row0",
+        "inspect_val_row0_for_no_surprise",
         format!(
             "context-graph dynamicjepa inspect-dataset --db {} --dataset-id {} --shard-id {} --row 0 --json",
             ctx.db.display(),
             dataset_id,
-            train_shard_id
+            val_shard_id
         ),
         inspect_dataset_command(InspectDatasetArgs {
             db: ctx.db.clone(),
             dataset_id: dataset_id.clone(),
-            shard_id: train_shard_id.clone(),
+            shard_id: val_shard_id.clone(),
             row: 0,
             json: true,
         }),
@@ -19487,25 +19487,25 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
         .insert("record_surprise_expected_none".to_string(), surprise_none);
 
     let surprise_count = if matches!(ctx.domain, VerificationDomain::CounterWorld) {
-        let val_row = run_ok_step(
-            "inspect_val_row0",
+        let far_row = run_ok_step(
+            "inspect_test_row0_for_forced_surprise",
             format!(
                 "context-graph dynamicjepa inspect-dataset --db {} --dataset-id {} --shard-id {} --row 0 --json",
                 ctx.db.display(),
                 dataset_id,
-                val_shard_id
+                test_shard_id
             ),
             inspect_dataset_command(InspectDatasetArgs {
                 db: ctx.db.clone(),
                 dataset_id: dataset_id.clone(),
-                shard_id: val_shard_id.clone(),
+                shard_id: test_shard_id.clone(),
                 row: 0,
                 json: true,
             }),
             ctx,
         )?;
         let far_panel_id = required_str(
-            &val_row,
+            &far_row,
             &["decoded_records", "row", "target_panel_id"],
             ctx,
         )?;
@@ -19931,10 +19931,11 @@ fn verify_pairwise_bitset(
 
 fn compile_all_splits_for_verification(
     ctx: &mut VerificationContext,
-) -> DynamicJepaResult<(String, String, String, BTreeMap<String, u64>)> {
+) -> DynamicJepaResult<(String, String, String, String, BTreeMap<String, u64>)> {
     let mut dataset_id = String::new();
     let mut train_shard_id = String::new();
     let mut val_shard_id = String::new();
+    let mut test_shard_id = String::new();
     let mut split_counts = BTreeMap::new();
     for split in ["train", "val", "test"] {
         let output = run_ok_step(
@@ -19967,6 +19968,8 @@ fn compile_all_splits_for_verification(
             train_shard_id = shard_id;
         } else if split == "val" {
             val_shard_id = shard_id;
+        } else if split == "test" {
+            test_shard_id = shard_id;
         }
         split_counts.insert(
             split.to_string(),
@@ -19977,7 +19980,13 @@ fn compile_all_splits_for_verification(
         ctx.decoded
             .insert(format!("dataset_{split}"), compact_dataset_summary(&output));
     }
-    Ok((dataset_id, train_shard_id, val_shard_id, split_counts))
+    Ok((
+        dataset_id,
+        train_shard_id,
+        val_shard_id,
+        test_shard_id,
+        split_counts,
+    ))
 }
 
 fn get_panel_for_verification(

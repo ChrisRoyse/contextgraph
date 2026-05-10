@@ -18,6 +18,7 @@ pub mod frozen_target;
 pub mod fsv_writer;
 pub mod gates;
 pub mod grad_hook;
+pub mod heal;
 pub mod loss;
 pub mod ood;
 pub mod oracle_head;
@@ -64,6 +65,7 @@ pub use grad_hook::{
     run_gradient_hook, GradStore, GradientHookReport, InstrumentGradHandle, NoOpGradHandle,
     TensorId,
 };
+pub use heal::*;
 pub use loss::{huber_loss_delta_one, vicreg_loss, VarianceFloorHistory};
 pub use ood::*;
 pub use oracle_head::OracleHead;

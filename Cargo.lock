@@ -1121,6 +1121,7 @@ dependencies = [
  "chrono",
  "clap",
  "context-graph-cuda",
+ "context-graph-embeddings",
  "context-graph-mejepa-instruments",
  "context-graph-mejepa-tct",
  "context-graph-witness",
