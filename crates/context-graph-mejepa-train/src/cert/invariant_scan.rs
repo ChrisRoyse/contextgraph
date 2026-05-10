@@ -21,4 +21,3 @@ pub fn scan_target_collapse_invariant(
     }
     Ok(violations)
 }
-

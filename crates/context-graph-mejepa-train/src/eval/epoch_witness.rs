@@ -71,7 +71,9 @@ impl EpochWitnessChain {
             parent_witness_hash: parent,
             self_hash,
             ed25519_signature: sig.to_vec(),
-            layout: "bytes[0..32]=parent_hash;[32..64]=self_hash;[64..72]=epoch_u64_be;[72]=version".into(),
+            layout:
+                "bytes[0..32]=parent_hash;[32..64]=self_hash;[64..72]=epoch_u64_be;[72]=version"
+                    .into(),
         })
     }
 

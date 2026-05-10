@@ -24,8 +24,8 @@ use crate::error::MejepaInferError;
 use crate::gates::{check_source_sha_drift, replay_witness_segment};
 use crate::ood::{compute_ood_score, squared_l2};
 use crate::types::{
-    FailedGate, PatchBundle, RealityPrediction, RealityPredictionBuilder, TaskContext,
-    VerifyVerdict,
+    validate_probability, FailedGate, PatchBundle, RealityPrediction, RealityPredictionBuilder,
+    TaskContext, VerifyVerdict,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -37,6 +37,14 @@ pub struct TrainCertSummary {
     pub witness_offset: u64,
 }
 
+impl TrainCertSummary {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        validate_probability("train_cert.delta_omega", self.delta_omega)?;
+        validate_probability("train_cert.delta_xi", self.delta_xi)?;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleScores {
@@ -44,6 +52,40 @@ pub struct OracleScores {
     pub predicted_test_pass: Vec<f32>,
     pub predicted_runtime_trace: [f32; 32],
     pub granger_attestations: BTreeMap<String, f32>,
+}
+
+impl OracleScores {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        validate_probability("oracle.predicted_oracle_pass", self.predicted_oracle_pass)?;
+        if self.predicted_test_pass.is_empty() {
+            return Err(MejepaInferError::DimMismatch {
+                expected: 1,
+                actual: 0,
+                context: "oracle predicted_test_pass must be non-empty".to_string(),
+            });
+        }
+        for (idx, value) in self.predicted_test_pass.iter().enumerate() {
+            validate_probability(&format!("oracle.predicted_test_pass[{idx}]"), *value)?;
+        }
+        for (idx, value) in self.predicted_runtime_trace.iter().enumerate() {
+            if !value.is_finite() {
+                return Err(MejepaInferError::NanDetected {
+                    nan_source: "oracle.predicted_runtime_trace".to_string(),
+                    detail: format!("predicted_runtime_trace[{idx}] is {value}"),
+                });
+            }
+        }
+        for (key, value) in &self.granger_attestations {
+            if key.trim().is_empty() {
+                return Err(MejepaInferError::InvalidInput {
+                    field: "oracle.granger_attestations".to_string(),
+                    detail: "attestation keys must be non-empty".to_string(),
+                });
+            }
+            validate_probability(&format!("oracle.granger_attestations[{key}]"), *value)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -164,12 +206,14 @@ impl MeJepaCompiler {
         patch: &PatchBundle,
         context: &TaskContext,
     ) -> Result<(RealityPrediction, Panel), MejepaInferError> {
+        patch.validate()?;
         context.validate()?;
         let calibration = self.calibration.load_active()?;
         let (panel_t0, panel_t1, panel_t2) = materialize_inference_panels(patch, context)?;
         let predicted = self.predictor.predict(&panel_t0, &panel_t1)?;
         let target = self.frozen_target.target(&panel_t2)?;
         let oracle = self.oracle_head.score(&predicted)?;
+        oracle.validate()?;
         let ood_score =
             compute_ood_score(predicted.data(), target.data(), calibration.sigma_squared)?;
         if ood_score > self.config.ood_refuse_threshold {
@@ -202,7 +246,7 @@ impl MeJepaCompiler {
         let confidence = calibrated_confidence(
             oracle.predicted_oracle_pass,
             1.0 - ood_score,
-            mean_attestation(&oracle.granger_attestations),
+            mean_attestation(&oracle.granger_attestations, context)?,
             evidence_factor(patch.ast_diff.hunks.len() as u32, 4)?,
             train_health.delta_omega_mean,
             train_health.delta_xi_mean,
@@ -233,6 +277,8 @@ impl MeJepaCompiler {
         patch: &PatchBundle,
         context: &TaskContext,
     ) -> Result<VerifyVerdict, MejepaInferError> {
+        patch.validate()?;
+        context.validate()?;
         if let Some(failed_gate) = check_source_sha_drift(patch, &self.repo_root)? {
             return Ok(VerifyVerdict::EscalateToHuman {
                 reality_prediction: None,
@@ -276,7 +322,7 @@ impl MeJepaCompiler {
                     ood_score: prediction.ood_score,
                     threshold: self.config.ood_refuse_threshold,
                 },
-                gates_passed: 3,
+                gates_passed: 2,
             });
         }
         if prediction.predicted_oracle_pass < self.config.p_test_threshold {
@@ -286,7 +332,7 @@ impl MeJepaCompiler {
                     predicted_oracle_pass: prediction.predicted_oracle_pass,
                     threshold: self.config.p_test_threshold,
                 },
-                gates_passed: 4,
+                gates_passed: 3,
             });
         }
         if prediction.outcome_set.outcomes.len() > self.config.outcome_set_max {
@@ -296,7 +342,7 @@ impl MeJepaCompiler {
                     outcome_set_len: prediction.outcome_set.outcomes.len(),
                     max_len: self.config.outcome_set_max,
                 },
-                gates_passed: 5,
+                gates_passed: 4,
             });
         }
         let rejected = prediction
@@ -312,7 +358,7 @@ impl MeJepaCompiler {
                     rejected,
                     threshold: self.config.p_threshold,
                 },
-                gates_passed: 6,
+                gates_passed: 5,
             });
         }
 
@@ -331,14 +377,14 @@ impl MeJepaCompiler {
                 failed_gate: FailedGate::ConstellationGuardRejected {
                     reason: constellation.reason,
                 },
-                gates_passed: 7,
+                gates_passed: 6,
             });
         }
 
         self.store.write_live_prediction(&prediction)?;
         Ok(VerifyVerdict::Approve {
             reality_prediction: prediction,
-            gates_passed: 8,
+            gates_passed: 7,
         })
     }
 
@@ -439,11 +485,25 @@ fn prediction_id(
     id
 }
 
-fn mean_attestation(attestations: &BTreeMap<String, f32>) -> f32 {
+fn mean_attestation(
+    attestations: &BTreeMap<String, f32>,
+    context: &TaskContext,
+) -> Result<f32, MejepaInferError> {
+    for citation in &context.skill_citations {
+        if !attestations.contains_key(&citation.skill_id.0) {
+            return Err(MejepaInferError::InvalidInput {
+                field: "oracle.granger_attestations".to_string(),
+                detail: format!(
+                    "missing Granger attestation for cited skill {}",
+                    citation.skill_id.0
+                ),
+            });
+        }
+    }
     if attestations.is_empty() {
-        1.0
+        Ok(1.0)
     } else {
-        attestations.values().sum::<f32>() / attestations.len() as f32
+        Ok(attestations.values().sum::<f32>() / attestations.len() as f32)
     }
 }
 

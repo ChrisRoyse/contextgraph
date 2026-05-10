@@ -64,7 +64,10 @@ impl BatchSampler {
             ("overrides", overrides.len()),
             ("ages_days", ages_days.len()),
             ("task_ids", task_ids.len()),
-            ("patch_similarity_graph.neighbors", patch_similarity_graph.neighbors.len()),
+            (
+                "patch_similarity_graph.neighbors",
+                patch_similarity_graph.neighbors.len(),
+            ),
         ] {
             if len != n {
                 return Err(Self::config_error(
@@ -183,7 +186,10 @@ impl BatchSampler {
         self.weighted_pick_from_pool(&pool).map(Some)
     }
 
-    pub(crate) fn weighted_pick_from_pool(&mut self, pool: &[usize]) -> Result<usize, TrainerError> {
+    pub(crate) fn weighted_pick_from_pool(
+        &mut self,
+        pool: &[usize],
+    ) -> Result<usize, TrainerError> {
         if pool.is_empty() {
             return Err(Self::config_error("pool", "weighted pool is empty"));
         }
@@ -266,7 +272,10 @@ mod tests {
         let mut a = sampler();
         let mut b = sampler();
         for _ in 0..10 {
-            assert_eq!(a.next_batch(None, 16).unwrap(), b.next_batch(None, 16).unwrap());
+            assert_eq!(
+                a.next_batch(None, 16).unwrap(),
+                b.next_batch(None, 16).unwrap()
+            );
         }
     }
 
@@ -280,4 +289,3 @@ mod tests {
         assert_eq!(expected, a.next_batch(None, 16).unwrap());
     }
 }
-

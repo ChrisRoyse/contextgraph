@@ -1,6 +1,6 @@
 use crate::cert::chain::{
-    body_canonical_json, canonical_json, cf, compute_merkle_root, compute_self_hash, last_cert_hash,
-    FSYNC_INTERVAL, GENESIS_PARENT_HASH,
+    body_canonical_json, canonical_json, cf, compute_merkle_root, compute_self_hash,
+    last_cert_hash, FSYNC_INTERVAL, GENESIS_PARENT_HASH,
 };
 use crate::cert::TrainingCertificate;
 use crate::error::TrainerError;

@@ -92,11 +92,17 @@ impl AuxHeadDistiller {
 }
 
 fn tensor_probs(tensor: &Tensor) -> Result<Vec<f32>, TrainerError> {
-    let vals = tensor.to_dtype(candle_core::DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
+    let vals = tensor
+        .to_dtype(candle_core::DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
     softmax(&vals)
 }
 
-fn kl_from_probs_and_logits(teacher_probs: &[f32], student_logits: &Tensor) -> Result<f32, TrainerError> {
+fn kl_from_probs_and_logits(
+    teacher_probs: &[f32],
+    student_logits: &Tensor,
+) -> Result<f32, TrainerError> {
     let student_vals = student_logits
         .to_dtype(candle_core::DType::F32)?
         .flatten_all()?

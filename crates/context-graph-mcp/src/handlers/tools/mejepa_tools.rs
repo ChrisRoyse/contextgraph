@@ -21,6 +21,7 @@ use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use crate::tools::names as tool_names;
 
 const ENV_TCT_DB: &str = "CONTEXTGRAPH_MEJEPA_TCT_DB";
+const ENV_ALLOW_DETERMINISTIC_VERIFY: &str = "CONTEXTGRAPH_MEJEPA_ALLOW_DETERMINISTIC_VERIFY";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -70,11 +71,15 @@ impl Handlers {
                 );
             }
         };
-        if request.context.problem_statement.len() > 65_536 {
+        if let Err(err) = request
+            .patch
+            .validate()
+            .and_then(|_| request.context.validate())
+        {
             return self.tool_error_typed(
                 id,
                 ToolErrorKind::Validation,
-                "problem_statement exceeds 65536 bytes",
+                &format!("{}: {err}", err.code()),
             );
         }
         let db_path = match infer_db_path() {
@@ -89,6 +94,7 @@ impl Handlers {
             "ME-JEPA verify"
         );
         let result = (|| {
+            ensure_deterministic_verify_allowed()?;
             let db = open_infer_rocksdb(&db_path)?;
             let calibration = CalibrationStore::new(db.clone(), 30)?;
             let store = Arc::new(RocksDbInferStore::new(db));
@@ -104,7 +110,7 @@ impl Handlers {
                 response["provenance"] = json!({
                     "codeVersion": env!("CARGO_PKG_VERSION"),
                     "dbPath": db_path,
-                    "mode": "phase4_inference"
+                    "mode": "deterministic_phase4_harness"
                 });
             }
             Ok::<serde_json::Value, context_graph_mejepa::MejepaInferError>(response)
@@ -157,6 +163,13 @@ impl Handlers {
                 &format!("sessionId decode failed: {err}"),
             );
         }
+        if !(1..=1000).contains(&request.limit) {
+            return self.tool_error_typed(
+                id,
+                ToolErrorKind::Validation,
+                "limit must be in [1, 1000]",
+            );
+        }
         let db_path = match infer_db_path() {
             Ok(path) => path,
             Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
@@ -167,7 +180,7 @@ impl Handlers {
             let predictions = context_graph_mejepa::MejepaStore::read_live_predictions(
                 &store,
                 session_id,
-                request.limit.clamp(1, 1000),
+                request.limit,
             )?;
             Ok::<serde_json::Value, context_graph_mejepa::MejepaInferError>(json!({
                 "predictions": predictions
@@ -280,6 +293,27 @@ fn infer_db_path() -> Result<PathBuf, String> {
         })
 }
 
+fn ensure_deterministic_verify_allowed() -> Result<(), context_graph_mejepa::MejepaInferError> {
+    match std::env::var(ENV_ALLOW_DETERMINISTIC_VERIFY) {
+        Ok(value) if value.eq_ignore_ascii_case("true") || value == "1" => Ok(()),
+        Ok(value) => Err(context_graph_mejepa::MejepaInferError::FeatureDisabled {
+            feature: format!(
+                "deterministic ME-JEPA verify harness requires {ENV_ALLOW_DETERMINISTIC_VERIFY}=true or 1; observed {value:?}"
+            ),
+        }),
+        Err(std::env::VarError::NotPresent) => {
+            Err(context_graph_mejepa::MejepaInferError::FeatureDisabled {
+                feature: format!(
+                    "deterministic ME-JEPA verify harness requires {ENV_ALLOW_DETERMINISTIC_VERIFY}=true or 1"
+                ),
+            })
+        }
+        Err(err) => Err(context_graph_mejepa::MejepaInferError::FeatureDisabled {
+            feature: format!("failed to read {ENV_ALLOW_DETERMINISTIC_VERIFY}: {err}"),
+        }),
+    }
+}
+
 fn parse_runtime_versions(
     input: &std::collections::BTreeMap<String, String>,
 ) -> Result<std::collections::BTreeMap<EmbedderId, [u8; 32]>, String> {
@@ -336,6 +370,7 @@ mod mejepa_constellation_inspect_tests {
     fn env_guard() -> MutexGuard<'static, ()> {
         let guard = ENV_LOCK.lock().unwrap();
         std::env::remove_var(ENV_TCT_DB);
+        std::env::remove_var(ENV_ALLOW_DETERMINISTIC_VERIFY);
         std::env::remove_var(context_graph_mejepa_tct::ENV_ALLOW_STALE);
         std::env::remove_var(context_graph_mejepa_tct::ENV_MAX_AGE_DAYS);
         guard
@@ -557,5 +592,14 @@ mod mejepa_constellation_inspect_tests {
         let runtime = versions(8);
         let err = run_constellation_inspect(temp.path(), None, &runtime).unwrap_err();
         assert_eq!(err.code(), "MEJEPA_TCT_MISSING_CENTROID");
+    }
+
+    #[test]
+    fn mejepa_verify_requires_explicit_deterministic_harness_opt_in() {
+        let _guard = env_guard();
+        let err = ensure_deterministic_verify_allowed().unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_FEATURE_DISABLED");
+        std::env::set_var(ENV_ALLOW_DETERMINISTIC_VERIFY, "true");
+        ensure_deterministic_verify_allowed().unwrap();
     }
 }

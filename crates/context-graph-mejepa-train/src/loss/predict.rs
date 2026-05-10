@@ -15,4 +15,3 @@ pub fn l_predict(predicted: &Tensor, target_detached: &Tensor) -> Result<Tensor,
     let target = target_detached.detach();
     Ok((predicted - &target)?.sqr()?.mean_all()?)
 }
-

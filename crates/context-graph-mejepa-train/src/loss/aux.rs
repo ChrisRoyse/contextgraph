@@ -9,8 +9,14 @@ pub fn l_mse(predicted: &Tensor, actual: &Tensor) -> Result<Tensor, TrainerError
 pub fn l_binary_ce(logits: &Tensor, actual: &Tensor) -> Result<Tensor, TrainerError> {
     ensure_same_shape(logits, actual, "binary_ce")?;
     let device = logits.device().clone();
-    let logit_vals = logits.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
-    let actual_vals = actual.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
+    let logit_vals = logits
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
+    let actual_vals = actual
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
     let mut loss = 0.0f32;
     for (logit, y) in logit_vals.iter().zip(actual_vals.iter()) {
         if !logit.is_finite() || !y.is_finite() {
@@ -29,11 +35,20 @@ pub fn l_cluster_ce(logits: &Tensor, class_ids: &Tensor) -> Result<Tensor, Train
     }
     let batch = dims[0];
     let classes = dims[1];
-    let labels = class_ids.to_dtype(DType::U32)?.flatten_all()?.to_vec1::<u32>()?;
+    let labels = class_ids
+        .to_dtype(DType::U32)?
+        .flatten_all()?
+        .to_vec1::<u32>()?;
     if labels.len() != batch {
-        return Err(shape_error("cluster_ce", "label count does not match batch"));
+        return Err(shape_error(
+            "cluster_ce",
+            "label count does not match batch",
+        ));
     }
-    let vals = logits.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
+    let vals = logits
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
     let mut total = 0.0f32;
     for row in 0..batch {
         let label = labels[row] as usize;
@@ -46,18 +61,33 @@ pub fn l_cluster_ce(logits: &Tensor, class_ids: &Tensor) -> Result<Tensor, Train
     Tensor::new(total / batch.max(1) as f32, logits.device()).map_err(TrainerError::from)
 }
 
-pub fn l_cluster_contrastive(embedding: &Tensor, class_ids: &Tensor) -> Result<Tensor, TrainerError> {
+pub fn l_cluster_contrastive(
+    embedding: &Tensor,
+    class_ids: &Tensor,
+) -> Result<Tensor, TrainerError> {
     let dims = embedding.dims();
     if dims.len() != 2 {
-        return Err(shape_error("cluster_contrastive", format!("rank {:?}", dims)));
+        return Err(shape_error(
+            "cluster_contrastive",
+            format!("rank {:?}", dims),
+        ));
     }
     let batch = dims[0];
     let dim = dims[1];
-    let labels = class_ids.to_dtype(DType::U32)?.flatten_all()?.to_vec1::<u32>()?;
+    let labels = class_ids
+        .to_dtype(DType::U32)?
+        .flatten_all()?
+        .to_vec1::<u32>()?;
     if labels.len() != batch {
-        return Err(shape_error("cluster_contrastive", "label count does not match batch"));
+        return Err(shape_error(
+            "cluster_contrastive",
+            "label count does not match batch",
+        ));
     }
-    let vals = embedding.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
+    let vals = embedding
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
     let mut loss = 0.0f32;
     let mut pairs = 0usize;
     for i in 0..batch {
@@ -89,8 +119,14 @@ pub fn l_operator_match(
     }
     let batch = dims[0];
     let classes = dims[1];
-    let logit_vals = logits.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
-    let gold_vals = gold_probs.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
+    let logit_vals = logits
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
+    let gold_vals = gold_probs
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
     let mut total = 0.0f32;
     let mut count = 0usize;
     for row in 0..batch {
@@ -111,7 +147,10 @@ pub fn l_operator_match(
 
 fn ensure_same_shape(a: &Tensor, b: &Tensor, name: &'static str) -> Result<(), TrainerError> {
     if a.dims() != b.dims() {
-        return Err(shape_error(name, format!("shape {:?} != {:?}", a.dims(), b.dims())));
+        return Err(shape_error(
+            name,
+            format!("shape {:?} != {:?}", a.dims(), b.dims()),
+        ));
     }
     Ok(())
 }

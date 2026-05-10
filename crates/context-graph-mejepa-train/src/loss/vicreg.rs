@@ -39,9 +39,11 @@ fn validate_rank2(tensor: &Tensor) -> Result<(), TrainerError> {
     if tensor.dims().len() != 2 || tensor.dims()[0] < 2 || tensor.dims()[1] == 0 {
         return Err(TrainerError::new(
             TrainerErrorCode::MejepaTrainConfigInvalid,
-            format!("VICReg expects rank-2 tensor with batch>=2, got {:?}", tensor.dims()),
+            format!(
+                "VICReg expects rank-2 tensor with batch>=2, got {:?}",
+                tensor.dims()
+            ),
         ));
     }
     Ok(())
 }
-

@@ -120,7 +120,13 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> Result<f32, TctError> {
     }
     let denom = na.sqrt() * nb.sqrt();
     if denom < 1.0e-12 {
-        return Ok(0.0);
+        return Err(TctError::ConstellationViolation {
+            detail: format!(
+                "cosine_similarity zero-norm vector: norm_a={:.6e} norm_b={:.6e}",
+                na.sqrt(),
+                nb.sqrt()
+            ),
+        });
     }
     let value = (dot / denom) as f32;
     if !value.is_finite() {

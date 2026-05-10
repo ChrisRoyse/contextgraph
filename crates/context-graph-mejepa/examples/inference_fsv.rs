@@ -5,14 +5,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use context_graph_mejepa::calibration::{count_cf, CF_MEJEPA_LIVE_PREDICTIONS};
+use context_graph_mejepa::calibration::{
+    count_cf, CF_MEJEPA_CALIBRATION_HISTORY, CF_MEJEPA_LIVE_PREDICTIONS,
+};
 use context_graph_mejepa::cli::write_json_0600;
 use context_graph_mejepa::conformal::{calibrate_tau, non_conformity_score, CalibrationExample};
 use context_graph_mejepa::fixtures::fixture_patch_context;
 use context_graph_mejepa::ood::{ood_score_from_norm_sq, separation_auc, tune_sigma_squared};
 use context_graph_mejepa::{
-    build_deterministic_compiler, open_infer_rocksdb, CalibrationStore, FailedGate, Language,
-    MeJepaInferConfig, OracleOutcome, RocksDbInferStore, VerifyVerdict,
+    build_deterministic_compiler, open_infer_rocksdb, valid_witness_segment, AstDiff,
+    CalibrationStore, FailedGate, Language, MeJepaInferConfig, OracleOutcome, PatchBundle,
+    RocksDbInferStore, VerifyVerdict,
 };
 use serde::{Deserialize, Serialize};
 
@@ -77,6 +80,28 @@ struct LatencyHistogram {
     per_gate_p50_ms: BTreeMap<String, f32>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EdgeCaseAudit {
+    source_of_truth: String,
+    cases: Vec<EdgeCaseRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EdgeCaseRecord {
+    case_name: String,
+    synthetic_input: String,
+    before_live_predictions: u64,
+    before_calibration_records: u64,
+    action: String,
+    expected: String,
+    observed: String,
+    after_live_predictions: u64,
+    after_calibration_records: u64,
+    pass: bool,
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     setup_fsv_dir()?;
     let db_path = PathBuf::from(FSV_DIR).join("inference-rocksdb");
@@ -120,6 +145,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let verify = write_verify_evidence(&compiler, &repo_root, &db)?;
     let ood = write_ood_evidence()?;
     let latency = write_latency_histogram(&compiler, &repo_root)?;
+    let edge_cases = write_edge_case_audit(&compiler, &repo_root, &db, infer_store.as_ref())?;
 
     re_read_and_assert("verify-evidence.json", &verify, |value: &VerifyEvidence| {
         assert_eq!(value.fixtures.len(), 8);
@@ -146,6 +172,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             assert!(value.p50_ms < 100.0, "p50={}ms", value.p50_ms);
         },
     )?;
+    re_read_and_assert(
+        "edge-case-audit.json",
+        &edge_cases,
+        |value: &EdgeCaseAudit| {
+            assert_eq!(value.cases.len(), 4);
+            assert!(value.cases.iter().all(|record| record.pass));
+        },
+    )?;
 
     println!("Phase 4 inference FSV complete");
     println!("source_of_truth_db={}", db_path.display());
@@ -153,6 +187,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("calibration_tau={}", conformal.tau);
     println!("ood_auc={}", ood.auc);
     println!("latency_p50_ms={}", latency.p50_ms);
+    println!("edge_cases={}", edge_cases.cases.len());
     Ok(())
 }
 
@@ -186,7 +221,7 @@ fn write_verify_evidence(
     for (case_name, scenario) in cases.drain(..) {
         let (mut patch, context) = fixture_patch_context(repo_root, scenario)?;
         if case_name == "witness_chain_broken" {
-            patch.witness_chain_segment.truncate(72);
+            patch.witness_chain_segment[context_graph_witness::WITNESS_ENTRY_SIZE] ^= 0x7f;
         }
         if case_name == "source_sha_drift" {
             let touched = repo_root.join(&patch.ast_diff.hunks[0].path);
@@ -357,6 +392,134 @@ fn write_latency_histogram(
         &evidence,
     )?;
     Ok(evidence)
+}
+
+fn write_edge_case_audit(
+    compiler: &context_graph_mejepa::MeJepaCompiler,
+    repo_root: &Path,
+    db: &rocksdb::DB,
+    store: &RocksDbInferStore,
+) -> Result<EdgeCaseAudit, Box<dyn Error>> {
+    let mut records = Vec::new();
+
+    let (_, context) = fixture_patch_context(repo_root, "edge_empty_hunks")?;
+    let empty_patch = PatchBundle {
+        ast_diff: AstDiff { hunks: Vec::new() },
+        witness_chain_segment: valid_witness_segment(),
+        commit_message: "synthetic edge empty hunks".to_string(),
+        patch_sha: [11; 32],
+    };
+    records.push(edge_case_record(
+        "empty_ast_hunks",
+        "PatchBundle.ast_diff.hunks=[]",
+        db,
+        "compiler.verify(empty_patch)",
+        "MEJEPA_INFER_INVALID_INPUT and no RocksDB mutation",
+        || {
+            compiler
+                .verify(&empty_patch, &context)
+                .unwrap_err()
+                .code()
+                .to_string()
+        },
+    )?);
+
+    let (mut unsafe_path_patch, unsafe_path_context) =
+        fixture_patch_context(repo_root, "edge_path_escape")?;
+    unsafe_path_patch.ast_diff.hunks[0].path = PathBuf::from("../outside.py");
+    records.push(edge_case_record(
+        "path_escape",
+        "PatchBundle.ast_diff.hunks[0].path=../outside.py",
+        db,
+        "compiler.verify(path_escape_patch)",
+        "MEJEPA_INFER_INVALID_INPUT and no RocksDB mutation",
+        || {
+            compiler
+                .verify(&unsafe_path_patch, &unsafe_path_context)
+                .unwrap_err()
+                .code()
+                .to_string()
+        },
+    )?);
+
+    records.push(edge_case_record(
+        "predict_latest_limit_max_plus_one",
+        "session_id=09090909090909090909090909090909 limit=1001",
+        db,
+        "RocksDbInferStore::read_live_predictions(limit=1001)",
+        "MEJEPA_INFER_INVALID_INPUT and no RocksDB mutation",
+        || {
+            context_graph_mejepa::MejepaStore::read_live_predictions(store, [9; 16], 1001)
+                .unwrap_err()
+                .code()
+                .to_string()
+        },
+    )?);
+
+    let (mut witness_patch, witness_context) =
+        fixture_patch_context(repo_root, "edge_witness_corrupt")?;
+    witness_patch.witness_chain_segment[context_graph_witness::WITNESS_ENTRY_SIZE] ^= 0x7f;
+    records.push(edge_case_record(
+        "corrupt_witness_same_size",
+        "valid witness length with one flipped byte in second entry",
+        db,
+        "compiler.verify(corrupt_witness_patch)",
+        "WitnessChainBroken verdict and no RocksDB mutation",
+        || match compiler.verify(&witness_patch, &witness_context).unwrap() {
+            VerifyVerdict::EscalateToHuman {
+                failed_gate: FailedGate::WitnessChainBroken { .. },
+                gates_passed,
+                ..
+            } => format!("witness_chain_broken:gates_passed={gates_passed}"),
+            other => format!("unexpected:{other:?}"),
+        },
+    )?);
+
+    let audit = EdgeCaseAudit {
+        source_of_truth: format!(
+            "{CF_MEJEPA_LIVE_PREDICTIONS} and {CF_MEJEPA_CALIBRATION_HISTORY} in RocksDB"
+        ),
+        cases: records,
+    };
+    write_json_0600(&PathBuf::from(FSV_DIR).join("edge-case-audit.json"), &audit)?;
+    Ok(audit)
+}
+
+fn edge_case_record<F>(
+    case_name: &str,
+    synthetic_input: &str,
+    db: &rocksdb::DB,
+    action: &str,
+    expected: &str,
+    trigger: F,
+) -> Result<EdgeCaseRecord, Box<dyn Error>>
+where
+    F: FnOnce() -> String,
+{
+    let before_live = count_cf(db, CF_MEJEPA_LIVE_PREDICTIONS)?;
+    let before_calibration = count_cf(db, CF_MEJEPA_CALIBRATION_HISTORY)?;
+    let observed = trigger();
+    let after_live = count_cf(db, CF_MEJEPA_LIVE_PREDICTIONS)?;
+    let after_calibration = count_cf(db, CF_MEJEPA_CALIBRATION_HISTORY)?;
+    let expected_signal = if case_name == "corrupt_witness_same_size" {
+        observed.starts_with("witness_chain_broken")
+    } else {
+        observed == "MEJEPA_INFER_INVALID_INPUT"
+    };
+    Ok(EdgeCaseRecord {
+        case_name: case_name.to_string(),
+        synthetic_input: synthetic_input.to_string(),
+        before_live_predictions: before_live,
+        before_calibration_records: before_calibration,
+        action: action.to_string(),
+        expected: expected.to_string(),
+        observed,
+        after_live_predictions: after_live,
+        after_calibration_records: after_calibration,
+        pass: expected_signal
+            && before_live == after_live
+            && before_calibration == after_calibration,
+    })
 }
 
 fn calibration_examples() -> Vec<CalibrationExample> {

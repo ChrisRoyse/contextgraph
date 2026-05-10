@@ -88,7 +88,10 @@ pub struct EvalHoldoutArgs {
 pub fn run_train(args: TrainArgs) -> ExitCode {
     match run_train_inner(args) {
         Ok(value) => {
-            println!("{}", serde_json::to_string(&value).expect("serialize result"));
+            println!(
+                "{}",
+                serde_json::to_string(&value).expect("serialize result")
+            );
             ExitCode::from(0)
         }
         Err(err) => exit_for_error(err),
@@ -102,11 +105,17 @@ pub fn run_verify_chain(args: VerifyChainArgs) -> ExitCode {
         verify_chain(&db, CF_MEJEPA_TRAIN_CERTS, from, to)
     }) {
         Ok(report) if report.broken_at.is_none() => {
-            println!("{}", serde_json::to_string(&report).expect("serialize report"));
+            println!(
+                "{}",
+                serde_json::to_string(&report).expect("serialize report")
+            );
             ExitCode::from(0)
         }
         Ok(report) => {
-            eprintln!("{}", json!({"code":"MEJEPA_TRAIN_CERT_CHAIN_BROKEN","report": report}));
+            eprintln!(
+                "{}",
+                json!({"code":"MEJEPA_TRAIN_CERT_CHAIN_BROKEN","report": report})
+            );
             ExitCode::from(1)
         }
         Err(err) => exit_for_error(err),

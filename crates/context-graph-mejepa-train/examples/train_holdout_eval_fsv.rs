@@ -38,7 +38,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let calibration = CalibrationDataset {
         examples: synthetic_examples(24)?,
     };
-    let report = evaluator.evaluate(&EchoPredictor, &SkewedOracle, &dataset, &calibration, 1000, true, 0.75)?;
+    let report = evaluator.evaluate(
+        &EchoPredictor,
+        &SkewedOracle,
+        &dataset,
+        &calibration,
+        1000,
+        true,
+        0.75,
+    )?;
     let stored = db
         .get_cf(
             db.cf_handle(CF_MEJEPA_HOLDOUT_REPORTS).expect("cf"),
@@ -52,7 +60,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(report.per_language_accuracy.len(), 11);
     assert!(report.generic_only_warning.is_some());
     assert_eq!(report.phase3_dod_passed, Some(true));
-    let best = promote_best(Path::new(FSV_DIR), 1000, report.prediction_oracle_agreement, 0.0, 0.005)?;
+    let best = promote_best(
+        Path::new(FSV_DIR),
+        1000,
+        report.prediction_oracle_agreement,
+        0.0,
+        0.005,
+    )?;
     let evidence = json!({
         "source_of_truth": DB_DIR,
         "cf": CF_MEJEPA_HOLDOUT_REPORTS,
@@ -63,20 +77,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "generic_only_warning": report.generic_only_warning,
         "best_safetensors_path": best
     });
-    write_0600(Path::new(FSV_DIR).join("holdout-eval-evidence.json"), &evidence)?;
+    write_0600(
+        Path::new(FSV_DIR).join("holdout-eval-evidence.json"),
+        &evidence,
+    )?;
     Ok(())
 }
 
 struct EchoPredictor;
 impl PredictorForward for EchoPredictor {
-    fn forward(&self, panel_t01: &Tensor) -> Result<Tensor, context_graph_mejepa_train::TrainerError> {
+    fn forward(
+        &self,
+        panel_t01: &Tensor,
+    ) -> Result<Tensor, context_graph_mejepa_train::TrainerError> {
         Ok(panel_t01.clone())
     }
 }
 
 struct SkewedOracle;
 impl OracleHead for SkewedOracle {
-    fn predict(&self, predicted_latent: &Tensor) -> Result<OraclePrediction, context_graph_mejepa_train::TrainerError> {
+    fn predict(
+        &self,
+        predicted_latent: &Tensor,
+    ) -> Result<OraclePrediction, context_graph_mejepa_train::TrainerError> {
         let vals = predicted_latent
             .to_dtype(candle_core::DType::F32)?
             .flatten_all()?
@@ -88,7 +111,11 @@ impl OracleHead for SkewedOracle {
         Ok(OraclePrediction {
             pass_to_pass_resolved: predicted,
             conformal_set: vec![OracleClass::Pass, OracleClass::Fail],
-            class_logits: if predicted { vec![0.0, 3.0] } else { vec![3.0, 0.0] },
+            class_logits: if predicted {
+                vec![0.0, 3.0]
+            } else {
+                vec![3.0, 0.0]
+            },
         })
     }
 }
@@ -109,7 +136,10 @@ fn synthetic_examples(n: usize) -> Result<Vec<HoldoutExample>, candle_core::Erro
     Ok(out)
 }
 
-fn write_0600(path: impl AsRef<Path>, value: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
+fn write_0600(
+    path: impl AsRef<Path>,
+    value: &serde_json::Value,
+) -> Result<(), Box<dyn std::error::Error>> {
     let path = path.as_ref();
     fs::write(path, serde_json::to_vec_pretty(value)?)?;
     let mut perms = fs::metadata(path)?.permissions();
@@ -120,4 +150,3 @@ fn write_0600(path: impl AsRef<Path>, value: &serde_json::Value) -> Result<(), B
     assert_eq!(&reread, value);
     Ok(())
 }
-

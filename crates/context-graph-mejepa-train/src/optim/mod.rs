@@ -1,9 +1,7 @@
 use crate::config::TrainingConfig;
 use crate::error::{TrainerError, TrainerErrorCode};
 use candle_core::{Tensor, Var};
-use context_graph_embeddings::training::optimizer::{
-    AdamW, AdamWConfig, ParamGroup,
-};
+use context_graph_embeddings::training::optimizer::{AdamW, AdamWConfig, ParamGroup};
 use serde_json::json;
 
 pub const GRAD_EXPLODE_RATIO_THRESHOLD: f32 = 100.0;
@@ -40,15 +38,18 @@ pub fn build_adamw(
     };
     let mut adamw = AdamW::new(adam_config);
     for param in predictor_params {
-        adamw.add_param(Var::from_tensor(&param)?, ParamGroup::Projection)
+        adamw
+            .add_param(Var::from_tensor(&param)?, ParamGroup::Projection)
             .map_err(|err| config_error("predictor_params", err.to_string()))?;
     }
     for param in lora_params {
-        adamw.add_param(Var::from_tensor(&param)?, ParamGroup::Lora)
+        adamw
+            .add_param(Var::from_tensor(&param)?, ParamGroup::Lora)
             .map_err(|err| config_error("lora_params", err.to_string()))?;
     }
     for param in aux_params {
-        adamw.add_param(Var::from_tensor(&param)?, ParamGroup::Markers)
+        adamw
+            .add_param(Var::from_tensor(&param)?, ParamGroup::Markers)
             .map_err(|err| config_error("aux_params", err.to_string()))?;
     }
     if !layernorm_bias_params.is_empty() {
@@ -88,7 +89,10 @@ pub fn effective_warmup_steps(config_warmup: u32, total_steps: u64) -> u32 {
 
 pub fn nan_inf_finite_check(grads: &[Tensor]) -> Result<(), TrainerError> {
     for (i, grad) in grads.iter().enumerate() {
-        let vals = grad.to_dtype(candle_core::DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
+        let vals = grad
+            .to_dtype(candle_core::DType::F32)?
+            .flatten_all()?
+            .to_vec1::<f32>()?;
         if let Some((offset, value)) = vals
             .iter()
             .enumerate()
@@ -178,7 +182,10 @@ mod tests {
     #[test]
     fn finite_check_rejects_nan() {
         let t = Tensor::from_slice(&[1f32, f32::NAN], 2, &Device::Cpu).unwrap();
-        assert_eq!(nan_inf_finite_check(&[t]).unwrap_err().code(), "MEJEPA_TRAIN_LOSS_NAN");
+        assert_eq!(
+            nan_inf_finite_check(&[t]).unwrap_err().code(),
+            "MEJEPA_TRAIN_LOSS_NAN"
+        );
     }
 
     #[test]

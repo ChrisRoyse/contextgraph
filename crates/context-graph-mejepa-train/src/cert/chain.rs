@@ -165,7 +165,10 @@ fn sort_value(value: Value) -> Value {
             let mut keys = map.keys().cloned().collect::<Vec<_>>();
             keys.sort();
             for key in keys {
-                sorted.insert(key.clone(), sort_value(map.get(&key).cloned().expect("key exists")));
+                sorted.insert(
+                    key.clone(),
+                    sort_value(map.get(&key).cloned().expect("key exists")),
+                );
             }
             Value::Object(sorted)
         }
@@ -177,4 +180,3 @@ fn sort_value(value: Value) -> Value {
 fn chain_error(step: u64, message: impl Into<String>) -> TrainerError {
     TrainerError::new(TrainerErrorCode::MejepaTrainCertChainBroken, message).with_step(step)
 }
-

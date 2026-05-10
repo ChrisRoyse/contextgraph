@@ -36,7 +36,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     for file in files {
         let path = Path::new(FSV_DIR).join(file);
         let value: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
-        assert!(value.is_object(), "{file} must contain JSON object evidence");
+        assert!(
+            value.is_object(),
+            "{file} must contain JSON object evidence"
+        );
         assert_eq!(fs::metadata(&path)?.permissions().mode() & 0o777, 0o600);
     }
     let summary = json!({
@@ -48,7 +51,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "holdout": "/tmp/contextgraph-mejepa-train-fsv/holdout-rocksdb"
         }
     });
-    write_0600(Path::new(FSV_DIR).join("training-fsv-summary.json"), &summary)?;
+    write_0600(
+        Path::new(FSV_DIR).join("training-fsv-summary.json"),
+        &summary,
+    )?;
     Ok(())
 }
 
@@ -101,10 +107,16 @@ fn write_utml_evidence() -> Result<(), Box<dyn std::error::Error>> {
         "passes": signal.delta_xi_components.target_collapse == 0.0
             && (0.0..=1.0).contains(&signal.l_step)
     });
-    write_0600(Path::new(FSV_DIR).join("utml-l-step-evidence.json"), &evidence)
+    write_0600(
+        Path::new(FSV_DIR).join("utml-l-step-evidence.json"),
+        &evidence,
+    )
 }
 
-fn write_0600(path: impl AsRef<Path>, value: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
+fn write_0600(
+    path: impl AsRef<Path>,
+    value: &serde_json::Value,
+) -> Result<(), Box<dyn std::error::Error>> {
     let path = path.as_ref();
     fs::write(path, serde_json::to_vec_pretty(value)?)?;
     let mut perms = fs::metadata(path)?.permissions();

@@ -88,7 +88,29 @@ impl CalibrationStore {
         let cf = cf(&self.db, CF_MEJEPA_CALIBRATION_HISTORY)?;
         let key = calibration_key(record);
         let value = bincode::serialize(record)?;
-        self.db.put_cf(cf, key, value)?;
+        self.db.put_cf(cf, &key, &value)?;
+        let readback = self
+            .db
+            .get_cf(cf, &key)?
+            .ok_or_else(|| MejepaInferError::InvalidInput {
+                field: "calibration_history".to_string(),
+                detail: "read-after-write could not find persisted calibration row".to_string(),
+            })?;
+        if readback != value {
+            return Err(MejepaInferError::InvalidInput {
+                field: "calibration_history".to_string(),
+                detail: "read-after-write bytes differ from persisted calibration payload"
+                    .to_string(),
+            });
+        }
+        let decoded: CalibrationRecord = bincode::deserialize(&readback)?;
+        decoded.validate()?;
+        if decoded != *record {
+            return Err(MejepaInferError::InvalidInput {
+                field: "calibration_history".to_string(),
+                detail: "read-after-write decoded calibration does not match input".to_string(),
+            });
+        }
         Ok(())
     }
 
@@ -159,6 +181,7 @@ impl CalibrationStore {
         for item in iter {
             let (_key, value) = item?;
             let record: CalibrationRecord = bincode::deserialize(&value)?;
+            record.validate()?;
             out.push(record);
             if out.len() == limit {
                 break;

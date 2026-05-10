@@ -8,7 +8,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition::new(
             tool_names::MEJEPA_VERIFY,
-            "Verify a candidate patch through the ME-JEPA Phase 4 inference gate ladder. The handler fails closed on schema, path, calibration, witness, or storage errors.",
+            "Verify a candidate patch through the ME-JEPA Phase 4 inference gate ladder. This surface currently exposes the deterministic Phase 4 harness only when CONTEXTGRAPH_MEJEPA_ALLOW_DETERMINISTIC_VERIFY is explicitly enabled; otherwise it fails closed.",
             json!({
                 "type": "object",
                 "additionalProperties": false,

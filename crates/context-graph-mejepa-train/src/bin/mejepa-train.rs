@@ -2,7 +2,11 @@ use clap::{Parser, Subcommand};
 use context_graph_mejepa_train::cli;
 
 #[derive(Parser)]
-#[command(name = "mejepa-train", version, about = "ME-JEPA Phase 3 Training Loop CLI")]
+#[command(
+    name = "mejepa-train",
+    version,
+    about = "ME-JEPA Phase 3 Training Loop CLI"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,

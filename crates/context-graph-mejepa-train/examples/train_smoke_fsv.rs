@@ -63,8 +63,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "all_delta_components_in_range": true
     });
     assert_eq!(physical_count, 100);
-    assert!(evidence["target_collapse_violations"].as_array().unwrap().is_empty());
-    write_0600(Path::new(FSV_DIR).join("training-smoke-evidence.json"), &evidence)?;
+    assert!(evidence["target_collapse_violations"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    write_0600(
+        Path::new(FSV_DIR).join("training-smoke-evidence.json"),
+        &evidence,
+    )?;
     Ok(())
 }
 
@@ -94,7 +100,10 @@ fn count_cf(db: &rocksdb::DB, cf_name: &str) -> Result<u64, rocksdb::Error> {
     Ok(count)
 }
 
-fn write_0600(path: impl AsRef<Path>, value: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
+fn write_0600(
+    path: impl AsRef<Path>,
+    value: &serde_json::Value,
+) -> Result<(), Box<dyn std::error::Error>> {
     let path = path.as_ref();
     fs::write(path, serde_json::to_vec_pretty(value)?)?;
     let mut perms = fs::metadata(path)?.permissions();

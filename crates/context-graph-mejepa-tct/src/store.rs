@@ -122,7 +122,7 @@ impl ConstellationStore {
         let cf = cf(&self.db, CF_MEJEPA_CONSTELLATION)?;
         let mut versions = Vec::new();
         for item in self.db.iterator_cf(cf, IteratorMode::Start) {
-            let (key, _value) = item.map_err(|err| {
+            let (key, value) = item.map_err(|err| {
                 TctError::store("iterate", CF_MEJEPA_CONSTELLATION, err.to_string())
             })?;
             if key.len() != 64 {
@@ -134,6 +134,13 @@ impl ConstellationStore {
             }
             let mut version = [0u8; 32];
             version.copy_from_slice(&key[..32]);
+            let constellation: TctConstellation = bincode_options().deserialize(&value)?;
+            constellation.validate_integrity()?;
+            if constellation.version_id() != version {
+                return Err(TctError::FrozenViolation {
+                    detail: "constellation key version does not match payload".to_string(),
+                });
+            }
             if !versions.contains(&version) {
                 versions.push(version);
             }
@@ -191,6 +198,13 @@ impl ConstellationStore {
             let (key, value) = item.map_err(|err| {
                 TctError::store("iterate", CF_MEJEPA_CONSTELLATION, err.to_string())
             })?;
+            if key.len() != 64 {
+                return Err(TctError::dim(
+                    64,
+                    key.len(),
+                    "constellation key must be version_id || corpus_sha",
+                ));
+            }
             if key.starts_with(&version_id) {
                 out.push(value.to_vec());
             }

@@ -3,11 +3,11 @@ pub mod invariant_scan;
 pub mod writer;
 
 use crate::learning_signal::LearningSignal;
+use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 
 pub const CF_MEJEPA_TRAIN_CERTS: &str = "CF_MEJEPA_TRAIN_CERTS";
 pub const CF_MEJEPA_HOLDOUT_REPORTS: &str = "CF_MEJEPA_HOLDOUT_REPORTS";

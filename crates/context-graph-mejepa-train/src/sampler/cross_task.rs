@@ -21,7 +21,8 @@ pub fn build_patch_similarity_graph(
 }
 
 pub fn related_tasks_above(graph: &PatchSimilarityGraph, task_idx: usize) -> &[usize] {
-    graph.neighbors
+    graph
+        .neighbors
         .get(task_idx)
         .map(Vec::as_slice)
         .unwrap_or(&[])
@@ -43,7 +44,8 @@ impl BatchSampler {
             .collect::<Vec<_>>();
         let mut used = plan.indices.iter().copied().collect::<HashSet<_>>();
         for _ in 0..need {
-            let use_cross_task = self.rng.next_unit_f32() < self.config.cross_task_transfer_probability;
+            let use_cross_task =
+                self.rng.next_unit_f32() < self.config.cross_task_transfer_probability;
             let candidate = if use_cross_task {
                 let pool = neighbors
                     .iter()
@@ -92,7 +94,8 @@ mod tests {
 
     #[test]
     fn threshold_filters_neighbors() {
-        let graph = build_patch_similarity_graph(&[vec![1.0, 0.0], vec![0.9, 0.1], vec![0.0, 1.0]], 0.7);
+        let graph =
+            build_patch_similarity_graph(&[vec![1.0, 0.0], vec![0.9, 0.1], vec![0.0, 1.0]], 0.7);
         assert_eq!(graph.neighbors[0], vec![1]);
         assert_eq!(graph.neighbors[2], Vec::<usize>::new());
     }

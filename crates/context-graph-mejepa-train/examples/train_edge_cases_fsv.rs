@@ -39,13 +39,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         CF_MEJEPA_TRAIN_CERTS.to_string(),
         "edge-fsv".to_string(),
         "edge-corpus".to_string(),
-        (1..=21).map(|i| (format!("E{i}"), "edge".to_string())).collect(),
+        (1..=21)
+            .map(|i| (format!("E{i}"), "edge".to_string()))
+            .collect(),
         "2026-05-10T00:00:00Z".to_string(),
     )?;
 
     let before_leak = count_cf(&db, CF_MEJEPA_TRAIN_CERTS)?;
     let mut leak_cert = cert(0, 0.5)?;
-    let leak_err = writer.emit(&mut leak_cert).expect_err("target collapse must fail");
+    let leak_err = writer
+        .emit(&mut leak_cert)
+        .expect_err("target collapse must fail");
     let after_leak = count_cf(&db, CF_MEJEPA_TRAIN_CERTS)?;
 
     let before_chain_count = after_leak;
@@ -107,25 +111,40 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             && before_holdout == after_holdout
     });
     assert_eq!(evidence["passes"], true);
-    write_0600(Path::new(FSV_DIR).join("edge-case-evidence.json"), &evidence)?;
+    write_0600(
+        Path::new(FSV_DIR).join("edge-case-evidence.json"),
+        &evidence,
+    )?;
     Ok(())
 }
 
 struct NoPredictor;
 impl context_graph_mejepa_train::eval::holdout::PredictorForward for NoPredictor {
-    fn forward(&self, _panel_t01: &candle_core::Tensor) -> Result<candle_core::Tensor, context_graph_mejepa_train::TrainerError> {
+    fn forward(
+        &self,
+        _panel_t01: &candle_core::Tensor,
+    ) -> Result<candle_core::Tensor, context_graph_mejepa_train::TrainerError> {
         unreachable!("empty holdout should fail before predictor call")
     }
 }
 
 struct NoOracle;
 impl context_graph_mejepa_train::eval::holdout::OracleHead for NoOracle {
-    fn predict(&self, _predicted_latent: &candle_core::Tensor) -> Result<context_graph_mejepa_train::eval::holdout::OraclePrediction, context_graph_mejepa_train::TrainerError> {
+    fn predict(
+        &self,
+        _predicted_latent: &candle_core::Tensor,
+    ) -> Result<
+        context_graph_mejepa_train::eval::holdout::OraclePrediction,
+        context_graph_mejepa_train::TrainerError,
+    > {
         unreachable!("empty holdout should fail before oracle call")
     }
 }
 
-fn cert(step: u64, target_collapse: f32) -> Result<TrainingCertificate, Box<dyn std::error::Error>> {
+fn cert(
+    step: u64,
+    target_collapse: f32,
+) -> Result<TrainingCertificate, Box<dyn std::error::Error>> {
     let signal = compute_l_step(
         DeltaPComponents {
             oracle_disagreement: 0.1,
@@ -177,7 +196,10 @@ fn count_cf(db: &rocksdb::DB, cf_name: &str) -> Result<u64, rocksdb::Error> {
     Ok(count)
 }
 
-fn write_0600(path: impl AsRef<Path>, value: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
+fn write_0600(
+    path: impl AsRef<Path>,
+    value: &serde_json::Value,
+) -> Result<(), Box<dyn std::error::Error>> {
     let path = path.as_ref();
     fs::write(path, serde_json::to_vec_pretty(value)?)?;
     let mut perms = fs::metadata(path)?.permissions();

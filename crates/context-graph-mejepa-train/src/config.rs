@@ -144,12 +144,21 @@ impl TrainingConfig {
                 "cross_task_transfer_probability",
                 self.cross_task_transfer_probability,
             ),
-            ("cross_task_cosine_threshold", self.cross_task_cosine_threshold),
+            (
+                "cross_task_cosine_threshold",
+                self.cross_task_cosine_threshold,
+            ),
             ("sampling_drop_threshold", self.sampling_drop_threshold),
             ("sampling_force_threshold", self.sampling_force_threshold),
             ("sampling_age_decay", self.sampling_age_decay),
-            ("holdout_promotion_threshold", self.holdout_promotion_threshold),
-            ("holdout_regression_threshold", self.holdout_regression_threshold),
+            (
+                "holdout_promotion_threshold",
+                self.holdout_promotion_threshold,
+            ),
+            (
+                "holdout_regression_threshold",
+                self.holdout_regression_threshold,
+            ),
             ("phase3_dod_min_agreement", self.phase3_dod_min_agreement),
         ] {
             if !(0.0..=1.0).contains(&value) || !value.is_finite() {
@@ -164,7 +173,10 @@ impl TrainingConfig {
         }
         for (field, value) in [
             ("checkpoint_interval_steps", self.checkpoint_interval_steps),
-            ("holdout_eval_interval_steps", self.holdout_eval_interval_steps),
+            (
+                "holdout_eval_interval_steps",
+                self.holdout_eval_interval_steps,
+            ),
             (
                 "counterfactual_interval_steps",
                 self.counterfactual_interval_steps,

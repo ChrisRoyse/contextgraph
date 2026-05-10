@@ -129,10 +129,7 @@ impl LearningSignal {
             ("delta_omega", self.delta_omega),
             ("delta_xi", self.delta_xi),
             ("l_step", self.l_step),
-            (
-                "target_collapse",
-                self.delta_xi_components.target_collapse,
-            ),
+            ("target_collapse", self.delta_xi_components.target_collapse),
         ] {
             if !value.is_finite() {
                 return Err(UtmlError::new(
@@ -160,13 +157,20 @@ pub fn clamp01(value: f32) -> f32 {
 }
 
 pub fn compute_delta_p(c: DeltaPComponents) -> Result<f32, UtmlError> {
-    mean_checked("delta_p", [c.oracle_disagreement, c.prediction_residual, c.uncertainty])
+    mean_checked(
+        "delta_p",
+        [c.oracle_disagreement, c.prediction_residual, c.uncertainty],
+    )
 }
 
 pub fn compute_delta_k(c: DeltaKComponents) -> Result<f32, UtmlError> {
     mean_checked(
         "delta_k",
-        [c.operator_override, c.novel_failure_mode, c.sparse_slice_bonus],
+        [
+            c.operator_override,
+            c.novel_failure_mode,
+            c.sparse_slice_bonus,
+        ],
     )
 }
 
@@ -253,7 +257,11 @@ pub fn pairwise_mi_audit(probabilities: &[Vec<f32>]) -> Result<f32, UtmlError> {
             pairs += 1;
         }
     }
-    Ok(if pairs == 0 { 0.0 } else { clamp01(acc / pairs as f32) })
+    Ok(if pairs == 0 {
+        0.0
+    } else {
+        clamp01(acc / pairs as f32)
+    })
 }
 
 fn mean_checked<const N: usize>(name: &'static str, values: [f32; N]) -> Result<f32, UtmlError> {

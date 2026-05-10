@@ -77,4 +77,3 @@ where
     }
     Some((min_key?, max_key?, max_val - min_val))
 }
-

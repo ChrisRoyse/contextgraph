@@ -1,14 +1,50 @@
 use serde::Serialize;
 use serde_json::Value;
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct SmallString(Box<str>);
+
+impl SmallString {
+    fn new(value: impl Into<String>) -> Self {
+        Self(value.into().into_boxed_str())
+    }
+}
+
+impl std::fmt::Display for SmallString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::ops::Deref for SmallString {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl PartialEq<&str> for SmallString {
+    fn eq(&self, other: &&str) -> bool {
+        self.0.as_ref() == *other
+    }
+}
+
+impl PartialEq<SmallString> for &str {
+    fn eq(&self, other: &SmallString) -> bool {
+        *self == other.0.as_ref()
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct CCRealityError {
     pub status: &'static str,
-    pub error_code: String,
-    pub message: String,
-    pub field_path: String,
-    pub remediation: String,
-    pub details: Value,
+    pub error_code: SmallString,
+    pub message: SmallString,
+    pub field_path: SmallString,
+    pub remediation: SmallString,
+    pub details: Box<Value>,
     pub source_of_truth: Option<String>,
 }
 
@@ -23,11 +59,11 @@ impl CCRealityError {
     ) -> Self {
         Self {
             status: "error",
-            error_code: error_code.into(),
-            message: message.into(),
-            field_path: field_path.into(),
-            remediation: remediation.into(),
-            details,
+            error_code: SmallString::new(error_code),
+            message: SmallString::new(message),
+            field_path: SmallString::new(field_path),
+            remediation: SmallString::new(remediation),
+            details: Box::new(details),
             source_of_truth,
         }
     }

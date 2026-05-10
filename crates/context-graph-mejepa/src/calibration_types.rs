@@ -76,6 +76,49 @@ impl CalibrationRecord {
                 actual: 0,
             });
         }
+        let counted = self.per_language_counts.values().sum::<usize>();
+        if counted != self.sample_count {
+            return Err(MejepaInferError::InvalidInput {
+                field: "per_language_counts".to_string(),
+                detail: format!(
+                    "per-language count sum {counted} does not match sample_count {}",
+                    self.sample_count
+                ),
+            });
+        }
+        for (language, count) in &self.per_language_counts {
+            if *count == 0 {
+                return Err(MejepaInferError::InvalidInput {
+                    field: "per_language_counts".to_string(),
+                    detail: format!("language {language:?} has zero samples"),
+                });
+            }
+            if *count < self.min_samples_per_stratum {
+                return Err(MejepaInferError::ConformalInsufficientSamples {
+                    language: Some(format!("{language:?}")),
+                    expected: self.min_samples_per_stratum,
+                    actual: *count,
+                });
+            }
+        }
+        if self.frozen_at <= 0 {
+            return Err(MejepaInferError::InvalidInput {
+                field: "frozen_at".to_string(),
+                detail: format!(
+                    "frozen_at must be a positive UNIX timestamp, got {}",
+                    self.frozen_at
+                ),
+            });
+        }
+        for (embedder, version) in &self.embedder_versions {
+            embedder.validate("embedder_versions.key")?;
+            if version.trim().is_empty() {
+                return Err(MejepaInferError::InvalidInput {
+                    field: "embedder_versions".to_string(),
+                    detail: "embedder version values must be non-empty".to_string(),
+                });
+            }
+        }
         Ok(())
     }
 }

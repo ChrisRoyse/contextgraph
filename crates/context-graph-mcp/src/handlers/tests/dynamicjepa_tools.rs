@@ -89,6 +89,8 @@ async fn call_tool_result(handlers: &Handlers, name: &str, arguments: Value) -> 
     response
         .result
         .unwrap_or_else(|| panic!("{name} must return an MCP result"))
+        .as_ref()
+        .clone()
 }
 
 async fn call_tool_ok(handlers: &Handlers, name: &str, arguments: Value) -> Value {

@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn path_traversal_rejected() {
         let temp = tempfile::tempdir().unwrap();
-        let patch = PatchBundle::try_new(
+        let err = PatchBundle::try_new(
             crate::types::AstDiff {
                 hunks: vec![crate::types::DiffHunk {
                     path: PathBuf::from("../../etc/passwd"),
@@ -208,11 +208,14 @@ mod tests {
             "test".to_string(),
             [0; 32],
         )
-        .unwrap();
-        assert!(matches!(
-            check_source_sha_drift(&patch, temp.path()).unwrap(),
-            Some(FailedGate::SourceShaDrift { .. })
-        ));
+        .unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_INFER_INVALID_INPUT");
+        assert_eq!(
+            canonicalize_under_root(Path::new("../../etc/passwd"), temp.path())
+                .unwrap_err()
+                .code(),
+            "MEJEPA_INFER_SOURCE_SHA_DRIFT"
+        );
     }
 
     #[test]

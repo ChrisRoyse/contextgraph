@@ -38,7 +38,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         CF_MEJEPA_TRAIN_CERTS.to_string(),
         "phase3-fsv".to_string(),
         "chain-fsv-corpus".to_string(),
-        (1..=21).map(|i| (format!("E{i}"), "fsv".to_string())).collect(),
+        (1..=21)
+            .map(|i| (format!("E{i}"), "fsv".to_string()))
+            .collect(),
         "2026-05-10T00:00:00Z".to_string(),
     )?;
     let setup_start = Instant::now();
@@ -101,11 +103,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "chain_verification": report,
         "target_collapse_violations": violations
     });
-    write_0600(Path::new(FSV_DIR).join("training-cert-chain.json"), &evidence)?;
+    write_0600(
+        Path::new(FSV_DIR).join("training-cert-chain.json"),
+        &evidence,
+    )?;
     Ok(())
 }
 
-fn write_0600(path: impl AsRef<Path>, value: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
+fn write_0600(
+    path: impl AsRef<Path>,
+    value: &serde_json::Value,
+) -> Result<(), Box<dyn std::error::Error>> {
     let path = path.as_ref();
     fs::write(path, serde_json::to_vec_pretty(value)?)?;
     let mut perms = fs::metadata(path)?.permissions();

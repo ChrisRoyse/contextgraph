@@ -29,9 +29,8 @@ pub fn promote_best(
     std::fs::create_dir_all(checkpoint_dir)?;
     let final_path = checkpoint_dir.join("best.safetensors");
     let tmp_path = checkpoint_dir.join("best.safetensors.tmp");
-    let bytes = format!(
-        "MEJEPA_BEST_STUB_V1\nstep={current_step}\nagreement={current_agreement:.6}\n"
-    );
+    let bytes =
+        format!("MEJEPA_BEST_STUB_V1\nstep={current_step}\nagreement={current_agreement:.6}\n");
     {
         let mut file = OpenOptions::new()
             .create(true)
@@ -72,4 +71,3 @@ pub fn detect_regression(
 pub fn track_consecutive_regressions(history: &[bool], window: usize) -> bool {
     history.len() >= window && history[history.len() - window..].iter().all(|v| *v)
 }
-

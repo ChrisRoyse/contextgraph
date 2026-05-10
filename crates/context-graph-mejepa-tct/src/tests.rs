@@ -277,3 +277,9 @@ fn violation_rate_uses_persisted_guard_decision_rows() {
         .unwrap();
     assert!((rate - 0.25).abs() < 1.0e-6, "rate={rate}");
 }
+
+#[test]
+fn cosine_similarity_rejects_zero_norm_vectors() {
+    let err = crate::gtau::cosine_similarity(&[0.0, 0.0], &[1.0, 0.0]).unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_INFER_CONSTELLATION_VIOLATION");
+}

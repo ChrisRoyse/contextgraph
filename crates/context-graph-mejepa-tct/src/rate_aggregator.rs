@@ -34,6 +34,47 @@ impl VerdictRecord {
     fn is_rejected(&self) -> bool {
         matches!(self, Self::GuardRejected(_))
     }
+
+    fn validate(&self) -> Result<(), TctError> {
+        let _ = unix_secs(self.timestamp())?;
+        match self {
+            Self::Approve(value) => {
+                if value.constellation_version_id == [0u8; 32] {
+                    return Err(TctError::invalid(
+                        "constellation_version_id",
+                        "approve verdict version id must be non-zero",
+                    ));
+                }
+            }
+            Self::GuardRejected(value) => {
+                if value.payload.constellation_version_id == [0u8; 32] {
+                    return Err(TctError::invalid(
+                        "constellation_version_id",
+                        "guard-rejected verdict version id must be non-zero",
+                    ));
+                }
+                if value.payload.violating_embedders.is_empty() {
+                    return Err(TctError::ConstellationViolation {
+                        detail: "guard-rejected verdict requires at least one violating embedder"
+                            .to_string(),
+                    });
+                }
+                if value
+                    .payload
+                    .predictor_predicted
+                    .per_test_probabilities
+                    .is_empty()
+                {
+                    return Err(TctError::InsufficientSamples {
+                        cell: "predictor_predicted.per_test_probabilities".to_string(),
+                        observed: 0,
+                        required: 1,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -68,12 +109,31 @@ impl ViolationRateAggregator {
     }
 
     pub fn record_verdict(&self, record: &VerdictRecord) -> Result<Vec<u8>, TctError> {
+        record.validate()?;
         let cf = cf(&self.db, CF_MEJEPA_GUARD_DECISIONS)?;
         let key = verdict_key(record.timestamp())?;
         let bytes = bincode_options().serialize(record)?;
         self.db
             .put_cf(cf, &key, bytes)
             .map_err(|err| TctError::store("put", CF_MEJEPA_GUARD_DECISIONS, err.to_string()))?;
+        let raw = self
+            .db
+            .get_cf(cf, &key)
+            .map_err(|err| TctError::store("get", CF_MEJEPA_GUARD_DECISIONS, err.to_string()))?
+            .ok_or_else(|| {
+                TctError::store(
+                    "read_after_write",
+                    CF_MEJEPA_GUARD_DECISIONS,
+                    "missing persisted guard decision row",
+                )
+            })?;
+        let readback: VerdictRecord = bincode_options().deserialize(&raw)?;
+        readback.validate()?;
+        if readback != *record {
+            return Err(TctError::FrozenViolation {
+                detail: "guard decision read-after-write payload mismatch".to_string(),
+            });
+        }
         Ok(key)
     }
 
@@ -122,6 +182,13 @@ impl ViolationRateAggregator {
                 break;
             }
             let record: VerdictRecord = bincode_options().deserialize(&value)?;
+            record.validate()?;
+            if unix_secs(record.timestamp())? != ts_secs {
+                return Err(TctError::FrozenViolation {
+                    detail: "guard decision key timestamp does not match payload timestamp"
+                        .to_string(),
+                });
+            }
             if record.is_rejected() {
                 rejected += 1;
             }

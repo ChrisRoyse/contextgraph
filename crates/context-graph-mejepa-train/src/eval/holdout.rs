@@ -141,8 +141,16 @@ impl HoldoutEvaluator {
             if prediction.pass_to_pass_resolved == ex.actual_oracle_pass {
                 correct += 1;
             }
-            cat_predictions.push((ex.category, prediction.pass_to_pass_resolved, ex.actual_oracle_pass));
-            lang_predictions.push((ex.language, prediction.pass_to_pass_resolved, ex.actual_oracle_pass));
+            cat_predictions.push((
+                ex.category,
+                prediction.pass_to_pass_resolved,
+                ex.actual_oracle_pass,
+            ));
+            lang_predictions.push((
+                ex.language,
+                prediction.pass_to_pass_resolved,
+                ex.actual_oracle_pass,
+            ));
             probability_vectors.push(softmax(&prediction.class_logits)?);
         }
         let agreement = correct as f32 / dataset.examples.len() as f32;

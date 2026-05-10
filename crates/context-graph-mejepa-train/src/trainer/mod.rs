@@ -1,5 +1,8 @@
 use crate::aux::AuxHeadEnsemble;
-use crate::cert::{TrainCertWriter, TrainingCertificate, CF_MEJEPA_EPOCH_WITNESS, CF_MEJEPA_HOLDOUT_REPORTS, CF_MEJEPA_TRAIN_CERTS};
+use crate::cert::{
+    TrainCertWriter, TrainingCertificate, CF_MEJEPA_EPOCH_WITNESS, CF_MEJEPA_HOLDOUT_REPORTS,
+    CF_MEJEPA_TRAIN_CERTS,
+};
 use crate::config::TrainingConfig;
 use crate::error::{TrainerError, TrainerErrorCode};
 use crate::eval::holdout::{CalibrationDataset, HoldoutDataset, TrainSplit};
@@ -68,7 +71,8 @@ impl Trainer {
                 neighbors: vec![Vec::new()],
             },
         )?;
-        let code_version = option_env!("GIT_HASH").unwrap_or("0000000000000000000000000000000000000000");
+        let code_version =
+            option_env!("GIT_HASH").unwrap_or("0000000000000000000000000000000000000000");
         let cert_writer = TrainCertWriter::new(
             rocksdb.clone(),
             CF_MEJEPA_TRAIN_CERTS.to_string(),
@@ -129,9 +133,10 @@ impl Trainer {
             if self.abort_requested {
                 break;
             }
-            let plan = self
-                .sampler
-                .next_batch_with_cross_task(batch_idx % dataset.train.examples.len(), self.config.batch_size)?;
+            let plan = self.sampler.next_batch_with_cross_task(
+                batch_idx % dataset.train.examples.len(),
+                self.config.batch_size,
+            )?;
             let hardness = (batch_idx as f32 + 1.0) / batches.max(1) as f32;
             let signal = compute_l_step(
                 DeltaPComponents {

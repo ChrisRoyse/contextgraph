@@ -28,9 +28,7 @@ impl TrainerErrorCode {
             Self::MejepaInstrumentGradientLeak => "MEJEPA_INSTRUMENT_GRADIENT_LEAK",
             Self::MejepaTrainDodFailed => "MEJEPA_TRAIN_DOD_FAILED",
             Self::MejepaTrainConfigInvalid => "MEJEPA_TRAIN_CONFIG_INVALID",
-            Self::MejepaTrainEmbedderDigestMismatch => {
-                "MEJEPA_TRAIN_EMBEDDER_DIGEST_MISMATCH"
-            }
+            Self::MejepaTrainEmbedderDigestMismatch => "MEJEPA_TRAIN_EMBEDDER_DIGEST_MISMATCH",
         }
     }
 }
@@ -135,4 +133,3 @@ impl From<candle_core::Error> for TrainerError {
             }))
     }
 }
-

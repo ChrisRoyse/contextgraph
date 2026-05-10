@@ -19,9 +19,9 @@ pub struct JsonRpcResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<JsonRpcId>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<serde_json::Value>,
+    pub result: Option<Box<serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<JsonRpcError>,
+    pub error: Option<Box<JsonRpcError>>,
 }
 
 /// JSON-RPC ID (can be string, number, or null per JSON-RPC 2.0 spec).
@@ -51,7 +51,7 @@ impl JsonRpcResponse {
         Self {
             jsonrpc: "2.0".to_string(),
             id,
-            result: Some(result),
+            result: Some(Box::new(result)),
             error: None,
         }
     }
@@ -62,11 +62,11 @@ impl JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
             id,
             result: None,
-            error: Some(JsonRpcError {
+            error: Some(Box::new(JsonRpcError {
                 code,
                 message: message.into(),
                 data: None,
-            }),
+            })),
         }
     }
 }

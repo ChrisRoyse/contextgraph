@@ -64,7 +64,10 @@ pub fn compute_counterfactual_loss(
     if panel_t1.dims().len() != 1 {
         return Err(TrainerError::new(
             TrainerErrorCode::MejepaTrainConfigInvalid,
-            format!("counterfactual panel must be rank-1, got {:?}", panel_t1.dims()),
+            format!(
+                "counterfactual panel must be rank-1, got {:?}",
+                panel_t1.dims()
+            ),
         ));
     }
     let dim = panel_t1.dims()[0];
@@ -109,12 +112,22 @@ fn cosine_scalar(a: &Tensor, b: &Tensor) -> Result<f32, TrainerError> {
             "counterfactual cosine tensor shape mismatch",
         ));
     }
-    let av = a.to_dtype(candle_core::DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
-    let bv = b.to_dtype(candle_core::DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
+    let av = a
+        .to_dtype(candle_core::DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
+    let bv = b
+        .to_dtype(candle_core::DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
     let dot = av.iter().zip(&bv).map(|(x, y)| x * y).sum::<f32>();
     let na = av.iter().map(|x| x * x).sum::<f32>().sqrt();
     let nb = bv.iter().map(|x| x * x).sum::<f32>().sqrt();
-    Ok(if na == 0.0 || nb == 0.0 { 0.0 } else { dot / (na * nb) })
+    Ok(if na == 0.0 || nb == 0.0 {
+        0.0
+    } else {
+        dot / (na * nb)
+    })
 }
 
 #[cfg(test)]
@@ -136,8 +149,14 @@ mod tests {
 
     #[test]
     fn deterministic_unit_vector() {
-        let a = sample_unit_vector(8, 11, &Device::Cpu).unwrap().to_vec1::<f32>().unwrap();
-        let b = sample_unit_vector(8, 11, &Device::Cpu).unwrap().to_vec1::<f32>().unwrap();
+        let a = sample_unit_vector(8, 11, &Device::Cpu)
+            .unwrap()
+            .to_vec1::<f32>()
+            .unwrap();
+        let b = sample_unit_vector(8, 11, &Device::Cpu)
+            .unwrap()
+            .to_vec1::<f32>()
+            .unwrap();
         assert_eq!(a, b);
     }
 
