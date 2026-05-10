@@ -1,5 +1,7 @@
 # TECH-SELF-HEALING — ME-JEPA-Code Self-Healing Operations (Implementation)
 
+> **📊 2026-05-10 STATUS:** SHIPPED — see ../implementation-plan.md for the full Phase 5 status.
+
 > **Level 3 — Technical Specification.** Implements `SPEC-SELF-HEALING.md`. Defines HOW the self-healing domain (Phase 5) is built. Conflicts with constitution / functional spec resolve to those per `<spec_authority_order>`.
 
 ```xml
@@ -7,9 +9,9 @@
 
 <metadata>
   <title>ME-JEPA-Code Self-Healing — Online observe() with EWC++, Drift Detection, A/B/C Promotion, Periodic Full Retrain, Continuous Calibration, Witness-Chain Integrity, LoRA Refresh, Distillation-Based Online Update — Implementation</title>
-  <status>draft</status>
+  <status>shipped</status>
   <owner>Phase 5 ME-JEPA implementation team</owner>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-SELF-HEALING</spec_ref>
     <spec_ref>SPEC-INFERENCE</spec_ref>

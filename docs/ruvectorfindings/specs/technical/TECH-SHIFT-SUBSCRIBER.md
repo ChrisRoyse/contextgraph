@@ -1,5 +1,7 @@
 # TECH-SHIFT-SUBSCRIBER — ME-JEPA-Code Real-Time Reality-Shift → Online Observe Pipeline (Implementation)
 
+> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 7 status.
+
 > **Level 3 — Technical Specification.** Implements `SPEC-SHIFT-SUBSCRIBER.md`. Defines HOW the shift-subscriber domain (Phase 7) is built. Conflicts with constitution / functional spec resolve to those.
 
 ```xml

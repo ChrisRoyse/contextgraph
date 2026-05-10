@@ -1,5 +1,7 @@
 # TECH-INFERENCE — ME-JEPA-Code Inference + Conformal Calibration + OOD Detection (Implementation)
 
+> **📊 2026-05-10 STATUS:** SHIPPED — see ../implementation-plan.md for the full Phase 4a status.
+
 > **Level 3 — Technical Specification.** Implements `SPEC-INFERENCE.md`. Defines HOW the inference domain (Phase 4a) is built. Conflicts with constitution / functional spec resolve to those.
 
 ```xml
@@ -7,9 +9,9 @@
 
 <metadata>
   <title>ME-JEPA-Code Inference + Conformal Calibration + OOD Detection — Implementation</title>
-  <status>draft</status>
+  <status>shipped</status>
   <owner>Phase 4a ME-JEPA implementation team</owner>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-INFERENCE</spec_ref>
     <spec_ref>SPEC-INSTRUMENTS</spec_ref>

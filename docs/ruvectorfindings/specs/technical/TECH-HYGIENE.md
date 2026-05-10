@@ -1,5 +1,7 @@
 # TECH-HYGIENE — ME-JEPA-Code Disk and Memory Hygiene (Implementation)
 
+> **📊 2026-05-10 STATUS:** PARTIAL — see ../implementation-plan.md for the full Phase 6 status.
+
 > **Level 3 — Technical Specification.** Implements `SPEC-HYGIENE.md`. Defines HOW the hygiene domain (Phase 6) is built. Conflicts with constitution / functional spec resolve to those.
 
 ```xml
@@ -7,9 +9,9 @@
 
 <metadata>
   <title>ME-JEPA-Code Disk and Memory Hygiene — Implementation</title>
-  <status>draft</status>
+  <status>partial</status>
   <owner>Phase 6 ME-JEPA implementation team</owner>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-HYGIENE</spec_ref>
     <spec_ref>SPEC-CORPUS</spec_ref>

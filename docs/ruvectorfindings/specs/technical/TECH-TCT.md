@@ -1,5 +1,7 @@
 # TECH-TCT — Teleological Constellation Training + Gτ Guard (Implementation)
 
+> **📊 2026-05-10 STATUS:** SHIPPED — see ../implementation-plan.md for the full Phase 4b status.
+
 > **Level 3 — Technical Specification.** Implements `SPEC-TCT.md`. Defines HOW the constellation construction + Gτ guard + L_constellation_centroid lookup primitive are built. Conflicts with the constitution / functional spec resolve to those. Cross-cutting boundaries: this spec defines the constellation data + Gτ test + centroid-lookup primitive; the L_constellation_centroid loss-surface integration lives in TECH-PHASE3-TRAINING; the verify() Gτ call site lives in TECH-PHASE4-INFERENCE.
 
 ```xml
@@ -7,9 +9,9 @@
 
 <metadata>
   <title>Teleological Constellation Training + Gτ Guard — Implementation</title>
-  <status>draft</status>
+  <status>shipped</status>
   <owner>Phase 4b ME-JEPA implementation team</owner>
-  <last_updated>2026-05-09</last_updated>
+  <last_updated>2026-05-10</last_updated>
   <related_specs>
     <spec_ref>SPEC-TCT</spec_ref>
     <spec_ref>SPEC-CORPUS</spec_ref>
