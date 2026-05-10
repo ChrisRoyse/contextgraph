@@ -124,10 +124,16 @@ fn main() -> ExitCode {
             seed: args.seed,
             rtx_5090_budget_min: args.rtx_5090_budget_min,
         }) {
-            Ok(summary) => {
-                println!("{}", serde_json::to_string_pretty(&summary).unwrap());
-                ExitCode::from(summary.exit_code as u8)
-            }
+            Ok(summary) => match serde_json::to_string_pretty(&summary) {
+                Ok(json) => {
+                    println!("{json}");
+                    ExitCode::from(summary.exit_code as u8)
+                }
+                Err(err) => {
+                    eprintln!("MEJEPA_HEAL_DRILL_JSON: {err}");
+                    ExitCode::from(1)
+                }
+            },
             Err(err) => {
                 err.log_context(file!());
                 eprintln!("{}: {err}", err.code());
@@ -167,10 +173,16 @@ fn main() -> ExitCode {
             }
         },
         Command::Stress(args) => match run_stress(args) {
-            Ok(value) => {
-                println!("{}", serde_json::to_string_pretty(&value).unwrap());
-                ExitCode::SUCCESS
-            }
+            Ok(value) => match serde_json::to_string_pretty(&value) {
+                Ok(json) => {
+                    println!("{json}");
+                    ExitCode::SUCCESS
+                }
+                Err(err) => {
+                    eprintln!("MEJEPA_HYGIENE_STRESS_JSON: {err}");
+                    ExitCode::from(1)
+                }
+            },
             Err(err) => {
                 err.log_context(file!());
                 eprintln!("{}: {err}", err.code);

@@ -8,6 +8,7 @@ use dashmap::DashMap;
 use fs2::FileExt;
 use parking_lot::Mutex;
 use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, DB};
+use serde::{de::DeserializeOwned, Serialize};
 
 use crate::categories::{BYTES_PER_GB, DEFAULT_TOTAL_QUOTA_BYTES};
 use crate::entry::{EntryId, HygieneEntryMeta};
@@ -209,7 +210,7 @@ pub fn read_meta(db: &DB, entry_id: &EntryId) -> OpsResult<Option<HygieneEntryMe
     else {
         return Ok(None);
     };
-    let meta: HygieneEntryMeta = bincode::deserialize(&bytes)?;
+    let meta: HygieneEntryMeta = decode_cf_json(&bytes)?;
     meta.validate().map_err(|detail| {
         OpsError::new(OpsErrorKind::CorruptMetadata {
             key_hex: hex::encode(key),
@@ -230,7 +231,7 @@ pub fn write_meta(db: &DB, meta: &HygieneEntryMeta) -> OpsResult<()> {
         db,
         context_graph_mejepa_cf::CF_MEJEPA_PANEL_META,
         &meta_key(&meta.entry_id),
-        &bincode::serialize(meta)?,
+        &encode_cf_json(meta)?,
     )
 }
 
@@ -241,7 +242,7 @@ pub fn list_meta(db: &DB) -> OpsResult<Vec<HygieneEntryMeta>> {
         IteratorMode::Start,
     ) {
         let (key, value) = item?;
-        let meta: HygieneEntryMeta = bincode::deserialize(&value)?;
+        let meta: HygieneEntryMeta = decode_cf_json(&value)?;
         meta.validate().map_err(|detail| {
             OpsError::new(OpsErrorKind::CorruptMetadata {
                 key_hex: hex::encode(key),
@@ -273,6 +274,14 @@ pub fn count_and_bytes_cf(db: &DB, cf_name: &str) -> OpsResult<(u64, u64)> {
     Ok((count, bytes))
 }
 
+pub fn encode_cf_json<T: Serialize>(value: &T) -> OpsResult<Vec<u8>> {
+    Ok(serde_json::to_vec(value)?)
+}
+
+pub fn decode_cf_json<T: DeserializeOwned>(bytes: &[u8]) -> OpsResult<T> {
+    Ok(serde_json::from_slice(bytes)?)
+}
+
 pub fn open_exclusive_lock(path: &Path) -> OpsResult<std::fs::File> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| OpsError::io("create_dir_all", parent, err))?;
@@ -297,5 +306,7 @@ pub fn open_exclusive_lock(path: &Path) -> OpsResult<std::fs::File> {
 }
 
 pub fn operation_lock_path(archive_root: &Path, operation: &str) -> PathBuf {
-    archive_root.join(".locks").join(format!("{operation}.lock"))
+    archive_root
+        .join(".locks")
+        .join(format!("{operation}.lock"))
 }

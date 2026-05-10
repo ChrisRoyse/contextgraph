@@ -10,8 +10,8 @@ use crate::error::{OpsError, OpsErrorKind, OpsResult};
 use crate::quota_types::{EvictionCandidate, QuotaStateRecord};
 use crate::reports::{EvictionRecord, QuotaCategoryStatus, QuotaEvictionReport, QuotaStatus};
 use crate::storage::{
-    cf, count_and_bytes_cf, list_meta, meta_key, open_exclusive_lock, operation_lock_path,
-    put_readback, read_meta, HygieneEnv,
+    cf, count_and_bytes_cf, encode_cf_json, list_meta, meta_key, open_exclusive_lock,
+    operation_lock_path, put_readback, read_meta, HygieneEnv,
 };
 
 const UNRECOVERABLE_PREFIX: &[u8] = b"unrecoverable:";
@@ -58,7 +58,15 @@ pub fn quota_check_and_evict(env: &HygieneEnv) -> OpsResult<QuotaEvictionReport>
             .categories
             .iter()
             .find(|row| row.category == category)
-            .expect("status contains category");
+            .ok_or_else(|| {
+                OpsError::invalid(
+                    "quota.status",
+                    format!(
+                        "unrecoverable category {} missing status row",
+                        category.as_str()
+                    ),
+                )
+            })?;
         return Err(OpsError::new(OpsErrorKind::QuotaUnrecoverable {
             category: category.as_str().to_string(),
             used_bytes: row.used_bytes,
@@ -108,7 +116,7 @@ pub fn quota_check_and_evict(env: &HygieneEnv) -> OpsResult<QuotaEvictionReport>
         &env.config.db,
         context_graph_mejepa_cf::CF_MEJEPA_QUOTA_STATE,
         LAST_REPORT_KEY,
-        &bincode::serialize(&report)?,
+        &encode_cf_json(&report)?,
     )?;
     Ok(report)
 }
@@ -190,7 +198,7 @@ fn mark_unrecoverable(
         &env.config.db,
         context_graph_mejepa_cf::CF_MEJEPA_QUOTA_STATE,
         &unrecoverable_key(category),
-        &bincode::serialize(&record)?,
+        &encode_cf_json(&record)?,
     )
 }
 
@@ -272,17 +280,17 @@ fn archive_dir_size(path: &Path) -> OpsResult<u64> {
     let mut total = 0u64;
     for entry in fs::read_dir(path).map_err(|err| OpsError::io("read_dir", path, err))? {
         let entry = entry.map_err(|err| OpsError::io("read_dir_entry", path, err))?;
-        let meta = entry
-            .symlink_metadata()
-            .map_err(|err| OpsError::io("metadata", entry.path(), err))?;
+        let entry_path = entry.path();
+        let meta = fs::symlink_metadata(&entry_path)
+            .map_err(|err| OpsError::io("metadata", &entry_path, err))?;
         if meta.file_type().is_symlink() {
             return Err(OpsError::invalid(
                 "archive_root",
-                format!("archive tree contains symlink {}", entry.path().display()),
+                format!("archive tree contains symlink {}", entry_path.display()),
             ));
         }
         if meta.is_dir() {
-            total = total.saturating_add(archive_dir_size(&entry.path())?);
+            total = total.saturating_add(archive_dir_size(&entry_path)?);
         } else {
             total = total.saturating_add(meta.len());
         }

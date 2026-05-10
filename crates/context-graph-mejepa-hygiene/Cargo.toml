@@ -7,7 +7,6 @@ description = "ME-JEPA Phase 6 storage hygiene, quota, GC, and witness compressi
 license.workspace = true
 
 [dependencies]
-bincode = { workspace = true }
 chrono = { workspace = true }
 context-graph-mejepa-cf = { path = "../context-graph-mejepa-cf" }
 context-graph-tier-compression = { path = "../context-graph-tier-compression" }

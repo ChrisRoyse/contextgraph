@@ -70,7 +70,8 @@ fn run_case(
     .0;
     let integrity = verify_witness_integrity(&env)?;
     if expect_compressed {
-        assert_eq!(after, 2);
+        let expected_after = (entries / segment_size as u64) + (entries % segment_size as u64);
+        assert_eq!(after, expected_after);
         assert!(audit_verify_old_entry(&env, 0, 17)?);
         assert!(integrity.compressed_entries > 0);
     } else {

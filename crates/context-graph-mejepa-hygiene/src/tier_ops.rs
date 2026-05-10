@@ -5,7 +5,7 @@ use rocksdb::WriteBatch;
 use crate::entry::{EntryId, HygieneEntryMeta, TierTransition};
 use crate::error::{OpsError, OpsErrorKind, OpsResult};
 use crate::reports::TierTransitionReport;
-use crate::storage::{cf, list_meta, meta_key, read_meta, write_meta, HygieneEnv};
+use crate::storage::{cf, encode_cf_json, list_meta, meta_key, read_meta, write_meta, HygieneEnv};
 use crate::tier::{decayed_score, decode_from_tier, encode_for_tier, tier_for_score, Tier};
 
 pub fn tier_demote(
@@ -196,7 +196,7 @@ fn transition(
     batch.put_cf(
         cf(db, context_graph_mejepa_cf::CF_MEJEPA_PANEL_META)?,
         meta_key(entry_id),
-        bincode::serialize(&meta)?,
+        encode_cf_json(&meta)?,
     );
     db.write(batch)?;
     let readback = db

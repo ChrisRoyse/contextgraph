@@ -12,7 +12,10 @@ use sha2::{Digest, Sha256};
 
 use crate::error::{OpsError, OpsErrorKind, OpsResult};
 use crate::reports::{WitnessCompressionReport, WitnessIntegrityReport, WitnessSegmentMeta};
-use crate::storage::{cf, open_exclusive_lock, operation_lock_path, scan_cf, HygieneEnv};
+use crate::storage::{
+    cf, decode_cf_json, encode_cf_json, open_exclusive_lock, operation_lock_path, scan_cf,
+    HygieneEnv,
+};
 
 pub const WITNESS_TYPE_COMPRESSED_SEGMENT: u8 = 0x80;
 type LiveWitnessRow = (Vec<u8>, Vec<u8>, WitnessEntry);
@@ -131,10 +134,7 @@ pub fn audit_verify_old_entry(
     Ok(true)
 }
 
-fn compress_window(
-    env: &HygieneEnv,
-    window: &[LiveWitnessRow],
-) -> OpsResult<WitnessSegmentMeta> {
+fn compress_window(env: &HygieneEnv, window: &[LiveWitnessRow]) -> OpsResult<WitnessSegmentMeta> {
     let first = window.first().ok_or_else(|| {
         OpsError::invalid(
             "witness_compress.window",
@@ -209,7 +209,7 @@ fn compress_window(
             context_graph_mejepa_cf::CF_MEJEPA_WITNESS_SEGMENT_META,
         )?,
         segment_start.to_be_bytes(),
-        bincode::serialize(&meta)?,
+        encode_cf_json(&meta)?,
     );
     env.config.db.write(batch)?;
     let readback =
@@ -254,14 +254,12 @@ fn first_eligible_window(
     let age_secs = i64::from(env.config.witness_min_age_days)
         .checked_mul(86_400)
         .ok_or_else(|| OpsError::invalid("witness_min_age_days", "age cutoff overflowed i64"))?;
-    let min_ts = now
-        .checked_sub(age_secs)
-        .ok_or_else(|| {
-            OpsError::invalid(
-                "witness_min_age_days",
-                "age cutoff is before the Unix epoch",
-            )
-        })? as u64;
+    let min_ts = now.checked_sub(age_secs).ok_or_else(|| {
+        OpsError::invalid(
+            "witness_min_age_days",
+            "age cutoff is before the Unix epoch",
+        )
+    })? as u64;
     let mut candidate = Vec::new();
     for row in rows {
         if row.2.witness_type == WITNESS_TYPE_COMPRESSED_SEGMENT {
@@ -296,7 +294,7 @@ fn rechain_after_window(
         context_graph_mejepa_cf::CF_MEJEPA_WITNESS_SEGMENT_META,
     )?;
     for (key, _bytes, entry) in rows.iter().skip(last_index + 1) {
-        let mut rewritten = *entry;
+        let mut rewritten = entry.clone();
         if rewritten.prev_hash != expected_prev {
             rewritten.prev_hash = expected_prev;
             batch.put_cf(chain_cf, key, rewritten.to_bytes());
@@ -304,7 +302,7 @@ fn rechain_after_window(
                 let mut meta = load_segment_meta(env, key)?;
                 meta.compressed_entry_hash = rewritten.chain_hash();
                 validate_segment_meta(env, key, &meta)?;
-                batch.put_cf(meta_cf, key, bincode::serialize(&meta)?);
+                batch.put_cf(meta_cf, key, encode_cf_json(&meta)?);
             }
         }
         expected_prev = rewritten.chain_hash();
@@ -390,16 +388,12 @@ fn load_segment_meta(env: &HygieneEnv, key: &[u8]) -> OpsResult<WitnessSegmentMe
                 detail: format!("missing segment metadata for key {}", hex::encode(key)),
             })
         })?;
-    let meta: WitnessSegmentMeta = bincode::deserialize(&bytes)?;
+    let meta: WitnessSegmentMeta = decode_cf_json(&bytes)?;
     validate_segment_meta(env, key, &meta)?;
     Ok(meta)
 }
 
-fn validate_segment_meta(
-    env: &HygieneEnv,
-    key: &[u8],
-    meta: &WitnessSegmentMeta,
-) -> OpsResult<()> {
+fn validate_segment_meta(env: &HygieneEnv, key: &[u8], meta: &WitnessSegmentMeta) -> OpsResult<()> {
     let segment_start = decode_u64_key(key)?;
     if meta.segment_start != segment_start {
         return Err(OpsError::new(OpsErrorKind::WitnessArchiveInvalid {
@@ -457,7 +451,11 @@ fn validate_segment_meta(
             detail: "last_key does not match segment_start + entry_count - 1".to_string(),
         }));
     }
-    let expected_path = segment_path(&env.config.archive_root, meta.segment_start, meta.entry_count);
+    let expected_path = segment_path(
+        &env.config.archive_root,
+        meta.segment_start,
+        meta.entry_count,
+    );
     if meta.archive_path != expected_path {
         return Err(OpsError::new(OpsErrorKind::WitnessArchiveInvalid {
             path: meta.archive_path.clone(),

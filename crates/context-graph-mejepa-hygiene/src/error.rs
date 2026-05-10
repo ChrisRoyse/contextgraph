@@ -51,9 +51,6 @@ pub enum OpsErrorKind {
     Json {
         detail: String,
     },
-    Bincode {
-        detail: String,
-    },
     Lock {
         path: PathBuf,
         detail: String,
@@ -85,7 +82,6 @@ impl OpsError {
             OpsErrorKind::Io { .. } => "MEJEPA_HYGIENE_IO",
             OpsErrorKind::RocksDb { .. } => "MEJEPA_HYGIENE_ROCKSDB",
             OpsErrorKind::Json { .. } => "MEJEPA_HYGIENE_JSON",
-            OpsErrorKind::Bincode { .. } => "MEJEPA_HYGIENE_BINCODE",
             OpsErrorKind::Lock { .. } => "MEJEPA_HYGIENE_LOCK",
             OpsErrorKind::CrossCuttingDeferred { .. } => "MEJEPA_HYGIENE_CROSS_CUTTING_DEFERRED",
         };
@@ -130,14 +126,6 @@ impl From<rocksdb::Error> for OpsError {
 impl From<serde_json::Error> for OpsError {
     fn from(value: serde_json::Error) -> Self {
         Self::new(OpsErrorKind::Json {
-            detail: value.to_string(),
-        })
-    }
-}
-
-impl From<Box<bincode::ErrorKind>> for OpsError {
-    fn from(value: Box<bincode::ErrorKind>) -> Self {
-        Self::new(OpsErrorKind::Bincode {
             detail: value.to_string(),
         })
     }

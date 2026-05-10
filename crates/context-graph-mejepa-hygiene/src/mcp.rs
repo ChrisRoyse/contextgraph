@@ -1,6 +1,6 @@
 // Inspired by ruvnet/RuVector at HEAD ef5274c2 (clean-room reimplementation).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -45,6 +45,7 @@ pub fn mcp_witness_compress(request: WitnessCompressMcpRequest) -> OpsResult<ser
             "segment size must be >= 1",
         ));
     }
+    validate_mcp_paths(&request.db_path, &request.archive_root)?;
     let db = open_hygiene_rocksdb(&request.db_path)?;
     let mut config = runtime_config(db, request.archive_root)?;
     config.witness_segment_size = request.segment_size;
@@ -54,8 +55,47 @@ pub fn mcp_witness_compress(request: WitnessCompressMcpRequest) -> OpsResult<ser
 }
 
 fn env_from_paths(db_path: PathBuf, archive_root: PathBuf) -> OpsResult<HygieneEnv> {
+    validate_mcp_paths(&db_path, &archive_root)?;
     let db = open_hygiene_rocksdb(db_path)?;
     HygieneEnv::try_new(runtime_config(db, archive_root)?)
+}
+
+fn validate_mcp_paths(db_path: &PathBuf, archive_root: &PathBuf) -> OpsResult<()> {
+    validate_path("dbPath", db_path)?;
+    validate_path("archiveRoot", archive_root)?;
+    if db_path == archive_root {
+        return Err(OpsError::invalid(
+            "paths",
+            "dbPath and archiveRoot must be different paths",
+        ));
+    }
+    if archive_root.starts_with(db_path) || db_path.starts_with(archive_root) {
+        return Err(OpsError::invalid(
+            "paths",
+            "dbPath and archiveRoot must not be nested inside each other",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_path(field: &'static str, path: &Path) -> OpsResult<()> {
+    if path.as_os_str().is_empty() {
+        return Err(OpsError::invalid(field, "path must be non-empty"));
+    }
+    if !path.is_absolute() {
+        return Err(OpsError::invalid(
+            field,
+            "MCP hygiene paths must be absolute",
+        ));
+    }
+    let rendered = path.to_string_lossy();
+    if rendered.chars().any(char::is_control) {
+        return Err(OpsError::invalid(
+            field,
+            "path must not contain control characters",
+        ));
+    }
+    Ok(())
 }
 
 fn default_segment_size() -> usize {

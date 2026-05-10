@@ -5,10 +5,12 @@ use std::path::PathBuf;
 use rocksdb::WriteBatch;
 
 use crate::entry::EntryId;
-use crate::error::{OpsError, OpsResult};
+use crate::error::OpsResult;
 use crate::quota::{quota_check_and_evict, quota_status};
 use crate::reports::{GcReport, GcStepReport};
-use crate::storage::{cf, list_meta, open_exclusive_lock, put_readback, scan_cf, HygieneEnv};
+use crate::storage::{
+    cf, encode_cf_json, list_meta, open_exclusive_lock, put_readback, scan_cf, HygieneEnv,
+};
 use crate::tier_ops::tier_demote_all;
 use crate::witness_compress::{verify_witness_integrity, witness_compress_old_segments};
 
@@ -60,7 +62,7 @@ pub fn gc_run_nightly(env: &HygieneEnv) -> OpsResult<GcReport> {
         &env.config.db,
         context_graph_mejepa_cf::CF_MEJEPA_GC_HISTORY,
         &report_key,
-        &bincode::serialize(&report)?,
+        &encode_cf_json(&report)?,
     )?;
     Ok(report)
 }
