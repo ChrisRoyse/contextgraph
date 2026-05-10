@@ -3,16 +3,15 @@
   "mcpServers": {
     "cgreality": {
       "type": "stdio",
-      "command": "/home/cabdru/contextgraph/target/release/context-graph-mcp",
-      "args": [
-        "--mode",
-        "reality-loop"
-      ],
+      "command": "/home/cabdru/contextgraph/scripts/context-graph-mcp-wrapper.sh",
+      "args": [],
       "env": {
         "CONTEXTGRAPH_ROOT": "/home/cabdru/contextgraph",
         "CONTEXTGRAPH_DATA_ROOT": "/mnt/d/contextgraph",
         "CONTEXT_GRAPH_STORAGE_PATH": "/mnt/d/contextgraph/storage/contextgraph-rocksdb",
         "CONTEXT_GRAPH_DB_PATH": "/mnt/d/contextgraph/storage/contextgraph-rocksdb",
+        "CONTEXT_GRAPH_MCP_MODE": "reality-loop",
+        "CONTEXT_GRAPH_MODELS_PATH": "/mnt/d/cabdru/contextgraph/models",
         "CGREALITY_CACHE_DIR": "/mnt/d/contextgraph/state/cgreality",
         "CGREALITY_RUNTIME_ROOT_HINT": "/mnt/d/contextgraph/state/cgreality/active_runtime_root",
         "CGREALITY_GOVERNED_PATHS": "/home/cabdru/contextgraph/config/ccreality_governed_paths.json",

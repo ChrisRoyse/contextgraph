@@ -6,7 +6,8 @@
 PORT=3100
 DATA_ROOT="${CONTEXTGRAPH_DATA_ROOT:-/mnt/d/contextgraph}"
 STORAGE="${CONTEXT_GRAPH_STORAGE_PATH:-${DATA_ROOT}/storage/contextgraph-rocksdb}"
-MODELS="/home/cabdru/contextgraph/models"
+MODE="${CONTEXT_GRAPH_MCP_MODE:-reality-loop}"
+MODELS="${CONTEXT_GRAPH_MODELS_PATH:-/mnt/d/cabdru/contextgraph/models}"
 BINARY="/home/cabdru/contextgraph/target/release/context-graph-mcp"
 LOGFILE="${DATA_ROOT}/logs/context-graph-daemon.log"
 PIDFILE="${DATA_ROOT}/state/locks/context-graph-daemon.pid"
@@ -66,9 +67,10 @@ echo "[ensure_daemon] Starting context-graph daemon on port $PORT..." >&2
 rotate_log_if_needed "$LOGFILE"
 CONTEXTGRAPH_DATA_ROOT="$DATA_ROOT" \
 CONTEXT_GRAPH_STORAGE_PATH="$STORAGE" \
+CONTEXT_GRAPH_DB_PATH="$STORAGE" \
 CONTEXT_GRAPH_MODELS_PATH="$MODELS" \
 RUST_LOG=warn \
-"$BINARY" --daemon-server-only --daemon-port "$PORT" >> "$LOGFILE" 2>&1 &
+setsid "$BINARY" --mode "$MODE" --daemon-server-only --daemon-port "$PORT" >> "$LOGFILE" 2>&1 < /dev/null &
 echo $! > "$PIDFILE"
 
 # Wait for it to start listening

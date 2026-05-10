@@ -2042,6 +2042,7 @@ async fn spawn_daemon_process(
     daemon_port: u16,
     config_path: Option<&Path>,
     warm_first: bool,
+    mode: &str,
 ) -> Result<()> {
     use std::os::unix::process::CommandExt;
     use tokio::time::{sleep, Duration};
@@ -2050,6 +2051,10 @@ async fn spawn_daemon_process(
         .map_err(|e| anyhow::anyhow!("Cannot determine current executable path: {}", e))?;
 
     let mut cmd = std::process::Command::new(&exe);
+    if mode != "default" {
+        cmd.arg("--mode");
+        cmd.arg(mode);
+    }
     cmd.arg("--daemon-server-only");
     cmd.arg("--daemon-port");
     cmd.arg(daemon_port.to_string());
@@ -2580,14 +2585,15 @@ async fn async_main() -> Result<()> {
     }
 
     // ROOT-CAUSE FIX (zombie prevention): install kernel-level parent-death
-    // tracking so if the MCP client dies for ANY reason (crash, kill -9,
-    // uncaught exception, OOM), the kernel delivers SIGTERM to us and we
-    // cannot outlive it. Combined with the existing SIGTERM handler below,
-    // this guarantees no orphan MCP server ever holds the RocksDB flock.
+    // tracking only for client-owned stdio/proxy processes. A detached
+    // --daemon-server-only process is intentionally allowed to outlive the
+    // launcher so reconnects can share one warm D-backed server.
     //
     // This is Linux-specific (PR_SET_PDEATHSIG) but the project already
     // targets x86_64-unknown-linux-gnu per rust-toolchain.toml.
-    install_parent_death_signal();
+    if !cli.daemon_server_only {
+        install_parent_death_signal();
+    }
 
     info!("Context Graph MCP Server starting...");
 
@@ -2809,8 +2815,13 @@ async fn async_main() -> Result<()> {
 
             #[cfg(unix)]
             {
-                match spawn_daemon_process(daemon_port, cli.config_path.as_deref(), warm_first)
-                    .await
+                match spawn_daemon_process(
+                    daemon_port,
+                    cli.config_path.as_deref(),
+                    warm_first,
+                    &cli.mode,
+                )
+                .await
                 {
                     Ok(()) => {
                         info!(

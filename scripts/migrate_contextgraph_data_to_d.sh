@@ -51,10 +51,6 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG_JSONL="$DATA_ROOT/logs/migration-$STAMP.jsonl"
 SUMMARY_JSON="$DATA_ROOT/logs/migration-$STAMP.json"
 
-json_escape() {
-  python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1])'
-}
-
 path_state_json() {
   local path="$1"
   python3 - "$path" <<'PY'
@@ -108,14 +104,28 @@ emit_event() {
   local label="$2"
   local src="$3"
   local dst="$4"
-  local details="${5:-{}}"
-  printf '{"event":"%s","label":"%s","source":"%s","target":"%s","details":%s,"timestamp":"%s"}\n' \
-    "$(printf '%s' "$event" | json_escape)" \
-    "$(printf '%s' "$label" | json_escape)" \
-    "$(printf '%s' "$src" | json_escape)" \
-    "$(printf '%s' "$dst" | json_escape)" \
-    "$details" \
-    "$STAMP" | tee -a "$LOG_JSONL"
+  local details="${5:-}"
+  if [ -z "$details" ]; then
+    details="{}"
+  fi
+  python3 - "$event" "$label" "$src" "$dst" "$details" "$STAMP" "$LOG_JSONL" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+event, label, src, dst, details_raw, stamp, log_jsonl = sys.argv[1:]
+payload = {
+    "event": event,
+    "label": label,
+    "source": src,
+    "target": dst,
+    "details": json.loads(details_raw),
+    "timestamp": stamp,
+}
+line = json.dumps(payload, sort_keys=True)
+Path(log_jsonl).open("a", encoding="utf-8").write(line + "\n")
+print(line)
+PY
 }
 
 verify_rsync_clean() {
@@ -124,11 +134,11 @@ verify_rsync_clean() {
   local diff
   diff="$(rsync -a --delete --dry-run --itemize-changes "$src"/ "$dst"/)"
   if [ -n "$diff" ]; then
-    emit_event "verify_failed" "$LABEL" "$src" "$dst" "$(python3 - <<PY
+    emit_event "verify_failed" "$LABEL" "$src" "$dst" "$(printf '%s' "$diff" | python3 -c '
 import json
-print(json.dumps({"rsync_dry_run": """$diff"""}))
-PY
-)"
+import sys
+print(json.dumps({"rsync_dry_run": sys.stdin.read()}))
+')"
     echo "copy verification failed for $src -> $dst" >&2
     echo "$diff" >&2
     exit 1

@@ -18,6 +18,8 @@ set -u
 REPO=/home/cabdru/contextgraph
 DATA_ROOT="${CONTEXTGRAPH_DATA_ROOT:-/mnt/d/contextgraph}"
 BIN="$REPO/target/release/context-graph-mcp"
+MODE="${CONTEXT_GRAPH_MCP_MODE:-reality-loop}"
+MODELS="${CONTEXT_GRAPH_MODELS_PATH:-/mnt/d/cabdru/contextgraph/models}"
 PIDFILE="${DATA_ROOT}/state/locks/context-graph-daemon.pid"
 DAEMON_LOG="${DATA_ROOT}/logs/cg-daemon.log"
 WATCHDOG_LOG="${DATA_ROOT}/logs/vram_watchdog.log"
@@ -98,10 +100,10 @@ else
   [ -x "$BIN" ] || fail "binary not found or not executable: $BIN"
   echo "[restart] launching daemon (detached via setsid) — model load takes 30-60s..."
   cd "$REPO"
-  setsid bash -c "CONTEXTGRAPH_DATA_ROOT=\"$DATA_ROOT\" CONTEXT_GRAPH_STORAGE_PATH=\"${DATA_ROOT}/storage/contextgraph-rocksdb\" RUST_LOG=info exec \"$BIN\" --daemon-server-only --daemon-port 3100 > \"$DAEMON_LOG\" 2>&1" < /dev/null >/dev/null 2>&1 &
+  setsid bash -c "CONTEXTGRAPH_DATA_ROOT=\"$DATA_ROOT\" CONTEXT_GRAPH_STORAGE_PATH=\"${DATA_ROOT}/storage/contextgraph-rocksdb\" CONTEXT_GRAPH_DB_PATH=\"${DATA_ROOT}/storage/contextgraph-rocksdb\" CONTEXT_GRAPH_MODELS_PATH=\"$MODELS\" RUST_LOG=info exec \"$BIN\" --mode \"$MODE\" --daemon-server-only --daemon-port 3100 > \"$DAEMON_LOG\" 2>&1" < /dev/null >/dev/null 2>&1 &
   sleep 1
   # Recover actual daemon PID from setsid child via pgrep
-  DPID=$(pgrep -f 'context-graph-mcp --daemon-server-only --daemon-port 3100' | head -1)
+  DPID=$(pgrep -f 'context-graph-mcp .*--daemon-server-only .*--daemon-port 3100' | head -1)
   if [ -z "$DPID" ]; then
     fail "daemon did not start (setsid child missing)"
   fi
