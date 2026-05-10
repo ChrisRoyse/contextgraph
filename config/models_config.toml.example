@@ -1,0 +1,216 @@
+# Phase 1b ME-JEPA embedder registry schema.
+# Copy this structure into the real operator-owned models_config.toml and replace
+# every manifest_sha256 with the SHA-256 manifest produced from the actual files.
+# Production code refuses to load missing files or mismatched digests.
+
+schema_version = 1
+
+[embedders.e1]
+embedder = "e1"
+name = "semantic"
+kind = "content_pretrained"
+path = "/mnt/d/cabdru/contextgraph/models/semantic"
+repo = "intfloat/e5-large-v2"
+dimension = 1024
+weight_files = ["model.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e2]
+embedder = "e2"
+name = "temporal_recent"
+kind = "content_deterministic"
+path = ""
+repo = ""
+dimension = 512
+weight_files = []
+manifest_sha256 = ""
+
+[embedders.e3]
+embedder = "e3"
+name = "temporal_periodic"
+kind = "content_deterministic"
+path = ""
+repo = ""
+dimension = 512
+weight_files = []
+manifest_sha256 = ""
+
+[embedders.e4]
+embedder = "e4"
+name = "temporal_positional"
+kind = "content_deterministic"
+path = ""
+repo = ""
+dimension = 512
+weight_files = []
+manifest_sha256 = ""
+
+[embedders.e5]
+embedder = "e5"
+name = "causal"
+kind = "content_pretrained"
+path = "/mnt/d/cabdru/contextgraph/models/causal"
+repo = "nomic-ai/nomic-embed-text-v1.5"
+dimension = 768
+weight_files = ["model.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e6]
+embedder = "e6"
+name = "sparse"
+kind = "content_pretrained"
+path = "/mnt/d/cabdru/contextgraph/models/sparse"
+repo = "naver/splade-cocondenser-ensembledistil"
+dimension = 1536
+weight_files = ["model.safetensors", "sparse_projection.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e7]
+embedder = "e7"
+name = "code"
+kind = "content_pretrained"
+path = "/mnt/d/cabdru/contextgraph/models/code-1536"
+repo = "Qodo/Qodo-Embed-1-1.5B"
+dimension = 1536
+weight_files = ["model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e8]
+embedder = "e8"
+name = "graph"
+kind = "content_pretrained"
+path = "/mnt/d/cabdru/contextgraph/models/graph"
+repo = "intfloat/e5-large-v2"
+dimension = 1024
+weight_files = ["model.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e9]
+embedder = "e9"
+name = "hdc"
+kind = "content_deterministic"
+path = ""
+repo = ""
+dimension = 1024
+weight_files = []
+manifest_sha256 = ""
+
+[embedders.e10]
+embedder = "e10"
+name = "contextual"
+kind = "content_pretrained"
+path = "/mnt/d/cabdru/contextgraph/models/contextual"
+repo = "intfloat/e5-base-v2"
+dimension = 768
+weight_files = ["model.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e11]
+embedder = "e11"
+name = "kepler"
+kind = "content_pretrained"
+path = "/mnt/d/cabdru/contextgraph/models/kepler"
+repo = "THU-KEG/KEPLER-Wiki5M-KE"
+dimension = 768
+weight_files = ["model.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e12]
+embedder = "e12"
+name = "late_interaction"
+kind = "content_pretrained"
+path = "/mnt/d/cabdru/contextgraph/models/late-interaction"
+repo = "colbert-ir/colbertv2.0"
+dimension = 128
+weight_files = ["model.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e13]
+embedder = "e13"
+name = "splade_v3"
+kind = "content_pretrained"
+path = "/mnt/d/cabdru/contextgraph/models/splade-v3"
+repo = "prithivida/Splade_PP_en_v1"
+dimension = 1536
+weight_files = ["model.safetensors", "sparse_projection.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e14]
+embedder = "e14"
+name = "bge_m3_dense"
+kind = "content_pretrained"
+path = "/mnt/d/cabdru/contextgraph/models/bge-m3-dense"
+repo = "BAAI/bge-m3"
+dimension = 1024
+weight_files = ["model.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e15]
+embedder = "e15"
+name = "affect_speech"
+kind = "learner_state"
+path = "/mnt/d/cabdru/contextgraph/models/learner-state/affect-speech"
+repo = "msp-dim/wav2vec2-large"
+dimension = 1024
+weight_files = ["model.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e16]
+embedder = "e16"
+name = "affect_face"
+kind = "learner_state"
+path = "/mnt/d/cabdru/contextgraph/models/learner-state/affect-face"
+repo = "OpenFace-3.0+MTL-local"
+dimension = 512
+weight_files = ["model.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e17]
+embedder = "e17"
+name = "affect_text"
+kind = "learner_state"
+path = "/mnt/d/cabdru/contextgraph/models/learner-state/affect-text"
+repo = "MiniLM-L6-v2+EmoBank-local"
+dimension = 384
+weight_files = ["model.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e18]
+embedder = "e18"
+name = "ppg"
+kind = "learner_state"
+path = "/mnt/d/cabdru/contextgraph/models/learner-state/ppg"
+repo = "PaPaGei/ppg-foundation"
+dimension = 512
+weight_files = ["model.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e19]
+embedder = "e19"
+name = "eda"
+kind = "learner_state"
+path = "/mnt/d/cabdru/contextgraph/models/learner-state/eda"
+repo = "WESAD/eda-stress-head"
+dimension = 64
+weight_files = ["model.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e20]
+embedder = "e20"
+name = "eeg"
+kind = "learner_state"
+path = "/mnt/d/cabdru/contextgraph/models/learner-state/eeg"
+repo = "LaBraM/eeg-foundation"
+dimension = 768
+weight_files = ["model.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[embedders.e21]
+embedder = "e21"
+name = "eeg_artifact_robust"
+kind = "learner_state"
+path = "/mnt/d/cabdru/contextgraph/models/learner-state/eeg-robust"
+repo = "EEGPT/eeg-artifact-robust"
+dimension = 768
+weight_files = ["model.safetensors"]
+manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"

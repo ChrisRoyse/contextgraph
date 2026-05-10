@@ -214,4 +214,12 @@ mod tests {
             "MEJEPA_EMBED_INVALID_INPUT"
         );
     }
+
+    #[test]
+    fn repository_example_config_matches_schema() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../config/models_config.toml.example");
+        let config = ModelsConfig::load(path).unwrap();
+        assert_eq!(config.embedders.len(), 21);
+    }
 }
