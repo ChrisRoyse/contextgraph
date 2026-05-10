@@ -40,7 +40,7 @@ fn get_memory_neighbors_definition() -> ToolDefinition {
                     "minimum": 0,
                     "maximum": 12,
                     "default": 0,
-                    "description": "Embedder space to search (0=E1 semantic, 6=E7 code, 7=E8 graph, 9=E10 paraphrase, 10=E11 entity). E5 causal is retired and disabled."
+                    "description": "Embedder space to search (0=E1 semantic, 6=E7 code, 7=E8 graph, 9=E10 paraphrase). E5 causal is retired and E11 entity is disabled."
                 },
                 "top_k": {
                     "type": "integer",
@@ -188,7 +188,7 @@ fn get_unified_neighbors_definition() -> ToolDefinition {
          view where neighbors are ranked by how consistently multiple embedders agree they are \
          related. Unlike get_memory_neighbors (single embedder), this shows what active embedders \
          agree on. Per ARCH-21: Uses Weighted RRF, not weighted sum. Per AP-60: Temporal \
-         embedders (E2-E4) are excluded from semantic fusion. E5 causal is retired and fixed at zero weight.",
+         embedders (E2-E4) are excluded from semantic fusion. E5 causal is retired and E11 entity is disabled; both are fixed at zero weight.",
         json!({
             "type": "object",
             "required": ["memory_id"],
@@ -238,7 +238,7 @@ fn get_unified_neighbors_definition() -> ToolDefinition {
                 },
                 "custom_weights": {
                     "type": "object",
-                    "description": "Custom per-embedder weights (overrides weight_profile). Each value 0-1, must sum to ~1.0.",
+                    "description": "Custom per-embedder weights (overrides weight_profile). Each active value is 0-1, retired E5 and disabled E11 must be 0, and weights must sum to ~1.0.",
                     "properties": {
                         "E1":  { "type": "number", "minimum": 0, "maximum": 1 },
                         "E2":  { "type": "number", "minimum": 0, "maximum": 1 },

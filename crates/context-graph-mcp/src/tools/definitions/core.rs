@@ -206,7 +206,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "customWeights": {
                         "type": "object",
-                        "description": "Custom per-embedder weights (overrides weightProfile). Each value 0-1, must sum to ~1.0. Omitted embedders default to 0. Temporal embedders E2/E3/E4 encode INDEPENDENT time dimensions and should be tuned separately: E2 (recency — how recently something was stored), E3 (periodicity — recurring time-of-day/day-of-week patterns), E4 (sequence — ordering within a conversation session). Set any combination to emphasize different temporal aspects.",
+                        "description": "Custom per-embedder weights (overrides weightProfile). Each active value is 0-1, retired E5 and disabled E11 must be 0, and weights must sum to ~1.0. Omitted embedders default to 0. Temporal embedders E2/E3/E4 encode INDEPENDENT time dimensions and should be tuned separately: E2 (recency — how recently something was stored), E3 (periodicity — recurring time-of-day/day-of-week patterns), E4 (sequence — ordering within a conversation session). Set any combination to emphasize different temporal aspects.",
                         "properties": {
                             "E1":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Semantic similarity (foundation)" },
                             "E2":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Temporal recency — find memories stored near a given time" },
