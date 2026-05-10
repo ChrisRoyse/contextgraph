@@ -41,5 +41,32 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 }
             }),
         ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_CONSTELLATION_INSPECT,
+            "Inspect a persisted ME-JEPA TCT constellation from CF_MEJEPA_CONSTELLATION. Returns metadata, counts, support, and thresholds only; raw centroid vectors are never returned.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["runtimeEmbedderVersions"],
+                "properties": {
+                    "dbPath": {
+                        "type": "string",
+                        "description": "RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_TCT_DB is required."
+                    },
+                    "versionId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{64}$"
+                    },
+                    "runtimeEmbedderVersions": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string",
+                            "pattern": "^[0-9a-fA-F]{64}$"
+                        },
+                        "minProperties": 21
+                    }
+                }
+            }),
+        ),
     ]
 }

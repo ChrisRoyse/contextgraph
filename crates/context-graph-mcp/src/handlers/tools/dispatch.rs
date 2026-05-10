@@ -164,6 +164,7 @@ impl Handlers {
             // ME-JEPA Phase 4 inference tools
             tool_names::MEJEPA_VERIFY => call_mejepa_verify(arguments),
             tool_names::MEJEPA_PREDICT_LATEST => call_mejepa_predict_latest(arguments),
+            tool_names::MEJEPA_CONSTELLATION_INSPECT => call_mejepa_constellation_inspect(arguments),
             // Provenance tools (Phase P3)
             tool_names::GET_AUDIT_TRAIL => call_get_audit_trail(arguments),
             tool_names::GET_MERGE_HISTORY => call_get_merge_history(arguments),

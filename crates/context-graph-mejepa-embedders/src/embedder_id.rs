@@ -234,12 +234,7 @@ impl FromStr for EmbedderId {
     type Err = EmbedError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value
-            .to_ascii_lowercase()
-            .replace('_', "")
-            .replace('-', "")
-            .as_str()
-        {
+        match value.to_ascii_lowercase().replace(['_', '-'], "").as_str() {
             "e1" | "semantic" => Ok(Self::E1),
             "e2" | "temporalrecent" => Ok(Self::E2),
             "e3" | "temporalperiodic" => Ok(Self::E3),

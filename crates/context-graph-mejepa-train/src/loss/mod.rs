@@ -61,8 +61,10 @@ pub fn compose_l_full(
         &aux_outputs.traceback_cluster_logits,
         &batch_metadata.actual_traceback_cluster_id,
     )?;
-    let l_hunk =
-        aux::l_binary_ce(&aux_outputs.hunk_verdicts, &batch_metadata.actual_hunk_verdicts)?;
+    let l_hunk = aux::l_binary_ce(
+        &aux_outputs.hunk_verdicts,
+        &batch_metadata.actual_hunk_verdicts,
+    )?;
     let l_collateral = aux::l_binary_ce(
         &aux_outputs.adjacent_outcomes,
         &batch_metadata.actual_adjacent_outcomes,
@@ -123,12 +125,18 @@ pub fn compose_l_full(
 }
 
 pub(crate) fn scalar(tensor: &Tensor) -> Result<f32, TrainerError> {
-    Ok(tensor.to_dtype(candle_core::DType::F32)?.mean_all()?.to_scalar::<f32>()?)
+    Ok(tensor
+        .to_dtype(candle_core::DType::F32)?
+        .mean_all()?
+        .to_scalar::<f32>()?)
 }
 
 #[allow(dead_code)]
 pub(crate) fn finite_tensor(tensor: &Tensor, field: &'static str) -> Result<(), TrainerError> {
-    let vals = tensor.to_dtype(candle_core::DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
+    let vals = tensor
+        .to_dtype(candle_core::DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
     if vals.iter().any(|v| !v.is_finite()) {
         return Err(TrainerError::new(
             TrainerErrorCode::MejepaTrainLossNan,
@@ -152,7 +160,8 @@ mod tests {
             warnings: Tensor::zeros((2, 1), candle_core::DType::F32, &device).unwrap(),
             runtime_log: Tensor::zeros((2, 1), candle_core::DType::F32, &device).unwrap(),
             rss: Tensor::zeros((2, 1), candle_core::DType::F32, &device).unwrap(),
-            traceback_cluster_logits: Tensor::zeros((2, 2), candle_core::DType::F32, &device).unwrap(),
+            traceback_cluster_logits: Tensor::zeros((2, 2), candle_core::DType::F32, &device)
+                .unwrap(),
             hunk_verdicts: Tensor::zeros((2, 1), candle_core::DType::F32, &device).unwrap(),
             adjacent_outcomes: Tensor::zeros((2, 1), candle_core::DType::F32, &device).unwrap(),
             reasoning_embedding: p.clone(),
@@ -168,7 +177,7 @@ mod tests {
             actual_cot_cluster_id: Tensor::from_slice(&[0u32, 1], 2, &device).unwrap(),
             override_flags: vec![false, false],
             override_gold_labels: Tensor::zeros((2, 2), candle_core::DType::F32, &device).unwrap(),
-            current_task_centroids: None,
+            current_task_centroids: Some(vec![p.clone()]),
         };
         let loss = compose_l_full(&p, &t, &aux, &meta, &LossCoefficients::default()).unwrap();
         assert_eq!(loss.components.len(), 13);

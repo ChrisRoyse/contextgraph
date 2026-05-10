@@ -194,6 +194,8 @@ pub enum MejepaInferError {
     Bincode(#[from] Box<bincode::ErrorKind>),
     #[error("MEJEPA_INFER_INSTRUMENT: {0}")]
     Instrument(#[from] context_graph_mejepa_instruments::InstrumentError),
+    #[error("MEJEPA_INFER_TCT: {0}")]
+    Tct(#[from] context_graph_mejepa_tct::TctError),
     #[error("MEJEPA_INFER_PREDICTOR: {0}")]
     Predictor(#[from] PredictorError),
 }
@@ -219,6 +221,7 @@ impl MejepaInferError {
             Self::RocksDb(_) => "MEJEPA_INFER_ROCKSDB",
             Self::Bincode(_) => "MEJEPA_INFER_BINCODE",
             Self::Instrument(_) => "MEJEPA_INFER_INSTRUMENT",
+            Self::Tct(_) => "MEJEPA_INFER_TCT",
             Self::Predictor(_) => "MEJEPA_INFER_PREDICTOR",
         }
     }

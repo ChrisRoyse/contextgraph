@@ -15,6 +15,7 @@ pub fn with_chain_lock<T>(path: &Path, operation: impl FnOnce() -> Result<T>) ->
         let lock_path = parent.join("witness-chain.lock");
         let lock_file = fs::OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(&lock_path)

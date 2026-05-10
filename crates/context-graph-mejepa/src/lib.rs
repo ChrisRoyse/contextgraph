@@ -35,7 +35,8 @@ pub use compiler::{
     materialize_inference_panels, panel_sha, residual_norm_sq, ConstellationDecision,
     ConstellationGuard, DeterministicConstellationGuard, DeterministicOracleHead,
     DeterministicPredictor, FrozenTarget, IdentityFrozenTarget, MeJepaCompiler, MejepaStore,
-    OracleScores, PatchWitnessReader, Predictor, TrainCertSummary, WitnessChainReader,
+    OracleScores, PatchWitnessReader, Predictor, TctConstellationGuard, TrainCertSummary,
+    WitnessChainReader,
 };
 pub use config::{
     MeJepaInferConfig, PredictorConfig, CONCAT_INPUT_DIM, DEFAULT_FF_EXPANSION, DEFAULT_HIDDEN_DIM,

@@ -100,6 +100,8 @@ pub const MEJEPA_VRAM_BUDGET_REPORT: &str = "mejepa_vram_budget_report";
 pub const MEJEPA_VERIFY: &str = "mcp__cgreality__mejepa_verify";
 /// Phase 4 inference live-prediction readback tool.
 pub const MEJEPA_PREDICT_LATEST: &str = "mcp__cgreality__mejepa_predict_latest";
+/// Phase 4b TCT constellation source-of-truth inspector.
+pub const MEJEPA_CONSTELLATION_INSPECT: &str = "mcp__cgreality__mejepa_constellation_inspect";
 // ========== TEMPORAL TOOLS (E2/E3 Integration) ==========
 // Temporal search with E2/E3 boost applied POST-retrieval per ARCH-25.
 pub const SEARCH_RECENT: &str = "search_recent";

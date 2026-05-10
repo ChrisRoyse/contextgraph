@@ -14,6 +14,7 @@ chrono = { workspace = true }
 clap = { version = "4.5", features = ["derive"] }
 context-graph-cuda = { path = "../context-graph-cuda" }
 context-graph-mejepa-instruments = { path = "../context-graph-mejepa-instruments" }
+context-graph-mejepa-tct = { path = "../context-graph-mejepa-tct" }
 context-graph-witness = { path = "../context-graph-witness" }
 hex = "0.4"
 rocksdb = "0.22"

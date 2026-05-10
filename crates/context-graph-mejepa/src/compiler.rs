@@ -6,6 +6,10 @@ use context_graph_mejepa_instruments::materialize::{
     materialize_panel, PanelVectorInput, TimeStep,
 };
 use context_graph_mejepa_instruments::{InstrumentSlot, Panel};
+use context_graph_mejepa_tct::{
+    gtau_check, EntityType as TctEntityType, Language as TctLanguage,
+    MutationCategory as TctMutationCategory, TctConstellation,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -67,6 +71,7 @@ pub trait ConstellationGuard: Send + Sync {
     fn verify(
         &self,
         prediction: &RealityPrediction,
+        predicted_panel: &Panel,
         context: &TaskContext,
     ) -> Result<ConstellationDecision, MejepaInferError>;
 
@@ -150,6 +155,15 @@ impl MeJepaCompiler {
         patch: &PatchBundle,
         context: &TaskContext,
     ) -> Result<RealityPrediction, MejepaInferError> {
+        self.compile_with_panel(patch, context)
+            .map(|(prediction, _predicted_panel)| prediction)
+    }
+
+    pub fn compile_with_panel(
+        &self,
+        patch: &PatchBundle,
+        context: &TaskContext,
+    ) -> Result<(RealityPrediction, Panel), MejepaInferError> {
         context.validate()?;
         let calibration = self.calibration.load_active()?;
         let (panel_t0, panel_t1, panel_t2) = materialize_inference_panels(patch, context)?;
@@ -211,6 +225,7 @@ impl MeJepaCompiler {
         .source_panel_sha(panel_sha(&predicted))
         .calibration_version(calibration.version.clone())
         .build()
+        .map(|prediction| (prediction, predicted))
     }
 
     pub fn verify(
@@ -235,8 +250,8 @@ impl MeJepaCompiler {
             });
         }
 
-        let prediction = match self.compile(patch, context) {
-            Ok(prediction) => prediction,
+        let (prediction, predicted_panel) = match self.compile_with_panel(patch, context) {
+            Ok(value) => value,
             Err(MejepaInferError::OodRefuse {
                 ood_score,
                 threshold,
@@ -301,7 +316,9 @@ impl MeJepaCompiler {
             });
         }
 
-        let constellation = self.constellation_guard.verify(&prediction, context)?;
+        let constellation =
+            self.constellation_guard
+                .verify(&prediction, &predicted_panel, context)?;
         if constellation.age_days > self.config.max_constellation_age_days {
             return Err(MejepaInferError::GtauStaleConstellation {
                 version: constellation.version_id,
@@ -503,6 +520,7 @@ impl ConstellationGuard for DeterministicConstellationGuard {
     fn verify(
         &self,
         _prediction: &RealityPrediction,
+        _predicted_panel: &Panel,
         context: &TaskContext,
     ) -> Result<ConstellationDecision, MejepaInferError> {
         let approved = !context
@@ -525,6 +543,77 @@ impl ConstellationGuard for DeterministicConstellationGuard {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct TctConstellationGuard {
+    constellation: TctConstellation,
+    predicted_class: TctMutationCategory,
+    entity_type: TctEntityType,
+}
+
+impl TctConstellationGuard {
+    pub fn new(
+        constellation: TctConstellation,
+        predicted_class: TctMutationCategory,
+        entity_type: TctEntityType,
+    ) -> Result<Self, MejepaInferError> {
+        constellation.validate_integrity()?;
+        Ok(Self {
+            constellation,
+            predicted_class,
+            entity_type,
+        })
+    }
+}
+
+impl ConstellationGuard for TctConstellationGuard {
+    fn verify(
+        &self,
+        _prediction: &RealityPrediction,
+        predicted_panel: &Panel,
+        context: &TaskContext,
+    ) -> Result<ConstellationDecision, MejepaInferError> {
+        let language = tct_language(context.language);
+        let output = gtau_check(
+            predicted_panel,
+            self.predicted_class,
+            language,
+            self.entity_type,
+            &self.constellation,
+        )?;
+        let age_days = constellation_age_days(self.constellation.frozen_at)?;
+        Ok(ConstellationDecision {
+            approved: output.gtau_satisfied,
+            reason: if output.gtau_satisfied {
+                format!(
+                    "Gtau accepted all {} embedders; min_margin={:.6}",
+                    output.evaluated_embedder_count, output.min_margin
+                )
+            } else {
+                let first = output
+                    .violations
+                    .first()
+                    .map(|violation| {
+                        format!(
+                            "{} observed_cos={:.6} threshold={:.6}",
+                            violation.embedder, violation.observed_cos, violation.threshold
+                        )
+                    })
+                    .unwrap_or_else(|| "unknown violation".to_string());
+                format!(
+                    "Gtau rejected {} violating embedders; first={first}",
+                    output.violations.len()
+                )
+            },
+            version_id: hex::encode(self.constellation.version_id()),
+            age_days,
+        })
+    }
+
+    fn version_id(&self) -> Option<String> {
+        Some(hex::encode(self.constellation.version_id()))
+    }
+}
+
 pub fn residual_norm_sq(predicted: &Panel, target: &Panel) -> Result<f32, MejepaInferError> {
     squared_l2(predicted.data(), target.data())
 }
@@ -540,4 +629,30 @@ fn synthetic_panel_for_scenario(scenario: u8, force_ood: bool) -> Result<Panel, 
     data[offset] = scenario as f32;
     let filled_mask = (1u16 << InstrumentSlot::all().len()) - 1;
     Ok(Panel::try_new(data, filled_mask)?)
+}
+
+fn tct_language(language: crate::types::Language) -> TctLanguage {
+    match language {
+        crate::types::Language::Rust => TctLanguage::Rust,
+        crate::types::Language::Python => TctLanguage::Python,
+        crate::types::Language::Javascript => TctLanguage::Javascript,
+        crate::types::Language::Typescript => TctLanguage::Typescript,
+        crate::types::Language::Go => TctLanguage::Go,
+        crate::types::Language::Java => TctLanguage::Java,
+        crate::types::Language::C => TctLanguage::C,
+        crate::types::Language::Cpp => TctLanguage::Cpp,
+        crate::types::Language::CSharp => TctLanguage::CSharp,
+        crate::types::Language::Ruby => TctLanguage::Ruby,
+        crate::types::Language::Php => TctLanguage::Php,
+    }
+}
+
+fn constellation_age_days(frozen_at: std::time::SystemTime) -> Result<u32, MejepaInferError> {
+    let age = std::time::SystemTime::now()
+        .duration_since(frozen_at)
+        .map_err(|_| MejepaInferError::InvalidInput {
+            field: "constellation.frozen_at".to_string(),
+            detail: "constellation frozen_at is in the future".to_string(),
+        })?;
+    Ok((age.as_secs() / 86_400) as u32)
 }

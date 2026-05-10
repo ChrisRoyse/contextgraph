@@ -50,9 +50,9 @@ pub(super) fn recall_recommendations_for_run(
 ) -> Result<Value> {
     let failure_summary = required_str(args, "failure_summary")?;
     let k = bounded_k(args)?;
-    let alpha = optional_f64_strict(&args, "alpha", 0.7)?;
-    let beta = optional_f64_strict(&args, "beta", 0.2)?;
-    let gamma = optional_f64_strict(&args, "gamma", 0.1)?;
+    let alpha = optional_f64_strict(args, "alpha", 0.7)?;
+    let beta = optional_f64_strict(args, "beta", 0.2)?;
+    let gamma = optional_f64_strict(args, "gamma", 0.1)?;
     let lambda = optional_f64_strict(args, "lambda", 0.7)?;
     for (name, value) in [("alpha", alpha), ("beta", beta), ("gamma", gamma)] {
         if !value.is_finite() || value < 0.0 {
@@ -69,7 +69,7 @@ pub(super) fn recall_recommendations_for_run(
             None,
         ));
     }
-    let run_root = runtime_root.join(&run_id);
+    let run_root = runtime_root.join(run_id);
     let witness_preflight = verify_witness_chain_for_run(runtime_root, run_id)?;
     let mut paths = Vec::new();
     collect_recommendation_paths(&run_root, &mut paths)?;
