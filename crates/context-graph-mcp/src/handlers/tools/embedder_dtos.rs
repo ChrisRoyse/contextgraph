@@ -737,8 +737,14 @@ pub struct GetMemoryFingerprintResponse {
     pub memory_id: Uuid,
     /// Per-embedder vector info.
     pub embedders: Vec<EmbedderVectorInfo>,
-    /// Total embedders with vectors present.
+    /// Active embedders with vectors present.
     pub embedders_present: usize,
+    /// Number of active content embedders that may contribute to ME-JEPA/search.
+    pub active_embedder_count: usize,
+    /// Number of persisted storage slots in each TeleologicalFingerprint.
+    pub storage_slot_count: usize,
+    /// Retired or disabled slots kept only for schema compatibility.
+    pub disabled_embedders: Vec<String>,
     /// Content text (if includeContent=true).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,

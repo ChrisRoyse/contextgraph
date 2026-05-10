@@ -25,6 +25,11 @@ import traceback
 # Configuration
 # ============================================================================
 MCP_BINARY = "/home/cabdru/contextgraph/target/release/context-graph-mcp"
+DATA_ROOT = os.environ.get("CONTEXTGRAPH_DATA_ROOT", "/mnt/d/contextgraph")
+MODELS_PATH = os.environ.get("CONTEXT_GRAPH_MODELS_PATH", "/mnt/d/cabdru/contextgraph/models")
+ACTIVE_EMBEDDERS = ["E1", "E2", "E3", "E4", "E6", "E7", "E8", "E9", "E10", "E12", "E13", "E14"]
+DISABLED_EMBEDDERS = ["E5", "E11"]
+NUM_STORAGE_SLOTS = 14
 TIMEOUT = 120  # seconds per call (some tools are slow with GPU)
 
 # ============================================================================
@@ -45,7 +50,9 @@ class McpClient:
         """Start the MCP server process."""
         env = os.environ.copy()
         env["CONTEXT_GRAPH_STORAGE_PATH"] = self.storage_path
-        env["CONTEXT_GRAPH_MODELS_PATH"] = "/home/cabdru/.cache/huggingface/hub"
+        env["CONTEXTGRAPH_DATA_ROOT"] = DATA_ROOT
+        env["CONTEXT_GRAPH_DB_PATH"] = self.storage_path
+        env["CONTEXT_GRAPH_MODELS_PATH"] = MODELS_PATH
         env["CONTEXT_GRAPH_WARM_FIRST"] = "1"
         env["RUST_LOG"] = "error"
 
@@ -356,55 +363,82 @@ class FSVTestRunner:
                            str(data)[:200] if data else "None", f"Error getting fingerprint for {label}")
                 continue
 
-            # Verify all 13 embedders present
-            embedders = data.get("embedders", {})
+            # Verify the active ME-JEPA embedder topology. E5 causal and E11
+            # entity remain persisted schema slots, but must be present=false.
+            embedders = data.get("embedders", [])
             embedder_count = len(embedders)
+            by_name = {
+                item.get("embedder"): item
+                for item in embedders
+                if isinstance(item, dict) and item.get("embedder")
+            }
+            active_count = data.get("activeEmbedderCount")
+            storage_slot_count = data.get("storageSlotCount")
+            disabled_names = data.get("disabledEmbedders", [])
 
             # Check asymmetric variants
-            e5 = embedders.get("E5", {})
-            e8 = embedders.get("E8", {})
-            e10 = embedders.get("E10", {})
+            e8 = by_name.get("E8", {})
+            e10 = by_name.get("E10", {})
 
-            e5_has_variants = e5.get("cause") is not None and e5.get("effect") is not None if isinstance(e5, dict) else False
-            e8_has_variants = e8.get("source") is not None and e8.get("target") is not None if isinstance(e8, dict) else False
-            e10_has_variants = e10.get("doc") is not None and e10.get("query") is not None if isinstance(e10, dict) else False
+            e8_variant_names = {
+                item.get("variant")
+                for item in e8.get("variants", [])
+                if isinstance(item, dict)
+            } if isinstance(e8, dict) else set()
+            e10_variant_names = {
+                item.get("variant")
+                for item in e10.get("variants", [])
+                if isinstance(item, dict)
+            } if isinstance(e10, dict) else set()
+            e8_has_variants = {"source", "target"}.issubset(e8_variant_names)
+            e10_has_variants = {"paraphrase", "context"}.issubset(e10_variant_names)
 
             issues = []
-            if embedder_count < 13:
-                issues.append(f"Only {embedder_count}/13 embedders")
-            if not e5_has_variants:
-                # Check alternate structure
-                e5_variants_str = json.dumps(e5)[:100] if e5 else "missing"
-                issues.append(f"E5 missing cause/effect variants: {e5_variants_str}")
+            missing_active = [name for name in ACTIVE_EMBEDDERS if not by_name.get(name, {}).get("present")]
+            active_disabled = [name for name in DISABLED_EMBEDDERS if by_name.get(name, {}).get("present")]
+            if active_count != len(ACTIVE_EMBEDDERS):
+                issues.append(f"Expected activeEmbedderCount={len(ACTIVE_EMBEDDERS)}, got {active_count}")
+            if storage_slot_count != NUM_STORAGE_SLOTS:
+                issues.append(f"Expected storageSlotCount={NUM_STORAGE_SLOTS}, got {storage_slot_count}")
+            if embedder_count != NUM_STORAGE_SLOTS:
+                issues.append(f"Expected {NUM_STORAGE_SLOTS} storage slot records, got {embedder_count}")
+            if disabled_names != DISABLED_EMBEDDERS:
+                issues.append(f"Expected disabledEmbedders={DISABLED_EMBEDDERS}, got {disabled_names}")
+            if missing_active:
+                issues.append(f"Missing active embedder vectors: {missing_active}")
+            if active_disabled:
+                issues.append(f"Disabled embedders have vectors: {active_disabled}")
             if not e8_has_variants:
                 e8_variants_str = json.dumps(e8)[:100] if e8 else "missing"
                 issues.append(f"E8 missing source/target variants: {e8_variants_str}")
             if not e10_has_variants:
                 e10_variants_str = json.dumps(e10)[:100] if e10 else "missing"
-                issues.append(f"E10 missing doc/query variants: {e10_variants_str}")
+                issues.append(f"E10 missing paraphrase/context variants: {e10_variants_str}")
 
             if issues:
                 # May still pass if structure is different - let me check
                 # The fingerprint format may use different keys
                 evidence = "; ".join(issues)
 
-                # More lenient check - look for any variant-like structure
-                fp_str = json.dumps(data)
-                has_dual = "cause" in fp_str or "effect" in fp_str or "source" in fp_str or "target" in fp_str
-
-                if embedder_count >= 13 and has_dual:
+                if (
+                    active_count == len(ACTIVE_EMBEDDERS)
+                    and storage_slot_count == NUM_STORAGE_SLOTS
+                    and embedder_count == NUM_STORAGE_SLOTS
+                    and not missing_active
+                    and not active_disabled
+                ):
                     verified += 1
                     self.record("get_memory_fingerprint", "PASS", f"{label} ID={mid}",
-                               f"{embedder_count} embedders, has_dual_vectors={has_dual}",
-                               f"13+ embedders present, dual vectors detected")
+                               f"active={active_count}, storage={storage_slot_count}, disabled={DISABLED_EMBEDDERS}",
+                               "Active vectors present; retired slots present=false")
                 else:
                     self.record("get_memory_fingerprint", "FAIL", f"{label} ID={mid}",
                                f"{embedder_count} embedders", evidence)
             else:
                 verified += 1
                 self.record("get_memory_fingerprint", "PASS", f"{label} ID={mid}",
-                           f"{embedder_count} embedders, E5 dual, E8 dual, E10 dual",
-                           "All 13 embedders present with correct asymmetric variants")
+                           f"active={active_count}, storage={storage_slot_count}, E8 dual, E10 dual",
+                           "All active embedders present; disabled E5/E11 present=false")
 
             # Print detailed evidence for key memories
             if label in detail_ids:
@@ -1095,23 +1129,21 @@ class FSVTestRunner:
 
         m1_id = self.memory_ids.get("M1", "")
 
-        # search_by_embedder E5
+        # search_by_embedder E5 must fail closed because E5 causal is retired.
         resp = self.client.call_tool("search_by_embedder", {
             "embedder": "E5",
             "query": "what causes cancer",
             "includeContent": True
         })
         data = parse_json_response(resp)
-        if not is_error(resp):
-            results = data.get("results", []) if isinstance(data, dict) else []
+        if is_error(resp):
             self.record("search_by_embedder[E5]", "PASS",
-                       "embedder=E5, query='what causes cancer'",
-                       f"{len(results)} results",
-                       "E5 embedder search returned")
+                       "embedder=E5",
+                       str(data)[:200], "Retired E5 rejected")
         else:
             self.record("search_by_embedder[E5]", "FAIL",
-                       "embedder=E5",
-                       str(data)[:200], "Error")
+                       "embedder=E5, query='what causes cancer'",
+                       str(data)[:200], "Retired E5 accepted unexpectedly")
 
         # search_by_embedder E7
         resp = self.client.call_tool("search_by_embedder", {
@@ -1150,17 +1182,17 @@ class FSVTestRunner:
         # compare_embedder_views
         resp = self.client.call_tool("compare_embedder_views", {
             "query": "stress cortisol brain",
-            "embedders": ["E1", "E5", "E11"]
+            "embedders": ["E1", "E7", "E14"]
         })
         data = parse_json_response(resp)
         if not is_error(resp):
             self.record("compare_embedder_views", "PASS",
-                       "query='stress cortisol brain', embedders=[E1,E5,E11]",
+                       "query='stress cortisol brain', embedders=[E1,E7,E14]",
                        str(data)[:200] if isinstance(data, str) else json.dumps(data)[:200],
                        "Embedder comparison returned")
         else:
             self.record("compare_embedder_views", "FAIL",
-                       "embedders=[E1,E5,E11]",
+                       "embedders=[E1,E7,E14]",
                        str(data)[:200], "Error")
 
         # list_embedder_indexes
@@ -1180,7 +1212,7 @@ class FSVTestRunner:
         # create_weight_profile
         resp = self.client.call_tool("create_weight_profile", {
             "name": "fsv_test_profile",
-            "weights": {"E1": 0.5, "E5": 0.2, "E7": 0.1, "E11": 0.1, "E6": 0.1}
+            "weights": {"E1": 0.5, "E7": 0.2, "E8": 0.1, "E10": 0.1, "E14": 0.1}
         })
         data = parse_json_response(resp)
         if not is_error(resp):
@@ -1196,13 +1228,13 @@ class FSVTestRunner:
         # search_cross_embedder_anomalies
         resp = self.client.call_tool("search_cross_embedder_anomalies", {
             "query": "cortisol stress",
-            "highEmbedder": "E5",
+            "highEmbedder": "E1",
             "lowEmbedder": "E7"
         })
         data = parse_json_response(resp)
         if not is_error(resp):
             self.record("search_cross_embedder_anomalies", "PASS",
-                       "query='cortisol stress', high=E5, low=E7",
+                       "query='cortisol stress', high=E1, low=E7",
                        str(data)[:200] if isinstance(data, str) else json.dumps(data)[:200],
                        "Cross-embedder anomaly search returned")
         else:
@@ -1567,11 +1599,11 @@ class FSVTestRunner:
         # All embedders excluded
         resp = self.client.call_tool("search_graph", {
             "query": "test",
-            "excludeEmbedders": ["E1","E2","E3","E4","E5","E6","E7","E8","E9","E10","E11","E12","E13"]
+            "excludeEmbedders": ACTIVE_EMBEDDERS
         })
         data = parse_json_response(resp)
         self.record("search_graph[edge:all_excluded]", "PASS",
-                   "excludeEmbedders=ALL 13",
+                   "excludeEmbedders=ALL ACTIVE",
                    str(data)[:200] if isinstance(data, str) else json.dumps(data)[:200],
                    "All embedders excluded handled gracefully")
 
@@ -1607,42 +1639,41 @@ class FSVTestRunner:
                        "Accepted built-in name overwrite",
                        "Should reject built-in names")
 
-        # Transparency verification: exclude E5,E7 and check breakdown
+        # Transparency verification: exclude two active embedders and check breakdown
         resp = self.client.call_tool("search_graph", {
             "query": "hippocampus neurons",
-            "excludeEmbedders": ["E5", "E7"],
+            "excludeEmbedders": ["E7", "E14"],
             "includeEmbedderBreakdown": True,
             "includeContent": True
         })
         data = parse_json_response(resp)
         if data and not is_error(resp):
             results = data.get("results", []) if isinstance(data, dict) else []
-            # Check that E5 and E7 are NOT in active embedders
-            breakdown_str = json.dumps(data)
-            e5_active = '"E5"' in breakdown_str and 'active' in breakdown_str.lower()
+            # Check that E7 and E14 are NOT in active embedders
             # More precise: check searchTransparency
             transparency = data.get("searchTransparency", {}) if isinstance(data, dict) else {}
             active_str = json.dumps(transparency)
-            e5_in_active = "E5" in active_str and "weight" in active_str
+            excluded_in_active = any(name in active_str and "weight" in active_str for name in ["E7", "E14"])
 
-            # Check if any result has E5/E7 in their breakdown with nonzero weight
+            # Check if any result has E7/E14 in their breakdown with nonzero weight
             has_excluded = False
             for r in results:
                 if isinstance(r, dict):
                     breakdown = r.get("embedderBreakdown", {}) or r.get("breakdown", {})
-                    for key in ["E5", "E7"]:
+                    for key in ["E7", "E14"]:
                         if key in str(breakdown):
                             val = breakdown.get(key, 0) if isinstance(breakdown, dict) else 0
                             if val and float(val) > 0:
                                 has_excluded = True
 
+            has_excluded = has_excluded or excluded_in_active
             self.record("search_graph[edge:transparency]", "PASS" if not has_excluded else "FAIL",
-                       "excludeEmbedders=[E5,E7], includeEmbedderBreakdown=true",
-                       f"E5/E7 in active breakdown: {has_excluded}",
+                       "excludeEmbedders=[E7,E14], includeEmbedderBreakdown=true",
+                       f"E7/E14 in active breakdown: {has_excluded}",
                        "Transparency report should NOT show excluded embedders as active")
         else:
             self.record("search_graph[edge:transparency]", "FAIL",
-                       "excludeEmbedders=[E5,E7]",
+                       "excludeEmbedders=[E7,E14]",
                        str(data)[:200], "Error")
 
     # ========================================================================
@@ -1706,10 +1737,20 @@ def main():
     print("=" * 80)
     print()
 
-    # Create temporary storage for clean-room investigation
-    tmpdir = tempfile.mkdtemp(prefix="fsv_mcp_")
+    if not os.path.isfile(MCP_BINARY):
+        raise FileNotFoundError(f"MCP binary not found: {MCP_BINARY}")
+    if not os.path.isdir(DATA_ROOT):
+        raise FileNotFoundError(f"ContextGraph D-drive data root not found: {DATA_ROOT}")
+    if not os.path.isdir(MODELS_PATH):
+        raise FileNotFoundError(f"ContextGraph D-drive models path not found: {MODELS_PATH}")
+
+    # Create D-backed temporary storage for clean-room investigation.
+    fsv_root = os.path.join(DATA_ROOT, "fsv")
+    os.makedirs(fsv_root, exist_ok=True)
+    tmpdir = tempfile.mkdtemp(prefix="fsv_mcp_", dir=fsv_root)
     storage_path = os.path.join(tmpdir, "rocksdb")
     print(f"Clean-room storage: {storage_path}")
+    print(f"Models path: {MODELS_PATH}")
     print()
 
     client = McpClient(MCP_BINARY, storage_path)

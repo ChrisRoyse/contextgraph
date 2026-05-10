@@ -31,6 +31,7 @@ use context_graph_core::memory::ast::{EntityType as AstEntityType, Language as A
 use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions};
 use context_graph_core::types::audit::{AuditOperation, AuditRecord};
 use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
+use context_graph_core::weights::{active_embedder_count, disabled_embedder_names};
 
 /// Maximum number of custom weight profiles to prevent unbounded HashMap growth.
 const MAX_CUSTOM_PROFILES: usize = 1_000;
@@ -1228,6 +1229,12 @@ impl Handlers {
             memory_id: memory_uuid,
             embedders: embedder_infos,
             embedders_present: present_count,
+            active_embedder_count: active_embedder_count(),
+            storage_slot_count: NUM_EMBEDDERS,
+            disabled_embedders: disabled_embedder_names()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
             content,
             created_at: fingerprint.created_at.to_rfc3339(),
         };
@@ -1235,6 +1242,9 @@ impl Handlers {
         info!(
             memory_id = %memory_uuid,
             embedders_present = present_count,
+            active_embedder_count = active_embedder_count(),
+            storage_slot_count = NUM_EMBEDDERS,
+            disabled_embedders = ?disabled_embedder_names(),
             elapsed_ms = elapsed_ms,
             "get_memory_fingerprint: Completed fingerprint introspection"
         );

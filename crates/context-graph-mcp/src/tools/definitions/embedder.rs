@@ -195,11 +195,13 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ToolDefinition::new(
             "get_memory_fingerprint",
             "Retrieve the per-embedder fingerprint vectors for a specific memory. Returns dimension, \
-             vector norm (L2), and presence status for each active embedder. Asymmetric embedders \
+             vector norm (L2), and presence status for each persisted storage slot, plus explicit \
+             activeEmbedderCount, storageSlotCount, and disabledEmbedders fields. Asymmetric embedders \
              (E8 graph, E10 paraphrase) show both directional variants. Sparse embedders \
              (E6, E13) show non-zero element count. E14 (BGE-M3 Dense) shows the 1024-D multilingual \
              vector. Use to debug embedding quality, verify which embedders produced vectors, and \
-             understand how a memory is represented across active spaces. E5 causal is retired and should be empty.",
+             understand how a memory is represented across active spaces. E5 causal and E11 entity \
+             are retained as schema slots only and should report present=false.",
             json!({
                 "type": "object",
                 "required": ["memoryId"],
@@ -211,7 +213,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "embedders": {
                         "type": "array",
-                        "description": "Filter to specific embedders (default: active embedders). E.g., [\"E1\", \"E7\", \"E14\"]. E5 is retired.",
+                        "description": "Filter to specific storage slots (default: all 14 slots). E.g., [\"E1\", \"E7\", \"E14\"]. E5 and E11 are disabled inspection-only slots.",
                         "items": {
                             "type": "string",
                             "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14"]
