@@ -32,7 +32,8 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_STORAGE = ROOT / "contextgraph_data"
+DATA_ROOT = Path(os.environ.get("CONTEXTGRAPH_DATA_ROOT", "/mnt/d/contextgraph"))
+DEFAULT_STORAGE = DATA_ROOT / "storage" / "contextgraph-rocksdb"
 DEFAULT_CLI = ROOT / "target/debug/context-graph-cli"
 DEFAULT_CAMD_PAIRS = Path("~/.contextgraph/training/v4_2_camd_lmdb.jsonl").expanduser()
 DEFAULT_EXPERIMENT_ROOT = Path("~/.contextgraph/experiments/shakespeare_closed_loop").expanduser()

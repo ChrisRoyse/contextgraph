@@ -43,7 +43,8 @@ import shakespeare_chunker  # noqa: E402
 
 
 DEFAULT_CORPUS = ROOT / "shakespear/complete_works.txt"
-DEFAULT_STORAGE = ROOT / "contextgraph_data"
+DATA_ROOT = Path(os.environ.get("CONTEXTGRAPH_DATA_ROOT", "/mnt/d/contextgraph"))
+DEFAULT_STORAGE = DATA_ROOT / "storage" / "contextgraph-rocksdb"
 DEFAULT_MCP = ROOT / "target/debug/context-graph-mcp"
 DEFAULT_MODELS = ROOT / "models"
 DEFAULT_REPORT = Path("~/.contextgraph/reports/shakespeare_corpus_fsv_latest.json").expanduser()
