@@ -615,23 +615,11 @@ impl Handlers {
 
         let mut causal_hints = Vec::with_capacity(items.len());
         if causal_hints_enabled {
-            let Some(provider) = &self.causal_hint_provider else {
-                return self.tool_error_typed(
-                    id,
-                    ToolErrorKind::Execution,
-                    "causalHints=true requires a causal hint provider",
-                );
-            };
-            if !provider.is_available() {
-                return self.tool_error_typed(
-                    id,
-                    ToolErrorKind::Execution,
-                    "causalHints=true requires a loaded causal hint provider",
-                );
-            }
-            for item in &items {
-                causal_hints.push(provider.get_hint(&item.content).await);
-            }
+            return self.tool_error_typed(
+                id,
+                ToolErrorKind::Validation,
+                "causalHints=true is not supported because E5 causal is retired and disabled",
+            );
         } else {
             causal_hints.resize_with(items.len(), || None);
         }

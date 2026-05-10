@@ -115,7 +115,8 @@ pub use pruning::{
 // Model accessor functions added for graph/causal discovery services
 pub use global_provider::{
     get_warm_causal_model, get_warm_graph_model, get_warm_provider,
-    initialize_global_warm_provider, is_warm_initialized, warm_status_message,
+    initialize_global_warm_provider, initialize_global_warm_provider_with_models_dir,
+    is_warm_initialized, warm_status_message,
 };
 
 // Learner-state E15-E21 embedder namespace.

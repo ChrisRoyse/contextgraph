@@ -915,13 +915,14 @@ pub trait MultiArrayEmbeddingProvider: Send + Sync {
     ///
     /// # Default Implementation
     ///
-    /// Falls back to `embed_all` and extracts E5 dual vectors.
-    /// Implementations should override for efficiency.
+    /// E5 is retired/inactive in the current ME-JEPA stack, so the default
+    /// implementation fails closed. Implementations that deliberately re-enable
+    /// E5 must override this method and provide real dual vectors.
     async fn embed_e5_dual(&self, content: &str) -> CoreResult<(Vec<f32>, Vec<f32>)> {
-        let output = self.embed_all(content).await?;
-        Ok((
-            output.fingerprint.e5_causal_as_cause,
-            output.fingerprint.e5_causal_as_effect,
+        let _ = content;
+        Err(CoreError::Internal(
+            "E5 causal embedder is retired and disabled; ME-JEPA/retrieval must use active embedders instead"
+                .to_string(),
         ))
     }
 
@@ -994,7 +995,7 @@ pub trait MultiArrayEmbeddingProvider: Send + Sync {
             512,  // E2: Temporal-Recent
             512,  // E3: Temporal-Periodic
             512,  // E4: Temporal-Positional
-            768,  // E5: Causal (Longformer)
+            0,    // E5: retired/disabled (kept as an addressable legacy slot)
             0,    // E6: Sparse (SPLADE) - variable
             1536, // E7: Code (Qodo-Embed-1-1.5B)
             1024, // E8: Graph (e5-large-v2, upgraded from MiniLM 384D)

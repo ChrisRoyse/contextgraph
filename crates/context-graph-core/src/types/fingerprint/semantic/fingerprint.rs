@@ -662,6 +662,7 @@ impl SemanticFingerprint {
     /// Token-level embedding (E12) is always considered complete (can have 0 tokens).
     ///
     /// For E5 Causal, accepts either:
+    /// - All E5 fields empty (retired/inactive slot)
     /// - Both e5_causal_as_cause and e5_causal_as_effect populated (new format)
     /// - Only e5_causal populated (legacy format)
     ///
@@ -676,10 +677,13 @@ impl SemanticFingerprint {
     ///
     /// `true` if all dense embeddings have correct dimensions, `false` otherwise.
     pub fn is_complete(&self) -> bool {
-        // E5 check: either new dual vectors OR legacy single vector
+        // E5 check: retired empty slot OR new dual vectors OR legacy single vector.
         let e5_complete = (self.e5_causal_as_cause.len() == E5_DIM
             && self.e5_causal_as_effect.len() == E5_DIM)
-            || self.e5_causal.len() == E5_DIM;
+            || self.e5_causal.len() == E5_DIM
+            || (self.e5_causal_as_cause.is_empty()
+                && self.e5_causal_as_effect.is_empty()
+                && self.e5_causal.is_empty());
 
         // E8 check: either new dual vectors OR legacy single vector
         let e8_complete = (self.e8_graph_as_source.len() == E8_DIM

@@ -49,8 +49,8 @@ use context_graph_core::config::Config;
 use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore};
 
 use context_graph_embeddings::{
-    get_warm_provider, initialize_global_warm_provider, is_warm_initialized, warm_status_message,
-    GpuConfig, ProductionMultiArrayProvider,
+    get_warm_provider, initialize_global_warm_provider_with_models_dir, is_warm_initialized,
+    warm_status_message,
 };
 
 // REAL implementations - NO STUBS
@@ -360,8 +360,8 @@ impl McpServer {
             let models_dir = Self::resolve_models_path(&config);
             info!("Loading models from {:?}...", models_dir);
 
-            // Initialize global warm provider SYNCHRONOUSLY
-            match initialize_global_warm_provider().await {
+            // Initialize global warm provider SYNCHRONOUSLY from the resolved source of truth.
+            match initialize_global_warm_provider_with_models_dir(models_dir.clone()).await {
                 Ok(()) => {
                     info!("Global warm provider initialized successfully");
                     match get_warm_provider() {
@@ -422,8 +422,8 @@ impl McpServer {
             let model_load_handle = tokio::spawn(async move {
                 info!("Background model loading started...");
 
-                // First try to initialize global warm provider
-                match initialize_global_warm_provider().await {
+                // Initialize global warm provider from the resolved source of truth.
+                match initialize_global_warm_provider_with_models_dir(models_dir_clone.clone()).await {
                     Ok(()) => {
                         // Global provider initialized, get it
                         match get_warm_provider() {
@@ -444,35 +444,14 @@ impl McpServer {
                         }
                     }
                     Err(e) => {
-                        // Global warm provider failed, fall back to direct ProductionMultiArrayProvider
-                        warn!(
-                            "Global warm provider initialization failed: {}. Falling back to direct loading.",
-                            e
+                        error!(
+                            "FATAL: Background model loading FAILED: {}. \
+                             Ensure models exist at {:?} and CUDA GPU is available.",
+                            e, models_dir_clone
                         );
-
-                        match ProductionMultiArrayProvider::new(
-                            models_dir_clone.clone(),
-                            GpuConfig::default(),
-                        )
-                        .await
-                        {
-                            Ok(provider) => {
-                                let mut slot = provider_slot.write().await;
-                                *slot = Some(Arc::new(provider));
-                                loading_flag.store(false, Ordering::SeqCst);
-                                info!("Background model loading COMPLETE - 14 embedders ready (cold loaded)");
-                            }
-                            Err(e) => {
-                                error!(
-                                    "FATAL: Background model loading FAILED: {}. \
-                                     Ensure models exist at {:?} and CUDA GPU is available.",
-                                    e, models_dir_clone
-                                );
-                                let mut failed = failed_slot.write().await;
-                                *failed = Some(format!("{}", e));
-                                loading_flag.store(false, Ordering::SeqCst);
-                            }
-                        }
+                        let mut failed = failed_slot.write().await;
+                        *failed = Some(format!("{}", e));
+                        loading_flag.store(false, Ordering::SeqCst);
                     }
                 }
             });
@@ -1107,8 +1086,9 @@ impl McpServer {
     ///
     /// Priority order:
     /// 1. `CONTEXT_GRAPH_MODELS_PATH` environment variable
-    /// 2. `config.models.path` from configuration (if exists)
-    /// 3. Default: `models` directory NEXT TO EXECUTABLE (not current dir!)
+    /// 2. `CONTEXTGRAPH_MODELS_ROOT` Phase-1b materializer environment variable
+    /// 3. Phase-1b canonical D: model registry path when present
+    /// 4. Default: `models` directory NEXT TO EXECUTABLE (not current dir!)
     ///
     /// CRITICAL: Uses executable directory as base, NOT current working directory.
     /// This prevents path resolution issues when MCP clients spawn the server from
@@ -1124,6 +1104,21 @@ impl McpServer {
                 path
             );
             return path;
+        }
+
+        if let Ok(env_path) = std::env::var("CONTEXTGRAPH_MODELS_ROOT") {
+            let path = PathBuf::from(env_path);
+            info!("Using models path from CONTEXTGRAPH_MODELS_ROOT: {:?}", path);
+            return path;
+        }
+
+        let phase1b_registry_path = PathBuf::from("/mnt/d/cabdru/contextgraph/models");
+        if phase1b_registry_path.join("mejepa_models_config.toml").is_file() {
+            info!(
+                "Using Phase-1b ME-JEPA model registry path: {:?}",
+                phase1b_registry_path
+            );
+            return phase1b_registry_path;
         }
 
         // FIXED: Use executable's directory instead of current_dir

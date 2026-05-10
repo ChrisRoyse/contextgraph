@@ -200,9 +200,17 @@ impl SemanticFingerprint {
     /// Validate E5 causal embeddings (768D dense for each).
     ///
     /// Accepts either:
+    /// - Retired format: all E5 fields empty (E5 intentionally disabled)
     /// - New format: both e5_causal_as_cause and e5_causal_as_effect have 768D
     /// - Legacy format: only e5_causal has 768D (as_cause/as_effect are empty)
     fn validate_e5(&self) -> Result<(), ValidationError> {
+        if self.e5_causal_as_cause.is_empty()
+            && self.e5_causal_as_effect.is_empty()
+            && self.e5_causal.is_empty()
+        {
+            return Ok(());
+        }
+
         // New format: dual vectors populated
         if !self.e5_causal_as_cause.is_empty() || !self.e5_causal_as_effect.is_empty() {
             // If either is non-empty, both must be correct

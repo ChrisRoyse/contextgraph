@@ -257,9 +257,13 @@ pub fn compute_similarity_for_space_with_direction(
     use crate::causal::asymmetric::{
         compute_e5_asymmetric_fingerprint_similarity, direction_mod, CausalDirection,
     };
+    use crate::weights::E5_CAUSAL_ENABLED;
 
     // AP-77: E5 MUST NOT use symmetric cosine — causal is directional.
     if matches!(embedder, Embedder::Causal) {
+        if !E5_CAUSAL_ENABLED {
+            return -1.0;
+        }
         if causal_direction == CausalDirection::Unknown {
             // No direction known → E5 cannot provide meaningful signal.
             // CORE-H1 FIX: Return -1.0 sentinel (not 0.0) so fusion correctly

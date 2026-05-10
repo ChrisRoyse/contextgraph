@@ -422,7 +422,7 @@ impl MultiEmbeddingQueryExecutor for InMemoryMultiEmbeddingExecutor {
             SpaceInfo::dense_hnsw(1, 512, 0, true),   // E2 Temporal-Recent
             SpaceInfo::dense_hnsw(2, 512, 0, true),   // E3 Temporal-Periodic
             SpaceInfo::dense_hnsw(3, 512, 0, true),   // E4 Temporal-Positional
-            SpaceInfo::dense_hnsw(4, 768, 0, true),   // E5 Causal
+            SpaceInfo::dense_hnsw(4, 0, 0, false),    // E5 retired/disabled
             SpaceInfo::sparse_inverted(5, 0, true),   // E6 Sparse
             SpaceInfo::dense_hnsw(6, 1536, 0, true),  // E7 Code (Qodo-Embed)
             SpaceInfo::dense_hnsw(7, 1024, 0, true),  // E8 Graph (e5-large-v2)
@@ -494,6 +494,10 @@ impl MultiEmbeddingQueryExecutor for InMemoryMultiEmbeddingExecutor {
         let stage3_start = Instant::now();
         let mut stage3_results = Vec::new();
         for space_idx in 0..NUM_EMBEDDERS {
+            // E5 retired/disabled; do not query or index the inactive slot.
+            if space_idx == 4 {
+                continue;
+            }
             // Skip sparse spaces (E6=5, E13=12) - handled separately
             if space_idx == 5 || space_idx == 12 {
                 continue;

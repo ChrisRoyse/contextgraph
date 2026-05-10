@@ -47,6 +47,14 @@ pub const TEMPORAL_EMBEDDERS_ENABLED: bool = true;
 /// even when low-discrimination for retrieval, so its information geometry can be measured.
 pub const E11_ENTITY_ENABLED: bool = true;
 
+/// Whether E5 Causal participates in model loading, search, and ME-JEPA routing.
+///
+/// E5 is intentionally retired: the implementation was never finished, the real
+/// Nomic checkpoint does not match the hard-coded loader schema, and existing
+/// audits showed near-degenerate similarity. Keep the storage slot addressable
+/// for old fingerprints, but do not load, score, or route new work through it.
+pub const E5_CAUSAL_ENABLED: bool = false;
+
 /// Weight profile error types.
 ///
 /// Provides detailed context for FAIL FAST error handling.
@@ -693,19 +701,45 @@ pub fn select_state_conditioned_weight_profile(
     })
 }
 
-/// Get weight profile with E11 disable applied when `E11_ENTITY_ENABLED` is false.
+/// Get weight profile with disabled slots removed from active scoring.
 ///
 /// This is the preferred entry point for production search code. It returns the
-/// same weights as `get_weight_profile` but with E11's weight redistributed to
-/// remaining active embedders when E11 is disabled.
+/// same base profile as `get_weight_profile` but with retired/disabled slots
+/// redistributed to remaining active embedders.
 pub fn get_effective_weight_profile(
     name: &str,
 ) -> Result<[f32; NUM_EMBEDDERS], WeightProfileError> {
     let mut weights = get_weight_profile(name)?;
+    if !E5_CAUSAL_ENABLED {
+        apply_e5_retirement(&mut weights);
+    }
     if !E11_ENTITY_ENABLED {
         apply_e11_disable(&mut weights);
     }
     Ok(weights)
+}
+
+/// Zero out retired E5 weight and redistribute proportionally to active embedders.
+///
+/// After redistribution, the weights still sum to ~1.0. This keeps legacy profile
+/// definitions readable while ensuring production search/ME-JEPA paths do not
+/// depend on the retired causal embedder.
+pub fn apply_e5_retirement(weights: &mut [f32; NUM_EMBEDDERS]) {
+    const E5_IDX: usize = 4;
+    let e5_weight = weights[E5_IDX];
+    if e5_weight <= 0.0 {
+        return;
+    }
+    weights[E5_IDX] = 0.0;
+    let remaining_sum: f32 = weights.iter().sum();
+    if remaining_sum > 0.0 {
+        let scale = (remaining_sum + e5_weight) / remaining_sum;
+        for w in weights.iter_mut() {
+            if *w > 0.0 {
+                *w *= scale;
+            }
+        }
+    }
 }
 
 /// Zero out E11 weight and redistribute proportionally to remaining active embedders.

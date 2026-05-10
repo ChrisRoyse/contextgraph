@@ -60,7 +60,9 @@ use context_graph_core::types::fingerprint::{
     SemanticFingerprint, SparseVector, E11_DIM, E12_TOKEN_DIM, E14_DIM, E1_DIM, E2_DIM, E3_DIM,
     E4_DIM, E7_DIM, E9_DIM, NUM_EMBEDDERS,
 };
-use context_graph_core::weights::{E11_ENTITY_ENABLED, TEMPORAL_EMBEDDERS_ENABLED};
+use context_graph_core::weights::{
+    E11_ENTITY_ENABLED, E5_CAUSAL_ENABLED, TEMPORAL_EMBEDDERS_ENABLED,
+};
 
 use crate::config::GpuConfig;
 use crate::error::{EmbeddingError, EmbeddingResult};
@@ -668,11 +670,9 @@ pub struct ProductionMultiArrayProvider {
     /// E4-FIX: Stored as concrete type to allow `embed_with_instruction()` calls
     /// for passing sequence numbers via "sequence:N" instruction.
     e4_temporal_positional: Arc<DenseEmbedderAdapter>,
-    /// E5: Causal embedder (nomic-embed-text-v1.5, 768D) - DUAL embedder for asymmetric similarity
-    ///
-    /// Per ARCH-15: Uses CausalDualEmbedderAdapter to produce genuinely different
-    /// vectors for cause vs effect roles.
-    e5_causal: Arc<CausalDualEmbedderAdapter>,
+    // E5 is retired and intentionally not loaded. The slot remains in the
+    // 14-slot fingerprint/index ABI for legacy data, but new ME-JEPA/retrieval
+    // work must not depend on it.
     /// E6: Sparse embedder (SPLADE, variable sparse)
     e6_sparse: Arc<dyn SparseEmbedder>,
     /// E7: Code embedder (Qodo-Embed, 1536D)
@@ -706,6 +706,19 @@ pub struct ProductionMultiArrayProvider {
 
     /// Model IDs for tracking
     model_ids: [String; NUM_EMBEDDERS],
+}
+
+const E5_RETIRED_MODEL_ID: &str = "E5_RETIRED_DISABLED_NOT_LOADED";
+
+fn retired_e5_vectors() -> (Vec<f32>, Vec<f32>) {
+    (Vec::new(), Vec::new())
+}
+
+fn retired_e5_error() -> CoreError {
+    CoreError::Internal(
+        "E5 causal embedder is retired and disabled; use active ME-JEPA embedders instead"
+            .to_string(),
+    )
 }
 
 const E14_REQUIRED_FILES: [&str; 3] = ["config.json", "pytorch_model.bin", "tokenizer.json"];
@@ -806,15 +819,12 @@ impl ProductionMultiArrayProvider {
         let factory = DefaultModelFactory::new(models_dir.clone(), gpu_config);
         let config = SingleModelConfig::cuda_fp16();
 
-        // Create all E1-E14 models using the factory.
-        // NOTE: E5 (Causal) is created directly for dual embedding support (ARCH-15)
+        // Create all active E1-E14 models using the factory.
+        // E5 is intentionally retired and is not constructed or loaded.
         let e1_model = factory.create_model(ModelId::Semantic, &config)?;
         let e2_model = factory.create_model(ModelId::TemporalRecent, &config)?;
         let e3_model = factory.create_model(ModelId::TemporalPeriodic, &config)?;
         let e4_model = factory.create_model(ModelId::TemporalPositional, &config)?;
-
-        // E5: Create CausalModel directly for dual embedding support
-        let e5_causal_model = CausalModel::new(&models_dir.join("causal"), config.clone())?;
 
         let e6_model = factory.create_model(ModelId::Sparse, &config)?;
         let e7_model = factory.create_model(ModelId::Code, &config)?;
@@ -835,18 +845,12 @@ impl ProductionMultiArrayProvider {
 
         // Load all models BEFORE wrapping in adapters (FAIL FAST)
         // Per constitution.yaml: models must be ready before embed()
-        tracing::info!("Loading E1-E13 embedding models...");
+        tracing::info!("Loading active E1-E14 embedding models (E5 retired)...");
 
         e1_model.load().await?;
         e2_model.load().await?;
         e3_model.load().await?;
         e4_model.load().await?;
-        e5_causal_model.load().await?; // E5 loaded directly
-                                       // Load trained LoRA + projection weights (REQUIRED for E5 to function correctly).
-                                       // FAIL FAST: Without trained weights, E5 produces near-uniform scores that
-                                       // make the causal gate a no-op. No silent fallback to base model.
-        let trained_dir = models_dir.join("causal").join("trained");
-        e5_causal_model.load_trained_weights(&trained_dir)?;
         e6_model.load().await?;
         e7_model.load().await?;
         e8_graph_model.load().await?; // E8 loaded directly for dual embedding
@@ -856,7 +860,7 @@ impl ProductionMultiArrayProvider {
         e12_model.load().await?;
         e13_model.load().await?;
 
-        tracing::info!("E1-E13 embedding models loaded successfully");
+        tracing::info!("Active E1-E14 embedding models loaded successfully (E5 retired)");
 
         // Wrap models in appropriate adapters
         let e1_semantic: Arc<dyn SingleEmbedder> = Arc::new(DenseEmbedderAdapter::new(
@@ -879,9 +883,6 @@ impl ProductionMultiArrayProvider {
             DenseEmbedderAdapter::new(e4_model, ModelId::TemporalPositional, E4_DIM),
         );
 
-        // E5: Use CausalDualEmbedderAdapter for asymmetric embeddings (ARCH-15)
-        let e5_causal: Arc<CausalDualEmbedderAdapter> =
-            Arc::new(CausalDualEmbedderAdapter::new(e5_causal_model));
         let e6_sparse: Arc<dyn SparseEmbedder> =
             Arc::new(SparseEmbedderAdapter::new(e6_model, ModelId::Sparse));
         let e7_code: Arc<dyn SingleEmbedder> =
@@ -931,7 +932,7 @@ impl ProductionMultiArrayProvider {
             ModelId::TemporalRecent.as_str().to_string(),
             ModelId::TemporalPeriodic.as_str().to_string(),
             ModelId::TemporalPositional.as_str().to_string(),
-            ModelId::Causal.as_str().to_string(),
+            E5_RETIRED_MODEL_ID.to_string(),
             ModelId::Sparse.as_str().to_string(),
             ModelId::Code.as_str().to_string(),
             ModelId::Graph.as_str().to_string(),
@@ -950,7 +951,6 @@ impl ProductionMultiArrayProvider {
             e2_temporal_recent,
             e3_temporal_periodic,
             e4_temporal_positional,
-            e5_causal,
             e6_sparse,
             e7_code,
             e8_graph,
@@ -984,19 +984,6 @@ impl ProductionMultiArrayProvider {
     // These methods expose the underlying models for use by discovery services.
     // Per Root Cause Fix Plan: graph and causal activation services
     // need direct access to GraphModel and CausalModel for embedding operations.
-
-    /// Get the underlying CausalModel for E5 embeddings.
-    ///
-    /// This method exposes the CausalModel used internally by E5 embeddings
-    /// for use by CausalDiscoveryService. The model is already loaded and
-    /// ready for use.
-    ///
-    /// # Returns
-    ///
-    /// Arc reference to the CausalModel (768D embeddings, ~0.4GB VRAM)
-    pub fn causal_model(&self) -> Arc<CausalModel> {
-        self.e5_causal.model()
-    }
 
     /// Get the underlying GraphModel for E8 embeddings.
     ///
@@ -1054,7 +1041,6 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         let e2 = Arc::clone(&self.e2_temporal_recent);
         let e3 = Arc::clone(&self.e3_temporal_periodic);
         let e4 = Arc::clone(&self.e4_temporal_positional);
-        let e5 = Arc::clone(&self.e5_causal);
         let e6 = Arc::clone(&self.e6_sparse);
         let e7 = Arc::clone(&self.e7_code);
         let e8 = Arc::clone(&self.e8_graph);
@@ -1121,9 +1107,8 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                     }
                 }
             }),
-            Self::timed_embed("E5_Causal_Dual", {
-                let c = content_owned.clone();
-                async move { e5.embed_dual(&c).await }
+            Self::timed_embed("E5_Causal_Retired", {
+                async move { Ok::<_, CoreError>(retired_e5_vectors()) }
             }),
             Self::timed_embed("E6_Sparse", {
                 let c = content_owned.clone();
@@ -1177,7 +1162,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         let e3_vec = r3?;
         let e4_vec = r4?;
 
-        // E5: embed_dual returns (cause_vec, effect_vec) for asymmetric similarity (ARCH-15)
+        // E5 retired: no vectors are produced for new fingerprints.
         let (e5_cause_vec, e5_effect_vec) = r5?;
 
         let e6_sparse = r6?;
@@ -1206,7 +1191,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             e4_temporal_positional: e4_vec,
             e5_causal_as_cause: e5_cause_vec,
             e5_causal_as_effect: e5_effect_vec,
-            e5_causal: Vec::new(), // Empty - using new dual format
+            e5_causal: Vec::new(), // E5 retired/inactive
             e6_sparse,
             e7_code: e7_vec,
             e8_graph_as_source: e8_source_vec,
@@ -1268,7 +1253,6 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         let e2 = Arc::clone(&self.e2_temporal_recent);
         let e3 = Arc::clone(&self.e3_temporal_periodic);
         let e4 = Arc::clone(&self.e4_temporal_positional);
-        let e5 = Arc::clone(&self.e5_causal);
         let e6 = Arc::clone(&self.e6_sparse);
         let e7 = Arc::clone(&self.e7_code);
         let e8 = Arc::clone(&self.e8_graph);
@@ -1285,9 +1269,6 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         let e2_instruction = metadata.e2_instruction();
         let e3_instruction = metadata.e3_instruction();
         let e4_instruction = metadata.e4_instruction();
-
-        // CAUSAL-HINT Phase 6: Clone causal hint for E5 embedding
-        let causal_hint = metadata.causal_hint.clone();
 
         // Run all 14 embedders in parallel
         let (
@@ -1346,11 +1327,8 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                     }
                 }
             }),
-            // CAUSAL-HINT Phase 6: Use embed_dual_with_hint for E5 if hint is available
-            Self::timed_embed("E5_Causal_Dual", {
-                let c = content_owned.clone();
-                let hint = causal_hint.clone();
-                async move { e5.embed_dual_with_hint(&c, hint.as_ref()).await }
+            Self::timed_embed("E5_Causal_Retired", {
+                async move { Ok::<_, CoreError>(retired_e5_vectors()) }
             }),
             Self::timed_embed("E6_Sparse", {
                 let c = content_owned.clone();
@@ -1403,7 +1381,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         let e3_vec = r3?;
         let e4_vec = r4?;
 
-        // E5: embed_dual returns (cause_vec, effect_vec) for asymmetric similarity
+        // E5 retired: no vectors are produced for new fingerprints.
         let (e5_cause_vec, e5_effect_vec) = r5?;
 
         let e6_sparse = r6?;
@@ -1432,7 +1410,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             e4_temporal_positional: e4_vec,
             e5_causal_as_cause: e5_cause_vec,
             e5_causal_as_effect: e5_effect_vec,
-            e5_causal: Vec::new(), // Empty - using new dual format
+            e5_causal: Vec::new(), // E5 retired/inactive
             e6_sparse,
             e7_code: e7_vec,
             e8_graph_as_source: e8_source_vec,
@@ -1491,7 +1469,6 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         let e2 = Arc::clone(&self.e2_temporal_recent);
         let e3 = Arc::clone(&self.e3_temporal_periodic);
         let e4 = Arc::clone(&self.e4_temporal_positional);
-        let e5 = Arc::clone(&self.e5_causal);
         let e6 = Arc::clone(&self.e6_sparse);
         let e7 = Arc::clone(&self.e7_code);
         let e8 = Arc::clone(&self.e8_graph);
@@ -1515,7 +1492,6 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                 let e2 = Arc::clone(&e2);
                 let e3 = Arc::clone(&e3);
                 let e4 = Arc::clone(&e4);
-                let e5 = Arc::clone(&e5);
                 let e6 = Arc::clone(&e6);
                 let e7 = Arc::clone(&e7);
                 let e8 = Arc::clone(&e8);
@@ -1534,8 +1510,6 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                     let e2_instruction = item_metadata.e2_instruction();
                     let e3_instruction = item_metadata.e3_instruction();
                     let e4_instruction = item_metadata.e4_instruction();
-                    let causal_hint = item_metadata.causal_hint.clone();
-
                     // Run all 14 embedders in parallel for this content
                     let (
                         (r1, d1),
@@ -1593,11 +1567,8 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                                 }
                             }
                         }),
-                        // EMB-H1 FIX: Use embed_dual_with_hint for E5 (was embed_dual)
-                        Self::timed_embed("E5_Causal_Dual", {
-                            let c = content.clone();
-                            let hint = causal_hint.clone();
-                            async move { e5.embed_dual_with_hint(&c, hint.as_ref()).await }
+                        Self::timed_embed("E5_Causal_Retired", {
+                            async move { Ok::<_, CoreError>(retired_e5_vectors()) }
                         }),
                         Self::timed_embed("E6_Sparse", {
                             let c = content.clone();
@@ -1669,7 +1640,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                         e4_temporal_positional: e4_vec,
                         e5_causal_as_cause: e5_cause_vec,
                         e5_causal_as_effect: e5_effect_vec,
-                        e5_causal: Vec::new(),
+                        e5_causal: Vec::new(), // E5 retired/inactive
                         e6_sparse,
                         e7_code: e7_vec,
                         e8_graph_as_source: e8_source_vec,
@@ -1719,6 +1690,26 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         Ok(results)
     }
 
+    /// Get expected dimensions for each embedder.
+    fn dimensions(&self) -> [usize; NUM_EMBEDDERS] {
+        [
+            E1_DIM,
+            E2_DIM,
+            E3_DIM,
+            E4_DIM,
+            0, // E5 retired/inactive
+            0, // E6 sparse
+            E7_DIM,
+            E8_DIM,
+            E9_DIM,
+            E10_DIM,
+            E11_DIM,
+            E12_TOKEN_DIM,
+            0, // E13 sparse
+            E14_DIM,
+        ]
+    }
+
     /// Get model IDs for each embedder slot.
     fn model_ids(&self) -> [&str; NUM_EMBEDDERS] {
         [
@@ -1745,7 +1736,6 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             && self.e2_temporal_recent.is_ready()
             && self.e3_temporal_periodic.is_ready()
             && self.e4_temporal_positional.is_ready()
-            && self.e5_causal.is_ready()
             && self.e6_sparse.is_ready()
             && self.e7_code.is_ready()
             && self.e8_graph.is_ready()
@@ -1764,7 +1754,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             self.e2_temporal_recent.is_ready(),
             self.e3_temporal_periodic.is_ready(),
             self.e4_temporal_positional.is_ready(),
-            self.e5_causal.is_ready(),
+            !E5_CAUSAL_ENABLED,
             self.e6_sparse.is_ready(),
             self.e7_code.is_ready(),
             self.e8_graph.is_ready(),
@@ -1812,13 +1802,8 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
     /// Returns (as_cause, as_effect) E5 dual embeddings (768D each).
     /// ~15ms vs ~200ms when running the legacy all-embedder path.
     async fn embed_e5_dual(&self, content: &str) -> CoreResult<(Vec<f32>, Vec<f32>)> {
-        if content.is_empty() {
-            return Err(CoreError::ValidationError {
-                field: "content".to_string(),
-                message: "Content cannot be empty".to_string(),
-            });
-        }
-        self.e5_causal.embed_dual(content).await
+        let _ = content;
+        Err(retired_e5_error())
     }
 
     /// Efficient E1 semantic embedding without running all embedders.

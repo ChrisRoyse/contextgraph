@@ -25,6 +25,7 @@
 use crate::config::constants::{pipeline, similarity};
 use crate::error::{CoreError, CoreResult};
 use crate::types::fingerprint::NUM_EMBEDDERS;
+use crate::weights::E5_CAUSAL_ENABLED;
 
 use super::aggregation::AggregationStrategy;
 
@@ -123,6 +124,14 @@ impl MultiEmbeddingQuery {
             return Err(CoreError::ValidationError {
                 field: "active_spaces".to_string(),
                 message: "At least one embedding space must be active".to_string(),
+            });
+        }
+
+        if !E5_CAUSAL_ENABLED && self.active_spaces.is_active(4) {
+            return Err(CoreError::ValidationError {
+                field: "active_spaces".to_string(),
+                message: "E5 causal space is retired and disabled; remove bit 4 from active_spaces"
+                    .to_string(),
             });
         }
 
@@ -290,11 +299,23 @@ impl PipelineStageConfig {
 pub struct EmbeddingSpaceMask(pub u16);
 
 impl EmbeddingSpaceMask {
-    /// All 14 spaces active (bits 0-13).
-    pub const ALL: Self = Self((1u16 << NUM_EMBEDDERS) - 1);
+    const ALL_BITS: u16 = if E5_CAUSAL_ENABLED {
+        (1u16 << NUM_EMBEDDERS) - 1
+    } else {
+        ((1u16 << NUM_EMBEDDERS) - 1) & !(1u16 << 4)
+    };
 
-    /// Dense fixed-vector spaces only. Excludes E6 sparse, E12 token-level, and E13 SPLADE.
-    pub const ALL_DENSE: Self = Self(0x27DF);
+    const ALL_DENSE_BITS: u16 = if E5_CAUSAL_ENABLED {
+        0x27DF
+    } else {
+        0x27DF & !(1u16 << 4)
+    };
+
+    /// All 14 spaces active (bits 0-13).
+    pub const ALL: Self = Self(Self::ALL_BITS);
+
+    /// Dense fixed-vector spaces only. Excludes E5 retired, E6 sparse, E12 token-level, and E13 SPLADE.
+    pub const ALL_DENSE: Self = Self(Self::ALL_DENSE_BITS);
 
     /// E1 semantic only.
     pub const SEMANTIC_ONLY: Self = Self(0x0001);

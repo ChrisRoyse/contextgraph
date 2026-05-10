@@ -105,6 +105,17 @@ mod cuda_impl {
     /// MUST be called ONCE at startup before any embedding operations.
     /// Subsequent calls are no-ops if initialization succeeded.
     pub async fn initialize_global_warm_provider_impl() -> EmbeddingResult<()> {
+        initialize_global_warm_provider_with_models_dir_impl(resolve_models_dir()).await
+    }
+
+    /// Initialize the global warm provider from an explicitly resolved model path.
+    ///
+    /// This is the production entry point for MCP startup: the caller resolves
+    /// the canonical model asset directory once and the singleton uses that exact
+    /// source of truth. No executable-relative probing or direct-loader fallback.
+    pub async fn initialize_global_warm_provider_with_models_dir_impl(
+        models_dir: PathBuf,
+    ) -> EmbeddingResult<()> {
         let slot =
             GLOBAL_WARM_PROVIDER.get_or_init(|| Arc::new(RwLock::new(ProviderState::default())));
 
@@ -128,10 +139,9 @@ mod cuda_impl {
 
         tracing::info!("Initializing global warm provider with ProductionMultiArrayProvider...");
         tracing::info!(
-            "Loading all 14 production embedding models to GPU VRAM (this takes 20-30 seconds)..."
+            "Loading active production embedding models to GPU VRAM (E5 retired; this takes 20-30 seconds)..."
         );
 
-        let models_dir = resolve_models_dir();
         let gpu_config = GpuConfig::default();
 
         // Verify models directory exists
@@ -181,7 +191,9 @@ mod cuda_impl {
         guard.concrete_provider = Some(Arc::clone(&concrete_provider));
         guard.provider = Some(concrete_provider);
 
-        tracing::info!("Global warm provider initialized successfully - all 14 production models loaded to VRAM");
+        tracing::info!(
+            "Global warm provider initialized successfully - active production models loaded to VRAM; E5 retired"
+        );
         Ok(())
     }
 }
@@ -212,11 +224,30 @@ pub async fn initialize_global_warm_provider() -> EmbeddingResult<()> {
     cuda_impl::initialize_global_warm_provider_impl().await
 }
 
+/// Initialize the global warm provider with an explicitly resolved model directory.
+#[cfg(feature = "candle")]
+pub async fn initialize_global_warm_provider_with_models_dir(
+    models_dir: impl Into<std::path::PathBuf>,
+) -> EmbeddingResult<()> {
+    cuda_impl::initialize_global_warm_provider_with_models_dir_impl(models_dir.into()).await
+}
+
 /// Initialize the global warm provider (non-CUDA stub).
 ///
 /// When CUDA is not available, this returns an error per Constitution AP-007.
 #[cfg(not(feature = "candle"))]
 pub async fn initialize_global_warm_provider() -> EmbeddingResult<()> {
+    Err(EmbeddingError::CudaUnavailable {
+        message: "Global warm provider requires CUDA feature. Build with --features cuda"
+            .to_string(),
+    })
+}
+
+/// Initialize the global warm provider with an explicitly resolved model directory.
+#[cfg(not(feature = "candle"))]
+pub async fn initialize_global_warm_provider_with_models_dir(
+    _models_dir: impl Into<std::path::PathBuf>,
+) -> EmbeddingResult<()> {
     Err(EmbeddingError::CudaUnavailable {
         message: "Global warm provider requires CUDA feature. Build with --features cuda"
             .to_string(),
@@ -329,27 +360,10 @@ pub fn warm_status_message() -> String {
 /// let service = CausalDiscoveryService::with_models(llm, causal_model, config);
 /// ```
 pub fn get_warm_causal_model() -> EmbeddingResult<Arc<CausalModel>> {
-    let slot = GLOBAL_WARM_PROVIDER.get().ok_or_else(|| EmbeddingError::InternalError {
-        message: "Global warm provider not initialized. Call initialize_global_warm_provider() first.".to_string(),
-    })?;
-
-    let guard = slot.try_read().map_err(|_| EmbeddingError::InternalError {
-        message: "Global warm provider is busy (lock contention). Retry later.".to_string(),
-    })?;
-
-    if let Some(ref err) = guard.init_error {
-        return Err(EmbeddingError::InternalError {
-            message: format!("Global warm provider initialization failed: {}", err),
-        });
-    }
-
-    guard
-        .concrete_provider
-        .as_ref()
-        .map(|p| p.causal_model())
-        .ok_or_else(|| EmbeddingError::InternalError {
-            message: "Global warm provider not initialized. Call initialize_global_warm_provider() first.".to_string(),
-        })
+    Err(EmbeddingError::InternalError {
+        message: "E5 causal embedder is retired and disabled; no warm CausalModel is loaded"
+            .to_string(),
+    })
 }
 
 /// Get the GraphModel from the global warm provider.

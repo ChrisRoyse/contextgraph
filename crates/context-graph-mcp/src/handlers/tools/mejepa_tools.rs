@@ -787,4 +787,52 @@ mod mejepa_constellation_inspect_tests {
         std::env::set_var(ENV_ALLOW_DETERMINISTIC_VERIFY, "true");
         ensure_deterministic_verify_allowed().unwrap();
     }
+
+    #[test]
+    fn mejepa_heal_status_and_rollback_read_persisted_source_of_truth() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("heal-db");
+        let chain_path = temp.path().join("chain.bin");
+        let storage = HealRocksStore::open(&db_path).unwrap();
+        let mut witness_chain = WitnessChainAppender::new(chain_path.clone()).unwrap();
+        let holdout = context_graph_mejepa::heal::HoldoutDataset::try_new(
+            (0..50)
+                .map(|idx| context_graph_mejepa::heal::HoldoutExample {
+                    predicted: vec![context_graph_mejepa::OracleOutcome::Pass],
+                    actual: if idx % 5 == 0 {
+                        context_graph_mejepa::OracleOutcome::Fail
+                    } else {
+                        context_graph_mejepa::OracleOutcome::Pass
+                    },
+                    ood_score: 0.05,
+                })
+                .collect(),
+            [7; 32],
+        )
+        .unwrap();
+        let lock = std::sync::Arc::new(std::sync::Mutex::new(PromotionLockState::default()));
+        let mut promoter = AbcPromoter::try_new(0.1, PromotionGate::default()).unwrap();
+        let report = promoter
+            .retrain_and_promote(
+                context_graph_mejepa::heal::TriggerReason::DriftHard,
+                &[0.2; 16],
+                storage,
+                &mut witness_chain,
+                holdout,
+                lock,
+                "mcp-test-calibration",
+            )
+            .unwrap();
+
+        let status = run_heal_status(&db_path).unwrap();
+        assert_eq!(status["cfCounts"][CF_MEJEPA_HEAL_REPORTS], 1);
+        assert_eq!(
+            status["latestHealReport"]["witnessChainOffset"],
+            serde_json::json!(report.witness_chain_offset)
+        );
+        let rollback = run_rollback_to(&db_path, chain_path, report.witness_chain_offset).unwrap();
+        assert_eq!(rollback["targetWitnessChainOffset"], 0);
+        let status_after = run_heal_status(&db_path).unwrap();
+        assert_eq!(status_after["cfCounts"][CF_MEJEPA_ACTIVE_POINTERS], 1);
+    }
 }

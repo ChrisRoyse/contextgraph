@@ -17,6 +17,7 @@ use uuid::Uuid;
 use crate::embeddings::category::category_for;
 use crate::teleological::Embedder;
 use crate::types::fingerprint::SemanticFingerprint;
+use crate::weights::E5_CAUSAL_ENABLED;
 
 use super::config::SimilarityThresholds;
 use super::distance::{compute_similarity_for_space, compute_similarity_for_space_with_direction};
@@ -111,6 +112,9 @@ impl MultiSpaceSimilarity {
     /// score above its high threshold.
     pub fn is_relevant(&self, scores: &PerSpaceScores) -> bool {
         for embedder in Embedder::all() {
+            if matches!(embedder, Embedder::Causal) && !E5_CAUSAL_ENABLED {
+                continue;
+            }
             let score = scores.get_score(embedder);
             let threshold = self.thresholds.high.get_threshold(embedder);
             if score > threshold {
@@ -125,6 +129,9 @@ impl MultiSpaceSimilarity {
         let mut matches = Vec::new();
 
         for embedder in Embedder::all() {
+            if matches!(embedder, Embedder::Causal) && !E5_CAUSAL_ENABLED {
+                continue;
+            }
             let score = scores.get_score(embedder);
             let threshold = self.thresholds.high.get_threshold(embedder);
             if score > threshold {
@@ -146,6 +153,9 @@ impl MultiSpaceSimilarity {
         let mut max_possible = 0.0_f32;
 
         for embedder in Embedder::all() {
+            if matches!(embedder, Embedder::Causal) && !E5_CAUSAL_ENABLED {
+                continue;
+            }
             let category_weight = category_for(embedder).topic_weight();
 
             // Skip temporal spaces (weight = 0.0) per AP-60
@@ -181,6 +191,9 @@ impl MultiSpaceSimilarity {
         let mut total_weight = 0.0_f32;
 
         for embedder in Embedder::all() {
+            if matches!(embedder, Embedder::Causal) && !E5_CAUSAL_ENABLED {
+                continue;
+            }
             let category_weight = category_for(embedder).topic_weight();
 
             // Skip temporal spaces (weight = 0.0) per AP-60

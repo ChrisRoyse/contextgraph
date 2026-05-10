@@ -1,7 +1,7 @@
 ---
 namespace: journal
-created: 2026-05-10T17:29:14.638911176+00:00
-updated: 2026-05-10T17:29:14.638911176+00:00
+created: 2026-05-10T17:35:01.398430192+00:00
+updated: 2026-05-10T17:35:01.398430192+00:00
 status: active
 tags: mejepa, phase5, witness, integrity
 ---
