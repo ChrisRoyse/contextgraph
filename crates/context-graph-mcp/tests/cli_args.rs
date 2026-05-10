@@ -15,7 +15,11 @@ fn run_mcp(args: &[&str]) -> Output {
 
 #[test]
 fn cli_rejects_zero_ports_before_startup() {
-    for args in [["--port", "0"], ["--daemon-port", "0"], ["--http-port", "0"]] {
+    for args in [
+        ["--port", "0"],
+        ["--daemon-port", "0"],
+        ["--http-port", "0"],
+    ] {
         let output = run_mcp(&args);
         let stderr = String::from_utf8_lossy(&output.stderr);
 
