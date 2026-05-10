@@ -52,7 +52,7 @@ impl ModelsConfig {
                     EmbedError::invalid(
                         "ModelsConfig.embedders",
                         format!("unknown registration table [embedders.{key}]"),
-                        "use canonical [embedders.eN] keys; E5 is retired and no new slots are implicit",
+                        "use canonical [embedders.eN] keys; E5 and E11 are retired/disabled and no new slots are implicit",
                     )
                 })?;
             if key_id != reg.embedder {
@@ -70,7 +70,7 @@ impl ModelsConfig {
                 return Err(EmbedError::invalid(
                     "ModelsConfig.embedders",
                     format!("duplicate registration for {}", reg.embedder),
-                    "register each active E1-E21 slot exactly once; E5 is retired",
+                    "register each active E1-E21 slot exactly once; E5 and E11 are retired/disabled",
                 ));
             }
         }
@@ -78,7 +78,7 @@ impl ModelsConfig {
             if !seen.contains(&id) {
                 return Err(EmbedError::MissingRegistration {
                     embedder: id,
-                    remediation: "add a complete [embedders.eN] entry to models_config.toml; E5 is retired and is not required",
+                    remediation: "add a complete [embedders.eN] entry to models_config.toml; E5 and E11 are retired/disabled and are not required",
                 });
             }
         }
@@ -90,14 +90,14 @@ impl ModelsConfig {
             return Err(EmbedError::invalid(
                 "ModelsConfig.registration",
                 format!("{id} is retired and disabled"),
-                "remove E5 from active ME-JEPA/embedder requests; use E1/E7/E8/E10/E12/E13/E14 and learner-state embedders as appropriate",
+                "remove retired/disabled embedders from active ME-JEPA/embedder requests; use E1/E7/E8/E10/E12/E13/E14 and learner-state embedders as appropriate",
             ));
         }
         self.embedders
             .get(id.slug())
             .ok_or(EmbedError::MissingRegistration {
                 embedder: id,
-                remediation: "add the missing [embedders.eN] entry to models_config.toml; E5 is retired and is not required",
+                remediation: "add the missing [embedders.eN] entry to models_config.toml; E5 and E11 are retired/disabled and are not required",
             })
     }
 }

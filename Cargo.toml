@@ -6,6 +6,7 @@ resolver = "2"
 members = [
     "crates/context-graph-mcp",
     "crates/context-graph-core",
+    "crates/context-graph-paths",
     "crates/context-graph-cuda",
     "crates/context-graph-embeddings",
     "crates/context-graph-storage",
@@ -32,6 +33,7 @@ members = [
 default-members = [
     "crates/context-graph-mcp",
     "crates/context-graph-core",
+    "crates/context-graph-paths",
     "crates/context-graph-cuda",
     "crates/context-graph-embeddings",
     "crates/context-graph-storage",
@@ -97,6 +99,7 @@ candle-nn = { version = "0.10.2", features = ["cuda"] }
 
 # Internal crates
 context-graph-core = { path = "crates/context-graph-core" }
+context-graph-paths = { path = "crates/context-graph-paths" }
 context-graph-embeddings = { path = "crates/context-graph-embeddings" }
 context-graph-cuda = { path = "crates/context-graph-cuda" }
 

@@ -149,7 +149,7 @@ impl McpServer {
         // ==========================================================================
         // 1. Create RocksDB teleological store (REAL persistent storage)
         // ==========================================================================
-        let db_path = Self::resolve_storage_path(&config);
+        let db_path = Self::resolve_storage_path(&config)?;
         info!("Opening RocksDbTeleologicalStore at {:?}...", db_path);
 
         let rocksdb_store = RocksDbTeleologicalStore::open(&db_path).map_err(|e| {
@@ -1035,16 +1035,12 @@ impl McpServer {
     /// Priority order:
     /// 1. `CONTEXT_GRAPH_STORAGE_PATH` environment variable
     /// 2. `config.storage.path` from configuration
-    /// 3. Default: `contextgraph_data` directory NEXT TO EXECUTABLE (not current dir!)
-    ///
-    /// CRITICAL: Uses executable directory as base, NOT current working directory.
-    /// This prevents permission errors when MCP clients spawn the server from
-    /// unpredictable directories (e.g., `/` or their own installation path).
+    /// 3. Default: D-backed ContextGraph storage under `/mnt/d/contextgraph`.
     ///
     /// Creates the directory if it doesn't exist.
     /// SRV-M3 FIX: Made `pub` so main.rs can use the same path resolution
     /// for PID file guard, ensuring PID file and RocksDB always use the same path.
-    pub fn resolve_storage_path(config: &Config) -> PathBuf {
+    pub fn resolve_storage_path(config: &Config) -> Result<PathBuf> {
         // Check environment variable first
         if let Ok(env_path) = std::env::var("CONTEXT_GRAPH_STORAGE_PATH") {
             let path = PathBuf::from(env_path);
@@ -1052,36 +1048,23 @@ impl McpServer {
                 "Using storage path from CONTEXT_GRAPH_STORAGE_PATH: {:?}",
                 path
             );
-            Self::ensure_directory_exists(&path);
-            return path;
+            context_graph_paths::require_under_data_root(&path, "CONTEXT_GRAPH_STORAGE_PATH")?;
+            Self::ensure_directory_exists(&path)?;
+            return Ok(path);
         }
 
         // Use config path if it's not the default "memory" backend
         if config.storage.backend != "memory" && !config.storage.path.is_empty() {
             let path = PathBuf::from(&config.storage.path);
             info!("Using storage path from config: {:?}", path);
-            Self::ensure_directory_exists(&path);
-            return path;
+            context_graph_paths::require_under_data_root(&path, "config.storage.path")?;
+            Self::ensure_directory_exists(&path)?;
+            return Ok(path);
         }
 
-        // FIXED: Use executable's directory instead of current_dir
-        // This ensures the server works regardless of working directory,
-        // which is critical for MCP clients that may launch from any directory.
-        let default_path = std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| {
-                // Fallback to current_dir only if we can't get executable path
-                warn!("Could not determine executable directory, falling back to current_dir");
-                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-            })
-            .join("contextgraph_data");
-        info!(
-            "Using default storage path (relative to executable): {:?}",
-            default_path
-        );
-        Self::ensure_directory_exists(&default_path);
-        default_path
+        let default_path = context_graph_paths::durable_storage_path()?;
+        info!("Using default D-backed storage path: {:?}", default_path);
+        Ok(default_path)
     }
 
     /// Resolve the models directory path from configuration or environment.
@@ -1148,17 +1131,15 @@ impl McpServer {
     }
 
     /// Ensure a directory exists, creating it if necessary.
-    pub(in crate::server) fn ensure_directory_exists(path: &PathBuf) {
+    pub(in crate::server) fn ensure_directory_exists(path: &PathBuf) -> Result<()> {
         if !path.exists() {
             info!("Creating storage directory: {:?}", path);
-            if let Err(e) = std::fs::create_dir_all(path) {
-                warn!(
-                    "Failed to create storage directory {:?}: {}. \
-                     RocksDB may fail to open.",
-                    path, e
-                );
-            }
+            std::fs::create_dir_all(path)?;
         }
+        if !path.is_dir() {
+            anyhow::bail!("storage path exists but is not a directory: {}", path.display());
+        }
+        Ok(())
     }
 }
 

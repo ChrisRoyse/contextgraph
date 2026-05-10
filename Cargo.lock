@@ -900,6 +900,7 @@ dependencies = [
  "context-graph-dynamicjepa",
  "context-graph-embeddings",
  "context-graph-mcp",
+ "context-graph-paths",
  "context-graph-storage",
  "context-graph-test-utils",
  "criterion",
@@ -1084,6 +1085,7 @@ dependencies = [
  "context-graph-mejepa",
  "context-graph-mejepa-embedders",
  "context-graph-mejepa-tct",
+ "context-graph-paths",
  "context-graph-solver",
  "context-graph-storage",
  "context-graph-witness",
@@ -1142,6 +1144,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "context-graph-mejepa-instruments",
+ "context-graph-paths",
  "ctrlc",
  "fs2",
  "rocksdb",
@@ -1238,6 +1241,10 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
 ]
+
+[[package]]
+name = "context-graph-paths"
+version = "0.1.0"
 
 [[package]]
 name = "context-graph-solver"

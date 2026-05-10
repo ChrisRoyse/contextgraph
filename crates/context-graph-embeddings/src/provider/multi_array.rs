@@ -178,6 +178,49 @@ impl SingleEmbedder for DenseEmbedderAdapter {
 unsafe impl Send for DenseEmbedderAdapter {}
 unsafe impl Sync for DenseEmbedderAdapter {}
 
+/// Explicit disabled-slot adapter for embedders that are intentionally not loaded.
+///
+/// This is not a fallback: production paths gate these slots out before scoring.
+/// Direct calls fail with a clear error so a disabled embedder cannot silently
+/// influence ME-JEPA/retrieval.
+struct DisabledDenseEmbedder {
+    model_id: &'static str,
+    dimension: usize,
+    reason: &'static str,
+}
+
+impl DisabledDenseEmbedder {
+    fn new(model_id: &'static str, dimension: usize, reason: &'static str) -> Self {
+        Self {
+            model_id,
+            dimension,
+            reason,
+        }
+    }
+}
+
+#[async_trait]
+impl SingleEmbedder for DisabledDenseEmbedder {
+    fn dimension(&self) -> usize {
+        self.dimension
+    }
+
+    fn model_id(&self) -> &str {
+        self.model_id
+    }
+
+    async fn embed(&self, _content: &str) -> CoreResult<Vec<f32>> {
+        Err(CoreError::Internal(self.reason.to_string()))
+    }
+
+    fn is_ready(&self) -> bool {
+        true
+    }
+}
+
+unsafe impl Send for DisabledDenseEmbedder {}
+unsafe impl Sync for DisabledDenseEmbedder {}
+
 /// Adapter that wraps a Sparse EmbeddingModel (SPLADE) to implement SparseEmbedder trait.
 struct SparseEmbedderAdapter {
     model: Arc<RwLock<Box<dyn EmbeddingModel>>>,
@@ -658,7 +701,7 @@ unsafe impl Sync for ContextualDualEmbedderAdapter {}
 ///
 /// # Performance
 ///
-/// All 14 embedders run in parallel using tokio::join! to achieve
+/// Active embedders run in parallel using tokio::join! to achieve
 /// the <30ms latency target for single content embedding.
 pub struct ProductionMultiArrayProvider {
     /// E1: Semantic embedder (e5-large-v2, 1024D)
@@ -691,7 +734,7 @@ pub struct ProductionMultiArrayProvider {
     /// Per E10 Upgrade: Uses ContextualDualEmbedderAdapter to produce genuinely different
     /// vectors for intent vs context roles.
     e10_contextual: Arc<ContextualDualEmbedderAdapter>,
-    /// E11: Entity embedder (KEPLER, 768D)
+    /// E11: Entity embedder (KEPLER, 768D), disabled until a self-contained runtime checkpoint exists.
     ///
     /// KEPLER is RoBERTa-base trained with TransE on Wikidata5M (4.8M entities, 20M triples).
     /// Unlike the previous MiniLM model, TransE operations (h + r ≈ t) are semantically meaningful.
@@ -711,6 +754,8 @@ pub struct ProductionMultiArrayProvider {
 }
 
 const E5_RETIRED_MODEL_ID: &str = "E5_RETIRED_DISABLED_NOT_LOADED";
+const E11_DISABLED_MODEL_ID: &str = "E11_KEPLER_DISABLED_NOT_LOADED";
+const E11_DISABLED_REASON: &str = "E11 Kepler embedder is disabled: available assets are fairseq .pt checkpoints, but the runtime requires a self-contained Hugging Face-style checkpoint";
 
 fn retired_e5_vectors() -> (Vec<f32>, Vec<f32>) {
     (Vec::new(), Vec::new())

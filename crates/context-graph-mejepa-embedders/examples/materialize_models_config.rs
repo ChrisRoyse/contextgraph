@@ -84,7 +84,7 @@ fn main() -> ExampleResult<()> {
             "config_exists": output_path.exists(),
             "registration_count": readback.embedders.len(),
             "digest_verified_count": digest_readback.len(),
-            "retired": ["e5"],
+            "retired": ["e5", "e11"],
             "registrations": registrations,
         },
         "passes": true,
@@ -339,14 +339,6 @@ fn slot_specs() -> Vec<SlotSpec> {
             "intfloat/e5-base-v2",
             &["model.safetensors"],
             Some(transformer_identity("bert", Some(768))),
-        ),
-        pretrained(
-            EmbedderId::E11,
-            "kepler",
-            "kepler",
-            "github:THU-KEG/KEPLER + cloud.tsinghua.edu.cn official checkpoints",
-            &["KEPLERforKE.pt", "KEPLERforNLP.pt", "dict.txt"],
-            None,
         ),
         pretrained(
             EmbedderId::E12,

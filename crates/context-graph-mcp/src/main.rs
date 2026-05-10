@@ -254,7 +254,7 @@ OPTIONS:
     --mode <MODE>        MCP server mode: default or reality-loop
     --port <PORT>        TCP port (only used with --transport tcp)
     --bind <ADDRESS>     TCP bind address (default: 127.0.0.1)
-    --warm-first         Block startup until embedding models are loaded into VRAM (default)
+    --warm-first         Block startup until active embedding models are loaded into VRAM (default)
     --no-warm            Skip blocking warmup (embeddings fail until background load completes)
     --daemon             Share one server across multiple terminals (RECOMMENDED)
     --daemon-port <PORT> Daemon TCP port (default: 3100)
@@ -456,16 +456,34 @@ fn apply_overrides(config: &mut Config, cli: &CliArgs) -> Result<()> {
         config.mcp.request_timeout = timeout;
     }
 
-    // CRITICAL: Override storage path and enable RocksDB backend
-    // When CONTEXT_GRAPH_STORAGE_PATH is set, use RocksDB instead of in-memory stub
-    if let Ok(storage_path) = env::var("CONTEXT_GRAPH_STORAGE_PATH") {
-        info!("ENV override: storage.path = {}", storage_path);
-        config.storage.path = storage_path;
-        // CRITICAL: Switch from "memory" stub to "rocksdb" real backend
-        if config.storage.backend == "memory" {
-            info!("ENV override: storage.backend = rocksdb (was memory stub)");
-            config.storage.backend = "rocksdb".to_string();
+    // CRITICAL: use D-backed RocksDB storage. If no explicit storage path is
+    // provided, the project default is CONTEXTGRAPH_DATA_ROOT/storage/contextgraph-rocksdb.
+    let storage_path = match env::var("CONTEXT_GRAPH_STORAGE_PATH") {
+        Ok(path) => {
+            context_graph_paths::require_under_data_root(
+                Path::new(&path),
+                "CONTEXT_GRAPH_STORAGE_PATH",
+            )?;
+            info!("ENV override: storage.path = {}", path);
+            path
         }
+        Err(env::VarError::NotPresent) => {
+            let path = context_graph_paths::durable_storage_path()?;
+            let rendered = path.display().to_string();
+            info!("Default D-backed storage.path = {}", rendered);
+            rendered
+        }
+        Err(err) => {
+            return Err(anyhow::anyhow!(
+                "Invalid CONTEXT_GRAPH_STORAGE_PATH environment: {}",
+                err
+            ));
+        }
+    };
+    config.storage.path = storage_path;
+    if config.storage.backend == "memory" {
+        info!("storage.backend = rocksdb (was memory stub)");
+        config.storage.backend = "rocksdb".to_string();
     }
 
     // CRITICAL: Override models path and enable real embeddings

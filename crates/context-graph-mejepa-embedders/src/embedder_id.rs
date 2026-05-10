@@ -64,7 +64,7 @@ impl EmbedderId {
         ]
     }
 
-    pub const fn required_registrations() -> [Self; 20] {
+    pub const fn required_registrations() -> [Self; 19] {
         [
             Self::E1,
             Self::E2,
@@ -75,7 +75,6 @@ impl EmbedderId {
             Self::E8,
             Self::E9,
             Self::E10,
-            Self::E11,
             Self::E12,
             Self::E13,
             Self::E14,
@@ -89,7 +88,7 @@ impl EmbedderId {
         ]
     }
 
-    pub const fn content() -> [Self; 13] {
+    pub const fn content() -> [Self; 12] {
         [
             Self::E1,
             Self::E2,
@@ -100,7 +99,6 @@ impl EmbedderId {
             Self::E8,
             Self::E9,
             Self::E10,
-            Self::E11,
             Self::E12,
             Self::E13,
             Self::E14,
@@ -108,7 +106,7 @@ impl EmbedderId {
     }
 
     pub const fn is_retired(self) -> bool {
-        matches!(self, Self::E5)
+        matches!(self, Self::E5 | Self::E11)
     }
 
     pub const fn learner_state() -> [Self; 7] {
@@ -300,10 +298,12 @@ mod tests {
     #[test]
     fn ids_cover_all_phase1b_slots() {
         assert_eq!(EmbedderId::all().len(), 21);
-        assert_eq!(EmbedderId::required_registrations().len(), 20);
+        assert_eq!(EmbedderId::required_registrations().len(), 19);
         assert!(!EmbedderId::required_registrations().contains(&EmbedderId::E5));
-        assert_eq!(EmbedderId::content().len(), 13);
+        assert!(!EmbedderId::required_registrations().contains(&EmbedderId::E11));
+        assert_eq!(EmbedderId::content().len(), 12);
         assert!(!EmbedderId::content().contains(&EmbedderId::E5));
+        assert!(!EmbedderId::content().contains(&EmbedderId::E11));
         assert_eq!(EmbedderId::learner_state().len(), 7);
         assert_eq!("bge_m3".parse::<EmbedderId>().unwrap(), EmbedderId::E14);
     }

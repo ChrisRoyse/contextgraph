@@ -110,7 +110,6 @@ impl EmbedderId {
                 | Self::E8
                 | Self::E9
                 | Self::E10
-                | Self::E11
                 | Self::E12
                 | Self::E13
                 | Self::E14
@@ -216,9 +215,8 @@ impl RoutingTableValue {
 const E7_E14: &[EmbedderId] = &[EmbedderId::E7, EmbedderId::E14];
 const E1_E10: &[EmbedderId] = &[EmbedderId::E1, EmbedderId::E10];
 const E1_E7: &[EmbedderId] = &[EmbedderId::E1, EmbedderId::E7];
-const E11_E7: &[EmbedderId] = &[EmbedderId::E11, EmbedderId::E7];
 const E1_E8: &[EmbedderId] = &[EmbedderId::E1, EmbedderId::E8];
-const E11_E13: &[EmbedderId] = &[EmbedderId::E11, EmbedderId::E13];
+const E8_E13: &[EmbedderId] = &[EmbedderId::E8, EmbedderId::E13];
 const E7_E12: &[EmbedderId] = &[EmbedderId::E7, EmbedderId::E12];
 
 const ROUTING_TABLE: &[RoutingTableEntry] = &[
@@ -245,27 +243,27 @@ const ROUTING_TABLE: &[RoutingTableEntry] = &[
     RoutingTableEntry {
         key: RoutingKey::Entity(EntityType::Class),
         language: None,
-        result: RoutingTableValue::Embedders(E11_E7),
+        result: RoutingTableValue::Embedders(E7_E14),
     },
     RoutingTableEntry {
         key: RoutingKey::Entity(EntityType::Struct),
         language: None,
-        result: RoutingTableValue::Embedders(E11_E7),
+        result: RoutingTableValue::Embedders(E7_E14),
     },
     RoutingTableEntry {
         key: RoutingKey::Entity(EntityType::Enum),
         language: None,
-        result: RoutingTableValue::Embedders(E11_E7),
+        result: RoutingTableValue::Embedders(E7_E14),
     },
     RoutingTableEntry {
         key: RoutingKey::Entity(EntityType::TraitOrInterface),
         language: None,
-        result: RoutingTableValue::Embedders(E11_E7),
+        result: RoutingTableValue::Embedders(E7_E14),
     },
     RoutingTableEntry {
         key: RoutingKey::Entity(EntityType::Impl),
         language: None,
-        result: RoutingTableValue::Embedders(E11_E7),
+        result: RoutingTableValue::Embedders(E7_E14),
     },
     RoutingTableEntry {
         key: RoutingKey::Entity(EntityType::Module),
@@ -280,7 +278,7 @@ const ROUTING_TABLE: &[RoutingTableEntry] = &[
     RoutingTableEntry {
         key: RoutingKey::Entity(EntityType::Import),
         language: None,
-        result: RoutingTableValue::Embedders(E11_E13),
+        result: RoutingTableValue::Embedders(E8_E13),
     },
     RoutingTableEntry {
         key: RoutingKey::Entity(EntityType::CommentBlock),

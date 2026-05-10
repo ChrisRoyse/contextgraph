@@ -41,11 +41,16 @@ use crate::types::fingerprint::NUM_EMBEDDERS;
 /// Post-retrieval temporal boosting (search_recent, search_periodic) is complementary.
 pub const TEMPORAL_EMBEDDERS_ENABLED: bool = true;
 
-/// Whether E11 Entity (KEPLER) participates in search/fusion.
-/// KEPLER produces near-identical vectors for all inputs (0.96-0.98 cosine).
-/// Enabled for EXP-2 audit per PRD §5: E11 is included in the 14-embedder MI audit
-/// even when low-discrimination for retrieval, so its information geometry can be measured.
-pub const E11_ENTITY_ENABLED: bool = true;
+/// Whether E11 Entity (KEPLER) participates in model loading, search/fusion, and ME-JEPA routing.
+///
+/// E11 is disabled because the available KEPLER assets are fairseq `.pt`
+/// checkpoints (`KEPLERforKE.pt`, `KEPLERforNLP.pt`, `dict.txt`) while the
+/// runtime loader requires a self-contained Hugging Face-style directory
+/// (`config.json`, `tokenizer.json`, supported transformer weights). Existing
+/// audits also showed low-discrimination vectors (0.96-0.98 cosine). Keep the
+/// storage slot addressable for old fingerprints, but do not load, score, or
+/// route new ME-JEPA work through it.
+pub const E11_ENTITY_ENABLED: bool = false;
 
 /// Whether E5 Causal participates in model loading, search, and ME-JEPA routing.
 ///

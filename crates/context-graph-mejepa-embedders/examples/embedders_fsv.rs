@@ -128,7 +128,7 @@ fn main() -> FsvResult<()> {
                 "after_state": config_after,
             },
             "load_content_set": {
-                "before_state": {"required_content_embedders": 13, "retired": ["e5"]},
+                "before_state": {"required_content_embedders": 12, "retired": ["e5", "e11"]},
                 "after_state": load_content_after,
             }
         },
