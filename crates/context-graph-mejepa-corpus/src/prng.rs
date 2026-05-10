@@ -18,6 +18,18 @@ impl SplitMix64 {
         Self { state: seed }
     }
 
+    /// Restore a previously saved internal state. This is required for
+    /// deterministic Phase 3 sampler checkpoint/resume.
+    pub fn from_state(state: u64) -> Self {
+        Self { state }
+    }
+
+    /// Expose the exact internal state for checkpointing. Restoring this value
+    /// with `from_state` makes the next draw byte-identical.
+    pub fn state(&self) -> u64 {
+        self.state
+    }
+
     /// Advance the state and return a 64-bit pseudo-random integer.
     pub fn next_u64(&mut self) -> u64 {
         self.state = self.state.wrapping_add(0x9E3779B97F4A7C15);
@@ -36,6 +48,15 @@ impl SplitMix64 {
         } else {
             Some((self.next_u64() as usize) % len)
         }
+    }
+
+    pub fn next_unit_f32(&mut self) -> f32 {
+        let raw = self.next_u64() >> 40;
+        (raw as f32) / ((1u64 << 24) as f32)
+    }
+
+    pub fn next_f32_signed(&mut self) -> f32 {
+        self.next_unit_f32() * 2.0 - 1.0
     }
 }
 

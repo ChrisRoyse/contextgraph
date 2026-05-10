@@ -1,0 +1,53 @@
+[package]
+name = "context-graph-mejepa-train"
+version = "0.1.0"
+edition = "2021"
+authors = ["Context Graph Team"]
+description = "ME-JEPA Phase 3 training loop, certificate chain, holdout evaluation, and FSV"
+license = "PolyForm-Noncommercial-1.0.0"
+
+[dependencies]
+context-graph-embeddings = { path = "../context-graph-embeddings" }
+context-graph-mejepa = { path = "../context-graph-mejepa" }
+context-graph-mejepa-corpus = { path = "../context-graph-mejepa-corpus" }
+context-graph-mejepa-instruments = { path = "../context-graph-mejepa-instruments" }
+context-graph-mincut = { path = "../context-graph-mincut" }
+context-graph-witness = { path = "../context-graph-witness" }
+
+candle-core = { workspace = true }
+candle-nn = { workspace = true }
+chrono = { workspace = true }
+clap = { version = "4.5", features = ["derive"] }
+ed25519-dalek = { version = "2.1", default-features = false, features = ["std"] }
+hex = "0.4"
+rocksdb = "0.22"
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+sha3 = "0.10"
+thiserror = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.10"
+
+[[bin]]
+name = "mejepa-train"
+path = "src/bin/mejepa-train.rs"
+
+[[example]]
+name = "train_smoke_fsv"
+path = "examples/train_smoke_fsv.rs"
+
+[[example]]
+name = "train_cert_chain_fsv"
+path = "examples/train_cert_chain_fsv.rs"
+
+[[example]]
+name = "train_holdout_eval_fsv"
+path = "examples/train_holdout_eval_fsv.rs"
+
+[[example]]
+name = "train_full_fsv"
+path = "examples/train_full_fsv.rs"

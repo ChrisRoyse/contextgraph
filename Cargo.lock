@@ -1110,6 +1110,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "context-graph-mejepa"
+version = "0.1.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "chrono",
+ "clap",
+ "context-graph-cuda",
+ "context-graph-mejepa-instruments",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "context-graph-mejepa-corpus"
 version = "0.1.0"
 dependencies = [
