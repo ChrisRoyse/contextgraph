@@ -1,3 +1,122 @@
+## 🔍 AI-Agent Implementation Mandate (read FIRST — fresh-context onboarding)
+
+> **You are an AI coding assistant inheriting this task with no prior context. This block gives you everything you need.**
+
+### 1. Project state pointers — read these before touching code
+
+- **Live shipping status table:** `docs/ruvectorfindings/specs/_README.md` Domain map (one row per phase, current as of 2026-05-10).
+- **Per-phase deliverable status:** `docs/ruvectorfindings/specs/implementation-plan.md` "Per-phase deliverable table".
+- **Constitution (immutable rules):** `docs/ruvectorfindings/specs/constitution.md`.
+- **This phase's status snapshot:** the `_index.md` in this same directory.
+- **Recent activity:** `git log --oneline -30` shows the last 30 commits.
+- **Architecture intent:** `docs/ruvectorfindings/{09,10,11,12,13,14}*.md` (read 09 master plan + 10 pivot first).
+- **Project rules:** `CLAUDE.md` at workspace root.
+
+### 2. ⚠ ASSUME THIS TASK IS WRONG — audit before you implement
+
+This task body was authored 2026-05-09. Before implementing, audit it against the current codebase:
+
+1. Do the file paths it references still exist? `find` / `ls` them.
+2. Do the type signatures it specifies still match what's in tree? `grep` for the type names in `crates/`.
+3. Has the crate it tells you to "create" already been created? Check `crates/`. If it exists, STOP — read what's there, reconcile against the task, and update the task itself before implementing more.
+4. Does the spec it cites (e.g., `TECH-<DOMAIN>.md`) still describe the same data shapes? Re-read those specs.
+
+If you find drift, document it in your handoff (`memory/handoff/`) and either (a) update the task to match reality before continuing, or (b) escalate to the operator if scope changed materially.
+
+### 3. Hard rules — ZERO tolerance, fail-closed
+
+1. **No backwards compatibility.** Schema changes wipe + recreate; never write migration shims. Synthetic data only.
+2. **No mock data in tests.** Use real types, real corpus rows, real RocksDB CFs, real file SHAs. Tests must FAIL when the system is broken — never write a test that passes against a broken state.
+3. **Fail closed with structured error codes** (e.g., `MEJEPA_*`, `UTML_*`). No `unwrap_or(default)` on confidence / quota / correlation / signature / chain-integrity paths. No silent fallback. Every error has `.code()` returning `SCREAMING_SNAKE_CASE`.
+4. **Robust error logging.** Every fail-path emits `tracing::error!` with the structured code + actionable context (which file, which CF, which byte offset, which step). When something breaks, the log must say exactly what failed and how to fix it.
+5. **No comments unless they encode non-obvious WHY.** Don't explain WHAT — well-named identifiers do that.
+6. **Files under 500 lines** (split if exceeded).
+7. **Provenance comment** at top of every new `.rs` file: `// Inspired by ruvnet/RuVector at HEAD ef5274c2 (clean-room reimplementation).` Per `memory/decisions/agent-141-coordinator--upstream-reference-only-clean-room.md`.
+
+### 4. Mandatory Full State Verification (FSV) — every task ships with it
+
+Do not rely on return values alone. After the logic runs, you MUST:
+
+1. **Define the Source of Truth.** State explicitly where the final result lives: a RocksDB column family, a `/tmp/contextgraph-*-fsv/*.json` file, a witness-chain segment, a tier-compressed panel blob, a CF watermark row, a tensor allocator's `live_tensors` map, etc.
+2. **Execute & Inspect.** Run the logic, then perform a SEPARATE READ on the Source of Truth to verify the data was processed correctly. Cite the readback command (e.g., `cargo run --release -p <crate> --example <fsv_example>` or a direct CF dump).
+3. **Boundary & Edge Case Audit.** Manually simulate AT LEAST 3 edge cases — empty inputs, maximum limits, invalid formats, NaN/Inf in floats, control chars in strings, byte offsets at file boundary, etc. For each, print the system state BEFORE and AFTER the action.
+4. **Evidence of Success.** Provide a log showing the actual data residing in the system after execution. Cite the log path in the task's `<verification>` block.
+
+### 5. Trigger → outcome verification (mandatory database / artifact check)
+
+> Every triggered event exists to produce a specific intended outcome. The trigger is observable; the outcome is queryable. If your task writes anything to a persistent surface, you MUST query that surface AFTER running and confirm the expected data is there. Do not trust return values alone.
+
+Synthetic protocol: pick an input where you KNOW the expected output. Run it. Manually check the source of truth for the expected output (e.g., open RocksDB and dump the CF, read the FSV JSON, replay the witness chain). Document the trigger → outcome chain in the FSV evidence. Examples:
+
+- Trigger: `compute_l_step({delta_p:0, delta_k:1, delta_omega:1, delta_xi:1})` → Outcome: returns `0.0` exactly (multiplicative gate; any factor at zero zeros the product). FSV: dump training cert, confirm `l_step == 0.0`.
+- Trigger: insert `ShiftEntry { shift_id: "01J0123456789ABCDEFGHIJK", ... }` → Outcome: row in `CF_MEJEPA_SHIFT_WATERMARK` with that exact key. FSV: open RocksDB, `cf.get(b"01J0123456789ABCDEFGHIJK")` returns Some.
+
+### 6. Occam's razor
+
+The simplest implementation that satisfies the contract is the correct one. Do NOT add features, abstractions, or fallbacks beyond the task scope. A bug fix doesn't need surrounding cleanup. Three similar lines beats a premature abstraction. If the task says "create struct X with 5 fields", create exactly that — not a builder, not a derive macro family, not a generic over a placeholder.
+
+### 7. Subagent / verification expectations
+
+After implementation:
+- Run `cargo build --release -p <crate>` AND `cargo test -p <crate>` AND `cargo clippy -p <crate> -- -D warnings`.
+- Spawn the `code-simplifier` subagent (or equivalent) on your changes; apply BLOCKER fixes.
+- Write a final SMAP report at `memory/reports/agent-{N}-{role}--final-report.md`.
+- Touch the corresponding row in `tasks/_traceability.md` if the REQ→TASK mapping changed.
+
+---
+
+## 📋 2026-05-10 STATE AUDIT — REQUIRES REWORK
+
+**Drift summary:** This task body assumes a sub-module tree at `crates/context-graph-mcp/src/handlers/tools/mejepa/` (with sibling files `verify.rs`, `predict_latest.rs`, `observe_shift.rs`, `subscriber_status.rs`, `capture_audit.rs`, plus `mod.rs` + `schemas.rs`). The codebase took a different path: **MCP tools live in a flat file** at `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs`, and three of the shipped handlers (`mejepa_load_learner_state`, `mejepa_routing_lookup`, `mejepa_vram_budget_report`) actually live in `crates/context-graph-mcp/src/handlers/tools/embedder_tools.rs`.
+
+**Actual file locations (verified 2026-05-10):**
+
+- `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` — flat file (not a directory) containing 5 handlers: `call_mejepa_verify` (~76), `call_mejepa_predict_latest` (~151), `call_mejepa_constellation_inspect` (~222), `call_mejepa_heal_status` (~273), `call_mejepa_rollback_to` (~308).
+- `crates/context-graph-mcp/src/handlers/tools/embedder_tools.rs` — contains 3 more shipped handlers: `call_mejepa_load_learner_state` (~1753), `call_mejepa_routing_lookup` (~1795), `call_mejepa_vram_budget_report` (~1817).
+- `crates/context-graph-mcp/src/tools/names.rs` — `MEJEPA_*` name constants live here.
+- The `crates/context-graph-mcp/src/handlers/tools/mejepa/` directory **does not exist**.
+
+**MEJEPA MCP tools — SHIPPED (8) vs PENDING (10):**
+
+SHIPPED (already in tree):
+- `mejepa_verify`
+- `mejepa_predict_latest`
+- `mejepa_constellation_inspect`
+- `mejepa_heal_status`
+- `mejepa_rollback_to`
+- `mejepa_load_learner_state`
+- `mejepa_routing_lookup`
+- `mejepa_vram_budget_report`
+
+PENDING (Phase 6 hygiene + Phase 7 shift-subscriber + Phase 8 evaluation):
+- `mejepa_observe_shift` (Phase 7 shift-subscriber wiring)
+- `mejepa_subscriber_status` (Phase 7)
+- `mejepa_capture_audit` (Phase 7)
+- `mejepa_gc_run` (Phase 6 hygiene)
+- `mejepa_quota_status` (Phase 6)
+- `mejepa_witness_compress` (Phase 6)
+- `mejepa_eval_run` (Phase 8)
+- `mejepa_eval_ship_gate_status` (Phase 8)
+- `mejepa_active_learning_queue` (Phase 8)
+- `mejepa_active_learning_label` (Phase 8)
+
+**Specific path discrepancies in this task body:**
+
+- `<files_to_create>` paths (`crates/context-graph-mcp/src/handlers/tools/mejepa/{mod,schemas,verify,predict_latest,observe_shift,subscriber_status,capture_audit}.rs`) — wrong, the sub-module tree was never created.
+- `<signature file="crates/context-graph-mcp/src/handlers/tools/mejepa/...">` — every file path under that prefix is non-existent.
+- `MEJEPA_TOOL_NAMES` constant slice (5 names) — partially correct as a target list, but 2 of those 5 (`verify`, `predict_latest`) are already wired into `mejepa_tools.rs` without the sub-module structure.
+- Tool count "5 mejepa_* tool stubs" understates the post-pivot reality — there are now **18 planned mejepa_* tools** (8 shipped + 10 pending) across Phase 6/7/8.
+- Test names (e.g., `mejepa::test_tools_list_enumerates_all_5`) reference a non-existent `mejepa::` module; tests for the shipped tools live elsewhere.
+
+**Recommended rework before implementing:**
+
+1. Decide whether to (a) keep the flat-file structure and add 3 missing Phase 7 tools (`observe_shift`, `subscriber_status`, `capture_audit`) as new functions in `mejepa_tools.rs`, or (b) refactor into the sub-module tree and migrate the 8 shipped handlers. Operator confirmation required.
+2. Rewrite `<scope>`, `<files_to_create>`, `<signatures>`, and `<verification>` blocks to match the chosen target structure.
+3. Expand `<implements>` to cover the 10 pending tools (Phase 6 hygiene + Phase 8 eval), not only the 5 originally specified.
+4. Update REQ-SHIFT-07 reference count from "Five new MCP tools" to the post-pivot reality.
+
+---
+
 <task_spec id="TASK-MCP-001" version="1.0">
 <metadata>
   <title>Foundation — Register 5 mejepa_* tool stubs with the MCP handler dispatcher (handler tree skeleton)</title>
