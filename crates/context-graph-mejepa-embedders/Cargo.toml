@@ -1,0 +1,21 @@
+[package]
+name = "context-graph-mejepa-embedders"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Fail-closed ME-JEPA Phase 1b embedder ensemble registry, routing, digest, VRAM, and calibration gates"
+license.workspace = true
+
+[dependencies]
+context-graph-core = { path = "../context-graph-core" }
+context-graph-cuda = { path = "../context-graph-cuda" }
+context-graph-embeddings = { path = "../context-graph-embeddings" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+thiserror = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.10"

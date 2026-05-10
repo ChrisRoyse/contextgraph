@@ -93,6 +93,9 @@ pub const GET_MEMORY_FINGERPRINT: &str = "get_memory_fingerprint";
 pub const CREATE_WEIGHT_PROFILE: &str = "create_weight_profile";
 /// Find memories that score high in one embedder but low in another.
 pub const SEARCH_CROSS_EMBEDDER_ANOMALIES: &str = "search_cross_embedder_anomalies";
+pub const MEJEPA_LOAD_LEARNER_STATE: &str = "mejepa_load_learner_state";
+pub const MEJEPA_ROUTING_LOOKUP: &str = "mejepa_routing_lookup";
+pub const MEJEPA_VRAM_BUDGET_REPORT: &str = "mejepa_vram_budget_report";
 // ========== TEMPORAL TOOLS (E2/E3 Integration) ==========
 // Temporal search with E2/E3 boost applied POST-retrieval per ARCH-25.
 pub const SEARCH_RECENT: &str = "search_recent";

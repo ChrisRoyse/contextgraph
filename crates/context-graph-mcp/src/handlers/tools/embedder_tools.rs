@@ -21,11 +21,13 @@
 
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::time::Instant;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use context_graph_core::causal::asymmetric::CausalDirection;
+use context_graph_core::memory::ast::{EntityType as AstEntityType, Language as AstLanguage};
 use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions};
 use context_graph_core::types::audit::{AuditOperation, AuditRecord};
 use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
@@ -36,6 +38,11 @@ const MAX_CUSTOM_PROFILES: usize = 1_000;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
 use context_graph_core::teleological::Embedder;
+use context_graph_mejepa_embedders::{
+    query_vram_budget as mejepa_query_vram_budget,
+    route_for_entity_type as mejepa_route_for_entity_type, EmbedderId as MejepaEmbedderId,
+    Ensemble as MejepaEnsemble, VramBudget as MejepaVramBudget,
+};
 
 use super::embedder_dtos::{
     AllEmbedderScores, AsymmetricVariant, CompareEmbedderViewsRequest,
@@ -1698,6 +1705,133 @@ impl Handlers {
             }
             Err(e) => self.tool_error(id, &format!("E13 expansion search failed: {}", e)),
         }
+    }
+
+    pub(crate) async fn call_mejepa_load_learner_state(
+        &self,
+        id: Option<JsonRpcId>,
+        arguments: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let config_path = match required_str(&arguments, "modelsConfigPath") {
+            Ok(value) => PathBuf::from(value),
+            Err(message) => return self.tool_error(id, &message),
+        };
+        let embedder = match required_str(&arguments, "embedder").and_then(|value| {
+            value
+                .parse::<MejepaEmbedderId>()
+                .map_err(|err| err.to_string())
+        }) {
+            Ok(value) => value,
+            Err(message) => return self.tool_error(id, &message),
+        };
+        let cert_path = arguments
+            .get("calibrationCertPath")
+            .and_then(|value| value.as_str())
+            .map(PathBuf::from);
+        match MejepaEnsemble::load_learner_state(&config_path, embedder, cert_path.as_deref()) {
+            Ok(loaded) => self.tool_result(
+                id,
+                json!({
+                    "sourceOfTruth": config_path.display().to_string(),
+                    "loaded": loaded,
+                    "passes": true
+                }),
+            ),
+            Err(err) => self.tool_error(
+                id,
+                &format!(
+                    "{}: {}. sourceOfTruth={}",
+                    err.code(),
+                    err,
+                    config_path.display()
+                ),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_routing_lookup(
+        &self,
+        id: Option<JsonRpcId>,
+        arguments: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let language = match required_str(&arguments, "language").and_then(|value| {
+            AstLanguage::from_slug(value).map_err(|err| format!("{}: {}", err.code(), err))
+        }) {
+            Ok(value) => value,
+            Err(message) => return self.tool_error(id, &message),
+        };
+        let entity_type =
+            match required_str(&arguments, "entityType").and_then(parse_ast_entity_type) {
+                Ok(value) => value,
+                Err(message) => return self.tool_error(id, &message),
+            };
+        match mejepa_route_for_entity_type(entity_type, language) {
+            Ok(route) => self.tool_result(id, json!({"route": route, "passes": true})),
+            Err(err) => self.tool_error(id, &format!("{}: {}", err.code(), err)),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_vram_budget_report(
+        &self,
+        id: Option<JsonRpcId>,
+        arguments: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let budget = match arguments
+            .get("budget")
+            .and_then(|value| value.as_str())
+            .unwrap_or("content_set")
+        {
+            "content_set" => MejepaVramBudget::content_set_rtx5090(),
+            "full_phase1" => MejepaVramBudget::full_phase1_rtx5090(),
+            other => {
+                return self.tool_error(
+                    id,
+                    &format!(
+                        "MEJEPA_EMBED_INVALID_INPUT: unsupported budget {:?}; use content_set or full_phase1",
+                        other
+                    ),
+                )
+            }
+        };
+        match mejepa_query_vram_budget(budget) {
+            Ok(report) => self.tool_result(id, json!({"report": report, "passes": true})),
+            Err(err) => self.tool_error(id, &format!("{}: {}", err.code(), err)),
+        }
+    }
+}
+
+fn required_str<'a>(arguments: &'a serde_json::Value, field: &str) -> Result<&'a str, String> {
+    arguments
+        .get(field)
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            format!(
+                "MEJEPA_EMBED_INVALID_INPUT: missing required non-empty string field {}",
+                field
+            )
+        })
+}
+
+fn parse_ast_entity_type(value: &str) -> Result<AstEntityType, String> {
+    match value {
+        "function" => Ok(AstEntityType::Function),
+        "method" => Ok(AstEntityType::Method),
+        "class" => Ok(AstEntityType::Class),
+        "struct" => Ok(AstEntityType::Struct),
+        "enum" => Ok(AstEntityType::Enum),
+        "trait_or_interface" => Ok(AstEntityType::TraitOrInterface),
+        "impl" => Ok(AstEntityType::Impl),
+        "module" => Ok(AstEntityType::Module),
+        "namespace" => Ok(AstEntityType::Namespace),
+        "test_function" => Ok(AstEntityType::TestFunction),
+        "import" => Ok(AstEntityType::Import),
+        "comment_block" => Ok(AstEntityType::CommentBlock),
+        "docstring" => Ok(AstEntityType::Docstring),
+        other => Err(format!(
+            "MEJEPA_EMBED_INVALID_INPUT: unsupported entityType {:?}",
+            other
+        )),
     }
 }
 

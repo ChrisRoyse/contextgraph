@@ -345,6 +345,44 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false
             }),
         ),
+        ToolDefinition::new(
+            "mejepa_load_learner_state",
+            "Fail-closed Phase 1b learner-state load preflight for E15-E21. Validates the Phase 1b models_config.toml schema, SHA-pinned model files, and E17 calibration certificate when loading AffectText. No CPU fallback and no synthetic learner-state output.",
+            json!({
+                "type": "object",
+                "required": ["modelsConfigPath", "embedder"],
+                "properties": {
+                    "modelsConfigPath": {"type": "string"},
+                    "embedder": {"type": "string", "enum": ["e15", "e16", "e17", "e18", "e19", "e20", "e21"]},
+                    "calibrationCertPath": {"type": "string"}
+                },
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "mejepa_routing_lookup",
+            "Lookup the fail-closed AST entity to embedder routing for one language/entity pair. Covers 13 EntityType variants across the 11 Phase 1 languages.",
+            json!({
+                "type": "object",
+                "required": ["language", "entityType"],
+                "properties": {
+                    "language": {"type": "string", "enum": ["rust", "python", "javascript", "typescript", "go", "java", "c", "cpp", "csharp", "ruby", "php"]},
+                    "entityType": {"type": "string", "enum": ["function", "method", "class", "struct", "enum", "trait_or_interface", "impl", "module", "namespace", "test_function", "import", "comment_block", "docstring"]}
+                },
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "mejepa_vram_budget_report",
+            "Run the CUDA cuMemGetInfo-backed Phase 1b VRAM budget check. Fails closed when WSL/Windows GPU access is unavailable.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "budget": {"type": "string", "enum": ["content_set", "full_phase1"], "default": "content_set"}
+                },
+                "additionalProperties": false
+            }),
+        ),
     ]
 }
 

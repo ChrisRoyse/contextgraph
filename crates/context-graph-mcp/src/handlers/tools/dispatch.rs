@@ -142,6 +142,9 @@ impl Handlers {
             tool_names::GET_MEMORY_FINGERPRINT => call_get_memory_fingerprint(arguments),
             tool_names::CREATE_WEIGHT_PROFILE => call_create_weight_profile(arguments),
             tool_names::SEARCH_CROSS_EMBEDDER_ANOMALIES => call_search_cross_embedder_anomalies(arguments),
+            tool_names::MEJEPA_LOAD_LEARNER_STATE => call_mejepa_load_learner_state(arguments),
+            tool_names::MEJEPA_ROUTING_LOOKUP => call_mejepa_routing_lookup(arguments),
+            tool_names::MEJEPA_VRAM_BUDGET_REPORT => call_mejepa_vram_budget_report(arguments),
             // E12/E13 standalone search tools
             tool_names::SEARCH_BY_TOKENS => call_search_by_tokens(arguments),
             tool_names::SEARCH_BY_EXPANSION => call_search_by_expansion(arguments),

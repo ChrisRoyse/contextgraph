@@ -1081,6 +1081,7 @@ dependencies = [
  "context-graph-core",
  "context-graph-cuda",
  "context-graph-embeddings",
+ "context-graph-mejepa-embedders",
  "context-graph-solver",
  "context-graph-storage",
  "context-graph-witness",
@@ -1127,11 +1128,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "context-graph-mejepa-embedders"
+version = "0.1.0"
+dependencies = [
+ "context-graph-core",
+ "context-graph-cuda",
+ "context-graph-embeddings",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
+ "toml",
+ "tracing",
+]
+
+[[package]]
 name = "context-graph-mejepa-instruments"
 version = "0.1.0"
 dependencies = [
  "context-graph-core",
  "context-graph-witness",
+ "rocksdb",
  "serde",
  "serde_json",
  "sha2",

@@ -1,21 +1,26 @@
 // Full State Verification for the Phase 1 concrete instruments.
 
 use context_graph_mejepa_instruments::{
+    active_slots, assert_probe_passes, materialize_panel, train_linear_probe, vectors_from_panel,
     CodeInstrumentInput, Diagnostic, DiagnosticSeverity, DiffInstrumentInput, EAstInstrument,
     ECfgInstrument, ECommitMsgInstrument, EDataFlowInstrument, EDiffInstrument, EOracleInstrument,
     EProblemInstrument, EReasoningInstrument, ERuntimeInstrument, EStaticAnalysisInstrument,
-    ETestInstrument, ETraceInstrument, ETypeGraphInstrument, EWitnessInstrument, Instrument,
-    InstrumentSlot, OracleVerdict, Panel, PanelBuilder, PerTestOutcome, ReasoningEvent,
-    ReasoningInput, RuntimeInput, ScalarInput, ScalarsInstrument, StaticAnalysisInput, TestOutcome,
-    TextInstrumentInput, TraceEvent, TraceEventKind, TraceInput, WitnessChainInput,
-    CANONICAL_WITNESS_FORMAT_VERSION, PANEL_DIM,
+    ETestInstrument, ETraceInstrument, ETypeGraphInstrument, EWitnessInstrument, FrozenGuard,
+    Instrument, InstrumentSlot, OracleVerdict, Panel, PanelBuilder, PanelEnvelope, PanelKey,
+    PanelProvenance, PanelStore, PanelVectorInput, PerTestOutcome, ReasoningEvent, ReasoningInput,
+    RuntimeInput, ScalarInput, ScalarsInstrument, StaticAnalysisInput, TestOutcome,
+    TextInstrumentInput, TimeStep, TraceEvent, TraceEventKind, TraceInput, WitnessChainInput,
+    CANONICAL_WITNESS_FORMAT_VERSION, CF_MEJEPA_PANELS, CF_MEJEPA_PANEL_META, PANEL_DIM,
 };
 use context_graph_witness::{shake256_32, WitnessEntry, WITNESS_ENTRY_SIZE, ZERO_HASH};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -77,6 +82,92 @@ fn main() -> FsvResult<()> {
         )?;
     }
 
+    let materialized_t2 = materialize_panel(
+        TimeStep::T2,
+        vectors_from_panel(&panel_readback, &InstrumentSlot::all()),
+    )?;
+    require(
+        "materialized t2 equals direct panel",
+        materialized_t2.panel == panel_readback,
+    )?;
+    let materialized_t0_inputs = active_slots(TimeStep::T0)
+        .iter()
+        .map(|slot| PanelVectorInput {
+            slot: *slot,
+            vector: panel_readback.slot(*slot).to_vec(),
+        })
+        .collect::<Vec<_>>();
+    let materialized_t0 = materialize_panel(TimeStep::T0, materialized_t0_inputs)?;
+    require(
+        "materialized t0 oracle is explicit zero",
+        materialized_t0
+            .panel
+            .slot(InstrumentSlot::EOracle)
+            .iter()
+            .all(|value| *value == 0.0),
+    )?;
+
+    let mut frozen_guard = FrozenGuard::new();
+    let frozen_snapshot = frozen_guard.register_panel("target.panel.t2", &panel_readback)?;
+    let frozen_verify = frozen_guard.verify_panel("target.panel.t2", &panel_readback)?;
+    require(
+        "frozen snapshot readback equality",
+        frozen_snapshot == frozen_verify,
+    )?;
+
+    let manifest_path = PathBuf::from("tasks/swebench-lite/sympy__sympy-20590.json");
+    let manifest_bytes = fs::read(&manifest_path)?;
+    let provenance = PanelProvenance {
+        code_version: format!("{}-{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
+        embedder_versions: instrument_versions(),
+        corpus_sha: sha256_hex_bytes(&manifest_bytes),
+        frozen_at_unix_ms: unix_ms_now()?,
+        source_sha256: sha256_hex_bytes(code.source.as_bytes()),
+    };
+    let envelope = PanelEnvelope::try_new(TimeStep::T2, panel_readback.clone(), provenance)?;
+    let envelope_path = root.join("panel-envelope-t2.json");
+    let envelope_text = serde_json::to_string_pretty(&envelope)?;
+    write_checked(&envelope_path, envelope_text.as_bytes())?;
+    let envelope_readback: PanelEnvelope =
+        serde_json::from_str(&fs::read_to_string(&envelope_path)?)?;
+    envelope_readback.validate()?;
+    require(
+        "panel envelope readback equality",
+        envelope_readback == envelope,
+    )?;
+
+    let panel_store_path = root.join("panels-rocksdb");
+    let panel_store_key = PanelKey::new("sympy__sympy-20590", TimeStep::T2)?;
+    {
+        let store = PanelStore::open(&panel_store_path)?;
+        store.put_envelope(&panel_store_key, &envelope_readback)?;
+        store.flush()?;
+    }
+    let panel_store = PanelStore::open(&panel_store_path)?;
+    let stored_envelope = panel_store
+        .get_envelope(&panel_store_key)?
+        .ok_or_else(|| missing_state("stored panel envelope missing after write"))?;
+    let stored_meta = panel_store
+        .get_meta(&panel_store_key)?
+        .ok_or_else(|| missing_state("stored panel metadata missing after write"))?;
+    require(
+        "rocksdb panel envelope readback equality",
+        stored_envelope == envelope_readback,
+    )?;
+    require(
+        "rocksdb panel meta hash matches envelope",
+        stored_meta.panel_hash == envelope_readback.panel_hash,
+    )?;
+    let rocksdb_panel_count = panel_store.count_cf(CF_MEJEPA_PANELS)?;
+    let rocksdb_meta_count = panel_store.count_cf(CF_MEJEPA_PANEL_META)?;
+    require("rocksdb panel count == 1", rocksdb_panel_count == 1)?;
+    require("rocksdb meta count == 1", rocksdb_meta_count == 1)?;
+    let rocksdb_panel_rows = panel_store.scan_cf_json(CF_MEJEPA_PANELS)?;
+    let rocksdb_meta_rows = panel_store.scan_cf_json(CF_MEJEPA_PANEL_META)?;
+
+    let probe_report = oracle_probe_report()?;
+    assert_probe_passes(&probe_report)?;
+
     let edge_cases = json!({
         "empty_witness_chain": edge_empty_witness(),
         "tampered_witness_chain": edge_tampered_witness(),
@@ -89,6 +180,11 @@ fn main() -> FsvResult<()> {
         "invalid_runtime_coverage": edge_invalid_runtime_coverage(),
         "blank_reasoning_transcript": edge_blank_reasoning(),
         "invalid_scalar_health": edge_invalid_scalar_health(),
+        "frozen_panel_mutation": edge_frozen_panel_mutation(&frozen_guard, &panel_readback),
+        "frozen_gradient_violation": edge_frozen_gradient(&frozen_guard),
+        "t0_future_slot_rejected": edge_t0_future_slot_rejected(&panel_readback),
+        "panel_envelope_hash_mismatch": edge_panel_envelope_hash_mismatch(&envelope),
+        "linear_probe_single_class": edge_linear_probe_single_class(),
     });
     require(
         "edge cases all pass",
@@ -107,6 +203,11 @@ fn main() -> FsvResult<()> {
         "source_of_truth": {
             "root": root.display().to_string(),
             "panel_json": panel_path.display().to_string(),
+            "panel_envelope_json": envelope_path.display().to_string(),
+            "panel_rocksdb": panel_store_path.display().to_string(),
+            "panel_cf": CF_MEJEPA_PANELS,
+            "panel_meta_cf": CF_MEJEPA_PANEL_META,
+            "swebench_manifest": manifest_path.display().to_string(),
         },
         "happy_path": {
             "before_state": {
@@ -124,6 +225,7 @@ fn main() -> FsvResult<()> {
                 "runtime_wall_time_ms": runtime.wall_time_ms,
                 "reasoning_events": reasoning.events.len(),
                 "scalar_files_touched": scalars.files_touched,
+                "probe_samples": probe_report.sample_count,
             },
             "after_state": {
                 "panel_dim": PANEL_DIM,
@@ -145,6 +247,18 @@ fn main() -> FsvResult<()> {
                 "runtime_slot_first_8": &panel_readback.slot(InstrumentSlot::ERuntime)[0..8],
                 "reasoning_slot_first_8": &panel_readback.slot(InstrumentSlot::EReasoning)[0..8],
                 "scalars_slot_first_8": &panel_readback.slot(InstrumentSlot::Scalars)[0..8],
+                "materialized_t0_mask": materialized_t0.panel.filled_mask(),
+                "materialized_t2_mask": materialized_t2.panel.filled_mask(),
+                "frozen_snapshot": frozen_snapshot,
+                "panel_envelope_hash": envelope_readback.panel_hash,
+                "rocksdb_counts": {
+                    CF_MEJEPA_PANELS: rocksdb_panel_count,
+                    CF_MEJEPA_PANEL_META: rocksdb_meta_count,
+                },
+                "rocksdb_panel_key": panel_store_key.storage_key(),
+                "rocksdb_panel_rows": rocksdb_panel_rows,
+                "rocksdb_meta_rows": rocksdb_meta_rows,
+                "linear_probe": probe_report,
             },
             "passes": true,
         },
@@ -412,14 +526,139 @@ fn edge_invalid_scalar_health() -> Value {
     json_edge("invalid scalar health", 1, result.err().map(|e| e.code()))
 }
 
+fn edge_frozen_panel_mutation(guard: &FrozenGuard, panel: &Panel) -> Value {
+    let mut changed = panel.data().to_vec();
+    changed[0] += 1.0;
+    let result = guard.verify_buffer("target.panel.t2", &changed);
+    json_edge_expected(
+        "frozen panel mutation",
+        changed.len(),
+        "MEJEPA_INSTR_FROZEN_VIOLATION",
+        result.err().map(|e| e.code()),
+    )
+}
+
+fn edge_frozen_gradient(guard: &FrozenGuard) -> Value {
+    let mut gradient = vec![0.0_f32; PANEL_DIM];
+    gradient[17] = 0.5;
+    let result = guard.assert_no_gradient("target.panel.t2", &gradient);
+    json_edge_expected(
+        "frozen gradient violation",
+        gradient.len(),
+        "MEJEPA_INSTR_FROZEN_VIOLATION",
+        result.err().map(|e| e.code()),
+    )
+}
+
+fn edge_t0_future_slot_rejected(panel: &Panel) -> Value {
+    let mut inputs = active_slots(TimeStep::T0)
+        .iter()
+        .map(|slot| PanelVectorInput {
+            slot: *slot,
+            vector: panel.slot(*slot).to_vec(),
+        })
+        .collect::<Vec<_>>();
+    inputs.push(PanelVectorInput {
+        slot: InstrumentSlot::EOracle,
+        vector: panel.slot(InstrumentSlot::EOracle).to_vec(),
+    });
+    let result = materialize_panel(TimeStep::T0, inputs);
+    json_edge(
+        "t0 future oracle slot rejected",
+        PANEL_DIM,
+        result.err().map(|e| e.code()),
+    )
+}
+
+fn edge_panel_envelope_hash_mismatch(envelope: &PanelEnvelope) -> Value {
+    let mut changed = envelope.clone();
+    changed.panel_hash = "c".repeat(64);
+    let result = changed.validate();
+    json_edge(
+        "panel envelope hash mismatch",
+        PANEL_DIM,
+        result.err().map(|e| e.code()),
+    )
+}
+
+fn edge_linear_probe_single_class() -> Value {
+    let features = vec![vec![1.0; 4]; 4];
+    let result = train_linear_probe(&features, &[1, 1, 1, 1], 0.25, 11);
+    json_edge(
+        "linear probe single class",
+        4,
+        result.err().map(|e| e.code()),
+    )
+}
+
 fn json_edge(name: &str, before_count: usize, actual_code: Option<&'static str>) -> Value {
+    json_edge_expected(
+        name,
+        before_count,
+        "MEJEPA_INSTRUMENTS_INVALID_INPUT",
+        actual_code,
+    )
+}
+
+fn json_edge_expected(
+    name: &str,
+    before_count: usize,
+    expected_code: &'static str,
+    actual_code: Option<&'static str>,
+) -> Value {
     json!({
         "before_state": { "name": name, "count": before_count },
         "after_state": { "accepted": false },
-        "expected_code": "MEJEPA_INSTRUMENTS_INVALID_INPUT",
+        "expected_code": expected_code,
         "actual_code": actual_code,
-        "passes": actual_code == Some("MEJEPA_INSTRUMENTS_INVALID_INPUT"),
+        "passes": actual_code == Some(expected_code),
     })
+}
+
+fn oracle_probe_report() -> FsvResult<context_graph_mejepa_instruments::ProbeReport> {
+    let mut features = Vec::new();
+    let mut labels = Vec::new();
+    for i in 0..30 {
+        let outcome = if i % 3 == 0 {
+            TestOutcome::Fail
+        } else {
+            TestOutcome::Pass
+        };
+        let verdict = OracleVerdict {
+            per_test: vec![PerTestOutcome {
+                test_id: format!("tests/test_phase1.py::test_probe_{i}"),
+                outcome,
+                runtime_ms: (i + 1) as i64,
+            }],
+            exception: None,
+        };
+        features.push(EOracleInstrument.encode(&verdict)?);
+        labels.push(if outcome == TestOutcome::Pass { 0 } else { 1 });
+    }
+    Ok(train_linear_probe(&features, &labels, 0.30, 17)?)
+}
+
+fn instrument_versions() -> BTreeMap<String, String> {
+    InstrumentSlot::all()
+        .iter()
+        .map(|slot| (slot.slug().to_string(), "deterministic-v1".to_string()))
+        .collect()
+}
+
+fn sha256_hex_bytes(bytes: &[u8]) -> String {
+    let digest: [u8; 32] = Sha256::digest(bytes).into();
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(64);
+    for byte in digest {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
+}
+
+fn unix_ms_now() -> FsvResult<i64> {
+    let duration = SystemTime::now().duration_since(UNIX_EPOCH)?;
+    Ok(i64::try_from(duration.as_millis())?)
 }
 
 fn write_checked(path: &Path, bytes: &[u8]) -> FsvResult<()> {
@@ -433,6 +672,10 @@ fn write_checked(path: &Path, bytes: &[u8]) -> FsvResult<()> {
     }
     require("byte readback", fs::read(path)? == bytes)?;
     Ok(())
+}
+
+fn missing_state(message: &'static str) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::NotFound, message)
 }
 
 fn require(label: &str, condition: bool) -> FsvResult<()> {

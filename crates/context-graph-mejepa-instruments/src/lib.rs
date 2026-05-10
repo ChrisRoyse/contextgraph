@@ -44,6 +44,7 @@ pub mod frozen_hook;
 pub mod linear_probe;
 pub mod materialize;
 pub mod panel_json;
+pub mod panel_store;
 
 pub type InstrumentResult<T> = Result<T, InstrumentError>;
 
@@ -71,6 +72,15 @@ pub enum InstrumentError {
         message: String,
         remediation: &'static str,
     },
+    #[error(
+        "instrument store error during {operation} on {cf}: {message}; remediation: {remediation}"
+    )]
+    Store {
+        operation: &'static str,
+        cf: &'static str,
+        message: String,
+        remediation: &'static str,
+    },
 }
 
 impl InstrumentError {
@@ -79,6 +89,7 @@ impl InstrumentError {
             Self::InvalidInput { .. } => "MEJEPA_INSTRUMENTS_INVALID_INPUT",
             Self::NumericalInvariant { .. } => "MEJEPA_INSTRUMENTS_NUMERICAL_INVARIANT",
             Self::FrozenViolation { .. } => "MEJEPA_INSTR_FROZEN_VIOLATION",
+            Self::Store { .. } => "MEJEPA_INSTRUMENTS_STORE_ERROR",
         }
     }
 
@@ -113,6 +124,20 @@ impl InstrumentError {
     ) -> Self {
         Self::FrozenViolation {
             field,
+            message: message.into(),
+            remediation,
+        }
+    }
+
+    pub(crate) fn store(
+        operation: &'static str,
+        cf: &'static str,
+        message: impl Into<String>,
+        remediation: &'static str,
+    ) -> Self {
+        Self::Store {
+            operation,
+            cf,
             message: message.into(),
             remediation,
         }
@@ -516,3 +541,6 @@ pub use materialize::{
     PanelVectorInput, TimeStep,
 };
 pub use panel_json::{PanelEnvelope, PanelProvenance, PANEL_JSON_SCHEMA_VERSION};
+pub use panel_store::{
+    PanelKey, PanelMeta, PanelStore, CF_MEJEPA_PANELS, CF_MEJEPA_PANEL_META, MEJEPA_PANEL_CFS,
+};
