@@ -13,7 +13,7 @@ use uuid::Uuid;
 /// - HookDescription: From Claude Code hook events
 /// - ClaudeResponse: From session end/stop captured responses
 /// - MDFileChunk: From markdown file watcher chunks
-/// - CausalExplanation: LLM-generated causal explanation (E5+LLM knowledge generation)
+/// - CausalExplanation: legacy generated causal explanation records from the retired E5+LLM path
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MemorySource {
     /// Memory captured from a Claude Code hook event.
@@ -39,10 +39,9 @@ pub enum MemorySource {
     },
     /// Memory created from LLM-generated causal explanation.
     ///
-    /// E5+LLM is the ONLY embedder pair that GENERATES new knowledge.
-    /// Other embedders just encode existing text - E5+LLM discovers and
-    /// articulates causal relationships that weren't explicitly stated.
-    /// This generated explanation IS knowledge and deserves full 13-embedder treatment.
+    /// Legacy source type for old generated causal explanations. The E5+LLM
+    /// generation path is retired; new ME-JEPA training should use active
+    /// embedders and durable reality evidence instead of creating these records.
     CausalExplanation {
         /// UUID of the original memory that was analyzed.
         source_fingerprint_id: Uuid,

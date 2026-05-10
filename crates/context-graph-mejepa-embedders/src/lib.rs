@@ -2,7 +2,8 @@
 //!
 //! This crate is intentionally fail-closed. It does not synthesize vectors or
 //! silently switch to CPU. Production loading requires:
-//! - a schema-versioned `models_config.toml` with E1-E21 registrations,
+//! - a schema-versioned `models_config.toml` with active E1-E21 registrations
+//!   (E5 is retired and intentionally not required),
 //! - SHA-256 manifest pins for every pretrained weight file,
 //! - runtime CUDA access for the configured GPU budget,
 //! - E17 calibration evidence before `agent_state_score` is used.

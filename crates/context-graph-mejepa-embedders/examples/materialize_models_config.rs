@@ -70,8 +70,8 @@ fn main() -> ExampleResult<()> {
     let readback = ModelsConfig::load(&output_path)?;
     let digest_readback = verify_all_registration_digests(&readback)?;
     require(
-        "all 21 registrations verified after disk readback",
-        digest_readback.len() == EmbedderId::all().len(),
+        "all active registrations verified after disk readback",
+        digest_readback.len() == EmbedderId::required_registrations().len(),
     )?;
 
     let evidence = json!({
@@ -84,6 +84,7 @@ fn main() -> ExampleResult<()> {
             "config_exists": output_path.exists(),
             "registration_count": readback.embedders.len(),
             "digest_verified_count": digest_readback.len(),
+            "retired": ["e5"],
             "registrations": registrations,
         },
         "passes": true,
@@ -303,14 +304,6 @@ fn slot_specs() -> Vec<SlotSpec> {
         deterministic(EmbedderId::E2, "temporal_recent"),
         deterministic(EmbedderId::E3, "temporal_periodic"),
         deterministic(EmbedderId::E4, "temporal_positional"),
-        pretrained(
-            EmbedderId::E5,
-            "causal",
-            "causal-nomic",
-            "nomic-ai/nomic-embed-text-v1.5",
-            &["model.safetensors"],
-            Some(transformer_identity("nomic_bert", Some(768))),
-        ),
         pretrained(
             EmbedderId::E6,
             "sparse",

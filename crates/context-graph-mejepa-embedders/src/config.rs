@@ -44,23 +44,28 @@ impl ModelsConfig {
             ));
         }
         let mut seen = BTreeSet::new();
-        for id in EmbedderId::all() {
-            let key = id.slug();
-            let reg = self
-                .embedders
-                .get(key)
-                .ok_or(EmbedError::MissingRegistration {
-                    embedder: id,
-                    remediation: "add a complete [embedders.eN] entry to models_config.toml",
+        for (key, reg) in &self.embedders {
+            let key_id = EmbedderId::all()
+                .into_iter()
+                .find(|id| id.slug() == key.as_str())
+                .ok_or_else(|| {
+                    EmbedError::invalid(
+                        "ModelsConfig.embedders",
+                        format!("unknown registration table [embedders.{key}]"),
+                        "use canonical [embedders.eN] keys; E5 is retired and no new slots are implicit",
+                    )
                 })?;
-            reg.validate()?;
-            if reg.embedder != id {
+            if key_id != reg.embedder {
                 return Err(EmbedError::invalid(
                     "EmbedderRegistration.embedder",
                     format!("table {key} declares embedder {}", reg.embedder),
                     "the table name and embedder field must identify the same slot",
                 ));
             }
+            if reg.embedder.is_retired() {
+                continue;
+            }
+            reg.validate()?;
             if !seen.insert(reg.embedder) {
                 return Err(EmbedError::invalid(
                     "ModelsConfig.embedders",
@@ -69,15 +74,30 @@ impl ModelsConfig {
                 ));
             }
         }
+        for id in EmbedderId::required_registrations() {
+            if !seen.contains(&id) {
+                return Err(EmbedError::MissingRegistration {
+                    embedder: id,
+                    remediation: "add a complete [embedders.eN] entry to models_config.toml; E5 is retired and is not required",
+                });
+            }
+        }
         Ok(())
     }
 
     pub fn registration(&self, id: EmbedderId) -> EmbedResult<&EmbedderRegistration> {
+        if id.is_retired() {
+            return Err(EmbedError::invalid(
+                "ModelsConfig.registration",
+                format!("{id} is retired and disabled"),
+                "remove E5 from active ME-JEPA/embedder requests; use E1/E7/E8/E10/E12/E13/E14 and learner-state embedders as appropriate",
+            ));
+        }
         self.embedders
             .get(id.slug())
             .ok_or(EmbedError::MissingRegistration {
                 embedder: id,
-                remediation: "add the missing [embedders.eN] entry to models_config.toml",
+                remediation: "add the missing [embedders.eN] entry to models_config.toml; E5 is retired and is not required",
             })
     }
 }

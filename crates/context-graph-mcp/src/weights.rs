@@ -11,9 +11,7 @@ pub use context_graph_core::weights::space_name;
 
 // Re-export E11 toggle and disable helper so MCP handlers can gate transparency display
 // and apply E11 disable to custom weights / custom profiles.
-pub use context_graph_core::weights::{
-    apply_e11_disable, apply_e5_retirement, E11_ENTITY_ENABLED, E5_CAUSAL_ENABLED,
-};
+pub use context_graph_core::weights::{apply_e11_disable, E11_ENTITY_ENABLED};
 
 /// Get raw weight profile by name (without E11 disable applied).
 ///

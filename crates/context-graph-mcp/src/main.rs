@@ -288,8 +288,8 @@ DAEMON MODE (--daemon):
       context-graph-mcp --daemon-port 4000 # Use custom daemon port
 
 GPU WARMUP:
-    By default, the server blocks startup until all 14 embedding models are loaded
-    into VRAM. This ensures embedding operations are available immediately.
+    By default, the server blocks startup until active embedding models are loaded
+    into VRAM. E5 causal is retired and is not loaded.
 
     RTX 5090 (32GB VRAM) warmup takes approximately 20-30 seconds.
     Use --no-warm only if you accept embedding failures during the warmup period.
@@ -2031,7 +2031,7 @@ async fn start_daemon_server(
 /// handler in main().
 ///
 /// Polls `is_daemon_healthy()` with 500ms intervals until the daemon is ready
-/// or 120s timeout (generous for model warmup: 14 embedders on RTX 5090).
+/// or 120s timeout (generous for active model warmup on RTX 5090).
 #[cfg(unix)]
 async fn spawn_daemon_process(
     daemon_port: u16,

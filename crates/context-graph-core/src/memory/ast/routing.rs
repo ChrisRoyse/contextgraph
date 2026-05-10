@@ -105,7 +105,6 @@ impl EmbedderId {
                 | Self::E2
                 | Self::E3
                 | Self::E4
-                | Self::E5
                 | Self::E6
                 | Self::E7
                 | Self::E8
@@ -220,7 +219,7 @@ const E1_E7: &[EmbedderId] = &[EmbedderId::E1, EmbedderId::E7];
 const E11_E7: &[EmbedderId] = &[EmbedderId::E11, EmbedderId::E7];
 const E1_E8: &[EmbedderId] = &[EmbedderId::E1, EmbedderId::E8];
 const E11_E13: &[EmbedderId] = &[EmbedderId::E11, EmbedderId::E13];
-const E5_E1: &[EmbedderId] = &[EmbedderId::E5, EmbedderId::E1];
+const E7_E12: &[EmbedderId] = &[EmbedderId::E7, EmbedderId::E12];
 
 const ROUTING_TABLE: &[RoutingTableEntry] = &[
     RoutingTableEntry {
@@ -296,7 +295,7 @@ const ROUTING_TABLE: &[RoutingTableEntry] = &[
     RoutingTableEntry {
         key: RoutingKey::TestAssertion,
         language: None,
-        result: RoutingTableValue::Embedders(E5_E1),
+        result: RoutingTableValue::Embedders(E7_E12),
     },
     RoutingTableEntry {
         key: RoutingKey::DiffHunk,

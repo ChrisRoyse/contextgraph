@@ -493,17 +493,27 @@ mod tests {
 
     #[test]
     fn test_arch10_semantic_only() {
-        // ARCH-10: Divergence detection uses SEMANTIC embedders only
+        // ARCH-10: Divergence detection uses active SEMANTIC embedders only.
+        // E5/Causal is semantic by category but retired, so it is intentionally excluded.
         for embedder in Embedder::all() {
-            let is_semantic = category_for(embedder).is_semantic();
+            let should_diverge = matches!(
+                embedder,
+                Embedder::Semantic
+                    | Embedder::Sparse
+                    | Embedder::Code
+                    | Embedder::Contextual
+                    | Embedder::LateInteraction
+                    | Embedder::KeywordSplade
+                    | Embedder::BgeM3Dense
+            );
             let is_divergence = is_divergence_space(embedder);
             assert_eq!(
-                is_semantic, is_divergence,
-                "{:?}: is_semantic={} but is_divergence_space={}",
-                embedder, is_semantic, is_divergence
+                should_diverge, is_divergence,
+                "{:?}: should_diverge={} but is_divergence_space={}",
+                embedder, should_diverge, is_divergence
             );
         }
-        println!("[PASS] ARCH-10: is_divergence_space matches is_semantic");
+        println!("[PASS] ARCH-10: is_divergence_space matches active semantic set");
     }
 
     #[test]

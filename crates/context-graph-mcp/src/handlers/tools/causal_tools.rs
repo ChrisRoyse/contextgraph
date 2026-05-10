@@ -12,6 +12,7 @@
 //! - AP-77: Direction modifiers: cause→effect=1.2, effect→cause=0.8
 //! - AP-02: All comparisons within E5 space (no cross-embedder)
 //! - FAIL FAST: All errors propagate immediately with logging
+#![allow(dead_code)] // Retired E5 tool surface; dispatch fails closed before these handlers run.
 
 use std::collections::HashSet;
 use tracing::{debug, error, info, warn};

@@ -100,7 +100,7 @@ pub fn verify_all_registration_digests(
     config: &ModelsConfig,
 ) -> EmbedResult<BTreeMap<EmbedderId, LoadedEmbedder>> {
     let mut out = BTreeMap::new();
-    for embedder in EmbedderId::all() {
+    for embedder in EmbedderId::required_registrations() {
         let reg = config.registration(embedder)?;
         let files = verify_registration_digest(reg)?;
         out.insert(

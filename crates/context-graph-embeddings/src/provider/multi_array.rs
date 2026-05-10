@@ -360,11 +360,13 @@ unsafe impl Sync for TokenEmbedderAdapter {}
 ///
 /// This adapter exposes the `embed_dual()` method from CausalModel, which
 /// produces genuinely different vectors for cause vs effect roles.
+#[allow(dead_code)]
 struct CausalDualEmbedderAdapter {
     /// Direct reference to CausalModel (not wrapped in EmbeddingModel trait)
     model: Arc<CausalModel>,
 }
 
+#[allow(dead_code)]
 impl CausalDualEmbedderAdapter {
     /// Create a new CausalDualEmbedderAdapter.
     ///

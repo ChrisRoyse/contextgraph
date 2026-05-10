@@ -22,6 +22,7 @@ fn routing_ids_cover_all_21_embedders_with_dimensions() {
     assert_eq!(EmbedderId::E17.projected_dimension(), 384);
     assert_eq!(EmbedderId::E19.projected_dimension(), 64);
     assert!(EmbedderId::E14.is_content());
+    assert!(!EmbedderId::E5.is_content());
     assert!(!EmbedderId::E15.is_content());
 
     for id in ids {
@@ -70,7 +71,7 @@ fn routing_table_matches_embedder_spec() {
     );
     assert_eq!(
         route_for_key(RoutingKey::TestAssertion, Some(Language::Java)).unwrap(),
-        RoutingResult::Embedders(BTreeSet::from([EmbedderId::E1, EmbedderId::E5]))
+        RoutingResult::Embedders(BTreeSet::from([EmbedderId::E7, EmbedderId::E12]))
     );
     assert_eq!(
         route_for_key(RoutingKey::DiffHunk, None).unwrap(),

@@ -476,7 +476,7 @@ mod tests {
     #[test]
     fn test_weights_normalization() {
         let weights = default_weights();
-        assert!((weights.sum() - 9.5).abs() < 0.001);
+        assert!((weights.sum() - 8.5).abs() < 0.001);
 
         let mut normalized = weights.clone();
         normalized.normalize();
@@ -528,7 +528,11 @@ mod tests {
         let w = default_weights();
         for embedder in Embedder::all() {
             let weight = w.get_weight(embedder);
-            let expected = category_for(embedder).topic_weight();
+            let expected = if matches!(embedder, Embedder::Causal) {
+                0.0
+            } else {
+                category_for(embedder).topic_weight()
+            };
             assert!(
                 (weight - expected).abs() < f32::EPSILON,
                 "{:?}: weight {} != category topic_weight {}",

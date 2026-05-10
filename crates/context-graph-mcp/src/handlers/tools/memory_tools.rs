@@ -2512,6 +2512,7 @@ use context_graph_core::traits::TeleologicalSearchResult;
 /// E5 weight (index 4) from the profile, or 0.10 if profile not found.
 /// Audit-11 MCP-H3: Now uses Result-based get_effective_weight_profile.
 /// Uses effective profile so E5 weight reflects E11 redistribution.
+#[cfg(test)]
 fn get_e5_causal_weight(profile_name: &str) -> f32 {
     get_effective_weight_profile(profile_name)
         .map(|weights| weights[4]) // E5 is at index 4
@@ -2534,6 +2535,7 @@ fn get_e5_causal_weight(profile_name: &str) -> f32 {
 /// * `results` - Mutable reference to search results to rerank
 /// * `query_embedding` - Query's semantic fingerprint
 /// * `query_direction` - Detected causal direction of the query
+#[allow(dead_code)]
 fn apply_asymmetric_e5_reranking(
     results: &mut [TeleologicalSearchResult],
     query_embedding: &SemanticFingerprint,
@@ -2568,6 +2570,7 @@ fn apply_asymmetric_e5_reranking(
 /// matches what the query seeks.
 ///
 /// This is applied AFTER the binary causal gate to provide a secondary ranking signal.
+#[allow(dead_code)]
 fn apply_direction_aware_reranking(
     results: &mut [TeleologicalSearchResult],
     query_direction: CausalDirection,
@@ -3042,11 +3045,9 @@ mod tests {
         assert!((demoted - 0.80 * causal_gate::NON_CAUSAL_DEMOTION).abs() < 1e-6);
         assert!((apply_causal_gate(0.80, 0.99, false) - 0.80).abs() < 1e-6);
         assert!((apply_causal_gate(0.80, 0.02, true) - 0.80).abs() < 1e-6);
-        // E5 weight profiles (effective weights: E11 redistribution bumps E5 slightly)
-        // causal_reasoning: raw E5=0.10, E11=0.10 → effective E5 ≈ 0.111
-        // semantic_search:  raw E5=0.15, E11=0.05 → effective E5 ≈ 0.158
-        assert!((get_e5_causal_weight("causal_reasoning") - 0.111).abs() < 0.02);
-        assert!((get_e5_causal_weight("semantic_search") - 0.158).abs() < 0.02);
+        // E5 is retired, so effective profiles expose zero E5 weight.
+        assert_eq!(get_e5_causal_weight("causal_reasoning"), 0.0);
+        assert_eq!(get_e5_causal_weight("semantic_search"), 0.0);
         // Direction modifiers
         assert_eq!(direction_mod::CAUSE_TO_EFFECT, 1.2);
         assert_eq!(direction_mod::EFFECT_TO_CAUSE, 0.8);

@@ -19,6 +19,7 @@
 //! - E11: Entity knowledge graph
 //!
 //! Results include consensus scores and per-embedder scores.
+#![allow(dead_code)] // Retired E5 relationship search surface; dispatch fails closed.
 
 use serde_json::json;
 use tracing::{debug, error, info};

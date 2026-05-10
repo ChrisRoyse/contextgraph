@@ -23,7 +23,18 @@ pub fn route_for_entity_type(
         CoreRoutingResult::Embedders(ids) => {
             let mut embedders = BTreeSet::new();
             for id in ids {
-                embedders.insert(convert_core_embedder(id));
+                let embedder = convert_core_embedder(id);
+                if embedder.is_retired() {
+                    return Err(EmbedError::RoutingMissing {
+                        language: language.slug().to_string(),
+                        entity_type: format!("{entity_type:?}"),
+                        message: format!(
+                            "core AST route attempted to use retired embedder {embedder}"
+                        ),
+                        remediation: "replace the route with active ME-JEPA embedders before loading the content set",
+                    });
+                }
+                embedders.insert(embedder);
             }
             Ok(RoutingResult {
                 language: language.slug().to_string(),

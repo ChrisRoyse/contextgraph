@@ -7,6 +7,7 @@
 //! Constitution References:
 //! - ARCH-15: Uses asymmetric E5 with separate cause/effect encodings
 //! - AP-77: Direction modifiers: cause→effect=1.2, effect→cause=0.8
+#![allow(dead_code)] // DTOs kept for legacy compatibility while E5 tools fail closed.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
