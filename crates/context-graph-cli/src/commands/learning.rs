@@ -329,7 +329,9 @@ async fn run(action: LearningCommands) -> Result<serde_json::Value> {
 }
 
 fn open_store(storage: &PathBuf) -> Result<RocksDbTeleologicalStore> {
-    RocksDbTeleologicalStore::open_with_config(storage, TeleologicalStoreConfig::default())
+    let storage = context_graph_paths::require_under_data_root(storage, "learning.storage")
+        .map_err(|err| anyhow!(err.to_string()))?;
+    RocksDbTeleologicalStore::open_with_config(&storage, TeleologicalStoreConfig::default())
         .with_context(|| format!("opening RocksDbTeleologicalStore at {}", storage.display()))
 }
 
@@ -337,7 +339,9 @@ async fn export_events_jsonl(
     store: &RocksDbTeleologicalStore,
     args: &LearningExportEventsJsonlArgs,
 ) -> Result<serde_json::Value> {
-    let tmp_path = prepare_output_path(&args.out, args.overwrite)?;
+    let out = context_graph_paths::require_under_data_root(&args.out, "learning.export.out")
+        .map_err(|err| anyhow!(err.to_string()))?;
+    let tmp_path = prepare_output_path(&out, args.overwrite)?;
     let ids = store
         .list_learning_event_ids()
         .await
@@ -375,14 +379,14 @@ async fn export_events_jsonl(
         let _ = std::fs::remove_file(&tmp_path);
         return Err(err);
     }
-    rename_or_cleanup(&tmp_path, &args.out)?;
-    let bytes_written = std::fs::metadata(&args.out)?.len();
+    rename_or_cleanup(&tmp_path, &out)?;
+    let bytes_written = std::fs::metadata(&out)?.len();
     Ok(json!({
         "status": "ok",
         "source_of_truth": source_of_truth(),
         "export": {
             "format": "jsonl",
-            "path": args.out,
+            "path": out,
             "record_kind": "learning_event_tensor",
             "include_text": args.include_text,
             "feature_schema_len": learning_event_feature_schema().len(),
@@ -399,7 +403,9 @@ async fn export_dataset_jsonl(
     store: &RocksDbTeleologicalStore,
     args: &LearningExportDatasetJsonlArgs,
 ) -> Result<serde_json::Value> {
-    let tmp_path = prepare_output_path(&args.out, args.overwrite)?;
+    let out = context_graph_paths::require_under_data_root(&args.out, "learning.export.out")
+        .map_err(|err| anyhow!(err.to_string()))?;
+    let tmp_path = prepare_output_path(&out, args.overwrite)?;
     let datasets = load_training_datasets(store, args.dataset_id).await?;
     let total_rows: usize = datasets.iter().map(|dataset| dataset.rows.len()).sum();
 
@@ -465,8 +471,8 @@ async fn export_dataset_jsonl(
             return Err(err);
         }
     };
-    rename_or_cleanup(&tmp_path, &args.out)?;
-    let bytes_written = std::fs::metadata(&args.out)?.len();
+    rename_or_cleanup(&tmp_path, &out)?;
+    let bytes_written = std::fs::metadata(&out)?.len();
     Ok(json!({
         "status": "ok",
         "source_of_truth": {
@@ -476,7 +482,7 @@ async fn export_dataset_jsonl(
         },
         "export": {
             "format": "jsonl",
-            "path": args.out,
+            "path": out,
             "record_kind": "learner_training_row",
         },
         "dataset_filter": args.dataset_id.map(|id| id.to_string()),
