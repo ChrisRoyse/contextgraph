@@ -536,14 +536,15 @@ pub async fn champion_state_promote(args: Value) -> Result<Value> {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::sync::{Mutex, MutexGuard};
+    use std::sync::MutexGuard;
     use tempfile::TempDir;
 
-    // Tests in this module mutate the process-wide cache file
-    // ~/.cache/cgreality/active_runtime_root, so they must run serially.
-    static RUNTIME_LOCK: Mutex<()> = Mutex::new(());
+    // These tests mutate process-wide cgreality cache files, so they share the
+    // reality_loop-wide lock with bandit/optimizer FSV tests.
     fn lock_runtime() -> MutexGuard<'static, ()> {
-        RUNTIME_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+        super::super::TEST_RUNTIME_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     struct TestRuntime {
@@ -626,9 +627,13 @@ mod tests {
             let target_path = cache_dir.join("active_target_instance");
             if let Some(orig) = &self._orig_active {
                 std::fs::write(&active_path, orig).ok();
+            } else {
+                std::fs::remove_file(&active_path).ok();
             }
             if let Some(orig) = &self._orig_target {
                 std::fs::write(&target_path, orig).ok();
+            } else {
+                std::fs::remove_file(&target_path).ok();
             }
         }
     }

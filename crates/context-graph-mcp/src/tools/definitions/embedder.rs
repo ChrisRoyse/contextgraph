@@ -30,7 +30,7 @@
 use crate::tools::types::ToolDefinition;
 use serde_json::json;
 
-/// Returns embedder-first search tool definitions (7 tools).
+/// Returns embedder-first search and ME-JEPA learner-state tool definitions.
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
         // search_by_embedder - Generic search using any embedder as primary
@@ -427,11 +427,29 @@ mod tests {
     #[test]
     fn test_definitions_exist_with_required_fields() {
         let tools = definitions();
-        assert_eq!(tools.len(), 7);
+        assert_eq!(tools.len(), 10);
+        let names: Vec<&str> = tools.iter().map(|tool| tool.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "search_by_embedder",
+                "get_embedder_clusters",
+                "compare_embedder_views",
+                "list_embedder_indexes",
+                "get_memory_fingerprint",
+                "create_weight_profile",
+                "search_cross_embedder_anomalies",
+                "mejepa_load_learner_state",
+                "mejepa_routing_lookup",
+                "mejepa_vram_budget_report",
+            ]
+        );
         for tool in &tools {
             assert!(
-                tool.description.contains("embedder") || tool.description.contains("E1"),
-                "Tool {} should mention embedder concepts",
+                tool.description.contains("embedder")
+                    || tool.description.contains("E1")
+                    || tool.name.starts_with("mejepa_"),
+                "Tool {} should mention embedder or ME-JEPA concepts",
                 tool.name
             );
         }

@@ -15,6 +15,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
+use context_graph_cli::commands::blackbox::LEDGER_SCHEMA_VERSION;
+
 const TENANT: &str = "tenant_phase13_test";
 const AGENT: &str = "agent_phase13_test";
 const PRIVACY_PRINCIPAL: &str = "user_privacy";
@@ -165,7 +167,7 @@ fn new_case() -> Phase13Case {
         "--ledger",
         ledger.to_str().expect("ledger path UTF-8"),
     ]));
-    assert_eq!(init["schema_version"], 13);
+    assert_eq!(init["schema_version"], LEDGER_SCHEMA_VERSION);
 
     let config_path = root.join("enterprise-config.json");
     let directory_path = root.join("enterprise-directory.json");

@@ -31,6 +31,7 @@ struct Phase3Fixture {
     workflow_status: String,
     workflow_conclusion: String,
     workflow_head_sha: String,
+    workflow_check_suite_id: u64,
     check_suite_count: u64,
     check_suite_conclusion: String,
 }
@@ -195,27 +196,22 @@ fn discover_fixture() -> Phase3Fixture {
         .as_array()
         .expect("fixture workflow_runs array");
     for run in workflow_runs {
-        let head_sha = run["head_sha"].as_str().expect("fixture workflow head sha");
-        let suites = github_api_json(&format!(
-            "repos/{owner}/{repo}/commits/{head_sha}/check-suites?per_page=100"
+        let Some(check_suite_id) = run["check_suite_id"].as_u64() else {
+            continue;
+        };
+        let suite = github_api_json(&format!(
+            "repos/{owner}/{repo}/check-suites/{check_suite_id}"
         ));
-        let suite_items = suites["check_suites"]
-            .as_array()
-            .expect("fixture check_suites array");
-        let total_count = suites["total_count"]
-            .as_u64()
-            .unwrap_or(suite_items.len() as u64);
-        if total_count > 0
-            && suite_items
-                .iter()
-                .all(|suite| suite["conclusion"].as_str() == Some("success"))
+        if suite["status"].as_str() == Some("completed")
+            && suite["conclusion"].as_str() == Some("success")
         {
-            selected_run = Some((run.clone(), total_count));
+            selected_run = Some((run.clone(), suite));
             break;
         }
     }
-    let (run, check_suite_count) =
-        selected_run.expect("fixture repository must have a successful run with successful checks");
+    let (run, check_suite) = selected_run.expect(
+        "fixture repository must have a successful run with a successful workflow check suite",
+    );
 
     Phase3Fixture {
         owner,
@@ -240,8 +236,14 @@ fn discover_fixture() -> Phase3Fixture {
             .as_str()
             .expect("fixture workflow head sha")
             .to_string(),
-        check_suite_count,
-        check_suite_conclusion: "success".to_string(),
+        workflow_check_suite_id: run["check_suite_id"]
+            .as_u64()
+            .expect("fixture workflow check suite id"),
+        check_suite_count: 1,
+        check_suite_conclusion: check_suite["conclusion"]
+            .as_str()
+            .expect("fixture check suite conclusion")
+            .to_string(),
     }
 }
 
@@ -619,7 +621,7 @@ fn phase3_live_github_and_actions_fsv() {
             "github_check_suite_passed_v1",
             source(&fixture),
             json!({
-                "ref": fixture.workflow_head_sha,
+                "check_suite_id": fixture.workflow_check_suite_id,
                 "conclusion": fixture.check_suite_conclusion
             }),
         ),
@@ -789,7 +791,7 @@ fn phase3_live_github_and_actions_fsv() {
         &fixture,
         "github_check_suite_passed_v1",
         json!({
-            "ref": fixture.workflow_head_sha,
+            "check_suite_id": fixture.workflow_check_suite_id,
             "conclusion": wrong_conclusion(&fixture.check_suite_conclusion)
         }),
         "GITHUB_CHECK_SUITE_CONCLUSION_MISMATCH",

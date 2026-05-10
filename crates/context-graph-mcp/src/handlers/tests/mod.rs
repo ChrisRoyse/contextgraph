@@ -1,15 +1,18 @@
 //! MCP Protocol Compliance Tests
 //!
-//! ALL tests use REAL RocksDB storage and REAL GPU embeddings via ProductionMultiArrayProvider.
-//! No stubs, no mocks, no workarounds. Every test exercises the full production code path.
+//! Default protocol tests use REAL RocksDB storage plus a fail-closed embedding
+//! provider that returns an explicit error if a protocol-only test accidentally
+//! reaches an embedding path. Tests that verify memory/search embedding behavior
+//! use `create_test_handlers_with_real_embeddings()` and are explicit integration
+//! tests requiring production model assets.
 //!
 //! Tests verify compliance with MCP protocol version 2024-11-05
 //! Reference: https://spec.modelcontextprotocol.io/specification/2024-11-05/
 //!
 //! # Test Helpers
 //!
-//! - `create_test_handlers()` - Real RocksDB + Real GPU embeddings, returns `(Handlers, TempDir)`
-//! - `create_test_handlers_with_rocksdb_store_access()` - Same + exposed store ref for FSV
+//! - `create_protocol_test_handlers()` - Real RocksDB + fail-closed embeddings
+//! - `create_test_handlers()` - Real RocksDB + real GPU embeddings
 //! - `create_test_handlers_with_real_embeddings()` - Alias for create_test_handlers()
 //!
 //! # TempDir Lifecycle
@@ -36,10 +39,16 @@ mod topic_tools;
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use tempfile::TempDir;
 
 use context_graph_core::monitoring::{LayerStatusProvider, StubLayerStatusProvider};
-use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore};
+use context_graph_core::traits::{
+    EmbeddingMetadata, MultiArrayEmbeddingOutput, MultiArrayEmbeddingProvider,
+    TeleologicalMemoryStore,
+};
+use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
+use context_graph_core::{CoreError, CoreResult};
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use context_graph_storage::{BackgroundGraphBuilder, EdgeRepository, GraphBuilderConfig};
 
@@ -160,17 +169,18 @@ use crate::protocol::{JsonRpcId, JsonRpcRequest};
 //
 // PERF: Tests that exercise only MCP protocol dispatch (initialize, tools/list,
 // error codes, etc.) don't mutate RocksDB state, so they can share ONE handler
-// instance across all tests. This amortizes the RocksDB open + warm-load cost
-// from N opens to exactly 1.
+// instance across all tests. This amortizes the RocksDB open from N opens to
+// exactly 1 and deliberately avoids unrelated production model loading.
 //
 // Tests that WRITE to storage (store_memory, merge, delete, forget, etc.) MUST
-// continue to use `create_test_handlers()` for isolation.
+// continue to use an isolated handler for source-of-truth verification.
 
 static SHARED_READONLY_HANDLERS: OnceCell<(Arc<Handlers>, Arc<TempDir>)> = OnceCell::const_new();
 
 /// Get a shared read-only Handlers instance for protocol-only tests.
 ///
-/// ALL callers share the same Handlers, RocksDB, warm-load provider, and TempDir.
+/// ALL callers share the same Handlers, RocksDB, fail-closed embedding provider,
+/// and TempDir.
 /// This is ONLY safe for tests that do not persistently mutate storage state.
 ///
 /// Returns `Arc<Handlers>` so the caller can `.dispatch()` without ownership juggling.
@@ -189,7 +199,7 @@ static SHARED_READONLY_HANDLERS: OnceCell<(Arc<Handlers>, Arc<TempDir>)> = OnceC
 pub(crate) async fn shared_readonly_handlers() -> Arc<Handlers> {
     let (handlers, _tempdir) = SHARED_READONLY_HANDLERS
         .get_or_init(|| async {
-            let (handlers, tempdir) = create_test_handlers().await;
+            let (handlers, tempdir) = create_protocol_test_handlers().await;
             (Arc::new(handlers), Arc::new(tempdir))
         })
         .await;
@@ -249,6 +259,95 @@ pub(crate) fn extract_mcp_tool_data(result: &serde_json::Value) -> serde_json::V
     }
 }
 
+/// Embedding provider for protocol-only tests.
+///
+/// This is not a fake success path: every embedding attempt returns a structured
+/// error. Protocol tests use it so they fail loudly if they cross into memory
+/// graph behavior that requires production model assets.
+struct FailClosedEmbeddingProvider {
+    reason: &'static str,
+}
+
+impl FailClosedEmbeddingProvider {
+    fn new(reason: &'static str) -> Self {
+        Self { reason }
+    }
+
+    fn error(&self, operation: &str) -> CoreError {
+        CoreError::FeatureDisabled {
+            feature: format!(
+                "{operation}: production embeddings are not configured for this protocol-only test harness; {}",
+                self.reason
+            ),
+        }
+    }
+}
+
+#[async_trait]
+impl MultiArrayEmbeddingProvider for FailClosedEmbeddingProvider {
+    async fn embed_all(&self, content: &str) -> CoreResult<MultiArrayEmbeddingOutput> {
+        tracing::error!(
+            content_len = content.len(),
+            "protocol-only test attempted embed_all without production models"
+        );
+        Err(self.error("embed_all"))
+    }
+
+    async fn embed_batch_all(
+        &self,
+        contents: &[String],
+        _metadata: &[EmbeddingMetadata],
+    ) -> CoreResult<Vec<MultiArrayEmbeddingOutput>> {
+        tracing::error!(
+            batch_len = contents.len(),
+            "protocol-only test attempted embed_batch_all without production models"
+        );
+        Err(self.error("embed_batch_all"))
+    }
+
+    fn model_ids(&self) -> [&str; NUM_EMBEDDERS] {
+        ["embedding-disabled-for-protocol-tests"; NUM_EMBEDDERS]
+    }
+
+    fn is_ready(&self) -> bool {
+        false
+    }
+
+    fn health_status(&self) -> [bool; NUM_EMBEDDERS] {
+        [false; NUM_EMBEDDERS]
+    }
+}
+
+/// Create protocol test handlers with REAL RocksDB storage and fail-closed embeddings.
+///
+/// Use this for tests whose source of truth is JSON-RPC/MCP protocol behavior,
+/// tool schema definitions, validation, or DynamicJEPA databases selected by an
+/// explicit `dbPath`. If the tested code tries to embed content, the provider
+/// returns a precise error instead of manufacturing vectors.
+pub(crate) async fn create_protocol_test_handlers() -> (Handlers, TempDir) {
+    let tempdir =
+        TempDir::new().expect("Failed to create temp directory for protocol RocksDB test");
+    let db_path = tempdir.path().join("test_protocol_rocksdb");
+
+    let rocksdb_store = RocksDbTeleologicalStore::open(&db_path)
+        .expect("Failed to open RocksDbTeleologicalStore in protocol test");
+    let (handlers, _) = create_protocol_handlers_from_store(rocksdb_store).await;
+
+    (handlers, tempdir)
+}
+
+pub(crate) async fn create_protocol_handlers_from_store(
+    rocksdb_store: RocksDbTeleologicalStore,
+) -> (Handlers, Arc<dyn TeleologicalMemoryStore>) {
+    create_handlers_from_store_with_provider(
+        rocksdb_store,
+        Arc::new(FailClosedEmbeddingProvider::new(
+            "use create_test_handlers_with_real_embeddings() for memory/search integration tests",
+        )),
+    )
+    .await
+}
+
 /// Create test handlers with REAL RocksDB storage and REAL GPU embeddings.
 ///
 /// ALL tests use real implementations - no stubs, no mocks, no workarounds.
@@ -301,13 +400,20 @@ pub(crate) async fn create_test_handlers_with_real_embeddings() -> (Handlers, Te
 async fn create_handlers_from_store(
     rocksdb_store: RocksDbTeleologicalStore,
 ) -> (Handlers, Arc<dyn TeleologicalMemoryStore>) {
+    // TASK-WARM-LOAD: Use WARM-LOADED embedding provider from global cache.
+    // RTX 5090 32GB - models loaded ONCE, shared across real integration tests.
+    let multi_array_provider = get_warm_loaded_provider().await;
+    create_handlers_from_store_with_provider(rocksdb_store, multi_array_provider).await
+}
+
+async fn create_handlers_from_store_with_provider(
+    rocksdb_store: RocksDbTeleologicalStore,
+    multi_array_provider: Arc<dyn MultiArrayEmbeddingProvider>,
+) -> (Handlers, Arc<dyn TeleologicalMemoryStore>) {
     let db_arc = rocksdb_store.db_arc();
 
     let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(rocksdb_store);
 
-    // TASK-WARM-LOAD: Use WARM-LOADED embedding provider from global cache.
-    // RTX 5090 32GB - models loaded ONCE, shared across all tests.
-    let multi_array_provider = get_warm_loaded_provider().await;
     let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
 
     let handlers = {

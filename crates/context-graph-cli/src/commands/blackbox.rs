@@ -37,7 +37,7 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 use uuid::Uuid;
 
-const LEDGER_SCHEMA_VERSION: i64 = 14;
+pub const LEDGER_SCHEMA_VERSION: i64 = 14;
 const REDACTION_POLICY_ID: &str = "redact_v1";
 const SQLITE_CONNECTOR_ID: &str = "sqlite_local_v1";
 const GIT_CONNECTOR_ID: &str = "git_local_v1";
@@ -34028,17 +34028,6 @@ async fn verify_github_check_suite_passed(spec: &VerifySpec) -> VerificationOutc
         Ok(parts) => parts,
         Err(outcome) => return outcome,
     };
-    let git_ref = match required_expected_string(
-        spec,
-        "ref",
-        "$.expected.ref",
-        GITHUB_CONNECTOR_ID,
-        &source_hint,
-        false,
-    ) {
-        Ok(git_ref) => git_ref,
-        Err(outcome) => return outcome,
-    };
     let expected_conclusion = match required_expected_string(
         spec,
         "conclusion",
@@ -34048,6 +34037,134 @@ async fn verify_github_check_suite_passed(spec: &VerifySpec) -> VerificationOutc
         false,
     ) {
         Ok(conclusion) => conclusion,
+        Err(outcome) => return outcome,
+    };
+    let check_suite_id = match spec.expected.get("check_suite_id") {
+        Some(Value::Number(value)) => match value.as_u64() {
+            Some(id) => Some(id),
+            None => {
+                return VerificationOutcome::blocked(
+                    GITHUB_CONNECTOR_ID,
+                    source_hint,
+                    "VERIFIER_SPEC_FIELD_TYPE",
+                    "$.expected.check_suite_id",
+                    "github_check_suite_passed_v1 requires $.expected.check_suite_id to be a non-negative integer",
+                    "replace $.expected.check_suite_id with the exact GitHub check suite id",
+                    None,
+                )
+            }
+        },
+        Some(_) => {
+            return VerificationOutcome::blocked(
+                GITHUB_CONNECTOR_ID,
+                source_hint,
+                "VERIFIER_SPEC_FIELD_TYPE",
+                "$.expected.check_suite_id",
+                "github_check_suite_passed_v1 requires $.expected.check_suite_id to be a non-negative integer",
+                "replace $.expected.check_suite_id with the exact GitHub check suite id",
+                None,
+            )
+        }
+        None => None,
+    };
+    if let Some(check_suite_id) = check_suite_id {
+        let source =
+            github_source_of_truth(&owner, &repo, &format!("check-suites/{check_suite_id}"));
+        let check_suite_id_string = check_suite_id.to_string();
+        let url = github_api_url(
+            &[
+                "repos",
+                &owner,
+                &repo,
+                "check-suites",
+                &check_suite_id_string,
+            ],
+            &[],
+        );
+        let response = match github_get_json(
+            GITHUB_CONNECTOR_ID,
+            url,
+            &source,
+            "GET /repos/{owner}/{repo}/check-suites/{check_suite_id}",
+            &[404],
+        )
+        .await
+        {
+            Ok(response) => response,
+            Err(err) => return connector_error_to_outcome(err),
+        };
+        let suite_summary = if response.status == 404 {
+            Value::Null
+        } else {
+            github_check_suite_summary(&response.body)
+        };
+        let total_count = if response.status == 404 { 0 } else { 1 };
+        let mismatched = if response.status == 404 {
+            1
+        } else if suite_summary.get("conclusion").and_then(Value::as_str)
+            == Some(expected_conclusion.as_str())
+        {
+            0
+        } else {
+            1
+        };
+        let actual = json!({
+            "check_suite_id": check_suite_id,
+            "http_status": response.status,
+            "exists": response.status != 404,
+            "total_count": total_count,
+            "expected_conclusion": expected_conclusion,
+            "mismatched_count": mismatched,
+            "check_suites": if response.status == 404 {
+                Vec::<Value>::new()
+            } else {
+                vec![suite_summary.clone()]
+            },
+            "check_suite": suite_summary,
+        });
+        let readback = github_readback_payload(
+            "github_check_suite_passed_v1",
+            GITHUB_CONNECTOR_ID,
+            &source,
+            "GET /repos/{owner}/{repo}/check-suites/{check_suite_id}",
+            &response,
+            &actual,
+        );
+        if response.status == 404 {
+            return VerificationOutcome::failed(
+                GITHUB_CONNECTOR_ID,
+                source,
+                "GITHUB_CHECK_SUITE_NOT_FOUND",
+                "actual_readback.check_suite_id",
+                "the expected GitHub check suite id was not found",
+                "read the workflow run's check_suite_id from GitHub Actions and retry",
+                readback,
+                actual,
+            );
+        }
+        if mismatched == 0 {
+            return VerificationOutcome::passed(GITHUB_CONNECTOR_ID, source, readback, actual);
+        }
+        return VerificationOutcome::failed(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "GITHUB_CHECK_SUITE_CONCLUSION_MISMATCH",
+            "actual_readback.check_suite",
+            "the GitHub check suite did not match the expected conclusion",
+            "inspect the exact check suite before claiming CI passed",
+            readback,
+            actual,
+        );
+    }
+    let git_ref = match required_expected_string(
+        spec,
+        "ref",
+        "$.expected.ref",
+        GITHUB_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(git_ref) => git_ref,
         Err(outcome) => return outcome,
     };
     let source = github_source_of_truth(&owner, &repo, &format!("commits/{git_ref}/check-suites"));

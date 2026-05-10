@@ -13,6 +13,8 @@ use rusqlite::{params, Connection};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
+use context_graph_cli::commands::blackbox::LEDGER_SCHEMA_VERSION;
+
 const TENANT: &str = "tenant_phase2_test";
 const AGENT: &str = "agent_phase2_test";
 
@@ -904,7 +906,7 @@ fn phase2_current_schema_init_wipes_v1_ledger_instead_of_migrating_silently() {
         "--ledger",
         ledger.to_str().expect("ledger path UTF-8"),
     ]));
-    assert_eq!(init["schema_version"], 13);
+    assert_eq!(init["schema_version"], LEDGER_SCHEMA_VERSION);
     assert_eq!(init["wiped_existing_ledger"], true);
 
     let conn = Connection::open(&ledger).expect("open physical current ledger");
@@ -915,7 +917,7 @@ fn phase2_current_schema_init_wipes_v1_ledger_instead_of_migrating_silently() {
             |row| row.get(0),
         )
         .expect("read schema version");
-    assert_eq!(version, "13");
+    assert_eq!(version, LEDGER_SCHEMA_VERSION.to_string());
     let record_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM ledger_records", [], |row| row.get(0))
         .expect("count physical current rows");

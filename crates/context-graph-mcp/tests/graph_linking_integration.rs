@@ -11,7 +11,7 @@
 //! 4. Edge data persists to RocksDB
 
 use context_graph_core::graph_linking::{
-    DirectedRelation, EmbedderEdge, GraphLinkEdgeType, TypedEdge,
+    DirectedRelation, EmbedderEdge, GraphLinkEdgeType, TypedEdge, NUM_EMBEDDERS,
 };
 use context_graph_storage::graph_edges::EdgeRepository;
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
@@ -226,6 +226,7 @@ fn test_edge_repository_multiple_embedders() {
     let target_e1 = Uuid::new_v4();
     let target_e6 = Uuid::new_v4();
     let target_e10 = Uuid::new_v4();
+    let target_e14 = Uuid::new_v4();
 
     // Store edges for different embedders (avoiding E5/E7/E8 which need direction)
     // E1 (semantic) - index 0
@@ -258,6 +259,16 @@ fn test_edge_repository_multiple_embedders() {
         .expect("Failed to store E10 edges");
     println!("✓ Stored E10 (intent) edge");
 
+    // E14 (BGE-M3 Dense) - index 13
+    edge_repo
+        .store_embedder_edges(
+            13,
+            source_id,
+            &[EmbedderEdge::new(source_id, target_e14, 13, 0.83).expect("E14 edge")],
+        )
+        .expect("Failed to store E14 edges");
+    println!("✓ Stored E14 (BGE-M3 Dense) edge");
+
     // Retrieve and verify each embedder's edges are isolated
     let e1_edges = edge_repo
         .get_embedder_edges(0, source_id)
@@ -268,6 +279,9 @@ fn test_edge_repository_multiple_embedders() {
     let e10_edges = edge_repo
         .get_embedder_edges(9, source_id)
         .expect("E10 query failed");
+    let e14_edges = edge_repo
+        .get_embedder_edges(13, source_id)
+        .expect("E14 query failed");
 
     assert_eq!(e1_edges.len(), 1);
     assert_eq!(e1_edges[0].target(), target_e1);
@@ -281,10 +295,18 @@ fn test_edge_repository_multiple_embedders() {
     assert_eq!(e10_edges[0].target(), target_e10);
     println!("✓ E10 edges isolated (found target_e10)");
 
-    // Verify embedder ID 13 is rejected
-    let result = edge_repo.store_embedder_edges(13, source_id, &[]);
-    assert!(result.is_err(), "Expected error for embedder_id=13");
-    println!("✓ Invalid embedder ID (13) rejected");
+    assert_eq!(e14_edges.len(), 1);
+    assert_eq!(e14_edges[0].target(), target_e14);
+    println!("✓ E14 edges isolated (found target_e14)");
+
+    // Verify one-past-the-end embedder ID is rejected.
+    let invalid_embedder_id = NUM_EMBEDDERS as u8;
+    let result = edge_repo.store_embedder_edges(invalid_embedder_id, source_id, &[]);
+    assert!(
+        result.is_err(),
+        "Expected error for embedder_id={invalid_embedder_id}"
+    );
+    println!("✓ Invalid embedder ID ({invalid_embedder_id}) rejected");
 
     println!("[PASS] Multiple embedders test completed\n");
 }

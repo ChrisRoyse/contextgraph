@@ -15,6 +15,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "context-graph-mcp"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 context-graph-core = { path = "../context-graph-core" }

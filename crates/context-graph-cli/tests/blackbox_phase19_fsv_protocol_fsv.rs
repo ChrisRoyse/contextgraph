@@ -14,6 +14,8 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
+use context_graph_cli::commands::blackbox::LEDGER_SCHEMA_VERSION;
+
 const TENANT: &str = "tenant_phase19_test";
 const AGENT: &str = "agent_phase19_test";
 
@@ -290,7 +292,7 @@ fn setup_case() -> Phase19Case {
         "--ledger".to_string(),
         ledger.display().to_string(),
     ]));
-    assert_eq!(init["schema_version"], 13);
+    assert_eq!(init["schema_version"], LEDGER_SCHEMA_VERSION);
     let pre_state = ledger_state(&ledger);
 
     let run = stdout_json(&run_context_graph(vec![

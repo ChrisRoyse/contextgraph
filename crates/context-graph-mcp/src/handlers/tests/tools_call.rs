@@ -1,9 +1,10 @@
 //! Tools Call Tests (MCP 2024-11-05 compliance)
 //!
 //! PERF: Tests that only validate dispatch errors or read static status use
-//! `shared_readonly_handlers()` to amortize the RocksDB + warm-load cost.
+//! `shared_readonly_handlers()` to amortize RocksDB setup without loading
+//! unrelated production embedding models.
 //! Tests that mutate storage (e.g. `store_memory`) keep their own isolated
-//! handler via `create_test_handlers()`.
+//! real-embedding handler and run as explicit integration tests.
 
 use serde_json::json;
 
@@ -58,6 +59,7 @@ async fn test_tools_call_get_memetic_status() {
 // =========================================================================
 
 #[tokio::test]
+#[ignore = "requires production E1-E14 embedding models under CONTEXT_GRAPH_MODELS_PATH"]
 async fn test_tools_call_store_memory_valid() {
     // Writes to storage — keep isolated.
     let (handlers, _tempdir) = create_test_handlers().await;
@@ -97,6 +99,7 @@ async fn test_tools_call_store_memory_valid() {
 // =========================================================================
 
 #[tokio::test]
+#[ignore = "requires production E1-E14 embedding models under CONTEXT_GRAPH_MODELS_PATH"]
 async fn test_tools_call_search_graph_valid() {
     // Read-only: searches (possibly empty) shared store.
     let handlers = shared_readonly_handlers().await;

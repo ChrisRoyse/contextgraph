@@ -7,14 +7,18 @@
 //!
 //! NO MOCK DATA - uses real MCP server infrastructure with GPU embeddings.
 //!
-//! Run with: cargo test -p context-graph-mcp --features cuda search_periodic -- --nocapture
+//! Run real integration tests with:
+//! cargo test -p context-graph-mcp --features cuda search_periodic -- --ignored --nocapture
 
 use serde_json::json;
 use tracing::info;
 
 use crate::protocol::JsonRpcId;
 
-use super::{create_test_handlers_with_real_embeddings, extract_mcp_tool_data, make_request};
+use super::{
+    create_protocol_test_handlers, create_test_handlers_with_real_embeddings,
+    extract_mcp_tool_data, make_request,
+};
 
 /// Store a memory via store_memory tool.
 async fn store_memory(
@@ -97,6 +101,7 @@ async fn search_periodic(
 
 /// Test that search_periodic tool is callable and returns expected structure.
 #[tokio::test]
+#[ignore = "requires production E1-E14 embedding models under CONTEXT_GRAPH_MODELS_PATH"]
 async fn test_search_periodic_basic_structure() {
     println!("\n======================================================================");
     println!("TC-PERIODIC-001: search_periodic Basic Structure Test");
@@ -166,7 +171,7 @@ async fn test_search_periodic_hour_validation() {
     println!("TC-PERIODIC-002: search_periodic Hour Validation Test");
     println!("======================================================================\n");
 
-    let (handlers, _tempdir) = create_test_handlers_with_real_embeddings().await;
+    let (handlers, _tempdir) = create_protocol_test_handlers().await;
 
     // Try with invalid hour
     let req = make_request(
@@ -234,7 +239,7 @@ async fn test_search_periodic_dow_validation() {
     println!("TC-PERIODIC-003: search_periodic Day of Week Validation Test");
     println!("======================================================================\n");
 
-    let (handlers, _tempdir) = create_test_handlers_with_real_embeddings().await;
+    let (handlers, _tempdir) = create_protocol_test_handlers().await;
 
     // Try with invalid day of week
     let req = make_request(
@@ -299,7 +304,7 @@ async fn test_search_periodic_empty_query() {
     println!("TC-PERIODIC-004: search_periodic Empty Query Validation Test");
     println!("======================================================================\n");
 
-    let (handlers, _tempdir) = create_test_handlers_with_real_embeddings().await;
+    let (handlers, _tempdir) = create_protocol_test_handlers().await;
 
     let req = make_request(
         "tools/call",
@@ -357,6 +362,7 @@ async fn test_search_periodic_empty_query() {
 
 /// Test auto-detect uses current time.
 #[tokio::test]
+#[ignore = "requires production E1-E14 embedding models under CONTEXT_GRAPH_MODELS_PATH"]
 async fn test_search_periodic_auto_detect() {
     println!("\n======================================================================");
     println!("TC-PERIODIC-005: search_periodic Auto-Detect Test");
@@ -407,6 +413,7 @@ async fn test_search_periodic_auto_detect() {
 
 /// Test that results include expected fields.
 #[tokio::test]
+#[ignore = "requires production E1-E14 embedding models under CONTEXT_GRAPH_MODELS_PATH"]
 async fn test_search_periodic_result_fields() {
     println!("\n======================================================================");
     println!("TC-PERIODIC-006: search_periodic Result Fields Test");
@@ -497,6 +504,7 @@ async fn test_search_periodic_result_fields() {
 
 /// Test that day_name is correctly computed.
 #[tokio::test]
+#[ignore = "requires production E1-E14 embedding models under CONTEXT_GRAPH_MODELS_PATH"]
 async fn test_search_periodic_day_names() {
     println!("\n======================================================================");
     println!("TC-PERIODIC-007: search_periodic Day Names Test");

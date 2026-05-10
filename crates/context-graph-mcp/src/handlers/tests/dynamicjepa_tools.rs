@@ -34,7 +34,7 @@ use crate::handlers::Handlers;
 use crate::protocol::JsonRpcId;
 use crate::tools::{get_tool_definitions, names as tool_names};
 
-use super::{create_handlers_from_store, create_test_handlers, make_request};
+use super::{create_protocol_handlers_from_store, create_protocol_test_handlers, make_request};
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -411,7 +411,7 @@ async fn dynamicjepa_phase9_mcp_full_state_verification_inner() {
     let skill_id = "10000000-0000-0000-0000-000000000001";
     let mut evidence = Vec::new();
 
-    let (handlers, _handler_tempdir) = create_test_handlers().await;
+    let (handlers, _handler_tempdir) = create_protocol_test_handlers().await;
 
     let initial = inspect_counts_mcp(&handlers, &db_path).await;
     assert_eq!(count(&initial, CF_DJ_DOMAIN_PACKS), 0);
@@ -1342,7 +1342,7 @@ async fn dynamicjepa_phase9_mcp_full_state_verification_inner() {
     let capability_store =
         RocksDbTeleologicalStore::open(&db_path).expect("open populated DB for capability matrix");
     let (capability_handlers, capability_store_arc) =
-        create_handlers_from_store(capability_store).await;
+        create_protocol_handlers_from_store(capability_store).await;
     let capability = call_tool_ok(
         &capability_handlers,
         tool_names::GET_CAPABILITY_MATRIX,
