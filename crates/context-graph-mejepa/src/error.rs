@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
@@ -134,6 +136,107 @@ impl From<LossError> for PredictorError {
                 detail: format!("VICReg lambdas must be finite: {lambdas_dump}"),
             },
             LossError::Candle(err) => PredictorError::Candle(err),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum MejepaInferError {
+    #[error("MEJEPA_INFER_OOD_REFUSE: ood_score={ood_score:.6} threshold={threshold:.6} reason={reason}")]
+    OodRefuse {
+        ood_score: f32,
+        threshold: f32,
+        reason: String,
+    },
+    #[error("MEJEPA_INFER_DIM_MISMATCH: expected={expected} actual={actual} context={context}")]
+    DimMismatch {
+        expected: usize,
+        actual: usize,
+        context: String,
+    },
+    #[error("MEJEPA_INFER_INSTRUMENT_MISSING: slot={slot} context={context}")]
+    InstrumentMissing { slot: String, context: String },
+    #[error("MEJEPA_INFER_NAN_DETECTED: source={nan_source} detail={detail}")]
+    NanDetected { nan_source: String, detail: String },
+    #[error("MEJEPA_INFER_CALIBRATION_STALE: version={version} age_days={age_days}")]
+    CalibrationStale { version: String, age_days: u32 },
+    #[error("MEJEPA_INFER_CONFORMAL_INSUFFICIENT_SAMPLES: language={language:?} expected={expected} actual={actual}")]
+    ConformalInsufficientSamples {
+        language: Option<String>,
+        expected: usize,
+        actual: usize,
+    },
+    #[error("MEJEPA_INFER_WITNESS_CHAIN_BROKEN: offset={offset:?} reason={reason}")]
+    WitnessChainBroken { offset: Option<u64>, reason: String },
+    #[error("MEJEPA_INFER_SOURCE_SHA_DRIFT: path={} claimed={} observed={}", path.display(), hex::encode(claimed), hex::encode(observed))]
+    SourceShaDrift {
+        path: PathBuf,
+        claimed: [u8; 32],
+        observed: [u8; 32],
+    },
+    #[error("MEJEPA_INFER_GTAU_STALE_CONSTELLATION: version={version} age_days={age_days}")]
+    GtauStaleConstellation { version: String, age_days: u32 },
+    #[error("MEJEPA_INFER_FEATURE_DISABLED: feature={feature}")]
+    FeatureDisabled { feature: String },
+    #[error("MEJEPA_INFER_INVALID_INPUT: field={field} detail={detail}")]
+    InvalidInput { field: String, detail: String },
+    #[error("MEJEPA_INFER_IO: op={op} path={} source={source}", path.display())]
+    Io {
+        op: &'static str,
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("MEJEPA_INFER_JSON: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("MEJEPA_INFER_ROCKSDB: {0}")]
+    RocksDb(#[from] rocksdb::Error),
+    #[error("MEJEPA_INFER_BINCODE: {0}")]
+    Bincode(#[from] Box<bincode::ErrorKind>),
+    #[error("MEJEPA_INFER_INSTRUMENT: {0}")]
+    Instrument(#[from] context_graph_mejepa_instruments::InstrumentError),
+    #[error("MEJEPA_INFER_PREDICTOR: {0}")]
+    Predictor(#[from] PredictorError),
+}
+
+impl MejepaInferError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::OodRefuse { .. } => "MEJEPA_INFER_OOD_REFUSE",
+            Self::DimMismatch { .. } => "MEJEPA_INFER_DIM_MISMATCH",
+            Self::InstrumentMissing { .. } => "MEJEPA_INFER_INSTRUMENT_MISSING",
+            Self::NanDetected { .. } => "MEJEPA_INFER_NAN_DETECTED",
+            Self::CalibrationStale { .. } => "MEJEPA_INFER_CALIBRATION_STALE",
+            Self::ConformalInsufficientSamples { .. } => {
+                "MEJEPA_INFER_CONFORMAL_INSUFFICIENT_SAMPLES"
+            }
+            Self::WitnessChainBroken { .. } => "MEJEPA_INFER_WITNESS_CHAIN_BROKEN",
+            Self::SourceShaDrift { .. } => "MEJEPA_INFER_SOURCE_SHA_DRIFT",
+            Self::GtauStaleConstellation { .. } => "MEJEPA_INFER_GTAU_STALE_CONSTELLATION",
+            Self::FeatureDisabled { .. } => "MEJEPA_INFER_FEATURE_DISABLED",
+            Self::InvalidInput { .. } => "MEJEPA_INFER_INVALID_INPUT",
+            Self::Io { .. } => "MEJEPA_INFER_IO",
+            Self::Json(_) => "MEJEPA_INFER_JSON",
+            Self::RocksDb(_) => "MEJEPA_INFER_ROCKSDB",
+            Self::Bincode(_) => "MEJEPA_INFER_BINCODE",
+            Self::Instrument(_) => "MEJEPA_INFER_INSTRUMENT",
+            Self::Predictor(_) => "MEJEPA_INFER_PREDICTOR",
+        }
+    }
+
+    pub fn log_context(&self, file: &'static str) {
+        tracing::error!(
+            error_code = self.code(),
+            error = %self,
+            file,
+            "ME-JEPA inference error"
+        );
+    }
+
+    pub fn io(op: &'static str, path: impl Into<PathBuf>, source: std::io::Error) -> Self {
+        Self::Io {
+            op,
+            path: path.into(),
+            source,
         }
     }
 }

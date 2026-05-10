@@ -9,10 +9,14 @@ license.workspace = true
 [dependencies]
 candle-core = { workspace = true }
 candle-nn = { workspace = true }
+bincode = { workspace = true }
 chrono = { workspace = true }
 clap = { version = "4.5", features = ["derive"] }
 context-graph-cuda = { path = "../context-graph-cuda" }
 context-graph-mejepa-instruments = { path = "../context-graph-mejepa-instruments" }
+context-graph-witness = { path = "../context-graph-witness" }
+hex = "0.4"
+rocksdb = "0.22"
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10"
@@ -20,6 +24,13 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
+[dev-dependencies]
+tempfile = "3.10"
+
 [[bin]]
 name = "mejepa"
 path = "src/bin/mejepa.rs"
+
+[[example]]
+name = "inference_fsv"
+path = "examples/inference_fsv.rs"

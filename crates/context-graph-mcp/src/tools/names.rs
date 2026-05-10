@@ -96,6 +96,10 @@ pub const SEARCH_CROSS_EMBEDDER_ANOMALIES: &str = "search_cross_embedder_anomali
 pub const MEJEPA_LOAD_LEARNER_STATE: &str = "mejepa_load_learner_state";
 pub const MEJEPA_ROUTING_LOOKUP: &str = "mejepa_routing_lookup";
 pub const MEJEPA_VRAM_BUDGET_REPORT: &str = "mejepa_vram_budget_report";
+/// Phase 4 inference verification tool.
+pub const MEJEPA_VERIFY: &str = "mcp__cgreality__mejepa_verify";
+/// Phase 4 inference live-prediction readback tool.
+pub const MEJEPA_PREDICT_LATEST: &str = "mcp__cgreality__mejepa_predict_latest";
 // ========== TEMPORAL TOOLS (E2/E3 Integration) ==========
 // Temporal search with E2/E3 boost applied POST-retrieval per ARCH-25.
 pub const SEARCH_RECENT: &str = "search_recent";

@@ -1,0 +1,45 @@
+//! ME-JEPA Phase 4 inference MCP tool definitions.
+
+use crate::tools::names as tool_names;
+use crate::tools::types::ToolDefinition;
+use serde_json::json;
+
+pub fn definitions() -> Vec<ToolDefinition> {
+    vec![
+        ToolDefinition::new(
+            tool_names::MEJEPA_VERIFY,
+            "Verify a candidate patch through the ME-JEPA Phase 4 inference gate ladder. The handler fails closed on schema, path, calibration, witness, or storage errors.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["patch", "context"],
+                "properties": {
+                    "patch": {"type": "object", "additionalProperties": true},
+                    "context": {"type": "object", "additionalProperties": true},
+                    "includeProvenance": {"type": "boolean", "default": false}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_PREDICT_LATEST,
+            "Read the latest persisted ME-JEPA RealityPrediction rows for a session from CF_MEJEPA_LIVE_PREDICTIONS.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["sessionId"],
+                "properties": {
+                    "sessionId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{32}$"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1000,
+                        "default": 10
+                    }
+                }
+            }),
+        ),
+    ]
+}

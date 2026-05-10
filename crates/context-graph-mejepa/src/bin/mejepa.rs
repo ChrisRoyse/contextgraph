@@ -9,8 +9,10 @@ use clap::{Parser, Subcommand};
 use context_graph_mejepa::fsv_writer;
 use context_graph_mejepa::panel_source::{self, PanelBatchView};
 use context_graph_mejepa::{
-    ForwardPassEvidence, FrozenTargetAdapter, LossOutputs, MeJepaPredictor, PredictorConfig,
-    TargetProvenance, VicregLambdas, VicregLossEvidence, PANEL_DIM, VRAM_STEADY_STATE_TARGET_BYTES,
+    build_deterministic_compiler, open_infer_rocksdb, CalibrationStore, ForwardPassEvidence,
+    FrozenTargetAdapter, InferTestArgs, LossOutputs, MeJepaPredictor, PredictorConfig,
+    RocksDbInferStore, TargetProvenance, VicregLambdas, VicregLossEvidence, PANEL_DIM,
+    VRAM_STEADY_STATE_TARGET_BYTES,
 };
 use thiserror::Error;
 
@@ -24,6 +26,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     Train(TrainArgs),
+    InferTest(InferTestArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -75,6 +78,13 @@ fn main() -> ExitCode {
             eprintln!("training requires Phase 3 mejepa-train; Phase 2 only supports --dry-run");
             ExitCode::from(64)
         }
+        Command::InferTest(args) => match run_infer_test_command(args) {
+            Ok(code) => code,
+            Err(err) => {
+                eprintln!("{err}");
+                ExitCode::from(4)
+            }
+        },
         Command::Train(args) => match run_dry_run(&args) {
             Ok(report) => {
                 println!("forward_latency_ms_p50={}", report.forward_latency_ms_p50);
@@ -107,6 +117,51 @@ fn main() -> ExitCode {
                 ExitCode::from(70)
             }
         },
+    }
+}
+
+fn run_infer_test_command(args: InferTestArgs) -> Result<ExitCode, MejepaCliError> {
+    let db_path = args.output_fsv.join("infer-rocksdb");
+    let repo_root = args.output_fsv.join("infer-test-repo");
+    let db = open_infer_rocksdb(&db_path).map_err(|err| {
+        MejepaCliError::Assertion(format!("failed to open inference RocksDB: {err}"))
+    })?;
+    let calibration = CalibrationStore::new(db.clone(), 30).map_err(|err| {
+        MejepaCliError::Assertion(format!("failed to initialize calibration store: {err}"))
+    })?;
+    let store = std::sync::Arc::new(RocksDbInferStore::new(db));
+    let compiler = build_deterministic_compiler(
+        repo_root,
+        store,
+        calibration.clone(),
+        context_graph_mejepa::MeJepaInferConfig::default(),
+    )
+    .map_err(|err| MejepaCliError::Assertion(format!("failed to initialize compiler: {err}")))?;
+    let report = match context_graph_mejepa::run_infer_test(args, &compiler, &calibration) {
+        Ok(report) => report,
+        Err(context_graph_mejepa::MejepaInferError::CalibrationStale { .. }) => {
+            eprintln!("MEJEPA_INFER_CALIBRATION_STALE");
+            return Ok(ExitCode::from(2));
+        }
+        Err(context_graph_mejepa::MejepaInferError::ConformalInsufficientSamples { .. }) => {
+            eprintln!("MEJEPA_INFER_CONFORMAL_INSUFFICIENT_SAMPLES");
+            return Ok(ExitCode::from(3));
+        }
+        Err(err) => {
+            return Err(MejepaCliError::Assertion(format!(
+                "infer-test failed: {err}"
+            )))
+        }
+    };
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report)
+            .map_err(context_graph_mejepa::PredictorError::from)?
+    );
+    if context_graph_mejepa::dod_satisfied(&report) {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::from(1))
     }
 }
 

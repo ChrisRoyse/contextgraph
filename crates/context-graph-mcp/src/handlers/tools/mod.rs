@@ -42,6 +42,7 @@ mod learning_tools;
 // Intentionally placed here (alphabetical within private modules is not required;
 // this sits next to helpers which consumes it).
 mod maintenance_tools;
+mod mejepa_tools;
 mod memory_tools;
 mod provenance_tools;
 pub(crate) mod reality_loop;

@@ -25,6 +25,7 @@ context-graph-witness = { path = "../context-graph-witness" }
 context-graph-solver = { path = "../context-graph-solver" }
 context-graph-cli = { path = "../context-graph-cli", default-features = false }
 context-graph-mejepa-embedders = { path = "../context-graph-mejepa-embedders" }
+context-graph-mejepa = { path = "../context-graph-mejepa" }
 
 # Async runtime
 tokio = { workspace = true }

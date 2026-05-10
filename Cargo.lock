@@ -1081,6 +1081,7 @@ dependencies = [
  "context-graph-core",
  "context-graph-cuda",
  "context-graph-embeddings",
+ "context-graph-mejepa",
  "context-graph-mejepa-embedders",
  "context-graph-solver",
  "context-graph-storage",
@@ -1113,15 +1114,20 @@ dependencies = [
 name = "context-graph-mejepa"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "candle-core",
  "candle-nn",
  "chrono",
  "clap",
  "context-graph-cuda",
  "context-graph-mejepa-instruments",
+ "context-graph-witness",
+ "hex",
+ "rocksdb",
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "thiserror 1.0.69",
  "tracing",
  "tracing-subscriber",
