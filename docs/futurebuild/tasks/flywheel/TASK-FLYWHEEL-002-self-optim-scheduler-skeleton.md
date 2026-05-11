@@ -55,8 +55,9 @@ Verification:
 
 - `cargo build --release -p context-graph-mejepa` passed.
 - `cargo test -p context-graph-mejepa heal::scheduler` passed: 6 scheduler tests.
-- `cargo run -p context-graph-mejepa --example scheduler_5_ticker_fsv -- --output-root /mnt/d/contextgraph/fsv/mejepa-heal-fsv` passed and wrote `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/scheduler_ticks.json`.
-- Manual readback: `ldb dump --db=/mnt/d/contextgraph/fsv/mejepa-heal-fsv/happy-path/rocksdb --column_family=CF_MEJEPA_ACTIVE_LEARNING_QUEUE --count_only` reported 1 key; `CF_MEJEPA_DRIFT_HISTORY` reported 9 keys after the happy path; the corrupt-drift edge retained 701 drift-window rows and logged `MEJEPA_HEAL_BINCODE`.
+- `CARGO_TARGET_DIR=/tmp/contextgraph-target-flywheel002 cargo test -p context-graph-mcp self_optimization_scheduler` passed.
+- `cargo run --release -p context-graph-mejepa --example scheduler_5_ticker_fsv -- --output-root /mnt/d/contextgraph/fsv/mejepa-heal-fsv` passed and wrote `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/scheduler_ticks.json`.
+- Manual readback: `ldb dump --db=/mnt/d/contextgraph/fsv/mejepa-heal-fsv/happy-path/rocksdb --column_family=CF_MEJEPA_ACTIVE_LEARNING_QUEUE --count_only` reported 1 key; `CF_MEJEPA_DRIFT_HISTORY` reported 10 keys after the happy path; the corrupt-drift edge retained 701 drift-window rows and logged `MEJEPA_HEAL_BINCODE`.
 
 ## Boundary cases
 
