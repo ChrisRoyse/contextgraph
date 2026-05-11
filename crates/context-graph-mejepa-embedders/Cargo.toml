@@ -11,6 +11,7 @@ context-graph-core = { path = "../context-graph-core" }
 context-graph-cuda = { path = "../context-graph-cuda" }
 context-graph-embeddings = { path = "../context-graph-embeddings" }
 context-graph-paths = { path = "../context-graph-paths" }
+async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10"
@@ -20,3 +21,4 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.10"
+tokio = { workspace = true }

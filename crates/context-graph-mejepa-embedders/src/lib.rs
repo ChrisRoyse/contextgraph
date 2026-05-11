@@ -15,6 +15,7 @@ pub mod digest;
 pub mod embedder_id;
 pub mod ensemble;
 pub mod error;
+pub mod forward;
 pub mod routing;
 pub mod types;
 pub mod vram;
@@ -33,6 +34,9 @@ pub use ensemble::{
     LoadedEmbedder,
 };
 pub use error::{EmbedError, EmbedResult};
+pub use forward::{
+    embedder_model_id, EmbedderForward, PretrainedEmbedderForward, SUPPORTED_FORWARD_EMBEDDERS,
+};
 pub use routing::{route_for_entity_type, routing_coverage};
 pub use types::{
     EmbedderInput, EmbedderOutput, LoraAdapterRegistration, RoutingResult, VramBudgetReport,

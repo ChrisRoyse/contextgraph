@@ -183,28 +183,60 @@ fn construct_model(embedder: EmbedderId, root: &Path) -> EmbedResult<Box<dyn Emb
     let config = SingleModelConfig::cuda_fp16();
     let model: Box<dyn EmbeddingModel> = match embedder {
         EmbedderId::E1 => Box::new(SemanticModel::new(root, config).map_err(|err| {
-            EmbedError::forward(embedder, format!("SemanticModel construction failed: {err}"), "fix E1 model config before loading")
+            EmbedError::forward(
+                embedder,
+                format!("SemanticModel construction failed: {err}"),
+                "fix E1 model config before loading",
+            )
         })?),
         EmbedderId::E6 => Box::new(SparseModel::new(root, config).map_err(|err| {
-            EmbedError::forward(embedder, format!("SparseModel construction failed: {err}"), "fix E6 model config before loading")
+            EmbedError::forward(
+                embedder,
+                format!("SparseModel construction failed: {err}"),
+                "fix E6 model config before loading",
+            )
         })?),
         EmbedderId::E7 => Box::new(CodeModel::new(root, config).map_err(|err| {
-            EmbedError::forward(embedder, format!("CodeModel construction failed: {err}"), "fix E7 model config before loading")
+            EmbedError::forward(
+                embedder,
+                format!("CodeModel construction failed: {err}"),
+                "fix E7 model config before loading",
+            )
         })?),
         EmbedderId::E8 => Box::new(GraphModel::new(root, config).map_err(|err| {
-            EmbedError::forward(embedder, format!("GraphModel construction failed: {err}"), "fix E8 model config before loading")
+            EmbedError::forward(
+                embedder,
+                format!("GraphModel construction failed: {err}"),
+                "fix E8 model config before loading",
+            )
         })?),
         EmbedderId::E10 => Box::new(ContextualModel::new(root, config).map_err(|err| {
-            EmbedError::forward(embedder, format!("ContextualModel construction failed: {err}"), "fix E10 model config before loading")
+            EmbedError::forward(
+                embedder,
+                format!("ContextualModel construction failed: {err}"),
+                "fix E10 model config before loading",
+            )
         })?),
         EmbedderId::E12 => Box::new(LateInteractionModel::new(root, config).map_err(|err| {
-            EmbedError::forward(embedder, format!("LateInteractionModel construction failed: {err}"), "fix E12 model config before loading")
+            EmbedError::forward(
+                embedder,
+                format!("LateInteractionModel construction failed: {err}"),
+                "fix E12 model config before loading",
+            )
         })?),
         EmbedderId::E13 => Box::new(SparseModel::new_splade(root, config).map_err(|err| {
-            EmbedError::forward(embedder, format!("SpladeModel construction failed: {err}"), "fix E13 model config before loading")
+            EmbedError::forward(
+                embedder,
+                format!("SpladeModel construction failed: {err}"),
+                "fix E13 model config before loading",
+            )
         })?),
         EmbedderId::E14 => Box::new(BgeM3DenseModel::new(root, config).map_err(|err| {
-            EmbedError::forward(embedder, format!("BgeM3DenseModel construction failed: {err}"), "fix E14 model config before loading")
+            EmbedError::forward(
+                embedder,
+                format!("BgeM3DenseModel construction failed: {err}"),
+                "fix E14 model config before loading",
+            )
         })?),
         other => return Err(embedder_model_id(other).unwrap_err()),
     };
@@ -260,7 +292,10 @@ fn runtime_artifacts(embedder: EmbedderId) -> EmbedResult<&'static [&'static str
     }
 }
 
-fn model_input_for_embedder(embedder: EmbedderId, input: &EmbedderInput) -> EmbedResult<ModelInput> {
+fn model_input_for_embedder(
+    embedder: EmbedderId,
+    input: &EmbedderInput,
+) -> EmbedResult<ModelInput> {
     if embedder == EmbedderId::E7 {
         let language = AstLanguage::from_path(&input.source_id).map_err(|err| {
             EmbedError::forward(
