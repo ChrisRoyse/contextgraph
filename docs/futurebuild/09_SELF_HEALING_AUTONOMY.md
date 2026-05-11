@@ -296,9 +296,11 @@ Per `06 HYGIENE` (shipped):
 - Quota enforcement: 115 GB hard cap; emergency eviction
 - Witness chain Merkle compression for chains > 90 days
 
-Scheduler integration adds:
-- A `gc_scheduler_tick` that runs nightly via systemd timer (or in-process tokio interval) — **already implementable today**, just needs a small task to wire it up.
-- An `emergency_eviction_tick` that runs every 10 minutes to check quota; if > 110 GB, run incremental eviction without waiting for nightly GC.
+Scheduler integration now has:
+- An in-process nightly GC scheduler in the MCP daemon that runs `gc_run_nightly` at 03:00 local time.
+- An `emergency_eviction_tick` in the self-optimization scheduler that runs every 10 minutes to check quota and invokes incremental eviction when the threshold is exceeded.
+
+Still missing: production threshold validation, operator-visible dashboard/runbook surfaces, and the Phase E policy that decides when quota pressure should also pause writes or alert.
 
 ---
 

@@ -158,7 +158,7 @@ mkdir -p /mnt/d/cabdru/contextgraph/models
 #    Run the digest verification check; it'll fail closed if any artifact is missing.
 
 # 4. Start the daemon
-scripts/context-graph-mcp-wrapper.sh   # bootstraps the warm daemon + stdio proxy
+scripts/ensure_daemon.sh   # bootstraps the warm daemon + stdio proxy
 
 # 5. Verify
 ls -la /mnt/d/contextgraph/state/locks/
@@ -177,7 +177,7 @@ If anything fails, the error code (`MEJEPA_D_DRIVE_UNAVAILABLE` / `MEJEPA_EMBEDD
 
 ## 7. What this storage policy commits us to
 
-1. **Daemon startup validator** that fail-closes if D-drive root absent. (`TASK-FLYWHEEL-001`)
+1. **Daemon startup validator** that fail-closes if D-drive root absent. (`TASK-FLYWHEEL-001`, shipped; keep enforced)
 2. **CI lint** that prevents regression. (`TASK-OBS-005`)
 3. **FSV path migration** sweep across `crates/*/examples/*_fsv.rs`. (`TASK-OBS-006`)
 4. **Hook output path update** for shift log files. (`TASK-LOOP-007`)

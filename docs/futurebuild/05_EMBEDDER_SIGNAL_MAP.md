@@ -177,9 +177,9 @@ This runs as part of the DDA signal computation; high-magnitude `BlindSpot`s are
 
 ## 7. What this signal map commits us to
 
-1. **Keep all 13 active embedders in code-domain routing.** Drop none; pairwise diversity is the source of the blind-spot signal. (No work; it's the existing routing.)
-2. **Build neural forward wrappers for all 13.** `EmbedderForward::forward(chunk) -> EmbeddingVec` per embedder; today these are deterministic placeholders. (Task: `TASK-ENRICH-001`.)
+1. **Keep all active embedders in code-domain routing.** Drop none; pairwise diversity is the source of the blind-spot signal. The current registry has 19 active registrations after E5/E11 retirement.
+2. **Finish neural forward coverage.** `EmbedderForward` / `PretrainedEmbedderForward` now exists for E1/E6/E7/E8/E10/E12/E13/E14 with fail-closed artifact checks and E10 FSV. Remaining `TASK-ENRICH-001` work is full model-artifact FSV coverage, cache/latency integration, and wiring every shift→panel path to the real forward outputs.
 3. **Wire the per-head feature projection** so each prediction head consumes its required DDA signal subset. (Task: `TASK-PREDICT-005-per-head-features.md`.)
 4. **Cross-embedder anomaly z-score features** as an auxiliary input to the failure-mode head. (Task: `TASK-PREDICT-006-blind-spot-features.md`.)
-5. **VRAM budget enforcement** at startup; refuse to start with an over-budget configuration. (Mostly shipped; small task to add a startup check to the daemon mode.)
+5. **VRAM budget enforcement** at startup; refuse to start with an over-budget configuration. The accounting is shipped; remaining work is daemon-start integration evidence under real model load.
 6. **Per-language stdlib registry** for `ReinventedWheel` detection, populated from a curated YAML per language. (Task: `TASK-ENRICH-007-stdlib-registry.md`.)

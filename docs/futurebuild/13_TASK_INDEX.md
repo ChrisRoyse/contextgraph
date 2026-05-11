@@ -25,7 +25,7 @@
 
 | ID | Title | Phase | Blocked by | Effort |
 |---|---|---|---|---|
-| `TASK-FLYWHEEL-001` | MCP daemon mode + supervised tokio tasks + systemd template + D-drive validator | A | none | 1-2d |
+| `TASK-FLYWHEEL-001` | MCP daemon mode + supervised tokio tasks + systemd template + D-drive validator | A | none | complete at code/FSV level; fresh-host enablement proof remains |
 | `TASK-FLYWHEEL-002` | Self-optimization scheduler skeleton (7 tickers calling shipped APIs) | A | FLYWHEEL-001 | complete |
 | `TASK-FLYWHEEL-003` | Test-outcome capture hook (parse pytest/cargo-test/jest) | A | none | 0.5d |
 | `TASK-FLYWHEEL-004` | Asynchronous oracle-binding inside observe() | A | FLYWHEEL-003 | 0.5d |
@@ -114,9 +114,9 @@
 | `TASK-HEAL-002` | Per-cell stratified drift detection | E | HEAL-001 | 1d |
 | `TASK-HEAL-003` | Dissipation detection | E | HEAL-001, UTML-008 | 1d |
 | `TASK-HEAL-004` | Bayesian small-window drift (Beta posterior) | E | HEAL-002 | 0.5d |
-| `TASK-HEAL-005` | Constellation refresh trigger wired into scheduler | E | HEAL-001 | 0.5d |
+| `TASK-HEAL-005` | Production constellation refresh policy (scheduler tick exists) | E | HEAL-001 | 0.5d |
 | `TASK-HEAL-006` | `mejepa_promote_approval` MCP tool | E | HEAL-001 | 0.5d |
-| `TASK-HEAL-007` | Emergency eviction tick | E | none | 0.5d |
+| `TASK-HEAL-007` | Emergency eviction policy validation (scheduler tick exists) | E | none | 0.5d |
 | `TASK-UTML-008` | Per-head dissipation detection | E | UTML-001 | 0.5d |
 
 **Phase E total: ~6 days.**
@@ -127,7 +127,7 @@
 
 | ID | Title | Phase | Blocked by | Effort |
 |---|---|---|---|---|
-| `TASK-OBS-001` | Weekly evaluation cron + report writer | F | HEAL-002, UTML-009 | 1d |
+| `TASK-OBS-001` | Weekly evaluation production feed/dashboard/runbook (daemon scheduler + writer exist) | F | HEAL-002, UTML-009 | 1d |
 | `TASK-OBS-002` | Pairwise MI heatmap renderer | F | none | 0.5d |
 | `TASK-OBS-003` | Daemon status aggregator MCP tool | F | FLYWHEEL-001 | 0.5d |
 | `TASK-OBS-004` | Per-prediction-class running calibration tracker | F | PREDICT-005 | 1d |
@@ -231,14 +231,14 @@ Each `tasks/<domain>/TASK-<DOMAIN>-NNN-<slug>.md` follows the [`prdtospec.md`](.
 
 ```yaml
 ---
-task_id: TASK-FLYWHEEL-001
-title: MCP daemon mode + supervised tokio tasks + systemd template + D-drive validator
+task_id: TASK-EXAMPLE-001
+title: Example task title
 phase: A
-status: open
+status: open|code_complete|complete
 blocked_by: []
-blocks: [TASK-FLYWHEEL-002, TASK-PREDICT-001, TASK-LOOP-001]
-effort: 1-2d
-spec_refs: [SPEC-FLYWHEEL.md, TECH-FLYWHEEL.md]
+blocks: [TASK-EXAMPLE-002]
+effort: 0.5d
+spec_refs: [SPEC-EXAMPLE.md, TECH-EXAMPLE.md]
 ---
 
 ## Goal

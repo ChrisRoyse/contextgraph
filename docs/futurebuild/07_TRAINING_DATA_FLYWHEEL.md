@@ -93,12 +93,13 @@ Plus, on the operator side:
 |---|---|---|
 | Hook layer (PreToolUse/PostToolUse/UserPromptSubmit) | YES | `.claude/settings.json` + `scripts/cc/*.sh` |
 | Shift-log JSONL writer | YES | `crates/context-graph-mcp` |
-| Shift subscriber | YES (crate) | `crates/context-graph-mejepa-shift-subscriber` |
+| Shift subscriber | YES (crate + daemon task) | `crates/context-graph-mejepa-shift-subscriber`; daemon task wiring in `crates/context-graph-mcp/src/daemon.rs` |
 | AST chunker | YES (11 langs) | `crates/context-graph-core::memory::ast` |
 | Embedder forward (deterministic) | YES placeholders | `crates/context-graph-mejepa-embedders` |
-| Embedder forward (neural) | NO | needs [#3](https://github.com/ChrisRoyse/contextgraph/issues/3) |
+| Embedder forward (neural) | partial | `EmbedderForward`/`PretrainedEmbedderForward` exists for E1/E6/E7/E8/E10/E12/E13/E14 with E10 FSV; remaining work is full model-artifact FSV/cache/integration |
 | DDA signal computation | NO | new — see `04_DDA_TCT_CODE_ENRICHMENT.md` |
 | PanelBuilder | YES | `crates/context-graph-mejepa-instruments` |
+| Embedder-backed instrument heads | partial | `EmbedderBackedInstrumentHead` exists for code/text/trace semantic slots; production analyzer feeds and all shift→panel integrations remain |
 | Continuous self-optim scheduler | YES (Phase A skeleton) | `crates/context-graph-mejepa::heal::{scheduler,scheduler_state}`; full autonomy remains Phase E |
 | `MeJepaCompiler::observe` | YES | `crates/context-graph-mejepa::compiler` |
 | EWC++ | YES | `crates/context-graph-mejepa::heal::ewc` |
@@ -110,54 +111,20 @@ Plus, on the operator side:
 | Multi-head extension to predictor | NO | new — see `03_ARCHITECTURE_BLUEPRINT.md §3` |
 | Prediction-injection hook | NO | new — see `08_LIVE_PREDICTION_AGENT_API.md` |
 | `mejepa_record_agent_feedback` MCP tool | NO | new — see `08_LIVE_PREDICTION_AGENT_API.md` |
-| MCP daemon mode (the supervised-process container) | partial | small task — `TASK-FLYWHEEL-001` |
-| Weekly evaluation cron | partial (code shipped; no scheduler) | small task — `TASK-OBS-001` |
+| MCP daemon mode (the supervised-process container) | YES (code + template) | `--daemon-server-only --d-root`; supervisor in `crates/context-graph-mcp/src/daemon.rs`; `scripts/systemd/mejepa-daemon.service`; operator install/runbook remains |
+| Weekly evaluation cron | partial (daemon scheduler exists) | weekly daemon task runs holdout eval and writes reports; missing populated production holdout feed + operator dashboard/runbook |
 
 **The unshipped pieces are operational glue, not new architecture.** Most of the work is wiring + scheduling + a couple of MCP tools.
 
 ---
 
-## 3. The MCP daemon mode (the missing supervisor)
+## 3. The MCP daemon mode (shipped supervisor, not fully installed)
 
-Today, `cargo run --release -p context-graph-mcp -- --daemon-root /mnt/d/contextgraph --daemon` starts the long-running shift subscriber, self-optimization scheduler, nightly GC scheduler, and weekly eval scheduler under the daemon supervisor. No systemd unit or install wrapper ships yet.
+Git history matters here. `e628fb5b` shipped supervisor shutdown, atomic state writes, launch-lock handling, `scripts/ensure_daemon.sh`, and `scripts/systemd/mejepa-daemon.service`. `23593272` then wired the self-optimization scheduler daemon task to the heal-crate scheduler instead of the old local ticker stub.
 
-**`TASK-FLYWHEEL-001-mcp-daemon-mode.md` adds a `--daemon` flag** that:
+Today, `context-graph-mcp --daemon-server-only --d-root /mnt/d/contextgraph --daemon-port 3100 --http-port 3101` validates the D-root, opens the shared RocksDB, and starts the long-running shift subscriber, self-optimization scheduler, nightly GC scheduler, and weekly eval scheduler under the daemon supervisor.
 
-```rust
-#[tokio::main]
-async fn main() -> Result<()> {
-    let opts = parse_opts()?;
-    let storage = Storage::open(&opts.storage_root)?;
-    
-    // Start the JSON-RPC stdio handler (existing)
-    let mcp_handle = tokio::spawn(run_mcp_stdio(storage.clone(), opts.clone()));
-    
-    if opts.daemon {
-        // NEW: long-running supervised tokio tasks
-        let shift_sub = tokio::spawn(
-            run_shift_subscriber(storage.clone(), opts.shift_log_root.clone())
-        );
-        let self_optim = tokio::spawn(
-            run_self_optimization_scheduler(storage.clone(), opts.heal_config.clone())
-        );
-        let gc_sched = tokio::spawn(
-            run_nightly_gc_scheduler(storage.clone(), opts.gc_config.clone())
-        );
-        let weekly_eval = tokio::spawn(
-            run_weekly_eval_scheduler(storage.clone(), opts.eval_config.clone())
-        );
-        
-        // panic supervisor: any task panic → log + restart with backoff
-        supervise(vec![mcp_handle, shift_sub, self_optim, gc_sched, weekly_eval]).await
-    } else {
-        mcp_handle.await?
-    }
-}
-```
-
-The daemon supervisor uses `tokio::select!` over `tokio::task::JoinSet` to detect panics and restart with exponential backoff (max 60s). Crash logs go to `<runtime_root>/_daemon_logs/<task>.log` rotated daily.
-
-A systemd unit (or equivalent) is provided as a template under `scripts/systemd/mejepa-daemon.service` so an operator can `systemctl --user enable mejepa-daemon` for persistent operation.
+What still needs work is operational proof and packaging: first-time setup docs, `systemctl --user enable --now mejepa-daemon` verification on a fresh host, dashboard/runbook commands, and the remaining data-flow tasks that make every edit become a labeled training example.
 
 ---
 
@@ -175,7 +142,7 @@ Per `03_ARCHITECTURE_BLUEPRINT.md §4.5`, the scheduler is a tokio task with sev
 | `constellation_freshness_tick` | 3600 s | inspect TCT constellation CF and fail closed on stale persisted constellation |
 | `emergency_eviction_tick` | 600 s | inspect hygiene quota state and invoke emergency eviction only when threshold is exceeded |
 
-**The scheduler is the single point at which "Claude Code did something" → "ME-JEPA learned from it" closes.** Before it ships, observe() is callable but only on demand; after it ships, every Edit becomes a training example without anyone calling anything.
+**The scheduler is the single point at which "Claude Code did something" → "ME-JEPA learned from it" closes.** The Phase A skeleton now runs and inspects the real source-of-truth CFs. What is not complete yet is the Phase E policy loop that turns every edit plus later oracle outcome into an autonomous intervention/promotion decision.
 
 Implementation: `crates/context-graph-mejepa::heal::scheduler::run_self_optimization_scheduler` (shipped Phase A skeleton). The skeleton delegates into shipped `heal`, `eval`, `hygiene`, and `tct` modules and persists a readback-verified scheduler status file. Phase E replaces the conservative inspection/action stubs with the full per-cell stratified, dissipation-aware autonomous policy loop.
 
@@ -340,7 +307,7 @@ report under "agent-flagged misses for the week" with a per-prediction-class bre
 > - Replay-buffer materializations: `/mnt/d/contextgraph/storage/replay/`
 > - Active-learning queue exports: `/mnt/d/contextgraph/exports/active-learning/`
 >
-> Daemon mode (`TASK-FLYWHEEL-001`) MUST refuse to start if the D-drive root is unavailable; this is not a fallback path. The wrapper script `scripts/context-graph-mcp-wrapper.sh` already enforces this at MCP startup; the new daemon must do the same.
+> Daemon mode (`TASK-FLYWHEEL-001`) MUST refuse to start if the D-drive root is unavailable; this is not a fallback path. `scripts/ensure_daemon.sh` and daemon D-root validation enforce this at MCP startup.
 
 Per `06 HYGIENE` (shipped):
 - Tier compression: hot 8-bit / warm 7-bit / cool 5-bit / cold 3-bit (per access frequency)
@@ -376,8 +343,8 @@ Tier transition decisions are made by `hygiene::tier::tier_for_score` based on `
 
 ## 11. What this flywheel commits us to
 
-1. **MCP daemon mode** with supervised tokio tasks + systemd template. (`TASK-FLYWHEEL-001`)
-2. **Continuous self-optimization scheduler** as the orchestrator of observe/drift/active-learning/promote/continual-backprop. (`TASK-FLYWHEEL-002` / `TASK-HEAL-001`)
+1. **MCP daemon mode** with supervised tokio tasks + systemd template. (`TASK-FLYWHEEL-001`, code shipped; operator install proof remains)
+2. **Continuous self-optimization scheduler** as the orchestrator of observe/drift/active-learning/promote/continual-backprop. (`TASK-FLYWHEEL-002`, skeleton shipped; `TASK-HEAL-001` is the full autonomous policy)
 3. **Test-outcome capture hook** that parses pytest/cargo-test/jest output and writes `TestOutcomeEvent`s. (`TASK-FLYWHEEL-003`)
 4. **Asynchronous oracle-binding** path inside observe(). (`TASK-FLYWHEEL-004`)
 5. **`mejepa_record_agent_feedback` MCP tool** + `CF_MEJEPA_AGENT_FEEDBACK` + sampling-weight bump wiring. (`TASK-PREDICT-002`)

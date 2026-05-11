@@ -10,8 +10,8 @@
 |---|---|---|---|
 | 0 | CORPUS | 8 Python mutation operators; repo+instance-atomic split; one-task SWE-bench Docker bridge; corpus CLI (`generate/verify/stats/prepare-images/cleanup`); WSL→D migrator; leakage detector; 8 categories tested on at least 1 SWE-bench Lite instance round-trip with real Docker | `context-graph-mejepa-corpus` |
 | 1a | AST-CHUNKING | 11-language tree-sitter chunker: Rust, Python, JS, TS, Go, Java, C, C++, C#, Ruby, PHP. Typed `Language`/`EntityType`. SHA-256 chunk IDs. FSVed for all 11 languages | `context-graph-core::memory::ast` |
-| 1b | EMBEDDERS | 21 declared slots; E5/E11 retired; 19 active registrations; SHA-256 digest verification; VRAM budget gate; E17 calibration cert; 143-row routing table | `context-graph-mejepa-embedders` |
-| 1c | INSTRUMENTS | All 15 panel slots (5,120-d total) with deterministic typed encoders + Panel + PanelBuilder + PanelStore + linear-probe gate. E_Oracle (128-d), E_Witness (256-d), E_StaticAnalysis (256-d) are first-class today | `context-graph-mejepa-instruments` |
+| 1b | EMBEDDERS | 21 declared slots; E5/E11 retired; 19 active registrations; SHA-256 digest verification; VRAM budget gate; E17 calibration cert; 143-row routing table; fail-closed `EmbedderForward`/`PretrainedEmbedderForward` wrappers for E1/E6/E7/E8/E10/E12/E13/E14 with runtime artifact checks and E10 FSV | `context-graph-mejepa-embedders` |
+| 1c | INSTRUMENTS | All 15 panel slots (5,120-d total) with deterministic typed encoders + Panel + PanelBuilder + PanelStore + linear-probe gate. E_Oracle (128-d), E_Witness (256-d), E_StaticAnalysis (256-d), and embedder-backed projection heads for code/text/trace semantic slots are first-class today | `context-graph-mejepa-instruments` |
 | 2 | PREDICTOR | 6-layer transformer (hidden 1024, 8 heads), VICReg loss, Oracle head, FrozenTargetAdapter, PanelSource, predictor_fsv example. CUDA-only sm_120 | `context-graph-mejepa::predictor` |
 | 3 | TRAINING | Full Trainer + AdamW + cosine LR + BatchSampler + PatchSimilarityGraph + sampling_weight + TrainingCertificate hash chain + holdout eval + LoRA + distillation. 5 FSV examples including 100k-step cert-chain replay | `context-graph-mejepa-train` |
 | 3+ | UTML-FORMULA | `compute_delta_p / _k / _omega / _xi / _l_step` shipped with `target_collapse == 0.0` enforced via `MEJEPA_INSTRUMENT_GRADIENT_LEAK`. PairwiseMiAuditor + CSV writer + `mejepa_audit_pairwise_mi` MCP tool. DormantUnitDetector + `reinit_dormant_units` wired into `heal/regulate.rs`. State-transfer T detector | `context-graph-mejepa-train::learning_signal` |
@@ -33,8 +33,8 @@ These are the items the operator's prompt is asking about — they are the gap b
 |---|---|---|---|
 | **Phase 0 corpus** — 300×8 batch | One-instance round-trip Docker oracle. CLI generates one `(task, mutation_category)` pair end-to-end | Full 300 SWE-bench Lite instances × 8 mutation categories = 2,400 entries; many-hour Docker eval; cluster-scale orchestration | [#5](https://github.com/ChrisRoyse/contextgraph/issues/5) |
 | **Per-language mutation operators** | 8 Python operators | Same 8 operators ported to Rust, JS, TS, Go, Java, C, C++, C#, Ruby, PHP | [#7](https://github.com/ChrisRoyse/contextgraph/issues/7) |
-| **Neural per-embedder forward wrappers** | Routing table + digest-verified model files; per-slot deterministic encoders | Actual neural forward passes — `EmbedderForward` / `Instrument` traits that load the GGUF/Safetensors and run candle/ggml inference | [#3](https://github.com/ChrisRoyse/contextgraph/issues/3) |
-| **Analyzer/embedder-backed semantic instruments** | Deterministic Python tree-sitter encoders for E_AST, E_CFG, E_DataFlow, E_TypeGraph, E_Test, E_Trace, E_Diff, E_Problem, E_CommitMsg, E_Runtime, E_Reasoning | Real Qodo/E1/E11 forward passes per chunk; real Pyright/mypy/rust-analyzer/javac/dotnet lattices for E_TypeGraph; real coverage Δ aggregator | [#4](https://github.com/ChrisRoyse/contextgraph/issues/4) |
+| **Neural per-embedder forward wrappers** | `EmbedderForward` trait + fail-closed `PretrainedEmbedderForward` load/forward path for E1/E6/E7/E8/E10/E12/E13/E14; model artifact digest/runtime checks; E10 forward FSV | Full production FSV for every supported D-root model artifact; cache layer; latency/VRAM telemetry under daemon load; integration into all shift→panel build paths | [#3](https://github.com/ChrisRoyse/contextgraph/issues/3) |
+| **Analyzer/embedder-backed semantic instruments** | `EmbedderBackedInstrumentHead` maps validated E7/E1/E14/E10 outputs into code/text/trace panel slots with source-id checks and fail-closed analyzer-feature requirements | Real Pyright/mypy/rust-analyzer/javac/dotnet lattices for E_TypeGraph; real coverage Δ aggregator; production chunk pipeline feeding neural vectors into every semantic slot | [#4](https://github.com/ChrisRoyse/contextgraph/issues/4) |
 | **Production chunk-level TCT centroids** | `gtau_check_chunks` algorithm + `Gτ` guard + chunk-level violation localization | Production-scale centroid refresh evidence against full corpus; operator-facing UX surfacing violating chunks | [#9](https://github.com/ChrisRoyse/contextgraph/issues/9) |
 | **Live conformal/OOD/p50/p99 capture** | All scorers shipped; FSV against synthetic data | Live measurement under production traffic; weekly stratified report driven by real prediction stream | [#11](https://github.com/ChrisRoyse/contextgraph/issues/11) |
 | **WSL GPU telemetry** | `vram.rs` accounting + nvidia-smi shell-out | Hardened `nvidia-smi` polling + WSL-specific GPU telemetry edge cases | [#10](https://github.com/ChrisRoyse/contextgraph/issues/10) |
@@ -51,14 +51,14 @@ These are the items the futurebuild docs propose to add. None of them exist toda
 
 | Capability | Why it doesn't exist | Where it's planned |
 |---|---|---|
-| **Live data flywheel** — every Claude Code Edit becomes a panel + corpus row + observe() call without operator intervention | Shift subscriber crate exists but is not invoked from a long-running daemon driven by Claude Code session activity | [`07_TRAINING_DATA_FLYWHEEL.md`](07_TRAINING_DATA_FLYWHEEL.md), [`SPEC-FLYWHEEL.md`](specs/functional/SPEC-FLYWHEEL.md) |
+| **Live data flywheel** — every Claude Code Edit becomes a panel + corpus row + observe() call without operator intervention | Daemon mode, shift subscriber, scheduler skeleton, and weekly/GC scheduler tasks exist; remaining blockers are test-outcome capture, async oracle binding, prompt prediction injection, and agent-feedback persistence | [`07_TRAINING_DATA_FLYWHEEL.md`](07_TRAINING_DATA_FLYWHEEL.md), [`SPEC-FLYWHEEL.md`](specs/functional/SPEC-FLYWHEEL.md) |
 | **Agent-facing live prediction injection** — `RealityPrediction` rendered into the agent's UserPromptSubmit context based on the latest panel | Hooks exist; no inject-from-MCP-state path for predictions | [`08_LIVE_PREDICTION_AGENT_API.md`](08_LIVE_PREDICTION_AGENT_API.md), [`SPEC-PREDICT.md`](specs/functional/SPEC-PREDICT.md) |
 | **DDA enrichment wrapper** — emit n·(N+N²) signals per shift per chunk, persist to a new CF, expose to predictor as auxiliary panel slots | TCT crate has the centroids; DDA signal computation is one call site away but unwrapped | [`04_DDA_TCT_CODE_ENRICHMENT.md`](04_DDA_TCT_CODE_ENRICHMENT.md), [`SPEC-ENRICHMENT.md`](specs/functional/SPEC-ENRICHMENT.md) |
 | **Refactored `loop.md`** — single outer loop around Claude Code, no Mode A/B split, focused on attempt-driven data capture | Current loop.md is bipartite (Mode A build / Mode B reality-capture) and references Phase 1-5 as deferred when they are SHIPPED | [`14_NEW_LOOP_MD.md`](14_NEW_LOOP_MD.md), [`SPEC-LOOP.md`](specs/functional/SPEC-LOOP.md) |
 | **Inner-loop residue deletion** — delete any remaining `reality-loop` binary code paths, Mode B drip references, ccreality runner shims | The `reality-loop` binary was deleted 2026-05-09 but the conceptual references remain in docs and hooks | [`11_DELETION_LIST_INNER_LOOP.md`](11_DELETION_LIST_INNER_LOOP.md) |
 | **Self-healing scheduler full autonomy** — autonomous A/B/C promotion driven by drift detection on production traffic, no operator pull required | Phase A scheduler skeleton exists and is daemon-wired; full production policy loop is still Phase E | [`09_SELF_HEALING_AUTONOMY.md`](09_SELF_HEALING_AUTONOMY.md), [`SPEC-HEAL.md`](specs/functional/SPEC-HEAL.md) |
 | **Live observability dashboard** — operator-facing weekly report + on-demand `mejepa_eval_run` invocations driven by real production data | Code paths shipped; no scheduled invocation; no operator-facing dashboard | [`SPEC-OBSERVABILITY.md`](specs/functional/SPEC-OBSERVABILITY.md) |
-| **MeJEPA-as-MCP-server installation** — operator runs `cargo run --release -p context-graph-mcp` once and the truth system is up forever | MCP server ships; no install/quickstart wraps the daemon mode + GC scheduler + shift-subscriber + heal-scheduler into one supervised process | covered in [`12_IMPLEMENTATION_PHASES.md`](12_IMPLEMENTATION_PHASES.md) |
+| **MeJEPA-as-MCP-server installation** — operator runs one command and the truth system stays up | MCP server, daemon mode, `scripts/ensure_daemon.sh`, and `scripts/systemd/mejepa-daemon.service` ship; missing first-time setup/runbook proof that an operator can enable it cleanly on a fresh machine | covered in [`12_IMPLEMENTATION_PHASES.md`](12_IMPLEMENTATION_PHASES.md) |
 
 ## 4. What is *deleted* (operational reality, not aspirational)
 
@@ -85,14 +85,14 @@ If you `cargo build --release --workspace` from a fresh clone of `ccreality-cuto
 
 - **Builds.** Workspace compiles. ME-JEPA crates compile.
 - **Tests.** `cargo test --workspace` passes (~6.5k+ tests on the consolidated tree).
-- **MCP starts.** `cargo run --release -p context-graph-mcp` boots, exposes 19 ME-JEPA tools.
+- **MCP starts.** `cargo run --release -p context-graph-mcp` boots, exposes 19 ME-JEPA tools. `--daemon-server-only --d-root /mnt/d/contextgraph` starts the long-running daemon task set when D-root validation passes.
 - **`mejepa_verify` answers.** Calling the tool with a synthetic patch returns a `Verdict` (likely `OutOfDistribution` because no production training has run yet — that's expected and correct).
 - **`mejepa_predict_latest` answers.** Returns a deterministic placeholder verdict if no shift has been observed, or the real predicted panel if a shift has been observed via `mejepa_observe_shift`.
 
 What does NOT happen out of the box:
 
 - Predictions do not get *automatically* injected into Claude Code's prompts (no UserPromptSubmit-from-MCP-state path).
-- The shift subscriber and self-optimization scheduler start under daemon mode, but no systemd unit ships yet.
+- The shift subscriber and self-optimization scheduler start under daemon mode, and a systemd template ships; the missing piece is operator-verified first-time installation/enablement on a fresh host.
 - The 300×8 corpus is not pre-populated (must be generated by running the Phase 0 corpus CLI against a SWE-bench Docker image set, which takes hours).
 - The ship gate ≥ 0.95 is not actually met (because the predictor has not been trained on a fully-populated corpus).
 

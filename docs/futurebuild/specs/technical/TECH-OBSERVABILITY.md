@@ -10,17 +10,16 @@
 crates/context-graph-mejepa/
   src/
     eval/
-      report.rs                         # existing; extended for weekly cron writer
-      weekly_cron.rs                    # NEW: scheduled cron writer (REQ-OBS-FB-01)
+      report.rs                         # existing; weekly JSON writer already used by daemon eval scheduler
       mi_heatmap_renderer.rs            # NEW: pairwise MI → markdown table + PNG (REQ-OBS-FB-02)
       per_head_calibration_tracker.rs   # NEW: rolling-window ECE per head (REQ-OBS-FB-04)
       slice_quota_breakdown.rs          # NEW: disk usage by slice (REQ-OBS-FB-08)
 
 crates/context-graph-mcp/
   src/
+    daemon.rs                           # existing: run_weekly_eval_scheduler + weekly.{md,json} writer
     handlers/tools/
       mejepa_tools.rs                   # extended: mejepa_daemon_status, mejepa_inspect_prediction
-  src/
     telemetry/
       gpu_wsl.rs                        # NEW: hardened nvidia-smi wrapper (REQ-OBS-FB-05)
 
@@ -35,13 +34,13 @@ ci/lints/
 
 ---
 
-## Weekly evaluation cron
+## Weekly Evaluation Scheduler
 
 ```rust
-// crates/context-graph-mejepa/src/eval/weekly_cron.rs (NEW)
+// crates/context-graph-mcp/src/daemon.rs (existing scheduler; Phase F hardens feed/dashboard)
 pub async fn run_weekly_eval_scheduler(
-    storage: Storage,
-    config: WeeklyEvalConfig,
+    config: FlywheelDaemonConfig,
+    db: Arc<DB>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Result<()> {
     loop {

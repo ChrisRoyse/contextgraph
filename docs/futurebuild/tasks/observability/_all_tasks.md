@@ -2,12 +2,13 @@
 
 OBS-005 has its own detailed file. The rest:
 
-## TASK-OBS-001 — Weekly evaluation cron + report writer
+## TASK-OBS-001 — Weekly evaluation production feed/dashboard/runbook
 
 - **Phase:** F · **Effort:** 1d · **Blocked by:** TASK-HEAL-002, TASK-UTML-009 · **Spec:** SPEC-OBSERVABILITY REQ-OBS-FB-01 + TECH-OBSERVABILITY §3
-- **Goal:** Weekly cron writes `weekly.md` to `/mnt/d/contextgraph/exports/eval/<date>/`.
-- **Outputs:** `crates/context-graph-mejepa/src/eval/weekly_cron.rs` (NEW).
-- **DoD:** triggered weekly; report contains all required sections (per-cell ship-gate, drift events, agent feedback summary, etc.).
+- **Goal:** Turn the shipped daemon weekly-eval scheduler into a production operator surface backed by real holdout panels and dashboard/runbook commands.
+- **What exists:** `crates/context-graph-mcp/src/daemon.rs::run_weekly_eval_scheduler` runs weekly, calls `EvalRunner`, persists `CF_MEJEPA_EVAL_REPORTS`, and writes `/mnt/d/contextgraph/exports/eval/<date>/weekly.{md,json}`.
+- **Outputs still needed:** production holdout feed setup, dashboard/CLI aggregation, and runbook proof for weekly operations.
+- **DoD:** triggered weekly against a populated production holdout feed; report contains all required sections (per-cell ship-gate, drift events, agent feedback summary, etc.) and is visible through the operator dashboard/runbook.
 
 ## TASK-OBS-002 — Pairwise MI heatmap renderer
 

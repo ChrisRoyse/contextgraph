@@ -403,7 +403,7 @@ The result: in a session-week of normal Claude Code usage, ME-JEPA accumulates r
 **Enforcement:**
 - The MCP daemon mode refuses to start if `/mnt/d/contextgraph/` does not exist or is not writable. Fail-closed with `MEJEPA_D_DRIVE_UNAVAILABLE`.
 - Storage hygiene's quota of 115 GB applies to `/mnt/d/contextgraph/` total footprint; nightly GC + tier compression target this directory only.
-- The wrapper script `scripts/context-graph-mcp-wrapper.sh` already enforces this at MCP startup; the new daemon, scheduler, and shift-subscriber tasks inherit the same root.
+- The wrapper scripts (`scripts/context-graph-mcp-wrapper.sh` and `scripts/ensure_daemon.sh`) and daemon D-root validator enforce this at MCP startup; daemon scheduler and shift-subscriber tasks inherit the same root.
 
 **For all future code in the futurebuild plan:** any new RocksDB CF, any new on-disk artifact, any new log, any new model file MUST default to a path under `/mnt/d/contextgraph/`. C:\-rooted defaults are forbidden. This is checked by the new `TASK-FLYWHEEL-001-mcp-daemon-mode.md` startup validator and by a small lint added to CI (`TASK-OBS-005-c-drive-lint.md`).
 

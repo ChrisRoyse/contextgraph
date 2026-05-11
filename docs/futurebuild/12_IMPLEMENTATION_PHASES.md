@@ -32,6 +32,8 @@
 
 **Total fresh implementation effort:** ~45-65 engineer-days, then Phase G runs continuously until the ship gate is met. Phases A, C, D, F can run in parallel; B and E depend on A; H depends on A.
 
+**History-reviewed baseline (HEAD `23593272`).** `TASK-FLYWHEEL-001` and `TASK-FLYWHEEL-002` are code-shipped: daemon supervisor/D-root validation/systemd template/daemon startup FSV exist, and the heal-crate self-optimization scheduler is daemon-wired with seven readback-verified tickers. Phase A still has the data-capture and agent-facing loop work below; Phase E still owns the full autonomous policy logic.
+
 ---
 
 ## Phase A — Operational Unblock (5-7 days)
@@ -42,7 +44,7 @@
 
 | Task | Description | Effort |
 |---|---|---|
-| `TASK-FLYWHEEL-001` | MCP daemon mode (`--daemon` flag) with supervised tokio tasks + systemd template | 1-2 days |
+| `TASK-FLYWHEEL-001` | MCP daemon mode with supervised tokio tasks + systemd template | complete at code/FSV level; fresh-host enablement proof remains in runbook/install tasks |
 | `TASK-FLYWHEEL-002` | Continuous self-optimization scheduler skeleton (7 tickers, calls into shipped modules) | complete |
 | `TASK-FLYWHEEL-003` | Test-outcome capture hook (parse pytest/cargo-test/jest output) | 0.5 day |
 | `TASK-FLYWHEEL-004` | Asynchronous oracle-binding inside observe() | 0.5 day |
@@ -153,7 +155,7 @@
 
 ## Phase E — Continuous Self-Optimization (5-7 days)
 
-**Goal:** Make the heal scheduler real. The skeleton from Phase A `TASK-FLYWHEEL-002` becomes the full per-cell stratified, dissipation-aware, lambda-ramping autonomous learner.
+**Goal:** Make the heal scheduler autonomous. The Phase A `TASK-FLYWHEEL-002` skeleton already fires seven tickers, delegates to shipped modules, persists readback-verified status, and is called by daemon mode. Phase E replaces the conservative inspection/action handlers with the full per-cell stratified, dissipation-aware, lambda-ramping autonomous learner.
 
 **Deliverables (TASK IDs):**
 
@@ -163,9 +165,9 @@
 | `TASK-HEAL-002` | Per-cell stratified drift detection | 1 day |
 | `TASK-HEAL-003` | Dissipation detection (training falls, holdout doesn't) | 1 day |
 | `TASK-HEAL-004` | Bayesian small-window drift (Beta posterior on per-cell sample counts < 50) | 0.5 day |
-| `TASK-HEAL-005` | Constellation refresh trigger wired into scheduler | 0.5 day |
+| `TASK-HEAL-005` | Production constellation refresh policy (scheduler tick exists; refresh thresholds/actions still need Phase E policy) | 0.5 day |
 | `TASK-HEAL-006` | `mejepa_promote_approval` MCP tool (operator approval for catastrophic promotions) | 0.5 day |
-| `TASK-HEAL-007` | Emergency eviction tick (10-minute cadence beyond nightly GC) | 0.5 day |
+| `TASK-HEAL-007` | Emergency eviction policy validation (scheduler tick exists; production quota thresholds/reporting still need hardening) | 0.5 day |
 
 **Ship gate:**
 1. Inject synthetic drift (90% → 84% over 1000 obs); scheduler detects within 1k more obs; queues LoRA refresh; A/B/C runs; winner promoted.
@@ -186,7 +188,7 @@
 
 | Task | Description | Effort |
 |---|---|---|
-| `TASK-OBS-001` | Weekly evaluation cron + report writer (ship-gate per-cell + active-learning summary + agent-feedback summary) | 1 day |
+| `TASK-OBS-001` | Weekly evaluation production feed/dashboard/runbook (daemon scheduler + report writer exist; ship-gate per-cell + active-learning + agent-feedback summaries still need production data) | 1 day |
 | `TASK-OBS-002` | Pairwise MI heatmap renderer (CSV → PNG/markdown) | 0.5 day |
 | `TASK-OBS-003` | Daemon status aggregator MCP tool | 0.5 day |
 | `TASK-OBS-004` | Per-prediction-class running calibration tracker (live ECE per head) | 1 day |

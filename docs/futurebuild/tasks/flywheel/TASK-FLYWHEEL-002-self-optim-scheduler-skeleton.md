@@ -24,13 +24,13 @@ Stand up the skeleton of `crates/context-graph-mejepa::heal::scheduler::run_self
 
 ## Outputs
 
-- `crates/context-graph-mejepa/src/heal/scheduler.rs` — NEW: skeleton of `run_self_optimization_scheduler` per TECH-HEAL.md §3
-- `crates/context-graph-mejepa/src/heal/scheduler_state.rs` — NEW: `SchedulerState` struct
+- `crates/context-graph-mejepa/src/heal/scheduler.rs` — shipped skeleton of `run_self_optimization_scheduler` per TECH-HEAL.md §3
+- `crates/context-graph-mejepa/src/heal/scheduler_state.rs` — shipped `SchedulerState` struct and readback-verified status source of truth
 - `crates/context-graph-mejepa/src/heal/mod.rs` — extension: `pub mod scheduler;`
 
 ## Definition of done
 
-1. `run_self_optimization_scheduler(storage, config, shutdown_rx)` is callable from the daemon (FLYWHEEL-001) and returns when shutdown fires.
+1. `run_self_optimization_scheduler(db, config, shutdown_rx)` is callable from the daemon (FLYWHEEL-001) and returns when shutdown fires.
 2. All 7 tickers fire at expected intervals (verified by FSV with shorter-than-default periods).
 3. Each tick logs at `tracing::debug` level which action it took (drain N shifts, no drift, etc.).
 4. `cargo build --release -p context-graph-mejepa` passes.
