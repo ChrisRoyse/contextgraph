@@ -1,239 +1,110 @@
-# Agent Issue-Flagging System — GitHub Issues as the Source of Truth
+# Agent Issue-Flagging — GitHub Issues as the Source of Truth
 
-> **Audience:** AI agents (Claude, Cursor, Aider, Copilot, etc.) and the human operator coordinating them.
-> **Purpose:** make "find something wrong → file a tracked GitHub Issue" an automatic, unmissable habit so nothing slips between agent sessions.
-> **Why GitHub Issues:** free on all plans (public and private repos), unlimited issues, full REST + GraphQL API, native CLI (`gh`), official MCP server — meaning your agents can read, write, search, and close issues directly during a session.
+**Audience:** AI agents + human operator. **Purpose:** make "find something wrong → file a tracked Issue" automatic. Agent sessions are amnesiac; if it isn't in the issue tracker, it dies with the session.
 
 ---
 
-## Table of Contents
+## 1. Platform facts (free tier)
 
-1. [Why GitHub Issues, Why Free](#1-why-github-issues-why-free)
-2. [The Core Rule — "If You See It, You File It"](#2-the-core-rule--if-you-see-it-you-file-it)
-3. [What Always Gets Flagged (the Trigger List)](#3-what-always-gets-flagged-the-trigger-list)
-4. [Anomaly Detection — "Outside Standard Deviations"](#4-anomaly-detection--outside-standard-deviations)
-5. [Repository Setup — One-Time Configuration](#5-repository-setup--one-time-configuration)
-6. [The Label Taxonomy](#6-the-label-taxonomy)
-7. [The Issue Templates](#7-the-issue-templates)
-8. [Authentication — Tokens, Scopes, Free-Tier Limits](#8-authentication--tokens-scopes-free-tier-limits)
-9. [Three Ways for Agents to Create Issues](#9-three-ways-for-agents-to-create-issues)
-10. [The Mandatory Deduplication Step](#10-the-mandatory-deduplication-step)
-11. [The Agent Operating Protocol](#11-the-agent-operating-protocol)
-12. [Multi-Agent Handoff — Picking Up Where the Last One Left Off](#12-multi-agent-handoff--picking-up-where-the-last-one-left-off)
-13. [Automation Backstop — GitHub Actions Catches What Agents Miss](#13-automation-backstop--github-actions-catches-what-agents-miss)
-14. [Issue Hygiene — Keeping the Backlog Useful](#14-issue-hygiene--keeping-the-backlog-useful)
-15. [Copy-Paste Pack — Ready-to-Use Files](#15-copy-paste-pack--ready-to-use-files)
+- Unlimited issues on public + private repos. Templates, labels, milestones, sub-issues, types all free.
+- REST + GraphQL, `gh` CLI, official MCP server (`github/github-mcp-server`) all free.
+- Actions: 2,000 min/mo private, unlimited public.
+
+**API rate limits (operational ceilings):**
+- Unauthenticated: 60/hr (unusable).
+- PAT/OAuth user: **5,000/hr**.
+- `GITHUB_TOKEN` in Actions: **1,000/hr per repo**.
+- GitHub App on GHEC org: 15,000/hr.
+- Secondary: ≤900 pts/min REST, ≤2,000 pts/min GraphQL. POST/PATCH/PUT/DELETE = 5 pts; GET = 1.
 
 ---
 
-## 1. Why GitHub Issues, Why Free
+## 2. Core rule
 
-GitHub Issues is the right answer for this use case because every property you need is included in the free tier.
+> If during a turn you observe anything matching §3 (Triggers) or §4 (Anomaly) and you are NOT fixing it this turn — open an Issue before ending the turn. No exceptions.
 
-| Feature | Free tier reality |
-|---|---|
-| Issue creation | Unlimited on public and private repos. No quota. |
-| Private repos | Unlimited, with unlimited collaborators (since April 2020). |
-| Issue API (REST + GraphQL) | Full access on all plans. |
-| GitHub CLI (`gh`) | Free, no plan gating. |
-| GitHub Actions | 2,000 free minutes/month on private repos; **unlimited** on public repos. Enough for the kind of lightweight automation in this doc. |
-| Issue templates | Free, stored in `.github/ISSUE_TEMPLATE/`. |
-| Labels, milestones, sub-issues, types | All free. Issue types via REST API were added in 2025. |
-| Issue search | Full-text + filters via the API, free. |
+Two-question test:
+1. Did I observe a defect/anomaly/smell/missing-test/dead-code/risk I'm not fixing now?
+2. Is there an open issue for it?
 
-**API rate limits** to know up front (these are the real operational ceilings):
-- Unauthenticated: 60 requests/hour per IP. Treat as unusable.
-- Authenticated user (PAT or OAuth): **5,000 requests/hour**. Plenty for agents.
-- `GITHUB_TOKEN` inside GitHub Actions: **1,000 requests/hour per repository**.
-- GitHub App on a GHEC organization: 15,000 requests/hour.
-- Secondary limits exist (≤ 900 points/min on REST, ≤ 2,000 points/min on GraphQL). POST/PATCH/PUT/DELETE cost 5 points; GET costs 1.
-
-Translation: a token-authenticated agent can create thousands of issues per hour. The bottleneck is *your* signal-to-noise discipline, not GitHub's wallet.
+If (1)=YES and (2)=NO → file now.
 
 ---
 
-## 2. The Core Rule — "If You See It, You File It"
+## 3. Trigger list (must file if not fixed this turn)
 
-> **Rule of the house:** during any task, if an agent observes anything that meets a Trigger (§3) or is statistically abnormal (§4) and does not fix it in the same turn, the agent **must** open a GitHub Issue before ending its turn. No exceptions.
+**3.1 Defects:** reproducible bug (crash, wrong output, off-by-one, race, leak, deadlock); error/stack trace in logs; any test flake (even once); FSV disagreement (SoT ≠ return value); uncovered 5xx/4xx anomalies.
 
-Reasoning:
-- Agent sessions are amnesiac. State that lives only in chat history dies with the session.
-- The next agent (or the human) cannot fix what isn't tracked.
-- "I'll mention it in the response" is not tracking. A response is not a queue.
-- GitHub Issues are the **Source of Truth** for outstanding work. Everything else is conversation.
+**3.2 Smells:** dead code (unused exports, unreachable, unimported files); duplicated logic (same code in 2+ places); commented-out blocks older than this session; long methods (>30 lines); cyclomatic complexity >10; magic numbers/strings; TODO/FIXME/XXX/HACK (convert to issue, link from comment or delete); bad names; bare `catch`/`except: pass`; linter-silenced inconsistencies.
 
-The two-question test the agent runs in its head:
+**3.3 Tech debt:** intentional shortcuts (file w/ rationale + payback note); outdated deps with CVEs; deprecated APIs / removed framework features / unsupported runtimes; missing tests on code you touched/read; stale or missing docs for behavior learned; workarounds for upstream bugs (track upstream).
 
-1. Did I observe a defect, anomaly, smell, missing test, dead code path, or risk I am not fixing right now?
-2. Is there an open issue that already covers it?
+**3.4 Architecture:** anti-patterns (distributed monolith symptoms, shared DB across services, God class, missing circuit breaker); SPOFs; tight coupling that should be independent; missing observability (no logs/metrics/traces); missing idempotency on retryable ops; schema/contract drift.
 
-If (1) is YES and (2) is NO → **open the issue now**.
+**3.5 Security (always P0/P1):** hardcoded secrets/tokens/keys (file even after removing — track rotation); missing auth/authz; SQL/NoSQL/OS/template injection; missing input validation, output encoding, CSRF; weak crypto (MD5, SHA1, DES, ECB, custom protocols); verbose error responses leaking internals; missing security headers / TLS / weak TLS. Public repo + actually-exploitable → use GitHub Security Advisories instead of Issues.
 
----
+**3.6 Performance:** N+1 queries; unbounded list/loop/recursion; sync blocking I/O on hot path; missing pagination / rate limit / timeout; missing retry-with-backoff on flaky deps; cache stampede risk / no TTL jitter.
 
-## 3. What Always Gets Flagged (the Trigger List)
+**3.7 Verification gaps:** function written without test; state change without FSV against SoT; uncovered boundary cases.
 
-These are the categories that *must* produce an issue if not fixed in the same turn. Treat as a hard rule, not a guideline.
+**3.8 Risks:** "will fail at scale X" (file w/ threshold); "will break when Y changes" (file w/ dependency); "hard to migrate later" (architectural debt).
 
-### 3.1 Defects and unexpected behavior
-- Any reproducible bug — crash, wrong output, off-by-one, race condition, memory leak, infinite loop, deadlock.
-- Any error or stack trace observed in logs that is not already an open issue.
-- Any test that flakes — even once.
-- Any FSV check (see the System Hardening Guide) where the Source of Truth disagrees with the return value.
-- Any 500 / 4xx anomaly in monitoring not already covered.
-
-### 3.2 Code-quality smells
-- **Dead code:** unused exports, unreachable branches, files imported by nothing.
-- **Redundant / duplicated code:** the same logic in 2+ places when it should be one.
-- **Commented-out code blocks** older than the session.
-- **Long methods** (> 30 lines) or **high cyclomatic complexity** (> 10) added or encountered.
-- **Magic numbers / strings** without named constants.
-- **TODO / FIXME / XXX / HACK** comments — convert to issues, then keep or remove the comment with a link to the issue.
-- **Bad names** (single letters, vague nouns, misleading verbs) that obscure intent.
-- **Bare `catch` / `except: pass`** swallowing errors.
-- **Inconsistent style** that the linter would catch but is silenced.
-
-### 3.3 Technical debt
-- Any **intentional shortcut** taken in this session — file it with rationale and a payback note.
-- **Outdated dependencies** with known CVEs (Dependabot alerts not converted to issues).
-- **Outdated patterns** (deprecated APIs, removed framework features, unsupported runtime versions).
-- **Missing tests** for code paths the agent touched or read.
-- **Missing or stale docs** for behavior the agent learned about.
-- **Workarounds** for upstream bugs — track the upstream resolution.
-
-### 3.4 Architectural and structural concerns
-- Newly observed **anti-patterns** (distributed monolith symptoms, shared database access across services, God class, missing circuit breaker, etc. — see Hardening Guide §5.2).
-- **Single points of failure** discovered.
-- **Tight coupling** between modules that should be independent.
-- **Missing observability** — code paths with no logs, metrics, or traces.
-- **Missing idempotency** on retryable operations.
-- **Schema / contract drift** between services.
-
-### 3.5 Security concerns (always P0/P1 — fix-now if possible, file if not)
-- Hardcoded secrets, tokens, keys, passwords — *and* file the issue even if you also remove them, so the rotation/audit work is tracked.
-- Missing authentication or authorization on an endpoint.
-- SQL/NoSQL/OS/template injection vectors.
-- Missing input validation, output encoding, or CSRF protection.
-- Insecure crypto (MD5, SHA1, DES, ECB, custom protocols).
-- Verbose error responses leaking internals.
-- Missing security headers, missing TLS, weak TLS config.
-
-### 3.6 Performance and operational concerns
-- N+1 queries.
-- Unbounded list / loop / recursion.
-- Synchronous blocking I/O on a hot path.
-- Missing pagination, missing rate limit, missing timeout.
-- Missing retry-with-backoff on a flaky dependency.
-- Cache stampede risk; no jitter on TTL.
-
-### 3.7 Verification gaps
-- Any function written without a test.
-- Any state change without an FSV check that reads the Source of Truth.
-- Any edge case from the boundary list (§6.3 of the Hardening Guide) not exercised.
-
-### 3.8 Risks / foresight items
-- "Will fail at scale X" — file with the threshold.
-- "Will break when Y changes" — file with the dependency.
-- "Will be hard to migrate later" — file as architectural debt.
-
-If the agent finds itself thinking "someone should look at this someday" — that thought *is* the trigger. File it.
+Heuristic: if you think "someone should look at this someday" — that thought IS the trigger.
 
 ---
 
-## 4. Anomaly Detection — "Outside Standard Deviations"
+## 4. Anomaly detection (statistical)
 
-The instruction "anything outside typical standard deviations" is a real, well-defined practice. Here is how an agent should operationalize it.
-
-### 4.1 What "anomalous" means in practice
-
-A signal is anomalous when its current value lies more than **N standard deviations from the rolling mean** of its recent history. The most common thresholds:
+A signal is anomalous if current value is >N stddev from rolling mean.
 
 | Threshold | Sensitivity | Use for |
 |---|---|---|
-| **±2σ** | Higher — flags ~5% of points in a normal distribution | Code-quality metrics, latency, error rates |
-| **±3σ** | Lower — flags ~0.3% | Capacity and resource use; reduces noise |
+| ±2σ | ~5% of points | code-quality metrics, latency, error rates |
+| ±3σ | ~0.3% | capacity/resource (less noise) |
 
-For asymmetric metrics (latency, error count) use only the *upper* bound. For symmetric ones (return-value distributions, RPS) use both.
+Asymmetric metrics (latency, error count) → upper bound only. Symmetric (RPS, return-value distribution) → both.
 
-The classic procedure (works without any ML infrastructure):
+**Procedure:** collect last N points → compute μ, σ → normal = [μ−2σ, μ+2σ] → outside = anomaly → file → update window. **Robust variant (median+IQR):** anomaly when value is >1.5×IQR outside [Q1, Q3]. Prefer IQR when N<10 or distribution is skewed.
 
-1. Collect the last *N* measurements (e.g., 30 builds, 90 days of metric).
-2. Compute mean (μ) and standard deviation (σ).
-3. Define normal range: `[μ − 2σ, μ + 2σ]`.
-4. New point outside the range → **anomaly → open an issue**.
-5. Update the rolling window.
+**Z-score recipe:** `z = (x−μ)/σ`. `|z|≥2` → file `type:anomaly` + (signal, μ, σ, current, z, cause hypothesis, scope). `|z|≥3` → also `priority:p1` (high).
 
-A more robust variant uses **median + IQR** (interquartile range) — less sensitive to outliers that themselves drag the mean. Anomaly when value is more than `1.5 × IQR` outside the [Q1, Q3] band.
+**Signals an agent can compute without infra:**
 
-### 4.2 What an agent should compute and watch
-
-The agent doesn't need a metrics platform. It can compute these from artifacts an LLM session already has access to:
-
-| Signal | Source | Anomaly trigger (≥ 2σ) → open issue |
+| Signal | Source | Trigger (≥2σ) |
 |---|---|---|
-| File length (lines) | git history of the file | A single commit grows a file by > 2σ |
-| Function length | static analysis output | Any function > 2σ above repo average |
-| Cyclomatic complexity | linter output | Same |
-| Test count per module | repo scan | Module added without a proportional test count |
-| PR diff size (lines) | git log | Diff > 2σ of recent PRs (likely too big to review) |
-| Build time | CI logs | Build runs > 2σ longer than baseline |
-| Test runtime | test report | Single test > 2σ above its history |
-| Error rate per endpoint | logs / metrics if available | Spike > 2σ during the session |
-| Latency p95 / p99 | metrics if available | Spike > 2σ |
-| Dependency count | lockfile diff | A PR adds > 2σ more deps than usual |
-| TODO/FIXME density | grep | A file > 2σ above repo TODO density |
-| Open-issue age | issue list | Issue older than μ+2σ → escalate, don't just leave |
+| File length | `git log --numstat` per file | single commit grows file >2σ |
+| Function length | linter/static analysis | function >2σ above repo avg |
+| Cyclomatic complexity | linter | >2σ above avg |
+| Test count per module | repo scan | new module w/o proportional tests |
+| PR diff size | `git log` | diff >2σ of recent PRs |
+| Build time | CI logs | run >2σ longer than baseline |
+| Test runtime | test report | single test >2σ above its history |
+| Error rate / endpoint | logs/metrics | spike >2σ |
+| Latency p95/p99 | metrics | spike >2σ |
+| Dep count | lockfile diff | PR adds >2σ more deps |
+| TODO/FIXME density | grep | file >2σ above repo avg |
+| Open-issue age | issue list | issue older than μ+2σ → escalate |
 
-### 4.3 The agent's anomaly recipe (no infrastructure required)
-
-When an agent suspects anomaly territory:
-
-1. Pull the historical series (`git log --numstat`, lint output, CI log, etc.).
-2. Compute mean and stdev in code or in head.
-3. Compute the z-score of the new point: `z = (x − μ) / σ`.
-4. If `|z| ≥ 2`, file an issue tagged `anomaly` with: signal name, μ, σ, current value, z-score, plausible cause, suspected scope.
-5. If `|z| ≥ 3`, also add `priority:high`.
-
-### 4.4 Beware of false signals
-
-- Small windows (< 10 data points) give unreliable σ. Use median/IQR instead.
-- Seasonal data needs deseasonalizing before σ is meaningful.
-- A single value of `0` in a count series can be a logging bug, not an event drop.
-- Two-tailed thresholds are wrong for one-sided metrics like "error count."
-
-When unsure → file the issue anyway with a `needs-triage` label. A noisy issue is cheaper than a missed regression.
+**False-signal cautions:** N<10 → σ unreliable, use median/IQR. Seasonal data → deseasonalize first. Single `0` in count series may be a logging bug. Two-tailed thresholds wrong for one-sided metrics. When unsure → file anyway with `needs-triage`.
 
 ---
 
-## 5. Repository Setup — One-Time Configuration
-
-Do this once per repo. Then agents have everything they need.
-
-### 5.1 Directory layout
+## 5. Repo setup (one-time)
 
 ```
 .github/
 ├── ISSUE_TEMPLATE/
 │   ├── config.yml
-│   ├── 01-bug.yml
-│   ├── 02-tech-debt.yml
-│   ├── 03-dead-code.yml
-│   ├── 04-security.yml
-│   ├── 05-anomaly.yml
-│   ├── 06-architecture.yml
-│   └── 07-test-gap.yml
+│   ├── 01-bug.yml … 07-test-gap.yml
 ├── workflows/
 │   ├── dedupe-issues.yml
 │   ├── auto-label.yml
 │   └── stale-cleanup.yml
 └── labels.yml
-AGENTS.md   # Agent operating instructions (top of repo)
+AGENTS.md   # repo-root operating rules
 ```
 
-### 5.2 Disable blank issues to force template use
-
-`.github/ISSUE_TEMPLATE/config.yml`:
-
+`.github/ISSUE_TEMPLATE/config.yml` — force template use:
 ```yaml
 blank_issues_enabled: false
 contact_links:
@@ -242,46 +113,38 @@ contact_links:
     about: Use Discussions for open-ended questions.
 ```
 
-This makes every new issue choose a template — including the ones agents file.
-
 ---
 
-## 6. The Label Taxonomy
-
-Use **prefix:value** so labels group naturally and don't sprawl. Pick consistent colors per prefix.
-
-### 6.1 The minimum useful set
+## 6. Labels (prefix:value, consistent colors per prefix)
 
 | Label | Color | Meaning |
 |---|---|---|
-| **`type:bug`** | red | Defect: actual ≠ expected |
-| **`type:tech-debt`** | gold | Working but should be improved |
-| **`type:dead-code`** | gray | Unused symbol, file, branch, or column |
-| **`type:duplication`** | gold | Redundant logic; should consolidate |
-| **`type:security`** | dark red | Vulnerability or weakness |
-| **`type:performance`** | orange | Slow or inefficient |
-| **`type:architecture`** | purple | Structural / design concern |
-| **`type:test-gap`** | yellow | Missing or weak test |
-| **`type:docs`** | blue | Missing or wrong documentation |
-| **`type:anomaly`** | bright orange | Statistical outlier; needs explanation |
-| **`type:risk`** | yellow | Foreseen future failure |
-| **`source:agent`** | light gray | Filed by an automated agent (always set) |
-| **`source:human`** | dark gray | Filed by a person |
-| **`priority:p0`** | crimson | Drop everything (security, prod outage) |
-| **`priority:p1`** | red | This week |
-| **`priority:p2`** | orange | This sprint |
-| **`priority:p3`** | green | Whenever |
-| **`status:needs-triage`** | white | Not yet validated |
-| **`status:confirmed`** | light green | Reproduced or verified |
-| **`status:in-progress`** | blue | Someone is working on it |
-| **`status:blocked`** | black | Waiting on something |
-| **`area:<module>`** | per-area | Subsystem tag (e.g., `area:api`, `area:auth`) |
-| **`agent:claude`** / **`agent:cursor`** / etc. | light blue | Which agent filed it (for trend analysis) |
+| `type:bug` | red | actual ≠ expected |
+| `type:tech-debt` | gold | works but should improve |
+| `type:dead-code` | gray | unused symbol/file/branch/column |
+| `type:duplication` | gold | redundant logic |
+| `type:security` | dark red | vuln/weakness |
+| `type:performance` | orange | slow/inefficient |
+| `type:architecture` | purple | structural/design |
+| `type:test-gap` | yellow | missing/weak test |
+| `type:docs` | blue | missing/wrong docs |
+| `type:anomaly` | bright orange | statistical outlier |
+| `type:risk` | yellow | foreseen failure |
+| `source:agent` | light gray | filed by agent (always set) |
+| `source:human` | dark gray | filed by person |
+| `priority:p0` | crimson | drop everything (sec, prod outage) |
+| `priority:p1` | red | this week |
+| `priority:p2` | orange | this sprint |
+| `priority:p3` | green | whenever |
+| `status:needs-triage` | white | not yet validated |
+| `status:confirmed` | light green | reproduced/verified |
+| `status:in-progress` | blue | someone working it |
+| `status:blocked` | black | waiting on something |
+| `area:<module>` | per-area | subsystem (`area:api`, `area:auth`) |
+| `agent:<name>` | light blue | which agent filed (claude/cursor/etc.) |
 
-### 6.2 Bootstrap labels via the CLI
-
+**Bootstrap script:**
 ```bash
-# Run once per repo
 gh label create "type:bug"        --color "d73a4a" --description "Defect"
 gh label create "type:tech-debt"  --color "fbca04" --description "Working but should improve"
 gh label create "type:dead-code"  --color "cccccc" --description "Unused code/data"
@@ -307,14 +170,11 @@ gh label create "status:blocked"      --color "000000" --description "Blocked"
 
 ---
 
-## 7. The Issue Templates
+## 7. Issue templates (`.github/ISSUE_TEMPLATE/`)
 
-Templates live in `.github/ISSUE_TEMPLATE/`. YAML form templates (`.yml`) give validated fields and auto-attach labels. Below are the seven templates the agent system actually uses.
+All templates use `source:agent` + `status:needs-triage` defaults.
 
-### 7.1 Bug template
-
-`.github/ISSUE_TEMPLATE/01-bug.yml`:
-
+### 7.1 `01-bug.yml`
 ```yaml
 name: 🐛 Bug
 description: Defect — actual behavior differs from expected.
@@ -323,55 +183,35 @@ labels: ["type:bug", "status:needs-triage", "source:agent"]
 body:
   - type: textarea
     id: summary
-    attributes:
-      label: Summary
-      description: One paragraph describing the bug.
-    validations:
-      required: true
+    attributes: {label: Summary, description: One paragraph.}
+    validations: {required: true}
   - type: textarea
     id: reproduce
-    attributes:
-      label: Steps to reproduce
-      description: Numbered, exact commands or inputs.
-    validations:
-      required: true
+    attributes: {label: Steps to reproduce, description: Numbered, exact commands or inputs.}
+    validations: {required: true}
   - type: textarea
     id: expected
-    attributes:
-      label: Expected
-    validations:
-      required: true
+    attributes: {label: Expected}
+    validations: {required: true}
   - type: textarea
     id: actual
-    attributes:
-      label: Actual (with evidence)
-      description: Logs, screenshots, or — for FSV — the Source-of-Truth read showing the disagreement.
-    validations:
-      required: true
+    attributes: {label: Actual (with evidence), description: Logs/screenshots/SoT read showing disagreement.}
+    validations: {required: true}
   - type: input
     id: location
-    attributes:
-      label: Location
-      description: File path(s), line(s), commit SHA, or URL.
+    attributes: {label: Location, description: File:line, commit SHA, URL.}
   - type: textarea
     id: scope
-    attributes:
-      label: Suspected scope / blast radius
+    attributes: {label: Suspected scope / blast radius}
   - type: textarea
     id: workaround
-    attributes:
-      label: Workaround (if any)
+    attributes: {label: Workaround (if any)}
   - type: input
     id: agent
-    attributes:
-      label: Filing agent
-      placeholder: e.g., claude-opus-4.7
+    attributes: {label: Filing agent, placeholder: "e.g., claude-opus-4.7"}
 ```
 
-### 7.2 Tech-debt template
-
-`.github/ISSUE_TEMPLATE/02-tech-debt.yml`:
-
+### 7.2 `02-tech-debt.yml`
 ```yaml
 name: 🧹 Tech debt
 description: Working but should be improved (smells, complexity, deprecated patterns).
@@ -380,35 +220,25 @@ labels: ["type:tech-debt", "status:needs-triage", "source:agent"]
 body:
   - type: textarea
     id: what
-    attributes:
-      label: What is the debt
+    attributes: {label: What is the debt}
     validations: {required: true}
   - type: textarea
     id: where
-    attributes:
-      label: Where (file paths, modules)
+    attributes: {label: Where (file paths, modules)}
     validations: {required: true}
   - type: textarea
     id: why-bad
-    attributes:
-      label: Why it's a problem (interest rate)
-      description: How is it slowing future work or risking failure?
+    attributes: {label: Why it's a problem (interest rate), description: How is it slowing future work?}
     validations: {required: true}
   - type: textarea
     id: proposal
-    attributes:
-      label: Suggested refactor
+    attributes: {label: Suggested refactor}
   - type: textarea
     id: effort
-    attributes:
-      label: Effort estimate
-      placeholder: e.g., small (<2h), medium (1–2 days), large (1+ weeks)
+    attributes: {label: Effort estimate, placeholder: "small (<2h), medium (1–2d), large (1+w)"}
 ```
 
-### 7.3 Dead-code template
-
-`.github/ISSUE_TEMPLATE/03-dead-code.yml`:
-
+### 7.3 `03-dead-code.yml`
 ```yaml
 name: 💀 Dead code
 description: Unused symbol, file, branch, column, or feature flag.
@@ -417,31 +247,22 @@ labels: ["type:dead-code", "status:needs-triage", "source:agent"]
 body:
   - type: input
     id: symbol
-    attributes:
-      label: Symbol / file / table / flag
+    attributes: {label: Symbol / file / table / flag}
     validations: {required: true}
   - type: textarea
     id: evidence
-    attributes:
-      label: Evidence it is unused
-      description: e.g., `grep -r` result, lint output, runtime coverage data, DB query showing 0 reads/writes.
+    attributes: {label: Evidence it is unused, description: "grep -r, lint, coverage, DB 0-read/write query"}
     validations: {required: true}
   - type: textarea
     id: indirect
-    attributes:
-      label: Indirect-consumer check
-      description: Reflection? DI? Generated code? External callers? — list what you ruled out.
+    attributes: {label: Indirect-consumer check, description: "Reflection? DI? Generated code? External callers?"}
     validations: {required: true}
   - type: textarea
     id: deletion-plan
-    attributes:
-      label: Proposed deletion plan
+    attributes: {label: Proposed deletion plan}
 ```
 
-### 7.4 Security template
-
-`.github/ISSUE_TEMPLATE/04-security.yml`:
-
+### 7.4 `04-security.yml`
 ```yaml
 name: 🔒 Security
 description: Vulnerability, weakness, or unsafe pattern. Triage as P0/P1.
@@ -450,40 +271,30 @@ labels: ["type:security", "priority:p1", "status:needs-triage", "source:agent"]
 body:
   - type: textarea
     id: finding
-    attributes:
-      label: Finding
+    attributes: {label: Finding}
     validations: {required: true}
   - type: input
     id: cwe
-    attributes:
-      label: CWE / OWASP category (if known)
+    attributes: {label: CWE / OWASP category (if known)}
   - type: textarea
     id: impact
-    attributes:
-      label: Impact if exploited
+    attributes: {label: Impact if exploited}
     validations: {required: true}
   - type: textarea
     id: reproduce
-    attributes:
-      label: How to reproduce / observe
+    attributes: {label: How to reproduce / observe}
   - type: textarea
     id: fix
-    attributes:
-      label: Suggested fix
+    attributes: {label: Suggested fix}
   - type: checkboxes
     id: disclosure
     attributes:
       label: Disclosure
       options:
-        - label: This finding may need private disclosure (do not include exploit details in this issue if it's a public repo).
+        - label: May need private disclosure (omit exploit details in public-repo issues).
 ```
 
-> Note: for public repos, use **GitHub Security Advisories** for actually-exploitable vulns, not Issues. Configure under `Security → Advisories → New draft`.
-
-### 7.5 Anomaly template
-
-`.github/ISSUE_TEMPLATE/05-anomaly.yml`:
-
+### 7.5 `05-anomaly.yml`
 ```yaml
 name: 📊 Anomaly
 description: A signal outside its typical range (≥ 2σ).
@@ -492,36 +303,24 @@ labels: ["type:anomaly", "status:needs-triage", "source:agent"]
 body:
   - type: input
     id: signal
-    attributes:
-      label: Signal name
-      placeholder: e.g., p95 latency, build time, error rate
+    attributes: {label: Signal name, placeholder: "p95 latency, build time, error rate"}
     validations: {required: true}
   - type: input
     id: stats
-    attributes:
-      label: μ / σ / current / z-score
-      placeholder: μ=1.2s σ=0.3s current=2.8s z=5.3
+    attributes: {label: μ / σ / current / z-score, placeholder: "μ=1.2s σ=0.3s current=2.8s z=5.3"}
     validations: {required: true}
   - type: textarea
     id: window
-    attributes:
-      label: Window used
-      description: How many points, over what period.
+    attributes: {label: Window used, description: How many points, over what period.}
   - type: textarea
     id: hypothesis
-    attributes:
-      label: Hypothesis for cause
+    attributes: {label: Hypothesis for cause}
   - type: textarea
     id: link
-    attributes:
-      label: Link to evidence
-      description: Dashboard URL, log query, CI run, commit range.
+    attributes: {label: Link to evidence, description: Dashboard URL, log query, CI run, commit range.}
 ```
 
-### 7.6 Architecture template
-
-`.github/ISSUE_TEMPLATE/06-architecture.yml`:
-
+### 7.6 `06-architecture.yml`
 ```yaml
 name: 🏛️ Architecture
 description: Structural or design concern. Coupling, SPOF, anti-pattern, missing seam.
@@ -544,10 +343,7 @@ body:
     attributes: {label: Options considered}
 ```
 
-### 7.7 Test-gap template
-
-`.github/ISSUE_TEMPLATE/07-test-gap.yml`:
-
+### 7.7 `07-test-gap.yml`
 ```yaml
 name: 🧪 Test gap
 description: Code path lacks adequate test or FSV coverage.
@@ -564,67 +360,31 @@ body:
     validations: {required: true}
   - type: textarea
     id: cases
-    attributes:
-      label: Cases that should exist
-      description: Happy path? Boundary? Concurrency? Auth variants? FSV against the SoT?
+    attributes: {label: Cases that should exist, description: "Happy path? Boundary? Concurrency? Auth variants? FSV against SoT?"}
 ```
 
 ---
 
-## 8. Authentication — Tokens, Scopes, Free-Tier Limits
+## 8. Authentication
 
-Agents need authenticated access. Pick one of three patterns by use case.
+**Fine-grained PAT (single user, recommended):** Settings → Developer settings → PAT → Fine-grained. Repo access: target repos only. Permissions: `Issues: Read/Write`, `Metadata: Read`, `Contents: Read` (or Write if committing). Max expiration 90d → schedule rotation. Rate limit: 5,000/hr shared across all tools that user uses.
 
-### 8.1 Personal Access Token (PAT) — simplest
+**Classic PAT (avoid):** `repo` scope grants issue access but also full read/write. Use only if forced.
 
-For a single user / single workstation / a single agent. Two flavors:
+**GitHub App (multi-agent, shared repo):** higher isolated rate limits per installation; short-lived auto-refreshed tokens; appears as `<app>[bot]`. Permissions: `Issues: Read/Write`, `Metadata: Read`.
 
-- **Fine-grained PAT** (recommended): scoped to specific repos, with specific permissions. Create at `Settings → Developer settings → Personal access tokens → Fine-grained tokens`.
-  - **Repository access:** select your repo(s) only.
-  - **Permissions → Repository:** `Issues: Read and Write`, `Metadata: Read-only`, `Contents: Read-only` (or Write if the agent also commits).
-  - **Expiration:** 90 days max. Schedule rotation.
-- **Classic PAT** (legacy): `repo` scope grants issue access but also full repo read/write. Avoid unless you must.
+**`GITHUB_TOKEN` (Actions only):** auto-provided per-run. Set `permissions: { issues: write }` at job level. 1,000/hr per repo.
 
-Rate limit: 5,000 requests/hour, shared across **all** tools the user uses.
-
-### 8.2 GitHub App — best for multi-agent / shared use
-
-When several agents (or several people running agents) share one repo, use a GitHub App. Benefits:
-- Higher and isolated rate limits (per installation, not per user).
-- Per-repo install with explicit permissions.
-- Tokens are short-lived and refreshed automatically.
-- Filings appear as `<app-name>[bot]`, easy to filter.
-
-Setup: `Settings → Developer settings → GitHub Apps → New GitHub App` → set permissions `Issues: Read/Write`, `Metadata: Read` → install on the target repo(s).
-
-### 8.3 `GITHUB_TOKEN` — inside GitHub Actions only
-
-When the agent runs as a GitHub Action, no PAT is needed. The runner exposes a per-run `GITHUB_TOKEN`. Set `permissions: { issues: write }` at the job level.
-
-Rate limit: 1,000/hour per repository. Plenty for normal automation.
-
-### 8.4 Token storage rules
-
-- Never commit a token. Pre-commit `gitleaks`.
-- In CI: use the repo's encrypted Secrets.
-- On a workstation: `gh auth login` (stores in OS keychain) or env-var loaded from a vault, never a plain `.env` you might commit.
-- Treat any leak as P0 → revoke immediately at `Settings → Developer settings → Tokens → Revoke`.
+**Storage rules:** never commit tokens (pre-commit `gitleaks`); CI → encrypted Secrets; workstation → `gh auth login` (OS keychain) or vault env-var. Any leak = P0 → revoke immediately.
 
 ---
 
-## 9. Three Ways for Agents to Create Issues
+## 9. Three ways to create issues (equivalent)
 
-Pick whichever the agent already has. All three are equivalent for our purposes.
-
-### 9.1 The `gh` CLI (most ergonomic for shell-capable agents)
-
-The CLI is preinstalled on every GitHub-hosted runner and on most dev machines.
-
+### 9.1 `gh` CLI
 ```bash
-# Auth once
 gh auth login --with-token < $TOKEN_FILE
 
-# Create an issue
 gh issue create \
   --repo "owner/repo" \
   --title "[BUG] Login retries fail after 3rd attempt" \
@@ -632,22 +392,17 @@ gh issue create \
   --label "type:bug,priority:p1,source:agent,agent:claude" \
   --assignee "@me"
 
-# Search for existing issues (dedupe)
 gh issue list --repo "owner/repo" --state open \
   --search "login retries in:title,body" \
   --json number,title,url
 
-# Comment on an existing one
-gh issue comment 123 --repo "owner/repo" --body "Reproduced again at $(date -u)."
+gh issue comment 123 --repo "owner/repo" --body "Reproduced at $(date -u)."
 
-# Close with a reason
 gh issue close 123 --repo "owner/repo" --reason "completed" --comment "Fixed in #456."
 ```
 
-### 9.2 The REST API (works from any language / any agent)
-
-Endpoint: `POST https://api.github.com/repos/{owner}/{repo}/issues`
-
+### 9.2 REST API
+`POST https://api.github.com/repos/{owner}/{repo}/issues`
 ```bash
 curl -X POST \
   -H "Authorization: Bearer $GITHUB_TOKEN" \
@@ -656,170 +411,105 @@ curl -X POST \
   https://api.github.com/repos/owner/repo/issues \
   -d '{
     "title": "[DEAD] handleLegacyAuth() unused since v3.2",
-    "body": "## Evidence\n- grep -r returns 0 callers\n- Removed in OAuth migration ...\n\n## Indirect check\n- No reflection usage\n- No external SDK calls\n\n/cc @maintainer",
-    "labels": ["type:dead-code", "source:agent", "status:needs-triage"]
+    "body": "## Evidence\n- grep -r returns 0 callers\n\n## Indirect check\n- No reflection/DI/external SDK\n",
+    "labels": ["type:dead-code","source:agent","status:needs-triage"]
   }'
 ```
 
-Python (using `requests`):
-
+Python helpers:
 ```python
-import os, requests, json
+import os, requests
+HDRS = {"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"}
 
 def create_issue(owner, repo, title, body, labels):
-    url = f"https://api.github.com/repos/{owner}/{repo}/issues"
-    r = requests.post(
-        url,
-        headers={
-            "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-        json={"title": title, "body": body, "labels": labels},
-        timeout=15,
-    )
-    r.raise_for_status()
-    return r.json()
-```
+    r = requests.post(f"https://api.github.com/repos/{owner}/{repo}/issues",
+                      headers=HDRS, json={"title":title,"body":body,"labels":labels}, timeout=15)
+    r.raise_for_status(); return r.json()
 
-Search for dupes first:
-
-```python
-def search_issues(owner, repo, query):
-    # Search is its own endpoint with its own (lower) rate limit
-    url = "https://api.github.com/search/issues"
+def search_issues(owner, repo, query):  # search endpoint has its own lower rate limit
     q = f"repo:{owner}/{repo} is:open is:issue {query}"
-    r = requests.get(
-        url,
-        headers={"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}"},
-        params={"q": q},
-        timeout=15,
-    )
-    r.raise_for_status()
-    return r.json()["items"]
+    r = requests.get("https://api.github.com/search/issues",
+                     headers=HDRS, params={"q":q}, timeout=15)
+    r.raise_for_status(); return r.json()["items"]
 ```
 
-### 9.3 The GitHub MCP Server (best for Claude / Cursor / agentic IDEs)
+### 9.3 GitHub MCP Server (best for Claude/Cursor/agentic IDEs)
+Official: `github/github-mcp-server`. Tools: `create_issue`, `list_issues`, `search_issues`, `update_issue`, `add_issue_comment`, plus PR/repo/Dependabot access.
 
-GitHub maintains an official MCP server (`github/github-mcp-server`) that gives any MCP-capable agent direct natural-language access to:
-- Create / update / search / close issues
-- Read repo files and history
-- Manage PRs, labels, assignees
-- Read Dependabot alerts
-
-For Claude (desktop or Claude Code), add to MCP config:
-
+Claude config:
 ```json
 {
   "mcpServers": {
     "github": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "<your-fine-grained-PAT>"
-      }
+      "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "<fine-grained-PAT>"}
     }
   }
 }
 ```
 
-Once installed, the agent can call tools like `create_issue`, `list_issues`, `search_issues`, `update_issue`, `add_issue_comment` directly — no shell, no `curl`.
-
-> If the agent is being told "search for relevant connectors," it should look up the **GitHub** connector specifically — the GitHub MCP is first-party and free.
-
 ---
 
-## 10. The Mandatory Deduplication Step
+## 10. Mandatory dedupe (run before every create)
 
-Filing duplicate issues poisons the backlog. The agent must run a dedupe check before every create.
-
-### 10.1 The dedupe algorithm (do this every time)
-
-1. **Pick 3–6 distinctive keywords** from the finding. Avoid generic words like "bug" or "issue."
-   - Good: `handleLegacyAuth`, `OAuth migration`, `retry exhaustion`
-   - Bad: `error`, `failure`, `broken`
-2. **Search open AND recently closed** issues:
+1. Pick **3–6 distinctive keywords** (symbol names, error strings, file paths). Avoid `bug`, `error`, `issue`, `failure`.
+2. Search open AND recently closed:
    ```bash
    gh issue list --repo o/r --state all --limit 50 \
      --search "handleLegacyAuth oauth retry in:title,body"
    ```
-3. **Score** each result for similarity. If the agent has access to embeddings, use cosine similarity on title+first-1KB-of-body. Without embeddings, use simple token overlap or have the LLM rate similarity 0–10.
-4. **Threshold:**
-   - Score ≥ 8 / 10 → **do not file**. Add a comment to the existing issue with new evidence. Use the format: "Re-observed at SHA `abc1234` running scenario X. New detail: ..."
-   - Score 5–7 → file but link the related issue in the body ("Possibly related to #123, but distinct because ...").
-   - Score < 5 → file as new.
-5. **If you choose to file** despite a partial match, link the related issues explicitly. GitHub's "Duplicate of #N" syntax in a comment automatically marks the new one as a duplicate.
+3. Score each result for similarity (embeddings cosine, token overlap, or LLM 0–10 rating).
+4. **Thresholds:**
+   - ≥8/10 → **do not file**. Comment on existing: `"Re-observed at SHA abc1234 running scenario X. New detail: …"`.
+   - 5–7 → file new, link related in body: `"Possibly related to #123, distinct because …"`.
+   - <5 → file as new.
+5. If a duplicate slips through, close explicitly:
+   ```bash
+   gh issue close 456 --repo o/r --reason "not planned" \
+     --comment "Duplicate of #123. Closing; follow #123 for updates."
+   ```
 
-### 10.2 Why this matters
-
-Without dedupe, a hardening pass that runs 5 agents over a week creates the same "long method in `auth.py`" issue five times. With dedupe, the second through fifth runs add a comment with "still present in commit X" — which is actually useful signal about whether the issue is being deprioritized.
-
-### 10.3 Closing duplicates explicitly
-
-When the agent decides a duplicate slipped through, it must explicitly close it:
-
-```bash
-gh issue close 456 --repo o/r --reason "not planned" \
-  --comment "Duplicate of #123. Closing this one; please follow #123 for updates."
-```
+GitHub's `Duplicate of #N` comment syntax auto-marks the new one as duplicate.
 
 ---
 
-## 11. The Agent Operating Protocol
+## 11. Per-turn protocol (5 steps — paste into `AGENTS.md`)
 
-This is the runtime contract every agent follows. Paste this section into the project's `AGENTS.md` (top-level file most agentic tools auto-read).
+**Step 1 — Read backlog:**
+```bash
+gh issue list --repo $REPO --state open --label "source:agent" --limit 50
+```
+Skim titles → mental list of what's already tracked (prevents dupes later).
 
-### 11.1 The five-step turn cycle
+**Step 2 — Do the work** (whatever the human asked).
 
-For every meaningful turn that touches code or state:
+**Step 3 — Observe surroundings.** Note §3 triggers and §4 anomalies you are NOT fixing this turn.
 
-**Step 1 — Read the open backlog.**
-- `gh issue list --repo $REPO --state open --label "source:agent" --limit 50`
-- Skim titles; build a mental list of what's already tracked. This **prevents** duplicate filings later in the turn.
+**Step 4 — Triage:** trivial + you're here anyway → fix now (boy-scout). Else → queue for filing.
 
-**Step 2 — Do the work.**
-- Whatever the human asked for: implement, refactor, debug, review.
+**Step 5 — File before ending turn.** For each queued item: run dedupe (§10) → pick template (§7) → fill out specific/evidence-rich → create → note issue # in response.
 
-**Step 3 — Observe the surroundings.**
-- While reading code, note triggers from §3 and anomalies from §4 *that you are not fixing in this turn*.
+### 11.2 Title rules
+- Specific (name the symbol/file/endpoint).
+- Imperative or declarative — describes state, not the fix.
+- Prefixed: `[BUG]`/`[DEBT]`/`[DEAD]`/`[SEC]`/`[ANOMALY]`/`[ARCH]`/`[TEST]`.
+- ≤80 chars.
 
-**Step 4 — Triage in your head.**
-For each observation:
-- **Trivial + I'm here anyway** → fix it now (boy-scout rule).
-- **Anything else** → queue it for filing.
+✅ `[BUG] /orders POST returns 200 but row not inserted when amount==0`
+✅ `[DEAD] PaymentLegacyProcessor unused since v4.0 migration (Apr 2024)`
+✅ `[ANOMALY] checkout endpoint p99 jumped 8σ after deploy abc1234`
+❌ `Bug in orders` / `Fix the payment thing`
 
-**Step 5 — File before ending the turn.**
-For each queued item:
-1. Run dedupe (§10.1).
-2. Pick the right template (§7).
-3. Fill it out — **specific** title, evidence-rich body, correct labels.
-4. Create the issue.
-5. Note the issue number in your response so the human can see what was filed.
-
-### 11.2 Writing the title
-
-A good title is:
-- **Specific** — names the symbol/file/endpoint involved.
-- **Imperative or declarative** — describes the state of the world, not the fix.
-- **Prefixed** with the template prefix (`[BUG]`, `[DEBT]`, `[DEAD]`, `[SEC]`, `[ANOMALY]`, `[ARCH]`, `[TEST]`).
-- **Under ~80 characters.**
-
-Examples:
-- ✅ `[BUG] /orders POST returns 200 but row not inserted when amount==0`
-- ✅ `[DEAD] PaymentLegacyProcessor unused since v4.0 migration (Apr 2024)`
-- ✅ `[ANOMALY] checkout endpoint p99 jumped 8σ after deploy abc1234`
-- ❌ `Bug in orders`  (too vague)
-- ❌ `Fix the payment thing`  (talks about fix, not evidence)
-
-### 11.3 Writing the body
-
-Whatever the template, the body should always include:
-1. **Evidence** the agent observed — log line, file:line, diff, query output, dashboard URL, commit SHA.
-2. **What was expected** vs **what was observed** (FSV-style).
-3. **Scope estimate** — what else might be affected.
-4. **Repro steps** if non-trivial.
-5. **Suggested next action** — even if it's "investigate further."
-6. **Agent attribution footer:**
+### 11.3 Body checklist (always include)
+1. Evidence (log line, file:line, diff, query output, dashboard URL, commit SHA).
+2. Expected vs observed (FSV-style).
+3. Scope estimate.
+4. Repro steps if non-trivial.
+5. Suggested next action (even "investigate further").
+6. Footer:
    ```
    ---
    Filed by: claude-opus-4.7
@@ -827,86 +517,59 @@ Whatever the template, the body should always include:
    Commit at time of filing: abc1234
    ```
 
-### 11.4 When the agent does fix the issue in the same turn
+### 11.4 Same-turn fixes
+Reference in commit/PR: `Fixes #N` / `Closes #N` auto-closes on merge. Small fix + no prior issue → optionally skip filing (commit msg suffices). Non-trivial fix → file first, reference from PR for reviewer context.
 
-Even then, **still mention it** in the PR/commit. Use `Fixes #N` / `Closes #N` in the commit message so GitHub auto-closes when the change merges. If no issue existed and the fix is small, the agent can either:
-- Skip filing (the commit message describes the work).
-- File-then-close-with-fix-in-same-PR (preferred for traceability of recurring problems).
-
-For non-trivial fixes, *always* file the issue first and reference it in the PR — this gives reviewers context the diff alone can't carry.
-
-### 11.5 Priority assignment heuristics
-
-- **`priority:p0`** — security-exploitable now, prod outage, data loss possible.
-- **`priority:p1`** — bug affecting users, security weakness with no immediate exploit, anomaly ≥ 3σ.
-- **`priority:p2`** — tech debt slowing development, anomaly 2–3σ, test gap on a real code path.
-- **`priority:p3`** — cosmetic, micro-optimization, far-future risk.
-
-Default to **p2** when unsure. Humans can retriage; better than no priority.
+### 11.5 Priority heuristics
+- **p0** — security-exploitable now, prod outage, data loss possible.
+- **p1** — user-facing bug, security weakness w/o immediate exploit, anomaly ≥3σ.
+- **p2** — tech debt slowing dev, anomaly 2–3σ, test gap on real path.
+- **p3** — cosmetic, micro-opt, far-future risk.
+- Default **p2** when unsure.
 
 ---
 
-## 12. Multi-Agent Handoff — Picking Up Where the Last One Left Off
+## 12. Multi-agent handoff
 
-The whole point is to make agent sessions composable. Here's how the next agent finds the work.
-
-### 12.1 The agent's start-of-session ritual
-
-Every agent's *very first* action on a repo:
-
+### 12.1 Start-of-session ritual
 ```bash
-# 1. What's open from prior agent runs?
+# Open agent-filed issues
 gh issue list --repo $REPO --state open --label "source:agent" \
-  --sort updated --limit 20 \
-  --json number,title,labels,updatedAt
+  --sort updated --limit 20 --json number,title,labels,updatedAt
 
-# 2. What did the last few agents work on?
+# Recent agent activity (open + closed)
 gh issue list --repo $REPO --state all --label "source:agent" \
-  --sort updated --limit 10 \
-  --json number,title,state,closedAt
+  --sort updated --limit 10 --json number,title,state,closedAt
 
-# 3. What's marked high-priority?
+# High-priority queue
 gh issue list --repo $REPO --state open \
   --label "priority:p0,priority:p1" --json number,title,labels
 ```
 
-### 12.2 The "next-up" selection rule
-
-When the human says "continue where you left off" or "work on the open issues":
-
-1. Filter to `state:open` AND `source:agent` AND `assignee:none`.
-2. Sort by `priority` ascending (p0 first), then `updated` ascending (oldest first).
-3. Pick the top item; assign yourself (`gh issue edit N --add-assignee @me`).
-4. Change `status:needs-triage` → `status:in-progress`.
-5. Comment on the issue with start-of-work note: *"Picking this up — agent X — commit Y — plan: ..."*.
+### 12.2 "Continue where you left off"
+1. Filter: `state:open` AND `source:agent` AND `assignee:none`.
+2. Sort: `priority` asc (p0 first), then `updated` asc (oldest first).
+3. Pick top → `gh issue edit N --add-assignee @me`.
+4. Swap `status:needs-triage` → `status:in-progress`.
+5. Comment: `"Picking this up — agent X — commit Y — plan: …"`.
 6. Work it.
-7. On completion: open PR with `Closes #N`. The status label gets removed when the PR merges.
+7. PR with `Closes #N`.
 
-### 12.3 Handing off mid-task
+### 12.3 Pausing mid-task
+Comment a **resume note**: what was tried, what was learned, file/line to start at, hypothesis to test next. Set `status:blocked` if waiting on something; else leave `status:in-progress`. Unassign only if you won't return.
 
-If an agent runs out of context window or hits an interrupt:
-- Comment on the issue with a **resume note**: what was tried, what was learned, what file/line to start at, what hypothesis to test next.
-- Add label `status:blocked` if waiting on something, otherwise leave as `status:in-progress`.
-- Unassign self only if you know you won't come back.
-
-This is the single most valuable habit in multi-agent work: leave the next agent enough breadcrumbs to be productive in 30 seconds, not 30 minutes.
+This is the single highest-leverage habit in multi-agent work.
 
 ---
 
-## 13. Automation Backstop — GitHub Actions Catches What Agents Miss
-
-Agents are conscientious but not perfect. Layer in automation so static-analysis findings, dependency vulns, and stale issues are filed/managed without an agent in the loop.
+## 13. Automation backstop (Actions)
 
 ### 13.1 SAST → Issues
-
-Use Semgrep, CodeQL, or whichever scanner you already trust. Wire a workflow to convert each finding above a severity threshold into a GitHub Issue, with dedupe based on rule ID + file path.
-
-`.github/workflows/sast-to-issues.yml` (skeleton):
-
+`.github/workflows/sast-to-issues.yml`:
 ```yaml
 name: SAST → Issues
 on:
-  schedule: [{cron: "0 4 * * 1"}]   # weekly Monday 04:00 UTC
+  schedule: [{cron: "0 4 * * 1"}]
   workflow_dispatch: {}
 permissions:
   contents: read
@@ -925,33 +588,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-        run: |
-          python .github/scripts/findings_to_issues.py findings.json
+        run: python .github/scripts/findings_to_issues.py findings.json
 ```
+Script must hash `rule_id + file + line range` as fingerprint, search title field for it, only file new ones (same dedupe contract as agents).
 
-The Python script reads `findings.json`, hashes `rule_id + file + line range` as a fingerprint, searches existing issues for that fingerprint in the title, and only files new ones — same dedupe contract as agents.
+### 13.2 Dependabot
+Enable under Settings → Security → Code security: alerts (free, all repos), security updates (auto-PRs), version updates (`.github/dependabot.yml`). Convert unfixed alerts → `type:security` issues after N days so they hit the same backlog.
 
-### 13.2 Dependabot is free and on by default
-
-Enable in `Settings → Security → Code security and analysis`:
-- **Dependabot alerts** — free on all repos.
-- **Dependabot security updates** — auto-opens PRs for vuln fixes.
-- **Dependabot version updates** — set up via `.github/dependabot.yml`.
-
-For each alert that isn't auto-fixed within N days, a small workflow can convert it to a `type:security` issue so it shows up in the same backlog the agents are watching.
-
-### 13.3 Stale issue management
-
-Don't let the backlog rot. Use the official `actions/stale` action.
-
+### 13.3 Stale cleanup
 `.github/workflows/stale-cleanup.yml`:
-
 ```yaml
 name: Stale issues
 on:
   schedule: [{cron: "30 1 * * *"}]
-permissions:
-  issues: write
+permissions: {issues: write}
 jobs:
   stale:
     runs-on: ubuntu-latest
@@ -963,134 +613,86 @@ jobs:
           stale-issue-label: "status:stale"
           exempt-issue-labels: "priority:p0,priority:p1,status:in-progress"
           stale-issue-message: |
-            This issue has had no activity for 60 days. It will close in 14 days
-            unless reactivated. Comment or remove the `status:stale` label to keep it open.
+            No activity for 60 days. Closing in 14 days unless reactivated.
+            Comment or remove the `status:stale` label to keep open.
           close-issue-message: |
             Closed as stale. Reopen if still relevant.
 ```
 
 ### 13.4 Auto-labeling
+`actions/labeler` applies labels by file-path patterns — use for `area:*`.
 
-`actions/labeler` applies labels by file path patterns automatically — useful for `area:*` labels.
-
-### 13.5 Issue title fingerprinting for dedupe
-
-For agents that don't compute embeddings, a cheap trick: include a structured fingerprint in the title.
-
-Example for a SAST finding:
-```
-[SEC] python.lang.security.audit.dangerous-eval at api/handler.py:142 [fp:semgrep:py-eval-handler-142]
-```
-
-The `[fp:...]` token is a stable hash you can grep against in the title field. The next agent / workflow doing dedupe just does:
-
+### 13.5 Title fingerprint dedupe (cheap)
+Embed stable hash in title: `[SEC] python.lang.security.audit.dangerous-eval at api/handler.py:142 [fp:semgrep:py-eval-handler-142]`
+Search:
 ```bash
 gh issue list --search "[fp:semgrep:py-eval-handler-142] in:title" --state all
 ```
-
-If a result comes back, comment on it instead of filing new.
-
----
-
-## 14. Issue Hygiene — Keeping the Backlog Useful
-
-The backlog is only valuable if it stays trustworthy. Some practices to bake in.
-
-### 14.1 The "Confirm or close" weekly review (5 minutes, human-led)
-
-Once a week, the human (or a designated triage agent) does:
-- Glance at issues with `status:needs-triage`. Either confirm (`status:confirmed`) or close with a reason.
-- Re-prioritize anything that drifted.
-- Close anything obviously fixed but not auto-closed.
-
-### 14.2 Don't punish reporters (including agents)
-
-Adam Cogan's rule for handling duplicates: even when closing a duplicate, leave a friendly note pointing to the tracker issue. The same applies to agent-filed duplicates — when you close one, the closing comment should reference the kept issue. This makes the next agent's dedupe work easier (the closed dup links to the canonical).
-
-### 14.3 Don't over-label
-
-Five to ten labels per issue is hard to read. Stick to: 1 `type:*`, 1 `priority:*`, 1 `status:*`, 1–2 `area:*`, plus `source:*`. That's the cap.
-
-### 14.4 Use Milestones for hardening sweeps
-
-Group all issues filed during a "harden the auth module" sweep into a Milestone of the same name. The Milestone page becomes the report of that sweep — closed vs open count, burn-down, sub-issue tree.
-
-### 14.5 Use sub-issues (issue hierarchy)
-
-GitHub now supports parent/sub-issue relationships natively. For a multi-issue sweep, create one parent **tracking issue** and link each finding as a sub-issue. The parent becomes the roll-up the human watches.
-
-CLI doesn't fully support this yet (as of 2025); use the REST API with `POST /repos/{o}/{r}/issues/{n}/sub_issues` and the issue's numeric `id` (not number).
-
-### 14.6 Trends to watch
-
-Once you have a few weeks of agent-filed issues, ask:
-- Which `area:*` accumulates the most issues? → That's where the real debt lives.
-- What's the average time-to-close per `type:*`? → If `type:dead-code` is fast and `type:tech-debt` is slow, your team is doing surface cleanup without deep refactoring.
-- Are agents finding things humans miss, or vice versa? → Tune the trigger list (§3) and templates (§7) accordingly.
+Match → comment; no match → file new.
 
 ---
 
-## 15. Copy-Paste Pack — Ready-to-Use Files
+## 14. Hygiene
 
-These are minimal, working artifacts to drop into a repo today.
+- **Weekly 5-min triage** (human or designated agent): scan `status:needs-triage`, confirm or close; reprioritize drifters; close obvious-fix-not-auto-closed.
+- **Closing dupes:** always link the kept issue in the closing comment (makes future dedupe easier).
+- **Label cap:** 1 `type:*` + 1 `priority:*` + 1 `status:*` + 1–2 `area:*` + `source:*`. That's the cap. Don't over-label.
+- **Milestones** for sweeps: group all issues from "harden auth module" sweep → milestone page = sweep report.
+- **Sub-issues** for trackers: parent issue + children via REST `POST /repos/{o}/{r}/issues/{n}/sub_issues` using the issue's numeric `id` (not number). CLI doesn't fully support yet.
+- **Trends to watch:** which `area:*` accumulates most → where real debt lives. Time-to-close per `type:*` → surface-only vs deep refactoring pattern. Agents vs humans hit ratio → tune triggers/templates.
+
+---
+
+## 15. Copy-paste artifacts
 
 ### 15.1 `AGENTS.md` (top of repo)
-
 ```markdown
 # AGENTS.md — Operating Rules for AI Agents in This Repo
 
-## The non-negotiable rule
+## Non-negotiable rule
 If you observe a bug, defect, smell, dead code, redundant code, tech debt,
 anomaly, security weakness, architectural concern, or test gap that you are
 NOT fixing in this same turn — you MUST open a GitHub Issue before ending
 your turn. See `.github/ISSUE_TEMPLATE/` for templates.
 
-## Before opening an issue
+## Before opening
 1. Search existing open AND closed issues with 3–6 distinctive keywords.
-2. If a clear duplicate exists, comment on the existing issue with new
-   evidence instead of opening a new one.
-3. If a partial match exists, link it in the new issue body.
+2. Clear duplicate → comment on existing with new evidence; do not file new.
+3. Partial match → file but link the related issue in body.
 
-## Required content for every issue you file
-- Specific, prefixed title (e.g., `[BUG] ...`, `[DEBT] ...`, `[DEAD] ...`).
-- Evidence (file:line, log line, query output, commit SHA).
+## Required content
+- Specific prefixed title (`[BUG]`/`[DEBT]`/`[DEAD]`/`[SEC]`/`[ANOMALY]`/`[ARCH]`/`[TEST]`).
+- Evidence (file:line, log, query output, commit SHA).
 - Expected vs observed (FSV style).
-- Suspected scope / blast radius.
+- Suspected scope/blast radius.
 - Suggested next action.
 - Footer: agent name, session id, commit SHA.
 
-## Labels every agent issue must have
-- One `type:*` label (bug, tech-debt, dead-code, duplication, security,
+## Required labels
+- One `type:*` (bug, tech-debt, dead-code, duplication, security,
   performance, architecture, test-gap, docs, anomaly, risk).
-- One `priority:*` label (default `priority:p2` when unsure).
-- `source:agent` and `agent:<your-name>`.
-- `status:needs-triage` for new ones; `status:in-progress` when you start work.
+- One `priority:*` (default `priority:p2`).
+- `source:agent` + `agent:<your-name>`.
+- `status:needs-triage` new; `status:in-progress` when you start work.
 
 ## Anomaly flagging
-Any signal more than 2σ from its rolling mean → file as `type:anomaly`.
-Include μ, σ, current value, z-score, and the window used.
+Any signal >2σ from rolling mean → file `type:anomaly` with μ, σ, current, z-score, window.
 
 ## Multi-agent handoff
-Before working: list open `source:agent` issues, pick the highest-priority
-unassigned one, assign yourself, set `status:in-progress`, comment with your
-plan.
+Before working: list open `source:agent` issues, pick highest-priority unassigned,
+assign self, set `status:in-progress`, comment with plan.
+Pausing mid-task: comment what tried/learned/where-to-resume.
 
-When pausing mid-task: comment with what you tried, what you learned, and
-where to resume.
-
-## Tools at your disposal
+## Tools
 - `gh` CLI (preferred for shell-capable agents).
-- GitHub REST/GraphQL API (any language).
-- GitHub MCP server (Claude / Cursor / agentic IDEs).
+- REST/GraphQL (any language).
+- GitHub MCP server (Claude/Cursor/agentic IDEs).
 
 ## Reference
-See `docs/AGENT_ISSUE_FLAGGING_GUIDE.md` for the full protocol.
+See `docs/AGENT_ISSUE_FLAGGING_GUIDE.md` for full protocol.
 ```
 
-### 15.2 Minimal create-issue script (Python, dedupe-aware)
-
-`.github/scripts/file_issue.py`:
-
+### 15.2 `.github/scripts/file_issue.py` — dedupe-aware filer
 ```python
 #!/usr/bin/env python3
 """Dedupe-aware issue filer for agents.
@@ -1102,6 +704,9 @@ Usage:
         --body-file body.md \
         --labels type:bug,priority:p2,source:agent \
         --keywords "foo bar baz"
+
+Exit codes: 0 = filed; 2 = dedupe match found, did NOT file (caller should
+comment on existing issue instead).
 """
 import argparse, json, os, sys
 import urllib.parse, urllib.request
@@ -1110,8 +715,7 @@ API = "https://api.github.com"
 
 def gh(method, path, payload=None):
     req = urllib.request.Request(
-        f"{API}{path}",
-        method=method,
+        f"{API}{path}", method=method,
         headers={
             "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
             "Accept": "application/vnd.github+json",
@@ -1126,8 +730,7 @@ def gh(method, path, payload=None):
 def search_existing(repo, keywords):
     q = f"repo:{repo} is:issue {keywords}"
     enc = urllib.parse.urlencode({"q": q, "per_page": 5})
-    res = gh("GET", f"/search/issues?{enc}")
-    return res.get("items", [])
+    return gh("GET", f"/search/issues?{enc}").get("items", [])
 
 def main():
     p = argparse.ArgumentParser()
@@ -1135,22 +738,18 @@ def main():
     p.add_argument("--title", required=True)
     p.add_argument("--body-file", required=True)
     p.add_argument("--labels", default="")
-    p.add_argument("--keywords", required=True,
-                   help="3–6 distinctive words for dedupe search")
+    p.add_argument("--keywords", required=True, help="3–6 distinctive words for dedupe")
     p.add_argument("--similarity-threshold", type=float, default=0.6)
     args = p.parse_args()
 
     body = open(args.body_file).read()
     labels = [l.strip() for l in args.labels.split(",") if l.strip()]
 
-    # Dedupe
     matches = search_existing(args.repo, args.keywords)
     if matches:
-        print(f"⚠ Possible duplicates found ({len(matches)}):")
+        print(f"⚠ Possible duplicates ({len(matches)}):")
         for m in matches[:5]:
             print(f"  #{m['number']} {m['state']} — {m['title']} — {m['html_url']}")
-        # Conservative behavior: refuse to file. Caller can re-run with
-        # --keywords narrowed or comment on the existing issue instead.
         sys.exit(2)
 
     owner, name = args.repo.split("/", 1)
@@ -1162,30 +761,25 @@ if __name__ == "__main__":
     main()
 ```
 
-Exit codes: `0` = filed; `2` = dedupe match found, did NOT file (agent should comment on the existing issue instead).
-
-### 15.3 Quick start checklist (one-pass setup)
-
-- [ ] Create labels (§6.2 script).
+### 15.3 Quick-start checklist
+- [ ] Create labels (§6 script).
 - [ ] Add 7 issue templates from §7.
-- [ ] Add `.github/ISSUE_TEMPLATE/config.yml` disabling blank issues.
+- [ ] Add `.github/ISSUE_TEMPLATE/config.yml` (disable blank issues).
 - [ ] Create `AGENTS.md` at repo root (§15.1).
-- [ ] Generate a fine-grained PAT scoped to this repo with `Issues: Read/Write`.
-- [ ] Store the PAT in the agent's credential vault / MCP config.
-- [ ] Enable Dependabot alerts under Security settings.
-- [ ] Add the `actions/stale` workflow (§13.3).
-- [ ] (Optional) Install GitHub MCP server for Claude/Cursor.
-- [ ] Test: run `gh issue create --title "[TEST] verifying setup" --body "test" --label "type:docs"`.
-- [ ] Close the test issue.
-- [ ] Tell your agent: *"From now on, file an issue for anything you see that isn't normal. Read AGENTS.md."*
-
-You now have a free, durable, multi-agent backlog system.
+- [ ] Generate fine-grained PAT scoped to repo with `Issues: R/W`.
+- [ ] Store PAT in agent vault / MCP config.
+- [ ] Enable Dependabot alerts (Settings → Security).
+- [ ] Add `actions/stale` workflow (§13.3).
+- [ ] (Optional) Install GitHub MCP server.
+- [ ] Smoke test: `gh issue create --title "[TEST] verify setup" --body "test" --label "type:docs"` then close.
+- [ ] Instruct agent: *"From now on, file an issue for anything you see that isn't normal. Read AGENTS.md."*
 
 ---
 
-## Final Notes
+## Limits to remember
 
-- **Cost:** $0/month, regardless of issue volume.
-- **Limits to remember:** 5,000 API calls/hour authenticated; 1,000/hour in Actions; free private repos limited to 3 *collaborators with write access* (does not affect agents that authenticate as the owner). For private repos with more than 3 humans needing write, upgrade to Pro/Team — Issues themselves remain free.
-- **The discipline, not the tool, is the work.** GitHub Issues makes filing free and frictionless. It's still up to the agents (and you) to actually file, dedupe, triage, and close. Re-read §2 if the backlog starts decaying.
-- **Trust the system.** Once issues are the SoT, your prompts can shrink: "harden the auth module" becomes "work through `priority:p1` issues with `area:auth`," and the agent's first action is to read the queue. That's the win.
+- **Cost:** $0/mo regardless of issue volume.
+- **API:** 5,000/hr user-auth; 1,000/hr `GITHUB_TOKEN` in Actions.
+- **Free private repos:** 3 collaborators w/ write access cap (does not affect agents authed as the owner). Issues themselves free.
+- **The discipline is the work.** GitHub Issues makes filing free and frictionless; the agents must actually file, dedupe, triage, close.
+- **Win condition:** once Issues are SoT, prompts shrink — "harden auth module" becomes "work `priority:p1` + `area:auth`."

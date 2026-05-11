@@ -36,7 +36,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let db = open_train_rocksdb(DB_DIR)?;
     let cfg = TrainingConfig {
         epochs: 1,
-        batch_size: 1,
+        batch_size: 2,
         random_seed: 0xCAFEBABEDEADBEEF,
         ..TrainingConfig::default()
     };
@@ -50,19 +50,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         holdout: HoldoutDataset { examples: vec![] },
     };
     trainer.train_one_epoch(&dataset, 0)?;
-    let report = verify_chain(&db, CF_MEJEPA_TRAIN_CERTS, 0, 99)?;
-    let violations = scan_target_collapse_invariant(&db, CF_MEJEPA_TRAIN_CERTS, 0, 99)?;
+    let expected_steps = 50;
+    let report = verify_chain(&db, CF_MEJEPA_TRAIN_CERTS, 0, expected_steps - 1)?;
+    let violations =
+        scan_target_collapse_invariant(&db, CF_MEJEPA_TRAIN_CERTS, 0, expected_steps - 1)?;
     let physical_count = count_cf(&db, CF_MEJEPA_TRAIN_CERTS)?;
     let evidence = json!({
         "source_of_truth": DB_DIR,
         "cf": CF_MEJEPA_TRAIN_CERTS,
-        "steps_expected": 100,
+        "steps_expected": expected_steps,
         "physical_cert_count": physical_count,
         "chain_verification": report,
         "target_collapse_violations": violations,
         "all_delta_components_in_range": true
     });
-    assert_eq!(physical_count, 100);
+    assert_eq!(physical_count, expected_steps);
     assert!(evidence["target_collapse_violations"]
         .as_array()
         .unwrap()
