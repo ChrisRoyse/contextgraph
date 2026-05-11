@@ -51,10 +51,8 @@ fn run(args: Args) -> Result<Value> {
 
     let happy = run_observe_happy_path(&args.output_root.join("happy-path"))?;
     let edge_empty = run_edge_empty_activation_window(&args.output_root.join("edge-empty-window"))?;
-    let edge_missing =
-        run_edge_missing_embedder(&args.output_root.join("edge-missing-embedder"))?;
-    let edge_stability =
-        run_edge_stability_zero(&args.output_root.join("edge-stability-zero"))?;
+    let edge_missing = run_edge_missing_embedder(&args.output_root.join("edge-missing-embedder"))?;
+    let edge_stability = run_edge_stability_zero(&args.output_root.join("edge-stability-zero"))?;
 
     let report = json!({
         "sourceOfTruth": {
