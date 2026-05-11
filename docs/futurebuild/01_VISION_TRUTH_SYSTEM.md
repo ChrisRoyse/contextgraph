@@ -59,10 +59,29 @@ The closed loop: predictions feed back to Claude Code as a `RealityPrediction` i
 **For an AI agent inside a Claude Code session writing code:**
 
 1. The agent makes an Edit. The PostToolUse hook fires; the shift is captured.
-2. The agent has not yet called any verification tool. ME-JEPA's shift subscriber has already pulled the shift, materialized the new panel, run `verify(patch_so_far, context)`, and persisted `RealityPrediction { verdict: Pass/Fail/OOD/Abstain/GuardRejected, confidence_interval, predicted_changed_tests, predicted_static_analysis_deltas }` to RocksDB.
-3. On the agent's next UserPromptSubmit, the hook injects the latest `RealityPrediction` for the working set into the agent's context. The agent now sees: "Reality predicts: 2 tests would flip from PASS→FAIL (test_separability_compound_models, test_nested_compound_separability) at 0.93 confidence; the GuardRejected violators are E_TypeGraph and E_DataFlow on chunk `astropy/modeling/separable.py:62-118`."
-4. The agent reads the prediction. Either it patches the predicted-failure path, or it asks `mcp__cgreality__mejepa_verify` for a fresh prediction after another edit, or it surfaces "this prediction is wrong because ..." (which becomes an active-learning event).
-5. When the agent eventually says "I'm done," `verify()` is called with the full patch. If the verdict is `Pass` at confidence ≥ ship-gate threshold AND every claim in the agent's response reconciles against the SHA chain, the agent's "done" signal is trusted; otherwise, the system surfaces the specific gap.
+2. The agent has not yet called any verification tool. ME-JEPA's shift subscriber has already pulled the shift, materialized the new panel, run `verify(patch_so_far, context)`, and persisted a full `RealityPrediction` to RocksDB.
+3. On the agent's next UserPromptSubmit, the hook injects the latest `RealityPrediction` for the working set into the agent's context. The agent now sees a structured report something like:
+   ```
+   Reality prediction for chunks affected since last prompt:
+     verdict: Fail (oracle pass confidence 0.07 [0.04, 0.12])
+     predicted failure modes (ranked):
+       1. astropy/modeling/separable.py:62-118 — predicted FAIL of test_separability_compound_models, test_nested_compound_separability (confidence 0.93)
+          root cause class: WrongAlgorithm — left-vs-right child indexing inverted in nested CompoundModel walk
+          violating embedders: E_TypeGraph, E_DataFlow
+       2. predicted regression: test_separability_simple may now be flaky (margin 0.6 → 0.4)
+     predicted edge cases not exercised by tests:
+       - empty CompoundModel branch (no test covers this; current code path raises IndexError)
+       - mutually-recursive CompoundModel (no test; predicted hang)
+     predicted latent bugs:
+       - shadowed local variable `idx` shadows outer-scope `idx` (low risk; warning class only)
+     predicted perf regressions: none above threshold
+     predicted security concerns: none
+     predicted tech debt added: 1 new TODO comment without owner
+     predicted dead code: function `_legacy_separable` now unreachable from any test
+     closest exemplars in corpus: psf__requests-2317 (similar inverted-traversal bug)
+   ```
+4. The agent reads the structured prediction. Either it patches the predicted-failure path, or it asks `mcp__cgreality__mejepa_verify` for a fresh prediction after another edit, or it surfaces "this prediction is wrong because ..." (which becomes an active-learning event).
+5. When the agent eventually says "I'm done," `verify()` is called with the full patch. If the verdict is `Pass` at confidence ≥ ship-gate threshold AND every claim in the agent's response reconciles against the SHA chain AND no high-severity Q4 concerns are above threshold, the agent's "done" signal is trusted; otherwise, the system surfaces the specific gap.
 
 **For an operator monitoring the system:**
 
