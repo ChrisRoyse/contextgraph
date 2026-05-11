@@ -2377,6 +2377,15 @@ fn build_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> 
         *by_oracle.entry(key.to_string()).or_default() += 1;
     }
     let expected_full_entries = index.split_assignments.len() * MutationCategory::all().len();
+    let full_ship_gate_300x8_passes = index.split_assignments.len() == 300
+        && index.entries.len() == 300 * MutationCategory::all().len()
+        && MutationCategory::all().iter().all(|category| {
+            by_category
+                .get(category.slug())
+                .copied()
+                .unwrap_or_default()
+                == 300
+        });
     let provenance = store.get_provenance(&index.corpus_version, &index.embedder_version)?;
     let leakage_failures = split_leakage_failures(index);
     let leakage_passes = leakage_failures.is_empty();
@@ -2392,6 +2401,14 @@ fn build_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> 
         "task_manifest_count": index.split_assignments.len(),
         "expected_full_phase0_entries": expected_full_entries,
         "full_phase0_complete": index.entries.len() == expected_full_entries,
+        "full_ship_gate_300x8": {
+            "required_task_count": 300,
+            "required_category_count": MutationCategory::all().len(),
+            "required_entry_count": 300 * MutationCategory::all().len(),
+            "actual_task_count": index.split_assignments.len(),
+            "actual_entry_count": index.entries.len(),
+            "passes": full_ship_gate_300x8_passes,
+        },
         "by_category": by_category,
         "by_bucket": by_bucket,
         "by_oracle": by_oracle,

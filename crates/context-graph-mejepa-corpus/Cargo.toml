@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 context-graph-mejepa-instruments = { path = "../context-graph-mejepa-instruments" }
+context-graph-core = { path = "../context-graph-core" }
 context-graph-paths = { path = "../context-graph-paths" }
 ctrlc = { version = "3.5", features = ["termination"] }
 fs2 = "0.4"

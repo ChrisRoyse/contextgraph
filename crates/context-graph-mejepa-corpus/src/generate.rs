@@ -62,7 +62,7 @@ pub enum MejepaCorpusError {
         context: String,
         source: std::io::Error,
     },
-    #[error("unsupported corpus language {0:?}; current supported set: [python]")]
+    #[error("unsupported corpus language {0:?}; supported set is the canonical 11-language mutation set")]
     UnsupportedLanguage(Language),
     #[error("corpus JSON failed at {context}: {message}")]
     Json { context: String, message: String },
@@ -463,7 +463,7 @@ fn validate_languages(languages: &[Language]) -> Result<(), MejepaCorpusError> {
         return Err(MutationError::invalid(
             "languages",
             "at least one language is required",
-            "pass Language::Python; current supported set: [python]",
+            "pass one or more canonical Language values from the 11-language mutation set",
         )
         .into());
     }

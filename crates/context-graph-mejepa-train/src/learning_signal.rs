@@ -202,6 +202,35 @@ pub struct DeltaXiComponents {
     pub constellation_violation_rate: f32,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SamplingWeightComponents {
+    pub base_weight: f32,
+    pub l_step: f32,
+    pub operator_override: bool,
+    pub age_days: f32,
+    pub age_decay: f32,
+    pub agent_surprise_severity_score: f32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CalibratedConfidenceComponents {
+    pub raw_confidence: f32,
+    pub convergence_rate: f32,
+    pub strategy_agreement: f32,
+    pub evidence_factor: f32,
+    pub delta_omega_mean: f32,
+    pub delta_xi_mean: f32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RewardComponents {
+    pub calibrated_confidence: f32,
+    pub mean_l_step_delta_xi: f32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LearningSignal {
     pub delta_p: f32,
@@ -560,6 +589,51 @@ pub fn sampling_weight(l_step: f32, operator_override: bool, age_days: f32, age_
     l_step.max(0.0) * override_factor * age_decay.powf(age_days.max(0.0))
 }
 
+pub fn sampling_weight_checked(c: SamplingWeightComponents) -> Result<f32, UtmlError> {
+    validate_nonnegative("sampling.base_weight", c.base_weight)?;
+    validate_unit("sampling.l_step", c.l_step)?;
+    validate_nonnegative("sampling.age_days", c.age_days)?;
+    validate_unit("sampling.age_decay", c.age_decay)?;
+    validate_unit(
+        "sampling.agent_surprise_severity_score",
+        c.agent_surprise_severity_score,
+    )?;
+    let override_factor = if c.operator_override { 6.0 } else { 1.0 };
+    let surprise_factor = 1.0 + c.agent_surprise_severity_score;
+    let value = c.base_weight
+        * c.l_step
+        * override_factor
+        * surprise_factor
+        * c.age_decay.powf(c.age_days);
+    validate_finite("sampling.weight", value)?;
+    Ok(value)
+}
+
+pub fn calibrated_confidence(c: CalibratedConfidenceComponents) -> Result<f32, UtmlError> {
+    validate_unit("confidence.raw_confidence", c.raw_confidence)?;
+    validate_unit("confidence.convergence_rate", c.convergence_rate)?;
+    validate_unit("confidence.strategy_agreement", c.strategy_agreement)?;
+    validate_unit("confidence.evidence_factor", c.evidence_factor)?;
+    validate_unit("confidence.delta_omega_mean", c.delta_omega_mean)?;
+    validate_unit("confidence.delta_xi_mean", c.delta_xi_mean)?;
+    let raw = c.raw_confidence
+        * c.convergence_rate
+        * c.strategy_agreement
+        * c.evidence_factor
+        * c.delta_omega_mean
+        * c.delta_xi_mean;
+    validate_finite("confidence.calibrated", raw)?;
+    Ok(raw.clamp(0.10, 0.95))
+}
+
+pub fn reward(c: RewardComponents) -> Result<f32, UtmlError> {
+    validate_unit("reward.calibrated_confidence", c.calibrated_confidence)?;
+    validate_unit("reward.mean_l_step_delta_xi", c.mean_l_step_delta_xi)?;
+    Ok(clamp01(
+        0.6 * c.calibrated_confidence + 0.4 * c.mean_l_step_delta_xi,
+    ))
+}
+
 pub fn should_drop(weight: f32, threshold: f32) -> bool {
     weight < threshold
 }
@@ -657,6 +731,17 @@ pub(crate) fn validate_unit(name: &str, value: f32) -> Result<(), UtmlError> {
         return Err(UtmlError::new(
             UtmlErrorCode::OutOfRange,
             format!("{name}={value} outside [0,1]"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_nonnegative(name: &str, value: f32) -> Result<(), UtmlError> {
+    validate_finite(name, value)?;
+    if value < 0.0 {
+        return Err(UtmlError::new(
+            UtmlErrorCode::OutOfRange,
+            format!("{name}={value} must be non-negative"),
         ));
     }
     Ok(())

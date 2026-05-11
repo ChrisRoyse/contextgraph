@@ -905,4 +905,43 @@ mod tests {
         println!("FSV_SUPERVISOR_STOPPED_STATUS={stopped_status}");
         assert!(stopped_status.contains("\"status\": \"stopped\""));
     }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn self_optimization_scheduler_panic_is_caught_by_supervisor_wrapper() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let paths =
+            crate::daemon_validate::validate_d_drive_root(temp.path()).expect("valid daemon root");
+        let db = Arc::new(open_mejepa_test_db(&paths.storage_db));
+        let config = FlywheelDaemonConfig::from_paths(paths, temp.path().to_path_buf());
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+        let runner: TaskRunner = Arc::new(|kind, _config, _db, _shutdown_rx| {
+            Box::pin(async move {
+                if kind == SupervisedTaskKind::SelfOptimizationScheduler {
+                    panic!("synthetic scheduler panic for FSV");
+                }
+                Ok(())
+            })
+        });
+        let mut tasks = JoinSet::new();
+        spawn_supervised_task(
+            &mut tasks,
+            SupervisedTaskKind::SelfOptimizationScheduler,
+            config,
+            db,
+            shutdown_rx,
+            runner,
+        );
+        let exit = tasks
+            .join_next()
+            .await
+            .expect("task exit")
+            .expect("task join");
+        assert_eq!(exit.kind, SupervisedTaskKind::SelfOptimizationScheduler);
+        match exit.status {
+            TaskExitStatus::Panic(detail) => {
+                assert!(detail.contains("synthetic scheduler panic for FSV"));
+            }
+            _ => panic!("expected panic task exit"),
+        }
+    }
 }

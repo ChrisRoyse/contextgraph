@@ -36,6 +36,9 @@ pub const CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS: &str = "CF_MEJEPA_ACTIVE_LEARNING
 pub const CF_MEJEPA_OOD_ESCALATIONS: &str = "CF_MEJEPA_OOD_ESCALATIONS";
 pub const CF_MEJEPA_RESEARCH_QUESTIONS: &str = "CF_MEJEPA_RESEARCH_QUESTIONS";
 pub const CF_MEJEPA_MODEL_PROMOTIONS: &str = "CF_MEJEPA_MODEL_PROMOTIONS";
+pub const CF_MEJEPA_PRODUCTION_TELEMETRY: &str = "CF_MEJEPA_PRODUCTION_TELEMETRY";
+pub const CF_MEJEPA_CONSTELLATION: &str = "CF_MEJEPA_CONSTELLATION";
+pub const CF_MEJEPA_GUARD_DECISIONS: &str = "CF_MEJEPA_GUARD_DECISIONS";
 
 pub const SELF_HEALING_CFS: &[&str] = &[
     CF_MEJEPA_FISHER_SNAPSHOTS,
@@ -78,6 +81,7 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_OOD_ESCALATIONS,
     CF_MEJEPA_RESEARCH_QUESTIONS,
     CF_MEJEPA_MODEL_PROMOTIONS,
+    CF_MEJEPA_PRODUCTION_TELEMETRY,
 ];
 
 pub const EVAL_CFS: &[&str] = &[
@@ -90,6 +94,7 @@ pub const EVAL_CFS: &[&str] = &[
     CF_MEJEPA_OOD_ESCALATIONS,
     CF_MEJEPA_RESEARCH_QUESTIONS,
     CF_MEJEPA_MODEL_PROMOTIONS,
+    CF_MEJEPA_PRODUCTION_TELEMETRY,
 ];
 
 pub const HYGIENE_CFS: &[&str] = &[
@@ -117,11 +122,14 @@ pub const HYGIENE_CFS: &[&str] = &[
     CF_MEJEPA_OOD_ESCALATIONS,
     CF_MEJEPA_RESEARCH_QUESTIONS,
     CF_MEJEPA_MODEL_PROMOTIONS,
+    CF_MEJEPA_PRODUCTION_TELEMETRY,
 ];
+
+pub const TCT_CFS: &[&str] = &[CF_MEJEPA_CONSTELLATION, CF_MEJEPA_GUARD_DECISIONS];
 
 pub fn all_hygiene_referenced_cfs() -> Vec<&'static str> {
     let mut names = SELF_HEALING_REFERENCED_CFS.to_vec();
-    for cf in INFER_CFS.iter().chain(HYGIENE_CFS.iter()) {
+    for cf in INFER_CFS.iter().chain(HYGIENE_CFS.iter()).chain(TCT_CFS.iter()) {
         if !names.contains(cf) {
             names.push(*cf);
         }

@@ -132,5 +132,8 @@ pub struct VramBudgetReport {
     pub total_bytes: u64,
     pub gpu_name: String,
     pub compute_capability: String,
+    pub telemetry_source: String,
+    pub nvidia_smi_status: String,
+    pub nvidia_smi_total_mb: Option<u64>,
     pub passes: bool,
 }

@@ -6,6 +6,7 @@ pub mod queue;
 pub mod report;
 pub mod runner;
 pub mod store;
+pub mod telemetry;
 pub mod types;
 
 pub use error::{EvalError, EvalErrorCode};
@@ -20,6 +21,7 @@ pub use queue::{
 pub use report::{seed_open_research_questions, write_weekly_report};
 pub use runner::{corpus_sha_from_holdout, EvalRunner};
 pub use store::RocksDbEvalStore;
+pub use telemetry::{LatencyTelemetry, ProductionTelemetryWindow};
 pub use types::{
     ActiveLearningSummary, AuxHeadDistillationSummary, ConformalHealthEntry, EvalConfig,
     EvalObservation, EvalProvenance, EvalReport, HoldoutPanel, MutationCategory,

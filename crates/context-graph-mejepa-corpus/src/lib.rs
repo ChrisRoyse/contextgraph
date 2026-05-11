@@ -50,6 +50,7 @@ pub use context_graph_mejepa_instruments::{
 
 mod compile_error;
 mod delete_test_call;
+mod generic_language_ops;
 pub mod generate;
 mod known_good;
 mod off_by_one;
@@ -236,7 +237,7 @@ impl Language {
     }
 
     pub const fn is_supported(self) -> bool {
-        matches!(self, Self::Python)
+        true
     }
 }
 
@@ -245,7 +246,7 @@ pub fn parse_languages(raw: &[String]) -> MutationResult<Vec<Language>> {
         return Err(MutationError::invalid(
             "languages",
             "at least one language slug is required",
-            "pass `python`; current supported set: [python]",
+            "pass one or more canonical language slugs from the 11-language mutation set",
         ));
     }
     let mut out = Vec::with_capacity(raw.len());
@@ -254,16 +255,9 @@ pub fn parse_languages(raw: &[String]) -> MutationResult<Vec<Language>> {
             MutationError::invalid(
                 "languages",
                 format!("unknown language slug `{value}`"),
-                "use one of: rust, python, javascript, typescript, go, java, c, cpp, c_sharp, ruby, php; current supported set: [python]",
+                "use one of: rust, python, javascript, typescript, go, java, c, cpp, c_sharp, ruby, php",
             )
         })?;
-        if !language.is_supported() {
-            return Err(MutationError::invalid(
-                "languages",
-                format!("language `{}` is not yet supported", language.slug()),
-                "drop unsupported languages; current supported set: [python]",
-            ));
-        }
         if !out.contains(&language) {
             out.push(language);
         }
@@ -341,7 +335,7 @@ impl CorpusProvenance {
             return Err(MutationError::invalid(
                 "languages",
                 "Phase 0 provenance contains a language without implemented mutation operators",
-                "enable only python until language-specific operators are complete",
+                "use only Language::all entries; all 11 parser-backed operators are implemented",
             ));
         }
         if self.mutation_count == 0 {
@@ -426,7 +420,7 @@ pub fn build_corpus_provenance(
         return Err(MutationError::invalid(
             "language_set",
             "unsupported language present in provenance request",
-            "drop unsupported languages; current supported set: [python]",
+            "use only Language::all entries; all 11 parser-backed operators are implemented",
         ));
     }
     let rows = store.iter_corpus_rows().map_err(|err| {
@@ -673,6 +667,18 @@ pub fn apply_mutation(
     primary_source: &str,
     config: MutationConfig,
 ) -> MutationResult<MutationOutcome> {
+    apply_mutation_for_language(Language::Python, category, primary_source, config)
+}
+
+pub fn apply_mutation_for_language(
+    language: Language,
+    category: MutationCategory,
+    primary_source: &str,
+    config: MutationConfig,
+) -> MutationResult<MutationOutcome> {
+    if language != Language::Python {
+        return generic_language_ops::apply(language, category, primary_source, config);
+    }
     if primary_source.is_empty() {
         return Err(MutationError::invalid(
             "primary_source",

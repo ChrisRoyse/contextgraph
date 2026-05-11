@@ -1,6 +1,7 @@
 use super::error::{EvalError, EvalErrorCode};
 use super::graph::PatchSimilarityGraph;
 use super::queue::{ActiveLearningLabel, ActiveLearningQueueState};
+use super::telemetry::ProductionTelemetryWindow;
 use super::types::{EvalReport, OpenResearchQuestionStatus};
 use crate::calibration::cf;
 use rocksdb::{IteratorMode, WriteOptions, DB};
@@ -11,8 +12,8 @@ use std::sync::Arc;
 pub use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
     CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_EVAL_REPORTS, CF_MEJEPA_MODEL_PROMOTIONS,
-    CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_RESEARCH_QUESTIONS, CF_MEJEPA_TASK_GRAPH,
-    CF_MEJEPA_TASK_GRAPH_HISTORY,
+    CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_PRODUCTION_TELEMETRY, CF_MEJEPA_RESEARCH_QUESTIONS,
+    CF_MEJEPA_TASK_GRAPH, CF_MEJEPA_TASK_GRAPH_HISTORY,
 };
 
 #[derive(Clone)]
@@ -131,6 +132,41 @@ impl RocksDbEvalStore {
         &self,
     ) -> Result<Option<Vec<OpenResearchQuestionStatus>>, EvalError> {
         self.get_bin(CF_MEJEPA_RESEARCH_QUESTIONS, b"open")
+    }
+
+    pub fn persist_production_telemetry(
+        &self,
+        window: &ProductionTelemetryWindow,
+    ) -> Result<(), EvalError> {
+        window.validate()?;
+        self.put_readback_bin(
+            CF_MEJEPA_PRODUCTION_TELEMETRY,
+            window.window_id.as_bytes(),
+            window,
+        )
+    }
+
+    pub fn load_production_telemetry(
+        &self,
+        window_id: &str,
+    ) -> Result<Option<ProductionTelemetryWindow>, EvalError> {
+        if window_id.trim().is_empty() {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "production telemetry window_id must be non-empty",
+            ));
+        }
+        self.get_bin(CF_MEJEPA_PRODUCTION_TELEMETRY, window_id.as_bytes())
+    }
+
+    pub fn count_production_telemetry(&self) -> Result<usize, EvalError> {
+        let cf_handle = cf(&self.db, CF_MEJEPA_PRODUCTION_TELEMETRY).map_err(EvalError::from)?;
+        let mut count = 0usize;
+        for item in self.db.iterator_cf(cf_handle, IteratorMode::Start) {
+            item?;
+            count += 1;
+        }
+        Ok(count)
     }
 
     fn put_readback_bin<T: Serialize + DeserializeOwned>(
