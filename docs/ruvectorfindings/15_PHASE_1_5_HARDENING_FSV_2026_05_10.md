@@ -1,5 +1,7 @@
 # 15 — Phase 1-5 Hardening + FSV Refresh (2026-05-10)
 
+> **🔄 Superseded as the "current ledger" by [`16_PHASE_6_8_HARDENING_FSV_2026_05_11.md`](./16_PHASE_6_8_HARDENING_FSV_2026_05_11.md).** Doc 15 remains authoritative for **Phases 1-5 evidence**; Phases 6/7/8 + UTML carriers (REQ-UTML-06/07/08) shipped on 2026-05-11 and are tracked in doc 16. The "Still to do" list in §3 of this doc is partially OBSOLETE: Phase 6 hygiene ops, Phase 7 shift subscriber, Phase 8 evaluation harness, and the pairwise MI / continual-backprop / state-transfer T carriers have all shipped end-to-end. See doc 16 for current ledger and remaining blindspots.
+
 > **Status:** Phases 1-5 have been re-run through manual Full State Verification on the current workspace. The operational surfaces for 11-language AST chunking, embedder registry/digest/VRAM/routing, 15-slot panel materialization, predictor, training, UTML `L_step`, inference, TCT, and self-healing all have readback evidence. This doc is the current phase-1-to-5 evidence ledger and blindspot register.
 
 ## Root-cause fixes landed
