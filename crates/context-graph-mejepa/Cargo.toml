@@ -13,8 +13,10 @@ candle-nn = { workspace = true }
 bincode = { workspace = true }
 chrono = { workspace = true }
 clap = { version = "4.5", features = ["derive"] }
+anyhow = { workspace = true }
 context-graph-cuda = { path = "../context-graph-cuda" }
 context-graph-embeddings = { path = "../context-graph-embeddings" }
+context-graph-mejepa-corpus = { path = "../context-graph-mejepa-corpus" }
 context-graph-mejepa-instruments = { path = "../context-graph-mejepa-instruments" }
 context-graph-mejepa-tct = { path = "../context-graph-mejepa-tct" }
 context-graph-mejepa-cf = { path = "../context-graph-mejepa-cf" }

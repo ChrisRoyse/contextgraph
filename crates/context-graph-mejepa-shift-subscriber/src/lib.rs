@@ -6,6 +6,7 @@ mod cache;
 mod error;
 mod models;
 mod runner;
+mod shift_transform;
 mod subscriber;
 mod tail;
 mod watermark;

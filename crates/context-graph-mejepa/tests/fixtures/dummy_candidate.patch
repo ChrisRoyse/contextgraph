@@ -1,0 +1,2 @@
+def phase7_dod_dummy():
+    return 4

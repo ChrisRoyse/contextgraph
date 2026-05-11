@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tracing::error;
 
-use crate::models::{decode_session_hex32, ShiftOutcome};
+use crate::models::{decode_session_hex32, LatencySnapshot, ShiftOutcome};
 use crate::{Result, ShiftLogTail, ShiftSubscriber, SubscriberError};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -17,6 +17,7 @@ pub struct SubscriberRunSummary {
     pub observed: u64,
     pub dropped_l_step_below_threshold: u64,
     pub lag_alert_active: bool,
+    pub latency_ms: LatencySnapshot,
     pub outcomes: Vec<ShiftOutcome>,
     pub status: serde_json::Value,
 }
@@ -56,12 +57,14 @@ impl ShiftSubscriber {
             }
         }
         let (processed, observed, dropped, lag_alert_active) = self.metrics().snapshot_counts();
+        let latency_ms = self.metrics().snapshot_latency_ms();
         let status = self.capture_minimal_status()?;
         Ok(SubscriberRunSummary {
             processed,
             observed,
             dropped_l_step_below_threshold: dropped,
             lag_alert_active,
+            latency_ms,
             outcomes,
             status,
         })
@@ -115,12 +118,14 @@ impl ShiftSubscriber {
             }
         }
         let (processed, observed, dropped, lag_alert_active) = self.metrics().snapshot_counts();
+        let latency_ms = self.metrics().snapshot_latency_ms();
         let status = self.capture_minimal_status()?;
         Ok(SubscriberRunSummary {
             processed,
             observed,
             dropped_l_step_below_threshold: dropped,
             lag_alert_active,
+            latency_ms,
             outcomes,
             status,
         })

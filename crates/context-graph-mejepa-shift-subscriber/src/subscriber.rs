@@ -3,11 +3,12 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use context_graph_mejepa::{
-    build_deterministic_compiler, materialize_inference_panels, open_infer_rocksdb, sha256_bytes,
-    AstDiff, CalibrationExample, CalibrationStore, DiffHunk, Language, MeJepaInferConfig,
-    MejepaStore, PatchBundle, RocksDbInferStore, TaskContext, TaskEnvironment, TaskId, TestId,
+    build_deterministic_compiler, materialize_inference_panels, open_infer_rocksdb,
+    CalibrationExample, CalibrationStore, MeJepaInferConfig, MejepaStore, PatchBundle,
+    RealityPrediction, RocksDbInferStore, TaskContext, TrainCertSummary,
 };
 use context_graph_mejepa_instruments::materialize::TimeStep;
 use context_graph_mejepa_instruments::panel_json::{PanelEnvelope, PanelProvenance};
@@ -20,6 +21,9 @@ use tracing::info;
 use crate::models::{
     encode_session_hex, ShiftEntry, ShiftOutcome, SkipReason, SubscriberMetrics, UtmlFactorBundle,
     WatermarkRecord,
+};
+use crate::shift_transform::{
+    required_f32_array, shift_to_inference, timestamp_ns_to_ms, utml_bundle,
 };
 use crate::{Result, SubscriberError, WatermarkWriter};
 
@@ -133,6 +137,7 @@ impl ShiftSubscriber {
     }
 
     pub fn process_shift(&self, entry: &ShiftEntry, replay: bool) -> Result<ShiftOutcome> {
+        let started = Instant::now();
         if let Some(existing) = self.watermark_writer.read(entry.session_id)? {
             if existing.source_log_path.as_deref()
                 == Some(&entry.source_log_path.display().to_string())
@@ -148,7 +153,9 @@ impl ShiftSubscriber {
         let (patch, context, source_sha, attempt_id) =
             shift_to_inference(entry, self.config.repo_root.clone())?;
         let compiler = self.compiler()?;
-        let prediction = compiler.compile(&patch, &context)?;
+        let mut prediction = compiler.compile(&patch, &context)?;
+        prediction.created_at_unix_ms = timestamp_ns_to_ms(entry.timestamp_unix_ns)?;
+        let prediction = RealityPrediction::try_new(prediction)?;
         self.store.write_live_prediction(&prediction)?;
         let readback = MejepaStore::read_live_predictions(&self.store, context.session_id, 1000)?;
         if !readback.iter().any(|row| {
@@ -161,7 +168,7 @@ impl ShiftSubscriber {
             });
         }
         self.persist_panels(&patch, &context, &attempt_id, source_sha)?;
-        let observed = self.persist_oracle_example(entry, &prediction)?;
+        let observed = self.persist_oracle_example(entry, &prediction, replay)?;
         let record = WatermarkRecord {
             session_id: encode_session_hex(entry.session_id),
             last_consumed_shift_id: entry.shift_id.0.clone(),
@@ -179,11 +186,14 @@ impl ShiftSubscriber {
         if observed {
             self.metrics.mark_observed();
         }
+        let latency_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
+        self.metrics.record_latency_ms(latency_ms);
         info!(
             error_code = "MEJEPA_SHIFT_SUBSCRIBER_PROCESSED",
             shift_id = %entry.shift_id.0,
             session_id = %record.session_id,
             prediction_id = %hex::encode(prediction.prediction_id),
+            latency_ms,
             "processed ME-JEPA shift"
         );
         Ok(ShiftOutcome::Predicted {
@@ -191,6 +201,7 @@ impl ShiftSubscriber {
             observed,
             watermark_key,
             watermark_offset: record.last_consumed_byte_offset,
+            latency_ms,
         })
     }
 
@@ -208,6 +219,7 @@ impl ShiftSubscriber {
             "observed_count": observed,
             "dropped_l_step_below_threshold_count": dropped,
             "lag_alert_active": lag_alert_active,
+            "latency_ms": self.metrics.snapshot_latency_ms(),
             "last_panic": Value::Null,
             "last_watermark_per_session": last_watermark_per_session
         }))
@@ -263,14 +275,11 @@ impl ShiftSubscriber {
         &self,
         entry: &ShiftEntry,
         prediction: &context_graph_mejepa::RealityPrediction,
+        replay: bool,
     ) -> Result<bool> {
         let Some(bundle) = utml_bundle(&entry.verification)? else {
             return Ok(false);
         };
-        if bundle.l_step < self.config.l_step_observe_threshold {
-            self.metrics.mark_l_step_dropped();
-            return Ok(false);
-        }
         let actual = required_f32_array(&entry.verification, "actual_test_pass")?;
         let example = CalibrationExample {
             language: prediction.language,
@@ -303,174 +312,60 @@ impl ShiftSubscriber {
                 "oracle verdict readback mismatch",
             ));
         }
+        self.persist_train_cert(entry, &bundle, replay)?;
+        if bundle.l_step < self.config.l_step_observe_threshold {
+            self.metrics.mark_l_step_dropped();
+            tracing::info!(
+                error_code = "MEJEPA_SHIFT_OBSERVE_DROPPED",
+                shift_id = %entry.shift_id.0,
+                l_step = bundle.l_step,
+                threshold = self.config.l_step_observe_threshold,
+                "oracle verdict persisted but online observe skipped below L_step threshold"
+            );
+            return Ok(false);
+        }
         Ok(true)
     }
-}
 
-fn shift_to_inference(
-    entry: &ShiftEntry,
-    repo_root: PathBuf,
-) -> Result<(PatchBundle, TaskContext, [u8; 32], String)> {
-    let attempt_id = required_string(&entry.subject, "task_id")?;
-    let path = required_string(&entry.subject, "path")?;
-    let language: Language =
-        serde_json::from_value(Value::String(required_string(&entry.subject, "language")?))?;
-    let before = required_string(&entry.before, "text")?;
-    let after = required_string(&entry.after, "text")?;
-    let pre_sha = sha256_text(&before);
-    let post_sha = sha256_text(&after);
-    validate_optional_sha(&entry.before, "sha256", pre_sha)?;
-    validate_optional_sha(&entry.after, "sha256", post_sha)?;
-    let commit_message = required_string(&entry.delta_summary, "commit_message")?;
-    let witness_hex = required_string(&entry.verification, "witness_chain_segment_hex")?;
-    let witness_chain_segment = hex::decode(&witness_hex).map_err(|err| {
-        SubscriberError::invalid(
-            "verification.witness_chain_segment_hex",
-            format!("hex decode failed: {err}"),
-        )
-    })?;
-    let patch_sha = sha256_bytes(after.as_bytes());
-    let patch = PatchBundle::try_new(
-        AstDiff {
-            hunks: vec![DiffHunk {
-                path: PathBuf::from(&path),
-                pre_sha,
-                post_sha,
-                before,
-                after,
-            }],
-        },
-        witness_chain_segment,
-        commit_message,
-        patch_sha,
-    )?;
-    let tests = required_string_array(&entry.subject, "tests")?
-        .into_iter()
-        .map(TestId)
-        .collect::<Vec<_>>();
-    let context = TaskContext {
-        task_id: TaskId(attempt_id.clone()),
-        session_id: entry.session_id,
-        language,
-        problem_statement: required_string(&entry.subject, "problem_statement")?,
-        tests,
-        environment: TaskEnvironment {
-            repo_root,
-            python_version: entry
-                .subject
-                .get("python_version")
-                .and_then(Value::as_str)
-                .map(ToOwned::to_owned),
-            os: required_string(&entry.subject, "os")?,
-        },
-        claim_graph: None,
-        skill_citations: Vec::new(),
-    };
-    context.validate()?;
-    Ok((patch, context, post_sha, attempt_id))
-}
-
-fn utml_bundle(value: &Value) -> Result<Option<UtmlFactorBundle>> {
-    let Some(l_step) = value.get("l_step") else {
-        return Ok(None);
-    };
-    let bundle = UtmlFactorBundle {
-        l_step: value_to_f32(l_step, "verification.l_step")?,
-        delta_p: value_to_f32(required_value(value, "delta_p")?, "verification.delta_p")?,
-        delta_k: value_to_f32(required_value(value, "delta_k")?, "verification.delta_k")?,
-        delta_omega: value_to_f32(
-            required_value(value, "delta_omega")?,
-            "verification.delta_omega",
-        )?,
-        delta_xi: value_to_f32(required_value(value, "delta_xi")?, "verification.delta_xi")?,
-    };
-    for (field, val) in [
-        ("l_step", bundle.l_step),
-        ("delta_p", bundle.delta_p),
-        ("delta_k", bundle.delta_k),
-        ("delta_omega", bundle.delta_omega),
-        ("delta_xi", bundle.delta_xi),
-    ] {
-        if !val.is_finite() || !(0.0..=1.0).contains(&val) {
+    fn persist_train_cert(
+        &self,
+        entry: &ShiftEntry,
+        bundle: &UtmlFactorBundle,
+        replay: bool,
+    ) -> Result<()> {
+        let cf = self
+            .db
+            .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS)
+            .ok_or_else(|| {
+                SubscriberError::invalid("rocksdb.column_family", "missing CF_MEJEPA_TRAIN_CERTS")
+            })?;
+        let cert = TrainCertSummary {
+            step: timestamp_ns_to_ms(entry.timestamp_unix_ns)? as u64,
+            delta_omega: bundle.delta_omega,
+            delta_xi: bundle.delta_xi,
+            witness_offset: entry.byte_offset,
+        };
+        cert.validate()?;
+        let key = format!(
+            "cert:phase7:{}:{}",
+            entry.shift_id.0,
+            if replay { "replay" } else { "live" }
+        );
+        let value = bincode::serialize(&cert)?;
+        let mut opts = WriteOptions::default();
+        opts.set_sync(true);
+        self.db.put_cf_opt(cf, key.as_bytes(), &value, &opts)?;
+        let readback = self.db.get_cf(cf, key.as_bytes())?.ok_or_else(|| {
+            SubscriberError::invalid("train_cert.readback", "train cert row absent")
+        })?;
+        if readback != value {
             return Err(SubscriberError::invalid(
-                format!("verification.{field}"),
-                "UTML factor must be finite and in [0, 1]",
+                "train_cert.readback",
+                "train cert readback mismatch",
             ));
         }
+        Ok(())
     }
-    Ok(Some(bundle))
-}
-
-fn required_value<'a>(value: &'a Value, field: &str) -> Result<&'a Value> {
-    value
-        .get(field)
-        .ok_or_else(|| SubscriberError::invalid(field, format!("missing required field {field:?}")))
-}
-
-fn required_string(value: &Value, field: &str) -> Result<String> {
-    required_value(value, field)?
-        .as_str()
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| SubscriberError::invalid(field, "field must be a string"))
-}
-
-fn required_string_array(value: &Value, field: &str) -> Result<Vec<String>> {
-    required_value(value, field)?
-        .as_array()
-        .ok_or_else(|| SubscriberError::invalid(field, "field must be an array"))?
-        .iter()
-        .enumerate()
-        .map(|(idx, item)| {
-            item.as_str().map(ToOwned::to_owned).ok_or_else(|| {
-                SubscriberError::invalid(format!("{field}[{idx}]"), "array item must be a string")
-            })
-        })
-        .collect()
-}
-
-fn required_f32_array(value: &Value, field: &str) -> Result<Vec<f32>> {
-    required_value(value, field)?
-        .as_array()
-        .ok_or_else(|| SubscriberError::invalid(field, "field must be an array"))?
-        .iter()
-        .enumerate()
-        .map(|(idx, item)| value_to_f32(item, &format!("{field}[{idx}]")))
-        .collect()
-}
-
-fn value_to_f32(value: &Value, field: &str) -> Result<f32> {
-    let number = value
-        .as_f64()
-        .ok_or_else(|| SubscriberError::invalid(field, "field must be numeric"))?;
-    let out = number as f32;
-    if !out.is_finite() {
-        return Err(SubscriberError::invalid(field, "field must be finite"));
-    }
-    Ok(out)
-}
-
-fn validate_optional_sha(value: &Value, field: &str, expected: [u8; 32]) -> Result<()> {
-    let Some(raw) = value.get(field).and_then(Value::as_str) else {
-        return Ok(());
-    };
-    let raw = raw.strip_prefix("sha256:").unwrap_or(raw);
-    let mut bytes = [0u8; 32];
-    hex::decode_to_slice(raw, &mut bytes).map_err(|err| {
-        SubscriberError::invalid(field, format!("sha256 hex decode failed: {err}"))
-    })?;
-    if bytes != expected {
-        return Err(SubscriberError::invalid(
-            field,
-            "declared sha256 does not match the text payload",
-        ));
-    }
-    Ok(())
-}
-
-fn sha256_text(value: &str) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(value.as_bytes());
-    hasher.finalize().into()
 }
 
 fn chrono_like_now_seconds() -> i64 {

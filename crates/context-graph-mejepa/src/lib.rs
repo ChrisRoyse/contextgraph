@@ -27,6 +27,7 @@ pub mod predictor;
 pub mod provenance;
 pub mod store;
 pub mod types;
+pub mod verify_cli;
 pub mod vram;
 
 pub use calibration::*;
