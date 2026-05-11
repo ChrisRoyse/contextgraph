@@ -61,7 +61,8 @@ pub(crate) fn ensure_repo_cache(
 }
 
 pub(crate) fn candidate_python_paths(
-    work_dir: &Path,
+    repo_cache: &Path,
+    base_commit: &str,
     changed_paths: &[String],
 ) -> MutationResult<Vec<String>> {
     let mut seen = BTreeSet::new();
@@ -71,7 +72,13 @@ pub(crate) fn candidate_python_paths(
             out.push(path.clone());
         }
     }
-    for path in list_python_files(work_dir)? {
+    let mut tracked_python = list_python_files_at_commit(repo_cache, base_commit)?;
+    tracked_python.sort_by(|left, right| {
+        candidate_python_priority(left)
+            .cmp(&candidate_python_priority(right))
+            .then_with(|| left.cmp(right))
+    });
+    for path in tracked_python {
         if seen.insert(path.clone()) {
             out.push(path);
         }
@@ -79,13 +86,59 @@ pub(crate) fn candidate_python_paths(
     Ok(out)
 }
 
-pub(crate) fn list_python_files(work_dir: &Path) -> MutationResult<Vec<String>> {
-    let output = run_git_capture(work_dir, &["ls-files", "--", "*.py"], "list Python files")?;
+pub(crate) fn list_python_files_at_commit(
+    repo_cache: &Path,
+    base_commit: &str,
+) -> MutationResult<Vec<String>> {
+    let output = run_git_capture(
+        repo_cache,
+        &["ls-tree", "-r", "--name-only", base_commit],
+        "list Python files at base commit",
+    )?;
     Ok(output
         .lines()
         .filter(|line| !line.trim().is_empty())
+        .filter(|line| is_python_path(line))
         .map(ToString::to_string)
         .collect())
+}
+
+pub(crate) fn parse_patch_file_paths(patch: &str) -> MutationResult<Vec<String>> {
+    let mut paths = Vec::new();
+    for line in patch.lines() {
+        if !line.starts_with("diff --git ") {
+            continue;
+        }
+        let parts = line.split_whitespace().collect::<Vec<_>>();
+        if parts.len() < 4 {
+            return Err(MutationError::invalid(
+                "patch.diff_header",
+                format!("invalid diff header: {line}"),
+                "pass a complete git-format unified diff",
+            ));
+        }
+        for raw in [parts[2], parts[3]] {
+            if raw == "/dev/null" {
+                continue;
+            }
+            let path = raw
+                .strip_prefix("a/")
+                .or_else(|| raw.strip_prefix("b/"))
+                .unwrap_or(raw);
+            validate_relative_repo_path(path)?;
+            if !paths.iter().any(|existing| existing == path) {
+                paths.push(path.to_string());
+            }
+        }
+    }
+    if paths.is_empty() {
+        return Err(MutationError::invalid(
+            "patch.diff_header",
+            "patch has no diff --git file headers",
+            "pass a complete git-format unified diff with changed file paths",
+        ));
+    }
+    Ok(paths)
 }
 
 pub(crate) fn parse_changed_paths(patch: &str) -> MutationResult<Vec<String>> {
@@ -116,6 +169,45 @@ pub(crate) fn parse_changed_paths(patch: &str) -> MutationResult<Vec<String>> {
         ));
     }
     Ok(paths)
+}
+
+pub(crate) fn read_git_blob(
+    repo_cache: &Path,
+    base_commit: &str,
+    path: &str,
+) -> MutationResult<Option<Vec<u8>>> {
+    validate_relative_repo_path(path)?;
+    let object = format!("{base_commit}:{path}");
+    let exists = Command::new("git")
+        .arg("-C")
+        .arg(repo_cache)
+        .arg("cat-file")
+        .arg("-e")
+        .arg(&object)
+        .status()
+        .map_err(|err| git_error("git cat-file spawn", err.to_string()))?;
+    if !exists.success() {
+        return Ok(None);
+    }
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo_cache)
+        .arg("show")
+        .arg(&object)
+        .output()
+        .map_err(|err| git_error("read git blob", err.to_string()))?;
+    if !output.status.success() {
+        return Err(git_error(
+            "read git blob",
+            format!(
+                "exit_code={:?}; stdout_tail={}; stderr_tail={}",
+                output.status.code(),
+                tail(&output.stdout),
+                tail(&output.stderr)
+            ),
+        ));
+    }
+    Ok(Some(output.stdout))
 }
 
 pub(crate) fn run_git(
@@ -177,21 +269,34 @@ pub(crate) fn run_git_capture(
 }
 
 pub(crate) fn write_readback(path: &Path, text: &str) -> MutationResult<()> {
-    fs::write(path, text).map_err(|err| {
+    write_readback_bytes(path, text.as_bytes())
+}
+
+pub(crate) fn write_readback_bytes(path: &Path, bytes: &[u8]) -> MutationResult<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| {
+            MutationError::op_failed(
+                "source.mkdir",
+                format!("failed creating file:{} parent: {err}", path.display()),
+                "ensure the worktree path is writable",
+            )
+        })?;
+    }
+    fs::write(path, bytes).map_err(|err| {
         MutationError::op_failed(
             "source.write",
             format!("failed writing file:{}: {err}", path.display()),
             "ensure the worktree is writable",
         )
     })?;
-    let readback = fs::read_to_string(path).map_err(|err| {
+    let readback = fs::read(path).map_err(|err| {
         MutationError::op_failed(
             "source.readback",
             format!("failed reading file:{} after write: {err}", path.display()),
             "ensure the worktree is readable",
         )
     })?;
-    if readback != text {
+    if readback != bytes {
         return Err(MutationError::op_failed(
             "source.readback",
             format!("readback mismatch after writing file:{}", path.display()),
@@ -302,6 +407,48 @@ fn is_python_path(path: &str) -> bool {
     path.ends_with(".py")
 }
 
+fn candidate_python_priority(path: &str) -> u8 {
+    let first = path.split('/').next().unwrap_or(path);
+    if first.starts_with('.') {
+        return 6;
+    }
+    if matches!(
+        first,
+        "bench"
+            | "benchmark"
+            | "benchmarks"
+            | "bin"
+            | "ci"
+            | "dev"
+            | "doc"
+            | "docs"
+            | "example"
+            | "examples"
+            | "maint"
+            | "release"
+            | "script"
+            | "scripts"
+            | "tool"
+            | "tools"
+    ) {
+        return 5;
+    }
+    if first == "tests"
+        || first == "test"
+        || path.contains("/tests/")
+        || path.contains("/test/")
+        || path.ends_with("_test.py")
+        || path.ends_with("_tests.py")
+        || path.ends_with("test.py")
+    {
+        return 4;
+    }
+    if !path.contains('/') {
+        return 3;
+    }
+    1
+}
+
 fn git_error(operation: &'static str, message: impl Into<String>) -> MutationError {
     MutationError::op_failed(
         "git",
@@ -355,16 +502,6 @@ impl WorkDirGuard {
     pub(crate) fn path(&self) -> &Path {
         &self.path
     }
-
-    pub(crate) fn path_str(&self) -> MutationResult<&str> {
-        self.path.to_str().ok_or_else(|| {
-            MutationError::invalid(
-                "work_dir",
-                "work directory path is not valid UTF-8",
-                "use a UTF-8 work root for source-backed patch generation",
-            )
-        })
-    }
 }
 
 impl Drop for WorkDirGuard {
@@ -372,5 +509,33 @@ impl Drop for WorkDirGuard {
         if self.path.exists() {
             let _ = fs::remove_dir_all(&self.path);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::candidate_python_priority;
+
+    #[test]
+    fn production_python_paths_rank_before_ci_docs_and_tests() {
+        let mut paths = [
+            ".ci/parse_durations_log.py",
+            "bin/authors_update.py",
+            "tests/test_api.py",
+            "docs/conf.py",
+            "setup.py",
+            "sympy/core/basic.py",
+        ];
+        paths.sort_by(|left, right| {
+            candidate_python_priority(left)
+                .cmp(&candidate_python_priority(right))
+                .then_with(|| left.cmp(right))
+        });
+        assert_eq!(paths[0], "sympy/core/basic.py");
+        assert_eq!(paths[1], "setup.py");
+        assert_eq!(paths[2], "tests/test_api.py");
+        assert_eq!(paths[3], "bin/authors_update.py");
+        assert_eq!(paths[4], "docs/conf.py");
+        assert_eq!(paths[5], ".ci/parse_durations_log.py");
     }
 }
