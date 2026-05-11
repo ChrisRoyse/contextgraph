@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 
+use context_graph_mejepa_instruments::OracleVerdict;
 use serde::{Deserialize, Serialize};
 
 use crate::error::MejepaInferError;
@@ -8,6 +9,16 @@ use crate::error::MejepaInferError;
 const MAX_ID_BYTES: usize = 512;
 const MAX_TESTS: usize = 1024;
 const MAX_CHUNKS: usize = 4096;
+/// REQ-FLYWHEEL-10 bounds. Empirically chosen to match the 21-active-embedder
+/// ceiling, the 100k chunk fanout cap (`MAX_EXEMPLARS_PER_BUCKET`), and the
+/// 64 KiB ledger payload limit. Numbers must stay loose enough to never reject
+/// real production traffic, but tight enough to fail-closed on accidental DoS.
+const MAX_EMBEDDERS_PER_PANEL: usize = 256;
+const MAX_PAIRWISE_SIGNALS: usize = MAX_EMBEDDERS_PER_PANEL * MAX_EMBEDDERS_PER_PANEL;
+const MAX_EXEMPLARS_PER_BUCKET: usize = 100_000;
+const MAX_AGENT_FEEDBACK_PAYLOAD_BYTES: usize = 65_536;
+const MAX_AGENT_EXPLANATION_BYTES: usize = 4_096;
+const MAX_AGENT_ID_BYTES: usize = 256;
 const MAX_ENTITIES: usize = 4096;
 const MAX_SKILL_CITATIONS: usize = 512;
 const MAX_PATCH_HUNKS: usize = 4096;
@@ -708,6 +719,439 @@ impl SkillCitation {
     }
 }
 
+// =============================================================================
+// REQ-FLYWHEEL-10 — value types for `CF_MEJEPA_DDA_SIGNALS`,
+// `CF_MEJEPA_FAILURE_EXEMPLARS`, and `CF_MEJEPA_AGENT_FEEDBACK`.
+//
+// All three structs persist as serde-JSON values keyed by bincode tuples.
+// Each `validate()` is the fail-closed gate enforced before write — never
+// store a value that round-trips into invalid state.
+// =============================================================================
+
+/// 128-bit prediction identifier (matches `RealityPrediction::prediction_id`).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
+#[serde(transparent)]
+pub struct PredictionId(pub [u8; 16]);
+
+/// 128-bit feedback identifier; minted client-side so retries dedupe.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
+#[serde(transparent)]
+pub struct FeedbackId(pub [u8; 16]);
+
+/// 256-bit panel content hash (matches `RealityPrediction::source_panel_sha`).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
+#[serde(transparent)]
+pub struct PanelId(pub [u8; 32]);
+
+/// 256-bit witness chain hash binding the event to a tamper-evident segment.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
+#[serde(transparent)]
+pub struct WitnessHash(pub [u8; 32]);
+
+/// Stable agent identifier (e.g. `"claude-opus-4.7"`, `"cursor-agent-v2"`).
+/// String-shaped so non-Anthropic agents integrate without schema changes.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
+#[serde(transparent)]
+pub struct AgentId(pub String);
+
+impl AgentId {
+    pub fn try_new(value: impl Into<String>) -> Result<Self, MejepaInferError> {
+        let value = value.into();
+        validate_bounded_id("agent_id", &value, MAX_AGENT_ID_BYTES)?;
+        Ok(Self(value))
+    }
+}
+
+/// REQ-FLYWHEEL-12 sampling-weight bump severity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SurpriseSeverity {
+    Low,
+    Medium,
+    High,
+    Catastrophic,
+}
+
+impl SurpriseSeverity {
+    /// `severity_score ∈ [0, 1]` per REQ-FLYWHEEL-12: sampling weight becomes
+    /// `1 + 2 * severity_score`, so the bump stays in `[1, 3]`.
+    pub fn severity_score(self) -> f32 {
+        match self {
+            Self::Low => 0.2,
+            Self::Medium => 0.5,
+            Self::High => 0.8,
+            Self::Catastrophic => 1.0,
+        }
+    }
+}
+
+/// Agent's interpretation of how their lived reality compared to the
+/// prediction. `Surprise` is the only variant that drives sampling bumps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeedbackKind {
+    Confirmed,
+    Surprise,
+    Omission,
+    Calibration,
+}
+
+/// What actually happened — measured, not predicted. Captured at the time the
+/// agent files feedback so the train-side observer doesn't need to re-derive.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ActualOutcome {
+    pub oracle_outcome: OracleOutcome,
+    pub failed_tests: Vec<TestId>,
+    pub runtime_ms: Option<u64>,
+    pub notes: String,
+}
+
+impl ActualOutcome {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        if self.failed_tests.len() > MAX_TESTS {
+            return Err(MejepaInferError::InvalidInput {
+                field: "actual_outcome.failed_tests".to_string(),
+                detail: format!(
+                    "failed_tests has {} entries; max supported is {}",
+                    self.failed_tests.len(),
+                    MAX_TESTS
+                ),
+            });
+        }
+        for (idx, test) in self.failed_tests.iter().enumerate() {
+            validate_non_empty_id(&format!("actual_outcome.failed_tests[{idx}]"), &test.0)?;
+        }
+        if let Some(ms) = self.runtime_ms {
+            if ms > 24 * 60 * 60 * 1000 {
+                return Err(MejepaInferError::InvalidInput {
+                    field: "actual_outcome.runtime_ms".to_string(),
+                    detail: format!("runtime_ms must be <= 86_400_000; got {ms}"),
+                });
+            }
+        }
+        validate_bounded_text(
+            "actual_outcome.notes",
+            &self.notes,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )?;
+        Ok(())
+    }
+}
+
+/// Coarse-grained label of how an attempt failed. Source of the label is
+/// `TASK-PREDICT-LABEL-001` (pytest traceback parser); the corpus also writes
+/// these labels when generating failure-mode-tagged mutations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureModeClass {
+    AssertionMismatch,
+    Exception,
+    TypeError,
+    NameError,
+    Timeout,
+    Crash,
+    CompileError,
+    Flaky,
+    NoTestsCollected,
+    Other,
+}
+
+/// Deterministic signature of which embedders flagged a chunk-level violation.
+/// Canonicalized to a sorted distinct `Vec<EmbedderId>` so semantically-equal
+/// signature sets hash to the same CF key.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct EmbedderViolationSignature {
+    pub embedder_ids: Vec<EmbedderId>,
+}
+
+impl EmbedderViolationSignature {
+    pub fn canonicalize(mut self) -> Result<Self, MejepaInferError> {
+        if self.embedder_ids.len() > MAX_EMBEDDERS_PER_PANEL {
+            return Err(MejepaInferError::InvalidInput {
+                field: "embedder_violation_signature.embedder_ids".to_string(),
+                detail: format!(
+                    "{} embedder ids; max is {}",
+                    self.embedder_ids.len(),
+                    MAX_EMBEDDERS_PER_PANEL
+                ),
+            });
+        }
+        for (idx, eid) in self.embedder_ids.iter().enumerate() {
+            validate_non_empty_id(
+                &format!("embedder_violation_signature.embedder_ids[{idx}]"),
+                &eid.0,
+            )?;
+        }
+        self.embedder_ids
+            .sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
+        self.embedder_ids.dedup();
+        Ok(self)
+    }
+}
+
+/// CF_MEJEPA_DDA_SIGNALS value: per-embedder + pairwise signal block per chunk.
+///
+/// Invariants enforced by `validate`:
+/// - `per_embedder_cosine.len() == N` where `N` is the active-embedder count
+/// - `pairwise_cosine_upper.len() == N * (N - 1) / 2` (strict upper triangle)
+/// - `blind_spot_z_scores.len() == pairwise_cosine_upper.len()`
+/// - `pairwise_mi_upper` is either empty (no weekly MI computed yet) or matches
+///   the upper-triangle length above (cached-weekly per TECH-FLYWHEEL.md §6)
+/// - every float is finite; cosines clamp to `[-1.0, 1.0]`
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct DdaSignals {
+    pub per_embedder_cosine: Vec<f32>,
+    pub pairwise_cosine_upper: Vec<f32>,
+    pub pairwise_mi_upper: Vec<f32>,
+    pub blind_spot_z_scores: Vec<f32>,
+}
+
+impl DdaSignals {
+    pub fn try_new(value: Self) -> Result<Self, MejepaInferError> {
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub fn embedder_count(&self) -> usize {
+        self.per_embedder_cosine.len()
+    }
+
+    pub fn expected_upper_triangle_len(&self) -> usize {
+        let n = self.embedder_count();
+        if n < 2 {
+            0
+        } else {
+            n * (n - 1) / 2
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        let n = self.per_embedder_cosine.len();
+        if n > MAX_EMBEDDERS_PER_PANEL {
+            return Err(MejepaInferError::InvalidInput {
+                field: "dda_signals.per_embedder_cosine".to_string(),
+                detail: format!(
+                    "per_embedder_cosine has {n} entries; max is {MAX_EMBEDDERS_PER_PANEL}",
+                ),
+            });
+        }
+        for (idx, value) in self.per_embedder_cosine.iter().enumerate() {
+            validate_cosine(&format!("dda_signals.per_embedder_cosine[{idx}]"), *value)?;
+        }
+        let expected = self.expected_upper_triangle_len();
+        if self.pairwise_cosine_upper.len() != expected {
+            return Err(MejepaInferError::DimMismatch {
+                expected,
+                actual: self.pairwise_cosine_upper.len(),
+                context: "dda_signals.pairwise_cosine_upper must equal N*(N-1)/2".to_string(),
+            });
+        }
+        if expected > MAX_PAIRWISE_SIGNALS {
+            return Err(MejepaInferError::InvalidInput {
+                field: "dda_signals.pairwise_cosine_upper".to_string(),
+                detail: format!(
+                    "{expected} pairwise entries exceed the MAX_PAIRWISE_SIGNALS cap of {MAX_PAIRWISE_SIGNALS}",
+                ),
+            });
+        }
+        for (idx, value) in self.pairwise_cosine_upper.iter().enumerate() {
+            validate_cosine(&format!("dda_signals.pairwise_cosine_upper[{idx}]"), *value)?;
+        }
+        if !self.pairwise_mi_upper.is_empty() && self.pairwise_mi_upper.len() != expected {
+            return Err(MejepaInferError::DimMismatch {
+                expected,
+                actual: self.pairwise_mi_upper.len(),
+                context: "dda_signals.pairwise_mi_upper must equal N*(N-1)/2 or be empty"
+                    .to_string(),
+            });
+        }
+        for (idx, value) in self.pairwise_mi_upper.iter().enumerate() {
+            if !value.is_finite() || *value < 0.0 {
+                return Err(MejepaInferError::NanDetected {
+                    nan_source: format!("dda_signals.pairwise_mi_upper[{idx}]"),
+                    detail: format!("mi must be finite and non-negative; got {value}"),
+                });
+            }
+        }
+        if self.blind_spot_z_scores.len() != expected {
+            return Err(MejepaInferError::DimMismatch {
+                expected,
+                actual: self.blind_spot_z_scores.len(),
+                context: "dda_signals.blind_spot_z_scores must equal N*(N-1)/2".to_string(),
+            });
+        }
+        for (idx, value) in self.blind_spot_z_scores.iter().enumerate() {
+            if !value.is_finite() {
+                return Err(MejepaInferError::NanDetected {
+                    nan_source: format!("dda_signals.blind_spot_z_scores[{idx}]"),
+                    detail: format!("z-score must be finite; got {value}"),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// CF_MEJEPA_FAILURE_EXEMPLARS row. Each row points at a concrete chunk that
+/// exhibited the keyed `(FailureModeClass, EmbedderViolationSignature)`; the
+/// CF value is `Vec<ExemplarRef>`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExemplarRef {
+    pub task_id: TaskId,
+    pub mutation_kind: crate::eval::MutationCategory,
+    pub chunk_id: ChunkId,
+    pub oracle_verdict: OracleVerdict,
+    pub witness_hash: WitnessHash,
+}
+
+impl ExemplarRef {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        validate_non_empty_id("exemplar_ref.task_id", &self.task_id.0)?;
+        validate_non_empty_id("exemplar_ref.chunk_id", &self.chunk_id.0)?;
+        if self.oracle_verdict.per_test.is_empty() && self.oracle_verdict.exception.is_none() {
+            return Err(MejepaInferError::InvalidInput {
+                field: "exemplar_ref.oracle_verdict".to_string(),
+                detail: "oracle_verdict must record at least one test outcome or an exception"
+                    .to_string(),
+            });
+        }
+        if self.oracle_verdict.per_test.len() > MAX_TESTS {
+            return Err(MejepaInferError::InvalidInput {
+                field: "exemplar_ref.oracle_verdict.per_test".to_string(),
+                detail: format!(
+                    "per_test has {} entries; max is {}",
+                    self.oracle_verdict.per_test.len(),
+                    MAX_TESTS
+                ),
+            });
+        }
+        Ok(())
+    }
+}
+
+/// Validate the full `Vec<ExemplarRef>` payload before persistence.
+pub fn validate_exemplar_bucket(exemplars: &[ExemplarRef]) -> Result<(), MejepaInferError> {
+    if exemplars.len() > MAX_EXEMPLARS_PER_BUCKET {
+        return Err(MejepaInferError::InvalidInput {
+            field: "exemplar_bucket".to_string(),
+            detail: format!(
+                "{} exemplars in one bucket; max is {}",
+                exemplars.len(),
+                MAX_EXEMPLARS_PER_BUCKET
+            ),
+        });
+    }
+    for (idx, exemplar) in exemplars.iter().enumerate() {
+        exemplar.validate().map_err(|err| match err {
+            MejepaInferError::InvalidInput { field, detail } => MejepaInferError::InvalidInput {
+                field: format!("exemplar_bucket[{idx}].{field}"),
+                detail,
+            },
+            other => other,
+        })?;
+    }
+    Ok(())
+}
+
+/// CF_MEJEPA_AGENT_FEEDBACK value: append-only ledger entry recording an
+/// agent's interpretation of a prior `RealityPrediction`. Keyed by
+/// `(prediction_id, agent_id, ts_millis)` so per-prediction lookups are O(1)
+/// and time-ordered iteration is the natural CF iterator order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurpriseEvent {
+    pub feedback_id: FeedbackId,
+    pub prediction_id: PredictionId,
+    pub agent_id: AgentId,
+    /// Milliseconds since Unix epoch — stable cross-process serialization. The
+    /// key encoder uses this same value so primary key and payload stay in
+    /// sync across restore.
+    pub ts_millis: i64,
+    pub feedback_kind: FeedbackKind,
+    pub agent_explanation: String,
+    pub actual_outcome: Option<ActualOutcome>,
+    pub severity: SurpriseSeverity,
+    pub extra_structured_data: serde_json::Value,
+    pub witness_hash: WitnessHash,
+}
+
+impl SurpriseEvent {
+    pub fn try_new(value: Self) -> Result<Self, MejepaInferError> {
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        if self.agent_id.0.trim().is_empty() {
+            return Err(MejepaInferError::InvalidInput {
+                field: "surprise_event.agent_id".to_string(),
+                detail: "agent_id must be non-empty".to_string(),
+            });
+        }
+        validate_bounded_id(
+            "surprise_event.agent_id",
+            &self.agent_id.0,
+            MAX_AGENT_ID_BYTES,
+        )?;
+        if self.ts_millis < 0 {
+            return Err(MejepaInferError::InvalidInput {
+                field: "surprise_event.ts_millis".to_string(),
+                detail: format!("ts_millis must be non-negative; got {}", self.ts_millis),
+            });
+        }
+        validate_bounded_text(
+            "surprise_event.agent_explanation",
+            &self.agent_explanation,
+            MAX_AGENT_EXPLANATION_BYTES,
+        )?;
+        if let Some(outcome) = &self.actual_outcome {
+            outcome.validate()?;
+        }
+        if matches!(
+            self.feedback_kind,
+            FeedbackKind::Surprise | FeedbackKind::Omission
+        ) && self.actual_outcome.is_none()
+        {
+            return Err(MejepaInferError::InvalidInput {
+                field: "surprise_event.actual_outcome".to_string(),
+                detail: format!(
+                    "actual_outcome is required when feedback_kind={:?}",
+                    self.feedback_kind
+                ),
+            });
+        }
+        let payload_bytes = serde_json::to_vec(&self.extra_structured_data).map_err(|err| {
+            MejepaInferError::InvalidInput {
+                field: "surprise_event.extra_structured_data".to_string(),
+                detail: format!("extra_structured_data must serialize to JSON: {err}"),
+            }
+        })?;
+        if payload_bytes.len() > MAX_AGENT_FEEDBACK_PAYLOAD_BYTES {
+            return Err(MejepaInferError::InvalidInput {
+                field: "surprise_event.extra_structured_data".to_string(),
+                detail: format!(
+                    "extra_structured_data serialized to {} bytes; max is {}",
+                    payload_bytes.len(),
+                    MAX_AGENT_FEEDBACK_PAYLOAD_BYTES
+                ),
+            });
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EntityType {
@@ -738,22 +1182,42 @@ pub(crate) fn validate_probability(field: &str, value: f32) -> Result<(), Mejepa
 }
 
 fn validate_non_empty_id(field: &str, value: &str) -> Result<(), MejepaInferError> {
+    validate_bounded_id(field, value, MAX_ID_BYTES)
+}
+
+fn validate_bounded_id(field: &str, value: &str, max_bytes: usize) -> Result<(), MejepaInferError> {
     if value.trim().is_empty() {
         return Err(MejepaInferError::InvalidInput {
             field: field.to_string(),
             detail: "must be non-empty".to_string(),
         });
     }
-    if value.len() > MAX_ID_BYTES {
+    if value.len() > max_bytes {
         return Err(MejepaInferError::InvalidInput {
             field: field.to_string(),
-            detail: format!("exceeds {MAX_ID_BYTES} bytes"),
+            detail: format!("exceeds {max_bytes} bytes"),
         });
     }
     if value.bytes().any(|b| b < 0x20 || b == 0x7f) {
         return Err(MejepaInferError::InvalidInput {
             field: field.to_string(),
             detail: "contains a control character".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_cosine(field: &str, value: f32) -> Result<(), MejepaInferError> {
+    if !value.is_finite() {
+        return Err(MejepaInferError::NanDetected {
+            nan_source: field.to_string(),
+            detail: format!("{field} is {value}; must be finite"),
+        });
+    }
+    if !(-1.0..=1.0).contains(&value) {
+        return Err(MejepaInferError::InvalidInput {
+            field: field.to_string(),
+            detail: format!("cosine value out of [-1, 1]; got {value}"),
         });
     }
     Ok(())

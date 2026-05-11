@@ -2,7 +2,7 @@
 task_id: TASK-FLYWHEEL-006
 title: Register CF_MEJEPA_DDA_SIGNALS, CF_MEJEPA_FAILURE_EXEMPLARS, CF_MEJEPA_AGENT_FEEDBACK
 phase: A
-status: open
+status: complete
 blocked_by: []
 blocks: [TASK-PREDICT-002, TASK-ENRICH-002]
 effort: 0.5d

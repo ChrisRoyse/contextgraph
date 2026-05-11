@@ -40,6 +40,25 @@ pub const CF_MEJEPA_PRODUCTION_TELEMETRY: &str = "CF_MEJEPA_PRODUCTION_TELEMETRY
 pub const CF_MEJEPA_CONSTELLATION: &str = "CF_MEJEPA_CONSTELLATION";
 pub const CF_MEJEPA_GUARD_DECISIONS: &str = "CF_MEJEPA_GUARD_DECISIONS";
 
+// REQ-FLYWHEEL-10 — three new column families for the data flywheel.
+//
+// String values match the existing `CF_MEJEPA_*` upper-case convention so the
+// "constant name == on-disk CF name" invariant continues to hold across the
+// whole registry (the lower-case strings in TECH-FLYWHEEL.md §6 are spec
+// illustrations only; the live mejepa-cf convention takes precedence).
+pub const CF_MEJEPA_DDA_SIGNALS: &str = "CF_MEJEPA_DDA_SIGNALS";
+pub const CF_MEJEPA_FAILURE_EXEMPLARS: &str = "CF_MEJEPA_FAILURE_EXEMPLARS";
+pub const CF_MEJEPA_AGENT_FEEDBACK: &str = "CF_MEJEPA_AGENT_FEEDBACK";
+
+/// REQ-FLYWHEEL-10 grouping. Daemon openers extend their CF descriptor list
+/// with this slice so the three new CFs land on disk during the first daemon
+/// startup, even if no other code path has touched them yet.
+pub const FLYWHEEL_CFS: &[&str] = &[
+    CF_MEJEPA_DDA_SIGNALS,
+    CF_MEJEPA_FAILURE_EXEMPLARS,
+    CF_MEJEPA_AGENT_FEEDBACK,
+];
+
 pub const SELF_HEALING_CFS: &[&str] = &[
     CF_MEJEPA_FISHER_SNAPSHOTS,
     CF_MEJEPA_DRIFT_WINDOW,
@@ -133,6 +152,7 @@ pub fn all_hygiene_referenced_cfs() -> Vec<&'static str> {
         .iter()
         .chain(HYGIENE_CFS.iter())
         .chain(TCT_CFS.iter())
+        .chain(FLYWHEEL_CFS.iter())
     {
         if !names.contains(cf) {
             names.push(*cf);
@@ -152,5 +172,28 @@ mod tests {
         sorted.sort_unstable();
         sorted.dedup();
         assert_eq!(names.len(), sorted.len());
+    }
+
+    #[test]
+    fn flywheel_cfs_are_registered_in_daemon_opener() {
+        let names = all_hygiene_referenced_cfs();
+        for cf in FLYWHEEL_CFS {
+            assert!(
+                names.contains(cf),
+                "FLYWHEEL CF {cf} missing from daemon opener; \
+                 daemon startup would fail to create the column family on \
+                 first run and downstream put_cf calls would panic.",
+            );
+        }
+    }
+
+    #[test]
+    fn flywheel_cf_names_match_const_idents() {
+        // REQ-FLYWHEEL-10 contract: the on-disk CF name MUST equal the
+        // constant identifier, so renaming the constant forces a deliberate
+        // (and grep-visible) data migration rather than a silent rename.
+        assert_eq!(CF_MEJEPA_DDA_SIGNALS, "CF_MEJEPA_DDA_SIGNALS");
+        assert_eq!(CF_MEJEPA_FAILURE_EXEMPLARS, "CF_MEJEPA_FAILURE_EXEMPLARS");
+        assert_eq!(CF_MEJEPA_AGENT_FEEDBACK, "CF_MEJEPA_AGENT_FEEDBACK");
     }
 }
