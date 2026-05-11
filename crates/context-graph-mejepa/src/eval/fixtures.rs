@@ -129,7 +129,7 @@ fn seed_calibration_and_train_certs(
     let examples = (0..40)
         .map(|idx| CalibrationExample {
             language: Language::Python,
-            predicted_test_pass: vec![if idx % 2 == 0 { 0.95 } else { 0.05 }],
+            predicted_test_pass: vec![0.50],
             actual_test_pass: vec![if idx % 2 == 0 { 1.0 } else { 0.0 }],
         })
         .collect::<Vec<_>>();
