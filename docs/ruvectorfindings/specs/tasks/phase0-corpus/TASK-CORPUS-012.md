@@ -6,7 +6,7 @@
   <title>KnownGood + WrongFile Mutation Operators (Python)</title>
   <status>complete</status>
   <implementation_state as_of="2026-05-09">
-    Shipped: `known_good.rs` (13 LOC — echo input + ignore seed) and `wrong_file.rs` (40 LOC — replace primary_source with `alternate_source` after `ensure_parseable_python` gate; `WrongFile` is the only category that requires the `MutationConfig::alternate_source` field per `apply_mutation` in `lib.rs:252-262`). Tests in `tests.rs`; FSV at `/tmp/contextgraph-mejepa-corpus-fsv/`.
+    Shipped: `known_good.rs` (13 LOC — echo input + ignore seed) and `wrong_file.rs` (40 LOC — replace primary_source with `alternate_source` after `ensure_parseable_python` gate; `WrongFile` is the only category that requires the `MutationConfig::alternate_source` field per `apply_mutation` in `lib.rs:252-262`). Tests in `tests.rs`; FSV at `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/`.
   </implementation_state>
   <layer>logic</layer>
   <sequence>12</sequence>

@@ -140,7 +140,7 @@ Per-attempt wallclock budget: `CGREALITY_PER_ATTEMPT_DEADLINE_SECS` env var, def
 | `--run-until-resolved` | `false` | line 277 |
 | `--smoke-test` | `false` | line 279 |
 | `--official-eval-each-attempt` | `false` (loop refuses without this set) | line 281 |
-| `--swebench-python` | `/home/cabdru/.cache/contextgraph-swebench/venv/bin/python` | line 283 |
+| `--swebench-python` | `/mnt/d/contextgraph/cache/contextgraph-swebench/venv/bin/python` | line 283 |
 | `--official-timeout` | `900` s | line 288 |
 | `--official-max-workers` | `1` | line 290 |
 | `--official-cache-level` | `env` | line 292 |

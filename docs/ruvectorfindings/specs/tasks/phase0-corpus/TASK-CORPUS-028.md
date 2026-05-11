@@ -85,7 +85,7 @@ leakage_check status. Always exits 0 (no Docker re-run).
 
   <constraints>
     - Read-only: NEVER writes to RocksDB, the corpus dir, or
-      `/tmp/contextgraph-mejepa-corpus-fsv/`.
+      `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/`.
     - JSON keys use snake_case, sorted (BTreeMap not HashMap)
       so output is reproducible.
     - `exception_classes` map keys are the lowercase slugs

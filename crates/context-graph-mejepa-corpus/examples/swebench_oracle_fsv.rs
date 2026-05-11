@@ -9,8 +9,8 @@
 //   - <run_root>/gold.<run_id>.json
 //   - <run_root>/logs/run_evaluation/<run_id>/gold/sympy__sympy-20590/
 //       report.json, run_instance.log, test_output.txt, patch.diff
-//   - /tmp/contextgraph-mejepa-corpus-fsv/swebench-oracle/oracle-store/
-//   - /tmp/contextgraph-mejepa-corpus-fsv/swebench-oracle-evidence.json
+//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/swebench-oracle/oracle-store/
+//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/swebench-oracle-evidence.json
 //
 // Expected: with --predictions_path=gold the harness applies the dataset's
 // canonical fix; the per-instance report.json reports
@@ -51,13 +51,17 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 const SMOKE_INSTANCE: &str = "sympy__sympy-20590";
-const FSV_ROOT: &str = "/tmp/contextgraph-mejepa-corpus-fsv";
+const FSV_SUBDIR: &str = "fsv/context-graph-mejepa-corpus";
 
-fn default_venv_python() -> PathBuf {
+fn fsv_root() -> FsvResult<PathBuf> {
+    Ok(context_graph_paths::ensure_subdir(FSV_SUBDIR)?)
+}
+
+fn default_venv_python() -> FsvResult<PathBuf> {
     if let Ok(custom) = std::env::var("CGSWEBENCH_VENV") {
-        return PathBuf::from(custom).join("bin").join("python");
+        return Ok(PathBuf::from(custom).join("bin").join("python"));
     }
-    PathBuf::from("/home/cabdru/.cache/contextgraph-swebench/venv/bin/python")
+    Ok(context_graph_paths::ensure_subdir("cache/contextgraph-swebench")?.join("venv/bin/python"))
 }
 
 fn iso_now() -> String {
@@ -181,7 +185,7 @@ fn assert_all_pass_resolved(result: &SwebenchOracleResult) -> FsvResult<()> {
 fn run_for_mode(
     mode: SwebenchPredictionMode,
 ) -> FsvResult<(SwebenchOracleResult, PathBuf, String)> {
-    let venv = default_venv_python();
+    let venv = default_venv_python()?;
     if let Some(reason) = check_preconditions(&venv, SMOKE_INSTANCE) {
         return Err(format!("PRECONDITION: {reason}").into());
     }
@@ -194,9 +198,7 @@ fn run_for_mode(
         },
         iso_now()
     );
-    let run_root = PathBuf::from(FSV_ROOT)
-        .join("swebench-oracle")
-        .join(&run_id);
+    let run_root = fsv_root()?.join("swebench-oracle").join(&run_id);
     if run_root.exists() {
         fs::remove_dir_all(&run_root)?;
     }
@@ -235,7 +237,7 @@ fn run_gold() -> FsvResult<Value> {
     )?;
 
     // Persist verdict to RocksDB and read back.
-    let store_root = PathBuf::from(FSV_ROOT)
+    let store_root = fsv_root()?
         .join("swebench-oracle")
         .join(&run_id)
         .join("oracle-store");
@@ -402,7 +404,7 @@ fn run_custom_with_gold_diff(gold_diff_path: &Path) -> FsvResult<Value> {
 
 fn main() -> FsvResult<()> {
     println!("[swebench-oracle-fsv] checked_at = {}", iso_now());
-    let venv = default_venv_python();
+    let venv = default_venv_python()?;
     if let Some(reason) = check_preconditions(&venv, SMOKE_INSTANCE) {
         let payload = json!({
             "checked_at": iso_now(),
@@ -411,7 +413,7 @@ fn main() -> FsvResult<()> {
             "reason": reason,
             "remediation": "Run scripts/swebench_lite_ops.py preflight then pull the smoke image.",
         });
-        let path = Path::new(FSV_ROOT).join("swebench-oracle-evidence.json");
+        let path = fsv_root()?.join("swebench-oracle-evidence.json");
         write_evidence(&path, &payload)?;
         println!("{}", serde_json::to_string_pretty(&payload)?);
         return Ok(());
@@ -438,7 +440,7 @@ fn main() -> FsvResult<()> {
         "gold": gold_payload,
         "custom": custom_payload,
     });
-    let path = Path::new(FSV_ROOT).join("swebench-oracle-evidence.json");
+    let path = fsv_root()?.join("swebench-oracle-evidence.json");
     write_evidence(&path, &evidence)?;
     println!("[swebench-oracle-fsv] wrote {}", path.display());
     println!("{}", serde_json::to_string_pretty(&evidence)?);

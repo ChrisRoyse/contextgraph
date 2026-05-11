@@ -28,7 +28,7 @@ Implements all 16 functional REQ-CORPUS-NN requirements (cross-linked in `../_tr
   - All eight mutation operators: `known_good`, `subtle_flip`, `off_by_one`, `swap_variable`, `delete_test_call`, `wrong_file`, `over_engineer`, `compile_error`.
   - Source-backed patch generation pipeline (`patch_mutation.rs`, `source_patch.rs`, `source_patch_support.rs`) for the batch CLI — adds the structural ability to mutate canonical fix sources even when the official diff has no `+` lines suitable for in-line operator targets (commits `b6b4810c`, `3f46ff78`).
   - Reusable `generate_swe_bench_mutation_corpus` library entry with a real SWE-bench Docker oracle implementation and source-backed mutation/persistence path.
-  - CLI subcommands `generate` / `verify` / `stats` / `smoke` / `merge` / `normalize` / `prepare-images` / `cleanup` (bin/mejepa-corpus.rs), including SIGINT cancellation during generation, row-by-row durable index/store writes, `verify --sample-fraction` oracle resampling, targeted `verify --sample-key task_id|category`, real-data smoke metrics, shard merge with physical RocksDB readback, and fresh-output corpus normalization for canonical verdict repairs.
+  - CLI subcommands `generate` / `verify` / `stats` / `smoke` / `merge` / `normalize` / `prepare-images` / `cleanup` (bin/mejepa-corpus.rs), including SIGINT cancellation during generation, row-by-row durable index/store writes, `verify --sample-fraction` oracle resampling, targeted `verify --sample-key task_id|category`, real-data smoke metrics, shard merge with physical RocksDB readback, fresh-output corpus normalization for canonical verdict repairs, and a fail-closed corpus-root guard that rejects corpus paths outside `/mnt/d/contextgraph/corpus/`.
   - Five FSV examples: `mejepa_corpus_fsv.rs`, `split_fsv.rs`, `oracle_fsv.rs`, `oracle_store_fsv.rs`, `swebench_oracle_fsv.rs` (examples/).
   - End-to-end Docker FSV against `swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest` in both gold and custom prediction modes (memory: project_phase0_mejepa_mutation_corpus.md, 2026-05-09e).
   - 103 mejepa-corpus crate tests passing; focused `cargo clippy -p context-graph-mejepa-corpus --no-deps --lib --bins --examples -- -D warnings` green.
@@ -37,9 +37,9 @@ Implements all 16 functional REQ-CORPUS-NN requirements (cross-linked in `../_tr
     - `/tmp/contextgraph-mejepa-corpus-smoke-rowloop-20260509/smoke-evidence.json` — row-loop progress smoke, 2 categories, 100% Docker oracle resample.
     - `/tmp/contextgraph-mejepa-corpus-merge-smoke-20260509/verify-evidence.json` — merge smoke, merged RocksDB row/provenance readback plus 100% Docker oracle resample.
 
-- **Operational production complete:** the full 300-instance × 8-category corpus is materialized under `/tmp/contextgraph-mejepa-corpus-prod-merged-normalized-20260509/` with 2400 entries, 300 entries per mutation category, 300 selected task ids, RocksDB CF counts `mejepa_mutation_corpus=2400`, `mejepa_oracle_verdicts=2400`, `mejepa_corpus_provenance=1`, `full_phase0_complete=true`, and final corpus SHA `f5a413eadbb1fa08f7fa51fd05c704eebe7ba51789c3ac0194592825dc2dae33`.
+- **2026-05-11 operational correction:** the prior full 300-instance × 8-category corpus was verified under `/tmp/contextgraph-mejepa-corpus-prod-merged-normalized-20260509/` with 2400 entries, 300 entries per mutation category, 300 selected task ids, RocksDB CF counts `mejepa_mutation_corpus=2400`, `mejepa_oracle_verdicts=2400`, `mejepa_corpus_provenance=1`, `full_phase0_complete=true`, and final corpus SHA `f5a413eadbb1fa08f7fa51fd05c704eebe7ba51789c3ac0194592825dc2dae33`; that path was ephemeral `/tmp` state and is gone after reboot. The current durable rerun target is `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/`. Docker image prewarm evidence shows all 300 SWE-bench Lite images present on the D-backed Docker store, but the active 2400-row source of truth is not considered present until the D-backed RocksDB store and `index.json` are regenerated and read back.
 
-Tasks below are implemented in the crate and the production corpus has passed source-of-truth verification. The final `verify-evidence.json` includes four real Docker oracle samples, including targeted readback of the previously unstable `sympy__sympy-13146|wrong_file` row.
+Tasks below are implemented in the crate. The previous production corpus passed source-of-truth verification, but its storage location was wrong. New production evidence must be captured from the D-backed corpus root, including a real Docker oracle sample and targeted readback of the previously unstable `sympy__sympy-13146|wrong_file` row.
 
 ## Dependency Graph
 
@@ -191,15 +191,15 @@ graph TD
 | TASK-CORPUS-021 | ✅ complete | OracleStore uses atomic `put_corpus_row` WriteBatch for mutation+verdict writes | FSV reads back both CF rows after reopen; invalid keys fail before partial write |
 | TASK-CORPUS-022 | ✅ complete | provenance compute/finalize/verify helpers and `put_provenance` shipped | provenance row persisted and independently read from `CF_MEJEPA_CORPUS_PROVENANCE` |
 | TASK-CORPUS-023 | ✅ complete | reusable `generate_swe_bench_mutation_corpus` library entry shipped | real CLI path exercises the same storage/provenance/oracle primitives; unsupported-language library test passes |
-| TASK-CORPUS-024 | ✅ complete | examples/mejepa_corpus_fsv.rs shipped | FSV evidence at /tmp/contextgraph-mejepa-corpus-fsv/ |
+| TASK-CORPUS-024 | ✅ complete | examples/mejepa_corpus_fsv.rs shipped | FSV evidence under `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/` |
 | TASK-CORPUS-025 | ✅ complete | examples/split_fsv.rs shipped | split-evidence.json + split-assignments.json under /tmp |
 | TASK-CORPUS-026 | ✅ complete | CLI generate subcommand shipped + source-backed patch generation + SIGINT trap | one-instance real SWE-bench Docker corpus generation completed; `complete: true` only after final row |
 | TASK-CORPUS-027 | ✅ complete | CLI verify subcommand shipped with `--sample-fraction` and targeted `--sample-key task_id\|category` | readback verification re-runs sampled SWE-bench Docker oracle; targeted row verification, tampered patch, invalid sample key, and invalid sample fraction edge cases fail closed |
 | TASK-CORPUS-028 | ✅ complete | CLI stats subcommand shipped (entries-by-bucket / entries-by-category / store CF counts / provenance) | output asserted by FSV and one-instance CLI stats readback |
 
-**Progress: 28/28 code tasks complete (100%). Operational full-batch corpus production (300 instances × 8 categories) is complete and verified.**
+**Progress: 28/28 code tasks complete (100%). Operational full-batch corpus production (300 instances × 8 categories) must be regenerated on D-backed durable storage because the previously verified `/tmp` source of truth was lost after reboot.**
 
-End-to-end primitive plumbing for the corpus generator is shipped and proven on real SWE-bench Lite smoke runs and the full 2400-row production corpus. The active source of truth is `/tmp/contextgraph-mejepa-corpus-prod-merged-normalized-20260509/`.
+End-to-end primitive plumbing for the corpus generator is shipped and proven on real SWE-bench Lite smoke runs and the prior full 2400-row production corpus. The active source of truth for new work is `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/`, plus its `oracle-store/` RocksDB CFs and `index.json`; `/tmp` corpus paths are invalid for durable evidence.
 
 ## Status legend
 
@@ -241,16 +241,16 @@ The implementation critical path is complete:
 001 → 004 → 010 → 016 → 017 → 020 → 021 → 022 → 023 → 026 → 027 → 028
 ```
 
-The operational critical path is complete:
+The operational critical path must be rerun on the D-backed source of truth:
 
 ```
-Generate shard0 + shard1 → merge shards into one 2400-row corpus/store/provenance → normalize stable SWE-bench verdict hashes → run verify with deterministic and targeted Docker oracle samples → inspect RocksDB/index/evidence output
+Generate D-backed corpus → persist row-by-row RocksDB/index evidence → run verify with deterministic and targeted Docker oracle samples → inspect RocksDB/index/evidence output → update current SHA
 ```
 
 ## Parallel opportunities
 
-- **Operational production:** complete for Python SWE-bench Lite Phase 0.
-- **Post-production audit:** independent RocksDB CF count/readback, patch hash audit, provenance SHA comparison, stats, and targeted Docker oracle verification all passed on the normalized corpus.
+- **Operational production:** rerunning for Python SWE-bench Lite Phase 0 on `/mnt/d/contextgraph/corpus/`.
+- **Post-production audit:** independent RocksDB CF count/readback, patch hash audit, provenance SHA comparison, stats, and targeted Docker oracle verification are required before marking the D-backed corpus complete.
 
 ## Reality-boundary discipline
 

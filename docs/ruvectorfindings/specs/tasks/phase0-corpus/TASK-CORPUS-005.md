@@ -6,7 +6,7 @@
   <title>SplitConfig + SplitMode + SplitReport Types</title>
   <status>complete</status>
   <implementation_state as_of="2026-05-09">
-    Shipped: `SplitConfig`, `SplitMode { InstanceAtomic (default), RepoAtomic }`, `SplitReport`, `TaskAssignment`, `CorpusEntry`, `Bucket { Train, Calibration, Holdout }`, `leakage_check_passed`, `split_is_leakage_free` (split.rs). Default mode is InstanceAtomic per the 2026-05-09e refactor; RepoAtomic kept as a diagnostic. 50 unit tests + FSV evidence at `/tmp/contextgraph-mejepa-corpus-fsv/{split-evidence.json,split-assignments.json}`.
+    Shipped: `SplitConfig`, `SplitMode { InstanceAtomic (default), RepoAtomic }`, `SplitReport`, `TaskAssignment`, `CorpusEntry`, `Bucket { Train, Calibration, Holdout }`, `leakage_check_passed`, `split_is_leakage_free` (split.rs). Default mode is InstanceAtomic per the 2026-05-09e refactor; RepoAtomic kept as a diagnostic. 50 unit tests + FSV evidence at `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/{split-evidence.json,split-assignments.json}`.
   </implementation_state>
   <layer>foundation</layer>
   <sequence>5</sequence>

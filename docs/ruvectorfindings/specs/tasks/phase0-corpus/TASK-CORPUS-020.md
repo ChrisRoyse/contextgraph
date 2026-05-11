@@ -165,7 +165,7 @@ regression.
       .arg("-m").arg("swebench.harness.run_evaluation")...`
       — the venv_python is what the operator specifies; we do
       NOT search PATH for `python`.
-    - The FSV evidence path is /tmp/contextgraph-mejepa-corpus-fsv/
+    - The FSV evidence path is /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/
       (mode 0o600 per SEC-MEJEPA-07).
     - File MUST stay under 500 lines; if oracle.rs +
       swebench.rs together exceed, split into

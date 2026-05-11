@@ -6,7 +6,7 @@
   <title>mejepa_corpus_fsv Example Binary (FSV harness with py_compile)</title>
   <status>complete</status>
   <implementation_state as_of="2026-05-09">
-    Shipped: `examples/mejepa_corpus_fsv.rs` (53-LOC main + helpers) — invokes the operator suite through `apply_mutation`, writes evidence JSON to `/tmp/contextgraph-mejepa-corpus-fsv/`, and calls `python -m py_compile` on each mutated source per the FSV protocol introduced in commit `b6b4810c`. Sister harnesses also shipped: `oracle_fsv.rs`, `oracle_store_fsv.rs`, `swebench_oracle_fsv.rs` — five total under `examples/`.
+    Shipped: `examples/mejepa_corpus_fsv.rs` (53-LOC main + helpers) — invokes the operator suite through `apply_mutation`, writes evidence JSON to `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/`, and calls `python -m py_compile` on each mutated source per the FSV protocol introduced in commit `b6b4810c`. Sister harnesses also shipped: `oracle_fsv.rs`, `oracle_store_fsv.rs`, `swebench_oracle_fsv.rs` — five total under `examples/`.
   </implementation_state>
   <layer>logic</layer>
   <sequence>24</sequence>
@@ -25,7 +25,7 @@ Logic task. The forensic source verification harness for the
 corpus generator. Builds a small in-memory fixture (1–3 real
 Python sources from `tasks/swebench-lite/*.json`), applies all
 8 mutation categories, persists each artifact under
-`/tmp/contextgraph-mejepa-corpus-fsv/sources/` with mode 0o600,
+`/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/sources/` with mode 0o600,
 runs `python3 -m py_compile` against every emitted Python
 artifact (real toolchain — NO mock), and writes evidence JSON
 that the operator can re-read. Already shipped per project
@@ -57,13 +57,13 @@ SEC-MEJEPA-07 mode-0o600 compliance.
          MutationConfig::default())` (with alternate_source for
          WrongFile).
       3. Persist each `mutated_source` under
-         `/tmp/contextgraph-mejepa-corpus-fsv/sources/{task_id}-{category}.py`
+         `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/sources/{task_id}-{category}.py`
          using `OpenOptions::new().mode(0o600)` (Unix only).
       4. Run `python3 -m py_compile <path>` against the file —
          capture exit code AND check for `.pyc` presence in the
          `__pycache__` directory.
       5. Append a row to
-         `/tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json`
+         `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/mejepa-corpus-evidence.json`
          containing: { task_id, category, mutated_source_sha256,
          py_compile_passed, expected_outcome }.
       6. Re-read the evidence JSON; for each row, recompute
@@ -100,9 +100,9 @@ SEC-MEJEPA-07 mode-0o600 compliance.
     - File mode 0o600 enforced on every artifact AND every
       evidence file (NFR-CORPUS-06 / SEC-MEJEPA-07).
     - Evidence path canon:
-      `/tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json`.
+      `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/mejepa-corpus-evidence.json`.
     - Sources path canon:
-      `/tmp/contextgraph-mejepa-corpus-fsv/sources/`.
+      `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/sources/`.
     - The harness creates the directory tree on first run; if
       it exists and contains stale evidence, OVERWRITES (not
       append) so consecutive runs don't bloat.
@@ -114,7 +114,7 @@ SEC-MEJEPA-07 mode-0o600 compliance.
   <verification>
     - `cargo run --release -p context-graph-mejepa-corpus --example mejepa_corpus_fsv`
       exits 0.
-    - `stat -c %a /tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json`
+    - `stat -c %a /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/mejepa-corpus-evidence.json`
       returns `600`.
     - Evidence file has at least 8 rows (1 fixture × 8 categories) and
       sha256-matches every persisted source.
@@ -126,8 +126,8 @@ SEC-MEJEPA-07 mode-0o600 compliance.
 <pseudo_code>
 fn main() -&gt; ExitCode {
     if !cfg!(unix) { eprintln!("FSV requires Unix; skipping"); return ExitCode::SUCCESS; }
-    let evidence_path = "/tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json";
-    fs::create_dir_all("/tmp/contextgraph-mejepa-corpus-fsv/sources/")?;
+    let evidence_path = "/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/mejepa-corpus-evidence.json";
+    fs::create_dir_all("/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/sources/")?;
     let fixtures = load_three_real_swebench_lite_python_sources();
     let mut rows = vec![];
     for (task_id, source) in fixtures {
@@ -136,7 +136,7 @@ fn main() -&gt; ExitCode {
                 MutationConfig { seed: 0, alternate_source: Some(load_alternate_python()) }
             } else { MutationConfig::default() };
             let outcome = apply_mutation(*cat, &amp;source, cfg).unwrap();
-            let path = format!("/tmp/contextgraph-mejepa-corpus-fsv/sources/{task_id}-{}.py", cat.slug());
+            let path = format!("/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/sources/{task_id}-{}.py", cat.slug());
             write_with_mode_0o600(&amp;path, outcome.mutated_source.as_bytes())?;
             let exit = Command::new("python3").args(&amp;["-m", "py_compile", &amp;path]).status()?;
             let py_compile_passed = exit.success();
@@ -178,7 +178,7 @@ fn main() -&gt; ExitCode {
 <test_commands>
   <command>cargo build --release -p context-graph-mejepa-corpus --example mejepa_corpus_fsv</command>
   <command>cargo run --release -p context-graph-mejepa-corpus --example mejepa_corpus_fsv</command>
-  <command>stat -c %a /tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json</command>
+  <command>stat -c %a /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/mejepa-corpus-evidence.json</command>
 </test_commands>
 </task_spec>
 ```

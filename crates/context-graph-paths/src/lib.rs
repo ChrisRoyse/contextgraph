@@ -100,6 +100,27 @@ pub fn mejepa_corpus_source_work_root() -> Result<PathBuf> {
     ensure_subdir("work/mejepa-corpus/source-work")
 }
 
+pub fn mejepa_corpus_root_dir() -> Result<PathBuf> {
+    ensure_subdir("corpus")
+}
+
+pub fn require_under_mejepa_corpus_root(path: &Path, field: &'static str) -> Result<PathBuf> {
+    let absolute = require_under_data_root(path, field)?;
+    let corpus_root = normalize_absolute_lexical(&mejepa_corpus_root_dir()?)?;
+    if !absolute.starts_with(&corpus_root) {
+        return Err(PathError::new(
+            "CONTEXTGRAPH_CORPUS_PATH_OUTSIDE_CORPUS_ROOT",
+            format!(
+                "{field}={} is outside corpus root {}",
+                absolute.display(),
+                corpus_root.display()
+            ),
+            "choose a path under /mnt/d/contextgraph/corpus so generated corpus data survives reboot and is isolated from FSV scratch",
+        ));
+    }
+    Ok(absolute)
+}
+
 pub fn mejepa_image_prep_log_dir() -> Result<PathBuf> {
     ensure_subdir("logs/mejepa-image-prep")
 }
@@ -313,6 +334,31 @@ mod tests {
         let err = require_under_data_root(Path::new("/tmp/not-contextgraph"), "storage")
             .expect_err("outside root must fail");
         assert_eq!(err.code, "CONTEXTGRAPH_DURABLE_PATH_OUTSIDE_DATA_ROOT");
+        restore_env(prior);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn corpus_paths_must_stay_under_corpus_root() {
+        let _guard = env_lock().lock().expect("env lock");
+        let prior = env::var(ENV_DATA_ROOT).ok();
+        let root = test_root("corpus-root");
+        env::set_var(ENV_DATA_ROOT, &root);
+
+        let ok = require_under_mejepa_corpus_root(
+            &root.join("corpus/swebench-lite-python-300x8-v1"),
+            "corpus.output",
+        )
+        .expect("corpus path under corpus root");
+        assert!(ok.starts_with(root.join("corpus")));
+
+        let err = require_under_mejepa_corpus_root(
+            &root.join("fsv/not-a-durable-corpus"),
+            "corpus.output",
+        )
+        .expect_err("corpus path outside corpus root must fail");
+        assert_eq!(err.code, "CONTEXTGRAPH_CORPUS_PATH_OUTSIDE_CORPUS_ROOT");
+
         restore_env(prior);
         let _ = fs::remove_dir_all(root);
     }

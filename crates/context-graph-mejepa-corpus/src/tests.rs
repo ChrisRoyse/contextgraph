@@ -79,19 +79,16 @@ fn language_enum_slug_round_trip() {
 }
 
 #[test]
-fn language_parse_rejects_unknown_and_unsupported() {
+fn language_parse_accepts_canonical_languages_and_rejects_unknown() {
     let accepted = parse_languages(&["python".to_string()]).unwrap();
     assert_eq!(accepted, vec![Language::Python]);
+    let accepted_all =
+        parse_languages(&["rust".to_string(), "python".to_string(), "rust".to_string()]).unwrap();
+    assert_eq!(accepted_all, vec![Language::Rust, Language::Python]);
 
     let unknown = parse_languages(&["lua".to_string()]).unwrap_err();
     assert_eq!(unknown.code(), "MEJEPA_CORPUS_INVALID_INPUT");
     assert!(unknown.to_string().contains("unknown language slug"));
-
-    let unsupported = parse_languages(&["rust".to_string()]).unwrap_err();
-    assert_eq!(unsupported.code(), "MEJEPA_CORPUS_INVALID_INPUT");
-    assert!(unsupported
-        .to_string()
-        .contains("current supported set: [python]"));
 }
 
 #[test]

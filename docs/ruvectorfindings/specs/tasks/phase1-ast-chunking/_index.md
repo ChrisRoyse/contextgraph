@@ -16,8 +16,8 @@ Do not create a second `ast_chunker/` directory module. The simple correct path 
 - **Entity types:** `Function`, `Method`, `Class`, `Struct`, `Enum`, `TraitOrInterface`, `Impl`, `Module`, `Namespace`, `TestFunction`, `Import`, `CommentBlock`, `Docstring`
 - **Routing:** `crates/context-graph-core/src/memory/ast/routing.rs` maps `EntityType` and special routing keys to `EmbedderId::E1..E21` or direct instruments. Missing routes are typed failures, not defaults.
 - **ME-JEPA consumer:** `crates/context-graph-mejepa-instruments/src/e_code.rs` already imports the canonical AST API and must keep failing closed on parse/chunk/routing errors.
-- **Phase 0 real corpus source:** `/tmp/contextgraph-mejepa-corpus-prod-merged-normalized-20260509`
-- **Phase 0 verification evidence:** `verify-evidence.json` in that corpus passed with 2400 entries and RocksDB CF counts `2400/2400/1`.
+- **Phase 0 real corpus source:** `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/` once the 2026-05-11 durable rerun completes. The previously verified `/tmp/contextgraph-mejepa-corpus-prod-merged-normalized-20260509` corpus passed FSV but was ephemeral and is no longer present after reboot.
+- **Phase 0 verification evidence:** required D-backed evidence is `verify-evidence.json`, `stats.json`, `index.json`, and `oracle-store/` RocksDB CF readback with 2400 mutation rows, 2400 verdict rows, and 1 provenance row. Do not use `/tmp` as an AST hardening dependency.
 - **Phase 0 final corpus SHA:** `f5a413eadbb1fa08f7fa51fd05c704eebe7ba51789c3ac0194592825dc2dae33`
 
 ## Best-Practice Notes

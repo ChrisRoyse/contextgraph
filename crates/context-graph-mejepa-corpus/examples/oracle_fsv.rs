@@ -1,9 +1,9 @@
 // Manual Full State Verification for Phase 0 oracle + RocksDB storage.
 //
 // Sources of truth on disk:
-//   /tmp/contextgraph-mejepa-corpus-fsv/oracle/pytest-report.json
-//   /tmp/contextgraph-mejepa-corpus-fsv/oracle/rocksdb/
-//   /tmp/contextgraph-mejepa-corpus-fsv/oracle-evidence.json
+//   /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/oracle/pytest-report.json
+//   /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/oracle/rocksdb/
+//   /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/oracle-evidence.json
 //
 // The trigger is a real `python3 -m pytest` run over synthetic tests whose
 // expected outcomes are known up front: 1 pass, 1 fail, 1 skip. A small local
@@ -24,7 +24,7 @@ use context_graph_mejepa_instruments::{OracleVerdict, TestOutcome};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
@@ -335,8 +335,9 @@ fn boundary_bad_store_key(db_path: &Path) -> FsvResult<Value> {
 }
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/tmp/contextgraph-mejepa-corpus-fsv/oracle");
-    let evidence_path = PathBuf::from("/tmp/contextgraph-mejepa-corpus-fsv/oracle-evidence.json");
+    let evidence_root = context_graph_paths::ensure_subdir("fsv/context-graph-mejepa-corpus")?;
+    let root = evidence_root.join("oracle");
+    let evidence_path = evidence_root.join("oracle-evidence.json");
     if root.exists() {
         fs::remove_dir_all(&root)?;
     }

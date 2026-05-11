@@ -706,7 +706,7 @@ path="crates/context-graph-mejepa-corpus/src/bin/mejepa-corpus.rs">
          exit; print structured error to stderr.
       4. On success: store.put_provenance(corpus_provenance); persist
          corpus-index.json with complete=true; FSV evidence to
-         /tmp/contextgraph-mejepa-corpus-fsv/{mejepa-corpus-evidence.json,
+         /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/{mejepa-corpus-evidence.json,
          split-evidence.json, split-assignments.json} with mode 0o600; exit 0.
       5. Verify → open OracleStore; read provenance; compute deterministic
          5%-sample seed = first 8 bytes of corpus_sha; for each sampled row:
@@ -747,10 +747,10 @@ path="crates/context-graph-mejepa-corpus/examples/mejepa_corpus_fsv.rs">
       1. Build an in-memory fixture: 1-3 real Python sources from
          tasks/swebench-lite/{first,middle,last}.json's gold patch.
       2. For each (source, category) combination: apply_mutation →
-         persist mutated source under /tmp/contextgraph-mejepa-corpus-fsv/sources/
+         persist mutated source under /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/sources/
          (mode 0o600) → run `python3 -m py_compile` against it (real toolchain) →
          capture exit code + .pyc presence.
-      3. Append a row to /tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json
+      3. Append a row to /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/mejepa-corpus-evidence.json
          with category, mutated_source_sha256, py_compile_passed, expected_outcome.
       4. Re-read the evidence file and assert every row's mutated_source_sha256
          matches the on-disk file's hash; assert expected_outcome agrees with
@@ -841,7 +841,7 @@ path="crates/context-graph-mejepa-corpus/examples/split_fsv.rs">
   run_swebench_lite_oracle as a defense-in-depth pair.</note>
 
   <note category="security">SEC-MEJEPA-07 (constitution) — FSV evidence files in
-  /tmp/contextgraph-mejepa-corpus-fsv/ MUST be mode 0o600. The FSV harness uses
+  /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/ MUST be mode 0o600. The FSV harness uses
   `OpenOptions::new().mode(0o600)` on Unix; non-Unix is unsupported for FSV.</note>
 
   <note category="performance">Docker oracle invocations dominate corpus generation
@@ -913,7 +913,7 @@ path="crates/context-graph-mejepa-corpus/examples/split_fsv.rs">
   90%.</note>
 
   <note category="fsv">Constitution `<fsv_protocol>` mandates physical
-  evidence at /tmp/contextgraph-mejepa-corpus-fsv/. The FSV harness invokes
+  evidence at /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/. The FSV harness invokes
   `python3 -m py_compile` against every emitted Python artifact (real
   toolchain, no mock). Equivalent toolchains for the 10 deferred
   languages will be wired as those operators ship: rustc, javac,

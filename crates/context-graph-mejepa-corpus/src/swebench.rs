@@ -23,7 +23,7 @@
 //   - `swebench.harness.run_evaluation` (CLI entrypoint).
 //   - `swebench.harness.grading.get_eval_report` (per-instance report
 //     producer; inspected at
-//     `~/.cache/contextgraph-swebench/SWE-bench/swebench/harness/grading.py`
+//     `/mnt/d/contextgraph/cache/contextgraph-swebench/SWE-bench/swebench/harness/grading.py`
 //     during this implementation).
 //   - `docs/ruvectorfindings/sitrep/04_implementation_plans/plan_phase0_docker_oracle.md`.
 

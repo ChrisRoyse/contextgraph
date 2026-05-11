@@ -13,10 +13,10 @@
 
 - **Phase:** C · **Effort:** 2-3d ops · **Blocked by:** none
 - **Goal:** Run the full Phase 0 corpus generator against the 300 SWE-bench Lite Python tasks × 8 mutation categories = 2,400 corpus entries. Each entry: `(task_id, mutation_kind, mutated_source, oracle_verdict)` persisted to `CF_MEJEPA_MUTATION_CORPUS`.
-- **Outputs:** populated CFs; per-instance per-category Docker eval results; report at `/mnt/d/contextgraph/exports/corpus/300x8.json`.
-- **DoD:** all 2,400 entries persisted with valid `OracleVerdict` (FAIL_TO_PASS, PASS_TO_FAIL, etc.); `assert_no_test_patch_leakage` passes; runtime ~16h wall (parallel across cores).
-- **FSV:** `/mnt/d/contextgraph/fsv/corpus-fsv/300x8_summary.json`
-- **Boundary:** Docker pull failure for an instance → retry × 3, then mark instance as `MEJEPA_CORPUS_DOCKER_UNAVAILABLE` and skip; corpus generation continues; partial coverage acceptable.
+- **Outputs:** populated D-backed corpus directory `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-<date>/`; `oracle-store/` RocksDB CFs; `index.json`; `stats.json`; `verify-evidence.json`; per-instance per-category Docker eval artifacts.
+- **DoD:** all 2,400 entries persisted with valid `OracleVerdict` (FAIL_TO_PASS, PASS_TO_FAIL, etc.); `assert_no_test_patch_leakage` passes; `oracle-store/` readback shows 2,400 mutation rows, 2,400 verdict rows, and 1 provenance row; corpus paths outside `/mnt/d/contextgraph/corpus/` fail before writing.
+- **FSV:** `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-<date>/verify-evidence.json` plus an independent RocksDB inspector readback saved beside it.
+- **Boundary:** Docker image/evaluator failure is a hard failure with actionable error logging. Do not mark the full corpus complete with skipped rows.
 
 ## TASK-CORPUS-003 — Per-language fixture corpora (~50 tasks per language)
 

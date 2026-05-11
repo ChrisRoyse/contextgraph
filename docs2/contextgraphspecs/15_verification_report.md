@@ -358,4 +358,4 @@ Makefile header documents the rationale: "the 11-crate workspace produces ~600 M
 - Python tests under `clipcannon/` (run separately via `make test-python` / `make test-python-smoke`).
 - External script behaviour (Python FSV scripts under `scripts/v4_2/`).
 - MCP tools' end-to-end behaviour beyond schema/count assertions (covered by `tools::definitions::tests::test_submodule_counts`, MCP+Storage FSV, and the audits enumerated in `docs/HIDDEN_BROKENNESS_AUDIT_*.md`).
-- Reality-loop end-to-end execution — requires a real Docker daemon and the official SWE-bench harness installed at `/home/cabdru/.cache/contextgraph-swebench/venv`; the loop refuses to run without `--official-eval-each-attempt`. See [22_reality_loop_subsystem.md](22_reality_loop_subsystem.md) for the operator contract.
+- Reality-loop end-to-end execution — requires a real Docker daemon and the official SWE-bench harness installed at `/mnt/d/contextgraph/cache/contextgraph-swebench/venv`; the loop refuses to run without `--official-eval-each-attempt`. See [22_reality_loop_subsystem.md](22_reality_loop_subsystem.md) for the operator contract.

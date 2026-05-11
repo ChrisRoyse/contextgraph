@@ -65,7 +65,7 @@ noise rather than signal — DO NOT silently pad accuracy.
 
 <prerequisites>
   <check>All instruments shipped (TASK-INSTR-005..019)</check>
-  <check>Phase 0 corpus generator shipped (TASK-CORPUS-023) AND a 100-example dev corpus available at /tmp/contextgraph-mejepa-corpus-fsv/dev100/ OR generated on demand</check>
+  <check>Phase 0 corpus generator shipped (TASK-CORPUS-023) AND a 100-example dev corpus available at /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/dev100/ OR generated on demand</check>
 </prerequisites>
 
 <scope>

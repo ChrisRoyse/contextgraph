@@ -20,6 +20,7 @@
 | Daemon pid + lock files | `/mnt/d/contextgraph/state/locks/` | wrapper script |
 | Active runtime root pointer | `/mnt/d/contextgraph/state/cgreality/active_runtime_root` | already at this path per existing hook context |
 | FSV evidence files (formerly `/tmp/contextgraph-*-fsv/`) | `/mnt/d/contextgraph/fsv/<crate>-fsv/` | per-crate FSV examples |
+| ME-JEPA mutation corpus runs (SWE-bench Lite 300×8, smoke corpora, merge/normalize outputs) | `/mnt/d/contextgraph/corpus/<corpus-id>/` | `crates/context-graph-mejepa-corpus` |
 | Replay buffer materializations | `/mnt/d/contextgraph/storage/replay/` | flywheel scheduler |
 | Active-learning queue exports | `/mnt/d/contextgraph/exports/active-learning/<date>.json` | weekly eval cron |
 | Eval reports + weekly snapshots | `/mnt/d/contextgraph/exports/eval/<date>/` | weekly eval cron |
@@ -78,6 +79,7 @@ fn validate_d_drive_root() -> Result<()> {
         "logs",
         "state/locks",
         "fsv",
+        "corpus",
         "storage/replay",
         "exports/eval",
         "exports/active-learning",
@@ -109,11 +111,24 @@ Daemon refuses to start if validation fails. Error code `MEJEPA_D_DRIVE_UNAVAILA
 - `/tmp/` references in test scratch directories (must be wrapped in `tempfile::TempDir`).
 - The wrapper script's own startup (it bootstraps the D-drive paths).
 
-### 4.3 FSV migration
+### 4.3 Corpus-root enforcement
+
+The Phase 0 corpus generator must treat `/mnt/d/contextgraph/corpus/` as the only durable corpus source-of-truth root. The CLI and library generator path validator reject `/tmp`, C-drive paths, and sibling directories such as `/mnt/d/contextgraph/fsv/` before opening RocksDB or writing `index.json`.
+
+Required source-of-truth files for a full Python run:
+
+- `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-<date>/index.json`
+- `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-<date>/stats.json`
+- `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-<date>/verify-evidence.json`
+- `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-<date>/oracle-store/` with RocksDB CFs `CF_MEJEPA_MUTATION_CORPUS`, `CF_MEJEPA_ORACLE_VERDICTS`, and `CF_MEJEPA_CORPUS_PROVENANCE`
+
+The 2026-05-10 full 2,400-row corpus was verified in `/tmp` but disappeared after reboot. That path is historical evidence only, not an active source of truth.
+
+### 4.4 FSV migration
 
 Today many FSV examples write to `/tmp/contextgraph-*-fsv/`. Per the locked decision, these should be redirected to `/mnt/d/contextgraph/fsv/<crate>-fsv/`. `TASK-OBS-006-fsv-path-migration.md` updates each FSV example's output path and adjusts the corresponding evidence-loading test code. This is a mechanical sweep across `crates/*/examples/*_fsv.rs`.
 
-### 4.4 Hook output paths
+### 4.5 Hook output paths
 
 Shift log files currently land at `/tmp/contextgraph-rust-reality-loop/cgreality-shift-log/`. The hook scripts must be updated to write under `/mnt/d/contextgraph/runtime/cgreality-shift-log/`. `TASK-LOOP-007-hook-output-paths.md` covers this — small change to `scripts/cc/hook_post_tool_use_*.sh`.
 
@@ -127,6 +142,7 @@ The 115 GB hard quota from `06 HYGIENE` (REQ-HYG-05, shipped) targets `/mnt/d/co
 |---|---|---|
 | `storage/contextgraph-rocksdb/` (all CFs) | 70 GB hot + warm; cool tier compresses to 25 GB | hot 8-bit, warm 7-bit, cool 5-bit, cold 3-bit |
 | `runtime/cgreality-shift-log/` | 5 GB rolling window | per-session GC after 30 days |
+| `corpus/` | operationally large; managed outside the 115 GB hot runtime cap while full SWE-bench runs are active | archived or deleted only after replacement corpus is verified |
 | `storage/witness/` | 2 GB hot; >90d Merkle-compressed | per Phase 6 REQ-HYG-03 |
 | `storage/cold/` | up to 25 GB cold blobs | 3-bit / 1-bit frozen |
 | `storage/replay/` | 5 GB | bounded by replay-buffer policy |
@@ -151,7 +167,7 @@ mkdir -p /mnt/d
 # (Windows host should already mount D: at /mnt/d when WSL starts)
 
 # 2. Create the ContextGraph root
-mkdir -p /mnt/d/contextgraph/{storage/{contextgraph-rocksdb,replay,cold,witness,train-certs,live-predictions},runtime/cgreality-shift-log,logs,state/locks,state/cgreality,state/gold-labels,fsv,exports/{active-learning,eval,pairwise-mi}}
+mkdir -p /mnt/d/contextgraph/{corpus,storage/{contextgraph-rocksdb,replay,cold,witness,train-certs,live-predictions},runtime/cgreality-shift-log,logs,state/locks,state/cgreality,state/gold-labels,fsv,exports/{active-learning,eval,pairwise-mi}}
 mkdir -p /mnt/d/cabdru/contextgraph/models
 
 # 3. Place SHA-pinned model artifacts under /mnt/d/cabdru/contextgraph/models/
@@ -178,10 +194,11 @@ If anything fails, the error code (`MEJEPA_D_DRIVE_UNAVAILABLE` / `MEJEPA_EMBEDD
 ## 7. What this storage policy commits us to
 
 1. **Daemon startup validator** that fail-closes if D-drive root absent. (`TASK-FLYWHEEL-001`, shipped; keep enforced)
-2. **CI lint** that prevents regression. (`TASK-OBS-005`)
-3. **FSV path migration** sweep across `crates/*/examples/*_fsv.rs`. (`TASK-OBS-006`)
-4. **Hook output path update** for shift log files. (`TASK-LOOP-007`)
-5. **Quota observability extension** to break down by slice (RocksDB / shift-log / cold / replay / etc.) for operator visibility. (`TASK-OBS-007`)
-6. **Operator quickstart documentation** in CLAUDE.md or a top-level INSTALL.md (small task; not separately listed because the content above suffices).
+2. **Corpus-root enforcement** that rejects corpus outputs outside `/mnt/d/contextgraph/corpus/`. (shipped in `context-graph-paths` + `context-graph-mejepa-corpus`)
+3. **CI lint** that prevents regression. (`TASK-OBS-005`)
+4. **FSV path migration** sweep across `crates/*/examples/*_fsv.rs`. (`TASK-OBS-006`)
+5. **Hook output path update** for shift log files. (`TASK-LOOP-007`)
+6. **Quota observability extension** to break down by slice (RocksDB / shift-log / corpus / cold / replay / etc.) for operator visibility. (`TASK-OBS-007`)
+7. **Operator quickstart documentation** in CLAUDE.md or a top-level INSTALL.md (small task; not separately listed because the content above suffices).
 
 All listed in [`13_TASK_INDEX.md`](13_TASK_INDEX.md).

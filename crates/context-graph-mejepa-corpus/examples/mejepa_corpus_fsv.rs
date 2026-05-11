@@ -2,11 +2,11 @@
 // the train/calibration/holdout split helper.
 //
 // Sources of truth:
-//   - /tmp/contextgraph-mejepa-corpus-fsv/generated_sources/*.py
-//   - /tmp/contextgraph-mejepa-corpus-fsv/pyc/*.pyc
-//   - /tmp/contextgraph-mejepa-corpus-fsv/split-assignments.json
-//   - /tmp/contextgraph-mejepa-corpus-fsv/split-repo-atomic-assignments.json
-//   - /tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json
+//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/generated_sources/*.py
+//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/pyc/*.pyc
+//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-assignments.json
+//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-repo-atomic-assignments.json
+//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/mejepa-corpus-evidence.json
 //
 // The example fails closed. It asserts every invariant before writing
 // evidence, fsyncs and read-checks each generated file, runs Python syntax
@@ -51,7 +51,7 @@ fn required_site(label: &str, outcome: &MutationOutcome) -> FsvResult<MutationSi
 }
 
 fn main() -> FsvResult<()> {
-    let evidence_root = PathBuf::from("/tmp/contextgraph-mejepa-corpus-fsv");
+    let evidence_root = context_graph_paths::ensure_subdir("fsv/context-graph-mejepa-corpus")?;
     let generated_root = evidence_root.join("generated_sources");
     let pyc_root = evidence_root.join("pyc");
     if generated_root.exists() {

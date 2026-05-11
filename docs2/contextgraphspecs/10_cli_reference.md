@@ -129,7 +129,7 @@ Source: `AttemptArgs` at `:257-350`.
 | `--run-until-resolved` | flag | `false` | no | Hard-rejected unless `--official-eval-each-attempt` is also set |
 | `--smoke-test` | flag | `false` | no | Bypass model+Docker; for wiring tests |
 | `--official-eval-each-attempt` | flag | `false` | required for any SWE run | Else `RUST_REALITY_OFFICIAL_EVAL_REQUIRED` |
-| `--swebench-python <PATH>` | `PathBuf` | `/home/cabdru/.cache/contextgraph-swebench/venv/bin/python` | no | Interpreter for `python -m swebench.harness.run_evaluation` |
+| `--swebench-python <PATH>` | `PathBuf` | `/mnt/d/contextgraph/cache/contextgraph-swebench/venv/bin/python` | no | Interpreter for `python -m swebench.harness.run_evaluation` |
 | `--official-timeout <SEC>` | `u64` | `900` | no | Per-instance Docker eval timeout |
 | `--official-max-workers <N>` | `u64` | `1` | no | `--max_workers` for SWE-bench harness |
 | `--official-cache-level <LEVEL>` | `String` | `env` | no | `--cache_level` for SWE-bench harness |
@@ -177,7 +177,7 @@ Source: `OfficialEvalArgs` at `:200-227`. Re-runs the official Docker evaluator 
 | `--target-instance <INSTANCE>` | `String` | required |
 | `--attempt <N>` | `u64` | required |
 | `--model <NAME>` | `String` | `qwen3-coder:30b-a3b` |
-| `--swebench-python <PATH>` | `PathBuf` | `/home/cabdru/.cache/contextgraph-swebench/venv/bin/python` |
+| `--swebench-python <PATH>` | `PathBuf` | `/mnt/d/contextgraph/cache/contextgraph-swebench/venv/bin/python` |
 | `--official-timeout <SEC>` | `u64` | `900` |
 | `--official-max-workers <N>` | `u64` | `1` |
 | `--official-cache-level <STR>` | `String` | `env` |

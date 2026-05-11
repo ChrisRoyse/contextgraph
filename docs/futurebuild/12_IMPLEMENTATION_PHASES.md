@@ -118,9 +118,11 @@
 1. `mejepa_corpus_stats` reports 2,400 Python entries + ≥500 per-language entries per non-Python language with verified Docker (Python) or real-toolchain (others) oracle outcomes.
 2. Train/calib/holdout split runs without leakage (verified by `assert_no_test_patch_leakage`).
 3. Per-(category × language) cell sample counts ≥ 50 wherever physically possible (some cells may remain Bayesian-shrunk).
+4. Python corpus source of truth resides under `/mnt/d/contextgraph/corpus/`; `/tmp` and C-drive corpus outputs fail closed before writing. `index.json`, `verify-evidence.json`, and `oracle-store/` RocksDB CF counts are read back after generation.
 
 **Risks / mitigations:**
-- *Risk:* Docker eval times are long (each task ~20-30s × 300 × 8 = ~16 hours wall time). *Mitigation:* parallelize across cores; checkpoint per-instance; resumable.
+- *Risk:* Docker eval times are long (each task ~20-30s × 300 × 8 = ~16 hours wall time). *Mitigation:* parallelize across cores; checkpoint per row to the D-backed corpus root; write index/evidence files atomically; make reruns resumable from the RocksDB/index source of truth.
+- *Risk:* corpus evidence is written to ephemeral storage and lost after reboot. *Mitigation:* corpus CLI and library generation reject any output outside `/mnt/d/contextgraph/corpus/`; storage docs and FSV commands name the D-backed source of truth explicitly.
 - *Risk:* per-language operator implementations have subtle bugs. *Mitigation:* each operator has a real-language compiler/parser FSV (e.g., `cargo check` for Rust mutations; `tsc --noEmit` for TS; etc.) — the same protocol that caught two bugs in the Python operators (per `memory/MEMORY.md` 2026-05-09 entries).
 
 ---

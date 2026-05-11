@@ -286,7 +286,7 @@ fn main() -> CliResult<()> {
 }
 
 fn generate(mut args: GenerateArgs) -> CliResult<()> {
-    args.output = require_durable_path(&args.output, "generate.output")?;
+    args.output = require_corpus_path(&args.output, "generate.output")?;
     args.venv_python = require_durable_path(&args.venv_python, "generate.venv_python")?;
     args.repo_cache_dir = require_durable_path(&args.repo_cache_dir, "generate.repo_cache_dir")?;
     args.source_work_root =
@@ -556,7 +556,7 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
 }
 
 fn verify(mut args: VerifyArgs) -> CliResult<()> {
-    args.corpus = require_durable_path(&args.corpus, "verify.corpus")?;
+    args.corpus = require_corpus_path(&args.corpus, "verify.corpus")?;
     args.venv_python = require_durable_path(&args.venv_python, "verify.venv_python")?;
     validate_verify_args(&args)?;
     let index = read_index(&args.corpus)?;
@@ -718,7 +718,7 @@ fn verify(mut args: VerifyArgs) -> CliResult<()> {
 }
 
 fn stats(mut args: StatsArgs) -> CliResult<()> {
-    args.corpus = require_durable_path(&args.corpus, "stats.corpus")?;
+    args.corpus = require_corpus_path(&args.corpus, "stats.corpus")?;
     let index = read_index(&args.corpus)?;
     validate_complete_index(&index)?;
     let store_path = resolve_corpus_path(&args.corpus, &index.store_path)?;
@@ -815,7 +815,7 @@ fn prepare_images(args: PrepareImagesArgs) -> CliResult<()> {
 }
 
 fn cleanup(mut args: CleanupArgs) -> CliResult<()> {
-    args.corpus = require_durable_path(&args.corpus, "cleanup.corpus")?;
+    args.corpus = require_corpus_path(&args.corpus, "cleanup.corpus")?;
     validate_cleanup_args(&args)?;
     let index = read_index(&args.corpus)?;
     validate_complete_index(&index)?;
@@ -930,7 +930,12 @@ fn cleanup(mut args: CleanupArgs) -> CliResult<()> {
 }
 
 fn merge(mut args: MergeArgs) -> CliResult<()> {
-    args.output = require_durable_path(&args.output, "merge.output")?;
+    args.output = require_corpus_path(&args.output, "merge.output")?;
+    args.shards = args
+        .shards
+        .iter()
+        .map(|shard| require_corpus_path(shard, "merge.shard"))
+        .collect::<CliResult<Vec<_>>>()?;
     if args.shards.is_empty() {
         return Err("merge requires at least one --shard".into());
     }
@@ -1083,8 +1088,8 @@ fn merge(mut args: MergeArgs) -> CliResult<()> {
 }
 
 fn normalize(mut args: NormalizeArgs) -> CliResult<()> {
-    args.corpus = require_durable_path(&args.corpus, "normalize.corpus")?;
-    args.output = require_durable_path(&args.output, "normalize.output")?;
+    args.corpus = require_corpus_path(&args.corpus, "normalize.corpus")?;
+    args.output = require_corpus_path(&args.output, "normalize.output")?;
     validate_normalize_args(&args)?;
     let source_index = read_index(&args.corpus)?;
     validate_complete_index(&source_index)?;
@@ -1250,7 +1255,7 @@ fn normalize(mut args: NormalizeArgs) -> CliResult<()> {
 }
 
 fn smoke(mut args: SmokeArgs) -> CliResult<()> {
-    args.output = require_durable_path(&args.output, "smoke.output")?;
+    args.output = require_corpus_path(&args.output, "smoke.output")?;
     args.venv_python = require_durable_path(&args.venv_python, "smoke.venv_python")?;
     args.repo_cache_dir = require_durable_path(&args.repo_cache_dir, "smoke.repo_cache_dir")?;
     args.source_work_root = require_durable_path(&args.source_work_root, "smoke.source_work_root")?;
@@ -1567,6 +1572,11 @@ fn validate_smoke_args(args: &SmokeArgs) -> CliResult<()> {
 
 fn require_durable_path(path: &Path, field: &'static str) -> CliResult<PathBuf> {
     context_graph_paths::require_under_data_root(path, field).map_err(|err| err.to_string().into())
+}
+
+fn require_corpus_path(path: &Path, field: &'static str) -> CliResult<PathBuf> {
+    context_graph_paths::require_under_mejepa_corpus_root(path, field)
+        .map_err(|err| err.to_string().into())
 }
 
 fn validate_generate_args(args: &GenerateArgs) -> CliResult<()> {
@@ -2592,10 +2602,29 @@ fn write_text_checked(path: &Path, text: &str) -> CliResult<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut file = File::create(path)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("cannot write path without parent: {}", path.display()))?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            format!(
+                "cannot write path with non-UTF8 file name: {}",
+                path.display()
+            )
+        })?;
+    let temp_path = parent.join(format!(
+        ".{}.tmp-{}-{}",
+        file_name,
+        std::process::id(),
+        unix_ms()
+    ));
+    let mut file = File::create(&temp_path)?;
     file.write_all(text.as_bytes())?;
     file.sync_all()?;
     drop(file);
+    fs::rename(&temp_path, path)?;
     if let Some(parent) = path.parent() {
         File::open(parent)?.sync_all()?;
     }

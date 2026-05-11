@@ -6,7 +6,7 @@
   <title>split_fsv Example Binary (Split Helpers FSV Harness)</title>
   <status>complete</status>
   <implementation_state as_of="2026-05-09">
-    Shipped: `examples/split_fsv.rs` — calls `split_corpus` and `assert_no_test_patch_leakage`, writes `split-evidence.json` and `split-assignments.json` to `/tmp/contextgraph-mejepa-corpus-fsv/`. Memory-recorded results (project_phase0_mejepa_mutation_corpus.md, 2026-05-09b): 25 repos × 300 tasks → 76.3/13.3/10.3 cross-cut weights all 0; InstanceAtomic mode on Lite achieves clean [240, 30, 30].
+    Shipped: `examples/split_fsv.rs` — calls `split_corpus` and `assert_no_test_patch_leakage`, writes `split-evidence.json` and `split-assignments.json` to `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/`. Memory-recorded results (project_phase0_mejepa_mutation_corpus.md, 2026-05-09b): 25 repos × 300 tasks → 76.3/13.3/10.3 cross-cut weights all 0; InstanceAtomic mode on Lite achieves clean [240, 30, 30].
   </implementation_state>
   <layer>logic</layer>
   <sequence>25</sequence>
@@ -54,11 +54,11 @@ shipped state.
       3. Run `split_corpus(&amp;entries, &amp;SplitConfig {
          mode: SplitMode::RepoAtomic, ..Default::default() })`.
       4. Write
-         `/tmp/contextgraph-mejepa-corpus-fsv/split-evidence.json`
+         `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-evidence.json`
          with both reports' bucket_sizes, bucket_fractions,
          leakage_check_passed, repo_assignments.
       5. Write
-         `/tmp/contextgraph-mejepa-corpus-fsv/split-assignments.json`
+         `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-assignments.json`
          with the per-task TaskAssignment list for
          InstanceAtomic mode.
       6. Re-read both files; assert byte-equality with what was
@@ -90,7 +90,7 @@ shipped state.
     - Determinism check: byte-equal SplitReport from two split
       runs with same SplitConfig.seed.
     - The harness creates the
-      `/tmp/contextgraph-mejepa-corpus-fsv/` directory if missing.
+      `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/` directory if missing.
     - InstanceAtomic MUST yield `bucket_sizes = [240, 30, 30]`;
       this is asserted in code (the harness fails if not).
     - RepoAtomic bucket_sizes are not pinned (depends on shuffle
@@ -100,8 +100,8 @@ shipped state.
   <verification>
     - `cargo run --release -p context-graph-mejepa-corpus --example split_fsv`
       exits 0.
-    - `stat -c %a /tmp/contextgraph-mejepa-corpus-fsv/split-evidence.json` returns `600`.
-    - `stat -c %a /tmp/contextgraph-mejepa-corpus-fsv/split-assignments.json` returns `600`.
+    - `stat -c %a /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-evidence.json` returns `600`.
+    - `stat -c %a /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-assignments.json` returns `600`.
     - Stdout contains "FSV PASSED" and the bucket sizes.
   </verification>
 </definition_of_done>
@@ -115,8 +115,8 @@ fn main() -&gt; ExitCode {
     let repo_cfg = SplitConfig { mode: SplitMode::RepoAtomic, ..Default::default() };
     let repo = split_corpus(&amp;entries, &amp;repo_cfg)?;
     assert!(repo.leakage_check_passed);
-    let split_evidence_path = "/tmp/contextgraph-mejepa-corpus-fsv/split-evidence.json";
-    let assignments_path = "/tmp/contextgraph-mejepa-corpus-fsv/split-assignments.json";
+    let split_evidence_path = "/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-evidence.json";
+    let assignments_path = "/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-assignments.json";
     let evidence = serde_json::json!({
         "instance_atomic": { "bucket_sizes": instance.bucket_sizes,
                              "bucket_fractions": instance.bucket_fractions,
@@ -152,8 +152,8 @@ fn main() -&gt; ExitCode {
 <test_commands>
   <command>cargo build --release -p context-graph-mejepa-corpus --example split_fsv</command>
   <command>cargo run --release -p context-graph-mejepa-corpus --example split_fsv</command>
-  <command>stat -c %a /tmp/contextgraph-mejepa-corpus-fsv/split-evidence.json</command>
-  <command>stat -c %a /tmp/contextgraph-mejepa-corpus-fsv/split-assignments.json</command>
+  <command>stat -c %a /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-evidence.json</command>
+  <command>stat -c %a /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-assignments.json</command>
 </test_commands>
 </task_spec>
 ```

@@ -1,8 +1,8 @@
 // Manual Full State Verification for the corpus split wrapper.
 //
 // Sources of truth:
-//   - /tmp/contextgraph-mejepa-corpus-fsv/split-evidence.json
-//   - /tmp/contextgraph-mejepa-corpus-fsv/split-assignments.json
+//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-evidence.json
+//   - /mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-assignments.json
 //
 // This example fails closed. It writes assignment/evidence files durably,
 // re-reads them, hashes them, reconstructs the assignment state from disk,
@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> FsvResult<()> {
-    let evidence_root = PathBuf::from("/tmp/contextgraph-mejepa-corpus-fsv");
+    let evidence_root = context_graph_paths::ensure_subdir("fsv/context-graph-mejepa-corpus")?;
     fs::create_dir_all(&evidence_root)?;
 
     let (corpus, tasks_dir, test_patch_sha_by_task) = build_real_corpus()?;

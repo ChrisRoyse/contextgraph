@@ -190,8 +190,10 @@ fn generate_with_config<O: Oracle>(
     oracle: &O,
 ) -> Result<CorpusReport, MejepaCorpusError> {
     validate_languages(&config.languages)?;
-    let output_root =
-        context_graph_paths::require_under_data_root(&config.output_root, "generate.output_root")?;
+    let output_root = context_graph_paths::require_under_mejepa_corpus_root(
+        &config.output_root,
+        "generate.output_root",
+    )?;
     let venv_python =
         context_graph_paths::require_under_data_root(&config.venv_python, "generate.venv_python")?;
     let repo_cache_dir = context_graph_paths::require_under_data_root(
@@ -756,16 +758,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn generate_unsupported_language_returns_error() {
+    fn generate_output_outside_corpus_root_returns_error() {
         let oracle = SwebenchDockerOracle;
         let err = generate_swe_bench_mutation_corpus_with_oracle(
             Path::new("tasks/swebench-lite"),
-            Path::new("/tmp/contextgraph-generate-unsupported-language"),
+            Path::new("/mnt/d/contextgraph/fsv/contextgraph-generate-outside-corpus-root"),
             &[MutationCategory::KnownGood],
-            &[Language::Rust],
+            &[Language::Python],
             &oracle,
         )
         .unwrap_err();
-        assert_eq!(err.code(), "MEJEPA_CHUNKER_UNSUPPORTED_LANGUAGE");
+        assert_eq!(err.code(), "CONTEXTGRAPH_CORPUS_PATH_OUTSIDE_CORPUS_ROOT");
     }
 }

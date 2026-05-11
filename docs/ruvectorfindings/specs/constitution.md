@@ -211,7 +211,7 @@ tasks/swebench-lite/*.json                 # 300-task corpus manifest (KEEP)
     <test_type>Shift-subscriber latency profiling: p50 &lt; 5s, p99 &lt; 30s on synthetic shift stream</test_type>
   </required_tests>
   <fsv_evidence_paths>
-    <path>/tmp/contextgraph-mejepa-corpus-fsv/{mejepa-corpus-evidence.json,split-evidence.json,split-assignments.json}</path>
+    <path>/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/{mejepa-corpus-evidence.json,split-evidence.json,split-assignments.json}</path>
     <path>/tmp/contextgraph-mejepa-instruments-fsv/{panel.json,e_oracle_*.json,e_witness_*.json,e_static_analysis_*.json}</path>
     <path>/tmp/contextgraph-mejepa-predictor-fsv/{forward-pass-evidence.json,vicreg-loss-evidence.json}</path>
     <path>/tmp/contextgraph-mejepa-train-fsv/{training-cert-chain.json,utml-l-step-evidence.json}</path>

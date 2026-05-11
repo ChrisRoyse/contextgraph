@@ -12,13 +12,12 @@ use context_graph_mejepa_instruments::{OracleVerdict, PerTestOutcome, TestOutcom
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::PathBuf;
 use std::time::Duration;
 
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/tmp/contextgraph-mejepa-corpus-fsv/oracle-store");
+    let root = context_graph_paths::ensure_subdir("fsv/context-graph-mejepa-corpus/oracle-store")?;
     if root.exists() {
         fs::remove_dir_all(&root)?;
     }

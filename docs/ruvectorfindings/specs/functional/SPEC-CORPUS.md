@@ -51,7 +51,7 @@ auditable (CLI verify mode re-runs the Docker oracle on a sample to confirm verd
 
 The corpus generator runs as a one-shot batch CLI (`mejepa-corpus generate`), exposes a verifier
 (`mejepa-corpus verify`) and a stats reporter (`mejepa-corpus stats`), and ships an FSV harness that
-writes physical evidence to `/tmp/contextgraph-mejepa-corpus-fsv/` for forensic verification.
+writes physical evidence to `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/` for forensic verification.
 
 The cross-language mandate (doc 10 Section C, constitution `<tech_stack>` 11 grammars) requires
 that all eight mutation operators eventually support all 11 supported languages. Python is shipped
@@ -105,7 +105,7 @@ end-to-end against real Docker images, eliminating any silent corruption risk).
 
   <user_type id="UT-CORPUS-05" name="FSV Auditor">
     <description>Any operator or downstream agent that re-reads
-    `/tmp/contextgraph-mejepa-corpus-fsv/*.json` to verify physical bytes-on-disk evidence of a
+    `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/*.json` to verify physical bytes-on-disk evidence of a
     corpus run. May run `mejepa-corpus verify` to redo the Docker oracle on a 5% sample.</description>
     <permissions>READ on the corpus output root; READ on FSV evidence directory; READ on
     Docker daemon for oracle replay.</permissions>
@@ -362,7 +362,7 @@ end-to-end against real Docker images, eliminating any silent corruption risk).
     <narrative>
       <as_a>Outer-Loop Operator (UT-CORPUS-04)</as_a>
       <i_want_to>Get an FSV evidence file at
-      `/tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json` after every CLI
+      `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/mejepa-corpus-evidence.json` after every CLI
       generate run</i_want_to>
       <so_that>I can inspect physical bytes-on-disk evidence of every (task_id, category) row
       independent of RocksDB and prove the run actually happened (forensic discipline).</so_that>
@@ -372,12 +372,12 @@ end-to-end against real Docker images, eliminating any silent corruption risk).
         <given>A successful `mejepa-corpus generate` run</given>
         <when>The CLI exits Ok</when>
         <then>
-          - `/tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json` exists.
+          - `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/mejepa-corpus-evidence.json` exists.
           - The JSON contains one row per generated entry with: task_id, category, patch_sha256,
             oracle_verdict_sha256, oracle_all_passed, oracle_exception, oracle_per_test_count,
             bucket.
           - File mode is 0o600 (per SEC-MEJEPA-07).
-          - `/tmp/contextgraph-mejepa-corpus-fsv/split-evidence.json` and `split-assignments.json`
+          - `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-evidence.json` and `split-assignments.json`
             also exist with bucket sizes, fractions, and per-task assignment.
         </then>
       </criterion>
@@ -526,7 +526,7 @@ end-to-end against real Docker images, eliminating any silent corruption risk).
         any bucket (RepoAtomic only) return `MEJEPA_CORPUS_INVALID_INPUT`.
     </constraints>
     <verification_method>Unit tests over both modes with the full 300-entry SWE-bench Lite
-    manifest. FSV harness writes `/tmp/contextgraph-mejepa-corpus-fsv/split-evidence.json`
+    manifest. FSV harness writes `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/split-evidence.json`
     and `split-assignments.json`.</verification_method>
   </requirement>
 
@@ -585,7 +585,7 @@ end-to-end against real Docker images, eliminating any silent corruption risk).
     <description>The crate SHALL ship two FSV example binaries:
     `examples/mejepa_corpus_fsv.rs` (corpus generation) and `examples/split_fsv.rs`
     (split helpers). Each writes physical evidence to
-    `/tmp/contextgraph-mejepa-corpus-fsv/` and re-reads + asserts before reporting
+    `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/` and re-reads + asserts before reporting
     success.</description>
     <rationale>Constitution `<fsv_protocol>` rule: every shipped primitive ships with an FSV
     harness.</rationale>
@@ -1103,7 +1103,7 @@ end-to-end against real Docker images, eliminating any silent corruption risk).
   </nfr>
 
   <nfr id="NFR-CORPUS-06" category="security">
-    <description>FSV evidence files in `/tmp/contextgraph-mejepa-corpus-fsv/` are created
+    <description>FSV evidence files in `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/` are created
     with mode 0o600 (per SEC-MEJEPA-07 of the constitution).</description>
     <metric>`stat -c %a <file>` returns `600` for every FSV evidence file.</metric>
     <priority>must</priority>
@@ -1329,7 +1329,7 @@ end-to-end against real Docker images, eliminating any silent corruption risk).
     <inputs>tempdir for `--output`; default flags otherwise.</inputs>
     <expected_result>Exit 0; corpus-index.json contains 16 entries (2 tasks × 8
     categories); FSV evidence at
-    `/tmp/contextgraph-mejepa-corpus-fsv/mejepa-corpus-evidence.json` mirrors the
+    `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/mejepa-corpus-evidence.json` mirrors the
     persisted rows.</expected_result>
     <priority>high</priority>
   </test_case>
@@ -1397,7 +1397,7 @@ end-to-end against real Docker images, eliminating any silent corruption risk).
     <description>FSV evidence files have the correct mode 0o600 per
     SEC-MEJEPA-07.</description>
     <preconditions>Run any FSV harness that writes
-    `/tmp/contextgraph-mejepa-corpus-fsv/*`.</preconditions>
+    `/mnt/d/contextgraph/fsv/context-graph-mejepa-corpus/*`.</preconditions>
     <inputs>None.</inputs>
     <expected_result>`stat -c %a` for every produced file returns `600`.</expected_result>
     <priority>medium</priority>

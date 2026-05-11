@@ -82,7 +82,7 @@
 | ID | Title | Phase | Blocked by | Effort |
 |---|---|---|---|---|
 | `TASK-CORPUS-001` | Per-language mutation operators (10 langs × 8 = 80) | C | none | 4-5d |
-| `TASK-CORPUS-002` | 300×8 SWE-bench Lite Python corpus generation (Docker) | C | none | 2-3d ops |
+| `TASK-CORPUS-002` | 300×8 SWE-bench Lite Python corpus generation under `/mnt/d/contextgraph/corpus/` (Docker) | C | none | 2-3d ops |
 | `TASK-CORPUS-003` | Per-language fixture corpora (~50 tasks per language) | C | CORPUS-001 | 1-2d |
 | `TASK-CORPUS-004` | Stoer-Wagner mincut split applied to new corpora | C | CORPUS-002, CORPUS-003 | 0.25d |
 

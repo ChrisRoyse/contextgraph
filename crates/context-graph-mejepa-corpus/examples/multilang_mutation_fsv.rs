@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -23,7 +23,7 @@ struct Fixture {
 }
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/tmp/contextgraph-mejepa-corpus-multilang-fsv");
+    let root = context_graph_paths::ensure_subdir("fsv/context-graph-mejepa-corpus-multilang")?;
     reset_root(&root)?;
     let source_root = root.join("source_of_truth_sources");
     fs::create_dir_all(&source_root)?;

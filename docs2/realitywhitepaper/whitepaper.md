@@ -468,7 +468,7 @@ Both the LLM-driven discovery agents (`Hermes-2-Pro-Mistral-7B` for causal/graph
 
 ### 8.3 Docker Dependency for the Reality Loop
 
-The Reality Loop refuses to enter the model loop without `--official-eval-each-attempt`. That flag in turn requires a working Docker daemon and the official SWE-bench harness installed at `/home/cabdru/.cache/contextgraph-swebench/venv` (or wherever `--swebench-python` points). The system explicitly does not implement a "CI-only" or "Docker-free" path; that would amount to building an alternative oracle, which would re-introduce the verification gap the project was built to close.
+The Reality Loop refuses to enter the model loop without `--official-eval-each-attempt`. That flag in turn requires a working Docker daemon and the official SWE-bench harness installed at `/mnt/d/contextgraph/cache/contextgraph-swebench/venv` (or wherever `--swebench-python` points). The system explicitly does not implement a "CI-only" or "Docker-free" path; that would amount to building an alternative oracle, which would re-introduce the verification gap the project was built to close.
 
 ### 8.4 Single Local Ollama Model
 
