@@ -1,6 +1,6 @@
 # TECH-AST-CHUNKING — Multi-Language AST-Perfect Atomic Chunker (Technical Spec)
 
-> **📊 2026-05-10 HARDENING STATUS:** OPERATIONAL via `context_graph_core::memory::ast` — 11-language chunking FSV passed with source-of-truth readback. The older `AstCodeChunker` type remains Rust-only and is now compatibility/deprecation work. Remaining technical work: reformat-invariant AST-node-ID hash audit, stale-consumer migration, and chunk-level TCT integration. See `../implementation-plan.md` and `../../15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`.
+> **📊 2026-05-11 HARDENING STATUS:** OPERATIONAL via `context_graph_core::memory::ast` — 11-language chunking FSV passed with source-of-truth readback. The older `AstCodeChunker` type remains Rust-only and is now compatibility/deprecation work ([#6](https://github.com/ChrisRoyse/contextgraph/issues/6)). Remaining technical work: reformat-invariant AST-node-ID hash audit ([#12](https://github.com/ChrisRoyse/contextgraph/issues/12)) and stale-consumer migration. Chunk-level TCT integration is code-shipped through `gtau_check_chunks`; production-scale TCT evidence is tracked in [#9](https://github.com/ChrisRoyse/contextgraph/issues/9). See `../implementation-plan.md`, `../../16_PHASE_6_8_HARDENING_FSV_2026_05_11.md`, and `../../15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`.
 
 > **Level 3 (technical spec).** Defines HOW to implement SPEC-AST-CHUNKING. The
 > companion Level 2 functional spec (`docs/ruvectorfindings/specs/functional/

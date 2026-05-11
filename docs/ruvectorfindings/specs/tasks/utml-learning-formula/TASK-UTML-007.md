@@ -92,7 +92,7 @@ After implementation:
 
 <metadata>
   <title>compute_l_step (multiplicative product clamped [0,1]) + sampling_weight (base · L · (1+5·override) · 0.995^age) + should_drop/should_force_include thresholds</title>
-  <status>blocked</status>
+  <status>complete</status>
   <layer>logic</layer>
   <sequence>7</sequence>
   <implements>

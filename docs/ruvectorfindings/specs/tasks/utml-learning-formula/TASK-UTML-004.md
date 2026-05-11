@@ -86,7 +86,7 @@ After implementation:
 
 <metadata>
   <title>compute_delta_k (grad, ema_grad, fisher, ECE, embedder_coherence) returning weighted sum 0.5·cos_align + 0.3·(1-fisher_violation) + 0.15·(1-ECE) + 0.05·embedder_coherence; update_grad_ema in-place EMA update</title>
-  <status>blocked</status>
+  <status>complete</status>
   <layer>logic</layer>
   <sequence>4</sequence>
   <implements>

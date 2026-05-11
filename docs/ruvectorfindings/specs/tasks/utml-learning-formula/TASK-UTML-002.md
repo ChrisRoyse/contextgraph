@@ -92,7 +92,7 @@ After implementation:
 
 <metadata>
   <title>Foundation enums: SkipReason (6 variants) + UtmlState (7 variants) + Intervention + ClassifierVerdict + DeltaPAggregator</title>
-  <status>blocked</status>
+  <status>complete</status>
   <layer>foundation</layer>
   <sequence>2</sequence>
   <implements>

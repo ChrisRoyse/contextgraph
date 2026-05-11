@@ -67,16 +67,13 @@ After implementation:
 
 ---
 
-## 📋 2026-05-11 STATE AUDIT — PENDING (largest remaining UTML item)
+## 📋 2026-05-11 STATE AUDIT — SHIPPED / SUPERSEDED
 
 > **Codebase reality table:** see `_index.md` in this directory.
 
-**Status: PENDING.** This task lands FOUR distinct primitives, none of which exist in code today:
-- **UtmlClassifier** (7-state regime classifier).
-- **prune_decision** (the curriculum-pruning rule per UTML §X).
-- **Consolidation M(t)** integral over the cert chain (UTML §XII).
-- **StateTransfer T detector** (Wasserstein-1-based train→deploy distribution shift).
-- **Continual-backprop dormant-unit re-init** intervention (triggered by `ΔΩ.effective_plasticity` collapse from TASK-UTML-005's signal).
+**Status: COMPLETE / SUPERSEDED.** The primitives in this task now ship in `crates/context-graph-mejepa-train/src/learning_signal/{classifier,consolidation,state_transfer,continual_backprop}.rs`. The continual-backprop intervention is wired into `crates/context-graph-mejepa/src/heal/regulate.rs`, persists changed handles to `CF_MEJEPA_WEIGHT_BLOBS`, and performs byte readback. Remaining semantic reconciliation between the current operational carriers and the richer doc-11 carrier formulas is tracked in [#13](https://github.com/ChrisRoyse/contextgraph/issues/13).
+
+The historical implementation sketch below remains as provenance for the original task decomposition. Current implementation authority is `../../implementation-plan.md`, `../../_README.md`, and `../../../16_PHASE_6_8_HARDENING_FSV_2026_05_11.md`.
 
 **Decided scope for this task — split into 4 sub-modules (parallelizable across 2 sub-agents):**
 
@@ -120,7 +117,7 @@ After implementation:
 
 <metadata>
   <title>UtmlClassifier::classify (7 states with coaching-order priority) + prune_decision (3-condition agreement) + Consolidation::update_m_t + Consolidation::detect_dissipating + StateTransfer::compute_t + ContinualBackprop::reinit_dormant_units</title>
-  <status>blocked</status>
+  <status>complete</status>
   <layer>logic</layer>
   <sequence>9</sequence>
   <implements>

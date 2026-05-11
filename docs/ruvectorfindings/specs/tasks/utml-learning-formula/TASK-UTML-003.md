@@ -88,7 +88,7 @@ After implementation:
 
 <metadata>
   <title>compute_delta_p (predicted, target, snr, exploration_bonus, gamma, imagined) + compute_delta_p_aggregate (per-chunk Mean | Max | TopKMean | EntityWeighted) returning f32 in [0, 1]</title>
-  <status>blocked</status>
+  <status>complete</status>
   <layer>logic</layer>
   <sequence>3</sequence>
   <implements>

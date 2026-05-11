@@ -6,23 +6,23 @@
 
 ---
 
-## Spec inventory (13 technical specs, paired 1:1 with functional) — **status refreshed 2026-05-10**
+## Spec inventory (13 technical specs, paired 1:1 with functional) — **status refreshed 2026-05-11**
 
-| ID | File | Implements | Phase | Status (2026-05-10) |
+| ID | File | Implements | Phase | Status (2026-05-11) |
 |---|---|---|---|---|
 | TECH-CORPUS | [TECH-CORPUS.md](./TECH-CORPUS.md) | SPEC-CORPUS | 0 | partial — Python operators+split+oracle bridge+CLI shipped |
-| TECH-AST-CHUNKING | [TECH-AST-CHUNKING.md](./TECH-AST-CHUNKING.md) | SPEC-AST-CHUNKING | 1a | partial — Rust-only chunker; multi-language extension pending |
-| TECH-EMBEDDERS | [TECH-EMBEDDERS.md](./TECH-EMBEDDERS.md) | SPEC-EMBEDDERS | 1b | partial — enum + manifest + VRAM gate shipped; real model-load wrappers pending |
-| TECH-INSTRUMENTS | [TECH-INSTRUMENTS.md](./TECH-INSTRUMENTS.md) | SPEC-INSTRUMENTS | 1c | partial — all 15 slots have deterministic encoders; embedder-backed replacements pending |
+| TECH-AST-CHUNKING | [TECH-AST-CHUNKING.md](./TECH-AST-CHUNKING.md) | SPEC-AST-CHUNKING | 1a | operational — 11-language `memory::ast` API shipped; legacy convergence/reformat audit pending ([#6](https://github.com/ChrisRoyse/contextgraph/issues/6), [#12](https://github.com/ChrisRoyse/contextgraph/issues/12)) |
+| TECH-EMBEDDERS | [TECH-EMBEDDERS.md](./TECH-EMBEDDERS.md) | SPEC-EMBEDDERS | 1b | control surface shipped; neural forward wrappers pending ([#3](https://github.com/ChrisRoyse/contextgraph/issues/3)) |
+| TECH-INSTRUMENTS | [TECH-INSTRUMENTS.md](./TECH-INSTRUMENTS.md) | SPEC-INSTRUMENTS | 1c | scaffold shipped; embedder/analyzer-backed replacements pending ([#4](https://github.com/ChrisRoyse/contextgraph/issues/4)) |
 | TECH-PREDICTOR | [TECH-PREDICTOR.md](./TECH-PREDICTOR.md) | SPEC-PREDICTOR | 2 | **shipped** — `crates/context-graph-mejepa/` |
 | TECH-TRAINING | [TECH-TRAINING.md](./TECH-TRAINING.md) | SPEC-TRAINING | 3 | **shipped** — `crates/context-graph-mejepa-train/` |
-| TECH-UTML | [TECH-UTML.md](./TECH-UTML.md) | SPEC-UTML | 3 (cross-cutting) | partial — `learning_signal.rs` shipped; pairwise MI / continual-backprop / state-transfer T pending |
+| TECH-UTML | [TECH-UTML.md](./TECH-UTML.md) | SPEC-UTML | 3 (cross-cutting) | shipped / safety-hardened — pairwise MI + continual-backprop + state-transfer T shipped; formula-carrier reconciliation tracked in [#13](https://github.com/ChrisRoyse/contextgraph/issues/13) |
 | TECH-INFERENCE | [TECH-INFERENCE.md](./TECH-INFERENCE.md) | SPEC-INFERENCE | 4a | **shipped** — `compiler.rs` + `conformal.rs` + `ood.rs` + `mejepa_verify` MCP tool |
 | TECH-TCT | [TECH-TCT.md](./TECH-TCT.md) | SPEC-TCT | 4b (cross-cutting) | **shipped** — `crates/context-graph-mejepa-tct/` + `mejepa_constellation_inspect` MCP tool |
 | TECH-SELF-HEALING | [TECH-SELF-HEALING.md](./TECH-SELF-HEALING.md) | SPEC-SELF-HEALING | 5 | **shipped** — `heal/` tree + `mejepa-heal-drill` + `mejepa_heal_status`/`mejepa_rollback_to` MCP tools |
-| TECH-HYGIENE | [TECH-HYGIENE.md](./TECH-HYGIENE.md) | SPEC-HYGIENE | 6 | partial — foundation crates shipped; integration + ops MCP tools pending |
-| TECH-SHIFT-SUBSCRIBER | [TECH-SHIFT-SUBSCRIBER.md](./TECH-SHIFT-SUBSCRIBER.md) | SPEC-SHIFT-SUBSCRIBER | 7 | partial — `reality_shift_log` infra + `mejepa_predict_latest` shipped; Tokio subscriber + remaining MCP tools pending |
-| TECH-EVALUATION | [TECH-EVALUATION.md](./TECH-EVALUATION.md) | SPEC-EVALUATION | 8 | partial — holdout-eval shipped; per-language stratification + ship gate + active learning pending |
+| TECH-HYGIENE | [TECH-HYGIENE.md](./TECH-HYGIENE.md) | SPEC-HYGIENE | 6 | shipped — hygiene crate + ops MCP tools; production scheduling tracked in [#8](https://github.com/ChrisRoyse/contextgraph/issues/8) |
+| TECH-SHIFT-SUBSCRIBER | [TECH-SHIFT-SUBSCRIBER.md](./TECH-SHIFT-SUBSCRIBER.md) | SPEC-SHIFT-SUBSCRIBER | 7 | shipped — subscriber + watermark + 3 MCP tools; production telemetry tracked in [#11](https://github.com/ChrisRoyse/contextgraph/issues/11) |
+| TECH-EVALUATION | [TECH-EVALUATION.md](./TECH-EVALUATION.md) | SPEC-EVALUATION | 8 | harness shipped — ship gate + active learning + graph; 300×8 rolling evidence tracked in [#5](https://github.com/ChrisRoyse/contextgraph/issues/5) |
 
 ---
 

@@ -46,7 +46,7 @@
 
 - **E5 and E11 retirement changes the original signal budget.** Active content set is now E1, E2, E3, E4, E6, E7, E8, E9, E10, E12, E13, E14. Any doc or implementation that still routes through E5 causal or E11 Kepler as active production embedders is stale and should fail closed or be rewritten to active replacements.
 - **Artifact integrity is not semantic inference.** Safetensors digest verification prevents supply-chain drift, but it does not prove tokenizer/model compatibility or embedding-quality behavior. The next deep FSV needs to run known real snippets through actual forward paths and read back persisted vectors with expected dimensions, finite values, and stable hashes.
-- **Panel-level TCT is not chunk-level TCT.** `GuardRejected` exists at panel level. Per-AST-chunk centroid construction and chunk-localized guard diagnostics are still needed to uncover function/class-specific failures.
+- **Superseded by doc 16:** panel-level TCT has since been extended with per-chunk `gtau_check_chunks` localization. The remaining TCT risk is production-scale centroid refresh evidence and operator UX surfacing, tracked in [#9](https://github.com/ChrisRoyse/contextgraph/issues/9).
 - **Synthetic FSV is not the final SWE-bench gate.** Current FSV uses deterministic, known-input fixtures to prove mechanics. The full 300 x 8 SWE-bench Lite corpus and rolling holdout evaluation remain the evidence required for the "review replacement" claim.
 - **WSL GPU telemetry is constrained.** NVIDIA documents that `nvidia-smi` exposes a limited feature set under WSL 2, so VRAM checks should keep using the code's CUDA/allocator readbacks and fail closed when telemetry is absent.
 

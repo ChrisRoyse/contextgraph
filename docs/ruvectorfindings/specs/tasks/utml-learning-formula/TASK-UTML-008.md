@@ -67,29 +67,17 @@ After implementation:
 
 ---
 
-## 📋 2026-05-11 STATE AUDIT — PARTIAL (compute primitive shipped; matrix-emitting JOB pending)
+## 📋 2026-05-11 STATE AUDIT — SHIPPED / SUPERSEDED
 
 > **Codebase reality table:** see `_index.md` in this directory.
 
-**Status: PARTIAL.** The COMPUTE primitive `pairwise_mi_audit(probabilities: &[Vec<f32>]) -> Result<f32, UtmlError>` SHIPPED at `crates/context-graph-mejepa-train/src/learning_signal.rs:275` — returns a SCALAR for ONE pair of distributions.
+**Status: COMPLETE / SUPERSEDED.** The scalar helper still exists, but the matrix implementation now lives in `crates/context-graph-mejepa-train/src/learning_signal/pairwise_mi_matrix.rs` with `PairwiseMiAuditor`, CSV writer/loader, and finite/range validation. `TrainingCertificate::{predictor_redundancy_pairwise_mi,predictor_redundancy_pairwise_mi_source}` are explicit columns, computed from selected batch tensors and validated against the nested ΔΞ component. The MCP surface `mcp__cgreality__mejepa_audit_pairwise_mi` writes the CSV source of truth and reloads it before returning.
 
-The MATRIX-emitting periodic AUDIT JOB that walks every instrument pair and persists `/tmp/contextgraph-mejepa-train-fsv/utml-pairwise-mi-matrix.csv` does NOT exist. This is the remaining work.
+The historical XML task body below remains as provenance for the original planned shape. Current implementation authority is `../../implementation-plan.md`, `../../_README.md`, and `../../../16_PHASE_6_8_HARDENING_FSV_2026_05_11.md`.
 
-**Decided scope for the remaining work:**
-1. New file `crates/context-graph-mejepa-train/src/aux/pairwise_mi_audit.rs` (alongside the existing `aux/` modules).
-2. `pub struct PairwiseMiAuditor { period_steps: u64, output_dir: PathBuf }`.
-3. `pub fn run_audit(&self, instrument_outputs: &BTreeMap<InstrumentSlot, Vec<Vec<f32>>>, step: u64) -> Result<PathBuf, UtmlError>`:
-   - For each `(slot_a, slot_b)` pair where `slot_a < slot_b` (no self-pairs, no duplicate orderings): call `pairwise_mi_audit(probabilities_a, probabilities_b)?`.
-   - Emit `utml-pairwise-mi-matrix-{step:08}.csv` with header `slot_a,slot_b,mi_nats,sample_count` and one row per pair.
-   - File mode `0o600` per SEC-MEJEPA-07.
-   - Return the file path.
-4. `pub struct EmbedderCoherence { matrix: BTreeMap<(InstrumentSlot, InstrumentSlot), f32>, computed_at_step: u64 }` — load from CSV for downstream consumers (Phase 8 TASK-EVAL-011 reads this for Q5 open research question).
-5. Schedule: invoked by `Trainer` every `period_steps` (default 1000); skipped during warmup.
-6. NEVER `unwrap_or` defaults on MI computation — NaN/Inf surfaces structured errors.
+**Cross-phase dep:** Phase 8 reads the pairwise-MI evidence through the shipped CSV/readback surface; production trend evidence is tracked in [#11](https://github.com/ChrisRoyse/contextgraph/issues/11) and [#5](https://github.com/ChrisRoyse/contextgraph/issues/5).
 
-**Cross-phase dep:** Phase 8 TASK-EVAL-011 reads the matrix CSV for the Q5 open-research-question entry.
-
-**FSV for this task:** integration test (a) constructs synthetic instrument outputs with KNOWN pairwise MI (independent: ~0.0 nats; identical: max nats) → asserts CSV matrix matches expected within ε; (b) reads back the CSV via separate file open → asserts byte-equal serialization; (c) verifies file mode `0o600`. Source of Truth: separate file read + ground-truth MI cross-check.
+**FSV for this task:** `cargo test -p context-graph-mcp pairwise_mi_audit --lib` writes and reloads `/mnt/d/contextgraph/fsv/mcp-pairwise-mi-unit/audit/utml-pairwise-mi-matrix-00000042.csv`; `train_smoke_fsv` persists cert rows with explicit pairwise-MI columns in `CF_MEJEPA_TRAIN_CERTS`.
 
 ---
 
@@ -98,7 +86,7 @@ The MATRIX-emitting periodic AUDIT JOB that walks every instrument pair and pers
 
 <metadata>
   <title>compute_embedder_coherence (Jaccard agreement of NN sets across E1-E14) + pairwise_mi_audit (writes pairwise_mi_matrix.csv) + bootstrap_neutral fallback for &lt; 1000 corpus entries</title>
-  <status>blocked</status>
+  <status>complete</status>
   <layer>logic</layer>
   <sequence>8</sequence>
   <implements>

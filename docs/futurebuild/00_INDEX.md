@@ -1,0 +1,70 @@
+# futurebuild — ME-JEPA as the Reality Truth System
+
+> **Purpose.** This directory is the complete forward-looking plan for turning ME-JEPA-Code into the operational truth system that predicts, in real time, whether code an AI agent has produced will work in reality. It supersedes the historical reality-loop framing (outer Claude + inner Qwen LLM) and consolidates everything around a **single outer loop around Claude Code**, whose only job is to generate the durable reality stream that ME-JEPA trains on and serves predictions about.
+>
+> **Authority.** When this suite conflicts with `docs/ruvectorfindings/specs/_README.md` or `.claude/loop.md`, the change is intentional — apply it. The operator approved the pivot in the prompt that originated this directory. `CLAUDE.md` is unchanged; the rules in §11 still apply, but the *content* of the work has shifted from "build ME-JEPA primitives" (largely done) to "operationalize ME-JEPA as the reality truth system that AI agents query."
+
+**Date authored:** 2026-05-10
+**Status:** active blueprint — this is the canonical forward-looking plan
+**Scope:** absorbs `09`, `10`, `11`, `12`, `13`, `14`, `15`, `16` from `docs/ruvectorfindings/`; refactors `.claude/loop.md`; deletes the inner-loop residue per the operator directive.
+
+---
+
+## Reading order
+
+| # | Document | What it covers |
+|---|---|---|
+| 1 | [`01_VISION_TRUTH_SYSTEM.md`](01_VISION_TRUTH_SYSTEM.md) | The end goal: ME-JEPA replaces human code review by predicting reality |
+| 2 | [`02_CURRENT_STATE_HONEST.md`](02_CURRENT_STATE_HONEST.md) | What's actually shipped vs aspirational — no marketing |
+| 3 | [`03_ARCHITECTURE_BLUEPRINT.md`](03_ARCHITECTURE_BLUEPRINT.md) | Reference architecture: edits → embeddings → panels → ME-JEPA → verdicts → agents |
+| 4 | [`04_DDA_TCT_CODE_ENRICHMENT.md`](04_DDA_TCT_CODE_ENRICHMENT.md) | The multi-embedder labeling pipeline — DDA explodes code into N·(N+N²) signals |
+| 5 | [`05_EMBEDDER_SIGNAL_MAP.md`](05_EMBEDDER_SIGNAL_MAP.md) | Which of the 21 embedders carry signal for code-reality prediction; routing table |
+| 6 | [`06_REALITY_LOOP_REFACTOR.md`](06_REALITY_LOOP_REFACTOR.md) | The single outer-loop-around-Claude-Code design replacing the bipartite Mode A/B |
+| 7 | [`07_TRAINING_DATA_FLYWHEEL.md`](07_TRAINING_DATA_FLYWHEEL.md) | How every Edit shift → panel → corpus row; replay-buffer + prioritized sampling |
+| 8 | [`08_LIVE_PREDICTION_AGENT_API.md`](08_LIVE_PREDICTION_AGENT_API.md) | The MCP tool surface AI agents call to ask "will this work?" + injection-back |
+| 9 | [`09_SELF_HEALING_AUTONOMY.md`](09_SELF_HEALING_AUTONOMY.md) | Autonomous learning: observe + EWC++ + drift + A/B/C, no human in the loop |
+| 10 | [`10_LEARNING_FORMULA_MEJEPA_TRUTH.md`](10_LEARNING_FORMULA_MEJEPA_TRUTH.md) | UTML v1.0 (JEPA Edition) operationalized for code-reality prediction |
+| 11 | [`11_DELETION_LIST_INNER_LOOP.md`](11_DELETION_LIST_INNER_LOOP.md) | What to delete from the codebase: inner-LLM residue, Mode B drip, etc. |
+| 12 | [`12_IMPLEMENTATION_PHASES.md`](12_IMPLEMENTATION_PHASES.md) | Phased rollout with effort estimates and ship gates |
+| 13 | [`13_TASK_INDEX.md`](13_TASK_INDEX.md) | Atomic task graph (DAG) by domain with dependencies |
+| 14 | [`14_NEW_LOOP_MD.md`](14_NEW_LOOP_MD.md) | The refactored `.claude/loop.md` content (single outer loop around Claude Code) |
+
+## Spec hierarchy
+
+| Level | Where | Purpose |
+|---|---|---|
+| 1 — Constitution | inherits from `docs/ruvectorfindings/specs/constitution.md` | immutable rules |
+| 2 — Functional | [`specs/functional/`](specs/functional/) | what to build, per domain |
+| 3 — Technical | [`specs/technical/`](specs/technical/) | how to build, per domain |
+| 4 — Tasks | [`tasks/`](tasks/) | atomic work units, sequenced, with definition of done |
+
+## Domain map
+
+| Domain | Functional spec | Technical spec | Tasks dir |
+|---|---|---|---|
+| **FLYWHEEL** — turn Claude Code's Edit shifts into ME-JEPA training data continuously | [`SPEC-FLYWHEEL.md`](specs/functional/SPEC-FLYWHEEL.md) | [`TECH-FLYWHEEL.md`](specs/technical/TECH-FLYWHEEL.md) | [`tasks/flywheel/`](tasks/flywheel/) |
+| **PREDICT** — agent-facing live prediction API (MCP tool surface) + verdict injection | [`SPEC-PREDICT.md`](specs/functional/SPEC-PREDICT.md) | [`TECH-PREDICT.md`](specs/technical/TECH-PREDICT.md) | [`tasks/predict/`](tasks/predict/) |
+| **ENRICHMENT** — DDA/TCT multi-embedder explosion of code into 462+ signals per chunk | [`SPEC-ENRICHMENT.md`](specs/functional/SPEC-ENRICHMENT.md) | [`TECH-ENRICHMENT.md`](specs/technical/TECH-ENRICHMENT.md) | [`tasks/enrichment/`](tasks/enrichment/) |
+| **LOOP** — refactor `.claude/loop.md` + delete inner-loop residue | [`SPEC-LOOP.md`](specs/functional/SPEC-LOOP.md) | [`TECH-LOOP.md`](specs/technical/TECH-LOOP.md) | [`tasks/loop/`](tasks/loop/) |
+| **HEAL** — autonomous observe + EWC++ + drift + A/B/C scheduler | [`SPEC-HEAL.md`](specs/functional/SPEC-HEAL.md) | [`TECH-HEAL.md`](specs/technical/TECH-HEAL.md) | [`tasks/heal/`](tasks/heal/) |
+| **CORPUS** — finish the 300×8 SWE-bench Lite mutation corpus + per-language operators | (covered by existing [`SPEC-CORPUS-functional.md`](../ruvectorfindings/specs/functional/SPEC-CORPUS-functional.md)) | (covered) | [`tasks/corpus/`](tasks/corpus/) |
+| **OBSERVABILITY** — live conformal/OOD/p50/p99 capture; ship-gate dashboard | (covered by existing `SPEC-EVAL` + extensions in [`SPEC-OBSERVABILITY.md`](specs/functional/SPEC-OBSERVABILITY.md)) | [`TECH-OBSERVABILITY.md`](specs/technical/TECH-OBSERVABILITY.md) | [`tasks/observability/`](tasks/observability/) |
+
+## What this directory is NOT
+
+- It is not a re-derivation of UTML v1.0 — that lives in `docs2/TheoryOfMachineLearning.md` and `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md`. We *use* it, we don't re-prove it.
+- It is not a re-derivation of TCT — that lives in `docs/ruvectorfindings/13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md`. We *consume* it as the predictor-side collapse defense and the universal-agent-verifier surface.
+- It is not a Phase 0–8 rebuild plan — most of those phases are SHIPPED. This directory documents the **operational integration** layer that turns the shipped primitives into a self-running truth system.
+- It is not a re-architecture — the architecture is correct. This is the productionization plan.
+
+## Cross-references
+
+- Master plan that this absorbs: `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md`
+- Pivot statement that this respects: `docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md`
+- Learning formula (use as-is): `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md`
+- Embedder doctrine (extended in `05`): `docs/ruvectorfindings/12_EMBEDDER_INTEGRATION.md`
+- TCT (consumed as collapse defense): `docs/ruvectorfindings/13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md`
+- AST chunking (consumed by enrichment): `docs/ruvectorfindings/14_AST_AWARE_CHUNKING_FOR_EMBEDDERS.md`
+- Hardening evidence ledgers: `docs/ruvectorfindings/{15,16}_PHASE_*_HARDENING_FSV_*.md`
+- Operator role contract: `CLAUDE.md §11`
+- The (about-to-be-replaced) loop spec: `.claude/loop.md` — see [`14_NEW_LOOP_MD.md`](14_NEW_LOOP_MD.md) for the replacement

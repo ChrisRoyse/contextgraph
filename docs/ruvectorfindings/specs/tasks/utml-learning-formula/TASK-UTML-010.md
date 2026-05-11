@@ -67,11 +67,13 @@ After implementation:
 
 ---
 
-## 📋 2026-05-11 STATE AUDIT — PENDING (build on existing edge-case FSV pattern)
+## 📋 2026-05-11 STATE AUDIT — SHIPPED / SUPERSEDED
 
 > **Codebase reality table:** see `_index.md` in this directory.
 
-**Status: PENDING.** Adjacent FSV examples SHIPPED (`train_edge_cases_fsv`, `train_holdout_eval_fsv`, `train_smoke_fsv`, `train_full_fsv`, `train_cert_chain_fsv` in `crates/context-graph-mejepa-train/examples/`) cover individual cases. The full 100-synthetic-example UTML envelope harness is the remaining work.
+**Status: COMPLETE / SUPERSEDED.** Adjacent FSV examples SHIPPED (`train_edge_cases_fsv`, `utml_l_step_fsv`, `train_holdout_eval_fsv`, `train_smoke_fsv`, `train_full_fsv`, `train_cert_chain_fsv` in `crates/context-graph-mejepa-train/examples/`) cover the L_step envelope, target-collapse failure, cert-chain persistence, and training-certificate readback. `continual_backprop_regulation_fsv` covers the regulation side effect in `CF_MEJEPA_WEIGHT_BLOBS`. Production-scale evidence is tracked in [#11](https://github.com/ChrisRoyse/contextgraph/issues/11) and [#5](https://github.com/ChrisRoyse/contextgraph/issues/5).
+
+The historical implementation sketch below remains as provenance for the original standalone 100-example harness. Current implementation authority is `../../implementation-plan.md`, `../../_README.md`, and `../../../16_PHASE_6_8_HARDENING_FSV_2026_05_11.md`.
 
 **Decided scope for this task:**
 1. New example binary `crates/context-graph-mejepa-train/examples/utml_envelope_fsv.rs` (clean-room, provenance comment per CLAUDE.md).
@@ -97,7 +99,7 @@ After implementation:
 
 <metadata>
   <title>FSV example binary utml_l_step_fsv: 100 synthetic examples (perfect prediction, total miss, high-drift, low-grad, collapsed latent, OOD, operator gold) writing utml-l-step-evidence.json + utml-classifier-evidence.json + utml-pairwise-mi-matrix.csv to /tmp/contextgraph-mejepa-train-fsv/ with mode 0o600 and re-reading + asserting envelope</title>
-  <status>blocked</status>
+  <status>complete</status>
   <layer>surface</layer>
   <sequence>10</sequence>
   <implements>

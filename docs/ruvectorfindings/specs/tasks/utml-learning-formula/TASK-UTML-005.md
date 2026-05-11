@@ -75,7 +75,7 @@ After implementation:
 
 **Sub-functions** (`plasticity`, `landscape`, `stability`, `agent_state`) are encoded as fields of `DeltaOmegaComponents` and combined inside `compute_delta_omega`. The semantic content of each sub-function (effective_plasticity collapse detection, loss-landscape sharpness, prediction stability, agent-state coherence) matches doc 11 §V.
 
-**Note:** The per-step _detection_ of `effective_plasticity` collapse is the trigger for continual-backprop dormant-unit re-init — that intervention itself is in PENDING TASK-UTML-009. The formula here PRODUCES the signal; UTML-009 ACTS on it.
+**2026-05-11 note:** The per-step _detection_ of `effective_plasticity` collapse is now consumed by the shipped continual-backprop dormant-unit re-init path in `heal/regulate.rs`, which persists changed handles to `CF_MEJEPA_WEIGHT_BLOBS` with readback. Broader formula-carrier reconciliation is tracked in [#13](https://github.com/ChrisRoyse/contextgraph/issues/13).
 
 **No further work needed for the core compute function.**
 
@@ -86,7 +86,7 @@ After implementation:
 
 <metadata>
   <title>compute_delta_omega geometric product (plasticity^0.4 · landscape^0.4 · stability^0.1 · agent_state^0.1) + sub-functions for each component</title>
-  <status>blocked</status>
+  <status>complete</status>
   <layer>logic</layer>
   <sequence>5</sequence>
   <implements>
