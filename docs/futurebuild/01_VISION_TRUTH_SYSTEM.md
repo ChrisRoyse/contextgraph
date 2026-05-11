@@ -14,15 +14,17 @@ Every AI coding agent today (Claude Code, Cursor, Copilot, Devin, the swarm-of-a
 
 ## 3. What ME-JEPA must answer for any agent action
 
-Three operator-defined questions, each deterministically resolvable:
+The truth system answers more than pass/fail. Even when oracle prediction is **Pass**, ME-JEPA must surface every other identifiable concern about the change — edge cases the tests do not exercise, latent bugs the change introduces, performance regressions, security-relevant deltas, dead code created or amplified, redundancy with existing code, and cost/efficiency degradations. **The system predicts every issue it can predict, every time it predicts at all.** The full taxonomy of prediction heads is in [`15_PREDICTION_TAXONOMY.md`](15_PREDICTION_TAXONOMY.md); the four operator questions below are how each prediction is anchored to a verifiable reality channel.
 
 | Q | Question | How ME-JEPA answers |
 |---|---|---|
 | **Q1** | Does what the AI claimed it did **EXIST**? | Claim graph extracted from the agent's response is reconciled against the source-of-truth SHA chain on disk. If the agent says "I added function X to file Y at line Z," `verify()` confirms file Y at SHA after_sha contains function X at line Z, OR returns `ClaimViolation{missing: [...], modified_unexpectedly: [...]}` |
-| **Q2** | Does it **WORK** as intended? | The patch is encoded into a panel; ME-JEPA's predictor outputs `predicted_oracle_panel`; the conformal predictor returns a calibrated interval; the TCT Gτ guard checks `cos(φ_m(ŷ), c_m) ≥ τ_m` for every embedder; verdict is `Pass / Fail / OutOfDistribution / Abstain / GuardRejected` with a confidence interval and the list of violating embedders/chunks if any |
-| **Q3** | How is it actually **IMPACTING REALITY**? | The shift log is replayed against the predicted side-effect set: which files changed, which tests would have flipped, which static-analysis warnings would have appeared. Predicted side-effect deltas are diffed against observed shifts and surfaced as a `RealityImpact` summary the agent can be re-prompted with |
+| **Q2** | Does it **WORK** as intended? | The patch is encoded into a panel; ME-JEPA's predictor outputs `predicted_oracle_panel`; the conformal predictor returns a calibrated interval; the TCT Gτ guard checks `cos(φ_m(ŷ), c_m) ≥ τ_m` for every embedder; verdict is `Pass / Fail / OutOfDistribution / Abstain / GuardRejected` |
+| **Q3** | If it doesn't work — **WHY**, and what are the failure modes? | When the verdict is anything other than confident `Pass`, ME-JEPA returns the ranked list of predicted root causes (`predicted_failure_modes: Vec<FailureMode>`), the specific tests predicted to flip from PASS→FAIL with logits, the violating embedders and chunks from the Gτ guard, and the closest known failure exemplars from the corpus retrieved by patch-similarity graph |
+| **Q4** | Even if it works, **WHAT ELSE COULD GO WRONG**? | Always-on multi-head predictions about non-oracle concerns: `predicted_edge_cases`, `predicted_latent_bugs`, `predicted_tech_debt_added`, `predicted_dead_code`, `predicted_redundant_code`, `predicted_perf_regressions`, `predicted_security_concerns`, `predicted_accuracy_degradations`, `predicted_cost_increases`. Each prediction comes with a chunk citation, a confidence interval, and the embedder(s) that surfaced it |
+| **Q5** | How is it actually **IMPACTING REALITY**? | The shift log is replayed against the predicted side-effect set: which files changed, which tests would have flipped, which static-analysis warnings would have appeared. Predicted side-effect deltas are diffed against observed shifts and surfaced as a `RealityImpact` summary the agent can be re-prompted with |
 
-These three questions cover the entire surface of "did the AI do what it said." Anything an AI agent could lie about, exaggerate, or be confused about reduces to one of Q1, Q2, Q3.
+These five questions cover the entire surface of "what the AI did and what's wrong with it." Anything an AI agent could lie about, miss, or be confused about reduces to one of Q1–Q5. **The agent never gets back only "looks fine" — it gets back a structured list of every concern ME-JEPA can identify, ranked by predicted severity, every single time.**
 
 ## 4. The architectural property that makes this possible
 
