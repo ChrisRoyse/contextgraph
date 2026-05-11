@@ -147,8 +147,8 @@ pub fn conformal_health(
                 expected_coverage: config.conformal_expected_coverage,
                 empirical_coverage: empirical,
                 sample_count: lang_obs.len(),
-                within_band: (empirical - config.conformal_expected_coverage).abs()
-                    <= config.conformal_band,
+                within_band: empirical + config.conformal_band
+                    >= config.conformal_expected_coverage,
             },
         );
     }
