@@ -1,0 +1,103 @@
+# SPEC-ENRICHMENT — Functional Specification
+
+> **Level 2.** Defines WHAT the multi-embedder DDA/TCT enrichment pipeline must do.
+> Owns: REQ-ENRICH-01..15.
+> Implementation reference: [`04_DDA_TCT_CODE_ENRICHMENT.md`](../../04_DDA_TCT_CODE_ENRICHMENT.md), [`05_EMBEDDER_SIGNAL_MAP.md`](../../05_EMBEDDER_SIGNAL_MAP.md).
+
+---
+
+## User stories
+
+- **As ME-JEPA training**, I want every code chunk converted to N + N² structured signals across all valuable embedders so the multi-head predictor has dense supervision.
+- **As ME-JEPA inference**, I want chunk-level Gτ guard checks against per-(category × language × embedder) centroids so I can localize geometric anomalies.
+- **As an operator**, I want predictable storage growth with the new DDA signal block, controlled via tier compression.
+
+## Requirements
+
+### REQ-ENRICH-01 — Neural per-embedder forward wrappers
+
+An `EmbedderForward` trait SHALL be implemented for each of the 12 active content embedders (E1, E2, E3, E4, E6, E7, E8, E10, E12, E13, E14, E17). Each implementation runs a real neural forward pass via Candle/CUDA against the SHA-pinned model artifact under `/mnt/d/cabdru/contextgraph/models/`. Deterministic placeholders are removed.
+
+### REQ-ENRICH-02 — DDA signal computation per chunk per shift
+
+For each chunk per shift, the system SHALL compute:
+- Per-embedder cosine to the corresponding `(predicted_category, entity_kind, language, embedder)` centroid (N values).
+- Pairwise cosine between embedder outputs (N² values, upper-triangle stored).
+- Pairwise mutual information (cached weekly; reused).
+
+Total: `n × (N + N²)` signals per panel where n = chunk count and N = active-embedder count.
+
+### REQ-ENRICH-03 — Persist DDA signals to `CF_MEJEPA_DDA_SIGNALS`
+
+The DDA signal block SHALL be persisted keyed by `(panel_id, chunk_id)` so it can be consumed by the TCT Gτ guard in O(1) and reused across training epochs without recomputation.
+
+### REQ-ENRICH-04 — Embedder cache (chunk_sha, embedder_id) → vector
+
+To avoid re-running neural forward on unchanged chunks, an embedder cache SHALL key on `(embedder_id, chunk_sha)` and return cached vectors. Cache size bounded; LRU eviction. Persists across daemon restarts (under `/mnt/d/contextgraph/storage/embedder-cache/`).
+
+### REQ-ENRICH-05 — VRAM budget gate at startup
+
+The daemon SHALL refuse to start if the configured embedder set exceeds the GPU VRAM budget (default 10 GB on RTX 5090). Fail closed with `MEJEPA_VRAM_BUDGET_EXCEEDED`. Lazy loading of embedders is permitted but the cap applies.
+
+### REQ-ENRICH-06 — Per-embedder digest verification at startup
+
+Each embedder loader SHALL SHA-256-verify its model artifact at startup. Mismatch fails closed with `MEJEPA_EMBEDDER_DIGEST_MISMATCH`.
+
+### REQ-ENRICH-07 — Routing table consistency
+
+The 143-row routing table from `crates/context-graph-mejepa-embedders::routing` SHALL be exercised by an FSV that for every (Language × EntityType) combination, the routed embedder set is non-empty AND every embedder in the set returns a valid forward output.
+
+### REQ-ENRICH-08 — Per-(category × entity × language × embedder) centroid table
+
+The TCT constellation (already shipped) SHALL be populated by per-cell centroid construction over the Phase 0 mutation corpus + KnownGood baseline. Cells with N < 50 supporting examples use Bayesian shrinkage.
+
+### REQ-ENRICH-09 — TCT Gτ guard at inference
+
+For each `verify(patch, context)` call, the system SHALL run `gtau_check_chunks` against the predicted panel; per-chunk × per-embedder cosine < τ_m → guard violation entry → `Verdict::GuardRejected`.
+
+### REQ-ENRICH-10 — Per-embedder threshold τ_m calibration
+
+τ_m thresholds SHALL be calibrated for false-positive rate ≤ 5% on a held-out KnownGood split, per existing `calibrator.rs`. Recalibrated when constellation refresh fires.
+
+### REQ-ENRICH-11 — Constellation freshness policy
+
+A constellation cell is `fresh` if updated within 90 days AND fewer than 100 new training examples have arrived since last refresh. Stale cells SHALL be refreshed by the self-optimization scheduler's constellation_freshness_tick.
+
+### REQ-ENRICH-12 — Pairwise MI matrix maintenance
+
+The pairwise MI matrix between active embedders SHALL be recomputed weekly via `mejepa_audit_pairwise_mi` and persisted to `/mnt/d/contextgraph/exports/pairwise-mi/<date>.csv`. Slots with MI > 0.85 ceiling are flagged.
+
+### REQ-ENRICH-13 — Failure-exemplar reverse index
+
+`CF_MEJEPA_FAILURE_EXEMPLARS` keyed by `(failure_mode_class, embedder_violation_signature)` SHALL be populated from corpus failures. Used by the prediction's `closest_exemplars` field.
+
+### REQ-ENRICH-14 — Per-language stdlib registry
+
+A small per-language YAML registry of standard solutions (e.g., "tenacity for retry-with-backoff", "logging instead of print") SHALL inform the `ReinventedWheel` redundancy class. Registry under `crates/context-graph-mejepa-instruments/data/stdlib_registry/<language>.yml`.
+
+### REQ-ENRICH-15 — Cross-embedder anomaly detection
+
+For each shift, the system SHALL compute `cross_embedder_anomaly_z_score` per chunk per embedder pair. High-magnitude z-scores feed the failure-mode head as auxiliary input.
+
+## Acceptance criteria
+
+1. `EmbedderForward::forward(chunk)` for all 12 active embedders returns non-deterministic outputs that match the expected output for a deterministic test chunk SHA.
+2. DDA signal computation for a 30-chunk patch produces 30 × (12 + 144) = 4,680 signals; persisted to `CF_MEJEPA_DDA_SIGNALS`.
+3. TCT Gτ guard for a synthetic "intentionally bad" chunk fires `Verdict::GuardRejected` with the expected violating embedders.
+4. VRAM peak under all 12 embedders loaded < 10 GB.
+5. Embedder cache hit rate > 90% on a session with 10 small edits to the same chunk.
+6. Pairwise MI heatmap rendered weekly to `/mnt/d/contextgraph/exports/pairwise-mi/<date>.csv`.
+
+## Edge cases
+
+- **Chunk too small to embed (< 16 chars)**: deterministic zero vector + `degenerate_chunk = true` flag in DDA signals.
+- **Chunk too large (> max model context)**: split into sub-chunks via the existing AST splitter; aggregate via mean pooling.
+- **Embedder model file missing**: fail closed at startup with `MEJEPA_EMBEDDER_DIGEST_MISMATCH`.
+- **Routing returns empty embedder set for an unknown (Language × EntityType)**: log `MEJEPA_ROUTING_UNKNOWN_COMBO` and skip the chunk; no panel is produced for it.
+- **MI matrix not yet computed (cold start)**: use uniform priors until the first weekly audit lands.
+
+## Non-functional
+
+- Per-shift DDA computation < 200ms (cached MI; only fresh cosines).
+- Embedder cache memory bounded at < 2 GB.
+- Constellation refresh < 5 min for an updated cell.
