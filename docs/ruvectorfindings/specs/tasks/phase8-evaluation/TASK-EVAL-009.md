@@ -65,15 +65,26 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mejepa/src/eval/active_learning.rs` does NOT exist. Accurate on "create".
-- **Active-learning loop is PENDING** per `_README.md` Phase 8 status.
-- BinaryHeap + dedup HashMap shape lands in TASK-EVAL-002 (queue.rs). This task adds the enqueue / label / OOD-escalation behavior on top.
-- CF_MEJEPA_ACTIVE_LEARNING_QUEUE/LABELS/EVICTIONS land in TASK-EVAL-003. Capacity overflow audit (EC-EVAL-04) must write to CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS — verify the eviction row schema before implementing.
-- LabelMethod (Manual/DockerRerun/AdjacentTestRerun) — defined in TASK-EVAL-001. DockerRerun must invoke the Phase-0 `swebench::run_swebench_lite_oracle` (shipped in `crates/context-graph-mejepa-corpus/src/swebench.rs`). Do not re-implement Docker dispatch.
+**Confirmed 2026-05-11:**
+- `ConformalSet` SHIPPED in `crates/context-graph-mejepa/src/conformal.rs`; `OodDetector` SHIPPED in `ood.rs`.
+- This task is INDEPENDENT of TASK-EVAL-004 — it works against per-prediction `ConformalSet` outputs from any source.
+
+**Decided scope for this task:**
+1. Add `EvalRunner::enqueue_uncertain(&mut self, predictions: &[(PredictionId, ConformalSet, f32)]) -> Result<usize, EvalError>` to `crates/context-graph-mejepa/src/eval/active_learning.rs` (new file). Returns the count of predictions enqueued.
+2. Filter rule: enqueue iff `conformal_set.outcome_set.len() > 3 AND ood_score < 0.5` (per REQ-EVAL-05). The threshold values are LOCKED constitutionally.
+3. `signal_value = conformal_set.outcome_set.len() as f32 * (1.0 - ood_score)` — ranks "high uncertainty + in-distribution" highest.
+4. Enqueue into `ActiveLearningQueueState` (BinaryHeap ordered by `signal_value` descending). Capacity-eviction: if `queue.len() > config.queue_capacity`, evict lowest-signal entry; persist eviction record to `CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS`.
+5. Persist new entries to `CF_MEJEPA_ACTIVE_LEARNING_QUEUE` keyed by `panel_sha`.
+6. `apply_active_learning_label(&mut self, panel_sha: [u8; 32], label: ActiveLearningLabel) -> Result<(), EvalError>`: pop entry from queue, append label to `CF_MEJEPA_ACTIVE_LEARNING_LABELS`, increment corpus growth counter for the weekly report.
+7. **OOD escalation routing:** when `ood_score >= 0.5`, route to `CF_MEJEPA_OOD_ESCALATIONS` (NOT the active learning queue) — per BR-EVAL-03 OOD-flagged predictions need adjacent-test re-run not human label.
+8. Target: ~1-2 % corpus growth per active-learning cycle (REQ-EVAL-06).
+9. NEVER `unwrap_or` on `panel_sha` existence checks.
+
+**FSV for this task:** integration test (a) feeds 1,000 synthetic predictions with KNOWN signal-value distribution → asserts top-K queue contents match expected by `signal_value`; (b) overflows the queue → asserts oldest-lowest evicted into `CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS`; (c) applies a label → asserts `CF_MEJEPA_ACTIVE_LEARNING_LABELS` row exists AND the queue is shorter by 1; (d) routes OOD-flagged into the OOD CF not the queue. Source of Truth: separate prefix scans on each CF after each scenario.
 
 ---
 

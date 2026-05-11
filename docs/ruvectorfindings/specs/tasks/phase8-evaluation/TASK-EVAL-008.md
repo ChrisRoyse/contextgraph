@@ -65,15 +65,30 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mejepa/src/eval/ship_gate.rs` does NOT exist. Accurate on "create".
-- **≥0.95 ship gate is the operator-facing Phase 8 DoD** — verify the 8-condition AND ordering against `_README.md` Domain map ship-gate-status row before deviating.
-- **Regression-history reader**: `crates/context-graph-mejepa-train/src/eval/regression.rs::detect_regression` is a train-internal precedent (line 47). Different surface — this task's `check_ship_gate` consumes CF_MEJEPA_EVAL_REPORTS rolling history (week-over-week < 2% delta), NOT train-loop regression checks. Do not couple.
-- Bayesian shrinkage entry-point — landed in TASK-EVAL-004 (runner.rs); this task consumes the shrunk per-cell correlations and skips low-N cells.
-- All 8 conditions MUST be `&&`-chained, not short-circuited beyond the natural AND — every condition's `passed: bool` and `reason: Option<String>` MUST be populated and persisted for operator audit.
+**Confirmed 2026-05-11:**
+- This is the central ship-gate decision; depends on every per-language stratification helper (TASK-EVAL-005/006/007) AND the Q1/Q2/Q3 rollup (TASK-EVAL-012).
+
+**Decided scope for this task:**
+1. Add `EvalRunner::check_ship_gate(&self, report: &EvalReport, prior_report: Option<&EvalReport>) -> Result<ShipGateStatus, EvalError>` to `crates/context-graph-mejepa/src/eval/ship_gate.rs` (new file).
+2. The 8-condition AND (per `ShipGateThresholds`):
+   - `report.overall_correlation >= 0.95`
+   - `report.per_category.values().all(|c| *c >= 0.95)` (all 8 mutation categories pass)
+   - `report.per_language.values().all(|c| *c >= 0.95)` (all 11 languages pass)
+   - `report.per_cell.values().all(|c| *c >= 0.90)` (all up-to-88 cells pass)
+   - `report.ood_calibration_health.values().all(|h| h.passes_band)` AND `report.ood_auc_per_language.values().all(|a| *a >= 0.85)`
+   - `report.conformal_coverage_health.values().all(|h| h.passes_band)` (all languages within ±2 %)
+   - `report.q1_pass_rate >= 0.99`
+   - `report.q3_side_effect_agreement.is_none() || report.q3_side_effect_agreement.unwrap() >= 0.90` (skip when Phase 7 not shipped)
+   - `prior_report.map(|p| week_over_week_regression_pct(p, report).abs() < 2.0).unwrap_or(true)` (no regression check on first run)
+3. Build `ShipGateStatus { passed: bool, per_category: BTreeMap<MutationCategory, bool>, per_language: BTreeMap<Language, bool>, blockers: Vec<String>, report_date: ..., overall_correlation: f32 }`. The `blockers` list contains a one-line description of every failing condition.
+4. NEVER `unwrap_or(true)` for confidence-related failures; only the regression check skips when no prior report exists (an explicit "first run" semantic).
+5. When Phase 7 is not shipped, skip the q3 condition AND emit `tracing::warn!` with `code = "MEJEPA_EVAL_PHASE7_DEPENDENCY_NOT_SHIPPED"` per the `_index.md` "Hard rules" #12.
+
+**FSV for this task:** integration test (a) constructs a passing report → `passed: true` + empty blockers; (b) constructs a report failing per_language[Java] → `passed: false` + blocker list contains `per_language[Java] < 0.95`; (c) constructs a 2.5% week-over-week regression → `passed: false`; (d) when Phase 7 not shipped, skips q3 with the warning emitted. Source of Truth: returned `ShipGateStatus` + log capture for the warning.
 
 ---
 

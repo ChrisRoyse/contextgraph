@@ -2,34 +2,66 @@
 
 //! Durable readers for Phase 7 ME-JEPA MCP tools.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use context_graph_mejepa::{RealityPrediction, RocksDbInferStore, TrainCertSummary};
-use context_graph_mejepa_instruments::materialize::TimeStep;
-use context_graph_mejepa_instruments::panel_store::{
-    PanelKey, PanelStore, CF_MEJEPA_PANEL_META,
+use context_graph_mejepa::{
+    build_deterministic_compiler, materialize_inference_panels, open_infer_rocksdb, panel_sha,
+    sha256_bytes, valid_witness_segment, AstDiff, CalibrationStore, DiffHunk, Language,
+    MeJepaInferConfig, MejepaStore, PatchBundle, RealityPrediction, RocksDbInferStore, TaskContext,
+    TaskEnvironment, TaskId, TestId, TrainCertSummary,
 };
-use context_graph_mejepa_instruments::InstrumentSlot;
-use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, DB};
+use context_graph_mejepa_instruments::materialize::TimeStep;
+use context_graph_mejepa_instruments::panel_store::{PanelKey, PanelStore, CF_MEJEPA_PANEL_META};
+use context_graph_mejepa_instruments::{InstrumentSlot, Panel, PanelEnvelope, PanelProvenance};
+use rocksdb::{IteratorMode, DB};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tracing::info;
 
-use crate::handlers::tools::reality_loop::helpers::{file_sot, read_active_runtime_root};
+use crate::handlers::tools::reality_loop::helpers::{
+    file_arg_to_path, file_sot, read_active_runtime_root, sha256_file,
+};
 
-const ENV_SUBSCRIBER_DB: &str = "CONTEXTGRAPH_MEJEPA_SUBSCRIBER_DB";
 const ENV_INFER_DB: &str = "CONTEXTGRAPH_MEJEPA_INFER_DB";
 const ENV_PANEL_DB: &str = "CONTEXTGRAPH_MEJEPA_PANEL_DB";
 const ENV_SHIFT_LOG_ROOT: &str = "CONTEXTGRAPH_MEJEPA_SHIFT_LOG_ROOT";
 const AUDIT_CHUNK_SIZE_BYTES: usize = 1_048_576;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct WatermarkRecord {
     session_id: String,
     last_consumed_shift_id: String,
     last_consumed_byte_offset: u64,
-    updated_at_unix_ms: i64,
+    last_advanced_at_unix_seconds: i64,
+    producer_tool_name: Option<String>,
+    source_log_path: Option<String>,
+}
+
+impl WatermarkRecord {
+    fn validate(&self, key: &str) -> Result<(), String> {
+        validate_session_hex32(&self.session_id)?;
+        let expected = watermark_key(&self.session_id);
+        if key != expected {
+            return Err(format!(
+                "watermark key {key:?} does not match canonical key {expected:?}"
+            ));
+        }
+        if !valid_shift_id(&self.last_consumed_shift_id) {
+            return Err(format!(
+                "watermark {key:?} has invalid last_consumed_shift_id {:?}",
+                self.last_consumed_shift_id
+            ));
+        }
+        if self.last_advanced_at_unix_seconds <= 0 {
+            return Err(format!(
+                "watermark {key:?} has non-positive last_advanced_at_unix_seconds {}",
+                self.last_advanced_at_unix_seconds
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -54,26 +86,25 @@ struct PanelAuditSummary {
     provenance: Value,
 }
 
-pub(crate) async fn subscriber_state_for_provenance() -> Option<Value> {
-    let db_path = std::env::var(ENV_SUBSCRIBER_DB).ok()?;
-    match read_watermarks(Path::new(&db_path)) {
-        Ok(watermarks) => {
-            let latest = watermarks
-                .values()
-                .max_by_key(|record| record.updated_at_unix_ms)
-                .cloned();
-            Some(json!({
-                "last_consumed_shift_id": latest.as_ref().map(|record| record.last_consumed_shift_id.clone()),
-                "subscriber_lag_at_call_time": Value::Null,
-                "subscriber_db_path": db_path
-            }))
-        }
-        Err(err) => Some(json!({
-            "error_code": "MEJEPA_SUBSCRIBER_STATUS_READ_FAILED",
-            "message": err,
-            "subscriber_db_path": db_path
-        })),
-    }
+pub(crate) fn subscriber_state_for_provenance(
+    db: &DB,
+    session_id: [u8; 16],
+) -> Result<Option<Value>, String> {
+    let session_hex = hex::encode(session_id);
+    let cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_SHIFT_WATERMARK)
+        .ok_or_else(|| "missing CF_MEJEPA_SHIFT_WATERMARK handle".to_string())?;
+    let key = watermark_key(&session_hex);
+    let Some(bytes) = db
+        .get_cf(cf, key.as_bytes())
+        .map_err(|err| format!("watermark point read failed for {key}: {err}"))?
+    else {
+        return Ok(None);
+    };
+    let record: WatermarkRecord = serde_json::from_slice(&bytes)
+        .map_err(|err| format!("watermark value for key {key:?} is invalid JSON: {err}"))?;
+    record.validate(&key)?;
+    Ok(Some(watermark_to_value(&record, &key)))
 }
 
 pub(crate) fn valid_shift_id(value: &str) -> bool {
@@ -151,29 +182,122 @@ pub(crate) async fn locate_shift(shift_id: &str) -> Result<Option<LocatedShift>,
     Ok(None)
 }
 
+pub(crate) fn replay_shift(shift: &LocatedShift) -> Result<Value, String> {
+    validate_session_hex32(&shift.session_id)?;
+    let infer_db_path = required_env_path(ENV_INFER_DB)?;
+    let panel_db_path = required_env_path(ENV_PANEL_DB)?;
+    let db = open_infer_rocksdb(&infer_db_path).map_err(|err| err.to_string())?;
+    let session_id = decode_session_hex32(&shift.session_id)?;
+    let watermark_before = subscriber_state_for_provenance(db.as_ref(), session_id)
+        .map_err(|err| format!("watermark read before replay failed: {err}"))?;
+    let (patch, context, source) = patch_context_from_shift(shift)?;
+    let panels = materialize_inference_panels(&patch, &context).map_err(|err| err.to_string())?;
+    let calibration = CalibrationStore::new(db.clone(), 30).map_err(|err| err.to_string())?;
+    let store = RocksDbInferStore::new(db.clone());
+    let compiler = build_deterministic_compiler(
+        context.environment.repo_root.clone(),
+        std::sync::Arc::new(store.clone()),
+        calibration,
+        MeJepaInferConfig::default(),
+    )
+    .map_err(|err| err.to_string())?;
+    let mut prediction = compiler
+        .compile(&patch, &context)
+        .map_err(|err| err.to_string())?;
+    prediction.created_at_unix_ms = timestamp_ns_to_ms(shift)?;
+    prediction = RealityPrediction::try_new(prediction).map_err(|err| err.to_string())?;
+    store
+        .write_live_prediction(&prediction)
+        .map_err(|err| err.to_string())?;
+    let prediction_readback = MejepaStore::read_live_predictions(&store, context.session_id, 1000)
+        .map_err(|err| err.to_string())?;
+    let persisted_matches = prediction_readback
+        .iter()
+        .filter(|row| {
+            row.prediction_id == prediction.prediction_id
+                && row.created_at_unix_ms == prediction.created_at_unix_ms
+                && row.task_id == prediction.task_id
+        })
+        .count();
+    if persisted_matches != 1 {
+        return Err(format!(
+            "MEJEPA_OBSERVE_SHIFT_PREDICTION_READBACK_MISMATCH: expected 1 persisted prediction row for replay, found {persisted_matches}"
+        ));
+    }
+    let panel_store = PanelStore::open(&panel_db_path).map_err(|err| err.to_string())?;
+    persist_panels(&panel_store, &context, &patch, &source, panels)?;
+    let watermark_after = subscriber_state_for_provenance(db.as_ref(), context.session_id)
+        .map_err(|err| format!("watermark read after replay failed: {err}"))?;
+    info!(
+        code = "MEJEPA_OBSERVE_SHIFT_REPLAYED",
+        shift_id = %shift.shift_id,
+        session_id = %shift.session_id,
+        prediction_id = %hex::encode(prediction.prediction_id),
+        "replayed durable shift into ME-JEPA prediction and panel stores"
+    );
+    Ok(json!({
+        "shift_id": shift.shift_id,
+        "shift_log_path": shift.path,
+        "shift_byte_offset": shift.byte_offset,
+        "shift_next_byte_offset": shift.next_byte_offset,
+        "attempt_id": context.task_id.0,
+        "session_id": shift.session_id,
+        "prediction_id": hex::encode(prediction.prediction_id),
+        "prediction_created_at_unix_ms": prediction.created_at_unix_ms,
+        "prediction_readback_count": persisted_matches,
+        "panel_db": file_sot(&panel_db_path),
+        "infer_db": file_sot(&infer_db_path),
+        "source": source,
+        "watermark_before": watermark_before,
+        "watermark_after": watermark_after,
+        "watermark_advanced": watermark_before != watermark_after
+    }))
+}
+
 pub(crate) async fn subscriber_status() -> Result<Value, String> {
-    let db_path = required_env_path(ENV_SUBSCRIBER_DB)?;
-    let watermarks = read_watermarks(&db_path)?;
+    let db_path = required_env_path(ENV_INFER_DB)?;
+    let db = open_infer_rocksdb(&db_path).map_err(|err| err.to_string())?;
+    let watermarks = read_watermarks(db.as_ref())?;
     let last_watermark_per_session = watermarks
         .iter()
-        .map(|(session, record)| (session.clone(), record.last_consumed_shift_id.clone()))
+        .map(|(session, record)| {
+            (
+                session.clone(),
+                record
+                    .get("last_consumed_shift_id")
+                    .cloned()
+                    .unwrap_or(Value::Null),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
+    let instrument_cache_entries = match std::env::var(ENV_PANEL_DB) {
+        Ok(path) => {
+            let store = PanelStore::open(&path).map_err(|err| err.to_string())?;
+            json!({
+                "panel_db": file_sot(Path::new(&path)),
+                "panels": store.count_cf(context_graph_mejepa_instruments::CF_MEJEPA_PANELS).map_err(|err| err.to_string())?,
+                "panel_meta": store.count_cf(context_graph_mejepa_instruments::CF_MEJEPA_PANEL_META).map_err(|err| err.to_string())?
+            })
+        }
+        Err(std::env::VarError::NotPresent) => Value::Null,
+        Err(err) => return Err(format!("{ENV_PANEL_DB} must be readable UTF-8: {err}")),
+    };
     Ok(json!({
         "last_watermark_per_session": last_watermark_per_session,
         "watermark_records": watermarks,
-        "lag": Value::Null,
+        "lag": observed_shift_lag(&watermarks).await?,
         "lag_alert_active": false,
         "error_rate_per_1000": Value::Null,
         "instrument_cache_hit_rate": Value::Null,
         "instrument_cache_capacity": Value::Null,
-        "instrument_cache_entries": Value::Null,
+        "instrument_cache_entries": instrument_cache_entries,
         "rss_bytes": rss_bytes()?,
         "task_alive_since": Value::Null,
-        "dropped_l_step_below_threshold_count": Value::Null,
+        "dropped_l_step_below_threshold_count": 0,
         "last_panic": Value::Null,
         "subscriber_running": false,
         "source_of_truth": file_sot(&db_path),
-        "status_scope": "persisted_watermarks_only_no_injected_subscriber_metrics"
+        "status_scope": "durable_rocksdb_watermarks_and_panel_counts_no_live_task"
     }))
 }
 
@@ -182,14 +306,18 @@ pub(crate) fn capture_audit(attempt_id: &str, page: u32) -> Result<Value, String
     let infer_db = required_env_path(ENV_INFER_DB)?;
     let panel_store = PanelStore::open(&panel_db).map_err(|err| err.to_string())?;
     let panels = read_panel_summaries(&panel_store, attempt_id)?;
-    let infer =
-        context_graph_mejepa::open_infer_rocksdb(&infer_db).map_err(|err| err.to_string())?;
+    let infer = open_infer_rocksdb(&infer_db).map_err(|err| err.to_string())?;
     let predictions =
         read_predictions_for_attempt(&RocksDbInferStore::new(infer.clone()), attempt_id)?;
     let train_certs = read_train_certs(infer.as_ref())?;
-    let oracle_examples = read_oracle_examples(infer.as_ref())?;
+    let oracle_examples = read_oracle_examples(infer.as_ref(), attempt_id)?;
 
     if panels.is_empty() && predictions.is_empty() {
+        if page != 0 {
+            return Err(
+                "MEJEPA_CAPTURE_AUDIT_PAGE_OUT_OF_RANGE: not-found audit has one page".to_string(),
+            );
+        }
         return Ok(json!({
             "attempt_found": false,
             "nearest_neighbors": nearest_panel_attempts(&panel_store, attempt_id)?,
@@ -205,9 +333,12 @@ pub(crate) fn capture_audit(attempt_id: &str, page: u32) -> Result<Value, String
     let missing_slots = panels
         .iter()
         .flat_map(|panel| panel.missing_slots.iter().copied())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
         .collect::<Vec<_>>();
     let bundle = json!({
         "attempt_id": attempt_id,
+        "attempt_found": true,
         "panels": panels,
         "predictions": predictions,
         "oracle_examples": oracle_examples,
@@ -248,8 +379,7 @@ fn trim_line(line: &[u8]) -> &[u8] {
     &line[..end]
 }
 
-fn read_watermarks(db_path: &Path) -> Result<BTreeMap<String, WatermarkRecord>, String> {
-    let db = open_single_cf_db(db_path, context_graph_mejepa_cf::CF_MEJEPA_SHIFT_WATERMARK)?;
+fn read_watermarks(db: &DB) -> Result<BTreeMap<String, Value>, String> {
     let cf = db
         .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_SHIFT_WATERMARK)
         .ok_or_else(|| "missing CF_MEJEPA_SHIFT_WATERMARK handle".to_string())?;
@@ -260,12 +390,23 @@ fn read_watermarks(db_path: &Path) -> Result<BTreeMap<String, WatermarkRecord>, 
             .map_err(|err| format!("watermark key is not UTF-8: {err}"))?;
         let record: WatermarkRecord = serde_json::from_slice(&value)
             .map_err(|err| format!("watermark value for key {key:?} is invalid JSON: {err}"))?;
-        if record.session_id.trim().is_empty() {
-            return Err(format!("watermark value for key {key:?} has empty session_id"));
-        }
-        out.insert(record.session_id.clone(), record);
+        record.validate(&key)?;
+        out.insert(record.session_id.clone(), watermark_to_value(&record, &key));
     }
     Ok(out)
+}
+
+fn watermark_to_value(record: &WatermarkRecord, key: &str) -> Value {
+    json!({
+        "session_id": record.session_id,
+        "last_consumed_shift_id": record.last_consumed_shift_id,
+        "last_consumed_byte_offset": record.last_consumed_byte_offset,
+        "last_advanced_at_unix_seconds": record.last_advanced_at_unix_seconds,
+        "producer_tool_name": record.producer_tool_name,
+        "source_log_path": record.source_log_path,
+        "source_key": key,
+        "subscriber_lag_at_call_time": Value::Null
+    })
 }
 
 fn read_panel_summaries(
@@ -313,7 +454,8 @@ fn read_predictions_for_attempt(
         .ok_or_else(|| "missing CF_MEJEPA_LIVE_PREDICTIONS handle".to_string())?;
     let mut out = Vec::new();
     for item in db.iterator_cf(cf, IteratorMode::Start) {
-        let (_key, value) = item.map_err(|err| format!("live prediction iterator failed: {err}"))?;
+        let (_key, value) =
+            item.map_err(|err| format!("live prediction iterator failed: {err}"))?;
         let prediction: RealityPrediction = bincode::deserialize(&value)
             .map_err(|err| format!("live prediction payload is invalid bincode: {err}"))?;
         prediction.validate().map_err(|err| err.to_string())?;
@@ -343,17 +485,21 @@ fn read_train_certs(db: &DB) -> Result<Vec<TrainCertSummary>, String> {
     Ok(out)
 }
 
-fn read_oracle_examples(db: &DB) -> Result<Vec<Value>, String> {
+fn read_oracle_examples(db: &DB, attempt_id: &str) -> Result<Vec<Value>, String> {
     let cf = db
         .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)
         .ok_or_else(|| "missing CF_MEJEPA_ORACLE_VERDICTS handle".to_string())?;
     let mut out = Vec::new();
     for item in db.iterator_cf(cf, IteratorMode::Start) {
         let (key, value) = item.map_err(|err| format!("oracle verdict iterator failed: {err}"))?;
-        let example: context_graph_mejepa::CalibrationExample =
-            bincode::deserialize(&value)
-                .map_err(|err| format!("oracle verdict payload is invalid bincode: {err}"))?;
+        let key_text = String::from_utf8_lossy(&key);
+        if !key_text.contains(attempt_id) {
+            continue;
+        }
+        let example: context_graph_mejepa::CalibrationExample = bincode::deserialize(&value)
+            .map_err(|err| format!("oracle verdict payload is invalid bincode: {err}"))?;
         out.push(json!({
+            "key": key_text,
             "key_hex": hex::encode(key),
             "example": example
         }));
@@ -364,7 +510,10 @@ fn read_oracle_examples(db: &DB) -> Result<Vec<Value>, String> {
     Ok(out)
 }
 
-fn nearest_panel_attempts(panel_store: &PanelStore, attempt_id: &str) -> Result<Vec<String>, String> {
+fn nearest_panel_attempts(
+    panel_store: &PanelStore,
+    attempt_id: &str,
+) -> Result<Vec<String>, String> {
     let mut candidates = panel_store
         .scan_cf_json(CF_MEJEPA_PANEL_META)
         .map_err(|err| err.to_string())?
@@ -372,15 +521,33 @@ fn nearest_panel_attempts(panel_store: &PanelStore, attempt_id: &str) -> Result<
         .filter_map(|(key, _)| key.split('/').next().map(ToOwned::to_owned))
         .filter(|candidate| candidate != attempt_id)
         .collect::<Vec<_>>();
-    candidates.sort();
+    candidates.sort_by(|left, right| {
+        nearest_score(left, attempt_id)
+            .cmp(&nearest_score(right, attempt_id))
+            .then_with(|| left.cmp(right))
+    });
     candidates.dedup();
     candidates.truncate(5);
     Ok(candidates)
 }
 
+fn nearest_score(candidate: &str, target: &str) -> (usize, usize) {
+    let common = candidate
+        .chars()
+        .zip(target.chars())
+        .take_while(|(left, right)| left == right)
+        .count();
+    (target.len().abs_diff(candidate.len()), usize::MAX - common)
+}
+
 fn paginate_bundle(bundle: Value, page: u32) -> Result<Value, String> {
     let encoded = serde_json::to_vec(&bundle).map_err(|err| err.to_string())?;
     if encoded.len() <= AUDIT_CHUNK_SIZE_BYTES {
+        if page != 0 {
+            return Err(format!(
+                "MEJEPA_CAPTURE_AUDIT_PAGE_OUT_OF_RANGE: page {page} is out of range for 1 page"
+            ));
+        }
         return Ok(json!({
             "attempt_found": true,
             "bundle": bundle,
@@ -395,7 +562,9 @@ fn paginate_bundle(bundle: Value, page: u32) -> Result<Value, String> {
         .ok_or_else(|| "capture audit bundle lost panels array during pagination".to_string())?;
     let total_pages = panels.len().max(1) as u32;
     if page >= total_pages {
-        return Err(format!("page {page} is out of range for {total_pages} pages"));
+        return Err(format!(
+            "MEJEPA_CAPTURE_AUDIT_PAGE_OUT_OF_RANGE: page {page} is out of range for {total_pages} pages"
+        ));
     }
     let mut paged = bundle;
     paged["panels"] = json!([panels[page as usize].clone()]);
@@ -408,29 +577,303 @@ fn paginate_bundle(bundle: Value, page: u32) -> Result<Value, String> {
 }
 
 fn required_env_path(name: &str) -> Result<PathBuf, String> {
-    std::env::var(name)
-        .map(PathBuf::from)
-        .map_err(|_| format!("{name} must be set; refusing to guess a Phase 7 source-of-truth path"))
+    std::env::var(name).map(PathBuf::from).map_err(|_| {
+        format!("{name} must be set; refusing to guess a Phase 7 source-of-truth path")
+    })
 }
 
-fn open_single_cf_db(path: &Path, cf_name: &'static str) -> Result<DB, String> {
-    let mut opts = Options::default();
-    opts.create_if_missing(true);
-    opts.create_missing_column_families(true);
-    opts.set_paranoid_checks(true);
-    let mut cf_names = context_graph_mejepa_cf::all_hygiene_referenced_cfs();
-    if !cf_names.contains(&cf_name) {
-        cf_names.push(cf_name);
+fn patch_context_from_shift(
+    shift: &LocatedShift,
+) -> Result<(PatchBundle, TaskContext, Value), String> {
+    let session_id = decode_session_hex32(&shift.session_id)?;
+    let attempt_id = attempt_id_from_shift(shift)?;
+    validate_attempt_id(&attempt_id)?;
+    let source_path = source_path_from_shift(shift)?;
+    let after_sha_text = shift
+        .record
+        .pointer("/after/sha256")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "shift after.sha256 is required for ME-JEPA replay".to_string())?;
+    let actual_after_sha = sha256_file(&source_path).map_err(|err| err.to_string())?;
+    if actual_after_sha != after_sha_text {
+        return Err(format!(
+            "MEJEPA_OBSERVE_SHIFT_SOURCE_SHA_MISMATCH: source {} has {}, shift after.sha256 is {}",
+            source_path.display(),
+            actual_after_sha,
+            after_sha_text
+        ));
     }
-    DB::open_cf_descriptors(
-        &opts,
-        path,
-        cf_names
-            .into_iter()
-            .map(|name| ColumnFamilyDescriptor::new(name, Options::default()))
-            .collect::<Vec<_>>(),
+    let after_bytes = std::fs::read(&source_path).map_err(|err| {
+        format!(
+            "failed to read replay source {}: {err}",
+            source_path.display()
+        )
+    })?;
+    let before_bytes = serde_json::to_vec(
+        shift
+            .record
+            .get("before")
+            .ok_or_else(|| "shift before object is required for ME-JEPA replay".to_string())?,
     )
-    .map_err(|err| format!("failed to open RocksDB {} with {cf_name}: {err}", path.display()))
+    .map_err(|err| format!("failed to serialize shift before object: {err}"))?;
+    let before_sha = shift
+        .record
+        .pointer("/before/sha256")
+        .and_then(Value::as_str)
+        .map(parse_sha256_text)
+        .transpose()?
+        .unwrap_or_else(|| sha256_bytes(&before_bytes));
+    let after_sha = parse_sha256_text(after_sha_text)?;
+    let record_bytes = serde_json::to_vec(&shift.record).map_err(|err| err.to_string())?;
+    let patch_sha = sha256_bytes(&record_bytes);
+    let rel_path = relative_replay_path(shift, &source_path)?;
+    let patch = PatchBundle::try_new(
+        AstDiff {
+            hunks: vec![DiffHunk {
+                path: rel_path.clone(),
+                pre_sha: before_sha,
+                post_sha: after_sha,
+                before: String::from_utf8_lossy(&before_bytes).into_owned(),
+                after: String::from_utf8_lossy(&after_bytes).into_owned(),
+            }],
+        },
+        valid_witness_segment(),
+        format!("ME-JEPA Phase 7 replay for shift {}", shift.shift_id),
+        patch_sha,
+    )
+    .map_err(|err| err.to_string())?;
+    let context = TaskContext {
+        task_id: TaskId(attempt_id.clone()),
+        session_id,
+        language: language_for_path(&source_path)?,
+        problem_statement: format!(
+            "Replay durable cgreality shift {} from {}",
+            shift.shift_id, shift.path
+        ),
+        tests: vec![TestId(format!("replay_shift_{}", shift.shift_id))],
+        environment: TaskEnvironment {
+            repo_root: source_path
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf(),
+            python_version: Some("3.11".to_string()),
+            os: std::env::consts::OS.to_string(),
+        },
+        claim_graph: None,
+        skill_citations: vec![],
+    };
+    context.validate().map_err(|err| err.to_string())?;
+    let source = json!({
+        "source_path": file_sot(&source_path),
+        "relative_path": rel_path,
+        "after_sha256": after_sha_text,
+        "patch_sha256": hex::encode(patch_sha)
+    });
+    Ok((patch, context, source))
+}
+
+fn persist_panels(
+    panel_store: &PanelStore,
+    context: &TaskContext,
+    patch: &PatchBundle,
+    source: &Value,
+    panels: (Panel, Panel, Panel),
+) -> Result<(), String> {
+    for (time_step, panel) in [
+        (TimeStep::T0, panels.0),
+        (TimeStep::T1, panels.1),
+        (TimeStep::T2, panels.2),
+    ] {
+        let key = PanelKey::new(&context.task_id.0, time_step).map_err(|err| err.to_string())?;
+        let provenance = PanelProvenance {
+            code_version: env!("CARGO_PKG_VERSION").to_string(),
+            embedder_versions: BTreeMap::from([(
+                "mejepa_deterministic_phase7_replay".to_string(),
+                env!("CARGO_PKG_VERSION").to_string(),
+            )]),
+            corpus_sha: hex::encode(patch.patch_sha),
+            frozen_at_unix_ms: chrono::Utc::now().timestamp_millis(),
+            source_sha256: source
+                .get("after_sha256")
+                .and_then(Value::as_str)
+                .and_then(|value| value.strip_prefix("sha256:"))
+                .ok_or_else(|| "source after_sha256 missing sha256: prefix".to_string())?
+                .to_string(),
+        };
+        let envelope =
+            PanelEnvelope::try_new(time_step, panel, provenance).map_err(|err| err.to_string())?;
+        panel_store
+            .put_envelope(&key, &envelope)
+            .map_err(|err| err.to_string())?;
+        let loaded = panel_store
+            .get_envelope(&key)
+            .map_err(|err| err.to_string())?
+            .ok_or_else(|| format!("panel read-after-write missing {}", key.storage_key()))?;
+        if loaded.panel_hash != envelope.panel_hash {
+            return Err(format!(
+                "panel read-after-write hash mismatch for {}",
+                key.storage_key()
+            ));
+        }
+        let actual_sha = hex::encode(panel_sha(&loaded.panel));
+        if actual_sha != loaded.panel_hash {
+            return Err(format!(
+                "panel read-after-write payload hash mismatch for {}",
+                key.storage_key()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn attempt_id_from_shift(shift: &LocatedShift) -> Result<String, String> {
+    for pointer in [
+        "/subject/attempt_id",
+        "/subject/attemptId",
+        "/subject/task_id",
+        "/subject/taskId",
+        "/subject/path",
+    ] {
+        if let Some(value) = shift.record.pointer(pointer).and_then(Value::as_str) {
+            if !value.trim().is_empty() {
+                return Ok(value.replace('/', "__"));
+            }
+        }
+    }
+    Ok(format!("shift_{}", shift.shift_id))
+}
+
+fn source_path_from_shift(shift: &LocatedShift) -> Result<PathBuf, String> {
+    for pointer in [
+        "/after/source_of_truth",
+        "/after/sourceOfTruth",
+        "/delta_summary/artifact",
+        "/harness_transition_path",
+    ] {
+        if let Some(value) = shift.record.pointer(pointer).and_then(Value::as_str) {
+            let path = file_arg_to_path(value);
+            if path.is_file() {
+                return Ok(path);
+            }
+        }
+    }
+    Err(format!(
+        "MEJEPA_OBSERVE_SHIFT_SOURCE_MISSING: shift {} has no readable after.source_of_truth, delta_summary.artifact, or harness_transition_path",
+        shift.shift_id
+    ))
+}
+
+fn relative_replay_path(shift: &LocatedShift, source_path: &Path) -> Result<PathBuf, String> {
+    if let Some(path) = shift
+        .record
+        .pointer("/subject/path")
+        .and_then(Value::as_str)
+    {
+        let candidate = PathBuf::from(path);
+        if !candidate.is_absolute()
+            && !path.contains('\0')
+            && !candidate.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir | std::path::Component::RootDir
+                )
+            })
+        {
+            return Ok(candidate);
+        }
+    }
+    source_path
+        .file_name()
+        .map(PathBuf::from)
+        .ok_or_else(|| format!("source path {} has no file name", source_path.display()))
+}
+
+fn language_for_path(path: &Path) -> Result<Language, String> {
+    match path.extension().and_then(|ext| ext.to_str()).unwrap_or("") {
+        "py" => Ok(Language::Python),
+        "rs" => Ok(Language::Rust),
+        "js" | "jsx" => Ok(Language::Javascript),
+        "ts" | "tsx" => Ok(Language::Typescript),
+        "go" => Ok(Language::Go),
+        "java" => Ok(Language::Java),
+        "c" | "h" => Ok(Language::C),
+        "cc" | "cpp" | "cxx" | "hpp" => Ok(Language::Cpp),
+        "cs" => Ok(Language::CSharp),
+        "rb" => Ok(Language::Ruby),
+        "php" => Ok(Language::Php),
+        other => Err(format!(
+            "MEJEPA_OBSERVE_SHIFT_LANGUAGE_UNSUPPORTED: source {} has unsupported extension {:?}",
+            path.display(),
+            other
+        )),
+    }
+}
+
+fn parse_sha256_text(value: &str) -> Result<[u8; 32], String> {
+    let hex_text = value.strip_prefix("sha256:").unwrap_or(value);
+    if hex_text.len() != 64 || !hex_text.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(format!("expected sha256:<64 hex> digest, got {value:?}"));
+    }
+    let mut out = [0u8; 32];
+    hex::decode_to_slice(hex_text, &mut out)
+        .map_err(|err| format!("failed to decode SHA-256 digest {value:?}: {err}"))?;
+    Ok(out)
+}
+
+fn timestamp_ns_to_ms(shift: &LocatedShift) -> Result<i64, String> {
+    let ns = shift
+        .record
+        .get("timestamp_unix_ns")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| "shift timestamp_unix_ns must fit in u64".to_string())?;
+    i64::try_from(ns / 1_000_000)
+        .map_err(|err| format!("timestamp_unix_ns millis overflowed i64: {err}"))
+}
+
+fn validate_session_hex32(value: &str) -> Result<(), String> {
+    if value.len() != 32 || !value.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err(format!(
+            "session_id must be exactly 32 hexadecimal characters, got {value:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn decode_session_hex32(value: &str) -> Result<[u8; 16], String> {
+    validate_session_hex32(value)?;
+    let mut out = [0u8; 16];
+    hex::decode_to_slice(value, &mut out)
+        .map_err(|err| format!("session_id hex decode failed: {err}"))?;
+    Ok(out)
+}
+
+fn watermark_key(session_id_hex: &str) -> String {
+    format!("wm:{session_id_hex}")
+}
+
+async fn observed_shift_lag(watermarks: &BTreeMap<String, Value>) -> Result<Value, String> {
+    let log_dir = shift_log_dir().await?;
+    if !log_dir.is_dir() {
+        return Ok(Value::Null);
+    }
+    let mut out = BTreeMap::new();
+    for (session, watermark) in watermarks {
+        let Some(offset) = watermark
+            .get("last_consumed_byte_offset")
+            .and_then(Value::as_u64)
+        else {
+            continue;
+        };
+        let path = log_dir.join(format!("{session}.jsonl"));
+        if !path.is_file() {
+            continue;
+        }
+        let len = std::fs::metadata(&path)
+            .map_err(|err| format!("failed to stat shift log {}: {err}", path.display()))?
+            .len();
+        out.insert(session.clone(), len.saturating_sub(offset));
+    }
+    Ok(json!(out))
 }
 
 fn rss_bytes() -> Result<u64, String> {
@@ -443,7 +886,9 @@ fn rss_bytes() -> Result<u64, String> {
             .nth(1)
             .ok_or_else(|| "/proc/self/statm missing resident pages field".to_string())?
             .parse::<u64>()
-            .map_err(|err| format!("failed to parse resident pages from /proc/self/statm: {err}"))?;
+            .map_err(|err| {
+                format!("failed to parse resident pages from /proc/self/statm: {err}")
+            })?;
         let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
         if page_size <= 0 {
             return Err("sysconf(_SC_PAGESIZE) returned non-positive page size".to_string());
@@ -456,3 +901,341 @@ fn rss_bytes() -> Result<u64, String> {
     }
 }
 
+#[cfg(test)]
+mod phase7_fsv_tests {
+    use super::*;
+    use context_graph_mejepa::{CalibrationExample, EmbedderId};
+    use context_graph_mejepa_instruments::panel_store::PanelStore;
+    use serde::Serialize;
+    use sha2::{Digest, Sha256};
+    use std::collections::BTreeMap;
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    use std::sync::{Mutex, MutexGuard};
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn env_guard() -> MutexGuard<'static, ()> {
+        let guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var(ENV_INFER_DB);
+        std::env::remove_var(ENV_PANEL_DB);
+        std::env::remove_var(ENV_SHIFT_LOG_ROOT);
+        guard
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn phase7_mcp_fsv_happy_path_and_edges() {
+        let _guard = env_guard();
+        let root = PathBuf::from("/tmp/contextgraph-mejepa-phase7-mcp-fsv");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let infer_db = root.join("infer-db");
+        let panel_db = root.join("panel-db");
+        let runtime_root = root.join("runtime");
+        let repo = root.join("repo");
+        let evidence_dir = root.join("evidence");
+        std::fs::create_dir_all(&runtime_root).unwrap();
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(&evidence_dir).unwrap();
+        std::env::set_var(ENV_INFER_DB, &infer_db);
+        std::env::set_var(ENV_PANEL_DB, &panel_db);
+        std::env::set_var(ENV_SHIFT_LOG_ROOT, &runtime_root);
+
+        let session = "01010101010101010101010101010101";
+        let session_bytes = decode_session_hex32(session).unwrap();
+        let shift_id = "01J0123456789ABCDEF1234";
+        let attempt_id = "phase7_fsv_attempt";
+        let source = repo.join("phase7_replay.py");
+        std::fs::write(&source, "def answer():\n    return 4\n").unwrap();
+        let after_sha = sha256_file(&source).unwrap();
+
+        seed_infer_db(&infer_db, session, shift_id, attempt_id).unwrap();
+        let shift = crate::handlers::tools::reality_loop::shift_log::ShiftRecord {
+            shift_id: shift_id.to_string(),
+            timestamp_unix_ns: 1_772_000_000_000_000_000,
+            tool_name: "harness_apply_line_window_edit".to_string(),
+            tool_use_id: Some("toolu_phase7_fsv".to_string()),
+            session_id: session.to_string(),
+            subject: json!({
+                "type": "file",
+                "path": "phase7_replay.py",
+                "attempt_id": attempt_id
+            }),
+            before: json!({"sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}),
+            after: json!({"sha256": after_sha, "source_of_truth": file_sot(&source)}),
+            delta_summary: json!({"lines_added": 2, "lines_removed": 0}),
+            verification: json!({"synthetic_expected_return": 4}),
+            harness_transition_path: None,
+        };
+        crate::handlers::tools::reality_loop::shift_log::append_shift(
+            &runtime_root,
+            session,
+            &shift,
+        )
+        .unwrap();
+
+        let before_state = readback_state(&infer_db, &panel_db, session_bytes, attempt_id).unwrap();
+        println!(
+            "FSV before happy path: {}",
+            serde_json::to_string_pretty(&before_state).unwrap()
+        );
+        let located = locate_shift(shift_id).await.unwrap().unwrap();
+        let replay = replay_shift(&located).unwrap();
+        let after_state = readback_state(&infer_db, &panel_db, session_bytes, attempt_id).unwrap();
+        println!(
+            "FSV after happy path: {}",
+            serde_json::to_string_pretty(&after_state).unwrap()
+        );
+        assert_eq!(after_state["prediction_count"], json!(1));
+        assert_eq!(after_state["panel_t0_exists"], json!(true));
+        assert_eq!(after_state["panel_t1_exists"], json!(true));
+        assert_eq!(after_state["panel_t2_exists"], json!(true));
+        assert_eq!(
+            before_state["watermark_record"], after_state["watermark_record"],
+            "operator replay must not advance subscriber watermark"
+        );
+
+        let audit = capture_audit(attempt_id, 0).unwrap();
+        assert_eq!(audit["attempt_found"], json!(true));
+        let status = subscriber_status().await.unwrap();
+        assert_eq!(
+            status["last_watermark_per_session"][session],
+            json!(shift_id)
+        );
+
+        let invalid_before =
+            readback_state(&infer_db, &panel_db, session_bytes, attempt_id).unwrap();
+        let invalid_shift_id_result = valid_shift_id("01j0123456789ABCDEF1234");
+        let invalid_after =
+            readback_state(&infer_db, &panel_db, session_bytes, attempt_id).unwrap();
+        println!(
+            "FSV edge invalid shift id before={} after={}",
+            invalid_before, invalid_after
+        );
+        assert!(!invalid_shift_id_result);
+        assert_eq!(invalid_before, invalid_after);
+
+        let not_found_before =
+            readback_state(&infer_db, &panel_db, session_bytes, attempt_id).unwrap();
+        let not_found = locate_shift("01JFFFFFFFFFFFFFFFFFFFF").await.unwrap();
+        let not_found_after =
+            readback_state(&infer_db, &panel_db, session_bytes, attempt_id).unwrap();
+        println!(
+            "FSV edge missing shift before={} after={}",
+            not_found_before, not_found_after
+        );
+        assert!(not_found.is_none());
+        assert_eq!(not_found_before, not_found_after);
+
+        let page_before = readback_state(&infer_db, &panel_db, session_bytes, attempt_id).unwrap();
+        let page_err = capture_audit(attempt_id, 1).unwrap_err();
+        let page_after = readback_state(&infer_db, &panel_db, session_bytes, attempt_id).unwrap();
+        println!(
+            "FSV edge page oob error={} before={} after={}",
+            page_err, page_before, page_after
+        );
+        assert!(page_err.contains("MEJEPA_CAPTURE_AUDIT_PAGE_OUT_OF_RANGE"));
+        assert_eq!(page_before, page_after);
+
+        let happy_path = json!({
+            "source_of_truth": {
+                "shift_log": file_sot(&runtime_root.join("cgreality-shift-log").join(format!("{session}.jsonl"))),
+                "infer_db": file_sot(&infer_db),
+                "panel_db": file_sot(&panel_db)
+            },
+            "before_state": before_state,
+            "replay_response": replay,
+            "after_state": after_state,
+            "capture_audit": audit,
+            "subscriber_status": status
+        });
+        let edge_invalid = json!({
+            "scenario": "invalid_shift_id",
+            "input": "01j0123456789ABCDEF1234",
+            "valid": invalid_shift_id_result,
+            "before_state": invalid_before,
+            "after_state": invalid_after
+        });
+        let edge_not_found = json!({
+            "scenario": "missing_shift",
+            "input": "01JFFFFFFFFFFFFFFFFFFFF",
+            "found": not_found.is_some(),
+            "before_state": not_found_before,
+            "after_state": not_found_after
+        });
+        let edge_page = json!({
+            "scenario": "capture_audit_page_out_of_range",
+            "error": page_err,
+            "before_state": page_before,
+            "after_state": page_after
+        });
+        let mut files = BTreeMap::new();
+        for (name, value) in [
+            ("happy_path.json", happy_path),
+            ("edge_invalid_shift_id.json", edge_invalid),
+            ("edge_missing_shift.json", edge_not_found),
+            ("edge_page_out_of_range.json", edge_page),
+        ] {
+            let path = evidence_dir.join(name);
+            write_json_0600(&path, &value).unwrap();
+            files.insert(name.to_string(), sha256_file_plain(&path).unwrap());
+        }
+        let manifest = json!({
+            "phase": "phase7-mcp-tools",
+            "source_of_truth": {
+                "infer_db": file_sot(&infer_db),
+                "panel_db": file_sot(&panel_db),
+                "shift_log_root": file_sot(&runtime_root.join("cgreality-shift-log"))
+            },
+            "evidence_files_sha256": files
+        });
+        write_json_0600(&evidence_dir.join("manifest.json"), &manifest).unwrap();
+        println!(
+            "FSV evidence manifest: {}",
+            serde_json::to_string_pretty(&manifest).unwrap()
+        );
+    }
+
+    fn seed_infer_db(
+        infer_db: &Path,
+        session: &str,
+        shift_id: &str,
+        attempt_id: &str,
+    ) -> Result<(), String> {
+        let db = open_infer_rocksdb(infer_db).map_err(|err| err.to_string())?;
+        let calibration = CalibrationStore::new(db.clone(), 30).map_err(|err| err.to_string())?;
+        let examples = (0..40)
+            .map(|idx| CalibrationExample {
+                language: Language::Python,
+                predicted_test_pass: vec![if idx % 10 == 0 { 0.2 } else { 0.95 }],
+                actual_test_pass: vec![if idx % 10 == 0 { 0.0 } else { 1.0 }],
+            })
+            .collect::<Vec<_>>();
+        let norms = vec![0.01; examples.len()];
+        calibration
+            .calibrate(
+                &examples,
+                &norms,
+                0.10,
+                30,
+                0.30,
+                [7; 32],
+                BTreeMap::<EmbedderId, String>::new(),
+            )
+            .map_err(|err| err.to_string())?;
+        let train_cf = db
+            .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS)
+            .ok_or_else(|| "missing train cert CF".to_string())?;
+        let cert = TrainCertSummary {
+            step: 1,
+            delta_omega: 0.8,
+            delta_xi: 0.8,
+            witness_offset: 44,
+        };
+        db.put_cf(
+            train_cf,
+            b"cert:phase7-fsv:0001",
+            bincode::serialize(&cert).map_err(|err| err.to_string())?,
+        )
+        .map_err(|err| err.to_string())?;
+        let oracle_cf = db
+            .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)
+            .ok_or_else(|| "missing oracle CF".to_string())?;
+        let example = CalibrationExample {
+            language: Language::Python,
+            predicted_test_pass: vec![0.95],
+            actual_test_pass: vec![1.0],
+        };
+        db.put_cf(
+            oracle_cf,
+            format!("oracle:{attempt_id}:0001").as_bytes(),
+            bincode::serialize(&example).map_err(|err| err.to_string())?,
+        )
+        .map_err(|err| err.to_string())?;
+        let watermark_cf = db
+            .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_SHIFT_WATERMARK)
+            .ok_or_else(|| "missing watermark CF".to_string())?;
+        let watermark = WatermarkRecord {
+            session_id: session.to_string(),
+            last_consumed_shift_id: shift_id.to_string(),
+            last_consumed_byte_offset: 0,
+            last_advanced_at_unix_seconds: 1_772_000_000,
+            producer_tool_name: Some("phase7_fsv_seed".to_string()),
+            source_log_path: None,
+        };
+        db.put_cf(
+            watermark_cf,
+            watermark_key(session).as_bytes(),
+            serde_json::to_vec(&watermark).map_err(|err| err.to_string())?,
+        )
+        .map_err(|err| err.to_string())?;
+        Ok(())
+    }
+
+    fn readback_state(
+        infer_db: &Path,
+        panel_db: &Path,
+        session_id: [u8; 16],
+        attempt_id: &str,
+    ) -> Result<Value, String> {
+        let db = open_infer_rocksdb(infer_db).map_err(|err| err.to_string())?;
+        let store = RocksDbInferStore::new(db.clone());
+        let predictions = MejepaStore::read_live_predictions(&store, session_id, 1000)
+            .map_err(|err| err.to_string())?;
+        let watermark = subscriber_state_for_provenance(db.as_ref(), session_id)
+            .map_err(|err| err.to_string())?;
+        drop(store);
+        drop(db);
+        let panel_store = PanelStore::open(panel_db).map_err(|err| err.to_string())?;
+        let panel_t0_exists = panel_store
+            .get_envelope(&PanelKey::new(attempt_id, TimeStep::T0).map_err(|err| err.to_string())?)
+            .map_err(|err| err.to_string())?
+            .is_some();
+        let panel_t1_exists = panel_store
+            .get_envelope(&PanelKey::new(attempt_id, TimeStep::T1).map_err(|err| err.to_string())?)
+            .map_err(|err| err.to_string())?
+            .is_some();
+        let panel_t2_exists = panel_store
+            .get_envelope(&PanelKey::new(attempt_id, TimeStep::T2).map_err(|err| err.to_string())?)
+            .map_err(|err| err.to_string())?
+            .is_some();
+        Ok(json!({
+            "prediction_count": predictions.len(),
+            "prediction_ids": predictions.iter().map(|row| hex::encode(row.prediction_id)).collect::<Vec<_>>(),
+            "watermark_record": watermark,
+            "panel_t0_exists": panel_t0_exists,
+            "panel_t1_exists": panel_t1_exists,
+            "panel_t2_exists": panel_t2_exists
+        }))
+    }
+
+    fn write_json_0600<T: Serialize>(path: &Path, value: &T) -> std::io::Result<()> {
+        let bytes = serde_json::to_vec_pretty(value)?;
+        #[cfg(unix)]
+        let mut file = {
+            use std::os::unix::fs::OpenOptionsExt;
+            OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .mode(0o600)
+                .open(path)?
+        };
+        #[cfg(not(unix))]
+        let mut file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(path)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        Ok(())
+    }
+
+    fn sha256_file_plain(path: &Path) -> std::io::Result<String> {
+        let bytes = std::fs::read(path)?;
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        Ok(format!("{:x}", hasher.finalize()))
+    }
+}

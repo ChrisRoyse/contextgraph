@@ -31,6 +31,7 @@ context-graph-mejepa = { path = "../context-graph-mejepa" }
 context-graph-mejepa-cf = { path = "../context-graph-mejepa-cf" }
 context-graph-mejepa-hygiene = { path = "../context-graph-mejepa-hygiene" }
 context-graph-mejepa-instruments = { path = "../context-graph-mejepa-instruments" }
+context-graph-mejepa-shift-subscriber = { path = "../context-graph-mejepa-shift-subscriber" }
 context-graph-mejepa-tct = { path = "../context-graph-mejepa-tct" }
 
 # Async runtime

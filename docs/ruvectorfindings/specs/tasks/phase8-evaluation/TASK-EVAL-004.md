@@ -65,15 +65,30 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mejepa/src/eval/runner.rs` does NOT exist. Accurate on "create".
-- **Precedent for `compile()` consumer**: `crates/context-graph-mejepa/src/compiler.rs` `MeJepaCompiler::compile` is **SHIPPED** (line 628 returns `predicted_class: TctMutationCategory`). Phase-8 eval consumes this — verify `compile()`'s real signature against the task's prescribed call shape.
-- **Leakage helper SHIPPED**: `crates/context-graph-mejepa-corpus/src/split.rs::assert_no_test_patch_leakage` (per `corpus_phase0_split` work). This dependency is SATISFIED. Direct re-export, not redefinition.
-- **Train-side holdout precedent exists** (do NOT copy wholesale): `crates/context-graph-mejepa-train/src/eval/holdout.rs::HoldoutEvaluator::evaluate` already runs per-panel forward + per-category accumulation for training-time evaluation. The Phase 8 `EvalRunner` in `mejepa` crate is operator-facing and computes Pearson correlation (not raw accuracy) — distinct surface.
-- Pearson `r = cov / (σ_P · σ_A)` math — verify scale assumptions against TECH-EVALUATION `compute_pearson_correlation` pseudo-code; clamp to `[-1, 1]` fail-closed on NaN inputs (no `unwrap_or(0.0)`).
+**Confirmed 2026-05-11:**
+- `crates/context-graph-mejepa/src/compiler.rs::MeJepaCompiler::compile` SHIPPED (line ~199 vicinity) with `compile(patch, context) -> Result<RealityPrediction, MejepaInferError>`.
+- `crates/context-graph-mejepa-train/src/eval/holdout.rs::split_holdout_via_mincut` SHIPPED + `assert_no_test_patch_leakage` available.
+- The train-internal `HoldoutEvaluator` in `eval/mod.rs:121` is per-epoch + train-side. Phase 8 `EvalRunner` is operator-facing — DO NOT delegate to `HoldoutEvaluator`; build a fresh `EvalRunner` that takes `Arc<MeJepaCompiler>` + a holdout dataset and produces a public `EvalReport`.
+
+**Decided scope for this task:**
+1. New file `crates/context-graph-mejepa/src/eval/runner.rs` (created by sister TASK-EVAL-001's mod tree).
+2. `pub struct EvalRunner { compiler: Arc<MeJepaCompiler>, store: Arc<dyn EvalStore>, config: EvalConfig }`.
+3. `pub async fn run_holdout_eval(&self, holdout: HoldoutDataset, report_date: chrono::NaiveDate) -> Result<EvalReport, EvalError>`:
+   - **Leakage check** FIRST: invoke `assert_no_test_patch_leakage(holdout)?` — if any panel SHA appears in train OR calibration splits, return `EvalError::LeakageDetected`.
+   - For each panel in holdout: dispatch `MeJepaCompiler::compile(patch, context).await?` via `tokio::task::spawn(...)` with `holdout_max_concurrent_panels` parallelism (default 8).
+   - Collect predictions; group by `(MutationCategory, Language)` cell.
+   - `compute_pearson_correlation(predictions, oracle_outcomes) -> Result<f32, EvalError>` returns clamped `[-1, 1]`.
+   - Aggregate `per_category: BTreeMap<MutationCategory, f32>`, `per_language: BTreeMap<Language, f32>`, `per_cell: BTreeMap<(MutationCategory, Language), f32>`.
+   - `compute_bayesian_shrinkage(per_cell)` for cells with N < 50 samples (cross-cuts TCT shrinkage; the formula is documented in TECH-TCT and reused here).
+   - Build `EvalReport` via `EvalReport::try_new(builder)`; persist to `CF_MEJEPA_EVAL_REPORTS` keyed by `report_date.iso8601()`.
+4. NaN/Inf in any predicted-outcome value → return `EvalError::PanelMaterializationFailed`; never silently skip.
+5. NO mock data. The synthetic holdout used in tests is REAL panels constructed via `mejepa::fixtures::synthetic_holdout(8 categories × 11 languages)`.
+
+**FSV for this task:** integration test (a) constructs synthetic holdout with KNOWN oracle outcomes per cell → asserts `per_category[KnownGood] == 1.0` exactly + `per_category[CompileError] < 1.0` + every cell finite; (b) inserts a leakage point into both train and holdout → asserts `EvalError::LeakageDetected` returned (Source of Truth: error code; CF UNCHANGED — separate read of `CF_MEJEPA_EVAL_REPORTS` confirms no row written); (c) measures wall time for the 1,000-panel synthetic holdout → asserts < 30 min p50.
 
 ---
 

@@ -65,15 +65,30 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mcp/src/handlers/tools/mejepa_eval.rs` does NOT exist. Accurate on "create".
-- **MCP tool location convention drift** (per agent-208 handoff): existing MCP tools live in `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` as a flat file (5 tools shipped: `mejepa_verify`, `mejepa_predict_latest`, `mejepa_constellation_inspect`, `mejepa_heal_status`, `mejepa_rollback_to`). This task adds the eval tools as a SEPARATE handler file `mejepa_eval.rs` — confirm that splitting is the right call vs. extending the existing flat file. Either way: register in `crates/context-graph-mcp/src/handlers/tools/mod.rs`.
-- `additionalProperties: false` is REQUIRED per audit-9 lesson (Schema validation enforcement).
-- Long-running tool — verify the MCP transport handles 30-min RPCs (`crates/context-graph-mcp/src/main.rs` may need to keep the stdio loop alive — confirm timeout strategy).
-- CF_MEJEPA_EVAL_REPORTS prefix-scan latest helper — implement in `mejepa::eval::storage` (TASK-EVAL-003) NOT in MCP handler; this handler is thin.
+**Confirmed 2026-05-11:**
+- Phase 8 MCP tool name constants are NOT yet declared in `crates/context-graph-mcp/src/tools/names.rs` (the `MEJEPA_*` block ends at line 114 with `MEJEPA_WITNESS_COMPRESS`).
+- The dispatcher pattern is established in `crates/context-graph-mcp/src/handlers/tools/dispatch.rs` lines 191-218 — append new arms following the same pattern.
+- The flat-file handler pattern is established in `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` (838 lines, 5 SHIPPED handlers); add new handlers there OR split into `mejepa_eval_tools.rs` if the file would exceed 1500 lines.
+
+**Decided scope for this task:**
+1. Add 2 new const tool names to `crates/context-graph-mcp/src/tools/names.rs` matching the established pattern:
+   ```
+   pub const MEJEPA_EVAL_RUN: &str = "mcp__cgreality__mejepa_eval_run";
+   pub const MEJEPA_EVAL_SHIP_GATE_STATUS: &str = "mcp__cgreality__mejepa_eval_ship_gate_status";
+   ```
+2. Add 2 schema builders to `crates/context-graph-mcp/src/tools/definitions/mejepa.rs` with `additionalProperties: false` recursive on every nested object node.
+3. Add 2 dispatcher arms to `dispatch.rs`: `tool_names::MEJEPA_EVAL_RUN => call_mejepa_eval_run(arguments),` etc.
+4. Add 2 handler functions in `mejepa_tools.rs` (or new `mejepa_eval_tools.rs`):
+   - `call_mejepa_eval_run`: long-running tool that schedules a holdout-eval via `EvalRunner::run_holdout_eval`. Response shape `{run_id, status: "queued|running|complete|failed", report_path: "file:..."}`. The actual work runs in a Tokio task; the call returns immediately with `status: "queued"`. Subsequent `ship_gate_status` calls (or polling `report_path` existence) reveal the outcome.
+   - `call_mejepa_eval_ship_gate_status`: reads the most recent `EvalReport` from `CF_MEJEPA_EVAL_REPORTS`, returns `ShipGateStatus`. Empty CF returns `{passed: null, blockers: ["no_eval_reports_persisted"]}`.
+5. Args DTOs with `#[serde(rename_all = "camelCase", deny_unknown_fields)]`. SessionId/[u8;16] convention if relevant.
+6. NEVER `unwrap_or` on `passed: bool`.
+
+**FSV for this task:** integration test invokes each tool via JSON-RPC envelope, asserts response shape, asserts schema rejects unknown properties, asserts `eval_run` returns a non-empty `run_id` and the followup `ship_gate_status` eventually reveals the result. Source of Truth: response JSON + `CF_MEJEPA_EVAL_REPORTS` row count after the run completes.
 
 ---
 

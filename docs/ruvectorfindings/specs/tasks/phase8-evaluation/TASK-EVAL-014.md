@@ -65,14 +65,27 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mcp/src/handlers/tools/mejepa_active_learning.rs` does NOT exist. Accurate on "create".
-- Same MCP convention note as TASK-EVAL-013: confirm whether to split or extend `mejepa_tools.rs`. The handoff suggests splitting is OK.
-- `mejepa_active_learning_label` operator_id input validation — strip control chars per constitution `mcp_input_validation`. NEVER write an unvalidated operator_id into CF_MEJEPA_ACTIVE_LEARNING_LABELS.
-- LabelMethod = DockerRerun path: validates via `crates/context-graph-mejepa-corpus/src/swebench.rs::run_swebench_lite_oracle` (SHIPPED). Confirm a thin MCP wrapper does not duplicate that logic.
+**Confirmed 2026-05-11:**
+- Same MCP infrastructure as TASK-EVAL-013 (names.rs + definitions + dispatch).
+- This task is INDEPENDENT of TASK-EVAL-013 — the 2 active-learning tools can ship in parallel against today's codebase (sister TASK-EVAL-009 ships the queue logic).
+
+**Decided scope for this task:**
+1. Add 2 const tool names to `tools/names.rs`:
+   ```
+   pub const MEJEPA_ACTIVE_LEARNING_QUEUE: &str = "mcp__cgreality__mejepa_active_learning_queue";
+   pub const MEJEPA_ACTIVE_LEARNING_LABEL: &str = "mcp__cgreality__mejepa_active_learning_label";
+   ```
+2. Add 2 schemas + 2 dispatcher arms following the established pattern.
+3. `call_mejepa_active_learning_queue`: accepts `{top_n: u32 (default 100, max 1000)}`; reads `CF_MEJEPA_ACTIVE_LEARNING_QUEUE`; sorts BinaryHeap descending by `signal_value`; returns top-N entries. Empty queue returns `{entries: [], queue_depth: 0}`.
+4. `call_mejepa_active_learning_label`: accepts `{panel_sha: String (hex-64), method: "manual"|"docker_rerun"|"adjacent_test_rerun", oracle_outcome: OracleOutcome, operator_attribution: String?}`. Validates panel_sha exists in queue (else `MEJEPA_EVAL_PANEL_SHA_NOT_FOUND`); calls `EvalRunner::apply_active_learning_label`; returns `{labeled: true, queue_depth_after: u32}`.
+5. Args DTOs `#[serde(deny_unknown_fields)]`.
+6. NEVER `unwrap_or` on the existence check.
+
+**FSV for this task:** integration test (a) seeds 100 entries via TASK-EVAL-009's `enqueue_uncertain` → invokes `active_learning_queue` with `top_n: 5` → asserts 5 highest-signal entries returned in order; (b) labels one entry → asserts `CF_MEJEPA_ACTIVE_LEARNING_LABELS` has 1 row + queue depth dropped by 1; (c) labels a non-existent `panel_sha` → asserts `MEJEPA_EVAL_PANEL_SHA_NOT_FOUND`. Source of Truth: response JSON + separate CF reads.
 
 ---
 

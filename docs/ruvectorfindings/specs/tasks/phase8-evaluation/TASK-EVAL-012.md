@@ -65,14 +65,29 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mejepa/src/eval/{q123.rs,regression.rs}` do NOT exist. Accurate on "create".
-- **Regression precedent**: `crates/context-graph-mejepa-train/src/eval/regression.rs` (SHIPPED) exposes `PromotionDecision`, `promote_best`, `detect_regression`, `track_consecutive_regressions`. This is train-internal. Phase 8 regression detection consumes the **rolling CF_MEJEPA_EVAL_REPORTS history** (week-over-week deltas) — distinct surface; do not couple, but mirror the API shape for operator consistency.
-- **Bayesian shrinkage**: per constitution `tct_invariants` rule 5, parallel pattern. This task is the entry-point — but TASK-EVAL-004 also references it as "Bayesian shrinkage entry-point lives here". Reconcile: the helper function lives in eval/runner.rs OR eval/q123.rs — pick one location and re-export from the other to avoid duplication.
-- Q1/Q2/Q3 rollup math — verify against TECH-EVALUATION's `compute_q1`/`compute_q2`/`compute_q3` pseudo-code.
+**Confirmed 2026-05-11:**
+- Q1 (source-SHA + chain replay) primitive: `verify_chain_bytes` SHIPPED in `crates/context-graph-witness/`.
+- Q2 (overall correlation) is the existing `EvalReport.overall_correlation` field — no new compute.
+- Q3 (F1 over predicted vs observed side-effect set) needs Phase 7 `CF_MEJEPA_LIVE_PREDICTIONS` — degrades to None when Phase 7 not shipped.
+- Gates 5/6 (predictor quality + ladder) SHIPPED in `crates/context-graph-mejepa/src/gates.rs`.
+
+**Decided scope for this task:**
+1. New file `crates/context-graph-mejepa/src/eval/q_rollup.rs`.
+2. `compute_q1_pass_rate(certs: &[TrainingCertificate]) -> Result<f32, EvalError>`: for each cert, replay the witness-chain bytes via `verify_chain_bytes`; pass-rate = passing / total. Bound `[0, 1]`; ship gate `>= 0.99`.
+3. `compute_q2_correlation(report: &EvalReport) -> f32`: alias for `report.overall_correlation`. (Trivial — exists for symmetry of API.)
+4. `compute_q3_side_effect_agreement(predictions: &[Prediction], observed: Option<&[ObservedSideEffect]>) -> Result<Option<f32>, EvalError>`:
+   - When `observed.is_none()` (Phase 7 not shipped) → return `Ok(None)` + `tracing::warn!`.
+   - Else → compute F1 score over predicted side-effect set vs observed; bound `[0, 1]`; ship gate `>= 0.90`.
+5. `detect_regression(prior: &EvalReport, current: &EvalReport) -> RegressionCheck`:
+   - If `prior.corpus_sha != current.corpus_sha` → `RegressionCheck::CorpusShaChanged{..}` (cannot compare across corpus changes).
+   - Else: compute per-cell delta `delta_pct = (current[cell] - prior[cell]) / prior[cell] * 100`; flag `is_regression: true` when `delta_pct < -2.0` (week-over-week regression > 2 % drop).
+6. `apply_bayesian_shrinkage(per_cell: &mut BTreeMap<(MutationCategory, Language), (f32, usize)>, prior_strength: f32)` — for cells with N < 50, shrink toward the global mean per `<bayesian_shrinkage>` formula in TECH-EVALUATION.
+
+**FSV for this task:** integration test (a) feeds synthetic certs with KNOWN Q1 outcomes → asserts pass-rate; (b) feeds Phase-7-absent state → asserts Q3=None + warning; (c) feeds prior + current reports with KNOWN regression → asserts `CellDelta` entries; (d) verifies Bayesian shrinkage formula on synthetic small-sample cells. Source of Truth: returned struct + log capture.
 
 ---
 

@@ -1089,6 +1089,7 @@ dependencies = [
  "context-graph-mejepa-embedders",
  "context-graph-mejepa-hygiene",
  "context-graph-mejepa-instruments",
+ "context-graph-mejepa-shift-subscriber",
  "context-graph-mejepa-tct",
  "context-graph-paths",
  "context-graph-solver",
@@ -1219,6 +1220,25 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "context-graph-mejepa-shift-subscriber"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "context-graph-mejepa",
+ "context-graph-mejepa-cf",
+ "context-graph-mejepa-instruments",
+ "hex",
+ "rocksdb",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

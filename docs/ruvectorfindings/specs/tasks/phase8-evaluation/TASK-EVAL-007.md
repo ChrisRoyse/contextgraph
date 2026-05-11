@@ -65,14 +65,22 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mejepa/src/eval/gtau_health.rs` does NOT exist. Accurate on "create".
-- **Gτ source**: `crates/context-graph-mejepa/src/gates.rs` is **SHIPPED**. This task is READ-ONLY against it — do NOT modify gate thresholds. SPEC-TCT owns the calibration; this task only consumes per-language Gτ outputs.
-- `crate::types::Language` (11 variants) required.
-- This task is the simplest in Phase 8 — 132 lines. Verify the SPEC-TCT interface contract still holds before implementing.
+**Confirmed 2026-05-11:**
+- `crates/context-graph-mejepa-tct/src/gtau.rs::ConstellationGuard::gtau_test` SHIPPED (Phase 4b).
+- The TCT spec hosts threshold calibration; this Phase 8 task is READ-ONLY against the SHIPPED guard.
+
+**Decided scope for this task:**
+1. New file `crates/context-graph-mejepa/src/eval/gtau_health.rs`.
+2. `compute_gtau_pass_rate_per_language(holdout: &HoldoutDataset, guard: &ConstellationGuard) -> Result<BTreeMap<Language, f32>, EvalError>` — for each panel call `guard.gtau_test(predicted_panel)`; group pass/fail by `language`; return pass-rate fraction `[0, 1]`.
+3. Per-language Gτ thresholds are owned by TCT spec; this task READS the per-language calibration from the TCT constellation store and reports it in the `EvalReport`.
+4. Each language with pass-rate < 0.95 fails `EvalReport.gtau_pass_rate` aggregation; ship gate respects per-language constraint via TASK-EVAL-008's 8-condition AND.
+5. NaN inputs trigger `EvalError::PanelMaterializationFailed`.
+
+**FSV for this task:** integration test feeds a synthetic holdout with KNOWN Gτ outcomes (mock the guard with deterministic pass/fail per language for testing only — the GUARD itself is not mocked; what's mocked is the synthetic input) → asserts pass-rate per language matches expected. Source of Truth: returned BTreeMap.
 
 ---
 

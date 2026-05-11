@@ -65,15 +65,27 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mejepa/src/eval/task_graph_build.rs` does NOT exist. Accurate on "create".
-- **Significant precedent — `PatchSimilarityGraph`**: `crates/context-graph-mejepa-train/src/sampler/cross_task.rs::build_patch_similarity_graph` EXISTS (line 7) as a Phase 3 train-time sampler helper. Phase 8's `EvalRunner::build_patch_similarity_graph` is the **operator-facing reporting surface** that persists to CF_MEJEPA_TASK_GRAPH; Phase 3's reads-only sampler counterpart consumes the persisted graph. Verify whether the train-side helper can be promoted or whether a separate eval-side implementation is required (likely the former — promote to a shared crate or `mejepa::eval`).
-- E_Diff InstrumentSlot — verify it's shipped in `crates/context-graph-mejepa-instruments/src/instruments/` before consuming.
-- Corpus iterator + corpus_sha — TASK-CORPUS-007 dependency. Confirm `crates/context-graph-mejepa-corpus/src/lib.rs` exposes the iterator interface.
-- Idempotency on corpus_sha — when corpus unchanged, return cached graph from CF_MEJEPA_TASK_GRAPH without recomputing the ~2.88M pairwise cosines. CF_MEJEPA_TASK_GRAPH_HISTORY keyed by `(corpus_sha, source_task_sha, target_task_sha)` per TASK-EVAL-003.
+**Confirmed 2026-05-11:**
+- E_Diff slot encoder SHIPPED (Phase 1c partial — deterministic encoder; embedder-backed replacement deferred). The deterministic encoder is sufficient for graph cosines today.
+- The train-internal `split_holdout_via_mincut` is a different graph (the train/holdout SPLIT graph, not the CROSS-TASK PATCH-SIMILARITY graph). Do NOT reuse — build a fresh per-task graph here.
+
+**Decided scope for this task:**
+1. New file `crates/context-graph-mejepa/src/eval/patch_graph.rs`.
+2. `EvalRunner::build_patch_similarity_graph(&self, corpus: &Corpus) -> Result<PatchGraph, EvalError>`:
+   - For each `(task_id_a, task_id_b)` pair: extract E_Diff embeddings; compute cosine similarity.
+   - Edge added when `cosine >= 0.7` (constitution-pinned).
+   - Top-k = 32 edges per node retained (truncate to keep graph sparse).
+   - Persist to `CF_MEJEPA_TASK_GRAPH` keyed by `corpus_sha`; idempotent — second invocation with same `corpus_sha` returns the persisted graph without recomputation.
+   - Append historical version to `CF_MEJEPA_TASK_GRAPH_HISTORY` for retention (Phase 6 hygiene tier-compresses old versions).
+3. `PatchGraph::nodes` keyed by `TaskId` (`BTreeMap` for determinism); `PatchGraph::edges` `BTreeSet<PatchGraphEdge>` ordered by `(source, target, ord_f32(cosine))`.
+4. NO mock data. The synthetic corpus used in tests is REAL via `mejepa::fixtures::synthetic_corpus(N=100)`.
+5. Symmetric edges (both `(a, b)` and `(b, a)` recorded) for downstream mini-batch sampler convenience.
+
+**FSV for this task:** integration test (a) builds graph against synthetic 100-task corpus → asserts node count == 100 + edge count matches expected from KNOWN cosine distribution; (b) re-invokes with same `corpus_sha` → asserts same `BuildAt` timestamp + zero recomputation (idempotent); (c) inspects `CF_MEJEPA_TASK_GRAPH` raw rows → confirms persistence; (d) dumps `CF_MEJEPA_TASK_GRAPH_HISTORY` → confirms versioning. Source of Truth: separate CF reads + cosine matrix recomputation cross-check.
 
 ---
 

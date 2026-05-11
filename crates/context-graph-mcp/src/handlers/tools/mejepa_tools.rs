@@ -114,14 +114,17 @@ impl Handlers {
             db_path = %db_path.display(),
             "ME-JEPA verify"
         );
-        let subscriber_state = if request.include_provenance {
-            subscriber_state_for_provenance().await
-        } else {
-            None
-        };
+        let session_id = request.context.session_id;
         let result = (|| {
             ensure_deterministic_verify_allowed()?;
             let db = open_infer_rocksdb(&db_path)?;
+            let subscriber_state = subscriber_state_for_provenance(db.as_ref(), session_id)
+                .map_err(
+                    |detail| context_graph_mejepa::MejepaInferError::InvalidInput {
+                        field: "subscriber_state".to_string(),
+                        detail,
+                    },
+                )?;
             let calibration = CalibrationStore::new(db.clone(), 30)?;
             let store = Arc::new(RocksDbInferStore::new(db));
             let compiler = build_deterministic_compiler(
@@ -132,13 +135,22 @@ impl Handlers {
             )?;
             let verdict = compiler.verify(&request.patch, &request.context)?;
             let mut response = serde_json::to_value(verdict)?;
+            let subscriber_state_value = subscriber_state.unwrap_or(serde_json::Value::Null);
+            response["subscriber_state"] = subscriber_state_value.clone();
             if request.include_provenance {
                 response["provenance"] = json!({
                     "codeVersion": env!("CARGO_PKG_VERSION"),
                     "dbPath": db_path,
-                    "mode": "deterministic_phase4_harness"
+                    "mode": "deterministic_phase4_harness",
+                    "last_consumed_shift_id": subscriber_state_value
+                        .get("last_consumed_shift_id")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null),
+                    "subscriber_lag_at_call_time": subscriber_state_value
+                        .get("subscriber_lag_at_call_time")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null)
                 });
-                response["subscriber_state"] = subscriber_state.unwrap_or(serde_json::Value::Null);
             }
             Ok::<serde_json::Value, context_graph_mejepa::MejepaInferError>(response)
         })();

@@ -65,15 +65,26 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory for the full audit table (2026-05-11). What follows is THIS task's scope-specific drift.
 
-- `crates/context-graph-mejepa/src/eval/` directory — **DOES NOT EXIST**. Task is ACCURATE on the "create new subtree" directive.
-- `crates/context-graph-mejepa/src/types.rs` — **SHIPPED** with `Language` (11 variants), `TaskId`, `EmbedderId`, `ChunkId`, `OracleOutcome`. Dependency TASK-INFER-001 satisfied.
-- `crates/context-graph-mejepa/src/compiler.rs` re-exports `MutationCategory as TctMutationCategory` (line 11). This task's `MutationCategory` (8 variants per doc 09 §3.1) MUST be the canonical eval type — verify it matches or replaces the TCT re-export rather than colliding.
-- **Type collision risk**: `crates/context-graph-mejepa-train/src/eval/mod.rs` already defines local `MutationCategory` (line 14) AND `Lang` (line 40, NOT the 11-variant Language). These are train-internal and SHOULD NOT be confused with the public eval types created here. Add `pub use crate::types::Language;` (or fully qualify) — DO NOT redeclare a competing `Lang` enum in `eval/types.rs`.
-- Holdout-eval skeleton: `crates/context-graph-mejepa-train/src/eval/{holdout.rs,slicing.rs,regression.rs,epoch_witness.rs}` ALREADY exists from Phase 3/training work. Those types are train-internal. Phase 8 eval landing in `mejepa` crate is the operator-facing surface — do not move the train-internal types.
+**Confirmed by `ls`/`grep` 2026-05-11:**
+- `crates/context-graph-mejepa/src/eval/` does NOT exist; this task creates the subtree fresh.
+- `crates/context-graph-mejepa/src/types.rs` SHIPPED with `Language` (11 variants), `OracleOutcome`, `TaskId`, `EmbedderId`, `ChunkId`. TASK-INFER-001 dependency satisfied.
+- `crates/context-graph-mejepa/src/compiler.rs` re-exports `MutationCategory as TctMutationCategory` (line 11). The Phase 8 `MutationCategory` (8 variants per doc 09 §3.1) is the canonical eval type for this domain — verify it matches or replaces the TCT re-export rather than colliding.
+- **Type collision risk:** `crates/context-graph-mejepa-train/src/eval/mod.rs:14` already defines a train-internal `MutationCategory` AND a train-internal `Lang` (line 40, NOT the canonical 11-variant Language). Both are train-internal and SHOULD NOT be propagated. Add `pub use crate::types::Language;` (or fully qualify) — DO NOT redeclare a competing `Lang` enum in `eval/types.rs`.
+- Train-internal holdout-eval skeleton at `crates/context-graph-mejepa-train/src/eval/{holdout,slicing,regression,epoch_witness,mod}.rs` is SHIPPED but train-internal — Phase 8 lands the operator-facing surface in `mejepa::eval` instead.
+
+**Decided scope for this task (unchanged from author intent + tightened):**
+1. Create `crates/context-graph-mejepa/src/eval/{mod.rs, types.rs, report.rs}` with all 16 public enums/structs documented in `<scope>` below.
+2. Use BTreeMap (not HashMap) on the public surface for determinism per TECH-EVALUATION implementation_notes.
+3. `EvalReport::try_new` validates finite + clamped at construction; rejects per_category != 8, per_language != 11, open_research_questions != 8.
+4. `serialize_canonical` uses `serde_json::to_vec` with sorted-key BTreeMap-backed maps; reject when len > 1 MiB.
+5. `hash_for_determinism` is SHA-256 of canonical bytes with `report_date` field stripped.
+6. Forward-declare `EvalError` as `&'static str` placeholder; replace in TASK-EVAL-002.
+
+**FSV for this task:** unit tests cover (a) NaN rejection in `overall_correlation`, (b) per_category map size invariant, (c) per_language map size invariant, (d) `serialize_canonical` byte-equal across runs, (e) `hash_for_determinism` identical when only `report_date` differs, (f) `seed_initial_research_questions().len() == 8` with all `Active`. Source of Truth: typed structures + serde JSON byte-equal round trips + boundary error returns.
 
 ---
 

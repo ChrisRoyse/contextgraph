@@ -1,0 +1,23 @@
+[package]
+name = "context-graph-mejepa-shift-subscriber"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+context-graph-mejepa = { path = "../context-graph-mejepa" }
+context-graph-mejepa-cf = { path = "../context-graph-mejepa-cf" }
+context-graph-mejepa-instruments = { path = "../context-graph-mejepa-instruments" }
+bincode = { workspace = true }
+hex = "0.4"
+rocksdb = "0.22"
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.8"

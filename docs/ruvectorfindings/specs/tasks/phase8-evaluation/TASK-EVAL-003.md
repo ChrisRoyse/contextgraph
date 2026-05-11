@@ -65,15 +65,36 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- 8 new CFs land in `crates/context-graph-mejepa/src/eval/storage.rs` — directory does NOT exist yet; task accurate on "create".
-- **CF registry pattern**: `crates/context-graph-mejepa-corpus/src/oracle_store.rs` (Phase 0 oracle CF shipped) is the working precedent. Phase 0 already established `CF_MEJEPA_ORACLE_VERDICTS`, `CF_MEJEPA_MUTATION_CORPUS`, `CF_MEJEPA_PANELS`, etc. Clone that registration style.
-- `crates/context-graph-storage/src/lib.rs` — verify the workspace-wide CF descriptor / `open_cf_descriptors` helper convention still matches what TECH-EVALUATION's `rocksdb_column_families` block prescribes.
-- `rocksdb`, `bincode`, `chrono`, `ulid` — all workspace-available.
-- **Phase 6 retention coupling**: hygiene tasks (TASK-HYG-***) own retention sweeps. This task only declares the CFs + retention policy; do NOT implement the GC daemon here.
+**Confirmed 2026-05-11:**
+- `crates/context-graph-mejepa-cf/src/lib.rs` declares all SHIPPED CFs (lines 6-29) including `CF_MEJEPA_FISHER_SNAPSHOTS`, `CF_MEJEPA_DRIFT_WINDOW`, `CF_MEJEPA_TRAIN_CERTS`, `CF_MEJEPA_LIVE_PREDICTIONS`, `CF_MEJEPA_ORACLE_VERDICTS`, etc.
+- **None of the 8 Phase 8 CFs declared.** `grep CF_MEJEPA_EVAL_REPORTS|CF_MEJEPA_TASK_GRAPH|CF_MEJEPA_ACTIVE_LEARNING_QUEUE` returns no matches.
+- The crate is dependency-free by design (per its own doc comment) — string constants only.
+
+**Decided scope for this task:**
+1. Add 8 new `pub const &str` declarations to `crates/context-graph-mejepa-cf/src/lib.rs` matching the SHIPPED pattern at lines 6-29:
+   ```
+   pub const CF_MEJEPA_EVAL_REPORTS: &str = "CF_MEJEPA_EVAL_REPORTS";
+   pub const CF_MEJEPA_TASK_GRAPH: &str = "CF_MEJEPA_TASK_GRAPH";
+   pub const CF_MEJEPA_TASK_GRAPH_HISTORY: &str = "CF_MEJEPA_TASK_GRAPH_HISTORY";
+   pub const CF_MEJEPA_ACTIVE_LEARNING_QUEUE: &str = "CF_MEJEPA_ACTIVE_LEARNING_QUEUE";
+   pub const CF_MEJEPA_ACTIVE_LEARNING_LABELS: &str = "CF_MEJEPA_ACTIVE_LEARNING_LABELS";
+   pub const CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS: &str = "CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS";
+   pub const CF_MEJEPA_OOD_ESCALATIONS: &str = "CF_MEJEPA_OOD_ESCALATIONS";
+   pub const CF_MEJEPA_RESEARCH_QUESTIONS: &str = "CF_MEJEPA_RESEARCH_QUESTIONS";
+   pub const CF_MEJEPA_MODEL_PROMOTIONS: &str = "CF_MEJEPA_MODEL_PROMOTIONS";
+   ```
+2. Add a new `EVAL_CFS: &[&str]` slice listing all 9 of them (TASK_GRAPH + TASK_GRAPH_HISTORY counted separately for clarity).
+3. Extend `all_hygiene_referenced_cfs()` (line 79) to include the new EVAL CFs so Phase 6 hygiene compaction sees them.
+4. Add `no_duplicate_eval_cfs` test mirroring the existing `no_duplicate_hygiene_cfs` test pattern (line 94).
+5. Document key/value layout in `crates/context-graph-mejepa/src/eval/storage.rs` (a separate Phase 8 doc — NOT touching the cf crate's responsibilities). Each CF gets a 5-line block: key bytes layout, value JSON shape, retention, write_options, secondary indexes.
+6. JSON serialization (NOT bincode). Per memory `bincode + skip_serializing_if = BROKEN`.
+7. NO `unwrap_or` defaults on key composition. Bytes are ASCII / UTF-8 only.
+
+**FSV for this task:** unit test against a tempdir RocksDB asserting (a) all 9 CFs open successfully via `DB::open_cf_descriptors`, (b) `put → get` round-trips JSON byte-equal on each CF, (c) `all_hygiene_referenced_cfs()` includes every new EVAL CF without duplicates, (d) `no_duplicate_eval_cfs` test asserts no duplicates within EVAL_CFS. Source of Truth: real RocksDB SST files + readback bytes + slice contents.
 
 ---
 

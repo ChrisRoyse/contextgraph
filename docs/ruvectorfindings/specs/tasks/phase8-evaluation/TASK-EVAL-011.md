@@ -65,15 +65,31 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mejepa/src/eval/{state_transfer.rs,aux_head.rs}` do NOT exist. Accurate on "create".
-- **Aux-head distillation back to trunk is PENDING** per `_README.md` Phase 8 status. This task lands the **summary/diagnostic surface** — the actual distillation loop lives in Phase 3 training.
-- **OracleHead precedent**: `crates/context-graph-mejepa/src/oracle_head.rs` is SHIPPED — verify its output shape matches what this task's aux-head summary expects.
-- Wasserstein-1 + M(t) — fail-closed numerical implementation; do NOT pull a stats crate that silently NaN-coerces.
-- State-transfer T diagnostic — read-only consumer of train-side aux-head distribution snapshots persisted to CF (verify which CF; TASK-EVAL-003 should declare or this task adds it).
+**Confirmed 2026-05-11:**
+- `crates/context-graph-mejepa-train/src/distill/` (SHIPPED Phase 3) writes distillation steps every 1,000 train iterations into `CF_MEJEPA_DISTILL_STEPS`.
+- `crates/context-graph-mejepa-train/src/cert/` SHIPPED — per-step training cert chain has the ΔΩ × ΔΞ M(t) factor decomposition.
+- **State-transfer T diagnostic** primitive lives in sister UTML-009 (PENDING) — the M(t) integral and Wasserstein-1 sampler primitives are owned there. Phase 8's job is to READ those outputs and build the report block.
+- Phase 7 `CF_MEJEPA_LIVE_PREDICTIONS` is PENDING; when not populated, `state_transfer_diagnostic` degrades to None.
+
+**Decided scope for this task:**
+1. New file `crates/context-graph-mejepa/src/eval/distillation_health.rs` and `crates/context-graph-mejepa/src/eval/state_transfer.rs`.
+2. `compute_aux_head_distillation_summary(certs: &[TrainingCertificate]) -> Result<AuxHeadDistillationSummary, EvalError>`:
+   - Walk every cert, find the most recent `distillation_step` row.
+   - Aggregate: `last_distillation_step: u64`, `distillation_loss: f32`, `aux_heads_in_consensus: usize`, `aux_heads_diverged: usize`.
+   - Diverged threshold: aux head whose loss is > 2× the median (constitution-pinned heuristic).
+3. `compute_state_transfer_diagnostic(certs: &[TrainingCertificate], live_preds: Option<&[LivePrediction]>) -> Result<Option<StateTransferDiagnostic>, EvalError>`:
+   - When `live_preds.is_none()` → return `Ok(None)` + `tracing::warn!` `code = "MEJEPA_EVAL_PHASE7_DEPENDENCY_NOT_SHIPPED"`.
+   - When live_preds available → call sister UTML-009's `compute_state_transfer_t(...)` (when shipped) OR stub locally with the documented field shape and refactor when UTML-009 lands.
+   - Return `StateTransferDiagnostic { d_train_deploy: f32, lambda: f32, t_value: f32, m_t_estimate: f32, performance_deploy_predicted: f32, attribution: String, wasserstein_samples_used: u64 }`.
+4. NEVER `unwrap_or` defaults on `m_t_estimate` or `t_value` — surface NaN as `EvalError::BayesianShrinkageInsufficientData`.
+
+**Cross-phase dep:** sister UTML-009 (Consolidation M(t) + StateTransfer T primitives); Phase 7 (live predictions). Both PENDING — stub locally and refactor on landing.
+
+**FSV for this task:** integration test (a) constructs synthetic train cert chain with KNOWN distillation steps → asserts summary fields match; (b) feeds live_preds=None → asserts `state_transfer_diagnostic.is_none()` + warning logged; (c) feeds live_preds with KNOWN train→deploy distribution shift → asserts `t_value` within ε of expected (when UTML-009 shipped). Source of Truth: returned struct + cert-chain replay + log capture.
 
 ---
 

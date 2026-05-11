@@ -65,15 +65,25 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mejepa/src/eval/ood_health.rs` does NOT exist. Accurate on "create".
-- **OOD score source**: `crates/context-graph-mejepa/src/ood.rs` is **SHIPPED**. Verify the per-panel OOD score field is exposed on the predictor output before computing AUC.
-- AUC implementation — use a fail-closed deterministic computation; do NOT pull a numerical lib that silently NaN-coerces. Pair-wise Mann-Whitney U or trapezoidal AUC over sorted scores per language.
-- 4-week drift detection — depends on the CF_MEJEPA_EVAL_REPORTS history (TASK-EVAL-003). Confirm rolling history retrieval helper lands in storage.rs.
-- Use `crate::types::Language` (11 variants) — NOT `mejepa-train::eval::Lang`.
+**Confirmed 2026-05-11:**
+- `crates/context-graph-mejepa/src/ood.rs::OodDetector` SHIPPED (Phase 4a).
+- The OOD threshold is currently a single global value (per `MeJepaInferConfig`); per-language stratification is NEW work in this task.
+- Synthetic OOD panels per language are produced by Phase 0 corpus (sister TASK-CORPUS — partial; if the per-language synthetic OOD generator does not yet ship, stub it locally and refactor when corpus lands).
+
+**Decided scope for this task:**
+1. New file `crates/context-graph-mejepa/src/eval/ood_health.rs`.
+2. `compute_ood_auc_per_language(in_dist_panels: &[Panel], synthetic_ood_panels: &[Panel], detector: &OodDetector) -> Result<BTreeMap<Language, f32>, EvalError>` returns AUC ∈ `[0, 1]`.
+3. Compute AUC via the trapezoidal rule over sorted scores (no external `roc_auc` crate; implement the ~30-line clean-room version).
+4. If any language has fewer than 30 in-distribution OR 30 OOD panels, return AUC = `None` for that language and emit `tracing::warn!` with `code = "MEJEPA_EVAL_LANGUAGE_INSUFFICIENT_OOD_SAMPLES"`.
+5. **4-week drift detection:** read prior 4 weekly reports from `CF_MEJEPA_EVAL_REPORTS` (sister TASK-EVAL-015 writes them); if AUC drops by > 0.05 over a 4-week window, emit `MEJEPA_EVAL_OOD_AUC_4_WEEK_DRIFT`.
+6. Per-language stratification of `ConformalSet`: each language gets its own residual quantile (track via `CalibrationStore::record_residual_with_language`).
+7. Bound: AUC ≥ 0.85 per language (constitution `ShipGateThresholds::ood_auc_min`).
+
+**FSV for this task:** integration test (a) synthesizes in-dist + OOD panels per language with KNOWN separation → asserts AUC per language matches expected within ε=0.02; (b) injects a 4-week trend dropping AUC by 0.06 → asserts the drift flag fires; (c) tests insufficient-sample fallback. Source of Truth: returned BTreeMap + drift-flag readback + `CF_MEJEPA_EVAL_REPORTS` history scan.
 
 ---
 

@@ -65,16 +65,23 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mejepa/src/eval/conformal_health.rs` does NOT exist. Accurate on "create".
-- **Per-language stratification gap**: confirmed in `_README.md` Phase 8 status — pending. This task is on the critical path before the ship gate (008) can fire.
-- ConformalSet (TASK-INFER-005) producer status — check `crates/context-graph-mejepa/src/conformal.rs` to verify the `outcome_set` field shape matches what this task consumes.
-- CalibrationStore per-language tau threshold (TASK-INFER-010) — verify `crates/context-graph-mejepa/src/calibration*.rs` exposes the `Language → tau` map this task reads.
-- `crate::types::Language` (11 variants) — REQUIRED for the `HashMap<Language, ConformalHealthEntry>`. Do NOT reuse `mejepa-train::eval::Lang` (5-variant local enum).
-- ±2% band literal `2.0` (delta_pct threshold) — encode as `const COVERAGE_BAND_PCT: f64 = 2.0` per constitution `<performance_budgets>`.
+**Confirmed 2026-05-11:**
+- `crates/context-graph-mejepa/src/calibration.rs` ships `CalibrationStore` with `record_residual` + `quantile`. Conformal calibration SHIPPED.
+- `crates/context-graph-mejepa/src/conformal.rs` ships the conformal set construction.
+- No per-language stratification exists today; both files are language-agnostic.
+
+**Decided scope for this task:**
+1. Add `compute_conformal_coverage_per_language(holdout: &HoldoutDataset, calibration: &CalibrationStore) -> Result<BTreeMap<Language, ConformalHealthEntry>, EvalError>` to `crates/context-graph-mejepa/src/eval/conformal_health.rs` (new file).
+2. For each `Language` in 11-variant enum: filter the calibration residuals to that language; compute the empirical coverage at the stated 90% level; produce `ConformalHealthEntry { stated: 0.90, empirical: <measured>, delta_pct: (empirical - stated) * 100, num_samples: <N>, passes_band: |delta_pct| <= 2.0 }`.
+3. If any language has `num_samples < 30`, set `passes_band: None` (use `Option<bool>` if needed) and emit `tracing::warn!` with `code = "MEJEPA_EVAL_LANGUAGE_INSUFFICIENT_CALIBRATION_SAMPLES"`.
+4. If any language fails the band, set the report flag `MEJEPA_EVAL_LANGUAGE_CONFORMAL_DRIFT` (a structured field in `EvalReport`).
+5. The `±2 %` band is constitution-pinned via `ShipGateThresholds::conformal_band_pct` (default 2.0).
+
+**FSV for this task:** integration test feeds a synthetic holdout with KNOWN per-language coverage drift (e.g., python: empirical 0.92, rust: empirical 0.87) → asserts `passes_band` correct per language → asserts the drift flag fires only on the failing language. Source of Truth: returned BTreeMap + flag readback.
 
 ---
 

@@ -89,13 +89,15 @@ impl Handlers {
             );
         }
         match locate_shift(&request.shift_id).await {
-            Ok(None) => {
-                self.tool_result(id, json!({"shift_found": false, "replay_outcome": Value::Null}))
-            }
+            Ok(None) => self.tool_result(
+                id,
+                json!({"shift_found": false, "replay_outcome": Value::Null}),
+            ),
             Ok(Some(shift)) => match replay_shift(&shift) {
-                Ok(replay_outcome) => {
-                    self.tool_result(id, json!({"shift_found": true, "replay_outcome": replay_outcome}))
-                }
+                Ok(replay_outcome) => self.tool_result(
+                    id,
+                    json!({"shift_found": true, "replay_outcome": replay_outcome}),
+                ),
                 Err(message) => {
                     error!(
                         code = "MEJEPA_OBSERVE_SHIFT_REPLAY_FAILED",

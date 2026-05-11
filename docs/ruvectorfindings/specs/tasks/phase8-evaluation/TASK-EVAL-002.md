@@ -65,15 +65,30 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mejepa/src/eval/` directory — **DOES NOT EXIST**. The `queue.rs`, `task_graph.rs`, `error.rs`, `config.rs` files this task creates are NEW and accurate.
-- Dependency TASK-EVAL-001 — NOT YET shipped (eval subtree must land first). Sequence intact.
-- **Error-taxonomy precedent**: `crates/context-graph-mejepa/src/error.rs` (`MejepaInferError`) ships the `.code()`/`.log_context()` SCREAMING_SNAKE pattern. Clone that approach exactly; do not re-invent.
-- `thiserror`, `tracing`, `parking_lot`, `ulid` — all available as workspace deps (confirmed in workspace Cargo.toml).
-- **Naming clash advisory**: `mejepa-train::eval::Lang` is a train-internal 5-language enum. The eval domain in `mejepa` MUST use `crate::types::Language` (11 variants) — do not redeclare.
+**Confirmed 2026-05-11:**
+- `crates/context-graph-mejepa/src/eval/` does NOT exist — created by sister TASK-EVAL-001.
+- No `EvalError`, `QueueError`, `GraphError`, `ActiveLearningQueueState`, `PatchGraph` types exist anywhere in the workspace yet.
+
+**Decided scope for this task:**
+1. Add to `crates/context-graph-mejepa/src/eval/internal.rs` (or split per type):
+   - `ActiveLearningQueueState` (BinaryHeap<ActiveLearningQueueEntry> + capacity + `signal_value` ordering)
+   - `ActiveLearningQueueEntry { task_id, mutation_category, language, signal_value, panel_sha, ood_score, conformal_set_size, enqueued_at_unix_seconds }`
+   - `ActiveLearningLabel { method: LabelMethod, oracle_outcome: OracleOutcome, applied_at_unix_seconds, operator_attribution: Option<String> }`
+   - `LabelMethod` enum (Manual, DockerRerun, AdjacentTestRerun) — already declared by TASK-EVAL-001 if needed there
+   - `PatchGraph { nodes: BTreeMap<TaskId, PatchGraphNode>, edges: BTreeSet<PatchGraphEdge>, corpus_sha: [u8; 32], built_at_unix_seconds: i64 }`
+   - `PatchGraphEdge { source: TaskId, target: TaskId, e_diff_cosine: f32 }` — must implement `Ord` for `BTreeSet` membership (sort by `(source, target, ord_f32(cosine))`)
+   - `EvalConfig` (host of all knobs incl. `holdout_max_concurrent_panels`, `signal_value_top_k`, `weekly_report_dir`, etc.)
+   - `ShipGateThresholds` (constitution-pinned defaults: 0.95/0.95/0.95/0.90/0.85/2.0/0.99/0.90/2.0)
+2. `EvalError` thiserror enum with variants: `LeakageDetected`, `PanelMaterializationFailed`, `CompileFailed`, `OodCalibrationDrift`, `ConformalCoverageDrift`, `GtauThresholdDrift`, `WeeklyReportPersistFailed`, `RocksDbWriteFailed`, `EmptyHoldout`, `MissingLanguage`, `BayesianShrinkageInsufficientData`, `Phase7DependencyNotShipped`. Each carries structured payload + `.code()` returning SCREAMING_SNAKE (`MEJEPA_EVAL_*`).
+3. `QueueError`: `CapacityExceeded`, `PanelShaNotFound`, `EvictionFailed`. `GraphError`: `CorpusEmpty`, `EmbedderUnavailable`, `IdempotencyMismatch`.
+4. `EvalError::log_context(&self, file: &str)` emits `tracing::error!` with all structured fields per `<error_handling>`.
+5. NO `unwrap_or` defaults on confidence / quota / correlation / signature paths.
+
+**FSV for this task:** unit tests construct each variant of `EvalError`/`QueueError`/`GraphError`, assert `.code()` returns the expected SCREAMING_SNAKE tag; serde round-trip every public type. Source of Truth: typed structures + serde JSON.
 
 ---
 
