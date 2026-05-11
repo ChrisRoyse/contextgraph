@@ -18,9 +18,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, bail, Context, Result};
-use context_graph_mejepa::eval::{
-    ActiveLearningKind, ActiveLearningQueueState, RocksDbEvalStore,
-};
+use context_graph_mejepa::eval::{ActiveLearningKind, ActiveLearningQueueState, RocksDbEvalStore};
 use context_graph_mejepa::types::{PredictionId, SurpriseSeverity, TaskId};
 use context_graph_mejepa_hygiene::storage::open_hygiene_rocksdb;
 use serde::Serialize;
@@ -142,7 +140,10 @@ fn main() -> Result<()> {
         .context("enqueue 2nd surprise to trigger eviction")?;
     // Capacity 1 + 3 entries → 2 evicted. AgentSurprise entries must survive.
     if queue.entries.len() != 1 {
-        bail!("expected queue capped to 1 entry, got {}", queue.entries.len());
+        bail!(
+            "expected queue capped to 1 entry, got {}",
+            queue.entries.len()
+        );
     }
     let surviving = queue
         .entries
@@ -157,7 +158,9 @@ fn main() -> Result<()> {
     }
     boundary_cases.push(CaseReport {
         case: "fast_track_eviction",
-        detail: "AgentSurprise (Low, score=0.2) survives against Uncertainty (score=0.99) at capacity=1".to_string(),
+        detail:
+            "AgentSurprise (Low, score=0.2) survives against Uncertainty (score=0.99) at capacity=1"
+                .to_string(),
         pass: true,
         extra: json!({
             "surviving_task_id": surviving.task_id.0,

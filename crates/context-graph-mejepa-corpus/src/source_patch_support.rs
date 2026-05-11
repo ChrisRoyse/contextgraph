@@ -1,10 +1,33 @@
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
+use crate::oracle::configure_child_process_group;
 use crate::source_patch::SourcePatchTask;
 use crate::{MutationCategory, MutationError, MutationResult};
+
+/// Per-operation timeouts for git subprocess calls invoked from source-prep.
+/// Calibrated empirically against the SWE-bench Lite Python repos and the
+/// observed p99 latencies on WSL2 → D-drive in this workspace.
+///
+/// REGRESSION HISTORY:
+/// - 2026-05-11 #1: corpus generator hung 5h on `django__django-15790`
+///   because `Command::output()` had no timeout. Fix: route every git
+///   subprocess through `run_git_timed`.
+/// - 2026-05-11 #2 (this file): tree-enumeration ops on `astropy/astropy`
+///   legitimately take 120-300s on cold cache; the original 120s
+///   GIT_QUERY_TIMEOUT was too tight. Fix: split enumeration off as its
+///   own GIT_ENUMERATION_TIMEOUT = 600s. The original 120s still applies
+///   to single-blob queries (cat-file -e, show), where 120s leaves
+///   plenty of margin while still catching a true hang.
+const GIT_QUERY_TIMEOUT: Duration = Duration::from_secs(120);
+const GIT_ENUMERATION_TIMEOUT: Duration = Duration::from_secs(600);
+const GIT_WRITE_TIMEOUT: Duration = Duration::from_secs(300);
+const GIT_NETWORK_TIMEOUT: Duration = Duration::from_secs(900);
 
 pub(crate) fn ensure_repo_cache(
     repo: &str,
@@ -178,24 +201,21 @@ pub(crate) fn read_git_blob(
 ) -> MutationResult<Option<Vec<u8>>> {
     validate_relative_repo_path(path)?;
     let object = format!("{base_commit}:{path}");
-    let exists = Command::new("git")
-        .arg("-C")
-        .arg(repo_cache)
-        .arg("cat-file")
-        .arg("-e")
-        .arg(&object)
-        .status()
-        .map_err(|err| git_error("git cat-file spawn", err.to_string()))?;
-    if !exists.success() {
+    let exists = run_git_timed(
+        Some(repo_cache),
+        &["cat-file", "-e", &object],
+        GIT_QUERY_TIMEOUT,
+        "git cat-file blob exists",
+    )?;
+    if !exists.status.success() {
         return Ok(None);
     }
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(repo_cache)
-        .arg("show")
-        .arg(&object)
-        .output()
-        .map_err(|err| git_error("read git blob", err.to_string()))?;
+    let output = run_git_timed(
+        Some(repo_cache),
+        &["show", &object],
+        GIT_QUERY_TIMEOUT,
+        "read git blob",
+    )?;
     if !output.status.success() {
         return Err(git_error(
             "read git blob",
@@ -215,14 +235,8 @@ pub(crate) fn run_git(
     args: &[&str],
     operation: &'static str,
 ) -> MutationResult<()> {
-    let mut cmd = Command::new("git");
-    if let Some(dir) = current_dir.first() {
-        cmd.arg("-C").arg(dir);
-    }
-    let output = cmd
-        .args(args)
-        .output()
-        .map_err(|err| git_error(operation, err.to_string()))?;
+    let timeout = classify_git_timeout(args);
+    let output = run_git_timed(current_dir.first().copied(), args, timeout, operation)?;
     if output.status.success() {
         return Ok(());
     }
@@ -242,12 +256,8 @@ pub(crate) fn run_git_capture(
     args: &[&str],
     operation: &'static str,
 ) -> MutationResult<String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(work_dir)
-        .args(args)
-        .output()
-        .map_err(|err| git_error(operation, err.to_string()))?;
+    let timeout = classify_git_timeout(args);
+    let output = run_git_timed(Some(work_dir), args, timeout, operation)?;
     if !output.status.success() {
         return Err(git_error(
             operation,
@@ -267,6 +277,218 @@ pub(crate) fn run_git_capture(
         )
     })
 }
+
+/// REGRESSION FIX (2026-05-11): every git subprocess spawned from source-prep
+/// flows through this helper. Three properties matter:
+///
+/// 1. **Per-operation timeout (no infinite hang).** Built on
+///    `oracle::wait_with_timeout`, which polls `try_wait()` then escalates
+///    SIGTERM → SIGKILL via `terminate_child_process_group`. A hung git
+///    subprocess will be killed at the deadline; the parent never blocks
+///    forever in `do_sys_poll`.
+///
+/// 2. **Process-group isolation.** `configure_child_process_group` puts the
+///    child in its own group so SIGTERM/SIGKILL reach grandchildren that
+///    git may have spawned (e.g., `git-remote-https`).
+///
+/// 3. **Structured timeout error.** On timeout we return
+///    `MutationError::SubprocessTimeout` with stdout/stderr tails so the
+///    operator sees `MEJEPA_CORPUS_SUBPROCESS_TIMEOUT` plus the partial
+///    output, instead of silent hang.
+///
+/// Call sites must NOT use `Command::new("git").output()` directly — use
+/// this helper or `run_git` / `run_git_capture` instead.
+/// Explicit-timeout entrypoint exposed for integration tests via
+/// `crate::test_support`. Production code paths use `run_git` /
+/// `run_git_capture` (which classify the timeout from the verb).
+pub(crate) fn run_git_with_timeout_for_test(
+    cwd: &Path,
+    args: &[&str],
+    timeout: Duration,
+    operation: &'static str,
+) -> MutationResult<()> {
+    let output = run_git_timed(Some(cwd), args, timeout, operation)?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(git_error(
+            operation,
+            format!("exit_code={:?}", output.status.code()),
+        ))
+    }
+}
+
+/// Spawn `git $args` with a deadline. Drains stdout/stderr in background
+/// threads so commands producing >64 KB of output (e.g., `git ls-tree -r`
+/// on a 30k-file repo like astropy) don't deadlock on a full pipe.
+///
+/// This was the second sub-bug in the 2026-05-11 source-prep regression:
+/// the initial timeout helper relied on `Command::output()`'s naïve
+/// post-exit `wait_with_output()` collection. For large-output children,
+/// the OS pipe buffer (typically 64 KB on Linux) fills, git blocks on the
+/// next `write()`, the parent never sees the child exit, and the
+/// "timeout" fires on a child that was actually progressing — just
+/// blocked on a pipe the parent wasn't reading.
+///
+/// The pattern below is the canonical Rust subprocess hardening idiom:
+///   1. Spawn with stdout/stderr piped.
+///   2. Move the pipe handles into two background threads that read to
+///      EOF, parking the bytes in heap-owned Vec<u8> buffers.
+///   3. Poll `try_wait()` with the deadline.
+///   4. On natural exit: join the drain threads to recover the bytes.
+///   5. On timeout: send SIGTERM to the process group (catches grandchildren
+///      like `git-remote-https`), escalate to SIGKILL after 2 s, then
+///      collect whatever the drain threads captured before the kill.
+///
+/// The Source of Truth for "did the timeout work?" is the wallclock
+/// elapsed at return: it must be `≤ timeout + 6 s` even when the child
+/// hangs. The regression test in `tests/source_prep_timeout_test.rs`
+/// covers this with a fake `git` that sleeps forever.
+fn run_git_timed(
+    cwd: Option<&Path>,
+    args: &[&str],
+    timeout: Duration,
+    operation: &'static str,
+) -> MutationResult<Output> {
+    let mut cmd = Command::new("git");
+    if let Some(dir) = cwd {
+        cmd.arg("-C").arg(dir);
+    }
+    cmd.args(args);
+    cmd.stdin(Stdio::null());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    configure_child_process_group(&mut cmd);
+    let mut child = cmd
+        .spawn()
+        .map_err(|err| git_error(operation, format!("spawn failed: {err}")))?;
+
+    // Hand the pipe handles to drain threads so the OS pipe buffer never
+    // fills up while we're polling try_wait().
+    let stdout_handle = child.stdout.take().map(spawn_drain);
+    let stderr_handle = child.stderr.take().map(spawn_drain);
+
+    let started = Instant::now();
+    let exit_status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if started.elapsed() >= timeout {
+                    let (stdout, stderr) = terminate_child_and_collect(
+                        &mut child,
+                        stdout_handle,
+                        stderr_handle,
+                        operation,
+                    )?;
+                    return Err(MutationError::SubprocessTimeout {
+                        program: "git".to_string(),
+                        operation,
+                        elapsed_secs: started.elapsed().as_secs(),
+                        stdout_tail: tail(&stdout),
+                        stderr_tail: tail(&stderr),
+                        remediation: "increase the per-operation git timeout only after profiling, \
+                                      or investigate why the git subprocess wedged (filesystem stall, \
+                                      lockfile deadlock, malformed repo)",
+                    });
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(err) => {
+                return Err(git_error(
+                    operation,
+                    format!("try_wait failed: {err}"),
+                ));
+            }
+        }
+    };
+
+    let stdout = stdout_handle
+        .map(|h| h.join().unwrap_or_default())
+        .unwrap_or_default();
+    let stderr = stderr_handle
+        .map(|h| h.join().unwrap_or_default())
+        .unwrap_or_default();
+    Ok(Output {
+        status: exit_status,
+        stdout,
+        stderr,
+    })
+}
+
+fn spawn_drain<R>(mut reader: R) -> thread::JoinHandle<Vec<u8>>
+where
+    R: Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let mut buf = Vec::new();
+        // Best-effort read; if the pipe errors we still return what was
+        // captured. The caller uses tail() so partial reads are useful.
+        let _ = reader.read_to_end(&mut buf);
+        buf
+    })
+}
+
+fn terminate_child_and_collect(
+    child: &mut std::process::Child,
+    stdout_handle: Option<thread::JoinHandle<Vec<u8>>>,
+    stderr_handle: Option<thread::JoinHandle<Vec<u8>>>,
+    operation: &'static str,
+) -> MutationResult<(Vec<u8>, Vec<u8>)> {
+    // Send SIGTERM to the process group (catches grandchildren).
+    #[cfg(unix)]
+    {
+        let process_group = format!("-{}", child.id());
+        let _ = Command::new("kill")
+            .args(["-TERM", "--", &process_group])
+            .status();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) => thread::sleep(Duration::from_millis(25)),
+                Err(err) => {
+                    return Err(git_error(operation, format!("try_wait after SIGTERM: {err}")));
+                }
+            }
+        }
+        let _ = Command::new("kill")
+            .args(["-KILL", "--", &process_group])
+            .status();
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill();
+    }
+    let _ = child.wait();
+    let stdout = stdout_handle
+        .map(|h| h.join().unwrap_or_default())
+        .unwrap_or_default();
+    let stderr = stderr_handle
+        .map(|h| h.join().unwrap_or_default())
+        .unwrap_or_default();
+    Ok((stdout, stderr))
+}
+
+/// Choose a timeout class based on the first git verb in `args`. Defaults to
+/// the conservative GIT_QUERY_TIMEOUT.
+///
+/// Enumeration verbs (`ls-tree`, `ls-files`, `log`, `rev-list`, `diff-tree`)
+/// walk the full tree/history and legitimately take minutes on large repos
+/// like astropy / sympy / django on cold cache. They go to the longer
+/// GIT_ENUMERATION_TIMEOUT bucket. Single-blob queries (`cat-file`, `show`,
+/// `rev-parse`) stay on the tighter GIT_QUERY_TIMEOUT so a wedged blob
+/// access surfaces quickly.
+fn classify_git_timeout(args: &[&str]) -> Duration {
+    match args.first().copied() {
+        Some("clone") | Some("fetch") | Some("push") | Some("pull") => GIT_NETWORK_TIMEOUT,
+        Some("apply") | Some("am") | Some("checkout") | Some("reset") | Some("commit")
+        | Some("add") | Some("rm") | Some("merge") | Some("rebase") => GIT_WRITE_TIMEOUT,
+        Some("ls-tree") | Some("ls-files") | Some("log") | Some("rev-list")
+        | Some("diff-tree") => GIT_ENUMERATION_TIMEOUT,
+        _ => GIT_QUERY_TIMEOUT,
+    }
+}
+
 
 pub(crate) fn write_readback(path: &Path, text: &str) -> MutationResult<()> {
     write_readback_bytes(path, text.as_bytes())
@@ -335,15 +557,14 @@ pub(crate) fn validate_patch_text(patch: &str) -> MutationResult<()> {
 }
 
 fn git_commit_exists(repo: &Path, commit: &str) -> MutationResult<bool> {
-    let status = Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("cat-file")
-        .arg("-e")
-        .arg(format!("{commit}^{{commit}}"))
-        .status()
-        .map_err(|err| git_error("git cat-file spawn", err.to_string()))?;
-    Ok(status.success())
+    let object = format!("{commit}^{{commit}}");
+    let output = run_git_timed(
+        Some(repo),
+        &["cat-file", "-e", &object],
+        GIT_QUERY_TIMEOUT,
+        "git cat-file commit exists",
+    )?;
+    Ok(output.status.success())
 }
 
 fn validate_repo_slug(repo: &str) -> MutationResult<()> {

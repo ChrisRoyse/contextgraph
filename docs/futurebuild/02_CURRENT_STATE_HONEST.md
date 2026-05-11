@@ -2,7 +2,9 @@
 
 > **Purpose.** Plain accounting of what's shipped at code level, what's shipped operationally, what's a placeholder, and what doesn't exist. No marketing, no aspirational language. Source of truth: `docs/ruvectorfindings/specs/_README.md` (Spec version 1.0.4, 2026-05-11) + the hardening ledgers `15_PHASE_1_5_HARDENING_FSV_2026_05_10.md` and `16_PHASE_6_8_HARDENING_FSV_2026_05_11.md`.
 >
-> **Last refreshed:** 2026-05-11 (post-TASK-FLYWHEEL-006). Active in-flight work: full 2,400-row corpus regeneration is running against `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/` with 300 known_good rows committed and 300 subtle_flip patches generated; Docker oracle is processing subtle_flip verdicts. **Every task picked up from `docs/futurebuild/tasks/` MUST first read `docs/futurebuild/specs/FSV-PROTOCOL.md` — that file is the binding verification contract.**
+> **Last refreshed:** 2026-05-11 22:05 UTC. **Phase 0 corpus partial-complete at 1,200/2,400 rows** persisted at `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/` across 4 of 8 mutation categories (`known_good`, `subtle_flip`, `off_by_one`, `swap_variable` — all 300 each). The run hung on `django__django-15790` source-prep at 17:02 UTC and was killed at 22:04 UTC after 5 hours stuck. Root cause: `Command::new("git").*.output()` in `crates/context-graph-mejepa-corpus/src/source_patch_support.rs` has no per-subprocess timeout — see `./memory/blockers/2026-05-11--mejepa-corpus-git-subprocess-no-timeout.md`. FSV evidence: `/mnt/d/contextgraph/fsv/corpus-durable-root-20260511/partial-1200-corpus-final.json` (`all_passed: false`, `complete: false`, but RocksDB counts intact at `mutation_cf=1200`, `verdict_cf=1200`). **Resuming the run requires the timeout fix first** — `--resume-incomplete` would re-hang on the same instance.
+>
+> **Every task picked up from `docs/futurebuild/tasks/` MUST first read `docs/futurebuild/specs/FSV-PROTOCOL.md` — that file is the binding verification contract.**
 
 ---
 

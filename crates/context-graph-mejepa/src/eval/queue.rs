@@ -24,10 +24,7 @@ pub enum ActiveLearningKind {
 impl ActiveLearningKind {
     /// Convenience constructor that maps a [`SurpriseSeverity`] enum into the
     /// (0.2 / 0.5 / 0.8 / 1.0) score the AgentSurprise variant carries.
-    pub fn agent_surprise(
-        prediction_id: PredictionId,
-        severity: SurpriseSeverity,
-    ) -> Self {
+    pub fn agent_surprise(prediction_id: PredictionId, severity: SurpriseSeverity) -> Self {
         Self::AgentSurprise {
             prediction_id,
             severity_score: severity.severity_score(),

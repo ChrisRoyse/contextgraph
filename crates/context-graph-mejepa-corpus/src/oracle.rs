@@ -990,7 +990,7 @@ fn validate_docker_config(config: &DockerOracleConfig) -> OracleResult<()> {
     Ok(())
 }
 
-pub(crate) fn configure_child_process_group(command: &mut Command) {
+pub fn configure_child_process_group(command: &mut Command) {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -998,15 +998,11 @@ pub(crate) fn configure_child_process_group(command: &mut Command) {
     }
 }
 
-pub(crate) fn wait_with_timeout(
-    child: Child,
-    timeout: Duration,
-    program: &str,
-) -> OracleResult<Output> {
+pub fn wait_with_timeout(child: Child, timeout: Duration, program: &str) -> OracleResult<Output> {
     wait_with_timeout_interruptible(child, timeout, program, None)
 }
 
-pub(crate) fn wait_with_timeout_interruptible(
+pub fn wait_with_timeout_interruptible(
     mut child: Child,
     timeout: Duration,
     program: &str,

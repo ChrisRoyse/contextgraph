@@ -63,6 +63,30 @@ pub mod source_patch;
 mod source_patch_support;
 pub mod split;
 mod subtle_flip;
+
+/// Integration-test access to the timed git runner. Public API surface is
+/// intentionally minimal: only the regression test in
+/// `tests/source_prep_timeout_test.rs` calls these. Adding a new public
+/// surface here requires the FSV-PROTOCOL audit.
+pub mod test_support {
+    use std::path::Path;
+    use std::time::Duration;
+
+    use crate::source_patch_support::{run_git, run_git_with_timeout_for_test};
+    use crate::{MutationError, MutationResult};
+
+    pub fn run_git_for_tests(cwd: &Path, args: &[&str]) -> MutationResult<()> {
+        run_git(&[cwd], args, "test_support.run_git")
+    }
+
+    pub fn run_git_with_timeout_for_tests(
+        cwd: &Path,
+        args: &[&str],
+        timeout: Duration,
+    ) -> Result<(), MutationError> {
+        run_git_with_timeout_for_test(cwd, args, timeout, "test_support.run_git_with_timeout")
+    }
+}
 mod swap_variable;
 pub mod swebench;
 mod util;
@@ -109,6 +133,18 @@ pub enum MutationError {
         sha: String,
         collisions: Vec<(String, String)>,
     },
+    #[error(
+        "subprocess {program} timed out after {elapsed_secs}s during {operation}; \
+         stdout_tail={stdout_tail}; stderr_tail={stderr_tail}; remediation: {remediation}"
+    )]
+    SubprocessTimeout {
+        program: String,
+        operation: &'static str,
+        elapsed_secs: u64,
+        stdout_tail: String,
+        stderr_tail: String,
+        remediation: &'static str,
+    },
 }
 
 impl MutationError {
@@ -118,6 +154,7 @@ impl MutationError {
             Self::NoMutationSite { .. } => "MEJEPA_CORPUS_NO_MUTATION_SITE",
             Self::OperatorFailed { .. } => "MEJEPA_CORPUS_OPERATOR_FAILED",
             Self::LeakageDetected { .. } => "MEJEPA_CORPUS_LEAKAGE_DETECTED",
+            Self::SubprocessTimeout { .. } => "MEJEPA_CORPUS_SUBPROCESS_TIMEOUT",
         }
     }
 
