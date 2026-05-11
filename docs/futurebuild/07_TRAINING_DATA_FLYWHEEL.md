@@ -1,0 +1,386 @@
+# 07 — Training Data Flywheel
+
+> **Purpose.** Specify how every Edit / Write / test-run / agent-feedback event becomes a labeled training example for ME-JEPA, **continuously and without operator intervention**. The flywheel is the operator's "this system can derive reward signals from durable reality. that is what we are doing, trying to capture all the reward signals as possible so we can have as much data as possible for the me jepa to be able to predict reality."
+>
+> Owned by [`SPEC-FLYWHEEL.md`](specs/functional/SPEC-FLYWHEEL.md) and [`TECH-FLYWHEEL.md`](specs/technical/TECH-FLYWHEEL.md).
+
+---
+
+## 1. Five reward channels
+
+Per the closed-loop architecture in [`03_ARCHITECTURE_BLUEPRINT.md §4`](03_ARCHITECTURE_BLUEPRINT.md), five channels feed back into the training stream. The flywheel is the orchestration that pulls all five into a single coherent training pipeline.
+
+| Channel | Source | Frequency | Label kind |
+|---|---|---|---|
+| **C1: Oracle ground truth** | Docker test runs (Phase 0 corpus + live `pytest`/`cargo test`) | per test invocation | hard label: per-test pass/fail |
+| **C2: Shift channel** | every Edit / Write — pre/after SHAs + cargo check + git diff | per file mutation (~250ms latency) | soft label: panel transition for SSL panel-loss |
+| **C3: Agent-feedback channel** | `mejepa_record_agent_feedback` calls from the agent | event-driven (rare; high signal) | weak label: prediction-correctness with severity |
+| **C4: Operator-override channel** | active-learning queue → operator labels | event-driven; gold-standard | hard label: operator-confirmed correct/incorrect |
+| **C5: Static-analysis snapshot deltas** | clippy/pylint/eslint/bandit/cargo-audit before vs after | per shift | soft label: warning class deltas drive Q4 heads |
+
+**No new channels are needed.** All five exist in the shipped substrate. The flywheel is the orchestration that ensures they all flow continuously.
+
+---
+
+## 2. The flywheel components
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                    Claude Code session activity                      │
+└────────┬──────────┬──────────┬──────────┬──────────┬─────────────────┘
+         │          │          │          │          │
+         ▼          ▼          ▼          ▼          ▼
+       Edit       Write      Bash       Read      User prompt
+        │          │          │          │          │
+        ▼          ▼          ▼          │          ▼
+   ┌──────────────────────────┐         │     ┌──────────────────┐
+   │ shift-log JSONL writer   │         │     │ UserPromptSubmit │
+   └────────┬─────────────────┘         │     │ injection        │
+            │                            │     └──────┬───────────┘
+            ▼                            │            │
+   ┌────────────────────────────┐        │            │
+   │ Shift subscriber (tokio)   │◄───────┘            │
+   │  poll_next_line @ 250ms    │                     │
+   └────────┬───────────────────┘                     │
+            │                                         │
+            ▼                                         │
+   ┌────────────────────────────┐                     │
+   │ Pipeline:                  │                     │
+   │  1. AST chunk              │                     │
+   │  2. Embedder forward       │                     │
+   │  3. DDA signals            │                     │
+   │  4. PanelBuilder           │                     │
+   │  5. Persist to CFs         │                     │
+   └────────┬───────────────────┘                     │
+            │                                         │
+            ▼                                         │
+   ┌────────────────────────────┐                     │
+   │ Continuous self-optim      │                     │
+   │ scheduler (tokio)          │                     │
+   │  - observe(panel, oracle)  │                     │
+   │  - EWC++ regularization    │                     │
+   │  - drift detection         │                     │
+   │  - active-learning queue   │                     │
+   │  - A/B/C promotion         │                     │
+   │  - continual backprop      │                     │
+   └────────┬───────────────────┘                     │
+            │                                         │
+            ▼                                         │
+   ┌────────────────────────────┐                     │
+   │ ME-JEPA model state        │                     │
+   │ (weights, Fisher snapshot, │                     │
+   │  centroids, calibration)   │                     │
+   └────────┬───────────────────┘                     │
+            │                                         │
+            ▼                                         │
+   ┌────────────────────────────┐                     │
+   │ verify(patch, context)     │─────────────────────┘
+   │ → RealityPrediction        │
+   │ → CF_MEJEPA_LIVE_PRED      │
+   └────────────────────────────┘
+
+Plus, on the operator side:
+   ┌────────────────────────────┐
+   │ Weekly evaluation report   │
+   │ (mejepa_eval_run cron)     │
+   │ + active-learning surface  │
+   └────────────────────────────┘
+```
+
+### 2.1 Component status
+
+| Component | Shipped? | Where |
+|---|---|---|
+| Hook layer (PreToolUse/PostToolUse/UserPromptSubmit) | YES | `.claude/settings.json` + `scripts/cc/*.sh` |
+| Shift-log JSONL writer | YES | `crates/context-graph-mcp` |
+| Shift subscriber | YES (crate) | `crates/context-graph-mejepa-shift-subscriber` |
+| AST chunker | YES (11 langs) | `crates/context-graph-core::memory::ast` |
+| Embedder forward (deterministic) | YES placeholders | `crates/context-graph-mejepa-embedders` |
+| Embedder forward (neural) | NO | needs [#3](https://github.com/ChrisRoyse/contextgraph/issues/3) |
+| DDA signal computation | NO | new — see `04_DDA_TCT_CODE_ENRICHMENT.md` |
+| PanelBuilder | YES | `crates/context-graph-mejepa-instruments` |
+| Continuous self-optim scheduler | NO | new — see `09_SELF_HEALING_AUTONOMY.md` |
+| `MeJepaCompiler::observe` | YES | `crates/context-graph-mejepa::compiler` |
+| EWC++ | YES | `crates/context-graph-mejepa::heal::ewc` |
+| Drift detector | YES | `crates/context-graph-mejepa::heal::drift` |
+| Active-learning queue | YES | `crates/context-graph-mejepa::eval::queue` |
+| A/B/C promotion | YES | `crates/context-graph-mejepa::heal::promote` |
+| Continual backprop | YES | `crates/context-graph-mejepa-train::learning_signal::continual_backprop` |
+| `verify()` → `RealityPrediction` | YES (basic schema) | `crates/context-graph-mejepa::compiler` |
+| Multi-head extension to predictor | NO | new — see `03_ARCHITECTURE_BLUEPRINT.md §3` |
+| Prediction-injection hook | NO | new — see `08_LIVE_PREDICTION_AGENT_API.md` |
+| `mejepa_record_agent_feedback` MCP tool | NO | new — see `08_LIVE_PREDICTION_AGENT_API.md` |
+| MCP daemon mode (the supervised-process container) | partial | small task — `TASK-FLYWHEEL-001` |
+| Weekly evaluation cron | partial (code shipped; no scheduler) | small task — `TASK-OBS-001` |
+
+**The unshipped pieces are operational glue, not new architecture.** Most of the work is wiring + scheduling + a couple of MCP tools.
+
+---
+
+## 3. The MCP daemon mode (the missing supervisor)
+
+Today, `cargo run --release -p context-graph-mcp` starts the JSON-RPC stdio server but does NOT start the long-running shift subscriber, GC scheduler, or self-optimization scheduler. These exist as crate-level entrypoints but no supervisor invokes them.
+
+**`TASK-FLYWHEEL-001-mcp-daemon-mode.md` adds a `--daemon` flag** that:
+
+```rust
+#[tokio::main]
+async fn main() -> Result<()> {
+    let opts = parse_opts()?;
+    let storage = Storage::open(&opts.storage_root)?;
+    
+    // Start the JSON-RPC stdio handler (existing)
+    let mcp_handle = tokio::spawn(run_mcp_stdio(storage.clone(), opts.clone()));
+    
+    if opts.daemon {
+        // NEW: long-running supervised tokio tasks
+        let shift_sub = tokio::spawn(
+            run_shift_subscriber(storage.clone(), opts.shift_log_root.clone())
+        );
+        let self_optim = tokio::spawn(
+            run_self_optimization_scheduler(storage.clone(), opts.heal_config.clone())
+        );
+        let gc_sched = tokio::spawn(
+            run_nightly_gc_scheduler(storage.clone(), opts.gc_config.clone())
+        );
+        let weekly_eval = tokio::spawn(
+            run_weekly_eval_scheduler(storage.clone(), opts.eval_config.clone())
+        );
+        
+        // panic supervisor: any task panic → log + restart with backoff
+        supervise(vec![mcp_handle, shift_sub, self_optim, gc_sched, weekly_eval]).await
+    } else {
+        mcp_handle.await?
+    }
+}
+```
+
+The daemon supervisor uses `tokio::select!` over `tokio::task::JoinSet` to detect panics and restart with exponential backoff (max 60s). Crash logs go to `<runtime_root>/_daemon_logs/<task>.log` rotated daily.
+
+A systemd unit (or equivalent) is provided as a template under `scripts/systemd/mejepa-daemon.service` so an operator can `systemctl --user enable mejepa-daemon` for persistent operation.
+
+---
+
+## 4. The continuous self-optimization scheduler (the heart of the flywheel)
+
+Per `03_ARCHITECTURE_BLUEPRINT.md §4.5`, the scheduler is a tokio task with five tickers:
+
+| Ticker | Period | Action |
+|---|---|---|
+| `observe_tick` | 250 ms | drain pending shifts → call `observe(panel, oracle_outcome_or_None)` with EWC++ regularization. If oracle is unknown yet (test hasn't run), enqueue for retroactive observe when oracle arrives. |
+| `drift_check_tick` | 60 s | snapshot drift window → classify Soft/Hard/Catastrophic → queue appropriate intervention |
+| `active_learning_tick` | 600 s | drain top-N high-priority entries from active-learning queue → fast-track observe on agent-flagged surprises |
+| `promote_tick` | 3600 s | run pending LoRA refresh / calibration recalibrate / (if scheduled) full A/B/C retrain |
+| `continual_backprop_tick` | 1800 s | detect dormant units → reinit if fraction > 15% |
+
+**The scheduler is the single point at which "Claude Code did something" → "ME-JEPA learned from it" closes.** Before it ships, observe() is callable but only on demand; after it ships, every Edit becomes a training example without anyone calling anything.
+
+Implementation: `crates/context-graph-mejepa::heal::scheduler::run_self_optimization_scheduler` (NEW). The interfaces it needs (`heal::ewc`, `heal::drift`, `heal::promote`, `heal::lora_refresh`, `heal::calibration`, `learning_signal::continual_backprop::*`, `eval::queue::*`) are all shipped — this task is pure orchestration.
+
+---
+
+## 5. The shift → panel → observe path (per-event)
+
+```
+Edit fires
+    │
+    ▼
+PostToolUse hook appends shift-log JSONL line:
+    { ts, session_id, file, before_sha, after_sha, line_count_before, line_count_after,
+      cargo_check_result, git_diff_summary, hook_id }
+    │
+    ▼ (within 250ms)
+ShiftSubscriber.poll_next_line() reads the line
+    │
+    ▼
+materialize_shift(shift) -> PanelMaterializationOutcome:
+    1. read file at after_sha (storage handle)
+    2. memory::ast::chunk_with_options(content, language, opts) -> Vec<Chunk>
+    3. for each chunk:
+        a. routing::lookup(chunk.lang, chunk.kind) -> embedder set
+        b. for embedder in set: EmbedderForward::forward(chunk) -> EmbeddingVec  [NEW for neural]
+        c. compute DDA signals (per-embedder cosine to centroid + pairwise cosine + cached MI)  [NEW]
+        d. persist to CF_MEJEPA_DDA_SIGNALS keyed by (panel_id, chunk_id)
+    4. PanelBuilder.build(chunks, scalar_features) -> Panel
+    5. persist Panel to CF_MEJEPA_PANELS keyed by (session_id, panel_id)
+    6. update CF_MEJEPA_SHIFT_WATERMARK with the consumed shift_id
+    │
+    ▼
+shift_to_inference(panel, prior_panel, action) -> RealityPrediction:
+    - predictor forward → predicted_panel + per-head outputs (Q1-Q5)
+    - conformal predictor wraps → confidence interval
+    - TCT Gτ guard → guard violations
+    - assemble RealityPrediction (per 15_PREDICTION_TAXONOMY.md §1)
+    - persist to CF_MEJEPA_LIVE_PREDICTIONS keyed by session_id
+    │
+    ▼ (asynchronously, when oracle outcome arrives)
+observe(panel_t, action, panel_t+1, oracle_outcome) -> ObserveOutcome:
+    - run EWC++ regularized SGD step
+    - compute ΔP / ΔK / ΔΩ / ΔΞ → L_step
+    - update sampling_weight for the involved chunks
+    - write a training cert to CF_MEJEPA_TRAIN_CERTS (witness-chain bound)
+    - if drift detector hits Soft/Hard, queue intervention
+    - if agent recorded a SurpriseEvent on this prediction, bump weight by 1+2*severity_score
+```
+
+Latency budget per `REQ-SHIFT-03`: p50 < 5s, p99 < 30s. The per-shift work is bounded by:
+- AST chunking: ~50ms for typical file
+- Embedder forwards (neural): ~200ms per chunk × 5 chunks parallelized = ~200ms total
+- DDA signals: ~50ms (cached MI; only fresh cosines)
+- Panel build + persist: ~100ms
+- Predictor forward: ~50ms (CUDA, batch=1)
+- Conformal + Gτ: ~10ms
+- Total p50: ~500ms; p99: dominated by embedder forward tail latency
+
+---
+
+## 6. The replay buffer + prioritized sampling
+
+Per `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md §6`:
+
+```
+sampling_weight(ex) = base_weight
+                    · L_step(ex)
+                    · (1 + 5 · operator_override_flag)
+                    · decay^age_in_days
+```
+
+with `base_weight = 1.0`, `decay = 0.995` (half-life ~140 days). Examples with `sampling_weight < 0.05` drop from the current epoch; examples with `sampling_weight > 1.0` are guaranteed inclusion.
+
+**The replay buffer is the union of CF_MEJEPA_PANELS panels + their training certs + their agent-feedback events.** The BatchSampler reads from this CF, applies sampling weights, and produces batches for the periodic full-retrain (every 1k attempts in Phase 5; reduced to every 10k attempts in steady state per the heal scheduler).
+
+The flywheel makes the replay buffer **self-curating**:
+- High-L_step examples (where the prediction was wrong) get over-sampled.
+- Operator-override examples get 6× weight.
+- Agent-flagged surprise examples get 1+2*severity weight bump.
+- Stale low-L_step examples decay out via the 0.995 multiplicative decay.
+
+Result: the trained model continuously over-fits to the hard-and-recent examples, which is exactly what we want for a system that gets better the more it's used.
+
+---
+
+## 7. The oracle-outcome arrival path (asynchronous label binding)
+
+Predictions are made before tests run. Oracle outcomes arrive later (sometimes seconds, sometimes hours after CI completes). The flywheel must bind them retroactively:
+
+```
+Test run completes (pytest / cargo test / jest / ...)
+    │
+    ▼
+Test-output capture hook (PostToolUse on Bash) parses the test result and
+emits a TestOutcomeEvent:
+    { ts, session_id, test_id, outcome: Pass|Fail|Error|Skip, duration_ms, error_log }
+    │
+    ▼
+TestOutcomeEvent is persisted to CF_MEJEPA_ORACLE_VERDICTS keyed by
+    (session_id, test_id, ts)
+    │
+    ▼
+Self-optim scheduler's observe_tick wakes (next 250ms tick), notices the
+new oracle entry, looks up:
+    - the most-recent prediction in CF_MEJEPA_LIVE_PREDICTIONS for this session
+      that includes this test in its predicted_failed_tests OR predicted_passed_tests
+    - the corresponding panel in CF_MEJEPA_PANELS
+    │
+    ▼
+observe(panel, action, panel_after_test, oracle=outcome) is called
+    - the prediction's correctness is computed
+    - if prediction was wrong AND severity is High/Critical, an active-learning
+      queue entry is created (kind=PredictionMissed)
+    - the panel + outcome → training cert chain entry
+```
+
+This is **the binding from "what the prediction said" to "what reality returned."** The oracle is the labeler. Predictions that match the oracle reinforce the model; predictions that don't get over-sampled in the next epoch.
+
+---
+
+## 8. The agent-feedback path (closing the metacognitive loop)
+
+```
+Agent calls mejepa_record_agent_feedback(prediction_id, kind, explanation, severity, actual_outcome)
+    │
+    ▼
+SurpriseEvent persisted to CF_MEJEPA_AGENT_FEEDBACK keyed by
+    (prediction_id, agent_id, ts)
+    │
+    ▼
+Active-learning queue entry created (kind=AgentSurprise) with high priority
+    │
+    ▼
+On the next active_learning_tick (≤ 600s later), the scheduler:
+    - reads the SurpriseEvent
+    - resolves the original prediction + panel
+    - calls observe() with bumped sampling weight (1 + 2 * severity_score)
+    - updates the calibration-error tracking for the head that made the wrong prediction
+    │
+    ▼
+If the SurpriseEvent has severity = Catastrophic AND the calibration error
+exceeds the drift threshold, fast-track to lora_refresh OR full_retrain queue
+    │
+    ▼
+On the operator-visible side: the SurpriseEvent appears in the weekly evaluation
+report under "agent-flagged misses for the week" with a per-prediction-class breakdown
+```
+
+**This is the loop the operator's "agents need a way to feed back into the me jepa model confirmation of predictions and give information whenever surprise happens" describes.** It's a single MCP tool + a CF + the scheduler entry — no new architecture.
+
+---
+
+## 9. Storage hygiene (so the flywheel doesn't eat the disk)
+
+> **D-drive policy (locked).** Per `memory/decisions/2026-05-10--d-backed-durable-data-root-and-mcp-daemon.md`, ALL bulk durable state lives under `/mnt/d/contextgraph` (the D:\ drive in the WSL host), NOT under `$HOME` or the C:\ root filesystem. The flywheel adds CFs that obey the same rule:
+>
+> - RocksDB store (all CFs including the new `CF_MEJEPA_DDA_SIGNALS`, `CF_MEJEPA_FAILURE_EXEMPLARS`, `CF_MEJEPA_AGENT_FEEDBACK`): `/mnt/d/contextgraph/storage/contextgraph-rocksdb/`
+> - Shift-log JSONL (the densest growing artifact): `/mnt/d/contextgraph/runtime/cgreality-shift-log/<session>.jsonl`
+> - Model artifacts: `/mnt/d/cabdru/contextgraph/models/`
+> - Daemon log + pid files: `/mnt/d/contextgraph/logs/`, `/mnt/d/contextgraph/state/locks/`
+> - FSV evidence (formerly under `/tmp/`): `/mnt/d/contextgraph/fsv/<crate>-fsv/`
+> - Replay-buffer materializations: `/mnt/d/contextgraph/storage/replay/`
+> - Active-learning queue exports: `/mnt/d/contextgraph/exports/active-learning/`
+>
+> Daemon mode (`TASK-FLYWHEEL-001`) MUST refuse to start if the D-drive root is unavailable; this is not a fallback path. The wrapper script `scripts/context-graph-mcp-wrapper.sh` already enforces this at MCP startup; the new daemon must do the same.
+
+Per `06 HYGIENE` (shipped):
+- Tier compression: hot 8-bit / warm 7-bit / cool 5-bit / cold 3-bit (per access frequency)
+- Quota enforcement: 115 GB hard cap; emergency eviction on overflow
+- Witness Merkle compression for chains > 90 days old
+- Nightly GC at 03:00 local: demote + compact + evict + prune + verify
+
+The flywheel adds three new CFs (`CF_MEJEPA_DDA_SIGNALS`, `CF_MEJEPA_FAILURE_EXEMPLARS`, `CF_MEJEPA_AGENT_FEEDBACK`) — each participates in the existing tier policy:
+
+| CF | Hot policy | Warm policy | Cool policy | Cold policy |
+|---|---|---|---|---|
+| `CF_MEJEPA_DDA_SIGNALS` | 8-bit groupwise quantization | 7-bit | 5-bit | 3-bit; ttl 365 days |
+| `CF_MEJEPA_FAILURE_EXEMPLARS` | 8-bit | 8-bit (operator-pinned) | 5-bit | 3-bit; ttl never (operator labels are permanent) |
+| `CF_MEJEPA_AGENT_FEEDBACK` | 8-bit | 8-bit | 5-bit; bound to original prediction; never aged out without operator override |
+
+Tier transition decisions are made by `hygiene::tier::tier_for_score` based on `access_count_30d` per the existing tier policy.
+
+---
+
+## 10. Failure modes the flywheel must survive
+
+| Failure | Detection | Response |
+|---|---|---|
+| Shift subscriber lag > 500 unprocessed shifts / 1 min | `mejepa_subscriber_status` MCP tool | log `MEJEPA_SHIFT_SUBSCRIBER_LAG_ALERT`; daemon escalates to operator if lag > 5 min |
+| Self-optim scheduler tokio task panics | `tokio::JoinSet` supervisor catches | log + restart with exponential backoff (cap 60s); after 5 restarts in 5 min, surface `MEJEPA_SCHEDULER_FLAPPING` |
+| Drift detector reports Catastrophic | `heal::drift::classify` | trigger A/B/C retrain; alert operator via `CF_MEJEPA_HEAL_REPORTS` (severity=Catastrophic); pause prediction emission until A/B/C completes |
+| Storage overflow | `hygiene::quota::quota_status` | emergency eviction kicks in; if still overflowing, alert operator + halt panel writes (predictions still served from existing weights) |
+| Embedder model file corrupt / missing | startup digest check (existing) | refuse to start the daemon; surface `MEJEPA_EMBEDDER_DIGEST_MISMATCH` |
+| Oracle outcome stops arriving (test runner misconfigured) | rolling-window oracle-arrival rate < threshold | log warning; observe() falls back to prediction-only confidence calibration (no hard label) |
+| RocksDB write contention | latency telemetry on observe() | log; auto-shrink batch size; if persistent, alert |
+
+---
+
+## 11. What this flywheel commits us to
+
+1. **MCP daemon mode** with supervised tokio tasks + systemd template. (`TASK-FLYWHEEL-001`)
+2. **Continuous self-optimization scheduler** as the orchestrator of observe/drift/active-learning/promote/continual-backprop. (`TASK-FLYWHEEL-002` / `TASK-HEAL-001`)
+3. **Test-outcome capture hook** that parses pytest/cargo-test/jest output and writes `TestOutcomeEvent`s. (`TASK-FLYWHEEL-003`)
+4. **Asynchronous oracle-binding** path inside observe(). (`TASK-FLYWHEEL-004`)
+5. **`mejepa_record_agent_feedback` MCP tool** + `CF_MEJEPA_AGENT_FEEDBACK` + sampling-weight bump wiring. (`TASK-PREDICT-002`)
+6. **Active-learning queue surfacing** of agent-flagged surprises (already shipped queue; needs the AgentSurprise kind extension). (`TASK-FLYWHEEL-005`)
+7. **Weekly evaluation report cron** that runs `mejepa_eval_run` and writes the per-(category × language) report. (`TASK-OBS-001`)
+8. **CF additions** for the new flywheel CFs in the shared `context-graph-mejepa-cf` registry. (`TASK-FLYWHEEL-006`)
+
+All listed in [`13_TASK_INDEX.md`](13_TASK_INDEX.md).

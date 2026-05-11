@@ -378,6 +378,37 @@ The result: in a session-week of normal Claude Code usage, ME-JEPA accumulates r
 
 ---
 
+## 8b. Storage location policy (D-drive only)
+
+> **Locked decision** per `memory/decisions/2026-05-10--d-backed-durable-data-root-and-mcp-daemon.md`. ALL durable state that grows over time lives under `/mnt/d/contextgraph` (D:\ drive in the WSL host). Nothing growing lives on the C:\ root filesystem.
+
+| Data class | Path | Reason |
+|---|---|---|
+| RocksDB workspace store | `/mnt/d/contextgraph/storage/contextgraph-rocksdb/` | grows with shifts/panels/predictions/feedback; tens of GB |
+| Shift-log JSONL files | `/mnt/d/contextgraph/runtime/cgreality-shift-log/<session>.jsonl` | one file per session; bounded GC; potentially many GB |
+| Model artifacts (GGUF, safetensors, ONNX) | `/mnt/d/cabdru/contextgraph/models/` | individual files are GB-class; SHA-pinned; never auto-fetched |
+| Daemon logs (rotated daily) | `/mnt/d/contextgraph/logs/` | grows; rotated |
+| Daemon pid + lock files | `/mnt/d/contextgraph/state/locks/` | tiny but kept where data is |
+| FSV evidence files (formerly `/tmp/`) | `/mnt/d/contextgraph/fsv/<crate>-fsv/` | persists across reboots; would otherwise stress `/tmp` (often tmpfs/RAM) |
+| Replay buffer / training corpus shards | `/mnt/d/contextgraph/storage/replay/` | grows continuously with the flywheel |
+| Active-learning queue exports | `/mnt/d/contextgraph/exports/active-learning/` | operator-facing dumps |
+| Eval reports + weekly snapshots | `/mnt/d/contextgraph/exports/eval/` | grows over time |
+| Witness chain segments + Merkle compressed bundles | `/mnt/d/contextgraph/storage/witness/` | append-only; grows |
+| Tier-compressed cold panels | `/mnt/d/contextgraph/storage/cold/` | tier 5/3-bit blobs |
+
+**What stays on C:\ (the source tree):** code, docs, configs, the `target/release/` build artifacts (these are reproducible from source so the host C:\ size is bounded by the repo + cargo cache).
+
+**What stays in `/tmp/`:** ephemeral test runs that don't need to survive a reboot; specifically test scratch spaces inside individual `cargo test` runs. Anything that should survive an MCP restart must NOT live in `/tmp/`.
+
+**Enforcement:**
+- The MCP daemon mode refuses to start if `/mnt/d/contextgraph/` does not exist or is not writable. Fail-closed with `MEJEPA_D_DRIVE_UNAVAILABLE`.
+- Storage hygiene's quota of 115 GB applies to `/mnt/d/contextgraph/` total footprint; nightly GC + tier compression target this directory only.
+- The wrapper script `scripts/context-graph-mcp-wrapper.sh` already enforces this at MCP startup; the new daemon, scheduler, and shift-subscriber tasks inherit the same root.
+
+**For all future code in the futurebuild plan:** any new RocksDB CF, any new on-disk artifact, any new log, any new model file MUST default to a path under `/mnt/d/contextgraph/`. C:\-rooted defaults are forbidden. This is checked by the new `TASK-FLYWHEEL-001-mcp-daemon-mode.md` startup validator and by a small lint added to CI (`TASK-OBS-005-c-drive-lint.md`).
+
+---
+
 ## 9. Critical constraints (carried from CLAUDE.md and the existing constitution)
 
 - **GENERIC-ONLY.** No per-task or per-language hard-coding in any of the new code paths. The multi-head taxonomy must work for every supported language; the agent-feedback channel must be language-agnostic.
