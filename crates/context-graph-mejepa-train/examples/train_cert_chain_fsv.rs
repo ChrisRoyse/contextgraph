@@ -77,6 +77,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             counterfactual_smoothness_anomaly: None,
             cross_task_transfer_indices: vec![],
             cross_task_transfer_fallback_count: 0,
+            predictor_redundancy_pairwise_mi: 0.01,
+            predictor_redundancy_pairwise_mi_source: "synthetic_cert_signal".to_string(),
             holdout_promotion: None,
             generic_only_warning: None,
             phase3_dod_passed: None,

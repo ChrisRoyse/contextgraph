@@ -11,8 +11,8 @@ use crate::eval::{
     MutationCategory,
 };
 use crate::learning_signal::{
-    compute_l_step, DeltaKComponents, DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents,
-    DeltaXiComponents,
+    compute_l_step, pairwise_mi_audit, DeltaKComponents, DeltaOmegaComponents, DeltaPAggregator,
+    DeltaPComponents, DeltaXiComponents,
 };
 use crate::sampler::{BatchSampler, PatchSimilarityGraph};
 use candle_core::{DType, Device};
@@ -138,6 +138,8 @@ impl Trainer {
                 batch_idx % dataset.train.examples.len(),
                 self.config.batch_size,
             )?;
+            let predictor_redundancy_pairwise_mi =
+                batch_pairwise_redundancy(dataset, &plan.indices)?;
             let hardness = (batch_idx as f32 + 1.0) / batches.max(1) as f32;
             let signal = compute_l_step(
                 DeltaPComponents {
@@ -165,7 +167,7 @@ impl Trainer {
                 },
                 DeltaXiComponents {
                     target_collapse: 0.0,
-                    predictor_redundancy: 0.05,
+                    predictor_redundancy: predictor_redundancy_pairwise_mi,
                     constellation_violation_rate: 0.05,
                 },
             )?;
@@ -197,6 +199,9 @@ impl Trainer {
                 counterfactual_smoothness_anomaly: None,
                 cross_task_transfer_indices: plan.cross_task_indices,
                 cross_task_transfer_fallback_count: plan.cross_task_fallback_count as u64,
+                predictor_redundancy_pairwise_mi,
+                predictor_redundancy_pairwise_mi_source: "train_batch_panel_t01_pairwise_cosine"
+                    .to_string(),
                 holdout_promotion: None,
                 generic_only_warning: None,
                 phase3_dod_passed: None,
@@ -311,6 +316,44 @@ impl Trainer {
         )?;
         Ok(())
     }
+}
+
+fn batch_pairwise_redundancy(
+    dataset: &TrainingDataset,
+    indices: &[usize],
+) -> Result<f32, TrainerError> {
+    if indices.len() < 2 {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            "pairwise MI train-cert column requires at least two selected batch examples",
+        )
+        .with_context(serde_json::json!({
+            "selected_batch_len": indices.len(),
+            "remediation": "increase batch_size or ensure the sampler has at least two non-dropped examples"
+        })));
+    }
+    let mut rows = Vec::with_capacity(indices.len());
+    for idx in indices {
+        let example = dataset.train.examples.get(*idx).ok_or_else(|| {
+            TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                format!("sampler selected train index {idx} outside train split"),
+            )
+        })?;
+        let values = example
+            .panel_t01
+            .to_dtype(DType::F32)?
+            .flatten_all()?
+            .to_vec1::<f32>()?;
+        if values.is_empty() {
+            return Err(TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                format!("train index {idx} has an empty panel_t01 tensor"),
+            ));
+        }
+        rows.push(values);
+    }
+    Ok(pairwise_mi_audit(&rows)?)
 }
 
 fn default_embedder_versions() -> HashMap<String, String> {

@@ -56,6 +56,8 @@ pub struct TrainingCertificate {
     pub counterfactual_smoothness_anomaly: Option<bool>,
     pub cross_task_transfer_indices: Vec<usize>,
     pub cross_task_transfer_fallback_count: u64,
+    pub predictor_redundancy_pairwise_mi: f32,
+    pub predictor_redundancy_pairwise_mi_source: String,
     pub holdout_promotion: Option<bool>,
     pub generic_only_warning: Option<String>,
     pub phase3_dod_passed: Option<bool>,
@@ -78,6 +80,48 @@ impl TrainingCertificate {
                 format!(
                     "target_collapse={} at step {}",
                     self.signal.delta_xi_components.target_collapse, self.step
+                ),
+            )
+            .with_step(self.step));
+        }
+        if !self.predictor_redundancy_pairwise_mi.is_finite()
+            || !(0.0..=1.0).contains(&self.predictor_redundancy_pairwise_mi)
+        {
+            return Err(crate::error::TrainerError::new(
+                crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                format!(
+                    "predictor_redundancy_pairwise_mi={} at step {} must be finite in [0,1]",
+                    self.predictor_redundancy_pairwise_mi, self.step
+                ),
+            )
+            .with_step(self.step));
+        }
+        if self
+            .predictor_redundancy_pairwise_mi_source
+            .trim()
+            .is_empty()
+        {
+            return Err(crate::error::TrainerError::new(
+                crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                format!(
+                    "predictor_redundancy_pairwise_mi_source is empty at step {}",
+                    self.step
+                ),
+            )
+            .with_step(self.step));
+        }
+        if (self.predictor_redundancy_pairwise_mi
+            - self.signal.delta_xi_components.predictor_redundancy)
+            .abs()
+            > 1e-6
+        {
+            return Err(crate::error::TrainerError::new(
+                crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                format!(
+                    "top-level pairwise MI {} diverges from signal ΔΞ predictor_redundancy {} at step {}",
+                    self.predictor_redundancy_pairwise_mi,
+                    self.signal.delta_xi_components.predictor_redundancy,
+                    self.step
                 ),
             )
             .with_step(self.step));
