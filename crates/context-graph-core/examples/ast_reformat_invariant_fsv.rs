@@ -38,7 +38,10 @@ fn main() -> FsvResult<()> {
     });
     write_secure_json(&evidence_path, &evidence)?;
     let readback: Value = serde_json::from_str(&fs::read_to_string(&evidence_path)?)?;
-    require("language_count", readback["happy_path"]["language_count"] == 11)?;
+    require(
+        "language_count",
+        readback["happy_path"]["language_count"] == 11,
+    )?;
     require(
         "all fixture hashes stable",
         readback["happy_path"]["rows"]
@@ -97,11 +100,16 @@ fn run_fixture(root: &Path, fixture: Fixture) -> FsvResult<Value> {
         },
         "passes": passes,
     });
-    require(&format!("{} reformat-invariant hashes", fixture.slug), passes)?;
+    require(
+        &format!("{} reformat-invariant hashes", fixture.slug),
+        passes,
+    )?;
     Ok(row)
 }
 
-fn stable_chunk_map(chunks: &[context_graph_core::memory::ast::AstChunk]) -> BTreeMap<String, String> {
+fn stable_chunk_map(
+    chunks: &[context_graph_core::memory::ast::AstChunk],
+) -> BTreeMap<String, String> {
     let mut map = BTreeMap::new();
     for chunk in chunks {
         if matches!(
@@ -176,7 +184,9 @@ fn max_fixture_case(root: &Path) -> FsvResult<Value> {
     let mut formatted = String::from("pub struct Big;\n\nimpl Big {\n");
     for idx in 0..64 {
         compact.push_str(&format!(" pub fn f{idx}(&self)->i32{{{idx}+1}}"));
-        formatted.push_str(&format!("    pub fn f{idx}(&self) -> i32 {{\n        {idx} + 1\n    }}\n"));
+        formatted.push_str(&format!(
+            "    pub fn f{idx}(&self) -> i32 {{\n        {idx} + 1\n    }}\n"
+        ));
     }
     compact.push_str(" }\n");
     formatted.push_str("}\n");

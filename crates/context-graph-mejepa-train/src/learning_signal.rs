@@ -582,11 +582,15 @@ pub fn compute_l_step(
 }
 
 pub fn sampling_weight(l_step: f32, operator_override: bool, age_days: f32, age_decay: f32) -> f32 {
-    if !l_step.is_finite() || !age_days.is_finite() || !age_decay.is_finite() {
-        return f32::NAN;
-    }
-    let override_factor = if operator_override { 6.0 } else { 1.0 };
-    l_step.max(0.0) * override_factor * age_decay.powf(age_days.max(0.0))
+    sampling_weight_checked(SamplingWeightComponents {
+        base_weight: 1.0,
+        l_step,
+        operator_override,
+        age_days,
+        age_decay,
+        agent_surprise_severity_score: 0.0,
+    })
+    .expect("sampling_weight inputs must be finite and in range; use sampling_weight_checked to handle errors")
 }
 
 pub fn sampling_weight_checked(c: SamplingWeightComponents) -> Result<f32, UtmlError> {
@@ -600,11 +604,8 @@ pub fn sampling_weight_checked(c: SamplingWeightComponents) -> Result<f32, UtmlE
     )?;
     let override_factor = if c.operator_override { 6.0 } else { 1.0 };
     let surprise_factor = 1.0 + c.agent_surprise_severity_score;
-    let value = c.base_weight
-        * c.l_step
-        * override_factor
-        * surprise_factor
-        * c.age_decay.powf(c.age_days);
+    let value =
+        c.base_weight * c.l_step * override_factor * surprise_factor * c.age_decay.powf(c.age_days);
     validate_finite("sampling.weight", value)?;
     Ok(value)
 }

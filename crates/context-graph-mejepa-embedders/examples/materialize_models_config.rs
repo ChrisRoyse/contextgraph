@@ -298,7 +298,7 @@ fn slot_specs() -> Vec<SlotSpec> {
             "semantic",
             "semantic",
             "intfloat/e5-large-v2",
-            &["model.safetensors"],
+            &["config.json", "model.safetensors", "tokenizer.json"],
             Some(transformer_identity("bert", Some(1024))),
         ),
         deterministic(EmbedderId::E2, "temporal_recent"),
@@ -309,7 +309,12 @@ fn slot_specs() -> Vec<SlotSpec> {
             "sparse",
             "sparse",
             "naver/splade-cocondenser-ensembledistil",
-            &["model.safetensors", "sparse_projection.safetensors"],
+            &[
+                "config.json",
+                "model.safetensors",
+                "sparse_projection.safetensors",
+                "tokenizer.json",
+            ],
             Some(transformer_identity("bert", Some(768))),
         ),
         pretrained(
@@ -318,8 +323,10 @@ fn slot_specs() -> Vec<SlotSpec> {
             "code-1536",
             "Qodo/Qodo-Embed-1-1.5B",
             &[
+                "config.json",
                 "model-00001-of-00002.safetensors",
                 "model-00002-of-00002.safetensors",
+                "tokenizer.json",
             ],
             Some(transformer_identity("qwen2", Some(1536))),
         ),
@@ -328,7 +335,7 @@ fn slot_specs() -> Vec<SlotSpec> {
             "graph",
             "semantic",
             "intfloat/e5-large-v2",
-            &["model.safetensors"],
+            &["config.json", "model.safetensors", "tokenizer.json"],
             Some(transformer_identity("bert", Some(1024))),
         ),
         deterministic(EmbedderId::E9, "hdc"),
@@ -337,7 +344,7 @@ fn slot_specs() -> Vec<SlotSpec> {
             "contextual",
             "contextual-e5-base",
             "intfloat/e5-base-v2",
-            &["model.safetensors"],
+            &["config.json", "model.safetensors", "tokenizer.json"],
             Some(transformer_identity("bert", Some(768))),
         ),
         pretrained(
@@ -345,7 +352,7 @@ fn slot_specs() -> Vec<SlotSpec> {
             "late_interaction",
             "late-interaction",
             "colbert-ir/colbertv2.0",
-            &["model.safetensors"],
+            &["config.json", "model.safetensors", "tokenizer.json"],
             Some(transformer_identity("bert", Some(768))),
         ),
         pretrained(
@@ -353,7 +360,12 @@ fn slot_specs() -> Vec<SlotSpec> {
             "splade_v3",
             "splade-v3",
             "prithivida/Splade_PP_en_v1",
-            &["model.safetensors", "sparse_projection.safetensors"],
+            &[
+                "config.json",
+                "model.safetensors",
+                "sparse_projection.safetensors",
+                "tokenizer.json",
+            ],
             Some(transformer_identity("bert", Some(768))),
         ),
         pretrained(
@@ -361,7 +373,7 @@ fn slot_specs() -> Vec<SlotSpec> {
             "bge_m3_dense",
             "bge-m3-dense",
             "BAAI/bge-m3",
-            &["pytorch_model.bin"],
+            &["config.json", "model.safetensors", "tokenizer.json"],
             Some(transformer_identity("xlm-roberta", Some(1024))),
         ),
         pretrained(

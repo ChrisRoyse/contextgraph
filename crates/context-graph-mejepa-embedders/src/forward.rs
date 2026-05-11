@@ -59,6 +59,7 @@ impl PretrainedEmbedderForward {
                 "wire the slot to a real context-graph-embeddings model before requesting forward inference",
             ));
         }
+        verify_runtime_artifacts(registration)?;
         let files = verify_registration_digest(registration)?;
         if files.is_empty() {
             return Err(EmbedError::forward(
@@ -208,6 +209,55 @@ fn construct_model(embedder: EmbedderId, root: &Path) -> EmbedResult<Box<dyn Emb
         other => return Err(embedder_model_id(other).unwrap_err()),
     };
     Ok(model)
+}
+
+fn verify_runtime_artifacts(registration: &EmbedderRegistration) -> EmbedResult<()> {
+    let root = Path::new(&registration.path);
+    for artifact in runtime_artifacts(registration.embedder)? {
+        if !registration
+            .weight_files
+            .iter()
+            .any(|pinned| pinned == artifact)
+        {
+            return Err(EmbedError::forward(
+                registration.embedder,
+                format!(
+                    "runtime artifact {artifact:?} is not pinned in models_config.toml"
+                ),
+                "regenerate the Phase 1b models config so every file needed by the concrete forward loader is digest-pinned",
+            ));
+        }
+        let path = root.join(artifact);
+        if !path.is_file() {
+            return Err(EmbedError::forward(
+                registration.embedder,
+                format!("runtime artifact missing at {}", path.display()),
+                "restore the exact model artifact on D: or regenerate the registration from the verified model directory",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn runtime_artifacts(embedder: EmbedderId) -> EmbedResult<&'static [&'static str]> {
+    match embedder {
+        EmbedderId::E1 | EmbedderId::E8 | EmbedderId::E10 | EmbedderId::E12 | EmbedderId::E14 => {
+            Ok(&["config.json", "model.safetensors", "tokenizer.json"])
+        }
+        EmbedderId::E6 | EmbedderId::E13 => Ok(&[
+            "config.json",
+            "model.safetensors",
+            "sparse_projection.safetensors",
+            "tokenizer.json",
+        ]),
+        EmbedderId::E7 => Ok(&[
+            "config.json",
+            "model-00001-of-00002.safetensors",
+            "model-00002-of-00002.safetensors",
+            "tokenizer.json",
+        ]),
+        other => Err(embedder_model_id(other).unwrap_err()),
+    }
 }
 
 fn model_input_for_embedder(embedder: EmbedderId, input: &EmbedderInput) -> EmbedResult<ModelInput> {

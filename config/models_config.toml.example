@@ -13,7 +13,7 @@ kind = "content_pretrained"
 path = "/mnt/d/cabdru/contextgraph/models/semantic"
 repo = "intfloat/e5-large-v2"
 dimension = 1024
-weight_files = ["model.safetensors"]
+weight_files = ["config.json", "model.safetensors", "tokenizer.json"]
 manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e2]
@@ -63,7 +63,7 @@ kind = "content_pretrained"
 path = "/mnt/d/cabdru/contextgraph/models/sparse"
 repo = "naver/splade-cocondenser-ensembledistil"
 dimension = 1536
-weight_files = ["model.safetensors", "sparse_projection.safetensors"]
+weight_files = ["config.json", "model.safetensors", "sparse_projection.safetensors", "tokenizer.json"]
 manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e7]
@@ -73,7 +73,7 @@ kind = "content_pretrained"
 path = "/mnt/d/cabdru/contextgraph/models/code-1536"
 repo = "Qodo/Qodo-Embed-1-1.5B"
 dimension = 1536
-weight_files = ["model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors"]
+weight_files = ["config.json", "model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors", "tokenizer.json"]
 manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e8]
@@ -83,7 +83,7 @@ kind = "content_pretrained"
 path = "/mnt/d/cabdru/contextgraph/models/semantic"
 repo = "intfloat/e5-large-v2"
 dimension = 1024
-weight_files = ["model.safetensors"]
+weight_files = ["config.json", "model.safetensors", "tokenizer.json"]
 manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e9]
@@ -103,7 +103,7 @@ kind = "content_pretrained"
 path = "/mnt/d/cabdru/contextgraph/models/contextual-e5-base"
 repo = "intfloat/e5-base-v2"
 dimension = 768
-weight_files = ["KEPLERforKE.pt", "KEPLERforNLP.pt", "dict.txt"]
+weight_files = ["config.json", "model.safetensors", "tokenizer.json"]
 manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e11]
@@ -123,7 +123,7 @@ kind = "content_pretrained"
 path = "/mnt/d/cabdru/contextgraph/models/late-interaction"
 repo = "colbert-ir/colbertv2.0"
 dimension = 128
-weight_files = ["model.safetensors"]
+weight_files = ["config.json", "model.safetensors", "tokenizer.json"]
 manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e13]
@@ -133,7 +133,7 @@ kind = "content_pretrained"
 path = "/mnt/d/cabdru/contextgraph/models/splade-v3"
 repo = "prithivida/Splade_PP_en_v1"
 dimension = 1536
-weight_files = ["model.safetensors", "sparse_projection.safetensors"]
+weight_files = ["config.json", "model.safetensors", "sparse_projection.safetensors", "tokenizer.json"]
 manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e14]
@@ -143,7 +143,7 @@ kind = "content_pretrained"
 path = "/mnt/d/cabdru/contextgraph/models/bge-m3-dense"
 repo = "BAAI/bge-m3"
 dimension = 1024
-weight_files = ["model.safetensors"]
+weight_files = ["config.json", "model.safetensors", "tokenizer.json"]
 manifest_sha256 = "REPLACE_WITH_REAL_SHA256"
 
 [embedders.e15]

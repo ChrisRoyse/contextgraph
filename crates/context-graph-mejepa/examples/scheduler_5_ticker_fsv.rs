@@ -7,7 +7,9 @@ use std::time::Duration;
 
 use anyhow::{ensure, Context, Result};
 use clap::Parser;
-use context_graph_mejepa::eval::{ActiveLearningQueueEntry, ActiveLearningQueueState, RocksDbEvalStore};
+use context_graph_mejepa::eval::{
+    ActiveLearningQueueEntry, ActiveLearningQueueState, RocksDbEvalStore,
+};
 use context_graph_mejepa::heal::{
     encode_value, read_status_snapshot, run_self_optimization_scheduler,
     write_json_atomic_readback, DriftSample, DriftStore, HealRocksStore, SchedulerState,
@@ -55,7 +57,8 @@ async fn run(args: Args) -> Result<Value> {
 
     let happy = run_happy_path(&args.output_root.join("happy-path")).await?;
     let edge_shutdown = run_edge_shutdown(&args.output_root.join("edge-shutdown")).await?;
-    let edge_invalid_config = run_edge_invalid_config(&args.output_root.join("edge-invalid-config")).await?;
+    let edge_invalid_config =
+        run_edge_invalid_config(&args.output_root.join("edge-invalid-config")).await?;
     let edge_corrupt_drift = run_edge_corrupt_drift(&args.output_root.join("edge-corrupt-drift"))?;
 
     let report = json!({
@@ -74,7 +77,10 @@ async fn run(args: Args) -> Result<Value> {
     let readback: Value = serde_json::from_slice(
         &fs::read(&artifact).with_context(|| format!("read {}", artifact.display()))?,
     )?;
-    ensure!(readback == report, "scheduler FSV artifact readback mismatch");
+    ensure!(
+        readback == report,
+        "scheduler FSV artifact readback mismatch"
+    );
     Ok(json!({
         "evidencePath": artifact,
         "report": report
@@ -89,7 +95,11 @@ async fn run_happy_path(root: &Path) -> Result<Value> {
     let config = config_for(root, Duration::from_secs(1));
     let before = physical_state(db.as_ref(), Some(&status_path))?;
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    let scheduler = tokio::spawn(run_self_optimization_scheduler(db.clone(), config, shutdown_rx));
+    let scheduler = tokio::spawn(run_self_optimization_scheduler(
+        db.clone(),
+        config,
+        shutdown_rx,
+    ));
     tokio::time::sleep(Duration::from_secs(10)).await;
     shutdown_tx.send(true).context("send shutdown")?;
     tokio::time::timeout(Duration::from_secs(5), scheduler)
@@ -106,18 +116,24 @@ async fn run_happy_path(root: &Path) -> Result<Value> {
             .get(tick.as_str())
             .copied()
             .unwrap_or_default();
-        expected.insert(tick.as_str().to_string(), json!({
-            "observedCount": count,
-            "expectedMinimum": 9,
-            "expectedMaximum": 20,
-        }));
+        expected.insert(
+            tick.as_str().to_string(),
+            json!({
+                "observedCount": count,
+                "expectedMinimum": 9,
+                "expectedMaximum": 20,
+            }),
+        );
         ensure!(
             (9..=20).contains(&count),
             "{} expected 9..=20 ticks from 10s one-second run, got {count}",
             tick.as_str()
         );
     }
-    ensure!(snapshot.status == "stopped", "scheduler did not persist stopped status");
+    ensure!(
+        snapshot.status == "stopped",
+        "scheduler did not persist stopped status"
+    );
     ensure!(
         after["cfCounts"][context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE].as_u64()
             == Some(1),
@@ -141,7 +157,11 @@ async fn run_edge_shutdown(root: &Path) -> Result<Value> {
     let status_path = root.join("self_optimization_status.json");
     let config = config_for(root, Duration::from_millis(25));
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    let scheduler = tokio::spawn(run_self_optimization_scheduler(db.clone(), config, shutdown_rx));
+    let scheduler = tokio::spawn(run_self_optimization_scheduler(
+        db.clone(),
+        config,
+        shutdown_rx,
+    ));
     tokio::time::sleep(Duration::from_millis(75)).await;
     let before = physical_state(db.as_ref(), Some(&status_path))?;
     shutdown_tx.send(true).context("send shutdown")?;

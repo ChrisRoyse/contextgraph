@@ -79,9 +79,7 @@ impl LatencyTelemetry {
                 ));
             }
         }
-        if !(self.p50_ms <= self.p95_ms
-            && self.p95_ms <= self.p99_ms
-            && self.p99_ms <= self.max_ms)
+        if !(self.p50_ms <= self.p95_ms && self.p95_ms <= self.p99_ms && self.p99_ms <= self.max_ms)
         {
             return Err(EvalError::new(
                 EvalErrorCode::InvalidInput,

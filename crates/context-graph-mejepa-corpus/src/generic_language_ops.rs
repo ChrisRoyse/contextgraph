@@ -26,7 +26,9 @@ pub(crate) fn apply(
         MutationCategory::SubtleFlip => subtle_flip(language, primary_source, config.seed)?,
         MutationCategory::OffByOne => off_by_one(language, primary_source, config.seed)?,
         MutationCategory::SwapVariable => swap_variable(language, primary_source, config.seed)?,
-        MutationCategory::DeleteTestCall => delete_test_call(language, primary_source, config.seed)?,
+        MutationCategory::DeleteTestCall => {
+            delete_test_call(language, primary_source, config.seed)?
+        }
         MutationCategory::WrongFile => {
             let alternate = config.alternate_source.as_deref().ok_or_else(|| {
                 MutationError::invalid(
@@ -189,9 +191,9 @@ fn delete_test_call(language: Language, source: &str, seed: u64) -> MutationResu
         let line_end = line_start + line.len();
         let line_no_nl = line.trim_end_matches('\n');
         let has_assertion = assertions.iter().any(|needle| {
-            line_no_nl.find(needle).is_some_and(|idx| {
-                range_is_code(&mask, line_start + idx, needle.len())
-            })
+            line_no_nl
+                .find(needle)
+                .is_some_and(|idx| range_is_code(&mask, line_start + idx, needle.len()))
         });
         if has_assertion {
             candidates.push(MutationSite {
@@ -213,12 +215,18 @@ fn over_engineer(language: Language, source: &str, seed: u64) -> MutationResult<
     let helper = match language {
         Language::Rust => format!("\nfn unused_helper_{suffix:08x}() -> i32 {{ 0 }}\n"),
         Language::JavaScript => format!("\nfunction unusedHelper{suffix:08x}() {{ return 0; }}\n"),
-        Language::TypeScript => format!("\nfunction unusedHelper{suffix:08x}(): number {{ return 0; }}\n"),
+        Language::TypeScript => {
+            format!("\nfunction unusedHelper{suffix:08x}(): number {{ return 0; }}\n")
+        }
         Language::Go => format!("\nfunc unusedHelper{suffix:08x}() int {{ return 0 }}\n"),
-        Language::Java => format!("\nclass UnusedHelper{suffix:08x} {{ int value() {{ return 0; }} }}\n"),
+        Language::Java => {
+            format!("\nclass UnusedHelper{suffix:08x} {{ int value() {{ return 0; }} }}\n")
+        }
         Language::C => format!("\nstatic int unused_helper_{suffix:08x}(void) {{ return 0; }}\n"),
         Language::Cpp => format!("\nstatic int unused_helper_{suffix:08x}() {{ return 0; }}\n"),
-        Language::CSharp => format!("\nclass UnusedHelper{suffix:08x} {{ int Value() {{ return 0; }} }}\n"),
+        Language::CSharp => {
+            format!("\nclass UnusedHelper{suffix:08x} {{ int Value() {{ return 0; }} }}\n")
+        }
         Language::Ruby => format!("\ndef unused_helper_{suffix:08x}\n  0\nend\n"),
         Language::Php => format!("\nfunction unused_helper_{suffix:08x}() {{ return 0; }}\n"),
         Language::Python => unreachable!("python uses python-specific operator"),
@@ -267,13 +275,16 @@ fn apply_site(
     seed: u64,
     site: MutationSite,
 ) -> MutationResult<MutationOutcome> {
-    let end = site.byte_offset.checked_add(site.byte_length).ok_or_else(|| {
-        MutationError::op_failed(
-            "mutation_site",
-            "site offset plus length overflowed",
-            "report the operator that produced the invalid site",
-        )
-    })?;
+    let end = site
+        .byte_offset
+        .checked_add(site.byte_length)
+        .ok_or_else(|| {
+            MutationError::op_failed(
+                "mutation_site",
+                "site offset plus length overflowed",
+                "report the operator that produced the invalid site",
+            )
+        })?;
     if site.byte_offset > source.len() || end > source.len() {
         return Err(MutationError::op_failed(
             "mutation_site",
@@ -295,7 +306,8 @@ fn apply_site(
             "report the operator that produced the invalid site",
         ));
     }
-    let mut out = String::with_capacity(source.len() - site.byte_length + site.replacement_text.len());
+    let mut out =
+        String::with_capacity(source.len() - site.byte_length + site.replacement_text.len());
     out.push_str(&source[..site.byte_offset]);
     out.push_str(&site.replacement_text);
     out.push_str(&source[end..]);
@@ -378,7 +390,11 @@ fn default_path(language: Language) -> &'static str {
     }
 }
 
-fn pick_site(mut candidates: Vec<MutationSite>, seed: u64, field: &'static str) -> MutationResult<MutationSite> {
+fn pick_site(
+    mut candidates: Vec<MutationSite>,
+    seed: u64,
+    field: &'static str,
+) -> MutationResult<MutationSite> {
     if candidates.is_empty() {
         return Err(MutationError::no_site(
             field,
@@ -386,7 +402,11 @@ fn pick_site(mut candidates: Vec<MutationSite>, seed: u64, field: &'static str) 
             "supply source containing an applicable language-level mutation site",
         ));
     }
-    candidates.sort_by(|a, b| a.byte_offset.cmp(&b.byte_offset).then_with(|| a.note.cmp(&b.note)));
+    candidates.sort_by(|a, b| {
+        a.byte_offset
+            .cmp(&b.byte_offset)
+            .then_with(|| a.note.cmp(&b.note))
+    });
     let mut rng = SplitMix64::new(seed);
     let pick = pick_index_or_fail(&mut rng, candidates.len())?;
     Ok(candidates.swap_remove(pick))
@@ -516,11 +536,52 @@ fn no_op_line(language: Language, line: &str, had_newline: bool) -> String {
 
 fn keyword(language: Language, ident: &str) -> bool {
     let common = [
-        "return", "if", "else", "for", "while", "class", "struct", "enum", "interface", "trait",
-        "impl", "function", "func", "fn", "def", "let", "const", "var", "public", "private",
-        "protected", "static", "void", "int", "float", "double", "string", "bool", "boolean",
-        "true", "false", "null", "nil", "None", "self", "this", "Self", "new", "package",
-        "import", "use", "using", "namespace", "module", "end", "do",
+        "return",
+        "if",
+        "else",
+        "for",
+        "while",
+        "class",
+        "struct",
+        "enum",
+        "interface",
+        "trait",
+        "impl",
+        "function",
+        "func",
+        "fn",
+        "def",
+        "let",
+        "const",
+        "var",
+        "public",
+        "private",
+        "protected",
+        "static",
+        "void",
+        "int",
+        "float",
+        "double",
+        "string",
+        "bool",
+        "boolean",
+        "true",
+        "false",
+        "null",
+        "nil",
+        "None",
+        "self",
+        "this",
+        "Self",
+        "new",
+        "package",
+        "import",
+        "use",
+        "using",
+        "namespace",
+        "module",
+        "end",
+        "do",
     ];
     common.contains(&ident)
         || matches!(language, Language::Go) && ident == "type"

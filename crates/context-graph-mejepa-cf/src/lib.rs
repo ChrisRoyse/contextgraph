@@ -129,7 +129,11 @@ pub const TCT_CFS: &[&str] = &[CF_MEJEPA_CONSTELLATION, CF_MEJEPA_GUARD_DECISION
 
 pub fn all_hygiene_referenced_cfs() -> Vec<&'static str> {
     let mut names = SELF_HEALING_REFERENCED_CFS.to_vec();
-    for cf in INFER_CFS.iter().chain(HYGIENE_CFS.iter()).chain(TCT_CFS.iter()) {
+    for cf in INFER_CFS
+        .iter()
+        .chain(HYGIENE_CFS.iter())
+        .chain(TCT_CFS.iter())
+    {
         if !names.contains(cf) {
             names.push(*cf);
         }

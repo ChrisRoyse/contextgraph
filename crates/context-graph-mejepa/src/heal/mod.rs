@@ -18,6 +18,8 @@ pub mod lora_refresh;
 pub mod pipeline;
 pub mod promote;
 pub mod regulate;
+pub mod scheduler;
+pub mod scheduler_state;
 pub mod store;
 
 pub use calibration::*;
@@ -34,4 +36,6 @@ pub use lora_refresh::*;
 pub use pipeline::*;
 pub use promote::*;
 pub use regulate::*;
+pub use scheduler::*;
+pub use scheduler_state::*;
 pub use store::*;

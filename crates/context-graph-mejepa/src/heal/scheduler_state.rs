@@ -276,7 +276,7 @@ impl SchedulerState {
             integrity_checker,
             MeJepaHealConfig::default(),
         )?;
-        let mut state = Self {
+        let state = Self {
             config,
             db,
             storage,
@@ -370,15 +370,15 @@ impl SchedulerState {
     }
 
     fn tick_observe(&self) -> Result<TickRunRecord, HealError> {
-        let oracle_verdicts =
-            self.storage
-                .count_cf(context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)?;
-        let live_predictions =
-            self.storage
-                .count_cf(context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS)?;
-        let shift_watermarks =
-            self.storage
-                .count_cf(context_graph_mejepa_cf::CF_MEJEPA_SHIFT_WATERMARK)?;
+        let oracle_verdicts = self
+            .storage
+            .count_cf(context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)?;
+        let live_predictions = self
+            .storage
+            .count_cf(context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS)?;
+        let shift_watermarks = self
+            .storage
+            .count_cf(context_graph_mejepa_cf::CF_MEJEPA_SHIFT_WATERMARK)?;
         Ok(TickRunRecord::success(
             TickName::Observe,
             "observed_sources_inspected",
@@ -502,8 +502,8 @@ impl SchedulerState {
     }
 
     fn tick_constellation_freshness(&self) -> Result<TickRunRecord, HealError> {
-        let store =
-            context_graph_mejepa_tct::ConstellationStore::new(self.db.clone()).map_err(map_tct_error)?;
+        let store = context_graph_mejepa_tct::ConstellationStore::new(self.db.clone())
+            .map_err(map_tct_error)?;
         let count = store.count_constellations().map_err(map_tct_error)?;
         if count == 0 {
             return Ok(TickRunRecord::success(
@@ -655,10 +655,7 @@ fn map_eval_error(err: crate::eval::EvalError) -> HealError {
 }
 
 fn map_tct_error(err: context_graph_mejepa_tct::TctError) -> HealError {
-    HealError::invalid(
-        "self_optim_scheduler.tct",
-        format!("{}: {err}", err.code()),
-    )
+    HealError::invalid("self_optim_scheduler.tct", format!("{}: {err}", err.code()))
 }
 
 fn map_hygiene_error(err: context_graph_mejepa_hygiene::OpsError) -> HealError {
@@ -697,11 +694,17 @@ mod tests {
     fn config_rejects_zero_periods_and_empty_paths() {
         let mut config = SelfOptimConfig::default();
         config.observe_period = Duration::ZERO;
-        assert_eq!(config.validate().unwrap_err().code(), "MEJEPA_HEAL_INVALID_STATE");
+        assert_eq!(
+            config.validate().unwrap_err().code(),
+            "MEJEPA_HEAL_INVALID_STATE"
+        );
 
         let mut config = SelfOptimConfig::default();
         config.status_path = PathBuf::new();
-        assert_eq!(config.validate().unwrap_err().code(), "MEJEPA_HEAL_INVALID_STATE");
+        assert_eq!(
+            config.validate().unwrap_err().code(),
+            "MEJEPA_HEAL_INVALID_STATE"
+        );
     }
 
     #[test]
@@ -755,7 +758,10 @@ mod tests {
             )
             .expect("open corrupt test db"),
         );
-        let err = SchedulerState::open(db, test_config(temp.path())).unwrap_err();
+        let err = match SchedulerState::open(db, test_config(temp.path())) {
+            Ok(_) => panic!("missing CF scheduler state should fail closed"),
+            Err(err) => err,
+        };
         assert_eq!(err.code(), "MEJEPA_HEAL_INVALID_STATE");
     }
 }

@@ -1,9 +1,11 @@
 use context_graph_mejepa_instruments::{InstrumentSlot, Panel, PanelBuilder};
 use context_graph_mejepa_train::learning_signal::{
-    classify_utml_state, compute_embedder_coherence, compute_l_step, compute_state_transfer,
-    detect_dormant_units, prune_decision, reinit_dormant_units, update_m_t, ContentEmbedder,
+    calibrated_confidence, classify_utml_state, compute_embedder_coherence, compute_l_step,
+    compute_state_transfer, detect_dormant_units, prune_decision, reinit_dormant_units, reward,
+    sampling_weight_checked, update_m_t, CalibratedConfidenceComponents, ContentEmbedder,
     DeltaKComponents, DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents, DeltaXiComponents,
     DivergenceMetric, DormantLayer, DormantUnitDetector, LStepWindow, PairwiseMiAuditor,
+    RewardComponents, SamplingWeightComponents,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -75,6 +77,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         DivergenceMetric::Wasserstein1,
         0.5,
     )?;
+    let sampling_components = SamplingWeightComponents {
+        base_weight: 2.0,
+        l_step: signal.l_step,
+        operator_override: true,
+        age_days: 3.0,
+        age_decay: 0.99,
+        agent_surprise_severity_score: 0.25,
+    };
+    let sampling_weight = sampling_weight_checked(sampling_components)?;
+    let expected_sampling_weight = 2.0 * signal.l_step * 6.0 * 1.25 * 0.99_f32.powf(3.0);
+    assert_close(
+        "sampling_weight_checked full formula",
+        sampling_weight,
+        expected_sampling_weight,
+        0.00001,
+    )?;
+    let confidence_components = CalibratedConfidenceComponents {
+        raw_confidence: 0.80,
+        convergence_rate: 0.90,
+        strategy_agreement: 0.75,
+        evidence_factor: 0.70,
+        delta_omega_mean: 0.60,
+        delta_xi_mean: 0.50,
+    };
+    let calibrated = calibrated_confidence(confidence_components)?;
+    let expected_calibrated = (0.80_f32 * 0.90 * 0.75 * 0.70 * 0.60 * 0.50).clamp(0.10, 0.95);
+    assert_close(
+        "calibrated_confidence product clamp",
+        calibrated,
+        expected_calibrated,
+        0.00001,
+    )?;
+    let reward_components = RewardComponents {
+        calibrated_confidence: calibrated,
+        mean_l_step_delta_xi: signal.delta_xi,
+    };
+    let reward_value = reward(reward_components)?;
+    let expected_reward = (0.6 * calibrated + 0.4 * signal.delta_xi).clamp(0.0, 1.0);
+    assert_close("reward formula", reward_value, expected_reward, 0.00001)?;
     let dormant = detect_dormant_units(
         &DormantUnitDetector {
             activation_threshold: 0.01,
@@ -111,6 +152,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ).unwrap_err().code()}
         }),
         json!({
+            "name": "sampling_weight_negative_age",
+            "before": {"age_days": -1.0},
+            "after": {"error": sampling_weight_checked(SamplingWeightComponents {
+                base_weight: 1.0,
+                l_step: 0.5,
+                operator_override: false,
+                age_days: -1.0,
+                age_decay: 0.99,
+                agent_surprise_severity_score: 0.0,
+            }).unwrap_err().code()}
+        }),
+        json!({
             "name": "invalid_state_transfer_lambda",
             "before": {"lambda": 0.0},
             "after": {"error": compute_state_transfer(&[0.1], &[0.2], DivergenceMetric::Wasserstein1, 0.0).unwrap_err().code()}
@@ -130,6 +183,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "prune": prune,
         "m_t": m_t,
         "state_transfer": transfer,
+        "doc11_formula_carriers": {
+            "sampling_components": sampling_components,
+            "sampling_weight": sampling_weight,
+            "expected_sampling_weight": expected_sampling_weight,
+            "calibrated_confidence_components": confidence_components,
+            "calibrated_confidence": calibrated,
+            "expected_calibrated_confidence": expected_calibrated,
+            "reward_components": reward_components,
+            "reward": reward_value,
+            "expected_reward": expected_reward
+        },
         "dormant": dormant,
         "before_reinit": before_reinit,
         "after_reinit": after_reinit,
@@ -139,6 +203,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     write_json_0600(
         &out.join("utml-classifier-evidence.json"),
         &summary["classifier"],
+    )?;
+    write_json_0600(
+        &out.join("utml-doc11-formula-carriers.json"),
+        &summary["doc11_formula_carriers"],
     )?;
     write_json_0600(&out.join("utml-edge-cases.json"), &edge_cases)?;
     write_json_0600(&out.join("utml-fsv-summary.json"), &summary)?;
@@ -155,6 +223,19 @@ fn build_panel(seed: usize) -> Result<Panel, context_graph_mejepa_instruments::I
         builder.set_slot(slot, &values)?;
     }
     builder.build()
+}
+
+fn assert_close(
+    label: &str,
+    actual: f32,
+    expected: f32,
+    tolerance: f32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if (actual - expected).abs() <= tolerance {
+        Ok(())
+    } else {
+        Err(format!("{label}: actual {actual} differs from expected {expected}").into())
+    }
 }
 
 #[derive(Debug)]

@@ -107,7 +107,9 @@ fn nvidia_smi_total_mb(device_ordinal: i32) -> Result<u64, String> {
         .ok_or_else(|| "nvidia-smi returned no rows".to_string())?
         .trim();
     if first.is_empty() || first.eq_ignore_ascii_case("[not supported]") {
-        return Err(format!("nvidia-smi returned unsupported memory.total row {first:?}"));
+        return Err(format!(
+            "nvidia-smi returned unsupported memory.total row {first:?}"
+        ));
     }
     first
         .parse::<u64>()
