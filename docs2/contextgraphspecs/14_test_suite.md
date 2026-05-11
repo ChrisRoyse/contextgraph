@@ -7,7 +7,6 @@
 - `crates/context-graph-mcp/src/tools/definitions/mod.rs` — tool-count assertions
 - `crates/context-graph-storage/src/dynamicjepa/tests.rs` — DJ CF and serialization assertions (`DJ_CF_COUNT == 28`)
 - `crates/context-graph-cli/src/bin/reality-loop.rs` — Rust SWE-bench reality-loop binary
-- `tests/chaos/mod.rs` — root-level chaos test redirect (legacy stub; see §11)
 - `Makefile` — `test`, `test-rust`, `test-mcp`, `test-e2e`, `test-python-smoke` targets
 - `scripts/v4_2/*_fsv.py` — Python FSV harnesses
 
@@ -252,6 +251,6 @@ Both `make build-rust` and `make test-rust` chain `scripts/trim-stale-deps.sh` a
 ## 12. Coverage Notes
 
 - Coverage percentages are not instrumented in this workspace. The numbers above are static (`find` + `grep` + Cargo declarations).
-- `tests/chaos/mod.rs` is a redirect-only stub pointing at a `context-graph-graph` crate that no longer exists in `Cargo.toml` `[workspace.members]`. Effective chaos-test coverage at HEAD is zero — flagged for follow-up.
+- The legacy root-level `tests/` tree has been removed. Executable test inventory now lives under Cargo-discovered crate unit/integration tests and the `scripts/v4_2/` Python FSV harnesses.
 - `cargo test --workspace` does not exercise feature-gated code paths when the gate is off: `llm`-feature MCP tools (`graph_*` LLM-gated tools, `causal_discovery`) and CUDA-only embedders are skipped without the `llm` and `cuda` features respectively. `make test-rust` runs with the workspace defaults (`cuda` on for storage / embeddings / cli; `llm` on for the `mcp` crate when its default feature set includes it).
 - See [15_verification_report.md §4](15_verification_report.md#4-most-recent-test-verifications) for the most recent successful test counts and audit history.

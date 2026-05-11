@@ -26,8 +26,6 @@ pub mod witness_chain_repair;
 #[cfg(test)]
 mod optimizer_preflight_fsv;
 #[cfg(test)]
-mod recommendation_recall_active_fsv;
-#[cfg(test)]
 mod recommendation_recall_fsv;
 #[cfg(test)]
 mod witness_chain_fsv;

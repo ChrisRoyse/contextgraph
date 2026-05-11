@@ -332,7 +332,7 @@ This tiering is referenced by the design (ADR-026) but is not currently implemen
 6. `RRF_K` is declared twice with different types: `f32 = 60.0` in `core/fusion/mod.rs:41` and `i32 = 60` in `storage/teleological/rocksdb_store/fusion.rs:49`. Both use the same numerical value.
 7. `E11_ENTITY_ENABLED` was `false` in earlier docs; current source has it `true` (`core/weights/mod.rs:48`).
 8. `LEDGER_SCHEMA_VERSION = 14` in current source. Earlier docs referenced v7/v8; the BlackBoxFix Phase 13–24 expansion bumped through v14 in the source-of-truth file.
-9. `tests/chaos/mod.rs` is a redirect-only stub pointing at a `context-graph-graph` crate that no longer exists in `Cargo.toml` `[workspace.members]` (workspace is 11 crates). Effective coverage of the chaos suite at HEAD is zero — flagged for follow-up.
+9. The legacy root-level `tests/` tree was removed after the stale chaos redirect was found to point at a non-existent `context-graph-graph` crate. Chaos coverage must be reintroduced as real Cargo-discovered tests under the crate that owns the behavior.
 10. The `gemmafrontend/` Python harness directory was removed in the `ccreality-cutover` branch. The Rust `reality-loop` binary (`crates/context-graph-cli/src/bin/reality-loop.rs`, 18,137 LOC) is now the only ContextGraph SWE-bench refinement implementation.
 11. `reality-loop.rs:28` has `DEFAULT_MODEL = "qwen3-coder:30b-a3b"`; `CLAUDE.md` and `.claude/settings.json` reference `qwen3.6:27b`. The CLI `--model` flag overrides at runtime.
 
