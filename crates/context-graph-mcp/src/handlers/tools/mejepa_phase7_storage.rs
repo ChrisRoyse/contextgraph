@@ -463,7 +463,7 @@ fn read_predictions_for_attempt(
             out.push(prediction);
         }
     }
-    out.sort_by(|a, b| b.created_at_unix_ms.cmp(&a.created_at_unix_ms));
+    out.sort_by_key(|row| std::cmp::Reverse(row.created_at_unix_ms));
     Ok(out)
 }
 

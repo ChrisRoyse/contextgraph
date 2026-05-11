@@ -29,6 +29,8 @@ pub enum SubscriberError {
     },
     #[error("MEJEPA_SHIFT_SUBSCRIBER_PROCESS_FAILED: shift_id={shift_id} detail={detail}")]
     ProcessFailed { shift_id: String, detail: String },
+    #[error("MEJEPA_SHIFT_SUBSCRIBER_PROCESS_PANIC: shift_id={shift_id} detail={detail}")]
+    ProcessPanic { shift_id: String, detail: String },
     #[error("MEJEPA_SHIFT_SUBSCRIBER_IO: op={op} path={} source={source}", path.display())]
     Io {
         op: &'static str,
@@ -57,6 +59,7 @@ impl SubscriberError {
                 "MEJEPA_SHIFT_SUBSCRIBER_INSTRUMENT_CACHE_OVERFLOW"
             }
             Self::ProcessFailed { .. } => "MEJEPA_SHIFT_SUBSCRIBER_PROCESS_FAILED",
+            Self::ProcessPanic { .. } => "MEJEPA_SHIFT_SUBSCRIBER_PROCESS_PANIC",
             Self::Io { .. } => "MEJEPA_SHIFT_SUBSCRIBER_IO",
             Self::Json(_) => "MEJEPA_SHIFT_SUBSCRIBER_JSON",
             Self::RocksDb(_) => "MEJEPA_SHIFT_SUBSCRIBER_ROCKSDB",

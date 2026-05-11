@@ -207,20 +207,21 @@ impl ShiftSubscriber {
 
     pub fn capture_minimal_status(&self) -> Result<Value> {
         let (processed, observed, dropped, lag_alert_active) = self.metrics.snapshot_counts();
+        let task_alive_since = self.metrics.task_alive_since();
         let watermarks = self.watermark_writer.read_all()?;
         let last_watermark_per_session = watermarks
             .iter()
             .map(|(session, record)| (session.clone(), record.last_consumed_shift_id.clone()))
             .collect::<BTreeMap<_, _>>();
         Ok(json!({
-            "subscriber_running": true,
-            "task_alive_since": Value::Null,
+            "subscriber_running": task_alive_since.is_some(),
+            "task_alive_since": task_alive_since,
             "processed_count": processed,
             "observed_count": observed,
             "dropped_l_step_below_threshold_count": dropped,
             "lag_alert_active": lag_alert_active,
             "latency_ms": self.metrics.snapshot_latency_ms(),
-            "last_panic": Value::Null,
+            "last_panic": self.metrics.last_panic(),
             "last_watermark_per_session": last_watermark_per_session
         }))
     }
@@ -302,8 +303,9 @@ impl ShiftSubscriber {
         let value = bincode::serialize(&example)?;
         let mut opts = WriteOptions::default();
         opts.set_sync(true);
-        self.db.put_cf_opt(cf, &key, &value, &opts)?;
-        let readback = self.db.get_cf(cf, &key)?.ok_or_else(|| {
+        let key_bytes = key.as_slice();
+        self.db.put_cf_opt(cf, key_bytes, &value, &opts)?;
+        let readback = self.db.get_cf(cf, key_bytes)?.ok_or_else(|| {
             SubscriberError::invalid("oracle_verdict.readback", "oracle verdict row absent")
         })?;
         if readback != value {

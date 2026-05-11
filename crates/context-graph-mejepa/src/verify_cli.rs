@@ -5,7 +5,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 
-use context_graph_mejepa_corpus::oracle::OracleStore;
+use context_graph_mejepa_corpus::oracle::{OracleStore, CF_MEJEPA_MUTATION_CORPUS};
 use context_graph_mejepa_corpus::{
     MutationCategory, MutationOutcome, OracleVerdict, PerTestOutcome, TestOutcome,
 };
@@ -91,12 +91,13 @@ fn run_verify_report(
     let _panels = materialize_inference_panels(&patch_bundle, &context)?;
     let panel_materialization_ms = materialized_at.elapsed().as_millis() as u64;
 
-    let compiler = build_compiler(evidence_dir)?;
+    let compiler = build_compiler(evidence_dir, context.environment.repo_root.clone())?;
     let verdict = compiler.verify(&patch_bundle, &context)?;
     let me_jepa_verify_verdict = verdict_label(&verdict).to_string();
     let prediction_pass = prediction_passes(&verdict);
 
     let sample = sample_holdout_5pct(task, holdout_sample_pct, &corpus_root.join("holdout"))?;
+    let (before, after) = append_corpus_entry(corpus_root, task, &patch_sha, &patch_bytes)?;
     let (agreement_count, mut blockers) =
         check_agreement(corpus_root, &sample, prediction_pass.unwrap_or(false))?;
     let me_jepa_predicts_match_oracle =
@@ -112,7 +113,6 @@ fn run_verify_report(
         ));
     }
 
-    let (before, after) = append_corpus_entry(corpus_root, task, &patch_sha, &patch_bytes)?;
     let evidence_files_present = match assert_fsv_preconditions(evidence_dir) {
         Ok(count) => count,
         Err(err) => {
@@ -250,13 +250,14 @@ fn build_patch_context(
     Ok((patch, context))
 }
 
-fn build_compiler(evidence_dir: &Path) -> anyhow::Result<crate::MeJepaCompiler> {
+fn build_compiler(
+    evidence_dir: &Path,
+    repo_root: PathBuf,
+) -> anyhow::Result<crate::MeJepaCompiler> {
     let db_path = evidence_dir.join("phase7-dod-infer-db");
-    let repo_root = evidence_dir.join("phase7-dod-repo");
     if db_path.exists() {
         std::fs::remove_dir_all(&db_path)?;
     }
-    std::fs::create_dir_all(&repo_root)?;
     let db = open_infer_rocksdb(&db_path)?;
     seed_infer_db(db.clone())?;
     let calibration = CalibrationStore::new(db.clone(), 30)?;
@@ -280,7 +281,7 @@ fn seed_infer_db(db: std::sync::Arc<rocksdb::DB>) -> anyhow::Result<()> {
         .collect::<Vec<_>>();
     calibration.calibrate(
         &examples,
-        &vec![0.01; 40],
+        &[0.01; 40],
         0.10,
         30,
         0.30,
@@ -357,8 +358,15 @@ fn append_corpus_entry(
     patch_bytes: &[u8],
 ) -> anyhow::Result<(u64, u64)> {
     let store = OracleStore::open(corpus_root.join("oracle-store"))?;
-    let before = store.count_cf(context_graph_mejepa_cf::CF_MEJEPA_MUTATION_CORPUS)? as u64;
-    let row_task = format!("phase7_dod_{task}_{before}");
+    let before = store.count_cf(CF_MEJEPA_MUTATION_CORPUS)? as u64;
+    let row_task = if store
+        .get_verdict(task, MutationCategory::KnownGood)?
+        .is_some()
+    {
+        format!("phase7_dod_{task}_{before}")
+    } else {
+        task.to_string()
+    };
     let outcome = MutationOutcome {
         category: MutationCategory::KnownGood,
         mutated_source: String::from_utf8(patch_bytes.to_vec())?,
@@ -374,7 +382,7 @@ fn append_corpus_entry(
         exception: None,
     };
     store.put_corpus_row(&row_task, MutationCategory::KnownGood, &outcome, &verdict)?;
-    let after = store.count_cf(context_graph_mejepa_cf::CF_MEJEPA_MUTATION_CORPUS)? as u64;
+    let after = store.count_cf(CF_MEJEPA_MUTATION_CORPUS)? as u64;
     if after != before + 1 {
         anyhow::bail!("MEJEPA_VERIFY_CORPUS_APPEND_READBACK: before={before} after={after}");
     }
@@ -431,10 +439,8 @@ fn validate_evidence_file(name: &str, value: &Value) -> anyhow::Result<()> {
                 anyhow::bail!("predict-latency-evidence.json missing finite p50/p99");
             }
         }
-        "mcp-tool-roundtrip-evidence.json" => {
-            if value.get("phase7_mcp_tools").is_none() {
-                anyhow::bail!("mcp-tool-roundtrip-evidence.json missing phase7_mcp_tools");
-            }
+        "mcp-tool-roundtrip-evidence.json" if value.get("phase7_mcp_tools").is_none() => {
+            anyhow::bail!("mcp-tool-roundtrip-evidence.json missing phase7_mcp_tools");
         }
         _ => {}
     }

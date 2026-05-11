@@ -99,7 +99,7 @@ fn seed_hygiene_stress(
         write_meta(&env.config.db, &meta)?;
     }
     let mut prev = ZERO_HASH;
-    let witness_entries = entries.max(2_048).min(10_240);
+    let witness_entries = entries.clamp(2_048, 10_240);
     for idx in 0..witness_entries {
         let mut action = [0u8; HASH_SIZE];
         action[..8].copy_from_slice(&idx.to_be_bytes());

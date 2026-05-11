@@ -382,13 +382,14 @@ fn resolve_heal_db_path(input: Option<PathBuf>) -> Result<PathBuf, String> {
 
 fn run_heal_status(
     db_path: &std::path::Path,
-) -> Result<serde_json::Value, context_graph_mejepa::heal::HealError> {
+) -> Result<serde_json::Value, Box<context_graph_mejepa::heal::HealError>> {
     let store = HealRocksStore::open(db_path)?;
     let cf_counts = all_referenced_cf_names()
         .iter()
         .map(|cf| Ok(((*cf).to_string(), store.count_cf(cf)?)))
-        .collect::<Result<std::collections::BTreeMap<_, _>, context_graph_mejepa::heal::HealError>>(
-        )?;
+        .collect::<
+            Result<std::collections::BTreeMap<_, _>, Box<context_graph_mejepa::heal::HealError>>,
+        >()?;
     let mut active_pointers = std::collections::BTreeMap::new();
     for name in [
         "active_weights",
@@ -438,7 +439,7 @@ fn run_rollback_to(
     db_path: &std::path::Path,
     witness_chain_path: PathBuf,
     target_witness_chain_offset: u64,
-) -> Result<serde_json::Value, context_graph_mejepa::heal::HealError> {
+) -> Result<serde_json::Value, Box<context_graph_mejepa::heal::HealError>> {
     let store = HealRocksStore::open(db_path)?;
     let mut witness_chain = WitnessChainAppender::new(witness_chain_path.clone())?;
     let lock = Arc::new(Mutex::new(PromotionLockState::default()));

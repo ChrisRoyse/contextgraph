@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -170,10 +170,22 @@ pub struct SubscriberMetrics {
     observed_count: AtomicU64,
     dropped_l_step_below_threshold_count: AtomicU64,
     lag_alert_state: AtomicU8,
+    task_alive_since_unix_seconds: AtomicI64,
     latency_samples_ms: Mutex<Vec<u64>>,
+    last_panic: Mutex<Option<PanicInfo>>,
 }
 
 impl SubscriberMetrics {
+    pub fn mark_task_alive_now(&self) {
+        self.task_alive_since_unix_seconds
+            .store(unix_now_seconds(), Ordering::Relaxed);
+    }
+
+    pub fn clear_task_alive(&self) {
+        self.task_alive_since_unix_seconds
+            .store(0, Ordering::Relaxed);
+    }
+
     pub fn mark_processed(&self) {
         self.processed_count.fetch_add(1, Ordering::Relaxed);
     }
@@ -197,6 +209,30 @@ impl SubscriberMetrics {
             .lock()
             .expect("subscriber latency metrics lock poisoned")
             .push(latency_ms);
+    }
+
+    pub fn record_panic(&self, message: impl Into<String>) {
+        *self
+            .last_panic
+            .lock()
+            .expect("subscriber panic metrics lock poisoned") = Some(PanicInfo {
+            message: message.into(),
+            at_unix_seconds: unix_now_seconds(),
+        });
+    }
+
+    pub fn task_alive_since(&self) -> Option<i64> {
+        match self.task_alive_since_unix_seconds.load(Ordering::Relaxed) {
+            value if value > 0 => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn last_panic(&self) -> Option<PanicInfo> {
+        self.last_panic
+            .lock()
+            .expect("subscriber panic metrics lock poisoned")
+            .clone()
     }
 
     pub fn snapshot_counts(&self) -> (u64, u64, u64, bool) {
@@ -245,6 +281,13 @@ fn percentile(samples: &[u64], percentile: usize) -> u64 {
     samples[idx.min(samples.len() - 1)]
 }
 
+fn unix_now_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time before unix epoch")
+        .as_secs() as i64
+}
+
 pub fn decode_session_hex32(value: &str) -> Result<[u8; 16]> {
     if value.len() != 32 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(SubscriberError::invalid(
@@ -267,4 +310,29 @@ pub fn decode_session_hex32(value: &str) -> Result<[u8; 16]> {
 
 pub fn encode_session_hex(session_id: [u8; 16]) -> String {
     hex::encode(session_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metrics_publish_liveness_latency_and_panic_state() {
+        let metrics = SubscriberMetrics::default();
+        assert_eq!(metrics.task_alive_since(), None);
+        metrics.mark_task_alive_now();
+        assert!(metrics.task_alive_since().is_some());
+        metrics.record_latency_ms(10);
+        metrics.record_latency_ms(20);
+        metrics.record_panic("unit panic");
+        let latency = metrics.snapshot_latency_ms();
+        assert_eq!(latency.count, 2);
+        assert_eq!(latency.max, 20);
+        assert_eq!(
+            metrics.last_panic().expect("panic info").message,
+            "unit panic"
+        );
+        metrics.clear_task_alive();
+        assert_eq!(metrics.task_alive_since(), None);
+    }
 }

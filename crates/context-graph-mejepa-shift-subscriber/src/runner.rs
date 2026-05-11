@@ -1,5 +1,7 @@
 // Inspired by ruvnet/RuVector at HEAD ef5274c2 (clean-room reimplementation).
 
+use std::any::Any;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -7,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tracing::error;
 
-use crate::models::{decode_session_hex32, LatencySnapshot, ShiftOutcome};
+use crate::models::{decode_session_hex32, LatencySnapshot, ShiftEntry, ShiftOutcome};
 use crate::{Result, ShiftLogTail, ShiftSubscriber, SubscriberError};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -24,6 +26,13 @@ pub struct SubscriberRunSummary {
 
 impl ShiftSubscriber {
     pub async fn run_until_idle(&self) -> Result<SubscriberRunSummary> {
+        self.metrics().mark_task_alive_now();
+        let result = self.run_until_idle_inner().await;
+        self.metrics().clear_task_alive();
+        result
+    }
+
+    async fn run_until_idle_inner(&self) -> Result<SubscriberRunSummary> {
         let mut tails = self.open_tails()?;
         let mut outcomes = Vec::new();
         let mut lag_exceeded_since = None;
@@ -33,7 +42,7 @@ impl ShiftSubscriber {
                 self.update_lag_alert(tail, &mut lag_exceeded_since)?;
                 match tail.poll_next_line().await {
                     Ok(Some(entry)) => {
-                        let outcome = self.process_shift(&entry, false);
+                        let outcome = self.process_shift_supervised(&entry);
                         match outcome {
                             Ok(outcome) => {
                                 outcomes.push(outcome);
@@ -74,6 +83,16 @@ impl ShiftSubscriber {
         &self,
         mut shutdown: watch::Receiver<bool>,
     ) -> Result<SubscriberRunSummary> {
+        self.metrics().mark_task_alive_now();
+        let result = self.run_until_shutdown_inner(&mut shutdown).await;
+        self.metrics().clear_task_alive();
+        result
+    }
+
+    async fn run_until_shutdown_inner(
+        &self,
+        shutdown: &mut watch::Receiver<bool>,
+    ) -> Result<SubscriberRunSummary> {
         let mut tails = self.open_tails()?;
         let mut outcomes = Vec::new();
         let mut lag_exceeded_since = None;
@@ -87,7 +106,7 @@ impl ShiftSubscriber {
                 self.update_lag_alert(tail, &mut lag_exceeded_since)?;
                 match tail.poll_next_line().await {
                     Ok(Some(entry)) => {
-                        let outcome = self.process_shift(&entry, false);
+                        let outcome = self.process_shift_supervised(&entry);
                         match outcome {
                             Ok(outcome) => {
                                 outcomes.push(outcome);
@@ -129,6 +148,27 @@ impl ShiftSubscriber {
             outcomes,
             status,
         })
+    }
+
+    fn process_shift_supervised(&self, entry: &ShiftEntry) -> Result<ShiftOutcome> {
+        match catch_unwind(AssertUnwindSafe(|| self.process_shift(entry, false))) {
+            Ok(result) => result,
+            Err(payload) => {
+                let detail = panic_payload_message(payload.as_ref());
+                self.metrics().record_panic(detail.clone());
+                error!(
+                    error_code = "MEJEPA_SHIFT_SUBSCRIBER_PROCESS_PANIC",
+                    shift_id = %entry.shift_id.0,
+                    byte_offset = entry.byte_offset,
+                    detail = %detail,
+                    "ME-JEPA shift subscriber process_shift panic caught by supervisor"
+                );
+                Err(SubscriberError::ProcessPanic {
+                    shift_id: entry.shift_id.0.clone(),
+                    detail,
+                })
+            }
+        }
     }
 
     fn open_tails(&self) -> Result<Vec<ShiftLogTail>> {
@@ -218,6 +258,16 @@ fn count_pending_lines(path: &Path, offset: u64) -> Result<usize> {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .count())
+}
+
+fn panic_payload_message(payload: &(dyn Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "non-string panic payload".to_string()
+    }
 }
 
 #[cfg(test)]
