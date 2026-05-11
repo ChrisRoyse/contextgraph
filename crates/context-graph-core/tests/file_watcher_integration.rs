@@ -8,9 +8,7 @@
 
 use std::fs;
 use std::sync::Arc;
-use std::time::Duration;
 use tempfile::TempDir;
-use tokio::time::sleep;
 
 use context_graph_core::memory::capture::{
     EmbeddingProvider, MemoryCaptureService, TestEmbeddingProvider,
@@ -96,9 +94,6 @@ async fn test_watcher_processes_new_file_with_source_metadata() {
     // Start watcher and let it process
     watcher.start().await.expect("start watcher");
 
-    // Wait for processing
-    sleep(Duration::from_millis(500)).await;
-
     // Get the canonical path (as the watcher stores it)
     let canonical_path = file_path.canonicalize().expect("canonicalize");
     let path_str = canonical_path.to_string_lossy().to_string();
@@ -178,7 +173,6 @@ async fn test_stale_embedding_cleanup_on_file_modification() {
 
     // Start watcher
     watcher.start().await.expect("start watcher");
-    sleep(Duration::from_millis(500)).await;
 
     // Get canonical path
     let canonical_path = file_path.canonicalize().expect("canonicalize");
@@ -223,8 +217,6 @@ async fn test_stale_embedding_cleanup_on_file_modification() {
 
     fs::write(&file_path, modified_content).expect("write modified");
 
-    // Wait for debounce and processing
-    sleep(Duration::from_millis(2000)).await;
     watcher.process_events().await.expect("process events");
 
     // VERIFICATION: Check stale cleanup
@@ -323,7 +315,6 @@ async fn test_multiple_files_isolated() {
     println!("Created 2 markdown files");
 
     watcher.start().await.expect("start watcher");
-    sleep(Duration::from_millis(500)).await;
 
     let path1 = file1_path
         .canonicalize()
@@ -449,7 +440,6 @@ async fn test_file_index_integration() {
     println!("PHASE 1: Creating markdown files and starting watcher");
 
     watcher.start().await.expect("start watcher");
-    sleep(Duration::from_millis(500)).await;
 
     let path1 = file1_path
         .canonicalize()
