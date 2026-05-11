@@ -182,15 +182,14 @@ Wired in `crates/context-graph-mcp/src/handlers/tools/mejepa_eval_tools.rs` and 
 
 ### 4.3 What's still operational, not greenfield
 
-REQ-UTML-09 (synthetic FSV envelope spanning ΔP/ΔK/ΔΩ/ΔΞ corner cases) is covered by `train_edge_cases_fsv`. The operational work that remains is:
+REQ-UTML-09 (synthetic FSV envelope spanning ΔP/ΔK/ΔΩ/ΔΞ corner cases) is covered by `train_edge_cases_fsv` and refreshed by `utml_l_step_fsv`. The operational work that remains is:
 
-- **Reconciling simplified ΔP / ΔK / ΔΩ carriers with the full doc-11 formulas** — the shipped operational signals are weighted/cosine carriers; doc 11 §2-§5 specifies Fisher / ECE / plasticity forms. Either ratify the simplified set as the production formula or re-implement the doc-11 set and re-FSV.
 - **Wire the pairwise MI matrix into per-step train certs as a column** so doc 12 §11 item 17 (cross-embedder coherence into ΔK) is observable from the cert chain.
 - **Trigger continual-backprop dormant-unit re-init from the live ΔΩ.effective_plasticity signal** in `heal/regulate.rs` — the detector + re-init exist; the policy hook in self-healing remains.
 
-### 4.4 New / pending MCP surface
+### 4.4 MCP surface
 
-`mejepa_audit_pairwise_mi` (doc 12 item 20) is not yet exposed as an MCP tool. The CSV writer (`load_pairwise_mi_matrix_csv` round-trips) is in the train crate; the corresponding MCP wrapper is the natural follow-up.
+`mcp__cgreality__mejepa_audit_pairwise_mi` is exposed through `context-graph-mcp` and writes a CSV source-of-truth under the configured data root, then reloads it before returning.
 
 ---
 
@@ -250,8 +249,8 @@ Combined with the doc-15 set (`mejepa_verify`, `mejepa_predict_latest`, `mejepa_
 | 1b — Embedders | ✅ 21-slot enum (E5/E11 retired), 19 active registrations, 12 active content, 7 learner-state, digest verification, VRAM budget, 143 routing rows | ✅ `embedders_fsv` | **deep blindspot**: per-embedder neural `EmbedderForward` / `Instrument` wrappers running real model forward passes for E1/E7/E8/E10/E12/E13/E14 |
 | 1c — Instruments | ✅ all 15 panel slots + Panel/PanelBuilder/PanelStore + linear-probe quality gate; E_Oracle / E_Witness / E_StaticAnalysis first-class | ✅ `instruments_fsv`, `phase1_extended_fsv`, `ast_embedder_smoke_fsv` | replace deterministic encoders with embedder/analyzer-backed heads for E_AST, E_CFG, E_DataFlow, E_TypeGraph, E_Diff, E_Test, E_Trace, E_Runtime, E_Reasoning |
 | 2 — Predictor | ✅ `MeJepaPredictor`, `VICRegLoss`, `OracleHead`, `FrozenTargetAdapter`, `PanelSource` | ✅ `predictor_fsv` | live latency / VRAM percentile capture under production load |
-| 3 — Training + UTML | ✅ Trainer + AdamW + cosine LR + BatchSampler + 100k-step cert chain + holdout eval + LoRA wiring + distillation; `compute_delta_xi` fail-closed | ✅ 5 training FSVs incl. `train_full_fsv` byte-readback | reconcile simplified ΔP/ΔK/ΔΩ carriers with full doc-11 formulas |
-| 3+ UTML — pairwise MI / continual BP / state transfer | ✅ shipped (§4 above) | ✅ `utml_l_step_fsv`, `train_edge_cases_fsv` | wire pairwise MI into per-step cert columns; trigger continual-BP re-init from `heal/regulate.rs`; expose `mejepa_audit_pairwise_mi` MCP wrapper |
+| 3 — Training + UTML | ✅ Trainer + AdamW + cosine LR + BatchSampler + 100k-step cert chain + holdout eval + LoRA wiring + distillation; ΔP/ΔK/ΔΩ/ΔΞ formulas hardened and `compute_delta_xi` fail-closed | ✅ 5 training FSVs incl. `train_full_fsv` byte-readback + refreshed `utml_l_step_fsv` | production-scale cert-chain monitoring |
+| 3+ UTML — pairwise MI / continual BP / state transfer | ✅ shipped (§4 above), including `mcp__cgreality__mejepa_audit_pairwise_mi` | ✅ `utml_l_step_fsv`, `train_edge_cases_fsv` | wire pairwise MI into per-step cert columns; trigger continual-BP re-init from `heal/regulate.rs` |
 | 4a — Inference | ✅ `MeJepaCompiler::{compile, verify, observe}` + conformal + OOD + `Verdict` | ✅ `inference_fsv` | live conformal coverage + OOD AUC measurement |
 | 4b — TCT | ✅ panel-level `TctConstellation` + `Gτ` + `GuardRejected` + Bayesian shrinkage + freshness + threshold calibrator | ✅ `tct_fsv` | per-AST-chunk centroids + chunk-level Gτ + chunk-level `GuardRejected` localization |
 | 5 — Self-healing | ✅ 16-module `heal/` tree + `mejepa-heal-drill` binary + 6 RocksDB CFs + 3 MCP tools | ✅ hard/soft/catastrophic drift drills, mode-C promotion only on holdout win | wire continual-backprop intervention from §4 above into `heal/regulate.rs` |
