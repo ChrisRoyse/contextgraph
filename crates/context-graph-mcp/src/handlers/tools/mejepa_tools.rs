@@ -836,15 +836,15 @@ mod mejepa_constellation_inspect_tests {
         let lock = std::sync::Arc::new(std::sync::Mutex::new(PromotionLockState::default()));
         let mut promoter = AbcPromoter::try_new(0.1, PromotionGate::default()).unwrap();
         let report = promoter
-            .retrain_and_promote(
-                context_graph_mejepa::heal::TriggerReason::DriftHard,
-                &[0.2; 16],
+            .retrain_and_promote(context_graph_mejepa::heal::RetrainPromoteRequest {
+                trigger_reason: context_graph_mejepa::heal::TriggerReason::DriftHard,
+                current_weights: &[0.2; 16],
                 storage,
-                &mut witness_chain,
+                witness_chain: &mut witness_chain,
                 holdout,
                 lock,
-                "mcp-test-calibration",
-            )
+                calibration_version: "mcp-test-calibration",
+            })
             .unwrap();
 
         let status = run_heal_status(&db_path).unwrap();

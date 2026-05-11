@@ -535,16 +535,13 @@ pub fn train_tiny_jepa(
 
     let model = TinyMlpJepa::new(config, input_dim, action_dim, &device, config.seed)
         .map_err(|err| training_err(format!("failed to initialize tiny JEPA MLP: {err}")))?;
-    let baseline_metrics = evaluate_model(
-        config,
-        &model,
-        examples,
-        &eval_input,
-        &eval_target,
-        &eval_action,
-        &eval_negative,
-        false,
-    )?;
+    let eval_tensors = EvalTensors {
+        input: &eval_input,
+        target: &eval_target,
+        action: &eval_action,
+        negative: &eval_negative,
+    };
+    let baseline_metrics = evaluate_model(config, &model, examples, eval_tensors, false)?;
 
     let mut opt = AdamW::new(
         model.params(),
@@ -637,14 +634,12 @@ pub fn train_tiny_jepa(
             }
         }
         let denom = steps_per_epoch as f64;
-        let epoch_loss =
-            mean_epoch_scalar(epoch_loss, denom, "loss").map_err(|err| training_err(err))?;
-        let epoch_mse =
-            mean_epoch_scalar(epoch_mse, denom, "latent_mse").map_err(|err| training_err(err))?;
-        let epoch_var = mean_epoch_scalar(epoch_var, denom, "vicreg_variance")
-            .map_err(|err| training_err(err))?;
-        let epoch_cov = mean_epoch_scalar(epoch_cov, denom, "vicreg_covariance")
-            .map_err(|err| training_err(err))?;
+        let epoch_loss = mean_epoch_scalar(epoch_loss, denom, "loss").map_err(training_err)?;
+        let epoch_mse = mean_epoch_scalar(epoch_mse, denom, "latent_mse").map_err(training_err)?;
+        let epoch_var =
+            mean_epoch_scalar(epoch_var, denom, "vicreg_variance").map_err(training_err)?;
+        let epoch_cov =
+            mean_epoch_scalar(epoch_cov, denom, "vicreg_covariance").map_err(training_err)?;
         epoch_metrics.push(EpochMetric {
             epoch,
             loss: epoch_loss,
@@ -656,16 +651,7 @@ pub fn train_tiny_jepa(
         let should_eval_stopping = completed_epoch % eval_interval_epochs == 0
             || completed_epoch == config.schedule.epochs;
         if should_eval_stopping {
-            let epoch_eval = evaluate_model(
-                config,
-                &model,
-                examples,
-                &eval_input,
-                &eval_target,
-                &eval_action,
-                &eval_negative,
-                false,
-            )?;
+            let epoch_eval = evaluate_model(config, &model, examples, eval_tensors, false)?;
             if start.elapsed().as_secs_f64() > config.stopping.max_seconds as f64 {
                 return Err(DynamicJepaError::TrainingFailed {
                     training_run_id: uuid::Uuid::nil(),
@@ -687,16 +673,7 @@ pub fn train_tiny_jepa(
         }
     }
 
-    let mut evaluation = evaluate_model(
-        config,
-        &model,
-        examples,
-        &eval_input,
-        &eval_target,
-        &eval_action,
-        &eval_negative,
-        true,
-    )?;
+    let mut evaluation = evaluate_model(config, &model, examples, eval_tensors, true)?;
     let final_stopping_value = metric_value(&evaluation, &config.stopping.metric)?;
     if !converged && final_stopping_value > config.stopping.target {
         return Err(DynamicJepaError::TrainingFailed {
@@ -1012,27 +989,32 @@ fn vicreg_covariance(z: &Tensor) -> candle_core::Result<Tensor> {
     off_diag / (latent as f64)
 }
 
+#[derive(Clone, Copy)]
+struct EvalTensors<'a> {
+    input: &'a Tensor,
+    target: &'a Tensor,
+    action: &'a Tensor,
+    negative: &'a Tensor,
+}
+
 fn evaluate_model(
     config: &TrainConfig,
     model: &TinyMlpJepa,
     examples: &[TrainExample],
-    input: &Tensor,
-    target: &Tensor,
-    action: &Tensor,
-    negative: &Tensor,
+    tensors: EvalTensors<'_>,
     compute_collapse_diagnostics: bool,
 ) -> DynamicJepaResult<EvaluationReport> {
     let z_online = model
-        .encode_online(input)
+        .encode_online(tensors.input)
         .map_err(|err| training_err(format!("evaluation encoder forward failed: {err}")))?;
     let z_target = model
-        .encode_target(config, target)
+        .encode_target(config, tensors.target)
         .map_err(|err| training_err(format!("evaluation target forward failed: {err}")))?;
     let z_negative = model
-        .encode_target(config, negative)
+        .encode_target(config, tensors.negative)
         .map_err(|err| training_err(format!("evaluation negative forward failed: {err}")))?;
     let z_hat = model
-        .predict(&z_online, action)
+        .predict(&z_online, tensors.action)
         .map_err(|err| training_err(format!("evaluation predictor forward failed: {err}")))?;
     let pred = z_hat
         .to_vec2::<f32>()

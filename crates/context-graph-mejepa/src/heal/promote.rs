@@ -316,6 +316,16 @@ pub struct AbcPromoter {
     pub last_evidence: Option<AbcFsvEvidence>,
 }
 
+pub struct RetrainPromoteRequest<'a> {
+    pub trigger_reason: TriggerReason,
+    pub current_weights: &'a [f32],
+    pub storage: Arc<HealRocksStore>,
+    pub witness_chain: &'a mut WitnessChainAppender,
+    pub holdout: HoldoutDataset,
+    pub lock: Arc<Mutex<PromotionLockState>>,
+    pub calibration_version: &'a str,
+}
+
 impl AbcPromoter {
     pub fn try_new(grid_search_step: f32, gate: PromotionGate) -> Result<Self, HealError> {
         if !grid_search_step.is_finite() || grid_search_step <= 0.0 || grid_search_step > 1.0 {
@@ -333,19 +343,16 @@ impl AbcPromoter {
 
     pub fn retrain_and_promote(
         &mut self,
-        trigger_reason: TriggerReason,
-        current_weights: &[f32],
-        storage: Arc<HealRocksStore>,
-        witness_chain: &mut WitnessChainAppender,
-        holdout: HoldoutDataset,
-        lock: Arc<Mutex<PromotionLockState>>,
-        calibration_version: &str,
+        request: RetrainPromoteRequest<'_>,
     ) -> Result<HealReport, HealError> {
         let holder = format!("pid:{}:phase5-promotion", std::process::id());
         {
-            let mut guard = lock.lock().map_err(|_| HealError::PromotionDeadlock {
-                holder: "poisoned".to_string(),
-            })?;
+            let mut guard = request
+                .lock
+                .lock()
+                .map_err(|_| HealError::PromotionDeadlock {
+                    holder: "poisoned".to_string(),
+                })?;
             if let Some(existing) = &guard.held_by {
                 return Err(HealError::PromotionDeadlock {
                     holder: existing.clone(),
@@ -353,19 +360,22 @@ impl AbcPromoter {
             }
             guard.held_by = Some(holder);
             guard.acquired_at = chrono::Utc::now().timestamp();
-            guard.trigger_reason = Some(trigger_reason);
+            guard.trigger_reason = Some(request.trigger_reason);
         }
         let result = self.retrain_and_promote_locked(
-            trigger_reason,
-            current_weights,
-            storage,
-            witness_chain,
-            holdout,
-            calibration_version,
+            request.trigger_reason,
+            request.current_weights,
+            request.storage,
+            request.witness_chain,
+            request.holdout,
+            request.calibration_version,
         );
-        let mut guard = lock.lock().map_err(|_| HealError::PromotionDeadlock {
-            holder: "poisoned".to_string(),
-        })?;
+        let mut guard = request
+            .lock
+            .lock()
+            .map_err(|_| HealError::PromotionDeadlock {
+                holder: "poisoned".to_string(),
+            })?;
         *guard = PromotionLockState::default();
         result
     }
@@ -414,14 +424,9 @@ impl AbcPromoter {
             theta_b,
             theta_a,
             &mode_b_weights,
-            current_weights,
         )?;
         if !winner.is_promoted() {
-            return Err(HealError::HoldoutRegression {
-                mode_a_score: mode_a,
-                mode_b_score: mode_b,
-                mode_c_score: mode_c,
-            });
+            return Err(HealError::holdout_regression(mode_a, mode_b, mode_c));
         }
         storage.put_cf_readback(CF_MEJEPA_WEIGHT_BLOBS, &winner_sha, &winner_blob)?;
         let eval_summary_sha = evaluation_summary_sha(
@@ -605,7 +610,6 @@ fn choose_winner(
     theta_b: [u8; 32],
     theta_a: [u8; 32],
     mode_b_weights: &[f32],
-    current_weights: &[f32],
 ) -> Result<(ModeWinner, [u8; 32], Vec<u8>, HoldoutEval), HealError> {
     let mut candidates = Vec::new();
     if gate.passes(mode_b) {
@@ -626,14 +630,8 @@ fn choose_winner(
     candidates
         .into_iter()
         .max_by(|a, b| a.3.oracle_agreement.total_cmp(&b.3.oracle_agreement))
-        .ok_or_else(|| HealError::HoldoutRegression {
-            mode_a_score: mode_a.clone(),
-            mode_b_score: mode_b.clone(),
-            mode_c_score: mode_c.clone(),
-        })
-        .or_else(|err| {
-            let _ = current_weights;
-            Err(err)
+        .ok_or_else(|| {
+            HealError::holdout_regression(mode_a.clone(), mode_b.clone(), mode_c.clone())
         })
 }
 
@@ -780,15 +778,15 @@ mod tests {
         let lock = std::sync::Arc::new(std::sync::Mutex::new(PromotionLockState::default()));
         let mut promoter = AbcPromoter::try_new(0.1, PromotionGate::default()).unwrap();
         let report = promoter
-            .retrain_and_promote(
-                TriggerReason::DriftHard,
-                &[0.1; 16],
-                storage.clone(),
-                &mut witness_chain,
+            .retrain_and_promote(RetrainPromoteRequest {
+                trigger_reason: TriggerReason::DriftHard,
+                current_weights: &[0.1; 16],
+                storage: storage.clone(),
+                witness_chain: &mut witness_chain,
                 holdout,
-                lock.clone(),
-                "calibration-v1",
-            )
+                lock: lock.clone(),
+                calibration_version: "calibration-v1",
+            })
             .unwrap();
         assert_eq!(report.witness_chain_offset, 0);
 

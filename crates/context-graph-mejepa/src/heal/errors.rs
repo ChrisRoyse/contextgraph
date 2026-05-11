@@ -51,9 +51,9 @@ pub enum HealError {
         kind: IntegrityViolationKind,
     },
     HoldoutRegression {
-        mode_a_score: HoldoutEval,
-        mode_b_score: HoldoutEval,
-        mode_c_score: HoldoutEval,
+        mode_a_score: Box<HoldoutEval>,
+        mode_b_score: Box<HoldoutEval>,
+        mode_c_score: Box<HoldoutEval>,
     },
     QuotaExceeded {
         used_gb: f32,
@@ -135,6 +135,18 @@ impl HealError {
         Self::InvalidState {
             field: field.into(),
             detail: detail.into(),
+        }
+    }
+
+    pub fn holdout_regression(
+        mode_a_score: HoldoutEval,
+        mode_b_score: HoldoutEval,
+        mode_c_score: HoldoutEval,
+    ) -> Self {
+        Self::HoldoutRegression {
+            mode_a_score: Box::new(mode_a_score),
+            mode_b_score: Box::new(mode_b_score),
+            mode_c_score: Box::new(mode_c_score),
         }
     }
 
@@ -224,11 +236,7 @@ mod tests {
                     expected_modulo: 73,
                 },
             },
-            HealError::HoldoutRegression {
-                mode_a_score: eval(),
-                mode_b_score: eval(),
-                mode_c_score: eval(),
-            },
+            HealError::holdout_regression(eval(), eval(), eval()),
             HealError::QuotaExceeded {
                 used_gb: 116.0,
                 quota_gb: 115.0,

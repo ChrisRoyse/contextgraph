@@ -152,19 +152,29 @@
 
 ---
 
-## Total task count: **70 atomic tasks across 8 domains.**
+## Total task count: **~115 atomic tasks across 13 domains.**
 
 | Domain | Task count | Effort sum |
 |---|---|---|
-| FLYWHEEL | 6 | ~5 days |
-| PREDICT | 9 + 9 LABEL | ~10 days |
+| FLYWHEEL | 7 | ~5.5 days |
+| PREDICT | 12 + 11 LABEL | ~12 days |
 | ENRICH | 7 | ~13 days |
 | LOOP | 7 | ~1.5 days |
-| HEAL | 7 | ~6 days |
+| HEAL | 8 | ~6.5 days |
 | CORPUS | 4 | ~10 days |
-| OBS | 10 | ~7.5 days |
+| OBS | 16 | ~12 days |
 | UTML | 9 | ~3.5 days |
-| **Total** | **70** | **~57 days** |
+| TESTING | 11 | ~13 days |
+| RUNBOOK | 12 | ~5.5 days |
+| DR | 8 | ~4 days |
+| SECURITY | 8 | ~3.5 days |
+| BOOTSTRAP | 3 | ~2 days |
+| API | 5 | ~2.5 days |
+| **Total** | **~115** | **~95 days** |
+
+> The original 8 phases (A–H per `12_IMPLEMENTATION_PHASES.md`) absorb the new TESTING / RUNBOOK / DR / SECURITY / BOOTSTRAP / API domains: TESTING + RUNBOOK + DR map mostly to Phase F (production observability) and Phase A (basic readiness); SECURITY tasks distribute across Phases A, B, E; BOOTSTRAP fits in Phases A and C; API stretches across A and F. The total fresh implementation effort grows from ~57 to ~95 engineer-days, then Phase G runs continuously.
+
+> Per-domain task detail: see [`tasks/<domain>/_all_tasks.md`](tasks/) for compact entries; Phase A has detailed individual task files for the 8 critical-path items.
 
 ---
 

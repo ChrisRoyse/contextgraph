@@ -6,6 +6,13 @@ use super::types::{
 use crate::types::{Language, OracleOutcome};
 use std::collections::BTreeMap;
 
+pub type CorrelationBreakdown = (
+    Option<f32>,
+    BTreeMap<MutationCategory, Option<f32>>,
+    BTreeMap<Language, Option<f32>>,
+    BTreeMap<String, Option<f32>>,
+);
+
 pub fn pearson_correlation(xs: &[f32], ys: &[f32]) -> Result<Option<f32>, EvalError> {
     if xs.len() != ys.len() {
         return Err(EvalError::new(
@@ -65,15 +72,7 @@ pub fn oracle_target_opt(outcome: OracleOutcome) -> Option<f32> {
 pub fn compute_correlations(
     observations: &[EvalObservation],
     config: &EvalConfig,
-) -> Result<
-    (
-        Option<f32>,
-        BTreeMap<MutationCategory, Option<f32>>,
-        BTreeMap<Language, Option<f32>>,
-        BTreeMap<String, Option<f32>>,
-    ),
-    EvalError,
-> {
+) -> Result<CorrelationBreakdown, EvalError> {
     let mut predicted = Vec::with_capacity(observations.len());
     let mut actual = Vec::with_capacity(observations.len());
     for obs in observations {
@@ -135,8 +134,7 @@ pub fn conformal_health(
                 .prediction
                 .outcome_set
                 .outcomes
-                .iter()
-                .any(|outcome| *outcome == obs.actual_oracle)
+                .contains(&obs.actual_oracle)
             {
                 covered += 1;
             }
@@ -220,68 +218,70 @@ pub fn bayesian_shrinkage(
     Ok(out)
 }
 
-pub fn ship_gate_failures(
-    observations: &[EvalObservation],
-    report_overall: Option<f32>,
-    conformal: &BTreeMap<Language, ConformalHealthEntry>,
-    ood: &BTreeMap<Language, Option<f32>>,
-    gtau: &BTreeMap<Language, f32>,
-    regression_checks: &[RegressionCheck],
-    q1_pass_rate: f32,
-    q3_side_effect_agreement: Option<f32>,
-    config: &EvalConfig,
-) -> Vec<String> {
+pub struct ShipGateInputs<'a> {
+    pub observations: &'a [EvalObservation],
+    pub report_overall: Option<f32>,
+    pub conformal: &'a BTreeMap<Language, ConformalHealthEntry>,
+    pub ood: &'a BTreeMap<Language, Option<f32>>,
+    pub gtau: &'a BTreeMap<Language, f32>,
+    pub regression_checks: &'a [RegressionCheck],
+    pub q1_pass_rate: f32,
+    pub q3_side_effect_agreement: Option<f32>,
+    pub config: &'a EvalConfig,
+}
+
+pub fn ship_gate_failures(inputs: ShipGateInputs<'_>) -> Vec<String> {
     let mut failures = Vec::new();
-    if observations.is_empty() {
+    if inputs.observations.is_empty() {
         failures.push("empty_holdout".to_string());
     }
-    match report_overall {
-        Some(value) if value >= config.correlation_min => {}
+    match inputs.report_overall {
+        Some(value) if value >= inputs.config.correlation_min => {}
         Some(value) => failures.push(format!(
             "overall_correlation {value:.6} < {:.6}",
-            config.correlation_min
+            inputs.config.correlation_min
         )),
         None => failures.push("overall_correlation unavailable".to_string()),
     }
-    for (language, health) in conformal {
+    for (language, health) in inputs.conformal {
         if !health.within_band {
             failures.push(format!("conformal_coverage {:?} outside band", language));
         }
     }
-    for (language, auc) in ood {
+    for (language, auc) in inputs.ood {
         if let Some(value) = auc {
-            if *value < config.ood_auc_min {
+            if *value < inputs.config.ood_auc_min {
                 failures.push(format!("ood_auc {:?} {value:.6} below threshold", language));
             }
         }
     }
-    for (language, value) in gtau {
-        if *value < config.gtau_pass_rate_min {
+    for (language, value) in inputs.gtau {
+        if *value < inputs.config.gtau_pass_rate_min {
             failures.push(format!(
                 "gtau_pass_rate {:?} {value:.6} below threshold",
                 language
             ));
         }
     }
-    if q1_pass_rate < config.q1_pass_rate_min {
+    if inputs.q1_pass_rate < inputs.config.q1_pass_rate_min {
         failures.push(format!(
-            "q1_pass_rate {q1_pass_rate:.6} below threshold {:.6}",
-            config.q1_pass_rate_min
+            "q1_pass_rate {:.6} below threshold {:.6}",
+            inputs.q1_pass_rate, inputs.config.q1_pass_rate_min
         ));
     }
-    match q3_side_effect_agreement {
-        Some(value) if value >= config.q3_side_effect_min => {}
+    match inputs.q3_side_effect_agreement {
+        Some(value) if value >= inputs.config.q3_side_effect_min => {}
         Some(value) => failures.push(format!(
             "q3_side_effect_agreement {value:.6} below threshold {:.6}",
-            config.q3_side_effect_min
+            inputs.config.q3_side_effect_min
         )),
         None => failures.push("q3_side_effect_agreement unavailable".to_string()),
     }
-    for check in regression_checks {
+    for check in inputs.regression_checks {
         if !check.passed {
             failures.push(format!(
                 "regression_check {} drop {:.6} exceeds threshold {:.6}",
-                check.name, check.drop, config.regression_max_drop
+                check.name, check.drop, inputs.config.regression_max_drop
             ));
         }
     }

@@ -19,6 +19,17 @@
 | **G. Rolling-window holdout to ≥0.95** | Run live evaluations until ship gate stably met across (category × language) | ongoing | Phase B + C + D + E + F | 4 consecutive rolling windows ≥ 0.95 |
 | **H. Inner-loop residue cleanup** | Apply deletion list, refactor loop.md, supersede SMAP files | 1-2 days | Phase A (so daemon is the new norm) | All `MEJEPA_*_RETIRED` symbols fail-closed; CLAUDE.md + agents/README.md updated |
 
+**Cross-cutting domains added by `17_BLIND_SPOTS_AND_MISSING_CAPABILITIES.md`** distribute across the existing phases:
+
+- **TESTING** (11 tasks, ~13 days) — most in Phase F; a few in Phase A (test-outcome capture hook is FLYWHEEL-003)
+- **RUNBOOK** (12 tasks, ~5.5 days) — RUN-001 (first-time setup) + RUN-010 (config files) + RUN-011 (INSTALL.md) in Phase A; rest of CLI commands in Phase F
+- **DR** (8 tasks, ~4 days) — DR-001/002/005/006 in Phase A (snapshot scripts + model digest list); DR-003/004/007/008 in Phase F
+- **SECURITY** (8 tasks, ~3.5 days) — SEC-001 (secret redaction) + SEC-006/007/008 (markdown hardening / D-drive perms / hook lint) in Phase A; SEC-003 (multi-head contradiction) in Phase B; SEC-005 (two-person rule) in Phase E; SEC-002 (adversarial corpus) in Phase F
+- **BOOTSTRAP** (3 tasks, ~2 days) — BOOT-001 + BOOT-003 in Phase A; BOOT-002 (baseline checkpoint) in Phase C
+- **API** (5 tasks, ~2.5 days) — API-001 (semver in MCP) + API-005 (changelog) in Phase A; API-002/003/004 in Phase F
+
+**Updated total fresh implementation effort: ~95 engineer-days.**
+
 **Total fresh implementation effort:** ~45-65 engineer-days, then Phase G runs continuously until the ship gate is met. Phases A, C, D, F can run in parallel; B and E depend on A; H depends on A.
 
 ---

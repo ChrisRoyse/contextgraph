@@ -1,7 +1,7 @@
 use super::error::{EvalError, EvalErrorCode};
 use super::metrics::{
     bayesian_shrinkage, compute_correlations, conformal_health, gtau_pass_rate_by_language,
-    ood_auc_by_language, oracle_target_opt, ship_gate_failures,
+    ood_auc_by_language, oracle_target_opt, ship_gate_failures, ShipGateInputs,
 };
 use super::queue::ActiveLearningQueueState;
 use super::report::seed_open_research_questions;
@@ -89,17 +89,17 @@ impl EvalRunner {
         let regression_checks = regression_checks(previous_report.as_ref(), overall, &self.config);
         let q1 = q1_pass_rate(&observations)?;
         let q3 = q3_side_effect_agreement(&observations);
-        let failures = ship_gate_failures(
-            &observations,
-            overall,
-            &conformal,
-            &ood,
-            &gtau,
-            &regression_checks,
-            q1,
-            q3,
-            &self.config,
-        );
+        let failures = ship_gate_failures(ShipGateInputs {
+            observations: &observations,
+            report_overall: overall,
+            conformal: &conformal,
+            ood: &ood,
+            gtau: &gtau,
+            regression_checks: &regression_checks,
+            q1_pass_rate: q1,
+            q3_side_effect_agreement: q3,
+            config: &self.config,
+        });
 
         let mut queue = ActiveLearningQueueState::new(16)?;
         for obs in &observations {

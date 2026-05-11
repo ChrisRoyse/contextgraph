@@ -42,6 +42,8 @@
 //! - `--bind` overrides `CONTEXT_GRAPH_BIND_ADDRESS`, `config.mcp.bind_address`
 
 mod adapters;
+mod daemon;
+mod daemon_validate;
 mod handlers;
 mod monitoring;
 mod protocol;
@@ -99,6 +101,8 @@ struct CliArgs {
     daemon: bool,
     /// Daemon TCP port (--daemon-port, default: 3100)
     daemon_port: u16,
+    /// Durable D-drive data root (--d-root, default: /mnt/d/contextgraph)
+    d_root: Option<PathBuf>,
     /// Whether --daemon-port was explicitly passed on CLI
     explicit_daemon_port: bool,
     /// Internal flag: this process IS the headless daemon (--daemon-server-only).
@@ -133,6 +137,7 @@ impl CliArgs {
             no_warm: false,
             daemon: false,
             daemon_port: 3100, // Default daemon port (aligned with .mcp.json)
+            d_root: None,
             explicit_daemon_port: false,
             daemon_server_only: false,
         };
@@ -217,6 +222,13 @@ impl CliArgs {
                     cli.daemon_port = parse_port_number("--daemon-port", &args[i])?;
                     cli.explicit_daemon_port = true;
                 }
+                "--d-root" => {
+                    i += 1;
+                    if i >= args.len() {
+                        return Err(anyhow::anyhow!("Missing value for --d-root"));
+                    }
+                    cli.d_root = Some(parse_d_root_arg(&args[i])?);
+                }
                 "--daemon-server-only" => {
                     // Internal flag: this process IS the headless daemon.
                     // Spawned by spawn_daemon_process() — not for direct user use.
@@ -251,6 +263,15 @@ fn parse_port_number(source: &str, value: &str) -> Result<u16> {
     Ok(port)
 }
 
+fn parse_d_root_arg(value: &str) -> Result<PathBuf> {
+    if value.trim().is_empty() || value.chars().any(|ch| ch.is_control()) {
+        return Err(anyhow::anyhow!(
+            "MEJEPA_D_DRIVE_PATH_INVALID: --d-root must be a non-empty path without control characters"
+        ));
+    }
+    Ok(PathBuf::from(value))
+}
+
 /// Print help message and exit.
 fn print_help() {
     eprintln!(
@@ -270,6 +291,7 @@ OPTIONS:
     --no-warm            Skip blocking warmup (embeddings fail until background load completes)
     --daemon             Share one server across multiple terminals (RECOMMENDED)
     --daemon-port <PORT> Daemon TCP port (default: 3100)
+    --d-root <PATH>      Durable data root (default: /mnt/d/contextgraph)
     --version, -V        Show version and exit
     --help, -h           Show this help message
 
@@ -280,6 +302,7 @@ ENVIRONMENT VARIABLES:
     CONTEXT_GRAPH_WARM_FIRST    Set to "0" to disable blocking warmup (default: "1")
     CONTEXT_GRAPH_DAEMON        Set to "1" to enable daemon mode (default: "0")
     CONTEXT_GRAPH_DAEMON_PORT   Daemon port number (default: 3100)
+    CONTEXTGRAPH_DATA_ROOT      Durable D-drive root (default: /mnt/d/contextgraph)
     RUST_LOG                    Log level (error, warn, info, debug, trace)
 
 PRIORITY:
@@ -878,57 +901,6 @@ impl Drop for PidFileGuard {
             );
         } else {
             debug!("PID file guard released: '{}'", self.path.display());
-        }
-    }
-}
-
-struct DaemonPidMarker {
-    path: PathBuf,
-    pid: u32,
-}
-
-impl DaemonPidMarker {
-    fn create() -> Result<Self> {
-        let path = context_graph_paths::mcp_daemon_pid_marker_path()
-            .map_err(|e| anyhow::anyhow!("Failed to resolve daemon PID marker path: {}", e))?;
-        let pid = std::process::id();
-        fs::write(&path, format!("{pid}\n")).map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to write daemon PID marker {}: {}",
-                path.display(),
-                e
-            )
-        })?;
-        Ok(Self { path, pid })
-    }
-}
-
-impl Drop for DaemonPidMarker {
-    fn drop(&mut self) {
-        let expected = format!("{}\n", self.pid);
-        match fs::read_to_string(&self.path) {
-            Ok(current) if current == expected => {
-                if let Err(e) = fs::remove_file(&self.path) {
-                    warn!(
-                        error = %e,
-                        pid_path = %self.path.display(),
-                        "E_DAEMON_PID_MARKER_CLEANUP: Failed to remove daemon PID marker"
-                    );
-                }
-            }
-            Ok(_) => {
-                debug!(
-                    pid_path = %self.path.display(),
-                    "Daemon PID marker changed; not removing newer marker"
-                );
-            }
-            Err(e) => {
-                debug!(
-                    error = %e,
-                    pid_path = %self.path.display(),
-                    "Daemon PID marker already absent during cleanup"
-                );
-            }
         }
     }
 }
@@ -2128,6 +2100,7 @@ async fn spawn_daemon_process(
     config_path: Option<&Path>,
     warm_first: bool,
     mode: &str,
+    d_root: Option<&Path>,
 ) -> Result<()> {
     use std::os::unix::process::CommandExt;
     use tokio::time::{sleep, Duration};
@@ -2145,6 +2118,10 @@ async fn spawn_daemon_process(
     cmd.arg(daemon_port.to_string());
     cmd.arg("--http-port");
     cmd.arg(http_port.to_string());
+    if let Some(d_root) = d_root {
+        cmd.arg("--d-root");
+        cmd.arg(d_root);
+    }
 
     if let Some(path) = config_path {
         cmd.arg("--config");
@@ -2235,8 +2212,12 @@ async fn spawn_daemon_process(
 /// the runtime manually we guarantee the `set_var` happens in a single-threaded
 /// context.
 fn main() -> Result<()> {
+    let cli = CliArgs::parse()?;
     // CRITICAL: Set env vars while still single-threaded (no tokio runtime yet).
     env::set_var("CONTEXT_GRAPH_MCP_QUIET", "1");
+    if let Some(d_root) = &cli.d_root {
+        env::set_var(context_graph_paths::ENV_DATA_ROOT, d_root);
+    }
 
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async_main())
@@ -2704,6 +2685,19 @@ async fn async_main() -> Result<()> {
 
     info!("Context Graph MCP Server starting...");
 
+    let daemon_mode_requested = cli.daemon
+        || cli.daemon_server_only
+        || env::var("CONTEXT_GRAPH_DAEMON")
+            .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+    let daemon_paths = if daemon_mode_requested {
+        let data_root = context_graph_paths::data_root()
+            .map_err(|err| anyhow::anyhow!("MEJEPA_D_DRIVE_UNAVAILABLE: {}", err))?;
+        Some(daemon_validate::validate_d_drive_root(&data_root)?)
+    } else {
+        None
+    };
+
     // Load configuration
     let mut config = if let Some(ref path) = cli.config_path {
         info!("Loading configuration from: {:?}", path);
@@ -2781,10 +2775,20 @@ async fn async_main() -> Result<()> {
         } else {
             None
         };
-        let _daemon_pid_marker = DaemonPidMarker::create()?;
+        let daemon_paths = daemon_paths.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("MEJEPA_D_DRIVE_UNAVAILABLE: daemon validation did not run")
+        })?;
+        let _daemon_pid_lock = daemon_validate::DaemonPidLock::acquire(&daemon_paths.pid_file)?;
 
         // Create server
         let server = server::McpServer::new(config, warm_first).await?;
+        let mut flywheel = daemon::start_supervised_flywheel_tasks(
+            daemon::FlywheelDaemonConfig::from_paths(
+                daemon_paths.clone(),
+                std::env::current_dir()?,
+            ),
+            server.rocksdb_db_arc(),
+        )?;
 
         // Start file watcher
         match server.start_file_watcher().await {
@@ -2827,6 +2831,7 @@ async fn async_main() -> Result<()> {
         };
 
         let mut transport_error: Option<anyhow::Error> = None;
+        let mut flywheel_exited = false;
         tokio::select! {
             result = server.run_tcp() => {
                 if let Err(e) = result {
@@ -2843,16 +2848,39 @@ async fn async_main() -> Result<()> {
             _ = shutdown_signal => {
                 info!("Headless daemon shutting down...");
             }
+            result = &mut flywheel.join_handle => {
+                flywheel_exited = true;
+                match result {
+                    Ok(Ok(())) => {
+                        error!("MEJEPA_DAEMON_SUPERVISOR_EXITED: flywheel supervisor exited before daemon shutdown");
+                        transport_error = Some(anyhow::anyhow!("MEJEPA_DAEMON_SUPERVISOR_EXITED"));
+                    }
+                    Ok(Err(e)) => {
+                        error!("MEJEPA_DAEMON_SUPERVISOR_FAILED: {}", e);
+                        transport_error = Some(e);
+                    }
+                    Err(e) => {
+                        error!("MEJEPA_DAEMON_SUPERVISOR_PANICKED: {}", e);
+                        transport_error = Some(anyhow::anyhow!("MEJEPA_DAEMON_SUPERVISOR_PANICKED: {}", e));
+                    }
+                }
+            }
         }
 
-        // Shutdown with 10s force-exit deadline
+        if !flywheel_exited {
+            flywheel.shutdown().await?;
+        }
+
+        // Shutdown with a bounded force-exit deadline. Individual background tasks
+        // are awaited or aborted inside server.shutdown(); this outer deadline catches
+        // unexpected shutdown regressions and guarantees the daemon lock is released.
         tokio::select! {
             _ = server.shutdown() => {
                 info!("Headless daemon shutdown complete");
             }
-            _ = tokio::time::sleep(tokio::time::Duration::from_secs(10)) => {
+            _ = tokio::time::sleep(tokio::time::Duration::from_secs(30)) => {
                 error!(
-                    "Headless daemon shutdown stuck (10s) — force exiting to release flock"
+                    "MEJEPA_DAEMON_SHUTDOWN_STUCK: headless daemon shutdown exceeded 30s; force exiting to release flock"
                 );
                 drop(_pid_guard);
                 std::process::exit(1);
@@ -2942,6 +2970,7 @@ async fn async_main() -> Result<()> {
                     cli.config_path.as_deref(),
                     warm_first,
                     &cli.mode,
+                    cli.d_root.as_deref(),
                 )
                 .await
                 {

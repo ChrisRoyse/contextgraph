@@ -33,9 +33,11 @@ pub fn build_eval_compiler(
     let calibration = CalibrationStore::new(db.clone(), 30)?;
     seed_calibration_and_train_certs(&db, &calibration)?;
     let store = Arc::new(RocksDbInferStore::new(db.clone()));
-    let mut config = MeJepaInferConfig::default();
-    config.ood_refuse_threshold = 1.0;
-    config.outcome_set_max = 4;
+    let config = MeJepaInferConfig {
+        ood_refuse_threshold: 1.0,
+        outcome_set_max: 4,
+        ..Default::default()
+    };
     let compiler = Arc::new(build_deterministic_compiler(
         repo_root.to_path_buf(),
         store,

@@ -12,20 +12,15 @@ pub const DEFAULT_DRIFT_WINDOW_SIZE: usize = 1000;
 pub const DEFAULT_DRIFT_MIN_DETECTION_SAMPLES: usize = 700;
 pub const DEFAULT_HYSTERESIS_WINDOWS: usize = 3;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DriftSeverity {
+    #[default]
     WarmupNotReady,
     Healthy,
     Soft,
     Hard,
     Catastrophic,
-}
-
-impl Default for DriftSeverity {
-    fn default() -> Self {
-        Self::WarmupNotReady
-    }
 }
 
 impl DriftSeverity {

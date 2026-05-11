@@ -177,8 +177,7 @@ pub fn refresh(
     let pre_lora_sha = sha_lora(refresher, embedder_id, b"pre");
     let pre_plasticity = compute_effective_plasticity(embedder_id, fresh_corpus_slice)?;
     let post_plasticity = (pre_plasticity + 0.25 + config.total_params() as f32 * 1e-9)
-        .min(0.95)
-        .max(PLASTICITY_REGULATE_FLOOR + 0.01);
+        .clamp(PLASTICITY_REGULATE_FLOOR + 0.01, 0.95);
     let post_lora_sha = sha_lora(refresher, embedder_id, &fresh_corpus_slice.sha());
     let report = LoraRefreshReport::try_new(LoraRefreshReport {
         embedder_id,

@@ -311,13 +311,13 @@ impl McpServer {
     /// `Ok(true)` if the worker started successfully, `Ok(false)` if no graph builder
     /// is configured, `Err` on failure.
     pub async fn start_graph_builder(&self) -> Result<bool> {
-        // L9 FIX: Idempotency guard — skip if already running
-        {
-            let task_guard = self.graph_builder_task.read().await;
-            if task_guard.is_some() {
-                debug!("Graph builder already running — skipping duplicate start");
-                return Ok(true);
-            }
+        // L9 FIX: Idempotency guard — skip if already running.
+        // Use the write guard for the whole scheduling path so TCP and HTTP transports
+        // cannot race and start duplicate graph-builder supervisors.
+        let mut task_guard = self.graph_builder_task.write().await;
+        if task_guard.is_some() {
+            debug!("Graph builder already running — skipping duplicate start");
+            return Ok(true);
         }
 
         let graph_builder = match &self.graph_builder {
@@ -328,19 +328,67 @@ impl McpServer {
             }
         };
 
-        // Wait for embedding models to be ready (needed for graph building)
+        // Graph building needs embeddings, but transport readiness must not wait
+        // for model warmup when --no-warm/background warmup is explicitly used.
         if self.models_loading.load(Ordering::SeqCst) {
-            info!("Waiting for embedding models to load before starting graph builder...");
-            for _ in 0..120 {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                if !self.models_loading.load(Ordering::SeqCst) {
-                    break;
+            info!(
+                "Embedding models still loading; graph builder will start after warmup completes"
+            );
+
+            let loading = Arc::clone(&self.models_loading);
+            let failed_slot = Arc::clone(&self.models_failed);
+            let mut shutdown_rx = self.shutdown_tx.subscribe();
+            let delayed_builder = Arc::clone(&graph_builder);
+
+            let task = tokio::spawn(async move {
+                loop {
+                    if !loading.load(Ordering::SeqCst) {
+                        break;
+                    }
+
+                    tokio::select! {
+                        _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {}
+                        changed = shutdown_rx.changed() => {
+                            match changed {
+                                Ok(()) if *shutdown_rx.borrow() => {
+                                    info!(
+                                        "Graph builder startup cancelled during shutdown before embeddings were ready"
+                                    );
+                                    return;
+                                }
+                                Ok(()) => {}
+                                Err(_) => {
+                                    info!(
+                                        "Graph builder startup cancelled because shutdown channel closed"
+                                    );
+                                    return;
+                                }
+                            }
+                        }
+                    }
                 }
-            }
-            if self.models_loading.load(Ordering::SeqCst) {
-                error!("Embedding models still loading after 60s - skipping graph builder");
-                return Ok(false);
-            }
+
+                if let Some(err) = (*failed_slot.read().await).clone() {
+                    error!(
+                        "Cannot start graph builder - embedding models failed: {}",
+                        err
+                    );
+                    return;
+                }
+
+                info!(
+                    "TASK-GRAPHLINK-PHASE1: Starting delayed background graph builder worker (interval={}s)",
+                    delayed_builder.config().batch_interval_secs
+                );
+                let worker = delayed_builder.start_worker();
+                match worker.await {
+                    Ok(()) => info!("Delayed graph builder worker stopped"),
+                    Err(e) => error!(error = %e, "Delayed graph builder worker failed to join"),
+                }
+            });
+
+            *task_guard = Some(task);
+            return Ok(true);
         }
 
         // Check if model loading failed
@@ -364,10 +412,7 @@ impl McpServer {
         let task = graph_builder.start_worker();
 
         // Store the task handle
-        {
-            let mut task_guard = self.graph_builder_task.write().await;
-            *task_guard = Some(task);
-        }
+        *task_guard = Some(task);
 
         info!("TASK-GRAPHLINK-PHASE1: Background graph builder started successfully");
         Ok(true)

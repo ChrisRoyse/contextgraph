@@ -83,6 +83,9 @@ pub struct McpServer {
     pub(in crate::server) config: Config,
     /// Teleological memory store - stores TeleologicalFingerprint with 14 embeddings.
     pub(in crate::server) teleological_store: Arc<dyn TeleologicalMemoryStore>,
+    /// Shared RocksDB handle for ME-JEPA daemon tasks that must not open a
+    /// competing owner on the same database path.
+    pub(in crate::server) rocksdb_db: Arc<rocksdb::DB>,
     /// Multi-array embedding provider - generates all 14 embeddings.
     /// Wrapped in RwLock<Option<...>> for lazy loading - None while models are loading.
     pub(in crate::server) multi_array_provider:
@@ -167,7 +170,7 @@ impl McpServer {
             )
         })?;
         info!(
-            "Created RocksDbTeleologicalStore at {:?} (51 column families, persistent storage)",
+            "Created RocksDbTeleologicalStore at {:?} (canonical column families, persistent storage)",
             db_path
         );
 
@@ -283,7 +286,7 @@ impl McpServer {
 
         // Create EdgeRepository sharing the same RocksDB instance
         // NO FALLBACKS - If this fails, the system errors so we can debug
-        let edge_repository = EdgeRepository::new(db_arc);
+        let edge_repository = EdgeRepository::new(db_arc.clone());
         info!("Created EdgeRepository for K-NN graph linking - NO FALLBACKS enabled");
 
         // TASK-GRAPHLINK-PHASE1: EdgeRepository clone for BackgroundGraphBuilder
@@ -589,6 +592,7 @@ impl McpServer {
         Ok(Self {
             config,
             teleological_store,
+            rocksdb_db: db_arc,
             multi_array_provider,
             models_loading,
             models_failed,
@@ -936,9 +940,9 @@ impl McpServer {
     /// # Behavior
     ///
     /// 1. Signal all background tasks to stop via shutdown flag
-    /// 2. Await GC task with 5s timeout
-    /// 3. Await model loading task with 60s timeout (M5 FIX)
-    /// 4. Await HNSW persist task with 10s timeout
+    /// 2. Await GC task with 5s timeout, then abort if it ignores shutdown
+    /// 3. Await model loading task with 2s timeout, then abort if it ignores shutdown
+    /// 4. Await HNSW persist task with 5s timeout, then abort if it ignores shutdown
     /// 5. Stop graph builder, code watcher, file watcher
     /// 6. Final HNSW persistence (captures any unsaved changes)
     /// 7. Flush ALL RocksDB column families to disk
@@ -958,36 +962,37 @@ impl McpServer {
         {
             let mut guard = self.gc_task.lock().await;
             if let Some(handle) = guard.take() {
-                match tokio::time::timeout(std::time::Duration::from_secs(5), handle).await {
-                    Ok(Ok(())) => info!("GC task shut down cleanly"),
-                    Ok(Err(e)) => error!("GC task panicked during shutdown: {}", e),
-                    Err(_) => warn!("GC task did not stop within 5s — abandoning"),
-                }
+                Self::await_task_or_abort("GC task", handle, std::time::Duration::from_secs(5))
+                    .await;
             }
         }
 
-        // 3. Await model loading task with 60s timeout (model loading can take 20-30s)
-        // M5 FIX: Constitution: "JoinHandle must be awaited or aborted — never silently dropped"
+        // 3. Await model loading task with a short timeout.
+        // Model loading does not own durability state. During daemon shutdown it must not
+        // block release of the daemon/process lock, so abort it if it ignores shutdown.
         {
             let mut guard = self.model_load_task.lock().await;
             if let Some(handle) = guard.take() {
-                match tokio::time::timeout(std::time::Duration::from_secs(60), handle).await {
-                    Ok(Ok(())) => info!("Model loading task shut down cleanly"),
-                    Ok(Err(e)) => error!("Model loading task panicked during shutdown: {}", e),
-                    Err(_) => warn!("Model loading task did not stop within 60s — abandoning"),
-                }
+                Self::await_task_or_abort(
+                    "Model loading task",
+                    handle,
+                    std::time::Duration::from_secs(2),
+                )
+                .await;
             }
         }
 
-        // 4. Await HNSW persist task with 10s timeout (persistence may take time)
+        // 4. Await HNSW persist task with 5s timeout. A final explicit persistence pass
+        // runs below, so a stuck periodic persist task is aborted instead of silently dropped.
         {
             let mut guard = self.hnsw_persist_task.lock().await;
             if let Some(handle) = guard.take() {
-                match tokio::time::timeout(std::time::Duration::from_secs(10), handle).await {
-                    Ok(Ok(())) => info!("HNSW persist task shut down cleanly"),
-                    Ok(Err(e)) => error!("HNSW persist task panicked during shutdown: {}", e),
-                    Err(_) => warn!("HNSW persist task did not stop within 10s — abandoning"),
-                }
+                Self::await_task_or_abort(
+                    "HNSW persist task",
+                    handle,
+                    std::time::Duration::from_secs(5),
+                )
+                .await;
             }
         }
 
@@ -1018,6 +1023,43 @@ impl McpServer {
         }
 
         info!("Graceful shutdown complete — all data persisted");
+    }
+
+    async fn await_task_or_abort(
+        task_name: &'static str,
+        mut handle: JoinHandle<()>,
+        timeout: std::time::Duration,
+    ) {
+        tokio::select! {
+            result = &mut handle => {
+                match result {
+                    Ok(()) => info!("{task_name} shut down cleanly"),
+                    Err(e) if e.is_cancelled() => {
+                        info!("{task_name} was already cancelled before shutdown await")
+                    }
+                    Err(e) => error!("{task_name} panicked during shutdown: {e}"),
+                }
+            }
+            _ = tokio::time::sleep(timeout) => {
+                warn!(
+                    task = task_name,
+                    timeout_ms = timeout.as_millis() as u64,
+                    "MEJEPA_BACKGROUND_TASK_ABORT_ON_SHUTDOWN: task ignored shutdown deadline; aborting"
+                );
+                handle.abort();
+                match tokio::time::timeout(std::time::Duration::from_secs(5), &mut handle).await {
+                    Ok(Ok(())) => info!("{task_name} completed after abort signal"),
+                    Ok(Err(e)) if e.is_cancelled() => {
+                        info!("{task_name} abort confirmed during shutdown")
+                    }
+                    Ok(Err(e)) => error!("{task_name} panicked after abort signal: {e}"),
+                    Err(_) => warn!(
+                        task = task_name,
+                        "MEJEPA_BACKGROUND_TASK_ABORT_DEFERRED: task handle did not resolve after abort; shutdown will continue after durable state is persisted"
+                    ),
+                }
+            }
+        }
     }
 
     /// Handle a single JSON-RPC request.
@@ -1083,6 +1125,10 @@ impl McpServer {
         let default_path = context_graph_paths::durable_storage_path()?;
         info!("Using default D-backed storage path: {:?}", default_path);
         Ok(default_path)
+    }
+
+    pub fn rocksdb_db_arc(&self) -> Arc<rocksdb::DB> {
+        Arc::clone(&self.rocksdb_db)
     }
 
     /// Resolve the models directory path from configuration or environment.

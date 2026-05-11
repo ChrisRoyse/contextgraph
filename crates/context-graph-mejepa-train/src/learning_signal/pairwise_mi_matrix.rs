@@ -92,7 +92,7 @@ impl PairwiseMiAuditor {
     }
 
     pub fn should_run(&self, step: u64) -> bool {
-        step % self.period_steps == 0
+        step.is_multiple_of(self.period_steps)
     }
 
     pub fn run_from_panels(

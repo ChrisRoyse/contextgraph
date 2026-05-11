@@ -67,6 +67,29 @@ if [ ! -x "$BINARY" ]; then
     exit 1
 fi
 
+if [ -z "$DATA_ROOT" ]; then
+    echo "MEJEPA_D_DRIVE_PATH_INVALID: CONTEXTGRAPH_DATA_ROOT is empty" >&2
+    exit 1
+fi
+
+case "$DATA_ROOT" in
+    /*) ;;
+    *)
+        echo "MEJEPA_D_DRIVE_PATH_INVALID: CONTEXTGRAPH_DATA_ROOT must be an absolute path: $DATA_ROOT" >&2
+        exit 1
+        ;;
+esac
+
+if [ ! -d "$DATA_ROOT" ]; then
+    echo "MEJEPA_D_DRIVE_UNAVAILABLE: $DATA_ROOT does not exist" >&2
+    exit 1
+fi
+
+if [ ! -w "$DATA_ROOT" ]; then
+    echo "MEJEPA_D_DRIVE_NOT_WRITABLE: $DATA_ROOT is not writable" >&2
+    exit 1
+fi
+
 mkdir -p "$(dirname "$LOGFILE")" "$(dirname "$PIDFILE")" "$STORAGE"
 
 # Start daemon
@@ -77,7 +100,7 @@ CONTEXT_GRAPH_STORAGE_PATH="$STORAGE" \
 CONTEXT_GRAPH_DB_PATH="$STORAGE" \
 CONTEXT_GRAPH_MODELS_PATH="$MODELS" \
 RUST_LOG=warn \
-setsid "$BINARY" --mode "$MODE" --daemon-server-only --daemon-port "$PORT" --http-port "$HTTP_PORT" >> "$LOGFILE" 2>&1 < /dev/null &
+setsid "$BINARY" --mode "$MODE" --daemon-server-only --d-root "$DATA_ROOT" --daemon-port "$PORT" --http-port "$HTTP_PORT" >> "$LOGFILE" 2>&1 < /dev/null &
 echo $! > "$PIDFILE"
 
 # Wait for it to start listening

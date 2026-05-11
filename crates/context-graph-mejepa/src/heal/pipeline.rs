@@ -17,7 +17,8 @@ use crate::heal::ewc::{EwcPlusPlus, HessianTraceProbe, PredictorGradAccessor};
 use crate::heal::integrity::{ChainIntegrityChecker, WitnessChainAppender};
 use crate::heal::lora_refresh::{CorpusSlice, LoraRefresher};
 use crate::heal::promote::{
-    AbcPromoter, HoldoutDataset, HoldoutExample, PromotionGate, PromotionLockState, TriggerReason,
+    AbcPromoter, HoldoutDataset, HoldoutExample, PromotionGate, PromotionLockState,
+    RetrainPromoteRequest, TriggerReason,
 };
 use crate::heal::regulate::{assess_substrate, regulate_substrate};
 use crate::heal::store::HealRocksStore;
@@ -451,15 +452,16 @@ impl SelfHealingPipeline {
         trigger: TriggerReason,
     ) -> Result<crate::heal::promote::HealReport, HealError> {
         let holdout = self.synthetic_holdout_for_current_window()?;
-        self.abc_promoter.retrain_and_promote(
-            trigger,
-            &self.predictor.parameters_flat(),
-            self.storage.clone(),
-            &mut self.witness_chain,
-            holdout,
-            self.promotion_lock.clone(),
-            &self.status.lock().unwrap().active_calibration_version,
-        )
+        self.abc_promoter
+            .retrain_and_promote(RetrainPromoteRequest {
+                trigger_reason: trigger,
+                current_weights: &self.predictor.parameters_flat(),
+                storage: self.storage.clone(),
+                witness_chain: &mut self.witness_chain,
+                holdout,
+                lock: self.promotion_lock.clone(),
+                calibration_version: &self.status.lock().unwrap().active_calibration_version,
+            })
     }
 
     pub fn synthetic_holdout_for_current_window(&self) -> Result<HoldoutDataset, HealError> {

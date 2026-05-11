@@ -115,6 +115,19 @@ impl ShiftSubscriber {
     pub fn open(config: MeJepaShiftSubscriberConfig) -> Result<Self> {
         config.validate()?;
         let db = open_infer_rocksdb(&config.infer_db_path)?;
+        Self::open_with_db(config, db)
+    }
+
+    pub fn open_with_db(config: MeJepaShiftSubscriberConfig, db: Arc<rocksdb::DB>) -> Result<Self> {
+        config.validate()?;
+        for cf in context_graph_mejepa::MEJEPA_INFER_CFS {
+            if db.cf_handle(cf).is_none() {
+                return Err(SubscriberError::invalid(
+                    "rocksdb.column_family",
+                    format!("missing ME-JEPA inference column family {cf}"),
+                ));
+            }
+        }
         let panel_store = PanelStore::open(&config.panel_db_path)?;
         let store = RocksDbInferStore::new(db.clone());
         let watermark_writer = WatermarkWriter::new(db.clone())?;

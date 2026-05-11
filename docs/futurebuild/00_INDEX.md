@@ -28,6 +28,18 @@
 | 12 | [`12_IMPLEMENTATION_PHASES.md`](12_IMPLEMENTATION_PHASES.md) | Phased rollout with effort estimates and ship gates |
 | 13 | [`13_TASK_INDEX.md`](13_TASK_INDEX.md) | Atomic task graph (DAG) by domain with dependencies |
 | 14 | [`14_NEW_LOOP_MD.md`](14_NEW_LOOP_MD.md) | The refactored `.claude/loop.md` content (single outer loop around Claude Code) |
+| 15 | [`15_PREDICTION_TAXONOMY.md`](15_PREDICTION_TAXONOMY.md) | Complete catalog of every prediction ME-JEPA emits (Q1–Q5, all heads, all classes) |
+| 16 | [`16_STORAGE_LOCATION_POLICY.md`](16_STORAGE_LOCATION_POLICY.md) | D-drive only for bulk state — locked decision restated for futurebuild |
+| 17 | [`17_BLIND_SPOTS_AND_MISSING_CAPABILITIES.md`](17_BLIND_SPOTS_AND_MISSING_CAPABILITIES.md) | Audit of what 00–16 missed; resolutions added in 18–26 |
+| 18 | [`18_INTEGRATION_AND_E2E_TESTING.md`](18_INTEGRATION_AND_E2E_TESTING.md) | Integration / E2E / chaos / load / soak testing strategy |
+| 19 | [`19_OPERATOR_RUNBOOK.md`](19_OPERATOR_RUNBOOK.md) | Daily / weekly / monthly / incident operations |
+| 20 | [`20_DISASTER_RECOVERY_AND_BACKUP.md`](20_DISASTER_RECOVERY_AND_BACKUP.md) | Backup strategy + restore procedures + DR drill |
+| 21 | [`21_COLD_START_AND_BOOTSTRAP.md`](21_COLD_START_AND_BOOTSTRAP.md) | Fresh-deploy behavior + baseline checkpoint + cold-start widening |
+| 22 | [`22_ADVERSARIAL_ROBUSTNESS.md`](22_ADVERSARIAL_ROBUSTNESS.md) | Adversarial threats + defenses; secret redaction; cross-language label gating |
+| 23 | [`23_MULTI_AGENT_ISOLATION.md`](23_MULTI_AGENT_ISOLATION.md) | Multi-agent / multi-tenant isolation + concurrency |
+| 24 | [`24_API_STABILITY.md`](24_API_STABILITY.md) | Semver / deprecation cycle / replay reproducibility |
+| 25 | [`25_FUTURE_DOMAINS_MEJEPA_X.md`](25_FUTURE_DOMAINS_MEJEPA_X.md) | Template for ME-JEPA-Voice / -Image / new modalities |
+| 26 | [`26_DOCUMENTATION_MAP.md`](26_DOCUMENTATION_MAP.md) | Cross-repo navigation + glossary |
 
 ## Spec hierarchy
 
@@ -48,7 +60,13 @@
 | **LOOP** — refactor `.claude/loop.md` + delete inner-loop residue | [`SPEC-LOOP.md`](specs/functional/SPEC-LOOP.md) | [`TECH-LOOP.md`](specs/technical/TECH-LOOP.md) | [`tasks/loop/`](tasks/loop/) |
 | **HEAL** — autonomous observe + EWC++ + drift + A/B/C scheduler | [`SPEC-HEAL.md`](specs/functional/SPEC-HEAL.md) | [`TECH-HEAL.md`](specs/technical/TECH-HEAL.md) | [`tasks/heal/`](tasks/heal/) |
 | **CORPUS** — finish the 300×8 SWE-bench Lite mutation corpus + per-language operators | (covered by existing [`SPEC-CORPUS-functional.md`](../ruvectorfindings/specs/functional/SPEC-CORPUS-functional.md)) | (covered) | [`tasks/corpus/`](tasks/corpus/) |
-| **OBSERVABILITY** — live conformal/OOD/p50/p99 capture; ship-gate dashboard | (covered by existing `SPEC-EVAL` + extensions in [`SPEC-OBSERVABILITY.md`](specs/functional/SPEC-OBSERVABILITY.md)) | [`TECH-OBSERVABILITY.md`](specs/technical/TECH-OBSERVABILITY.md) | [`tasks/observability/`](tasks/observability/) |
+| **OBSERVABILITY** — live conformal/OOD/p50/p99 capture; ship-gate dashboard | [`SPEC-OBSERVABILITY.md`](specs/functional/SPEC-OBSERVABILITY.md) | [`TECH-OBSERVABILITY.md`](specs/technical/TECH-OBSERVABILITY.md) | [`tasks/observability/`](tasks/observability/) |
+| **TESTING** — integration / E2E / chaos / load / soak harnesses | [`SPEC-TESTING.md`](specs/functional/SPEC-TESTING.md) | [`TECH-TESTING.md`](specs/technical/TECH-TESTING.md) | [`tasks/testing/`](tasks/testing/) |
+| **RUNBOOK** — operator daily/weekly/incident operations + CLI | [`SPEC-RUNBOOK.md`](specs/functional/SPEC-RUNBOOK.md) | [`TECH-RUNBOOK.md`](specs/technical/TECH-RUNBOOK.md) | [`tasks/runbook/`](tasks/runbook/) |
+| **DR** — disaster recovery + backup + restore + drill | [`SPEC-DR.md`](specs/functional/SPEC-DR.md) | [`TECH-DR.md`](specs/technical/TECH-DR.md) | [`tasks/dr/`](tasks/dr/) |
+| **SECURITY** — adversarial robustness + secret redaction + audit trails | [`SPEC-SECURITY.md`](specs/functional/SPEC-SECURITY.md) | [`TECH-SECURITY.md`](specs/technical/TECH-SECURITY.md) | [`tasks/security/`](tasks/security/) |
+| **BOOTSTRAP** — fresh-deploy + baseline checkpoint + cold-start widening | (in [`21_COLD_START_AND_BOOTSTRAP.md`](21_COLD_START_AND_BOOTSTRAP.md)) | (in `21 §3-7`) | [`tasks/bootstrap/`](tasks/bootstrap/) |
+| **API** — semver / deprecation / replay / migration | (in [`24_API_STABILITY.md`](24_API_STABILITY.md)) | (in `24`) | [`tasks/api/`](tasks/api/) |
 
 ## What this directory is NOT
 

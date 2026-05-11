@@ -33,10 +33,10 @@ impl ShiftSubscriber {
     }
 
     async fn run_until_idle_inner(&self) -> Result<SubscriberRunSummary> {
-        let mut tails = self.open_tails()?;
         let mut outcomes = Vec::new();
         let mut lag_exceeded_since = None;
         loop {
+            let mut tails = self.open_tails()?;
             let mut made_progress = false;
             for tail in &mut tails {
                 self.update_lag_alert(tail, &mut lag_exceeded_since)?;
@@ -93,7 +93,6 @@ impl ShiftSubscriber {
         &self,
         shutdown: &mut watch::Receiver<bool>,
     ) -> Result<SubscriberRunSummary> {
-        let mut tails = self.open_tails()?;
         let mut outcomes = Vec::new();
         let mut lag_exceeded_since = None;
         let poll = Duration::from_millis(self.config.tail_poll_interval_ms);
@@ -101,6 +100,7 @@ impl ShiftSubscriber {
             if *shutdown.borrow() {
                 break;
             }
+            let mut tails = self.open_tails()?;
             let mut made_progress = false;
             for tail in &mut tails {
                 self.update_lag_alert(tail, &mut lag_exceeded_since)?;
@@ -205,12 +205,6 @@ impl ShiftSubscriber {
                 .map(|record| record.last_consumed_byte_offset)
                 .unwrap_or(0);
             tails.push(ShiftLogTail::new(path, offset));
-        }
-        if tails.is_empty() {
-            return Err(SubscriberError::invalid(
-                "shift_log_dir",
-                format!("{} contains no session JSONL files", dir.display()),
-            ));
         }
         Ok(tails)
     }

@@ -475,7 +475,20 @@ mod tests {
         let embedder_enum = props["embedder"]["enum"].as_array().unwrap();
         // CD-M1 FIX: E6/E12/E13 removed from search_by_embedder (non-HNSW)
         // E14 added post-Phase-C (HNSW-capable 1024-D BGE-M3 Dense)
-        assert_eq!(embedder_enum.len(), 11);
+        assert_eq!(
+            embedder_enum,
+            &vec![
+                json!("E1"),
+                json!("E2"),
+                json!("E3"),
+                json!("E4"),
+                json!("E7"),
+                json!("E8"),
+                json!("E9"),
+                json!("E10"),
+                json!("E14")
+            ]
+        );
     }
 
     #[test]

@@ -1,0 +1,26 @@
+[Unit]
+Description=ContextGraph ME-JEPA flywheel daemon
+After=network.target
+Documentation=file:/home/cabdru/contextgraph/docs/futurebuild/07_TRAINING_DATA_FLYWHEEL.md
+
+[Service]
+Type=simple
+WorkingDirectory=/home/cabdru/contextgraph
+Environment=CONTEXTGRAPH_DATA_ROOT=/mnt/d/contextgraph
+Environment=CONTEXT_GRAPH_STORAGE_PATH=/mnt/d/contextgraph/storage/contextgraph-rocksdb
+Environment=CONTEXT_GRAPH_DB_PATH=/mnt/d/contextgraph/storage/contextgraph-rocksdb
+Environment=CONTEXT_GRAPH_MODELS_PATH=/mnt/d/cabdru/contextgraph/models
+Environment=RUST_LOG=info,context_graph_mejepa=debug
+ExecStartPre=/usr/bin/test -x /home/cabdru/contextgraph/target/release/context-graph-mcp
+ExecStartPre=/usr/bin/test -d /mnt/d/contextgraph
+ExecStartPre=/usr/bin/test -w /mnt/d/contextgraph
+ExecStartPre=/usr/bin/test -f /mnt/d/cabdru/contextgraph/models/bge-m3-dense/model.safetensors
+ExecStart=/home/cabdru/contextgraph/target/release/context-graph-mcp --mode reality-loop --daemon-server-only --d-root /mnt/d/contextgraph --daemon-port 3100 --http-port 3101
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=300s
+StandardOutput=append:/mnt/d/contextgraph/logs/mejepa-daemon.stdout.log
+StandardError=append:/mnt/d/contextgraph/logs/mejepa-daemon.stderr.log
+
+[Install]
+WantedBy=default.target

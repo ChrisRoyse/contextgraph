@@ -49,6 +49,7 @@ jsonschema = { version = "0.18", features = ["draft202012"] }
 thiserror = { workspace = true }
 anyhow = "1.0"
 async-trait = { workspace = true }
+futures-util = "0.3"
 
 # Logging
 tracing = { workspace = true }

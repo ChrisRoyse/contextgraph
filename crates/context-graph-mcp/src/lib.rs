@@ -16,6 +16,8 @@ compile_error!(
 );
 
 pub mod adapters;
+pub mod daemon;
+pub mod daemon_validate;
 pub mod handlers;
 pub mod monitoring;
 pub mod protocol;
