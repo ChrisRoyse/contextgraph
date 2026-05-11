@@ -65,15 +65,39 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT (agent-211-task-updater)
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Audit pass against current tree on 2026-05-10:**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- ✅ **Crate `context-graph-mejepa-shift-subscriber` does NOT exist yet** — CF descriptor module lands in the same not-yet-existing crate created by TASK-SHIFT-001.
-- ⚠ **CF naming overlap audit:** the 5 CFs declared here (`CF_MEJEPA_SHIFT_WATERMARK`, `CF_MEJEPA_LIVE_PREDICTIONS`, `CF_MEJEPA_ORACLE_VERDICTS`, `CF_MEJEPA_TRAIN_CERTS`, `CF_MEJEPA_PANELS`) DO match the doc 11 / CLAUDE.md §11.13 artifact layout. Sibling CFs `CF_MEJEPA_ACTIVE_POINTERS` and `CF_MEJEPA_HEAL_REPORTS` are already used by `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` against a separate RocksDB instance — naming convention consistent.
-- ✅ `rocksdb` workspace dep present; `sha2` workspace dep present (used by `context-graph-witness` already).
-- ✅ Constitution `<naming_conventions>` row "rocksdb_cfs SCREAMING_SNAKE with CF_ prefix" still in force.
-- No drift in `<files_to_create>` paths.
+**Confirmed 2026-05-11:**
+- `CF_MEJEPA_SHIFT_WATERMARK` is already declared in `crates/context-graph-mejepa-cf/src/lib.rs:14` as a `pub const &str`. **No new CF declaration needed.**
+- The CF is already a member of `SELF_HEALING_REFERENCED_CFS` (line 50) and `HYGIENE_CFS` (line 74) — Phase 5 self-healing and Phase 6 hygiene already open it.
+- The CF is opened by `crates/context-graph-mejepa/src/heal/store.rs` and friends.
+
+**Decided scope for this task (refined):**
+1. Document the canonical key layout: `b"wm:" || session_id_bytes_lowercase_hex(32 bytes)` (UTF-8). Total key length: 35 bytes. Rationale: prefix-scannable; UTF-8 hex avoids non-ASCII bytes that some RocksDB iterators mishandle in tools that pretty-print keys.
+2. Document the canonical value layout: JSON-serialized `WatermarkRecord` (sister TASK-SHIFT-002):
+   ```
+   {
+     "session_id_hex": "<32 lowercase hex>",
+     "last_consumed_shift_id": "01J...",
+     "last_consumed_byte_offset": 12345,
+     "last_advanced_at_unix_seconds": 1715000000,
+     "provenance_corpus_sha": "<64 hex>",
+     "provenance_code_version": "<git describe output>"
+   }
+   ```
+3. NO `bincode`. JSON is the format per memory `2026-02 lesson: bincode + skip_serializing_if = BROKEN`.
+4. Implement the layout encoders/decoders in `crates/context-graph-mejepa-shift-subscriber/src/watermark_layout.rs` (a 50-line helper used by sister TASK-SHIFT-008's `WatermarkWriter`).
+5. Unit tests against a tempdir RocksDB asserting:
+   (a) `put → get` round-trips the JSON byte-equal,
+   (b) prefix iter on `b"wm:"` returns ALL session rows in lexicographic SessionId order,
+   (c) malformed value (e.g., truncated JSON) surfaces a structured `MEJEPA_SHIFT_SUBSCRIBER_WATERMARK_DECODE_FAILED` error (NEVER `unwrap`),
+   (d) duplicate keys atomically overwrite (idempotent advance).
+
+**FSV for this task:** the unit tests above run against a fresh `tempfile::TempDir`-backed RocksDB; after each `put`, a SEPARATE `db.get(key)` confirms the bytes; the test directory is `cat`-ed (or LSM-listed) to prove the SST file exists on disk. Source of Truth: real RocksDB SST files + readback bytes.
+
+---
 
 <task_spec id="TASK-SHIFT-004" version="1.0">
 <metadata>

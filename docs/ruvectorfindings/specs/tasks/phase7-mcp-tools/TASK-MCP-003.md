@@ -65,35 +65,24 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — REQUIRES REWORK
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Drift summary:** This task body assumes a sub-module file at `crates/context-graph-mcp/src/handlers/tools/mejepa/predict_latest.rs`. The codebase took a different path: `mejepa_predict_latest` has **already been shipped** as `call_mejepa_predict_latest` (line ~151) in the flat file `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs`.
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**Actual file locations (verified 2026-05-10):**
+**This task is now HARDENING-ONLY.** `mejepa_predict_latest` already ships at `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs:151-220` (`call_mejepa_predict_latest`).
 
-- `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` — flat file containing `call_mejepa_predict_latest` (~line 151) and 4 other handlers.
-- `crates/context-graph-mcp/src/handlers/tools/embedder_tools.rs` — contains 3 more shipped handlers.
-- `crates/context-graph-mcp/src/tools/names.rs` — `MEJEPA_PREDICT_LATEST` constant at line ~102.
-- The `crates/context-graph-mcp/src/handlers/tools/mejepa/` directory **does not exist**.
+**Drift from original task body:**
+- The handler exists. It accepts a 32-character hex `sessionId` decoding to `[u8; 16]`, validates `limit ∈ [1, 1000]`, opens the infer RocksDB, dispatches `MejepaStore::read_live_predictions`.
+- The SHIPPED response is `{"predictions": [...]}`. It does NOT yet include `session_known: bool` per AC-SHIFT-02-03 / EC-SHIFT-11.
+- Empty-session today returns `{"predictions": []}` — correct in spirit but missing the explicit `session_known: false` flag.
 
-**MEJEPA MCP tools — SHIPPED (8) vs PENDING (10):**
+**Decided scope for this task:**
+1. Extend the response payload at `mejepa_tools.rs:205-207` to include `session_known: bool`. Compute it via a separate `MejepaStore::session_known(session_id_bytes) -> bool` call (extension trait method on `MejepaStore` shipped in `crates/context-graph-mejepa/src/compiler.rs:127`). Add the trait method + `RocksDbInferStore` impl as part of this task — it is a single CF prefix-existence check (`prefix_iterator(session_id_bytes).next().is_some()`).
+2. Update the existing `live_prediction_write_reads_back_physical_row` test in `crates/context-graph-mejepa/src/store.rs:209` to also assert `session_known == true`.
+3. Add a new test asserting empty-session returns `{"predictions": [], "session_known": false}` AND latency p50 < 50 ms (`Instant::now()` measurement on a fresh tempdir RocksDB).
+4. NO change to the SessionId contract (hex-32 → `[u8; 16]`); the SPEC's "up to 64 chars UTF-8" is stale.
 
-SHIPPED: `mejepa_verify`, `mejepa_predict_latest`, `mejepa_constellation_inspect`, `mejepa_heal_status`, `mejepa_rollback_to`, `mejepa_load_learner_state`, `mejepa_routing_lookup`, `mejepa_vram_budget_report`.
-
-PENDING: `mejepa_observe_shift`, `mejepa_subscriber_status`, `mejepa_capture_audit` (Phase 7); `mejepa_gc_run`, `mejepa_quota_status`, `mejepa_witness_compress` (Phase 6); `mejepa_eval_run`, `mejepa_eval_ship_gate_status`, `mejepa_active_learning_queue`, `mejepa_active_learning_label` (Phase 8).
-
-**Specific path discrepancies in this task body:**
-
-- `<files_to_create>` / `<signatures>` paths under `crates/context-graph-mcp/src/handlers/tools/mejepa/predict_latest.rs` — non-existent.
-- The handler is shipped, but the writer side (sister TASK-SHIFT-007 producing `CF_MEJEPA_LIVE_PREDICTIONS` rows) may not yet be wired — verify whether the read path actually returns rows or always returns `session_known: false`.
-- The 10-byte key format `session_id_hash[6] || witness_chain_offset_be[8]` needs to be re-verified against the shipped CF write path.
-
-**Recommended rework before implementing:**
-
-1. Read the current shipped `call_mejepa_predict_latest` in `mejepa_tools.rs` and compare against `<scope>` / `<verification>` (NFR-SHIFT-03 p50 < 50 ms, EC-SHIFT-11 empty-friendly).
-2. Confirm the CF key format and writer-side population status (TASK-SHIFT-007).
-3. If gaps exist (e.g., limit clamping, empty-result shape), pivot this task to "audit + close gaps in shipped handler".
-4. Update `<files_to_create>` to reflect the flat-file structure.
+**FSV for this task:** the new test reads back the response JSON, asserts every documented field present, and asserts the latency budget on an EMPTY-session call (Source of Truth: response JSON + `Instant` measurement).
 
 ---
 

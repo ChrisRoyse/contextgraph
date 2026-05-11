@@ -65,15 +65,50 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT (agent-211-task-updater)
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Audit pass against current tree on 2026-05-10:**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- ✅ **Crate `context-graph-mejepa-shift-subscriber` does NOT exist yet** — `ReplayContext` lands in the same not-yet-existing crate.
-- ⚠ **Sister phase dependency:** `mejepa_observe_shift` MCP tool is PENDING (not in `tools/names.rs`). The replay-mode caller of `process_shift_with_context` does not yet exist; this task's `ReplayContext` is the contract for the future TASK-MCP-004 handler that will land alongside the other 2 PENDING MCP tools (`mejepa_subscriber_status`, `mejepa_capture_audit`).
-- ✅ `SamplingDecision` enum (declared in TASK-SHIFT-007's `traits.rs`) needs the `ReplayObserved` variant added — confirm during implementation that the variant was extended, not duplicated.
-- ✅ EWC++ idempotency property is doc 11 §5.2 / §11 — cite path in module-level doc comment as instructed.
-- No drift in `<files_to_create>` paths.
+**Confirmed 2026-05-11:**
+- `MeJepaCompiler::observe(panel, oracle_outcome)` lives at `crates/context-graph-mejepa/src/compiler.rs:391` (public) and is the OWNER of EWC++ regularization (SPEC-SELF-HEALING REQ-HEAL-01/02).
+- EWC++ Fisher matrix update lives in `crates/context-graph-mejepa/src/heal/ewc.rs` (SHIPPED Phase 5).
+- This task wires the call site only — does NOT modify the gradient or Fisher computation.
+
+**Decided scope for this task (refined):**
+1. In `process_shift` (TASK-SHIFT-007), the observe path is:
+   ```
+   if utml.l_step >= config.l_step_observe_threshold {
+       let observe_result = self.mejepa_handle.observe(panel_t1, panel_t2, oracle_outcome).await?;
+       train_cert_writer.write(TrainCert {
+           sampling_decision: SamplingDecision::Observed,
+           replay: shift_replay_flag,
+           l_step: utml.l_step,
+           factors: utml.clone(),
+           grad_norm: observe_result.grad_norm,
+           ..
+       })?;
+   } else {
+       metrics.dropped_l_step_count.fetch_add(1, Ordering::Relaxed);
+       train_cert_writer.write(TrainCert {
+           sampling_decision: SamplingDecision::DroppedLStepBelowThreshold,
+           replay: shift_replay_flag,
+           l_step: utml.l_step,
+           factors: utml.clone(),
+           grad_norm: 0.0,
+           ..
+       })?;
+       tracing::debug!(code = "MEJEPA_SHIFT_OBSERVE_DROPPED", shift_id = %shift.shift_id, l_step = utml.l_step, threshold = config.l_step_observe_threshold);
+   }
+   ```
+2. Idempotency: `observe()` is NOT idempotent across replays (Fisher information accumulates); this is by design. The `replay: true` flag in the per-step cert documents it for audit. EWC++ regularization tolerates duplicate observe calls within bounds.
+3. Out-of-order: shifts arrive via JSONL tail in producer order; `max_concurrent_shifts: 1` (REQ-SHIFT-17) preserves order at the subscriber level. Replay via `mejepa_observe_shift` MAY introduce out-of-order observes; the per-cert `replay: true` flag is the audit trail.
+4. NaN/Inf in L_step → return `MEJEPA_OBSERVE_BATCH_NAN`; observe() skipped; per BR-SHIFT-03 the predict() persistence path still ran in TASK-SHIFT-007.
+
+**Cross-phase deps:** sister TASK-SHIFT-007 calls this code path; SPEC-SELF-HEALING owns the observe() body.
+
+**FSV for this task:** integration test (a) feeds 1,000 shifts with controlled L_step distribution → asserts `metrics.dropped_l_step_count` matches the count of L_step < 0.05 inputs; (b) feeds a shift whose L_step computation produces NaN → asserts `MEJEPA_OBSERVE_BATCH_NAN` returned and observe() not invoked; (c) replays an already-consumed shift via the future `mejepa_observe_shift` handler → asserts the per-step training cert carries `replay: true`. Source of Truth: separate dump of `CF_MEJEPA_TRAIN_CERTS` after each scenario.
+
+---
 
 <task_spec id="TASK-SHIFT-011" version="1.0">
 <metadata>

@@ -65,15 +65,24 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT (agent-211-task-updater)
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Audit pass against current tree on 2026-05-10:**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- ✅ **Crate `context-graph-mejepa-shift-subscriber` does NOT exist yet.** Subscriber crate is created by TASK-SHIFT-001; this task adds the second batch of foundation data shapes into that same not-yet-existing crate.
-- ✅ `context-graph-mejepa-instruments` crate IS shipped at `crates/context-graph-mejepa-instruments/` with `InstrumentSlot` enum + `Panel`/`PanelBuilder` + `EOracleInstrument` (per project memory `project_phase0_mejepa_mutation_corpus.md` 2026-05-09d entry). The `context-graph-mejepa-instruments = { path = "../context-graph-mejepa-instruments" }` dependency declared here is valid.
-- ⚠ The "stubbed cross-cutting types" (`RealityPrediction`, `VerifyVerdict`, `OracleOutcome`, `AuxHeadPrediction`, `CounterfactualResult`) typed as `serde_json::Value` are still STUBS — SPEC-INFERENCE/SPEC-PREDICTOR/SPEC-CORPUS concrete types are not yet shipped under their owning crates. Stub policy stays in force.
-- ✅ `lru`, `parking_lot`, `dashmap` are workspace deps in the current `Cargo.toml`; `procfs` may need adding (verify before edit).
-- No drift in `<files_to_create>` paths.
+**Confirmed 2026-05-11:** `WatermarkRecord`, `ShiftLogTail`, `InstrumentCache`, `SlotKey`, `SubscriberMetrics`, `UtmlFactorBundle`, `CaptureAuditBundle`, `LiveSubscriberStatus`, `PanicInfo` types do NOT exist anywhere in the workspace yet. This task creates them all in the NEW `context-graph-mejepa-shift-subscriber` crate.
+
+**Cross-cutting types to import (do NOT redefine):**
+- `InstrumentSlot` enum — owned by `crates/context-graph-mejepa-instruments/` (sister Phase 1 crate). Re-export through `pub use context_graph_mejepa_instruments::InstrumentSlot;` so SlotKey can use it.
+- `RealityPrediction`, `VerifyVerdict`, `OracleOutcome` — owned by `crates/context-graph-mejepa/src/`. Re-export.
+- `AuxHeadPrediction`, `CounterfactualResult` — owned by `crates/context-graph-mejepa/src/predictor/`. Re-export.
+
+**SessionId everywhere:** every type that carries a session id MUST hold the `SessionId([u8; 16])` newtype from TASK-SHIFT-001 — NOT `String`. The TECH spec's `HashMap<SessionId, …>` keys serialize the wrapped 16 bytes as a 32-char hex string in JSON output (implement `Serialize`/`Deserialize` accordingly so `LiveSubscriberStatus.last_watermark_per_session` round-trips through MCP).
+
+**SubscriberMetrics atomics:** all counters use `AtomicU64`/`AtomicUsize` (lock-free); the lag-alert state machine uses `AtomicU8` representing the variant + `compare_exchange_weak` for transitions; the 1,000-shift error rate uses `parking_lot::RwLock<CircularBuffer<ErrorEvent, 1000>>` (use the `circular-buffer` crate or vendor a thin clean-room copy per CLAUDE.md). Per WebSearch best practice: RwLock buys nothing on a stateful LRU — for `InstrumentCache` use `parking_lot::Mutex<LruCache<...>>` instead, or wrap a single `RwLock<LruCache<...>>` (write-lock on every get because LRU mutates recency).
+
+**FSV for this task:** unit tests covering serde round-trips on every data model; atomic increment/decrement correctness on `SubscriberMetrics`; `LiveSubscriberStatus` JSON output matches the wire schema in `TECH-SHIFT-SUBSCRIBER#api_contracts[mejepa_subscriber_status]`. Source of Truth: typed structures + serde JSON.
+
+---
 
 <task_spec id="TASK-SHIFT-002" version="1.0">
 <metadata>

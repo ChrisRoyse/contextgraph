@@ -65,36 +65,26 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — REQUIRES REWORK
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Drift summary:** This task body assumes a sub-module file at `crates/context-graph-mcp/src/handlers/tools/mejepa/subscriber_status.rs`. The codebase took a different path: MCP MEJEPA handlers live in flat files (`mejepa_tools.rs` + `embedder_tools.rs`). **`mejepa_subscriber_status` is PENDING** — it has NOT been shipped yet.
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**Actual file locations (verified 2026-05-10):**
+**This task creates a NEW MCP handler.** Today no `mejepa_subscriber_status` const, schema, dispatcher arm, or handler exists.
 
-- `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` — flat file containing 5 shipped handlers. **Does NOT contain `subscriber_status`.**
-- `crates/context-graph-mcp/src/handlers/tools/embedder_tools.rs` — contains 3 more shipped handlers.
-- `crates/context-graph-mcp/src/tools/names.rs` — no `MEJEPA_SUBSCRIBER_STATUS` constant yet.
-- The `crates/context-graph-mcp/src/handlers/tools/mejepa/` directory **does not exist**.
-- `crates/context-graph-mejepa-shift-subscriber/` **does not exist** — `SubscriberMetrics` + `LagMonitor` + `WatermarkWriter` types are not yet in tree.
+**Drift from original task body:**
+- File path `crates/context-graph-mcp/src/handlers/tools/mejepa/subscriber_status.rs` is wrong — the sub-module tree was never created.
+- Place the new handler in `mejepa_tools.rs` next to `call_mejepa_predict_latest`.
 
-**MEJEPA MCP tools — SHIPPED (8) vs PENDING (10):**
+**Decided scope for this task:**
+1. Add `SubscriberStatusArgs` DTO (empty struct with `#[serde(deny_unknown_fields)]`).
+2. Add `pub(crate) async fn call_mejepa_subscriber_status(&self, id, _args) -> JsonRpcResponse` on `Handlers`. Body: snapshot atomics from `SubscriberMetrics` (sister TASK-SHIFT-002 type), read CF_MEJEPA_SHIFT_WATERMARK to compose `last_watermark_per_session: HashMap<String, String>` (key is hex-encoded SessionId), measure RSS via `procfs::process::Process::myself()?.statm()?.resident * page_size` (add `procfs` to crate `[dependencies]` in `Cargo.toml`), package as `LiveSubscriberStatus` (sister TASK-SHIFT-002).
+3. Use the `MEJEPA_SUBSCRIBER_STATUS` constant added by TASK-MCP-001.
+4. NEVER returns stale-but-cached state — `task_alive_since: None` when supervisor detected panic; `last_panic: Some(PanicInfo)` populated.
+5. Latency p50 < 50 ms target (in-memory atomics + single CF prefix iter).
 
-SHIPPED: `mejepa_verify`, `mejepa_predict_latest`, `mejepa_constellation_inspect`, `mejepa_heal_status`, `mejepa_rollback_to`, `mejepa_load_learner_state`, `mejepa_routing_lookup`, `mejepa_vram_budget_report`.
+**Cross-phase dep:** sister TASK-SHIFT-002 (`SubscriberMetrics`, `LiveSubscriberStatus`, `PanicInfo`); sister TASK-SHIFT-008 (watermark reader); sister TASK-SHIFT-010 (subscriber Arc + JoinSet supervisor). Stub locally if SHIFT not landed.
 
-PENDING (this task targets one): `mejepa_observe_shift`, **`mejepa_subscriber_status`**, `mejepa_capture_audit` (Phase 7); `mejepa_gc_run`, `mejepa_quota_status`, `mejepa_witness_compress` (Phase 6); `mejepa_eval_run`, `mejepa_eval_ship_gate_status`, `mejepa_active_learning_queue`, `mejepa_active_learning_label` (Phase 8).
-
-**Specific path discrepancies in this task body:**
-
-- `<files_to_create>` path `crates/context-graph-mcp/src/handlers/tools/mejepa/subscriber_status.rs` — non-existent target tree. Should be a new `call_mejepa_subscriber_status` function added to the flat file `mejepa_tools.rs`.
-- `Arc<SubscriberMetrics>` and `WatermarkWriter::read_all_watermarks` — these types do not yet exist (sister TASK-SHIFT-002 + TASK-SHIFT-008 not shipped).
-- `<depends_on>TASK-MCP-001</depends_on>` — TASK-MCP-001 was never implemented as described.
-
-**Recommended rework before implementing:**
-
-1. Block until Phase 7 shift-subscriber crate ships (TASK-SHIFT-002 for `SubscriberMetrics`, TASK-SHIFT-008 for `WatermarkWriter`).
-2. Rewrite `<files_to_create>` to add `call_mejepa_subscriber_status` as a new function in `mejepa_tools.rs`.
-3. Add `MEJEPA_SUBSCRIBER_STATUS` constant to `crates/context-graph-mcp/src/tools/names.rs`.
-4. Confirm dispatcher wiring path (the actual dispatcher in `handlers/tools/mod.rs` or equivalent) — the sub-module dispatch this task assumes does not exist.
+**FSV for this task:** integration test (a) runs the subscriber for 1,000 synthetic shifts → invokes handler → asserts every documented field populated and finite (Source of Truth: response JSON + separate atomic readback); (b) injects a panic via test hook → asserts `task_alive_since: None` plus `last_panic: Some(_)`; (c) measures latency on 100 sequential calls → asserts p50 < 50 ms.
 
 ---
 

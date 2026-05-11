@@ -65,38 +65,26 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — REQUIRES REWORK
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Drift summary:** This task body assumes a sub-module file at `crates/context-graph-mcp/src/handlers/tools/mejepa/capture_audit.rs`. The codebase took a different path: MCP MEJEPA handlers live in flat files (`mejepa_tools.rs` + `embedder_tools.rs`). **`mejepa_capture_audit` is PENDING** — it has NOT been shipped yet.
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**Actual file locations (verified 2026-05-10):**
+**This task creates a NEW MCP handler.** Today no `mejepa_capture_audit` const, schema, dispatcher arm, or handler exists.
 
-- `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` — flat file containing 5 shipped handlers. **Does NOT contain `capture_audit`.**
-- `crates/context-graph-mcp/src/handlers/tools/embedder_tools.rs` — contains 3 more shipped handlers.
-- `crates/context-graph-mcp/src/tools/names.rs` — no `MEJEPA_CAPTURE_AUDIT` constant yet.
-- The `crates/context-graph-mcp/src/handlers/tools/mejepa/` directory **does not exist**.
-- The 4 RocksDB CFs referenced (`CF_MEJEPA_LIVE_PREDICTIONS`, `CF_MEJEPA_ORACLE_VERDICTS`, `CF_MEJEPA_TRAIN_CERTS`, `CF_MEJEPA_PANELS`) need re-verification against the current storage crate.
+**Drift from original task body:**
+- File path `crates/context-graph-mcp/src/handlers/tools/mejepa/capture_audit.rs` is wrong — the sub-module tree was never created.
+- Place the new handler in `mejepa_tools.rs` (or split into `mejepa_capture_audit_tools.rs` if that file is already past 1500 lines after TASK-MCP-001/004/005 land).
 
-**MEJEPA MCP tools — SHIPPED (8) vs PENDING (10):**
+**Decided scope for this task:**
+1. Add `CaptureAuditArgs { attempt_id: String, page: Option<u32> }` DTO with `#[serde(deny_unknown_fields)]`. Validate `attempt_id` length ≤ 128 chars and is sanitized UTF-8 (`!attempt_id.chars().any(|c| c.is_control())`).
+2. Add `pub(crate) async fn call_mejepa_capture_audit(&self, id, args) -> JsonRpcResponse`. Body: lookup CF_MEJEPA_PANELS by `(attempt_id, time_step)` for t=0/1/2; CF_MEJEPA_LIVE_PREDICTIONS by derived `(session_id, witness_chain_offset)`; CF_MEJEPA_ORACLE_VERDICTS; CF_MEJEPA_TRAIN_CERTS for L_step + factor decomposition. If no rows → query nearest 5 by witness_chain_offset distance via in-memory secondary index → respond `{"attempt_found": false, "nearest_neighbors": [...]}`. If found → assemble `CaptureAuditBundle` (sister TASK-SHIFT-002) with EVERY field; surface `missing_slots: Vec<InstrumentSlot>` explicitly (NEVER zero-fill).
+3. Pagination: when serialized JSON > `audit_chunk_size_bytes` (config default 1 MiB; sister TASK-SHIFT-001), paginate by panel slot; respond `{"bundle": {...slice}, "total_pages": u32, "current_page": u32}`. Sort all keys deterministically; canonicalize floats via `ryu::Buffer::format_finite` for byte-stable diffs across replays.
+4. Use the `MEJEPA_CAPTURE_AUDIT` constant added by TASK-MCP-001.
+5. Latency p50 < 100 ms target (CF prefix scans on warm RocksDB).
 
-SHIPPED: `mejepa_verify`, `mejepa_predict_latest`, `mejepa_constellation_inspect`, `mejepa_heal_status`, `mejepa_rollback_to`, `mejepa_load_learner_state`, `mejepa_routing_lookup`, `mejepa_vram_budget_report`.
+**Cross-phase dep:** sister TASK-SHIFT-002 (`CaptureAuditBundle`, `PanelSnapshot`, `AuxHeadPrediction`, `CounterfactualResult`); sister TASK-SHIFT-007 (writers populate the CFs).
 
-PENDING (this task targets one): `mejepa_observe_shift`, `mejepa_subscriber_status`, **`mejepa_capture_audit`** (Phase 7); `mejepa_gc_run`, `mejepa_quota_status`, `mejepa_witness_compress` (Phase 6); `mejepa_eval_run`, `mejepa_eval_ship_gate_status`, `mejepa_active_learning_queue`, `mejepa_active_learning_label` (Phase 8).
-
-**Specific path discrepancies in this task body:**
-
-- `<files_to_create>` paths under `crates/context-graph-mcp/src/handlers/tools/mejepa/capture_audit.rs` — non-existent target tree. Should be new `call_mejepa_capture_audit` (+ optional helper module) in the flat-file layout.
-- `CaptureAuditBundle` carrier — verify the type does not yet exist in tree (sister TASK-SHIFT-002 / TASK-SHIFT-007 own it).
-- `<depends_on>TASK-MCP-001</depends_on>` — TASK-MCP-001 was never implemented as described.
-- "high complexity, 2 files" — under flat-file structure, may consolidate to 1 file if under 500 lines, or split as a sibling flat file (`mejepa_capture_audit.rs`).
-
-**Recommended rework before implementing:**
-
-1. Block until Phase 7 shift-subscriber crate ships the writer paths for the 4 CFs (TASK-SHIFT-002, TASK-SHIFT-007) — without populated CFs this handler has nothing to return.
-2. Rewrite `<files_to_create>` to add `call_mejepa_capture_audit` as a new function in `mejepa_tools.rs` (or a new sibling flat file if size grows past 500 lines).
-3. Add `MEJEPA_CAPTURE_AUDIT` constant to `crates/context-graph-mcp/src/tools/names.rs`.
-4. Confirm pagination chunk size + canonicalize-floats behavior against the actual `CaptureAuditBundle` shape once it ships.
-5. Confirm dispatcher wiring path — the sub-module dispatch this task assumes does not exist.
+**FSV for this task:** integration test (a) runs one full attempt end-to-end → invokes handler → asserts every documented field present and finite + `missing_slots` populated when an instrument was unavailable (Source of Truth: response JSON cross-checked against direct CF reads); (b) invokes handler with bogus `attempt_id` → asserts `{"attempt_found": false}` and 5 `nearest_neighbors`; (c) constructs an attempt whose serialized bundle exceeds 1 MiB → asserts pagination kicks in (`total_pages > 1`).
 
 ---
 

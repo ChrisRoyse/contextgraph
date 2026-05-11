@@ -65,15 +65,33 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT (agent-211-task-updater)
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Audit pass against current tree on 2026-05-10:**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- ✅ **Crate `context-graph-mejepa-shift-subscriber` does NOT exist yet** — `LagMonitor` lands in the same not-yet-existing crate.
-- ✅ `SubscriberMetrics`, `LagAlertState`, `LagAlertStateTag` declarations come from TASK-SHIFT-002 in the same crate.
-- ✅ Atomic state transitions via `AtomicU8::compare_exchange_weak` are the documented invariant; no replacement primitive shipped elsewhere.
-- ✅ Lag threshold + sustain knobs are part of `MeJepaShiftSubscriberConfig` (TASK-SHIFT-001), with bounds checked at construction.
-- No drift in `<files_to_create>` paths.
+**Confirmed 2026-05-11:** `LagAlertState` enum + `evaluate_lag_alert_state` method do NOT exist anywhere. New work in `crates/context-graph-mejepa-shift-subscriber/src/lag_alert.rs`.
+
+**Decided scope for this task (refined):**
+1. State machine variants per `<lag_alert_state_machine>` diagram in TECH-SHIFT-SUBSCRIBER:
+   - `Idle` (lag == 0)
+   - `Watching` (lag > 0 but < threshold)
+   - `Trigger { since: Instant }` (lag > threshold but not yet sustained)
+   - `AlertActive` (lag > threshold sustained for `lag_alert_sustain_seconds`)
+   - `AlertClearing { since: Instant }` (lag dropped but not yet sustained)
+2. Encode the state as a SUM type stored in a `parking_lot::RwLock<LagAlertState>` (the `Instant` payload makes pure `AtomicU8` insufficient). Transitions take a write lock; reads are short. Alternative: `AtomicU8` for the variant tag + `AtomicU64` for the `Instant` epoch nanos — pick whichever has cleaner code; both are correct.
+3. `evaluate_lag_alert_state(&mut self, current_lag: u64, now: Instant)`:
+   - Idle → Watching when lag > 0
+   - Watching → Trigger when lag >= threshold (start the timer)
+   - Trigger → Watching when lag drops back below threshold within sustain_window
+   - Trigger → AlertActive when sustained: emit `MEJEPA_SHIFT_SUBSCRIBER_LAG_ALERT` EXACTLY ONCE per Idle→AlertActive transition (no log spam — guard with a single edge-detector); set `metrics.lag_alert_active = true`.
+   - AlertActive → AlertClearing when lag drops below threshold (start the clear-timer)
+   - AlertClearing → Watching when sustained low; AlertClearing → AlertActive when lag rises again within window
+4. Threshold + sustain_seconds are config-driven (`lag_alert_threshold_shifts` default 500 bounded `[100, 5000]`; `lag_alert_sustain_seconds` default 60 bounded `[10, 300]`).
+5. NEVER drops shifts to "catch up" — alerting is informational; consumption continues per BR-SHIFT-07.
+
+**FSV for this task:** unit tests synthesizing all 8 transitions; integration test driving lag from 0 → 600 → 600 (sustained 70s) → asserts `MEJEPA_SHIFT_SUBSCRIBER_LAG_ALERT` emitted exactly once at the 60s mark; verifies `EC-SHIFT-07` (oscillation around threshold does NOT cause flapping). Source of Truth: log capture (assert exactly 1 alert line per scenario) + state-machine readback after each tick.
+
+---
 
 <task_spec id="TASK-SHIFT-009" version="1.0">
 <metadata>

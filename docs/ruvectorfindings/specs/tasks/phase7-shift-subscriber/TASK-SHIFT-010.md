@@ -65,15 +65,34 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT (agent-211-task-updater)
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Audit pass against current tree on 2026-05-10:**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- ✅ **Crate `context-graph-mejepa-shift-subscriber` does NOT exist yet** — `run()` entry point lands in the same not-yet-existing crate.
-- ⚠ **MCP server startup wiring is NOT yet in this task's scope.** The actual `tokio::spawn(subscriber.run(shutdown_rx))` call site inside `crates/context-graph-mcp/src/main.rs` is the sister phase's job — TASK-SHIFT-010 only produces the `run()` async fn signature. Verify `crates/context-graph-mcp/src/main.rs` (already modified per `git status`) does not yet reference `ShiftSubscriber::run` before declaring this task done.
-- ✅ `tokio::sync::watch`, `tokio::select!`, and `tokio::task::JoinSet` are stable in current `tokio` workspace dep version.
-- ✅ All cross-cutting deps from TASK-SHIFT-005..009 (tail, process, watermark, lag) compile into a single coherent loop.
-- No drift in `<files_to_create>` paths.
+**Confirmed 2026-05-11:**
+- The MCP server already manages a singleton flock at `~/.cache/cgreality/reality-loop-stdio.lock` (per CLAUDE.md §11.12, commits `71404040`, `36e01578`); only one MCP server runs at a time, so only one `ShiftSubscriber::run` task runs at a time.
+- The MCP server lifecycle is in `crates/context-graph-mcp/src/main.rs`; the subscriber Arc must be constructed during startup AFTER `RocksDbInferStore` is opened, BEFORE the JSON-RPC dispatcher starts accepting requests.
+
+**Decided scope for this task (refined):**
+1. `pub async fn run(mut self) -> Result<(), SubscriberError>`:
+   (a) `metrics.task_alive_since = Some(now())`;
+   (b) hydrate per-session resume points via `watermark_writer.read_all_watermarks()`; for each session call `tail.open_or_create_reader(session_id, last_consumed_byte_offset)`;
+   (c) main loop:
+       - poll all session readers via `tail.poll_all().await` (returns `Vec<(SessionId, ShiftEntry)>`)
+       - for each ShiftEntry: `self.process_shift(entry).await?`
+       - on Ok: `watermark_writer.write_watermark(record)?`
+       - update lag metrics
+       - `evaluate_lag_alert_state()` (TASK-SHIFT-009)
+       - `tokio::select!` on shutdown signal: drain in-flight, set `task_alive_since = None`, return Ok
+   (d) panic supervision: wrap CPU-bound calls in `tokio::task::spawn_blocking`; the outer Tokio task uses `tokio::task::JoinSet` (or a manual `JoinHandle::is_panicked()` check) to catch instrument-forward panics; on panic populate `metrics.last_panic = Some(PanicInfo { ... })`; respawn-or-die per EC-SHIFT-10 (3 panics on the same shift_id → high-severity blocker).
+2. MCP integration: in `context-graph-mcp/src/main.rs`, after RocksDB open, construct the `ShiftSubscriber`, get an `Arc<MeJepaSubscriber>` (or split into `Arc<MeJepaCompiler>` + `Arc<SubscriberMetrics>` so individual handlers don't pull the whole subscriber), spawn the `run()` task via `tokio::spawn`, store the `JoinHandle` for graceful shutdown.
+3. The 4 NEW MCP handlers from sister `phase7-mcp-tools/` get `Arc<SubscriberMetrics>` + `Arc<MejepaStore>` injected through the existing `Handlers` context (extend the struct in `crates/context-graph-mcp/src/handlers/mod.rs` as needed).
+
+**Cross-phase deps:** sister TASK-SHIFT-{007, 008, 009} provide the helpers; sister `phase7-mcp-tools/TASK-MCP-{004,005,006}` consume the subscriber Arc.
+
+**FSV for this task:** integration test (a) starts the MCP server with a tempdir RocksDB + a synthetic JSONL fixture → invokes `mejepa_subscriber_status` → asserts `task_alive_since` populated and growing; (b) injects a panic via test-only hook → asserts `last_panic` populated and the supervisor respawns once; (c) sends SIGTERM → asserts graceful drain (in-flight shift completes before exit). Source of Truth: status endpoint readback + shift-log progression + RocksDB watermark CF.
+
+---
 
 <task_spec id="TASK-SHIFT-010" version="1.0">
 <metadata>

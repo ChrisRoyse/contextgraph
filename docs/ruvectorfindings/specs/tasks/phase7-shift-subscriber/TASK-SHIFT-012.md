@@ -65,15 +65,27 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT (agent-211-task-updater)
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Audit pass against current tree on 2026-05-10:**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- ✅ **Crate `context-graph-mejepa-shift-subscriber` does NOT exist yet** — `LatencyProfiler` lands in the same not-yet-existing crate.
-- ⚠ **`hdrhistogram` workspace dep status: verify before assuming.** Search `Cargo.toml` for `hdrhistogram` — if absent, this task adds it. If a different histogram primitive (e.g. an internal bucketed counter) is already present, prefer using that. As of 2026-05-10 there's no clear evidence the dep is present in the workspace; treat as "add if missing".
-- ✅ `LiveSubscriberStatus` (declared in TASK-SHIFT-002) is extended here with a `latency_profile: LatencySnapshot` field — confirm the field addition does not collide with another `latency_*` field from TASK-MCP-005 (PENDING).
-- ✅ `process_shift` instrumentation tracks `Instant::now()` deltas at 4 stages (panel / predict / observe / persist) — these stages all exist in TASK-SHIFT-007's body.
-- No drift in `<files_to_create>` paths.
+**Decided scope for this task (refined):**
+1. Add `hdrhistogram = "7"` to `crates/context-graph-mejepa-shift-subscriber/Cargo.toml`. Use `hdrhistogram::Histogram::<u64>::new_with_bounds(1, 60_000_000_000, 3)` for nanosecond-precision over a 0-60s range. Wrap in `parking_lot::Mutex<Histogram<u64>>` per session OR a single global `Histogram<AtomicU64>` if the contention proves measurable.
+2. In `process_shift` (TASK-SHIFT-007), measure latency:
+   ```
+   let started = Instant::now();
+   let outcome = /* ... main body ... */;
+   let elapsed_ns = started.elapsed().as_nanos() as u64;
+   self.metrics.latency_histogram.lock().record(elapsed_ns).expect("histogram bounds OK");
+   outcome
+   ```
+3. Expose percentiles via `SubscriberMetrics::latency_p50_ms()`, `latency_p99_ms()` reading from the histogram lock. `mejepa_subscriber_status` (sister `phase7-mcp-tools/TASK-MCP-005`) includes both fields in the response.
+4. Budget: p50 < 5,000 ms (cached), p99 < 30,000 ms (cold). FSV harness asserts both bounds.
+5. NO sampling (every shift recorded — hdrhistogram is fast enough for our throughput).
+
+**FSV for this task:** integration test runs 1,000 shifts (mix of cold/warm cache), asserts `p50_ms < 5000` AND `p99_ms < 30000`, writes evidence file `/tmp/contextgraph-mejepa-shift-subscriber-fsv/predict-latency-evidence.json` with `{p50_ms, p95_ms, p99_ms, max_ms, sample_count, cold_cache_count, warm_cache_count}`. Source of Truth: histogram readback after the 1,000-shift run; budget assertion in the test.
+
+---
 
 <task_spec id="TASK-SHIFT-012" version="1.0">
 <metadata>

@@ -65,16 +65,37 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT (agent-211-task-updater)
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Audit pass against current tree on 2026-05-10:**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- ✅ **Crate `context-graph-mejepa-shift-subscriber` does NOT exist yet** — `process_shift` body lands in the same not-yet-existing crate.
-- ⚠ **Cross-cutting trait targets:** `MeJepaPredictor::predict` is implemented today at `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs::call_mejepa_predict_latest` (an MCP tool body, NOT a public trait method on a `MeJepaCompiler` impl). The actual `MeJepaCompiler::predict` / `observe` traits are still PENDING — TASK-INFER-003 in SPEC-INFERENCE owns the implementation. This task creates the 7 `Arc<dyn Trait>` injection points in `traits.rs` so the subscriber compiles standalone; the concrete impls land later (subscriber binds to the traits, not to the existing MCP tool body).
-- ✅ `context-graph-mejepa` crate exists with `MeJepaCompiler` machinery — verify trait surface matches before binding here.
-- ✅ `InstrumentSlot::iter_all()` is the canonical 15-slot enum order (defined in `context-graph-mejepa-instruments`).
-- ✅ `futures` workspace dep available.
-- No drift in `<files_to_create>` paths.
+**Confirmed 2026-05-11:**
+- `MeJepaCompiler::predict` lives at `crates/context-graph-mejepa/src/compiler.rs:199` (public).
+- `MeJepaCompiler::observe` lives at `crates/context-graph-mejepa/src/compiler.rs:391` (public).
+- `MejepaStore::write_live_prediction(prediction: &RealityPrediction)` lives at `compiler.rs:133` (trait method); `RocksDbInferStore` impl at `store.rs:36-156`. **The subscriber MUST use this trait — do NOT roll a raw RocksDB write.**
+- `CF_MEJEPA_LIVE_PREDICTIONS`, `CF_MEJEPA_ORACLE_VERDICTS`, `CF_MEJEPA_TRAIN_CERTS` declared in `mejepa-cf/src/lib.rs` and opened by `RocksDbInferStore`.
+- Per-step training cert writer: `crates/context-graph-mejepa-train/src/cert/` — use `Arc<TrainCertWriter>` (the public type), do NOT inline cert construction.
+
+**Persistence-vs-update separation (REQ-SHIFT-09 — structural correctness invariant):**
+The order in `process_shift` MUST be:
+1. panel_t1 = materialize 15 slots
+2. predict(panel_t1) → ALWAYS persist to `CF_MEJEPA_LIVE_PREDICTIONS` (regardless of L_step gate)
+3. IF oracle outcome attached: build panel_t2 with `E_Oracle` populated; persist `OracleOutcome` to `CF_MEJEPA_ORACLE_VERDICTS`; compute `utml = utml_engine.compute_l_step(...)`; if `utml.l_step >= 0.05` call `observe()` AND write training cert with `sampling_decision: observed`; else write training cert with `sampling_decision: dropped_l_step_below_threshold` (still write the cert!).
+4. Return `Ok(ShiftOutcome { ... })` ONLY after ALL persistence calls have fsync'd.
+5. Caller (`run()` in TASK-SHIFT-010) advances watermark only after `process_shift` returns Ok.
+
+**Inner-shift slot parallelism is allowed:** dispatch the 15 `materialize_slot` calls via `futures::stream::iter(slots).buffer_unordered(N).try_collect()`. The OUTER loop is serialized at `max_concurrent_shifts: 1` per REQ-SHIFT-17 (preserves observe() ordering for EWC++ correctness).
+
+**`materialize_slot` cache miss path:** dispatch to the slot's `Instrument::encode` via `tokio::task::spawn_blocking` (AST parsing + embedder forward are CPU-bound, would block the cooperative scheduler).
+
+**Failure modes (use the SubscriberError variants from TASK-SHIFT-003):**
+- Instrument missing (e.g., pyright not on PATH) → record in `missing_slots`, do NOT zero-fill, surface `MEJEPA_INFER_INSTRUMENT_MISSING`.
+- L_step NaN/Inf → return `MEJEPA_OBSERVE_BATCH_NAN`; observe() skipped; predict() persistence still proceeds.
+- Witness-chain replay broken → return `MEJEPA_OBSERVE_INTEGRITY_VIOLATION`; observe() skipped; write a `memory/blockers/` entry.
+
+**FSV for this task:** integration test feeds 1,000 synthetic shifts with controlled L_step distribution (200 with oracle, 800 predict-only) → asserts (a) `CF_MEJEPA_LIVE_PREDICTIONS` row count == 1,000, (b) `CF_MEJEPA_ORACLE_VERDICTS` row count == 200, (c) the join recovers all 200 paired tuples, (d) zero pairs dropped because of L_step gate. Source of Truth: separate prefix scans on each CF after the run.
+
+---
 
 <task_spec id="TASK-SHIFT-007" version="1.0">
 <metadata>

@@ -65,39 +65,30 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — REQUIRES REWORK
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Drift summary:** This FSV harness task asserts roundtrip evidence for "all 5 mejepa_* tools" but the post-pivot reality is 18 planned mejepa_* tools: 8 SHIPPED + 10 PENDING. The harness scope must expand — and the `example mejepa_mcp_tools_fsv` binary path must be re-confirmed.
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**Actual file locations (verified 2026-05-10):**
+**This task ships the surface FSV harness.**
 
-- `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` — flat file containing 5 shipped handlers (verify, predict_latest, constellation_inspect, heal_status, rollback_to).
-- `crates/context-graph-mcp/src/handlers/tools/embedder_tools.rs` — contains 3 more shipped handlers (load_learner_state, routing_lookup, vram_budget_report).
-- `crates/context-graph-mcp/src/tools/names.rs` — `MEJEPA_*` name constants (8 currently).
-- The `crates/context-graph-mcp/src/handlers/tools/mejepa/` directory **does not exist**.
-- `crates/context-graph-mcp/examples/` — confirm whether `mejepa_mcp_tools_fsv.rs` exists.
+**Drift from original task body:**
+- "FSV for all 5 tools + retired-tool round-trip" is now "FSV for the 3 NEW tools (`observe_shift`, `subscriber_status`, `capture_audit`) + 2 HARDENED tools (`verify`, `predict_latest`) + retired-name fail-closed regression on the 5-name retired set".
+- Existing FSV evidence directory pattern in this codebase: `/tmp/contextgraph-mejepa-<phase-or-feature>-fsv/<sub-feature>/<artifact>.json`. Use `/tmp/contextgraph-mejepa-phase7-mcp-fsv/`.
+- Per SEC-MEJEPA-07, file mode `0o600`.
 
-**MEJEPA MCP tools — SHIPPED (8) vs PENDING (10):**
+**Decided scope for this task:**
+1. New example binary at `crates/context-graph-mcp/examples/mejepa_phase7_mcp_roundtrip_fsv.rs` (clean-room, provenance comment per CLAUDE.md).
+2. The example spawns the full MCP server (or the handler dispatch surface in-process) against a tempdir-backed RocksDB and a synthetic `SubscriberMetrics`/`MejepaStore`. For each of the 3 NEW tools + 2 HARDENED tools: invoke via JSON-RPC envelope, assert response shape, write `/tmp/contextgraph-mejepa-phase7-mcp-fsv/<tool_name>/{happy_path,empty_session,oversize_payload,invalid_args}.json`.
+3. For the retired-name set: invoke each of `mcp__cgreality__reality_run_attempt`, `_alter_file`, `_alter_run`, `_alter_apply`, `_drip_attempt` → assert response is `{"error": {"code": "CCREALITY_ENGINE_RETIRED", "message": "...", "payload": {"attempted_tool": "..."}}}` → write `/tmp/contextgraph-mejepa-phase7-mcp-fsv/retired/{tool_name}.json`.
+4. Per `<fsv_protocol>` in constitution: every evidence file is read back from disk after writing → asserted byte-equal to the in-memory representation → cite the readback assertion in the example output. SHA-256 of each evidence file recorded into a top-level `manifest.json`.
+5. NO mock data — use real `RocksDbInferStore` against a tempdir. NO test that passes when the system is broken (e.g., if a tool is renamed or a schema breaks, the FSV must fail).
 
-SHIPPED (FSV should already cover these): `mejepa_verify`, `mejepa_predict_latest`, `mejepa_constellation_inspect`, `mejepa_heal_status`, `mejepa_rollback_to`, `mejepa_load_learner_state`, `mejepa_routing_lookup`, `mejepa_vram_budget_report`.
+**Cross-phase dep:** sister TASK-SHIFT-013 publishes the upstream subscriber FSV that provides the synthetic shift-log fixture for `observe_shift` and `capture_audit`.
 
-PENDING (FSV will need coverage once shipped): `mejepa_observe_shift`, `mejepa_subscriber_status`, `mejepa_capture_audit` (Phase 7); `mejepa_gc_run`, `mejepa_quota_status`, `mejepa_witness_compress` (Phase 6); `mejepa_eval_run`, `mejepa_eval_ship_gate_status`, `mejepa_active_learning_queue`, `mejepa_active_learning_label` (Phase 8).
-
-**Specific path discrepancies in this task body:**
-
-- `<title>` and `<implements>` say "all 5 mejepa_* tools" — outdated; post-pivot scope is 18 tools.
-- The FSV harness should drive happy-path round-trips for the 8 SHIPPED tools NOW (this task should be re-scoped to "FSV evidence for shipped MEJEPA MCP tools, expanding as new tools ship").
-- Retired-tool fail-closed (`CCREALITY_ENGINE_RETIRED`) coverage is still valid as a regression guard.
-- `<files_to_create>` may need to be split across phases: one FSV per phase's tools rather than one mega-harness.
-- `<depends_on>` chain points at TASK-MCP-002..006 which themselves require rework (see their audit notes).
-
-**Recommended rework before implementing:**
-
-1. Re-scope this task to "FSV for shipped 8 MEJEPA MCP tools + retired-tool fail-closed", and create separate Phase-6/7/8 FSV tasks for the 10 PENDING tools to be filed as those tools ship.
-2. Verify whether `examples/mejepa_mcp_tools_fsv.rs` exists; if not, create a new one driven by the actual flat-file dispatcher (not the non-existent sub-module dispatch).
-3. Expand `<implements>` to cover REQ-SHIFT-07 for the 8 shipped tools, with a forward-looking note for the 10 pending.
-4. Confirm `/tmp/contextgraph-mejepa-mcp-tools-fsv/` mode 0o600 enforcement is straightforward under the chosen test harness.
-5. Hold off on FSV for `observe_shift`, `subscriber_status`, `capture_audit` until their source-of-truth CFs (Phase 7 shift-subscriber crate) ship.
+**FSV evidence:**
+- `/tmp/contextgraph-mejepa-phase7-mcp-fsv/manifest.json` — SHA-256s of every artifact + tool roster
+- `/tmp/contextgraph-mejepa-phase7-mcp-fsv/<tool_name>/<scenario>.json` — one per tool × scenario
+- `/tmp/contextgraph-mejepa-phase7-mcp-fsv/retired/<tool_name>.json` — one per retired tool
 
 ---
 

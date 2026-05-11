@@ -65,15 +65,28 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT (agent-211-task-updater)
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase + 2026 best practices)
 
-**Audit pass against current tree on 2026-05-10:**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- ✅ **Crate `context-graph-mejepa-shift-subscriber` does NOT exist yet** — `ShiftLogTail` body lands in the same not-yet-existing crate.
-- ✅ **Reality-shift JSONL producer exists at `crates/context-graph-mcp/src/handlers/tools/reality_loop/shift_log.rs`.** This is the upstream writer the tail-reader implemented here will consume from. The JSONL schema in that producer is the source of truth for `ShiftEntry` parsing — re-grep the producer's struct fields against TASK-SHIFT-001's `ShiftEntry` declaration to catch any drift before writing the parser.
-- ✅ Producer-side log dir convention: `/tmp/contextgraph-rust-reality-loop/cgreality-shift-log/<session_id>.jsonl` per CLAUDE.md §11.13 and the producer's own path-builder — confirm against the producer's path constant when implementing `discover_sessions`.
-- ✅ `tokio` workspace dep with `fs` + `io-util` features available; `tempfile` workspace dev-dep available.
-- No drift in `<files_to_create>` paths.
+**Confirmed 2026-05-11:**
+- Producer side: `crates/context-graph-mcp/src/handlers/tools/reality_loop/shift_log.rs::append_shift()` (line 71) writes line-by-line `serde_json::to_string(&ShiftRecord) + "\n"`, calls `file.sync_all()` after each write. So every shift hits disk durably before the writer returns.
+- Default runtime root: `file:/mnt/d/contextgraph/state/cgreality/active_runtime_root` per the latest D-mount migration. Tests use `tempfile::TempDir`.
+
+**2026 best-practice refresh (per WebSearch):**
+- File-tail rotation detection MUST combine: (1) inode comparison (Unix `BasicFileAttributes.fileKey()`-equivalent via `MetadataExt::ino()`), (2) creation-time guard (ext4 inode reuse trap — different `ctime` ⇒ treat as new file even if inode matches), (3) size monotonicity (offset > current file_size ⇒ copytruncate rotation, drain the OLD file before switching).
+- Use `tokio::fs::File` + `tokio::io::BufReader` + `read_line()` with a poll-interval `tokio::time::sleep` between EOF-empty reads (see Tokio "infinite data streams" pattern).
+- Half-written line (no `\n` at EOF) ⇒ return None, retry on next poll. NEVER parse a partial line.
+
+**Decided scope for this task (refined):**
+1. `ShiftLogTail::open_or_create_reader(session_id, start_byte_offset)` opens `<root>/cgreality-shift-log/<session_hex>.jsonl`, seeks to `start_byte_offset`, captures `(inode, ctime, size)` for the rotation detector.
+2. `poll_next_line(session_id) -> Result<Option<(String, u64)>, SubscriberError>`: read_line with `tokio::time::timeout(poll_interval)`; on rotation detection (inode change OR ctime change OR `offset > file.metadata()?.len()`), close the OLD reader, drain remaining bytes, open the new file at offset 0, retry once.
+3. `discover_sessions()`: read directory; filter `*.jsonl`; reject filenames containing control chars or path separators per SEC-MEJEPA-01.
+4. NEVER block the runtime — every read goes through `tokio::fs` (NOT `std::fs`).
+
+**FSV for this task:** integration test with synthetic JSONL (a) writes 100 lines slowly while tail reads them → asserts every line consumed in order; (b) rotates the file mid-tail (delete + recreate) → asserts no shift dropped, no shift duplicated; (c) writes a half-line, waits, completes the line → asserts tail returns the line only once it's complete. Source of Truth: in-memory consumer log of `(line_hash, byte_offset)` tuples vs known producer-side tuples.
+
+---
 
 <task_spec id="TASK-SHIFT-005" version="1.0">
 <metadata>

@@ -65,16 +65,26 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT (agent-211-task-updater)
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Audit pass against current tree on 2026-05-10:**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- ✅ **Crate `context-graph-mejepa-shift-subscriber` does NOT exist yet** — FSV harness example lands in the same not-yet-existing crate at `examples/shift_subscriber_fsv.rs`.
-- ✅ FSV evidence directory `/tmp/contextgraph-mejepa-shift-subscriber-fsv/` does NOT exist yet (no prior FSV run). The harness's `std::fs::create_dir_all` is correct.
-- ⚠ **Sister phase evidence dependency:** `mcp-tool-roundtrip-evidence.json` is produced by TASK-MCP-007 (sister phase 7 PENDING). This task explicitly excludes producing that file. TASK-SHIFT-014 (next) asserts on its presence — order matters: MCP roundtrip evidence must be produced first if TASK-SHIFT-014 is run with strict FSV asserts.
-- ✅ Test trait impls from TASK-SHIFT-007 (`#[cfg(test)] mod`) are the planned source for predictor/utml/cert/oracle/witness collaborators in the FSV harness.
-- ✅ `tempfile` workspace dev-dep available; mode-0o600 enforcement via `std::os::unix::fs::OpenOptionsExt::mode` is the standard pattern.
-- No drift in `<files_to_create>` paths.
+**Decided scope for this task (refined):**
+1. NEW example binary: `crates/context-graph-mejepa-shift-subscriber/examples/shift_subscriber_fsv.rs` (clean-room, provenance comment per CLAUDE.md `// Inspired by ruvnet/RuVector at HEAD ef5274c2 (clean-room reimplementation).`).
+2. The example creates a tempdir-backed RocksDB, opens the required CFs, constructs a `ShiftSubscriber` against a synthetic JSONL fixture (100 shifts; 80 predict-only + 20 oracle-attached with a controlled L_step distribution), spawns `run()`, waits until lag = 0, then dumps:
+   - `/tmp/contextgraph-mejepa-shift-subscriber-fsv/watermark.json` — final watermark per session (read via `watermark_writer.read_all_watermarks()`)
+   - `/tmp/contextgraph-mejepa-shift-subscriber-fsv/observe-evidence.json` — one observed example + one dropped-L_step example pulled from `CF_MEJEPA_TRAIN_CERTS`
+   - `/tmp/contextgraph-mejepa-shift-subscriber-fsv/predict-latency-evidence.json` — p50/p95/p99 from the latency histogram (TASK-SHIFT-012)
+   - `/tmp/contextgraph-mejepa-shift-subscriber-fsv/mcp-tool-roundtrip-evidence.json` — placeholder pointing to the sister `phase7-mcp-tools/TASK-MCP-007` FSV (cross-link)
+3. ALL evidence files: file mode `0o600` per SEC-MEJEPA-07 (use `std::os::unix::fs::OpenOptionsExt::mode(0o600)` at create time).
+4. After writing each file, READ IT BACK and `assert!(read_back == in_memory)` byte-equal — the FSV protocol requires evidence to be re-verified, not just written.
+5. Top-level `manifest.json` records the SHA-256 of every evidence file plus the synthetic fixture SHA, the code_version, and the wall-clock timestamps.
+
+**Cross-phase deps:** sister TASK-SHIFT-{007, 008, 010, 012} provide the components.
+
+**FSV for this task:** the example IS the FSV. After running, the evidence directory exists with mode 0600 files; the manifest's SHA-256 column matches a fresh `sha256sum` of each file.
+
+---
 
 <task_spec id="TASK-SHIFT-013" version="1.0">
 <metadata>

@@ -65,34 +65,28 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — REQUIRES REWORK
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Drift summary:** This task body assumes a sub-module file at `crates/context-graph-mcp/src/handlers/tools/mejepa/verify.rs`. The codebase took a different path: `mejepa_verify` has **already been shipped** as `call_mejepa_verify` (line ~76) in the flat file `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs`. There is no `mejepa/` sub-module directory.
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**Actual file locations (verified 2026-05-10):**
+**This task is now HARDENING-ONLY, not new development.** `mejepa_verify` already ships at `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs:76-149` (`call_mejepa_verify`).
 
-- `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` — flat file containing `call_mejepa_verify` (~line 76) and 4 other handlers.
-- `crates/context-graph-mcp/src/handlers/tools/embedder_tools.rs` — contains 3 more shipped handlers (`load_learner_state`, `routing_lookup`, `vram_budget_report`).
-- `crates/context-graph-mcp/src/tools/names.rs` — `MEJEPA_VERIFY` constant at line ~100.
-- The `crates/context-graph-mcp/src/handlers/tools/mejepa/` directory **does not exist**.
+**Drift from original task body:**
+- The handler exists; the original "wire SPEC-INFERENCE body" framing is stale.
+- `VerifyRequest` DTO at `mejepa_tools.rs:32-39` uses `#[serde(rename_all = "camelCase", deny_unknown_fields)]` — pattern preserved.
+- The SHIPPED handler returns the verdict + an optional `provenance` JSON field when `include_provenance: true`, but does NOT yet attach `last_consumed_shift_id` or `subscriber_lag_at_call_time` (REQ-SHIFT-07 + AC-SHIFT-04-03 still un-met).
+- The handler routes through `build_deterministic_compiler` (Phase 4 deterministic harness), not yet through a live `MeJepaCompiler` backed by the shift-subscriber's `Arc<MeJepaCompiler>`. That cross-wiring lands when sister TASK-SHIFT-010 publishes the subscriber Arc.
 
-**MEJEPA MCP tools — SHIPPED (8) vs PENDING (10):**
+**Decided scope for this task:**
+1. Extend `call_mejepa_verify` to accept an `Option<Arc<MeJepaSubscriber>>` from the MCP context (None when subscriber is not yet running — emit `subscriber_state: null` in the response).
+2. When `include_provenance: true`, augment the existing provenance JSON with two new fields: `last_consumed_shift_id: String | null` and `subscriber_lag_at_call_time: u64`. Both are read from `SubscriberMetrics` (sister TASK-SHIFT-002 type).
+3. Add a new test in `tests/mejepa_verify_phase7_provenance.rs` that exercises both provenance paths (include_provenance true/false) against a synthetic subscriber metrics fixture.
+4. NO change to the underlying seven-gate verdict body (TECH-INFERENCE owns that).
+5. NO change to the SHIPPED `additionalProperties: false` enforcement.
 
-SHIPPED: `mejepa_verify`, `mejepa_predict_latest`, `mejepa_constellation_inspect`, `mejepa_heal_status`, `mejepa_rollback_to`, `mejepa_load_learner_state`, `mejepa_routing_lookup`, `mejepa_vram_budget_report`.
+**Cross-phase dep:** sister TASK-SHIFT-002 (`SubscriberMetrics`, `LiveSubscriberStatus`); sister TASK-SHIFT-010 (subscriber Arc publishing). If those have not landed yet, stub the metrics type locally with the documented field shape and refactor when SHIFT lands.
 
-PENDING: `mejepa_observe_shift`, `mejepa_subscriber_status`, `mejepa_capture_audit` (Phase 7); `mejepa_gc_run`, `mejepa_quota_status`, `mejepa_witness_compress` (Phase 6); `mejepa_eval_run`, `mejepa_eval_ship_gate_status`, `mejepa_active_learning_queue`, `mejepa_active_learning_label` (Phase 8).
-
-**Specific path discrepancies in this task body:**
-
-- `<files_to_create>` / `<signatures>` paths under `crates/context-graph-mcp/src/handlers/tools/mejepa/verify.rs` — non-existent. The shipped handler lives in `mejepa_tools.rs::call_mejepa_verify`.
-- `<depends_on>TASK-MCP-001</depends_on>` — TASK-MCP-001 itself was not implemented as described; the dependency chain is partly satisfied differently (flat-file dispatch instead of sub-module dispatch).
-- The "~50-line shim" assumption may not match the shipped implementation; audit `call_mejepa_verify` body before claiming this task is done.
-
-**Recommended rework before implementing:**
-
-1. Read the current shipped `call_mejepa_verify` in `mejepa_tools.rs` and compare against `<scope>` / `<verification>` to determine whether the existing handler already satisfies REQ-SHIFT-07 + SEC-MEJEPA-01.
-2. If gaps exist (e.g., subscriber state attachment, path canonicalization), this task should pivot to "audit + close gaps in shipped handler" rather than "create new shim".
-3. Rewrite `<files_to_create>` to reflect the flat-file structure; remove references to `mejepa/verify.rs`.
+**FSV for this task:** the new test must (a) verify the response carries the new fields when subscriber is alive, and (b) verify graceful `subscriber_state: null` when subscriber is unavailable.
 
 ---
 

@@ -65,16 +65,38 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT (agent-211-task-updater)
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase + 2026 best practices)
 
-**Audit pass against current tree on 2026-05-10:**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- ✅ **Crate `context-graph-mejepa-shift-subscriber` does NOT exist yet** — `WatermarkWriter` body lands in the same not-yet-existing crate.
-- ✅ `rocksdb` workspace dep available; `WriteOptions::set_sync(true)` is the documented durability primitive.
-- ✅ `CF_MEJEPA_SHIFT_WATERMARK` constant + `watermark_key` helper come from TASK-SHIFT-004 (in the same crate's `cf.rs`).
-- ✅ `WatermarkRecord` struct comes from TASK-SHIFT-002 (in the same crate's `watermark.rs`).
-- ✅ ULID lexicographic ordering invariant (`01J<20 hex>`) is enforced by `ShiftId::try_from_str` in TASK-SHIFT-001 — monotonicity check here is structurally sound.
-- No drift in `<files_to_create>` paths.
+**2026 best-practice refresh (per WebSearch on RocksDB durability):**
+- `WriteOptions { sync: true }` flushes the WAL synchronously to disk — sufficient for at-least-once delivery to a single CF. Per-shift latency budget (5 s p50) easily absorbs an fsync (~2 ms on NVMe).
+- **NEVER batch watermark writes.** Batched writes would advance past shifts whose persistence is still in flight, violating REQ-SHIFT-02 / BR-SHIFT-02.
+- Idempotency is structural: writes to `CF_MEJEPA_LIVE_PREDICTIONS` and `CF_MEJEPA_ORACLE_VERDICTS` overwrite atomically on the same `(session_id, witness_chain_offset)` key, so a SIGKILL between persistence and watermark advance is safe — the in-flight shift is reprocessed exactly once on respawn.
+
+**Confirmed 2026-05-11:**
+- `CF_MEJEPA_SHIFT_WATERMARK` already declared in `mejepa-cf/src/lib.rs:14`. Key/value layout owned by sister TASK-SHIFT-004.
+- The RocksDB handle is shared with `RocksDbInferStore` — open via `Arc<DB>` rather than per-component opens.
+
+**Decided scope for this task (refined):**
+1. `WatermarkWriter::new(rocksdb: Arc<DB>, cf: ColumnFamilyHandle) -> Self`.
+2. `write_watermark(record: WatermarkRecord) -> Result<(), WatermarkError>`:
+   (a) read existing record at `b"wm:" || hex(session_id)`; if `persisted.last_consumed_shift_id > record.last_consumed_shift_id` (lex compare per ULID monotonicity), return `WatermarkError::Backwards` (maps to `MEJEPA_SHIFT_SUBSCRIBER_WATERMARK_BACKWARDS`);
+   (b) JSON-serialize record;
+   (c) `db.put_cf_opt(&self.cf, key, json_bytes, WriteOptions { sync: true })?`;
+   (d) return Ok ONLY after the put returns (sync=true blocks until fsync completes).
+3. `read_watermark(session_id) -> Result<Option<WatermarkRecord>, WatermarkError>`: point read; deserialize JSON; None on missing key.
+4. `read_all_watermarks() -> Result<Vec<WatermarkRecord>, WatermarkError>`: prefix iter on `b"wm:"`; deserialize each value; used by `run()` startup hydration in TASK-SHIFT-010.
+5. NO `bincode`. JSON only. Per memory `bincode + skip_serializing_if = BROKEN`.
+6. NEVER `unwrap_or` defaults. Every error path returns a structured `WatermarkError` whose `.code()` returns SCREAMING_SNAKE.
+
+**FSV for this task:** integration test against a tempdir RocksDB:
+(a) write 100 watermarks for 10 sessions → `read_all_watermarks` returns all 100 in lexicographic order;
+(b) write a backwards shift_id → asserts `WatermarkError::Backwards` returned, persisted state unchanged;
+(c) spawn process A writing watermark 50, SIGKILL between put_cf and Ok return, spawn process B → process B reads back watermark 50 (sync=true guarantees the put hit disk before Ok was returned).
+Source of Truth: separate `db.get_cf` reads after each scenario; for (c), shutdown + reopen the RocksDB to confirm SST persistence.
+
+---
 
 <task_spec id="TASK-SHIFT-008" version="1.0">
 <metadata>

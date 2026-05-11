@@ -65,16 +65,25 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT (agent-211-task-updater)
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Audit pass against current tree on 2026-05-10:**
+> **Codebase reality table:** see `_index.md` in this directory for the full audit table (ground truth as of 2026-05-11). What follows is THIS task's scope-specific drift.
 
-- ✅ **Crate `context-graph-mejepa-shift-subscriber` does NOT exist yet.** `ls crates/context-graph-mejepa-shift-subscriber/` returns "No such file or directory". This task remains the canonical foundation task that creates the crate — proceed as written.
-- ✅ Workspace `Cargo.toml` accepts new `context-graph-mejepa-*` members (e.g. `context-graph-mejepa-corpus`, `context-graph-mejepa-instruments`, `context-graph-mejepa-train` already shipped — confirm placement alphabetically).
-- ✅ `serde`, `serde_json`, `thiserror` workspace deps confirmed available.
-- ⚠ **Sibling phase 7 surface drift:** `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` (a flat file, NOT a `mejepa/` directory tree) already hosts 5 MCP tools — including `mejepa_predict_latest` and `mejepa_verify`. The 3 MCP tools that this phase's subscriber feeds (`mejepa_observe_shift`, `mejepa_subscriber_status`, `mejepa_capture_audit`) are still PENDING; the const names are absent from `crates/context-graph-mcp/src/tools/names.rs`. Foundation data shapes in this task (`ShiftEntry`, `ShiftOutcome`, etc.) are still load-bearing for those PENDING tools — no signature drift here.
-- ✅ Reality-shift producer at `crates/context-graph-mcp/src/handlers/tools/reality_loop/shift_log.rs` SHIPPED — this is the JSONL writer the subscriber's tail-reader (TASK-SHIFT-005) will consume from.
-- No changes required to `<files_to_create>` paths — all paths still accurate.
+**Confirmed by `ls`/`grep` 2026-05-11:**
+- `crates/context-graph-mejepa-shift-subscriber/` does NOT exist. This task creates the crate from zero.
+- Adjacent crate naming pattern is established: `context-graph-mejepa-corpus`, `-instruments`, `-train`, `-hygiene`, `-tct`, `-cf`, `-embedders`. Match it.
+- Workspace `Cargo.toml` already accepts `context-graph-mejepa-*` members.
+- `serde`, `serde_json`, `thiserror`, `tokio` confirmed in workspace `[workspace.dependencies]`.
+
+**Truth-source for `ShiftEntry` shape:** `crates/context-graph-mcp/src/handlers/tools/reality_loop/shift_log.rs:11-24` defines `ShiftRecord` (the JSONL producer's row type). Lift these field names verbatim into `ShiftEntry`. The `byte_offset: u64` field this task adds is SYNTHESIZED by the tail reader (not produced by the writer) — see `<data_models>` in TECH-SHIFT-SUBSCRIBER for the full specification.
+
+**SessionId contract:** the SHIPPED `MejepaStore::read_live_predictions(session_id: [u8; 16], limit: u32)` (`crates/context-graph-mejepa/src/compiler.rs:127`) and the SHIPPED `mejepa_predict_latest` MCP shim (`mejepa_tools.rs:151-220`) both use a fixed 16-byte session id, decoded from a 32-character hex string at the MCP boundary. The TECH spec's "SessionId max 64 chars UTF-8" is STALE — your `SessionId` newtype MUST wrap `[u8; 16]` with a hex-32 `try_from(&str)` constructor matching the established pattern. Trust the code.
+
+**Decided scope for this task (unchanged):** create the crate, register in workspace, declare `ShiftSubscriber` skeleton, `MeJepaShiftSubscriberConfig` (9 bounded knobs + `validate()`), `ShiftEntry`, `ShiftSide`, `ShiftId`, `SessionId` (newtype `[u8; 16]`), `ShiftOutcome`, `SkipReason`. No async behavior, no I/O, no Tokio task — purely typed scaffolding.
+
+**FSV for this task:** unit tests covering each config knob's min/max/out-of-bound boundary; serde round-trip on every data model; `SessionId::try_from` fails closed on non-hex / wrong length; `ShiftId` regex `^01J[0-9A-F]{20}$` enforced. Source of Truth: typed structures + serde JSON byte-equal round trips + boundary error returns.
+
+---
 
 <task_spec id="TASK-SHIFT-001" version="1.0">
 <metadata>

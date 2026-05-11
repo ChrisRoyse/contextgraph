@@ -65,16 +65,34 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT (agent-211-task-updater)
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Audit pass against current tree on 2026-05-10:**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- ✅ **Crate `context-graph-mejepa-shift-subscriber` does NOT exist yet** — the `mejepa` CLI bin lands in `context-graph-mejepa` (which DOES exist), NOT in the subscriber crate.
-- ⚠ **`crates/context-graph-mejepa/src/bin/mejepa.rs` may already exist** — verify with `ls crates/context-graph-mejepa/src/bin/` before declaring `<files_to_create>` accurate. Some mejepa CLI surface may exist via `[[bin]]` declarations in the crate Cargo.toml already; reconcile any pre-existing `Cmd` enum before adding `Verify`.
-- ⚠ **Cross-cutting dependency on TASK-INFER-003:** the `MeJepaCompiler::compile(&PatchBundle, &TaskContext)` trait method is PENDING. As of 2026-05-10 the closest existing API surface is `call_mejepa_predict_latest` in `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` — that's an MCP tool body, NOT a Rust trait method. Implementation will need a temporary deterministic-verify shim OR wait for TASK-INFER-003 to ship.
-- ⚠ **Holdout split path `./data/mejepa-corpus/holdout/` may not exist yet.** Phase 0 shipped `context-graph-mejepa-corpus::split` (per project memory `project_phase0_mejepa_mutation_corpus.md` 2026-05-09b entry) with split assignments at `/tmp/contextgraph-mejepa-corpus-fsv/split-assignments.json`, but the operator-facing `./data/mejepa-corpus/holdout/` materialization may still be pending. Audit + escalate before the verify CLI tries to read from that path.
-- ✅ FSV evidence preconditions: TASK-SHIFT-013 produces 3 of the 4 required files; TASK-MCP-007 produces `mcp-tool-roundtrip-evidence.json`. The verify CLI asserts on ALL 4 — TASK-SHIFT-013 + TASK-MCP-007 are blocking dependencies in addition to the listed `depends_on` chain.
-- ✅ `clap`, `anyhow`, `tracing` workspace deps available.
+**Decided scope for this task (refined):**
+1. NEW CLI binary: `crates/context-graph-mejepa/src/bin/verify_cli.rs` (extending the existing `context-graph-mejepa` crate so the binary is `cargo run --release -p context-graph-mejepa -- verify`).
+2. CLI flags:
+   - `--task <swe_lite_id>` (required, e.g. `astropy__astropy-12907`)
+   - `--patch <path>` (required, candidate patch on disk)
+   - `--output-fsv <path>` (default `/tmp/contextgraph-mejepa-shift-subscriber-fsv/`)
+3. End-to-end behavior:
+   (a) load Phase 0 corpus + Phase 1-4 weights (resolve from current model registry per Phase 1b)
+   (b) verify subscriber Tokio task is alive (read `mejepa_subscriber_status` via direct lib call OR ping the MCP server if running)
+   (c) synthesize a `ShiftEntry` from the `--patch` path (lift the bytes, compute SHA, build the `subject`/`before`/`after` payload)
+   (d) drive `subscriber.process_shift(entry)` directly (bypassing JSONL tail for deterministic test)
+   (e) measure `panel_materialization_ms`
+   (f) call `mejepa_compiler.verify(patch, context)` → record verdict
+   (g) compare predicted oracle outcome against actual Docker oracle (cross-cutting with SPEC-CORPUS Docker bridge — call `swebench_lite::run_swebench_lite_oracle` for one task)
+   (h) emit JSON to stdout: `{panel_materialization_ms, me_jepa_verify_verdict, me_jepa_predicts_match_oracle, corpus_entry_added, total_corpus_size}`
+   (i) exit 0 only if every metric within bounds; else exit non-zero with structured error code `MEJEPA_PHASE7_DOD_DISAGREEMENT` (carrying disagreeing task IDs + predicted vs actual outcomes per EC-SHIFT-13)
+4. The CLI is the verification — no separate test needed beyond this artifact.
+5. NEVER mock the Docker oracle. Real call to the SHIPPED `context-graph-mejepa-corpus::swebench` module (see memory `Phase 0 SWE-bench oracle bridge shipped 2026-05-09e`).
+
+**Cross-phase deps:** TASK-SHIFT-013 provides the FSV directory; SPEC-CORPUS provides the SWE-bench Docker bridge; TASK-MCP-002 provides the verify MCP tool (this CLI calls the lib directly, not over MCP).
+
+**FSV for this task:** the CLI run IS the verification. Evidence file at `--output-fsv/phase7-dod-verify.json` captures the round-trip; SHA pinned in `manifest.json` from TASK-SHIFT-013.
+
+---
 
 <task_spec id="TASK-SHIFT-014" version="1.0">
 <metadata>

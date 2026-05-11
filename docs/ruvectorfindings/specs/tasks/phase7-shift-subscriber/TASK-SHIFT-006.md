@@ -65,15 +65,28 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT (agent-211-task-updater)
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase + 2026 best practices)
 
-**Audit pass against current tree on 2026-05-10:**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- ✅ **Crate `context-graph-mejepa-shift-subscriber` does NOT exist yet** — `InstrumentCache` body lands in the same not-yet-existing crate.
-- ✅ `lru ≥ 0.12` and `parking_lot` workspace deps available; declared in TASK-SHIFT-002.
-- ✅ `SlotKey` + `InstrumentCache` skeletons (declared in TASK-SHIFT-002) match the body signatures defined in this task — no signature drift to reconcile.
-- ✅ `InstrumentSlot` enum is shipped at `crates/context-graph-mejepa-instruments/src/lib.rs` and is the canonical slot identifier used in the cache key.
-- No drift in `<files_to_create>` paths.
+**2026 best-practice refresh (per WebSearch):**
+- For an LRU cache where every `get` mutates recency, `RwLock` provides ZERO benefit over `Mutex` — every read still requires exclusive access. **Use `parking_lot::Mutex<LruCache<SlotKey, Arc<Vec<f32>>>>`** for predictable latency, OR a segmented LRU (e.g., `moka` crate with feature `sync` for byte-budget eviction) if cache thrash becomes an issue.
+- Track RAM budget via a separate `AtomicU64 ram_used_bytes` — increment on insert, decrement on eviction. Eviction loop runs OUTSIDE the lock when possible (lock → pop_lru → release → drop the value out-of-lock to avoid blocking other gets).
+- Cache values are `Arc<Vec<f32>>` — clone-cheap on hits.
+
+**Decided scope for this task (refined):**
+1. `InstrumentCache::new(capacity: usize, ram_budget_bytes: u64)` — capacity bounded `[256, 16_384]`, budget bounded `[256 * 1024^2, 8 * 1024^3]` per SPEC-SHIFT REQ-SHIFT-08.
+2. `get_or_insert_with<F>(key: SlotKey, compute: F) -> Result<Arc<Vec<f32>>, SubscriberError>` where `F: FnOnce() -> Result<Vec<f32>, SubscriberError>`:
+   (a) lock; check LRU; on hit bump `hits` atomic, return `Arc::clone`;
+   (b) drop lock; call `compute()` outside the lock (so concurrent gets on OTHER keys aren't blocked by a slow embedder forward);
+   (c) re-lock; recheck (someone else may have inserted between drop and re-acquire); insert if still absent; bump `misses` atomic.
+3. Eviction: when `ram_used_bytes + new_value_bytes > ram_budget_bytes`, pop_lru() until under budget; if even popping every entry can't satisfy (single-value > total budget), return `MEJEPA_SHIFT_SUBSCRIBER_INSTRUMENT_CACHE_OVERFLOW`.
+4. `hit_rate() -> f32` (lock-free, atomic load); `entries() -> usize`; `resize(new_capacity) -> Result<(), SubscriberError>` (hot-resize bounded).
+5. Per CLAUDE.md provenance comment: this is a clean-room reimplementation of the LRU+budget pattern; cite `lru` crate as inspiration but vendor only the LinkedHashMap if needed.
+
+**FSV for this task:** synthetic harness (a) inserts 5,000 entries with varied byte sizes → asserts entry count stabilizes at capacity + `ram_used_bytes ≤ ram_budget_bytes`; (b) inserts a single value larger than the entire budget → asserts `MEJEPA_SHIFT_SUBSCRIBER_INSTRUMENT_CACHE_OVERFLOW` returned, NOT silently truncated; (c) issues 1,000 lookups against a Zipfian SHA distribution → reports hit rate. Source of Truth: atomic readback of `entries()`, `ram_used_bytes`, `hit_rate()` after each scenario.
+
+---
 
 <task_spec id="TASK-SHIFT-006" version="1.0">
 <metadata>

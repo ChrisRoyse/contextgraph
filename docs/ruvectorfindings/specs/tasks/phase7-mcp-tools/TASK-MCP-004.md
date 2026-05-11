@@ -65,35 +65,27 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — REQUIRES REWORK
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Drift summary:** This task body assumes a sub-module file at `crates/context-graph-mcp/src/handlers/tools/mejepa/observe_shift.rs`. The codebase took a different path: MCP MEJEPA handlers live in flat files (`mejepa_tools.rs` + `embedder_tools.rs`). **`mejepa_observe_shift` is PENDING** — it has NOT been shipped yet (Phase 7 shift-subscriber wiring is not complete).
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**Actual file locations (verified 2026-05-10):**
+**This task creates a NEW MCP handler.** Today no `mejepa_observe_shift` const, schema, dispatcher arm, or handler exists.
 
-- `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` — flat file containing 5 shipped handlers (verify, predict_latest, constellation_inspect, heal_status, rollback_to). **Does NOT contain `observe_shift`.**
-- `crates/context-graph-mcp/src/handlers/tools/embedder_tools.rs` — contains 3 more shipped handlers (load_learner_state, routing_lookup, vram_budget_report).
-- `crates/context-graph-mcp/src/tools/names.rs` — no `MEJEPA_OBSERVE_SHIFT` constant yet.
-- The `crates/context-graph-mcp/src/handlers/tools/mejepa/` directory **does not exist**.
+**Drift from original task body:**
+- File path `crates/context-graph-mcp/src/handlers/tools/mejepa/observe_shift.rs` is wrong — the sub-module tree was never created.
+- Place the new handler at the bottom of `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` (currently 838 lines; if your addition pushes the file past 1500, split in a follow-up).
+- The `Args` DTO must match the inline pattern at `mejepa_tools.rs:32-69`: `#[derive(Debug, Deserialize)]` `#[serde(rename_all = "camelCase", deny_unknown_fields)]`.
 
-**MEJEPA MCP tools — SHIPPED (8) vs PENDING (10):**
+**Decided scope for this task:**
+1. Add `ObserveShiftArgs { shift_id: String }` DTO (validate `^01J[0-9A-F]{20}$` regex inline before dispatch).
+2. Add `pub(crate) async fn call_mejepa_observe_shift(&self, id, args) -> JsonRpcResponse` impl on `Handlers`. Body: locate the in-memory `SubscriberIndex` (DashMap<ShiftId, (SessionId, ByteOffset, Option<AttemptId>)>) via the subscriber Arc (sister TASK-SHIFT-007 publishes); if shift_id not found → return `{"shift_found": false, "replay_outcome": null}` (NEVER errors per AC-SHIFT-06-02); if found → invoke `subscriber.process_shift(replayed_entry)` with `replay: true`; the watermark writer enforces `ReplayWatermarkPolicy::DoNotAdvance` so the watermark never rolls back.
+3. Use the `MEJEPA_OBSERVE_SHIFT` constant added by TASK-MCP-001.
+4. SessionId contract: WatermarkRecord uses `[u8; 16]` everywhere — see TASK-SHIFT-002.
+5. Per-step training cert from replay carries `replay: true` flag (cross-cutting with SPEC-TRAINING).
 
-SHIPPED: `mejepa_verify`, `mejepa_predict_latest`, `mejepa_constellation_inspect`, `mejepa_heal_status`, `mejepa_rollback_to`, `mejepa_load_learner_state`, `mejepa_routing_lookup`, `mejepa_vram_budget_report`.
+**Cross-phase dep:** sister TASK-SHIFT-007 publishes `ShiftSubscriber::process_shift`; sister TASK-SHIFT-011 enforces EWC++ replay tolerance. Stub locally if SHIFT not landed.
 
-PENDING (this task targets one): **`mejepa_observe_shift` (Phase 7 shift-subscriber wiring)**; `mejepa_subscriber_status`, `mejepa_capture_audit` (Phase 7); `mejepa_gc_run`, `mejepa_quota_status`, `mejepa_witness_compress` (Phase 6); `mejepa_eval_run`, `mejepa_eval_ship_gate_status`, `mejepa_active_learning_queue`, `mejepa_active_learning_label` (Phase 8).
-
-**Specific path discrepancies in this task body:**
-
-- `<files_to_create>` path `crates/context-graph-mcp/src/handlers/tools/mejepa/observe_shift.rs` — non-existent target tree. Should be a new `call_mejepa_observe_shift` function added to the flat file `mejepa_tools.rs` (or a sibling flat file if size exceeds 500 lines).
-- `<depends_on>TASK-MCP-001</depends_on>` — TASK-MCP-001 was never implemented as described; the dispatcher path is different.
-- `SubscriberIndex` (DashMap shift_id → (session_id, byte_offset, attempt_id)) maintained by TASK-SHIFT-007 / TASK-SHIFT-011 — neither sister task has shipped yet; `crates/context-graph-mejepa-shift-subscriber/` does not exist.
-
-**Recommended rework before implementing:**
-
-1. Wait for Phase 7 shift-subscriber crate (`crates/context-graph-mejepa-shift-subscriber/`) to ship (TASK-SHIFT-007 + TASK-SHIFT-011), OR plan this task to ship alongside them.
-2. Rewrite `<files_to_create>` to add `call_mejepa_observe_shift` as a new function in `mejepa_tools.rs` (matching the shipped pattern of the other 5 handlers).
-3. Add `MEJEPA_OBSERVE_SHIFT` constant to `crates/context-graph-mcp/src/tools/names.rs`.
-4. Confirm dispatcher wiring path (the actual dispatcher in `handlers/tools/mod.rs` or equivalent).
+**FSV for this task:** integration test invokes the handler 10 times on the same `shift_id`, asserts (a) `CF_MEJEPA_LIVE_PREDICTIONS` has exactly one row for the resulting `(session_id, witness_chain_offset)` key (Source of Truth: separate read on the CF after the call), (b) watermark CF row unchanged, (c) per-step training certs record 10 `replay: true` entries.
 
 ---
 

@@ -65,15 +65,72 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT (agent-211-task-updater)
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase — IMPORTANT correction)
 
-**Audit pass against current tree on 2026-05-10:**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- ✅ **Crate `context-graph-mejepa-shift-subscriber` does NOT exist yet** — `SubscriberError` lands in the same not-yet-existing crate via this task.
-- ⚠ **`crates/context-graph-mcp/src/handlers/tools/reality_loop/retired.rs` does NOT exist.** `ls` returns "No such file or directory". The "verify or create: 4+ retired handlers all returning CCREALITY_ENGINE_RETIRED with no subprocess" branch is the relevant one — this task CREATES `retired.rs`. The pre-pivot retired-tool fail-closed wiring is currently distributed across other handlers (cf. the 2026-05-09 retirement commits `77cd98c5` / `7a718785` in `git log`); centralizing it into a single `retired.rs` per this task spec is still wanted.
-- ✅ Existing retired-MCP fail-closed sentinels already exist as `CCREALITY_ENGINE_RETIRED` markers — confirmed via repo search; new `retired.rs` should match the same sentinel.
-- ✅ `thiserror`, `rocksdb`, `serde_json` workspace deps present.
-- No drift in `<files_to_create>` for `error.rs`.
+**🔴 SIGNIFICANT correction to original task body:**
+
+The original task body assumed `crates/context-graph-mcp/src/handlers/tools/reality_loop/retired.rs` already exists in some form (or that retired-name handlers existed and just needed wiring). **Both assumptions are wrong as of 2026-05-11.**
+
+**Verified by `grep`/`ls` 2026-05-11:**
+- `crates/context-graph-mcp/src/handlers/tools/reality_loop/retired.rs` does NOT exist.
+- `CCREALITY_ENGINE_RETIRED` literal does NOT appear ANYWHERE in `crates/context-graph-mcp/src/`.
+- Retired tool names (`reality_run_attempt`, `reality_alter_*`, `reality_drip_attempt`) are NOT in `tools/names.rs`.
+- Retired names hit the dispatcher's unknown-tool fall-through branch in `dispatch.rs` and emit a generic "method not found" error — a regression against constitution `<mcp_tool_namespace_lock>` and `<failure_taxonomy>` `CCREALITY_ENGINE_RETIRED`.
+- The retirement happened by WHOLESALE deletion in commits `4072dcf3` / `d48102e6` (the `target/release/reality-loop` binary was removed; old MCP→CLI shim handlers were removed without a replacement intercept).
+
+**Decided scope for this task (CORRECTED):**
+
+1. **`SubscriberError` taxonomy** in `crates/context-graph-mejepa-shift-subscriber/src/error.rs`:
+   ```
+   #[derive(Debug, thiserror::Error)]
+   pub enum SubscriberError {
+     #[error("MEJEPA_SHIFT_SUBSCRIBER_LAG_ALERT: lag={lag} sustained={sustain_seconds}s")]
+     LagAlert { lag: u64, sustain_seconds: u64 },
+     #[error("MEJEPA_SHIFT_SUBSCRIBER_LOG_PARSE_FAIL: ...")]
+     LogParseFail { session_id: SessionId, byte_offset: u64, line_preview: String, parse_error: String },
+     #[error("MEJEPA_SHIFT_SUBSCRIBER_INSTRUMENT_CACHE_OVERFLOW: ...")]
+     InstrumentCacheOverflow { requested_bytes: u64, current_bytes: u64, capacity_bytes: u64 },
+     #[error("MEJEPA_SHIFT_SUBSCRIBER_WATERMARK_BACKWARDS: ...")]
+     WatermarkBackwards { persisted: ShiftId, observed: ShiftId, session_id: SessionId },
+     #[error("MEJEPA_OBSERVE_BATCH_NAN: ...")]
+     ObserveBatchNan { shift_id: ShiftId, factors: UtmlFactorBundle },
+     #[error("MEJEPA_OBSERVE_INTEGRITY_VIOLATION: ...")]
+     ObserveIntegrityViolation { shift_id: ShiftId, witness_chain_offset: u64, expected_hash: [u8; 32], observed_hash: [u8; 32] },
+     #[error("CCREALITY_ENGINE_RETIRED: tool_name={tool_name}")]
+     EngineRetired { tool_name: String },
+     #[error("MEJEPA_ROCKSDB_WRITE_FAILED: cf={cf} retry={retry}")]
+     RocksDbWriteFailed { cf: String, key: Vec<u8>, retry: u8 },
+     #[error("MEJEPA_CONFIG_OUT_OF_BOUNDS: knob={knob} value={value}")]
+     ConfigOutOfBounds { knob: String, value: String },
+   }
+   impl SubscriberError { pub fn code(&self) -> &'static str { match self { Self::LagAlert{..} => "MEJEPA_SHIFT_SUBSCRIBER_LAG_ALERT", ... } } }
+   ```
+
+2. **Retired-name dispatcher intercept** in `crates/context-graph-mcp/src/handlers/tools/dispatch.rs`. Add BEFORE the unknown-tool fall-through at line ~218:
+   ```
+   const RETIRED_TOOL_NAMES: &[&str] = &[
+     "mcp__cgreality__reality_run_attempt",
+     "mcp__cgreality__reality_alter_file",
+     "mcp__cgreality__reality_alter_run",
+     "mcp__cgreality__reality_alter_apply",
+     "mcp__cgreality__reality_drip_attempt",
+   ];
+   if RETIRED_TOOL_NAMES.contains(&tool_name) {
+     return Err(McpError::structured("CCREALITY_ENGINE_RETIRED",
+       format!("tool retired in 2026-05-09 ME-JEPA pivot; use mcp__cgreality__mejepa_*"),
+       json!({"attempted_tool": tool_name})));
+   }
+   ```
+
+3. **NO subprocess spawn.** **NO aliasing to a new tool.** **NO compatibility shim.**
+
+**Cross-phase dep:** sister `phase7-mcp-tools/TASK-MCP-001` does the dispatcher wiring; this task can either land the intercept itself (if MCP-001 not yet shipped) OR coordinate so the intercept lands once. Single source of truth for the retired list lives wherever the intercept ships — do NOT duplicate.
+
+**FSV for this task:** unit tests exhaustively constructing each `SubscriberError` variant and asserting `.code()` returns the expected SCREAMING_SNAKE tag; integration test invokes each retired tool name through the JSON-RPC dispatcher and asserts the response code is exactly `CCREALITY_ENGINE_RETIRED` and no `target/release/reality-loop` process is spawned (use `pgrep -f reality-loop` before and after; assert no new PID). Source of Truth: response JSON + process table.
+
+---
 
 <task_spec id="TASK-SHIFT-003" version="1.0">
 <metadata>
