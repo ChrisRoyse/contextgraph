@@ -28,7 +28,9 @@ context-graph-solver = { path = "../context-graph-solver" }
 context-graph-cli = { path = "../context-graph-cli", default-features = false }
 context-graph-mejepa-embedders = { path = "../context-graph-mejepa-embedders" }
 context-graph-mejepa = { path = "../context-graph-mejepa" }
+context-graph-mejepa-cf = { path = "../context-graph-mejepa-cf" }
 context-graph-mejepa-hygiene = { path = "../context-graph-mejepa-hygiene" }
+context-graph-mejepa-instruments = { path = "../context-graph-mejepa-instruments" }
 context-graph-mejepa-tct = { path = "../context-graph-mejepa-tct" }
 
 # Async runtime
@@ -38,6 +40,7 @@ axum = "0.8"
 # Serialization
 serde = { workspace = true }
 serde_json = "1.0"
+bincode = { workspace = true }
 jsonschema = { version = "0.18", features = ["draft202012"] }
 
 # Error handling
@@ -71,6 +74,7 @@ rand_distr = { workspace = true }
 glob = "0.3"
 regex = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
+rocksdb = "0.22"
 
 # PID file flock guard (Unix only, prevents multi-process DB corruption)
 [target.'cfg(unix)'.dependencies]

@@ -2519,6 +2519,26 @@ async fn run_reality_loop_stdio() -> Result<()> {
                     .get("arguments")
                     .cloned()
                     .unwrap_or_else(|| json!({}));
+                if matches!(
+                    name,
+                    "mcp__cgreality__reality_run_attempt"
+                        | "mcp__cgreality__reality_alter_file"
+                        | "mcp__cgreality__reality_alter_run"
+                        | "mcp__cgreality__reality_alter_apply"
+                        | "mcp__cgreality__reality_drip_attempt"
+                ) {
+                    let err = reality_loop::CCRealityError::new(
+                        "CCREALITY_ENGINE_RETIRED",
+                        "tool retired in 2026-05-09 ME-JEPA pivot; use mcp__cgreality__mejepa_*",
+                        "tools.call.name",
+                        "use mcp__cgreality__mejepa_verify, mcp__cgreality__mejepa_predict_latest, or a Phase 7 mejepa subscriber tool",
+                        json!({"attempted_tool": name}),
+                        None,
+                    );
+                    let response = tool_error(id, err.into_value());
+                    write_jsonrpc_line(&mut writer, &response).await?;
+                    continue;
+                }
                 let result = match name {
                     tool_names::REALITY_LATEST_ROOT => reality_loop::analyze::reality_latest_root(args).await,
                     tool_names::REALITY_ATTEMPT_SUMMARY => reality_loop::analyze::reality_attempt_summary(args).await,

@@ -105,6 +105,10 @@ impl Handlers {
         let tool_name = crate::tools::aliases::resolve_alias(raw_tool_name);
         let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
 
+        if super::mejepa_phase7_tools::is_retired_cgreality_tool(tool_name) {
+            return super::mejepa_phase7_tools::retired_tool_response(id, tool_name);
+        }
+
         if !context_graph_core::weights::E11_ENTITY_ENABLED
             && matches!(
                 tool_name,
@@ -210,6 +214,9 @@ impl Handlers {
             // ME-JEPA Phase 4 inference tools
             tool_names::MEJEPA_VERIFY => call_mejepa_verify(arguments),
             tool_names::MEJEPA_PREDICT_LATEST => call_mejepa_predict_latest(arguments),
+            tool_names::MEJEPA_OBSERVE_SHIFT => call_mejepa_observe_shift(arguments),
+            tool_names::MEJEPA_SUBSCRIBER_STATUS => call_mejepa_subscriber_status(arguments),
+            tool_names::MEJEPA_CAPTURE_AUDIT => call_mejepa_capture_audit(arguments),
             tool_names::MEJEPA_CONSTELLATION_INSPECT => call_mejepa_constellation_inspect(arguments),
             tool_names::MEJEPA_HEAL_STATUS => call_mejepa_heal_status(arguments),
             tool_names::MEJEPA_ROLLBACK_TO => call_mejepa_rollback_to(arguments),

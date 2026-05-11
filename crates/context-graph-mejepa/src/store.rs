@@ -156,6 +156,40 @@ impl MejepaStore for RocksDbInferStore {
         Ok(out)
     }
 
+    fn session_known(&self, session_id: [u8; 16]) -> Result<bool, MejepaInferError> {
+        let cf = cf(&self.db, CF_MEJEPA_LIVE_PREDICTIONS)?;
+        let mut end = Vec::with_capacity(24);
+        end.extend_from_slice(&session_id);
+        end.extend_from_slice(&i64::MAX.to_be_bytes());
+        let mut iter = self
+            .db
+            .iterator_cf(cf, IteratorMode::From(&end, Direction::Reverse));
+        let Some(item) = iter.next() else {
+            return Ok(false);
+        };
+        let (key, value) = item?;
+        if !key.starts_with(&session_id) {
+            return Ok(false);
+        }
+        if key.len() != 40 {
+            return Err(MejepaInferError::DimMismatch {
+                expected: 40,
+                actual: key.len(),
+                context: "live prediction key must be session_id || created_at || prediction_id"
+                    .to_string(),
+            });
+        }
+        let prediction: RealityPrediction = bincode::deserialize(&value)?;
+        prediction.validate()?;
+        if prediction.session_id != session_id {
+            return Err(MejepaInferError::InvalidInput {
+                field: "live_predictions.session_id".to_string(),
+                detail: "payload session_id does not match key prefix".to_string(),
+            });
+        }
+        Ok(true)
+    }
+
     fn read_recent_calibration_examples(
         &self,
         limit: usize,
@@ -214,6 +248,8 @@ mod tests {
         store.write_live_prediction(&prediction).unwrap();
         let loaded = store.read_live_predictions([9; 16], 1).unwrap();
         assert_eq!(loaded, vec![prediction]);
+        assert!(store.session_known([9; 16]).unwrap());
+        assert!(!store.session_known([8; 16]).unwrap());
     }
 
     #[test]

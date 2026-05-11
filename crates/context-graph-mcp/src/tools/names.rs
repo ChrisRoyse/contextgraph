@@ -100,6 +100,12 @@ pub const MEJEPA_VRAM_BUDGET_REPORT: &str = "mejepa_vram_budget_report";
 pub const MEJEPA_VERIFY: &str = "mcp__cgreality__mejepa_verify";
 /// Phase 4 inference live-prediction readback tool.
 pub const MEJEPA_PREDICT_LATEST: &str = "mcp__cgreality__mejepa_predict_latest";
+/// Phase 7 replay of a durable reality-shift log entry through the live subscriber.
+pub const MEJEPA_OBSERVE_SHIFT: &str = "mcp__cgreality__mejepa_observe_shift";
+/// Phase 7 shift-subscriber health, lag, watermark, and cache snapshot.
+pub const MEJEPA_SUBSCRIBER_STATUS: &str = "mcp__cgreality__mejepa_subscriber_status";
+/// Phase 7 full signal-capture audit bundle for a processed attempt.
+pub const MEJEPA_CAPTURE_AUDIT: &str = "mcp__cgreality__mejepa_capture_audit";
 /// Phase 4b TCT constellation source-of-truth inspector.
 pub const MEJEPA_CONSTELLATION_INSPECT: &str = "mcp__cgreality__mejepa_constellation_inspect";
 /// Phase 5 self-healing source-of-truth status inspector.

@@ -20,6 +20,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tracing::info;
 
+use super::mejepa_phase7_storage::subscriber_state_for_provenance;
 use crate::handlers::tools::helpers::ToolErrorKind;
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
@@ -113,6 +114,11 @@ impl Handlers {
             db_path = %db_path.display(),
             "ME-JEPA verify"
         );
+        let subscriber_state = if request.include_provenance {
+            subscriber_state_for_provenance().await
+        } else {
+            None
+        };
         let result = (|| {
             ensure_deterministic_verify_allowed()?;
             let db = open_infer_rocksdb(&db_path)?;
@@ -132,6 +138,7 @@ impl Handlers {
                     "dbPath": db_path,
                     "mode": "deterministic_phase4_harness"
                 });
+                response["subscriber_state"] = subscriber_state.unwrap_or(serde_json::Value::Null);
             }
             Ok::<serde_json::Value, context_graph_mejepa::MejepaInferError>(response)
         })();
@@ -202,8 +209,11 @@ impl Handlers {
                 session_id,
                 request.limit,
             )?;
+            let session_known =
+                context_graph_mejepa::MejepaStore::session_known(&store, session_id)?;
             Ok::<serde_json::Value, context_graph_mejepa::MejepaInferError>(json!({
-                "predictions": predictions
+                "predictions": predictions,
+                "session_known": session_known
             }))
         })();
         match result {

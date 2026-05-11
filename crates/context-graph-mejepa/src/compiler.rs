@@ -139,6 +139,8 @@ pub trait MejepaStore: Send + Sync {
         limit: u32,
     ) -> Result<Vec<RealityPrediction>, MejepaInferError>;
 
+    fn session_known(&self, session_id: [u8; 16]) -> Result<bool, MejepaInferError>;
+
     fn read_recent_calibration_examples(
         &self,
         limit: usize,

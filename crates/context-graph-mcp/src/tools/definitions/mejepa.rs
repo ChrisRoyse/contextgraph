@@ -42,6 +42,51 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_OBSERVE_SHIFT,
+            "Replay a durable reality-shift log entry through the Phase 7 ME-JEPA subscriber. Fails closed if the subscriber replay channel is not available.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["shiftId"],
+                "properties": {
+                    "shiftId": {
+                        "type": "string",
+                        "pattern": "^01J[0-9A-F]{20}$"
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_SUBSCRIBER_STATUS,
+            "Read the Phase 7 shift-subscriber persisted watermarks and runtime health snapshot.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {}
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_CAPTURE_AUDIT,
+            "Assemble a Phase 7 ME-JEPA signal-capture audit bundle for an attempt from persisted panel and inference RocksDB sources of truth.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["attemptId"],
+                "properties": {
+                    "attemptId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    },
+                    "page": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 0
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_CONSTELLATION_INSPECT,
             "Inspect a persisted ME-JEPA TCT constellation from CF_MEJEPA_CONSTELLATION. Returns metadata, counts, support, and thresholds only; raw centroid vectors are never returned.",
             json!({

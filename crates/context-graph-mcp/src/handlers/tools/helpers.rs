@@ -101,6 +101,34 @@ impl Handlers {
         )
     }
 
+    pub(crate) fn tool_error_structured(
+        &self,
+        id: Option<JsonRpcId>,
+        kind: ToolErrorKind,
+        error_code: &str,
+        message: &str,
+        payload: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let (code, label) = kind.code_and_label();
+        let structured = json!({
+            "error_code": error_code,
+            "message": message,
+            "payload": payload
+        });
+        JsonRpcResponse::success(
+            id,
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": format!("[{} {}] {}: {}", label, code, error_code, message)
+                }],
+                "structuredContent": structured,
+                "isError": true,
+                "errorCode": code
+            }),
+        )
+    }
+
     /// MCP-compliant tool error helper (untyped convenience).
     ///
     /// For cases where the error category is obvious from context.
