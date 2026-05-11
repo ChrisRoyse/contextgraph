@@ -67,20 +67,51 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — TASK NOT SUPERSEDED (PENDING — clean implementation work)
+## 📋 2026-05-11 STATE AUDIT — PENDING (largest remaining UTML item)
 
-**Status: PENDING. No supersession.** Host crate `context-graph-mejepa-train` exists, but NONE of the symbols this task introduces are in tree.
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**NOT FOUND in `crates/context-graph-mejepa-train/src/` (full grep `UtmlClassifier|EmbedderCoherence|compute_embedder_coherence|UtmlState|ClassifierVerdict|update_grad_ema|update_m_t|detect_dissipating|reinit_dormant|prune_decision|state_transfer|dormant_unit|continual_backprop|active_learning_trigger` returns zero hits):**
+**Status: PENDING.** This task lands FOUR distinct primitives, none of which exist in code today:
+- **UtmlClassifier** (7-state regime classifier).
+- **prune_decision** (the curriculum-pruning rule per UTML §X).
+- **Consolidation M(t)** integral over the cert chain (UTML §XII).
+- **StateTransfer T detector** (Wasserstein-1-based train→deploy distribution shift).
+- **Continual-backprop dormant-unit re-init** intervention (triggered by `ΔΩ.effective_plasticity` collapse from TASK-UTML-005's signal).
 
-- `UtmlClassifier::classify` (7-state coaching-order priority classifier).
-- `prune_decision` (3-condition agreement gate).
-- `Consolidation::update_m_t` (consolidation metric tracker).
-- `Consolidation::detect_dissipating`.
-- `StateTransfer::compute_t` (state-transfer T detector for REQ-UTML-08 active-learning trigger).
-- `ContinualBackprop::reinit_dormant_units` (dormant-unit re-init per REQ-UTML-07).
+**Decided scope for this task — split into 4 sub-modules (parallelizable across 2 sub-agents):**
 
-**Direction for future agents:** Task remains fully actionable as authored. Implement against the existing `src/learning_signal.rs` module (extend with classifier/consolidation/state-transfer/continual-backprop sub-modules) rather than creating a separate crate. The dependencies on TASK-UTML-002 (`UtmlState`, `ClassifierVerdict`, `Intervention`) remain pending — sequence accordingly.
+1. **`crates/context-graph-mejepa-train/src/learning_signal/classifier.rs`** (~150 lines):
+   - `UtmlClassifier { history: VecDeque<UtmlSignal>, window_size: usize }`.
+   - `classify(&self, signal: &UtmlSignal) -> ClassifierVerdict` — applies UTML §VII-VIII state-classification rules over the rolling window.
+   - `prune_decision(history: &[UtmlSignal]) -> PruneDecision` — per UTML §X: `Prune` iff `L_step < 0.1 for N steps AND ΔΩ > 0.4 throughout AND ΔΞ > 0.4 throughout`.
+
+2. **`crates/context-graph-mejepa-train/src/learning_signal/consolidation.rs`** (~100 lines):
+   - `pub struct ConsolidationMt { window_steps: usize }`.
+   - `compute_m_t(&self, certs: &[TrainingCertificate]) -> Result<f32, UtmlError>` — geometric mean of `(ΔΩ × ΔΞ)` over the chain window, clamped `[0, 1]`. The cert chain IS the physical M(t) tensor (per UTML §XII) — this function INTEGRATES.
+
+3. **`crates/context-graph-mejepa-train/src/learning_signal/state_transfer.rs`** (~150 lines):
+   - `pub struct StateTransferT { sample_size: usize }`.
+   - `compute_state_transfer_t(&self, train_dist: &[f32], deploy_dist: &[f32]) -> Result<StateTransferDiagnostic, UtmlError>` — Wasserstein-1 distance between sorted-CDF samples + lambda + T value per UTML §VIII.
+   - Uses `rand` for sampling, sorts both samples, computes mean of |diff|.
+
+4. **`crates/context-graph-mejepa-train/src/learning_signal/continual_backprop.rs`** (~100 lines):
+   - `pub struct ContinualBackprop { dormancy_threshold: f32, reinit_count: u64 }`.
+   - `detect_dormant_units(&self, plasticity_per_unit: &[f32]) -> Vec<usize>` — units with plasticity < threshold.
+   - `reinit_dormant(&mut self, model_weights: &mut Tensor, dormant_indices: &[usize])` — Kaiming-init on dormant rows; integrates with `Trainer::optimizer_step`.
+
+5. Common: `UtmlClassifier::classify()` returns a verdict; `Trainer` consumes the verdict each step and routes to either `KeepTraining`, `Prune`, `Reinit` (continual-backprop), or `EscalateToOperator`.
+
+6. NEVER `unwrap_or` defaults on M(t), Wasserstein-1, or plasticity computations — all surface structured errors.
+
+7. `learning_signal.rs` is at 388 lines today; if these 4 sub-modules are added inline, the file would exceed 500. **Split into a sub-module directory `learning_signal/{mod, deltas, sampling, classifier, consolidation, state_transfer, continual_backprop}.rs`** with `pub use` re-exports preserving the existing public API.
+
+**Cross-phase dep:** Phase 8 TASK-EVAL-011 consumes the M(t) integral + StateTransfer T diagnostic; TRAINING `Trainer` consumes the classifier verdict + dormant re-init.
+
+**FSV for this task:** integration test for each sub-module:
+(a) classifier: synthesize 7 regime patterns (one per UtmlState variant) → asserts each verdict matches expected;
+(b) M(t): synthesize cert chain with KNOWN ΔΩ × ΔΞ → asserts M(t) matches geometric mean within ε;
+(c) state-transfer: synthesize train/deploy with KNOWN distribution shift → asserts T-value within ε of analytical Wasserstein-1;
+(d) continual-backprop: synthesize plasticity vector with KNOWN dormant indices → asserts reinit triggered on those indices and weights actually changed (Source of Truth: tensor before/after diff). Evidence files `/tmp/contextgraph-mejepa-train-fsv/{utml-classifier-evidence.json, utml-mt-evidence.json, utml-state-transfer-evidence.json, utml-continual-backprop-evidence.json}`.
 
 ---
 

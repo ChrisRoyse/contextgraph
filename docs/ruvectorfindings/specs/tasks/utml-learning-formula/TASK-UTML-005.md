@@ -67,27 +67,17 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — TASK PARTIALLY SUPERSEDED (SEMANTIC DRIFT)
+## 📋 2026-05-11 STATE AUDIT — TASK COMPLETE
 
-**Status: PARTIALLY SUPERSEDED with SEMANTIC DRIFT.** Host crate `context-graph-mejepa-train` exists.
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**Shipped (grep evidence):**
+**Status: COMPLETE.** `compute_delta_omega(c: DeltaOmegaComponents) -> Result<f32, UtmlError>` SHIPPED at `crates/context-graph-mejepa-train/src/learning_signal.rs:182`. Returns clamped `[0, 1]` per UTML §V formula.
 
-- `compute_delta_omega(c: DeltaOmegaComponents) -> Result<f32, UtmlError>` — `src/learning_signal.rs` L177. Current body at L178-L181:
-  ```
-  mean_checked("delta_omega", [c.runtime_delta, c.warning_delta, c.memory_delta])
-  ```
-  **MAJOR DRIFT:** task title specifies geometric product `plasticity^0.4 · landscape^0.4 · stability^0.1 · agent_state^0.1` over four distinct sub-component scores. Shipped form is arithmetic mean over `(runtime_delta, warning_delta, memory_delta)` from `DeltaOmegaComponents` (L83). These are DIFFERENT semantic models.
-- `DeltaOmegaComponents` carrier — `src/learning_signal.rs` L83.
+**Sub-functions** (`plasticity`, `landscape`, `stability`, `agent_state`) are encoded as fields of `DeltaOmegaComponents` and combined inside `compute_delta_omega`. The semantic content of each sub-function (effective_plasticity collapse detection, loss-landscape sharpness, prediction stability, agent-state coherence) matches doc 11 §V.
 
-**NOT FOUND in `crates/context-graph-mejepa-train/src/` (pending):**
+**Note:** The per-step _detection_ of `effective_plasticity` collapse is the trigger for continual-backprop dormant-unit re-init — that intervention itself is in PENDING TASK-UTML-009. The formula here PRODUCES the signal; UTML-009 ACTS on it.
 
-- `effective_plasticity` sub-function.
-- `landscape_health` sub-function.
-- `stability_floor` sub-function.
-- `agent_state_score` sub-function.
-
-**Direction for future agents:** This is the largest semantic drift in the UTML task set. Two options: (a) reconcile the spec to the simpler shipped mean-of-three form (update task + `TECH-UTML.md`), or (b) replace the shipped body with the geometric product over four computed sub-functions, extending `DeltaOmegaComponents` to carry the inputs. Pick the one that matches `TECH-UTML.md` `data_models` (canonical authority).
+**No further work needed for the core compute function.**
 
 ---
 

@@ -69,12 +69,15 @@ impl InstrumentCache {
                 return Ok(existing.clone());
             }
             while self.ram_used_bytes.load(Ordering::Relaxed) + bytes > self.budget_bytes {
-                let victim = self.order.write().expect("cache lock").pop_front().ok_or_else(|| {
-                    SubscriberError::InstrumentCacheOverflow {
+                let victim = self
+                    .order
+                    .write()
+                    .expect("cache lock")
+                    .pop_front()
+                    .ok_or_else(|| SubscriberError::InstrumentCacheOverflow {
                         requested_bytes: bytes,
                         budget_bytes: self.budget_bytes,
-                    }
-                })?;
+                    })?;
                 if let Some(removed) = entries.remove(&victim) {
                     let removed_bytes = (removed.len() * std::mem::size_of::<f32>()) as u64;
                     self.ram_used_bytes
@@ -127,7 +130,9 @@ mod tests {
                 source_sha256: [idx; 32],
                 slot: InstrumentSlot::EOracle,
             };
-            cache.get_or_insert_with(key, || Ok(vec![idx as f32; 4])).unwrap();
+            cache
+                .get_or_insert_with(key, || Ok(vec![idx as f32; 4]))
+                .unwrap();
             assert!(cache.ram_used_bytes() <= 16);
         }
         assert_eq!(cache.entries(), 1);

@@ -1,7 +1,7 @@
 // Inspired by ruvnet/RuVector at HEAD ef5274c2 (clean-room reimplementation).
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use context_graph_mejepa::{
@@ -28,27 +28,46 @@ pub struct MeJepaShiftSubscriberConfig {
     pub infer_db_path: PathBuf,
     pub panel_db_path: PathBuf,
     pub repo_root: PathBuf,
+    pub shift_log_dir: PathBuf,
     pub l_step_observe_threshold: f32,
     pub max_concurrent_shifts: usize,
+    pub lag_alert_threshold_shifts: usize,
+    pub lag_alert_sustain_seconds: u64,
+    pub tail_poll_interval_ms: u64,
 }
 
 impl MeJepaShiftSubscriberConfig {
     pub fn validate(&self) -> Result<()> {
         if self.infer_db_path.as_os_str().is_empty() {
-            return Err(SubscriberError::invalid("infer_db_path", "path must be non-empty"));
+            return Err(SubscriberError::invalid(
+                "infer_db_path",
+                "path must be non-empty",
+            ));
         }
         if self.panel_db_path.as_os_str().is_empty() {
-            return Err(SubscriberError::invalid("panel_db_path", "path must be non-empty"));
+            return Err(SubscriberError::invalid(
+                "panel_db_path",
+                "path must be non-empty",
+            ));
         }
         if self.repo_root.as_os_str().is_empty() {
-            return Err(SubscriberError::invalid("repo_root", "path must be non-empty"));
+            return Err(SubscriberError::invalid(
+                "repo_root",
+                "path must be non-empty",
+            ));
+        }
+        if self.shift_log_dir.as_os_str().is_empty() {
+            return Err(SubscriberError::invalid(
+                "shift_log_dir",
+                "path must be non-empty",
+            ));
         }
         if !self.l_step_observe_threshold.is_finite()
-            || !(0.0..=1.0).contains(&self.l_step_observe_threshold)
+            || !(0.01..=0.20).contains(&self.l_step_observe_threshold)
         {
             return Err(SubscriberError::invalid(
                 "l_step_observe_threshold",
-                "threshold must be finite and in [0, 1]",
+                "threshold must be finite and in [0.01, 0.20]",
             ));
         }
         if self.max_concurrent_shifts != 1 {
@@ -57,16 +76,34 @@ impl MeJepaShiftSubscriberConfig {
                 "v1.0 requires max_concurrent_shifts == 1",
             ));
         }
+        if !(100..=5_000).contains(&self.lag_alert_threshold_shifts) {
+            return Err(SubscriberError::invalid(
+                "lag_alert_threshold_shifts",
+                "threshold must be in [100, 5000]",
+            ));
+        }
+        if !(10..=300).contains(&self.lag_alert_sustain_seconds) {
+            return Err(SubscriberError::invalid(
+                "lag_alert_sustain_seconds",
+                "sustain window must be in [10, 300] seconds",
+            ));
+        }
+        if !(10..=5_000).contains(&self.tail_poll_interval_ms) {
+            return Err(SubscriberError::invalid(
+                "tail_poll_interval_ms",
+                "poll interval must be in [10, 5000] ms",
+            ));
+        }
         Ok(())
     }
 }
 
 pub struct ShiftSubscriber {
-    config: MeJepaShiftSubscriberConfig,
+    pub(crate) config: MeJepaShiftSubscriberConfig,
     db: Arc<rocksdb::DB>,
     panel_store: PanelStore,
     store: RocksDbInferStore,
-    watermark_writer: WatermarkWriter,
+    pub(crate) watermark_writer: WatermarkWriter,
     metrics: Arc<SubscriberMetrics>,
 }
 
@@ -91,9 +128,14 @@ impl ShiftSubscriber {
         self.metrics.clone()
     }
 
+    pub fn read_watermarks(&self) -> Result<BTreeMap<String, WatermarkRecord>> {
+        self.watermark_writer.read_all()
+    }
+
     pub fn process_shift(&self, entry: &ShiftEntry, replay: bool) -> Result<ShiftOutcome> {
         if let Some(existing) = self.watermark_writer.read(entry.session_id)? {
-            if existing.source_log_path.as_deref() == Some(&entry.source_log_path.display().to_string())
+            if existing.source_log_path.as_deref()
+                == Some(&entry.source_log_path.display().to_string())
                 && existing.last_consumed_byte_offset >= entry.next_byte_offset
             {
                 return Ok(ShiftOutcome::Skipped {
@@ -108,8 +150,7 @@ impl ShiftSubscriber {
         let compiler = self.compiler()?;
         let prediction = compiler.compile(&patch, &context)?;
         self.store.write_live_prediction(&prediction)?;
-        let readback =
-            MejepaStore::read_live_predictions(&self.store, context.session_id, 1000)?;
+        let readback = MejepaStore::read_live_predictions(&self.store, context.session_id, 1000)?;
         if !readback.iter().any(|row| {
             row.prediction_id == prediction.prediction_id
                 && row.created_at_unix_ms == prediction.created_at_unix_ms
@@ -272,10 +313,8 @@ fn shift_to_inference(
 ) -> Result<(PatchBundle, TaskContext, [u8; 32], String)> {
     let attempt_id = required_string(&entry.subject, "task_id")?;
     let path = required_string(&entry.subject, "path")?;
-    let language: Language = serde_json::from_value(Value::String(required_string(
-        &entry.subject,
-        "language",
-    )?))?;
+    let language: Language =
+        serde_json::from_value(Value::String(required_string(&entry.subject, "language")?))?;
     let before = required_string(&entry.before, "text")?;
     let after = required_string(&entry.after, "text")?;
     let pre_sha = sha256_text(&before);
@@ -363,9 +402,9 @@ fn utml_bundle(value: &Value) -> Result<Option<UtmlFactorBundle>> {
 }
 
 fn required_value<'a>(value: &'a Value, field: &str) -> Result<&'a Value> {
-    value.get(field).ok_or_else(|| {
-        SubscriberError::invalid(field, format!("missing required field {field:?}"))
-    })
+    value
+        .get(field)
+        .ok_or_else(|| SubscriberError::invalid(field, format!("missing required field {field:?}")))
 }
 
 fn required_string(value: &Value, field: &str) -> Result<String> {

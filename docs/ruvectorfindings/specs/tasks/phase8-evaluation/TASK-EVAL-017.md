@@ -65,15 +65,35 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mejepa/examples/eval_fsv.rs` does NOT exist. Accurate on "create".
-- **FSV-harness precedent**: `crates/context-graph-mejepa-train/examples/train_holdout_eval_fsv.rs` is SHIPPED — clone its structure (path setup, mode 0o600, re-read-and-assert, exit code semantics) verbatim where applicable. Other FSV examples: `crates/context-graph-mejepa-corpus/examples/`, `crates/context-graph-mejepa-instruments/` (per Phase 0/1 FSV work).
-- Output dir `/tmp/contextgraph-mejepa-evaluation-fsv/` — create with `std::fs::create_dir_all`; per-file mode 0o600 via `std::os::unix::fs::PermissionsExt`.
-- 16 evidence files — enumerate explicitly; do NOT generate dynamically (per Occam — each file has a known shape and known consumer).
-- Re-read-and-assert: each write MUST be followed by a fresh `fs::read` and JSON-parse round-trip + structural assertion. Fail-closed on parse mismatch.
+**Decided scope for this task:**
+1. New example binary `crates/context-graph-mejepa/examples/eval_phase8_fsv.rs` (clean-room, provenance comment per CLAUDE.md `// Inspired by ruvnet/RuVector at HEAD ef5274c2 (clean-room reimplementation).`).
+2. The example creates a tempdir-backed RocksDB, opens all required CFs (sister TASK-EVAL-003 declares them), constructs `EvalRunner` against synthetic-but-valid holdout (`mejepa::fixtures::synthetic_holdout`), runs end-to-end + active-learning + graph + weekly-report + ship-gate.
+3. Writes 16 evidence files to `/tmp/contextgraph-mejepa-evaluation-fsv/` mode `0o600`:
+   - `holdout-eval.json` — output of TASK-EVAL-004
+   - `weekly-report.json` — output of TASK-EVAL-015
+   - `active-learning-queue.json` — output of TASK-EVAL-009/014
+   - `ship-gate.json` — output of TASK-EVAL-008
+   - `patch-similarity-graph.json` — output of TASK-EVAL-010
+   - `regression.json` — output of TASK-EVAL-012
+   - `ood.json` — output of TASK-EVAL-006
+   - `q1q2q3.json` — output of TASK-EVAL-012
+   - `state-transfer.json` — output of TASK-EVAL-011 (+ Phase-7-not-shipped degradation)
+   - `aux-head-distillation.json` — output of TASK-EVAL-011
+   - `open-research-questions.json` — output of TASK-EVAL-001/015
+   - `leakage-check.json` — output of TASK-EVAL-004 leakage path
+   - `bayesian-shrinkage.json` — output of TASK-EVAL-012
+   - `provenance.json` — every persisted record's provenance fields
+   - `latency.json` — TASK-EVAL-016 measured wall times per phase
+   - `mcp-roundtrip.json` — output of TASK-EVAL-013/014 MCP tool roundtrip
+4. Top-level `manifest.json` records SHA-256 of every evidence file plus the synthetic fixture SHA, code_version, and wall-clock timestamps.
+5. After writing each file, READ IT BACK and `assert!(read_back == in_memory)` byte-equal.
+6. NO mock data — use real `RocksDbInferStore` against a tempdir.
+
+**FSV for this task:** the example IS the FSV. After running, `/tmp/contextgraph-mejepa-evaluation-fsv/` contains 16 evidence files with mode 0600; `manifest.json` SHA-256 column matches a fresh `sha256sum`.
 
 ---
 

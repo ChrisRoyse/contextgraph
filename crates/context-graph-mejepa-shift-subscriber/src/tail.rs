@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::io::{AsyncBufReadExt, AsyncSeekExt, BufReader};
 
 use crate::models::{decode_session_hex32, ShiftEntry, ShiftId};
 use crate::{Result, SubscriberError};
@@ -38,6 +38,10 @@ impl ShiftLogTail {
         self.offset
     }
 
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     pub async fn poll_next_line(&mut self) -> Result<Option<ShiftEntry>> {
         let meta = tokio::fs::metadata(&self.path)
             .await
@@ -59,16 +63,20 @@ impl ShiftLogTail {
         file.seek(std::io::SeekFrom::Start(start))
             .await
             .map_err(|err| SubscriberError::io("seek", self.path.clone(), err))?;
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)
+        let mut reader = BufReader::new(file);
+        let mut line = Vec::new();
+        let read = reader
+            .read_until(b'\n', &mut line)
             .await
-            .map_err(|err| SubscriberError::io("read", self.path.clone(), err))?;
-        let Some(newline) = bytes.iter().position(|byte| *byte == b'\n') else {
+            .map_err(|err| SubscriberError::io("read_line", self.path.clone(), err))?;
+        if read == 0 || !line.ends_with(b"\n") {
             return Ok(None);
-        };
-        let line = &bytes[..newline];
-        let next_offset = start + newline as u64 + 1;
-        let entry = parse_shift_line(&self.path, start, next_offset, line)?;
+        }
+        let next_offset = start + line.len() as u64;
+        while matches!(line.last(), Some(b'\n' | b'\r')) {
+            line.pop();
+        }
+        let entry = parse_shift_line(&self.path, start, next_offset, &line)?;
         self.offset = next_offset;
         Ok(Some(entry))
     }
@@ -80,13 +88,12 @@ fn parse_shift_line(
     next_byte_offset: u64,
     line: &[u8],
 ) -> Result<ShiftEntry> {
-    let raw: RawShiftRecord = serde_json::from_slice(line).map_err(|err| {
-        SubscriberError::LogParseFail {
+    let raw: RawShiftRecord =
+        serde_json::from_slice(line).map_err(|err| SubscriberError::LogParseFail {
             path: path.to_path_buf(),
             byte_offset,
             detail: err.to_string(),
-        }
-    })?;
+        })?;
     raw.into_entry(path.to_path_buf(), byte_offset, next_byte_offset)
 }
 
@@ -175,7 +182,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("11111111111111111111111111111111.jsonl");
         let line = serde_json::to_string(&json!({
-            "shift_id": "01J0123456789ABCDEF012",
+            "shift_id": "01J0123456789ABCDEF0123",
             "timestamp_unix_ns": 1u128,
             "tool_name": "unit",
             "tool_use_id": null,

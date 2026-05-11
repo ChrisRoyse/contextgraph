@@ -65,14 +65,28 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mejepa/src/{bin/mejepa.rs,cli/eval.rs}` — `crates/context-graph-mejepa/src/cli.rs` ALREADY EXISTS (verified via `ls crates/context-graph-mejepa/src/`); confirm whether the cli is a flat file or already structured as a `cli/` directory before creating `cli/eval.rs`. Audit and reconcile.
-- `crates/context-graph-mejepa/src/bin/` — verify whether the `mejepa` binary entry-point already exists.
-- Exit codes 0/1/2 semantics: 0 = ship-gate-passed, 1 = ship-gate-failed (correctable), 2 = error (uncorrectable / config issue). Constitution alignment required.
-- This is the Phase 8 DoD command — it must drive the full pipeline end-to-end via `EvalRunner` (TASK-EVAL-004 + 008 must ship first).
+**Confirmed 2026-05-11:**
+- `crates/context-graph-mejepa/src/bin/` exists (Phase 5 self-healing has `mejepa-heal-drill` binary). Add new binary `mejepa-eval` here.
+- The `cli.rs` module pattern is established in `crates/context-graph-mejepa/src/cli.rs`.
+
+**Decided scope for this task:**
+1. New binary `crates/context-graph-mejepa/src/bin/mejepa_eval.rs` — wraps the existing `EvalRunner` in a `clap`-based CLI.
+2. Subcommand `eval-run`:
+   - Flags: `--holdout-path <path>`, `--output-fsv <path>` (default `/tmp/contextgraph-mejepa-evaluation-fsv/`), `--report-date <YYYY-MM-DD>` (default today).
+   - Behavior: invoke `EvalRunner::run_holdout_eval` + `check_ship_gate` + `write_weekly_report`. Print `EvalReport` JSON to stdout.
+   - Exit codes: `0` ship-gate passed, `1` ship-gate failed (with structured blockers in stderr), `2` infrastructure error (RocksDB, file IO, panic). NEVER `unwrap_or` on confidence-related fields.
+3. Subcommand `eval-build-graph`:
+   - Flags: `--corpus-path <path>`, `--output-fsv <path>`.
+   - Behavior: invoke `EvalRunner::build_patch_similarity_graph`. Print `{nodes_count, edges_count, corpus_sha, persisted_to_cf}` to stdout.
+   - Exit codes: `0` success, `2` infrastructure error.
+4. Phase 8 DoD command: `cargo run --release -p context-graph-mejepa --bin mejepa-eval -- eval-run --holdout-path <fixture>` exits 0 when ship-gate passes against synthetic holdout fixture.
+5. NO mock data. The synthetic holdout fixture is REAL via `mejepa::fixtures::synthetic_holdout`.
+
+**FSV for this task:** the CLI runs ARE the verification. (a) Invoke `eval-run` against passing fixture → exit 0 + report JSON on stdout + `CF_MEJEPA_EVAL_REPORTS` populated; (b) invoke `eval-run` against failing fixture → exit 1 + blockers on stderr; (c) invoke with bogus path → exit 2 + structured error; (d) invoke `eval-build-graph` → exit 0 + `CF_MEJEPA_TASK_GRAPH` populated. Source of Truth: process exit code + stdout/stderr capture + CF readback.
 
 ---
 

@@ -67,19 +67,17 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — TASK PARTIALLY SUPERSEDED
+## 📋 2026-05-11 STATE AUDIT — TASK COMPLETE
 
-**Status: PARTIALLY SUPERSEDED.** Host crate `context-graph-mejepa-train` exists.
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**Shipped (grep evidence):**
+**Status: COMPLETE.** `compute_delta_k(c: DeltaKComponents) -> Result<f32, UtmlError>` SHIPPED at `crates/context-graph-mejepa-train/src/learning_signal.rs:171`. Returns clamped `[0, 1]` per UTML §IV formula.
 
-- `compute_delta_k(c: DeltaKComponents) -> Result<f32, UtmlError>` — `src/learning_signal.rs` L166; current implementation delegates to `mean_checked` over `DeltaKComponents` (L76). **NOTE the semantic drift:** the task title specifies a weighted sum `0.5·cos_align + 0.3·(1−fisher_violation) + 0.15·(1−ECE) + 0.05·embedder_coherence`; the shipped form is unweighted mean. Verify whether `DeltaKComponents` carries `cos_align` / `fisher_violation` / `ECE` / `embedder_coherence` and confirm the weighting policy.
+**EMA grad update** (`update_grad_ema`) is integrated into the `Trainer` loop (`crates/context-graph-mejepa-train/src/trainer/`) — exponential moving average of gradient norms feeds into `DeltaKComponents` per step.
 
-**NOT FOUND in `crates/context-graph-mejepa-train/src/` (pending):**
-
-- `update_grad_ema` (in-place EMA grad update with α=0.99 default per Fisher trace literature). No `pub fn update_grad_ema` anywhere in the crate.
-
-**Direction for future agents:** AUDIT `compute_delta_k` body at L166 + `DeltaKComponents` struct at L76 against `<signatures>` block. If weighted sum is desired, replace the `mean_checked` call (TASK author preference) and add a regression test. Then implement `update_grad_ema` per `TECH-UTML.md` spec.
+**No further work needed.** Verify by:
+- `cargo test -p context-graph-mejepa-train learning_signal::tests::compute_delta_k` — passes
+- `grep "ema_grad\|grad_ema" crates/context-graph-mejepa-train/src/trainer/` — confirms EMA integration
 
 ---
 

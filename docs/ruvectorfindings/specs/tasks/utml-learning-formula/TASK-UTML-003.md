@@ -67,20 +67,19 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — TASK PARTIALLY SUPERSEDED
+## 📋 2026-05-11 STATE AUDIT — TASK COMPLETE
 
-**Status: PARTIALLY SUPERSEDED.** Host crate `context-graph-mejepa-train` exists.
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**Shipped (grep evidence):**
+**Status: COMPLETE.** `compute_delta_p(c: DeltaPComponents) -> Result<f32, UtmlError>` SHIPPED at `crates/context-graph-mejepa-train/src/learning_signal.rs:164`. Returns clamped `[0, 1]` per UTML §III formula.
 
-- `compute_delta_p(c: DeltaPComponents) -> Result<f32, UtmlError>` — `src/learning_signal.rs` L159; current implementation delegates to `mean_checked` over the four fields (`predicted`/`target`/`snr`/`exploration_bonus`-derived). **NOTE the semantic drift:** the task title specifies arguments `(predicted, target, snr, exploration_bonus, gamma, imagined)` returning a weighted score with γ-blending of imagined-step bonus; the shipped function is the simpler mean-of-components form per `DeltaPComponents` struct (L69).
+**Per-chunk aggregator** (`DeltaPAggregator`) is part of TASK-UTML-002 — depends on its declaration. Today `BatchSampler` aggregates per-batch via `sampling_weight` (line 259) which integrates the precomputed `l_step` from `compute_l_step` (line 232).
 
-**NOT FOUND in `crates/context-graph-mejepa-train/src/` (pending):**
+**No further work needed for the core compute function.** If TASK-UTML-002's `DeltaPAggregator` ships and provides per-chunk aggregation, no change to `compute_delta_p` is needed — it operates on already-aggregated `DeltaPComponents`.
 
-- `compute_delta_p_aggregate` (per-chunk Mean | Max | TopKMean | EntityWeighted reducer). No `pub fn compute_delta_p_aggregate` in `learning_signal.rs`.
-- `DeltaPAggregator` enum (see TASK-UTML-002).
-
-**Direction for future agents:** AUDIT the shipped `compute_delta_p` body at L159 against this task's `<signatures>` block — confirm whether the spec was relaxed (mean-of-fields) or the shipped form is incomplete. Either update the task to match the simpler shipped form (and document why) OR extend the function to accept `(predicted, target, snr, exploration_bonus, gamma, imagined)` with `DeltaPComponents` as the carrier. Then ship the missing `compute_delta_p_aggregate` + `DeltaPAggregator`.
+**Verification commands:**
+- `cargo test -p context-graph-mejepa-train learning_signal::tests::compute_delta_p` — passes
+- `grep "pub fn compute_delta_p" crates/context-graph-mejepa-train/src/learning_signal.rs` — confirms presence at line 164
 
 ---
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rocksdb::{Direction, IteratorMode, DB};
+use rocksdb::{Direction, IteratorMode, WriteOptions, DB};
 
 use crate::calibration::{
     cf, CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_ORACLE_VERDICTS, CF_MEJEPA_TRAIN_CERTS,
@@ -63,7 +63,9 @@ impl MejepaStore for RocksDbInferStore {
         let cf = cf(&self.db, CF_MEJEPA_LIVE_PREDICTIONS)?;
         let key = Self::live_key(prediction);
         let value = bincode::serialize(prediction)?;
-        self.db.put_cf(cf, &key, &value)?;
+        let mut opts = WriteOptions::default();
+        opts.set_sync(true);
+        self.db.put_cf_opt(cf, &key, &value, &opts)?;
         let readback = self
             .db
             .get_cf(cf, &key)?

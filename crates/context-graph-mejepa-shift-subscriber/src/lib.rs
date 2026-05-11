@@ -5,6 +5,7 @@
 mod cache;
 mod error;
 mod models;
+mod runner;
 mod subscriber;
 mod tail;
 mod watermark;
@@ -12,9 +13,11 @@ mod watermark;
 pub use cache::{InstrumentCache, SlotKey};
 pub use error::{Result, SubscriberError};
 pub use models::{
-    CaptureAuditBundle, LiveSubscriberStatus, PanicInfo, ShiftEntry, ShiftId, ShiftOutcome,
-    ShiftSide, SkipReason, SubscriberMetrics, UtmlFactorBundle, WatermarkRecord,
+    decode_session_hex32, CaptureAuditBundle, LatencySnapshot, LiveSubscriberStatus, PanicInfo,
+    ShiftEntry, ShiftId, ShiftOutcome, ShiftSide, SkipReason, SubscriberMetrics, UtmlFactorBundle,
+    WatermarkRecord,
 };
+pub use runner::SubscriberRunSummary;
 pub use subscriber::{MeJepaShiftSubscriberConfig, ShiftSubscriber};
 pub use tail::ShiftLogTail;
 pub use watermark::WatermarkWriter;

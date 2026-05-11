@@ -82,12 +82,9 @@ impl WatermarkWriter {
         opts.set_sync(true);
         self.db
             .put_cf_opt(self.cf()?, key.as_bytes(), &value, &opts)?;
-        let readback = self
-            .db
-            .get_cf(self.cf()?, key.as_bytes())?
-            .ok_or_else(|| {
-                SubscriberError::invalid("watermark.readback", "write returned but row is absent")
-            })?;
+        let readback = self.db.get_cf(self.cf()?, key.as_bytes())?.ok_or_else(|| {
+            SubscriberError::invalid("watermark.readback", "write returned but row is absent")
+        })?;
         if readback != value {
             return Err(SubscriberError::invalid(
                 "watermark.readback",
@@ -117,7 +114,7 @@ mod tests {
     fn record(offset: u64) -> WatermarkRecord {
         WatermarkRecord {
             session_id: "11111111111111111111111111111111".to_string(),
-            last_consumed_shift_id: "01J0123456789ABCDEF012".to_string(),
+            last_consumed_shift_id: "01J0123456789ABCDEF0123".to_string(),
             last_consumed_byte_offset: offset,
             last_advanced_at_unix_seconds: 1,
             producer_tool_name: Some("unit".to_string()),
@@ -134,7 +131,10 @@ mod tests {
         assert_eq!(key, "wm:11111111111111111111111111111111");
         assert_eq!(
             writer
-                .read(crate::models::decode_session_hex32("11111111111111111111111111111111").unwrap())
+                .read(
+                    crate::models::decode_session_hex32("11111111111111111111111111111111")
+                        .unwrap()
+                )
                 .unwrap()
                 .unwrap()
                 .last_consumed_byte_offset,

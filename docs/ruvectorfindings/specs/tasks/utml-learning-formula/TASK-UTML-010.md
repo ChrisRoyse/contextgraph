@@ -67,24 +67,28 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — TASK PARTIALLY SUPERSEDED
+## 📋 2026-05-11 STATE AUDIT — PENDING (build on existing edge-case FSV pattern)
 
-**Status: PARTIALLY SUPERSEDED.** Host crate `context-graph-mejepa-train` exists with an FSV examples directory.
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**Shipped (grep + ls evidence):**
+**Status: PENDING.** Adjacent FSV examples SHIPPED (`train_edge_cases_fsv`, `train_holdout_eval_fsv`, `train_smoke_fsv`, `train_full_fsv`, `train_cert_chain_fsv` in `crates/context-graph-mejepa-train/examples/`) cover individual cases. The full 100-synthetic-example UTML envelope harness is the remaining work.
 
-- `crates/context-graph-mejepa-train/examples/` exists with 5 FSV harnesses: `train_cert_chain_fsv.rs`, `train_edge_cases_fsv.rs`, `train_full_fsv.rs`, `train_holdout_eval_fsv.rs`, `train_smoke_fsv.rs`.
-- `train_full_fsv.rs` already writes `utml-l-step-evidence.json` (referenced at L34 + L111 — `Path::new(FSV_DIR).join("utml-l-step-evidence.json")`). This is the FSV target named in the task title.
+**Decided scope for this task:**
+1. New example binary `crates/context-graph-mejepa-train/examples/utml_envelope_fsv.rs` (clean-room, provenance comment per CLAUDE.md).
+2. Generate 100 synthetic `(DeltaPComponents, DeltaKComponents, DeltaOmegaComponents, DeltaXiComponents)` inputs spanning corner cases:
+   - 4 zero-corner cases (one factor at 0.0): expected `L_step = 0.0` exactly.
+   - 4 one-corner cases (one factor at 1.0, others mid-range): expected formula evaluates analytically.
+   - 8 boundary cases (factors exactly 0.5, 0.7, 0.9, etc.).
+   - 4 NaN/Inf cases (one component at NaN): expected structured error.
+   - 4 `target_collapse > 0` cases: expected `MEJEPA_INSTRUMENT_GRADIENT_LEAK` (sister TASK-UTML-006).
+   - 76 random valid cases drawn from a fixed-seed PRNG: each ≤ `[0, 1]` and finite.
+3. For each case: compute `L_step`; record `{input, expected_outcome, actual_outcome, passed}` to `/tmp/contextgraph-mejepa-train-fsv/utml-l-step-evidence.json`.
+4. Write a sampling histogram: 1,000 samples through `BatchSampler` with controlled L_step distribution → record `{l_step_bin, count}` rows + assert distribution matches expected after reweighting.
+5. Write `utml-classifier-evidence.json` (5 synthetic regimes, one per `UtmlState` variant tested in TASK-UTML-009 — shares evidence; this task aggregates all into the envelope harness).
+6. File mode `0o600`. Top-level `manifest.json` records SHA-256 of every evidence file.
+7. After writing each file, READ IT BACK and `assert!(read_back == in_memory)` byte-equal.
 
-**NOT YET CONFIRMED in tree (likely pending):**
-
-- A binary named `utml_l_step_fsv` (the task specifies that exact name; shipped binary is named `train_full_fsv`).
-- `utml-classifier-evidence.json` — depends on TASK-UTML-009 (`UtmlClassifier`), which is still pending.
-- `utml-pairwise-mi-matrix.csv` — depends on TASK-UTML-008's CSV writer extension, which is pending (current `pairwise_mi_audit` returns a scalar, not a CSV).
-- Coverage of all 100 synthetic examples (perfect prediction, total miss, high-drift, low-grad, collapsed latent, OOD, operator gold) and the asserted L_step envelope + target_collapse-always-0 + sampling-histogram readback assertions.
-- File mode `0o600` enforcement on the three written artifacts.
-
-**Direction for future agents:** AUDIT `examples/train_full_fsv.rs` to determine which of the seven synthetic corner cases it already covers; either rename + extend that example to satisfy TASK-UTML-010 exactly, or ship a new `examples/utml_l_step_fsv.rs` that delegates to the shared learning_signal API. The classifier-evidence and pairwise-mi-matrix outputs are blocked by TASK-UTML-008 + TASK-UTML-009; sequence after those ship.
+**FSV for this task:** the example IS the FSV. After running, `/tmp/contextgraph-mejepa-train-fsv/utml-l-step-evidence.json` exists with 100 rows + every `passed: true` entry verified by separate read; `utml-classifier-evidence.json` has 5 rows; `manifest.json` SHA-256 column matches `sha256sum`.
 
 ---
 

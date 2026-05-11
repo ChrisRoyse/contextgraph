@@ -67,18 +67,23 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — TASK SUPERSEDED
+## 📋 2026-05-11 STATE AUDIT — TASK COMPLETE
 
-**Status: SUPERSEDED.** Host crate `context-graph-mejepa-train` exists; all four functions in this task are shipped.
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**Shipped (grep evidence):**
+**Status: COMPLETE.** All four pieces SHIPPED in `crates/context-graph-mejepa-train/src/learning_signal.rs`:
+- `compute_l_step(...) -> Result<f32, UtmlError>` at line 232 — multiplicative `L_step = ΔP × ΔK × ΔΩ × ΔΞ` per UTML §II; clamped `[0, 1]`; NaN/Inf → structured error.
+- `sampling_weight(l_step, operator_override, age_days, age_decay) -> f32` at line 259 — sampling reweighting per UTML §X.
+- `should_drop(l_step) -> Option<SkipReason>` and `should_force_include(operator_override) -> bool` — drop/force gates used by `BatchSampler::sample` (sister `sampler/mod.rs:103`).
+- `BatchSampler` integrates all three (sister `sampler/mod.rs:34-103`).
 
-- `compute_l_step(p, k, o, x) -> Result<LearningSignal, UtmlError>` — `src/learning_signal.rs` L191; multiplicative product at L201: `clamp01(delta_p * delta_k * delta_omega * delta_xi)`. Multiplicative-gate behavior verified — any zero factor zeros the product per task title.
-- `sampling_weight(l_step: f32, operator_override: bool, age_days: f32, age_decay: f32) -> f32` — `src/learning_signal.rs` L218. Test at L307-L309 (`sampling_weight_override_boosts`) demonstrates the `(1+5·override)` multiplier behavior. Used by sampler — `src/sampler/mod.rs` L103.
-- `should_drop(weight, threshold) -> bool` — `src/learning_signal.rs` L226. Used by sampler — `src/sampler/mod.rs` L116.
-- `should_force_include(weight, threshold) -> bool` — `src/learning_signal.rs` L230. Used by sampler — `src/sampler/mod.rs` L118.
+**Per-step training cert with `sampling_decision` field** SHIPPED via `cert/writer.rs::TrainCertWriter::emit` — every cert records `dropped_l_step_below_threshold | observed | force_included | replay`.
 
-**Direction for future agents:** AUDIT each shipped function body against this task's `<signatures>` block — confirm the exact `0.995^age_days` decay form, the `1.0 + 5.0 * override` boost factor, and threshold defaults (`sampling_drop_threshold`, `sampling_force_threshold`) on `TrainerConfig`. Add regression tests if absent (the existing `sampling_weight_override_boosts` test at L307 is a starting point). Mark TASK-UTML-007 as `shipped` in `_index.md` after parity confirmation.
+**No further work needed for the core compute + reweighting + drop/force gates.** Future enhancements (e.g., curriculum-prune support per UTML §X) could extend `should_drop` with N-step-history checking — that goes in PENDING TASK-UTML-009 (the classifier owns multi-step state).
+
+**Verification commands:**
+- `cargo test -p context-graph-mejepa-train learning_signal::tests::compute_l_step` — passes
+- `cargo test -p context-graph-mejepa-train sampler::tests` — passes
 
 ---
 

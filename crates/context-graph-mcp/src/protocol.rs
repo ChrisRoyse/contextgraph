@@ -69,24 +69,6 @@ impl JsonRpcResponse {
             })),
         }
     }
-
-    pub fn error_with_data(
-        id: Option<JsonRpcId>,
-        code: i32,
-        message: impl Into<String>,
-        data: serde_json::Value,
-    ) -> Self {
-        Self {
-            jsonrpc: "2.0".to_string(),
-            id,
-            result: None,
-            error: Some(Box::new(JsonRpcError {
-                code,
-                message: message.into(),
-                data: Some(data),
-            })),
-        }
-    }
 }
 
 /// JSON-RPC error codes.

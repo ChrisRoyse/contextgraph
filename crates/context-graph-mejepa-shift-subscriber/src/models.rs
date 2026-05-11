@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -78,6 +79,7 @@ pub enum ShiftOutcome {
         observed: bool,
         watermark_key: String,
         watermark_offset: u64,
+        latency_ms: u64,
     },
     Skipped {
         reason: SkipReason,
@@ -100,7 +102,10 @@ pub struct WatermarkRecord {
 impl WatermarkRecord {
     pub fn validate(&self) -> Result<()> {
         ShiftId::parse(self.last_consumed_shift_id.clone())?;
-        if decode_session_hex32(&self.session_id)?.iter().all(|byte| *byte == 0) {
+        if decode_session_hex32(&self.session_id)?
+            .iter()
+            .all(|byte| *byte == 0)
+        {
             return Err(SubscriberError::invalid(
                 "watermark.session_id",
                 "session_id must be non-zero",
@@ -165,6 +170,7 @@ pub struct SubscriberMetrics {
     observed_count: AtomicU64,
     dropped_l_step_below_threshold_count: AtomicU64,
     lag_alert_state: AtomicU8,
+    latency_samples_ms: Mutex<Vec<u64>>,
 }
 
 impl SubscriberMetrics {
@@ -186,6 +192,13 @@ impl SubscriberMetrics {
             .store(if active { 1 } else { 0 }, Ordering::Relaxed);
     }
 
+    pub fn record_latency_ms(&self, latency_ms: u64) {
+        self.latency_samples_ms
+            .lock()
+            .expect("subscriber latency metrics lock poisoned")
+            .push(latency_ms);
+    }
+
     pub fn snapshot_counts(&self) -> (u64, u64, u64, bool) {
         (
             self.processed_count.load(Ordering::Relaxed),
@@ -195,6 +208,41 @@ impl SubscriberMetrics {
             self.lag_alert_state.load(Ordering::Relaxed) != 0,
         )
     }
+
+    pub fn snapshot_latency_ms(&self) -> LatencySnapshot {
+        let mut samples = self
+            .latency_samples_ms
+            .lock()
+            .expect("subscriber latency metrics lock poisoned")
+            .clone();
+        if samples.is_empty() {
+            return LatencySnapshot::default();
+        }
+        samples.sort_unstable();
+        let count = samples.len();
+        LatencySnapshot {
+            count: count as u64,
+            p50: percentile(&samples, 50),
+            p95: percentile(&samples, 95),
+            p99: percentile(&samples, 99),
+            max: *samples.last().expect("non-empty latency samples"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct LatencySnapshot {
+    pub count: u64,
+    pub p50: u64,
+    pub p95: u64,
+    pub p99: u64,
+    pub max: u64,
+}
+
+fn percentile(samples: &[u64], percentile: usize) -> u64 {
+    let idx = ((samples.len() - 1) * percentile).div_ceil(100);
+    samples[idx.min(samples.len() - 1)]
 }
 
 pub fn decode_session_hex32(value: &str) -> Result<[u8; 16]> {
@@ -205,8 +253,9 @@ pub fn decode_session_hex32(value: &str) -> Result<[u8; 16]> {
         ));
     }
     let mut out = [0u8; 16];
-    hex::decode_to_slice(value, &mut out)
-        .map_err(|err| SubscriberError::invalid("session_id", format!("hex decode failed: {err}")))?;
+    hex::decode_to_slice(value, &mut out).map_err(|err| {
+        SubscriberError::invalid("session_id", format!("hex decode failed: {err}"))
+    })?;
     if out.iter().all(|byte| *byte == 0) {
         return Err(SubscriberError::invalid(
             "session_id",

@@ -67,22 +67,23 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — TASK PARTIALLY SUPERSEDED
+## 📋 2026-05-11 STATE AUDIT — TASK PARTIALLY COMPLETE
 
-**Status: PARTIALLY SUPERSEDED.** The host crate `crates/context-graph-mejepa-train/` ALREADY EXISTS; do not scaffold a new crate.
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**Shipped (grep evidence):**
+**Status:** `SkipReason` shipped (used by `BatchSampler::should_drop` / `should_force_include` in `learning_signal.rs:259+`). `UtmlState` and `ClassifierVerdict` enums DO NOT exist yet — they are the data models for the pending UtmlClassifier (TASK-UTML-009).
 
-- `SkipReason` — `src/learning_signal.rs` L57 (`pub enum SkipReason`); re-exported from `src/lib.rs` L31. Used at `src/learning_signal.rs` L107 (LearningSignal field), L212 (constructor).
+**Decided scope for the remaining work:**
+1. Add `UtmlState` enum (7 variants per UTML §VII-VIII): `OnTrack`, `OverwhelmedAtBoundary`, `BoredAtMastery`, `RegressedAfterGain`, `StuckUninformative`, `OverPlasticDriftRisk`, `RedundantInputs`. `#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]`.
+2. Add `ClassifierVerdict { state: UtmlState, recommendation: ClassifierRecommendation, evidence: ClassifierEvidence }` struct.
+3. Add `ClassifierRecommendation` enum: `KeepTraining`, `ReduceLearningRate`, `IncreasePlasticity`, `Prune`, `RewindAndRetry`, `EscalateToOperator`.
+4. Add `DeltaPAggregator` struct for per-chunk aggregation (sum + count + clamp `[0, 1]`).
+5. All types `#[derive(Serialize, Deserialize)]` with `deny_unknown_fields` on structs.
+6. Add to `crates/context-graph-mejepa-train/src/learning_signal.rs` OR split into `learning_signal/classifier_types.rs` if file approaches 500 lines.
 
-**NOT FOUND in `crates/context-graph-mejepa-train/src/` (pending implementation):**
+**Cross-phase dep:** TASK-UTML-009 consumes these enums; this task lands the data models alone.
 
-- `UtmlState` (7 variants — Discover/Reinforce/Consolidate/Refine/Plateau/Dissipate/Collapse per coaching priority).
-- `ClassifierVerdict`.
-- `DeltaPAggregator` (Mean | Max | TopKMean | EntityWeighted).
-- `Intervention`.
-
-**Direction for future agents:** AUDIT `src/learning_signal.rs` for `SkipReason` parity against this task's `<signatures>` (variant set, serde attrs, `Display` impl). Implement the four remaining enums alongside the existing module; do NOT recreate `SkipReason`. Update `_index.md` to reflect that 1/5 enums are shipped.
+**FSV for this task:** unit tests exhaustively constructing each `UtmlState` variant; serde round-trip every public type; `DeltaPAggregator::aggregate` produces clamped finite output. Source of Truth: typed structures + serde JSON.
 
 ---
 

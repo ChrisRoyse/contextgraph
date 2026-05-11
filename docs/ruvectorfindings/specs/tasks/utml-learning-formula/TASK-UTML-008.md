@@ -67,22 +67,29 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — TASK PARTIALLY SUPERSEDED
+## 📋 2026-05-11 STATE AUDIT — PARTIAL (compute primitive shipped; matrix-emitting JOB pending)
 
-**Status: PARTIALLY SUPERSEDED.** Host crate `context-graph-mejepa-train` exists.
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**Shipped (grep evidence):**
+**Status: PARTIAL.** The COMPUTE primitive `pairwise_mi_audit(probabilities: &[Vec<f32>]) -> Result<f32, UtmlError>` SHIPPED at `crates/context-graph-mejepa-train/src/learning_signal.rs:275` — returns a SCALAR for ONE pair of distributions.
 
-- `pairwise_mi_audit(probabilities: &[Vec<f32>]) -> Result<f32, UtmlError>` — `src/learning_signal.rs` L234. Consumed by `src/eval/holdout.rs` L160 (`let redundancy = pairwise_mi_audit(&probability_vectors)?;`) and surfaced as `predictor_redundancy_pairwise_mi` on the holdout eval result (`src/eval/mod.rs` L77; `src/trainer/mod.rs` L245). **NOTE: this satisfies the function-level half of REQ-UTML-06 but does NOT yet persist a `pairwise_mi_matrix.csv` artifact** — current shipped form returns a single scalar redundancy summary, not the full N×N matrix CSV the task title specifies.
+The MATRIX-emitting periodic AUDIT JOB that walks every instrument pair and persists `/tmp/contextgraph-mejepa-train-fsv/utml-pairwise-mi-matrix.csv` does NOT exist. This is the remaining work.
 
-**NOT FOUND (pending):**
+**Decided scope for the remaining work:**
+1. New file `crates/context-graph-mejepa-train/src/aux/pairwise_mi_audit.rs` (alongside the existing `aux/` modules).
+2. `pub struct PairwiseMiAuditor { period_steps: u64, output_dir: PathBuf }`.
+3. `pub fn run_audit(&self, instrument_outputs: &BTreeMap<InstrumentSlot, Vec<Vec<f32>>>, step: u64) -> Result<PathBuf, UtmlError>`:
+   - For each `(slot_a, slot_b)` pair where `slot_a < slot_b` (no self-pairs, no duplicate orderings): call `pairwise_mi_audit(probabilities_a, probabilities_b)?`.
+   - Emit `utml-pairwise-mi-matrix-{step:08}.csv` with header `slot_a,slot_b,mi_nats,sample_count` and one row per pair.
+   - File mode `0o600` per SEC-MEJEPA-07.
+   - Return the file path.
+4. `pub struct EmbedderCoherence { matrix: BTreeMap<(InstrumentSlot, InstrumentSlot), f32>, computed_at_step: u64 }` — load from CSV for downstream consumers (Phase 8 TASK-EVAL-011 reads this for Q5 open research question).
+5. Schedule: invoked by `Trainer` every `period_steps` (default 1000); skipped during warmup.
+6. NEVER `unwrap_or` defaults on MI computation — NaN/Inf surfaces structured errors.
 
-- `compute_embedder_coherence` (Jaccard agreement of NN sets across E1-E14). No `pub fn compute_embedder_coherence` anywhere.
-- `EmbedderCoherence` carrier struct.
-- `bootstrap_neutral` fallback for `< 1000 corpus entries`.
-- CSV writer to `pairwise_mi_matrix.csv` (full N×N matrix vs the shipped scalar form).
+**Cross-phase dep:** Phase 8 TASK-EVAL-011 reads the matrix CSV for the Q5 open-research-question entry.
 
-**Direction for future agents:** AUDIT `pairwise_mi_audit` body at L234 against this task's `<signatures>` — confirm whether the spec calls for scalar redundancy (shipped) OR a CSV-emitting full-matrix writer (task title). The eval pipeline already consumes the scalar form, so likely the CSV writer is an additional persisted artifact alongside the scalar. Then ship `compute_embedder_coherence` + `EmbedderCoherence` + `bootstrap_neutral`. Cross-reference REQ-UTML-06 in `_traceability.md`.
+**FSV for this task:** integration test (a) constructs synthetic instrument outputs with KNOWN pairwise MI (independent: ~0.0 nats; identical: max nats) → asserts CSV matrix matches expected within ε; (b) reads back the CSV via separate file open → asserts byte-equal serialization; (c) verifies file mode `0o600`. Source of Truth: separate file read + ground-truth MI cross-check.
 
 ---
 

@@ -21,3 +21,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.8"
+
+[[example]]
+name = "shift_subscriber_fsv"
+path = "examples/shift_subscriber_fsv.rs"

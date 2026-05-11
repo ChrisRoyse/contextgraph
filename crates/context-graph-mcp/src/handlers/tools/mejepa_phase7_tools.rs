@@ -46,14 +46,26 @@ pub(crate) fn is_retired_cgreality_tool(tool_name: &str) -> bool {
 }
 
 pub(crate) fn retired_tool_response(id: Option<JsonRpcId>, tool_name: &str) -> JsonRpcResponse {
-    JsonRpcResponse::error_with_data(
+    error!(
+        code = "CCREALITY_ENGINE_RETIRED",
+        attempted_tool = tool_name,
+        "retired ccreality tool call refused"
+    );
+    let structured = json!({
+        "error_code": "CCREALITY_ENGINE_RETIRED",
+        "attempted_tool": tool_name,
+        "remediation": "use mcp__cgreality__mejepa_verify, mcp__cgreality__mejepa_predict_latest, or a Phase 7 mejepa subscriber tool"
+    });
+    JsonRpcResponse::success(
         id,
-        error_codes::INVALID_PARAMS,
-        "CCREALITY_ENGINE_RETIRED: tool retired in 2026-05-09 ME-JEPA pivot; use mcp__cgreality__mejepa_*",
         json!({
-            "error_code": "CCREALITY_ENGINE_RETIRED",
-            "attempted_tool": tool_name,
-            "remediation": "use mcp__cgreality__mejepa_verify, mcp__cgreality__mejepa_predict_latest, or a Phase 7 mejepa subscriber tool"
+            "content": [{
+                "type": "text",
+                "text": "CCREALITY_ENGINE_RETIRED: tool retired in 2026-05-09 ME-JEPA pivot; use mcp__cgreality__mejepa_*"
+            }],
+            "structuredContent": structured,
+            "isError": true,
+            "errorCode": error_codes::INVALID_PARAMS
         }),
     )
 }
@@ -192,5 +204,29 @@ impl Handlers {
                 json!({"attempt_id": request.attempt_id}),
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retired_tool_returns_mcp_tool_error_result() {
+        let response = retired_tool_response(
+            Some(JsonRpcId::Number(7)),
+            "mcp__cgreality__reality_run_attempt",
+        );
+        assert!(response.error.is_none());
+        let result = response.result.unwrap();
+        assert_eq!(result["isError"], json!(true));
+        assert_eq!(
+            result["structuredContent"]["error_code"],
+            json!("CCREALITY_ENGINE_RETIRED")
+        );
+        assert_eq!(
+            result["structuredContent"]["attempted_tool"],
+            json!("mcp__cgreality__reality_run_attempt")
+        );
     }
 }

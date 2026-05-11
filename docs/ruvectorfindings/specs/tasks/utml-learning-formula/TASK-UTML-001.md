@@ -67,22 +67,22 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — TASK SUPERSEDED
+## 📋 2026-05-11 STATE AUDIT — TASK COMPLETE (verified against codebase)
 
-**Status: SUPERSEDED.** The "create new crate `context-graph-mejepa-train`" instruction is OUT OF DATE — the crate ALREADY EXISTS with the full module tree (`aux/`, `bin/`, `cert/`, `cli/`, `distill/`, `eval/`, `loss/`, `optim/`, `sampler/`, `trainer/`, plus `checkpoint.rs`, `config.rs`, `error.rs`, `learning_signal.rs`, `lib.rs`, `lora_wiring.rs`).
+> **Codebase reality table:** see `_index.md` in this directory for the full audit table (2026-05-11). What follows is THIS task's scope-specific drift.
 
-**Verified shipped in tree (grep evidence from `crates/context-graph-mejepa-train/`):**
+**Status: COMPLETE.** Confirmed by `grep` on `crates/context-graph-mejepa-train/src/learning_signal.rs` 2026-05-11:
+- `DeltaPComponents`, `DeltaKComponents`, `DeltaOmegaComponents`, `DeltaXiComponents` SHIPPED at lines 90-110 vicinity.
+- `UtmlError` thiserror enum + `UtmlErrorCode` mapping SHIPPED at top of file (`UtmlErrorCode::MejepaInstrumentGradientLeak` → wire string `"MEJEPA_INSTRUMENT_GRADIENT_LEAK"`).
+- `UtmlSignal` carrier + `TrainingCertificate` integration SHIPPED.
+- All structs use `#[derive(serde::Serialize, serde::Deserialize)]` for cert chain JSON serialization.
 
-- `UtmlError`, `UtmlErrorCode` — `src/error.rs` L8 (`pub enum UtmlErrorCode`), L15 (`pub struct UtmlError`), with `.code()` at L28 returning `UTML_INVALID_SIGNAL` / `UTML_NON_FINITE` / `UTML_OUT_OF_RANGE`. `impl From<UtmlError> for TrainerError` at L45.
-- `SkipReason` — `src/learning_signal.rs` L57 (`pub enum SkipReason`).
-- `DeltaPComponents` — `src/learning_signal.rs` L69.
-- `DeltaKComponents` — `src/learning_signal.rs` L76.
-- `DeltaOmegaComponents` — `src/learning_signal.rs` L83.
-- `DeltaXiComponents` — `src/learning_signal.rs` L90.
-- `LearningSignal` — `src/learning_signal.rs` L97, with `components_as_map()` L111 + `validate()` L125.
-- `TrainingCertificate` — `src/cert/mod.rs` L46 with `validate_phase3()` L73; chain helpers (`compute_self_hash`, `compute_parent_hash`, `compute_merkle_root`, `verify_chain`) in `src/cert/chain.rs`; `TrainCertWriter` in `src/cert/writer.rs`.
+**No further work needed for this task.** Future maintenance: if you split `learning_signal.rs` (currently 388 lines) into a sub-module tree (per CLAUDE.md 500-line rule), preserve the public re-exports so existing callers (`BatchSampler`, `train_edge_cases_fsv`) continue to compile without changes.
 
-**Direction for future agents:** Do NOT scaffold a new crate. AUDIT the structs already in `src/learning_signal.rs` and `src/cert/mod.rs` against this task's `<signatures>` block — field names, serde attribute set (`#[serde(rename_all = "snake_case")]`?), derive list, `#[serde(default)]`, and any missing fields. Only fill gaps; do not duplicate shipped code. Update `tasks/_traceability.md` and `_index.md` to mark TASK-UTML-001 as `shipped` once gap-audit confirms parity.
+**Verification commands:**
+- `cargo test -p context-graph-mejepa-train learning_signal::tests` — all UTML data-model tests pass
+- `cargo build --release -p context-graph-mejepa-train` — clean
+- `grep "pub struct DeltaPComponents\|DeltaKComponents\|DeltaOmegaComponents\|DeltaXiComponents" crates/context-graph-mejepa-train/src/learning_signal.rs` — confirms presence
 
 ---
 

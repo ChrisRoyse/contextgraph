@@ -67,19 +67,23 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT — RESOLVED BY HARDENING PASS
+## 📋 2026-05-11 STATE AUDIT — TASK COMPLETE + HARDENED 2026-05-10
 
-**Status: RESOLVED.** Host crate `context-graph-mejepa-train` exists, and the critical `target_collapse == 0.0` invariant is now enforced at `crates/context-graph-mejepa-train/src/learning_signal.rs::compute_delta_xi`.
+> **Codebase reality table:** see `_index.md` in this directory.
 
-**Shipped (grep evidence):**
+**Status: COMPLETE + HARDENED.** `compute_delta_xi(c: DeltaXiComponents) -> Result<f32, UtmlError>` SHIPPED at `crates/context-graph-mejepa-train/src/learning_signal.rs:189`. The CRITICAL `target_collapse == 0.0` invariant is enforced fail-closed:
 
-- `compute_delta_xi(c: DeltaXiComponents) -> Result<f32, UtmlError>` now rejects non-finite and non-zero `target_collapse` with `UtmlErrorCode::MejepaInstrumentGradientLeak`, mapped to `TrainerErrorCode::MejepaInstrumentGradientLeak` / `MEJEPA_INSTRUMENT_GRADIENT_LEAK`.
-- The healthy path computes `(1.0 - target_collapse)^0.5 * (1.0 - predictor_collapse)^0.3 * (1.0 - redundancy_mi)^0.2`, clamped to `[0,1]`.
-- `DeltaXiComponents` carrier — `src/learning_signal.rs` L90.
-- Regression tests cover known-value multiplicative formula, `target_collapse=0.001`, and `target_collapse=NaN`.
-- `train_edge_cases_fsv` proves the leak is rejected before training-cert construction/write and source-of-truth cert count remains unchanged.
+- Lines 190-198: rejects non-finite `target_collapse` with `UtmlErrorCode::MejepaInstrumentGradientLeak`.
+- Lines 199-211: rejects non-zero `target_collapse` (any `c.target_collapse != 0.0`) with the same error code.
+- Line 226: healthy formula `(1.0 - target_collapse)^0.5 * (1.0 - predictor_collapse)^0.3 * (1.0 - redundancy_mi)^0.2`, clamped to `[0, 1]`.
 
-**FSV evidence:** `/tmp/contextgraph-mejepa-train-fsv/edge-case-evidence.json` and `/tmp/contextgraph-mejepa-train-fsv/utml-l-step-evidence.json`; summary in `docs/ruvectorfindings/15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`.
+**Regression tests** at lines 368-386:
+- `delta_xi_fails_closed_on_target_collapse`: `target_collapse = 0.001` → `MEJEPA_INSTRUMENT_GRADIENT_LEAK`
+- `delta_xi_fails_closed_on_nan_target_collapse`: `target_collapse = NaN` → `MEJEPA_INSTRUMENT_GRADIENT_LEAK`
+
+**FSV evidence:** `train_edge_cases_fsv` example proves the leak is rejected before the training-cert is constructed/written. The source-of-truth cert count remains unchanged across the leak-injection scenario. Evidence file `/tmp/contextgraph-mejepa-train-fsv/edge-case-evidence.json`. Summary in `docs/ruvectorfindings/15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`.
+
+**No further work needed.**
 
 ---
 
