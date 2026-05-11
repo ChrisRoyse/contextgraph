@@ -1344,10 +1344,12 @@ fn finish_smoke(
         }) {
             Ok((path, stats)) => {
                 store_path = Some(path);
-                if stats.get("passes").and_then(Value::as_bool) != Some(true) {
+                let expected_entries = index.entries.len();
+                if !stats_source_of_truth_passes(&stats, expected_entries) {
                     failures.push(json!({
                         "phase": "stats",
-                        "error": "stats leakage/source-of-truth check did not pass",
+                        "error": "stats source-of-truth integrity check did not pass",
+                        "expected_entry_count": expected_entries,
                         "stats": stats,
                     }));
                 }
@@ -2438,6 +2440,29 @@ fn write_stats_json(output: &Path, stats: &Value) -> CliResult<()> {
     write_json_checked(&output.join("stats.json"), stats)
 }
 
+fn stats_source_of_truth_passes(stats: &Value, expected_entries: usize) -> bool {
+    let expected = expected_entries as u64;
+    stats.get("total_entries").and_then(Value::as_u64) == Some(expected)
+        && stats.get("mutation_cf_count").and_then(Value::as_u64) == Some(expected)
+        && stats.get("verdict_cf_count").and_then(Value::as_u64) == Some(expected)
+        && stats.get("provenance_cf_count").and_then(Value::as_u64) == Some(1)
+        && stats
+            .get("leakage_check")
+            .and_then(|value| value.get("passes"))
+            .and_then(Value::as_bool)
+            == Some(true)
+        && stats
+            .get("provenance")
+            .and_then(|value| value.get("complete"))
+            .and_then(Value::as_bool)
+            == Some(true)
+        && stats
+            .get("provenance")
+            .and_then(|value| value.get("mutation_count"))
+            .and_then(Value::as_u64)
+            == Some(expected)
+}
+
 fn build_provenance(index: &CorpusIndex) -> CliResult<CorpusProvenance> {
     let rows = index
         .entries
@@ -2695,6 +2720,25 @@ fn unix_ms() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn smoke_stats_integrity_allows_partial_corpus_without_full_ship_gate() {
+        let stats = json!({
+            "total_entries": 8,
+            "mutation_cf_count": 8,
+            "verdict_cf_count": 8,
+            "provenance_cf_count": 1,
+            "leakage_check": {"passes": true},
+            "provenance": {"complete": true, "mutation_count": 8},
+            "passes": false,
+            "full_ship_gate_300x8": {"passes": false},
+        });
+        assert!(stats_source_of_truth_passes(&stats, 8));
+
+        let mut tampered = stats.clone();
+        tampered["verdict_cf_count"] = json!(7);
+        assert!(!stats_source_of_truth_passes(&tampered, 8));
+    }
 
     #[test]
     #[cfg(unix)]

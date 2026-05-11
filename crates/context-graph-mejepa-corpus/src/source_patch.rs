@@ -68,6 +68,7 @@ pub fn mutate_task_source_patch(
             "clone",
             "--quiet",
             "--shared",
+            "--no-checkout",
             cache.to_str().ok_or_else(|| {
                 MutationError::invalid(
                     "repo_cache_dir",
