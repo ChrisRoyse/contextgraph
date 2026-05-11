@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
+use std::future::Future;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -19,6 +21,17 @@ use crate::daemon_validate::DaemonPaths;
 const RESTART_WINDOW: Duration = Duration::from_secs(5 * 60);
 const FLAPPING_THRESHOLD: usize = 5;
 const BACKOFF_CAP: Duration = Duration::from_secs(60);
+
+type TaskRunner = Arc<
+    dyn Fn(
+            SupervisedTaskKind,
+            FlywheelDaemonConfig,
+            Arc<DB>,
+            watch::Receiver<bool>,
+        ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>
+        + Send
+        + Sync,
+>;
 
 #[derive(Debug, Clone)]
 pub struct FlywheelDaemonConfig {
@@ -104,7 +117,20 @@ pub fn start_supervised_flywheel_tasks(
 async fn supervise(
     config: FlywheelDaemonConfig,
     db: Arc<DB>,
+    shutdown_rx: watch::Receiver<bool>,
+) -> Result<()> {
+    supervise_with_runner(config, db, shutdown_rx, production_task_runner()).await
+}
+
+fn production_task_runner() -> TaskRunner {
+    Arc::new(|kind, config, db, shutdown_rx| Box::pin(run_task(kind, config, db, shutdown_rx)))
+}
+
+async fn supervise_with_runner(
+    config: FlywheelDaemonConfig,
+    db: Arc<DB>,
     mut shutdown_rx: watch::Receiver<bool>,
+    runner: TaskRunner,
 ) -> Result<()> {
     let mut tasks = JoinSet::new();
     let mut restart_state = RestartState::default();
@@ -115,11 +141,20 @@ async fn supervise(
             config.clone(),
             db.clone(),
             shutdown_rx.clone(),
+            runner.clone(),
         );
     }
     write_supervisor_status(&config, "running", &restart_state.restart_counts())?;
 
     loop {
+        if *shutdown_rx.borrow() {
+            info!("MEJEPA_DAEMON_SUPERVISOR_SHUTDOWN: stopping supervised flywheel tasks");
+            tasks.abort_all();
+            while tasks.join_next().await.is_some() {}
+            write_supervisor_status(&config, "stopped", &restart_state.restart_counts())?;
+            return Ok(());
+        }
+
         tokio::select! {
             changed = shutdown_rx.changed() => {
                 if changed.is_ok() && *shutdown_rx.borrow() {
@@ -161,6 +196,7 @@ async fn supervise(
                         config.clone(),
                         db.clone(),
                         shutdown_rx.clone(),
+                        runner.clone(),
                     );
                     write_supervisor_status(&config, "running", &restart_state.restart_counts())?;
                 }
@@ -175,10 +211,11 @@ fn spawn_supervised_task(
     config: FlywheelDaemonConfig,
     db: Arc<DB>,
     shutdown_rx: watch::Receiver<bool>,
+    runner: TaskRunner,
 ) {
     tasks.spawn(async move {
         let started = chrono::Utc::now().timestamp();
-        let result = std::panic::AssertUnwindSafe(run_task(kind, config, db, shutdown_rx))
+        let result = std::panic::AssertUnwindSafe(runner(kind, config, db, shutdown_rx))
             .catch_unwind()
             .await;
         match result {
@@ -707,14 +744,34 @@ fn write_supervisor_status(
     )
 }
 
-fn write_json_atomic(path: &PathBuf, value: &impl Serialize) -> Result<()> {
+fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
     let tmp = path.with_extension("json.tmp");
     let bytes = serde_json::to_vec_pretty(value)?;
-    fs::write(&tmp, bytes)?;
+    {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&tmp)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+    }
     fs::rename(&tmp, path)?;
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = File::open(parent) {
+            dir.sync_all()?;
+        }
+    }
+    let readback = fs::read(path)?;
+    if readback != bytes {
+        return Err(anyhow::anyhow!(
+            "MEJEPA_DAEMON_STATE_READBACK_MISMATCH: {}",
+            path.display()
+        ));
+    }
     Ok(())
 }
 
@@ -747,6 +804,17 @@ fn panic_payload(payload: Box<dyn std::any::Any + Send>) -> String {
 mod tests {
     use super::*;
 
+    fn open_mejepa_test_db(path: &Path) -> DB {
+        let mut opts = rocksdb::Options::default();
+        opts.create_if_missing(true);
+        opts.create_missing_column_families(true);
+        let descriptors = context_graph_mejepa_cf::all_hygiene_referenced_cfs()
+            .into_iter()
+            .map(|cf| rocksdb::ColumnFamilyDescriptor::new(cf, rocksdb::Options::default()))
+            .collect::<Vec<_>>();
+        DB::open_cf_descriptors(&opts, path, descriptors).expect("open db")
+    }
+
     #[test]
     fn supervised_task_name_contract_is_stable() {
         assert_eq!(
@@ -763,14 +831,7 @@ mod tests {
     #[test]
     fn flapping_report_round_trips_through_heal_reports_cf() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let mut opts = rocksdb::Options::default();
-        opts.create_if_missing(true);
-        opts.create_missing_column_families(true);
-        let descriptors = context_graph_mejepa_cf::all_hygiene_referenced_cfs()
-            .into_iter()
-            .map(|cf| rocksdb::ColumnFamilyDescriptor::new(cf, rocksdb::Options::default()))
-            .collect::<Vec<_>>();
-        let db = DB::open_cf_descriptors(&opts, temp.path(), descriptors).expect("open db");
+        let db = open_mejepa_test_db(temp.path());
         ensure_mejepa_column_families(&db).expect("ensure cfs");
         record_scheduler_flapping(&db, SupervisedTaskKind::ShiftSubscriber, 6)
             .expect("write flapping report");
@@ -779,5 +840,69 @@ mod tests {
             .expect("cf");
         let count = db.iterator_cf(cf, rocksdb::IteratorMode::Start).count();
         assert_eq!(count, 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn supervisor_restart_flapping_writes_heal_report_source_of_truth() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let paths =
+            crate::daemon_validate::validate_d_drive_root(temp.path()).expect("valid daemon root");
+        let db = Arc::new(open_mejepa_test_db(&paths.storage_db));
+        let config = FlywheelDaemonConfig::from_paths(paths.clone(), temp.path().to_path_buf());
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let runner: TaskRunner = Arc::new(|kind, _config, _db, mut shutdown_rx| {
+            Box::pin(async move {
+                if kind == SupervisedTaskKind::ShiftSubscriber {
+                    panic!("synthetic supervisor panic for FSV");
+                }
+                loop {
+                    if *shutdown_rx.borrow() {
+                        return Ok(());
+                    }
+                    if shutdown_rx.changed().await.is_err() {
+                        return Ok(());
+                    }
+                }
+            })
+        });
+
+        let supervisor = tokio::spawn(supervise_with_runner(
+            config,
+            db.clone(),
+            shutdown_rx,
+            runner,
+        ));
+        let cf = db
+            .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS)
+            .expect("heal reports cf");
+        let mut heal_report_count = 0usize;
+        for _ in 0..120 {
+            heal_report_count = db.iterator_cf(cf, rocksdb::IteratorMode::Start).count();
+            if heal_report_count > 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let running_status_path = paths
+            .scheduler_state_dir
+            .join("flywheel_supervisor_status.json");
+        let running_status = fs::read_to_string(&running_status_path).expect("running status");
+        println!("FSV_SUPERVISOR_RUNNING_STATUS={running_status}");
+        println!("FSV_HEAL_REPORT_COUNT={heal_report_count}");
+        assert!(
+            heal_report_count > 0,
+            "MEJEPA_SCHEDULER_FLAPPING heal report missing from source-of-truth CF"
+        );
+
+        shutdown_tx.send(true).expect("send shutdown");
+        let result = tokio::time::timeout(Duration::from_secs(10), supervisor)
+            .await
+            .expect("supervisor shutdown timeout")
+            .expect("join supervisor");
+        result.expect("supervisor result");
+
+        let stopped_status = fs::read_to_string(&running_status_path).expect("stopped status");
+        println!("FSV_SUPERVISOR_STOPPED_STATUS={stopped_status}");
+        assert!(stopped_status.contains("\"status\": \"stopped\""));
     }
 }

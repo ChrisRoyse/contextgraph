@@ -2220,7 +2220,12 @@ fn main() -> Result<()> {
     }
 
     let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async_main())
+    let result = runtime.block_on(async_main());
+    // Tokio's Runtime::drop waits for blocking tasks indefinitely. Daemon shutdown
+    // already flushes durable state before async_main returns, so bound runtime
+    // teardown to prevent a live process with a removed PID file.
+    runtime.shutdown_timeout(std::time::Duration::from_secs(5));
+    result
 }
 
 /// Install kernel-level parent-death tracking (Linux `PR_SET_PDEATHSIG`).
@@ -2887,11 +2892,16 @@ async fn async_main() -> Result<()> {
             }
         }
 
-        info!("Headless daemon exiting");
-        if let Some(error) = transport_error {
-            return Err(error);
-        }
-        return Ok(());
+        let exit_code = if let Some(error) = transport_error {
+            error!("MEJEPA_DAEMON_EXITING_WITH_ERROR: {error:#}");
+            1
+        } else {
+            info!("Headless daemon exiting");
+            0
+        };
+        drop(_daemon_pid_lock);
+        drop(_pid_guard);
+        std::process::exit(exit_code);
     }
 
     if daemon_mode {

@@ -12,6 +12,7 @@ MODELS="${CONTEXT_GRAPH_MODELS_PATH:-/mnt/d/cabdru/contextgraph/models}"
 BINARY="/home/cabdru/contextgraph/target/release/context-graph-mcp"
 LOGFILE="${DATA_ROOT}/logs/context-graph-daemon.log"
 PIDFILE="${DATA_ROOT}/state/locks/context-graph-daemon.pid"
+LAUNCH_LOCKFILE="${DATA_ROOT}/state/locks/context-graph-daemon-launch.lock"
 MAX_WAIT=300  # 5 minutes max wait for startup
 MAX_LOG_BYTES=$((10 * 1024 * 1024))
 LOG_BACKUPS=3
@@ -37,6 +38,23 @@ rotate_log_if_needed() {
     mv "$path" "${path}.1"
 }
 
+terminate_daemon_pid() {
+    local pid="$1"
+    local elapsed=0
+    echo "Daemon PID $pid alive but not listening after ${MAX_WAIT}s — sending SIGTERM" >&2
+    kill -TERM "$pid" 2>/dev/null || return 0
+    while [ $elapsed -lt 30 ]; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            echo "Daemon PID $pid exited after SIGTERM" >&2
+            return 0
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+    echo "MEJEPA_DAEMON_SHUTDOWN_STUCK: PID $pid ignored SIGTERM for 30s; sending SIGKILL" >&2
+    kill -KILL "$pid" 2>/dev/null || true
+}
+
 # Check if already listening
 if is_daemon_ready; then
     exit 0
@@ -55,8 +73,7 @@ if [ -f "$PIDFILE" ]; then
             sleep 3
             elapsed=$((elapsed + 3))
         done
-        echo "Daemon PID $PID alive but not listening after ${MAX_WAIT}s — killing" >&2
-        kill -9 "$PID" 2>/dev/null
+        terminate_daemon_pid "$PID"
     fi
 fi
 
@@ -90,7 +107,25 @@ if [ ! -w "$DATA_ROOT" ]; then
     exit 1
 fi
 
-mkdir -p "$(dirname "$LOGFILE")" "$(dirname "$PIDFILE")" "$STORAGE"
+mkdir -p "$(dirname "$LOGFILE")" "$(dirname "$PIDFILE")"
+
+exec 9>"$LAUNCH_LOCKFILE"
+if ! flock -n 9; then
+    elapsed=0
+    while [ $elapsed -lt $MAX_WAIT ]; do
+        if is_daemon_ready; then
+            exit 0
+        fi
+        sleep 3
+        elapsed=$((elapsed + 3))
+    done
+    echo "MEJEPA_DAEMON_LOCK_HELD: daemon launcher lock is held and daemon did not become ready within ${MAX_WAIT}s" >&2
+    exit 1
+fi
+
+if is_daemon_ready; then
+    exit 0
+fi
 
 # Start daemon
 echo "[ensure_daemon] Starting context-graph daemon on TCP port $PORT and HTTP port $HTTP_PORT..." >&2
@@ -101,14 +136,23 @@ CONTEXT_GRAPH_DB_PATH="$STORAGE" \
 CONTEXT_GRAPH_MODELS_PATH="$MODELS" \
 RUST_LOG=warn \
 setsid "$BINARY" --mode "$MODE" --daemon-server-only --d-root "$DATA_ROOT" --daemon-port "$PORT" --http-port "$HTTP_PORT" >> "$LOGFILE" 2>&1 < /dev/null &
-echo $! > "$PIDFILE"
+DAEMON_PID=$!
 
 # Wait for it to start listening
 elapsed=0
 while [ $elapsed -lt $MAX_WAIT ]; do
     if is_daemon_ready; then
+        if [ ! -s "$PIDFILE" ]; then
+            echo "MEJEPA_DAEMON_PID_MISSING: daemon ready but $PIDFILE is missing or empty" >&2
+            exit 1
+        fi
         echo "[ensure_daemon] Daemon ready on TCP port $PORT and HTTP port $HTTP_PORT (took ${elapsed}s)" >&2
         exit 0
+    fi
+    if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
+        echo "ERROR: Daemon process $DAEMON_PID exited before becoming ready" >&2
+        echo "Check logs: $LOGFILE" >&2
+        exit 1
     fi
     sleep 3
     elapsed=$((elapsed + 3))
@@ -116,4 +160,5 @@ done
 
 echo "ERROR: Daemon failed to start within ${MAX_WAIT}s" >&2
 echo "Check logs: $LOGFILE" >&2
+terminate_daemon_pid "$DAEMON_PID"
 exit 1

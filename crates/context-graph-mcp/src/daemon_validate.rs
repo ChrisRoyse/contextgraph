@@ -58,6 +58,9 @@ pub fn validate_d_drive_root(root: &Path) -> Result<DaemonPaths, DaemonValidatio
         });
     }
 
+    let root_write_test = root.join(".mejepa-daemon-root-write-test");
+    write_remove_test(root, &root_write_test)?;
+
     let paths = DaemonPaths {
         root: root.to_path_buf(),
         storage_db: root.join("storage/contextgraph-rocksdb"),
@@ -94,15 +97,19 @@ pub fn validate_d_drive_root(root: &Path) -> Result<DaemonPaths, DaemonValidatio
     }
 
     let write_test = paths.locks_dir.join(".mejepa-daemon-write-test");
-    fs::write(&write_test, b"ok").map_err(|source| DaemonValidationError::DDriveNotWritable {
+    write_remove_test(&paths.locks_dir, &write_test)?;
+    Ok(paths)
+}
+
+fn write_remove_test(root: &Path, write_test: &Path) -> Result<(), DaemonValidationError> {
+    fs::write(write_test, b"ok").map_err(|source| DaemonValidationError::DDriveNotWritable {
         path: root.to_path_buf(),
         source,
     })?;
-    fs::remove_file(&write_test).map_err(|source| DaemonValidationError::DDriveNotWritable {
-        path: write_test,
+    fs::remove_file(write_test).map_err(|source| DaemonValidationError::DDriveNotWritable {
+        path: write_test.to_path_buf(),
         source,
-    })?;
-    Ok(paths)
+    })
 }
 
 fn validate_root_path(path: &Path) -> Result<(), DaemonValidationError> {
