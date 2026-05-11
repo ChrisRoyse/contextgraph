@@ -48,7 +48,18 @@ STATE_PATH=""
 if [ -n "${RUNTIME_ROOT}" ] && [ -d "${RUNTIME_ROOT}" ]; then
   STATE_PATH="$(cgreality_preedit_state_path "${RUNTIME_ROOT}" "${SESSION_ID}" "${TOOL_USE_ID}")"
   STATE_SOURCE_OF_TRUTH="$(cgreality_file_sot "${STATE_PATH}")"
+  BEFORE_TEXT_PATH="${STATE_PATH%.json}.before.txt"
+  BEFORE_TEXT_SOURCE_OF_TRUTH=""
+  BEFORE_TEXT_SHA=""
   mkdir -p "$(dirname "${STATE_PATH}")"
+  if [ -f "${ABS_PATH}" ]; then
+    cp "${ABS_PATH}" "${BEFORE_TEXT_PATH}"
+    if ! sync -f "${BEFORE_TEXT_PATH}" 2>/dev/null; then
+      cgreality_log_event "PreToolUseEditBeforeTextSyncFailed" "$(jq -nc --arg before_text_path "${BEFORE_TEXT_PATH}" '{before_text_path: $before_text_path}')"
+    fi
+    BEFORE_TEXT_SOURCE_OF_TRUTH="$(cgreality_file_sot "${BEFORE_TEXT_PATH}")"
+    BEFORE_TEXT_SHA="$(cgreality_sha256_or_missing "${BEFORE_TEXT_PATH}")"
+  fi
   jq -nc \
     --arg record_kind "ccreality_pretool_edit_state" \
     --arg session_id "${SESSION_ID}" \
@@ -58,6 +69,8 @@ if [ -n "${RUNTIME_ROOT}" ] && [ -d "${RUNTIME_ROOT}" ]; then
     --arg abs_path "${ABS_PATH}" \
     --arg rel_path "${REL_PATH}" \
     --arg sha "${SHA}" \
+    --arg before_text_source_of_truth "${BEFORE_TEXT_SOURCE_OF_TRUTH}" \
+    --arg before_text_sha256 "${BEFORE_TEXT_SHA}" \
     --argjson line_count "${LINE_COUNT}" \
     --arg policy_source "ungated" \
     --arg created_at "$(date -u +%FT%TZ)" \
@@ -71,6 +84,8 @@ if [ -n "${RUNTIME_ROOT}" ] && [ -d "${RUNTIME_ROOT}" ]; then
       abs_path: $abs_path,
       rel_path: $rel_path,
       before_sha256: $sha,
+      before_text_source_of_truth: (if $before_text_source_of_truth == "" then null else $before_text_source_of_truth end),
+      before_text_sha256: (if $before_text_sha256 == "" then null else $before_text_sha256 end),
       before_line_count: $line_count,
       policy_source: $policy_source,
       created_at: $created_at,

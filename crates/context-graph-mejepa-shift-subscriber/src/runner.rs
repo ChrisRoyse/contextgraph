@@ -310,8 +310,14 @@ mod tests {
                 "problem_statement": "answer returns four",
                 "os": std::env::consts::OS
             },
-            "before": {"text": before},
-            "after": {"text": after},
+            "before": {
+                "text": before,
+                "sha256": format!("sha256:{}", hex::encode(context_graph_mejepa::sha256_bytes(before.as_bytes())))
+            },
+            "after": {
+                "text": after,
+                "sha256": format!("sha256:{}", hex::encode(context_graph_mejepa::sha256_bytes(after.as_bytes())))
+            },
             "delta_summary": {"commit_message": "phase7 runner test"},
             "verification": {
                 "witness_chain_segment_hex": hex::encode(context_graph_mejepa::valid_witness_segment()),

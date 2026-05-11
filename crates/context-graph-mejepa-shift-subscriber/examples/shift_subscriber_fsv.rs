@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     seed_infer_db(&infer_db)?;
 
     let session = "22222222222222222222222222222222";
-    let fixture = write_shift_fixture(&log_dir, session)?;
+    let fixture = write_shift_fixture(&root, &repo, &log_dir, session)?;
 
     let before = read_state(&infer_db, session)?;
     let subscriber = ShiftSubscriber::open(MeJepaShiftSubscriberConfig {
@@ -186,9 +186,13 @@ struct FixtureSummary {
 }
 
 fn write_shift_fixture(
+    root: &Path,
+    repo: &Path,
     log_dir: &Path,
     session: &str,
 ) -> Result<FixtureSummary, Box<dyn std::error::Error>> {
+    let before_dir = root.join("preedit-before-text");
+    std::fs::create_dir_all(&before_dir)?;
     let mut payload = String::new();
     let mut final_shift_id = String::new();
     for idx in 1..=100u64 {
@@ -196,6 +200,10 @@ fn write_shift_fixture(
         final_shift_id = shift_id.clone();
         let before = format!("def answer():\n    return {}\n", idx - 1);
         let after = format!("def answer():\n    return {idx}\n");
+        let before_path = before_dir.join(format!("answer_{idx:03}.before.py"));
+        let after_path = repo.join(format!("answer_{idx:03}.py"));
+        std::fs::write(&before_path, &before)?;
+        std::fs::write(&after_path, &after)?;
         let mut verification = json!({
             "witness_chain_segment_hex": hex::encode(context_graph_mejepa::valid_witness_segment())
         });
@@ -222,8 +230,14 @@ fn write_shift_fixture(
                 "problem_statement": "answer returns the indexed value",
                 "os": std::env::consts::OS
             },
-            "before": {"text": before},
-            "after": {"text": after},
+            "before": {
+                "text_source_of_truth": file_sot(&before_path),
+                "sha256": format!("sha256:{}", hex::encode(context_graph_mejepa::sha256_bytes(before.as_bytes())))
+            },
+            "after": {
+                "source_of_truth": file_sot(&after_path),
+                "sha256": format!("sha256:{}", hex::encode(context_graph_mejepa::sha256_bytes(after.as_bytes())))
+            },
             "delta_summary": {"commit_message": format!("phase7 shift subscriber fsv {idx}")},
             "verification": verification,
             "harness_transition_path": null

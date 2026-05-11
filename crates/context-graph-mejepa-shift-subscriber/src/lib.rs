@@ -19,6 +19,7 @@ pub use models::{
     WatermarkRecord,
 };
 pub use runner::SubscriberRunSummary;
+pub use shift_transform::shift_to_inference;
 pub use subscriber::{MeJepaShiftSubscriberConfig, ShiftSubscriber};
 pub use tail::ShiftLogTail;
 pub use watermark::WatermarkWriter;

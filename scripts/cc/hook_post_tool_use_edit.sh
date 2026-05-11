@@ -104,6 +104,8 @@ if TRANSITION_JSON="$(timeout 30 "${CLI_BIN}" ccreality record-harness-transitio
   --file-path "${REL_PATH}" \
   --before-sha256 "${BEFORE_SHA}" \
   --after-sha256 "${AFTER_SHA}" \
+  --preedit-state-path "${STATE_PATH}" \
+  --after-source-path "${ABS_PATH}" \
   --lines-added "${LINES_ADDED}" \
   --lines-removed "${LINES_REMOVED}" \
   --git-diff-stat "${DIFF_STAT}" \

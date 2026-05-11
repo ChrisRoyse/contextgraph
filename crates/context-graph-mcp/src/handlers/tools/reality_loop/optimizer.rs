@@ -208,24 +208,73 @@ pub async fn optimizer_record_harness_transition(
             )
         })?;
     let session = session_id(&args)?;
-    let mut shift_id = Value::Null;
-    if append_external_shift {
-        let mut shift = ShiftRecord::new(
-            "optimizer_record_harness_transition",
-            &session,
-            json!({"type": "harness_transition", "path": file_sot(&path)}),
-        )?;
-        shift.after = json!({"sha256": sha256_file(&path)?});
-        shift.harness_transition_path = Some(file_sot(&path));
-        append_shift(&runtime_root, &session, &shift)?;
-        shift_id = json!(shift.shift_id);
-    }
+    let transition_sha = sha256_file(&path)?;
     let witness_append = append_witness_entry_for_run(
         &runtime_root,
         &run_id,
         WitnessOpType::HarnessTransition,
-        &sha256_file(&path)?,
+        &transition_sha,
     )?;
+    let mut shift_id = Value::Null;
+    if append_external_shift {
+        let file_path = args
+            .get("file_path")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown-file");
+        let mut shift = ShiftRecord::new(
+            "optimizer_record_harness_transition",
+            &session,
+            json!({
+                "type": "file_edit",
+                "task_id": format!("{run_id}:{attempt}:round-{round:02}"),
+                "path": file_path,
+                "harness_transition": file_sot(&path),
+                "tests": ["phase7_harness_transition_replay"],
+                "problem_statement": format!("Replay harness transition for {file_path}"),
+                "os": std::env::consts::OS
+            }),
+        )?;
+        let preedit_state = args
+            .get("preedit_state_path")
+            .and_then(Value::as_str)
+            .map(file_arg_to_path);
+        let before_text_source_of_truth = preedit_state
+            .as_ref()
+            .and_then(|state_path| read_json(state_path).ok())
+            .and_then(|state| {
+                state
+                    .get("before_text_source_of_truth")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned)
+            });
+        let after_source = args
+            .get("after_source_path")
+            .and_then(Value::as_str)
+            .map(file_arg_to_path)
+            .unwrap_or_else(|| {
+                project_root()
+                    .unwrap_or_else(|_| Path::new(".").to_path_buf())
+                    .join(file_path)
+            });
+        shift.before = json!({
+            "sha256": args.get("before_sha256").cloned().unwrap_or(Value::Null),
+            "text_source_of_truth": before_text_source_of_truth
+        });
+        shift.after = json!({
+            "sha256": args.get("after_sha256").cloned().unwrap_or(Value::Null),
+            "source_of_truth": file_sot(&after_source)
+        });
+        shift.delta_summary = json!({
+            "artifact": file_sot(&path),
+            "lines_added": args.get("lines_added").cloned().unwrap_or(Value::Null),
+            "lines_removed": args.get("lines_removed").cloned().unwrap_or(Value::Null),
+            "git_diff_stat": args.get("git_diff_stat").cloned().unwrap_or(Value::Null)
+        });
+        shift.verification = witness_segment_from_append(&witness_append)?;
+        shift.harness_transition_path = Some(file_sot(&path));
+        append_shift(&runtime_root, &session, &shift)?;
+        shift_id = json!(shift.shift_id);
+    }
     Ok(json!({
         "transition_path": file_sot(&path),
         "round": round,
@@ -233,6 +282,102 @@ pub async fn optimizer_record_harness_transition(
         "witness_preflight": witness_preflight,
         "witness_append": witness_append,
         "source_of_truth": file_sot(&path)
+    }))
+}
+
+fn witness_segment_from_append(witness_append: &Value) -> Result<Value> {
+    let source = witness_append
+        .get("source_of_truth")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            super::errors::CCRealityError::new(
+                "CCREALITY_WITNESS_APPEND_SOURCE_MISSING",
+                "witness append result did not include source_of_truth",
+                "witness_append.source_of_truth",
+                "inspect witness append output before recording a Phase 7 shift",
+                json!({"witness_append": witness_append}),
+                None,
+            )
+        })?;
+    let offset = witness_append
+        .get("offset")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            super::errors::CCRealityError::new(
+                "CCREALITY_WITNESS_APPEND_OFFSET_MISSING",
+                "witness append result did not include numeric offset",
+                "witness_append.offset",
+                "inspect witness append output before recording a Phase 7 shift",
+                json!({"witness_append": witness_append}),
+                Some(source.to_string()),
+            )
+        })?;
+    let entry_size = witness_append
+        .get("entry_size")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            super::errors::CCRealityError::new(
+                "CCREALITY_WITNESS_APPEND_ENTRY_SIZE_MISSING",
+                "witness append result did not include numeric entry_size",
+                "witness_append.entry_size",
+                "inspect witness append output before recording a Phase 7 shift",
+                json!({"witness_append": witness_append}),
+                Some(source.to_string()),
+            )
+        })?;
+    let path = file_arg_to_path(source);
+    let bytes =
+        fs::read(&path).map_err(|e| fs_error("CCREALITY_WITNESS_SEGMENT_READ_FAILED", &path, e))?;
+    let start = usize::try_from(offset)
+        .ok()
+        .and_then(|idx| idx.checked_mul(usize::try_from(entry_size).ok()?))
+        .ok_or_else(|| {
+            super::errors::CCRealityError::new(
+                "CCREALITY_WITNESS_SEGMENT_OFFSET_OVERFLOW",
+                "witness offset and entry_size overflowed usize",
+                "witness_append.offset",
+                "inspect witness append output before recording a Phase 7 shift",
+                json!({"offset": offset, "entry_size": entry_size}),
+                Some(source.to_string()),
+            )
+        })?;
+    let entry_size = usize::try_from(entry_size).map_err(|err| {
+        super::errors::CCRealityError::new(
+            "CCREALITY_WITNESS_SEGMENT_SIZE_OVERFLOW",
+            format!("witness entry_size does not fit usize: {err}"),
+            "witness_append.entry_size",
+            "inspect witness append output before recording a Phase 7 shift",
+            json!({"entry_size": witness_append.get("entry_size")}),
+            Some(source.to_string()),
+        )
+    })?;
+    let end = start.checked_add(entry_size).ok_or_else(|| {
+        super::errors::CCRealityError::new(
+            "CCREALITY_WITNESS_SEGMENT_RANGE_OVERFLOW",
+            "witness segment byte range overflowed usize",
+            "witness_append.offset",
+            "inspect witness append output before recording a Phase 7 shift",
+            json!({"offset": offset, "entry_size": entry_size}),
+            Some(source.to_string()),
+        )
+    })?;
+    let segment = bytes.get(start..end).ok_or_else(|| {
+        super::errors::CCRealityError::new(
+            "CCREALITY_WITNESS_SEGMENT_RANGE_INVALID",
+            "witness append range is outside witness-chain.bin",
+            "witness_append.offset",
+            "inspect witness-chain durability before recording a Phase 7 shift",
+            json!({"offset": offset, "entry_size": entry_size, "len": bytes.len()}),
+            Some(source.to_string()),
+        )
+    })?;
+    Ok(json!({
+        "witness_chain_segment_hex": hex::encode(segment),
+        "witness_chain_segment": {
+            "source_of_truth": source,
+            "offset": offset,
+            "entry_size": entry_size
+        }
     }))
 }
 

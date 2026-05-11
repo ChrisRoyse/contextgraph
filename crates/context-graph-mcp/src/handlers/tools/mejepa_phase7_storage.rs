@@ -7,20 +7,20 @@ use std::path::{Path, PathBuf};
 
 use context_graph_mejepa::{
     build_deterministic_compiler, materialize_inference_panels, open_infer_rocksdb, panel_sha,
-    sha256_bytes, valid_witness_segment, AstDiff, CalibrationStore, DiffHunk, Language,
-    MeJepaInferConfig, MejepaStore, PatchBundle, RealityPrediction, RocksDbInferStore, TaskContext,
-    TaskEnvironment, TaskId, TestId, TrainCertSummary,
+    CalibrationStore, MeJepaInferConfig, MejepaStore, PatchBundle, RealityPrediction,
+    RocksDbInferStore, TaskContext, TrainCertSummary,
 };
 use context_graph_mejepa_instruments::materialize::TimeStep;
 use context_graph_mejepa_instruments::panel_store::{PanelKey, PanelStore, CF_MEJEPA_PANEL_META};
 use context_graph_mejepa_instruments::{InstrumentSlot, Panel, PanelEnvelope, PanelProvenance};
+use context_graph_mejepa_shift_subscriber::{shift_to_inference, ShiftEntry, ShiftId};
 use rocksdb::{IteratorMode, DB};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::info;
 
 use crate::handlers::tools::reality_loop::helpers::{
-    file_arg_to_path, file_sot, read_active_runtime_root, sha256_file,
+    file_arg_to_path, file_sot, read_active_runtime_root,
 };
 
 const ENV_INFER_DB: &str = "CONTEXTGRAPH_MEJEPA_INFER_DB";
@@ -585,91 +585,90 @@ fn required_env_path(name: &str) -> Result<PathBuf, String> {
 fn patch_context_from_shift(
     shift: &LocatedShift,
 ) -> Result<(PatchBundle, TaskContext, Value), String> {
-    let session_id = decode_session_hex32(&shift.session_id)?;
-    let attempt_id = attempt_id_from_shift(shift)?;
-    validate_attempt_id(&attempt_id)?;
-    let source_path = source_path_from_shift(shift)?;
-    let after_sha_text = shift
-        .record
-        .pointer("/after/sha256")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "shift after.sha256 is required for ME-JEPA replay".to_string())?;
-    let actual_after_sha = sha256_file(&source_path).map_err(|err| err.to_string())?;
-    if actual_after_sha != after_sha_text {
-        return Err(format!(
-            "MEJEPA_OBSERVE_SHIFT_SOURCE_SHA_MISMATCH: source {} has {}, shift after.sha256 is {}",
-            source_path.display(),
-            actual_after_sha,
-            after_sha_text
-        ));
-    }
-    let after_bytes = std::fs::read(&source_path).map_err(|err| {
-        format!(
-            "failed to read replay source {}: {err}",
-            source_path.display()
-        )
-    })?;
-    let before_bytes = serde_json::to_vec(
-        shift
-            .record
-            .get("before")
-            .ok_or_else(|| "shift before object is required for ME-JEPA replay".to_string())?,
-    )
-    .map_err(|err| format!("failed to serialize shift before object: {err}"))?;
-    let before_sha = shift
-        .record
-        .pointer("/before/sha256")
-        .and_then(Value::as_str)
-        .map(parse_sha256_text)
-        .transpose()?
-        .unwrap_or_else(|| sha256_bytes(&before_bytes));
-    let after_sha = parse_sha256_text(after_sha_text)?;
-    let record_bytes = serde_json::to_vec(&shift.record).map_err(|err| err.to_string())?;
-    let patch_sha = sha256_bytes(&record_bytes);
-    let rel_path = relative_replay_path(shift, &source_path)?;
-    let patch = PatchBundle::try_new(
-        AstDiff {
-            hunks: vec![DiffHunk {
-                path: rel_path.clone(),
-                pre_sha: before_sha,
-                post_sha: after_sha,
-                before: String::from_utf8_lossy(&before_bytes).into_owned(),
-                after: String::from_utf8_lossy(&after_bytes).into_owned(),
-            }],
-        },
-        valid_witness_segment(),
-        format!("ME-JEPA Phase 7 replay for shift {}", shift.shift_id),
-        patch_sha,
-    )
-    .map_err(|err| err.to_string())?;
-    let context = TaskContext {
-        task_id: TaskId(attempt_id.clone()),
-        session_id,
-        language: language_for_path(&source_path)?,
-        problem_statement: format!(
-            "Replay durable cgreality shift {} from {}",
-            shift.shift_id, shift.path
-        ),
-        tests: vec![TestId(format!("replay_shift_{}", shift.shift_id))],
-        environment: TaskEnvironment {
-            repo_root: source_path
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .to_path_buf(),
-            python_version: Some("3.11".to_string()),
-            os: std::env::consts::OS.to_string(),
-        },
-        claim_graph: None,
-        skill_citations: vec![],
-    };
-    context.validate().map_err(|err| err.to_string())?;
+    let entry = located_shift_to_entry(shift)?;
+    let repo_root = repo_root_from_shift(shift);
+    let (patch, context, source_sha, _attempt_id) =
+        shift_to_inference(&entry, repo_root).map_err(|err| err.to_string())?;
     let source = json!({
-        "source_path": file_sot(&source_path),
-        "relative_path": rel_path,
-        "after_sha256": after_sha_text,
-        "patch_sha256": hex::encode(patch_sha)
+        "relative_path": patch.ast_diff.hunks[0].path,
+        "after_sha256": format!("sha256:{}", hex::encode(source_sha)),
+        "patch_sha256": hex::encode(patch.patch_sha)
     });
     Ok((patch, context, source))
+}
+
+fn located_shift_to_entry(shift: &LocatedShift) -> Result<ShiftEntry, String> {
+    Ok(ShiftEntry {
+        shift_id: ShiftId::parse(shift.shift_id.clone()).map_err(|err| err.to_string())?,
+        timestamp_unix_ns: shift
+            .record
+            .get("timestamp_unix_ns")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| "shift timestamp_unix_ns must fit in u64".to_string())?
+            as u128,
+        tool_name: shift
+            .record
+            .get("tool_name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "shift tool_name is required".to_string())?
+            .to_string(),
+        tool_use_id: shift
+            .record
+            .get("tool_use_id")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        session_id: context_graph_mejepa_shift_subscriber::decode_session_hex32(&shift.session_id)
+            .map_err(|err| err.to_string())?,
+        subject: shift
+            .record
+            .get("subject")
+            .cloned()
+            .ok_or_else(|| "shift subject is required".to_string())?,
+        before: shift
+            .record
+            .get("before")
+            .cloned()
+            .ok_or_else(|| "shift before is required".to_string())?,
+        after: shift
+            .record
+            .get("after")
+            .cloned()
+            .ok_or_else(|| "shift after is required".to_string())?,
+        delta_summary: shift
+            .record
+            .get("delta_summary")
+            .cloned()
+            .ok_or_else(|| "shift delta_summary is required".to_string())?,
+        verification: shift
+            .record
+            .get("verification")
+            .cloned()
+            .ok_or_else(|| "shift verification is required".to_string())?,
+        harness_transition_path: shift
+            .record
+            .get("harness_transition_path")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        byte_offset: shift.byte_offset,
+        next_byte_offset: shift.next_byte_offset,
+        source_log_path: PathBuf::from(&shift.path),
+    })
+}
+
+fn repo_root_from_shift(shift: &LocatedShift) -> PathBuf {
+    for pointer in [
+        "/after/source_of_truth",
+        "/after/sourceOfTruth",
+        "/after_source_path",
+    ] {
+        if let Some(raw) = shift.record.pointer(pointer).and_then(Value::as_str) {
+            let path = file_arg_to_path(raw);
+            if let Some(parent) = path.parent() {
+                return parent.to_path_buf();
+            }
+        }
+    }
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
 fn persist_panels(
@@ -724,100 +723,6 @@ fn persist_panels(
         }
     }
     Ok(())
-}
-
-fn attempt_id_from_shift(shift: &LocatedShift) -> Result<String, String> {
-    for pointer in [
-        "/subject/attempt_id",
-        "/subject/attemptId",
-        "/subject/task_id",
-        "/subject/taskId",
-        "/subject/path",
-    ] {
-        if let Some(value) = shift.record.pointer(pointer).and_then(Value::as_str) {
-            if !value.trim().is_empty() {
-                return Ok(value.replace('/', "__"));
-            }
-        }
-    }
-    Ok(format!("shift_{}", shift.shift_id))
-}
-
-fn source_path_from_shift(shift: &LocatedShift) -> Result<PathBuf, String> {
-    for pointer in [
-        "/after/source_of_truth",
-        "/after/sourceOfTruth",
-        "/delta_summary/artifact",
-        "/harness_transition_path",
-    ] {
-        if let Some(value) = shift.record.pointer(pointer).and_then(Value::as_str) {
-            let path = file_arg_to_path(value);
-            if path.is_file() {
-                return Ok(path);
-            }
-        }
-    }
-    Err(format!(
-        "MEJEPA_OBSERVE_SHIFT_SOURCE_MISSING: shift {} has no readable after.source_of_truth, delta_summary.artifact, or harness_transition_path",
-        shift.shift_id
-    ))
-}
-
-fn relative_replay_path(shift: &LocatedShift, source_path: &Path) -> Result<PathBuf, String> {
-    if let Some(path) = shift
-        .record
-        .pointer("/subject/path")
-        .and_then(Value::as_str)
-    {
-        let candidate = PathBuf::from(path);
-        if !candidate.is_absolute()
-            && !path.contains('\0')
-            && !candidate.components().any(|component| {
-                matches!(
-                    component,
-                    std::path::Component::ParentDir | std::path::Component::RootDir
-                )
-            })
-        {
-            return Ok(candidate);
-        }
-    }
-    source_path
-        .file_name()
-        .map(PathBuf::from)
-        .ok_or_else(|| format!("source path {} has no file name", source_path.display()))
-}
-
-fn language_for_path(path: &Path) -> Result<Language, String> {
-    match path.extension().and_then(|ext| ext.to_str()).unwrap_or("") {
-        "py" => Ok(Language::Python),
-        "rs" => Ok(Language::Rust),
-        "js" | "jsx" => Ok(Language::Javascript),
-        "ts" | "tsx" => Ok(Language::Typescript),
-        "go" => Ok(Language::Go),
-        "java" => Ok(Language::Java),
-        "c" | "h" => Ok(Language::C),
-        "cc" | "cpp" | "cxx" | "hpp" => Ok(Language::Cpp),
-        "cs" => Ok(Language::CSharp),
-        "rb" => Ok(Language::Ruby),
-        "php" => Ok(Language::Php),
-        other => Err(format!(
-            "MEJEPA_OBSERVE_SHIFT_LANGUAGE_UNSUPPORTED: source {} has unsupported extension {:?}",
-            path.display(),
-            other
-        )),
-    }
-}
-
-fn parse_sha256_text(value: &str) -> Result<[u8; 32], String> {
-    let hex_text = value.strip_prefix("sha256:").unwrap_or(value);
-    if hex_text.len() != 64 || !hex_text.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(format!("expected sha256:<64 hex> digest, got {value:?}"));
-    }
-    let mut out = [0u8; 32];
-    hex::decode_to_slice(hex_text, &mut out)
-        .map_err(|err| format!("failed to decode SHA-256 digest {value:?}: {err}"))?;
-    Ok(out)
 }
 
 fn timestamp_ns_to_ms(shift: &LocatedShift) -> Result<i64, String> {
@@ -904,6 +809,8 @@ fn rss_bytes() -> Result<u64, String> {
 #[cfg(test)]
 mod phase7_fsv_tests {
     use super::*;
+    use crate::handlers::tools::reality_loop::helpers::sha256_file;
+    use context_graph_mejepa::Language;
     use context_graph_mejepa::{CalibrationExample, EmbedderId};
     use context_graph_mejepa_instruments::panel_store::PanelStore;
     use serde::Serialize;
@@ -948,6 +855,8 @@ mod phase7_fsv_tests {
         let source = repo.join("phase7_replay.py");
         std::fs::write(&source, "def answer():\n    return 4\n").unwrap();
         let after_sha = sha256_file(&source).unwrap();
+        let before_text = "def answer():\n    return 3\n";
+        let before_sha = format!("sha256:{}", sha256_bytes_plain(before_text.as_bytes()));
 
         seed_infer_db(&infer_db, session, shift_id, attempt_id).unwrap();
         let shift = crate::handlers::tools::reality_loop::shift_log::ShiftRecord {
@@ -961,10 +870,13 @@ mod phase7_fsv_tests {
                 "path": "phase7_replay.py",
                 "attempt_id": attempt_id
             }),
-            before: json!({"sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}),
+            before: json!({"sha256": before_sha, "text": before_text}),
             after: json!({"sha256": after_sha, "source_of_truth": file_sot(&source)}),
             delta_summary: json!({"lines_added": 2, "lines_removed": 0}),
-            verification: json!({"synthetic_expected_return": 4}),
+            verification: json!({
+                "synthetic_expected_return": 4,
+                "witness_chain_segment_hex": hex::encode(context_graph_mejepa::valid_witness_segment())
+            }),
             harness_transition_path: None,
         };
         crate::handlers::tools::reality_loop::shift_log::append_shift(
@@ -1234,8 +1146,12 @@ mod phase7_fsv_tests {
 
     fn sha256_file_plain(path: &Path) -> std::io::Result<String> {
         let bytes = std::fs::read(path)?;
+        Ok(sha256_bytes_plain(&bytes))
+    }
+
+    fn sha256_bytes_plain(bytes: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(bytes);
-        Ok(format!("{:x}", hasher.finalize()))
+        format!("{:x}", hasher.finalize())
     }
 }

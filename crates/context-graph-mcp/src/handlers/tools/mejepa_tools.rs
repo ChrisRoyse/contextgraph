@@ -412,8 +412,8 @@ fn run_heal_status(
     let latest_report = store
         .scan_cf_values(CF_MEJEPA_HEAL_REPORTS)?
         .into_iter()
-        .map(|bytes| decode_value::<HealReport>(&bytes))
-        .collect::<Result<Vec<_>, _>>()?
+        .map(|bytes| decode_value::<HealReport>(&bytes).map_err(Box::new))
+        .collect::<Result<Vec<_>, Box<context_graph_mejepa::heal::HealError>>>()?
         .into_iter()
         .max_by_key(|report| report.witness_chain_offset)
         .map(|report| {

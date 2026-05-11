@@ -57,6 +57,14 @@ pub struct RecordHarnessTransitionArgs {
     #[arg(long)]
     pub after_sha256: String,
 
+    /// Source-of-truth JSON file written by the PreToolUse edit hook.
+    #[arg(long)]
+    pub preedit_state_path: Option<String>,
+
+    /// Absolute source path read by the PostToolUse edit hook after the edit.
+    #[arg(long)]
+    pub after_source_path: Option<String>,
+
     /// Lines added by the edit.
     #[arg(long, default_value_t = 0)]
     pub lines_added: u64,
@@ -167,6 +175,8 @@ async fn record_harness_transition(args: RecordHarnessTransitionArgs) -> CCResul
         "file_path": args.file_path,
         "before_sha256": args.before_sha256,
         "after_sha256": args.after_sha256,
+        "preedit_state_path": args.preedit_state_path,
+        "after_source_path": args.after_source_path,
         "lines_added": args.lines_added,
         "lines_removed": args.lines_removed,
         "git_diff_stat": args.git_diff_stat,
