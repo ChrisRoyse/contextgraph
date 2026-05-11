@@ -1,6 +1,8 @@
 # Atomic task graph (futurebuild)
 
 > Authoritative task index: [`13_TASK_INDEX.md`](../13_TASK_INDEX.md). This file is the directory map for the atomic task files. Phase A has detailed individual task files; other phases use compact per-domain `_all_tasks.md` files.
+>
+> **READ THIS FIRST every task.** [`../specs/FSV-PROTOCOL.md`](../specs/FSV-PROTOCOL.md) is the universal verification contract every TASK-* file inherits. The task file says *what* to build; FSV-PROTOCOL says *how to prove it works at the Source of Truth*. Without producing FSV-PROTOCOL §6 artifacts, no task is done — `cargo test` passing is necessary but not sufficient. **`ASSUME THE TASK IS WRONG`**: audit every file path, symbol name, CF reference, and effort estimate against the live tree before writing code (FSV-PROTOCOL §7).
 
 ## Phase A — Operational Unblock (detailed individual files + compact)
 

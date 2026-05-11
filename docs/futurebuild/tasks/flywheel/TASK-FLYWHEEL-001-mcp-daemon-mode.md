@@ -10,6 +10,10 @@ spec_refs: [SPEC-FLYWHEEL.md REQ-FLYWHEEL-01..03,15, TECH-FLYWHEEL.md §1-2]
 storage_policy: D-drive (/mnt/d/contextgraph/) per docs/futurebuild/16_STORAGE_LOCATION_POLICY.md
 ---
 
+## Verification contract
+
+Inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md). Status is `code_complete` per the file frontmatter; remaining work is fresh-host enablement proof. SoTs: `/mnt/d/contextgraph/state/locks/context-graph-daemon.pid`, `/mnt/d/contextgraph/logs/mejepa-daemon.stdout.log`, `/mnt/d/contextgraph/fsv/mcp-daemon-fsv/startup.json`.
+
 ## Goal
 
 Ship daemon mode for `context-graph-mcp`: validate the D-root, run the MCP server as the long-lived daemon process, and start four supervised tokio tasks in that process: shift subscriber, self-optimization scheduler (skeleton from FLYWHEEL-002), nightly GC scheduler, weekly evaluation scheduler.

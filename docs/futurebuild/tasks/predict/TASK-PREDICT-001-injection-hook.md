@@ -9,6 +9,10 @@ effort: 1d
 spec_refs: [SPEC-PREDICT.md REQ-PREDICT-12..13, TECH-PREDICT.md §6]
 ---
 
+## Verification contract
+
+Inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md). SoT is the rendered markdown file at the FSV path below + the actual injection of that text into the Claude Code prompt context (verifiable by inspecting the next conversation turn's system-reminder block). `ASSUME THE TASK IS WRONG` — verify `mejepa_predict_latest` is registered in `crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs` before assuming the queryable surface exists; verify `.claude/settings.json` accepts `hooks.UserPromptSubmit` array additions without breaking existing hooks.
+
 ## Goal
 
 Add a hook script that fires on UserPromptSubmit, queries the daemon's `mejepa_predict_latest` for the current session, and renders the latest `RealityPrediction` as a ≤ 4 KB markdown injection block per `15_PREDICTION_TAXONOMY.md §8`. The block is appended to the agent's prompt context as a `<user>` message addendum. **Without this hook, predictions are computed but never reach the agent.**

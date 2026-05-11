@@ -9,16 +9,23 @@ effort: 0.25d
 spec_refs: [SPEC-LOOP.md REQ-LOOP-06, TECH-LOOP.md §3]
 ---
 
+## Verification contract
+
+Inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md). SoT readback, ≥3 boundary cases, NO mocks, fail-closed errors, Occam's-razor justification, §6 evidence artifacts mandatory. `ASSUME THE TASK IS WRONG` — audit `scripts/cc/hook_post_tool_use_*.sh` content before editing; the actual current writer file name may have drifted from the path listed in `## Inputs`.
+
 ## Goal
 
 Update the PostToolUse hook scripts so shift-log entries write to `/mnt/d/contextgraph/runtime/cgreality-shift-log/<session>.jsonl` instead of `/tmp/contextgraph-rust-reality-loop/cgreality-shift-log/<session>.jsonl`. Same JSON shape; same filename convention; new directory.
 
 ## Inputs
 
-- `scripts/cc/hook_post_tool_use_edit.sh` — current writer (writes to `/tmp/`)
-- `scripts/cc/hook_post_tool_use_*.sh` — any other PostToolUse scripts
+- `scripts/cc/hook_post_tool_use_edit.sh` — current PostToolUse:Edit writer (records SHA, computes deltas)
+- `scripts/cc/hook_user_prompt_submit.sh` — **(audited 2026-05-11)** writes shift-log references; check before changes
+- `scripts/cc/hook_pre_compact.sh` — **(audited 2026-05-11)** also references shift-log paths
 - `docs/futurebuild/specs/technical/TECH-LOOP.md` §3 (the updated script template)
 - `docs/futurebuild/16_STORAGE_LOCATION_POLICY.md` §4.4
+
+**Audit (2026-05-11):** `scripts/cc/hook_post_tool_use_edit.sh` is the documented writer per CLAUDE.md §11.6 surface 4, but `grep -l cgreality-shift-log scripts/cc/*.sh` shows the *actual* path references live in `hook_user_prompt_submit.sh` and `hook_pre_compact.sh`. Either (a) the writer was renamed and the spec is stale, or (b) the shift log is read by submit/compact but written elsewhere. **Verify by running an Edit and checking which file path ends up touched.** Do not just edit `hook_post_tool_use_edit.sh` blindly.
 
 ## Outputs
 

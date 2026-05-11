@@ -2,6 +2,8 @@
 
 > **Purpose.** This directory is the complete forward-looking plan for turning ME-JEPA-Code into the operational truth system that predicts, in real time, whether code an AI agent has produced will work in reality. It supersedes the historical reality-loop framing (outer Claude + inner Qwen LLM) and consolidates everything around a **single outer loop around Claude Code**, whose only job is to generate the durable reality stream that ME-JEPA trains on and serves predictions about.
 >
+> **MANDATORY first read for any agent picking up a TASK-* file:** [`specs/FSV-PROTOCOL.md`](specs/FSV-PROTOCOL.md). The protocol defines the inherited verification contract — SoT readback, ≥3 boundary cases, NO mocks, NO backwards compatibility, fail-closed errors, Occam's-razor justification, and the §6 evidence artifacts. A task is not done without these, regardless of `cargo test` results. **`ASSUME THE TASK IS WRONG`** — audit every path, symbol, and CF reference against the live tree (FSV-PROTOCOL §7).
+>
 > **Authority.** When this suite conflicts with `docs/ruvectorfindings/specs/_README.md` or `.claude/loop.md`, the change is intentional — apply it. The operator approved the pivot in the prompt that originated this directory. `CLAUDE.md` is unchanged; the rules in §11 still apply, but the *content* of the work has shifted from "build ME-JEPA primitives" (largely done) to "operationalize ME-JEPA as the reality truth system that AI agents query."
 
 **Date authored:** 2026-05-10
@@ -45,6 +47,7 @@
 
 | Level | Where | Purpose |
 |---|---|---|
+| 0 — Verification | [`specs/FSV-PROTOCOL.md`](specs/FSV-PROTOCOL.md) | **mandatory inherited contract** for every task: SoT readback, boundary audit, no mocks, fail-closed errors |
 | 1 — Constitution | inherits from `docs/ruvectorfindings/specs/constitution.md` | immutable rules |
 | 2 — Functional | [`specs/functional/`](specs/functional/) | what to build, per domain |
 | 3 — Technical | [`specs/technical/`](specs/technical/) | how to build, per domain |

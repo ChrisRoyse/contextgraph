@@ -9,6 +9,18 @@ effort: 1d
 spec_refs: [SPEC-PREDICT.md REQ-PREDICT-10..11, TECH-PREDICT.md §10]
 ---
 
+## Verification contract
+
+Inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md). SoT is the `CF_MEJEPA_AGENT_FEEDBACK` row keyed by `(prediction_id, agent_id, ts_millis)` — verifiable with `Storage::get_cf` or `ldb dump --column_family=CF_MEJEPA_AGENT_FEEDBACK`. `ASSUME THE TASK IS WRONG` — confirm tool registry layout in `crates/context-graph-mcp/src/tools/names.rs` (the actual const-pattern is `MEJEPA_*: &str = "mcp__cgreality__mejepa_*"`).
+
+## Audit (2026-05-11)
+
+- `mejepa_record_agent_feedback` is **not yet** registered. `grep -rn "mejepa_record_agent_feedback" crates/context-graph-mcp/src/` returns 0 hits. This task is unstarted.
+- `mejepa_predict_latest` IS registered (`crates/context-graph-mcp/src/tools/names.rs:102` and `handlers/tools/mejepa_tools.rs:170 call_mejepa_predict_latest`). Use it as the pattern template for the new tool.
+- **The value types listed in `## Outputs` (`SurpriseEvent`, `FeedbackKind`, `SurpriseSeverity`, `ActualOutcome`) are ALREADY in `crates/context-graph-mejepa/src/types.rs`** — shipped by TASK-FLYWHEEL-006 on 2026-05-11. Do NOT re-define them. Import: `use context_graph_mejepa::types::{SurpriseEvent, FeedbackKind, SurpriseSeverity, ActualOutcome, AgentId, PredictionId, WitnessHash};`
+- `CF_MEJEPA_AGENT_FEEDBACK` is registered (TASK-FLYWHEEL-006). Already opened by `open_hygiene_rocksdb` per `mejepa-cf::FLYWHEEL_CFS`.
+- `SurpriseEvent::validate()` and `try_new()` are pre-shipped — your handler should call them and propagate the `MejepaInferError` upward; do not re-implement validation.
+
 ## Goal
 
 Add the `mejepa_record_agent_feedback` MCP tool that accepts a `prediction_id`, `feedback_kind` ∈ {Confirmed, Surprise, Omission, Calibration}, agent explanation, actual outcome, severity. Persists a `SurpriseEvent` to `CF_MEJEPA_AGENT_FEEDBACK`. Bumps sampling weight on contributing chunks by `1 + 2 * severity_score`. Adds an `ActiveLearningKind::AgentSurprise` entry. Writes operator alert if `severity=Catastrophic`. Returns the feedback record + queue position.

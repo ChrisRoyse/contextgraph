@@ -48,3 +48,17 @@ Wire each into the storage opener so they're created on first daemon startup. De
 - ExemplarRef list with > 100 entries → no truncation at CF layer; consumer paginates
 - SurpriseEvent with empty `agent_explanation` → permitted; serialized as empty string
 - Concurrent writes to `CF_MEJEPA_AGENT_FEEDBACK` from multiple agents → CF write is atomic per RocksDB; no extra locking needed
+
+## Verification contract
+
+Inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md).
+
+## Completion record (2026-05-11)
+
+- **`crates/context-graph-mejepa-cf/src/lib.rs`** — added `CF_MEJEPA_DDA_SIGNALS`, `CF_MEJEPA_FAILURE_EXEMPLARS`, `CF_MEJEPA_AGENT_FEEDBACK` constants + `FLYWHEEL_CFS` slice; extended `all_hygiene_referenced_cfs()` chain; 2 new tests.
+- **`crates/context-graph-mejepa/src/types.rs`** — added value types: `PredictionId`/`FeedbackId`/`PanelId`/`WitnessHash`/`AgentId` newtypes, `SurpriseSeverity`/`FeedbackKind`/`FailureModeClass` enums, `DdaSignals`/`ExemplarRef`/`SurpriseEvent`/`ActualOutcome`/`EmbedderViolationSignature` structs with `validate()`. Re-uses `OracleVerdict` from `mejepa-instruments`.
+- **`crates/context-graph-mejepa/examples/cf_round_trip_fsv.rs`** — FSV harness (the path differs from the original Outputs section because `mejepa-cf` is intentionally dependency-free; `mejepa` is where rocksdb + value types live). All happy-path round-trips and 4 boundary cases pass.
+- **`crates/context-graph-mejepa-hygiene/tests/flywheel_cfs_registered_test.rs`** — integration test confirming `open_hygiene_rocksdb` creates the 3 CFs on a fresh root AND across close-reopen.
+- **FSV evidence**: `/mnt/d/contextgraph/fsv/mejepa-cf-fsv/round_trip.json` with `all_passed: true`; real RocksDB SST files at `/mnt/d/contextgraph/fsv/mejepa-cf-fsv/rocks-1778516317859/000009.sst` and siblings.
+- **Session report**: `./memory/reports/session-2026-05-11--task-flywheel-006-new-cfs.md`
+- **Decision**: kept uppercase CF string convention matching the rest of `mejepa-cf`; spec illustrations used lowercase. See `./memory/discoveries/2026-05-11--mejepa-cf-uppercase-string-convention.md`.

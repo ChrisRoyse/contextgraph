@@ -1,5 +1,7 @@
 # Runbook domain — all atomic tasks
 
+> **Verification contract.** Every task below inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md). Read it before starting. SoT readback, ≥3 boundary cases, NO mocks, NO backwards compat, fail-closed errors, Occam's-razor justification, and the §6 evidence artifacts are mandatory. **`ASSUME THE TASK IS WRONG`** — audit file paths, symbol names, and CF references against the live tree before implementing.
+
 Most CLI / runbook items are small wrappers over existing MCP tools or shell scripts.
 
 ## TASK-RUN-001 — First-time setup script

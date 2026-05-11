@@ -1,6 +1,17 @@
 # Flywheel domain — all atomic tasks
 
+> **Verification contract.** Every task below inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md). Read it before starting. SoT readback, ≥3 boundary cases, NO mocks, NO backwards compat, fail-closed errors, Occam's-razor justification, and the §6 evidence artifacts are mandatory.
+
 Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file covers the rest of the FLYWHEEL + UTML tasks compactly.
+
+**Status snapshot (2026-05-11):**
+- FLYWHEEL-001: `code_complete` (daemon ships; fresh-host enablement proof still pending)
+- FLYWHEEL-002: `complete` (scheduler skeleton, 7 tickers, FSV at `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/scheduler_ticks.json`)
+- FLYWHEEL-003: `open` — Test-outcome capture hook (not started)
+- FLYWHEEL-004: `open` — Async oracle binding (not started)
+- FLYWHEEL-005: `partial` — `SurpriseEvent`, `SurpriseSeverity`, `FeedbackKind`, `ActualOutcome` types **already shipped** in `crates/context-graph-mejepa/src/types.rs` as part of FLYWHEEL-006. Remaining work: add `ActiveLearningKind::AgentSurprise` variant to `crates/context-graph-mejepa/src/eval/queue.rs` and consumer in `scheduler.tick_active_learning`.
+- FLYWHEEL-006: `complete (2026-05-11)` — 3 CFs registered, FSV at `/mnt/d/contextgraph/fsv/mejepa-cf-fsv/round_trip.json`, all boundary cases pass; see `./memory/reports/session-2026-05-11--task-flywheel-006-new-cfs.md`.
+- FLYWHEEL-007: `open` — Park-list CF (blocked-by FLYWHEEL-006 → now unblocked)
 
 ---
 
@@ -22,11 +33,12 @@ Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file cove
 
 ## TASK-FLYWHEEL-005 — `ActiveLearningKind::AgentSurprise` enum variant
 
-- **Phase:** A · **Effort:** 0.5d · **Blocked by:** none
-- **Goal:** Extend `ActiveLearningKind` enum with `AgentSurprise` variant; queue the kind from `mejepa_record_agent_feedback` handler; consumer in scheduler.tick_active_learning fast-tracks observe() for queued surprise entries.
-- **Outputs:** `crates/context-graph-mejepa/src/eval/queue.rs` extension; `crates/context-graph-mejepa/src/types.rs` enum extension.
-- **DoD:** record-feedback with severity=Medium → queue entry exists with kind=AgentSurprise; tick_active_learning drains it within 600s; round-trip verified.
-- **FSV:** `/mnt/d/contextgraph/fsv/active-learning-fsv/agent_surprise.json`
+- **Phase:** A · **Effort:** ~0.25d (reduced; types pre-shipped) · **Blocked by:** none · **Status:** partial
+- **Goal:** Extend `ActiveLearningKind` enum with `AgentSurprise` variant; queue the kind from `mejepa_record_agent_feedback` handler; consumer in `scheduler.tick_active_learning` fast-tracks observe() for queued surprise entries.
+- **Audit (2026-05-11):** the `mejepa::types::SurpriseEvent` / `SurpriseSeverity` / `FeedbackKind` / `ActualOutcome` extensions originally listed under this task's Outputs are **already shipped** in `crates/context-graph-mejepa/src/types.rs` (TASK-FLYWHEEL-006 pre-emptively built the type system for REQ-FLYWHEEL-10). Remaining work is purely the `ActiveLearningKind` variant + queue/scheduler wiring.
+- **Outputs:** `crates/context-graph-mejepa/src/eval/queue.rs` — extend `ActiveLearningKind` enum + `ActiveLearningEntry` constructor; `crates/context-graph-mejepa/src/eval/types.rs` if the enum lives there (audit first). DO NOT re-define types already in `mejepa::types`.
+- **DoD:** enqueue with kind=AgentSurprise → readback in `CF_MEJEPA_ACTIVE_LEARNING_QUEUE` shows entry; `tick_active_learning` drains it within one tick period; SoT round-trip verified per FSV-PROTOCOL §6.4.
+- **FSV:** `/mnt/d/contextgraph/fsv/active-learning-fsv/agent_surprise.json` (with `cf_counts_before`/`after`, `readback_equal=true`, boundary cases per FSV-PROTOCOL §5).
 
 ## TASK-FLYWHEEL-007 — Park-list CF for the 3-attempt-park rule
 

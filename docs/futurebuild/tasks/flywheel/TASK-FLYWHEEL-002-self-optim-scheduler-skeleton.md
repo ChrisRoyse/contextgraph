@@ -9,6 +9,10 @@ effort: 1d
 spec_refs: [SPEC-FLYWHEEL.md REQ-FLYWHEEL-05, TECH-HEAL.md §3]
 ---
 
+## Verification contract
+
+Inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md). Status `complete` per frontmatter — FSV at `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/scheduler_ticks.json`; readback verified via `ldb dump` per the "Implementation evidence" section.
+
 ## Goal
 
 Stand up the skeleton of `crates/context-graph-mejepa::heal::scheduler::run_self_optimization_scheduler` with 7 tickers (observe 250ms, drift 60s, active_learning 600s, promote 3600s, continual_backprop 1800s, constellation 3600s, emergency_eviction 600s). Each tick calls a stub function that delegates to existing shipped modules (no new logic — just wiring). Phase E will replace the stubs with full per-cell stratified, dissipation-aware logic.

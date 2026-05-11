@@ -9,6 +9,10 @@ effort: 0.25d
 spec_refs: [SPEC-LOOP.md REQ-LOOP-01..05, TECH-LOOP.md §1]
 ---
 
+## Verification contract
+
+Inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md). SoT is the on-disk `.claude/loop.md` byte content — verify with `sha256sum` and the `grep -c` checks in DoD. `ASSUME THE TASK IS WRONG` — confirm `=== BEGIN LOOP MD ===` / `=== END LOOP MD ===` markers actually exist in `14_NEW_LOOP_MD.md` before extraction (audit with `grep -n "=== BEGIN" docs/futurebuild/14_NEW_LOOP_MD.md`).
+
 ## Goal
 
 Replace `.claude/loop.md` content entirely with the block from `docs/futurebuild/14_NEW_LOOP_MD.md` between the `=== BEGIN LOOP MD ===` and `=== END LOOP MD ===` markers. The new content drops the Mode A/B framing, references D-drive paths, includes the daemon-health check at orientation, and removes inner-actor language.

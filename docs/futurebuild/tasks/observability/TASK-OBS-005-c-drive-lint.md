@@ -9,6 +9,10 @@ effort: 0.25d
 spec_refs: [SPEC-OBSERVABILITY.md REQ-OBS-FB-09, TECH-LOOP.md §6]
 ---
 
+## Verification contract
+
+Inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md). SoT readback (the CI exit code IS the SoT here), ≥3 boundary cases below, NO mocks, fail-closed errors, Occam's-razor justification. `ASSUME THE TASK IS WRONG` — confirm `.github/workflows/` exists before wiring CI; if the repo uses a different CI runner, adapt the integration point.
+
 ## Goal
 
 Add a CI lint that grep-asserts no source file introduces a hardcoded path matching `/home/`, `~/.cache/`, or `/tmp/contextgraph-` outside allowed exceptions. Prevents regression to non-D-drive paths after the FSV migration sweep (TASK-OBS-006).
