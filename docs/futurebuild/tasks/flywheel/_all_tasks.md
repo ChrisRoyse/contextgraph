@@ -9,7 +9,7 @@ Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file cove
 - FLYWHEEL-002: `complete` (scheduler skeleton, 7 tickers, FSV at `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/scheduler_ticks.json`)
 - FLYWHEEL-003: `open` — Test-outcome capture hook (not started)
 - FLYWHEEL-004: `open` — Async oracle binding (not started)
-- FLYWHEEL-005: `partial` — `SurpriseEvent`, `SurpriseSeverity`, `FeedbackKind`, `ActualOutcome` types **already shipped** in `crates/context-graph-mejepa/src/types.rs` as part of FLYWHEEL-006. Remaining work: add `ActiveLearningKind::AgentSurprise` variant to `crates/context-graph-mejepa/src/eval/queue.rs` and consumer in `scheduler.tick_active_learning`.
+- FLYWHEEL-005: `complete (2026-05-11)` — `ActiveLearningKind` enum (Uncertainty / OutOfDistribution / AgentSurprise{prediction_id, severity_score}) shipped in `crates/context-graph-mejepa/src/eval/queue.rs`; `enqueue_agent_surprise()` + fast-track eviction; `tick_active_learning` orders AgentSurprise first. FSV at `/mnt/d/contextgraph/fsv/active-learning-fsv/agent_surprise.json`. 4 new unit tests pass; 80/80 mejepa lib tests pass; clippy clean. Real bug caught by FSV: bincode rejected `tag="type"` internal enum representation — fixed to default external tag.
 - FLYWHEEL-006: `complete (2026-05-11)` — 3 CFs registered, FSV at `/mnt/d/contextgraph/fsv/mejepa-cf-fsv/round_trip.json`, all boundary cases pass; see `./memory/reports/session-2026-05-11--task-flywheel-006-new-cfs.md`.
 - FLYWHEEL-007: `open` — Park-list CF (blocked-by FLYWHEEL-006 → now unblocked)
 

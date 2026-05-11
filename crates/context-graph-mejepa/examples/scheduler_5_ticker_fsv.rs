@@ -282,6 +282,7 @@ fn seed_happy_path_state(db: Arc<DB>) -> Result<()> {
                 outcome_set_len: 2 + idx,
                 ood_score: 0.10 + idx as f32 * 0.05,
                 reason: "wide_conformal_set".to_string(),
+                kind: context_graph_mejepa::eval::ActiveLearningKind::Uncertainty,
             },
         );
     }

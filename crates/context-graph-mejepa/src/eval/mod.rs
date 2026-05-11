@@ -16,7 +16,8 @@ pub use graph::{
 };
 pub use metrics::{conformal_health, ood_auc_by_language, pearson_correlation};
 pub use queue::{
-    ActiveLearningLabel, ActiveLearningQueueEntry, ActiveLearningQueueState, LabelMethod,
+    ActiveLearningKind, ActiveLearningLabel, ActiveLearningQueueEntry, ActiveLearningQueueState,
+    LabelMethod,
 };
 pub use report::{seed_open_research_questions, write_weekly_report};
 pub use runner::{corpus_sha_from_holdout, EvalRunner};

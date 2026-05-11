@@ -1,8 +1,50 @@
 use super::error::{EvalError, EvalErrorCode};
 use super::types::EvalObservation;
-use crate::types::{OracleOutcome, TaskId};
+use crate::types::{OracleOutcome, PredictionId, SurpriseSeverity, TaskId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+/// REQ-FLYWHEEL-11 — discriminates how an entry landed on the active-learning
+/// queue. The Uncertainty / OutOfDistribution variants are the existing
+/// eval-runner-driven paths; AgentSurprise is the agent-feedback path
+/// (TASK-PREDICT-002) that fast-tracks observe() for predictions the agent
+/// flagged as wrong. The `severity_score` on AgentSurprise feeds the
+/// REQ-FLYWHEEL-12 sampling-weight bump (`1 + 2 * severity_score`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActiveLearningKind {
+    Uncertainty,
+    OutOfDistribution,
+    AgentSurprise {
+        prediction_id: PredictionId,
+        severity_score: f32,
+    },
+}
+
+impl ActiveLearningKind {
+    /// Convenience constructor that maps a [`SurpriseSeverity`] enum into the
+    /// (0.2 / 0.5 / 0.8 / 1.0) score the AgentSurprise variant carries.
+    pub fn agent_surprise(
+        prediction_id: PredictionId,
+        severity: SurpriseSeverity,
+    ) -> Self {
+        Self::AgentSurprise {
+            prediction_id,
+            severity_score: severity.severity_score(),
+        }
+    }
+
+    /// Fast-track ordering key: AgentSurprise > OutOfDistribution > Uncertainty.
+    /// The scheduler's `tick_active_learning` consumes entries in this order so
+    /// agent-flagged surprises are drained before any uncertainty backlog.
+    pub fn fast_track_rank(&self) -> u8 {
+        match self {
+            Self::AgentSurprise { .. } => 0,
+            Self::OutOfDistribution => 1,
+            Self::Uncertainty => 2,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -12,6 +54,7 @@ pub struct ActiveLearningQueueEntry {
     pub outcome_set_len: usize,
     pub ood_score: f32,
     pub reason: String,
+    pub kind: ActiveLearningKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,18 +121,24 @@ impl ActiveLearningQueueState {
         let outcome_set_len = observation.prediction.outcome_set.outcomes.len();
         let ood_score = observation.prediction.ood_score;
         let max_len = outcome_set_len.max(uncertainty_outcome_len) as f32;
+        let is_ood = ood_score >= ood_escalation_threshold;
         let entry = ActiveLearningQueueEntry {
             task_id: observation.task_id.clone(),
             score: ((outcome_set_len as f32 / max_len) * (1.0 - ood_score)).clamp(0.0, 1.0),
             outcome_set_len,
             ood_score,
-            reason: if ood_score >= ood_escalation_threshold {
+            reason: if is_ood {
                 "ood_escalation".to_string()
             } else {
                 "wide_conformal_set".to_string()
             },
+            kind: if is_ood {
+                ActiveLearningKind::OutOfDistribution
+            } else {
+                ActiveLearningKind::Uncertainty
+            },
         };
-        if ood_score >= ood_escalation_threshold {
+        if is_ood {
             self.ood_escalations.push(entry);
             return Ok(());
         }
@@ -97,11 +146,60 @@ impl ActiveLearningQueueState {
             return Ok(());
         }
         self.entries.insert(observation.task_id.clone(), entry);
+        self.evict_to_capacity()?;
+        Ok(())
+    }
+
+    /// REQ-FLYWHEEL-11 / TASK-FLYWHEEL-005 — enqueue an agent-flagged surprise.
+    /// Fast-tracked ahead of Uncertainty / OOD entries via
+    /// [`ActiveLearningKind::fast_track_rank`]; the score is pinned to the
+    /// severity (so Catastrophic surprises always sort to the top regardless
+    /// of the queue's other ordering criteria).
+    pub fn enqueue_agent_surprise(
+        &mut self,
+        task_id: TaskId,
+        prediction_id: PredictionId,
+        severity: SurpriseSeverity,
+    ) -> Result<(), EvalError> {
+        if task_id.0.trim().is_empty() {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidConfig,
+                "agent surprise task_id must be non-empty",
+            ));
+        }
+        let severity_score = severity.severity_score();
+        let entry = ActiveLearningQueueEntry {
+            task_id: task_id.clone(),
+            score: severity_score,
+            outcome_set_len: 0,
+            ood_score: 0.0,
+            reason: format!("agent_surprise:{severity:?}"),
+            kind: ActiveLearningKind::AgentSurprise {
+                prediction_id,
+                severity_score,
+            },
+        };
+        self.entries.insert(task_id, entry);
+        self.evict_to_capacity()?;
+        Ok(())
+    }
+
+    fn evict_to_capacity(&mut self) -> Result<(), EvalError> {
         while self.entries.len() > self.capacity {
             let lowest = self
                 .entries
                 .iter()
-                .min_by(|a, b| a.1.score.total_cmp(&b.1.score).then_with(|| a.0.cmp(b.0)))
+                .min_by(|a, b| {
+                    // Fast-tracked kinds (lower rank) MUST never be evicted in
+                    // favor of uncertainty rows. Compare rank first, score
+                    // second so AgentSurprise wins ties.
+                    let lhs_rank = a.1.kind.fast_track_rank();
+                    let rhs_rank = b.1.kind.fast_track_rank();
+                    rhs_rank
+                        .cmp(&lhs_rank)
+                        .then_with(|| a.1.score.total_cmp(&b.1.score))
+                        .then_with(|| a.0.cmp(b.0))
+                })
                 .map(|(task_id, _)| task_id.clone())
                 .ok_or_else(|| EvalError::new(EvalErrorCode::Store, "queue unexpectedly empty"))?;
             if let Some(evicted) = self.entries.remove(&lowest) {
@@ -109,5 +207,98 @@ impl ActiveLearningQueueState {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pred(id: u8) -> PredictionId {
+        PredictionId([id; 16])
+    }
+
+    #[test]
+    fn enqueue_agent_surprise_uses_agent_surprise_kind_and_severity_score() {
+        let mut queue = ActiveLearningQueueState::new(8).expect("queue");
+        queue
+            .enqueue_agent_surprise(
+                TaskId("synthetic-task-1".to_string()),
+                pred(0x11),
+                SurpriseSeverity::High,
+            )
+            .expect("enqueue surprise");
+        let entry = queue
+            .entries
+            .get(&TaskId("synthetic-task-1".to_string()))
+            .expect("entry present");
+        match &entry.kind {
+            ActiveLearningKind::AgentSurprise {
+                prediction_id,
+                severity_score,
+            } => {
+                assert_eq!(prediction_id, &pred(0x11));
+                assert!((severity_score - 0.8).abs() < f32::EPSILON);
+            }
+            other => panic!("expected AgentSurprise variant, got {other:?}"),
+        }
+        assert!((entry.score - 0.8).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn agent_surprise_survives_eviction_when_uncertainty_rows_would_lose_first() {
+        let mut queue = ActiveLearningQueueState::new(1).expect("queue");
+        queue
+            .enqueue_agent_surprise(
+                TaskId("agent-surprise".to_string()),
+                pred(0x22),
+                SurpriseSeverity::Low,
+            )
+            .expect("enqueue surprise");
+        // Force-evict by inserting an Uncertainty entry with a higher score:
+        // the queue is capacity=1, but AgentSurprise must out-rank by kind
+        // regardless of score.
+        let task_id = TaskId("uncertain".to_string());
+        queue.entries.insert(
+            task_id.clone(),
+            ActiveLearningQueueEntry {
+                task_id: task_id.clone(),
+                score: 0.99,
+                outcome_set_len: 4,
+                ood_score: 0.1,
+                reason: "wide_conformal_set".to_string(),
+                kind: ActiveLearningKind::Uncertainty,
+            },
+        );
+        queue.evict_to_capacity().expect("evict");
+        assert!(queue
+            .entries
+            .contains_key(&TaskId("agent-surprise".to_string())));
+        assert!(!queue.entries.contains_key(&task_id));
+    }
+
+    #[test]
+    fn empty_task_id_rejected() {
+        let mut queue = ActiveLearningQueueState::new(8).expect("queue");
+        let err = queue
+            .enqueue_agent_surprise(TaskId(String::new()), pred(0x33), SurpriseSeverity::Medium)
+            .expect_err("empty task_id must reject");
+        assert!(err.to_string().contains("task_id"));
+    }
+
+    #[test]
+    fn fast_track_rank_orders_agent_surprise_first() {
+        assert!(
+            ActiveLearningKind::AgentSurprise {
+                prediction_id: pred(0),
+                severity_score: 0.5,
+            }
+            .fast_track_rank()
+                < ActiveLearningKind::OutOfDistribution.fast_track_rank()
+        );
+        assert!(
+            ActiveLearningKind::OutOfDistribution.fast_track_rank()
+                < ActiveLearningKind::Uncertainty.fast_track_rank()
+        );
     }
 }

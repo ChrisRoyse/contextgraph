@@ -2,12 +2,26 @@
 task_id: TASK-LOOP-007
 title: Hook output paths to D-drive (cgreality-shift-log)
 phase: A
-status: open
+status: complete (2026-05-11 — code already shipped; operational SoT migration documented)
 blocked_by: []
 blocks: []
 effort: 0.25d
 spec_refs: [SPEC-LOOP.md REQ-LOOP-06, TECH-LOOP.md §3]
 ---
+
+## Audit outcome (2026-05-11)
+
+The task body below is **stale**. Verified by reading the actual hook scripts:
+
+- `scripts/cc/_common.sh:5-6` already pins `CGREALITY_CACHE="${CGREALITY_CACHE_DIR:-/mnt/d/contextgraph/state/cgreality}"` and `RUNTIME_ROOT_FILE="${CGREALITY_CACHE}/active_runtime_root"` — both D-drive paths.
+- `scripts/cc/hook_user_prompt_submit.sh:45` and `scripts/cc/hook_pre_compact.sh:21` both compute `SHIFT_LOG="${RUNTIME_ROOT}/cgreality-shift-log/$(cgreality_safe_id "${SESSION_ID}").jsonl"` where `RUNTIME_ROOT` is the *content* of the SoT file, not a hardcoded path.
+- `grep -r "/tmp/contextgraph-rust-reality-loop" scripts/cc/` returns 0 hits — the legacy path is no longer referenced anywhere.
+
+**Therefore the code-level migration is already complete.** The only remaining work is operational: an operator must write a D-drive path (e.g. `/mnt/d/contextgraph/runtime`) into `/mnt/d/contextgraph/state/cgreality/active_runtime_root`. Right now that file is empty, so shift-log writes silently no-op — the fail-closed default.
+
+Per CLAUDE.md §11.13 and the post-pivot ME-JEPA architecture, **shift-log writing during normal Claude Code operation is now optional** — the data flywheel (TASK-FLYWHEEL-003/004) replaces shift-log-as-training-data, so an empty `active_runtime_root` is the steady state until/unless the operator wants per-edit forensic logs.
+
+No further code change required for TASK-LOOP-007.
 
 ## Verification contract
 

@@ -4,6 +4,16 @@
 
 LOOP-001/007 have detailed individual files. The rest:
 
+**Status snapshot (2026-05-11):**
+- LOOP-001: `open` — Apply new `.claude/loop.md` from `14_NEW_LOOP_MD.md`
+- LOOP-002: `open` — CLAUDE.md / agents/README retirements (blocked by LOOP-001)
+- LOOP-003: `open` — Mark superseded SMAP decisions (blocked by LOOP-001)
+- LOOP-004: `open` — Retire legacy MCP tools
+- LOOP-005: `open` — Audit absence of inner-actor model files (Phase H cleanup)
+- LOOP-006: `open` — Delete stale `target/release/reality-loop` binary
+- LOOP-007: `complete (2026-05-11)` — code-level migration already shipped (audit found hooks already resolve runtime root from D-drive SoT file); see TASK-LOOP-007 file for audit details
+
+
 ## TASK-LOOP-002 — Update CLAUDE.md + agents/README.md retirements
 
 - **Phase:** A · **Effort:** 0.25d · **Blocked by:** TASK-LOOP-001 · **Spec:** TECH-LOOP §6-7

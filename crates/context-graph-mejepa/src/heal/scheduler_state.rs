@@ -437,7 +437,15 @@ impl SchedulerState {
             ));
         };
         let mut top_tasks = queue.entries.values().collect::<Vec<_>>();
-        top_tasks.sort_by(|left, right| right.score.total_cmp(&left.score));
+        // REQ-FLYWHEEL-11: AgentSurprise → OutOfDistribution → Uncertainty,
+        // with score as the within-kind tiebreaker. This makes the scheduler
+        // drain agent-flagged surprises before any uncertainty backlog.
+        top_tasks.sort_by(|left, right| {
+            left.kind
+                .fast_track_rank()
+                .cmp(&right.kind.fast_track_rank())
+                .then_with(|| right.score.total_cmp(&left.score))
+        });
         let top_tasks = top_tasks
             .into_iter()
             .take(10)
@@ -448,6 +456,7 @@ impl SchedulerState {
                     "reason": entry.reason,
                     "ood_score": entry.ood_score,
                     "outcome_set_len": entry.outcome_set_len,
+                    "kind": entry.kind,
                 })
             })
             .collect::<Vec<_>>();
