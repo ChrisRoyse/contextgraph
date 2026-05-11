@@ -126,6 +126,8 @@ pub const MEJEPA_SHIP_GATE_STATUS: &str = "mcp__cgreality__mejepa_ship_gate_stat
 pub const MEJEPA_ACTIVE_LEARNING_QUEUE: &str = "mcp__cgreality__mejepa_active_learning_queue";
 /// Phase 8 patch similarity graph builder/readback.
 pub const MEJEPA_EVAL_BUILD_GRAPH: &str = "mcp__cgreality__mejepa_eval_build_graph";
+/// UTML pairwise mutual-information audit with CSV source-of-truth readback.
+pub const MEJEPA_AUDIT_PAIRWISE_MI: &str = "mcp__cgreality__mejepa_audit_pairwise_mi";
 // ========== TEMPORAL TOOLS (E2/E3 Integration) ==========
 // Temporal search with E2/E3 boost applied POST-retrieval per ARCH-25.
 pub const SEARCH_RECENT: &str = "search_recent";

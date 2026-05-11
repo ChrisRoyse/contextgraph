@@ -244,5 +244,38 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 }
             }),
         ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_AUDIT_PAIRWISE_MI,
+            "Compute the UTML pairwise mutual-information audit from real per-slot series, persist the CSV matrix, reload the CSV, and return the readback summary.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["outputDir", "step", "seriesBySlot"],
+                "properties": {
+                    "outputDir": {
+                        "type": "string",
+                        "description": "Directory under CONTEXTGRAPH_DATA_ROOT where the audit CSV is written"
+                    },
+                    "step": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "periodSteps": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "default": 1
+                    },
+                    "seriesBySlot": {
+                        "type": "object",
+                        "minProperties": 2,
+                        "additionalProperties": {
+                            "type": "array",
+                            "minItems": 2,
+                            "items": {"type": "number"}
+                        }
+                    }
+                }
+            }),
+        ),
     ]
 }

@@ -205,6 +205,7 @@ pub struct SelfHealingPipeline {
     pub embedder_versions_sha: [u8; 32],
     pub active_embedders: Vec<EmbedderHandle>,
     pub oracle_handle: OracleHandle,
+    pub dormant_activation_window: Vec<Vec<f32>>,
 }
 
 impl SelfHealingPipeline {
@@ -255,6 +256,7 @@ impl SelfHealingPipeline {
                 pass_score: 0.95,
                 fail_score: 0.05,
             },
+            dormant_activation_window: Vec::new(),
         })
     }
 
@@ -286,6 +288,7 @@ impl SelfHealingPipeline {
             });
         }
         let breakdown = assess_substrate(&cert_window);
+        self.capture_dormant_activation_from_panel(panel)?;
         if cert_window.delta_omega_mean < 0.4 || cert_window.delta_xi_mean < 0.4 {
             regulate_substrate(self, &breakdown)?;
         }
@@ -478,6 +481,46 @@ impl SelfHealingPipeline {
         if let Ok(mut status) = self.status.lock() {
             status.status_change = status_change;
         }
+    }
+
+    pub(crate) fn capture_dormant_activation_from_panel(
+        &mut self,
+        panel: &Panel,
+    ) -> Result<(), HealError> {
+        let unit_count = self
+            .active_embedders
+            .iter()
+            .find(|embedder| !embedder.weights.is_empty())
+            .map(|embedder| embedder.weights.len())
+            .ok_or_else(|| {
+                HealError::invalid(
+                    "self_healing.active_embedders",
+                    "cannot capture dormant-unit activations without active embedder weights",
+                )
+            })?;
+        let data = panel.data();
+        if data.is_empty() {
+            return Err(HealError::invalid(
+                "self_healing.panel",
+                "cannot capture dormant-unit activations from an empty panel",
+            ));
+        }
+        let row = (0..unit_count)
+            .map(|idx| data[idx % data.len()])
+            .collect::<Vec<_>>();
+        if row.iter().any(|value| !value.is_finite()) {
+            return Err(HealError::BatchNan {
+                component: "self_healing.dormant_activation_window".to_string(),
+                witness_chain_offset: self.status.lock().unwrap().observation_counter,
+            });
+        }
+        self.dormant_activation_window.push(row);
+        let max_rows = self.config.train_cert_window_steps.max(1);
+        if self.dormant_activation_window.len() > max_rows {
+            let remove_count = self.dormant_activation_window.len() - max_rows;
+            self.dormant_activation_window.drain(0..remove_count);
+        }
+        Ok(())
     }
 }
 

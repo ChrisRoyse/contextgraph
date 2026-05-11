@@ -93,7 +93,10 @@ pub fn detect_dissipating(
     if window.len() < 3 {
         return Ok(false);
     }
-    let latest = window.last().expect("non-empty").m_t;
+    let latest = window
+        .last()
+        .ok_or_else(|| UtmlError::new(UtmlErrorCode::EmptyInput, "consolidation_window is empty"))?
+        .m_t;
     if latest > threshold {
         return Ok(false);
     }

@@ -1,7 +1,8 @@
 //! Top-level Phase 3 FSV: smoke + chain + holdout + UTML cross-check.
 
 use context_graph_mejepa_train::learning_signal::{
-    compute_l_step, DeltaKComponents, DeltaOmegaComponents, DeltaPComponents, DeltaXiComponents,
+    compute_l_step, DeltaKComponents, DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents,
+    DeltaXiComponents,
 };
 use serde_json::json;
 use std::fs;
@@ -76,24 +77,32 @@ fn sibling_example_path(name: &str) -> Result<PathBuf, Box<dyn std::error::Error
 fn write_utml_evidence() -> Result<(), Box<dyn std::error::Error>> {
     let signal = compute_l_step(
         DeltaPComponents {
-            oracle_disagreement: 0.8,
-            prediction_residual: 0.4,
-            uncertainty: 0.2,
+            delta_p_real: 0.6,
+            delta_p_imagined: Some(0.5),
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![0.4, 0.8],
         },
         DeltaKComponents {
-            operator_override: 1.0,
-            novel_failure_mode: 0.3,
-            sparse_slice_bonus: 0.2,
+            cos_align: 0.9,
+            fisher_violation: 0.1,
+            ece: 0.1,
+            embedder_coherence: 0.7,
+            embedder_coherence_source: "computed".to_string(),
         },
         DeltaOmegaComponents {
-            runtime_delta: 0.1,
-            warning_delta: 0.2,
-            memory_delta: 0.3,
+            effective_plasticity: 0.9,
+            landscape_health: 0.85,
+            stability_floor: 1.0,
+            agent_state_score: 0.7,
+            agent_state_source: "default_neutral_no_transcript".to_string(),
         },
         DeltaXiComponents {
             target_collapse: 0.0,
-            predictor_collapse: 0.05,
-            redundancy_mi: 0.05,
+            predictor_redundancy: 0.05,
+            constellation_violation_rate: 0.05,
         },
     )?;
     let evidence = json!({

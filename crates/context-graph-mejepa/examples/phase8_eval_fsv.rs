@@ -29,6 +29,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         generated_by: "phase8_eval_fsv".to_string(),
     };
     let runner = EvalRunner::new(compiler, eval_store.clone(), config)?;
+    let mut baseline_provenance = provenance.clone();
+    baseline_provenance.generated_by = "phase8_eval_fsv_baseline".to_string();
+    let baseline = runner.run_holdout_eval(&holdout, &[], "2026-05-10", baseline_provenance)?;
     let report = runner.run_holdout_eval(&holdout, &[], "2026-05-11", provenance)?;
     let weekly_path = out.join("weekly-report.json");
     write_weekly_report(&weekly_path, &report)?;
@@ -113,6 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "db_path": db_path,
         "weekly_report_path": weekly_path,
         "report_hash": latest.determinism_hash()?,
+        "baseline_ship_gate_passed": baseline.ship_gate_passed,
         "cf_counts": cf_counts,
         "graph_edge_count": graph_readback.edge_count,
         "queue_entries": queue.entries.len(),

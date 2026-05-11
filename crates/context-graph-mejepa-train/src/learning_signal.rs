@@ -34,8 +34,10 @@ pub use state_transfer::{
 pub enum UtmlErrorCode {
     InvalidSignal,
     MejepaInstrumentGradientLeak,
+    CatastrophicForgetting,
     NonFinite,
     OutOfRange,
+    SnrBelowFloor,
     AmbiguousClassifierState,
     EmptyInput,
     Io,
@@ -61,8 +63,10 @@ impl UtmlError {
         match self.code {
             UtmlErrorCode::InvalidSignal => "UTML_INVALID_SIGNAL",
             UtmlErrorCode::MejepaInstrumentGradientLeak => "MEJEPA_INSTRUMENT_GRADIENT_LEAK",
+            UtmlErrorCode::CatastrophicForgetting => "UTML_CATASTROPHIC_FORGETTING",
             UtmlErrorCode::NonFinite => "UTML_NON_FINITE",
             UtmlErrorCode::OutOfRange => "UTML_OUT_OF_RANGE",
+            UtmlErrorCode::SnrBelowFloor => "UTML_SNR_BELOW_FLOOR",
             UtmlErrorCode::AmbiguousClassifierState => "UTML_AMBIGUOUS_CLASSIFIER_STATE",
             UtmlErrorCode::EmptyInput => "UTML_EMPTY_INPUT",
             UtmlErrorCode::Io => "UTML_IO",
@@ -106,32 +110,94 @@ pub enum SkipReason {
     VramOom,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+pub const DEFAULT_SNR_FLOOR: f32 = 0.05;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DeltaPAggregator {
+    #[default]
+    Mean,
+    Max,
+    TopKMean { k: usize },
+    EntityWeighted,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeltaPComponents {
-    pub oracle_disagreement: f32,
-    pub prediction_residual: f32,
-    pub uncertainty: f32,
+    pub delta_p_real: f32,
+    pub delta_p_imagined: Option<f32>,
+    pub snr: f32,
+    pub exploration_bonus: f32,
+    pub gamma: f32,
+    pub aggregator: DeltaPAggregator,
+    pub per_chunk_values: Vec<f32>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+impl Default for DeltaPComponents {
+    fn default() -> Self {
+        Self {
+            delta_p_real: 0.0,
+            delta_p_imagined: None,
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![0.0],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeltaKComponents {
-    pub operator_override: f32,
-    pub novel_failure_mode: f32,
-    pub sparse_slice_bonus: f32,
+    pub cos_align: f32,
+    pub fisher_violation: f32,
+    pub ece: f32,
+    pub embedder_coherence: f32,
+    pub embedder_coherence_source: String,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+impl Default for DeltaKComponents {
+    fn default() -> Self {
+        Self {
+            cos_align: 0.0,
+            fisher_violation: 0.0,
+            ece: 0.0,
+            embedder_coherence: 0.5,
+            embedder_coherence_source: "bootstrap_neutral_n_lt_1000".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeltaOmegaComponents {
-    pub runtime_delta: f32,
-    pub warning_delta: f32,
-    pub memory_delta: f32,
+    pub effective_plasticity: f32,
+    pub landscape_health: f32,
+    pub stability_floor: f32,
+    pub agent_state_score: f32,
+    pub agent_state_source: String,
+}
+
+impl Default for DeltaOmegaComponents {
+    fn default() -> Self {
+        Self {
+            effective_plasticity: 1.0,
+            landscape_health: 1.0,
+            stability_floor: 1.0,
+            agent_state_score: 0.7,
+            agent_state_source: "default_neutral_no_transcript".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct DeltaXiComponents {
     pub target_collapse: f32,
-    pub predictor_collapse: f32,
-    pub redundancy_mi: f32,
+    pub predictor_redundancy: f32,
+    pub constellation_violation_rate: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,6 +230,10 @@ impl LearningSignal {
     }
 
     pub fn validate(&self) -> Result<(), UtmlError> {
+        self.delta_p_components.validate()?;
+        self.delta_k_components.validate()?;
+        self.delta_omega_components.validate()?;
+        self.delta_xi_components.validate()?;
         for (name, value) in [
             ("delta_p", self.delta_p),
             ("delta_k", self.delta_k),
@@ -197,29 +267,145 @@ pub fn clamp01(value: f32) -> f32 {
     }
 }
 
+impl DeltaPComponents {
+    pub fn validate(&self) -> Result<(), UtmlError> {
+        validate_unit("delta_p.delta_p_real", self.delta_p_real)?;
+        if let Some(value) = self.delta_p_imagined {
+            validate_unit("delta_p.delta_p_imagined", value)?;
+        }
+        if !self.snr.is_finite() {
+            return Err(UtmlError::new(
+                UtmlErrorCode::NonFinite,
+                format!("delta_p.snr is non-finite: {}", self.snr),
+            ));
+        }
+        if self.snr < DEFAULT_SNR_FLOOR {
+            return Err(UtmlError::new(
+                UtmlErrorCode::SnrBelowFloor,
+                format!(
+                    "delta_p.snr={} is below floor {}",
+                    self.snr, DEFAULT_SNR_FLOOR
+                ),
+            ));
+        }
+        if !self.gamma.is_finite() || !(0.6..=0.8).contains(&self.gamma) {
+            return Err(UtmlError::new(
+                UtmlErrorCode::OutOfRange,
+                format!("delta_p.gamma={} outside [0.6,0.8]", self.gamma),
+            ));
+        }
+        if self.exploration_bonus != 0.0 && self.exploration_bonus != 0.5 {
+            return Err(UtmlError::new(
+                UtmlErrorCode::OutOfRange,
+                format!(
+                    "delta_p.exploration_bonus={} must be exactly 0.0 or 0.5",
+                    self.exploration_bonus
+                ),
+            ));
+        }
+        let aggregate = compute_delta_p_aggregate(&self.per_chunk_values, self.aggregator, None)?;
+        if (aggregate - self.delta_p_real).abs() > 1e-5 {
+            return Err(UtmlError::new(
+                UtmlErrorCode::InvalidSignal,
+                format!(
+                    "delta_p_real={} does not match {:?} per-chunk aggregate {}",
+                    self.delta_p_real, self.aggregator, aggregate
+                ),
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl DeltaKComponents {
+    pub fn validate(&self) -> Result<(), UtmlError> {
+        validate_finite("delta_k.cos_align", self.cos_align)?;
+        if !(-1.0..=1.0).contains(&self.cos_align) {
+            return Err(UtmlError::new(
+                UtmlErrorCode::OutOfRange,
+                format!("delta_k.cos_align={} outside [-1,1]", self.cos_align),
+            ));
+        }
+        validate_unit("delta_k.fisher_violation", self.fisher_violation)?;
+        validate_unit("delta_k.ece", self.ece)?;
+        validate_unit("delta_k.embedder_coherence", self.embedder_coherence)?;
+        validate_source(
+            "delta_k.embedder_coherence_source",
+            &self.embedder_coherence_source,
+            &["computed", "bootstrap_neutral_n_lt_1000"],
+        )
+    }
+}
+
+impl DeltaOmegaComponents {
+    pub fn validate(&self) -> Result<(), UtmlError> {
+        validate_unit("delta_omega.effective_plasticity", self.effective_plasticity)?;
+        validate_unit("delta_omega.landscape_health", self.landscape_health)?;
+        validate_stability_floor(self.stability_floor)?;
+        validate_unit("delta_omega.agent_state_score", self.agent_state_score)?;
+        validate_source(
+            "delta_omega.agent_state_source",
+            &self.agent_state_source,
+            &["e17_transcript", "default_neutral_no_transcript"],
+        )
+    }
+}
+
+impl DeltaXiComponents {
+    pub fn validate(&self) -> Result<(), UtmlError> {
+        if !self.target_collapse.is_finite() || self.target_collapse != 0.0 {
+            return Err(UtmlError::new(
+                UtmlErrorCode::MejepaInstrumentGradientLeak,
+                format!(
+                    "ME-JEPA target_collapse must be exactly 0.0; got {}",
+                    self.target_collapse
+                ),
+            ));
+        }
+        validate_unit("delta_xi.predictor_redundancy", self.predictor_redundancy)?;
+        validate_unit(
+            "delta_xi.constellation_violation_rate",
+            self.constellation_violation_rate,
+        )
+    }
+}
+
 pub fn compute_delta_p(c: DeltaPComponents) -> Result<f32, UtmlError> {
-    mean_checked(
-        "delta_p",
-        [c.oracle_disagreement, c.prediction_residual, c.uncertainty],
-    )
+    c.validate()?;
+    let imagined = c.delta_p_imagined.unwrap_or(0.0);
+    Ok(clamp01(
+        (c.delta_p_real.max(c.gamma * imagined) + 0.5 * c.exploration_bonus) / c.snr,
+    ))
 }
 
 pub fn compute_delta_k(c: DeltaKComponents) -> Result<f32, UtmlError> {
-    mean_checked(
-        "delta_k",
-        [
-            c.operator_override,
-            c.novel_failure_mode,
-            c.sparse_slice_bonus,
-        ],
-    )
+    c.validate()?;
+    if c.cos_align < 0.0 {
+        return Err(UtmlError::new(
+            UtmlErrorCode::CatastrophicForgetting,
+            format!(
+                "delta_k.cos_align={} is negative; update is destructive to prior gradient direction",
+                c.cos_align
+            ),
+        ));
+    }
+    let cos_align_normalized = (c.cos_align + 1.0) / 2.0;
+    Ok(clamp01(
+        0.5 * cos_align_normalized
+            + 0.3 * (1.0 - c.fisher_violation)
+            + 0.15 * (1.0 - c.ece)
+            + 0.05 * c.embedder_coherence,
+    ))
 }
 
 pub fn compute_delta_omega(c: DeltaOmegaComponents) -> Result<f32, UtmlError> {
-    mean_checked(
-        "delta_omega",
-        [c.runtime_delta, c.warning_delta, c.memory_delta],
-    )
+    c.validate()?;
+    Ok(clamp01(
+        c.effective_plasticity.powf(0.4)
+            * c.landscape_health.powf(0.4)
+            * c.stability_floor.powf(0.1)
+            * c.agent_state_score.powf(0.1),
+    ))
 }
 
 pub fn compute_delta_xi(c: DeltaXiComponents) -> Result<f32, UtmlError> {
@@ -236,14 +422,17 @@ pub fn compute_delta_xi(c: DeltaXiComponents) -> Result<f32, UtmlError> {
         return Err(UtmlError::new(
             UtmlErrorCode::MejepaInstrumentGradientLeak,
             format!(
-                "ME-JEPA target_collapse must be 0.0 by construction; instrument has gradient flow; target_collapse={}, predictor_collapse={}, redundancy_mi={}",
-                c.target_collapse, c.predictor_collapse, c.redundancy_mi
+                "ME-JEPA target_collapse must be 0.0 by construction; instrument has gradient flow; target_collapse={}, predictor_redundancy={}, constellation_violation_rate={}",
+                c.target_collapse, c.predictor_redundancy, c.constellation_violation_rate
             ),
         ));
     }
     for (name, value) in [
-        ("predictor_collapse", c.predictor_collapse),
-        ("redundancy_mi", c.redundancy_mi),
+        ("predictor_redundancy", c.predictor_redundancy),
+        (
+            "constellation_violation_rate",
+            c.constellation_violation_rate,
+        ),
     ] {
         if !value.is_finite() {
             return Err(UtmlError::new(
@@ -260,9 +449,75 @@ pub fn compute_delta_xi(c: DeltaXiComponents) -> Result<f32, UtmlError> {
     }
     Ok(clamp01(
         (1.0 - c.target_collapse).powf(0.5)
-            * (1.0 - c.predictor_collapse).powf(0.3)
-            * (1.0 - c.redundancy_mi).powf(0.2),
+            * (1.0 - c.predictor_redundancy).powf(0.3)
+            * (1.0 - c.constellation_violation_rate).powf(0.2),
     ))
+}
+
+pub fn compute_delta_p_aggregate(
+    per_chunk: &[f32],
+    aggregator: DeltaPAggregator,
+    entity_weights: Option<&[f32]>,
+) -> Result<f32, UtmlError> {
+    non_empty("delta_p.per_chunk_values", per_chunk)?;
+    for (idx, value) in per_chunk.iter().enumerate() {
+        validate_unit(&format!("delta_p.per_chunk_values[{idx}]"), *value)?;
+    }
+    let value = match aggregator {
+        DeltaPAggregator::Mean => per_chunk.iter().sum::<f32>() / per_chunk.len() as f32,
+        DeltaPAggregator::Max => per_chunk.iter().copied().fold(0.0, f32::max),
+        DeltaPAggregator::TopKMean { k } => {
+            if k == 0 {
+                return Err(UtmlError::new(
+                    UtmlErrorCode::OutOfRange,
+                    "delta_p TopKMean.k must be greater than zero",
+                ));
+            }
+            let mut sorted = per_chunk.to_vec();
+            sorted.sort_by(|a, b| b.total_cmp(a));
+            let take = k.min(sorted.len());
+            sorted.iter().take(take).sum::<f32>() / take as f32
+        }
+        DeltaPAggregator::EntityWeighted => {
+            let weights = entity_weights.ok_or_else(|| {
+                UtmlError::new(
+                    UtmlErrorCode::MissingSourceOfTruth,
+                    "delta_p EntityWeighted requires entity_weights source of truth",
+                )
+            })?;
+            if weights.len() != per_chunk.len() {
+                return Err(UtmlError::new(
+                    UtmlErrorCode::InvalidSignal,
+                    format!(
+                        "delta_p EntityWeighted weight count {} != chunk count {}",
+                        weights.len(),
+                        per_chunk.len()
+                    ),
+                ));
+            }
+            let mut weighted_sum = 0.0f32;
+            let mut weight_sum = 0.0f32;
+            for (idx, (value, weight)) in per_chunk.iter().zip(weights).enumerate() {
+                validate_finite(&format!("delta_p.entity_weights[{idx}]"), *weight)?;
+                if *weight < 0.0 {
+                    return Err(UtmlError::new(
+                        UtmlErrorCode::OutOfRange,
+                        format!("delta_p.entity_weights[{idx}]={} is negative", weight),
+                    ));
+                }
+                weighted_sum += value * weight;
+                weight_sum += weight;
+            }
+            if weight_sum <= f32::EPSILON {
+                return Err(UtmlError::new(
+                    UtmlErrorCode::InvalidSignal,
+                    "delta_p EntityWeighted requires positive weight mass",
+                ));
+            }
+            weighted_sum / weight_sum
+        }
+    };
+    Ok(clamp01(value))
 }
 
 pub fn compute_l_step(
@@ -271,9 +526,9 @@ pub fn compute_l_step(
     o: DeltaOmegaComponents,
     x: DeltaXiComponents,
 ) -> Result<LearningSignal, UtmlError> {
-    let delta_p = compute_delta_p(p)?;
-    let delta_k = compute_delta_k(k)?;
-    let delta_omega = compute_delta_omega(o)?;
+    let delta_p = compute_delta_p(p.clone())?;
+    let delta_k = compute_delta_k(k.clone())?;
+    let delta_omega = compute_delta_omega(o.clone())?;
     let delta_xi = compute_delta_xi(x)?;
     let l_step = clamp01(delta_p * delta_k * delta_omega * delta_xi);
     let signal = LearningSignal {
@@ -341,24 +596,6 @@ pub fn pairwise_mi_audit(probabilities: &[Vec<f32>]) -> Result<f32, UtmlError> {
     })
 }
 
-fn mean_checked<const N: usize>(name: &'static str, values: [f32; N]) -> Result<f32, UtmlError> {
-    for v in values {
-        if !v.is_finite() {
-            return Err(UtmlError::new(
-                UtmlErrorCode::NonFinite,
-                format!("{name} has non-finite component"),
-            ));
-        }
-        if !(0.0..=1.0).contains(&v) {
-            return Err(UtmlError::new(
-                UtmlErrorCode::OutOfRange,
-                format!("{name} component {v} outside [0,1]"),
-            ));
-        }
-    }
-    Ok(values.iter().sum::<f32>() / N as f32)
-}
-
 pub(crate) fn validate_finite(name: &str, value: f32) -> Result<(), UtmlError> {
     if !value.is_finite() {
         tracing::error!(
@@ -374,6 +611,32 @@ pub(crate) fn validate_finite(name: &str, value: f32) -> Result<(), UtmlError> {
         ));
     }
     Ok(())
+}
+
+fn validate_stability_floor(value: f32) -> Result<(), UtmlError> {
+    validate_unit("delta_omega.stability_floor", value)?;
+    if [1.0, 0.4, 0.1, 0.0]
+        .iter()
+        .any(|allowed| (value - allowed).abs() <= f32::EPSILON)
+    {
+        Ok(())
+    } else {
+        Err(UtmlError::new(
+            UtmlErrorCode::OutOfRange,
+            format!("delta_omega.stability_floor={value} must be one of 1.0, 0.4, 0.1, 0.0"),
+        ))
+    }
+}
+
+fn validate_source(name: &str, value: &str, allowed: &[&str]) -> Result<(), UtmlError> {
+    if allowed.contains(&value) {
+        Ok(())
+    } else {
+        Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            format!("{name}={value:?} must be one of {allowed:?}"),
+        ))
+    }
 }
 
 pub(crate) fn validate_unit(name: &str, value: f32) -> Result<(), UtmlError> {
@@ -418,16 +681,20 @@ mod tests {
     fn l_step_known_values() {
         let sig = compute_l_step(
             DeltaPComponents {
-                oracle_disagreement: 1.0,
-                prediction_residual: 0.5,
-                uncertainty: 0.0,
+                delta_p_real: 0.0,
+                delta_p_imagined: None,
+                snr: 1.0,
+                exploration_bonus: 0.0,
+                gamma: 0.7,
+                aggregator: DeltaPAggregator::Mean,
+                per_chunk_values: vec![0.0],
             },
             DeltaKComponents::default(),
             DeltaOmegaComponents::default(),
             DeltaXiComponents::default(),
         )
         .unwrap();
-        assert!((sig.delta_p - 0.5).abs() < 1e-6);
+        assert_eq!(sig.delta_p, 0.0);
         assert_eq!(sig.l_step, 0.0);
     }
 
@@ -443,8 +710,8 @@ mod tests {
     fn delta_xi_uses_multiplicative_non_collapse_formula() {
         let value = compute_delta_xi(DeltaXiComponents {
             target_collapse: 0.0,
-            predictor_collapse: 0.1,
-            redundancy_mi: 0.05,
+            predictor_redundancy: 0.1,
+            constellation_violation_rate: 0.05,
         })
         .unwrap();
         let expected = 1.0f32 * 0.9f32.powf(0.3) * 0.95f32.powf(0.2);
@@ -455,8 +722,8 @@ mod tests {
     fn delta_xi_fails_closed_on_target_collapse() {
         let err = compute_delta_xi(DeltaXiComponents {
             target_collapse: 0.001,
-            predictor_collapse: 0.0,
-            redundancy_mi: 0.0,
+            predictor_redundancy: 0.0,
+            constellation_violation_rate: 0.0,
         })
         .unwrap_err();
         assert_eq!(err.code(), "MEJEPA_INSTRUMENT_GRADIENT_LEAK");
@@ -466,10 +733,82 @@ mod tests {
     fn delta_xi_fails_closed_on_nan_target_collapse() {
         let err = compute_delta_xi(DeltaXiComponents {
             target_collapse: f32::NAN,
-            predictor_collapse: 0.0,
-            redundancy_mi: 0.0,
+            predictor_redundancy: 0.0,
+            constellation_violation_rate: 0.0,
         })
         .unwrap_err();
         assert_eq!(err.code(), "MEJEPA_INSTRUMENT_GRADIENT_LEAK");
+    }
+
+    #[test]
+    fn delta_k_uses_weighted_formula_and_fails_on_negative_alignment() {
+        let value = compute_delta_k(DeltaKComponents {
+            cos_align: 0.8,
+            fisher_violation: 0.2,
+            ece: 0.1,
+            embedder_coherence: 0.6,
+            embedder_coherence_source: "computed".to_string(),
+        })
+        .unwrap();
+        let expected = 0.5 * 0.9 + 0.3 * 0.8 + 0.15 * 0.9 + 0.05 * 0.6;
+        assert!((value - expected).abs() < 1e-6);
+        let err = compute_delta_k(DeltaKComponents {
+            cos_align: -0.01,
+            fisher_violation: 0.0,
+            ece: 0.0,
+            embedder_coherence: 1.0,
+            embedder_coherence_source: "computed".to_string(),
+        })
+        .unwrap_err();
+        assert_eq!(err.code(), "UTML_CATASTROPHIC_FORGETTING");
+    }
+
+    #[test]
+    fn delta_omega_uses_geometric_formula_and_zeroes_on_stability_floor() {
+        let value = compute_delta_omega(DeltaOmegaComponents {
+            effective_plasticity: 0.8,
+            landscape_health: 0.7,
+            stability_floor: 1.0,
+            agent_state_score: 0.7,
+            agent_state_source: "default_neutral_no_transcript".to_string(),
+        })
+        .unwrap();
+        let expected = 0.8f32.powf(0.4) * 0.7f32.powf(0.4) * 1.0f32 * 0.7f32.powf(0.1);
+        assert!((value - expected).abs() < 1e-6);
+        let zeroed = compute_delta_omega(DeltaOmegaComponents {
+            effective_plasticity: 0.8,
+            landscape_health: 0.7,
+            stability_floor: 0.0,
+            agent_state_score: 0.7,
+            agent_state_source: "default_neutral_no_transcript".to_string(),
+        })
+        .unwrap();
+        assert_eq!(zeroed, 0.0);
+    }
+
+    #[test]
+    fn delta_p_validates_per_chunk_source_of_truth() {
+        let value = compute_delta_p(DeltaPComponents {
+            delta_p_real: 0.6,
+            delta_p_imagined: Some(0.9),
+            snr: 1.0,
+            exploration_bonus: 0.5,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Max,
+            per_chunk_values: vec![0.2, 0.6],
+        })
+        .unwrap();
+        assert!((value - 0.88).abs() < 1e-6);
+        let err = compute_delta_p(DeltaPComponents {
+            delta_p_real: 0.2,
+            delta_p_imagined: None,
+            snr: 0.01,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![0.2],
+        })
+        .unwrap_err();
+        assert_eq!(err.code(), "UTML_SNR_BELOW_FLOOR");
     }
 }

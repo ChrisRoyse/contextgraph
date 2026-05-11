@@ -1,6 +1,7 @@
 use super::error::{EvalError, EvalErrorCode};
 use super::types::{
     language_slug, ConformalHealthEntry, EvalConfig, EvalObservation, MutationCategory,
+    RegressionCheck,
 };
 use crate::types::{Language, OracleOutcome};
 use std::collections::BTreeMap;
@@ -225,6 +226,9 @@ pub fn ship_gate_failures(
     conformal: &BTreeMap<Language, ConformalHealthEntry>,
     ood: &BTreeMap<Language, Option<f32>>,
     gtau: &BTreeMap<Language, f32>,
+    regression_checks: &[RegressionCheck],
+    q1_pass_rate: f32,
+    q3_side_effect_agreement: Option<f32>,
     config: &EvalConfig,
 ) -> Vec<String> {
     let mut failures = Vec::new();
@@ -256,6 +260,28 @@ pub fn ship_gate_failures(
             failures.push(format!(
                 "gtau_pass_rate {:?} {value:.6} below threshold",
                 language
+            ));
+        }
+    }
+    if q1_pass_rate < config.q1_pass_rate_min {
+        failures.push(format!(
+            "q1_pass_rate {q1_pass_rate:.6} below threshold {:.6}",
+            config.q1_pass_rate_min
+        ));
+    }
+    match q3_side_effect_agreement {
+        Some(value) if value >= config.q3_side_effect_min => {}
+        Some(value) => failures.push(format!(
+            "q3_side_effect_agreement {value:.6} below threshold {:.6}",
+            config.q3_side_effect_min
+        )),
+        None => failures.push("q3_side_effect_agreement unavailable".to_string()),
+    }
+    for check in regression_checks {
+        if !check.passed {
+            failures.push(format!(
+                "regression_check {} drop {:.6} exceeds threshold {:.6}",
+                check.name, check.drop, config.regression_max_drop
             ));
         }
     }

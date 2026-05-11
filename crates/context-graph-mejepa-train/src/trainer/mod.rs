@@ -11,7 +11,8 @@ use crate::eval::{
     MutationCategory,
 };
 use crate::learning_signal::{
-    compute_l_step, DeltaKComponents, DeltaOmegaComponents, DeltaPComponents, DeltaXiComponents,
+    compute_l_step, DeltaKComponents, DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents,
+    DeltaXiComponents,
 };
 use crate::sampler::{BatchSampler, PatchSimilarityGraph};
 use candle_core::{DType, Device};
@@ -140,24 +141,32 @@ impl Trainer {
             let hardness = (batch_idx as f32 + 1.0) / batches.max(1) as f32;
             let signal = compute_l_step(
                 DeltaPComponents {
-                    oracle_disagreement: hardness.min(1.0),
-                    prediction_residual: 0.25,
-                    uncertainty: 0.10,
+                    delta_p_real: hardness.min(1.0),
+                    delta_p_imagined: None,
+                    snr: 1.0,
+                    exploration_bonus: 0.0,
+                    gamma: 0.7,
+                    aggregator: DeltaPAggregator::Mean,
+                    per_chunk_values: vec![hardness.min(1.0)],
                 },
                 DeltaKComponents {
-                    operator_override: (plan.force_count > 0) as u8 as f32,
-                    novel_failure_mode: 0.2,
-                    sparse_slice_bonus: 0.1,
+                    cos_align: if plan.force_count > 0 { 0.85 } else { 0.65 },
+                    fisher_violation: 0.2,
+                    ece: 0.1,
+                    embedder_coherence: 0.5,
+                    embedder_coherence_source: "bootstrap_neutral_n_lt_1000".to_string(),
                 },
                 DeltaOmegaComponents {
-                    runtime_delta: 0.1,
-                    warning_delta: 0.1,
-                    memory_delta: 0.1,
+                    effective_plasticity: 0.9,
+                    landscape_health: 0.85,
+                    stability_floor: 1.0,
+                    agent_state_score: 0.7,
+                    agent_state_source: "default_neutral_no_transcript".to_string(),
                 },
                 DeltaXiComponents {
                     target_collapse: 0.0,
-                    predictor_collapse: 0.05,
-                    redundancy_mi: 0.05,
+                    predictor_redundancy: 0.05,
+                    constellation_violation_rate: 0.05,
                 },
             )?;
             l_sum += signal.l_step;

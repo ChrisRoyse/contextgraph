@@ -7,7 +7,8 @@ use context_graph_mejepa_train::cert::{
 use context_graph_mejepa_train::eval::holdout::{CalibrationDataset, HoldoutDataset};
 use context_graph_mejepa_train::eval::HoldoutEvaluator;
 use context_graph_mejepa_train::learning_signal::{
-    compute_l_step, DeltaKComponents, DeltaOmegaComponents, DeltaPComponents, DeltaXiComponents,
+    compute_l_step, DeltaKComponents, DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents,
+    DeltaXiComponents,
 };
 use context_graph_mejepa_train::TrainerErrorCode;
 use serde_json::json;
@@ -48,16 +49,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let before_leak = count_cf(&db, CF_MEJEPA_TRAIN_CERTS)?;
     let leak_err = compute_l_step(
         DeltaPComponents {
-            oracle_disagreement: 0.1,
-            prediction_residual: 0.1,
-            uncertainty: 0.1,
+            delta_p_real: 0.1,
+            delta_p_imagined: None,
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![0.1],
         },
         DeltaKComponents::default(),
         DeltaOmegaComponents::default(),
         DeltaXiComponents {
             target_collapse: 0.5,
-            predictor_collapse: 0.0,
-            redundancy_mi: 0.0,
+            predictor_redundancy: 0.0,
+            constellation_violation_rate: 0.0,
         },
     )
     .expect_err("target collapse must fail before cert construction");
@@ -158,16 +163,20 @@ fn cert(
 ) -> Result<TrainingCertificate, Box<dyn std::error::Error>> {
     let signal = compute_l_step(
         DeltaPComponents {
-            oracle_disagreement: 0.1,
-            prediction_residual: 0.1,
-            uncertainty: 0.1,
+            delta_p_real: 0.1,
+            delta_p_imagined: None,
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![0.1],
         },
         DeltaKComponents::default(),
         DeltaOmegaComponents::default(),
         DeltaXiComponents {
             target_collapse,
-            predictor_collapse: 0.0,
-            redundancy_mi: 0.0,
+            predictor_redundancy: 0.0,
+            constellation_violation_rate: 0.0,
         },
     )?;
     Ok(TrainingCertificate {

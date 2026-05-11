@@ -56,6 +56,8 @@ pub struct EvalConfig {
     pub gtau_pass_rate_min: f32,
     pub correlation_min: f32,
     pub regression_max_drop: f32,
+    pub q1_pass_rate_min: f32,
+    pub q3_side_effect_min: f32,
 }
 
 impl Default for EvalConfig {
@@ -69,6 +71,8 @@ impl Default for EvalConfig {
             gtau_pass_rate_min: 0.95,
             correlation_min: 0.25,
             regression_max_drop: 0.02,
+            q1_pass_rate_min: 0.99,
+            q3_side_effect_min: 0.90,
         }
     }
 }
@@ -97,6 +101,8 @@ impl EvalConfig {
             ("gtau_pass_rate_min", self.gtau_pass_rate_min),
             ("correlation_min", self.correlation_min),
             ("regression_max_drop", self.regression_max_drop),
+            ("q1_pass_rate_min", self.q1_pass_rate_min),
+            ("q3_side_effect_min", self.q3_side_effect_min),
         ] {
             validate_unit(name, value)?;
         }
@@ -151,6 +157,8 @@ pub struct EvalObservation {
     pub actual_oracle: OracleOutcome,
     pub prediction: RealityPrediction,
     pub gtau_passed: bool,
+    pub approved: bool,
+    pub live_prediction_readback: bool,
     pub latency_ms: f32,
 }
 

@@ -1091,6 +1091,7 @@ dependencies = [
  "context-graph-mejepa-instruments",
  "context-graph-mejepa-shift-subscriber",
  "context-graph-mejepa-tct",
+ "context-graph-mejepa-train",
  "context-graph-paths",
  "context-graph-solver",
  "context-graph-storage",

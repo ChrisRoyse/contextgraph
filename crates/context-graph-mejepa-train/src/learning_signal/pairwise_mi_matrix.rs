@@ -196,10 +196,19 @@ pub fn compute_pairwise_mi_matrix(
             values[row][col] = if row == col {
                 1.0
             } else {
-                normalized_mutual_information(
-                    series_by_slot.get(&slots[row]).expect("slot key exists"),
-                    series_by_slot.get(&slots[col]).expect("slot key exists"),
-                )?
+                let left = series_by_slot.get(&slots[row]).ok_or_else(|| {
+                    UtmlError::new(
+                        UtmlErrorCode::MissingSourceOfTruth,
+                        format!("pairwise MI missing slot {}", slots[row]),
+                    )
+                })?;
+                let right = series_by_slot.get(&slots[col]).ok_or_else(|| {
+                    UtmlError::new(
+                        UtmlErrorCode::MissingSourceOfTruth,
+                        format!("pairwise MI missing slot {}", slots[col]),
+                    )
+                })?;
+                normalized_mutual_information(left, right)?
             };
         }
     }

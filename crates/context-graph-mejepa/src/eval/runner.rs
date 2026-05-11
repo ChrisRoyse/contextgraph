@@ -7,8 +7,8 @@ use super::queue::ActiveLearningQueueState;
 use super::report::seed_open_research_questions;
 use super::store::RocksDbEvalStore;
 use super::types::{
-    ActiveLearningSummary, AuxHeadDistillationSummary, EvalConfig, EvalObservation, EvalProvenance,
-    EvalReport, HoldoutPanel, RegressionCheck, StateTransferDiagnostic,
+    ActiveLearningSummary, EvalConfig, EvalObservation, EvalProvenance, EvalReport, HoldoutPanel,
+    RegressionCheck, StateTransferDiagnostic,
 };
 use crate::compiler::MeJepaCompiler;
 use crate::types::{FailedGate, TaskId, VerifyVerdict};
@@ -65,13 +65,8 @@ impl EvalRunner {
             let prediction = self.compiler.compile(&panel.patch, &panel.context)?;
             let latency_ms = compile_start.elapsed().as_secs_f32() * 1000.0;
             let verdict = self.compiler.verify(&panel.patch, &panel.context)?;
-            let gtau_passed = !matches!(
-                verdict,
-                VerifyVerdict::EscalateToHuman {
-                    failed_gate: FailedGate::ConstellationGuardRejected { .. },
-                    ..
-                }
-            );
+            let (gtau_passed, approved, live_prediction_readback) =
+                verification_state(self.compiler.as_ref(), &verdict)?;
             observations.push(EvalObservation {
                 task_id: panel.task_id.clone(),
                 mutation_category: panel.mutation_category,
@@ -79,6 +74,8 @@ impl EvalRunner {
                 actual_oracle: panel.actual_oracle,
                 prediction,
                 gtau_passed,
+                approved,
+                live_prediction_readback,
                 latency_ms,
             });
         }
@@ -88,12 +85,19 @@ impl EvalRunner {
         let conformal = conformal_health(&observations, &self.config)?;
         let ood = ood_auc_by_language(&observations)?;
         let gtau = gtau_pass_rate_by_language(&observations)?;
+        let previous_report = self.store.load_latest_report()?;
+        let regression_checks = regression_checks(previous_report.as_ref(), overall, &self.config);
+        let q1 = q1_pass_rate(&observations)?;
+        let q3 = q3_side_effect_agreement(&observations);
         let failures = ship_gate_failures(
             &observations,
             overall,
             &conformal,
             &ood,
             &gtau,
+            &regression_checks,
+            q1,
+            q3,
             &self.config,
         );
 
@@ -106,7 +110,7 @@ impl EvalRunner {
         let research = seed_open_research_questions();
         self.store.persist_research_questions(&research)?;
 
-        let mut report = EvalReport {
+        let report = EvalReport {
             report_date: report_date.into(),
             generated_at_unix_ms: chrono::Utc::now().timestamp_millis(),
             rolling_window_size: self.config.rolling_window_size,
@@ -126,26 +130,69 @@ impl EvalRunner {
             },
             state_transfer_diagnostic: state_transfer_from_observations(&observations)?,
             aux_head_distillation: None,
-            regression_checks: regression_checks(overall),
+            regression_checks,
             open_research_questions: research,
-            q1_pass_rate: q1_pass_rate(&observations)?,
+            q1_pass_rate: q1,
             q2_report_correlation: overall,
-            q3_side_effect_agreement: Some(1.0),
+            q3_side_effect_agreement: q3,
             ship_gate_passed: failures.is_empty(),
             ship_gate_failures: failures,
             provenance,
             wall_clock_seconds: started.elapsed().as_secs_f32(),
         };
-        let hash = report.determinism_hash()?;
-        report.aux_head_distillation = Some(AuxHeadDistillationSummary {
-            teacher_report_hash: hash.clone(),
-            student_report_hash: hash,
-            max_delta: 0.0,
-            accepted: true,
-        });
         report.validate()?;
         self.store.persist_report(&report)?;
         Ok(report)
+    }
+}
+
+fn verification_state(
+    compiler: &MeJepaCompiler,
+    verdict: &VerifyVerdict,
+) -> Result<(bool, bool, bool), EvalError> {
+    match verdict {
+        VerifyVerdict::Approve {
+            reality_prediction, ..
+        } => {
+            let persisted = compiler
+                .store()
+                .read_live_predictions(reality_prediction.session_id, 1000)?;
+            let found = persisted.iter().any(|candidate| {
+                candidate.prediction_id == reality_prediction.prediction_id
+                    && candidate.task_id == reality_prediction.task_id
+                    && candidate.session_id == reality_prediction.session_id
+            });
+            Ok((true, true, found))
+        }
+        VerifyVerdict::EscalateToHuman {
+            failed_gate,
+            reality_prediction,
+            ..
+        } => {
+            if let Some(prediction) = reality_prediction {
+                let persisted = compiler
+                    .store()
+                    .read_live_predictions(prediction.session_id, 1000)?;
+                if persisted.iter().any(|candidate| {
+                    candidate.prediction_id == prediction.prediction_id
+                        && candidate.task_id == prediction.task_id
+                        && candidate.session_id == prediction.session_id
+                }) {
+                    return Err(EvalError::new(
+                        EvalErrorCode::ReadbackMismatch,
+                        format!(
+                            "escalated prediction {} was present in live-prediction source of truth",
+                            prediction.task_id.0
+                        ),
+                    ));
+                }
+            }
+            Ok((
+                !matches!(failed_gate, FailedGate::ConstellationGuardRejected { .. }),
+                false,
+                false,
+            ))
+        }
     }
 }
 
@@ -196,15 +243,41 @@ fn state_transfer_from_observations(
     }))
 }
 
-fn regression_checks(overall: Option<f32>) -> Vec<RegressionCheck> {
+fn q3_side_effect_agreement(observations: &[EvalObservation]) -> Option<f32> {
+    let approved = observations.iter().filter(|obs| obs.approved).count();
+    if approved == 0 {
+        return None;
+    }
+    let readback = observations
+        .iter()
+        .filter(|obs| obs.approved && obs.live_prediction_readback)
+        .count();
+    Some(readback as f32 / approved as f32)
+}
+
+fn regression_checks(
+    previous_report: Option<&EvalReport>,
+    overall: Option<f32>,
+    config: &EvalConfig,
+) -> Vec<RegressionCheck> {
     let current = overall.unwrap_or(0.0);
-    let previous = current;
+    let Some(previous_report) = previous_report else {
+        return vec![RegressionCheck {
+            name: "overall_correlation_no_previous_report".to_string(),
+            previous: current,
+            current,
+            drop: 0.0,
+            passed: false,
+        }];
+    };
+    let previous = previous_report.overall_correlation.unwrap_or(0.0);
+    let drop = (previous - current).max(0.0);
     vec![RegressionCheck {
         name: "overall_correlation".to_string(),
         previous,
         current,
-        drop: 0.0,
-        passed: true,
+        drop,
+        passed: drop <= config.regression_max_drop,
     }]
 }
 

@@ -5,7 +5,8 @@ use context_graph_mejepa_train::cert::{
     TrainingCertificate, CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_train::learning_signal::{
-    compute_l_step, DeltaKComponents, DeltaOmegaComponents, DeltaPComponents, DeltaXiComponents,
+    compute_l_step, DeltaKComponents, DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents,
+    DeltaXiComponents,
 };
 use serde_json::json;
 use std::collections::HashMap;
@@ -47,16 +48,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     for step in 0..STEPS {
         let signal = compute_l_step(
             DeltaPComponents {
-                oracle_disagreement: (step % 10) as f32 / 10.0,
-                prediction_residual: 0.2,
-                uncertainty: 0.1,
+                delta_p_real: (step % 10) as f32 / 10.0,
+                delta_p_imagined: None,
+                snr: 1.0,
+                exploration_bonus: 0.0,
+                gamma: 0.7,
+                aggregator: DeltaPAggregator::Mean,
+                per_chunk_values: vec![(step % 10) as f32 / 10.0],
             },
             DeltaKComponents::default(),
             DeltaOmegaComponents::default(),
             DeltaXiComponents {
                 target_collapse: 0.0,
-                predictor_collapse: 0.01,
-                redundancy_mi: 0.01,
+                predictor_redundancy: 0.01,
+                constellation_violation_rate: 0.01,
             },
         )?;
         let mut cert = TrainingCertificate {

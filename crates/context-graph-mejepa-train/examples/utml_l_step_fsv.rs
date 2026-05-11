@@ -2,8 +2,9 @@ use context_graph_mejepa_instruments::{InstrumentSlot, Panel, PanelBuilder};
 use context_graph_mejepa_train::learning_signal::{
     classify_utml_state, compute_embedder_coherence, compute_l_step, compute_state_transfer,
     detect_dormant_units, prune_decision, reinit_dormant_units, update_m_t, ContentEmbedder,
-    DeltaKComponents, DeltaOmegaComponents, DeltaPComponents, DeltaXiComponents, DivergenceMetric,
-    DormantLayer, DormantUnitDetector, LStepWindow, PairwiseMiAuditor,
+    DeltaKComponents, DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents,
+    DeltaXiComponents, DivergenceMetric, DormantLayer, DormantUnitDetector, LStepWindow,
+    PairwiseMiAuditor,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -22,24 +23,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let signal = compute_l_step(
         DeltaPComponents {
-            oracle_disagreement: 0.9,
-            prediction_residual: 0.7,
-            uncertainty: 0.5,
+            delta_p_real: 0.7,
+            delta_p_imagined: Some(0.6),
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![0.6, 0.8],
         },
         DeltaKComponents {
-            operator_override: 0.2,
-            novel_failure_mode: 0.8,
-            sparse_slice_bonus: 0.5,
+            cos_align: 0.8,
+            fisher_violation: 0.2,
+            ece: 0.1,
+            embedder_coherence: 0.6,
+            embedder_coherence_source: "computed".to_string(),
         },
         DeltaOmegaComponents {
-            runtime_delta: 0.8,
-            warning_delta: 0.6,
-            memory_delta: 0.7,
+            effective_plasticity: 0.8,
+            landscape_health: 0.7,
+            stability_floor: 1.0,
+            agent_state_score: 0.7,
+            agent_state_source: "default_neutral_no_transcript".to_string(),
         },
         DeltaXiComponents {
             target_collapse: 0.0,
-            predictor_collapse: 0.05,
-            redundancy_mi: 0.10,
+            predictor_redundancy: 0.05,
+            constellation_violation_rate: 0.10,
         },
     )?;
     let auditor = PairwiseMiAuditor::new(1, &out)?;
@@ -96,10 +105,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "name": "target_collapse_gradient_leak",
             "before": {"target_collapse": 0.5},
             "after": {"error": compute_l_step(
-                DeltaPComponents { oracle_disagreement: 0.1, prediction_residual: 0.1, uncertainty: 0.1 },
-                DeltaKComponents { operator_override: 0.1, novel_failure_mode: 0.1, sparse_slice_bonus: 0.1 },
-                DeltaOmegaComponents { runtime_delta: 0.1, warning_delta: 0.1, memory_delta: 0.1 },
-                DeltaXiComponents { target_collapse: 0.5, predictor_collapse: 0.0, redundancy_mi: 0.0 },
+                DeltaPComponents::default(),
+                DeltaKComponents::default(),
+                DeltaOmegaComponents::default(),
+                DeltaXiComponents { target_collapse: 0.5, predictor_redundancy: 0.0, constellation_violation_rate: 0.0 },
             ).unwrap_err().code()}
         }),
         json!({

@@ -2,11 +2,11 @@
 
 > **Phase-ordered execution roadmap.** Translates the 8-phase build plan in `09_END_GOAL_REVIEW_REPLACEMENT.md §7` (re-framed by `10_MEJEPA_PIVOT_2026_05_09.md`) into a concrete sequence of spec-IDs and task-IDs. **Every entry references a Level 2 functional spec, a Level 3 technical spec, and a Level 4 task list.**
 
-**Date:** 2026-05-10 (status refresh; spec body authored 2026-05-09)
-**Spec version:** 1.0.2
+**Date:** 2026-05-11 (status refresh; spec body authored 2026-05-09)
+**Spec version:** 1.0.3
 **Authority:** `constitution.md §spec_authority_order` and `09_END_GOAL_REVIEW_REPLACEMENT.md §7` Phase plan.
 
-> **2026-05-10 hardening snapshot.** Phases 1-5 have been manually re-verified with source-of-truth readbacks; evidence and blindspots are captured in `../15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`. Phase 1a is operational via the new 11-language `context_graph_core::memory::ast` API; legacy `AstCodeChunker` remains Rust-only and is now compatibility/deprecation work. Phase 1b is hardened for model artifact integrity, active/retired policy, VRAM, calibration, and routing; actual neural per-embedder forward wrappers remain a critical deep-integration item. Phases 1c, 2, 3, 4a, 4b, and 5 are SHIPPED with FSV evidence. `compute_delta_xi` now fails closed on target-collapse leaks with `MEJEPA_INSTRUMENT_GRADIENT_LEAK`. Phase 6 (storage hygiene operations), Phase 7 (shift subscriber Tokio task), Phase 8 (evaluation harness against ≥0.95 gate), neural embedder forward wrappers, and chunk-level TCT are the active forward edge.
+> **2026-05-11 hardening snapshot.** Phases 1-5 evidence: `../15_PHASE_1_5_HARDENING_FSV_2026_05_10.md`. **Phases 6/7/8 + REQ-UTML-06/07/08 evidence: `../16_PHASE_6_8_HARDENING_FSV_2026_05_11.md`.** Phase 1a operational via the 11-language `context_graph_core::memory::ast` API (legacy `AstCodeChunker` is compatibility/deprecation work). Phase 1b hardened for model artifact integrity, active/retired policy, VRAM, calibration, and routing; **neural per-embedder forward wrappers remain the critical deep-integration item**. Phases 1c, 2, 3, 4a, 4b, 5, **6, 7, and 8 are SHIPPED end-to-end** with FSV evidence and MCP wrappers. UTML carriers REQ-UTML-06 (pairwise MI), REQ-UTML-07 (continual-backprop dormant-unit re-init), and REQ-UTML-08 (state-transfer T detector) are SHIPPED. `compute_delta_xi` fails closed on target-collapse leaks with `MEJEPA_INSTRUMENT_GRADIENT_LEAK`. Live ME-JEPA MCP surface is **18 tools** (8 from doc 15 + 3 hygiene + 3 shift-subscriber + 4 evaluation). New crates added since doc 15: `context-graph-mejepa-hygiene`, `context-graph-mejepa-shift-subscriber`, `context-graph-mejepa-cf` (shared CF registry). The active forward edge is now **operational/integration work**: full 300×8 SWE-bench Lite corpus run, neural per-embedder forward wrappers, analyzer/embedder-backed semantic instrument heads, chunk-level TCT + per-chunk `GuardRejected` localization, per-language mutation operators (10 languages beyond Python), live conformal / OOD / shift-subscriber p50/p99 capture under production traffic, rolling-window holdout against the ≥0.95 ship gate, `mejepa_audit_pairwise_mi` MCP wrapper, and continual-backprop intervention hook in `heal/regulate.rs`.
 
 ---
 
@@ -20,13 +20,13 @@
 | 1c | INSTRUMENTS | ~15 days | partially (instruments depend on AST + embedders + chunker; each instrument is then independent) | **shipped scaffold / semantic heads pending** — all 15 panel slots have deterministic encoders + Panel/PanelBuilder/PanelStore + linear-probe gate shipped; embedder/analyzer-backed replacements remain capability work |
 | 2 | PREDICTOR | ~7-10 days | no (sequential: panel → predictor → frozen target → VICReg → Oracle head) | **shipped** — `MeJepaPredictor`, `VICRegLoss`, `OracleHead`, `FrozenTargetAdapter` in `crates/context-graph-mejepa/`; `predictor_fsv` example |
 | 3 | TRAINING | ~5-7 days | yes (training loop scaffolding parallels training-cert + sampler) | **shipped** — `Trainer` + AdamW + cosine LR + `BatchSampler` + `TrainingCertificate` chain + holdout eval + LoRA wiring + distillation in `crates/context-graph-mejepa-train/`; 5 FSV examples |
-| 3+ | UTML-FORMULA | ~5 days | yes (ΔP, ΔK, ΔΩ, ΔΞ are independent computations) | partial / safety-hardened — 4 deltas + L_step computation + sampling reweighting shipped in `learning_signal.rs`; `compute_delta_xi` now enforces `target_collapse == 0.0` and multiplicative non-collapse; remaining semantic work is reconciling simplified ΔP/ΔK/ΔΩ carriers with the full doc-11 formulas plus pairwise MI audit (REQ-UTML-06), continual-backprop (REQ-UTML-07), state-transfer T detector (REQ-UTML-08) |
+| 3+ | UTML-FORMULA | ~5 days | yes (ΔP, ΔK, ΔΩ, ΔΞ are independent computations) | **shipped / safety-hardened** — 4 deltas + L_step computation + sampling reweighting shipped in `learning_signal.rs`; `compute_delta_xi` enforces `target_collapse == 0.0` and multiplicative non-collapse; **REQ-UTML-06 pairwise MI ✅ shipped** (`learning_signal/pairwise_mi_matrix.rs`); **REQ-UTML-07 continual-backprop ✅ shipped** (`learning_signal/continual_backprop.rs`); **REQ-UTML-08 state-transfer T ✅ shipped** (`learning_signal/state_transfer.rs`); remaining semantic work is reconciling simplified ΔP/ΔK/ΔΩ carriers with the full doc-11 formulas, exposing `mejepa_audit_pairwise_mi` MCP wrapper, and triggering continual-backprop re-init from `heal/regulate.rs` |
 | 4a | INFERENCE | ~3-5 days | no (sequential: verify() → conformal → OOD) | **shipped** — `MeJepaCompiler::{compile, verify, observe}` + conformal + OOD + `Verdict` enum; `mcp__cgreality__mejepa_verify` MCP tool live; `inference_fsv` example |
 | 4b | TCT-CONSTELLATION | ~5 days | yes (centroid construction parallels Gτ guard + GuardRejected verdict) | **shipped** — full `TctConstellation` + `Gτ` + `Verdict::GuardRejected` + Bayesian shrinkage + freshness check + threshold calibrator in `crates/context-graph-mejepa-tct/`; `mcp__cgreality__mejepa_constellation_inspect` MCP tool live |
 | 5 | SELF-HEALING | ~5-7 days | partially (drift detection parallels EWC++; A/B/C promotion is sequential) | **shipped** — 16-module `heal/` tree + `mejepa-heal-drill` binary + 6 RocksDB CFs + `mcp__cgreality__mejepa_heal_status` and `mejepa_rollback_to` MCP tools live |
-| 6 | HYGIENE | ~3-5 days | yes (tier integration parallels Merkle compression + GC scheduler) | partial — tier-compression + mincut crates shipped; CF integration, Merkle compression of >90d chains, nightly GC, 115 GB quota, `me_jepa::ops::*` MCP wrappers (REQ-HYG-03..07) pending |
-| 7 | SHIFT-SUBSCRIBER | ~5-7 days | yes (subscriber Tokio task parallels new MCP tools) | partial — `reality_shift_log` reader/writer + `mcp__cgreality__mejepa_predict_latest` shipped; Tokio subscriber loop, watermark CF, and `mejepa_observe_shift` / `mejepa_subscriber_status` / `mejepa_capture_audit` MCP tools (REQ-SHIFT-01..09) pending |
-| 8 | EVALUATION | ongoing | yes (per-category eval parallels per-language eval + active-learning) | partial — holdout-eval harness shipped; per-language stratification, ≥0.95 ship gate, active-learning loop (REQ-EVAL-04), cross-task patch-similarity transfer (REQ-EVAL-05), aux-head distillation back to trunk (REQ-EVAL-06), and weekly report (REQ-EVAL-07) pending |
+| 6 | HYGIENE | ~3-5 days | yes (tier integration parallels Merkle compression + GC scheduler) | **shipped 2026-05-11** — tier-compression + mincut foundation crates ✅. New `context-graph-mejepa-hygiene` crate ✅: tier transitions, quota + emergency eviction, witness Merkle compression of >90d segments, nightly GC orchestrator, JSON codec, MCP path discipline. 3 MCP tools live (`mejepa_gc_run`, `mejepa_quota_status`, `mejepa_witness_compress`). 3 FSV examples. REQ-HYG-03..07 satisfied. Live cron-driven nightly GC + 115 GB hard quota in production are operational follow-ups |
+| 7 | SHIFT-SUBSCRIBER | ~5-7 days | yes (subscriber Tokio task parallels new MCP tools) | **shipped 2026-05-11** — new `context-graph-mejepa-shift-subscriber` crate ✅: restart-safe Tokio tailer (`run_until_idle`/`run_until_shutdown`), watermark CF, lag alert, panic supervision, latency telemetry, end-to-end shift→`shift_to_inference`→observe→prediction. 3 MCP tools live (`mejepa_observe_shift`, `mejepa_subscriber_status`, `mejepa_capture_audit`) plus the previously-shipped `mejepa_predict_latest`. FSV: `shift_subscriber_fsv` + 2 in-crate `tokio::test` round-trips. REQ-SHIFT-01..09 satisfied at code level. Live p50/p99 capture under production traffic is the operational follow-up |
+| 8 | EVALUATION | ongoing | yes (per-category eval parallels per-language eval + active-learning) | **harness shipped 2026-05-11** — full `crates/context-graph-mejepa/src/eval/` ✅: `EvalRunner`, ship-gate failure analysis, per-language conformal/OOD stratification, Bayesian shrinkage, ActiveLearning queue, PatchSimilarityGraph, weekly report writer, RocksDbEvalStore. 4 MCP tools live (`mejepa_eval_run`, `mejepa_ship_gate_status`, `mejepa_active_learning_queue`, `mejepa_eval_build_graph`). FSV `phase8_eval_fsv` writes 17 evidence files. REQ-EVAL-01..07 satisfied at code level. Rolling-window holdout against the real 300×8 SWE-bench Lite corpus over enough windows to ship a stable ≥0.95 is the operational follow-up |
 
 **Total fresh effort estimate:** ~75-95 days. Embedder reuse and chunker extension shorten Phase 1 from "build 14 instruments from scratch" to "build 14 instruments as thin heads on existing embedders" per doc 12 §3.
 
@@ -143,9 +143,9 @@ Phase 5 (self-healing) and Phase 6 (hygiene) are operational gates that run AFTE
 | `compute_delta_omega(plasticity, landscape, stability, agent_state)` | REQ-UTML-03 | ✅ shipped |
 | `compute_delta_xi(target_collapse, redundancy, violation)` (target_collapse always 0) | REQ-UTML-04 | ✅ shipped and hardened — non-zero/non-finite target collapse fails closed with `MEJEPA_INSTRUMENT_GRADIENT_LEAK`; formula is multiplicative non-collapse |
 | EMA running mean of recent batch gradients | REQ-UTML-05 | ✅ shipped |
-| Pairwise MI audit job persisting `pairwise_mi_matrix.csv` | REQ-UTML-06 | pending |
-| Continual-backprop dormant-unit re-init (ΔΩ.effective_plasticity intervention) | REQ-UTML-07 | pending — Phase 5 `regulate.rs` is the integration point |
-| State-transfer T detector for active-learning trigger | REQ-UTML-08 | pending |
+| Pairwise MI audit job persisting `pairwise_mi_matrix.csv` | REQ-UTML-06 | ✅ shipped — `learning_signal/pairwise_mi_matrix.rs::{PairwiseMiAuditor, PairwiseMiMatrix, compute_pairwise_mi_matrix, load_pairwise_mi_matrix_csv}`. `mejepa_audit_pairwise_mi` MCP wrapper is the remaining surface follow-up |
+| Continual-backprop dormant-unit re-init (ΔΩ.effective_plasticity intervention) | REQ-UTML-07 | ✅ shipped at code level — `learning_signal/continual_backprop.rs::{DormantUnitDetector, DormantUnitReport, detect_dormant_units, reinit_dormant_units}`. Trigger from `heal/regulate.rs` is the remaining integration |
+| State-transfer T detector for active-learning trigger | REQ-UTML-08 | ✅ shipped — `learning_signal/state_transfer.rs::{compute_state_transfer, performance_deploy, StateTransferDiagnostic}`; surfaced via `eval/types.rs::StateTransferDiagnostic` and Phase 8 weekly report |
 | FSV: 100 synthetic examples spanning ΔP/ΔK/ΔΩ/ΔΞ corner cases; verify L_step matches expected envelope | REQ-UTML-09 | ✅ shipped via `train_edge_cases_fsv`; target-collapse leak edge proves no training cert is written on invariant violation |
 
 ### Phase 4a — Inference + conformal + OOD (INFERENCE) — **SHIPPED**
@@ -190,43 +190,43 @@ Phase 5 (self-healing) and Phase 6 (hygiene) are operational gates that run AFTE
 | Distillation-based online observe (reuses crates/context-graph-embeddings/src/training/distillation.rs) | REQ-HEAL-09 | ✅ shipped (`heal/distill.rs`) |
 | FSV: synthetic drift drill detects within 1,000 observations + promotes Mode B/C only on holdout win | REQ-HEAL-10 | ✅ shipped — `mejepa-heal-drill` binary + `phase5_self_healing_fsv` example; hard/soft/catastrophic drills detect at 700 obs, mode winner C, evidence files mode `0600`; invalid max-observations edge exits with `MEJEPA_HEAL_INVALID_STATE` and creates no output root |
 
-### Phase 6 — Disk + memory hygiene (HYGIENE)
+### Phase 6 — Disk + memory hygiene (HYGIENE) — **SHIPPED**
 
 | Deliverable | Spec ref | Status |
 |---|---|---|
-| Tier-compression integration: hot 8 / warm 7 / cool 5 / cold 3 / frozen 1 bit | REQ-HYG-01 | partial (tier-compression crate ✅) |
+| Tier-compression integration: hot 8 / warm 7 / cool 5 / cold 3 / frozen 1 bit | REQ-HYG-01 | ✅ shipped — `tier-compression` foundation crate + `tier.rs`/`tier_frozen.rs`/`tier_ops.rs` in `context-graph-mejepa-hygiene` (`tier_for_score`, `decayed_score`, `score_after_read`, `encode_for_tier`, `decode_from_tier`, `tier_demote`, `tier_promote`, `tier_demote_all`, `tier_promote_all`) |
 | Stoer-Wagner mincut for repo-atomic split (already shipped per crates/context-graph-mincut) | REQ-HYG-02 | ✅ shipped |
-| Witness-chain Merkle compression for chains older than 90 days | REQ-HYG-03 | new |
-| Nightly GC at 03:00 local: demote + compact + evict + prune + verify | REQ-HYG-04 | new |
-| Quota enforcement: hard 115 GB; emergency eviction on overflow | REQ-HYG-05 | new |
-| `me_jepa::ops::*` MCP-callable: gc_run_nightly, quota_check_and_evict, heal_detect_drift, heal_retrain_if_needed, witness_compress_old_segments, witness_verify_integrity, tier_demote, tier_promote | REQ-HYG-06 | new |
-| FSV: 10,000-entry stress corpus → nightly GC keeps disk ≤ 110 GB | REQ-HYG-07 | new |
+| Witness-chain Merkle compression for chains older than 90 days | REQ-HYG-03 | ✅ shipped — `witness_compress.rs::{witness_compress_old_segments, verify_witness_integrity, audit_verify_old_entry}` + `merkle_compression_fsv` example |
+| Nightly GC at 03:00 local: demote + compact + evict + prune + verify | REQ-HYG-04 | ✅ shipped — `gc.rs::gc_run_nightly` returning `GcReport`; `gc_stress_fsv` example proves 10,000-entry stress run. Live cron scheduling is operational follow-up |
+| Quota enforcement: hard 115 GB; emergency eviction on overflow | REQ-HYG-05 | ✅ shipped — `quota.rs::{quota_status, quota_check_and_evict}` + `quota_overflow_fsv` example |
+| `me_jepa::ops::*` MCP-callable: gc_run_nightly, quota_check_and_evict, heal_detect_drift, heal_retrain_if_needed, witness_compress_old_segments, witness_verify_integrity, tier_demote, tier_promote | REQ-HYG-06 | ✅ shipped — `ops.rs` exports all eight ops; `mcp.rs::{mcp_gc_run, mcp_quota_status, mcp_witness_compress}` and dispatch wires `mejepa_gc_run`, `mejepa_quota_status`, `mejepa_witness_compress` MCP tools |
+| FSV: 10,000-entry stress corpus → nightly GC keeps disk ≤ 110 GB | REQ-HYG-07 | ✅ shipped — `gc_stress_fsv` example writes evidence files mode `0600` |
 
-### Phase 7 — Shift subscriber + MCP tools (SHIFT-SUBSCRIBER) — **PARTIAL**
-
-| Deliverable | Spec ref | Status |
-|---|---|---|
-| Tokio task tailing `cgreality-shift-log/<session_id>.jsonl`; per-shift instrument cache keyed by file_sha | REQ-SHIFT-01 | pending |
-| Watermark CF (CF_MEJEPA_SHIFT_WATERMARK) records last shift_id consumed; restart-safe | REQ-SHIFT-02 | partial — `CF_MEJEPA_SHIFT_WATERMARK` declared and persisted via heal pipeline; subscriber consumer pending |
-| Per-shift latency: p50 &lt; 5s; p99 &lt; 30s; subscriber-lag alert &gt; 500 unprocessed shifts / 1 minute | REQ-SHIFT-03 | pending |
-| `mcp__cgreality__mejepa_predict_latest()` MCP tool | REQ-SHIFT-04 | ✅ shipped (`crates/context-graph-mcp/src/tools/names.rs:102` + `mejepa_tools.rs::call_mejepa_predict_latest`) |
-| `mcp__cgreality__mejepa_observe_shift(shift_id)` MCP tool | REQ-SHIFT-05 | pending |
-| `mcp__cgreality__mejepa_subscriber_status()` MCP tool | REQ-SHIFT-06 | pending |
-| `mcp__cgreality__mejepa_capture_audit(attempt_id)` MCP tool | REQ-SHIFT-07 | pending |
-| Backpressure + durability: log queues; on resume, tail from last-processed offset | REQ-SHIFT-08 | partial — `reality_shift_log` reader/writer in `crates/context-graph-mcp/src/handlers/tools/reality_loop/shift_log.rs` provides durable on-disk JSONL log; consumer-side resume pending |
-| FSV: synthetic shift stream end-to-end latency profiled; persistence verified | REQ-SHIFT-09 | pending |
-
-### Phase 8 — Evaluation against ≥0.95 (EVALUATION)
+### Phase 7 — Shift subscriber + MCP tools (SHIFT-SUBSCRIBER) — **SHIPPED**
 
 | Deliverable | Spec ref | Status |
 |---|---|---|
-| Holdout split evaluation: prediction-oracle correlation per (mutation_category, language) | REQ-EVAL-01 | new |
-| Per-language stratification: conformal calibration + OOD calibration + Gτ thresholds calibrated per language | REQ-EVAL-02 | new |
-| ≥0.95 ship gate: stable correlation across all 8 categories AND all supported languages on rolling-window holdout | REQ-EVAL-03 | new |
-| Active learning loop: when conformal set &gt; 3 AND OOD score &lt; 0.5, surface for operator label / Docker oracle re-run / adjacent-test re-run | REQ-EVAL-04 | new |
-| Cross-task transfer: patch-similarity graph upweights similar tasks during fine-tune | REQ-EVAL-05 | new |
-| Aux-head distillation back into trunk every 1,000 steps | REQ-EVAL-06 | new |
-| Weekly evaluation report: tracked metric + per-category + per-language; surface to operator | REQ-EVAL-07 | new |
+| Tokio task tailing `cgreality-shift-log/<session_id>.jsonl`; per-shift instrument cache keyed by file_sha | REQ-SHIFT-01 | ✅ shipped — `context-graph-mejepa-shift-subscriber::{ShiftLogTail, ShiftSubscriber::{run_until_idle, run_until_shutdown}}` + `cache::{InstrumentCache, SlotKey}` |
+| Watermark CF (CF_MEJEPA_SHIFT_WATERMARK) records last shift_id consumed; restart-safe | REQ-SHIFT-02 | ✅ shipped — `WatermarkWriter::{new, write, read_all}`; `ShiftSubscriber::open` reconstructs `ShiftLogTail` cursors from the persisted byte offset per session JSONL |
+| Per-shift latency: p50 &lt; 5s; p99 &lt; 30s; subscriber-lag alert &gt; 500 unprocessed shifts / 1 minute | REQ-SHIFT-03 | ✅ shipped at code level — `SubscriberMetrics::{record_latency_ms, snapshot_latency_ms}` returns `LatencySnapshot { p50_ms, p99_ms }`; `update_lag_alert` fires `MEJEPA_SHIFT_SUBSCRIBER_LAG_ALERT` on sustained breach. Live distribution capture under production traffic is operational follow-up |
+| `mcp__cgreality__mejepa_predict_latest()` MCP tool | REQ-SHIFT-04 | ✅ shipped (`crates/context-graph-mcp/src/tools/names.rs` + `mejepa_tools.rs::call_mejepa_predict_latest`) |
+| `mcp__cgreality__mejepa_observe_shift(shift_id)` MCP tool | REQ-SHIFT-05 | ✅ shipped — `mejepa_phase7_tools.rs::call_mejepa_observe_shift` + dispatch in `dispatch.rs` |
+| `mcp__cgreality__mejepa_subscriber_status()` MCP tool | REQ-SHIFT-06 | ✅ shipped — `mejepa_phase7_tools.rs::call_mejepa_subscriber_status` returns `LiveSubscriberStatus` (counts, latency p50/p99, lag-alert flag, last panic) |
+| `mcp__cgreality__mejepa_capture_audit(attempt_id)` MCP tool | REQ-SHIFT-07 | ✅ shipped — `mejepa_phase7_tools.rs::call_mejepa_capture_audit` + `CaptureAuditBundle` |
+| Backpressure + durability: log queues; on resume, tail from last-processed offset | REQ-SHIFT-08 | ✅ shipped — `reality_shift_log` reader/writer + `ShiftLogTail::poll_next_line` + `WatermarkWriter` round-trip; in-crate `tokio::test` proves single-shift round-trip restarts at byte-offset = line.len()+1 |
+| FSV: synthetic shift stream end-to-end latency profiled; persistence verified | REQ-SHIFT-09 | ✅ shipped — `shift_subscriber_fsv` + 2 in-crate `tokio::test` round-trips: `run_until_idle_consumes_jsonl_and_persists_readback_state` and `run_until_idle_skips_non_code_shift_and_advances_watermark` |
+
+### Phase 8 — Evaluation against ≥0.95 (EVALUATION) — **HARNESS SHIPPED**
+
+| Deliverable | Spec ref | Status |
+|---|---|---|
+| Holdout split evaluation: prediction-oracle correlation per (mutation_category, language) | REQ-EVAL-01 | ✅ shipped — `crates/context-graph-mejepa/src/eval/runner.rs::EvalRunner::run_holdout_eval` + `metrics.rs::{pearson_correlation, compute_correlations}` |
+| Per-language stratification: conformal calibration + OOD calibration + Gτ thresholds calibrated per language | REQ-EVAL-02 | ✅ shipped — `metrics.rs::{conformal_health, ood_auc_by_language, gtau_pass_rate_by_language, bayesian_shrinkage}` |
+| ≥0.95 ship gate: stable correlation across all 8 categories AND all supported languages on rolling-window holdout | REQ-EVAL-03 | ✅ shipped at code level — `metrics.rs::ship_gate_failures` + `EvalReport::{ship_gate_passed, ship_gate_failures}` + `mejepa_ship_gate_status` MCP tool. Production rolling-window data is operational follow-up |
+| Active learning loop: when conformal set &gt; 3 AND OOD score &lt; 0.5, surface for operator label / Docker oracle re-run / adjacent-test re-run | REQ-EVAL-04 | ✅ shipped — `queue.rs::ActiveLearningQueueState::{new, enqueue_uncertain}` + `ActiveLearningLabel` + `LabelMethod` + `mejepa_active_learning_queue` MCP tool |
+| Cross-task transfer: patch-similarity graph upweights similar tasks during fine-tune | REQ-EVAL-05 | ✅ shipped — `graph.rs::{PatchEmbedding, PatchGraphEdge, PatchSimilarityGraph, build_patch_similarity_graph}` + `mejepa_eval_build_graph` MCP tool + `RocksDbEvalStore::{persist_graph, load_graph}` |
+| Aux-head distillation back into trunk every 1,000 steps | REQ-EVAL-06 | ✅ shipped — `types.rs::AuxHeadDistillationSummary` + report column; aux head wiring in `crates/context-graph-mejepa-train/src/aux/` |
+| Weekly evaluation report: tracked metric + per-category + per-language; surface to operator | REQ-EVAL-07 | ✅ shipped — `report.rs::{write_weekly_report, seed_open_research_questions, write_json_0600}`; `phase8_eval_fsv` writes 17 evidence files to `/tmp/contextgraph-mejepa-phase8-eval-fsv/` |
 
 ---
 
@@ -252,3 +252,4 @@ Each phase's task list lives under `tasks/<phase>/TASK-<DOMAIN>-NNN.md`. The `ta
 |---|---|---|---|
 | 2026-05-09 | v1.0.0 initial | Claude Code (outer-loop optimizer) | First full plan covering all 8 phases × 13 domains |
 | 2026-05-10 | v1.0.2 hardening refresh | Codex | Updated Phase 1-5 status after manual FSV; documented `ΔΞ.target_collapse` fail-closed fix, embedder forward blindspot, and AST compatibility caveat |
+| 2026-05-11 | v1.0.3 Phase 6/7/8 + UTML refresh | Claude Code | Marked Phase 6 (HYGIENE) shipped (`context-graph-mejepa-hygiene` + 3 MCP tools), Phase 7 (SHIFT-SUBSCRIBER) shipped (`context-graph-mejepa-shift-subscriber` + 3 MCP tools), Phase 8 (EVALUATION) harness shipped (`crates/context-graph-mejepa/src/eval/` + 4 MCP tools), and UTML carriers REQ-UTML-06/07/08 shipped (`learning_signal/{pairwise_mi_matrix, continual_backprop, state_transfer}`). New crate `context-graph-mejepa-cf` (shared CF registry). Live ME-JEPA MCP surface now 18 tools. Cross-references doc 16 evidence ledger throughout |
