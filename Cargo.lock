@@ -1221,6 +1221,7 @@ name = "context-graph-mejepa-instruments"
 version = "0.1.0"
 dependencies = [
  "context-graph-core",
+ "context-graph-mejepa-embedders",
  "context-graph-witness",
  "rocksdb",
  "serde",

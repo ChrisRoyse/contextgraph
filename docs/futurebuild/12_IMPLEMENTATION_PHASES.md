@@ -43,7 +43,7 @@
 | Task | Description | Effort |
 |---|---|---|
 | `TASK-FLYWHEEL-001` | MCP daemon mode (`--daemon` flag) with supervised tokio tasks + systemd template | 1-2 days |
-| `TASK-FLYWHEEL-002` | Continuous self-optimization scheduler skeleton (5 tickers, calls into shipped modules) | 1 day |
+| `TASK-FLYWHEEL-002` | Continuous self-optimization scheduler skeleton (7 tickers, calls into shipped modules) | complete |
 | `TASK-FLYWHEEL-003` | Test-outcome capture hook (parse pytest/cargo-test/jest output) | 0.5 day |
 | `TASK-FLYWHEEL-004` | Asynchronous oracle-binding inside observe() | 0.5 day |
 | `TASK-FLYWHEEL-005` | ActiveLearningKind::AgentSurprise variant + queue extension | 0.5 day |

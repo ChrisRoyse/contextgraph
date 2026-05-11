@@ -332,7 +332,7 @@ pub async fn handle_promote_approval(storage: &Storage, args: PromoteApprovalArg
 
 | FSV | What it proves | Output |
 |---|---|---|
-| `scheduler_5_ticker_fsv` | all 5 tickers fire at expected periods over 1 minute | `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/scheduler_ticks.json` |
+| `scheduler_5_ticker_fsv` | all 7 scheduler tickers fire at expected periods over 10 seconds in the Phase A FSV harness | `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/scheduler_ticks.json` |
 | `drift_soft_to_lora_fsv` | injected soft drift triggers LoRA refresh + auto-promotion | `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/drift_soft.json` |
 | `drift_catastrophic_alert_fsv` | injected catastrophic drift triggers operator alert + blocks promotion | `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/drift_catastrophic.json` |
 | `dissipation_detection_fsv` | synthetic dissipation pattern fires `MEJEPA_DISSIPATION_DETECTED` | `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/dissipation.json` |

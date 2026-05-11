@@ -16,7 +16,7 @@
 
 ### REQ-HEAL-FB-01 — Continuous self-optimization scheduler
 
-A new tokio task `run_self_optimization_scheduler` SHALL fire 5 tickers per `09 §2`: observe (250ms), drift_check (60s), active_learning (600s), promote (3600s), continual_backprop (1800s), constellation_freshness (3600s).
+A tokio task `run_self_optimization_scheduler` SHALL fire 7 tickers per `09 §2`: observe (250ms), drift_check (60s), active_learning (600s), promote (3600s), continual_backprop (1800s), constellation_freshness (3600s), emergency_eviction (600s).
 
 ### REQ-HEAL-FB-02 — Per-cell stratified drift detection
 

@@ -235,7 +235,7 @@ async fn run_task(
     match kind {
         SupervisedTaskKind::ShiftSubscriber => run_shift_subscriber(config, db, shutdown_rx).await,
         SupervisedTaskKind::SelfOptimizationScheduler => {
-            run_self_optimization_scheduler(config, shutdown_rx).await
+            run_self_optimization_scheduler(config, db, shutdown_rx).await
         }
         SupervisedTaskKind::NightlyGcScheduler => {
             run_nightly_gc_scheduler(config, db, shutdown_rx).await
@@ -272,29 +272,29 @@ async fn run_shift_subscriber(
 
 async fn run_self_optimization_scheduler(
     config: FlywheelDaemonConfig,
-    mut shutdown_rx: watch::Receiver<bool>,
+    db: Arc<DB>,
+    shutdown_rx: watch::Receiver<bool>,
 ) -> Result<()> {
-    let mut ticker_counts = BTreeMap::<&'static str, u64>::new();
-    let mut observe = tokio::time::interval(Duration::from_millis(250));
-    let mut drift = tokio::time::interval(Duration::from_secs(60));
-    let mut active_learning = tokio::time::interval(Duration::from_secs(600));
-    let mut promote = tokio::time::interval(Duration::from_secs(3600));
-    let mut continual_backprop = tokio::time::interval(Duration::from_secs(1800));
-    let mut constellation = tokio::time::interval(Duration::from_secs(3600));
-    loop {
-        tokio::select! {
-            changed = shutdown_rx.changed() => {
-                if changed.is_ok() && *shutdown_rx.borrow() {
-                    return Ok(());
-                }
-            }
-            _ = observe.tick() => write_scheduler_tick(&config, "observe", &mut ticker_counts)?,
-            _ = drift.tick() => write_scheduler_tick(&config, "drift_check", &mut ticker_counts)?,
-            _ = active_learning.tick() => write_scheduler_tick(&config, "active_learning", &mut ticker_counts)?,
-            _ = promote.tick() => write_scheduler_tick(&config, "promote", &mut ticker_counts)?,
-            _ = continual_backprop.tick() => write_scheduler_tick(&config, "continual_backprop", &mut ticker_counts)?,
-            _ = constellation.tick() => write_scheduler_tick(&config, "constellation_freshness", &mut ticker_counts)?,
-        }
+    let scheduler_config = self_optimization_scheduler_config(&config);
+    context_graph_mejepa::heal::run_self_optimization_scheduler(db, scheduler_config, shutdown_rx)
+        .await?;
+    Ok(())
+}
+
+fn self_optimization_scheduler_config(
+    config: &FlywheelDaemonConfig,
+) -> context_graph_mejepa::heal::SelfOptimConfig {
+    context_graph_mejepa::heal::SelfOptimConfig {
+        status_path: config
+            .paths
+            .scheduler_state_dir
+            .join("self_optimization_status.json"),
+        hygiene_archive_root: config.paths.hygiene_archive_dir.clone(),
+        witness_chain_path: config
+            .paths
+            .hygiene_archive_dir
+            .join("self-optimization-witness-chain.bin"),
+        ..context_graph_mejepa::heal::SelfOptimConfig::default()
     }
 }
 
@@ -695,23 +695,6 @@ pub fn ensure_mejepa_column_families(db: &DB) -> Result<()> {
     Ok(())
 }
 
-fn write_scheduler_tick(
-    config: &FlywheelDaemonConfig,
-    ticker: &'static str,
-    counts: &mut BTreeMap<&'static str, u64>,
-) -> Result<()> {
-    *counts.entry(ticker).or_insert(0) += 1;
-    write_scheduler_report(
-        config,
-        "self_optimization",
-        &serde_json::json!({
-            "last_ticker": ticker,
-            "ticker_counts": counts,
-            "updated_at_unix_seconds": chrono::Utc::now().timestamp(),
-        }),
-    )
-}
-
 fn write_scheduler_report(
     config: &FlywheelDaemonConfig,
     name: &str,
@@ -840,6 +823,32 @@ mod tests {
             .expect("cf");
         let count = db.iterator_cf(cf, rocksdb::IteratorMode::Start).count();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn self_optimization_scheduler_config_uses_daemon_source_of_truth_paths() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let paths =
+            crate::daemon_validate::validate_d_drive_root(temp.path()).expect("valid daemon root");
+        let config = FlywheelDaemonConfig::from_paths(paths.clone(), temp.path().to_path_buf());
+        let scheduler_config = self_optimization_scheduler_config(&config);
+
+        assert_eq!(
+            scheduler_config.status_path,
+            paths
+                .scheduler_state_dir
+                .join("self_optimization_status.json")
+        );
+        assert_eq!(
+            scheduler_config.hygiene_archive_root,
+            paths.hygiene_archive_dir
+        );
+        assert_eq!(
+            scheduler_config.witness_chain_path,
+            paths
+                .hygiene_archive_dir
+                .join("self-optimization-witness-chain.bin")
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

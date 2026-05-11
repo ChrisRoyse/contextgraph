@@ -37,7 +37,7 @@ The daemon SHALL run the shift subscriber (`context-graph-mejepa-shift-subscribe
 
 ### REQ-FLYWHEEL-05 — Continuous self-optimization scheduler
 
-The daemon SHALL run a self-optimization scheduler tokio task (NEW, `crates/context-graph-mejepa::heal::scheduler::run_self_optimization_scheduler`) that fires five tickers: observe (250ms), drift_check (60s), active_learning (600s), promote (3600s), continual_backprop (1800s), constellation_freshness (3600s).
+The daemon SHALL run a self-optimization scheduler tokio task (`crates/context-graph-mejepa::heal::scheduler::run_self_optimization_scheduler`) that fires seven tickers: observe (250ms), drift_check (60s), active_learning (600s), promote (3600s), continual_backprop (1800s), constellation_freshness (3600s), emergency_eviction (600s).
 
 ### REQ-FLYWHEEL-06 — Nightly GC scheduler
 

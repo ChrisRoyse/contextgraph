@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod e_code;
+pub mod e_embedder_heads;
 pub mod e_oracle;
 pub mod e_reasoning;
 pub mod e_runtime;

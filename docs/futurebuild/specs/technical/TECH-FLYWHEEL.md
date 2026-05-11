@@ -15,7 +15,7 @@ The flywheel is a single supervised process (the MCP daemon) hosting four cooper
 │   ┌──────────────────┐  ┌──────────────────┐  ┌────────────────────┐    │
 │   │ MCP stdio handler│  │ Shift subscriber │  │ Self-optim         │    │
 │   │ (JSON-RPC)       │  │ (run_until_      │  │ scheduler          │    │
-│   │                  │  │  shutdown)       │  │ (5 tickers)        │    │
+│   │                  │  │  shutdown)       │  │ (7 tickers)        │    │
 │   └──────────────────┘  └──────────────────┘  └────────────────────┘    │
 │                                                                          │
 │   ┌──────────────────┐  ┌──────────────────────────────────────────┐    │

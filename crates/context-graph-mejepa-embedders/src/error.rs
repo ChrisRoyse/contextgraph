@@ -67,6 +67,12 @@ pub enum EmbedError {
         message: String,
         remediation: &'static str,
     },
+    #[error("forward pass failed for {embedder}: {message}; remediation: {remediation}")]
+    ForwardFailed {
+        embedder: EmbedderId,
+        message: String,
+        remediation: &'static str,
+    },
 }
 
 impl EmbedError {
@@ -82,6 +88,7 @@ impl EmbedError {
             Self::GpuUnavailable { .. } => "MEJEPA_EMBED_GPU_UNAVAILABLE",
             Self::VramExceeded { .. } => "MEJEPA_EMBED_VRAM_EXCEEDED",
             Self::E17Uncalibrated { .. } => "MEJEPA_EMBED_E17_UNCALIBRATED",
+            Self::ForwardFailed { .. } => "MEJEPA_EMBED_FORWARD_FAILED",
         }
     }
 
@@ -92,6 +99,18 @@ impl EmbedError {
     ) -> Self {
         Self::InvalidInput {
             field,
+            message: message.into(),
+            remediation,
+        }
+    }
+
+    pub(crate) fn forward(
+        embedder: EmbedderId,
+        message: impl Into<String>,
+        remediation: &'static str,
+    ) -> Self {
+        Self::ForwardFailed {
+            embedder,
             message: message.into(),
             remediation,
         }

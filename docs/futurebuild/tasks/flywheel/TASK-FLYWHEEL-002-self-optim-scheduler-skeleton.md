@@ -1,8 +1,8 @@
 ---
 task_id: TASK-FLYWHEEL-002
-title: Self-optimization scheduler skeleton (5 tickers calling shipped APIs)
+title: Self-optimization scheduler skeleton (7 tickers calling shipped APIs)
 phase: A
-status: open
+status: complete
 blocked_by: [TASK-FLYWHEEL-001]
 blocks: [TASK-HEAL-001]
 effort: 1d
@@ -11,7 +11,7 @@ spec_refs: [SPEC-FLYWHEEL.md REQ-FLYWHEEL-05, TECH-HEAL.md §3]
 
 ## Goal
 
-Stand up the skeleton of `crates/context-graph-mejepa::heal::scheduler::run_self_optimization_scheduler` with 5 tickers (observe 250ms, drift 60s, active_learning 600s, promote 3600s, continual_backprop 1800s, constellation 3600s, emergency_eviction 600s). Each tick calls a stub function that delegates to existing shipped modules (no new logic — just wiring). Phase E will replace the stubs with full per-cell stratified, dissipation-aware logic.
+Stand up the skeleton of `crates/context-graph-mejepa::heal::scheduler::run_self_optimization_scheduler` with 7 tickers (observe 250ms, drift 60s, active_learning 600s, promote 3600s, continual_backprop 1800s, constellation 3600s, emergency_eviction 600s). Each tick calls a stub function that delegates to existing shipped modules (no new logic — just wiring). Phase E will replace the stubs with full per-cell stratified, dissipation-aware logic.
 
 ## Inputs
 
@@ -40,6 +40,23 @@ Stand up the skeleton of `crates/context-graph-mejepa::heal::scheduler::run_self
 ## FSV evidence path
 
 `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/scheduler_ticks.json`
+
+## Implementation evidence
+
+Completed 2026-05-11.
+
+- Scheduler implementation: `crates/context-graph-mejepa/src/heal/scheduler.rs`
+- Durable scheduler state/source-of-truth writer: `crates/context-graph-mejepa/src/heal/scheduler_state.rs`
+- Daemon wiring: `crates/context-graph-mcp/src/daemon.rs`
+- FSV harness: `crates/context-graph-mejepa/examples/scheduler_5_ticker_fsv.rs`
+- Shared CF registry now includes TCT scheduler CFs: `CF_MEJEPA_CONSTELLATION`, `CF_MEJEPA_GUARD_DECISIONS`
+
+Verification:
+
+- `cargo build --release -p context-graph-mejepa` passed.
+- `cargo test -p context-graph-mejepa heal::scheduler` passed: 6 scheduler tests.
+- `cargo run -p context-graph-mejepa --example scheduler_5_ticker_fsv -- --output-root /mnt/d/contextgraph/fsv/mejepa-heal-fsv` passed and wrote `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/scheduler_ticks.json`.
+- Manual readback: `ldb dump --db=/mnt/d/contextgraph/fsv/mejepa-heal-fsv/happy-path/rocksdb --column_family=CF_MEJEPA_ACTIVE_LEARNING_QUEUE --count_only` reported 1 key; `CF_MEJEPA_DRIFT_HISTORY` reported 9 keys after the happy path; the corrupt-drift edge retained 701 drift-window rows and logged `MEJEPA_HEAL_BINCODE`.
 
 ## Boundary cases
 

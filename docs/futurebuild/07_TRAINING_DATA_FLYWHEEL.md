@@ -99,7 +99,7 @@ Plus, on the operator side:
 | Embedder forward (neural) | NO | needs [#3](https://github.com/ChrisRoyse/contextgraph/issues/3) |
 | DDA signal computation | NO | new — see `04_DDA_TCT_CODE_ENRICHMENT.md` |
 | PanelBuilder | YES | `crates/context-graph-mejepa-instruments` |
-| Continuous self-optim scheduler | NO | new — see `09_SELF_HEALING_AUTONOMY.md` |
+| Continuous self-optim scheduler | YES (Phase A skeleton) | `crates/context-graph-mejepa::heal::{scheduler,scheduler_state}`; full autonomy remains Phase E |
 | `MeJepaCompiler::observe` | YES | `crates/context-graph-mejepa::compiler` |
 | EWC++ | YES | `crates/context-graph-mejepa::heal::ewc` |
 | Drift detector | YES | `crates/context-graph-mejepa::heal::drift` |
@@ -119,7 +119,7 @@ Plus, on the operator side:
 
 ## 3. The MCP daemon mode (the missing supervisor)
 
-Today, `cargo run --release -p context-graph-mcp` starts the JSON-RPC stdio server but does NOT start the long-running shift subscriber, GC scheduler, or self-optimization scheduler. These exist as crate-level entrypoints but no supervisor invokes them.
+Today, `cargo run --release -p context-graph-mcp -- --daemon-root /mnt/d/contextgraph --daemon` starts the long-running shift subscriber, self-optimization scheduler, nightly GC scheduler, and weekly eval scheduler under the daemon supervisor. No systemd unit or install wrapper ships yet.
 
 **`TASK-FLYWHEEL-001-mcp-daemon-mode.md` adds a `--daemon` flag** that:
 
@@ -163,7 +163,7 @@ A systemd unit (or equivalent) is provided as a template under `scripts/systemd/
 
 ## 4. The continuous self-optimization scheduler (the heart of the flywheel)
 
-Per `03_ARCHITECTURE_BLUEPRINT.md §4.5`, the scheduler is a tokio task with five tickers:
+Per `03_ARCHITECTURE_BLUEPRINT.md §4.5`, the scheduler is a tokio task with seven tickers:
 
 | Ticker | Period | Action |
 |---|---|---|
@@ -172,10 +172,12 @@ Per `03_ARCHITECTURE_BLUEPRINT.md §4.5`, the scheduler is a tokio task with fiv
 | `active_learning_tick` | 600 s | drain top-N high-priority entries from active-learning queue → fast-track observe on agent-flagged surprises |
 | `promote_tick` | 3600 s | run pending LoRA refresh / calibration recalibrate / (if scheduled) full A/B/C retrain |
 | `continual_backprop_tick` | 1800 s | detect dormant units → reinit if fraction > 15% |
+| `constellation_freshness_tick` | 3600 s | inspect TCT constellation CF and fail closed on stale persisted constellation |
+| `emergency_eviction_tick` | 600 s | inspect hygiene quota state and invoke emergency eviction only when threshold is exceeded |
 
 **The scheduler is the single point at which "Claude Code did something" → "ME-JEPA learned from it" closes.** Before it ships, observe() is callable but only on demand; after it ships, every Edit becomes a training example without anyone calling anything.
 
-Implementation: `crates/context-graph-mejepa::heal::scheduler::run_self_optimization_scheduler` (NEW). The interfaces it needs (`heal::ewc`, `heal::drift`, `heal::promote`, `heal::lora_refresh`, `heal::calibration`, `learning_signal::continual_backprop::*`, `eval::queue::*`) are all shipped — this task is pure orchestration.
+Implementation: `crates/context-graph-mejepa::heal::scheduler::run_self_optimization_scheduler` (shipped Phase A skeleton). The skeleton delegates into shipped `heal`, `eval`, `hygiene`, and `tct` modules and persists a readback-verified scheduler status file. Phase E replaces the conservative inspection/action stubs with the full per-cell stratified, dissipation-aware autonomous policy loop.
 
 ---
 

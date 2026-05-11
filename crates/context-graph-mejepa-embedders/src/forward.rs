@@ -5,9 +5,9 @@ use crate::error::{EmbedError, EmbedResult};
 use crate::types::{EmbedderInput, EmbedderOutput};
 use async_trait::async_trait;
 use context_graph_core::memory::ast::Language as AstLanguage;
+use context_graph_embeddings::models::pretrained::BgeM3DenseModel;
 use context_graph_embeddings::models::{
-    BgeM3DenseModel, CodeModel, ContextualModel, GraphModel, LateInteractionModel, SemanticModel,
-    SparseModel,
+    CodeModel, ContextualModel, GraphModel, LateInteractionModel, SemanticModel, SparseModel,
 };
 use context_graph_embeddings::traits::{EmbeddingModel, SingleModelConfig};
 use context_graph_embeddings::types::{ModelId, ModelInput};

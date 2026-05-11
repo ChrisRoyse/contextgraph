@@ -2389,6 +2389,7 @@ fn build_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> 
     let provenance = store.get_provenance(&index.corpus_version, &index.embedder_version)?;
     let leakage_failures = split_leakage_failures(index);
     let leakage_passes = leakage_failures.is_empty();
+    let ship_gate_passes = leakage_passes && full_ship_gate_300x8_passes;
     Ok(json!({
         "source_of_truth": {
             "index": output.join("index.json").display().to_string(),
@@ -2419,7 +2420,7 @@ fn build_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> 
             "failures": leakage_failures,
             "passes": leakage_passes,
         },
-        "passes": leakage_passes,
+        "passes": ship_gate_passes,
     }))
 }
 

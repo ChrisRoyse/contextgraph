@@ -26,7 +26,7 @@
 | ID | Title | Phase | Blocked by | Effort |
 |---|---|---|---|---|
 | `TASK-FLYWHEEL-001` | MCP daemon mode + supervised tokio tasks + systemd template + D-drive validator | A | none | 1-2d |
-| `TASK-FLYWHEEL-002` | Self-optimization scheduler skeleton (5 tickers calling shipped APIs) | A | FLYWHEEL-001 | 1d |
+| `TASK-FLYWHEEL-002` | Self-optimization scheduler skeleton (7 tickers calling shipped APIs) | A | FLYWHEEL-001 | complete |
 | `TASK-FLYWHEEL-003` | Test-outcome capture hook (parse pytest/cargo-test/jest) | A | none | 0.5d |
 | `TASK-FLYWHEEL-004` | Asynchronous oracle-binding inside observe() | A | FLYWHEEL-003 | 0.5d |
 | `TASK-FLYWHEEL-005` | `ActiveLearningKind::AgentSurprise` variant + queue extension | A | none | 0.5d |

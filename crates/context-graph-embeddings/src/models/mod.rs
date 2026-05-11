@@ -60,6 +60,8 @@ pub use custom::{
 pub use factory::DefaultModelFactory;
 pub use memory_tracker::MemoryTracker;
 pub use pretrained::{
+    // BgeM3DenseModel (E14) - BAAI/bge-m3 dense head
+    BgeM3DenseModel,
     // CausalModel (E5) - nomic-embed-text-v1.5
     CausalModel,
     // CodeModel (E7) - Qodo-Embed-1-1.5B (Qwen2-based)
@@ -78,6 +80,9 @@ pub use pretrained::{
     SparseModel,
     SparseVector,
     TokenEmbeddings,
+    BGE_M3_DENSE_DIMENSION,
+    BGE_M3_DENSE_LATENCY_BUDGET_MS,
+    BGE_M3_DENSE_MAX_TOKENS,
     CAUSAL_DIMENSION,
     CAUSAL_LATENCY_BUDGET_MS,
     CAUSAL_MAX_TOKENS,

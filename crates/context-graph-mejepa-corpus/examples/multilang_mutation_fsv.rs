@@ -307,7 +307,7 @@ fn fixtures() -> Vec<Fixture> {
         Fixture {
             language: Language::Python,
             extension: "py",
-            source: "def check(alpha, beta):\n    total = alpha + beta + 3\n    assert total >= 0\n    return total == 5 and True\n",
+            source: "def check(alpha, beta):\n    total = alpha + beta + 3\n    expected = 5\n    assert total >= 0\n    return total == expected and True\n",
             alternate: "def alternate(alpha):\n    return alpha == 1 and True\n",
         },
         Fixture {
