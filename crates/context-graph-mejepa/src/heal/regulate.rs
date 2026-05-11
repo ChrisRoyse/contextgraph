@@ -310,7 +310,9 @@ fn detect_dormant_units(
         for (unit_idx, value) in row.iter().enumerate() {
             if !value.is_finite() {
                 return Err(HealError::BatchNan {
-                    component: format!("continual_backprop.activation_window[{row_idx}][{unit_idx}]"),
+                    component: format!(
+                        "continual_backprop.activation_window[{row_idx}][{unit_idx}]"
+                    ),
                     witness_chain_offset: 0,
                 });
             }

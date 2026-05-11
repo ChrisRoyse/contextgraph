@@ -148,16 +148,16 @@ Wired in `crates/context-graph-mcp/src/handlers/tools/mejepa_eval_tools.rs` and 
 - `ship-gate.json` — `{ship_gate_passed, failures, report_hash}`.
 - `patch-similarity-graph.json` — `PatchSimilarityGraph` round-trip from `eval_store.persist_graph` → `eval_store.load_graph`.
 - `regression-evidence.json`, `ood-evidence.json`, `conformal-evidence.json` — slice-level health checks.
-- `q1q2q3-evidence.json` — pass rate, report correlation, side-effect agreement (the "three operator questions").
+- `q1q2q3-evidence.json` — pass rate, report correlation, and live-prediction readback agreement for approved predictions (the "three operator questions").
 - `state-transfer-evidence.json` — UTML state-transfer T diagnostic.
-- `aux-head-distillation.json` — REQ-EVAL-06 trunk distillation summary.
+- `aux-head-distillation.json` — REQ-EVAL-06 trunk distillation summary when real distillation evidence exists; remains `null` instead of fabricating acceptance.
 - `open-research-questions.json` — `seed_open_research_questions` snapshot.
 - `leakage-check-evidence.json` — `assert_no_test_patch_leakage`-style edge-case audit.
 - `bayesian-shrinkage.json`, `provenance.json`, `latency.json`, `mcp-roundtrip.json`, `manifest.json`.
 
 ### 3.5 What ship-gate currently means at the code layer
 
-`ship_gate_failures` (`metrics.rs`) inspects the per-(category, language) Pearson correlation matrix and emits a structured `RegressionCheck` for any cell that fails the EvalConfig threshold. `EvalReport::ship_gate_passed` is the AND across all cells; `EvalReport::ship_gate_failures` is the explanatory list. The remaining shipping work is rolling this against the real 300×8 SWE-bench Lite corpus over enough holdout windows to show a stable ≥0.95 — not building the gate; the gate exists, runs, and persists.
+`ship_gate_failures` (`metrics.rs`) inspects overall correlation, conformal lower-bound health, OOD AUC, Gτ pass rate, Q1 pass rate, Q3 live-prediction readback agreement, and regression checks. Q3 is now derived from `CF_MEJEPA_LIVE_PREDICTIONS` readback for approved predictions; missing side-effect evidence fails the gate instead of returning `Some(1.0)`. Regression requires a previous persisted `EvalReport`; the Phase 8 FSV writes a baseline report and then verifies the current report against it, so `CF_MEJEPA_EVAL_REPORTS` contains two rows. `EvalReport::ship_gate_passed` is the AND across all required checks; `EvalReport::ship_gate_failures` is the explanatory list. The remaining shipping work is rolling this against the real 300×8 SWE-bench Lite corpus over enough holdout windows to show a stable ≥0.95 — not building the gate; the gate exists, runs, and persists.
 
 ---
 

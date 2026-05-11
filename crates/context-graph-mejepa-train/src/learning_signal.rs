@@ -118,7 +118,9 @@ pub enum DeltaPAggregator {
     #[default]
     Mean,
     Max,
-    TopKMean { k: usize },
+    TopKMean {
+        k: usize,
+    },
     EntityWeighted,
 }
 
@@ -339,7 +341,10 @@ impl DeltaKComponents {
 
 impl DeltaOmegaComponents {
     pub fn validate(&self) -> Result<(), UtmlError> {
-        validate_unit("delta_omega.effective_plasticity", self.effective_plasticity)?;
+        validate_unit(
+            "delta_omega.effective_plasticity",
+            self.effective_plasticity,
+        )?;
         validate_unit("delta_omega.landscape_health", self.landscape_health)?;
         validate_stability_floor(self.stability_floor)?;
         validate_unit("delta_omega.agent_state_score", self.agent_state_score)?;

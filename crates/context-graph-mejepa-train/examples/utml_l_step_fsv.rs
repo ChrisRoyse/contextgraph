@@ -2,9 +2,8 @@ use context_graph_mejepa_instruments::{InstrumentSlot, Panel, PanelBuilder};
 use context_graph_mejepa_train::learning_signal::{
     classify_utml_state, compute_embedder_coherence, compute_l_step, compute_state_transfer,
     detect_dormant_units, prune_decision, reinit_dormant_units, update_m_t, ContentEmbedder,
-    DeltaKComponents, DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents,
-    DeltaXiComponents, DivergenceMetric, DormantLayer, DormantUnitDetector, LStepWindow,
-    PairwiseMiAuditor,
+    DeltaKComponents, DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents, DeltaXiComponents,
+    DivergenceMetric, DormantLayer, DormantUnitDetector, LStepWindow, PairwiseMiAuditor,
 };
 use serde::Serialize;
 use serde_json::json;

@@ -192,10 +192,9 @@ mod tests {
         let csv_path = output["csvPath"].as_str().unwrap();
         let text = fs::read_to_string(csv_path).unwrap();
         assert!(text.starts_with("slot,e_ast,e_diff,e_test"));
-        let readback = context_graph_mejepa_train::learning_signal::load_pairwise_mi_matrix_csv(
-            csv_path,
-        )
-        .unwrap();
+        let readback =
+            context_graph_mejepa_train::learning_signal::load_pairwise_mi_matrix_csv(csv_path)
+                .unwrap();
         assert_eq!(readback.slots.len(), 3);
         assert_eq!(readback.values.len(), 3);
     }
