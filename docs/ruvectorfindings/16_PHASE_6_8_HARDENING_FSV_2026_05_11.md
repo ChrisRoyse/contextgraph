@@ -2,7 +2,7 @@
 
 > **Status:** This is the current authoritative current-state ledger. It supersedes the "Phase 6, 7, 8 still pending" framing in docs 09 §0, 10 (build-plan delta table), 11 §13 (UTML roadmap), 12 §11 (embedder roadmap), 14 §0 (chunking status), and 15 ("Still to do" list). Doc 15 remains the authoritative FSV-evidence ledger for Phases 1-5; this doc is its extension into Phases 6-8 and the rest of the UTML carrier set. Any earlier doc that says "Phase 6 / Phase 7 / Phase 8 / pairwise MI / continual-backprop / state-transfer T is pending" is stale relative to this doc.
 >
-> **Source-of-truth code anchors:** `crates/context-graph-mejepa-hygiene/`, `crates/context-graph-mejepa-shift-subscriber/`, `crates/context-graph-mejepa/src/eval/`, `crates/context-graph-mejepa-train/src/learning_signal/`, `crates/context-graph-mejepa-cf/`, `crates/context-graph-mcp/src/handlers/tools/{mejepa_hygiene_tools,mejepa_phase7_tools,mejepa_phase7_storage,mejepa_eval_tools,mejepa_tools}.rs`, `crates/context-graph-mcp/src/tools/names.rs`.
+> **Source-of-truth code anchors:** `crates/context-graph-mejepa-hygiene/`, `crates/context-graph-mejepa-shift-subscriber/`, `crates/context-graph-mejepa/src/eval/`, `crates/context-graph-mejepa/src/heal/regulate.rs`, `crates/context-graph-mejepa-train/src/{cert,trainer,learning_signal}/`, `crates/context-graph-mejepa-tct/src/{builder,gtau}.rs`, `crates/context-graph-mejepa-cf/`, `crates/context-graph-mcp/src/handlers/tools/{mejepa_hygiene_tools,mejepa_phase7_tools,mejepa_phase7_storage,mejepa_eval_tools,mejepa_utml_tools,mejepa_tools}.rs`, `crates/context-graph-mcp/src/tools/names.rs`.
 
 ---
 
@@ -16,7 +16,7 @@ Doc 15 (2026-05-10) reported Phases 1-5 hardened with FSV. Since then, Phases 6,
 - **UTML carriers** — `learning_signal/{pairwise_mi_matrix,continual_backprop,state_transfer,consolidation,classifier,embedder_coherence}.rs` ship the previously-pending REQ-UTML-06/07/08 items: `PairwiseMiAuditor` + CSV writer, `DormantUnitDetector` + `reinit_dormant_units`, `compute_state_transfer` + `performance_deploy`, `ConsolidationMt`, UTML state classifier + prune decision, embedder-coherence Jaccard.
 - **Shared CF crate** — new dependency-free `context-graph-mejepa-cf` with 32 canonical CF name constants + grouping consts (`SELF_HEALING_CFS`, `SELF_HEALING_REFERENCED_CFS`, `INFER_CFS`, `EVAL_CFS`, `HYGIENE_CFS`) so runtime / hygiene / MCP / training crates share names without cycles.
 
-The active forward edge is now **operational/integration work, not greenfield code**: full 300×8 SWE-bench Lite corpus run, neural per-embedder forward wrappers (E1/E7/E8/E10/E12/E13/E14), analyzer/embedder-backed semantic instrument heads, chunk-level TCT + per-chunk `GuardRejected` localization, legacy `AstCodeChunker` convergence/deprecation, and live calibration + production rolling-window evidence against the ≥0.95 ship gate.
+The active forward edge is now **operational/integration work, not greenfield code**: full 300×8 SWE-bench Lite corpus run, neural per-embedder forward wrappers (E1/E7/E8/E10/E12/E13/E14), analyzer/embedder-backed semantic instrument heads, legacy `AstCodeChunker` convergence/deprecation, per-language mutation operators beyond Python, and live calibration + production rolling-window evidence against the ≥0.95 ship gate.
 
 ---
 
@@ -182,10 +182,7 @@ Wired in `crates/context-graph-mcp/src/handlers/tools/mejepa_eval_tools.rs` and 
 
 ### 4.3 What's still operational, not greenfield
 
-REQ-UTML-09 (synthetic FSV envelope spanning ΔP/ΔK/ΔΩ/ΔΞ corner cases) is covered by `train_edge_cases_fsv` and refreshed by `utml_l_step_fsv`. The operational work that remains is:
-
-- **Wire the pairwise MI matrix into per-step train certs as a column** so doc 12 §11 item 17 (cross-embedder coherence into ΔK) is observable from the cert chain.
-- **Trigger continual-backprop dormant-unit re-init from the live ΔΩ.effective_plasticity signal** in `heal/regulate.rs` — the detector + re-init exist; the policy hook in self-healing remains.
+REQ-UTML-09 (synthetic FSV envelope spanning ΔP/ΔK/ΔΩ/ΔΞ corner cases) is covered by `train_edge_cases_fsv` and refreshed by `utml_l_step_fsv`. The pairwise-MI train-cert column is now explicit (`TrainingCertificate::{predictor_redundancy_pairwise_mi,predictor_redundancy_pairwise_mi_source}`), validated against the nested ΔΞ component, and computed from selected batch tensors in `Trainer::train_one_epoch`. The continual-backprop detector is wired into `heal/regulate.rs`; low ΔΩ.effective_plasticity reinitializes dormant embedder units, persists the changed handle to `CF_MEJEPA_WEIGHT_BLOBS`, and performs byte readback. The remaining work here is production-scale trend monitoring over the full corpus, not code plumbing.
 
 ### 4.4 MCP surface
 
@@ -234,9 +231,10 @@ mcp__cgreality__mejepa_eval_run                  # Phase 8 holdout-eval driver
 mcp__cgreality__mejepa_ship_gate_status          # Phase 8 ship-gate inspection
 mcp__cgreality__mejepa_active_learning_queue     # Phase 8 active-learning queue
 mcp__cgreality__mejepa_eval_build_graph          # Phase 8 patch-similarity graph build
+mcp__cgreality__mejepa_audit_pairwise_mi         # UTML pairwise-MI CSV audit + readback
 ```
 
-Combined with the doc-15 set (`mejepa_verify`, `mejepa_predict_latest`, `mejepa_constellation_inspect`, `mejepa_heal_status`, `mejepa_rollback_to`, `mejepa_load_learner_state`, `mejepa_routing_lookup`, `mejepa_vram_budget_report`), the live ME-JEPA MCP surface is **18 tools**.
+Combined with the doc-15 set (`mejepa_verify`, `mejepa_predict_latest`, `mejepa_constellation_inspect`, `mejepa_heal_status`, `mejepa_rollback_to`, `mejepa_load_learner_state`, `mejepa_routing_lookup`, `mejepa_vram_budget_report`), the live ME-JEPA MCP surface is **19 tools**.
 
 ---
 
@@ -250,10 +248,10 @@ Combined with the doc-15 set (`mejepa_verify`, `mejepa_predict_latest`, `mejepa_
 | 1c — Instruments | ✅ all 15 panel slots + Panel/PanelBuilder/PanelStore + linear-probe quality gate; E_Oracle / E_Witness / E_StaticAnalysis first-class | ✅ `instruments_fsv`, `phase1_extended_fsv`, `ast_embedder_smoke_fsv` | replace deterministic encoders with embedder/analyzer-backed heads for E_AST, E_CFG, E_DataFlow, E_TypeGraph, E_Diff, E_Test, E_Trace, E_Runtime, E_Reasoning |
 | 2 — Predictor | ✅ `MeJepaPredictor`, `VICRegLoss`, `OracleHead`, `FrozenTargetAdapter`, `PanelSource` | ✅ `predictor_fsv` | live latency / VRAM percentile capture under production load |
 | 3 — Training + UTML | ✅ Trainer + AdamW + cosine LR + BatchSampler + 100k-step cert chain + holdout eval + LoRA wiring + distillation; ΔP/ΔK/ΔΩ/ΔΞ formulas hardened and `compute_delta_xi` fail-closed | ✅ 5 training FSVs incl. `train_full_fsv` byte-readback + refreshed `utml_l_step_fsv` | production-scale cert-chain monitoring |
-| 3+ UTML — pairwise MI / continual BP / state transfer | ✅ shipped (§4 above), including `mcp__cgreality__mejepa_audit_pairwise_mi` | ✅ `utml_l_step_fsv`, `train_edge_cases_fsv` | wire pairwise MI into per-step cert columns; trigger continual-BP re-init from `heal/regulate.rs` |
+| 3+ UTML — pairwise MI / continual BP / state transfer | ✅ shipped (§4 above), including `mcp__cgreality__mejepa_audit_pairwise_mi`, train-cert pairwise-MI columns, and live continual-BP regulation hook | ✅ `utml_l_step_fsv`, `train_edge_cases_fsv`, `train_smoke_fsv`, `train_cert_chain_fsv`, `continual_backprop_regulation_fsv` | production-scale trend monitoring over full corpus |
 | 4a — Inference | ✅ `MeJepaCompiler::{compile, verify, observe}` + conformal + OOD + `Verdict` | ✅ `inference_fsv` | live conformal coverage + OOD AUC measurement |
-| 4b — TCT | ✅ panel-level `TctConstellation` + `Gτ` + `GuardRejected` + Bayesian shrinkage + freshness + threshold calibrator | ✅ `tct_fsv` | per-AST-chunk centroids + chunk-level Gτ + chunk-level `GuardRejected` localization |
-| 5 — Self-healing | ✅ 16-module `heal/` tree + `mejepa-heal-drill` binary + 6 RocksDB CFs + 3 MCP tools | ✅ hard/soft/catastrophic drift drills, mode-C promotion only on holdout win | wire continual-backprop intervention from §4 above into `heal/regulate.rs` |
+| 4b — TCT | ✅ panel-level `TctConstellation` + `Gτ` + `GuardRejected` + Bayesian shrinkage + freshness + threshold calibrator + per-chunk `gtau_check_chunks` localization | ✅ `tct_fsv`, `cargo test -p context-graph-mejepa-tct chunk_gtau --lib` | production-scale centroid refresh and operator UX surfacing |
+| 5 — Self-healing | ✅ 16-module `heal/` tree + `mejepa-heal-drill` binary + 6 RocksDB CFs + 3 MCP tools + continual-backprop dormant-unit intervention | ✅ hard/soft/catastrophic drift drills, mode-C promotion only on holdout win, `continual_backprop_regulation_fsv` | supervised production scheduling and rolling health evidence |
 | 6 — Hygiene | ✅ `context-graph-mejepa-hygiene` crate, tier transitions, quota + emergency eviction, witness Merkle compression, nightly GC, JSON codec, MCP path discipline | ✅ `gc_stress_fsv`, `merkle_compression_fsv`, `quota_overflow_fsv` | live nightly GC scheduler under cron + 115 GB hard quota in production |
 | 7 — Shift subscriber | ✅ `context-graph-mejepa-shift-subscriber` crate, restart-safe Tokio tailer, watermark CF, lag alert, panic supervision, latency telemetry, end-to-end shift→observe→prediction wiring | ✅ `shift_subscriber_fsv` + 2 in-crate `tokio::test` round-trips | record real-world p50/p99 distribution under production traffic against REQ-SHIFT-03 envelope |
 | 8 — Evaluation | ✅ `eval/` module + `EvalRunner` + ship-gate + active-learning + patch-similarity graph + weekly report writer + 4 MCP tools | ✅ `phase8_eval_fsv` (17 evidence files) | run rolling-window holdout against full 300×8 corpus with per-language stratification; ship gate ≥0.95 across all (category, language) cells |
@@ -263,13 +261,12 @@ Combined with the doc-15 set (`mejepa_verify`, `mejepa_predict_latest`, `mejepa_
 ## 8. Critical blindspots (current — replaces doc 15 §"Critical blindspots" where overlapping)
 
 1. **Neural embedder forward execution still pending.** Phase 1b proves real artifact existence, digest integrity, VRAM budget, active/retired policy, learner-state calibration, and routing coverage; it does **not** prove that any of E1/E7/E8/E10/E12/E13/E14 actually runs a forward pass and produces a finite, expected-dimension vector. The `EmbedderForward` / `Instrument` wrappers are the largest deep-integration item between "control surface FSV" and "production-ready embedding pipeline."
-2. **Panel-level vs chunk-level TCT.** `Verdict::GuardRejected` exists at the panel level. Per-AST-chunk centroid construction over the now-shipped `memory::ast` chunk IDs and chunk-level guard diagnostics are still required to surface function/class-specific failures with named geometric reasons (per doc 13 §3.3).
+2. **Chunk-level TCT is code-shipped but still needs production-scale evidence.** `gtau_check_chunks` localizes failing chunks and prefers per-chunk-type thresholds when present; the remaining risk is corpus-scale centroid refresh coverage and operator UX surfacing, not the core guard implementation.
 3. **Synthetic FSV vs SWE-bench gate.** Every Phase 1-8 FSV today uses deterministic synthetic fixtures to prove mechanics. The full 300×8 SWE-bench Lite corpus + rolling-window holdout evaluation against the ≥0.95 ship gate is the evidence required for the "review replacement" claim. The harness, ship gate, active-learning queue, and weekly report all exist; the missing piece is the production data.
 4. **Operational scheduling.** Nightly GC, `mejepa-shift-subscriber` Tokio task, and `EvalRunner::run_holdout_eval` all run; they are not yet on a cron / systemd-timer / supervised long-running process. This is operational shipping, not code shipping, but it's load-bearing for the autonomous ME-JEPA narrative.
-5. **`mejepa_audit_pairwise_mi` MCP tool gap.** The audit code exists in `learning_signal/pairwise_mi_matrix.rs` and round-trips CSV; the MCP wrapper that surfaces it for operator review (doc 12 item 20) is the obvious follow-up.
-6. **Legacy `AstCodeChunker` not yet deprecated.** The Rust-only legacy API in `crates/context-graph-core/src/memory/ast_chunker.rs` still exists for compatibility; new work targets `context_graph_core::memory::ast::{chunk, chunk_path, chunk_with_options}`. Either converge the old API or mark it `#[deprecated]` with a migration shim.
-7. **Per-language mutation operators.** Phase 0's 8 mutation operators are Python-only. Doc 14's chunking now spans 11 languages; the corpus generator should follow. Until it does, ME-JEPA's training corpus is single-language and the cross-language ship-gate is structurally untestable.
-8. **WSL GPU telemetry constraint (carried from doc 15).** `nvidia-smi` exposes a limited feature set under WSL 2; VRAM gates must continue to use the code's CUDA/allocator readbacks and fail closed when telemetry is absent.
+5. **Legacy `AstCodeChunker` not yet deprecated.** The Rust-only legacy API in `crates/context-graph-core/src/memory/ast_chunker.rs` still exists for compatibility; new work targets `context_graph_core::memory::ast::{chunk, chunk_path, chunk_with_options}`. Either converge the old API or mark it `#[deprecated]` with a migration shim.
+6. **Per-language mutation operators.** Phase 0's 8 mutation operators are Python-only. Doc 14's chunking now spans 11 languages; the corpus generator should follow. Until it does, ME-JEPA's training corpus is single-language and the cross-language ship-gate is structurally untestable.
+7. **WSL GPU telemetry constraint (carried from doc 15).** `nvidia-smi` exposes a limited feature set under WSL 2; VRAM gates must continue to use the code's CUDA/allocator readbacks and fail closed when telemetry is absent.
 
 ---
 
