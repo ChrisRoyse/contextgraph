@@ -99,6 +99,14 @@ pub fn shift_to_inference(
     Ok((patch, context, post_sha, attempt_id))
 }
 
+pub(crate) fn is_inference_candidate(entry: &ShiftEntry) -> Result<bool> {
+    let transition = load_harness_transition(entry)?;
+    let Ok(path) = replay_path(entry, transition.as_ref()) else {
+        return Ok(false);
+    };
+    Ok(language_from_extension(&path).is_some())
+}
+
 pub(crate) fn utml_bundle(value: &Value) -> Result<Option<UtmlFactorBundle>> {
     let Some(l_step) = value.get("l_step") else {
         return Ok(None);

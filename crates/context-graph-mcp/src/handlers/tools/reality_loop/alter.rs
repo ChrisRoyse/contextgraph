@@ -4,6 +4,7 @@ use super::lock::EditLock;
 use super::optimizer;
 use super::path_policy;
 use super::shift_log::{append_shift, ShiftRecord};
+use super::witness_chain::{append_witness_entry_for_run, WitnessOpType};
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use serde_json::{json, Value};
@@ -116,7 +117,39 @@ pub async fn harness_apply_line_window_edit(args: Value) -> Result<Value> {
 
     let before_path = root.join(&path);
     let before_sha = sha256_file(&before_path)?;
+    let before_bytes = fs::read(&before_path)
+        .map_err(|e| fs_error("CCREALITY_HARNESS_BEFORE_READ_FAILED", &before_path, e))?;
+    std::str::from_utf8(&before_bytes).map_err(|e| {
+        CCRealityError::new(
+            "CCREALITY_HARNESS_BEFORE_NON_UTF8",
+            format!("pre-edit file content is not valid UTF-8: {e}"),
+            "harness_apply_line_window_edit.before",
+            "only use the line-window edit harness on UTF-8 source files",
+            json!({"path": path}),
+            Some(file_sot(&before_path)),
+        )
+    })?;
     let tool_dir = attempt_dir.join("claude-code-optimizer/edits");
+    fs::create_dir_all(&tool_dir)
+        .map_err(|e| fs_error("CCREALITY_HARNESS_EDIT_DIR_CREATE_FAILED", &tool_dir, e))?;
+    let before_text_sot_path =
+        tool_dir.join(format!("before-{}.txt", uuid::Uuid::new_v4().as_simple()));
+    fs::write(&before_text_sot_path, &before_bytes).map_err(|e| {
+        fs_error(
+            "CCREALITY_HARNESS_BEFORE_TEXT_SOT_WRITE_FAILED",
+            &before_text_sot_path,
+            e,
+        )
+    })?;
+    fs::File::open(&before_text_sot_path)
+        .and_then(|file| file.sync_all())
+        .map_err(|e| {
+            fs_error(
+                "CCREALITY_HARNESS_BEFORE_TEXT_SOT_SYNC_FAILED",
+                &before_text_sot_path,
+                e,
+            )
+        })?;
     let edit = json!({
         "path": path,
         "start_line": start,
@@ -154,20 +187,46 @@ pub async fn harness_apply_line_window_edit(args: Value) -> Result<Value> {
         "lines_added": lines_added,
         "lines_removed": lines_removed,
         "git_diff_stat": diff_path,
+        "before_text_source_of_truth": file_sot(&before_text_sot_path),
+        "after_source_path": file_sot(&before_path),
         "outcome": "edited",
         "governed_edit_result": result
     });
     let transition_path = optimizer::write_harness_transition(&attempt_dir, &transition_payload)?;
+    let transition_sha = sha256_file(&transition_path)?;
+    let witness_append = append_witness_entry_for_run(
+        &runtime_root,
+        &run_id,
+        WitnessOpType::HarnessTransition,
+        &transition_sha,
+    )?;
 
     let mut shift = ShiftRecord::new(
         "harness_apply_line_window_edit",
         &session,
-        json!({"type": "file", "path": path}),
+        json!({
+            "type": "file_edit",
+            "task_id": format!("{run_id}:{attempt}:line-window-edit"),
+            "path": path,
+            "harness_transition": file_sot(&transition_path),
+            "tests": ["phase7_harness_line_window_replay"],
+            "problem_statement": format!("Replay direct line-window edit for {path}"),
+            "os": std::env::consts::OS
+        }),
     )?;
     shift.tool_use_id = tool_use_id.clone();
-    shift.before = json!({"sha256": before_sha});
+    shift.before = json!({
+        "sha256": before_sha,
+        "text_source_of_truth": file_sot(&before_text_sot_path)
+    });
     shift.after = json!({"sha256": after_sha, "source_of_truth": file_sot(&before_path)});
-    shift.delta_summary = json!({"lines_added": lines_added, "lines_removed": lines_removed, "git_diff_path": diff_path});
+    shift.delta_summary = json!({
+        "artifact": file_sot(&transition_path),
+        "lines_added": lines_added,
+        "lines_removed": lines_removed,
+        "git_diff_path": diff_path
+    });
+    shift.verification = optimizer::witness_segment_from_append(&witness_append)?;
     shift.harness_transition_path = Some(file_sot(&transition_path));
     append_shift(&runtime_root, &session, &shift)?;
 
@@ -182,6 +241,7 @@ pub async fn harness_apply_line_window_edit(args: Value) -> Result<Value> {
         "lines_removed": lines_removed,
         "git_diff_path": diff_path,
         "harness_transition_path": file_sot(&transition_path),
+        "witness_append": witness_append,
         "shift_id": shift.shift_id,
         "source_of_truth": file_sot(&transition_path)
     }))

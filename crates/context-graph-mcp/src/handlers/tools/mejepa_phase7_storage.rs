@@ -741,6 +741,9 @@ fn validate_session_hex32(value: &str) -> Result<(), String> {
             "session_id must be exactly 32 hexadecimal characters, got {value:?}"
         ));
     }
+    if value.bytes().all(|byte| byte == b'0') {
+        return Err("session_id must be non-zero".to_string());
+    }
     Ok(())
 }
 

@@ -23,7 +23,7 @@ use crate::models::{
     WatermarkRecord,
 };
 use crate::shift_transform::{
-    required_f32_array, shift_to_inference, timestamp_ns_to_ms, utml_bundle,
+    is_inference_candidate, required_f32_array, shift_to_inference, timestamp_ns_to_ms, utml_bundle,
 };
 use crate::{Result, SubscriberError, WatermarkWriter};
 
@@ -150,6 +150,9 @@ impl ShiftSubscriber {
                 });
             }
         }
+        if !is_inference_candidate(entry)? {
+            return self.skip_non_inference_shift(entry, replay, started);
+        }
         let (patch, context, source_sha, attempt_id) =
             shift_to_inference(entry, self.config.repo_root.clone())?;
         let compiler = self.compiler()?;
@@ -202,6 +205,44 @@ impl ShiftSubscriber {
             watermark_key,
             watermark_offset: record.last_consumed_byte_offset,
             latency_ms,
+        })
+    }
+
+    fn skip_non_inference_shift(
+        &self,
+        entry: &ShiftEntry,
+        replay: bool,
+        started: Instant,
+    ) -> Result<ShiftOutcome> {
+        let record = WatermarkRecord {
+            session_id: encode_session_hex(entry.session_id),
+            last_consumed_shift_id: entry.shift_id.0.clone(),
+            last_consumed_byte_offset: entry.next_byte_offset,
+            last_advanced_at_unix_seconds: chrono_like_now_seconds(),
+            producer_tool_name: Some(if replay {
+                "mcp__cgreality__mejepa_observe_shift".to_string()
+            } else {
+                entry.tool_name.clone()
+            }),
+            source_log_path: Some(entry.source_log_path.display().to_string()),
+        };
+        let watermark_key = self.watermark_writer.write_watermark(&record)?;
+        self.metrics.mark_processed();
+        let latency_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
+        self.metrics.record_latency_ms(latency_ms);
+        info!(
+            error_code = "MEJEPA_SHIFT_SUBSCRIBER_NON_INFERENCE_SHIFT_SKIPPED",
+            shift_id = %entry.shift_id.0,
+            session_id = %record.session_id,
+            tool_name = %entry.tool_name,
+            watermark_offset = record.last_consumed_byte_offset,
+            latency_ms,
+            "advanced watermark for non-code reality shift without compiling ME-JEPA inference"
+        );
+        Ok(ShiftOutcome::Skipped {
+            reason: SkipReason::NoOracleSignal,
+            watermark_key: Some(watermark_key),
+            watermark_offset: Some(record.last_consumed_byte_offset),
         })
     }
 

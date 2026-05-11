@@ -104,18 +104,24 @@ cgreality_log_event() {
 }
 
 cgreality_context_graph_cli_bin() {
-  # Prefer release (smaller, faster, what production uses); fall back to debug for
-  # local-dev cycles. Operator override via CGREALITY_CONTEXT_GRAPH_CLI still wins.
-  # Switched from debug-default to release-default 2026-05-06: the debug build
-  # accumulates 100+ GB of incremental cache + multi-hash deps that operators
-  # have to keep cargo-cleaning. Release-default lets us delete target/debug
-  # safely without breaking hooks.
+  # Operator override via CGREALITY_CONTEXT_GRAPH_CLI wins. Without an override,
+  # use the newest executable local build so hook/CLI schema changes cannot be
+  # masked by an older release binary while still allowing target/debug to be
+  # deleted in production.
   local bin="${CGREALITY_CONTEXT_GRAPH_CLI:-}"
   if [ -z "${bin}" ]; then
-    if [ -x "${CONTEXTGRAPH_ROOT_RESOLVED}/target/release/context-graph-cli" ]; then
-      bin="${CONTEXTGRAPH_ROOT_RESOLVED}/target/release/context-graph-cli"
+    local release_bin="${CONTEXTGRAPH_ROOT_RESOLVED}/target/release/context-graph-cli"
+    local debug_bin="${CONTEXTGRAPH_ROOT_RESOLVED}/target/debug/context-graph-cli"
+    if [ -x "${release_bin}" ] && [ -x "${debug_bin}" ]; then
+      if [ "${debug_bin}" -nt "${release_bin}" ]; then
+        bin="${debug_bin}"
+      else
+        bin="${release_bin}"
+      fi
+    elif [ -x "${release_bin}" ]; then
+      bin="${release_bin}"
     else
-      bin="${CONTEXTGRAPH_ROOT_RESOLVED}/target/debug/context-graph-cli"
+      bin="${debug_bin}"
     fi
   fi
   if [ ! -x "${bin}" ]; then

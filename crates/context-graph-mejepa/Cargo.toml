@@ -50,3 +50,7 @@ path = "examples/inference_fsv.rs"
 [[example]]
 name = "phase5_self_healing_fsv"
 path = "examples/phase5_self_healing_fsv.rs"
+
+[[example]]
+name = "phase8_eval_fsv"
+path = "examples/phase8_eval_fsv.rs"

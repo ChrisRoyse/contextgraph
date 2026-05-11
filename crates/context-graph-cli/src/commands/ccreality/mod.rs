@@ -562,14 +562,16 @@ fn project_root() -> CCResult<PathBuf> {
 /// Resolve the MCP binary the CLI shells out to.
 ///
 /// Priority order: operator override first, otherwise the command in
-/// `.mcp.json` (which Claude Code itself spawns).
+/// `.mcp.json` (which Claude Code itself spawns). HTTP-style `.mcp.json`
+/// configs do not expose a local command for this subprocess path, so they use
+/// the newest local context-graph-mcp binary and report both profile paths if
+/// neither exists.
 ///
 /// The previous default (`target/debug/context-graph-mcp` regardless
 /// of staleness) caused recurring `CCREALITY_WITNESS_OP_TYPE_UNKNOWN`
 /// hook errors when the debug binary was older than the release MCP
-/// that wrote new op_types into the witness chain. There is intentionally
-/// no inferred debug/release fallback: local-dev callers must set
-/// `CGREALITY_MCP_BIN` explicitly or update `.mcp.json`.
+/// that wrote new op_types into the witness chain. Explicit command configs
+/// still fail closed when that exact binary is missing.
 fn mcp_binary(root: &Path) -> CCResult<PathBuf> {
     if let Some(override_path) = env::var_os("CGREALITY_MCP_BIN") {
         let path = normalize_program_path(root, PathBuf::from(override_path));
@@ -597,26 +599,40 @@ fn mcp_binary(root: &Path) -> CCResult<PathBuf> {
             Some(file_sot(&config_path)),
         )
     })?;
-    let command = config
+    if let Some(command) = config
         .pointer("/mcpServers/cgreality/command")
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            ccreality_error(
-                "CCREALITY_CLI_MCP_CONFIG_COMMAND_MISSING",
-                ".mcp.json does not define mcpServers.cgreality.command",
-                "mcpServers.cgreality.command",
-                "set the cgreality MCP command in .mcp.json or set CGREALITY_MCP_BIN explicitly",
-                json!({"path": config_path.display().to_string()}),
-                Some(file_sot(&config_path)),
-            )
-        })?;
-    let path = normalize_program_path(root, PathBuf::from(command));
-    validate_mcp_binary(
-        &path,
-        "mcpServers.cgreality.command",
+    {
+        let path = normalize_program_path(root, PathBuf::from(command));
+        return validate_mcp_binary(
+            &path,
+            "mcpServers.cgreality.command",
+            Some(file_sot(&config_path)),
+        );
+    }
+
+    if config
+        .pointer("/mcpServers/cgreality/url")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .is_some()
+    {
+        return newest_local_mcp_binary(
+            root,
+            "mcpServers.cgreality.url",
+            Some(file_sot(&config_path)),
+        );
+    }
+
+    Err(ccreality_error(
+        "CCREALITY_CLI_MCP_CONFIG_COMMAND_MISSING",
+        ".mcp.json does not define mcpServers.cgreality.command or mcpServers.cgreality.url",
+        "mcpServers.cgreality",
+        "set CGREALITY_MCP_BIN explicitly, add a command to .mcp.json, or build a local MCP binary for the HTTP-style config",
+        json!({"path": config_path.display().to_string()}),
         Some(file_sot(&config_path)),
-    )
+    ))
 }
 
 fn normalize_program_path(root: &Path, path: PathBuf) -> PathBuf {
@@ -624,6 +640,49 @@ fn normalize_program_path(root: &Path, path: PathBuf) -> PathBuf {
         path
     } else {
         root.join(path)
+    }
+}
+
+fn newest_local_mcp_binary(
+    root: &Path,
+    field_path: &'static str,
+    source_of_truth: Option<String>,
+) -> CCResult<PathBuf> {
+    let release = root.join("target/release/context-graph-mcp");
+    let debug = root.join("target/debug/context-graph-mcp");
+    match (is_executable_file(&release), is_executable_file(&debug)) {
+        (true, true) => {
+            let release_modified = fs::metadata(&release).and_then(|meta| meta.modified()).ok();
+            let debug_modified = fs::metadata(&debug).and_then(|meta| meta.modified()).ok();
+            if debug_modified > release_modified {
+                Ok(debug)
+            } else {
+                Ok(release)
+            }
+        }
+        (true, false) => Ok(release),
+        (false, true) => Ok(debug),
+        (false, false) => Err(ccreality_error(
+            "CCREALITY_CLI_MCP_BINARY_MISSING",
+            "no local context-graph-mcp binary is executable for the HTTP-style .mcp.json config",
+            field_path,
+            "build target/release/context-graph-mcp or target/debug/context-graph-mcp, or set CGREALITY_MCP_BIN explicitly",
+            json!({
+                "release": {
+                    "path": release.display().to_string(),
+                    "exists": release.exists(),
+                    "is_file": release.is_file(),
+                    "is_executable": is_executable_file(&release)
+                },
+                "debug": {
+                    "path": debug.display().to_string(),
+                    "exists": debug.exists(),
+                    "is_file": debug.is_file(),
+                    "is_executable": is_executable_file(&debug)
+                }
+            }),
+            source_of_truth,
+        )),
     }
 }
 
@@ -794,6 +853,23 @@ mod tests {
         .expect("write .mcp.json");
     }
 
+    fn write_mcp_http_config(root: &Path) {
+        fs::create_dir_all(root).expect("create root");
+        fs::write(
+            root.join(".mcp.json"),
+            serde_json::json!({
+                "mcpServers": {
+                    "cgreality": {
+                        "type": "http",
+                        "url": "http://127.0.0.1:3101/mcp"
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .expect("write .mcp.json");
+    }
+
     struct EnvGuard {
         key: &'static str,
         old: Option<String>,
@@ -887,6 +963,42 @@ mod tests {
         );
         assert_eq!(err["details"]["exists"], false);
         assert_eq!(err["details"]["is_executable"], false);
+        assert_eq!(err["source_of_truth"], file_sot(&root.join(".mcp.json")));
+
+        fs::remove_dir_all(root).expect("cleanup temp root");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn mcp_binary_http_config_uses_newest_local_binary() {
+        let _env = EnvGuard::unset("CGREALITY_MCP_BIN");
+        let root = temp_root("mcp-http-local-newest");
+        let release = root.join("target/release/context-graph-mcp");
+        let debug = root.join("target/debug/context-graph-mcp");
+        write_executable(&release);
+        thread::sleep(Duration::from_millis(1100));
+        write_executable(&debug);
+        write_mcp_http_config(&root);
+
+        let selected = mcp_binary(&root).expect("newest local MCP binary selected");
+        assert_eq!(selected, debug);
+
+        fs::remove_dir_all(root).expect("cleanup temp root");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn mcp_binary_http_config_fails_when_no_local_binary_exists() {
+        let _env = EnvGuard::unset("CGREALITY_MCP_BIN");
+        let root = temp_root("mcp-http-no-local-binary");
+        write_mcp_http_config(&root);
+
+        let err = mcp_binary(&root).expect_err("missing local MCP binary must reject");
+        assert_eq!(err["error_code"], "CCREALITY_CLI_MCP_BINARY_MISSING");
+        assert_eq!(
+            err["field_path"],
+            serde_json::json!("mcpServers.cgreality.url")
+        );
         assert_eq!(err["source_of_truth"], file_sot(&root.join(".mcp.json")));
 
         fs::remove_dir_all(root).expect("cleanup temp root");

@@ -118,6 +118,14 @@ pub const MEJEPA_GC_RUN: &str = "mcp__cgreality__mejepa_gc_run";
 pub const MEJEPA_QUOTA_STATUS: &str = "mcp__cgreality__mejepa_quota_status";
 /// Phase 6 old witness-chain Merkle compression.
 pub const MEJEPA_WITNESS_COMPRESS: &str = "mcp__cgreality__mejepa_witness_compress";
+/// Phase 8 public holdout evaluation runner.
+pub const MEJEPA_EVAL_RUN: &str = "mcp__cgreality__mejepa_eval_run";
+/// Phase 8 latest ship-gate status readback.
+pub const MEJEPA_SHIP_GATE_STATUS: &str = "mcp__cgreality__mejepa_ship_gate_status";
+/// Phase 8 active-learning queue status readback.
+pub const MEJEPA_ACTIVE_LEARNING_QUEUE: &str = "mcp__cgreality__mejepa_active_learning_queue";
+/// Phase 8 patch similarity graph builder/readback.
+pub const MEJEPA_EVAL_BUILD_GRAPH: &str = "mcp__cgreality__mejepa_eval_build_graph";
 // ========== TEMPORAL TOOLS (E2/E3 Integration) ==========
 // Temporal search with E2/E3 boost applied POST-retrieval per ARCH-25.
 pub const SEARCH_RECENT: &str = "search_recent";

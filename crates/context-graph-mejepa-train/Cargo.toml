@@ -55,3 +55,7 @@ path = "examples/train_full_fsv.rs"
 [[example]]
 name = "train_edge_cases_fsv"
 path = "examples/train_edge_cases_fsv.rs"
+
+[[example]]
+name = "utml_l_step_fsv"
+path = "examples/utml_l_step_fsv.rs"

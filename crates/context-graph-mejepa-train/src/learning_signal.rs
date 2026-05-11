@@ -4,12 +4,43 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::fmt;
 
+pub mod classifier;
+pub mod consolidation;
+pub mod continual_backprop;
+pub mod embedder_coherence;
+pub mod pairwise_mi_matrix;
+pub mod state_transfer;
+
+pub use classifier::{
+    classify_utml_state, prune_decision, ClassifierVerdict, Intervention, LStepWindow,
+    PruneDecision, UtmlState,
+};
+pub use consolidation::{detect_dissipating, update_m_t, ConsolidationEvidence, ConsolidationMt};
+pub use continual_backprop::{
+    detect_dormant_units, reinit_dormant_units, DormantLayer, DormantUnitDetector,
+    DormantUnitReport,
+};
+pub use embedder_coherence::{
+    compute_embedder_coherence, ContentEmbedder, EmbedderCoherenceReport,
+};
+pub use pairwise_mi_matrix::{
+    load_pairwise_mi_matrix_csv, PairwiseMiAuditor, PairwiseMiMatrix, PairwiseMiSummary,
+};
+pub use state_transfer::{
+    compute_state_transfer, performance_deploy, DivergenceMetric, StateTransferDiagnostic,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UtmlErrorCode {
     InvalidSignal,
     MejepaInstrumentGradientLeak,
     NonFinite,
     OutOfRange,
+    AmbiguousClassifierState,
+    EmptyInput,
+    Io,
+    MissingSourceOfTruth,
+    ReadbackMismatch,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,6 +63,11 @@ impl UtmlError {
             UtmlErrorCode::MejepaInstrumentGradientLeak => "MEJEPA_INSTRUMENT_GRADIENT_LEAK",
             UtmlErrorCode::NonFinite => "UTML_NON_FINITE",
             UtmlErrorCode::OutOfRange => "UTML_OUT_OF_RANGE",
+            UtmlErrorCode::AmbiguousClassifierState => "UTML_AMBIGUOUS_CLASSIFIER_STATE",
+            UtmlErrorCode::EmptyInput => "UTML_EMPTY_INPUT",
+            UtmlErrorCode::Io => "UTML_IO",
+            UtmlErrorCode::MissingSourceOfTruth => "UTML_MISSING_SOURCE_OF_TRUTH",
+            UtmlErrorCode::ReadbackMismatch => "UTML_READBACK_MISMATCH",
         }
     }
 }
@@ -321,6 +357,57 @@ fn mean_checked<const N: usize>(name: &'static str, values: [f32; N]) -> Result<
         }
     }
     Ok(values.iter().sum::<f32>() / N as f32)
+}
+
+pub(crate) fn validate_finite(name: &str, value: f32) -> Result<(), UtmlError> {
+    if !value.is_finite() {
+        tracing::error!(
+            target: "context_graph_mejepa_train::utml",
+            utml_code = "UTML_NON_FINITE",
+            field = name,
+            value = %value,
+            "UTML finite-value validation failed"
+        );
+        return Err(UtmlError::new(
+            UtmlErrorCode::NonFinite,
+            format!("{name} is non-finite: {value}"),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_unit(name: &str, value: f32) -> Result<(), UtmlError> {
+    validate_finite(name, value)?;
+    if !(0.0..=1.0).contains(&value) {
+        tracing::error!(
+            target: "context_graph_mejepa_train::utml",
+            utml_code = "UTML_OUT_OF_RANGE",
+            field = name,
+            value = value,
+            "UTML unit-interval validation failed"
+        );
+        return Err(UtmlError::new(
+            UtmlErrorCode::OutOfRange,
+            format!("{name}={value} outside [0,1]"),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn non_empty<'a, T>(name: &str, values: &'a [T]) -> Result<&'a [T], UtmlError> {
+    if values.is_empty() {
+        tracing::error!(
+            target: "context_graph_mejepa_train::utml",
+            utml_code = "UTML_EMPTY_INPUT",
+            field = name,
+            "UTML required non-empty input"
+        );
+        return Err(UtmlError::new(
+            UtmlErrorCode::EmptyInput,
+            format!("{name} must be non-empty"),
+        ));
+    }
+    Ok(values)
 }
 
 #[cfg(test)]

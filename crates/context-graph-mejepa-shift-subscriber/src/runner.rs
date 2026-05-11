@@ -376,6 +376,85 @@ mod tests {
         assert_eq!(predictions.len(), 1);
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn run_until_idle_skips_non_code_shift_and_advances_watermark() {
+        let temp = tempfile::tempdir().unwrap();
+        let infer_db = temp.path().join("infer-db");
+        let panel_db = temp.path().join("panel-db");
+        let repo = temp.path().join("repo");
+        let log_dir = temp.path().join("cgreality-shift-log");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(&log_dir).unwrap();
+        seed_infer_db(&infer_db).unwrap();
+
+        let session = "12121212121212121212121212121212";
+        let shift_id = "01J00000000000000000001";
+        let line = serde_json::to_string(&json!({
+            "shift_id": shift_id,
+            "timestamp_unix_ns": 1_772_000_000_000_000_000u128,
+            "tool_name": "optimizer_record_decision",
+            "tool_use_id": null,
+            "session_id": session,
+            "subject": {"type": "decision", "policy": "synthetic"},
+            "before": {},
+            "after": {},
+            "delta_summary": {"summary": "non-code shift should only advance watermark"},
+            "verification": {},
+            "harness_transition_path": null
+        }))
+        .unwrap();
+        std::fs::write(
+            log_dir.join(format!("{session}.jsonl")),
+            format!("{line}\n"),
+        )
+        .unwrap();
+
+        let subscriber = ShiftSubscriber::open(MeJepaShiftSubscriberConfig {
+            infer_db_path: infer_db.clone(),
+            panel_db_path: panel_db,
+            repo_root: repo,
+            shift_log_dir: log_dir,
+            l_step_observe_threshold: 0.05,
+            max_concurrent_shifts: 1,
+            lag_alert_threshold_shifts: 500,
+            lag_alert_sustain_seconds: 60,
+            tail_poll_interval_ms: 10,
+        })
+        .unwrap();
+        let summary = subscriber.run_until_idle().await.unwrap();
+        println!(
+            "subscriber non-code skip source-of-truth readback: {}",
+            serde_json::to_string_pretty(&summary).unwrap()
+        );
+        assert_eq!(summary.processed, 1);
+        assert_eq!(summary.observed, 0);
+        assert!(matches!(
+            summary.outcomes.as_slice(),
+            [ShiftOutcome::Skipped {
+                reason: crate::models::SkipReason::NoOracleSignal,
+                ..
+            }]
+        ));
+
+        let watermark = subscriber.watermark_writer.read_all().unwrap();
+        assert_eq!(
+            watermark[session].last_consumed_shift_id,
+            shift_id.to_string()
+        );
+        assert_eq!(
+            watermark[session].last_consumed_byte_offset,
+            line.len() as u64 + 1
+        );
+        drop(subscriber);
+
+        let db = open_infer_rocksdb(&infer_db).unwrap();
+        let store = RocksDbInferStore::new(db.clone());
+        let predictions = store
+            .read_live_predictions(crate::models::decode_session_hex32(session).unwrap(), 10)
+            .unwrap();
+        assert!(predictions.is_empty());
+    }
+
     fn seed_infer_db(path: &Path) -> Result<()> {
         let db = open_infer_rocksdb(path)?;
         let calibration = CalibrationStore::new(db.clone(), 30)?;

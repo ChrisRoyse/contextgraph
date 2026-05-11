@@ -190,5 +190,59 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 }
             }),
         ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_EVAL_RUN,
+            "Run the Phase 8 ME-JEPA holdout evaluation against a real RocksDB source of truth, persist CF_MEJEPA_EVAL_REPORTS, and read back the report hash before returning.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["dbPath", "repoRoot", "outputFsv", "reportDate"],
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "repoRoot": {"type": "string"},
+                    "outputFsv": {"type": "string"},
+                    "reportDate": {"type": "string", "minLength": 1}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_SHIP_GATE_STATUS,
+            "Read the latest Phase 8 EvalReport from CF_MEJEPA_EVAL_REPORTS and return ship-gate status with persisted report hash.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["dbPath"],
+                "properties": {
+                    "dbPath": {"type": "string"}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_ACTIVE_LEARNING_QUEUE,
+            "Read the Phase 8 active-learning queue from CF_MEJEPA_ACTIVE_LEARNING_QUEUE.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["dbPath"],
+                "properties": {
+                    "dbPath": {"type": "string"}
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_EVAL_BUILD_GRAPH,
+            "Build and persist the Phase 8 patch-similarity graph into CF_MEJEPA_TASK_GRAPH and verify readback.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["dbPath", "outputFsv"],
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "outputFsv": {"type": "string"},
+                    "threshold": {"type": "number", "minimum": -1.0, "maximum": 1.0, "default": 0.85},
+                    "topK": {"type": "integer", "minimum": 1, "default": 3}
+                }
+            }),
+        ),
     ]
 }

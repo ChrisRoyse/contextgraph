@@ -12,6 +12,7 @@ pub mod conformal;
 pub mod data_models;
 pub mod degraded;
 pub mod error;
+pub mod eval;
 pub mod evidence;
 pub mod fixtures;
 pub mod frozen_target;
@@ -55,6 +56,7 @@ pub use conformal::*;
 pub use data_models::{OracleLogits, PredictedPanel, TargetPanel, TargetProvenance};
 pub use degraded::*;
 pub use error::{LossError, MejepaInferError, NanSource, PredictorError};
+pub use eval::*;
 pub use evidence::{
     AdversarialEvidence, DeterminismEvidence, ForwardPassEvidence, LossOutputs, VicregLambdas,
     VicregLossEvidence,

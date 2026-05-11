@@ -6,6 +6,10 @@ use std::time::Instant;
 
 use candle_core::{DType, Device};
 use clap::{Parser, Subcommand};
+use context_graph_mejepa::eval::{
+    build_eval_compiler, build_patch_similarity_graph, corpus_sha_from_holdout, synthetic_holdout,
+    synthetic_patch_embeddings, write_weekly_report, EvalConfig, EvalProvenance, EvalRunner,
+};
 use context_graph_mejepa::fsv_writer;
 use context_graph_mejepa::heal::{run_heal_drill, HealDrillArgs, InjectDrift, FSV_ROOT};
 use context_graph_mejepa::panel_source::{self, PanelBatchView};
@@ -32,6 +36,8 @@ enum Command {
     Train(TrainArgs),
     InferTest(InferTestArgs),
     Verify(VerifyArgs),
+    EvalRun(EvalRunArgs),
+    EvalBuildGraph(EvalBuildGraphArgs),
     HealDrill(HealDrillCliArgs),
     Stress(StressArgs),
 }
@@ -76,6 +82,30 @@ struct VerifyArgs {
     evidence_dir: PathBuf,
     #[arg(long, default_value_t = 0.05)]
     holdout_sample_pct: f32,
+}
+
+#[derive(Debug, Parser)]
+struct EvalRunArgs {
+    #[arg(long, default_value = "/tmp/contextgraph-mejepa-phase8-eval/rocksdb")]
+    db_path: PathBuf,
+    #[arg(long, default_value = "/tmp/contextgraph-mejepa-phase8-eval/repo")]
+    repo_root: PathBuf,
+    #[arg(long, default_value = "/tmp/contextgraph-mejepa-phase8-eval")]
+    output_fsv: PathBuf,
+    #[arg(long, default_value = "2026-05-11")]
+    report_date: String,
+}
+
+#[derive(Debug, Parser)]
+struct EvalBuildGraphArgs {
+    #[arg(long, default_value = "/tmp/contextgraph-mejepa-phase8-eval/rocksdb")]
+    db_path: PathBuf,
+    #[arg(long, default_value = "/tmp/contextgraph-mejepa-phase8-eval")]
+    output_fsv: PathBuf,
+    #[arg(long, default_value_t = 0.85)]
+    threshold: f32,
+    #[arg(long, default_value_t = 3)]
+    top_k: usize,
 }
 
 #[derive(Debug, Parser)]
@@ -137,6 +167,22 @@ fn main() -> ExitCode {
             &args.evidence_dir,
             args.holdout_sample_pct,
         ),
+        Command::EvalRun(args) => match run_eval_run(args) {
+            Ok(code) => code,
+            Err(err) => {
+                err.log_context(file!());
+                eprintln!("{}: {err}", err.code());
+                ExitCode::from(2)
+            }
+        },
+        Command::EvalBuildGraph(args) => match run_eval_build_graph(args) {
+            Ok(code) => code,
+            Err(err) => {
+                err.log_context(file!());
+                eprintln!("{}: {err}", err.code());
+                ExitCode::from(2)
+            }
+        },
         Command::HealDrill(args) => match run_heal_drill(HealDrillArgs {
             inject_drift: args.inject_drift,
             output_fsv: args.output_fsv,
@@ -210,6 +256,66 @@ fn main() -> ExitCode {
             }
         },
     }
+}
+
+fn run_eval_run(args: EvalRunArgs) -> Result<ExitCode, context_graph_mejepa::EvalError> {
+    let (_db, compiler, eval_store, calibration) =
+        build_eval_compiler(&args.db_path, &args.repo_root)?;
+    let holdout = synthetic_holdout(&args.repo_root)?;
+    let provenance = EvalProvenance {
+        corpus_sha: corpus_sha_from_holdout(&holdout),
+        eval_code_version: env!("CARGO_PKG_VERSION").to_string(),
+        calibration_version: calibration.load_active()?.version.clone(),
+        generated_by: "mejepa eval-run".to_string(),
+    };
+    let runner = EvalRunner::new(compiler, eval_store.clone(), EvalConfig::default())?;
+    let report = runner.run_holdout_eval(&holdout, &[], args.report_date, provenance)?;
+    let report_path = args.output_fsv.join("weekly-eval-report.json");
+    write_weekly_report(&report_path, &report)?;
+    let latest = eval_store.load_latest_report()?.ok_or_else(|| {
+        context_graph_mejepa::EvalError::new(
+            context_graph_mejepa::EvalErrorCode::ReportPersistFail,
+            "latest eval report missing after eval-run",
+        )
+    })?;
+    if latest.determinism_hash()? != report.determinism_hash()? {
+        return Err(context_graph_mejepa::EvalError::new(
+            context_graph_mejepa::EvalErrorCode::ReadbackMismatch,
+            "latest eval report hash does not match current report",
+        ));
+    }
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(if report.ship_gate_passed {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    })
+}
+
+fn run_eval_build_graph(
+    args: EvalBuildGraphArgs,
+) -> Result<ExitCode, context_graph_mejepa::EvalError> {
+    let db = context_graph_mejepa::open_infer_rocksdb(&args.db_path)?;
+    let eval_store = context_graph_mejepa::RocksDbEvalStore::new(db)?;
+    let graph =
+        build_patch_similarity_graph(&synthetic_patch_embeddings(), args.threshold, args.top_k)?;
+    eval_store.persist_graph(&graph)?;
+    let readback = eval_store.load_graph()?.ok_or_else(|| {
+        context_graph_mejepa::EvalError::new(
+            context_graph_mejepa::EvalErrorCode::ReadbackMismatch,
+            "patch similarity graph missing after persist",
+        )
+    })?;
+    if readback.edge_count != graph.edge_count || readback.node_count != graph.node_count {
+        return Err(context_graph_mejepa::EvalError::new(
+            context_graph_mejepa::EvalErrorCode::ReadbackMismatch,
+            "patch similarity graph readback differs",
+        ));
+    }
+    let path = args.output_fsv.join("patch-similarity-graph.json");
+    context_graph_mejepa::eval::report::write_json_0600(&path, &graph)?;
+    println!("{}", serde_json::to_string_pretty(&graph)?);
+    Ok(ExitCode::SUCCESS)
 }
 
 fn run_infer_test_command(args: InferTestArgs) -> Result<ExitCode, MejepaCliError> {

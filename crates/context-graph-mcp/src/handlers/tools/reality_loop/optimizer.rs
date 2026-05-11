@@ -217,10 +217,52 @@ pub async fn optimizer_record_harness_transition(
     )?;
     let mut shift_id = Value::Null;
     if append_external_shift {
-        let file_path = args
-            .get("file_path")
+        let file_path = required_str(&args, "file_path")?;
+        let before_sha = required_str(&args, "before_sha256")?;
+        let after_sha = required_str(&args, "after_sha256")?;
+        let preedit_state_raw = required_str(&args, "preedit_state_path")?;
+        let preedit_state_path = file_arg_to_path(&preedit_state_raw);
+        let preedit_state = read_json(&preedit_state_path)?;
+        let before_text_source_of_truth = preedit_state
+            .get("before_text_source_of_truth")
             .and_then(Value::as_str)
-            .unwrap_or("unknown-file");
+            .ok_or_else(|| {
+                super::errors::CCRealityError::new(
+                    "CCREALITY_PREEDIT_BEFORE_TEXT_SOT_MISSING",
+                    "pre-edit state did not include before_text_source_of_truth",
+                    "preedit_state.before_text_source_of_truth",
+                    "use the pre-tool edit hook so Phase 7 can verify the exact before text",
+                    json!({"preedit_state_path": preedit_state_path.display().to_string()}),
+                    Some(file_sot(&preedit_state_path)),
+                )
+            })?
+            .to_string();
+        let before_text_path = file_arg_to_path(&before_text_source_of_truth);
+        if !before_text_path.is_file() {
+            return Err(super::errors::CCRealityError::new(
+                "CCREALITY_PREEDIT_BEFORE_TEXT_SOT_NOT_FOUND",
+                "before_text_source_of_truth does not point to a readable file",
+                "preedit_state.before_text_source_of_truth",
+                "inspect the pre-tool edit hook output and rerun with a valid before text artifact",
+                json!({
+                    "preedit_state_path": preedit_state_path.display().to_string(),
+                    "before_text_source_of_truth": before_text_source_of_truth
+                }),
+                Some(file_sot(&preedit_state_path)),
+            ));
+        }
+        let after_source_raw = required_str(&args, "after_source_path")?;
+        let after_source = file_arg_to_path(&after_source_raw);
+        if !after_source.is_file() {
+            return Err(super::errors::CCRealityError::new(
+                "CCREALITY_AFTER_SOURCE_NOT_FOUND",
+                "after_source_path does not point to a readable file",
+                "arguments.after_source_path",
+                "pass the edited source file path from the post-tool edit hook",
+                json!({"after_source_path": after_source_raw}),
+                None,
+            ));
+        }
         let mut shift = ShiftRecord::new(
             "optimizer_record_harness_transition",
             &session,
@@ -234,34 +276,12 @@ pub async fn optimizer_record_harness_transition(
                 "os": std::env::consts::OS
             }),
         )?;
-        let preedit_state = args
-            .get("preedit_state_path")
-            .and_then(Value::as_str)
-            .map(file_arg_to_path);
-        let before_text_source_of_truth = preedit_state
-            .as_ref()
-            .and_then(|state_path| read_json(state_path).ok())
-            .and_then(|state| {
-                state
-                    .get("before_text_source_of_truth")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned)
-            });
-        let after_source = args
-            .get("after_source_path")
-            .and_then(Value::as_str)
-            .map(file_arg_to_path)
-            .unwrap_or_else(|| {
-                project_root()
-                    .unwrap_or_else(|_| Path::new(".").to_path_buf())
-                    .join(file_path)
-            });
         shift.before = json!({
-            "sha256": args.get("before_sha256").cloned().unwrap_or(Value::Null),
+            "sha256": before_sha,
             "text_source_of_truth": before_text_source_of_truth
         });
         shift.after = json!({
-            "sha256": args.get("after_sha256").cloned().unwrap_or(Value::Null),
+            "sha256": after_sha,
             "source_of_truth": file_sot(&after_source)
         });
         shift.delta_summary = json!({
@@ -285,7 +305,7 @@ pub async fn optimizer_record_harness_transition(
     }))
 }
 
-fn witness_segment_from_append(witness_append: &Value) -> Result<Value> {
+pub(crate) fn witness_segment_from_append(witness_append: &Value) -> Result<Value> {
     let source = witness_append
         .get("source_of_truth")
         .and_then(Value::as_str)

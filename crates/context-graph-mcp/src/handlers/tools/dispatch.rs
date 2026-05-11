@@ -223,6 +223,10 @@ impl Handlers {
             tool_names::MEJEPA_GC_RUN => call_mejepa_gc_run(arguments),
             tool_names::MEJEPA_QUOTA_STATUS => call_mejepa_quota_status(arguments),
             tool_names::MEJEPA_WITNESS_COMPRESS => call_mejepa_witness_compress(arguments),
+            tool_names::MEJEPA_EVAL_RUN => call_mejepa_eval_run(arguments),
+            tool_names::MEJEPA_SHIP_GATE_STATUS => call_mejepa_ship_gate_status(arguments),
+            tool_names::MEJEPA_ACTIVE_LEARNING_QUEUE => call_mejepa_active_learning_queue(arguments),
+            tool_names::MEJEPA_EVAL_BUILD_GRAPH => call_mejepa_eval_build_graph(arguments),
             // Provenance tools (Phase P3)
             tool_names::GET_AUDIT_TRAIL => call_get_audit_trail(arguments),
             tool_names::GET_MERGE_HISTORY => call_get_merge_history(arguments),
