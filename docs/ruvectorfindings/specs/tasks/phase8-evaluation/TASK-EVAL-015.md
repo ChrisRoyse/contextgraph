@@ -65,15 +65,24 @@ After implementation:
 
 ---
 
-## 📋 2026-05-10 STATE AUDIT
+## 📋 2026-05-11 STATE AUDIT (sharpened against verified codebase)
 
-**Verified by agent-212-task-updater against working tree HEAD.**
+> **Codebase reality table:** see `_index.md` in this directory.
 
-- `crates/context-graph-mejepa/src/eval/weekly_report.rs` does NOT exist. Accurate on "create".
-- **Weekly evaluation report is PENDING** per `_README.md` Phase 8 status.
-- Output path `data/mejepa-eval/mejepa-weekly-report-YYYY-MM-DD.json` mode 0o600 — verify the `data/mejepa-eval/` directory creation logic and `nix::sys::stat::fchmod` (or `std::os::unix::fs::PermissionsExt`) usage.
-- Open-research-questions seed (Q1..Q8) — defined in TASK-EVAL-001. The 8-entry persistent state in CF_MEJEPA_RESEARCH_QUESTIONS is updated by this writer; verify CF descriptor lands in TASK-EVAL-003 before implementing.
-- Persist-fail fallback — must still write FSV evidence even when JSON serialization or fchmod fails, for operator diagnosis. Do NOT silently swallow.
+**Decided scope for this task:**
+1. New file `crates/context-graph-mejepa/src/eval/weekly_report.rs`.
+2. `EvalRunner::write_weekly_report(&self, report: &EvalReport, output_dir: &Path) -> Result<PathBuf, EvalError>`:
+   - Default `output_dir: data/mejepa-eval/`. If write fails (permission denied, disk full), fall back to `/tmp/contextgraph-mejepa-evaluation-fsv/weekly-report-<date>.json` and emit `tracing::warn!` `code = "MEJEPA_EVAL_WEEKLY_REPORT_PERSIST_FALLBACK"`.
+   - File name: `mejepa-weekly-report-{report_date.iso8601()}.json`.
+   - File mode `0o600` per SEC-MEJEPA-07 (`std::os::unix::fs::OpenOptionsExt::mode(0o600)` at create time).
+   - Content: `EvalReport::serialize_canonical()` (sorted-key BTreeMap-backed JSON).
+   - Append `OpenResearchQuestionStatus` seeds to the report if not already populated.
+   - Append `drift_severity_history` (read from CF_MEJEPA_DRIFT_HISTORY when Phase 5 has populated it).
+   - Append `model_promotion_history` (read from CF_MEJEPA_MODEL_PROMOTIONS).
+3. Persist `report` to `CF_MEJEPA_EVAL_REPORTS` keyed by `{report_date.iso8601()}` with sync=true.
+4. Return the file path.
+
+**FSV for this task:** integration test (a) writes a synthetic report to a tempdir → asserts file exists with mode 0600 + byte-equal content match (Source of Truth: separate file read after write); (b) writes to a permission-denied dir → asserts fallback to /tmp/ + warning logged; (c) verifies CF_MEJEPA_EVAL_REPORTS has the row after write. Source of Truth: filesystem stat + CF readback.
 
 ---
 
