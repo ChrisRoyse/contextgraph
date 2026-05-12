@@ -1,0 +1,23 @@
+[build]
+# WSL exposes 30 logical CPUs on the 9950X3D host. Use physical-core-scale
+# Cargo fanout for Rust work while keeping native CMake/NVCC fanout bounded
+# below; this avoids the old multiplicative C++/CUDA OOM failure mode.
+jobs = 16
+
+[target.'cfg(target_os = "linux")']
+# Linux builds require mold in PATH. Do not silently fall back to GNU ld: if
+# mold is unavailable, the build should fail with an actionable linker error.
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[env]
+# Native build scripts can multiply Cargo's job count if they also fan out.
+# Keep that layer serial unless a caller explicitly opts into more parallelism.
+CMAKE_BUILD_PARALLEL_LEVEL = { value = "1", force = false }
+
+# Keep CUDA compiler/toolkit selection coherent. Without this, CMake can pair
+# CUDA 13.2 headers from /usr/local with the distro /usr/bin/nvcc 12.0.
+CUDA_HOME = { value = "/usr/local/cuda-13.2", force = false }
+CUDA_PATH = { value = "/usr/local/cuda-13.2", force = false }
+CUDACXX = { value = "/usr/local/cuda-13.2/bin/nvcc", force = false }
+CMAKE_CUDA_COMPILER = { value = "/usr/local/cuda-13.2/bin/nvcc", force = false }
+CMAKE_CUDA_ARCHITECTURES = { value = "120a-real", force = false }

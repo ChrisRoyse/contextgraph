@@ -111,8 +111,14 @@ context-graph-cuda = { path = "crates/context-graph-cuda" }
 
 [profile.release]
 lto = "thin"
-codegen-units = 1
+codegen-units = 16
 strip = true
+
+[profile.release-max]
+inherits = "release"
+# Use this only when final runtime throughput matters more than local build
+# latency. The default release profile keeps ThinLTO but restores parallel CGUs.
+codegen-units = 1
 
 [profile.dev]
 # Faster compile times for development
