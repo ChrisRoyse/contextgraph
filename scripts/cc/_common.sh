@@ -84,7 +84,10 @@ cgreality_emit_pretool_decision() {
 
 cgreality_log_event() {
   local event="$1"
-  local payload="${2:-{}}"
+  local payload="${2:-}"
+  if [ -z "${payload}" ]; then
+    payload="{}"
+  fi
   local runtime_root
   runtime_root="$(cgreality_runtime_root)"
   if [ -z "${runtime_root}" ]; then
@@ -121,7 +124,10 @@ cgreality_log_event() {
 
 cgreality_droot_log_event() {
   local event="$1"
-  local payload="${2:-{}}"
+  local payload="${2:-}"
+  if [ -z "${payload}" ]; then
+    payload="{}"
+  fi
   local droot="${CGREALITY_DROOT:-/mnt/d/contextgraph}"
   local log="${droot}/runtime/cgreality-hook-events.jsonl"
   if ! mkdir -p "$(dirname "${log}")"; then

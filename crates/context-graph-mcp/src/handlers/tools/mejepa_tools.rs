@@ -11,14 +11,14 @@ use context_graph_mejepa::heal::{
     WitnessChainAppender, CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_HEAL_REPORTS,
 };
 use context_graph_mejepa::{
-    build_deterministic_compiler, open_infer_rocksdb, ActualOutcome, ActiveLearningQueueState,
+    build_deterministic_compiler, open_infer_rocksdb, ActiveLearningQueueState, ActualOutcome,
     AgentId, CalibrationStore, FeedbackId, FeedbackKind, MeJepaInferConfig, OracleOutcome,
     PatchBundle, PredictionId, RealityPrediction, RocksDbEvalStore, RocksDbInferStore,
     SurpriseEvent, SurpriseSeverity, TaskContext, TestId, WitnessHash,
 };
 use context_graph_mejepa_cf::{
-    CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
-    CF_MEJEPA_AGENT_FEEDBACK, CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_OOD_ESCALATIONS,
+    CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_AGENT_FEEDBACK,
+    CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_OOD_ESCALATIONS,
 };
 use context_graph_mejepa_tct::{
     build_inspect_summary, open_tct_rocksdb, ConstellationStore, EmbedderId,
@@ -319,11 +319,17 @@ impl Handlers {
         };
         let result = (|| {
             let db = open_infer_rocksdb(&db_path)?;
-            let oracle_verdict_rows = count_cf_any(db.as_ref(), context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)?;
+            let oracle_verdict_rows = count_cf_any(
+                db.as_ref(),
+                context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS,
+            )?;
             let live_prediction_rows = count_cf_any(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS)?;
             let agent_feedback_rows = count_cf_any(db.as_ref(), CF_MEJEPA_AGENT_FEEDBACK)?;
             let active_learning_queue_present = db
-                .get_cf(cf_handle(db.as_ref(), CF_MEJEPA_ACTIVE_LEARNING_QUEUE)?, b"active")?
+                .get_cf(
+                    cf_handle(db.as_ref(), CF_MEJEPA_ACTIVE_LEARNING_QUEUE)?,
+                    b"active",
+                )?
                 .is_some();
             let stage = if oracle_verdict_rows >= 1000 {
                 "warm"
@@ -633,7 +639,9 @@ fn record_agent_feedback_in_db(
     }
     let agent_id = AgentId::try_new(request.agent_id.clone())
         .map_err(|err| anyhow!("agentId validation failed: {err}"))?;
-    let actual_outcome = request.actual_outcome.map(ActualOutcomeRequest::into_actual);
+    let actual_outcome = request
+        .actual_outcome
+        .map(ActualOutcomeRequest::into_actual);
     let mut extra_structured_data = request.extra_structured_data;
     if extra_structured_data.is_null() {
         extra_structured_data = json!({});
@@ -657,7 +665,10 @@ fn record_agent_feedback_in_db(
         );
         let candidate_key = feedback_key(prediction_id, &agent_id, ts_millis)?;
         if db
-            .get_cf(cf_handle(db.as_ref(), CF_MEJEPA_AGENT_FEEDBACK)?, &candidate_key)?
+            .get_cf(
+                cf_handle(db.as_ref(), CF_MEJEPA_AGENT_FEEDBACK)?,
+                &candidate_key,
+            )?
             .is_none()
         {
             feedback_id = candidate_id;

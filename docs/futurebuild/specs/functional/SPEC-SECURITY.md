@@ -32,8 +32,8 @@ Prediction-injection markdown render escapes `>>>`, `system:`, template-injectio
 ### REQ-SEC-07 — D-drive permissions verified at startup
 Daemon checks `/mnt/d/contextgraph/` is `chmod 700` for the operator's user; refuses to start if world-readable.
 
-### REQ-SEC-08 — Per-agent rate limit
-`mejepa_record_agent_feedback`: 100 events/hour/agent_id (per REQ-PREDICT-11).
+### REQ-SEC-08 — Unthrottled local feedback with fail-closed validation
+`mejepa_record_agent_feedback` is not locally rate-limited. Valid feedback must be durably persisted; invalid payloads must return explicit errors without mutating feedback or queue state.
 
 ### REQ-SEC-09 — Witness-chain provenance audit
 Every operator action (label, dismiss, approve, rollback, restore) writes a witness-chain entry. Tamper-evident.
@@ -51,7 +51,7 @@ Operator gold-labels weight 6× higher than agent labels. Floods don't outweigh 
 
 1. Synthetic patch with hardcoded AWS key → embedder receives `[REDACTED]` placeholder; no key in any CF.
 2. Adversarial test corpus run: ≥ 80% non-Pass; 0 false-confident-Pass.
-3. Synthetic adversarial agent submits 1000 feedback events in 1 hour → rate-limited at 100; remaining 900 rejected.
+3. Synthetic adversarial agent submits 1000 valid feedback events in 1 hour → all 1000 are durably persisted or storage errors identify the exact failed write/readback point.
 4. Two-person rule enabled: catastrophic promotion blocks until two distinct approvals.
 5. World-readable D-drive → daemon refuses to start.
 6. Witness-chain entries for last 10 operator actions exist + verify successfully.
@@ -60,4 +60,4 @@ Operator gold-labels weight 6× higher than agent labels. Floods don't outweigh 
 
 - Secret redaction adds < 5ms per chunk.
 - Adversarial test corpus runs in < 60s.
-- Rate-limiting check < 1ms per call.
+- Feedback validation overhead < 1ms per call before storage.

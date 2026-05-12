@@ -32,6 +32,7 @@ REQUEST="$(jq -nc \
 
 if ! RESPONSE="$(curl --silent --show-error --fail-with-body --max-time 4 \
   -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
   --data "${REQUEST}" \
   "${MCP_URL}" 2>&1)"; then
   log_injection_event "daemon_unavailable" "${RESPONSE}"

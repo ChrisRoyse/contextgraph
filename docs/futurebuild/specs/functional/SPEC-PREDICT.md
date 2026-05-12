@@ -67,9 +67,9 @@ Each Q4 head SHALL include a calibrated confidence interval per `MeJepaCompiler:
 6. Write a witness-chain entry binding the feedback to the original prediction's witness hash.
 7. Return `feedback_id`, `witness_hash`, `sampling_weight_bump_applied`, `active_learning_queue_position`, `drift_signal_contribution`, `scheduler_action_queued`.
 
-#### REQ-PREDICT-11 — Feedback rate limiting
+#### REQ-PREDICT-11 — Feedback is not locally rate-limited
 
-`mejepa_record_agent_feedback` SHALL be rate-limited to 100 events/hour/agent_id (anti-DoS). Exceeding returns `MEJEPA_FEEDBACK_RATE_LIMITED`.
+`mejepa_record_agent_feedback` SHALL NOT impose a local per-agent rate limit. This is a single-operator system; valid feedback must be durably recorded and invalid feedback must return an explicit fail-closed error. Flood resistance is provided by schema validation, witness-bound writes, active-learning queue readback, and operator-label priority rather than throttling the operator's own tools.
 
 ### Hook-side delivery
 

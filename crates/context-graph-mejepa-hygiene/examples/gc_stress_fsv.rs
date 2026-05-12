@@ -84,7 +84,9 @@ fn stress(
 }
 
 fn invalid_config_case() -> serde_json::Value {
-    let db = match open_hygiene_rocksdb("/mnt/d/contextgraph/fsv/contextgraph-mejepa-hygiene-gc-invalid-db") {
+    let db = match open_hygiene_rocksdb(
+        "/mnt/d/contextgraph/fsv/contextgraph-mejepa-hygiene-gc-invalid-db",
+    ) {
         Ok(db) => db,
         Err(err) => {
             return serde_json::json!({

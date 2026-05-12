@@ -63,9 +63,9 @@ Per `08 §5.5` (queue extension): when contradiction signal is detected, the pre
 
 ## 3. Defenses against compromised agents
 
-### 3.1 Per-agent rate limit on feedback
+### 3.1 Feedback flood resistance without local rate limits
 
-Per REQ-PREDICT-11: 100 feedback events per hour per agent_id. Agents can't flood-bias the model.
+`mejepa_record_agent_feedback` is intentionally not rate-limited for local single-operator use. Flood resistance comes from fail-closed schema validation, witness-bound persistence, active-learning queue readback, and operator-label priority. A high-volume local run should either durably record valid feedback or return an explicit validation/storage error with enough context to fix the root cause.
 
 ### 3.2 Witness-chain provenance for every prediction + feedback
 

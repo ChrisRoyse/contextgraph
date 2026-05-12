@@ -52,7 +52,7 @@ fn main() -> ExampleResult<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             PathBuf::from(
-                "/tmp/contextgraph-mejepa-models-config-materialization/models-config-materialization.json",
+                "/mnt/d/contextgraph/fsv/contextgraph-mejepa-models-config-materialization/models-config-materialization.json",
             )
         });
 

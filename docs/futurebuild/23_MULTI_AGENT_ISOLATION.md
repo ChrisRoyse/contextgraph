@@ -65,12 +65,11 @@ This is the same reality-shift principle from CLAUDE.md §11.5; it just needs to
 
 ---
 
-## 4. Rate limiting per agent
+## 4. Feedback volume behavior
 
-Per `08 §2.1` REQ-PREDICT-11:
-- `mejepa_record_agent_feedback`: 100 events / hour / `agent_id`
+Per the local-operator contract, `mejepa_record_agent_feedback` is not rate-limited by `agent_id`. Valid feedback must be durably persisted; invalid feedback must fail closed with explicit validation/storage context.
 
-Other tools are not rate-limited per agent because they're either pure reads (cheap) or compute-bound (CUDA queue is the natural rate limiter).
+Other tools are also not rate-limited per agent because they're either pure reads or naturally bounded by compute/storage capacity. Isolation remains session-based: state writes include `agent_id` where relevant, but cross-session reads require an explicit session identifier.
 
 ---
 

@@ -235,7 +235,9 @@ The operator-mandated closed-loop: when the agent gets a prediction and acts on 
 **Errors:**
 - `MEJEPA_FEEDBACK_PREDICTION_NOT_FOUND` — `prediction_id` does not exist or is older than the retention window
 - `MEJEPA_FEEDBACK_INVALID_OUTCOME_SHAPE` — `actual_outcome` has the wrong schema for its `kind`
-- `MEJEPA_FEEDBACK_RATE_LIMITED` — same agent submitting > 100 feedback events / hour (anti-DoS)
+- `MEJEPA_FEEDBACK_INVALID_PAYLOAD` — payload is malformed, missing required fields, or references an unsupported feedback kind/severity
+
+There is no local per-agent feedback rate limit. This is a single-operator system; invalid or abusive payloads fail closed through validation, durable error logging, and source-of-truth readback rather than silent throttling.
 
 ### 2.2 Feedback kinds in detail
 

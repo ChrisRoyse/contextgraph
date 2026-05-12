@@ -555,7 +555,8 @@ fn boundary_static_bad_line() -> FsvResult<Value> {
 }
 
 fn main() -> FsvResult<()> {
-    let evidence_root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-fsv");
+    let evidence_root =
+        PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-fsv");
     if evidence_root.exists() {
         fs::remove_dir_all(&evidence_root)?;
     }

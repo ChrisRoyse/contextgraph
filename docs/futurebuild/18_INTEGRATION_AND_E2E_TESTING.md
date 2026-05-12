@@ -114,7 +114,7 @@ Implementation: `cargo test -p e2e-tests --features chaos` with `failpoints` cra
 |---|---|---|
 | 10 concurrent agents, 1 edit/s each | sustained 10 min | p99 prediction latency < 30s; subscriber lag never exceeds 50 |
 | 100 shifts/min for 1 hour | bursty | no shift loss; lag alert never fires for > 60s |
-| 1k feedback events / hour from 10 agents | continuous | rate limit kicks in at 100/hr/agent; daemon stable |
+| 1k feedback events / hour from 10 agents | continuous | all valid feedback is durably recorded or a precise validation/storage error is returned; daemon stable |
 | Continuous training during inference | trainer + inference at saturation | inference p99 < 3× idle latency; training cert rate ≥ 50% of idle rate |
 
 Tooling: custom harness or `goose`-equivalent for Rust; results emitted to `/mnt/d/contextgraph/exports/load-tests/<date>.json`.

@@ -599,20 +599,18 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
                         category.slug()
                     )
                 })?;
-            let (_patch_path, patch_path_rel) = write_mutated_patch(
-                &args.output,
-                &manifest.instance_id,
-                &patch_outcome,
-            )
-            .map_err(|err| {
-                format!(
+            let (_patch_path, patch_path_rel) =
+                write_mutated_patch(&args.output, &manifest.instance_id, &patch_outcome).map_err(
+                    |err| {
+                        format!(
                     "serial write_mutated_patch failed for task={} category={}: {} (debug={:?})",
                     manifest.instance_id,
                     category.slug(),
                     err,
                     err,
                 )
-            })?;
+                    },
+                )?;
             store.put_corpus_row(&manifest.instance_id, *category, &mutation, &verdict)?;
             store.flush()?;
             let (stored_mutation, stored_verdict) = store

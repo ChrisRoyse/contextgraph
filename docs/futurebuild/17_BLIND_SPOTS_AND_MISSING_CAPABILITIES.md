@@ -13,7 +13,7 @@
 | 3 | **Disaster recovery + backup strategy for `/mnt/d/contextgraph/`** | All durable state lives on D-drive; what happens if D-drive fails or corrupts? Where are the backups? | NEW `20_DISASTER_RECOVERY_AND_BACKUP.md` + `SPEC-DR.md` + `TECH-DR.md` + tasks |
 | 4 | **Cold start: first prediction on a fresh deploy with no training data** | Predictor starts with random weights or seeded weights? Conformal calibration with N=0? Constellation fallback? | NEW `21_COLD_START_AND_BOOTSTRAP.md` |
 | 5 | **Adversarial robustness against agents that try to fool ME-JEPA into Pass** | Agent could craft patches that game the predictor; no spec addresses this | NEW `22_ADVERSARIAL_ROBUSTNESS.md` + `SPEC-SECURITY.md` extension |
-| 6 | **Multi-agent / multi-tenant isolation** | Multiple agents using same daemon: does session_id isolate? rate limits per agent_id? cross-session leakage? | NEW `23_MULTI_AGENT_ISOLATION.md` |
+| 6 | **Multi-agent / multi-tenant isolation** | Multiple agents using same daemon: does session_id isolate? how are unthrottled feedback writes attributed by agent_id? cross-session leakage? | NEW `23_MULTI_AGENT_ISOLATION.md` |
 | 7 | **API stability + versioning of MCP tools and `RealityPrediction` schema** | Schema is described as additive but no formal semver / deprecation policy | NEW `24_API_STABILITY.md` |
 | 8 | **Future domains (ME-JEPA-Voice / -Image / -X) template** | Architecture is described as transferable but no doc specifies the template for adapting to a new modality | NEW `25_FUTURE_DOMAINS_MEJEPA_X.md` |
 | 9 | **Documentation map (meta)** | 17+ docs in futurebuild + ruvectorfindings + memory; new contributors need a single map | NEW `26_DOCUMENTATION_MAP.md` |

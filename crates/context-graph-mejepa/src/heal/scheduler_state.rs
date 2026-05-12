@@ -756,9 +756,8 @@ fn bind_test_outcomes(
                 report.events_skipped_non_hard_label += 1;
                 continue;
             };
-            let session_id = decode_hex16(&event.session_id).map_err(|message| {
-                HealError::invalid("test_outcome_event.session_id", message)
-            })?;
+            let session_id = decode_hex16(&event.session_id)
+                .map_err(|message| HealError::invalid("test_outcome_event.session_id", message))?;
             let predictions = infer_store
                 .read_live_predictions(session_id, 1)
                 .map_err(|err| {
@@ -798,8 +797,7 @@ impl TestOutcomeEvent {
         if self.event_id.len() != 32 || !self.event_id.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("event_id must be exactly 32 hexadecimal characters".to_string());
         }
-        if self.session_id.len() != 32 || !self.session_id.bytes().all(|b| b.is_ascii_hexdigit())
-        {
+        if self.session_id.len() != 32 || !self.session_id.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("session_id must be exactly 32 hexadecimal characters".to_string());
         }
         if self.ts < 0 {
@@ -890,7 +888,9 @@ fn map_hygiene_error(err: context_graph_mejepa_hygiene::OpsError) -> HealError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{ConformalSet, Language, OracleOutcome, RealityPrediction, TaskId};
     use rocksdb::{ColumnFamilyDescriptor, Options};
+    use std::collections::BTreeMap;
 
     fn open_test_db(path: &Path) -> Arc<DB> {
         let mut opts = Options::default();
@@ -911,6 +911,27 @@ mod tests {
             test_outcome_root: root.join("test-outcomes"),
             ..SelfOptimConfig::default().with_all_periods(Duration::from_millis(20))
         }
+    }
+
+    fn test_prediction(session_id: [u8; 16]) -> RealityPrediction {
+        RealityPrediction::try_new(RealityPrediction {
+            prediction_id: [0x46; 16],
+            task_id: TaskId("scheduler-bind-test-task".to_string()),
+            session_id,
+            language: Language::Python,
+            predicted_oracle_pass: 0.95,
+            predicted_test_pass: vec![0.9, 0.8],
+            predicted_runtime_trace: [0.0; 32],
+            ood_score: 0.1,
+            outcome_set: ConformalSet::try_new(vec![OracleOutcome::Pass], 0.1, 0.2).unwrap(),
+            calibrated_confidence: 0.7,
+            degraded_status: false,
+            granger_attestations: BTreeMap::from([("scheduler:test".to_string(), 0.9)]),
+            source_panel_sha: [0x5b; 32],
+            calibration_version: "scheduler-test-calibration".to_string(),
+            created_at_unix_ms: 1_778_000_000_000,
+        })
+        .unwrap()
     }
 
     #[test]
@@ -962,6 +983,82 @@ mod tests {
                 .action,
             "observed_sources_inspected"
         );
+    }
+
+    #[test]
+    fn observe_tick_binds_test_outcome_to_oracle_cf() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db = open_test_db(&temp.path().join("db"));
+        let config = test_config(temp.path());
+        let session_id = [0x09; 16];
+        let session_hex = hex::encode(session_id);
+        let event_id = "11111111111111111111111111111111";
+        let prediction = test_prediction(session_id);
+        RocksDbInferStore::new(db.clone())
+            .write_live_prediction(&prediction)
+            .expect("write live prediction");
+
+        fs::create_dir_all(&config.test_outcome_root).expect("create test outcome root");
+        let outcome_path = config
+            .test_outcome_root
+            .join(format!("{session_hex}.jsonl"));
+        let event = json!({
+            "event_id": event_id,
+            "ts": 1_778_000_000_001i64,
+            "session_id": session_hex,
+            "tool_use_id": "scheduler-bind-test",
+            "command": "pytest tests/test_math.py",
+            "framework": "pytest",
+            "test_id": "tests/test_math.py::test_sub",
+            "outcome": "fail",
+            "duration_ms": 12,
+            "error_log": "AssertionError: expected 4",
+            "source": "synthetic-fsv",
+            "sequence": 0,
+            "line_no": 1
+        });
+        fs::write(
+            &outcome_path,
+            format!("{}\n", serde_json::to_string(&event).unwrap()),
+        )
+        .expect("write outcome jsonl");
+
+        let mut state = SchedulerState::open(db.clone(), config).expect("open scheduler state");
+        state.run_tick(TickName::Observe).expect("run observe tick");
+        let snapshot = read_status_snapshot(state.status_path()).expect("read status");
+        let observe = snapshot
+            .last_success
+            .get("observe")
+            .expect("observe record");
+        assert_eq!(
+            observe.details["test_outcome_bindings"]["events_bound"],
+            json!(1)
+        );
+        assert_eq!(
+            observe.details["test_outcome_bindings"]["bound_keys"][0],
+            format!("test-outcome-bind::{session_hex}::{event_id}")
+        );
+
+        let storage = HealRocksStore::from_db(db.clone()).expect("heal store");
+        assert_eq!(
+            storage
+                .count_cf(context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)
+                .expect("oracle count"),
+            1
+        );
+        let cf = db
+            .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)
+            .expect("oracle cf");
+        let key = format!("test-outcome-bind::{session_hex}::{event_id}");
+        let readback = db
+            .get_cf(cf, key.as_bytes())
+            .expect("oracle readback")
+            .expect("oracle row exists");
+        let decoded: CalibrationExample =
+            bincode::deserialize(&readback).expect("decode oracle binding");
+        assert_eq!(decoded.language, Language::Python);
+        assert_eq!(decoded.predicted_test_pass, vec![0.9, 0.8]);
+        assert_eq!(decoded.actual_test_pass, vec![0.0, 0.0]);
     }
 
     #[test]
