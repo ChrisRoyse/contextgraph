@@ -7,12 +7,19 @@ use std::time::Instant;
 
 use context_graph_mejepa::{
     build_deterministic_compiler, materialize_inference_panels, open_infer_rocksdb,
-    CalibrationExample, CalibrationStore, MeJepaInferConfig, MejepaStore, PatchBundle,
-    RealityPrediction, RocksDbInferStore, TaskContext, TrainCertSummary,
+    CalibrationExample, CalibrationStore, ChunkId, DdaSignals, MeJepaInferConfig, MejepaStore,
+    PanelId, PatchBundle, RealityPrediction, RocksDbInferStore, TaskContext, TrainCertSummary,
+};
+use context_graph_mejepa_embedders::cache::EmbedderCache;
+use context_graph_mejepa_embedders::{
+    AlgorithmicEmbedderForward, EmbedderInput, SUPPORTED_ALGORITHMIC_FORWARD_EMBEDDERS,
 };
 use context_graph_mejepa_instruments::materialize::TimeStep;
 use context_graph_mejepa_instruments::panel_json::{PanelEnvelope, PanelProvenance};
 use context_graph_mejepa_instruments::panel_store::{PanelKey, PanelStore};
+use context_graph_mejepa_train::dda::{
+    compute_dda_signals, persist_dda_signals, DdaPairwiseBaseline, DdaVectorInput,
+};
 use rocksdb::WriteOptions;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -149,7 +156,7 @@ impl ShiftSubscriber {
         self.watermark_writer.read_all()
     }
 
-    pub fn process_shift(&self, entry: &ShiftEntry, replay: bool) -> Result<ShiftOutcome> {
+    pub async fn process_shift(&self, entry: &ShiftEntry, replay: bool) -> Result<ShiftOutcome> {
         let started = Instant::now();
         if let Some(existing) = self.watermark_writer.read(entry.session_id)? {
             if existing.source_log_path.as_deref()
@@ -172,6 +179,7 @@ impl ShiftSubscriber {
         let mut prediction = compiler.compile(&patch, &context)?;
         prediction.created_at_unix_ms = timestamp_ns_to_ms(entry.timestamp_unix_ns)?;
         let prediction = RealityPrediction::try_new(prediction)?;
+        let dda_rows = self.compute_dda_rows(entry, &patch, &prediction).await?;
         self.store.write_live_prediction(&prediction)?;
         let readback = MejepaStore::read_live_predictions(&self.store, context.session_id, 1000)?;
         if !readback.iter().any(|row| {
@@ -183,6 +191,7 @@ impl ShiftSubscriber {
                 detail: "live prediction readback did not contain the written row".to_string(),
             });
         }
+        let dda_signal_count = self.persist_dda_rows(entry, &prediction, &dda_rows)?;
         self.persist_panels(&patch, &context, &attempt_id, source_sha)?;
         let observed = self.persist_oracle_example(entry, &prediction, replay)?;
         let record = WatermarkRecord {
@@ -209,12 +218,14 @@ impl ShiftSubscriber {
             shift_id = %entry.shift_id.0,
             session_id = %record.session_id,
             prediction_id = %hex::encode(prediction.prediction_id),
+            dda_signal_count,
             latency_ms,
             "processed ME-JEPA shift"
         );
         Ok(ShiftOutcome::Predicted {
             prediction_id: hex::encode(prediction.prediction_id),
             observed,
+            dda_signal_count,
             watermark_key,
             watermark_offset: record.last_consumed_byte_offset,
             latency_ms,
@@ -289,6 +300,100 @@ impl ShiftSubscriber {
             calibration,
             MeJepaInferConfig::default(),
         )?)
+    }
+
+    async fn compute_dda_rows(
+        &self,
+        entry: &ShiftEntry,
+        patch: &PatchBundle,
+        prediction: &RealityPrediction,
+    ) -> Result<Vec<(PanelId, ChunkId, DdaSignals)>> {
+        if prediction.covered_chunks.len() != patch.ast_diff.hunks.len() {
+            return Err(SubscriberError::ProcessFailed {
+                shift_id: entry.shift_id.0.clone(),
+                detail: format!(
+                    "covered_chunks/hunks length mismatch before DDA computation: {} vs {}",
+                    prediction.covered_chunks.len(),
+                    patch.ast_diff.hunks.len()
+                ),
+            });
+        }
+        let cache = EmbedderCache::new(self.dda_cache_root()?)?;
+        let panel_id = PanelId(prediction.source_panel_sha);
+        let mut rows = Vec::with_capacity(patch.ast_diff.hunks.len());
+        for (idx, hunk) in patch.ast_diff.hunks.iter().enumerate() {
+            let input_text = self.dda_input_text(entry, idx, hunk.after.as_str())?;
+            let source_id = format!("{}#{}", hunk.path.display(), idx);
+            let mut inputs = Vec::with_capacity(SUPPORTED_ALGORITHMIC_FORWARD_EMBEDDERS.len());
+            for embedder in SUPPORTED_ALGORITHMIC_FORWARD_EMBEDDERS {
+                let forward = AlgorithmicEmbedderForward::load(*embedder)?;
+                let output = cache
+                    .forward_cached(
+                        &forward,
+                        &EmbedderInput {
+                            embedder: *embedder,
+                            text: input_text.clone(),
+                            source_id: source_id.clone(),
+                        },
+                    )
+                    .await?;
+                inputs.push(DdaVectorInput {
+                    embedder_id: output.embedder.slug().to_string(),
+                    centroid: output.vector.clone(),
+                    vector: output.vector,
+                });
+            }
+            let baseline = DdaPairwiseBaseline::explicit_unit_baseline_for_count(inputs.len());
+            let signals = compute_dda_signals(&inputs, &baseline)?;
+            rows.push((panel_id, prediction.covered_chunks[idx].clone(), signals));
+        }
+        Ok(rows)
+    }
+
+    fn persist_dda_rows(
+        &self,
+        entry: &ShiftEntry,
+        prediction: &RealityPrediction,
+        rows: &[(PanelId, ChunkId, DdaSignals)],
+    ) -> Result<usize> {
+        for (panel_id, chunk_id, signals) in rows {
+            persist_dda_signals(self.db.as_ref(), panel_id, chunk_id, signals)?;
+        }
+        info!(
+            error_code = "MEJEPA_SHIFT_SUBSCRIBER_DDA_PERSISTED",
+            shift_id = %entry.shift_id.0,
+            prediction_id = %hex::encode(prediction.prediction_id),
+            source_panel_sha = %hex::encode(prediction.source_panel_sha),
+            dda_signal_count = rows.len(),
+            active_embedder_count = SUPPORTED_ALGORITHMIC_FORWARD_EMBEDDERS.len(),
+            "persisted live shift DDA signals with RocksDB readback"
+        );
+        Ok(rows.len())
+    }
+
+    fn dda_cache_root(&self) -> Result<PathBuf> {
+        let cache_root = self
+            .config
+            .infer_db_path
+            .with_file_name("mejepa-embedder-cache");
+        if cache_root.as_os_str().is_empty() {
+            return Err(SubscriberError::invalid(
+                "embedder_cache_path",
+                "could not derive non-empty cache path beside infer_db_path",
+            ));
+        }
+        Ok(cache_root)
+    }
+
+    fn dda_input_text(&self, entry: &ShiftEntry, idx: usize, text: &str) -> Result<String> {
+        if text.trim().is_empty() {
+            return Err(SubscriberError::invalid(
+                format!("ast_diff.hunks[{idx}].after"),
+                "post-shift chunk text is empty; DDA cannot embed an empty deleted chunk",
+            ));
+        }
+        let timestamp_secs = entry.timestamp_unix_ns / 1_000_000_000;
+        Ok(format!("epoch:{timestamp_secs}\n{text}"))
     }
 
     fn persist_panels(

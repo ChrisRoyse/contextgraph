@@ -4,51 +4,60 @@
 
 ## TASK-ENRICH-001 — Neural per-embedder forward wrappers
 
-- **Phase:** D · **Effort:** 4-5d · **Blocked by:** TASK-FLYWHEEL-001 · **Spec:** TECH-ENRICHMENT §3 + 04_DDA_TCT_CODE_ENRICHMENT.md §2
-- **Goal:** Implement `EmbedderForward` trait + Candle/CUDA implementations for 12 active content embedders (E1, E2, E3, E4, E6, E7, E8, E10, E12, E13, E14, E17). Each loads its SHA-pinned model artifact from `/mnt/d/cabdru/contextgraph/models/` and runs real neural forward.
-- **Outputs:** `crates/context-graph-mejepa-embedders/src/forward/{e1_e5_large,e7_qodo,e8_graph_attention,e10_paraphrase,e12_colbert,e14_codet5,e17_affect,...}.rs`.
-- **DoD:** each embedder returns a non-deterministic vector matching expected shape + dim; per-embedder FSV passes (deterministic input → expected output bytes).
-- **FSV:** per-embedder FSV files (12 total).
+- **Phase:** D · **Status:** code_complete/partial 2026-05-12 · **Blocked by:** TASK-FLYWHEEL-001 · **Spec:** TECH-ENRICHMENT §3 + 04_DDA_TCT_CODE_ENRICHMENT.md §2
+- **Goal:** Implement `EmbedderForward` trait for the live 12 active content embedders: pretrained E1/E6/E7/E8/E10/E12/E13/E14 and algorithmic E2/E3/E4/E9. E17 remains a learner-state/affect embedder in the live registry, not a content embedder.
+- **Outputs:** `crates/context-graph-mejepa-embedders/src/forward.rs` with `PretrainedEmbedderForward`, `AlgorithmicEmbedderForward`, and explicit supported-embedder sets.
+- **Done 2026-05-12:** all 12 active content slots map to a real forward implementation; temporal slots fail closed unless an explicit timestamp is provided; E9 HDC emits a real algorithmic vector; pretrained wrappers retain digest/runtime artifact checks.
+- **Still open:** full D-root model-artifact FSV for every pretrained wrapper and the full Language × EntityType routing forward-output FSV.
+- **FSV:** unit tests plus `phase_d_embedder_cache_fsv`; full per-pretrained forward FSV remains open.
 
 ## TASK-ENRICH-002 — DDA signal computation per chunk per shift
 
-- **Phase:** D · **Effort:** 1d · **Blocked by:** TASK-ENRICH-001, TASK-FLYWHEEL-006 · **Spec:** TECH-ENRICHMENT §4
-- **Goal:** Implement `compute_dda_signals` per `TECH-ENRICHMENT §4`. For each chunk × embedder pair: compute cosine to centroid + pairwise cosine + cached pairwise MI. Persist to `CF_MEJEPA_DDA_SIGNALS`.
-- **Outputs:** `crates/context-graph-mejepa-train/src/dda/mod.rs` (NEW).
-- **DoD:** synthetic 30-chunk patch produces 30 × (12 + 144) = 4,680 signals; round-trip from CF.
-- **FSV:** `/mnt/d/contextgraph/fsv/dda-fsv/signal_compute.json`
+- **Phase:** D · **Status:** complete 2026-05-12 · **Blocked by:** TASK-ENRICH-001, TASK-FLYWHEEL-006 · **Spec:** TECH-ENRICHMENT §4
+- **Goal:** Implement `compute_dda_signals` per the live `DdaSignals` schema. For each chunk: compute per-embedder cosine to centroid, strict upper-triangle pairwise cosine, cached pairwise MI, and blind-spot z-scores.
+- **Outputs:** `crates/context-graph-mejepa-train/src/dda.rs`.
+- **DoD:** synthetic 30-chunk patch persists 30 `DdaSignals` rows to `CF_MEJEPA_DDA_SIGNALS`, drops/reopens the RocksDB handle, and reads back first/last rows with correct shapes.
+- **FSV:** `/mnt/d/contextgraph/fsv/phase-d-fsv/dda-signal-compute.json`
 
 ## TASK-ENRICH-003 — Populate new CFs with real signals
 
-- **Phase:** D · **Effort:** 0.25d · **Blocked by:** TASK-ENRICH-002
+- **Phase:** D · **Status:** complete 2026-05-12 · **Blocked by:** TASK-ENRICH-002
 - **Goal:** Wire DDA computation into the shift subscriber pipeline; ensure CF writes are atomic per-shift.
-- **Outputs:** `shift_subscriber/src/lib.rs` extension.
-- **DoD:** running 100 shifts populates `CF_MEJEPA_DDA_SIGNALS` with 100 × N signal blocks.
+- **Done 2026-05-12:** root-cause fix landed: `context_graph_mejepa_cf::INFER_CFS` now includes `CF_MEJEPA_DDA_SIGNALS` and `CF_MEJEPA_FAILURE_EXEMPLARS`, so inference runtimes open the CFs they need. `persist_dda_signals` writes synchronously and immediately reads back the stored value. The live shift subscriber now computes real algorithmic embedder outputs for each code hunk and persists DDA rows before prediction/watermark side effects.
+- **Still open:** full pretrained 12-slot routing FSV and trained-head DDA feature consumption are tracked under `TASK-ENRICH-001/006` and `TASK-PREDICT-005/006`, not this CF population task.
+- **DoD:** running 100 real shifts populates `CF_MEJEPA_DDA_SIGNALS` with 100 × chunk-count signal blocks.
+- **FSV:** `/mnt/d/contextgraph/fsv/contextgraph-mejepa-shift-subscriber-fsv/`
 
 ## TASK-ENRICH-004 — Embedder cache layer
 
-- **Phase:** D · **Effort:** 1d · **Blocked by:** TASK-ENRICH-001
-- **Goal:** Implement `EmbedderCache` per `TECH-ENRICHMENT §5`. LRU bounded; persists to `/mnt/d/contextgraph/storage/embedder-cache/`.
-- **Outputs:** `crates/context-graph-mejepa-embedders/src/cache.rs` (NEW).
-- **DoD:** re-Edit on same chunk → cache hit; no neural forward; verified via call counter.
+- **Phase:** D · **Status:** partial/code_complete 2026-05-12 · **Blocked by:** TASK-ENRICH-001
+- **Goal:** Implement `EmbedderCache` per `TECH-ENRICHMENT §5`.
+- **Outputs:** `crates/context-graph-mejepa-embedders/src/cache.rs`.
+- **Done 2026-05-12:** persistent content-addressed JSON cache keyed by `(schema_version, embedder_id, model_version, chunk_sha256)`; atomic write + fsync + readback; corrupt cache entries fail closed and are not treated as misses.
+- **Still open:** production LRU pruning/size-bound enforcement and daemon hit-rate telemetry.
+- **FSV:** `/mnt/d/contextgraph/fsv/phase-d-fsv/embedder-cache-fsv.json`
 
 ## TASK-ENRICH-005 — VRAM budget gate at startup
 
-- **Phase:** D · **Effort:** 0.5d · **Blocked by:** TASK-ENRICH-001
-- **Goal:** Per `TECH-ENRICHMENT §7`. Daemon refuses to start over budget; `MEJEPA_VRAM_BUDGET_EXCEEDED`.
-- **Outputs:** `vram_budget.rs::enforce_startup_budget`.
-- **DoD:** configured budget 1 GB + active set requires 6 GB → daemon refuses with clear error.
+- **Phase:** D · **Status:** existing gate present; daemon-load FSV open · **Blocked by:** TASK-ENRICH-001
+- **Goal:** Per `TECH-ENRICHMENT §7`. Daemon refuses to start over budget.
+- **Done before this pass:** `query_vram_budget` and content-set/full Phase 1 VRAM budget checks exist in `crates/context-graph-mejepa-embedders/src/vram.rs`.
+- **Still open:** daemon startup evidence under the full active model load and WSL telemetry hardening.
+- **DoD:** configured budget 1 GB + active set requires >1 GB → daemon refuses with clear error and logs free/required/total VRAM.
 
 ## TASK-ENRICH-006 — Per-embedder FSV
 
-- **Phase:** D · **Effort:** 2-3d · **Blocked by:** TASK-ENRICH-001
+- **Phase:** D · **Status:** partial · **Blocked by:** TASK-ENRICH-001
 - **Goal:** One FSV example per embedder asserting deterministic input → expected output vector (bytes) when the model is the SHA-pinned artifact.
 - **Outputs:** `crates/context-graph-mejepa-embedders/examples/forward_<embedder>_fsv.rs` (12 files).
+- **Done 2026-05-12:** algorithmic/cache FSV proves E9 real forward + cache readback; existing E10 forward wrapper FSV remains available.
+- **Still open:** one source-of-truth FSV per pretrained model artifact and full routing FSV.
 - **DoD:** each FSV passes; vectors match; cosine similarity to expected = 1.0.
 
 ## TASK-ENRICH-007 — Per-language stdlib registry
 
-- **Phase:** D · **Effort:** 1d · **Blocked by:** none
+- **Phase:** D · **Status:** complete 2026-05-12 · **Blocked by:** none
 - **Goal:** Per `TECH-ENRICHMENT §8`. Curated YAML registry per language for `ReinventedWheel` detection.
-- **Outputs:** `crates/context-graph-mejepa-instruments/data/stdlib_registry/{python,rust,javascript,typescript,go,java,c,cpp,csharp,ruby,php}.yml` (11 files).
-- **DoD:** all 11 YAMLs load + parse; pattern-matcher correctly identifies hand-rolled retry-with-backoff in synthetic Python code.
+- **Outputs:** `crates/context-graph-mejepa-instruments/assets/stdlib_registry/{python,rust,javascript,typescript,go,java,c,cpp,csharp,ruby,php}.yml` (11 files) and `src/stdlib_registry.rs`.
+- **DoD:** all 11 YAMLs load + parse; pattern-matcher correctly identifies hand-rolled retry-with-backoff in synthetic Python code; unknown language and missing registry file fail closed.
+- **FSV:** `/mnt/d/contextgraph/fsv/phase-d-fsv/stdlib-registry-fsv.json`

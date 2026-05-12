@@ -99,15 +99,15 @@
 
 | ID | Title | Phase | Blocked by | Effort |
 |---|---|---|---|---|
-| `TASK-ENRICH-001` | `EmbedderForward` trait + Candle/CUDA implementations for E1, E7, E8, E10, E12, E14, E17 | D | none | 4-5d |
-| `TASK-ENRICH-002` | DDA signal computation (n × N + N²) per chunk per shift | D | ENRICH-001, FLYWHEEL-006 | 1d |
-| `TASK-ENRICH-003` | Populate the new CFs with real signals | D | ENRICH-002 | 0.25d |
-| `TASK-ENRICH-004` | Embedder cache layer | D | ENRICH-001 | 1d |
-| `TASK-ENRICH-005` | VRAM budget gate enforcement at startup | D | ENRICH-001 | 0.5d |
-| `TASK-ENRICH-006` | Per-embedder FSV (real model file, deterministic input → expected output) | D | ENRICH-001 | 2-3d |
-| `TASK-ENRICH-007` | Per-language stdlib registry for `ReinventedWheel` | D | none | 1d |
+| `TASK-ENRICH-001` | `EmbedderForward` trait + active content forwards: pretrained E1/E6/E7/E8/E10/E12/E13/E14, algorithmic E2/E3/E4/E9 | D | none | **code_complete (2026-05-12; full artifact/routing FSV open)** |
+| `TASK-ENRICH-002` | DDA signal computation per chunk with per-embedder cosine, strict upper-triangle pairwise cosine/MI, blind-spot z-scores | D | ENRICH-001, FLYWHEEL-006 | **complete (2026-05-12)** |
+| `TASK-ENRICH-003` | Populate the new CFs with real signals | D | ENRICH-002 | **complete (2026-05-12; live algorithmic DDA rows FSV writes/readbacks 100 shifts)** |
+| `TASK-ENRICH-004` | Embedder cache layer | D | ENRICH-001 | **partial/code_complete (persistent key/value cache complete; LRU/telemetry open)** |
+| `TASK-ENRICH-005` | VRAM budget gate enforcement at startup | D | ENRICH-001 | existing gate present; daemon-load FSV open |
+| `TASK-ENRICH-006` | Per-embedder FSV (real model file, deterministic input → expected output) | D | ENRICH-001 | **partial; full pretrained set open** |
+| `TASK-ENRICH-007` | Per-language stdlib registry for `ReinventedWheel` | D | none | **complete (2026-05-12)** |
 
-**Phase D total: ~13 days.**
+**Phase D status (2026-05-12):** enrichment substrate is code/FSV-shipped for DDA compute/store, live shift-subscriber DDA rows, persistent cache, inference CF opening, and stdlib registry. Production-complete Phase D still requires full pretrained artifact/routing FSV, cache pruning/telemetry, and DDA feature consumption by trained heads.
 
 ---
 

@@ -34,13 +34,13 @@ Per `crates/context-graph-mejepa-embedders/`. Slots E5 and E11 are **retired** p
 | E20 | learner-state — confidence | 256 | learner-state | partial | agent-side reported confidence calibration |
 | E21 | learner-state — generative-style | 256 | learner-state | NO (not for code) | — |
 
-**Active set for ME-JEPA-Code's content-side prediction (the "valuable signals"):** {E1, E2, E3, E4, E6, E7, E8, E9, E10, E12, E13, E14, E17}. The non-content learner-state slots (E15, E16, E19, E21) are reserved for non-code domains in the broader ME-JEPA-X family. **Per the operator directive ("use as many as would be valuable"), we keep all 13 in active routing for code-domain prediction.**
+**Active set for ME-JEPA-Code's content-side prediction (the "valuable signals"):** {E1, E2, E3, E4, E6, E7, E8, E9, E10, E12, E13, E14}. E17 remains valuable, but it is a learner-state/affect side channel for `E_Reasoning`, not a content embedder in the live forward registry. E18 and E20 are also learner-state side channels. The non-content learner-state slots (E15, E16, E19, E21) are reserved for non-code domains in the broader ME-JEPA-X family.
 
 E18 and E20 carry partial signal — context novelty (E18) helps with the active-learning queue prioritization, and confidence (E20) provides weak supervision for the Reasoning head. Both are in the routing table but at low weight.
 
 ---
 
-## 2. What each ACTIVE embedder uniquely contributes
+## 2. What each valuable embedder uniquely contributes
 
 This is the "what would we lose if we dropped this embedder" section. Each row is the unique contribution; together they form the ensemble.
 
@@ -141,7 +141,7 @@ Per `docs/ruvectorfindings/specs/_README.md` Phase 1b: SHA-256 digest verificati
 | E17 | `cardiffnlp/twitter-roberta-base-sentiment-latest` | RoBERTa | 0.5 GB | affect / tone |
 | E18, E20 | small adapters | — | <0.2 GB | learner-state |
 
-**Total VRAM at fp16 with all 13 active loaded simultaneously: ~6.5 GB.** The RTX 5090 (32 GB) has ample headroom; the existing VRAM budget gate per `mejepa_vram_budget_report` MCP tool tracks this. The retired-slot policy (E5, E11) prevents accidentally loading them.
+**Approximate VRAM at fp16 for the full code content model set plus E17/E18/E20 learner-state side-channel adapters: ~6.5 GB.** The RTX 5090 (32 GB) has ample headroom; the existing VRAM budget gate per `mejepa_vram_budget_report` MCP tool tracks this. The retired-slot policy (E5, E11) prevents accidentally loading them.
 
 **Lazy-loading is enabled** for E15, E16, E19, E21 (non-code learner-state) — they're only loaded when a non-code domain prediction is requested.
 
@@ -171,15 +171,15 @@ fn cross_embedder_anomaly(chunk, panel) -> Vec<BlindSpot> {
 }
 ```
 
-This runs as part of the DDA signal computation; high-magnitude `BlindSpot`s are surfaced via `mejepa_cross_embedder_anomalies` MCP tool (already shipped as `search_cross_embedder_anomalies`). For the futurebuild plan, this becomes a feature in the multi-head predictor — `BlindSpot.z_score` is a 144-d feature vector (the upper-triangle of the embedder-pair grid) consumed by the failure-mode head as auxiliary input.
+This runs as part of the DDA signal computation; high-magnitude `BlindSpot`s are surfaced via `mejepa_cross_embedder_anomalies` MCP tool (already shipped as `search_cross_embedder_anomalies`). For the futurebuild plan, this becomes a feature in the multi-head predictor — for the 12 active content embedders, `blind_spot_z_scores` is a 66-d strict-upper-triangle feature vector consumed by the failure-mode head as auxiliary input.
 
 ---
 
 ## 7. What this signal map commits us to
 
 1. **Keep all active embedders in code-domain routing.** Drop none; pairwise diversity is the source of the blind-spot signal. The current registry has 19 active registrations after E5/E11 retirement.
-2. **Finish neural forward coverage.** `EmbedderForward` / `PretrainedEmbedderForward` now exists for E1/E6/E7/E8/E10/E12/E13/E14 with fail-closed artifact checks and E10 FSV. Remaining `TASK-ENRICH-001` work is full model-artifact FSV coverage, cache/latency integration, and wiring every shift→panel path to the real forward outputs.
+2. **Finish production neural/DDA consumption.** `EmbedderForward` now covers the 12 live content embedders: pretrained E1/E6/E7/E8/E10/E12/E13/E14 and algorithmic E2/E3/E4/E9. `EmbedderCache` and DDA compute/store/readback are code/FSV-shipped. Remaining `TASK-ENRICH-001/003/006` work is full model-artifact/routing FSV coverage, cache pruning/telemetry, and wiring every shift→panel path to persisted DDA features.
 3. **Wire the per-head feature projection** so each prediction head consumes its required DDA signal subset. (Task: `TASK-PREDICT-005-per-head-features.md`.)
 4. **Cross-embedder anomaly z-score features** as an auxiliary input to the failure-mode head. (Task: `TASK-PREDICT-006-blind-spot-features.md`.)
 5. **VRAM budget enforcement** at startup; refuse to start with an over-budget configuration. The accounting is shipped; remaining work is daemon-start integration evidence under real model load.
-6. **Per-language stdlib registry** for `ReinventedWheel` detection, populated from a curated YAML per language. (Task: `TASK-ENRICH-007-stdlib-registry.md`.)
+6. **Per-language stdlib registry** for `ReinventedWheel` detection is shipped under `crates/context-graph-mejepa-instruments/assets/stdlib_registry/` with FSV at `/mnt/d/contextgraph/fsv/phase-d-fsv/stdlib-registry-fsv.json`.

@@ -9,27 +9,17 @@
 ```
 crates/context-graph-mejepa-embedders/
   src/
-    forward/
-      mod.rs                  # NEW: EmbedderForward trait
-      e1_e5_large.rs          # NEW: Candle/CUDA wrapper for E5-style dense
-      e7_qodo.rs              # NEW: Qodo-Embed code-specific
-      e8_graph_attention.rs   # NEW: graph adapter on top of E7
-      e10_paraphrase.rs       # NEW
-      e12_colbert.rs          # NEW
-      e14_codet5.rs           # NEW
-      e17_affect.rs           # NEW
-      deterministic.rs        # existing: kept for E2/E3/E4/E6/E9/E13 (no neural model)
-    cache.rs                  # NEW: (embedder_id, chunk_sha) → vector LRU
+    forward.rs                # shipped: EmbedderForward, PretrainedEmbedderForward, AlgorithmicEmbedderForward
+    cache.rs                  # shipped: (schema, embedder_id, model_version, chunk_sha) → vector
     routing.rs                # existing: 143-row routing table
-    digest_verify.rs          # existing: SHA-256 verification at startup
-    vram_budget.rs            # existing: extended with startup gate
+    digest.rs                 # existing: SHA-256 verification at startup
+    vram.rs                   # existing: VRAM budget query/gate
 
 crates/context-graph-mejepa-train/
   src/
-    dda/
-      mod.rs                  # NEW: DDA signal computation
-      pairwise_mi.rs          # existing (REQ-UTML-06 shipped); reused
-      blind_spot.rs           # NEW: cross-embedder z-score features
+    dda.rs                    # shipped: DDA signal computation + RocksDB persistence/readback
+    learning_signal/
+      pairwise_mi_matrix.rs   # existing (REQ-UTML-06 shipped); weekly MI source
 
 crates/context-graph-mejepa-tct/
   src/
@@ -39,19 +29,21 @@ crates/context-graph-mejepa-tct/
     freshness.rs              # existing; consumed by scheduler
 
 crates/context-graph-mejepa-instruments/
-  data/
+  assets/
     stdlib_registry/
-      python.yml              # NEW
-      rust.yml                # NEW
-      javascript.yml          # NEW
-      typescript.yml          # NEW
-      go.yml                  # NEW
-      java.yml                # NEW
-      c.yml                   # NEW
-      cpp.yml                 # NEW
-      csharp.yml              # NEW
-      ruby.yml                # NEW
-      php.yml                 # NEW
+      python.yml              # shipped
+      rust.yml                # shipped
+      javascript.yml          # shipped
+      typescript.yml          # shipped
+      go.yml                  # shipped
+      java.yml                # shipped
+      c.yml                   # shipped
+      cpp.yml                 # shipped
+      csharp.yml              # shipped
+      ruby.yml                # shipped
+      php.yml                 # shipped
+  src/
+    stdlib_registry.rs        # shipped: schema-validating loader + detector
 ```
 
 ---
@@ -60,17 +52,14 @@ crates/context-graph-mejepa-instruments/
 
 ```rust
 pub trait EmbedderForward: Send + Sync {
-    fn embedder_id(&self) -> EmbedderId;
-    fn dim(&self) -> usize;
-    fn forward(&self, chunk: &Chunk) -> Result<EmbeddingVec>;
-    fn supports_batch(&self) -> bool { false }
-    fn forward_batch(&self, chunks: &[Chunk]) -> Result<Vec<EmbeddingVec>> {
-        chunks.iter().map(|c| self.forward(c)).collect()
-    }
+    fn embedder(&self) -> EmbedderId;
+    fn model_version(&self) -> &str;
+    fn artifact_root(&self) -> &Path;
+    async fn forward(&self, input: &EmbedderInput) -> EmbedResult<EmbedderOutput>;
 }
 ```
 
-Per-embedder implementations load Candle/CUDA models from `/mnt/d/cabdru/contextgraph/models/` at construction (with digest verify per `Phase 1b`). Forward methods run real neural inference.
+`PretrainedEmbedderForward` loads Candle/CUDA models from `/mnt/d/cabdru/contextgraph/models/` at construction with digest/runtime artifact verification. `AlgorithmicEmbedderForward` covers E2/E3/E4/E9 with real mathematical implementations. Temporal algorithmic inputs require an explicit `timestamp:` or `epoch:` instruction; missing time fails closed so cache keys are reproducible.
 
 ---
 
@@ -79,104 +68,54 @@ Per-embedder implementations load Candle/CUDA models from `/mnt/d/cabdru/context
 ```rust
 // crates/context-graph-mejepa-embedders/src/cache.rs
 pub struct EmbedderCache {
-    inner: Arc<RwLock<LruCache<CacheKey, Arc<EmbeddingVec>>>>,
-    persist_path: PathBuf,                     // /mnt/d/contextgraph/storage/embedder-cache/
+    root: PathBuf,
 }
 
-#[derive(Hash, PartialEq, Eq)]
-pub struct CacheKey {
-    pub embedder_id: EmbedderId,
-    pub chunk_sha: Sha256,
+pub struct EmbedderCacheKey {
+    pub schema_version: u16,
+    pub embedder: EmbedderId,
+    pub model_version: String,
+    pub chunk_sha256: String,
 }
 
 impl EmbedderCache {
-    pub fn get_or_compute(&self, key: CacheKey, compute: impl FnOnce() -> Result<EmbeddingVec>) -> Result<Arc<EmbeddingVec>> {
-        if let Some(v) = self.inner.read().peek(&key) {
-            return Ok(v.clone());
-        }
-        let v = Arc::new(compute()?);
-        self.inner.write().put(key.clone(), v.clone());
-        self.persist_async(key, v.clone());
-        Ok(v)
-    }
+    pub async fn forward_cached(
+        &self,
+        forwarder: &dyn EmbedderForward,
+        input: &EmbedderInput,
+    ) -> EmbedResult<EmbedderOutput>;
 }
 ```
 
-Persistence to disk under `/mnt/d/contextgraph/storage/embedder-cache/<embedder_id>/<chunk_sha>.bin`. LRU bounded at 100k entries × 12 embedders × 4 KB ≈ 4.8 GB max.
+Persistence writes JSON under `<root>/<embedder>/<model_version_hash>/<chunk_sha>.json` with atomic temp-file write, fsync, rename, directory fsync, and readback. Corrupt entries fail closed instead of being treated as misses. LRU pruning and production hit-rate telemetry remain open.
 
 ---
 
 ## DDA signal computation
 
 ```rust
-// crates/context-graph-mejepa-train/src/dda/mod.rs
+// crates/context-graph-mejepa-train/src/dda.rs
 pub fn compute_dda_signals(
-    panel_id: PanelId,
-    chunk: &Chunk,
-    per_embedder_vecs: &HashMap<EmbedderId, EmbeddingVec>,
-    constellation: &TctConstellation,
-    cached_mi_matrix: &PairwiseMiMatrix,
-) -> DdaSignals {
-    let active = active_embedders();
-    let n = active.len();
-    
-    // Per-embedder cosine to centroid
-    let mut per_embedder_cosine = Vec::with_capacity(n);
-    for emb_id in &active {
-        let cell = constellation.lookup_default(chunk, *emb_id);
-        let cosine = cosine_sim(&per_embedder_vecs[emb_id], &cell.centroid);
-        per_embedder_cosine.push(cosine);
-    }
-    
-    // Pairwise cosine (upper triangle)
-    let mut pairwise_cosine = Vec::with_capacity(n * (n - 1) / 2);
-    for (i, m1) in active.iter().enumerate() {
-        for m2 in active.iter().skip(i + 1) {
-            pairwise_cosine.push(cosine_sim(&per_embedder_vecs[m1], &per_embedder_vecs[m2]));
-        }
-    }
-    
-    // Pairwise MI (cached weekly; just look up)
-    let pairwise_mi = cached_mi_matrix.upper_triangle();
-    
-    // Blind-spot z-scores
-    let blind_spot_z = compute_blind_spot_zs(&pairwise_cosine, cached_mi_matrix.expected_pairwise());
-    
-    DdaSignals {
-        per_embedder_cosine,
-        pairwise_cosine_upper: pairwise_cosine,
-        pairwise_mi_upper: pairwise_mi,
-        blind_spot_z_scores: blind_spot_z,
-    }
+    inputs: &[DdaVectorInput],
+    baseline: &DdaPairwiseBaseline,
+) -> DdaResult<DdaSignals> {
+    // validates non-empty, sorted unique embedder ids, finite vectors,
+    // vector/centroid dimension equality, baseline lengths, and positive sigmas
 }
 ```
 
-Persisted to `CF_MEJEPA_DDA_SIGNALS` keyed by `(panel_id, chunk_id)`.
+Per-embedder cosine is computed against each input's centroid. Pairwise cosine uses a versioned signed-hash projection (`signed-hash-projection-v1`, 128 dims) so heterogeneous embedder dimensions can be compared in a common DDA basis without dropping or padding data. Pairwise arrays are stored as strict upper triangles. Persisted to `CF_MEJEPA_DDA_SIGNALS` keyed by `(panel_id, chunk_id)` through `persist_dda_signals`, which sync-writes, flushes the CF, and immediately reads back/deserializes/validates the value.
 
 ---
 
 ## VRAM budget enforcement at startup
 
 ```rust
-// crates/context-graph-mejepa-embedders/src/vram_budget.rs (extension)
-pub fn enforce_startup_budget(active: &[EmbedderId], budget_gb: f32) -> Result<()> {
-    let mut total_gb = 0.0;
-    for emb_id in active {
-        let model_size_gb = get_model_size_gb(*emb_id)?;
-        total_gb += model_size_gb;
-    }
-    if total_gb > budget_gb {
-        return Err(EmbedderError::VramBudgetExceeded {
-            requested_gb: total_gb,
-            budget_gb,
-            embedders: active.to_vec(),
-        });
-    }
-    Ok(())
-}
+// crates/context-graph-mejepa-embedders/src/vram.rs
+pub fn query_vram_budget(budget: VramBudget) -> EmbedResult<VramBudgetReport>;
 ```
 
-Called by daemon startup right after digest verification. Refuses to start the daemon if exceeded.
+`query_vram_budget` reads CUDA driver memory info (`cuMemGetInfo_v2`) and returns a source-of-truth `VramBudgetReport` with required/free/total bytes, GPU name, compute capability, telemetry source, and non-authoritative `nvidia-smi` diagnostics. It fails closed with `EmbedError::VramExceeded` if free bytes are below the configured content-set or full-Phase-1 budget. Daemon startup evidence under the full active model load remains open.
 
 ---
 
@@ -210,32 +149,24 @@ Triggered by the scheduler's constellation_freshness_tick when stale cells are f
 ## Per-language stdlib registry format
 
 ```yaml
-# crates/context-graph-mejepa-instruments/data/stdlib_registry/python.yml
-version: 1
+# crates/context-graph-mejepa-instruments/assets/stdlib_registry/python.yml
+schema_version: 1
 language: python
 patterns:
-  - kind: ReinventedWheel
-    pattern_name: hand_rolled_retry_with_backoff
+  - id: python_retry_backoff
+    kind: ReinventedWheel
+    name: Hand-rolled retry with exponential backoff
+    stdlib_alternative: tenacity or urllib3.util.Retry
+    confidence: 0.93
     detection:
-      ast_match: |
-        for attempt in range(MAX_RETRIES):
-          try:
-            ...
-          except Exception:
-            time.sleep(2 ** attempt)
-    suggested_alternative: "tenacity.retry()"
-    confidence: 0.85
-  
-  - kind: ReinventedWheel
-    pattern_name: hand_rolled_logger
-    detection:
-      ast_match: |
-        def log(msg):
-          print(f"[{datetime.now()}] {msg}")
-    suggested_alternative: "logging.getLogger(__name__)"
-    confidence: 0.95
-  
-  # ... more patterns
+      required_substrings:
+        - "for attempt in range"
+        - "try:"
+        - "except"
+        - "time.sleep"
+        - "2 ** attempt"
+      forbidden_substrings:
+        - "from tenacity import"
 ```
 
 Loaded at startup; consumed by the redundancy / dead-code label pipelines and surfaced as `PredictedRedundancy { kind: ReinventedWheel, ... }` in predictions.
@@ -246,10 +177,10 @@ Loaded at startup; consumed by the redundancy / dead-code label pipelines and su
 
 | FSV | What it proves | Output path |
 |---|---|---|
-| `embedder_forward_e1_fsv` | E1 forward returns expected vector for deterministic chunk | `/mnt/d/contextgraph/fsv/mejepa-embedders-fsv/e1.json` |
-| ... per embedder ... | each of the 12 active embedders has its own FSV | `/mnt/d/contextgraph/fsv/mejepa-embedders-fsv/<embedder_id>.json` |
+| `forward_wrapper_fsv` | E10 pretrained forward wrapper loads SHA-pinned artifacts and returns valid output | `/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv/` |
+| `phase_d_embedder_cache_fsv` | E9 real algorithmic forward writes and reads a persistent cache file; corrupt cache fails closed | `/mnt/d/contextgraph/fsv/phase-d-fsv/embedder-cache-fsv.json` |
+| ... per pretrained embedder ... | each pretrained active content embedder still needs its own full artifact FSV | `/mnt/d/contextgraph/fsv/mejepa-embedders-fsv/<embedder_id>.json` |
 | `vram_budget_fsv` | over-budget config refuses to start | `/mnt/d/contextgraph/fsv/mejepa-embedders-fsv/vram_budget.json` |
-| `dda_signal_compute_fsv` | DdaSignals computed correctly for synthetic chunks | `/mnt/d/contextgraph/fsv/mejepa-train-fsv/dda_signal.json` |
-| `embedder_cache_fsv` | cache hit returns identical vector | `/mnt/d/contextgraph/fsv/mejepa-embedders-fsv/cache.json` |
+| `phase_d_dda_fsv` | DdaSignals computed, persisted, reopened, and read back for 30 chunks | `/mnt/d/contextgraph/fsv/phase-d-fsv/dda-signal-compute.json` |
 | `constellation_refresh_fsv` | stale cell refit produces new centroid + tau_m | `/mnt/d/contextgraph/fsv/mejepa-tct-fsv/refresh.json` |
-| `stdlib_registry_load_fsv` | all 11 per-language YAMLs load + parse | `/mnt/d/contextgraph/fsv/mejepa-instruments-fsv/stdlib_registry.json` |
+| `phase_d_stdlib_registry_fsv` | all 11 per-language YAMLs load + parse; Python retry-backoff detects; missing/unknown registries fail closed | `/mnt/d/contextgraph/fsv/phase-d-fsv/stdlib-registry-fsv.json` |

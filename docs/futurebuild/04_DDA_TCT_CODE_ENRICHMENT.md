@@ -4,7 +4,7 @@
 >
 > **The slogan:** **every byte of reality becomes hundreds of labeled training examples.** This document specifies the exact pipeline that delivers that.
 
-**Status snapshot (2026-05-12):** The storage substrate (`CF_MEJEPA_DDA_SIGNALS`) and Phase B typed prediction surfaces are shipped, but production DDA signal computation and real neural feature consumption remain Phase D. Current Phase B predictions use deterministic patch/panel surfaces and must not be treated as trained DDA-backed head quality.
+**Status snapshot (2026-05-12):** The storage substrate (`CF_MEJEPA_DDA_SIGNALS`) and Phase B typed prediction surfaces are shipped. Phase D now also ships the DDA compute/store/readback API, persistent embedder cache, 12-slot content forward surface, inference CF opener fix, stdlib registry FSV, and live shift-subscriber DDA persistence for real algorithmic forward outputs. Current Phase B predictions still use deterministic patch/panel surfaces; trained heads do not yet consume persisted DDA features, and full pretrained artifact/routing FSV remains open.
 
 ---
 
@@ -22,17 +22,27 @@ at `n` aggregation points (chunks, lines, paragraphs, ...) where the `N` is per-
 
 For **N=21** (the full ContextGraph ensemble), this is **n × 462 signals per input**. For a typical SWE-bench Lite mutation entry of ~30 chunks, that's **~13,860 signals per training example.** That is the operator's "insane amount of reward signals from durable reality."
 
-For ME-JEPA's *active* code-domain set (N=12 active content embedders + 7 learner-state per `docs/ruvectorfindings/specs/_README.md` §1; we use the 12 active for code-reality prediction), the math is **n × (12 + 144) = n × 156 signals per input**, or ~4,680 per typical patch.
+For ME-JEPA's *active* code-domain set, the live content embedders are **E1, E2, E3, E4, E6, E7, E8, E9, E10, E12, E13, E14**. E17 is a learner-state/affect slot, not a content embedder in the live registry.
+
+The theoretical Royse identity still describes the dense feature budget. The persisted `DdaSignals` schema intentionally stores **strict upper triangles** for pairwise arrays to avoid duplicated symmetric entries:
+
+- per-embedder cosine: `N = 12`
+- pairwise cosine upper triangle: `N × (N - 1) / 2 = 66`
+- pairwise MI upper triangle: `66`
+- blind-spot z-score upper triangle: `66`
+
+So the current persisted DDA block has **210 scalar values per chunk** for N=12, or **6,300 scalar values across a 30-chunk FSV patch**. If a downstream feature projection needs a full `N²` view, it reconstructs the symmetric matrix from the upper triangle.
 
 ### 1.2 What each signal carries
 
 | Signal class | Count per chunk | What it measures |
 |---|---|---|
 | Per-embedder cosine to centroid (N) | 12 | how close the chunk's embedder-m output is to the (category × entity × language × embedder) centroid for that slot — **direct surface for "this chunk looks anomalous to embedder m"** |
-| Pairwise cosine between embedders (N²) | 144 | whether two embedders agree on the chunk; high disagreement is a red flag for blind-spot-where-one-embedder-misses |
-| Pairwise mutual information between embedders (cached, recomputed periodically) | 144 | structural redundancy across embedders — used by the ΔΞ.predictor_redundancy term |
-| **Total per chunk** | **300** | |
-| For ~30 chunks per typical patch | **~9,000** | dense signal budget per training example |
+| Pairwise cosine between embedders (strict upper triangle) | 66 | whether two embedders agree on the chunk; high disagreement is a red flag for blind-spot-where-one-embedder-misses |
+| Pairwise mutual information between embedders (strict upper triangle, cached/recomputed periodically) | 66 | structural redundancy across embedders — used by the ΔΞ.predictor_redundancy term |
+| Blind-spot z-scores (strict upper triangle) | 66 | normalized pairwise-disagreement features for auxiliary heads |
+| **Total persisted per chunk** | **210** | |
+| For 30 chunks in the Phase D FSV | **6,300** | persisted scalar DDA budget |
 
 These signals are persisted to `CF_MEJEPA_DDA_SIGNALS` keyed by `(panel_id, chunk_id)` so they can be reused across training epochs without recomputation, and so the inference path's TCT Gτ guard can read them in O(1).
 
@@ -69,19 +79,21 @@ These signals are persisted to `CF_MEJEPA_DDA_SIGNALS` keyed by `(panel_id, chun
 │ Step 3 — Per-chunk embedder forward pass                                   │
 │   for each (chunk, embedder_id) in routing × chunks:                       │
 │     EmbedderForward::forward(chunk) → EmbeddingVec                         │
-│   Real neural forward (CodeT5+, Qodo-Embed, GTE, BGE-M3, CodeBERT, ...)    │
-│   per doc 12 §6.1 cache key = (embedder_id, chunk_sha) → 100% hit on       │
+│   Real forward: pretrained Candle/CUDA for E1/E6/E7/E8/E10/E12/E13/E14     │
+│   and real algorithmic forward for E2/E3/E4/E9. Cache key includes         │
+│   schema_version, embedder_id, model_version, and chunk_sha → hit on       │
 │   re-embedding the same chunk → near-zero re-cost                           │
 └──────────────────────────────────┬─────────────────────────────────────────┘
                                    │
                                    ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ Step 4 — DDA signal computation (NEW)                                      │
+│ Step 4 — DDA signal computation (code/FSV shipped 2026-05-12)             │
 │   for each chunk:                                                          │
 │     - cosine_to_centroid[m] = cosine(emb_m(chunk),                         │
 │                                       constellation[category, kind, lang, m]) │
-│     - pairwise_cosine[m1][m2] = cosine(emb_m1(chunk), emb_m2(chunk))       │
-│     - pairwise_mi[m1][m2] = cached MI matrix (recomputed weekly)           │
+│     - pairwise_cosine_upper[m1][m2] = cosine(projected_m1, projected_m2)   │
+│     - pairwise_mi_upper[m1][m2] = cached MI matrix (strict upper triangle) │
+│     - blind_spot_z_scores[m1][m2] = normalized pairwise disagreement       │
 │   Persist to CF_MEJEPA_DDA_SIGNALS                                         │
 └──────────────────────────────────┬─────────────────────────────────────────┘
                                    │
@@ -109,7 +121,7 @@ These signals are persisted to `CF_MEJEPA_DDA_SIGNALS` keyed by `(panel_id, chun
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Steps 1, 2, 3 (with deterministic placeholders), 5, and 6 are shipped today. Step 3's neural forward and Step 4's DDA signal computation are the futurebuild work for this domain.
+Steps 1, 2, 5, and 6 are shipped. Step 3's real forward surface and Step 4's DDA compute/store/readback substrate are now code/FSV-shipped, and the live shift subscriber writes DDA rows for the real algorithmic forward set. The remaining production work is full pretrained/routing FSV and feeding persisted DDA features into trained prediction heads.
 
 ---
 
@@ -211,8 +223,8 @@ Walking through what happens for a single Edit:
 4. **Chunker runs.** `memory::ast::chunk_with_options(...)` returns `[Chunk(separable.py:1-25, Module, Python), Chunk(separable.py:27-58, Function, "def is_separable"), Chunk(separable.py:62-118, Function, "def _walk_compound"), Chunk(separable.py:120-150, Function, "def separability_matrix"), ...]` — say 12 chunks for the file.
 5. **Routing.** Each chunk gets its embedder set per the routing table. For `Function` in Python, the active set is `{E1, E7, E10, E12, E14}` (5 embedders). For `Module`, the set is `{E1, E10, E14}`. For `Comment`, `{E1, E10}`.
 6. **Forward pass.** For each (chunk, embedder), the EmbedderForward returns a vector. Cache hit on chunks unchanged from last shift; cache miss on the modified chunks. Total: ~30 forward passes for the modified region.
-7. **DDA signals.** For each chunk: 5 cosine-to-centroid scalars + 25 pairwise-cosines + 25 cached pairwise-MI = 55 signals per chunk × 12 chunks = **660 signals for this file.** Persist to `CF_MEJEPA_DDA_SIGNALS`.
-8. **Gτ guard.** Each chunk's 5 cosines vs the corresponding `(predicted_category, entity_kind, language, embedder)` τ_m thresholds. The chunk at lines 62-118 violates on E_TypeGraph and E_DataFlow; that's appended to `violating_chunks`.
+7. **DDA signals.** For a Python `Function` chunk routed to 5 content embedders: 5 cosine-to-centroid scalars + 10 strict-upper pairwise-cosines + 10 cached pairwise-MI values + 10 blind-spot z-scores = 35 persisted scalars per chunk. If all 12 chunks used the same 5-embedder route, that would be **420 persisted scalars for this file**. Persist to `CF_MEJEPA_DDA_SIGNALS`.
+8. **Gτ guard.** Each chunk's routed cosines are checked against the corresponding `(predicted_category, entity_kind, language, embedder)` τ_m thresholds. A chunk at lines 62-118 might violate on E7/E14 code-semantics thresholds while deterministic instruments add E_TypeGraph/E_DataFlow context; the violating chunk ids are appended to `violating_chunks`.
 9. **Panel.** The 15 instrument slots are populated by aggregating the chunk-level signals + scalar features. Total Panel = 5,120-d. Persist to `CF_MEJEPA_PANELS`.
 10. **Predictor forward.** 6-layer transformer trunk + the 10 heads run a single forward pass over `(panel_t-1, action, panel_t)`. Outputs are assembled into `RealityPrediction` per the schema in `15_PREDICTION_TAXONOMY.md §1`.
 11. **Persist.** `RealityPrediction` written to `CF_MEJEPA_LIVE_PREDICTIONS` keyed by `session_id`.
@@ -277,10 +289,10 @@ Per `docs/ruvectorfindings/specs/_README.md` Phase 6, the system has a **115 GB 
 
 ## 10. What this enrichment pipeline commits us to
 
-1. **Build neural per-embedder forward wrappers** so `EmbedderForward::forward(chunk)` actually runs the model instead of returning deterministic placeholders. (Task: `tasks/enrichment/TASK-ENRICH-001-neural-forward-wrappers.md`.)
-2. **Wire DDA signal computation** as a step between embedder forward and panel assembly. (Task: `TASK-ENRICH-002-dda-signal-computation.md`.)
-3. **Add `CF_MEJEPA_DDA_SIGNALS` and `CF_MEJEPA_FAILURE_EXEMPLARS` to the CF registry.** (Task: `TASK-ENRICH-003-new-cfs.md`.)
-4. **Multi-head extensions** to the predictor that consume DDA signals as auxiliary features. (Task: `TASK-PREDICT-004-multi-head-stack.md`.)
+1. **Build per-embedder forward wrappers** so `EmbedderForward::forward(chunk)` runs a real pretrained or algorithmic implementation instead of returning placeholders. The 12 active content forward surface is code-shipped; full pretrained artifact/routing FSV remains open.
+2. **Wire DDA signal computation** as a step between embedder forward and panel assembly. The compute/store API, RocksDB FSV, and live shift-subscriber write/readback path are shipped for real algorithmic forward outputs; full 12-slot pretrained/routing FSV remains open.
+3. **Open `CF_MEJEPA_DDA_SIGNALS` and `CF_MEJEPA_FAILURE_EXEMPLARS` in inference runtime.** Shipped 2026-05-12; this fixed the root cause where the CF constants existed but `open_infer_rocksdb` did not open them.
+4. **Multi-head extensions** to the predictor that consume DDA signals as auxiliary features. Phase B schema/API code exists; trained DDA feature consumption remains open.
 5. **Per-language mutation operators** for the 10 non-Python languages are complete in Phase C. Future work here is corpus broadening, not the Phase C ship gate.
 6. **Pairwise MI heatmap renderer** as an operator UI surface. (Task: `TASK-OBS-002-mi-heatmap-renderer.md`.)
 7. **Constellation refresh trigger** wired into the continuous self-optimization daemon. (Task: `TASK-HEAL-005-constellation-refresh.md`.)

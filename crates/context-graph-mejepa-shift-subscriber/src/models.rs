@@ -77,6 +77,7 @@ pub enum ShiftOutcome {
     Predicted {
         prediction_id: String,
         observed: bool,
+        dda_signal_count: usize,
         watermark_key: String,
         watermark_offset: u64,
         latency_ms: u64,

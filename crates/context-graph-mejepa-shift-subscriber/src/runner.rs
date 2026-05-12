@@ -1,10 +1,11 @@
 // Inspired by ruvnet/RuVector at HEAD ef5274c2 (clean-room reimplementation).
 
 use std::any::Any;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tracing::error;
@@ -42,7 +43,7 @@ impl ShiftSubscriber {
                 self.update_lag_alert(tail, &mut lag_exceeded_since)?;
                 match tail.poll_next_line().await {
                     Ok(Some(entry)) => {
-                        let outcome = self.process_shift_supervised(&entry);
+                        let outcome = self.process_shift_supervised(&entry).await;
                         match outcome {
                             Ok(outcome) => {
                                 outcomes.push(outcome);
@@ -106,7 +107,7 @@ impl ShiftSubscriber {
                 self.update_lag_alert(tail, &mut lag_exceeded_since)?;
                 match tail.poll_next_line().await {
                     Ok(Some(entry)) => {
-                        let outcome = self.process_shift_supervised(&entry);
+                        let outcome = self.process_shift_supervised(&entry).await;
                         match outcome {
                             Ok(outcome) => {
                                 outcomes.push(outcome);
@@ -150,8 +151,11 @@ impl ShiftSubscriber {
         })
     }
 
-    fn process_shift_supervised(&self, entry: &ShiftEntry) -> Result<ShiftOutcome> {
-        match catch_unwind(AssertUnwindSafe(|| self.process_shift(entry, false))) {
+    async fn process_shift_supervised(&self, entry: &ShiftEntry) -> Result<ShiftOutcome> {
+        match AssertUnwindSafe(self.process_shift(entry, false))
+            .catch_unwind()
+            .await
+        {
             Ok(result) => result,
             Err(payload) => {
                 let detail = panic_payload_message(payload.as_ref());
@@ -272,6 +276,7 @@ mod tests {
         open_infer_rocksdb, CalibrationExample, CalibrationStore, EmbedderId, MejepaStore,
         RocksDbInferStore, TrainCertSummary,
     };
+    use context_graph_mejepa_train::dda::count_persisted_dda_signals;
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -350,6 +355,13 @@ mod tests {
         );
         assert_eq!(summary.processed, 1);
         assert_eq!(summary.observed, 1);
+        assert!(matches!(
+            summary.outcomes.as_slice(),
+            [ShiftOutcome::Predicted {
+                dda_signal_count: 1,
+                ..
+            }]
+        ));
 
         let watermark = subscriber.watermark_writer.read_all().unwrap();
         assert_eq!(
@@ -368,6 +380,7 @@ mod tests {
             .read_live_predictions(crate::models::decode_session_hex32(session).unwrap(), 10)
             .unwrap();
         assert_eq!(predictions.len(), 1);
+        assert_eq!(count_persisted_dda_signals(db.as_ref()).unwrap(), 1);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -447,6 +460,7 @@ mod tests {
             .read_live_predictions(crate::models::decode_session_hex32(session).unwrap(), 10)
             .unwrap();
         assert!(predictions.is_empty());
+        assert_eq!(count_persisted_dda_signals(db.as_ref()).unwrap(), 0);
     }
 
     fn seed_infer_db(path: &Path) -> Result<()> {

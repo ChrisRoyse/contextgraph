@@ -45,8 +45,12 @@ pub enum SubscriberError {
     Bincode(#[from] Box<bincode::ErrorKind>),
     #[error("MEJEPA_SHIFT_SUBSCRIBER_INFER: {0}")]
     Infer(#[from] context_graph_mejepa::MejepaInferError),
+    #[error("MEJEPA_SHIFT_SUBSCRIBER_EMBED: {0}")]
+    Embed(#[from] context_graph_mejepa_embedders::EmbedError),
     #[error("MEJEPA_SHIFT_SUBSCRIBER_INSTRUMENT: {0}")]
     Instrument(#[from] context_graph_mejepa_instruments::InstrumentError),
+    #[error("MEJEPA_SHIFT_SUBSCRIBER_TRAIN: {0}")]
+    Train(#[from] context_graph_mejepa_train::TrainerError),
 }
 
 impl SubscriberError {
@@ -65,7 +69,9 @@ impl SubscriberError {
             Self::RocksDb(_) => "MEJEPA_SHIFT_SUBSCRIBER_ROCKSDB",
             Self::Bincode(_) => "MEJEPA_SHIFT_SUBSCRIBER_BINCODE",
             Self::Infer(_) => "MEJEPA_SHIFT_SUBSCRIBER_INFER",
+            Self::Embed(_) => "MEJEPA_SHIFT_SUBSCRIBER_EMBED",
             Self::Instrument(_) => "MEJEPA_SHIFT_SUBSCRIBER_INSTRUMENT",
+            Self::Train(_) => "MEJEPA_SHIFT_SUBSCRIBER_TRAIN",
         }
     }
 
