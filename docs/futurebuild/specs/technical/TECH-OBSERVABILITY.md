@@ -11,6 +11,7 @@ crates/context-graph-mejepa/
   src/
     eval/
       report.rs                         # existing; weekly JSON writer already used by daemon eval scheduler
+      telemetry.rs                      # existing: ProductionTelemetryWindow validation + RocksDB source-of-truth rows
       mi_heatmap_renderer.rs            # NEW: pairwise MI → markdown table + PNG (REQ-OBS-FB-02)
       per_head_calibration_tracker.rs   # NEW: rolling-window ECE per head (REQ-OBS-FB-04)
       slice_quota_breakdown.rs          # NEW: disk usage by slice (REQ-OBS-FB-08)
@@ -130,6 +131,20 @@ fn parse_nvidia_smi_output(stdout: &[u8], query: &str) -> Result<GpuTelemetry> {
 ```
 
 Per `memory/decisions/agent-42-harness-editor--nvidia-smi-na-sentinel-tolerance.md`: N/A is not silently swapped for -1; it's reported as `unavailable: true` for that field.
+
+---
+
+## Production telemetry rows
+
+`crates/context-graph-mejepa/src/eval/telemetry.rs` owns the production-window source of truth used by the Phase G ship gate. `ProductionTelemetryWindow::validate()` fails closed before persistence if:
+- `window_id`, `source`, or `corpus_sha256` is empty
+- sample count is zero
+- any rate or metric is non-finite or outside its unit interval
+- latency percentiles are non-monotonic
+- `ship_gate_passed` does not equal `prediction_oracle_agreement >= ship_gate_target`
+- CUDA VRAM accounting is impossible (`required == 0`, `total == 0`, `free > total`, or `required > total`)
+
+The FSV path builds telemetry from real evidence artifacts, writes final plus rolling rows with sync writes, flushes/drops/reopens RocksDB, reads every row back through the typed API, and independently iterates `CF_MEJEPA_PRODUCTION_TELEMETRY` to prove the physical row count.
 
 ---
 
@@ -264,3 +279,4 @@ impl ActiveLearningCmd {
 | `slice_quota_fsv` | breakdown sums to total; total matches du -sh | `/mnt/d/contextgraph/fsv/eval-fsv/slice_quota.json` |
 | `c_drive_lint_fsv` | catches deliberately-introduced /tmp/contextgraph-test/ path | CI step output |
 | `cli_active_learning_fsv` | list / label / dismiss work end-to-end | `/mnt/d/contextgraph/fsv/cli-fsv/active_learning.json` |
+| `production_telemetry_fsv` | persists final + rolling production telemetry windows, flushes/reopens RocksDB, reads back typed rows and raw CF iterator count, and verifies invalid rows leave state unchanged | `/mnt/d/contextgraph/fsv/contextgraph-mejepa-production-telemetry-fsv/production-telemetry-evidence.json` |

@@ -8,7 +8,7 @@
 
 **Date authored:** 2026-05-10
 **Date revised:** 2026-05-12 — Phase B code/FSV status reconciled; Phase C corpus expansion completed and verified.
-**Status:** active blueprint — Phase A, Phase B prediction/API/schema, Phase C corpus expansion, and the Phase D enrichment substrate are code/FSV-shipped; production telemetry capture now has source-of-truth FSV, but Phase E remains blocked by the Phase A-D readiness gate ([#15](https://github.com/ChrisRoyse/contextgraph/issues/15)) until the remaining analyzer, UTML-carrier, and non-green 0.95 ship-gate gaps are closed with source-of-truth evidence.
+**Status:** active blueprint — Phase A, Phase B prediction/API/schema, Phase C corpus expansion, and the Phase D enrichment substrate are code/FSV-shipped; production telemetry, analyzer-backed instruments, and UTML carrier reconciliation now have source-of-truth FSV. The Phase E handoff is ready. The latest holdout still reports `0.866667 < 0.95`, so human-review replacement remains a Phase G convergence target, not a completed claim.
 **Scope:** absorbs `09`, `10`, `11`, `12`, `13`, `14`, `15`, `16` from `docs/ruvectorfindings/`; refactors `.claude/loop.md`; deletes the inner-loop residue per the operator directive.
 
 ---

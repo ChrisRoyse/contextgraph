@@ -23,11 +23,11 @@
 
 ## Current gate
 
-Phase E tasks are blocked by the A-D readiness issue [#15](https://github.com/ChrisRoyse/contextgraph/issues/15). The open task-level blockers are analyzer-backed instrument parity (#4), UTML carrier reconciliation (#13), and the non-green 0.95 prediction-oracle gate (#15). Phase D substrate tasks can be code/FSV-complete while Phase E remains blocked by model-quality readiness.
+The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed instrument parity (#4), production telemetry (#11), UTML carrier reconciliation (#13), and the umbrella readiness gate (#15) have source-of-truth FSV. The latest holdout remains `0.866667 < 0.95`; that is Phase G model-quality convergence, not an A-D substrate blocker.
 
 ---
 
-## Phase A — Operational Unblock (14 tasks)
+## Phase A — Operational Unblock (12 substrate tasks + moved cleanup/observability)
 
 | ID | Title | Phase | Blocked by | Effort |
 |---|---|---|---|---|
@@ -40,13 +40,13 @@ Phase E tasks are blocked by the A-D readiness issue [#15](https://github.com/Ch
 | `TASK-PREDICT-001` | UserPromptSubmit prediction-injection hook | A | FLYWHEEL-001 | **complete (2026-05-12)** |
 | `TASK-PREDICT-002` | `mejepa_record_agent_feedback` MCP tool + sampling-weight bump wiring | A | FLYWHEEL-005, FLYWHEEL-006 | **complete (2026-05-12; no feedback rate limit)** |
 | `TASK-LOOP-001` | Apply new `.claude/loop.md` content from `14_NEW_LOOP_MD.md` | A | FLYWHEEL-001 | **complete (already applied)** |
-| `TASK-LOOP-002` | Update CLAUDE.md §11.11/§13/§3 + `agents/README.md` retirements | A | LOOP-001 | 0.25d |
+| `TASK-LOOP-002` | Update CLAUDE.md §11.11/§13/§3 + agent README retirements | H | LOOP-001 | moved to Phase H residue cleanup; not an A-D ME-JEPA substrate blocker |
 | `TASK-LOOP-007` | Hook output paths → D-drive `cgreality-shift-log/` | A | none | **complete (2026-05-11 — code already shipped, audit doc updated)** |
 | `TASK-OBS-005` | C-drive lint in CI | A | none | **complete (2026-05-12)** |
 | `TASK-OBS-006` | FSV path migration sweep | A | none | **complete (2026-05-12)** |
-| `TASK-OBS-007` | Per-slice quota observability extension | A | none | 0.5d |
+| `TASK-OBS-007` | Per-slice quota observability extension | F | none | moved to Phase F observability; category-level quota status already ships |
 
-**Phase A total: ~7.5 days.**
+**Phase A substrate status:** complete for the ME-JEPA Phase E handoff. The two moved rows remain tracked under Phase F/H where they belong.
 
 ---
 
@@ -69,20 +69,20 @@ Phase E tasks are blocked by the A-D readiness issue [#15](https://github.com/Ch
 | `TASK-PREDICT-LABEL-007` | Accuracy label source (test-output metric regex extractor) | B | none | **partial/code_complete: metric keyword extractor; full regex catalog open** |
 | `TASK-PREDICT-LABEL-008` | Cost label source (CI minute counter + token telemetry + dep-count delta) | B | none | **partial/code_complete: dependency-count delta; CI/token telemetry open** |
 | `TASK-PREDICT-LABEL-009` | Reasoning-class weak supervisor (E_Reasoning ⟂ E_Diff agreement) | B | PREDICT-005 | **partial/code_complete: field/schema present; embedder-agreement supervisor open** |
-| `TASK-PREDICT-LABEL-010` | Toolchain availability fail-closed audit | B | none | open / re-scoped from fallback |
-| `TASK-PREDICT-LABEL-011` | Cross-language label gating | B | PREDICT-LABEL-001..009 | open |
+| `TASK-PREDICT-LABEL-010` | Toolchain availability fail-closed audit | F | none | open Phase F hardening; not a Phase B schema/API blocker |
+| `TASK-PREDICT-LABEL-011` | Cross-language label gating | F | PREDICT-LABEL-001..009 | open Phase F hardening; not a Phase B schema/API blocker |
 | `TASK-PREDICT-009` | `ActiveLearningKind::AgentSurprise` integration (consumer side) | B | FLYWHEEL-005 | **complete (2026-05-11/12)** |
 | `TASK-UTML-001` | Per-head ΔP/ΔK/ΔΞ tracking | B | PREDICT-005 | **complete/code_complete (2026-05-12)** |
-| `TASK-UTML-002` | Per-head cert columns in `CF_MEJEPA_TRAIN_CERTS` | B | UTML-001 | **partial/code_complete: `per_head_l_step` + `delta_xi_global_min`; full per-head loss/delta/lambda columns open** |
-| `TASK-UTML-003` | `ΔΞ_global = min_h(ΔΞ_h)` aggregation | B | UTML-001 | **partial/code_complete: aggregation implemented; BatchSampler skip policy open** |
+| `TASK-UTML-002` | Per-head cert columns in `CF_MEJEPA_TRAIN_CERTS` | B | UTML-001 | **complete for Phase A-D (2026-05-12; cert readback + carrier fields FSV)** |
+| `TASK-UTML-003` | `ΔΞ_global = min_h(ΔΞ_h)` aggregation | B | UTML-001 | **complete for persisted learning-signal carrier; BatchSampler policy belongs to Phase E** |
 | `TASK-UTML-004` | `agent_surprise_severity_score` factor in sampling_weight | B | PREDICT-002 | **complete** |
-| `TASK-UTML-005` | Per-head Fisher matrices | B | UTML-001 | open |
-| `TASK-UTML-006` | Per-head dormancy detection | B | UTML-001 | open |
-| `TASK-UTML-007` | Per-head loss coefficient λ ramp in heal scheduler | B | HEAL-001, UTML-001 | open |
+| `TASK-UTML-005` | Per-head Fisher matrices | E | UTML-001 | open Phase E policy |
+| `TASK-UTML-006` | Per-head dormancy detection | E | UTML-001 | open Phase E policy |
+| `TASK-UTML-007` | Per-head loss coefficient λ ramp in heal scheduler | E | HEAL-001, UTML-001 | open Phase E policy |
 | `TASK-UTML-008` | Per-head dissipation detection | E | UTML-001 | open |
-| `TASK-UTML-009` | Per-cell state-transfer T in eval reports | B | UTML-001 | open |
+| `TASK-UTML-009` | Per-cell state-transfer T in eval reports | F | UTML-001 | open Phase F reporting |
 
-**Phase B code/FSV status (2026-05-12):** primary prediction/API/schema/label/UTML skeleton complete with FSV at `/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-prediction-fsv.json`. Remaining work is quality/training hardening: per-head Fisher, dormancy, lambda ramp, dissipation, per-cell state transfer, full analyzer/toolchain label deltas, and holdout metrics.
+**Phase B code/FSV status (2026-05-12):** primary prediction/API/schema/label/UTML carrier work is complete with FSV at `/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-prediction-fsv.json` and `/mnt/d/contextgraph/fsv/contextgraph-utml-fsv/utml-fsv-summary.json`. Remaining items are Phase E/F/G quality/policy work: per-head Fisher, dormancy, lambda ramp, dissipation, per-cell state-transfer reporting, full analyzer/toolchain label deltas, and holdout metrics.
 
 ---
 
@@ -107,11 +107,11 @@ Phase E tasks are blocked by the A-D readiness issue [#15](https://github.com/Ch
 | `TASK-ENRICH-002` | DDA signal computation per chunk with per-embedder cosine, strict upper-triangle pairwise cosine/MI, blind-spot z-scores | D | ENRICH-001, FLYWHEEL-006 | **complete (2026-05-12)** |
 | `TASK-ENRICH-003` | Populate the new CFs with real signals | D | ENRICH-002 | **complete (2026-05-12; live algorithmic DDA rows FSV writes/readbacks 100 shifts)** |
 | `TASK-ENRICH-004` | Embedder cache layer | D | ENRICH-001 | **complete (2026-05-12; persistent cache, corrupt-entry fail-closed, LRU/telemetry evidence closed in #17)** |
-| `TASK-ENRICH-005` | VRAM budget gate enforcement at startup | D | ENRICH-001 | complete for telemetry capture; remaining readiness belongs to #15 |
+| `TASK-ENRICH-005` | VRAM budget gate enforcement at startup | D | ENRICH-001 | **complete for Phase A-D (production telemetry window + VRAM readback FSV)** |
 | `TASK-ENRICH-006` | Per-embedder FSV (real model file, deterministic input → expected output) | D | ENRICH-001 | **complete (2026-05-12; 8 pretrained + 4 algorithmic + 143 routing rows read back)** |
 | `TASK-ENRICH-007` | Per-language stdlib registry for `ReinventedWheel` | D | none | **complete (2026-05-12)** |
 
-**Phase D status (2026-05-12):** enrichment substrate is code/FSV-shipped for full pretrained/routing forwards, DDA compute/store, live shift-subscriber DDA rows, persistent cache/LRU telemetry, inference CF opening, TCT refresh support, production telemetry windows, and stdlib registry. Autonomous Phase E still waits on the A-D readiness gate (#15), especially analyzer parity (#4), UTML carrier evidence (#13), and the non-green 0.95 prediction-oracle threshold.
+**Phase D status (2026-05-12):** enrichment substrate is code/FSV-shipped for full pretrained/routing forwards, DDA compute/store, live shift-subscriber DDA rows, persistent cache/LRU telemetry, inference CF opening, TCT refresh support, production telemetry windows, analyzer-backed semantic heads, UTML carrier evidence, and stdlib registry. Autonomous Phase E can start from this substrate; the non-green 0.95 prediction-oracle threshold remains Phase G convergence work.
 
 ---
 
@@ -119,14 +119,14 @@ Phase E tasks are blocked by the A-D readiness issue [#15](https://github.com/Ch
 
 | ID | Title | Phase | Blocked by | Effort |
 |---|---|---|---|---|
-| `TASK-HEAL-001` | Self-optimization scheduler full implementation | E | #15 closed | 1.5d |
-| `TASK-HEAL-002` | Per-cell stratified drift detection | E | #15 closed, HEAL-001 | 1d |
-| `TASK-HEAL-003` | Dissipation detection | E | #15 closed, HEAL-001, UTML-008 | 1d |
-| `TASK-HEAL-004` | Bayesian small-window drift (Beta posterior) | E | #15 closed, HEAL-002 | 0.5d |
-| `TASK-HEAL-005` | Production constellation refresh policy (scheduler tick exists) | E | #15 closed, HEAL-001 | 0.5d |
-| `TASK-HEAL-006` | `mejepa_promote_approval` MCP tool | E | #15 closed, HEAL-001 | 0.5d |
-| `TASK-HEAL-007` | Emergency eviction policy validation (scheduler tick exists) | E | #15 closed | 0.5d |
-| `TASK-UTML-008` | Per-head dissipation detection | E | #15 closed, UTML-001 | 0.5d |
+| `TASK-HEAL-001` | Self-optimization scheduler full implementation | E | Phase A-D substrate verified | 1.5d |
+| `TASK-HEAL-002` | Per-cell stratified drift detection | E | HEAL-001 | 1d |
+| `TASK-HEAL-003` | Dissipation detection | E | HEAL-001, UTML-008 | 1d |
+| `TASK-HEAL-004` | Bayesian small-window drift (Beta posterior) | E | HEAL-002 | 0.5d |
+| `TASK-HEAL-005` | Production constellation refresh policy (scheduler tick exists) | E | HEAL-001 | 0.5d |
+| `TASK-HEAL-006` | `mejepa_promote_approval` MCP tool | E | HEAL-001 | 0.5d |
+| `TASK-HEAL-007` | Emergency eviction policy validation (scheduler tick exists) | E | none | 0.5d |
+| `TASK-UTML-008` | Per-head dissipation detection | E | UTML-001 | 0.5d |
 
 **Phase E total: ~6 days.**
 

@@ -33,15 +33,15 @@
 - **Goal:** Implement `EmbedderCache` per `TECH-ENRICHMENT §5`.
 - **Outputs:** `crates/context-graph-mejepa-embedders/src/cache.rs`.
 - **Done 2026-05-12:** persistent content-addressed JSON cache keyed by `(schema_version, embedder_id, model_version, chunk_sha256)`; atomic write + fsync + readback; corrupt cache entries fail closed and are not treated as misses; LRU/size-bound pruning and daemon hit/miss telemetry were closed under #17.
-- **Still open:** remaining autonomous readiness belongs to #15, not this Phase D substrate task.
+- **Still open:** Phase E autonomous policy work consumes this cache telemetry; the Phase D cache substrate itself is complete.
 - **FSV:** `/mnt/d/contextgraph/fsv/phase-d-fsv/embedder-cache-fsv.json`
 
 ## TASK-ENRICH-005 — VRAM budget gate at startup
 
-- **Phase:** D · **Status:** complete for telemetry capture; remaining readiness under #15 · **Blocked by:** TASK-ENRICH-001
+- **Phase:** D · **Status:** complete for telemetry capture and production readback · **Blocked by:** TASK-ENRICH-001
 - **Goal:** Per `TECH-ENRICHMENT §7`. Daemon refuses to start over budget.
 - **Done before this pass:** `query_vram_budget` and content-set/full Phase 1 VRAM budget checks exist in `crates/context-graph-mejepa-embedders/src/vram.rs`.
-- **Still open:** full A-D readiness gate still requires the non-green ship-gate and model-quality blockers to close under #15.
+- **Still open:** the non-green ship-gate is a Phase G model-quality target; Phase D VRAM telemetry source-of-truth capture is complete.
 - **DoD:** configured budget 1 GB + active set requires >1 GB → daemon refuses with clear error and logs free/required/total VRAM.
 
 ## TASK-ENRICH-006 — Per-embedder FSV

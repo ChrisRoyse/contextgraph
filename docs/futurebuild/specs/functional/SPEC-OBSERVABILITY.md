@@ -1,7 +1,7 @@
 # SPEC-OBSERVABILITY — Functional Specification
 
 > **Level 2.** Defines WHAT the production observability surface must do.
-> Owns: REQ-OBS-FB-01..12.
+> Owns: REQ-OBS-FB-01..13.
 > Implementation reference: `12_IMPLEMENTATION_PHASES.md §F`. Extends Phase 8 SPEC-EVAL (shipped).
 
 ---
@@ -74,6 +74,16 @@ Catastrophic-severity alerts SHALL be visible at the top of the weekly report AN
 
 `mejepa_subscriber_status` SHALL include latency p50/p99/max histograms over the last 1000 shifts, plus lag-alert state.
 
+### REQ-OBS-FB-13 — Production telemetry source-of-truth windows
+
+The system SHALL persist `ProductionTelemetryWindow` rows to `CF_MEJEPA_PRODUCTION_TELEMETRY` for each production evaluation window. Each row SHALL include:
+- window id, source path, corpus SHA, sample count, and timestamp range
+- conformal ECE, OOD AUC, Gτ pass rate, prediction-oracle agreement, ship-gate target, and ship-gate pass flag
+- p50/p95/p99/max prediction latency
+- CUDA-driver VRAM free/required/total bytes when CUDA is required
+
+The ship-gate pass flag SHALL be derived from `prediction_oracle_agreement >= ship_gate_target`; stored contradictions SHALL fail closed. VRAM totals SHALL fail closed if free exceeds total, required is zero, or required exceeds total.
+
 ## Acceptance criteria
 
 1. After one week of operation, `/mnt/d/contextgraph/exports/eval/<date>/weekly.md` exists and contains all required sections.
@@ -81,12 +91,14 @@ Catastrophic-severity alerts SHALL be visible at the top of the weekly report AN
 3. `nvidia-smi` returning "N/A" for any field → `mejepa_vram_budget_report` reports `unavailable: true` for that field, not a fake value.
 4. `mejepa_inspect_prediction` for a recent prediction returns the full provenance with all referenced artifacts present.
 5. CI lint catches a deliberately-introduced `/tmp/contextgraph-test/` path in source.
+6. A production telemetry FSV writes final plus rolling windows, flushes/drops/reopens RocksDB, independently reads back every `CF_MEJEPA_PRODUCTION_TELEMETRY` row, and proves direct iterator count equals the expected window count.
 
 ## Edge cases
 
 - **Weekly cron fires while a full retrain is in flight**: report writer waits up to 5 min for retrain to finish; if not, writes report with retrain marker noted.
 - **Active-learning queue empty for two weeks**: report still writes (with empty queue section); not a problem.
 - **GPU not present (CPU-only run)**: VRAM telemetry returns `gpu_present: false`; daemon refuses to load CUDA-required embedders.
+- **Invalid production telemetry row**: empty window id, zero samples, non-monotonic latency, contradictory ship-gate flag, or impossible VRAM accounting fails validation before a RocksDB write.
 
 ## Non-functional
 
