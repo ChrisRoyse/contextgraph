@@ -79,7 +79,7 @@ impl ConstellationBuilder {
         mutation: MutationCategory,
         oracle_outcome: OracleOutcome,
         language: Language,
-        entity_type: EntityType,
+        _panel_entity_type: EntityType,
         chunk_panels: &[(ChunkId, Panel)],
     ) -> Result<(), TctError> {
         for embedder in EmbedderId::all() {
@@ -113,20 +113,11 @@ impl ConstellationBuilder {
                     ),
                 ));
             }
-            if chunk_id.entity_type != entity_type {
-                return Err(TctError::invalid(
-                    "chunk_id.entity_type",
-                    format!(
-                        "chunk entity {:?} does not match corpus entry entity {:?}",
-                        chunk_id.entity_type, entity_type
-                    ),
-                ));
-            }
             for embedder in EmbedderId::all() {
                 let slot = panel_slice_for_embedder(chunk_panel, embedder)?;
                 accumulate(
                     &mut self.per_chunk_type_buckets,
-                    (mutation, entity_type, language, embedder),
+                    (mutation, chunk_id.entity_type, language, embedder),
                     slot,
                     "per_chunk_type_buckets",
                 )?;
