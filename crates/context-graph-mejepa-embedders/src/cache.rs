@@ -1,13 +1,20 @@
+use crate::cache_limits::{
+    EmbedderCacheConfig, EmbedderCacheTelemetry, PruneReport, EMBEDDER_CACHE_TELEMETRY_FILE,
+};
+use crate::cache_entry::{CacheEntryRecord, CachedEmbedderVector};
+use crate::cache_io::{
+    cache_json_parse_error, checked_inc, fsync_dir, is_lower_hex_sha256, unix_ms,
+    visit_cache_files, write_bytes_atomic,
+};
 use crate::embedder_id::EmbedderId;
 use crate::error::{EmbedError, EmbedResult};
 use crate::forward::EmbedderForward;
 use crate::types::{EmbedderInput, EmbedderOutput};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+
+pub use crate::cache_entry::chunk_sha256;
 
 pub const EMBEDDER_CACHE_SCHEMA_VERSION: u16 = 1;
 
@@ -85,79 +92,21 @@ impl EmbedderCacheKey {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CachedEmbedderVector {
-    pub key: EmbedderCacheKey,
-    pub vector: Vec<f32>,
-    pub precision_class: String,
-    pub written_at_unix_ms: u128,
-}
-
-impl CachedEmbedderVector {
-    fn from_output(key: EmbedderCacheKey, output: &EmbedderOutput) -> EmbedResult<Self> {
-        output.validate()?;
-        validate_output_matches_key(&key, output)?;
-        Ok(Self {
-            key,
-            vector: output.vector.clone(),
-            precision_class: output.precision_class.clone(),
-            written_at_unix_ms: unix_ms()?,
-        })
-    }
-
-    fn validate(&self) -> EmbedResult<()> {
-        self.key.validate()?;
-        if self.vector.len() != self.key.embedder.dimension() {
-            return Err(EmbedError::invalid(
-                "CachedEmbedderVector.vector",
-                format!(
-                    "{} cached vector dimension {}, expected {}",
-                    self.key.embedder,
-                    self.vector.len(),
-                    self.key.embedder.dimension()
-                ),
-                "delete the corrupt cache entry and recompute it from the pinned model",
-            ));
-        }
-        if !self.vector.iter().all(|value| value.is_finite()) {
-            return Err(EmbedError::invalid(
-                "CachedEmbedderVector.vector",
-                "cached vector contains NaN or Inf",
-                "delete the corrupt cache entry and inspect the model forward logs",
-            ));
-        }
-        if self.precision_class.trim().is_empty() {
-            return Err(EmbedError::invalid(
-                "CachedEmbedderVector.precision_class",
-                "precision_class is empty",
-                "persist the concrete forward precision class with each cache row",
-            ));
-        }
-        Ok(())
-    }
-
-    fn into_output(self, source_id: String) -> EmbedResult<EmbedderOutput> {
-        self.validate()?;
-        let output = EmbedderOutput {
-            embedder: self.key.embedder,
-            source_id,
-            vector: self.vector,
-            model_version: self.key.model_version,
-            precision_class: self.precision_class,
-        };
-        output.validate()?;
-        Ok(output)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct EmbedderCache {
     root: PathBuf,
+    config: EmbedderCacheConfig,
 }
 
 impl EmbedderCache {
     pub fn new(root: impl Into<PathBuf>) -> EmbedResult<Self> {
+        Self::new_with_config(root, EmbedderCacheConfig::from_env()?)
+    }
+
+    pub fn new_with_config(
+        root: impl Into<PathBuf>,
+        config: EmbedderCacheConfig,
+    ) -> EmbedResult<Self> {
         let root = root.into();
         if root.as_os_str().is_empty() {
             return Err(EmbedError::invalid(
@@ -166,11 +115,24 @@ impl EmbedderCache {
                 "configure a concrete local cache directory on durable storage",
             ));
         }
-        Ok(Self { root })
+        config.validate()?;
+        Ok(Self { root, config })
     }
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub fn config(&self) -> EmbedderCacheConfig {
+        self.config
+    }
+
+    pub fn telemetry_path(&self) -> PathBuf {
+        self.root.join(EMBEDDER_CACHE_TELEMETRY_FILE)
+    }
+
+    pub fn telemetry(&self) -> EmbedResult<EmbedderCacheTelemetry> {
+        self.load_telemetry()
     }
 
     pub fn get(
@@ -181,6 +143,7 @@ impl EmbedderCache {
         key.validate()?;
         let path = self.entry_path(key);
         if !path.exists() {
+            self.record_miss()?;
             return Ok(None);
         }
         let bytes = fs::read(&path).map_err(|err| {
@@ -190,14 +153,16 @@ impl EmbedderCache {
                 "inspect cache filesystem permissions and storage health; corrupt cache reads are not treated as misses",
             )
         })?;
-        let cached: CachedEmbedderVector = serde_json::from_slice(&bytes).map_err(|err| {
-            EmbedError::forward(
-                key.embedder,
-                format!("cache JSON parse failed at {}: {err}", path.display()),
-                "delete the corrupt cache entry and recompute it from the pinned model",
-            )
+        let mut cached: CachedEmbedderVector = serde_json::from_slice(&bytes).map_err(|err| {
+            let _ = self.record_corrupt_entry_error();
+            cache_json_parse_error(key.embedder, &path, err)
         })?;
+        if let Err(err) = cached.validate() {
+            self.record_corrupt_entry_error()?;
+            return Err(err);
+        }
         if cached.key != *key {
+            self.record_corrupt_entry_error()?;
             return Err(EmbedError::forward(
                 key.embedder,
                 format!(
@@ -209,6 +174,9 @@ impl EmbedderCache {
                 "delete the corrupt cache entry; cache files must be content-addressed by the stored key",
             ));
         }
+        cached.touch()?;
+        self.write_cached_entry(&path, &cached)?;
+        self.record_hit()?;
         cached.into_output(source_id).map(Some)
     }
 
@@ -220,23 +188,6 @@ impl EmbedderCache {
         key.validate()?;
         let cached = CachedEmbedderVector::from_output(key.clone(), output)?;
         let path = self.entry_path(key);
-        let parent = path.parent().ok_or_else(|| {
-            EmbedError::forward(
-                key.embedder,
-                format!("cache entry path has no parent: {}", path.display()),
-                "configure a normal directory path for the embedder cache root",
-            )
-        })?;
-        fs::create_dir_all(parent).map_err(|err| {
-            EmbedError::forward(
-                key.embedder,
-                format!(
-                    "cache directory create failed at {}: {err}",
-                    parent.display()
-                ),
-                "inspect cache root permissions and available disk",
-            )
-        })?;
         let bytes = serde_json::to_vec(&cached).map_err(|err| {
             EmbedError::forward(
                 key.embedder,
@@ -244,59 +195,47 @@ impl EmbedderCache {
                 "ensure cached vector metadata remains JSON serializable",
             )
         })?;
-        let tmp_path = path.with_extension("json.tmp");
-        {
-            let mut file = OpenOptions::new()
-                .create(true)
-                .truncate(true)
-                .write(true)
-                .open(&tmp_path)
-                .map_err(|err| {
-                    EmbedError::forward(
-                        key.embedder,
-                        format!("cache temp open failed at {}: {err}", tmp_path.display()),
-                        "inspect cache root permissions and available disk",
-                    )
-                })?;
-            file.write_all(&bytes).map_err(|err| {
-                EmbedError::forward(
-                    key.embedder,
-                    format!("cache temp write failed at {}: {err}", tmp_path.display()),
-                    "inspect cache root permissions and available disk",
-                )
-            })?;
-            file.sync_all().map_err(|err| {
-                EmbedError::forward(
-                    key.embedder,
-                    format!("cache temp fsync failed at {}: {err}", tmp_path.display()),
-                    "inspect filesystem durability support and disk health",
-                )
-            })?;
+        if bytes.len() as u64 > self.config.max_bytes {
+            return Err(EmbedError::forward(
+                key.embedder,
+                format!(
+                    "cache entry {} is {} bytes, larger than configured cache max_bytes {}",
+                    path.display(),
+                    bytes.len(),
+                    self.config.max_bytes
+                ),
+                "raise CG_MEJEPA_EMBED_CACHE_MAX_BYTES or reduce the embedder output size before caching",
+            ));
         }
-        fs::rename(&tmp_path, &path).map_err(|err| {
+        write_bytes_atomic(&path, &bytes, key.embedder)?;
+        let readback_bytes = fs::read(&path).map_err(|err| {
             EmbedError::forward(
                 key.embedder,
                 format!(
-                    "cache atomic rename failed from {} to {}: {err}",
-                    tmp_path.display(),
+                    "cache readback failed immediately after write at {}: {err}",
                     path.display()
                 ),
-                "ensure the cache temp file and final entry live on the same filesystem",
+                "inspect cache filesystem permissions and storage health",
             )
         })?;
-        fsync_dir(parent, key.embedder)?;
-        let readback = self.get(key, output.source_id.clone())?.ok_or_else(|| {
-            EmbedError::forward(
+        if readback_bytes != bytes {
+            return Err(EmbedError::forward(
                 key.embedder,
-                format!(
-                    "cache readback returned None after write at {}",
-                    path.display()
-                ),
-                "inspect the cache key path derivation and filesystem visibility",
-            )
-        })?;
+                "cache readback bytes did not match the just-written payload",
+                "inspect disk write ordering and filesystem integrity",
+            ));
+        }
+        let readback: CachedEmbedderVector =
+            serde_json::from_slice(&readback_bytes).map_err(|err| {
+                EmbedError::forward(
+                    key.embedder,
+                    format!("cache readback JSON parse failed at {}: {err}", path.display()),
+                    "delete the corrupt cache entry and inspect disk write ordering",
+                )
+            })?;
+        readback.validate()?;
         if readback.vector != output.vector
-            || readback.model_version != output.model_version
+            || readback.key.model_version != output.model_version
             || readback.precision_class != output.precision_class
         {
             return Err(EmbedError::forward(
@@ -305,6 +244,8 @@ impl EmbedderCache {
                 "delete the corrupt cache entry and inspect disk write ordering",
             ));
         }
+        self.record_write()?;
+        self.enforce_limits(key.embedder)?;
         Ok(())
     }
 
@@ -323,123 +264,232 @@ impl EmbedderCache {
     }
 
     pub fn entry_path(&self, key: &EmbedderCacheKey) -> PathBuf {
-        let model_version_hash = chunk_sha256(&key.model_version);
         self.root
             .join(format!("{:?}", key.embedder))
-            .join(model_version_hash)
+            .join(chunk_sha256(&key.model_version))
             .join(format!("{}.json", key.chunk_sha256))
     }
-}
 
-pub fn chunk_sha256(text: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(text.as_bytes());
-    hex_lower(hasher.finalize().as_slice())
-}
-
-fn validate_output_matches_key(key: &EmbedderCacheKey, output: &EmbedderOutput) -> EmbedResult<()> {
-    if output.embedder != key.embedder {
-        return Err(EmbedError::forward(
-            key.embedder,
-            format!(
-                "cache output embedder mismatch: key={} output={}",
-                key.embedder, output.embedder
-            ),
-            "write only outputs generated by the same embedder as the cache key",
-        ));
-    }
-    if output.model_version != key.model_version {
-        return Err(EmbedError::forward(
-            key.embedder,
-            format!(
-                "cache output model_version mismatch: key={} output={}",
-                key.model_version, output.model_version
-            ),
-            "write only outputs generated by the exact model version in the cache key",
-        ));
-    }
-    Ok(())
-}
-
-fn fsync_dir(path: &Path, embedder: EmbedderId) -> EmbedResult<()> {
-    let dir = OpenOptions::new().read(true).open(path).map_err(|err| {
-        EmbedError::forward(
-            embedder,
-            format!(
-                "cache directory open for fsync failed at {}: {err}",
-                path.display()
-            ),
-            "inspect cache root permissions and filesystem support for directory fsync",
-        )
-    })?;
-    dir.sync_all().map_err(|err| {
-        EmbedError::forward(
-            embedder,
-            format!("cache directory fsync failed at {}: {err}", path.display()),
-            "inspect filesystem durability support and disk health",
-        )
-    })
-}
-
-fn unix_ms() -> EmbedResult<u128> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|err| {
-            EmbedError::invalid(
-                "system_time",
-                format!("system clock is before UNIX_EPOCH: {err}"),
-                "fix host clock before writing cache evidence",
-            )
-        })?
-        .as_millis())
-}
-
-fn is_lower_hex_sha256(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-}
-
-fn hex_lower(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push(HEX[(byte >> 4) as usize] as char);
-        out.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-    out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::forward::AlgorithmicEmbedderForward;
-
-    #[tokio::test]
-    async fn cache_writes_and_reads_algorithmic_output_from_disk() {
-        let tmp = tempfile::tempdir().unwrap();
-        let cache = EmbedderCache::new(tmp.path()).unwrap();
-        let forward = AlgorithmicEmbedderForward::load(EmbedderId::E9).unwrap();
-        let input = EmbedderInput {
-            embedder: EmbedderId::E9,
-            text: "fn cache_add(a: i32, b: i32) -> i32 { a + b }".to_string(),
-            source_id: "src/cache.rs#0".to_string(),
+    pub fn enforce_limits(&self, embedder: EmbedderId) -> EmbedResult<PruneReport> {
+        let mut entries = self.entry_records(embedder)?;
+        let mut total_bytes = entries.iter().map(|entry| entry.byte_count).sum::<u64>();
+        let mut report = PruneReport {
+            before_entries: entries.len(),
+            before_bytes: total_bytes,
+            ..PruneReport::default()
         };
-
-        let first = cache.forward_cached(&forward, &input).await.unwrap();
-        let key = EmbedderCacheKey::for_input(&forward, &input).unwrap();
-        assert!(cache.entry_path(&key).is_file());
-
-        let second = cache.forward_cached(&forward, &input).await.unwrap();
-        assert_eq!(first.vector, second.vector);
-        assert_eq!(second.source_id, input.source_id);
+        entries.sort_by(|left, right| {
+            left.last_accessed_unix_ms
+                .cmp(&right.last_accessed_unix_ms)
+                .then_with(|| left.path.cmp(&right.path))
+        });
+        while entries.len().saturating_sub(report.evicted_entries) > self.config.max_entries
+            || total_bytes > self.config.max_bytes
+        {
+            let Some(victim) = entries.get(report.evicted_entries) else {
+                return Err(EmbedError::forward(
+                    embedder,
+                    "cache limit enforcement ran out of eviction candidates",
+                    "inspect cache inventory and configured bounds",
+                ));
+            };
+            fs::remove_file(&victim.path).map_err(|err| {
+                EmbedError::forward(
+                    embedder,
+                    format!("cache eviction failed at {}: {err}", victim.path.display()),
+                    "inspect cache filesystem permissions; eviction failures are not ignored",
+                )
+            })?;
+            if let Some(parent) = victim.path.parent() {
+                fsync_dir(parent, embedder)?;
+            }
+            total_bytes = total_bytes.saturating_sub(victim.byte_count);
+            report.evicted_entries += 1;
+            report.evicted_bytes = report.evicted_bytes.saturating_add(victim.byte_count);
+            report.evicted_paths.push(victim.path.display().to_string());
+        }
+        report.after_entries = entries.len().saturating_sub(report.evicted_entries);
+        report.after_bytes = total_bytes;
+        if report.evicted_entries > 0 {
+            self.record_eviction(report.evicted_entries as u64, report.evicted_bytes)?;
+        } else {
+            self.refresh_telemetry_inventory()?;
+        }
+        Ok(report)
     }
 
-    #[test]
-    fn cache_key_rejects_invalid_chunk_sha() {
-        let key = EmbedderCacheKey::new(EmbedderId::E1, "v1", "not-a-sha".to_string());
-        let err = key.validate().unwrap_err();
-        assert_eq!(err.code(), "MEJEPA_EMBED_INVALID_INPUT");
+    fn write_cached_entry(
+        &self,
+        path: &Path,
+        cached: &CachedEmbedderVector,
+    ) -> EmbedResult<()> {
+        let bytes = serde_json::to_vec(cached).map_err(|err| {
+            EmbedError::forward(
+                cached.key.embedder,
+                format!("cache JSON serialization failed: {err}"),
+                "ensure cached vector metadata remains JSON serializable",
+            )
+        })?;
+        write_bytes_atomic(path, &bytes, cached.key.embedder)
+    }
+
+    fn entry_records(&self, embedder: EmbedderId) -> EmbedResult<Vec<CacheEntryRecord>> {
+        let mut out = Vec::new();
+        if !self.root.exists() {
+            return Ok(out);
+        }
+        let telemetry_path = self.telemetry_path();
+        visit_cache_files(&self.root, &mut |path| {
+            if path == telemetry_path
+                || path.extension().and_then(|ext| ext.to_str()) != Some("json")
+            {
+                return Ok(());
+            }
+            let bytes = fs::read(path).map_err(|err| {
+                EmbedError::forward(
+                    embedder,
+                    format!("cache inventory read failed at {}: {err}", path.display()),
+                    "inspect cache filesystem permissions before pruning",
+                )
+            })?;
+            let cached: CachedEmbedderVector = serde_json::from_slice(&bytes).map_err(|err| {
+                EmbedError::forward(
+                    embedder,
+                    format!("cache inventory JSON parse failed at {}: {err}", path.display()),
+                    "delete the corrupt cache entry; pruning refuses to guess around corrupt rows",
+                )
+            })?;
+            cached.validate()?;
+            out.push(CacheEntryRecord {
+                path: path.to_path_buf(),
+                byte_count: fs::metadata(path).map_err(|err| {
+                    EmbedError::forward(
+                        embedder,
+                        format!("cache inventory metadata failed at {}: {err}", path.display()),
+                        "inspect cache filesystem permissions before pruning",
+                    )
+                })?.len(),
+                last_accessed_unix_ms: cached.last_accessed_unix_ms,
+            });
+            Ok(())
+        })?;
+        Ok(out)
+    }
+
+    fn load_telemetry(&self) -> EmbedResult<EmbedderCacheTelemetry> {
+        let path = self.telemetry_path();
+        if !path.exists() {
+            return Ok(EmbedderCacheTelemetry::new(
+                EMBEDDER_CACHE_SCHEMA_VERSION,
+                self.config,
+                unix_ms()?,
+            ));
+        }
+        let bytes = fs::read(&path).map_err(|err| {
+            EmbedError::invalid(
+                "EmbedderCacheTelemetry",
+                format!("telemetry read failed at {}: {err}", path.display()),
+                "inspect cache telemetry filesystem permissions",
+            )
+        })?;
+        let telemetry: EmbedderCacheTelemetry = serde_json::from_slice(&bytes).map_err(|err| {
+            EmbedError::invalid(
+                "EmbedderCacheTelemetry",
+                format!("telemetry JSON parse failed at {}: {err}", path.display()),
+                "delete or repair the corrupt telemetry file before continuing",
+            )
+        })?;
+        telemetry.validate(EMBEDDER_CACHE_SCHEMA_VERSION, self.config)?;
+        Ok(telemetry)
+    }
+
+    fn write_telemetry(&self, telemetry: &EmbedderCacheTelemetry) -> EmbedResult<()> {
+        telemetry.validate(EMBEDDER_CACHE_SCHEMA_VERSION, self.config)?;
+        let bytes = serde_json::to_vec_pretty(telemetry).map_err(|err| {
+            EmbedError::invalid(
+                "EmbedderCacheTelemetry",
+                format!("telemetry JSON serialization failed: {err}"),
+                "ensure telemetry fields remain JSON serializable",
+            )
+        })?;
+        write_bytes_atomic(&self.telemetry_path(), &bytes, EmbedderId::E1)
+    }
+
+    fn update_telemetry<F>(&self, update: F) -> EmbedResult<()>
+    where
+        F: FnOnce(&mut EmbedderCacheTelemetry) -> EmbedResult<()>,
+    {
+        let mut telemetry = self.load_telemetry()?;
+        update(&mut telemetry)?;
+        telemetry.last_event_unix_ms = unix_ms()?;
+        self.write_telemetry(&telemetry)
+    }
+
+    fn update_telemetry_with_inventory<F>(&self, embedder: EmbedderId, update: F) -> EmbedResult<()>
+    where
+        F: FnOnce(&mut EmbedderCacheTelemetry) -> EmbedResult<()>,
+    {
+        let inventory = self.entry_records(embedder)?;
+        let entry_count = inventory.len();
+        let entry_bytes = inventory.iter().map(|entry| entry.byte_count).sum();
+        self.update_telemetry(|telemetry| {
+            update(telemetry)?;
+            telemetry.entry_count = entry_count;
+            telemetry.entry_bytes = entry_bytes;
+            Ok(())
+        })
+    }
+
+    fn record_hit(&self) -> EmbedResult<()> {
+        self.update_telemetry_with_inventory(EmbedderId::E1, |t| {
+            t.hits = checked_inc(t.hits, "EmbedderCacheTelemetry.hits")?;
+            Ok(())
+        })
+    }
+
+    fn record_miss(&self) -> EmbedResult<()> {
+        self.update_telemetry_with_inventory(EmbedderId::E1, |t| {
+            t.misses = checked_inc(t.misses, "EmbedderCacheTelemetry.misses")?;
+            Ok(())
+        })
+    }
+
+    fn record_write(&self) -> EmbedResult<()> {
+        self.update_telemetry_with_inventory(EmbedderId::E1, |t| {
+            t.writes = checked_inc(t.writes, "EmbedderCacheTelemetry.writes")?;
+            Ok(())
+        })
+    }
+
+    fn record_eviction(&self, entries: u64, bytes: u64) -> EmbedResult<()> {
+        self.update_telemetry_with_inventory(EmbedderId::E1, |t| {
+            t.evictions = t.evictions.checked_add(entries).ok_or_else(|| {
+                EmbedError::invalid(
+                    "EmbedderCacheTelemetry.evictions",
+                    "eviction counter overflowed u64",
+                    "rotate telemetry after investigating pathological cache churn",
+                )
+            })?;
+            t.evicted_bytes = t.evicted_bytes.checked_add(bytes).ok_or_else(|| {
+                EmbedError::invalid(
+                    "EmbedderCacheTelemetry.evicted_bytes",
+                    "evicted_bytes counter overflowed u64",
+                    "rotate telemetry after investigating pathological cache churn",
+                )
+            })?;
+            Ok(())
+        })
+    }
+
+    fn record_corrupt_entry_error(&self) -> EmbedResult<()> {
+        self.update_telemetry(|t| {
+            t.corrupt_entry_errors =
+                checked_inc(t.corrupt_entry_errors, "EmbedderCacheTelemetry.corrupt_entry_errors")?;
+            Ok(())
+        })
+    }
+
+    fn refresh_telemetry_inventory(&self) -> EmbedResult<()> {
+        self.update_telemetry_with_inventory(EmbedderId::E1, |_| Ok(()))
     }
 }

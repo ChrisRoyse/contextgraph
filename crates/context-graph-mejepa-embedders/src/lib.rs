@@ -9,6 +9,9 @@
 //! - E17 calibration evidence before `agent_state_score` is used.
 
 pub mod cache;
+mod cache_entry;
+mod cache_io;
+pub mod cache_limits;
 pub mod calibration;
 pub mod config;
 pub mod diagnostics;
@@ -21,7 +24,11 @@ pub mod routing;
 pub mod types;
 pub mod vram;
 
+#[cfg(test)]
+mod cache_tests;
+
 pub use calibration::{agent_state_score, verify_calibration_certificate, CalibrationCertificate};
+pub use cache_limits::{EmbedderCacheConfig, EmbedderCacheTelemetry, PruneReport};
 pub use config::{EmbedderRegistration, ModelsConfig};
 pub use diagnostics::{
     embedder_coherence, predictor_collapse_score, CoherenceReport, CollapseReport,
