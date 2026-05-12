@@ -22110,7 +22110,7 @@ fn build_dashboard_errors(
     }
     let error_codes = groups
         .into_values()
-        .map(|group| group.to_json())
+        .map(DashboardErrorGroup::into_json)
         .collect::<Vec<_>>();
     Ok(json!({
         "format": "blackbox_dashboard_errors_json_v1",
@@ -24041,7 +24041,7 @@ impl DashboardErrorGroup {
         }
     }
 
-    fn to_json(self) -> Value {
+    fn into_json(self) -> Value {
         json!({
             "error_code": self.error_code,
             "count": self.count,
