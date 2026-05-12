@@ -12,6 +12,11 @@ Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file cove
 - FLYWHEEL-005: `complete (2026-05-11)` — `ActiveLearningKind` enum (Uncertainty / OutOfDistribution / AgentSurprise{prediction_id, severity_score}) shipped in `crates/context-graph-mejepa/src/eval/queue.rs`; `enqueue_agent_surprise()` + fast-track eviction; `tick_active_learning` orders AgentSurprise first. FSV at `/mnt/d/contextgraph/fsv/active-learning-fsv/agent_surprise.json`. 4 new unit tests pass; 80/80 mejepa lib tests pass; clippy clean. Real bug caught by FSV: bincode rejected `tag="type"` internal enum representation — fixed to default external tag.
 - FLYWHEEL-006: `complete (2026-05-11)` — 3 CFs registered, FSV at `/mnt/d/contextgraph/fsv/mejepa-cf-fsv/round_trip.json`, all boundary cases pass; see `./memory/reports/session-2026-05-11--task-flywheel-006-new-cfs.md`.
 - FLYWHEEL-007: `open` — Park-list CF (blocked-by FLYWHEEL-006 → now unblocked)
+- UTML-001: `complete/code_complete (2026-05-12)` — per-head signal module added in `crates/context-graph-mejepa-train/src/learning_signal/per_head.rs`; `delta_xi_global_min = min_h(delta_xi_h)` validates fail-closed.
+- UTML-002: `partial/code_complete (2026-05-12)` — `TrainingCertificate` now persists `per_head_l_step` and `delta_xi_global_min`; full per-head loss/delta/lambda columns remain open.
+- UTML-003: `partial/code_complete (2026-05-12)` — min-head aggregation exists; BatchSampler skip/requeue policy for collapsed heads remains open.
+- UTML-004: `complete (2026-05-12)` — sampling weight includes agent surprise severity.
+- UTML-005..009: `open` — per-head Fisher, dormancy, lambda ramp, dissipation, and per-cell state-transfer T remain with Phase E/F policy hardening.
 
 ---
 
@@ -56,20 +61,26 @@ Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file cove
 
 ## TASK-UTML-001 — Per-head ΔP/ΔK/ΔΞ tracking
 
+**Status:** complete/code_complete (2026-05-12). Implemented in `crates/context-graph-mejepa-train/src/learning_signal/per_head.rs`; focused tests prove `delta_xi_global_min` is the minimum head value and all outputs validate in [0,1].
+
 - **Phase:** B · **Effort:** 0.5d · **Blocked by:** TASK-PREDICT-005 · **Spec:** TECH-PREDICT §3
 - **Goal:** Extend `learning_signal::compute_delta_*` to compute per-head deltas + global aggregates per `10 §15`. ΔΞ_global = `min_h(ΔΞ_h)`.
-- **Outputs:** `crates/context-graph-mejepa-train/src/learning_signal/per_head.rs` (NEW).
+- **Outputs:** `crates/context-graph-mejepa-train/src/learning_signal/per_head.rs`.
 - **DoD:** for a synthetic batch with one head having ΔΞ=0, global L_step = 0; cert columns reflect per-head + global.
-- **FSV:** `/mnt/d/contextgraph/fsv/utml-fsv/per_head_deltas.json`
+- **FSV:** focused unit tests plus Phase B FSV `/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-prediction-fsv.json`.
 
 ## TASK-UTML-002 — Per-head training cert columns
+
+**Status:** partial/code_complete (2026-05-12). `per_head_l_step` and `delta_xi_global_min` are persisted in `TrainingCertificate`; full `loss_per_head`, `delta_p_per_head`, `delta_k_per_head`, `delta_xi_per_head`, and `lambda_h` maps remain open.
 
 - **Phase:** B · **Effort:** 0.25d · **Blocked by:** TASK-UTML-001
 - **Goal:** Extend `TrainingCertificate` struct with `loss_per_head`, `delta_p_per_head`, `delta_k_per_head`, `delta_xi_per_head`, `lambda_h` fields per `10 §7`.
 - **Outputs:** `crates/context-graph-mejepa-train/src/cert/mod.rs` extension; round-trip serde test.
-- **DoD:** new cert serializes/deserializes losslessly; existing certs without per-head fields still parse (additive schema).
+- **DoD:** new cert serializes/deserializes losslessly; fail-closed validation rejects missing/non-finite head entries.
 
 ## TASK-UTML-003 — `min_h` aggregation in BatchSampler
+
+**Status:** partial/code_complete (2026-05-12). The aggregation calculation exists and is trainer-wired; BatchSampler's epoch skip policy remains open.
 
 - **Phase:** B · **Effort:** 0.25d · **Blocked by:** TASK-UTML-001
 - **Goal:** BatchSampler reads ΔΞ_global per `10 §5`; if any head's ΔΞ_h = 0, BatchSampler skips this example for the next epoch.
@@ -77,6 +88,8 @@ Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file cove
 - **DoD:** synthetic example with ΔΞ_failure_mode = 0 → not sampled in next epoch; verified by sample-counting in test.
 
 ## TASK-UTML-004 — `agent_surprise_severity_score` factor in sampling_weight
+
+**Status:** complete (2026-05-12). The sampling path applies the `1 + 2 * severity_score` multiplier and is covered by focused tests.
 
 - **Phase:** B · **Effort:** 0.25d · **Blocked by:** TASK-PREDICT-002
 - **Goal:** Extend `compute_sampling_weight` per `TECH-FLYWHEEL §6` to multiply by `1 + 2 * severity_score` when feedback exists.

@@ -8,6 +8,7 @@
 //! - runtime CUDA access for the configured GPU budget,
 //! - E17 calibration evidence before `agent_state_score` is used.
 
+pub mod cache;
 pub mod calibration;
 pub mod config;
 pub mod diagnostics;
@@ -35,7 +36,9 @@ pub use ensemble::{
 };
 pub use error::{EmbedError, EmbedResult};
 pub use forward::{
-    embedder_model_id, EmbedderForward, PretrainedEmbedderForward, SUPPORTED_FORWARD_EMBEDDERS,
+    embedder_model_id, AlgorithmicEmbedderForward, EmbedderForward, PretrainedEmbedderForward,
+    SUPPORTED_ALGORITHMIC_FORWARD_EMBEDDERS, SUPPORTED_FORWARD_EMBEDDERS,
+    SUPPORTED_PRETRAINED_FORWARD_EMBEDDERS,
 };
 pub use routing::{route_for_entity_type, routing_coverage};
 pub use types::{

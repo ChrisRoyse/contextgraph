@@ -1,6 +1,7 @@
 //! ME-JEPA Phase 4 inference MCP handlers.
 
-use std::path::PathBuf;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
@@ -18,7 +19,8 @@ use context_graph_mejepa::{
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_AGENT_FEEDBACK,
-    CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_OOD_ESCALATIONS,
+    CF_MEJEPA_CALIBRATION_HISTORY, CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_OOD_ESCALATIONS,
+    CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_tct::{
     build_inspect_summary, open_tct_rocksdb, ConstellationStore, EmbedderId,
@@ -54,6 +56,20 @@ struct PredictLatestRequest {
     session_id: String,
     #[serde(default = "default_limit")]
     limit: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PredictWhatIfRequest {
+    patch: PatchBundle,
+    context: TaskContext,
+    compare_to_prediction_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ExplainPredictionRequest {
+    prediction_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -270,6 +286,87 @@ impl Handlers {
                     &format!("{}: {err}", err.code()),
                 )
             }
+        }
+    }
+
+    pub(crate) async fn call_mejepa_predict_what_if(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: PredictWhatIfRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_PREDICT_WHAT_IF
+                    ),
+                );
+            }
+        };
+        if let Err(err) = request
+            .patch
+            .validate()
+            .and_then(|_| request.context.validate())
+        {
+            return self.tool_error_typed(
+                id,
+                ToolErrorKind::Validation,
+                &format!("{}: {err}", err.code()),
+            );
+        }
+        let db_path = match infer_db_path() {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        let result = run_predict_what_if(&db_path, request);
+        match result {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Execution,
+                "MEJEPA_PREDICT_WHAT_IF_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_explain_prediction(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: ExplainPredictionRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_EXPLAIN_PREDICTION
+                    ),
+                );
+            }
+        };
+        let db_path = match infer_db_path() {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        let result = run_explain_prediction(&db_path, request);
+        match result {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Storage,
+                "MEJEPA_EXPLAIN_PREDICTION_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path}),
+            ),
         }
     }
 
@@ -627,6 +724,177 @@ fn infer_db_path() -> Result<PathBuf, String> {
         .map_err(|_| {
             "CONTEXTGRAPH_MEJEPA_INFER_DB must point to the Phase 4 inference RocksDB; refusing to guess a database path".to_string()
         })
+}
+
+fn run_predict_what_if(db_path: &Path, request: PredictWhatIfRequest) -> AnyhowResult<Value> {
+    ensure_deterministic_verify_allowed().map_err(|err| anyhow!("{}: {err}", err.code()))?;
+    let repo_root = request.context.environment.repo_root.clone();
+    let disk_sha_before = file_sha_snapshot(&repo_root, &request.patch)
+        .context("read repository file SHA snapshot before what-if prediction")?;
+    let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
+    let calibration = CalibrationStore::new(db.clone(), 30)?;
+    let store = Arc::new(RocksDbInferStore::new(db.clone()));
+    let compiler = build_deterministic_compiler(
+        repo_root.clone(),
+        store,
+        calibration,
+        MeJepaInferConfig::default(),
+    )
+    .context("build deterministic ME-JEPA compiler")?;
+    let prediction = compiler
+        .compile(&request.patch, &request.context)
+        .context("compile what-if prediction")?;
+    let disk_sha_after = file_sha_snapshot(&repo_root, &request.patch)
+        .context("read repository file SHA snapshot after what-if prediction")?;
+    if disk_sha_before != disk_sha_after {
+        bail!("what-if prediction mutated at least one referenced repository file");
+    }
+
+    let compare_to_current = match request.compare_to_prediction_id {
+        Some(raw) => {
+            let prediction_id = parse_prediction_id_hex(&raw)?;
+            let prior = find_prediction_by_id(db.as_ref(), prediction_id)?;
+            json!({
+                "predictionId": raw,
+                "priorVerdict": prior.verdict,
+                "priorConfidence": prior.calibrated_confidence,
+                "newVerdict": prediction.verdict,
+                "newConfidence": prediction.calibrated_confidence,
+                "confidenceDelta": prediction.calibrated_confidence - prior.calibrated_confidence,
+                "failureModeDelta": prediction.predicted_failure_modes.len() as i64
+                    - prior.predicted_failure_modes.len() as i64,
+                "securityConcernDelta": prediction.predicted_security_concerns.len() as i64
+                    - prior.predicted_security_concerns.len() as i64
+            })
+        }
+        None => Value::Null,
+    };
+
+    Ok(json!({
+        "prediction": prediction,
+        "compareToCurrent": compare_to_current,
+        "diskShaBefore": disk_sha_before,
+        "diskShaAfter": disk_sha_after,
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "calibrationCf": CF_MEJEPA_CALIBRATION_HISTORY,
+            "trainCertCf": CF_MEJEPA_TRAIN_CERTS,
+            "repositoryRoot": repo_root.display().to_string(),
+            "persistedPrediction": false
+        }
+    }))
+}
+
+fn run_explain_prediction(
+    db_path: &Path,
+    request: ExplainPredictionRequest,
+) -> AnyhowResult<Value> {
+    let prediction_id = parse_prediction_id_hex(&request.prediction_id)?;
+    let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
+    let prediction = find_prediction_by_id(db.as_ref(), prediction_id)?;
+    let saliency = saliency_by_chunk(&prediction)?;
+    Ok(json!({
+        "predictionId": request.prediction_id,
+        "verdict": prediction.verdict,
+        "confidenceInterval": prediction.confidence_interval,
+        "calibratedConfidence": prediction.calibrated_confidence,
+        "oodScore": prediction.ood_score,
+        "saliencyByChunk": saliency,
+        "topFailureModes": prediction.predicted_failure_modes,
+        "predictedFailedTests": prediction.predicted_failed_tests,
+        "guardViolations": prediction.guard_violations,
+        "edgeCases": prediction.predicted_edge_cases,
+        "latentBugs": prediction.predicted_latent_bugs,
+        "techDebt": prediction.predicted_tech_debt_added,
+        "deadCode": prediction.predicted_dead_code,
+        "redundantCode": prediction.predicted_redundant_code,
+        "perfRegressions": prediction.predicted_perf_regressions,
+        "securityConcerns": prediction.predicted_security_concerns,
+        "accuracyDegradations": prediction.predicted_accuracy_degradations,
+        "costRegressions": prediction.predicted_cost_regressions,
+        "reasoningClass": prediction.predicted_reasoning_class,
+        "agentClaimGraph": prediction.agent_claim_graph,
+        "claimReconciliation": prediction.claim_reconciliation,
+        "realityImpact": prediction.reality_impact,
+        "provenance": prediction.provenance,
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "cf": CF_MEJEPA_LIVE_PREDICTIONS,
+            "predictionId": request.prediction_id
+        }
+    }))
+}
+
+fn file_sha_snapshot(
+    repo_root: &Path,
+    patch: &PatchBundle,
+) -> AnyhowResult<BTreeMap<String, Option<String>>> {
+    let mut out = BTreeMap::new();
+    for hunk in &patch.ast_diff.hunks {
+        let full_path = repo_root.join(&hunk.path);
+        let value = match std::fs::read(&full_path) {
+            Ok(bytes) => Some(hex::encode(Sha256::digest(&bytes))),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+            Err(err) => {
+                return Err(err)
+                    .with_context(|| format!("read referenced file {}", full_path.display()))
+            }
+        };
+        out.insert(hunk.path.display().to_string(), value);
+    }
+    Ok(out)
+}
+
+fn saliency_by_chunk(prediction: &RealityPrediction) -> AnyhowResult<BTreeMap<String, f64>> {
+    if prediction.covered_chunks.is_empty() {
+        bail!("prediction has no covered chunks; cannot build normalized saliency map");
+    }
+    let mut weights = prediction
+        .covered_chunks
+        .iter()
+        .map(|chunk| (chunk.0.clone(), 1.0_f64))
+        .collect::<BTreeMap<_, _>>();
+    for mode in &prediction.predicted_failure_modes {
+        *weights.entry(mode.chunk.0.clone()).or_insert(0.0) += 4.0;
+    }
+    for failed in &prediction.predicted_failed_tests {
+        *weights.entry(failed.why.chunk.0.clone()).or_insert(0.0) += 3.0;
+    }
+    for item in &prediction.predicted_edge_cases {
+        *weights.entry(item.chunk.0.clone()).or_insert(0.0) += 2.0;
+    }
+    for item in &prediction.predicted_latent_bugs {
+        *weights.entry(item.chunk.0.clone()).or_insert(0.0) += 2.0;
+    }
+    for item in &prediction.predicted_tech_debt_added {
+        *weights.entry(item.chunk.0.clone()).or_insert(0.0) += 1.5;
+    }
+    for item in &prediction.predicted_dead_code {
+        *weights.entry(item.chunk.0.clone()).or_insert(0.0) += 1.0;
+    }
+    for item in &prediction.predicted_redundant_code {
+        *weights.entry(item.chunk.0.clone()).or_insert(0.0) += 1.0;
+    }
+    for item in &prediction.predicted_perf_regressions {
+        *weights.entry(item.chunk.0.clone()).or_insert(0.0) += 1.0;
+    }
+    for item in &prediction.predicted_security_concerns {
+        *weights.entry(item.chunk.0.clone()).or_insert(0.0) += 4.0;
+    }
+    for item in &prediction.predicted_accuracy_degradations {
+        *weights.entry(item.chunk.0.clone()).or_insert(0.0) += 2.0;
+    }
+    for item in &prediction.predicted_cost_regressions {
+        *weights.entry(item.chunk.0.clone()).or_insert(0.0) += 1.0;
+    }
+    let total = weights.values().sum::<f64>();
+    if !total.is_finite() || total <= 0.0 {
+        bail!("prediction saliency weight total is invalid: {total}");
+    }
+    Ok(weights
+        .into_iter()
+        .map(|(chunk, weight)| (chunk, weight / total))
+        .collect())
 }
 
 fn record_agent_feedback_in_db(

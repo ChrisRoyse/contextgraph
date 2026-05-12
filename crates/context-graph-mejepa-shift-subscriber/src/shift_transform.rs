@@ -246,7 +246,7 @@ fn replay_path(entry: &ShiftEntry, transition: Option<&Value>) -> Result<PathBuf
         }
     }
     if let Some(path) = source_path_from_value(&entry.after)
-        .or_else(|| transition.and_then(|value| source_path_from_transition(value)))
+        .or_else(|| transition.and_then(source_path_from_transition))
     {
         return path.file_name().map(PathBuf::from).ok_or_else(|| {
             SubscriberError::invalid("source.path", "source path has no file name")

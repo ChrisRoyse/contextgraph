@@ -4,6 +4,8 @@
 >
 > **Source theory:** `docs2/TheoryOfMachineLearning.md` (UTML v1.0 — JEPA Edition) + `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md` (the existing single-head application). This doc adds the multi-head extension that the futurebuild plan requires.
 
+**Status snapshot (2026-05-12):** The core Phase B carrier is implemented: `crates/context-graph-mejepa-train/src/learning_signal/per_head.rs` computes per-head L-step inputs and `delta_xi_global_min`, `TrainingCertificate` persists `per_head_l_step` plus `delta_xi_global_min`, and sampling weight includes the agent-surprise severity factor. Remaining work is the richer training/eval accounting: full per-head loss/delta/lambda maps, BatchSampler skip/requeue policy for collapsed heads, per-head Fisher, per-head dormancy, lambda ramp, per-head dissipation, and per-cell state-transfer T.
+
 ---
 
 ## 1. The base formula is unchanged
@@ -355,14 +357,14 @@ Reward:
 
 ## 16. What this formula extension commits us to
 
-1. **Per-head ΔP, ΔK, ΔΞ tracking** in `learning_signal/`. (Task: `TASK-UTML-001-per-head-deltas.md`.)
-2. **Per-head cert columns** in `CF_MEJEPA_TRAIN_CERTS`. (Task: `TASK-UTML-002-per-head-cert-cols.md`.)
-3. **`ΔΞ_global = min_h(ΔΞ_h)`** in the BatchSampler. (Task: `TASK-UTML-003-min-head-aggregation.md`.)
-4. **`agent_surprise_severity_score` factor** in `sampling_weight`. (Task: `TASK-UTML-004-surprise-weight-factor.md`.)
-5. **Per-head Fisher matrices** in `heal::ewc::FisherSnapshot`. (Task: `TASK-UTML-005-per-head-fisher.md`.)
-6. **Per-head dormancy detection** in `learning_signal::continual_backprop`. (Task: `TASK-UTML-006-per-head-dormancy.md`.)
-7. **Per-head loss coefficient ramping** in the heal scheduler. (Task: `TASK-UTML-007-lambda-ramp.md`.)
-8. **Dissipation detection per head** in the heal scheduler. (Task: `TASK-UTML-008-per-head-dissipation.md`.)
-9. **Per-cell state-transfer T** in eval reports. (Task: `TASK-UTML-009-per-cell-T.md`.)
+1. **Per-head ΔP, ΔK, ΔΞ tracking** in `learning_signal/` — complete/code_complete in `learning_signal/per_head.rs`.
+2. **Per-head cert columns** in `CF_MEJEPA_TRAIN_CERTS` — partial/code_complete: `per_head_l_step` and `delta_xi_global_min` persist; full loss/delta/lambda maps remain.
+3. **`ΔΞ_global = min_h(ΔΞ_h)`** in the BatchSampler — partial/code_complete: aggregation exists; skip/requeue policy remains.
+4. **`agent_surprise_severity_score` factor** in `sampling_weight` — complete.
+5. **Per-head Fisher matrices** in `heal::ewc::FisherSnapshot` — open.
+6. **Per-head dormancy detection** in `learning_signal::continual_backprop` — open.
+7. **Per-head loss coefficient ramping** in the heal scheduler — open.
+8. **Dissipation detection per head** in the heal scheduler — open.
+9. **Per-cell state-transfer T** in eval reports — open.
 
 All listed in [`13_TASK_INDEX.md`](13_TASK_INDEX.md). Implementation assumes the existing `learning_signal/`, `heal/ewc`, `heal/promote`, `eval/` modules are extended in-place — no new crate.

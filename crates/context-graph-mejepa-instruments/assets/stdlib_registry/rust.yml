@@ -1,0 +1,15 @@
+schema_version: 1
+language: rust
+patterns:
+  - id: rust_manual_temp_file
+    kind: ReinventedWheel
+    name: Hand-rolled temporary file naming
+    stdlib_alternative: tempfile::NamedTempFile
+    confidence: 0.88
+    detection:
+      required_substrings:
+        - "std::env::temp_dir()"
+        - "format!"
+        - "std::fs::File::create"
+      forbidden_substrings:
+        - "tempfile::"

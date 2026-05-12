@@ -95,13 +95,13 @@ The shipped substrate covers Tier 1-3 well per `15_PHASE_1_5_HARDENING_FSV_2026_
 |---|---|---|
 | Subscriber tokio panic | `failpoints::on("subscriber.consume")` triggers panic | JoinSet supervisor restarts; state recovers from watermark |
 | Scheduler tokio panic | failpoint in `tick_drift` | restart with backoff; no double-promotion |
-| RocksDB write fails (e.g., disk full mid-write) | failpoint in CF write | observe() returns error; training cert NOT written; sample is skipped |
-| Embedder forward returns NaN | failpoint in `EmbedderForward::forward` | prediction marked OOD; `MEJEPA_EMBEDDER_NAN` logged; no panel persisted |
-| Witness chain integrity check finds corruption | inject hash mismatch | auto-repair attempted; if fail, panel writes paused + alert |
-| Hook script crashes | replace hook with `exit 1` | agent's Edit succeeds; shift entry is lost; daemon logs missing-shift |
-| `nvidia-smi` returns malformed output | mock command | telemetry returns `unavailable: true`; daemon still runs |
+| RocksDB write fails (e.g., disk full mid-write) | failpoint in CF write | observe() returns error; training cert NOT written; no sample is emitted |
+| Embedder forward returns NaN | failpoint in `EmbedderForward::forward` | prediction fails closed with `MEJEPA_EMBEDDER_NAN`; no panel or prediction is persisted |
+| Witness chain integrity check finds corruption | inject hash mismatch | writes freeze and operator alert includes the corrupt witness range |
+| Hook script crashes | replace hook with `exit 1` | hook failure is visible in the hook diagnostic log; no successful capture is claimed |
+| `nvidia-smi` returns malformed output | run against a real malformed-output wrapper in the chaos harness | telemetry fails that field with diagnostic context; daemon health reports the telemetry fault |
 | 5 supervised tasks panic in 5 min | failpoints flap | `MEJEPA_SCHEDULER_FLAPPING` alert; cooldown enforced |
-| Network partition between hooks and MCP daemon | block socket access | hook silently exits 0; agent's edit completes; shift queued for retry |
+| Network partition between hooks and MCP daemon | block socket access | hook writes a diagnostic and refuses to report successful MCP delivery |
 | Concurrent two daemon instances | start a second one | second fails pid lock; clean exit `MEJEPA_DAEMON_LOCK_HELD` |
 
 Implementation: `cargo test -p e2e-tests --features chaos` with `failpoints` crate; CI nightly job.
@@ -152,12 +152,12 @@ Some prediction-label sources require external toolchains:
 - Perf head: `pytest-benchmark`, `cargo bench`, `valgrind`
 - Cost head: CI runner's time output
 
-The integration tests SHALL include a "toolchain fallback" matrix:
-- If `pyright` not present, mark E_TypeGraph fields as `unavailable: true` and use deterministic fallback
-- If `cargo` not present in the agent's environment, the Rust prediction heads degrade to deterministic-only
-- Operator can configure required-vs-optional toolchains per language
+The integration tests SHALL include a "toolchain fail-closed" matrix:
+- If `pyright` is required and not present, startup/request fails with `MEJEPA_LABEL_TOOLCHAIN_MISSING` and no partial labels are persisted.
+- If `cargo` is required for Rust prediction labels and not present, the Rust label path fails closed with the exact missing binary/config path.
+- Operator can configure required toolchains per language; optional toolchains must be explicitly marked optional and excluded from label emission when absent.
 
-`TASK-PREDICT-LABEL-010-toolchain-fallback.md` covers this.
+`TASK-PREDICT-LABEL-010-toolchain-availability-fail-closed.md` covers this.
 
 ---
 
@@ -200,6 +200,6 @@ Tasks (in `tasks/testing/`):
 - `TASK-TEST-006` — chaos test harness with failpoints
 - `TASK-TEST-007` — load test harness
 - `TASK-TEST-008` — soak test harness + nightly cron job
-- `TASK-TEST-009` — toolchain fallback matrix (cross-cuts label-source tasks)
+- `TASK-TEST-009` — toolchain fail-closed matrix (cross-cuts label-source tasks)
 - `TASK-TEST-010` — adversarial test corpus (cross-cuts `22`)
 - `TASK-TEST-011` — CI workflow updates (nightly chaos, weekly load, quarterly soak)

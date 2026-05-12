@@ -184,7 +184,7 @@ Tasks (in `tasks/security/`):
 
 - `TASK-SEC-001` — secret redaction module + integration into chunk pipeline (D3)
 - `TASK-SEC-002` — adversarial test corpus (10 + 10 + 10 cases) + integration into CI (D14, `TASK-TEST-010`)
-- `TASK-SEC-003` — multi-head contradiction detection in verdict assembly (§2.5)
+- `TASK-SEC-003` — multi-head contradiction detection in verdict assembly (§2.5) — complete 2026-05-12
 - `TASK-SEC-004` — cross-language label gating (D10, `TASK-PREDICT-LABEL-011`)
 - `TASK-SEC-005` — two-person-rule config option for catastrophic promotion
 - `TASK-SEC-006` — markdown render hardening (escape adversarial patterns)

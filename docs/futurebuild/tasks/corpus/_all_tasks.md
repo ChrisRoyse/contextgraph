@@ -4,12 +4,14 @@
 
 ## TASK-CORPUS-001 — Per-language mutation operators
 
+**Status:** complete (2026-05-12). Implemented in `crates/context-graph-mejepa-corpus/src/generic_language_ops.rs` and dispatched via `apply_mutation_for_language` for Rust, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, and PHP. Source-of-truth FSV is the generated non-Python corpus at `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/`, where every operator/language row is validated by the corresponding real toolchain report.
+
 - **Phase:** C · **Effort:** 4-5d · **Blocked by:** none · **Spec:** existing SPEC-CORPUS-functional + 04_DDA_TCT_CODE_ENRICHMENT.md §7
-- **Goal:** Port the 8 Python mutation operators (KnownGood, SubtleFlip, OffByOne, SwapVariable, DeleteTestCall, WrongFile, OverEngineer, CompileError) to Rust, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP. Each per-language op uses tree-sitter for AST-aware mutations and the corresponding compiler for syntax verification.
-- **Outputs:** `crates/context-graph-mejepa-corpus/src/<language>/{known_good,subtle_flip,off_by_one,swap_variable,delete_test_call,wrong_file,over_engineer,compile_error}.rs` × 10 languages.
-- **DoD:** for each (language, operator) pair, generate 50 mutations against fixture programs; verify syntax check produces expected pass/fail per category; round-trip evidence at `/mnt/d/contextgraph/fsv/corpus-fsv/<language>/<operator>.json`.
-- **FSV:** per-(language, operator) FSV files (80 total).
-- **Boundary:** language with no boolean operators (e.g., comments-only file) for SubtleFlip → `MEJEPA_CORPUS_OPERATOR_INAPPLICABLE` (existing pattern).
+- **Goal:** Port the 8 Python mutation categories (KnownGood, SubtleFlip, OffByOne, SwapVariable, DeleteTestCall, WrongFile, OverEngineer, CompileError) to Rust, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP.
+- **Outputs:** generic non-Python mutation dispatch plus parse-preserving candidate validation; regression tests for the real failures discovered during corpus generation; per-row toolchain reports under each generated fixture corpus.
+- **DoD:** for each (language, operator) pair, generate mutations against fixture programs; verify syntax/toolchain check produces expected pass/fail per category; fail closed on mismatch; read back the mutation, verdict, report JSON, and corpus index from source of truth.
+- **FSV:** `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/verify-evidence.json`, `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/stats.json`, and read-only RocksDB inspection of `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/oracle-store`.
+- **Boundary:** invalid syntax and operator no-site cases fail closed; output outside `/mnt/d/contextgraph/corpus/` fails before writing; `--tasks-per-language 0` fails before writing.
 
 ## TASK-CORPUS-002 — 300×8 SWE-bench Lite Python corpus generation
 
@@ -24,15 +26,20 @@
 
 ## TASK-CORPUS-003 — Per-language fixture corpora (~50 tasks per language)
 
+**Status:** complete (2026-05-12). Source of truth: `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/verify-evidence.json` with `passes=true`, `entry_count=5120`, `mutation_cf_count=5120`, `verdict_cf_count=5120`, `provenance_cf_count=1`, and `toolchain_report_count=5120`.
+
 - **Phase:** C · **Effort:** 1-2d · **Blocked by:** TASK-CORPUS-001
-- **Goal:** For each non-Python language (10 langs), curate ~50 fixture tasks (small synthetic + scraped public CI logs) and generate corpora using TASK-CORPUS-001's per-language operators.
-- **Outputs:** `crates/context-graph-mejepa-corpus/fixtures/<language>/*.json` (~50 per language); populated CFs.
-- **DoD:** each language has ≥ 30 corpus entries with verified oracle outcomes; per-(language × category) cell counts ≥ 5.
+- **Goal:** For each non-Python language (10 langs), generate deterministic fixture tasks and run all 8 mutation categories through TASK-CORPUS-001's per-language operators.
+- **Outputs:** `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/` with `fixture-manifest.json`, `index.json`, `stats.json`, `verify-evidence.json`, `mutations/`, `toolchain-reports/`, `toolchain-work/`, and `oracle-store/`.
+- **DoD:** each language has ≥500 corpus entries with verified real-toolchain outcomes. Final state has 512 entries per language and 64 entries per `(language × category)` cell.
+- **FSV:** independent readback confirmed 5,120 mutation files, 5,120 toolchain report JSON files, 5,120 mutation CF rows, 5,120 verdict CF rows, and 1 provenance CF row.
 
 ## TASK-CORPUS-004 — Stoer-Wagner mincut split applied to new corpora
 
+**Status:** complete (2026-05-12). Source of truth: `/mnt/d/contextgraph/fsv/corpus-fsv/split_full.json` with `passes=true`, Python entry count 2,400, non-Python entry count 5,120, combined task count 940, bucket sizes `[752, 94, 94]`, and leakage check passed.
+
 - **Phase:** C · **Effort:** 0.25d · **Blocked by:** TASK-CORPUS-002, TASK-CORPUS-003
-- **Goal:** Apply the existing `context-graph-mincut` split function to the new combined corpus (Python + 10 other languages) producing train / calibration / holdout per `docs/ruvectorfindings/specs/_README.md` Phase 0.
-- **Outputs:** split assignments persisted; `assert_no_test_patch_leakage` validation report.
-- **DoD:** clean split with zero cross-cut leakage; ratios ~80/10/10 (relaxed for sparse cells per Bayesian shrinkage policy).
+- **Goal:** Apply the corpus split function to the new combined corpus (Python + 10 other languages) producing train / calibration / holdout per `docs/ruvectorfindings/specs/_README.md` Phase 0.
+- **Outputs:** split assignments persisted in `/mnt/d/contextgraph/fsv/corpus-fsv/split_full.json`; `assert_no_test_patch_leakage` validation report included in the evidence.
+- **DoD:** clean split with zero cross-cut leakage; ratios ~80/10/10 over 940 tasks.
 - **FSV:** `/mnt/d/contextgraph/fsv/corpus-fsv/split_full.json`

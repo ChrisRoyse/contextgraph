@@ -75,7 +75,7 @@ Compared to today's loop:
 
 ## 4. Build work taxonomy (the futurebuild deliverables)
 
-When the loop picks a build item, it's drawn from `13_TASK_INDEX.md` priority order. The futurebuild plan lays out 6 phases; each phase has tasks. Per `12_IMPLEMENTATION_PHASES.md` Phase A is the operational unblock (turn the daemon on; close the prediction-injection loop), Phase B is the multi-head extension, Phase C is the corpus completion, etc.
+When the loop picks a build item, it's drawn from `13_TASK_INDEX.md` priority order. The futurebuild plan lays out the active phases in `12_IMPLEMENTATION_PHASES.md`: Phase A is the operational unblock (code-shipped; burn-in remains), Phase B is the multi-head extension (core code/FSV shipped; quality hardening remains), Phase C corpus completion is code/FSV-shipped, and the current forward work shifts to neural enrichment, autonomy, observability, rolling holdout, and cleanup.
 
 Examples of build items the loop might pick:
 
@@ -83,7 +83,7 @@ Examples of build items the loop might pick:
 - `TASK-PREDICT-002-record-agent-feedback-tool.md` — add `mejepa_record_agent_feedback` MCP tool + CF + sampling-weight bump
 - `TASK-PREDICT-001-prediction-injection-hook.md` — extend UserPromptSubmit hook to read `CF_MEJEPA_LIVE_PREDICTIONS` and render a markdown injection block
 - `TASK-ENRICH-001-neural-forward-wrappers.md` — replace deterministic embedder placeholders with real neural forward
-- `TASK-CORPUS-001-per-language-operators.md` — port the 8 Python mutation operators to Rust, JS, TS, Go, ...
+- Future corpus broadening — add scraped/public CI corpora beyond the completed Python SWE-bench and 10-language fixture seed
 - `TASK-HEAL-001-continuous-self-optimization-daemon.md` — implement the scheduler tokio task
 
 Each is atomic (per `prdtospec.md` Level 4), with explicit definition-of-done, signature-level scope, and dependency on prior tasks via the DAG in `13_TASK_INDEX.md`.

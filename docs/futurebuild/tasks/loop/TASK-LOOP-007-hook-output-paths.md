@@ -17,7 +17,7 @@ The task body below is **stale**. Verified by reading the actual hook scripts:
 - `scripts/cc/hook_user_prompt_submit.sh:45` and `scripts/cc/hook_pre_compact.sh:21` both compute `SHIFT_LOG="${RUNTIME_ROOT}/cgreality-shift-log/$(cgreality_safe_id "${SESSION_ID}").jsonl"` where `RUNTIME_ROOT` is the *content* of the SoT file, not a hardcoded path.
 - `grep -r "/tmp/contextgraph-rust-reality-loop" scripts/cc/` returns 0 hits — the legacy path is no longer referenced anywhere.
 
-**Therefore the code-level migration is already complete.** The only remaining work is operational: an operator must write a D-drive path (e.g. `/mnt/d/contextgraph/runtime`) into `/mnt/d/contextgraph/state/cgreality/active_runtime_root`. Right now that file is empty, so shift-log writes silently no-op — the fail-closed default.
+**Therefore the code-level migration is already complete.** The only remaining work is operational: an operator must write a D-drive path (e.g. `/mnt/d/contextgraph/runtime`) into `/mnt/d/contextgraph/state/cgreality/active_runtime_root`. If that file is empty, shift-log capture must emit a clear diagnostic rather than silently pretending capture happened.
 
 Per CLAUDE.md §11.13 and the post-pivot ME-JEPA architecture, **shift-log writing during normal Claude Code operation is now optional** — the data flywheel (TASK-FLYWHEEL-003/004) replaces shift-log-as-training-data, so an empty `active_runtime_root` is the steady state until/unless the operator wants per-edit forensic logs.
 

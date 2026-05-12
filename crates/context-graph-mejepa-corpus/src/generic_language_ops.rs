@@ -74,6 +74,9 @@ fn subtle_flip(language: Language, source: &str, seed: u64) -> MutationResult<Mu
     let mut candidates = Vec::new();
     for (original, replacement, note) in specs {
         for offset in find_token_sites(source, &mask, original) {
+            if !replacement_preserves_parse(language, source, offset, original, replacement) {
+                continue;
+            }
             candidates.push(MutationSite {
                 byte_offset: offset,
                 byte_length: original.len(),
@@ -84,6 +87,27 @@ fn subtle_flip(language: Language, source: &str, seed: u64) -> MutationResult<Mu
         }
     }
     pick_site(candidates, seed, "boolean_operator")
+}
+
+fn replacement_preserves_parse(
+    language: Language,
+    source: &str,
+    offset: usize,
+    original: &str,
+    replacement: &str,
+) -> bool {
+    let end = match offset.checked_add(original.len()) {
+        Some(end) => end,
+        None => return false,
+    };
+    if end > source.len() || source.get(offset..end) != Some(original) {
+        return false;
+    }
+    let mut mutated = String::with_capacity(source.len() - original.len() + replacement.len());
+    mutated.push_str(&source[..offset]);
+    mutated.push_str(replacement);
+    mutated.push_str(&source[end..]);
+    validate_parseable(language, &mutated, "subtle_flip_candidate").is_ok()
 }
 
 fn off_by_one(language: Language, source: &str, seed: u64) -> MutationResult<MutationSite> {
@@ -140,7 +164,10 @@ fn swap_variable(language: Language, source: &str, seed: u64) -> MutationResult<
     let mask = code_mask(language, source)?;
     let mut identifiers = Vec::<(String, usize)>::new();
     for (offset, ident) in identifier_sites(source, &mask) {
-        if !keyword(language, &ident) && !ident.chars().next().unwrap_or('_').is_uppercase() {
+        if !keyword(language, &ident)
+            && !ident.chars().next().unwrap_or('_').is_uppercase()
+            && is_variable_use_site(language, source, offset, ident.len())
+        {
             identifiers.push((ident, offset));
         }
     }
@@ -190,11 +217,10 @@ fn delete_test_call(language: Language, source: &str, seed: u64) -> MutationResu
     for line in source.split_inclusive('\n') {
         let line_end = line_start + line.len();
         let line_no_nl = line.trim_end_matches('\n');
-        let has_assertion = assertions.iter().any(|needle| {
-            line_no_nl
-                .find(needle)
-                .is_some_and(|idx| range_is_code(&mask, line_start + idx, needle.len()))
-        });
+        let has_assertion = !is_declaration_line(line_no_nl)
+            && assertions
+                .iter()
+                .any(|needle| assertion_token_on_line(line_no_nl, line_start, &mask, needle));
         if has_assertion {
             candidates.push(MutationSite {
                 byte_offset: line_start,
@@ -207,6 +233,55 @@ fn delete_test_call(language: Language, source: &str, seed: u64) -> MutationResu
         line_start = line_end;
     }
     pick_site(candidates, seed, "assertion_line")
+}
+
+fn is_declaration_line(line: &str) -> bool {
+    let line = line.trim_start();
+    [
+        "fn ",
+        "function ",
+        "func ",
+        "def ",
+        "class ",
+        "struct ",
+        "enum ",
+        "type ",
+        "interface ",
+        "trait ",
+        "impl ",
+        "void ",
+        "bool ",
+        "boolean ",
+        "int ",
+        "long ",
+        "short ",
+        "float ",
+        "double ",
+        "string ",
+    ]
+    .iter()
+    .any(|prefix| line.starts_with(prefix))
+}
+
+fn assertion_token_on_line(line: &str, line_start: usize, mask: &[bool], needle: &str) -> bool {
+    let mut offset = 0usize;
+    while let Some(found) = line[offset..].find(needle) {
+        let idx = offset + found;
+        if range_is_code(mask, line_start + idx, needle.len())
+            && assertion_token_boundary(line.as_bytes(), idx, needle)
+        {
+            return true;
+        }
+        offset = idx + needle.len();
+    }
+    false
+}
+
+fn assertion_token_boundary(bytes: &[u8], offset: usize, token: &str) -> bool {
+    if matches!(token, "require." | "t.Fatal") {
+        return true;
+    }
+    token_boundary(bytes, offset, token)
 }
 
 fn over_engineer(language: Language, source: &str, seed: u64) -> MutationResult<MutationSite> {
@@ -565,6 +640,31 @@ fn keyword(language: Language, ident: &str) -> bool {
         "string",
         "bool",
         "boolean",
+        "byte",
+        "char",
+        "decimal",
+        "long",
+        "short",
+        "signed",
+        "unsigned",
+        "number",
+        "object",
+        "symbol",
+        "bigint",
+        "i8",
+        "i16",
+        "i32",
+        "i64",
+        "i128",
+        "isize",
+        "u8",
+        "u16",
+        "u32",
+        "u64",
+        "u128",
+        "usize",
+        "f32",
+        "f64",
         "true",
         "false",
         "null",
@@ -576,16 +676,130 @@ fn keyword(language: Language, ident: &str) -> bool {
         "new",
         "package",
         "import",
+        "include",
         "use",
         "using",
         "namespace",
         "module",
         "end",
         "do",
+        "assert",
+        "assert_eq",
+        "assert_ne",
+        "console",
+        "Debug",
+        "t",
+        "Fatal",
     ];
     common.contains(&ident)
         || matches!(language, Language::Go) && ident == "type"
         || matches!(language, Language::Php) && ident.starts_with("php")
+}
+
+fn is_variable_use_site(language: Language, source: &str, offset: usize, len: usize) -> bool {
+    let line_start = source[..offset].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+    let line_end = source[offset..]
+        .find('\n')
+        .map(|idx| offset + idx)
+        .unwrap_or(source.len());
+    let line = source[line_start..line_end].trim_start();
+    let declaration_prefixes = [
+        "fn ",
+        "function ",
+        "func ",
+        "def ",
+        "class ",
+        "struct ",
+        "enum ",
+        "type ",
+        "interface ",
+        "trait ",
+        "impl ",
+        "let ",
+        "const ",
+        "var ",
+        "int ",
+        "long ",
+        "short ",
+        "float ",
+        "double ",
+        "void ",
+        "bool ",
+        "boolean ",
+        "string ",
+        "package ",
+        "import ",
+        "using ",
+        "use ",
+        "#include",
+        "<?php",
+    ];
+    if declaration_prefixes
+        .iter()
+        .any(|prefix| line.starts_with(prefix))
+    {
+        return false;
+    }
+    if line.contains(":=") {
+        return false;
+    }
+
+    let bytes = source.as_bytes();
+    let next = next_non_ws(bytes, offset + len);
+    let next_at = next_non_ws_at(bytes, offset + len);
+    let prev = prev_non_ws(bytes, offset);
+    if next.is_some_and(|byte| matches!(byte, b'(' | b'!' | b':' | b'.'))
+        || prev.is_some_and(|byte| byte == b'.')
+    {
+        return false;
+    }
+    if next_at.is_some_and(|(idx, byte)| {
+        byte == b'=' && next_non_ws(bytes, idx + 1).is_none_or(|next| next != b'=')
+    }) {
+        return false;
+    }
+
+    if matches!(language, Language::Rust | Language::TypeScript)
+        && next.is_some_and(|byte| byte == b':')
+    {
+        return false;
+    }
+
+    true
+}
+
+fn next_non_ws(bytes: &[u8], mut offset: usize) -> Option<u8> {
+    while let Some(byte) = bytes.get(offset).copied() {
+        if !byte.is_ascii_whitespace() {
+            return Some(byte);
+        }
+        offset += 1;
+    }
+    None
+}
+
+fn next_non_ws_at(bytes: &[u8], mut offset: usize) -> Option<(usize, u8)> {
+    while let Some(byte) = bytes.get(offset).copied() {
+        if !byte.is_ascii_whitespace() {
+            return Some((offset, byte));
+        }
+        offset += 1;
+    }
+    None
+}
+
+fn prev_non_ws(bytes: &[u8], offset: usize) -> Option<u8> {
+    let mut i = offset.checked_sub(1)?;
+    loop {
+        let byte = bytes[i];
+        if !byte.is_ascii_whitespace() {
+            return Some(byte);
+        }
+        if i == 0 {
+            return None;
+        }
+        i -= 1;
+    }
 }
 
 fn is_ident_start(byte: u8) -> bool {

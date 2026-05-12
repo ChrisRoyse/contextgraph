@@ -23,10 +23,13 @@ use crate::degraded::{
 use crate::error::MejepaInferError;
 use crate::gates::{check_source_sha_drift, replay_witness_segment};
 use crate::ood::{compute_ood_score, squared_l2};
+use crate::prediction_surfaces::{covered_chunks_for_patch, infer_phase_b_surfaces};
 use crate::types::{
-    validate_probability, FailedGate, PatchBundle, RealityPrediction, RealityPredictionBuilder,
-    TaskContext, VerifyVerdict,
+    validate_probability, AgentClaimGraph, ConformalInterval, ConformalMethod, FailedGate,
+    PatchBundle, PredictionProvenance, RealityPrediction, RealityPredictionBuilder, TaskContext,
+    VerifyVerdict, WitnessHash,
 };
+use crate::verdict_assembly::{assemble_verdict, VerdictAssemblyInput};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -254,6 +257,35 @@ impl MeJepaCompiler {
             train_health.delta_xi_mean,
         )?;
         let prediction_id = prediction_id(context, patch, &calibration);
+        let phase_b_surfaces = infer_phase_b_surfaces(patch, context, &oracle.predicted_test_pass)?;
+        let covered_chunks = covered_chunks_for_patch(patch)?;
+        let confidence_interval = ConformalInterval {
+            lower: (confidence - calibration.tau).clamp(0.0, 1.0),
+            upper: (confidence + calibration.tau).clamp(0.0, 1.0),
+            method: ConformalMethod::SplitConformal,
+            coverage_target: 1.0 - self.config.alpha,
+            empirical_coverage: calibration.empirical_coverage,
+        };
+        confidence_interval.validate("confidence_interval")?;
+        let verdict = assemble_verdict(VerdictAssemblyInput {
+            oracle_pass_confidence: oracle.predicted_oracle_pass,
+            failure_modes: &phase_b_surfaces.predicted_failure_modes,
+            guard_violation_count: phase_b_surfaces.guard_violations.len(),
+            ood_score,
+            confidence_interval: &confidence_interval,
+            pass_threshold: self.config.p_test_threshold,
+            ood_threshold: self.config.ood_refuse_threshold,
+            interval_width_threshold: 0.8,
+        });
+        let provenance = PredictionProvenance {
+            predictor_version: env!("CARGO_PKG_VERSION").to_string(),
+            constellation_version: self
+                .constellation_guard
+                .version_id()
+                .unwrap_or_else(|| "unversioned".to_string()),
+            calibration_version: calibration.version.clone(),
+            active_pointer: hex::encode(prediction_id),
+        };
         RealityPredictionBuilder::from_parts(
             context.task_id.clone(),
             context.session_id,
@@ -261,6 +293,10 @@ impl MeJepaCompiler {
             outcome_set,
         )
         .prediction_id(prediction_id)
+        .witness_hash(witness_hash(patch))
+        .covered_chunks(covered_chunks)
+        .verdict(verdict)
+        .confidence_interval(confidence_interval)
         .predicted_oracle_pass(oracle.predicted_oracle_pass)
         .predicted_test_pass(oracle.predicted_test_pass)
         .predicted_runtime_trace(oracle.predicted_runtime_trace)
@@ -268,6 +304,9 @@ impl MeJepaCompiler {
         .calibrated_confidence(confidence)
         .degraded_status(train_health.degraded_status)
         .granger_attestations(oracle.granger_attestations)
+        .phase_b_surfaces(phase_b_surfaces)
+        .agent_claim_graph(AgentClaimGraph::default())
+        .provenance(provenance)
         .source_panel_sha(panel_sha(&predicted))
         .calibration_version(calibration.version.clone())
         .build()
@@ -497,6 +536,12 @@ fn prediction_id(
     let mut id = [0u8; 16];
     id.copy_from_slice(&digest[..16]);
     id
+}
+
+fn witness_hash(patch: &PatchBundle) -> WitnessHash {
+    let mut hasher = Sha256::new();
+    hasher.update(&patch.witness_chain_segment);
+    WitnessHash(hasher.finalize().into())
 }
 
 fn mean_attestation(

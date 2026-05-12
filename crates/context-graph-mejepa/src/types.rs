@@ -187,13 +187,1023 @@ impl ConformalSet {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HeadId {
+    Panel,
+    Oracle,
+    FailureMode,
+    EdgeCase,
+    TechDebt,
+    Perf,
+    Security,
+    Accuracy,
+    Cost,
+    Reasoning,
+}
+
+impl HeadId {
+    pub const ALL: [Self; 10] = [
+        Self::Panel,
+        Self::Oracle,
+        Self::FailureMode,
+        Self::EdgeCase,
+        Self::TechDebt,
+        Self::Perf,
+        Self::Security,
+        Self::Accuracy,
+        Self::Cost,
+        Self::Reasoning,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Panel => "panel",
+            Self::Oracle => "oracle",
+            Self::FailureMode => "failure_mode",
+            Self::EdgeCase => "edge_case",
+            Self::TechDebt => "tech_debt",
+            Self::Perf => "perf",
+            Self::Security => "security",
+            Self::Accuracy => "accuracy",
+            Self::Cost => "cost",
+            Self::Reasoning => "reasoning",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Verdict {
+    Pass,
+    Fail,
+    OutOfDistribution,
+    Abstain,
+    GuardRejected,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Severity {
+    Info,
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConformalMethod {
+    SplitConformal,
+    Mondrian,
+    Group,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConformalInterval {
+    pub lower: f32,
+    pub upper: f32,
+    pub method: ConformalMethod,
+    pub coverage_target: f32,
+    pub empirical_coverage: f32,
+}
+
+impl Default for ConformalInterval {
+    fn default() -> Self {
+        Self {
+            lower: 0.0,
+            upper: 1.0,
+            method: ConformalMethod::SplitConformal,
+            coverage_target: 0.90,
+            empirical_coverage: 0.0,
+        }
+    }
+}
+
+impl ConformalInterval {
+    pub fn validate(&self, field: &str) -> Result<(), MejepaInferError> {
+        validate_probability(&format!("{field}.lower"), self.lower)?;
+        validate_probability(&format!("{field}.upper"), self.upper)?;
+        validate_probability(&format!("{field}.coverage_target"), self.coverage_target)?;
+        validate_probability(
+            &format!("{field}.empirical_coverage"),
+            self.empirical_coverage,
+        )?;
+        if self.lower > self.upper {
+            return Err(MejepaInferError::InvalidInput {
+                field: field.to_string(),
+                detail: format!("lower {} must be <= upper {}", self.lower, self.upper),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn width(&self) -> f32 {
+        self.upper - self.lower
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RootCauseClass {
+    LogicError,
+    StateError,
+    ResourceError,
+    ConcurrencyError,
+    InterfaceError,
+    EnvironmentError,
+    ConfigurationError,
+    TestQualityError,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TestOutcome {
+    Pass,
+    Fail,
+    Error,
+    Skip,
+    Flaky,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TestDeltaKind {
+    PassToFail,
+    FailToPass,
+    NewFailure,
+    NewPass,
+    NowSkipped,
+    NowFlaky,
+    Unchanged,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PredictedFailureMode {
+    pub failure_class: FailureModeClass,
+    pub chunk: ChunkId,
+    pub line_range: (u32, u32),
+    pub confidence: f32,
+    pub severity: Severity,
+    pub explanation: String,
+    pub contributing_embedders: Vec<EmbedderId>,
+    pub root_cause_class: RootCauseClass,
+}
+
+impl PredictedFailureMode {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.chunk.validate("predicted_failure_mode.chunk")?;
+        validate_line_range("predicted_failure_mode.line_range", self.line_range)?;
+        validate_probability("predicted_failure_mode.confidence", self.confidence)?;
+        validate_bounded_text(
+            "predicted_failure_mode.explanation",
+            &self.explanation,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )?;
+        if self.contributing_embedders.len() > MAX_EMBEDDERS_PER_PANEL {
+            return Err(MejepaInferError::DimMismatch {
+                expected: MAX_EMBEDDERS_PER_PANEL,
+                actual: self.contributing_embedders.len(),
+                context: "predicted_failure_mode.contributing_embedders exceeds maximum"
+                    .to_string(),
+            });
+        }
+        for (idx, embedder) in self.contributing_embedders.iter().enumerate() {
+            embedder.validate(&format!(
+                "predicted_failure_mode.contributing_embedders[{idx}]"
+            ))?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PredictedTestOutcome {
+    pub test_id: TestId,
+    pub current_outcome: TestOutcome,
+    pub predicted_outcome: TestOutcome,
+    pub delta_kind: TestDeltaKind,
+    pub confidence: f32,
+    pub why: PredictedFailureMode,
+}
+
+impl PredictedTestOutcome {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.test_id.validate("predicted_test_outcome.test_id")?;
+        validate_probability("predicted_test_outcome.confidence", self.confidence)?;
+        self.why.validate()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuardViolation {
+    pub embedder: EmbedderId,
+    pub chunk: ChunkId,
+    pub centroid_id: String,
+    pub cosine: f32,
+    pub threshold_tau_m: f32,
+    pub deficit: f32,
+}
+
+impl GuardViolation {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.embedder.validate("guard_violation.embedder")?;
+        self.chunk.validate("guard_violation.chunk")?;
+        validate_non_empty_id("guard_violation.centroid_id", &self.centroid_id)?;
+        validate_cosine("guard_violation.cosine", self.cosine)?;
+        validate_probability("guard_violation.threshold_tau_m", self.threshold_tau_m)?;
+        if !self.deficit.is_finite() || self.deficit < 0.0 {
+            return Err(MejepaInferError::NanDetected {
+                nan_source: "guard_violation.deficit".to_string(),
+                detail: format!(
+                    "deficit must be finite and non-negative; got {}",
+                    self.deficit
+                ),
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExemplarMatch {
+    pub task_id: TaskId,
+    pub mutation_kind: crate::eval::MutationCategory,
+    pub similarity_score: f32,
+    pub diff_summary: String,
+    pub oracle_outcome: OracleVerdict,
+    pub witness_hash: WitnessHash,
+}
+
+impl ExemplarMatch {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.task_id.validate("exemplar_match.task_id")?;
+        validate_probability("exemplar_match.similarity_score", self.similarity_score)?;
+        validate_bounded_text(
+            "exemplar_match.diff_summary",
+            &self.diff_summary,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EdgeCaseClass {
+    EmptyInput,
+    SingleElement,
+    BoundaryValue,
+    UnicodeEdge,
+    WhitespaceOnly,
+    LeadingTrailingWhitespace,
+    DuplicateKeys,
+    CircularReference,
+    SelfReference,
+    DeepNesting,
+    LargeInput,
+    UninitializedField,
+    OptionalNotPresent,
+    DefaultValueLeakage,
+    ConcurrentAccess,
+    PartialFailure,
+    CrossPlatform,
+    TimezoneTransition,
+    Locale,
+    NetworkPartition,
+    DiskFull,
+    PermissionDenied,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PredictedEdgeCase {
+    pub edge_class: EdgeCaseClass,
+    pub chunk: ChunkId,
+    pub line_range: (u32, u32),
+    pub triggering_input_description: String,
+    pub covered_by_test: bool,
+    pub confidence: f32,
+}
+
+impl PredictedEdgeCase {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.chunk.validate("predicted_edge_case.chunk")?;
+        validate_line_range("predicted_edge_case.line_range", self.line_range)?;
+        validate_bounded_text(
+            "predicted_edge_case.triggering_input_description",
+            &self.triggering_input_description,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )?;
+        validate_probability("predicted_edge_case.confidence", self.confidence)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LatentBugClass {
+    ShadowedVariable,
+    ShadowedImport,
+    InconsistentNullCheck,
+    InconsistentErrorHandling,
+    UnreachableBranch,
+    DuplicateCondition,
+    SwitchFallthrough,
+    LooseEquality,
+    BareException,
+    LoggerNotConfigured,
+    ForgottenAwait,
+    ForgottenYield,
+    ForgottenReturn,
+    ResourceNotReleasedOnError,
+    LockHeldAcrossAwait,
+    NondeterministicIteration,
+    HashableMutation,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PredictedLatentBug {
+    pub bug_class: LatentBugClass,
+    pub chunk: ChunkId,
+    pub line_range: (u32, u32),
+    pub confidence: f32,
+    pub severity: Severity,
+    pub explanation: String,
+}
+
+impl PredictedLatentBug {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.chunk.validate("predicted_latent_bug.chunk")?;
+        validate_line_range("predicted_latent_bug.line_range", self.line_range)?;
+        validate_probability("predicted_latent_bug.confidence", self.confidence)?;
+        validate_bounded_text(
+            "predicted_latent_bug.explanation",
+            &self.explanation,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TechDebtClass {
+    HighCyclomaticComplexity,
+    DeepNesting,
+    LongFunction,
+    LongParameterList,
+    LongFile,
+    DuplicatedCode,
+    DataClumps,
+    FeatureEnvy,
+    ShotgunSurgery,
+    GodObject,
+    PrematureAbstraction,
+    DeadFlagBranch,
+    TodoWithoutOwner,
+    CommentedOutCode,
+    MagicNumber,
+    StringLiteralForEnum,
+    CopyOnWriteAbuse,
+    SerdeUntagged,
+    UnboundedRetry,
+    UnboundedCache,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PredictedTechDebt {
+    pub debt_class: TechDebtClass,
+    pub chunk: ChunkId,
+    pub line_range: (u32, u32),
+    pub severity: Severity,
+    pub explanation: String,
+}
+
+impl PredictedTechDebt {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.chunk.validate("predicted_tech_debt.chunk")?;
+        validate_line_range("predicted_tech_debt.line_range", self.line_range)?;
+        validate_bounded_text(
+            "predicted_tech_debt.explanation",
+            &self.explanation,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeadCodeKind {
+    UnusedFunction,
+    UnusedClass,
+    UnusedImport,
+    UnusedVariable,
+    UnreachableAfterReturn,
+    UnreachableInfiniteLoop,
+    DeadParameter,
+    DeadField,
+    AlwaysFalseBranch,
+    AlwaysTrueBranch,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PredictedDeadCode {
+    pub kind: DeadCodeKind,
+    pub chunk: ChunkId,
+    pub line_range: (u32, u32),
+    pub reason: String,
+}
+
+impl PredictedDeadCode {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.chunk.validate("predicted_dead_code.chunk")?;
+        validate_line_range("predicted_dead_code.line_range", self.line_range)?;
+        validate_bounded_text(
+            "predicted_dead_code.reason",
+            &self.reason,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RedundancyKind {
+    DuplicatedFunction,
+    DuplicatedTest,
+    DuplicatedConstant,
+    OverlappingErrorMessage,
+    ParallelImplementation,
+    ReinventedWheel,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PredictedRedundancy {
+    pub kind: RedundancyKind,
+    pub chunk: ChunkId,
+    pub also_at: Vec<ChunkId>,
+    pub similarity: f32,
+    pub explanation: String,
+}
+
+impl PredictedRedundancy {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.chunk.validate("predicted_redundancy.chunk")?;
+        if self.also_at.len() > MAX_CHUNKS {
+            return Err(MejepaInferError::DimMismatch {
+                expected: MAX_CHUNKS,
+                actual: self.also_at.len(),
+                context: "predicted_redundancy.also_at exceeds maximum".to_string(),
+            });
+        }
+        for (idx, chunk) in self.also_at.iter().enumerate() {
+            chunk.validate(&format!("predicted_redundancy.also_at[{idx}]"))?;
+        }
+        validate_probability("predicted_redundancy.similarity", self.similarity)?;
+        validate_bounded_text(
+            "predicted_redundancy.explanation",
+            &self.explanation,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PerfAxis {
+    CpuMs,
+    WallclockMs,
+    RssKb,
+    HeapAllocs,
+    HeapBytes,
+    StackBytes,
+    BinarySize,
+    StartupMs,
+    P50LatencyMs,
+    P99LatencyMs,
+    Throughput,
+    NetworkBytesIn,
+    NetworkBytesOut,
+    DiskReadBytes,
+    DiskWriteBytes,
+    GpuMemoryMb,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PredictedPerfRegression {
+    pub axis: PerfAxis,
+    pub chunk: ChunkId,
+    pub predicted_delta_pct: f32,
+    pub baseline_value: Option<f64>,
+    pub confidence: f32,
+    pub explanation: String,
+}
+
+impl PredictedPerfRegression {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.chunk.validate("predicted_perf_regression.chunk")?;
+        validate_finite_f32(
+            "predicted_perf_regression.predicted_delta_pct",
+            self.predicted_delta_pct,
+        )?;
+        validate_optional_f64(
+            "predicted_perf_regression.baseline_value",
+            self.baseline_value,
+        )?;
+        validate_probability("predicted_perf_regression.confidence", self.confidence)?;
+        validate_bounded_text(
+            "predicted_perf_regression.explanation",
+            &self.explanation,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecurityConcernClass {
+    SqlInjection,
+    CommandInjection,
+    PathTraversal,
+    Xss,
+    Csrf,
+    Ssrf,
+    XmlExternalEntity,
+    Deserialization,
+    InsecureRandom,
+    HardcodedSecret,
+    LoggingSecret,
+    OverbroadException,
+    InsecureCryptoAlgo,
+    InsufficientCryptoKeyLength,
+    MissingAuth,
+    BrokenAccessControl,
+    OpenRedirect,
+    ClickjackingMissing,
+    MissingTlsVerify,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PredictedSecurityConcern {
+    pub class: SecurityConcernClass,
+    pub chunk: ChunkId,
+    pub line_range: (u32, u32),
+    pub cvss_estimate: Option<f32>,
+    pub explanation: String,
+}
+
+impl PredictedSecurityConcern {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.chunk.validate("predicted_security_concern.chunk")?;
+        validate_line_range("predicted_security_concern.line_range", self.line_range)?;
+        if let Some(cvss) = self.cvss_estimate {
+            if !cvss.is_finite() || !(0.0..=10.0).contains(&cvss) {
+                return Err(MejepaInferError::NanDetected {
+                    nan_source: "predicted_security_concern.cvss_estimate".to_string(),
+                    detail: format!("cvss estimate must be finite in [0, 10]; got {cvss}"),
+                });
+            }
+        }
+        validate_bounded_text(
+            "predicted_security_concern.explanation",
+            &self.explanation,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AccuracyMetric {
+    F1,
+    Precision,
+    Recall,
+    Auc,
+    Accuracy,
+    MeanAbsoluteError,
+    MeanSquaredError,
+    R2,
+    PerplexitySnapshot,
+    CalibrationError,
+    BrierScore,
+    EmbeddingSimilarity,
+    DownstreamTaskScore(String),
+    Other(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PredictedAccuracyDegradation {
+    pub metric: AccuracyMetric,
+    pub chunk: ChunkId,
+    pub predicted_delta: f32,
+    pub baseline_value: Option<f64>,
+    pub confidence: f32,
+    pub explanation: String,
+}
+
+impl PredictedAccuracyDegradation {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.chunk
+            .validate("predicted_accuracy_degradation.chunk")?;
+        validate_finite_f32(
+            "predicted_accuracy_degradation.predicted_delta",
+            self.predicted_delta,
+        )?;
+        validate_optional_f64(
+            "predicted_accuracy_degradation.baseline_value",
+            self.baseline_value,
+        )?;
+        validate_probability("predicted_accuracy_degradation.confidence", self.confidence)?;
+        validate_bounded_text(
+            "predicted_accuracy_degradation.explanation",
+            &self.explanation,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CostAxis {
+    CiMinutes,
+    CiCpuSeconds,
+    CiWallSeconds,
+    EstimatedDollarsPerRun,
+    LlmTokensPerCall,
+    LlmDollarsPerCall,
+    StorageBytes,
+    EgressBytes,
+    DependencyCount,
+    BuildSeconds,
+    Other(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PredictedCostRegression {
+    pub axis: CostAxis,
+    pub chunk: ChunkId,
+    pub predicted_delta: f64,
+    pub baseline_value: Option<f64>,
+    pub explanation: String,
+}
+
+impl PredictedCostRegression {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.chunk.validate("predicted_cost_regression.chunk")?;
+        validate_finite_f64(
+            "predicted_cost_regression.predicted_delta",
+            self.predicted_delta,
+        )?;
+        validate_optional_f64(
+            "predicted_cost_regression.baseline_value",
+            self.baseline_value,
+        )?;
+        validate_bounded_text(
+            "predicted_cost_regression.explanation",
+            &self.explanation,
+            MAX_COMMIT_MESSAGE_BYTES,
+        )
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningClass {
+    Correct,
+    MostlyCorrect,
+    PlausibleButWrong,
+    Hallucination,
+    Hedging,
+    Overclaiming,
+    UnderClaiming,
+    #[default]
+    Mute,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct AgentClaimGraph {
+    pub raw_response: String,
+    pub claims: Vec<AgentClaim>,
+}
+
+impl AgentClaimGraph {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        validate_bounded_text(
+            "agent_claim_graph.raw_response",
+            &self.raw_response,
+            MAX_PROBLEM_STATEMENT_BYTES,
+        )?;
+        if self.claims.len() > MAX_ENTITIES {
+            return Err(MejepaInferError::DimMismatch {
+                expected: MAX_ENTITIES,
+                actual: self.claims.len(),
+                context: "agent_claim_graph.claims exceeds maximum".to_string(),
+            });
+        }
+        validate_items(
+            "agent_claim_graph.claims",
+            &self.claims,
+            AgentClaim::validate,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentClaim {
+    pub kind: ClaimKind,
+    pub text: String,
+    pub references: Vec<ClaimReference>,
+}
+
+impl AgentClaim {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        validate_bounded_text("agent_claim.text", &self.text, MAX_COMMIT_MESSAGE_BYTES)?;
+        if self.references.len() > MAX_ENTITIES {
+            return Err(MejepaInferError::DimMismatch {
+                expected: MAX_ENTITIES,
+                actual: self.references.len(),
+                context: "agent_claim.references exceeds maximum".to_string(),
+            });
+        }
+        validate_items(
+            "agent_claim.references",
+            &self.references,
+            ClaimReference::validate,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
+pub enum ClaimKind {
+    Added(SymbolRef),
+    Modified(SymbolRef),
+    Removed(SymbolRef),
+    Renamed(SymbolRef, String),
+    Tested(TestId),
+    Verified(String),
+    Refactored(String),
+    Documented(SymbolRef),
+    Other(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SymbolRef {
+    pub symbol: String,
+    pub file: Option<PathBuf>,
+    pub line: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClaimReference {
+    pub file: PathBuf,
+    pub symbol: Option<String>,
+    pub line: Option<u32>,
+}
+
+impl ClaimReference {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        validate_relative_path("claim_reference.file", &self.file)?;
+        if let Some(symbol) = &self.symbol {
+            validate_non_empty_id("claim_reference.symbol", symbol)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClaimReconciliation {
+    pub claim: AgentClaim,
+    pub status: ReconciliationStatus,
+    pub evidence: Vec<EvidenceRow>,
+}
+
+impl ClaimReconciliation {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.claim.validate()?;
+        if self.evidence.len() > MAX_ENTITIES {
+            return Err(MejepaInferError::DimMismatch {
+                expected: MAX_ENTITIES,
+                actual: self.evidence.len(),
+                context: "claim_reconciliation.evidence exceeds maximum".to_string(),
+            });
+        }
+        validate_items(
+            "claim_reconciliation.evidence",
+            &self.evidence,
+            EvidenceRow::validate,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReconciliationStatus {
+    Confirmed,
+    Missing,
+    Modified,
+    UnexpectedSideEffect,
+    SuperficialMatch,
+    AmbiguousRef,
+    Unverifiable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvidenceRow {
+    pub file: PathBuf,
+    pub before_sha: [u8; 32],
+    pub after_sha: [u8; 32],
+    pub line_range: (u32, u32),
+    pub contributing_shift_id: String,
+}
+
+impl EvidenceRow {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        validate_relative_path("evidence_row.file", &self.file)?;
+        validate_line_range("evidence_row.line_range", self.line_range)?;
+        validate_non_empty_id(
+            "evidence_row.contributing_shift_id",
+            &self.contributing_shift_id,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RealityImpact {
+    pub observed_shifts: Vec<ShiftEntry>,
+    pub predicted_files_changed: Vec<PathBuf>,
+    pub observed_files_changed: Vec<PathBuf>,
+    pub unexpected_files_changed: Vec<PathBuf>,
+    pub predicted_test_outcomes: Vec<PredictedTestOutcome>,
+    pub observed_test_outcomes: Vec<ObservedTestOutcome>,
+    pub prediction_correctness: PredictionCorrectness,
+}
+
+impl RealityImpact {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        if self.observed_shifts.len() > MAX_PATCH_HUNKS {
+            return Err(MejepaInferError::DimMismatch {
+                expected: MAX_PATCH_HUNKS,
+                actual: self.observed_shifts.len(),
+                context: "reality_impact.observed_shifts exceeds maximum".to_string(),
+            });
+        }
+        validate_items(
+            "reality_impact.observed_shifts",
+            &self.observed_shifts,
+            ShiftEntry::validate,
+        )?;
+        validate_paths(
+            "reality_impact.predicted_files_changed",
+            &self.predicted_files_changed,
+        )?;
+        validate_paths(
+            "reality_impact.observed_files_changed",
+            &self.observed_files_changed,
+        )?;
+        validate_paths(
+            "reality_impact.unexpected_files_changed",
+            &self.unexpected_files_changed,
+        )?;
+        validate_items(
+            "reality_impact.predicted_test_outcomes",
+            &self.predicted_test_outcomes,
+            PredictedTestOutcome::validate,
+        )?;
+        validate_items(
+            "reality_impact.observed_test_outcomes",
+            &self.observed_test_outcomes,
+            ObservedTestOutcome::validate,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShiftEntry {
+    pub shift_id: String,
+    pub file: PathBuf,
+    pub before_sha: [u8; 32],
+    pub after_sha: [u8; 32],
+}
+
+impl ShiftEntry {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        validate_non_empty_id("shift_entry.shift_id", &self.shift_id)?;
+        validate_relative_path("shift_entry.file", &self.file)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObservedTestOutcome {
+    pub test_id: TestId,
+    pub outcome: TestOutcome,
+    pub duration_ms: Option<u64>,
+}
+
+impl ObservedTestOutcome {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        self.test_id.validate("observed_test_outcome.test_id")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PredictionCorrectness {
+    Aligned,
+    UnderPredicted,
+    OverPredicted,
+    DivergentInClass,
+    Surprise,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct PredictionProvenance {
+    pub predictor_version: String,
+    pub constellation_version: String,
+    pub calibration_version: String,
+    pub active_pointer: String,
+}
+
+impl PredictionProvenance {
+    pub fn validate(&self) -> Result<(), MejepaInferError> {
+        validate_optional_id(
+            "prediction_provenance.predictor_version",
+            &self.predictor_version,
+        )?;
+        validate_optional_id(
+            "prediction_provenance.constellation_version",
+            &self.constellation_version,
+        )?;
+        validate_optional_id(
+            "prediction_provenance.calibration_version",
+            &self.calibration_version,
+        )?;
+        validate_optional_id("prediction_provenance.active_pointer", &self.active_pointer)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct PhaseBPredictionSurfaces {
+    pub predicted_failure_modes: Vec<PredictedFailureMode>,
+    pub predicted_failed_tests: Vec<PredictedTestOutcome>,
+    pub guard_violations: Vec<GuardViolation>,
+    pub closest_exemplars: Vec<ExemplarMatch>,
+    pub predicted_edge_cases: Vec<PredictedEdgeCase>,
+    pub predicted_latent_bugs: Vec<PredictedLatentBug>,
+    pub predicted_tech_debt_added: Vec<PredictedTechDebt>,
+    pub predicted_dead_code: Vec<PredictedDeadCode>,
+    pub predicted_redundant_code: Vec<PredictedRedundancy>,
+    pub predicted_perf_regressions: Vec<PredictedPerfRegression>,
+    pub predicted_security_concerns: Vec<PredictedSecurityConcern>,
+    pub predicted_accuracy_degradations: Vec<PredictedAccuracyDegradation>,
+    pub predicted_cost_regressions: Vec<PredictedCostRegression>,
+    pub predicted_reasoning_class: ReasoningClass,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RealityPrediction {
     pub prediction_id: [u8; 16],
+    pub witness_hash: WitnessHash,
     pub task_id: TaskId,
     pub session_id: [u8; 16],
     pub language: Language,
+    pub covered_chunks: Vec<ChunkId>,
+    pub verdict: Verdict,
+    pub confidence_interval: ConformalInterval,
     pub predicted_oracle_pass: f32,
     pub predicted_test_pass: Vec<f32>,
     pub predicted_runtime_trace: [f32; 32],
@@ -202,6 +1212,24 @@ pub struct RealityPrediction {
     pub calibrated_confidence: f32,
     pub degraded_status: bool,
     pub granger_attestations: BTreeMap<String, f32>,
+    pub predicted_failure_modes: Vec<PredictedFailureMode>,
+    pub predicted_failed_tests: Vec<PredictedTestOutcome>,
+    pub guard_violations: Vec<GuardViolation>,
+    pub closest_exemplars: Vec<ExemplarMatch>,
+    pub predicted_edge_cases: Vec<PredictedEdgeCase>,
+    pub predicted_latent_bugs: Vec<PredictedLatentBug>,
+    pub predicted_tech_debt_added: Vec<PredictedTechDebt>,
+    pub predicted_dead_code: Vec<PredictedDeadCode>,
+    pub predicted_redundant_code: Vec<PredictedRedundancy>,
+    pub predicted_perf_regressions: Vec<PredictedPerfRegression>,
+    pub predicted_security_concerns: Vec<PredictedSecurityConcern>,
+    pub predicted_accuracy_degradations: Vec<PredictedAccuracyDegradation>,
+    pub predicted_cost_regressions: Vec<PredictedCostRegression>,
+    pub predicted_reasoning_class: ReasoningClass,
+    pub agent_claim_graph: AgentClaimGraph,
+    pub claim_reconciliation: Vec<ClaimReconciliation>,
+    pub reality_impact: Option<RealityImpact>,
+    pub provenance: PredictionProvenance,
     pub source_panel_sha: [u8; 32],
     pub calibration_version: String,
     pub created_at_unix_ms: i64,
@@ -210,12 +1238,38 @@ pub struct RealityPrediction {
 impl RealityPrediction {
     pub fn try_new(mut value: Self) -> Result<Self, MejepaInferError> {
         value.validate()?;
+        value.covered_chunks.shrink_to_fit();
         value.predicted_test_pass.shrink_to_fit();
+        value.predicted_failure_modes.shrink_to_fit();
+        value.predicted_failed_tests.shrink_to_fit();
+        value.guard_violations.shrink_to_fit();
+        value.closest_exemplars.shrink_to_fit();
+        value.predicted_edge_cases.shrink_to_fit();
+        value.predicted_latent_bugs.shrink_to_fit();
+        value.predicted_tech_debt_added.shrink_to_fit();
+        value.predicted_dead_code.shrink_to_fit();
+        value.predicted_redundant_code.shrink_to_fit();
+        value.predicted_perf_regressions.shrink_to_fit();
+        value.predicted_security_concerns.shrink_to_fit();
+        value.predicted_accuracy_degradations.shrink_to_fit();
+        value.predicted_cost_regressions.shrink_to_fit();
+        value.claim_reconciliation.shrink_to_fit();
         Ok(value)
     }
 
     pub fn validate(&self) -> Result<(), MejepaInferError> {
         validate_non_empty_id("task_id", &self.task_id.0)?;
+        if self.covered_chunks.len() > MAX_CHUNKS {
+            return Err(MejepaInferError::DimMismatch {
+                expected: MAX_CHUNKS,
+                actual: self.covered_chunks.len(),
+                context: "covered_chunks exceeds maximum".to_string(),
+            });
+        }
+        for (idx, chunk) in self.covered_chunks.iter().enumerate() {
+            chunk.validate(&format!("covered_chunks[{idx}]"))?;
+        }
+        self.confidence_interval.validate("confidence_interval")?;
         validate_probability("predicted_oracle_pass", self.predicted_oracle_pass)?;
         validate_probability("ood_score", self.ood_score)?;
         validate_probability("calibrated_confidence", self.calibrated_confidence)?;
@@ -241,6 +1295,81 @@ impl RealityPrediction {
             validate_non_empty_id("granger_attestations.key", key)?;
             validate_probability(&format!("granger_attestations[{key}]"), *value)?;
         }
+        validate_items(
+            "predicted_failure_modes",
+            &self.predicted_failure_modes,
+            PredictedFailureMode::validate,
+        )?;
+        validate_items(
+            "predicted_failed_tests",
+            &self.predicted_failed_tests,
+            PredictedTestOutcome::validate,
+        )?;
+        validate_items(
+            "guard_violations",
+            &self.guard_violations,
+            GuardViolation::validate,
+        )?;
+        validate_items(
+            "closest_exemplars",
+            &self.closest_exemplars,
+            ExemplarMatch::validate,
+        )?;
+        validate_items(
+            "predicted_edge_cases",
+            &self.predicted_edge_cases,
+            PredictedEdgeCase::validate,
+        )?;
+        validate_items(
+            "predicted_latent_bugs",
+            &self.predicted_latent_bugs,
+            PredictedLatentBug::validate,
+        )?;
+        validate_items(
+            "predicted_tech_debt_added",
+            &self.predicted_tech_debt_added,
+            PredictedTechDebt::validate,
+        )?;
+        validate_items(
+            "predicted_dead_code",
+            &self.predicted_dead_code,
+            PredictedDeadCode::validate,
+        )?;
+        validate_items(
+            "predicted_redundant_code",
+            &self.predicted_redundant_code,
+            PredictedRedundancy::validate,
+        )?;
+        validate_items(
+            "predicted_perf_regressions",
+            &self.predicted_perf_regressions,
+            PredictedPerfRegression::validate,
+        )?;
+        validate_items(
+            "predicted_security_concerns",
+            &self.predicted_security_concerns,
+            PredictedSecurityConcern::validate,
+        )?;
+        validate_items(
+            "predicted_accuracy_degradations",
+            &self.predicted_accuracy_degradations,
+            PredictedAccuracyDegradation::validate,
+        )?;
+        validate_items(
+            "predicted_cost_regressions",
+            &self.predicted_cost_regressions,
+            PredictedCostRegression::validate,
+        )?;
+        self.agent_claim_graph.validate()?;
+        validate_items(
+            "claim_reconciliation",
+            &self.claim_reconciliation,
+            ClaimReconciliation::validate,
+        )?;
+        if let Some(impact) = &self.reality_impact {
+            impact.validate()?;
+        }
+        self.provenance.validate()?;
         self.outcome_set.validate()?;
         if self.calibration_version.is_empty() {
             return Err(MejepaInferError::InvalidInput {
@@ -256,9 +1385,13 @@ impl RealityPrediction {
 #[derive(Debug, Clone)]
 pub struct RealityPredictionBuilder {
     prediction_id: [u8; 16],
+    witness_hash: WitnessHash,
     task_id: TaskId,
     session_id: [u8; 16],
     language: Language,
+    covered_chunks: Vec<ChunkId>,
+    verdict: Verdict,
+    confidence_interval: ConformalInterval,
     predicted_oracle_pass: f32,
     predicted_test_pass: Vec<f32>,
     predicted_runtime_trace: [f32; 32],
@@ -267,6 +1400,24 @@ pub struct RealityPredictionBuilder {
     calibrated_confidence: f32,
     degraded_status: bool,
     granger_attestations: BTreeMap<String, f32>,
+    predicted_failure_modes: Vec<PredictedFailureMode>,
+    predicted_failed_tests: Vec<PredictedTestOutcome>,
+    guard_violations: Vec<GuardViolation>,
+    closest_exemplars: Vec<ExemplarMatch>,
+    predicted_edge_cases: Vec<PredictedEdgeCase>,
+    predicted_latent_bugs: Vec<PredictedLatentBug>,
+    predicted_tech_debt_added: Vec<PredictedTechDebt>,
+    predicted_dead_code: Vec<PredictedDeadCode>,
+    predicted_redundant_code: Vec<PredictedRedundancy>,
+    predicted_perf_regressions: Vec<PredictedPerfRegression>,
+    predicted_security_concerns: Vec<PredictedSecurityConcern>,
+    predicted_accuracy_degradations: Vec<PredictedAccuracyDegradation>,
+    predicted_cost_regressions: Vec<PredictedCostRegression>,
+    predicted_reasoning_class: ReasoningClass,
+    agent_claim_graph: AgentClaimGraph,
+    claim_reconciliation: Vec<ClaimReconciliation>,
+    reality_impact: Option<RealityImpact>,
+    provenance: PredictionProvenance,
     source_panel_sha: [u8; 32],
     calibration_version: String,
     created_at_unix_ms: i64,
@@ -281,9 +1432,13 @@ impl RealityPredictionBuilder {
     ) -> Self {
         Self {
             prediction_id: [0u8; 16],
+            witness_hash: WitnessHash([0u8; 32]),
             task_id,
             session_id,
             language,
+            covered_chunks: Vec::new(),
+            verdict: Verdict::Abstain,
+            confidence_interval: ConformalInterval::default(),
             predicted_oracle_pass: 0.0,
             predicted_test_pass: Vec::new(),
             predicted_runtime_trace: [0.0; 32],
@@ -292,6 +1447,24 @@ impl RealityPredictionBuilder {
             calibrated_confidence: 0.0,
             degraded_status: false,
             granger_attestations: BTreeMap::new(),
+            predicted_failure_modes: Vec::new(),
+            predicted_failed_tests: Vec::new(),
+            guard_violations: Vec::new(),
+            closest_exemplars: Vec::new(),
+            predicted_edge_cases: Vec::new(),
+            predicted_latent_bugs: Vec::new(),
+            predicted_tech_debt_added: Vec::new(),
+            predicted_dead_code: Vec::new(),
+            predicted_redundant_code: Vec::new(),
+            predicted_perf_regressions: Vec::new(),
+            predicted_security_concerns: Vec::new(),
+            predicted_accuracy_degradations: Vec::new(),
+            predicted_cost_regressions: Vec::new(),
+            predicted_reasoning_class: ReasoningClass::Mute,
+            agent_claim_graph: AgentClaimGraph::default(),
+            claim_reconciliation: Vec::new(),
+            reality_impact: None,
+            provenance: PredictionProvenance::default(),
             source_panel_sha: [0u8; 32],
             calibration_version: String::new(),
             created_at_unix_ms: chrono::Utc::now().timestamp_millis(),
@@ -300,6 +1473,26 @@ impl RealityPredictionBuilder {
 
     pub fn prediction_id(mut self, prediction_id: [u8; 16]) -> Self {
         self.prediction_id = prediction_id;
+        self
+    }
+
+    pub fn witness_hash(mut self, witness_hash: WitnessHash) -> Self {
+        self.witness_hash = witness_hash;
+        self
+    }
+
+    pub fn covered_chunks(mut self, value: Vec<ChunkId>) -> Self {
+        self.covered_chunks = value;
+        self
+    }
+
+    pub fn verdict(mut self, value: Verdict) -> Self {
+        self.verdict = value;
+        self
+    }
+
+    pub fn confidence_interval(mut self, value: ConformalInterval) -> Self {
+        self.confidence_interval = value;
         self
     }
 
@@ -338,6 +1531,59 @@ impl RealityPredictionBuilder {
         self
     }
 
+    pub fn predicted_failure_modes(mut self, value: Vec<PredictedFailureMode>) -> Self {
+        self.predicted_failure_modes = value;
+        self
+    }
+
+    pub fn predicted_failed_tests(mut self, value: Vec<PredictedTestOutcome>) -> Self {
+        self.predicted_failed_tests = value;
+        self
+    }
+
+    pub fn predicted_reasoning_class(mut self, value: ReasoningClass) -> Self {
+        self.predicted_reasoning_class = value;
+        self
+    }
+
+    pub fn agent_claim_graph(mut self, value: AgentClaimGraph) -> Self {
+        self.agent_claim_graph = value;
+        self
+    }
+
+    pub fn claim_reconciliation(mut self, value: Vec<ClaimReconciliation>) -> Self {
+        self.claim_reconciliation = value;
+        self
+    }
+
+    pub fn reality_impact(mut self, value: Option<RealityImpact>) -> Self {
+        self.reality_impact = value;
+        self
+    }
+
+    pub fn phase_b_surfaces(mut self, value: PhaseBPredictionSurfaces) -> Self {
+        self.predicted_failure_modes = value.predicted_failure_modes;
+        self.predicted_failed_tests = value.predicted_failed_tests;
+        self.guard_violations = value.guard_violations;
+        self.closest_exemplars = value.closest_exemplars;
+        self.predicted_edge_cases = value.predicted_edge_cases;
+        self.predicted_latent_bugs = value.predicted_latent_bugs;
+        self.predicted_tech_debt_added = value.predicted_tech_debt_added;
+        self.predicted_dead_code = value.predicted_dead_code;
+        self.predicted_redundant_code = value.predicted_redundant_code;
+        self.predicted_perf_regressions = value.predicted_perf_regressions;
+        self.predicted_security_concerns = value.predicted_security_concerns;
+        self.predicted_accuracy_degradations = value.predicted_accuracy_degradations;
+        self.predicted_cost_regressions = value.predicted_cost_regressions;
+        self.predicted_reasoning_class = value.predicted_reasoning_class;
+        self
+    }
+
+    pub fn provenance(mut self, value: PredictionProvenance) -> Self {
+        self.provenance = value;
+        self
+    }
+
     pub fn source_panel_sha(mut self, value: [u8; 32]) -> Self {
         self.source_panel_sha = value;
         self
@@ -351,9 +1597,13 @@ impl RealityPredictionBuilder {
     pub fn build(self) -> Result<RealityPrediction, MejepaInferError> {
         RealityPrediction::try_new(RealityPrediction {
             prediction_id: self.prediction_id,
+            witness_hash: self.witness_hash,
             task_id: self.task_id,
             session_id: self.session_id,
             language: self.language,
+            covered_chunks: self.covered_chunks,
+            verdict: self.verdict,
+            confidence_interval: self.confidence_interval,
             predicted_oracle_pass: self.predicted_oracle_pass,
             predicted_test_pass: self.predicted_test_pass,
             predicted_runtime_trace: self.predicted_runtime_trace,
@@ -362,6 +1612,24 @@ impl RealityPredictionBuilder {
             calibrated_confidence: self.calibrated_confidence,
             degraded_status: self.degraded_status,
             granger_attestations: self.granger_attestations,
+            predicted_failure_modes: self.predicted_failure_modes,
+            predicted_failed_tests: self.predicted_failed_tests,
+            guard_violations: self.guard_violations,
+            closest_exemplars: self.closest_exemplars,
+            predicted_edge_cases: self.predicted_edge_cases,
+            predicted_latent_bugs: self.predicted_latent_bugs,
+            predicted_tech_debt_added: self.predicted_tech_debt_added,
+            predicted_dead_code: self.predicted_dead_code,
+            predicted_redundant_code: self.predicted_redundant_code,
+            predicted_perf_regressions: self.predicted_perf_regressions,
+            predicted_security_concerns: self.predicted_security_concerns,
+            predicted_accuracy_degradations: self.predicted_accuracy_degradations,
+            predicted_cost_regressions: self.predicted_cost_regressions,
+            predicted_reasoning_class: self.predicted_reasoning_class,
+            agent_claim_graph: self.agent_claim_graph,
+            claim_reconciliation: self.claim_reconciliation,
+            reality_impact: self.reality_impact,
+            provenance: self.provenance,
             source_panel_sha: self.source_panel_sha,
             calibration_version: self.calibration_version,
             created_at_unix_ms: self.created_at_unix_ms,
@@ -854,8 +2122,34 @@ impl ActualOutcome {
 #[serde(rename_all = "snake_case")]
 pub enum FailureModeClass {
     AssertionMismatch,
+    WrongAlgorithm,
+    OffByOne,
+    NullDeref,
+    ResourceLeak,
+    RaceCondition,
+    DeadlockPotential,
+    InfiniteLoop,
+    StackOverflow,
     Exception,
     TypeError,
+    SignatureMismatch,
+    ImportMissing,
+    SyntaxError,
+    SemanticError,
+    AssertionViolation,
+    ContractViolation,
+    ApiMisuse,
+    ConfigDrift,
+    EncodingError,
+    DateTimeError,
+    NumericalInstability,
+    SerializationError,
+    SchemaMigrationGap,
+    DependencyVersionConflict,
+    PlatformAssumption,
+    CompilerVersionGap,
+    PermissionsError,
+    WrongTestUpdated,
     NameError,
     Timeout,
     Crash,
@@ -1169,6 +2463,96 @@ pub enum SideEffect {
     Network,
     ProcessSpawn,
     DatabaseWrite,
+}
+
+fn validate_items<T>(
+    field: &str,
+    items: &[T],
+    validate: impl Fn(&T) -> Result<(), MejepaInferError>,
+) -> Result<(), MejepaInferError> {
+    for (idx, item) in items.iter().enumerate() {
+        validate(item).map_err(|err| match err {
+            MejepaInferError::InvalidInput {
+                field: subfield,
+                detail,
+            } => MejepaInferError::InvalidInput {
+                field: format!("{field}[{idx}].{subfield}"),
+                detail,
+            },
+            MejepaInferError::DimMismatch {
+                expected,
+                actual,
+                context,
+            } => MejepaInferError::DimMismatch {
+                expected,
+                actual,
+                context: format!("{field}[{idx}].{context}"),
+            },
+            other => other,
+        })?;
+    }
+    Ok(())
+}
+
+fn validate_line_range(field: &str, range: (u32, u32)) -> Result<(), MejepaInferError> {
+    if range.0 == 0 || range.1 == 0 || range.0 > range.1 {
+        return Err(MejepaInferError::InvalidInput {
+            field: field.to_string(),
+            detail: format!(
+                "line range must be one-indexed and start <= end; got {}..{}",
+                range.0, range.1
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn validate_optional_id(field: &str, value: &str) -> Result<(), MejepaInferError> {
+    if value.is_empty() {
+        return Ok(());
+    }
+    validate_non_empty_id(field, value)
+}
+
+fn validate_paths(field: &str, paths: &[PathBuf]) -> Result<(), MejepaInferError> {
+    if paths.len() > MAX_PATCH_HUNKS {
+        return Err(MejepaInferError::DimMismatch {
+            expected: MAX_PATCH_HUNKS,
+            actual: paths.len(),
+            context: format!("{field} exceeds maximum"),
+        });
+    }
+    for (idx, path) in paths.iter().enumerate() {
+        validate_relative_path(&format!("{field}[{idx}]"), path)?;
+    }
+    Ok(())
+}
+
+fn validate_finite_f32(field: &str, value: f32) -> Result<(), MejepaInferError> {
+    if !value.is_finite() {
+        return Err(MejepaInferError::NanDetected {
+            nan_source: field.to_string(),
+            detail: format!("{field} must be finite; got {value}"),
+        });
+    }
+    Ok(())
+}
+
+fn validate_finite_f64(field: &str, value: f64) -> Result<(), MejepaInferError> {
+    if !value.is_finite() {
+        return Err(MejepaInferError::NanDetected {
+            nan_source: field.to_string(),
+            detail: format!("{field} must be finite; got {value}"),
+        });
+    }
+    Ok(())
+}
+
+fn validate_optional_f64(field: &str, value: Option<f64>) -> Result<(), MejepaInferError> {
+    if let Some(value) = value {
+        validate_finite_f64(field, value)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_probability(field: &str, value: f32) -> Result<(), MejepaInferError> {

@@ -1,0 +1,14 @@
+schema_version: 1
+language: ruby
+patterns:
+  - id: ruby_manual_csv_split
+    kind: ReinventedWheel
+    name: Hand-rolled CSV splitting
+    stdlib_alternative: CSV.parse
+    confidence: 0.85
+    detection:
+      required_substrings:
+        - ".split(',')"
+        - ".map"
+      forbidden_substrings:
+        - "CSV.parse"

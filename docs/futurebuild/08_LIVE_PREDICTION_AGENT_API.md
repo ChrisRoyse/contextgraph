@@ -4,6 +4,8 @@
 >
 > **The slogan:** **the agent calls one tool, gets the full Q1–Q5 prediction surface, and can write back surprise events with one tool.** Two reads, one write — minimal API friction, maximal reality coupling.
 
+**Status snapshot (2026-05-12):** Phase A/B code now ships `mejepa_verify`, `mejepa_predict_latest`, `mejepa_predict_what_if`, `mejepa_explain_prediction`, and `mejepa_record_agent_feedback`. Phase B FSV evidence lives at `/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-prediction-fsv.json`; the live persisted readback used `CF_MEJEPA_LIVE_PREDICTIONS` prediction id `78e5bc08a3e79d8d47487dc9efd7bd7f`. Remaining work is production UX polish for rendering every Q1-Q5 field, full exemplar/counterfactual explanation enrichment, and trained per-head quality gates.
+
 ---
 
 ## 1. Read-side tools (agent asks for predictions)
@@ -100,7 +102,7 @@ Agent asks "what's the latest prediction for my session, based on shifts the dae
 
 This is the path for **passive** predictions — the agent doesn't have to construct a patch; the daemon has already observed the shifts.
 
-### 1.3 `mejepa_predict_what_if` (NEW)
+### 1.3 `mejepa_predict_what_if` (shipped Phase B, 2026-05-12)
 
 Agent asks "if I were to make this hypothetical edit, what would ME-JEPA predict?" without actually applying the edit.
 
@@ -109,10 +111,12 @@ Agent asks "if I were to make this hypothetical edit, what would ME-JEPA predict
 {
   "tool": "mcp__cgreality__mejepa_predict_what_if",
   "input": {
-    "hypothetical_changes": [
-      { "file": "src/foo.py", "old_string": "...", "new_string": "..." }
-    ],
-    "context": { ... }
+    "patch": {
+      "kind": "unified_diff",
+      "content": "diff --git ..."
+    },
+    "context": { ... },
+    "compareToPredictionId": "78e5bc08a3e79d8d47487dc9efd7bd7f" // optional
   }
 }
 ```
@@ -121,18 +125,20 @@ Agent asks "if I were to make this hypothetical edit, what would ME-JEPA predict
 // Response
 {
   "prediction": { ... },                       // RealityPrediction with verdict, all heads, etc.
-  "comparison_to_current": {
-    "delta_oracle_pass_confidence": -0.3,
-    "delta_predicted_failure_count": +2,
-    "delta_perf_regression_axis_count": 0,
-    "verdict_change": "Pass → Fail"
+  "compareToCurrent": { ... },                  // null unless compareToPredictionId is supplied
+  "diskShaBefore": { ... },
+  "diskShaAfter": { ... },
+  "sourceOfTruth": {
+    "dbPath": "/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-rocksdb",
+    "repositoryRoot": "/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/repo",
+    "persistedPrediction": false
   }
 }
 ```
 
-**Use case:** Claude Code is considering two refactor approaches; it asks ME-JEPA to predict reality for each before committing. The hypothetical doesn't touch disk; it's purely a forward pass through the predictor.
+**Use case:** Claude Code is considering two refactor approaches; it asks ME-JEPA to predict reality for each before committing. The what-if path must prove disk SHAs are unchanged and must not write a live prediction row.
 
-### 1.4 `mejepa_explain_prediction` (NEW)
+### 1.4 `mejepa_explain_prediction` (shipped Phase B, 2026-05-12)
 
 Agent asks for the *reasoning* behind a specific prediction — which embedders, which chunks, which exemplars contributed most.
 
@@ -141,9 +147,7 @@ Agent asks for the *reasoning* behind a specific prediction — which embedders,
 {
   "tool": "mcp__cgreality__mejepa_explain_prediction",
   "input": {
-    "prediction_id": "pred_01HXYZ...",
-    "head": "failure_mode",                    // or "edge_case" / "tech_debt" / etc.
-    "concern_index": 0                          // index into the head's vec
+    "predictionId": "78e5bc08a3e79d8d47487dc9efd7bd7f"
   }
 }
 ```
@@ -151,29 +155,26 @@ Agent asks for the *reasoning* behind a specific prediction — which embedders,
 ```jsonc
 // Response
 {
-  "concern": { ... },                          // the original concern
-  "contributing_signals": [
-    { "embedder": "E_TypeGraph", "chunk": "chunk_123", "cosine_to_centroid": 0.61, "tau_m": 0.72, "weight": 0.34 },
-    { "embedder": "E_DataFlow", "chunk": "chunk_123", "cosine_to_centroid": 0.58, "tau_m": 0.70, "weight": 0.27 },
-    ...
-  ],
-  "saliency_map": {                            // attention weights from the failure-mode head
-    "chunk_123": 0.78,
-    "chunk_124": 0.15,
-    "chunk_125": 0.07
+  "predictionId": "78e5bc08a3e79d8d47487dc9efd7bd7f",
+  "verdict": "Fail",
+  "saliencyByChunk": {
+    "src/phase_b_sample.py#0": 0.8709677419354839,
+    "requirements.txt#1": 0.12903225806451613
   },
-  "closest_exemplars": [
-    { "task_id": "psf__requests-2317", "similarity_score": 0.91, "diff_summary": "...", "oracle_outcome": "Fail" }
-  ],
-  "counterfactual_minimum_edit": {              // what's the smallest change that would flip this concern?
-    "chunk": "chunk_123",
-    "suggested_edit_class": "swap_left_right_indexing",
-    "predicted_post_edit_concern_severity": "Low"
+  "topFailureModes": [ ... ],
+  "edgeCases": [ ... ],
+  "techDebt": [ ... ],
+  "securityConcerns": [ ... ],
+  "agentClaimGraph": { ... },
+  "realityImpact": null,
+  "sourceOfTruth": {
+    "dbPath": "/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-rocksdb",
+    "cf": "CF_MEJEPA_LIVE_PREDICTIONS"
   }
 }
 ```
 
-**Use case:** the agent wants to understand *why* ME-JEPA predicted what it predicted, so it can either act on the prediction or argue with it.
+**Use case:** the agent wants to inspect the persisted prediction surface and saliency before acting on it. Closest-exemplar and counterfactual-minimum-edit enrichment remain future work once `CF_MEJEPA_FAILURE_EXEMPLARS` is production-populated.
 
 ### 1.5 `mejepa_constellation_inspect` (already shipped — extension)
 
@@ -183,7 +184,7 @@ Already-shipped tool. Extended to allow per-chunk inspection: "for this chunk, s
 
 ## 2. Write-side tool (agent records feedback)
 
-### 2.1 `mejepa_record_agent_feedback` (NEW — the operator's missing piece)
+### 2.1 `mejepa_record_agent_feedback` (shipped Phase A, 2026-05-12)
 
 The operator-mandated closed-loop: when the agent gets a prediction and acts on it, it can confirm, contest, or augment via this tool.
 
@@ -252,9 +253,9 @@ The agent can add free text in `agent_explanation` plus structured fields in `ex
 
 ---
 
-## 3. The prediction-injection hook (the missing piece on the read path)
+## 3. The prediction-injection hook
 
-Today the hooks layer captures shifts and runs cargo check + git diff on writes. **It does not inject ME-JEPA predictions into the next agent prompt.** This is the closing of the read loop the operator implicitly requires.
+The hooks layer captures shifts, runs cargo check + git diff on writes, and now has a UserPromptSubmit path for injecting the latest ME-JEPA prediction into the next agent prompt. This closes the read loop the operator required.
 
 `TASK-PREDICT-001-prediction-injection-hook.md` adds a UserPromptSubmit hook handler that:
 
@@ -265,7 +266,7 @@ Today the hooks layer captures shifts and runs cargo check + git diff on writes.
 
 Implementation: a new shell script `scripts/cc/hook_user_prompt_submit_inject_prediction.sh` wired into `.claude/settings.json` under `hooks.UserPromptSubmit`. It calls a small `mcp__cgreality__mejepa_predict_latest` request and renders the response.
 
-**This is the most operationally-impactful single task in the futurebuild plan**: until predictions are injected, the agent has to remember to call `mejepa_verify` manually, which it often won't. With injection, the agent gets the prediction whether it asked or not.
+Remaining work: refresh the renderer so every Phase B Q1-Q5 field is surfaced usefully under the 4 KB hook budget, and complete fresh-host daemon enablement proof.
 
 ---
 
@@ -364,14 +365,14 @@ Wrapping these in a single `mejepa_daemon_status` aggregator tool would be conve
  noted tech debt items I'll address in follow-up"]
 ```
 
-This is the **target experience**. Today, steps marked "daemon" / "Hook injects updated prediction" / `mejepa_record_agent_feedback` don't fire because the daemon mode and the injection hook and the feedback tool don't exist yet. The futurebuild plan delivers all three.
+This is now the intended production experience. The daemon mode, injection hook, feedback tool, what-if tool, and explain tool exist; the remaining risk is operational burn-in and quality gates, not missing first-class API surface.
 
 ---
 
-## 7. Backwards compatibility & versioning
+## 7. API versioning
 
-- The existing `mejepa_verify` and `mejepa_predict_latest` tools are EXTENDED (new optional fields) rather than replaced. Old callers see the same response shape with new fields they can ignore.
-- `Verdict` enum extension is additive. New variants don't change existing behavior; old serialized values still deserialize.
+- The existing `mejepa_verify` and `mejepa_predict_latest` tools are extended rather than replaced where possible.
+- Schema changes must be explicit and fail closed when a required field, enum, or binary RocksDB value cannot be decoded. Do not silently default old predictions into a new shape.
 - `RealityPrediction` is versioned via the `provenance.predictor_version` field; clients that need to cross-reference predictions across model versions can use this as the version key.
 - The `provenance` block lets a future client reproduce the prediction byte-for-byte from the persisted weights + constellation + calibration; this is the "audit substrate" closure.
 
@@ -385,7 +386,7 @@ This is the **target experience**. Today, steps marked "daemon" / "Hook injects 
 | `mejepa_predict_latest` | unbounded | pure RocksDB read |
 | `mejepa_predict_what_if` | unbounded | same forward path as verify |
 | `mejepa_explain_prediction` | unbounded | RocksDB read + lightweight rerank |
-| `mejepa_record_agent_feedback` | 100 / hour / agent_id | anti-DoS; agents shouldn't be feedback-spamming |
+| `mejepa_record_agent_feedback` | unbounded; validation fail-closed | single-operator system; bad payloads should fail with durable diagnostics, not disappear under a throttle |
 | `mejepa_constellation_inspect` | unbounded | RocksDB read |
 
 The CUDA queue is shared between training (during periodic full-retrain) and inference (verify calls). The scheduler's promote_tick coordinates: during full-retrain, inference latency may rise; the predictor has a small priority-queue bypass for inference requests during retrain so end-user latency stays bounded.
@@ -394,14 +395,14 @@ The CUDA queue is shared between training (during periodic full-retrain) and inf
 
 ## 9. What this API spec commits us to
 
-1. `TASK-PREDICT-001-prediction-injection-hook.md` — the UserPromptSubmit injector
-2. `TASK-PREDICT-002-record-agent-feedback-tool.md` — the new MCP write tool + CF + sampling-weight wiring
-3. `TASK-PREDICT-003-predict-what-if-tool.md` — the hypothetical prediction tool
-4. `TASK-PREDICT-004-explain-prediction-tool.md` — the per-prediction reasoning tool
-5. `TASK-PREDICT-005-multi-head-stack.md` — extend the predictor with the multi-head taxonomy from `03_ARCHITECTURE_BLUEPRINT.md §3`
-6. `TASK-PREDICT-006-rich-reality-prediction-schema.md` — extend `RealityPrediction` to the full Q1–Q5 schema in `15_PREDICTION_TAXONOMY.md §1`
-7. `TASK-PREDICT-007-agent-claim-graph-extractor.md` — deterministic rule-based extractor for Q1
-8. `TASK-PREDICT-008-reality-impact-reconciler.md` — Q5 reconciliation between predicted & observed shifts
-9. `TASK-PREDICT-009-active-learning-agent-surprise-kind.md` — extend `ActiveLearningKind` enum
+1. `TASK-PREDICT-001-prediction-injection-hook.md` — complete; renderer hardening remains.
+2. `TASK-PREDICT-002-record-agent-feedback-tool.md` — complete.
+3. `TASK-PREDICT-003-predict-what-if-tool.md` — complete.
+4. `TASK-PREDICT-004-explain-prediction-tool.md` — complete for persisted prediction explanations; exemplar/counterfactual enrichment remains.
+5. `TASK-PREDICT-005-multi-head-stack.md` — code_complete; production DDA/neural feature consumption and trained holdout gates remain.
+6. `TASK-PREDICT-006-rich-reality-prediction-schema.md` — complete.
+7. `TASK-PREDICT-007-agent-claim-graph-extractor.md` — complete.
+8. `TASK-PREDICT-008-reality-impact-reconciler.md` — complete.
+9. `TASK-PREDICT-009-active-learning-agent-surprise-kind.md` — complete.
 
 All listed in [`13_TASK_INDEX.md`](13_TASK_INDEX.md).

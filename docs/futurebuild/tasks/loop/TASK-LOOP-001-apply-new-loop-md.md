@@ -2,7 +2,7 @@
 task_id: TASK-LOOP-001
 title: Apply new .claude/loop.md content from 14_NEW_LOOP_MD.md
 phase: A
-status: open
+status: complete (2026-05-12)
 blocked_by: [TASK-FLYWHEEL-001]
 blocks: [TASK-LOOP-002, TASK-LOOP-003]
 effort: 0.25d
@@ -12,6 +12,8 @@ spec_refs: [SPEC-LOOP.md REQ-LOOP-01..05, TECH-LOOP.md §1]
 ## Verification contract
 
 Inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md). SoT is the on-disk `.claude/loop.md` byte content — verify with `sha256sum` and the `grep -c` checks in DoD. `ASSUME THE TASK IS WRONG` — confirm `=== BEGIN LOOP MD ===` / `=== END LOOP MD ===` markers actually exist in `14_NEW_LOOP_MD.md` before extraction (audit with `grep -n "=== BEGIN" docs/futurebuild/14_NEW_LOOP_MD.md`).
+
+**Status note (2026-05-12):** `.claude/loop.md` has been replaced from `14_NEW_LOOP_MD.md`. Remaining loop-domain work is `TASK-LOOP-002/003/004/005/006`, not this content swap.
 
 ## Goal
 

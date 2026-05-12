@@ -2,6 +2,8 @@
 
 > **Level 3.** Implements [`SPEC-SECURITY.md`](../functional/SPEC-SECURITY.md). Implementation reference: [`22_ADVERSARIAL_ROBUSTNESS.md`](../../22_ADVERSARIAL_ROBUSTNESS.md).
 
+**Status snapshot (2026-05-12):** `verdict_assembly.rs` contradiction detection is implemented and tested as part of Phase B. Secret redaction, cross-language label gating, adversarial corpus, catastrophic promotion approval, and remaining hardening tasks are still tracked separately.
+
 ## Module layout
 
 ```

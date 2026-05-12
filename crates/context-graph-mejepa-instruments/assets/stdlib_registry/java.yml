@@ -1,0 +1,14 @@
+schema_version: 1
+language: java
+patterns:
+  - id: java_manual_url_encoding
+    kind: ReinventedWheel
+    name: Hand-rolled URL encoding
+    stdlib_alternative: java.net.URLEncoder
+    confidence: 0.84
+    detection:
+      required_substrings:
+        - ".replace(\" \", \"%20\")"
+        - ".replace(\"/\", \"%2F\")"
+      forbidden_substrings:
+        - "URLEncoder"

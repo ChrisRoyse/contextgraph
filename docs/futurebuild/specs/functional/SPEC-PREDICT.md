@@ -4,6 +4,8 @@
 > Owns: REQ-PREDICT-01..20.
 > Implementation reference: [`08_LIVE_PREDICTION_AGENT_API.md`](../../08_LIVE_PREDICTION_AGENT_API.md), [`15_PREDICTION_TAXONOMY.md`](../../15_PREDICTION_TAXONOMY.md).
 
+**Status snapshot (2026-05-12):** REQ-PREDICT-03/04/06/10/12/17/19 have code-level Phase A/B implementations. REQ-PREDICT-05/07/09/14 remain partially open for trained DDA-backed heads, per-head calibration, exemplar retrieval, and explicit schema migration discipline.
+
 ---
 
 ## User stories
@@ -26,13 +28,13 @@
 
 `mejepa_predict_latest(session_id, max_age_seconds, include_provenance)` SHALL return the most recent `RealityPrediction` from `CF_MEJEPA_LIVE_PREDICTIONS` for the session, or recompute if older than `max_age_seconds`.
 
-#### REQ-PREDICT-03 — `mejepa_predict_what_if` MCP tool (NEW)
+#### REQ-PREDICT-03 — `mejepa_predict_what_if` MCP tool (shipped Phase B)
 
-`mejepa_predict_what_if(hypothetical_changes, context)` SHALL run a forward pass against the hypothetical patch WITHOUT applying it to disk. Returns the same `RealityPrediction` schema PLUS a `comparison_to_current` block.
+`mejepa_predict_what_if(patch, context, compare_to_prediction_id?)` SHALL run a forward pass against the hypothetical patch WITHOUT applying it to disk and without persisting a live prediction row. Returns the same `RealityPrediction` schema PLUS optional `compareToCurrent`, `diskShaBefore`, `diskShaAfter`, and source-of-truth metadata proving `persistedPrediction=false`.
 
-#### REQ-PREDICT-04 — `mejepa_explain_prediction` MCP tool (NEW)
+#### REQ-PREDICT-04 — `mejepa_explain_prediction` MCP tool (shipped Phase B, enrichment remains)
 
-`mejepa_explain_prediction(prediction_id, head, concern_index)` SHALL return per-prediction reasoning: contributing signals (embedder + chunk + cosine), saliency map, closest exemplars, counterfactual minimum edit suggestion.
+`mejepa_explain_prediction(prediction_id)` SHALL read the persisted prediction from `CF_MEJEPA_LIVE_PREDICTIONS` and return saliency-by-chunk, head surfaces, guard violations, claim graph, reality impact, provenance, and source-of-truth metadata. Closest exemplars and counterfactual minimum edit suggestions remain future enrichment once exemplar storage is production-populated.
 
 #### REQ-PREDICT-05 — Multi-head extension to predictor
 
@@ -56,7 +58,7 @@ Each Q4 head SHALL include a calibrated confidence interval per `MeJepaCompiler:
 
 ### Write-side tool
 
-#### REQ-PREDICT-10 — `mejepa_record_agent_feedback` MCP tool (NEW)
+#### REQ-PREDICT-10 — `mejepa_record_agent_feedback` MCP tool (shipped Phase A)
 
 `mejepa_record_agent_feedback(prediction_id, feedback_kind, agent_explanation, actual_outcome, severity, extra_structured_data)` SHALL:
 1. Persist a `SurpriseEvent` to `CF_MEJEPA_AGENT_FEEDBACK` keyed by `(prediction_id, agent_id, ts)`.
@@ -73,7 +75,7 @@ Each Q4 head SHALL include a calibrated confidence interval per `MeJepaCompiler:
 
 ### Hook-side delivery
 
-#### REQ-PREDICT-12 — UserPromptSubmit prediction injection (NEW)
+#### REQ-PREDICT-12 — UserPromptSubmit prediction injection (shipped Phase A)
 
 A new hook SHALL be wired into `.claude/settings.json` under `hooks.UserPromptSubmit` that:
 1. Reads `CF_MEJEPA_LIVE_PREDICTIONS` for the current session.
@@ -89,7 +91,7 @@ When the prediction's full markdown rendering exceeds 4 KB, the hook SHALL trunc
 
 #### REQ-PREDICT-14 — `RealityPrediction` schema stability
 
-`RealityPrediction` schema is additive: extending an enum or adding a field is allowed; renaming or shrinking is forbidden. Old serialized predictions remain readable.
+`RealityPrediction` schema changes SHALL be explicit. JSON API fields may be additive, but persisted RocksDB/bincode values must fail closed on undecodable schema changes unless an explicit migration has been run and read back.
 
 #### REQ-PREDICT-15 — Provenance bound
 
@@ -125,7 +127,7 @@ A `RealityPrediction` produced by `mejepa_verify` SHALL serialize to JSON and de
 - **Patch has merge conflict markers**: `Verdict::OutOfDistribution` with `predicted_failure_modes: [SyntaxError]`.
 - **OOD score > 0.9 (way out of distribution)**: verdict = `OutOfDistribution`; `predicted_*` heads still populated but with widened intervals.
 - **No prediction exists for `prediction_id` in `mejepa_record_agent_feedback`**: return `MEJEPA_FEEDBACK_PREDICTION_NOT_FOUND`.
-- **Constellation stale (> 90 days)**: verdict optionally `Abstain` with reason; operator override via `mejepa_constellation_inspect --force-stale`.
+- **Constellation stale (> 90 days)**: fail closed or return `Abstain` with explicit stale-constellation reason; no force-stale bypass unless a future operator-approved tool records the override durably.
 
 ## Non-functional requirements
 

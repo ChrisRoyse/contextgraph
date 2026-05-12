@@ -1,5 +1,6 @@
 //! Manual edge-case FSV: before/after physical state for fail-closed paths.
 
+use context_graph_mejepa::HeadId;
 use context_graph_mejepa_train::cert::{
     open_train_rocksdb, verify_chain, TrainCertWriter, TrainingCertificate,
     CF_MEJEPA_HOLDOUT_REPORTS, CF_MEJEPA_TRAIN_CERTS,
@@ -179,10 +180,17 @@ fn cert(
             constellation_violation_rate: 0.0,
         },
     )?;
+    let per_head_l_step = HeadId::ALL
+        .into_iter()
+        .map(|head| (head.as_str().to_string(), signal.l_step))
+        .collect();
+    let delta_xi_global_min = signal.delta_xi;
     Ok(TrainingCertificate {
         step,
         epoch: 0,
         signal,
+        per_head_l_step,
+        delta_xi_global_min,
         loss_components: HashMap::from([("predict".to_string(), 0.1)]),
         training_mode: "edge_case".to_string(),
         distillation_cycle_id: None,

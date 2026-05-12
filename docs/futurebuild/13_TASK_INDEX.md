@@ -46,36 +46,39 @@
 
 ---
 
-## Phase B — Multi-Head Extension (24 tasks)
+## Phase B — Multi-Head Extension (core tracked tasks)
 
 | ID | Title | Phase | Blocked by | Effort |
 |---|---|---|---|---|
-| `TASK-PREDICT-003` | `mejepa_predict_what_if` MCP tool | B | PREDICT-005 | 0.5d |
-| `TASK-PREDICT-004` | `mejepa_explain_prediction` MCP tool | B | PREDICT-005 | 0.5d |
-| `TASK-PREDICT-005` | Multi-head stack (8 new heads + per-head feature projections) | B | none | 3d |
-| `TASK-PREDICT-006` | Rich `RealityPrediction` schema | B | PREDICT-005 | 0.5d |
-| `TASK-PREDICT-007` | Agent claim graph extractor (deterministic) | B | none | 1d |
-| `TASK-PREDICT-008` | Reality-impact reconciler (Q5) | B | PREDICT-007 | 1d |
-| `TASK-PREDICT-LABEL-001` | Failure-mode label source (pytest traceback parser → FailureModeClass) | B | CORPUS-002 | 0.5d |
-| `TASK-PREDICT-LABEL-002` | Edge-case label source (coverage delta + symbolic-execution proxy + per-language pattern catalog) | B | none | 1d |
-| `TASK-PREDICT-LABEL-003` | Tech-debt label source (clippy/pylint/eslint warning delta + radon/lizard) | B | none | 0.5d |
-| `TASK-PREDICT-LABEL-004` | Dead-code label source (vulture/udeps/eslint-no-unused) | B | none | 0.5d |
-| `TASK-PREDICT-LABEL-005` | Perf label source (pytest-benchmark / cargo bench / massif delta extractors) | B | none | 1d |
-| `TASK-PREDICT-LABEL-006` | Security label source (bandit/cargo-audit/eslint-security/semgrep delta) | B | none | 0.5d |
-| `TASK-PREDICT-LABEL-007` | Accuracy label source (test-output metric regex extractor) | B | none | 0.5d |
-| `TASK-PREDICT-LABEL-008` | Cost label source (CI minute counter + token telemetry + dep-count delta) | B | none | 0.5d |
-| `TASK-PREDICT-LABEL-009` | Reasoning-class weak supervisor (E_Reasoning ⟂ E_Diff agreement) | B | PREDICT-005 | 0.5d |
-| `TASK-PREDICT-009` | `ActiveLearningKind::AgentSurprise` integration (consumer side) | B | FLYWHEEL-005 | 0.25d |
-| `TASK-UTML-001` | Per-head ΔP/ΔK/ΔΞ tracking | B | PREDICT-005 | 0.5d |
-| `TASK-UTML-002` | Per-head cert columns in `CF_MEJEPA_TRAIN_CERTS` | B | UTML-001 | 0.25d |
-| `TASK-UTML-003` | `ΔΞ_global = min_h(ΔΞ_h)` aggregation | B | UTML-001 | 0.25d |
-| `TASK-UTML-004` | `agent_surprise_severity_score` factor in sampling_weight | B | PREDICT-002 | 0.25d |
-| `TASK-UTML-005` | Per-head Fisher matrices | B | UTML-001 | 0.5d |
-| `TASK-UTML-006` | Per-head dormancy detection | B | UTML-001 | 0.5d |
-| `TASK-UTML-007` | Per-head loss coefficient λ ramp in heal scheduler | B | HEAL-001, UTML-001 | 0.25d |
-| `TASK-UTML-009` | Per-cell state-transfer T in eval reports | B | UTML-001 | 0.5d |
+| `TASK-PREDICT-003` | `mejepa_predict_what_if` MCP tool | B | PREDICT-005 | **complete (2026-05-12)** |
+| `TASK-PREDICT-004` | `mejepa_explain_prediction` MCP tool | B | PREDICT-005 | **complete (2026-05-12)** |
+| `TASK-PREDICT-005` | Multi-head stack (8 new heads + per-head feature projections) | B | none | **code_complete (2026-05-12; DDA feature hardening remains Phase D)** |
+| `TASK-PREDICT-006` | Rich `RealityPrediction` schema | B | PREDICT-005 | **complete (2026-05-12)** |
+| `TASK-PREDICT-007` | Agent claim graph extractor (deterministic) | B | none | **complete (2026-05-12)** |
+| `TASK-PREDICT-008` | Reality-impact reconciler (Q5) | B | PREDICT-007 | **complete (2026-05-12)** |
+| `TASK-PREDICT-LABEL-001` | Failure-mode label source (pytest traceback parser → FailureModeClass) | B | CORPUS-002 | **code_complete (2026-05-12 unified deterministic extractor)** |
+| `TASK-PREDICT-LABEL-002` | Edge-case label source (coverage delta + symbolic-execution proxy + per-language pattern catalog) | B | none | **partial/code_complete: deterministic text extractor; coverage/symbolic hardening open** |
+| `TASK-PREDICT-LABEL-003` | Tech-debt label source (clippy/pylint/eslint warning delta + radon/lizard) | B | none | **partial/code_complete: deterministic text extractor; analyzer deltas open** |
+| `TASK-PREDICT-LABEL-004` | Dead-code label source (vulture/udeps/eslint-no-unused) | B | none | **partial/code_complete: taxonomy/schema exists; analyzer deltas open** |
+| `TASK-PREDICT-LABEL-005` | Perf label source (pytest-benchmark / cargo bench / massif delta extractors) | B | none | **partial/code_complete: patch-surface heuristic; benchmark parsers open** |
+| `TASK-PREDICT-LABEL-006` | Security label source (bandit/cargo-audit/eslint-security/semgrep delta) | B | none | **partial/code_complete: hardcoded secret/crypto text extractor; SAST deltas open** |
+| `TASK-PREDICT-LABEL-007` | Accuracy label source (test-output metric regex extractor) | B | none | **partial/code_complete: metric keyword extractor; full regex catalog open** |
+| `TASK-PREDICT-LABEL-008` | Cost label source (CI minute counter + token telemetry + dep-count delta) | B | none | **partial/code_complete: dependency-count delta; CI/token telemetry open** |
+| `TASK-PREDICT-LABEL-009` | Reasoning-class weak supervisor (E_Reasoning ⟂ E_Diff agreement) | B | PREDICT-005 | **partial/code_complete: field/schema present; embedder-agreement supervisor open** |
+| `TASK-PREDICT-LABEL-010` | Toolchain availability fail-closed audit | B | none | open / re-scoped from fallback |
+| `TASK-PREDICT-LABEL-011` | Cross-language label gating | B | PREDICT-LABEL-001..009 | open |
+| `TASK-PREDICT-009` | `ActiveLearningKind::AgentSurprise` integration (consumer side) | B | FLYWHEEL-005 | **complete (2026-05-11/12)** |
+| `TASK-UTML-001` | Per-head ΔP/ΔK/ΔΞ tracking | B | PREDICT-005 | **complete/code_complete (2026-05-12)** |
+| `TASK-UTML-002` | Per-head cert columns in `CF_MEJEPA_TRAIN_CERTS` | B | UTML-001 | **partial/code_complete: `per_head_l_step` + `delta_xi_global_min`; full per-head loss/delta/lambda columns open** |
+| `TASK-UTML-003` | `ΔΞ_global = min_h(ΔΞ_h)` aggregation | B | UTML-001 | **partial/code_complete: aggregation implemented; BatchSampler skip policy open** |
+| `TASK-UTML-004` | `agent_surprise_severity_score` factor in sampling_weight | B | PREDICT-002 | **complete** |
+| `TASK-UTML-005` | Per-head Fisher matrices | B | UTML-001 | open |
+| `TASK-UTML-006` | Per-head dormancy detection | B | UTML-001 | open |
+| `TASK-UTML-007` | Per-head loss coefficient λ ramp in heal scheduler | B | HEAL-001, UTML-001 | open |
+| `TASK-UTML-008` | Per-head dissipation detection | E | UTML-001 | open |
+| `TASK-UTML-009` | Per-cell state-transfer T in eval reports | B | UTML-001 | open |
 
-**Phase B total: ~13 days.**
+**Phase B code/FSV status (2026-05-12):** primary prediction/API/schema/label/UTML skeleton complete with FSV at `/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-prediction-fsv.json`. Remaining work is quality/training hardening: per-head Fisher, dormancy, lambda ramp, dissipation, per-cell state transfer, full analyzer/toolchain label deltas, and holdout metrics.
 
 ---
 
@@ -83,12 +86,12 @@
 
 | ID | Title | Phase | Blocked by | Effort |
 |---|---|---|---|---|
-| `TASK-CORPUS-001` | Per-language mutation operators (10 langs × 8 = 80) | C | none | 4-5d |
+| `TASK-CORPUS-001` | Per-language mutation operators (10 langs × 8 = 80) | C | none | **complete (2026-05-12; real-toolchain verified)** |
 | `TASK-CORPUS-002` | 300×8 SWE-bench Lite Python corpus generation under `/mnt/d/contextgraph/corpus/` (Docker) | C | none | **complete (2400/2400 verified, 2026-05-12)** |
-| `TASK-CORPUS-003` | Per-language fixture corpora (~50 tasks per language) | C | CORPUS-001 | 1-2d |
-| `TASK-CORPUS-004` | Stoer-Wagner mincut split applied to new corpora | C | CORPUS-002, CORPUS-003 | 0.25d |
+| `TASK-CORPUS-003` | Per-language fixture corpora (64 tasks per language × 8 categories) | C | CORPUS-001 | **complete (5120/5120 verified, 2026-05-12)** |
+| `TASK-CORPUS-004` | Combined split applied to Python + non-Python corpora | C | CORPUS-002, CORPUS-003 | **complete (split FSV passed, 2026-05-12)** |
 
-**Phase C total: ~10 days.**
+**Phase C status:** complete. Sources of truth: Python corpus `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/`, non-Python corpus `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/`, combined evidence `/mnt/d/contextgraph/fsv/corpus-fsv/split_full.json`.
 
 ---
 
@@ -217,13 +220,13 @@ LOOP-* (cleanup) — independent except LOOP-002 ←── LOOP-001
 
 These tasks can run in parallel without conflict:
 
-- All 80 per-language operator tasks within `TASK-CORPUS-001` (Phase C)
+- Phase C is complete; future corpus broadening can parallelize by language if adding scraped/public CI corpora beyond the deterministic fixture seed.
 - Per-embedder FSV tasks within `TASK-ENRICH-006` (Phase D) — one per embedder
 - Per-head label-source tasks `TASK-PREDICT-LABEL-001..009` (Phase B) — independent
 - Cleanup tasks in Phase H — all independent
 - All OBS tasks (Phase F) — mostly independent
 
-A two-engineer pairing could reduce total wall-clock to ~20-25 days from the ~57 single-engineer-day total, since most of Phase B's labels, Phase C's operators, Phase D's per-embedder FSVs, and Phase F's observability tasks are embarrassingly parallel.
+A two-engineer pairing could reduce total wall-clock to ~20-25 days from the ~57 single-engineer-day total, since most remaining Phase B label hardening, Phase D per-embedder FSVs, Phase F observability tasks, and any future corpus broadening are embarrassingly parallel.
 
 ---
 

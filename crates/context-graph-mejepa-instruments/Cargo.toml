@@ -12,6 +12,7 @@ context-graph-mejepa-embedders = { path = "../context-graph-mejepa-embedders" }
 context-graph-witness = { path = "../context-graph-witness" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = "0.9"
 sha2 = "0.10"
 thiserror = { workspace = true }
 rocksdb = "0.22"

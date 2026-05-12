@@ -104,17 +104,17 @@ This is the "which embedders surface which failure" cross-reference. Reading dir
 | **Cost regressions** (Q4) | scalar (CI minutes / token counter / dep counter) | scalar only — no embedder needed |
 | **Reasoning class** (Q4) | E17 (affect-text), pairwise cosine[E_Reasoning][E_Diff], pairwise cosine[E_Reasoning][E_Oracle] | tone + agreement of agent's prose with the change and the outcome |
 
-**Architectural reading.** The Q3 (failure) and Q4 (concern) heads do not each need a *new* embedder; they need the existing 12-active embedders' DDA signals consumed differently. The ensemble is sufficient; what's missing today is the multi-head consumption layer in the predictor.
+**Architectural reading.** The Q3 (failure) and Q4 (concern) heads do not each need a *new* embedder; they need the existing 12-active embedders' DDA signals consumed differently. Phase B now ships typed prediction surfaces and deterministic extraction; the remaining gap is production DDA/neural feature consumption and trained per-head quality.
 
 ---
 
 ## 4. Routing table (extension of the 143-row shipped table)
 
-Today: 143 routes shipped per `crates/context-graph-mejepa-embedders` covering all 11 languages × 13 entity types. Two extensions for the futurebuild plan:
+Today: 143 routes shipped per `crates/context-graph-mejepa-embedders` covering all 11 languages × 13 entity types. Two extensions remain for the futurebuild plan:
 
 ### 4.1 Per-EntityType routing for the new heads
 
-The shipped routing handles which embedders run on which (Language × EntityType). The futurebuild plan adds a second-tier routing: **for each prediction head, which embedders' DDA signals does it consume?** This is the per-head feature-projection table. Specified in the multi-head technical spec (`SPEC-PREDICT.md`).
+The shipped routing handles which embedders run on which (Language × EntityType). The futurebuild plan still needs production second-tier routing: **for each prediction head, which embedders' DDA signals does it consume?** This is the per-head feature-projection table. Specified in the multi-head technical spec (`SPEC-PREDICT.md`).
 
 ### 4.2 Per-Action routing for the agent-feedback channel
 

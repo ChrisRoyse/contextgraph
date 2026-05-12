@@ -686,6 +686,121 @@ fn subtle_flip_skips_python_type_annotation_arrow() {
 }
 
 #[test]
+fn generic_subtle_flip_skips_rust_return_arrow() {
+    // Regression: the generic non-Python operator must validate syntax after
+    // replacement so Rust `->` return arrows are not mutated into `-<`.
+    let src = "fn check(alpha: i32, beta: i32) -> bool {\n    let total = alpha + beta + 3;\n    let expected = 5;\n    total == expected && true\n}\n";
+    let outcome = apply_mutation_for_language(
+        Language::Rust,
+        MutationCategory::SubtleFlip,
+        src,
+        MutationConfig::default(),
+    )
+    .unwrap();
+    let site = outcome.mutation_site.unwrap();
+    assert_ne!(site.original_text, ">");
+    assert!(!outcome.mutated_source.contains("-< bool"));
+}
+
+#[test]
+fn generic_swap_variable_skips_rust_binding_declarations() {
+    // Regression: mutating `let expected = ...` made later uses unresolved.
+    let src = "fn check(alpha: i32, beta: i32) -> bool {\n    let total = alpha + beta + 3;\n    let expected = 5;\n    total == expected && true\n}\n";
+    for seed in 0..32 {
+        let outcome = apply_mutation_for_language(
+            Language::Rust,
+            MutationCategory::SwapVariable,
+            src,
+            MutationConfig {
+                seed,
+                alternate_source: None,
+            },
+        )
+        .unwrap();
+        assert!(outcome.mutated_source.contains("let total ="));
+        assert!(outcome.mutated_source.contains("let expected ="));
+    }
+}
+
+#[test]
+fn generic_delete_test_call_does_not_match_expected_variable() {
+    // Regression: substring matching for `expect` deleted the
+    // `let expected = ...` binding instead of the actual assertion line.
+    let src = "fn check(alpha: i32, beta: i32) -> bool {\n    let total = alpha + beta + 3;\n    let expected = 5;\n    assert!(total >= 0);\n    total == expected && true\n}\n";
+    let outcome = apply_mutation_for_language(
+        Language::Rust,
+        MutationCategory::DeleteTestCall,
+        src,
+        MutationConfig::default(),
+    )
+    .unwrap();
+    assert!(outcome.mutated_source.contains("let expected ="));
+    assert!(!outcome.mutated_source.contains("assert!(total >= 0);"));
+}
+
+#[test]
+fn generic_swap_variable_skips_csharp_method_parameter_bindings() {
+    // Regression: C# replacement names included `condition` from
+    // `void assert(bool condition)`, creating an out-of-scope use.
+    let src = "class MutationFixture0000 {\n  void assert(bool condition) {}\n  bool Check(int alpha, int beta) {\n    int total = alpha + beta + 3;\n    int expected = 5;\n    assert(total >= 0);\n    return total == expected && true;\n  }\n}\n";
+    for seed in 0..32 {
+        let outcome = apply_mutation_for_language(
+            Language::CSharp,
+            MutationCategory::SwapVariable,
+            src,
+            MutationConfig {
+                seed,
+                alternate_source: None,
+            },
+        )
+        .unwrap();
+        assert!(!outcome.mutated_source.contains("condition >= 0"));
+        assert!(outcome
+            .mutated_source
+            .contains("void assert(bool condition)"));
+    }
+}
+
+#[test]
+fn generic_swap_variable_skips_go_type_declarations() {
+    // Regression: mutating `type tester0009 struct{}` left receiver and
+    // variable declarations referring to an undefined type.
+    let src = "package main\n\ntype tester0009 struct{}\nfunc (tester0009) Fatal(message string) {}\n\nfunc check0009(alpha int, beta int) bool {\n    var t tester0009\n    total := alpha + beta + 12\n    expected := 14\n    if total >= 0 { t.Fatal(\"fixture assertion\") }\n    _ = t\n    if expected < 0 { return false }\n    return total == expected && true\n}\n";
+    for seed in 0..32 {
+        let outcome = apply_mutation_for_language(
+            Language::Go,
+            MutationCategory::SwapVariable,
+            src,
+            MutationConfig {
+                seed,
+                alternate_source: None,
+            },
+        )
+        .unwrap();
+        assert!(outcome.mutated_source.contains("type tester0009 struct{}"));
+        assert!(outcome.mutated_source.matches("expected").count() >= 2);
+    }
+}
+
+#[test]
+fn generic_delete_test_call_skips_csharp_assert_helper_definition() {
+    // Regression: `void assert(...)` is a helper declaration, not the test
+    // assertion call to delete.
+    let src = "class MutationFixture0000 {\n  void assert(bool condition) {}\n  bool Check(int alpha, int beta) {\n    int total = alpha + beta + 3;\n    int expected = 5;\n    assert(total >= 0);\n    return total == expected && true;\n  }\n}\n";
+    let outcome = apply_mutation_for_language(
+        Language::CSharp,
+        MutationCategory::DeleteTestCall,
+        src,
+        MutationConfig::default(),
+    )
+    .unwrap();
+    assert!(outcome
+        .mutated_source
+        .contains("void assert(bool condition)"));
+    assert!(!outcome.mutated_source.contains("assert(total >= 0);"));
+}
+
+#[test]
 fn subtle_flip_skips_bitshift_operators() {
     // Regression: `<<` and `>>` must not surface as single-char `<`/`>`.
     let src = "MASK = 1 << 4\nSHIFT = 8 >> 2\nflag = MASK == SHIFT\n";

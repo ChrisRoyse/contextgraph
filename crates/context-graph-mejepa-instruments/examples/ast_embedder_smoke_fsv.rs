@@ -290,7 +290,7 @@ fn oracle_from_manifest(manifest: &Value) -> OracleVerdict {
                 })
                 .collect()
         })
-        .unwrap_or_else(Vec::new);
+        .unwrap_or_default();
     OracleVerdict {
         per_test,
         exception: None,

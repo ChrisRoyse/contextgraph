@@ -16,6 +16,8 @@ Some security tasks are duplicated/cross-referenced across other domains (e.g., 
 
 ## TASK-SEC-003 — Multi-head contradiction detection
 
+**Status:** complete (2026-05-12). Implemented in `crates/context-graph-mejepa/src/verdict_assembly.rs`; focused verdict-assembly tests passed during Phase B verification.
+
 - **Phase:** B · **Effort:** 0.5d · **Spec:** SPEC-SECURITY REQ-SEC-03 + TECH-SECURITY §3
 - **Outputs:** `verdict_assembly.rs::assemble_verdict` extension.
 - **DoD:** synthetic prediction with oracle Pass + failure_mode High → verdict = Abstain.

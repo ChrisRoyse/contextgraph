@@ -700,16 +700,16 @@ The rendering is bounded (≤ 4 KB by default; tightened from the 16 KB initial 
 |---|---|---|---|
 | Panel | frozen-instrument target on observed panel[t=2] | VICReg variance/cov regularization | shipped (`predictor` + `loss/vicreg.rs`) |
 | Oracle | Docker test results from Phase 0 corpus + CI runs from Mode B reality capture | E_Test agreement | shipped (`oracle_head.rs`) |
-| Failure-mode | rule-based extraction from pytest/cargo-test/jest tracebacks; patch-similarity-graph nearest exemplar | TCT Gτ guard violation pattern | NEW |
-| Edge-case | coverage diff + symbolic-execution proxy on AST + per-language pattern catalog | mutation operator (`MutationKind::EdgeCaseExploit` proposed) | NEW |
-| Tech-debt | clippy/pylint/eslint warning-delta + radon/lizard complexity + duplicate detector | E14 (semantic-code) cosine for redundancy | NEW |
-| Perf | pytest-benchmark / cargo bench / valgrind massif deltas | per-axis regression head | NEW; needs CI integration |
-| Security | bandit / cargo-audit / eslint-security / semgrep + CVE-db on dep deltas | per-class severity floor | NEW |
-| Accuracy | test-output metric extraction (regex on common metric names) | E_Reasoning agreement with E_Oracle when ML-test detected | NEW |
-| Cost | CI minute counters + agent token telemetry + build-script timing + dep-count delta | per-axis regression head | NEW |
-| Reasoning | E_Reasoning ⟂ E_Diff agreement / E_Reasoning predictions vs E_Oracle outcomes | weak-supervised | NEW |
+| Failure-mode | rule-based extraction from pytest/cargo-test/jest tracebacks; patch-similarity-graph nearest exemplar | TCT Gτ guard violation pattern | code_complete Phase B; exemplar hardening remains |
+| Edge-case | coverage diff + symbolic-execution proxy on AST + per-language pattern catalog | mutation operator (`MutationKind::EdgeCaseExploit` proposed) | partial/code_complete; coverage/symbolic hardening remains |
+| Tech-debt | clippy/pylint/eslint warning-delta + radon/lizard complexity + duplicate detector | E14 (semantic-code) cosine for redundancy | partial/code_complete; analyzer deltas remain |
+| Perf | pytest-benchmark / cargo bench / valgrind massif deltas | per-axis regression head | partial/code_complete; benchmark integration remains |
+| Security | bandit / cargo-audit / eslint-security / semgrep + CVE-db on dep deltas | per-class severity floor | partial/code_complete; SAST/CVE deltas remain |
+| Accuracy | test-output metric extraction (regex on common metric names) | E_Reasoning agreement with E_Oracle when ML-test detected | partial/code_complete; broader metric catalog remains |
+| Cost | CI minute counters + agent token telemetry + build-script timing + dep-count delta | per-axis regression head | partial/code_complete; CI/token telemetry remains |
+| Reasoning | E_Reasoning ⟂ E_Diff agreement / E_Reasoning predictions vs E_Oracle outcomes | weak-supervised | partial/code_complete; embedder-agreement supervisor remains |
 
-All NEW heads are added by the futurebuild plan in [`12_IMPLEMENTATION_PHASES.md`](12_IMPLEMENTATION_PHASES.md) Phase B. They share the predictor trunk; head-specific holdout metrics gate λ-coefficient ramp per `13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md §2.2`.
+Phase B added the typed prediction surfaces and unified deterministic extractor in `crates/context-graph-mejepa-train/src/labels.rs`. Remaining work is trained quality: per-tool/per-language analyzers, production DDA/neural feature consumption, and head-specific holdout gates per `12_IMPLEMENTATION_PHASES.md`.
 
 ---
 

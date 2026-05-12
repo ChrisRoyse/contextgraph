@@ -53,6 +53,7 @@ mod delete_test_call;
 pub mod generate;
 mod generic_language_ops;
 mod known_good;
+pub mod multilang_fixture_corpus;
 mod off_by_one;
 pub mod oracle;
 mod over_engineer;
@@ -206,8 +207,8 @@ impl MutationError {
     }
 }
 
-/// Phase 0 currently mutates Python SWE-bench Lite tasks. Other languages must
-/// fail closed until language-specific operators and oracle fixtures exist.
+/// Corpus generation supports Python SWE-bench Lite plus Phase C fixture
+/// corpora for the 10 non-Python languages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Language {

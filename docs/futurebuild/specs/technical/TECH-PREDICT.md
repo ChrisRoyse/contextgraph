@@ -2,6 +2,8 @@
 
 > **Level 3.** Defines HOW the live prediction agent API and multi-head extension are built. Implements [`SPEC-PREDICT.md`](../functional/SPEC-PREDICT.md).
 
+**Status snapshot (2026-05-12):** Phase B code/FSV ships the rich `RealityPrediction` carrier, deterministic Phase B prediction surfaces, claim graph, reality-impact reconciler, what-if tool, and explain tool. Production DDA/neural feature consumption, trained per-head holdout gates, exemplar retrieval, and counterfactual-minimum-edit explanations remain open.
+
 ---
 
 ## Module layout
@@ -15,24 +17,19 @@ crates/context-graph-mejepa/
       heads/
         panel.rs                        # existing
         oracle.rs                       # existing
-        failure_mode.rs                 # NEW
-        edge_case.rs                    # NEW
-        tech_debt.rs                    # NEW
-        perf.rs                         # NEW
-        security.rs                     # NEW
-        accuracy.rs                     # NEW
-        cost.rs                         # NEW
-        reasoning.rs                    # NEW
+        ...                             # Phase B typed auxiliary surfaces; full trained heads still hardening
     types.rs                            # extended: RealityPrediction with all Q1-Q5 fields
-    claim_graph.rs                      # NEW: deterministic agent-claim extractor (REQ-PREDICT-17)
-    reality_impact.rs                   # NEW: Q5 reconciler (REQ-PREDICT-19)
+    prediction_surfaces.rs              # Phase B deterministic prediction surfaces
+    verdict_assembly.rs                 # Phase B contradiction-aware verdict assembly
+    claim_graph.rs                      # deterministic agent-claim extractor (REQ-PREDICT-17)
+    reality_impact.rs                   # Q5 reconciler (REQ-PREDICT-19)
 crates/context-graph-mcp/
   src/
     handlers/tools/
       mejepa_tools.rs                   # extended: predict_what_if, explain_prediction, record_agent_feedback
 scripts/cc/
-  hook_user_prompt_submit_inject_prediction.sh   # NEW: prediction injection (REQ-PREDICT-12)
-  render_prediction_markdown.py                  # NEW: render RealityPrediction → markdown
+  hook_user_prompt_submit_inject_prediction.sh   # prediction injection (REQ-PREDICT-12)
+  render_prediction_markdown.py                  # render RealityPrediction → markdown
 ```
 
 ---
@@ -46,14 +43,14 @@ pub struct MeJepaPredictor {
     pub trunk: TransformerTrunk,           // 6 layers, hidden 1024, 8 heads
     pub head_panel: PanelHead,
     pub head_oracle: OracleHead,
-    pub head_failure_mode: FailureModeHead,    // NEW
-    pub head_edge_case: EdgeCaseHead,           // NEW
-    pub head_tech_debt: TechDebtHead,           // NEW
-    pub head_perf: PerfHead,                    // NEW
-    pub head_security: SecurityHead,            // NEW
-    pub head_accuracy: AccuracyHead,            // NEW
-    pub head_cost: CostHead,                    // NEW
-    pub head_reasoning: ReasoningHead,          // NEW
+    pub head_failure_mode: FailureModeHead,    // Phase B surface; trained DDA-backed hardening remains
+    pub head_edge_case: EdgeCaseHead,
+    pub head_tech_debt: TechDebtHead,
+    pub head_perf: PerfHead,
+    pub head_security: SecurityHead,
+    pub head_accuracy: AccuracyHead,
+    pub head_cost: CostHead,
+    pub head_reasoning: ReasoningHead,
 }
 
 impl MeJepaPredictor {
@@ -81,7 +78,7 @@ Each head is ~10-100k parameters (small Linear); the shared trunk is ~30M. Addin
 
 ## RealityPrediction full schema
 
-See [`15_PREDICTION_TAXONOMY.md §1`](../../15_PREDICTION_TAXONOMY.md) for the canonical struct definition. Persisted as JSON to `CF_MEJEPA_LIVE_PREDICTIONS` keyed by `session_id`.
+See [`15_PREDICTION_TAXONOMY.md §1`](../../15_PREDICTION_TAXONOMY.md) for the canonical struct definition. The live implementation persists bincode-encoded `RealityPrediction` rows to `CF_MEJEPA_LIVE_PREDICTIONS` under `(session_id, created_at_unix_ms, prediction_id)` and performs read-after-write byte and decode validation.
 
 ---
 
@@ -143,7 +140,7 @@ pub fn gtau_check_chunks(
 ## Agent claim graph extractor (REQ-PREDICT-17)
 
 ```rust
-// crates/context-graph-mejepa/src/claim_graph.rs (NEW)
+// crates/context-graph-mejepa/src/claim_graph.rs
 pub fn extract_claim_graph(agent_response: &str) -> AgentClaimGraph {
     // Deterministic rule-based parser. NO LLM.
     let mut claims = Vec::new();
@@ -194,11 +191,11 @@ set -euo pipefail
 
 SESSION_ID="${CLAUDE_SESSION_ID:-default}"
 
-# Call MCP for latest prediction
+# Call MCP for latest prediction. Failure writes a diagnostic and exits non-zero.
 RESPONSE=$(echo "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"mcp__cgreality__mejepa_predict_latest\",\"arguments\":{\"session_id\":\"$SESSION_ID\",\"max_age_seconds\":60,\"include_provenance\":false}}}" \
-    | nc -U "/mnt/d/contextgraph/state/locks/mcp.sock" 2>/dev/null || echo '{"prediction":null}')
+    | nc -U "/mnt/d/contextgraph/state/locks/mcp.sock")
 
-# If no prediction, exit silently
+# If no prediction, emit no markdown but do not claim a prediction was injected.
 if [[ "$(echo "$RESPONSE" | jq -r '.result.prediction')" == "null" ]]; then
     exit 0
 fi

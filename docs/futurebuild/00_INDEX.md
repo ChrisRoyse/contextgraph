@@ -7,7 +7,8 @@
 > **Authority.** When this suite conflicts with `docs/ruvectorfindings/specs/_README.md` or `.claude/loop.md`, the change is intentional — apply it. The operator approved the pivot in the prompt that originated this directory. `CLAUDE.md` is unchanged; the rules in §11 still apply, but the *content* of the work has shifted from "build ME-JEPA primitives" (largely done) to "operationalize ME-JEPA as the reality truth system that AI agents query."
 
 **Date authored:** 2026-05-10
-**Status:** active blueprint — this is the canonical forward-looking plan
+**Date revised:** 2026-05-12 — Phase B code/FSV status reconciled; Phase C corpus expansion completed and verified.
+**Status:** active blueprint — Phase A, the Phase B prediction/API/schema carrier, and Phase C corpus expansion are code/FSV-shipped; remaining work is production hardening, trained quality gates, neural/DDA enrichment, and autonomous policy.
 **Scope:** absorbs `09`, `10`, `11`, `12`, `13`, `14`, `15`, `16` from `docs/ruvectorfindings/`; refactors `.claude/loop.md`; deletes the inner-loop residue per the operator directive.
 
 ---
@@ -62,7 +63,7 @@
 | **ENRICHMENT** — DDA/TCT multi-embedder explosion of code into 462+ signals per chunk | [`SPEC-ENRICHMENT.md`](specs/functional/SPEC-ENRICHMENT.md) | [`TECH-ENRICHMENT.md`](specs/technical/TECH-ENRICHMENT.md) | [`tasks/enrichment/`](tasks/enrichment/) |
 | **LOOP** — refactor `.claude/loop.md` + delete inner-loop residue | [`SPEC-LOOP.md`](specs/functional/SPEC-LOOP.md) | [`TECH-LOOP.md`](specs/technical/TECH-LOOP.md) | [`tasks/loop/`](tasks/loop/) |
 | **HEAL** — autonomous observe + EWC++ + drift + A/B/C scheduler | [`SPEC-HEAL.md`](specs/functional/SPEC-HEAL.md) | [`TECH-HEAL.md`](specs/technical/TECH-HEAL.md) | [`tasks/heal/`](tasks/heal/) |
-| **CORPUS** — finish the 300×8 SWE-bench Lite mutation corpus + per-language operators | (covered by existing [`SPEC-CORPUS-functional.md`](../ruvectorfindings/specs/functional/SPEC-CORPUS-functional.md)) | (covered) | [`tasks/corpus/`](tasks/corpus/) |
+| **CORPUS** — completed 300×8 SWE-bench Lite Python corpus + 10-language fixture corpus with real toolchain validation | (covered by existing [`SPEC-CORPUS-functional.md`](../ruvectorfindings/specs/functional/SPEC-CORPUS-functional.md)) | (covered) | [`tasks/corpus/`](tasks/corpus/) |
 | **OBSERVABILITY** — live conformal/OOD/p50/p99 capture; ship-gate dashboard | [`SPEC-OBSERVABILITY.md`](specs/functional/SPEC-OBSERVABILITY.md) | [`TECH-OBSERVABILITY.md`](specs/technical/TECH-OBSERVABILITY.md) | [`tasks/observability/`](tasks/observability/) |
 | **TESTING** — integration / E2E / chaos / load / soak harnesses | [`SPEC-TESTING.md`](specs/functional/SPEC-TESTING.md) | [`TECH-TESTING.md`](specs/technical/TECH-TESTING.md) | [`tasks/testing/`](tasks/testing/) |
 | **RUNBOOK** — operator daily/weekly/incident operations + CLI | [`SPEC-RUNBOOK.md`](specs/functional/SPEC-RUNBOOK.md) | [`TECH-RUNBOOK.md`](specs/technical/TECH-RUNBOOK.md) | [`tasks/runbook/`](tasks/runbook/) |

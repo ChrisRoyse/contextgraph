@@ -1,0 +1,15 @@
+schema_version: 1
+language: go
+patterns:
+  - id: go_manual_query_parser
+    kind: ReinventedWheel
+    name: Hand-rolled URL query parser
+    stdlib_alternative: net/url.ParseQuery
+    confidence: 0.90
+    detection:
+      required_substrings:
+        - "strings.Split"
+        - "\"&\""
+        - "\"=\""
+      forbidden_substrings:
+        - "url.ParseQuery"

@@ -5,6 +5,7 @@
 
 pub mod calibration;
 pub mod calibration_types;
+pub mod claim_graph;
 pub mod cli;
 pub mod compiler;
 pub mod config;
@@ -24,15 +25,19 @@ pub mod loss;
 pub mod ood;
 pub mod oracle_head;
 pub mod panel_source;
+pub mod prediction_surfaces;
 pub mod predictor;
 pub mod provenance;
+pub mod reality_impact;
 pub mod store;
 pub mod types;
+pub mod verdict_assembly;
 pub mod verify_cli;
 pub mod vram;
 
 pub use calibration::*;
 pub use calibration_types::*;
+pub use claim_graph::*;
 pub use cli::*;
 pub use compiler::{
     materialize_inference_panels, panel_sha, residual_norm_sq, ConstellationDecision,
@@ -71,7 +76,10 @@ pub use grad_hook::{
 pub use loss::{huber_loss_delta_one, vicreg_loss, VarianceFloorHistory};
 pub use ood::*;
 pub use oracle_head::OracleHead;
+pub use prediction_surfaces::*;
 pub use predictor::{ArchitectureSummary, MeJepaPredictor, TransformerLayer};
+pub use reality_impact::*;
 pub use store::*;
 pub use types::*;
+pub use verdict_assembly::*;
 pub use vram::{check_vram_steady_state, enforce_vram_report, vram_resident_bytes, VramReport};

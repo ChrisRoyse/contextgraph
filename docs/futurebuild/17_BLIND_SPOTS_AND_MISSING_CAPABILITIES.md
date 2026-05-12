@@ -23,14 +23,14 @@
 | # | Gap | Where addressed |
 |---|---|---|
 | D1 | Schema migration path when CFs evolve | Already CLAUDE.md says "no backwards compat" but storage 4 needs explicit guidance for the moment we DO need it (post-1.0) | `24_API_STABILITY.md §5` |
-| D2 | Per-language toolchain availability detection (agent's environment may lack `cargo`, `tsc`, `dotnet`) | `SPEC-PREDICT.md` REQ-PREDICT-LABEL-* depend on toolchains; need fallback policy | `18 §6` + new task `TASK-PREDICT-LABEL-010-toolchain-fallback` |
+| D2 | Per-language toolchain availability detection (agent's environment may lack `cargo`, `tsc`, `dotnet`) | `SPEC-PREDICT.md` REQ-PREDICT-LABEL-* depend on toolchains; missing required toolchains must fail closed with exact diagnostics | `18 §6` + `TASK-PREDICT-LABEL-010-toolchain-availability-fail-closed` |
 | D3 | Privacy / secret redaction for code being embedded | Not addressed; sensitive material in patches | `22 §4` + new `TASK-PREDICT-010-secret-redaction-pre-embed` |
 | D4 | Drift attribution: when drift fires, which root cause (data shift / model stale / spec change)? | `09_SELF_HEALING_AUTONOMY.md` mentions but doesn't specify | new `TASK-HEAL-008-drift-attribution` |
 | D5 | Cross-version reproducibility: predictor v0.4 → v0.5 should reproduce predictions | mentioned via `provenance` field; needs replay tool | new `TASK-OBS-011-prediction-replay-tool` |
 | D6 | Reasoning-trace visualization for operators | `SPEC-OBSERVABILITY.md` REQ-OBS-FB-06 mentions inspect; needs HTML/markdown render | new `TASK-OBS-012-reasoning-trace-renderer` |
 | D7 | Cost / token usage telemetry for the system itself (CUDA cycles, agent token cost of feedback events) | not tracked | new `TASK-OBS-013-system-cost-telemetry` |
 | D8 | Plugin architecture for new prediction heads / new label sources | hardcoded today; future-friendly | `25_FUTURE_DOMAINS_MEJEPA_X.md §2` |
-| D9 | Graceful degradation when one head fails | not specified — assume crash propagates | new `TASK-PREDICT-011-per-head-graceful-degradation` |
+| D9 | Fail-closed diagnostics when one head fails | partial verdicts would hide broken prediction state | `TASK-PREDICT-011-per-head-fail-closed-diagnostics` |
 | D10 | Cross-language label noise (Python failure mode applied to Rust via patch-similarity) | conceptual issue; needs gating | `22 §6` + `TASK-PREDICT-LABEL-011-cross-language-label-gating` |
 | D11 | Concurrent agent edits to the same file (race conditions in shift log) | shift log is per-session JSONL, but external mtime conflicts across sessions | `23 §3` |
 | D12 | The 3-attempt-park rule needs a formal data structure | `06_REALITY_LOOP_REFACTOR.md §6` mentions; needs CF + tool | new `TASK-FLYWHEEL-007-park-list-cf` |

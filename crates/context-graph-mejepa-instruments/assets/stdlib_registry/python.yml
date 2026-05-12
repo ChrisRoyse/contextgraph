@@ -1,0 +1,17 @@
+schema_version: 1
+language: python
+patterns:
+  - id: python_retry_backoff
+    kind: ReinventedWheel
+    name: Hand-rolled retry with exponential backoff
+    stdlib_alternative: tenacity or urllib3.util.Retry
+    confidence: 0.93
+    detection:
+      required_substrings:
+        - "for attempt in range"
+        - "try:"
+        - "except"
+        - "time.sleep"
+        - "2 ** attempt"
+      forbidden_substrings:
+        - "from tenacity import"

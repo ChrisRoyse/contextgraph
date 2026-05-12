@@ -214,6 +214,8 @@ impl Handlers {
             // ME-JEPA Phase 4 inference tools
             tool_names::MEJEPA_VERIFY => call_mejepa_verify(arguments),
             tool_names::MEJEPA_PREDICT_LATEST => call_mejepa_predict_latest(arguments),
+            tool_names::MEJEPA_PREDICT_WHAT_IF => call_mejepa_predict_what_if(arguments),
+            tool_names::MEJEPA_EXPLAIN_PREDICTION => call_mejepa_explain_prediction(arguments),
             tool_names::MEJEPA_RECORD_AGENT_FEEDBACK => call_mejepa_record_agent_feedback(arguments),
             tool_names::MEJEPA_OBSERVE_SHIFT => call_mejepa_observe_shift(arguments),
             tool_names::MEJEPA_SUBSCRIBER_STATUS => call_mejepa_subscriber_status(arguments),

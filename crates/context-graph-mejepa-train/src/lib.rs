@@ -13,9 +13,11 @@ pub mod cert;
 pub mod checkpoint;
 pub mod cli;
 pub mod config;
+pub mod dda;
 pub mod distill;
 pub mod error;
 pub mod eval;
+pub mod labels;
 pub mod learning_signal;
 pub mod lora_wiring;
 pub mod loss;
@@ -27,6 +29,7 @@ pub use cert::{TrainingCertificate, CF_MEJEPA_TRAIN_CERTS};
 pub use config::{LossCoefficients, TrainingConfig};
 pub use error::{TrainerError, TrainerErrorCode};
 pub use learning_signal::{
-    compute_l_step, DeltaKComponents, DeltaOmegaComponents, DeltaPComponents, DeltaXiComponents,
-    LearningSignal, SkipReason, UtmlError, UtmlErrorCode,
+    compute_l_step, compute_per_head_learning_signal, DeltaKComponents, DeltaOmegaComponents,
+    DeltaPComponents, DeltaXiComponents, HeadSignalInput, LearningSignal, PerHeadLearningSignal,
+    SkipReason, UtmlError, UtmlErrorCode,
 };

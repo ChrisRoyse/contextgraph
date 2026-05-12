@@ -161,8 +161,8 @@ Read-side ME-JEPA tools (no governance gating):
 
 - `mejepa_verify` — agent-facing verify a candidate patch + context, returns full `RealityPrediction`
 - `mejepa_predict_latest` — latest prediction for current session (from daemon)
-- `mejepa_predict_what_if` — hypothetical without applying the edit (NEW in Phase B)
-- `mejepa_explain_prediction` — per-prediction reasoning (NEW in Phase B)
+- `mejepa_predict_what_if` — hypothetical without applying the edit (shipped Phase B, 2026-05-12)
+- `mejepa_explain_prediction` — per-prediction reasoning/readback (shipped Phase B, 2026-05-12)
 - `mejepa_constellation_inspect` — TCT centroid lookup; per-chunk inspection
 - `mejepa_subscriber_status`, `mejepa_heal_status`, `mejepa_quota_status`, `mejepa_vram_budget_report` — daemon health
 - `mejepa_eval_run`, `mejepa_ship_gate_status`, `mejepa_active_learning_queue`, `mejepa_eval_build_graph` — operator-side eval
@@ -171,7 +171,7 @@ Read-side ME-JEPA tools (no governance gating):
 
 Write-side tools:
 
-- `mejepa_record_agent_feedback` — agent feedback on a prediction (NEW in Phase A)
+- `mejepa_record_agent_feedback` — agent feedback on a prediction (shipped Phase A, 2026-05-12)
 - `mejepa_load_learner_state`, `mejepa_routing_lookup`, `mejepa_rollback_to`, `mejepa_promote_approval` — operator/scheduler control
 - `mejepa_gc_run`, `mejepa_witness_compress` — hygiene ops
 

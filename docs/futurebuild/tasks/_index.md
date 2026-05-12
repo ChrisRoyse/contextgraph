@@ -32,6 +32,12 @@
 - [`bootstrap/_all_tasks.md`](bootstrap/_all_tasks.md) — BOOT-001..003
 - [`api/_all_tasks.md`](api/_all_tasks.md) — API-001..005
 
+## Phase B status snapshot (2026-05-12)
+
+Phase B code/FSV is now shipped for the core prediction surface: `PREDICT-003/004/005/006/007/008/009`, `SEC-003`, deterministic `PREDICT-LABEL-001..009` coverage in `crates/context-graph-mejepa-train/src/labels.rs`, and core `UTML-001..004` accounting. Source-of-truth proof is `/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-prediction-fsv.json`, with persisted RocksDB data in `CF_MEJEPA_LIVE_PREDICTIONS`.
+
+What remains is quality and hardening work, not the first API/schema substrate: full per-tool/per-language label analyzers, production DDA/neural feature consumption, trained per-head holdout gates, per-head Fisher/dormancy/lambda/dissipation, per-cell state-transfer T, and fresh-host/operator burn-in.
+
 ## Total task count
 
 **~115 atomic tasks** across 13 domains and 8 phases. See `13_TASK_INDEX.md` for the full DAG, effort estimates, and dependency edges.

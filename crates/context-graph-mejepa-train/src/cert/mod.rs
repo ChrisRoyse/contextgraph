@@ -47,6 +47,8 @@ pub struct TrainingCertificate {
     pub step: u64,
     pub epoch: u32,
     pub signal: LearningSignal,
+    pub per_head_l_step: HashMap<String, f32>,
+    pub delta_xi_global_min: f32,
     pub loss_components: HashMap<String, f32>,
     pub training_mode: String,
     pub distillation_cycle_id: Option<u64>,
@@ -122,6 +124,54 @@ impl TrainingCertificate {
                     self.predictor_redundancy_pairwise_mi,
                     self.signal.delta_xi_components.predictor_redundancy,
                     self.step
+                ),
+            )
+            .with_step(self.step));
+        }
+        if !self.delta_xi_global_min.is_finite() || !(0.0..=1.0).contains(&self.delta_xi_global_min)
+        {
+            return Err(crate::error::TrainerError::new(
+                crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                format!(
+                    "delta_xi_global_min={} at step {} must be finite in [0,1]",
+                    self.delta_xi_global_min, self.step
+                ),
+            )
+            .with_step(self.step));
+        }
+        for head in context_graph_mejepa::HeadId::ALL {
+            let Some(value) = self.per_head_l_step.get(head.as_str()) else {
+                return Err(crate::error::TrainerError::new(
+                    crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                    format!(
+                        "per_head_l_step missing {} at step {}",
+                        head.as_str(),
+                        self.step
+                    ),
+                )
+                .with_step(self.step));
+            };
+            if !value.is_finite() || !(0.0..=1.0).contains(value) {
+                return Err(crate::error::TrainerError::new(
+                    crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                    format!(
+                        "per_head_l_step[{}]={} at step {} must be finite in [0,1]",
+                        head.as_str(),
+                        value,
+                        self.step
+                    ),
+                )
+                .with_step(self.step));
+            }
+        }
+        if self.per_head_l_step.len() != context_graph_mejepa::HeadId::ALL.len() {
+            return Err(crate::error::TrainerError::new(
+                crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                format!(
+                    "per_head_l_step has {} entries at step {}; expected {}",
+                    self.per_head_l_step.len(),
+                    self.step,
+                    context_graph_mejepa::HeadId::ALL.len()
                 ),
             )
             .with_step(self.step));

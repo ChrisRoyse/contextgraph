@@ -74,8 +74,8 @@
    │   CF_MEJEPA_PANELS · CF_MEJEPA_PANEL_META · CF_MEJEPA_WEIGHT_BLOBS       │
    │   CF_MEJEPA_TRAIN_CERTS · CF_MEJEPA_ORACLE_VERDICTS                      │
    │   CF_MEJEPA_MUTATION_CORPUS · CF_MEJEPA_LIVE_PREDICTIONS                 │
-   │   CF_MEJEPA_SHIFT_WATERMARK · CF_MEJEPA_AGENT_FEEDBACK *new*             │
-   │   CF_MEJEPA_FAILURE_EXEMPLARS *new* · CF_MEJEPA_DDA_SIGNALS *new*        │
+   │   CF_MEJEPA_SHIFT_WATERMARK · CF_MEJEPA_AGENT_FEEDBACK *Phase A*         │
+   │   CF_MEJEPA_FAILURE_EXEMPLARS *Phase A* · CF_MEJEPA_DDA_SIGNALS *Phase A*│
    │   CF_MEJEPA_CONSTELLATION · CF_MEJEPA_FISHER_SNAPSHOTS                   │
    │   CF_MEJEPA_DRIFT_WINDOW · CF_MEJEPA_DRIFT_HISTORY                       │
    │   CF_MEJEPA_HEAL_REPORTS · CF_MEJEPA_DISTILL_STEPS                       │
@@ -85,7 +85,7 @@
    └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The two new things relative to the shipped substrate are highlighted as *new* in the storage block: **CF_MEJEPA_AGENT_FEEDBACK** (the closed-loop channel for agent-confirmed/-corrected predictions) and **CF_MEJEPA_DDA_SIGNALS** + **CF_MEJEPA_FAILURE_EXEMPLARS** (the multi-head prediction substrate). The rest of the diagram is wiring.
+The storage block now mixes shipped and remaining work. **CF_MEJEPA_AGENT_FEEDBACK**, **CF_MEJEPA_DDA_SIGNALS**, and **CF_MEJEPA_FAILURE_EXEMPLARS** are registered and available; Phase B also ships the rich prediction rows that consume this substrate. Remaining architecture work is production population/consumption of DDA and exemplar signals, not first CF creation.
 
 ---
 
@@ -99,17 +99,17 @@ The two new things relative to the shipped substrate are highlighted as *new* in
 | AST chunker (11 languages) | shipped | `context-graph-core::memory::ast` | typed Chunk { chunk_id, lang, kind } |
 | Embedder routing table | shipped (143 routes) | `context-graph-mejepa-embedders::routing` | per (Language, EntityType) → embedder set |
 | Per-embedder forward wrappers (neural) | partial (deterministic placeholders) | `context-graph-mejepa-embedders::forward` (proposed) | run actual model forward passes, not deterministic encoders |
-| DDA enrichment computation (N+N² signals) | new | `context-graph-mejepa-train::dda` (proposed) | compute pairwise cosine + MI per chunk per shift |
+| DDA enrichment computation (N+N² signals) | partial | `CF_MEJEPA_DDA_SIGNALS` registered; production computation/consumption still planned | compute pairwise cosine + MI per chunk per shift |
 | TCT constellation + Gτ guard | shipped | `context-graph-mejepa-tct` | per-(cat × ent × lang × emb) centroids; guard test |
 | 15 instrument slots → Panel(5120-d) | shipped (deterministic) / partial (semantic heads) | `context-graph-mejepa-instruments` | typed feature vectors; PanelBuilder with fail-closed dim |
 | Predictor trunk (6-layer transformer) | shipped | `context-graph-mejepa::predictor` | latent-space prediction of panel[t=2] |
-| Multi-head prediction stack | shipped (partial — only panel + oracle heads) | `context-graph-mejepa::heads` (proposed extension) | per-failure-class + edge-case + tech-debt + perf + security + cost heads |
+| Multi-head prediction stack | code_complete Phase B; training-quality hardening remains | `context-graph-mejepa::{prediction_surfaces,predictor::heads}` | per-failure-class + edge-case + tech-debt + perf + security + accuracy + cost + reasoning surfaces |
 | `MeJepaCompiler::compile/verify/observe` | shipped | `context-graph-mejepa::compiler` | the inference + online-update API |
-| `RealityPrediction` rich struct | shipped (basic) / proposed extension | `context-graph-mejepa::types` | full Q4 surface (concerns, edge cases, etc.) |
-| `mejepa_verify` / `mejepa_predict_latest` MCP tools | shipped | `context-graph-mcp::handlers::tools::mejepa_tools` | agent-facing read API |
-| `mejepa_record_agent_feedback` MCP tool | new | `context-graph-mcp` (proposed) | agent-facing write API for surprise events |
+| `RealityPrediction` rich struct | shipped Phase B | `context-graph-mejepa::types` | full Q1-Q5 surface (claim graph, failures, edge cases, debt, perf, security, accuracy, cost, reasoning, reality impact) |
+| `mejepa_verify` / `mejepa_predict_latest` / `mejepa_predict_what_if` / `mejepa_explain_prediction` MCP tools | shipped | `context-graph-mcp::handlers::tools::mejepa_tools` | agent-facing read API |
+| `mejepa_record_agent_feedback` MCP tool | shipped Phase A | `context-graph-mcp` | agent-facing write API for surprise events |
 | `mejepa_observe_shift` MCP tool | shipped | `context-graph-mcp` | trigger online observe() from a captured shift |
-| Continuous self-optimization daemon | new | `context-graph-mejepa::heal::scheduler` (proposed) | tokio task: drift detect → A/B/C promote → continual backprop → recalibrate |
+| Continuous self-optimization daemon | shipped skeleton; full policy loop remains Phase E | `context-graph-mejepa::heal::scheduler` | tokio task: drift detect → A/B/C promote → continual backprop → recalibrate |
 | Storage hygiene daemon | shipped (no scheduler) | `context-graph-mejepa-hygiene::gc` | nightly demote + compact + evict + Merkle compress |
 | Active-learning queue surfacing | shipped | `context-graph-mejepa::eval::queue` | when conformal interval > T or surprise recorded |
 | Weekly evaluation report writer | shipped | `context-graph-mejepa::eval::report` | per-(category × language) stratified ship-gate report |
@@ -120,7 +120,7 @@ The two new things relative to the shipped substrate are highlighted as *new* in
 
 ## 3. The multi-head prediction stack
 
-The current `MeJepaPredictor` ships with a 6-layer transformer trunk (hidden 1024, 8 heads) followed by a panel head (predicts panel[t=2] in latent space) and an Oracle head (per-test pass/fail logits + count). The full truth-system requires more heads. **Each head is a thin Linear projection on top of the shared trunk**, so adding a head costs essentially zero parameters and amortizes over the same forward pass.
+The current `MeJepaPredictor` ships with a 6-layer transformer trunk (hidden 1024, 8 heads), panel/oracle heads, and Phase B typed auxiliary prediction surfaces. The remaining work is to harden trained auxiliary heads against real DDA/neural features and holdout metrics. **Each head is a thin projection on top of the shared trunk**, so adding or hardening a head amortizes over the same forward pass.
 
 | Head | Output | Loss | Label source |
 |---|---|---|---|
@@ -157,11 +157,11 @@ When an agent runs tests (or CI does), the actual pass/fail outcome is captured 
 
 ### 4.2 Shift channel (the deterministic delta)
 
-Every Edit shift (file SHA delta + cargo-check result + git diff) is captured in `cgreality-shift-log/<session>.jsonl`. The shift subscriber tails this and writes (panel_t-1, action, panel_t) tuples to `CF_MEJEPA_PANELS`. **This is the densest data stream: every keystroke roughly produces a panel.** This is shipped today (subscriber crate exists; needs daemon-mode invocation).
+Every Edit shift (file SHA delta + cargo-check result + git diff) is captured in `runtime/cgreality-shift-log/<session>.jsonl`. The shift subscriber tails this and writes (panel_t-1, action, panel_t) tuples to `CF_MEJEPA_PANELS`. **This is the densest data stream: every keystroke roughly produces a panel.** The subscriber and daemon entrypoint ship; fresh-host burn-in remains.
 
-### 4.3 Agent-feedback channel (NEW)
+### 4.3 Agent-feedback channel (shipped Phase A)
 
-When the agent gets a `RealityPrediction` and acts on it, it can call `mejepa_record_agent_feedback`:
+When the agent gets a `RealityPrediction` and acts on it, it can call the shipped `mejepa_record_agent_feedback` tool:
 
 ```rust
 // MCP tool signature
@@ -182,15 +182,15 @@ The handler:
 5. If `severity == Catastrophic` AND `feedback_kind == Surprise`, posts a high-severity event to the active-learning queue AND the drift detector AND the operator-visible alerts stream.
 6. Writes a witness-chain entry binding the feedback to the original prediction's witness hash; both sides become permanent provenance.
 
-**This is the operator's "agents need a way to feed back into the me jepa model confirmation of predictions and give information whenever surprise happens."** It is the closing of the loop ME-JEPA was missing.
+**This is the operator's "agents need a way to feed back into the me jepa model confirmation of predictions and give information whenever surprise happens."** Phase A closed this API/storage loop; remaining work is production cadence and model-quality consumption.
 
 ### 4.4 Operator-override channel (the weight=6 examples)
 
 When the operator labels an example via the active-learning queue (`mejepa_active_learning_queue` MCP tool returns the queue, operator marks an entry), the `operator_override_flag` is set on the example. Per the formula in §4.1, this multiplies sampling weight by 6×. Operator examples are gold-standard.
 
-### 4.5 Continuous self-optimization daemon (NEW)
+### 4.5 Continuous self-optimization daemon (skeleton shipped; full policy open)
 
-A new long-running tokio task (`context-graph-mejepa::heal::scheduler`) runs the following loop forever, gated by config but on by default:
+A long-running tokio task (`context-graph-mejepa::heal::scheduler`) runs the following loop forever, gated by config. Phase A ships the skeleton and tickers; Phase E still owns the full policy logic behind several branches:
 
 ```rust
 loop {
@@ -234,7 +234,7 @@ loop {
 }
 ```
 
-**No human in the loop unless drift is Catastrophic.** The system observes shifts every 250ms, checks drift every minute, drains active-learning every 10 minutes, runs LoRA refresh + full-retrain hourly, and triggers continual backprop every 30 minutes. Catastrophic drift surfaces to the operator + writes a high-severity blocker; everything else is automatic.
+**Target policy:** no human in the loop unless drift is Catastrophic. The shipped skeleton has the tick structure; Phase E must finish the production policy that observes shifts every 250ms, checks drift every minute, drains active-learning every 10 minutes, runs LoRA refresh + full-retrain hourly, and triggers continual backprop every 30 minutes. Catastrophic drift surfaces to the operator + writes a high-severity blocker; everything else should be automatic once Phase E is complete.
 
 This is the operator's "ME-JEPA system needs to continually learn and evolve and improve itself the more it is used, it continually self optimizes."
 
@@ -244,7 +244,7 @@ This is the operator's "ME-JEPA system needs to continually learn and evolve and
 
 Existing CFs (per `docs/ruvectorfindings/specs/_README.md` §1 and the `context-graph-mejepa-cf` crate) cover panels, weights, certs, oracle verdicts, mutation corpus, live predictions, shift watermark, constellation, Fisher snapshots, drift window/history, heal reports, distill steps, active pointers, eval reports, active-learning queue, patch graph.
 
-**Three new CFs needed for the truth-system extension:**
+**Three Phase A CFs now available for the truth-system extension:**
 
 | CF | Key | Value (serde JSON, 0600 perms) | Purpose |
 |---|---|---|---|
@@ -258,7 +258,7 @@ Storage hygiene per `docs/ruvectorfindings/specs/_README.md` Phase 6 still appli
 
 ## 6. End-to-end data flow (one Edit, soup-to-nuts)
 
-This is the operational sequence the futurebuild plan delivers. Steps marked **NEW** are added by this directory; everything else is already shipped at code level and just needs to be wired into the daemon.
+This is the operational sequence the futurebuild plan is converging on. Phase A/B shipped the first API/schema/storage pieces; status notes below call out the parts that still need production hardening.
 
 ```
 T+0    Agent calls Edit { file: foo.py, old_string: ..., new_string: ... }
@@ -267,7 +267,7 @@ T+1    PreToolUse hook records pre_sha for foo.py.
 
 T+2    The Edit returns; PostToolUse hook computes after_sha,
        runs cargo check (if Rust file), git diff, appends a JSONL line
-       to /tmp/contextgraph-rust-reality-loop/cgreality-shift-log/<session>.jsonl.
+       to /mnt/d/contextgraph/runtime/cgreality-shift-log/<session>.jsonl.
 
 T+3    Shift subscriber tails the JSONL line (within 250ms — pollNoAwait).
        It reads foo.py @ after_sha, calls
@@ -277,8 +277,8 @@ T+3    Shift subscriber tails the JSONL line (within 250ms — pollNoAwait).
 T+4    For each chunk:
          - Look up routing: routing::lookup(chunk.lang, chunk.kind) → embedder set
          - For each embedder in set, call EmbedderForward::forward(chunk)
-           returning the per-embedder vector. NEW for non-deterministic
-           neural embedders (currently placeholder).
+          returning the per-embedder vector. Full non-deterministic
+          neural forward hardening remains Phase D.
          - Compute DDA signals: pairwise cosine + cached MI matrix.
            Persist to CF_MEJEPA_DDA_SIGNALS.
 
@@ -306,13 +306,13 @@ T+6    ME-JEPA verify(panel_t-1, action=foo.py edit, panel_t):
          - persist to CF_MEJEPA_LIVE_PREDICTIONS keyed by session_id
 
 T+7    UserPromptSubmit hook on next prompt → reads CF_MEJEPA_LIVE_PREDICTIONS
-       for this session → renders markdown injection block. NEW: hook needs
-       to be extended to read MCP-state-driven predictions, not just shift entries.
+       for this session → renders markdown injection block. Phase A shipped
+       the hook; Phase B renderer coverage for every Q1-Q5 field still needs UX polish.
 
 T+8    Agent reads the prediction in its prompt context. It either:
          (a) Acts on the prediction (patches predicted-failure path)
          (b) Asks for a fresh prediction after another edit
-         (c) Disagrees → calls mejepa_record_agent_feedback. NEW MCP tool.
+        (c) Disagrees → calls the shipped mejepa_record_agent_feedback MCP tool.
 
 T+9    If (c): SurpriseEvent persisted to CF_MEJEPA_AGENT_FEEDBACK; sampling
        weight for affected chunks bumped; if severity=Catastrophic, drift
@@ -368,13 +368,13 @@ Per the operator's "self-healing and self-learning property," the following inva
 
 The system gets better the more it is used because of three compounding effects:
 
-1. **Every Edit is a training example.** The shift subscriber turns every keystroke into (panel_t-1, action, panel_t) tuples. The 250ms tick rate means even a fast-typing agent contributes hundreds of tuples per session. Over weeks, the corpus grows to millions of examples beyond the seeded 2,400.
+1. **Every Edit is a training example.** The shift subscriber turns every keystroke into (panel_t-1, action, panel_t) tuples. The 250ms tick rate means even a fast-typing agent contributes hundreds of tuples per session. Over weeks, the corpus grows to millions of examples beyond the seeded 7,520 Phase C rows (2,400 Python SWE-bench rows + 5,120 non-Python fixture rows).
 
 2. **Surprise events get over-sampled.** The agent-feedback channel multiplies the sampling weight of examples where the prediction was wrong. A surprised agent tells ME-JEPA "look here," and ME-JEPA's next epoch over-samples the chunks involved by 2–10× depending on severity. This is the active-learning loop closed.
 
 3. **Operator-override examples are gold.** When the operator confirms or overrides a prediction via the active-learning queue, the example is sampled at 6× the base rate and Fisher-protected against catastrophic forgetting. Operator labels become permanent anchors.
 
-The result: in a session-week of normal Claude Code usage, ME-JEPA accumulates roughly an order of magnitude more training data than the seeded corpus, weighted toward the examples that matter most. Per the UTML §VII consolidation integral M(t), with `k_replay ≈ 3` during periodic full-retrain phases and `τ_decay ≈ 365 days` for high-Fisher consolidated examples, the system's effective training corpus grows monotonically. The Phase 8 evaluation report tracks `prediction_oracle_correlation` per (category × language) over rolling windows; a stable monotone climb toward ≥ 0.95 is the empirical signature that self-learning is working.
+The result: in a session-week of normal Claude Code usage, ME-JEPA accumulates roughly an order of magnitude more training data than the completed Phase C seed corpus, weighted toward the examples that matter most. Per the UTML §VII consolidation integral M(t), with `k_replay ≈ 3` during periodic full-retrain phases and `τ_decay ≈ 365 days` for high-Fisher consolidated examples, the system's effective training corpus grows monotonically. The Phase 8 evaluation report tracks `prediction_oracle_correlation` per (category × language) over rolling windows; a stable monotone climb toward ≥ 0.95 is the empirical signature that self-learning is working.
 
 ---
 

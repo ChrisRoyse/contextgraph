@@ -3,6 +3,8 @@
 > **Level 2.** Adversarial robustness, secret handling, multi-agent isolation, audit trails.
 > Implementation reference: [`22_ADVERSARIAL_ROBUSTNESS.md`](../../22_ADVERSARIAL_ROBUSTNESS.md), [`23_MULTI_AGENT_ISOLATION.md`](../../23_MULTI_AGENT_ISOLATION.md).
 
+**Status snapshot (2026-05-12):** REQ-SEC-03 is complete in Phase B. REQ-SEC-08 is aligned with the shipped unthrottled feedback path. Remaining security work is redaction, adversarial corpus, cross-language gating, markdown hardening, D-drive permission proof, and promotion controls.
+
 ## User stories
 
 - **As an operator**, I want the system to resist agents that try to game predictions into Pass.

@@ -42,6 +42,38 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_PREDICT_WHAT_IF,
+            "Compile a non-mutating ME-JEPA Phase B what-if prediction for a candidate patch. Reads calibration/train-cert state from the real inference RocksDB, refuses to run unless the deterministic harness is explicitly enabled, and returns repository SHA readback proving no touched file was modified.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["patch", "context"],
+                "properties": {
+                    "patch": {"type": "object", "additionalProperties": true},
+                    "context": {"type": "object", "additionalProperties": true},
+                    "compareToPredictionId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{32}$"
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_EXPLAIN_PREDICTION,
+            "Explain a persisted ME-JEPA Phase B RealityPrediction by reading CF_MEJEPA_LIVE_PREDICTIONS and returning stored verdict, top risks, claim reconciliation, reality impact, provenance, and a saliency map normalized from covered chunks.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["predictionId"],
+                "properties": {
+                    "predictionId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{32}$"
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_RECORD_AGENT_FEEDBACK,
             "Persist measured agent feedback for a prior ME-JEPA RealityPrediction into CF_MEJEPA_AGENT_FEEDBACK, update the active-learning queue when the feedback is surprise-like, and verify RocksDB readback before returning.",
             json!({

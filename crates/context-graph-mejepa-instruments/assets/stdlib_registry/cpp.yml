@@ -1,0 +1,15 @@
+schema_version: 1
+language: cpp
+patterns:
+  - id: cpp_manual_path_extension
+    kind: ReinventedWheel
+    name: Hand-rolled path extension extraction
+    stdlib_alternative: std::filesystem::path::extension
+    confidence: 0.88
+    detection:
+      required_substrings:
+        - "find_last_of"
+        - "\".\""
+        - "substr"
+      forbidden_substrings:
+        - "std::filesystem"

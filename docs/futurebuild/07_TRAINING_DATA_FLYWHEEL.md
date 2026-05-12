@@ -97,7 +97,7 @@ Plus, on the operator side:
 | AST chunker | YES (11 langs) | `crates/context-graph-core::memory::ast` |
 | Embedder forward (deterministic) | YES placeholders | `crates/context-graph-mejepa-embedders` |
 | Embedder forward (neural) | partial | `EmbedderForward`/`PretrainedEmbedderForward` exists for E1/E6/E7/E8/E10/E12/E13/E14 with E10 FSV; remaining work is full model-artifact FSV/cache/integration |
-| DDA signal computation | NO | new — see `04_DDA_TCT_CODE_ENRICHMENT.md` |
+| DDA signal computation | partial | CF substrate exists; production computation/consumption remains Phase D — see `04_DDA_TCT_CODE_ENRICHMENT.md` |
 | PanelBuilder | YES | `crates/context-graph-mejepa-instruments` |
 | Embedder-backed instrument heads | partial | `EmbedderBackedInstrumentHead` exists for code/text/trace semantic slots; production analyzer feeds and all shift→panel integrations remain |
 | Continuous self-optim scheduler | YES (Phase A skeleton) | `crates/context-graph-mejepa::heal::{scheduler,scheduler_state}`; full autonomy remains Phase E |
@@ -107,14 +107,14 @@ Plus, on the operator side:
 | Active-learning queue | YES | `crates/context-graph-mejepa::eval::queue` |
 | A/B/C promotion | YES | `crates/context-graph-mejepa::heal::promote` |
 | Continual backprop | YES | `crates/context-graph-mejepa-train::learning_signal::continual_backprop` |
-| `verify()` → `RealityPrediction` | YES (basic schema) | `crates/context-graph-mejepa::compiler` |
-| Multi-head extension to predictor | NO | new — see `03_ARCHITECTURE_BLUEPRINT.md §3` |
-| Prediction-injection hook | NO | new — see `08_LIVE_PREDICTION_AGENT_API.md` |
-| `mejepa_record_agent_feedback` MCP tool | NO | new — see `08_LIVE_PREDICTION_AGENT_API.md` |
+| `verify()` → `RealityPrediction` | YES (rich Phase B schema) | `crates/context-graph-mejepa::compiler`, `types.rs`, `prediction_surfaces.rs` |
+| Multi-head extension to predictor | code_complete Phase B | typed surfaces and deterministic extraction ship; trained DDA/neural-backed quality remains |
+| Prediction-injection hook | YES | `scripts/cc/hook_user_prompt_submit_inject_prediction.sh` + renderer; Phase B field UX hardening remains |
+| `mejepa_record_agent_feedback` MCP tool | YES | `crates/context-graph-mcp`; persists to `CF_MEJEPA_AGENT_FEEDBACK` |
 | MCP daemon mode (the supervised-process container) | YES (code + template) | `--daemon-server-only --d-root`; supervisor in `crates/context-graph-mcp/src/daemon.rs`; `scripts/systemd/mejepa-daemon.service`; operator install/runbook remains |
 | Weekly evaluation cron | partial (daemon scheduler exists) | weekly daemon task runs holdout eval and writes reports; missing populated production holdout feed + operator dashboard/runbook |
 
-**The unshipped pieces are operational glue, not new architecture.** Most of the work is wiring + scheduling + a couple of MCP tools.
+**The unshipped pieces are production hardening and model-quality work, not new architecture:** real DDA/neural signal flow, full self-optimization policy, weekly production evaluation, per-head holdout gates, and operator packaging.
 
 ---
 
@@ -167,8 +167,8 @@ materialize_shift(shift) -> PanelMaterializationOutcome:
     2. memory::ast::chunk_with_options(content, language, opts) -> Vec<Chunk>
     3. for each chunk:
         a. routing::lookup(chunk.lang, chunk.kind) -> embedder set
-        b. for embedder in set: EmbedderForward::forward(chunk) -> EmbeddingVec  [NEW for neural]
-        c. compute DDA signals (per-embedder cosine to centroid + pairwise cosine + cached MI)  [NEW]
+        b. for embedder in set: EmbedderForward::forward(chunk) -> EmbeddingVec  [Phase D for full neural]
+        c. compute DDA signals (per-embedder cosine to centroid + pairwise cosine + cached MI)  [Phase D production path]
         d. persist to CF_MEJEPA_DDA_SIGNALS keyed by (panel_id, chunk_id)
     4. PanelBuilder.build(chunks, scalar_features) -> Panel
     5. persist Panel to CF_MEJEPA_PANELS keyed by (session_id, panel_id)
@@ -336,8 +336,8 @@ Tier transition decisions are made by `hygiene::tier::tier_for_score` based on `
 | Drift detector reports Catastrophic | `heal::drift::classify` | trigger A/B/C retrain; alert operator via `CF_MEJEPA_HEAL_REPORTS` (severity=Catastrophic); pause prediction emission until A/B/C completes |
 | Storage overflow | `hygiene::quota::quota_status` | emergency eviction kicks in; if still overflowing, alert operator + halt panel writes (predictions still served from existing weights) |
 | Embedder model file corrupt / missing | startup digest check (existing) | refuse to start the daemon; surface `MEJEPA_EMBEDDER_DIGEST_MISMATCH` |
-| Oracle outcome stops arriving (test runner misconfigured) | rolling-window oracle-arrival rate < threshold | log warning; observe() falls back to prediction-only confidence calibration (no hard label) |
-| RocksDB write contention | latency telemetry on observe() | log; auto-shrink batch size; if persistent, alert |
+| Oracle outcome stops arriving (test runner misconfigured) | rolling-window oracle-arrival rate < threshold | fail the affected hard-label observe path with diagnostic context; do not synthesize prediction-only labels |
+| RocksDB write contention | latency telemetry on observe() | fail the affected write with CF/key/latency diagnostics; alert if persistent |
 
 ---
 
@@ -347,8 +347,8 @@ Tier transition decisions are made by `hygiene::tier::tier_for_score` based on `
 2. **Continuous self-optimization scheduler** as the orchestrator of observe/drift/active-learning/promote/continual-backprop. (`TASK-FLYWHEEL-002`, skeleton shipped; `TASK-HEAL-001` is the full autonomous policy)
 3. **Test-outcome capture hook** that parses pytest/cargo-test/jest output and writes `TestOutcomeEvent`s. (`TASK-FLYWHEEL-003`)
 4. **Asynchronous oracle-binding** path inside observe(). (`TASK-FLYWHEEL-004`)
-5. **`mejepa_record_agent_feedback` MCP tool** + `CF_MEJEPA_AGENT_FEEDBACK` + sampling-weight bump wiring. (`TASK-PREDICT-002`)
-6. **Active-learning queue surfacing** of agent-flagged surprises (already shipped queue; needs the AgentSurprise kind extension). (`TASK-FLYWHEEL-005`)
+5. **`mejepa_record_agent_feedback` MCP tool** + `CF_MEJEPA_AGENT_FEEDBACK` + sampling-weight bump wiring. (`TASK-PREDICT-002`, complete)
+6. **Active-learning queue surfacing** of agent-flagged surprises. (`TASK-FLYWHEEL-005`, complete)
 7. **Weekly evaluation report cron** that runs `mejepa_eval_run` and writes the per-(category × language) report. (`TASK-OBS-001`)
 8. **CF additions** for the new flywheel CFs in the shared `context-graph-mejepa-cf` registry. (`TASK-FLYWHEEL-006`)
 

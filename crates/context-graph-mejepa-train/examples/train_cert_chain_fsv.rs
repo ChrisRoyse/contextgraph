@@ -1,5 +1,6 @@
 //! 100,000-step synthetic cert chain replay FSV (NFR-TRAIN-02).
 
+use context_graph_mejepa::HeadId;
 use context_graph_mejepa_train::cert::{
     open_train_rocksdb, scan_target_collapse_invariant, verify_chain, TrainCertWriter,
     TrainingCertificate, CF_MEJEPA_TRAIN_CERTS,
@@ -64,10 +65,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 constellation_violation_rate: 0.01,
             },
         )?;
+        let per_head_l_step = HeadId::ALL
+            .into_iter()
+            .map(|head| (head.as_str().to_string(), signal.l_step))
+            .collect();
+        let delta_xi_global_min = signal.delta_xi;
         let mut cert = TrainingCertificate {
             step,
             epoch: 0,
             signal,
+            per_head_l_step,
+            delta_xi_global_min,
             loss_components: HashMap::from([("predict".to_string(), 0.1)]),
             training_mode: "fsv_chain_stress".to_string(),
             distillation_cycle_id: None,

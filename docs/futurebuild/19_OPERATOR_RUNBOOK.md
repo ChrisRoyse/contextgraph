@@ -229,7 +229,7 @@ Configuration lives in `~/.config/mejepa/daemon.toml` (or daemon args). Edits re
 | Daemon won't start | pid lock held | another instance running; `pkill -f context-graph-mcp.*--daemon` |
 | Predictions never appear | subscriber lagged | `mcp_call mejepa_subscriber_status`; check shift-log dir; check tokio runtime |
 | Predictions appear but agent doesn't see them | injection hook misconfigured | check `.claude/settings.json hooks.UserPromptSubmit`; test the script manually |
-| `mejepa_record_agent_feedback` returns rate-limited | exceeded 100/hr/agent | wait or use a different agent_id |
+| `mejepa_record_agent_feedback` fails | invalid payload, missing prediction, or storage validation error | inspect the returned `MEJEPA_FEEDBACK_*` code and source-of-truth readback details; fix the payload or storage root |
 | Sampling weight not bumping after surprise | scheduler not consuming queue | check active-learning tick is firing; check `CF_MEJEPA_ACTIVE_LEARNING_QUEUE` |
 | Disk filling fast | shift-log retention broken | check GC logs; manually run `mcp_call mejepa_gc_run` |
 | Wrong predictions on Python tasks but Rust looks fine | per-language drift | `mejepa_ship_gate_status --by-language python`; consider per-language LoRA refresh |

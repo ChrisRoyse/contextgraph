@@ -50,11 +50,11 @@
 - **Outputs:** `tests/soak/seven_day.rs`; `scripts/soak/*.sh` orchestrators.
 - **DoD:** 7-day soak run produces day-7 assertions document; no leaks, drift addressed.
 
-## TASK-TEST-009 — Toolchain fallback matrix
+## TASK-TEST-009 — Toolchain fail-closed matrix
 
 - **Phase:** F · **Effort:** 1d · **Blocked by:** TASK-PREDICT-LABEL-010
-- **Outputs:** `tests/toolchain_fallback/matrix.rs`.
-- **DoD:** for each per-language label source, missing toolchain → graceful degradation.
+- **Outputs:** `tests/toolchain_fail_closed/matrix.rs`.
+- **DoD:** for each enabled per-language label source, missing toolchain → startup/request fails closed with the exact missing binary/config and no partial labels persisted.
 
 ## TASK-TEST-010 — Adversarial test corpus
 

@@ -4,6 +4,8 @@
 >
 > **The slogan:** **every byte of reality becomes hundreds of labeled training examples.** This document specifies the exact pipeline that delivers that.
 
+**Status snapshot (2026-05-12):** The storage substrate (`CF_MEJEPA_DDA_SIGNALS`) and Phase B typed prediction surfaces are shipped, but production DDA signal computation and real neural feature consumption remain Phase D. Current Phase B predictions use deterministic patch/panel surfaces and must not be treated as trained DDA-backed head quality.
+
 ---
 
 ## 1. The signal-count math (the operator's "blow up the code")
@@ -220,19 +222,21 @@ The whole pipeline takes ≤ 5s p50 / 30s p99 per `REQ-SHIFT-03`, ensuring the p
 
 ---
 
-## 7. What the per-language operator extension changes
+## 7. What the per-language operator extension changed
 
-Today the chunker handles all 11 languages but the constellation is sparse for non-Python (because Phase 0 mutations only run on Python). Extending per-language mutation operators per [#7](https://github.com/ChrisRoyse/contextgraph/issues/7):
+As of 2026-05-12, the chunker handles all 11 languages and Phase C has a verified non-Python fixture corpus. The Python SWE-bench corpus remains the real Docker-oracle corpus; the 10 non-Python languages now have deterministic fixture corpora with real toolchain validation. Source of truth:
+
+- Python: `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/` — 2,400 verified entries.
+- Non-Python: `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/` — 5,120 verified entries, 512 per non-Python language, 64 per `(language × category)` cell.
+- Combined Phase C split: `/mnt/d/contextgraph/fsv/corpus-fsv/split_full.json` — `passes=true`, 940 tasks, bucket sizes `[752, 94, 94]`.
 
 - **Rust**: 8 operators ported. `SubtleFlip` swaps `==` ↔ `!=`, `<=` ↔ `>=`, `&&` ↔ `||`. `OffByOne` perturbs integer literals. `SwapVariable` renames a local var. `DeleteTestCall` removes one `assert!` / `assert_eq!`. `WrongFile` patches a sibling. `OverEngineer` appends an unused fn. `CompileError` introduces a syntax error. `KnownGood` echoes.
-- **JS/TS**: same 8, JS-aware. `SubtleFlip` swaps `===` ↔ `!==` (NOT `==` to avoid coercion noise). `OffByOne` perturbs numeric literals. Etc.
+- **JS/TS**: same 8, JS/TS-aware. `SubtleFlip` swaps equality/comparison/logical operators and boolean literals while requiring the mutated source to remain parseable. `OffByOne` perturbs numeric literals. Etc.
 - **Go**: same 8, Go-aware. `SubtleFlip` swaps `==` ↔ `!=`, `<` ↔ `>=`. `DeleteTestCall` removes one `t.Errorf` / `t.Fatal`. Etc.
 - **Java**: same 8, Java-aware. `SubtleFlip` swaps `==` ↔ `!=` for primitives, `.equals` ↔ `!.equals` for objects. Etc.
 - **C/C++/C#/Ruby/PHP**: same 8, language-aware.
 
-Each per-language operator is a thin file in `crates/context-graph-mejepa-corpus/src/<language>/` mirroring the Python implementation. The shared mutation seed determinism guarantees reproducibility.
-
-After all 11 languages have operators, the Phase 0 corpus generator can produce **300 SWE-bench-like tasks × 8 categories × 11 languages = 26,400 training entries** at full operational scale (the actual SWE-bench Lite is Python-only at 300 instances; we'd extend with synthetic per-language corpora and CI scrape data in Phase B+).
+The non-Python implementation is currently shared generic operator logic in `crates/context-graph-mejepa-corpus/src/generic_language_ops.rs`, exercised through `apply_mutation_for_language`, not one file per language. `generate-fixtures` produces fixture tasks and `phase-c-verify` verifies the combined Python + non-Python corpus. Future corpus broadening can add scraped/public CI corpora, but the Phase C ship gate no longer waits on that.
 
 ---
 
@@ -277,7 +281,7 @@ Per `docs/ruvectorfindings/specs/_README.md` Phase 6, the system has a **115 GB 
 2. **Wire DDA signal computation** as a step between embedder forward and panel assembly. (Task: `TASK-ENRICH-002-dda-signal-computation.md`.)
 3. **Add `CF_MEJEPA_DDA_SIGNALS` and `CF_MEJEPA_FAILURE_EXEMPLARS` to the CF registry.** (Task: `TASK-ENRICH-003-new-cfs.md`.)
 4. **Multi-head extensions** to the predictor that consume DDA signals as auxiliary features. (Task: `TASK-PREDICT-004-multi-head-stack.md`.)
-5. **Per-language mutation operators** for the 10 non-Python languages. (Task: `TASK-CORPUS-001-per-language-operators.md`.)
+5. **Per-language mutation operators** for the 10 non-Python languages are complete in Phase C. Future work here is corpus broadening, not the Phase C ship gate.
 6. **Pairwise MI heatmap renderer** as an operator UI surface. (Task: `TASK-OBS-002-mi-heatmap-renderer.md`.)
 7. **Constellation refresh trigger** wired into the continuous self-optimization daemon. (Task: `TASK-HEAL-005-constellation-refresh.md`.)
 

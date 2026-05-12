@@ -1,3 +1,4 @@
+pub mod heads;
 pub mod transformer_layer;
 
 use candle_core::{DType, Device, DeviceLocation, Tensor, Var};
@@ -13,6 +14,7 @@ use crate::frozen_target::FrozenTargetAdapter;
 use crate::grad_hook::{run_gradient_hook, GradStore, GradientHookReport};
 use crate::loss::VarianceFloorHistory;
 use crate::oracle_head::OracleHead;
+use crate::predictor::heads::{AllHeadOutputs, AuxiliaryHeads};
 use crate::vram::{check_vram_steady_state, VramReport};
 
 #[derive(Debug, Clone, Serialize)]
@@ -36,6 +38,7 @@ pub struct MeJepaPredictor {
     pub(crate) layers: Vec<TransformerLayer>,
     pub(crate) output_proj: Linear,
     pub(crate) oracle_head: OracleHead,
+    pub(crate) auxiliary_heads: AuxiliaryHeads,
     pub(crate) frozen_target_adapter: FrozenTargetAdapter,
     pub(crate) device: Device,
     pub(crate) dtype: DType,
@@ -48,6 +51,7 @@ impl std::fmt::Debug for MeJepaPredictor {
             .field("config", &self.config)
             .field("layers", &self.layers.len())
             .field("oracle_head", &self.oracle_head)
+            .field("auxiliary_heads", &self.auxiliary_heads)
             .field("frozen_target_adapter", &self.frozen_target_adapter)
             .field("device", &self.device.location())
             .field("dtype", &self.dtype)
@@ -100,6 +104,7 @@ impl MeJepaPredictor {
         }
         let output_proj = linear(hidden_dim, PANEL_DIM, vb.pp("output_proj"))?;
         let oracle_head = OracleHead::new(num_tests, vb.pp("oracle_head"))?;
+        let auxiliary_heads = AuxiliaryHeads::new(vb.pp("auxiliary_heads"))?;
         Ok(Self {
             config,
             varmap,
@@ -107,6 +112,7 @@ impl MeJepaPredictor {
             layers,
             output_proj,
             oracle_head,
+            auxiliary_heads,
             frozen_target_adapter,
             device,
             dtype,
@@ -128,6 +134,26 @@ impl MeJepaPredictor {
         panel_t1: &Tensor,
     ) -> Result<PredictedPanel, PredictorError> {
         self.forward_inner(panel_t0, panel_t1, true)
+    }
+
+    pub fn forward_all_heads(
+        &self,
+        panel_t0: &Tensor,
+        panel_t1: &Tensor,
+    ) -> Result<AllHeadOutputs, PredictorError> {
+        let predicted_panel = self.forward_inner(panel_t0, panel_t1, true)?;
+        let auxiliary = self.auxiliary_heads.forward(&predicted_panel)?;
+        Ok(AllHeadOutputs {
+            predicted_panel,
+            failure_mode: auxiliary.failure_mode,
+            edge_case: auxiliary.edge_case,
+            tech_debt: auxiliary.tech_debt,
+            perf: auxiliary.perf,
+            security: auxiliary.security,
+            accuracy: auxiliary.accuracy,
+            cost: auxiliary.cost,
+            reasoning: auxiliary.reasoning,
+        })
     }
 
     fn forward_inner(

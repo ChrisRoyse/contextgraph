@@ -35,8 +35,8 @@ Quota saturation triggers emergency eviction; quota recovers ≤ 110% of cap.
 ### REQ-TEST-08 — Soak test harness
 7-day continuous run with synthetic load + injected drift on day 4 + catastrophic on day 5. Day 7 assertions: no leaks, drift addressed, witness chain valid.
 
-### REQ-TEST-09 — Toolchain fallback matrix
-Each per-language label source has fallback when toolchain absent. `unavailable: true` rather than crash.
+### REQ-TEST-09 — Toolchain fail-closed matrix
+Each enabled per-language label source fails closed when a required toolchain is absent. The error must identify the missing binary/config and no partial labels may be persisted.
 
 ### REQ-TEST-10 — Adversarial test corpus
 30 adversarial cases (10 buggy-but-passing-tests + 10 KnownGood-look-alikes + 10 embedder-targeting). ≥80% correctly classified non-Pass; 0 false-confident-Pass.

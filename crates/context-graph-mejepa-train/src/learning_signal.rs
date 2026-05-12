@@ -9,6 +9,7 @@ pub mod consolidation;
 pub mod continual_backprop;
 pub mod embedder_coherence;
 pub mod pairwise_mi_matrix;
+pub mod per_head;
 pub mod state_transfer;
 
 pub use classifier::{
@@ -26,6 +27,7 @@ pub use embedder_coherence::{
 pub use pairwise_mi_matrix::{
     load_pairwise_mi_matrix_csv, PairwiseMiAuditor, PairwiseMiMatrix, PairwiseMiSummary,
 };
+pub use per_head::{compute_per_head_learning_signal, HeadSignalInput, PerHeadLearningSignal};
 pub use state_transfer::{
     compute_state_transfer, performance_deploy, DivergenceMetric, StateTransferDiagnostic,
 };

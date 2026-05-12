@@ -1,0 +1,15 @@
+schema_version: 1
+language: c
+patterns:
+  - id: c_manual_basename
+    kind: ReinventedWheel
+    name: Hand-rolled path basename scanning
+    stdlib_alternative: libgen.h basename
+    confidence: 0.82
+    detection:
+      required_substrings:
+        - "strrchr"
+        - "'/'"
+        - "return"
+      forbidden_substrings:
+        - "basename("

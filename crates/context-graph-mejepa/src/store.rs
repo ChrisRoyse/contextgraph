@@ -217,15 +217,26 @@ impl MejepaStore for RocksDbInferStore {
 mod tests {
     use super::*;
     use crate::calibration::open_infer_rocksdb;
-    use crate::types::{ConformalSet, Language, OracleOutcome, RealityPrediction, TaskId};
+    use crate::types::{
+        AgentClaimGraph, ConformalInterval, ConformalSet, Language, OracleOutcome,
+        PredictionProvenance, RealityPrediction, ReasoningClass, TaskId, Verdict, WitnessHash,
+    };
     use std::collections::BTreeMap;
 
     fn prediction(session_id: [u8; 16]) -> RealityPrediction {
         RealityPrediction::try_new(RealityPrediction {
             prediction_id: [3; 16],
+            witness_hash: WitnessHash([6; 32]),
             task_id: TaskId("store-test-task".to_string()),
             session_id,
             language: Language::Python,
+            covered_chunks: Vec::new(),
+            verdict: Verdict::Pass,
+            confidence_interval: ConformalInterval {
+                lower: 0.6,
+                upper: 0.8,
+                ..ConformalInterval::default()
+            },
             predicted_oracle_pass: 0.9,
             predicted_test_pass: vec![0.9],
             predicted_runtime_trace: [0.0; 32],
@@ -234,6 +245,29 @@ mod tests {
             calibrated_confidence: 0.7,
             degraded_status: false,
             granger_attestations: BTreeMap::from([("skill:unit".to_string(), 0.9)]),
+            predicted_failure_modes: Vec::new(),
+            predicted_failed_tests: Vec::new(),
+            guard_violations: Vec::new(),
+            closest_exemplars: Vec::new(),
+            predicted_edge_cases: Vec::new(),
+            predicted_latent_bugs: Vec::new(),
+            predicted_tech_debt_added: Vec::new(),
+            predicted_dead_code: Vec::new(),
+            predicted_redundant_code: Vec::new(),
+            predicted_perf_regressions: Vec::new(),
+            predicted_security_concerns: Vec::new(),
+            predicted_accuracy_degradations: Vec::new(),
+            predicted_cost_regressions: Vec::new(),
+            predicted_reasoning_class: ReasoningClass::Mute,
+            agent_claim_graph: AgentClaimGraph::default(),
+            claim_reconciliation: Vec::new(),
+            reality_impact: None,
+            provenance: PredictionProvenance {
+                predictor_version: "store-test".to_string(),
+                constellation_version: "store-test-constellation".to_string(),
+                calibration_version: "calibration-v1".to_string(),
+                active_pointer: hex::encode([3; 16]),
+            },
             source_panel_sha: [4; 32],
             calibration_version: "calibration-v1".to_string(),
             created_at_unix_ms: 1_772_000_000_000,

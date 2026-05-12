@@ -46,6 +46,7 @@ pub mod linear_probe;
 pub mod materialize;
 pub mod panel_json;
 pub mod panel_store;
+pub mod stdlib_registry;
 
 pub type InstrumentResult<T> = Result<T, InstrumentError>;
 

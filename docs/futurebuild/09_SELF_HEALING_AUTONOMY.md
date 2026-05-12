@@ -6,6 +6,8 @@
 >
 > Owned by [`SPEC-HEAL.md`](specs/functional/SPEC-HEAL.md) and [`TECH-HEAL.md`](specs/technical/TECH-HEAL.md).
 
+**Status snapshot (2026-05-12):** The daemon/scheduler skeleton and seven tickers are code/FSV-shipped under Phase A. Phase B added `ActiveLearningKind::AgentSurprise` consumption and core per-head UTML carriers. The full autonomous policy remains Phase E: per-cell drift, Bayesian small-window drift, full dissipation handling, per-head Fisher/dormancy/lambda ramp, constellation refresh policy, catastrophic promotion approval, emergency eviction tick, and drift attribution.
+
 ---
 
 ## 1. Self-healing scope (what gets healed without humans)
@@ -26,14 +28,14 @@
 | Self-optim scheduler tokio task panic | JoinSet supervisor | restart with exponential backoff | none | escalate if flapping |
 | Agent records Catastrophic surprise | CF_MEJEPA_AGENT_FEEDBACK write | fast-track observe + optionally fast-track A/B/C if drift threshold crossed | per-prediction-class metric | none unless drift triggered |
 
-**Only Catastrophic-class events surface to the operator.** Everything else is automatic, measured, and reversible (A/B/C promotion gate ensures no degradation gets shipped).
+**Target behavior:** only Catastrophic-class events surface to the operator. Everything else should be automatic, measured, and reversible once Phase E policy work is complete.
 
 ---
 
 ## 2. The continuous self-optimization scheduler (the daemon's heart)
 
 ```rust
-// crates/context-graph-mejepa/src/heal/scheduler.rs (NEW)
+// crates/context-graph-mejepa/src/heal/scheduler.rs (skeleton shipped; full policy Phase E)
 pub async fn run_self_optimization_scheduler(
     storage: Storage,
     config: SelfOptimConfig,
@@ -51,9 +53,7 @@ pub async fn run_self_optimization_scheduler(
     loop {
         tokio::select! {
             _ = observe_tick.tick() => {
-                if let Err(e) = state.drain_pending_shifts(deadline_ms = 200).await {
-                    tracing::warn!(?e, "observe drain failed; continuing");
-                }
+                state.drain_pending_shifts(deadline_ms = 200).await?;
             }
             _ = drift_tick.tick() => {
                 let snapshot = drift::DriftWindow::snapshot(&storage)?;
@@ -175,7 +175,7 @@ Operational tuning the futurebuild plan adds (`TASK-HEAL-002`):
 
 `learning_signal::continual_backprop::{detect_dormant_units, reinit_dormant_units}` (shipped). Detector identifies units (ReLU pre-activations, attention heads) that are near-zero on > 99% of recent batches. Re-init applies a small magnitude Gaussian to the dormant unit's incoming weights and resets the corresponding output bias.
 
-Scheduler integration (NEW, in §2 above):
+Scheduler integration (skeleton shipped; full policy in §2 above):
 - Detector runs every 1800s (30 minutes).
 - If `dormant_fraction > 0.15`, re-init runs.
 - Re-init writes to `CF_MEJEPA_WEIGHT_BLOBS` as a new variant; A/B/C promotion gate evaluates whether the re-init helped (A = pre-re-init; B = post-re-init).

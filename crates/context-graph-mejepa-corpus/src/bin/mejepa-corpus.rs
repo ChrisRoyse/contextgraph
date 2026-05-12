@@ -1,4 +1,8 @@
 use clap::{Parser, Subcommand};
+use context_graph_mejepa_corpus::multilang_fixture_corpus::{
+    build_fixture_tasks, non_python_languages, sha256_text as fixture_sha256_text,
+    validate_toolchain, FixtureTask,
+};
 use context_graph_mejepa_corpus::oracle::{
     OracleStore, CF_MEJEPA_CORPUS_PROVENANCE, CF_MEJEPA_MUTATION_CORPUS, CF_MEJEPA_ORACLE_VERDICTS,
 };
@@ -15,10 +19,13 @@ use context_graph_mejepa_corpus::swebench::{
 };
 use context_graph_mejepa_corpus::timed_subprocess::run_capture_timed;
 use context_graph_mejepa_corpus::{
-    compute_corpus_sha256, parse_languages, CorpusProvenance, CorpusProvenanceRow, Language,
-    MutationCategory, MutationOutcome, MEJEPA_CORPUS_VERSION_V1, MEJEPA_EMBEDDER_VERSION_V1,
+    apply_mutation_for_language, compute_corpus_sha256, parse_languages, CorpusProvenance,
+    CorpusProvenanceRow, Language, MutationCategory, MutationConfig, MutationOutcome,
+    MEJEPA_CORPUS_VERSION_V1, MEJEPA_EMBEDDER_VERSION_V1,
 };
-use context_graph_mejepa_instruments::OracleVerdict;
+use context_graph_mejepa_instruments::{
+    ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -54,6 +61,8 @@ enum CommandKind {
     Smoke(SmokeArgs),
     Merge(MergeArgs),
     Normalize(NormalizeArgs),
+    GenerateFixtures(GenerateFixturesArgs),
+    PhaseCVerify(PhaseCVerifyArgs),
     PrepareImages(PrepareImagesArgs),
     Cleanup(CleanupArgs),
 }
@@ -201,6 +210,35 @@ struct NormalizeArgs {
 }
 
 #[derive(Parser, Debug, Clone)]
+struct GenerateFixturesArgs {
+    #[arg(long)]
+    output: PathBuf,
+    #[arg(long, default_value_t = 64)]
+    tasks_per_language: usize,
+    #[arg(long, default_value_t = 17)]
+    seed: u64,
+    #[arg(long, default_value_t = 45)]
+    tool_timeout_secs: u64,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct PhaseCVerifyArgs {
+    #[arg(long)]
+    python_corpus: PathBuf,
+    #[arg(long)]
+    non_python_corpus: PathBuf,
+    #[arg(
+        long,
+        default_value = "/mnt/d/contextgraph/fsv/corpus-fsv/split_full.json"
+    )]
+    evidence: PathBuf,
+    #[arg(long, default_value = "tasks/swebench-lite")]
+    tasks_dir: PathBuf,
+    #[arg(long, default_value_t = 500)]
+    min_entries_per_non_python_language: usize,
+}
+
+#[derive(Parser, Debug, Clone)]
 struct PrepareImagesArgs {
     #[arg(long)]
     evidence: PathBuf,
@@ -271,6 +309,8 @@ struct CorpusIndex {
 struct GeneratedEntry {
     task_id: String,
     repo: String,
+    #[serde(default = "default_entry_language")]
+    language: Language,
     category: MutationCategory,
     bucket: String,
     patch_path: String,
@@ -282,6 +322,10 @@ struct GeneratedEntry {
     oracle_per_test_count: usize,
 }
 
+fn default_entry_language() -> Language {
+    Language::Python
+}
+
 fn main() -> CliResult<()> {
     match Cli::parse().command {
         CommandKind::Generate(args) => generate(args),
@@ -290,6 +334,8 @@ fn main() -> CliResult<()> {
         CommandKind::Smoke(args) => smoke(args),
         CommandKind::Merge(args) => merge(args),
         CommandKind::Normalize(args) => normalize(args),
+        CommandKind::GenerateFixtures(args) => generate_fixtures(args),
+        CommandKind::PhaseCVerify(args) => phase_c_verify(args),
         CommandKind::PrepareImages(args) => prepare_images(args),
         CommandKind::Cleanup(args) => cleanup(args),
     }
@@ -629,6 +675,7 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
             let entry = GeneratedEntry {
                 task_id: manifest.instance_id.clone(),
                 repo: manifest.repo.clone(),
+                language: Language::Python,
                 category: *category,
                 bucket: bucket_by_task
                     .get(&manifest.instance_id)
@@ -1374,6 +1421,515 @@ fn normalize(mut args: NormalizeArgs) -> CliResult<()> {
     Ok(())
 }
 
+fn generate_fixtures(mut args: GenerateFixturesArgs) -> CliResult<()> {
+    args.output = require_corpus_path(&args.output, "generate_fixtures.output")?;
+    if args.tasks_per_language == 0 {
+        return Err("tasks_per_language must be > 0".into());
+    }
+    if args.tool_timeout_secs == 0 {
+        return Err("tool_timeout_secs must be > 0".into());
+    }
+    ensure_output_directory_ready(&args.output)?;
+    fs::create_dir_all(&args.output)?;
+
+    let fixtures = build_fixture_tasks(args.tasks_per_language, args.seed)
+        .map_err(|err| format!("{err} ({})", err.code()))?;
+    let split_entries = fixtures
+        .iter()
+        .map(|fixture| CorpusEntry {
+            task_id: fixture.task_id.clone(),
+            repo: fixture.repo.clone(),
+        })
+        .collect::<Vec<_>>();
+    let split = split_corpus(
+        &split_entries,
+        SplitConfig {
+            mode: SplitMode::InstanceAtomic,
+            ..SplitConfig::default()
+        },
+    )?;
+    let source_sha_by_task = fixtures
+        .iter()
+        .map(|fixture| (fixture.task_id.clone(), fixture.source_sha256.clone()))
+        .collect::<BTreeMap<_, _>>();
+    assert_no_test_patch_leakage(&split.assignments, |task_id| {
+        source_sha_by_task.get(task_id).map(String::as_str)
+    })?;
+    let bucket_by_task = split
+        .assignments
+        .iter()
+        .map(|assignment| {
+            (
+                assignment.task_id.clone(),
+                assignment.bucket.slug().to_string(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let store_path_rel = PathBuf::from("oracle-store");
+    let store_path = args.output.join(&store_path_rel);
+    let store = OracleStore::open(&store_path)?;
+    let languages = non_python_languages().to_vec();
+    let mut index = CorpusIndex {
+        schema_version: 1,
+        corpus_version: MEJEPA_CORPUS_VERSION_V1.to_string(),
+        embedder_version: MEJEPA_EMBEDDER_VERSION_V1.to_string(),
+        complete: false,
+        generated_at_unix_ms: unix_ms(),
+        seed: args.seed,
+        languages,
+        tasks_dir: "generated-multilang-fixtures".to_string(),
+        store_path: store_path_rel.display().to_string(),
+        corpus_sha256: None,
+        selected_task_ids: fixtures
+            .iter()
+            .map(|fixture| fixture.task_id.clone())
+            .collect(),
+        entries: Vec::with_capacity(fixtures.len() * MutationCategory::all().len()),
+        split_assignments: split.assignments.clone(),
+    };
+    write_index(&args.output, &index)?;
+
+    let fixture_manifest_path = args.output.join("fixture-manifest.json");
+    write_json_checked(&fixture_manifest_path, &serde_json::to_value(&fixtures)?)?;
+    let mut toolchain_rows = Vec::new();
+    for fixture in &fixtures {
+        for category in MutationCategory::all() {
+            let seed = stable_seed(args.seed, &fixture.task_id, category);
+            let config = MutationConfig {
+                seed,
+                alternate_source: (category == MutationCategory::WrongFile)
+                    .then(|| fixture.alternate_source.clone()),
+            };
+            let mutation =
+                apply_mutation_for_language(fixture.language, category, &fixture.source, config)
+                    .map_err(|err| {
+                        format!(
+                            "fixture mutation failed for {}|{} language={}: {} ({})",
+                            fixture.task_id,
+                            category.slug(),
+                            fixture.language.slug(),
+                            err,
+                            err.code()
+                        )
+                    })?;
+            let relative_path = fixture_mutation_relative_path(fixture, category);
+            let source_path = args.output.join(&relative_path);
+            write_text_checked(&source_path, &mutation.mutated_source)?;
+            let expected_success = category != MutationCategory::CompileError;
+            let report = validate_toolchain(
+                fixture.language,
+                &source_path,
+                &args
+                    .output
+                    .join("toolchain-work")
+                    .join(&fixture.task_id)
+                    .join(category.slug()),
+                expected_success,
+                Duration::from_secs(args.tool_timeout_secs),
+            )?;
+            let report_path = args
+                .output
+                .join("toolchain-reports")
+                .join(&fixture.task_id)
+                .join(format!("{}.json", category.slug()));
+            write_json_checked(&report_path, &serde_json::to_value(&report)?)?;
+            let readback: Value = serde_json::from_str(&fs::read_to_string(&report_path)?)?;
+            if readback != serde_json::to_value(&report)? {
+                return Err(format!(
+                    "toolchain report readback mismatch for {}|{}",
+                    fixture.task_id,
+                    category.slug()
+                )
+                .into());
+            }
+
+            let verdict = toolchain_verdict(&fixture.task_id, category, expected_success);
+            store.put_corpus_row(&fixture.task_id, category, &mutation, &verdict)?;
+            store.flush()?;
+            let (stored_mutation, stored_verdict) = store
+                .get_corpus_row(&fixture.task_id, category)?
+                .ok_or("fixture corpus row missing immediately after RocksDB write")?;
+            if stored_mutation != mutation || stored_verdict != verdict {
+                return Err(format!(
+                    "fixture RocksDB row readback mismatch for {}|{}",
+                    fixture.task_id,
+                    category.slug()
+                )
+                .into());
+            }
+
+            let oracle_verdict_sha256 = sha256_json_value(&serde_json::to_value(&verdict)?);
+            index.entries.push(GeneratedEntry {
+                task_id: fixture.task_id.clone(),
+                repo: fixture.repo.clone(),
+                language: fixture.language,
+                category,
+                bucket: bucket_by_task
+                    .get(&fixture.task_id)
+                    .cloned()
+                    .ok_or("fixture task missing split bucket")?,
+                patch_path: relative_path.display().to_string(),
+                mutation_note: mutation
+                    .mutation_site
+                    .as_ref()
+                    .map(|site| site.note.clone())
+                    .unwrap_or_else(|| format!("{} fixture mutation", category.slug())),
+                patch_sha256: fixture_sha256_text(&mutation.mutated_source),
+                oracle_verdict_sha256,
+                oracle_all_passed: verdict.all_passed(),
+                oracle_exception: verdict.exception.map(|class| class.slug().to_string()),
+                oracle_per_test_count: verdict.per_test.len(),
+            });
+            toolchain_rows.push(json!({
+                "task_id": fixture.task_id.clone(),
+                "language": fixture.language.slug(),
+                "category": category.slug(),
+                "source": source_path.display().to_string(),
+                "report": report_path.display().to_string(),
+                "expected_success": expected_success,
+                "status_success": report.status_success,
+            }));
+            write_index(&args.output, &index)?;
+        }
+    }
+
+    let expected_entries = fixtures.len() * MutationCategory::all().len();
+    let mutation_cf_count = store.count_cf(CF_MEJEPA_MUTATION_CORPUS)?;
+    let verdict_cf_count = store.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?;
+    if index.entries.len() != expected_entries
+        || mutation_cf_count != expected_entries
+        || verdict_cf_count != expected_entries
+    {
+        return Err(format!(
+            "fixture corpus count mismatch: index={} expected={} mutation_cf={} verdict_cf={}",
+            index.entries.len(),
+            expected_entries,
+            mutation_cf_count,
+            verdict_cf_count
+        )
+        .into());
+    }
+    let provenance = build_provenance(&index)?;
+    store.put_provenance(&provenance)?;
+    store.flush()?;
+    let stored_provenance = store
+        .get_provenance(&index.corpus_version, &index.embedder_version)?
+        .ok_or("fixture provenance row missing immediately after RocksDB write")?;
+    if stored_provenance != provenance {
+        return Err("fixture provenance readback mismatch immediately after RocksDB write".into());
+    }
+    index.corpus_sha256 = Some(provenance.corpus_sha256.clone());
+    index.complete = true;
+    write_stats_json(
+        &args.output,
+        &build_stats_json(&args.output, &index, &store)?,
+    )?;
+    write_index(&args.output, &index)?;
+    let evidence = json!({
+        "status": "generated_fixtures",
+        "source_of_truth": {
+            "index": args.output.join("index.json").display().to_string(),
+            "store": store_path.display().to_string(),
+            "fixture_manifest": fixture_manifest_path.display().to_string(),
+            "toolchain_reports": args.output.join("toolchain-reports").display().to_string(),
+            "stats": args.output.join("stats.json").display().to_string(),
+        },
+        "tasks_per_language": args.tasks_per_language,
+        "language_count": non_python_languages().len(),
+        "fixture_task_count": fixtures.len(),
+        "entry_count": index.entries.len(),
+        "mutation_cf_count": mutation_cf_count,
+        "verdict_cf_count": verdict_cf_count,
+        "provenance_cf_count": store.count_cf(CF_MEJEPA_CORPUS_PROVENANCE)?,
+        "toolchain_report_count": toolchain_rows.len(),
+        "corpus_sha256": provenance.corpus_sha256,
+        "passes": true,
+    });
+    write_json_checked(&args.output.join("verify-evidence.json"), &evidence)?;
+    println!("{}", serde_json::to_string_pretty(&evidence)?);
+    Ok(())
+}
+
+fn fixture_mutation_relative_path(fixture: &FixtureTask, category: MutationCategory) -> PathBuf {
+    PathBuf::from("mutations")
+        .join(&fixture.task_id)
+        .join(format!("{}.{}", category.slug(), fixture.extension))
+}
+
+fn toolchain_verdict(
+    task_id: &str,
+    category: MutationCategory,
+    expected_success: bool,
+) -> OracleVerdict {
+    let outcome = if expected_success {
+        TestOutcome::Pass
+    } else {
+        TestOutcome::Error
+    };
+    OracleVerdict {
+        per_test: vec![PerTestOutcome {
+            test_id: format!("toolchain::{task_id}::{}", category.slug()),
+            outcome,
+            runtime_ms: -1,
+        }],
+        exception: (!expected_success).then_some(ExceptionClass::Other),
+    }
+}
+
+fn phase_c_verify(mut args: PhaseCVerifyArgs) -> CliResult<()> {
+    args.python_corpus = require_corpus_path(&args.python_corpus, "phase_c.python_corpus")?;
+    args.non_python_corpus =
+        require_corpus_path(&args.non_python_corpus, "phase_c.non_python_corpus")?;
+    args.evidence = require_durable_path(&args.evidence, "phase_c.evidence")?;
+    if args.min_entries_per_non_python_language == 0 {
+        return Err("min_entries_per_non_python_language must be > 0".into());
+    }
+
+    let python_index = read_index(&args.python_corpus)?;
+    validate_complete_index(&python_index)?;
+    let non_python_index = read_index(&args.non_python_corpus)?;
+    validate_complete_index(&non_python_index)?;
+    let python_store_path = resolve_corpus_path(&args.python_corpus, &python_index.store_path)?;
+    let non_python_store_path =
+        resolve_corpus_path(&args.non_python_corpus, &non_python_index.store_path)?;
+    let python_store = OracleStore::open(&python_store_path)?;
+    let non_python_store = OracleStore::open(&non_python_store_path)?;
+    let python_stats = build_stats_json(&args.python_corpus, &python_index, &python_store)?;
+    let non_python_stats = build_stats_json(
+        &args.non_python_corpus,
+        &non_python_index,
+        &non_python_store,
+    )?;
+    let python_verify = read_json_required(&args.python_corpus.join("verify-evidence.json"))?;
+    let non_python_verify =
+        read_json_required(&args.non_python_corpus.join("verify-evidence.json"))?;
+
+    let mut failures = Vec::<Value>::new();
+    if python_verify.get("passes").and_then(Value::as_bool) != Some(true) {
+        failures.push(json!({"corpus": "python", "error": "verify-evidence passes was not true"}));
+    }
+    if non_python_verify.get("passes").and_then(Value::as_bool) != Some(true) {
+        failures
+            .push(json!({"corpus": "non_python", "error": "verify-evidence passes was not true"}));
+    }
+    if python_stats
+        .get("full_ship_gate_300x8")
+        .and_then(|value| value.get("passes"))
+        .and_then(Value::as_bool)
+        != Some(true)
+    {
+        failures.push(json!({"corpus": "python", "error": "300x8 Python ship gate failed"}));
+    }
+    let expected_non_python = non_python_languages()
+        .iter()
+        .map(|language| language.slug().to_string())
+        .collect::<BTreeSet<_>>();
+    let actual_non_python = non_python_index
+        .languages
+        .iter()
+        .map(|language| language.slug().to_string())
+        .collect::<BTreeSet<_>>();
+    if actual_non_python != expected_non_python {
+        failures.push(json!({
+            "corpus": "non_python",
+            "error": "language set mismatch",
+            "expected": expected_non_python,
+            "actual": actual_non_python,
+        }));
+    }
+    let by_language = non_python_stats
+        .get("by_language")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    for language in non_python_languages() {
+        let count = by_language
+            .get(language.slug())
+            .and_then(Value::as_u64)
+            .unwrap_or_default() as usize;
+        if count < args.min_entries_per_non_python_language {
+            failures.push(json!({
+                "corpus": "non_python",
+                "language": language.slug(),
+                "error": "entry count below Phase C minimum",
+                "actual": count,
+                "minimum": args.min_entries_per_non_python_language,
+            }));
+        }
+    }
+    let toolchain_report_count =
+        count_files_with_extension(&args.non_python_corpus.join("toolchain-reports"), "json")?;
+    if toolchain_report_count != non_python_index.entries.len() {
+        failures.push(json!({
+            "corpus": "non_python",
+            "error": "toolchain report count does not match index entries",
+            "toolchain_report_count": toolchain_report_count,
+            "index_entries": non_python_index.entries.len(),
+        }));
+    }
+
+    let combined_split_entries = combined_split_entries(&python_index, &non_python_index)?;
+    let combined_split = split_corpus(
+        &combined_split_entries,
+        SplitConfig {
+            mode: SplitMode::InstanceAtomic,
+            seed: 17,
+            ..SplitConfig::default()
+        },
+    )?;
+    let mut sha_by_task = load_python_test_patch_sha_map(&args.tasks_dir)?;
+    for entry in &non_python_index.entries {
+        if entry.category == MutationCategory::KnownGood {
+            sha_by_task.insert(entry.task_id.clone(), entry.patch_sha256.clone());
+        }
+    }
+    let split_leakage_check =
+        assert_no_test_patch_leakage(&combined_split.assignments, |task_id| {
+            sha_by_task.get(task_id).map(String::as_str)
+        });
+    if let Err(err) = &split_leakage_check {
+        failures.push(json!({
+            "corpus": "combined",
+            "error": "combined split leakage check failed",
+            "detail": err.to_string(),
+            "code": err.code(),
+        }));
+    }
+
+    let passes = failures.is_empty();
+    let evidence = json!({
+        "source_of_truth": {
+            "python_index": args.python_corpus.join("index.json").display().to_string(),
+            "python_store": python_store_path.display().to_string(),
+            "python_verify_evidence": args.python_corpus.join("verify-evidence.json").display().to_string(),
+            "non_python_index": args.non_python_corpus.join("index.json").display().to_string(),
+            "non_python_store": non_python_store_path.display().to_string(),
+            "non_python_verify_evidence": args.non_python_corpus.join("verify-evidence.json").display().to_string(),
+            "non_python_toolchain_reports": args.non_python_corpus.join("toolchain-reports").display().to_string(),
+            "combined_split_evidence": args.evidence.display().to_string(),
+        },
+        "python": {
+            "entry_count": python_index.entries.len(),
+            "mutation_cf_count": python_store.count_cf(CF_MEJEPA_MUTATION_CORPUS)?,
+            "verdict_cf_count": python_store.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?,
+            "verify_passes": python_verify.get("passes").and_then(Value::as_bool),
+            "stats": python_stats,
+        },
+        "non_python": {
+            "entry_count": non_python_index.entries.len(),
+            "toolchain_report_count": toolchain_report_count,
+            "mutation_cf_count": non_python_store.count_cf(CF_MEJEPA_MUTATION_CORPUS)?,
+            "verdict_cf_count": non_python_store.count_cf(CF_MEJEPA_ORACLE_VERDICTS)?,
+            "verify_passes": non_python_verify.get("passes").and_then(Value::as_bool),
+            "stats": non_python_stats,
+        },
+        "combined_split": {
+            "task_count": combined_split.assignments.len(),
+            "bucket_sizes": combined_split.bucket_sizes,
+            "bucket_fractions": combined_split.bucket_fractions,
+            "leakage_check_passed": combined_split.leakage_check_passed && split_leakage_check.is_ok(),
+            "assignments": combined_split.assignments,
+        },
+        "failures": failures,
+        "passes": passes,
+    });
+    write_json_checked(&args.evidence, &evidence)?;
+    let readback: Value = serde_json::from_str(&fs::read_to_string(&args.evidence)?)?;
+    if readback != evidence {
+        return Err("Phase C evidence readback mismatch immediately after write".into());
+    }
+    if !passes {
+        return Err(format!(
+            "Phase C verification failed; evidence written to {}",
+            args.evidence.display()
+        )
+        .into());
+    }
+    println!("{}", serde_json::to_string_pretty(&evidence)?);
+    Ok(())
+}
+
+fn read_json_required(path: &Path) -> CliResult<Value> {
+    let text = fs::read_to_string(path).map_err(|err| {
+        format!(
+            "required JSON evidence file is not readable: {}; error={err}",
+            path.display()
+        )
+    })?;
+    serde_json::from_str(&text).map_err(|err| {
+        format!(
+            "required JSON evidence file is invalid JSON: {}; error={err}",
+            path.display()
+        )
+        .into()
+    })
+}
+
+fn count_files_with_extension(root: &Path, extension: &str) -> CliResult<usize> {
+    if !root.is_dir() {
+        return Err(format!(
+            "required directory for extension count does not exist: {}",
+            root.display()
+        )
+        .into());
+    }
+    let mut count = 0usize;
+    count_files_with_extension_inner(root, extension, &mut count)?;
+    Ok(count)
+}
+
+fn count_files_with_extension_inner(
+    root: &Path,
+    extension: &str,
+    count: &mut usize,
+) -> CliResult<()> {
+    for entry in fs::read_dir(root)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            count_files_with_extension_inner(&path, extension, count)?;
+        } else if path.extension().and_then(|value| value.to_str()) == Some(extension) {
+            *count += 1;
+        }
+    }
+    Ok(())
+}
+
+fn combined_split_entries(
+    python_index: &CorpusIndex,
+    non_python_index: &CorpusIndex,
+) -> CliResult<Vec<CorpusEntry>> {
+    let mut seen = BTreeSet::<String>::new();
+    let mut entries = Vec::with_capacity(
+        python_index.split_assignments.len() + non_python_index.split_assignments.len(),
+    );
+    for assignment in python_index
+        .split_assignments
+        .iter()
+        .chain(non_python_index.split_assignments.iter())
+    {
+        if !seen.insert(assignment.task_id.clone()) {
+            return Err(format!(
+                "duplicate task_id in combined Phase C split: {}",
+                assignment.task_id
+            )
+            .into());
+        }
+        entries.push(CorpusEntry {
+            task_id: assignment.task_id.clone(),
+            repo: assignment.repo.clone(),
+        });
+    }
+    Ok(entries)
+}
+
+fn load_python_test_patch_sha_map(tasks_dir: &Path) -> CliResult<BTreeMap<String, String>> {
+    let manifests = load_task_manifests(tasks_dir)?;
+    Ok(manifests
+        .into_iter()
+        .map(|manifest| (manifest.instance_id, manifest.official_test_patch_sha256))
+        .collect())
+}
+
 fn smoke(mut args: SmokeArgs) -> CliResult<()> {
     args.output = require_corpus_path(&args.output, "smoke.output")?;
     args.venv_python = require_durable_path(&args.venv_python, "smoke.venv_python")?;
@@ -1605,7 +2161,7 @@ fn finish_smoke(
         "phase0_language_scope": {
             "full_corpus_language": "python",
             "requires_all_ast_languages_before_full_corpus": false,
-            "reason": "SWE-bench Lite and the Phase 0 mutation/oracle path are Python-only; non-Python language enum variants fail closed until their operators and fixtures exist."
+            "reason": "SWE-bench Lite oracle smoke remains Python-only; Phase C non-Python fixtures use generate-fixtures and real language toolchains."
         },
         "config": {
             "tasks_dir": args.tasks_dir,
@@ -2627,12 +3183,24 @@ fn resolve_corpus_path(corpus: &Path, stored_path: &str) -> CliResult<PathBuf> {
 fn build_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> CliResult<Value> {
     let mut by_category = BTreeMap::<String, usize>::new();
     let mut by_bucket = BTreeMap::<String, usize>::new();
+    let mut by_language = BTreeMap::<String, usize>::new();
+    let mut by_language_category = BTreeMap::<String, usize>::new();
     let mut by_oracle = BTreeMap::<String, usize>::new();
     for entry in &index.entries {
         *by_category
             .entry(entry.category.slug().to_string())
             .or_default() += 1;
         *by_bucket.entry(entry.bucket.clone()).or_default() += 1;
+        *by_language
+            .entry(entry.language.slug().to_string())
+            .or_default() += 1;
+        *by_language_category
+            .entry(format!(
+                "{}|{}",
+                entry.language.slug(),
+                entry.category.slug()
+            ))
+            .or_default() += 1;
         let key = if entry.oracle_all_passed {
             "pass"
         } else {
@@ -2641,7 +3209,9 @@ fn build_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> 
         *by_oracle.entry(key.to_string()).or_default() += 1;
     }
     let expected_full_entries = index.split_assignments.len() * MutationCategory::all().len();
-    let full_ship_gate_300x8_passes = index.split_assignments.len() == 300
+    let python_only = index.languages == vec![Language::Python];
+    let full_ship_gate_300x8_passes = python_only
+        && index.split_assignments.len() == 300
         && index.entries.len() == 300 * MutationCategory::all().len()
         && MutationCategory::all().iter().all(|category| {
             by_category
@@ -2650,10 +3220,31 @@ fn build_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> 
                 .unwrap_or_default()
                 == 300
         });
+    let expected_non_python = non_python_languages()
+        .iter()
+        .map(|language| language.slug().to_string())
+        .collect::<BTreeSet<_>>();
+    let actual_languages = index
+        .languages
+        .iter()
+        .map(|language| language.slug().to_string())
+        .collect::<BTreeSet<_>>();
+    let non_python_fixture_gate_passes = actual_languages == expected_non_python
+        && expected_non_python.iter().all(|language| {
+            by_language.get(language).copied().unwrap_or_default() >= 500
+                && MutationCategory::all().iter().all(|category| {
+                    by_language_category
+                        .get(&format!("{language}|{}", category.slug()))
+                        .copied()
+                        .unwrap_or_default()
+                        > 0
+                })
+        });
     let provenance = store.get_provenance(&index.corpus_version, &index.embedder_version)?;
     let leakage_failures = split_leakage_failures(index);
     let leakage_passes = leakage_failures.is_empty();
-    let ship_gate_passes = leakage_passes && full_ship_gate_300x8_passes;
+    let ship_gate_passes =
+        leakage_passes && (full_ship_gate_300x8_passes || non_python_fixture_gate_passes);
     Ok(json!({
         "source_of_truth": {
             "index": output.join("index.json").display().to_string(),
@@ -2675,6 +3266,8 @@ fn build_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> 
             "passes": full_ship_gate_300x8_passes,
         },
         "by_category": by_category,
+        "by_language": by_language,
+        "by_language_category": by_language_category,
         "by_bucket": by_bucket,
         "by_oracle": by_oracle,
         "mutation_cf_count": store.count_cf(CF_MEJEPA_MUTATION_CORPUS)?,
@@ -2683,6 +3276,12 @@ fn build_stats_json(output: &Path, index: &CorpusIndex, store: &OracleStore) -> 
         "leakage_check": {
             "failures": leakage_failures,
             "passes": leakage_passes,
+        },
+        "non_python_fixture_gate": {
+            "required_languages": expected_non_python,
+            "actual_languages": actual_languages,
+            "min_entries_per_language": 500,
+            "passes": non_python_fixture_gate_passes,
         },
         "passes": ship_gate_passes,
     }))

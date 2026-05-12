@@ -1,0 +1,15 @@
+schema_version: 1
+language: javascript
+patterns:
+  - id: javascript_querystring_parser
+    kind: ReinventedWheel
+    name: Hand-rolled query string parser
+    stdlib_alternative: URLSearchParams
+    confidence: 0.90
+    detection:
+      required_substrings:
+        - ".split('?')"
+        - ".split('&')"
+        - ".split('=')"
+      forbidden_substrings:
+        - "URLSearchParams"

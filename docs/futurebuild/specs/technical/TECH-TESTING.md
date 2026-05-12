@@ -18,7 +18,7 @@ tests/
     concurrent_agents.rs          # REQ-TEST-07
   soak/
     seven_day.rs                  # REQ-TEST-08
-  toolchain_fallback/
+  toolchain_fail_closed/
     matrix.rs                     # REQ-TEST-09
   fixtures/
     adversarial/                  # REQ-TEST-10 corpus (30 cases)

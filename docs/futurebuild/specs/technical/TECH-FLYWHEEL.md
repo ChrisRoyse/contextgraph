@@ -2,6 +2,8 @@
 
 > **Level 3.** Defines HOW the data flywheel is built. Implements [`SPEC-FLYWHEEL.md`](../functional/SPEC-FLYWHEEL.md).
 
+**Status snapshot (2026-05-12):** The daemon supervisor, D-root validation, scheduler skeleton, systemd template, test-capture hook, new CF registrations, `AgentSurprise`, and surprise sampling weight are code/FSV-shipped. Full scheduler policy, weekly production eval cadence, and fresh-host enablement proof remain open.
+
 ---
 
 ## Architecture
@@ -35,8 +37,8 @@ The flywheel is a single supervised process (the MCP daemon) hosting four cooper
 crates/context-graph-mcp/
   src/
     main.rs                      # extended with --daemon flag (REQ-FLYWHEEL-01)
-    daemon.rs                    # NEW: supervisor + JoinSet + restart logic (REQ-FLYWHEEL-03)
-    daemon_validate.rs           # NEW: D-drive validation (REQ-FLYWHEEL-02)
+    daemon.rs                    # supervisor + JoinSet + restart logic (REQ-FLYWHEEL-03)
+    daemon_validate.rs           # D-drive validation (REQ-FLYWHEEL-02)
     handlers/
       tools/
         mejepa_tools.rs          # extended with mejepa_record_agent_feedback (Phase A)
@@ -44,7 +46,7 @@ crates/context-graph-mcp/
 crates/context-graph-mejepa/
   src/
     heal/
-      scheduler.rs               # NEW: run_self_optimization_scheduler (REQ-FLYWHEEL-05)
+      scheduler.rs               # run_self_optimization_scheduler skeleton (REQ-FLYWHEEL-05)
       ...                        # existing heal modules consumed by scheduler
 crates/context-graph-mejepa-cf/
   src/
@@ -55,9 +57,9 @@ crates/context-graph-mejepa-train/
       batch_sampler.rs           # extended: surprise-weight bump (REQ-FLYWHEEL-12)
 scripts/
   systemd/
-    mejepa-daemon.service        # NEW: systemd template (REQ-FLYWHEEL-15)
+    mejepa-daemon.service        # systemd template (REQ-FLYWHEEL-15)
   cc/
-    hook_post_tool_use_test_capture.sh  # NEW: pytest/cargo-test/jest output parser (REQ-FLYWHEEL-08)
+    hook_post_tool_use_test_capture.sh  # pytest/cargo-test/jest output parser (REQ-FLYWHEEL-08)
 ```
 
 ---

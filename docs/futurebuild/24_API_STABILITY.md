@@ -9,7 +9,7 @@
 Semantic versioning at the **system** level: `vMAJOR.MINOR.PATCH`.
 
 - **MAJOR** — incompatible changes (removing a tool, changing an enum to add a non-default variant in a way that breaks deserialization, dropping a CF without migration).
-- **MINOR** — additive changes (new tool, new field with default, new enum variant with `#[serde(other)]` fallback, new CF).
+- **MINOR** — additive changes (new tool, new optional JSON field, new documented enum variant, new CF). Persisted binary schema changes still require explicit migration/readback.
 - **PATCH** — bug fixes, perf improvements, internal refactors with no API change.
 
 Current target: ME-JEPA-Code v0.x (pre-1.0). Pre-1.0 means MAJOR can change, but MINOR/PATCH discipline still applies.
@@ -27,7 +27,7 @@ Current target: ME-JEPA-Code v0.x (pre-1.0). Pre-1.0 means MAJOR can change, but
 | `mejepa_verify` | Stable (v0.4+); response shape extensions only |
 | `mejepa_predict_latest` | Stable (v0.4+) |
 | `mejepa_record_agent_feedback` | Stable from Phase A onwards |
-| `mejepa_predict_what_if`, `mejepa_explain_prediction` | Beta (Phase B) |
+| `mejepa_predict_what_if`, `mejepa_explain_prediction` | Beta (implemented Phase B, 2026-05-12) |
 | `mejepa_constellation_inspect` | Stable |
 | `mejepa_subscriber_status`, `mejepa_heal_status`, `mejepa_quota_status`, `mejepa_vram_budget_report` | Stable |
 | `mejepa_eval_run`, `mejepa_ship_gate_status`, `mejepa_active_learning_queue`, `mejepa_eval_build_graph` | Stable |
@@ -42,10 +42,11 @@ Stable tools commit to additive-only changes. Beta tools may evolve.
 ### 2.2 `RealityPrediction` schema
 
 - Adding a new field with default → minor bump
-- Adding a new `Verdict` variant → minor bump (deserializers should treat unknown variants as `Verdict::Abstain` with a `forward_compat: true` flag)
+- Adding a new `Verdict` variant → minor bump; daemon-side decoding must fail closed if a persisted binary value cannot be decoded into the active schema
 - Adding a new `FailureModeClass` → minor bump (extractors fall back to `Other(name)`)
 - Removing a field → major bump (with deprecation cycle)
 - Renaming a field → major bump (with field-alias support during deprecation)
+- Binary RocksDB value schema changes require explicit migration or fresh CF creation. Do not silently default old serialized predictions into a new shape.
 
 ### 2.3 Error codes
 
@@ -83,7 +84,7 @@ When a CF schema must change incompatibly:
 ```
 1. Add new CF with v2 schema
 2. Provide migration tool: context-graph-cli mejepa storage migrate-cf <old> <new> [--dry-run]
-3. Daemon's startup code reads from old CF if new CF missing
+3. Daemon startup validates that the active CF schema version is readable; if migration is required and has not been run, startup fails closed with a precise migration error
 4. After migration period, old CF is removed in a major version bump
 ```
 
@@ -91,7 +92,7 @@ The migration tool reads old entries, transforms via a deterministic mapper, wri
 
 For pre-1.0 (current state): schema migrations are explicit operator-run commands, not silent.
 
-For post-1.0: optional automatic migration on daemon startup (with operator opt-in).
+For post-1.0: optional automatic migration on daemon startup is allowed only with explicit operator opt-in and pre/post source-of-truth readback.
 
 ---
 
@@ -121,7 +122,7 @@ This is the cross-version reproducibility guarantee. If `mejepa replay` ever pro
 External MCP clients (e.g., scripts, CI bots, third-party agents) should:
 
 1. Pin to a daemon version range (e.g., `cgreality >= 0.4, < 0.5`).
-2. Use forward-compatible deserialization (treat unknown enum variants as the default; tolerate extra fields).
+2. Tolerate extra JSON fields, but treat unknown required enum variants or undecodable persisted values as explicit errors.
 3. Read the daemon's reported version: `mcp_call optimizer_recall_recommendations` returns `daemon_version` in the response metadata; clients can adapt accordingly.
 
 ---

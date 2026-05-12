@@ -4,6 +4,8 @@
 > Owns: REQ-FLYWHEEL-01..15.
 > Implementation reference: [`07_TRAINING_DATA_FLYWHEEL.md`](../../07_TRAINING_DATA_FLYWHEEL.md).
 
+**Status snapshot (2026-05-12):** daemon mode, D-root validation, scheduler skeleton, test-outcome capture, oracle binding, new CFs, `AgentSurprise`, and surprise sampling-weight wiring are code/FSV-shipped. Weekly production eval, full scheduler policy, and fresh-host operator enablement remain open.
+
 ---
 
 ## Domain
@@ -95,9 +97,9 @@ The daemon SHALL ship with a systemd unit template at `scripts/systemd/mejepa-da
 
 - **Empty shift-log file**: subscriber returns immediately with no work; no error.
 - **Malformed shift-log line**: subscriber logs `MEJEPA_SHIFT_LOG_PARSE_ERROR` and skips; does not advance watermark past the bad line so it can be inspected.
-- **Test outcome arrives for a prediction that no longer exists in `CF_MEJEPA_LIVE_PREDICTIONS`** (TTL'd out): observe() runs in label-only mode (no per-chunk attribution); training cert flagged `late_oracle = true`.
-- **Disk full during shift-log append**: hook fails closed with `CCREALITY_HOOK_DISK_FULL`; agent's Edit succeeds (shift is lost — operator alerted).
-- **Subscriber processing N shifts > 60s**: lag alert fires; if persistent, daemon spawns a second consumer thread.
+- **Test outcome arrives for a prediction that no longer exists in `CF_MEJEPA_LIVE_PREDICTIONS`** (TTL'd out): observe binding fails closed with a late-oracle diagnostic; no unlabeled attribution is synthesized.
+- **Disk full during shift-log append**: hook fails closed with `CCREALITY_HOOK_DISK_FULL` and writes a diagnostic; no successful capture is claimed.
+- **Subscriber processing N shifts > 60s**: lag alert fires; if persistent, daemon records backpressure diagnostics and operator-visible alert.
 
 ## Non-functional requirements
 

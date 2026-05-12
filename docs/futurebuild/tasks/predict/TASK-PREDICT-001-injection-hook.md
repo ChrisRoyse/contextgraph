@@ -29,8 +29,8 @@ Add a hook script that fires on UserPromptSubmit, queries the daemon's `mejepa_p
 
 ## Outputs
 
-- `scripts/cc/hook_user_prompt_submit_inject_prediction.sh` — NEW
-- `scripts/cc/render_prediction_markdown.py` — NEW (Python renderer per TECH-PREDICT.md §7)
+- `scripts/cc/hook_user_prompt_submit_inject_prediction.sh`
+- `scripts/cc/render_prediction_markdown.py` (Python renderer per TECH-PREDICT.md §7)
 - `.claude/settings.json` — extended `hooks.UserPromptSubmit` list to include the new script
 - FSV: `scripts/cc/test_inject_prediction.sh` — round-trip test
 
@@ -38,8 +38,8 @@ Add a hook script that fires on UserPromptSubmit, queries the daemon's `mejepa_p
 
 1. With the daemon running and at least one prediction in `CF_MEJEPA_LIVE_PREDICTIONS`, calling the hook script outputs a markdown block.
 2. Block is ≤ 4 KB (per REQ-PREDICT-13); when full content exceeds, Q4 concerns are truncated to top-5 per category.
-3. With no prediction available, hook outputs nothing (silent exit code 0).
-4. With the daemon down, hook outputs nothing (silent exit code 0; the agent is not blocked).
+3. With no prediction available, hook outputs no prediction block and exits 0 because there is no failure to report.
+4. With the daemon down, hook writes a precise D-root diagnostic and does not claim prediction injection succeeded.
 5. Markdown contains the exact sections in order from `15_PREDICTION_TAXONOMY.md §8`: verdict + interval, predicted failure modes, predicted edge cases, predicted latent bugs, predicted tech debt, predicted dead code, predicted perf/security/accuracy/cost, reasoning class, claim reconciliation, reality impact, "to respond" line.
 6. Hook is wired in `.claude/settings.json` under `hooks.UserPromptSubmit`.
 7. Test fixture (`scripts/cc/test_inject_prediction.sh`) writes a synthetic `RealityPrediction` to a test session, runs the hook, asserts the rendered markdown matches the expected snapshot.
@@ -53,4 +53,4 @@ Add a hook script that fires on UserPromptSubmit, queries the daemon's `mejepa_p
 - Empty `RealityPrediction` (verdict=Pass, all Q4 vecs empty) → block contains "Verdict: Pass" + "predicted: none above threshold" for each Q4 section
 - All 8 Q4 categories non-empty with > 5 entries each → top-5 truncation applied; "...truncated; use mejepa_predict_latest for full" footer added
 - Markdown rendering produces exactly 4096 bytes → no truncation; final newline preserved
-- `mejepa_predict_latest` returns error → hook silently exits 0 (don't crash the prompt)
+- `mejepa_predict_latest` returns error → hook writes a diagnostic with the MCP error code and source-of-truth path; no prediction block is emitted.

@@ -1,0 +1,14 @@
+schema_version: 1
+language: php
+patterns:
+  - id: php_manual_query_parser
+    kind: ReinventedWheel
+    name: Hand-rolled query string parser
+    stdlib_alternative: parse_str
+    confidence: 0.89
+    detection:
+      required_substrings:
+        - "explode('&'"
+        - "explode('='"
+      forbidden_substrings:
+        - "parse_str"

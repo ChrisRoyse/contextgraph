@@ -2,6 +2,8 @@
 
 > **Verification contract.** Every task below inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md). Read it before starting. SoT readback, ≥3 boundary cases, NO mocks, NO backwards compat, fail-closed errors, Occam's-razor justification, and the §6 evidence artifacts are mandatory. **`ASSUME THE TASK IS WRONG`** — audit file paths, symbol names, and CF references against the live tree before implementing.
 
+**Status snapshot (2026-05-12):** Phase A ships the scheduler skeleton and seven ticker structure. Phase B ships `AgentSurprise` queue priority/consumer behavior and core per-head UTML carriers. All tasks below remain open unless noted; they are the full production policy layer on top of the shipped skeleton.
+
 ## TASK-HEAL-001 — Self-optimization scheduler (full implementation)
 
 - **Phase:** E · **Effort:** 1.5d · **Blocked by:** TASK-FLYWHEEL-002 · **Spec:** TECH-HEAL §3 + SPEC-HEAL REQ-HEAL-FB-01

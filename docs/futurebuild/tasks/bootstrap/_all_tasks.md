@@ -10,7 +10,9 @@
 
 ## TASK-BOOT-002 — Baseline checkpoint build pipeline
 
-- **Phase:** C · **Effort:** 1d · **Blocked by:** TASK-CORPUS-002 · **Spec:** 21 §3
+**Status:** open. The Phase C corpus prerequisite is complete (`/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/`, `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/`, and `/mnt/d/contextgraph/fsv/corpus-fsv/split_full.json`), but no release baseline checkpoint artifact is claimed here yet.
+
+- **Phase:** post-C release prep · **Effort:** 1d · **Blocked by:** completed Phase C corpus source-of-truth readback · **Spec:** 21 §3
 - **Outputs:** `scripts/release/build_baseline_checkpoint.sh`; release-prep job.
 - **DoD:** produces `models/mejepa-baseline-vN.safetensors` with verifiable holdout correlation ≥ 0.65.
 

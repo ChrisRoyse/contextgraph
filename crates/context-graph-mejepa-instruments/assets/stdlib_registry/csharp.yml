@@ -1,0 +1,14 @@
+schema_version: 1
+language: csharp
+patterns:
+  - id: csharp_manual_path_join
+    kind: ReinventedWheel
+    name: Hand-rolled path joining
+    stdlib_alternative: System.IO.Path.Combine
+    confidence: 0.86
+    detection:
+      required_substrings:
+        - "+ \"/\" +"
+        - "string"
+      forbidden_substrings:
+        - "Path.Combine"

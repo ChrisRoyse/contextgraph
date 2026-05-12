@@ -11,14 +11,15 @@ use crate::eval::{
     MutationCategory,
 };
 use crate::learning_signal::{
-    compute_l_step, pairwise_mi_audit, DeltaKComponents, DeltaOmegaComponents, DeltaPAggregator,
-    DeltaPComponents, DeltaXiComponents,
+    compute_l_step, compute_per_head_learning_signal, pairwise_mi_audit, DeltaKComponents,
+    DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents, DeltaXiComponents, HeadSignalInput,
 };
 use crate::sampler::{BatchSampler, PatchSimilarityGraph};
 use candle_core::{DType, Device};
+use context_graph_mejepa::HeadId;
 use ed25519_dalek::SigningKey;
 use rocksdb::DB;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -171,6 +172,19 @@ impl Trainer {
                     constellation_violation_rate: 0.05,
                 },
             )?;
+            let mut per_head_inputs = BTreeMap::new();
+            for head in HeadId::ALL {
+                per_head_inputs.insert(
+                    head,
+                    HeadSignalInput {
+                        delta_p: signal.delta_p_components.clone(),
+                        delta_k: signal.delta_k_components.clone(),
+                        delta_omega: signal.delta_omega_components.clone(),
+                        delta_xi: signal.delta_xi_components,
+                    },
+                );
+            }
+            let per_head_signal = compute_per_head_learning_signal(per_head_inputs)?;
             l_sum += signal.l_step;
             p_sum += signal.delta_p;
             k_sum += signal.delta_k;
@@ -186,6 +200,8 @@ impl Trainer {
                 step: self.step,
                 epoch,
                 signal,
+                per_head_l_step: per_head_signal.l_step_map().into_iter().collect(),
+                delta_xi_global_min: per_head_signal.delta_xi_global_min,
                 loss_components,
                 training_mode: if self.config.full_finetune {
                     "full_finetune".to_string()

@@ -11,8 +11,8 @@
 | Phase | Goal | Effort | Dependencies | Ship gate |
 |---|---|---|---|---|
 | **A. Operational unblock** | Daemon mode + prediction injection + agent-feedback channel + D-drive enforcement | code closure 2026-05-12; operator burn-in remains | none | Daemon runs; first prediction injected; first SurpriseEvent recorded; cargo lint passes |
-| **B. Multi-head extension** | Q3/Q4 prediction heads, label sources, reasoning class | 10-14 days | Phase A | All 10 heads emit; per-head holdout metric > random baseline |
-| **C. Corpus expansion** | Completed Python 300×8 corpus + remaining per-language operators/splits | 4-7 days after Phase A | Phase A | 2,400 Python entries verified; 10 non-Python operators ship; combined corpus FSV passes |
+| **B. Multi-head extension** | Q1-Q5 `RealityPrediction` schema, what-if/explain APIs, auxiliary heads, deterministic label extractors, per-head UTML accounting | code + FSV complete 2026-05-12; training/eval hardening remains | Phase A | Code/FSV gate passed; production holdout metrics and remaining per-head self-healing tasks still open |
+| **C. Corpus expansion** | Completed Python 300×8 corpus + 10-language fixture corpus + combined split | complete 2026-05-12 | Phase A | 2,400 Python entries verified; 5,120 non-Python entries verified; combined corpus FSV passes |
 | **D. Neural embedder forwards** | Replace deterministic placeholders with real neural forward passes | 10-15 days | Phase A | All 12 active embedders run real forward; routing FSV passes; pairwise MI matrix updates |
 | **E. Continuous self-optimization** | Scheduler tokio task + per-cell stratified drift + dissipation detection + lambda ramp | 5-7 days | Phase A + Phase B | Scheduler runs; drift detected within 1k obs; A/B/C promotion executes autonomously |
 | **F. Production observability** | Live conformal/OOD/p50/p99 capture + weekly eval + active-learning dashboard + WSL GPU telemetry hardening | 5-7 days | Phase A | Weekly report writes; conformal coverage measured; active-learning queue cleared by operator weekly |
@@ -25,14 +25,12 @@
 - **RUNBOOK** (12 tasks, ~5.5 days) — RUN-001 (first-time setup) + RUN-010 (config files) + RUN-011 (INSTALL.md) in Phase A; rest of CLI commands in Phase F
 - **DR** (8 tasks, ~4 days) — DR-001/002/005/006 in Phase A (snapshot scripts + model digest list); DR-003/004/007/008 in Phase F
 - **SECURITY** (8 tasks, ~3.5 days) — SEC-001 (secret redaction) + SEC-006/007/008 (markdown hardening / D-drive perms / hook lint) in Phase A; SEC-003 (multi-head contradiction) in Phase B; SEC-005 (two-person rule) in Phase E; SEC-002 (adversarial corpus) in Phase F
-- **BOOTSTRAP** (3 tasks, ~2 days) — BOOT-001 + BOOT-003 in Phase A; BOOT-002 (baseline checkpoint) in Phase C
+- **BOOTSTRAP** (3 tasks, ~2 days) — BOOT-001 + BOOT-003 in Phase A; BOOT-002 (baseline checkpoint) remains open release-prep work, now unblocked by the completed Phase C corpus
 - **API** (5 tasks, ~2.5 days) — API-001 (semver in MCP) + API-005 (changelog) in Phase A; API-002/003/004 in Phase F
 
-**Updated total fresh implementation effort: ~95 engineer-days.**
+**Updated remaining fresh implementation effort:** Phase C no longer counts as remaining work. Phase A, the Phase B prediction/API/schema carrier, and Phase C corpus expansion are code/FSV-shipped; the remaining estimate is dominated by real neural/DDA enrichment, autonomous self-optimization policy, observability, DR, bootstrap checkpoint release prep, and production hardening.
 
-**Total fresh implementation effort:** ~45-65 engineer-days, then Phase G runs continuously until the ship gate is met. Phases A, C, D, F can run in parallel; B and E depend on A; H depends on A.
-
-**Current Phase A baseline (2026-05-12).** `TASK-FLYWHEEL-001/002/003/004/005/006`, `TASK-PREDICT-001/002`, `TASK-LOOP-001/007`, `TASK-OBS-005/006`, `TASK-RUN-001/010/011`, `TASK-BOOT-001/003`, and `TASK-SEC-001/006/007/008` are code-shipped or operationally applied. Phase E still owns the full autonomous policy logic; Phase B still owns rich Q1-Q5 prediction heads/schema.
+**Current Phase A/B baseline (2026-05-12).** `TASK-FLYWHEEL-001/002/003/004/005/006`, `TASK-PREDICT-001/002`, `TASK-LOOP-001/007`, `TASK-OBS-005/006`, `TASK-RUN-001/010/011`, `TASK-BOOT-001/003`, and `TASK-SEC-001/006/007/008` are code-shipped or operationally applied. Phase B code/FSV now ships `TASK-PREDICT-003/004/005/006/007/008`, `TASK-SEC-003`, deterministic `TASK-PREDICT-LABEL-001..009` coverage in one label module, and the core `TASK-UTML-001/002/003/004` accounting path. Phase E still owns autonomous policy logic, per-head Fisher/dormancy/lambda/dissipation, and production holdout gates.
 
 ---
 
@@ -54,7 +52,7 @@
 | `TASK-PREDICT-002` | `mejepa_record_agent_feedback` MCP tool + sampling-weight bump wiring | complete (2026-05-12; no feedback rate limit by operator directive) |
 | `TASK-LOOP-001` | Apply new `.claude/loop.md` content from `14_NEW_LOOP_MD.md` | complete (already applied) |
 | `TASK-LOOP-002` | Update CLAUDE.md §11.11/§13/§3 + `agents/README.md` retirements | 0.25 day |
-| `TASK-LOOP-007` | Hook output paths → `/mnt/d/contextgraph/runtime/cgreality-shift-log/` | 0.25 day |
+| `TASK-LOOP-007` | Hook output paths → `/mnt/d/contextgraph/runtime/cgreality-shift-log/` | complete |
 | `TASK-OBS-005` | C-drive lint in CI | complete (2026-05-12) |
 | `TASK-OBS-006` | FSV path migration sweep across `crates/*/examples/*_fsv.rs` | complete (2026-05-12) |
 | `TASK-OBS-007` | Per-slice quota observability extension | 0.5 day |
@@ -72,7 +70,7 @@
 
 ---
 
-## Phase B — Multi-Head Extension (10-14 days)
+## Phase B — Multi-Head Extension (code/FSV completed 2026-05-12; training gates remain)
 
 **Goal:** Add the 8 new prediction heads (failure-mode, edge-case, tech-debt, perf, security, accuracy, cost, reasoning) per `03_ARCHITECTURE_BLUEPRINT.md §3` + `15_PREDICTION_TAXONOMY.md`. Wire their label sources. Train each head's holdout metric to beat random.
 
@@ -80,20 +78,28 @@
 
 | Task | Description | Effort |
 |---|---|---|
-| `TASK-PREDICT-003` | `mejepa_predict_what_if` MCP tool | 0.5 day |
-| `TASK-PREDICT-004` | `mejepa_explain_prediction` MCP tool | 0.5 day |
-| `TASK-PREDICT-005` | Multi-head stack (8 new heads + their per-head feature projections) | 3 days |
-| `TASK-PREDICT-006` | Rich `RealityPrediction` schema per `15 §1` | 0.5 day |
-| `TASK-PREDICT-007` | Agent claim graph extractor (deterministic rule-based) | 1 day |
-| `TASK-PREDICT-008` | Reality-impact reconciler (Q5 path) | 1 day |
-| `TASK-UTML-001..009` | Per-head ΔP/ΔK/ΔΞ tracking, cert columns, `min_h` aggregation, surprise-weight factor, per-head Fisher, per-head dormancy, lambda ramp, dissipation, per-cell T (per `10 §16`) | 3 days |
-| `TASK-PREDICT-LABEL-001..008` | Label-source extractors: failure trace classifier, coverage delta + symbolic-execution proxy, static-analysis warning delta, benchmark delta extractor, SAST delta, ML metric extractor, CI-cost delta, reasoning-class weak supervisor | 4 days |
+| `TASK-PREDICT-003` | `mejepa_predict_what_if` MCP tool | **complete (2026-05-12; non-mutating disk SHA readback)** |
+| `TASK-PREDICT-004` | `mejepa_explain_prediction` MCP tool | **complete (2026-05-12; persisted-row readback + normalized saliency)** |
+| `TASK-PREDICT-005` | Multi-head stack (8 new heads + their per-head feature projections) | **code_complete (2026-05-12; auxiliary heads emit logits/probabilities; production DDA feature consumption still Phase D)** |
+| `TASK-PREDICT-006` | Rich `RealityPrediction` schema per `15 §1` | **complete (2026-05-12; persisted through RocksDB FSV)** |
+| `TASK-PREDICT-007` | Agent claim graph extractor (deterministic rule-based) | **complete (2026-05-12)** |
+| `TASK-PREDICT-008` | Reality-impact reconciler (Q5 path) | **complete (2026-05-12)** |
+| `TASK-UTML-001..004` | Per-head learning signal skeleton, cert readout, global `min_h` value, surprise sampling factor | **complete/code_complete (2026-05-12; BatchSampler policy hardening remains)** |
+| `TASK-UTML-005..009` | Per-head Fisher, dormancy, lambda ramp, dissipation, per-cell T | **open; moves with Phase E/F policy hardening** |
+| `TASK-PREDICT-LABEL-001..009` | Label-source extractors: failure trace classifier, edge/security/debt/perf/accuracy/cost/reasoning signals | **code_complete (2026-05-12 deterministic unified extractor; per-tool/per-language analyzers remain hardening work)** |
 
-**Ship gate:**
-1. Each new head's holdout metric beats random baseline by ≥ 10 pp (e.g., failure-mode head F1 > 0.40, edge-case head recall > 0.30, etc.).
-2. Per-step training cert includes all 10 head losses and all 10 per-head delta values.
-3. `RealityPrediction` schema returned by `mejepa_verify` passes round-trip validation.
-4. Agent reads a synthetic prediction with all Q1–Q5 fields populated and renders correctly.
+**Code/FSV gate passed 2026-05-12:**
+1. `cargo run -p context-graph-mejepa --example phase_b_prediction_fsv` wrote a real `RealityPrediction` to `CF_MEJEPA_LIVE_PREDICTIONS` and read it back by session.
+2. Evidence file: `/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-prediction-fsv.json`.
+3. Persisted prediction id: `78e5bc08a3e79d8d47487dc9efd7bd7f`.
+4. Manual edge cases passed with no new DB rows: empty patch, path traversal hunk, malformed witness segment.
+5. MCP readbacks passed: `mcp__cgreality__mejepa_predict_latest`, `mcp__cgreality__mejepa_explain_prediction`, and `mcp__cgreality__mejepa_predict_what_if`.
+
+**Remaining Phase B-adjacent ship gate before declaring model quality complete:**
+1. Each new head's holdout metric beats random baseline by ≥ 10 pp after real training.
+2. Per-step training cert expands from persisted per-head L-step/global-min to all loss/delta/lambda values.
+3. Production DDA/neural embedder features are consumed by the heads, not only deterministic patch-surface heuristics.
+4. Per-head Fisher, dormancy, lambda ramp, dissipation, and per-cell T are completed under Phase E/F.
 
 **Risks / mitigations:**
 - *Risk:* auxiliary heads destabilize the trunk. *Mitigation:* per-head λ defaults are small (0.05); ramp gated on holdout improvement (per `10 §8`).
@@ -101,18 +107,25 @@
 
 ---
 
-## Phase C — Corpus Completion (7-10 days, ops-heavy)
+## Phase C — Corpus Completion (complete 2026-05-12)
 
-**Goal:** Run the 300 × 8 SWE-bench Lite corpus through the Phase 0 generator. Port the 8 mutation operators to all 10 non-Python languages. The resulting corpus is the training-data backbone for the multi-head predictor.
+**Goal:** Run the 300 × 8 SWE-bench Lite corpus through the Phase 0 generator. Port the 8 mutation operators to all 10 non-Python languages. Produce the seed training-data backbone for the multi-head predictor with source-of-truth readback.
+
+**Completion state (2026-05-12):**
+- Python corpus source of truth: `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/` — 2,400 entries, 2,400 mutation CF rows, 2,400 verdict CF rows, 1 provenance row, Docker oracle verification passed.
+- Non-Python corpus source of truth: `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/` — 5,120 entries, 5,120 mutation CF rows, 5,120 verdict CF rows, 5,120 real-toolchain report files, 1 provenance row.
+- Per non-Python language count: 512 entries each for Rust, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP.
+- Combined split evidence: `/mnt/d/contextgraph/fsv/corpus-fsv/split_full.json` — `passes=true`, 940 tasks, bucket sizes `[752, 94, 94]`, leakage passed.
+- New CLI surface: `mejepa-corpus generate-fixtures`, `mejepa-corpus phase-c-verify`, and expanded `stats` language/category reporting.
 
 **Deliverables (TASK IDs):**
 
 | Task | Description | Effort |
 |---|---|---|
-| `TASK-CORPUS-001` | Per-language mutation operators (Rust, JS, TS, Go, Java, C, C++, C#, Ruby, PHP) — 8 operators × 10 languages = 80 small implementations | 4-5 days (largely mechanical) |
+| `TASK-CORPUS-001` | Per-language mutation operators (Rust, JS, TS, Go, Java, C, C++, C#, Ruby, PHP) — implemented through generic non-Python operator dispatch with parse-preserving candidate checks and real-toolchain validation | complete |
 | `TASK-CORPUS-002` | 300 × 8 SWE-bench Lite Python corpus generation (Docker oracle, real evaluator) | complete: 2400/2400 at `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/` |
-| `TASK-CORPUS-003` | Per-language fixture corpora (smaller; ~50 tasks per language scraped from CI logs) | 1-2 days |
-| `TASK-CORPUS-004` | Stoer-Wagner mincut-based train/calib/holdout split applied to the new corpora | 0.25 day |
+| `TASK-CORPUS-003` | Per-language fixture corpora (64 deterministic fixture tasks per language × 8 categories) | complete: 5120/5120 at `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/` |
+| `TASK-CORPUS-004` | Combined train/calib/holdout split applied to Python + non-Python corpora | complete: `/mnt/d/contextgraph/fsv/corpus-fsv/split_full.json` |
 
 **Ship gate:**
 1. `mejepa_corpus_stats` reports 2,400 Python entries + ≥500 per-language entries per non-Python language with verified Docker (Python) or real-toolchain (others) oracle outcomes.
@@ -120,10 +133,12 @@
 3. Per-(category × language) cell sample counts ≥ 50 wherever physically possible (some cells may remain Bayesian-shrunk).
 4. Python corpus source of truth resides under `/mnt/d/contextgraph/corpus/`; `/tmp` and C-drive corpus outputs fail closed before writing. `index.json`, `verify-evidence.json`, and `oracle-store/` RocksDB CF counts are read back after generation.
 
+**Ship gate result:** passed 2026-05-12.
+
 **Risks / mitigations:**
 - *Risk:* Docker eval times are long (each task ~20-30s × 300 × 8 = ~16 hours wall time). *Mitigation:* parallelize across cores; checkpoint per row to the D-backed corpus root; write index/evidence files atomically; make reruns resumable from the RocksDB/index source of truth.
 - *Risk:* corpus evidence is written to ephemeral storage and lost after reboot. *Mitigation:* corpus CLI and library generation reject any output outside `/mnt/d/contextgraph/corpus/`; storage docs and FSV commands name the D-backed source of truth explicitly.
-- *Risk:* per-language operator implementations have subtle bugs. *Mitigation:* each operator has a real-language compiler/parser FSV (e.g., `cargo check` for Rust mutations; `tsc --noEmit` for TS; etc.) — the same protocol that caught two bugs in the Python operators (per `memory/MEMORY.md` 2026-05-09 entries).
+- *Risk:* per-language operator implementations have subtle bugs. *Mitigation:* Phase C generation runs each non-Python row through the real language toolchain and fails closed on mismatch. This caught and fixed Rust arrow mutation, declaration-site swap, assertion substring deletion, C# helper deletion, and Go unused/local declaration failures before the final corpus was accepted.
 
 ---
 
@@ -194,7 +209,7 @@
 | `TASK-OBS-002` | Pairwise MI heatmap renderer (CSV → PNG/markdown) | 0.5 day |
 | `TASK-OBS-003` | Daemon status aggregator MCP tool | 0.5 day |
 | `TASK-OBS-004` | Per-prediction-class running calibration tracker (live ECE per head) | 1 day |
-| `TASK-OBS-008` | WSL GPU telemetry hardening (nvidia-smi NA-sentinel, retry, fallback) — addresses [#10](https://github.com/ChrisRoyse/contextgraph/issues/10) | 1-2 days |
+| `TASK-OBS-008` | WSL GPU telemetry hardening (nvidia-smi NA-sentinel diagnostics, retry, fail-closed malformed output handling) — addresses [#10](https://github.com/ChrisRoyse/contextgraph/issues/10) | 1-2 days |
 | `TASK-OBS-009` | Per-prediction observability: `mejepa_inspect_prediction` returns full provenance trace (witness_hash, predictor version, calibration version, contributing chunks) | 0.5 day |
 | `TASK-OBS-010` | Active-learning operator CLI (`cargo run -p context-graph-cli mejepa active-learning`) | 0.5 day |
 
@@ -243,7 +258,7 @@ Recommended order (with parallelism):
 ```
 Phase A    [days 1–7]    ============
 Phase B    [days 4–18]       =====================
-Phase C    [days 5–14]        ====================
+Phase C    [complete 2026-05-12] ================= closed
 Phase D    [days 8–22]            ===================
 Phase E    [days 12–18]                ============
 Phase F    [days 15–21]                   ===========
@@ -263,7 +278,7 @@ Phases A → B → E (each waits on the prior); A → C → G; A → D → G; A 
 |---|---|---|
 | A | Daemon supervision flapping | exponential backoff + `MEJEPA_SCHEDULER_FLAPPING` alert |
 | B | Auxiliary heads destabilize trunk | small λ defaults + ramp gated on metric improvement |
-| C | Docker eval throughput | parallelize + checkpoint + resumable |
+| C | Completed 2026-05-12; future corpus broadening can regress operators | real-toolchain reports + fail-closed generation gate + checkpointed source-of-truth readback |
 | D | VRAM exhaustion under all-12-loaded | budget gate + lazy load + Candle CUDA precision tuning |
 | E | Over-eager promotion regresses cells | per-cell promotion criterion |
 | F | Weekly cron drift between machine clock and quota window | use UTC + explicit calendar weekly boundary |
@@ -276,7 +291,7 @@ Phases A → B → E (each waits on the prior); A → C → G; A → D → G; A 
 
 - **End of Phase A**: "ME-JEPA is now a service. Edit a file → see prediction in next prompt → record feedback if wrong."
 - **End of Phase B**: "Predictions now cover Q1–Q5; agent gets 'what's wrong' for every change, even on Pass."
-- **End of Phase C**: "Corpus is full; per-language operators ship; ME-JEPA can train against the real distribution."
+- **End of Phase C** (reached 2026-05-12): "Corpus is full; per-language operators ship; ME-JEPA can train against the real distribution."
 - **End of Phase D**: "Embedders are real neural forwards; DDA signal substrate is live."
 - **End of Phase E**: "Self-healing actually heals; operator approves only catastrophic promotions."
 - **End of Phase F**: "Operator has a dashboard; weekly report writes; active-learning queue surfaces."

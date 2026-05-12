@@ -23,8 +23,8 @@ Calling `mejepa_verify(patch, context)` in this state must NOT return a dangerou
 ### 2.1 Mode A — fresh deploy (no prior state)
 
 State:
-- Predictor weights: seeded from a "baseline" checkpoint shipped under `models/mejepa-baseline-vN.safetensors` (small model, trained on synthetic + Phase 0 corpus during release prep).
-- Constellation: bootstrapped from the seeded corpus (8 categories × 11 languages × 13 entity types, with Bayesian-shrunk centroids per `04 §4`).
+- Predictor weights: seeded from a "baseline" checkpoint shipped under `models/mejepa-baseline-vN.safetensors` (small model, trained on the completed Phase C seed corpus during release prep).
+- Constellation: bootstrapped from the completed Phase C seed corpus (2,400 Python SWE-bench rows + 5,120 non-Python fixture rows, with Bayesian-shrunk centroids per `04 §4`).
 - Conformal predictor: bootstrapped on the same seed corpus's holdout split.
 - Patch-similarity graph: bootstrapped from seed corpus.
 
@@ -53,11 +53,13 @@ Behavior:
 
 ## 3. The seeded baseline checkpoint
 
+**Status as of 2026-05-12:** the Phase C corpus prerequisite exists and is verified, but the release baseline checkpoint pipeline (`TASK-BOOT-002`) is still open. This section defines the release-prep artifact to build; it does not claim that `models/mejepa-baseline-vN.safetensors` already exists.
+
 `models/mejepa-baseline-vN.safetensors` ships with the release. Built during release prep:
 
 ```
-1. Generate the 300×8 SWE-bench Lite corpus per Phase 0
-2. Train the predictor for 10 epochs on the full corpus
+1. Read the completed Phase C corpus from the D-backed source of truth
+2. Train the predictor for 10 epochs on the full seed corpus
 3. Run holdout eval; assert correlation ≥ 0.65 (the baseline floor)
 4. Compress to bf16 + safetensors
 5. Pin SHA-256 digest in the release notes
