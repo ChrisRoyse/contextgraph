@@ -13,7 +13,7 @@
 | **A. Operational unblock** | Daemon mode + prediction injection + agent-feedback channel + D-drive enforcement | code closure 2026-05-12; operator burn-in remains | none | Daemon runs; first prediction injected; first SurpriseEvent recorded; cargo lint passes |
 | **B. Multi-head extension** | Q1-Q5 `RealityPrediction` schema, what-if/explain APIs, auxiliary heads, deterministic label extractors, per-head UTML accounting | code + FSV complete 2026-05-12; training/eval hardening remains | Phase A | Code/FSV gate passed; production holdout metrics and remaining per-head self-healing tasks still open |
 | **C. Corpus expansion** | Completed Python 300×8 corpus + 10-language fixture corpus + combined split | complete 2026-05-12 | Phase A | 2,400 Python entries verified; 5,120 non-Python entries verified; combined corpus FSV passes |
-| **D. Neural embedder forwards** | Ship real forward/DDA enrichment substrate and remove placeholder-only Phase D paths | code/FSV partial 2026-05-12; trained DDA consumption remains | Phase A | Forward wrappers, full pretrained/routing FSV, DDA compute/store, live shift DDA rows, cache, and stdlib registry FSV pass; trained DDA feature consumption still open |
+| **D. Neural embedder forwards** | Ship real forward/DDA enrichment substrate and remove placeholder-only Phase D paths | code/FSV substrate shipped 2026-05-12; production consumption/telemetry remains | Phase A | Forward wrappers, full pretrained/routing FSV, DDA compute/store, live shift DDA rows, cache, and stdlib registry FSV pass; trained DDA feature consumption and cache/daemon telemetry still open |
 | **E. Continuous self-optimization** | Scheduler tokio task + per-cell stratified drift + dissipation detection + lambda ramp | 5-7 days | Phase A + Phase B | Scheduler runs; drift detected within 1k obs; A/B/C promotion executes autonomously |
 | **F. Production observability** | Live conformal/OOD/p50/p99 capture + weekly eval + active-learning dashboard + WSL GPU telemetry hardening | 5-7 days | Phase A | Weekly report writes; conformal coverage measured; active-learning queue cleared by operator weekly |
 | **G. Rolling-window holdout to ≥0.95** | Run live evaluations until ship gate stably met across (category × language) | ongoing | Phase B + C + D + E + F | 4 consecutive rolling windows ≥ 0.95 |
@@ -142,9 +142,9 @@
 
 ---
 
-## Phase D — Neural Embedder Forwards (code/FSV partial 2026-05-12)
+## Phase D — Neural Embedder Forwards and DDA Substrate (code/FSV shipped; production telemetry partial 2026-05-12)
 
-**Goal:** Replace deterministic placeholder encoders with real forward outputs in the embedder routing layer and persist DDA enrichment signals. This is the [#3](https://github.com/ChrisRoyse/contextgraph/issues/3) gap.
+**Goal:** Replace deterministic placeholder encoders with real forward outputs in the embedder routing layer and persist DDA enrichment signals. The forward/routing gap tracked in [#3](https://github.com/ChrisRoyse/contextgraph/issues/3) is closed; remaining production hardening is tracked under [#16](https://github.com/ChrisRoyse/contextgraph/issues/16) and [#17](https://github.com/ChrisRoyse/contextgraph/issues/17).
 
 **Code/FSV shipped 2026-05-12:**
 - `EmbedderForward` now covers the 12 active content slots in the live registry: pretrained E1/E6/E7/E8/E10/E12/E13/E14 through `PretrainedEmbedderForward`, plus algorithmic E2/E3/E4/E9 through `AlgorithmicEmbedderForward`. E17 remains learner-state/affect, not a content embedder in the live code.
