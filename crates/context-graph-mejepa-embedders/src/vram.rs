@@ -2,6 +2,7 @@ use crate::error::{EmbedError, EmbedResult};
 use crate::types::VramBudgetReport;
 use context_graph_cuda::safe::GpuDevice;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::process::Command;
 
 pub const GB: u64 = 1024 * 1024 * 1024;
@@ -52,6 +53,8 @@ pub fn query_vram_budget(budget: VramBudget) -> EmbedResult<VramBudgetReport> {
         message: format!("{err}"),
         remediation: "fix CUDA device-name access before loading embedders",
     })?;
+    let nvidia_smi_total = nvidia_smi_total_mb(budget.device_ordinal);
+    let nvidia_smi_status = nvidia_smi_status(&nvidia_smi_total);
     let report = VramBudgetReport {
         required_bytes: budget.required_bytes,
         free_bytes: free as u64,
@@ -59,8 +62,8 @@ pub fn query_vram_budget(budget: VramBudget) -> EmbedResult<VramBudgetReport> {
         gpu_name,
         compute_capability: format!("{major}.{minor}"),
         telemetry_source: "cuda_driver_cuMemGetInfo_v2".to_string(),
-        nvidia_smi_status: nvidia_smi_status(budget.device_ordinal),
-        nvidia_smi_total_mb: nvidia_smi_total_mb(budget.device_ordinal).ok(),
+        nvidia_smi_status,
+        nvidia_smi_total_mb: nvidia_smi_total.ok(),
         passes: (free as u64) >= budget.required_bytes,
     };
     if !report.passes {
@@ -74,16 +77,24 @@ pub fn query_vram_budget(budget: VramBudget) -> EmbedResult<VramBudgetReport> {
     Ok(report)
 }
 
-fn nvidia_smi_status(device_ordinal: i32) -> String {
-    match nvidia_smi_total_mb(device_ordinal) {
+pub fn nvidia_smi_status(result: &Result<u64, String>) -> String {
+    match result {
         Ok(total) => format!("diagnostic_available_total_mb={total}"),
         Err(message) => format!("diagnostic_unavailable_not_authoritative: {message}"),
     }
 }
 
-fn nvidia_smi_total_mb(device_ordinal: i32) -> Result<u64, String> {
+pub fn nvidia_smi_total_mb(device_ordinal: i32) -> Result<u64, String> {
+    nvidia_smi_total_mb_from_command("nvidia-smi", device_ordinal)
+}
+
+pub fn nvidia_smi_total_mb_from_command(
+    command: impl AsRef<Path>,
+    device_ordinal: i32,
+) -> Result<u64, String> {
+    let command = command.as_ref();
     let ordinal = device_ordinal.to_string();
-    let output = Command::new("nvidia-smi")
+    let output = Command::new(command)
         .args([
             "--query-gpu=memory.total",
             "--format=csv,noheader,nounits",
@@ -91,22 +102,37 @@ fn nvidia_smi_total_mb(device_ordinal: i32) -> Result<u64, String> {
             &ordinal,
         ])
         .output()
-        .map_err(|err| format!("failed to execute nvidia-smi: {err}"))?;
+        .map_err(|err| format!("failed to execute {}: {err}", command.display()))?;
     if !output.status.success() {
         return Err(format!(
-            "nvidia-smi exited with status {:?}: {}",
+            "{} exited with status {:?}: {}",
+            command.display(),
             output.status.code(),
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
     let stdout = String::from_utf8(output.stdout)
         .map_err(|err| format!("nvidia-smi stdout was not UTF-8: {err}"))?;
+    parse_nvidia_smi_memory_total_mb(&stdout)
+}
+
+pub fn parse_nvidia_smi_memory_total_mb(stdout: &str) -> Result<u64, String> {
     let first = stdout
         .lines()
         .next()
         .ok_or_else(|| "nvidia-smi returned no rows".to_string())?
         .trim();
-    if first.is_empty() || first.eq_ignore_ascii_case("[not supported]") {
+    let normalized = first
+        .trim_matches(['[', ']'])
+        .trim()
+        .to_ascii_lowercase()
+        .replace('-', " ");
+    if first.is_empty()
+        || normalized == "not supported"
+        || normalized == "unsupported"
+        || normalized == "n/a"
+        || normalized == "na"
+    {
         return Err(format!(
             "nvidia-smi returned unsupported memory.total row {first:?}"
         ));
@@ -114,4 +140,39 @@ fn nvidia_smi_total_mb(device_ordinal: i32) -> Result<u64, String> {
     first
         .parse::<u64>()
         .map_err(|err| format!("failed to parse nvidia-smi memory.total row {first:?}: {err}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_nvidia_smi_memory_total() {
+        assert_eq!(parse_nvidia_smi_memory_total_mb("32607\n").unwrap(), 32607);
+    }
+
+    #[test]
+    fn rejects_wsl_unsupported_sentinels() {
+        for row in [
+            "N/A\n",
+            "[Not Supported]\n",
+            "Not-Supported\n",
+            "unsupported\n",
+        ] {
+            let err = parse_nvidia_smi_memory_total_mb(row).unwrap_err();
+            assert!(err.contains("unsupported memory.total row"));
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_nvidia_smi_memory_total() {
+        let err = parse_nvidia_smi_memory_total_mb("32607 MiB\n").unwrap_err();
+        assert!(err.contains("failed to parse nvidia-smi memory.total row"));
+    }
+
+    #[test]
+    fn diagnostic_status_marks_nvidia_smi_non_authoritative() {
+        let status = nvidia_smi_status(&Err("failed to execute nvidia-smi".to_string()));
+        assert!(status.starts_with("diagnostic_unavailable_not_authoritative"));
+    }
 }

@@ -61,3 +61,7 @@ path = "examples/train_edge_cases_fsv.rs"
 [[example]]
 name = "utml_l_step_fsv"
 path = "examples/utml_l_step_fsv.rs"
+
+[[example]]
+name = "swebench_300x8_ship_gate_fsv"
+path = "examples/swebench_300x8_ship_gate_fsv.rs"

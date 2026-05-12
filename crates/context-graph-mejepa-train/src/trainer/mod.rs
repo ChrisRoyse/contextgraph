@@ -49,7 +49,7 @@ pub struct TrainingDataset {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct TrainingResult {
-    pub final_holdout_agreement: f32,
+    pub final_holdout_agreement: Option<f32>,
     pub total_walltime_seconds: u64,
     pub total_steps: u64,
     pub total_certs: u64,
@@ -234,7 +234,6 @@ impl Trainer {
             self.step += 1;
         }
         let count = (self.step - start_step).max(1) as f32;
-        let holdout_agreement = 1.0;
         let summary = EpochSummary {
             epoch,
             mean_l_step: l_sum / count,
@@ -242,7 +241,7 @@ impl Trainer {
             mean_delta_k: k_sum / count,
             mean_delta_omega: o_sum / count,
             mean_delta_xi: x_sum / count,
-            holdout_agreement,
+            holdout_agreement: self.best_holdout_agreement,
             best_category: MutationCategory::KnownGood,
             worst_category: MutationCategory::CompileError,
             best_language: Lang::Python,
@@ -257,7 +256,7 @@ impl Trainer {
             epoch,
             summary,
             witness_entry,
-            phase3_dod_passed_at_this_epoch: Some(true),
+            phase3_dod_passed_at_this_epoch: None,
         })
     }
 
@@ -266,18 +265,15 @@ impl Trainer {
         _holdout: &HoldoutDataset,
         is_final_step: bool,
     ) -> Result<HoldoutReport, TrainerError> {
-        Ok(HoldoutReport {
-            step: self.step,
-            prediction_oracle_agreement: 1.0,
-            conformal_coverage_calibration: 1.0,
-            per_mutation_category_accuracy: HashMap::from([(MutationCategory::KnownGood, 1.0)]),
-            per_language_accuracy: HashMap::from([(Lang::Python, 1.0)]),
-            predictor_redundancy_pairwise_mi: 0.0,
-            gtau_pass_rate: 1.0,
-            generic_only_warning: None,
-            phase3_dod_passed: if is_final_step { Some(true) } else { None },
-            timestamp_iso8601: chrono::Utc::now().to_rfc3339(),
-        })
+        Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            "Trainer::evaluate_holdout has no predictor/oracle inputs; call HoldoutEvaluator::evaluate and persist the resulting report",
+        )
+        .with_context(serde_json::json!({
+            "step": self.step,
+            "is_final_step": is_final_step,
+            "remediation": "wire an explicit PredictorForward and OracleHead so holdout metrics are computed from data instead of fabricated by the trainer"
+        })))
     }
 
     pub fn run_full_training(
@@ -286,18 +282,10 @@ impl Trainer {
     ) -> Result<TrainingResult, TrainerError> {
         let start = Instant::now();
         for epoch in 0..self.config.epochs {
-            let report = self.train_one_epoch(dataset, epoch)?;
-            if epoch == self.config.epochs - 1
-                && report.summary.holdout_agreement < self.config.phase3_dod_min_agreement
-            {
-                return Err(TrainerError::new(
-                    TrainerErrorCode::MejepaTrainDodFailed,
-                    "Phase 3 DoD holdout agreement threshold was not met",
-                ));
-            }
+            self.train_one_epoch(dataset, epoch)?;
         }
         Ok(TrainingResult {
-            final_holdout_agreement: 1.0,
+            final_holdout_agreement: None,
             total_walltime_seconds: start.elapsed().as_secs(),
             total_steps: self.step,
             total_certs: self.step,

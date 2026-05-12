@@ -1,15 +1,13 @@
 use crate::cert::{open_train_rocksdb, verify_chain, CF_MEJEPA_TRAIN_CERTS};
 use crate::config::TrainingConfig;
 use crate::error::{TrainerError, TrainerErrorCode};
-use crate::eval::holdout::{
-    split_holdout_via_mincut, HoldoutExample, OracleClass, OracleHead, OraclePrediction,
-    PredictorForward,
-};
+use crate::eval::holdout::{HoldoutExample, TrainSplit};
 use crate::eval::{Lang, MutationCategory};
 use crate::trainer::{Trainer, TrainingDataset};
 use candle_core::{Device, Tensor};
 use clap::Args;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -145,13 +143,7 @@ fn run_train_inner(args: TrainArgs) -> Result<serde_json::Value, TrainerError> {
     apply_overrides(&mut config, &args);
     config.random_seed = args.random_seed;
     config.validate()?;
-    let examples = load_corpus_index_examples(&args.corpus)?;
-    let (train, calibration, holdout) = split_holdout_via_mincut(examples)?;
-    let dataset = TrainingDataset {
-        train,
-        calibration,
-        holdout,
-    };
+    let dataset = load_corpus_index_dataset(&args.corpus)?;
     let db = open_train_rocksdb(&args.output)?;
     let mut trainer = Trainer::new(config, db, Device::Cpu)?;
     let result = trainer.run_full_training(&dataset)?;
@@ -215,9 +207,9 @@ fn apply_overrides(config: &mut TrainingConfig, args: &TrainArgs) {
     }
 }
 
-fn load_corpus_index_examples(corpus: &Path) -> Result<Vec<HoldoutExample>, TrainerError> {
+pub fn load_corpus_index_dataset(corpus: &Path) -> Result<TrainingDataset, TrainerError> {
     let index = if corpus.is_dir() {
-        corpus.join("corpus-index.json")
+        corpus.join("index.json")
     } else {
         corpus.to_path_buf()
     };
@@ -226,6 +218,10 @@ fn load_corpus_index_examples(corpus: &Path) -> Result<Vec<HoldoutExample>, Trai
             TrainerErrorCode::MejepaTrainConfigInvalid,
             format!("failed to read corpus index {}: {err}", index.display()),
         )
+        .with_context(json!({
+            "index": index,
+            "remediation": "pass the verified corpus index.json path or a directory containing index.json"
+        }))
     })?;
     let root: serde_json::Value = serde_json::from_slice(&bytes)?;
     let entries = root
@@ -237,7 +233,9 @@ fn load_corpus_index_examples(corpus: &Path) -> Result<Vec<HoldoutExample>, Trai
                 "corpus-index.json missing entries array",
             )
         })?;
-    let mut out = Vec::with_capacity(entries.len());
+    let mut train = Vec::new();
+    let mut calibration = Vec::new();
+    let mut holdout = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
         let task_id = entry
             .get("task_id")
@@ -254,17 +252,154 @@ fn load_corpus_index_examples(corpus: &Path) -> Result<Vec<HoldoutExample>, Trai
             .get("oracle_all_passed")
             .and_then(|v| v.as_bool())
             .ok_or_else(|| corpus_field(i, "oracle_all_passed"))?;
-        let panel = Tensor::from_slice(&[i as f32, actual as u8 as f32], 2, &Device::Cpu)?;
-        out.push(HoldoutExample {
+        let bucket = parse_bucket(
+            i,
+            entry
+                .get("bucket")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| corpus_field(i, "bucket"))?,
+        )?;
+        let panel = corpus_feature_panel(&task_id, cat)?;
+        let example = HoldoutExample {
             task_id,
             category: cat,
             language: Lang::Python,
             panel_t01: panel.clone(),
             panel_t2: panel,
             actual_oracle_pass: actual,
-        });
+        };
+        match bucket {
+            CorpusBucket::Train => train.push(example),
+            CorpusBucket::Calibration => calibration.push(example),
+            CorpusBucket::Holdout => holdout.push(example),
+        }
     }
-    Ok(out)
+    validate_dataset_splits(
+        entries.len(),
+        train.len(),
+        calibration.len(),
+        holdout.len(),
+        &index,
+    )?;
+    Ok(TrainingDataset {
+        train: TrainSplit { examples: train },
+        calibration: crate::eval::holdout::CalibrationDataset {
+            examples: calibration,
+        },
+        holdout: crate::eval::holdout::HoldoutDataset { examples: holdout },
+    })
+}
+
+pub fn corpus_feature_panel(
+    task_id: &str,
+    category: MutationCategory,
+) -> Result<Tensor, TrainerError> {
+    if task_id.trim().is_empty() {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            "corpus task_id must not be empty",
+        ));
+    }
+    let digest = Sha256::digest(task_id.as_bytes());
+    let task_hash =
+        u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]) as f32 / u32::MAX as f32;
+    let category_code = category_feature_code(category);
+    Ok(Tensor::from_slice(
+        &[task_hash, category_code],
+        2,
+        &Device::Cpu,
+    )?)
+}
+
+fn validate_dataset_splits(
+    total_entries: usize,
+    train: usize,
+    calibration: usize,
+    holdout: usize,
+    index: &Path,
+) -> Result<(), TrainerError> {
+    let observed_total = train + calibration + holdout;
+    if observed_total != total_entries {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            format!(
+                "corpus split count mismatch for {}: observed {observed_total}, entries {total_entries}",
+                index.display()
+            ),
+        )
+        .with_context(json!({
+            "index": index,
+            "entries": total_entries,
+            "train": train,
+            "calibration": calibration,
+            "holdout": holdout
+        })));
+    }
+    let missing = [
+        ("train", train),
+        ("calibration", calibration),
+        ("holdout", holdout),
+    ]
+    .into_iter()
+    .filter_map(|(name, count)| if count == 0 { Some(name) } else { None })
+    .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            format!(
+                "corpus index {} has empty required split(s): {}",
+                index.display(),
+                missing.join(", ")
+            ),
+        )
+        .with_context(json!({
+            "index": index,
+            "entries": total_entries,
+            "train": train,
+            "calibration": calibration,
+            "holdout": holdout,
+            "missing_splits": missing
+        })));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CorpusBucket {
+    Train,
+    Calibration,
+    Holdout,
+}
+
+fn parse_bucket(row: usize, value: &str) -> Result<CorpusBucket, TrainerError> {
+    match value {
+        "train" => Ok(CorpusBucket::Train),
+        "calibration" => Ok(CorpusBucket::Calibration),
+        "holdout" => Ok(CorpusBucket::Holdout),
+        other => Err(TrainerError::new(
+            TrainerErrorCode::MejepaTrainConfigInvalid,
+            format!("corpus entry {row} has unknown bucket {other}"),
+        )
+        .with_context(json!({
+            "row": row,
+            "bucket": other,
+            "allowed": ["train", "calibration", "holdout"]
+        }))),
+    }
+}
+
+fn category_feature_code(category: MutationCategory) -> f32 {
+    let idx = match category {
+        MutationCategory::KnownGood => 0,
+        MutationCategory::SubtleFlip => 1,
+        MutationCategory::OffByOne => 2,
+        MutationCategory::SwapVariable => 3,
+        MutationCategory::DeleteTestCall => 4,
+        MutationCategory::WrongFile => 5,
+        MutationCategory::OverEngineer => 6,
+        MutationCategory::CompileError => 7,
+    };
+    idx as f32 / (MutationCategory::ALL.len() - 1) as f32
 }
 
 fn parse_category(value: &str) -> Result<MutationCategory, TrainerError> {
@@ -298,30 +433,5 @@ fn exit_for_error(err: TrainerError) -> ExitCode {
         TrainerErrorCode::MejepaTrainConfigInvalid
         | TrainerErrorCode::MejepaTrainEmbedderDigestMismatch => ExitCode::from(3),
         _ => ExitCode::from(2),
-    }
-}
-
-#[allow(dead_code)]
-struct EchoPredictor;
-impl PredictorForward for EchoPredictor {
-    fn forward(&self, panel_t01: &Tensor) -> Result<Tensor, TrainerError> {
-        Ok(panel_t01.clone())
-    }
-}
-
-#[allow(dead_code)]
-struct EchoOracle;
-impl OracleHead for EchoOracle {
-    fn predict(&self, predicted_latent: &Tensor) -> Result<OraclePrediction, TrainerError> {
-        let vals = predicted_latent
-            .to_dtype(candle_core::DType::F32)?
-            .flatten_all()?
-            .to_vec1::<f32>()?;
-        let pass = vals.get(1).copied().unwrap_or(0.0) >= 0.5;
-        Ok(OraclePrediction {
-            pass_to_pass_resolved: pass,
-            conformal_set: vec![OracleClass::Pass, OracleClass::Fail],
-            class_logits: if pass { vec![0.0, 4.0] } else { vec![4.0, 0.0] },
-        })
     }
 }

@@ -51,4 +51,7 @@ pub use routing::{route_for_entity_type, routing_coverage};
 pub use types::{
     EmbedderInput, EmbedderOutput, LoraAdapterRegistration, RoutingResult, VramBudgetReport,
 };
-pub use vram::{query_vram_budget, VramBudget};
+pub use vram::{
+    nvidia_smi_status, nvidia_smi_total_mb_from_command, parse_nvidia_smi_memory_total_mb,
+    query_vram_budget, VramBudget,
+};

@@ -2,9 +2,11 @@ use context_graph_mejepa_embedders::{
     EmbedderForward, EmbedderId, EmbedderInput, ModelsConfig, PretrainedEmbedderForward,
 };
 use context_graph_mejepa_instruments::e_embedder_heads::{
-    EmbedderBackedInstrumentHead, EmbedderHeadInput,
+    AnalyzerFeatureEvidence, EmbedderBackedInstrumentHead, EmbedderHeadInput,
 };
-use context_graph_mejepa_instruments::{Instrument, InstrumentSlot};
+use context_graph_mejepa_instruments::{
+    ETraceInstrument, Instrument, InstrumentSlot, TraceEvent, TraceEventKind, TraceInput,
+};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -46,11 +48,13 @@ async fn main() -> FsvResult<()> {
         "files_before": file_count(&root)?,
     });
     let head = EmbedderBackedInstrumentHead::new(InstrumentSlot::ETrace)?;
+    let analyzer_evidence =
+        trace_analyzer_evidence(embedder_output.source_id.clone(), "trace-head-fsv")?;
     let encoded = head.encode(&EmbedderHeadInput {
         slot: InstrumentSlot::ETrace,
         source_id: embedder_output.source_id.clone(),
         embedder_output: embedder_output.clone(),
-        analyzer_features: vec![0.42, 1.0, 0.0, 7.0],
+        analyzer_evidence: vec![analyzer_evidence],
     })?;
     let output_json = json!({
         "slot": "e_trace",
@@ -126,7 +130,10 @@ fn edge_source_mismatch(
             slot: InstrumentSlot::ETrace,
             source_id: "other-source".to_string(),
             embedder_output: output.clone(),
-            analyzer_features: vec![0.1],
+            analyzer_evidence: vec![trace_analyzer_evidence(
+                "other-source".to_string(),
+                "source-mismatch-edge",
+            )?],
         })
         .unwrap_err();
     let after = json!({"error_code": err.code(), "files_after": file_count(root)?});
@@ -158,7 +165,10 @@ fn edge_slot_mismatch(
             slot: InstrumentSlot::EReasoning,
             source_id: output.source_id.clone(),
             embedder_output: output.clone(),
-            analyzer_features: vec![0.1],
+            analyzer_evidence: vec![trace_analyzer_evidence(
+                output.source_id.clone(),
+                "slot-mismatch-edge",
+            )?],
         })
         .unwrap_err();
     let after = json!({"error_code": err.code(), "files_after": file_count(root)?});
@@ -190,7 +200,7 @@ fn edge_disallowed_embedder_for_slot(
             slot: InstrumentSlot::EAst,
             source_id: output.source_id.clone(),
             embedder_output: output.clone(),
-            analyzer_features: vec![0.1, 0.2],
+            analyzer_evidence: vec![],
         })
         .unwrap_err();
     let after = json!({"error_code": err.code(), "files_after": file_count(root)?});
@@ -209,6 +219,37 @@ fn edge_disallowed_embedder_for_slot(
         "after_state": after,
         "passes": true,
     }))
+}
+
+fn trace_analyzer_evidence(
+    source_id: String,
+    function_id: &str,
+) -> FsvResult<AnalyzerFeatureEvidence> {
+    let trace = TraceInput {
+        events: vec![
+            TraceEvent {
+                function_id: format!("{function_id}::enter_compile"),
+                line: 12,
+                value_hash: "sha256:trace-enter".into(),
+                timestamp_ms: 7,
+                kind: TraceEventKind::FunctionEnter,
+            },
+            TraceEvent {
+                function_id: format!("{function_id}::exit_compile"),
+                line: 18,
+                value_hash: "sha256:trace-exit".into(),
+                timestamp_ms: 42,
+                kind: TraceEventKind::FunctionExit,
+            },
+        ],
+    };
+    Ok(AnalyzerFeatureEvidence::from_instrument(
+        source_id,
+        "context-graph-mejepa-instruments::ETraceInstrument",
+        "trace-feature-v1",
+        &ETraceInstrument,
+        &trace,
+    )?)
 }
 
 fn reset_root(root: &Path) -> FsvResult<()> {
