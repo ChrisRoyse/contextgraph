@@ -17,7 +17,7 @@ type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/tmp/contextgraph-mejepa-instruments-embedder-heads-fsv");
+    let root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-embedder-heads-fsv");
     reset_root(&root)?;
     let output_path = root.join("trace-head-output.json");
     let evidence_path = root.join("embedder-heads-evidence.json");

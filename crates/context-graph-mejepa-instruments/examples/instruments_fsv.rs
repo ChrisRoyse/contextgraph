@@ -1,11 +1,11 @@
 // Manual Full State Verification for the Phase 1 instruments scaffolding.
 //
 // Sources of truth on disk:
-//   /tmp/contextgraph-mejepa-instruments-fsv/panel.json       — full 5,120-d panel
-//   /tmp/contextgraph-mejepa-instruments-fsv/oracle_*.json    — per-verdict input
-//   /tmp/contextgraph-mejepa-instruments-fsv/witness_chain.bin — canonical witness bytes
-//   /tmp/contextgraph-mejepa-instruments-fsv/static_*.json     — static-analysis input/vector
-//   /tmp/contextgraph-mejepa-instruments-fsv/instruments-evidence.json
+//   /mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/panel.json       — full 5,120-d panel
+//   /mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/oracle_*.json    — per-verdict input
+//   /mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/witness_chain.bin — canonical witness bytes
+//   /mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/static_*.json     — static-analysis input/vector
+//   /mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/instruments-evidence.json
 //
 // Plan:
 //   1. Build 4 real synthetic OracleVerdict scenarios:
@@ -555,7 +555,7 @@ fn boundary_static_bad_line() -> FsvResult<Value> {
 }
 
 fn main() -> FsvResult<()> {
-    let evidence_root = PathBuf::from("/tmp/contextgraph-mejepa-instruments-fsv");
+    let evidence_root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-fsv");
     if evidence_root.exists() {
         fs::remove_dir_all(&evidence_root)?;
     }

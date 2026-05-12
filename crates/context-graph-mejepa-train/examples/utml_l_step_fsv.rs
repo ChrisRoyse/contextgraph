@@ -13,7 +13,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-const OUT: &str = "/tmp/contextgraph-utml-fsv";
+const OUT: &str = "/mnt/d/contextgraph/fsv/contextgraph-utml-fsv";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = PathBuf::from(OUT);

@@ -4,11 +4,11 @@
 
 Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file covers the rest of the FLYWHEEL + UTML tasks compactly.
 
-**Status snapshot (2026-05-11):**
+**Status snapshot (2026-05-12):**
 - FLYWHEEL-001: `code_complete` (daemon ships; fresh-host enablement proof still pending)
 - FLYWHEEL-002: `complete` (scheduler skeleton, 7 tickers, FSV at `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/scheduler_ticks.json`)
-- FLYWHEEL-003: `open` — Test-outcome capture hook (not started)
-- FLYWHEEL-004: `open` — Async oracle binding (not started)
+- FLYWHEEL-003: `complete (2026-05-12)` — PostToolUse Bash capture hook + parser wired into `.claude/settings.json`; source of truth `/mnt/d/contextgraph/runtime/test-outcomes/<session>.jsonl`.
+- FLYWHEEL-004: `complete (2026-05-12 code path)` — observe tick consumes captured test-outcome JSONL, matches latest session prediction, writes readback-verified `CalibrationExample` rows into `CF_MEJEPA_ORACLE_VERDICTS`.
 - FLYWHEEL-005: `complete (2026-05-11)` — `ActiveLearningKind` enum (Uncertainty / OutOfDistribution / AgentSurprise{prediction_id, severity_score}) shipped in `crates/context-graph-mejepa/src/eval/queue.rs`; `enqueue_agent_surprise()` + fast-track eviction; `tick_active_learning` orders AgentSurprise first. FSV at `/mnt/d/contextgraph/fsv/active-learning-fsv/agent_surprise.json`. 4 new unit tests pass; 80/80 mejepa lib tests pass; clippy clean. Real bug caught by FSV: bincode rejected `tag="type"` internal enum representation — fixed to default external tag.
 - FLYWHEEL-006: `complete (2026-05-11)` — 3 CFs registered, FSV at `/mnt/d/contextgraph/fsv/mejepa-cf-fsv/round_trip.json`, all boundary cases pass; see `./memory/reports/session-2026-05-11--task-flywheel-006-new-cfs.md`.
 - FLYWHEEL-007: `open` — Park-list CF (blocked-by FLYWHEEL-006 → now unblocked)
@@ -17,6 +17,8 @@ Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file cove
 
 ## TASK-FLYWHEEL-003 — Test-outcome capture hook
 
+**Status:** complete (2026-05-12).
+
 - **Phase:** A · **Effort:** 0.5d · **Blocked by:** none · **Spec:** SPEC-FLYWHEEL REQ-FLYWHEEL-08
 - **Goal:** New PostToolUse-on-Bash hook script `scripts/cc/hook_post_tool_use_test_capture.sh` that parses pytest / cargo-test / jest output and appends `TestOutcomeEvent { ts, session_id, test_id, outcome, duration_ms, error_log }` per test to `/mnt/d/contextgraph/runtime/test-outcomes/<session>.jsonl`.
 - **Outputs:** `scripts/cc/hook_post_tool_use_test_capture.sh`, `scripts/cc/parse_test_output.py`, extension to `.claude/settings.json`.
@@ -24,6 +26,8 @@ Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file cove
 - **FSV:** `/mnt/d/contextgraph/fsv/test-capture-fsv/three_frameworks.json`
 
 ## TASK-FLYWHEEL-004 — Asynchronous oracle binding inside observe()
+
+**Status:** complete (2026-05-12 code path). Current live schema does not persist per-test IDs or panel handles inside `RealityPrediction`, so the shipped binding uses the real persisted session prediction and writes hard labels to `CF_MEJEPA_ORACLE_VERDICTS`; panel-rich observe remains Phase E/B follow-up once prediction provenance stores panel handles.
 
 - **Phase:** A · **Effort:** 0.5d · **Blocked by:** TASK-FLYWHEEL-003
 - **Goal:** Self-optim scheduler's observe_tick consumes `TestOutcomeEvent`s from the JSONL queue and binds each to the most recent matching `RealityPrediction` (matching session + including the test_id), then calls `MeJepaCompiler::observe(panel, action, panel_after_test, OracleOutcome::from(event))`.

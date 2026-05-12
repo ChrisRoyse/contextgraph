@@ -42,6 +42,65 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_RECORD_AGENT_FEEDBACK,
+            "Persist measured agent feedback for a prior ME-JEPA RealityPrediction into CF_MEJEPA_AGENT_FEEDBACK, update the active-learning queue when the feedback is surprise-like, and verify RocksDB readback before returning.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["predictionId", "agentId", "feedbackKind", "agentExplanation", "severity"],
+                "properties": {
+                    "predictionId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{32}$"
+                    },
+                    "agentId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                    },
+                    "feedbackKind": {
+                        "type": "string",
+                        "enum": ["confirmed", "surprise", "omission", "calibration"]
+                    },
+                    "agentExplanation": {
+                        "type": "string",
+                        "maxLength": 4096
+                    },
+                    "actualOutcome": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["oracleOutcome", "failedTests", "notes"],
+                        "properties": {
+                            "oracleOutcome": {
+                                "type": "string",
+                                "enum": ["pass", "fail", "out_of_distribution", "abstain"]
+                            },
+                            "failedTests": {
+                                "type": "array",
+                                "items": {"type": "string", "minLength": 1},
+                                "maxItems": 1024
+                            },
+                            "runtimeMs": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 86400000
+                            },
+                            "notes": {"type": "string"}
+                        }
+                    },
+                    "severity": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high", "catastrophic"]
+                    },
+                    "extraStructuredData": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "default": {}
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_OBSERVE_SHIFT,
             "Replay a durable reality-shift log entry through the Phase 7 ME-JEPA subscriber. Fails closed if the subscriber replay channel is not available.",
             json!({
@@ -227,6 +286,15 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "properties": {
                     "dbPath": {"type": "string"}
                 }
+            }),
+        ),
+        ToolDefinition::new(
+            tool_names::MEJEPA_BOOTSTRAP_STATUS,
+            "Read ME-JEPA bootstrap stage and source-of-truth CF counts from the configured inference RocksDB. Refuses to guess a database path.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {}
             }),
         ),
         ToolDefinition::new(

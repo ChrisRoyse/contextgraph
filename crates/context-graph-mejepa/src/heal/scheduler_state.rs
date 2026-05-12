@@ -5,10 +5,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rocksdb::DB;
+use rocksdb::{WriteOptions, DB};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::compiler::MejepaStore;
+use crate::conformal::CalibrationExample;
 use crate::eval::RocksDbEvalStore;
 use crate::heal::calibration::continuous_calibration_if_due;
 use crate::heal::cf::{decode_value, CF_MEJEPA_DRIFT_WINDOW};
@@ -19,6 +21,7 @@ use crate::heal::integrity::{ChainIntegrityChecker, WitnessChainAppender};
 use crate::heal::pipeline::{LinearHealPredictor, MeJepaHealConfig, SelfHealingPipeline};
 use crate::heal::regulate::{assess_substrate, regulate_substrate};
 use crate::heal::store::HealRocksStore;
+use crate::store::RocksDbInferStore;
 
 pub const DEFAULT_OBSERVE_PERIOD: Duration = Duration::from_millis(250);
 pub const DEFAULT_DRIFT_PERIOD: Duration = Duration::from_secs(60);
@@ -41,6 +44,7 @@ pub struct SelfOptimConfig {
     pub status_path: PathBuf,
     pub hygiene_archive_root: PathBuf,
     pub witness_chain_path: PathBuf,
+    pub test_outcome_root: PathBuf,
     pub emergency_eviction_threshold_bytes: u64,
 }
 
@@ -61,6 +65,7 @@ impl Default for SelfOptimConfig {
             witness_chain_path: PathBuf::from(
                 "/mnt/d/contextgraph/storage/witness/self-optimization-witness-chain.bin",
             ),
+            test_outcome_root: PathBuf::from("/mnt/d/contextgraph/runtime/test-outcomes"),
             emergency_eviction_threshold_bytes: DEFAULT_EMERGENCY_EVICTION_THRESHOLD_BYTES,
         }
     }
@@ -111,6 +116,12 @@ impl SelfOptimConfig {
             return Err(HealError::invalid(
                 "self_optim_config.witness_chain_path",
                 "witness chain path must be non-empty",
+            ));
+        }
+        if self.test_outcome_root.as_os_str().is_empty() {
+            return Err(HealError::invalid(
+                "self_optim_config.test_outcome_root",
+                "test outcome root must be non-empty",
             ));
         }
         if self.emergency_eviction_threshold_bytes == 0 {
@@ -171,6 +182,37 @@ impl TickName {
             Self::EmergencyEviction => "emergency_eviction",
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TestOutcomeEvent {
+    event_id: String,
+    ts: i64,
+    session_id: String,
+    tool_use_id: String,
+    command: String,
+    framework: String,
+    test_id: String,
+    outcome: String,
+    duration_ms: Option<u64>,
+    error_log: String,
+    source: String,
+    sequence: u64,
+    line_no: u64,
+    #[serde(default)]
+    summary_count: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TestOutcomeBindingReport {
+    source_root: PathBuf,
+    scanned_files: usize,
+    events_scanned: usize,
+    events_bound: usize,
+    events_skipped_non_hard_label: usize,
+    bound_keys: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -370,6 +412,8 @@ impl SchedulerState {
     }
 
     fn tick_observe(&self) -> Result<TickRunRecord, HealError> {
+        let test_outcome_bindings =
+            bind_test_outcomes(&self.config.test_outcome_root, self.storage.db())?;
         let oracle_verdicts = self
             .storage
             .count_cf(context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)?;
@@ -386,6 +430,7 @@ impl SchedulerState {
                 "oracle_verdict_rows": oracle_verdicts,
                 "live_prediction_rows": live_predictions,
                 "shift_watermark_rows": shift_watermarks,
+                "test_outcome_bindings": test_outcome_bindings,
                 "source_of_truth_cfs": [
                     context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS,
                     context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
@@ -656,6 +701,174 @@ fn tmp_path_for(path: &Path) -> Result<PathBuf, HealError> {
     Ok(tmp)
 }
 
+fn bind_test_outcomes(
+    source_root: &Path,
+    db: Arc<DB>,
+) -> Result<TestOutcomeBindingReport, HealError> {
+    let mut report = TestOutcomeBindingReport {
+        source_root: source_root.to_path_buf(),
+        scanned_files: 0,
+        events_scanned: 0,
+        events_bound: 0,
+        events_skipped_non_hard_label: 0,
+        bound_keys: Vec::new(),
+    };
+    if !source_root.exists() {
+        return Ok(report);
+    }
+    if !source_root.is_dir() {
+        return Err(HealError::invalid(
+            "test_outcome_root",
+            format!("{} exists but is not a directory", source_root.display()),
+        ));
+    }
+    let infer_store = RocksDbInferStore::new(db.clone());
+    let mut entries = fs::read_dir(source_root)
+        .map_err(|err| HealError::io("read_dir", source_root, err))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| HealError::io("read_dir", source_root, err))?;
+    entries.sort_by_key(|entry| entry.path());
+    for entry in entries {
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("jsonl") {
+            continue;
+        }
+        report.scanned_files += 1;
+        let raw = fs::read_to_string(&path).map_err(|err| HealError::io("read", &path, err))?;
+        for (line_idx, line) in raw.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            report.events_scanned += 1;
+            let event: TestOutcomeEvent = serde_json::from_str(line).map_err(|err| {
+                HealError::invalid(
+                    "test_outcome_event.json",
+                    format!("{}:{} invalid JSON: {err}", path.display(), line_idx + 1),
+                )
+            })?;
+            event.validate().map_err(|message| {
+                HealError::invalid(
+                    "test_outcome_event.validate",
+                    format!("{}:{} {message}", path.display(), line_idx + 1),
+                )
+            })?;
+            let Some(actual_test_value) = event.actual_test_value() else {
+                report.events_skipped_non_hard_label += 1;
+                continue;
+            };
+            let session_id = decode_hex16(&event.session_id).map_err(|message| {
+                HealError::invalid("test_outcome_event.session_id", message)
+            })?;
+            let predictions = infer_store
+                .read_live_predictions(session_id, 1)
+                .map_err(|err| {
+                    HealError::invalid(
+                        "test_outcome_event.prediction_lookup",
+                        format!("{}: {err}", err.code()),
+                    )
+                })?;
+            let prediction = predictions.first().ok_or_else(|| {
+                HealError::invalid(
+                    "test_outcome_event.prediction_lookup",
+                    format!(
+                        "no RealityPrediction found for session_id={} while binding event_id={}",
+                        event.session_id, event.event_id
+                    ),
+                )
+            })?;
+            let example = CalibrationExample {
+                language: prediction.language,
+                predicted_test_pass: prediction.predicted_test_pass.clone(),
+                actual_test_pass: vec![actual_test_value; prediction.predicted_test_pass.len()],
+            };
+            let key = format!(
+                "test-outcome-bind::{}::{}",
+                event.session_id, event.event_id
+            );
+            put_oracle_binding_readback(db.as_ref(), key.as_bytes(), &example)?;
+            report.events_bound += 1;
+            report.bound_keys.push(key);
+        }
+    }
+    Ok(report)
+}
+
+impl TestOutcomeEvent {
+    fn validate(&self) -> Result<(), String> {
+        if self.event_id.len() != 32 || !self.event_id.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err("event_id must be exactly 32 hexadecimal characters".to_string());
+        }
+        if self.session_id.len() != 32 || !self.session_id.bytes().all(|b| b.is_ascii_hexdigit())
+        {
+            return Err("session_id must be exactly 32 hexadecimal characters".to_string());
+        }
+        if self.ts < 0 {
+            return Err("ts must be non-negative".to_string());
+        }
+        if self.test_id.trim().is_empty() {
+            return Err("test_id must be non-empty".to_string());
+        }
+        if !matches!(self.outcome.as_str(), "pass" | "fail" | "skipped") {
+            return Err(format!("unsupported outcome {}", self.outcome));
+        }
+        Ok(())
+    }
+
+    fn actual_test_value(&self) -> Option<f32> {
+        match self.outcome.as_str() {
+            "pass" => Some(1.0),
+            "fail" => Some(0.0),
+            "skipped" => None,
+            _ => None,
+        }
+    }
+}
+
+fn decode_hex16(value: &str) -> Result<[u8; 16], String> {
+    let mut out = [0u8; 16];
+    hex::decode_to_slice(value, &mut out).map_err(|err| format!("hex decode failed: {err}"))?;
+    Ok(out)
+}
+
+fn put_oracle_binding_readback(
+    db: &DB,
+    key: &[u8],
+    example: &CalibrationExample,
+) -> Result<(), HealError> {
+    let cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)
+        .ok_or_else(|| {
+            HealError::invalid(
+                "test_outcome_event.oracle_cf",
+                "missing CF_MEJEPA_ORACLE_VERDICTS",
+            )
+        })?;
+    let value = bincode::serialize(example)?;
+    let mut opts = WriteOptions::default();
+    opts.set_sync(true);
+    db.put_cf_opt(cf, key, &value, &opts)?;
+    let readback = db.get_cf(cf, key)?.ok_or_else(|| {
+        HealError::invalid(
+            "test_outcome_event.oracle_readback",
+            "missing CF_MEJEPA_ORACLE_VERDICTS row after write",
+        )
+    })?;
+    if readback != value {
+        return Err(HealError::invalid(
+            "test_outcome_event.oracle_readback",
+            "CF_MEJEPA_ORACLE_VERDICTS readback bytes differ",
+        ));
+    }
+    let decoded: CalibrationExample = bincode::deserialize(&readback)?;
+    if decoded != *example {
+        return Err(HealError::invalid(
+            "test_outcome_event.oracle_readback",
+            "CF_MEJEPA_ORACLE_VERDICTS decoded readback differs",
+        ));
+    }
+    Ok(())
+}
+
 fn map_eval_error(err: crate::eval::EvalError) -> HealError {
     HealError::invalid(
         "self_optim_scheduler.eval",
@@ -695,6 +908,7 @@ mod tests {
             status_path: root.join("self_optimization_status.json"),
             hygiene_archive_root: root.join("archive"),
             witness_chain_path: root.join("witness-chain.bin"),
+            test_outcome_root: root.join("test-outcomes"),
             ..SelfOptimConfig::default().with_all_periods(Duration::from_millis(20))
         }
     }

@@ -9,7 +9,7 @@ use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
 
-const OUT: &str = "/tmp/contextgraph-mejepa-phase8-eval-fsv";
+const OUT: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-phase8-eval-fsv";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = PathBuf::from(OUT);

@@ -10,7 +10,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-const FSV_DIR: &str = "/tmp/contextgraph-mejepa-train-fsv";
+const FSV_DIR: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-train-fsv";
 
 fn main() -> ExitCode {
     match run() {
@@ -47,9 +47,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "phase3_fsv_passes": true,
         "evidence_files": files,
         "source_of_truths": {
-            "smoke": "/tmp/contextgraph-mejepa-train-fsv/smoke-rocksdb",
-            "chain": "/tmp/contextgraph-mejepa-train-fsv/chain-rocksdb",
-            "holdout": "/tmp/contextgraph-mejepa-train-fsv/holdout-rocksdb"
+            "smoke": "/mnt/d/contextgraph/fsv/contextgraph-mejepa-train-fsv/smoke-rocksdb",
+            "chain": "/mnt/d/contextgraph/fsv/contextgraph-mejepa-train-fsv/chain-rocksdb",
+            "holdout": "/mnt/d/contextgraph/fsv/contextgraph-mejepa-train-fsv/holdout-rocksdb"
         }
     });
     write_0600(

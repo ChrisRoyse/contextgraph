@@ -603,7 +603,7 @@ pub fn sampling_weight_checked(c: SamplingWeightComponents) -> Result<f32, UtmlE
         c.agent_surprise_severity_score,
     )?;
     let override_factor = if c.operator_override { 6.0 } else { 1.0 };
-    let surprise_factor = 1.0 + c.agent_surprise_severity_score;
+    let surprise_factor = 1.0 + 2.0 * c.agent_surprise_severity_score;
     let value =
         c.base_weight * c.l_step * override_factor * surprise_factor * c.age_decay.powf(c.age_days);
     validate_finite("sampling.weight", value)?;
@@ -795,6 +795,29 @@ mod tests {
         let forced = sampling_weight(0.2, true, 0.0, 0.995);
         assert_eq!(regular, 0.2);
         assert_eq!(forced, 1.2);
+    }
+
+    #[test]
+    fn sampling_weight_agent_surprise_reaches_three_x_at_catastrophic() {
+        let base = sampling_weight_checked(SamplingWeightComponents {
+            base_weight: 1.0,
+            l_step: 0.5,
+            operator_override: false,
+            age_days: 0.0,
+            age_decay: 1.0,
+            agent_surprise_severity_score: 0.0,
+        })
+        .expect("base weight");
+        let catastrophic = sampling_weight_checked(SamplingWeightComponents {
+            base_weight: 1.0,
+            l_step: 0.5,
+            operator_override: false,
+            age_days: 0.0,
+            age_decay: 1.0,
+            agent_surprise_severity_score: 1.0,
+        })
+        .expect("catastrophic weight");
+        assert!((catastrophic / base - 3.0).abs() < f32::EPSILON);
     }
 
     #[test]

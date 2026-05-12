@@ -15,7 +15,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-const ROOT: &str = "/tmp/contextgraph-mejepa-shift-subscriber-fsv";
+const ROOT: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-shift-subscriber-fsv";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

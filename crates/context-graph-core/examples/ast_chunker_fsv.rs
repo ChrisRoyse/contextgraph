@@ -1,9 +1,9 @@
 //! Manual Full State Verification for the Rust AST chunker.
 //!
 //! Sources of truth:
-//! - `/tmp/contextgraph-rust-ast-chunker-fsv/sources/*.rs`
-//! - `/tmp/contextgraph-rust-ast-chunker-fsv/rustc/*.rmeta`
-//! - `/tmp/contextgraph-rust-ast-chunker-fsv/ast-chunker-evidence.json`
+//! - `/mnt/d/contextgraph/fsv/contextgraph-rust-ast-chunker-fsv/sources/*.rs`
+//! - `/mnt/d/contextgraph/fsv/contextgraph-rust-ast-chunker-fsv/rustc/*.rmeta`
+//! - `/mnt/d/contextgraph/fsv/contextgraph-rust-ast-chunker-fsv/ast-chunker-evidence.json`
 //!
 //! This example fails closed. It writes real Rust source files, validates parse
 //! reality with `rustc`, runs the tree-sitter AST chunker, persists evidence,
@@ -20,7 +20,7 @@ use std::process::Command;
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/tmp/contextgraph-rust-ast-chunker-fsv");
+    let root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-rust-ast-chunker-fsv");
     let sources = root.join("sources");
     let rustc_out = root.join("rustc");
     if root.exists() {

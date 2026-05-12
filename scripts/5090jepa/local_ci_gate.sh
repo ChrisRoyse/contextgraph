@@ -206,6 +206,10 @@ static_gate() {
   preflight_common
   log "cargo fmt"
   cargo fmt --all -- --check
+  log "C-drive path lint"
+  scripts/ci/check_no_c_drive_paths.sh
+  log "Claude hook script lint"
+  scripts/ci/hook_script_lint.sh
   log "cargo check"
   cargo check -p context-graph-cli --all-features
   log "clippy"

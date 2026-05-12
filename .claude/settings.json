@@ -111,6 +111,11 @@
             "type": "command",
             "timeout": 8,
             "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/cc/hook_user_prompt_submit.sh"
+          },
+          {
+            "type": "command",
+            "timeout": 6,
+            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/cc/hook_user_prompt_submit_inject_prediction.sh"
           }
         ]
       }
@@ -135,6 +140,16 @@
             "type": "command",
             "timeout": 90,
             "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/cc/hook_post_tool_use_edit.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 8,
+            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/cc/hook_post_tool_use_test_capture.sh"
           }
         ]
       }

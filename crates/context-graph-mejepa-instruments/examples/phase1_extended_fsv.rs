@@ -25,7 +25,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/tmp/contextgraph-mejepa-instruments-fsv/phase1-extended");
+    let root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/phase1-extended");
     if root.exists() {
         fs::remove_dir_all(&root)?;
     }

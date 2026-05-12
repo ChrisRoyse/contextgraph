@@ -1,5 +1,5 @@
 // Manual Full State Verification for Granger causality test.
-// Writes JSON evidence to /tmp/contextgraph-tier2-fsv/.
+// Writes JSON evidence to /mnt/d/contextgraph/fsv/contextgraph-tier2-fsv/.
 
 use context_graph_solver::{
     f_distribution_upper_tail, granger_test, regularized_incomplete_beta, GrangerConfig,
@@ -27,7 +27,7 @@ fn pseudo_normal(seed: u64) -> f64 {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let evidence_root = PathBuf::from("/tmp/contextgraph-tier2-fsv");
+    let evidence_root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-tier2-fsv");
     fs::create_dir_all(&evidence_root)?;
 
     let n = 200usize;

@@ -13,6 +13,8 @@
 
 ## TASK-CORPUS-002 — 300×8 SWE-bench Lite Python corpus generation
 
+**Status:** complete (2026-05-12). Source of truth: `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/verify-evidence.json` with `passes=true`, `entry_count=2400`, `full_phase0_complete=true`, `mutation_cf_count=2400`, `verdict_cf_count=2400`, `provenance_cf_count=1`, `oracle_sample_count=20`, and `failures=[]`.
+
 - **Phase:** C · **Effort:** 2-3d ops · **Blocked by:** none
 - **Goal:** Run the full Phase 0 corpus generator against the 300 SWE-bench Lite Python tasks × 8 mutation categories = 2,400 corpus entries. Each entry: `(task_id, mutation_kind, mutated_source, oracle_verdict)` persisted to `CF_MEJEPA_MUTATION_CORPUS`.
 - **Outputs:** populated D-backed corpus directory `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-<date>/`; `oracle-store/` RocksDB CFs; `index.json`; `stats.json`; `verify-evidence.json`; per-instance per-category Docker eval artifacts.

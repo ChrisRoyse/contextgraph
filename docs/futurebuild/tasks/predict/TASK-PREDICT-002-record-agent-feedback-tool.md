@@ -2,7 +2,7 @@
 task_id: TASK-PREDICT-002
 title: mejepa_record_agent_feedback MCP tool + sampling-weight bump wiring
 phase: A
-status: open
+status: complete
 blocked_by: [TASK-FLYWHEEL-005, TASK-FLYWHEEL-006]
 blocks: [TASK-UTML-004]
 effort: 1d
@@ -15,7 +15,7 @@ Inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md). SoT 
 
 ## Audit (2026-05-11)
 
-- `mejepa_record_agent_feedback` is **not yet** registered. `grep -rn "mejepa_record_agent_feedback" crates/context-graph-mcp/src/` returns 0 hits. This task is unstarted.
+- `mejepa_record_agent_feedback` is registered as of 2026-05-12.
 - `mejepa_predict_latest` IS registered (`crates/context-graph-mcp/src/tools/names.rs:102` and `handlers/tools/mejepa_tools.rs:170 call_mejepa_predict_latest`). Use it as the pattern template for the new tool.
 - **The value types listed in `## Outputs` (`SurpriseEvent`, `FeedbackKind`, `SurpriseSeverity`, `ActualOutcome`) are ALREADY in `crates/context-graph-mejepa/src/types.rs`** — shipped by TASK-FLYWHEEL-006 on 2026-05-11. Do NOT re-define them. Import: `use context_graph_mejepa::types::{SurpriseEvent, FeedbackKind, SurpriseSeverity, ActualOutcome, AgentId, PredictionId, WitnessHash};`
 - `CF_MEJEPA_AGENT_FEEDBACK` is registered (TASK-FLYWHEEL-006). Already opened by `open_hygiene_rocksdb` per `mejepa-cf::FLYWHEEL_CFS`.
@@ -24,6 +24,8 @@ Inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md). SoT 
 ## Goal
 
 Add the `mejepa_record_agent_feedback` MCP tool that accepts a `prediction_id`, `feedback_kind` ∈ {Confirmed, Surprise, Omission, Calibration}, agent explanation, actual outcome, severity. Persists a `SurpriseEvent` to `CF_MEJEPA_AGENT_FEEDBACK`. Bumps sampling weight on contributing chunks by `1 + 2 * severity_score`. Adds an `ActiveLearningKind::AgentSurprise` entry. Writes operator alert if `severity=Catastrophic`. Returns the feedback record + queue position.
+
+**Status (2026-05-12):** shipped. The operator explicitly removed rate limits for local single-operator use; there is no 100/hour feedback limiter.
 
 This is the agent-side closing of the closed feedback loop. **Without this tool, ME-JEPA cannot learn from agent surprise events.**
 
@@ -54,7 +56,7 @@ This is the agent-side closing of the closed feedback loop. **Without this tool,
 4. The next `BatchSampler` invocation observes the bumped sampling_weight = `1 + 2 * 0.5 = 2.0` for the affected chunk(s).
 5. Calling with `severity=Catastrophic` writes an additional alert to `CF_MEJEPA_HEAL_REPORTS` with `severity=Catastrophic`.
 6. Calling with non-existent `prediction_id` returns `MEJEPA_FEEDBACK_PREDICTION_NOT_FOUND`.
-7. Rate-limited at 100/hour/agent_id; 101st call returns `MEJEPA_FEEDBACK_RATE_LIMITED`.
+7. No feedback rate limit is enforced by operator directive; invalid payloads still fail closed.
 8. Witness-chain entry written binding `feedback_id` to original prediction's `witness_hash`.
 9. `cargo build --release` + `cargo test -p context-graph-mcp` + `cargo clippy` all pass.
 10. FSV evidence at `/mnt/d/contextgraph/fsv/mejepa-predict-fsv/feedback.json` shows: input args, persisted SurpriseEvent, queue length before/after, sampling_weight delta, witness_hash chain.
@@ -70,5 +72,5 @@ This is the agent-side closing of the closed feedback loop. **Without this tool,
 - `feedback_kind=Confirmed` (no severity) → bump = 1.1 (small reinforcement)
 - `feedback_kind=Calibration` → bump = 1.2; recalibrate the involved head's conformal predictor
 - `actual_outcome=None` (agent observed surprise but doesn't know the actual outcome yet) → still records; calibration_delta = None
-- Same agent_id submitting > 100 events in 1 hour → `MEJEPA_FEEDBACK_RATE_LIMITED`
+- High-volume same-agent submissions → accepted until the bounded payload / RocksDB write/readback contract fails.
 - `prediction_id` exists but has been TTL'd from `CF_MEJEPA_LIVE_PREDICTIONS` (after 30 days) → `MEJEPA_FEEDBACK_PREDICTION_NOT_FOUND`

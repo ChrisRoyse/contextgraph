@@ -23,6 +23,22 @@ cgreality_safe_id() {
   printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '_'
 }
 
+cgreality_session_hex32() {
+  local raw="${1:-}"
+  if [[ "${raw}" =~ ^[0-9a-fA-F]{32}$ ]]; then
+    local lower
+    lower="$(printf '%s' "${raw}" | tr 'A-F' 'a-f')"
+    if [ "${lower}" != "00000000000000000000000000000000" ]; then
+      printf '%s' "${lower}"
+      return 0
+    fi
+  fi
+  if [ -z "${raw}" ]; then
+    raw="cgreality-hook-session-unknown"
+  fi
+  printf '%s' "${raw}" | sha256sum | awk '{print substr($1, 1, 32)}'
+}
+
 cgreality_file_sot() {
   printf 'file:%s' "$1"
 }
@@ -100,6 +116,39 @@ cgreality_log_event() {
   fi
   if ! sync -f "${log}" 2>/dev/null; then
     printf '{"status":"error","error_code":"CCREALITY_HOOK_EVENT_LOG_SYNC_FAILED","source_of_truth":"%s"}\n' "$(cgreality_file_sot "${log}")" >&2
+  fi
+}
+
+cgreality_droot_log_event() {
+  local event="$1"
+  local payload="${2:-{}}"
+  local droot="${CGREALITY_DROOT:-/mnt/d/contextgraph}"
+  local log="${droot}/runtime/cgreality-hook-events.jsonl"
+  if ! mkdir -p "$(dirname "${log}")"; then
+    printf '{"status":"error","error_code":"CCREALITY_DROOT_HOOK_EVENT_LOG_DIR_FAILED","source_of_truth":"%s"}\n' "$(cgreality_file_sot "${log}")" >&2
+    return 0
+  fi
+  local line
+  if jq -e . >/dev/null 2>&1 <<<"${payload}"; then
+    line="$(jq -nc --arg ts "$(date -u +%FT%TZ)" --arg ev "${event}" --argjson payload "${payload}" '{
+      timestamp: $ts,
+      event: $ev,
+      payload: $payload
+    }')"
+  else
+    line="$(jq -nc --arg ts "$(date -u +%FT%TZ)" --arg ev "${event}" --arg payload "${payload}" '{
+      timestamp: $ts,
+      event: $ev,
+      payload: $payload
+    }')"
+  fi
+  local lock="${log}.lock"
+  if ! (
+    flock -x 9
+    printf '%s\n' "${line}" >> "${log}"
+    sync -f "${log}" 2>/dev/null || true
+  ) 9>"${lock}"; then
+    printf '{"status":"error","error_code":"CCREALITY_DROOT_HOOK_EVENT_LOG_WRITE_FAILED","source_of_truth":"%s"}\n' "$(cgreality_file_sot "${log}")" >&2
   fi
 }
 

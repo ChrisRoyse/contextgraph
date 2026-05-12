@@ -17,8 +17,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::ExitCode;
 
-const FSV_DIR: &str = "/tmp/contextgraph-mejepa-train-fsv";
-const DB_DIR: &str = "/tmp/contextgraph-mejepa-train-fsv/smoke-rocksdb";
+const FSV_DIR: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-train-fsv";
+const DB_DIR: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-train-fsv/smoke-rocksdb";
 
 fn main() -> ExitCode {
     match run() {

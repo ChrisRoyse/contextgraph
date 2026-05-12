@@ -16,8 +16,8 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::Instant;
 
-const FSV_DIR: &str = "/tmp/contextgraph-mejepa-train-fsv";
-const DB_DIR: &str = "/tmp/contextgraph-mejepa-train-fsv/chain-rocksdb";
+const FSV_DIR: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-train-fsv";
+const DB_DIR: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-train-fsv/chain-rocksdb";
 const STEPS: u64 = 100_000;
 
 fn main() -> ExitCode {

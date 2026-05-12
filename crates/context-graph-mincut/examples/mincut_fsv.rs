@@ -1,5 +1,5 @@
 // Manual Full State Verification for Stoer-Wagner global minimum cut.
-// Writes JSON evidence to disk under /tmp/contextgraph-tier2-fsv/.
+// Writes JSON evidence to disk under /mnt/d/contextgraph/fsv/contextgraph-tier2-fsv/.
 
 use context_graph_mincut::{stoer_wagner, weights_from_edges, StoerWagnerConfig};
 use serde_json::Value;
@@ -8,7 +8,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let evidence_root = PathBuf::from("/tmp/contextgraph-tier2-fsv");
+    let evidence_root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-tier2-fsv");
     fs::create_dir_all(&evidence_root)?;
 
     // Case 1: Stoer-Wagner paper Figure 1 — known mincut weight = 4.

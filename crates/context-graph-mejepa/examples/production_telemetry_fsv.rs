@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/tmp/contextgraph-mejepa-production-telemetry-fsv");
+    let root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-mejepa-production-telemetry-fsv");
     if root.exists() {
         fs::remove_dir_all(&root)?;
     }

@@ -100,6 +100,8 @@ pub const MEJEPA_VRAM_BUDGET_REPORT: &str = "mejepa_vram_budget_report";
 pub const MEJEPA_VERIFY: &str = "mcp__cgreality__mejepa_verify";
 /// Phase 4 inference live-prediction readback tool.
 pub const MEJEPA_PREDICT_LATEST: &str = "mcp__cgreality__mejepa_predict_latest";
+/// Phase A agent feedback ledger writer for live ME-JEPA predictions.
+pub const MEJEPA_RECORD_AGENT_FEEDBACK: &str = "mcp__cgreality__mejepa_record_agent_feedback";
 /// Phase 7 replay of a durable reality-shift log entry through the live subscriber.
 pub const MEJEPA_OBSERVE_SHIFT: &str = "mcp__cgreality__mejepa_observe_shift";
 /// Phase 7 shift-subscriber health, lag, watermark, and cache snapshot.
@@ -128,6 +130,8 @@ pub const MEJEPA_ACTIVE_LEARNING_QUEUE: &str = "mcp__cgreality__mejepa_active_le
 pub const MEJEPA_EVAL_BUILD_GRAPH: &str = "mcp__cgreality__mejepa_eval_build_graph";
 /// UTML pairwise mutual-information audit with CSV source-of-truth readback.
 pub const MEJEPA_AUDIT_PAIRWISE_MI: &str = "mcp__cgreality__mejepa_audit_pairwise_mi";
+/// Phase A bootstrap status readback from ME-JEPA RocksDB sources of truth.
+pub const MEJEPA_BOOTSTRAP_STATUS: &str = "mcp__cgreality__mejepa_bootstrap_status";
 // ========== TEMPORAL TOOLS (E2/E3 Integration) ==========
 // Temporal search with E2/E3 boost applied POST-retrieval per ARCH-25.
 pub const SEARCH_RECENT: &str = "search_recent";

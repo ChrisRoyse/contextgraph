@@ -9,7 +9,7 @@ use std::process::Command;
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> FsvResult<()> {
-    let corpus = PathBuf::from("/tmp/contextgraph-phase0-smoke-one-task");
+    let corpus = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-phase0-smoke-one-task");
     let manifest_path = PathBuf::from("tasks/swebench-lite/sympy__sympy-20590.json");
     let patch_path = corpus.join("mutations/sympy__sympy-20590/known_good.patch");
     let repo_cache =
@@ -24,7 +24,7 @@ fn main() -> FsvResult<()> {
     let patch = fs::read_to_string(&patch_path)?;
     let target_rel = first_python_changed_path(&patch)?;
 
-    let root = PathBuf::from("/tmp/contextgraph-swebench-ast-fsv");
+    let root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-swebench-ast-fsv");
     let work = root.join("work");
     if root.exists() {
         fs::remove_dir_all(&root)?;

@@ -5,7 +5,7 @@
 // for the policy.
 //
 // Manual Full State Verification for causal masking and retrocausal safety.
-// Writes JSON evidence to /tmp/contextgraph-tier2-fsv/.
+// Writes JSON evidence to /mnt/d/contextgraph/fsv/contextgraph-tier2-fsv/.
 
 use context_graph_solver::{
     apply_mask_to_scores, build_causal_mask, retrocausal_safety_check, softmax_row, MaskStrategy,
@@ -16,7 +16,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let evidence_root = PathBuf::from("/tmp/contextgraph-tier2-fsv");
+    let evidence_root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-tier2-fsv");
     fs::create_dir_all(&evidence_root)?;
 
     let timestamps = [10_u64, 20, 35, 50];

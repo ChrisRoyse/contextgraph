@@ -10,7 +10,7 @@ use context_graph_mejepa_hygiene::{
 use context_graph_witness::{WitnessEntry, HASH_SIZE, ZERO_HASH};
 use serde::Serialize;
 
-const ROOT: &str = "/tmp/contextgraph-mejepa-hygiene-merkle-fsv";
+const ROOT: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-hygiene-merkle-fsv";
 
 #[derive(Debug, Serialize)]
 struct CaseEvidence {

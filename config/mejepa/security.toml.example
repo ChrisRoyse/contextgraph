@@ -1,0 +1,6 @@
+[security]
+redact_secrets = true
+render_prediction_markdown_hardened = true
+require_private_droot = true
+hook_lint_required = true
+

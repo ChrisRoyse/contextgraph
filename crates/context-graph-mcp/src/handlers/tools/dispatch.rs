@@ -214,6 +214,7 @@ impl Handlers {
             // ME-JEPA Phase 4 inference tools
             tool_names::MEJEPA_VERIFY => call_mejepa_verify(arguments),
             tool_names::MEJEPA_PREDICT_LATEST => call_mejepa_predict_latest(arguments),
+            tool_names::MEJEPA_RECORD_AGENT_FEEDBACK => call_mejepa_record_agent_feedback(arguments),
             tool_names::MEJEPA_OBSERVE_SHIFT => call_mejepa_observe_shift(arguments),
             tool_names::MEJEPA_SUBSCRIBER_STATUS => call_mejepa_subscriber_status(arguments),
             tool_names::MEJEPA_CAPTURE_AUDIT => call_mejepa_capture_audit(arguments),
@@ -226,6 +227,7 @@ impl Handlers {
             tool_names::MEJEPA_EVAL_RUN => call_mejepa_eval_run(arguments),
             tool_names::MEJEPA_SHIP_GATE_STATUS => call_mejepa_ship_gate_status(arguments),
             tool_names::MEJEPA_ACTIVE_LEARNING_QUEUE => call_mejepa_active_learning_queue(arguments),
+            tool_names::MEJEPA_BOOTSTRAP_STATUS => call_mejepa_bootstrap_status(arguments),
             tool_names::MEJEPA_EVAL_BUILD_GRAPH => call_mejepa_eval_build_graph(arguments),
             tool_names::MEJEPA_AUDIT_PAIRWISE_MI => call_mejepa_audit_pairwise_mi(arguments),
             // Provenance tools (Phase P3)

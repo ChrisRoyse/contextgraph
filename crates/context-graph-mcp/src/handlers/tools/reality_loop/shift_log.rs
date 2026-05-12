@@ -4,6 +4,7 @@ use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
@@ -33,7 +34,7 @@ impl ShiftRecord {
             timestamp_unix_ns: unix_ns()?,
             tool_name: tool_name.to_string(),
             tool_use_id: None,
-            session_id: session_id.to_string(),
+            session_id: normalize_session_id_hex32(session_id),
             subject,
             before: json!({}),
             after: json!({}),
@@ -69,10 +70,25 @@ impl Handlers {
 }
 
 pub fn append_shift(runtime_root: &Path, session_id: &str, record: &ShiftRecord) -> Result<()> {
+    let normalized_session_id = normalize_session_id_hex32(session_id);
+    if record.session_id != normalized_session_id {
+        return Err(CCRealityError::new(
+            "CCREALITY_SHIFT_SESSION_ID_MISMATCH",
+            "shift record session_id does not match the append target after 32-hex normalization",
+            "shift_log.session_id",
+            "construct ShiftRecord with the same raw session_id passed to append_shift",
+            json!({
+                "append_session_id_hex32": normalized_session_id,
+                "record_session_id": record.session_id,
+                "shift_id": record.shift_id
+            }),
+            None,
+        ));
+    }
     let dir = runtime_root.join("cgreality-shift-log");
     std::fs::create_dir_all(&dir)
         .map_err(|e| fs_error("CCREALITY_SHIFT_LOG_DIR_FAILED", &dir, e))?;
-    let path = dir.join(format!("{}.jsonl", safe_id(session_id)));
+    let path = dir.join(format!("{}.jsonl", safe_id(&normalized_session_id)));
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
@@ -95,7 +111,7 @@ pub fn append_shift(runtime_root: &Path, session_id: &str, record: &ShiftRecord)
 }
 
 pub async fn reality_shift_log(args: Value) -> Result<Value> {
-    let session_id = required_str(&args, "session_id")?;
+    let session_id = normalize_session_id_hex32(&required_str(&args, "session_id")?);
     let limit = optional_u64_strict(&args, "limit", 20)?.min(500) as usize;
     let since_id = optional_str_strict(&args, "since_shift_id")?;
     let runtime_root = require_active_runtime_root().await?;
@@ -147,7 +163,7 @@ pub async fn reality_shift_log(args: Value) -> Result<Value> {
 }
 
 pub async fn reality_shift_compare_to_my_view(args: Value) -> Result<Value> {
-    let session_id = required_str(&args, "session_id")?;
+    let session_id = normalize_session_id_hex32(&required_str(&args, "session_id")?);
     let files = args.get("files").and_then(Value::as_array).ok_or_else(|| {
         CCRealityError::new(
             "CCREALITY_ARG_FILES_NOT_ARRAY",
@@ -232,6 +248,22 @@ pub async fn reality_shift_compare_to_my_view(args: Value) -> Result<Value> {
     }))
 }
 
+pub(crate) fn normalize_session_id_hex32(session_id: &str) -> String {
+    if session_id.len() == 32 && session_id.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
+        let lower = session_id.to_ascii_lowercase();
+        if lower != "00000000000000000000000000000000" {
+            return lower;
+        }
+    }
+    let input = if session_id.is_empty() {
+        "cgreality-hook-session-unknown"
+    } else {
+        session_id
+    };
+    let digest = Sha256::digest(input.as_bytes());
+    hex::encode(&digest[..16])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,10 +275,24 @@ mod tests {
             ShiftRecord::new("unit", "phase4-shift-test", json!({"type": "unit"})).expect("shift");
         shift.after = json!({"sha256": "sha256:abc"});
         append_shift(root.path(), "phase4-shift-test", &shift).expect("append");
+        let normalized = normalize_session_id_hex32("phase4-shift-test");
         let path = root
             .path()
-            .join("cgreality-shift-log/phase4-shift-test.jsonl");
+            .join(format!("cgreality-shift-log/{normalized}.jsonl"));
         let raw = std::fs::read_to_string(path).expect("read");
         assert!(raw.contains(&shift.shift_id));
+        assert!(raw.contains(&normalized));
+    }
+
+    #[test]
+    fn session_normalization_is_stable_and_preserves_valid_hex32() {
+        assert_eq!(
+            normalize_session_id_hex32("0123456789ABCDEF0123456789ABCDEF"),
+            "0123456789abcdef0123456789abcdef"
+        );
+        assert_eq!(
+            normalize_session_id_hex32("phase4-shift-test"),
+            "072aefeec4fb0227ab59c00233d37483"
+        );
     }
 }

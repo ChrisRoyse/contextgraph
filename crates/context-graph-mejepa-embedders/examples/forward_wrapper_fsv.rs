@@ -14,7 +14,7 @@ type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> FsvResult<()> {
-    let root = PathBuf::from("/tmp/contextgraph-mejepa-forward-fsv");
+    let root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv");
     reset_root(&root)?;
     let output_path = root.join("e10-forward-output.json");
     let evidence_path = root.join("forward-wrapper-evidence.json");

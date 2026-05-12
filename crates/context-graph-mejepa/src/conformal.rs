@@ -14,6 +14,34 @@ pub struct CalibrationExample {
     pub actual_test_pass: Vec<f32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ColdStartConformalPolicy {
+    pub oracle_outcome_count: usize,
+    pub coverage_target: f32,
+    pub alpha: f32,
+    pub confidence_interval: (f32, f32),
+}
+
+pub fn cold_start_conformal_policy(
+    oracle_outcome_count: usize,
+) -> Result<ColdStartConformalPolicy, MejepaInferError> {
+    let (coverage_target, confidence_interval) = if oracle_outcome_count < 100 {
+        (1.0, (0.0, 1.0))
+    } else if oracle_outcome_count < 1000 {
+        (0.99, (0.0, 1.0))
+    } else {
+        (0.90, (0.05, 0.95))
+    };
+    let alpha = 1.0 - coverage_target;
+    Ok(ColdStartConformalPolicy {
+        oracle_outcome_count,
+        coverage_target,
+        alpha,
+        confidence_interval,
+    })
+}
+
 pub fn non_conformity_score(
     predicted_test_pass: &[f32],
     actual_test_pass: &[f32],
@@ -275,6 +303,21 @@ mod tests {
     fn tau_uses_conformal_quantile() {
         let tau = calibrate_tau(&[0.1, 0.2, 0.3, 0.4], 0.10).unwrap();
         assert_eq!(tau, 0.4);
+    }
+
+    #[test]
+    fn cold_start_policy_widens_until_enough_oracle_outcomes_exist() {
+        let first = cold_start_conformal_policy(99).unwrap();
+        assert_eq!(first.confidence_interval, (0.0, 1.0));
+        assert_eq!(first.coverage_target, 1.0);
+
+        let mid = cold_start_conformal_policy(100).unwrap();
+        assert_eq!(mid.confidence_interval, (0.0, 1.0));
+        assert_eq!(mid.coverage_target, 0.99);
+
+        let standard = cold_start_conformal_policy(1000).unwrap();
+        assert_eq!(standard.confidence_interval, (0.05, 0.95));
+        assert_eq!(standard.coverage_target, 0.90);
     }
 
     #[test]

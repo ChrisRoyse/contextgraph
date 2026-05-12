@@ -2,7 +2,7 @@
 task_id: TASK-PREDICT-001
 title: UserPromptSubmit prediction-injection hook
 phase: A
-status: open
+status: complete
 blocked_by: [TASK-FLYWHEEL-001]
 blocks: []
 effort: 1d
@@ -16,6 +16,8 @@ Inherits from [`../../specs/FSV-PROTOCOL.md`](../../specs/FSV-PROTOCOL.md). SoT 
 ## Goal
 
 Add a hook script that fires on UserPromptSubmit, queries the daemon's `mejepa_predict_latest` for the current session, and renders the latest `RealityPrediction` as a ≤ 4 KB markdown injection block per `15_PREDICTION_TAXONOMY.md §8`. The block is appended to the agent's prompt context as a `<user>` message addendum. **Without this hook, predictions are computed but never reach the agent.**
+
+**Status (2026-05-12):** shipped. Files: `scripts/cc/hook_user_prompt_submit_inject_prediction.sh`, `scripts/cc/render_prediction_markdown.py`, `.claude/settings.json`.
 
 ## Inputs
 

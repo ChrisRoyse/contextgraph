@@ -4,20 +4,29 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
+use anyhow::{anyhow, bail, Context, Result as AnyhowResult};
 use context_graph_mejepa::heal::{
     all_referenced_cf_names, decode_value, encode_active_pointer_key, AbcPromoter,
     ActivePointerValue, HealReport, HealRocksStore, PromotionGate, PromotionLockState,
     WitnessChainAppender, CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_HEAL_REPORTS,
 };
 use context_graph_mejepa::{
-    build_deterministic_compiler, open_infer_rocksdb, CalibrationStore, MeJepaInferConfig,
-    PatchBundle, RocksDbInferStore, TaskContext,
+    build_deterministic_compiler, open_infer_rocksdb, ActualOutcome, ActiveLearningQueueState,
+    AgentId, CalibrationStore, FeedbackId, FeedbackKind, MeJepaInferConfig, OracleOutcome,
+    PatchBundle, PredictionId, RealityPrediction, RocksDbEvalStore, RocksDbInferStore,
+    SurpriseEvent, SurpriseSeverity, TaskContext, TestId, WitnessHash,
+};
+use context_graph_mejepa_cf::{
+    CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+    CF_MEJEPA_AGENT_FEEDBACK, CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_OOD_ESCALATIONS,
 };
 use context_graph_mejepa_tct::{
     build_inspect_summary, open_tct_rocksdb, ConstellationStore, EmbedderId,
 };
+use rocksdb::{IteratorMode, WriteBatch, WriteOptions, DB};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tracing::info;
 
 use super::mejepa_phase7_storage::subscriber_state_for_provenance;
@@ -45,6 +54,29 @@ struct PredictLatestRequest {
     session_id: String,
     #[serde(default = "default_limit")]
     limit: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RecordAgentFeedbackRequest {
+    prediction_id: String,
+    agent_id: String,
+    feedback_kind: FeedbackKind,
+    agent_explanation: String,
+    actual_outcome: Option<ActualOutcomeRequest>,
+    severity: SurpriseSeverity,
+    #[serde(default)]
+    extra_structured_data: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ActualOutcomeRequest {
+    oracle_outcome: OracleOutcome,
+    #[serde(default)]
+    failed_tests: Vec<String>,
+    runtime_ms: Option<u64>,
+    notes: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -238,6 +270,96 @@ impl Handlers {
                     &format!("{}: {err}", err.code()),
                 )
             }
+        }
+    }
+
+    pub(crate) async fn call_mejepa_record_agent_feedback(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: RecordAgentFeedbackRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_RECORD_AGENT_FEEDBACK
+                    ),
+                );
+            }
+        };
+        let db_path = match infer_db_path() {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        let result = record_agent_feedback_in_db(&db_path, request);
+        match result {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Storage,
+                "MEJEPA_RECORD_AGENT_FEEDBACK_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_bootstrap_status(
+        &self,
+        id: Option<JsonRpcId>,
+        _args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let db_path = match infer_db_path() {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        let result = (|| {
+            let db = open_infer_rocksdb(&db_path)?;
+            let oracle_verdict_rows = count_cf_any(db.as_ref(), context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)?;
+            let live_prediction_rows = count_cf_any(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS)?;
+            let agent_feedback_rows = count_cf_any(db.as_ref(), CF_MEJEPA_AGENT_FEEDBACK)?;
+            let active_learning_queue_present = db
+                .get_cf(cf_handle(db.as_ref(), CF_MEJEPA_ACTIVE_LEARNING_QUEUE)?, b"active")?
+                .is_some();
+            let stage = if oracle_verdict_rows >= 1000 {
+                "warm"
+            } else if oracle_verdict_rows > 0 || live_prediction_rows > 0 {
+                "bootstrapping"
+            } else {
+                "cold"
+            };
+            Ok::<Value, anyhow::Error>(json!({
+                "stage": stage,
+                "counts": {
+                    "oracleVerdicts": oracle_verdict_rows,
+                    "livePredictions": live_prediction_rows,
+                    "agentFeedback": agent_feedback_rows,
+                    "activeLearningQueuePresent": active_learning_queue_present
+                },
+                "sourceOfTruth": {
+                    "dbPath": db_path,
+                    "cfs": [
+                        context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS,
+                        CF_MEJEPA_LIVE_PREDICTIONS,
+                        CF_MEJEPA_AGENT_FEEDBACK,
+                        CF_MEJEPA_ACTIVE_LEARNING_QUEUE
+                    ]
+                }
+            }))
+        })();
+        match result {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Storage,
+                "MEJEPA_BOOTSTRAP_STATUS_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path}),
+            ),
         }
     }
 
@@ -499,6 +621,252 @@ fn infer_db_path() -> Result<PathBuf, String> {
         .map_err(|_| {
             "CONTEXTGRAPH_MEJEPA_INFER_DB must point to the Phase 4 inference RocksDB; refusing to guess a database path".to_string()
         })
+}
+
+fn record_agent_feedback_in_db(
+    db_path: &std::path::Path,
+    request: RecordAgentFeedbackRequest,
+) -> AnyhowResult<Value> {
+    let prediction_id = parse_prediction_id_hex(&request.prediction_id)?;
+    if request.agent_explanation.as_bytes().len() > 4096 {
+        bail!("agentExplanation exceeds 4096 bytes");
+    }
+    let agent_id = AgentId::try_new(request.agent_id.clone())
+        .map_err(|err| anyhow!("agentId validation failed: {err}"))?;
+    let actual_outcome = request.actual_outcome.map(ActualOutcomeRequest::into_actual);
+    let mut extra_structured_data = request.extra_structured_data;
+    if extra_structured_data.is_null() {
+        extra_structured_data = json!({});
+    }
+    if !extra_structured_data.is_object() {
+        bail!("extraStructuredData must be a JSON object");
+    }
+
+    let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
+    let prediction = find_prediction_by_id(db.as_ref(), prediction_id)?;
+    let mut ts_millis = chrono::Utc::now().timestamp_millis();
+    let feedback_id;
+    let persisted_feedback_key: Vec<u8>;
+    loop {
+        let candidate_id = feedback_id_for(
+            prediction_id,
+            &agent_id,
+            ts_millis,
+            request.feedback_kind,
+            &request.agent_explanation,
+        );
+        let candidate_key = feedback_key(prediction_id, &agent_id, ts_millis)?;
+        if db
+            .get_cf(cf_handle(db.as_ref(), CF_MEJEPA_AGENT_FEEDBACK)?, &candidate_key)?
+            .is_none()
+        {
+            feedback_id = candidate_id;
+            persisted_feedback_key = candidate_key;
+            break;
+        }
+        ts_millis = ts_millis
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("feedback timestamp overflow"))?;
+    }
+
+    let event = SurpriseEvent::try_new(SurpriseEvent {
+        feedback_id,
+        prediction_id,
+        agent_id: agent_id.clone(),
+        ts_millis,
+        feedback_kind: request.feedback_kind,
+        agent_explanation: request.agent_explanation,
+        actual_outcome,
+        severity: request.severity,
+        extra_structured_data,
+        witness_hash: WitnessHash(prediction.source_panel_sha),
+    })
+    .map_err(|err| anyhow!("SurpriseEvent validation failed: {err}"))?;
+
+    let mut queue = RocksDbEvalStore::new(db.clone())
+        .context("construct RocksDbEvalStore")?
+        .load_queue()
+        .context("load active-learning queue")?
+        .unwrap_or(ActiveLearningQueueState::new(4096).context("create active-learning queue")?);
+    let queue_count_before = queue.entries.len();
+    let active_learning_queued = matches!(
+        event.feedback_kind,
+        FeedbackKind::Surprise | FeedbackKind::Omission
+    );
+    if active_learning_queued {
+        queue
+            .enqueue_agent_surprise(prediction.task_id.clone(), prediction_id, event.severity)
+            .context("enqueue agent surprise")?;
+    }
+
+    persist_feedback_and_queue(db.as_ref(), &persisted_feedback_key, &event, &queue)?;
+    let queue_entry = queue.entries.get(&prediction.task_id).cloned();
+    let sampling_weight_multiplier = 1.0 + 2.0 * event.severity.severity_score();
+    Ok(json!({
+        "status": "recorded",
+        "predictionId": hex::encode(prediction_id.0),
+        "feedbackId": hex::encode(feedback_id.0),
+        "agentId": event.agent_id.0,
+        "feedbackKind": event.feedback_kind,
+        "severity": event.severity,
+        "severityScore": event.severity.severity_score(),
+        "samplingWeightMultiplier": sampling_weight_multiplier,
+        "activeLearningQueued": active_learning_queued,
+        "catastrophicAlert": matches!(event.severity, SurpriseSeverity::Catastrophic),
+        "queueCountBefore": queue_count_before,
+        "queueCountAfter": queue.entries.len(),
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "feedbackCf": CF_MEJEPA_AGENT_FEEDBACK,
+            "feedbackKeyHex": hex::encode(&persisted_feedback_key),
+            "queueCf": CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+            "queueKeyHex": hex::encode(b"active")
+        },
+        "readback": {
+            "feedback": event,
+            "queueEntry": queue_entry
+        }
+    }))
+}
+
+impl ActualOutcomeRequest {
+    fn into_actual(self) -> ActualOutcome {
+        ActualOutcome {
+            oracle_outcome: self.oracle_outcome,
+            failed_tests: self.failed_tests.into_iter().map(TestId).collect(),
+            runtime_ms: self.runtime_ms,
+            notes: self.notes,
+        }
+    }
+}
+
+fn parse_prediction_id_hex(raw: &str) -> AnyhowResult<PredictionId> {
+    if raw.len() != 32 || !raw.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
+        bail!("predictionId must be exactly 32 hexadecimal characters");
+    }
+    let mut bytes = [0u8; 16];
+    hex::decode_to_slice(raw, &mut bytes).context("decode predictionId")?;
+    Ok(PredictionId(bytes))
+}
+
+fn find_prediction_by_id(db: &DB, prediction_id: PredictionId) -> AnyhowResult<RealityPrediction> {
+    let cf = cf_handle(db, CF_MEJEPA_LIVE_PREDICTIONS)?;
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let (_key, value) = item?;
+        let prediction: RealityPrediction =
+            bincode::deserialize(&value).context("decode CF_MEJEPA_LIVE_PREDICTIONS row")?;
+        prediction
+            .validate()
+            .map_err(|err| anyhow!("invalid persisted RealityPrediction: {err}"))?;
+        if prediction.prediction_id == prediction_id.0 {
+            return Ok(prediction);
+        }
+    }
+    bail!(
+        "predictionId={} was not found in CF_MEJEPA_LIVE_PREDICTIONS",
+        hex::encode(prediction_id.0)
+    )
+}
+
+fn feedback_id_for(
+    prediction_id: PredictionId,
+    agent_id: &AgentId,
+    ts_millis: i64,
+    feedback_kind: FeedbackKind,
+    explanation: &str,
+) -> FeedbackId {
+    let mut hasher = Sha256::new();
+    hasher.update(prediction_id.0);
+    hasher.update(agent_id.0.as_bytes());
+    hasher.update(ts_millis.to_be_bytes());
+    hasher.update(serde_json::to_vec(&feedback_kind).unwrap_or_default());
+    hasher.update(explanation.as_bytes());
+    let digest = hasher.finalize();
+    let mut out = [0u8; 16];
+    out.copy_from_slice(&digest[..16]);
+    FeedbackId(out)
+}
+
+fn feedback_key(
+    prediction_id: PredictionId,
+    agent_id: &AgentId,
+    ts_millis: i64,
+) -> AnyhowResult<Vec<u8>> {
+    bincode::serialize(&(prediction_id, agent_id, ts_millis)).context("encode feedback key")
+}
+
+fn persist_feedback_and_queue(
+    db: &DB,
+    feedback_key: &[u8],
+    event: &SurpriseEvent,
+    queue: &ActiveLearningQueueState,
+) -> AnyhowResult<()> {
+    let feedback_cf = cf_handle(db, CF_MEJEPA_AGENT_FEEDBACK)?;
+    let queue_cf = cf_handle(db, CF_MEJEPA_ACTIVE_LEARNING_QUEUE)?;
+    let evictions_cf = cf_handle(db, CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS)?;
+    let ood_cf = cf_handle(db, CF_MEJEPA_OOD_ESCALATIONS)?;
+    let feedback_bytes = serde_json::to_vec(event).context("encode SurpriseEvent")?;
+    let queue_bytes = bincode::serialize(queue).context("encode ActiveLearningQueueState")?;
+    let mut batch = WriteBatch::default();
+    batch.put_cf(feedback_cf, feedback_key, &feedback_bytes);
+    batch.put_cf(queue_cf, b"active", &queue_bytes);
+    for entry in &queue.evicted {
+        batch.put_cf(
+            evictions_cf,
+            entry.task_id.0.as_bytes(),
+            bincode::serialize(entry).context("encode active-learning eviction")?,
+        );
+    }
+    for entry in &queue.ood_escalations {
+        batch.put_cf(
+            ood_cf,
+            entry.task_id.0.as_bytes(),
+            bincode::serialize(entry).context("encode OOD escalation")?,
+        );
+    }
+    let mut opts = WriteOptions::default();
+    opts.set_sync(true);
+    db.write_opt(batch, &opts).context("atomic RocksDB write")?;
+
+    let feedback_readback = db
+        .get_cf(feedback_cf, feedback_key)?
+        .ok_or_else(|| anyhow!("CF_MEJEPA_AGENT_FEEDBACK readback missing"))?;
+    if feedback_readback != feedback_bytes {
+        bail!("CF_MEJEPA_AGENT_FEEDBACK readback bytes differ");
+    }
+    let decoded_event: SurpriseEvent =
+        serde_json::from_slice(&feedback_readback).context("decode SurpriseEvent readback")?;
+    decoded_event
+        .validate()
+        .map_err(|err| anyhow!("SurpriseEvent readback validation failed: {err}"))?;
+    if decoded_event != *event {
+        bail!("CF_MEJEPA_AGENT_FEEDBACK decoded readback differs");
+    }
+
+    let queue_readback = db
+        .get_cf(queue_cf, b"active")?
+        .ok_or_else(|| anyhow!("CF_MEJEPA_ACTIVE_LEARNING_QUEUE readback missing"))?;
+    if queue_readback != queue_bytes {
+        bail!("CF_MEJEPA_ACTIVE_LEARNING_QUEUE readback bytes differ");
+    }
+    let _decoded_queue: ActiveLearningQueueState =
+        bincode::deserialize(&queue_readback).context("decode queue readback")?;
+    Ok(())
+}
+
+fn cf_handle<'a>(db: &'a DB, name: &str) -> AnyhowResult<&'a rocksdb::ColumnFamily> {
+    db.cf_handle(name)
+        .ok_or_else(|| anyhow!("missing RocksDB column family {name}"))
+}
+
+fn count_cf_any(db: &DB, name: &str) -> AnyhowResult<u64> {
+    let cf = cf_handle(db, name)?;
+    let mut count = 0u64;
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let _ = item?;
+        count += 1;
+    }
+    Ok(count)
 }
 
 fn ensure_deterministic_verify_allowed() -> Result<(), context_graph_mejepa::MejepaInferError> {

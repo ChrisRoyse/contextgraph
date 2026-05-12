@@ -9,7 +9,7 @@ use context_graph_mejepa_hygiene::{
 };
 use serde::Serialize;
 
-const ROOT: &str = "/tmp/contextgraph-mejepa-hygiene-quota-fsv";
+const ROOT: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-hygiene-quota-fsv";
 const MIB: usize = 1024 * 1024;
 
 #[derive(Debug, Serialize)]

@@ -35,6 +35,8 @@ pub enum DaemonValidationError {
         path: PathBuf,
         source: std::io::Error,
     },
+    #[error("MEJEPA_D_DRIVE_PERMS_TOO_OPEN: {path}: mode {mode:o}; expected no group/world bits")]
+    DDrivePermsTooOpen { path: PathBuf, mode: u32 },
     #[error("MEJEPA_D_DRIVE_SUBDIR_CREATE_FAILED: {path}: {source}")]
     DDriveSubdirCreateFailed {
         path: PathBuf,
@@ -57,6 +59,7 @@ pub fn validate_d_drive_root(root: &Path) -> Result<DaemonPaths, DaemonValidatio
             detail: "root exists but is not a directory".to_string(),
         });
     }
+    validate_d_drive_permissions(root, &metadata)?;
 
     let root_write_test = root.join(".mejepa-daemon-root-write-test");
     write_remove_test(root, &root_write_test)?;
@@ -99,6 +102,28 @@ pub fn validate_d_drive_root(root: &Path) -> Result<DaemonPaths, DaemonValidatio
     let write_test = paths.locks_dir.join(".mejepa-daemon-write-test");
     write_remove_test(&paths.locks_dir, &write_test)?;
     Ok(paths)
+}
+
+fn validate_d_drive_permissions(
+    root: &Path,
+    metadata: &fs::Metadata,
+) -> Result<(), DaemonValidationError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = metadata.permissions().mode() & 0o777;
+        if mode & 0o077 != 0 {
+            return Err(DaemonValidationError::DDrivePermsTooOpen {
+                path: root.to_path_buf(),
+                mode,
+            });
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, metadata);
+    }
+    Ok(())
 }
 
 fn write_remove_test(root: &Path, write_test: &Path) -> Result<(), DaemonValidationError> {
@@ -250,6 +275,21 @@ mod tests {
         let err = validate_d_drive_root(Path::new("relative"))
             .expect_err("relative root must fail closed");
         assert!(matches!(err, DaemonValidationError::PathInvalid { .. }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validator_rejects_world_readable_d_root() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o777))
+            .expect("set open perms");
+        let err = validate_d_drive_root(temp.path()).expect_err("open perms must fail");
+        assert!(matches!(
+            err,
+            DaemonValidationError::DDrivePermsTooOpen { .. }
+        ));
     }
 
     #[test]

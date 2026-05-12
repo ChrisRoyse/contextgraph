@@ -10,9 +10,9 @@
 
 | Phase | Goal | Effort | Dependencies | Ship gate |
 |---|---|---|---|---|
-| **A. Operational unblock** | Daemon mode + prediction injection + agent-feedback channel + D-drive enforcement | 5-7 days | none | Daemon runs; first prediction injected; first SurpriseEvent recorded; cargo lint passes |
+| **A. Operational unblock** | Daemon mode + prediction injection + agent-feedback channel + D-drive enforcement | code closure 2026-05-12; operator burn-in remains | none | Daemon runs; first prediction injected; first SurpriseEvent recorded; cargo lint passes |
 | **B. Multi-head extension** | Q3/Q4 prediction heads, label sources, reasoning class | 10-14 days | Phase A | All 10 heads emit; per-head holdout metric > random baseline |
-| **C. Corpus completion** | Full 300×8 SWE-bench Lite corpus + per-language operators | 7-10 days (ops-heavy) | Phase A | 2,400 entries persisted; 10 non-Python operators ship; corpus FSV passes |
+| **C. Corpus expansion** | Completed Python 300×8 corpus + remaining per-language operators/splits | 4-7 days after Phase A | Phase A | 2,400 Python entries verified; 10 non-Python operators ship; combined corpus FSV passes |
 | **D. Neural embedder forwards** | Replace deterministic placeholders with real neural forward passes | 10-15 days | Phase A | All 12 active embedders run real forward; routing FSV passes; pairwise MI matrix updates |
 | **E. Continuous self-optimization** | Scheduler tokio task + per-cell stratified drift + dissipation detection + lambda ramp | 5-7 days | Phase A + Phase B | Scheduler runs; drift detected within 1k obs; A/B/C promotion executes autonomously |
 | **F. Production observability** | Live conformal/OOD/p50/p99 capture + weekly eval + active-learning dashboard + WSL GPU telemetry hardening | 5-7 days | Phase A | Weekly report writes; conformal coverage measured; active-learning queue cleared by operator weekly |
@@ -32,7 +32,7 @@
 
 **Total fresh implementation effort:** ~45-65 engineer-days, then Phase G runs continuously until the ship gate is met. Phases A, C, D, F can run in parallel; B and E depend on A; H depends on A.
 
-**History-reviewed baseline (HEAD `23593272`).** `TASK-FLYWHEEL-001` and `TASK-FLYWHEEL-002` are code-shipped: daemon supervisor/D-root validation/systemd template/daemon startup FSV exist, and the heal-crate self-optimization scheduler is daemon-wired with seven readback-verified tickers. Phase A still has the data-capture and agent-facing loop work below; Phase E still owns the full autonomous policy logic.
+**Current Phase A baseline (2026-05-12).** `TASK-FLYWHEEL-001/002/003/004/005/006`, `TASK-PREDICT-001/002`, `TASK-LOOP-001/007`, `TASK-OBS-005/006`, `TASK-RUN-001/010/011`, `TASK-BOOT-001/003`, and `TASK-SEC-001/006/007/008` are code-shipped or operationally applied. Phase E still owns the full autonomous policy logic; Phase B still owns rich Q1-Q5 prediction heads/schema.
 
 ---
 
@@ -46,17 +46,17 @@
 |---|---|---|
 | `TASK-FLYWHEEL-001` | MCP daemon mode with supervised tokio tasks + systemd template | complete at code/FSV level; fresh-host enablement proof remains in runbook/install tasks |
 | `TASK-FLYWHEEL-002` | Continuous self-optimization scheduler skeleton (7 tickers, calls into shipped modules) | complete |
-| `TASK-FLYWHEEL-003` | Test-outcome capture hook (parse pytest/cargo-test/jest output) | 0.5 day |
-| `TASK-FLYWHEEL-004` | Asynchronous oracle-binding inside observe() | 0.5 day |
-| `TASK-FLYWHEEL-005` | ActiveLearningKind::AgentSurprise variant + queue extension | 0.5 day |
-| `TASK-FLYWHEEL-006` | New CFs: `CF_MEJEPA_DDA_SIGNALS`, `CF_MEJEPA_FAILURE_EXEMPLARS`, `CF_MEJEPA_AGENT_FEEDBACK` | 0.5 day |
-| `TASK-PREDICT-001` | UserPromptSubmit prediction-injection hook (script + `mejepa_predict_latest` call + markdown render) | 1 day |
-| `TASK-PREDICT-002` | `mejepa_record_agent_feedback` MCP tool + sampling-weight bump wiring | 1 day |
-| `TASK-LOOP-001` | Apply new `.claude/loop.md` content from `14_NEW_LOOP_MD.md` | 0.25 day |
+| `TASK-FLYWHEEL-003` | Test-outcome capture hook (parse pytest/cargo-test/jest output) | complete (2026-05-12) |
+| `TASK-FLYWHEEL-004` | Oracle-binding from captured test outcomes into `CF_MEJEPA_ORACLE_VERDICTS` | complete (2026-05-12 code path) |
+| `TASK-FLYWHEEL-005` | ActiveLearningKind::AgentSurprise variant + queue extension | complete (2026-05-11) |
+| `TASK-FLYWHEEL-006` | New CFs: `CF_MEJEPA_DDA_SIGNALS`, `CF_MEJEPA_FAILURE_EXEMPLARS`, `CF_MEJEPA_AGENT_FEEDBACK` | complete (2026-05-11) |
+| `TASK-PREDICT-001` | UserPromptSubmit prediction-injection hook (script + `mejepa_predict_latest` call + markdown render) | complete (2026-05-12) |
+| `TASK-PREDICT-002` | `mejepa_record_agent_feedback` MCP tool + sampling-weight bump wiring | complete (2026-05-12; no feedback rate limit by operator directive) |
+| `TASK-LOOP-001` | Apply new `.claude/loop.md` content from `14_NEW_LOOP_MD.md` | complete (already applied) |
 | `TASK-LOOP-002` | Update CLAUDE.md §11.11/§13/§3 + `agents/README.md` retirements | 0.25 day |
 | `TASK-LOOP-007` | Hook output paths → `/mnt/d/contextgraph/runtime/cgreality-shift-log/` | 0.25 day |
-| `TASK-OBS-005` | C-drive lint in CI | 0.25 day |
-| `TASK-OBS-006` | FSV path migration sweep across `crates/*/examples/*_fsv.rs` | 0.5 day |
+| `TASK-OBS-005` | C-drive lint in CI | complete (2026-05-12) |
+| `TASK-OBS-006` | FSV path migration sweep across `crates/*/examples/*_fsv.rs` | complete (2026-05-12) |
 | `TASK-OBS-007` | Per-slice quota observability extension | 0.5 day |
 
 **Ship gate:**
@@ -110,7 +110,7 @@
 | Task | Description | Effort |
 |---|---|---|
 | `TASK-CORPUS-001` | Per-language mutation operators (Rust, JS, TS, Go, Java, C, C++, C#, Ruby, PHP) — 8 operators × 10 languages = 80 small implementations | 4-5 days (largely mechanical) |
-| `TASK-CORPUS-002` | 300 × 8 SWE-bench Lite Python corpus generation (Docker oracle, real evaluator) | 2-3 days operationally (Docker-bound) |
+| `TASK-CORPUS-002` | 300 × 8 SWE-bench Lite Python corpus generation (Docker oracle, real evaluator) | complete: 2400/2400 at `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/` |
 | `TASK-CORPUS-003` | Per-language fixture corpora (smaller; ~50 tasks per language scraped from CI logs) | 1-2 days |
 | `TASK-CORPUS-004` | Stoer-Wagner mincut-based train/calib/holdout split applied to the new corpora | 0.25 day |
 

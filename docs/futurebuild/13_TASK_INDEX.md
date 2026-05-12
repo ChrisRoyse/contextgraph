@@ -29,17 +29,17 @@
 |---|---|---|---|---|
 | `TASK-FLYWHEEL-001` | MCP daemon mode + supervised tokio tasks + systemd template + D-drive validator | A | none | complete at code/FSV level; fresh-host enablement proof remains |
 | `TASK-FLYWHEEL-002` | Self-optimization scheduler skeleton (7 tickers calling shipped APIs) | A | FLYWHEEL-001 | complete |
-| `TASK-FLYWHEEL-003` | Test-outcome capture hook (parse pytest/cargo-test/jest) | A | none | 0.5d |
-| `TASK-FLYWHEEL-004` | Asynchronous oracle-binding inside observe() | A | FLYWHEEL-003 | 0.5d |
+| `TASK-FLYWHEEL-003` | Test-outcome capture hook (parse pytest/cargo-test/jest) | A | none | **complete (2026-05-12)** |
+| `TASK-FLYWHEEL-004` | Captured test-outcome oracle binding | A | FLYWHEEL-003 | **complete (2026-05-12 code path)** |
 | `TASK-FLYWHEEL-005` | `ActiveLearningKind::AgentSurprise` variant + queue extension | A | none | **complete (2026-05-11)** |
 | `TASK-FLYWHEEL-006` | New CFs: `CF_MEJEPA_DDA_SIGNALS`, `CF_MEJEPA_FAILURE_EXEMPLARS`, `CF_MEJEPA_AGENT_FEEDBACK` | A | none | **complete (2026-05-11)** |
-| `TASK-PREDICT-001` | UserPromptSubmit prediction-injection hook | A | FLYWHEEL-001 | 1d |
-| `TASK-PREDICT-002` | `mejepa_record_agent_feedback` MCP tool + sampling-weight bump wiring | A | FLYWHEEL-005, FLYWHEEL-006 | 1d |
-| `TASK-LOOP-001` | Apply new `.claude/loop.md` content from `14_NEW_LOOP_MD.md` | A | FLYWHEEL-001 | 0.25d |
+| `TASK-PREDICT-001` | UserPromptSubmit prediction-injection hook | A | FLYWHEEL-001 | **complete (2026-05-12)** |
+| `TASK-PREDICT-002` | `mejepa_record_agent_feedback` MCP tool + sampling-weight bump wiring | A | FLYWHEEL-005, FLYWHEEL-006 | **complete (2026-05-12; no feedback rate limit)** |
+| `TASK-LOOP-001` | Apply new `.claude/loop.md` content from `14_NEW_LOOP_MD.md` | A | FLYWHEEL-001 | **complete (already applied)** |
 | `TASK-LOOP-002` | Update CLAUDE.md §11.11/§13/§3 + `agents/README.md` retirements | A | LOOP-001 | 0.25d |
 | `TASK-LOOP-007` | Hook output paths → D-drive `cgreality-shift-log/` | A | none | **complete (2026-05-11 — code already shipped, audit doc updated)** |
-| `TASK-OBS-005` | C-drive lint in CI | A | none | 0.25d |
-| `TASK-OBS-006` | FSV path migration sweep | A | none | 0.5d |
+| `TASK-OBS-005` | C-drive lint in CI | A | none | **complete (2026-05-12)** |
+| `TASK-OBS-006` | FSV path migration sweep | A | none | **complete (2026-05-12)** |
 | `TASK-OBS-007` | Per-slice quota observability extension | A | none | 0.5d |
 
 **Phase A total: ~7.5 days.**
@@ -84,7 +84,7 @@
 | ID | Title | Phase | Blocked by | Effort |
 |---|---|---|---|---|
 | `TASK-CORPUS-001` | Per-language mutation operators (10 langs × 8 = 80) | C | none | 4-5d |
-| `TASK-CORPUS-002` | 300×8 SWE-bench Lite Python corpus generation under `/mnt/d/contextgraph/corpus/` (Docker) | C | none | 2-3d ops |
+| `TASK-CORPUS-002` | 300×8 SWE-bench Lite Python corpus generation under `/mnt/d/contextgraph/corpus/` (Docker) | C | none | **complete (2400/2400 verified, 2026-05-12)** |
 | `TASK-CORPUS-003` | Per-language fixture corpora (~50 tasks per language) | C | CORPUS-001 | 1-2d |
 | `TASK-CORPUS-004` | Stoer-Wagner mincut split applied to new corpora | C | CORPUS-002, CORPUS-003 | 0.25d |
 

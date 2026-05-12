@@ -1,11 +1,11 @@
 // Manual Full State Verification for the 8/7/5/3-bit tier compressor.
 //
 // Source of truth on disk:
-//   /tmp/contextgraph-tier-compression-fsv/blob_8.bin
-//   /tmp/contextgraph-tier-compression-fsv/blob_7.bin
-//   /tmp/contextgraph-tier-compression-fsv/blob_5.bin
-//   /tmp/contextgraph-tier-compression-fsv/blob_3.bin
-//   /tmp/contextgraph-tier-compression-fsv/tier-compression-evidence.json
+//   /mnt/d/contextgraph/fsv/contextgraph-tier-compression-fsv/blob_8.bin
+//   /mnt/d/contextgraph/fsv/contextgraph-tier-compression-fsv/blob_7.bin
+//   /mnt/d/contextgraph/fsv/contextgraph-tier-compression-fsv/blob_5.bin
+//   /mnt/d/contextgraph/fsv/contextgraph-tier-compression-fsv/blob_3.bin
+//   /mnt/d/contextgraph/fsv/contextgraph-tier-compression-fsv/tier-compression-evidence.json
 //
 // Plan:
 //   1. Build a 768-dim deterministic synthetic vector (Box-Muller via SplitMix64).
@@ -242,7 +242,7 @@ fn boundary_wrong_magic(evidence_root: &Path) -> FsvResult<Value> {
 }
 
 fn main() -> FsvResult<()> {
-    let evidence_root = PathBuf::from("/tmp/contextgraph-tier-compression-fsv");
+    let evidence_root = PathBuf::from("/mnt/d/contextgraph/fsv/contextgraph-tier-compression-fsv");
     if evidence_root.exists() {
         fs::remove_dir_all(&evidence_root)?;
     }
