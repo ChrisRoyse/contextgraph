@@ -1,7 +1,7 @@
 use context_graph_mejepa_embedders::{
     agent_state_score, digest_manifest_for_embedder, query_vram_budget, routing_coverage,
     verify_all_registration_digests, verify_registration_digest, EmbedError, EmbedderId,
-    EmbedderKind, EmbedderRegistration, Ensemble, ModelsConfig, VramBudget,
+    EmbedderKind, EmbedderRegistration, ModelsConfig, VramBudget,
 };
 use serde_json::{json, Value};
 use std::fs::{self, File};
@@ -91,27 +91,36 @@ fn main() -> FsvResult<()> {
         "models_config_digest_start",
         json!({"source_of_truth": config_path.display().to_string()}),
     )?;
-    let config_after = match ModelsConfig::load(&config_path) {
+    let (config_after, verified_digests) = match ModelsConfig::load(&config_path) {
         Ok(config) => match verify_all_registration_digests(&config) {
-            Ok(loaded) => json!({
-                "passes": true,
-                "registration_count": config.embedders.len(),
-                "digest_verified_count": loaded.len(),
-                "learner_state_verified_count": EmbedderId::learner_state()
-                    .iter()
-                    .filter(|id| loaded.contains_key(id))
-                    .count(),
-            }),
-            Err(err) => json!({
+            Ok(loaded) => (
+                json!({
+                    "passes": true,
+                    "registration_count": config.embedders.len(),
+                    "digest_verified_count": loaded.len(),
+                    "learner_state_verified_count": EmbedderId::learner_state()
+                        .iter()
+                        .filter(|id| loaded.contains_key(id))
+                        .count(),
+                }),
+                Some(loaded),
+            ),
+            Err(err) => (
+                json!({
+                    "passes": false,
+                    "registration_count": config.embedders.len(),
+                    "error": err_json(&err),
+                }),
+                None,
+            ),
+        },
+        Err(err) => (
+            json!({
                 "passes": false,
-                "registration_count": config.embedders.len(),
                 "error": err_json(&err),
             }),
-        },
-        Err(err) => json!({
-            "passes": false,
-            "error": err_json(&err),
-        }),
+            None,
+        ),
     };
     record_progress(
         &progress_path,
@@ -128,18 +137,16 @@ fn main() -> FsvResult<()> {
         &progress_path,
         &mut progress,
         "load_content_set_start",
-        json!({"source_of_truth": config_path.display().to_string()}),
+        json!({
+            "source_of_truth": config_path.display().to_string(),
+            "derivation": "uses the already verified digest map from models_config_digest_complete; does not rehash the same 45GB model tree twice"
+        }),
     )?;
-    let load_content_after = match Ensemble::load_content_set(&config_path) {
-        Ok(ensemble) => json!({
-            "passes": true,
-            "status": ensemble.status,
-        }),
-        Err(err) => json!({
-            "passes": false,
-            "error": err_json(&err),
-        }),
-    };
+    let load_content_after = content_set_from_verified_digests(
+        &config_path,
+        verified_digests.as_ref(),
+        vram_after["passes"] == Value::Bool(true),
+    );
     record_progress(
         &progress_path,
         &mut progress,
@@ -233,6 +240,54 @@ fn record_progress(
         "detail": detail,
     }));
     write_checked(path, serde_json::to_string_pretty(progress)?.as_bytes())
+}
+
+fn content_set_from_verified_digests(
+    config_path: &Path,
+    verified_digests: Option<
+        &std::collections::BTreeMap<EmbedderId, context_graph_mejepa_embedders::LoadedEmbedder>,
+    >,
+    vram_passed: bool,
+) -> Value {
+    if !vram_passed {
+        return json!({
+            "passes": false,
+            "error": {
+                "code": "MEJEPA_EMBED_VRAM_BUDGET_EXCEEDED",
+                "message": "content-set load refused because the VRAM budget check failed"
+            }
+        });
+    }
+    let Some(loaded) = verified_digests else {
+        return json!({
+            "passes": false,
+            "error": {
+                "code": "MEJEPA_EMBED_DIGEST_UNVERIFIED",
+                "message": "content-set load refused because model digest verification did not complete"
+            }
+        });
+    };
+    let mut content = Vec::new();
+    for embedder in EmbedderId::content() {
+        let Some(row) = loaded.get(&embedder) else {
+            return json!({
+                "passes": false,
+                "error": {
+                    "code": "MEJEPA_EMBED_REGISTRATION_MISSING",
+                    "message": format!("verified digest map is missing content embedder {embedder}")
+                }
+            });
+        };
+        content.push(row.clone());
+    }
+    json!({
+        "passes": true,
+        "status": {
+            "loaded_count": content.len(),
+            "loaded": content,
+            "config_path": config_path.display().to_string(),
+        }
+    })
 }
 
 fn edge_invalid_embedder_id() -> Value {

@@ -178,7 +178,7 @@ This runs as part of the DDA signal computation; high-magnitude `BlindSpot`s are
 ## 7. What this signal map commits us to
 
 1. **Keep all active embedders in code-domain routing.** Drop none; pairwise diversity is the source of the blind-spot signal. The current registry has 19 active registrations after E5/E11 retirement.
-2. **Finish production neural/DDA consumption.** `EmbedderForward` now covers the 12 live content embedders: pretrained E1/E6/E7/E8/E10/E12/E13/E14 and algorithmic E2/E3/E4/E9. `EmbedderCache` and DDA compute/store/readback are code/FSV-shipped. Remaining `TASK-ENRICH-001/003/006` work is full model-artifact/routing FSV coverage, cache pruning/telemetry, and wiring every shift→panel path to persisted DDA features.
+2. **Finish production neural/DDA consumption.** `EmbedderForward` now covers the 12 live content embedders: pretrained E1/E6/E7/E8/E10/E12/E13/E14 and algorithmic E2/E3/E4/E9. Full pretrained/routing forward FSV, `EmbedderCache`, and DDA compute/store/readback are code/FSV-shipped. Remaining work is cache pruning/telemetry and wiring trained predictor heads to persisted DDA features.
 3. **Wire the per-head feature projection** so each prediction head consumes its required DDA signal subset. (Task: `TASK-PREDICT-005-per-head-features.md`.)
 4. **Cross-embedder anomaly z-score features** as an auxiliary input to the failure-mode head. (Task: `TASK-PREDICT-006-blind-spot-features.md`.)
 5. **VRAM budget enforcement** at startup; refuse to start with an over-budget configuration. The accounting is shipped; remaining work is daemon-start integration evidence under real model load.

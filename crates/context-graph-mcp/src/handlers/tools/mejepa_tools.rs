@@ -902,7 +902,7 @@ fn record_agent_feedback_in_db(
     request: RecordAgentFeedbackRequest,
 ) -> AnyhowResult<Value> {
     let prediction_id = parse_prediction_id_hex(&request.prediction_id)?;
-    if request.agent_explanation.as_bytes().len() > 4096 {
+    if request.agent_explanation.len() > 4096 {
         bail!("agentExplanation exceeds 4096 bytes");
     }
     let agent_id = AgentId::try_new(request.agent_id.clone())

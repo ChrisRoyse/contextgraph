@@ -13,7 +13,7 @@
 | **A. Operational unblock** | Daemon mode + prediction injection + agent-feedback channel + D-drive enforcement | code closure 2026-05-12; operator burn-in remains | none | Daemon runs; first prediction injected; first SurpriseEvent recorded; cargo lint passes |
 | **B. Multi-head extension** | Q1-Q5 `RealityPrediction` schema, what-if/explain APIs, auxiliary heads, deterministic label extractors, per-head UTML accounting | code + FSV complete 2026-05-12; training/eval hardening remains | Phase A | Code/FSV gate passed; production holdout metrics and remaining per-head self-healing tasks still open |
 | **C. Corpus expansion** | Completed Python 300×8 corpus + 10-language fixture corpus + combined split | complete 2026-05-12 | Phase A | 2,400 Python entries verified; 5,120 non-Python entries verified; combined corpus FSV passes |
-| **D. Neural embedder forwards** | Ship real forward/DDA enrichment substrate and remove placeholder-only Phase D paths | code/FSV partial 2026-05-12; full pretrained/routing consumption remains | Phase A | Forward wrappers, DDA compute/store, live shift DDA rows, cache, and stdlib registry FSV pass; full pretrained routing + trained DDA feature consumption still open |
+| **D. Neural embedder forwards** | Ship real forward/DDA enrichment substrate and remove placeholder-only Phase D paths | code/FSV partial 2026-05-12; trained DDA consumption remains | Phase A | Forward wrappers, full pretrained/routing FSV, DDA compute/store, live shift DDA rows, cache, and stdlib registry FSV pass; trained DDA feature consumption still open |
 | **E. Continuous self-optimization** | Scheduler tokio task + per-cell stratified drift + dissipation detection + lambda ramp | 5-7 days | Phase A + Phase B | Scheduler runs; drift detected within 1k obs; A/B/C promotion executes autonomously |
 | **F. Production observability** | Live conformal/OOD/p50/p99 capture + weekly eval + active-learning dashboard + WSL GPU telemetry hardening | 5-7 days | Phase A | Weekly report writes; conformal coverage measured; active-learning queue cleared by operator weekly |
 | **G. Rolling-window holdout to ≥0.95** | Run live evaluations until ship gate stably met across (category × language) | ongoing | Phase B + C + D + E + F | 4 consecutive rolling windows ≥ 0.95 |
@@ -28,7 +28,7 @@
 - **BOOTSTRAP** (3 tasks, ~2 days) — BOOT-001 + BOOT-003 in Phase A; BOOT-002 (baseline checkpoint) remains open release-prep work, now unblocked by the completed Phase C corpus
 - **API** (5 tasks, ~2.5 days) — API-001 (semver in MCP) + API-005 (changelog) in Phase A; API-002/003/004 in Phase F
 
-**Updated remaining fresh implementation effort:** Phase C no longer counts as remaining work. Phase A, the Phase B prediction/API/schema carrier, Phase C corpus expansion, and the Phase D enrichment substrate (forward surface, DDA compute/store, live shift DDA persistence, persistent cache, stdlib registry) are code/FSV-shipped. The remaining estimate is dominated by full pretrained model artifact FSV/routing coverage, trained-head DDA/neural feature consumption, autonomous self-optimization policy, observability, DR, bootstrap checkpoint release prep, and production hardening.
+**Updated remaining fresh implementation effort:** Phase C no longer counts as remaining work. Phase A, the Phase B prediction/API/schema carrier, Phase C corpus expansion, and the Phase D enrichment substrate (forward surface, full pretrained/routing FSV, DDA compute/store, live shift DDA persistence, persistent cache, stdlib registry) are code/FSV-shipped. The remaining estimate is dominated by trained-head DDA/neural feature consumption, cache telemetry/pruning, autonomous self-optimization policy, observability, DR, bootstrap checkpoint release prep, and production hardening.
 
 **Current Phase A/B baseline (2026-05-12).** `TASK-FLYWHEEL-001/002/003/004/005/006`, `TASK-PREDICT-001/002`, `TASK-LOOP-001/007`, `TASK-OBS-005/006`, `TASK-RUN-001/010/011`, `TASK-BOOT-001/003`, and `TASK-SEC-001/006/007/008` are code-shipped or operationally applied. Phase B code/FSV now ships `TASK-PREDICT-003/004/005/006/007/008`, `TASK-SEC-003`, deterministic `TASK-PREDICT-LABEL-001..009` coverage in one label module, and the core `TASK-UTML-001/002/003/004` accounting path. Phase E still owns autonomous policy logic, per-head Fisher/dormancy/lambda/dissipation, and production holdout gates.
 
@@ -148,16 +148,15 @@
 
 **Code/FSV shipped 2026-05-12:**
 - `EmbedderForward` now covers the 12 active content slots in the live registry: pretrained E1/E6/E7/E8/E10/E12/E13/E14 through `PretrainedEmbedderForward`, plus algorithmic E2/E3/E4/E9 through `AlgorithmicEmbedderForward`. E17 remains learner-state/affect, not a content embedder in the live code.
+- Full forward FSV now runs all eight pretrained content slots, all four algorithmic content slots, all 11 E7 language-specific code inputs, and all 143 Language × EntityType routing rows with output-file readback evidence.
 - Persistent `EmbedderCache` exists under `crates/context-graph-mejepa-embedders/src/cache.rs`, keyed by schema version, embedder id, model version, and chunk SHA-256. Corrupt cache entries fail closed instead of being treated as misses.
 - `compute_dda_signals`, `persist_dda_signals`, `read_dda_signals`, and row counting exist in `crates/context-graph-mejepa-train/src/dda.rs`. The source-of-truth CF is `CF_MEJEPA_DDA_SIGNALS`, keyed by `(panel_id, chunk_id)`.
 - Runtime inference RocksDB now opens `CF_MEJEPA_DDA_SIGNALS` and `CF_MEJEPA_FAILURE_EXEMPLARS`; this fixes the root cause where the CFs existed but the inference opener could not physically read/write them.
 - The live shift subscriber now computes real algorithmic embedder outputs for each code hunk, persists DDA rows before prediction/watermark side effects, and readbacks the RocksDB rows through `persist_dda_signals`.
 - The 11-language `ReinventedWheel` registry is tracked under `crates/context-graph-mejepa-instruments/assets/stdlib_registry/` and loaded through a schema-validating YAML parser.
-- FSV evidence: `/mnt/d/contextgraph/fsv/phase-d-fsv/dda-signal-compute.json`, `/mnt/d/contextgraph/fsv/phase-d-fsv/embedder-cache-fsv.json`, `/mnt/d/contextgraph/fsv/phase-d-fsv/stdlib-registry-fsv.json`, and `/mnt/d/contextgraph/fsv/contextgraph-mejepa-shift-subscriber-fsv/`.
+- FSV evidence: `/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv/forward-wrapper-evidence.json`, `/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv/routing-forward-resolution.json`, `/mnt/d/contextgraph/fsv/phase-d-fsv/dda-signal-compute.json`, `/mnt/d/contextgraph/fsv/phase-d-fsv/embedder-cache-fsv.json`, `/mnt/d/contextgraph/fsv/phase-d-fsv/stdlib-registry-fsv.json`, and `/mnt/d/contextgraph/fsv/contextgraph-mejepa-shift-subscriber-fsv/`.
 
 **Still open before declaring Phase D production-complete:**
-- Extend and FSV the live path against the full pretrained 12-slot routing matrix once every model artifact path and route is verified.
-- Add full D-root model-artifact FSV coverage for every pretrained forward wrapper and full Language × EntityType routing forward-output FSV.
 - Add production cache pruning/size-bound enforcement and hit-rate telemetry under daemon load.
 - Connect persisted DDA signals into the trained multi-head predictor feature projections and weekly pairwise-MI maintenance.
 
@@ -165,17 +164,17 @@
 
 | Task | Description | Effort |
 |---|---|---|
-| `TASK-ENRICH-001` | `EmbedderForward` trait + real pretrained wrappers for E1/E6/E7/E8/E10/E12/E13/E14 and algorithmic wrappers for E2/E3/E4/E9 | **code_complete (2026-05-12); full per-model artifact/routing FSV open** |
+| `TASK-ENRICH-001` | `EmbedderForward` trait + real pretrained wrappers for E1/E6/E7/E8/E10/E12/E13/E14 and algorithmic wrappers for E2/E3/E4/E9 | **complete (2026-05-12; full pretrained/routing FSV passed)** |
 | `TASK-ENRICH-002` | DDA signal computation per chunk with strict upper-triangle pairwise features and blind-spot z-scores | **complete (2026-05-12; FSV writes 30 RocksDB rows and reopens/readbacks)** |
 | `TASK-ENRICH-003` | New CFs from Phase A's `TASK-FLYWHEEL-006` opened by inference runtime and populated through DDA persistence API | **complete (2026-05-12; live algorithmic DDA rows FSV writes/readbacks 100 shifts)** |
 | `TASK-ENRICH-004` | Embedder cache layer keyed by `(schema, embedder_id, model_version, chunk_sha)` for re-edit scenarios | **partial/code_complete (2026-05-12; persistent cache FSV complete, LRU/telemetry open)** |
 | `TASK-ENRICH-005` | VRAM budget gate enforcement at startup (refuse to start over budget) | existing gate present; daemon-load telemetry/evidence open |
-| `TASK-ENRICH-006` | `EmbedderForward` FSV per embedder (real model file, deterministic input → expected output) | **partial; E10 + algorithmic/cache FSV evidence exists, full pretrained set open** |
+| `TASK-ENRICH-006` | `EmbedderForward` FSV per embedder (real model file, deterministic input → expected output) | **complete (2026-05-12; 8 pretrained + 4 algorithmic + 143 routing rows read back)** |
 | `TASK-ENRICH-007` | Per-language stdlib registry for `ReinventedWheel` detection | **complete (2026-05-12; 11 tracked YAMLs + FSV)** |
 
 **Ship gate:**
-1. All 12 active content embedders return valid real outputs when called via `EmbedderForward::forward(chunk)`; pretrained slots use SHA-pinned model artifacts and algorithmic slots use their real mathematical implementations. **Partially passed at code level; full per-model artifact FSV still open.**
-2. Routing FSV runs all 11 languages × 13 entity types and confirms each route returns a valid vector. **Open.**
+1. All 12 active content embedders return valid real outputs when called via `EmbedderForward::forward(chunk)`; pretrained slots use SHA-pinned model artifacts and algorithmic slots use their real mathematical implementations. **Passed 2026-05-12.**
+2. Routing FSV runs all 11 languages × 13 entity types and confirms each route resolves to a read-back forward output file. **Passed 2026-05-12.**
 3. DDA FSV writes and reopens `CF_MEJEPA_DDA_SIGNALS` with 30 chunk rows. **Passed 2026-05-12.**
 4. VRAM peak under load < 10 GB (10× headroom on RTX 5090). **Open under daemon load.**
 5. Cache hit rate > 90% for re-Edit scenarios on the same chunk. **Cache hit semantics passed in FSV; production hit-rate telemetry open.**

@@ -4,7 +4,7 @@
 >
 > **The slogan:** **every byte of reality becomes hundreds of labeled training examples.** This document specifies the exact pipeline that delivers that.
 
-**Status snapshot (2026-05-12):** The storage substrate (`CF_MEJEPA_DDA_SIGNALS`) and Phase B typed prediction surfaces are shipped. Phase D now also ships the DDA compute/store/readback API, persistent embedder cache, 12-slot content forward surface, inference CF opener fix, stdlib registry FSV, and live shift-subscriber DDA persistence for real algorithmic forward outputs. Current Phase B predictions still use deterministic patch/panel surfaces; trained heads do not yet consume persisted DDA features, and full pretrained artifact/routing FSV remains open.
+**Status snapshot (2026-05-12):** The storage substrate (`CF_MEJEPA_DDA_SIGNALS`) and Phase B typed prediction surfaces are shipped. Phase D now also ships the DDA compute/store/readback API, persistent embedder cache, 12-slot content forward surface, full pretrained/routing forward FSV, inference CF opener fix, stdlib registry FSV, and live shift-subscriber DDA persistence for real algorithmic forward outputs. Current Phase B predictions still use deterministic patch/panel surfaces; trained heads do not yet consume persisted DDA features.
 
 ---
 
@@ -121,7 +121,7 @@ These signals are persisted to `CF_MEJEPA_DDA_SIGNALS` keyed by `(panel_id, chun
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Steps 1, 2, 5, and 6 are shipped. Step 3's real forward surface and Step 4's DDA compute/store/readback substrate are now code/FSV-shipped, and the live shift subscriber writes DDA rows for the real algorithmic forward set. The remaining production work is full pretrained/routing FSV and feeding persisted DDA features into trained prediction heads.
+Steps 1, 2, 5, and 6 are shipped. Step 3's real forward surface and Step 4's DDA compute/store/readback substrate are now code/FSV-shipped, and the live shift subscriber writes DDA rows for the real algorithmic forward set. The remaining production work is feeding persisted DDA features into trained prediction heads.
 
 ---
 
@@ -289,8 +289,8 @@ Per `docs/ruvectorfindings/specs/_README.md` Phase 6, the system has a **115 GB 
 
 ## 10. What this enrichment pipeline commits us to
 
-1. **Build per-embedder forward wrappers** so `EmbedderForward::forward(chunk)` runs a real pretrained or algorithmic implementation instead of returning placeholders. The 12 active content forward surface is code-shipped; full pretrained artifact/routing FSV remains open.
-2. **Wire DDA signal computation** as a step between embedder forward and panel assembly. The compute/store API, RocksDB FSV, and live shift-subscriber write/readback path are shipped for real algorithmic forward outputs; full 12-slot pretrained/routing FSV remains open.
+1. **Build per-embedder forward wrappers** so `EmbedderForward::forward(chunk)` runs a real pretrained or algorithmic implementation instead of returning placeholders. The 12 active content forward surface and full pretrained/routing FSV are shipped.
+2. **Wire DDA signal computation** as a step between embedder forward and panel assembly. The compute/store API, RocksDB FSV, and live shift-subscriber write/readback path are shipped for real algorithmic forward outputs.
 3. **Open `CF_MEJEPA_DDA_SIGNALS` and `CF_MEJEPA_FAILURE_EXEMPLARS` in inference runtime.** Shipped 2026-05-12; this fixed the root cause where the CF constants existed but `open_infer_rocksdb` did not open them.
 4. **Multi-head extensions** to the predictor that consume DDA signals as auxiliary features. Phase B schema/API code exists; trained DDA feature consumption remains open.
 5. **Per-language mutation operators** for the 10 non-Python languages are complete in Phase C. Future work here is corpus broadening, not the Phase C ship gate.

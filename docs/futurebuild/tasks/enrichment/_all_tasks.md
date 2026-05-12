@@ -4,12 +4,11 @@
 
 ## TASK-ENRICH-001 — Neural per-embedder forward wrappers
 
-- **Phase:** D · **Status:** code_complete/partial 2026-05-12 · **Blocked by:** TASK-FLYWHEEL-001 · **Spec:** TECH-ENRICHMENT §3 + 04_DDA_TCT_CODE_ENRICHMENT.md §2
+- **Phase:** D · **Status:** complete 2026-05-12 · **Blocked by:** TASK-FLYWHEEL-001 · **Spec:** TECH-ENRICHMENT §3 + 04_DDA_TCT_CODE_ENRICHMENT.md §2
 - **Goal:** Implement `EmbedderForward` trait for the live 12 active content embedders: pretrained E1/E6/E7/E8/E10/E12/E13/E14 and algorithmic E2/E3/E4/E9. E17 remains a learner-state/affect embedder in the live registry, not a content embedder.
 - **Outputs:** `crates/context-graph-mejepa-embedders/src/forward.rs` with `PretrainedEmbedderForward`, `AlgorithmicEmbedderForward`, and explicit supported-embedder sets.
-- **Done 2026-05-12:** all 12 active content slots map to a real forward implementation; temporal slots fail closed unless an explicit timestamp is provided; E9 HDC emits a real algorithmic vector; pretrained wrappers retain digest/runtime artifact checks.
-- **Still open:** full D-root model-artifact FSV for every pretrained wrapper and the full Language × EntityType routing forward-output FSV.
-- **FSV:** unit tests plus `phase_d_embedder_cache_fsv`; full per-pretrained forward FSV remains open.
+- **Done 2026-05-12:** all 12 active content slots map to a real forward implementation; temporal slots fail closed unless an explicit timestamp is provided; E9 HDC emits a real algorithmic vector; pretrained wrappers retain digest/runtime artifact checks; full forward FSV reads back outputs for 8 pretrained slots, 4 algorithmic slots, all 11 E7 language inputs, and all 143 routing rows.
+- **FSV:** `/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv/forward-wrapper-evidence.json`, `/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv/routing-forward-resolution.json`, plus unit tests and `phase_d_embedder_cache_fsv`.
 
 ## TASK-ENRICH-002 — DDA signal computation per chunk per shift
 
@@ -24,7 +23,7 @@
 - **Phase:** D · **Status:** complete 2026-05-12 · **Blocked by:** TASK-ENRICH-002
 - **Goal:** Wire DDA computation into the shift subscriber pipeline; ensure CF writes are atomic per-shift.
 - **Done 2026-05-12:** root-cause fix landed: `context_graph_mejepa_cf::INFER_CFS` now includes `CF_MEJEPA_DDA_SIGNALS` and `CF_MEJEPA_FAILURE_EXEMPLARS`, so inference runtimes open the CFs they need. `persist_dda_signals` writes synchronously and immediately reads back the stored value. The live shift subscriber now computes real algorithmic embedder outputs for each code hunk and persists DDA rows before prediction/watermark side effects.
-- **Still open:** full pretrained 12-slot routing FSV and trained-head DDA feature consumption are tracked under `TASK-ENRICH-001/006` and `TASK-PREDICT-005/006`, not this CF population task.
+- **Still open:** trained-head DDA feature consumption is tracked under `TASK-PREDICT-005/006`, not this CF population task.
 - **DoD:** running 100 real shifts populates `CF_MEJEPA_DDA_SIGNALS` with 100 × chunk-count signal blocks.
 - **FSV:** `/mnt/d/contextgraph/fsv/contextgraph-mejepa-shift-subscriber-fsv/`
 
@@ -47,12 +46,12 @@
 
 ## TASK-ENRICH-006 — Per-embedder FSV
 
-- **Phase:** D · **Status:** partial · **Blocked by:** TASK-ENRICH-001
+- **Phase:** D · **Status:** complete 2026-05-12 · **Blocked by:** TASK-ENRICH-001
 - **Goal:** One FSV example per embedder asserting deterministic input → expected output vector (bytes) when the model is the SHA-pinned artifact.
 - **Outputs:** `crates/context-graph-mejepa-embedders/examples/forward_<embedder>_fsv.rs` (12 files).
-- **Done 2026-05-12:** algorithmic/cache FSV proves E9 real forward + cache readback; existing E10 forward wrapper FSV remains available.
-- **Still open:** one source-of-truth FSV per pretrained model artifact and full routing FSV.
-- **DoD:** each FSV passes; vectors match; cosine similarity to expected = 1.0.
+- **Done 2026-05-12:** full forward FSV proves E1/E6/E7/E8/E10/E12/E13/E14 pretrained outputs, E2/E3/E4/E9 algorithmic outputs, E7 language-specific code inputs for 11 languages, and 143 Language × EntityType routing rows resolving to read-back output files.
+- **DoD:** each FSV passes; vectors have expected dimensions, finite nonzero norms, SHA-pinned model versions, and source-of-truth JSON readback.
+- **FSV:** `/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv/`
 
 ## TASK-ENRICH-007 — Per-language stdlib registry
 

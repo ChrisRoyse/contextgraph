@@ -177,9 +177,9 @@ Loaded at startup; consumed by the redundancy / dead-code label pipelines and su
 
 | FSV | What it proves | Output path |
 |---|---|---|
-| `forward_wrapper_fsv` | E10 pretrained forward wrapper loads SHA-pinned artifacts and returns valid output | `/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv/` |
+| `forward_wrapper_fsv` | all 8 pretrained content wrappers, all 4 algorithmic wrappers, E7 11-language code inputs, and 143 routing rows load/forward/read back valid output evidence | `/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv/` |
 | `phase_d_embedder_cache_fsv` | E9 real algorithmic forward writes and reads a persistent cache file; corrupt cache fails closed | `/mnt/d/contextgraph/fsv/phase-d-fsv/embedder-cache-fsv.json` |
-| ... per pretrained embedder ... | each pretrained active content embedder still needs its own full artifact FSV | `/mnt/d/contextgraph/fsv/mejepa-embedders-fsv/<embedder_id>.json` |
+| `forward_wrapper_fsv` output files | one source-of-truth JSON output per active forward slot, plus E7 per-language files | `/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv/forward-outputs/` |
 | `vram_budget_fsv` | over-budget config refuses to start | `/mnt/d/contextgraph/fsv/mejepa-embedders-fsv/vram_budget.json` |
 | `phase_d_dda_fsv` | DdaSignals computed, persisted, reopened, and read back for 30 chunks | `/mnt/d/contextgraph/fsv/phase-d-fsv/dda-signal-compute.json` |
 | `constellation_refresh_fsv` | stale cell refit produces new centroid + tau_m | `/mnt/d/contextgraph/fsv/mejepa-tct-fsv/refresh.json` |
