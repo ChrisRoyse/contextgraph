@@ -3,8 +3,8 @@
 // inputs; no mocks.
 
 use super::e_code::{
-    CodeInstrumentInput, DiffInstrumentInput, EAstInstrument, ECfgInstrument, EDataFlowInstrument,
-    EDiffInstrument, ETypeGraphInstrument,
+    analyze_python_semantic_facts, CodeInstrumentInput, DiffInstrumentInput, EAstInstrument,
+    ECfgInstrument, EDataFlowInstrument, EDiffInstrument, ETypeGraphInstrument,
 };
 use super::e_oracle::{
     EOracleInstrument, ExceptionClass, OracleVerdict, PerTestOutcome, TestOutcome,
@@ -536,6 +536,75 @@ fn code_instruments_accept_real_multilanguage_ast_sources() {
             input.language
         );
     }
+}
+
+#[test]
+fn python_code_instruments_use_slot_specific_ruff_semantic_facts() {
+    let input = CodeInstrumentInput {
+        language: "python".into(),
+        path: "pkg/solver.py".into(),
+        source: r#"from typing import Any
+
+class Solver:
+    def compute(self, values: list[int] | None, meta: Any = None) -> int:
+        total: int = 0
+        if values is None:
+            return 0
+            unreachable = 1
+        for value in values:
+            total += value
+        return total
+"#
+        .into(),
+    };
+    let facts = analyze_python_semantic_facts(&input).unwrap();
+    assert_eq!(facts.analyzer, "python_ruff_semantic_v1");
+    assert!(facts.ast_stmt_count >= 8, "{facts:?}");
+    assert!(facts.ast_expr_count >= 10, "{facts:?}");
+    assert!(facts.cfg_block_count >= facts.ast_stmt_count, "{facts:?}");
+    assert!(facts.cfg_edge_count > 0, "{facts:?}");
+    assert!(facts.cfg_branch_count > 0, "{facts:?}");
+    assert!(facts.cfg_loop_back_edge_count > 0, "{facts:?}");
+    assert!(facts.cfg_unreachable_stmt_count > 0, "{facts:?}");
+    assert!(facts.data_def_count > 0, "{facts:?}");
+    assert!(facts.data_use_count > 0, "{facts:?}");
+    assert!(facts.data_def_use_edge_count > 0, "{facts:?}");
+    assert!(facts.data_param_source_count >= 3, "{facts:?}");
+    assert_eq!(facts.data_undefined_read_count, 0, "{facts:?}");
+    assert!(facts.type_annotated_binding_count >= 4, "{facts:?}");
+    assert!(facts.type_return_annotation_count >= 1, "{facts:?}");
+    assert!(facts.type_generic_count >= 1, "{facts:?}");
+    assert!(facts.type_union_optional_count >= 1, "{facts:?}");
+    assert!(facts.type_any_like_count >= 1, "{facts:?}");
+
+    let ast = EAstInstrument.encode(&input).unwrap();
+    let cfg = ECfgInstrument.encode(&input).unwrap();
+    let data_flow = EDataFlowInstrument.encode(&input).unwrap();
+    let type_graph = ETypeGraphInstrument.encode(&input).unwrap();
+    assert_ne!(
+        ast, cfg,
+        "AST and CFG slots must not share one generic vector"
+    );
+    assert_ne!(
+        data_flow, type_graph,
+        "Data-flow and type-graph slots must carry different analyzer facts"
+    );
+    assert!(
+        ast[16] > 0.0,
+        "AST semantic feature lane should be populated"
+    );
+    assert!(
+        cfg[16] > 0.0,
+        "CFG semantic feature lane should be populated"
+    );
+    assert!(
+        data_flow[16] > 0.0,
+        "Data-flow semantic feature lane should be populated"
+    );
+    assert!(
+        type_graph[16] > 0.0,
+        "Type-graph semantic feature lane should be populated"
+    );
 }
 
 #[test]

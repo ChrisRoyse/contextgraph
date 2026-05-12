@@ -147,7 +147,7 @@ Assertions on day 7:
 ## 6. Per-language toolchain detection (D2)
 
 Some prediction-label sources require external toolchains:
-- E_TypeGraph for Python: `pyright` / `mypy`
+- E_TypeGraph for Python: in-process Ruff semantic facts are shipped; FSV also requires `pyright` plus `python3 -m py_compile` readback. `mypy` remains a planned second type-lattice source.
 - E_StaticAnalysis: `bandit`, `pylint`, `clippy`, `eslint`, `cargo-audit`, `semgrep`
 - Perf head: `pytest-benchmark`, `cargo bench`, `valgrind`
 - Cost head: CI runner's time output

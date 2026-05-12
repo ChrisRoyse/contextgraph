@@ -43,6 +43,7 @@ crates/context-graph-mejepa-instruments/
       ruby.yml                # shipped
       php.yml                 # shipped
   src/
+    e_code.rs                 # shipped: Python Ruff semantic analyzer facts for E_AST/E_CFG/E_DataFlow/E_TypeGraph; non-Python parity remains staged
     stdlib_registry.rs        # shipped: schema-validating loader + detector
 ```
 
@@ -184,3 +185,4 @@ Loaded at startup; consumed by the redundancy / dead-code label pipelines and su
 | `phase_d_dda_fsv` | DdaSignals computed, persisted, reopened, and read back for 30 chunks | `/mnt/d/contextgraph/fsv/phase-d-fsv/dda-signal-compute.json` |
 | `constellation_refresh_fsv` | stale cell refit produces new centroid + tau_m | `/mnt/d/contextgraph/fsv/mejepa-tct-fsv/refresh.json` |
 | `phase_d_stdlib_registry_fsv` | all 11 per-language YAMLs load + parse; Python retry-backoff detects; missing/unknown registries fail closed | `/mnt/d/contextgraph/fsv/phase-d-fsv/stdlib-registry-fsv.json` |
+| `python_semantic_analyzers_fsv` | Python E_AST/E_CFG/E_DataFlow/E_TypeGraph use distinct Ruff semantic facts, external Ruff/Pyright/py_compile evidence is persisted, and empty/invalid/non-Python/max-size edge cases print before/after source-of-truth state | `/mnt/d/contextgraph/fsv/contextgraph-python-semantic-analyzers-fsv/python-semantic-analyzers-evidence.json` |

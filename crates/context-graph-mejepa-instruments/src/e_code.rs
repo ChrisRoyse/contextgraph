@@ -1,7 +1,11 @@
 use context_graph_core::memory::ast::{
     chunk_with_options, AstChunk, AstChunkOptions, AstChunkerError, EntityType, Language,
 };
+use ruff_python_ast::{
+    Arguments, Comprehension, ElifElseClause, ExceptHandler, Expr, ExprContext, Parameters, Stmt,
+};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use crate::features::{
     add_hashed_pair, add_hashed_token_features, bounded_ratio, normalize_l2,
@@ -45,6 +49,7 @@ pub struct EDiffInstrument;
 
 #[derive(Default)]
 struct CodeStats {
+    analyzer: CodeAnalyzerKind,
     node_count: usize,
     named_node_count: usize,
     max_depth: usize,
@@ -58,6 +63,126 @@ struct CodeStats {
     type_hint_count: usize,
     return_count: usize,
     import_count: usize,
+    ast_stmt_count: usize,
+    ast_expr_count: usize,
+    decorator_count: usize,
+    comprehension_count: usize,
+    match_case_count: usize,
+    try_count: usize,
+    with_count: usize,
+    await_count: usize,
+    yield_count: usize,
+    cfg_block_count: usize,
+    cfg_edge_count: usize,
+    cfg_exit_count: usize,
+    cfg_branch_count: usize,
+    cfg_loop_back_edge_count: usize,
+    cfg_unreachable_stmt_count: usize,
+    cfg_exception_edge_count: usize,
+    data_def_count: usize,
+    data_use_count: usize,
+    data_def_use_edge_count: usize,
+    data_param_source_count: usize,
+    data_call_sink_count: usize,
+    data_undefined_read_count: usize,
+    data_attribute_flow_count: usize,
+    data_subscript_flow_count: usize,
+    data_unused_def_count: usize,
+    type_annotated_binding_count: usize,
+    type_unannotated_binding_count: usize,
+    type_return_annotation_count: usize,
+    type_class_base_count: usize,
+    type_generic_count: usize,
+    type_union_optional_count: usize,
+    type_literal_inference_count: usize,
+    type_any_like_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum CodeAnalyzerKind {
+    #[default]
+    GenericAstChunker,
+    PythonRuffSemanticV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PythonSemanticFacts {
+    pub analyzer: String,
+    pub ast_stmt_count: usize,
+    pub ast_expr_count: usize,
+    pub function_count: usize,
+    pub class_count: usize,
+    pub branch_count: usize,
+    pub loop_count: usize,
+    pub call_count: usize,
+    pub cfg_block_count: usize,
+    pub cfg_edge_count: usize,
+    pub cfg_exit_count: usize,
+    pub cfg_branch_count: usize,
+    pub cfg_loop_back_edge_count: usize,
+    pub cfg_unreachable_stmt_count: usize,
+    pub cfg_exception_edge_count: usize,
+    pub data_def_count: usize,
+    pub data_use_count: usize,
+    pub data_def_use_edge_count: usize,
+    pub data_param_source_count: usize,
+    pub data_call_sink_count: usize,
+    pub data_undefined_read_count: usize,
+    pub data_attribute_flow_count: usize,
+    pub data_subscript_flow_count: usize,
+    pub data_unused_def_count: usize,
+    pub type_annotated_binding_count: usize,
+    pub type_unannotated_binding_count: usize,
+    pub type_return_annotation_count: usize,
+    pub type_class_base_count: usize,
+    pub type_generic_count: usize,
+    pub type_union_optional_count: usize,
+    pub type_literal_inference_count: usize,
+    pub type_any_like_count: usize,
+}
+
+impl From<&CodeStats> for PythonSemanticFacts {
+    fn from(stats: &CodeStats) -> Self {
+        Self {
+            analyzer: match stats.analyzer {
+                CodeAnalyzerKind::GenericAstChunker => "generic_ast_chunker".to_string(),
+                CodeAnalyzerKind::PythonRuffSemanticV1 => "python_ruff_semantic_v1".to_string(),
+            },
+            ast_stmt_count: stats.ast_stmt_count,
+            ast_expr_count: stats.ast_expr_count,
+            function_count: stats.function_count,
+            class_count: stats.class_count,
+            branch_count: stats.branch_count,
+            loop_count: stats.loop_count,
+            call_count: stats.call_count,
+            cfg_block_count: stats.cfg_block_count,
+            cfg_edge_count: stats.cfg_edge_count,
+            cfg_exit_count: stats.cfg_exit_count,
+            cfg_branch_count: stats.cfg_branch_count,
+            cfg_loop_back_edge_count: stats.cfg_loop_back_edge_count,
+            cfg_unreachable_stmt_count: stats.cfg_unreachable_stmt_count,
+            cfg_exception_edge_count: stats.cfg_exception_edge_count,
+            data_def_count: stats.data_def_count,
+            data_use_count: stats.data_use_count,
+            data_def_use_edge_count: stats.data_def_use_edge_count,
+            data_param_source_count: stats.data_param_source_count,
+            data_call_sink_count: stats.data_call_sink_count,
+            data_undefined_read_count: stats.data_undefined_read_count,
+            data_attribute_flow_count: stats.data_attribute_flow_count,
+            data_subscript_flow_count: stats.data_subscript_flow_count,
+            data_unused_def_count: stats.data_unused_def_count,
+            type_annotated_binding_count: stats.type_annotated_binding_count,
+            type_unannotated_binding_count: stats.type_unannotated_binding_count,
+            type_return_annotation_count: stats.type_return_annotation_count,
+            type_class_base_count: stats.type_class_base_count,
+            type_generic_count: stats.type_generic_count,
+            type_union_optional_count: stats.type_union_optional_count,
+            type_literal_inference_count: stats.type_literal_inference_count,
+            type_any_like_count: stats.type_any_like_count,
+        }
+    }
 }
 
 impl Instrument for EAstInstrument {
@@ -270,6 +395,9 @@ fn validate_diff_input(input: &DiffInstrumentInput) -> InstrumentResult<()> {
 fn parse_code(input: &CodeInstrumentInput) -> InstrumentResult<CodeStats> {
     validate_code_input(input)?;
     let language = parse_language(&input.language)?;
+    if language == Language::Python {
+        return parse_python_semantic_code(input);
+    }
     let chunks = chunk_with_options(
         input.source.as_bytes(),
         language,
@@ -277,6 +405,24 @@ fn parse_code(input: &CodeInstrumentInput) -> InstrumentResult<CodeStats> {
     )
     .map_err(map_chunker_error)?;
     stats_from_chunks(&chunks, &input.source)
+}
+
+pub fn analyze_python_semantic_facts(
+    input: &CodeInstrumentInput,
+) -> InstrumentResult<PythonSemanticFacts> {
+    validate_code_input(input)?;
+    let language = parse_language(&input.language)?;
+    if language != Language::Python {
+        return Err(InstrumentError::invalid(
+            "input.language",
+            format!(
+                "python semantic analyzer only accepts python, got {}",
+                input.language
+            ),
+            "route non-Python code through its language-specific analyzer once that phase is active",
+        ));
+    }
+    parse_python_semantic_code(input).map(|stats| PythonSemanticFacts::from(&stats))
 }
 
 fn parse_language(language: &str) -> InstrumentResult<Language> {
@@ -356,6 +502,714 @@ fn stats_from_chunks(chunks: &[AstChunk], source: &str) -> InstrumentResult<Code
     Ok(stats)
 }
 
+fn parse_python_semantic_code(input: &CodeInstrumentInput) -> InstrumentResult<CodeStats> {
+    let parsed = ruff_python_parser::parse_module(&input.source).map_err(|err| {
+        InstrumentError::invalid(
+            "input.source",
+            format!("ruff-python-parser rejected source: {err}"),
+            "fix Python syntax before encoding semantic instruments; recovered ASTs are not accepted",
+        )
+    })?;
+    let module = parsed.into_syntax();
+    let mut stats = CodeStats {
+        analyzer: CodeAnalyzerKind::PythonRuffSemanticV1,
+        ..CodeStats::default()
+    };
+    let mut scope = PythonScope::module();
+    analyze_python_suite(&module.body, &mut scope, &mut stats, 1);
+    scope.finish(&mut stats);
+    if stats.ast_stmt_count == 0 {
+        stats.node_count = 1;
+        stats.named_node_count = 1;
+        stats.max_depth = 1;
+        stats.identifier_count = count_python_identifiers(&input.source);
+        return Ok(stats);
+    }
+    stats.node_count = stats.ast_stmt_count + stats.ast_expr_count;
+    stats.named_node_count = stats.node_count;
+    stats.identifier_count = count_python_identifiers(&input.source);
+    stats.assignment_count = stats.data_def_count;
+    stats.type_hint_count = stats.type_annotated_binding_count + stats.type_return_annotation_count;
+    Ok(stats)
+}
+
+#[derive(Debug, Default)]
+struct PythonScope {
+    defined: BTreeMap<String, usize>,
+    read: BTreeMap<String, usize>,
+}
+
+impl PythonScope {
+    fn module() -> Self {
+        let mut scope = Self::default();
+        for builtin in PYTHON_BUILTINS {
+            scope.defined.insert((*builtin).to_string(), 1);
+        }
+        scope
+    }
+
+    fn function(parameters: &Parameters, stats: &mut CodeStats) -> Self {
+        let mut scope = Self::module();
+        for param in parameters.iter() {
+            define_name(param.name().as_str(), &mut scope, stats);
+            stats.data_param_source_count += 1;
+            if let Some(annotation) = param.annotation() {
+                record_type_annotation(annotation, stats);
+            } else {
+                stats.type_unannotated_binding_count += 1;
+            }
+        }
+        scope
+    }
+
+    fn finish(self, stats: &mut CodeStats) {
+        for (name, count) in self.defined {
+            if name == "_" || is_python_builtin(&name) {
+                continue;
+            }
+            if self.read.get(&name).copied().unwrap_or(0) == 0 {
+                stats.data_unused_def_count += count;
+            }
+        }
+    }
+}
+
+fn analyze_python_suite(
+    suite: &[Stmt],
+    scope: &mut PythonScope,
+    stats: &mut CodeStats,
+    depth: usize,
+) -> bool {
+    let mut reachable = true;
+    let mut saw_stmt = false;
+    for stmt in suite {
+        if reachable && saw_stmt {
+            stats.cfg_edge_count += 1;
+        }
+        if !reachable {
+            stats.cfg_unreachable_stmt_count += 1;
+        }
+        let falls_through = analyze_python_stmt(stmt, scope, stats, depth, reachable);
+        reachable = reachable && falls_through;
+        saw_stmt = true;
+    }
+    !saw_stmt || reachable
+}
+
+fn analyze_python_stmt(
+    stmt: &Stmt,
+    scope: &mut PythonScope,
+    stats: &mut CodeStats,
+    depth: usize,
+    reachable: bool,
+) -> bool {
+    stats.ast_stmt_count += 1;
+    stats.cfg_block_count += 1;
+    stats.max_depth = stats.max_depth.max(depth);
+    match stmt {
+        Stmt::FunctionDef(function) => {
+            stats.function_count += 1;
+            define_name(function.name.as_str(), scope, stats);
+            stats.decorator_count += function.decorator_list.len();
+            for decorator in &function.decorator_list {
+                analyze_python_expr(&decorator.expression, scope, stats, depth + 1);
+            }
+            if let Some(returns) = &function.returns {
+                stats.type_return_annotation_count += 1;
+                record_type_annotation(returns, stats);
+            }
+            let mut function_scope = PythonScope::function(&function.parameters, stats);
+            analyze_python_suite(&function.body, &mut function_scope, stats, depth + 1);
+            function_scope.finish(stats);
+            true
+        }
+        Stmt::ClassDef(class_def) => {
+            stats.class_count += 1;
+            define_name(class_def.name.as_str(), scope, stats);
+            stats.decorator_count += class_def.decorator_list.len();
+            for decorator in &class_def.decorator_list {
+                analyze_python_expr(&decorator.expression, scope, stats, depth + 1);
+            }
+            if let Some(arguments) = &class_def.arguments {
+                stats.type_class_base_count += arguments.len();
+                analyze_python_arguments(arguments, scope, stats, depth + 1);
+            }
+            let mut class_scope = PythonScope::module();
+            analyze_python_suite(&class_def.body, &mut class_scope, stats, depth + 1);
+            class_scope.finish(stats);
+            true
+        }
+        Stmt::Return(stmt_return) => {
+            stats.return_count += 1;
+            if let Some(value) = &stmt_return.value {
+                analyze_python_expr(value, scope, stats, depth + 1);
+            }
+            if reachable {
+                stats.cfg_exit_count += 1;
+            }
+            false
+        }
+        Stmt::Delete(stmt_delete) => {
+            for target in &stmt_delete.targets {
+                analyze_python_expr(target, scope, stats, depth + 1);
+            }
+            true
+        }
+        Stmt::TypeAlias(type_alias) => {
+            define_python_target(&type_alias.name, scope, stats, depth + 1);
+            record_type_annotation(&type_alias.value, stats);
+            true
+        }
+        Stmt::Assign(assign) => {
+            analyze_python_expr(&assign.value, scope, stats, depth + 1);
+            if let Some(kind) = literal_type_kind(&assign.value) {
+                stats.type_literal_inference_count += 1;
+                add_hashed_pair_to_counts(kind, stats);
+            }
+            for target in &assign.targets {
+                define_python_target(target, scope, stats, depth + 1);
+                stats.type_unannotated_binding_count += 1;
+            }
+            true
+        }
+        Stmt::AugAssign(aug_assign) => {
+            analyze_python_expr(&aug_assign.target, scope, stats, depth + 1);
+            analyze_python_expr(&aug_assign.value, scope, stats, depth + 1);
+            define_python_target(&aug_assign.target, scope, stats, depth + 1);
+            true
+        }
+        Stmt::AnnAssign(ann_assign) => {
+            record_type_annotation(&ann_assign.annotation, stats);
+            if let Some(value) = &ann_assign.value {
+                analyze_python_expr(value, scope, stats, depth + 1);
+            }
+            define_python_target(&ann_assign.target, scope, stats, depth + 1);
+            true
+        }
+        Stmt::For(stmt_for) => {
+            stats.loop_count += 1;
+            stats.cfg_branch_count += 1;
+            stats.cfg_edge_count += usize::from(reachable) * 2;
+            stats.cfg_loop_back_edge_count += usize::from(reachable);
+            analyze_python_expr(&stmt_for.iter, scope, stats, depth + 1);
+            define_python_target(&stmt_for.target, scope, stats, depth + 1);
+            analyze_python_suite(&stmt_for.body, scope, stats, depth + 1);
+            analyze_python_suite(&stmt_for.orelse, scope, stats, depth + 1);
+            true
+        }
+        Stmt::While(stmt_while) => {
+            stats.loop_count += 1;
+            stats.cfg_branch_count += 1;
+            stats.cfg_edge_count += usize::from(reachable) * 2;
+            stats.cfg_loop_back_edge_count += usize::from(reachable);
+            analyze_python_expr(&stmt_while.test, scope, stats, depth + 1);
+            analyze_python_suite(&stmt_while.body, scope, stats, depth + 1);
+            analyze_python_suite(&stmt_while.orelse, scope, stats, depth + 1);
+            true
+        }
+        Stmt::If(stmt_if) => {
+            stats.branch_count += 1 + stmt_if.elif_else_clauses.len();
+            let branch_count = 1 + stmt_if.elif_else_clauses.len();
+            stats.cfg_branch_count += branch_count;
+            stats.cfg_edge_count += usize::from(reachable) * branch_count;
+            analyze_python_expr(&stmt_if.test, scope, stats, depth + 1);
+            let mut any_branch_falls_through =
+                analyze_python_suite(&stmt_if.body, scope, stats, depth + 1);
+            let mut has_else = false;
+            for clause in &stmt_if.elif_else_clauses {
+                any_branch_falls_through |=
+                    analyze_python_elif_else_clause(clause, scope, stats, depth + 1);
+                has_else |= clause.test.is_none();
+            }
+            !has_else || any_branch_falls_through
+        }
+        Stmt::With(stmt_with) => {
+            stats.with_count += 1;
+            for item in &stmt_with.items {
+                analyze_python_expr(&item.context_expr, scope, stats, depth + 1);
+                if let Some(optional_vars) = &item.optional_vars {
+                    define_python_target(optional_vars, scope, stats, depth + 1);
+                }
+            }
+            analyze_python_suite(&stmt_with.body, scope, stats, depth + 1);
+            true
+        }
+        Stmt::Match(stmt_match) => {
+            analyze_python_expr(&stmt_match.subject, scope, stats, depth + 1);
+            stats.match_case_count += stmt_match.cases.len();
+            stats.branch_count += stmt_match.cases.len();
+            stats.cfg_branch_count += stmt_match.cases.len();
+            stats.cfg_edge_count += usize::from(reachable) * stmt_match.cases.len();
+            let mut any_case_falls_through = false;
+            for case in &stmt_match.cases {
+                if let Some(guard) = &case.guard {
+                    analyze_python_expr(guard, scope, stats, depth + 1);
+                }
+                any_case_falls_through |= analyze_python_suite(&case.body, scope, stats, depth + 1);
+            }
+            any_case_falls_through
+        }
+        Stmt::Raise(stmt_raise) => {
+            if let Some(exc) = &stmt_raise.exc {
+                analyze_python_expr(exc, scope, stats, depth + 1);
+            }
+            if let Some(cause) = &stmt_raise.cause {
+                analyze_python_expr(cause, scope, stats, depth + 1);
+            }
+            if reachable {
+                stats.cfg_exit_count += 1;
+            }
+            false
+        }
+        Stmt::Try(stmt_try) => {
+            stats.try_count += 1;
+            stats.cfg_exception_edge_count += stmt_try.handlers.len();
+            stats.cfg_edge_count += usize::from(reachable) * stmt_try.handlers.len();
+            let mut falls_through = analyze_python_suite(&stmt_try.body, scope, stats, depth + 1);
+            for handler in &stmt_try.handlers {
+                let ExceptHandler::ExceptHandler(handler) = handler;
+                if let Some(type_) = &handler.type_ {
+                    analyze_python_expr(type_, scope, stats, depth + 1);
+                }
+                if let Some(name) = &handler.name {
+                    define_name(name.as_str(), scope, stats);
+                }
+                falls_through |= analyze_python_suite(&handler.body, scope, stats, depth + 1);
+            }
+            falls_through |= analyze_python_suite(&stmt_try.orelse, scope, stats, depth + 1);
+            falls_through |= analyze_python_suite(&stmt_try.finalbody, scope, stats, depth + 1);
+            falls_through
+        }
+        Stmt::Assert(stmt_assert) => {
+            analyze_python_expr(&stmt_assert.test, scope, stats, depth + 1);
+            if let Some(msg) = &stmt_assert.msg {
+                analyze_python_expr(msg, scope, stats, depth + 1);
+            }
+            true
+        }
+        Stmt::Import(stmt_import) => {
+            stats.import_count += stmt_import.names.len();
+            for alias in &stmt_import.names {
+                let name = alias
+                    .asname
+                    .as_ref()
+                    .map(|asname| asname.as_str())
+                    .unwrap_or_else(|| alias.name.as_str().split('.').next().unwrap_or(""));
+                define_name(name, scope, stats);
+            }
+            true
+        }
+        Stmt::ImportFrom(stmt_import_from) => {
+            stats.import_count += stmt_import_from.names.len();
+            for alias in &stmt_import_from.names {
+                let name = alias
+                    .asname
+                    .as_ref()
+                    .map(|asname| asname.as_str())
+                    .unwrap_or_else(|| alias.name.as_str());
+                if name != "*" {
+                    define_name(name, scope, stats);
+                }
+            }
+            true
+        }
+        Stmt::Global(_) | Stmt::Nonlocal(_) | Stmt::Pass(_) | Stmt::IpyEscapeCommand(_) => true,
+        Stmt::Expr(stmt_expr) => {
+            analyze_python_expr(&stmt_expr.value, scope, stats, depth + 1);
+            true
+        }
+        Stmt::Break(_) | Stmt::Continue(_) => false,
+    }
+}
+
+fn analyze_python_elif_else_clause(
+    clause: &ElifElseClause,
+    scope: &mut PythonScope,
+    stats: &mut CodeStats,
+    depth: usize,
+) -> bool {
+    if let Some(test) = &clause.test {
+        analyze_python_expr(test, scope, stats, depth + 1);
+    }
+    analyze_python_suite(&clause.body, scope, stats, depth + 1)
+}
+
+fn analyze_python_expr(expr: &Expr, scope: &mut PythonScope, stats: &mut CodeStats, depth: usize) {
+    stats.ast_expr_count += 1;
+    stats.max_depth = stats.max_depth.max(depth);
+    match expr {
+        Expr::BoolOp(bool_op) => {
+            stats.branch_count += bool_op.values.len().saturating_sub(1);
+            for value in &bool_op.values {
+                analyze_python_expr(value, scope, stats, depth + 1);
+            }
+        }
+        Expr::Named(named) => {
+            analyze_python_expr(&named.value, scope, stats, depth + 1);
+            define_python_target(&named.target, scope, stats, depth + 1);
+        }
+        Expr::BinOp(bin_op) => {
+            analyze_python_expr(&bin_op.left, scope, stats, depth + 1);
+            analyze_python_expr(&bin_op.right, scope, stats, depth + 1);
+        }
+        Expr::UnaryOp(unary_op) => analyze_python_expr(&unary_op.operand, scope, stats, depth + 1),
+        Expr::Lambda(lambda) => {
+            if let Some(parameters) = &lambda.parameters {
+                let mut lambda_scope = PythonScope::function(parameters, stats);
+                analyze_python_expr(&lambda.body, &mut lambda_scope, stats, depth + 1);
+                lambda_scope.finish(stats);
+            } else {
+                analyze_python_expr(&lambda.body, scope, stats, depth + 1);
+            }
+        }
+        Expr::If(expr_if) => {
+            stats.branch_count += 1;
+            analyze_python_expr(&expr_if.test, scope, stats, depth + 1);
+            analyze_python_expr(&expr_if.body, scope, stats, depth + 1);
+            analyze_python_expr(&expr_if.orelse, scope, stats, depth + 1);
+        }
+        Expr::Dict(dict) => {
+            for item in &dict.items {
+                if let Some(key) = &item.key {
+                    analyze_python_expr(key, scope, stats, depth + 1);
+                }
+                analyze_python_expr(&item.value, scope, stats, depth + 1);
+            }
+        }
+        Expr::Set(set) => {
+            for elt in &set.elts {
+                analyze_python_expr(elt, scope, stats, depth + 1);
+            }
+        }
+        Expr::ListComp(comp) => {
+            analyze_python_comprehensions(&comp.generators, scope, stats, depth + 1);
+            analyze_python_expr(&comp.elt, scope, stats, depth + 1);
+        }
+        Expr::SetComp(comp) => {
+            analyze_python_comprehensions(&comp.generators, scope, stats, depth + 1);
+            analyze_python_expr(&comp.elt, scope, stats, depth + 1);
+        }
+        Expr::DictComp(comp) => {
+            analyze_python_comprehensions(&comp.generators, scope, stats, depth + 1);
+            analyze_python_expr(&comp.key, scope, stats, depth + 1);
+            analyze_python_expr(&comp.value, scope, stats, depth + 1);
+        }
+        Expr::Generator(generator) => {
+            analyze_python_comprehensions(&generator.generators, scope, stats, depth + 1);
+            analyze_python_expr(&generator.elt, scope, stats, depth + 1);
+        }
+        Expr::Await(await_expr) => {
+            stats.await_count += 1;
+            analyze_python_expr(&await_expr.value, scope, stats, depth + 1);
+        }
+        Expr::Yield(yield_expr) => {
+            stats.yield_count += 1;
+            if let Some(value) = &yield_expr.value {
+                analyze_python_expr(value, scope, stats, depth + 1);
+            }
+        }
+        Expr::YieldFrom(yield_from) => {
+            stats.yield_count += 1;
+            analyze_python_expr(&yield_from.value, scope, stats, depth + 1);
+        }
+        Expr::Compare(compare) => {
+            analyze_python_expr(&compare.left, scope, stats, depth + 1);
+            for comparator in &compare.comparators {
+                analyze_python_expr(comparator, scope, stats, depth + 1);
+            }
+        }
+        Expr::Call(call) => {
+            stats.call_count += 1;
+            stats.data_call_sink_count += 1;
+            analyze_python_expr(&call.func, scope, stats, depth + 1);
+            analyze_python_arguments(&call.arguments, scope, stats, depth + 1);
+        }
+        Expr::Attribute(attribute) => {
+            stats.data_attribute_flow_count += 1;
+            analyze_python_expr(&attribute.value, scope, stats, depth + 1);
+        }
+        Expr::Subscript(subscript) => {
+            stats.data_subscript_flow_count += 1;
+            analyze_python_expr(&subscript.value, scope, stats, depth + 1);
+            analyze_python_expr(&subscript.slice, scope, stats, depth + 1);
+        }
+        Expr::Starred(starred) => analyze_python_expr(&starred.value, scope, stats, depth + 1),
+        Expr::Name(name) => match name.ctx {
+            ExprContext::Load => read_name(name.id.as_str(), scope, stats),
+            ExprContext::Store => define_name(name.id.as_str(), scope, stats),
+            ExprContext::Del | ExprContext::Invalid => {}
+        },
+        Expr::List(list) => {
+            for elt in &list.elts {
+                analyze_python_expr(elt, scope, stats, depth + 1);
+            }
+        }
+        Expr::Tuple(tuple) => {
+            for elt in &tuple.elts {
+                analyze_python_expr(elt, scope, stats, depth + 1);
+            }
+        }
+        Expr::Slice(slice) => {
+            if let Some(lower) = &slice.lower {
+                analyze_python_expr(lower, scope, stats, depth + 1);
+            }
+            if let Some(upper) = &slice.upper {
+                analyze_python_expr(upper, scope, stats, depth + 1);
+            }
+            if let Some(step) = &slice.step {
+                analyze_python_expr(step, scope, stats, depth + 1);
+            }
+        }
+        Expr::FString(_)
+        | Expr::TString(_)
+        | Expr::StringLiteral(_)
+        | Expr::BytesLiteral(_)
+        | Expr::NumberLiteral(_)
+        | Expr::BooleanLiteral(_)
+        | Expr::NoneLiteral(_)
+        | Expr::EllipsisLiteral(_)
+        | Expr::IpyEscapeCommand(_) => {}
+    }
+}
+
+fn analyze_python_comprehensions(
+    comprehensions: &[Comprehension],
+    scope: &mut PythonScope,
+    stats: &mut CodeStats,
+    depth: usize,
+) {
+    stats.comprehension_count += comprehensions.len();
+    for comprehension in comprehensions {
+        analyze_python_expr(&comprehension.iter, scope, stats, depth + 1);
+        define_python_target(&comprehension.target, scope, stats, depth + 1);
+        for if_expr in &comprehension.ifs {
+            analyze_python_expr(if_expr, scope, stats, depth + 1);
+        }
+    }
+}
+
+fn analyze_python_arguments(
+    arguments: &Arguments,
+    scope: &mut PythonScope,
+    stats: &mut CodeStats,
+    depth: usize,
+) {
+    for arg in &arguments.args {
+        analyze_python_expr(arg, scope, stats, depth + 1);
+    }
+    for keyword in &arguments.keywords {
+        analyze_python_expr(&keyword.value, scope, stats, depth + 1);
+    }
+}
+
+fn define_python_target(
+    target: &Expr,
+    scope: &mut PythonScope,
+    stats: &mut CodeStats,
+    depth: usize,
+) {
+    match target {
+        Expr::Name(name) => {
+            if matches!(name.ctx, ExprContext::Store | ExprContext::Load) {
+                define_name(name.id.as_str(), scope, stats);
+            }
+        }
+        Expr::Tuple(tuple) => {
+            for elt in &tuple.elts {
+                define_python_target(elt, scope, stats, depth + 1);
+            }
+        }
+        Expr::List(list) => {
+            for elt in &list.elts {
+                define_python_target(elt, scope, stats, depth + 1);
+            }
+        }
+        Expr::Starred(starred) => define_python_target(&starred.value, scope, stats, depth + 1),
+        Expr::Attribute(attribute) => {
+            stats.data_attribute_flow_count += 1;
+            analyze_python_expr(&attribute.value, scope, stats, depth + 1);
+        }
+        Expr::Subscript(subscript) => {
+            stats.data_subscript_flow_count += 1;
+            analyze_python_expr(&subscript.value, scope, stats, depth + 1);
+            analyze_python_expr(&subscript.slice, scope, stats, depth + 1);
+        }
+        _ => analyze_python_expr(target, scope, stats, depth + 1),
+    }
+}
+
+fn define_name(name: &str, scope: &mut PythonScope, stats: &mut CodeStats) {
+    if name.trim().is_empty() {
+        return;
+    }
+    *scope.defined.entry(name.to_string()).or_insert(0) += 1;
+    stats.data_def_count += 1;
+}
+
+fn read_name(name: &str, scope: &mut PythonScope, stats: &mut CodeStats) {
+    if name.trim().is_empty() {
+        return;
+    }
+    *scope.read.entry(name.to_string()).or_insert(0) += 1;
+    stats.data_use_count += 1;
+    if scope.defined.contains_key(name) || is_python_builtin(name) {
+        stats.data_def_use_edge_count += 1;
+    } else {
+        stats.data_undefined_read_count += 1;
+    }
+}
+
+fn record_type_annotation(annotation: &Expr, stats: &mut CodeStats) {
+    stats.type_annotated_binding_count += 1;
+    record_type_annotation_inner(annotation, stats);
+}
+
+fn record_type_annotation_inner(annotation: &Expr, stats: &mut CodeStats) {
+    match annotation {
+        Expr::Name(name) => {
+            if name.id.as_str() == "Any" {
+                stats.type_any_like_count += 1;
+            }
+        }
+        Expr::Attribute(attribute) => {
+            if attribute.attr.as_str() == "Any" {
+                stats.type_any_like_count += 1;
+            }
+            record_type_annotation_inner(&attribute.value, stats);
+        }
+        Expr::Subscript(subscript) => {
+            stats.type_generic_count += 1;
+            if annotation_is_union_like(&subscript.value) {
+                stats.type_union_optional_count += 1;
+            }
+            record_type_annotation_inner(&subscript.value, stats);
+            record_type_annotation_inner(&subscript.slice, stats);
+        }
+        Expr::BinOp(bin_op) => {
+            stats.type_union_optional_count += 1;
+            record_type_annotation_inner(&bin_op.left, stats);
+            record_type_annotation_inner(&bin_op.right, stats);
+        }
+        Expr::Tuple(tuple) => {
+            for elt in &tuple.elts {
+                record_type_annotation_inner(elt, stats);
+            }
+        }
+        Expr::List(list) => {
+            for elt in &list.elts {
+                record_type_annotation_inner(elt, stats);
+            }
+        }
+        Expr::StringLiteral(_)
+        | Expr::BytesLiteral(_)
+        | Expr::NumberLiteral(_)
+        | Expr::BooleanLiteral(_)
+        | Expr::NoneLiteral(_)
+        | Expr::EllipsisLiteral(_) => {}
+        _ => {}
+    }
+}
+
+fn annotation_is_union_like(expr: &Expr) -> bool {
+    match expr {
+        Expr::Name(name) => matches!(name.id.as_str(), "Union" | "Optional"),
+        Expr::Attribute(attribute) => matches!(attribute.attr.as_str(), "Union" | "Optional"),
+        _ => false,
+    }
+}
+
+fn literal_type_kind(expr: &Expr) -> Option<&'static str> {
+    match expr {
+        Expr::StringLiteral(_) => Some("str"),
+        Expr::BytesLiteral(_) => Some("bytes"),
+        Expr::NumberLiteral(_) => Some("number"),
+        Expr::BooleanLiteral(_) => Some("bool"),
+        Expr::NoneLiteral(_) => Some("none"),
+        Expr::List(_) | Expr::ListComp(_) => Some("list"),
+        Expr::Tuple(_) => Some("tuple"),
+        Expr::Dict(_) | Expr::DictComp(_) => Some("dict"),
+        Expr::Set(_) | Expr::SetComp(_) => Some("set"),
+        _ => None,
+    }
+}
+
+fn add_hashed_pair_to_counts(kind: &str, stats: &mut CodeStats) {
+    if kind == "none" || kind == "bool" {
+        stats.type_union_optional_count += usize::from(kind == "none");
+    }
+}
+
+fn count_python_identifiers(source: &str) -> usize {
+    source
+        .split(|ch: char| !(ch == '_' || ch.is_ascii_alphanumeric()))
+        .filter(|token| {
+            !token.is_empty()
+                && token
+                    .chars()
+                    .next()
+                    .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
+        })
+        .count()
+}
+
+fn is_python_builtin(name: &str) -> bool {
+    PYTHON_BUILTINS.contains(&name)
+}
+
+const PYTHON_BUILTINS: &[&str] = &[
+    "Any",
+    "BaseException",
+    "Exception",
+    "False",
+    "None",
+    "NotImplemented",
+    "Optional",
+    "True",
+    "Union",
+    "__debug__",
+    "abs",
+    "all",
+    "any",
+    "bool",
+    "bytes",
+    "callable",
+    "chr",
+    "classmethod",
+    "dict",
+    "enumerate",
+    "filter",
+    "float",
+    "getattr",
+    "hasattr",
+    "int",
+    "isinstance",
+    "issubclass",
+    "iter",
+    "len",
+    "list",
+    "map",
+    "max",
+    "min",
+    "next",
+    "object",
+    "open",
+    "print",
+    "property",
+    "range",
+    "repr",
+    "reversed",
+    "set",
+    "slice",
+    "sorted",
+    "staticmethod",
+    "str",
+    "sum",
+    "super",
+    "tuple",
+    "type",
+    "zip",
+];
+
 fn count_words(source: &str, words: &[&str]) -> usize {
     source
         .split(|ch: char| !(ch == '_' || ch.is_ascii_alphanumeric()))
@@ -383,12 +1237,80 @@ fn encode_code(
     out[10] = bounded_ratio(stats.type_hint_count as f32, 10_000.0);
     out[11] = bounded_ratio(stats.return_count as f32, 10_000.0);
     out[12] = bounded_ratio(stats.import_count as f32, 10_000.0);
+    if stats.analyzer == CodeAnalyzerKind::PythonRuffSemanticV1 {
+        encode_python_semantic_channel(&mut out, stats, slot);
+    }
     add_hashed_token_features(&mut out[32..], &input.source, 0.25);
     add_hashed_pair(&mut out, &input.path, 1.0, 16, 16);
     add_hashed_pair(&mut out, channel, 2.0, slot.dim().saturating_sub(32), 32);
     normalize_l2(&mut out);
     validate_finite_output("e_code.output", &out)?;
     Ok(out)
+}
+
+fn encode_python_semantic_channel(out: &mut [f32], stats: &CodeStats, slot: InstrumentSlot) {
+    let values: &[f32] = match slot {
+        InstrumentSlot::EAst => &[
+            bounded_ratio(stats.ast_stmt_count as f32, 100_000.0),
+            bounded_ratio(stats.ast_expr_count as f32, 250_000.0),
+            bounded_ratio(stats.decorator_count as f32, 10_000.0),
+            bounded_ratio(stats.comprehension_count as f32, 10_000.0),
+            bounded_ratio(stats.match_case_count as f32, 10_000.0),
+            bounded_ratio(stats.try_count as f32, 10_000.0),
+            bounded_ratio(stats.with_count as f32, 10_000.0),
+            bounded_ratio(stats.await_count as f32, 10_000.0),
+            bounded_ratio(stats.yield_count as f32, 10_000.0),
+        ],
+        InstrumentSlot::ECfg => &[
+            bounded_ratio(stats.cfg_block_count as f32, 100_000.0),
+            bounded_ratio(stats.cfg_edge_count as f32, 250_000.0),
+            bounded_ratio(stats.cfg_exit_count as f32, 10_000.0),
+            bounded_ratio(stats.cfg_branch_count as f32, 10_000.0),
+            bounded_ratio(stats.cfg_loop_back_edge_count as f32, 10_000.0),
+            bounded_ratio(stats.cfg_unreachable_stmt_count as f32, 10_000.0),
+            bounded_ratio(stats.cfg_exception_edge_count as f32, 10_000.0),
+            cfg_cyclomatic_ratio(stats),
+        ],
+        InstrumentSlot::EDataFlow => &[
+            bounded_ratio(stats.data_def_count as f32, 100_000.0),
+            bounded_ratio(stats.data_use_count as f32, 250_000.0),
+            bounded_ratio(stats.data_def_use_edge_count as f32, 250_000.0),
+            bounded_ratio(stats.data_param_source_count as f32, 10_000.0),
+            bounded_ratio(stats.data_call_sink_count as f32, 50_000.0),
+            bounded_ratio(stats.data_undefined_read_count as f32, 10_000.0),
+            bounded_ratio(stats.data_attribute_flow_count as f32, 50_000.0),
+            bounded_ratio(stats.data_subscript_flow_count as f32, 50_000.0),
+            bounded_ratio(stats.data_unused_def_count as f32, 50_000.0),
+        ],
+        InstrumentSlot::ETypeGraph => &[
+            bounded_ratio(stats.type_annotated_binding_count as f32, 50_000.0),
+            bounded_ratio(stats.type_unannotated_binding_count as f32, 50_000.0),
+            bounded_ratio(stats.type_return_annotation_count as f32, 10_000.0),
+            bounded_ratio(stats.type_class_base_count as f32, 10_000.0),
+            bounded_ratio(stats.type_generic_count as f32, 10_000.0),
+            bounded_ratio(stats.type_union_optional_count as f32, 10_000.0),
+            bounded_ratio(stats.type_literal_inference_count as f32, 50_000.0),
+            bounded_ratio(stats.type_any_like_count as f32, 10_000.0),
+        ],
+        _ => &[],
+    };
+    for (idx, value) in values.iter().enumerate() {
+        let offset = 16 + idx;
+        if offset < out.len() {
+            out[offset] = *value;
+        }
+    }
+}
+
+fn cfg_cyclomatic_ratio(stats: &CodeStats) -> f32 {
+    if stats.cfg_block_count == 0 {
+        return 0.0;
+    }
+    let complexity = stats
+        .cfg_edge_count
+        .saturating_add(2)
+        .saturating_sub(stats.cfg_block_count);
+    bounded_ratio(complexity as f32, 10_000.0)
 }
 
 fn signed_delta(after: usize, before: usize, denom: f32) -> f32 {

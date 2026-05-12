@@ -104,6 +104,8 @@ This is the "which embedders surface which failure" cross-reference. Reading dir
 | **Cost regressions** (Q4) | scalar (CI minutes / token counter / dep counter) | scalar only — no embedder needed |
 | **Reasoning class** (Q4) | E17 (affect-text), pairwise cosine[E_Reasoning][E_Diff], pairwise cosine[E_Reasoning][E_Oracle] | tone + agreement of agent's prose with the change and the outcome |
 
+**Python analyzer-backed code slots (2026-05-12).** For Python, `E_AST`, `E_CFG`, `E_DataFlow`, and `E_TypeGraph` no longer share one generic code-stat projection. They are filled from `python_ruff_semantic_v1` facts: AST statement/expression/decorator/comprehension shape, CFG blocks/edges/branches/loop-backs/unreachable/exception edges, local def-use/source-sink/undefined-read flows, and type annotation/generic/union/Any/literal-inference counts. Full State Verification persists the source, per-slot vectors, Ruff JSON, Pyright JSON, `py_compile` evidence, and edge-case before/after state at `/mnt/d/contextgraph/fsv/contextgraph-python-semantic-analyzers-fsv/python-semantic-analyzers-evidence.json`. Non-Python analyzer parity remains intentionally separate because Python AST quality is the priority baseline.
+
 **Architectural reading.** The Q3 (failure) and Q4 (concern) heads do not each need a *new* embedder; they need the existing 12-active embedders' DDA signals consumed differently. Phase B now ships typed prediction surfaces and deterministic extraction; the remaining gap is production DDA/neural feature consumption and trained per-head quality.
 
 ---

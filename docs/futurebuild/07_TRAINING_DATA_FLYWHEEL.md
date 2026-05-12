@@ -99,7 +99,7 @@ Plus, on the operator side:
 | Embedder forward (neural) | partial | `EmbedderForward`/`PretrainedEmbedderForward` exists for E1/E6/E7/E8/E10/E12/E13/E14 with E10 FSV; remaining work is full model-artifact FSV/cache/integration |
 | DDA signal computation | partial | CF substrate exists; production computation/consumption remains Phase D — see `04_DDA_TCT_CODE_ENRICHMENT.md` |
 | PanelBuilder | YES | `crates/context-graph-mejepa-instruments` |
-| Embedder-backed instrument heads | partial | `EmbedderBackedInstrumentHead` exists for code/text/trace semantic slots; production analyzer feeds and all shift→panel integrations remain |
+| Embedder-backed instrument heads | partial | `EmbedderBackedInstrumentHead` exists for code/text/trace semantic slots; Python code-slot analyzer feeds now use Ruff semantic facts with Ruff/Pyright/py_compile FSV at `/mnt/d/contextgraph/fsv/contextgraph-python-semantic-analyzers-fsv/python-semantic-analyzers-evidence.json`; production shift→panel neural-vector integration and non-Python analyzer parity remain |
 | Continuous self-optim scheduler | YES (Phase A skeleton) | `crates/context-graph-mejepa::heal::{scheduler,scheduler_state}`; full autonomy remains Phase E |
 | `MeJepaCompiler::observe` | YES | `crates/context-graph-mejepa::compiler` |
 | EWC++ | YES | `crates/context-graph-mejepa::heal::ewc` |
