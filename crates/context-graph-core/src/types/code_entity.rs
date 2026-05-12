@@ -208,12 +208,16 @@ pub enum CodeEntityType {
     Function,
     /// Method inside an impl block.
     Method,
+    /// Class definition.
+    Class,
     /// Struct definition.
     Struct,
     /// Enum definition.
     Enum,
     /// Trait definition.
     Trait,
+    /// Trait or interface definition.
+    TraitOrInterface,
     /// Impl block (entire block, not individual methods).
     Impl,
     /// Constant definition.
@@ -226,10 +230,18 @@ pub enum CodeEntityType {
     Macro,
     /// Module definition.
     Module,
+    /// Namespace or package declaration.
+    Namespace,
     /// Import/use statement.
     Import,
     /// Test function.
     Test,
+    /// Comment block.
+    Comment,
+    /// Documentation string or documentation comment.
+    Docstring,
+    /// Mixed AST chunk spanning multiple entity classes.
+    Mixed,
     /// Associated type in trait.
     AssociatedType,
     /// Variant of an enum.
@@ -244,17 +256,23 @@ impl CodeEntityType {
         match self {
             Self::Function => "function",
             Self::Method => "method",
+            Self::Class => "class",
             Self::Struct => "struct",
             Self::Enum => "enum",
             Self::Trait => "trait",
+            Self::TraitOrInterface => "trait_or_interface",
             Self::Impl => "impl",
             Self::Const => "const",
             Self::Static => "static",
             Self::TypeAlias => "type",
             Self::Macro => "macro",
             Self::Module => "module",
+            Self::Namespace => "namespace",
             Self::Import => "import",
             Self::Test => "test",
+            Self::Comment => "comment",
+            Self::Docstring => "docstring",
+            Self::Mixed => "mixed",
             Self::AssociatedType => "associated_type",
             Self::EnumVariant => "variant",
             Self::StructField => "field",
@@ -263,14 +281,22 @@ impl CodeEntityType {
 
     /// Check if this type represents a callable entity.
     pub fn is_callable(&self) -> bool {
-        matches!(self, Self::Function | Self::Method | Self::Macro)
+        matches!(
+            self,
+            Self::Function | Self::Method | Self::Macro | Self::Test
+        )
     }
 
     /// Check if this type represents a type definition.
     pub fn is_type_definition(&self) -> bool {
         matches!(
             self,
-            Self::Struct | Self::Enum | Self::Trait | Self::TypeAlias
+            Self::Class
+                | Self::Struct
+                | Self::Enum
+                | Self::Trait
+                | Self::TraitOrInterface
+                | Self::TypeAlias
         )
     }
 }
@@ -300,6 +326,12 @@ pub enum CodeLanguage {
     Cpp,
     /// C
     C,
+    /// C#
+    CSharp,
+    /// Ruby
+    Ruby,
+    /// PHP
+    Php,
     /// SQL
     Sql,
     /// TOML configuration
@@ -329,6 +361,9 @@ impl CodeLanguage {
             "java" => Self::Java,
             "cpp" | "cc" | "cxx" | "hpp" | "hxx" => Self::Cpp,
             "c" | "h" => Self::C,
+            "cs" => Self::CSharp,
+            "rb" => Self::Ruby,
+            "php" => Self::Php,
             "sql" => Self::Sql,
             "toml" => Self::Toml,
             "yaml" | "yml" => Self::Yaml,
@@ -362,6 +397,9 @@ impl CodeLanguage {
             Self::Java => &["java"],
             Self::Cpp => &["cpp", "cc", "cxx", "hpp", "hxx"],
             Self::C => &["c", "h"],
+            Self::CSharp => &["cs"],
+            Self::Ruby => &["rb"],
+            Self::Php => &["php"],
             Self::Sql => &["sql"],
             Self::Toml => &["toml"],
             Self::Yaml => &["yaml", "yml"],
@@ -383,6 +421,9 @@ impl CodeLanguage {
             Self::Java => "Java",
             Self::Cpp => "C++",
             Self::C => "C",
+            Self::CSharp => "C#",
+            Self::Ruby => "Ruby",
+            Self::Php => "PHP",
             Self::Sql => "SQL",
             Self::Toml => "TOML",
             Self::Yaml => "YAML",
@@ -405,6 +446,9 @@ impl CodeLanguage {
                 | Self::Java
                 | Self::Cpp
                 | Self::C
+                | Self::CSharp
+                | Self::Ruby
+                | Self::Php
         )
     }
 }

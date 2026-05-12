@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use thiserror::Error;
-use tracing::{debug, info, instrument};
+use tracing::{debug, error, info, instrument};
 use uuid::Uuid;
 
 use super::ast_chunker::{CodeChunk, EntityType as ChunkEntityType};
@@ -69,6 +69,13 @@ pub enum CodeCaptureError {
     #[error("AST chunking failed: {0}")]
     ChunkingFailed(String),
 
+    #[error("Unsupported code capture mapping for {file_path}: entity={entity_type}, language={language}")]
+    UnsupportedCodeEntityMapping {
+        file_path: String,
+        entity_type: String,
+        language: String,
+    },
+
     /// File not found.
     #[error("File not found: {path}")]
     FileNotFound { path: String },
@@ -80,6 +87,12 @@ pub enum CodeCaptureError {
 
 /// Result type for code capture operations.
 pub type CodeCaptureResult<T> = Result<T, CodeCaptureError>;
+
+#[derive(Debug, Clone, Copy)]
+struct CodeEntityMapping {
+    entity_type: CodeEntityType,
+    language: CodeLanguage,
+}
 
 /// Trait for code embedding providers.
 ///
@@ -213,7 +226,7 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeCaptureService<E, S> {
         }
 
         // Convert chunk to entity
-        let entity = self.chunk_to_entity(chunk.clone());
+        let entity = self.chunk_to_entity(chunk.clone())?;
         let id = entity.id;
 
         // Generate full 13-embedding fingerprint from contextualized text
@@ -253,7 +266,7 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeCaptureService<E, S> {
             .iter()
             .filter(|c| !c.code.trim().is_empty())
             .map(|c| self.chunk_to_entity(c.clone()))
-            .collect();
+            .collect::<CodeCaptureResult<Vec<_>>>()?;
 
         if entities.is_empty() {
             return Ok(Vec::new());
@@ -323,9 +336,14 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeCaptureService<E, S> {
     }
 
     /// Convert a CodeChunk to a CodeEntity.
-    fn chunk_to_entity(&self, chunk: CodeChunk) -> CodeEntity {
-        let entity_type = Self::convert_entity_type(chunk.metadata.entity_type);
-        let language = Self::language_from_string(&chunk.metadata.language);
+    fn chunk_to_entity(&self, chunk: CodeChunk) -> CodeCaptureResult<CodeEntity> {
+        let mapping = Self::map_chunk_metadata(
+            chunk.metadata.entity_type,
+            &chunk.metadata.language,
+            &chunk.metadata.file_path,
+        )?;
+        let entity_type = mapping.entity_type;
+        let language = mapping.language;
 
         // Extract name from scope chain or use default
         let name = chunk
@@ -361,44 +379,82 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeCaptureService<E, S> {
             entity = entity.with_module_path(module_path);
         }
 
-        entity
+        Ok(entity)
+    }
+
+    fn map_chunk_metadata(
+        chunk_type: ChunkEntityType,
+        language: &str,
+        file_path: &str,
+    ) -> CodeCaptureResult<CodeEntityMapping> {
+        let entity_type = Self::convert_entity_type(chunk_type).ok_or_else(|| {
+            let err = CodeCaptureError::UnsupportedCodeEntityMapping {
+                file_path: file_path.to_string(),
+                entity_type: format!("{chunk_type:?}"),
+                language: language.to_string(),
+            };
+            error!(error = %err, "unsupported code entity type mapping");
+            err
+        })?;
+        let language = Self::language_from_string(language).ok_or_else(|| {
+            let err = CodeCaptureError::UnsupportedCodeEntityMapping {
+                file_path: file_path.to_string(),
+                entity_type: format!("{chunk_type:?}"),
+                language: language.to_string(),
+            };
+            error!(error = %err, "unsupported code entity language mapping");
+            err
+        })?;
+        Ok(CodeEntityMapping {
+            entity_type,
+            language,
+        })
     }
 
     /// Convert AST chunker EntityType to CodeEntityType.
-    fn convert_entity_type(chunk_type: ChunkEntityType) -> CodeEntityType {
+    fn convert_entity_type(chunk_type: ChunkEntityType) -> Option<CodeEntityType> {
         match chunk_type {
-            ChunkEntityType::Function => CodeEntityType::Function,
-            ChunkEntityType::Method => CodeEntityType::Method,
-            ChunkEntityType::Struct => CodeEntityType::Struct,
-            ChunkEntityType::Enum => CodeEntityType::Enum,
-            ChunkEntityType::Trait => CodeEntityType::Trait,
-            ChunkEntityType::Impl => CodeEntityType::Impl,
-            ChunkEntityType::Module => CodeEntityType::Module,
-            ChunkEntityType::Const => CodeEntityType::Const,
-            ChunkEntityType::Static => CodeEntityType::Static,
-            ChunkEntityType::TypeAlias => CodeEntityType::TypeAlias,
-            ChunkEntityType::Macro => CodeEntityType::Macro,
-            ChunkEntityType::Comment => CodeEntityType::Function, // Fallback for doc comments
-            ChunkEntityType::Mixed => CodeEntityType::Function,   // Fallback for merged chunks
-            ChunkEntityType::Unknown => CodeEntityType::Function, // Fallback
+            ChunkEntityType::Function => Some(CodeEntityType::Function),
+            ChunkEntityType::Method => Some(CodeEntityType::Method),
+            ChunkEntityType::Class => Some(CodeEntityType::Class),
+            ChunkEntityType::Struct => Some(CodeEntityType::Struct),
+            ChunkEntityType::Enum => Some(CodeEntityType::Enum),
+            ChunkEntityType::Trait => Some(CodeEntityType::Trait),
+            ChunkEntityType::TraitOrInterface => Some(CodeEntityType::TraitOrInterface),
+            ChunkEntityType::Impl => Some(CodeEntityType::Impl),
+            ChunkEntityType::Module => Some(CodeEntityType::Module),
+            ChunkEntityType::Namespace => Some(CodeEntityType::Namespace),
+            ChunkEntityType::TestFunction => Some(CodeEntityType::Test),
+            ChunkEntityType::Import => Some(CodeEntityType::Import),
+            ChunkEntityType::Const => Some(CodeEntityType::Const),
+            ChunkEntityType::Static => Some(CodeEntityType::Static),
+            ChunkEntityType::TypeAlias => Some(CodeEntityType::TypeAlias),
+            ChunkEntityType::Macro => Some(CodeEntityType::Macro),
+            ChunkEntityType::Comment | ChunkEntityType::CommentBlock => Some(CodeEntityType::Comment),
+            ChunkEntityType::Docstring => Some(CodeEntityType::Docstring),
+            ChunkEntityType::Mixed => Some(CodeEntityType::Mixed),
+            ChunkEntityType::Unknown => None,
         }
     }
 
     /// Convert language string to CodeLanguage enum.
-    fn language_from_string(lang: &str) -> CodeLanguage {
+    fn language_from_string(lang: &str) -> Option<CodeLanguage> {
         match lang.to_lowercase().as_str() {
-            "rust" => CodeLanguage::Rust,
-            "python" => CodeLanguage::Python,
-            "typescript" => CodeLanguage::TypeScript,
-            "javascript" => CodeLanguage::JavaScript,
-            "go" => CodeLanguage::Go,
-            "java" => CodeLanguage::Java,
-            "cpp" | "c++" => CodeLanguage::Cpp,
-            "c" => CodeLanguage::C,
-            "sql" => CodeLanguage::Sql,
-            "toml" => CodeLanguage::Toml,
-            "yaml" => CodeLanguage::Yaml,
-            _ => CodeLanguage::Unknown,
+            "rust" => Some(CodeLanguage::Rust),
+            "python" => Some(CodeLanguage::Python),
+            "typescript" => Some(CodeLanguage::TypeScript),
+            "javascript" => Some(CodeLanguage::JavaScript),
+            "go" => Some(CodeLanguage::Go),
+            "java" => Some(CodeLanguage::Java),
+            "cpp" | "c++" => Some(CodeLanguage::Cpp),
+            "c" => Some(CodeLanguage::C),
+            "csharp" | "c#" => Some(CodeLanguage::CSharp),
+            "ruby" => Some(CodeLanguage::Ruby),
+            "php" => Some(CodeLanguage::Php),
+            "sql" => Some(CodeLanguage::Sql),
+            "toml" => Some(CodeLanguage::Toml),
+            "yaml" => Some(CodeLanguage::Yaml),
+            _ => None,
         }
     }
 }
