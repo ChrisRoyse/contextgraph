@@ -142,6 +142,8 @@ pub struct ParseDiagnostic {
 pub struct AstChunk {
     pub language: Language,
     pub entity_type: EntityType,
+    #[serde(default)]
+    pub symbol_name: Option<String>,
     pub parent_chain: Vec<String>,
     pub line_start: u32,
     pub line_end: u32,
@@ -149,6 +151,8 @@ pub struct AstChunk {
     pub end_byte: usize,
     pub sha256: String,
     pub parse_diagnostics: Vec<ParseDiagnostic>,
+    #[serde(default)]
+    pub raw_source: String,
     pub content: String,
     pub embedder_routing_set: BTreeSet<EmbedderId>,
 }
@@ -320,6 +324,7 @@ fn chunk_python_with_options(
             Language::Python,
             EntityType::Module,
             &[],
+            None,
             0,
             source.len(),
             source_text.to_string(),
@@ -368,6 +373,7 @@ fn walk_ruff_python_stmt(
             chunks.push(build_ruff_python_span_chunk(
                 entity_type,
                 scope_names,
+                Some(function.name.as_str().to_string()),
                 ruff_python_function_start_byte(function, source),
                 text_range_end(function.range()),
                 source,
@@ -413,6 +419,7 @@ fn walk_ruff_python_stmt(
             chunks.push(build_ruff_python_span_chunk(
                 EntityType::Import,
                 scope_names,
+                None,
                 line_start_byte(source, text_range_start(stmt.range())),
                 text_range_end(stmt.range()),
                 source,
@@ -611,6 +618,7 @@ fn build_ruff_python_module_globals_chunk(
         Language::Python,
         EntityType::Module,
         &[],
+        None,
         ranges[0].0,
         ranges.last().map(|(_, end)| *end).unwrap_or(ranges[0].1),
         raw,
@@ -680,6 +688,7 @@ fn build_ruff_python_class_shell_chunk(
         Language::Python,
         EntityType::Class,
         parent_chain,
+        Some(class_def.name.as_str().to_string()),
         start_byte,
         end_byte,
         raw.clone(),
@@ -692,6 +701,7 @@ fn build_ruff_python_class_shell_chunk(
 fn build_ruff_python_span_chunk(
     entity_type: EntityType,
     parent_chain: &[String],
+    symbol_name: Option<String>,
     start_byte: usize,
     end_byte: usize,
     source: &[u8],
@@ -711,6 +721,7 @@ fn build_ruff_python_span_chunk(
         Language::Python,
         entity_type,
         parent_chain,
+        symbol_name,
         start_byte,
         end_byte,
         raw,
@@ -854,6 +865,7 @@ fn build_text_chunk_with_sha(
     language: Language,
     entity_type: EntityType,
     parent_chain: &[String],
+    symbol_name: Option<String>,
     start_byte: usize,
     end_byte: usize,
     raw: String,
@@ -872,10 +884,11 @@ fn build_text_chunk_with_sha(
     let line_end = line_for_byte(source, end_byte);
     let non_ws = raw.chars().filter(|ch| !ch.is_whitespace()).count();
     let content = format!(
-        "path: {}\nlanguage: {}\nentity_type: {:?}\nparent_chain: {}\nlines: {}-{}\nnon_ws_chars: {}\n--- source ---\n{}",
+        "path: {}\nlanguage: {}\nentity_type: {:?}\nsymbol_name: {}\nparent_chain: {}\nlines: {}-{}\nnon_ws_chars: {}\n--- source ---\n{}",
         options.file_path,
         language.slug(),
         entity_type,
+        symbol_name.as_deref().unwrap_or(""),
         parent_chain.join("::"),
         line_start,
         line_end,
@@ -885,6 +898,7 @@ fn build_text_chunk_with_sha(
     Ok(AstChunk {
         language,
         entity_type,
+        symbol_name,
         parent_chain: parent_chain.to_vec(),
         line_start,
         line_end,
@@ -892,6 +906,7 @@ fn build_text_chunk_with_sha(
         end_byte,
         sha256,
         parse_diagnostics: vec![],
+        raw_source: raw,
         content,
         embedder_routing_set: routing,
     })
@@ -995,6 +1010,7 @@ fn build_chunk(
     let start_byte = node.start_byte();
     let end_byte = node.end_byte();
     let raw = node.utf8_text(source).unwrap_or("").to_string();
+    let symbol_name = classify::node_name(language, node, source);
     let sha256 = structural_sha256(node, source, language, entity_type, parent_chain);
     let routing = try_route_to_embedders(entity_type, Some(language)).map_err(|err| {
         AstChunkerError::RoutingMissing {
@@ -1005,10 +1021,11 @@ fn build_chunk(
     })?;
     let non_ws = raw.chars().filter(|ch| !ch.is_whitespace()).count();
     let content = format!(
-        "path: {}\nlanguage: {}\nentity_type: {:?}\nparent_chain: {}\nlines: {}-{}\nnon_ws_chars: {}\n--- source ---\n{}",
+        "path: {}\nlanguage: {}\nentity_type: {:?}\nsymbol_name: {}\nparent_chain: {}\nlines: {}-{}\nnon_ws_chars: {}\n--- source ---\n{}",
         options.file_path,
         language.slug(),
         entity_type,
+        symbol_name.as_deref().unwrap_or(""),
         parent_chain.join("::"),
         line_start,
         line_end,
@@ -1018,6 +1035,7 @@ fn build_chunk(
     Ok(AstChunk {
         language,
         entity_type,
+        symbol_name,
         parent_chain: parent_chain.to_vec(),
         line_start,
         line_end,
@@ -1025,6 +1043,7 @@ fn build_chunk(
         end_byte,
         sha256,
         parse_diagnostics: vec![],
+        raw_source: raw,
         content,
         embedder_routing_set: routing,
     })
@@ -1034,6 +1053,7 @@ fn build_text_chunk(
     language: Language,
     entity_type: EntityType,
     parent_chain: &[String],
+    symbol_name: Option<String>,
     start_byte: usize,
     end_byte: usize,
     raw: String,
@@ -1051,10 +1071,11 @@ fn build_text_chunk(
     let line_end = line_for_byte(source, end_byte);
     let non_ws = raw.chars().filter(|ch| !ch.is_whitespace()).count();
     let content = format!(
-        "path: {}\nlanguage: {}\nentity_type: {:?}\nparent_chain: {}\nlines: {}-{}\nnon_ws_chars: {}\n--- source ---\n{}",
+        "path: {}\nlanguage: {}\nentity_type: {:?}\nsymbol_name: {}\nparent_chain: {}\nlines: {}-{}\nnon_ws_chars: {}\n--- source ---\n{}",
         options.file_path,
         language.slug(),
         entity_type,
+        symbol_name.as_deref().unwrap_or(""),
         parent_chain.join("::"),
         line_start,
         line_end,
@@ -1064,6 +1085,7 @@ fn build_text_chunk(
     Ok(AstChunk {
         language,
         entity_type,
+        symbol_name,
         parent_chain: parent_chain.to_vec(),
         line_start,
         line_end,
@@ -1071,6 +1093,7 @@ fn build_text_chunk(
         end_byte,
         sha256: atomic_text_sha256(language, entity_type, parent_chain, &raw),
         parse_diagnostics: vec![],
+        raw_source: raw,
         content,
         embedder_routing_set: routing,
     })
