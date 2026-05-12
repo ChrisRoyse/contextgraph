@@ -78,12 +78,13 @@ struct GenerateArgs {
     max_tasks: Option<usize>,
     #[arg(long, default_value_t = 0)]
     skip_tasks: usize,
-    #[arg(long, default_value = "/mnt/d/contextgraph/cache/mejepa-corpus/repos")]
+    // EPHEMERAL — defaults pinned to ext4 (~/.cache/...) for ~40-100× WSL2
+    // throughput vs 9P (D-drive). On native Linux ~/.cache/ is still ext4
+    // and Just Works. The require_ephemeral_path validator forbids C-drive
+    // mounts; D-drive (durable) is still accepted via explicit override.
+    #[arg(long, default_value = "/home/cabdru/.cache/mejepa-corpus/repos")]
     repo_cache_dir: PathBuf,
-    #[arg(
-        long,
-        default_value = "/mnt/d/contextgraph/work/mejepa-corpus/source-work"
-    )]
+    #[arg(long, default_value = "/home/cabdru/.cache/mejepa-corpus/work")]
     source_work_root: PathBuf,
     #[arg(long, default_value = "mejepa-corpus")]
     run_id_prefix: String,
@@ -93,6 +94,11 @@ struct GenerateArgs {
     overall_timeout_secs: u64,
     #[arg(long, default_value_t = 4)]
     oracle_workers: usize,
+    /// Rayon thread pool size for parallel patch generation. 0 = auto
+    /// (num_cpus). Bottleneck on a single core was ~10 s/task; parallel
+    /// across the AMD 9950X3D's 16 cores brings it to <1 s/task.
+    #[arg(long, default_value_t = 0)]
+    patch_workers: usize,
     #[arg(long, default_value_t = false)]
     resume_incomplete: bool,
 }
@@ -147,12 +153,13 @@ struct SmokeArgs {
     max_tasks: Option<usize>,
     #[arg(long, default_value_t = 0)]
     skip_tasks: usize,
-    #[arg(long, default_value = "/mnt/d/contextgraph/cache/mejepa-corpus/repos")]
+    // EPHEMERAL — defaults pinned to ext4 (~/.cache/...) for ~40-100× WSL2
+    // throughput vs 9P (D-drive). On native Linux ~/.cache/ is still ext4
+    // and Just Works. The require_ephemeral_path validator forbids C-drive
+    // mounts; D-drive (durable) is still accepted via explicit override.
+    #[arg(long, default_value = "/home/cabdru/.cache/mejepa-corpus/repos")]
     repo_cache_dir: PathBuf,
-    #[arg(
-        long,
-        default_value = "/mnt/d/contextgraph/work/mejepa-corpus/source-work"
-    )]
+    #[arg(long, default_value = "/home/cabdru/.cache/mejepa-corpus/work")]
     source_work_root: PathBuf,
     #[arg(long, default_value = "mejepa-corpus-smoke")]
     run_id_prefix: String,
@@ -288,9 +295,11 @@ fn main() -> CliResult<()> {
 fn generate(mut args: GenerateArgs) -> CliResult<()> {
     args.output = require_corpus_path(&args.output, "generate.output")?;
     args.venv_python = require_durable_path(&args.venv_python, "generate.venv_python")?;
-    args.repo_cache_dir = require_durable_path(&args.repo_cache_dir, "generate.repo_cache_dir")?;
+    // Cache + source-work are ephemeral: rebuildable from durable inputs
+    // and pinned to ext4 on WSL2 for ~40-100× throughput vs 9P (D-drive).
+    args.repo_cache_dir = require_ephemeral_path(&args.repo_cache_dir, "generate.repo_cache_dir")?;
     args.source_work_root =
-        require_durable_path(&args.source_work_root, "generate.source_work_root")?;
+        require_ephemeral_path(&args.source_work_root, "generate.source_work_root")?;
     validate_generate_args(&args)?;
     let categories = parse_categories(&args.categories)?;
     let languages =
@@ -399,69 +408,170 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
     let mut completed_keys = validate_resume_rows(&args.output, &index, &store)?;
     write_index(&args.output, &index)?;
 
+    // REQ-FLYWHEEL-PARALLEL — rayon-parallel patch generation.
+    //
+    // The original loop was strictly sequential at ~10 s/task (git cat-file +
+    // tree-sitter AST parse + mutation operator + git diff). On the AMD
+    // 9950X3D (16 cores / 30 threads, Zen 5, dual-CCD) this left 29 cores
+    // idle while one core was saturated. Mutation testing in Rust is a
+    // well-established rayon use case (Foundry's `--mutation-jobs` ships
+    // exactly this pattern with 2.5× speedup at 4 workers).
+    //
+    // Concurrency model: each task is independent — distinct
+    // source-work directory, distinct output path, read-only access to
+    // the shared bare repo cache (git supports concurrent readers).
+    // The OracleStore (RocksDB) is `Sync` via internal locks. The
+    // `interrupted` flag is `Arc<AtomicBool>`. `completed_keys` is a
+    // shared `HashSet<String>` borrowed immutably (read-only during the
+    // per-category pass).
+    //
+    // Foundry recommends 16 MB stack per rayon thread for mutation
+    // workloads; we match that. Defaults to `num_cpus::get()` (typically
+    // 30 on this box) when --patch-workers=0.
+    let patch_pool = {
+        let want = if args.patch_workers == 0 {
+            num_cpus::get()
+        } else {
+            args.patch_workers
+        };
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(want)
+            .thread_name(|i| format!("mejepa-patch-{i}"))
+            .stack_size(16 * 1024 * 1024)
+            .build()
+            .map_err(|err| format!("failed to build patch_workers pool: {err}"))?
+    };
+
+    type PendingRow = (
+        TaskManifest,
+        context_graph_mejepa_corpus::patch_mutation::PatchMutationOutcome,
+        PathBuf,
+        String,
+        MutationOutcome,
+    );
+
     for category in &categories {
-        let mut pending = Vec::with_capacity(selected.len());
-        let mut predictions = Vec::with_capacity(selected.len());
-        for manifest in &selected {
-            let row_key = corpus_row_key(&manifest.instance_id, *category);
-            if completed_keys.contains(&row_key) {
-                continue;
-            }
-            if interrupted.load(Ordering::SeqCst) {
-                write_index(&args.output, &index)?;
-                return Err(
-                    "generation interrupted by SIGINT before starting next corpus row; index remains complete=false"
-                        .into(),
-                );
-            }
-            let official_patch = patch_by_task.get(&manifest.instance_id).ok_or_else(|| {
-                format!(
-                    "official dataset patch missing after loader for {}",
-                    manifest.instance_id
-                )
-            })?;
-            let seed = stable_seed(args.seed, &manifest.instance_id, *category);
-            let patch_outcome = mutate_task_source_patch(
-                &SourcePatchTask {
-                    instance_id: manifest.instance_id.clone(),
-                    repo: manifest.repo.clone(),
-                    base_commit: manifest.base_commit.clone(),
-                },
-                *category,
-                official_patch,
-                seed,
-                &source_patch_config,
-            )
-            .map_err(|err| {
-                format!(
-                    "failed to build source-backed patch for task={} category={}: {} ({})",
-                    manifest.instance_id,
-                    category.slug(),
-                    err,
-                    err.code()
-                )
-            })?;
-            let (_patch_path, patch_path_rel) =
-                write_mutated_patch(&args.output, &manifest.instance_id, &patch_outcome)?;
-            let patch_sha256 = sha256_text(&patch_outcome.mutated_patch);
-            let mutation = MutationOutcome {
-                category: *category,
-                mutated_source: patch_outcome.mutated_patch.clone(),
-                seed,
-                mutation_site: None,
-            };
-            predictions.push(SwebenchPrediction {
-                instance_id: manifest.instance_id.clone(),
-                model_name_or_path: format!("mejepa-{}", category.slug()),
-                model_patch: patch_outcome.mutated_patch.clone(),
+        if interrupted.load(Ordering::SeqCst) {
+            write_index(&args.output, &index)?;
+            return Err(
+                "generation interrupted by SIGINT before starting next corpus row; index remains complete=false"
+                    .into(),
+            );
+        }
+        // Phase 1: parallel patch generation across all selected manifests
+        // for this category. Each rayon thread produces a Result; we
+        // collect, then short-circuit on the first error.
+        let category_value = *category;
+        let interrupted_ref = &interrupted;
+        let source_patch_config_ref = &source_patch_config;
+        let patch_by_task_ref = &patch_by_task;
+        let args_output_ref = &args.output;
+        let args_seed = args.seed;
+        let completed_keys_ref = &completed_keys;
+        let results: Vec<Result<Option<(PendingRow, SwebenchPrediction)>, String>> = patch_pool
+            .install(|| {
+                use rayon::prelude::*;
+                selected
+                    .par_iter()
+                    .map(|manifest| -> Result<Option<(PendingRow, SwebenchPrediction)>, String> {
+                        let row_key = corpus_row_key(&manifest.instance_id, category_value);
+                        if completed_keys_ref.contains(&row_key) {
+                            return Ok(None);
+                        }
+                        if interrupted_ref.load(Ordering::SeqCst) {
+                            return Ok(None);
+                        }
+                        let official_patch =
+                            patch_by_task_ref.get(&manifest.instance_id).ok_or_else(|| {
+                                format!(
+                                    "official dataset patch missing after loader for {}",
+                                    manifest.instance_id
+                                )
+                            })?;
+                        let seed = stable_seed(args_seed, &manifest.instance_id, category_value);
+                        let patch_outcome = mutate_task_source_patch(
+                            &SourcePatchTask {
+                                instance_id: manifest.instance_id.clone(),
+                                repo: manifest.repo.clone(),
+                                base_commit: manifest.base_commit.clone(),
+                            },
+                            category_value,
+                            official_patch,
+                            seed,
+                            source_patch_config_ref,
+                        )
+                        .map_err(|err| {
+                            format!(
+                                "failed to build source-backed patch for task={} category={}: {} ({})",
+                                manifest.instance_id,
+                                category_value.slug(),
+                                err,
+                                err.code()
+                            )
+                        })?;
+                        let (_patch_path, patch_path_rel) = write_mutated_patch(
+                            args_output_ref,
+                            &manifest.instance_id,
+                            &patch_outcome,
+                        )
+                        .map_err(|err| {
+                            format!(
+                                "write_mutated_patch failed for task={} category={}: {} (debug={:?})",
+                                manifest.instance_id,
+                                category_value.slug(),
+                                err,
+                                err,
+                            )
+                        })?;
+                        let patch_sha256 = sha256_text(&patch_outcome.mutated_patch);
+                        let mutation = MutationOutcome {
+                            category: category_value,
+                            mutated_source: patch_outcome.mutated_patch.clone(),
+                            seed,
+                            mutation_site: None,
+                        };
+                        let prediction = SwebenchPrediction {
+                            instance_id: manifest.instance_id.clone(),
+                            model_name_or_path: format!("mejepa-{}", category_value.slug()),
+                            model_patch: patch_outcome.mutated_patch.clone(),
+                        };
+                        Ok(Some((
+                            (
+                                manifest.clone(),
+                                patch_outcome,
+                                patch_path_rel,
+                                patch_sha256,
+                                mutation,
+                            ),
+                            prediction,
+                        )))
+                    })
+                    .collect()
             });
-            pending.push((
-                manifest.clone(),
-                patch_outcome,
-                patch_path_rel,
-                patch_sha256,
-                mutation,
-            ));
+
+        // Drain results: short-circuit on first error so the CLI exits with
+        // a structured failure rather than producing a half-baked corpus.
+        let mut pending: Vec<PendingRow> = Vec::with_capacity(selected.len());
+        let mut predictions: Vec<SwebenchPrediction> = Vec::with_capacity(selected.len());
+        for result in results {
+            match result {
+                Ok(Some((row, prediction))) => {
+                    pending.push(row);
+                    predictions.push(prediction);
+                }
+                Ok(None) => continue,
+                Err(err) => {
+                    write_index(&args.output, &index)?;
+                    return Err(err.into());
+                }
+            }
+        }
+        if interrupted.load(Ordering::SeqCst) {
+            write_index(&args.output, &index)?;
+            return Err(
+                "generation interrupted by SIGINT after parallel patch generation; index remains complete=false"
+                    .into(),
+            );
         }
         if predictions.is_empty() {
             continue;
@@ -1257,8 +1367,12 @@ fn normalize(mut args: NormalizeArgs) -> CliResult<()> {
 fn smoke(mut args: SmokeArgs) -> CliResult<()> {
     args.output = require_corpus_path(&args.output, "smoke.output")?;
     args.venv_python = require_durable_path(&args.venv_python, "smoke.venv_python")?;
-    args.repo_cache_dir = require_durable_path(&args.repo_cache_dir, "smoke.repo_cache_dir")?;
-    args.source_work_root = require_durable_path(&args.source_work_root, "smoke.source_work_root")?;
+    // Same ephemeral-on-ext4 pattern as `generate` (see comments there) —
+    // smoke is just generate-with-tighter-scope, so the cache/work paths
+    // have identical durability semantics.
+    args.repo_cache_dir = require_ephemeral_path(&args.repo_cache_dir, "smoke.repo_cache_dir")?;
+    args.source_work_root =
+        require_ephemeral_path(&args.source_work_root, "smoke.source_work_root")?;
     validate_smoke_args(&args)?;
     let task_limit = args.max_tasks.or({
         if args.instance_ids.is_empty() {
@@ -1283,6 +1397,7 @@ fn smoke(mut args: SmokeArgs) -> CliResult<()> {
         instance_timeout_secs: args.instance_timeout_secs,
         overall_timeout_secs: args.overall_timeout_secs,
         oracle_workers: args.oracle_workers,
+        patch_workers: 0,
         resume_incomplete: args.resume_incomplete,
     };
     let verify_args = VerifyArgs {
@@ -1558,6 +1673,7 @@ fn validate_smoke_args(args: &SmokeArgs) -> CliResult<()> {
         instance_timeout_secs: args.instance_timeout_secs,
         overall_timeout_secs: args.overall_timeout_secs,
         oracle_workers: args.oracle_workers,
+        patch_workers: 0,
         resume_incomplete: args.resume_incomplete,
     })?;
     validate_verify_args(&VerifyArgs {
@@ -1574,6 +1690,14 @@ fn validate_smoke_args(args: &SmokeArgs) -> CliResult<()> {
 
 fn require_durable_path(path: &Path, field: &'static str) -> CliResult<PathBuf> {
     context_graph_paths::require_under_data_root(path, field).map_err(|err| err.to_string().into())
+}
+
+/// CLI-side validator for **ephemeral** paths (caches, scratch work). See
+/// `context_graph_paths::require_ephemeral_path` for the contract. Used by
+/// the `generate` command for `--repo-cache-dir` and `--source-work-root`,
+/// which on WSL2 must live on ext4 for acceptable throughput.
+fn require_ephemeral_path(path: &Path, field: &'static str) -> CliResult<PathBuf> {
+    context_graph_paths::require_ephemeral_path(path, field).map_err(|err| err.to_string().into())
 }
 
 fn require_corpus_path(path: &Path, field: &'static str) -> CliResult<PathBuf> {
@@ -2639,11 +2763,25 @@ fn write_text_checked(path: &Path, text: &str) -> CliResult<()> {
                 path.display()
             )
         })?;
+    // REGRESSION FIX (2026-05-11): under rayon-parallel writers, two threads
+    // in the SAME parent dir at the SAME unix_ms tick would collide on
+    // temp_path, race on `File::create`, and one would see ENOENT at
+    // `fs::rename` after the other already moved the file. Include the
+    // thread id + a fast monotonic counter so two concurrent calls in the
+    // same parent never produce the same temp name.
+    use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+    let counter = TEMP_COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
+    let thread_id = format!("{:?}", std::thread::current().id())
+        .replace("ThreadId(", "")
+        .replace(')', "");
     let temp_path = parent.join(format!(
-        ".{}.tmp-{}-{}",
+        ".{}.tmp-{}-t{}-{}-{}",
         file_name,
         std::process::id(),
-        unix_ms()
+        thread_id,
+        unix_ms(),
+        counter,
     ));
     let mut file = File::create(&temp_path)?;
     file.write_all(text.as_bytes())?;

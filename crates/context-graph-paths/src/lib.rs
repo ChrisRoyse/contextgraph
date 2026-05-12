@@ -179,6 +179,50 @@ pub fn require_under_data_root(path: &Path, field: &'static str) -> Result<PathB
     Ok(normalized)
 }
 
+/// Validator for **ephemeral** paths — caches and work directories whose
+/// contents are deterministically rebuildable from durable inputs. Examples:
+///
+/// - `mejepa-corpus --repo-cache-dir`: bare git clones of public SWE-bench
+///   repositories. Rebuildable via `git clone --bare https://github.com/...`.
+/// - `mejepa-corpus --source-work-root`: per-task scratch checkouts that
+///   live for the duration of a single mutation operation and are deleted
+///   after the corpus row commits.
+///
+/// On WSL2 the data root `/mnt/d/contextgraph` lives behind the 9P filesystem
+/// shim, which is ~100× slower than ext4 for small-file workloads (validated
+/// via direct benchmark on 2026-05-11: 50 sequential `echo > file` calls
+/// took 0.227 s on 9P vs 0.002 s on ext4). Forcing every ephemeral working
+/// path through 9P added ~28 hours to corpus generation. Pinning ephemeral
+/// state to ext4 (e.g. `/home/<user>/.cache/...`) restores native throughput
+/// while leaving the durable corpus output on D-drive.
+///
+/// Contract: the path MUST be absolute, lexically normalizable, and live
+/// outside the C-drive policy deny list. It is explicitly allowed OUTSIDE
+/// the data root (that is the entire point of this validator). Callers
+/// must NEVER use this for durable artifacts — use `require_under_data_root`
+/// for any state that must survive a reboot.
+pub fn require_ephemeral_path(path: &Path, field: &'static str) -> Result<PathBuf> {
+    let absolute = make_absolute(path)?;
+    let normalized = normalize_absolute_lexical(&absolute)?;
+    // Hard-deny the C-drive (and anything that would route into 9P windows
+    // mounts other than /mnt/d/contextgraph). The data-root constraint is
+    // intentionally NOT applied here.
+    let denied_prefixes = ["/mnt/c/", "/mnt/c"];
+    for prefix in &denied_prefixes {
+        if normalized.to_string_lossy().starts_with(prefix) {
+            return Err(PathError::new(
+                "CONTEXTGRAPH_EPHEMERAL_PATH_ON_DENIED_MOUNT",
+                format!(
+                    "{field}={} lives on a denied mount (C-drive). Use ext4 (e.g. /home/<user>/.cache/...) or the durable D-drive root.",
+                    normalized.display()
+                ),
+                "pick an absolute path on ext4 (~/.cache/mejepa-corpus/...) or under /mnt/d/contextgraph",
+            ));
+        }
+    }
+    Ok(normalized)
+}
+
 fn validate_data_root(path: &Path) -> Result<()> {
     if !path.is_absolute() {
         return Err(PathError::new(

@@ -1166,6 +1166,8 @@ dependencies = [
  "context-graph-paths",
  "ctrlc",
  "fs2",
+ "num_cpus",
+ "rayon",
  "rocksdb",
  "serde",
  "serde_json",

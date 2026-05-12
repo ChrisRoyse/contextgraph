@@ -94,6 +94,14 @@ struct GeneratorConfig {
     seed: u64,
     instance_timeout: Duration,
     overall_timeout: Duration,
+    /// REQ-FLYWHEEL-corpus-PARALLEL — number of rayon worker threads driving
+    /// the patch-generation loop. 0 means "auto" → `num_cpus::get()`. Each
+    /// worker independently spawns its own git subprocesses against the
+    /// shared (read-mostly) bare repo cache and writes to its own unique
+    /// source-work directory. The OracleStore (RocksDB) and CorpusIndex
+    /// are shared via internal locks. Default 0 (auto) matches the
+    /// Foundry-mutate / pytest-gremlins / fest-mutate convention.
+    patch_workers: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -181,6 +189,7 @@ pub fn generate_swe_bench_mutation_corpus_with_oracle<O: Oracle>(
         seed: 0,
         instance_timeout: Duration::from_secs(1800),
         overall_timeout: Duration::from_secs(3600),
+        patch_workers: 0, // auto (num_cpus)
     };
     generate_with_config(&config, oracle)
 }
@@ -196,11 +205,17 @@ fn generate_with_config<O: Oracle>(
     )?;
     let venv_python =
         context_graph_paths::require_under_data_root(&config.venv_python, "generate.venv_python")?;
-    let repo_cache_dir = context_graph_paths::require_under_data_root(
+    // Cache and work roots are EPHEMERAL — rebuildable from the durable
+    // corpus output + a fresh `git clone`. On WSL2 these paths benchmark
+    // 40-100× faster on ext4 than on the D-drive 9P shim, so the validator
+    // explicitly allows paths outside the data root (only denying C-drive).
+    // See `context_graph_paths::require_ephemeral_path` and the 2026-05-11
+    // 9P throughput benchmark in `./memory/discoveries/`.
+    let repo_cache_dir = context_graph_paths::require_ephemeral_path(
         &config.repo_cache_dir,
         "generate.repo_cache_dir",
     )?;
-    let source_work_root = context_graph_paths::require_under_data_root(
+    let source_work_root = context_graph_paths::require_ephemeral_path(
         &config.source_work_root,
         "generate.source_work_root",
     )?;

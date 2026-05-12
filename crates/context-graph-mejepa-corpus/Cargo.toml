@@ -13,6 +13,8 @@ context-graph-core = { path = "../context-graph-core" }
 context-graph-paths = { path = "../context-graph-paths" }
 ctrlc = { version = "3.5", features = ["termination"] }
 fs2 = "0.4"
+num_cpus = "1.16"
+rayon = "1.10"
 rocksdb = "0.22"
 serde = { workspace = true }
 serde_json = { workspace = true }
