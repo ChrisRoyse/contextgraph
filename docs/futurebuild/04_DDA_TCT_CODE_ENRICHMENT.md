@@ -211,6 +211,15 @@ If `len(violations) > 0`, the verdict becomes `GuardRejected` regardless of the 
 
 Per `docs/ruvectorfindings/specs/_README.md`, this is shipped as `mejepa_constellation_inspect` MCP tool + chunk-level localization via `gtau_check_chunks --lib` test.
 
+**Durable refresh evidence (2026-05-12):** `crates/context-graph-mejepa-tct/examples/tct_centroid_refresh_fsv.rs` now refits a constellation from the real 2,400-row SWE-bench Lite Python corpus index plus the 300-task Python AST FSV entity-family evidence. The source of truth is RocksDB: `CF_MEJEPA_CONSTELLATION` and `CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS` under `/mnt/d/contextgraph/fsv/contextgraph-mejepa-tct-refresh-fsv/tct-refresh-rocksdb`. The persisted `ConstellationRefreshReport` records:
+
+- 2,400 source corpus rows and 10,560 AST-derived chunk-family observations.
+- all 8 mutation categories, Python language support, pass/fail oracle support, and per-entity chunk support.
+- 1,008 `(mutation, entity_type, language, embedder)` centroid-support cells with shrinkage origin and sample counts.
+- reward-signal summary (`estimated_reward_scalar_count=244266`) and operator-visible rejected chunk diagnostics (`inspected=2`, `rejected=1`, `violating_embedder_count=1`, finite worst margin).
+
+FSV readback: `/mnt/d/contextgraph/fsv/contextgraph-mejepa-tct-refresh-fsv/tct-centroid-refresh-evidence.json` (`passes=true`, SHA-256 `1af684d98dbab40f5d13b0974029104d056ce9025bbb8fd20b5e3754445bfcfe`). Edge cases for empty cell support, category-support mismatch, tampered report id, and zero report limit fail closed without increasing the refresh-report row count.
+
 ---
 
 ## 6. The "blow up code" pipeline as a runnable example

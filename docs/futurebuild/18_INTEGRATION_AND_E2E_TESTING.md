@@ -20,6 +20,10 @@
 
 The shipped substrate covers Tier 1-3 well per `15_PHASE_1_5_HARDENING_FSV_2026_05_10.md` and `16_PHASE_6_8_HARDENING_FSV_2026_05_11.md`. Tiers 4-7 are the gap this doc fills.
 
+Recent Tier-2 additions:
+
+- `context-graph-mejepa-tct/examples/tct_centroid_refresh_fsv.rs` writes `/mnt/d/contextgraph/fsv/contextgraph-mejepa-tct-refresh-fsv/tct-centroid-refresh-evidence.json`. It defines RocksDB `CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS` as the source of truth, persists a corpus-scale refresh report, drops/reopens the DB, reads the row back, and prints before/after state for empty-cell-support, category-support-mismatch, tampered-report-id, and zero-limit edge cases.
+
 ---
 
 ## 2. End-to-end test scenarios

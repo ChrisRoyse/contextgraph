@@ -27,6 +27,8 @@ crates/context-graph-mejepa-tct/
     builder.rs                # existing; extended for per-cell refresh
     gtau.rs                   # existing
     freshness.rs              # existing; consumed by scheduler
+    refresh_report.rs         # shipped: durable reward-signal support report for constellation refresh
+    store.rs                  # shipped: sync write + WAL/CF flush + read-after-write/reopen readback for constellation artifacts
 
 crates/context-graph-mejepa-instruments/
   assets/
@@ -143,7 +145,9 @@ pub async fn refit_cell(storage: &Storage, cell_key: ConstellationCellKey) -> Re
 }
 ```
 
-Triggered by the scheduler's constellation_freshness_tick when stale cells are found.
+The production artifact for a refresh is `ConstellationRefreshReport`, persisted to `CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS`. The report is content-addressed by `report_id`, validates its own digest, and records the durable reward-signal support needed to audit a constellation: source corpus digest/path, code commit, source row count, source chunk count, per-entity support, per-mutation-category support, per-language support, per-oracle-outcome support, per-cell centroid support, shrinkage-origin counts, operator violating-chunk diagnostics, and an estimated reward-scalar count. `ConstellationStore::persist` and `persist_refresh_report` use sync write options, explicit WAL/CF flush, and immediate deserialize/validate readback.
+
+Triggered by the scheduler's constellation_freshness_tick when stale cells are found. The current Phase A-D FSV exercises the refresh path manually against the real Python corpus and AST evidence; Phase E wires this into the periodic scheduler policy.
 
 ---
 
@@ -183,6 +187,6 @@ Loaded at startup; consumed by the redundancy / dead-code label pipelines and su
 | `forward_wrapper_fsv` output files | one source-of-truth JSON output per active forward slot, plus E7 per-language files | `/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv/forward-outputs/` |
 | `vram_budget_fsv` | over-budget config refuses to start | `/mnt/d/contextgraph/fsv/mejepa-embedders-fsv/vram_budget.json` |
 | `phase_d_dda_fsv` | DdaSignals computed, persisted, reopened, and read back for 30 chunks | `/mnt/d/contextgraph/fsv/phase-d-fsv/dda-signal-compute.json` |
-| `constellation_refresh_fsv` | stale cell refit produces new centroid + tau_m | `/mnt/d/contextgraph/fsv/mejepa-tct-fsv/refresh.json` |
+| `tct_centroid_refresh_fsv` | real 2,400-row Python corpus index plus 300-task AST evidence produces a persisted constellation + refresh report; after reopen the report proves 10,560 chunk-family observations, all 8 mutation categories, 1,008 centroid cells, shrinkage support, and operator rejected-chunk diagnostics; four fail-closed edge cases leave row count unchanged | `/mnt/d/contextgraph/fsv/contextgraph-mejepa-tct-refresh-fsv/tct-centroid-refresh-evidence.json` |
 | `phase_d_stdlib_registry_fsv` | all 11 per-language YAMLs load + parse; Python retry-backoff detects; missing/unknown registries fail closed | `/mnt/d/contextgraph/fsv/phase-d-fsv/stdlib-registry-fsv.json` |
 | `python_semantic_analyzers_fsv` | Python E_AST/E_CFG/E_DataFlow/E_TypeGraph use distinct Ruff semantic facts, external Ruff/Pyright/py_compile evidence is persisted, and empty/invalid/non-Python/max-size edge cases print before/after source-of-truth state | `/mnt/d/contextgraph/fsv/contextgraph-python-semantic-analyzers-fsv/python-semantic-analyzers-evidence.json` |

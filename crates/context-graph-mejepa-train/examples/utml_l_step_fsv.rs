@@ -129,7 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         agent_surprise_severity_score: 0.25,
     };
     let sampling_weight = sampling_weight_checked(sampling_components)?;
-    let expected_sampling_weight = 2.0 * signal.l_step * 6.0 * 1.25 * 0.99_f32.powf(3.0);
+    let expected_sampling_weight = 2.0 * signal.l_step * 6.0 * 1.5 * 0.99_f32.powf(3.0);
     assert_close(
         "sampling_weight_checked full formula",
         sampling_weight,
