@@ -18,10 +18,6 @@ pub(crate) fn classify_node(
     if matches!(kind, "comment" | "line_comment" | "block_comment") {
         return Some(EntityType::CommentBlock);
     }
-    if is_python_docstring(language, node) {
-        return Some(EntityType::Docstring);
-    }
-
     match language {
         Language::Rust => classify_rust(node, source, path),
         Language::Python => classify_python(node, source, path),
@@ -88,7 +84,6 @@ fn classify_python(node: Node<'_>, source: &[u8], path: &str) -> Option<EntityTy
         }
         "class_definition" => Some(EntityType::Class),
         "import_statement" | "import_from_statement" => Some(EntityType::Import),
-        "module" => Some(EntityType::Module),
         _ => None,
     }
 }
@@ -407,17 +402,6 @@ fn is_ruby_test_dsl(node: Node<'_>, source: &[u8], path: &str) -> bool {
             name.as_str(),
             "describe" | "context" | "it" | "specify" | "test"
         )
-}
-
-fn is_python_docstring(language: Language, node: Node<'_>) -> bool {
-    language == Language::Python
-        && node.kind() == "expression_statement"
-        && node
-            .named_child(0)
-            .is_some_and(|child| child.kind() == "string")
-        && node.parent().is_some_and(|parent| {
-            matches!(parent.kind(), "module" | "block") && parent.named_child(0) == Some(node)
-        })
 }
 
 fn is_doc_comment(node: Node<'_>, source: &[u8]) -> bool {

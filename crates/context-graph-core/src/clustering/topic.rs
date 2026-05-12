@@ -108,7 +108,7 @@ impl TopicProfile {
     /// ```
     /// use context_graph_core::clustering::TopicProfile;
     ///
-    /// let profile = TopicProfile::new([1.5, -0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    /// let profile = TopicProfile::new([1.5, -0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
     /// assert_eq!(profile.strengths[0], 1.0); // clamped from 1.5
     /// assert_eq!(profile.strengths[1], 0.0); // clamped from -0.5
     /// ```
@@ -230,8 +230,8 @@ impl TopicProfile {
     /// ```
     /// use context_graph_core::clustering::TopicProfile;
     ///
-    /// let p1 = TopicProfile::new([1.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
-    /// let p2 = TopicProfile::new([1.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    /// let p1 = TopicProfile::new([1.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    /// let p2 = TopicProfile::new([1.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
     ///
     /// let sim = p1.similarity(&p2);
     /// assert!((sim - 1.0).abs() < 0.001); // identical profiles

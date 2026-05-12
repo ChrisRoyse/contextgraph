@@ -12,6 +12,11 @@ use std::collections::BTreeSet;
 use thiserror::Error;
 use tree_sitter::{Node, Parser};
 
+use ruff_python_ast::{
+    token::Tokens, ExceptHandler, ModModule, Stmt, StmtClassDef, StmtFunctionDef,
+};
+use ruff_text_size::{Ranged, TextRange, TextSize};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Language {
@@ -225,6 +230,9 @@ pub fn chunk_with_options(
         diagnostics: vec![],
     })?;
     detect_mixed_language(source_text, language)?;
+    if language == Language::Python {
+        return chunk_python_with_options(source_text, source, options);
+    }
 
     let grammar = language.tree_sitter_language(&options.file_path);
     let mut parser = Parser::new();
@@ -267,6 +275,673 @@ pub fn chunk_with_options(
         )?);
     }
     Ok(chunks)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PythonScopeKind {
+    Class,
+    Function,
+}
+
+fn chunk_python_with_options(
+    source_text: &str,
+    source: &[u8],
+    options: &AstChunkOptions,
+) -> Result<Vec<AstChunk>, AstChunkerError> {
+    let parsed = ruff_python_parser::parse_module(source_text).map_err(|err| {
+        AstChunkerError::ParseFailed {
+            file_path: options.file_path.clone(),
+            language: Language::Python,
+            reason: format!("ruff-python-parser rejected source: {err}"),
+            diagnostics: vec![ruff_parse_diagnostic(&err, source)],
+        }
+    })?;
+    let tokens = parsed.tokens().clone();
+    let module = parsed.into_syntax();
+    let mut chunks = Vec::new();
+    if let Some(module_chunk) =
+        build_ruff_python_module_globals_chunk(&module, &tokens, source, options)?
+    {
+        chunks.push(module_chunk);
+    }
+    let mut scope_names = Vec::new();
+    let mut scope_kinds = Vec::new();
+    walk_ruff_python_suite(
+        &module.body,
+        &tokens,
+        source,
+        options,
+        &mut scope_names,
+        &mut scope_kinds,
+        &mut chunks,
+    )?;
+    if chunks.is_empty() {
+        chunks.push(build_text_chunk(
+            Language::Python,
+            EntityType::Module,
+            &[],
+            0,
+            source.len(),
+            source_text.to_string(),
+            source,
+            options,
+        )?);
+    }
+    Ok(chunks)
+}
+
+fn walk_ruff_python_suite(
+    suite: &[Stmt],
+    tokens: &Tokens,
+    source: &[u8],
+    options: &AstChunkOptions,
+    scope_names: &mut Vec<String>,
+    scope_kinds: &mut Vec<PythonScopeKind>,
+    chunks: &mut Vec<AstChunk>,
+) -> Result<(), AstChunkerError> {
+    for stmt in suite {
+        walk_ruff_python_stmt(
+            stmt,
+            tokens,
+            source,
+            options,
+            scope_names,
+            scope_kinds,
+            chunks,
+        )?;
+    }
+    Ok(())
+}
+
+fn walk_ruff_python_stmt(
+    stmt: &Stmt,
+    tokens: &Tokens,
+    source: &[u8],
+    options: &AstChunkOptions,
+    scope_names: &mut Vec<String>,
+    scope_kinds: &mut Vec<PythonScopeKind>,
+    chunks: &mut Vec<AstChunk>,
+) -> Result<(), AstChunkerError> {
+    match stmt {
+        Stmt::FunctionDef(function) => {
+            let entity_type = ruff_python_function_entity_type(function, scope_kinds);
+            chunks.push(build_ruff_python_span_chunk(
+                entity_type,
+                scope_names,
+                ruff_python_function_start_byte(function, source),
+                text_range_end(function.range()),
+                source,
+                options,
+                tokens,
+            )?);
+            scope_names.push(function.name.as_str().to_string());
+            scope_kinds.push(PythonScopeKind::Function);
+            walk_ruff_python_suite(
+                &function.body,
+                tokens,
+                source,
+                options,
+                scope_names,
+                scope_kinds,
+                chunks,
+            )?;
+            scope_kinds.pop();
+            scope_names.pop();
+        }
+        Stmt::ClassDef(class_def) => {
+            chunks.push(build_ruff_python_class_shell_chunk(
+                class_def,
+                scope_names,
+                source,
+                options,
+            )?);
+            scope_names.push(class_def.name.as_str().to_string());
+            scope_kinds.push(PythonScopeKind::Class);
+            walk_ruff_python_suite(
+                &class_def.body,
+                tokens,
+                source,
+                options,
+                scope_names,
+                scope_kinds,
+                chunks,
+            )?;
+            scope_kinds.pop();
+            scope_names.pop();
+        }
+        Stmt::Import(_) | Stmt::ImportFrom(_) => {
+            chunks.push(build_ruff_python_span_chunk(
+                EntityType::Import,
+                scope_names,
+                line_start_byte(source, text_range_start(stmt.range())),
+                text_range_end(stmt.range()),
+                source,
+                options,
+                tokens,
+            )?);
+        }
+        _ => walk_ruff_python_nested_suites(
+            stmt,
+            tokens,
+            source,
+            options,
+            scope_names,
+            scope_kinds,
+            chunks,
+        )?,
+    }
+    Ok(())
+}
+
+fn walk_ruff_python_nested_suites(
+    stmt: &Stmt,
+    tokens: &Tokens,
+    source: &[u8],
+    options: &AstChunkOptions,
+    scope_names: &mut Vec<String>,
+    scope_kinds: &mut Vec<PythonScopeKind>,
+    chunks: &mut Vec<AstChunk>,
+) -> Result<(), AstChunkerError> {
+    match stmt {
+        Stmt::For(stmt_for) => {
+            walk_ruff_python_suite(
+                &stmt_for.body,
+                tokens,
+                source,
+                options,
+                scope_names,
+                scope_kinds,
+                chunks,
+            )?;
+            walk_ruff_python_suite(
+                &stmt_for.orelse,
+                tokens,
+                source,
+                options,
+                scope_names,
+                scope_kinds,
+                chunks,
+            )?;
+        }
+        Stmt::While(stmt_while) => {
+            walk_ruff_python_suite(
+                &stmt_while.body,
+                tokens,
+                source,
+                options,
+                scope_names,
+                scope_kinds,
+                chunks,
+            )?;
+            walk_ruff_python_suite(
+                &stmt_while.orelse,
+                tokens,
+                source,
+                options,
+                scope_names,
+                scope_kinds,
+                chunks,
+            )?;
+        }
+        Stmt::If(stmt_if) => {
+            walk_ruff_python_suite(
+                &stmt_if.body,
+                tokens,
+                source,
+                options,
+                scope_names,
+                scope_kinds,
+                chunks,
+            )?;
+            for clause in &stmt_if.elif_else_clauses {
+                walk_ruff_python_suite(
+                    &clause.body,
+                    tokens,
+                    source,
+                    options,
+                    scope_names,
+                    scope_kinds,
+                    chunks,
+                )?;
+            }
+        }
+        Stmt::With(stmt_with) => {
+            walk_ruff_python_suite(
+                &stmt_with.body,
+                tokens,
+                source,
+                options,
+                scope_names,
+                scope_kinds,
+                chunks,
+            )?;
+        }
+        Stmt::Match(stmt_match) => {
+            for case in &stmt_match.cases {
+                walk_ruff_python_suite(
+                    &case.body,
+                    tokens,
+                    source,
+                    options,
+                    scope_names,
+                    scope_kinds,
+                    chunks,
+                )?;
+            }
+        }
+        Stmt::Try(stmt_try) => {
+            walk_ruff_python_suite(
+                &stmt_try.body,
+                tokens,
+                source,
+                options,
+                scope_names,
+                scope_kinds,
+                chunks,
+            )?;
+            for handler in &stmt_try.handlers {
+                let ExceptHandler::ExceptHandler(handler) = handler;
+                walk_ruff_python_suite(
+                    &handler.body,
+                    tokens,
+                    source,
+                    options,
+                    scope_names,
+                    scope_kinds,
+                    chunks,
+                )?;
+            }
+            walk_ruff_python_suite(
+                &stmt_try.orelse,
+                tokens,
+                source,
+                options,
+                scope_names,
+                scope_kinds,
+                chunks,
+            )?;
+            walk_ruff_python_suite(
+                &stmt_try.finalbody,
+                tokens,
+                source,
+                options,
+                scope_names,
+                scope_kinds,
+                chunks,
+            )?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn ruff_python_function_entity_type(
+    function: &StmtFunctionDef,
+    scope_kinds: &[PythonScopeKind],
+) -> EntityType {
+    if python_is_test_function_name(function.name.as_str()) {
+        EntityType::TestFunction
+    } else if scope_kinds.last() == Some(&PythonScopeKind::Class) {
+        EntityType::Method
+    } else {
+        EntityType::Function
+    }
+}
+
+fn build_ruff_python_module_globals_chunk(
+    module: &ModModule,
+    tokens: &Tokens,
+    source: &[u8],
+    options: &AstChunkOptions,
+) -> Result<Option<AstChunk>, AstChunkerError> {
+    let mut ranges = Vec::new();
+    for stmt in &module.body {
+        if is_ruff_python_module_global_stmt(stmt) {
+            ranges.push((
+                line_start_byte(source, text_range_start(stmt.range())),
+                text_range_end(stmt.range()),
+            ));
+        }
+    }
+    if ranges.is_empty() {
+        return Ok(None);
+    }
+    let raw = join_source_ranges(source, &ranges);
+    Ok(Some(build_text_chunk_with_sha(
+        Language::Python,
+        EntityType::Module,
+        &[],
+        ranges[0].0,
+        ranges.last().map(|(_, end)| *end).unwrap_or(ranges[0].1),
+        raw,
+        source,
+        options,
+        python_token_sha256(
+            tokens,
+            source,
+            ranges[0].0,
+            ranges.last().map(|(_, end)| *end).unwrap_or(ranges[0].1),
+            EntityType::Module,
+            &[],
+        ),
+    )?))
+}
+
+fn build_ruff_python_class_shell_chunk(
+    class_def: &StmtClassDef,
+    parent_chain: &[String],
+    source: &[u8],
+    options: &AstChunkOptions,
+) -> Result<AstChunk, AstChunkerError> {
+    let start_byte = ruff_python_class_start_byte(class_def, source);
+    let class_end = text_range_end(class_def.range());
+    let header_end = class_def
+        .body
+        .first()
+        .map(|stmt| text_range_start(stmt.range()))
+        .unwrap_or(class_end);
+    let class_line = line_for_byte(source, start_byte);
+    let class_indent = python_line_indent(source, start_byte);
+    let mut raw_parts = vec![source_slice(source, start_byte, header_end)
+        .trim_end()
+        .to_string()];
+    let mut included_parts = 1_usize;
+    let mut end_byte = header_end;
+    for stmt in &class_def.body {
+        if !stmt_contains_python_definition(stmt) {
+            let child_start = text_range_start(stmt.range());
+            let child_end = text_range_end(stmt.range());
+            if line_for_byte(source, child_start) == class_line {
+                raw_parts.push(format!(
+                    "{}    {}",
+                    class_indent,
+                    source_slice(source, child_start, child_end).trim()
+                ));
+            } else {
+                raw_parts.push(
+                    source_slice(source, line_start_byte(source, child_start), child_end)
+                        .trim_end()
+                        .to_string(),
+                );
+            }
+            included_parts += 1;
+            end_byte = child_end;
+        }
+    }
+    let mut raw = raw_parts
+        .into_iter()
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if included_parts == 1 {
+        raw.push_str(&python_shell_pass_line(source, start_byte));
+    }
+    build_text_chunk_with_sha(
+        Language::Python,
+        EntityType::Class,
+        parent_chain,
+        start_byte,
+        end_byte,
+        raw.clone(),
+        source,
+        options,
+        atomic_text_sha256(Language::Python, EntityType::Class, parent_chain, &raw),
+    )
+}
+
+fn build_ruff_python_span_chunk(
+    entity_type: EntityType,
+    parent_chain: &[String],
+    start_byte: usize,
+    end_byte: usize,
+    source: &[u8],
+    options: &AstChunkOptions,
+    tokens: &Tokens,
+) -> Result<AstChunk, AstChunkerError> {
+    let raw = source_slice(source, start_byte, end_byte);
+    let sha256 = python_token_sha256(
+        tokens,
+        source,
+        start_byte,
+        end_byte,
+        entity_type,
+        parent_chain,
+    );
+    build_text_chunk_with_sha(
+        Language::Python,
+        entity_type,
+        parent_chain,
+        start_byte,
+        end_byte,
+        raw,
+        source,
+        options,
+        sha256,
+    )
+}
+
+fn is_ruff_python_module_global_stmt(stmt: &Stmt) -> bool {
+    !matches!(
+        stmt,
+        Stmt::Import(_) | Stmt::ImportFrom(_) | Stmt::FunctionDef(_) | Stmt::ClassDef(_)
+    ) && !stmt_contains_python_definition(stmt)
+}
+
+fn stmt_contains_python_definition(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::FunctionDef(_) | Stmt::ClassDef(_) => true,
+        Stmt::For(stmt_for) => {
+            suite_contains_python_definition(&stmt_for.body)
+                || suite_contains_python_definition(&stmt_for.orelse)
+        }
+        Stmt::While(stmt_while) => {
+            suite_contains_python_definition(&stmt_while.body)
+                || suite_contains_python_definition(&stmt_while.orelse)
+        }
+        Stmt::If(stmt_if) => {
+            suite_contains_python_definition(&stmt_if.body)
+                || stmt_if
+                    .elif_else_clauses
+                    .iter()
+                    .any(|clause| suite_contains_python_definition(&clause.body))
+        }
+        Stmt::With(stmt_with) => suite_contains_python_definition(&stmt_with.body),
+        Stmt::Match(stmt_match) => stmt_match
+            .cases
+            .iter()
+            .any(|case| suite_contains_python_definition(&case.body)),
+        Stmt::Try(stmt_try) => {
+            suite_contains_python_definition(&stmt_try.body)
+                || stmt_try.handlers.iter().any(|handler| {
+                    let ExceptHandler::ExceptHandler(handler) = handler;
+                    suite_contains_python_definition(&handler.body)
+                })
+                || suite_contains_python_definition(&stmt_try.orelse)
+                || suite_contains_python_definition(&stmt_try.finalbody)
+        }
+        _ => false,
+    }
+}
+
+fn suite_contains_python_definition(suite: &[Stmt]) -> bool {
+    suite.iter().any(stmt_contains_python_definition)
+}
+
+fn ruff_python_function_start_byte(function: &StmtFunctionDef, source: &[u8]) -> usize {
+    let start = function
+        .decorator_list
+        .first()
+        .map(|decorator| text_range_start(decorator.range()))
+        .unwrap_or_else(|| text_range_start(function.range()));
+    line_start_byte(source, start)
+}
+
+fn ruff_python_class_start_byte(class_def: &StmtClassDef, source: &[u8]) -> usize {
+    let start = class_def
+        .decorator_list
+        .first()
+        .map(|decorator| text_range_start(decorator.range()))
+        .unwrap_or_else(|| text_range_start(class_def.range()));
+    line_start_byte(source, start)
+}
+
+fn python_token_sha256(
+    tokens: &Tokens,
+    source: &[u8],
+    start_byte: usize,
+    end_byte: usize,
+    entity_type: EntityType,
+    parent_chain: &[String],
+) -> String {
+    let start = text_size_from_usize(start_byte);
+    let end = text_size_from_usize(end_byte);
+    let mut signature = format!(
+        "{:?}|{:?}|{}\n",
+        Language::Python,
+        entity_type,
+        parent_chain.join("::")
+    );
+    for token in tokens.iter() {
+        if token.end() <= start || token.start() >= end {
+            continue;
+        }
+        let kind = token.kind();
+        if kind.is_trivia()
+            || kind.is_eof()
+            || matches!(
+                kind,
+                ruff_python_ast::token::TokenKind::Newline
+                    | ruff_python_ast::token::TokenKind::Indent
+                    | ruff_python_ast::token::TokenKind::Dedent
+            )
+        {
+            continue;
+        }
+        signature.push_str(&format!("{kind:?}"));
+        if matches!(kind, ruff_python_ast::token::TokenKind::Name)
+            || matches!(
+                kind,
+                ruff_python_ast::token::TokenKind::String
+                    | ruff_python_ast::token::TokenKind::FStringStart
+                    | ruff_python_ast::token::TokenKind::FStringMiddle
+                    | ruff_python_ast::token::TokenKind::FStringEnd
+                    | ruff_python_ast::token::TokenKind::TStringStart
+                    | ruff_python_ast::token::TokenKind::TStringMiddle
+                    | ruff_python_ast::token::TokenKind::TStringEnd
+            )
+            || matches!(
+                kind,
+                ruff_python_ast::token::TokenKind::Int
+                    | ruff_python_ast::token::TokenKind::Float
+                    | ruff_python_ast::token::TokenKind::Complex
+            )
+        {
+            let token_start = token.start().to_usize();
+            let token_end = token.end().to_usize();
+            signature.push(':');
+            signature.push_str(&normalize_token_text(&source_slice(
+                source,
+                token_start,
+                token_end,
+            )));
+        }
+        signature.push('\n');
+    }
+    hex_sha256(signature.as_bytes())
+}
+
+fn build_text_chunk_with_sha(
+    language: Language,
+    entity_type: EntityType,
+    parent_chain: &[String],
+    start_byte: usize,
+    end_byte: usize,
+    raw: String,
+    source: &[u8],
+    options: &AstChunkOptions,
+    sha256: String,
+) -> Result<AstChunk, AstChunkerError> {
+    let routing = try_route_to_embedders(entity_type, Some(language)).map_err(|err| {
+        AstChunkerError::RoutingMissing {
+            language,
+            entity_type,
+            reason: format!("{}: {}", err.code(), err),
+        }
+    })?;
+    let line_start = line_for_byte(source, start_byte);
+    let line_end = line_for_byte(source, end_byte);
+    let non_ws = raw.chars().filter(|ch| !ch.is_whitespace()).count();
+    let content = format!(
+        "path: {}\nlanguage: {}\nentity_type: {:?}\nparent_chain: {}\nlines: {}-{}\nnon_ws_chars: {}\n--- source ---\n{}",
+        options.file_path,
+        language.slug(),
+        entity_type,
+        parent_chain.join("::"),
+        line_start,
+        line_end,
+        non_ws,
+        raw
+    );
+    Ok(AstChunk {
+        language,
+        entity_type,
+        parent_chain: parent_chain.to_vec(),
+        line_start,
+        line_end,
+        start_byte,
+        end_byte,
+        sha256,
+        parse_diagnostics: vec![],
+        content,
+        embedder_routing_set: routing,
+    })
+}
+
+fn ruff_parse_diagnostic(err: &ruff_python_parser::ParseError, source: &[u8]) -> ParseDiagnostic {
+    let start_byte = text_range_start(err.range());
+    let end_byte = text_range_end(err.range()).max(start_byte);
+    ParseDiagnostic {
+        kind: format!("{:?}", &err.error),
+        is_error: true,
+        is_missing: false,
+        start_byte,
+        end_byte,
+        start_line: line_for_byte(source, start_byte),
+        start_column: column_for_byte(source, start_byte),
+        end_line: line_for_byte(source, end_byte),
+        end_column: column_for_byte(source, end_byte),
+        excerpt: byte_excerpt(start_byte, end_byte, source),
+    }
+}
+
+fn text_range_start(range: TextRange) -> usize {
+    range.start().to_usize()
+}
+
+fn text_range_end(range: TextRange) -> usize {
+    range.end().to_usize()
+}
+
+fn text_size_from_usize(value: usize) -> TextSize {
+    TextSize::try_from(value).expect("Python source exceeds ruff_text_size u32 range")
+}
+
+fn column_for_byte(source: &[u8], byte: usize) -> u32 {
+    byte.saturating_sub(line_start_byte(source, byte)) as u32
+}
+
+fn byte_excerpt(start_byte: usize, end_byte: usize, source: &[u8]) -> String {
+    let start = start_byte.saturating_sub(64);
+    let end = (end_byte + 64).min(source.len());
+    std::str::from_utf8(&source[start..end])
+        .unwrap_or("")
+        .chars()
+        .take(128)
+        .collect()
+}
+
+fn python_is_test_function_name(name: &str) -> bool {
+    name.starts_with("test_") || name.ends_with("_test") || name.ends_with("Test")
 }
 
 fn walk_and_emit(
@@ -317,7 +992,10 @@ fn build_chunk(
 ) -> Result<AstChunk, AstChunkerError> {
     let line_start = node.start_position().row as u32 + 1;
     let line_end = node.end_position().row as u32 + 1;
-    let raw = node.utf8_text(source).unwrap_or("");
+    let start_byte = node.start_byte();
+    let end_byte = node.end_byte();
+    let raw = node.utf8_text(source).unwrap_or("").to_string();
+    let sha256 = structural_sha256(node, source, language, entity_type, parent_chain);
     let routing = try_route_to_embedders(entity_type, Some(language)).map_err(|err| {
         AstChunkerError::RoutingMissing {
             language,
@@ -343,13 +1021,121 @@ fn build_chunk(
         parent_chain: parent_chain.to_vec(),
         line_start,
         line_end,
-        start_byte: node.start_byte(),
-        end_byte: node.end_byte(),
-        sha256: structural_sha256(node, source, language, entity_type, parent_chain),
+        start_byte,
+        end_byte,
+        sha256,
         parse_diagnostics: vec![],
         content,
         embedder_routing_set: routing,
     })
+}
+
+fn build_text_chunk(
+    language: Language,
+    entity_type: EntityType,
+    parent_chain: &[String],
+    start_byte: usize,
+    end_byte: usize,
+    raw: String,
+    source: &[u8],
+    options: &AstChunkOptions,
+) -> Result<AstChunk, AstChunkerError> {
+    let routing = try_route_to_embedders(entity_type, Some(language)).map_err(|err| {
+        AstChunkerError::RoutingMissing {
+            language,
+            entity_type,
+            reason: format!("{}: {}", err.code(), err),
+        }
+    })?;
+    let line_start = line_for_byte(source, start_byte);
+    let line_end = line_for_byte(source, end_byte);
+    let non_ws = raw.chars().filter(|ch| !ch.is_whitespace()).count();
+    let content = format!(
+        "path: {}\nlanguage: {}\nentity_type: {:?}\nparent_chain: {}\nlines: {}-{}\nnon_ws_chars: {}\n--- source ---\n{}",
+        options.file_path,
+        language.slug(),
+        entity_type,
+        parent_chain.join("::"),
+        line_start,
+        line_end,
+        non_ws,
+        raw
+    );
+    Ok(AstChunk {
+        language,
+        entity_type,
+        parent_chain: parent_chain.to_vec(),
+        line_start,
+        line_end,
+        start_byte,
+        end_byte,
+        sha256: atomic_text_sha256(language, entity_type, parent_chain, &raw),
+        parse_diagnostics: vec![],
+        content,
+        embedder_routing_set: routing,
+    })
+}
+
+fn source_slice(source: &[u8], start: usize, end: usize) -> String {
+    std::str::from_utf8(&source[start..end])
+        .unwrap_or("")
+        .to_string()
+}
+
+fn line_start_byte(source: &[u8], byte: usize) -> usize {
+    let mut index = byte.min(source.len());
+    while index > 0 && source[index - 1] != b'\n' {
+        index -= 1;
+    }
+    index
+}
+
+fn python_shell_pass_line(source: &[u8], class_start_byte: usize) -> String {
+    let indent = python_line_indent(source, class_start_byte);
+    format!("\n{indent}    pass")
+}
+
+fn python_line_indent(source: &[u8], byte: usize) -> String {
+    let line_start = line_start_byte(source, byte);
+    let mut indent_end = line_start;
+    while indent_end < source.len() && matches!(source[indent_end], b' ' | b'\t') {
+        indent_end += 1;
+    }
+    let class_indent = &source[line_start..indent_end];
+    std::str::from_utf8(class_indent)
+        .expect("source was validated as UTF-8 before chunking")
+        .to_string()
+}
+
+fn join_source_ranges(source: &[u8], ranges: &[(usize, usize)]) -> String {
+    ranges
+        .iter()
+        .filter_map(|(start, end)| std::str::from_utf8(&source[*start..*end]).ok())
+        .map(str::trim_end)
+        .filter(|text| !text.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn atomic_text_sha256(
+    language: Language,
+    entity_type: EntityType,
+    parent_chain: &[String],
+    raw: &str,
+) -> String {
+    let signature = format!(
+        "{:?}|{:?}|{}\n{}",
+        language,
+        entity_type,
+        parent_chain.join("::"),
+        normalize_token_text(raw)
+    );
+    hex_sha256(signature.as_bytes())
+}
+
+fn line_for_byte(source: &[u8], byte: usize) -> u32 {
+    let end = byte.min(source.len());
+    source[..end].iter().filter(|byte| **byte == b'\n').count() as u32 + 1
 }
 
 fn structural_sha256(

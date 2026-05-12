@@ -32,7 +32,7 @@ sha2 = "0.10"
 # Runtime 0.26 accepts newer grammar ABI versions such as C# language ABI 15.
 tree-sitter = "0.26"
 tree-sitter-rust = "0.23"
-tree-sitter-python = "0.23.6"
+tree-sitter-python = "0.25.0"
 tree-sitter-javascript = "0.23.1"
 tree-sitter-typescript = "0.23.2"
 tree-sitter-go = "0.23.4"
@@ -42,6 +42,13 @@ tree-sitter-cpp = "0.23.4"
 tree-sitter-c-sharp = "0.23.5"
 tree-sitter-ruby = "0.23.1"
 tree-sitter-php = "0.23.11"
+
+# Python-specific parser used for canonical Python AST chunking. The tree-sitter
+# Python grammar still rejects some valid f-string format-spec forms in real
+# SWE-bench sources, so Python chunking uses Ruff's current Python parser.
+ruff_python_ast = { package = "rustpython-ruff_python_ast", version = "0.15.8" }
+ruff_python_parser = { package = "rustpython-ruff_python_parser", version = "0.15.8" }
+ruff_text_size = { package = "rustpython-ruff_text_size", version = "0.15.8" }
 
 # Real HNSW implementation - NO FALLBACKS
 hnsw_rs = "0.3"

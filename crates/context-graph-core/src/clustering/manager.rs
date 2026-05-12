@@ -14,28 +14,19 @@
 //! # Usage
 //!
 //! ```
-//! use context_graph_core::clustering::{MultiSpaceClusterManager, manager_defaults};
+//! use context_graph_core::clustering::MultiSpaceClusterManager;
+//! use context_graph_core::embeddings::config::get_dimension;
+//! use context_graph_core::teleological::Embedder;
 //! use uuid::Uuid;
 //!
 //! // Create manager with default parameters
 //! let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
 //!
-//! // Insert a memory with 13 embeddings
+//! // Insert a memory with all 14 embeddings
 //! let memory_id = Uuid::new_v4();
 //! let embeddings: [Vec<f32>; 14] = std::array::from_fn(|i| {
-//!     match i {
-//!         0 => vec![0.0; 1024],   // E1
-//!         1..=3 => vec![0.0; 512], // E2-E4
-//!         4 => vec![0.0; 768],    // E5
-//!         5 | 12 => vec![0.0; 30522], // E6, E13 sparse
-//!         6 => vec![0.0; 1536],   // E7
-//!         7 => vec![0.0; 1024], // E8 (upgraded from 384D)
-//!         10 => vec![0.0; 768], // E11 (KEPLER)
-//!         8 => vec![0.0; 1024],   // E9
-//!         9 => vec![0.0; 768],    // E10
-//!         11 => vec![0.0; 128],   // E12 per-token (simplified)
-//!         _ => vec![0.0; 128],
-//!     }
+//!     let embedder = Embedder::from_index(i).unwrap();
+//!     vec![0.01 * (i as f32 + 1.0); get_dimension(embedder)]
 //! });
 //!
 //! // Insert into manager
@@ -367,13 +358,13 @@ impl MultiSpaceClusterManager {
     /// let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
     /// let memory_id = Uuid::new_v4();
     ///
-    /// // Create 13 embeddings with correct dimensions
+    /// // Create all 14 embeddings with dimensions from the canonical embedder config
     /// let embeddings: [Vec<f32>; 14] = std::array::from_fn(|i| {
-    ///     let dim = match i {
-    ///         0 => 1024, 1 | 2 | 3 => 512, 4 => 768, 5 | 12 => 30522,
-    ///         6 => 1536, 7 => 1024, 8 => 1024, 9 | 10 => 768, 11 => 128, _ => 128,
-    ///     };
-    ///     vec![0.0; dim]
+    ///     use context_graph_core::embeddings::config::get_dimension;
+    ///     use context_graph_core::teleological::Embedder;
+    ///
+    ///     let embedder = Embedder::from_index(i).unwrap();
+    ///     vec![0.01 * (i as f32 + 1.0); get_dimension(embedder)]
     /// });
     ///
     /// let result = manager.insert(memory_id, &embeddings);

@@ -139,6 +139,132 @@ fn python_chunks_test_method_import_and_class() {
 }
 
 #[test]
+fn python_chunks_are_atomic_without_parent_body_overlap() {
+    let source = br#""""Module contract."""
+import os
+from pathlib import Path
+
+OFFSET = 41
+
+class Solver:
+    """Solver contract."""
+    label = "solver"
+
+    def compute(self, x: int) -> int:
+        return x + OFFSET
+
+    def helper(self) -> int:
+        return self.compute(1)
+
+def top_level() -> int:
+    return Solver().helper()
+
+def test_compute() -> None:
+    assert Solver().compute(1) == 42
+"#;
+    let chunks = chunk_with_options(
+        source,
+        Language::Python,
+        &AstChunkOptions::for_path("tests/test_solver.py"),
+    )
+    .unwrap();
+
+    let module = chunks
+        .iter()
+        .find(|chunk| chunk.entity_type == EntityType::Module)
+        .expect("module globals chunk");
+    assert!(module.content.contains("OFFSET = 41"));
+    assert!(!module.content.contains("class Solver"));
+    assert!(!module.content.contains("def compute"));
+
+    let class = chunks
+        .iter()
+        .find(|chunk| chunk.entity_type == EntityType::Class)
+        .expect("class shell chunk");
+    assert!(class.content.contains("class Solver"));
+    assert!(class.content.contains("label = \"solver\""));
+    assert!(!class.content.contains("def compute"));
+    assert!(!class.content.contains("return x + OFFSET"));
+
+    let methods_only = br#"class OnlyMethods:
+    def first(self):
+        return 1
+"#;
+    let methods_only_chunks = chunk_with_options(
+        methods_only,
+        Language::Python,
+        &AstChunkOptions::for_path("pkg/only_methods.py"),
+    )
+    .unwrap();
+    let methods_only_class = methods_only_chunks
+        .iter()
+        .find(|chunk| chunk.entity_type == EntityType::Class)
+        .unwrap();
+    assert!(methods_only_class.content.contains("class OnlyMethods"));
+    assert!(methods_only_class.content.contains("    pass"));
+    assert!(!methods_only_class.content.contains("def first"));
+
+    let nested_methods_only = br#"def outer():
+    class Nested:
+        def first(self):
+            return 1
+"#;
+    let nested_chunks = chunk_with_options(
+        nested_methods_only,
+        Language::Python,
+        &AstChunkOptions::for_path("pkg/nested.py"),
+    )
+    .unwrap();
+    let nested_class = nested_chunks
+        .iter()
+        .find(|chunk| chunk.entity_type == EntityType::Class)
+        .unwrap();
+    assert!(nested_class.content.contains("    class Nested"));
+    assert!(nested_class.content.contains("\n        pass"));
+    assert!(!nested_class.content.contains("def first"));
+
+    let one_line_class = b"class Empty: pass\n";
+    let one_line_chunks = chunk_with_options(
+        one_line_class,
+        Language::Python,
+        &AstChunkOptions::for_path("pkg/one_line.py"),
+    )
+    .unwrap();
+    let one_line_class_chunk = one_line_chunks
+        .iter()
+        .find(|chunk| chunk.entity_type == EntityType::Class)
+        .unwrap();
+    assert!(one_line_class_chunk.content.contains("class Empty:"));
+    assert!(one_line_class_chunk.content.contains("\n    pass"));
+    assert!(!one_line_class_chunk.content.contains("class Empty: pass"));
+
+    let methods = chunks
+        .iter()
+        .filter(|chunk| chunk.entity_type == EntityType::Method)
+        .collect::<Vec<_>>();
+    assert_eq!(methods.len(), 2);
+    assert!(methods.iter().all(|chunk| chunk.parent_chain == ["Solver"]));
+    assert!(methods
+        .iter()
+        .any(|chunk| chunk.content.contains("def compute")));
+    assert!(methods
+        .iter()
+        .any(|chunk| chunk.content.contains("def helper")));
+
+    assert!(chunks
+        .iter()
+        .any(|chunk| chunk.entity_type == EntityType::Function
+            && chunk.content.contains("def top_level")));
+    assert!(chunks
+        .iter()
+        .any(|chunk| chunk.entity_type == EntityType::TestFunction
+            && chunk.content.contains("def test_compute")));
+    assert!(!chunks.iter().any(|chunk| {
+        chunk.content.contains("class Solver") && chunk.content.contains("def top_level")
+    }));
+}
+
+#[test]
 fn test_path_helpers_keep_production_entity_types() {
     let js = b"class Solver { compute(x) { return x + 1; } }\nfunction helper(x) { return x + 2; }\nfunction testCompute() { return helper(1) === 3; }\n";
     let js_chunks = chunk_with_options(
