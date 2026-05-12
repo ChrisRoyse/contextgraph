@@ -1,18 +1,14 @@
 // Inspired by ruvnet/RuVector at HEAD ef5274c2 (clean-room reimplementation).
-
+use crate::models::{decode_session_hex32, LatencySnapshot, ShiftEntry, ShiftOutcome};
+use crate::{Result, ShiftLogTail, ShiftSubscriber, SubscriberError};
+use futures_util::FutureExt;
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::time::{Duration, Instant};
-
-use futures_util::FutureExt;
-use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tracing::error;
-
-use crate::models::{decode_session_hex32, LatencySnapshot, ShiftEntry, ShiftOutcome};
-use crate::{Result, ShiftLogTail, ShiftSubscriber, SubscriberError};
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SubscriberRunSummary {
@@ -24,7 +20,6 @@ pub struct SubscriberRunSummary {
     pub outcomes: Vec<ShiftOutcome>,
     pub status: serde_json::Value,
 }
-
 impl ShiftSubscriber {
     pub async fn run_until_idle(&self) -> Result<SubscriberRunSummary> {
         self.metrics().mark_task_alive_now();
@@ -32,7 +27,6 @@ impl ShiftSubscriber {
         self.metrics().clear_task_alive();
         result
     }
-
     async fn run_until_idle_inner(&self) -> Result<SubscriberRunSummary> {
         let mut outcomes = Vec::new();
         let mut lag_exceeded_since = None;
@@ -79,7 +73,6 @@ impl ShiftSubscriber {
             status,
         })
     }
-
     pub async fn run_until_shutdown(
         &self,
         mut shutdown: watch::Receiver<bool>,
@@ -89,7 +82,6 @@ impl ShiftSubscriber {
         self.metrics().clear_task_alive();
         result
     }
-
     async fn run_until_shutdown_inner(
         &self,
         shutdown: &mut watch::Receiver<bool>,
@@ -150,7 +142,6 @@ impl ShiftSubscriber {
             status,
         })
     }
-
     async fn process_shift_supervised(&self, entry: &ShiftEntry) -> Result<ShiftOutcome> {
         match AssertUnwindSafe(self.process_shift(entry, false))
             .catch_unwind()
@@ -174,7 +165,6 @@ impl ShiftSubscriber {
             }
         }
     }
-
     fn open_tails(&self) -> Result<Vec<ShiftLogTail>> {
         let dir = &self.config.shift_log_dir;
         if !dir.is_dir() {
@@ -212,7 +202,6 @@ impl ShiftSubscriber {
         }
         Ok(tails)
     }
-
     fn update_lag_alert(
         &self,
         tail: &ShiftLogTail,
@@ -237,7 +226,6 @@ impl ShiftSubscriber {
         Ok(())
     }
 }
-
 fn count_pending_lines(path: &Path, offset: u64) -> Result<usize> {
     let bytes = std::fs::read(path).map_err(|source| SubscriberError::io("read", path, source))?;
     let start = usize::try_from(offset).map_err(|err| {
@@ -257,7 +245,6 @@ fn count_pending_lines(path: &Path, offset: u64) -> Result<usize> {
         .filter(|line| !line.is_empty())
         .count())
 }
-
 fn panic_payload_message(payload: &(dyn Any + Send)) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
         (*message).to_string()
@@ -267,7 +254,6 @@ fn panic_payload_message(payload: &(dyn Any + Send)) -> String {
         "non-string panic payload".to_string()
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,7 +265,7 @@ mod tests {
     use context_graph_mejepa_train::dda::count_persisted_dda_signals;
     use serde_json::json;
     use std::collections::BTreeMap;
-
+    use std::path::PathBuf;
     #[tokio::test(flavor = "current_thread")]
     async fn run_until_idle_consumes_jsonl_and_persists_readback_state() {
         let temp = tempfile::tempdir().unwrap();
@@ -372,6 +358,18 @@ mod tests {
             watermark[session].last_consumed_byte_offset,
             line.len() as u64 + 1
         );
+        let cache_status = &summary.status["embedder_cache"];
+        assert_eq!(cache_status["telemetry_present"], true);
+        assert_eq!(cache_status["telemetry"]["misses"], 4);
+        assert_eq!(cache_status["telemetry"]["writes"], 4);
+        assert_eq!(cache_status["telemetry"]["entry_count"], 4);
+        let telemetry_path = PathBuf::from(cache_status["telemetry_path"].as_str().unwrap());
+        assert!(telemetry_path.is_file());
+        let telemetry_readback: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&telemetry_path).unwrap()).unwrap();
+        assert_eq!(telemetry_readback["misses"], 4);
+        assert_eq!(telemetry_readback["writes"], 4);
+        assert_eq!(telemetry_readback["entry_count"], 4);
         drop(subscriber);
 
         let db = open_infer_rocksdb(&infer_db).unwrap();

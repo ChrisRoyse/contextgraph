@@ -1,10 +1,12 @@
 // Inspired by ruvnet/RuVector at HEAD ef5274c2 (clean-room reimplementation).
-
-use std::collections::BTreeMap;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Instant;
-
+use crate::models::{
+    encode_session_hex, ShiftEntry, ShiftOutcome, SkipReason, SubscriberMetrics, UtmlFactorBundle,
+    WatermarkRecord,
+};
+use crate::shift_transform::{
+    is_inference_candidate, required_f32_array, shift_to_inference, timestamp_ns_to_ms, utml_bundle,
+};
+use crate::{Result, SubscriberError, WatermarkWriter};
 use context_graph_mejepa::{
     build_deterministic_compiler, materialize_inference_panels, open_infer_rocksdb,
     CalibrationExample, CalibrationStore, ChunkId, DdaSignals, MeJepaInferConfig, MejepaStore,
@@ -21,19 +23,12 @@ use context_graph_mejepa_train::dda::{
     compute_dda_signals, persist_dda_signals, DdaPairwiseBaseline, DdaVectorInput,
 };
 use rocksdb::WriteOptions;
-use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Instant;
 use tracing::info;
-
-use crate::models::{
-    encode_session_hex, ShiftEntry, ShiftOutcome, SkipReason, SubscriberMetrics, UtmlFactorBundle,
-    WatermarkRecord,
-};
-use crate::shift_transform::{
-    is_inference_candidate, required_f32_array, shift_to_inference, timestamp_ns_to_ms, utml_bundle,
-};
-use crate::{Result, SubscriberError, WatermarkWriter};
-
 #[derive(Debug, Clone)]
 pub struct MeJepaShiftSubscriberConfig {
     pub infer_db_path: PathBuf,
@@ -46,7 +41,6 @@ pub struct MeJepaShiftSubscriberConfig {
     pub lag_alert_sustain_seconds: u64,
     pub tail_poll_interval_ms: u64,
 }
-
 impl MeJepaShiftSubscriberConfig {
     pub fn validate(&self) -> Result<()> {
         if self.infer_db_path.as_os_str().is_empty() {
@@ -108,7 +102,6 @@ impl MeJepaShiftSubscriberConfig {
         Ok(())
     }
 }
-
 pub struct ShiftSubscriber {
     pub(crate) config: MeJepaShiftSubscriberConfig,
     db: Arc<rocksdb::DB>,
@@ -117,14 +110,12 @@ pub struct ShiftSubscriber {
     pub(crate) watermark_writer: WatermarkWriter,
     metrics: Arc<SubscriberMetrics>,
 }
-
 impl ShiftSubscriber {
     pub fn open(config: MeJepaShiftSubscriberConfig) -> Result<Self> {
         config.validate()?;
         let db = open_infer_rocksdb(&config.infer_db_path)?;
         Self::open_with_db(config, db)
     }
-
     pub fn open_with_db(config: MeJepaShiftSubscriberConfig, db: Arc<rocksdb::DB>) -> Result<Self> {
         config.validate()?;
         for cf in context_graph_mejepa::MEJEPA_INFER_CFS {
@@ -147,15 +138,12 @@ impl ShiftSubscriber {
             metrics: Arc::new(SubscriberMetrics::default()),
         })
     }
-
     pub fn metrics(&self) -> Arc<SubscriberMetrics> {
         self.metrics.clone()
     }
-
     pub fn read_watermarks(&self) -> Result<BTreeMap<String, WatermarkRecord>> {
         self.watermark_writer.read_all()
     }
-
     pub async fn process_shift(&self, entry: &ShiftEntry, replay: bool) -> Result<ShiftOutcome> {
         let started = Instant::now();
         if let Some(existing) = self.watermark_writer.read(entry.session_id)? {
@@ -231,7 +219,6 @@ impl ShiftSubscriber {
             latency_ms,
         })
     }
-
     fn skip_non_inference_shift(
         &self,
         entry: &ShiftEntry,
@@ -269,28 +256,6 @@ impl ShiftSubscriber {
             watermark_offset: Some(record.last_consumed_byte_offset),
         })
     }
-
-    pub fn capture_minimal_status(&self) -> Result<Value> {
-        let (processed, observed, dropped, lag_alert_active) = self.metrics.snapshot_counts();
-        let task_alive_since = self.metrics.task_alive_since();
-        let watermarks = self.watermark_writer.read_all()?;
-        let last_watermark_per_session = watermarks
-            .iter()
-            .map(|(session, record)| (session.clone(), record.last_consumed_shift_id.clone()))
-            .collect::<BTreeMap<_, _>>();
-        Ok(json!({
-            "subscriber_running": task_alive_since.is_some(),
-            "task_alive_since": task_alive_since,
-            "processed_count": processed,
-            "observed_count": observed,
-            "dropped_l_step_below_threshold_count": dropped,
-            "lag_alert_active": lag_alert_active,
-            "latency_ms": self.metrics.snapshot_latency_ms(),
-            "last_panic": self.metrics.last_panic(),
-            "last_watermark_per_session": last_watermark_per_session
-        }))
-    }
-
     fn compiler(&self) -> Result<context_graph_mejepa::MeJepaCompiler> {
         let calibration = CalibrationStore::new(self.db.clone(), 30)?;
         let store = Arc::new(self.store.clone());
@@ -301,7 +266,6 @@ impl ShiftSubscriber {
             MeJepaInferConfig::default(),
         )?)
     }
-
     async fn compute_dda_rows(
         &self,
         entry: &ShiftEntry,
@@ -349,7 +313,6 @@ impl ShiftSubscriber {
         }
         Ok(rows)
     }
-
     fn persist_dda_rows(
         &self,
         entry: &ShiftEntry,
@@ -370,8 +333,7 @@ impl ShiftSubscriber {
         );
         Ok(rows.len())
     }
-
-    fn dda_cache_root(&self) -> Result<PathBuf> {
+    pub(crate) fn dda_cache_root(&self) -> Result<PathBuf> {
         let cache_root = self
             .config
             .infer_db_path
@@ -384,7 +346,6 @@ impl ShiftSubscriber {
         }
         Ok(cache_root)
     }
-
     fn dda_input_text(&self, entry: &ShiftEntry, idx: usize, text: &str) -> Result<String> {
         if text.trim().is_empty() {
             return Err(SubscriberError::invalid(
@@ -395,7 +356,6 @@ impl ShiftSubscriber {
         let timestamp_secs = entry.timestamp_unix_ns / 1_000_000_000;
         Ok(format!("epoch:{timestamp_secs}\n{text}"))
     }
-
     fn persist_panels(
         &self,
         patch: &PatchBundle,
@@ -430,7 +390,6 @@ impl ShiftSubscriber {
         }
         Ok(())
     }
-
     fn persist_oracle_example(
         &self,
         entry: &ShiftEntry,
@@ -487,7 +446,6 @@ impl ShiftSubscriber {
         }
         Ok(true)
     }
-
     fn persist_train_cert(
         &self,
         entry: &ShiftEntry,
@@ -528,7 +486,6 @@ impl ShiftSubscriber {
         Ok(())
     }
 }
-
 fn chrono_like_now_seconds() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
