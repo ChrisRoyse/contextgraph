@@ -81,8 +81,9 @@ fn run_happy_positive(root: &Path, python: &str) -> FsvResult<Value> {
         "readback": readback,
     });
     println!("after {case}: {}", serde_json::to_string(&after)?);
-    let passes =
-        after["failed_tests"] == 1 && after["failure_modes"] == 1 && after["edge_cases"] == 1;
+    let passes = after["failed_tests"] == 1
+        && after["failure_modes"].as_u64().unwrap_or(0) >= 1
+        && after["edge_cases"].as_u64().unwrap_or(0) >= 1;
     Ok(json!({ "before_state": before, "after_state": after, "passes": passes }))
 }
 

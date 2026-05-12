@@ -216,7 +216,7 @@ fn setup(
     let examples = calibration_examples();
     calibration_store.calibrate(
         &examples,
-        &[0.01; 20],
+        &[0.01; 40],
         0.10,
         30,
         0.30,
@@ -283,7 +283,7 @@ fn signals_two() -> DdaSignals {
 }
 
 fn calibration_examples() -> Vec<CalibrationExample> {
-    (0..20)
+    (0..40)
         .map(|idx| CalibrationExample {
             language: context_graph_mejepa::Language::Python,
             predicted_test_pass: vec![0.90],
