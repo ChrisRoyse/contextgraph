@@ -353,23 +353,21 @@ fn assert_otel_export_files(out: &Path, expected_spans: i64) -> Value {
         file_entry(&manifest, "traces")["item_count"],
         expected_spans
     );
-    assert_eq!(
+    assert!(
         spans[0]["attributes"]
             .as_array()
             .expect("span attributes")
             .iter()
-            .any(|attr| attr["key"] == "blackbox.record.kind"),
-        true
+            .any(|attr| attr["key"] == "blackbox.record.kind")
     );
-    assert_eq!(
+    assert!(
         traces["resourceSpans"][0]["resource"]["attributes"]
             .as_array()
             .expect("resource attributes")
             .iter()
             .any(|attr| {
                 attr["key"] == "service.name" && attr["value"]["stringValue"] == "blackboxfix"
-            }),
-        true
+            })
     );
     manifest
 }

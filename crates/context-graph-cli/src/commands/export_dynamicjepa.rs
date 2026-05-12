@@ -650,7 +650,7 @@ fn plan_episode_row(
             "domain_pack_id": plan.domain_pack_id,
             "current_panel_id": plan.current_panel_id,
             "model_artifact_id": plan.model_artifact_id,
-            "model_artifact_hash_at_plan": hex(&plan.model_artifact_hash_at_plan),
+            "model_artifact_hash_at_plan": hex(plan.model_artifact_hash_at_plan),
             "skill_policy_id": plan.skill_policy_id,
             "created_at_unix_ms": plan.created_at_unix_ms,
         }),
@@ -1152,13 +1152,13 @@ fn sha256_f32_slice(values: &[f32]) -> String {
     for value in values {
         hasher.update(value.to_le_bytes());
     }
-    format!("sha256:{}", hex(&hasher.finalize()))
+    format!("sha256:{}", hex(hasher.finalize()))
 }
 
 fn sha256_bytes(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    hex(&hasher.finalize())
+    hex(hasher.finalize())
 }
 
 fn hex(bytes: impl AsRef<[u8]>) -> String {

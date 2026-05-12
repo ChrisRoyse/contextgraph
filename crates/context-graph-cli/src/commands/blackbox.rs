@@ -539,7 +539,7 @@ pub struct VerifyArgs {
 #[derive(Subcommand, Debug)]
 pub enum PolicyCommands {
     /// Evaluate one tool action and persist the policy decision row.
-    Evaluate(PolicyEvaluateArgs),
+    Evaluate(Box<PolicyEvaluateArgs>),
     /// List the shipped Phase 6 policy modes and capability registry.
     Registry(PolicyRegistryArgs),
 }
@@ -1337,7 +1337,7 @@ enum ErrorKind {
 }
 
 #[derive(Debug)]
-pub struct BlackboxError {
+struct BlackboxErrorRepr {
     kind: ErrorKind,
     error_code: &'static str,
     message: String,
@@ -1346,6 +1346,9 @@ pub struct BlackboxError {
     remediation: String,
     connector: &'static str,
 }
+
+#[derive(Debug)]
+pub struct BlackboxError(Box<BlackboxErrorRepr>);
 
 impl BlackboxError {
     fn new(
@@ -1376,7 +1379,7 @@ impl BlackboxError {
         field_path: Option<String>,
         remediation: impl Into<String>,
     ) -> Self {
-        Self {
+        Self(Box::new(BlackboxErrorRepr {
             kind,
             error_code,
             message: message.into(),
@@ -1384,7 +1387,15 @@ impl BlackboxError {
             field_path,
             remediation: remediation.into(),
             connector,
-        }
+        }))
+    }
+
+    fn kind(&self) -> ErrorKind {
+        self.0.kind
+    }
+
+    fn error_code(&self) -> &'static str {
+        self.0.error_code
     }
 
     fn invalid(message: impl Into<String>, remediation: impl Into<String>) -> Self {
@@ -1602,7 +1613,7 @@ impl BlackboxError {
     }
 
     fn exit_code(&self) -> i32 {
-        match self.kind {
+        match self.0.kind {
             ErrorKind::HashChain => 2,
             _ => 1,
         }
@@ -1611,19 +1622,19 @@ impl BlackboxError {
     fn to_json(&self) -> Value {
         json!({
             "status": "error",
-            "error_code": self.error_code,
-            "message": self.message,
-            "source_of_truth": self.source_of_truth,
-            "connector": self.connector,
-            "field_path": self.field_path,
-            "remediation": self.remediation,
+            "error_code": self.0.error_code,
+            "message": self.0.message,
+            "source_of_truth": self.0.source_of_truth,
+            "connector": self.0.connector,
+            "field_path": self.0.field_path,
+            "remediation": self.0.remediation,
         })
     }
 }
 
 impl std::fmt::Display for BlackboxError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.error_code, self.message)
+        write!(f, "{}: {}", self.0.error_code, self.0.message)
     }
 }
 
@@ -1633,9 +1644,9 @@ type BbxResult<T> = Result<T, BlackboxError>;
 
 pub async fn handle_blackbox_command(command: BlackboxCommands) -> i32 {
     match command {
-        BlackboxCommands::Mcp { action } => return handle_mcp_command(action).await,
-        BlackboxCommands::Server { action } => return handle_server_command(action).await,
-        other => return handle_blackbox_json_command(other).await,
+        BlackboxCommands::Mcp { action } => handle_mcp_command(action).await,
+        BlackboxCommands::Server { action } => handle_server_command(action).await,
+        other => handle_blackbox_json_command(other).await,
     }
 }
 
@@ -1677,7 +1688,7 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
             SdkCommands::Ingest(args) => sdk_ingest(args),
         },
         BlackboxCommands::Policy { action } => match action {
-            PolicyCommands::Evaluate(args) => policy_evaluate(args),
+            PolicyCommands::Evaluate(args) => policy_evaluate(*args),
             PolicyCommands::Registry(args) => policy_registry(args),
         },
         BlackboxCommands::Mcp { action: _ } => Err(BlackboxError::invalid(
@@ -2390,7 +2401,7 @@ async fn http_finish_response(
                         route_id,
                         status_code: status.as_u16(),
                         outcome: "error",
-                        error_code: Some(err.error_code),
+                        error_code: Some(err.error_code()),
                         request_body_sha256: None,
                         response_body_sha256: &response_hash,
                         started_at,
@@ -2930,13 +2941,13 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 }
 
 fn http_status_for_error(err: &BlackboxError) -> StatusCode {
-    match err.error_code {
+    match err.error_code() {
         "HTTP_AUTH_MISSING" | "HTTP_AUTH_SCHEME_INVALID" | "HTTP_AUTH_INVALID" => {
             StatusCode::UNAUTHORIZED
         }
         "HTTP_BODY_TOO_LARGE" => StatusCode::PAYLOAD_TOO_LARGE,
         "HTTP_REMOTE_BIND_REFUSED" => StatusCode::FORBIDDEN,
-        _ => match err.kind {
+        _ => match err.kind() {
             ErrorKind::InvalidInput | ErrorKind::TenantMismatch | ErrorKind::Redaction => {
                 StatusCode::BAD_REQUEST
             }
@@ -6043,6 +6054,17 @@ fn sdk_record_kind_for_event_type(event_type: &str) -> &'static str {
     }
 }
 
+type SdkStoredRow = (
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+    String,
+);
+
 fn sdk_ingest_readback(
     conn: &Connection,
     ledger: &Path,
@@ -6064,7 +6086,7 @@ fn sdk_ingest_readback(
     }
     let mut rows = Vec::with_capacity(events.len());
     for (event, append) in events.iter().zip(appends.iter()) {
-        let stored: Option<(String, String, String, Option<String>, Option<String>, String, String, String)> =
+        let stored: Option<SdkStoredRow> =
             conn.query_row(
                 "SELECT record_id, record_kind, tenant_id, run_id, step_id, payload_json, payload_sha256, record_sha256
                  FROM ledger_records
@@ -7123,13 +7145,15 @@ fn enterprise_access_evaluate(args: EnterpriseAccessEvaluateArgs) -> BbxResult<V
     let access_append = append_enterprise_access_decision(
         &mut conn,
         &args.ledger,
-        &args.tenant,
-        &args.principal_id,
-        &args.permission,
-        &args.resource,
-        &args.agent,
-        args.model.as_deref(),
-        &outcome,
+        EnterpriseAccessDecisionInput {
+            tenant: &args.tenant,
+            principal_id: &args.principal_id,
+            permission: &args.permission,
+            resource: &args.resource,
+            agent: &args.agent,
+            model: args.model.as_deref(),
+            outcome: &outcome,
+        },
     )?;
 
     Ok(json!({
@@ -7174,13 +7198,15 @@ fn enterprise_export_audit(args: EnterpriseAuditExportArgs) -> BbxResult<Value> 
     let access_append = append_enterprise_access_decision(
         &mut conn,
         &args.ledger,
-        &args.tenant,
-        &args.principal_id,
-        "audit.export",
-        &resource,
-        &args.agent,
-        args.model.as_deref(),
-        &authorization,
+        EnterpriseAccessDecisionInput {
+            tenant: &args.tenant,
+            principal_id: &args.principal_id,
+            permission: "audit.export",
+            resource: &resource,
+            agent: &args.agent,
+            model: args.model.as_deref(),
+            outcome: &authorization,
+        },
     )?;
     if !authorization.allowed {
         return Err(BlackboxError::new_with_connector(
@@ -7609,13 +7635,15 @@ fn append_privacy_decision(args: PrivacyDecisionRequest<'_>) -> BbxResult<Value>
     let authorization_append = append_enterprise_access_decision(
         &mut conn,
         args.ledger,
-        args.tenant,
-        args.principal_id,
-        args.operation.permission(),
-        &resource,
-        args.agent,
-        args.model,
-        &authorization,
+        EnterpriseAccessDecisionInput {
+            tenant: args.tenant,
+            principal_id: args.principal_id,
+            permission: args.operation.permission(),
+            resource: &resource,
+            agent: args.agent,
+            model: args.model,
+            outcome: &authorization,
+        },
     )?;
     if !authorization.allowed {
         return Err(BlackboxError::new_with_connector(
@@ -7720,15 +7748,17 @@ fn append_privacy_decision(args: PrivacyDecisionRequest<'_>) -> BbxResult<Value>
     let readback = readback_privacy_append(
         &conn,
         args.ledger,
-        args.operation.record_kind(),
-        args.run_id,
-        payload["privacy_decision_id"]
-            .as_str()
-            .expect("privacy_decision_id is static string"),
-        append.sequence,
-        &append.payload_sha256,
-        &append.record_sha256,
-        record_count_before_privacy,
+        PrivacyAppendReadbackInput {
+            record_kind: args.operation.record_kind(),
+            run_id: args.run_id,
+            privacy_decision_id: payload["privacy_decision_id"]
+                .as_str()
+                .expect("privacy_decision_id is static string"),
+            sequence: append.sequence,
+            expected_payload_sha256: &append.payload_sha256,
+            expected_record_sha256: &append.record_sha256,
+            record_count_before: record_count_before_privacy,
+        },
     )?;
 
     Ok(json!({
@@ -8050,19 +8080,23 @@ fn build_privacy_decision_value(
     }
 }
 
+struct PrivacyAppendReadbackInput<'a> {
+    record_kind: &'a str,
+    run_id: &'a str,
+    privacy_decision_id: &'a str,
+    sequence: i64,
+    expected_payload_sha256: &'a str,
+    expected_record_sha256: &'a str,
+    record_count_before: i64,
+}
+
 fn readback_privacy_append(
     conn: &Connection,
     ledger_path: &Path,
-    record_kind: &str,
-    run_id: &str,
-    privacy_decision_id: &str,
-    sequence: i64,
-    expected_payload_sha256: &str,
-    expected_record_sha256: &str,
-    record_count_before: i64,
+    input: PrivacyAppendReadbackInput<'_>,
 ) -> BbxResult<Value> {
     let inspection_after = verify_ledger_integrity(conn, ledger_path)?;
-    if inspection_after.record_count != record_count_before + 1 {
+    if inspection_after.record_count != input.record_count_before + 1 {
         return Err(BlackboxError::evidence_integrity_for_connector(
             "PRIVACY_DECISION_READBACK_MISMATCH",
             PRIVACY_CONNECTOR_ID,
@@ -8070,7 +8104,7 @@ fn readback_privacy_append(
             "ledger_records.count",
             format!(
                 "privacy append expected row count {}, read back {}",
-                record_count_before + 1,
+                input.record_count_before + 1,
                 inspection_after.record_count
             ),
             "inspect the append-only ledger transaction and rerun privacy evaluation after fixing SQLite state",
@@ -8079,26 +8113,31 @@ fn readback_privacy_append(
     let row = inspection_after
         .records
         .iter()
-        .find(|record| record.sequence == sequence)
+        .find(|record| record.sequence == input.sequence)
         .ok_or_else(|| {
             BlackboxError::evidence_integrity_for_connector(
                 "PRIVACY_DECISION_READBACK_MISMATCH",
                 PRIVACY_CONNECTOR_ID,
                 source_of_truth(ledger_path),
                 "ledger_records.sequence",
-                format!("privacy decision sequence {sequence} was not readable after append"),
+                format!(
+                    "privacy decision sequence {} was not readable after append",
+                    input.sequence
+                ),
                 "inspect the append-only ledger transaction and rerun privacy evaluation after fixing SQLite state",
             )
         })?;
-    if row.record_kind != record_kind
-        || row.run_id.as_deref() != Some(run_id)
+    if row.record_kind != input.record_kind
+        || row.run_id.as_deref() != Some(input.run_id)
         || row
             .payload
             .get("privacy_decision_id")
             .and_then(Value::as_str)
-            != Some(privacy_decision_id)
-        || row.hash.get("payload_sha256").and_then(Value::as_str) != Some(expected_payload_sha256)
-        || row.hash.get("record_sha256").and_then(Value::as_str) != Some(expected_record_sha256)
+            != Some(input.privacy_decision_id)
+        || row.hash.get("payload_sha256").and_then(Value::as_str)
+            != Some(input.expected_payload_sha256)
+        || row.hash.get("record_sha256").and_then(Value::as_str)
+            != Some(input.expected_record_sha256)
     {
         return Err(BlackboxError::evidence_integrity_for_connector(
             "PRIVACY_DECISION_READBACK_MISMATCH",
@@ -8285,13 +8324,15 @@ fn gate_evaluate(args: GateEvaluateArgs) -> BbxResult<Value> {
     let authorization_append = append_enterprise_access_decision(
         &mut conn,
         &args.ledger,
-        &args.tenant,
-        &args.principal_id,
-        "release.approve",
-        &resource,
-        &args.agent,
-        args.model.as_deref(),
-        &authorization,
+        EnterpriseAccessDecisionInput {
+            tenant: &args.tenant,
+            principal_id: &args.principal_id,
+            permission: "release.approve",
+            resource: &resource,
+            agent: &args.agent,
+            model: args.model.as_deref(),
+            outcome: &authorization,
+        },
     )?;
     if !authorization.allowed {
         return Err(BlackboxError::new_with_connector(
@@ -8908,13 +8949,15 @@ fn package_pilot_report(args: PackagePilotReportArgs) -> BbxResult<Value> {
     let authorization_append = append_enterprise_access_decision(
         &mut conn,
         &args.ledger,
-        &args.tenant,
-        &args.principal_id,
-        "commercial.package",
-        &resource,
-        &args.agent,
-        args.model.as_deref(),
-        &authorization,
+        EnterpriseAccessDecisionInput {
+            tenant: &args.tenant,
+            principal_id: &args.principal_id,
+            permission: "commercial.package",
+            resource: &resource,
+            agent: &args.agent,
+            model: args.model.as_deref(),
+            outcome: &authorization,
+        },
     )?;
     if !authorization.allowed {
         return Err(BlackboxError::new_with_connector(
@@ -10052,13 +10095,15 @@ fn risk_evaluate(args: RiskEvaluateArgs) -> BbxResult<Value> {
     let authorization_append = append_enterprise_access_decision(
         &mut conn,
         &args.ledger,
-        &args.tenant,
-        &args.principal_id,
-        "risk.review",
-        &resource,
-        &args.agent,
-        args.model.as_deref(),
-        &authorization,
+        EnterpriseAccessDecisionInput {
+            tenant: &args.tenant,
+            principal_id: &args.principal_id,
+            permission: "risk.review",
+            resource: &resource,
+            agent: &args.agent,
+            model: args.model.as_deref(),
+            outcome: &authorization,
+        },
     )?;
     if !authorization.allowed {
         return Err(BlackboxError::new_with_connector(
@@ -16598,7 +16643,7 @@ fn validate_enterprise_directory_payload(
         enterprise_object(
             ledger_path,
             group,
-            &format!("$.groups[{index}]"),
+            format!("$.groups[{index}]"),
             "ENTERPRISE_DIRECTORY_INVALID",
             "SCIM group must be a JSON object",
         )?;
@@ -16606,7 +16651,7 @@ fn validate_enterprise_directory_payload(
             ledger_path,
             group,
             "id",
-            &format!("$.groups[{index}].id"),
+            format!("$.groups[{index}].id"),
             "ENTERPRISE_DIRECTORY_INVALID",
         )?;
         validate_enterprise_atom(ledger_path, &format!("$.groups[{index}].id"), id)?;
@@ -16623,14 +16668,14 @@ fn validate_enterprise_directory_payload(
             ledger_path,
             group,
             "displayName",
-            &format!("$.groups[{index}].displayName"),
+            format!("$.groups[{index}].displayName"),
             "ENTERPRISE_DIRECTORY_INVALID",
         )?;
         let assigned_roles = enterprise_required_array(
             ledger_path,
             group,
             "roles",
-            &format!("$.groups[{index}].roles"),
+            format!("$.groups[{index}].roles"),
             "ENTERPRISE_DIRECTORY_INVALID",
         )?;
         if assigned_roles.is_empty() {
@@ -16684,7 +16729,7 @@ fn validate_enterprise_directory_payload(
         enterprise_object(
             ledger_path,
             user,
-            &format!("$.users[{index}]"),
+            format!("$.users[{index}]"),
             "ENTERPRISE_DIRECTORY_INVALID",
             "SCIM user must be a JSON object",
         )?;
@@ -16692,7 +16737,7 @@ fn validate_enterprise_directory_payload(
             ledger_path,
             user,
             "id",
-            &format!("$.users[{index}].id"),
+            format!("$.users[{index}].id"),
             "ENTERPRISE_DIRECTORY_INVALID",
         )?;
         validate_enterprise_atom(ledger_path, &format!("$.users[{index}].id"), id)?;
@@ -16709,21 +16754,21 @@ fn validate_enterprise_directory_payload(
             ledger_path,
             user,
             "userName",
-            &format!("$.users[{index}].userName"),
+            format!("$.users[{index}].userName"),
             "ENTERPRISE_DIRECTORY_INVALID",
         )?;
         enterprise_required_bool(
             ledger_path,
             user,
             "active",
-            &format!("$.users[{index}].active"),
+            format!("$.users[{index}].active"),
             "ENTERPRISE_DIRECTORY_INVALID",
         )?;
         let memberships = enterprise_required_array(
             ledger_path,
             user,
             "groups",
-            &format!("$.users[{index}].groups"),
+            format!("$.users[{index}].groups"),
             "ENTERPRISE_DIRECTORY_INVALID",
         )?;
         let mut seen_groups = BTreeSet::new();
@@ -16986,7 +17031,7 @@ fn validate_enterprise_rbac(ledger_path: &Path, rbac: &Value) -> BbxResult<()> {
         enterprise_object(
             ledger_path,
             role,
-            &format!("$.rbac.roles[{index}]"),
+            format!("$.rbac.roles[{index}]"),
             "ENTERPRISE_RBAC_CONFIG_INVALID",
             "RBAC role must be a JSON object",
         )?;
@@ -16994,7 +17039,7 @@ fn validate_enterprise_rbac(ledger_path: &Path, rbac: &Value) -> BbxResult<()> {
             ledger_path,
             role,
             "role_id",
-            &format!("$.rbac.roles[{index}].role_id"),
+            format!("$.rbac.roles[{index}].role_id"),
             "ENTERPRISE_RBAC_CONFIG_INVALID",
         )?;
         validate_enterprise_atom(
@@ -17015,7 +17060,7 @@ fn validate_enterprise_rbac(ledger_path: &Path, rbac: &Value) -> BbxResult<()> {
             ledger_path,
             role,
             "permissions",
-            &format!("$.rbac.roles[{index}].permissions"),
+            format!("$.rbac.roles[{index}].permissions"),
             "ENTERPRISE_RBAC_CONFIG_INVALID",
         )?;
         if permissions.is_empty() {
@@ -17104,7 +17149,7 @@ fn validate_enterprise_retention(ledger_path: &Path, retention: &Value) -> BbxRe
         enterprise_object(
             ledger_path,
             class,
-            &format!("$.retention.classes[{index}]"),
+            format!("$.retention.classes[{index}]"),
             "ENTERPRISE_RETENTION_CONFIG_INVALID",
             "retention class must be a JSON object",
         )?;
@@ -17112,7 +17157,7 @@ fn validate_enterprise_retention(ledger_path: &Path, retention: &Value) -> BbxRe
             ledger_path,
             class,
             "class_id",
-            &format!("$.retention.classes[{index}].class_id"),
+            format!("$.retention.classes[{index}].class_id"),
             "ENTERPRISE_RETENTION_CONFIG_INVALID",
         )?;
         validate_enterprise_atom(
@@ -17133,7 +17178,7 @@ fn validate_enterprise_retention(ledger_path: &Path, retention: &Value) -> BbxRe
             ledger_path,
             class,
             "retain_days",
-            &format!("$.retention.classes[{index}].retain_days"),
+            format!("$.retention.classes[{index}].retain_days"),
             "ENTERPRISE_RETENTION_CONFIG_INVALID",
         )?;
         if retain_days <= 0 {
@@ -17149,7 +17194,7 @@ fn validate_enterprise_retention(ledger_path: &Path, retention: &Value) -> BbxRe
             ledger_path,
             class,
             "legal_hold",
-            &format!("$.retention.classes[{index}].legal_hold"),
+            format!("$.retention.classes[{index}].legal_hold"),
             "ENTERPRISE_RETENTION_CONFIG_INVALID",
         )?;
     }
@@ -17448,25 +17493,29 @@ fn enterprise_access_payload(
     })
 }
 
+struct EnterpriseAccessDecisionInput<'a> {
+    tenant: &'a str,
+    principal_id: &'a str,
+    permission: &'a str,
+    resource: &'a str,
+    agent: &'a str,
+    model: Option<&'a str>,
+    outcome: &'a EnterpriseAccessOutcome,
+}
+
 fn append_enterprise_access_decision(
     conn: &mut Connection,
     ledger_path: &Path,
-    tenant: &str,
-    principal_id: &str,
-    permission: &str,
-    resource: &str,
-    agent: &str,
-    model: Option<&str>,
-    outcome: &EnterpriseAccessOutcome,
+    input: EnterpriseAccessDecisionInput<'_>,
 ) -> BbxResult<EnterpriseAccessAppend> {
     let access_decision_id = prefixed_id("enterprise_access");
     let payload = enterprise_access_payload(
         &access_decision_id,
-        tenant,
-        principal_id,
-        permission,
-        resource,
-        outcome,
+        input.tenant,
+        input.principal_id,
+        input.permission,
+        input.resource,
+        input.outcome,
     );
     let record_id = prefixed_id("bbx_ent_access");
     let append = append_record(
@@ -17475,10 +17524,10 @@ fn append_enterprise_access_decision(
         NewRecord {
             record_id: record_id.clone(),
             record_kind: "enterprise_access_decision".to_string(),
-            tenant_id: tenant.to_string(),
+            tenant_id: input.tenant.to_string(),
             run_id: None,
             step_id: None,
-            actor: actor_json(agent, model),
+            actor: actor_json(input.agent, input.model),
             payload,
             redaction: RedactionReport::empty(),
         },
@@ -17487,7 +17536,7 @@ fn append_enterprise_access_decision(
     let stored = latest_enterprise_record(
         ledger_path,
         &inspection,
-        tenant,
+        input.tenant,
         "enterprise_access_decision",
     )?;
     verify_enterprise_append_readback(ledger_path, stored, append.sequence, &record_id)?;
@@ -18496,8 +18545,8 @@ fn validate_no_enterprise_secret_material(ledger_path: &Path, value: &Value) -> 
                     walk(ledger_path, child, &format!("{path}[{index}]"))?;
                 }
             }
-            Value::String(text) => {
-                if looks_like_secret_literal(text) {
+            Value::String(text)
+                if looks_like_secret_literal(text) => {
                     return Err(enterprise_invalid(
                         ledger_path,
                         "ENTERPRISE_SECRET_MATERIAL_REFUSED",
@@ -18506,7 +18555,6 @@ fn validate_no_enterprise_secret_material(ledger_path: &Path, value: &Value) -> 
                         "replace secret material with a credential key id or SHA-256 fingerprint",
                     ));
                 }
-            }
             _ => {}
         }
         Ok(())
@@ -19897,7 +19945,7 @@ async fn verify_local_value(
         "failed" => Err(BlackboxError::verifier_failed(
             verification.error_code.unwrap_or("VERIFIER_FAILED"),
             verification.connector,
-            verification.source_of_truth,
+            verification.source_of_truth.clone(),
             verification
                 .field_path
                 .as_deref()
@@ -19912,7 +19960,7 @@ async fn verify_local_value(
         "blocked" => Err(BlackboxError::connector_blocked(
             verification.error_code.unwrap_or("VERIFIER_BLOCKED"),
             verification.connector,
-            verification.source_of_truth,
+            verification.source_of_truth.clone(),
             verification
                 .field_path
                 .as_deref()
@@ -25633,7 +25681,7 @@ impl VerifySpec {
 }
 
 #[derive(Debug)]
-struct VerificationOutcome {
+struct VerificationOutcomeRepr {
     status: &'static str,
     connector: &'static str,
     source_of_truth: String,
@@ -25646,6 +25694,17 @@ struct VerificationOutcome {
     field_path: Option<String>,
     message: Option<String>,
     remediation: Option<String>,
+}
+
+#[derive(Debug)]
+struct VerificationOutcome(Box<VerificationOutcomeRepr>);
+
+impl std::ops::Deref for VerificationOutcome {
+    type Target = VerificationOutcomeRepr;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 async fn run_phase2_verifier(spec: &VerifySpec) -> VerificationOutcome {
@@ -25691,13 +25750,17 @@ async fn run_phase2_verifier(spec: &VerifySpec) -> VerificationOutcome {
 }
 
 impl VerificationOutcome {
+    fn into_inner(self) -> VerificationOutcomeRepr {
+        *self.0
+    }
+
     fn passed(
         connector: &'static str,
         source_of_truth: String,
         readback_payload: Value,
         actual_readback: Value,
     ) -> Self {
-        Self {
+        Self(Box::new(VerificationOutcomeRepr {
             status: "passed",
             connector,
             source_of_truth,
@@ -25710,7 +25773,7 @@ impl VerificationOutcome {
             field_path: None,
             message: None,
             remediation: None,
-        }
+        }))
     }
 
     fn failed(
@@ -25723,7 +25786,7 @@ impl VerificationOutcome {
         readback_payload: Value,
         actual_readback: Value,
     ) -> Self {
-        Self {
+        Self(Box::new(VerificationOutcomeRepr {
             status: "failed",
             connector,
             source_of_truth,
@@ -25736,7 +25799,7 @@ impl VerificationOutcome {
             field_path: Some(field_path.into()),
             message: Some(message.into()),
             remediation: Some(remediation.into()),
-        }
+        }))
     }
 
     fn blocked(
@@ -25752,7 +25815,7 @@ impl VerificationOutcome {
             .as_ref()
             .and_then(|payload| payload.get("observed_state").cloned())
             .unwrap_or_else(|| json!({ "blocked": true }));
-        Self {
+        Self(Box::new(VerificationOutcomeRepr {
             status: "blocked",
             connector,
             source_of_truth,
@@ -25765,7 +25828,7 @@ impl VerificationOutcome {
             field_path: Some(field_path.into()),
             message: Some(message.into()),
             remediation: Some(remediation.into()),
-        }
+        }))
     }
 }
 
@@ -26528,6 +26591,7 @@ fn k8s_snapshot_state(
 fn k8s_snapshot_connector_readback(path: &Path) -> BbxResult<Value> {
     let source = k8s_source_of_truth(path, "deployment-snapshot");
     let state = k8s_snapshot_state(path, &source, "--source").map_err(|outcome| {
+        let outcome = outcome.into_inner();
         BlackboxError::connector_blocked(
             outcome.error_code.unwrap_or("K8S_SNAPSHOT_READ_FAILED"),
             K8S_CONNECTOR_ID,
@@ -26552,6 +26616,7 @@ fn k8s_snapshot_connector_readback(path: &Path) -> BbxResult<Value> {
         ));
     }
     let snapshot = parse_k8s_snapshot_json(&state, &source, "--source").map_err(|outcome| {
+        let outcome = outcome.into_inner();
         BlackboxError::connector_blocked(
             outcome.error_code.unwrap_or("K8S_SNAPSHOT_JSON_INVALID"),
             K8S_CONNECTOR_ID,
@@ -27147,6 +27212,7 @@ fn normalize_osv_report(report: &Value) -> Result<Value, String> {
 fn scanner_osv_report_readback(path: &Path) -> BbxResult<Value> {
     let source = scanner_source_of_truth(path, "osv-report");
     let state = scanner_file_state(path, "osv-report", &source, "--source").map_err(|outcome| {
+        let outcome = outcome.into_inner();
         BlackboxError::connector_blocked(
             outcome.error_code.unwrap_or("SCANNER_ARTIFACT_READ_FAILED"),
             SCANNER_CONNECTOR_ID,
@@ -29753,6 +29819,7 @@ fn tf_plan_connector_readback(path: &Path) -> BbxResult<Value> {
 }
 
 fn tf_connector_error_from_outcome(outcome: VerificationOutcome) -> BlackboxError {
+    let outcome = outcome.into_inner();
     BlackboxError::connector_blocked(
         outcome
             .error_code
@@ -31405,6 +31472,7 @@ fn parse_ticketing_json(
 }
 
 fn ticketing_connector_error_from_outcome(outcome: VerificationOutcome) -> BlackboxError {
+    let outcome = outcome.into_inner();
     BlackboxError::connector_blocked(
         outcome
             .error_code
@@ -34779,6 +34847,7 @@ fn verify_cmd_exit_zero(spec: &VerifySpec) -> VerificationOutcome {
 }
 
 fn connector_error_to_outcome(err: BlackboxError) -> VerificationOutcome {
+    let BlackboxError(err) = err;
     let field_path = err.field_path.unwrap_or_else(|| "source".to_string());
     VerificationOutcome::blocked(
         err.connector,

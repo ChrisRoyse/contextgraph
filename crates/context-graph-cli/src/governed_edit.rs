@@ -5,7 +5,7 @@
 //! runs a small allowlist of project commands, and writes readback artifacts
 //! that callers can inspect as source of truth.
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -16,7 +16,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize)]
-pub struct GovernedEditError {
+struct GovernedEditErrorRepr {
     pub status: &'static str,
     pub error_code: String,
     pub message: String,
@@ -24,6 +24,18 @@ pub struct GovernedEditError {
     pub remediation: String,
     pub details: Value,
     pub source_of_truth: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GovernedEditError(Box<GovernedEditErrorRepr>);
+
+impl Serialize for GovernedEditError {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.0.serialize(serializer)
+    }
 }
 
 impl GovernedEditError {
@@ -35,7 +47,7 @@ impl GovernedEditError {
         details: Value,
         source_of_truth: Option<String>,
     ) -> Self {
-        Self {
+        Self(Box::new(GovernedEditErrorRepr {
             status: "error",
             error_code: error_code.into(),
             message: message.into(),
@@ -43,7 +55,12 @@ impl GovernedEditError {
             remediation: remediation.into(),
             details,
             source_of_truth,
-        }
+        }))
+    }
+
+    #[cfg(test)]
+    fn error_code(&self) -> &str {
+        &self.0.error_code
     }
 }
 
@@ -1207,7 +1224,7 @@ mod tests {
         );
         assert_eq!(before, after);
         assert_eq!(
-            err.error_code,
+            err.error_code(),
             "RUST_REALITY_GOVERNED_PROJECT_EDIT_SHA_MISMATCH"
         );
     }
@@ -1227,7 +1244,7 @@ mod tests {
         );
         assert_eq!(secret, ".env");
         assert_eq!(
-            traversal.error_code,
+            traversal.error_code(),
             "RUST_REALITY_GOVERNED_PROJECT_PATH_INVALID"
         );
     }
@@ -1274,7 +1291,7 @@ mod tests {
             serde_json::to_string_pretty(&err).unwrap(),
             marker.exists()
         );
-        assert_eq!(err.error_code, "RUST_REALITY_GOVERNED_COMMAND_DENIED");
+        assert_eq!(err.error_code(), "RUST_REALITY_GOVERNED_COMMAND_DENIED");
         assert!(!marker.exists());
     }
 }

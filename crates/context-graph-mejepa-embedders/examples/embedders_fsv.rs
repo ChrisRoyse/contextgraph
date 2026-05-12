@@ -8,6 +8,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 type FsvResult<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -24,6 +25,17 @@ fn main() -> FsvResult<()> {
         .unwrap_or_else(|_| {
             PathBuf::from("/mnt/d/cabdru/contextgraph/models/mejepa_models_config.toml")
         });
+    let progress_path = root.join("embedders_fsv_progress.json");
+    let mut progress = Vec::new();
+    record_progress(
+        &progress_path,
+        &mut progress,
+        "start",
+        json!({
+            "root": root.display().to_string(),
+            "models_config": config_path.display().to_string(),
+        }),
+    )?;
 
     let routing_rows = routing_coverage()?;
     let routing_path = root.join("routing_coverage.json");
@@ -35,6 +47,15 @@ fn main() -> FsvResult<()> {
     require(
         "routing row readback count",
         routing_readback.as_array().map(Vec::len) == Some(13 * 11),
+    )?;
+    record_progress(
+        &progress_path,
+        &mut progress,
+        "routing_coverage_complete",
+        json!({
+            "source_of_truth": routing_path.display().to_string(),
+            "row_count": routing_rows.len(),
+        }),
     )?;
 
     let vram_before = json!({
@@ -50,11 +71,26 @@ fn main() -> FsvResult<()> {
         &vram_path,
         serde_json::to_string_pretty(&vram_after)?.as_bytes(),
     )?;
+    record_progress(
+        &progress_path,
+        &mut progress,
+        "vram_budget_complete",
+        json!({
+            "source_of_truth": vram_path.display().to_string(),
+            "passes": vram_after["passes"],
+        }),
+    )?;
 
     let config_before = json!({
         "config_path": config_path.display().to_string(),
         "config_exists": config_path.exists(),
     });
+    record_progress(
+        &progress_path,
+        &mut progress,
+        "models_config_digest_start",
+        json!({"source_of_truth": config_path.display().to_string()}),
+    )?;
     let config_after = match ModelsConfig::load(&config_path) {
         Ok(config) => match verify_all_registration_digests(&config) {
             Ok(loaded) => json!({
@@ -77,7 +113,23 @@ fn main() -> FsvResult<()> {
             "error": err_json(&err),
         }),
     };
+    record_progress(
+        &progress_path,
+        &mut progress,
+        "models_config_digest_complete",
+        json!({
+            "passes": config_after["passes"],
+            "digest_verified_count": config_after["digest_verified_count"],
+            "error": config_after.get("error").cloned().unwrap_or(Value::Null),
+        }),
+    )?;
 
+    record_progress(
+        &progress_path,
+        &mut progress,
+        "load_content_set_start",
+        json!({"source_of_truth": config_path.display().to_string()}),
+    )?;
     let load_content_after = match Ensemble::load_content_set(&config_path) {
         Ok(ensemble) => json!({
             "passes": true,
@@ -88,6 +140,16 @@ fn main() -> FsvResult<()> {
             "error": err_json(&err),
         }),
     };
+    record_progress(
+        &progress_path,
+        &mut progress,
+        "load_content_set_complete",
+        json!({
+            "passes": load_content_after["passes"],
+            "loaded_count": load_content_after["status"]["loaded_count"],
+            "error": load_content_after.get("error").cloned().unwrap_or(Value::Null),
+        }),
+    )?;
 
     let edge_cases = json!({
         "invalid_embedder_id": edge_invalid_embedder_id(),
@@ -103,6 +165,12 @@ fn main() -> FsvResult<()> {
             .values()
             .all(|case| case["observed_expected_failure"] == Value::Bool(true)),
     )?;
+    record_progress(
+        &progress_path,
+        &mut progress,
+        "edge_cases_complete",
+        edge_cases.clone(),
+    )?;
 
     let phase_ready = config_after["passes"] == Value::Bool(true)
         && load_content_after["passes"] == Value::Bool(true);
@@ -112,6 +180,7 @@ fn main() -> FsvResult<()> {
             "models_config": config_path.display().to_string(),
             "routing_coverage_json": routing_path.display().to_string(),
             "vram_budget_json": vram_path.display().to_string(),
+            "progress_json": progress_path.display().to_string(),
         },
         "happy_path": {
             "routing": {
@@ -150,6 +219,20 @@ fn main() -> FsvResult<()> {
     );
     println!("{}", text);
     Ok(())
+}
+
+fn record_progress(
+    path: &Path,
+    progress: &mut Vec<Value>,
+    stage: &str,
+    detail: Value,
+) -> FsvResult<()> {
+    progress.push(json!({
+        "stage": stage,
+        "unix_ms": unix_ms()?,
+        "detail": detail,
+    }));
+    write_checked(path, serde_json::to_string_pretty(progress)?.as_bytes())
 }
 
 fn edge_invalid_embedder_id() -> Value {
@@ -240,6 +323,10 @@ fn write_checked(path: &Path, bytes: &[u8]) -> FsvResult<()> {
     }
     require("byte readback", fs::read(path)? == bytes)?;
     Ok(())
+}
+
+fn unix_ms() -> FsvResult<u128> {
+    Ok(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis())
 }
 
 fn require(label: &str, condition: bool) -> FsvResult<()> {

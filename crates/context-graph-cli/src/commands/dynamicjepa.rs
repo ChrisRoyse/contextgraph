@@ -5951,9 +5951,7 @@ fn semantic_language_for_path(path: &str) -> Option<&'static str> {
         Some("go")
     } else if path.ends_with(".java") {
         Some("java")
-    } else if path.ends_with(".c") {
-        Some("c")
-    } else if path.ends_with(".h") {
+    } else if path.ends_with(".c") || path.ends_with(".h") {
         Some("c")
     } else if path.ends_with(".cc")
         || path.ends_with(".cpp")
@@ -6871,9 +6869,7 @@ fn semantic_cpp_function_is_method(node: tree_sitter::Node<'_>, source: &str) ->
         return false;
     };
     let qualifier = qualifier
-        .split(|ch: char| !is_identifier_char(ch))
-        .filter(|part| !part.is_empty())
-        .last()
+        .split(|ch: char| !is_identifier_char(ch)).rfind(|part| !part.is_empty())
         .unwrap_or("");
     !qualifier.is_empty()
         && (semantic_source_contains_type_declaration(source, "class", qualifier)
@@ -7600,7 +7596,7 @@ fn semantic_csharp_attribute_simple_name(
         .and_then(|child| child.utf8_text(source.as_bytes()).ok())?;
     let without_generic = raw.split('<').next().unwrap_or(raw);
     let simple = without_generic
-        .rsplit(|ch| matches!(ch, '.' | ':'))
+        .rsplit(['.', ':'])
         .next()
         .unwrap_or(without_generic)
         .trim()
@@ -8403,12 +8399,11 @@ fn shadow_artifact_record_with_hashes(
     field: &str,
 ) -> DynamicJepaResult<Value> {
     let id = parse_model_artifact_id(artifact_id, field)?;
-    let artifact = get_model_artifact(db, id.clone())?.ok_or_else(|| {
-        DynamicJepaError::SourceOfTruthMissing {
+    let artifact =
+        get_model_artifact(db, id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
             cf: CF_DJ_MODEL_ARTIFACTS.to_string(),
             key: id.into_bytes().to_vec(),
-        }
-    })?;
+        })?;
     let artifact_hashes = verify_artifact_files(&artifact)?;
     if let Some(mismatch) = artifact_hashes.iter().find(|check| !check.equal) {
         return Err(DynamicJepaError::ArtifactHashMismatch {
@@ -19929,9 +19924,11 @@ fn verify_pairwise_bitset(
     Ok(())
 }
 
+type CompiledSplitIdsAndCounts = (String, String, String, String, BTreeMap<String, u64>);
+
 fn compile_all_splits_for_verification(
     ctx: &mut VerificationContext,
-) -> DynamicJepaResult<(String, String, String, String, BTreeMap<String, u64>)> {
+) -> DynamicJepaResult<CompiledSplitIdsAndCounts> {
     let mut dataset_id = String::new();
     let mut train_shard_id = String::new();
     let mut val_shard_id = String::new();

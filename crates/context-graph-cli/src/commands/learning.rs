@@ -328,7 +328,7 @@ async fn run(action: LearningCommands) -> Result<serde_json::Value> {
     }
 }
 
-fn open_store(storage: &PathBuf) -> Result<RocksDbTeleologicalStore> {
+fn open_store(storage: &Path) -> Result<RocksDbTeleologicalStore> {
     let storage = context_graph_paths::require_under_data_root(storage, "learning.storage")
         .map_err(|err| anyhow!(err.to_string()))?;
     RocksDbTeleologicalStore::open_with_config(&storage, TeleologicalStoreConfig::default())

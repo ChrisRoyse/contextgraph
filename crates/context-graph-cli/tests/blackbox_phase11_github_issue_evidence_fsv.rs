@@ -155,7 +155,7 @@ fn extract_first_url(text: &str) -> Option<String> {
         })
         .unwrap_or(tail.len());
     let url = tail[..end]
-        .trim_end_matches(|ch: char| matches!(ch, '.' | ',' | ';' | ':' | ')' | ']'))
+        .trim_end_matches(['.', ',', ';', ':', ')', ']'])
         .to_string();
     if url.starts_with("http://") || url.starts_with("https://") {
         Some(url)
