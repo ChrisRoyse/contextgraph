@@ -6,6 +6,17 @@
 
 ---
 
+## Phase E entry rule
+
+Phase E is blocked until the Phase A-D readiness gate [#15](https://github.com/ChrisRoyse/contextgraph/issues/15) is closed. A-D code/FSV evidence is broad, but "code path exists" is not the same as "ready for autonomous self-optimization." The currently open blockers are:
+
+- [#4](https://github.com/ChrisRoyse/contextgraph/issues/4) — remaining analyzer-backed instrument head parity and semantic signal density;
+- [#11](https://github.com/ChrisRoyse/contextgraph/issues/11) — production conformal/OOD/latency/VRAM telemetry windows and ship-gate trend evidence;
+- [#13](https://github.com/ChrisRoyse/contextgraph/issues/13) — UTML carrier/formula reconciliation in persisted training certificates;
+- [#15](https://github.com/ChrisRoyse/contextgraph/issues/15) — umbrella gate, including the current non-green 0.95 prediction-oracle correlation threshold.
+
+No Phase E task should be treated as started until those gaps either close with source-of-truth readback or are deliberately moved out of A-D readiness with a new issue and an explicit rationale.
+
 ## Phase summary
 
 | Phase | Goal | Effort | Dependencies | Ship gate |
@@ -13,8 +24,8 @@
 | **A. Operational unblock** | Daemon mode + prediction injection + agent-feedback channel + D-drive enforcement | code/FSV closure 2026-05-12; fresh-host operator burn-in remains | none | Daemon task set runs; GC/eval job-run rows persist; first prediction injected; first SurpriseEvent recorded; cargo lint passes |
 | **B. Multi-head extension** | Q1-Q5 `RealityPrediction` schema, what-if/explain APIs, auxiliary heads, deterministic label extractors, per-head UTML accounting | code + FSV complete 2026-05-12; training/eval hardening remains | Phase A | Code/FSV gate passed; production holdout metrics and remaining per-head self-healing tasks still open |
 | **C. Corpus expansion** | Completed Python 300×8 corpus + 10-language fixture corpus + combined split | complete 2026-05-12 | Phase A | 2,400 Python entries verified; 5,120 non-Python entries verified; combined corpus FSV passes |
-| **D. Neural embedder forwards** | Ship real forward/DDA enrichment substrate and remove placeholder-only Phase D paths | code/FSV substrate shipped 2026-05-12; production consumption/telemetry remains | Phase A | Forward wrappers, full pretrained/routing FSV, DDA compute/store, live shift DDA rows, cache, and stdlib registry FSV pass; trained DDA feature consumption and cache/daemon telemetry still open |
-| **E. Continuous self-optimization** | Scheduler tokio task + per-cell stratified drift + dissipation detection + lambda ramp | 5-7 days | Phase A + Phase B | Scheduler runs; drift detected within 1k obs; A/B/C promotion executes autonomously |
+| **D. Neural embedder forwards** | Ship real forward/DDA enrichment substrate and remove placeholder-only Phase D paths | code/FSV substrate shipped 2026-05-12; production telemetry/readiness evidence remains under #11/#15 | Phase A | Forward wrappers, full pretrained/routing FSV, DDA compute/store, live shift DDA rows, cache, and stdlib registry FSV pass; production telemetry trend still open |
+| **E. Continuous self-optimization** | Scheduler tokio task + per-cell stratified drift + dissipation detection + lambda ramp | 5-7 days | Phase A-D readiness gate closed (#15) | Scheduler runs; drift detected within 1k obs; A/B/C promotion executes autonomously |
 | **F. Production observability** | Live conformal/OOD/p50/p99 capture + weekly eval + active-learning dashboard + WSL GPU telemetry hardening | 5-7 days | Phase A | Weekly report writes; conformal coverage measured; active-learning queue cleared by operator weekly |
 | **G. Rolling-window holdout to ≥0.95** | Run live evaluations until ship gate stably met across (category × language) | ongoing | Phase B + C + D + E + F | 4 consecutive rolling windows ≥ 0.95 |
 | **H. Inner-loop residue cleanup** | Apply deletion list, refactor loop.md, supersede SMAP files | 1-2 days | Phase A (so daemon is the new norm) | All `MEJEPA_*_RETIRED` symbols fail-closed; CLAUDE.md + agents/README.md updated |
@@ -25,12 +36,12 @@
 - **RUNBOOK** (12 tasks, ~5.5 days) — RUN-001 (first-time setup) + RUN-010 (config files) + RUN-011 (INSTALL.md) in Phase A; rest of CLI commands in Phase F
 - **DR** (8 tasks, ~4 days) — DR-001/002/005/006 in Phase A (snapshot scripts + model digest list); DR-003/004/007/008 in Phase F
 - **SECURITY** (8 tasks, ~3.5 days) — SEC-001 (secret redaction) + SEC-006/007/008 (markdown hardening / D-drive perms / hook lint) in Phase A; SEC-003 (multi-head contradiction) in Phase B; SEC-005 (two-person rule) in Phase E; SEC-002 (adversarial corpus) in Phase F
-- **BOOTSTRAP** (3 tasks, ~2 days) — BOOT-001 + BOOT-003 in Phase A; BOOT-002 (baseline checkpoint) remains open release-prep work, now unblocked by the completed Phase C corpus
+- **BOOTSTRAP** (3 tasks, ~2 days) — BOOT-001 + BOOT-003 in Phase A; BOOT-002 baseline checkpoint FSV is closed, with release packaging tracked by the readiness gate if it regresses
 - **API** (5 tasks, ~2.5 days) — API-001 (semver in MCP) + API-005 (changelog) in Phase A; API-002/003/004 in Phase F
 
-**Updated remaining fresh implementation effort:** Phase C no longer counts as remaining work. Phase A, the Phase B prediction/API/schema carrier, Phase C corpus expansion, and the Phase D enrichment substrate (forward surface, full pretrained/routing FSV, DDA compute/store, live shift DDA persistence, persistent cache, stdlib registry) are code/FSV-shipped. The remaining estimate is dominated by trained-head DDA/neural feature consumption, cache telemetry/pruning, autonomous self-optimization policy, observability, DR, bootstrap checkpoint release prep, and production hardening.
+**Updated remaining fresh implementation effort:** Phase C no longer counts as remaining work. Phase A, the Phase B prediction/API/schema carrier, Phase C corpus expansion, and the Phase D enrichment substrate (forward surface, full pretrained/routing FSV, DDA compute/store, live shift DDA persistence, persistent cache, stdlib registry, TCT refresh support) are code/FSV-shipped. The remaining estimate is dominated by analyzer parity (#4), production telemetry and ship-gate trend evidence (#11/#15), UTML carrier reconciliation (#13), autonomous self-optimization policy, observability, DR, and production hardening.
 
-**Current Phase A/B baseline (2026-05-12).** `TASK-FLYWHEEL-001/002/003/004/005/006`, `TASK-PREDICT-001/002`, `TASK-LOOP-001/007`, `TASK-OBS-005/006`, `TASK-RUN-001/010/011`, `TASK-BOOT-001/003`, and `TASK-SEC-001/006/007/008` are code-shipped or operationally applied. Daemon supervision now has durable `CF_MEJEPA_FLYWHEEL_JOB_RUNS` evidence plus GC/eval source-of-truth readback at `/mnt/d/contextgraph/fsv/mcp-daemon-supervision-fsv/daemon-supervision-evidence.json`. Phase B code/FSV now ships `TASK-PREDICT-003/004/005/006/007/008`, `TASK-SEC-003`, deterministic `TASK-PREDICT-LABEL-001..009` coverage in one label module, and the core `TASK-UTML-001/002/003/004` accounting path. Phase E still owns autonomous policy logic, per-head Fisher/dormancy/lambda/dissipation, and production holdout gates.
+**Current Phase A-D baseline (2026-05-12).** `TASK-FLYWHEEL-001/002/003/004/005/006`, `TASK-PREDICT-001/002`, `TASK-LOOP-001/007`, `TASK-OBS-005/006`, `TASK-RUN-001/010/011`, `TASK-BOOT-001/003`, and `TASK-SEC-001/006/007/008` are code-shipped or operationally applied. Daemon supervision now has durable `CF_MEJEPA_FLYWHEEL_JOB_RUNS` evidence plus GC/eval source-of-truth readback at `/mnt/d/contextgraph/fsv/mcp-daemon-supervision-fsv/daemon-supervision-evidence.json`. Phase B code/FSV now ships `TASK-PREDICT-003/004/005/006/007/008`, `TASK-SEC-003`, deterministic `TASK-PREDICT-LABEL-001..009` coverage in one label module, and the core `TASK-UTML-001/002/003/004` accounting path. Phase D now ships active content forward wrappers, DDA compute/store/readback, live shift DDA rows, persistent cache behavior, stdlib registry, and TCT refresh support. Phase E remains blocked by #15 until #4/#11/#13 and the non-green 0.95 ship-gate evidence are resolved.
 
 ---
 
