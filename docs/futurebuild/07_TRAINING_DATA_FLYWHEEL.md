@@ -111,8 +111,8 @@ Plus, on the operator side:
 | Multi-head extension to predictor | code_complete Phase B | typed surfaces and deterministic extraction ship; trained DDA/neural-backed quality remains |
 | Prediction-injection hook | YES | `scripts/cc/hook_user_prompt_submit_inject_prediction.sh` + renderer; Phase B field UX hardening remains |
 | `mejepa_record_agent_feedback` MCP tool | YES | `crates/context-graph-mcp`; persists to `CF_MEJEPA_AGENT_FEEDBACK` |
-| MCP daemon mode (the supervised-process container) | YES (code + template) | `--daemon-server-only --d-root`; supervisor in `crates/context-graph-mcp/src/daemon.rs`; `scripts/systemd/mejepa-daemon.service`; operator install/runbook remains |
-| Weekly evaluation cron | partial (daemon scheduler exists) | weekly daemon task runs holdout eval and writes reports; missing populated production holdout feed + operator dashboard/runbook |
+| MCP daemon mode (the supervised-process container) | YES (code + template + FSV) | `--daemon-server-only --d-root`; supervisor in `crates/context-graph-mcp/src/daemon.rs`; durable `CF_MEJEPA_FLYWHEEL_JOB_RUNS`; `scripts/systemd/mejepa-daemon.service`; fresh-host operator install/runbook remains |
+| Weekly evaluation cron | partial (daemon scheduler FSV exists) | weekly daemon task runs holdout eval, writes reports/status, and records job-run rows; missing populated production holdout feed + operator dashboard/runbook |
 
 **The unshipped pieces are production hardening and model-quality work, not new architecture:** real DDA/neural signal flow, full self-optimization policy, weekly production evaluation, per-head holdout gates, and operator packaging.
 
@@ -122,9 +122,9 @@ Plus, on the operator side:
 
 Git history matters here. `e628fb5b` shipped supervisor shutdown, atomic state writes, launch-lock handling, `scripts/ensure_daemon.sh`, and `scripts/systemd/mejepa-daemon.service`. `23593272` then wired the self-optimization scheduler daemon task to the heal-crate scheduler instead of the old local ticker stub.
 
-Today, `context-graph-mcp --daemon-server-only --d-root /mnt/d/contextgraph --daemon-port 3100 --http-port 3101` validates the D-root, opens the shared RocksDB, and starts the long-running shift subscriber, self-optimization scheduler, nightly GC scheduler, and weekly eval scheduler under the daemon supervisor.
+Today, `context-graph-mcp --daemon-server-only --d-root /mnt/d/contextgraph --daemon-port 3100 --http-port 3101` validates the D-root, opens the shared RocksDB, and starts the long-running shift subscriber, self-optimization scheduler, nightly GC scheduler, and weekly eval scheduler under the daemon supervisor. Task starts, scheduled run completions/errors, and task exits are sync-written to `CF_MEJEPA_FLYWHEEL_JOB_RUNS` and read back immediately; FSV evidence lives at `/mnt/d/contextgraph/fsv/mcp-daemon-supervision-fsv/daemon-supervision-evidence.json`.
 
-What still needs work is operational proof and packaging: first-time setup docs, `systemctl --user enable --now mejepa-daemon` verification on a fresh host, dashboard/runbook commands, and the remaining data-flow tasks that make every edit become a labeled training example.
+What still needs work is fresh-host packaging and production data: first-time setup docs, `systemctl --user enable --now mejepa-daemon` verification on a fresh host, dashboard/runbook commands, populated production holdout feed, and the remaining Phase E/F policy/data-flow tasks that make every edit become a labeled training example.
 
 ---
 
@@ -313,7 +313,8 @@ Per `06 HYGIENE` (shipped):
 - Tier compression: hot 8-bit / warm 7-bit / cool 5-bit / cold 3-bit (per access frequency)
 - Quota enforcement: 115 GB hard cap; emergency eviction on overflow
 - Witness Merkle compression for chains > 90 days old
-- Nightly GC at 03:00 local: demote + compact + evict + prune + verify
+- Nightly GC at 03:00 local: demote + compact + evict + prune + verify; every scheduled run writes `CF_MEJEPA_FLYWHEEL_JOB_RUNS` plus `state/schedulers/nightly_gc_status.json`
+- Weekly eval: read `state/gold-labels/weekly_holdout_panels.json`, run holdout eval without treating expected OOD abstention as a job crash, persist `CF_MEJEPA_EVAL_REPORTS`, and write `state/schedulers/weekly_eval_status.json` plus `exports/eval/<date>/weekly.{json,md}`
 
 The flywheel adds three new CFs (`CF_MEJEPA_DDA_SIGNALS`, `CF_MEJEPA_FAILURE_EXEMPLARS`, `CF_MEJEPA_AGENT_FEEDBACK`) — each participates in the existing tier policy:
 

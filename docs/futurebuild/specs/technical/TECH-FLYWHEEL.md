@@ -2,13 +2,13 @@
 
 > **Level 3.** Defines HOW the data flywheel is built. Implements [`SPEC-FLYWHEEL.md`](../functional/SPEC-FLYWHEEL.md).
 
-**Status snapshot (2026-05-12):** The daemon supervisor, D-root validation, scheduler skeleton, systemd template, test-capture hook, new CF registrations, `AgentSurprise`, and surprise sampling weight are code/FSV-shipped. Full scheduler policy, weekly production eval cadence, and fresh-host enablement proof remain open.
+**Status snapshot (2026-05-12):** The daemon supervisor, D-root validation, scheduler skeleton, systemd template, test-capture hook, flywheel CF registrations, `AgentSurprise`, surprise sampling weight, and supervised GC/eval job-run ledger are code/FSV-shipped. Full scheduler policy, populated weekly production eval feed, and fresh-host enablement proof remain open.
 
 ---
 
 ## Architecture
 
-The flywheel is a single supervised process (the MCP daemon) hosting four cooperating tokio tasks: the JSON-RPC stdio handler, the shift subscriber, the self-optimization scheduler, and the nightly GC scheduler. A fifth task (weekly evaluation cron) optionally runs in-process or via systemd timer.
+The flywheel is a single supervised process (the MCP daemon) hosting five cooperating tokio tasks: the JSON-RPC handler, the shift subscriber, the self-optimization scheduler, the nightly GC scheduler, and the weekly evaluation scheduler. Task starts, scheduled run completions/errors, and task exits are persisted to `CF_MEJEPA_FLYWHEEL_JOB_RUNS` with sync write + readback.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -26,6 +26,7 @@ The flywheel is a single supervised process (the MCP daemon) hosting four cooper
 │   └──────────────────┘  └──────────────────────────────────────────┘    │
 │                                                                          │
 │   JoinSet supervisor: detects panics, restarts with exponential backoff │
+│   Job-run ledger: CF_MEJEPA_FLYWHEEL_JOB_RUNS + scheduler status JSON     │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -37,7 +38,7 @@ The flywheel is a single supervised process (the MCP daemon) hosting four cooper
 crates/context-graph-mcp/
   src/
     main.rs                      # extended with --daemon flag (REQ-FLYWHEEL-01)
-    daemon.rs                    # supervisor + JoinSet + restart logic (REQ-FLYWHEEL-03)
+    daemon.rs                    # supervisor + JoinSet + restart logic + job-run ledger (REQ-FLYWHEEL-03)
     daemon_validate.rs           # D-drive validation (REQ-FLYWHEEL-02)
     handlers/
       tools/
@@ -50,7 +51,7 @@ crates/context-graph-mejepa/
       ...                        # existing heal modules consumed by scheduler
 crates/context-graph-mejepa-cf/
   src/
-    lib.rs                       # extended: register CF_MEJEPA_DDA_SIGNALS, _FAILURE_EXEMPLARS, _AGENT_FEEDBACK (REQ-FLYWHEEL-10)
+    lib.rs                       # extended: register CF_MEJEPA_DDA_SIGNALS, _FAILURE_EXEMPLARS, _AGENT_FEEDBACK, _FLYWHEEL_JOB_RUNS (REQ-FLYWHEEL-10)
 crates/context-graph-mejepa-train/
   src/
     sampler/
@@ -401,6 +402,7 @@ All map to `MEJEPA_*` error codes returned via the MCP error response format.
 |---|---|---|
 | `daemon_startup_fsv` | --daemon flag works; D-drive validation fires | `/mnt/d/contextgraph/fsv/mcp-daemon-fsv/startup.json` |
 | `supervisor_panic_recovery_fsv` | scheduler task panic → restart with backoff | `/mnt/d/contextgraph/fsv/mcp-daemon-fsv/panic_recovery.json` |
+| `daemon_supervision_fsv` | real daemon tasks run scheduled GC/eval, write/readback job-run ledger, shutdown cleanly, reopen RocksDB, and verify edge failures | `/mnt/d/contextgraph/fsv/mcp-daemon-supervision-fsv/daemon-supervision-evidence.json` |
 | `oracle_binding_fsv` | TestOutcomeEvent → prediction binding → observe() called | `/mnt/d/contextgraph/fsv/mcp-daemon-fsv/oracle_binding.json` |
 | `agent_feedback_fsv` | mejepa_record_agent_feedback → SurpriseEvent persisted → sampling weight bumped | `/mnt/d/contextgraph/fsv/mcp-daemon-fsv/agent_feedback.json` |
 | `subscriber_lag_alert_fsv` | inject 1000 shifts in 30s → lag alert fires | `/mnt/d/contextgraph/fsv/mcp-daemon-fsv/lag_alert.json` |

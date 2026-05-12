@@ -821,12 +821,12 @@ mod phase7_fsv_tests {
     use std::collections::BTreeMap;
     use std::fs::OpenOptions;
     use std::io::Write;
-    use std::sync::{Mutex, MutexGuard};
+    use tokio::sync::{Mutex, MutexGuard};
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    static ENV_LOCK: Mutex<()> = Mutex::const_new(());
 
-    fn env_guard() -> MutexGuard<'static, ()> {
-        let guard = ENV_LOCK.lock().unwrap();
+    async fn env_guard() -> MutexGuard<'static, ()> {
+        let guard = ENV_LOCK.lock().await;
         std::env::remove_var(ENV_INFER_DB);
         std::env::remove_var(ENV_PANEL_DB);
         std::env::remove_var(ENV_SHIFT_LOG_ROOT);
@@ -835,7 +835,7 @@ mod phase7_fsv_tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn phase7_mcp_fsv_happy_path_and_edges() {
-        let _guard = env_guard();
+        let _guard = env_guard().await;
         let root = PathBuf::from("/tmp/contextgraph-mejepa-phase7-mcp-fsv");
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();

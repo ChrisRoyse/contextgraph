@@ -10,7 +10,7 @@
 
 | Phase | Goal | Effort | Dependencies | Ship gate |
 |---|---|---|---|---|
-| **A. Operational unblock** | Daemon mode + prediction injection + agent-feedback channel + D-drive enforcement | code closure 2026-05-12; operator burn-in remains | none | Daemon runs; first prediction injected; first SurpriseEvent recorded; cargo lint passes |
+| **A. Operational unblock** | Daemon mode + prediction injection + agent-feedback channel + D-drive enforcement | code/FSV closure 2026-05-12; fresh-host operator burn-in remains | none | Daemon task set runs; GC/eval job-run rows persist; first prediction injected; first SurpriseEvent recorded; cargo lint passes |
 | **B. Multi-head extension** | Q1-Q5 `RealityPrediction` schema, what-if/explain APIs, auxiliary heads, deterministic label extractors, per-head UTML accounting | code + FSV complete 2026-05-12; training/eval hardening remains | Phase A | Code/FSV gate passed; production holdout metrics and remaining per-head self-healing tasks still open |
 | **C. Corpus expansion** | Completed Python 300×8 corpus + 10-language fixture corpus + combined split | complete 2026-05-12 | Phase A | 2,400 Python entries verified; 5,120 non-Python entries verified; combined corpus FSV passes |
 | **D. Neural embedder forwards** | Ship real forward/DDA enrichment substrate and remove placeholder-only Phase D paths | code/FSV substrate shipped 2026-05-12; production consumption/telemetry remains | Phase A | Forward wrappers, full pretrained/routing FSV, DDA compute/store, live shift DDA rows, cache, and stdlib registry FSV pass; trained DDA feature consumption and cache/daemon telemetry still open |
@@ -30,7 +30,7 @@
 
 **Updated remaining fresh implementation effort:** Phase C no longer counts as remaining work. Phase A, the Phase B prediction/API/schema carrier, Phase C corpus expansion, and the Phase D enrichment substrate (forward surface, full pretrained/routing FSV, DDA compute/store, live shift DDA persistence, persistent cache, stdlib registry) are code/FSV-shipped. The remaining estimate is dominated by trained-head DDA/neural feature consumption, cache telemetry/pruning, autonomous self-optimization policy, observability, DR, bootstrap checkpoint release prep, and production hardening.
 
-**Current Phase A/B baseline (2026-05-12).** `TASK-FLYWHEEL-001/002/003/004/005/006`, `TASK-PREDICT-001/002`, `TASK-LOOP-001/007`, `TASK-OBS-005/006`, `TASK-RUN-001/010/011`, `TASK-BOOT-001/003`, and `TASK-SEC-001/006/007/008` are code-shipped or operationally applied. Phase B code/FSV now ships `TASK-PREDICT-003/004/005/006/007/008`, `TASK-SEC-003`, deterministic `TASK-PREDICT-LABEL-001..009` coverage in one label module, and the core `TASK-UTML-001/002/003/004` accounting path. Phase E still owns autonomous policy logic, per-head Fisher/dormancy/lambda/dissipation, and production holdout gates.
+**Current Phase A/B baseline (2026-05-12).** `TASK-FLYWHEEL-001/002/003/004/005/006`, `TASK-PREDICT-001/002`, `TASK-LOOP-001/007`, `TASK-OBS-005/006`, `TASK-RUN-001/010/011`, `TASK-BOOT-001/003`, and `TASK-SEC-001/006/007/008` are code-shipped or operationally applied. Daemon supervision now has durable `CF_MEJEPA_FLYWHEEL_JOB_RUNS` evidence plus GC/eval source-of-truth readback at `/mnt/d/contextgraph/fsv/mcp-daemon-supervision-fsv/daemon-supervision-evidence.json`. Phase B code/FSV now ships `TASK-PREDICT-003/004/005/006/007/008`, `TASK-SEC-003`, deterministic `TASK-PREDICT-LABEL-001..009` coverage in one label module, and the core `TASK-UTML-001/002/003/004` accounting path. Phase E still owns autonomous policy logic, per-head Fisher/dormancy/lambda/dissipation, and production holdout gates.
 
 ---
 
@@ -42,12 +42,12 @@
 
 | Task | Description | Effort |
 |---|---|---|
-| `TASK-FLYWHEEL-001` | MCP daemon mode with supervised tokio tasks + systemd template | complete at code/FSV level; fresh-host enablement proof remains in runbook/install tasks |
+| `TASK-FLYWHEEL-001` | MCP daemon mode with supervised tokio tasks + systemd template + durable job-run ledger | complete at code/FSV level; fresh-host enablement proof remains in runbook/install tasks |
 | `TASK-FLYWHEEL-002` | Continuous self-optimization scheduler skeleton (7 tickers, calls into shipped modules) | complete |
 | `TASK-FLYWHEEL-003` | Test-outcome capture hook (parse pytest/cargo-test/jest output) | complete (2026-05-12) |
 | `TASK-FLYWHEEL-004` | Oracle-binding from captured test outcomes into `CF_MEJEPA_ORACLE_VERDICTS` | complete (2026-05-12 code path) |
 | `TASK-FLYWHEEL-005` | ActiveLearningKind::AgentSurprise variant + queue extension | complete (2026-05-11) |
-| `TASK-FLYWHEEL-006` | New CFs: `CF_MEJEPA_DDA_SIGNALS`, `CF_MEJEPA_FAILURE_EXEMPLARS`, `CF_MEJEPA_AGENT_FEEDBACK` | complete (2026-05-11) |
+| `TASK-FLYWHEEL-006` | New CFs: `CF_MEJEPA_DDA_SIGNALS`, `CF_MEJEPA_FAILURE_EXEMPLARS`, `CF_MEJEPA_AGENT_FEEDBACK`, `CF_MEJEPA_FLYWHEEL_JOB_RUNS` | complete (2026-05-12) |
 | `TASK-PREDICT-001` | UserPromptSubmit prediction-injection hook (script + `mejepa_predict_latest` call + markdown render) | complete (2026-05-12) |
 | `TASK-PREDICT-002` | `mejepa_record_agent_feedback` MCP tool + sampling-weight bump wiring | complete (2026-05-12; no feedback rate limit by operator directive) |
 | `TASK-LOOP-001` | Apply new `.claude/loop.md` content from `14_NEW_LOOP_MD.md` | complete (already applied) |
@@ -58,11 +58,12 @@
 | `TASK-OBS-007` | Per-slice quota observability extension | 0.5 day |
 
 **Ship gate:**
-1. `cargo run --release -p context-graph-mcp -- --daemon` boots; `/mnt/d/contextgraph/state/locks/context-graph-daemon.pid` exists; `mejepa_subscriber_status` returns OK.
+1. `cargo run --release -p context-graph-mcp -- --daemon` boots; `/mnt/d/contextgraph/state/locks/context-graph-daemon.pid` exists; `mejepa_subscriber_status` returns OK; daemon job starts/exits are written to `CF_MEJEPA_FLYWHEEL_JOB_RUNS`.
 2. Make a synthetic Edit to a tracked file → `cgreality-shift-log` line lands → daemon logs "shift consumed in X ms" → `mejepa_predict_latest` returns a `RealityPrediction`.
 3. Submit a synthetic prompt → UserPromptSubmit hook injects the prediction in markdown form (visible in agent context).
 4. Call `mejepa_record_agent_feedback` with a synthetic SurpriseEvent → entry persisted to `CF_MEJEPA_AGENT_FEEDBACK` → active-learning queue length increments.
 5. CI lint passes with no C-drive paths.
+6. Daemon FSV proves scheduled GC and weekly eval complete, then flushes/drops/reopens RocksDB and reads back `CF_MEJEPA_FLYWHEEL_JOB_RUNS`, `CF_MEJEPA_GC_HISTORY`, and `CF_MEJEPA_EVAL_REPORTS`.
 
 **Risks / mitigations:**
 - *Risk:* daemon supervisor's panic restart logic flaps under transient errors. *Mitigation:* exponential backoff + `MEJEPA_SCHEDULER_FLAPPING` alert after 5 restarts in 5 min; manual cooldown.

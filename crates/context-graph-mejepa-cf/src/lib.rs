@@ -49,6 +49,7 @@ pub const CF_MEJEPA_GUARD_DECISIONS: &str = "CF_MEJEPA_GUARD_DECISIONS";
 pub const CF_MEJEPA_DDA_SIGNALS: &str = "CF_MEJEPA_DDA_SIGNALS";
 pub const CF_MEJEPA_FAILURE_EXEMPLARS: &str = "CF_MEJEPA_FAILURE_EXEMPLARS";
 pub const CF_MEJEPA_AGENT_FEEDBACK: &str = "CF_MEJEPA_AGENT_FEEDBACK";
+pub const CF_MEJEPA_FLYWHEEL_JOB_RUNS: &str = "CF_MEJEPA_FLYWHEEL_JOB_RUNS";
 
 /// REQ-FLYWHEEL-10 grouping. Daemon openers extend their CF descriptor list
 /// with this slice so the three new CFs land on disk during the first daemon
@@ -57,6 +58,7 @@ pub const FLYWHEEL_CFS: &[&str] = &[
     CF_MEJEPA_DDA_SIGNALS,
     CF_MEJEPA_FAILURE_EXEMPLARS,
     CF_MEJEPA_AGENT_FEEDBACK,
+    CF_MEJEPA_FLYWHEEL_JOB_RUNS,
 ];
 
 pub const SELF_HEALING_CFS: &[&str] = &[
@@ -104,6 +106,7 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_DDA_SIGNALS,
     CF_MEJEPA_FAILURE_EXEMPLARS,
     CF_MEJEPA_AGENT_FEEDBACK,
+    CF_MEJEPA_FLYWHEEL_JOB_RUNS,
 ];
 
 pub const EVAL_CFS: &[&str] = &[
@@ -117,6 +120,7 @@ pub const EVAL_CFS: &[&str] = &[
     CF_MEJEPA_RESEARCH_QUESTIONS,
     CF_MEJEPA_MODEL_PROMOTIONS,
     CF_MEJEPA_PRODUCTION_TELEMETRY,
+    CF_MEJEPA_FLYWHEEL_JOB_RUNS,
 ];
 
 pub const HYGIENE_CFS: &[&str] = &[
@@ -149,19 +153,57 @@ pub const HYGIENE_CFS: &[&str] = &[
 
 pub const TCT_CFS: &[&str] = &[CF_MEJEPA_CONSTELLATION, CF_MEJEPA_GUARD_DECISIONS];
 
+/// Canonical, duplicate-free list opened by ME-JEPA hygiene/runtime databases.
+///
+/// This is intentionally explicit instead of synthesized at runtime: downstream
+/// storage code uses the length as part of the full RocksDB schema contract, so
+/// adding or removing a CF must be a visible schema change.
+pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
+    CF_MEJEPA_FISHER_SNAPSHOTS,
+    CF_MEJEPA_DRIFT_WINDOW,
+    CF_MEJEPA_DRIFT_HISTORY,
+    CF_MEJEPA_HEAL_REPORTS,
+    CF_MEJEPA_DISTILL_STEPS,
+    CF_MEJEPA_ACTIVE_POINTERS,
+    CF_MEJEPA_CALIBRATION_HISTORY,
+    CF_MEJEPA_WEIGHT_BLOBS,
+    CF_MEJEPA_SHIFT_WATERMARK,
+    CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_LIVE_PREDICTIONS,
+    CF_MEJEPA_ORACLE_VERDICTS,
+    CF_MEJEPA_PANEL_CACHE,
+    CF_MEJEPA_PANEL_META,
+    CF_MEJEPA_AUX_SIGNALS_OVERRIDES,
+    CF_MEJEPA_EVAL_REPORTS,
+    CF_MEJEPA_TASK_GRAPH,
+    CF_MEJEPA_TASK_GRAPH_HISTORY,
+    CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+    CF_MEJEPA_ACTIVE_LEARNING_LABELS,
+    CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
+    CF_MEJEPA_OOD_ESCALATIONS,
+    CF_MEJEPA_RESEARCH_QUESTIONS,
+    CF_MEJEPA_MODEL_PROMOTIONS,
+    CF_MEJEPA_PRODUCTION_TELEMETRY,
+    CF_MEJEPA_DDA_SIGNALS,
+    CF_MEJEPA_FAILURE_EXEMPLARS,
+    CF_MEJEPA_AGENT_FEEDBACK,
+    CF_MEJEPA_FLYWHEEL_JOB_RUNS,
+    CF_MEJEPA_MUTATION_CORPUS,
+    CF_MEJEPA_LIVE_ATTEMPT_CORPUS,
+    CF_MEJEPA_QUOTA_STATE,
+    CF_MEJEPA_WEIGHT_BLOBS_META,
+    CF_MEJEPA_WITNESS_CHAIN,
+    CF_MEJEPA_WITNESS_SEGMENT_META,
+    CF_MEJEPA_PANEL_DISK_OVERFLOW,
+    CF_MEJEPA_GC_HISTORY,
+    CF_MEJEPA_CONSTELLATION,
+    CF_MEJEPA_GUARD_DECISIONS,
+];
+
+pub const MEJEPA_HYGIENE_REFERENCED_CF_COUNT: usize = ALL_HYGIENE_REFERENCED_CFS.len();
+
 pub fn all_hygiene_referenced_cfs() -> Vec<&'static str> {
-    let mut names = SELF_HEALING_REFERENCED_CFS.to_vec();
-    for cf in INFER_CFS
-        .iter()
-        .chain(HYGIENE_CFS.iter())
-        .chain(TCT_CFS.iter())
-        .chain(FLYWHEEL_CFS.iter())
-    {
-        if !names.contains(cf) {
-            names.push(*cf);
-        }
-    }
-    names
+    ALL_HYGIENE_REFERENCED_CFS.to_vec()
 }
 
 #[cfg(test)]
@@ -175,6 +217,28 @@ mod tests {
         sorted.sort_unstable();
         sorted.dedup();
         assert_eq!(names.len(), sorted.len());
+        assert_eq!(names.len(), MEJEPA_HYGIENE_REFERENCED_CF_COUNT);
+    }
+
+    #[test]
+    fn canonical_hygiene_cfs_match_group_union() {
+        let mut generated = SELF_HEALING_REFERENCED_CFS.to_vec();
+        for cf in INFER_CFS
+            .iter()
+            .chain(HYGIENE_CFS.iter())
+            .chain(TCT_CFS.iter())
+            .chain(FLYWHEEL_CFS.iter())
+        {
+            if !generated.contains(cf) {
+                generated.push(*cf);
+            }
+        }
+
+        assert_eq!(
+            ALL_HYGIENE_REFERENCED_CFS,
+            generated.as_slice(),
+            "canonical ME-JEPA CF list drifted from the grouped CF contract",
+        );
     }
 
     #[test]
@@ -198,5 +262,6 @@ mod tests {
         assert_eq!(CF_MEJEPA_DDA_SIGNALS, "CF_MEJEPA_DDA_SIGNALS");
         assert_eq!(CF_MEJEPA_FAILURE_EXEMPLARS, "CF_MEJEPA_FAILURE_EXEMPLARS");
         assert_eq!(CF_MEJEPA_AGENT_FEEDBACK, "CF_MEJEPA_AGENT_FEEDBACK");
+        assert_eq!(CF_MEJEPA_FLYWHEEL_JOB_RUNS, "CF_MEJEPA_FLYWHEEL_JOB_RUNS");
     }
 }

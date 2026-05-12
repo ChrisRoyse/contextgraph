@@ -374,7 +374,7 @@ pub fn get_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamilyDes
 /// - 13 quantized embedder CFs (emb_0 through emb_12)
 /// - 5 code CFs (code_entities, code_e7_embeddings, etc.)
 /// - 2 causal CFs (causal_relationships, causal_by_source)
-/// - 32 ME-JEPA CFs used by inference, evaluation, healing, hygiene, and flywheel tasks
+/// - 39 ME-JEPA CFs used by inference, evaluation, healing, hygiene, and flywheel tasks
 ///
 /// # Example
 /// ```ignore
@@ -399,7 +399,7 @@ pub fn get_all_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamil
 
 /// Total number of column families in a fully configured Context Graph database.
 /// Base (11: 8 original + 3 graph linking) + Teleological (41) + Quantized Embedder (14)
-/// + Code (5) + Causal (2) + DynamicJEPA (29) + ME-JEPA (32) = 134
+/// + Code (5) + Causal (2) + DynamicJEPA (29) + ME-JEPA (39) = 141
 ///   Teleological 41 = 5 original + 1 content + 1 source_metadata + 1 file_index + 1 topic_portfolio
 ///   + 1 e12_late_interaction + 1 entity_provenance + 2 audit log + 2 merge/importance history
 ///   + 1 tool call index + 1 consolidation recommendations + 1 embedding registry + 1 custom weight profiles
@@ -407,7 +407,13 @@ pub fn get_all_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamil
 ///   + 1 contrastive_pairs + 1 contrastive_by_kind + 1 contrastive_by_anchor
 ///   + 1 typed_edge_records + 1 typed_edge_validations + 11 learner-state UTL column families
 ///   + 1 learner_training_datasets matrix-shard CF.
-pub const TOTAL_COLUMN_FAMILIES: usize = 134;
+pub const TOTAL_COLUMN_FAMILIES: usize = cf_names::ALL.len()
+    + crate::teleological::column_families::TELEOLOGICAL_CF_COUNT
+    + crate::teleological::column_families::QUANTIZED_EMBEDDER_CF_COUNT
+    + crate::teleological::column_families::CODE_CF_COUNT
+    + crate::teleological::column_families::CAUSAL_CF_COUNT
+    + crate::dynamicjepa::column_families::DJ_CF_COUNT
+    + context_graph_mejepa_cf::MEJEPA_HYGIENE_REFERENCED_CF_COUNT;
 
 fn mejepa_cf_descriptors() -> Vec<ColumnFamilyDescriptor> {
     context_graph_mejepa_cf::all_hygiene_referenced_cfs()
@@ -693,14 +699,14 @@ mod tests {
     #[test]
     fn test_total_column_families_constant() {
         // Verify the constant is correct:
-        // 11 base + 41 teleological + 14 quantized + 5 code + 2 causal + 29 DynamicJEPA + 32 ME-JEPA = 134
+        // 11 base + 41 teleological + 14 quantized + 5 code + 2 causal + 29 DynamicJEPA + 39 ME-JEPA = 141
         // Teleological: 20 core CFs + CF_TRAINING_RECORDS + CF_LEARNING_EVENTS + CF_CONSTELLATIONS + CF_CONSTELLATION_BY_SELECTOR
         //   + CF_CONTRASTIVE_PAIRS + CF_CONTRASTIVE_BY_KIND + CF_CONTRASTIVE_BY_ANCHOR
         //   + CF_TYPED_EDGE_RECORDS + CF_TYPED_EDGE_VALIDATIONS + 11 learner-state UTL CFs = 40
         // Quantized grew 13 -> 14 with E14 BGE-M3 Dense.
         assert_eq!(
-            TOTAL_COLUMN_FAMILIES, 134,
-            "Total column families should be 134 (102 ContextGraph/DynamicJEPA + 32 ME-JEPA)"
+            TOTAL_COLUMN_FAMILIES, 141,
+            "Total column families should be 141 (102 ContextGraph/DynamicJEPA + 39 ME-JEPA)"
         );
     }
 

@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use futures_util::FutureExt;
 use rocksdb::{WriteOptions, DB};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 use tokio::task::JoinSet;
@@ -21,6 +21,7 @@ use crate::daemon_validate::DaemonPaths;
 const RESTART_WINDOW: Duration = Duration::from_secs(5 * 60);
 const FLAPPING_THRESHOLD: usize = 5;
 const BACKOFF_CAP: Duration = Duration::from_secs(60);
+const SUPERVISOR_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 
 type TaskRunner = Arc<
     dyn Fn(
@@ -37,12 +38,41 @@ type TaskRunner = Arc<
 pub struct FlywheelDaemonConfig {
     pub paths: DaemonPaths,
     pub repo_root: PathBuf,
+    nightly_gc_interval_override: Option<Duration>,
+    weekly_eval_interval_override: Option<Duration>,
 }
 
 impl FlywheelDaemonConfig {
     pub fn from_paths(paths: DaemonPaths, repo_root: PathBuf) -> Self {
-        Self { paths, repo_root }
+        Self {
+            paths,
+            repo_root,
+            nightly_gc_interval_override: None,
+            weekly_eval_interval_override: None,
+        }
     }
+
+    #[allow(dead_code)]
+    pub fn with_test_scheduler_periods(
+        mut self,
+        nightly_gc_period: Duration,
+        weekly_eval_period: Duration,
+    ) -> Result<Self> {
+        validate_scheduler_period("nightly_gc_period", nightly_gc_period)?;
+        validate_scheduler_period("weekly_eval_period", weekly_eval_period)?;
+        self.nightly_gc_interval_override = Some(nightly_gc_period);
+        self.weekly_eval_interval_override = Some(weekly_eval_period);
+        Ok(self)
+    }
+}
+
+fn validate_scheduler_period(field: &str, period: Duration) -> Result<()> {
+    if period.is_zero() {
+        return Err(anyhow::anyhow!(
+            "MEJEPA_DAEMON_SCHEDULER_PERIOD_INVALID: {field} must be greater than zero"
+        ));
+    }
+    Ok(())
 }
 
 pub struct FlywheelDaemonHandle {
@@ -93,6 +123,207 @@ fn all_task_kinds() -> [SupervisedTaskKind; 4] {
         SupervisedTaskKind::NightlyGcScheduler,
         SupervisedTaskKind::WeeklyEvalScheduler,
     ]
+}
+
+fn flywheel_job_run_source_of_truth() -> serde_json::Value {
+    serde_json::json!({
+        "column_family": context_graph_mejepa_cf::CF_MEJEPA_FLYWHEEL_JOB_RUNS,
+        "status_file": "state/schedulers/flywheel_supervisor_status.json"
+    })
+}
+
+fn flywheel_run_id(kind: SupervisedTaskKind, event: &str) -> String {
+    let nanos = chrono::Utc::now()
+        .timestamp_nanos_opt()
+        .unwrap_or_else(|| chrono::Utc::now().timestamp_micros() * 1000);
+    format!("{}:{event}:{}:{nanos}", kind.name(), std::process::id())
+}
+
+fn error_code_from_message(message: &str) -> String {
+    message
+        .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+        .find(|token| token.starts_with("MEJEPA_") && token.len() > "MEJEPA_".len())
+        .unwrap_or("MEJEPA_FLYWHEEL_JOB_FAILED")
+        .to_string()
+}
+
+pub fn record_flywheel_job_run(db: &DB, record: &FlywheelJobRunRecord) -> Result<String> {
+    record.validate()?;
+    let cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_FLYWHEEL_JOB_RUNS)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "MEJEPA_CF_MISSING: {}; storage opener must register flywheel job-run source of truth",
+                context_graph_mejepa_cf::CF_MEJEPA_FLYWHEEL_JOB_RUNS
+            )
+        })?;
+    let key = record.run_id.as_bytes();
+    let value = serde_json::to_vec(record)?;
+    let mut opts = WriteOptions::default();
+    opts.set_sync(true);
+    db.put_cf_opt(cf, key, &value, &opts)?;
+    let readback = db.get_cf(cf, key)?.ok_or_else(|| {
+        anyhow::anyhow!(
+            "MEJEPA_FLYWHEEL_JOB_RUN_READBACK_MISSING: {}",
+            record.run_id
+        )
+    })?;
+    if readback != value {
+        return Err(anyhow::anyhow!(
+            "MEJEPA_FLYWHEEL_JOB_RUN_READBACK_MISMATCH: {}",
+            record.run_id
+        ));
+    }
+    let decoded: FlywheelJobRunRecord = serde_json::from_slice(&readback)?;
+    if decoded != *record {
+        return Err(anyhow::anyhow!(
+            "MEJEPA_FLYWHEEL_JOB_RUN_DECODE_MISMATCH: {}",
+            record.run_id
+        ));
+    }
+    Ok(hex::encode(key))
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FlywheelJobRunRecord {
+    pub schema_version: u32,
+    pub run_id: String,
+    pub task: String,
+    pub event: String,
+    pub status: String,
+    pub pid: u32,
+    pub started_unix_ms: i64,
+    pub completed_unix_ms: Option<i64>,
+    pub duration_ms: Option<u64>,
+    pub restart_count_5m: Option<usize>,
+    pub source_of_truth: serde_json::Value,
+    pub details: serde_json::Value,
+    pub error_code: Option<String>,
+    pub error: Option<String>,
+}
+
+impl FlywheelJobRunRecord {
+    fn started(kind: SupervisedTaskKind, event: &str, run_id: String) -> Self {
+        let now = chrono::Utc::now().timestamp_millis();
+        Self {
+            schema_version: 1,
+            run_id,
+            task: kind.name().to_string(),
+            event: event.to_string(),
+            status: "started".to_string(),
+            pid: std::process::id(),
+            started_unix_ms: now,
+            completed_unix_ms: None,
+            duration_ms: None,
+            restart_count_5m: None,
+            source_of_truth: flywheel_job_run_source_of_truth(),
+            details: serde_json::json!({}),
+            error_code: None,
+            error: None,
+        }
+    }
+
+    fn completed(mut self, details: serde_json::Value) -> Self {
+        let completed = chrono::Utc::now().timestamp_millis();
+        self.status = "completed".to_string();
+        self.completed_unix_ms = Some(completed);
+        self.duration_ms = Some((completed - self.started_unix_ms).max(0) as u64);
+        self.details = details;
+        self
+    }
+
+    fn failed(mut self, error: &anyhow::Error) -> Self {
+        let completed = chrono::Utc::now().timestamp_millis();
+        let message = error.to_string();
+        self.status = "error".to_string();
+        self.completed_unix_ms = Some(completed);
+        self.duration_ms = Some((completed - self.started_unix_ms).max(0) as u64);
+        self.error_code = Some(error_code_from_message(&message));
+        self.error = Some(message);
+        self
+    }
+
+    fn task_exit(kind: SupervisedTaskKind, exit: &TaskExit, restart: RestartDecision) -> Self {
+        let mut record = Self {
+            schema_version: 1,
+            run_id: flywheel_run_id(kind, "task_exit"),
+            task: kind.name().to_string(),
+            event: "task_exit".to_string(),
+            status: "completed".to_string(),
+            pid: std::process::id(),
+            started_unix_ms: exit.started_unix_seconds * 1000,
+            completed_unix_ms: Some(exit.completed_unix_seconds * 1000),
+            duration_ms: Some(
+                (exit.completed_unix_seconds - exit.started_unix_seconds).max(0) as u64 * 1000,
+            ),
+            restart_count_5m: Some(restart.count_in_window),
+            source_of_truth: flywheel_job_run_source_of_truth(),
+            details: serde_json::json!({
+                "backoff_ms": restart.backoff.as_millis() as u64,
+                "flapping": restart.flapping
+            }),
+            error_code: None,
+            error: None,
+        };
+        match &exit.status {
+            TaskExitStatus::Completed => {}
+            TaskExitStatus::Error(detail) => {
+                record.status = "error".to_string();
+                record.error_code = Some(error_code_from_message(detail));
+                record.error = Some(detail.clone());
+            }
+            TaskExitStatus::Panic(detail) => {
+                record.status = "panic".to_string();
+                record.error_code = Some("MEJEPA_DAEMON_TASK_PANIC".to_string());
+                record.error = Some(detail.clone());
+            }
+        }
+        record
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.schema_version != 1 {
+            return Err(anyhow::anyhow!(
+                "MEJEPA_FLYWHEEL_JOB_RUN_SCHEMA_UNSUPPORTED: {}",
+                self.schema_version
+            ));
+        }
+        for (field, value) in [
+            ("run_id", self.run_id.as_str()),
+            ("task", self.task.as_str()),
+            ("event", self.event.as_str()),
+            ("status", self.status.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                return Err(anyhow::anyhow!(
+                    "MEJEPA_FLYWHEEL_JOB_RUN_INVALID: {field} must be non-empty"
+                ));
+            }
+        }
+        if !matches!(
+            self.status.as_str(),
+            "started" | "completed" | "error" | "panic"
+        ) {
+            return Err(anyhow::anyhow!(
+                "MEJEPA_FLYWHEEL_JOB_RUN_INVALID: unsupported status {}",
+                self.status
+            ));
+        }
+        if matches!(self.status.as_str(), "error" | "panic") && self.error_code.is_none() {
+            return Err(anyhow::anyhow!(
+                "MEJEPA_FLYWHEEL_JOB_RUN_INVALID: failed records require error_code"
+            ));
+        }
+        if let Some(completed) = self.completed_unix_ms {
+            if completed < self.started_unix_ms {
+                return Err(anyhow::anyhow!(
+                    "MEJEPA_FLYWHEEL_JOB_RUN_INVALID: completed_unix_ms precedes started_unix_ms"
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 pub fn start_supervised_flywheel_tasks(
@@ -149,9 +380,7 @@ async fn supervise_with_runner(
     loop {
         if *shutdown_rx.borrow() {
             info!("MEJEPA_DAEMON_SUPERVISOR_SHUTDOWN: stopping supervised flywheel tasks");
-            tasks.abort_all();
-            while tasks.join_next().await.is_some() {}
-            write_supervisor_status(&config, "stopped", &restart_state.restart_counts())?;
+            stop_supervised_tasks(&mut tasks, &config, &restart_state).await?;
             return Ok(());
         }
 
@@ -159,9 +388,7 @@ async fn supervise_with_runner(
             changed = shutdown_rx.changed() => {
                 if changed.is_ok() && *shutdown_rx.borrow() {
                     info!("MEJEPA_DAEMON_SUPERVISOR_SHUTDOWN: stopping supervised flywheel tasks");
-                    tasks.abort_all();
-                    while tasks.join_next().await.is_some() {}
-                    write_supervisor_status(&config, "stopped", &restart_state.restart_counts())?;
+                    stop_supervised_tasks(&mut tasks, &config, &restart_state).await?;
                     return Ok(());
                 }
             }
@@ -177,6 +404,10 @@ async fn supervise_with_runner(
                 }
                 let restart = restart_state.record(exit.kind);
                 log_task_exit(&exit, restart);
+                record_flywheel_job_run(
+                    &db,
+                    &FlywheelJobRunRecord::task_exit(exit.kind, &exit, restart),
+                )?;
                 if restart.flapping {
                     record_scheduler_flapping(&db, exit.kind, restart.count_in_window)?;
                 }
@@ -205,6 +436,55 @@ async fn supervise_with_runner(
     }
 }
 
+async fn stop_supervised_tasks(
+    tasks: &mut JoinSet<TaskExit>,
+    config: &FlywheelDaemonConfig,
+    restart_state: &RestartState,
+) -> Result<()> {
+    let timeout = tokio::time::sleep(SUPERVISOR_SHUTDOWN_TIMEOUT);
+    tokio::pin!(timeout);
+    while !tasks.is_empty() {
+        tokio::select! {
+            joined = tasks.join_next() => {
+                match joined {
+                    Some(Ok(exit)) => {
+                        if let Some(detail) = task_exit_detail(&exit.status) {
+                            warn!(
+                                task = exit.kind.name(),
+                                detail = %detail,
+                                "MEJEPA_DAEMON_TASK_STOPPED_WITH_ERROR_DURING_SHUTDOWN"
+                            );
+                        }
+                    }
+                    Some(Err(err)) => {
+                        warn!(
+                            error = %err,
+                            "MEJEPA_DAEMON_TASK_JOIN_ERROR_DURING_SHUTDOWN"
+                        );
+                    }
+                    None => break,
+                }
+            }
+            _ = &mut timeout => {
+                return Err(anyhow::anyhow!(
+                    "MEJEPA_DAEMON_SUPERVISOR_SHUTDOWN_TIMEOUT: {} tasks still running after {:?}",
+                    tasks.len(),
+                    SUPERVISOR_SHUTDOWN_TIMEOUT
+                ));
+            }
+        }
+    }
+    write_supervisor_status(config, "stopped", &restart_state.restart_counts())?;
+    Ok(())
+}
+
+fn task_exit_detail(status: &TaskExitStatus) -> Option<&str> {
+    match status {
+        TaskExitStatus::Completed => None,
+        TaskExitStatus::Error(detail) | TaskExitStatus::Panic(detail) => Some(detail.as_str()),
+    }
+}
+
 fn spawn_supervised_task(
     tasks: &mut JoinSet<TaskExit>,
     kind: SupervisedTaskKind,
@@ -215,6 +495,17 @@ fn spawn_supervised_task(
 ) {
     tasks.spawn(async move {
         let started = chrono::Utc::now().timestamp();
+        let run_id = flywheel_run_id(kind, "task_started");
+        if let Err(err) = record_flywheel_job_run(
+            &db,
+            &FlywheelJobRunRecord::started(kind, "task_started", run_id),
+        ) {
+            return TaskExit::errored(
+                kind,
+                started,
+                format!("MEJEPA_FLYWHEEL_JOB_RUN_LEDGER_WRITE_FAILED: {err}"),
+            );
+        }
         let result = std::panic::AssertUnwindSafe(runner(kind, config, db, shutdown_rx))
             .catch_unwind()
             .await;
@@ -304,7 +595,7 @@ async fn run_nightly_gc_scheduler(
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> Result<()> {
     loop {
-        let delay = duration_until_next_local_hour(3)?;
+        let delay = next_nightly_gc_delay(&config)?;
         tokio::select! {
             changed = shutdown_rx.changed() => {
                 if changed.is_ok() && *shutdown_rx.borrow() {
@@ -312,14 +603,7 @@ async fn run_nightly_gc_scheduler(
                 }
             }
             _ = tokio::time::sleep(delay) => {
-                let db = db.clone();
-                let archive_root = config.paths.hygiene_archive_dir.clone();
-                let report = tokio::task::spawn_blocking(move || -> Result<_> {
-                    let runtime = context_graph_mejepa_hygiene::runtime_config(db, archive_root)?;
-                    let env = context_graph_mejepa_hygiene::HygieneEnv::try_new(runtime)?;
-                    Ok(context_graph_mejepa_hygiene::gc_run_nightly(&env)?)
-                }).await.context("MEJEPA_GC_SCHEDULER_JOIN_FAILED")??;
-                write_scheduler_report(&config, "nightly_gc", &report)?;
+                run_nightly_gc_job_once(&config, db.clone()).await?;
             }
         }
     }
@@ -331,7 +615,7 @@ async fn run_weekly_eval_scheduler(
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> Result<()> {
     loop {
-        let delay = Duration::from_secs(7 * 24 * 3600);
+        let delay = next_weekly_eval_delay(&config)?;
         tokio::select! {
             changed = shutdown_rx.changed() => {
                 if changed.is_ok() && *shutdown_rx.borrow() {
@@ -339,15 +623,90 @@ async fn run_weekly_eval_scheduler(
                 }
             }
             _ = tokio::time::sleep(delay) => {
-                let db = db.clone();
-                let config_for_eval = config.clone();
-                let report_summary = tokio::task::spawn_blocking(move || {
-                    run_weekly_eval_once(&config_for_eval, db)
-                })
-                .await
-                .context("MEJEPA_WEEKLY_EVAL_JOIN_FAILED")??;
-                write_scheduler_report(&config, "weekly_eval", &report_summary)?;
+                run_weekly_eval_job_once(&config, db.clone()).await?;
             }
+        }
+    }
+}
+
+fn next_nightly_gc_delay(config: &FlywheelDaemonConfig) -> Result<Duration> {
+    match config.nightly_gc_interval_override {
+        Some(period) => {
+            validate_scheduler_period("nightly_gc_interval_override", period)?;
+            Ok(period)
+        }
+        None => duration_until_next_local_hour(3),
+    }
+}
+
+fn next_weekly_eval_delay(config: &FlywheelDaemonConfig) -> Result<Duration> {
+    match config.weekly_eval_interval_override {
+        Some(period) => {
+            validate_scheduler_period("weekly_eval_interval_override", period)?;
+            Ok(period)
+        }
+        None => Ok(Duration::from_secs(7 * 24 * 3600)),
+    }
+}
+
+pub async fn run_nightly_gc_job_once(
+    config: &FlywheelDaemonConfig,
+    db: Arc<DB>,
+) -> Result<serde_json::Value> {
+    let started = FlywheelJobRunRecord::started(
+        SupervisedTaskKind::NightlyGcScheduler,
+        "scheduled_run",
+        flywheel_run_id(SupervisedTaskKind::NightlyGcScheduler, "scheduled_run"),
+    );
+    record_flywheel_job_run(db.as_ref(), &started)?;
+    let db_for_gc = db.clone();
+    let archive_root = config.paths.hygiene_archive_dir.clone();
+    let result = tokio::task::spawn_blocking(move || -> Result<_> {
+        let runtime = context_graph_mejepa_hygiene::runtime_config(db_for_gc, archive_root)?;
+        let env = context_graph_mejepa_hygiene::HygieneEnv::try_new(runtime)?;
+        Ok(context_graph_mejepa_hygiene::gc_run_nightly(&env)?)
+    })
+    .await
+    .context("MEJEPA_GC_SCHEDULER_JOIN_FAILED")?;
+    match result {
+        Ok(report) => {
+            write_scheduler_report(config, "nightly_gc", &report)?;
+            let details = serde_json::to_value(&report)?;
+            record_flywheel_job_run(db.as_ref(), &started.completed(details.clone()))?;
+            Ok(details)
+        }
+        Err(err) => {
+            record_flywheel_job_run(db.as_ref(), &started.failed(&err))?;
+            Err(err)
+        }
+    }
+}
+
+pub async fn run_weekly_eval_job_once(
+    config: &FlywheelDaemonConfig,
+    db: Arc<DB>,
+) -> Result<serde_json::Value> {
+    let started = FlywheelJobRunRecord::started(
+        SupervisedTaskKind::WeeklyEvalScheduler,
+        "scheduled_run",
+        flywheel_run_id(SupervisedTaskKind::WeeklyEvalScheduler, "scheduled_run"),
+    );
+    record_flywheel_job_run(db.as_ref(), &started)?;
+    let db_for_eval = db.clone();
+    let config_for_eval = config.clone();
+    let result =
+        tokio::task::spawn_blocking(move || run_weekly_eval_once(&config_for_eval, db_for_eval))
+            .await
+            .context("MEJEPA_WEEKLY_EVAL_JOIN_FAILED")?;
+    match result {
+        Ok(summary) => {
+            write_scheduler_report(config, "weekly_eval", &summary)?;
+            record_flywheel_job_run(db.as_ref(), &started.completed(summary.clone()))?;
+            Ok(summary)
+        }
+        Err(err) => {
+            record_flywheel_job_run(db.as_ref(), &started.failed(&err))?;
+            Err(err)
         }
     }
 }
@@ -399,11 +758,19 @@ fn run_weekly_eval_once(config: &FlywheelDaemonConfig, db: Arc<DB>) -> Result<se
     )?;
     let active_calibration = calibration.load_active()?;
     let infer_store = Arc::new(context_graph_mejepa::RocksDbInferStore::new(db.clone()));
+    let eval_infer_config = context_graph_mejepa::MeJepaInferConfig {
+        // Evaluation must measure reject/OOD behavior across the full holdout.
+        // The production verify path still refuses OOD samples; this compiler
+        // config prevents the report job from crashing before it can record the
+        // OOD score, GTau result, and active-learning escalation evidence.
+        ood_refuse_threshold: 1.0,
+        ..context_graph_mejepa::MeJepaInferConfig::default()
+    };
     let compiler = Arc::new(context_graph_mejepa::build_deterministic_compiler(
         config.repo_root.clone(),
         infer_store,
         calibration,
-        context_graph_mejepa::MeJepaInferConfig::default(),
+        eval_infer_config,
     )?);
     let eval_store = context_graph_mejepa::RocksDbEvalStore::new(db)?;
     let provenance = context_graph_mejepa::EvalProvenance {
@@ -834,6 +1201,41 @@ mod tests {
             .expect("cf");
         let count = db.iterator_cf(cf, rocksdb::IteratorMode::Start).count();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn flywheel_job_run_record_round_trips_through_source_of_truth_cf() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db = open_mejepa_test_db(temp.path());
+        ensure_mejepa_column_families(&db).expect("ensure cfs");
+        let record = FlywheelJobRunRecord::started(
+            SupervisedTaskKind::WeeklyEvalScheduler,
+            "scheduled_run",
+            flywheel_run_id(SupervisedTaskKind::WeeklyEvalScheduler, "unit_test"),
+        )
+        .completed(serde_json::json!({"weekly_json_path": "/mnt/d/contextgraph/exports/eval/unit/weekly.json"}));
+        let key_hex = record_flywheel_job_run(&db, &record).expect("record job run");
+        let key = hex::decode(key_hex).expect("decode key");
+        let cf = db
+            .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_FLYWHEEL_JOB_RUNS)
+            .expect("job run cf");
+        let readback = db.get_cf(cf, &key).expect("read cf").expect("row");
+        let decoded: FlywheelJobRunRecord = serde_json::from_slice(&readback).expect("decode row");
+        assert_eq!(decoded, record);
+    }
+
+    #[test]
+    fn scheduler_period_override_rejects_zero_duration() {
+        let temp = private_tempdir();
+        let paths =
+            crate::daemon_validate::validate_d_drive_root(temp.path()).expect("valid daemon root");
+        let config = FlywheelDaemonConfig::from_paths(paths, temp.path().to_path_buf());
+        let err = config
+            .with_test_scheduler_periods(Duration::ZERO, Duration::from_secs(1))
+            .expect_err("zero period must fail closed");
+        assert!(err
+            .to_string()
+            .contains("MEJEPA_DAEMON_SCHEDULER_PERIOD_INVALID"));
     }
 
     #[test]
