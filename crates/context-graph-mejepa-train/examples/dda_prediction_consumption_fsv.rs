@@ -64,13 +64,8 @@ fn run_happy_path(root: &Path) -> FsvResult<Value> {
     for chunk in &chunks {
         persist_dda_signals(state.db.as_ref(), &panel_id, chunk, &signals_three())?;
     }
-    let verdict = state.compiler.verify(&state.patch, &state.context)?;
-    let prediction = match verdict {
-        context_graph_mejepa::VerifyVerdict::Approve {
-            reality_prediction, ..
-        } => reality_prediction,
-        other => return Err(format!("happy path did not approve: {other:?}").into()),
-    };
+    let prediction = state.compiler.compile(&state.patch, &state.context)?;
+    state.store.write_live_prediction(&prediction)?;
     let predictions = state
         .store
         .read_live_predictions(state.context.session_id, 1000)?;
@@ -114,7 +109,7 @@ fn run_edge_missing_row(root: &Path) -> FsvResult<Value> {
     println!("before {case}: {}", serde_json::to_string(&before)?);
     let err = state
         .compiler
-        .verify(&state.patch, &state.context)
+        .compile(&state.patch, &state.context)
         .unwrap_err();
     let after = json!({
         "counts": state_counts(&state)?,
@@ -145,7 +140,7 @@ fn run_edge_malformed_row(root: &Path) -> FsvResult<Value> {
     state.db.put_cf(cf, key, b"{ not valid json")?;
     let err = state
         .compiler
-        .verify(&state.patch, &state.context)
+        .compile(&state.patch, &state.context)
         .unwrap_err();
     let after = json!({
         "counts": state_counts(&state)?,
@@ -171,7 +166,7 @@ fn run_edge_shape_mismatch(root: &Path) -> FsvResult<Value> {
     persist_dda_signals(state.db.as_ref(), &panel_id, &chunks[0], &signals_two())?;
     let err = state
         .compiler
-        .verify(&state.patch, &state.context)
+        .compile(&state.patch, &state.context)
         .unwrap_err();
     let after = json!({
         "counts": state_counts(&state)?,
