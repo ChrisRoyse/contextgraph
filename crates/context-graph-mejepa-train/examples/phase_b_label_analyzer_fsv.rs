@@ -37,8 +37,14 @@ fn main() -> FsvResult<()> {
     });
     write_secure_json(&evidence_path, &evidence)?;
     let readback: Value = serde_json::from_str(&fs::read_to_string(&evidence_path)?)?;
-    require("positive labels persisted", readback["happy_path"]["known_positive"]["passes"] == true)?;
-    require("negative labels persisted", readback["happy_path"]["known_negative"]["passes"] == true)?;
+    require(
+        "positive labels persisted",
+        readback["happy_path"]["known_positive"]["passes"] == true,
+    )?;
+    require(
+        "negative labels persisted",
+        readback["happy_path"]["known_negative"]["passes"] == true,
+    )?;
     require(
         "edge cases fail closed",
         readback["edge_cases"]
@@ -75,7 +81,8 @@ fn run_happy_positive(root: &Path, python: &str) -> FsvResult<Value> {
         "readback": readback,
     });
     println!("after {case}: {}", serde_json::to_string(&after)?);
-    let passes = after["failed_tests"] == 1 && after["failure_modes"] == 1 && after["edge_cases"] == 1;
+    let passes =
+        after["failed_tests"] == 1 && after["failure_modes"] == 1 && after["edge_cases"] == 1;
     Ok(json!({ "before_state": before, "after_state": after, "passes": passes }))
 }
 
@@ -103,7 +110,12 @@ fn run_happy_negative(root: &Path, python: &str) -> FsvResult<Value> {
         "security_concerns",
     ]
     .iter()
-    .map(|field| readback[*field].as_array().map(Vec::len).unwrap_or(usize::MAX))
+    .map(|field| {
+        readback[*field]
+            .as_array()
+            .map(Vec::len)
+            .unwrap_or(usize::MAX)
+    })
     .sum::<usize>();
     let after = json!({
         "labels_file_exists": labels_path.exists(),
@@ -132,7 +144,9 @@ fn run_edge_missing_binary(root: &Path) -> FsvResult<Value> {
     .unwrap_err();
     let after = json!({ "accepted": false, "error_code": err.code(), "error": err.to_string() });
     println!("after {case}: {}", serde_json::to_string(&after)?);
-    Ok(json!({ "before_state": before, "after_state": after, "expected_code": "UTML_IO", "passes": err.code() == "UTML_IO" }))
+    Ok(
+        json!({ "before_state": before, "after_state": after, "expected_code": "UTML_IO", "passes": err.code() == "UTML_IO" }),
+    )
 }
 
 fn run_edge_malformed_json(root: &Path, python: &str) -> FsvResult<Value> {
@@ -152,7 +166,9 @@ fn run_edge_malformed_json(root: &Path, python: &str) -> FsvResult<Value> {
     .unwrap_err();
     let after = json!({ "accepted": false, "error_code": err.code(), "error": err.to_string() });
     println!("after {case}: {}", serde_json::to_string(&after)?);
-    Ok(json!({ "before_state": before, "after_state": after, "expected_code": "UTML_INVALID_SIGNAL", "passes": err.code() == "UTML_INVALID_SIGNAL" }))
+    Ok(
+        json!({ "before_state": before, "after_state": after, "expected_code": "UTML_INVALID_SIGNAL", "passes": err.code() == "UTML_INVALID_SIGNAL" }),
+    )
 }
 
 fn run_edge_unsupported_language(root: &Path, python: &str) -> FsvResult<Value> {
@@ -172,10 +188,17 @@ fn run_edge_unsupported_language(root: &Path, python: &str) -> FsvResult<Value> 
     .unwrap_err();
     let after = json!({ "accepted": false, "error_code": err.code(), "error": err.to_string() });
     println!("after {case}: {}", serde_json::to_string(&after)?);
-    Ok(json!({ "before_state": before, "after_state": after, "expected_code": "UTML_INVALID_SIGNAL", "passes": err.code() == "UTML_INVALID_SIGNAL" }))
+    Ok(
+        json!({ "before_state": before, "after_state": after, "expected_code": "UTML_INVALID_SIGNAL", "passes": err.code() == "UTML_INVALID_SIGNAL" }),
+    )
 }
 
-fn pytest_config(root: &Path, python: &str, test_file: &str, require_labels: bool) -> PhaseBLabelAnalyzerConfig {
+fn pytest_config(
+    root: &Path,
+    python: &str,
+    test_file: &str,
+    require_labels: bool,
+) -> PhaseBLabelAnalyzerConfig {
     PhaseBLabelAnalyzerConfig {
         source: LabelSource::Pytest,
         language: LabelInputLanguage::Python,

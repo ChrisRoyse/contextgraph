@@ -178,7 +178,9 @@ pub enum MejepaInferError {
     GtauStaleConstellation { version: String, age_days: u32 },
     #[error("MEJEPA_INFER_FEATURE_DISABLED: feature={feature}")]
     FeatureDisabled { feature: String },
-    #[error("MEJEPA_INFER_DDA_FEATURE_MISSING: schema={schema} panel_id={panel_id} chunk_id={chunk_id}")]
+    #[error(
+        "MEJEPA_INFER_DDA_FEATURE_MISSING: schema={schema} panel_id={panel_id} chunk_id={chunk_id}"
+    )]
     DdaFeatureMissing {
         schema: String,
         panel_id: String,

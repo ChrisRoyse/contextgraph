@@ -148,13 +148,12 @@ pub fn run_phase_b_label_analyzer(
             stderr,
         })?,
         AnalyzerOutputMode::StrictJson => {
-            let labels: ExtractedPhaseBLabels =
-                serde_json::from_str(&stdout).map_err(|err| {
-                    UtmlError::new(
-                        UtmlErrorCode::InvalidSignal,
-                        format!("strict analyzer JSON parse failed: {err}"),
-                    )
-                })?;
+            let labels: ExtractedPhaseBLabels = serde_json::from_str(&stdout).map_err(|err| {
+                UtmlError::new(
+                    UtmlErrorCode::InvalidSignal,
+                    format!("strict analyzer JSON parse failed: {err}"),
+                )
+            })?;
             validate_extracted_labels(&labels)?;
             labels
         }
@@ -491,7 +490,10 @@ fn validate_analyzer_config(config: &PhaseBLabelAnalyzerConfig) -> Result<(), Ut
     if config.args.len() > 128 {
         return Err(UtmlError::new(
             UtmlErrorCode::InvalidSignal,
-            format!("phase-b label analyzer has {} args; max is 128", config.args.len()),
+            format!(
+                "phase-b label analyzer has {} args; max is 128",
+                config.args.len()
+            ),
         ));
     }
     if !source_supports_language(&config.source, config.language) {
@@ -508,9 +510,7 @@ fn validate_analyzer_config(config: &PhaseBLabelAnalyzerConfig) -> Result<(), Ut
 
 fn source_supports_language(source: &LabelSource, language: LabelInputLanguage) -> bool {
     match source {
-        LabelSource::Pytest | LabelSource::PythonUnittest => {
-            language == LabelInputLanguage::Python
-        }
+        LabelSource::Pytest | LabelSource::PythonUnittest => language == LabelInputLanguage::Python,
         LabelSource::CargoTest | LabelSource::CargoClippy => language == LabelInputLanguage::Rust,
         LabelSource::AgentResponse => false,
     }
@@ -520,7 +520,10 @@ fn bounded_output(field: &str, bytes: &[u8], max_bytes: usize) -> Result<String,
     if bytes.len() > max_bytes {
         return Err(UtmlError::new(
             UtmlErrorCode::InvalidSignal,
-            format!("analyzer {field} is {} bytes; max is {max_bytes}", bytes.len()),
+            format!(
+                "analyzer {field} is {} bytes; max is {max_bytes}",
+                bytes.len()
+            ),
         ));
     }
     String::from_utf8(bytes.to_vec()).map_err(|err| {

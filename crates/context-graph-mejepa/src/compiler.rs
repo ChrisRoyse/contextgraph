@@ -17,17 +17,17 @@ use crate::calibration::CalibrationStore;
 use crate::calibration_types::CalibrationRecord;
 use crate::config::MeJepaInferConfig;
 use crate::conformal::{build_outcome_set, conformal_set, CalibrationExample};
+use crate::dda_features::{project_dda_features, DDA_FEATURE_PROJECTION_SCHEMA};
 use crate::degraded::{
     calibrated_confidence, calibrated_confidence_multiplier, compute_train_health, evidence_factor,
 };
-use crate::dda_features::{project_dda_features, DDA_FEATURE_PROJECTION_SCHEMA};
 use crate::error::MejepaInferError;
 use crate::gates::{check_source_sha_drift, replay_witness_segment};
 use crate::ood::{compute_ood_score, squared_l2};
 use crate::prediction_surfaces::{covered_chunks_for_patch, infer_phase_b_surfaces};
 use crate::types::{
-    validate_probability, AgentClaimGraph, ConformalInterval, ConformalMethod, FailedGate,
-    ChunkId, DdaSignals, PanelId, PatchBundle, PredictionProvenance, RealityPrediction,
+    validate_probability, AgentClaimGraph, ChunkId, ConformalInterval, ConformalMethod, DdaSignals,
+    FailedGate, PanelId, PatchBundle, PredictionProvenance, RealityPrediction,
     RealityPredictionBuilder, TaskContext, VerifyVerdict, WitnessHash,
 };
 use crate::verdict_assembly::{assemble_verdict, VerdictAssemblyInput};
