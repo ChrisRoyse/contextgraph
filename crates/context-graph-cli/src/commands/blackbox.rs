@@ -18545,16 +18545,15 @@ fn validate_no_enterprise_secret_material(ledger_path: &Path, value: &Value) -> 
                     walk(ledger_path, child, &format!("{path}[{index}]"))?;
                 }
             }
-            Value::String(text)
-                if looks_like_secret_literal(text) => {
-                    return Err(enterprise_invalid(
-                        ledger_path,
-                        "ENTERPRISE_SECRET_MATERIAL_REFUSED",
-                        path,
-                        "enterprise control input contains a secret-like literal",
-                        "replace secret material with a credential key id or SHA-256 fingerprint",
-                    ));
-                }
+            Value::String(text) if looks_like_secret_literal(text) => {
+                return Err(enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_SECRET_MATERIAL_REFUSED",
+                    path,
+                    "enterprise control input contains a secret-like literal",
+                    "replace secret material with a credential key id or SHA-256 fingerprint",
+                ));
+            }
             _ => {}
         }
         Ok(())

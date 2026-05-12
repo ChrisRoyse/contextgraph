@@ -6869,7 +6869,8 @@ fn semantic_cpp_function_is_method(node: tree_sitter::Node<'_>, source: &str) ->
         return false;
     };
     let qualifier = qualifier
-        .split(|ch: char| !is_identifier_char(ch)).rfind(|part| !part.is_empty())
+        .split(|ch: char| !is_identifier_char(ch))
+        .rfind(|part| !part.is_empty())
         .unwrap_or("");
     !qualifier.is_empty()
         && (semantic_source_contains_type_declaration(source, "class", qualifier)
