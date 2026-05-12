@@ -163,11 +163,25 @@ impl ShiftSubscriber {
         }
         let (patch, context, source_sha, attempt_id) =
             shift_to_inference(entry, self.config.repo_root.clone())?;
-        let compiler = self.compiler()?;
+        let bootstrap_compiler = self.compiler(false)?;
+        let bootstrap_prediction = bootstrap_compiler.compile(&patch, &context)?;
+        let dda_rows = self
+            .compute_dda_rows(entry, &patch, &bootstrap_prediction)
+            .await?;
+        let dda_signal_count = self.persist_dda_rows(entry, &bootstrap_prediction, &dda_rows)?;
+        let compiler = self.compiler(true)?;
         let mut prediction = compiler.compile(&patch, &context)?;
+        if prediction.source_panel_sha != bootstrap_prediction.source_panel_sha
+            || prediction.covered_chunks != bootstrap_prediction.covered_chunks
+        {
+            return Err(SubscriberError::ProcessFailed {
+                shift_id: entry.shift_id.0.clone(),
+                detail: "DDA-required prediction identity diverged from bootstrap DDA key identity"
+                    .to_string(),
+            });
+        }
         prediction.created_at_unix_ms = timestamp_ns_to_ms(entry.timestamp_unix_ns)?;
         let prediction = RealityPrediction::try_new(prediction)?;
-        let dda_rows = self.compute_dda_rows(entry, &patch, &prediction).await?;
         self.store.write_live_prediction(&prediction)?;
         let readback = MejepaStore::read_live_predictions(&self.store, context.session_id, 1000)?;
         if !readback.iter().any(|row| {
@@ -179,7 +193,6 @@ impl ShiftSubscriber {
                 detail: "live prediction readback did not contain the written row".to_string(),
             });
         }
-        let dda_signal_count = self.persist_dda_rows(entry, &prediction, &dda_rows)?;
         self.persist_panels(&patch, &context, &attempt_id, source_sha)?;
         let observed = self.persist_oracle_example(entry, &prediction, replay)?;
         let record = WatermarkRecord {
@@ -256,14 +269,19 @@ impl ShiftSubscriber {
             watermark_offset: Some(record.last_consumed_byte_offset),
         })
     }
-    fn compiler(&self) -> Result<context_graph_mejepa::MeJepaCompiler> {
+    fn compiler(&self, require_dda_features: bool) -> Result<context_graph_mejepa::MeJepaCompiler> {
         let calibration = CalibrationStore::new(self.db.clone(), 30)?;
         let store = Arc::new(self.store.clone());
+        let config = MeJepaInferConfig {
+            require_dda_features,
+            dda_expected_embedder_count: SUPPORTED_ALGORITHMIC_FORWARD_EMBEDDERS.len(),
+            ..MeJepaInferConfig::default()
+        };
         Ok(build_deterministic_compiler(
             self.config.repo_root.clone(),
             store,
             calibration,
-            MeJepaInferConfig::default(),
+            config,
         )?)
     }
     async fn compute_dda_rows(

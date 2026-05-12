@@ -8,7 +8,7 @@ use crate::calibration::{
 use crate::compiler::{MejepaStore, TrainCertSummary};
 use crate::conformal::CalibrationExample;
 use crate::error::MejepaInferError;
-use crate::types::RealityPrediction;
+use crate::types::{ChunkId, DdaSignals, PanelId, RealityPrediction};
 
 #[derive(Clone)]
 pub struct RocksDbInferStore {
@@ -210,6 +210,22 @@ impl MejepaStore for RocksDbInferStore {
             }
         }
         Ok(out)
+    }
+
+    fn read_dda_signals(
+        &self,
+        panel_id: &PanelId,
+        chunk_id: &ChunkId,
+    ) -> Result<Option<DdaSignals>, MejepaInferError> {
+        chunk_id.validate("dda_signal.chunk_id")?;
+        let cf = cf(&self.db, context_graph_mejepa_cf::CF_MEJEPA_DDA_SIGNALS)?;
+        let key = bincode::serialize(&(panel_id, chunk_id))?;
+        let Some(bytes) = self.db.get_cf(cf, key)? else {
+            return Ok(None);
+        };
+        let signals: DdaSignals = serde_json::from_slice(&bytes)?;
+        signals.validate()?;
+        Ok(Some(signals))
     }
 }
 

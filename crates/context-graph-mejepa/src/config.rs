@@ -116,6 +116,9 @@ pub const INFER_DEFAULT_BOOTSTRAP_DELTA_OMEGA: f32 = 0.50;
 pub const INFER_DEFAULT_BOOTSTRAP_DELTA_XI: f32 = 0.50;
 pub const INFER_DEFAULT_TRAIN_CERT_WINDOW_STEPS: usize = 128;
 pub const INFER_DEFAULT_INSTRUMENT_CACHE_CAPACITY: usize = 4096;
+pub const INFER_DEFAULT_REQUIRE_DDA_FEATURES: bool = false;
+pub const INFER_DEFAULT_DDA_EXPECTED_EMBEDDER_COUNT: usize = 0;
+pub const INFER_MAX_DDA_EXPECTED_EMBEDDER_COUNT: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -131,6 +134,11 @@ pub struct MeJepaInferConfig {
     pub bootstrap_delta_xi: f32,
     pub train_cert_window_steps: usize,
     pub instrument_cache_capacity: usize,
+    pub require_dda_features: bool,
+    /// `0` means infer the count from the first persisted DDA row and require
+    /// every covered chunk to match it. Production callers should set this to
+    /// the active routed embedder count, currently 12 for Phase D.
+    pub dda_expected_embedder_count: usize,
 }
 
 impl Default for MeJepaInferConfig {
@@ -147,6 +155,8 @@ impl Default for MeJepaInferConfig {
             bootstrap_delta_xi: INFER_DEFAULT_BOOTSTRAP_DELTA_XI,
             train_cert_window_steps: INFER_DEFAULT_TRAIN_CERT_WINDOW_STEPS,
             instrument_cache_capacity: INFER_DEFAULT_INSTRUMENT_CACHE_CAPACITY,
+            require_dda_features: INFER_DEFAULT_REQUIRE_DDA_FEATURES,
+            dda_expected_embedder_count: INFER_DEFAULT_DDA_EXPECTED_EMBEDDER_COUNT,
         }
     }
 }
@@ -195,6 +205,14 @@ impl MeJepaInferConfig {
         if self.instrument_cache_capacity == 0 {
             return Err(PredictorError::ConfigInvalid {
                 detail: "instrument_cache_capacity must be >= 1".to_string(),
+            });
+        }
+        if self.dda_expected_embedder_count > INFER_MAX_DDA_EXPECTED_EMBEDDER_COUNT {
+            return Err(PredictorError::ConfigInvalid {
+                detail: format!(
+                    "dda_expected_embedder_count must be <= {INFER_MAX_DDA_EXPECTED_EMBEDDER_COUNT}; got {}",
+                    self.dda_expected_embedder_count
+                ),
             });
         }
         Ok(())

@@ -20,14 +20,15 @@ use crate::conformal::{build_outcome_set, conformal_set, CalibrationExample};
 use crate::degraded::{
     calibrated_confidence, calibrated_confidence_multiplier, compute_train_health, evidence_factor,
 };
+use crate::dda_features::{project_dda_features, DDA_FEATURE_PROJECTION_SCHEMA};
 use crate::error::MejepaInferError;
 use crate::gates::{check_source_sha_drift, replay_witness_segment};
 use crate::ood::{compute_ood_score, squared_l2};
 use crate::prediction_surfaces::{covered_chunks_for_patch, infer_phase_b_surfaces};
 use crate::types::{
     validate_probability, AgentClaimGraph, ConformalInterval, ConformalMethod, FailedGate,
-    PatchBundle, PredictionProvenance, RealityPrediction, RealityPredictionBuilder, TaskContext,
-    VerifyVerdict, WitnessHash,
+    ChunkId, DdaSignals, PanelId, PatchBundle, PredictionProvenance, RealityPrediction,
+    RealityPredictionBuilder, TaskContext, VerifyVerdict, WitnessHash,
 };
 use crate::verdict_assembly::{assemble_verdict, VerdictAssemblyInput};
 
@@ -148,6 +149,12 @@ pub trait MejepaStore: Send + Sync {
         &self,
         limit: usize,
     ) -> Result<Vec<CalibrationExample>, MejepaInferError>;
+
+    fn read_dda_signals(
+        &self,
+        panel_id: &PanelId,
+        chunk_id: &ChunkId,
+    ) -> Result<Option<DdaSignals>, MejepaInferError>;
 }
 
 pub struct MeJepaCompiler {
@@ -217,7 +224,15 @@ impl MeJepaCompiler {
         let (panel_t0, panel_t1, panel_t2) = materialize_inference_panels(patch, context)?;
         let predicted = self.predictor.predict(&panel_t0, &panel_t1)?;
         let target = self.frozen_target.target(&panel_t2)?;
-        let oracle = self.oracle_head.score(&predicted)?;
+        let mut oracle = self.oracle_head.score(&predicted)?;
+        let source_panel_sha = panel_sha(&predicted);
+        let covered_chunks = covered_chunks_for_patch(patch)?;
+        if self.config.require_dda_features {
+            let dda_projection = self.load_dda_projection(&source_panel_sha, &covered_chunks)?;
+            oracle
+                .granger_attestations
+                .extend(dda_projection.to_granger_attestations());
+        }
         oracle.validate()?;
         let ood_score =
             compute_ood_score(predicted.data(), target.data(), calibration.sigma_squared)?;
@@ -258,7 +273,6 @@ impl MeJepaCompiler {
         )?;
         let prediction_id = prediction_id(context, patch, &calibration);
         let phase_b_surfaces = infer_phase_b_surfaces(patch, context, &oracle.predicted_test_pass)?;
-        let covered_chunks = covered_chunks_for_patch(patch)?;
         let confidence_interval = ConformalInterval {
             lower: (confidence - calibration.tau).clamp(0.0, 1.0),
             upper: (confidence + calibration.tau).clamp(0.0, 1.0),
@@ -307,10 +321,37 @@ impl MeJepaCompiler {
         .phase_b_surfaces(phase_b_surfaces)
         .agent_claim_graph(AgentClaimGraph::default())
         .provenance(provenance)
-        .source_panel_sha(panel_sha(&predicted))
+        .source_panel_sha(source_panel_sha)
         .calibration_version(calibration.version.clone())
         .build()
         .map(|prediction| (prediction, predicted))
+    }
+
+    fn load_dda_projection(
+        &self,
+        source_panel_sha: &[u8; 32],
+        covered_chunks: &[ChunkId],
+    ) -> Result<crate::dda_features::DdaFeatureProjection, MejepaInferError> {
+        if covered_chunks.is_empty() {
+            return Err(MejepaInferError::InvalidInput {
+                field: "covered_chunks".to_string(),
+                detail: "DDA-required inference needs at least one covered chunk".to_string(),
+            });
+        }
+        let panel_id = PanelId(*source_panel_sha);
+        let mut rows = Vec::with_capacity(covered_chunks.len());
+        for chunk in covered_chunks {
+            let signals = self
+                .store
+                .read_dda_signals(&panel_id, chunk)?
+                .ok_or_else(|| MejepaInferError::DdaFeatureMissing {
+                    schema: DDA_FEATURE_PROJECTION_SCHEMA.to_string(),
+                    panel_id: hex::encode(panel_id.0),
+                    chunk_id: chunk.0.clone(),
+                })?;
+            rows.push((chunk.clone(), signals));
+        }
+        project_dda_features(&rows, self.config.dda_expected_embedder_count)
     }
 
     pub fn verify(

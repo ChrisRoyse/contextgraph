@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::process::Command;
 
 use context_graph_mejepa::{
     EdgeCaseClass, FailureModeClass, LatentBugClass, ReasoningClass, RootCauseClass,
@@ -16,6 +17,33 @@ pub enum LabelSource {
     CargoTest,
     CargoClippy,
     AgentResponse,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LabelInputLanguage {
+    Python,
+    Rust,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnalyzerOutputMode {
+    CommandLog,
+    StrictJson,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PhaseBLabelAnalyzerConfig {
+    pub source: LabelSource,
+    pub language: LabelInputLanguage,
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    pub cwd: PathBuf,
+    pub output_mode: AnalyzerOutputMode,
+    pub require_labels: bool,
+    pub max_output_bytes: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,6 +117,62 @@ impl CommandEvidence {
             (true, true) => String::new(),
         }
     }
+}
+
+pub fn run_phase_b_label_analyzer(
+    config: &PhaseBLabelAnalyzerConfig,
+) -> Result<ExtractedPhaseBLabels, UtmlError> {
+    validate_analyzer_config(config)?;
+    let output = Command::new(&config.program)
+        .args(&config.args)
+        .current_dir(&config.cwd)
+        .output()
+        .map_err(|err| {
+            UtmlError::new(
+                UtmlErrorCode::Io,
+                format!(
+                    "phase-b label analyzer spawn failed: program={} cwd={} err={err}",
+                    config.program.display(),
+                    config.cwd.display()
+                ),
+            )
+        })?;
+    let stdout = bounded_output("stdout", &output.stdout, config.max_output_bytes)?;
+    let stderr = bounded_output("stderr", &output.stderr, config.max_output_bytes)?;
+    let exit_code = output.status.code().unwrap_or(-1);
+    let labels = match config.output_mode {
+        AnalyzerOutputMode::CommandLog => extract_phase_b_labels(&CommandEvidence {
+            source: config.source.clone(),
+            exit_code,
+            stdout,
+            stderr,
+        })?,
+        AnalyzerOutputMode::StrictJson => {
+            let labels: ExtractedPhaseBLabels =
+                serde_json::from_str(&stdout).map_err(|err| {
+                    UtmlError::new(
+                        UtmlErrorCode::InvalidSignal,
+                        format!("strict analyzer JSON parse failed: {err}"),
+                    )
+                })?;
+            validate_extracted_labels(&labels)?;
+            labels
+        }
+    };
+    if labels.source != config.source {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            format!(
+                "analyzer label source mismatch: expected {:?}, got {:?}",
+                config.source, labels.source
+            ),
+        ));
+    }
+    if config.require_labels {
+        require_non_empty_labels(&labels)?;
+    }
+    validate_extracted_labels(&labels)?;
+    Ok(labels)
 }
 
 pub fn extract_phase_b_labels(
@@ -330,6 +414,121 @@ pub fn require_non_empty_labels(labels: &ExtractedPhaseBLabels) -> Result<(), Ut
         ));
     }
     Ok(())
+}
+
+pub fn validate_extracted_labels(labels: &ExtractedPhaseBLabels) -> Result<(), UtmlError> {
+    for label in &labels.failed_tests {
+        if label.test_id.0.trim().is_empty() {
+            return Err(UtmlError::new(
+                UtmlErrorCode::InvalidSignal,
+                "failed test label has empty test_id",
+            ));
+        }
+        if label.evidence_line.trim().is_empty() {
+            return Err(UtmlError::new(
+                UtmlErrorCode::InvalidSignal,
+                "failed test label has empty evidence_line",
+            ));
+        }
+    }
+    for label in &labels.failure_modes {
+        if label.evidence_line.trim().is_empty() {
+            return Err(UtmlError::new(
+                UtmlErrorCode::InvalidSignal,
+                "failure mode label has empty evidence_line",
+            ));
+        }
+    }
+    for label in &labels.edge_cases {
+        if label.evidence_line.trim().is_empty() {
+            return Err(UtmlError::new(
+                UtmlErrorCode::InvalidSignal,
+                "edge-case label has empty evidence_line",
+            ));
+        }
+    }
+    for label in &labels.latent_bugs {
+        if label.evidence_line.trim().is_empty() {
+            return Err(UtmlError::new(
+                UtmlErrorCode::InvalidSignal,
+                "latent-bug label has empty evidence_line",
+            ));
+        }
+    }
+    for label in &labels.security_concerns {
+        if label.evidence_line.trim().is_empty() {
+            return Err(UtmlError::new(
+                UtmlErrorCode::InvalidSignal,
+                "security label has empty evidence_line",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_analyzer_config(config: &PhaseBLabelAnalyzerConfig) -> Result<(), UtmlError> {
+    if config.program.as_os_str().is_empty() {
+        return Err(UtmlError::new(
+            UtmlErrorCode::MissingSourceOfTruth,
+            "phase-b label analyzer program is empty",
+        ));
+    }
+    if config.cwd.as_os_str().is_empty() {
+        return Err(UtmlError::new(
+            UtmlErrorCode::MissingSourceOfTruth,
+            "phase-b label analyzer cwd is empty",
+        ));
+    }
+    if !(1..=1_048_576).contains(&config.max_output_bytes) {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            format!(
+                "phase-b label analyzer max_output_bytes must be in [1, 1048576], got {}",
+                config.max_output_bytes
+            ),
+        ));
+    }
+    if config.args.len() > 128 {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            format!("phase-b label analyzer has {} args; max is 128", config.args.len()),
+        ));
+    }
+    if !source_supports_language(&config.source, config.language) {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            format!(
+                "analyzer source {:?} does not support input language {:?}",
+                config.source, config.language
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn source_supports_language(source: &LabelSource, language: LabelInputLanguage) -> bool {
+    match source {
+        LabelSource::Pytest | LabelSource::PythonUnittest => {
+            language == LabelInputLanguage::Python
+        }
+        LabelSource::CargoTest | LabelSource::CargoClippy => language == LabelInputLanguage::Rust,
+        LabelSource::AgentResponse => false,
+    }
+}
+
+fn bounded_output(field: &str, bytes: &[u8], max_bytes: usize) -> Result<String, UtmlError> {
+    if bytes.len() > max_bytes {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            format!("analyzer {field} is {} bytes; max is {max_bytes}", bytes.len()),
+        ));
+    }
+    String::from_utf8(bytes.to_vec()).map_err(|err| {
+        UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            format!("analyzer {field} is not UTF-8: {err}"),
+        )
+    })
 }
 
 #[cfg(test)]
