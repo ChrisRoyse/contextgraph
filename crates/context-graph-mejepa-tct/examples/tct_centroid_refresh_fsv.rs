@@ -221,7 +221,7 @@ fn main() -> FsvResult<()> {
 #[allow(clippy::too_many_arguments)]
 fn build_refresh_report(
     entries: &[CorpusEntry],
-    entity_by_task: &BTreeMap<String, EntityType>,
+    entities_by_task: &BTreeMap<String, Vec<EntityType>>,
     base_panel: &Panel,
     versions: &BTreeMap<EmbedderId, [u8; 32]>,
     code_version: &str,
@@ -239,42 +239,57 @@ fn build_refresh_report(
     let mut observed_cell_counts =
         BTreeMap::<(MutationCategory, EntityType, Language, EmbedderId), usize>::new();
     let mut sample_good: Option<(ChunkId, Panel, MutationCategory)> = None;
+    let mut source_row_count = 0usize;
+    let mut source_chunk_count = 0usize;
 
     for (index, entry) in entries.iter().enumerate() {
-        let entity_type = *entity_by_task
+        let entity_types = entities_by_task
             .get(&entry.task_id)
             .ok_or_else(|| format!("AST FSV entity support missing for {}", entry.task_id))?;
         let patch_bytes = fs::read(&entry.patch_path)?;
-        let panel = panel_from_patch(base_panel, &patch_bytes, entry.mutation, index)?;
-        let chunk_id = ChunkId::try_new(
-            entry.patch_sha256,
-            Language::Python,
-            entity_type,
-            1,
-            1,
-            parent_chain_hash(&entry.task_id),
-        )?;
-        builder.ingest_corpus_entry(
-            &panel,
-            entry.mutation,
-            entry.oracle_outcome,
-            Language::Python,
-            entity_type,
-            &[(chunk_id.clone(), panel.clone())],
-        )?;
-        *entity_counts.entry(entity_type).or_default() += 1;
         *category_row_counts.entry(entry.mutation).or_default() += 1;
-        *category_chunk_counts.entry(entry.mutation).or_default() += 1;
         *language_row_counts.entry(Language::Python).or_default() += 1;
-        *language_chunk_counts.entry(Language::Python).or_default() += 1;
         *oracle_row_counts.entry(entry.oracle_outcome).or_default() += 1;
-        for embedder in EmbedderId::all() {
-            *observed_cell_counts
-                .entry((entry.mutation, entity_type, Language::Python, embedder))
-                .or_default() += 1;
-        }
-        if sample_good.is_none() && entry.mutation == MutationCategory::KnownGood {
-            sample_good = Some((chunk_id, panel, entry.mutation));
+        source_row_count += 1;
+        for (entity_index, entity_type) in entity_types.iter().copied().enumerate() {
+            let panel = panel_from_patch(
+                base_panel,
+                &patch_bytes,
+                entry.mutation,
+                index
+                    .checked_mul(32)
+                    .and_then(|value| value.checked_add(entity_index))
+                    .ok_or("panel derivation index overflow")?,
+            )?;
+            let line = u32::try_from(entity_index + 1)?;
+            let chunk_id = ChunkId::try_new(
+                entry.patch_sha256,
+                Language::Python,
+                entity_type,
+                line,
+                line,
+                parent_chain_hash(&format!("{}:{entity_type:?}", entry.task_id)),
+            )?;
+            builder.ingest_corpus_entry(
+                &panel,
+                entry.mutation,
+                entry.oracle_outcome,
+                Language::Python,
+                entity_type,
+                &[(chunk_id.clone(), panel.clone())],
+            )?;
+            *entity_counts.entry(entity_type).or_default() += 1;
+            *category_chunk_counts.entry(entry.mutation).or_default() += 1;
+            *language_chunk_counts.entry(Language::Python).or_default() += 1;
+            for embedder in EmbedderId::all() {
+                *observed_cell_counts
+                    .entry((entry.mutation, entity_type, Language::Python, embedder))
+                    .or_default() += 1;
+            }
+            source_chunk_count += 1;
+            if sample_good.is_none() && entry.mutation == MutationCategory::KnownGood {
+                sample_good = Some((chunk_id, panel, entry.mutation));
+            }
         }
     }
 
@@ -372,8 +387,6 @@ fn build_refresh_report(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let shrinkage = summarize_shrinkage(&shrinkage_decisions);
-    let source_row_count = entries.len();
-    let source_chunk_count = entries.len();
     let panel_level_cell_count = constellation
         .per_category_centroids
         .values()
@@ -656,7 +669,7 @@ fn load_corpus_entries(path: &Path) -> FsvResult<Vec<CorpusEntry>> {
         .collect()
 }
 
-fn load_entity_by_task(path: &Path) -> FsvResult<BTreeMap<String, EntityType>> {
+fn load_entities_by_task(path: &Path) -> FsvResult<BTreeMap<String, Vec<EntityType>>> {
     let evidence: Value = serde_json::from_str(&fs::read_to_string(path)?)?;
     let rows = evidence["rows"]
         .as_array()
@@ -667,29 +680,31 @@ fn load_entity_by_task(path: &Path) -> FsvResult<BTreeMap<String, EntityType>> {
             .as_str()
             .ok_or("AST FSV row task_id must be a string")?;
         let counts = &row["chunk_state"]["counts"];
-        out.insert(task_id.to_string(), primary_entity_type(counts)?);
+        out.insert(task_id.to_string(), observed_entity_types(counts)?);
     }
     Ok(out)
 }
 
-fn primary_entity_type(counts: &Value) -> FsvResult<EntityType> {
+fn observed_entity_types(counts: &Value) -> FsvResult<Vec<EntityType>> {
     let candidates = [
-        ("method", EntityType::Method),
-        ("function", EntityType::Function),
         ("class", EntityType::Class),
+        ("function", EntityType::Function),
+        ("import", EntityType::Import),
+        ("method", EntityType::Method),
         ("module", EntityType::Module),
         ("testfunction", EntityType::TestFunction),
-        ("import", EntityType::Import),
+        ("commentblock", EntityType::CommentBlock),
+        ("docstring", EntityType::Docstring),
     ];
-    let mut best = (0u64, EntityType::Function);
+    let mut observed = Vec::new();
     for (key, entity) in candidates {
         let count = counts[key].as_u64().unwrap_or(0);
-        if count > best.0 {
-            best = (count, entity);
+        if count > 0 {
+            observed.push(entity);
         }
     }
-    require("primary AST entity has support", best.0 > 0)?;
-    Ok(best.1)
+    require("AST entity families have support", !observed.is_empty())?;
+    Ok(observed)
 }
 
 fn panel_from_patch(

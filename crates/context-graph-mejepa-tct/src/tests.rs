@@ -103,6 +103,119 @@ fn calibrated_constellation() -> (
     (constellation, decisions, calibration)
 }
 
+fn refresh_report_for_test(
+    constellation: &TctConstellation,
+    decisions: &[ShrinkageDecision],
+) -> ConstellationRefreshReport {
+    let source_row_count = 50;
+    let source_chunk_count = 50;
+    let cell_support = constellation
+        .per_chunk_type_centroids
+        .iter()
+        .map(|((mutation, entity_type, language, embedder), centroid)| {
+            CellSupportRecord::try_new(
+                *mutation,
+                *entity_type,
+                *language,
+                *embedder,
+                centroid.sample_count,
+                centroid.sample_count,
+                centroid.origin,
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let mut shrinkage = RefreshShrinkageSummary {
+        total_cells: decisions.len(),
+        own_cell: 0,
+        language_aggregate: 0,
+        entity_aggregate: 0,
+        category_aggregate: 0,
+    };
+    for decision in decisions {
+        match decision.origin {
+            ShrinkageOrigin::OwnCell => shrinkage.own_cell += 1,
+            ShrinkageOrigin::LanguageAggregate => shrinkage.language_aggregate += 1,
+            ShrinkageOrigin::EntityAggregate => shrinkage.entity_aggregate += 1,
+            ShrinkageOrigin::CategoryAggregate => shrinkage.category_aggregate += 1,
+        }
+    }
+    let panel_level_cell_count = constellation
+        .per_category_centroids
+        .values()
+        .map(BTreeMap::len)
+        .sum::<usize>()
+        + constellation
+            .per_language_centroids
+            .values()
+            .map(BTreeMap::len)
+            .sum::<usize>()
+        + constellation
+            .outcome_centroids
+            .values()
+            .map(BTreeMap::len)
+            .sum::<usize>();
+    let operator_diagnostics = OperatorDiagnosticSummary {
+        inspected_chunk_count: 2,
+        rejected_chunk_count: 1,
+        violating_embedder_count: 1,
+        worst_margin: -0.25,
+    };
+    let reward_signal_summary = RefreshRewardSignalSummary {
+        source_row_count,
+        source_chunk_count,
+        mutation_category_count: 1,
+        language_count: 1,
+        oracle_outcome_count: 1,
+        per_chunk_type_cell_count: cell_support.len(),
+        panel_level_cell_count,
+        strict_guard_rejection_count: operator_diagnostics.rejected_chunk_count,
+        violating_chunk_count: operator_diagnostics.rejected_chunk_count,
+        estimated_reward_scalar_count: source_chunk_count * (EmbedderId::all().len() + 2)
+            + cell_support.len()
+            + panel_level_cell_count,
+    };
+    ConstellationRefreshReport::try_new(ConstellationRefreshReportInput {
+        started_at: constellation.frozen_at,
+        finished_at: constellation.frozen_at + Duration::from_secs(1),
+        constellation_version_id: constellation.version_id(),
+        corpus_sha: constellation.corpus_provenance.corpus_sha,
+        code_version: constellation.corpus_provenance.code_version.clone(),
+        source_corpus_path: "/mnt/d/contextgraph/corpus/test-index.json".to_string(),
+        source_corpus_sha256: [2u8; 32],
+        source_row_count,
+        source_chunk_count,
+        ingested_panel_count: source_row_count + source_chunk_count,
+        per_entity_support: vec![EntitySupportRecord::try_new(
+            EntityType::Function,
+            source_chunk_count,
+        )
+        .unwrap()],
+        per_category_support: vec![CategorySupportRecord::try_new(
+            MutationCategory::KnownGood,
+            source_row_count,
+            source_chunk_count,
+        )
+        .unwrap()],
+        per_language_support: vec![LanguageSupportRecord::try_new(
+            Language::Python,
+            source_row_count,
+            source_chunk_count,
+        )
+        .unwrap()],
+        per_oracle_outcome_support: vec![OracleOutcomeSupportRecord::try_new(
+            OracleOutcome::Pass,
+            source_row_count,
+        )
+        .unwrap()],
+        cell_support,
+        shrinkage,
+        operator_diagnostics,
+        reward_signal_summary,
+    })
+    .unwrap()
+}
+
 #[test]
 fn public_type_validation_rejects_bad_inputs() {
     assert_eq!(MutationCategory::all().len(), 8);
@@ -231,6 +344,73 @@ fn store_persists_and_reopens_source_of_truth() {
         .unwrap();
     assert_eq!(loaded.version_id(), constellation.version_id());
     assert_eq!(store.read_raw_by_version(version).unwrap().len(), 1);
+}
+
+#[test]
+fn refresh_report_persists_reopens_and_captures_reward_support() {
+    let (constellation, decisions, _calibration) = calibrated_constellation();
+    let report = refresh_report_for_test(&constellation, &decisions);
+    let temp = TempDir::new().unwrap();
+    let db = open_tct_rocksdb(temp.path()).unwrap();
+    let store = ConstellationStore::new(db.clone()).unwrap();
+    assert_eq!(store.count_refresh_reports().unwrap(), 0);
+    let version = store.persist(&constellation).unwrap();
+    let report_id = store.persist_refresh_report(&report).unwrap();
+    assert_eq!(version, constellation.version_id());
+    assert_eq!(report_id, report.report_id);
+    assert_eq!(store.count_constellations().unwrap(), 1);
+    assert_eq!(store.count_refresh_reports().unwrap(), 1);
+    drop(store);
+    drop(db);
+
+    let reopened = ConstellationStore::new(open_tct_rocksdb(temp.path()).unwrap()).unwrap();
+    let loaded = reopened.load_refresh_report(report_id).unwrap();
+    assert_eq!(loaded, report);
+    assert_eq!(reopened.latest_refresh_report().unwrap(), report);
+    assert_eq!(
+        reopened
+            .refresh_reports_for_constellation(version, 1)
+            .unwrap(),
+        vec![report.clone()]
+    );
+    assert_eq!(loaded.per_category_support.len(), 1);
+    assert_eq!(loaded.per_language_support.len(), 1);
+    assert_eq!(loaded.per_oracle_outcome_support.len(), 1);
+    assert_eq!(
+        loaded.reward_signal_summary.per_chunk_type_cell_count,
+        loaded.cell_support.len()
+    );
+}
+
+#[test]
+fn refresh_report_validation_fails_closed_on_reward_signal_mismatches() {
+    let (constellation, decisions, _calibration) = calibrated_constellation();
+    let report = refresh_report_for_test(&constellation, &decisions);
+
+    let mut mismatched_category = report.clone();
+    mismatched_category.per_category_support[0].row_count += 1;
+    assert_eq!(
+        mismatched_category.validate_integrity().unwrap_err().code(),
+        "MEJEPA_TCT_INVALID_INPUT"
+    );
+
+    let mut duplicate_cell = report.clone();
+    duplicate_cell
+        .cell_support
+        .push(duplicate_cell.cell_support[0].clone());
+    assert_eq!(
+        duplicate_cell.validate_integrity().unwrap_err().code(),
+        "MEJEPA_TCT_INVALID_INPUT"
+    );
+
+    let mut tampered_summary = report;
+    tampered_summary
+        .reward_signal_summary
+        .estimated_reward_scalar_count = 1;
+    assert_eq!(
+        tampered_summary.validate_integrity().unwrap_err().code(),
+        "MEJEPA_TCT_INVALID_INPUT"
+    );
 }
 
 #[test]

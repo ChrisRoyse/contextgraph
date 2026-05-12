@@ -1066,11 +1066,10 @@ fn record_type_annotation(annotation: &Expr, stats: &mut CodeStats) {
 
 fn record_type_annotation_inner(annotation: &Expr, stats: &mut CodeStats) {
     match annotation {
-        Expr::Name(name) => {
-            if name.id.as_str() == "Any" {
-                stats.type_any_like_count += 1;
-            }
+        Expr::Name(name) if name.id.as_str() == "Any" => {
+            stats.type_any_like_count += 1;
         }
+        Expr::Name(_) => {}
         Expr::Attribute(attribute) => {
             if attribute.attr.as_str() == "Any" {
                 stats.type_any_like_count += 1;
