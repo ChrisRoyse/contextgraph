@@ -166,7 +166,7 @@ fn run_git_timed_kills_hung_subprocess_within_grace_window() {
 }
 
 /// REGRESSION (2026-05-11 sub-bug 3): a `git`-like subprocess that emits
-/// >64 KB to stdout MUST complete without deadlocking. The previous version
+/// more than 64 KB to stdout MUST complete without deadlocking. The previous version
 /// of `run_git_timed` deadlocked because it only read stdout via
 /// `wait_with_output()` AFTER the child exited — for huge output the OS
 /// pipe buffer (64 KB on Linux) filled, the child blocked on `write()`,
@@ -191,7 +191,9 @@ fn run_git_timed_drains_large_stdout_without_deadlock() {
          exit 0\n",
     )
     .expect("write large-output stub");
-    let mut perms = fs::metadata(&script).expect("script metadata").permissions();
+    let mut perms = fs::metadata(&script)
+        .expect("script metadata")
+        .permissions();
     perms.set_mode(0o755);
     fs::set_permissions(&script, perms).expect("chmod large stub");
 

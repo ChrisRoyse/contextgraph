@@ -63,6 +63,7 @@ pub mod source_patch;
 mod source_patch_support;
 pub mod split;
 mod subtle_flip;
+pub mod timed_subprocess;
 
 /// Integration-test access to the timed git runner. Public API surface is
 /// intentionally minimal: only the regression test in

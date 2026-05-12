@@ -394,10 +394,7 @@ fn run_git_timed(
                 thread::sleep(Duration::from_millis(10));
             }
             Err(err) => {
-                return Err(git_error(
-                    operation,
-                    format!("try_wait failed: {err}"),
-                ));
+                return Err(git_error(operation, format!("try_wait failed: {err}")));
             }
         }
     };
@@ -440,6 +437,8 @@ fn terminate_child_and_collect(
         let process_group = format!("-{}", child.id());
         let _ = Command::new("kill")
             .args(["-TERM", "--", &process_group])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status();
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
@@ -447,12 +446,17 @@ fn terminate_child_and_collect(
                 Ok(Some(_)) => break,
                 Ok(None) => thread::sleep(Duration::from_millis(25)),
                 Err(err) => {
-                    return Err(git_error(operation, format!("try_wait after SIGTERM: {err}")));
+                    return Err(git_error(
+                        operation,
+                        format!("try_wait after SIGTERM: {err}"),
+                    ));
                 }
             }
         }
         let _ = Command::new("kill")
             .args(["-KILL", "--", &process_group])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status();
     }
     #[cfg(not(unix))]
@@ -483,12 +487,12 @@ fn classify_git_timeout(args: &[&str]) -> Duration {
         Some("clone") | Some("fetch") | Some("push") | Some("pull") => GIT_NETWORK_TIMEOUT,
         Some("apply") | Some("am") | Some("checkout") | Some("reset") | Some("commit")
         | Some("add") | Some("rm") | Some("merge") | Some("rebase") => GIT_WRITE_TIMEOUT,
-        Some("ls-tree") | Some("ls-files") | Some("log") | Some("rev-list")
-        | Some("diff-tree") => GIT_ENUMERATION_TIMEOUT,
+        Some("ls-tree") | Some("ls-files") | Some("log") | Some("rev-list") | Some("diff-tree") => {
+            GIT_ENUMERATION_TIMEOUT
+        }
         _ => GIT_QUERY_TIMEOUT,
     }
 }
-
 
 pub(crate) fn write_readback(path: &Path, text: &str) -> MutationResult<()> {
     write_readback_bytes(path, text.as_bytes())

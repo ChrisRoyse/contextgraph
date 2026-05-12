@@ -13,6 +13,7 @@ use context_graph_mejepa_corpus::swebench::{
     normalize_swebench_oracle_verdict, run_swebench_lite_oracle, run_swebench_lite_oracle_batch,
     SwebenchBatchOracleConfig, SwebenchOracleConfig, SwebenchPrediction, SwebenchPredictionMode,
 };
+use context_graph_mejepa_corpus::timed_subprocess::run_capture_timed;
 use context_graph_mejepa_corpus::{
     compute_corpus_sha256, parse_languages, CorpusProvenance, CorpusProvenanceRow, Language,
     MutationCategory, MutationOutcome, MEJEPA_CORPUS_VERSION_V1, MEJEPA_EMBEDDER_VERSION_V1,
@@ -22,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
@@ -35,6 +36,8 @@ use std::time::{Duration, Instant};
 
 type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
 const LOG_TAIL_BYTES: u64 = 64 * 1024;
+const DOCKER_QUERY_TIMEOUT: Duration = Duration::from_secs(120);
+const OFFICIAL_PATCH_LOADER_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Parser, Debug)]
 #[command(version, about = "ME-JEPA Phase 0 corpus generation and verification")]
@@ -442,14 +445,6 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
             .map_err(|err| format!("failed to build patch_workers pool: {err}"))?
     };
 
-    type PendingRow = (
-        TaskManifest,
-        context_graph_mejepa_corpus::patch_mutation::PatchMutationOutcome,
-        PathBuf,
-        String,
-        MutationOutcome,
-    );
-
     for category in &categories {
         if interrupted.load(Ordering::SeqCst) {
             write_index(&args.output, &index)?;
@@ -459,21 +454,30 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
             );
         }
         // Phase 1: parallel patch generation across all selected manifests
-        // for this category. Each rayon thread produces a Result; we
-        // collect, then short-circuit on the first error.
+        // for this category. Rayon workers stay on source-prep work only:
+        // git/cache/worktree activity lives under the ext4 ephemeral roots.
+        // Durable corpus patch files on /mnt/d are persisted serially after
+        // oracle verdicts return, so DrvFs/9P never sees 30 concurrent atomic
+        // writes and failed oracle batches do not leave stale patch files.
         let category_value = *category;
         let interrupted_ref = &interrupted;
         let source_patch_config_ref = &source_patch_config;
         let patch_by_task_ref = &patch_by_task;
-        let args_output_ref = &args.output;
         let args_seed = args.seed;
         let completed_keys_ref = &completed_keys;
-        let results: Vec<Result<Option<(PendingRow, SwebenchPrediction)>, String>> = patch_pool
+        type GeneratedPatch = (
+            TaskManifest,
+            context_graph_mejepa_corpus::patch_mutation::PatchMutationOutcome,
+            String,
+            MutationOutcome,
+        );
+
+        let results: Vec<Result<Option<(GeneratedPatch, SwebenchPrediction)>, String>> = patch_pool
             .install(|| {
                 use rayon::prelude::*;
                 selected
                     .par_iter()
-                    .map(|manifest| -> Result<Option<(PendingRow, SwebenchPrediction)>, String> {
+                    .map(|manifest| -> Result<Option<(GeneratedPatch, SwebenchPrediction)>, String> {
                         let row_key = corpus_row_key(&manifest.instance_id, category_value);
                         if completed_keys_ref.contains(&row_key) {
                             return Ok(None);
@@ -509,20 +513,6 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
                                 err.code()
                             )
                         })?;
-                        let (_patch_path, patch_path_rel) = write_mutated_patch(
-                            args_output_ref,
-                            &manifest.instance_id,
-                            &patch_outcome,
-                        )
-                        .map_err(|err| {
-                            format!(
-                                "write_mutated_patch failed for task={} category={}: {} (debug={:?})",
-                                manifest.instance_id,
-                                category_value.slug(),
-                                err,
-                                err,
-                            )
-                        })?;
                         let patch_sha256 = sha256_text(&patch_outcome.mutated_patch);
                         let mutation = MutationOutcome {
                             category: category_value,
@@ -539,7 +529,6 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
                             (
                                 manifest.clone(),
                                 patch_outcome,
-                                patch_path_rel,
                                 patch_sha256,
                                 mutation,
                             ),
@@ -551,12 +540,12 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
 
         // Drain results: short-circuit on first error so the CLI exits with
         // a structured failure rather than producing a half-baked corpus.
-        let mut pending: Vec<PendingRow> = Vec::with_capacity(selected.len());
+        let mut generated_patches: Vec<GeneratedPatch> = Vec::with_capacity(selected.len());
         let mut predictions: Vec<SwebenchPrediction> = Vec::with_capacity(selected.len());
         for result in results {
             match result {
                 Ok(Some((row, prediction))) => {
-                    pending.push(row);
+                    generated_patches.push(row);
                     predictions.push(prediction);
                 }
                 Ok(None) => continue,
@@ -576,7 +565,6 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
         if predictions.is_empty() {
             continue;
         }
-
         let mut batch_config = SwebenchBatchOracleConfig::defaults_for(
             predictions,
             docker_run_id(&format!("{}-{}", args.run_id_prefix, category.slug()))?,
@@ -589,7 +577,17 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
         batch_config.interrupt_flag = Some(Arc::clone(&interrupted));
         let batch_result = run_swebench_lite_oracle_batch(&batch_config)?;
 
-        for (manifest, patch_outcome, patch_path_rel, patch_sha256, mutation) in pending {
+        // Phase 2: after the oracle returns, serialize durable writes for the
+        // rows that have a verdict. This avoids creating patch files for an
+        // oracle batch that never produced source-of-truth rows.
+        for (manifest, patch_outcome, patch_sha256, mutation) in generated_patches {
+            if interrupted.load(Ordering::SeqCst) {
+                write_index(&args.output, &index)?;
+                return Err(
+                    "generation interrupted by SIGINT before durable row persistence; index remains complete=false"
+                        .into(),
+                );
+            }
             let verdict = batch_result
                 .verdicts
                 .get(&manifest.instance_id)
@@ -601,6 +599,20 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
                         category.slug()
                     )
                 })?;
+            let (_patch_path, patch_path_rel) = write_mutated_patch(
+                &args.output,
+                &manifest.instance_id,
+                &patch_outcome,
+            )
+            .map_err(|err| {
+                format!(
+                    "serial write_mutated_patch failed for task={} category={}: {} (debug={:?})",
+                    manifest.instance_id,
+                    category.slug(),
+                    err,
+                    err,
+                )
+            })?;
             store.put_corpus_row(&manifest.instance_id, *category, &mutation, &verdict)?;
             store.flush()?;
             let (stored_mutation, stored_verdict) = store
@@ -1963,6 +1975,8 @@ fn terminate_child_process_group(child: &mut Child) -> CliResult<()> {
         let process_group = format!("-{}", child.id());
         let term = Command::new("kill")
             .args(["-TERM", "--", &process_group])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status()?;
         if !term.success() {
             let _ = child.kill();
@@ -1976,6 +1990,8 @@ fn terminate_child_process_group(child: &mut Child) -> CliResult<()> {
         }
         let kill = Command::new("kill")
             .args(["-KILL", "--", &process_group])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status()?;
         if !kill.success() {
             let _ = child.kill();
@@ -2004,7 +2020,19 @@ fn swebench_instance_image_ref(namespace: &str, instance_id: &str) -> CliResult<
 }
 
 fn docker_stdout(args: &[&str]) -> CliResult<String> {
-    let output = Command::new("docker").args(args).output()?;
+    let output = run_capture_timed(
+        Path::new("docker"),
+        args,
+        DOCKER_QUERY_TIMEOUT,
+        "docker stdout command",
+    )
+    .map_err(|err| {
+        format!(
+            "docker {} failed before exit: {err} ({})",
+            args.join(" "),
+            err.code()
+        )
+    })?;
     if !output.status.success() {
         return Err(format!(
             "docker {} failed: status={:?} stdout_tail={} stderr_tail={}",
@@ -2019,7 +2047,19 @@ fn docker_stdout(args: &[&str]) -> CliResult<String> {
 }
 
 fn docker_status(args: &[&str]) -> CliResult<()> {
-    let output = Command::new("docker").args(args).output()?;
+    let output = run_capture_timed(
+        Path::new("docker"),
+        args,
+        DOCKER_QUERY_TIMEOUT,
+        "docker status command",
+    )
+    .map_err(|err| {
+        format!(
+            "docker {} failed before exit: {err} ({})",
+            args.join(" "),
+            err.code()
+        )
+    })?;
     if !output.status.success() {
         return Err(format!(
             "docker {} failed: status={:?} stdout_tail={} stderr_tail={}",
@@ -2206,6 +2246,7 @@ fn validate_resume_rows(
     store: &OracleStore,
 ) -> CliResult<BTreeSet<String>> {
     let mut keys = BTreeSet::new();
+    validate_resume_patch_file_set(output, index)?;
     for entry in &index.entries {
         let key = corpus_row_key(&entry.task_id, entry.category);
         if !keys.insert(key.clone()) {
@@ -2236,7 +2277,89 @@ fn validate_resume_rows(
             .into());
         }
     }
+    let store_keys: BTreeSet<String> = store
+        .iter_corpus_rows()?
+        .into_iter()
+        .map(|(task_id, category, _mutation, _verdict)| corpus_row_key(&task_id, category))
+        .collect();
+    if store_keys != keys {
+        return Err(format!(
+            "cannot resume because RocksDB row set diverges from index: index_count={} store_count={} missing_in_store={:?} extra_in_store={:?}",
+            keys.len(),
+            store_keys.len(),
+            sample_set_difference(&keys, &store_keys, 8),
+            sample_set_difference(&store_keys, &keys, 8),
+        )
+        .into());
+    }
     Ok(keys)
+}
+
+fn validate_resume_patch_file_set(output: &Path, index: &CorpusIndex) -> CliResult<()> {
+    let expected: BTreeSet<String> = index
+        .entries
+        .iter()
+        .map(|entry| entry.patch_path.clone())
+        .collect();
+    let actual = collect_patch_files(&output.join("mutations"), output)?;
+    if actual != expected {
+        return Err(format!(
+            "cannot resume because mutation patch files diverge from index: index_count={} patch_file_count={} missing_files={:?} extra_files={:?}",
+            expected.len(),
+            actual.len(),
+            sample_set_difference(&expected, &actual, 8),
+            sample_set_difference(&actual, &expected, 8),
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn collect_patch_files(root: &Path, output: &Path) -> CliResult<BTreeSet<String>> {
+    let mut files = BTreeSet::new();
+    if !root.exists() {
+        return Ok(files);
+    }
+    collect_patch_files_rec(root, output, &mut files)?;
+    Ok(files)
+}
+
+fn collect_patch_files_rec(
+    dir: &Path,
+    output: &Path,
+    files: &mut BTreeSet<String>,
+) -> CliResult<()> {
+    for entry in fs::read_dir(dir).map_err(|err| {
+        format!(
+            "failed to read mutation patch directory {}: {err}",
+            dir.display()
+        )
+    })? {
+        let entry = entry?;
+        let path = entry.path();
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            collect_patch_files_rec(&path, output, files)?;
+        } else if file_type.is_file() && path.extension().is_some_and(|ext| ext == "patch") {
+            let relative = path.strip_prefix(output).map_err(|err| {
+                format!(
+                    "mutation patch path {} is not under output {}: {err}",
+                    path.display(),
+                    output.display()
+                )
+            })?;
+            files.insert(relative.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    Ok(())
+}
+
+fn sample_set_difference(
+    left: &BTreeSet<String>,
+    right: &BTreeSet<String>,
+    limit: usize,
+) -> Vec<String> {
+    left.difference(right).take(limit).cloned().collect()
 }
 
 fn load_task_manifests(tasks_dir: &Path) -> CliResult<Vec<TaskManifest>> {
@@ -2315,11 +2438,18 @@ if missing:
     raise SystemExit("missing official dataset rows: " + ",".join(missing))
 print(json.dumps(rows, sort_keys=True))
 "#;
-    let output = Command::new(venv_python)
-        .arg("-c")
-        .arg(snippet)
-        .arg(ids_json)
-        .output()?;
+    let output = run_capture_timed(
+        venv_python,
+        &["-c", snippet, &ids_json],
+        OFFICIAL_PATCH_LOADER_TIMEOUT,
+        "load official SWE-bench patches",
+    )
+    .map_err(|err| {
+        format!(
+            "official patch loader failed before exit: {err} ({})",
+            err.code()
+        )
+    })?;
     if !output.status.success() {
         return Err(format!(
             "official patch loader failed: status={:?} stdout={} stderr={}",
@@ -2749,7 +2879,13 @@ fn read_optional_json(path: &Path) -> Option<Value> {
 
 fn write_text_checked(path: &Path, text: &str) -> CliResult<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).map_err(|err| {
+            format!(
+                "write_text_checked: create_dir_all parent={} failed: {err}; state={}",
+                parent.display(),
+                describe_path_state(parent)
+            )
+        })?;
     }
     let parent = path
         .parent()
@@ -2763,12 +2899,9 @@ fn write_text_checked(path: &Path, text: &str) -> CliResult<()> {
                 path.display()
             )
         })?;
-    // REGRESSION FIX (2026-05-11): under rayon-parallel writers, two threads
-    // in the SAME parent dir at the SAME unix_ms tick would collide on
-    // temp_path, race on `File::create`, and one would see ENOENT at
-    // `fs::rename` after the other already moved the file. Include the
-    // thread id + a fast monotonic counter so two concurrent calls in the
-    // same parent never produce the same temp name.
+    // Use a process/thread/counter-qualified temp name. Even if a future call
+    // site writes concurrently in the same parent, temp-file collisions fail
+    // closed at create_new() instead of silently truncating another writer.
     use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
     static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
     let counter = TEMP_COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
@@ -2783,19 +2916,90 @@ fn write_text_checked(path: &Path, text: &str) -> CliResult<()> {
         unix_ms(),
         counter,
     ));
-    let mut file = File::create(&temp_path)?;
-    file.write_all(text.as_bytes())?;
-    file.sync_all()?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp_path)
+        .map_err(|err| {
+        format!(
+            "write_text_checked: open(create_new) temp_path={} parent={} failed: {err}; temp_state={}; parent_state={}",
+            temp_path.display(),
+            parent.display(),
+            describe_path_state(&temp_path),
+            describe_path_state(parent)
+        )
+    })?;
+    file.write_all(text.as_bytes()).map_err(|err| {
+        format!(
+            "write_text_checked: write_all to {} failed: {err}",
+            temp_path.display()
+        )
+    })?;
+    file.sync_all().map_err(|err| {
+        format!(
+            "write_text_checked: sync_all on {} failed: {err}",
+            temp_path.display()
+        )
+    })?;
     drop(file);
-    fs::rename(&temp_path, path)?;
+    fs::rename(&temp_path, path).map_err(|err| {
+        format!(
+            "write_text_checked: rename {} -> {} failed (temp_exists={}, target_parent_exists={}): {err}",
+            temp_path.display(),
+            path.display(),
+            temp_path.exists(),
+            path.parent().is_some_and(|p| p.exists())
+        )
+    })?;
     if let Some(parent) = path.parent() {
-        File::open(parent)?.sync_all()?;
+        File::open(parent)
+            .map_err(|err| {
+                format!(
+                    "write_text_checked: File::open parent {} for sync failed: {err}",
+                    parent.display()
+                )
+            })?
+            .sync_all()
+            .map_err(|err| {
+                format!(
+                    "write_text_checked: parent sync_all {} failed: {err}",
+                    parent.display()
+                )
+            })?;
     }
-    let readback = fs::read_to_string(path)?;
+    let readback = fs::read_to_string(path).map_err(|err| {
+        format!(
+            "write_text_checked: readback fs::read_to_string {} failed immediately after rename+fsync: {err}; target_state={}; parent_state={}",
+            path.display(),
+            describe_path_state(path),
+            describe_path_state(parent)
+        )
+    })?;
     if readback != text {
-        return Err(format!("readback mismatch after writing {}", path.display()).into());
+        return Err(format!(
+            "write_text_checked: readback mismatch after writing {}; expected_len={} actual_len={} expected_sha256={} actual_sha256={}",
+            path.display(),
+            text.len(),
+            readback.len(),
+            sha256_text(text),
+            sha256_text(&readback)
+        )
+        .into());
     }
     Ok(())
+}
+
+fn describe_path_state(path: &Path) -> String {
+    match fs::metadata(path) {
+        Ok(metadata) => format!(
+            "exists=true is_dir={} is_file={} len={} readonly={}",
+            metadata.is_dir(),
+            metadata.is_file(),
+            metadata.len(),
+            metadata.permissions().readonly()
+        ),
+        Err(err) => format!("exists=false metadata_error={err}"),
+    }
 }
 
 fn duration_secs(duration: Duration) -> f64 {

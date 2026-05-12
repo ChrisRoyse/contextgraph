@@ -4,7 +4,6 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -22,10 +21,13 @@ use crate::swebench::{
     run_swebench_lite_oracle, SwebenchOracleConfig, SwebenchOracleResult, SwebenchPrediction,
     SwebenchPredictionMode,
 };
+use crate::timed_subprocess::run_capture_timed;
 use crate::{
     compute_corpus_sha256, CorpusProvenance, CorpusProvenanceRow, Language, MutationCategory,
     MutationError, MutationOutcome, MEJEPA_CORPUS_VERSION_V1, MEJEPA_EMBEDDER_VERSION_V1,
 };
+
+const OFFICIAL_PATCH_LOADER_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub trait Oracle {
     fn run(&self, config: &SwebenchOracleConfig) -> Result<SwebenchOracleResult, OracleError>;
@@ -94,14 +96,6 @@ struct GeneratorConfig {
     seed: u64,
     instance_timeout: Duration,
     overall_timeout: Duration,
-    /// REQ-FLYWHEEL-corpus-PARALLEL — number of rayon worker threads driving
-    /// the patch-generation loop. 0 means "auto" → `num_cpus::get()`. Each
-    /// worker independently spawns its own git subprocesses against the
-    /// shared (read-mostly) bare repo cache and writes to its own unique
-    /// source-work directory. The OracleStore (RocksDB) and CorpusIndex
-    /// are shared via internal locks. Default 0 (auto) matches the
-    /// Foundry-mutate / pytest-gremlins / fest-mutate convention.
-    patch_workers: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -189,7 +183,6 @@ pub fn generate_swe_bench_mutation_corpus_with_oracle<O: Oracle>(
         seed: 0,
         instance_timeout: Duration::from_secs(1800),
         overall_timeout: Duration::from_secs(3600),
-        patch_workers: 0, // auto (num_cpus)
     };
     generate_with_config(&config, oracle)
 }
@@ -534,12 +527,19 @@ if missing:
     raise SystemExit("missing official dataset rows: " + ",".join(missing))
 print(json.dumps(rows, sort_keys=True))
 "#;
-    let output = Command::new(venv_python)
-        .arg("-c")
-        .arg(snippet)
-        .arg(ids_json)
-        .output()
-        .map_err(|source| io_error(venv_python, source))?;
+    let output = run_capture_timed(
+        venv_python,
+        &["-c", snippet, &ids_json],
+        OFFICIAL_PATCH_LOADER_TIMEOUT,
+        "load official SWE-bench patches",
+    )
+    .map_err(|err| MejepaCorpusError::Json {
+        context: venv_python.display().to_string(),
+        message: format!(
+            "official patch loader failed before exit: {err} ({})",
+            err.code()
+        ),
+    })?;
     if !output.status.success() {
         return Err(MejepaCorpusError::Json {
             context: venv_python.display().to_string(),
