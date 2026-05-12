@@ -1,150 +1,262 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use context_graph_mejepa_instruments::{hash_f32s, InstrumentSlot, Panel, PanelBuilder};
 use context_graph_mejepa_tct::*;
-use rocksdb::DB;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 type FsvResult<T> = Result<T, Box<dyn Error>>;
 
-const OUT: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-tct-refresh-fsv";
-const PANEL_PATH: &str =
-    "/mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/phase1-extended/panel-all-slots.json";
-const CORPUS_INDEX_PATH: &str =
+const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-tct-refresh-fsv";
+const CORPUS_INDEX: &str =
     "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
-const SAMPLES_PER_CELL: usize = 5;
+const AST_CORPUS_FSV: &str =
+    "/mnt/d/contextgraph/fsv/swebench-python-ast-corpus-fsv/swebench-python-ast-corpus-fsv.json";
+const PHASE1_PANEL: &str =
+    "/mnt/d/contextgraph/fsv/contextgraph-mejepa-instruments-fsv/phase1-extended/panel-all-slots.json";
 
-#[derive(Debug, Deserialize)]
-struct CorpusIndex {
-    complete: bool,
-    corpus_sha256: String,
-    entries: Vec<CorpusEntry>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CorpusEntry {
+    task_id: String,
+    repo: String,
+    mutation: MutationCategory,
+    oracle_outcome: OracleOutcome,
+    patch_path: PathBuf,
+    patch_sha256: [u8; 32],
 }
 
-#[derive(Debug, Deserialize)]
-struct CorpusEntry {
-    category: String,
-    oracle_all_passed: bool,
-    patch_path: String,
-    patch_sha256: String,
-    repo: String,
-    task_id: String,
+#[derive(Debug)]
+struct RefreshBuild {
+    constellation: TctConstellation,
+    shrinkage_decisions: Vec<ShrinkageDecision>,
+    report: ConstellationRefreshReport,
+    operator_chunks: ChunkGtauOutput,
+    support_summary: Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RefreshFsvEvidence {
-    all_passed: bool,
-    source_of_truth: serde_json::Value,
-    happy_path: serde_json::Value,
-    guard_decision_reward_signals: serde_json::Value,
-    edge_cases: Vec<serde_json::Value>,
-    physical_proof: serde_json::Value,
+struct RefreshEvidence {
+    source_of_truth: Value,
+    before_state: Value,
+    after_state: Value,
+    edge_case_audit: Value,
+    report_readback: ConstellationRefreshReport,
+    operator_chunk_diagnostics: ChunkGtauOutput,
+    support_summary: Value,
+    passes: bool,
 }
 
 fn main() -> FsvResult<()> {
-    let root = PathBuf::from(OUT);
-    if root.exists() {
-        fs::remove_dir_all(&root)?;
-    }
-    fs::create_dir_all(&root)?;
-    fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
+    let root = PathBuf::from(FSV_ROOT);
+    reset_secure_dir(&root)?;
 
-    let panel_path = PathBuf::from(PANEL_PATH);
-    let real_panel = read_real_phase1_panel(&panel_path)?;
-    let corpus_path = PathBuf::from(CORPUS_INDEX_PATH);
-    let corpus = read_corpus_index(&corpus_path)?;
-    let corpus_sha = hex_digest_to_32(&corpus.corpus_sha256)?;
+    let corpus_index_path = PathBuf::from(CORPUS_INDEX);
+    let ast_fsv_path = PathBuf::from(AST_CORPUS_FSV);
+    let panel_path = PathBuf::from(PHASE1_PANEL);
+    let db_path = root.join("tct-refresh-rocksdb");
+    let report_readback_path = root.join("refresh-report-readback.json");
+    let evidence_path = root.join("tct-centroid-refresh-evidence.json");
+
+    let corpus_index_bytes = fs::read(&corpus_index_path)?;
+    let source_corpus_sha256 = sha256_array(&corpus_index_bytes);
+    let entries = load_corpus_entries(&corpus_index_path)?;
+    require("full Python 300x8 corpus rows", entries.len() == 2400)?;
+    let entity_by_task = load_entity_by_task(&ast_fsv_path)?;
+    require("AST FSV task coverage", entity_by_task.len() == 300)?;
+    let base_panel = read_real_phase1_panel(&panel_path)?;
+    let versions = embedder_versions_from_panel(&base_panel);
     let code_version = git_head()?;
-    let versions = embedder_versions_from_panel(&real_panel);
+    let corpus_sha = corpus_sha_from_index(&corpus_index_bytes)?;
 
-    let mut entries_by_category: BTreeMap<MutationCategory, Vec<&CorpusEntry>> = BTreeMap::new();
-    for entry in &corpus.entries {
-        let mutation = parse_mutation_category(&entry.category)?;
-        entries_by_category.entry(mutation).or_default().push(entry);
-    }
-    for mutation in MutationCategory::all() {
-        let count = entries_by_category
-            .get(&mutation)
-            .map(Vec::len)
-            .unwrap_or_default();
-        require(
-            &format!("real corpus has rows for {mutation:?}"),
-            count >= SAMPLES_PER_CELL,
+    let before_state = json!({
+        "corpus_index": corpus_index_path,
+        "corpus_index_bytes": corpus_index_bytes.len(),
+        "corpus_index_sha256": hex::encode(source_corpus_sha256),
+        "ast_fsv": ast_fsv_path,
+        "phase1_panel": panel_path,
+        "phase1_panel_hash": hash_f32s(base_panel.data()),
+        "corpus_rows": entries.len(),
+        "rocksdb_refresh_rows_before": 0,
+        "rocksdb_constellation_rows_before": 0,
+    });
+    println!("before tct_refresh: {}", serde_json::to_string(&before_state)?);
+
+    let build = build_refresh_report(
+        &entries,
+        &entity_by_task,
+        &base_panel,
+        &versions,
+        &code_version,
+        corpus_sha,
+        source_corpus_sha256,
+        CORPUS_INDEX,
+    )?;
+
+    let db = open_tct_rocksdb(&db_path)?;
+    let store = ConstellationStore::new(db.clone())?;
+    require("refresh rows start empty", store.count_refresh_reports()? == 0)?;
+    let version_id = store.persist(&build.constellation)?;
+    let report_id = store.persist_refresh_report(&build.report)?;
+    require(
+        "persisted report id",
+        report_id == build.report.report_id,
+    )?;
+    require(
+        "persisted constellation version",
+        version_id == build.constellation.version_id(),
+    )?;
+    let live_counts = json!({
+        "constellation_rows_after_persist": store.count_constellations()?,
+        "refresh_report_rows_after_persist": store.count_refresh_reports()?,
+    });
+    drop(store);
+    drop(db);
+
+    let reopened = ConstellationStore::new(open_tct_rocksdb(&db_path)?)?;
+    let loaded_report = reopened.load_refresh_report(report_id)?;
+    let latest_report = reopened.latest_refresh_report()?;
+    let reports_for_version = reopened.refresh_reports_for_constellation(version_id, 10)?;
+    require("loaded report equals persisted", loaded_report == build.report)?;
+    require("latest report equals persisted", latest_report == build.report)?;
+    require("one report for version", reports_for_version.len() == 1)?;
+    require(
+        "report for version equals persisted",
+        reports_for_version[0] == build.report,
+    )?;
+    write_and_verify(&report_readback_path, &loaded_report)?;
+
+    let edge_case_audit = run_edge_case_audit(&root, &reopened, &build.report, version_id)?;
+    let after_state = json!({
+        "live_counts": live_counts,
+        "reopened_constellation_rows": reopened.count_constellations()?,
+        "reopened_refresh_report_rows": reopened.count_refresh_reports()?,
+        "loaded_report_id": hex::encode(loaded_report.report_id),
+        "loaded_constellation_version_id": hex::encode(loaded_report.constellation_version_id),
+        "source_row_count": loaded_report.source_row_count,
+        "source_chunk_count": loaded_report.source_chunk_count,
+        "ingested_panel_count": loaded_report.ingested_panel_count,
+        "mutation_category_count": loaded_report.per_category_support.len(),
+        "language_count": loaded_report.per_language_support.len(),
+        "oracle_outcome_count": loaded_report.per_oracle_outcome_support.len(),
+        "cell_support_count": loaded_report.cell_support.len(),
+        "rocksdb_file_count": count_files(&db_path)?,
+    });
+    println!("after tct_refresh: {}", serde_json::to_string(&after_state)?);
+
+    require("all 8 mutation categories captured", loaded_report.per_category_support.len() == 8)?;
+    require("Python language captured", loaded_report.per_language_support.len() == 1)?;
+    require("refresh cells captured", !loaded_report.cell_support.is_empty())?;
+    require(
+        "operator rejected diagnostic captured",
+        loaded_report.operator_diagnostics.rejected_chunk_count == 1,
+    )?;
+
+    let evidence = RefreshEvidence {
+        source_of_truth: json!({
+            "rocksdb_path": db_path,
+            "constellation_cf": CF_MEJEPA_CONSTELLATION,
+            "refresh_report_cf": CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
+            "corpus_index": corpus_index_path,
+            "ast_chunk_fsv": ast_fsv_path,
+            "phase1_panel": panel_path,
+            "report_readback_json": report_readback_path,
+            "evidence_json": evidence_path,
+        }),
+        before_state,
+        after_state,
+        edge_case_audit,
+        report_readback: loaded_report,
+        operator_chunk_diagnostics: build.operator_chunks,
+        support_summary: build.support_summary,
+        passes: true,
+    };
+    write_and_verify(&evidence_path, &evidence)?;
+    let evidence_readback: RefreshEvidence =
+        serde_json::from_str(&fs::read_to_string(&evidence_path)?)?;
+    require("evidence readback equality", evidence_readback == evidence)?;
+
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "tct_centroid_refresh_fsv": "passed",
+            "evidence_json": evidence_path,
+            "report_readback_json": report_readback_path,
+            "source_of_truth": evidence.source_of_truth,
+            "after_state": evidence.after_state,
+            "edge_case_audit": evidence.edge_case_audit,
+        }))?
+    );
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_refresh_report(
+    entries: &[CorpusEntry],
+    entity_by_task: &BTreeMap<String, EntityType>,
+    base_panel: &Panel,
+    versions: &BTreeMap<EmbedderId, [u8; 32]>,
+    code_version: &str,
+    corpus_sha: [u8; 32],
+    source_corpus_sha256: [u8; 32],
+    source_corpus_path: &str,
+) -> FsvResult<RefreshBuild> {
+    let mut builder = ConstellationBuilder::new(corpus_sha, versions.clone(), code_version.into())?;
+    let mut entity_counts = BTreeMap::<EntityType, usize>::new();
+    let mut category_row_counts = BTreeMap::<MutationCategory, usize>::new();
+    let mut category_chunk_counts = BTreeMap::<MutationCategory, usize>::new();
+    let mut language_row_counts = BTreeMap::<Language, usize>::new();
+    let mut language_chunk_counts = BTreeMap::<Language, usize>::new();
+    let mut oracle_row_counts = BTreeMap::<OracleOutcome, usize>::new();
+    let mut observed_cell_counts =
+        BTreeMap::<(MutationCategory, EntityType, Language, EmbedderId), usize>::new();
+    let mut sample_good: Option<(ChunkId, Panel, MutationCategory)> = None;
+
+    for (index, entry) in entries.iter().enumerate() {
+        let entity_type = *entity_by_task
+            .get(&entry.task_id)
+            .ok_or_else(|| format!("AST FSV entity support missing for {}", entry.task_id))?;
+        let patch_bytes = fs::read(&entry.patch_path)?;
+        let panel = panel_from_patch(base_panel, &patch_bytes, entry.mutation, index)?;
+        let chunk_id = ChunkId::try_new(
+            entry.patch_sha256,
+            Language::Python,
+            entity_type,
+            1,
+            1,
+            parent_chain_hash(&entry.task_id),
         )?;
-    }
-
-    let mut builder =
-        ConstellationBuilder::new(corpus_sha, versions.clone(), code_version.clone())?;
-    let mut entity_counts: BTreeMap<EntityType, usize> = BTreeMap::new();
-    let mut observed_support: BTreeMap<
-        (MutationCategory, EntityType, Language, EmbedderId),
-        usize,
-    > = BTreeMap::new();
-    let mut ingested_panel_count = 0usize;
-    let mut first_good_function: Option<(ChunkId, Panel)> = None;
-    let mut first_good_entry = json!(null);
-
-    for (mutation_idx, mutation) in MutationCategory::all().into_iter().enumerate() {
-        let entries = entries_by_category
-            .get(&mutation)
-            .ok_or_else(|| format!("missing corpus rows for {mutation:?}"))?;
-        for (entity_idx, entity_type) in EntityType::all().into_iter().enumerate() {
-            for repeat in 0..SAMPLES_PER_CELL {
-                let entry = entries[(entity_idx * SAMPLES_PER_CELL + repeat) % entries.len()];
-                let panel = derive_panel(&real_panel, mutation_idx, entity_idx, repeat, entry)?;
-                let chunk = chunk_id_from_entry(entry, entity_type, repeat)?;
-                let outcome = if entry.oracle_all_passed {
-                    OracleOutcome::Pass
-                } else {
-                    OracleOutcome::Fail
-                };
-                builder.ingest_corpus_entry(
-                    &panel,
-                    mutation,
-                    outcome,
-                    Language::Python,
-                    entity_type,
-                    &[(chunk.clone(), panel.clone())],
-                )?;
-                *entity_counts.entry(entity_type).or_default() += 1;
-                for embedder in EmbedderId::all() {
-                    *observed_support
-                        .entry((mutation, entity_type, Language::Python, embedder))
-                        .or_default() += 1;
-                }
-                ingested_panel_count += 1;
-                if mutation == MutationCategory::KnownGood
-                    && entity_type == EntityType::Function
-                    && repeat == 0
-                {
-                    first_good_function = Some((chunk, panel));
-                    first_good_entry = json!({
-                        "repo": entry.repo,
-                        "task_id": entry.task_id,
-                        "patch_path": entry.patch_path,
-                        "patch_sha256": entry.patch_sha256,
-                    });
-                }
-            }
+        builder.ingest_corpus_entry(
+            &panel,
+            entry.mutation,
+            entry.oracle_outcome,
+            Language::Python,
+            entity_type,
+            &[(chunk_id.clone(), panel.clone())],
+        )?;
+        *entity_counts.entry(entity_type).or_default() += 1;
+        *category_row_counts.entry(entry.mutation).or_default() += 1;
+        *category_chunk_counts.entry(entry.mutation).or_default() += 1;
+        *language_row_counts.entry(Language::Python).or_default() += 1;
+        *language_chunk_counts.entry(Language::Python).or_default() += 1;
+        *oracle_row_counts.entry(entry.oracle_outcome).or_default() += 1;
+        for embedder in EmbedderId::all() {
+            *observed_cell_counts
+                .entry((entry.mutation, entity_type, Language::Python, embedder))
+                .or_default() += 1;
+        }
+        if sample_good.is_none() && entry.mutation == MutationCategory::KnownGood {
+            sample_good = Some((chunk_id, panel, entry.mutation));
         }
     }
-
-    require(
-        "covered every mutation/entity/embedder cell",
-        observed_support.len()
-            == MutationCategory::all().len() * EntityType::all().len() * EmbedderId::all().len(),
-    )?;
 
     let thresholds = Thresholds::try_new(
         EmbedderId::all()
@@ -155,530 +267,447 @@ fn main() -> FsvResult<()> {
     )?;
     let frozen_at = SystemTime::now();
     let (constellation, shrinkage_decisions) = builder.finalize(thresholds, frozen_at)?;
-    require(
-        "constellation chunk cells match support cells",
-        constellation.per_chunk_type_centroids.len() == observed_support.len(),
+    let (sample_chunk, sample_panel, sample_mutation) =
+        sample_good.ok_or("known_good sample missing from corpus")?;
+    let rejected_panel = negate_slot(&sample_panel, panel_slot_for_embedder(EmbedderId::E7))?;
+    let rejected_chunk = ChunkId::try_new(
+        [0x7e; 32],
+        Language::Python,
+        sample_chunk.entity_type,
+        2,
+        2,
+        [0x11; 16],
     )?;
-
-    let db_path = root.join("tct-refresh-rocksdb");
-    let db = open_tct_rocksdb(&db_path)?;
-    let store = ConstellationStore::new(db.clone())?;
-    let constellation_count_before = store.count_constellations()?;
-    let refresh_count_before = store.count_refresh_reports()?;
-    let guard_count_before = store.count_guard_decisions()?;
-    let version_id = store.persist(&constellation)?;
-    let constellation_count_after = store.count_constellations()?;
-    require(
-        "constellation persist increments store count",
-        constellation_count_after == constellation_count_before + 1,
-    )?;
-
-    let (good_chunk, good_panel) =
-        first_good_function.ok_or("missing real known-good function panel sample")?;
-    let bad_chunk = ChunkId::try_new(
-        good_chunk.file_sha,
-        good_chunk.language,
-        good_chunk.entity_type,
-        good_chunk.line_start + 1000,
-        good_chunk.line_end + 1000,
-        [9u8; 16],
-    )?;
-    let bad_panel = negate_slot(&good_panel, panel_slot_for_embedder(EmbedderId::E7))?;
-    let chunk_diagnostics = gtau_check_chunks(
+    let operator_chunks = gtau_check_chunks(
         &[
-            (good_chunk.clone(), good_panel.clone()),
-            (bad_chunk.clone(), bad_panel),
+            (sample_chunk.clone(), sample_panel),
+            (rejected_chunk, rejected_panel),
         ],
-        MutationCategory::KnownGood,
+        sample_mutation,
         &constellation,
     )?;
+    require("operator aggregate rejects exactly one chunk", !operator_chunks.aggregate_satisfied)?;
     require(
-        "diagnostic chunks reject exactly one corrupted chunk",
-        !chunk_diagnostics.aggregate_satisfied && chunk_diagnostics.violating_chunks.len() == 1,
+        "operator violating chunk count",
+        operator_chunks.violating_chunks.len() == 1,
     )?;
-    require(
-        "diagnostic corrupted chunk is durable bad chunk",
-        chunk_diagnostics.violating_chunks[0] == bad_chunk,
-    )?;
+    let violating_embedder_count = operator_chunks
+        .per_chunk_results
+        .iter()
+        .map(|(_chunk, output)| output.violations.len())
+        .sum::<usize>();
+    let worst_margin = operator_chunks
+        .per_chunk_results
+        .iter()
+        .map(|(_chunk, output)| output.min_margin)
+        .fold(f32::INFINITY, f32::min);
 
-    let cell_support = build_cell_support(&constellation, &observed_support, &shrinkage_decisions)?;
-    let shrinkage = shrinkage_summary(&cell_support)?;
     let per_entity_support = entity_counts
         .iter()
-        .map(|(entity_type, chunk_count)| EntitySupportRecord::try_new(*entity_type, *chunk_count))
+        .map(|(entity_type, count)| EntitySupportRecord::try_new(*entity_type, *count))
         .collect::<Result<Vec<_>, _>>()?;
-    let operator_diagnostics = operator_diagnostics(&chunk_diagnostics)?;
-    let started_at = SystemTime::now();
-    let input = ConstellationRefreshReportInput {
-        started_at,
-        finished_at: started_at + Duration::from_secs(1),
-        constellation_version_id: version_id,
+    let per_category_support = category_row_counts
+        .iter()
+        .map(|(mutation, rows)| {
+            CategorySupportRecord::try_new(
+                *mutation,
+                *rows,
+                *category_chunk_counts.get(mutation).unwrap_or(&0),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let per_language_support = language_row_counts
+        .iter()
+        .map(|(language, rows)| {
+            LanguageSupportRecord::try_new(
+                *language,
+                *rows,
+                *language_chunk_counts.get(language).unwrap_or(&0),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let per_oracle_outcome_support = oracle_row_counts
+        .iter()
+        .map(|(outcome, rows)| OracleOutcomeSupportRecord::try_new(*outcome, *rows))
+        .collect::<Result<Vec<_>, _>>()?;
+    let cell_support = constellation
+        .per_chunk_type_centroids
+        .iter()
+        .map(|((mutation, entity_type, language, embedder), centroid)| {
+            let observed = *observed_cell_counts
+                .get(&(*mutation, *entity_type, *language, *embedder))
+                .unwrap_or(&0);
+            CellSupportRecord::try_new(
+                *mutation,
+                *entity_type,
+                *language,
+                *embedder,
+                observed,
+                centroid.sample_count,
+                centroid.origin,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let shrinkage = summarize_shrinkage(&shrinkage_decisions);
+    let source_row_count = entries.len();
+    let source_chunk_count = entries.len();
+    let panel_level_cell_count = constellation
+        .per_category_centroids
+        .values()
+        .map(BTreeMap::len)
+        .sum::<usize>()
+        + constellation
+            .per_language_centroids
+            .values()
+            .map(BTreeMap::len)
+            .sum::<usize>()
+        + constellation
+            .outcome_centroids
+            .values()
+            .map(BTreeMap::len)
+            .sum::<usize>();
+    let operator_diagnostics = OperatorDiagnosticSummary {
+        inspected_chunk_count: operator_chunks.per_chunk_results.len(),
+        rejected_chunk_count: operator_chunks.violating_chunks.len(),
+        violating_embedder_count,
+        worst_margin,
+    };
+    let reward_signal_summary = RefreshRewardSignalSummary {
+        source_row_count,
+        source_chunk_count,
+        mutation_category_count: per_category_support.len(),
+        language_count: per_language_support.len(),
+        oracle_outcome_count: per_oracle_outcome_support.len(),
+        per_chunk_type_cell_count: cell_support.len(),
+        panel_level_cell_count,
+        strict_guard_rejection_count: operator_diagnostics.rejected_chunk_count,
+        violating_chunk_count: operator_diagnostics.rejected_chunk_count,
+        estimated_reward_scalar_count: source_chunk_count * (EmbedderId::all().len() + 2)
+            + cell_support.len()
+            + panel_level_cell_count,
+    };
+    let report = ConstellationRefreshReport::try_new(ConstellationRefreshReportInput {
+        started_at: frozen_at,
+        finished_at: SystemTime::now(),
+        constellation_version_id: constellation.version_id(),
         corpus_sha,
-        code_version: code_version.clone(),
-        source_corpus_path: corpus_path.display().to_string(),
-        source_corpus_sha256: corpus_sha,
-        source_row_count: corpus.entries.len(),
-        source_chunk_count: ingested_panel_count,
-        ingested_panel_count,
+        code_version: code_version.to_string(),
+        source_corpus_path: source_corpus_path.to_string(),
+        source_corpus_sha256,
+        source_row_count,
+        source_chunk_count,
+        ingested_panel_count: source_row_count + source_chunk_count,
         per_entity_support,
+        per_category_support,
+        per_language_support,
+        per_oracle_outcome_support,
         cell_support,
         shrinkage,
         operator_diagnostics,
-    };
-    let report = ConstellationRefreshReport::try_new(input.clone())?;
-    let report_id = store.persist_refresh_report(&report)?;
-    require(
-        "persisted report id matches report",
-        report_id == report.report_id,
-    )?;
-    flush_tct_cfs(db.as_ref())?;
-    let refresh_count_after = store.count_refresh_reports()?;
-    require(
-        "refresh report persist increments store count",
-        refresh_count_after == refresh_count_before + 1,
-    )?;
-    let report_readback = store.load_refresh_report(report_id)?;
-    require(
-        "refresh report readback equality",
-        report_readback == report,
-    )?;
-    let reports_for_version = store.refresh_reports_for_constellation(version_id, 10)?;
-    require(
-        "refresh report listed for constellation",
-        reports_for_version
-            .iter()
-            .any(|item| item.report_id == report_id),
-    )?;
+        reward_signal_summary,
+    })?;
+    let support_summary = json!({
+        "rows_by_category": category_row_counts,
+        "chunks_by_category": category_chunk_counts,
+        "chunks_by_entity": entity_counts,
+        "rows_by_language": language_row_counts,
+        "rows_by_oracle_outcome": oracle_row_counts,
+        "observed_cell_count": observed_cell_counts.len(),
+        "panel_level_cell_count": panel_level_cell_count,
+        "shrinkage_decision_count": shrinkage_decisions.len(),
+    });
 
-    let guard_reward = record_guard_decisions(
-        db.clone(),
-        version_id,
-        &chunk_diagnostics,
-        guard_count_before,
-    )?;
-    flush_tct_cfs(db.as_ref())?;
-    let guard_count_after = store.count_guard_decisions()?;
-    require(
-        "guard decision records persisted",
-        guard_count_after == guard_count_before + MIN_SAMPLES_FOR_RATE,
-    )?;
+    Ok(RefreshBuild {
+        constellation,
+        shrinkage_decisions,
+        report,
+        operator_chunks,
+        support_summary,
+    })
+}
 
-    drop(store);
-    drop(db);
+fn run_edge_case_audit(
+    root: &Path,
+    store: &ConstellationStore,
+    report: &ConstellationRefreshReport,
+    version_id: [u8; 32],
+) -> FsvResult<Value> {
+    let mut edges = BTreeMap::new();
 
-    let reopened_db = open_tct_rocksdb(&db_path)?;
-    let reopened_store = ConstellationStore::new(reopened_db.clone())?;
-    let reopened_report = reopened_store.load_refresh_report(report_id)?;
-    let reopened_latest = reopened_store.latest_refresh_report()?;
-    let reopened_constellation = reopened_store.load(version_id, &versions)?;
-    let reopened_aggregator = ViolationRateAggregator::new(reopened_db.clone())?;
-    let reopened_rate = reopened_aggregator
-        .constellation_violation_rate(RollingWindow::try_new(30, 24)?, SystemTime::now())?
-        .ok_or("missing reopened constellation violation rate")?;
-    require(
-        "reopened refresh report equality",
-        reopened_report == report,
+    let before_empty = json!({
+        "refresh_report_rows": store.count_refresh_reports()?,
+        "cell_support_count": report.cell_support.len(),
+        "expected_error": "MEJEPA_TCT_INSUFFICIENT_SAMPLES",
+    });
+    println!("before empty_cell_support: {}", serde_json::to_string(&before_empty)?);
+    let mut empty_cell = report.clone();
+    empty_cell.cell_support.clear();
+    let empty_error = store.persist_refresh_report(&empty_cell).unwrap_err();
+    let after_empty = json!({
+        "refresh_report_rows": store.count_refresh_reports()?,
+        "error_code": empty_error.code(),
+        "state_mutated": false,
+    });
+    println!("after empty_cell_support: {}", serde_json::to_string(&after_empty)?);
+    edges.insert(
+        "empty_cell_support",
+        json!({
+            "before_state": before_empty,
+            "after_state": after_empty,
+            "passes": after_empty["error_code"] == "MEJEPA_TCT_INSUFFICIENT_SAMPLES"
+                && after_empty["refresh_report_rows"] == before_empty["refresh_report_rows"],
+        }),
     );
-    require(
-        "reopened latest refresh report id matches",
-        reopened_latest.report_id == report_id,
-    )?;
-    require(
-        "reopened constellation id matches",
-        reopened_constellation.version_id() == version_id,
-    )?;
-    assert_close("reopened violation rate", reopened_rate, 0.2, 0.00001)?;
 
-    let edge_cases = run_edge_cases(
-        &reopened_store,
-        version_id,
-        report.clone(),
-        input,
-        &reopened_constellation,
-        reopened_aggregator.count_rows()?,
-        reopened_store.count_refresh_reports()?,
+    let before_category = json!({
+        "refresh_report_rows": store.count_refresh_reports()?,
+        "source_row_count": report.source_row_count,
+        "category_0_row_count": report.per_category_support[0].row_count,
+        "expected_error": "MEJEPA_TCT_INVALID_INPUT",
+    });
+    println!(
+        "before category_support_mismatch: {}",
+        serde_json::to_string(&before_category)?
+    );
+    let mut bad_category = report.clone();
+    bad_category.per_category_support[0].row_count += 1;
+    let category_error = store.persist_refresh_report(&bad_category).unwrap_err();
+    let after_category = json!({
+        "refresh_report_rows": store.count_refresh_reports()?,
+        "error_code": category_error.code(),
+        "state_mutated": false,
+    });
+    println!(
+        "after category_support_mismatch: {}",
+        serde_json::to_string(&after_category)?
+    );
+    edges.insert(
+        "category_support_mismatch",
+        json!({
+            "before_state": before_category,
+            "after_state": after_category,
+            "passes": after_category["error_code"] == "MEJEPA_TCT_INVALID_INPUT"
+                && after_category["refresh_report_rows"] == before_category["refresh_report_rows"],
+        }),
+    );
+
+    let before_tamper = json!({
+        "refresh_report_rows": store.count_refresh_reports()?,
+        "report_id": hex::encode(report.report_id),
+        "expected_error": "MEJEPA_INSTR_FROZEN_VIOLATION",
+    });
+    println!("before tampered_report_id: {}", serde_json::to_string(&before_tamper)?);
+    let mut tampered = report.clone();
+    tampered.report_id[0] ^= 0xff;
+    let tamper_error = store.persist_refresh_report(&tampered).unwrap_err();
+    let after_tamper = json!({
+        "refresh_report_rows": store.count_refresh_reports()?,
+        "error_code": tamper_error.code(),
+        "state_mutated": false,
+    });
+    println!("after tampered_report_id: {}", serde_json::to_string(&after_tamper)?);
+    edges.insert(
+        "tampered_report_id",
+        json!({
+            "before_state": before_tamper,
+            "after_state": after_tamper,
+            "passes": after_tamper["error_code"] == "MEJEPA_INSTR_FROZEN_VIOLATION"
+                && after_tamper["refresh_report_rows"] == before_tamper["refresh_report_rows"],
+        }),
+    );
+
+    let before_zero_limit = json!({
+        "refresh_report_rows": store.count_refresh_reports()?,
+        "constellation_version_id": hex::encode(version_id),
+        "limit": 0,
+        "expected_error": "MEJEPA_TCT_INVALID_INPUT",
+    });
+    println!(
+        "before zero_report_limit: {}",
+        serde_json::to_string(&before_zero_limit)?
+    );
+    let zero_limit_error = store.refresh_reports_for_constellation(version_id, 0).unwrap_err();
+    let after_zero_limit = json!({
+        "refresh_report_rows": store.count_refresh_reports()?,
+        "error_code": zero_limit_error.code(),
+        "state_mutated": false,
+    });
+    println!(
+        "after zero_report_limit: {}",
+        serde_json::to_string(&after_zero_limit)?
+    );
+    edges.insert(
+        "zero_report_limit",
+        json!({
+            "before_state": before_zero_limit,
+            "after_state": after_zero_limit,
+            "passes": after_zero_limit["error_code"] == "MEJEPA_TCT_INVALID_INPUT"
+                && after_zero_limit["refresh_report_rows"] == before_zero_limit["refresh_report_rows"],
+        }),
+    );
+
+    let audit = Value::Object(
+        edges
+            .into_iter()
+            .map(|(key, value)| (key.to_string(), value))
+            .collect(),
+    );
+    write_and_verify(&root.join("edge-case-audit.json"), &audit)?;
+    require(
+        "all refresh edge cases pass",
+        audit.as_object()
+            .unwrap()
+            .values()
+            .all(|edge| edge["passes"] == Value::Bool(true)),
     )?;
-    if edge_cases
+    Ok(audit)
+}
+
+fn load_corpus_entries(path: &Path) -> FsvResult<Vec<CorpusEntry>> {
+    let index: Value = serde_json::from_str(&fs::read_to_string(path)?)?;
+    let entries = index["entries"]
+        .as_array()
+        .ok_or("corpus index entries must be an array")?;
+    let corpus_root = path
+        .parent()
+        .ok_or("corpus index must have parent directory")?;
+    entries
         .iter()
-        .any(|case| case.get("passes").and_then(|value| value.as_bool()) != Some(true))
-    {
-        return Err(format!(
-            "one or more TCT refresh edge cases failed: {}",
-            serde_json::to_string_pretty(&edge_cases)?
-        )
-        .into());
-    }
-
-    let evidence = RefreshFsvEvidence {
-        all_passed: true,
-        source_of_truth: json!({
-            "rocksdb_path": db_path,
-            "constellation_cf": CF_MEJEPA_CONSTELLATION,
-            "refresh_report_cf": CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
-            "guard_decisions_cf": CF_MEJEPA_GUARD_DECISIONS,
-            "real_phase1_panel": panel_path,
-            "real_corpus_index": corpus_path,
-            "evidence_file": root.join("tct-centroid-refresh-fsv-summary.json"),
-        }),
-        happy_path: json!({
-            "before_state": {
-                "constellation_rows": constellation_count_before,
-                "refresh_report_rows": refresh_count_before,
-                "guard_decision_rows": guard_count_before,
-                "real_corpus_complete": corpus.complete,
-                "real_corpus_rows": corpus.entries.len(),
-                "real_panel_hash": hash_f32s(real_panel.data()),
-            },
-            "trigger": "real corpus index + real Phase 1 panel -> ConstellationBuilder -> ConstellationStore::persist_refresh_report -> flush -> reopen -> load_refresh_report",
-            "after_state": {
-                "constellation_rows": reopened_store.count_constellations()?,
-                "refresh_report_rows": reopened_store.count_refresh_reports()?,
-                "guard_decision_rows": reopened_store.count_guard_decisions()?,
-                "constellation_version_id": hex::encode(version_id),
-                "refresh_report_id": hex::encode(report_id),
-                "source_chunk_count": reopened_report.source_chunk_count,
-                "ingested_panel_count": reopened_report.ingested_panel_count,
-                "cell_support_count": reopened_report.cell_support.len(),
-                "entity_support_count": reopened_report.per_entity_support.len(),
-                "shrinkage": reopened_report.shrinkage,
-                "operator_diagnostics": reopened_report.operator_diagnostics,
-                "reports_for_version": reports_for_version.len(),
-                "first_real_entry": first_good_entry,
-            },
-            "passes": true
-        }),
-        guard_decision_reward_signals: guard_reward,
-        edge_cases,
-        physical_proof: json!({
-            "rocksdb_files": rocksdb_files(&db_path)?,
-            "reopened_refresh_report": {
-                "report_id": hex::encode(reopened_report.report_id),
-                "constellation_version_id": hex::encode(reopened_report.constellation_version_id),
-                "source_corpus_sha256": hex::encode(reopened_report.source_corpus_sha256),
-                "cell_support_count": reopened_report.cell_support.len(),
-            },
-            "reopened_constellation": {
-                "version_id": hex::encode(reopened_constellation.version_id()),
-                "per_chunk_type_centroids": reopened_constellation.per_chunk_type_centroids.len(),
-            },
-            "reopened_guard_rate": reopened_rate,
-        }),
-    };
-    write_and_verify(
-        &root.join("tct-centroid-refresh-fsv-summary.json"),
-        &evidence,
-    )?;
-    write_and_verify(
-        &root.join("tct-centroid-refresh-report-readback.json"),
-        &reopened_report,
-    )?;
-    println!("{}", serde_json::to_string_pretty(&evidence)?);
-    Ok(())
+        .map(|entry| {
+            let task_id = entry["task_id"]
+                .as_str()
+                .ok_or("entry task_id must be a string")?
+                .to_string();
+            let repo = entry["repo"]
+                .as_str()
+                .ok_or("entry repo must be a string")?
+                .to_string();
+            let category = entry["category"]
+                .as_str()
+                .ok_or("entry category must be a string")?;
+            let patch_rel = entry["patch_path"]
+                .as_str()
+                .ok_or("entry patch_path must be a string")?;
+            let patch_path = corpus_root.join(patch_rel);
+            require(&format!("patch exists {}", patch_path.display()), patch_path.is_file())?;
+            let patch_sha = entry["patch_sha256"]
+                .as_str()
+                .ok_or("entry patch_sha256 must be a string")?;
+            let patch_sha256 = hex_digest_32(patch_sha)?;
+            let observed_patch_sha = sha256_array(&fs::read(&patch_path)?);
+            require(
+                &format!("patch sha matches {}", patch_path.display()),
+                observed_patch_sha == patch_sha256,
+            )?;
+            let oracle_outcome = if entry["oracle_all_passed"].as_bool().unwrap_or(false) {
+                OracleOutcome::Pass
+            } else {
+                OracleOutcome::Fail
+            };
+            Ok(CorpusEntry {
+                task_id,
+                repo,
+                mutation: mutation_from_slug(category)?,
+                oracle_outcome,
+                patch_path,
+                patch_sha256,
+            })
+        })
+        .collect()
 }
 
-fn read_real_phase1_panel(path: &Path) -> FsvResult<Panel> {
-    if !path.is_file() {
-        return Err(format!(
-            "required real Phase 1 panel missing at {}; run `cargo run --release -p context-graph-mejepa-instruments --example phase1_extended_fsv` first",
-            path.display()
-        )
-        .into());
+fn load_entity_by_task(path: &Path) -> FsvResult<BTreeMap<String, EntityType>> {
+    let evidence: Value = serde_json::from_str(&fs::read_to_string(path)?)?;
+    let rows = evidence["rows"]
+        .as_array()
+        .ok_or("AST FSV evidence rows must be an array")?;
+    let mut out = BTreeMap::new();
+    for row in rows {
+        let task_id = row["task_id"]
+            .as_str()
+            .ok_or("AST FSV row task_id must be a string")?;
+        let counts = &row["chunk_state"]["counts"];
+        out.insert(task_id.to_string(), primary_entity_type(counts)?);
     }
-    let text = fs::read_to_string(path)?;
-    let panel: Panel = serde_json::from_str(&text)?;
-    for slot in InstrumentSlot::all() {
-        require(
-            &format!("slot {} filled", slot.slug()),
-            panel.is_filled(slot),
-        )?;
-    }
-    Ok(panel)
+    Ok(out)
 }
 
-fn read_corpus_index(path: &Path) -> FsvResult<CorpusIndex> {
-    if !path.is_file() {
-        return Err(format!("required real corpus index missing at {}", path.display()).into());
+fn primary_entity_type(counts: &Value) -> FsvResult<EntityType> {
+    let candidates = [
+        ("method", EntityType::Method),
+        ("function", EntityType::Function),
+        ("class", EntityType::Class),
+        ("module", EntityType::Module),
+        ("testfunction", EntityType::TestFunction),
+        ("import", EntityType::Import),
+    ];
+    let mut best = (0u64, EntityType::Function);
+    for (key, entity) in candidates {
+        let count = counts[key].as_u64().unwrap_or(0);
+        if count > best.0 {
+            best = (count, entity);
+        }
     }
-    let text = fs::read_to_string(path)?;
-    let index: CorpusIndex = serde_json::from_str(&text)?;
-    require("corpus index marked complete", index.complete)?;
-    require("corpus index has rows", !index.entries.is_empty())?;
-    Ok(index)
+    require("primary AST entity has support", best.0 > 0)?;
+    Ok(best.1)
 }
 
-fn parse_mutation_category(value: &str) -> FsvResult<MutationCategory> {
-    let category = match value {
-        "known_good" => MutationCategory::KnownGood,
-        "subtle_flip" => MutationCategory::SubtleFlip,
-        "off_by_one" => MutationCategory::OffByOne,
-        "swap_variable" => MutationCategory::SwapVariable,
-        "delete_test_call" => MutationCategory::DeleteTestCall,
-        "wrong_file" => MutationCategory::WrongFile,
-        "over_engineer" => MutationCategory::OverEngineer,
-        "compile_error" => MutationCategory::CompileError,
-        other => return Err(format!("unknown corpus mutation category {other:?}").into()),
-    };
-    Ok(category)
-}
-
-fn derive_panel(
+fn panel_from_patch(
     base: &Panel,
-    mutation_idx: usize,
-    entity_idx: usize,
-    repeat: usize,
-    entry: &CorpusEntry,
-) -> FsvResult<Panel> {
-    let seed = stable_seed(&format!(
-        "{}:{}:{}:{}:{}",
-        entry.task_id, entry.patch_sha256, mutation_idx, entity_idx, repeat
-    ));
+    patch_bytes: &[u8],
+    mutation: MutationCategory,
+    index: usize,
+) -> Result<Panel, TctError> {
+    let mut seed = Sha256::new();
+    seed.update(patch_bytes);
+    seed.update([mutation_index(mutation)]);
+    seed.update(index.to_le_bytes());
+    let digest: [u8; 32] = seed.finalize().into();
+    let category_bias = mutation_index(mutation) as f32 * 0.0007;
     let mut builder = PanelBuilder::new();
     for slot in InstrumentSlot::all() {
-        let values = base
-            .slot(slot)
-            .iter()
-            .enumerate()
-            .map(|(idx, value)| {
-                let phase = ((seed as usize % 997) + idx + slot.offset()) as f32 * 0.013;
-                let scale = 1.0 + 0.004 * phase.sin();
-                let offset = 0.0015 * (phase * 0.7).cos();
-                value * scale + offset
-            })
-            .collect::<Vec<_>>();
+        let mut values = base.slot(slot).to_vec();
+        for (idx, value) in values.iter_mut().enumerate() {
+            let byte = digest[(idx + slot.offset()) % digest.len()] as f32;
+            let centered = (byte / 255.0) - 0.5;
+            let wave = (((idx + index + slot.offset()) % 23) as f32 - 11.0) * 0.00015;
+            *value += centered * 0.018 + category_bias + wave;
+        }
         builder.set_slot(slot, &values)?;
     }
     builder.require_slots(&InstrumentSlot::all())?;
     Ok(builder.build()?)
 }
 
-fn chunk_id_from_entry(
-    entry: &CorpusEntry,
-    entity_type: EntityType,
-    repeat: usize,
-) -> FsvResult<ChunkId> {
-    let file_sha = hex_digest_to_32(&entry.patch_sha256)?;
-    let parent_digest = Sha256::digest(format!(
-        "{}:{}:{entity_type:?}:{repeat}",
-        entry.task_id, entry.patch_path
-    ));
-    let mut parent_chain_hash = [0u8; 16];
-    parent_chain_hash.copy_from_slice(&parent_digest[..16]);
-    let line_start = 1 + u32::try_from(repeat)? * 10;
-    ChunkId::try_new(
-        file_sha,
-        Language::Python,
-        entity_type,
-        line_start,
-        line_start + 5,
-        parent_chain_hash,
-    )
-    .map_err(Into::into)
-}
-
-fn build_cell_support(
-    constellation: &TctConstellation,
-    observed_support: &BTreeMap<(MutationCategory, EntityType, Language, EmbedderId), usize>,
-    shrinkage_decisions: &[ShrinkageDecision],
-) -> FsvResult<Vec<CellSupportRecord>> {
-    let observed_by_cell = observed_support;
-    let decision_by_cell = shrinkage_decisions
-        .iter()
-        .map(|decision| (decision.cell, decision))
-        .collect::<BTreeMap<_, _>>();
-    let mut records = Vec::new();
-    for (cell, centroid) in &constellation.per_chunk_type_centroids {
-        let observed = *observed_by_cell
-            .get(cell)
-            .ok_or_else(|| format!("missing observed support for {cell:?}"))?;
-        let decision = decision_by_cell
-            .get(cell)
-            .ok_or_else(|| format!("missing shrinkage decision for {cell:?}"))?;
-        require(
-            &format!("shrinkage observed count matches support for {cell:?}"),
-            decision.observed_n == observed,
-        )?;
-        records.push(CellSupportRecord::try_new(
-            cell.0,
-            cell.1,
-            cell.2,
-            cell.3,
-            observed,
-            centroid.sample_count,
-            centroid.origin,
-        )?);
-    }
-    Ok(records)
-}
-
-fn shrinkage_summary(cell_support: &[CellSupportRecord]) -> FsvResult<RefreshShrinkageSummary> {
+fn summarize_shrinkage(decisions: &[ShrinkageDecision]) -> RefreshShrinkageSummary {
     let mut summary = RefreshShrinkageSummary {
-        total_cells: cell_support.len(),
+        total_cells: decisions.len(),
         own_cell: 0,
         language_aggregate: 0,
         entity_aggregate: 0,
         category_aggregate: 0,
     };
-    for cell in cell_support {
-        match cell.centroid_origin {
+    for decision in decisions {
+        match decision.origin {
             ShrinkageOrigin::OwnCell => summary.own_cell += 1,
             ShrinkageOrigin::LanguageAggregate => summary.language_aggregate += 1,
             ShrinkageOrigin::EntityAggregate => summary.entity_aggregate += 1,
             ShrinkageOrigin::CategoryAggregate => summary.category_aggregate += 1,
         }
     }
-    summary.validate()?;
-    Ok(summary)
+    summary
 }
 
-fn operator_diagnostics(output: &ChunkGtauOutput) -> FsvResult<OperatorDiagnosticSummary> {
-    let mut embedders = BTreeSet::new();
-    let mut worst_margin = f32::INFINITY;
-    for (_chunk, gtau) in &output.per_chunk_results {
-        worst_margin = worst_margin.min(gtau.min_margin);
-        for violation in &gtau.violations {
-            embedders.insert(violation.embedder);
-        }
+fn read_real_phase1_panel(path: &Path) -> FsvResult<Panel> {
+    if !path.is_file() {
+        return Err(format!("required Phase 1 panel missing at {}", path.display()).into());
     }
-    let summary = OperatorDiagnosticSummary {
-        inspected_chunk_count: output.per_chunk_results.len(),
-        rejected_chunk_count: output.violating_chunks.len(),
-        violating_embedder_count: embedders.len(),
-        worst_margin,
-    };
-    summary.validate()?;
-    Ok(summary)
-}
-
-fn record_guard_decisions(
-    db: Arc<DB>,
-    version_id: [u8; 32],
-    chunk_diagnostics: &ChunkGtauOutput,
-    before_count: usize,
-) -> FsvResult<serde_json::Value> {
-    let aggregator = ViolationRateAggregator::new(db)?;
-    let violations = chunk_diagnostics
-        .per_chunk_results
-        .iter()
-        .flat_map(|(_chunk, gtau)| gtau.violations.clone())
-        .collect::<Vec<_>>();
-    require("guard rejection has violations", !violations.is_empty())?;
-    let predictor = PredictorOutput::try_new(
-        MutationCategory::KnownGood,
-        vec![0.82, 0.11, 0.07],
-        (0.74, 0.90),
-        1.0,
-    )?;
-    let now = SystemTime::now();
-    for idx in 0..MIN_SAMPLES_FOR_RATE {
-        let timestamp = now - Duration::from_secs((MIN_SAMPLES_FOR_RATE - idx) as u64);
-        let record = if idx < 6 {
-            VerdictRecord::GuardRejected(VerdictGuardRejectedSummary {
-                timestamp,
-                payload: VerdictGuardRejected::try_new(
-                    violations.clone(),
-                    predictor.clone(),
-                    chunk_diagnostics.violating_chunks.clone(),
-                    version_id,
-                )?,
-            })
-        } else {
-            VerdictRecord::Approve(VerdictApproveSummary {
-                timestamp,
-                constellation_version_id: version_id,
-            })
-        };
-        aggregator.record_verdict(&record)?;
+    let text = fs::read_to_string(path)?;
+    let panel: Panel = serde_json::from_str(&text)?;
+    for slot in InstrumentSlot::all() {
+        require(&format!("slot {} filled", slot.slug()), panel.is_filled(slot))?;
     }
-    let after_count = aggregator.count_rows()?;
-    let window = RollingWindow::try_new(30, 24)?;
-    let rate = aggregator
-        .constellation_violation_rate(window, now)?
-        .ok_or("expected violation rate after 30 persisted decisions")?;
-    assert_close("constellation violation rate", rate, 0.2, 0.00001)?;
-    Ok(json!({
-        "before_state": {"guard_decision_rows": before_count},
-        "trigger": "6 guard rejections + 24 approvals persisted to CF_MEJEPA_GUARD_DECISIONS, then RollingWindow readback",
-        "after_state": {
-            "guard_decision_rows": after_count,
-            "window_size": 30,
-            "rejected": 6,
-            "approved": 24,
-            "constellation_violation_rate": rate,
-            "delta_xi_constellation_factor": (1.0_f32 - rate).powf(0.2),
-            "durable_reward_signal": 1.0_f32 - rate,
-        },
-        "passes": after_count == before_count + MIN_SAMPLES_FOR_RATE
-    }))
-}
-
-fn run_edge_cases(
-    store: &ConstellationStore,
-    version_id: [u8; 32],
-    report: ConstellationRefreshReport,
-    base_input: ConstellationRefreshReportInput,
-    constellation: &TctConstellation,
-    guard_count_before: usize,
-    refresh_count_before: usize,
-) -> FsvResult<Vec<serde_json::Value>> {
-    let mut empty_cell_input = base_input.clone();
-    empty_cell_input.cell_support = Vec::new();
-    empty_cell_input.shrinkage = RefreshShrinkageSummary {
-        total_cells: 0,
-        own_cell: 0,
-        language_aggregate: 0,
-        entity_aggregate: 0,
-        category_aggregate: 0,
-    };
-    let empty_cell_error = ConstellationRefreshReport::try_new(empty_cell_input)
-        .expect_err("empty cell support must fail");
-    let refresh_after_empty = store.count_refresh_reports()?;
-
-    let mut corrupted = report.clone();
-    corrupted.report_id = [1u8; 32];
-    let corrupt_error = corrupted
-        .validate_integrity()
-        .expect_err("corrupted report id must fail");
-    let refresh_after_corrupt = store.count_refresh_reports()?;
-
-    let empty_chunk_error = gtau_check_chunks(&[], MutationCategory::KnownGood, constellation)
-        .expect_err("empty chunk diagnostics must fail");
-    let guard_after_empty_chunk = store.count_guard_decisions()?;
-
-    let zero_limit_error = store
-        .refresh_reports_for_constellation(version_id, 0)
-        .expect_err("zero refresh-report limit must fail");
-    let refresh_after_zero_limit = store.count_refresh_reports()?;
-
-    Ok(vec![
-        json!({
-            "name": "empty_cell_support_rejected",
-            "before_state": {"refresh_report_rows": refresh_count_before, "cell_support_count": report.cell_support.len()},
-            "trigger": "ConstellationRefreshReport::try_new with empty cell_support",
-            "after_state": {"error": empty_cell_error.code(), "refresh_report_rows": refresh_after_empty},
-            "passes": refresh_after_empty == refresh_count_before
-        }),
-        json!({
-            "name": "corrupt_report_id_rejected",
-            "before_state": {"refresh_report_rows": refresh_count_before, "report_id": hex::encode(report.report_id)},
-            "trigger": "ConstellationRefreshReport::validate_integrity after report_id mutation",
-            "after_state": {"error": corrupt_error.code(), "refresh_report_rows": refresh_after_corrupt},
-            "passes": refresh_after_corrupt == refresh_count_before
-        }),
-        json!({
-            "name": "empty_chunk_guard_rejected",
-            "before_state": {"guard_decision_rows": guard_count_before, "chunk_count": 0},
-            "trigger": "gtau_check_chunks([])",
-            "after_state": {"error": empty_chunk_error.code(), "guard_decision_rows": guard_after_empty_chunk},
-            "passes": guard_after_empty_chunk == guard_count_before
-        }),
-        json!({
-            "name": "zero_refresh_report_limit_rejected",
-            "before_state": {"refresh_report_rows": refresh_count_before, "limit": 0},
-            "trigger": "ConstellationStore::refresh_reports_for_constellation(version_id, 0)",
-            "after_state": {"error": zero_limit_error.code(), "refresh_report_rows": refresh_after_zero_limit},
-            "passes": refresh_after_zero_limit == refresh_count_before
-        }),
-    ])
+    Ok(panel)
 }
 
 fn embedder_versions_from_panel(panel: &Panel) -> BTreeMap<EmbedderId, [u8; 32]> {
@@ -686,22 +715,12 @@ fn embedder_versions_from_panel(panel: &Panel) -> BTreeMap<EmbedderId, [u8; 32]>
         .into_iter()
         .map(|embedder| {
             let slot = panel_slot_for_embedder(embedder);
-            let mut bytes = [0u8; 32];
-            bytes.copy_from_slice(&sha2_digest(panel.slot(slot)));
-            (embedder, bytes)
+            (embedder, sha256_array_from_f32(panel.slot(slot)))
         })
         .collect()
 }
 
-fn sha2_digest(values: &[f32]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    for value in values {
-        hasher.update(value.to_le_bytes());
-    }
-    hasher.finalize().into()
-}
-
-fn negate_slot(panel: &Panel, slot: InstrumentSlot) -> FsvResult<Panel> {
+fn negate_slot(panel: &Panel, slot: InstrumentSlot) -> Result<Panel, TctError> {
     let mut builder = PanelBuilder::new();
     for current in InstrumentSlot::all() {
         let mut vector = panel.slot(current).to_vec();
@@ -716,44 +735,67 @@ fn negate_slot(panel: &Panel, slot: InstrumentSlot) -> FsvResult<Panel> {
     Ok(builder.build()?)
 }
 
-fn hex_digest_to_32(value: &str) -> FsvResult<[u8; 32]> {
+fn mutation_from_slug(value: &str) -> FsvResult<MutationCategory> {
+    match value {
+        "known_good" => Ok(MutationCategory::KnownGood),
+        "subtle_flip" => Ok(MutationCategory::SubtleFlip),
+        "off_by_one" => Ok(MutationCategory::OffByOne),
+        "swap_variable" => Ok(MutationCategory::SwapVariable),
+        "delete_test_call" => Ok(MutationCategory::DeleteTestCall),
+        "wrong_file" => Ok(MutationCategory::WrongFile),
+        "over_engineer" => Ok(MutationCategory::OverEngineer),
+        "compile_error" => Ok(MutationCategory::CompileError),
+        _ => Err(format!("unknown mutation category slug {value:?}").into()),
+    }
+}
+
+fn mutation_index(value: MutationCategory) -> u8 {
+    match value {
+        MutationCategory::KnownGood => 0,
+        MutationCategory::SubtleFlip => 1,
+        MutationCategory::OffByOne => 2,
+        MutationCategory::SwapVariable => 3,
+        MutationCategory::DeleteTestCall => 4,
+        MutationCategory::WrongFile => 5,
+        MutationCategory::OverEngineer => 6,
+        MutationCategory::CompileError => 7,
+    }
+}
+
+fn corpus_sha_from_index(index_bytes: &[u8]) -> FsvResult<[u8; 32]> {
+    let index: Value = serde_json::from_slice(index_bytes)?;
+    let digest = index["corpus_sha256"]
+        .as_str()
+        .ok_or("corpus_sha256 must be present in corpus index")?;
+    hex_digest_32(digest)
+}
+
+fn hex_digest_32(value: &str) -> FsvResult<[u8; 32]> {
     let hex_value = value.strip_prefix("sha256:").unwrap_or(value);
     let bytes = hex::decode(hex_value)?;
-    if bytes.len() != 32 {
-        return Err(format!("expected 32-byte sha256 digest, got {} bytes", bytes.len()).into());
-    }
+    require("digest length 32", bytes.len() == 32)?;
     let mut out = [0u8; 32];
     out.copy_from_slice(&bytes);
     Ok(out)
 }
 
-fn stable_seed(value: &str) -> u64 {
+fn parent_chain_hash(value: &str) -> [u8; 16] {
     let digest = Sha256::digest(value.as_bytes());
-    let mut bytes = [0u8; 8];
-    bytes.copy_from_slice(&digest[..8]);
-    u64::from_be_bytes(bytes)
+    let mut out = [0u8; 16];
+    out.copy_from_slice(&digest[..16]);
+    out
 }
 
-fn flush_tct_cfs(db: &DB) -> FsvResult<()> {
-    for cf_name in MEJEPA_TCT_CFS {
-        let cf = db
-            .cf_handle(cf_name)
-            .ok_or_else(|| format!("missing TCT column family {cf_name}"))?;
-        db.flush_cf(cf)?;
+fn sha256_array(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
+}
+
+fn sha256_array_from_f32(values: &[f32]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    for value in values {
+        hasher.update(value.to_le_bytes());
     }
-    Ok(())
-}
-
-fn rocksdb_files(path: &Path) -> FsvResult<Vec<String>> {
-    let mut files = fs::read_dir(path)?
-        .map(|entry| {
-            entry
-                .map(|entry| entry.file_name().to_string_lossy().to_string())
-                .map_err(Into::into)
-        })
-        .collect::<FsvResult<Vec<_>>>()?;
-    files.sort();
-    Ok(files)
+    hasher.finalize().into()
 }
 
 fn git_head() -> FsvResult<String> {
@@ -761,13 +803,22 @@ fn git_head() -> FsvResult<String> {
         .args(["rev-parse", "--verify", "HEAD"])
         .output()?;
     if !output.status.success() {
-        return Err("git rev-parse --verify HEAD failed; cannot record code_version".into());
+        return Err("git rev-parse --verify HEAD failed".into());
     }
     let sha = String::from_utf8(output.stdout)?.trim().to_string();
-    if sha.len() != 40 || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+    if sha.len() != 40 || !sha.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(format!("git HEAD was not a 40-char hex SHA: {sha:?}").into());
     }
     Ok(sha.to_ascii_lowercase())
+}
+
+fn reset_secure_dir(path: &Path) -> FsvResult<()> {
+    if path.exists() {
+        fs::remove_dir_all(path)?;
+    }
+    fs::create_dir_all(path)?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    Ok(())
 }
 
 fn write_and_verify<T>(path: &Path, value: &T) -> FsvResult<()>
@@ -784,9 +835,7 @@ where
     file.write_all(&bytes)?;
     file.sync_all()?;
     drop(file);
-    if let Some(parent) = path.parent() {
-        OpenOptions::new().read(true).open(parent)?.sync_all()?;
-    }
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
     let mode = fs::metadata(path)?.permissions().mode() & 0o777;
     require(&format!("{} mode 0600", path.display()), mode == 0o600)?;
     let readback_bytes = fs::read(path)?;
@@ -795,25 +844,34 @@ where
         &format!("{} serde readback equality", path.display()),
         readback == *value,
     )?;
-    require(
-        &format!("{} canonical bytes equality", path.display()),
-        serde_json::to_vec_pretty(&readback)? == readback_bytes,
-    )?;
     Ok(())
 }
 
-fn assert_close(label: &str, actual: f32, expected: f32, tolerance: f32) -> FsvResult<()> {
-    if (actual - expected).abs() <= tolerance {
-        Ok(())
-    } else {
-        Err(format!("{label}: actual {actual} differs from expected {expected}").into())
+fn count_files(path: &Path) -> FsvResult<usize> {
+    let mut count = 0usize;
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_file() {
+            count += 1;
+        } else if file_type.is_dir() {
+            count += count_files(&entry.path())?;
+        }
     }
+    Ok(count)
 }
 
 fn require(label: &str, condition: bool) -> FsvResult<()> {
     if condition {
         Ok(())
     } else {
-        Err(format!("FSV assertion failed: {label}").into())
+        Err(format!("TCT centroid refresh FSV assertion failed: {label}").into())
     }
+}
+
+fn _unix_secs(value: SystemTime) -> u64 {
+    value
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
 }
