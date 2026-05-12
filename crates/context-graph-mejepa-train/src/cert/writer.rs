@@ -78,8 +78,12 @@ impl TrainCertWriter {
         let cf = cf(&self.rocksdb, &self.cf_train_certs_name)?;
         let mut write_opts = WriteOptions::default();
         write_opts.set_sync(true);
-        self.rocksdb
-            .put_cf_opt(cf, cert.step.to_be_bytes(), final_body.as_bytes(), &write_opts)?;
+        self.rocksdb.put_cf_opt(
+            cf,
+            cert.step.to_be_bytes(),
+            final_body.as_bytes(),
+            &write_opts,
+        )?;
         let readback = self
             .rocksdb
             .get_cf(cf, cert.step.to_be_bytes())?

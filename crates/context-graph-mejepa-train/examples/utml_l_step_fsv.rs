@@ -1,5 +1,5 @@
-use context_graph_mejepa_instruments::{InstrumentSlot, Panel, PanelBuilder};
 use context_graph_mejepa::HeadId;
+use context_graph_mejepa_instruments::{InstrumentSlot, Panel, PanelBuilder};
 use context_graph_mejepa_train::cert::{
     open_train_rocksdb, verify_chain, TrainCertWriter, TrainingCertificate, CF_MEJEPA_TRAIN_CERTS,
 };
@@ -212,14 +212,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .any(|case| case.get("passes").and_then(|value| value.as_bool()) != Some(true))
     {
-        return Err(format!("one or more UTML edge cases failed: {}", serde_json::to_string_pretty(&edge_cases)?).into());
+        return Err(format!(
+            "one or more UTML edge cases failed: {}",
+            serde_json::to_string_pretty(&edge_cases)?
+        )
+        .into());
     }
     drop(cert_writer);
     drop(cert_db);
     let reopened_cert_db = open_train_rocksdb(&cert_db_path)?;
     let reopened_cert_count = count_cf(reopened_cert_db.as_ref(), CF_MEJEPA_TRAIN_CERTS)?;
     if reopened_cert_count != 2 {
-        return Err(format!("expected 2 persisted training certs after reopen, got {reopened_cert_count}").into());
+        return Err(format!(
+            "expected 2 persisted training certs after reopen, got {reopened_cert_count}"
+        )
+        .into());
     }
     let reopened_cert = read_cert(reopened_cert_db.as_ref(), 0)?;
     if reopened_cert.signal != signal {
@@ -303,10 +310,7 @@ fn count_cf(db: &DB, cf_name: &'static str) -> Result<usize, Box<dyn std::error:
     Ok(count)
 }
 
-fn read_cert(
-    db: &DB,
-    step: u64,
-) -> Result<TrainingCertificate, Box<dyn std::error::Error>> {
+fn read_cert(db: &DB, step: u64) -> Result<TrainingCertificate, Box<dyn std::error::Error>> {
     let cf = db
         .cf_handle(CF_MEJEPA_TRAIN_CERTS)
         .ok_or("missing CF_MEJEPA_TRAIN_CERTS")?;
@@ -321,7 +325,11 @@ fn read_cert(
     Ok(cert)
 }
 
-fn training_cert(step: u64, signal: LearningSignal, training_mode: Option<&str>) -> TrainingCertificate {
+fn training_cert(
+    step: u64,
+    signal: LearningSignal,
+    training_mode: Option<&str>,
+) -> TrainingCertificate {
     TrainingCertificate {
         step,
         epoch: 0,
@@ -463,7 +471,9 @@ fn edge_zero_multiplicative_gate(
     }))
 }
 
-fn edge_conflicting_state_transfer(db: &DB) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+fn edge_conflicting_state_transfer(
+    db: &DB,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let before_count = count_cf(db, CF_MEJEPA_TRAIN_CERTS)?;
     let result = compute_state_transfer(&[0.1], &[0.2, 0.3], DivergenceMetric::Wasserstein1, 0.5);
     let err = match result {

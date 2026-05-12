@@ -51,8 +51,8 @@ impl ConstellationStore {
         self.db
             .write_opt(batch, &durable_write_options())
             .map_err(|err| {
-            TctError::store("write_batch", CF_MEJEPA_CONSTELLATION, err.to_string())
-        })?;
+                TctError::store("write_batch", CF_MEJEPA_CONSTELLATION, err.to_string())
+            })?;
         durable_flush_cf(&self.db, CF_MEJEPA_CONSTELLATION)?;
         let raw = self
             .db
@@ -252,7 +252,10 @@ impl ConstellationStore {
         let mut matches = self.refresh_report_values_by_id(report_id)?;
         if matches.is_empty() {
             return Err(TctError::MissingCentroid {
-                detail: format!("no refresh report row for report {}", hex::encode(report_id)),
+                detail: format!(
+                    "no refresh report row for report {}",
+                    hex::encode(report_id)
+                ),
             });
         }
         if matches.len() > 1 {

@@ -113,7 +113,10 @@ impl LanguageSupportRecord {
         row_count: usize,
         chunk_count: usize,
     ) -> Result<Self, TctError> {
-        validate_nonzero_support(&format!("language_support/{language:?}/row_count"), row_count)?;
+        validate_nonzero_support(
+            &format!("language_support/{language:?}/row_count"),
+            row_count,
+        )?;
         validate_nonzero_support(
             &format!("language_support/{language:?}/chunk_count"),
             chunk_count,
@@ -627,8 +630,7 @@ impl ConstellationRefreshReport {
                 ),
             ));
         }
-        let oracle_row_total =
-            validate_oracle_outcome_support(&self.per_oracle_outcome_support)?;
+        let oracle_row_total = validate_oracle_outcome_support(&self.per_oracle_outcome_support)?;
         if oracle_row_total != self.source_row_count {
             return Err(TctError::invalid(
                 "refresh_report.per_oracle_outcome_support",
@@ -768,7 +770,10 @@ fn validate_category_support(items: &[CategorySupportRecord]) -> Result<(usize, 
             ));
         }
         validate_nonzero_support(
-            &format!("refresh_report.per_category_support/{:?}/row_count", item.mutation),
+            &format!(
+                "refresh_report.per_category_support/{:?}/row_count",
+                item.mutation
+            ),
             item.row_count,
         )?;
         validate_nonzero_support(
@@ -778,11 +783,7 @@ fn validate_category_support(items: &[CategorySupportRecord]) -> Result<(usize, 
             ),
             item.chunk_count,
         )?;
-        rows = add_support(
-            rows,
-            item.row_count,
-            "refresh_report.per_category_support",
-        )?;
+        rows = add_support(rows, item.row_count, "refresh_report.per_category_support")?;
         chunks = add_support(
             chunks,
             item.chunk_count,
@@ -811,7 +812,10 @@ fn validate_language_support(items: &[LanguageSupportRecord]) -> Result<(usize, 
             ));
         }
         validate_nonzero_support(
-            &format!("refresh_report.per_language_support/{:?}/row_count", item.language),
+            &format!(
+                "refresh_report.per_language_support/{:?}/row_count",
+                item.language
+            ),
             item.row_count,
         )?;
         validate_nonzero_support(
