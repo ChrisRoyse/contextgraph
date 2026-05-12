@@ -23,7 +23,6 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 context-graph-core = { path = "../context-graph-core" }
-context-graph-witness = { path = "../context-graph-witness" }
 tempfile = "3.10"
 
 [[example]]

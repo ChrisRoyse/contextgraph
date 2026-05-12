@@ -1320,7 +1320,6 @@ dependencies = [
  "context-graph-mejepa-cf",
  "context-graph-mejepa-embedders",
  "context-graph-mejepa-instruments",
- "context-graph-witness",
  "hex",
  "rocksdb",
  "serde",
