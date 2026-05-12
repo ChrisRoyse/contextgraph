@@ -4,6 +4,12 @@
 
 ---
 
+## 0. Product boundary
+
+All architecture arrows terminate in ME-JEPA. Claude Code and other agents are edit producers. Durable storage is the source of truth. The frozen instruments, DDA signals, TCT constellations, oracle outcomes, telemetry windows, and witness chains are the reward-signal substrate. The served product is `RealityPrediction`.
+
+Architecture review for this project is therefore simple: for every component, identify the trigger event, the durable source of truth it writes or reads, the ME-JEPA signal it improves, and the Q1-Q5 prediction surface it affects. If that chain cannot be named, the component is outside the core system unless a GitHub issue documents why it must remain.
+
 ## 1. Single end-to-end picture
 
 ```
@@ -98,8 +104,8 @@ The storage block now mixes shipped and remaining work. **CF_MEJEPA_AGENT_FEEDBA
 | Shift subscriber (Tokio task) | shipped (run via daemon mode) | `context-graph-mejepa-shift-subscriber` | tail shift-log → materialize panel → call observe()/predict() |
 | AST chunker (11 languages) | shipped | `context-graph-core::memory::ast` | typed Chunk { chunk_id, lang, kind } |
 | Embedder routing table | shipped (143 routes) | `context-graph-mejepa-embedders::routing` | per (Language, EntityType) → embedder set |
-| Per-embedder forward wrappers (neural) | partial (deterministic placeholders) | `context-graph-mejepa-embedders::forward` (proposed) | run actual model forward passes, not deterministic encoders |
-| DDA enrichment computation (N+N² signals) | partial | `CF_MEJEPA_DDA_SIGNALS` registered; production computation/consumption still planned | compute pairwise cosine + MI per chunk per shift |
+| Per-embedder forward wrappers (neural + algorithmic) | shipped Phase D substrate; production telemetry still gated | `context-graph-mejepa-embedders::{forward,pretrained,algorithmic}` | run SHA-pinned pretrained forwards for E1/E6/E7/E8/E10/E12/E13/E14 and algorithmic forwards for E2/E3/E4/E9 |
+| DDA enrichment computation (N+N² signals) | shipped compute/store/readback + live shift rows; trained-head consumption and weekly MI maintenance gated by [#15](https://github.com/ChrisRoyse/contextgraph/issues/15) | `context-graph-mejepa-train::dda`, `CF_MEJEPA_DDA_SIGNALS` | compute pairwise cosine + MI/blind-spot signals per chunk per shift and persist them before prediction side effects |
 | TCT constellation + Gτ guard | shipped | `context-graph-mejepa-tct` | per-(cat × ent × lang × emb) centroids; guard test |
 | 15 instrument slots → Panel(5120-d) | shipped; Python code semantic slots analyzer-backed | `context-graph-mejepa-instruments` | typed feature vectors; PanelBuilder with fail-closed dim; Python `E_AST`/`E_CFG`/`E_DataFlow`/`E_TypeGraph` use Ruff semantic facts and FSV readback |
 | Predictor trunk (6-layer transformer) | shipped | `context-graph-mejepa::predictor` | latent-space prediction of panel[t=2] |
@@ -114,7 +120,7 @@ The storage block now mixes shipped and remaining work. **CF_MEJEPA_AGENT_FEEDBA
 | Active-learning queue surfacing | shipped | `context-graph-mejepa::eval::queue` | when conformal interval > T or surprise recorded |
 | Weekly evaluation report writer | shipped | `context-graph-mejepa::eval::report` | per-(category × language) stratified ship-gate report |
 | Witness chain + Stage 0/F/Merkle certs | shipped | `context-graph-witness` | cryptographic provenance of every step |
-| Per-step training certificate | shipped | `context-graph-mejepa-train::cert` | hash-chained ΔP/ΔK/ΔΩ/ΔΞ + L_step per step |
+| Per-step training certificate | shipped carrier; full doc-11 formula reconciliation open in [#13](https://github.com/ChrisRoyse/contextgraph/issues/13) | `context-graph-mejepa-train::cert` | hash-chained ΔP/ΔK/ΔΩ/ΔΞ + L_step per step |
 
 ---
 
@@ -425,15 +431,16 @@ The result: in a session-week of normal Claude Code usage, ME-JEPA accumulates r
 
 Implementing this architecture means delivering, in order:
 
-1. **Daemon mode for the MCP server** that runs the shift subscriber + continuous self-optimization scheduler + nightly GC scheduler as supervised tokio tasks.
-2. **Multi-head extensions to the predictor** with the head taxonomy in §3.
-3. **`mejepa_record_agent_feedback` MCP tool** + `CF_MEJEPA_AGENT_FEEDBACK` + sampling-weight bump wiring.
-4. **`CF_MEJEPA_DDA_SIGNALS` + `CF_MEJEPA_FAILURE_EXEMPLARS`** for the multi-head label substrate.
-5. **Prediction-injection hook** so that `RealityPrediction` is rendered into UserPromptSubmit context for the agent.
-6. **Neural per-embedder forward wrappers** (replacing deterministic placeholders) per [#3](https://github.com/ChrisRoyse/contextgraph/issues/3).
-7. **Per-language mutation operators** so the corpus covers all 11 languages, not just Python, per [#7](https://github.com/ChrisRoyse/contextgraph/issues/7).
-8. **Full 300×8 corpus run** so the predictor trains on a real corpus, per [#5](https://github.com/ChrisRoyse/contextgraph/issues/5).
-9. **Production rolling-window holdout evaluation** that drives the ship-gate ≥ 0.95 metric, per [#5](https://github.com/ChrisRoyse/contextgraph/issues/5) + [#11](https://github.com/ChrisRoyse/contextgraph/issues/11).
-10. **The refactored `.claude/loop.md`** that aligns the per-tick agent behavior with this architecture (Mode A becomes "ship a futurebuild deliverable"; the dual-mode A/B split is retired).
+1. **Daemon mode for the MCP server** that runs the shift subscriber + continuous self-optimization scheduler + nightly GC scheduler as supervised tokio tasks. Shipped at code/FSV level.
+2. **Multi-head extensions to the predictor** with the head taxonomy in §3. Shipped at schema/API/code level; production model-quality hardening remains under the Phase A-D gate.
+3. **`mejepa_record_agent_feedback` MCP tool** + `CF_MEJEPA_AGENT_FEEDBACK` + sampling-weight bump wiring. Shipped.
+4. **`CF_MEJEPA_DDA_SIGNALS` + `CF_MEJEPA_FAILURE_EXEMPLARS`** for the multi-head label substrate. Shipped; DDA rows are persisted and read back.
+5. **Prediction-injection hook** so that `RealityPrediction` is rendered into UserPromptSubmit context for the agent. Shipped.
+6. **Neural and algorithmic per-embedder forward wrappers** replacing placeholder-only paths. Shipped for the 12 active content slots with full routing/readback FSV.
+7. **Per-language mutation operators** so the corpus covers all 11 languages, not just Python. Shipped for the 10 non-Python fixture languages plus the Python SWE-bench Lite 300x8 corpus.
+8. **Full 300×8 corpus run and rolling holdout FSV** so the predictor trains against real durable reality. The evidence exists; the measured ship gate is not green yet, so Phase E remains blocked by [#15](https://github.com/ChrisRoyse/contextgraph/issues/15).
+9. **Production rolling-window telemetry** for conformal coverage, OOD, p50/p99, VRAM, and ship-gate trends, per [#11](https://github.com/ChrisRoyse/contextgraph/issues/11).
+10. **UTML carrier reconciliation** so training certs prove the production formulas they claim, per [#13](https://github.com/ChrisRoyse/contextgraph/issues/13).
+11. **The refactored `.claude/loop.md`** that aligns the per-tick agent behavior with this architecture (Mode A becomes "ship a futurebuild deliverable"; the dual-mode A/B split is retired).
 
 The implementation phasing for these is in [`12_IMPLEMENTATION_PHASES.md`](12_IMPLEMENTATION_PHASES.md). The atomic task graph is in [`13_TASK_INDEX.md`](13_TASK_INDEX.md). The new loop.md content is in [`14_NEW_LOOP_MD.md`](14_NEW_LOOP_MD.md).

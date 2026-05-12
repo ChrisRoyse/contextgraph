@@ -1,7 +1,7 @@
 # SPEC-FLYWHEEL — Functional Specification
 
 > **Level 2 (functional spec)** per `prdtospec.md`. Defines WHAT the data flywheel must do.
-> Owns: REQ-FLYWHEEL-01..15.
+> Owns: REQ-FLYWHEEL-01..16.
 > Implementation reference: [`07_TRAINING_DATA_FLYWHEEL.md`](../../07_TRAINING_DATA_FLYWHEEL.md).
 
 **Status snapshot (2026-05-12):** daemon mode, D-root validation, scheduler skeleton, test-outcome capture, oracle binding, new CFs, `AgentSurprise`, and surprise sampling-weight wiring are code/FSV-shipped. Weekly production eval, full scheduler policy, and fresh-host operator enablement remain open.
@@ -84,6 +84,17 @@ Every observe() call SHALL write a per-step training cert with a `parent_witness
 
 The daemon SHALL ship with a systemd unit template at `scripts/systemd/mejepa-daemon.service` (operator-installable via `systemctl --user enable mejepa-daemon`).
 
+### REQ-FLYWHEEL-16 — ME-JEPA reward-signal completeness
+
+Every flywheel event SHALL be evaluated as ME-JEPA training or verification signal before it is considered successfully captured. The implementation SHALL persist enough source-of-truth data to reconstruct:
+
+- the trigger event: edit/write/test/feedback/operator action plus session id and before/after SHA when applicable;
+- the process surface: AST chunk ids, active embedders, DDA row keys, TCT cell keys, panel id, prediction id, and witness hash;
+- the outcome surface: oracle result, static-analysis delta, runtime/resource delta, agent feedback, active-learning entry, or a fail-closed diagnostic;
+- the ME-JEPA consumer: predictor head, calibration window, replay weight, drift detector, TCT refresh, or training certificate affected by the event.
+
+If an event cannot be connected to a ME-JEPA consumer, the system SHALL either reject it with a typed diagnostic or file a tracked design gap; it SHALL NOT silently treat unconnected telemetry as complete.
+
 ## Acceptance criteria (functional FSV)
 
 1. `cargo run --release -p context-graph-mcp -- --daemon --d-root /mnt/d/contextgraph` starts; pid file at `/mnt/d/contextgraph/state/locks/context-graph-daemon.pid` exists.
@@ -92,6 +103,7 @@ The daemon SHALL ship with a systemd unit template at `scripts/systemd/mejepa-da
 4. Editing a tracked file → shift-log line lands in `/mnt/d/contextgraph/runtime/cgreality-shift-log/<session>.jsonl` within 100ms; subscriber consumes within 250ms; panel materialized; prediction persisted.
 5. Running `pytest tests/test_X.py::test_Y` → test-outcome capture hook writes `TestOutcomeEvent` to `CF_MEJEPA_ORACLE_VERDICTS`; observe_tick binds it to the most recent prediction; training cert written.
 6. Calling `mejepa_record_agent_feedback` with `severity=Medium` → `SurpriseEvent` persisted to `CF_MEJEPA_AGENT_FEEDBACK`; queue length increments; sampling-weight multiplier on affected chunks = `1 + 2*0.5 = 2.0` for next epoch.
+7. Capturing any flywheel event writes a `RealitySignalEnvelope` or equivalent durable record; FSV reopens the source of truth and proves trigger/process/outcome/consumer fields are present and non-empty.
 
 ## Edge cases
 
@@ -100,6 +112,7 @@ The daemon SHALL ship with a systemd unit template at `scripts/systemd/mejepa-da
 - **Test outcome arrives for a prediction that no longer exists in `CF_MEJEPA_LIVE_PREDICTIONS`** (TTL'd out): observe binding fails closed with a late-oracle diagnostic; no unlabeled attribution is synthesized.
 - **Disk full during shift-log append**: hook fails closed with `CCREALITY_HOOK_DISK_FULL` and writes a diagnostic; no successful capture is claimed.
 - **Subscriber processing N shifts > 60s**: lag alert fires; if persistent, daemon records backpressure diagnostics and operator-visible alert.
+- **Event has no ME-JEPA consumer**: capture fails closed with a typed diagnostic naming the missing consumer; no orphan success row is written.
 
 ## Non-functional requirements
 

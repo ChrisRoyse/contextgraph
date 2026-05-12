@@ -20,7 +20,13 @@ pub struct ProductionTelemetryWindow {
     pub conformal_ece: f32,
     pub ood_auc: f32,
     pub gtau_pass_rate: f32,
+    pub prediction_oracle_agreement: f32,
+    pub ship_gate_target: f32,
+    pub ship_gate_passed: bool,
     pub latency: LatencyTelemetry,
+    pub vram_free_bytes: u64,
+    pub vram_total_bytes: u64,
+    pub vram_required_bytes: u64,
     pub source: String,
 }
 
@@ -53,7 +59,52 @@ impl ProductionTelemetryWindow {
         validate_unit("conformal_ece", self.conformal_ece)?;
         validate_unit("ood_auc", self.ood_auc)?;
         validate_unit("gtau_pass_rate", self.gtau_pass_rate)?;
+        validate_unit(
+            "prediction_oracle_agreement",
+            self.prediction_oracle_agreement,
+        )?;
+        validate_unit("ship_gate_target", self.ship_gate_target)?;
+        let computed_ship_gate_passed = self.prediction_oracle_agreement >= self.ship_gate_target;
+        if self.ship_gate_passed != computed_ship_gate_passed {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!(
+                    "production telemetry ship_gate_passed={} contradicts prediction_oracle_agreement={} and ship_gate_target={}",
+                    self.ship_gate_passed, self.prediction_oracle_agreement, self.ship_gate_target
+                ),
+            ));
+        }
         self.latency.validate()?;
+        if self.vram_total_bytes == 0 {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "production telemetry vram_total_bytes must be greater than zero",
+            ));
+        }
+        if self.vram_required_bytes == 0 {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "production telemetry vram_required_bytes must be greater than zero",
+            ));
+        }
+        if self.vram_free_bytes > self.vram_total_bytes {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!(
+                    "production telemetry vram_free_bytes {} exceeds total {}",
+                    self.vram_free_bytes, self.vram_total_bytes
+                ),
+            ));
+        }
+        if self.vram_required_bytes > self.vram_total_bytes {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!(
+                    "production telemetry vram_required_bytes {} exceeds total {}",
+                    self.vram_required_bytes, self.vram_total_bytes
+                ),
+            ));
+        }
         if self.source.trim().is_empty() {
             return Err(EvalError::new(
                 EvalErrorCode::InvalidInput,

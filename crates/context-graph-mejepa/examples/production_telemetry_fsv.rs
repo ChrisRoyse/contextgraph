@@ -77,6 +77,31 @@ fn main() -> FsvResult<()> {
             },
             "MEJEPA_EVAL_INVALID_INPUT",
         )?,
+        edge_case(
+            db.as_ref(),
+            &store,
+            "edge_ship_gate_flag_contradiction",
+            ProductionTelemetryWindow {
+                window_id: "edge-ship-gate-contradiction".to_string(),
+                prediction_oracle_agreement: 0.80,
+                ship_gate_target: 0.95,
+                ship_gate_passed: true,
+                ..happy_window("edge-ship-gate-contradiction")
+            },
+            "MEJEPA_EVAL_INVALID_INPUT",
+        )?,
+        edge_case(
+            db.as_ref(),
+            &store,
+            "edge_vram_free_exceeds_total",
+            ProductionTelemetryWindow {
+                window_id: "edge-vram-free-exceeds-total".to_string(),
+                vram_free_bytes: 35_000_000_000,
+                vram_total_bytes: 34_190_458_880,
+                ..happy_window("edge-vram-free-exceeds-total")
+            },
+            "MEJEPA_EVAL_INVALID_INPUT",
+        )?,
     ];
     let cf = db
         .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY)
@@ -133,12 +158,18 @@ fn happy_window(window_id: &str) -> ProductionTelemetryWindow {
         conformal_ece: 0.021,
         ood_auc: 0.932,
         gtau_pass_rate: 0.997,
+        prediction_oracle_agreement: 0.966,
+        ship_gate_target: 0.95,
+        ship_gate_passed: true,
         latency: LatencyTelemetry {
             p50_ms: 8.4,
             p95_ms: 18.2,
             p99_ms: 31.7,
             max_ms: 44.0,
         },
+        vram_free_bytes: 32_429_309_952,
+        vram_total_bytes: 34_190_458_880,
+        vram_required_bytes: 19_327_352_832,
         source: "production_eval_window".to_string(),
     }
 }

@@ -8,10 +8,24 @@
 
 **Date authored:** 2026-05-10
 **Date revised:** 2026-05-12 — Phase B code/FSV status reconciled; Phase C corpus expansion completed and verified.
-**Status:** active blueprint — Phase A, the Phase B prediction/API/schema carrier, and Phase C corpus expansion are code/FSV-shipped; remaining work is production hardening, trained quality gates, neural/DDA enrichment, and autonomous policy.
+**Status:** active blueprint — Phase A, the Phase B prediction/API/schema carrier, Phase C corpus expansion, and the Phase D enrichment substrate are code/FSV-shipped; Phase E remains blocked by the Phase A-D readiness gate ([#15](https://github.com/ChrisRoyse/contextgraph/issues/15)) until the remaining analyzer, production telemetry, and UTML-carrier gaps are closed with source-of-truth evidence.
 **Scope:** absorbs `09`, `10`, `11`, `12`, `13`, `14`, `15`, `16` from `docs/ruvectorfindings/`; refactors `.claude/loop.md`; deletes the inner-loop residue per the operator directive.
 
 ---
+
+## North star invariant
+
+ME-JEPA-Code is the product. LLM agents are untrusted edit producers; hooks, MCP tools, AST chunks, corpora, embedders, DDA, TCT, telemetry, and docs exist only to train, calibrate, serve, or audit ME-JEPA's `RealityPrediction`.
+
+Every futurebuild task must satisfy at least one of these roles:
+
+1. capture a durable reality event from bytes on disk, tool output, oracle result, operator feedback, or agent surprise;
+2. transform that event into a frozen-instrument target, DDA signal, TCT constellation cell, calibration window, or training certificate;
+3. train, regularize, calibrate, evaluate, or promote the ME-JEPA predictor;
+4. serve the Q1-Q5 `RealityPrediction` surface to an AI agent or operator;
+5. feed prediction error, drift, or surprise back into replay, active learning, or self-healing.
+
+Anything outside those roles is either support tooling with a named source-of-truth readback, or it should be cut or tracked as a design exception.
 
 ## Reading order
 

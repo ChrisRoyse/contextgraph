@@ -20,6 +20,21 @@ Per the closed-loop architecture in [`03_ARCHITECTURE_BLUEPRINT.md §4`](03_ARCH
 
 **No new channels are needed.** All five exist in the shipped substrate. The flywheel is the orchestration that ensures they all flow continuously.
 
+## 1.1 Reward signal completeness contract
+
+The flywheel's job is to capture teleological constellations: the durable relationship between an intended code change, the structures it touched, the instruments that observed it, the oracle outcomes it caused, and the ways ME-JEPA's prediction was right or wrong. Every captured event must be usable as ME-JEPA training data or as evidence that a needed signal is missing.
+
+For each event, the implementation must name and verify:
+
+| Stage | Required evidence |
+|---|---|
+| Trigger | edit/write/test/feedback/operator event id, timestamp, session id, and before/after SHA when code changed |
+| Process | AST chunks, active embedders, DDA rows, TCT cells, panel id, prediction id, and witness hash |
+| Outcome | oracle result, static-analysis delta, runtime/resource delta, agent feedback, active-learning entry, or explicit fail-closed diagnostic |
+| Source of truth | RocksDB CF row, D-backed JSONL/file, witness-chain entry, or model artifact manifest read back independently after write |
+
+The source-of-truth rule is non-negotiable: if the output should be durable, FSV must reopen or independently read the durable artifact and prove the expected row or file exists with the expected content. A successful return value is not enough.
+
 ---
 
 ## 2. The flywheel components
@@ -95,9 +110,9 @@ Plus, on the operator side:
 | Shift-log JSONL writer | YES | `crates/context-graph-mcp` |
 | Shift subscriber | YES (crate + daemon task) | `crates/context-graph-mejepa-shift-subscriber`; daemon task wiring in `crates/context-graph-mcp/src/daemon.rs` |
 | AST chunker | YES (11 langs) | `crates/context-graph-core::memory::ast` |
-| Embedder forward (deterministic) | YES placeholders | `crates/context-graph-mejepa-embedders` |
-| Embedder forward (neural) | partial | `EmbedderForward`/`PretrainedEmbedderForward` exists for E1/E6/E7/E8/E10/E12/E13/E14 with E10 FSV; remaining work is full model-artifact FSV/cache/integration |
-| DDA signal computation | partial | CF substrate exists; production computation/consumption remains Phase D — see `04_DDA_TCT_CODE_ENRICHMENT.md` |
+| Embedder forward (algorithmic) | YES | `AlgorithmicEmbedderForward` for E2/E3/E4/E9, with Phase D FSV readback |
+| Embedder forward (pretrained neural) | YES substrate | `EmbedderForward`/`PretrainedEmbedderForward` for E1/E6/E7/E8/E10/E12/E13/E14 with SHA-pinned artifact/routing FSV; production daemon telemetry remains under [#11](https://github.com/ChrisRoyse/contextgraph/issues/11) / [#15](https://github.com/ChrisRoyse/contextgraph/issues/15) |
+| DDA signal computation | YES substrate | `compute_dda_signals`, `persist_dda_signals`, readback, live shift rows, and `CF_MEJEPA_DDA_SIGNALS`; trained-head feature consumption and weekly MI maintenance remain gated by [#15](https://github.com/ChrisRoyse/contextgraph/issues/15) |
 | PanelBuilder | YES | `crates/context-graph-mejepa-instruments` |
 | Embedder-backed instrument heads | partial | `EmbedderBackedInstrumentHead` exists for code/text/trace semantic slots; Python code-slot analyzer feeds now use Ruff semantic facts with Ruff/Pyright/py_compile FSV at `/mnt/d/contextgraph/fsv/contextgraph-python-semantic-analyzers-fsv/python-semantic-analyzers-evidence.json`; production shift→panel neural-vector integration and non-Python analyzer parity remain |
 | Continuous self-optim scheduler | YES (Phase A skeleton) | `crates/context-graph-mejepa::heal::{scheduler,scheduler_state}`; full autonomy remains Phase E |
@@ -114,7 +129,7 @@ Plus, on the operator side:
 | MCP daemon mode (the supervised-process container) | YES (code + template + FSV) | `--daemon-server-only --d-root`; supervisor in `crates/context-graph-mcp/src/daemon.rs`; durable `CF_MEJEPA_FLYWHEEL_JOB_RUNS`; `scripts/systemd/mejepa-daemon.service`; fresh-host operator install/runbook remains |
 | Weekly evaluation cron | partial (daemon scheduler FSV exists) | weekly daemon task runs holdout eval, writes reports/status, and records job-run rows; missing populated production holdout feed + operator dashboard/runbook |
 
-**The unshipped pieces are production hardening and model-quality work, not new architecture:** real DDA/neural signal flow, full self-optimization policy, weekly production evaluation, per-head holdout gates, and operator packaging.
+**The unshipped pieces are production hardening and model-quality work, not new architecture:** analyzer parity, live production telemetry windows, full self-optimization policy, weekly production evaluation, per-head holdout gates, UTML carrier reconciliation, and operator packaging.
 
 ---
 

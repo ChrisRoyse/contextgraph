@@ -218,7 +218,7 @@ Per `docs/ruvectorfindings/specs/_README.md`, this is shipped as `mejepa_constel
 - 1,008 `(mutation, entity_type, language, embedder)` centroid-support cells with shrinkage origin and sample counts.
 - reward-signal summary (`estimated_reward_scalar_count=244266`) and operator-visible rejected chunk diagnostics (`inspected=2`, `rejected=1`, `violating_embedder_count=1`, finite worst margin).
 
-FSV readback: `/mnt/d/contextgraph/fsv/contextgraph-mejepa-tct-refresh-fsv/tct-centroid-refresh-evidence.json` (`passes=true`, SHA-256 `1af684d98dbab40f5d13b0974029104d056ce9025bbb8fd20b5e3754445bfcfe`). Edge cases for empty cell support, category-support mismatch, tampered report id, and zero report limit fail closed without increasing the refresh-report row count.
+FSV readback: `/mnt/d/contextgraph/fsv/contextgraph-mejepa-tct-refresh-fsv/tct-centroid-refresh-evidence.json` (`passes=true`, SHA-256 `e9dd03b6ad345632e1ec9a798dea78aaf4d3d5f12181b55636e80a6e32ca270a`). Edge cases for empty cell support, category-support mismatch, tampered report id, and zero report limit fail closed without increasing the refresh-report row count.
 
 ---
 

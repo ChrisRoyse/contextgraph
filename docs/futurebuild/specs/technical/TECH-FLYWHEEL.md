@@ -121,6 +121,42 @@ pub struct TestOutcomeEvent {
 pub enum TestOutcome { Pass, Fail, Error, Skip }
 ```
 
+### `RealitySignalEnvelope`
+
+`RealitySignalEnvelope` is the cross-channel audit envelope for `REQ-FLYWHEEL-16`. It prevents a capture path from claiming success unless the event is connected to ME-JEPA's training, calibration, evaluation, or serving surface.
+
+```rust
+pub struct RealitySignalEnvelope {
+    pub event_id: String,
+    pub event_kind: RealityEventKind,
+    pub session_id: String,
+    pub repo_before_sha: Option<String>,
+    pub repo_after_sha: Option<String>,
+    pub trigger_ref: String,
+    pub ast_chunk_ids: Vec<String>,
+    pub active_embedder_ids: Vec<String>,
+    pub dda_row_keys: Vec<String>,
+    pub tct_cell_keys: Vec<String>,
+    pub panel_id: Option<String>,
+    pub prediction_id: Option<String>,
+    pub outcome_refs: Vec<String>,
+    pub mejepa_consumers: Vec<MeJepaConsumer>,
+    pub witness_hash: String,
+}
+
+pub enum RealityEventKind { Edit, Write, TestOutcome, AgentFeedback, OperatorOverride, StaticAnalysis, RuntimeTelemetry }
+pub enum MeJepaConsumer { PredictorHead(String), CalibrationWindow, ReplayWeight, DriftDetector, TctRefresh, TrainingCertificate, ActiveLearningQueue }
+```
+
+Validation rules:
+
+- `event_id`, `session_id`, `trigger_ref`, `witness_hash`, and `mejepa_consumers` are required.
+- code-changing events require `repo_before_sha`, `repo_after_sha`, and at least one `ast_chunk_id`;
+- prediction-producing events require `panel_id` and `prediction_id`;
+- DDA/TCT-bearing events require at least one `dda_row_key` or `tct_cell_key`;
+- oracle, feedback, static-analysis, runtime, and operator events require at least one `outcome_ref`;
+- unknown or empty consumers fail closed with `MEJEPA_REALITY_SIGNAL_UNCONNECTED`.
+
 ---
 
 ## Daemon main loop pseudocode

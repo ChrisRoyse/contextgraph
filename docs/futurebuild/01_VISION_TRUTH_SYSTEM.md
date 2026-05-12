@@ -12,6 +12,18 @@ Every AI coding agent today (Claude Code, Cursor, Copilot, Devin, the swarm-of-a
 
 **Human review of AI-produced code is unjustified the moment a system can predict — to a calibrated, auditable certainty — what the deterministic reality oracle would say if the code were actually run.** That predictive system is ME-JEPA-Code. When it stably reaches `prediction_oracle_correlation ≥ 0.95` across all 8 mutation categories AND all supported languages on rolling-window holdout, the verifier *is* the system. Humans become spot-checkers of the verifier-of-the-verifier.
 
+## 2.1 Product boundary
+
+ME-JEPA is the system under construction. The LLM is not trusted, trained, or used as the verifier; it is only an edit generator and a source of claims that ME-JEPA can accept, reject, or learn from. MCP tools are the serving surface. Hooks are the capture surface. AST/DDA/TCT/corpus/telemetry are reward-signal machinery. The only acceptable end product is a predictor that answers, from durable reality, whether a code change exists, works, fails, has hidden risks, and changes reality in the intended direction.
+
+That means the project optimizes for **reality-prediction accuracy**, not agent fluency. A feature belongs in the architecture only if it increases at least one of:
+
+- the number of durable reality events captured;
+- the semantic density of frozen target panels, DDA features, or TCT constellations;
+- the calibration, coverage, or OOD reliability of `RealityPrediction`;
+- the speed at which prediction mistakes become replay weight, active-learning entries, or self-healing actions;
+- the operator's ability to prove, by source-of-truth readback, that ME-JEPA is functioning as claimed.
+
 ## 3. What ME-JEPA must answer for any agent action
 
 The truth system answers more than pass/fail. Even when oracle prediction is **Pass**, ME-JEPA must surface every other identifiable concern about the change — edge cases the tests do not exercise, latent bugs the change introduces, performance regressions, security-relevant deltas, dead code created or amplified, redundancy with existing code, and cost/efficiency degradations. **The system predicts every issue it can predict, every time it predicts at all.** The full taxonomy of prediction heads is in [`15_PREDICTION_TAXONOMY.md`](15_PREDICTION_TAXONOMY.md); the four operator questions below are how each prediction is anchored to a verifiable reality channel.
@@ -25,6 +37,33 @@ The truth system answers more than pass/fail. Even when oracle prediction is **P
 | **Q5** | How is it actually **IMPACTING REALITY**? | The shift log is replayed against the predicted side-effect set: which files changed, which tests would have flipped, which static-analysis warnings would have appeared. Predicted side-effect deltas are diffed against observed shifts and surfaced as a `RealityImpact` summary the agent can be re-prompted with |
 
 These five questions cover the entire surface of "what the AI did and what's wrong with it." Anything an AI agent could lie about, miss, or be confused about reduces to one of Q1–Q5. **The agent never gets back only "looks fine" — it gets back a structured list of every concern ME-JEPA can identify, ranked by predicted severity, every single time.**
+
+## 3.1 Durable reality tuple
+
+The atomic training and verification unit is:
+
+```
+RealityEvent = {
+  agent_claim,
+  repo_before_sha,
+  repo_after_sha,
+  patch,
+  affected_ast_chunks,
+  frozen_instrument_panel,
+  dda_signals,
+  tct_constellation_cells,
+  oracle_outcomes,
+  static_analysis_deltas,
+  runtime_and_resource_deltas,
+  agent_feedback,
+  operator_override,
+  witness_chain_hash
+}
+```
+
+Every field is either physically observed or absent. Missing source-of-truth data is a fail-closed diagnostic, not a default label. No synthetic pass/fail label can satisfy a ship gate. Synthetic inputs are allowed only for manual FSV when the expected output is known and the persisted result is independently read back.
+
+The reward target is teleological: what changed, what purpose it served, what deterministic oracle observed, what side effects appeared, and where ME-JEPA's prediction diverged from durable reality. Teleological constellations are the compressed geometry of those purpose/outcome relationships; they must cover all observed `(mutation_category, language, entity_family, embedder, chunk_type)` cells that reality actually emits.
 
 ## 4. The architectural property that makes this possible
 
