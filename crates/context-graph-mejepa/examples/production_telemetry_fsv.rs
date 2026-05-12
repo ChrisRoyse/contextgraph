@@ -78,8 +78,27 @@ fn main() -> FsvResult<()> {
             "MEJEPA_EVAL_INVALID_INPUT",
         )?,
     ];
+    let cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY)
+        .ok_or("missing production telemetry column family")?;
+    db.flush_cf(cf)?;
+    drop(store);
+    drop(db);
+
+    let reopened_db = open_infer_rocksdb(&db_path)?;
+    let reopened_store = RocksDbEvalStore::new(reopened_db.clone())?;
+    let reopened_loaded = reopened_store
+        .load_production_telemetry(&window.window_id)?
+        .ok_or("production telemetry readback missing after reopen")?;
+    require(
+        "reopened telemetry equals persisted value",
+        reopened_loaded == window,
+    )?;
+    let reopened_state = physical_state(reopened_db.as_ref(), &reopened_store, &window.window_id)?;
 
     let evidence = json!({
+        "all_passed": true,
+        "passes": true,
         "source_of_truth": {
             "rocksdb_path": db_path,
             "column_family": context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY,
@@ -91,10 +110,11 @@ fn main() -> FsvResult<()> {
             "trigger": "RocksDbEvalStore::persist_production_telemetry",
             "after_state": after,
             "loaded_readback": loaded,
+            "reopened_state": reopened_state,
+            "reopened_loaded_readback": reopened_loaded,
             "passes": true,
         },
         "edge_cases": edge_cases,
-        "passes": true,
     });
     let evidence_path = root.join("production-telemetry-evidence.json");
     write_json_checked(&evidence_path, &evidence)?;

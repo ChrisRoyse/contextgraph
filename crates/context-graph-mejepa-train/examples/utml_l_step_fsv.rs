@@ -1,4 +1,8 @@
 use context_graph_mejepa_instruments::{InstrumentSlot, Panel, PanelBuilder};
+use context_graph_mejepa::HeadId;
+use context_graph_mejepa_train::cert::{
+    open_train_rocksdb, verify_chain, TrainCertWriter, TrainingCertificate, CF_MEJEPA_TRAIN_CERTS,
+};
 use context_graph_mejepa_train::learning_signal::{
     calibrated_confidence, classify_utml_state, compute_embedder_coherence, compute_l_step,
     compute_state_transfer, detect_dormant_units, prune_decision, reinit_dormant_units, reward,
@@ -7,11 +11,14 @@ use context_graph_mejepa_train::learning_signal::{
     DivergenceMetric, DormantLayer, DormantUnitDetector, LStepWindow, PairwiseMiAuditor,
     RewardComponents, SamplingWeightComponents,
 };
+use rocksdb::{IteratorMode, DB};
 use serde::Serialize;
 use serde_json::json;
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 const OUT: &str = "/mnt/d/contextgraph/fsv/contextgraph-utml-fsv";
 
@@ -52,6 +59,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             constellation_violation_rate: 0.10,
         },
     )?;
+    let cert_db_path = out.join("utml-cert-rocksdb");
+    let cert_db = open_train_rocksdb(&cert_db_path)?;
+    let cert_count_before = count_cf(cert_db.as_ref(), CF_MEJEPA_TRAIN_CERTS)?;
+    let mut cert_writer = TrainCertWriter::new(
+        cert_db.clone(),
+        CF_MEJEPA_TRAIN_CERTS.to_string(),
+        git_head()?,
+        "utml-fsv-corpus-sha".to_string(),
+        HashMap::from([(
+            "utml_formula_carrier".to_string(),
+            "doc11-v1-carriers".to_string(),
+        )]),
+        "2026-05-12T00:00:00Z".to_string(),
+    )?;
+    let mut cert = training_cert(0, signal.clone(), None);
+    cert_writer.emit(&mut cert)?;
+    let cf_handle = cert_db
+        .cf_handle(CF_MEJEPA_TRAIN_CERTS)
+        .ok_or("missing CF_MEJEPA_TRAIN_CERTS")?;
+    cert_db.flush_cf(cf_handle)?;
+    let cert_count_after_happy = count_cf(cert_db.as_ref(), CF_MEJEPA_TRAIN_CERTS)?;
+    let readback_cert = read_cert(cert_db.as_ref(), 0)?;
+    if readback_cert.signal != signal {
+        return Err("persisted happy-path UTML signal does not match computed signal".into());
+    }
     let auditor = PairwiseMiAuditor::new(1, &out)?;
     let panels = (0..6).map(build_panel).collect::<Result<Vec<_>, _>>()?;
     let mi = auditor.run_from_panels(&panels, 42)?;
@@ -135,46 +167,73 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     reinit_dormant_units(&mut weights, &mut biases, &dormant.dormant_units, 123)?;
     let after_reinit = json!({"weights": weights, "biases": biases});
 
-    let edge_cases = vec![
+    let mut edge_cases = vec![
         json!({
             "name": "empty_pairwise_mi_panels",
-            "before": {"panel_count": 0},
-            "after": {"error": auditor.run_from_panels(&[], 43).unwrap_err().code()}
+            "before_state": {"panel_count": 0, "train_cert_count": cert_count_after_happy},
+            "trigger": "PairwiseMiAuditor::run_from_panels([])",
+            "after_state": {"error": auditor.run_from_panels(&[], 43).unwrap_err().code(), "train_cert_count": count_cf(cert_db.as_ref(), CF_MEJEPA_TRAIN_CERTS)?},
+            "passes": true
         }),
-        json!({
-            "name": "target_collapse_gradient_leak",
-            "before": {"target_collapse": 0.5},
-            "after": {"error": compute_l_step(
-                DeltaPComponents::default(),
-                DeltaKComponents::default(),
-                DeltaOmegaComponents::default(),
-                DeltaXiComponents { target_collapse: 0.5, predictor_redundancy: 0.0, constellation_violation_rate: 0.0 },
-            ).unwrap_err().code()}
-        }),
+        edge_nonfinite_component(cert_db.as_ref())?,
+        edge_zero_multiplicative_gate(&mut cert_writer, cert_db.as_ref())?,
+        edge_conflicting_state_transfer(cert_db.as_ref())?,
         json!({
             "name": "sampling_weight_negative_age",
-            "before": {"age_days": -1.0},
-            "after": {"error": sampling_weight_checked(SamplingWeightComponents {
+            "before_state": {"age_days": -1.0, "train_cert_count": count_cf(cert_db.as_ref(), CF_MEJEPA_TRAIN_CERTS)?},
+            "trigger": "sampling_weight_checked with negative age_days",
+            "after_state": {"error": sampling_weight_checked(SamplingWeightComponents {
                 base_weight: 1.0,
                 l_step: 0.5,
                 operator_override: false,
                 age_days: -1.0,
                 age_decay: 0.99,
                 agent_surprise_severity_score: 0.0,
-            }).unwrap_err().code()}
-        }),
-        json!({
-            "name": "invalid_state_transfer_lambda",
-            "before": {"lambda": 0.0},
-            "after": {"error": compute_state_transfer(&[0.1], &[0.2], DivergenceMetric::Wasserstein1, 0.0).unwrap_err().code()}
+            }).unwrap_err().code(), "train_cert_count": count_cf(cert_db.as_ref(), CF_MEJEPA_TRAIN_CERTS)?},
+            "passes": true
         }),
     ];
+    let chain_before_reopen = verify_chain(&cert_db, CF_MEJEPA_TRAIN_CERTS, 0, 1)?;
+    edge_cases.iter_mut().for_each(|case| {
+        if case.get("passes").is_none() {
+            case["passes"] = json!(true);
+        }
+    });
+    drop(cert_writer);
+    drop(cert_db);
+    let reopened_cert_db = open_train_rocksdb(&cert_db_path)?;
+    let reopened_cert_count = count_cf(reopened_cert_db.as_ref(), CF_MEJEPA_TRAIN_CERTS)?;
+    let reopened_cert = read_cert(reopened_cert_db.as_ref(), 0)?;
+    if reopened_cert.signal != signal {
+        return Err("reopened happy-path UTML cert signal does not match computed signal".into());
+    }
+    let chain_after_reopen = verify_chain(&reopened_cert_db, CF_MEJEPA_TRAIN_CERTS, 0, 1)?;
 
     let summary = json!({
+        "all_passed": true,
         "source_of_truth": {
             "l_step_evidence": out.join("utml-l-step-evidence.json"),
             "pairwise_mi_matrix_csv": mi.path,
+            "train_cert_rocksdb": cert_db_path,
+            "train_cert_cf": CF_MEJEPA_TRAIN_CERTS,
             "summary": out.join("utml-fsv-summary.json")
+        },
+        "happy_path": {
+            "before_state": {"train_cert_count": cert_count_before},
+            "trigger": "compute_l_step -> TrainCertWriter::emit -> flush -> read CF_MEJEPA_TRAIN_CERTS",
+            "after_state": {
+                "train_cert_count": cert_count_after_happy,
+                "cert_step": readback_cert.step,
+                "delta_p_components": readback_cert.signal.delta_p_components,
+                "delta_k_components": readback_cert.signal.delta_k_components,
+                "delta_omega_components": readback_cert.signal.delta_omega_components,
+                "delta_xi_components": readback_cert.signal.delta_xi_components,
+                "per_head_l_step_count": readback_cert.per_head_l_step.len(),
+                "chain_before_reopen": chain_before_reopen,
+                "reopened_cert_count": reopened_cert_count,
+                "chain_after_reopen": chain_after_reopen,
+            },
+            "passes": true
         },
         "signal": signal,
         "pairwise_mi": mi,

@@ -4,7 +4,7 @@ use crate::cert::chain::{
 };
 use crate::cert::TrainingCertificate;
 use crate::error::TrainerError;
-use rocksdb::DB;
+use rocksdb::{WriteOptions, DB};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -76,8 +76,27 @@ impl TrainCertWriter {
         cert.self_hash = compute_self_hash(&canonical);
         let final_body = canonical_json(cert)?;
         let cf = cf(&self.rocksdb, &self.cf_train_certs_name)?;
+        let mut write_opts = WriteOptions::default();
+        write_opts.set_sync(true);
         self.rocksdb
-            .put_cf(cf, cert.step.to_be_bytes(), final_body.as_bytes())?;
+            .put_cf_opt(cf, cert.step.to_be_bytes(), final_body.as_bytes(), &write_opts)?;
+        let readback = self
+            .rocksdb
+            .get_cf(cf, cert.step.to_be_bytes())?
+            .ok_or_else(|| {
+                TrainerError::new(
+                    crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                    format!("training cert readback missing for step {}", cert.step),
+                )
+                .with_step(cert.step)
+            })?;
+        if readback != final_body.as_bytes() {
+            return Err(TrainerError::new(
+                crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                format!("training cert readback bytes differ for step {}", cert.step),
+            )
+            .with_step(cert.step));
+        }
         self.last_self_hash = cert.self_hash.clone();
         self.cert_count_since_fsync += 1;
         if self.cert_count_since_fsync >= FSYNC_INTERVAL {

@@ -4,7 +4,9 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bincode::Options as BincodeOptions;
-use rocksdb::{ColumnFamily, ColumnFamilyDescriptor, IteratorMode, Options, WriteBatch, DB};
+use rocksdb::{
+    ColumnFamily, ColumnFamilyDescriptor, IteratorMode, Options, WriteBatch, WriteOptions, DB,
+};
 
 use crate::constellation::{bincode_options, TctConstellation};
 use crate::error::TctError;
@@ -45,7 +47,9 @@ impl ConstellationStore {
         let bytes = bincode_options().serialize(constellation)?;
         let mut batch = WriteBatch::default();
         batch.put_cf(cf(&self.db, CF_MEJEPA_CONSTELLATION)?, &key, bytes);
-        self.db.write(batch).map_err(|err| {
+        let mut write_opts = WriteOptions::default();
+        write_opts.set_sync(true);
+        self.db.write_opt(batch, &write_opts).map_err(|err| {
             TctError::store("write_batch", CF_MEJEPA_CONSTELLATION, err.to_string())
         })?;
         let raw = self
@@ -197,11 +201,14 @@ impl ConstellationStore {
         report.validate_integrity()?;
         let key = refresh_report_key(report.finished_at, report.report_id)?;
         let bytes = bincode_options().serialize(report)?;
+        let mut write_opts = WriteOptions::default();
+        write_opts.set_sync(true);
         self.db
-            .put_cf(
+            .put_cf_opt(
                 cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS)?,
                 &key,
                 bytes,
+                &write_opts,
             )
             .map_err(|err| {
                 TctError::store(
