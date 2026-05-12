@@ -90,9 +90,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     let readback_cert = read_cert(cert_db.as_ref(), 0)?;
-    if readback_cert.signal != signal {
-        return Err("persisted happy-path UTML signal does not match computed signal".into());
-    }
+    assert_signal_equal(
+        "persisted happy-path UTML signal",
+        &readback_cert.signal,
+        &signal,
+    )?;
     let auditor = PairwiseMiAuditor::new(1, &out)?;
     let panels = (0..6).map(build_panel).collect::<Result<Vec<_>, _>>()?;
     let mi = auditor.run_from_panels(&panels, 42)?;
@@ -229,9 +231,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     let reopened_cert = read_cert(reopened_cert_db.as_ref(), 0)?;
-    if reopened_cert.signal != signal {
-        return Err("reopened happy-path UTML cert signal does not match computed signal".into());
-    }
+    assert_signal_equal(
+        "reopened happy-path UTML signal",
+        &reopened_cert.signal,
+        &signal,
+    )?;
     let chain_after_reopen = verify_chain(&reopened_cert_db, CF_MEJEPA_TRAIN_CERTS, 0, 1)?;
 
     let summary = json!({
@@ -459,9 +463,11 @@ fn edge_zero_multiplicative_gate(
     db.flush_cf(cf)?;
     let after_count = count_cf(db, CF_MEJEPA_TRAIN_CERTS)?;
     let readback = read_cert(db, 1)?;
-    if readback.signal != zero_signal {
-        return Err("zero-gate training cert readback signal mismatch".into());
-    }
+    assert_signal_equal(
+        "zero-gate training cert readback signal",
+        &readback.signal,
+        &zero_signal,
+    )?;
     Ok(json!({
         "name": "zero_multiplicative_gate_persists_zero_l_step",
         "before_state": {"train_cert_count": before_count, "stability_floor": 0.0},
@@ -528,6 +534,20 @@ fn assert_close(
         Ok(())
     } else {
         Err(format!("{label}: actual {actual} differs from expected {expected}").into())
+    }
+}
+
+fn assert_signal_equal(
+    label: &str,
+    actual: &LearningSignal,
+    expected: &LearningSignal,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let actual_json = serde_json::to_value(actual)?;
+    let expected_json = serde_json::to_value(expected)?;
+    if actual_json == expected_json {
+        Ok(())
+    } else {
+        Err(format!("{label}: persisted signal JSON differs from expected signal JSON").into())
     }
 }
 

@@ -69,8 +69,8 @@ fn main() -> FsvResult<()> {
     let source_corpus_sha256 = sha256_array(&corpus_index_bytes);
     let entries = load_corpus_entries(&corpus_index_path)?;
     require("full Python 300x8 corpus rows", entries.len() == 2400)?;
-    let entity_by_task = load_entity_by_task(&ast_fsv_path)?;
-    require("AST FSV task coverage", entity_by_task.len() == 300)?;
+    let entities_by_task = load_entities_by_task(&ast_fsv_path)?;
+    require("AST FSV task coverage", entities_by_task.len() == 300)?;
     let base_panel = read_real_phase1_panel(&panel_path)?;
     let versions = embedder_versions_from_panel(&base_panel);
     let code_version = git_head()?;
@@ -87,11 +87,14 @@ fn main() -> FsvResult<()> {
         "rocksdb_refresh_rows_before": 0,
         "rocksdb_constellation_rows_before": 0,
     });
-    println!("before tct_refresh: {}", serde_json::to_string(&before_state)?);
+    println!(
+        "before tct_refresh: {}",
+        serde_json::to_string(&before_state)?
+    );
 
     let build = build_refresh_report(
         &entries,
-        &entity_by_task,
+        &entities_by_task,
         &base_panel,
         &versions,
         &code_version,
@@ -102,13 +105,13 @@ fn main() -> FsvResult<()> {
 
     let db = open_tct_rocksdb(&db_path)?;
     let store = ConstellationStore::new(db.clone())?;
-    require("refresh rows start empty", store.count_refresh_reports()? == 0)?;
+    require(
+        "refresh rows start empty",
+        store.count_refresh_reports()? == 0,
+    )?;
     let version_id = store.persist(&build.constellation)?;
     let report_id = store.persist_refresh_report(&build.report)?;
-    require(
-        "persisted report id",
-        report_id == build.report.report_id,
-    )?;
+    require("persisted report id", report_id == build.report.report_id)?;
     require(
         "persisted constellation version",
         version_id == build.constellation.version_id(),
@@ -124,8 +127,14 @@ fn main() -> FsvResult<()> {
     let loaded_report = reopened.load_refresh_report(report_id)?;
     let latest_report = reopened.latest_refresh_report()?;
     let reports_for_version = reopened.refresh_reports_for_constellation(version_id, 10)?;
-    require("loaded report equals persisted", loaded_report == build.report)?;
-    require("latest report equals persisted", latest_report == build.report)?;
+    require(
+        "loaded report equals persisted",
+        loaded_report == build.report,
+    )?;
+    require(
+        "latest report equals persisted",
+        latest_report == build.report,
+    )?;
     require("one report for version", reports_for_version.len() == 1)?;
     require(
         "report for version equals persisted",
@@ -149,11 +158,23 @@ fn main() -> FsvResult<()> {
         "cell_support_count": loaded_report.cell_support.len(),
         "rocksdb_file_count": count_files(&db_path)?,
     });
-    println!("after tct_refresh: {}", serde_json::to_string(&after_state)?);
+    println!(
+        "after tct_refresh: {}",
+        serde_json::to_string(&after_state)?
+    );
 
-    require("all 8 mutation categories captured", loaded_report.per_category_support.len() == 8)?;
-    require("Python language captured", loaded_report.per_language_support.len() == 1)?;
-    require("refresh cells captured", !loaded_report.cell_support.is_empty())?;
+    require(
+        "all 8 mutation categories captured",
+        loaded_report.per_category_support.len() == 8,
+    )?;
+    require(
+        "Python language captured",
+        loaded_report.per_language_support.len() == 1,
+    )?;
+    require(
+        "refresh cells captured",
+        !loaded_report.cell_support.is_empty(),
+    )?;
     require(
         "operator rejected diagnostic captured",
         loaded_report.operator_diagnostics.rejected_chunk_count == 1,
@@ -285,7 +306,10 @@ fn build_refresh_report(
         sample_mutation,
         &constellation,
     )?;
-    require("operator aggregate rejects exactly one chunk", !operator_chunks.aggregate_satisfied)?;
+    require(
+        "operator aggregate rejects exactly one chunk",
+        !operator_chunks.aggregate_satisfied,
+    )?;
     require(
         "operator violating chunk count",
         operator_chunks.violating_chunks.len() == 1,
@@ -437,7 +461,10 @@ fn run_edge_case_audit(
         "cell_support_count": report.cell_support.len(),
         "expected_error": "MEJEPA_TCT_INSUFFICIENT_SAMPLES",
     });
-    println!("before empty_cell_support: {}", serde_json::to_string(&before_empty)?);
+    println!(
+        "before empty_cell_support: {}",
+        serde_json::to_string(&before_empty)?
+    );
     let mut empty_cell = report.clone();
     empty_cell.cell_support.clear();
     let empty_error = store.persist_refresh_report(&empty_cell).unwrap_err();
@@ -446,7 +473,10 @@ fn run_edge_case_audit(
         "error_code": empty_error.code(),
         "state_mutated": false,
     });
-    println!("after empty_cell_support: {}", serde_json::to_string(&after_empty)?);
+    println!(
+        "after empty_cell_support: {}",
+        serde_json::to_string(&after_empty)?
+    );
     edges.insert(
         "empty_cell_support",
         json!({
@@ -494,7 +524,10 @@ fn run_edge_case_audit(
         "report_id": hex::encode(report.report_id),
         "expected_error": "MEJEPA_INSTR_FROZEN_VIOLATION",
     });
-    println!("before tampered_report_id: {}", serde_json::to_string(&before_tamper)?);
+    println!(
+        "before tampered_report_id: {}",
+        serde_json::to_string(&before_tamper)?
+    );
     let mut tampered = report.clone();
     tampered.report_id[0] ^= 0xff;
     let tamper_error = store.persist_refresh_report(&tampered).unwrap_err();
@@ -503,7 +536,10 @@ fn run_edge_case_audit(
         "error_code": tamper_error.code(),
         "state_mutated": false,
     });
-    println!("after tampered_report_id: {}", serde_json::to_string(&after_tamper)?);
+    println!(
+        "after tampered_report_id: {}",
+        serde_json::to_string(&after_tamper)?
+    );
     edges.insert(
         "tampered_report_id",
         json!({
@@ -524,7 +560,9 @@ fn run_edge_case_audit(
         "before zero_report_limit: {}",
         serde_json::to_string(&before_zero_limit)?
     );
-    let zero_limit_error = store.refresh_reports_for_constellation(version_id, 0).unwrap_err();
+    let zero_limit_error = store
+        .refresh_reports_for_constellation(version_id, 0)
+        .unwrap_err();
     let after_zero_limit = json!({
         "refresh_report_rows": store.count_refresh_reports()?,
         "error_code": zero_limit_error.code(),
@@ -553,7 +591,8 @@ fn run_edge_case_audit(
     write_and_verify(&root.join("edge-case-audit.json"), &audit)?;
     require(
         "all refresh edge cases pass",
-        audit.as_object()
+        audit
+            .as_object()
             .unwrap()
             .values()
             .all(|edge| edge["passes"] == Value::Bool(true)),
@@ -587,7 +626,10 @@ fn load_corpus_entries(path: &Path) -> FsvResult<Vec<CorpusEntry>> {
                 .as_str()
                 .ok_or("entry patch_path must be a string")?;
             let patch_path = corpus_root.join(patch_rel);
-            require(&format!("patch exists {}", patch_path.display()), patch_path.is_file())?;
+            require(
+                &format!("patch exists {}", patch_path.display()),
+                patch_path.is_file(),
+            )?;
             let patch_sha = entry["patch_sha256"]
                 .as_str()
                 .ok_or("entry patch_sha256 must be a string")?;
@@ -703,7 +745,10 @@ fn read_real_phase1_panel(path: &Path) -> FsvResult<Panel> {
     let text = fs::read_to_string(path)?;
     let panel: Panel = serde_json::from_str(&text)?;
     for slot in InstrumentSlot::all() {
-        require(&format!("slot {} filled", slot.slug()), panel.is_filled(slot))?;
+        require(
+            &format!("slot {} filled", slot.slug()),
+            panel.is_filled(slot),
+        )?;
     }
     Ok(panel)
 }
