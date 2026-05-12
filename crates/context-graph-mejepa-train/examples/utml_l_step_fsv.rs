@@ -8,8 +8,8 @@ use context_graph_mejepa_train::learning_signal::{
     compute_state_transfer, detect_dormant_units, prune_decision, reinit_dormant_units, reward,
     sampling_weight_checked, update_m_t, CalibratedConfidenceComponents, ContentEmbedder,
     DeltaKComponents, DeltaOmegaComponents, DeltaPAggregator, DeltaPComponents, DeltaXiComponents,
-    DivergenceMetric, DormantLayer, DormantUnitDetector, LStepWindow, PairwiseMiAuditor,
-    RewardComponents, SamplingWeightComponents,
+    DivergenceMetric, DormantLayer, DormantUnitDetector, LStepWindow, LearningSignal,
+    PairwiseMiAuditor, RewardComponents, SamplingWeightComponents,
 };
 use rocksdb::{IteratorMode, DB};
 use serde::Serialize;
@@ -80,6 +80,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("missing CF_MEJEPA_TRAIN_CERTS")?;
     cert_db.flush_cf(cf_handle)?;
     let cert_count_after_happy = count_cf(cert_db.as_ref(), CF_MEJEPA_TRAIN_CERTS)?;
+    if cert_count_after_happy != cert_count_before + 1 {
+        return Err(format!(
+            "expected happy-path cert count {} -> {}, observed {}",
+            cert_count_before,
+            cert_count_before + 1,
+            cert_count_after_happy
+        )
+        .into());
+    }
     let readback_cert = read_cert(cert_db.as_ref(), 0)?;
     if readback_cert.signal != signal {
         return Err("persisted happy-path UTML signal does not match computed signal".into());
@@ -199,10 +208,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             case["passes"] = json!(true);
         }
     });
+    if edge_cases
+        .iter()
+        .any(|case| case.get("passes").and_then(|value| value.as_bool()) != Some(true))
+    {
+        return Err(format!("one or more UTML edge cases failed: {}", serde_json::to_string_pretty(&edge_cases)?).into());
+    }
     drop(cert_writer);
     drop(cert_db);
     let reopened_cert_db = open_train_rocksdb(&cert_db_path)?;
     let reopened_cert_count = count_cf(reopened_cert_db.as_ref(), CF_MEJEPA_TRAIN_CERTS)?;
+    if reopened_cert_count != 2 {
+        return Err(format!("expected 2 persisted training certs after reopen, got {reopened_cert_count}").into());
+    }
     let reopened_cert = read_cert(reopened_cert_db.as_ref(), 0)?;
     if reopened_cert.signal != signal {
         return Err("reopened happy-path UTML cert signal does not match computed signal".into());
@@ -271,6 +289,212 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     write_json_0600(&out.join("utml-fsv-summary.json"), &summary)?;
     println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(())
+}
+
+fn count_cf(db: &DB, cf_name: &'static str) -> Result<usize, Box<dyn std::error::Error>> {
+    let cf = db
+        .cf_handle(cf_name)
+        .ok_or_else(|| format!("missing RocksDB column family {cf_name}"))?;
+    let mut count = 0usize;
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        item?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+fn read_cert(
+    db: &DB,
+    step: u64,
+) -> Result<TrainingCertificate, Box<dyn std::error::Error>> {
+    let cf = db
+        .cf_handle(CF_MEJEPA_TRAIN_CERTS)
+        .ok_or("missing CF_MEJEPA_TRAIN_CERTS")?;
+    let bytes = db
+        .get_cf(cf, step.to_be_bytes())?
+        .ok_or_else(|| format!("missing training certificate at step {step}"))?;
+    let cert: TrainingCertificate = serde_json::from_slice(&bytes)?;
+    cert.validate_phase3()?;
+    if cert.step != step {
+        return Err(format!("training certificate step {} != key {step}", cert.step).into());
+    }
+    Ok(cert)
+}
+
+fn training_cert(step: u64, signal: LearningSignal, training_mode: Option<&str>) -> TrainingCertificate {
+    TrainingCertificate {
+        step,
+        epoch: 0,
+        per_head_l_step: HeadId::ALL
+            .into_iter()
+            .map(|head| (head.as_str().to_string(), signal.l_step))
+            .collect(),
+        delta_xi_global_min: signal.delta_xi,
+        loss_components: signal.components_as_map(),
+        training_mode: training_mode.unwrap_or("utml_l_step_fsv").to_string(),
+        distillation_cycle_id: None,
+        distillation_loss_mean: None,
+        distillation_skipped_count: None,
+        counterfactual_smoothness: Some(0.0),
+        counterfactual_smoothness_anomaly: Some(false),
+        cross_task_transfer_indices: Vec::new(),
+        cross_task_transfer_fallback_count: 0,
+        predictor_redundancy_pairwise_mi: signal.delta_xi_components.predictor_redundancy,
+        predictor_redundancy_pairwise_mi_source: "utml_l_step_fsv_pairwise_mi_matrix".to_string(),
+        holdout_promotion: Some(false),
+        generic_only_warning: None,
+        phase3_dod_passed: Some(true),
+        grad_norm_running_mean: 0.0,
+        parent_witness_hash: String::new(),
+        self_hash: String::new(),
+        merkle_root: String::new(),
+        code_version: String::new(),
+        corpus_sha: String::new(),
+        embedder_versions: HashMap::new(),
+        frozen_at: String::new(),
+        signal,
+    }
+}
+
+fn edge_nonfinite_component(db: &DB) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let before_count = count_cf(db, CF_MEJEPA_TRAIN_CERTS)?;
+    let result = compute_l_step(
+        DeltaPComponents {
+            delta_p_real: f32::NAN,
+            delta_p_imagined: None,
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![f32::NAN],
+        },
+        DeltaKComponents {
+            cos_align: 0.8,
+            fisher_violation: 0.2,
+            ece: 0.1,
+            embedder_coherence: 0.6,
+            embedder_coherence_source: "computed".to_string(),
+        },
+        DeltaOmegaComponents {
+            effective_plasticity: 0.8,
+            landscape_health: 0.7,
+            stability_floor: 1.0,
+            agent_state_score: 0.7,
+            agent_state_source: "default_neutral_no_transcript".to_string(),
+        },
+        DeltaXiComponents {
+            target_collapse: 0.0,
+            predictor_redundancy: 0.05,
+            constellation_violation_rate: 0.10,
+        },
+    );
+    let err = match result {
+        Ok(_) => return Err("non-finite UTML component unexpectedly succeeded".into()),
+        Err(err) => err,
+    };
+    let after_count = count_cf(db, CF_MEJEPA_TRAIN_CERTS)?;
+    if after_count != before_count {
+        return Err("non-finite component edge case mutated training cert state".into());
+    }
+    Ok(json!({
+        "name": "nonfinite_delta_p_component",
+        "before_state": {"train_cert_count": before_count, "delta_p_real": "NaN"},
+        "trigger": "compute_l_step with NaN delta_p_real and per_chunk_values",
+        "after_state": {"error": err.code(), "train_cert_count": after_count},
+        "passes": err.code() == "UTML_NON_FINITE"
+    }))
+}
+
+fn edge_zero_multiplicative_gate(
+    cert_writer: &mut TrainCertWriter,
+    db: &DB,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let before_count = count_cf(db, CF_MEJEPA_TRAIN_CERTS)?;
+    let zero_signal = compute_l_step(
+        DeltaPComponents {
+            delta_p_real: 0.5,
+            delta_p_imagined: Some(0.5),
+            snr: 1.0,
+            exploration_bonus: 0.0,
+            gamma: 0.7,
+            aggregator: DeltaPAggregator::Mean,
+            per_chunk_values: vec![0.5, 0.5],
+        },
+        DeltaKComponents {
+            cos_align: 0.8,
+            fisher_violation: 0.2,
+            ece: 0.1,
+            embedder_coherence: 0.6,
+            embedder_coherence_source: "computed".to_string(),
+        },
+        DeltaOmegaComponents {
+            effective_plasticity: 0.8,
+            landscape_health: 0.7,
+            stability_floor: 0.0,
+            agent_state_score: 0.7,
+            agent_state_source: "default_neutral_no_transcript".to_string(),
+        },
+        DeltaXiComponents {
+            target_collapse: 0.0,
+            predictor_redundancy: 0.05,
+            constellation_violation_rate: 0.10,
+        },
+    )?;
+    if zero_signal.l_step != 0.0 {
+        return Err(format!("expected zero-gate l_step 0.0, got {}", zero_signal.l_step).into());
+    }
+    let mut cert = training_cert(1, zero_signal.clone(), Some("utml_zero_gate_fsv"));
+    cert_writer.emit(&mut cert)?;
+    let cf = db
+        .cf_handle(CF_MEJEPA_TRAIN_CERTS)
+        .ok_or("missing CF_MEJEPA_TRAIN_CERTS")?;
+    db.flush_cf(cf)?;
+    let after_count = count_cf(db, CF_MEJEPA_TRAIN_CERTS)?;
+    let readback = read_cert(db, 1)?;
+    if readback.signal != zero_signal {
+        return Err("zero-gate training cert readback signal mismatch".into());
+    }
+    Ok(json!({
+        "name": "zero_multiplicative_gate_persists_zero_l_step",
+        "before_state": {"train_cert_count": before_count, "stability_floor": 0.0},
+        "trigger": "compute_l_step with stability_floor=0.0 -> TrainCertWriter::emit step 1 -> read CF_MEJEPA_TRAIN_CERTS",
+        "after_state": {"train_cert_count": after_count, "l_step": readback.signal.l_step, "cert_step": readback.step},
+        "passes": after_count == before_count + 1 && readback.signal.l_step == 0.0
+    }))
+}
+
+fn edge_conflicting_state_transfer(db: &DB) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let before_count = count_cf(db, CF_MEJEPA_TRAIN_CERTS)?;
+    let result = compute_state_transfer(&[0.1], &[0.2, 0.3], DivergenceMetric::Wasserstein1, 0.5);
+    let err = match result {
+        Ok(_) => return Err("conflicting state transfer input unexpectedly succeeded".into()),
+        Err(err) => err,
+    };
+    let after_count = count_cf(db, CF_MEJEPA_TRAIN_CERTS)?;
+    if after_count != before_count {
+        return Err("conflicting state transfer edge case mutated training cert state".into());
+    }
+    Ok(json!({
+        "name": "conflicting_state_transfer_cardinality",
+        "before_state": {"train_cert_count": before_count, "source_len": 1, "target_len": 2},
+        "trigger": "compute_state_transfer with mismatched source/target cardinality",
+        "after_state": {"error": err.code(), "train_cert_count": after_count},
+        "passes": err.code() == "UTML_INVALID_SIGNAL"
+    }))
+}
+
+fn git_head() -> Result<String, Box<dyn std::error::Error>> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--verify", "HEAD"])
+        .output()?;
+    if !output.status.success() {
+        return Err("git rev-parse --verify HEAD failed; cannot record code_version".into());
+    }
+    let sha = String::from_utf8(output.stdout)?.trim().to_string();
+    if sha.len() != 40 || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(format!("git HEAD was not a 40-char hex SHA: {sha:?}").into());
+    }
+    Ok(sha.to_ascii_lowercase())
 }
 
 fn build_panel(seed: usize) -> Result<Panel, context_graph_mejepa_instruments::InstrumentError> {

@@ -5,7 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use bincode::Options as BincodeOptions;
 use rocksdb::{
-    ColumnFamily, ColumnFamilyDescriptor, IteratorMode, Options, WriteBatch, WriteOptions, DB,
+    ColumnFamily, ColumnFamilyDescriptor, FlushOptions, IteratorMode, Options, WriteBatch,
+    WriteOptions, DB,
 };
 
 use crate::constellation::{bincode_options, TctConstellation};
@@ -47,11 +48,12 @@ impl ConstellationStore {
         let bytes = bincode_options().serialize(constellation)?;
         let mut batch = WriteBatch::default();
         batch.put_cf(cf(&self.db, CF_MEJEPA_CONSTELLATION)?, &key, bytes);
-        let mut write_opts = WriteOptions::default();
-        write_opts.set_sync(true);
-        self.db.write_opt(batch, &write_opts).map_err(|err| {
+        self.db
+            .write_opt(batch, &durable_write_options())
+            .map_err(|err| {
             TctError::store("write_batch", CF_MEJEPA_CONSTELLATION, err.to_string())
         })?;
+        durable_flush_cf(&self.db, CF_MEJEPA_CONSTELLATION)?;
         let raw = self
             .db
             .get_cf(cf(&self.db, CF_MEJEPA_CONSTELLATION)?, &key)
@@ -201,14 +203,12 @@ impl ConstellationStore {
         report.validate_integrity()?;
         let key = refresh_report_key(report.finished_at, report.report_id)?;
         let bytes = bincode_options().serialize(report)?;
-        let mut write_opts = WriteOptions::default();
-        write_opts.set_sync(true);
         self.db
             .put_cf_opt(
                 cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS)?,
                 &key,
                 bytes,
-                &write_opts,
+                &durable_write_options(),
             )
             .map_err(|err| {
                 TctError::store(
@@ -217,6 +217,7 @@ impl ConstellationStore {
                     err.to_string(),
                 )
             })?;
+        durable_flush_cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS)?;
         let raw = self
             .db
             .get_cf(cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS)?, &key)
@@ -439,6 +440,23 @@ fn cf_options() -> Options {
     let mut opts = Options::default();
     opts.set_paranoid_checks(true);
     opts
+}
+
+fn durable_write_options() -> WriteOptions {
+    let mut opts = WriteOptions::default();
+    opts.set_sync(true);
+    opts.disable_wal(false);
+    opts
+}
+
+fn durable_flush_cf(db: &DB, cf_name: &'static str) -> Result<(), TctError> {
+    db.flush_wal(true)
+        .map_err(|err| TctError::store("flush_wal", cf_name, err.to_string()))?;
+    let mut flush_opts = FlushOptions::default();
+    flush_opts.set_wait(true);
+    db.flush_cf_opt(cf(db, cf_name)?, &flush_opts)
+        .map_err(|err| TctError::store("flush_cf", cf_name, err.to_string()))?;
+    Ok(())
 }
 
 fn constellation_key(version_id: [u8; 32], corpus_sha: [u8; 32]) -> Vec<u8> {

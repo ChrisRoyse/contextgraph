@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bincode::Options;
-use rocksdb::{Direction, IteratorMode, DB};
+use rocksdb::{Direction, IteratorMode, WriteOptions, DB};
 use serde::{Deserialize, Serialize};
 
 use crate::constellation::bincode_options;
@@ -113,8 +113,10 @@ impl ViolationRateAggregator {
         let cf = cf(&self.db, CF_MEJEPA_GUARD_DECISIONS)?;
         let key = verdict_key(record.timestamp())?;
         let bytes = bincode_options().serialize(record)?;
+        let mut write_opts = WriteOptions::default();
+        write_opts.set_sync(true);
         self.db
-            .put_cf(cf, &key, bytes)
+            .put_cf_opt(cf, &key, bytes, &write_opts)
             .map_err(|err| TctError::store("put", CF_MEJEPA_GUARD_DECISIONS, err.to_string()))?;
         let raw = self
             .db

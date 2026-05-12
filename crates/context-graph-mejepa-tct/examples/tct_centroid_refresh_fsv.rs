@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
@@ -12,14 +12,13 @@ use context_graph_core::memory::ast::{
     Language as CoreLanguage,
 };
 use context_graph_mejepa_instruments::{
-    CodeInstrumentInput, Diagnostic, DiagnosticSeverity, EAstInstrument, ECfgInstrument,
-    ECommitMsgInstrument, EDataFlowInstrument, EOracleInstrument, EProblemInstrument,
-    EReasoningInstrument, ERuntimeInstrument, EStaticAnalysisInstrument, ETestInstrument,
-    ETraceInstrument, ETypeGraphInstrument, InstrumentSlot, OracleVerdict, Panel, PanelBuilder,
+    CodeInstrumentInput, Diagnostic, EAstInstrument, ECfgInstrument, ECommitMsgInstrument,
+    EDataFlowInstrument, EOracleInstrument, EProblemInstrument, EReasoningInstrument,
+    ERuntimeInstrument, EStaticAnalysisInstrument, ETestInstrument, ETraceInstrument,
+    ETypeGraphInstrument, ExceptionClass, InstrumentSlot, OracleVerdict, Panel, PanelBuilder,
     PerTestOutcome, ReasoningEvent, ReasoningInput, RuntimeInput, ScalarInput, ScalarsInstrument,
     StaticAnalysisInput, TestOutcome, TextInstrumentInput, TraceEvent, TraceEventKind, TraceInput,
 };
-use context_graph_witness::{shake256_32, WitnessEntry, ZERO_HASH};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -30,6 +29,10 @@ type FsvResult<T> = Result<T, Box<dyn Error>>;
 
 const AST_CORPUS_EVIDENCE: &str =
     "/mnt/d/contextgraph/fsv/swebench-python-ast-corpus-fsv/swebench-python-ast-corpus-fsv.json";
+const CORPUS_INDEX: &str =
+    "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/index.json";
+const CORPUS_ROOT: &str =
+    "/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511";
 const FSV_ROOT: &str = "/mnt/d/contextgraph/fsv/contextgraph-mejepa-tct-centroid-refresh-fsv";
 const VALIDATION_PER_ENTITY_LIMIT: usize = 80;
 
@@ -48,6 +51,29 @@ struct AstCorpusRow {
     host_source: HostSource,
     docker_source: DockerSource,
     chunk_state: ChunkState,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CorpusIndex {
+    corpus_sha256: String,
+    corpus_version: String,
+    embedder_version: String,
+    entries: Vec<CorpusIndexEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CorpusIndexEntry {
+    bucket: String,
+    category: String,
+    mutation_note: String,
+    oracle_all_passed: bool,
+    oracle_exception: Option<String>,
+    oracle_per_test_count: usize,
+    oracle_verdict_sha256: String,
+    patch_path: String,
+    patch_sha256: String,
+    repo: String,
+    task_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -90,7 +116,10 @@ struct BuiltCorpus {
     validation: HeldOutValidation,
     source_row_count: usize,
     source_chunk_count: usize,
+    ingested_panel_count: usize,
     entity_counts: BTreeMap<EntityType, usize>,
+    category_counts: BTreeMap<MutationCategory, usize>,
+    outcome_counts: BTreeMap<OracleOutcome, usize>,
     selected_good_chunk: ChunkId,
     selected_good_panel: Panel,
     selected_row_task_id: String,
@@ -115,6 +144,15 @@ fn main() -> FsvResult<()> {
     let evidence_sha = sha256_bytes(&evidence_bytes);
     let corpus: AstCorpusEvidence = serde_json::from_slice(&evidence_bytes)?;
     require("AST corpus has rows", !corpus.rows.is_empty())?;
+    let index_bytes = fs::read(CORPUS_INDEX)?;
+    let index_sha = sha256_bytes(&index_bytes);
+    let corpus_index: CorpusIndex = serde_json::from_slice(&index_bytes)?;
+    require("corpus index has entries", !corpus_index.entries.is_empty())?;
+    require(
+        "corpus index sha readback",
+        normalize_sha(&corpus_index.corpus_sha256) == hex::encode(index_sha),
+    )?;
+    let combined_source_sha = combined_sha(evidence_sha, index_sha);
 
     let started_at = SystemTime::now();
     let code_version = git_head()?;
@@ -128,8 +166,9 @@ fn main() -> FsvResult<()> {
     )?;
     let draft = build_corpus_constellation(
         &corpus.rows,
+        &corpus_index,
         zero_thresholds,
-        evidence_sha,
+        combined_source_sha,
         &versions,
         &code_version,
     )?;
@@ -151,7 +190,13 @@ fn main() -> FsvResult<()> {
     let before_state = json!({
         "ast_corpus_evidence": AST_CORPUS_EVIDENCE,
         "ast_corpus_sha256": hex::encode(evidence_sha),
+        "corpus_index": CORPUS_INDEX,
+        "corpus_index_sha256": hex::encode(index_sha),
+        "corpus_index_declared_sha256": corpus_index.corpus_sha256,
+        "corpus_version": corpus_index.corpus_version,
+        "corpus_embedder_version": corpus_index.embedder_version,
         "rows_before": corpus.rows.len(),
+        "index_entries_before": corpus_index.entries.len(),
         "constellation_rows_before": store.count_constellations()?,
         "refresh_report_rows_before": store.count_refresh_reports()?,
         "guard_decision_rows_before": store.count_guard_decisions()?,
@@ -178,7 +223,7 @@ fn main() -> FsvResult<()> {
         &loaded,
         &draft,
         &code_version,
-        evidence_sha,
+        combined_source_sha,
         &operator_diagnostics,
     )?;
     let report_id = reopened.persist_refresh_report(&report)?;
@@ -196,8 +241,14 @@ fn main() -> FsvResult<()> {
         "guard_record_key_hex": hex::encode(guard_record_key),
         "source_rows_processed": draft.source_row_count,
         "source_chunks_processed": draft.source_chunk_count,
+        "ingested_panels_processed": draft.ingested_panel_count,
         "entity_counts": entity_counts_json(&draft.entity_counts),
+        "category_counts": category_counts_json(&draft.category_counts),
+        "outcome_counts": outcome_counts_json(&draft.outcome_counts),
         "per_chunk_type_cells": loaded.per_chunk_type_centroids.len(),
+        "per_category_cells": loaded.per_category_centroids.len(),
+        "per_language_cells": loaded.per_language_centroids.len(),
+        "outcome_cells": loaded.outcome_centroids.len(),
         "calibration_decisions": calibration_decisions.len(),
     });
     println!("after_tct_refresh: {}", serde_json::to_string(&after_state)?);
@@ -210,6 +261,9 @@ fn main() -> FsvResult<()> {
             "refresh_report_cf": CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
             "guard_decisions_cf": CF_MEJEPA_GUARD_DECISIONS,
             "ast_corpus_evidence": AST_CORPUS_EVIDENCE,
+            "corpus_index": CORPUS_INDEX,
+            "source_corpus_descriptor": source_corpus_descriptor(),
+            "combined_source_sha256": hex::encode(combined_source_sha),
             "evidence_file": root.join("tct-centroid-refresh-evidence.json"),
         }),
         before_state,
@@ -234,16 +288,22 @@ fn main() -> FsvResult<()> {
 
 fn build_corpus_constellation(
     rows: &[AstCorpusRow],
+    corpus_index: &CorpusIndex,
     thresholds: Thresholds,
     corpus_sha: [u8; 32],
     versions: &BTreeMap<EmbedderId, [u8; 32]>,
     code_version: &str,
 ) -> FsvResult<BuiltCorpus> {
     let mut builder = ConstellationBuilder::new(corpus_sha, versions.clone(), code_version.into())?;
+    let entries_by_task = corpus_entries_by_task(corpus_index)?;
     let mut validation = Vec::new();
     let mut validation_by_entity = BTreeMap::<EntityType, usize>::new();
+    let mut source_row_count = 0usize;
     let mut source_chunk_count = 0usize;
+    let mut ingested_panel_count = 0usize;
     let mut entity_counts = BTreeMap::<EntityType, usize>::new();
+    let mut category_counts = BTreeMap::<MutationCategory, usize>::new();
+    let mut outcome_counts = BTreeMap::<OracleOutcome, usize>::new();
     let mut selected: Option<(ChunkId, Panel, String, String)> = None;
 
     for row in rows {
@@ -274,61 +334,104 @@ fn build_corpus_constellation(
             &format!("{} chunk count matches AST FSV", row.task_id),
             chunks.len() == row.chunk_state.chunk_count,
         )?;
-        let file_panel = build_panel(
-            &source,
-            "file",
-            row,
-            &manifest,
-            row.python_path.as_str(),
-            1,
-            source.lines().count().max(1) as u32,
+        let entries = entries_by_task
+            .get(&row.task_id)
+            .ok_or_else(|| format!("{} missing corpus index entries", row.task_id))?;
+        require(
+            &format!("{} has one entry per mutation category", row.task_id),
+            entries.len() == MutationCategory::all().len(),
         )?;
-        let mut chunk_panels = Vec::with_capacity(chunks.len());
-        for chunk in &chunks {
-            let entity_type = map_entity_type(chunk.entity_type);
-            let chunk_id = chunk_id_from_ast(chunk)?;
-            let chunk_panel = build_panel(
-                &chunk.content,
-                "chunk",
-                row,
-                &manifest,
-                &row.python_path,
-                chunk.line_start,
-                chunk.line_end,
+        require_task_category_coverage(&row.task_id, entries)?;
+
+        for entry in entries {
+            require(
+                &format!("{} entry task id matches", row.task_id),
+                entry.task_id == row.task_id,
             )?;
-            source_chunk_count += 1;
-            *entity_counts.entry(entity_type).or_default() += 1;
-            let validation_count = validation_by_entity.entry(entity_type).or_default();
-            if *validation_count < VALIDATION_PER_ENTITY_LIMIT {
-                validation.push(HeldOutSample {
-                    language: Language::Python,
-                    entity_type,
-                    mutation: MutationCategory::KnownGood,
-                    panel: chunk_panel.clone(),
-                });
-                *validation_count += 1;
+            require(
+                &format!("{} entry repo matches", row.task_id),
+                entry.repo == row.repo,
+            )?;
+            let mutation = parse_mutation_category(&entry.category)?;
+            let outcome = oracle_outcome(entry);
+            let patch_text = read_index_patch(entry)?;
+            let patch_lines = patch_line_count_text(&patch_text);
+            let file_panel = build_panel(
+                &source,
+                "file",
+                row,
+                entry,
+                mutation,
+                outcome,
+                &manifest,
+                row.python_path.as_str(),
+                1,
+                source.lines().count().max(1) as u32,
+                &patch_text,
+                patch_lines,
+            )?;
+            let mut chunk_panels = Vec::with_capacity(chunks.len());
+            for chunk in &chunks {
+                let entity_type = map_entity_type(chunk.entity_type);
+                let chunk_id = chunk_id_from_ast(chunk)?;
+                let chunk_panel = build_panel(
+                    &chunk.content,
+                    "chunk",
+                    row,
+                    entry,
+                    mutation,
+                    outcome,
+                    &manifest,
+                    &row.python_path,
+                    chunk.line_start,
+                    chunk.line_end,
+                    &patch_text,
+                    patch_lines,
+                )?;
+                source_chunk_count += 1;
+                *entity_counts.entry(entity_type).or_default() += 1;
+                if mutation == MutationCategory::KnownGood && entry.oracle_all_passed {
+                    let validation_count = validation_by_entity.entry(entity_type).or_default();
+                    if *validation_count < VALIDATION_PER_ENTITY_LIMIT {
+                        validation.push(HeldOutSample {
+                            language: Language::Python,
+                            entity_type,
+                            mutation: MutationCategory::KnownGood,
+                            panel: chunk_panel.clone(),
+                        });
+                        *validation_count += 1;
+                    }
+                    if selected.is_none() && entity_type == EntityType::Function {
+                        selected = Some((
+                            chunk_id.clone(),
+                            chunk_panel.clone(),
+                            row.task_id.clone(),
+                            row.host_source.path.clone(),
+                        ));
+                    }
+                }
+                chunk_panels.push((chunk_id, chunk_panel));
             }
-            if selected.is_none() && entity_type == EntityType::Function {
-                selected = Some((
-                    chunk_id.clone(),
-                    chunk_panel.clone(),
-                    row.task_id.clone(),
-                    row.host_source.path.clone(),
-                ));
-            }
-            chunk_panels.push((chunk_id, chunk_panel));
+            builder.ingest_corpus_entry(
+                &file_panel,
+                mutation,
+                outcome,
+                Language::Python,
+                EntityType::Module,
+                &chunk_panels,
+            )?;
+            source_row_count += 1;
+            ingested_panel_count += 1 + chunk_panels.len();
+            *category_counts.entry(mutation).or_default() += 1;
+            *outcome_counts.entry(outcome).or_default() += 1;
         }
-        builder.ingest_corpus_entry(
-            &file_panel,
-            MutationCategory::KnownGood,
-            OracleOutcome::Pass,
-            Language::Python,
-            EntityType::Module,
-            &chunk_panels,
-        )?;
     }
 
     require("validation has panel samples", validation.len() >= MIN_SAMPLES_PANEL_LEVEL)?;
+    require(
+        "all mutation categories observed",
+        category_counts.len() == MutationCategory::all().len(),
+    )?;
     let (constellation, shrinkage_decisions) = builder.finalize(thresholds, SystemTime::now())?;
     let (selected_good_chunk, selected_good_panel, selected_row_task_id, selected_row_source_path) =
         selected.ok_or("no function chunk selected for operator diagnostic")?;
@@ -338,9 +441,12 @@ fn build_corpus_constellation(
         validation: HeldOutValidation {
             knowngood_samples: validation,
         },
-        source_row_count: rows.len(),
+        source_row_count,
         source_chunk_count,
+        ingested_panel_count,
         entity_counts,
+        category_counts,
+        outcome_counts,
         selected_good_chunk,
         selected_good_panel,
         selected_row_task_id,
@@ -352,12 +458,20 @@ fn build_panel(
     source: &str,
     scope: &str,
     row: &AstCorpusRow,
+    entry: &CorpusIndexEntry,
+    mutation: MutationCategory,
+    outcome: OracleOutcome,
     manifest: &ManifestContext,
     path: &str,
     line_start: u32,
     line_end: u32,
+    patch_text: &str,
+    patch_lines: usize,
 ) -> FsvResult<Panel> {
-    let source_id = format!("{}::{scope}::{path}:{line_start}-{line_end}", row.task_id);
+    let source_id = format!(
+        "{}::{}::{scope}::{path}:{line_start}-{line_end}",
+        row.task_id, entry.category
+    );
     let code = CodeInstrumentInput {
         language: "python".into(),
         path: path.into(),
@@ -373,7 +487,10 @@ fn build_panel(
     builder.set_from_instrument(&ECfgInstrument, &code)?;
     builder.set_from_instrument(&EDataFlowInstrument, &code)?;
     builder.set_from_instrument(&ETypeGraphInstrument, &code)?;
-    builder.set_from_instrument(&EStaticAnalysisInstrument, &static_analysis(source, row)?)?;
+    builder.set_from_instrument(
+        &EStaticAnalysisInstrument,
+        &static_analysis(source, patch_lines)?,
+    )?;
     builder.set_from_instrument(
         &ETestInstrument,
         &text("tests", manifest.tests.join("\n")),
@@ -387,27 +504,38 @@ fn build_panel(
         &text(
             "patch",
             format!(
-                "{} {} {} {}",
-                row.task_id, row.repo, row.base_commit, row.patch_path
+                "task={} repo={} index_repo={} base_commit={} bucket={} category={} mutation={:?} outcome={:?} patch_path={} patch_sha={} oracle_sha={} oracle_all_passed={} oracle_exception={} note={} patch_lines={}",
+                row.task_id,
+                row.repo,
+                entry.repo,
+                row.base_commit,
+                entry.bucket,
+                entry.category,
+                mutation,
+                outcome,
+                entry.patch_path,
+                entry.patch_sha256,
+                entry.oracle_verdict_sha256,
+                entry.oracle_all_passed,
+                entry.oracle_exception.as_deref().unwrap_or("none"),
+                entry.mutation_note,
+                patch_lines
             ),
         ),
     )?;
-    builder.set_from_instrument(&EOracleInstrument, &oracle_verdict(&manifest.tests))?;
+    builder.set_from_instrument(&EOracleInstrument, &oracle_verdict(&manifest.tests, entry)?)?;
     builder.set_from_instrument(&ETraceInstrument, &trace_input(&source_id, source, line_start))?;
-    builder.set_from_instrument(&ERuntimeInstrument, &runtime_input(row))?;
-    builder.set_from_instrument(&EReasoningInstrument, &reasoning_input(row, path, source)?)?;
-    builder.set_from_instrument(&ScalarsInstrument, &scalar_input(row, line_start, line_end))?;
-    for slot in required_tct_slots() {
-        require(
-            &format!("{source_id} required slot {} filled", slot.slug()),
-            builder_preview_slot_filled(&builder, slot).is_none(),
-        )?;
-    }
+    builder.set_from_instrument(&ERuntimeInstrument, &runtime_input(row, entry))?;
+    builder.set_from_instrument(
+        &EReasoningInstrument,
+        &reasoning_input(row, entry, mutation, outcome, path, source, patch_text)?,
+    )?;
+    builder.set_from_instrument(
+        &ScalarsInstrument,
+        &scalar_input(row, entry, mutation, line_start, line_end, patch_lines),
+    )?;
+    builder.require_slots(&required_tct_slots())?;
     Ok(builder.build()?)
-}
-
-fn builder_preview_slot_filled(_builder: &PanelBuilder, _slot: InstrumentSlot) -> Option<()> {
-    None
 }
 
 fn required_tct_slots() -> [InstrumentSlot; 13] {
@@ -428,6 +556,124 @@ fn required_tct_slots() -> [InstrumentSlot; 13] {
     ]
 }
 
+fn corpus_entries_by_task(
+    corpus_index: &CorpusIndex,
+) -> FsvResult<BTreeMap<String, Vec<CorpusIndexEntry>>> {
+    let mut grouped = BTreeMap::<String, Vec<CorpusIndexEntry>>::new();
+    for entry in &corpus_index.entries {
+        let mutation = parse_mutation_category(&entry.category)?;
+        require(
+            &format!("{} index repo nonempty", entry.task_id),
+            !entry.repo.trim().is_empty(),
+        )?;
+        require(
+            &format!("{} index patch sha has sha256 prefix", entry.task_id),
+            entry.patch_sha256.starts_with("sha256:"),
+        )?;
+        require(
+            &format!("{} oracle verdict sha has sha256 prefix", entry.task_id),
+            entry.oracle_verdict_sha256.starts_with("sha256:"),
+        )?;
+        require(
+            &format!("{} mutation category roundtrips", entry.task_id),
+            mutation_category_slug(mutation) == entry.category,
+        )?;
+        grouped
+            .entry(entry.task_id.clone())
+            .or_default()
+            .push(entry.clone());
+    }
+    Ok(grouped)
+}
+
+fn require_task_category_coverage(task_id: &str, entries: &[CorpusIndexEntry]) -> FsvResult<()> {
+    let mut seen = BTreeSet::new();
+    for entry in entries {
+        seen.insert(parse_mutation_category(&entry.category)?);
+    }
+    for expected in MutationCategory::all() {
+        require(
+            &format!("{task_id} has {}", mutation_category_slug(expected)),
+            seen.contains(&expected),
+        )?;
+    }
+    Ok(())
+}
+
+fn read_index_patch(entry: &CorpusIndexEntry) -> FsvResult<String> {
+    let patch_path = Path::new(CORPUS_ROOT).join(&entry.patch_path);
+    let patch = fs::read_to_string(&patch_path)?;
+    require(
+        &format!("{} patch readback sha {}", entry.task_id, entry.category),
+        normalize_sha(&entry.patch_sha256) == hex::encode(sha256_bytes(patch.as_bytes())),
+    )?;
+    require(
+        &format!("{} patch nonempty {}", entry.task_id, entry.category),
+        !patch.trim().is_empty(),
+    )?;
+    Ok(patch)
+}
+
+fn parse_mutation_category(value: &str) -> FsvResult<MutationCategory> {
+    Ok(match value {
+        "known_good" => MutationCategory::KnownGood,
+        "subtle_flip" => MutationCategory::SubtleFlip,
+        "off_by_one" => MutationCategory::OffByOne,
+        "swap_variable" => MutationCategory::SwapVariable,
+        "delete_test_call" => MutationCategory::DeleteTestCall,
+        "wrong_file" => MutationCategory::WrongFile,
+        "over_engineer" => MutationCategory::OverEngineer,
+        "compile_error" => MutationCategory::CompileError,
+        other => return Err(format!("unknown mutation category {other}").into()),
+    })
+}
+
+fn mutation_category_slug(category: MutationCategory) -> &'static str {
+    match category {
+        MutationCategory::KnownGood => "known_good",
+        MutationCategory::SubtleFlip => "subtle_flip",
+        MutationCategory::OffByOne => "off_by_one",
+        MutationCategory::SwapVariable => "swap_variable",
+        MutationCategory::DeleteTestCall => "delete_test_call",
+        MutationCategory::WrongFile => "wrong_file",
+        MutationCategory::OverEngineer => "over_engineer",
+        MutationCategory::CompileError => "compile_error",
+    }
+}
+
+fn mutation_index(category: MutationCategory) -> usize {
+    MutationCategory::all()
+        .iter()
+        .position(|candidate| *candidate == category)
+        .expect("MutationCategory::all is exhaustive")
+}
+
+fn oracle_outcome(entry: &CorpusIndexEntry) -> OracleOutcome {
+    if entry.oracle_all_passed {
+        OracleOutcome::Pass
+    } else if entry.oracle_exception.is_some() {
+        OracleOutcome::OutOfDistribution
+    } else {
+        OracleOutcome::Fail
+    }
+}
+
+fn parse_exception_class(value: &str) -> FsvResult<ExceptionClass> {
+    Ok(match value {
+        "assertion_error" | "AssertionError" => ExceptionClass::AssertionError,
+        "type_error" | "TypeError" => ExceptionClass::TypeError,
+        "value_error" | "ValueError" => ExceptionClass::ValueError,
+        "import_error" | "ImportError" => ExceptionClass::ImportError,
+        "attribute_error" | "AttributeError" => ExceptionClass::AttributeError,
+        "key_error" | "KeyError" => ExceptionClass::KeyError,
+        "index_error" | "IndexError" => ExceptionClass::IndexError,
+        "name_error" | "NameError" => ExceptionClass::NameError,
+        "runtime_error" | "RuntimeError" => ExceptionClass::RuntimeError,
+        "other" | "Other" => ExceptionClass::Other,
+        other => return Err(format!("unknown oracle exception class {other}").into()),
+    })
+}
+
 fn read_manifest(task_id: &str) -> FsvResult<ManifestContext> {
     let path = Path::new("tasks/swebench-lite").join(format!("{task_id}.json"));
     let manifest: SwebenchManifest = serde_json::from_str(&fs::read_to_string(&path)?)?;
@@ -441,27 +687,53 @@ fn read_manifest(task_id: &str) -> FsvResult<ManifestContext> {
     })
 }
 
-fn static_analysis(source: &str, row: &AstCorpusRow) -> FsvResult<StaticAnalysisInput> {
+fn static_analysis(source: &str, patch_lines: usize) -> FsvResult<StaticAnalysisInput> {
     require("static analysis source nonempty", !source.trim().is_empty())?;
     Ok(StaticAnalysisInput {
         source_text: source.into(),
         diagnostics: Vec::<Diagnostic>::new(),
-        churn_30d: Some(patch_line_count(&row.patch_path)? as u32),
+        churn_30d: Some(patch_lines as u32),
     })
 }
 
-fn oracle_verdict(tests: &[String]) -> OracleVerdict {
-    OracleVerdict {
-        per_test: tests
-            .iter()
-            .map(|test_id| PerTestOutcome {
-                test_id: test_id.clone(),
-                outcome: TestOutcome::Pass,
+fn oracle_verdict(tests: &[String], entry: &CorpusIndexEntry) -> FsvResult<OracleVerdict> {
+    require(
+        &format!("{} has durable oracle rows", entry.task_id),
+        entry.oracle_per_test_count > 0,
+    )?;
+    require(
+        &format!("{} manifest tests available", entry.task_id),
+        !tests.is_empty(),
+    )?;
+    let outcome = if entry.oracle_all_passed {
+        TestOutcome::Pass
+    } else if entry.oracle_exception.is_some() {
+        TestOutcome::Error
+    } else {
+        TestOutcome::Fail
+    };
+    let per_test = (0..entry.oracle_per_test_count)
+        .map(|idx| {
+            let test_id = &tests[idx % tests.len()];
+            PerTestOutcome {
+                test_id: if idx < tests.len() {
+                    test_id.clone()
+                } else {
+                    format!("{test_id}::oracle_row_{idx}")
+                },
+                outcome,
                 runtime_ms: -1,
-            })
-            .collect(),
-        exception: None,
-    }
+            }
+        })
+        .collect();
+    Ok(OracleVerdict {
+        per_test,
+        exception: entry
+            .oracle_exception
+            .as_deref()
+            .map(parse_exception_class)
+            .transpose()?,
+    })
 }
 
 fn trace_input(source_id: &str, source: &str, line_start: u32) -> TraceInput {
@@ -476,11 +748,15 @@ fn trace_input(source_id: &str, source: &str, line_start: u32) -> TraceInput {
     }
 }
 
-fn runtime_input(row: &AstCorpusRow) -> RuntimeInput {
+fn runtime_input(row: &AstCorpusRow, entry: &CorpusIndexEntry) -> RuntimeInput {
     RuntimeInput {
-        wall_time_ms: row.docker_source.pyc_bytes.max(1) as u64,
+        wall_time_ms: row
+            .docker_source
+            .pyc_bytes
+            .saturating_add(entry.oracle_per_test_count)
+            .max(1) as u64,
         peak_rss_bytes: row.docker_source.bytes.max(row.docker_source.pyc_bytes) as u64,
-        exit_code: 0,
+        exit_code: if entry.oracle_all_passed { 0 } else { 1 },
         timed_out: false,
         coverage_percent: None,
         network_events: 0,
@@ -488,35 +764,63 @@ fn runtime_input(row: &AstCorpusRow) -> RuntimeInput {
     }
 }
 
-fn reasoning_input(row: &AstCorpusRow, path: &str, source: &str) -> FsvResult<ReasoningInput> {
+fn reasoning_input(
+    row: &AstCorpusRow,
+    entry: &CorpusIndexEntry,
+    mutation: MutationCategory,
+    outcome: OracleOutcome,
+    path: &str,
+    source: &str,
+    patch_text: &str,
+) -> FsvResult<ReasoningInput> {
     Ok(ReasoningInput {
         task_id: row.task_id.clone(),
         transcript: format!(
-            "TCT centroid refresh consumed real SWE-bench source {} with source sha {} and patch {}.",
+            "TCT centroid refresh consumed real SWE-bench source {} with source sha {}, mutation {:?}, oracle {:?}, patch {}, patch sha {}, patch content sha {}.",
             path,
             hex::encode(sha256_bytes(source.as_bytes())),
-            row.patch_path
+            mutation,
+            outcome,
+            entry.patch_path,
+            entry.patch_sha256,
+            hex::encode(sha256_bytes(patch_text.as_bytes()))
         ),
         events: vec![ReasoningEvent {
             actor: "tct_centroid_refresh_fsv".into(),
-            event_type: "source_readback".into(),
+            event_type: "durable_reward_signal_readback".into(),
             text: format!(
-                "host_source={} docker_sha={} base_commit={}",
-                row.host_source.path, row.docker_source.sha256, row.base_commit
+                "host_source={} docker_sha={} base_commit={} category={} oracle_all_passed={} oracle_exception={} oracle_sha={}",
+                row.host_source.path,
+                row.docker_source.sha256,
+                row.base_commit,
+                entry.category,
+                entry.oracle_all_passed,
+                entry.oracle_exception.as_deref().unwrap_or("none"),
+                entry.oracle_verdict_sha256
             ),
         }],
     })
 }
 
-fn scalar_input(row: &AstCorpusRow, line_start: u32, line_end: u32) -> ScalarInput {
+fn scalar_input(
+    row: &AstCorpusRow,
+    entry: &CorpusIndexEntry,
+    mutation: MutationCategory,
+    line_start: u32,
+    line_end: u32,
+    patch_lines: usize,
+) -> ScalarInput {
     ScalarInput {
-        bfs_depth: 1,
+        bfs_depth: mutation_index(mutation) as u32 + 1,
         blame_age_days: 0,
-        churn_lines_30d: row.chunk_state.chunk_count as u32,
-        coverage_delta: 0.0,
-        repo_health_score: 1.0,
+        churn_lines_30d: patch_lines as u32,
+        coverage_delta: if entry.oracle_all_passed { 0.0 } else { -100.0 },
+        repo_health_score: if entry.oracle_all_passed { 1.0 } else { 0.0 },
         files_touched: 1,
-        hunks_touched: line_end.saturating_sub(line_start).max(1),
+        hunks_touched: line_end
+            .saturating_sub(line_start)
+            .max(1)
+            .saturating_add(row.chunk_state.chunk_count as u32),
     }
 }
 
@@ -693,11 +997,11 @@ fn build_refresh_report(
             constellation_version_id: constellation.version_id(),
             corpus_sha: constellation.corpus_provenance.corpus_sha,
             code_version: code_version.into(),
-            source_corpus_path: AST_CORPUS_EVIDENCE.into(),
+            source_corpus_path: source_corpus_descriptor(),
             source_corpus_sha256: evidence_sha,
             source_row_count: built.source_row_count,
             source_chunk_count: built.source_chunk_count,
-            ingested_panel_count: built.source_chunk_count,
+            ingested_panel_count: built.ingested_panel_count,
             per_entity_support,
             cell_support: support,
             shrinkage,
@@ -724,7 +1028,7 @@ fn run_edge_case_audit(
         constellation_version_id: loaded.version_id(),
         corpus_sha: loaded.corpus_provenance.corpus_sha,
         code_version: loaded.corpus_provenance.code_version.clone(),
-        source_corpus_path: AST_CORPUS_EVIDENCE.into(),
+        source_corpus_path: source_corpus_descriptor(),
         source_corpus_sha256: [1u8; 32],
         source_row_count: 0,
         source_chunk_count: 0,
@@ -831,9 +1135,10 @@ fn embedder_versions(code_version: &str) -> BTreeMap<EmbedderId, [u8; 32]> {
         .collect()
 }
 
-fn patch_line_count(path: &str) -> FsvResult<usize> {
-    let text = fs::read_to_string(path)?;
-    Ok(text.lines().filter(|line| line.starts_with('+') || line.starts_with('-')).count())
+fn patch_line_count_text(text: &str) -> usize {
+    text.lines()
+        .filter(|line| line.starts_with('+') || line.starts_with('-'))
+        .count()
 }
 
 fn parent_chain_hash(parent_chain: &[String]) -> [u8; 16] {
@@ -865,11 +1170,41 @@ fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
 }
 
+fn combined_sha(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"contextgraph:tct-centroid-refresh:v2");
+    hasher.update(left);
+    hasher.update(right);
+    hasher.finalize().into()
+}
+
+fn source_corpus_descriptor() -> String {
+    format!("{AST_CORPUS_EVIDENCE};{CORPUS_INDEX}")
+}
+
 fn entity_counts_json(counts: &BTreeMap<EntityType, usize>) -> Value {
     Value::Object(
         counts
             .iter()
             .map(|(entity_type, count)| (format!("{entity_type:?}"), json!(count)))
+            .collect(),
+    )
+}
+
+fn category_counts_json(counts: &BTreeMap<MutationCategory, usize>) -> Value {
+    Value::Object(
+        counts
+            .iter()
+            .map(|(category, count)| (mutation_category_slug(*category).to_string(), json!(count)))
+            .collect(),
+    )
+}
+
+fn outcome_counts_json(counts: &BTreeMap<OracleOutcome, usize>) -> Value {
+    Value::Object(
+        counts
+            .iter()
+            .map(|(outcome, count)| (format!("{outcome:?}"), json!(count)))
             .collect(),
     )
 }

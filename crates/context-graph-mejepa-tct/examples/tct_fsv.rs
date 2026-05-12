@@ -405,7 +405,11 @@ where
         .mode(0o600)
         .open(path)?;
     file.write_all(&bytes)?;
+    file.sync_all()?;
     drop(file);
+    if let Some(parent) = path.parent() {
+        OpenOptions::new().read(true).open(parent)?.sync_all()?;
+    }
     let mode = fs::metadata(path)?.permissions().mode() & 0o777;
     require(&format!("{} mode 0600", path.display()), mode == 0o600)?;
     let readback_bytes = fs::read(path)?;
