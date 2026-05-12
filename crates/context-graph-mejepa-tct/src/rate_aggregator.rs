@@ -11,7 +11,7 @@ use crate::rate::RollingWindow;
 use crate::store::cf;
 use crate::verdict::VerdictGuardRejected;
 
-pub const CF_MEJEPA_GUARD_DECISIONS: &str = "CF_MEJEPA_GUARD_DECISIONS";
+pub use context_graph_mejepa_cf::CF_MEJEPA_GUARD_DECISIONS;
 pub const MIN_SAMPLES_FOR_RATE: usize = 30;
 pub const ENV_RATE_WINDOW_SIZE: &str = "MEJEPA_TCT_RATE_WINDOW_SIZE";
 pub const ENV_RATE_WINDOW_HOURS: &str = "MEJEPA_TCT_RATE_WINDOW_HOURS";

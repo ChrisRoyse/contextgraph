@@ -101,7 +101,7 @@ The storage block now mixes shipped and remaining work. **CF_MEJEPA_AGENT_FEEDBA
 | Per-embedder forward wrappers (neural) | partial (deterministic placeholders) | `context-graph-mejepa-embedders::forward` (proposed) | run actual model forward passes, not deterministic encoders |
 | DDA enrichment computation (N+N² signals) | partial | `CF_MEJEPA_DDA_SIGNALS` registered; production computation/consumption still planned | compute pairwise cosine + MI per chunk per shift |
 | TCT constellation + Gτ guard | shipped | `context-graph-mejepa-tct` | per-(cat × ent × lang × emb) centroids; guard test |
-| 15 instrument slots → Panel(5120-d) | shipped (deterministic) / partial (semantic heads) | `context-graph-mejepa-instruments` | typed feature vectors; PanelBuilder with fail-closed dim |
+| 15 instrument slots → Panel(5120-d) | shipped; Python code semantic slots analyzer-backed | `context-graph-mejepa-instruments` | typed feature vectors; PanelBuilder with fail-closed dim; Python `E_AST`/`E_CFG`/`E_DataFlow`/`E_TypeGraph` use Ruff semantic facts and FSV readback |
 | Predictor trunk (6-layer transformer) | shipped | `context-graph-mejepa::predictor` | latent-space prediction of panel[t=2] |
 | Multi-head prediction stack | code_complete Phase B; training-quality hardening remains | `context-graph-mejepa::{prediction_surfaces,predictor::heads}` | per-failure-class + edge-case + tech-debt + perf + security + accuracy + cost + reasoning surfaces |
 | `MeJepaCompiler::compile/verify/observe` | shipped | `context-graph-mejepa::compiler` | the inference + online-update API |

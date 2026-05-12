@@ -39,6 +39,7 @@ pub const CF_MEJEPA_MODEL_PROMOTIONS: &str = "CF_MEJEPA_MODEL_PROMOTIONS";
 pub const CF_MEJEPA_PRODUCTION_TELEMETRY: &str = "CF_MEJEPA_PRODUCTION_TELEMETRY";
 pub const CF_MEJEPA_CONSTELLATION: &str = "CF_MEJEPA_CONSTELLATION";
 pub const CF_MEJEPA_GUARD_DECISIONS: &str = "CF_MEJEPA_GUARD_DECISIONS";
+pub const CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS: &str = "CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS";
 
 // REQ-FLYWHEEL-10 — three new column families for the data flywheel.
 //
@@ -151,7 +152,11 @@ pub const HYGIENE_CFS: &[&str] = &[
     CF_MEJEPA_PRODUCTION_TELEMETRY,
 ];
 
-pub const TCT_CFS: &[&str] = &[CF_MEJEPA_CONSTELLATION, CF_MEJEPA_GUARD_DECISIONS];
+pub const TCT_CFS: &[&str] = &[
+    CF_MEJEPA_CONSTELLATION,
+    CF_MEJEPA_GUARD_DECISIONS,
+    CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
+];
 
 /// Canonical, duplicate-free list opened by ME-JEPA hygiene/runtime databases.
 ///
@@ -198,6 +203,7 @@ pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
     CF_MEJEPA_GC_HISTORY,
     CF_MEJEPA_CONSTELLATION,
     CF_MEJEPA_GUARD_DECISIONS,
+    CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
 ];
 
 pub const MEJEPA_HYGIENE_REFERENCED_CF_COUNT: usize = ALL_HYGIENE_REFERENCED_CFS.len();
@@ -263,5 +269,16 @@ mod tests {
         assert_eq!(CF_MEJEPA_FAILURE_EXEMPLARS, "CF_MEJEPA_FAILURE_EXEMPLARS");
         assert_eq!(CF_MEJEPA_AGENT_FEEDBACK, "CF_MEJEPA_AGENT_FEEDBACK");
         assert_eq!(CF_MEJEPA_FLYWHEEL_JOB_RUNS, "CF_MEJEPA_FLYWHEEL_JOB_RUNS");
+    }
+
+    #[test]
+    fn tct_cfs_are_registered_in_daemon_opener() {
+        let names = all_hygiene_referenced_cfs();
+        for cf in TCT_CFS {
+            assert!(
+                names.contains(cf),
+                "TCT CF {cf} missing from daemon opener; production TCT source-of-truth reads would miss persisted rows.",
+            );
+        }
     }
 }

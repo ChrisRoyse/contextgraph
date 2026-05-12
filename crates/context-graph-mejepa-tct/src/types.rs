@@ -85,15 +85,15 @@ pub enum EntityType {
     Method,
     Class,
     Struct,
+    Enum,
+    TraitOrInterface,
     Impl,
     Module,
-    Trait,
-    Interface,
-    Macro,
-    Enum,
-    Union,
     Namespace,
-    TopLevelStmt,
+    TestFunction,
+    Import,
+    CommentBlock,
+    Docstring,
 }
 
 impl EntityType {
@@ -103,15 +103,15 @@ impl EntityType {
             Self::Method,
             Self::Class,
             Self::Struct,
+            Self::Enum,
+            Self::TraitOrInterface,
             Self::Impl,
             Self::Module,
-            Self::Trait,
-            Self::Interface,
-            Self::Macro,
-            Self::Enum,
-            Self::Union,
             Self::Namespace,
-            Self::TopLevelStmt,
+            Self::TestFunction,
+            Self::Import,
+            Self::CommentBlock,
+            Self::Docstring,
         ]
     }
 }

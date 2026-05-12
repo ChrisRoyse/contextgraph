@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use bincode::Options as BincodeOptions;
 use rocksdb::{ColumnFamily, ColumnFamilyDescriptor, IteratorMode, Options, WriteBatch, DB};
@@ -9,10 +10,12 @@ use crate::constellation::{bincode_options, TctConstellation};
 use crate::error::TctError;
 use crate::freshness::read_freshness_config;
 use crate::rate_aggregator::CF_MEJEPA_GUARD_DECISIONS;
+use crate::refresh_report::ConstellationRefreshReport;
 use crate::types::EmbedderId;
 
-pub const CF_MEJEPA_CONSTELLATION: &str = "CF_MEJEPA_CONSTELLATION";
-pub const MEJEPA_TCT_CFS: &[&str] = &[CF_MEJEPA_CONSTELLATION, CF_MEJEPA_GUARD_DECISIONS];
+pub use context_graph_mejepa_cf::{
+    CF_MEJEPA_CONSTELLATION, CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS, TCT_CFS as MEJEPA_TCT_CFS,
+};
 
 #[derive(Clone)]
 pub struct ConstellationStore {
@@ -187,8 +190,182 @@ impl ConstellationStore {
         count_cf(&self.db, CF_MEJEPA_GUARD_DECISIONS)
     }
 
+    pub fn persist_refresh_report(
+        &self,
+        report: &ConstellationRefreshReport,
+    ) -> Result<[u8; 32], TctError> {
+        report.validate_integrity()?;
+        let key = refresh_report_key(report.finished_at, report.report_id)?;
+        let bytes = bincode_options().serialize(report)?;
+        self.db
+            .put_cf(
+                cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS)?,
+                &key,
+                bytes,
+            )
+            .map_err(|err| {
+                TctError::store(
+                    "put",
+                    CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
+                    err.to_string(),
+                )
+            })?;
+        let raw = self
+            .db
+            .get_cf(cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS)?, &key)
+            .map_err(|err| {
+                TctError::store(
+                    "get",
+                    CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
+                    err.to_string(),
+                )
+            })?
+            .ok_or_else(|| {
+                TctError::store(
+                    "read_after_write",
+                    CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
+                    "missing persisted refresh report row",
+                )
+            })?;
+        let readback: ConstellationRefreshReport = bincode_options().deserialize(&raw)?;
+        readback.validate_integrity()?;
+        if readback != *report {
+            return Err(TctError::FrozenViolation {
+                detail: "refresh report read-after-write payload mismatch".to_string(),
+            });
+        }
+        Ok(report.report_id)
+    }
+
+    pub fn load_refresh_report(
+        &self,
+        report_id: [u8; 32],
+    ) -> Result<ConstellationRefreshReport, TctError> {
+        let mut matches = self.refresh_report_values_by_id(report_id)?;
+        if matches.is_empty() {
+            return Err(TctError::MissingCentroid {
+                detail: format!("no refresh report row for report {}", hex::encode(report_id)),
+            });
+        }
+        if matches.len() > 1 {
+            return Err(TctError::Store {
+                operation: "load_refresh_report",
+                cf: CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
+                detail: format!(
+                    "ambiguous refresh report {} has {} rows",
+                    hex::encode(report_id),
+                    matches.len()
+                ),
+            });
+        }
+        let report = matches.remove(0);
+        report.validate_integrity()?;
+        Ok(report)
+    }
+
+    pub fn latest_refresh_report(&self) -> Result<ConstellationRefreshReport, TctError> {
+        let cf = cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS)?;
+        let mut latest: Option<ConstellationRefreshReport> = None;
+        for item in self.db.iterator_cf(cf, IteratorMode::Start) {
+            let (_key, value) = item.map_err(|err| {
+                TctError::store(
+                    "iterate",
+                    CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
+                    err.to_string(),
+                )
+            })?;
+            let report: ConstellationRefreshReport = bincode_options().deserialize(&value)?;
+            report.validate_integrity()?;
+            let replace = latest
+                .as_ref()
+                .map(|current| {
+                    report.finished_at > current.finished_at
+                        || (report.finished_at == current.finished_at
+                            && report.report_id > current.report_id)
+                })
+                .unwrap_or(true);
+            if replace {
+                latest = Some(report);
+            }
+        }
+        latest.ok_or_else(|| TctError::MissingCentroid {
+            detail: "no persisted TCT refresh reports".to_string(),
+        })
+    }
+
+    pub fn refresh_reports_for_constellation(
+        &self,
+        version_id: [u8; 32],
+        limit: usize,
+    ) -> Result<Vec<ConstellationRefreshReport>, TctError> {
+        if limit == 0 {
+            return Err(TctError::invalid(
+                "limit",
+                "refresh report limit must be positive",
+            ));
+        }
+        let cf = cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS)?;
+        let mut reports = Vec::new();
+        for item in self.db.iterator_cf(cf, IteratorMode::Start) {
+            let (_key, value) = item.map_err(|err| {
+                TctError::store(
+                    "iterate",
+                    CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
+                    err.to_string(),
+                )
+            })?;
+            let report: ConstellationRefreshReport = bincode_options().deserialize(&value)?;
+            report.validate_integrity()?;
+            if report.constellation_version_id == version_id {
+                reports.push(report);
+            }
+        }
+        reports.sort_by(|left, right| {
+            right
+                .finished_at
+                .cmp(&left.finished_at)
+                .then_with(|| right.report_id.cmp(&left.report_id))
+        });
+        reports.truncate(limit);
+        Ok(reports)
+    }
+
+    pub fn count_refresh_reports(&self) -> Result<usize, TctError> {
+        count_cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS)
+    }
+
     pub fn read_raw_by_version(&self, version_id: [u8; 32]) -> Result<Vec<Vec<u8>>, TctError> {
         self.raw_values_for_version(version_id)
+    }
+
+    fn refresh_report_values_by_id(
+        &self,
+        report_id: [u8; 32],
+    ) -> Result<Vec<ConstellationRefreshReport>, TctError> {
+        let cf = cf(&self.db, CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS)?;
+        let mut out = Vec::new();
+        for item in self.db.iterator_cf(cf, IteratorMode::Start) {
+            let (key, value) = item.map_err(|err| {
+                TctError::store(
+                    "iterate",
+                    CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
+                    err.to_string(),
+                )
+            })?;
+            if key.len() != 40 {
+                return Err(TctError::dim(
+                    40,
+                    key.len(),
+                    "refresh report key must be finished_at_secs || report_id",
+                ));
+            }
+            if key[8..] == report_id {
+                let report: ConstellationRefreshReport = bincode_options().deserialize(&value)?;
+                report.validate_integrity()?;
+                out.push(report);
+            }
+        }
+        Ok(out)
     }
 
     fn raw_values_for_version(&self, version_id: [u8; 32]) -> Result<Vec<Vec<u8>>, TctError> {
@@ -262,4 +439,20 @@ fn constellation_key(version_id: [u8; 32], corpus_sha: [u8; 32]) -> Vec<u8> {
     key.extend_from_slice(&version_id);
     key.extend_from_slice(&corpus_sha);
     key
+}
+
+fn refresh_report_key(finished_at: SystemTime, report_id: [u8; 32]) -> Result<Vec<u8>, TctError> {
+    let secs = finished_at
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| {
+            TctError::invalid(
+                "refresh_report.finished_at",
+                "finished_at must not predate UNIX_EPOCH",
+            )
+        })?
+        .as_secs();
+    let mut key = Vec::with_capacity(40);
+    key.extend_from_slice(&secs.to_be_bytes());
+    key.extend_from_slice(&report_id);
+    Ok(key)
 }
