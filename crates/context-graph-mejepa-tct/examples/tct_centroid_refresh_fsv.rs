@@ -36,7 +36,6 @@ struct CorpusEntry {
 #[derive(Debug)]
 struct RefreshBuild {
     constellation: TctConstellation,
-    shrinkage_decisions: Vec<ShrinkageDecision>,
     report: ConstellationRefreshReport,
     operator_chunks: ChunkGtauOutput,
     support_summary: Value,
@@ -419,7 +418,6 @@ fn build_refresh_report(
 
     Ok(RefreshBuild {
         constellation,
-        shrinkage_decisions,
         report,
         operator_chunks,
         support_summary,
