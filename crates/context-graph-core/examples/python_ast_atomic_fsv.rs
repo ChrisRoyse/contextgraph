@@ -126,7 +126,7 @@ def test_compute() -> None:
             .ok_or("missing module globals chunk")?,
     );
     let passes = compile["success"] == Value::Bool(true)
-        && after["method_count"] == Value::from(2)
+        && after["method_count"].as_u64() == Some(2)
         && after["has_top_level_function"] == Value::Bool(true)
         && after["has_test_function"] == Value::Bool(true)
         && class_source.contains("class Solver")
@@ -244,7 +244,7 @@ fn run_maximum_class_edge(sources: &Path) -> FsvResult<Value> {
         "before_state": before,
         "action": { "py_compile": compile },
         "after_state": after,
-        "passes": after["method_count"] == Value::from(40)
+        "passes": after["method_count"].as_u64() == Some(40)
             && class_source.contains("class Bulk")
             && class_source.contains("label = \"bulk\"")
             && !class_source.contains("def method_0")

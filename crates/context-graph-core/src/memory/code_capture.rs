@@ -19,6 +19,8 @@
 //! - But each code entity gets the FULL 13-embedder treatment
 //! - E7 (V_correctness) provides code-specific patterns, other embedders provide context
 
+#![allow(deprecated)] // Internal bridge until CodeCaptureService accepts canonical AstChunk directly.
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -430,7 +432,9 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeCaptureService<E, S> {
             ChunkEntityType::Static => Some(CodeEntityType::Static),
             ChunkEntityType::TypeAlias => Some(CodeEntityType::TypeAlias),
             ChunkEntityType::Macro => Some(CodeEntityType::Macro),
-            ChunkEntityType::Comment | ChunkEntityType::CommentBlock => Some(CodeEntityType::Comment),
+            ChunkEntityType::Comment | ChunkEntityType::CommentBlock => {
+                Some(CodeEntityType::Comment)
+            }
             ChunkEntityType::Docstring => Some(CodeEntityType::Docstring),
             ChunkEntityType::Mixed => Some(CodeEntityType::Mixed),
             ChunkEntityType::Unknown => None,
@@ -704,19 +708,25 @@ mod tests {
             CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::convert_entity_type(
                 ChunkEntityType::Function
             ),
-            CodeEntityType::Function
+            Some(CodeEntityType::Function)
         );
         assert_eq!(
             CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::convert_entity_type(
                 ChunkEntityType::Struct
             ),
-            CodeEntityType::Struct
+            Some(CodeEntityType::Struct)
         );
         assert_eq!(
             CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::convert_entity_type(
                 ChunkEntityType::Impl
             ),
-            CodeEntityType::Impl
+            Some(CodeEntityType::Impl)
+        );
+        assert_eq!(
+            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::convert_entity_type(
+                ChunkEntityType::Unknown
+            ),
+            None
         );
     }
 
@@ -724,17 +734,29 @@ mod tests {
     fn test_language_from_string() {
         assert_eq!(
             CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::language_from_string("rust"),
-            CodeLanguage::Rust
+            Some(CodeLanguage::Rust)
         );
         assert_eq!(
             CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::language_from_string("Python"),
-            CodeLanguage::Python
+            Some(CodeLanguage::Python)
+        );
+        assert_eq!(
+            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::language_from_string("csharp"),
+            Some(CodeLanguage::CSharp)
+        );
+        assert_eq!(
+            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::language_from_string("Ruby"),
+            Some(CodeLanguage::Ruby)
+        );
+        assert_eq!(
+            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::language_from_string("PHP"),
+            Some(CodeLanguage::Php)
         );
         assert_eq!(
             CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::language_from_string(
                 "unknown_lang"
             ),
-            CodeLanguage::Unknown
+            None
         );
     }
 }

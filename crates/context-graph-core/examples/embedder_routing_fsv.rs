@@ -52,7 +52,7 @@ fn main() -> FsvResult<()> {
     let readback: Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
     require(
         "routing row count readback",
-        readback["after_state"]["row_count"] == Value::from(143),
+        readback["after_state"]["row_count"].as_u64() == Some(143),
     )?;
     println!(
         "{}",

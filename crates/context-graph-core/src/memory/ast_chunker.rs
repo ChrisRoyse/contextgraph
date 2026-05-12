@@ -4,6 +4,8 @@
 //! older code-capture call sites keep compiling while using the same canonical,
 //! multi-language parser and fail-closed diagnostics as the ME-JEPA path.
 
+#![allow(deprecated)] // This module is the deprecated compatibility boundary.
+
 use crate::memory::ast::{
     self, AstChunk as CanonicalAstChunk, AstChunkOptions, AstChunkerError as CanonicalAstError,
     EntityType as CanonicalEntityType, Language, ParseDiagnostic as CanonicalDiagnostic,
@@ -12,9 +14,6 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use thiserror::Error;
 use tracing::error;
-
-const DEPRECATED_NOTE: &str =
-    "use context_graph_core::memory::ast::{chunk_path, chunk_with_options, AstChunkOptions}";
 
 /// Errors that can occur during deprecated AST-based code chunking.
 #[derive(Debug, Error)]
@@ -53,7 +52,10 @@ impl AstChunkerError {
 
 /// Byte-precise parser diagnostic captured before failing closed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[deprecated(since = "0.1.0", note = DEPRECATED_NOTE)]
+#[deprecated(
+    since = "0.1.0",
+    note = "use context_graph_core::memory::ast::{chunk_path, chunk_with_options, AstChunkOptions}"
+)]
 pub struct AstParseDiagnostic {
     pub kind: String,
     pub is_error: bool,
@@ -69,7 +71,10 @@ pub struct AstParseDiagnostic {
 
 /// Configuration retained for source compatibility with the legacy API.
 #[derive(Debug, Clone)]
-#[deprecated(since = "0.1.0", note = DEPRECATED_NOTE)]
+#[deprecated(
+    since = "0.1.0",
+    note = "use context_graph_core::memory::ast::{chunk_path, chunk_with_options, AstChunkOptions}"
+)]
 pub struct AstChunkConfig {
     pub target_size: usize,
     pub min_size: usize,
@@ -92,7 +97,10 @@ impl Default for AstChunkConfig {
 
 /// Entity type detected in the AST.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[deprecated(since = "0.1.0", note = DEPRECATED_NOTE)]
+#[deprecated(
+    since = "0.1.0",
+    note = "use context_graph_core::memory::ast::{chunk_path, chunk_with_options, AstChunkOptions}"
+)]
 pub enum EntityType {
     Function,
     Method,
@@ -119,7 +127,10 @@ pub enum EntityType {
 
 /// Metadata for a code chunk.
 #[derive(Debug, Clone)]
-#[deprecated(since = "0.1.0", note = DEPRECATED_NOTE)]
+#[deprecated(
+    since = "0.1.0",
+    note = "use context_graph_core::memory::ast::{chunk_path, chunk_with_options, AstChunkOptions}"
+)]
 pub struct CodeChunkMetadata {
     pub file_path: String,
     pub language: String,
@@ -137,7 +148,10 @@ pub struct CodeChunkMetadata {
 
 /// A code chunk with full context for embedding.
 #[derive(Debug, Clone)]
-#[deprecated(since = "0.1.0", note = DEPRECATED_NOTE)]
+#[deprecated(
+    since = "0.1.0",
+    note = "use context_graph_core::memory::ast::{chunk_path, chunk_with_options, AstChunkOptions}"
+)]
 pub struct CodeChunk {
     pub code: String,
     pub contextualized_text: String,
@@ -146,7 +160,10 @@ pub struct CodeChunk {
 }
 
 /// Deprecated AST chunker facade backed by `memory::ast`.
-#[deprecated(since = "0.1.0", note = DEPRECATED_NOTE)]
+#[deprecated(
+    since = "0.1.0",
+    note = "use context_graph_core::memory::ast::{chunk_path, chunk_with_options, AstChunkOptions}"
+)]
 pub struct AstCodeChunker {
     config: AstChunkConfig,
     fixed_language: Option<Language>,

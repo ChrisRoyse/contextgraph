@@ -50,6 +50,7 @@ pub use ast::{
     EntityType as AstEntityType, Language as AstLanguage,
     ParseDiagnostic as MultiAstParseDiagnostic, RoutingError, RoutingKey, RoutingResult,
 };
+#[allow(deprecated)]
 pub use ast_chunker::{
     AstChunkConfig, AstChunkerError, AstCodeChunker, AstParseDiagnostic, CodeChunk,
     CodeChunkMetadata, EntityType,

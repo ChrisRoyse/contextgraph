@@ -320,17 +320,18 @@ fn chunk_python_with_options(
         &mut chunks,
     )?;
     if chunks.is_empty() {
-        chunks.push(build_text_chunk(
-            Language::Python,
-            EntityType::Module,
-            &[],
-            None,
-            0,
-            source.len(),
-            source_text.to_string(),
+        chunks.push(build_text_chunk(TextChunkInput {
+            language: Language::Python,
+            entity_type: EntityType::Module,
+            parent_chain: &[],
+            symbol_name: None,
+            start_byte: 0,
+            end_byte: source.len(),
+            raw: source_text.to_string(),
             source,
             options,
-        )?);
+            sha256: None,
+        })?);
     }
     Ok(chunks)
 }
@@ -614,25 +615,25 @@ fn build_ruff_python_module_globals_chunk(
         return Ok(None);
     }
     let raw = join_source_ranges(source, &ranges);
-    Ok(Some(build_text_chunk_with_sha(
-        Language::Python,
-        EntityType::Module,
-        &[],
-        None,
-        ranges[0].0,
-        ranges.last().map(|(_, end)| *end).unwrap_or(ranges[0].1),
+    Ok(Some(build_text_chunk(TextChunkInput {
+        language: Language::Python,
+        entity_type: EntityType::Module,
+        parent_chain: &[],
+        symbol_name: None,
+        start_byte: ranges[0].0,
+        end_byte: ranges.last().map(|(_, end)| *end).unwrap_or(ranges[0].1),
         raw,
         source,
         options,
-        python_token_sha256(
+        sha256: Some(python_token_sha256(
             tokens,
             source,
             ranges[0].0,
             ranges.last().map(|(_, end)| *end).unwrap_or(ranges[0].1),
             EntityType::Module,
             &[],
-        ),
-    )?))
+        )),
+    })?))
 }
 
 fn build_ruff_python_class_shell_chunk(
@@ -684,18 +685,19 @@ fn build_ruff_python_class_shell_chunk(
     if included_parts == 1 {
         raw.push_str(&python_shell_pass_line(source, start_byte));
     }
-    build_text_chunk_with_sha(
-        Language::Python,
-        EntityType::Class,
+    let sha256 = atomic_text_sha256(Language::Python, EntityType::Class, parent_chain, &raw);
+    build_text_chunk(TextChunkInput {
+        language: Language::Python,
+        entity_type: EntityType::Class,
         parent_chain,
-        Some(class_def.name.as_str().to_string()),
+        symbol_name: Some(class_def.name.as_str().to_string()),
         start_byte,
         end_byte,
-        raw.clone(),
+        raw,
         source,
         options,
-        atomic_text_sha256(Language::Python, EntityType::Class, parent_chain, &raw),
-    )
+        sha256: Some(sha256),
+    })
 }
 
 fn build_ruff_python_span_chunk(
@@ -717,8 +719,8 @@ fn build_ruff_python_span_chunk(
         entity_type,
         parent_chain,
     );
-    build_text_chunk_with_sha(
-        Language::Python,
+    build_text_chunk(TextChunkInput {
+        language: Language::Python,
         entity_type,
         parent_chain,
         symbol_name,
@@ -727,8 +729,8 @@ fn build_ruff_python_span_chunk(
         raw,
         source,
         options,
-        sha256,
-    )
+        sha256: Some(sha256),
+    })
 }
 
 fn is_ruff_python_module_global_stmt(stmt: &Stmt) -> bool {
@@ -861,18 +863,32 @@ fn python_token_sha256(
     hex_sha256(signature.as_bytes())
 }
 
-fn build_text_chunk_with_sha(
+struct TextChunkInput<'a> {
     language: Language,
     entity_type: EntityType,
-    parent_chain: &[String],
+    parent_chain: &'a [String],
     symbol_name: Option<String>,
     start_byte: usize,
     end_byte: usize,
     raw: String,
-    source: &[u8],
-    options: &AstChunkOptions,
-    sha256: String,
-) -> Result<AstChunk, AstChunkerError> {
+    source: &'a [u8],
+    options: &'a AstChunkOptions,
+    sha256: Option<String>,
+}
+
+fn build_text_chunk(input: TextChunkInput<'_>) -> Result<AstChunk, AstChunkerError> {
+    let TextChunkInput {
+        language,
+        entity_type,
+        parent_chain,
+        symbol_name,
+        start_byte,
+        end_byte,
+        raw,
+        source,
+        options,
+        sha256,
+    } = input;
     let routing = try_route_to_embedders(entity_type, Some(language)).map_err(|err| {
         AstChunkerError::RoutingMissing {
             language,
@@ -904,7 +920,8 @@ fn build_text_chunk_with_sha(
         line_end,
         start_byte,
         end_byte,
-        sha256,
+        sha256: sha256
+            .unwrap_or_else(|| atomic_text_sha256(language, entity_type, parent_chain, &raw)),
         parse_diagnostics: vec![],
         raw_source: raw,
         content,
@@ -1042,56 +1059,6 @@ fn build_chunk(
         start_byte,
         end_byte,
         sha256,
-        parse_diagnostics: vec![],
-        raw_source: raw,
-        content,
-        embedder_routing_set: routing,
-    })
-}
-
-fn build_text_chunk(
-    language: Language,
-    entity_type: EntityType,
-    parent_chain: &[String],
-    symbol_name: Option<String>,
-    start_byte: usize,
-    end_byte: usize,
-    raw: String,
-    source: &[u8],
-    options: &AstChunkOptions,
-) -> Result<AstChunk, AstChunkerError> {
-    let routing = try_route_to_embedders(entity_type, Some(language)).map_err(|err| {
-        AstChunkerError::RoutingMissing {
-            language,
-            entity_type,
-            reason: format!("{}: {}", err.code(), err),
-        }
-    })?;
-    let line_start = line_for_byte(source, start_byte);
-    let line_end = line_for_byte(source, end_byte);
-    let non_ws = raw.chars().filter(|ch| !ch.is_whitespace()).count();
-    let content = format!(
-        "path: {}\nlanguage: {}\nentity_type: {:?}\nsymbol_name: {}\nparent_chain: {}\nlines: {}-{}\nnon_ws_chars: {}\n--- source ---\n{}",
-        options.file_path,
-        language.slug(),
-        entity_type,
-        symbol_name.as_deref().unwrap_or(""),
-        parent_chain.join("::"),
-        line_start,
-        line_end,
-        non_ws,
-        raw
-    );
-    Ok(AstChunk {
-        language,
-        entity_type,
-        symbol_name,
-        parent_chain: parent_chain.to_vec(),
-        line_start,
-        line_end,
-        start_byte,
-        end_byte,
-        sha256: atomic_text_sha256(language, entity_type, parent_chain, &raw),
         parse_diagnostics: vec![],
         raw_source: raw,
         content,

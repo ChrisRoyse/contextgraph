@@ -119,7 +119,7 @@ fn run_cases_parallel(
                 }
                 let result = run_task_case(&cases[index], sources_dir);
                 let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
-                if done == 1 || done % 25 == 0 || done == cases.len() {
+                if done == 1 || done.is_multiple_of(25) || done == cases.len() {
                     println!(
                         "swebench python AST FSV progress: task {} / {}",
                         done,

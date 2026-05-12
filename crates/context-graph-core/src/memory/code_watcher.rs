@@ -1,18 +1,19 @@
 //! CodeFileWatcher - Git-based file watcher for code file changes.
 //!
 //! Monitors directories for code file changes and automatically parses them
-//! using tree-sitter AST chunking, then stores code entities with E7 embeddings.
+//! using the canonical AST chunking path, then stores code entities with E7 embeddings.
 //!
 //! # Architecture
 //! Git Commands -> File Read -> ASTChunker -> CodeCaptureService -> CodeStore
 //!
 //! # Supported Languages
-//! Currently: Rust (.rs)
-//! Future: Python, TypeScript, JavaScript, Go
+//! The watcher accepts the 11 canonical `memory::ast` languages.
 //!
 //! # Constitution Compliance
 //! - E7 (V_correctness): 1536D code patterns, function signatures
 //! - Code embeddings are stored separately from the 13-embedder teleological system
+
+#![allow(deprecated)] // Internal bridge until CodeCaptureService accepts canonical AstChunk directly.
 
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
@@ -107,7 +108,7 @@ struct GitChange {
 /// - Uses `git ls-files` for initial file discovery
 /// - Uses `git status --porcelain` for change detection
 /// - Tracks SHA256 hashes to detect actual content changes
-/// - Processes files through ASTChunker (tree-sitter)
+/// - Processes files through the canonical multi-language AST chunker
 /// - Stores chunks via CodeCaptureService with E7 embeddings
 ///
 /// # Thread Safety
@@ -171,17 +172,15 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeFileWatcher<E, S> {
             None
         };
 
-        // Create AST chunker for Rust
-        let chunker =
-            AstCodeChunker::default_rust().map_err(|e| CodeWatcherError::ChunkingFailed {
+        // Create AST chunker backed by the canonical multi-language parser.
+        let chunker = AstCodeChunker::default_multi_language().map_err(|e| {
+            CodeWatcherError::ChunkingFailed {
                 path: PathBuf::from("init"),
                 source: e,
-            })?;
+            }
+        })?;
 
-        // Supported extensions
-        let mut supported_extensions = HashSet::new();
-        supported_extensions.insert("rs".to_string());
-        // Future: Add "py", "ts", "js", "go"
+        let supported_extensions = supported_ast_extensions();
 
         Ok(Self {
             capture_service,
@@ -203,11 +202,12 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeFileWatcher<E, S> {
         config: AstChunkConfig,
     ) -> Result<Self, CodeWatcherError> {
         let mut watcher = Self::new(watch_paths, capture_service, session_id)?;
-        watcher.chunker =
-            AstCodeChunker::new_rust(config).map_err(|e| CodeWatcherError::ChunkingFailed {
+        watcher.chunker = AstCodeChunker::new_multi_language(config).map_err(|e| {
+            CodeWatcherError::ChunkingFailed {
                 path: PathBuf::from("init"),
                 source: e,
-            })?;
+            }
+        })?;
         Ok(watcher)
     }
 
@@ -561,6 +561,16 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeFileWatcher<E, S> {
     }
 }
 
+fn supported_ast_extensions() -> HashSet<String> {
+    [
+        "rs", "py", "js", "mjs", "cjs", "ts", "tsx", "mts", "cts", "go", "java", "c", "cpp", "cc",
+        "cxx", "hpp", "hh", "hxx", "cs", "rb", "php",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
 /// Statistics about the code file watcher.
 #[derive(Debug, Clone)]
 pub struct WatcherStats {
@@ -714,8 +724,21 @@ mod tests {
         // This test may fail if not in a git repo, which is fine
         if let Ok(watcher) = watcher_result {
             assert!(watcher.is_supported_code_file(Path::new("test.rs")));
+            assert!(watcher.is_supported_code_file(Path::new("test.py")));
+            assert!(watcher.is_supported_code_file(Path::new("test.js")));
+            assert!(watcher.is_supported_code_file(Path::new("test.mjs")));
+            assert!(watcher.is_supported_code_file(Path::new("test.ts")));
+            assert!(watcher.is_supported_code_file(Path::new("test.tsx")));
+            assert!(watcher.is_supported_code_file(Path::new("test.go")));
+            assert!(watcher.is_supported_code_file(Path::new("test.java")));
+            assert!(watcher.is_supported_code_file(Path::new("test.c")));
+            assert!(watcher.is_supported_code_file(Path::new("test.cpp")));
+            assert!(watcher.is_supported_code_file(Path::new("test.cs")));
+            assert!(watcher.is_supported_code_file(Path::new("test.rb")));
+            assert!(watcher.is_supported_code_file(Path::new("test.php")));
             assert!(!watcher.is_supported_code_file(Path::new("test.txt")));
             assert!(!watcher.is_supported_code_file(Path::new("test.md")));
+            assert!(!watcher.is_supported_code_file(Path::new("test.h")));
         }
     }
 

@@ -57,7 +57,7 @@ fn main() -> FsvResult<()> {
     let readback: Value = serde_json::from_str(&fs::read_to_string(&aggregate_path)?)?;
     require(
         "aggregate language_count readback",
-        readback["language_count"] == Value::from(11),
+        readback["language_count"].as_u64() == Some(11),
     )?;
     require(
         "edge readback all pass",
@@ -159,7 +159,7 @@ fn run_language_fsv(root: &Path, fixture: Fixture) -> FsvResult<Value> {
     let readback: Value = serde_json::from_str(&fs::read_to_string(&evidence_path)?)?;
     require(
         &format!("{} evidence chunk_count readback", fixture.slug),
-        readback["after_state"]["chunk_count"] == Value::from(chunks.len()),
+        readback["after_state"]["chunk_count"].as_u64() == Some(chunks.len() as u64),
     )?;
     let copy_path = root.join(format!("{}-evidence-copy.json", fixture.slug));
     write_secure_json(&copy_path, &readback)?;

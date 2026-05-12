@@ -1,3 +1,5 @@
+#![allow(deprecated)] // This legacy FSV intentionally exercises the deprecated bridge.
+
 //! Manual Full State Verification for the Rust AST chunker.
 //!
 //! Sources of truth:
