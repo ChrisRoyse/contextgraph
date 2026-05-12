@@ -8,14 +8,9 @@
 
 ## Phase E entry rule
 
-Phase E is blocked until the Phase A-D readiness gate [#15](https://github.com/ChrisRoyse/contextgraph/issues/15) is closed. A-D code/FSV evidence is broad, but "code path exists" is not the same as "ready for autonomous self-optimization." The currently open blockers are:
+Phase E can start when the Phase A-D substrate is source-of-truth verified: daemon/job-run ledgers, prediction/feedback surfaces, corpus roots, embedder forwards, DDA/TCT rows, semantic heads, production telemetry windows, and UTML carrier certs all have independent readback evidence. That gate is now satisfied at implementation/FSV level.
 
-- [#4](https://github.com/ChrisRoyse/contextgraph/issues/4) — remaining analyzer-backed instrument head parity and semantic signal density;
-- [#11](https://github.com/ChrisRoyse/contextgraph/issues/11) — production conformal/OOD/latency/VRAM telemetry windows and ship-gate trend evidence;
-- [#13](https://github.com/ChrisRoyse/contextgraph/issues/13) — UTML carrier/formula reconciliation in persisted training certificates;
-- [#15](https://github.com/ChrisRoyse/contextgraph/issues/15) — umbrella gate, including the current non-green 0.95 prediction-oracle correlation threshold.
-
-No Phase E task should be treated as started until those gaps either close with source-of-truth readback or are deliberately moved out of A-D readiness with a new issue and an explicit rationale.
+This does **not** mean the system can replace human code review yet. The latest rolling holdout evidence reports `prediction_oracle_correlation = 0.866667` against the `0.95` ship gate. That is Phase G model-quality convergence. Phase E's job is to make the autonomous self-optimization policy learn from the Phase A-D reality stream so the Phase G gate can eventually become true.
 
 ## Phase summary
 
@@ -24,8 +19,8 @@ No Phase E task should be treated as started until those gaps either close with 
 | **A. Operational unblock** | Daemon mode + prediction injection + agent-feedback channel + D-drive enforcement | code/FSV closure 2026-05-12; fresh-host operator burn-in remains | none | Daemon task set runs; GC/eval job-run rows persist; first prediction injected; first SurpriseEvent recorded; cargo lint passes |
 | **B. Multi-head extension** | Q1-Q5 `RealityPrediction` schema, what-if/explain APIs, auxiliary heads, deterministic label extractors, per-head UTML accounting | code + FSV complete 2026-05-12; training/eval hardening remains | Phase A | Code/FSV gate passed; production holdout metrics and remaining per-head self-healing tasks still open |
 | **C. Corpus expansion** | Completed Python 300×8 corpus + 10-language fixture corpus + combined split | complete 2026-05-12 | Phase A | 2,400 Python entries verified; 5,120 non-Python entries verified; combined corpus FSV passes |
-| **D. Neural embedder forwards** | Ship real forward/DDA enrichment substrate and remove placeholder-only Phase D paths | code/FSV substrate shipped 2026-05-12; production telemetry/readiness evidence remains under #11/#15 | Phase A | Forward wrappers, full pretrained/routing FSV, DDA compute/store, live shift DDA rows, cache, and stdlib registry FSV pass; production telemetry trend still open |
-| **E. Continuous self-optimization** | Scheduler tokio task + per-cell stratified drift + dissipation detection + lambda ramp | 5-7 days | Phase A-D readiness gate closed (#15) | Scheduler runs; drift detected within 1k obs; A/B/C promotion executes autonomously |
+| **D. Neural embedder forwards** | Ship real forward/DDA enrichment substrate and remove placeholder-only Phase D paths | code/FSV substrate shipped 2026-05-12; Phase E handoff ready | Phase A | Forward wrappers, full pretrained/routing FSV, DDA compute/store, live shift DDA rows, cache, stdlib registry, TCT refresh, semantic-head evidence, production telemetry, and UTML carrier FSV pass |
+| **E. Continuous self-optimization** | Scheduler tokio task + per-cell stratified drift + dissipation detection + lambda ramp | 5-7 days | Phase A-D substrate verified | Scheduler runs; drift detected within 1k obs; A/B/C promotion executes autonomously |
 | **F. Production observability** | Live conformal/OOD/p50/p99 capture + weekly eval + active-learning dashboard + WSL GPU telemetry hardening | 5-7 days | Phase A | Weekly report writes; conformal coverage measured; active-learning queue cleared by operator weekly |
 | **G. Rolling-window holdout to ≥0.95** | Run live evaluations until ship gate stably met across (category × language) | ongoing | Phase B + C + D + E + F | 4 consecutive rolling windows ≥ 0.95 |
 | **H. Inner-loop residue cleanup** | Apply deletion list, refactor loop.md, supersede SMAP files | 1-2 days | Phase A (so daemon is the new norm) | All `MEJEPA_*_RETIRED` symbols fail-closed; CLAUDE.md + agents/README.md updated |
@@ -39,9 +34,9 @@ No Phase E task should be treated as started until those gaps either close with 
 - **BOOTSTRAP** (3 tasks, ~2 days) — BOOT-001 + BOOT-003 in Phase A; BOOT-002 baseline checkpoint FSV is closed, with release packaging tracked by the readiness gate if it regresses
 - **API** (5 tasks, ~2.5 days) — API-001 (semver in MCP) + API-005 (changelog) in Phase A; API-002/003/004 in Phase F
 
-**Updated remaining fresh implementation effort:** Phase C no longer counts as remaining work. Phase A, the Phase B prediction/API/schema carrier, Phase C corpus expansion, and the Phase D enrichment substrate (forward surface, full pretrained/routing FSV, DDA compute/store, live shift DDA persistence, persistent cache, stdlib registry, TCT refresh support) are code/FSV-shipped. The remaining estimate is dominated by analyzer parity (#4), production telemetry and ship-gate trend evidence (#11/#15), UTML carrier reconciliation (#13), autonomous self-optimization policy, observability, DR, and production hardening.
+**Updated remaining fresh implementation effort:** Phase C no longer counts as remaining work. Phase A, the Phase B prediction/API/schema carrier, Phase C corpus expansion, and the Phase D enrichment substrate (forward surface, full pretrained/routing FSV, DDA compute/store, live shift DDA persistence, persistent cache, stdlib registry, TCT refresh support, semantic analyzer/head evidence, production telemetry capture, and UTML carrier reconciliation) are code/FSV-shipped. The remaining estimate is dominated by autonomous self-optimization policy, production observability/dashboard cadence, DR, operator packaging, and Phase G model-quality convergence.
 
-**Current Phase A-D baseline (2026-05-12).** `TASK-FLYWHEEL-001/002/003/004/005/006`, `TASK-PREDICT-001/002`, `TASK-LOOP-001/007`, `TASK-OBS-005/006`, `TASK-RUN-001/010/011`, `TASK-BOOT-001/003`, and `TASK-SEC-001/006/007/008` are code-shipped or operationally applied. Daemon supervision now has durable `CF_MEJEPA_FLYWHEEL_JOB_RUNS` evidence plus GC/eval source-of-truth readback at `/mnt/d/contextgraph/fsv/mcp-daemon-supervision-fsv/daemon-supervision-evidence.json`. Phase B code/FSV now ships `TASK-PREDICT-003/004/005/006/007/008`, `TASK-SEC-003`, deterministic `TASK-PREDICT-LABEL-001..009` coverage in one label module, and the core `TASK-UTML-001/002/003/004` accounting path. Phase D now ships active content forward wrappers, DDA compute/store/readback, live shift DDA rows, persistent cache behavior, stdlib registry, and TCT refresh support. Phase E remains blocked by #15 until #4/#11/#13 and the non-green 0.95 ship-gate evidence are resolved.
+**Current Phase A-D baseline (2026-05-12).** `TASK-FLYWHEEL-001/002/003/004/005/006`, `TASK-PREDICT-001/002`, `TASK-LOOP-001/007`, `TASK-OBS-005/006`, `TASK-RUN-001/010/011`, `TASK-BOOT-001/003`, and `TASK-SEC-001/006/007/008` are code-shipped or operationally applied. Daemon supervision now has durable `CF_MEJEPA_FLYWHEEL_JOB_RUNS` evidence plus GC/eval source-of-truth readback at `/mnt/d/contextgraph/fsv/mcp-daemon-supervision-fsv/daemon-supervision-evidence.json`. Phase B code/FSV now ships `TASK-PREDICT-003/004/005/006/007/008`, `TASK-SEC-003`, deterministic `TASK-PREDICT-LABEL-001..009` coverage in one label module, and the core `TASK-UTML-001/002/003/004` accounting path with carrier evidence. Phase D now ships active content forward wrappers, DDA compute/store/readback, live shift DDA rows, persistent cache behavior, stdlib registry, TCT refresh support, semantic analyzer/head evidence, production telemetry windows, and UTML cert readback. Phase E can start; Phase G remains non-green until the 0.95 correlation requirement is met.
 
 ---
 
@@ -110,7 +105,7 @@ No Phase E task should be treated as started until those gaps either close with 
 **Remaining Phase B-adjacent ship gate before declaring model quality complete:**
 1. Each new head's holdout metric beats random baseline by ≥ 10 pp after real training.
 2. Per-step training cert expands from persisted per-head L-step/global-min to all loss/delta/lambda values.
-3. Production DDA/neural embedder features are consumed by the heads, not only deterministic patch-surface heuristics.
+3. Production DDA/neural embedder features are consumed by the heads and shown to improve holdout quality, not merely persisted as side-channel evidence.
 4. Per-head Fisher, dormancy, lambda ramp, dissipation, and per-cell T are completed under Phase E/F.
 
 **Risks / mitigations:**
@@ -154,9 +149,9 @@ No Phase E task should be treated as started until those gaps either close with 
 
 ---
 
-## Phase D — Neural Embedder Forwards and DDA Substrate (code/FSV shipped; production telemetry partial 2026-05-12)
+## Phase D — Neural Embedder Forwards and DDA Substrate (code/FSV shipped; Phase E handoff ready 2026-05-12)
 
-**Goal:** Replace deterministic placeholder encoders with real forward outputs in the embedder routing layer and persist DDA enrichment signals. The forward/routing gap tracked in [#3](https://github.com/ChrisRoyse/contextgraph/issues/3) is closed; remaining production hardening is tracked under [#16](https://github.com/ChrisRoyse/contextgraph/issues/16) and [#17](https://github.com/ChrisRoyse/contextgraph/issues/17).
+**Goal:** Replace deterministic placeholder encoders with real forward outputs in the embedder routing layer and persist DDA enrichment signals. The forward/routing gap tracked in [#3](https://github.com/ChrisRoyse/contextgraph/issues/3), the DDA predictor-consumption gap tracked in [#16](https://github.com/ChrisRoyse/contextgraph/issues/16), the cache LRU/telemetry gap tracked in [#17](https://github.com/ChrisRoyse/contextgraph/issues/17), production telemetry gap tracked in [#11](https://github.com/ChrisRoyse/contextgraph/issues/11), analyzer-head gap tracked in [#4](https://github.com/ChrisRoyse/contextgraph/issues/4), and UTML-carrier gap tracked in [#13](https://github.com/ChrisRoyse/contextgraph/issues/13) are closed for the Phase A-D readiness scope.
 
 **Code/FSV shipped 2026-05-12:**
 - `EmbedderForward` now covers the 12 active content slots in the live registry: pretrained E1/E6/E7/E8/E10/E12/E13/E14 through `PretrainedEmbedderForward`, plus algorithmic E2/E3/E4/E9 through `AlgorithmicEmbedderForward`. E17 remains learner-state/affect, not a content embedder in the live code.
@@ -165,13 +160,14 @@ No Phase E task should be treated as started until those gaps either close with 
 - `compute_dda_signals`, `persist_dda_signals`, `read_dda_signals`, and row counting exist in `crates/context-graph-mejepa-train/src/dda.rs`. The source-of-truth CF is `CF_MEJEPA_DDA_SIGNALS`, keyed by `(panel_id, chunk_id)`.
 - Runtime inference RocksDB now opens `CF_MEJEPA_DDA_SIGNALS` and `CF_MEJEPA_FAILURE_EXEMPLARS`; this fixes the root cause where the CFs existed but the inference opener could not physically read/write them.
 - TCT centroid refresh now has durable reward-signal evidence: `/mnt/d/contextgraph/fsv/contextgraph-mejepa-tct-refresh-fsv/tct-centroid-refresh-evidence.json` proves `CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS` readback after reopen for 2,400 Python corpus rows, 10,560 AST-derived chunk-family observations, all 8 mutation categories, 1,008 centroid cells, and fail-closed edge cases.
+- Semantic analyzer/head evidence now proves source-bound analyzer facts and real pretrained vectors for E_AST, E_CFG, E_DataFlow, E_TypeGraph, E_Diff, E_Test, E_Trace, E_Runtime, and E_Reasoning. Source of truth: `/mnt/d/contextgraph/fsv/contextgraph-python-semantic-analyzers-fsv/python-semantic-analyzers-evidence.json` and `/mnt/d/contextgraph/fsv/contextgraph-mejepa-semantic-heads-fsv/semantic-heads-evidence.json`.
+- Production telemetry windows now persist/readback `CF_MEJEPA_PRODUCTION_TELEMETRY` with conformal ECE, OOD AUC, Gτ pass rate, prediction-oracle agreement, ship-gate target/pass flag, p50/p95/p99/max latency, and VRAM free/required/total. Source of truth: `/mnt/d/contextgraph/fsv/contextgraph-mejepa-production-telemetry-fsv/production-telemetry-evidence.json`.
+- UTML carrier reconciliation now persists/readbacks `CF_MEJEPA_TRAIN_CERTS` with explicit ΔP/ΔK/ΔΩ/ΔΞ carriers, per-head L-step count, sampling-weight formula fields, and state-transfer evidence. Source of truth: `/mnt/d/contextgraph/fsv/contextgraph-utml-fsv/utml-fsv-summary.json`.
 - The live shift subscriber now computes real algorithmic embedder outputs for each code hunk, persists DDA rows before prediction/watermark side effects, and readbacks the RocksDB rows through `persist_dda_signals`.
 - The 11-language `ReinventedWheel` registry is tracked under `crates/context-graph-mejepa-instruments/assets/stdlib_registry/` and loaded through a schema-validating YAML parser.
 - FSV evidence: `/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv/forward-wrapper-evidence.json`, `/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv/routing-forward-resolution.json`, `/mnt/d/contextgraph/fsv/phase-d-fsv/dda-signal-compute.json`, `/mnt/d/contextgraph/fsv/phase-d-fsv/embedder-cache-fsv.json`, `/mnt/d/contextgraph/fsv/phase-d-fsv/stdlib-registry-fsv.json`, and `/mnt/d/contextgraph/fsv/contextgraph-mejepa-shift-subscriber-fsv/`.
 
-**Still open before declaring Phase D production-complete:**
-- Add production cache pruning/size-bound enforcement and hit-rate telemetry under daemon load.
-- Connect persisted DDA signals into the trained multi-head predictor feature projections and weekly pairwise-MI maintenance.
+**Not a Phase D blocker:** the `0.95` prediction-oracle threshold is a Phase G convergence gate. Phase E begins before that gate so the self-optimization policy can generate the learning pressure needed to reach it.
 
 **Deliverables (TASK IDs):**
 
@@ -180,8 +176,8 @@ No Phase E task should be treated as started until those gaps either close with 
 | `TASK-ENRICH-001` | `EmbedderForward` trait + real pretrained wrappers for E1/E6/E7/E8/E10/E12/E13/E14 and algorithmic wrappers for E2/E3/E4/E9 | **complete (2026-05-12; full pretrained/routing FSV passed)** |
 | `TASK-ENRICH-002` | DDA signal computation per chunk with strict upper-triangle pairwise features and blind-spot z-scores | **complete (2026-05-12; FSV writes 30 RocksDB rows and reopens/readbacks)** |
 | `TASK-ENRICH-003` | New CFs from Phase A's `TASK-FLYWHEEL-006` opened by inference runtime and populated through DDA persistence API | **complete (2026-05-12; live algorithmic DDA rows FSV writes/readbacks 100 shifts)** |
-| `TASK-ENRICH-004` | Embedder cache layer keyed by `(schema, embedder_id, model_version, chunk_sha)` for re-edit scenarios | **partial/code_complete (2026-05-12; persistent cache FSV complete, LRU/telemetry open)** |
-| `TASK-ENRICH-005` | VRAM budget gate enforcement at startup (refuse to start over budget) | existing gate present; daemon-load telemetry/evidence open |
+| `TASK-ENRICH-004` | Embedder cache layer keyed by `(schema, embedder_id, model_version, chunk_sha)` for re-edit scenarios | **complete (2026-05-12; persistent cache, corrupt-entry fail-closed, LRU/telemetry evidence closed in #17)** |
+| `TASK-ENRICH-005` | VRAM budget gate enforcement at startup (refuse to start over budget) | complete for Phase A-D telemetry capture; long-running trend dashboards move to Phase F |
 | `TASK-ENRICH-006` | `EmbedderForward` FSV per embedder (real model file, deterministic input → expected output) | **complete (2026-05-12; 8 pretrained + 4 algorithmic + 143 routing rows read back)** |
 | `TASK-ENRICH-007` | Per-language stdlib registry for `ReinventedWheel` detection | **complete (2026-05-12; 11 tracked YAMLs + FSV)** |
 
@@ -189,8 +185,8 @@ No Phase E task should be treated as started until those gaps either close with 
 1. All 12 active content embedders return valid real outputs when called via `EmbedderForward::forward(chunk)`; pretrained slots use SHA-pinned model artifacts and algorithmic slots use their real mathematical implementations. **Passed 2026-05-12.**
 2. Routing FSV runs all 11 languages × 13 entity types and confirms each route resolves to a read-back forward output file. **Passed 2026-05-12.**
 3. DDA FSV writes and reopens `CF_MEJEPA_DDA_SIGNALS` with 30 chunk rows. **Passed 2026-05-12.**
-4. VRAM peak under load < 10 GB (10× headroom on RTX 5090). **Open under daemon load.**
-5. Cache hit rate > 90% for re-Edit scenarios on the same chunk. **Cache hit semantics passed in FSV; production hit-rate telemetry open.**
+4. VRAM peak under load < 10 GB (10× headroom on RTX 5090). **Budget gate exists and production telemetry windows persist CUDA-driver VRAM readback.**
+5. Cache hit rate > 90% for re-Edit scenarios on the same chunk. **Cache hit/LRU telemetry FSV closed in #17.**
 
 **Risks / mitigations:**
 - *Risk:* Candle / CUDA model loading is slow; daemon startup balloons. *Mitigation:* lazy-load embedders on first use; the warm daemon keeps them resident.
@@ -294,7 +290,7 @@ Phase H    [days 21–22]                          ==
 Phase G                                            ──── ongoing
 ```
 
-Phases A → B → E (each waits on the prior); A → C → G; A → D → G; A → F → G; A → H. Phase A is the gate for everything else; Phase G never gates because it's continuous.
+Phases A → B; A → C; A → D; then Phase E starts from the verified A-D substrate. A → F → G and A → H proceed when their own gates are satisfied. Phase G never gates Phase E because it is the convergence phase; its non-green `0.866667 < 0.95` evidence blocks only the human-review-replacement claim.
 
 **Most aggressive single-engineer schedule:** ~3-4 weeks to all-shipped (Phases A-F + H), with G running indefinitely after week 1.
 

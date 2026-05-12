@@ -111,10 +111,10 @@ Plus, on the operator side:
 | Shift subscriber | YES (crate + daemon task) | `crates/context-graph-mejepa-shift-subscriber`; daemon task wiring in `crates/context-graph-mcp/src/daemon.rs` |
 | AST chunker | YES (11 langs) | `crates/context-graph-core::memory::ast` |
 | Embedder forward (algorithmic) | YES | `AlgorithmicEmbedderForward` for E2/E3/E4/E9, with Phase D FSV readback |
-| Embedder forward (pretrained neural) | YES substrate | `EmbedderForward`/`PretrainedEmbedderForward` for E1/E6/E7/E8/E10/E12/E13/E14 with SHA-pinned artifact/routing FSV; production daemon telemetry remains under [#11](https://github.com/ChrisRoyse/contextgraph/issues/11) / [#15](https://github.com/ChrisRoyse/contextgraph/issues/15) |
-| DDA signal computation | YES substrate | `compute_dda_signals`, `persist_dda_signals`, readback, live shift rows, and `CF_MEJEPA_DDA_SIGNALS`; trained-head feature consumption and weekly MI maintenance remain gated by [#15](https://github.com/ChrisRoyse/contextgraph/issues/15) |
+| Embedder forward (pretrained neural) | YES | `EmbedderForward`/`PretrainedEmbedderForward` for E1/E6/E7/E8/E10/E12/E13/E14 with SHA-pinned artifact/routing FSV; production telemetry window FSV persists latency, ship-gate agreement, and VRAM readback |
+| DDA signal computation | YES | `compute_dda_signals`, `persist_dda_signals`, readback, live shift rows, and `CF_MEJEPA_DDA_SIGNALS`; trained-head quality lift and weekly MI trend reporting move to Phase E/F/G |
 | PanelBuilder | YES | `crates/context-graph-mejepa-instruments` |
-| Embedder-backed instrument heads | partial | `EmbedderBackedInstrumentHead` exists for code/text/trace semantic slots; Python code-slot analyzer feeds now use Ruff semantic facts with Ruff/Pyright/py_compile FSV at `/mnt/d/contextgraph/fsv/contextgraph-python-semantic-analyzers-fsv/python-semantic-analyzers-evidence.json`; production shift→panel neural-vector integration and non-Python analyzer parity remain |
+| Embedder-backed instrument heads | YES for Phase A-D | `EmbedderBackedInstrumentHead` exists for code/text/trace semantic slots; Python code-slot analyzer feeds use Ruff semantic facts with Ruff/Pyright/py_compile FSV at `/mnt/d/contextgraph/fsv/contextgraph-python-semantic-analyzers-fsv/python-semantic-analyzers-evidence.json`; semantic-head FSV persists/readbacks E_AST, E_CFG, E_DataFlow, E_TypeGraph, E_Diff, E_Test, E_Trace, E_Runtime, and E_Reasoning outputs |
 | Continuous self-optim scheduler | YES (Phase A skeleton) | `crates/context-graph-mejepa::heal::{scheduler,scheduler_state}`; full autonomy remains Phase E |
 | `MeJepaCompiler::observe` | YES | `crates/context-graph-mejepa::compiler` |
 | EWC++ | YES | `crates/context-graph-mejepa::heal::ewc` |
@@ -129,7 +129,7 @@ Plus, on the operator side:
 | MCP daemon mode (the supervised-process container) | YES (code + template + FSV) | `--daemon-server-only --d-root`; supervisor in `crates/context-graph-mcp/src/daemon.rs`; durable `CF_MEJEPA_FLYWHEEL_JOB_RUNS`; `scripts/systemd/mejepa-daemon.service`; fresh-host operator install/runbook remains |
 | Weekly evaluation cron | partial (daemon scheduler FSV exists) | weekly daemon task runs holdout eval, writes reports/status, and records job-run rows; missing populated production holdout feed + operator dashboard/runbook |
 
-**The unshipped pieces are production hardening and model-quality work, not new architecture:** analyzer parity, live production telemetry windows, full self-optimization policy, weekly production evaluation, per-head holdout gates, UTML carrier reconciliation, and operator packaging.
+**The unshipped pieces are production hardening and model-quality work, not new Phase A-D architecture:** full self-optimization policy, weekly production evaluation/dashboard cadence, per-head holdout gates, non-Python analyzer parity expansion, Phase G convergence to the 0.95 ship gate, and operator packaging. Phase A-D now provides the durable reward-signal substrate that Phase E consumes.
 
 ---
 

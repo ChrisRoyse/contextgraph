@@ -24,9 +24,17 @@ That means the project optimizes for **reality-prediction accuracy**, not agent 
 - the speed at which prediction mistakes become replay weight, active-learning entries, or self-healing actions;
 - the operator's ability to prove, by source-of-truth readback, that ME-JEPA is functioning as claimed.
 
+## 2.2 Research alignment
+
+The futurebuild design follows the external lessons from the verifier/evaluation stack instead of inventing a softer label source:
+
+- SWE-bench evaluation applies candidate patches to real repositories and runs tests in isolated containers; ME-JEPA therefore treats Docker/toolchain oracle outcomes, not LLM prose, as the label source. Reference: <https://www.swebench.com/SWE-bench/guides/evaluation/>.
+- OpenTelemetry's metric model is built around timestamped runtime measurements with attributes and histogram-style latency/resource summaries; ME-JEPA's production telemetry windows persist conformal ECE, OOD AUC, p50/p95/p99/max latency, VRAM free/required/total, and prediction-oracle agreement as first-class reality signals. Reference: <https://opentelemetry.io/docs/concepts/signals/metrics/>.
+- RocksDB durability depends on write/flush/WAL behavior and recovery semantics; ME-JEPA evidence artifacts use sync writes, flush/drop/reopen, and independent row readback for claims that matter. Reference: <https://rocksdb.org/blog/2022/10/05/lost-buffered-write-recovery.html>.
+
 ## 3. What ME-JEPA must answer for any agent action
 
-The truth system answers more than pass/fail. Even when oracle prediction is **Pass**, ME-JEPA must surface every other identifiable concern about the change — edge cases the tests do not exercise, latent bugs the change introduces, performance regressions, security-relevant deltas, dead code created or amplified, redundancy with existing code, and cost/efficiency degradations. **The system predicts every issue it can predict, every time it predicts at all.** The full taxonomy of prediction heads is in [`15_PREDICTION_TAXONOMY.md`](15_PREDICTION_TAXONOMY.md); the four operator questions below are how each prediction is anchored to a verifiable reality channel.
+The truth system answers more than pass/fail. Even when oracle prediction is **Pass**, ME-JEPA must surface every other identifiable concern about the change — edge cases the tests do not exercise, latent bugs the change introduces, performance regressions, security-relevant deltas, dead code created or amplified, redundancy with existing code, and cost/efficiency degradations. **The system predicts every issue it can predict, every time it predicts at all.** The full taxonomy of prediction heads is in [`15_PREDICTION_TAXONOMY.md`](15_PREDICTION_TAXONOMY.md); the five operator questions below are how each prediction is anchored to a verifiable reality channel.
 
 | Q | Question | How ME-JEPA answers |
 |---|---|---|

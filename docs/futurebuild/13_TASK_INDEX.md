@@ -21,6 +21,10 @@
 | `TASK-OBS-NNN` | observability: weekly eval cron, MI heatmap, GPU telemetry, CLI |
 | `TASK-UTML-NNN` | learning-formula extensions: per-head deltas, cert cols, lambda ramp |
 
+## Current gate
+
+Phase E tasks are blocked by the A-D readiness issue [#15](https://github.com/ChrisRoyse/contextgraph/issues/15). The open task-level blockers are analyzer-backed instrument parity (#4), UTML carrier reconciliation (#13), and the non-green 0.95 prediction-oracle gate (#15). Phase D substrate tasks can be code/FSV-complete while Phase E remains blocked by model-quality readiness.
+
 ---
 
 ## Phase A — Operational Unblock (14 tasks)
@@ -102,12 +106,12 @@
 | `TASK-ENRICH-001` | `EmbedderForward` trait + active content forwards: pretrained E1/E6/E7/E8/E10/E12/E13/E14, algorithmic E2/E3/E4/E9 | D | none | **complete (2026-05-12; full pretrained/routing FSV passed)** |
 | `TASK-ENRICH-002` | DDA signal computation per chunk with per-embedder cosine, strict upper-triangle pairwise cosine/MI, blind-spot z-scores | D | ENRICH-001, FLYWHEEL-006 | **complete (2026-05-12)** |
 | `TASK-ENRICH-003` | Populate the new CFs with real signals | D | ENRICH-002 | **complete (2026-05-12; live algorithmic DDA rows FSV writes/readbacks 100 shifts)** |
-| `TASK-ENRICH-004` | Embedder cache layer | D | ENRICH-001 | **partial/code_complete (persistent key/value cache complete; LRU/telemetry open)** |
-| `TASK-ENRICH-005` | VRAM budget gate enforcement at startup | D | ENRICH-001 | existing gate present; daemon-load FSV open |
+| `TASK-ENRICH-004` | Embedder cache layer | D | ENRICH-001 | **complete (2026-05-12; persistent cache, corrupt-entry fail-closed, LRU/telemetry evidence closed in #17)** |
+| `TASK-ENRICH-005` | VRAM budget gate enforcement at startup | D | ENRICH-001 | complete for telemetry capture; remaining readiness belongs to #15 |
 | `TASK-ENRICH-006` | Per-embedder FSV (real model file, deterministic input → expected output) | D | ENRICH-001 | **complete (2026-05-12; 8 pretrained + 4 algorithmic + 143 routing rows read back)** |
 | `TASK-ENRICH-007` | Per-language stdlib registry for `ReinventedWheel` | D | none | **complete (2026-05-12)** |
 
-**Phase D status (2026-05-12):** enrichment substrate is code/FSV-shipped for full pretrained/routing forwards, DDA compute/store, live shift-subscriber DDA rows, persistent cache, inference CF opening, and stdlib registry. Production-complete Phase D still requires cache pruning/telemetry and DDA feature consumption by trained heads.
+**Phase D status (2026-05-12):** enrichment substrate is code/FSV-shipped for full pretrained/routing forwards, DDA compute/store, live shift-subscriber DDA rows, persistent cache/LRU telemetry, inference CF opening, TCT refresh support, production telemetry windows, and stdlib registry. Autonomous Phase E still waits on the A-D readiness gate (#15), especially analyzer parity (#4), UTML carrier evidence (#13), and the non-green 0.95 prediction-oracle threshold.
 
 ---
 
@@ -115,14 +119,14 @@
 
 | ID | Title | Phase | Blocked by | Effort |
 |---|---|---|---|---|
-| `TASK-HEAL-001` | Self-optimization scheduler full implementation | E | FLYWHEEL-002 | 1.5d |
-| `TASK-HEAL-002` | Per-cell stratified drift detection | E | HEAL-001 | 1d |
-| `TASK-HEAL-003` | Dissipation detection | E | HEAL-001, UTML-008 | 1d |
-| `TASK-HEAL-004` | Bayesian small-window drift (Beta posterior) | E | HEAL-002 | 0.5d |
-| `TASK-HEAL-005` | Production constellation refresh policy (scheduler tick exists) | E | HEAL-001 | 0.5d |
-| `TASK-HEAL-006` | `mejepa_promote_approval` MCP tool | E | HEAL-001 | 0.5d |
-| `TASK-HEAL-007` | Emergency eviction policy validation (scheduler tick exists) | E | none | 0.5d |
-| `TASK-UTML-008` | Per-head dissipation detection | E | UTML-001 | 0.5d |
+| `TASK-HEAL-001` | Self-optimization scheduler full implementation | E | #15 closed | 1.5d |
+| `TASK-HEAL-002` | Per-cell stratified drift detection | E | #15 closed, HEAL-001 | 1d |
+| `TASK-HEAL-003` | Dissipation detection | E | #15 closed, HEAL-001, UTML-008 | 1d |
+| `TASK-HEAL-004` | Bayesian small-window drift (Beta posterior) | E | #15 closed, HEAL-002 | 0.5d |
+| `TASK-HEAL-005` | Production constellation refresh policy (scheduler tick exists) | E | #15 closed, HEAL-001 | 0.5d |
+| `TASK-HEAL-006` | `mejepa_promote_approval` MCP tool | E | #15 closed, HEAL-001 | 0.5d |
+| `TASK-HEAL-007` | Emergency eviction policy validation (scheduler tick exists) | E | #15 closed | 0.5d |
+| `TASK-UTML-008` | Per-head dissipation detection | E | #15 closed, UTML-001 | 0.5d |
 
 **Phase E total: ~6 days.**
 

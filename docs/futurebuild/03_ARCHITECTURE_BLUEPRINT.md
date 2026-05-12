@@ -104,8 +104,8 @@ The storage block now mixes shipped and remaining work. **CF_MEJEPA_AGENT_FEEDBA
 | Shift subscriber (Tokio task) | shipped (run via daemon mode) | `context-graph-mejepa-shift-subscriber` | tail shift-log → materialize panel → call observe()/predict() |
 | AST chunker (11 languages) | shipped | `context-graph-core::memory::ast` | typed Chunk { chunk_id, lang, kind } |
 | Embedder routing table | shipped (143 routes) | `context-graph-mejepa-embedders::routing` | per (Language, EntityType) → embedder set |
-| Per-embedder forward wrappers (neural + algorithmic) | shipped Phase D substrate; production telemetry still gated | `context-graph-mejepa-embedders::{forward,pretrained,algorithmic}` | run SHA-pinned pretrained forwards for E1/E6/E7/E8/E10/E12/E13/E14 and algorithmic forwards for E2/E3/E4/E9 |
-| DDA enrichment computation (N+N² signals) | shipped compute/store/readback + live shift rows; trained-head consumption and weekly MI maintenance gated by [#15](https://github.com/ChrisRoyse/contextgraph/issues/15) | `context-graph-mejepa-train::dda`, `CF_MEJEPA_DDA_SIGNALS` | compute pairwise cosine + MI/blind-spot signals per chunk per shift and persist them before prediction side effects |
+| Per-embedder forward wrappers (neural + algorithmic) | shipped Phase D + production telemetry FSV | `context-graph-mejepa-embedders::{forward,pretrained,algorithmic}` | run SHA-pinned pretrained forwards for E1/E6/E7/E8/E10/E12/E13/E14 and algorithmic forwards for E2/E3/E4/E9 |
+| DDA enrichment computation (N+N² signals) | shipped compute/store/readback + live shift rows; trained-head quality work moves to Phase E/F/G | `context-graph-mejepa-train::dda`, `CF_MEJEPA_DDA_SIGNALS` | compute pairwise cosine + MI/blind-spot signals per chunk per shift and persist them before prediction side effects |
 | TCT constellation + Gτ guard | shipped | `context-graph-mejepa-tct` | per-(cat × ent × lang × emb) centroids; guard test |
 | 15 instrument slots → Panel(5120-d) | shipped; Python code semantic slots analyzer-backed | `context-graph-mejepa-instruments` | typed feature vectors; PanelBuilder with fail-closed dim; Python `E_AST`/`E_CFG`/`E_DataFlow`/`E_TypeGraph` use Ruff semantic facts and FSV readback |
 | Predictor trunk (6-layer transformer) | shipped | `context-graph-mejepa::predictor` | latent-space prediction of panel[t=2] |
@@ -120,7 +120,7 @@ The storage block now mixes shipped and remaining work. **CF_MEJEPA_AGENT_FEEDBA
 | Active-learning queue surfacing | shipped | `context-graph-mejepa::eval::queue` | when conformal interval > T or surprise recorded |
 | Weekly evaluation report writer | shipped | `context-graph-mejepa::eval::report` | per-(category × language) stratified ship-gate report |
 | Witness chain + Stage 0/F/Merkle certs | shipped | `context-graph-witness` | cryptographic provenance of every step |
-| Per-step training certificate | shipped carrier; full doc-11 formula reconciliation open in [#13](https://github.com/ChrisRoyse/contextgraph/issues/13) | `context-graph-mejepa-train::cert` | hash-chained ΔP/ΔK/ΔΩ/ΔΞ + L_step per step |
+| Per-step training certificate | shipped carrier + doc-11 reconciliation FSV | `context-graph-mejepa-train::cert` | hash-chained ΔP/ΔK/ΔΩ/ΔΞ + L_step per step, with explicit carrier components and source-of-truth readback |
 
 ---
 
@@ -438,9 +438,9 @@ Implementing this architecture means delivering, in order:
 5. **Prediction-injection hook** so that `RealityPrediction` is rendered into UserPromptSubmit context for the agent. Shipped.
 6. **Neural and algorithmic per-embedder forward wrappers** replacing placeholder-only paths. Shipped for the 12 active content slots with full routing/readback FSV.
 7. **Per-language mutation operators** so the corpus covers all 11 languages, not just Python. Shipped for the 10 non-Python fixture languages plus the Python SWE-bench Lite 300x8 corpus.
-8. **Full 300×8 corpus run and rolling holdout FSV** so the predictor trains against real durable reality. The evidence exists; the measured ship gate is not green yet, so Phase E remains blocked by [#15](https://github.com/ChrisRoyse/contextgraph/issues/15).
+8. **Full 300×8 corpus run and rolling holdout FSV** so the predictor trains against real durable reality. The evidence exists; the measured ship gate is not green yet (`0.866667` vs `0.95`), which means Phase G convergence is not complete.
 9. **Production rolling-window telemetry** for conformal coverage, OOD, p50/p99, VRAM, and ship-gate trends, per [#11](https://github.com/ChrisRoyse/contextgraph/issues/11).
-10. **UTML carrier reconciliation** so training certs prove the production formulas they claim, per [#13](https://github.com/ChrisRoyse/contextgraph/issues/13).
+10. **UTML carrier reconciliation** so training certs prove the production formulas they claim. This is physically verified at `/mnt/d/contextgraph/fsv/contextgraph-utml-fsv/utml-fsv-summary.json`.
 11. **The refactored `.claude/loop.md`** that aligns the per-tick agent behavior with this architecture (Mode A becomes "ship a futurebuild deliverable"; the dual-mode A/B split is retired).
 
 The implementation phasing for these is in [`12_IMPLEMENTATION_PHASES.md`](12_IMPLEMENTATION_PHASES.md). The atomic task graph is in [`13_TASK_INDEX.md`](13_TASK_INDEX.md). The new loop.md content is in [`14_NEW_LOOP_MD.md`](14_NEW_LOOP_MD.md).

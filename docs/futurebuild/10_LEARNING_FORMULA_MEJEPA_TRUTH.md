@@ -4,7 +4,7 @@
 >
 > **Source theory:** `docs2/TheoryOfMachineLearning.md` (UTML v1.0 — JEPA Edition) + `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md` (the existing single-head application). This doc adds the multi-head extension that the futurebuild plan requires.
 
-**Status snapshot (2026-05-12):** The core Phase B carrier is implemented: `crates/context-graph-mejepa-train/src/learning_signal/per_head.rs` computes per-head L-step inputs and `delta_xi_global_min`, `TrainingCertificate` persists `per_head_l_step` plus `delta_xi_global_min`, and sampling weight includes the agent-surprise severity factor. Remaining work is the richer training/eval accounting: full per-head loss/delta/lambda maps, BatchSampler skip/requeue policy for collapsed heads, per-head Fisher, per-head dormancy, lambda ramp, per-head dissipation, and per-cell state-transfer T.
+**Status snapshot (2026-05-12):** The Phase B/Phase D UTML carrier is implemented and physically verified. `crates/context-graph-mejepa-train/src/learning_signal/per_head.rs` computes per-head L-step inputs and `delta_xi_global_min`; `TrainingCertificate` persists `per_head_l_step`, `delta_xi_global_min`, and explicit ΔP/ΔK/ΔΩ/ΔΞ component carriers; sampling weight includes the agent-surprise severity factor. FSV source of truth: `/mnt/d/contextgraph/fsv/contextgraph-utml-fsv/utml-fsv-summary.json` (`passes=true`, SHA-256 `a7d1041db76adca835649305645e4e5df8a5157673cbde40fc2ac5e18d112657`) reads back `CF_MEJEPA_TRAIN_CERTS` after reopen and covers non-finite component, zero gate, conflicting state-transfer, empty input, and negative-age edge cases. Remaining work is Phase E/F policy automation: per-head Fisher, per-head dormancy, lambda ramp, per-head dissipation, and per-cell state-transfer reporting cadence.
 
 ---
 
@@ -279,7 +279,7 @@ If a head dissipates, the heal scheduler triggers a LoRA refresh for that head s
 
 ---
 
-## 13. The four operator questions ↔ per-head L_step
+## 13. The five operator questions ↔ per-head L_step
 
 Mapping the operator's Q1–Q5 (per `01_VISION_TRUTH_SYSTEM.md §3`) to the heads:
 
@@ -358,8 +358,8 @@ Reward:
 ## 16. What this formula extension commits us to
 
 1. **Per-head ΔP, ΔK, ΔΞ tracking** in `learning_signal/` — complete/code_complete in `learning_signal/per_head.rs`.
-2. **Per-head cert columns** in `CF_MEJEPA_TRAIN_CERTS` — partial/code_complete: `per_head_l_step` and `delta_xi_global_min` persist; full loss/delta/lambda maps remain.
-3. **`ΔΞ_global = min_h(ΔΞ_h)`** in the BatchSampler — partial/code_complete: aggregation exists; skip/requeue policy remains.
+2. **Per-head cert columns** in `CF_MEJEPA_TRAIN_CERTS` — Phase A-D complete for `per_head_l_step`, `delta_xi_global_min`, and component-carrier audit fields; richer per-head loss/lambda trend maps remain Phase E/F policy telemetry.
+3. **`ΔΞ_global = min_h(ΔΞ_h)`** in the learning signal — complete for the persisted carrier path; BatchSampler skip/requeue automation remains Phase E policy.
 4. **`agent_surprise_severity_score` factor** in `sampling_weight` — complete.
 5. **Per-head Fisher matrices** in `heal::ewc::FisherSnapshot` — open.
 6. **Per-head dormancy detection** in `learning_signal::continual_backprop` — open.

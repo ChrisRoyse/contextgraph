@@ -29,19 +29,19 @@
 
 ## TASK-ENRICH-004 — Embedder cache layer
 
-- **Phase:** D · **Status:** partial/code_complete 2026-05-12 · **Blocked by:** TASK-ENRICH-001
+- **Phase:** D · **Status:** complete 2026-05-12 · **Blocked by:** TASK-ENRICH-001
 - **Goal:** Implement `EmbedderCache` per `TECH-ENRICHMENT §5`.
 - **Outputs:** `crates/context-graph-mejepa-embedders/src/cache.rs`.
-- **Done 2026-05-12:** persistent content-addressed JSON cache keyed by `(schema_version, embedder_id, model_version, chunk_sha256)`; atomic write + fsync + readback; corrupt cache entries fail closed and are not treated as misses.
-- **Still open:** production LRU pruning/size-bound enforcement and daemon hit-rate telemetry.
+- **Done 2026-05-12:** persistent content-addressed JSON cache keyed by `(schema_version, embedder_id, model_version, chunk_sha256)`; atomic write + fsync + readback; corrupt cache entries fail closed and are not treated as misses; LRU/size-bound pruning and daemon hit/miss telemetry were closed under #17.
+- **Still open:** remaining autonomous readiness belongs to #15, not this Phase D substrate task.
 - **FSV:** `/mnt/d/contextgraph/fsv/phase-d-fsv/embedder-cache-fsv.json`
 
 ## TASK-ENRICH-005 — VRAM budget gate at startup
 
-- **Phase:** D · **Status:** existing gate present; daemon-load FSV open · **Blocked by:** TASK-ENRICH-001
+- **Phase:** D · **Status:** complete for telemetry capture; remaining readiness under #15 · **Blocked by:** TASK-ENRICH-001
 - **Goal:** Per `TECH-ENRICHMENT §7`. Daemon refuses to start over budget.
 - **Done before this pass:** `query_vram_budget` and content-set/full Phase 1 VRAM budget checks exist in `crates/context-graph-mejepa-embedders/src/vram.rs`.
-- **Still open:** daemon startup evidence under the full active model load and WSL telemetry hardening.
+- **Still open:** full A-D readiness gate still requires the non-green ship-gate and model-quality blockers to close under #15.
 - **DoD:** configured budget 1 GB + active set requires >1 GB → daemon refuses with clear error and logs free/required/total VRAM.
 
 ## TASK-ENRICH-006 — Per-embedder FSV
