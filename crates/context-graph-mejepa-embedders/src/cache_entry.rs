@@ -25,10 +25,7 @@ pub(crate) struct CachedEmbedderVector {
 }
 
 impl CachedEmbedderVector {
-    pub(crate) fn from_output(
-        key: EmbedderCacheKey,
-        output: &EmbedderOutput,
-    ) -> EmbedResult<Self> {
+    pub(crate) fn from_output(key: EmbedderCacheKey, output: &EmbedderOutput) -> EmbedResult<Self> {
         output.validate()?;
         validate_output_matches_key(&key, output)?;
         let now = unix_ms()?;

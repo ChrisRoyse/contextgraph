@@ -84,5 +84,9 @@ async fn cache_rejects_entry_larger_than_byte_bound() {
         .await
         .expect_err("oversized cache write unexpectedly passed");
     assert_eq!(err.code(), "MEJEPA_EMBED_FORWARD_FAILED");
-    assert!(!cache.telemetry_path().exists());
+    let telemetry = cache.telemetry().unwrap();
+    assert_eq!(telemetry.misses, 1);
+    assert_eq!(telemetry.writes, 0);
+    assert_eq!(telemetry.write_rejections, 1);
+    assert_eq!(telemetry.entry_count, 0);
 }

@@ -20,7 +20,10 @@ pub(crate) fn write_bytes_atomic(
     fs::create_dir_all(parent).map_err(|err| {
         EmbedError::forward(
             embedder,
-            format!("cache directory create failed at {}: {err}", parent.display()),
+            format!(
+                "cache directory create failed at {}: {err}",
+                parent.display()
+            ),
             "inspect cache root permissions and available disk",
         )
     })?;
@@ -132,7 +135,10 @@ where
             .map_err(|err| {
                 EmbedError::invalid(
                     "EmbedderCache.root",
-                    format!("cache directory entry read failed at {}: {err}", path.display()),
+                    format!(
+                        "cache directory entry read failed at {}: {err}",
+                        path.display()
+                    ),
                     "inspect cache root permissions before scanning cache inventory",
                 )
             })?

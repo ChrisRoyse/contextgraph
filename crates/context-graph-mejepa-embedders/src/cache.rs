@@ -1,10 +1,10 @@
-use crate::cache_limits::{
-    EmbedderCacheConfig, EmbedderCacheTelemetry, PruneReport, EMBEDDER_CACHE_TELEMETRY_FILE,
-};
 use crate::cache_entry::{CacheEntryRecord, CachedEmbedderVector};
 use crate::cache_io::{
     cache_json_parse_error, checked_inc, fsync_dir, is_lower_hex_sha256, unix_ms,
     visit_cache_files, write_bytes_atomic,
+};
+use crate::cache_limits::{
+    EmbedderCacheConfig, EmbedderCacheTelemetry, PruneReport, EMBEDDER_CACHE_TELEMETRY_FILE,
 };
 use crate::embedder_id::EmbedderId;
 use crate::error::{EmbedError, EmbedResult};
@@ -15,7 +15,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub use crate::cache_entry::chunk_sha256;
-
 pub const EMBEDDER_CACHE_SCHEMA_VERSION: u16 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,15 +121,12 @@ impl EmbedderCache {
     pub fn root(&self) -> &Path {
         &self.root
     }
-
     pub fn config(&self) -> EmbedderCacheConfig {
         self.config
     }
-
     pub fn telemetry_path(&self) -> PathBuf {
         self.root.join(EMBEDDER_CACHE_TELEMETRY_FILE)
     }
-
     pub fn telemetry(&self) -> EmbedResult<EmbedderCacheTelemetry> {
         self.load_telemetry()
     }
@@ -196,6 +192,7 @@ impl EmbedderCache {
             )
         })?;
         if bytes.len() as u64 > self.config.max_bytes {
+            self.record_write_rejection()?;
             return Err(EmbedError::forward(
                 key.embedder,
                 format!(
@@ -229,7 +226,10 @@ impl EmbedderCache {
             serde_json::from_slice(&readback_bytes).map_err(|err| {
                 EmbedError::forward(
                     key.embedder,
-                    format!("cache readback JSON parse failed at {}: {err}", path.display()),
+                    format!(
+                        "cache readback JSON parse failed at {}: {err}",
+                        path.display()
+                    ),
                     "delete the corrupt cache entry and inspect disk write ordering",
                 )
             })?;
@@ -318,11 +318,7 @@ impl EmbedderCache {
         Ok(report)
     }
 
-    fn write_cached_entry(
-        &self,
-        path: &Path,
-        cached: &CachedEmbedderVector,
-    ) -> EmbedResult<()> {
+    fn write_cached_entry(&self, path: &Path, cached: &CachedEmbedderVector) -> EmbedResult<()> {
         let bytes = serde_json::to_vec(cached).map_err(|err| {
             EmbedError::forward(
                 cached.key.embedder,
@@ -352,23 +348,29 @@ impl EmbedderCache {
                     "inspect cache filesystem permissions before pruning",
                 )
             })?;
-            let cached: CachedEmbedderVector = serde_json::from_slice(&bytes).map_err(|err| {
-                EmbedError::forward(
+            let cached: CachedEmbedderVector =
+                serde_json::from_slice(&bytes).map_err(|err| {
+                    EmbedError::forward(
                     embedder,
                     format!("cache inventory JSON parse failed at {}: {err}", path.display()),
                     "delete the corrupt cache entry; pruning refuses to guess around corrupt rows",
                 )
-            })?;
+                })?;
             cached.validate()?;
             out.push(CacheEntryRecord {
                 path: path.to_path_buf(),
-                byte_count: fs::metadata(path).map_err(|err| {
-                    EmbedError::forward(
-                        embedder,
-                        format!("cache inventory metadata failed at {}: {err}", path.display()),
-                        "inspect cache filesystem permissions before pruning",
-                    )
-                })?.len(),
+                byte_count: fs::metadata(path)
+                    .map_err(|err| {
+                        EmbedError::forward(
+                            embedder,
+                            format!(
+                                "cache inventory metadata failed at {}: {err}",
+                                path.display()
+                            ),
+                            "inspect cache filesystem permissions before pruning",
+                        )
+                    })?
+                    .len(),
                 last_accessed_unix_ms: cached.last_accessed_unix_ms,
             });
             Ok(())
@@ -461,6 +463,16 @@ impl EmbedderCache {
         })
     }
 
+    fn record_write_rejection(&self) -> EmbedResult<()> {
+        self.update_telemetry_with_inventory(EmbedderId::E1, |t| {
+            t.write_rejections = checked_inc(
+                t.write_rejections,
+                "EmbedderCacheTelemetry.write_rejections",
+            )?;
+            Ok(())
+        })
+    }
+
     fn record_eviction(&self, entries: u64, bytes: u64) -> EmbedResult<()> {
         self.update_telemetry_with_inventory(EmbedderId::E1, |t| {
             t.evictions = t.evictions.checked_add(entries).ok_or_else(|| {
@@ -483,8 +495,10 @@ impl EmbedderCache {
 
     fn record_corrupt_entry_error(&self) -> EmbedResult<()> {
         self.update_telemetry(|t| {
-            t.corrupt_entry_errors =
-                checked_inc(t.corrupt_entry_errors, "EmbedderCacheTelemetry.corrupt_entry_errors")?;
+            t.corrupt_entry_errors = checked_inc(
+                t.corrupt_entry_errors,
+                "EmbedderCacheTelemetry.corrupt_entry_errors",
+            )?;
             Ok(())
         })
     }

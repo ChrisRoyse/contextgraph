@@ -27,8 +27,8 @@ pub mod vram;
 #[cfg(test)]
 mod cache_tests;
 
-pub use calibration::{agent_state_score, verify_calibration_certificate, CalibrationCertificate};
 pub use cache_limits::{EmbedderCacheConfig, EmbedderCacheTelemetry, PruneReport};
+pub use calibration::{agent_state_score, verify_calibration_certificate, CalibrationCertificate};
 pub use config::{EmbedderRegistration, ModelsConfig};
 pub use diagnostics::{
     embedder_coherence, predictor_collapse_score, CoherenceReport, CollapseReport,
