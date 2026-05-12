@@ -101,7 +101,6 @@ impl EmbedderCache {
     pub fn new(root: impl Into<PathBuf>) -> EmbedResult<Self> {
         Self::new_with_config(root, EmbedderCacheConfig::from_env()?)
     }
-
     pub fn new_with_config(
         root: impl Into<PathBuf>,
         config: EmbedderCacheConfig,
@@ -328,7 +327,6 @@ impl EmbedderCache {
         })?;
         write_bytes_atomic(path, &bytes, cached.key.embedder)
     }
-
     fn entry_records(&self, embedder: EmbedderId) -> EmbedResult<Vec<CacheEntryRecord>> {
         let mut out = Vec::new();
         if !self.root.exists() {
@@ -377,7 +375,6 @@ impl EmbedderCache {
         })?;
         Ok(out)
     }
-
     fn load_telemetry(&self) -> EmbedResult<EmbedderCacheTelemetry> {
         let path = self.telemetry_path();
         if !path.exists() {
@@ -404,7 +401,6 @@ impl EmbedderCache {
         telemetry.validate(EMBEDDER_CACHE_SCHEMA_VERSION, self.config)?;
         Ok(telemetry)
     }
-
     fn write_telemetry(&self, telemetry: &EmbedderCacheTelemetry) -> EmbedResult<()> {
         telemetry.validate(EMBEDDER_CACHE_SCHEMA_VERSION, self.config)?;
         let bytes = serde_json::to_vec_pretty(telemetry).map_err(|err| {
@@ -416,7 +412,6 @@ impl EmbedderCache {
         })?;
         write_bytes_atomic(&self.telemetry_path(), &bytes, EmbedderId::E1)
     }
-
     fn update_telemetry<F>(&self, update: F) -> EmbedResult<()>
     where
         F: FnOnce(&mut EmbedderCacheTelemetry) -> EmbedResult<()>,
@@ -426,7 +421,6 @@ impl EmbedderCache {
         telemetry.last_event_unix_ms = unix_ms()?;
         self.write_telemetry(&telemetry)
     }
-
     fn update_telemetry_with_inventory<F>(&self, embedder: EmbedderId, update: F) -> EmbedResult<()>
     where
         F: FnOnce(&mut EmbedderCacheTelemetry) -> EmbedResult<()>,
@@ -441,28 +435,24 @@ impl EmbedderCache {
             Ok(())
         })
     }
-
     fn record_hit(&self) -> EmbedResult<()> {
         self.update_telemetry_with_inventory(EmbedderId::E1, |t| {
             t.hits = checked_inc(t.hits, "EmbedderCacheTelemetry.hits")?;
             Ok(())
         })
     }
-
     fn record_miss(&self) -> EmbedResult<()> {
         self.update_telemetry_with_inventory(EmbedderId::E1, |t| {
             t.misses = checked_inc(t.misses, "EmbedderCacheTelemetry.misses")?;
             Ok(())
         })
     }
-
     fn record_write(&self) -> EmbedResult<()> {
         self.update_telemetry_with_inventory(EmbedderId::E1, |t| {
             t.writes = checked_inc(t.writes, "EmbedderCacheTelemetry.writes")?;
             Ok(())
         })
     }
-
     fn record_write_rejection(&self) -> EmbedResult<()> {
         self.update_telemetry_with_inventory(EmbedderId::E1, |t| {
             t.write_rejections = checked_inc(
@@ -472,7 +462,6 @@ impl EmbedderCache {
             Ok(())
         })
     }
-
     fn record_eviction(&self, entries: u64, bytes: u64) -> EmbedResult<()> {
         self.update_telemetry_with_inventory(EmbedderId::E1, |t| {
             t.evictions = t.evictions.checked_add(entries).ok_or_else(|| {
@@ -492,7 +481,6 @@ impl EmbedderCache {
             Ok(())
         })
     }
-
     fn record_corrupt_entry_error(&self) -> EmbedResult<()> {
         self.update_telemetry(|t| {
             t.corrupt_entry_errors = checked_inc(
@@ -502,7 +490,6 @@ impl EmbedderCache {
             Ok(())
         })
     }
-
     fn refresh_telemetry_inventory(&self) -> EmbedResult<()> {
         self.update_telemetry_with_inventory(EmbedderId::E1, |_| Ok(()))
     }
