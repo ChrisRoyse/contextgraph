@@ -253,9 +253,20 @@ impl Drop for DaemonPidLock {
 mod tests {
     use super::*;
 
+    fn private_tempdir() -> tempfile::TempDir {
+        let temp = tempfile::tempdir().expect("tempdir");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o700))
+                .expect("set private tempdir permissions");
+        }
+        temp
+    }
+
     #[test]
     fn validator_creates_required_subdirs_and_readback_paths() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = private_tempdir();
         let paths = validate_d_drive_root(temp.path()).expect("valid root");
         assert!(paths.storage_db.is_dir());
         assert!(paths.shift_log_dir.is_dir());

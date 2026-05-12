@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
-        assert_eq!(tools.len(), 163);
+        assert_eq!(tools.len(), 167);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         let len_before = names.len();
@@ -186,7 +186,7 @@ mod tests {
         assert_eq!(entity::definitions().len(), 6);
         assert_eq!(embedder::definitions().len(), 10);
         assert_eq!(embedder::standalone_definitions().len(), 2);
-        assert_eq!(mejepa::definitions().len(), 16);
+        assert_eq!(mejepa::definitions().len(), 20);
         assert_eq!(temporal::definitions().len(), 2);
         assert_eq!(graph_link::definitions().len(), 4);
         assert_eq!(maintenance::definitions().len(), 1);

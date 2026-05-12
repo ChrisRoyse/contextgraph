@@ -787,6 +787,17 @@ fn panic_payload(payload: Box<dyn std::any::Any + Send>) -> String {
 mod tests {
     use super::*;
 
+    fn private_tempdir() -> tempfile::TempDir {
+        let temp = tempfile::tempdir().expect("tempdir");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o700))
+                .expect("set private tempdir permissions");
+        }
+        temp
+    }
+
     fn open_mejepa_test_db(path: &Path) -> DB {
         let mut opts = rocksdb::Options::default();
         opts.create_if_missing(true);
@@ -827,7 +838,7 @@ mod tests {
 
     #[test]
     fn self_optimization_scheduler_config_uses_daemon_source_of_truth_paths() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = private_tempdir();
         let paths =
             crate::daemon_validate::validate_d_drive_root(temp.path()).expect("valid daemon root");
         let config = FlywheelDaemonConfig::from_paths(paths.clone(), temp.path().to_path_buf());
@@ -853,7 +864,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn supervisor_restart_flapping_writes_heal_report_source_of_truth() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = private_tempdir();
         let paths =
             crate::daemon_validate::validate_d_drive_root(temp.path()).expect("valid daemon root");
         let db = Arc::new(open_mejepa_test_db(&paths.storage_db));
@@ -917,7 +928,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn self_optimization_scheduler_panic_is_caught_by_supervisor_wrapper() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = private_tempdir();
         let paths =
             crate::daemon_validate::validate_d_drive_root(temp.path()).expect("valid daemon root");
         let db = Arc::new(open_mejepa_test_db(&paths.storage_db));
