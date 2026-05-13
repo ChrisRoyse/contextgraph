@@ -142,6 +142,11 @@ enum Commands {
         #[command(subcommand)]
         action: commands::ccreality::CCRealityCommands,
     },
+    /// ME-JEPA operator commands.
+    Mejepa {
+        #[command(subcommand)]
+        action: commands::mejepa_active_learning::MejepaCommands,
+    },
 }
 
 /// `context-graph-cli export <sub>` targets.
@@ -215,6 +220,9 @@ pub async fn main() {
         Commands::Blackbox { action } => commands::blackbox::handle_blackbox_command(action).await,
         Commands::Ccreality { action } => {
             commands::ccreality::handle_ccreality_command(action).await
+        }
+        Commands::Mejepa { action } => {
+            commands::mejepa_active_learning::handle_mejepa_command(action).await
         }
     };
 

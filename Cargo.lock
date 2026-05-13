@@ -947,6 +947,7 @@ dependencies = [
  "context-graph-dynamicjepa",
  "context-graph-embeddings",
  "context-graph-mcp",
+ "context-graph-mejepa",
  "context-graph-paths",
  "context-graph-storage",
  "context-graph-test-utils",

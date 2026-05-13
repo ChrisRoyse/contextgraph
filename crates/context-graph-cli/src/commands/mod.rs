@@ -18,6 +18,7 @@ pub mod export_dynamicjepa;
 pub mod export_training;
 pub mod hooks;
 pub mod learning;
+pub mod mejepa_active_learning;
 pub mod memory;
 pub mod session;
 pub mod setup;

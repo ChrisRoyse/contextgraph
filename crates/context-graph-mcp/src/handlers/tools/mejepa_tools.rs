@@ -16,7 +16,7 @@ use context_graph_mejepa::heal::{
 use context_graph_mejepa::{
     build_deterministic_compiler, open_infer_rocksdb, ActiveLearningQueueState, ActualOutcome,
     AgentId, CalibrationStore, ChunkId, DdaSignals, FeedbackId, FeedbackKind, MeJepaInferConfig,
-    OracleOutcome, PatchBundle, PanelId, PredictionId, RealityPrediction, RocksDbEvalStore,
+    OracleOutcome, PanelId, PatchBundle, PredictionId, RealityPrediction, RocksDbEvalStore,
     RocksDbInferStore, SurpriseEvent, SurpriseSeverity, TaskContext, TestId, WitnessHash,
 };
 use context_graph_mejepa_cf::{
@@ -84,6 +84,7 @@ struct ExplainPredictionRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct InspectPredictionRequest {
     prediction_id: String,
+    db_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -453,7 +454,7 @@ impl Handlers {
                 );
             }
         };
-        let db_path = match infer_db_path() {
+        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
             Ok(path) => path,
             Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
         };
@@ -1158,6 +1159,16 @@ fn infer_db_path() -> Result<PathBuf, String> {
         })
 }
 
+fn resolve_optional_infer_db_path(input: Option<&PathBuf>) -> Result<PathBuf, String> {
+    match input {
+        Some(path) if path.as_os_str().is_empty() => {
+            Err("dbPath must be a non-empty path".to_string())
+        }
+        Some(path) => Ok(path.clone()),
+        None => infer_db_path(),
+    }
+}
+
 fn run_predict_what_if(db_path: &Path, request: PredictWhatIfRequest) -> AnyhowResult<Value> {
     ensure_deterministic_verify_allowed().map_err(|err| anyhow!("{}: {err}", err.code()))?;
     let repo_root = request.context.environment.repo_root.clone();
@@ -1272,7 +1283,7 @@ fn run_inspect_prediction(
         "predictionId": request.prediction_id,
         "predictionIdentity": {
             "predictionId": hex::encode(row.prediction.prediction_id),
-            "taskId": row.prediction.task_id.0,
+            "taskId": row.prediction.task_id.0.clone(),
             "sessionId": hex::encode(row.prediction.session_id),
             "language": row.prediction.language,
             "createdAtUnixMs": row.prediction.created_at_unix_ms
@@ -1280,11 +1291,11 @@ fn run_inspect_prediction(
         "witnessHash": hex::encode(row.prediction.witness_hash.0),
         "sourcePanelSha": hex::encode(row.prediction.source_panel_sha),
         "versions": {
-            "predictorVersion": row.prediction.provenance.predictor_version,
-            "constellationVersion": row.prediction.provenance.constellation_version,
-            "calibrationVersion": row.prediction.provenance.calibration_version,
-            "activePointer": row.prediction.provenance.active_pointer,
-            "predictionCalibrationVersion": row.prediction.calibration_version
+            "predictorVersion": row.prediction.provenance.predictor_version.clone(),
+            "constellationVersion": row.prediction.provenance.constellation_version.clone(),
+            "calibrationVersion": row.prediction.provenance.calibration_version.clone(),
+            "activePointer": row.prediction.provenance.active_pointer.clone(),
+            "predictionCalibrationVersion": row.prediction.calibration_version.clone()
         },
         "conformalTrace": {
             "steps": [
@@ -1297,14 +1308,14 @@ fn run_inspect_prediction(
                 },
                 {
                     "step": "load_calibration_version",
-                    "calibrationVersion": row.prediction.calibration_version
+                    "calibrationVersion": row.prediction.calibration_version.clone()
                 },
                 {
                     "step": "assemble_outcome_set",
                     "alpha": row.prediction.outcome_set.alpha,
                     "tau": row.prediction.outcome_set.tau,
                     "entropyBits": row.prediction.outcome_set.entropy_bits,
-                    "outcomes": row.prediction.outcome_set.outcomes
+                    "outcomes": row.prediction.outcome_set.outcomes.clone()
                 },
                 {
                     "step": "compute_confidence_interval",
@@ -1324,12 +1335,12 @@ fn run_inspect_prediction(
                     "degradedStatus": row.prediction.degraded_status
                 }
             ],
-            "predictedTestPass": row.prediction.predicted_test_pass,
-            "grangerAttestations": row.prediction.granger_attestations
+            "predictedTestPass": row.prediction.predicted_test_pass.clone(),
+            "grangerAttestations": row.prediction.granger_attestations.clone()
         },
         "tctTrace": {
-            "constellationVersion": row.prediction.provenance.constellation_version,
-            "guardViolations": row.prediction.guard_violations,
+            "constellationVersion": row.prediction.provenance.constellation_version.clone(),
+            "guardViolations": row.prediction.guard_violations.clone(),
             "guardViolationCount": row.prediction.guard_violations.len()
         },
         "contributingChunks": contributing_chunks,
@@ -1548,23 +1559,167 @@ fn parse_prediction_id_hex(raw: &str) -> AnyhowResult<PredictionId> {
     Ok(PredictionId(bytes))
 }
 
+struct PredictionRow {
+    prediction: RealityPrediction,
+    key: Vec<u8>,
+    value_sha256_hex: String,
+    value_len: usize,
+}
+
 fn find_prediction_by_id(db: &DB, prediction_id: PredictionId) -> AnyhowResult<RealityPrediction> {
+    Ok(find_prediction_row_by_id(db, prediction_id)?.prediction)
+}
+
+fn find_prediction_row_by_id(db: &DB, prediction_id: PredictionId) -> AnyhowResult<PredictionRow> {
     let cf = cf_handle(db, CF_MEJEPA_LIVE_PREDICTIONS)?;
     for item in db.iterator_cf(cf, IteratorMode::Start) {
-        let (_key, value) = item?;
-        let prediction: RealityPrediction =
-            bincode::deserialize(&value).context("decode CF_MEJEPA_LIVE_PREDICTIONS row")?;
-        prediction
-            .validate()
-            .map_err(|err| anyhow!("invalid persisted RealityPrediction: {err}"))?;
+        let (key, value) = item?;
+        let prediction = decode_live_prediction_row(&key, &value)?;
         if prediction.prediction_id == prediction_id.0 {
-            return Ok(prediction);
+            return Ok(PredictionRow {
+                prediction,
+                key: key.to_vec(),
+                value_sha256_hex: hex::encode(Sha256::digest(&value)),
+                value_len: value.len(),
+            });
         }
     }
     bail!(
         "predictionId={} was not found in CF_MEJEPA_LIVE_PREDICTIONS",
         hex::encode(prediction_id.0)
     )
+}
+
+fn decode_live_prediction_row(key: &[u8], value: &[u8]) -> AnyhowResult<RealityPrediction> {
+    if key.len() != 40 {
+        bail!(
+            "invalid CF_MEJEPA_LIVE_PREDICTIONS key length: expected 40, got {}",
+            key.len()
+        );
+    }
+    let prediction: RealityPrediction =
+        bincode::deserialize(value).context("decode CF_MEJEPA_LIVE_PREDICTIONS row")?;
+    prediction
+        .validate()
+        .map_err(|err| anyhow!("invalid persisted RealityPrediction: {err}"))?;
+    if prediction.session_id != key[0..16] {
+        bail!("CF_MEJEPA_LIVE_PREDICTIONS key session prefix does not match payload");
+    }
+    let mut created_at = [0u8; 8];
+    created_at.copy_from_slice(&key[16..24]);
+    if prediction.created_at_unix_ms != i64::from_be_bytes(created_at) {
+        bail!("CF_MEJEPA_LIVE_PREDICTIONS key timestamp does not match payload");
+    }
+    if prediction.prediction_id != key[24..40] {
+        bail!("CF_MEJEPA_LIVE_PREDICTIONS key prediction suffix does not match payload");
+    }
+    Ok(prediction)
+}
+
+fn inspect_contributing_chunks(
+    db: &DB,
+    prediction: &RealityPrediction,
+    saliency: &BTreeMap<String, f64>,
+) -> AnyhowResult<Vec<Value>> {
+    let panel_id = PanelId(prediction.source_panel_sha);
+    let mut chunks = Vec::with_capacity(prediction.covered_chunks.len());
+    for chunk in &prediction.covered_chunks {
+        let (key, signals) = read_required_dda_signals(db, &panel_id, chunk)?;
+        let saliency_value = saliency
+            .get(&chunk.0)
+            .copied()
+            .ok_or_else(|| anyhow!("saliency missing for covered chunk {}", chunk.0))?;
+        chunks.push(json!({
+            "chunkId": chunk.0.clone(),
+            "saliency": saliency_value,
+            "panelId": hex::encode(panel_id.0),
+            "ddaSignals": {
+                "perEmbedderCosineVector": signals.per_embedder_cosine.clone(),
+                "pairwiseCosineVector": signals.pairwise_cosine_upper.clone(),
+                "pairwiseMiVector": signals.pairwise_mi_upper.clone(),
+                "blindSpotZScoreVector": signals.blind_spot_z_scores.clone()
+            },
+            "vectorDimensions": {
+                "perEmbedderCosine": signals.per_embedder_cosine.len(),
+                "pairwiseCosine": signals.pairwise_cosine_upper.len(),
+                "pairwiseMi": signals.pairwise_mi_upper.len(),
+                "blindSpotZScores": signals.blind_spot_z_scores.len()
+            },
+            "vectorNorms": {
+                "perEmbedderCosine": vector_norm_f32(&signals.per_embedder_cosine),
+                "pairwiseCosine": vector_norm_f32(&signals.pairwise_cosine_upper),
+                "pairwiseMi": vector_norm_f32(&signals.pairwise_mi_upper),
+                "blindSpotZScores": vector_norm_f32(&signals.blind_spot_z_scores)
+            },
+            "tctCellsConsulted": tct_cells_for_chunk(prediction, chunk),
+            "sourceOfTruth": {
+                "cf": CF_MEJEPA_DDA_SIGNALS,
+                "keyHex": hex::encode(key),
+                "readbackVerified": true
+            }
+        }));
+    }
+    Ok(chunks)
+}
+
+fn read_required_dda_signals(
+    db: &DB,
+    panel_id: &PanelId,
+    chunk: &ChunkId,
+) -> AnyhowResult<(Vec<u8>, DdaSignals)> {
+    let cf = cf_handle(db, CF_MEJEPA_DDA_SIGNALS)?;
+    let key = bincode::serialize(&(panel_id, chunk)).context("encode DDA signal key")?;
+    let Some(bytes) = db.get_cf(cf, &key).context("read CF_MEJEPA_DDA_SIGNALS")? else {
+        bail!(
+            "MEJEPA_INSPECT_PREDICTION_DDA_MISSING: missing CF_MEJEPA_DDA_SIGNALS row for panel_id={} chunk_id={}",
+            hex::encode(panel_id.0),
+            chunk.0
+        );
+    };
+    let signals: DdaSignals =
+        serde_json::from_slice(&bytes).context("decode CF_MEJEPA_DDA_SIGNALS row")?;
+    signals
+        .validate()
+        .map_err(|err| anyhow!("invalid CF_MEJEPA_DDA_SIGNALS row: {err}"))?;
+    Ok((key, signals))
+}
+
+fn tct_cells_for_chunk(prediction: &RealityPrediction, chunk: &ChunkId) -> Vec<Value> {
+    prediction
+        .guard_violations
+        .iter()
+        .filter(|violation| violation.chunk == *chunk)
+        .map(|violation| {
+            json!({
+                "language": prediction.language,
+                "chunkId": chunk.0.clone(),
+                "embedder": violation.embedder.0.clone(),
+                "centroidId": violation.centroid_id.clone(),
+                "cosine": violation.cosine,
+                "thresholdTauM": violation.threshold_tau_m,
+                "deficit": violation.deficit,
+                "source": "RealityPrediction.guard_violations"
+            })
+        })
+        .collect()
+}
+
+fn vector_norm_f32(values: &[f32]) -> f64 {
+    values
+        .iter()
+        .map(|value| {
+            let as_f64 = f64::from(*value);
+            as_f64 * as_f64
+        })
+        .sum::<f64>()
+        .sqrt()
+}
+
+fn mean_prediction_attestation(values: &BTreeMap<String, f32>) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    Some(values.values().map(|value| f64::from(*value)).sum::<f64>() / values.len() as f64)
 }
 
 fn feedback_id_for(
@@ -1731,6 +1886,8 @@ fn parse_version_id(value: &str) -> Result<[u8; 32], String> {
 mod mejepa_constellation_inspect_tests {
     use super::*;
     use std::collections::BTreeMap;
+    use std::fs::{self, OpenOptions};
+    use std::io::Write;
     use std::sync::{Mutex, MutexGuard};
     use std::time::{Duration, SystemTime};
 
@@ -1834,6 +1991,152 @@ mod mejepa_constellation_inspect_tests {
         store.persist(constellation).unwrap();
     }
 
+    fn inspect_prediction_fixture(prediction_id: [u8; 16], chunk: &str) -> RealityPrediction {
+        RealityPrediction::try_new(RealityPrediction {
+            prediction_id,
+            witness_hash: WitnessHash([0x77; 32]),
+            task_id: context_graph_mejepa::TaskId("inspect-test-task".to_string()),
+            session_id: [0x19; 16],
+            language: context_graph_mejepa::Language::Python,
+            covered_chunks: vec![ChunkId(chunk.to_string())],
+            verdict: context_graph_mejepa::Verdict::GuardRejected,
+            confidence_interval: context_graph_mejepa::ConformalInterval {
+                lower: 0.41,
+                upper: 0.74,
+                method: context_graph_mejepa::ConformalMethod::SplitConformal,
+                coverage_target: 0.90,
+                empirical_coverage: 0.89,
+            },
+            predicted_oracle_pass: 0.62,
+            predicted_test_pass: vec![0.61, 0.83],
+            predicted_runtime_trace: [0.0; 32],
+            ood_score: 0.22,
+            outcome_set: context_graph_mejepa::ConformalSet::try_new(
+                vec![context_graph_mejepa::OracleOutcome::Pass],
+                0.1,
+                0.14,
+            )
+            .unwrap(),
+            calibrated_confidence: 0.58,
+            degraded_status: false,
+            granger_attestations: BTreeMap::from([("dda:mean_cosine".to_string(), 0.81)]),
+            predicted_failure_modes: Vec::new(),
+            predicted_failed_tests: Vec::new(),
+            guard_violations: vec![context_graph_mejepa::GuardViolation {
+                embedder: context_graph_mejepa::EmbedderId("E7".to_string()),
+                chunk: ChunkId(chunk.to_string()),
+                centroid_id: "known_good:function:python:e7".to_string(),
+                cosine: 0.71,
+                threshold_tau_m: 0.85,
+                deficit: 0.14,
+            }],
+            closest_exemplars: Vec::new(),
+            predicted_edge_cases: Vec::new(),
+            predicted_latent_bugs: Vec::new(),
+            predicted_tech_debt_added: Vec::new(),
+            predicted_dead_code: Vec::new(),
+            predicted_redundant_code: Vec::new(),
+            predicted_perf_regressions: Vec::new(),
+            predicted_security_concerns: Vec::new(),
+            predicted_accuracy_degradations: Vec::new(),
+            predicted_cost_regressions: Vec::new(),
+            predicted_reasoning_class: context_graph_mejepa::ReasoningClass::MostlyCorrect,
+            agent_claim_graph: context_graph_mejepa::AgentClaimGraph::default(),
+            claim_reconciliation: Vec::new(),
+            reality_impact: None,
+            provenance: context_graph_mejepa::PredictionProvenance {
+                predictor_version: "inspect-test-predictor-v1".to_string(),
+                constellation_version: "inspect-test-constellation-v1".to_string(),
+                calibration_version: "inspect-test-calibration-v1".to_string(),
+                active_pointer: hex::encode(prediction_id),
+            },
+            source_panel_sha: [0x42; 32],
+            calibration_version: "inspect-test-calibration-v1".to_string(),
+            created_at_unix_ms: 1_778_644_000_000,
+        })
+        .unwrap()
+    }
+
+    fn persist_prediction_and_dda(db: Arc<DB>, prediction: &RealityPrediction) {
+        let store = RocksDbInferStore::new(db.clone());
+        context_graph_mejepa::MejepaStore::write_live_prediction(&store, prediction).unwrap();
+        persist_dda_for_prediction(db.as_ref(), prediction);
+    }
+
+    fn persist_dda_for_prediction(db: &DB, prediction: &RealityPrediction) {
+        let cf = cf_handle(db, CF_MEJEPA_DDA_SIGNALS).unwrap();
+        let mut opts = WriteOptions::default();
+        opts.set_sync(true);
+        for chunk in &prediction.covered_chunks {
+            let key = bincode::serialize(&(PanelId(prediction.source_panel_sha), chunk)).unwrap();
+            let signals = DdaSignals::try_new(DdaSignals {
+                per_embedder_cosine: vec![0.91, 0.82, 0.73],
+                pairwise_cosine_upper: vec![0.71, 0.62, 0.53],
+                pairwise_mi_upper: vec![0.11, 0.07, 0.03],
+                blind_spot_z_scores: vec![1.2, -0.4, 0.2],
+            })
+            .unwrap();
+            let bytes = serde_json::to_vec(&signals).unwrap();
+            db.put_cf_opt(cf, &key, bytes, &opts).unwrap();
+            let readback = db.get_cf(cf, &key).unwrap().unwrap();
+            let decoded: DdaSignals = serde_json::from_slice(&readback).unwrap();
+            assert_eq!(decoded, signals);
+        }
+        db.flush_cf(cf).unwrap();
+    }
+
+    fn write_fsv_json(path: &Path, value: &Value) {
+        let bytes = serde_json::to_vec_pretty(value).unwrap();
+        let mut file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(path)
+            .unwrap();
+        file.write_all(&bytes).unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+
+    fn physical_file_summary(root: &Path) -> Value {
+        let mut file_count = 0u64;
+        let mut total_bytes = 0u64;
+        let mut sst_files = Vec::new();
+        collect_physical_files(root, &mut file_count, &mut total_bytes, &mut sst_files);
+        json!({
+            "root": root.display().to_string(),
+            "file_count": file_count,
+            "total_file_bytes": total_bytes,
+            "sst_files": sst_files
+        })
+    }
+
+    fn collect_physical_files(
+        root: &Path,
+        file_count: &mut u64,
+        total_bytes: &mut u64,
+        sst_files: &mut Vec<Value>,
+    ) {
+        for entry in fs::read_dir(root).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let metadata = entry.metadata().unwrap();
+            if metadata.is_dir() {
+                collect_physical_files(&path, file_count, total_bytes, sst_files);
+                continue;
+            }
+            *file_count += 1;
+            *total_bytes += metadata.len();
+            if path.extension().and_then(|ext| ext.to_str()) == Some("sst") {
+                sst_files.push(json!({
+                    "path": path.display().to_string(),
+                    "bytes": metadata.len()
+                }));
+            }
+        }
+    }
+
     fn contains_key(value: &serde_json::Value, needle: &str) -> bool {
         match value {
             serde_json::Value::Object(map) => map
@@ -1844,6 +2147,219 @@ mod mejepa_constellation_inspect_tests {
             }
             _ => false,
         }
+    }
+
+    #[tokio::test]
+    async fn mejepa_inspect_prediction_writes_phase_f_fsv_artifact() {
+        let _guard = env_guard();
+        let (handlers, _handler_tempdir) =
+            crate::handlers::tests::create_protocol_test_handlers().await;
+        let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
+        let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-inspect-prediction-fsv");
+        fs::create_dir_all(&fsv_root).unwrap();
+        let run_root = fsv_root.join(format!("run-{}-{}", started_at_unix_ms, std::process::id()));
+        fs::create_dir_all(&run_root).unwrap();
+        let infer_db = run_root.join("infer-db");
+
+        let prediction = inspect_prediction_fixture([0x44; 16], "src/lib.rs#fn#0");
+        let missing_dda_prediction =
+            inspect_prediction_fixture([0x45; 16], "src/lib.rs#fn#missing-dda");
+        let db = open_infer_rocksdb(&infer_db).unwrap();
+        let cf_counts_before = json!({
+            CF_MEJEPA_LIVE_PREDICTIONS: count_cf_any(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS).unwrap(),
+            CF_MEJEPA_DDA_SIGNALS: count_cf_any(db.as_ref(), CF_MEJEPA_DDA_SIGNALS).unwrap()
+        });
+        persist_prediction_and_dda(db.clone(), &prediction);
+        let store = RocksDbInferStore::new(db.clone());
+        context_graph_mejepa::MejepaStore::write_live_prediction(&store, &missing_dda_prediction)
+            .unwrap();
+        let cf_counts_after = json!({
+            CF_MEJEPA_LIVE_PREDICTIONS: count_cf_any(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS).unwrap(),
+            CF_MEJEPA_DDA_SIGNALS: count_cf_any(db.as_ref(), CF_MEJEPA_DDA_SIGNALS).unwrap()
+        });
+        drop(store);
+        drop(db);
+
+        let reopened = open_infer_rocksdb(&infer_db).unwrap();
+        let reopened_prediction =
+            find_prediction_row_by_id(reopened.as_ref(), PredictionId(prediction.prediction_id))
+                .unwrap();
+        let (_dda_key, reopened_dda) = read_required_dda_signals(
+            reopened.as_ref(),
+            &PanelId(prediction.source_panel_sha),
+            &prediction.covered_chunks[0],
+        )
+        .unwrap();
+        let independent_reopen_equal = reopened_prediction.prediction == prediction
+            && reopened_dda.per_embedder_cosine == vec![0.91, 0.82, 0.73];
+        drop(reopened);
+
+        let prediction_id = hex::encode(prediction.prediction_id);
+        let happy_response = handlers
+            .call_mejepa_inspect_prediction(
+                Some(JsonRpcId::Number(440)),
+                json!({"predictionId": prediction_id, "dbPath": infer_db.display().to_string()}),
+            )
+            .await;
+        assert!(happy_response.error.is_none());
+        let happy_result = happy_response.result.unwrap();
+        let happy_structured = happy_result["structuredContent"].clone();
+        let happy_pass = happy_result["isError"] == false
+            && happy_structured["sourceOfTruth"]["readbackVerified"] == true
+            && happy_structured["sourceOfTruth"]["livePredictionCf"]
+                == json!(CF_MEJEPA_LIVE_PREDICTIONS)
+            && happy_structured["sourceOfTruth"]["ddaSignalsCf"] == json!(CF_MEJEPA_DDA_SIGNALS)
+            && happy_structured["versions"]["predictorVersion"]
+                == json!("inspect-test-predictor-v1")
+            && happy_structured["witnessHash"] == json!(hex::encode([0x77; 32]))
+            && happy_structured["contributingChunks"]
+                .as_array()
+                .map(|chunks| chunks.len())
+                == Some(1)
+            && happy_structured["contributingChunks"][0]["ddaSignals"]["perEmbedderCosineVector"]
+                .as_array()
+                .map(|values| values.len())
+                == Some(3)
+            && happy_structured["contributingChunks"][0]["tctCellsConsulted"]
+                .as_array()
+                .map(|values| values.len())
+                == Some(1);
+
+        let malformed_response = handlers
+            .call_mejepa_inspect_prediction(
+                Some(JsonRpcId::Number(441)),
+                json!({"predictionId": "not-hex", "dbPath": infer_db.display().to_string()}),
+            )
+            .await;
+        let malformed_result = malformed_response.result.unwrap();
+
+        let missing_prediction_response = handlers
+            .call_mejepa_inspect_prediction(
+                Some(JsonRpcId::Number(442)),
+                json!({
+                    "predictionId": hex::encode([0xaa; 16]),
+                    "dbPath": infer_db.display().to_string()
+                }),
+            )
+            .await;
+        let missing_prediction_result = missing_prediction_response.result.unwrap();
+
+        let missing_dda_response = handlers
+            .call_mejepa_inspect_prediction(
+                Some(JsonRpcId::Number(443)),
+                json!({
+                    "predictionId": hex::encode(missing_dda_prediction.prediction_id),
+                    "dbPath": infer_db.display().to_string()
+                }),
+            )
+            .await;
+        let missing_dda_result = missing_dda_response.result.unwrap();
+
+        let unknown_field_response = handlers
+            .call_mejepa_inspect_prediction(
+                Some(JsonRpcId::Number(444)),
+                json!({
+                    "predictionId": hex::encode(prediction.prediction_id),
+                    "dbPath": infer_db.display().to_string(),
+                    "extra": true
+                }),
+            )
+            .await;
+        let unknown_field_result = unknown_field_response.result.unwrap();
+
+        let boundary_cases = vec![
+            json!({
+                "case": "malformed_prediction_id_fails_closed",
+                "expected": "predictionId must be exactly 32 hexadecimal characters",
+                "actual": malformed_result,
+                "pass": malformed_result["isError"] == true
+                    && malformed_result["content"][0]["text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("predictionId must be exactly 32 hexadecimal characters")
+            }),
+            json!({
+                "case": "missing_prediction_row_fails_closed",
+                "expected": "not found in CF_MEJEPA_LIVE_PREDICTIONS",
+                "actual": missing_prediction_result,
+                "pass": missing_prediction_result["isError"] == true
+                    && missing_prediction_result["content"][0]["text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("was not found in CF_MEJEPA_LIVE_PREDICTIONS")
+            }),
+            json!({
+                "case": "missing_dda_signal_row_fails_closed",
+                "expected": "MEJEPA_INSPECT_PREDICTION_DDA_MISSING",
+                "actual": missing_dda_result,
+                "pass": missing_dda_result["isError"] == true
+                    && missing_dda_result["content"][0]["text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("MEJEPA_INSPECT_PREDICTION_DDA_MISSING")
+            }),
+            json!({
+                "case": "unknown_request_field_fails_schema_validation",
+                "expected": "schema validation failed",
+                "actual": unknown_field_result,
+                "pass": unknown_field_result["isError"] == true
+                    && unknown_field_result["content"][0]["text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("schema validation failed")
+            }),
+        ];
+        let all_boundaries_pass = boundary_cases
+            .iter()
+            .all(|case| case["pass"].as_bool() == Some(true));
+        let report = json!({
+            "fsv_root": fsv_root,
+            "task_id": "TASK-OBS-009",
+            "started_at_unix_ms": started_at_unix_ms,
+            "build_release_sha": std::process::Command::new("git")
+                .args(["rev-parse", "--short", "HEAD"])
+                .output()
+                .ok()
+                .and_then(|out| String::from_utf8(out.stdout).ok())
+                .map(|text| text.trim().to_string())
+                .unwrap_or_else(|| "unknown".to_string()),
+            "happy_path": [{
+                "case": "inspect_prediction_reads_live_prediction_and_dda_vectors",
+                "sot": format!("{CF_MEJEPA_LIVE_PREDICTIONS} + {CF_MEJEPA_DDA_SIGNALS}"),
+                "before": {
+                    "db_path": infer_db.display().to_string(),
+                    "prediction_id": hex::encode(prediction.prediction_id),
+                    "covered_chunks": prediction.covered_chunks.clone()
+                },
+                "trigger": "cargo test -p context-graph-mcp mejepa_inspect_prediction_writes_phase_f_fsv_artifact -- --nocapture",
+                "after": happy_structured,
+                "expected": {
+                    "readbackVerified": true,
+                    "chunk_count": 1,
+                    "per_embedder_vector_len": 3,
+                    "tct_cell_count": 1
+                },
+                "actual": happy_pass,
+                "pass": happy_pass,
+                "evidence_path": run_root.display().to_string()
+            }],
+            "boundary_cases": boundary_cases,
+            "all_passed": happy_pass && all_boundaries_pass,
+            "cf_counts_before": cf_counts_before,
+            "cf_counts_after": cf_counts_after,
+            "readback_equal": independent_reopen_equal,
+            "physical_artifacts": {
+                "infer_db_exists": infer_db.exists(),
+                "run_root": run_root.display().to_string(),
+                "infer_db": physical_file_summary(&infer_db)
+            }
+        });
+        assert_eq!(report["all_passed"], true);
+        let evidence_path = fsv_root.join("inspect_prediction_fsv.json");
+        write_fsv_json(&evidence_path, &report);
+        let readback: Value = serde_json::from_slice(&fs::read(&evidence_path).unwrap()).unwrap();
+        assert_eq!(readback["all_passed"], true);
+        assert_eq!(readback["readback_equal"], true);
     }
 
     #[test]

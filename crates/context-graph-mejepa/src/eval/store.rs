@@ -1,6 +1,6 @@
 use super::error::{EvalError, EvalErrorCode};
 use super::graph::PatchSimilarityGraph;
-use super::queue::{ActiveLearningLabel, ActiveLearningQueueState};
+use super::queue::{ActiveLearningLabel, ActiveLearningQueueEntry, ActiveLearningQueueState};
 use super::telemetry::ProductionTelemetryWindow;
 use super::types::{EvalReport, OpenResearchQuestionStatus};
 use crate::calibration::cf;
@@ -105,6 +105,26 @@ impl RocksDbEvalStore {
             label.task_id.0.as_bytes(),
             label,
         )
+    }
+
+    pub fn load_label(
+        &self,
+        task_id: &crate::types::TaskId,
+    ) -> Result<Option<ActiveLearningLabel>, EvalError> {
+        task_id
+            .validate("active_learning_label.task_id")
+            .map_err(EvalError::from)?;
+        self.get_bin(CF_MEJEPA_ACTIVE_LEARNING_LABELS, task_id.0.as_bytes())
+    }
+
+    pub fn load_evicted_entry(
+        &self,
+        task_id: &crate::types::TaskId,
+    ) -> Result<Option<ActiveLearningQueueEntry>, EvalError> {
+        task_id
+            .validate("active_learning_eviction.task_id")
+            .map_err(EvalError::from)?;
+        self.get_bin(CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, task_id.0.as_bytes())
     }
 
     pub fn persist_graph(&self, graph: &PatchSimilarityGraph) -> Result<(), EvalError> {
