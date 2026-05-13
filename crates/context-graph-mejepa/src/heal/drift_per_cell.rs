@@ -469,7 +469,7 @@ fn corpus_slice_for_cell(
     cell_key: &str,
     weighted_trials: u64,
 ) -> Result<CorpusSlice, HealError> {
-    let mut observations = latest_observations(storage, weighted_trials.max(1).min(128) as usize)?;
+    let mut observations = latest_observations(storage, weighted_trials.clamp(1, 128) as usize)?;
     observations.retain(|observation| observation.cell.key() == cell_key);
     if observations.is_empty() {
         return Err(HealError::invalid(

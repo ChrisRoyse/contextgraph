@@ -129,7 +129,7 @@ Plus, on the operator side:
 | MCP daemon mode (the supervised-process container) | YES (code + template + FSV) | `--daemon-server-only --d-root`; supervisor in `crates/context-graph-mcp/src/daemon.rs`; durable `CF_MEJEPA_FLYWHEEL_JOB_RUNS`; `scripts/systemd/mejepa-daemon.service`; fresh-host operator install/runbook remains |
 | Weekly evaluation cron | partial (daemon scheduler FSV exists) | weekly daemon task runs holdout eval, writes reports/status, and records job-run rows; missing populated production holdout feed + operator dashboard/runbook |
 
-**The unshipped pieces are production hardening and model-quality work, not new Phase A-D architecture:** full self-optimization policy, weekly production evaluation/dashboard cadence, per-head holdout gates, non-Python analyzer parity expansion, Phase G convergence to the 0.95 ship gate, and operator packaging. Phase A-D now provides the durable reward-signal substrate that Phase E consumes.
+**The unshipped pieces are production hardening and model-quality work, not new Phase A-E architecture:** weekly production evaluation/dashboard cadence, per-head holdout gates, non-Python analyzer parity expansion, Phase G convergence to the 0.95 ship gate, and operator packaging. Phase A-E now provides the durable reward-signal substrate that Phase F/G consumes.
 
 ---
 
@@ -139,7 +139,7 @@ Git history matters here. `e628fb5b` shipped supervisor shutdown, atomic state w
 
 Today, `context-graph-mcp --daemon-server-only --d-root /mnt/d/contextgraph --daemon-port 3100 --http-port 3101` validates the D-root, opens the shared RocksDB, and starts the long-running shift subscriber, self-optimization scheduler, nightly GC scheduler, and weekly eval scheduler under the daemon supervisor. Task starts, scheduled run completions/errors, and task exits are sync-written to `CF_MEJEPA_FLYWHEEL_JOB_RUNS` and read back immediately; FSV evidence lives at `/mnt/d/contextgraph/fsv/mcp-daemon-supervision-fsv/daemon-supervision-evidence.json`.
 
-What still needs work is fresh-host packaging and production data: first-time setup docs, `systemctl --user enable --now mejepa-daemon` verification on a fresh host, dashboard/runbook commands, populated production holdout feed, and the remaining Phase E/F policy/data-flow tasks that make every edit become a labeled training example.
+What still needs work is fresh-host packaging and production data: first-time setup docs, `systemctl --user enable --now mejepa-daemon` verification on a fresh host, dashboard/runbook commands, populated production holdout feed, and the remaining Phase F/G reporting/data-flow tasks that make every edit become a labeled training example.
 
 ---
 

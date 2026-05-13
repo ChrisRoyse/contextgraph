@@ -358,7 +358,7 @@ Reward:
 ## 16. What this formula extension commits us to
 
 1. **Per-head ΔP, ΔK, ΔΞ tracking** in `learning_signal/` — complete/code_complete in `learning_signal/per_head.rs`.
-2. **Per-head cert columns** in `CF_MEJEPA_TRAIN_CERTS` — Phase A-D complete for `per_head_l_step`, `delta_xi_global_min`, and component-carrier audit fields; richer per-head loss/lambda trend maps remain Phase E/F policy telemetry.
+2. **Per-head cert columns** in `CF_MEJEPA_TRAIN_CERTS` — Phase A-D complete for `per_head_l_step`, `delta_xi_global_min`, and component-carrier audit fields; Phase E adds per-head Fisher, dormancy, and lambda policy evidence. Richer per-head loss/lambda trend maps remain Phase F/G telemetry.
 3. **`ΔΞ_global = min_h(ΔΞ_h)`** in the learning signal — complete for the persisted carrier path; BatchSampler skip/requeue automation remains Phase F/G model-quality hardening.
 4. **`agent_surprise_severity_score` factor** in `sampling_weight` — complete.
 5. **Per-head Fisher matrices** in Phase E policy ledger — complete/code+FSV.

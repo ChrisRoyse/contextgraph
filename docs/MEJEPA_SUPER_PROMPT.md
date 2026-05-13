@@ -96,7 +96,7 @@ separate read against the Source of Truth (SoT).
 43. The 21 embedders and 12 active content slots
 44. Frozen instruments and panel slots
 45. RocksDB column-family map
-46. MCP tool surface (23 live)
+46. MCP tool surface (24 live)
 47. Reality streams and reward-signal capture
 48. DDA, TCT, and teleological constellations
 49. Continuous self-optimization (Phase E)
@@ -3812,10 +3812,10 @@ CF_MEJEPA_EMBEDDING_REGISTRY      # embedder_id -> model version per fingerprint
 
 ---
 
-## 46. MCP tool surface (23 live)
+## 46. MCP tool surface (24 live)
 
 Source: `docs/futurebuild/02_CURRENT_STATE_HONEST.md §1` plus Phase
-A/B additions.
+A/B/E additions.
 
 ```
 mejepa_verify                       # given patch+context, return verdict
@@ -3827,6 +3827,7 @@ mejepa_bootstrap_status             # first-time setup status
 mejepa_constellation_inspect        # inspect chunk-level TCT centroids
 mejepa_heal_status                  # current scheduler state
 mejepa_rollback_to                  # rollback to a prior weights checkpoint
+mejepa_promote_approval             # approve/reject catastrophic promotions
 mejepa_load_learner_state           # load a learner state snapshot
 mejepa_routing_lookup               # which embedder routes for (lang, entity)
 mejepa_vram_budget_report           # VRAM accounting
@@ -3843,8 +3844,8 @@ mejepa_eval_build_graph             # build patch-similarity graph
 mejepa_audit_pairwise_mi            # pairwise MI heatmap
 ```
 
-**Phase E / F additions planned:** `mejepa_promote_approval`,
-`mejepa_inspect_prediction`, daemon status aggregator.
+**Phase F additions planned:** `mejepa_inspect_prediction`, daemon
+status aggregator.
 
 **Tools that fail closed:** `mcp__cgreality__reality_run_attempt`
 returns `CCREALITY_ENGINE_RETIRED`. The inner-actor LLM spawn path is
@@ -4474,6 +4475,5 @@ override default agent behavior. When this conflicts with anything
 else, the more specific rule wins; where it conflicts with
 `CLAUDE.md`, CLAUDE.md wins (this file mirrors CLAUDE.md and adds
 operational detail — it does not replace it).
-
 
 

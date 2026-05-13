@@ -1402,15 +1402,19 @@ mod tests {
 
     #[test]
     fn config_rejects_zero_periods_and_empty_paths() {
-        let mut config = SelfOptimConfig::default();
-        config.observe_period = Duration::ZERO;
+        let config = SelfOptimConfig {
+            observe_period: Duration::ZERO,
+            ..SelfOptimConfig::default()
+        };
         assert_eq!(
             config.validate().unwrap_err().code(),
             "MEJEPA_HEAL_INVALID_STATE"
         );
 
-        let mut config = SelfOptimConfig::default();
-        config.status_path = PathBuf::new();
+        let config = SelfOptimConfig {
+            status_path: PathBuf::new(),
+            ..SelfOptimConfig::default()
+        };
         assert_eq!(
             config.validate().unwrap_err().code(),
             "MEJEPA_HEAL_INVALID_STATE"

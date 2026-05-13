@@ -1,6 +1,6 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -159,9 +159,19 @@ impl WitnessChainAppender {
 
 pub fn verify(
     checker: &mut ChainIntegrityChecker,
+    witness_chain: &WitnessChainAppender,
+    storage: &HealRocksStore,
+    status: &Arc<Mutex<HealStatus>>,
+) -> Result<ChainIntegrityReport, HealError> {
+    verify_with_memory_root(checker, witness_chain, storage, status, Path::new("memory"))
+}
+
+fn verify_with_memory_root(
+    checker: &mut ChainIntegrityChecker,
     _witness_chain: &WitnessChainAppender,
     _storage: &HealRocksStore,
     status: &Arc<Mutex<HealStatus>>,
+    memory_root: &Path,
 ) -> Result<ChainIntegrityReport, HealError> {
     let started = Instant::now();
     let bytes = fs::read(&checker.chain_path)
@@ -177,7 +187,7 @@ pub fn verify(
                 entry_count: report.entries,
                 replay_duration_ms: started.elapsed().as_millis() as u64,
             };
-            write_smap_journal_chain_verified(&out)?;
+            write_smap_journal_chain_verified_at(memory_root, &out)?;
             Ok(out)
         }
         Err(err) => {
@@ -185,7 +195,8 @@ pub fn verify(
             if let Ok(mut status) = status.lock() {
                 status.status_change = StatusChange::Paused;
             }
-            write_smap_blocker_critical(
+            write_smap_blocker_critical_at(
+                memory_root,
                 "witness chain integrity failed",
                 &kind,
                 checker.rollback_target.as_ref(),
@@ -216,7 +227,16 @@ pub fn write_smap_blocker_critical(
     kind: &IntegrityViolationKind,
     rollback_target: Option<&[u8; 32]>,
 ) -> Result<PathBuf, HealError> {
-    let root = PathBuf::from("memory/blockers");
+    write_smap_blocker_critical_at(Path::new("memory"), reason, kind, rollback_target)
+}
+
+fn write_smap_blocker_critical_at(
+    memory_root: &Path,
+    reason: &str,
+    kind: &IntegrityViolationKind,
+    rollback_target: Option<&[u8; 32]>,
+) -> Result<PathBuf, HealError> {
+    let root = memory_root.join("blockers");
     fs::create_dir_all(&root).map_err(|err| HealError::io("create_dir_all", &root, err))?;
     let ts = chrono::Utc::now();
     let path = root.join(format!(
@@ -238,7 +258,14 @@ pub fn write_smap_blocker_critical(
 pub fn write_smap_journal_chain_verified(
     report: &ChainIntegrityReport,
 ) -> Result<PathBuf, HealError> {
-    let root = PathBuf::from("memory/journal");
+    write_smap_journal_chain_verified_at(Path::new("memory"), report)
+}
+
+fn write_smap_journal_chain_verified_at(
+    memory_root: &Path,
+    report: &ChainIntegrityReport,
+) -> Result<PathBuf, HealError> {
+    let root = memory_root.join("journal");
     fs::create_dir_all(&root).map_err(|err| HealError::io("create_dir_all", &root, err))?;
     let ts = chrono::Utc::now();
     let path = root.join(format!(
@@ -347,7 +374,14 @@ mod tests {
         let storage = HealRocksStore::open(temp.path().join("db")).unwrap();
         let mut checker = ChainIntegrityChecker::try_new(path).unwrap();
         let status = Arc::new(Mutex::new(HealStatus::default()));
-        let report = verify(&mut checker, &appender, &storage, &status).unwrap();
+        let report = verify_with_memory_root(
+            &mut checker,
+            &appender,
+            &storage,
+            &status,
+            &temp.path().join("memory"),
+        )
+        .unwrap();
         assert_eq!(report.entry_count, 2);
     }
 }

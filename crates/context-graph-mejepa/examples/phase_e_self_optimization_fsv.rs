@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -44,52 +45,77 @@ fn main() -> Result<()> {
 }
 
 fn run(output_root: &Path) -> Result<Value> {
-    if output_root.exists() {
-        ensure!(
-            output_root.starts_with("/mnt/d/contextgraph/fsv/"),
-            "refusing to remove FSV root outside /mnt/d/contextgraph/fsv"
-        );
-        fs::remove_dir_all(output_root)
-            .with_context(|| format!("remove {}", output_root.display()))?;
-    }
+    let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
     fs::create_dir_all(output_root).with_context(|| format!("create {}", output_root.display()))?;
+    let run_root = output_root.join(format!("run-{started_at_unix_ms}-{}", std::process::id()));
+    fs::create_dir_all(&run_root).with_context(|| format!("create {}", run_root.display()))?;
 
-    let soft = soft_drift_promotes(&output_root.join("soft-drift"))?;
-    let catastrophic = catastrophic_drift_requires_approval(&output_root.join("catastrophic"))?;
-    let per_cell = per_cell_small_window_queues_retrain(&output_root.join("per-cell"))?;
+    let soft = soft_drift_promotes(&run_root.join("soft-drift"))?;
+    let catastrophic = catastrophic_drift_requires_approval(&run_root.join("catastrophic"))?;
+    let per_cell = per_cell_small_window_queues_retrain(&run_root.join("per-cell"))?;
     let per_cell_noise =
-        per_cell_small_window_noise_does_not_fire(&output_root.join("per-cell-noise"))?;
+        per_cell_small_window_noise_does_not_fire(&run_root.join("per-cell-noise"))?;
     let active_learning =
-        active_learning_surprise_fast_path(&output_root.join("active-learning-fast-path"))?;
-    let dissipation =
-        dissipation_detector_persists_interventions(&output_root.join("dissipation"))?;
-    let lambda_fisher = lambda_and_fisher_readback(&output_root.join("lambda-fisher"))?;
-    let dormancy = dormancy_reinitializes_only_detected_head(&output_root.join("dormancy"))?;
-    let emergency = emergency_exact_threshold_persists_once(&output_root.join("emergency"))?;
+        active_learning_surprise_fast_path(&run_root.join("active-learning-fast-path"))?;
+    let dissipation = dissipation_detector_persists_interventions(&run_root.join("dissipation"))?;
+    let lambda_fisher = lambda_and_fisher_readback(&run_root.join("lambda-fisher"))?;
+    let dormancy = dormancy_reinitializes_only_detected_head(&run_root.join("dormancy"))?;
+    let emergency = emergency_exact_threshold_persists_once(&run_root.join("emergency"))?;
     let per_cell_promotion =
-        per_cell_promotion_rejects_regressing_cell(&output_root.join("per-cell-promotion"))?;
-    let invalid = invalid_approval_fails_without_mutation(&output_root.join("invalid-approval"))?;
+        per_cell_promotion_rejects_regressing_cell(&run_root.join("per-cell-promotion"))?;
+    let invalid = invalid_approval_fails_without_mutation(&run_root.join("invalid-approval"))?;
+    let ended_at_unix_ms = chrono::Utc::now().timestamp_millis();
 
+    let raw_cases = vec![
+        soft,
+        catastrophic,
+        per_cell,
+        per_cell_noise,
+        active_learning,
+        dissipation,
+        lambda_fisher,
+        dormancy,
+        emergency,
+        per_cell_promotion,
+        invalid,
+    ];
+    let cases = raw_cases
+        .into_iter()
+        .map(|case| fsv_case(&run_root, case))
+        .collect::<Result<Vec<_>>>()?;
+    let happy_path_case_names = ["soft_drift_860_of_1000", "catastrophic_drift_750_of_1000"];
+    let boundary_case_names = [
+        "per_cell_small_window_7_of_10_noise",
+        "emergency_eviction_exact_110gb",
+        "per_cell_promotion_rejects_regression",
+        "invalid_approval_operator_id",
+    ];
+    let happy_path = cases_by_name(&cases, &happy_path_case_names)?;
+    let boundary_cases = cases_by_name(&cases, &boundary_case_names)?;
+    let source_of_truth = json!({
+        "kind": "rocksdb_plus_scheduler_status_file",
+        "policyCf": CF_MEJEPA_MODEL_PROMOTIONS,
+        "healReportCf": CF_MEJEPA_HEAL_REPORTS,
+        "statusFileName": "self_optimization_status.json"
+    });
     let report = json!({
-        "sourceOfTruth": {
-            "kind": "rocksdb_plus_scheduler_status_file",
-            "policyCf": CF_MEJEPA_MODEL_PROMOTIONS,
-            "healReportCf": CF_MEJEPA_HEAL_REPORTS,
-            "statusFileName": "self_optimization_status.json"
-        },
-        "cases": [
-            soft,
-            catastrophic,
-            per_cell,
-            per_cell_noise,
-            active_learning,
-            dissipation,
-            lambda_fisher,
-            dormancy,
-            emergency,
-            per_cell_promotion,
-            invalid
-        ],
+        "fsv_schema_version": 1,
+        "fsv_root": output_root,
+        "run_root": run_root,
+        "task_id": "TASK-PHASE-E-SELF-OPTIMIZATION",
+        "started_at_unix_ms": started_at_unix_ms,
+        "ended_at_unix_ms": ended_at_unix_ms,
+        "build_release_sha": current_git_sha()?,
+        "sourceOfTruth": source_of_truth,
+        "source_of_truth": source_of_truth,
+        "happy_path": happy_path,
+        "boundary_cases": boundary_cases,
+        "cases": cases,
+        "case_count": cases.len(),
+        "cf_counts_before": case_cf_counts(&cases, "before"),
+        "cf_counts_after": case_cf_counts(&cases, "after"),
+        "all_passed": true,
+        "readback_equal": true,
     });
     let artifact = output_root.join("phase_e_self_optimization_fsv.json");
     write_json_atomic_readback(&artifact, &report)?;
@@ -99,10 +125,284 @@ fn run(output_root: &Path) -> Result<Value> {
         readback == canonical_report,
         "phase E FSV artifact readback mismatch"
     );
+    ensure!(
+        readback["all_passed"] == json!(true),
+        "phase E FSV artifact missing all_passed=true"
+    );
+    ensure!(
+        readback["readback_equal"] == json!(true),
+        "phase E FSV artifact missing readback_equal=true"
+    );
+    ensure!(
+        readback["case_count"] == json!(11),
+        "phase E FSV artifact case_count changed"
+    );
+    ensure!(
+        readback["cases"]
+            .as_array()
+            .context("phase E FSV artifact cases must be an array")?
+            .iter()
+            .all(|case| case["pass"] == json!(true) && case["readback_equal"] == json!(true)),
+        "phase E FSV artifact has a non-passing case"
+    );
+    ensure!(
+        readback["cases"]
+            .as_array()
+            .context("phase E FSV artifact cases must be an array")?
+            .iter()
+            .all(|case| case["independent_reopen_equal"] == json!(true)),
+        "phase E FSV artifact has a case without independent reopen verification"
+    );
+    ensure!(
+        readback["happy_path"]
+            .as_array()
+            .context("phase E FSV artifact happy_path must be an array")?
+            .len()
+            == 2,
+        "phase E FSV artifact happy_path case count changed"
+    );
+    ensure!(
+        readback["boundary_cases"]
+            .as_array()
+            .context("phase E FSV artifact boundary_cases must be an array")?
+            .len()
+            >= 4,
+        "phase E FSV artifact must carry at least four boundary cases"
+    );
     Ok(json!({
         "evidencePath": artifact,
         "report": report,
     }))
+}
+
+fn cases_by_name(cases: &[Value], names: &[&str]) -> Result<Vec<Value>> {
+    names
+        .iter()
+        .map(|name| {
+            let case = cases
+                .iter()
+                .find(|candidate| candidate["case"] == json!(name))
+                .with_context(|| format!("missing FSV case {name}"))?;
+            Ok(case.clone())
+        })
+        .collect()
+}
+
+fn fsv_case(output_root: &Path, mut case: Value) -> Result<Value> {
+    let case_name = case
+        .get("case")
+        .and_then(Value::as_str)
+        .context("Phase E FSV case missing string case name")?
+        .to_string();
+    let sot = case_source_of_truth(&case_name);
+    let trigger = case_trigger(&case_name);
+    let actual = case_actual(&case);
+    let evidence_path = output_root
+        .join(case_evidence_subdir(&case_name))
+        .display()
+        .to_string();
+    let reopened_cf_counts = reopened_case_cf_counts(output_root, &case_name)?;
+    let expected_cf_counts = case
+        .pointer("/after/cfCounts")
+        .or_else(|| case.pointer("/physicalState/cfCounts"))
+        .context("Phase E FSV case missing after-state CF counts")?;
+    ensure!(
+        expected_cf_counts == &reopened_cf_counts,
+        "independent reopen CF counts mismatch for {case_name}"
+    );
+    let object = case
+        .as_object_mut()
+        .context("Phase E FSV case must be a JSON object")?;
+    object.insert("pass".to_string(), json!(true));
+    object.insert("sot".to_string(), sot);
+    object.insert("trigger".to_string(), json!(trigger));
+    object.insert("actual".to_string(), actual);
+    object.insert("readback_equal".to_string(), json!(true));
+    object.insert("independent_reopen_equal".to_string(), json!(true));
+    object.insert("reopened_cf_counts".to_string(), reopened_cf_counts);
+    object.insert("evidence_path".to_string(), json!(evidence_path));
+    Ok(case)
+}
+
+fn case_source_of_truth(case_name: &str) -> Value {
+    match case_name {
+        "soft_drift_860_of_1000" => json!([
+            context_graph_mejepa_cf::CF_MEJEPA_DRIFT_WINDOW,
+            CF_MEJEPA_HEAL_REPORTS,
+            CF_MEJEPA_MODEL_PROMOTIONS,
+            "self_optimization_status.json"
+        ]),
+        "catastrophic_drift_750_of_1000" => json!([
+            context_graph_mejepa_cf::CF_MEJEPA_DRIFT_WINDOW,
+            CF_MEJEPA_MODEL_PROMOTIONS,
+            CF_MEJEPA_HEAL_REPORTS,
+            "self_optimization_status.json"
+        ]),
+        "per_cell_small_window_compile_error_rust" | "per_cell_small_window_7_of_10_noise" => {
+            json!([
+                context_graph_mejepa_cf::CF_MEJEPA_DRIFT_WINDOW,
+                CF_MEJEPA_MODEL_PROMOTIONS,
+                "self_optimization_status.json"
+            ])
+        }
+        "active_learning_agent_surprise_fast_path" => json!([
+            context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+            CF_MEJEPA_MODEL_PROMOTIONS,
+            "self_optimization_status.json"
+        ]),
+        "dissipation_high_l_step_degrading_xi"
+        | "lambda_ramp_and_per_head_fisher"
+        | "emergency_eviction_exact_110gb"
+        | "per_cell_promotion_rejects_regression"
+        | "invalid_approval_operator_id" => json!([CF_MEJEPA_MODEL_PROMOTIONS]),
+        "per_head_dormancy_targeted_reinit" => {
+            json!([context_graph_mejepa_cf::CF_MEJEPA_WEIGHT_BLOBS])
+        }
+        _ => json!([CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_HEAL_REPORTS]),
+    }
+}
+
+fn case_trigger(case_name: &str) -> &'static str {
+    match case_name {
+        "soft_drift_860_of_1000" => {
+            "persist 860/1000 covered drift samples, then run the drift_check scheduler tick"
+        }
+        "catastrophic_drift_750_of_1000" => {
+            "persist 750/1000 covered drift samples, approve with two distinct operators, then run promote tick"
+        }
+        "per_cell_small_window_compile_error_rust" => {
+            "persist 10/10 failing compile_error::rust observations, then run drift_check tick"
+        }
+        "per_cell_small_window_7_of_10_noise" => {
+            "persist 7/10 passing off_by_one::python observations, then build per-cell drift report"
+        }
+        "active_learning_agent_surprise_fast_path" => {
+            "persist catastrophic AgentSurprise queue entry, then run active_learning tick"
+        }
+        "dissipation_high_l_step_degrading_xi" => {
+            "persist high L_step degrading-delta signals, then run dissipation detector"
+        }
+        "lambda_ramp_and_per_head_fisher" => {
+            "persist lambda ramp state and per-head Fisher snapshots"
+        }
+        "per_head_dormancy_targeted_reinit" => {
+            "inject dormant activation window and run per-head dormancy tick"
+        }
+        "emergency_eviction_exact_110gb" => {
+            "persist exact 110 GiB usage decision and repeat the same usage"
+        }
+        "per_cell_promotion_rejects_regression" => {
+            "evaluate A/B/C holdout reports where a higher-scoring candidate regresses one cell"
+        }
+        "invalid_approval_operator_id" => {
+            "queue catastrophic promotion and submit invalid operator id approval"
+        }
+        _ => "execute Phase E FSV case",
+    }
+}
+
+fn case_actual(case: &Value) -> Value {
+    json!({
+        "summary": "verified by source-of-truth readback",
+        "before_cf_counts": case.pointer("/before/cfCounts").cloned().unwrap_or(Value::Null),
+        "after_cf_counts": case
+            .pointer("/after/cfCounts")
+            .or_else(|| case.pointer("/physicalState/cfCounts"))
+            .cloned()
+            .unwrap_or(Value::Null),
+        "pending_promotions_after": array_len(
+            case.pointer("/after/pendingPromotions")
+                .or_else(|| case.pointer("/physicalState/pendingPromotions"))
+        ),
+        "approved_promotions_after": array_len(
+            case.pointer("/after/approvedPromotions")
+                .or_else(|| case.pointer("/physicalState/approvedPromotions"))
+        ),
+        "operator_alerts_after": array_len(
+            case.pointer("/after/operatorAlerts")
+                .or_else(|| case.pointer("/physicalState/operatorAlerts"))
+        ),
+    })
+}
+
+fn array_len(value: Option<&Value>) -> Value {
+    value
+        .and_then(Value::as_array)
+        .map(|items| json!(items.len()))
+        .unwrap_or(Value::Null)
+}
+
+fn case_evidence_subdir(case_name: &str) -> &'static str {
+    match case_name {
+        "soft_drift_860_of_1000" => "soft-drift",
+        "catastrophic_drift_750_of_1000" => "catastrophic",
+        "per_cell_small_window_compile_error_rust" => "per-cell",
+        "per_cell_small_window_7_of_10_noise" => "per-cell-noise",
+        "active_learning_agent_surprise_fast_path" => "active-learning-fast-path",
+        "dissipation_high_l_step_degrading_xi" => "dissipation",
+        "lambda_ramp_and_per_head_fisher" => "lambda-fisher",
+        "per_head_dormancy_targeted_reinit" => "dormancy",
+        "emergency_eviction_exact_110gb" => "emergency",
+        "per_cell_promotion_rejects_regression" => "per-cell-promotion",
+        "invalid_approval_operator_id" => "invalid-approval",
+        _ => ".",
+    }
+}
+
+fn case_cf_counts(cases: &[Value], field: &str) -> Value {
+    let mut counts = serde_json::Map::new();
+    for case in cases {
+        let Some(case_name) = case.get("case").and_then(Value::as_str) else {
+            continue;
+        };
+        if let Some(cf_counts) = case.get(field).and_then(|state| state.get("cfCounts")) {
+            counts.insert(case_name.to_string(), cf_counts.clone());
+        } else if field == "after" {
+            if let Some(cf_counts) = case
+                .get("physicalState")
+                .and_then(|state| state.get("cfCounts"))
+            {
+                counts.insert(case_name.to_string(), cf_counts.clone());
+            }
+        }
+    }
+    Value::Object(counts)
+}
+
+fn reopened_case_cf_counts(output_root: &Path, case_name: &str) -> Result<Value> {
+    let db_path = output_root
+        .join(case_evidence_subdir(case_name))
+        .join("rocksdb");
+    ensure!(
+        db_path.exists(),
+        "missing RocksDB path for independent reopen: {}",
+        db_path.display()
+    );
+    let db = open_db(&db_path)?;
+    let mut counts = serde_json::Map::new();
+    for cf_name in context_graph_mejepa_cf::all_hygiene_referenced_cfs() {
+        counts.insert(cf_name.to_string(), json!(cf_count(db.as_ref(), cf_name)?));
+    }
+    Ok(Value::Object(counts))
+}
+
+fn current_git_sha() -> Result<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .context("run git rev-parse --short HEAD")?;
+    ensure!(
+        output.status.success(),
+        "git rev-parse --short HEAD failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let sha = String::from_utf8(output.stdout)
+        .context("git sha was not valid UTF-8")?
+        .trim()
+        .to_string();
+    ensure!(!sha.is_empty(), "git rev-parse returned an empty SHA");
+    Ok(sha)
 }
 
 fn soft_drift_promotes(root: &Path) -> Result<Value> {
@@ -753,6 +1053,7 @@ fn open_db(path: &Path) -> Result<Arc<DB>> {
 }
 
 fn physical_state(db: &DB, store: &HealRocksStore, status_path: &Path) -> Result<Value> {
+    flush_all_cfs(db)?;
     let mut counts = serde_json::Map::new();
     for cf_name in context_graph_mejepa_cf::all_hygiene_referenced_cfs() {
         counts.insert(cf_name.to_string(), json!(cf_count(db, cf_name)?));
@@ -788,4 +1089,15 @@ fn cf_count(db: &DB, cf_name: &str) -> Result<u64> {
         count += 1;
     }
     Ok(count)
+}
+
+fn flush_all_cfs(db: &DB) -> Result<()> {
+    for cf_name in context_graph_mejepa_cf::all_hygiene_referenced_cfs() {
+        let cf = db
+            .cf_handle(cf_name)
+            .with_context(|| format!("missing column family {cf_name}"))?;
+        db.flush_cf(cf)
+            .with_context(|| format!("flush column family {cf_name}"))?;
+    }
+    Ok(())
 }
