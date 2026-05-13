@@ -24,6 +24,18 @@ That means the project optimizes for **reality-prediction accuracy**, not agent 
 - the speed at which prediction mistakes become replay weight, active-learning entries, or self-healing actions;
 - the operator's ability to prove, by source-of-truth readback, that ME-JEPA is functioning as claimed.
 
+## 2.1.1 Phase G is a corpus-driven ME-JEPA training program — not an open-ended observability phase
+
+The 0.95 prediction-oracle correlation gate is the *only* metric that closes the truth system. Every other Phase A–F item exists to feed the training loop that closes it. Specifically:
+
+- **The 300×8 SWE-bench Lite Python corpus on `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/` is the ground-truth training set** for Phase G. Each task ships with the upstream SWE-bench instance metadata, the gold patch + gold tests, and the per-task Docker oracle so we know unambiguously which mutated variants should `Pass` and which should `Fail`. The combined 5,120-row non-Python fixture corpus at `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/` provides the cross-language generalization sample.
+- **Every corpus row must flow end-to-end through the trained ME-JEPA stack**, not just be sampled by FSV smoke harnesses. The 11-language AST chunker → per-chunk embedder forwards (12 active content slots) → 15-slot frozen instrument panel → DDA signal compute → TCT cell membership → predictor forward → conformal calibration → oracle reconciliation pipeline must materialize per task and per mutation category. Phase G's per-cell ship-gate is the source of truth that this pipeline is operating at full coverage, not just on the example samples used for FSV.
+- **Reward-signal density per teleological constellation cell is the convergence currency.** Per `13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md §1.1`, each chunk produces N · (N + N²) ≈ 462 reward signals at N=21 active embedders: per-embedder cosine to the cell's centroid, strict-upper-triangle pairwise cosine across embedders, strict-upper-triangle pairwise MI, plus blind-spot z-scores between the primary embedder and each enhancer embedder. Phase G must run this signal extraction across the entire corpus, persist every signal into `CF_MEJEPA_DDA_SIGNALS`, and converge the predictor against the resulting reward field until each (mutation_category × language) cell beats the 0.95 threshold.
+- **The training pipeline is JEPA-classic by construction.** The frozen instruments produce `f_target(panel_t2)` with zero trainable parameters, so `ΔΞ.target_collapse = 0` by structure. The predictor's only job is to learn `f_predictor(panel_t1) → f_target(panel_t2)` for every reality-shift the corpus encodes. Phase G is the controlled training run that drives this objective to convergence.
+- **Operator overrides + agent-feedback events fold back into training as 6×-weighted reward.** TASK-PREDICT-012 already persists overrides into `CF_MEJEPA_OPERATOR_OVERRIDES`; Phase G's BatchSampler must consume the multiplier so operator interventions actually upweight affected chunks in the next training step (the consumer wiring is tracked as Phase F follow-up F2).
+
+Phase G therefore decomposes into a concrete set of atomic, FSV-able tasks: corpus-wide panel materialization, per-cell training and eval drivers, conformal recalibration after each promotion, holdout rotation, per-head fail-closed audits, adversarial-corpus retrains, and the rolling-window stability assertion. The blind-spot doc enumerates these as `TASK-G-*` issues filed to GitHub.
+
 ## 2.2 Research alignment
 
 The futurebuild design follows the external lessons from the verifier/evaluation stack instead of inventing a softer label source:
