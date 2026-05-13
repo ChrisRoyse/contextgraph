@@ -241,14 +241,14 @@ pub fn run_catastrophic_event_fsv(fsv_root: &Path) -> Result<CatastrophicEventFs
         let after_promote = physical_state(db.as_ref(), store.as_ref(), &harness.status_path)?;
         let heal_reports_before = before_second_approval["cfCounts"][CF_MEJEPA_HEAL_REPORTS]
             .as_u64()
-            .unwrap_or_default();
+            .ok_or_else(|| anyhow!("MEJEPA_CATASTROPHIC_HEAL_REPORT_COUNT_MISSING_BEFORE"))?;
         let heal_reports_after = after_promote["cfCounts"][CF_MEJEPA_HEAL_REPORTS]
             .as_u64()
-            .unwrap_or_default();
+            .ok_or_else(|| anyhow!("MEJEPA_CATASTROPHIC_HEAL_REPORT_COUNT_MISSING_AFTER"))?;
         let active_pointers_after = after_promote["cfCounts"]
             [context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_POINTERS]
             .as_u64()
-            .unwrap_or_default();
+            .ok_or_else(|| anyhow!("MEJEPA_CATASTROPHIC_ACTIVE_POINTER_COUNT_MISSING"))?;
         let executed = after_promote["executedPromotions"]
             .as_array()
             .map(|rows| {
@@ -473,7 +473,11 @@ fn boundary_duplicate_operator_rejected(root: &Path) -> Result<BoundaryEvidence>
             "errorCode": err.code(),
             "promotionRowsBefore": before["cfCounts"][CF_MEJEPA_MODEL_PROMOTIONS],
             "promotionRowsAfter": after["cfCounts"][CF_MEJEPA_MODEL_PROMOTIONS],
-            "approvalCount": queued.first().map(|promotion| promotion.approvals.len()).unwrap_or_default()
+            "approvalCount": queued
+                .first()
+                .ok_or_else(|| anyhow!("MEJEPA_CATASTROPHIC_DUPLICATE_BOUNDARY_PROMOTION_MISSING"))?
+                .approvals
+                .len()
         }),
         before,
         after,
@@ -518,7 +522,11 @@ fn boundary_empty_reason_rejected(root: &Path) -> Result<BoundaryEvidence> {
             "errorCode": err.code(),
             "promotionRowsBefore": before["cfCounts"][CF_MEJEPA_MODEL_PROMOTIONS],
             "promotionRowsAfter": after["cfCounts"][CF_MEJEPA_MODEL_PROMOTIONS],
-            "approvalCount": queued.first().map(|promotion| promotion.approvals.len()).unwrap_or_default()
+            "approvalCount": queued
+                .first()
+                .ok_or_else(|| anyhow!("MEJEPA_CATASTROPHIC_EMPTY_REASON_BOUNDARY_PROMOTION_MISSING"))?
+                .approvals
+                .len()
         }),
         before,
         after,

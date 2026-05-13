@@ -369,8 +369,10 @@ impl MeJepaCompiler {
         patch.validate()?;
         context.validate()?;
         if let Some(pause_state) = self.active_pause_state() {
+            let (prediction, _panel) =
+                self.paused_prediction_with_panel(patch, context, &pause_state)?;
             return Ok(VerifyVerdict::EscalateToHuman {
-                reality_prediction: None,
+                reality_prediction: Some(prediction),
                 failed_gate: FailedGate::PredictionPaused {
                     paused_until_unix_ms: pause_state.paused_until_unix_ms,
                     reason: PAUSE_REASON_CODE.to_string(),

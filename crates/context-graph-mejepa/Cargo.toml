@@ -91,5 +91,9 @@ name = "phase_f_adversarial_corpus_fsv"
 path = "examples/phase_f_adversarial_corpus_fsv.rs"
 
 [[example]]
+name = "phase_f_pause_consumer_fsv"
+path = "examples/phase_f_pause_consumer_fsv.rs"
+
+[[example]]
 name = "phase_f_restart_safety_fsv"
 path = "examples/phase_f_restart_safety_fsv.rs"

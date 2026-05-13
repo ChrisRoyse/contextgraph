@@ -17,7 +17,7 @@ fn main() -> Result<()> {
             .cf_counts_after
             .get(context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS)
             .copied()
-            .unwrap_or_default()
+            .ok_or_else(|| anyhow::anyhow!("MEJEPA_CATASTROPHIC_HEAL_REPORT_COUNT_MISSING"))?
     );
     Ok(())
 }
