@@ -45,14 +45,13 @@ separate read against the Source of Truth (SoT).
 4. Phase E entry rule
 
 **Part II — Operating contract**
-5. Per-turn protocol
-6. Hard rules — never do
-7. Hard rules — always do
-8. Path discipline (behavioral deny set)
-9. Reality-shift principle
-10. Concurrency: 1 message = all related operations
-11. Workflow orchestration
-12. Subagent strategy
+6. Per-turn protocol
+7. Hard rules — never do
+8. Hard rules — always do
+9. Path discipline (behavioral deny set)
+10. Reality-shift principle
+11. Concurrency: 1 message = all related operations
+12. Workflow orchestration
 
 **Part III — Memory + verification**
 13. SAMP / SMAP memory protocol
@@ -374,3 +373,715 @@ dependency order):
    dissipation.
 
 ---
+
+# PART II — OPERATING CONTRACT
+
+## 6. Per-turn protocol
+
+At the start of every turn, in order:
+
+1. **READ memory.** `./memory/context/`, `./memory/decisions/`,
+   `./memory/blockers/` (skip `status: resolved`), most recent
+   `./memory/reports/`. Bootstrap the directory tree if missing
+   (`mkdir -p ./memory/{context,decisions,discoveries,handoff,journal,blockers,patterns,reports}`).
+2. **READ phase docs.** `docs/futurebuild/{00_INDEX.md,
+   02_CURRENT_STATE_HONEST.md, 12_IMPLEMENTATION_PHASES.md,
+   13_TASK_INDEX.md}` for the current phase and the next-up tasks.
+3. **READ GitHub state.** `gh issue list --state open --label "status:in-progress"`
+   (claimed work to avoid), `gh issue list --state open --label "source:agent" --search "no:assignee"`
+   (your candidate queue). See §17–§18 for full multi-agent protocol.
+4. **PICK** the highest-priority incomplete deliverable from the task DAG.
+   Or, if specifically directed by the operator, pick that work instead.
+5. **CLAIM** the issue (if working from an existing one). Set
+   `status:in-progress`, assign self, post a plan comment with files
+   you'll touch and ETA. See §18.2.
+6. **AUDIT the task.** Per FSV-PROTOCOL §7: verify every file path,
+   symbol name, and CF reference in the task against the live tree.
+   `ASSUME THE TASK IS WRONG`. If anything is stale, file the audit
+   finding and either update the task or escalate. See §15 (Linear
+   Sequential Unmasking — examine evidence before claims).
+7. **PLAN.** Trigger → Process → Outcome. Identify the SoT before writing
+   code. If the SoT cannot be named, the design is broken — fix the
+   design before the implementation. List ≥3 boundary cases.
+8. **WORK.** Ship one primitive end-to-end with FSV evidence per the
+   protocol. Write `./memory/*.md` files IMMEDIATELY when discoveries /
+   decisions / blockers / patterns emerge — do not batch.
+9. **VERIFY.** Build (`cargo build --release -p <crate>`), test (`cargo
+   test -p <crate>`), lint (`cargo clippy -p <crate> --no-deps --tests
+   --examples -- -D warnings`), FSV harness write to
+   `/mnt/d/contextgraph/fsv/<task>-fsv/<artifact>.json`, independent
+   re-open readback for any RocksDB write. See §14.
+10. **SIMPLIFY.** Run the code-simplifier discipline (§16) on every
+    shipped primitive before merging. Confirm no BLOCKER refinements
+    outstanding.
+11. **HOLMES PASS.** For non-trivial primitives, run an internal
+    forensic-investigation pass (§15) — Cold Read, Contradiction Engine,
+    boundary audit. Catch bugs your tests didn't.
+12. **REPORT.** Write `./memory/reports/session-YYYY-MM-DD--<slug>.md`
+    with the SAMP §3.5 template (see §13.7). Comment milestone+done on
+    the GitHub issue (§18.3, §18.7).
+13. **OBSERVE & FILE.** Note §20 triggers and §20.5 anomalies you are NOT
+    fixing this turn. File before turn ends per §17.
+
+---
+
+## 7. Hard rules — never do
+
+| # | Rule | Reason |
+|---|------|--------|
+| 1 | Never call HTTP APIs from action paths (curl/wget/fetch). | MCP server is the only action surface. Exa/WebSearch/WebFetch are read-only research tools. |
+| 2 | Never edit `.env` or `.env.*` files. | Secrets discipline. |
+| 3 | Never edit `swebench/**`, `tests/oracle_**/**`, `crates/*/src/reward_specs/**`, `crates/*/src/verifiers/**`. | Editing these destroys forward progress on SWE-bench. |
+| 4 | Never use destructive git (`push --force`, `reset --hard`, `checkout --`, `clean -f`, `rebase`). | Pre-production but still — destruction is irreversible. |
+| 5 | Never reintroduce the inner-actor LLM (Qwen, Hermes, Ollama, llama.cpp generative inference). | Pivot is intentional. Operator deleted models 2026-05-09. |
+| 6 | Never use mock data in tests that gate task completion. | Mock data hides bugs. Real RocksDB temp roots, real shift-log files, real `MeJepaCompiler` instances. |
+| 7 | Never write tests that pass when the project is broken. | If commenting out the core implementation leaves the test green, the test is wrong. Mutation-test mentally. |
+| 8 | Never weaken or remove a verifier or hook that legitimately blocked you. | Edit the source to fix the underlying issue; or surface the rule to the operator. |
+| 9 | Never silently fall back to a default / `None` / empty Vec / placeholder string on a missing artifact/CF/env-var/model. | Fail closed with `SCREAMING_SNAKE_CASE` codes (`MEJEPA_D_DRIVE_UNAVAILABLE`, etc.). |
+| 10 | Never add backwards-compat shims (rename-tolerant deserialization, version probes). | Pre-production. Wipe DB on schema change. |
+| 11 | Never delete a resolved blocker file. | Update `status: resolved`. History matters. |
+| 12 | Never silently overwrite a superseded decision. | Set `status: superseded`, link forward, write the new decision. |
+| 13 | Never commit secrets, `.env` files, or credentials. | Run `gitleaks` pre-commit + CI; leak = p0 → revoke now. |
+| 14 | Never proactively create documentation files (`*.md`) or READMEs unless explicitly requested. | Per CLAUDE.md §2.4. |
+| 15 | Never save working files, ad-hoc tests, or scratch markdown to the project root. | Use `./memory/`, `/tmp/`, or `/mnt/d/contextgraph/`. |
+| 16 | Never add cost caps, dollar budgets, `cost_cap_reached` blocked status, or `cost_estimate_usd` fields. | System runs locally; no spend caps. |
+| 17 | Never cater a primitive to a specific task. | GENERIC-ONLY rule (§3.3). |
+| 18 | Never trust a function's return value as evidence of work. | FSV is the contract — read the SoT (§14). |
+| 19 | Never batch documentation at the end of a session. | Insights decay; context compaction can drop them. Write to `./memory/` as you go. |
+| 20 | Never edit files referenced by another agent's `status:in-progress` issue without commenting first. | Multi-agent coordination (§18). |
+| 21 | Never enable a paid GitHub feature (premium runners, GHAS, Codespaces overage, etc.). | Private repo on GitHub Free plan; $0 budget. See §19. |
+| 22 | Never strip labels another agent set without superseding-with-reason. | Coordination integrity. |
+| 23 | Never close an issue you didn't claim (except `Duplicate of #N`). | Coordination integrity. |
+| 24 | Never batch silent commits on a claimed issue. | Every push touching an issue's files = a comment with SHA + 1-line summary. |
+| 25 | Never use `Option<T>::unwrap_or_default()` to paper over a real missing value. | Almost always a bug in this codebase. |
+| 26 | Never use `#[ignore]` on a failing test to ship. | Fix the bug or write a `./memory/blockers/` entry. |
+| 27 | Never read a PR description / commit message / developer claim BEFORE examining the code. | Linear Sequential Unmasking (§15.4) — examine evidence before claims to avoid confirmation bias. |
+| 28 | Never declare GUILTY without considering ≥3 alternative hypotheses. | Self-verification protocol (§15.14). |
+| 29 | Never settle on the first plausible explanation in RCA. | Abduction optimizes for narrative coherence, not statistical rigor (§15.3). |
+| 30 | Never write nested ternary operators. | Use switch/if-else chains for multiple conditions. Clarity over brevity (§16.4). |
+
+---
+
+## 8. Hard rules — always do
+
+| # | Rule |
+|---|------|
+| 1 | Read `./memory/context/`, `./memory/decisions/`, `./memory/blockers/` at the start of every turn. |
+| 2 | Read the futurebuild status docs (00/02/12/13) and pick the highest-priority next item. |
+| 3 | Check GitHub state — claimed/blocked/unclaimed — before starting any work. |
+| 4 | Audit every task against the live tree before writing code (FSV-PROTOCOL §7). |
+| 5 | Do file reading, synthesis, code edits, and decisions personally. No delegation — own every step. |
+| 6 | Run `cargo build --release` for touched crates after every meaningful change. |
+| 7 | Run `cargo test` and `cargo clippy --no-deps --tests --examples -- -D warnings` for verification. |
+| 8 | Produce FSV evidence at `/mnt/d/contextgraph/fsv/<task>-fsv/<artifact>.json` for every task. |
+| 9 | Use `WriteOptions::set_sync(true)` for RocksDB FSV writes; flush + drop + reopen + readback for any persistence claim. |
+| 10 | Use `#[serde(deny_unknown_fields)]` on every persisted struct. |
+| 11 | Validate input at system boundaries; never trust raw user/MCP/RPC input. |
+| 12 | Fail closed with structured `SCREAMING_SNAKE_CASE` error codes on any unknown. |
+| 13 | Write decisions / discoveries / blockers / patterns to `./memory/` immediately. |
+| 14 | End every turn with a `./memory/reports/session-YYYY-MM-DD--<slug>.md` report. |
+| 15 | File a GitHub issue for any defect / smell / dead code / tech debt / anomaly / security / architecture concern / test gap you observe but are NOT fixing this turn (§17). |
+| 16 | Claim an issue (assign + label + plan comment) before touching code tied to it (§18.2). |
+| 17 | Comment at every milestone on a claimed issue (Discovery / Direction change / Sibling issue / Heartbeat). |
+| 18 | Comment a pause-note (Done / Tried-failed / Learned / Resume-at / Hypothesis) before stopping mid-task (§18.4). |
+| 19 | Run the code-simplifier discipline (§16) on every shipped primitive before merging. |
+| 20 | Update `MEMORY.md` (auto-memory index) with new memory entries; keep entries under 200 chars. |
+| 21 | Convert relative dates ("Thursday") to absolute (`2026-03-05`) when saving memory. |
+| 22 | Resolve merge conflicts rather than discarding changes; investigate before deleting unfamiliar state. |
+| 23 | For UI/frontend work: start the dev server and exercise the feature in a browser before declaring done. |
+| 24 | For risky / irreversible / shared-state actions: confirm with the operator first. |
+| 25 | Apply Linear Sequential Unmasking (§15.4): examine code/tests BEFORE reading developer claims / PR descriptions. |
+| 26 | Generate ≥3 hypotheses before testing any one in RCA (§15.7). |
+| 27 | Run the Cold Read protocol (§15.5) on every unfamiliar file before deep-diving. |
+| 28 | Run the Contradiction Engine (§15.6) when verifying any claim of behavior. |
+| 29 | Document RCA output as a system property ("the system allowed X because Y"), not "human error" (§38.4). |
+| 30 | Pin GitHub Actions to SHA (not tag); declare `timeout-minutes` on every workflow; use `runs-on: ubuntu-latest` only (§19). |
+
+---
+
+## 9. Path discipline (behavioral deny set)
+
+The MCP-server-side path-policy gate and the pre-edit hook deny-list were
+both **removed 2026-05-07** (operator directive: "the AI needs to be able
+to do anything it needs to do"). Path discipline is now **BEHAVIORAL** —
+honor it because editing these destroys forward progress, not because a
+gate enforces it.
+
+**Don't-touch paths:**
+
+- `.env` and `.env.*` anywhere
+- `swebench/**` (the upstream evaluator)
+- `tests/oracle_**/**` (benchmark fixtures)
+- `crates/context-graph-benchmark/datasets/swe_bench_*/**`
+- `crates/*/src/reward_specs/**`
+- `crates/*/src/verifiers/**`
+- Any `*.pem`, `*.key`, `**/credentials.json`
+
+If editing one of these is genuinely the right thing for an
+operator-directed task, **ask the operator to confirm first**.
+
+---
+
+## 10. Reality-shift principle — the six injection surfaces
+
+> **No alteration without current state. No alteration without a delta
+> back into perception.**
+
+Six surfaces by which reality reaches an agent:
+
+1. **SessionStart hook** — active runtime root, target instance, success
+   predicate, reality-boundary rules.
+2. **UserPromptSubmit hook** — latest trigger decision, reality-signal
+   compact, last 3 shift-log entries — every prompt.
+3. **PreToolUse Edit/Write hook** — records current file SHA + line count
+   for post-hook delta computation.
+4. **PostToolUse Edit/Write hook** — cargo check (for touched Rust files)
+   + git diff + harness-transition record + shift-log append.
+5. **`mcp__cgreality__*` MCP tools** — query any artifact, query the
+   shift log, detect drift, run any allowlisted command, alter the
+   harness through governed tools.
+6. **Stop hook** — blocks turn end until
+   `mcp__cgreality__optimizer_record_recommendation` is called (if the
+   reality loop is running).
+
+### 10.1 When to record `no_change`
+
+Recording is mostly retired post-pivot. Use `no_change` only when:
+
+1. All ME-JEPA spec/task priority items shipped AND no maintenance work
+   needed AND no operator directive specifies a task.
+2. External drift detected mid-turn
+   (`reality_shift_compare_to_my_view` reports
+   `external_drift_detected: true`). Re-perceive before continuing.
+3. Hard build/test failure that blocks all forward progress and isn't
+   fixable this turn — write the blocker to `./memory/blockers/` and
+   record `blocked` with a remediation plan.
+
+### 10.2 Three consecutive `blocked` for the same root cause → escalate
+
+Write a high-severity blocker AND surface in `remaining_risks: ["requires
+human inspection: …"]`.
+
+---
+
+## 11. Concurrency: 1 message = all related operations
+
+- All independent tool calls in a single response **MUST** be made in one
+  message.
+- Batch ALL todos in **ONE** TaskCreate call (5+ minimum if creating a
+  batch).
+- Spawn ALL agents in **ONE** message with full instructions via the
+  `Agent` tool.
+- Batch ALL file reads/writes/edits in **ONE** message.
+- Batch ALL Bash commands that don't depend on each other in **ONE**
+  message.
+
+When agents have dependencies, sequence them (don't fake parallelism).
+
+---
+
+## 12. Workflow orchestration
+
+### 12.1 Plan-first for non-trivial work
+
+- Enter plan mode for any task with 3+ steps or architectural decisions.
+- If something goes sideways, **STOP and re-plan**; don't keep pushing
+  through.
+- Write detailed specs upfront to reduce ambiguity.
+
+### 12.2 4-phase workflow
+
+**Planning → Implementation → Review → Documentation.**
+
+- **Planning**: write trigger/process/outcome, name the SoT, list ≥3
+  boundary cases, audit the task per FSV-PROTOCOL §7.
+- **Implementation**: ship the primitive end-to-end (code + tests + FSV
+  harness + memory updates).
+- **Review**: run the code-simplifier discipline (§16) on every shipped
+  primitive before merging; run a Sherlock-Holmes Cold Read +
+  Contradiction Engine pass (§15) for non-trivial primitives.
+- **Documentation**: update specs/tasks/`./memory/` to reflect the new
+  reality.
+
+### 12.3 Self-improvement loop
+
+- After a correction from the operator, write the lesson to
+  `./memory/decisions/` (locked rule) or `./memory/discoveries/`
+  (finding).
+- Review `./memory/decisions/` at the start of every turn.
+- Iterate ruthlessly until the same mistake stops appearing.
+
+### 12.4 Verification before done
+
+- Never mark a task complete without proving it works.
+- Diff behavior between main and your changes when relevant.
+- Ask: "Would a staff engineer approve this?" Run tests, check logs,
+  demonstrate correctness.
+
+### 12.5 Demand elegance (balanced)
+
+- For non-trivial changes: pause and ask "is there a more elegant way?"
+- If a fix feels hacky, replace it with the elegant version once you
+  understand the problem.
+- Skip this for simple, obvious fixes — don't over-engineer.
+
+### 12.6 Autonomous bug fixing
+
+When given a bug report: just fix it. Don't ask for hand-holding unless
+something is genuinely ambiguous. Point at logs, errors, failing tests —
+then resolve them.
+
+### 12.7 Asymmetry of risk
+
+Reversible local edits — proceed. Hard-to-reverse / shared-state /
+destructive — confirm first. Match cost of acting wrongly against cost
+of pausing.
+
+### 12.8 80/20 in hardening
+
+Most issues cluster: missing indexes, N+1, no timeouts, no SLOs, no SBOM,
+no MFA, no FSV. Hit those before chasing edge cases.
+
+---
+
+---
+
+# PART III — MEMORY + VERIFICATION
+
+## 13. SAMP / SMAP memory protocol
+
+Long-term memory across sessions and across context-window compactions
+lives in `./memory/` at the project root. SAMP for solo work; SMAP for
+the shared-agent lifecycle.
+
+### 13.1 Directory layout
+
+```
+./memory/
+├── context/      # Mission, current phase, scope — read first every turn
+├── decisions/    # Locked choices future agents MUST NOT contradict
+├── discoveries/  # Constraints, gotchas, edge cases learned during work
+├── handoff/      # Concrete deliverables passed agent-to-agent (SMAP)
+├── journal/      # Append-only chronological execution log
+├── blockers/     # Unresolved issues with severity (never delete; mark resolved)
+├── patterns/     # Reusable conventions and standards
+└── reports/      # End-of-session full summaries
+```
+
+### 13.2 Frontmatter (mandatory on every file)
+
+```yaml
+---
+namespace: {context|decisions|discoveries|handoff|journal|blockers|patterns|reports}
+agent_id: agent-{N}-{role}   # SMAP; or `agent-coordinator` for SAMP
+created: 2026-05-12T19:00:00Z
+updated: 2026-05-12T19:00:00Z
+status: {active|resolved|superseded}
+severity: {high|medium|low}   # required for blockers
+tags: comma,separated,keywords
+---
+```
+
+### 13.3 File naming
+
+```
+{namespace}/{descriptor}.md                                # topic-based
+journal/{YYYY-MM-DD}--{descriptor}.md                      # date-based
+reports/session-{YYYY-MM-DD}--{descriptor}.md              # date-based
+```
+
+### 13.4 Lifecycle every turn: READ → ORIENT → WORK → WRITE → REPORT
+
+1. **READ** the memory directory (§6 step 1) and the futurebuild status
+   docs.
+2. **ORIENT** — answer internally: what's the project, what's my task,
+   what binds me, what's failed before that I shouldn't repeat.
+3. **WORK** — write `.md` files into the right namespace IMMEDIATELY
+   when discoveries / decisions / blockers / patterns emerge.
+4. **WRITE** (mid-session checkpoint) — when context starts feeling
+   crowded, stop and capture anything not yet filed.
+5. **REPORT** — end every turn with
+   `./memory/reports/session-YYYY-MM-DD--<slug>.md`.
+
+### 13.5 When to write what
+
+| Trigger | Where |
+|---------|-------|
+| You discover something unexpected (constraint, edge case, gotcha) | `./memory/discoveries/{descriptor}.md` |
+| You make a decision future-you must respect | `./memory/decisions/{descriptor}.md` |
+| You hit a blocker you cannot resolve this turn | `./memory/blockers/{descriptor}.md` |
+| You establish a pattern you intend to repeat | `./memory/patterns/{descriptor}.md` |
+| Something fails | `./memory/journal/{YYYY-MM-DD}--failure-{descriptor}.md` |
+| Something noteworthy succeeds | `./memory/journal/{YYYY-MM-DD}--success-{descriptor}.md` |
+
+### 13.6 Decision and discovery body structure
+
+Lead with the rule/fact, then **Why:** (motivation/incident/constraint)
+and **How to apply:** (when this kicks in). Knowing *why* lets future-you
+judge edge cases instead of blindly following the rule.
+
+### 13.7 Session report template (SAMP §3.5)
+
+```markdown
+# Session Report: YYYY-MM-DD — <topic>
+
+## Task: <one-line>
+## Outcome: {complete | partial | blocked}
+
+## Summary
+<2-3 paragraphs of what was attempted and what happened>
+
+## Files Created or Modified in the Repo
+- `path/to/file` — <one-line>
+
+## Files Written or Updated in ./memory/
+- `{namespace}/{filename}` — <one-line>
+
+## Decisions Made
+- <decision> — Rationale — File: ./memory/decisions/<filename>
+
+## Discoveries
+- <finding> — Impact — File: ./memory/discoveries/<filename>
+
+## Failures
+- <what failed> — Error — Lesson
+
+## Successes
+- <what worked> — Details
+
+## Open Blockers
+- <issue> — Severity — File: ./memory/blockers/<filename>
+
+## Tests / Build
+- Tests added:
+- Tests passing: {yes | no | partial}
+- Build status: {passing | failing | not-run}
+- Clippy: {clean | warnings | failing}
+
+## FSV evidence
+- /mnt/d/contextgraph/fsv/<path> — sha256:<hex>
+
+## GitHub issues touched
+- #N — claimed/commented/closed — comment URL
+
+## Resume Here Next Session
+- Start by reading: <file>
+- Watch out for: <gotcha>
+- Priority: <what matters most>
+- Open question: <anything you wanted to verify but couldn't>
+
+## Confidence: {high | medium | low}
+<brief justification>
+```
+
+The "Resume Here Next Session" section is the most important — it's the
+message you're leaving for the next session of yourself. Be specific.
+File paths, not vibes.
+
+### 13.8 Recovering from context compaction
+
+1. **Stop.** Don't keep working from a half-erased mental model.
+2. **Re-READ the affected namespaces** (`decisions/`, `discoveries/`,
+   most recent `reports/` and `journal/`).
+3. **Re-ORIENT** before continuing.
+4. **Write a journal entry** noting the compaction and what you re-read.
+   This is itself useful signal: a future session can see that
+   compaction happened mid-task and know where state may be
+   reconstructed-not-original.
+5. **Resume work.**
+
+### 13.9 Auto-memory (under `~/.claude/projects/...`)
+
+You also have a persistent file-based memory at
+`/home/cabdru/.claude/projects/-home-cabdru-contextgraph/memory/`. Index
+in `MEMORY.md`; each entry one line under 200 chars (`MEMORY.md` will
+truncate after line 200). Write detail into topic files. Types: `user`,
+`feedback`, `project`, `reference`. Save corrections **and** validated
+non-obvious approaches.
+
+### 13.10 Trust the code over memory when they conflict
+
+Memory captures what was true at a point in time. If `./memory/` claims
+function X exists at `crates/foo/bar.rs:42` and the file has 100 lines
+today, **trust the code**. Update or supersede the stale memory file
+rather than acting on it.
+
+### 13.11 Memory file relationships and linking
+
+Link related memories with `[[name]]` syntax where `name` is the other
+memory's slug. Link liberally — a `[[name]]` that doesn't match an
+existing memory yet is fine; it marks something worth writing later, not
+an error.
+
+### 13.12 What NOT to save in memory
+
+- Code patterns, conventions, architecture, file paths, or project
+  structure — derivable by reading current project state.
+- Git history, recent changes, who-changed-what — `git log` / `git
+  blame` are authoritative.
+- Debugging solutions or fix recipes — the fix is in the code; the
+  commit message has the context.
+- Anything already documented in `CLAUDE.md` files.
+- Ephemeral task details: in-progress work, temporary state, current
+  conversation context.
+
+These exclusions apply even when the operator explicitly asks you to
+save. Ask what was *surprising* or *non-obvious* about it — that is the
+part worth keeping.
+
+### 13.13 Before recommending from memory
+
+A memory that names a specific function, file, or flag is a claim that
+it existed *when the memory was written*. It may have been renamed,
+removed, or never merged. Before recommending it:
+
+- If the memory names a file path: check the file exists.
+- If the memory names a function or flag: grep for it.
+- If the user is about to act on your recommendation (not just asking
+  about history), verify first.
+
+"The memory says X exists" is not the same as "X exists now."
+
+---
+
+## 14. FSV protocol — the verification contract
+
+Binding contract for every task. Source:
+`docs/futurebuild/specs/FSV-PROTOCOL.md`.
+
+### 14.1 First principle
+
+A function returning `Ok(())`, a process exiting `0`, a log line saying
+`"persisted"`, and an HTTP `200 OK` are all *claims*. The only evidence
+that counts is a separate read against the SoT.
+
+Before declaring a task complete, answer all four:
+
+1. **What state changed?** (one or more fields/rows/files)
+2. **Where does that state live?** (CF + key / file path / queue topic /
+   metric / external system record)
+3. **How do I read it back independently?** (SQL / `Storage::get_cf` /
+   `cat file` / API call / `ldb dump`)
+4. **What is the exact expected value?** (literal / range / schema /
+   count delta)
+
+If you cannot answer all four, **you do not understand the feature well
+enough to call it done. Ask the operator or read the relevant
+TECH-*.md spec section before writing code.**
+
+### 14.2 Trigger → Process → Outcome
+
+```
+[Trigger]  ──►  [Process]  ──►  [Outcome]
+ observable    measurable     verifiable @ SoT
+```
+
+Before implementing, write down:
+
+- **Trigger.** HTTP call / cron tick / shift-log append / MCP tool
+  invocation / file system event / Edit hook.
+- **Process.** Which functions in which files? Which RocksDB CF or which
+  file path gets touched?
+- **Outcome.** Which CF row exists with what value? Which file contains
+  what bytes? Which metric ticked up by how much?
+
+If the trigger is not observable (no log/metric/event), or the outcome
+is not verifiable at a SoT (no row/file/counter to read), the task is
+broken *at the design level* — fix the design before writing the
+implementation.
+
+### 14.3 Verification chain (every feature usually writes multiple SoTs)
+
+Example *submit order*:
+
+- `orders` row inserted with correct fields ✓
+- `order_items` count matches cart ✓
+- `inventory.available` decremented ✓
+- queue `order.created` event emitted ✓
+- external charge created at correct amount ✓
+- `email_outbox` row queued ✓
+- metric `orders_created_total` incremented ✓
+- log entry w/ order ID + user ID ✓
+
+Skip any → prod bug waiting.
+
+ME-JEPA-flavored example *observe shift*:
+
+- `CF_MEJEPA_PANELS` row written ✓
+- `CF_MEJEPA_DDA_SIGNALS` row(s) written per chunk ✓
+- `CF_MEJEPA_SHIFT_WATERMARK` updated ✓
+- `CF_MEJEPA_LIVE_PREDICTIONS` row written ✓
+- `mejepa_subscriber_status` MCP tool reports new shift consumed ✓
+- shift-log line offset advanced in
+  `/mnt/d/contextgraph/runtime/cgreality-shift-log/<sid>.jsonl` ✓
+
+### 14.4 Mandatory boundary case set (≥ 3 from this list per code path)
+
+Pick the categories that apply to the feature:
+
+1. **Empty** — `""`, `[]`, `{}`, `null`, missing field. Must either
+   reject with a structured error OR persist a known-good empty value
+   verifiable at the SoT.
+2. **Single item** — off-by-one bugs surface here.
+3. **Maximum allowed** — documented upper bound exactly.
+4. **Maximum + 1** — must reject with structured error, not panic /
+   truncate.
+5. **Min allowed** — `0`, `1`, documented lower bound.
+6. **Min − 1** — `-1`, `0` where invalid.
+7. **Wrong type / malformed** — invalid JSON, invalid UTF-8, NaN floats.
+8. **Unicode edges** — emoji, RTL, combining marks, NUL bytes, very long
+   strings.
+9. **Duplicate / replay** — same `idempotency_key` twice; same
+   `shift_id` reprocessed; same `prediction_id` recorded twice.
+10. **Out-of-order** — event B before event A (e.g., `TestOutcomeEvent`
+    arriving before the matching `RealityPrediction`).
+11. **Concurrent** — two threads / sessions writing the same CF
+    simultaneously.
+12. **Authorization variants** — owner, non-owner, missing token,
+    expired token.
+13. **Tenant scope** — A cannot see B's data.
+14. **Time edges** — clock skew, daylight saving, leap second, negative
+    `ts_millis`, end-of-month.
+15. **Resource exhaustion** — full disk / OOM / connection pool /
+    rate-limit hit.
+
+Each boundary case MUST produce one FSV evidence-line JSON object —
+state before, action, state after, assertion PASS/FAIL with
+expected-vs-actual.
+
+### 14.5 Synthetic test data properties
+
+| Property | Why |
+|---|---|
+| **Deterministic seed** | Same input → same expected output every run |
+| **Distinguishable** | Values like `synthetic_test_user_2026_05_11` so you can find + clean |
+| **Representative** | Shape/distribution mirrors real data — never half-size or single-record |
+| **Boundary-rich** | Includes §15.4 minimum boundary set |
+| **Privacy-safe** | Generated, never copied from production |
+| **Cleanup-tagged** | Deletable via single query or `tempfile::TempDir` drop |
+
+Principle: *if `2+2=4`, then `POST /add {a:2,b:2}` must return `4` AND
+insert `calculations.result=4`.* The synthetic data gives you the
+expected value; FSV verifies it landed at the SoT.
+
+### 14.6 Required FSV evidence artifacts
+
+For every task, produce all of the following:
+
+1. **Build evidence.** `cargo build --release -p <crates>` output with
+   duration.
+2. **Test evidence.** `cargo test -p <crates>` output; zero failed, zero
+   ignored. Number of `passed` documented.
+3. **Clippy evidence.** `cargo clippy -p <crates> --no-deps --tests
+   --examples -- -D warnings` output. `-D warnings` is non-optional.
+4. **SoT readback JSON** at
+   `/mnt/d/contextgraph/fsv/<task-domain>-fsv/<artifact>.json`:
+
+```json
+{
+  "fsv_root": "/mnt/d/contextgraph/fsv/<task-domain>-fsv",
+  "task_id": "TASK-EXAMPLE-NNN",
+  "started_at_unix_ms": 0,
+  "build_release_sha": "<git HEAD short sha>",
+  "happy_path": [
+    {
+      "case": "happy_path",
+      "sot": "<CF name or file path>",
+      "before": null,
+      "trigger": "<exact command run>",
+      "after": "<value>",
+      "expected": "<value>",
+      "actual": "<value>",
+      "pass": true,
+      "evidence_path": "<absolute path to physical artifact>"
+    }
+  ],
+  "boundary_cases": [
+    {"case": "<name>", "before": "<v>", "after": "<v>",
+     "expected": "<v>", "actual": "<v>", "pass": true}
+  ],
+  "all_passed": true,
+  "cf_counts_before": {"CF_NAME": 0},
+  "cf_counts_after": {"CF_NAME": 1},
+  "readback_equal": true
+}
+```
+
+5. **Physical artifact verification.** If RocksDB: list SST files
+   (`find /mnt/d/...-fsv/rocks-* -name '*.sst' -printf '%p %s
+   bytes\n'`). If file: `wc -c` and `sha256sum`. If metric: confirm
+   counter increment.
+6. **Independent re-open verification (RocksDB only).** Close the handle
+   and reopen it in a separate process step; verify the same row exists.
+   Catches MemTable-not-flushed bugs.
+7. **Task report** in `./memory/reports/` per §14.7.
+
+### 14.7 Hard rules (non-negotiable)
+
+1. **NO MOCKS** in tests that gate task completion. Use real RocksDB
+   temp roots, real shift-log files, real `MeJepaCompiler` instances,
+   real `BatchSampler`, real Docker oracle when the feature touches the
+   corpus. The only legitimate fakes are deterministic *inputs*
+   (synthetic patches, synthetic test outcomes) — never deterministic
+   *replacements* for subsystems the feature actually exercises in
+   production.
+2. **NO BACKWARDS COMPATIBILITY.** Wipe DB on schema change.
+3. **NO WORKAROUNDS.** Root-cause every bug. Never `#[ignore]` a
+   failing test to ship. If the operator's priorities force a postpone,
+   write the blocker to `./memory/blockers/` with `severity: high`.
+4. **TESTS MUST FAIL WHEN THE FEATURE IS BROKEN.** If commenting out the
+   core implementation leaves the test green, rewrite the test.
+   Mutation-test mentally.
+5. **FAIL CLOSED ON UNKNOWNS.** Missing artifact, missing CF, missing
+   env var, missing model file → structured `SCREAMING_SNAKE_CASE`
+   error and exit non-zero.
+6. **ASSUME THE TASK IS WRONG.** Audit every claim in `## Inputs`,
+   `## Outputs`, and code-path references against the live tree before
+   following them.
+7. **OCCAM'S RAZOR.** Fewest new abstractions / files / types / paths.
+   Justify any new crate, new trait, new error enum, or new file in the
+   session report.
+
+### 14.8 Failure modes that mean "task not done" even with green tests
+
+Watch for these specifically — they creep past inattentive reviewers:
+
+- **Constant returned from a function the test checks.** Test passes
+  because `compute_score()` always returns `0.42`. Look at the function
+  body, not just the test.
+- **Test that never exercises the code path** (conditional behind a
+  flag that's off in tests).
+- **CF row written but never flushed.** Add `db.flush_cf(cf)` before
+  readback; reopen the DB in a separate handle.
+- **Sync write returning `Ok()` but disk write never happened.** Use
+  `WriteOptions::set_sync(true)`.
+- **Test that uses a different RocksDB instance than production.** Use
+  the actual `open_hygiene_rocksdb` (or equivalent production opener)
+  in the FSV harness, not a hand-rolled minimal opener.
+- **Schema-loose JSON deserialization swallowing field renames.** Set
+  `#[serde(deny_unknown_fields)]` on every persisted struct.
+- **Optional field handling that papers over a real missing value.**
+  `Option<T>::unwrap_or_default()` is almost always a bug.
+- **Async tests with no await on the producer side.** If you spawn a
+  task to write, join the task before reading.
+
+### 14.9 Occam's-razor template
+
+In every session report's "Decisions Made" section, justify the design
+choice against simpler alternatives:
+
+```markdown
+## Decisions Made
+- **Approach chosen**: <one-line>
+- **Considered alternatives**:
+  1. <simpler> — rejected because <specific reason backed by code ref or measurement>
+  2. <fancier> — rejected because <YAGNI / no current consumer>
+- **Why this one wins**: <usually "fewest new abstractions" or "matches existing pattern in <file>:<line>">
+- **What changes the decision**: <future event that would justify revisiting>
+```
+
+If the spec already locked the choice, cite the requirement ID instead.
+
+---
+
+
