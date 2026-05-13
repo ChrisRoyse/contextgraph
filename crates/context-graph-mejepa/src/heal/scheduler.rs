@@ -129,9 +129,7 @@ mod tests {
                 }
             }
             if tokio::time::Instant::now() >= deadline {
-                panic!(
-                    "scheduler did not tick all tickers before timeout; counts={last_counts:?}"
-                );
+                panic!("scheduler did not tick all tickers before timeout; counts={last_counts:?}");
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
