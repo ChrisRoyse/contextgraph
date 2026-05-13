@@ -37,7 +37,7 @@ tracing-subscriber = { workspace = true }
 [dev-dependencies]
 context-graph-mejepa-shift-subscriber = { path = "../context-graph-mejepa-shift-subscriber" }
 context-graph-mejepa-train = { path = "../context-graph-mejepa-train" }
-fail = "0.5"
+fail = { version = "0.5", features = ["failpoints"] }
 tempfile = "3.10"
 
 [[bin]]
