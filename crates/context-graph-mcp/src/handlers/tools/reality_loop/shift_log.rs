@@ -190,6 +190,7 @@ pub async fn reality_shift_compare_to_my_view(args: Value) -> Result<Value> {
                 Some(file_sot(&runtime_root.join("reality-shifts"))),
             )
         })?;
+    let all_records = load_all_shift_records(&runtime_root)?;
     let root = project_root()?;
     let mut out = Vec::new();
     for (idx, file) in files.iter().enumerate() {
@@ -219,33 +220,165 @@ pub async fn reality_shift_compare_to_my_view(args: Value) -> Result<Value> {
             continue;
         }
         let current = sha256_file(&path)?;
-        let last = records.iter().rev().find_map(|r| {
-            let subject_path = r.pointer("/subject/path").and_then(Value::as_str)?;
-            if subject_path == path_str_arg || root.join(subject_path) == path {
-                r.pointer("/after/sha256")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned)
-            } else {
-                None
+        let last = latest_after_sha_for_file(&records, path_str_arg, &path, &root);
+        let global_latest = latest_record_for_file(&all_records, path_str_arg, &path, &root);
+        let stale_write = stale_write_conflict_for_session(
+            &records,
+            &all_records,
+            path_str_arg,
+            &path,
+            &root,
+        );
+        let drift = if stale_write.is_some() {
+            "external_drift_detected"
+        } else {
+            match &last {
+                Some(known) if known == &current => "no_change",
+                Some(_) => "external_drift_detected",
+                None => "unseen_file",
             }
-        });
-        let drift = match &last {
-            Some(known) if known == &current => "no_change",
-            Some(_) => "external_drift_detected",
-            None => "unseen_file",
         };
+        let external_writer_hint = stale_write.or_else(|| {
+            global_latest.and_then(|record| {
+                let after = record.pointer("/after/sha256").and_then(Value::as_str)?;
+                if Some(after) == last.as_deref() {
+                    None
+                } else {
+                    Some(json!({
+                        "session_id": record.get("session_id").and_then(Value::as_str),
+                        "shift_id": record.get("shift_id").and_then(Value::as_str),
+                        "after_sha256": after
+                    }))
+                }
+            })
+        });
         out.push(json!({
             "path": path_str_arg,
             "current_sha256": current,
             "session_last_known_sha256": last,
             "drift": drift,
-            "external_writer_hint": Value::Null
+            "external_writer_hint": external_writer_hint
         }));
     }
     Ok(json!({
         "files": out,
         "source_of_truth": file_sot(&runtime_root.join("cgreality-shift-log").join(format!("{}.jsonl", safe_id(&session_id))))
     }))
+}
+
+fn load_all_shift_records(runtime_root: &Path) -> Result<Vec<Value>> {
+    let dir = runtime_root.join("cgreality-shift-log");
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(&dir).map_err(|e| fs_error("CCREALITY_SHIFT_LOG_READ_FAILED", &dir, e))? {
+        let entry = entry.map_err(|e| fs_error("CCREALITY_SHIFT_LOG_READ_FAILED", &dir, e))?;
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let raw = std::fs::read_to_string(&path)
+            .map_err(|e| fs_error("CCREALITY_SHIFT_LOG_READ_FAILED", &path, e))?;
+        for (idx, line) in raw.lines().enumerate() {
+            let record: Value = serde_json::from_str(line).map_err(|e| {
+                CCRealityError::new(
+                    "CCREALITY_SHIFT_LOG_JSON_INVALID",
+                    format!("invalid JSON at shift log line {}: {e}", idx + 1),
+                    "shift_log.parse",
+                    "repair or remove the corrupt shift log line",
+                    json!({"path": path.display().to_string(), "line": idx + 1}),
+                    Some(file_sot(&path)),
+                )
+            })?;
+            out.push(record);
+        }
+    }
+    out.sort_by_key(shift_timestamp);
+    Ok(out)
+}
+
+fn latest_after_sha_for_file(
+    records: &[Value],
+    path_str_arg: &str,
+    path: &Path,
+    root: &Path,
+) -> Option<String> {
+    records
+        .iter()
+        .rev()
+        .find(|record| record_matches_file(record, path_str_arg, path, root))
+        .and_then(|record| {
+            record
+                .pointer("/after/sha256")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        })
+}
+
+fn latest_record_for_file<'a>(
+    records: &'a [Value],
+    path_str_arg: &str,
+    path: &Path,
+    root: &Path,
+) -> Option<&'a Value> {
+    records
+        .iter()
+        .rev()
+        .find(|record| record_matches_file(record, path_str_arg, path, root))
+}
+
+fn stale_write_conflict_for_session(
+    session_records: &[Value],
+    all_records: &[Value],
+    path_str_arg: &str,
+    path: &Path,
+    root: &Path,
+) -> Option<Value> {
+    for record in session_records
+        .iter()
+        .filter(|record| record_matches_file(record, path_str_arg, path, root))
+    {
+        let before = record.pointer("/before/sha256").and_then(Value::as_str)?;
+        let timestamp = shift_timestamp(record);
+        let previous = all_records.iter().rev().find(|candidate| {
+            record_matches_file(candidate, path_str_arg, path, root)
+                && shift_timestamp(candidate) < timestamp
+        })?;
+        let previous_after = previous.pointer("/after/sha256").and_then(Value::as_str)?;
+        if previous_after != before {
+            return Some(json!({
+                "conflict": "stale_before_sha",
+                "session_shift_id": record.get("shift_id").and_then(Value::as_str),
+                "session_before_sha256": before,
+                "previous_writer_session_id": previous.get("session_id").and_then(Value::as_str),
+                "previous_writer_shift_id": previous.get("shift_id").and_then(Value::as_str),
+                "previous_after_sha256": previous_after
+            }));
+        }
+    }
+    None
+}
+
+fn record_matches_file(record: &Value, path_str_arg: &str, path: &Path, root: &Path) -> bool {
+    let Some(subject_path) = record.pointer("/subject/path").and_then(Value::as_str) else {
+        return false;
+    };
+    subject_path == path_str_arg || root.join(subject_path) == path
+}
+
+fn shift_timestamp(record: &Value) -> u128 {
+    record
+        .get("timestamp_unix_ns")
+        .and_then(Value::as_u64)
+        .map(u128::from)
+        .or_else(|| {
+            record
+                .get("timestamp_unix_ns")
+                .and_then(Value::as_str)
+                .and_then(|raw| raw.parse::<u128>().ok())
+        })
+        .unwrap_or(0)
 }
 
 pub(crate) fn normalize_session_id_hex32(session_id: &str) -> String {
@@ -294,5 +427,35 @@ mod tests {
             normalize_session_id_hex32("phase4-shift-test"),
             "072aefeec4fb0227ab59c00233d37483"
         );
+    }
+
+    #[test]
+    fn stale_before_sha_surfaces_concurrent_edit_conflict() {
+        let root = std::path::PathBuf::from("/repo");
+        let path = root.join("src/lib.rs");
+        let session_b = vec![json!({
+            "shift_id": "shift-b",
+            "timestamp_unix_ns": 20u64,
+            "session_id": "session-b",
+            "subject": {"path": "src/lib.rs"},
+            "before": {"sha256": "sha256:base"},
+            "after": {"sha256": "sha256:b"}
+        })];
+        let all = vec![
+            json!({
+                "shift_id": "shift-a",
+                "timestamp_unix_ns": 10u64,
+                "session_id": "session-a",
+                "subject": {"path": "src/lib.rs"},
+                "before": {"sha256": "sha256:base"},
+                "after": {"sha256": "sha256:a"}
+            }),
+            session_b[0].clone(),
+        ];
+        let conflict =
+            stale_write_conflict_for_session(&session_b, &all, "src/lib.rs", &path, &root)
+                .expect("stale write conflict");
+        assert_eq!(conflict["conflict"], json!("stale_before_sha"));
+        assert_eq!(conflict["previous_writer_session_id"], json!("session-a"));
     }
 }
