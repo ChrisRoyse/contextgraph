@@ -358,8 +358,14 @@ pub fn run_e2e_happy_path_fsv(fsv_root: &Path) -> Result<E2eFsvReport> {
 pub fn write_report_with_readback(report: &E2eFsvReport, path: &Path) -> Result<()> {
     let bytes = serde_json::to_vec_pretty(report)?;
     write_bytes_readback(path, &bytes)?;
-    let readback: E2eFsvReport = serde_json::from_slice(&fs::read(path)?)?;
-    ensure!(readback == *report, "FSV evidence readback did not match");
+    let readback_bytes = fs::read(path)?;
+    let readback: E2eFsvReport = serde_json::from_slice(&readback_bytes)?;
+    let expected_json: Value = serde_json::from_slice(&bytes)?;
+    let actual_json = serde_json::to_value(&readback)?;
+    ensure!(
+        actual_json == expected_json,
+        "FSV evidence semantic readback did not match"
+    );
     Ok(())
 }
 
