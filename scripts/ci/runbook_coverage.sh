@@ -4,9 +4,10 @@
 # For every `MEJEPA_*` error / alert class documented under §5 of
 # `docs/futurebuild/19_OPERATOR_RUNBOOK.md`, this script grep-asserts that
 # the same identifier appears at least once in the Rust source tree
-# (`crates/**/*.rs`). Orphan runbook entries fail the lint so the next
-# operator never finds a documented playbook for a code that the system
-# can no longer raise.
+# (`crates/**/*.rs`). It also checks operator-alert emit sites in Rust have a
+# runbook §5 heading. Orphan runbook entries and undocumented emitted alerts
+# both fail the lint so the next operator never finds a live alert without a
+# playbook.
 #
 # Per CLAUDE.md §3.6 "no backwards compatibility": when an alert is
 # renamed the runbook entry must be renamed in the same PR; this lint
@@ -14,8 +15,9 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-RUNBOOK="${REPO_ROOT}/docs/futurebuild/19_OPERATOR_RUNBOOK.md"
+REPO_ROOT="${MEJEPA_RUNBOOK_COVERAGE_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+RUNBOOK="${MEJEPA_RUNBOOK_COVERAGE_RUNBOOK:-${REPO_ROOT}/docs/futurebuild/19_OPERATOR_RUNBOOK.md}"
+CRATES_ROOT="${MEJEPA_RUNBOOK_COVERAGE_CRATES_ROOT:-${REPO_ROOT}/crates}"
 
 if [[ ! -f "${RUNBOOK}" ]]; then
   echo "MEJEPA_RUNBOOK_COVERAGE_RUNBOOK_MISSING: ${RUNBOOK} not found" >&2
@@ -54,7 +56,7 @@ fi
 
 orphans=()
 for code in "${alert_codes[@]}"; do
-  if ! grep -RnE --include="*.rs" "\b${code}\b" "${REPO_ROOT}/crates" >/dev/null 2>&1; then
+  if ! grep -RnE --include="*.rs" "\b${code}\b" "${CRATES_ROOT}" >/dev/null 2>&1; then
     orphans+=("${code}")
   fi
 done
@@ -67,4 +69,37 @@ if [[ ${#orphans[@]} -gt 0 ]]; then
   exit 1
 fi
 
-echo "runbook_coverage_ok: ${#alert_codes[@]} alert classes verified against crates/**/*.rs"
+mapfile -t emitted_alert_codes < <(
+  {
+    grep -RhoE --include="*.rs" 'error_code[[:space:]]*=[[:space:]]*"MEJEPA_[A-Z][A-Z0-9_]+' "${CRATES_ROOT}" || true
+    grep -RhoE --include="*.rs" 'code[[:space:]]*=[[:space:]]*"MEJEPA_[A-Z][A-Z0-9_]+' "${CRATES_ROOT}" || true
+    grep -RhoE --include="*.rs" 'summary[[:space:]]*=[[:space:]]*format!\("MEJEPA_[A-Z][A-Z0-9_]+' "${CRATES_ROOT}" || true
+  } \
+    | sed -E 's/.*"(MEJEPA_[A-Z][A-Z0-9_]+).*/\1/' \
+    | grep -E '(ALERT|FLAPPING|UNAVAILABLE|BROKEN|DETECTED|EXCEEDED|UNRECOVERABLE)$' \
+    | sort -u
+)
+
+missing_runbook=()
+for code in "${emitted_alert_codes[@]}"; do
+  found=0
+  for documented in "${alert_codes[@]}"; do
+    if [[ "${documented}" == "${code}" ]]; then
+      found=1
+      break
+    fi
+  done
+  if [[ "${found}" -eq 0 ]]; then
+    missing_runbook+=("${code}")
+  fi
+done
+
+if [[ ${#missing_runbook[@]} -gt 0 ]]; then
+  echo "MEJEPA_RUNBOOK_COVERAGE_UNDOCUMENTED_ALERTS: emitted but missing from runbook §5:" >&2
+  for code in "${missing_runbook[@]}"; do
+    echo "  - ${code}" >&2
+  done
+  exit 1
+fi
+
+echo "runbook_coverage_ok: ${#alert_codes[@]} alert classes verified against ${CRATES_ROOT}/**/*.rs; ${#emitted_alert_codes[@]} emitted operator alerts documented"

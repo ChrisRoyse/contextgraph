@@ -193,7 +193,17 @@ tail -100 /mnt/d/contextgraph/logs/mejepa-daemon.stderr.log
 2. If unmounted: remount; restart daemon.
 3. If corrupted: see `20_DISASTER_RECOVERY_AND_BACKUP.md §3`.
 
-### 5.7 Predictions silently wrong (no alert, but operator notices)
+### 5.7 `MEJEPA_SHIFT_SUBSCRIBER_LAG_ALERT`
+
+**Cause:** the shift subscriber has sustained pending shift-log lines above its configured threshold, so predictions may be stale.
+
+**Resolution:**
+1. Check `mcp_call mejepa_subscriber_status` and confirm `lag_alert_active=true`, pending shift count, and latest watermark.
+2. Inspect `/mnt/d/contextgraph/runtime/cgreality-shift-log/` for oversized or malformed JSONL files.
+3. If the daemon is alive but not consuming, restart it once: `systemctl --user restart mejepa-daemon`.
+4. If lag returns, file a high-severity blocker with the offending session id, shift-log path, and subscriber status payload.
+
+### 5.8 Predictions silently wrong (no alert, but operator notices)
 
 **Cause:** drift below detection threshold; OR data distribution shift the detector hasn't caught; OR head's λ ramped too high prematurely.
 
