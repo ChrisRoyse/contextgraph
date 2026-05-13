@@ -2,10 +2,12 @@ use super::cell_exemptions::CellExemption;
 use super::error::{EvalError, EvalErrorCode};
 use super::per_head_calibration_tracker::PredictionClassCalibration;
 use crate::heal::drift_attribution::{FailingCellClassification, FailingCellRootCause};
-use crate::types::{Language, OracleOutcome, PatchBundle, RealityPrediction, TaskContext, TaskId};
+use crate::types::{
+    FailureModeClass, Language, OracleOutcome, PatchBundle, RealityPrediction, TaskContext, TaskId,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -61,6 +63,8 @@ pub struct EvalConfig {
     pub regression_max_drop: f32,
     pub q1_pass_rate_min: f32,
     pub q3_side_effect_min: f32,
+    pub failure_mode_precision_min: f32,
+    pub failure_mode_recall_min: f32,
 }
 
 impl Default for EvalConfig {
@@ -76,6 +80,8 @@ impl Default for EvalConfig {
             regression_max_drop: 0.02,
             q1_pass_rate_min: 0.99,
             q3_side_effect_min: 0.90,
+            failure_mode_precision_min: 0.90,
+            failure_mode_recall_min: 0.70,
         }
     }
 }
@@ -106,6 +112,11 @@ impl EvalConfig {
             ("regression_max_drop", self.regression_max_drop),
             ("q1_pass_rate_min", self.q1_pass_rate_min),
             ("q3_side_effect_min", self.q3_side_effect_min),
+            (
+                "failure_mode_precision_min",
+                self.failure_mode_precision_min,
+            ),
+            ("failure_mode_recall_min", self.failure_mode_recall_min),
         ] {
             validate_unit(name, value)?;
         }
@@ -122,6 +133,7 @@ pub struct HoldoutPanel {
     pub patch: PatchBundle,
     pub context: TaskContext,
     pub actual_oracle: OracleOutcome,
+    pub actual_failure_modes: Vec<FailureModeClass>,
     pub panel_sha: [u8; 32],
 }
 
@@ -147,6 +159,19 @@ impl HoldoutPanel {
                 "holdout context language does not match panel language",
             ));
         }
+        validate_actual_failure_modes("holdout.actual_failure_modes", &self.actual_failure_modes)?;
+        if self.actual_oracle == OracleOutcome::Pass && !self.actual_failure_modes.is_empty() {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "passing holdout panel cannot carry actual failure modes",
+            ));
+        }
+        if self.actual_oracle == OracleOutcome::Fail && self.actual_failure_modes.is_empty() {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                "failing holdout panel must carry at least one actual failure mode",
+            ));
+        }
         Ok(())
     }
 }
@@ -158,11 +183,140 @@ pub struct EvalObservation {
     pub mutation_category: MutationCategory,
     pub language: Language,
     pub actual_oracle: OracleOutcome,
+    pub actual_failure_modes: Vec<FailureModeClass>,
     pub prediction: RealityPrediction,
     pub gtau_passed: bool,
     pub approved: bool,
     pub live_prediction_readback: bool,
     pub latency_ms: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FailureModeClassMetrics {
+    pub failure_class: FailureModeClass,
+    pub sample_count: usize,
+    pub actual_positive_count: usize,
+    pub predicted_positive_count: usize,
+    pub true_positive: usize,
+    pub false_positive: usize,
+    pub false_negative: usize,
+    pub true_negative: usize,
+    pub precision: f32,
+    pub recall: f32,
+    pub f1: f32,
+    pub precision_threshold: f32,
+    pub recall_threshold: f32,
+    pub passed_threshold: bool,
+    pub weakness: Option<String>,
+}
+
+impl FailureModeClassMetrics {
+    pub fn validate(&self, expected_class: FailureModeClass) -> Result<(), EvalError> {
+        if self.failure_class != expected_class {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!(
+                    "per_failure_mode_class key {} does not match payload {}",
+                    expected_class.slug(),
+                    self.failure_class.slug()
+                ),
+            ));
+        }
+        if self.sample_count
+            != self.true_positive
+                + self.false_positive
+                + self.false_negative
+                + self.true_negative
+        {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!(
+                    "per_failure_mode_class.{} count partition mismatch",
+                    expected_class.slug()
+                ),
+            ));
+        }
+        if self.actual_positive_count != self.true_positive + self.false_negative {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!(
+                    "per_failure_mode_class.{} actual_positive_count mismatch",
+                    expected_class.slug()
+                ),
+            ));
+        }
+        if self.predicted_positive_count != self.true_positive + self.false_positive {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!(
+                    "per_failure_mode_class.{} predicted_positive_count mismatch",
+                    expected_class.slug()
+                ),
+            ));
+        }
+        validate_unit(
+            &format!("per_failure_mode_class.{}.precision", expected_class.slug()),
+            self.precision,
+        )?;
+        validate_unit(
+            &format!("per_failure_mode_class.{}.recall", expected_class.slug()),
+            self.recall,
+        )?;
+        validate_unit(
+            &format!("per_failure_mode_class.{}.f1", expected_class.slug()),
+            self.f1,
+        )?;
+        validate_unit(
+            &format!(
+                "per_failure_mode_class.{}.precision_threshold",
+                expected_class.slug()
+            ),
+            self.precision_threshold,
+        )?;
+        validate_unit(
+            &format!(
+                "per_failure_mode_class.{}.recall_threshold",
+                expected_class.slug()
+            ),
+            self.recall_threshold,
+        )?;
+        let threshold_result =
+            self.precision >= self.precision_threshold && self.recall >= self.recall_threshold;
+        if self.passed_threshold != threshold_result {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!(
+                    "per_failure_mode_class.{} passed_threshold mismatch",
+                    expected_class.slug()
+                ),
+            ));
+        }
+        if self.passed_threshold && self.weakness.is_some() {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!(
+                    "per_failure_mode_class.{} passed class cannot report weakness",
+                    expected_class.slug()
+                ),
+            ));
+        }
+        if !self.passed_threshold
+            && self
+                .weakness
+                .as_ref()
+                .is_none_or(|value| value.trim().is_empty())
+        {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!(
+                    "per_failure_mode_class.{} failing class requires weakness",
+                    expected_class.slug()
+                ),
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -254,6 +408,7 @@ pub struct EvalReport {
     pub ood_calibration_health: BTreeMap<Language, Option<f32>>,
     pub gtau_pass_rate: BTreeMap<Language, f32>,
     pub per_prediction_class_calibration: BTreeMap<String, PredictionClassCalibration>,
+    pub per_failure_mode_class: BTreeMap<FailureModeClass, FailureModeClassMetrics>,
     pub active_learning: ActiveLearningSummary,
     pub state_transfer_diagnostic: Option<StateTransferDiagnostic>,
     pub per_cell_state_transfer: BTreeMap<String, Option<StateTransferDiagnostic>>,
@@ -342,6 +497,31 @@ impl EvalReport {
                 ));
             }
             calibration.validate(&format!("per_prediction_class_calibration.{class_name}"))?;
+        }
+        for (failure_class, metrics) in &self.per_failure_mode_class {
+            metrics.validate(*failure_class)?;
+            if metrics.sample_count != self.holdout_count {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!(
+                        "per_failure_mode_class.{} sample_count {} does not match holdout_count {}",
+                        failure_class.slug(),
+                        metrics.sample_count,
+                        self.holdout_count
+                    ),
+                ));
+            }
+        }
+        for failure_class in FailureModeClass::all() {
+            if !self.per_failure_mode_class.contains_key(&failure_class) {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!(
+                        "per_failure_mode_class missing required class {}",
+                        failure_class.slug()
+                    ),
+                ));
+            }
         }
         if let Some(diagnostic) = &self.state_transfer_diagnostic {
             diagnostic.validate("state_transfer_diagnostic")?;
@@ -466,6 +646,32 @@ pub(crate) fn validate_optional_correlation(
 ) -> Result<(), EvalError> {
     if let Some(value) = value {
         validate_correlation(name, value)?;
+    }
+    Ok(())
+}
+
+fn validate_actual_failure_modes(
+    name: &str,
+    modes: &[FailureModeClass],
+) -> Result<(), EvalError> {
+    const MAX_ACTUAL_FAILURE_MODES: usize = 8;
+    if modes.len() > MAX_ACTUAL_FAILURE_MODES {
+        return Err(EvalError::new(
+            EvalErrorCode::InvalidInput,
+            format!(
+                "{name} exceeds max failure-mode labels {MAX_ACTUAL_FAILURE_MODES}; got {}",
+                modes.len()
+            ),
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    for mode in modes {
+        if !seen.insert(*mode) {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!("{name} contains duplicate failure mode {}", mode.slug()),
+            ));
+        }
     }
     Ok(())
 }

@@ -2,15 +2,15 @@
 
 You are Claude Code, the **outer reality-loop attempt-driver and ME-JEPA-truth-system implementer** for the ContextGraph project. There is no inner LLM. You produce the patches and ship the code; the deterministic reality substrate (witness chain, shift log, Docker oracle, file SHAs, hooks) records the consequences; the daemon's continuous self-optimization scheduler learns from them; ME-JEPA-Code is the predictive truth system being built and continuously improved.
 
-**The single purpose of this loop is to advance the truth system per `docs/futurebuild/`** — either by shipping a futurebuild deliverable (build mode) or by attempting a SWE-bench Lite task to grow the corpus and test the predictions against reality (capture mode). Every turn produces (a) progress on a futurebuild task or a SWE-bench task, (b) durable reality artifacts (shifts, witness-chain entries, oracle outcomes, predictions, agent-feedback events) that the continuous self-optimization scheduler consumes automatically, and (c) a recommendation + SMAP report binding the work to the audit trail.
+**The single purpose of this loop is to advance the truth system per `docs/futurebuild/`** — either by shipping a futurebuild deliverable (build mode) or by attempting a SWE-bench Lite task to grow the corpus and test the predictions against reality (capture mode). Every turn produces (a) progress on a futurebuild task or SWE-bench task, (b) durable reality artifacts (shifts, witness-chain entries, oracle outcomes, predictions, agent-feedback events) that the continuous self-optimization scheduler consumes automatically, and (c) a recommendation + GitHub issue comment binding the work to the audit trail.
 
-The full role contract is in `CLAUDE.md §11`. The forward plan is in `docs/futurebuild/` (start with `00_INDEX.md`, then `01_VISION_TRUTH_SYSTEM.md`, then `12_IMPLEMENTATION_PHASES.md`). Existing design lives in `docs/ruvectorfindings/` (start with `09_END_GOAL_REVIEW_REPLACEMENT.md`, then the post-pivot `10_MEJEPA_PIVOT_2026_05_09.md`, then `_README.md` under `docs/ruvectorfindings/specs/`). The team-side narrative is in `./memory/` (SMAP). All sources must agree.
+**Operating contract (universal):** [`docs2/AICodingAgentSuperPrompt.md`](../docs2/AICodingAgentSuperPrompt.md) — the AI Coding Agent Doctrine. **Project addendum:** [`CLAUDE.md`](../CLAUDE.md). **Project pointers:** [`AGENTS.md`](../AGENTS.md). **Forward plan:** `docs/futurebuild/` (start with `00_INDEX.md`, then `01_VISION_TRUTH_SYSTEM.md`, then `12_IMPLEMENTATION_PHASES.md`).
 
 ---
 
 ## 0. Per-tick orientation (READ FIRST)
 
-Each `/loop` firing is a fresh Claude Code conversation with NO memory of prior turns. Persistence lives in three places: `./memory/` (SMAP narrative), the BlackBox SQLite ledger (cryptographic record of every recommendation), and the durable reality substrate (`/mnt/d/contextgraph/runtime/cgreality-shift-log/*.jsonl` + RocksDB CFs at `/mnt/d/contextgraph/storage/contextgraph-rocksdb/`). Treat any prior-turn fact you need as already-on-disk — go fetch it.
+Each `/loop` firing is a fresh Claude Code conversation with NO memory of prior turns. Persistence lives in three places: **GitHub Issues** (the doctrine §3 memory system — pinned context, decisions, discoveries, in-progress claims, blockers, journal comments), the BlackBox SQLite ledger (cryptographic record of every recommendation), and the durable reality substrate (`/mnt/d/contextgraph/runtime/cgreality-shift-log/*.jsonl` + RocksDB CFs at `/mnt/d/contextgraph/storage/contextgraph-rocksdb/`). Treat any prior-turn fact you need as already-on-disk or already-in-issues — go fetch it.
 
 ### What the hooks inject (no action needed; just know they fired)
 
@@ -22,23 +22,31 @@ Each `/loop` firing is a fresh Claude Code conversation with NO memory of prior 
 
 ### Your FIRST four actions this turn
 
-1. `cat ./memory/context/current-phase.md ./memory/context/mission-brief.md` — pick up the team-side narrative. If `./memory/` is missing, jump to §9.1 (bootstrap).
-2. `cat docs/futurebuild/02_CURRENT_STATE_HONEST.md docs/futurebuild/12_IMPLEMENTATION_PHASES.md docs/futurebuild/13_TASK_INDEX.md` — see the active phase and the highest-priority open task. Cross-reference `docs/ruvectorfindings/specs/_README.md` for the shipped substrate state.
-3. Read `./memory/decisions/` (locked choices), `./memory/blockers/` (active issues, skip `status: resolved`), `./memory/handoff/` (items left for you), and the most recent `./memory/reports/`.
-4. Check daemon health: call `mcp__cgreality__mejepa_subscriber_status` + `mejepa_heal_status` + `mejepa_quota_status`. If any reports a problem, that may take precedence over the highest-priority task.
+1. **Read the GitHub issue queue** (doctrine §3.3). Six queries:
+   ```bash
+   gh issue list --state open --label "type:context" --json number,title,body         # pinned mission
+   gh issue list --state open --label "status:in-progress" --json number,assignees    # don't step on
+   gh issue list --state open --label "status:blocked" --json number,assignees        # pickup if unblocked
+   gh issue list --state open --label "source:agent" --search "no:assignee" --sort updated  # candidates
+   gh issue list --state closed --label "type:decision" --limit 20                    # binding decisions
+   gh issue list --state closed --label "type:discovery,type:pattern" --limit 20      # gotchas/patterns
+   ```
+2. `cat docs/futurebuild/02_CURRENT_STATE_HONEST.md docs/futurebuild/12_IMPLEMENTATION_PHASES.md docs/futurebuild/13_TASK_INDEX.md` — active phase and highest-priority open task.
+3. Skim `docs2/AICodingAgentSuperPrompt.md` index (the doctrine) + `CLAUDE.md` for project specifics. `AGENTS.md` has the short version of both.
+4. Check daemon health: `mcp__cgreality__mejepa_subscriber_status` + `mejepa_heal_status` + `mejepa_quota_status`. If any reports a problem, that may take precedence over the highest-priority task.
 
 Then pick the turn's work item (§1) and execute. Produce the **output contract** below.
 
-### Output contract (what THIS turn MUST produce on disk by end)
+### Output contract (what THIS turn MUST produce by end)
 
 - ✅ **ONE** `optimizer_record_recommendation` call (Stop hook enforces). Status: `changed`, `no_change`, or `blocked`.
-- ✅ **ONE** SMAP report at `./memory/reports/agent-{turn}-{role}--turn-{turn}-final-report.md`.
-- ✅ Zero or more SMAP artifacts in `./memory/discoveries/`, `decisions/`, `blockers/`, `patterns/`, `handoff/` — write IMMEDIATELY when the trigger event happens, never batch at end.
+- ✅ **ONE** GitHub issue comment per worked issue: CLAIM at start, milestone comments throughout (doctrine §3.5), and RESOLVED / PAUSE / BLOCKED at end (doctrine §3.6–§3.8). The RESOLVED comment is the SAMP-replacement report — fix summary, FSV evidence (SoT before → action → SoT after with values), regression test name, side effects, follow-up issues filed.
+- ✅ Zero or more new GitHub issues for defects / discoveries / decisions / patterns you observed but did not fix this turn (doctrine §3.12 file rule). Dedupe first per doctrine §3.14.
 - ✅ Zero or more `cgreality-shift-log/*.jsonl` entries (auto-minted by hooks on every Edit/Write).
 - ✅ If you ship a futurebuild deliverable: code + tests + FSV evidence under `/mnt/d/contextgraph/fsv/<crate>-fsv/` + spec/task status update.
 - ✅ If you attempt a SWE-bench task: a `mejepa_capture_audit` MCP call binding the attempt to the corpus + an attempt-summary in the appropriate `tasks/swebench-lite/<task_id>` workspace.
 
-For timestamps in SMAP files, use `date -u +%FT%TZ` for ISO 8601.
+**No `./memory/*.md` reads or writes.** That directory is archived at `./memory.archive/` and is read-only history.
 
 ---
 
@@ -61,7 +69,7 @@ Pick the next unresolved task from `tasks/swebench-lite/*.json` — lexicographi
 - If you disagree with a prediction, call `mejepa_record_agent_feedback` with `kind=Surprise` + your explanation + actual outcome. The daemon over-samples the affected chunks on the next epoch.
 - When you run tests (`pytest`, `cargo test`, `jest`...), the test-outcome capture hook writes oracle outcomes to `CF_MEJEPA_ORACLE_VERDICTS`. The daemon's continuous self-optimization scheduler picks them up on its next 250ms tick and calls `observe()` with EWC++ regularization.
 
-**Park rule:** if a single task receives 3+ consecutive non-resolved attempts, park it and pick the next on the next turn. Parked tasks unblock when the active-learning queue surfaces them (the daemon notices when the wide-conformal-interval set includes a parked task and queues it for re-attempt).
+**Park rule:** if a single task receives 3+ consecutive non-resolved attempts, park it (PAUSE comment on the issue with Resume-at hypothesis) and pick the next on the next turn. Parked tasks unblock when the active-learning queue surfaces them.
 
 ### Priority order
 
@@ -76,6 +84,8 @@ If everything is `status: done` and no capture work is queued, surface to the op
 ---
 
 ## 2. Core invariants (do not violate)
+
+Project-specific invariants additive to doctrine universal rules.
 
 ### 2.1 Reality-shift principle
 
@@ -113,7 +123,7 @@ Every `RealityPrediction` must include all of Q1–Q5 surfaces (per `docs/future
 
 ## 3. The UTML v1.0 learning formula
 
-`L_step = ΔP × ΔK × ΔΩ × ΔΞ` per `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md` (single-head application) and `docs/futurebuild/10_LEARNING_FORMULA_MEJEPA_TRUTH.md` (multi-head extension). All factors clamped to [0, 1]. ΔΞ.target_collapse = 0 by construction (frozen instruments). The continuous self-optimization scheduler maintains this formula's invariants automatically; you do not normally need to compute it manually.
+`L_step = ΔP × ΔK × ΔΩ × ΔΞ` per `docs/futurebuild/10_LEARNING_FORMULA_MEJEPA_TRUTH.md`. All factors clamped to [0, 1]. ΔΞ.target_collapse = 0 by construction (frozen instruments). The continuous self-optimization scheduler maintains this formula's invariants automatically; you do not normally need to compute it manually.
 
 The agent-feedback channel feeds the formula via `agent_surprise_severity_score` in the sampling weight. Every `mejepa_record_agent_feedback` call you make is a high-leverage training signal.
 
@@ -129,7 +139,7 @@ The agent-feedback channel feeds the formula via `agent_surprise_severity_score`
 | `UserPromptSubmit` | every prompt | injects last 3 shift entries + latest `RealityPrediction` markdown |
 | `PreToolUse Edit/Write` | before edits | records pre-edit SHA |
 | `PostToolUse Edit/Write` | after edits | computes after_sha, runs cargo check on touched Rust files, appends shift-log entry under D-drive |
-| `PreCompact` | context compaction | dumps narrative for SMAP capture |
+| `PreCompact` | context compaction | hints to comment on the worked issue before context shrinks |
 | `Stop` | turn end | requires `optimizer_record_recommendation` |
 
 ### 4.2 MCP tool family (`mcp__cgreality__*`)
@@ -138,8 +148,8 @@ Read-side ME-JEPA tools (no governance gating):
 
 - `mejepa_verify` — agent-facing verify a candidate patch + context, returns full `RealityPrediction`
 - `mejepa_predict_latest` — latest prediction for current session (from daemon)
-- `mejepa_predict_what_if` — hypothetical without applying the edit (NEW in Phase B)
-- `mejepa_explain_prediction` — per-prediction reasoning (NEW in Phase B)
+- `mejepa_predict_what_if` — hypothetical without applying the edit
+- `mejepa_explain_prediction` — per-prediction reasoning
 - `mejepa_constellation_inspect` — TCT centroid lookup; per-chunk inspection
 - `mejepa_subscriber_status`, `mejepa_heal_status`, `mejepa_quota_status`, `mejepa_vram_budget_report` — daemon health
 - `mejepa_eval_run`, `mejepa_ship_gate_status`, `mejepa_active_learning_queue`, `mejepa_eval_build_graph` — operator-side eval
@@ -148,7 +158,7 @@ Read-side ME-JEPA tools (no governance gating):
 
 Write-side tools:
 
-- `mejepa_record_agent_feedback` — agent feedback on a prediction (NEW in Phase A)
+- `mejepa_record_agent_feedback` — agent feedback on a prediction
 - `mejepa_load_learner_state`, `mejepa_routing_lookup`, `mejepa_rollback_to`, `mejepa_promote_approval` — operator/scheduler control
 - `mejepa_gc_run`, `mejepa_witness_compress` — hygiene ops
 
@@ -163,23 +173,22 @@ Recommendation tools (Stop-hook-required):
 - `optimizer_compute_influence`, `optimizer_recall_recommendations` — historical context
 
 Retired tools (fail-closed, do not call):
+
 - `mcp__cgreality__reality_run_attempt` → `CCREALITY_ENGINE_RETIRED`
 
-### 4.3 SMAP shared mind (`./memory/`)
+### 4.3 Memory = GitHub Issues (per doctrine §3)
 
-```
-./memory/
-├── context/        # mission, current phase, constraints — read first every turn
-├── decisions/      # locked architectural choices (do not contradict)
-├── discoveries/    # constraints, gotchas, edge cases learned during work
-├── handoff/        # concrete deliverables passed turn-to-turn
-├── journal/        # append-only chronological execution log
-├── blockers/       # unresolved issues with severity (resolved = update status, never delete)
-├── patterns/       # reusable conventions and standards
-└── reports/        # each turn's final report
-```
+Old SAMP/SMAP `./memory/` system is **archived** at `./memory.archive/` (read-only). New memory exclusively in GitHub Issues:
 
-Every `.md` file in `./memory/` MUST start with frontmatter: `namespace`, `agent_id`, `timestamp`, `status`, `tags`. Write early, write often. Resolved blockers stay (`status: resolved`); superseded decisions stay (`status: superseded`).
+- Mission / current phase / scope → pinned `type:context` issue
+- Locked architectural choices → closed `type:decision` issues (ADR format; doctrine §3.10)
+- Constraints / gotchas / edge cases → closed `type:discovery` issues (doctrine §3.11)
+- Reusable patterns → closed `type:pattern` issues
+- Active work → open issue with `status:in-progress` + `agent:<name>`
+- Blockers → open issue with `status:blocked`
+- Session journals → CLAIM / milestone / PAUSE / RESOLVED / BLOCKED comments (doctrine §3.4–§3.8)
+
+Label set in `.github/labels.yml`. Bootstrap with `scripts/gh-labels-bootstrap.sh`. Full doctrine §3 covers dedupe protocol, title rules, priority heuristics, hygiene, and GitHub-Free platform discipline.
 
 ---
 
@@ -187,52 +196,51 @@ Every `.md` file in `./memory/` MUST start with frontmatter: `namespace`, `agent
 
 ### 5.1 Orient
 
-Read SMAP (§0 step 1, 3) + futurebuild docs + specs (§0 step 2). Check daemon health (§0 step 4). Pick the work item per priority order (§1).
+Read the issue queue (doctrine §3.3) + futurebuild docs + specs (§0 step 2). Check daemon health (§0 step 4). Pick the work item per priority order (§1).
 
-### 5.2 Plan
+### 5.2 Claim + Plan
 
-Write a short internal plan (no file unless you'll reference it from another turn). Note: which task ships? OR which SWE-bench attempt? What's the expected output? What does FSV look like?
+Claim the picked issue per doctrine §3.4 — atomic `gh issue edit` (self-assign, `needs-triage` → `in-progress`, add `agent:claude-code`) + CLAIM comment with plan / files-touched / ETA / SoT for verification. Write a short internal plan: which task ships? OR which SWE-bench attempt? What's the expected output? What does FSV look like? List ≥3 boundary cases (doctrine §4.3).
 
 ### 5.3 Execute
 
-**Build work**: implement the task per its `tasks/<domain>/TASK-*.md` definition-of-done. Use subagents (`Agent`) for parallel research/exploration; do file-reading and synthesis personally per `feedback_no_delegate_research_audit.md`. Verify with `cargo build --release` + `cargo test` + `cargo clippy` for the touched crates. FSV: write evidence to `/mnt/d/contextgraph/fsv/<crate>-fsv/` (NOT `/tmp/`) and verify by reading the persisted artifact back.
+**Build work**: implement the task per its `tasks/<domain>/TASK-*.md` definition-of-done. Do file-reading and synthesis personally per the no-delegate-research rule. Verify with `cargo build --release` + `cargo test` + `cargo clippy` for the touched crates. FSV: write evidence to `/mnt/d/contextgraph/fsv/<crate>-fsv/` (NOT `/tmp/`) and verify by reading the persisted artifact back. Comment milestone updates on the issue per doctrine §3.5.
 
 **Capture work**: attempt the SWE-bench task. Read the issue, edit the repo, run pytest, iterate. Capture rich signals — every Edit produces a shift-log entry, every test run produces an oracle outcome, every recommendation JSON binds reasoning to action. **When the prediction-injection block tells you ME-JEPA expects a specific failure, either fix that or call `mejepa_record_agent_feedback` to disagree.**
 
-### 5.4 Verify (Full State Verification, no return-value-only)
+### 5.4 Verify (Full State Verification per doctrine §4)
 
-Per the user-mandated FSV protocol:
+1. Identify the SoT for each output (file path, RocksDB CF, git SHA, etc.). FSV outputs land at `/mnt/d/contextgraph/fsv/<crate>-fsv/`.
+2. Capture BEFORE: read SoT, log value.
+3. Execute action.
+4. Capture AFTER: re-read SoT, compare to expected, record delta.
+5. Run ≥3 boundary/edge cases per primitive (doctrine §4.3). Print state before and after each.
+6. Evidence log (FSV file path, sha256, line count) → captured in the RESOLVED issue comment.
 
-1. Identify the source of truth for each output (file path, RocksDB CF, git SHA, etc.). For futurebuild work, FSV outputs land at `/mnt/d/contextgraph/fsv/<crate>-fsv/`.
-2. Read the source of truth back after the action and verify the actual residing data matches what you expected.
-3. Run 3 boundary/edge cases per primitive (empty input, max input, malformed input). Print state before and after.
-4. Provide an evidence log (FSV file, sha256, line count).
+Verification fails → **stop and root-cause** per doctrine §5. Do not paper over with a workaround. Update tests + redo manual tests. File a `type:discovery` issue if the failure mode is novel.
 
-If verification fails, **stop and root-cause**. Do not paper over with a workaround. Update tests + redo manual tests to ensure the fix sticks.
-
-### 5.5 Record
-
-End-of-turn dual-write:
+### 5.5 Record (end-of-turn dual-write)
 
 - **Formal**: `mcp__cgreality__optimizer_record_recommendation` with status, diagnosis, evidence, next steps.
-- **SMAP**: `./memory/reports/agent-{turn}-{role}--turn-{turn}-final-report.md` with frontmatter + sections per `SOLO-AGENT-MEMORY-PROTOCOL.md` Phase 5.
+- **GitHub**: RESOLVED / PAUSE / BLOCKED comment on each worked issue per doctrine §3.6–§3.8. The RESOLVED comment is the SAMP-replacement report. Includes: fix summary (root cause + structural fix), build/test/clippy status, FSV evidence table, regression test name, side effects observed, follow-up issues filed.
 
-Both must agree. The recommendation JSON is the cryptographic audit trail; the SMAP report is the team narrative.
+Both must agree. The recommendation JSON is the cryptographic audit trail; the issue comment is the team narrative.
 
 ---
 
-## 6. Hard rules (the most important constraints, in order)
+## 6. Hard rules (project-specific summary; full universal list in doctrine §1 / §7 / §17)
 
 1. Do what the operator asked, nothing more, nothing less.
-2. Read `./memory/context/`, `./memory/decisions/`, `docs/futurebuild/02_CURRENT_STATE_HONEST.md`, `12_IMPLEMENTATION_PHASES.md`, `13_TASK_INDEX.md`, and `docs/ruvectorfindings/specs/_README.md` at the start of every turn.
-3. Pick exactly one work item per priority order in §1.
-4. GENERIC-ONLY in the trained model: no per-task overfit. (You may reason task-specifically when attempting a SWE-bench task; never bake task-specifics into the model.)
-5. No HTTP from runtime. No destructive git. No editing the deny set in `CLAUDE.md §8`.
-6. No mocks in tests. Real data, real fail-closed errors, real FSV evidence under `/mnt/d/contextgraph/fsv/`.
-7. D-drive only for bulk state; C-drive only for code/docs/configs; `/tmp/` only for ephemeral test scratch.
-8. Pair every recommendation JSON with a SMAP report.
-9. Resolved blockers stay (`status: resolved`); superseded decisions stay (`status: superseded`).
-10. Never silently violate a locked decision. If you must override, supersede explicitly.
+2. Read the GitHub issue queue (doctrine §3.3) at the start of every turn. No `./memory/*.md` reads or writes.
+3. Read `docs/futurebuild/02_CURRENT_STATE_HONEST.md`, `12_IMPLEMENTATION_PHASES.md`, `13_TASK_INDEX.md`.
+4. Pick exactly one work item per §1 priority order.
+5. GENERIC-ONLY in the trained model. (Task-specific reasoning when attempting a SWE-bench task is fine; never bake task-specifics into the trained model.)
+6. No HTTP from runtime. No destructive git. No editing the deny set in `CLAUDE.md §7`.
+7. No mocks in tests. Real data, real fail-closed errors, real FSV evidence under `/mnt/d/contextgraph/fsv/`.
+8. D-drive only for bulk state; C-drive only for code/docs/configs; `/tmp/` only for ephemeral test scratch.
+9. Pair every recommendation JSON with a RESOLVED/PAUSE/BLOCKED issue comment.
+10. Never reintroduce the retired inner-actor LLM stack without operator authorization.
+11. Resolved blockers stay closed as `status:resolved` GitHub issues, never deleted. Superseded decisions stay closed as superseded GitHub issues with a forward pointer.
 
 ---
 
@@ -261,17 +269,17 @@ If the cron fires `/loop` without the operator looking, defaults:
 - Pick the highest-priority Phase-A futurebuild task. If Phase A is done, pick from Phase B (operating in parallel with capture work).
 - If all build tasks are completed, pick capture work — next unresolved SWE-bench Lite task per §1 Class 2.
 - If everything is `status: done` and no capture work queued, record `no_change` with `surface_to_operator: "phases A-H complete; choose scaling/domain target"`.
-- Always end with the recommendation + SMAP report.
-- Never assume the operator is watching. Errors must produce robust logs and clean blocker writes.
+- Always end with the recommendation + RESOLVED/PAUSE/BLOCKED issue comment.
+- Never assume the operator is watching. Errors must produce robust structured logs and clean BLOCKED issue comments.
 
 ---
 
 ## 9. Bootstrap (first turn after fresh clone)
 
-If `./memory/` does not exist, run:
+If GitHub labels are not bootstrapped, run:
 
 ```bash
-mkdir -p ./memory/{context,decisions,discoveries,patterns,blockers,journal,reports,handoff}
+scripts/gh-labels-bootstrap.sh
 ```
 
 If `/mnt/d/contextgraph/` does not exist or is not writable:
@@ -282,23 +290,24 @@ Per docs/futurebuild/16_STORAGE_LOCATION_POLICY.md, the daemon refuses to start 
 Fix the mount, then re-run.
 ```
 
-After both are present, write initial `./memory/context/mission-brief.md` + `current-phase.md` reflecting the post-pivot state. Re-read `CLAUDE.md` and `docs/futurebuild/00_INDEX.md`. Treat this turn as bootstrap; the recommendation is `changed` if you wrote initial SMAP files, `no_change` if everything was already in place.
+If no pinned `type:context` issue exists in this repo: file one summarizing post-pivot mission + current phase, pin it. Re-read `CLAUDE.md`, `AGENTS.md`, and `docs/futurebuild/00_INDEX.md`. Treat this turn as bootstrap; the recommendation is `changed` if you bootstrapped labels or filed the context issue, `no_change` if everything was already in place.
 
 ---
 
 ## See also
 
-- Forward plan: `docs/futurebuild/00_INDEX.md` (start here for new work)
+- Doctrine (master): `docs2/AICodingAgentSuperPrompt.md`
+- Project addendum: `CLAUDE.md`
+- Project pointers: `AGENTS.md`
+- Forward plan: `docs/futurebuild/00_INDEX.md`
 - Vision: `docs/futurebuild/01_VISION_TRUTH_SYSTEM.md`
 - Architecture: `docs/futurebuild/03_ARCHITECTURE_BLUEPRINT.md`
 - Prediction taxonomy: `docs/futurebuild/15_PREDICTION_TAXONOMY.md`
 - Storage policy: `docs/futurebuild/16_STORAGE_LOCATION_POLICY.md`
 - Implementation phases: `docs/futurebuild/12_IMPLEMENTATION_PHASES.md`
 - Task index: `docs/futurebuild/13_TASK_INDEX.md`
-- Master plan (historical): `docs/ruvectorfindings/09_END_GOAL_REVIEW_REPLACEMENT.md`
-- Pivot statement: `docs/ruvectorfindings/10_MEJEPA_PIVOT_2026_05_09.md`
-- UTML v1.0 learning theory: `docs2/TheoryOfMachineLearning.md`
-- Spec status/roadmap: `docs/ruvectorfindings/specs/_README.md` + `docs/ruvectorfindings/specs/implementation-plan.md`
-- Operator contract: `CLAUDE.md §11`
-- Reality-shift principle: `docs/ccreality/01b_REALITY_SHIFT_PRINCIPLE.md`
-- SMAP protocol: `docs2/SHARED-MIND-AGENT-PROTOCOL.md` + `docs2/SOLO-AGENT-MEMORY-PROTOCOL.md`
+- 14-axis hardening deep-dive: `docs2/hardeningprompt.md` (doctrine §14 = summary)
+- Reality-shift principle: `docs/ccreality/01b_REALITY_SHIFT_PRINCIPLE.md` (project narrative)
+- Legacy MEJEPA narrative (SUPERSEDED for protocol; project content valid): `docs/MEJEPA_SUPER_PROMPT.md`
+- Legacy issue protocol (SUPERSEDED by doctrine §3): `docs2/flagprompt.md`
+- Legacy SAMP/SMAP narrative (read-only history): `./memory.archive/`

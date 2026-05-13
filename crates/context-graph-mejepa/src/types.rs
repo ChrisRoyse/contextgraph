@@ -2173,6 +2173,90 @@ pub enum FailureModeClass {
     Other,
 }
 
+impl FailureModeClass {
+    pub fn all() -> [Self; 36] {
+        [
+            Self::AssertionMismatch,
+            Self::WrongAlgorithm,
+            Self::OffByOne,
+            Self::NullDeref,
+            Self::ResourceLeak,
+            Self::RaceCondition,
+            Self::DeadlockPotential,
+            Self::InfiniteLoop,
+            Self::StackOverflow,
+            Self::Exception,
+            Self::TypeError,
+            Self::SignatureMismatch,
+            Self::ImportMissing,
+            Self::SyntaxError,
+            Self::SemanticError,
+            Self::AssertionViolation,
+            Self::ContractViolation,
+            Self::ApiMisuse,
+            Self::ConfigDrift,
+            Self::EncodingError,
+            Self::DateTimeError,
+            Self::NumericalInstability,
+            Self::SerializationError,
+            Self::SchemaMigrationGap,
+            Self::DependencyVersionConflict,
+            Self::PlatformAssumption,
+            Self::CompilerVersionGap,
+            Self::PermissionsError,
+            Self::WrongTestUpdated,
+            Self::NameError,
+            Self::Timeout,
+            Self::Crash,
+            Self::CompileError,
+            Self::Flaky,
+            Self::NoTestsCollected,
+            Self::Other,
+        ]
+    }
+
+    pub fn slug(self) -> &'static str {
+        match self {
+            Self::AssertionMismatch => "assertion_mismatch",
+            Self::WrongAlgorithm => "wrong_algorithm",
+            Self::OffByOne => "off_by_one",
+            Self::NullDeref => "null_deref",
+            Self::ResourceLeak => "resource_leak",
+            Self::RaceCondition => "race_condition",
+            Self::DeadlockPotential => "deadlock_potential",
+            Self::InfiniteLoop => "infinite_loop",
+            Self::StackOverflow => "stack_overflow",
+            Self::Exception => "exception",
+            Self::TypeError => "type_error",
+            Self::SignatureMismatch => "signature_mismatch",
+            Self::ImportMissing => "import_missing",
+            Self::SyntaxError => "syntax_error",
+            Self::SemanticError => "semantic_error",
+            Self::AssertionViolation => "assertion_violation",
+            Self::ContractViolation => "contract_violation",
+            Self::ApiMisuse => "api_misuse",
+            Self::ConfigDrift => "config_drift",
+            Self::EncodingError => "encoding_error",
+            Self::DateTimeError => "date_time_error",
+            Self::NumericalInstability => "numerical_instability",
+            Self::SerializationError => "serialization_error",
+            Self::SchemaMigrationGap => "schema_migration_gap",
+            Self::DependencyVersionConflict => "dependency_version_conflict",
+            Self::PlatformAssumption => "platform_assumption",
+            Self::CompilerVersionGap => "compiler_version_gap",
+            Self::PermissionsError => "permissions_error",
+            Self::WrongTestUpdated => "wrong_test_updated",
+            Self::NameError => "name_error",
+            Self::Timeout => "timeout",
+            Self::Crash => "crash",
+            Self::CompileError => "compile_error",
+            Self::Flaky => "flaky",
+            Self::NoTestsCollected => "no_tests_collected",
+            Self::Other => "other",
+        }
+    }
+}
+
 /// Deterministic signature of which embedders flagged a chunk-level violation.
 /// Canonicalized to a sorted distinct `Vec<EmbedderId>` so semantically-equal
 /// signature sets hash to the same CF key.

@@ -7,7 +7,7 @@ use crate::compiler::TrainCertSummary;
 use crate::conformal::CalibrationExample;
 use crate::fixtures::fixture_patch_context;
 use crate::gates::sha256_bytes;
-use crate::types::{EmbedderId, Language, OracleOutcome, TaskId};
+use crate::types::{EmbedderId, FailureModeClass, Language, OracleOutcome, TaskId};
 use crate::{
     build_deterministic_compiler, open_infer_rocksdb, MeJepaCompiler, MeJepaInferConfig,
     RocksDbInferStore,
@@ -54,45 +54,53 @@ pub fn synthetic_holdout(repo_root: &Path) -> Result<Vec<HoldoutPanel>, EvalErro
             "known_good_python",
             MutationCategory::KnownGood,
             OracleOutcome::Pass,
+            vec![],
         ),
         (
             "predicted_failure_subtle_flip",
             MutationCategory::SubtleFlip,
             OracleOutcome::Fail,
+            vec![FailureModeClass::WrongAlgorithm],
         ),
         (
             "predicted_failure_off_by_one",
             MutationCategory::OffByOne,
             OracleOutcome::Fail,
+            vec![FailureModeClass::OffByOne],
         ),
         (
             "low_confidence_swap_variable",
             MutationCategory::SwapVariable,
             OracleOutcome::Pass,
+            vec![],
         ),
         (
             "predicted_failure_delete_test_call",
             MutationCategory::DeleteTestCall,
             OracleOutcome::Fail,
+            vec![FailureModeClass::AssertionViolation],
         ),
         (
             "ood_wrong_file",
             MutationCategory::WrongFile,
             OracleOutcome::OutOfDistribution,
+            vec![],
         ),
         (
             "granger_rejection_over_engineer",
             MutationCategory::OverEngineer,
             OracleOutcome::Pass,
+            vec![],
         ),
         (
             "predicted_failure_compile_error",
             MutationCategory::CompileError,
             OracleOutcome::Fail,
+            vec![FailureModeClass::CompileError],
         ),
     ];
     let mut out = Vec::with_capacity(specs.len());
-    for (scenario, category, actual) in specs {
+    for (scenario, category, actual, actual_failure_modes) in specs {
         let (patch, mut context) = fixture_patch_context(repo_root, scenario)?;
         context.task_id = TaskId(format!("phase8-{scenario}"));
         context.language = Language::Python;
@@ -104,6 +112,7 @@ pub fn synthetic_holdout(repo_root: &Path) -> Result<Vec<HoldoutPanel>, EvalErro
             patch,
             context,
             actual_oracle: actual,
+            actual_failure_modes,
             panel_sha,
         });
     }

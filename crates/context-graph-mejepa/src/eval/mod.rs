@@ -23,7 +23,8 @@ pub use graph::{
     build_patch_similarity_graph, PatchEmbedding, PatchGraphEdge, PatchSimilarityGraph,
 };
 pub use metrics::{
-    compute_state_transfer_per_cell, conformal_health, ood_auc_by_language, pearson_correlation,
+    compute_failure_mode_class_metrics, compute_state_transfer_per_cell, conformal_health,
+    empty_failure_mode_class_metrics, ood_auc_by_language, pearson_correlation,
     state_transfer_from_observations,
 };
 pub use mi_heatmap_renderer::{
@@ -55,6 +56,7 @@ pub use telemetry::{
 };
 pub use types::{
     cell_key, language_slug, ActiveLearningSummary, AuxHeadDistillationSummary,
-    ConformalHealthEntry, EvalConfig, EvalObservation, EvalProvenance, EvalReport, HoldoutPanel,
-    MutationCategory, OpenResearchQuestionStatus, RegressionCheck, StateTransferDiagnostic,
+    ConformalHealthEntry, EvalConfig, EvalObservation, EvalProvenance, EvalReport,
+    FailureModeClassMetrics, HoldoutPanel, MutationCategory, OpenResearchQuestionStatus,
+    RegressionCheck, StateTransferDiagnostic,
 };

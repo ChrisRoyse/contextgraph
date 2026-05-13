@@ -2,9 +2,9 @@ use super::cell_exemptions::CellExemption;
 use super::error::{EvalError, EvalErrorCode};
 use super::types::{
     cell_key, language_slug, ConformalHealthEntry, EvalConfig, EvalObservation, MutationCategory,
-    RegressionCheck, StateTransferDiagnostic,
+    FailureModeClassMetrics, RegressionCheck, StateTransferDiagnostic,
 };
-use crate::types::{Language, OracleOutcome};
+use crate::types::{FailureModeClass, Language, OracleOutcome};
 use std::collections::BTreeMap;
 
 pub type CorrelationBreakdown = (
@@ -243,6 +243,60 @@ pub fn bayesian_shrinkage(
     Ok(out)
 }
 
+pub fn compute_failure_mode_class_metrics(
+    observations: &[EvalObservation],
+    config: &EvalConfig,
+) -> Result<BTreeMap<FailureModeClass, FailureModeClassMetrics>, EvalError> {
+    let mut out = BTreeMap::new();
+    for failure_class in FailureModeClass::all() {
+        let mut true_positive = 0usize;
+        let mut false_positive = 0usize;
+        let mut false_negative = 0usize;
+        let mut true_negative = 0usize;
+
+        for obs in observations {
+            let actual = obs.actual_failure_modes.iter().any(|mode| *mode == failure_class);
+            let predicted = obs
+                .prediction
+                .predicted_failure_modes
+                .iter()
+                .any(|mode| mode.failure_class == failure_class);
+            match (actual, predicted) {
+                (true, true) => true_positive += 1,
+                (false, true) => false_positive += 1,
+                (true, false) => false_negative += 1,
+                (false, false) => true_negative += 1,
+            }
+        }
+
+        let metrics = build_failure_mode_metrics(
+            failure_class,
+            observations.len(),
+            true_positive,
+            false_positive,
+            false_negative,
+            true_negative,
+            config,
+        )?;
+        out.insert(failure_class, metrics);
+    }
+    Ok(out)
+}
+
+pub fn empty_failure_mode_class_metrics(
+    sample_count: usize,
+    config: &EvalConfig,
+) -> BTreeMap<FailureModeClass, FailureModeClassMetrics> {
+    let mut out = BTreeMap::new();
+    for failure_class in FailureModeClass::all() {
+        out.insert(
+            failure_class,
+            failure_mode_metrics_value(failure_class, sample_count, 0, 0, 0, sample_count, config),
+        );
+    }
+    out
+}
+
 pub struct ShipGateInputs<'a> {
     pub observations: &'a [EvalObservation],
     pub report_overall: Option<f32>,
@@ -251,6 +305,7 @@ pub struct ShipGateInputs<'a> {
     pub conformal: &'a BTreeMap<Language, ConformalHealthEntry>,
     pub ood: &'a BTreeMap<Language, Option<f32>>,
     pub gtau: &'a BTreeMap<Language, f32>,
+    pub per_failure_mode_class: &'a BTreeMap<FailureModeClass, FailureModeClassMetrics>,
     pub regression_checks: &'a [RegressionCheck],
     pub q1_pass_rate: f32,
     pub q3_side_effect_agreement: Option<f32>,
@@ -301,6 +356,24 @@ pub fn ship_gate_failures(inputs: ShipGateInputs<'_>) -> Vec<String> {
                 "gtau_pass_rate {:?} {value:.6} below threshold",
                 language
             ));
+        }
+    }
+    for failure_class in FailureModeClass::all() {
+        match inputs.per_failure_mode_class.get(&failure_class) {
+            Some(metrics) if metrics.passed_threshold => {}
+            Some(metrics) => failures.push(format!(
+                "failure_mode_class {} precision {:.6} recall {:.6} below thresholds {:.6}/{:.6}: {}",
+                failure_class.slug(),
+                metrics.precision,
+                metrics.recall,
+                metrics.precision_threshold,
+                metrics.recall_threshold,
+                metrics.weakness.as_deref().unwrap_or("unknown")
+            )),
+            None => failures.push(format!(
+                "failure_mode_class {} metrics unavailable",
+                failure_class.slug()
+            )),
         }
     }
     if inputs.q1_pass_rate < inputs.config.q1_pass_rate_min {
@@ -408,4 +481,80 @@ fn languages_in(observations: &[EvalObservation]) -> Vec<Language> {
     languages.sort();
     languages.dedup();
     languages
+}
+
+fn build_failure_mode_metrics(
+    failure_class: FailureModeClass,
+    sample_count: usize,
+    true_positive: usize,
+    false_positive: usize,
+    false_negative: usize,
+    true_negative: usize,
+    config: &EvalConfig,
+) -> Result<FailureModeClassMetrics, EvalError> {
+    let metrics = failure_mode_metrics_value(
+        failure_class,
+        sample_count,
+        true_positive,
+        false_positive,
+        false_negative,
+        true_negative,
+        config,
+    );
+    metrics.validate(failure_class)?;
+    Ok(metrics)
+}
+
+fn failure_mode_metrics_value(
+    failure_class: FailureModeClass,
+    sample_count: usize,
+    true_positive: usize,
+    false_positive: usize,
+    false_negative: usize,
+    true_negative: usize,
+    config: &EvalConfig,
+) -> FailureModeClassMetrics {
+    let actual_positive_count = true_positive + false_negative;
+    let predicted_positive_count = true_positive + false_positive;
+    let precision = if predicted_positive_count == 0 {
+        1.0
+    } else {
+        true_positive as f32 / predicted_positive_count as f32
+    };
+    let recall = if actual_positive_count == 0 {
+        1.0
+    } else {
+        true_positive as f32 / actual_positive_count as f32
+    };
+    let f1 = if precision + recall <= f32::EPSILON {
+        0.0
+    } else {
+        2.0 * precision * recall / (precision + recall)
+    };
+    let precision_failed = precision < config.failure_mode_precision_min;
+    let recall_failed = recall < config.failure_mode_recall_min;
+    let passed_threshold = !precision_failed && !recall_failed;
+    let weakness = match (precision_failed, recall_failed) {
+        (true, true) => Some("low_precision_and_low_recall".to_string()),
+        (true, false) => Some("low_precision".to_string()),
+        (false, true) => Some("low_recall".to_string()),
+        (false, false) => None,
+    };
+    FailureModeClassMetrics {
+        failure_class,
+        sample_count,
+        actual_positive_count,
+        predicted_positive_count,
+        true_positive,
+        false_positive,
+        false_negative,
+        true_negative,
+        precision,
+        recall,
+        f1,
+        precision_threshold: config.failure_mode_precision_min,
+        recall_threshold: config.failure_mode_recall_min,
+        passed_threshold,
+        weakness,
+    }
 }

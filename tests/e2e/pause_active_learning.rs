@@ -231,6 +231,7 @@ fn active_pause_suppresses_queue(
             mutation_category: MutationCategory::SubtleFlip,
             language: Language::Python,
             actual_oracle: OracleOutcome::Fail,
+            actual_failure_modes: vec![context_graph_mejepa::FailureModeClass::WrongAlgorithm],
             prediction,
             gtau_passed: false,
             approved: false,

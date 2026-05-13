@@ -1,9 +1,10 @@
 use super::cell_exemptions::{default_cell_exemptions_path, load_cell_exemptions};
 use super::error::{EvalError, EvalErrorCode};
 use super::metrics::{
-    bayesian_shrinkage, compute_correlations, compute_state_transfer_per_cell, conformal_health,
-    gtau_pass_rate_by_language, ood_auc_by_language, oracle_target_opt, ship_gate_failures,
-    state_transfer_from_observations, ShipGateInputs,
+    bayesian_shrinkage, compute_correlations, compute_failure_mode_class_metrics,
+    compute_state_transfer_per_cell, conformal_health, gtau_pass_rate_by_language,
+    ood_auc_by_language, oracle_target_opt, ship_gate_failures, state_transfer_from_observations,
+    ShipGateInputs,
 };
 use super::per_head_calibration_tracker::compute_prediction_class_calibration;
 use super::queue::ActiveLearningQueueState;
@@ -78,6 +79,7 @@ impl EvalRunner {
                 mutation_category: panel.mutation_category,
                 language: panel.language,
                 actual_oracle: panel.actual_oracle,
+                actual_failure_modes: panel.actual_failure_modes.clone(),
                 prediction,
                 gtau_passed,
                 approved,
@@ -92,6 +94,8 @@ impl EvalRunner {
         let ood = ood_auc_by_language(&observations)?;
         let gtau = gtau_pass_rate_by_language(&observations)?;
         let per_prediction_class_calibration = compute_prediction_class_calibration(&observations)?;
+        let per_failure_mode_class =
+            compute_failure_mode_class_metrics(&observations, &self.config)?;
         let previous_report = self.store.load_latest_report()?;
         let regression_checks = regression_checks(previous_report.as_ref(), overall, &self.config);
         let q1 = q1_pass_rate(&observations)?;
@@ -108,6 +112,7 @@ impl EvalRunner {
             conformal: &conformal,
             ood: &ood,
             gtau: &gtau,
+            per_failure_mode_class: &per_failure_mode_class,
             regression_checks: &regression_checks,
             q1_pass_rate: q1,
             q3_side_effect_agreement: q3,
@@ -145,6 +150,7 @@ impl EvalRunner {
             ood_calibration_health: ood,
             gtau_pass_rate: gtau,
             per_prediction_class_calibration,
+            per_failure_mode_class,
             active_learning: ActiveLearningSummary {
                 queued_count: queue.entries.len(),
                 evicted_count: queue.evicted.len(),

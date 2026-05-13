@@ -261,6 +261,7 @@ operator_id = "operator"
         mutation_category: MutationCategory::CompileError,
         language: Language::Python,
         actual_oracle: OracleOutcome::Fail,
+        actual_failure_modes: vec![context_graph_mejepa::FailureModeClass::CompileError],
         prediction,
         gtau_passed: true,
         approved: true,
@@ -276,6 +277,10 @@ operator_id = "operator"
         conformal: &BTreeMap::new(),
         ood: &BTreeMap::new(),
         gtau: &BTreeMap::new(),
+        per_failure_mode_class: &context_graph_mejepa::empty_failure_mode_class_metrics(
+            1,
+            &context_graph_mejepa::EvalConfig::default(),
+        ),
         regression_checks: &[],
         q1_pass_rate: 1.0,
         q3_side_effect_agreement: Some(1.0),
