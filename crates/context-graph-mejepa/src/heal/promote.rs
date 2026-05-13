@@ -15,7 +15,7 @@ use crate::heal::cf::{
     ActivePointerValue, CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_CALIBRATION_HISTORY,
     CF_MEJEPA_HEAL_REPORTS, CF_MEJEPA_WEIGHT_BLOBS,
 };
-use crate::heal::errors::HealError;
+use crate::heal::errors::{HealError, PromotionCellRegression};
 use crate::heal::integrity::WitnessChainAppender;
 use crate::heal::store::HealRocksStore;
 use crate::types::{Language, OracleOutcome};
@@ -27,6 +27,9 @@ const PROMOTION_CALIBRATION_ALPHA: f32 = 0.10;
 const PROMOTION_TARGET_COVERAGE: f32 = 0.90;
 const PROMOTION_COVERAGE_MIN: f32 = 0.88;
 const PROMOTION_COVERAGE_MAX: f32 = 0.92;
+const PROMOTION_CELL_REGRESSION_TOLERANCE: f32 = 0.005;
+const PROMOTION_CELL_REGRESSION_EPSILON: f32 = 1e-6;
+pub const GLOBAL_HOLDOUT_CELL_KEY: &str = "global_or_per_cell";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -116,6 +119,7 @@ pub struct HoldoutEval {
     pub ood_distribution_kl: f32,
     pub num_samples: usize,
     pub evaluation_summary_sha: [u8; 32],
+    pub per_cell_correlation: BTreeMap<String, f32>,
 }
 
 impl HoldoutEval {
@@ -125,6 +129,24 @@ impl HoldoutEval {
         ood_distribution_kl: f32,
         num_samples: usize,
         evaluation_summary_sha: [u8; 32],
+    ) -> Result<Self, HealError> {
+        Self::try_new_with_cells(
+            coverage,
+            oracle_agreement,
+            ood_distribution_kl,
+            num_samples,
+            evaluation_summary_sha,
+            BTreeMap::from([(GLOBAL_HOLDOUT_CELL_KEY.to_string(), oracle_agreement)]),
+        )
+    }
+
+    pub fn try_new_with_cells(
+        coverage: f32,
+        oracle_agreement: f32,
+        ood_distribution_kl: f32,
+        num_samples: usize,
+        evaluation_summary_sha: [u8; 32],
+        per_cell_correlation: BTreeMap<String, f32>,
     ) -> Result<Self, HealError> {
         for (name, value) in [
             ("coverage", coverage),
@@ -150,14 +172,54 @@ impl HoldoutEval {
                 "holdout evaluation requires at least one sample",
             ));
         }
+        validate_per_cell_correlation_map(
+            "holdout_eval.per_cell_correlation",
+            &per_cell_correlation,
+        )?;
         Ok(Self {
             coverage,
             oracle_agreement,
             ood_distribution_kl,
             num_samples,
             evaluation_summary_sha,
+            per_cell_correlation,
         })
     }
+}
+
+fn validate_per_cell_correlation_map(
+    field: &str,
+    values: &BTreeMap<String, f32>,
+) -> Result<(), HealError> {
+    if values.is_empty() {
+        return Err(HealError::invalid(
+            field,
+            "per-cell correlation map must be non-empty",
+        ));
+    }
+    for (cell_key, value) in values {
+        validate_cell_key(&format!("{field}.{cell_key}"), cell_key)?;
+        if !value.is_finite() || !(0.0..=1.0).contains(value) {
+            return Err(HealError::invalid(
+                format!("{field}.{cell_key}"),
+                format!("cell correlation must be finite in [0,1], got {value}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_cell_key(field: &str, cell_key: &str) -> Result<(), HealError> {
+    if cell_key.trim().is_empty()
+        || cell_key.trim() != cell_key
+        || cell_key.bytes().any(|byte| byte == 0 || byte == b'\n')
+    {
+        return Err(HealError::invalid(
+            field,
+            "cell key must be non-empty trimmed single-line text",
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -167,6 +229,7 @@ pub struct PromotionGate {
     pub oracle_agreement_floor: f32,
     pub ood_kl_ceiling: f32,
     pub full_retrain_floor: f32,
+    pub cell_regression_tolerance: f32,
 }
 
 impl PromotionGate {
@@ -181,6 +244,10 @@ impl PromotionGate {
             ("oracle_agreement_floor", oracle_agreement_floor),
             ("ood_kl_ceiling", ood_kl_ceiling),
             ("full_retrain_floor", full_retrain_floor),
+            (
+                "cell_regression_tolerance",
+                PROMOTION_CELL_REGRESSION_TOLERANCE,
+            ),
         ] {
             if !value.is_finite() || value < 0.0 {
                 return Err(HealError::invalid(
@@ -194,6 +261,7 @@ impl PromotionGate {
             oracle_agreement_floor,
             ood_kl_ceiling,
             full_retrain_floor,
+            cell_regression_tolerance: PROMOTION_CELL_REGRESSION_TOLERANCE,
         })
     }
 
@@ -241,6 +309,7 @@ pub struct HoldoutExample {
     pub actual: OracleOutcome,
     pub ood_score: f32,
     pub calibration_nonconformity_score: f32,
+    pub cell_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -279,6 +348,10 @@ impl HoldoutDataset {
                     "calibration non-conformity score must be finite in [0,1]",
                 ));
             }
+            validate_cell_key(
+                &format!("holdout.examples[{idx}].cell_key"),
+                &example.cell_key,
+            )?;
         }
         Ok(Self {
             examples,
@@ -512,6 +585,24 @@ impl AbcPromoter {
 
     pub fn split_state(&self) -> Option<&PromotionSplitState> {
         self.split_state.as_ref()
+    }
+
+    pub fn evaluate(
+        &self,
+        mode_a: &HoldoutEval,
+        mode_b: &HoldoutEval,
+        mode_c: &HoldoutEval,
+    ) -> Result<ModeWinner, HealError> {
+        let (winner, _, _, _) = choose_winner(
+            &self.gate,
+            mode_a,
+            mode_b,
+            mode_c,
+            [0xB0; 32],
+            [0xA0; 32],
+            &[0.0],
+        )?;
+        Ok(winner)
     }
 
     pub fn retrain_and_promote(
@@ -1070,22 +1161,43 @@ fn choose_winner(
 ) -> Result<(ModeWinner, [u8; 32], Vec<u8>, HoldoutEval), HealError> {
     let mode_a_score = phase_e_promotion_score(mode_a, MODE_A_INFERENCE_LATENCY_MULTIPLIER)?;
     let mut candidates = Vec::new();
+    let mut blocked_regressions = Vec::new();
     let mode_b_score = phase_e_promotion_score(mode_b, MODE_B_INFERENCE_LATENCY_MULTIPLIER)?;
     if gate.passes(mode_b) && mode_b_score > mode_a_score {
-        candidates.push((
+        let regressions = promotion_cell_regressions(
             ModeWinner::B,
-            theta_b,
-            weights_to_bytes(mode_b_weights),
-            mode_b.clone(),
-        ));
+            mode_a,
+            mode_b,
+            gate.cell_regression_tolerance,
+        )?;
+        if regressions.is_empty() {
+            candidates.push((
+                ModeWinner::B,
+                theta_b,
+                weights_to_bytes(mode_b_weights),
+                mode_b.clone(),
+            ));
+        } else {
+            blocked_regressions.extend(regressions);
+        }
     }
     let mode_c_score = phase_e_promotion_score(mode_c, MODE_C_INFERENCE_LATENCY_MULTIPLIER)?;
     if gate.passes(mode_c) && mode_c_score > mode_a_score {
-        let mut blob = Vec::new();
-        blob.extend_from_slice(&theta_a);
-        blob.extend_from_slice(&theta_b);
-        let c_sha = sha_bytes(&blob);
-        candidates.push((ModeWinner::C, c_sha, blob, mode_c.clone()));
+        let regressions = promotion_cell_regressions(
+            ModeWinner::C,
+            mode_a,
+            mode_c,
+            gate.cell_regression_tolerance,
+        )?;
+        if regressions.is_empty() {
+            let mut blob = Vec::new();
+            blob.extend_from_slice(&theta_a);
+            blob.extend_from_slice(&theta_b);
+            let c_sha = sha_bytes(&blob);
+            candidates.push((ModeWinner::C, c_sha, blob, mode_c.clone()));
+        } else {
+            blocked_regressions.extend(regressions);
+        }
     }
     candidates
         .into_iter()
@@ -1097,8 +1209,43 @@ fn choose_winner(
             a_score.total_cmp(&b_score)
         })
         .ok_or_else(|| {
-            HealError::holdout_regression(mode_a.clone(), mode_b.clone(), mode_c.clone())
+            if blocked_regressions.is_empty() {
+                HealError::holdout_regression(mode_a.clone(), mode_b.clone(), mode_c.clone())
+            } else {
+                HealError::promotion_cell_regression(blocked_regressions)
+            }
         })
+}
+
+fn promotion_cell_regressions(
+    attempted_winner: ModeWinner,
+    before: &HoldoutEval,
+    after: &HoldoutEval,
+    tolerance: f32,
+) -> Result<Vec<PromotionCellRegression>, HealError> {
+    if !tolerance.is_finite() || tolerance < 0.0 {
+        return Err(HealError::invalid(
+            "promotion.cell_regression_tolerance",
+            "cell regression tolerance must be finite and non-negative",
+        ));
+    }
+    let mut regressions = Vec::new();
+    for (cell_key, before_value) in &before.per_cell_correlation {
+        let after_value = after.per_cell_correlation.get(cell_key).copied();
+        let holds_or_improves = after_value
+            .map(|value| value + tolerance + PROMOTION_CELL_REGRESSION_EPSILON >= *before_value)
+            .unwrap_or(false);
+        if !holds_or_improves {
+            regressions.push(PromotionCellRegression {
+                cell_key: cell_key.clone(),
+                correlation_before: *before_value,
+                correlation_after: after_value,
+                tolerance,
+                attempted_winner,
+            });
+        }
+    }
+    Ok(regressions)
 }
 
 fn phase_e_promotion_score(eval: &HoldoutEval, latency_multiplier: f32) -> Result<f32, HealError> {
@@ -1145,13 +1292,37 @@ fn evaluate_holdout(
     hasher.update(coverage.to_le_bytes());
     hasher.update(agreement.to_le_bytes());
     hasher.update(ood.to_le_bytes());
-    HoldoutEval::try_new(
+    let per_cell_correlation = evaluate_per_cell_correlation(holdout, lift);
+    for (cell_key, correlation) in &per_cell_correlation {
+        hasher.update(cell_key.as_bytes());
+        hasher.update(correlation.to_le_bytes());
+    }
+    HoldoutEval::try_new_with_cells(
         coverage,
         agreement,
         ood,
         holdout.examples.len(),
         hasher.finalize().into(),
+        per_cell_correlation,
     )
+}
+
+fn evaluate_per_cell_correlation(holdout: &HoldoutDataset, lift: f32) -> BTreeMap<String, f32> {
+    let mut cells = BTreeMap::<String, (usize, usize)>::new();
+    for example in &holdout.examples {
+        let entry = cells.entry(example.cell_key.clone()).or_insert((0, 0));
+        if example.predicted.contains(&example.actual) {
+            entry.0 += 1;
+        }
+        entry.1 += 1;
+    }
+    cells
+        .into_iter()
+        .map(|(cell_key, (covered, total))| {
+            let base = covered as f32 / total as f32;
+            (cell_key, (base + lift * 0.90).min(0.99))
+        })
+        .collect()
 }
 
 fn train_mode_b(current: &[f32], holdout: &HoldoutDataset) -> Vec<f32> {
@@ -1235,6 +1406,97 @@ mod tests {
         assert!(HoldoutEval::try_new(1.1, 0.9, 0.1, 1, [0; 32]).is_err());
     }
 
+    fn eval_with_cells(score: f32, cells: &[(&str, f32)], sha: u8) -> HoldoutEval {
+        HoldoutEval::try_new_with_cells(
+            score,
+            score,
+            0.05,
+            100,
+            [sha; 32],
+            cells
+                .iter()
+                .map(|(cell, value)| ((*cell).to_string(), *value))
+                .collect(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn promotion_evaluate_blocks_one_cell_regression() {
+        let promoter = AbcPromoter::try_new(0.1, PromotionGate::default()).unwrap();
+        let mode_a = eval_with_cells(
+            0.90,
+            &[("compile_error::rust", 0.90), ("off_by_one::python", 0.80)],
+            1,
+        );
+        let mode_b = eval_with_cells(
+            0.94,
+            &[("compile_error::rust", 0.91), ("off_by_one::python", 0.794)],
+            2,
+        );
+        let mode_c = eval_with_cells(
+            0.89,
+            &[("compile_error::rust", 0.90), ("off_by_one::python", 0.80)],
+            3,
+        );
+        let err = promoter.evaluate(&mode_a, &mode_b, &mode_c).unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_PROMOTION_CELL_REGRESSION");
+        let HealError::PromotionCellRegression { regressions } = err else {
+            panic!("expected cell regression error");
+        };
+        assert_eq!(regressions.len(), 1);
+        assert_eq!(regressions[0].cell_key, "off_by_one::python");
+        assert_eq!(regressions[0].attempted_winner, ModeWinner::B);
+    }
+
+    #[test]
+    fn promotion_evaluate_allows_exact_tolerance_floor() {
+        let promoter = AbcPromoter::try_new(0.1, PromotionGate::default()).unwrap();
+        let mode_a = eval_with_cells(
+            0.90,
+            &[("compile_error::rust", 0.90), ("off_by_one::python", 0.80)],
+            1,
+        );
+        let mode_b = eval_with_cells(
+            0.94,
+            &[("compile_error::rust", 0.91), ("off_by_one::python", 0.795)],
+            2,
+        );
+        let mode_c = eval_with_cells(
+            0.89,
+            &[("compile_error::rust", 0.90), ("off_by_one::python", 0.80)],
+            3,
+        );
+        assert_eq!(
+            promoter.evaluate(&mode_a, &mode_b, &mode_c).unwrap(),
+            ModeWinner::B
+        );
+    }
+
+    #[test]
+    fn promotion_evaluate_falls_back_to_non_regressing_candidate() {
+        let promoter = AbcPromoter::try_new(0.1, PromotionGate::default()).unwrap();
+        let mode_a = eval_with_cells(
+            0.90,
+            &[("compile_error::rust", 0.90), ("off_by_one::python", 0.80)],
+            1,
+        );
+        let mode_b = eval_with_cells(
+            0.95,
+            &[("compile_error::rust", 0.91), ("off_by_one::python", 0.79)],
+            2,
+        );
+        let mode_c = eval_with_cells(
+            0.94,
+            &[("compile_error::rust", 0.91), ("off_by_one::python", 0.80)],
+            3,
+        );
+        assert_eq!(
+            promoter.evaluate(&mode_a, &mode_b, &mode_c).unwrap(),
+            ModeWinner::C
+        );
+    }
+
     #[test]
     fn mode_winner_promoted_only_for_b_or_c() {
         assert!(ModeWinner::B.is_promoted());
@@ -1265,6 +1527,7 @@ mod tests {
                     },
                     ood_score: 0.05,
                     calibration_nonconformity_score: if idx < 72 { 0.05 } else { 0.95 },
+                    cell_key: GLOBAL_HOLDOUT_CELL_KEY.to_string(),
                 })
                 .collect(),
             [9; 32],

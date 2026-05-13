@@ -486,6 +486,7 @@ impl SelfHealingPipeline {
                 actual: sample.actual_oracle,
                 ood_score: sample.ood_score,
                 calibration_nonconformity_score,
+                cell_key: crate::heal::promote::GLOBAL_HOLDOUT_CELL_KEY.to_string(),
             });
         }
         HoldoutDataset::try_new(examples, self.corpus_sha)

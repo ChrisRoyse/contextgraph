@@ -176,6 +176,7 @@ fn holdout_with_base_coverage(covered: usize, total: usize) -> Result<HoldoutDat
                 },
                 ood_score: if is_covered { 0.05 } else { 0.15 },
                 calibration_nonconformity_score: if is_covered { 0.05 } else { 0.95 },
+                cell_key: "global_or_per_cell".to_string(),
             }
         })
         .collect();

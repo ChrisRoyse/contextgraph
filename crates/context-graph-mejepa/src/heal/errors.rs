@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::heal::drift::DriftSeverity;
-use crate::heal::promote::HoldoutEval;
+use crate::heal::promote::{HoldoutEval, ModeWinner};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -38,6 +38,16 @@ pub enum CriticalBugKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct PromotionCellRegression {
+    pub cell_key: String,
+    pub correlation_before: f32,
+    pub correlation_after: Option<f32>,
+    pub tolerance: f32,
+    pub attempted_winner: ModeWinner,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub enum HealError {
     BatchNan {
         component: String,
@@ -54,6 +64,9 @@ pub enum HealError {
         mode_a_score: Box<HoldoutEval>,
         mode_b_score: Box<HoldoutEval>,
         mode_c_score: Box<HoldoutEval>,
+    },
+    PromotionCellRegression {
+        regressions: Vec<PromotionCellRegression>,
     },
     QuotaExceeded {
         used_gb: f32,
@@ -125,6 +138,7 @@ impl HealError {
             Self::DriftDetected { .. } => "MEJEPA_OBSERVE_DRIFT_DETECTED",
             Self::IntegrityViolation { .. } => "MEJEPA_OBSERVE_INTEGRITY_VIOLATION",
             Self::HoldoutRegression { .. } => "MEJEPA_RETRAIN_HOLDOUT_REGRESSION",
+            Self::PromotionCellRegression { .. } => "MEJEPA_PROMOTION_CELL_REGRESSION",
             Self::QuotaExceeded { .. } => "MEJEPA_RETRAIN_QUOTA_EXCEEDED",
             Self::FisherRankDeficient { .. } => "MEJEPA_HEAL_FISHER_RANK_DEFICIENT",
             Self::LoraRefreshFail { .. } => "MEJEPA_HEAL_LORA_REFRESH_FAIL",
@@ -161,6 +175,10 @@ impl HealError {
             mode_b_score: Box::new(mode_b_score),
             mode_c_score: Box::new(mode_c_score),
         }
+    }
+
+    pub fn promotion_cell_regression(regressions: Vec<PromotionCellRegression>) -> Self {
+        Self::PromotionCellRegression { regressions }
     }
 
     pub fn io(op: &'static str, path: impl Into<PathBuf>, source: std::io::Error) -> Self {
@@ -250,6 +268,13 @@ mod tests {
                 },
             },
             HealError::holdout_regression(eval(), eval(), eval()),
+            HealError::promotion_cell_regression(vec![PromotionCellRegression {
+                cell_key: "off_by_one::python".into(),
+                correlation_before: 0.90,
+                correlation_after: Some(0.89),
+                tolerance: 0.005,
+                attempted_winner: ModeWinner::B,
+            }]),
             HealError::QuotaExceeded {
                 used_gb: 116.0,
                 quota_gb: 115.0,
