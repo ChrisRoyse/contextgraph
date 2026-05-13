@@ -206,30 +206,34 @@ impl Handlers {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::deprecation::RETIRED_CGREALITY_TOOLS;
 
     #[test]
-    fn retired_tool_returns_mcp_tool_error_result() {
+    fn retired_cgreality_tools_fail_closed_as_jsonrpc_responses() {
         let _guard = crate::handlers::tools::test_env_lock::lock();
         std::env::remove_var("CONTEXT_GRAPH_DEPRECATION_LEVEL");
-        let response = retired_tool_response(
-            Some(JsonRpcId::Number(7)),
-            "mcp__cgreality__reality_run_attempt",
-        );
-        assert!(response.error.is_none());
-        let result = response.result.unwrap();
-        assert_eq!(result["isError"], json!(true));
-        assert_eq!(
-            result["structuredContent"]["error_code"],
-            json!("CCREALITY_ENGINE_RETIRED")
-        );
-        assert_eq!(
-            result["structuredContent"]["attempted_tool"],
-            json!("mcp__cgreality__reality_run_attempt")
-        );
-        assert_eq!(
-            result["warnings"][0]["code"],
-            json!("MEJEPA_TOOL_DEPRECATED_MCP__CGREALITY__REALITY_RUN_ATTEMPT")
-        );
+        for (idx, tool_name) in RETIRED_CGREALITY_TOOLS.iter().enumerate() {
+            let response =
+                retired_tool_response(Some(JsonRpcId::Number(idx as i64 + 7)), tool_name);
+            assert!(response.error.is_none(), "{tool_name}");
+            let result = response.result.unwrap();
+            assert_eq!(result["isError"], json!(true), "{tool_name}");
+            assert_eq!(
+                result["structuredContent"]["error_code"],
+                json!("CCREALITY_ENGINE_RETIRED"),
+                "{tool_name}"
+            );
+            assert_eq!(
+                result["structuredContent"]["attempted_tool"],
+                json!(tool_name),
+                "{tool_name}"
+            );
+            assert_eq!(
+                result["warnings"][0]["tool"],
+                json!(tool_name),
+                "{tool_name}"
+            );
+        }
     }
 
     #[test]

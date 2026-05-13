@@ -216,4 +216,29 @@ mod tests {
         assert!(!names.contains("get_memory_neighbors"));
         assert!(!names.contains("get_audit_trail"));
     }
+
+    #[test]
+    fn retired_cgreality_tools_are_not_advertised_by_tool_registries() {
+        let default_tools = get_tool_definitions();
+        let default_names: BTreeSet<&str> = default_tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect();
+        let reality_tools = get_reality_loop_tool_definitions();
+        let reality_names: BTreeSet<&str> = reality_tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect();
+
+        for retired_tool in crate::deprecation::RETIRED_CGREALITY_TOOLS {
+            assert!(
+                !default_names.contains(retired_tool),
+                "{retired_tool} must not be advertised by the default tools/list registry"
+            );
+            assert!(
+                !reality_names.contains(retired_tool),
+                "{retired_tool} must not be advertised by the reality-loop tools/list registry"
+            );
+        }
+    }
 }

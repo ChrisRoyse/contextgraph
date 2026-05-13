@@ -267,7 +267,7 @@ The A-F implementation issues are closed for the Phase G handoff. Analyzer-backe
 | ID | Title | Phase | Blocked by | Effort |
 |---|---|---|---|---|
 | `TASK-LOOP-003` | Mark superseded SMAP decisions | H | LOOP-001 | **complete (#132)** — five retired inner-actor decision files have `status: superseded` + `superseded_by: 2026-05-09--single-outer-loop-mejepa-no-local-llm.md`; FSV at `/mnt/d/contextgraph/fsv/phase-h-smap-superseded-decisions-fsv/smap_superseded_decisions_fsv.json` |
-| `TASK-LOOP-004` | Retire legacy MCP tools | H | none | 0.25d |
+| `TASK-LOOP-004` | Retire legacy MCP tools | H | none | **complete (#133)** — five retired cgreality compatibility names are excluded from tool definitions and fail closed with `CCREALITY_ENGINE_RETIRED`; FSV at `/mnt/d/contextgraph/fsv/phase-h-retired-mcp-tools-fsv/retired_mcp_tools_fsv.json` |
 | `TASK-LOOP-005` | Audit absence of inner-actor model files | H | none | **complete (#134)** — `scripts/audit/no_inner_actor_models.sh`; FSV at `/mnt/d/contextgraph/fsv/phase-h-no-inner-actor-models-fsv/no_inner_actor_models_fsv.json` |
 | `TASK-LOOP-006` | Delete stale `target/release/reality-loop` binary | H | none | **complete (#135)** — `scripts/ci/phase_h_reality_loop_binary_absence_fsv.sh`; FSV at `/mnt/d/contextgraph/fsv/phase-h-reality-loop-binary-absence-fsv/reality_loop_binary_absence_fsv.json` |
 | `TASK-LOOP-009` | Update CLAUDE.md inner-loop references | H | none | **complete (#137)** — remaining references are retirement/deny/fail-closed guidance; FSV at `/mnt/d/contextgraph/fsv/phase-h-claude-inner-loop-reference-fsv/claude_inner_loop_reference_fsv.json` |

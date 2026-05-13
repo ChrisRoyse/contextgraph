@@ -85,8 +85,8 @@ The `memory/` SMAP tree has many decisions and reports that reference inner-acto
 
 | Symbol | Path | Action | Retirement code |
 |---|---|---|---|
-| `mcp__cgreality__reality_run_attempt` | MCP server | already RETIRED | `CCREALITY_ENGINE_RETIRED` |
-| `mcp__cgreality__reality_loop_*` legacy tools (any not in the active 19-tool ME-JEPA surface) | MCP server | RETIRE | per-tool-specific code |
+| `mcp__cgreality__reality_run_attempt` | MCP server | **RETIRED / FSV-verified 2026-05-13 (#133)** | `CCREALITY_ENGINE_RETIRED`; FSV at `/mnt/d/contextgraph/fsv/phase-h-retired-mcp-tools-fsv/retired_mcp_tools_fsv.json` |
+| `mcp__cgreality__reality_loop_*` legacy tools (any not in the active 19-tool ME-JEPA surface) | MCP server | **RETIRED / FSV-verified 2026-05-13 (#133)** | retired `mcp__cgreality__reality_*` compatibility names are not advertised in tool definitions and route through the retired-tool fail-closed response |
 | Any `Champion` / `ChampionState` types still referenced | various | KEEP if used by `champion_state_get/promote` MCP tools | otherwise DELETE |
 | `mcp__cgreality__champion_state_get` and `_promote` MCP tools | MCP server | KEEP — repurpose for ME-JEPA model variant pinning | the "champion" now refers to the active ME-JEPA model, not an inner-actor patch |
 | `crates/context-graph-cli` `reality-loop` subcommand if present | CLI | DELETE | confirm absence |
@@ -161,7 +161,7 @@ The SMAP roster doc lists agents. Update:
 2. **Update CLAUDE.md §11.11 + §13 + §3** (`TASK-LOOP-002`).
 3. **Mark retired agents in `agents/README.md`** (part of `TASK-LOOP-002`).
 4. **Mark superseded SMAP decisions** with frontmatter `status: superseded` + `superseded_by:` pointer (`TASK-LOOP-003`) — **complete (#132)**; FSV asserts five legacy decision files point to `2026-05-09--single-outer-loop-mejepa-no-local-llm.md` and `rg '^status: superseded$' memory/decisions` returns the expected total.
-5. **Delete or retire unused MCP tools** (`TASK-LOOP-004`).
+5. **Delete or retire unused MCP tools** (`TASK-LOOP-004`) — **complete (#133)**; five retired cgreality compatibility names are registered only in the deprecation layer, excluded from `tools/list`, and fail closed with `CCREALITY_ENGINE_RETIRED`.
 6. **Confirm absence of inner-actor model files on disk** (`TASK-LOOP-005`).
 7. **Delete `target/release/reality-loop` if it lingers** (`TASK-LOOP-006`).
 8. **Add C-drive lint to CI** to prevent regression (`TASK-OBS-005`).
