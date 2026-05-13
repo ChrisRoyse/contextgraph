@@ -14,7 +14,7 @@ use super::types::{
     RegressionCheck,
 };
 use crate::compiler::MeJepaCompiler;
-use crate::types::{FailedGate, TaskId, VerifyVerdict};
+use crate::types::{FailedGate, RealityPrediction, TaskId, VerifyVerdict};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -167,14 +167,7 @@ fn verification_state(
         VerifyVerdict::Approve {
             reality_prediction, ..
         } => {
-            let persisted = compiler
-                .store()
-                .read_live_predictions(reality_prediction.session_id, 1000)?;
-            let found = persisted.iter().any(|candidate| {
-                candidate.prediction_id == reality_prediction.prediction_id
-                    && candidate.task_id == reality_prediction.task_id
-                    && candidate.session_id == reality_prediction.session_id
-            });
+            let found = prediction_persisted(compiler, reality_prediction)?;
             Ok((true, true, found))
         }
         VerifyVerdict::EscalateToHuman {
@@ -182,31 +175,32 @@ fn verification_state(
             reality_prediction,
             ..
         } => {
-            if let Some(prediction) = reality_prediction {
-                let persisted = compiler
-                    .store()
-                    .read_live_predictions(prediction.session_id, 1000)?;
-                if persisted.iter().any(|candidate| {
-                    candidate.prediction_id == prediction.prediction_id
-                        && candidate.task_id == prediction.task_id
-                        && candidate.session_id == prediction.session_id
-                }) {
-                    return Err(EvalError::new(
-                        EvalErrorCode::ReadbackMismatch,
-                        format!(
-                            "escalated prediction {} was present in live-prediction source of truth",
-                            prediction.task_id.0
-                        ),
-                    ));
-                }
-            }
+            let live_prediction_readback = reality_prediction
+                .as_ref()
+                .map(|prediction| prediction_persisted(compiler, prediction))
+                .transpose()?
+                .unwrap_or(false);
             Ok((
                 !matches!(failed_gate, FailedGate::ConstellationGuardRejected { .. }),
                 false,
-                false,
+                live_prediction_readback,
             ))
         }
     }
+}
+
+fn prediction_persisted(
+    compiler: &MeJepaCompiler,
+    prediction: &RealityPrediction,
+) -> Result<bool, EvalError> {
+    let persisted = compiler
+        .store()
+        .read_live_predictions(prediction.session_id, 1000)?;
+    Ok(persisted.iter().any(|candidate| {
+        candidate.prediction_id == prediction.prediction_id
+            && candidate.task_id == prediction.task_id
+            && candidate.session_id == prediction.session_id
+    }))
 }
 
 fn q1_pass_rate(observations: &[EvalObservation]) -> Result<f32, EvalError> {
@@ -273,4 +267,36 @@ pub fn corpus_sha_from_holdout(holdout: &[HoldoutPanel]) -> String {
         hasher.update(panel.panel_sha);
     }
     hex::encode(hasher.finalize())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::eval::fixtures::{build_eval_compiler, synthetic_holdout};
+
+    #[test]
+    fn verification_state_accepts_persisted_escalations_for_replay() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("rocksdb");
+        let repo_root = temp.path().join("repo");
+        let (_db, compiler, _eval_store, _calibration) =
+            build_eval_compiler(&db_path, &repo_root).expect("eval compiler");
+        let holdout = synthetic_holdout(&repo_root).expect("synthetic holdout");
+        let panel = holdout
+            .iter()
+            .find(|panel| panel.task_id.0 == "phase8-predicted_failure_subtle_flip")
+            .expect("predicted failure panel");
+
+        let verdict = compiler
+            .verify(&panel.patch, &panel.context)
+            .expect("verify predicted failure panel");
+        let (_gtau_passed, approved, live_prediction_readback) =
+            verification_state(compiler.as_ref(), &verdict).expect("verification state");
+
+        assert!(!approved, "predicted failure must escalate");
+        assert!(
+            live_prediction_readback,
+            "compiled escalations must remain replayable from CF_MEJEPA_LIVE_PREDICTIONS"
+        );
+    }
 }

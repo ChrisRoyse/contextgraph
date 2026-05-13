@@ -21,7 +21,7 @@ This does **not** mean the system can replace human code review yet. The latest 
 | **C. Corpus expansion** | Completed Python 300×8 corpus + 10-language fixture corpus + combined split | complete 2026-05-12 | Phase A | 2,400 Python entries verified; 5,120 non-Python entries verified; combined corpus FSV passes |
 | **D. Neural embedder forwards** | Ship real forward/DDA enrichment substrate and remove placeholder-only Phase D paths | code/FSV substrate shipped 2026-05-12 | Phase A | Forward wrappers, full pretrained/routing FSV, DDA compute/store, live shift DDA rows, cache, stdlib registry, TCT refresh, semantic-head evidence, production telemetry, and UTML carrier FSV pass |
 | **E. Continuous self-optimization** | Scheduler tokio task + per-cell stratified drift + dissipation detection + lambda ramp | **code/FSV shipped 2026-05-13** | Phase A-D substrate verified | Scheduler runs; drift detected within 1k obs; A/B/C promotion executes autonomously; catastrophic promotion requires two distinct approvals |
-| **F. Production observability + runbook + DR + API** | Live conformal/OOD/p50/p99 capture + weekly eval + active-learning dashboard + WSL GPU telemetry hardening + operator CLI + DR scripts + deprecation framework + integration tests | **~26 of 37 atomic issues code/FSV-shipped 2026-05-13**; ~5-7 engineer-days remaining (integration test harnesses TEST-002..010 + DR-004/API-002) | Phase A | Weekly report writes; conformal coverage measured; active-learning queue cleared by operator weekly; operator CLI surface complete (`mejepa {active-learning, replay, daemon-status, report-weekly, hygiene, rollback, eval-ship-gate, storage-verify, session-cleanup, pause}`); DR scripts ship with FSV; CI workflows (e2e/chaos/load/soak) live |
+| **F. Production observability + runbook + DR + API** | Live conformal/OOD/p50/p99 capture + weekly eval + active-learning dashboard + WSL GPU telemetry hardening + operator CLI + storage restore/migrate + DR scripts + deprecation framework + integration tests | **code/FSV complete 2026-05-13** | Phase A | Weekly report writes; conformal coverage measured; active-learning queue is operator-actionable; operator CLI surface complete (`mejepa {active-learning, replay, daemon-status, report-weekly, hygiene, rollback, eval-ship-gate, storage-verify, storage restore-cf, storage migrate-cf, session-cleanup, pause}`); DR scripts ship with FSV; CI workflows (e2e/chaos/load/soak) live; remaining implementation issues = none |
 | **G. Rolling-window holdout to ≥0.95** | Run live evaluations until ship gate stably met across (category × language) | ongoing | Phase B + C + D + E + F | 4 consecutive rolling windows ≥ 0.95 |
 | **H. Inner-loop residue cleanup** | Apply deletion list, refactor loop.md, supersede SMAP files | 1-2 days | Phase A (so daemon is the new norm) | All `MEJEPA_*_RETIRED` symbols fail-closed; CLAUDE.md + agents/README.md updated |
 
@@ -34,7 +34,7 @@ This does **not** mean the system can replace human code review yet. The latest 
 - **BOOTSTRAP** (3 tasks, ~2 days) — BOOT-001 + BOOT-003 in Phase A; BOOT-002 baseline checkpoint FSV is closed, with release packaging tracked by the readiness gate if it regresses
 - **API** (5 tasks, ~2.5 days) — API-001 (semver in MCP) + API-005 (changelog) in Phase A; API-002/003/004 in Phase F
 
-**Updated remaining fresh implementation effort:** Phase C no longer counts as remaining work. Phase A, the Phase B prediction/API/schema carrier, Phase C corpus expansion, Phase D enrichment substrate, and Phase E autonomous self-optimization policy are code/FSV-shipped. The remaining estimate is dominated by production observability/dashboard cadence, DR, operator packaging, and Phase G model-quality convergence.
+**Updated remaining fresh implementation effort:** Phase C no longer counts as remaining work. Phase A, the Phase B prediction/API/schema carrier, Phase C corpus expansion, Phase D enrichment substrate, Phase E autonomous self-optimization policy, and Phase F production operations are code/FSV-shipped. The remaining estimate is dominated by Phase G model-quality convergence and Phase H residue cleanup, not Phase F implementation.
 
 **Current Phase A-E baseline (2026-05-13).** `TASK-FLYWHEEL-001/002/003/004/005/006`, `TASK-PREDICT-001/002`, `TASK-LOOP-001/007`, `TASK-OBS-005/006`, `TASK-RUN-001/010/011`, `TASK-BOOT-001/003`, and `TASK-SEC-001/006/007/008` are code-shipped or operationally applied. Daemon supervision now has durable `CF_MEJEPA_FLYWHEEL_JOB_RUNS` evidence plus GC/eval source-of-truth readback at `/mnt/d/contextgraph/fsv/mcp-daemon-supervision-fsv/daemon-supervision-evidence.json`. Phase B code/FSV ships `TASK-PREDICT-003/004/005/006/007/008`, `TASK-SEC-003`, deterministic `TASK-PREDICT-LABEL-001..009` coverage in one label module, and the core `TASK-UTML-001/002/003/004` accounting path with carrier evidence. Phase D ships active content forward wrappers, DDA compute/store/readback, live shift DDA rows, persistent cache behavior, stdlib registry, TCT refresh support, semantic analyzer/head evidence, production telemetry windows, and UTML cert readback. Phase E now ships the autonomous self-optimization policy layer with FSV at `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`. Phase G remains non-green until the 0.95 prediction-oracle correlation requirement is met.
 
@@ -92,7 +92,7 @@ This does **not** mean the system can replace human code review yet. The latest 
 | `TASK-PREDICT-007` | Agent claim graph extractor (deterministic rule-based) | **complete (2026-05-12)** |
 | `TASK-PREDICT-008` | Reality-impact reconciler (Q5 path) | **complete (2026-05-12)** |
 | `TASK-UTML-001..004` | Per-head learning signal skeleton, cert readout, global `min_h` value, surprise sampling factor | **complete/code_complete (2026-05-12; BatchSampler policy hardening remains)** |
-| `TASK-UTML-005..009` | Per-head Fisher, dormancy, lambda ramp, dissipation, per-cell T | **TASK-UTML-005..008 complete/code+FSV (2026-05-13); TASK-UTML-009 remains Phase F reporting** |
+| `TASK-UTML-005..009` | Per-head Fisher, dormancy, lambda ramp, dissipation, per-cell T | **complete/code+FSV (2026-05-13)** — `TASK-UTML-009` evidence at `/mnt/d/contextgraph/fsv/utml-009-fsv/per_cell_state_transfer_fsv.json` |
 | `TASK-PREDICT-LABEL-001..009` | Label-source extractors: failure trace classifier, edge/security/debt/perf/accuracy/cost/reasoning signals | **code_complete (2026-05-12 deterministic unified extractor; per-tool/per-language analyzers remain hardening work)** |
 
 **Code/FSV gate passed 2026-05-12:**
@@ -106,7 +106,7 @@ This does **not** mean the system can replace human code review yet. The latest 
 1. Each new head's holdout metric beats random baseline by ≥ 10 pp after real training.
 2. Per-step training cert expands from persisted per-head L-step/global-min to all loss/delta/lambda values.
 3. Production DDA/neural embedder features are consumed by the heads and shown to improve holdout quality, not merely persisted as side-channel evidence.
-4. Per-head Fisher, dormancy, lambda ramp, and dissipation are complete under Phase E; per-cell T reporting remains Phase F.
+4. Per-head Fisher, dormancy, lambda ramp, dissipation, and per-cell T reporting are complete with Phase E/F FSV.
 
 **Risks / mitigations:**
 - *Risk:* auxiliary heads destabilize the trunk. *Mitigation:* per-head λ defaults are small (0.05); ramp gated on holdout improvement (per `10 §8`).
@@ -222,27 +222,22 @@ This does **not** mean the system can replace human code review yet. The latest 
 
 ---
 
-## Phase F — Production Observability (5-7 days)
+## Phase F — Production Observability + Runbook + DR + API (complete 2026-05-13)
 
-**Goal:** Make the system legible to the operator. Weekly evaluation report. Live conformal coverage tracking. Per-axis perf-regression histograms. WSL GPU telemetry hardening.
+**Goal:** Make the system legible and operable: weekly evaluation report, live conformal/OOD/p50/p99 capture, per-axis regression summaries, WSL GPU telemetry hardening, operator CLI, DR restore/drill tooling, deprecation framework, and integration/chaos/load/soak coverage.
 
-**Deliverables (TASK IDs):**
+**Status (2026-05-13):** complete at code/FSV level. The expanded Phase F tracker has 0 open Phase F implementation issues after closure of the integration-test harnesses, DR/API storage CLIs, and follow-up consumer-wiring tasks. GitHub `phase:f-followup` is empty. See `docs/futurebuild/13_TASK_INDEX.md` for the task ledger and artifact hashes.
 
-| Task | Description | Effort |
-|---|---|---|
-| `TASK-OBS-001` | Weekly evaluation production feed/dashboard/runbook (daemon scheduler + report writer exist; ship-gate per-cell + active-learning + agent-feedback summaries still need production data) | 1 day |
-| `TASK-OBS-002` | Pairwise MI heatmap renderer (CSV → PNG/markdown) | 0.5 day |
-| `TASK-OBS-003` | Daemon status aggregator MCP tool | 0.5 day |
-| `TASK-OBS-004` | Per-prediction-class running calibration tracker (live ECE per head) | 1 day |
-| `TASK-OBS-008` | WSL GPU telemetry hardening (nvidia-smi NA-sentinel diagnostics, retry, fail-closed malformed output handling) — addresses [#10](https://github.com/ChrisRoyse/contextgraph/issues/10) | 1-2 days |
-| `TASK-OBS-009` | Per-prediction observability: `mejepa_inspect_prediction` returns full provenance trace (witness_hash, predictor version, calibration version, contributing chunks) | 0.5 day |
-| `TASK-OBS-010` | Active-learning operator CLI (`cargo run -p context-graph-cli mejepa active-learning`) | 0.5 day |
+**Delivered surface:**
 
-**Ship gate:**
-1. Weekly cron writes a report at `/mnt/d/contextgraph/exports/eval/<date>/weekly.md`; operator can read it.
-2. `mejepa_ship_gate_status` returns the per-cell status table.
-3. Pairwise MI heatmap rendered weekly.
-4. WSL GPU telemetry no longer reports `N/A` spuriously.
+| Area | Delivered |
+|---|---|
+| Observability | weekly dashboard/report, MI heatmap, daemon status, per-head calibration, WSL GPU hardening, `mejepa_inspect_prediction`, reasoning/executive renderers, health/readiness probes, system-cost counters |
+| Runbook CLI | `active-learning`, `replay`, `daemon-status`, `report-weekly`, `hygiene`, `rollback`, `eval-ship-gate`, `storage-verify`, `storage restore-cf`, `storage migrate-cf`, `session-cleanup`, `pause` |
+| DR/API/security | storage verify/restore/migrate, monthly restore verification, quarterly DR drill, deprecation framework, workflow SHA pin audit, witness-chain quarantine, retention policy, agent-identity attestation |
+| Testing | happy-path, restart-safety, multi-agent, catastrophic-event, storage-exhaustion, chaos failpoints, load, soak, toolchain fail-closed, adversarial corpus, and CI workflow discovery |
+
+**Ship gate result:** passed at code/FSV level. Weekly reports and dashboards write/read their SoTs; `mejepa_ship_gate_status` reports the still-non-green Phase G convergence gate; pairwise MI renders; GPU telemetry handles absent/malformed `nvidia-smi`; operator CLI commands read/write only declared SoTs; DR scripts have restore/drill evidence; integration harnesses write independent FSV artifacts.
 
 ---
 
@@ -286,14 +281,14 @@ Phase B    [days 4–18]       =====================
 Phase C    [complete 2026-05-12] ================= closed
 Phase D    [days 8–22]            ===================
 Phase E    [complete 2026-05-13]       ========== closed
-Phase F    [days 15–21]                   ===========
+Phase F    [complete 2026-05-13]          =========== closed
 Phase H    [days 21–22]                          ==
 Phase G                                            ──── ongoing
 ```
 
-Phases A → B; A → C; A → D; then Phase E shipped from the verified A-D substrate. A → F → G and A → H proceed when their own gates are satisfied. Phase G never gates Phase E because it is the convergence phase; its non-green `0.866667 < 0.95` evidence blocks only the human-review-replacement claim.
+Phases A → B; A → C; A → D; then Phase E shipped from the verified A-D substrate. Phase F is now closed at code/FSV level. Phase G never gates Phase E or Phase F because it is the convergence phase; its non-green `0.866667 < 0.95` evidence blocks only the human-review-replacement claim.
 
-**Most aggressive single-engineer schedule:** ~3-4 weeks to all-shipped (Phases A-F + H), with G running indefinitely after week 1.
+**Most aggressive single-engineer schedule:** Phases A-F are shipped; remaining implementation work is Phase H residue cleanup, with G running until the 0.95 gate is stable.
 
 ---
 
@@ -306,7 +301,7 @@ Phases A → B; A → C; A → D; then Phase E shipped from the verified A-D sub
 | C | Completed 2026-05-12; future corpus broadening can regress operators | real-toolchain reports + fail-closed generation gate + checkpointed source-of-truth readback |
 | D | VRAM exhaustion under all-12-loaded | budget gate + lazy load + Candle CUDA precision tuning |
 | E | Over-eager promotion regresses cells | per-cell promotion criterion |
-| F | Weekly cron drift between machine clock and quota window | use UTC + explicit calendar weekly boundary |
+| F | Completed 2026-05-13; future risk is cron/report drift | use UTC + explicit calendar weekly boundary + FSV reruns |
 | G | Ship gate never stably reached | active learning + operator gold labels + LoRA refresh + dissipation detection — all already shipped |
 | H | Accidental deletion of load-bearing artifact | per-item action class (DELETE/SUPERSEDE/RETIRE/KEEP) explicit in `11` |
 
@@ -319,6 +314,6 @@ Phases A → B; A → C; A → D; then Phase E shipped from the verified A-D sub
 - **End of Phase C** (reached 2026-05-12): "Corpus is full; per-language operators ship; ME-JEPA can train against the real distribution."
 - **End of Phase D**: "Embedders are real neural forwards; DDA signal substrate is live."
 - **End of Phase E** (reached 2026-05-13): "Self-healing actually heals; operator approves only catastrophic promotions."
-- **End of Phase F**: "Operator has a dashboard; weekly report writes; active-learning queue surfaces."
+- **End of Phase F** (reached 2026-05-13): "Operator has the dashboard, runbook CLI, DR/API tooling, and integration harnesses needed to operate ME-JEPA."
 - **End of Phase H**: "No inner-loop residue; codebase is post-pivot clean."
 - **Phase G stable**: "ME-JEPA prediction-oracle correlation ≥ 0.95 across all cells over 4 rolling windows. Code review of AI patches is statistically unjustified."

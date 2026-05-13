@@ -23,7 +23,7 @@
 
 ## Current gate
 
-The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed instrument parity (#4), production telemetry (#11), UTML carrier reconciliation (#13), and the umbrella readiness gate (#15) have source-of-truth FSV. The latest holdout remains `0.866667 < 0.95`; that is Phase G model-quality convergence, not an A-D substrate blocker.
+The A-F implementation issues are closed for the Phase G handoff. Analyzer-backed instrument parity (#4), production telemetry (#11), UTML carrier reconciliation (#13), Phase E self-optimization, and Phase F operations all have source-of-truth FSV. The latest holdout remains `0.866667 < 0.95`; that is Phase G model-quality convergence, not an A-F implementation blocker.
 
 ---
 
@@ -45,9 +45,9 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 | `TASK-LOOP-007` | Hook output paths → D-drive `cgreality-shift-log/` | A | none | **complete (2026-05-11 — code already shipped, audit doc updated)** |
 | `TASK-OBS-005` | C-drive lint in CI | A | none | **complete (2026-05-12)** |
 | `TASK-OBS-006` | FSV path migration sweep | A | none | **complete (2026-05-12)** |
-| `TASK-OBS-007` | Per-slice quota observability extension | F | none | moved to Phase F observability; category-level quota status already ships |
+| `TASK-OBS-007` | Per-slice quota observability extension | F | none | **complete** — `mejepa_daemon_status` and `mejepa_quota_status` expose quota slices; storage-exhaustion/session-cleanup FSV read back quota state |
 
-**Phase A substrate status:** complete for the ME-JEPA Phase E handoff. The two moved rows remain tracked under Phase F/H where they belong.
+**Phase A substrate status:** complete for the ME-JEPA Phase E handoff. The only moved row still outside A is Phase H residue cleanup.
 
 ---
 
@@ -70,8 +70,8 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 | `TASK-PREDICT-LABEL-007` | Accuracy label source (test-output metric regex extractor) | B | none | **partial/code_complete: metric keyword extractor; full regex catalog open** |
 | `TASK-PREDICT-LABEL-008` | Cost label source (CI minute counter + token telemetry + dep-count delta) | B | none | **partial/code_complete: dependency-count delta; CI/token telemetry open** |
 | `TASK-PREDICT-LABEL-009` | Reasoning-class weak supervisor (E_Reasoning ⟂ E_Diff agreement) | B | PREDICT-005 | **partial/code_complete: field/schema present; embedder-agreement supervisor open** |
-| `TASK-PREDICT-LABEL-010` | Toolchain availability fail-closed audit | F | none | open Phase F hardening; not a Phase B schema/API blocker |
-| `TASK-PREDICT-LABEL-011` | Cross-language label gating | F | PREDICT-LABEL-001..009 | open Phase F hardening; not a Phase B schema/API blocker |
+| `TASK-PREDICT-LABEL-010` | Toolchain availability fail-closed audit | F | none | **complete (#61 + startup gate follow-up)** |
+| `TASK-PREDICT-LABEL-011` | Cross-language label gating | F | PREDICT-LABEL-001..009 | **complete (#62)** |
 | `TASK-PREDICT-009` | `ActiveLearningKind::AgentSurprise` integration (consumer side) | B | FLYWHEEL-005 | **complete (2026-05-11/12)** |
 | `TASK-UTML-001` | Per-head ΔP/ΔK/ΔΞ tracking | B | PREDICT-005 | **complete/code_complete (2026-05-12)** |
 | `TASK-UTML-002` | Per-head cert columns in `CF_MEJEPA_TRAIN_CERTS` | B | UTML-001 | **complete for Phase A-D (2026-05-12; cert readback + carrier fields FSV)** |
@@ -81,9 +81,9 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 | `TASK-UTML-006` | Per-head dormancy detection | E | UTML-001 | **complete/code+FSV (2026-05-13)** |
 | `TASK-UTML-007` | Per-head loss coefficient λ ramp in heal scheduler | E | HEAL-001, UTML-001 | **complete/code+FSV (2026-05-13)** |
 | `TASK-UTML-008` | Per-head dissipation detection | E | UTML-001 | **complete/code+FSV (2026-05-13)** |
-| `TASK-UTML-009` | Per-cell state-transfer T in eval reports | F | UTML-001 | open Phase F reporting |
+| `TASK-UTML-009` | Per-cell state-transfer T in eval reports | F | UTML-001 | **complete (#63)** — weekly eval reports persist per-cell state-transfer diagnostics; FSV at `/mnt/d/contextgraph/fsv/utml-009-fsv/per_cell_state_transfer_fsv.json` |
 
-**Phase B/E code/FSV status (2026-05-13):** primary prediction/API/schema/label/UTML carrier work is complete with FSV at `/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-prediction-fsv.json` and `/mnt/d/contextgraph/fsv/contextgraph-utml-fsv/utml-fsv-summary.json`; Phase E completes Fisher, dormancy, lambda ramp, and dissipation with evidence in `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`. Remaining quality/reporting work: per-cell state-transfer reporting, full analyzer/toolchain label deltas, and holdout metrics.
+**Phase B/E/F code/FSV status (2026-05-13):** primary prediction/API/schema/label/UTML carrier work is complete with FSV at `/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-prediction-fsv.json` and `/mnt/d/contextgraph/fsv/contextgraph-utml-fsv/utml-fsv-summary.json`; Phase E completes Fisher, dormancy, lambda ramp, and dissipation with evidence in `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`; Phase F completes per-cell state-transfer reporting with evidence in `/mnt/d/contextgraph/fsv/utml-009-fsv/per_cell_state_transfer_fsv.json`. Remaining quality work belongs to Phase G convergence: full analyzer/toolchain label deltas and holdout metrics.
 
 ---
 
@@ -134,9 +134,9 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 
 ---
 
-## Phase F — Production Observability + Operator Runbook + DR + API (~26 of ~37 tasks shipped 2026-05-13)
+## Phase F — Production Observability + Operator Runbook + DR + API (complete 2026-05-13)
 
-> **Status (2026-05-13).** Phase F expanded well beyond the original 10 OBS tasks during multi-agent execution. The current backlog spans CLI, observability, DR, API stability, security, and integration testing. Of the 37 atomic Phase F issues filed against `docs/futurebuild/tasks/<domain>/_all_tasks.md`, **26 are closed with FSV evidence under `/mnt/d/contextgraph/fsv/`**; the remaining ~11 are heavy integration-test harnesses (`TEST-002..010`) plus two storage-level CLI commands (`DR-004` restore-cf, `API-002` migrate-cf) whose effort sizes are intentionally multi-session.
+> **Status (2026-05-13).** Phase F expanded well beyond the original 10 OBS tasks during multi-agent execution. The backlog spans CLI, observability, DR, API stability, security, integration testing, and follow-up consumer wiring. Source-of-truth tracker readback on 2026-05-13 shows **0 open Phase F implementation issues**: all 37 atomic Phase F issues plus all 15 `phase:f-followup` issues are closed with FSV evidence under `/mnt/d/contextgraph/fsv/`.
 
 ### Closed OBS tasks
 
@@ -175,6 +175,7 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 | ID | Title | Status / Evidence |
 |---|---|---|
 | `TASK-DR-003` | Storage verify CLI | **complete (#54, commit 9ccec509)** — `mejepa storage-verify --db-path <p>` with `set_paranoid_checks(true)` + per-CF row counts |
+| `TASK-DR-004` | Storage restore-cf CLI | **complete (#55)** — `mejepa storage restore-cf` replaces target CF rows from a source DB with runbook FSV readback |
 | `TASK-DR-007` | Restore verification monthly cron | **complete (#56, commit f036afac)** — `scripts/dr/verify_backup.sh` + `scripts/systemd/mejepa-dr-verify.{service,timer}` (first Sunday 04:00) |
 | `TASK-DR-008` | Quarterly DR drill | **complete (#57, commit c710dfc4)** — `scripts/dr/dr_drill.sh` restore + corrupt SST + re-restore + RTO budget check |
 
@@ -182,9 +183,10 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 
 | ID | Title | Status / Evidence |
 |---|---|---|
+| `TASK-API-002` | Storage migrate-cf command | **complete (#58)** — `mejepa storage migrate-cf` copies rows from source to target CF with fail-closed non-empty target handling |
 | `TASK-API-004` | Deprecation framework | **complete (#59, commit edf19c75)** — `crates/context-graph-mcp/src/deprecation.rs`; default warn / opt-in `CONTEXT_GRAPH_DEPRECATION_LEVEL=error` |
 
-### Closed PREDICT + label tasks (Phase F hardening)
+### Closed PREDICT + label + UTML tasks (Phase F hardening)
 
 | ID | Title | Status / Evidence |
 |---|---|---|
@@ -192,45 +194,71 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 | `TASK-PREDICT-LABEL-010` | Toolchain availability fail-closed audit | **complete (#61, commit 0379df9c)** — `crates/context-graph-mejepa/src/toolchain_detect.rs`; 16-binary default catalogue across 11 languages |
 | `TASK-PREDICT-LABEL-011` | Cross-language label gating | **complete (#62, commit 0379df9c)** — `crates/context-graph-mejepa/src/cross_language_label_gating.rs`; same-root-cause + similarity > 0.85 + correlation ≥ 0.60 ⇒ transfer at 0.5× weight |
 | `TASK-PREDICT-LABEL-012` | Cross-language label gating consumer | **complete (#86)** — `label_transfer_audit` + `apply_phase_b_labels_with_transfer_gate()` + `CF_MEJEPA_LABEL_TRANSFER_DECISIONS`; weekly surfaces include accept/reject ratios per language pair |
+| `TASK-UTML-009` | Per-cell state-transfer T in eval reports | **complete (#63)** — weekly eval reports carry per-cell state-transfer diagnostics; FSV sha256:ada99a63 |
 
 ### Closed integration test tasks
 
 | ID | Title | Status / Evidence |
 |---|---|---|
 | `TASK-TEST-001` | End-to-end happy-path harness | **complete (#64, commit 062d413d/a0e77b38)** — `crates/context-graph-mejepa/tests/e2e.rs` + `tests/e2e/{happy_path.rs, harness.rs}` |
+| `TASK-TEST-002` | Restart-safety E2E harness | **complete (#65)** — daemon restart + watermark replay FSV at `/mnt/d/contextgraph/fsv/phase-f-restart-safety-fsv/` |
+| `TASK-TEST-003` | Multi-agent E2E harness | **complete (#66)** — concurrent-session isolation FSV at `/mnt/d/contextgraph/fsv/phase-f-multi-agent-fsv/` |
+| `TASK-TEST-004` | Catastrophic-event E2E harness | **complete (#67)** — catastrophic-event FSV at `/mnt/d/contextgraph/fsv/phase-f-catastrophic-event-fsv/` |
+| `TASK-TEST-005` | Storage-exhaustion E2E harness | **complete (#52)** — storage-exhaustion FSV at `/mnt/d/contextgraph/fsv/phase-f-storage-exhaustion-fsv/` |
+| `TASK-TEST-006` | Chaos harness with failpoints | **complete (#53)** — failpoint chaos FSV at `/mnt/d/contextgraph/fsv/phase-f-chaos-failpoints-fsv/` |
+| `TASK-TEST-007` | Load test harness | **complete (#68)** — load-test FSV at `/mnt/d/contextgraph/fsv/phase-f-load-test-fsv/` |
+| `TASK-TEST-008` | Soak test harness + nightly cron | **complete (#69)** — soak-test FSV at `/mnt/d/contextgraph/fsv/phase-f-soak-test-fsv/` |
 | `TASK-TEST-009` | Toolchain fail-closed matrix | **complete (#70, commit 237b4aef)** — `crates/context-graph-mejepa/tests/toolchain_fail_closed.rs` (5 matrix assertions across 16 binaries) |
+| `TASK-TEST-010` | Adversarial corpus for security robustness | **complete (#71)** — adversarial-corpus FSV at `/mnt/d/contextgraph/fsv/phase-f-adversarial-corpus-fsv/` |
 | `TASK-TEST-011` | CI workflow updates for Phase F harnesses | **complete (#72, commit a56ceda3)** — `.github/workflows/{e2e,chaos,load,soak}.yml`; ubuntu-latest only; conditional harness discovery |
 
-### Remaining open Phase F tasks (~11)
+### Closed Phase F follow-up hardening tasks
 
-| ID | Title | Blocked by | Notes |
-|---|---|---|---|
-| `TASK-TEST-002` | Restart-safety E2E harness | TASK-FLYWHEEL-001 | daemon restart + watermark replay |
-| `TASK-TEST-003` | Multi-agent E2E harness | TASK-TEST-001 | concurrent sessions, agent isolation |
-| `TASK-TEST-004` | Catastrophic-event E2E harness | TASK-TEST-001 | reuse e2e scaffolding |
-| `TASK-TEST-005` | Storage-exhaustion E2E harness | TASK-HYG-* | disk-fill simulation |
-| `TASK-TEST-006` | Chaos harness with failpoints | TASK-TEST-001 | failpoint crate integration |
-| `TASK-TEST-007` | Load test harness | TASK-TEST-001 | concurrent prediction throughput |
-| `TASK-TEST-008` | Soak test harness + nightly cron | TASK-TEST-007 | long-running variant of load |
-| `TASK-TEST-010` | Adversarial corpus for security robustness | TASK-PREDICT-005 | fixture diffs + assertion runner |
-| `TASK-DR-004` | Storage restore-cf CLI | TASK-DR-001 | atomic per-CF SST restore |
-| `TASK-API-002` | Storage migrate-cf command | TASK-API-005 | cross-CF transform tooling |
+| ID | Title | Status / Evidence |
+|---|---|---|
+| `TASK-PREDICT-013` | Pause-state consumer in `MeJepaCompiler::verify` | **complete (#82)** |
+| `TASK-PREDICT-014` | Operator-override BatchSampler 6x upweight consumer | **complete (#83)** |
+| `TASK-OBS-017` | `SystemCostCounters` producer wiring | **complete (#84)** |
+| `TASK-FLYWHEEL-009` | Toolchain-audit startup fail-closed gate | **complete (#85)** |
+| `TASK-PREDICT-LABEL-012` | Cross-language gating consumer + decisions audit CF | **complete (#86)** |
+| `TASK-FLYWHEEL-010` | Unified `SupervisedTaskHealth` registry powering `/ready` | **complete (#87)** |
+| `TASK-API-006` | Deprecation framework call-site audit | **complete (#88)** |
+| `TASK-RUN-014` | Runbook actionability lint | **complete (#89)** |
+| `TASK-FLYWHEEL-011` | Witness chain auto-quarantine on integrity-check failure | **complete (#90)** |
+| `TASK-RUN-013` | Session-cleanup quota/GC-history reconciliation | **complete (#91)** |
+| `TASK-SEC-009` | Agent identity attestation | **complete (#92)** |
+| `TASK-HYG-002` | Retention policy for feedback + override CFs | **complete (#93)** |
+| `TASK-OBS-018` | Heal-scheduler ticker resource burn telemetry | **complete (#94)** |
+| `TASK-TEST-012` | Pin Phase F workflow Actions to SHA | **complete (#95)** |
+| `TASK-FLYWHEEL-012` | Pause + active-learning enqueue suppression | **complete (#96)** |
 
-**Phase F closure status (2026-05-13):** ~26 / 37 atomic Phase F issues shipped with FSV. The CI workflows already shipped under `TASK-TEST-011` discover the remaining harnesses dynamically — when `TEST-002..010` land in `crates/context-graph-mejepa/tests/`, the chaos/load/soak workflows pick them up without further CI plumbing. Continuation effort: ~5-7 engineer-days for the remaining test harnesses, plus 2-3 days for the two storage-level CLI commands.
+**Phase F closure status (2026-05-13):** closed. GitHub issue readback shows no open issues with `phase:f-followup` and no open `[Phase F]` implementation issues. Remaining open work is Phase G convergence and Phase H residue cleanup, not Phase F implementation.
 
 **Phase F FSV index (selected evidence files):**
 
 - `/mnt/d/contextgraph/fsv/phase-f-active-learning-cli-fsv/active_learning_cli_fsv.json` — sha256:a02788b1
-- `/mnt/d/contextgraph/fsv/phase-f-runbook-cli-fsv/runbook_cli_fsv.json` — sha256:b836a21a (5 happy + 12 boundary)
-- `/mnt/d/contextgraph/fsv/phase-f-renderers-fsv/renderers_fsv.json` — sha256:ae363d5b (3 happy + 5 boundary)
-- `/mnt/d/contextgraph/fsv/phase-f-deprecation-framework-fsv/deprecation_framework_fsv.json` — sha256:812ad8f6 (3 happy + 3 boundary)
-- `/mnt/d/contextgraph/fsv/phase-f-health-probe-fsv/health_probe_fsv.json` — 7 boundary + live daemon subscriber failure/recovery
-- `/mnt/d/contextgraph/fsv/phase-f-toolchain-availability-fsv/toolchain_availability_fsv.json`
-- `/mnt/d/contextgraph/fsv/phase-f-cross-language-label-gating-fsv/cross_language_label_gating_fsv.json`
-- `/mnt/d/contextgraph/fsv/phase-f-label-transfer-gating-fsv/label_transfer_consumer_fsv.json`
-- `/mnt/d/contextgraph/fsv/phase-f-system-cost-fsv/system_cost_fsv.json`
-- `/mnt/d/contextgraph/fsv/phase-f-operator-override-fsv/operator_override_fsv.json` — sha256:c6da2c60
-- `/mnt/d/contextgraph/fsv/phase-f-pause-cli-fsv/pause_cli_fsv.json`
+- `/mnt/d/contextgraph/fsv/phase-f-runbook-cli-fsv/runbook_cli_fsv.json` — sha256:9c6cce66a2c227ce12479b690b33bcfa12cdfdaede3e375588ef3bdde059f706 (`all_passed=true`, `readback_equal=true`)
+- `/mnt/d/contextgraph/fsv/phase-f-renderers-fsv/renderers_fsv.json` — sha256:6fe3b26e9bcbb3b418e5942a4e3038187ab8af627dedd15b3c7c6f880bc8a460
+- `/mnt/d/contextgraph/fsv/phase-f-deprecation-framework-fsv/deprecation_framework_fsv.json` — sha256:180bb18146e2efea31203794a8712fa616a33c9ef053c36d7c7b505d4f36f23d
+- `/mnt/d/contextgraph/fsv/phase-f-health-probe-fsv/health_probe_fsv.json` — sha256:ae96204da5a9ba6529775c1fa7fa1bc4c68aa671918fa90de8d38c9c0a9d2fac
+- `/mnt/d/contextgraph/fsv/phase-f-toolchain-availability-fsv/toolchain_availability_fsv.json` — sha256:02b6e6fbf9e6d647647837741a94e94d5edafd6f4fb2b537a9acdcfe18284667
+- `/mnt/d/contextgraph/fsv/phase-f-cross-language-label-gating-fsv/cross_language_label_gating_fsv.json` — sha256:873764c6e7504b1626c0cbb024d8edd809036af2e7666f5c397df89bd3ccaf34
+- `/mnt/d/contextgraph/fsv/phase-f-label-transfer-gating-fsv/label_transfer_consumer_fsv.json` — sha256:8edc6686832b28360b974e84eb067c0821e3731d100f5d24319259f5e52bce9a
+- `/mnt/d/contextgraph/fsv/phase-f-system-cost-fsv/system_cost_fsv.json` — sha256:cb76b6ee937fc9a968511db158e400abca0aaeb344643387bc6ce0abc6212b6b
+- `/mnt/d/contextgraph/fsv/phase-f-operator-override-fsv/operator_override_fsv.json` — sha256:5eea66f1744b8e954a54ab2b9ea0be334e95861e4f73fc037b6977d91a46f99a
+- `/mnt/d/contextgraph/fsv/phase-f-pause-cli-fsv/pause_cli_fsv.json` — sha256:1228d14e4a56afa7a67f8c17fd2fdeb5d2103c67e052d2fcfd8729d800b6df63
+- `/mnt/d/contextgraph/fsv/utml-009-fsv/per_cell_state_transfer_fsv.json` — sha256:ada99a63709fdde01fadd0a6a282feeb41563d2812c30fe41dc322e1a35b6344
+- `/mnt/d/contextgraph/fsv/phase-f-restart-safety-fsv/restart_safety_fsv.json`
+- `/mnt/d/contextgraph/fsv/phase-f-multi-agent-fsv/multi_agent_fsv.json`
+- `/mnt/d/contextgraph/fsv/phase-f-catastrophic-event-fsv/catastrophic_event_fsv.json`
+- `/mnt/d/contextgraph/fsv/phase-f-storage-exhaustion-fsv/storage_exhaustion_fsv.json`
+- `/mnt/d/contextgraph/fsv/phase-f-chaos-failpoints-fsv/chaos_failpoints_fsv.json`
+- `/mnt/d/contextgraph/fsv/phase-f-load-test-fsv/load_test_fsv.json`
+- `/mnt/d/contextgraph/fsv/phase-f-soak-test-fsv/soak_test_fsv.json`
+- `/mnt/d/contextgraph/fsv/phase-f-adversarial-corpus-fsv/adversarial_corpus_fsv.json`
+- `/mnt/d/contextgraph/fsv/phase-f-agent-identity-fsv/agent_identity_mcp_fsv.json` — sha256:1184ff5264454a1e78df6405cfd297370d0331d907be228e74e10f48e77c86d5
+- `/mnt/d/contextgraph/fsv/phase-f-retention-fsv/feedback_override_retention_fsv.json` — sha256:80c285e6a2297492e5149b525ffc27bafb2170279321bba13b56115a9778f477
+- `/mnt/d/contextgraph/fsv/phase-f-witness-quarantine-fsv/witness_quarantine_fsv.json`
 
 ---
 
@@ -311,12 +339,10 @@ LOOP-* (cleanup) — independent except LOOP-002 ←── LOOP-001
 These tasks can run in parallel without conflict:
 
 - Phase C is complete; future corpus broadening can parallelize by language if adding scraped/public CI corpora beyond the deterministic fixture seed.
-- Per-embedder FSV tasks within `TASK-ENRICH-006` (Phase D) — one per embedder
-- Per-head label-source tasks `TASK-PREDICT-LABEL-001..009` (Phase B) — independent
+- Future Phase G model-quality experiments by cell/language/head, if the 0.95 convergence gate needs targeted retraining pressure.
 - Cleanup tasks in Phase H — all independent
-- All OBS tasks (Phase F) — mostly independent
 
-A two-engineer pairing could reduce total wall-clock to ~20-25 days from the ~57 single-engineer-day total, since most remaining Phase B label hardening, Phase D per-embedder FSVs, Phase F observability tasks, and any future corpus broadening are embarrassingly parallel.
+Phase F no longer has parallelizable implementation work. A two-engineer pairing is now only relevant for Phase G convergence experiments, optional future corpus broadening, and Phase H residue cleanup.
 
 ---
 
