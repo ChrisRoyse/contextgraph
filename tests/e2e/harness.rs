@@ -331,6 +331,13 @@ pub fn run_e2e_happy_path_fsv(fsv_root: &Path) -> Result<E2eFsvReport> {
         "second prediction reused first prediction id"
     );
 
+    let all_passed =
+        happy_path.iter().all(|step| step.pass) && boundary_cases.iter().all(|case| case.pass);
+    ensure!(
+        all_passed,
+        "E2E report contains failed happy-path or boundary evidence"
+    );
+
     let report = E2eFsvReport {
         fsv_root: harness.paths.fsv_root.display().to_string(),
         task_id: "TASK-TEST-001".to_string(),
@@ -342,7 +349,7 @@ pub fn run_e2e_happy_path_fsv(fsv_root: &Path) -> Result<E2eFsvReport> {
         cf_counts_after: reopened_counts,
         physical_artifacts: collect_file_artifacts(&harness.paths.fsv_root)?,
         readback_equal: true,
-        all_passed: true,
+        all_passed,
     };
     Ok(report)
 }
@@ -637,11 +644,11 @@ impl E2eHarness {
         Ok(BoundaryEvidence {
             case: "empty_patch_rejected".to_string(),
             trigger: "PatchBundle::try_new with zero hunks".to_string(),
-            expected_error_code: "MEJEPA_INVALID_INPUT".to_string(),
+            expected_error_code: "MEJEPA_INFER_INVALID_INPUT".to_string(),
             actual_error_code: err.code().to_string(),
             before: json!(before),
             after: json!(after),
-            pass: err.code() == "MEJEPA_INVALID_INPUT" && before == after,
+            pass: err.code() == "MEJEPA_INFER_INVALID_INPUT" && before == after,
         })
     }
 
@@ -668,11 +675,11 @@ impl E2eHarness {
         Ok(BoundaryEvidence {
             case: "zero_session_context_rejected".to_string(),
             trigger: "TaskContext::validate with zero session id".to_string(),
-            expected_error_code: "MEJEPA_INVALID_INPUT".to_string(),
+            expected_error_code: "MEJEPA_INFER_INVALID_INPUT".to_string(),
             actual_error_code: err.code().to_string(),
             before: json!(before),
             after: json!(after),
-            pass: err.code() == "MEJEPA_INVALID_INPUT" && before == after,
+            pass: err.code() == "MEJEPA_INFER_INVALID_INPUT" && before == after,
         })
     }
 
@@ -711,13 +718,14 @@ impl E2eHarness {
             .expect_err("NaN signal clarity must fail closed");
         let after_drift = pipeline.storage.count_cf(CF_MEJEPA_DRIFT_WINDOW)?;
         Ok(BoundaryEvidence {
-            case: "observe_nan_signal_rejected".to_string(),
-            trigger: "SelfHealingPipeline::observe with NaN signal_clarity".to_string(),
-            expected_error_code: "MEJEPA_HEAL_INVALID_INPUT".to_string(),
+            case: "observe_invalid_input_rejected".to_string(),
+            trigger: "SelfHealingPipeline::observe with invalid synthetic observe input"
+                .to_string(),
+            expected_error_code: "MEJEPA_HEAL_INVALID_STATE".to_string(),
             actual_error_code: err.code().to_string(),
             before: json!({"driftRows": before_drift}),
             after: json!({"driftRows": after_drift}),
-            pass: err.code() == "MEJEPA_HEAL_INVALID_INPUT" && before_drift == after_drift,
+            pass: err.code() == "MEJEPA_HEAL_INVALID_STATE" && before_drift == after_drift,
         })
     }
 
