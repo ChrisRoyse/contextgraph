@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use crate::heal::calibration::{
     CalibrationExample, CalibrationWriter, DEFAULT_CALIBRATION_WINDOW_SIZE,
 };
-use crate::heal::cf::CF_MEJEPA_SHIFT_WATERMARK;
+use crate::heal::cf::{decode_value, CF_MEJEPA_DRIFT_WINDOW, CF_MEJEPA_SHIFT_WATERMARK};
 use crate::heal::distill::{consume, EmbedderHandle, OnlineDistiller, OracleHandle};
 use crate::heal::drift::{
     DriftDetector, DriftSample, DriftSeverity, NoopDriftSurface, SeverityTable,
@@ -451,7 +451,7 @@ impl SelfHealingPipeline {
         &mut self,
         trigger: TriggerReason,
     ) -> Result<crate::heal::promote::HealReport, HealError> {
-        let holdout = self.synthetic_holdout_for_current_window()?;
+        let holdout = self.holdout_for_current_drift_window()?;
         self.abc_promoter
             .retrain_and_promote(RetrainPromoteRequest {
                 trigger_reason: trigger,
@@ -464,18 +464,28 @@ impl SelfHealingPipeline {
             })
     }
 
-    pub fn synthetic_holdout_for_current_window(&self) -> Result<HoldoutDataset, HealError> {
-        let examples = (0..100)
-            .map(|idx| HoldoutExample {
-                predicted: if idx < 82 {
-                    vec![OracleOutcome::Pass]
-                } else {
-                    vec![OracleOutcome::Fail]
-                },
-                actual: OracleOutcome::Pass,
-                ood_score: 0.10 + idx as f32 * 0.0001,
-            })
-            .collect();
+    pub fn holdout_for_current_drift_window(&self) -> Result<HoldoutDataset, HealError> {
+        let values = self.storage.scan_cf_values(CF_MEJEPA_DRIFT_WINDOW)?;
+        if values.is_empty() {
+            return Err(HealError::invalid(
+                "drift_window.holdout",
+                "cannot run A/B/C promotion without persisted drift-window observations",
+            ));
+        }
+        let mut examples = Vec::with_capacity(values.len());
+        for (idx, bytes) in values.iter().enumerate() {
+            let sample: DriftSample = decode_value(bytes).map_err(|err| {
+                HealError::invalid(
+                    "drift_window.holdout",
+                    format!("drift sample {idx} could not be decoded: {err}"),
+                )
+            })?;
+            examples.push(HoldoutExample {
+                predicted: sample.predicted_set,
+                actual: sample.actual_oracle,
+                ood_score: sample.ood_score,
+            });
+        }
         HoldoutDataset::try_new(examples, self.corpus_sha)
     }
 

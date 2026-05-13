@@ -14,11 +14,25 @@ use crate::conformal::CalibrationExample;
 use crate::eval::RocksDbEvalStore;
 use crate::heal::calibration::continuous_calibration_if_due;
 use crate::heal::cf::{decode_value, CF_MEJEPA_DRIFT_WINDOW};
+use crate::eval::ProductionTelemetryWindow;
+use crate::heal::dissipation::{detect_dissipation, DissipationConfig};
+use crate::heal::dormancy::tick_per_head_dormancy;
 use crate::heal::drift::{DriftDetector, DriftSample, NoopDriftSurface, SeverityTable};
+use crate::heal::drift_per_cell::{
+    detect_and_act_per_cell_drift, PerCellDriftConfig, PerCellIntervention,
+};
 use crate::heal::errors::HealError;
+use crate::heal::fisher::snapshot_per_head_fisher;
 use crate::heal::full_retrain::full_retrain_if_due;
 use crate::heal::integrity::{ChainIntegrityChecker, WitnessChainAppender};
+use crate::heal::lambda_ramp::tick_lambda_ramp;
 use crate::heal::pipeline::{LinearHealPredictor, MeJepaHealConfig, SelfHealingPipeline};
+use crate::heal::policy::{persist_policy_record, timestamped_policy_key};
+use crate::heal::promote::TriggerReason;
+use crate::heal::promote_approval::{
+    approved_promotions, mark_promotion_executed, queue_pending_retrain_request,
+    PendingPromotionKind,
+};
 use crate::heal::regulate::{assess_substrate, regulate_substrate};
 use crate::heal::store::HealRocksStore;
 use crate::store::RocksDbInferStore;
@@ -440,7 +454,7 @@ impl SchedulerState {
         ))
     }
 
-    fn tick_drift_check(&self) -> Result<TickRunRecord, HealError> {
+    fn tick_drift_check(&mut self) -> Result<TickRunRecord, HealError> {
         let values = self.storage.scan_cf_values(CF_MEJEPA_DRIFT_WINDOW)?;
         let mut detector = DriftDetector::try_new(0.90, SeverityTable::default())?;
         for bytes in values
@@ -456,6 +470,60 @@ impl SchedulerState {
         }
         let sample_count = detector.window.len();
         let severity = detector.detect_drift(self.storage.as_ref(), &NoopDriftSurface)?;
+        let per_cell = detect_and_act_per_cell_drift(
+            self.db.clone(),
+            self.storage.clone(),
+            &mut self.pipeline.lora_refresher,
+            &PerCellDriftConfig::default(),
+        )?;
+        let catastrophic_cell_count = per_cell
+            .cells
+            .values()
+            .filter(|decision| {
+                decision.intervention == PerCellIntervention::QueueFullRetrainApproval
+            })
+            .count();
+        let lora_cell_count = per_cell
+            .cells
+            .values()
+            .filter(|decision| decision.intervention == PerCellIntervention::QueueLoraRefresh)
+            .count();
+        let promotion_action = if severity == crate::heal::drift::DriftSeverity::Catastrophic
+            || catastrophic_cell_count > 0
+        {
+            let coverage = detector.last_empirical_coverage.unwrap_or(0.0);
+            let promotion_id = queue_pending_retrain_request(
+                self.storage.as_ref(),
+                PendingPromotionKind::CatastrophicFullRetrainRequired {
+                    cell_key: "global_or_per_cell".to_string(),
+                    metric_value: coverage,
+                },
+                TriggerReason::DriftCatastrophic,
+                "catastrophic global/per-cell drift requires operator approval",
+            )?;
+            json!({
+                "kind": "catastrophic_promotion_approval_queued",
+                "promotion_id": promotion_id,
+                "coverage": coverage,
+                "sample_count": sample_count,
+            })
+        } else if matches!(
+            severity,
+            crate::heal::drift::DriftSeverity::Soft | crate::heal::drift::DriftSeverity::Hard
+        ) || lora_cell_count > 0
+        {
+            let abc_report = self
+                .pipeline
+                .trigger_abc_for_current_drift(TriggerReason::DriftHard)?;
+            json!({
+                "kind": "lora_refresh_and_abc_promoted",
+                "reason": "soft_or_hard_drift",
+                "sample_count": sample_count,
+                "heal_report": abc_report,
+            })
+        } else {
+            json!({"kind": "none"})
+        };
         Ok(TickRunRecord::success(
             TickName::DriftCheck,
             "drift_window_evaluated",
@@ -464,6 +532,10 @@ impl SchedulerState {
                 "sample_count": sample_count,
                 "severity": severity,
                 "empirical_coverage": detector.last_empirical_coverage,
+                "per_cell": per_cell,
+                "lora_cell_count": lora_cell_count,
+                "catastrophic_cell_count": catastrophic_cell_count,
+                "promotion_action": promotion_action,
             }),
         ))
     }
@@ -519,12 +591,27 @@ impl SchedulerState {
     }
 
     fn tick_promote(&mut self) -> Result<TickRunRecord, HealError> {
+        let mut approved = approved_promotions(self.storage.as_ref())?;
+        approved.sort_by_key(|record| record.updated_at_unix_ms);
+        let catastrophic_promotion = if let Some(record) = approved.pop() {
+            let report = self
+                .pipeline
+                .trigger_abc_for_current_drift(TriggerReason::DriftCatastrophic)?;
+            let executed = mark_promotion_executed(self.storage.as_ref(), &record.promotion_id)?;
+            Some(json!({
+                "approval": executed,
+                "heal_report": report,
+            }))
+        } else {
+            None
+        };
         let calibration = continuous_calibration_if_due(&mut self.pipeline)?;
         let retrain = full_retrain_if_due(&mut self.pipeline)?;
         Ok(TickRunRecord::success(
             TickName::Promote,
             "promotion_gates_checked",
             json!({
+                "catastrophic_promotion": catastrophic_promotion,
                 "calibration_record": calibration,
                 "full_retrain_report": retrain,
                 "source_of_truth_cfs": [
@@ -540,6 +627,15 @@ impl SchedulerState {
         let window = self.pipeline.read_train_cert_window()?;
         let breakdown = assess_substrate(&window);
         let report = regulate_substrate(&mut self.pipeline, &breakdown)?;
+        let dissipation = detect_dissipation(self.storage.as_ref(), &DissipationConfig::default())?;
+        let lambda_ramp = tick_lambda_ramp(self.storage.as_ref())?;
+        let per_head_fisher = snapshot_per_head_fisher(
+            self.storage.as_ref(),
+            &self.pipeline.ewc.fisher_matrix.diagonal,
+            self.pipeline.ewc.fisher_matrix.rank,
+            self.pipeline.ewc.fisher_matrix.step_count,
+        )?;
+        let per_head_dormancy = tick_per_head_dormancy(&self.pipeline)?;
         Ok(TickRunRecord::success(
             TickName::ContinualBackprop,
             "continual_backprop_regulation_checked",
@@ -551,6 +647,10 @@ impl SchedulerState {
                 "train_cert_source_step_count": window.source_step_count,
                 "substrate_breakdown": breakdown,
                 "regulation_report": report,
+                "dissipation_report": dissipation,
+                "lambda_ramp_report": lambda_ramp,
+                "per_head_fisher_report": per_head_fisher,
+                "per_head_dormancy_report": per_head_dormancy,
             }),
         ))
     }
@@ -575,9 +675,64 @@ impl SchedulerState {
             .map_err(map_tct_error)?;
         let (max_age_days, allow_stale) =
             context_graph_mejepa_tct::read_freshness_config().map_err(map_tct_error)?;
-        constellation
-            .check_freshness(max_age_days, allow_stale)
-            .map_err(map_tct_error)?;
+        let mut refresh_reasons = Vec::new();
+        match constellation.check_freshness(max_age_days, allow_stale) {
+            Ok(()) => {}
+            Err(context_graph_mejepa_tct::TctError::StaleConstellation {
+                frozen_at_iso,
+                age_days,
+                max_age_days,
+            }) => {
+                refresh_reasons.push(json!({
+                    "kind": "stale_constellation",
+                    "frozen_at_iso": frozen_at_iso,
+                    "age_days": age_days,
+                    "max_age_days": max_age_days,
+                }));
+            }
+            Err(err) => return Err(map_tct_error(err)),
+        }
+        let train_cert_count = self
+            .storage
+            .count_cf(context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS)?;
+        let refresh_report_count = store.count_refresh_reports().map_err(map_tct_error)?;
+        if train_cert_count >= 100 && refresh_report_count == 0 {
+            refresh_reasons.push(json!({
+                "kind": "new_training_examples_without_refresh_report",
+                "train_cert_count": train_cert_count,
+                "threshold": 100,
+            }));
+        }
+        let latest_telemetry = latest_production_telemetry(self.storage.as_ref())?;
+        if let Some(telemetry) = &latest_telemetry {
+            if telemetry.gtau_pass_rate < 0.97 {
+                refresh_reasons.push(json!({
+                    "kind": "gtau_pass_rate_drift",
+                    "gtau_pass_rate": telemetry.gtau_pass_rate,
+                    "threshold": 0.97,
+                    "window_id": telemetry.window_id,
+                }));
+            }
+        }
+        let refresh_policy = if refresh_reasons.is_empty() {
+            json!({"action": "none", "reasons": []})
+        } else {
+            let record = json!({
+                "action": "queue_constellation_refresh",
+                "constellation_version_hex": hex::encode(latest_version),
+                "reasons": refresh_reasons,
+                "source_of_truth_cfs": [
+                    context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION,
+                    context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
+                    context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS,
+                    context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY
+                ],
+                "generated_at_unix_ms": chrono::Utc::now().timestamp_millis(),
+            });
+            let key = timestamped_policy_key("constellation_refresh")?;
+            persist_policy_record(self.storage.as_ref(), &key, &record)?;
+            record
+        };
         Ok(TickRunRecord::success(
             TickName::ConstellationFreshness,
             "constellation_freshness_verified",
@@ -587,6 +742,10 @@ impl SchedulerState {
                 "latest_version_hex": hex::encode(latest_version),
                 "max_age_days": max_age_days,
                 "allow_stale": allow_stale,
+                "refresh_report_count": refresh_report_count,
+                "train_cert_count": train_cert_count,
+                "latest_production_telemetry": latest_telemetry,
+                "refresh_policy": refresh_policy,
             }),
         ))
     }
@@ -865,6 +1024,36 @@ fn put_oracle_binding_readback(
         ));
     }
     Ok(())
+}
+
+fn latest_production_telemetry(
+    storage: &HealRocksStore,
+) -> Result<Option<ProductionTelemetryWindow>, HealError> {
+    let db = storage.db();
+    let cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY)
+        .ok_or_else(|| {
+            HealError::invalid(
+                "production_telemetry.cf",
+                "missing CF_MEJEPA_PRODUCTION_TELEMETRY",
+            )
+        })?;
+    let mut latest: Option<ProductionTelemetryWindow> = None;
+    for item in db.iterator_cf(cf, rocksdb::IteratorMode::Start) {
+        let (_key, value) = item?;
+        let telemetry: ProductionTelemetryWindow = bincode::deserialize(&value)?;
+        telemetry
+            .validate()
+            .map_err(|err| HealError::invalid("production_telemetry", err.to_string()))?;
+        let replace = latest
+            .as_ref()
+            .map(|current| telemetry.captured_at_unix_ms > current.captured_at_unix_ms)
+            .unwrap_or(true);
+        if replace {
+            latest = Some(telemetry);
+        }
+    }
+    Ok(latest)
 }
 
 fn map_eval_error(err: crate::eval::EvalError) -> HealError {

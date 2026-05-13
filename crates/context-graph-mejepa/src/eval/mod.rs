@@ -24,7 +24,8 @@ pub use runner::{corpus_sha_from_holdout, EvalRunner};
 pub use store::RocksDbEvalStore;
 pub use telemetry::{LatencyTelemetry, ProductionTelemetryWindow};
 pub use types::{
-    ActiveLearningSummary, AuxHeadDistillationSummary, ConformalHealthEntry, EvalConfig,
-    EvalObservation, EvalProvenance, EvalReport, HoldoutPanel, MutationCategory,
+    cell_key, language_slug, ActiveLearningSummary, AuxHeadDistillationSummary,
+    ConformalHealthEntry, EvalConfig, EvalObservation, EvalProvenance, EvalReport, HoldoutPanel,
+    MutationCategory,
     OpenResearchQuestionStatus, RegressionCheck, StateTransferDiagnostic,
 };

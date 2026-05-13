@@ -223,6 +223,7 @@ impl Handlers {
             tool_names::MEJEPA_CONSTELLATION_INSPECT => call_mejepa_constellation_inspect(arguments),
             tool_names::MEJEPA_HEAL_STATUS => call_mejepa_heal_status(arguments),
             tool_names::MEJEPA_ROLLBACK_TO => call_mejepa_rollback_to(arguments),
+            tool_names::MEJEPA_PROMOTE_APPROVAL => call_mejepa_promote_approval(arguments),
             tool_names::MEJEPA_GC_RUN => call_mejepa_gc_run(arguments),
             tool_names::MEJEPA_QUOTA_STATUS => call_mejepa_quota_status(arguments),
             tool_names::MEJEPA_WITNESS_COMPRESS => call_mejepa_witness_compress(arguments),

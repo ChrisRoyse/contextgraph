@@ -241,6 +241,34 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_PROMOTE_APPROVAL,
+            "Approve or reject a pending catastrophic ME-JEPA self-optimization promotion. The approval record is read from and written back to CF_MEJEPA_MODEL_PROMOTIONS; non-pending or non-catastrophic promotions fail closed.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["promotionId", "operatorId", "approve"],
+                "properties": {
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Self-healing RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_HEAL_DB is required."
+                    },
+                    "promotionId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    },
+                    "operatorId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    },
+                    "approve": {
+                        "type": "boolean"
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_GC_RUN,
             "Run the Phase 6 ME-JEPA hygiene GC against a real RocksDB source of truth: tier demotion, compaction, quota enforcement, checkpoint/calibration retention, witness compression, witness verification, and CF_MEJEPA_GC_HISTORY readback.",
             json!({

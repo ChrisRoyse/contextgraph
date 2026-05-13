@@ -7,8 +7,9 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, bail, Context, Result as AnyhowResult};
 use context_graph_mejepa::heal::{
-    all_referenced_cf_names, decode_value, encode_active_pointer_key, AbcPromoter,
-    ActivePointerValue, HealReport, HealRocksStore, PromotionGate, PromotionLockState,
+    all_referenced_cf_names, apply_promotion_approval, decode_value, encode_active_pointer_key,
+    AbcPromoter, ActivePointerValue, HealReport, HealRocksStore, PromotionApprovalAction,
+    PromotionApprovalRequest as HealPromotionApprovalRequest, PromotionGate, PromotionLockState,
     WitnessChainAppender, CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_HEAL_REPORTS,
 };
 use context_graph_mejepa::{
@@ -115,6 +116,15 @@ struct RollbackToRequest {
     db_path: Option<PathBuf>,
     witness_chain_path: PathBuf,
     target_witness_chain_offset: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PromoteApprovalRequest {
+    db_path: Option<PathBuf>,
+    promotion_id: String,
+    operator_id: String,
+    approve: bool,
 }
 
 fn default_limit() -> u32 {
@@ -590,6 +600,46 @@ impl Handlers {
             }
         }
     }
+
+    pub(crate) async fn call_mejepa_promote_approval(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: PromoteApprovalRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_PROMOTE_APPROVAL
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_heal_db_path(request.db_path) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match run_promote_approval(
+            &db_path,
+            &request.promotion_id,
+            &request.operator_id,
+            request.approve,
+        ) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => {
+                err.log_context(file!());
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("{}: {err}", err.code()),
+                )
+            }
+        }
+    }
 }
 
 fn resolve_heal_db_path(input: Option<PathBuf>) -> Result<PathBuf, String> {
@@ -681,6 +731,42 @@ fn run_rollback_to(
         "newWitnessChainOffset": evidence.new_witness_chain_offset,
         "dbPath": db_path,
         "witnessChainPath": witness_chain_path
+    }))
+}
+
+fn run_promote_approval(
+    db_path: &std::path::Path,
+    promotion_id: &str,
+    operator_id: &str,
+    approve: bool,
+) -> Result<serde_json::Value, Box<context_graph_mejepa::heal::HealError>> {
+    let store = HealRocksStore::open(db_path)?;
+    let response = apply_promotion_approval(
+        &store,
+        HealPromotionApprovalRequest {
+            promotion_id: promotion_id.to_string(),
+            operator_id: operator_id.to_string(),
+            action: if approve {
+                PromotionApprovalAction::Approve
+            } else {
+                PromotionApprovalAction::Reject
+            },
+            reason: "operator MCP approval".to_string(),
+            two_person_rule: false,
+        },
+    )?;
+    Ok(json!({
+        "dbPath": db_path,
+        "promotionId": response.promotion_id,
+        "stateBefore": response.state_before,
+        "stateAfter": response.state_after,
+        "requiredDistinctApprovals": response.required_distinct_approvals,
+        "distinctApprovalCount": response.distinct_approval_count,
+        "sourceOfTruth": {
+            "cf": response.source_of_truth_cf,
+            "keyHex": response.source_of_truth_key_hex,
+            "readbackVerified": response.readback_verified
+        }
     }))
 }
 

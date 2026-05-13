@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, DB};
+use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, WriteOptions, DB};
 
 use crate::heal::cf::{
     all_referenced_cf_names, encode_calibration_history_key, encode_drift_history_key,
@@ -64,7 +64,9 @@ impl HealRocksStore {
         value: &[u8],
     ) -> Result<(), HealError> {
         let cf = self.cf(cf_name)?;
-        self.db.put_cf(cf, key, value)?;
+        let mut opts = WriteOptions::default();
+        opts.set_sync(true);
+        self.db.put_cf_opt(cf, key, value, &opts)?;
         let readback = self.db.get_cf(cf, key)?.ok_or_else(|| {
             HealError::invalid(
                 "heal_store.readback",

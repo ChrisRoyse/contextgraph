@@ -10,8 +10,8 @@ use crate::heal::errors::HealError;
 pub use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_CALIBRATION_HISTORY, CF_MEJEPA_DISTILL_STEPS,
     CF_MEJEPA_DRIFT_HISTORY, CF_MEJEPA_DRIFT_WINDOW, CF_MEJEPA_FISHER_SNAPSHOTS,
-    CF_MEJEPA_HEAL_REPORTS, CF_MEJEPA_SHIFT_WATERMARK, CF_MEJEPA_TRAIN_CERTS,
-    CF_MEJEPA_WEIGHT_BLOBS,
+    CF_MEJEPA_HEAL_REPORTS, CF_MEJEPA_MODEL_PROMOTIONS, CF_MEJEPA_PRODUCTION_TELEMETRY,
+    CF_MEJEPA_SHIFT_WATERMARK, CF_MEJEPA_TRAIN_CERTS, CF_MEJEPA_WEIGHT_BLOBS,
 };
 
 pub fn all_self_healing_cf_names() -> [&'static str; 7] {
@@ -21,7 +21,20 @@ pub fn all_self_healing_cf_names() -> [&'static str; 7] {
 }
 
 pub fn all_referenced_cf_names() -> Vec<&'static str> {
-    context_graph_mejepa_cf::SELF_HEALING_REFERENCED_CFS.to_vec()
+    let mut names = context_graph_mejepa_cf::SELF_HEALING_REFERENCED_CFS.to_vec();
+    for cf in [
+        context_graph_mejepa_cf::CF_MEJEPA_EVAL_REPORTS,
+        context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS,
+        context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY,
+        context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION,
+        context_graph_mejepa_cf::CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
+        context_graph_mejepa_cf::CF_MEJEPA_QUOTA_STATE,
+    ] {
+        if !names.contains(&cf) {
+            names.push(cf);
+        }
+    }
+    names
 }
 
 pub fn encode_fisher_snapshot_key(boundary_step: u64) -> [u8; 8] {
@@ -223,6 +236,7 @@ mod tests {
         let names = all_referenced_cf_names();
         assert!(names.contains(&CF_MEJEPA_WEIGHT_BLOBS));
         assert!(names.contains(&CF_MEJEPA_SHIFT_WATERMARK));
-        assert_eq!(names.len(), 10);
+        assert!(names.contains(&CF_MEJEPA_MODEL_PROMOTIONS));
+        assert_eq!(names.len(), 16);
     }
 }
