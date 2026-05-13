@@ -133,19 +133,101 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 
 ---
 
-## Phase F — Production Observability (10 tasks)
+## Phase F — Production Observability + Operator Runbook + DR + API (~26 of ~37 tasks shipped 2026-05-13)
 
-| ID | Title | Phase | Blocked by | Effort |
-|---|---|---|---|---|
-| `TASK-OBS-001` | Weekly evaluation production feed/dashboard/runbook (daemon scheduler + writer exist) | F | HEAL-002, UTML-009 | 1d |
-| `TASK-OBS-002` | Pairwise MI heatmap renderer | F | none | 0.5d |
-| `TASK-OBS-003` | Daemon status aggregator MCP tool | F | FLYWHEEL-001 | 0.5d |
-| `TASK-OBS-004` | Per-prediction-class running calibration tracker | F | PREDICT-005 | 1d |
-| `TASK-OBS-008` | WSL GPU telemetry hardening | F | none | 1-2d |
-| `TASK-OBS-009` | `mejepa_inspect_prediction` MCP tool with full provenance trace | F | PREDICT-005 | 0.5d |
-| `TASK-OBS-010` | Active-learning operator CLI | F | none | 0.5d |
+> **Status (2026-05-13).** Phase F expanded well beyond the original 10 OBS tasks during multi-agent execution. The current backlog spans CLI, observability, DR, API stability, security, and integration testing. Of the 37 atomic Phase F issues filed against `docs/futurebuild/tasks/<domain>/_all_tasks.md`, **26 are closed with FSV evidence under `/mnt/d/contextgraph/fsv/`**; the remaining ~11 are heavy integration-test harnesses (`TEST-002..010`) plus two storage-level CLI commands (`DR-004` restore-cf, `API-002` migrate-cf) whose effort sizes are intentionally multi-session.
 
-**Phase F total: ~6 days.**
+### Closed OBS tasks
+
+| ID | Title | Status / Evidence |
+|---|---|---|
+| `TASK-OBS-001` | Weekly evaluation production feed/dashboard/runbook | **complete** — daemon weekly-eval scheduler runs; writer persists `CF_MEJEPA_EVAL_REPORTS` + `/mnt/d/contextgraph/exports/eval/<date>/weekly.{md,json}` |
+| `TASK-OBS-002` | Pairwise MI heatmap renderer | **complete** — `mejepa_audit_pairwise_mi` MCP tool + CSV-to-PNG/markdown renderer |
+| `TASK-OBS-003` | Daemon status aggregator MCP tool | **complete** — `mejepa_daemon_status` aggregates subscriber + heal + quota + VRAM |
+| `TASK-OBS-004` | Per-prediction-class running calibration tracker | **complete** — `eval::per_head_calibration_tracker.rs` exposes rolling ECE per head |
+| `TASK-OBS-007` | Prediction explanation surface completion (re-scoped) | **complete (#42)** — `mejepa_explain_prediction` + `mejepa_inspect_prediction` cover the full provenance trace |
+| `TASK-OBS-008` | WSL GPU telemetry hardening | **complete** — `crates/context-graph-mcp/src/telemetry/gpu_wsl.rs` with retry + N/A detection |
+| `TASK-OBS-009` | `mejepa_inspect_prediction` MCP tool | **complete (#44, commit 7f7e5c1d/e4baea50)** — full provenance trace including DDA chunks |
+| `TASK-OBS-010` | Active-learning operator CLI | **complete (#45, commit 1f538ce1)** — `mejepa active-learning {list,label,dismiss}` — FSV sha256:a02788b1 |
+| `TASK-OBS-011` | Prediction replay tool | **complete (#46)** — `mejepa replay --prediction-id <hex>` byte-for-byte replay |
+| `TASK-OBS-012` | Reasoning-trace renderer | **complete (#47, commit 5662a744/a8474ace)** — `scripts/render_reasoning_trace.py` (HTML/markdown + saliency heatmap + counterfactuals) |
+| `TASK-OBS-013` | System cost telemetry (resource counters, no spend caps) | **complete (#48, commit 0379df9c)** — `crates/context-graph-mejepa/src/system_cost.rs` tracks CUDA µs / tokens / RocksDB bytes; explicitly forbids `cost_estimate_usd` |
+| `TASK-OBS-014` | Health + readiness HTTP probes | **complete (#49, commit 5aebf4ac/fcd3234f)** — `crates/context-graph-mcp/src/health_probe.rs`; opt-in via `CONTEXT_GRAPH_HEALTH_PROBE=1` |
+| `TASK-OBS-015` | Log rotation policy | **complete (#50, commit 366d7e2a)** — `scripts/systemd/mejepa-log-rotate.{service,timer}` daily 03:15 |
+| `TASK-OBS-016` | Executive summary renderer | **complete (#51, commit 5662a744)** — `scripts/render_executive_summary.py`; ≤200 words per render |
+
+### Closed RUN (operator runbook) tasks
+
+| ID | Title | Status / Evidence |
+|---|---|---|
+| `TASK-RUN-002` | Operator CLI: daemon command | **complete (#73, commit 4d801592)** — `mejepa daemon-status` reads `self_optimization_status.json` |
+| `TASK-RUN-003` | Operator CLI: weekly report command | **complete (#74)** — `mejepa report-weekly --date <YYYY-MM-DD>` reads `CF_MEJEPA_EVAL_REPORTS` |
+| `TASK-RUN-005` | Operator CLI: hygiene command | **complete (#75, commit 366d7e2a)** — `mejepa hygiene {cold-audit, aggressive-cold-tier-down}` |
+| `TASK-RUN-006` | Operator CLI: rollback command | **complete (#76)** — `mejepa rollback --target-witness-offset <u64>` wraps `AbcPromoter::rollback_to` |
+| `TASK-RUN-007` | Operator CLI: eval command | **complete (#77)** — `mejepa eval-ship-gate` reads latest EvalReport |
+| `TASK-RUN-008` | Operator CLI: pause command | **complete (#78, commit baeef6b0)** — `mejepa pause --duration-mins <n>` + `mejepa_pause_predictions` MCP tool |
+| `TASK-RUN-009` | Operator CLI: session cleanup command | **complete (#79, commit 0379df9c)** — `mejepa session-cleanup --session-id <32-hex>` |
+| `TASK-RUN-012` | Incident response checklist verification | **complete (#80, commit a54803fa)** — `scripts/ci/runbook_coverage.sh` enforces `MEJEPA_*` alert ↔ code parity |
+
+### Closed DR (disaster recovery) tasks
+
+| ID | Title | Status / Evidence |
+|---|---|---|
+| `TASK-DR-003` | Storage verify CLI | **complete (#54, commit 9ccec509)** — `mejepa storage-verify --db-path <p>` with `set_paranoid_checks(true)` + per-CF row counts |
+| `TASK-DR-007` | Restore verification monthly cron | **complete (#56, commit f036afac)** — `scripts/dr/verify_backup.sh` + `scripts/systemd/mejepa-dr-verify.{service,timer}` (first Sunday 04:00) |
+| `TASK-DR-008` | Quarterly DR drill | **complete (#57, commit c710dfc4)** — `scripts/dr/dr_drill.sh` restore + corrupt SST + re-restore + RTO budget check |
+
+### Closed API stability tasks
+
+| ID | Title | Status / Evidence |
+|---|---|---|
+| `TASK-API-004` | Deprecation framework | **complete (#59, commit edf19c75)** — `crates/context-graph-mcp/src/deprecation.rs`; default warn / opt-in `CONTEXT_GRAPH_DEPRECATION_LEVEL=error` |
+
+### Closed PREDICT + label tasks (Phase F hardening)
+
+| ID | Title | Status / Evidence |
+|---|---|---|
+| `TASK-PREDICT-012` | Operator override prediction tool | **complete (#60, commit 377f0884)** — `operator_override.rs` + `CF_MEJEPA_OPERATOR_OVERRIDES` + `mejepa_operator_override_prediction` MCP tool; 6.0× sampling-weight multiplier persisted |
+| `TASK-PREDICT-LABEL-010` | Toolchain availability fail-closed audit | **complete (#61, commit 0379df9c)** — `crates/context-graph-mejepa/src/toolchain_detect.rs`; 16-binary default catalogue across 11 languages |
+| `TASK-PREDICT-LABEL-011` | Cross-language label gating | **complete (#62, commit 0379df9c)** — `crates/context-graph-mejepa/src/cross_language_label_gating.rs`; same-root-cause + similarity > 0.85 + correlation ≥ 0.60 ⇒ transfer at 0.5× weight |
+
+### Closed integration test tasks
+
+| ID | Title | Status / Evidence |
+|---|---|---|
+| `TASK-TEST-001` | End-to-end happy-path harness | **complete (#64, commit 062d413d/a0e77b38)** — `crates/context-graph-mejepa/tests/e2e.rs` + `tests/e2e/{happy_path.rs, harness.rs}` |
+| `TASK-TEST-009` | Toolchain fail-closed matrix | **complete (#70, commit 237b4aef)** — `crates/context-graph-mejepa/tests/toolchain_fail_closed.rs` (5 matrix assertions across 16 binaries) |
+| `TASK-TEST-011` | CI workflow updates for Phase F harnesses | **complete (#72, commit a56ceda3)** — `.github/workflows/{e2e,chaos,load,soak}.yml`; ubuntu-latest only; conditional harness discovery |
+
+### Remaining open Phase F tasks (~11)
+
+| ID | Title | Blocked by | Notes |
+|---|---|---|---|
+| `TASK-TEST-002` | Restart-safety E2E harness | TASK-FLYWHEEL-001 | daemon restart + watermark replay |
+| `TASK-TEST-003` | Multi-agent E2E harness | TASK-TEST-001 | concurrent sessions, agent isolation |
+| `TASK-TEST-004` | Catastrophic-event E2E harness | TASK-TEST-001 | reuse e2e scaffolding |
+| `TASK-TEST-005` | Storage-exhaustion E2E harness | TASK-HYG-* | disk-fill simulation |
+| `TASK-TEST-006` | Chaos harness with failpoints | TASK-TEST-001 | failpoint crate integration |
+| `TASK-TEST-007` | Load test harness | TASK-TEST-001 | concurrent prediction throughput |
+| `TASK-TEST-008` | Soak test harness + nightly cron | TASK-TEST-007 | long-running variant of load |
+| `TASK-TEST-010` | Adversarial corpus for security robustness | TASK-PREDICT-005 | fixture diffs + assertion runner |
+| `TASK-DR-004` | Storage restore-cf CLI | TASK-DR-001 | atomic per-CF SST restore |
+| `TASK-API-002` | Storage migrate-cf command | TASK-API-005 | cross-CF transform tooling |
+
+**Phase F closure status (2026-05-13):** ~26 / 37 atomic Phase F issues shipped with FSV. The CI workflows already shipped under `TASK-TEST-011` discover the remaining harnesses dynamically — when `TEST-002..010` land in `crates/context-graph-mejepa/tests/`, the chaos/load/soak workflows pick them up without further CI plumbing. Continuation effort: ~5-7 engineer-days for the remaining test harnesses, plus 2-3 days for the two storage-level CLI commands.
+
+**Phase F FSV index (selected evidence files):**
+
+- `/mnt/d/contextgraph/fsv/phase-f-active-learning-cli-fsv/active_learning_cli_fsv.json` — sha256:a02788b1
+- `/mnt/d/contextgraph/fsv/phase-f-runbook-cli-fsv/runbook_cli_fsv.json` — sha256:b836a21a (5 happy + 12 boundary)
+- `/mnt/d/contextgraph/fsv/phase-f-renderers-fsv/renderers_fsv.json` — sha256:ae363d5b (3 happy + 5 boundary)
+- `/mnt/d/contextgraph/fsv/phase-f-deprecation-framework-fsv/deprecation_framework_fsv.json` — sha256:812ad8f6 (3 happy + 3 boundary)
+- `/mnt/d/contextgraph/fsv/phase-f-health-probe-fsv/health_probe_fsv.json` — sha256:7f7c03f2
+- `/mnt/d/contextgraph/fsv/phase-f-toolchain-availability-fsv/toolchain_availability_fsv.json`
+- `/mnt/d/contextgraph/fsv/phase-f-cross-language-label-gating-fsv/cross_language_label_gating_fsv.json`
+- `/mnt/d/contextgraph/fsv/phase-f-system-cost-fsv/system_cost_fsv.json`
+- `/mnt/d/contextgraph/fsv/phase-f-operator-override-fsv/operator_override_fsv.json` — sha256:c6da2c60
+- `/mnt/d/contextgraph/fsv/phase-f-pause-cli-fsv/pause_cli_fsv.json`
 
 ---
 
