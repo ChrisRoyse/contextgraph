@@ -70,6 +70,7 @@ impl BatchSampler {
                 }
             }
         }
+        self.record_operator_override_sampler_batch(&mut plan);
         Ok(plan)
     }
 }

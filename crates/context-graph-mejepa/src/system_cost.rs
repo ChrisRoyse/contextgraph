@@ -29,6 +29,7 @@ pub struct SystemCostCounters {
     rocksdb_writes_total: AtomicU64,
     heal_ticker_telemetry_total: Mutex<BTreeMap<String, HealTickerTelemetryTotals>>,
     heal_scheduler_restart_count_total: AtomicU64,
+    operator_override_sampler_applied_count_total: AtomicU64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -39,6 +40,7 @@ pub struct SystemCostSnapshot {
     pub rocksdb_bytes_written_total: u64,
     pub rocksdb_writes_total: u64,
     pub heal_ticker_telemetry_total: HealTickerTelemetrySnapshot,
+    pub operator_override_sampler_applied_count_total: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -107,6 +109,9 @@ impl SystemCostSnapshot {
             heal_ticker_telemetry_total: self
                 .heal_ticker_telemetry_total
                 .delta(&earlier.heal_ticker_telemetry_total),
+            operator_override_sampler_applied_count_total: self
+                .operator_override_sampler_applied_count_total
+                .saturating_sub(earlier.operator_override_sampler_applied_count_total),
         }
     }
 }
@@ -258,6 +263,11 @@ impl SystemCostCounters {
             .fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn record_operator_override_sampler_applied(&self, count: u64) {
+        self.operator_override_sampler_applied_count_total
+            .fetch_add(count, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> SystemCostSnapshot {
         SystemCostSnapshot {
             cuda_kernel_microseconds_total: self
@@ -276,6 +286,9 @@ impl SystemCostCounters {
                     .heal_scheduler_restart_count_total
                     .load(Ordering::Relaxed),
             },
+            operator_override_sampler_applied_count_total: self
+                .operator_override_sampler_applied_count_total
+                .load(Ordering::Relaxed),
         }
     }
 }
@@ -313,6 +326,7 @@ mod tests {
         let snapshot = counters.snapshot();
         assert_eq!(snapshot.cuda_kernel_microseconds_total, 0);
         assert_eq!(snapshot.rocksdb_writes_total, 0);
+        assert_eq!(snapshot.operator_override_sampler_applied_count_total, 0);
     }
 
     #[test]
@@ -357,6 +371,7 @@ mod tests {
             rocksdb_bytes_written_total: 0,
             rocksdb_writes_total: 0,
             heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
+            operator_override_sampler_applied_count_total: 0,
         };
         let now = counters.snapshot();
         let delta = now.delta(&earlier);
@@ -392,6 +407,7 @@ mod tests {
             rocksdb_bytes_written_total: 1_000,
             rocksdb_writes_total: 1,
             heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
+            operator_override_sampler_applied_count_total: 2,
         };
         let current = SystemCostSnapshot {
             cuda_kernel_microseconds_total: 250,
@@ -399,6 +415,7 @@ mod tests {
             rocksdb_bytes_written_total: 1_750,
             rocksdb_writes_total: 3,
             heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
+            operator_override_sampler_applied_count_total: 5,
         };
         let breakdown = SystemCostBreakdown::from_snapshots(&earlier, &current);
         let report = serde_json::json!({
@@ -411,6 +428,10 @@ mod tests {
             150
         );
         assert_eq!(extended["systemCost"]["noSpendCaps"], true);
+        assert_eq!(
+            extended["systemCost"]["windowDelta"]["operatorOverrideSamplerAppliedCountTotal"],
+            3
+        );
     }
 
     #[test]
@@ -462,6 +483,16 @@ mod tests {
             .expect_err("uppercase ticker should fail");
         assert!(matches!(err, SystemCostError::InvalidTicker(_)));
         assert_eq!(counters.snapshot(), before);
+    }
+
+    #[test]
+    fn operator_override_sampler_counter_accumulates() {
+        let counters = SystemCostCounters::new();
+        let earlier = counters.snapshot();
+        counters.record_operator_override_sampler_applied(3);
+        counters.record_operator_override_sampler_applied(2);
+        let delta = counters.snapshot().delta(&earlier);
+        assert_eq!(delta.operator_override_sampler_applied_count_total, 5);
     }
 
     #[test]

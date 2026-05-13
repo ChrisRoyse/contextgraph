@@ -3,9 +3,17 @@ pub mod cross_task;
 use crate::config::TrainingConfig;
 use crate::error::{TrainerError, TrainerErrorCode};
 use crate::learning_signal::{sampling_weight, should_drop, should_force_include};
+use context_graph_mejepa::system_cost::SystemCostCounters;
+use context_graph_mejepa::{
+    ActiveLearningQueueEntry, ChunkId, OperatorOverride, PredictionId, RealityPrediction, TaskId,
+    OPERATOR_OVERRIDE_SAMPLING_WEIGHT,
+};
 use context_graph_mejepa_corpus::prng::SplitMix64;
+use rocksdb::{IteratorMode, DB};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatchSimilarityGraph {
@@ -19,6 +27,35 @@ pub struct BatchPlan {
     pub regular_count: usize,
     pub cross_task_indices: Vec<usize>,
     pub cross_task_fallback_count: usize,
+    pub operator_override_sampler_applied_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SamplerExampleSource {
+    pub prediction_id: PredictionId,
+    pub chunk_id: ChunkId,
+}
+
+#[derive(Debug, Clone)]
+pub struct OperatorOverrideSamplerInput {
+    pub config: TrainingConfig,
+    pub l_steps: Vec<f32>,
+    pub overrides: Vec<bool>,
+    pub ages_days: Vec<f32>,
+    pub task_ids: Vec<String>,
+    pub example_sources: Vec<SamplerExampleSource>,
+    pub patch_similarity_graph: PatchSimilarityGraph,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct OperatorOverrideSamplerReport {
+    pub override_rows_scanned: usize,
+    pub live_prediction_rows_scanned: usize,
+    pub dismissed_override_count: usize,
+    pub applied_count: usize,
+    pub boosted_indices: Vec<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,6 +81,9 @@ pub struct BatchSampler {
     pub drop_indices: Vec<usize>,
     pub regular_indices: Vec<usize>,
     pub force_cursor: usize,
+    pub operator_override_sampler_applied_count: usize,
+    operator_override_boosted_indices: BTreeSet<usize>,
+    system_cost_counters: Option<Arc<SystemCostCounters>>,
 }
 
 impl BatchSampler {
@@ -89,9 +129,39 @@ impl BatchSampler {
             drop_indices: Vec::new(),
             regular_indices: Vec::new(),
             force_cursor: 0,
+            operator_override_sampler_applied_count: 0,
+            operator_override_boosted_indices: BTreeSet::new(),
+            system_cost_counters: None,
         };
         sampler.recompute_weights()?;
         Ok(sampler)
+    }
+
+    pub fn new_with_operator_override_db(
+        mut input: OperatorOverrideSamplerInput,
+        db: &DB,
+        system_cost_counters: Option<Arc<SystemCostCounters>>,
+    ) -> Result<(Self, OperatorOverrideSamplerReport), TrainerError> {
+        validate_operator_override_input(&input)?;
+        let mut report = apply_operator_override_rows(&mut input, db)?;
+        let boosted_index_set = report
+            .boosted_indices
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let mut sampler = Self::new(
+            input.config,
+            input.l_steps,
+            input.overrides,
+            input.ages_days,
+            input.task_ids,
+            input.patch_similarity_graph,
+        )?;
+        report.boosted_indices.sort_unstable();
+        sampler.operator_override_sampler_applied_count = report.applied_count;
+        sampler.operator_override_boosted_indices = boosted_index_set;
+        sampler.system_cost_counters = system_cost_counters;
+        Ok((sampler, report))
     }
 
     pub fn recompute_weights(&mut self) -> Result<Vec<SamplerWarning>, TrainerError> {
@@ -155,6 +225,7 @@ impl BatchSampler {
             plan.indices.push(chosen);
             plan.regular_count += 1;
         }
+        self.record_operator_override_sampler_batch(&mut plan);
         Ok(plan)
     }
 
@@ -165,6 +236,7 @@ impl BatchSampler {
             regular_count: 0,
             cross_task_indices: Vec::new(),
             cross_task_fallback_count: 0,
+            operator_override_sampler_applied_count: 0,
         };
         if self.force_indices.is_empty() {
             return plan;
@@ -226,6 +298,20 @@ impl BatchSampler {
         self.l_steps.len()
     }
 
+    pub(crate) fn record_operator_override_sampler_batch(&self, plan: &mut BatchPlan) {
+        let count = plan
+            .indices
+            .iter()
+            .filter(|idx| self.operator_override_boosted_indices.contains(idx))
+            .count();
+        plan.operator_override_sampler_applied_count = count;
+        if count > 0 {
+            if let Some(counters) = &self.system_cost_counters {
+                counters.record_operator_override_sampler_applied(count as u64);
+            }
+        }
+    }
+
     fn config_error(field: &'static str, message: impl Into<String>) -> TrainerError {
         TrainerError::new(TrainerErrorCode::MejepaTrainConfigInvalid, message).with_context(json!({
             "field": field,
@@ -233,6 +319,201 @@ impl BatchSampler {
             "remediation": "fix sampler inputs; all vectors must be same length and all weights finite"
         }))
     }
+}
+
+fn validate_operator_override_input(
+    input: &OperatorOverrideSamplerInput,
+) -> Result<(), TrainerError> {
+    let n = input.l_steps.len();
+    if input.example_sources.len() != n {
+        return Err(BatchSampler::config_error(
+            "example_sources",
+            format!(
+                "length {} does not match l_steps length {n}",
+                input.example_sources.len()
+            ),
+        ));
+    }
+    for (idx, source) in input.example_sources.iter().enumerate() {
+        if source.prediction_id.0 == [0_u8; 16] {
+            return Err(BatchSampler::config_error(
+                "example_sources.prediction_id",
+                format!("prediction_id at index {idx} must be non-zero"),
+            ));
+        }
+        source
+            .chunk_id
+            .validate(&format!("example_sources[{idx}].chunk_id"))
+            .map_err(|err| {
+                BatchSampler::config_error(
+                    "example_sources.chunk_id",
+                    format!("invalid chunk_id at index {idx}: {err}"),
+                )
+            })?;
+    }
+    Ok(())
+}
+
+fn apply_operator_override_rows(
+    input: &mut OperatorOverrideSamplerInput,
+    db: &DB,
+) -> Result<OperatorOverrideSamplerReport, TrainerError> {
+    let overrides = load_operator_overrides(db)?;
+    let live_predictions = load_live_prediction_rows(db)?;
+    let mut boosted_indices = BTreeSet::new();
+    let mut dismissed_override_count = 0_usize;
+
+    for (prediction_id, override_record) in &overrides {
+        validate_override_multiplier(override_record)?;
+        let prediction = live_predictions.get(prediction_id).ok_or_else(|| {
+            BatchSampler::config_error(
+                "operator_overrides.prediction_id",
+                format!(
+                    "MEJEPA_OPERATOR_OVERRIDE_SAMPLER_PREDICTION_MISSING: override {} has no live prediction row",
+                    hex::encode(prediction_id.0)
+                ),
+            )
+        })?;
+        if operator_override_dismissed(db, &prediction.task_id)? {
+            dismissed_override_count += 1;
+            continue;
+        }
+        for (idx, source) in input.example_sources.iter().enumerate() {
+            if source.prediction_id == *prediction_id
+                && prediction
+                    .covered_chunks
+                    .iter()
+                    .any(|chunk| chunk == &source.chunk_id)
+            {
+                input.overrides[idx] = true;
+                boosted_indices.insert(idx);
+            }
+        }
+    }
+
+    let boosted_indices = boosted_indices.into_iter().collect::<Vec<_>>();
+    Ok(OperatorOverrideSamplerReport {
+        override_rows_scanned: overrides.len(),
+        live_prediction_rows_scanned: live_predictions.len(),
+        dismissed_override_count,
+        applied_count: boosted_indices.len(),
+        boosted_indices,
+    })
+}
+
+fn load_operator_overrides(
+    db: &DB,
+) -> Result<BTreeMap<PredictionId, OperatorOverride>, TrainerError> {
+    let cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_OVERRIDES)
+        .ok_or_else(|| {
+            BatchSampler::config_error(
+                "operator_overrides.cf",
+                "missing CF_MEJEPA_OPERATOR_OVERRIDES",
+            )
+        })?;
+    let mut out = BTreeMap::new();
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let (key, value) = item.map_err(map_rocksdb_error)?;
+        let record: OperatorOverride = bincode::deserialize(&value).map_err(map_bincode_error)?;
+        validate_override_multiplier(&record)?;
+        if key.as_ref() != record.prediction_id.as_slice() {
+            return Err(BatchSampler::config_error(
+                "operator_overrides.key",
+                "CF_MEJEPA_OPERATOR_OVERRIDES key does not match payload prediction_id",
+            ));
+        }
+        out.insert(PredictionId(record.prediction_id), record);
+    }
+    Ok(out)
+}
+
+fn load_live_prediction_rows(
+    db: &DB,
+) -> Result<BTreeMap<PredictionId, RealityPrediction>, TrainerError> {
+    let cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS)
+        .ok_or_else(|| {
+            BatchSampler::config_error("live_predictions.cf", "missing CF_MEJEPA_LIVE_PREDICTIONS")
+        })?;
+    let mut out = BTreeMap::new();
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let (key, value) = item.map_err(map_rocksdb_error)?;
+        if key.len() != 40 {
+            return Err(BatchSampler::config_error(
+                "live_predictions.key",
+                format!("expected 40-byte live prediction key, got {}", key.len()),
+            ));
+        }
+        let prediction: RealityPrediction =
+            bincode::deserialize(&value).map_err(map_bincode_error)?;
+        prediction
+            .validate()
+            .map_err(|err| BatchSampler::config_error("live_predictions.value", err.to_string()))?;
+        if prediction.session_id.as_slice() != &key[0..16] {
+            return Err(BatchSampler::config_error(
+                "live_predictions.session_id",
+                "key session prefix does not match prediction payload",
+            ));
+        }
+        let mut timestamp = [0_u8; 8];
+        timestamp.copy_from_slice(&key[16..24]);
+        if prediction.created_at_unix_ms != i64::from_be_bytes(timestamp) {
+            return Err(BatchSampler::config_error(
+                "live_predictions.created_at_unix_ms",
+                "key timestamp does not match prediction payload",
+            ));
+        }
+        if prediction.prediction_id.as_slice() != &key[24..40] {
+            return Err(BatchSampler::config_error(
+                "live_predictions.prediction_id",
+                "key prediction suffix does not match prediction payload",
+            ));
+        }
+        out.insert(PredictionId(prediction.prediction_id), prediction);
+    }
+    Ok(out)
+}
+
+fn operator_override_dismissed(db: &DB, task_id: &TaskId) -> Result<bool, TrainerError> {
+    let cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS)
+        .ok_or_else(|| {
+            BatchSampler::config_error(
+                "active_learning_evictions.cf",
+                "missing CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS",
+            )
+        })?;
+    let Some(value) = db
+        .get_cf(cf, task_id.0.as_bytes())
+        .map_err(map_rocksdb_error)?
+    else {
+        return Ok(false);
+    };
+    let entry: ActiveLearningQueueEntry =
+        bincode::deserialize(&value).map_err(map_bincode_error)?;
+    Ok(entry.reason.starts_with("operator_dismissed:"))
+}
+
+fn validate_override_multiplier(record: &OperatorOverride) -> Result<(), TrainerError> {
+    if !record.sampling_weight_multiplier.is_finite()
+        || (record.sampling_weight_multiplier - OPERATOR_OVERRIDE_SAMPLING_WEIGHT).abs()
+            > f32::EPSILON
+    {
+        return Err(BatchSampler::config_error(
+            "operator_overrides.sampling_weight_multiplier",
+            "sampling_weight_multiplier must be exactly 6.0",
+        ));
+    }
+    Ok(())
+}
+
+fn map_rocksdb_error(err: rocksdb::Error) -> TrainerError {
+    BatchSampler::config_error("rocksdb", err.to_string())
+}
+
+fn map_bincode_error(err: Box<bincode::ErrorKind>) -> TrainerError {
+    BatchSampler::config_error("bincode", err.to_string())
 }
 
 #[cfg(test)]

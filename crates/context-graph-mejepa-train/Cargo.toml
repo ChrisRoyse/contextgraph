@@ -65,3 +65,7 @@ path = "examples/utml_l_step_fsv.rs"
 [[example]]
 name = "swebench_300x8_ship_gate_fsv"
 path = "examples/swebench_300x8_ship_gate_fsv.rs"
+
+[[example]]
+name = "operator_override_sampler_fsv"
+path = "examples/operator_override_sampler_fsv.rs"

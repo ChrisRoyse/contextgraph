@@ -28,6 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     counters.record_heal_ticker_run("observe", 7)?;
     counters.record_heal_ticker_run("drift", 11)?;
     counters.record_heal_scheduler_restart();
+    counters.record_operator_override_sampler_applied(3);
     let after = counters.snapshot();
     let breakdown = SystemCostBreakdown::from_snapshots(&before, &after);
     let weekly_report = json!({
@@ -45,6 +46,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && weekly_readback["systemCost"]["windowDelta"]["agentFeedbackTokensTotal"] == json!(450)
         && weekly_readback["systemCost"]["windowDelta"]["rocksdbBytesWrittenTotal"] == json!(2_560)
         && weekly_readback["systemCost"]["windowDelta"]["rocksdbWritesTotal"] == json!(2)
+        && weekly_readback["systemCost"]["windowDelta"]["operatorOverrideSamplerAppliedCountTotal"]
+            == json!(3)
         && weekly_readback["systemCost"]["windowDelta"]["healTickerTelemetryTotal"]
             ["schedulerRestartCountTotal"]
             == json!(1)
@@ -86,6 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "rocksdb_writes_total": 2,
                 "heal_ticker_scheduler_restart_count_total": 1,
                 "heal_ticker_rows": 2,
+                "operator_override_sampler_applied_count_total": 3,
                 "no_spend_caps": true,
                 "forbidden_fields_absent": true
             },
@@ -127,6 +131,7 @@ fn restart_delta_clamps_to_zero() -> Result<serde_json::Value, Box<dyn std::erro
         rocksdb_bytes_written_total: 5_000,
         rocksdb_writes_total: 20,
         heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
+        operator_override_sampler_applied_count_total: 12,
     };
     let current = SystemCostSnapshot::default();
     let breakdown = SystemCostBreakdown::from_snapshots(&earlier, &current);
