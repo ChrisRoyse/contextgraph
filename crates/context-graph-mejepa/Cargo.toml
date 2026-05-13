@@ -102,3 +102,7 @@ path = "examples/phase_f_pause_active_learning_fsv.rs"
 [[example]]
 name = "phase_f_restart_safety_fsv"
 path = "examples/phase_f_restart_safety_fsv.rs"
+
+[[example]]
+name = "phase_f_multi_agent_fsv"
+path = "examples/phase_f_multi_agent_fsv.rs"
