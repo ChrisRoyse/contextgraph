@@ -130,7 +130,11 @@ impl HealTickerTelemetrySnapshot {
     pub fn delta(&self, earlier: &Self) -> Self {
         let mut ticker_totals = BTreeMap::new();
         for (ticker, current) in &self.ticker_totals {
-            let previous = earlier.ticker_totals.get(ticker).cloned().unwrap_or_default();
+            let previous = earlier
+                .ticker_totals
+                .get(ticker)
+                .cloned()
+                .unwrap_or_default();
             ticker_totals.insert(
                 ticker.clone(),
                 HealTickerTelemetryTotals {

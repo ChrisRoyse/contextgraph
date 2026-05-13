@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use context_graph_mejepa::system_cost::{
-    attach_system_cost_to_weekly_report, SystemCostBreakdown, SystemCostCounters, SystemCostError,
-    SystemCostSnapshot,
+    attach_system_cost_to_weekly_report, HealTickerTelemetrySnapshot, SystemCostBreakdown,
+    SystemCostCounters, SystemCostError, SystemCostSnapshot,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -25,6 +25,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     counters.record_agent_feedback_tokens(450);
     counters.record_rocksdb_write(2_048);
     counters.record_rocksdb_write(512);
+    counters.record_heal_ticker_run("observe", 7)?;
+    counters.record_heal_ticker_run("drift", 11)?;
+    counters.record_heal_scheduler_restart();
     let after = counters.snapshot();
     let breakdown = SystemCostBreakdown::from_snapshots(&before, &after);
     let weekly_report = json!({
@@ -42,6 +45,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && weekly_readback["systemCost"]["windowDelta"]["agentFeedbackTokensTotal"] == json!(450)
         && weekly_readback["systemCost"]["windowDelta"]["rocksdbBytesWrittenTotal"] == json!(2_560)
         && weekly_readback["systemCost"]["windowDelta"]["rocksdbWritesTotal"] == json!(2)
+        && weekly_readback["systemCost"]["windowDelta"]["healTickerTelemetryTotal"]
+            ["schedulerRestartCountTotal"]
+            == json!(1)
+        && weekly_readback["heal_tickers_per_window"]["tickers"]
+            .as_array()
+            .map(|rows| rows.len())
+            == Some(2)
         && weekly_readback["systemCost"]["noSpendCaps"] == json!(true)
         && !contains_forbidden(&weekly_readback);
 
@@ -50,6 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         forbidden_cost_cap_field_rejected()?,
         forbidden_nested_spend_field_rejected()?,
         non_object_weekly_report_rejected()?,
+        invalid_heal_ticker_rejected()?,
     ];
     let all_boundaries_pass = boundary_cases
         .iter()
@@ -73,6 +84,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "agent_feedback_tokens_total": 450,
                 "rocksdb_bytes_written_total": 2560,
                 "rocksdb_writes_total": 2,
+                "heal_ticker_scheduler_restart_count_total": 1,
+                "heal_ticker_rows": 2,
                 "no_spend_caps": true,
                 "forbidden_fields_absent": true
             },
@@ -113,6 +126,7 @@ fn restart_delta_clamps_to_zero() -> Result<serde_json::Value, Box<dyn std::erro
         agent_feedback_tokens_total: 1_000,
         rocksdb_bytes_written_total: 5_000,
         rocksdb_writes_total: 20,
+        heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
     };
     let current = SystemCostSnapshot::default();
     let breakdown = SystemCostBreakdown::from_snapshots(&earlier, &current);
@@ -168,6 +182,22 @@ fn non_object_weekly_report_rejected() -> Result<serde_json::Value, Box<dyn std:
     }))
 }
 
+fn invalid_heal_ticker_rejected() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let counters = SystemCostCounters::new();
+    let before = counters.snapshot();
+    let err = counters
+        .record_heal_ticker_run("DriftCheck", 10)
+        .unwrap_err();
+    let after = counters.snapshot();
+    Ok(json!({
+        "case": "invalid_heal_ticker_name_rejected",
+        "sot": "SystemCostCounters::snapshot",
+        "expected": "MEJEPA_SYSTEM_COST_INVALID_TICKER",
+        "actual": error_code(&err),
+        "pass": matches!(err, SystemCostError::InvalidTicker(_)) && before == after
+    }))
+}
+
 fn empty_breakdown() -> SystemCostBreakdown {
     SystemCostBreakdown::from_snapshots(
         &SystemCostSnapshot::default(),
@@ -197,6 +227,7 @@ fn error_code(err: &SystemCostError) -> &'static str {
     match err {
         SystemCostError::WeeklyReportNotObject => "MEJEPA_SYSTEM_COST_WEEKLY_REPORT_NOT_OBJECT",
         SystemCostError::ForbiddenField(_) => "MEJEPA_SYSTEM_COST_FORBIDDEN_FIELD",
+        SystemCostError::InvalidTicker(_) => "MEJEPA_SYSTEM_COST_INVALID_TICKER",
         SystemCostError::Serialize(_) => "MEJEPA_SYSTEM_COST_SERIALIZE_FAILED",
     }
 }

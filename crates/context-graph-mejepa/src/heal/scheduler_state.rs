@@ -1049,7 +1049,10 @@ impl SchedulerState {
         self.system_cost_counters
             .record_heal_ticker_run(&ticker, record.duration_ms)
             .map_err(|err| {
-                HealError::invalid("self_optim_scheduler.heal_ticker_telemetry", err.to_string())
+                HealError::invalid(
+                    "self_optim_scheduler.heal_ticker_telemetry",
+                    err.to_string(),
+                )
             })?;
         *self.ticker_counts.entry(ticker.clone()).or_insert(0) += 1;
         self.last_ticker = Some(ticker.clone());

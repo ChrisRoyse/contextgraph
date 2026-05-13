@@ -41,11 +41,11 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tracing::info;
 
-use super::mejepa_phase7_storage::{subscriber_state_for_provenance, subscriber_status_for_paths};
 use super::mejepa_agent_identity::{
     resolve_feedback_identity, resolve_operator_identity, IdentityAttestationRequest,
     ResolvedAgentIdentity, MEJEPA_AGENT_IDENTITY_CONFIG_INVALID, MEJEPA_AGENT_IDENTITY_UNVERIFIED,
 };
+use super::mejepa_phase7_storage::{subscriber_state_for_provenance, subscriber_status_for_paths};
 use crate::handlers::tools::helpers::ToolErrorKind;
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
@@ -1887,7 +1887,10 @@ fn mejepa_write_error_classification<'a>(
         return (ToolErrorKind::Validation, MEJEPA_AGENT_IDENTITY_UNVERIFIED);
     }
     if message.contains(MEJEPA_AGENT_IDENTITY_CONFIG_INVALID) {
-        return (ToolErrorKind::Validation, MEJEPA_AGENT_IDENTITY_CONFIG_INVALID);
+        return (
+            ToolErrorKind::Validation,
+            MEJEPA_AGENT_IDENTITY_CONFIG_INVALID,
+        );
     }
     (default_kind, default_code)
 }
@@ -2421,11 +2424,14 @@ mod mejepa_constellation_inspect_tests {
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn env_guard() -> MutexGuard<'static, ()> {
-        let guard = ENV_LOCK.lock().unwrap();
+        let guard = ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
         std::env::remove_var(ENV_TCT_DB);
         std::env::remove_var(ENV_INFER_DB);
         std::env::remove_var(ENV_PAUSE_PATH);
         std::env::remove_var(ENV_ALLOW_DETERMINISTIC_VERIFY);
+        std::env::remove_var(
+            crate::handlers::tools::mejepa_agent_identity::ENV_MEJEPA_AGENTS_CONFIG,
+        );
         std::env::remove_var(context_graph_mejepa_tct::ENV_ALLOW_STALE);
         std::env::remove_var(context_graph_mejepa_tct::ENV_MAX_AGE_DAYS);
         guard
@@ -2551,17 +2557,37 @@ mod mejepa_constellation_inspect_tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn mejepa_operator_override_prediction_persists_override_and_label() {
+        let _guard = env_guard();
         let (handlers, _handler_tempdir) =
             crate::handlers::tests::create_protocol_test_handlers().await;
         let tmp = TempDir::new().unwrap();
         let infer_db = tmp.path().join("infer-db");
+        let agents_config = tmp.path().join("agents.toml");
+        let operator_psk = "operator-override-unit-secret";
+        write_single_agent_config(
+            &agents_config,
+            "operator-override-unit-test",
+            operator_psk,
+            true,
+        );
+        std::env::set_var(
+            crate::handlers::tools::mejepa_agent_identity::ENV_MEJEPA_AGENTS_CONFIG,
+            &agents_config,
+        );
         let prediction = inspect_prediction_fixture([0x60; 16], "src/lib.rs#fn#override");
         let prediction_id = PredictionId(prediction.prediction_id);
         let db = open_infer_rocksdb(&infer_db).unwrap();
         persist_prediction_and_dda(db.clone(), &prediction);
         drop(db);
+        let identity_attestation = signed_identity_json(
+            operator_psk,
+            tool_names::MEJEPA_OPERATOR_OVERRIDE_PREDICTION,
+            "operator-override-unit-test",
+            "operator-override-unit-session",
+            "nonce-operator-override-unit",
+        );
 
         let response = handlers
             .call_mejepa_operator_override_prediction(
@@ -2571,7 +2597,8 @@ mod mejepa_constellation_inspect_tests {
                     "predictionId": hex::encode(prediction.prediction_id),
                     "overrideVerdict": "fail",
                     "reason": "operator readback test",
-                    "operatorId": "operator-override-unit-test"
+                    "operatorId": "operator-override-unit-test",
+                    "identityAttestation": identity_attestation
                 }),
             )
             .await;
@@ -2617,7 +2644,14 @@ mod mejepa_constellation_inspect_tests {
                     "predictionId": hex::encode([0x61; 16]),
                     "overrideVerdict": "fail",
                     "reason": "operator readback test",
-                    "operatorId": "operator-override-unit-test"
+                    "operatorId": "operator-override-unit-test",
+                    "identityAttestation": signed_identity_json(
+                        operator_psk,
+                        tool_names::MEJEPA_OPERATOR_OVERRIDE_PREDICTION,
+                        "operator-override-unit-test",
+                        "operator-override-unit-session",
+                        "nonce-operator-override-missing-prediction"
+                    )
                 }),
             )
             .await;
@@ -2628,6 +2662,335 @@ mod mejepa_constellation_inspect_tests {
             missing_text.contains("CF_MEJEPA_LIVE_PREDICTIONS"),
             "{missing_text}"
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn mejepa_agent_identity_attestation_writes_phase_f_fsv_artifact() {
+        let _guard = env_guard();
+        let (handlers, _handler_tempdir) =
+            crate::handlers::tests::create_protocol_test_handlers().await;
+        let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
+        let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-agent-identity-fsv");
+        fs::create_dir_all(&fsv_root).unwrap();
+        let run_root = fsv_root.join(format!(
+            "mcp-run-{}-{}",
+            started_at_unix_ms,
+            std::process::id()
+        ));
+        fs::create_dir_all(&run_root).unwrap();
+        let infer_db = run_root.join("infer-db");
+        let agents_config = run_root.join("agents.toml");
+        let agent_psk = "phase-f-agent-secret-0001";
+        let operator_psk = "phase-f-operator-secret-0001";
+        fs::write(
+            &agents_config,
+            format!(
+                r#"[[agents]]
+agent_id = "agent-codex"
+psk = "{agent_psk}"
+
+[[agents]]
+agent_id = "operator-1"
+psk = "{operator_psk}"
+can_operator_override = true
+"#
+            ),
+        )
+        .unwrap();
+        std::env::set_var(ENV_INFER_DB, &infer_db);
+        std::env::set_var(
+            crate::handlers::tools::mejepa_agent_identity::ENV_MEJEPA_AGENTS_CONFIG,
+            &agents_config,
+        );
+
+        let prediction = inspect_prediction_fixture([0x92; 16], "src/lib.rs#fn#identity");
+        let db = open_infer_rocksdb(&infer_db).unwrap();
+        let cf_counts_before = json!({
+            CF_MEJEPA_LIVE_PREDICTIONS: count_cf_any(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS).unwrap(),
+            CF_MEJEPA_AGENT_FEEDBACK: count_cf_any(db.as_ref(), CF_MEJEPA_AGENT_FEEDBACK).unwrap(),
+            CF_MEJEPA_OPERATOR_OVERRIDES: count_cf_any(db.as_ref(), CF_MEJEPA_OPERATOR_OVERRIDES).unwrap(),
+            CF_MEJEPA_ACTIVE_LEARNING_LABELS: count_cf_any(db.as_ref(), CF_MEJEPA_ACTIVE_LEARNING_LABELS).unwrap()
+        });
+        persist_prediction_and_dda(db.clone(), &prediction);
+        drop(db);
+
+        let session_id = "phase-f-agent-identity-session";
+        let valid_feedback_sig = signed_identity_json(
+            agent_psk,
+            tool_names::MEJEPA_RECORD_AGENT_FEEDBACK,
+            "agent-codex",
+            session_id,
+            "nonce-valid-feedback",
+        );
+        let valid_feedback_response = handlers
+            .call_mejepa_record_agent_feedback(
+                Some(JsonRpcId::Number(920)),
+                json!({
+                    "predictionId": hex::encode(prediction.prediction_id),
+                    "agentId": "agent-codex",
+                    "feedbackKind": "confirmed",
+                    "agentExplanation": "signed identity FSV feedback",
+                    "severity": "high",
+                    "identityAttestation": valid_feedback_sig
+                }),
+            )
+            .await;
+        let valid_feedback_result = valid_feedback_response.result.unwrap();
+        let valid_feedback = valid_feedback_result["structuredContent"].clone();
+
+        let invalid_feedback_sig = signed_identity_json(
+            "wrong-phase-f-agent-secret",
+            tool_names::MEJEPA_RECORD_AGENT_FEEDBACK,
+            "agent-codex",
+            session_id,
+            "nonce-invalid-feedback",
+        );
+        let invalid_feedback_response = handlers
+            .call_mejepa_record_agent_feedback(
+                Some(JsonRpcId::Number(921)),
+                json!({
+                    "predictionId": hex::encode(prediction.prediction_id),
+                    "agentId": "agent-codex",
+                    "feedbackKind": "surprise",
+                    "agentExplanation": "bad signature should fail",
+                    "severity": "high",
+                    "identityAttestation": invalid_feedback_sig
+                }),
+            )
+            .await;
+        let invalid_feedback_result = invalid_feedback_response.result.unwrap();
+
+        let anonymous_response = handlers
+            .call_mejepa_record_agent_feedback(
+                Some(JsonRpcId::Number(922)),
+                json!({
+                    "predictionId": hex::encode(prediction.prediction_id),
+                    "feedbackKind": "confirmed",
+                    "agentExplanation": "anonymous feedback stays anonymous",
+                    "severity": "low"
+                }),
+            )
+            .await;
+        let anonymous_result = anonymous_response.result.unwrap();
+        let anonymous_feedback = anonymous_result["structuredContent"].clone();
+
+        let operator_sig = signed_identity_json(
+            operator_psk,
+            tool_names::MEJEPA_OPERATOR_OVERRIDE_PREDICTION,
+            "operator-1",
+            session_id,
+            "nonce-valid-operator",
+        );
+        let operator_response = handlers
+            .call_mejepa_operator_override_prediction(
+                Some(JsonRpcId::Number(923)),
+                json!({
+                    "dbPath": infer_db.display().to_string(),
+                    "predictionId": hex::encode(prediction.prediction_id),
+                    "overrideVerdict": "fail",
+                    "reason": "signed operator identity FSV",
+                    "operatorId": "operator-1",
+                    "identityAttestation": operator_sig
+                }),
+            )
+            .await;
+        let operator_result = operator_response.result.unwrap();
+        let operator_override = operator_result["structuredContent"].clone();
+
+        let missing_operator_sig_response = handlers
+            .call_mejepa_operator_override_prediction(
+                Some(JsonRpcId::Number(924)),
+                json!({
+                    "dbPath": infer_db.display().to_string(),
+                    "predictionId": hex::encode(prediction.prediction_id),
+                    "overrideVerdict": "fail",
+                    "reason": "unsigned operator should fail",
+                    "operatorId": "operator-1"
+                }),
+            )
+            .await;
+        let missing_operator_sig_result = missing_operator_sig_response.result.unwrap();
+
+        let reopened = open_infer_rocksdb(&infer_db).unwrap();
+        let feedback_agents = read_feedback_agent_ids(reopened.as_ref());
+        let override_readback =
+            load_operator_override(reopened.as_ref(), PredictionId(prediction.prediction_id))
+                .unwrap()
+                .unwrap();
+        let eval_store = RocksDbEvalStore::new(reopened.clone()).unwrap();
+        let label_readback = eval_store.load_label(&prediction.task_id).unwrap().unwrap();
+        let cf_counts_after = json!({
+            CF_MEJEPA_LIVE_PREDICTIONS: count_cf_any(reopened.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS).unwrap(),
+            CF_MEJEPA_AGENT_FEEDBACK: count_cf_any(reopened.as_ref(), CF_MEJEPA_AGENT_FEEDBACK).unwrap(),
+            CF_MEJEPA_OPERATOR_OVERRIDES: count_cf_any(reopened.as_ref(), CF_MEJEPA_OPERATOR_OVERRIDES).unwrap(),
+            CF_MEJEPA_ACTIVE_LEARNING_LABELS: count_cf_any(reopened.as_ref(), CF_MEJEPA_ACTIVE_LEARNING_LABELS).unwrap()
+        });
+        let independent_reopen_equal = feedback_agents == vec!["agent-codex", "anonymous"]
+            && override_readback.operator_id == "operator-1"
+            && override_readback.reason == "signed operator identity FSV"
+            && label_readback.method == LabelMethod::Human
+            && label_readback.oracle_outcome == context_graph_mejepa::OracleOutcome::Fail;
+        drop(eval_store);
+        drop(reopened);
+
+        let happy_path = vec![
+            json!({
+                "case": "signed_agent_feedback_accepts_configured_identity",
+                "sot": format!("{CF_MEJEPA_AGENT_FEEDBACK} + {}", agents_config.display()),
+                "before": {"agent_id": "agent-codex"},
+                "trigger": "cargo test -p context-graph-mcp mejepa_agent_identity_attestation_writes_phase_f_fsv_artifact -- --nocapture",
+                "after": valid_feedback,
+                "expected": {"identity.authenticated": true, "agentId": "agent-codex"},
+                "actual": valid_feedback_result["isError"] == false,
+                "pass": valid_feedback_result["isError"] == false
+                    && valid_feedback["agentId"] == json!("agent-codex")
+                    && valid_feedback["identity"]["authenticated"] == json!(true),
+                "evidence_path": run_root.display().to_string()
+            }),
+            json!({
+                "case": "signed_operator_override_accepts_configured_operator",
+                "sot": format!("{CF_MEJEPA_OPERATOR_OVERRIDES} + {CF_MEJEPA_ACTIVE_LEARNING_LABELS}"),
+                "before": {"operator_id": "operator-1"},
+                "trigger": "cargo test -p context-graph-mcp mejepa_agent_identity_attestation_writes_phase_f_fsv_artifact -- --nocapture",
+                "after": operator_override,
+                "expected": {"identity.authenticated": true, "operatorId": "operator-1"},
+                "actual": operator_result["isError"] == false,
+                "pass": operator_result["isError"] == false
+                    && operator_override["operatorId"] == json!("operator-1")
+                    && operator_override["identity"]["authenticated"] == json!(true),
+                "evidence_path": run_root.display().to_string()
+            }),
+        ];
+        let boundary_cases = vec![
+            json!({
+                "case": "invalid_psk_rejected",
+                "expected": "MEJEPA_AGENT_IDENTITY_UNVERIFIED",
+                "actual": invalid_feedback_result,
+                "pass": invalid_feedback_result["isError"] == true
+                    && invalid_feedback_result["structuredContent"]["error_code"]
+                        == json!(crate::handlers::tools::mejepa_agent_identity::MEJEPA_AGENT_IDENTITY_UNVERIFIED)
+            }),
+            json!({
+                "case": "anonymous_feedback_writes_anonymous_agent_id",
+                "expected": "agent_id = anonymous",
+                "actual": anonymous_feedback,
+                "pass": anonymous_result["isError"] == false
+                    && anonymous_feedback["agentId"] == json!("anonymous")
+                    && anonymous_feedback["identity"]["authenticated"] == json!(false)
+            }),
+            json!({
+                "case": "unsigned_operator_override_rejected",
+                "expected": "MEJEPA_AGENT_IDENTITY_UNVERIFIED",
+                "actual": missing_operator_sig_result,
+                "pass": missing_operator_sig_result["isError"] == true
+                    && missing_operator_sig_result["structuredContent"]["error_code"]
+                        == json!(crate::handlers::tools::mejepa_agent_identity::MEJEPA_AGENT_IDENTITY_UNVERIFIED)
+            }),
+        ];
+        let all_happy_pass = happy_path
+            .iter()
+            .all(|case| case["pass"].as_bool() == Some(true));
+        let all_boundaries_pass = boundary_cases
+            .iter()
+            .all(|case| case["pass"].as_bool() == Some(true));
+        let report = json!({
+            "fsv_root": fsv_root,
+            "task_id": "TASK-SEC-009",
+            "issue": 92,
+            "started_at_unix_ms": started_at_unix_ms,
+            "build_release_sha": std::process::Command::new("git")
+                .args(["rev-parse", "--short", "HEAD"])
+                .output()
+                .ok()
+                .and_then(|out| String::from_utf8(out.stdout).ok())
+                .map(|text| text.trim().to_string())
+                .unwrap_or_else(|| "unknown".to_string()),
+            "happy_path": happy_path,
+            "boundary_cases": boundary_cases,
+            "all_passed": all_happy_pass && all_boundaries_pass && independent_reopen_equal,
+            "cf_counts_before": cf_counts_before,
+            "cf_counts_after": cf_counts_after,
+            "readback_equal": independent_reopen_equal,
+            "source_of_truth": {
+                "agents_config": agents_config.display().to_string(),
+                "feedback_cf": CF_MEJEPA_AGENT_FEEDBACK,
+                "operator_override_cf": CF_MEJEPA_OPERATOR_OVERRIDES,
+                "active_learning_label_cf": CF_MEJEPA_ACTIVE_LEARNING_LABELS,
+                "feedback_agents_after_reopen": feedback_agents,
+                "operator_id_after_reopen": override_readback.operator_id
+            },
+            "physical_artifacts": {
+                "infer_db_exists": infer_db.exists(),
+                "agents_config_exists": agents_config.exists(),
+                "run_root": run_root.display().to_string(),
+                "infer_db": physical_file_summary(&infer_db)
+            }
+        });
+        assert_eq!(
+            report["all_passed"],
+            true,
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap()
+        );
+        let evidence_path = fsv_root.join("agent_identity_mcp_fsv.json");
+        write_fsv_json(&evidence_path, &report);
+        let readback: Value = serde_json::from_slice(&fs::read(&evidence_path).unwrap()).unwrap();
+        assert_eq!(readback["all_passed"], true);
+        assert_eq!(readback["readback_equal"], true);
+    }
+
+    fn signed_identity_json(
+        psk: &str,
+        tool_name: &str,
+        claimed_id: &str,
+        session_id: &str,
+        nonce: &str,
+    ) -> Value {
+        let timestamp_unix_ms = chrono::Utc::now().timestamp_millis();
+        let signature_hex =
+            crate::handlers::tools::mejepa_agent_identity::sign_identity_attestation(
+                psk,
+                tool_name,
+                claimed_id,
+                session_id,
+                nonce,
+                timestamp_unix_ms,
+            )
+            .unwrap();
+        json!({
+            "sessionId": session_id,
+            "nonce": nonce,
+            "timestampUnixMs": timestamp_unix_ms,
+            "signatureHex": signature_hex
+        })
+    }
+
+    fn write_single_agent_config(path: &Path, agent_id: &str, psk: &str, operator: bool) {
+        fs::write(
+            path,
+            format!(
+                r#"[[agents]]
+agent_id = "{agent_id}"
+psk = "{psk}"
+can_operator_override = {operator}
+"#
+            ),
+        )
+        .unwrap();
+    }
+
+    fn read_feedback_agent_ids(db: &DB) -> Vec<String> {
+        let cf = cf_handle(db, CF_MEJEPA_AGENT_FEEDBACK).unwrap();
+        let mut ids = db
+            .iterator_cf(cf, IteratorMode::Start)
+            .map(|row| {
+                let (_key, value) = row.unwrap();
+                let event: SurpriseEvent = serde_json::from_slice(&value).unwrap();
+                event.agent_id.0
+            })
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids
     }
 
     fn versions(seed: u8) -> BTreeMap<EmbedderId, [u8; 32]> {
@@ -3142,6 +3505,7 @@ mod mejepa_constellation_inspect_tests {
 
     #[tokio::test]
     async fn mejepa_operator_override_prediction_writes_phase_f_fsv_artifact() {
+        let _guard = env_guard();
         let (handlers, _handler_tempdir) =
             crate::handlers::tests::create_protocol_test_handlers().await;
         let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
@@ -3154,6 +3518,13 @@ mod mejepa_constellation_inspect_tests {
         ));
         fs::create_dir_all(&run_root).unwrap();
         let infer_db = run_root.join("infer-db");
+        let agents_config = run_root.join("agents.toml");
+        let operator_psk = "phase-f-operator-override-secret";
+        write_single_agent_config(&agents_config, "operator-1", operator_psk, true);
+        std::env::set_var(
+            crate::handlers::tools::mejepa_agent_identity::ENV_MEJEPA_AGENTS_CONFIG,
+            &agents_config,
+        );
 
         let prediction = inspect_prediction_fixture([0x60; 16], "src/lib.rs#fn#override");
         let db = open_infer_rocksdb(&infer_db).unwrap();
@@ -3173,7 +3544,14 @@ mod mejepa_constellation_inspect_tests {
                     "dbPath": infer_db.display().to_string(),
                     "overrideVerdict": "fail",
                     "reason": "operator observed oracle failure",
-                    "operatorId": "operator-1"
+                    "operatorId": "operator-1",
+                    "identityAttestation": signed_identity_json(
+                        operator_psk,
+                        tool_names::MEJEPA_OPERATOR_OVERRIDE_PREDICTION,
+                        "operator-1",
+                        "operator-override-fsv-session",
+                        "nonce-operator-override-happy"
+                    )
                 }),
             )
             .await;
@@ -3221,7 +3599,14 @@ mod mejepa_constellation_inspect_tests {
                     "dbPath": infer_db.display().to_string(),
                     "overrideVerdict": "fail",
                     "reason": "x",
-                    "operatorId": "operator-1"
+                    "operatorId": "operator-1",
+                    "identityAttestation": signed_identity_json(
+                        operator_psk,
+                        tool_names::MEJEPA_OPERATOR_OVERRIDE_PREDICTION,
+                        "operator-1",
+                        "operator-override-fsv-session",
+                        "nonce-operator-override-missing-prediction"
+                    )
                 }),
             )
             .await;
@@ -3235,7 +3620,14 @@ mod mejepa_constellation_inspect_tests {
                     "dbPath": infer_db.display().to_string(),
                     "overrideVerdict": "fail",
                     "reason": "x",
-                    "operatorId": "operator-1"
+                    "operatorId": "operator-1",
+                    "identityAttestation": signed_identity_json(
+                        operator_psk,
+                        tool_names::MEJEPA_OPERATOR_OVERRIDE_PREDICTION,
+                        "operator-1",
+                        "operator-override-fsv-session",
+                        "nonce-operator-override-missing-prediction"
+                    )
                 }),
             )
             .await;
@@ -3249,7 +3641,14 @@ mod mejepa_constellation_inspect_tests {
                     "dbPath": infer_db.display().to_string(),
                     "overrideVerdict": "fail",
                     "reason": "  ",
-                    "operatorId": "operator-1"
+                    "operatorId": "operator-1",
+                    "identityAttestation": signed_identity_json(
+                        operator_psk,
+                        tool_names::MEJEPA_OPERATOR_OVERRIDE_PREDICTION,
+                        "operator-1",
+                        "operator-override-fsv-session",
+                        "nonce-operator-override-empty-reason"
+                    )
                 }),
             )
             .await;

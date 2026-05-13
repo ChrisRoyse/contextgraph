@@ -1,0 +1,14 @@
+[Unit]
+Description=ContextGraph ME-JEPA nightly accelerated soak timer
+Documentation=file:/home/cabdru/contextgraph/docs/futurebuild/18_INTEGRATION_AND_E2E_TESTING.md
+Requires=mejepa-soak-nightly.service
+
+[Timer]
+# Daily at 05:30 local, after log rotation and monthly DR verification windows.
+OnCalendar=*-*-* 05:30:00
+RandomizedDelaySec=45min
+Persistent=true
+Unit=mejepa-soak-nightly.service
+
+[Install]
+WantedBy=timers.target

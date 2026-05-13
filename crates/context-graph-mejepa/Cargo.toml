@@ -111,3 +111,7 @@ path = "examples/phase_f_multi_agent_fsv.rs"
 [[example]]
 name = "phase_f_chaos_failpoints_fsv"
 path = "examples/phase_f_chaos_failpoints_fsv.rs"
+
+[[example]]
+name = "phase_f_heal_ticker_telemetry_fsv"
+path = "examples/phase_f_heal_ticker_telemetry_fsv.rs"

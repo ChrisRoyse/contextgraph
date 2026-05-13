@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
-use anyhow::{anyhow, bail, Context, Result as AnyhowResult};
+use anyhow::{anyhow, bail, Result as AnyhowResult};
 use hmac::{Hmac, Mac};
 use serde::Deserialize;
 use sha2::Sha256;
@@ -97,7 +97,9 @@ pub(crate) fn resolve_operator_identity(
         fail_identity("operatorId must name a configured non-anonymous operator")?;
     }
     let attestation = attestation.ok_or_else(|| {
-        anyhow!("{MEJEPA_AGENT_IDENTITY_UNVERIFIED}: operator override requires identityAttestation")
+        anyhow!(
+            "{MEJEPA_AGENT_IDENTITY_UNVERIFIED}: operator override requires identityAttestation"
+        )
     })?;
     verify_signed_identity(claimed, attestation, tool_name, true, now_unix_ms)
 }
@@ -221,7 +223,10 @@ fn load_agents_config() -> AnyhowResult<(PathBuf, BTreeMap<String, ConfiguredAge
     let mut agents = BTreeMap::new();
     for agent in parsed.agents {
         validate_configured_agent(&agent)?;
-        if agents.insert(agent.agent_id.clone(), agent.clone()).is_some() {
+        if agents
+            .insert(agent.agent_id.clone(), agent.clone())
+            .is_some()
+        {
             bail!(
                 "{MEJEPA_AGENT_IDENTITY_CONFIG_INVALID}: duplicate agent_id {:?}",
                 agent.agent_id
@@ -256,7 +261,9 @@ fn validate_configured_agent(agent: &ConfiguredAgent) -> AnyhowResult<()> {
         bail!("{MEJEPA_AGENT_IDENTITY_CONFIG_INVALID}: anonymous is reserved");
     }
     if agent.agent_id.len() > 256 || agent.agent_id.chars().any(char::is_control) {
-        bail!("{MEJEPA_AGENT_IDENTITY_CONFIG_INVALID}: agent_id must be single-line text <=256 bytes");
+        bail!(
+            "{MEJEPA_AGENT_IDENTITY_CONFIG_INVALID}: agent_id must be single-line text <=256 bytes"
+        );
     }
     if agent.psk.as_bytes().len() < MIN_PSK_BYTES {
         bail!("{MEJEPA_AGENT_IDENTITY_CONFIG_INVALID}: psk must be at least 16 bytes");
