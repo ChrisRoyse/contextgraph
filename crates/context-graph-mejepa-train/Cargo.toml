@@ -69,3 +69,7 @@ path = "examples/swebench_300x8_ship_gate_fsv.rs"
 [[example]]
 name = "operator_override_sampler_fsv"
 path = "examples/operator_override_sampler_fsv.rs"
+
+[[example]]
+name = "label_transfer_consumer_fsv"
+path = "examples/label_transfer_consumer_fsv.rs"

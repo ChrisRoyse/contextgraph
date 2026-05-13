@@ -190,6 +190,7 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 | `TASK-PREDICT-012` | Operator override prediction tool | **complete (#60, commit 377f0884)** — `operator_override.rs` + `CF_MEJEPA_OPERATOR_OVERRIDES` + `mejepa_operator_override_prediction` MCP tool; 6.0× sampling-weight multiplier persisted |
 | `TASK-PREDICT-LABEL-010` | Toolchain availability fail-closed audit | **complete (#61, commit 0379df9c)** — `crates/context-graph-mejepa/src/toolchain_detect.rs`; 16-binary default catalogue across 11 languages |
 | `TASK-PREDICT-LABEL-011` | Cross-language label gating | **complete (#62, commit 0379df9c)** — `crates/context-graph-mejepa/src/cross_language_label_gating.rs`; same-root-cause + similarity > 0.85 + correlation ≥ 0.60 ⇒ transfer at 0.5× weight |
+| `TASK-PREDICT-LABEL-012` | Cross-language label gating consumer | **complete (#86)** — `label_transfer_audit` + `apply_phase_b_labels_with_transfer_gate()` + `CF_MEJEPA_LABEL_TRANSFER_DECISIONS`; weekly surfaces include accept/reject ratios per language pair |
 
 ### Closed integration test tasks
 
@@ -225,6 +226,7 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 - `/mnt/d/contextgraph/fsv/phase-f-health-probe-fsv/health_probe_fsv.json` — sha256:7f7c03f2
 - `/mnt/d/contextgraph/fsv/phase-f-toolchain-availability-fsv/toolchain_availability_fsv.json`
 - `/mnt/d/contextgraph/fsv/phase-f-cross-language-label-gating-fsv/cross_language_label_gating_fsv.json`
+- `/mnt/d/contextgraph/fsv/phase-f-label-transfer-gating-fsv/label_transfer_consumer_fsv.json`
 - `/mnt/d/contextgraph/fsv/phase-f-system-cost-fsv/system_cost_fsv.json`
 - `/mnt/d/contextgraph/fsv/phase-f-operator-override-fsv/operator_override_fsv.json` — sha256:c6da2c60
 - `/mnt/d/contextgraph/fsv/phase-f-pause-cli-fsv/pause_cli_fsv.json`

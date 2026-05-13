@@ -47,6 +47,13 @@ pub(super) fn weekly_eval_dashboard(
         .and_then(Value::as_str)
         .unwrap_or("unknown");
     let feedback = agent_feedback_summary(db.as_ref(), 5)?;
+    let label_transfer = context_graph_mejepa::summarize_label_transfer_decisions(db.as_ref())
+        .map_err(|err| {
+            context_graph_mejepa::EvalError::new(
+                context_graph_mejepa::EvalErrorCode::Store,
+                err.to_string(),
+            )
+        })?;
     let overall_status = if weekly_files_status == "present"
         && holdout_feed_status == "ready"
         && report.ship_gate_passed
@@ -83,6 +90,7 @@ pub(super) fn weekly_eval_dashboard(
             "perPredictionClassCalibration": report.per_prediction_class_calibration
         },
         "activeLearning": report.active_learning,
+        "labelTransferDecisions": label_transfer,
         "agentFeedback": feedback,
         "operationalSignals": operational_signal_counts(db.as_ref())?,
         "weeklyFiles": weekly_files,
@@ -93,6 +101,7 @@ pub(super) fn weekly_eval_dashboard(
             "holdoutFeed": d_root.join("state/gold-labels/weekly_holdout_panels.json"),
             "exportsRoot": exports_root,
             "agentFeedback": context_graph_mejepa_cf::CF_MEJEPA_AGENT_FEEDBACK,
+            "labelTransferDecisions": context_graph_mejepa_cf::CF_MEJEPA_LABEL_TRANSFER_DECISIONS,
             "driftHistory": context_graph_mejepa_cf::CF_MEJEPA_DRIFT_HISTORY
         }
     }))
@@ -182,6 +191,7 @@ fn operational_signal_counts(db: &DB) -> Result<Value, context_graph_mejepa::Eva
         "healReportRows": cf_count(db, context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS)?,
         "modelPromotionRows": cf_count(db, context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS)?,
         "activeLearningQueueRows": cf_count(db, context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE)?,
+        "labelTransferDecisionRows": cf_count(db, context_graph_mejepa_cf::CF_MEJEPA_LABEL_TRANSFER_DECISIONS)?,
         "oodEscalationRows": cf_count(db, context_graph_mejepa_cf::CF_MEJEPA_OOD_ESCALATIONS)?
     }))
 }

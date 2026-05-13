@@ -40,10 +40,11 @@
 **Phase F durable state surface additions (2026-05-13):**
 
 - New CF `CF_MEJEPA_OPERATOR_OVERRIDES` (registered in `context-graph-mejepa-cf`, opened by hygiene + inference). Keyed by `PredictionId`; carries `OperatorOverride` with `sampling_weight_multiplier = 6.0` so the BatchSampler upweights affected chunks for the next training batch.
+- New CF `CF_MEJEPA_LABEL_TRANSFER_DECISIONS` (registered in `context-graph-mejepa-cf`, opened by hygiene + inference + eval). Keyed by `(PredictionId, label_source, source_chunk, target_chunk)`; carries every same-language, cross-language-transfer, and reject decision from the label application path so weekly reports can render accept/reject ratios per language pair.
 - New state file `/mnt/d/contextgraph/state/cgreality/predictions_paused_until.json` (JSON, `paused_until_unix_ms` + `set_at_unix_ms` + `reason` + `source`). Predictions consult it on every verify cycle.
 - New module `crates/context-graph-mejepa/src/system_cost.rs` — monotonic atomic counters for `cuda_kernel_microseconds_total`, `agent_feedback_tokens_total`, `rocksdb_bytes_written_total`, `rocksdb_writes_total`. Explicitly forbids `cost_estimate_usd` and `cost_cap_reached` (test asserts JSON does not contain those keys).
 - New module `crates/context-graph-mejepa/src/toolchain_detect.rs` — fail-closed `MEJEPA_LABEL_TOOLCHAIN_MISSING` audit for the 16-binary default catalogue spanning Rust, Python, JS, TS, Go, Java, C, C++, C#, Ruby, PHP.
-- New module `crates/context-graph-mejepa/src/cross_language_label_gating.rs` — label-transfer policy with `RejectReason::{RootCauseMismatch, SimilarityBelowThreshold, CorrelationBelowThreshold}` and 0.5× transferred weight.
+- New module `crates/context-graph-mejepa/src/cross_language_label_gating.rs` — label-transfer policy with `RejectReason::{RootCauseMismatch, SimilarityBelowThreshold, CorrelationBelowThreshold}` and 0.5× transferred weight. New module `crates/context-graph-mejepa/src/label_transfer_audit.rs` persists the consumer decision trail and per-language-pair summary.
 - New module `crates/context-graph-mcp/src/deprecation.rs` — `DeprecationNotice` + `apply_deprecation()` injects warnings or fails closed (`CONTEXT_GRAPH_DEPRECATION_LEVEL=error`).
 - New module `crates/context-graph-mcp/src/health_probe.rs` — opt-in axum listener exposing `/health` + `/ready` for systemd / k8s liveness checks.
 

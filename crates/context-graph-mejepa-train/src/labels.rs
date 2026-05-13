@@ -1,10 +1,15 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use context_graph_mejepa::{
-    EdgeCaseClass, FailureModeClass, LatentBugClass, ReasoningClass, RootCauseClass,
-    SecurityConcernClass, TestDeltaKind, TestId, TestOutcome,
+use context_graph_mejepa::label_transfer_audit::{
+    apply_and_persist_label_transfer_decision, LabelTransferApplicationInput,
+    LabelTransferAuditRecord,
 };
+use context_graph_mejepa::{
+    ChunkId, EdgeCaseClass, FailureModeClass, Language, LatentBugClass, PredictionId,
+    ReasoningClass, RootCauseClass, SecurityConcernClass, TestDeltaKind, TestId, TestOutcome,
+};
+use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
 use crate::learning_signal::{non_empty, UtmlError, UtmlErrorCode};
@@ -106,6 +111,45 @@ pub struct ExtractedPhaseBLabels {
     pub security_concerns: Vec<SecurityLabel>,
     pub reasoning_class: ReasoningClass,
     pub touched_files: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LabelTransferApplicationContext {
+    pub prediction_id: PredictionId,
+    pub label_source_id: String,
+    pub source_language: Language,
+    pub target_language: Language,
+    pub source_chunk_id: ChunkId,
+    pub target_chunk_id: ChunkId,
+    pub target_root_cause: RootCauseClass,
+    pub similarity: f32,
+    pub source_cross_language_correlation: f32,
+    pub created_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AppliedFailureModeLabel {
+    pub label: FailureModeLabel,
+    pub decision: LabelTransferAuditRecord,
+    pub effective_weight: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RejectedFailureModeLabel {
+    pub label: FailureModeLabel,
+    pub decision: LabelTransferAuditRecord,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AppliedPhaseBLabels {
+    pub source: LabelSource,
+    pub accepted_failure_modes: Vec<AppliedFailureModeLabel>,
+    pub rejected_failure_modes: Vec<RejectedFailureModeLabel>,
+    pub transfer_decisions: Vec<LabelTransferAuditRecord>,
 }
 
 impl CommandEvidence {
@@ -267,6 +311,57 @@ pub fn extract_cargo_test_labels(
         exit_code,
         stdout: stdout.to_string(),
         stderr: stderr.to_string(),
+    })
+}
+
+pub fn apply_phase_b_labels_with_transfer_gate(
+    db: &DB,
+    labels: &ExtractedPhaseBLabels,
+    context: &LabelTransferApplicationContext,
+) -> Result<AppliedPhaseBLabels, UtmlError> {
+    validate_extracted_labels(labels)?;
+    validate_label_transfer_context(context)?;
+    let mut accepted_failure_modes = Vec::new();
+    let mut rejected_failure_modes = Vec::new();
+    let mut transfer_decisions = Vec::new();
+    for (idx, label) in labels.failure_modes.iter().enumerate() {
+        let label_source = format!("{}:failure_mode:{idx}", context.label_source_id);
+        let decision = apply_and_persist_label_transfer_decision(
+            db,
+            LabelTransferApplicationInput {
+                prediction_id: context.prediction_id,
+                label_source,
+                source_chunk_id: context.source_chunk_id.clone(),
+                target_chunk_id: context.target_chunk_id.clone(),
+                source_language: context.source_language,
+                target_language: context.target_language,
+                source_root_cause: label.root_cause_class,
+                target_root_cause: context.target_root_cause,
+                similarity: context.similarity,
+                source_cross_language_correlation: context.source_cross_language_correlation,
+                created_at_unix_ms: context.created_at_unix_ms,
+            },
+        )
+        .map_err(map_label_transfer_error)?;
+        if decision.applied_weight > 0.0 {
+            accepted_failure_modes.push(AppliedFailureModeLabel {
+                label: label.clone(),
+                effective_weight: decision.applied_weight,
+                decision: decision.clone(),
+            });
+        } else {
+            rejected_failure_modes.push(RejectedFailureModeLabel {
+                label: label.clone(),
+                decision: decision.clone(),
+            });
+        }
+        transfer_decisions.push(decision);
+    }
+    Ok(AppliedPhaseBLabels {
+        source: labels.source.clone(),
+        accepted_failure_modes,
+        rejected_failure_modes,
+        transfer_decisions,
     })
 }
 
@@ -514,6 +609,54 @@ fn source_supports_language(source: &LabelSource, language: LabelInputLanguage) 
         LabelSource::CargoTest | LabelSource::CargoClippy => language == LabelInputLanguage::Rust,
         LabelSource::AgentResponse => false,
     }
+}
+
+fn validate_label_transfer_context(
+    context: &LabelTransferApplicationContext,
+) -> Result<(), UtmlError> {
+    if context.prediction_id.0 == [0_u8; 16] {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "label transfer prediction_id must be non-zero",
+        ));
+    }
+    if context.label_source_id.trim().is_empty() {
+        return Err(UtmlError::new(
+            UtmlErrorCode::MissingSourceOfTruth,
+            "label transfer source id is empty",
+        ));
+    }
+    context
+        .source_chunk_id
+        .validate("label_transfer.source_chunk_id")
+        .map_err(|err| UtmlError::new(UtmlErrorCode::InvalidSignal, err.to_string()))?;
+    context
+        .target_chunk_id
+        .validate("label_transfer.target_chunk_id")
+        .map_err(|err| UtmlError::new(UtmlErrorCode::InvalidSignal, err.to_string()))?;
+    if context.created_at_unix_ms < 0 {
+        return Err(UtmlError::new(
+            UtmlErrorCode::InvalidSignal,
+            "label transfer created_at_unix_ms must be non-negative",
+        ));
+    }
+    Ok(())
+}
+
+fn map_label_transfer_error(err: context_graph_mejepa::LabelTransferAuditError) -> UtmlError {
+    let code = match &err {
+        context_graph_mejepa::LabelTransferAuditError::MissingColumnFamily(_) => {
+            UtmlErrorCode::MissingSourceOfTruth
+        }
+        context_graph_mejepa::LabelTransferAuditError::ReadbackMismatch(_) => {
+            UtmlErrorCode::ReadbackMismatch
+        }
+        context_graph_mejepa::LabelTransferAuditError::RocksDb(_) => UtmlErrorCode::Io,
+        context_graph_mejepa::LabelTransferAuditError::Bincode(_) => UtmlErrorCode::InvalidSignal,
+        context_graph_mejepa::LabelTransferAuditError::InvalidInput { .. }
+        | context_graph_mejepa::LabelTransferAuditError::Policy(_) => UtmlErrorCode::InvalidSignal,
+    };
+    UtmlError::new(code, err.to_string())
 }
 
 fn bounded_output(field: &str, bytes: &[u8], max_bytes: usize) -> Result<String, UtmlError> {

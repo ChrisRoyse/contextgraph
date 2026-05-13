@@ -23,6 +23,7 @@ pub mod fsv_writer;
 pub mod gates;
 pub mod grad_hook;
 pub mod heal;
+pub mod label_transfer_audit;
 pub mod loss;
 pub mod ood;
 pub mod operator_override;
@@ -84,6 +85,7 @@ pub use grad_hook::{
     run_gradient_hook, GradStore, GradientHookReport, InstrumentGradHandle, NoOpGradHandle,
     TensorId,
 };
+pub use label_transfer_audit::*;
 pub use loss::{huber_loss_delta_one, vicreg_loss, VarianceFloorHistory};
 pub use ood::*;
 pub use operator_override::*;
@@ -96,6 +98,7 @@ pub use predictor::{ArchitectureSummary, MeJepaPredictor, TransformerLayer};
 pub use reality_impact::*;
 pub use secret_redaction::*;
 pub use store::*;
+pub use system_cost::*;
 pub use types::*;
 pub use verdict_assembly::*;
 pub use vram::{check_vram_steady_state, enforce_vram_report, vram_resident_bytes, VramReport};

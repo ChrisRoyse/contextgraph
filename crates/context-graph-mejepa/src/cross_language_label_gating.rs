@@ -35,7 +35,7 @@ pub struct LabelTransferQuery {
     pub source_cross_language_correlation: f32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LabelTransferDecision {
     /// Source and target are the same language — no transfer needed.
@@ -46,7 +46,7 @@ pub enum LabelTransferDecision {
     Reject { reason: RejectReason },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RejectReason {
     RootCauseMismatch,
