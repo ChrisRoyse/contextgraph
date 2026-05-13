@@ -21,6 +21,7 @@ pub mod learning;
 pub mod mejepa_active_learning;
 pub mod mejepa_replay;
 pub mod mejepa_runbook;
+pub mod mejepa_train;
 pub mod memory;
 pub mod session;
 pub mod setup;

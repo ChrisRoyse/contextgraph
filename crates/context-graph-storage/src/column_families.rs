@@ -399,7 +399,7 @@ pub fn get_all_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamil
 
 /// Total number of column families in a fully configured Context Graph database.
 /// Base (11: 8 original + 3 graph linking) + Teleological (41) + Quantized Embedder (14)
-/// + Code (5) + Causal (2) + DynamicJEPA (29) + ME-JEPA (40) = 142
+/// + Code (5) + Causal (2) + DynamicJEPA (29) + ME-JEPA (44) = 146
 ///   Teleological 41 = 5 original + 1 content + 1 source_metadata + 1 file_index + 1 topic_portfolio
 ///   + 1 e12_late_interaction + 1 entity_provenance + 2 audit log + 2 merge/importance history
 ///   + 1 tool call index + 1 consolidation recommendations + 1 embedding registry + 1 custom weight profiles
@@ -699,14 +699,14 @@ mod tests {
     #[test]
     fn test_total_column_families_constant() {
         // Verify the constant is correct:
-        // 11 base + 41 teleological + 14 quantized + 5 code + 2 causal + 29 DynamicJEPA + 40 ME-JEPA = 142
+        // 11 base + 41 teleological + 14 quantized + 5 code + 2 causal + 29 DynamicJEPA + 44 ME-JEPA = 146
         // Teleological: 20 core CFs + CF_TRAINING_RECORDS + CF_LEARNING_EVENTS + CF_CONSTELLATIONS + CF_CONSTELLATION_BY_SELECTOR
         //   + CF_CONTRASTIVE_PAIRS + CF_CONTRASTIVE_BY_KIND + CF_CONTRASTIVE_BY_ANCHOR
         //   + CF_TYPED_EDGE_RECORDS + CF_TYPED_EDGE_VALIDATIONS + 11 learner-state UTL CFs = 40
         // Quantized grew 13 -> 14 with E14 BGE-M3 Dense.
         assert_eq!(
-            TOTAL_COLUMN_FAMILIES, 142,
-            "Total column families should be 142 (102 ContextGraph/DynamicJEPA + 40 ME-JEPA)"
+            TOTAL_COLUMN_FAMILIES, 146,
+            "Total column families should be 146 (102 ContextGraph/DynamicJEPA + 44 ME-JEPA)"
         );
     }
 

@@ -23,7 +23,7 @@
 
 ## Current gate
 
-The A-F implementation issues are closed for the Phase G handoff. Analyzer-backed instrument parity (#4), production telemetry (#11), UTML carrier reconciliation (#13), Phase E self-optimization, and Phase F operations all have source-of-truth FSV. The latest holdout remains `0.866667 < 0.95`; that is Phase G model-quality convergence, not an A-F implementation blocker.
+The A-F and H implementation issues are closed for the Phase G handoff. Analyzer-backed instrument parity (#4), production telemetry (#11), UTML carrier reconciliation (#13), Phase E self-optimization, Phase F operations, and Phase H residue cleanup all have source-of-truth FSV. The latest holdout remains `0.866667 < 0.95`; that is Phase G model-quality convergence, not an A-F/H implementation blocker. Phase G now has an explicit GitHub task set; `TASK-G-001` is complete.
 
 ---
 
@@ -47,7 +47,7 @@ The A-F implementation issues are closed for the Phase G handoff. Analyzer-backe
 | `TASK-OBS-006` | FSV path migration sweep | A | none | **complete (2026-05-12)** |
 | `TASK-OBS-007` | Per-slice quota observability extension | F | none | **complete** — `mejepa_daemon_status` and `mejepa_quota_status` expose quota slices; storage-exhaustion/session-cleanup FSV read back quota state |
 
-**Phase A substrate status:** complete for the ME-JEPA Phase E handoff. The only moved row still outside A is Phase H residue cleanup.
+**Phase A substrate status:** complete for the ME-JEPA Phase E/G handoff. The moved Phase H residue rows are now closed.
 
 ---
 
@@ -232,7 +232,7 @@ The A-F implementation issues are closed for the Phase G handoff. Analyzer-backe
 | `TASK-TEST-012` | Pin Phase F workflow Actions to SHA | **complete (#95)** |
 | `TASK-FLYWHEEL-012` | Pause + active-learning enqueue suppression | **complete (#96)** |
 
-**Phase F closure status (2026-05-13):** closed. GitHub issue readback shows no open issues with `phase:f-followup` and no open `[Phase F]` implementation issues. Remaining open work is Phase G convergence and Phase H residue cleanup, not Phase F implementation.
+**Phase F closure status (2026-05-13):** closed. GitHub issue readback shows no open issues with `phase:f-followup` and no open `[Phase F]` implementation issues. Remaining open work is Phase G convergence, not Phase F implementation.
 
 **Phase F FSV index (selected evidence files):**
 
@@ -262,6 +262,17 @@ The A-F implementation issues are closed for the Phase G handoff. Analyzer-backe
 
 ---
 
+## Phase G — Ship-Gate Convergence (active issue set)
+
+| ID | Title | Phase | Blocked by | Effort |
+|---|---|---|---|---|
+| `TASK-G-001` | End-to-end corpus training-pipeline orchestrator (`context-graph-cli mejepa train --corpus <root> --split <train\|calibration\|holdout>`) | G | Phase C + D substrate | **complete (#97)** — writes/readbacks `CF_MEJEPA_PANELS`, `CF_MEJEPA_DDA_SIGNALS`, `CF_MEJEPA_LIVE_PREDICTIONS`, `CF_MEJEPA_ORACLE_VERDICTS`, and `CF_MEJEPA_TRAIN_CERTS`; FSV at `/mnt/d/contextgraph/fsv/phase-g-training-pipeline-orchestrator-fsv/training_pipeline_orchestrator_fsv.json` |
+| `TASK-G-002..TASK-G-058` | Remaining Phase G convergence tasks: full split operating cadence, per-cell training/eval drivers, conformal recalibration, holdout rotation, analyzer hardening, adversarial retraining, and rolling-window stability assertions | G | TASK-G-001 where corpus rows are required | open GitHub issues #98-#154 |
+
+**Phase G status (2026-05-13):** active. The orchestrator now proves the corpus rows can enter the full source-of-truth reward pipeline, including the required invariant `input_task_count = output_panel_count = logical_dda_signal_count / 462 = oracle_verdict_count`. The human-review-replacement claim is still blocked by the rolling 0.95 prediction-oracle correlation gate.
+
+---
+
 ## Phase H — Inner-Loop Residue Cleanup (expanded cleanup)
 
 | ID | Title | Phase | Blocked by | Effort |
@@ -276,7 +287,7 @@ The A-F implementation issues are closed for the Phase G handoff. Analyzer-backe
 | `TASK-LOOP-011` | `CCREALITY_ENGINE_RETIRED` gate audit | H | LOOP-004 | **complete (#139)** — all five retired endpoints have unit fail-closed coverage, one JSON-RPC round-trip structured-error test, and fmt/check/clippy FSV at `/mnt/d/contextgraph/fsv/phase-h-ccreality-engine-retired-fsv/ccreality_engine_retired_gate_fsv.json` |
 | `TASK-LOOP-012` | Remove orphaned scripts/config inner-LLM references | H | LOOP-005 | **complete (#140)** — `scripts/ci/phase_h_scripts_config_inner_llm_residue_fsv.sh` classifies scripts/config matches as retired-audit, generated snapshot, or explicit `historical, do not reanimate`; active disallowed count 0; four retired Shakespeare local-runtime helpers abort; FSV at `/mnt/d/contextgraph/fsv/phase-h-scripts-config-inner-llm-residue-fsv/scripts_config_inner_llm_residue_fsv.json` |
 
-**Phase H total: ~0.9 days.**
+**Phase H status:** complete. GitHub issue readback on 2026-05-13 showed no open `phase:h` issues after #136 and #140 closed.
 
 ---
 
@@ -347,7 +358,7 @@ These tasks can run in parallel without conflict:
 - Future Phase G model-quality experiments by cell/language/head, if the 0.95 convergence gate needs targeted retraining pressure.
 - Cleanup tasks in Phase H — all independent
 
-Phase F no longer has parallelizable implementation work. A two-engineer pairing is now only relevant for Phase G convergence experiments, optional future corpus broadening, and Phase H residue cleanup.
+Phase F and Phase H no longer have parallelizable implementation work. A two-engineer pairing is now only relevant for Phase G convergence experiments and optional future corpus broadening.
 
 ---
 

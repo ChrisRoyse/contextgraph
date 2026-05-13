@@ -15,7 +15,7 @@ use context_graph_mejepa::{
 use serde::Serialize;
 use serde_json::json;
 
-const DEFAULT_MEJEPA_INFER_DB: &str = "/mnt/d/contextgraph/storage/contextgraph-rocksdb";
+pub(crate) const DEFAULT_MEJEPA_INFER_DB: &str = "/mnt/d/contextgraph/storage/contextgraph-rocksdb";
 
 #[derive(Subcommand, Debug)]
 pub enum MejepaCommands {
@@ -27,6 +27,8 @@ pub enum MejepaCommands {
     },
     /// Replay a persisted ME-JEPA prediction byte-for-byte from RocksDB.
     Replay(crate::commands::mejepa_replay::ReplayArgs),
+    /// End-to-end Phase G corpus training-pipeline orchestrator.
+    Train(crate::commands::mejepa_train::MejepaTrainArgs),
     /// Operator runbook: read the self-optimization scheduler status file.
     #[command(name = "daemon-status")]
     DaemonStatus(crate::commands::mejepa_runbook::DaemonStatusArgs),
@@ -206,6 +208,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
         MejepaCommands::Replay(args) => {
             serde_json::to_value(crate::commands::mejepa_replay::replay_prediction_cli(args).await?)
                 .context("serialize replay")
+        }
+        MejepaCommands::Train(args) => {
+            serde_json::to_value(crate::commands::mejepa_train::run_mejepa_train(args)?)
+                .context("serialize train")
         }
         MejepaCommands::DaemonStatus(args) => {
             serde_json::to_value(crate::commands::mejepa_runbook::run_daemon_status(args)?)
