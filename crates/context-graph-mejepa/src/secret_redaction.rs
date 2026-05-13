@@ -139,6 +139,15 @@ fn detect_env_assignments(text: &str, spans: &mut Vec<SecretRedactionSpan>) {
                     value_end -= 1;
                 }
                 if value_end > value_start + 3 {
+                    let value = line[value_start..value_end]
+                        .trim_matches('"')
+                        .trim_matches('\'');
+                    if is_aws_access_key(value)
+                        || is_jwt_like(value)
+                        || is_high_entropy_secret(value)
+                    {
+                        continue;
+                    }
                     push_span(
                         text,
                         spans,
@@ -183,6 +192,14 @@ fn detect_ascii_tokens(text: &str, spans: &mut Vec<SecretRedactionSpan>) {
 }
 
 fn is_secret_name(name: &str) -> bool {
+    let candidate = name.trim();
+    if candidate.is_empty()
+        || !candidate
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    {
+        return false;
+    }
     let upper = name
         .trim_start_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
         .to_ascii_uppercase();

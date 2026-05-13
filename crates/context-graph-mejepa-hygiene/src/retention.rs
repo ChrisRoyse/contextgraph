@@ -66,9 +66,10 @@ impl RetentionPolicy {
         }
         let seen_refs = seen.iter().map(String::as_str).collect::<BTreeSet<_>>();
         let missing = expected
-            .difference(&seen_refs)
-            .copied()
-            .collect::<Vec<&'static str>>();
+            .iter()
+            .filter(|cf_name| !seen_refs.contains(**cf_name))
+            .map(|cf_name| (*cf_name).to_string())
+            .collect::<Vec<_>>();
         if !missing.is_empty() {
             return Err(OpsError::invalid(
                 "retention.column_families",

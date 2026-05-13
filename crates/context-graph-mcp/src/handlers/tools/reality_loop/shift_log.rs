@@ -222,13 +222,8 @@ pub async fn reality_shift_compare_to_my_view(args: Value) -> Result<Value> {
         let current = sha256_file(&path)?;
         let last = latest_after_sha_for_file(&records, path_str_arg, &path, &root);
         let global_latest = latest_record_for_file(&all_records, path_str_arg, &path, &root);
-        let stale_write = stale_write_conflict_for_session(
-            &records,
-            &all_records,
-            path_str_arg,
-            &path,
-            &root,
-        );
+        let stale_write =
+            stale_write_conflict_for_session(&records, &all_records, path_str_arg, &path, &root);
         let drift = if stale_write.is_some() {
             "external_drift_detected"
         } else {
@@ -272,7 +267,9 @@ fn load_all_shift_records(runtime_root: &Path) -> Result<Vec<Value>> {
         return Ok(Vec::new());
     }
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(&dir).map_err(|e| fs_error("CCREALITY_SHIFT_LOG_READ_FAILED", &dir, e))? {
+    for entry in
+        std::fs::read_dir(&dir).map_err(|e| fs_error("CCREALITY_SHIFT_LOG_READ_FAILED", &dir, e))?
+    {
         let entry = entry.map_err(|e| fs_error("CCREALITY_SHIFT_LOG_READ_FAILED", &dir, e))?;
         let path = entry.path();
         if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {

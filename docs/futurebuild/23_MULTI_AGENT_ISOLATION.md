@@ -53,7 +53,8 @@ Each session writes to its own JSONL file under `runtime/cgreality-shift-log/<se
 Risk: two agents edit the same file in different sessions; the on-disk state is non-deterministic from either agent's view.
 
 Mitigation:
-- The shift-log entry records the file path + before_sha + after_sha. If the before_sha doesn't match the after_sha of the most recent shift for the same file, mark the shift as `external_drift_detected: true`.
+- The shift-log entry records the file path + before_sha + after_sha. The conflict rule is last-writer-wins on disk, but the SHA chain remains append-only: if a session writes from a before_sha that does not match the most recent cross-session after_sha for the same file, `reality_shift_compare_to_my_view` reports `external_drift_detected` with `external_writer_hint.conflict = "stale_before_sha"`.
+- The compare tool reads every session JSONL under the shift-log root, not only the caller's own session. A session that lost the last-writer race sees its current file SHA diverge from its last known after_sha; the session that won the race still sees the stale-before conflict against the prior writer.
 - The subscriber materializes the panel from the actual file content (post-edit). Concurrent edits produce two panels for the same file at different SHAs; both are correct (each at a different point in time).
 - Agents that detect external drift via `mcp__cgreality__reality_shift_compare_to_my_view` re-perceive before continuing.
 
@@ -85,16 +86,24 @@ Operator override: `mejepa_predict_latest --session-id <other-session>` returns 
 
 The current design is **single-machine, single-daemon, multi-agent**. Cross-machine deployment is out of scope for v1. If an operator wants ME-JEPA shared across multiple developer machines:
 
+Single-machine assumptions that are load-bearing:
+- `/mnt/d/contextgraph/` is the only durable bulk-state root, and every daemon/tool sees the same RocksDB files, shift logs, test-outcome files, and FSV artifacts through local filesystem semantics.
+- RocksDB CF handles are local-process handles. There is no multi-writer network filesystem contract; do not mount the same DB over SMB/NFS and run multiple daemons.
+- Shift-log ordering uses local file append + local clock timestamps. Cross-machine clock skew and partial network writes are not modeled.
+- MCP action paths are local stdio/unix-socket paths. TCP MCP, remote auth, TLS, and per-client ACLs are not part of v1.
+
 Option A — Centralized daemon, distributed clients:
 - One daemon runs on a designated host
 - Developer machines connect to it via TCP MCP (operator-enabled)
-- Risks: network latency in shift propagation; secrets policy (D-drive sharing)
+- Required before implementation: authenticated transport, TLS, per-tool ACLs, a remote-safe shift append API, and a secret-redaction boundary that prevents client-machine secrets from entering daemon-side embeddings.
+- Risks: network latency in shift propagation; remote client clock skew; secrets policy; operator workstation availability as a SPOF.
 
 Option B — Per-machine daemon, federated training:
 - Each developer machine runs its own daemon
 - Periodic federated training merges weights (out of scope per `17 §O3`)
+- Required before implementation: model-lineage merge protocol, conflict-free training certs, per-machine corpus provenance, and signed export/import bundles.
 
-Both options are deferred. v1 assumes one machine per operator.
+Both options are deferred. v1 assumes one machine per operator and one local daemon owns the D-drive state. Any cross-machine design must first replace the D-drive-local SoT assumptions with explicit network SoTs and FSV readbacks for shift ordering, RocksDB ownership, secret boundaries, and model-lineage merge behavior.
 
 ---
 

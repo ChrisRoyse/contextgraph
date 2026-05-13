@@ -37,6 +37,7 @@ tracing-subscriber = { workspace = true }
 [dev-dependencies]
 context-graph-mejepa-shift-subscriber = { path = "../context-graph-mejepa-shift-subscriber" }
 context-graph-mejepa-train = { path = "../context-graph-mejepa-train" }
+fail = "0.5"
 tempfile = "3.10"
 
 [[bin]]
@@ -106,3 +107,7 @@ path = "examples/phase_f_restart_safety_fsv.rs"
 [[example]]
 name = "phase_f_multi_agent_fsv"
 path = "examples/phase_f_multi_agent_fsv.rs"
+
+[[example]]
+name = "phase_f_chaos_failpoints_fsv"
+path = "examples/phase_f_chaos_failpoints_fsv.rs"

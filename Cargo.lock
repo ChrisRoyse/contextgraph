@@ -1197,6 +1197,7 @@ dependencies = [
  "context-graph-mejepa-tct",
  "context-graph-mejepa-train",
  "context-graph-witness",
+ "fail",
  "hex",
  "rocksdb",
  "serde",
@@ -2067,6 +2068,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d817e038c30374a4bcb22f94d0a8a0e216958d4c3dcde369b1439fec4bdda6e6"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "fail"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe5e43d0f78a42ad591453aedb1d7ae631ce7ee445c7643691055a9ed8d3b01c"
+dependencies = [
+ "log",
+ "once_cell",
+ "rand 0.8.6",
 ]
 
 [[package]]
