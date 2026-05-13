@@ -34,7 +34,9 @@ use crate::heal::full_retrain::full_retrain_if_due;
 use crate::heal::integrity::{verify, ChainIntegrityChecker, WitnessChainAppender};
 use crate::heal::lambda_ramp::tick_lambda_ramp;
 use crate::heal::pipeline::{LinearHealPredictor, MeJepaHealConfig, SelfHealingPipeline};
-use crate::heal::policy::{persist_policy_record, policy_key, timestamped_policy_key};
+use crate::heal::policy::{
+    load_policy_record, persist_policy_record, policy_key, timestamped_policy_key,
+};
 use crate::heal::promote::TriggerReason;
 use crate::heal::promote_approval::{
     approved_promotions, mark_promotion_executed, queue_pending_retrain_request,
@@ -387,53 +389,6 @@ impl SchedulerState {
 
     pub fn mark_stopped(&mut self) -> Result<(), HealError> {
         self.write_status("stopped")
-    }
-
-    fn maybe_verify_witness_chain_integrity(&mut self) -> Result<serde_json::Value, HealError> {
-        let report = verify(
-            &mut self.pipeline.integrity_checker,
-            &self.pipeline.witness_chain,
-            self.storage.as_ref(),
-            &self.pipeline.status,
-        )?;
-        Ok(json!({
-            "source_of_truth_path": self.config.witness_chain_path,
-            "report": report,
-        }))
-    }
-
-    fn write_drift_alert_if_needed(
-        &self,
-        severity: DriftSeverity,
-        catastrophic_cell_count: usize,
-        lora_cell_count: usize,
-        empirical_coverage: Option<f32>,
-    ) -> Result<Option<crate::heal::drift_attribution::OperatorAlert>, HealError> {
-        if severity == DriftSeverity::Healthy
-            && catastrophic_cell_count == 0
-            && lora_cell_count == 0
-        {
-            return Ok(None);
-        }
-        let coverage = empirical_coverage.unwrap_or(1.0).clamp(0.0, 1.0);
-        let tau_drift_fraction = (1.0 - coverage).clamp(0.0, 1.0);
-        let attribution = classify_drift_attribution(
-            severity == DriftSeverity::Healthy
-                && (catastrophic_cell_count > 0 || lora_cell_count > 0),
-            tau_drift_fraction,
-            0,
-            false,
-        )?;
-        let alert = write_operator_alert(
-            self.storage.as_ref(),
-            severity,
-            format!("ME-JEPA drift {:?} detected", severity),
-            format!(
-                "empirical_coverage={coverage:.6}; catastrophic_cells={catastrophic_cell_count}; lora_cells={lora_cell_count}"
-            ),
-            Some(attribution),
-        )?;
-        Ok(Some(alert))
     }
 
     pub fn run_tick(&mut self, tick: TickName) -> Result<(), HealError> {
@@ -1087,44 +1042,6 @@ impl SchedulerState {
 
     fn write_status(&self, status: &str) -> Result<(), HealError> {
         write_json_atomic_readback(&self.config.status_path, &self.snapshot(status))
-    }
-
-    fn maybe_verify_witness_chain_integrity(&mut self) -> Result<serde_json::Value, HealError> {
-        let (observation_counter, last_integrity_check_at) = {
-            let status = self.pipeline.status.lock().map_err(|_| {
-                HealError::invalid(
-                    "self_optim_scheduler.status_lock",
-                    "heal status lock poisoned while checking witness-chain integrity",
-                )
-            })?;
-            (status.observation_counter, status.last_integrity_check_at)
-        };
-        let period = self.pipeline.config.integrity_check_period;
-        let due = last_integrity_check_at < 0
-            || (observation_counter > 0 && observation_counter % period == 0);
-        if !due {
-            return Ok(json!({
-                "action": "skipped_not_due",
-                "observation_counter": observation_counter,
-                "integrity_check_period": period,
-                "last_integrity_check_at": last_integrity_check_at,
-                "chain_path": self.pipeline.witness_chain.chain_path,
-            }));
-        }
-
-        let report = verify(
-            &mut self.pipeline.integrity_checker,
-            &self.pipeline.witness_chain,
-            self.storage.as_ref(),
-            &self.pipeline.status,
-        )?;
-        Ok(json!({
-            "action": "verified",
-            "observation_counter": observation_counter,
-            "integrity_check_period": period,
-            "chain_path": self.pipeline.witness_chain.chain_path,
-            "report": report,
-        }))
     }
 }
 

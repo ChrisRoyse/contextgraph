@@ -12,7 +12,7 @@ const PENDING_PROMOTION_PREFIX: &[u8] = b"phase_e/pending-promotion/";
 pub const CATASTROPHIC_REQUIRED_DISTINCT_APPROVALS: u8 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
 pub enum PendingPromotionKind {
     CatastrophicFullRetrainRequired {
         cell_key: String,
