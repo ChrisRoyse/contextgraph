@@ -8,6 +8,7 @@ pub mod per_head_calibration_tracker;
 pub mod queue;
 pub mod report;
 pub mod runner;
+pub mod ship_gate_stability;
 pub mod store;
 pub mod telemetry;
 pub mod types;
@@ -40,6 +41,11 @@ pub use queue::{
 };
 pub use report::{seed_open_research_questions, write_weekly_report};
 pub use runner::{corpus_sha_from_holdout, EvalRunner};
+pub use ship_gate_stability::{
+    ship_gate_stability_status, ship_gate_stability_status_with_requirements,
+    ShipGateStabilityStatus, SHIP_GATE_REQUIRED_CONSECUTIVE_WINDOWS, SHIP_GATE_STABILITY_BLOCKER,
+    SHIP_GATE_STABILITY_CORRELATION_THRESHOLD,
+};
 pub use store::RocksDbEvalStore;
 pub use telemetry::{LatencyTelemetry, ProductionTelemetryWindow};
 pub use types::{

@@ -1,11 +1,11 @@
 //! ME-JEPA Phase 8 evaluation MCP handlers.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use context_graph_mejepa::eval::{
     build_eval_compiler, build_patch_similarity_graph, corpus_sha_from_holdout, synthetic_holdout,
     synthetic_patch_embeddings, write_weekly_report, EvalConfig, EvalProvenance, EvalRunner,
-    RocksDbEvalStore,
+    RocksDbEvalStore, SHIP_GATE_STABILITY_BLOCKER,
 };
 use context_graph_mejepa::open_infer_rocksdb;
 use serde::Deserialize;
@@ -137,26 +137,7 @@ impl Handlers {
                 );
             }
         };
-        let result: Result<serde_json::Value, context_graph_mejepa::EvalError> = (|| {
-            let db = open_infer_rocksdb(&request.db_path)?;
-            let eval_store = RocksDbEvalStore::new(db)?;
-            let report = eval_store.load_latest_report()?.ok_or_else(|| {
-                context_graph_mejepa::EvalError::new(
-                    context_graph_mejepa::EvalErrorCode::ReportPersistFail,
-                    "no eval report exists in CF_MEJEPA_EVAL_REPORTS",
-                )
-            })?;
-            Ok(json!({
-                "shipGatePassed": report.ship_gate_passed,
-                "shipGateFailures": report.ship_gate_failures,
-                "reportHash": report.determinism_hash()?,
-                "holdoutCount": report.holdout_count,
-                "perCellStateTransfer": report.per_cell_state_transfer,
-                "lowStateTransferCells": low_state_transfer_cells(&report),
-                "perPredictionClassCalibration": report.per_prediction_class_calibration,
-                "sourceOfTruth": "CF_MEJEPA_EVAL_REPORTS"
-            }))
-        })();
+        let result = mejepa_ship_gate_status_payload(&request.db_path);
         match result {
             Ok(value) => self.tool_result(id, value),
             Err(err) => {
@@ -279,6 +260,49 @@ impl Handlers {
             }
         }
     }
+}
+
+pub fn mejepa_ship_gate_status_payload(
+    db_path: &Path,
+) -> Result<serde_json::Value, context_graph_mejepa::EvalError> {
+    let db = open_infer_rocksdb(db_path)?;
+    let eval_store = RocksDbEvalStore::new(db)?;
+    let report = eval_store.load_latest_report()?.ok_or_else(|| {
+        context_graph_mejepa::EvalError::new(
+            context_graph_mejepa::EvalErrorCode::ReportPersistFail,
+            "no eval report exists in CF_MEJEPA_EVAL_REPORTS",
+        )
+    })?;
+    let stability = context_graph_mejepa::eval::ship_gate_stability_status(&eval_store)?;
+    let mut ship_gate_failures = report.ship_gate_failures.clone();
+    if !stability.ready
+        && !ship_gate_failures
+            .iter()
+            .any(|failure| failure.starts_with(SHIP_GATE_STABILITY_BLOCKER))
+    {
+        ship_gate_failures.push(format!(
+            "{SHIP_GATE_STABILITY_BLOCKER}: consecutive_passing_windows={}/{}",
+            stability.consecutive_passing_windows, stability.required_consecutive_windows
+        ));
+    }
+    Ok(json!({
+        "shipGatePassed": stability.ready,
+        "latestWindowShipGatePassed": report.ship_gate_passed,
+        "latestWindowPassedStability": stability.latest_report_passed_window,
+        "consecutivePassingWindows": stability.consecutive_passing_windows,
+        "requiredConsecutivePassingWindows": stability.required_consecutive_windows,
+        "shipGateCorrelationThreshold": stability.correlation_threshold,
+        "shipGateFailures": ship_gate_failures,
+        "stabilityResetReason": stability.latest_reset_reason,
+        "stabilityResetUnixMs": stability.latest_reset_unix_ms,
+        "modelPromotionResetCount": stability.model_promotion_reset_count,
+        "reportHash": report.determinism_hash()?,
+        "holdoutCount": report.holdout_count,
+        "perCellStateTransfer": report.per_cell_state_transfer,
+        "lowStateTransferCells": low_state_transfer_cells(&report),
+        "perPredictionClassCalibration": report.per_prediction_class_calibration,
+        "sourceOfTruth": "CF_MEJEPA_EVAL_REPORTS"
+    }))
 }
 
 fn low_state_transfer_cells(report: &context_graph_mejepa::EvalReport) -> Vec<String> {

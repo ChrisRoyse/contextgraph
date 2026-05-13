@@ -482,7 +482,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             tool_names::MEJEPA_SHIP_GATE_STATUS,
-            "Read the latest Phase 8 EvalReport from CF_MEJEPA_EVAL_REPORTS and return ship-gate status with persisted report hash.",
+            "Read Phase 8 EvalReports from CF_MEJEPA_EVAL_REPORTS and return ship-gate status, including the four-consecutive-window stability streak and persisted report hash.",
             json!({
                 "type": "object",
                 "additionalProperties": false,

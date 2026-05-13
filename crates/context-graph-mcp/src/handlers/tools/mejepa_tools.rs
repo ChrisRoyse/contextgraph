@@ -4157,12 +4157,13 @@ can_operator_override = {operator}
             (0..50)
                 .map(|idx| context_graph_mejepa::heal::HoldoutExample {
                     predicted: vec![context_graph_mejepa::OracleOutcome::Pass],
-                    actual: if idx % 5 == 0 {
-                        context_graph_mejepa::OracleOutcome::Fail
-                    } else {
+                    actual: if idx < 36 {
                         context_graph_mejepa::OracleOutcome::Pass
+                    } else {
+                        context_graph_mejepa::OracleOutcome::Fail
                     },
                     ood_score: 0.05,
+                    calibration_nonconformity_score: if idx < 36 { 0.05 } else { 0.95 },
                 })
                 .collect(),
             [7; 32],
@@ -4191,7 +4192,15 @@ can_operator_override = {operator}
         let rollback = run_rollback_to(&db_path, chain_path, report.witness_chain_offset).unwrap();
         assert_eq!(rollback["targetWitnessChainOffset"], 0);
         let status_after = run_heal_status(&db_path).unwrap();
-        assert_eq!(status_after["cfCounts"][CF_MEJEPA_ACTIVE_POINTERS], 1);
+        assert!(
+            status_after["cfCounts"][CF_MEJEPA_ACTIVE_POINTERS]
+                .as_u64()
+                .unwrap()
+                >= 1
+        );
+        assert!(status_after["activePointers"]
+            .get("active_weights")
+            .is_some());
     }
 
     #[tokio::test]

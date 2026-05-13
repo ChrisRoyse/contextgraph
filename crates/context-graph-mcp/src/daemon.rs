@@ -85,7 +85,7 @@ pub struct StartupToolchainGateReport {
 pub struct StartupToolchainGateError {
     pub error_code: &'static str,
     pub detail: String,
-    pub report: StartupToolchainGateReport,
+    pub report: Box<StartupToolchainGateReport>,
 }
 
 impl StartupToolchainGateError {
@@ -93,7 +93,7 @@ impl StartupToolchainGateError {
         serde_json::json!({
             "error_code": self.error_code,
             "detail": self.detail,
-            "toolchain_audit": self.report,
+            "toolchain_audit": self.report.as_ref(),
         })
     }
 }
@@ -243,7 +243,7 @@ pub fn enforce_startup_toolchain_gate(
     Err(StartupToolchainGateError {
         error_code: "MEJEPA_LABEL_TOOLCHAIN_MISSING",
         detail: "daemon startup refused before opening RocksDB because one or more configured label toolchains are missing".to_string(),
-        report,
+        report: Box::new(report),
     })
 }
 
@@ -295,7 +295,7 @@ fn startup_toolchain_config_error(
     StartupToolchainGateError {
         error_code,
         detail,
-        report: StartupToolchainGateReport {
+        report: Box::new(StartupToolchainGateReport {
             schema_version: 1,
             config_path: path.map(|path| path.display().to_string()),
             config_source: "daemon_toml_invalid".to_string(),
@@ -307,7 +307,7 @@ fn startup_toolchain_config_error(
             all_available: false,
             no_rocksdb_opened: true,
             missing: Vec::new(),
-        },
+        }),
     }
 }
 
