@@ -45,6 +45,7 @@ mod adapters;
 mod daemon;
 mod daemon_validate;
 mod handlers;
+mod health_probe;
 mod monitoring;
 mod protocol;
 mod server;
@@ -303,6 +304,9 @@ ENVIRONMENT VARIABLES:
     CONTEXT_GRAPH_WARM_FIRST    Set to "0" to disable blocking warmup (default: "1")
     CONTEXT_GRAPH_DAEMON        Set to "1" to enable daemon mode (default: "0")
     CONTEXT_GRAPH_DAEMON_PORT   Daemon port number (default: 3100)
+    CONTEXT_GRAPH_HEALTH_PROBE  Set to "1" to enable /health and /ready probe listener
+    CONTEXT_GRAPH_HEALTH_PROBE_PORT Probe port when enabled (default: 9111)
+    CONTEXT_GRAPH_HEALTH_PROBE_BIND Probe bind address when enabled (default: 127.0.0.1)
     CONTEXTGRAPH_DATA_ROOT      Durable D-drive root (default: /mnt/d/contextgraph)
     RUST_LOG                    Log level (error, warn, info, debug, trace)
 
@@ -2795,6 +2799,18 @@ async fn async_main() -> Result<()> {
             ),
             server.rocksdb_db_arc(),
         )?;
+        let mut health_probe = match health_probe::config_from_env(daemon_paths)? {
+            Some(config) => {
+                let handle = health_probe::start_health_probe(config).await?;
+                info!(
+                    "ME-JEPA health probe listening on http://{}/health and /ready",
+                    handle.local_addr
+                );
+                Some(handle)
+            }
+            None => None,
+        };
+        let mut health_probe_exited = false;
 
         // Start file watcher
         match server.start_file_watcher().await {
@@ -2871,10 +2887,37 @@ async fn async_main() -> Result<()> {
                     }
                 }
             }
+            result = async {
+                match health_probe.as_mut() {
+                    Some(handle) => (&mut handle.join_handle).await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                health_probe_exited = true;
+                match result {
+                    Ok(Ok(())) => {
+                        error!("MEJEPA_HEALTH_PROBE_EXITED: health probe exited before daemon shutdown");
+                        transport_error = Some(anyhow::anyhow!("MEJEPA_HEALTH_PROBE_EXITED"));
+                    }
+                    Ok(Err(e)) => {
+                        error!("MEJEPA_HEALTH_PROBE_FAILED: {}", e);
+                        transport_error = Some(e);
+                    }
+                    Err(e) => {
+                        error!("MEJEPA_HEALTH_PROBE_PANICKED: {}", e);
+                        transport_error = Some(anyhow::anyhow!("MEJEPA_HEALTH_PROBE_PANICKED: {}", e));
+                    }
+                }
+            }
         }
 
         if !flywheel_exited {
             flywheel.shutdown().await?;
+        }
+        if let Some(probe) = health_probe {
+            if !health_probe_exited {
+                probe.shutdown().await?;
+            }
         }
 
         // Shutdown with a bounded force-exit deadline. Individual background tasks

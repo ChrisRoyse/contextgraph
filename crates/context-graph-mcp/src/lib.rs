@@ -19,6 +19,7 @@ pub mod adapters;
 pub mod daemon;
 pub mod daemon_validate;
 pub mod handlers;
+pub mod health_probe;
 pub mod monitoring;
 pub mod protocol;
 pub mod server;
