@@ -1,4 +1,5 @@
 use super::cell_exemptions::CellExemption;
+use super::convergence_tracker::CellConvergenceEta;
 use super::error::{EvalError, EvalErrorCode};
 use super::per_head_calibration_tracker::PredictionClassCalibration;
 use crate::heal::drift_attribution::{FailingCellClassification, FailingCellRootCause};
@@ -55,6 +56,9 @@ impl MutationCategory {
 pub struct EvalConfig {
     pub rolling_window_size: usize,
     pub min_samples_per_slice: usize,
+    pub convergence_target_correlation: f32,
+    pub convergence_history_windows: usize,
+    pub convergence_eta_min_points: usize,
     pub conformal_expected_coverage: f32,
     pub conformal_band: f32,
     pub ood_auc_min: f32,
@@ -72,6 +76,9 @@ impl Default for EvalConfig {
         Self {
             rolling_window_size: 100,
             min_samples_per_slice: 2,
+            convergence_target_correlation: 0.95,
+            convergence_history_windows: 8,
+            convergence_eta_min_points: 3,
             conformal_expected_coverage: 0.90,
             conformal_band: 0.05,
             ood_auc_min: 0.85,
@@ -100,6 +107,28 @@ impl EvalConfig {
                 "min_samples_per_slice must be greater than zero",
             ));
         }
+        if self.convergence_history_windows == 0 {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidConfig,
+                "convergence_history_windows must be greater than zero",
+            ));
+        }
+        if self.convergence_eta_min_points < 2 {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidConfig,
+                "convergence_eta_min_points must be at least 2",
+            ));
+        }
+        if self.convergence_eta_min_points > self.convergence_history_windows {
+            return Err(EvalError::new(
+                EvalErrorCode::InvalidConfig,
+                "convergence_eta_min_points cannot exceed convergence_history_windows",
+            ));
+        }
+        validate_correlation(
+            "convergence_target_correlation",
+            self.convergence_target_correlation,
+        )?;
         for (name, value) in [
             (
                 "conformal_expected_coverage",
@@ -406,6 +435,7 @@ pub struct EvalReport {
     pub gtau_pass_rate: BTreeMap<Language, f32>,
     pub per_prediction_class_calibration: BTreeMap<String, PredictionClassCalibration>,
     pub per_failure_mode_class: BTreeMap<FailureModeClass, FailureModeClassMetrics>,
+    pub per_cell_convergence_eta: BTreeMap<String, CellConvergenceEta>,
     pub active_learning: ActiveLearningSummary,
     pub state_transfer_diagnostic: Option<StateTransferDiagnostic>,
     pub per_cell_state_transfer: BTreeMap<String, Option<StateTransferDiagnostic>>,
@@ -517,6 +547,23 @@ impl EvalReport {
                         "per_failure_mode_class missing required class {}",
                         failure_class.slug()
                     ),
+                ));
+            }
+        }
+        for (cell, eta) in &self.per_cell_convergence_eta {
+            if !self.per_cell_correlation.contains_key(cell) {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!("per_cell_convergence_eta.{cell} has no per_cell_correlation entry"),
+                ));
+            }
+            eta.validate(cell)?;
+        }
+        for cell in self.per_cell_correlation.keys() {
+            if !self.per_cell_convergence_eta.contains_key(cell) {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!("per_cell_convergence_eta missing required cell {cell}"),
                 ));
             }
         }

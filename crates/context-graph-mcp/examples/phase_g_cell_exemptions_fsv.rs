@@ -201,6 +201,8 @@ fn report(date: &str, timestamp_millis: i64) -> EvalReport {
         Some(0.96),
     );
     per_cell.insert(EXEMPT_CELL.to_string(), Some(0.10));
+    let per_cell_convergence_eta =
+        context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell, 0.95);
     EvalReport {
         report_date: date.to_string(),
         generated_at_unix_ms: timestamp_millis,
@@ -220,6 +222,7 @@ fn report(date: &str, timestamp_millis: i64) -> EvalReport {
             100,
             &context_graph_mejepa::EvalConfig::default(),
         ),
+        per_cell_convergence_eta,
         active_learning: ActiveLearningSummary {
             queued_count: 0,
             evicted_count: 0,

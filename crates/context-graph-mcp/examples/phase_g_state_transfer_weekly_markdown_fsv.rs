@@ -126,6 +126,8 @@ fn synthetic_report() -> EvalReport {
     per_cell_correlation.insert(known_good_python.clone(), Some(0.96));
     per_cell_correlation.insert(off_by_one_rust.clone(), Some(0.81));
     per_cell_correlation.insert(subtle_flip_go.clone(), None);
+    let per_cell_convergence_eta =
+        context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell_correlation, 0.95);
     let mut per_cell_state_transfer = BTreeMap::new();
     per_cell_state_transfer.insert(
         known_good_python,
@@ -163,6 +165,7 @@ fn synthetic_report() -> EvalReport {
             3,
             &context_graph_mejepa::EvalConfig::default(),
         ),
+        per_cell_convergence_eta,
         active_learning: ActiveLearningSummary {
             queued_count: 0,
             evicted_count: 0,

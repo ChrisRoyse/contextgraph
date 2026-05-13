@@ -1322,6 +1322,7 @@ pub fn write_weekly_eval_markdown(
     let per_cell_state_transfer = render_state_transfer_per_cell_table(report);
     let failing_cell_root_causes = render_failing_cell_root_cause_table(report);
     let operator_cell_triage = render_operator_cell_triage_table(report);
+    let convergence_eta = render_convergence_eta_table(report);
     let per_failure_mode_class = render_failure_mode_class_metrics_table(report);
     let per_cell_ship_gate = if report.per_cell_correlation.is_empty() {
         "- none".to_string()
@@ -1400,6 +1401,7 @@ pub fn write_weekly_eval_markdown(
          ## Catastrophic Events\n\n{}\n\n\
          ## Per-Cell Ship Gate Status\n\n{}\n\n\
          ## Operator Cell Triage\n\n{}\n\n\
+         ## Convergence ETA Per Cell\n\n{}\n\n\
          ## Failing Cell Root-Cause Classification\n\n{}\n\n\
          ## Active-Learning Queue Summary\n\n\
          - queued_count: {}\n\
@@ -1435,6 +1437,7 @@ pub fn write_weekly_eval_markdown(
         catastrophic_events,
         per_cell_ship_gate,
         operator_cell_triage,
+        convergence_eta,
         failing_cell_root_causes,
         report.active_learning.queued_count,
         report.active_learning.evicted_count,
@@ -1548,12 +1551,15 @@ struct OperatorTriageRow {
     confidence: f32,
     suggested_action: &'static str,
     evidence: String,
+    eta_status: String,
+    estimated_passing_window: String,
+    eta_ci: String,
 }
 
 fn render_operator_cell_triage_table(report: &context_graph_mejepa::EvalReport) -> String {
     let mut rows = vec![
-        "| rank | failing_cell | correlation | distance_to_0_95 | root_cause | confidence | suggested_action | evidence |".to_string(),
-        "|---:|---|---:|---:|---|---:|---|---|".to_string(),
+        "| rank | failing_cell | correlation | distance_to_0_95 | eta_status | estimated_passing_window | eta_ci | root_cause | confidence | suggested_action | evidence |".to_string(),
+        "|---:|---|---:|---:|---|---:|---|---|---:|---|---|".to_string(),
     ];
     let mut triage_rows = report
         .failing_cell_classifications
@@ -1571,11 +1577,28 @@ fn render_operator_cell_triage_table(report: &context_graph_mejepa::EvalReport) 
                 confidence: classification.confidence,
                 suggested_action: suggested_action_for_root_cause(classification.root_cause),
                 evidence: classification.evidence.join("; "),
+                eta_status: report
+                    .per_cell_convergence_eta
+                    .get(cell)
+                    .map(|eta| convergence_eta_status_slug(eta.status).to_string())
+                    .unwrap_or_else(|| "missing_eta".to_string()),
+                estimated_passing_window: report
+                    .per_cell_convergence_eta
+                    .get(cell)
+                    .and_then(|eta| eta.estimated_passing_window)
+                    .map(|window| window.to_string())
+                    .unwrap_or_else(|| "unavailable".to_string()),
+                eta_ci: report
+                    .per_cell_convergence_eta
+                    .get(cell)
+                    .and_then(|eta| eta.confidence_interval.as_ref())
+                    .map(|interval| format!("{}..{}", interval.lower_window, interval.upper_window))
+                    .unwrap_or_else(|| "unavailable".to_string()),
             })
         })
         .collect::<Vec<_>>();
     if triage_rows.is_empty() {
-        rows.push("| none | none | unavailable | unavailable | unknown | 0.000000 | no_action | no failing cells classified |".to_string());
+        rows.push("| none | none | unavailable | unavailable | unavailable | unavailable | unavailable | unknown | 0.000000 | no_action | no failing cells classified |".to_string());
         return rows.join("\n");
     }
     triage_rows.sort_by(|left, right| {
@@ -1587,11 +1610,14 @@ fn render_operator_cell_triage_table(report: &context_graph_mejepa::EvalReport) 
     });
     rows.extend(triage_rows.iter().take(10).enumerate().map(|(index, row)| {
         format!(
-            "| {} | {} | {} | {} | {} | {:.6} | {} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {:.6} | {} | {} |",
             index + 1,
             escape_markdown_table_cell(&row.cell),
             format_optional_metric(row.correlation),
             format_optional_metric(row.correlation.map(|value| (0.95 - value).max(0.0))),
+            row.eta_status,
+            row.estimated_passing_window,
+            row.eta_ci,
             failing_cell_root_cause_slug(row.root_cause),
             row.confidence,
             row.suggested_action,
@@ -1599,6 +1625,49 @@ fn render_operator_cell_triage_table(report: &context_graph_mejepa::EvalReport) 
         )
     }));
     rows.join("\n")
+}
+
+fn render_convergence_eta_table(report: &context_graph_mejepa::EvalReport) -> String {
+    let mut rows = vec![
+        "| cell | latest_correlation | eta_status | estimated_passing_window | confidence_interval | slope_per_window | r_squared | history_windows | valid_points |".to_string(),
+        "|---|---:|---|---:|---|---:|---:|---:|---:|".to_string(),
+    ];
+    if report.per_cell_convergence_eta.is_empty() {
+        rows.push("| none | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable | 0 | 0 |".to_string());
+        return rows.join("\n");
+    }
+    rows.extend(report.per_cell_convergence_eta.values().map(|eta| {
+        let interval = eta
+            .confidence_interval
+            .as_ref()
+            .map(|interval| format!("{}..{}", interval.lower_window, interval.upper_window))
+            .unwrap_or_else(|| "unavailable".to_string());
+        format!(
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+            escape_markdown_table_cell(&eta.cell),
+            format_optional_metric(eta.latest_correlation),
+            convergence_eta_status_slug(eta.status),
+            eta.estimated_passing_window
+                .map(|window| window.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            interval,
+            format_optional_metric(eta.slope_per_window),
+            format_optional_metric(eta.r_squared),
+            eta.history_window_count,
+            eta.valid_observation_count
+        )
+    }));
+    rows.join("\n")
+}
+
+fn convergence_eta_status_slug(status: context_graph_mejepa::ConvergenceEtaStatus) -> &'static str {
+    match status {
+        context_graph_mejepa::ConvergenceEtaStatus::AlreadyPassing => "already_passing",
+        context_graph_mejepa::ConvergenceEtaStatus::TrendingToTarget => "trending_to_target",
+        context_graph_mejepa::ConvergenceEtaStatus::NotConverging => "not_converging",
+        context_graph_mejepa::ConvergenceEtaStatus::InsufficientHistory => "insufficient_history",
+        context_graph_mejepa::ConvergenceEtaStatus::InsufficientSamples => "insufficient_samples",
+    }
 }
 
 fn triage_sort_distance(correlation: Option<f32>) -> f32 {
@@ -2124,6 +2193,7 @@ mod tests {
                 1,
                 &context_graph_mejepa::EvalConfig::default(),
             ),
+            per_cell_convergence_eta: BTreeMap::new(),
             active_learning: context_graph_mejepa::ActiveLearningSummary {
                 queued_count: 0,
                 evicted_count: 0,
@@ -2185,6 +2255,8 @@ mod tests {
         per_cell_correlation.insert(known_good_python.clone(), Some(0.96));
         per_cell_correlation.insert(off_by_one_rust.clone(), Some(0.81));
         per_cell_correlation.insert(subtle_flip_go.clone(), None);
+        let per_cell_convergence_eta =
+            context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell_correlation, 0.95);
         let mut per_cell_state_transfer = BTreeMap::new();
         per_cell_state_transfer.insert(
             known_good_python.clone(),
@@ -2222,6 +2294,7 @@ mod tests {
                 3,
                 &context_graph_mejepa::EvalConfig::default(),
             ),
+            per_cell_convergence_eta,
             active_learning: context_graph_mejepa::ActiveLearningSummary {
                 queued_count: 0,
                 evicted_count: 0,
@@ -2299,6 +2372,8 @@ mod tests {
         per_cell_correlation.insert(oracle_flake.clone(), Some(0.65));
         per_cell_correlation.insert(distribution_shift.clone(), Some(0.70));
         per_cell_correlation.insert(passing_classification.clone(), Some(0.99));
+        let per_cell_convergence_eta =
+            context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell_correlation, 0.95);
         let mut failing_cell_classifications = BTreeMap::new();
         for (cell, root_cause, confidence, evidence) in [
             (
@@ -2368,6 +2443,7 @@ mod tests {
                 6,
                 &context_graph_mejepa::EvalConfig::default(),
             ),
+            per_cell_convergence_eta,
             active_learning: context_graph_mejepa::ActiveLearningSummary {
                 queued_count: 0,
                 evicted_count: 0,
@@ -2397,13 +2473,13 @@ mod tests {
         write_weekly_eval_markdown(&markdown_path, &report, "synthetic-hash", &operational)
             .expect("write weekly markdown");
         let markdown = fs::read_to_string(markdown_path).expect("read weekly markdown");
-        assert!(markdown.contains("| rank | failing_cell | correlation | distance_to_0_95 | root_cause | confidence | suggested_action | evidence |"));
-        assert!(markdown.contains("| 1 | known_good::python | 0.400000 | 0.550000 | insufficient_training_data | 0.950000 | expand_corpus | holdout_count=3 |"));
-        assert!(markdown.contains("| 2 | off_by_one::rust | 0.500000 | 0.450000 | embedder_signal_gap | 0.820000 | request_adversarial_sample | blind_spot_z=2.400000 |"));
-        assert!(markdown.contains("| 3 | subtle_flip::go | 0.600000 | 0.350000 | label_noise | 0.860000 | recalibrate | label_disagreement_rate=0.210000 |"));
-        assert!(markdown.contains("| 4 | swap_variable::java | 0.650000 | 0.300000 | oracle_flakiness | 0.900000 | mark_exempt | oracle_flake_rate=0.120000 |"));
-        assert!(markdown.contains("| 5 | wrong_file::ruby | 0.700000 | 0.250000 | distribution_shift | 0.840000 | expand_corpus | distribution_shift_score=0.340000 |"));
-        assert!(!markdown.contains("| known_good::javascript | 0.990000 |"));
+        assert!(markdown.contains("| rank | failing_cell | correlation | distance_to_0_95 | eta_status | estimated_passing_window | eta_ci | root_cause | confidence | suggested_action | evidence |"));
+        assert!(markdown.contains("| 1 | known_good::python | 0.400000 | 0.550000 | insufficient_history | unavailable | unavailable | insufficient_training_data | 0.950000 | expand_corpus | holdout_count=3 |"));
+        assert!(markdown.contains("| 2 | off_by_one::rust | 0.500000 | 0.450000 | insufficient_history | unavailable | unavailable | embedder_signal_gap | 0.820000 | request_adversarial_sample | blind_spot_z=2.400000 |"));
+        assert!(markdown.contains("| 3 | subtle_flip::go | 0.600000 | 0.350000 | insufficient_history | unavailable | unavailable | label_noise | 0.860000 | recalibrate | label_disagreement_rate=0.210000 |"));
+        assert!(markdown.contains("| 4 | swap_variable::java | 0.650000 | 0.300000 | insufficient_history | unavailable | unavailable | oracle_flakiness | 0.900000 | mark_exempt | oracle_flake_rate=0.120000 |"));
+        assert!(markdown.contains("| 5 | wrong_file::ruby | 0.700000 | 0.250000 | insufficient_history | unavailable | unavailable | distribution_shift | 0.840000 | expand_corpus | distribution_shift_score=0.340000 |"));
+        assert!(!markdown.contains("| 6 | known_good::javascript |"));
     }
 
     #[test]
@@ -2416,6 +2492,8 @@ mod tests {
         );
         let mut per_cell_correlation = BTreeMap::new();
         per_cell_correlation.insert(off_by_one_rust.clone(), Some(0.81));
+        let per_cell_convergence_eta =
+            context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell_correlation, 0.95);
         let mut failing_cell_classifications = BTreeMap::new();
         failing_cell_classifications.insert(
             off_by_one_rust.clone(),
@@ -2447,6 +2525,7 @@ mod tests {
                 1,
                 &context_graph_mejepa::EvalConfig::default(),
             ),
+            per_cell_convergence_eta,
             active_learning: context_graph_mejepa::ActiveLearningSummary {
                 queued_count: 0,
                 evicted_count: 0,

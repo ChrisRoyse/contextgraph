@@ -259,6 +259,9 @@ fn boundary_nonfinite_diagnostic() -> Result<serde_json::Value, Box<dyn std::err
 
 fn minimal_report() -> Result<EvalReport, Box<dyn std::error::Error>> {
     let cell = cell_key(MutationCategory::KnownGood, Language::Python);
+    let per_cell_correlation = BTreeMap::from([(cell.clone(), Some(1.0))]);
+    let per_cell_convergence_eta =
+        context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell_correlation, 0.95);
     let mut per_cell_state_transfer = BTreeMap::new();
     per_cell_state_transfer.insert(cell.clone(), None);
     Ok(EvalReport {
@@ -269,7 +272,7 @@ fn minimal_report() -> Result<EvalReport, Box<dyn std::error::Error>> {
         overall_correlation: Some(1.0),
         per_category_correlation: BTreeMap::from([(MutationCategory::KnownGood, Some(1.0))]),
         per_language_correlation: BTreeMap::from([(Language::Python, Some(1.0))]),
-        per_cell_correlation: BTreeMap::from([(cell, Some(1.0))]),
+        per_cell_correlation,
         cell_exemptions: BTreeMap::new(),
         bayesian_shrinkage: BTreeMap::from([("known_good::python".to_string(), 1.0)]),
         conformal_coverage_health: BTreeMap::new(),
@@ -280,6 +283,7 @@ fn minimal_report() -> Result<EvalReport, Box<dyn std::error::Error>> {
             2,
             &context_graph_mejepa::EvalConfig::default(),
         ),
+        per_cell_convergence_eta,
         active_learning: context_graph_mejepa::ActiveLearningSummary {
             queued_count: 0,
             evicted_count: 0,

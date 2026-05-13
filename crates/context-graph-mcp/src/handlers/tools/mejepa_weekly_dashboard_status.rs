@@ -173,10 +173,11 @@ fn per_cell_dashboard_rows(
                 None => "collect_more_labels",
             };
             json!({
-                "cell": cell,
-                "correlation": correlation,
+                    "cell": cell,
+                    "correlation": correlation,
                 "bayesianShrinkage": report.bayesian_shrinkage.get(cell),
                 "stateTransfer": state_transfer,
+                "convergenceEta": report.per_cell_convergence_eta.get(cell),
                 "correlationStatus": correlation_status,
                 "stateTransferCandidate": state_transfer_candidate
             })
@@ -399,6 +400,7 @@ fn required_weekly_sections_status(exports_root: &Path, report_date: &str) -> Va
         "## Catastrophic Events",
         "## Per-Failure-Mode-Class Metrics",
         "## Per-Cell Ship Gate Status",
+        "## Convergence ETA Per Cell",
         "## Active-Learning Queue Summary",
         "## Agent-Feedback Summary",
         "## Drift Events Of The Week",
@@ -491,6 +493,13 @@ fn runbook_actions(
         .any(|metrics| !metrics.passed_threshold)
     {
         actions.push("review low precision/recall failure-mode classes before Phase G promotion");
+    }
+    if report
+        .per_cell_convergence_eta
+        .values()
+        .any(|eta| eta.status == context_graph_mejepa::ConvergenceEtaStatus::NotConverging)
+    {
+        actions.push("review non-converging cells and expand targeted training data");
     }
     if !low_state_transfer_cells(report).is_empty() {
         actions.push("queue fine-tune review for low state-transfer cells");

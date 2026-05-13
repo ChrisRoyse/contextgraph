@@ -937,6 +937,8 @@ fn eval_report_with_cells(per_cell_correlation: BTreeMap<String, Option<f32>>) -
         .keys()
         .map(|key| (key.clone(), None))
         .collect();
+    let per_cell_convergence_eta =
+        context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell_correlation, 0.95);
     EvalReport {
         report_date: "2026-05-13-phase-e-fsv".to_string(),
         generated_at_unix_ms: chrono::Utc::now().timestamp_millis(),
@@ -964,6 +966,7 @@ fn eval_report_with_cells(per_cell_correlation: BTreeMap<String, Option<f32>>) -
             8,
             &context_graph_mejepa::EvalConfig::default(),
         ),
+        per_cell_convergence_eta,
         active_learning: ActiveLearningSummary {
             queued_count: 0,
             evicted_count: 0,

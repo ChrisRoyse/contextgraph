@@ -348,6 +348,8 @@ mod tests {
             crate::eval::cell_key(MutationCategory::KnownGood, crate::Language::Python),
             Some(correlation),
         );
+        let per_cell_convergence_eta =
+            crate::eval::baseline_convergence_eta_for_cells(&per_cell, 0.95);
         EvalReport {
             report_date: date.to_string(),
             generated_at_unix_ms: timestamp_millis,
@@ -367,6 +369,7 @@ mod tests {
                 100,
                 &crate::eval::EvalConfig::default(),
             ),
+            per_cell_convergence_eta,
             active_learning: ActiveLearningSummary {
                 queued_count: 0,
                 evicted_count: 0,

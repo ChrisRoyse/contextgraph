@@ -1,4 +1,5 @@
 use super::cell_exemptions::{default_cell_exemptions_path, load_cell_exemptions};
+use super::convergence_tracker::compute_convergence_eta_from_reports;
 use super::error::{EvalError, EvalErrorCode};
 use super::metrics::{
     bayesian_shrinkage, compute_correlations, compute_failure_mode_class_metrics,
@@ -135,7 +136,7 @@ impl EvalRunner {
             &self.config,
         )?;
 
-        let report = EvalReport {
+        let mut report = EvalReport {
             report_date: report_date.into(),
             generated_at_unix_ms: chrono::Utc::now().timestamp_millis(),
             rolling_window_size: self.config.rolling_window_size,
@@ -151,6 +152,7 @@ impl EvalRunner {
             gtau_pass_rate: gtau,
             per_prediction_class_calibration,
             per_failure_mode_class,
+            per_cell_convergence_eta: BTreeMap::new(),
             active_learning: ActiveLearningSummary {
                 queued_count: queue.entries.len(),
                 evicted_count: queue.evicted.len(),
@@ -170,6 +172,16 @@ impl EvalRunner {
             provenance,
             wall_clock_seconds: started.elapsed().as_secs_f32(),
         };
+        let mut convergence_history = self
+            .store
+            .load_recent_reports(self.config.convergence_history_windows.saturating_sub(1))?;
+        convergence_history.push(report.clone());
+        report.per_cell_convergence_eta = compute_convergence_eta_from_reports(
+            &convergence_history,
+            self.config.convergence_target_correlation,
+            self.config.convergence_history_windows,
+            self.config.convergence_eta_min_points,
+        )?;
         report.validate()?;
         self.store.persist_report(&report)?;
         Ok(report)

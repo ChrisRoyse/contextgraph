@@ -231,6 +231,8 @@ fn synthetic_report(classifications: BTreeMap<String, FailingCellClassification>
         .keys()
         .map(|cell| (cell.clone(), Some(0.75)))
         .collect();
+    let per_cell_convergence_eta =
+        context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell_correlation, 0.95);
     EvalReport {
         report_date: "2026-05-13".to_string(),
         generated_at_unix_ms: 1_778_666_683_000,
@@ -250,6 +252,7 @@ fn synthetic_report(classifications: BTreeMap<String, FailingCellClassification>
             72,
             &context_graph_mejepa::EvalConfig::default(),
         ),
+        per_cell_convergence_eta,
         active_learning: ActiveLearningSummary {
             queued_count: 0,
             evicted_count: 0,
@@ -328,6 +331,10 @@ fn boundary_mismatched_report_classification_key() -> Value {
     report.per_cell_correlation.insert(
         cell_key(MutationCategory::KnownGood, Language::Python),
         Some(0.70),
+    );
+    report.per_cell_convergence_eta = context_graph_mejepa::baseline_convergence_eta_for_cells(
+        &report.per_cell_correlation,
+        0.95,
     );
     report.failing_cell_classifications.insert(
         "wrong_file::python".to_string(),

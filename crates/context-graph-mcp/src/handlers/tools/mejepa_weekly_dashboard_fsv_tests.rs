@@ -220,6 +220,8 @@ fn synthetic_dashboard_report(report_date: &str) -> EvalReport {
     let cell = context_graph_mejepa::cell_key(MutationCategory::KnownGood, Language::Python);
     let mut per_cell_correlation = BTreeMap::new();
     per_cell_correlation.insert(cell.clone(), Some(0.96));
+    let per_cell_convergence_eta =
+        context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell_correlation, 0.95);
     let mut per_cell_state_transfer = BTreeMap::new();
     per_cell_state_transfer.insert(
         cell.clone(),
@@ -270,6 +272,7 @@ fn synthetic_dashboard_report(report_date: &str) -> EvalReport {
             4,
             &context_graph_mejepa::EvalConfig::default(),
         ),
+        per_cell_convergence_eta,
         active_learning: ActiveLearningSummary {
             queued_count: 1,
             evicted_count: 0,
@@ -348,6 +351,10 @@ fn weekly_markdown_with_required_sections() -> &'static str {
      |---|---:|---:|---:|---:|---:|---:|---:|---|---|\n\
      | name_error | 1.000000 | 1.000000 | 1.000000 | 0 | 0 | 0 | 4 | true | none |\n\n\
      ## Per-Cell Ship Gate Status\n\n- known_good::python: pass\n\n\
+     ## Convergence ETA Per Cell\n\n\
+     | cell | latest_correlation | eta_status | estimated_passing_window | confidence_interval | slope_per_window | r_squared | history_windows | valid_points |\n\
+     |---|---:|---|---:|---|---:|---:|---:|---:|\n\
+     | known_good::python | 0.960000 | already_passing | 0 | 0..0 | unavailable | unavailable | 1 | 1 |\n\n\
      ## Active-Learning Queue Summary\n\n- queued_count: 1\n\n\
      ## Agent-Feedback Summary\n\n- surprise: 1\n\n\
      ## Drift Events Of The Week\n\n- none\n\n\

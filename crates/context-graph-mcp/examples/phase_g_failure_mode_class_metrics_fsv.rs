@@ -335,6 +335,7 @@ fn synthetic_report(
         gtau_pass_rate: BTreeMap::new(),
         per_prediction_class_calibration: BTreeMap::new(),
         per_failure_mode_class,
+        per_cell_convergence_eta: BTreeMap::new(),
         active_learning: ActiveLearningSummary {
             queued_count: 0,
             evicted_count: 0,

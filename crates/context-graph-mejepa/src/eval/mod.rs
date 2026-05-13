@@ -1,4 +1,5 @@
 pub mod cell_exemptions;
+pub mod convergence_tracker;
 pub mod error;
 pub mod fixtures;
 pub mod graph;
@@ -16,6 +17,11 @@ pub mod types;
 pub use cell_exemptions::{
     default_cell_exemptions_path, load_cell_exemptions, CellExemption, CellExemptionConfig,
     DEFAULT_CELL_EXEMPTIONS_PATH,
+};
+pub use convergence_tracker::{
+    baseline_convergence_eta_for_cells, compute_convergence_eta_from_reports, CellConvergenceEta,
+    ConvergenceEtaConfidenceInterval, ConvergenceEtaStatus, DEFAULT_CONVERGENCE_HISTORY_WINDOWS,
+    DEFAULT_CONVERGENCE_MIN_POINTS, DEFAULT_CONVERGENCE_TARGET,
 };
 pub use error::{EvalError, EvalErrorCode};
 pub use fixtures::{build_eval_compiler, synthetic_holdout, synthetic_patch_embeddings};

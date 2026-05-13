@@ -89,6 +89,26 @@ impl RocksDbEvalStore {
         Ok(Some(report))
     }
 
+    pub fn load_recent_reports(&self, limit: usize) -> Result<Vec<EvalReport>, EvalError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let cf_handle = cf(&self.db, CF_MEJEPA_EVAL_REPORTS).map_err(EvalError::from)?;
+        let mut reports = Vec::with_capacity(limit);
+        for item in self
+            .db
+            .iterator_cf(cf_handle, IteratorMode::End)
+            .take(limit)
+        {
+            let (_key, value) = item?;
+            let report: EvalReport = bincode::deserialize(&value)?;
+            report.validate()?;
+            reports.push(report);
+        }
+        reports.reverse();
+        Ok(reports)
+    }
+
     pub fn load_report_by_key(&self, key: &[u8]) -> Result<Option<EvalReport>, EvalError> {
         let cf_handle = cf(&self.db, CF_MEJEPA_EVAL_REPORTS).map_err(EvalError::from)?;
         let Some(value) = self.db.get_cf(cf_handle, key)? else {

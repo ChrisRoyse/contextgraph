@@ -171,6 +171,9 @@ fn synthetic_report(
     per_prediction_class_calibration: BTreeMap<String, PredictionClassCalibration>,
 ) -> Result<EvalReport, Box<dyn std::error::Error>> {
     let cell = cell_key(MutationCategory::KnownGood, Language::Rust);
+    let per_cell_correlation = BTreeMap::from([(cell.clone(), Some(0.96))]);
+    let per_cell_convergence_eta =
+        context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell_correlation, 0.95);
     let mut per_cell_state_transfer = BTreeMap::new();
     per_cell_state_transfer.insert(
         cell.clone(),
@@ -188,7 +191,7 @@ fn synthetic_report(
         overall_correlation: Some(0.96),
         per_category_correlation: BTreeMap::from([(MutationCategory::KnownGood, Some(0.96))]),
         per_language_correlation: BTreeMap::from([(Language::Rust, Some(0.96))]),
-        per_cell_correlation: BTreeMap::from([(cell, Some(0.96))]),
+        per_cell_correlation,
         cell_exemptions: BTreeMap::new(),
         bayesian_shrinkage: BTreeMap::from([("known_good::rust".to_string(), 0.95)]),
         conformal_coverage_health: BTreeMap::from([(
@@ -207,6 +210,7 @@ fn synthetic_report(
             4,
             &context_graph_mejepa::EvalConfig::default(),
         ),
+        per_cell_convergence_eta,
         active_learning: ActiveLearningSummary {
             queued_count: 0,
             evicted_count: 0,

@@ -1005,6 +1005,7 @@ pub struct CellStatusRow {
     pub mutation_category: String,
     pub language: String,
     pub correlation: Option<f32>,
+    pub convergence_eta: Option<context_graph_mejepa::CellConvergenceEta>,
     pub holdout_count: usize,
     pub distance_to_threshold: Option<f32>,
     pub last_update_unix_ms: i64,
@@ -1198,11 +1199,13 @@ pub fn run_cell_status(args: CellStatusArgs) -> Result<CellStatusOutput> {
                 "missing"
             }
         };
+        let convergence_eta = report.per_cell_convergence_eta.get(&key).cloned();
         rows.push(CellStatusRow {
             cell: key,
             mutation_category: category.slug().to_string(),
             language: language_slug(language).to_string(),
             correlation,
+            convergence_eta,
             holdout_count: report.holdout_count,
             distance_to_threshold: correlation.map(|value| (args.threshold - value).max(0.0)),
             last_update_unix_ms: report.generated_at_unix_ms,

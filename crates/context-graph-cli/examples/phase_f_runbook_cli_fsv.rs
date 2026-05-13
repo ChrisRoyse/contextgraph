@@ -583,6 +583,7 @@ fn build_synthetic_report(
             300,
             &context_graph_mejepa::EvalConfig::default(),
         ),
+        per_cell_convergence_eta: BTreeMap::new(),
         active_learning: ActiveLearningSummary {
             queued_count: 0,
             evicted_count: 0,

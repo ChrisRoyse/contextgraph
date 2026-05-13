@@ -171,6 +171,8 @@ fn build_report(scenario: Scenario) -> EvalReport {
         };
         per_cell_correlation.insert(key, Some(correlation));
     }
+    let per_cell_convergence_eta =
+        context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell_correlation, 0.95);
 
     let ship_gate_passed = matches!(scenario, Scenario::Pass);
     EvalReport {
@@ -202,6 +204,7 @@ fn build_report(scenario: Scenario) -> EvalReport {
             800,
             &context_graph_mejepa::EvalConfig::default(),
         ),
+        per_cell_convergence_eta,
         active_learning: ActiveLearningSummary {
             queued_count: 0,
             evicted_count: 0,
