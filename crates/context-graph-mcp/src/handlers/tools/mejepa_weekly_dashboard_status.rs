@@ -79,7 +79,8 @@ pub(super) fn weekly_eval_dashboard(
         "calibration": {
             "conformalCoverage": report.conformal_coverage_health,
             "oodCalibration": report.ood_calibration_health,
-            "gtauPassRate": report.gtau_pass_rate
+            "gtauPassRate": report.gtau_pass_rate,
+            "perPredictionClassCalibration": report.per_prediction_class_calibration
         },
         "activeLearning": report.active_learning,
         "agentFeedback": feedback,

@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use context_graph_mejepa::eval::{synthetic_holdout, RocksDbEvalStore};
+use context_graph_mejepa::eval::{
+    compute_calibration_for_samples, synthetic_holdout, CalibrationSample, RocksDbEvalStore,
+};
 use context_graph_mejepa::{
     ActiveLearningSummary, AgentId, ConformalHealthEntry, EvalProvenance, EvalReport, FeedbackId,
     FeedbackKind, Language, MutationCategory, PredictionId, RegressionCheck,
@@ -38,11 +40,16 @@ async fn weekly_eval_dashboard_writes_phase_f_fsv_artifact() {
     assert!(happy_response.error.is_none());
     let happy_result = happy_response.result.unwrap();
     let happy_structured = happy_result["structuredContent"].clone();
+    let happy_calibration_ece = happy_structured["calibration"]["perPredictionClassCalibration"]
+        ["q2_oracle_pass"]["expected_calibration_error"]
+        .as_f64()
+        .unwrap_or(-1.0);
     let happy_pass = happy_result["isError"] == false
         && happy_structured["holdoutFeed"]["status"] == "ready"
         && happy_structured["weeklyFiles"]["status"] == "present"
         && happy_structured["requiredWeeklySections"]["allPresent"] == true
-        && happy_structured["agentFeedback"]["counts"]["surprise"] == 1;
+        && happy_structured["agentFeedback"]["counts"]["surprise"] == 1
+        && (happy_calibration_ece - 0.25).abs() < f64::EPSILON;
 
     let missing_holdout = seed_dashboard_fixture(&run_root.join("missing-holdout"), false, true);
     let missing_holdout_response = handlers
@@ -132,7 +139,7 @@ async fn weekly_eval_dashboard_writes_phase_f_fsv_artifact() {
             "before": null,
             "trigger": "cargo test -p context-graph-mcp weekly_eval_dashboard_writes_phase_f_fsv_artifact",
             "after": happy_structured,
-            "expected": "holdout ready, weekly files present, required sections present, surprise feedback counted",
+            "expected": "holdout ready, weekly files present, required sections present, surprise feedback counted, per-class calibration surfaced",
             "actual": happy_pass,
             "pass": happy_pass,
             "evidence_path": happy.run_root
@@ -243,7 +250,21 @@ fn synthetic_dashboard_report(report_date: &str) -> EvalReport {
         )]),
         ood_calibration_health: BTreeMap::from([(Language::Python, Some(0.88))]),
         gtau_pass_rate: BTreeMap::from([(Language::Python, 0.98)]),
-        per_prediction_class_calibration: BTreeMap::new(),
+        per_prediction_class_calibration: BTreeMap::from([(
+            "q2_oracle_pass".to_string(),
+            compute_calibration_for_samples(
+                "q2_oracle_pass",
+                &[
+                    CalibrationSample::try_new(0.25, false).unwrap(),
+                    CalibrationSample::try_new(0.25, false).unwrap(),
+                    CalibrationSample::try_new(0.75, true).unwrap(),
+                    CalibrationSample::try_new(0.75, true).unwrap(),
+                ],
+                2,
+                0.02,
+            )
+            .unwrap(),
+        )]),
         active_learning: ActiveLearningSummary {
             queued_count: 1,
             evicted_count: 0,

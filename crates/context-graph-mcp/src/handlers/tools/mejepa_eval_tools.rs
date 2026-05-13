@@ -153,6 +153,7 @@ impl Handlers {
                 "holdoutCount": report.holdout_count,
                 "perCellStateTransfer": report.per_cell_state_transfer,
                 "lowStateTransferCells": low_state_transfer_cells(&report),
+                "perPredictionClassCalibration": report.per_prediction_class_calibration,
                 "sourceOfTruth": "CF_MEJEPA_EVAL_REPORTS"
             }))
         })();

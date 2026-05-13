@@ -65,5 +65,9 @@ name = "phase_f_mi_heatmap_fsv"
 path = "examples/phase_f_mi_heatmap_fsv.rs"
 
 [[example]]
+name = "phase_f_per_head_calibration_fsv"
+path = "examples/phase_f_per_head_calibration_fsv.rs"
+
+[[example]]
 name = "continual_backprop_regulation_fsv"
 path = "examples/continual_backprop_regulation_fsv.rs"
