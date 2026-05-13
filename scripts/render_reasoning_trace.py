@@ -95,6 +95,17 @@ def load_inspect_payload(path: Path) -> dict[str, Any]:
         raise SystemExit(
             "MEJEPA_RENDER_REASONING_INPUT_INCOMPLETE: missing keys " + ", ".join(sorted(missing))
         )
+    chunks = payload["contributingChunks"]
+    if not isinstance(chunks, list):
+        raise SystemExit("MEJEPA_RENDER_REASONING_INPUT_SCHEMA: contributingChunks must be a list")
+    for index, chunk in enumerate(chunks):
+        if not isinstance(chunk, dict):
+            raise SystemExit(f"MEJEPA_RENDER_REASONING_INPUT_SCHEMA: contributingChunks[{index}] must be an object")
+        for key in ("chunkId", "saliency"):
+            if key not in chunk:
+                raise SystemExit(
+                    f"MEJEPA_RENDER_REASONING_INPUT_INCOMPLETE: contributingChunks[{index}] missing {key}"
+                )
     return payload
 
 
@@ -105,6 +116,8 @@ def render_markdown(payload: dict[str, Any]) -> str:
         payload.get("conformalTrace", {}).get("predictedTestPass", []) if isinstance(payload.get("conformalTrace"), dict) else []
     )
     guard_violations = payload.get("tctTrace", {}).get("guardViolations", []) if isinstance(payload.get("tctTrace"), dict) else []
+    failure_modes = collect_failure_modes(payload)
+    counterfactuals = collect_counterfactuals(payload)
 
     lines = [
         f"# Reasoning trace — prediction `{identity.get('predictionId', '?')}`",
@@ -131,19 +144,40 @@ def render_markdown(payload: dict[str, Any]) -> str:
                 )
             )
 
+    lines += [
+        "",
+        "## Saliency heatmap",
+        "",
+        "| signal | score | heat |",
+        "|---|---:|---|",
+    ]
+    heat_rows = saliency_heat_rows(chunks, failure_modes)
+    if not heat_rows:
+        lines.append("| _(none)_ | 0.000 | |")
+    else:
+        for label, score in heat_rows:
+            lines.append(f"| `{label}` | {score:.3f} | `{heat_bar(score)}` |")
+
     lines += ["", "## Predicted test-pass deltas", ""]
     if not failure_modes:
         lines.append("_(none)_")
     else:
         for mode in failure_modes:
-            lines.append(f"- `{mode}`")
+            lines.append(f"- `{format_structured(mode)}`")
 
     lines += ["", "## TCT guard violations", ""]
     if not guard_violations:
         lines.append("_None — predicted output lies inside the known-good constellation region._")
     else:
         for violation in guard_violations:
-            lines.append(f"- `{violation}`")
+            lines.append(f"- `{format_structured(violation)}`")
+
+    lines += ["", "## Counterfactuals", ""]
+    if not counterfactuals:
+        lines.append("_No counterfactual minimum-edit suggestions were persisted in this payload._")
+    else:
+        for item in counterfactuals:
+            lines.append(f"- `{format_structured(item)}`")
 
     lines += ["", "## Source of truth", "", "- `CF_MEJEPA_LIVE_PREDICTIONS` + `CF_MEJEPA_DDA_SIGNALS`", ""]
     return "\n".join(lines)
@@ -239,6 +273,81 @@ def safe_float(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def collect_failure_modes(payload: dict[str, Any]) -> list[Any]:
+    candidates = (
+        payload.get("predictedFailureModes"),
+        payload.get("topFailureModes"),
+        payload.get("prediction", {}).get("predicted_failure_modes")
+        if isinstance(payload.get("prediction"), dict)
+        else None,
+        payload.get("prediction", {}).get("predictedFailureModes")
+        if isinstance(payload.get("prediction"), dict)
+        else None,
+    )
+    for candidate in candidates:
+        if isinstance(candidate, list):
+            return candidate
+    return (
+        payload.get("conformalTrace", {}).get("predictedTestPass", [])
+        if isinstance(payload.get("conformalTrace"), dict)
+        else []
+    )
+
+
+def collect_counterfactuals(payload: dict[str, Any]) -> list[Any]:
+    prediction = payload.get("prediction") if isinstance(payload.get("prediction"), dict) else {}
+    candidates = (
+        payload.get("counterfactuals"),
+        payload.get("counterfactual"),
+        payload.get("counterfactualTrace"),
+        payload.get("minimumEditCounterfactuals"),
+        prediction.get("counterfactuals"),
+        prediction.get("counterfactual"),
+        prediction.get("counterfactual_minimum_edits"),
+    )
+    for candidate in candidates:
+        if isinstance(candidate, list):
+            return candidate
+        if isinstance(candidate, dict) or isinstance(candidate, str):
+            return [candidate]
+    return []
+
+
+def saliency_heat_rows(chunks: list[Any], failure_modes: list[Any]) -> list[tuple[str, float]]:
+    rows: list[tuple[str, float]] = []
+    for chunk in chunks:
+        if isinstance(chunk, dict):
+            rows.append((f"chunk:{chunk.get('chunkId', '?')}", clamp01(safe_float(chunk.get("saliency")))))
+    for mode in failure_modes:
+        if isinstance(mode, dict):
+            label = str(mode.get("class") or mode.get("name") or mode.get("label") or mode.get("mode") or "?")
+            score = safe_float(mode.get("score", mode.get("probability", mode.get("confidence"))))
+        else:
+            label = str(mode)
+            score = 0.5
+        rows.append((f"failure:{label}", clamp01(score)))
+    return rows
+
+
+def clamp01(value: float) -> float:
+    if value < 0.0:
+        return 0.0
+    if value > 1.0:
+        return 1.0
+    return value
+
+
+def heat_bar(score: float) -> str:
+    filled = round(clamp01(score) * 10)
+    return "#" * filled + "-" * (10 - filled)
+
+
+def format_structured(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return str(value)
 
 
 def write_output(path: Path, contents: str) -> None:
