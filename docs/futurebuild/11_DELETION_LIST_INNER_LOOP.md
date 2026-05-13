@@ -134,8 +134,9 @@ CLAUDE.md §11 already reflects the post-pivot single-loop architecture. Three s
 1. **§11.11 (Operator-driven skills)**: mark `/ccreality-trigger-check` as retired; mark `/loop` as canonical (already correct in spirit; tighten language).
 2. **§13 (Support)**: replace `19_MIGRATION_RUNBOOK.md` reference with a pointer to `docs/futurebuild/12_IMPLEMENTATION_PHASES.md` once the new plan is the working document.
 3. **§3 (Directory layout)**: add `docs/futurebuild/` to the directory layout block.
+4. **Inner-loop references**: **complete (#137)** — remaining CLAUDE.md mentions are retirement/deny/fail-closed compatibility guidance only; FSV at `/mnt/d/contextgraph/fsv/phase-h-claude-inner-loop-reference-fsv/claude_inner_loop_reference_fsv.json`.
 
-These are 3-5 line edits; covered by `TASK-LOOP-002`.
+Items 1-3 are covered by `TASK-LOOP-002`; item 4 is covered by `TASK-LOOP-009`.
 
 ---
 

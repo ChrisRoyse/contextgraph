@@ -43,7 +43,7 @@ Audit trail: `./memory/discoveries/2026-05-12--phase-a-d-independent-audit-zero-
 
 ## 3. The crates
 
-- **`context-graph-mcp`** — MCP server. Speaks JSON-RPC over stdio. Exposes the 23 live `mejepa_*` tools plus `mcp__cgreality__*` family. Owns path-policy, edit-lock, ledger, and shift-log machinery. Fails closed on retired reality-loop calls (`CCREALITY_ENGINE_RETIRED`).
+- **`context-graph-mcp`** — MCP server. Speaks JSON-RPC over stdio. Exposes the 28 live `mejepa_*` tools plus compatibility `mcp__cgreality__*` source-of-truth transport. Owns path-policy, edit-lock, ledger, and shift-log machinery. Fails closed on retired reality-loop calls (`CCREALITY_ENGINE_RETIRED`).
 - **`context-graph-cli`** — Harness CLI, DynamicJEPA commands, governed readback helpers, ME-JEPA implementation work.
 - **`context-graph-mejepa`** — Predictor, compiler, heal scheduler, eval. The trunk model.
 - **`context-graph-mejepa-cf`** — RocksDB column-family registry (51+ CFs).
@@ -56,7 +56,7 @@ Audit trail: `./memory/discoveries/2026-05-12--phase-a-d-independent-audit-zero-
 - **`context-graph-mejepa-train`** — Trainer + UTML formula carriers + DDA computation + samplers.
 - **`context-graph-{core,mincut,solver,tier-compression,witness,benchmark}`** — Supporting primitives.
 
-Legacy `reality-loop` binary and inner-actor LLM (Qwen3.6-27B / Hermes-2-Pro / Ollama / llama.cpp generative inference) were deleted 2026-05-09. **Do not reanimate.**
+Legacy `reality-loop` binary and inner-actor LLM (Qwen3.6-27B / Hermes-2-Pro / Ollama / llama.cpp generative inference) were deleted 2026-05-09 and Phase H FSV-verified on 2026-05-13 (#134/#135). **Do not reanimate.**
 
 ---
 
@@ -288,7 +288,7 @@ cargo fmt
 1. Never call HTTP from action paths (curl / wget / fetch). MCP is the only action surface.
 2. Never edit `.env`, `swebench/**`, `tests/oracle_**/**`, `crates/*/src/reward_specs/**`, `crates/*/src/verifiers/**`.
 3. Never use destructive git (`push --force`, `reset --hard`, `checkout --`, `clean -f`, `rebase`).
-4. Never reintroduce the inner-actor LLM (Qwen, Hermes, Ollama, llama.cpp generative inference).
+4. Never reintroduce the retired inner-actor LLM stack (Qwen, Hermes, Ollama, llama.cpp generative inference) without explicit operator authorization and new FSV evidence.
 5. Never use mock data in tests that gate task completion.
 6. Never write tests that pass when the project is broken.
 7. Never weaken or remove a verifier or hook that legitimately blocked you.
