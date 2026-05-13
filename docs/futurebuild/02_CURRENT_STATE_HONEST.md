@@ -26,7 +26,7 @@
 >
 > **2026-05-13 Phase G `TASK-G-018` update:** weekly eval markdown now renders an `Operator Cell Triage` top-10 table from source-backed failing-cell classifications, ranks cells by distance to the 0.95 target, and maps root causes to operator actions. FSV source of truth: `/mnt/d/contextgraph/fsv/phase-g-weekly-cell-triage-fsv/weekly_cell_triage_fsv.json` (`all_passed=true`).
 >
-> **2026-05-13 Phase G `TASK-G-019` update:** `context-graph-cli mejepa oracle-flakiness-audit` now consumes repeated oracle observations, computes outcome/hash flakiness with the required 3-run default and >5% quarantine threshold, writes `config/corpus_quarantine.toml`, and `context-graph-cli mejepa train` excludes quarantined tasks before train/holdout SoT writes. FSV source of truth: `/mnt/d/contextgraph/fsv/phase-g-oracle-flakiness-quarantine-fsv/oracle_flakiness_quarantine_fsv.json` (`all_passed=true`).
+> **2026-05-13 Phase G `TASK-G-019` update:** `mejepa-corpus verify --oracle-repeat-runs 3 --oracle-repeat-output <json>` now produces repeated oracle observations, `context-graph-cli mejepa oracle-flakiness-audit` consumes them, computes outcome/hash flakiness with the required 3-run default and >5% quarantine threshold, writes `config/corpus_quarantine.toml`, and `context-graph-cli mejepa train` excludes quarantined tasks before train/holdout SoT writes. FSV source of truth: `/mnt/d/contextgraph/fsv/phase-g-oracle-flakiness-quarantine-fsv/oracle_flakiness_quarantine_fsv.json` (`all_passed=true`).
 >
 > **Every task picked up from `docs/futurebuild/tasks/` MUST first read `docs/futurebuild/specs/FSV-PROTOCOL.md` — that file is the binding verification contract.**
 

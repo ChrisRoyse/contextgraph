@@ -134,6 +134,10 @@ struct VerifyArgs {
     instance_timeout_secs: u64,
     #[arg(long, default_value_t = 3600)]
     overall_timeout_secs: u64,
+    #[arg(long, default_value_t = 1)]
+    oracle_repeat_runs: usize,
+    #[arg(long)]
+    oracle_repeat_output: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -725,6 +729,10 @@ fn generate(mut args: GenerateArgs) -> CliResult<()> {
 fn verify(mut args: VerifyArgs) -> CliResult<()> {
     args.corpus = require_corpus_path(&args.corpus, "verify.corpus")?;
     args.venv_python = require_durable_path(&args.venv_python, "verify.venv_python")?;
+    args.oracle_repeat_output = match args.oracle_repeat_output.take() {
+        Some(path) => Some(require_durable_path(&path, "verify.oracle_repeat_output")?),
+        None => None,
+    };
     validate_verify_args(&args)?;
     let index = read_index(&args.corpus)?;
     validate_complete_index(&index)?;
@@ -816,6 +824,7 @@ fn verify(mut args: VerifyArgs) -> CliResult<()> {
         }));
     }
     let mut oracle_sample = Vec::new();
+    let mut oracle_repeat_tasks = Vec::new();
     let mut oracle_sample_count = 0usize;
     let oracle_sample_skipped_due_to_local_failures = !failures.is_empty();
     if !oracle_sample_skipped_due_to_local_failures {
@@ -827,26 +836,72 @@ fn verify(mut args: VerifyArgs) -> CliResult<()> {
         )?;
         oracle_sample_count = sampled_entries.len();
         for entry in &sampled_entries {
-            let fresh_verdict = run_oracle_for_entry(&args, entry)?;
-            let fresh_hash = sha256_json_value(&serde_json::to_value(&fresh_verdict)?);
-            let matches_persisted = fresh_hash == entry.oracle_verdict_sha256;
-            if !matches_persisted {
-                failures.push(json!({
-                    "key": format!("{}|{}", entry.task_id, entry.category.slug()),
-                    "error": "fresh oracle sample hash mismatch",
-                    "expected": entry.oracle_verdict_sha256,
-                    "actual": fresh_hash,
+            let mut fresh_runs = Vec::with_capacity(args.oracle_repeat_runs);
+            let mut repeat_runs_for_output = Vec::with_capacity(args.oracle_repeat_runs);
+            for repeat_run_index in 1..=args.oracle_repeat_runs {
+                let run_id = oracle_repeat_run_id(&args, entry, repeat_run_index)?;
+                let fresh_verdict = run_oracle_for_entry(&args, entry, &run_id)?;
+                let fresh_run = oracle_repeat_run_json(run_id, &fresh_verdict)?;
+                let fresh_hash = fresh_run
+                    .get("oracle_verdict_sha256")
+                    .and_then(Value::as_str)
+                    .ok_or("oracle repeat run missing oracle_verdict_sha256")?
+                    .to_string();
+                let matches_persisted = fresh_hash == entry.oracle_verdict_sha256;
+                if !matches_persisted {
+                    failures.push(json!({
+                        "key": format!("{}|{}", entry.task_id, entry.category.slug()),
+                        "run_index": repeat_run_index,
+                        "error": "fresh oracle sample hash mismatch",
+                        "expected": entry.oracle_verdict_sha256,
+                        "actual": fresh_hash,
+                    }));
+                }
+                fresh_runs.push(json!({
+                    "run_index": repeat_run_index,
+                    "fresh_oracle_verdict_sha256": fresh_hash,
+                    "fresh_all_passed": fresh_verdict.all_passed(),
+                    "matches_persisted": matches_persisted,
                 }));
+                repeat_runs_for_output.push(fresh_run);
             }
+            let first_run = fresh_runs
+                .first()
+                .ok_or("oracle_repeat_runs validation allowed zero repeat runs")?;
+            oracle_repeat_tasks.push(build_oracle_repeat_task_observation(
+                entry,
+                repeat_runs_for_output,
+            ));
             oracle_sample.push(json!({
                 "task_id": entry.task_id,
                 "category": entry.category.slug(),
                 "persisted_oracle_verdict_sha256": entry.oracle_verdict_sha256,
-                "fresh_oracle_verdict_sha256": fresh_hash,
+                "fresh_oracle_verdict_sha256": first_run["fresh_oracle_verdict_sha256"].clone(),
                 "persisted_all_passed": entry.oracle_all_passed,
-                "fresh_all_passed": fresh_verdict.all_passed(),
-                "matches_persisted": matches_persisted,
+                "fresh_all_passed": first_run["fresh_all_passed"].clone(),
+                "matches_persisted": fresh_runs.iter().all(|run| run["matches_persisted"].as_bool() == Some(true)),
+                "fresh_runs": fresh_runs,
             }));
+        }
+    }
+    let oracle_repeat_output_path = args
+        .oracle_repeat_output
+        .as_ref()
+        .map(|path| path.display().to_string());
+    let mut oracle_repeat_output_written = false;
+    if let Some(path) = &args.oracle_repeat_output {
+        if !oracle_sample_skipped_due_to_local_failures {
+            let observations = json!({ "tasks": oracle_repeat_tasks });
+            write_json_checked(path, &observations)?;
+            let readback: Value = serde_json::from_str(&fs::read_to_string(path)?)?;
+            if readback != observations {
+                return Err(format!(
+                    "oracle repeat output readback mismatch at {}",
+                    path.display()
+                )
+                .into());
+            }
+            oracle_repeat_output_written = true;
         }
     }
     let passes = failures.is_empty();
@@ -868,6 +923,10 @@ fn verify(mut args: VerifyArgs) -> CliResult<()> {
         "targeted_sample_keys": args.sample_keys,
         "oracle_sample_count": oracle_sample_count,
         "oracle_sample_skipped_due_to_local_failures": oracle_sample_skipped_due_to_local_failures,
+        "oracle_repeat_runs_per_sample": args.oracle_repeat_runs,
+        "oracle_repeat_output": oracle_repeat_output_path,
+        "oracle_repeat_output_task_count": oracle_repeat_tasks.len(),
+        "oracle_repeat_output_written": oracle_repeat_output_written,
         "oracle_sample": oracle_sample,
         "failures": failures,
         "passes": passes,
@@ -1974,6 +2033,8 @@ fn smoke(mut args: SmokeArgs) -> CliResult<()> {
         run_id_prefix: format!("{}-verify", args.run_id_prefix),
         instance_timeout_secs: args.instance_timeout_secs,
         overall_timeout_secs: args.overall_timeout_secs,
+        oracle_repeat_runs: 1,
+        oracle_repeat_output: None,
     };
 
     let mut failures = Vec::<Value>::new();
@@ -2250,6 +2311,8 @@ fn validate_smoke_args(args: &SmokeArgs) -> CliResult<()> {
         run_id_prefix: format!("{}-verify", args.run_id_prefix),
         instance_timeout_secs: args.instance_timeout_secs,
         overall_timeout_secs: args.overall_timeout_secs,
+        oracle_repeat_runs: 1,
+        oracle_repeat_output: None,
     })?;
     Ok(())
 }
@@ -2671,6 +2734,12 @@ fn validate_verify_args(args: &VerifyArgs) -> CliResult<()> {
         return Err("run_id_prefix must be non-empty".into());
     }
     validate_docker_run_id_component(&args.run_id_prefix)?;
+    if args.oracle_repeat_runs == 0 {
+        return Err("oracle_repeat_runs must be >= 1".into());
+    }
+    if args.oracle_repeat_output.is_some() && args.oracle_repeat_runs < 2 {
+        return Err("oracle_repeat_runs must be >= 2 when oracle_repeat_output is set".into());
+    }
     Ok(())
 }
 
@@ -3059,7 +3128,11 @@ fn write_mutated_patch(
     Ok((path, relative_path))
 }
 
-fn run_oracle_for_entry(args: &VerifyArgs, entry: &GeneratedEntry) -> CliResult<OracleVerdict> {
+fn run_oracle_for_entry(
+    args: &VerifyArgs,
+    entry: &GeneratedEntry,
+    run_id: &str,
+) -> CliResult<OracleVerdict> {
     let patch_path = resolve_corpus_path(&args.corpus, &entry.patch_path)?;
     let patch_text = fs::read_to_string(&patch_path)?;
     if sha256_text(&patch_text) != entry.patch_sha256 {
@@ -3075,16 +3148,9 @@ fn run_oracle_for_entry(args: &VerifyArgs, entry: &GeneratedEntry) -> CliResult<
         model_name_or_path: format!("mejepa-verify-{}", entry.category.slug()),
         model_patch: patch_text,
     };
-    let run_id = docker_run_id(&format!(
-        "{}-{}-{}-{}",
-        args.run_id_prefix,
-        entry.task_id,
-        entry.category.slug(),
-        unix_ms()
-    ))?;
     let mut config = SwebenchOracleConfig::defaults_for(
         entry.task_id.clone(),
-        run_id,
+        run_id.to_string(),
         args.corpus.join("swebench-verify-runs"),
         args.venv_python.clone(),
         SwebenchPredictionMode::Custom(prediction),
@@ -3093,6 +3159,38 @@ fn run_oracle_for_entry(args: &VerifyArgs, entry: &GeneratedEntry) -> CliResult<
     config.overall_timeout = Duration::from_secs(args.overall_timeout_secs);
     let result = run_swebench_lite_oracle(&config)?;
     Ok(result.verdict)
+}
+
+fn oracle_repeat_run_id(
+    args: &VerifyArgs,
+    entry: &GeneratedEntry,
+    repeat_run_index: usize,
+) -> CliResult<String> {
+    docker_run_id(&format!(
+        "{}-{}-{}-r{}-{}",
+        args.run_id_prefix,
+        entry.task_id,
+        entry.category.slug(),
+        repeat_run_index,
+        unix_ms()
+    ))
+}
+
+fn oracle_repeat_run_json(run_id: String, verdict: &OracleVerdict) -> CliResult<Value> {
+    Ok(json!({
+        "run_id": run_id,
+        "oracle_all_passed": verdict.all_passed(),
+        "oracle_verdict_sha256": sha256_json_value(&serde_json::to_value(verdict)?),
+    }))
+}
+
+fn build_oracle_repeat_task_observation(entry: &GeneratedEntry, runs: Vec<Value>) -> Value {
+    json!({
+        "task_id": entry.task_id,
+        "repo": entry.repo,
+        "category": entry.category.slug(),
+        "runs": runs,
+    })
 }
 
 fn write_index(output: &Path, index: &CorpusIndex) -> CliResult<()> {
@@ -3677,6 +3775,68 @@ mod tests {
         let mut tampered = stats.clone();
         tampered["verdict_cf_count"] = json!(7);
         assert!(!stats_source_of_truth_passes(&tampered, 8));
+    }
+
+    #[test]
+    fn oracle_repeat_output_matches_flakiness_audit_schema() -> CliResult<()> {
+        let verdict = OracleVerdict {
+            per_test: vec![PerTestOutcome {
+                test_id: "tests/test_synthetic.py::test_passes".to_string(),
+                outcome: TestOutcome::Pass,
+                runtime_ms: 7,
+            }],
+            exception: None,
+        };
+        let entry = GeneratedEntry {
+            task_id: "synthetic_task_repeat_schema".to_string(),
+            repo: "synthetic/repo".to_string(),
+            language: Language::Python,
+            category: MutationCategory::KnownGood,
+            bucket: "train".to_string(),
+            patch_path: "mutations/synthetic_task_repeat_schema/known_good.patch".to_string(),
+            mutation_note: "synthetic".to_string(),
+            patch_sha256: sha256_text("patch"),
+            oracle_verdict_sha256: sha256_json_value(&serde_json::to_value(&verdict)?),
+            oracle_all_passed: true,
+            oracle_exception: None,
+            oracle_per_test_count: 1,
+        };
+
+        let run = oracle_repeat_run_json("repeat-run-1".to_string(), &verdict)?;
+        let task = build_oracle_repeat_task_observation(&entry, vec![run.clone()]);
+        let observations = json!({ "tasks": [task] });
+
+        assert_eq!(observations["tasks"][0]["task_id"], entry.task_id);
+        assert_eq!(observations["tasks"][0]["repo"], entry.repo);
+        assert_eq!(observations["tasks"][0]["category"], entry.category.slug());
+        assert_eq!(observations["tasks"][0]["runs"][0], run);
+        assert!(observations.as_object().is_some_and(|map| map.len() == 1));
+        assert!(run.as_object().is_some_and(|map| map.len() == 3));
+        Ok(())
+    }
+
+    #[test]
+    fn oracle_repeat_output_requires_multiple_runs() -> CliResult<()> {
+        let venv = tempfile::NamedTempFile::new()?;
+        let args = VerifyArgs {
+            corpus: PathBuf::from("/mnt/d/contextgraph/corpus/synthetic-repeat-check"),
+            sample_fraction: 1.0,
+            sample_keys: Vec::new(),
+            venv_python: venv.path().to_path_buf(),
+            run_id_prefix: "synthetic-repeat-check".to_string(),
+            instance_timeout_secs: 1,
+            overall_timeout_secs: 1,
+            oracle_repeat_runs: 1,
+            oracle_repeat_output: Some(PathBuf::from(
+                "/mnt/d/contextgraph/exports/eval/synthetic-repeat-check.json",
+            )),
+        };
+
+        let error = validate_verify_args(&args).expect_err("single-run output must fail closed");
+        assert!(error
+            .to_string()
+            .contains("oracle_repeat_runs must be >= 2"));
+        Ok(())
     }
 
     #[test]

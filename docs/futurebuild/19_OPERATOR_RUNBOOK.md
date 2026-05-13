@@ -87,7 +87,12 @@ less /mnt/d/contextgraph/exports/eval/$(date +%Y-%m-%d)/weekly.md
 # - Agent-feedback summary (top surprises)
 # - Storage trend
 
-# 3.1a Refresh oracle flakiness quarantine if repeat-oracle observations exist
+# 3.1a Produce repeat-oracle observations and refresh flakiness quarantine
+mejepa-corpus verify \
+  --corpus /mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511 \
+  --sample-fraction 1.0 \
+  --oracle-repeat-runs 3 \
+  --oracle-repeat-output /mnt/d/contextgraph/exports/eval/$(date +%Y-%m-%d)/oracle-repeat-observations.json
 context-graph-cli mejepa oracle-flakiness-audit \
   --input /mnt/d/contextgraph/exports/eval/$(date +%Y-%m-%d)/oracle-repeat-observations.json \
   --output config/corpus_quarantine.toml
