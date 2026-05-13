@@ -362,7 +362,7 @@ def build_report(root: Path) -> tuple[dict[str, Any], str]:
         },
         {
             "name": "model output / tool choice",
-            "source": "Gemma Ollama tool call and BlackBoxFix tool_call payload",
+            "source": "historical Gemma local tool call and BlackBoxFix tool_call payload",
             "count": 1,
             "key_fields": ["tool_call_id", "tool_name", "capability_id"],
             "stored_content": "tool name and structured arguments",

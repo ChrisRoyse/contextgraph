@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# retired-inner-actor audit: historical, do not reanimate the local LLM names
+# named below; synthetic matches prove CLAUDE.md rejects active guidance.
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FSV_ROOT="${FSV_ROOT:-/mnt/d/contextgraph/fsv/phase-h-claude-inner-loop-reference-fsv}"
 RUN_ID="run-$(date -u +%s)-$$"

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# retired-inner-actor audit: historical, do not reanimate the local LLM paths
+# named below; this FSV exists only to prevent their return.
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 OUT="${OUT:-/tmp/contextgraph-mejepa-retirement-fsv}"
 mkdir -p "${OUT}"

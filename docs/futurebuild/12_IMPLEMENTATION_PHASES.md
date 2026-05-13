@@ -261,14 +261,18 @@ This phase is **operational, not implementation**. The system is built; this pha
 |---|---|---|
 | `TASK-LOOP-003` | Mark superseded SMAP decisions with frontmatter | **complete (#132)** — `scripts/ci/phase_h_smap_superseded_decisions_fsv.sh` |
 | `TASK-LOOP-004` | Retire legacy MCP tools (mark fail-closed, update tool registry) | **complete (#133)** — retired names excluded from tool definitions and fail closed through `CCREALITY_ENGINE_RETIRED`; FSV at `/mnt/d/contextgraph/fsv/phase-h-retired-mcp-tools-fsv/retired_mcp_tools_fsv.json` |
-| `TASK-LOOP-005` | Confirm absence of inner-actor model files (audit script) | 0.1 day |
-| `TASK-LOOP-006` | Delete stale `target/release/reality-loop` binary if present | 0.1 day |
+| `TASK-LOOP-005` | Confirm absence of inner-actor model files (audit script) | **complete (#134)** — FSV at `/mnt/d/contextgraph/fsv/phase-h-no-inner-actor-models-fsv/no_inner_actor_models_fsv.json` |
+| `TASK-LOOP-006` | Delete stale `target/release/reality-loop` binary if present | **complete (#135)** — FSV at `/mnt/d/contextgraph/fsv/phase-h-reality-loop-binary-absence-fsv/reality_loop_binary_absence_fsv.json` |
+| `TASK-LOOP-009` | Update CLAUDE.md inner-loop references | **complete (#137)** — FSV at `/mnt/d/contextgraph/fsv/phase-h-claude-inner-loop-reference-fsv/claude_inner_loop_reference_fsv.json` |
+| `TASK-LOOP-010` | Update agents/README.md retirements | **complete (#138)** — FSV at `/mnt/d/contextgraph/fsv/phase-h-agent-roster-retirement-fsv/agent_roster_retirement_fsv.json` |
 | `TASK-LOOP-011` | Audit `CCREALITY_ENGINE_RETIRED` gate coverage for retired MCP endpoints | **complete (#139)** — FSV at `/mnt/d/contextgraph/fsv/phase-h-ccreality-engine-retired-fsv/ccreality_engine_retired_gate_fsv.json` |
+| `TASK-LOOP-012` | Remove orphaned scripts/config references to retired local LLM runtimes | **complete (#140)** — active disallowed count 0; old local-runtime helpers abort; FSV at `/mnt/d/contextgraph/fsv/phase-h-scripts-config-inner-llm-residue-fsv/scripts_config_inner_llm_residue_fsv.json` |
 
 **Ship gate:**
 1. No `MEJEPA_*_RETIRED` symbols accidentally invokable. **Passed for legacy cgreality MCP tools on 2026-05-13 (#133/#139).**
 2. SMAP supersession is consistent (no active decision asserts the retired inner-actor contract; legacy decisions have `superseded_by` pointers). **Passed for TASK-LOOP-003 on 2026-05-13.**
-3. CLAUDE.md + `agents/README.md` reflect current state.
+3. CLAUDE.md + `agents/README.md` reflect current state. **Passed on 2026-05-13 (#137/#138).**
+4. `scripts/` and `config/` contain no active Qwen/Hermes/Ollama/llama.cpp code paths. **Passed on 2026-05-13 (#140).**
 
 ---
 

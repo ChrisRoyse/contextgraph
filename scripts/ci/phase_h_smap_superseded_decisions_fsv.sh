@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# retired-inner-actor audit: historical, do not reanimate the superseded local
+# LLM decision names below; this scanner verifies they stay superseded.
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FSV_ROOT="${FSV_ROOT:-/mnt/d/contextgraph/fsv/phase-h-smap-superseded-decisions-fsv}"
 RUN_ID="run-$(date -u +%s)-$$"

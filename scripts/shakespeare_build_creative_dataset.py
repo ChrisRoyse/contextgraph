@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Build a creative Shakespeare-style SFT+DPO dataset.
 
+historical, do not reanimate: this pre-pivot local Ollama/Gemma training
+helper is retained only as provenance. Its executable path aborts below.
+
 Instead of pairing modern prompts with raw Shakespeare text (which causes
 the model to memorize scenes), this script:
 
@@ -23,6 +26,14 @@ Usage:
 from __future__ import annotations
 import argparse, json, os, random, sys, time, urllib.request
 from pathlib import Path
+
+HISTORICAL_ONLY_NOTICE = (
+    "historical, do not reanimate: scripts/shakespeare_build_creative_dataset.py "
+    "is a retired local Ollama/Gemma dataset helper, not a Phase H active code path."
+)
+
+if __name__ == "__main__":
+    raise SystemExit(HISTORICAL_ONLY_NOTICE)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _gemma_shakespeare_lib import (
@@ -156,6 +167,7 @@ TEMPERATURES = [0.7, 0.8, 0.9, 1.0]  # Varied temperatures for diversity
 
 
 def gemma_generate(prompt: str, system: str, temperature: float, max_tokens: int = 150) -> str:
+    raise RuntimeError(HISTORICAL_ONLY_NOTICE)
     body = {"model": MODEL, "stream": False, "think": False,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": prompt}],
@@ -183,6 +195,7 @@ def score_candidate(rpc: Rpc, text: str, cons_cache: list[dict]) -> tuple[float,
 
 
 def main():
+    raise SystemExit(HISTORICAL_ONLY_NOTICE)
     ap = argparse.ArgumentParser()
     ap.add_argument("--sft-out", default=os.path.expanduser("~/.contextgraph/training/shakespeare_sft_creative.jsonl"))
     ap.add_argument("--dpo-out", default=os.path.expanduser("~/.contextgraph/training/shakespeare_dpo_creative.jsonl"))

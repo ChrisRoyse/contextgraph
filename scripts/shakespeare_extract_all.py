@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Extract ALL Shakespeare training signals from Context Graph.
 
+historical, do not reanimate: this pre-pivot local Ollama/Gemma training
+helper is retained only as provenance. Its executable path aborts below.
+
 Pulls every memory, scores against every constellation, tags with
 cross-correlation patterns, generates multiple prompt variants per memory,
 and builds adversarial examples. Outputs a single comprehensive SFT JSONL.
@@ -14,6 +17,14 @@ Usage:
 from __future__ import annotations
 import argparse, json, os, sys, time, random, urllib.request
 from pathlib import Path
+
+HISTORICAL_ONLY_NOTICE = (
+    "historical, do not reanimate: scripts/shakespeare_extract_all.py "
+    "is a retired local Ollama/Gemma dataset helper, not a Phase H active code path."
+)
+
+if __name__ == "__main__":
+    raise SystemExit(HISTORICAL_ONLY_NOTICE)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _gemma_shakespeare_lib import (
@@ -66,6 +77,7 @@ VARIANT_TEMPLATES = [
 
 
 def gemma_generate(prompt: str, system: str, max_tokens: int = 60) -> str:
+    raise RuntimeError(HISTORICAL_ONLY_NOTICE)
     body = {"model": MODEL, "stream": False, "think": False,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": prompt}],
@@ -238,6 +250,7 @@ def build_adversarial_examples() -> list[dict]:
 
 
 def main():
+    raise SystemExit(HISTORICAL_ONLY_NOTICE)
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=os.path.expanduser("~/.contextgraph/training/shakespeare_sft_full.jsonl"))
     ap.add_argument("--skip-constellation-scoring", action="store_true")

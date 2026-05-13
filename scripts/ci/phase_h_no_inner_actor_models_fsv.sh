@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# retired-inner-actor audit: historical, do not reanimate the local LLM paths
+# named below; synthetic matches prove the detector fails closed.
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FSV_ROOT="${FSV_ROOT:-/mnt/d/contextgraph/fsv/phase-h-no-inner-actor-models-fsv}"
 RUN_ID="run-$(date -u +%s)-$$"

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Generate 500+ Shakespeare-style COMPOSITIONS about modern topics.
 
+historical, do not reanimate: this pre-pivot local Ollama/Gemma training
+helper is retained only as provenance. Its executable path aborts below.
+
 These are the KEY training examples that teach the model to be DYNAMIC —
 to write about ANY topic in Shakespeare's voice. Unlike raw play text,
 these show the model COMPOSING new verse about modern subjects.
@@ -16,6 +19,10 @@ from pathlib import Path
 
 OLLAMA_URL = "http://127.0.0.1:11434"
 MODEL = "gemma4:e4b"
+HISTORICAL_ONLY_NOTICE = (
+    "historical, do not reanimate: scripts/shakespeare_generate_compositions.py "
+    "is a retired local Ollama/Gemma dataset helper, not a Phase H active code path."
+)
 
 SYS = (
     "You are William Shakespeare. Write ONLY in early modern English — use thee, "
@@ -356,6 +363,7 @@ PROMPTS = list(dict.fromkeys(PROMPTS))
 
 
 def gemma_generate(prompt: str, max_tokens: int = 200, temperature: float = 0.85) -> str:
+    raise RuntimeError(HISTORICAL_ONLY_NOTICE)
     body = {"model": MODEL, "stream": False, "think": False,
             "messages": [{"role": "system", "content": SYS},
                          {"role": "user", "content": prompt}],
@@ -369,6 +377,7 @@ def gemma_generate(prompt: str, max_tokens: int = 200, temperature: float = 0.85
 
 
 def main():
+    raise SystemExit(HISTORICAL_ONLY_NOTICE)
     out_path = Path(os.path.expanduser(
         "~/.contextgraph/training/shakespeare_compositions.jsonl"))
     out_path.parent.mkdir(parents=True, exist_ok=True)

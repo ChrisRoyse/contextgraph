@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Enhance SFT dataset prompts using Gemma4 to generate modern-language prompts.
 
+historical, do not reanimate: this pre-pivot local Ollama/Gemma training
+helper is retained only as provenance. Its executable path aborts below.
+
 Takes the existing shakespeare_sft.jsonl (with "Write about: {first_line}" prompts)
 and replaces each prompt with a Gemma-generated modern-language question that the
 Shakespeare text naturally answers.
@@ -18,6 +21,10 @@ from pathlib import Path
 
 OLLAMA_URL = "http://127.0.0.1:11434"
 MODEL = "gemma4:e4b"
+HISTORICAL_ONLY_NOTICE = (
+    "historical, do not reanimate: scripts/shakespeare_enhance_prompts.py "
+    "is a retired local Ollama/Gemma dataset helper, not a Phase H active code path."
+)
 
 PROMPT_GEN_SYSTEM = (
     "You are a dataset builder. Given a passage of Shakespeare's writing, "
@@ -37,6 +44,7 @@ PROMPT_GEN_SYSTEM = (
 
 
 def gemma_generate(prompt: str, system: str, max_tokens: int = 60) -> str:
+    raise RuntimeError(HISTORICAL_ONLY_NOTICE)
     body = {"model": MODEL, "stream": False, "think": False,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": prompt}],
@@ -49,6 +57,7 @@ def gemma_generate(prompt: str, system: str, max_tokens: int = 60) -> str:
 
 
 def main():
+    raise SystemExit(HISTORICAL_ONLY_NOTICE)
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", default=os.path.expanduser("~/.contextgraph/training/shakespeare_sft.jsonl"))
     ap.add_argument("--output", default=os.path.expanduser("~/.contextgraph/training/shakespeare_sft_v2.jsonl"))
