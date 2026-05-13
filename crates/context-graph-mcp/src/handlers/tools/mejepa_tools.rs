@@ -9,7 +9,8 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{anyhow, bail, Context, Result as AnyhowResult};
 use context_graph_mejepa::heal::{
     all_referenced_cf_names, apply_promotion_approval, decode_value, encode_active_pointer_key,
-    AbcPromoter, ActivePointerValue, HealReport, HealRocksStore, PromotionApprovalAction,
+    is_holdout_rotation_event_key, AbcPromoter, ActivePointerValue, HealError, HealReport,
+    HealRocksStore, PromotionApprovalAction,
     PromotionApprovalRequest as HealPromotionApprovalRequest, PromotionGate, PromotionLockState,
     WitnessChainAppender, CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_HEAL_REPORTS,
 };
@@ -1315,11 +1316,22 @@ fn run_heal_status(
             );
         }
     }
-    let latest_report = store
-        .scan_cf_values(CF_MEJEPA_HEAL_REPORTS)?
-        .into_iter()
-        .map(|bytes| decode_value::<HealReport>(&bytes).map_err(Box::new))
-        .collect::<Result<Vec<_>, Box<context_graph_mejepa::heal::HealError>>>()?
+    let db = store.db();
+    let heal_reports_cf = db.cf_handle(CF_MEJEPA_HEAL_REPORTS).ok_or_else(|| {
+        HealError::invalid(
+            "heal_status.heal_reports_cf",
+            format!("missing column family {CF_MEJEPA_HEAL_REPORTS}"),
+        )
+    })?;
+    let mut heal_reports = Vec::new();
+    for item in db.iterator_cf(heal_reports_cf, IteratorMode::Start) {
+        let (key, value) = item.map_err(HealError::from)?;
+        if is_holdout_rotation_event_key(key.as_ref()) {
+            continue;
+        }
+        heal_reports.push(decode_value::<HealReport>(&value)?);
+    }
+    let latest_report = heal_reports
         .into_iter()
         .max_by_key(|report| report.witness_chain_offset)
         .map(|report| {

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -11,7 +11,8 @@ use crate::calibration_types::CalibrationRecord;
 use crate::heal::calibration::compute_conformal_tau;
 use crate::heal::cf::{
     encode_active_pointer_key, encode_calibration_history_record_key, encode_heal_report_key,
-    encode_value, ActivePointerValue, CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_CALIBRATION_HISTORY,
+    encode_holdout_rotation_event_key, encode_value, is_holdout_rotation_event_key,
+    ActivePointerValue, CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_CALIBRATION_HISTORY,
     CF_MEJEPA_HEAL_REPORTS, CF_MEJEPA_WEIGHT_BLOBS,
 };
 use crate::heal::errors::HealError;
@@ -283,6 +284,102 @@ impl HoldoutDataset {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct HoldoutRotationPolicy {
+    pub successful_promotion_period: u64,
+    pub swap_fraction: f32,
+    pub seed: u64,
+}
+
+impl HoldoutRotationPolicy {
+    pub fn try_new(
+        successful_promotion_period: u64,
+        swap_fraction: f32,
+        seed: u64,
+    ) -> Result<Self, HealError> {
+        if successful_promotion_period == 0 {
+            return Err(HealError::invalid(
+                "holdout_rotation.successful_promotion_period",
+                "period must be greater than zero",
+            ));
+        }
+        if !swap_fraction.is_finite() || swap_fraction <= 0.0 || swap_fraction > 1.0 {
+            return Err(HealError::invalid(
+                "holdout_rotation.swap_fraction",
+                "swap fraction must be finite in (0,1]",
+            ));
+        }
+        Ok(Self {
+            successful_promotion_period,
+            swap_fraction,
+            seed,
+        })
+    }
+}
+
+impl Default for HoldoutRotationPolicy {
+    fn default() -> Self {
+        Self::try_new(4, 0.10, 0x000C_07A7_E607_A710_u64)
+            .expect("default holdout rotation policy is valid")
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PromotionSplitState {
+    pub train_task_ids: Vec<String>,
+    pub holdout_task_ids: Vec<String>,
+    pub successful_promotions_since_rotation: u64,
+    pub total_successful_promotions: u64,
+    pub rotation_index: u64,
+}
+
+impl PromotionSplitState {
+    pub fn try_new(
+        train_task_ids: Vec<String>,
+        holdout_task_ids: Vec<String>,
+    ) -> Result<Self, HealError> {
+        validate_split_ids("train_task_ids", &train_task_ids)?;
+        validate_split_ids("holdout_task_ids", &holdout_task_ids)?;
+        let train = train_task_ids.iter().collect::<BTreeSet<_>>();
+        for task_id in &holdout_task_ids {
+            if train.contains(task_id) {
+                return Err(HealError::invalid(
+                    "holdout_rotation.split",
+                    format!("task {task_id} appears in both train and holdout"),
+                ));
+            }
+        }
+        Ok(Self {
+            train_task_ids,
+            holdout_task_ids,
+            successful_promotions_since_rotation: 0,
+            total_successful_promotions: 0,
+            rotation_index: 0,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct HoldoutRotationEvent {
+    pub rotation_index: u64,
+    pub successful_promotion_count: u64,
+    pub rotated_at_unix_ms: i64,
+    pub seed: u64,
+    pub swap_fraction_basis_points: u32,
+    pub train_count_before: usize,
+    pub holdout_count_before: usize,
+    pub train_count_after: usize,
+    pub holdout_count_after: usize,
+    pub train_to_holdout: Vec<String>,
+    pub holdout_to_train: Vec<String>,
+    pub train_task_ids_after: Vec<String>,
+    pub holdout_task_ids_after: Vec<String>,
+    pub source_of_truth_cf: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HealReport {
@@ -340,6 +437,7 @@ pub struct AbcFsvEvidence {
     pub mode_c_score: HoldoutEval,
     pub mode_c_weights: (f32, f32),
     pub conformal_recalibration: PromotionConformalCalibration,
+    pub holdout_rotation: Option<HoldoutRotationEvent>,
     pub mode_winner: ModeWinner,
     pub theta_sha_winner: [u8; 32],
     pub evaluation_summary_sha: [u8; 32],
@@ -352,6 +450,8 @@ pub struct AbcPromoter {
     pub grid_search_step: f32,
     pub gate: PromotionGate,
     pub last_evidence: Option<AbcFsvEvidence>,
+    pub split_state: Option<PromotionSplitState>,
+    pub rotation_policy: HoldoutRotationPolicy,
 }
 
 pub struct RetrainPromoteRequest<'a> {
@@ -398,7 +498,17 @@ impl AbcPromoter {
             grid_search_step,
             gate,
             last_evidence: None,
+            split_state: None,
+            rotation_policy: HoldoutRotationPolicy::default(),
         })
+    }
+
+    pub fn set_split_state(&mut self, state: PromotionSplitState) {
+        self.split_state = Some(state);
+    }
+
+    pub fn split_state(&self) -> Option<&PromotionSplitState> {
+        self.split_state.as_ref()
     }
 
     pub fn retrain_and_promote(
@@ -517,12 +627,15 @@ impl AbcPromoter {
         };
         let report_key = encode_heal_report_key(chrono::Utc::now().timestamp());
         storage.put_cf_readback(CF_MEJEPA_HEAL_REPORTS, &report_key, &encode_value(&report)?)?;
+        let holdout_rotation =
+            self.record_successful_promotion_and_rotate_if_due(storage.as_ref())?;
         self.last_evidence = Some(AbcFsvEvidence {
             mode_a_score: mode_a,
             mode_b_score: mode_b,
             mode_c_score: mode_c,
             mode_c_weights,
             conformal_recalibration: commit.conformal_recalibration,
+            holdout_rotation,
             mode_winner: winner,
             theta_sha_winner: winner_sha,
             evaluation_summary_sha: commit.evaluation_summary_sha,
@@ -663,6 +776,29 @@ impl AbcPromoter {
         Ok(result)
     }
 
+    fn record_successful_promotion_and_rotate_if_due(
+        &mut self,
+        storage: &HealRocksStore,
+    ) -> Result<Option<HoldoutRotationEvent>, HealError> {
+        let Some(state) = &mut self.split_state else {
+            return Ok(None);
+        };
+        state.total_successful_promotions += 1;
+        state.successful_promotions_since_rotation += 1;
+        if state.successful_promotions_since_rotation
+            < self.rotation_policy.successful_promotion_period
+        {
+            return Ok(None);
+        }
+        let event = rotate_holdout_split(state, self.rotation_policy)?;
+        storage.put_cf_readback(
+            CF_MEJEPA_HEAL_REPORTS,
+            &encode_holdout_rotation_event_key(event.rotation_index, event.rotated_at_unix_ms),
+            &encode_value(&event)?,
+        )?;
+        Ok(Some(event))
+    }
+
     fn best_ensemble(
         &self,
         holdout: &HoldoutDataset,
@@ -764,7 +900,10 @@ fn weights_sha_at_offset_from_reports(
         )
     })?;
     for item in db.iterator_cf(cf, IteratorMode::Start) {
-        let (_key, value) = item?;
+        let (key, value) = item?;
+        if is_holdout_rotation_event_key(key.as_ref()) {
+            continue;
+        }
         let report: HealReport = bincode::deserialize(&value)?;
         if report.witness_chain_offset == target_witness_chain_offset {
             return Ok(report.weights_sha_winner);
@@ -774,6 +913,130 @@ fn weights_sha_at_offset_from_reports(
         theta_sha: [0; 32],
         gced_at: 0,
     })
+}
+
+fn validate_split_ids(field: &str, task_ids: &[String]) -> Result<(), HealError> {
+    if task_ids.is_empty() {
+        return Err(HealError::invalid(
+            format!("holdout_rotation.{field}"),
+            "split bucket must be non-empty",
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    for (idx, task_id) in task_ids.iter().enumerate() {
+        if task_id.trim().is_empty() || task_id.trim() != task_id {
+            return Err(HealError::invalid(
+                format!("holdout_rotation.{field}[{idx}]"),
+                "task id must be non-empty and trimmed",
+            ));
+        }
+        if !seen.insert(task_id.as_str()) {
+            return Err(HealError::invalid(
+                format!("holdout_rotation.{field}"),
+                format!("duplicate task id {task_id}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn rotate_holdout_split(
+    state: &mut PromotionSplitState,
+    policy: HoldoutRotationPolicy,
+) -> Result<HoldoutRotationEvent, HealError> {
+    validate_split_ids("train_task_ids", &state.train_task_ids)?;
+    validate_split_ids("holdout_task_ids", &state.holdout_task_ids)?;
+    let train_count_before = state.train_task_ids.len();
+    let holdout_count_before = state.holdout_task_ids.len();
+    let train_move_count = rotation_count(train_count_before, policy.swap_fraction);
+    let holdout_move_count = rotation_count(holdout_count_before, policy.swap_fraction);
+    let next_rotation_index = state.rotation_index + 1;
+    let mut train_to_holdout = select_rotation_ids(
+        &state.train_task_ids,
+        train_move_count,
+        policy.seed,
+        next_rotation_index,
+        b"train-to-holdout",
+    );
+    let mut holdout_to_train = select_rotation_ids(
+        &state.holdout_task_ids,
+        holdout_move_count,
+        policy.seed,
+        next_rotation_index,
+        b"holdout-to-train",
+    );
+    train_to_holdout.sort();
+    holdout_to_train.sort();
+    let train_to_holdout_set = train_to_holdout.iter().cloned().collect::<BTreeSet<_>>();
+    let holdout_to_train_set = holdout_to_train.iter().cloned().collect::<BTreeSet<_>>();
+    let mut train_task_ids_after = state
+        .train_task_ids
+        .iter()
+        .filter(|task_id| !train_to_holdout_set.contains(task_id.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    train_task_ids_after.extend(holdout_to_train.iter().cloned());
+    train_task_ids_after.sort();
+    let mut holdout_task_ids_after = state
+        .holdout_task_ids
+        .iter()
+        .filter(|task_id| !holdout_to_train_set.contains(task_id.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    holdout_task_ids_after.extend(train_to_holdout.iter().cloned());
+    holdout_task_ids_after.sort();
+    state.train_task_ids = train_task_ids_after.clone();
+    state.holdout_task_ids = holdout_task_ids_after.clone();
+    state.rotation_index = next_rotation_index;
+    state.successful_promotions_since_rotation = 0;
+    let rotated_at_unix_ms = chrono::Utc::now().timestamp_millis();
+    Ok(HoldoutRotationEvent {
+        rotation_index: state.rotation_index,
+        successful_promotion_count: state.total_successful_promotions,
+        rotated_at_unix_ms,
+        seed: policy.seed,
+        swap_fraction_basis_points: (policy.swap_fraction * 10_000.0).round() as u32,
+        train_count_before,
+        holdout_count_before,
+        train_count_after: state.train_task_ids.len(),
+        holdout_count_after: state.holdout_task_ids.len(),
+        train_to_holdout,
+        holdout_to_train,
+        train_task_ids_after,
+        holdout_task_ids_after,
+        source_of_truth_cf: CF_MEJEPA_HEAL_REPORTS.to_string(),
+    })
+}
+
+fn rotation_count(len: usize, fraction: f32) -> usize {
+    ((len as f32 * fraction).ceil() as usize).clamp(1, len)
+}
+
+fn select_rotation_ids(
+    task_ids: &[String],
+    count: usize,
+    seed: u64,
+    rotation_index: u64,
+    salt: &[u8],
+) -> Vec<String> {
+    let mut ranked = task_ids
+        .iter()
+        .map(|task_id| {
+            let mut hasher = Sha256::new();
+            hasher.update(seed.to_be_bytes());
+            hasher.update(rotation_index.to_be_bytes());
+            hasher.update(salt);
+            hasher.update(task_id.as_bytes());
+            let digest: [u8; 32] = hasher.finalize().into();
+            (digest, task_id.clone())
+        })
+        .collect::<Vec<_>>();
+    ranked.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    ranked
+        .into_iter()
+        .take(count)
+        .map(|(_, task_id)| task_id)
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

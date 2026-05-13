@@ -66,6 +66,14 @@ pub fn encode_heal_report_key(timestamp_seconds: i64) -> [u8; 8] {
     timestamp_seconds.to_be_bytes()
 }
 
+pub fn encode_holdout_rotation_event_key(rotation_index: u64, timestamp_millis: i64) -> Vec<u8> {
+    format!("holdout-rotation/{rotation_index:016x}/{timestamp_millis:020}").into_bytes()
+}
+
+pub fn is_holdout_rotation_event_key(key: &[u8]) -> bool {
+    key.starts_with(b"holdout-rotation/")
+}
+
 pub fn encode_distill_step_key(timestamp_nanos: i64) -> [u8; 8] {
     timestamp_nanos.to_be_bytes()
 }
