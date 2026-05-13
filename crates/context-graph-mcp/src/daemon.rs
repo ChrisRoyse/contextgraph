@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use futures_util::FutureExt;
-use rocksdb::{WriteOptions, DB};
+use rocksdb::{IteratorMode, WriteOptions, DB};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::watch;
@@ -33,6 +33,15 @@ type TaskRunner = Arc<
         + Send
         + Sync,
 >;
+
+#[derive(Debug, Clone, Serialize)]
+struct WeeklyOperationalSummary {
+    agent_feedback_rows: usize,
+    drift_window_rows: usize,
+    drift_history_rows: usize,
+    active_learning_queue_rows: usize,
+    ood_escalation_rows: usize,
+}
 
 #[derive(Debug, Clone)]
 pub struct FlywheelDaemonConfig {
@@ -772,7 +781,7 @@ fn run_weekly_eval_once(config: &FlywheelDaemonConfig, db: Arc<DB>) -> Result<se
         calibration,
         eval_infer_config,
     )?);
-    let eval_store = context_graph_mejepa::RocksDbEvalStore::new(db)?;
+    let eval_store = context_graph_mejepa::RocksDbEvalStore::new(db.clone())?;
     let provenance = context_graph_mejepa::EvalProvenance {
         corpus_sha: context_graph_mejepa::corpus_sha_from_holdout(&holdout),
         eval_code_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -799,9 +808,37 @@ fn run_weekly_eval_once(config: &FlywheelDaemonConfig, db: Arc<DB>) -> Result<se
 
     let report_dir = config.paths.root.join("exports/eval").join(&report_date);
     let markdown_path = report_dir.join("weekly.md");
-    write_weekly_eval_markdown(&markdown_path, &report, &report_hash)?;
+    let operational = weekly_operational_summary(db.as_ref())?;
+    write_weekly_eval_markdown(&markdown_path, &report, &report_hash, &operational)?;
     let json_path = report_dir.join("weekly.json");
     context_graph_mejepa::eval::report::write_json_0600(&json_path, &report)?;
+    let pairwise_dir = config.paths.root.join("exports/pairwise-mi");
+    let pairwise_csv_path = pairwise_dir.join(format!("{report_date}.csv"));
+    let pairwise_mi_heatmap = if pairwise_csv_path.is_file() {
+        let pairwise_markdown_path = pairwise_dir.join(format!("{report_date}.md"));
+        let pairwise_png_path = pairwise_dir.join(format!("{report_date}.png"));
+        let render = context_graph_mejepa::eval::render_pairwise_mi_heatmap(
+            &pairwise_csv_path,
+            &pairwise_markdown_path,
+            &pairwise_png_path,
+        )
+        .with_context(|| {
+            format!(
+                "MEJEPA_PAIRWISE_MI_HEATMAP_RENDER_FAILED: {}",
+                pairwise_csv_path.display()
+            )
+        })?;
+        Some(serde_json::json!({
+            "source_csv_path": pairwise_csv_path,
+            "markdown_path": pairwise_markdown_path,
+            "png_path": pairwise_png_path,
+            "slot_count": render.slot_count,
+            "max_off_diagonal": render.max_off_diagonal,
+            "readback_equal": render.readback_equal,
+        }))
+    } else {
+        None
+    };
     Ok(serde_json::json!({
         "status": "completed",
         "report_date": report_date,
@@ -813,6 +850,8 @@ fn run_weekly_eval_once(config: &FlywheelDaemonConfig, db: Arc<DB>) -> Result<se
         "holdout_path": holdout_path,
         "weekly_markdown_path": markdown_path,
         "weekly_json_path": json_path,
+        "pairwise_mi_heatmap": pairwise_mi_heatmap,
+        "operational_summary": operational,
         "updated_at_unix_seconds": chrono::Utc::now().timestamp(),
     }))
 }
@@ -821,6 +860,7 @@ fn write_weekly_eval_markdown(
     path: &Path,
     report: &context_graph_mejepa::EvalReport,
     report_hash: &str,
+    operational: &WeeklyOperationalSummary,
 ) -> Result<()> {
     report.validate()?;
     if let Some(parent) = path.parent() {
@@ -849,6 +889,48 @@ fn write_weekly_eval_markdown(
             .collect::<Vec<_>>()
             .join("\n")
     };
+    let per_cell_ship_gate = if report.per_cell_correlation.is_empty() {
+        "- none".to_string()
+    } else {
+        report
+            .per_cell_correlation
+            .iter()
+            .map(|(cell, correlation)| match correlation {
+                Some(value) if *value >= 0.95 => {
+                    format!("- {cell}: pass correlation={value:.6}")
+                }
+                Some(value) => format!("- {cell}: fail correlation={value:.6} target=0.950000"),
+                None => format!("- {cell}: insufficient_samples"),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let regression_checks = if report.regression_checks.is_empty() {
+        "- none".to_string()
+    } else {
+        report
+            .regression_checks
+            .iter()
+            .map(|check| {
+                format!(
+                    "- {}: previous={:.6}, current={:.6}, drop={:.6}, passed={}",
+                    check.name, check.previous, check.current, check.drop, check.passed
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let catastrophic_events = report
+        .ship_gate_failures
+        .iter()
+        .filter(|failure| failure.to_ascii_lowercase().contains("catastrophic"))
+        .map(|failure| format!("- {failure}"))
+        .collect::<Vec<_>>();
+    let catastrophic_events = if catastrophic_events.is_empty() {
+        "- none".to_string()
+    } else {
+        catastrophic_events.join("\n")
+    };
     let bytes = format!(
         "# ME-JEPA Weekly Evaluation\n\n\
          - report_date: {}\n\
@@ -859,6 +941,26 @@ fn write_weekly_eval_markdown(
          - q1_pass_rate: {:.6}\n\
          - q2_report_correlation: {:?}\n\
          - q3_side_effect_agreement: {:?}\n\n\
+         ## Catastrophic Events\n\n{}\n\n\
+         ## Per-Cell Ship Gate Status\n\n{}\n\n\
+         ## Active-Learning Queue Summary\n\n\
+         - queued_count: {}\n\
+         - evicted_count: {}\n\
+         - ood_escalation_count: {}\n\
+         - active_learning_queue_rows: {}\n\
+         - ood_escalation_rows: {}\n\n\
+         ## Agent-Feedback Summary\n\n\
+         - feedback_rows: {}\n\
+         - source_of_truth: CF_MEJEPA_AGENT_FEEDBACK\n\n\
+         ## Drift Events Of The Week\n\n\
+         - drift_window_rows: {}\n\
+         - drift_history_rows: {}\n\n{}\n\n\
+         ## Promotions / Rollbacks Of The Week\n\n\
+         - source_of_truth: CF_MEJEPA_HEAL_REPORTS / CF_MEJEPA_MODEL_PROMOTIONS\n\
+         - see `mcp__cgreality__mejepa_weekly_eval_dashboard` for current row counts and readback hashes\n\n\
+         ## Storage Utilization\n\n\
+         - storage source: /mnt/d/contextgraph runtime root\n\
+         - detailed slice readback: `mcp__cgreality__mejepa_quota_status`\n\n\
          ## Per-Cell State Transfer T\n\n{}\n\n\
          ## Ship Gate Failures\n\n{}\n",
         report.report_date,
@@ -868,6 +970,17 @@ fn write_weekly_eval_markdown(
         report.q1_pass_rate,
         report.q2_report_correlation,
         report.q3_side_effect_agreement,
+        catastrophic_events,
+        per_cell_ship_gate,
+        report.active_learning.queued_count,
+        report.active_learning.evicted_count,
+        report.active_learning.ood_escalation_count,
+        operational.active_learning_queue_rows,
+        operational.ood_escalation_rows,
+        operational.agent_feedback_rows,
+        operational.drift_window_rows,
+        operational.drift_history_rows,
+        regression_checks,
         per_cell_state_transfer,
         if report.ship_gate_failures.is_empty() {
             "- none".to_string()
@@ -896,6 +1009,37 @@ fn write_weekly_eval_markdown(
         ));
     }
     Ok(())
+}
+
+fn weekly_operational_summary(db: &DB) -> Result<WeeklyOperationalSummary> {
+    Ok(WeeklyOperationalSummary {
+        agent_feedback_rows: weekly_count_cf(
+            db,
+            context_graph_mejepa_cf::CF_MEJEPA_AGENT_FEEDBACK,
+        )?,
+        drift_window_rows: weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_DRIFT_WINDOW)?,
+        drift_history_rows: weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_DRIFT_HISTORY)?,
+        active_learning_queue_rows: weekly_count_cf(
+            db,
+            context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+        )?,
+        ood_escalation_rows: weekly_count_cf(
+            db,
+            context_graph_mejepa_cf::CF_MEJEPA_OOD_ESCALATIONS,
+        )?,
+    })
+}
+
+fn weekly_count_cf(db: &DB, cf_name: &str) -> Result<usize> {
+    let cf = db
+        .cf_handle(cf_name)
+        .ok_or_else(|| anyhow::anyhow!("MEJEPA_WEEKLY_REPORT_CF_MISSING: {cf_name}"))?;
+    let mut count = 0usize;
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        item?;
+        count += 1;
+    }
+    Ok(count)
 }
 
 #[derive(Debug)]

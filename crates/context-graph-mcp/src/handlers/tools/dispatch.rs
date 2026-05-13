@@ -230,6 +230,7 @@ impl Handlers {
             tool_names::MEJEPA_WITNESS_COMPRESS => call_mejepa_witness_compress(arguments),
             tool_names::MEJEPA_EVAL_RUN => call_mejepa_eval_run(arguments),
             tool_names::MEJEPA_SHIP_GATE_STATUS => call_mejepa_ship_gate_status(arguments),
+            tool_names::MEJEPA_WEEKLY_EVAL_DASHBOARD => call_mejepa_weekly_eval_dashboard(arguments),
             tool_names::MEJEPA_ACTIVE_LEARNING_QUEUE => call_mejepa_active_learning_queue(arguments),
             tool_names::MEJEPA_BOOTSTRAP_STATUS => call_mejepa_bootstrap_status(arguments),
             tool_names::MEJEPA_EVAL_BUILD_GRAPH => call_mejepa_eval_build_graph(arguments),

@@ -2,6 +2,7 @@ pub mod error;
 pub mod fixtures;
 pub mod graph;
 pub mod metrics;
+pub mod mi_heatmap_renderer;
 pub mod queue;
 pub mod report;
 pub mod runner;
@@ -17,6 +18,10 @@ pub use graph::{
 pub use metrics::{
     compute_state_transfer_per_cell, conformal_health, ood_auc_by_language, pearson_correlation,
     state_transfer_from_observations,
+};
+pub use mi_heatmap_renderer::{
+    load_pairwise_mi_heatmap_csv, render_pairwise_mi_heatmap, PairwiseMiHeatmapMatrix,
+    PairwiseMiHeatmapRender,
 };
 pub use queue::{
     ActiveLearningKind, ActiveLearningLabel, ActiveLearningQueueEntry, ActiveLearningQueueState,

@@ -388,6 +388,27 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_WEEKLY_EVAL_DASHBOARD,
+            "Read the latest weekly EvalReport from CF_MEJEPA_EVAL_REPORTS, reconcile it with weekly export files, and return the Phase F operator dashboard/runbook status.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["dbPath"],
+                "properties": {
+                    "dbPath": {"type": "string"},
+                    "dRoot": {
+                        "type": "string",
+                        "description": "D-drive ME-JEPA root containing state/gold-labels and exports. Defaults to CONTEXTGRAPH_DATA_ROOT or is inferred from exportsRoot when possible."
+                    },
+                    "exportsRoot": {
+                        "type": "string",
+                        "description": "Directory containing dated weekly eval exports. Defaults to CONTEXTGRAPH_DATA_ROOT/exports/eval."
+                    },
+                    "maxCells": {"type": "integer", "minimum": 1, "maximum": 500, "default": 64}
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_ACTIVE_LEARNING_QUEUE,
             "Read the Phase 8 active-learning queue from CF_MEJEPA_ACTIVE_LEARNING_QUEUE.",
             json!({
