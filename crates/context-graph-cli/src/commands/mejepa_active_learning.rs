@@ -43,6 +43,9 @@ pub enum MejepaCommands {
     /// Operator runbook: integrity-check the inference RocksDB.
     #[command(name = "storage-verify")]
     StorageVerify(crate::commands::mejepa_runbook::StorageVerifyArgs),
+    /// Operator runbook: delete all rows for a closed session.
+    #[command(name = "session-cleanup")]
+    SessionCleanup(crate::commands::mejepa_runbook::SessionCleanupArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -220,6 +223,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
         MejepaCommands::StorageVerify(args) => {
             serde_json::to_value(crate::commands::mejepa_runbook::run_storage_verify(args)?)
                 .context("serialize storage-verify")
+        }
+        MejepaCommands::SessionCleanup(args) => {
+            serde_json::to_value(crate::commands::mejepa_runbook::run_session_cleanup(args)?)
+                .context("serialize session-cleanup")
         }
     }
 }

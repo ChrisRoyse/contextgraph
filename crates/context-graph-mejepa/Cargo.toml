@@ -71,3 +71,11 @@ path = "examples/phase_f_per_head_calibration_fsv.rs"
 [[example]]
 name = "continual_backprop_regulation_fsv"
 path = "examples/continual_backprop_regulation_fsv.rs"
+
+[[example]]
+name = "phase_f_toolchain_availability_fsv"
+path = "examples/phase_f_toolchain_availability_fsv.rs"
+
+[[example]]
+name = "phase_f_cross_language_label_gating_fsv"
+path = "examples/phase_f_cross_language_label_gating_fsv.rs"

@@ -76,6 +76,131 @@ pub fn run_storage_verify(args: StorageVerifyArgs) -> Result<StorageVerifyOutput
 }
 
 #[derive(Args, Debug, Clone)]
+pub struct SessionCleanupArgs {
+    /// Inference RocksDB path containing CF_MEJEPA_LIVE_PREDICTIONS + CF_MEJEPA_SHIFT_WATERMARK.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_INFER_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
+    pub db_path: PathBuf,
+
+    /// 32-character lowercase hexadecimal session id.
+    #[arg(long)]
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionCleanupOutput {
+    pub session_id_hex: String,
+    pub live_predictions_deleted: u64,
+    pub shift_watermark_deleted: bool,
+    pub readback_equal: bool,
+    pub source_of_truth: Value,
+}
+
+pub fn run_session_cleanup(args: SessionCleanupArgs) -> Result<SessionCleanupOutput> {
+    let session_id = parse_session_hex(&args.session_id)?;
+    validate_dir(&args.db_path, "session-db-path")?;
+    let db = open_infer_rocksdb(&args.db_path).with_context(|| {
+        format!(
+            "MEJEPA_RUNBOOK_SESSION_CLEANUP_OPEN_FAILED: {}",
+            args.db_path.display()
+        )
+    })?;
+
+    let live_cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS)
+        .ok_or_else(|| {
+            anyhow!("MEJEPA_RUNBOOK_SESSION_CLEANUP_LIVE_CF_MISSING: CF_MEJEPA_LIVE_PREDICTIONS")
+        })?;
+    let mut keys_to_delete = Vec::new();
+    for item in db.iterator_cf(live_cf, rocksdb::IteratorMode::Start) {
+        let (key, _value) =
+            item.with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_ITER_FAILED".to_string())?;
+        if key.starts_with(&session_id) {
+            keys_to_delete.push(key.to_vec());
+        }
+    }
+    let mut write_opts = rocksdb::WriteOptions::default();
+    write_opts.set_sync(true);
+    let live_predictions_deleted = keys_to_delete.len() as u64;
+    for key in &keys_to_delete {
+        db.delete_cf_opt(live_cf, key, &write_opts).with_context(|| {
+            format!(
+                "MEJEPA_RUNBOOK_SESSION_CLEANUP_DELETE_FAILED: key_len={}",
+                key.len()
+            )
+        })?;
+    }
+    db.flush_cf(live_cf)
+        .with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_FLUSH_FAILED".to_string())?;
+
+    let watermark_cf = db
+        .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_SHIFT_WATERMARK)
+        .ok_or_else(|| {
+            anyhow!(
+                "MEJEPA_RUNBOOK_SESSION_CLEANUP_WATERMARK_CF_MISSING: CF_MEJEPA_SHIFT_WATERMARK"
+            )
+        })?;
+    let watermark_existed = db
+        .get_cf(watermark_cf, &session_id)
+        .with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_WATERMARK_READ_FAILED".to_string())?
+        .is_some();
+    if watermark_existed {
+        db.delete_cf_opt(watermark_cf, &session_id, &write_opts)
+            .with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_WATERMARK_DELETE_FAILED".to_string())?;
+        db.flush_cf(watermark_cf)
+            .with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_WATERMARK_FLUSH_FAILED".to_string())?;
+    }
+
+    // Readback: nothing matching `session_id` should remain in either CF.
+    let mut residual_live = 0u64;
+    for item in db.iterator_cf(live_cf, rocksdb::IteratorMode::Start) {
+        let (key, _value) =
+            item.with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_READBACK_FAILED".to_string())?;
+        if key.starts_with(&session_id) {
+            residual_live += 1;
+        }
+    }
+    let residual_watermark = db
+        .get_cf(watermark_cf, &session_id)
+        .with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_READBACK_WATERMARK_FAILED".to_string())?
+        .is_some();
+    let readback_equal = residual_live == 0 && !residual_watermark;
+    if !readback_equal {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_SESSION_CLEANUP_READBACK_MISMATCH: residual_live={residual_live} residual_watermark={residual_watermark}"
+        ));
+    }
+
+    Ok(SessionCleanupOutput {
+        session_id_hex: args.session_id.to_ascii_lowercase(),
+        live_predictions_deleted,
+        shift_watermark_deleted: watermark_existed,
+        readback_equal,
+        source_of_truth: json!({
+            "writer": "rocksdb DB::delete_cf with WriteOptions::set_sync(true)",
+            "column_families": [
+                context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
+                context_graph_mejepa_cf::CF_MEJEPA_SHIFT_WATERMARK,
+            ],
+        }),
+    })
+}
+
+fn parse_session_hex(raw: &str) -> Result<[u8; 16]> {
+    let trimmed = raw.trim();
+    if trimmed.len() != 32 {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_SESSION_ID_INVALID: must be 32 lowercase hex chars; got {} chars",
+            trimmed.len()
+        ));
+    }
+    let mut bytes = [0u8; 16];
+    hex::decode_to_slice(trimmed, &mut bytes)
+        .map_err(|err| anyhow!("MEJEPA_RUNBOOK_SESSION_ID_INVALID: {err}"))?;
+    Ok(bytes)
+}
+
+#[derive(Args, Debug, Clone)]
 pub struct HygieneArgs {
     /// Hygiene RocksDB path containing the hygiene CFs.
     #[arg(long, env = "CONTEXTGRAPH_MEJEPA_HYGIENE_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
