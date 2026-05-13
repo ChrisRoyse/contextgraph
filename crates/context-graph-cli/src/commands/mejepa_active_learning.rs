@@ -46,6 +46,8 @@ pub enum MejepaCommands {
     /// Operator runbook: delete all rows for a closed session.
     #[command(name = "session-cleanup")]
     SessionCleanup(crate::commands::mejepa_runbook::SessionCleanupArgs),
+    /// Operator runbook: pause predictions for a duration (writes pause state file).
+    Pause(crate::commands::mejepa_runbook::PauseArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -227,6 +229,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
         MejepaCommands::SessionCleanup(args) => {
             serde_json::to_value(crate::commands::mejepa_runbook::run_session_cleanup(args)?)
                 .context("serialize session-cleanup")
+        }
+        MejepaCommands::Pause(args) => {
+            serde_json::to_value(crate::commands::mejepa_runbook::run_pause(args)?)
+                .context("serialize pause")
         }
     }
 }

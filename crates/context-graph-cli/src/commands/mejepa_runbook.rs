@@ -30,6 +30,153 @@ const DEFAULT_SCHEDULER_STATE_ROOT: &str = "/mnt/d/contextgraph/state/schedulers
 const DEFAULT_WITNESS_CHAIN_PATH: &str =
     "/mnt/d/contextgraph/state/cgreality/mejepa-witness-chain.bin";
 const DEFAULT_HYGIENE_ARCHIVE_ROOT: &str = "/mnt/d/contextgraph/storage/hygiene-archive";
+const DEFAULT_PAUSE_STATE_PATH: &str =
+    "/mnt/d/contextgraph/state/cgreality/predictions_paused_until.json";
+
+#[derive(Args, Debug, Clone)]
+pub struct PauseArgs {
+    /// Pause-state file path (JSON, single key `paused_until_unix_ms`).
+    #[arg(
+        long,
+        env = "CONTEXTGRAPH_MEJEPA_PAUSE_PATH",
+        default_value = DEFAULT_PAUSE_STATE_PATH
+    )]
+    pub state_path: PathBuf,
+
+    /// Pause duration in minutes (> 0). Predictions resume `now + duration`.
+    #[arg(long)]
+    pub duration_mins: u64,
+
+    /// Operator reason persisted alongside the pause timestamp.
+    #[arg(long, default_value = "manual pause")]
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PauseState {
+    pub paused_until_unix_ms: i64,
+    pub set_at_unix_ms: i64,
+    pub reason: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PauseOutput {
+    pub state_path: PathBuf,
+    pub paused_until_unix_ms: i64,
+    pub set_at_unix_ms: i64,
+    pub duration_mins: u64,
+    pub reason: String,
+    pub readback_equal: bool,
+    pub source_of_truth: Value,
+}
+
+pub fn run_pause(args: PauseArgs) -> Result<PauseOutput> {
+    validate_path_non_empty(&args.state_path, "pause-state-path")?;
+    if args.duration_mins == 0 {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_PAUSE_DURATION_ZERO: --duration-mins must be > 0"
+        ));
+    }
+    if args.duration_mins > 7 * 24 * 60 {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_PAUSE_DURATION_EXCEEDS_WEEK: --duration-mins must be <= 10080 (one week); got {}",
+            args.duration_mins
+        ));
+    }
+    if args.reason.trim().is_empty() {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_PAUSE_REASON_EMPTY: --reason must be non-empty"
+        ));
+    }
+    if args.reason.chars().any(char::is_control) {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_PAUSE_REASON_INVALID: --reason must contain no control characters"
+        ));
+    }
+    if let Some(parent) = args.state_path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "MEJEPA_RUNBOOK_PAUSE_PARENT_CREATE_FAILED: {}",
+                parent.display()
+            )
+        })?;
+    }
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let duration_ms = args
+        .duration_mins
+        .checked_mul(60_000)
+        .and_then(|value| i64::try_from(value).ok())
+        .ok_or_else(|| anyhow!("MEJEPA_RUNBOOK_PAUSE_OVERFLOW: duration calculation overflowed"))?;
+    let paused_until_ms = now_ms
+        .checked_add(duration_ms)
+        .ok_or_else(|| {
+            anyhow!("MEJEPA_RUNBOOK_PAUSE_OVERFLOW: paused_until calculation overflowed i64")
+        })?;
+    let state = PauseState {
+        paused_until_unix_ms: paused_until_ms,
+        set_at_unix_ms: now_ms,
+        reason: args.reason.clone(),
+        source: "context-graph-cli mejepa pause".to_string(),
+    };
+    let bytes = serde_json::to_vec_pretty(&state)
+        .with_context(|| "MEJEPA_RUNBOOK_PAUSE_SERIALIZE_FAILED".to_string())?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&args.state_path)
+        .with_context(|| {
+            format!(
+                "MEJEPA_RUNBOOK_PAUSE_WRITE_OPEN_FAILED: {}",
+                args.state_path.display()
+            )
+        })?;
+    std::io::Write::write_all(&mut file, &bytes).with_context(|| {
+        format!(
+            "MEJEPA_RUNBOOK_PAUSE_WRITE_FAILED: {}",
+            args.state_path.display()
+        )
+    })?;
+    file.sync_all().with_context(|| {
+        format!(
+            "MEJEPA_RUNBOOK_PAUSE_SYNC_FAILED: {}",
+            args.state_path.display()
+        )
+    })?;
+    drop(file);
+    let readback_bytes = std::fs::read(&args.state_path).with_context(|| {
+        format!(
+            "MEJEPA_RUNBOOK_PAUSE_READBACK_FAILED: {}",
+            args.state_path.display()
+        )
+    })?;
+    if readback_bytes != bytes {
+        return Err(anyhow!("MEJEPA_RUNBOOK_PAUSE_READBACK_BYTES_MISMATCH"));
+    }
+    let readback: PauseState = serde_json::from_slice(&readback_bytes)
+        .with_context(|| "MEJEPA_RUNBOOK_PAUSE_READBACK_DESERIALIZE_FAILED".to_string())?;
+    let readback_equal = readback == state;
+    if !readback_equal {
+        return Err(anyhow!("MEJEPA_RUNBOOK_PAUSE_READBACK_MISMATCH"));
+    }
+    Ok(PauseOutput {
+        state_path: args.state_path.clone(),
+        paused_until_unix_ms: state.paused_until_unix_ms,
+        set_at_unix_ms: state.set_at_unix_ms,
+        duration_mins: args.duration_mins,
+        reason: args.reason,
+        readback_equal,
+        source_of_truth: json!({
+            "kind": "file",
+            "path": args.state_path,
+            "writer": "context_graph_cli::commands::mejepa_runbook::run_pause",
+            "consumer": "ME-JEPA prediction handlers read this on startup of each verify cycle",
+        }),
+    })
+}
 
 #[derive(Args, Debug, Clone)]
 pub struct StorageVerifyArgs {
@@ -58,9 +205,8 @@ pub fn run_storage_verify(args: StorageVerifyArgs) -> Result<StorageVerifyOutput
     })?;
     let mut counts = std::collections::BTreeMap::new();
     for cf_name in context_graph_mejepa_cf::INFER_CFS {
-        let count = context_graph_mejepa::count_cf(db.as_ref(), cf_name).with_context(|| {
-            format!("MEJEPA_RUNBOOK_STORAGE_VERIFY_CF_FAILED: {cf_name}")
-        })?;
+        let count = context_graph_mejepa::count_cf(db.as_ref(), cf_name)
+            .with_context(|| format!("MEJEPA_RUNBOOK_STORAGE_VERIFY_CF_FAILED: {cf_name}"))?;
         counts.insert((*cf_name).to_string(), count);
     }
     Ok(StorageVerifyOutput {
@@ -115,7 +261,7 @@ pub fn run_session_cleanup(args: SessionCleanupArgs) -> Result<SessionCleanupOut
     for item in db.iterator_cf(live_cf, rocksdb::IteratorMode::Start) {
         let (key, _value) =
             item.with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_ITER_FAILED".to_string())?;
-        if key.starts_with(&session_id) {
+        if key.starts_with(session_id.as_slice()) {
             keys_to_delete.push(key.to_vec());
         }
     }
@@ -123,12 +269,13 @@ pub fn run_session_cleanup(args: SessionCleanupArgs) -> Result<SessionCleanupOut
     write_opts.set_sync(true);
     let live_predictions_deleted = keys_to_delete.len() as u64;
     for key in &keys_to_delete {
-        db.delete_cf_opt(live_cf, key, &write_opts).with_context(|| {
-            format!(
-                "MEJEPA_RUNBOOK_SESSION_CLEANUP_DELETE_FAILED: key_len={}",
-                key.len()
-            )
-        })?;
+        db.delete_cf_opt(live_cf, key, &write_opts)
+            .with_context(|| {
+                format!(
+                    "MEJEPA_RUNBOOK_SESSION_CLEANUP_DELETE_FAILED: key_len={}",
+                    key.len()
+                )
+            })?;
     }
     db.flush_cf(live_cf)
         .with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_FLUSH_FAILED".to_string())?;
@@ -141,12 +288,14 @@ pub fn run_session_cleanup(args: SessionCleanupArgs) -> Result<SessionCleanupOut
             )
         })?;
     let watermark_existed = db
-        .get_cf(watermark_cf, &session_id)
+        .get_cf(watermark_cf, session_id)
         .with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_WATERMARK_READ_FAILED".to_string())?
         .is_some();
     if watermark_existed {
-        db.delete_cf_opt(watermark_cf, &session_id, &write_opts)
-            .with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_WATERMARK_DELETE_FAILED".to_string())?;
+        db.delete_cf_opt(watermark_cf, session_id, &write_opts)
+            .with_context(|| {
+                "MEJEPA_RUNBOOK_SESSION_CLEANUP_WATERMARK_DELETE_FAILED".to_string()
+            })?;
         db.flush_cf(watermark_cf)
             .with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_WATERMARK_FLUSH_FAILED".to_string())?;
     }
@@ -156,12 +305,12 @@ pub fn run_session_cleanup(args: SessionCleanupArgs) -> Result<SessionCleanupOut
     for item in db.iterator_cf(live_cf, rocksdb::IteratorMode::Start) {
         let (key, _value) =
             item.with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_READBACK_FAILED".to_string())?;
-        if key.starts_with(&session_id) {
+        if key.starts_with(session_id.as_slice()) {
             residual_live += 1;
         }
     }
     let residual_watermark = db
-        .get_cf(watermark_cf, &session_id)
+        .get_cf(watermark_cf, session_id)
         .with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_READBACK_WATERMARK_FAILED".to_string())?
         .is_some();
     let readback_equal = residual_live == 0 && !residual_watermark;

@@ -16,13 +16,16 @@ use std::process::Command;
 use anyhow::{anyhow, ensure, Context, Result};
 use chrono::Utc;
 use context_graph_cli::commands::mejepa_runbook::{
-    run_daemon_status, run_eval_ship_gate, run_report_weekly, run_rollback, DaemonStatusArgs,
-    EvalShipGateArgs, ReportWeeklyArgs, RollbackArgs,
+    run_daemon_status, run_eval_ship_gate, run_pause, run_report_weekly, run_rollback,
+    run_session_cleanup, DaemonStatusArgs, EvalShipGateArgs, PauseArgs, ReportWeeklyArgs,
+    RollbackArgs, SessionCleanupArgs,
 };
 use context_graph_mejepa::eval::types::{
     ActiveLearningSummary, EvalProvenance, EvalReport, OpenResearchQuestionStatus,
 };
 use context_graph_mejepa::{open_infer_rocksdb, RocksDbEvalStore};
+use context_graph_mejepa_cf::{CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_SHIFT_WATERMARK};
+use rocksdb::WriteOptions;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
@@ -127,6 +130,53 @@ fn main() -> Result<()> {
         "eval-ship-gate should select the most recently generated report"
     );
 
+    // --- pause happy path -------------------------------------------------
+    let pause_path = run_root.join("pause-state/predictions_paused_until.json");
+    let pause_output = run_pause(PauseArgs {
+        state_path: pause_path.clone(),
+        duration_mins: 15,
+        reason: "phase-f-fsv".to_string(),
+    })
+    .context("run pause happy path")?;
+    let pause_readback: Value =
+        serde_json::from_slice(&fs::read(&pause_path).context("read pause SoT")?)?;
+    ensure!(
+        pause_output.readback_equal,
+        "pause command must report readback_equal=true"
+    );
+    let paused_until_ms = pause_readback["pausedUntilUnixMs"]
+        .as_i64()
+        .ok_or_else(|| anyhow!("pause readback missing pausedUntilUnixMs"))?;
+    let set_at_ms = pause_readback["setAtUnixMs"]
+        .as_i64()
+        .ok_or_else(|| anyhow!("pause readback missing setAtUnixMs"))?;
+    ensure!(
+        paused_until_ms > set_at_ms,
+        "pause readback must persist a future pausedUntilUnixMs"
+    );
+
+    // --- session-cleanup happy path --------------------------------------
+    let cleanup_db = run_root.join("session-cleanup-rocksdb");
+    let cleanup_session_id = "00112233445566778899aabbccddeeff";
+    seed_session_cleanup_db(&cleanup_db, cleanup_session_id)?;
+    let cleanup_output = run_session_cleanup(SessionCleanupArgs {
+        db_path: cleanup_db.clone(),
+        session_id: cleanup_session_id.to_string(),
+    })
+    .context("run session-cleanup happy path")?;
+    ensure!(
+        cleanup_output.live_predictions_deleted == 2,
+        "session-cleanup should delete both live-prediction rows"
+    );
+    ensure!(
+        cleanup_output.shift_watermark_deleted,
+        "session-cleanup should delete the session watermark"
+    );
+    ensure!(
+        cleanup_output.readback_equal,
+        "session-cleanup must verify deletion readback"
+    );
+
     // --- boundary cases ---------------------------------------------------
     let boundary_cases = run_boundary_cases(&run_root, &db_path)?;
     let failed: Vec<&Value> = boundary_cases
@@ -155,9 +205,11 @@ fn main() -> Result<()> {
             "TASK-RUN-002",
             "TASK-RUN-003",
             "TASK-RUN-006",
-            "TASK-RUN-007"
+            "TASK-RUN-007",
+            "TASK-RUN-008",
+            "TASK-RUN-009"
         ],
-        "issues": [73, 74, 76, 77],
+        "issues": [73, 74, 76, 77, 78, 79],
         "started_at_unix_ms": started_at_unix_ms,
         "build_release_sha": build_release_sha,
         "trigger": "cargo run --release -p context-graph-cli --example phase_f_runbook_cli_fsv",
@@ -218,6 +270,52 @@ fn main() -> Result<()> {
                 }),
                 "pass": true,
                 "evidence_path": db_path.clone(),
+            },
+            {
+                "case": "pause_writes_future_pause_state",
+                "sot": json!({"kind": "file", "path": pause_path}),
+                "before": null,
+                "after": pause_readback,
+                "expected": json!({
+                    "reason": "phase-f-fsv",
+                    "paused_until_gt_set_at": true,
+                    "readback_equal": true,
+                }),
+                "actual": json!({
+                    "reason": pause_output.reason,
+                    "paused_until_gt_set_at": pause_output.paused_until_unix_ms > pause_output.set_at_unix_ms,
+                    "readback_equal": pause_output.readback_equal,
+                }),
+                "pass": true,
+                "evidence_path": pause_path,
+            },
+            {
+                "case": "session_cleanup_deletes_live_predictions_and_watermark",
+                "sot": json!({
+                    "dbPath": cleanup_db,
+                    "columnFamilies": [CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_SHIFT_WATERMARK]
+                }),
+                "before": json!({
+                    "live_predictions": 2,
+                    "shift_watermark": true,
+                }),
+                "after": json!({
+                    "live_predictions_deleted": cleanup_output.live_predictions_deleted,
+                    "shift_watermark_deleted": cleanup_output.shift_watermark_deleted,
+                    "readback_equal": cleanup_output.readback_equal,
+                }),
+                "expected": json!({
+                    "live_predictions_deleted": 2,
+                    "shift_watermark_deleted": true,
+                    "readback_equal": true,
+                }),
+                "actual": json!({
+                    "live_predictions_deleted": cleanup_output.live_predictions_deleted,
+                    "shift_watermark_deleted": cleanup_output.shift_watermark_deleted,
+                    "readback_equal": cleanup_output.readback_equal,
+                }),
+                "pass": true,
+                "evidence_path": cleanup_db,
             }
         ],
         "boundary_cases": boundary_cases,
@@ -438,7 +536,114 @@ fn run_boundary_cases(run_root: &Path, db_path: &Path) -> Result<Vec<Value>> {
         &err,
     ));
 
+    // 10. pause: zero duration rejected before writing state.
+    let err = run_pause(PauseArgs {
+        state_path: run_root.join("pause-zero.json"),
+        duration_mins: 0,
+        reason: "phase-f-fsv".to_string(),
+    })
+    .expect_err("zero pause duration must fail closed");
+    cases.push(boundary(
+        "pause_zero_duration",
+        "MEJEPA_RUNBOOK_PAUSE_DURATION_ZERO",
+        &err,
+    ));
+
+    // 11. pause: maximum + 1 duration rejected.
+    let err = run_pause(PauseArgs {
+        state_path: run_root.join("pause-too-long.json"),
+        duration_mins: 7 * 24 * 60 + 1,
+        reason: "phase-f-fsv".to_string(),
+    })
+    .expect_err("maximum + 1 pause duration must fail closed");
+    cases.push(boundary(
+        "pause_duration_exceeds_week",
+        "MEJEPA_RUNBOOK_PAUSE_DURATION_EXCEEDS_WEEK",
+        &err,
+    ));
+
+    // 12. pause: empty reason rejected.
+    let err = run_pause(PauseArgs {
+        state_path: run_root.join("pause-empty-reason.json"),
+        duration_mins: 1,
+        reason: "   ".to_string(),
+    })
+    .expect_err("empty pause reason must fail closed");
+    cases.push(boundary(
+        "pause_empty_reason",
+        "MEJEPA_RUNBOOK_PAUSE_REASON_EMPTY",
+        &err,
+    ));
+
+    // 13. pause: control characters in reason rejected.
+    let err = run_pause(PauseArgs {
+        state_path: run_root.join("pause-control-reason.json"),
+        duration_mins: 1,
+        reason: "bad\nreason".to_string(),
+    })
+    .expect_err("control-character pause reason must fail closed");
+    cases.push(boundary(
+        "pause_control_character_reason",
+        "MEJEPA_RUNBOOK_PAUSE_REASON_INVALID",
+        &err,
+    ));
+
+    // 14. pause: empty state path rejected.
+    let err = run_pause(PauseArgs {
+        state_path: PathBuf::new(),
+        duration_mins: 1,
+        reason: "phase-f-fsv".to_string(),
+    })
+    .expect_err("empty pause state path must fail closed");
+    cases.push(boundary(
+        "pause_empty_state_path",
+        "MEJEPA_RUNBOOK_PAUSE_STATE_PATH_EMPTY",
+        &err,
+    ));
+
+    // 15. session-cleanup: malformed session id rejected before DB open.
+    let err = run_session_cleanup(SessionCleanupArgs {
+        db_path: db_path.to_path_buf(),
+        session_id: "not-hex".to_string(),
+    })
+    .expect_err("malformed session id must fail closed");
+    cases.push(boundary(
+        "session_cleanup_invalid_session_id",
+        "MEJEPA_RUNBOOK_SESSION_ID_INVALID",
+        &err,
+    ));
+
     Ok(cases)
+}
+
+fn seed_session_cleanup_db(db_path: &Path, session_hex: &str) -> Result<()> {
+    let mut session_id = [0_u8; 16];
+    hex::decode_to_slice(session_hex, &mut session_id)
+        .context("decode session id for cleanup FSV")?;
+    let db = open_infer_rocksdb(db_path).context("open session-cleanup infer rocksdb")?;
+    let live_cf = db
+        .cf_handle(CF_MEJEPA_LIVE_PREDICTIONS)
+        .ok_or_else(|| anyhow!("missing CF_MEJEPA_LIVE_PREDICTIONS"))?;
+    let watermark_cf = db
+        .cf_handle(CF_MEJEPA_SHIFT_WATERMARK)
+        .ok_or_else(|| anyhow!("missing CF_MEJEPA_SHIFT_WATERMARK"))?;
+    let mut opts = WriteOptions::default();
+    opts.set_sync(true);
+    let mut key_one = session_id.to_vec();
+    key_one.extend_from_slice(b":prediction-one");
+    let mut key_two = session_id.to_vec();
+    key_two.extend_from_slice(b":prediction-two");
+    db.put_cf_opt(live_cf, &key_one, b"prediction-one", &opts)
+        .context("write live prediction one")?;
+    db.put_cf_opt(live_cf, &key_two, b"prediction-two", &opts)
+        .context("write live prediction two")?;
+    db.put_cf_opt(watermark_cf, session_id, b"watermark", &opts)
+        .context("write shift watermark")?;
+    db.flush_cf(live_cf).context("flush live prediction CF")?;
+    db.flush_cf(watermark_cf)
+        .context("flush shift watermark CF")?;
+    drop(db);
+    Ok(())
 }
 
 fn boundary(case: &str, expected: &str, err: &anyhow::Error) -> Value {

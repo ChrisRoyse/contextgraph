@@ -15,9 +15,10 @@ use context_graph_mejepa::heal::{
 };
 use context_graph_mejepa::{
     build_deterministic_compiler, open_infer_rocksdb, ActiveLearningQueueState, ActualOutcome,
-    AgentId, CalibrationStore, ChunkId, DdaSignals, FeedbackId, FeedbackKind, MeJepaInferConfig,
-    OracleOutcome, PanelId, PatchBundle, PredictionId, RealityPrediction, RocksDbEvalStore,
-    RocksDbInferStore, SurpriseEvent, SurpriseSeverity, TaskContext, TestId, WitnessHash,
+    AgentId, CalibrationStore, ChunkId, DdaSignals, FailedGate, FeedbackId, FeedbackKind,
+    MeJepaInferConfig, OracleOutcome, PanelId, PatchBundle, PredictionId, RealityPrediction,
+    RocksDbEvalStore, RocksDbInferStore, SurpriseEvent, SurpriseSeverity, TaskContext, TestId,
+    VerifyVerdict, WitnessHash,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_AGENT_FEEDBACK,
@@ -30,7 +31,7 @@ use context_graph_mejepa_tct::{
     build_inspect_summary, open_tct_rocksdb, ConstellationStore, EmbedderId,
 };
 use rocksdb::{IteratorMode, WriteBatch, WriteOptions, DB};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tracing::info;
@@ -48,6 +49,9 @@ const ENV_HYGIENE_ARCHIVE_ROOT: &str = "CONTEXTGRAPH_MEJEPA_HYGIENE_ARCHIVE_ROOT
 const ENV_PANEL_DB: &str = "CONTEXTGRAPH_MEJEPA_PANEL_DB";
 const ENV_INFER_DB: &str = "CONTEXTGRAPH_MEJEPA_INFER_DB";
 const ENV_ALLOW_DETERMINISTIC_VERIFY: &str = "CONTEXTGRAPH_MEJEPA_ALLOW_DETERMINISTIC_VERIFY";
+const ENV_PAUSE_PATH: &str = "CONTEXTGRAPH_MEJEPA_PAUSE_PATH";
+const DEFAULT_PAUSE_STATE_PATH: &str =
+    "/mnt/d/contextgraph/state/cgreality/predictions_paused_until.json";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -119,6 +123,15 @@ struct ActualOutcomeRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PausePredictionsRequest {
+    state_path: Option<PathBuf>,
+    duration_mins: u64,
+    #[serde(default = "default_pause_reason")]
+    reason: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ConstellationInspectRequest {
     db_path: Option<PathBuf>,
     version_id: Option<String>,
@@ -184,6 +197,10 @@ struct MejepaDaemonStatusRequest {
 
 fn default_limit() -> u32 {
     10
+}
+
+fn default_pause_reason() -> String {
+    "manual pause".to_string()
 }
 
 fn default_two_person_rule() -> bool {
@@ -738,6 +755,40 @@ impl Handlers {
         match self.run_mejepa_daemon_status(request).await {
             Ok(value) => self.tool_result(id, value),
             Err(message) => self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_pause_predictions(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: PausePredictionsRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_PAUSE_PREDICTIONS
+                    ),
+                );
+            }
+        };
+        let state_path = match resolve_pause_state_path(request.state_path) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match write_pause_state(&state_path, request.duration_mins, &request.reason) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Storage,
+                "MEJEPA_PAUSE_PREDICTIONS_FAILED",
+                &err.to_string(),
+                json!({"statePath": state_path}),
+            ),
         }
     }
 
@@ -1877,6 +1928,104 @@ fn cf_handle<'a>(db: &'a DB, name: &str) -> AnyhowResult<&'a rocksdb::ColumnFami
         .ok_or_else(|| anyhow!("missing RocksDB column family {name}"))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct PausePredictionState {
+    paused_until_unix_ms: i64,
+    set_at_unix_ms: i64,
+    reason: String,
+    source: String,
+}
+
+fn resolve_pause_state_path(input: Option<PathBuf>) -> Result<PathBuf, String> {
+    match input {
+        Some(path) if path.as_os_str().is_empty() => {
+            Err("statePath must be a non-empty path".to_string())
+        }
+        Some(path) => Ok(path),
+        None => match std::env::var(ENV_PAUSE_PATH) {
+            Ok(path) if path.trim().is_empty() => {
+                Err(format!("{ENV_PAUSE_PATH} must be non-empty"))
+            }
+            Ok(path) => Ok(PathBuf::from(path)),
+            Err(std::env::VarError::NotPresent) => Ok(PathBuf::from(DEFAULT_PAUSE_STATE_PATH)),
+            Err(err) => Err(format!("{ENV_PAUSE_PATH} must be readable UTF-8: {err}")),
+        },
+    }
+}
+
+fn write_pause_state(state_path: &Path, duration_mins: u64, reason: &str) -> AnyhowResult<Value> {
+    if duration_mins == 0 {
+        bail!("MEJEPA_PAUSE_DURATION_ZERO: durationMins must be > 0");
+    }
+    if duration_mins > 7 * 24 * 60 {
+        bail!(
+            "MEJEPA_PAUSE_DURATION_EXCEEDS_WEEK: durationMins must be <= 10080; got {duration_mins}"
+        );
+    }
+    if reason.trim().is_empty() || reason.chars().any(char::is_control) {
+        bail!("MEJEPA_PAUSE_REASON_INVALID: reason must be non-empty and contain no control characters");
+    }
+    if let Some(parent) = state_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("MEJEPA_PAUSE_PARENT_CREATE_FAILED: {}", parent.display()))?;
+    }
+    let set_at_unix_ms: i64 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("MEJEPA_PAUSE_CLOCK_BEFORE_UNIX_EPOCH")?
+        .as_millis()
+        .try_into()
+        .context("MEJEPA_PAUSE_CLOCK_OVERFLOW")?;
+    let duration_ms = duration_mins
+        .checked_mul(60_000)
+        .and_then(|value| i64::try_from(value).ok())
+        .context("MEJEPA_PAUSE_DURATION_OVERFLOW")?;
+    let paused_until_unix_ms = set_at_unix_ms
+        .checked_add(duration_ms)
+        .context("MEJEPA_PAUSE_UNTIL_OVERFLOW")?;
+    let state = PausePredictionState {
+        paused_until_unix_ms,
+        set_at_unix_ms,
+        reason: reason.to_string(),
+        source: tool_names::MEJEPA_PAUSE_PREDICTIONS.to_string(),
+    };
+    let bytes = serde_json::to_vec_pretty(&state).context("MEJEPA_PAUSE_SERIALIZE_FAILED")?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(state_path)
+        .with_context(|| format!("MEJEPA_PAUSE_WRITE_OPEN_FAILED: {}", state_path.display()))?;
+    std::io::Write::write_all(&mut file, &bytes)
+        .with_context(|| format!("MEJEPA_PAUSE_WRITE_FAILED: {}", state_path.display()))?;
+    file.sync_all()
+        .with_context(|| format!("MEJEPA_PAUSE_SYNC_FAILED: {}", state_path.display()))?;
+    drop(file);
+    let readback_bytes = std::fs::read(state_path)
+        .with_context(|| format!("MEJEPA_PAUSE_READBACK_FAILED: {}", state_path.display()))?;
+    if readback_bytes != bytes {
+        bail!("MEJEPA_PAUSE_READBACK_BYTES_MISMATCH");
+    }
+    let readback: PausePredictionState = serde_json::from_slice(&readback_bytes)
+        .context("MEJEPA_PAUSE_READBACK_DESERIALIZE_FAILED")?;
+    if readback != state {
+        bail!("MEJEPA_PAUSE_READBACK_STATE_MISMATCH");
+    }
+    Ok(json!({
+        "statePath": state_path,
+        "pausedUntilUnixMs": state.paused_until_unix_ms,
+        "setAtUnixMs": state.set_at_unix_ms,
+        "durationMins": duration_mins,
+        "reason": state.reason,
+        "readbackEqual": true,
+        "sourceOfTruth": {
+            "kind": "file",
+            "path": state_path,
+            "writer": "mcp__cgreality__mejepa_pause_predictions",
+        }
+    }))
+}
+
 fn count_cf_any(db: &DB, name: &str) -> AnyhowResult<u64> {
     let cf = cf_handle(db, name)?;
     let mut count = 0u64;
@@ -1970,6 +2119,27 @@ mod mejepa_constellation_inspect_tests {
         std::env::remove_var(context_graph_mejepa_tct::ENV_ALLOW_STALE);
         std::env::remove_var(context_graph_mejepa_tct::ENV_MAX_AGE_DAYS);
         guard
+    }
+
+    #[test]
+    fn pause_predictions_writes_state_file_and_reads_back() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("pause-state.json");
+        let value = write_pause_state(&path, 5, "unit-test").unwrap();
+        assert_eq!(value["readbackEqual"], true);
+        let readback: PausePredictionState =
+            serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert!(readback.paused_until_unix_ms > readback.set_at_unix_ms);
+        assert_eq!(readback.reason, "unit-test");
+        assert_eq!(readback.source, tool_names::MEJEPA_PAUSE_PREDICTIONS);
+    }
+
+    #[test]
+    fn pause_predictions_rejects_invalid_duration() {
+        let tmp = TempDir::new().unwrap();
+        let err =
+            write_pause_state(&tmp.path().join("pause-state.json"), 0, "unit-test").unwrap_err();
+        assert!(err.to_string().contains("MEJEPA_PAUSE_DURATION_ZERO"));
     }
 
     fn versions(seed: u8) -> BTreeMap<EmbedderId, [u8; 32]> {

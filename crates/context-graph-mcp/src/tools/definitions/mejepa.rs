@@ -300,6 +300,32 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_PAUSE_PREDICTIONS,
+            "Pause ME-JEPA prediction serving until now + durationMins by writing a durable pause-state JSON file and reading it back byte-for-byte.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["durationMins"],
+                "properties": {
+                    "statePath": {
+                        "type": "string",
+                        "description": "Pause-state JSON path. If omitted, CONTEXTGRAPH_MEJEPA_PAUSE_PATH or the D-drive default is used."
+                    },
+                    "durationMins": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10080
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096,
+                        "default": "manual pause"
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_ROLLBACK_TO,
             "Rollback ME-JEPA active weights to a previously promoted witness-chain offset. The target must exist in CF_MEJEPA_HEAL_REPORTS and the weight blob must exist in CF_MEJEPA_WEIGHT_BLOBS; otherwise the tool fails closed.",
             json!({
