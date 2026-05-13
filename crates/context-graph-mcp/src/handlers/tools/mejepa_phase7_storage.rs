@@ -268,7 +268,7 @@ pub(crate) async fn subscriber_status_for_paths(
     db_path: &Path,
     panel_db_path: Option<&Path>,
 ) -> Result<Value, String> {
-    let db = open_infer_rocksdb(&db_path).map_err(|err| err.to_string())?;
+    let db = open_infer_rocksdb(db_path).map_err(|err| err.to_string())?;
     let watermarks = read_watermarks(db.as_ref())?;
     let last_watermark_per_session = watermarks
         .iter()
@@ -307,7 +307,7 @@ pub(crate) async fn subscriber_status_for_paths(
         "dropped_l_step_below_threshold_count": 0,
         "last_panic": Value::Null,
         "subscriber_running": false,
-        "source_of_truth": file_sot(&db_path),
+        "source_of_truth": file_sot(db_path),
         "status_scope": "durable_rocksdb_watermarks_and_panel_counts_no_live_task"
     }))
 }
