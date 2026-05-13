@@ -340,7 +340,7 @@ fn list_sst_files(db_path: &Path) -> Result<Vec<serde_json::Value>, Box<dyn std:
             }
         }
     }
-    out.sort_by_key(|value| value["path"].as_str().unwrap_or_default().to_string());
+    out.sort_by_key(|value| value["path"].to_string());
     Ok(out)
 }
 
