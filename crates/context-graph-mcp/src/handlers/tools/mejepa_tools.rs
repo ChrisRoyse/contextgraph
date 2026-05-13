@@ -2462,11 +2462,12 @@ mod mejepa_constellation_inspect_tests {
             .contains("MEJEPA_PAUSE_DURATION_ZERO"));
     }
 
-    #[tokio::test]
-    async fn mejepa_verify_honors_active_pause_state() {
+    #[test]
+    fn mejepa_verify_honors_active_pause_state() {
         let _guard = env_guard();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
         let (handlers, _handler_tempdir) =
-            crate::handlers::tests::create_protocol_test_handlers().await;
+            runtime.block_on(crate::handlers::tests::create_protocol_test_handlers());
         let tmp = TempDir::new().unwrap();
         let infer_db = tmp.path().join("infer-db");
         let pause_path = tmp.path().join("pause-state.json");
@@ -2475,16 +2476,14 @@ mod mejepa_constellation_inspect_tests {
         write_pause_state(&pause_path, 5, "operator requested pause").unwrap();
         let (patch, context) =
             context_graph_mejepa::fixture_patch_context(tmp.path(), "happy").unwrap();
-        let response = handlers
-            .call_mejepa_verify(
-                Some(JsonRpcId::Number(49)),
-                json!({
-                    "patch": patch,
-                    "context": context,
-                    "includeProvenance": true
-                }),
-            )
-            .await;
+        let response = runtime.block_on(handlers.call_mejepa_verify(
+            Some(JsonRpcId::Number(49)),
+            json!({
+                "patch": patch,
+                "context": context,
+                "includeProvenance": true
+            }),
+        ));
         assert!(response.error.is_none());
         let result = response.result.unwrap();
         assert_eq!(result["isError"], false);
