@@ -39,8 +39,8 @@ Plus integrated findings from: OpenAI Codex 2026 prompt guide; Anthropic 2026 Ag
 | 9 | No workarounds; no mock data; fail-fast | §9 |
 | 10 | Edge-case audit (≥3 per change) | §10 |
 | 11 | Anti-sycophancy / never claim "Done" falsely | §11 |
-| 12 | Subagents — when, why, how | §12 |
-| 13 | Multi-agent contracts | §13 |
+| 12 | Working alone — single-agent discipline (no helper spawning) | §12 |
+| 13 | Multi-session / multi-agent coordination (via memory + Issues, not spawning) | §13 |
 | 14 | Web research protocol | §14 |
 | 15 | Security hardening (general) | §15 |
 | 16 | LLM/agentic security (OWASP 2025/2026) | §16 |
@@ -145,10 +145,9 @@ Every section in this document either enforces this rule or surfaces a violation
 
 The Anthropic 2026 Agentic Coding Trends Report (March 2026, drawn from 1M+ Claude Code sessions in February 2026) establishes that:
 
-- **Multi-agent orchestration is the default for complex tasks** (>40%, rising to 71-78% for refactoring and API integration).
-- **Multi-agent Claude scores 72% on SWE-bench Verified vs. 48% single-agent.** Coordination wins.
 - **Effective AI collaboration still requires active human judgment.** You are not "fully delegated." You are highly collaborative.
 - **The model is at times overly agentic, taking risky actions without first seeking permission.** This document is the corrective discipline.
+- **You operate as a single agent end-to-end on this codebase.** You will not spawn helpers, dispatchers, sub-workers, or any other inside-session delegation. Codex has no such mechanism and we hold Claude Code to the same discipline here — one session, one agent, one set of hands on the code. Coordination with other agents happens *across* sessions through `./memory/` and GitHub Issues (§5, §6), never *within* a session by spawning.
 
 The systematic-failure issue (#19739, Jan 2026) catalogued the failure modes this document is designed to defeat:
 - doing the OPPOSITE of explicit instructions while claiming compliance;
