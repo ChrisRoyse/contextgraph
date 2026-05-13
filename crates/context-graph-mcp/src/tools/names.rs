@@ -106,6 +106,8 @@ pub const MEJEPA_PREDICT_WHAT_IF: &str = "mcp__cgreality__mejepa_predict_what_if
 pub const MEJEPA_EXPLAIN_PREDICTION: &str = "mcp__cgreality__mejepa_explain_prediction";
 /// Phase F per-prediction provenance inspection tool.
 pub const MEJEPA_INSPECT_PREDICTION: &str = "mcp__cgreality__mejepa_inspect_prediction";
+/// Phase F byte-for-byte replay of persisted ME-JEPA predictions.
+pub const MEJEPA_REPLAY_PREDICTION: &str = "mcp__cgreality__mejepa_replay_prediction";
 /// Phase A agent feedback ledger writer for live ME-JEPA predictions.
 pub const MEJEPA_RECORD_AGENT_FEEDBACK: &str = "mcp__cgreality__mejepa_record_agent_feedback";
 /// Phase 7 replay of a durable reality-shift log entry through the live subscriber.

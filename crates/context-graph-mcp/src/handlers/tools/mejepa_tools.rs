@@ -89,6 +89,13 @@ struct InspectPredictionRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ReplayPredictionRequest {
+    prediction_id: String,
+    db_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecordAgentFeedbackRequest {
     prediction_id: String,
     agent_id: String,
@@ -465,6 +472,63 @@ impl Handlers {
                 id,
                 ToolErrorKind::Storage,
                 "MEJEPA_INSPECT_PREDICTION_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_replay_prediction(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: ReplayPredictionRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_REPLAY_PREDICTION
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        let prediction_id =
+            match context_graph_mejepa::parse_prediction_id_hex(&request.prediction_id) {
+                Ok(value) => value,
+                Err(err) => {
+                    return self.tool_error_structured(
+                        id,
+                        ToolErrorKind::Validation,
+                        "MEJEPA_REPLAY_PREDICTION_ID_INVALID",
+                        &err.to_string(),
+                        json!({"predictionId": request.prediction_id}),
+                    );
+                }
+            };
+        let result = context_graph_mejepa::replay_prediction_from_db(&db_path, prediction_id);
+        match result {
+            Ok(value) => match serde_json::to_value(value) {
+                Ok(value) => self.tool_result(id, value),
+                Err(err) => self.tool_error_structured(
+                    id,
+                    ToolErrorKind::Execution,
+                    "MEJEPA_REPLAY_PREDICTION_SERIALIZE_FAILED",
+                    &err.to_string(),
+                    json!({"dbPath": db_path}),
+                ),
+            },
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Storage,
+                "MEJEPA_REPLAY_PREDICTION_FAILED",
                 &err.to_string(),
                 json!({"dbPath": db_path}),
             ),
@@ -2359,6 +2423,58 @@ mod mejepa_constellation_inspect_tests {
         let readback: Value = serde_json::from_slice(&fs::read(&evidence_path).unwrap()).unwrap();
         assert_eq!(readback["all_passed"], true);
         assert_eq!(readback["readback_equal"], true);
+    }
+
+    #[tokio::test]
+    async fn mejepa_replay_prediction_api_reads_byte_equal_source_of_truth() {
+        let (handlers, _handler_tempdir) =
+            crate::handlers::tests::create_protocol_test_handlers().await;
+        let temp = TempDir::new().unwrap();
+        let infer_db = temp.path().join("infer-db");
+        let prediction = inspect_prediction_fixture([0x46; 16], "src/lib.rs#fn#replay");
+        let db = open_infer_rocksdb(&infer_db).unwrap();
+        persist_prediction_and_dda(db.clone(), &prediction);
+        drop(db);
+
+        let response = handlers
+            .call_mejepa_replay_prediction(
+                Some(JsonRpcId::Number(460)),
+                json!({
+                    "predictionId": hex::encode(prediction.prediction_id),
+                    "dbPath": infer_db.display().to_string()
+                }),
+            )
+            .await;
+        assert!(response.error.is_none());
+        let result = response.result.unwrap();
+        assert_eq!(result["isError"], false);
+        let structured = &result["structuredContent"];
+        assert_eq!(structured["byteEqual"], true);
+        assert_eq!(structured["semanticEqual"], true);
+        assert_eq!(
+            structured["columnFamily"],
+            json!(CF_MEJEPA_LIVE_PREDICTIONS)
+        );
+        assert_eq!(
+            structured["predictionId"],
+            json!(hex::encode(prediction.prediction_id))
+        );
+
+        let missing_response = handlers
+            .call_mejepa_replay_prediction(
+                Some(JsonRpcId::Number(461)),
+                json!({
+                    "predictionId": hex::encode([0xee; 16]),
+                    "dbPath": infer_db.display().to_string()
+                }),
+            )
+            .await;
+        let missing_result = missing_response.result.unwrap();
+        assert_eq!(missing_result["isError"], true);
+        assert!(missing_result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("MEJEPA_PREDICTION_REPLAY_NOT_FOUND"));
     }
 
     #[test]

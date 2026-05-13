@@ -97,6 +97,25 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_REPLAY_PREDICTION,
+            "Replay a persisted ME-JEPA RealityPrediction byte-for-byte from CF_MEJEPA_LIVE_PREDICTIONS by validating the key/payload provenance and reserializing the decoded prediction.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["predictionId"],
+                "properties": {
+                    "predictionId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{32}$"
+                    },
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional Phase 4 inference RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_RECORD_AGENT_FEEDBACK,
             "Persist measured agent feedback for a prior ME-JEPA RealityPrediction into CF_MEJEPA_AGENT_FEEDBACK, update the active-learning queue when the feedback is surprise-like, and verify RocksDB readback before returning.",
             json!({

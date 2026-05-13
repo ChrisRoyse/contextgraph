@@ -26,6 +26,7 @@ pub mod loss;
 pub mod ood;
 pub mod oracle_head;
 pub mod panel_source;
+pub mod prediction_replay;
 pub mod prediction_surfaces;
 pub mod predictor;
 pub mod provenance;
@@ -79,6 +80,7 @@ pub use grad_hook::{
 pub use loss::{huber_loss_delta_one, vicreg_loss, VarianceFloorHistory};
 pub use ood::*;
 pub use oracle_head::OracleHead;
+pub use prediction_replay::*;
 pub use prediction_surfaces::*;
 pub use predictor::{ArchitectureSummary, MeJepaPredictor, TransformerLayer};
 pub use reality_impact::*;

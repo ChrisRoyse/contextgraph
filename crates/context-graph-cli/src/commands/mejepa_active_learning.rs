@@ -25,6 +25,19 @@ pub enum MejepaCommands {
         #[command(subcommand)]
         action: ActiveLearningCommands,
     },
+    /// Replay a persisted ME-JEPA prediction byte-for-byte from RocksDB.
+    Replay(crate::commands::mejepa_replay::ReplayArgs),
+    /// Operator runbook: read the self-optimization scheduler status file.
+    #[command(name = "daemon-status")]
+    DaemonStatus(crate::commands::mejepa_runbook::DaemonStatusArgs),
+    /// Operator runbook: read the weekly EvalReport for a specific date.
+    #[command(name = "report-weekly")]
+    ReportWeekly(crate::commands::mejepa_runbook::ReportWeeklyArgs),
+    /// Operator runbook: roll the active weights back to a witness-chain offset.
+    Rollback(crate::commands::mejepa_runbook::RollbackArgs),
+    /// Operator runbook: read ship-gate status from the latest EvalReport.
+    #[command(name = "eval-ship-gate")]
+    EvalShipGate(crate::commands::mejepa_runbook::EvalShipGateArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -175,6 +188,26 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
                     .context("serialize dismiss")
             }
         },
+        MejepaCommands::Replay(args) => {
+            serde_json::to_value(crate::commands::mejepa_replay::replay_prediction_cli(args).await?)
+                .context("serialize replay")
+        }
+        MejepaCommands::DaemonStatus(args) => {
+            serde_json::to_value(crate::commands::mejepa_runbook::run_daemon_status(args)?)
+                .context("serialize daemon-status")
+        }
+        MejepaCommands::ReportWeekly(args) => {
+            serde_json::to_value(crate::commands::mejepa_runbook::run_report_weekly(args)?)
+                .context("serialize report-weekly")
+        }
+        MejepaCommands::Rollback(args) => {
+            serde_json::to_value(crate::commands::mejepa_runbook::run_rollback(args)?)
+                .context("serialize rollback")
+        }
+        MejepaCommands::EvalShipGate(args) => {
+            serde_json::to_value(crate::commands::mejepa_runbook::run_eval_ship_gate(args)?)
+                .context("serialize eval-ship-gate")
+        }
     }
 }
 
