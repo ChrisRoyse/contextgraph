@@ -8,9 +8,11 @@ use anyhow::{anyhow, ensure, Context, Result};
 use chrono::Utc;
 use context_graph_mejepa::open_infer_rocksdb;
 use context_graph_mejepa::operator_override::{
-    load_operator_override, persist_operator_override, OperatorOverride, OperatorOverrideError,
-    OverrideVerdict, OPERATOR_OVERRIDE_SAMPLING_WEIGHT,
+    count_operator_overrides, load_operator_override, operator_override_flags_for_predictions,
+    persist_operator_override, OperatorOverride, OperatorOverrideError, OverrideVerdict,
+    OPERATOR_OVERRIDE_SAMPLING_WEIGHT,
 };
+use context_graph_mejepa::{PredictionId, TaskId};
 use context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_OVERRIDES;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -27,15 +29,14 @@ fn main() -> Result<()> {
 
     let db = open_infer_rocksdb(&db_path).context("open infer rocksdb for override FSV")?;
     let build_release_sha = git_head_short()?;
-    let cf_count_before = count_cf_entries(db.as_ref(), CF_MEJEPA_OPERATOR_OVERRIDES)?;
-    let record = OperatorOverride {
-        prediction_id: [0xAB; 16],
-        override_verdict: OverrideVerdict::Fail,
-        reason: "operator marked verdict as Fail after manual inspection".to_string(),
-        operator_id: "fsv-operator".to_string(),
-        created_at_unix_ms: stamp,
-        sampling_weight_multiplier: OPERATOR_OVERRIDE_SAMPLING_WEIGHT,
-    };
+    let cf_count_before = count_operator_overrides(db.as_ref())?;
+    let record = OperatorOverride::new(
+        PredictionId([0xAB; 16]),
+        OverrideVerdict::Fail,
+        "operator marked verdict as Fail after manual inspection".to_string(),
+        "fsv-operator".to_string(),
+        stamp,
+    )?;
 
     // --- happy path: persist + readback ----------------------------------
     persist_operator_override(db.as_ref(), &record).context("persist override")?;
@@ -43,6 +44,14 @@ fn main() -> Result<()> {
         .ok_or_else(|| anyhow!("readback returned None"))?;
     let persist_readback_pass = loaded == record;
     ensure!(persist_readback_pass, "loaded record diverged from input");
+    let flags = operator_override_flags_for_predictions(db.as_ref(), &[record.prediction_id()])?;
+    let flag_readback_pass = flags == vec![true];
+    ensure!(flag_readback_pass, "override flag readback mismatch");
+    let label = record.active_learning_label(TaskId("fsv-operator-override-task".to_string()));
+    let label_pass = label.oracle_outcome == context_graph_mejepa::OracleOutcome::Fail
+        && label.method == context_graph_mejepa::LabelMethod::Human
+        && label.labeled_at_unix_ms == stamp;
+    ensure!(label_pass, "active-learning label projection mismatch");
 
     // --- boundary cases --------------------------------------------------
     let empty_reason_err = persist_operator_override(
@@ -92,13 +101,50 @@ fn main() -> Result<()> {
     );
     ensure!(zero_prediction_id_pass);
 
+    let control_reason_err = persist_operator_override(
+        db.as_ref(),
+        &OperatorOverride {
+            reason: "bad\nreason".to_string(),
+            ..record.clone()
+        },
+    )
+    .expect_err("control-character reason must fail closed");
+    let control_reason_pass = matches!(control_reason_err, OperatorOverrideError::ReasonInvalid);
+    ensure!(control_reason_pass);
+
+    let invalid_operator_err = persist_operator_override(
+        db.as_ref(),
+        &OperatorOverride {
+            operator_id: "operator\n1".to_string(),
+            ..record.clone()
+        },
+    )
+    .expect_err("control-character operator must fail closed");
+    let invalid_operator_pass =
+        matches!(invalid_operator_err, OperatorOverrideError::OperatorInvalid);
+    ensure!(invalid_operator_pass);
+
+    let invalid_weight_err = persist_operator_override(
+        db.as_ref(),
+        &OperatorOverride {
+            sampling_weight_multiplier: 1.0,
+            ..record.clone()
+        },
+    )
+    .expect_err("non-6x sampling weight must fail closed");
+    let invalid_weight_pass = matches!(
+        invalid_weight_err,
+        OperatorOverrideError::SamplingWeightInvalid
+    );
+    ensure!(invalid_weight_pass);
+
     // --- absent key returns None, not an error --------------------------
     let absent_id = context_graph_mejepa::PredictionId([0xCD; 16]);
     let absent = load_operator_override(db.as_ref(), absent_id)?;
     let absent_key_pass = absent.is_none();
     ensure!(absent_key_pass, "absent prediction-id must return None");
 
-    let cf_count_after = count_cf_entries(db.as_ref(), CF_MEJEPA_OPERATOR_OVERRIDES)?;
+    let cf_count_after = count_operator_overrides(db.as_ref())?;
     drop(db);
 
     // Independent re-open verifies persistence survives close.
@@ -123,7 +169,12 @@ fn main() -> Result<()> {
         && empty_operator_pass
         && long_reason_pass
         && zero_prediction_id_pass
+        && control_reason_pass
+        && invalid_operator_pass
+        && invalid_weight_pass
         && absent_key_pass
+        && flag_readback_pass
+        && label_pass
         && cf_count_after == cf_count_before + 1;
 
     let artifact_path = fsv.join("operator_override_fsv.json");
@@ -164,6 +215,12 @@ fn main() -> Result<()> {
              "actual": long_reason_err.to_string(), "pass": long_reason_pass},
             {"case": "zero_prediction_id", "expected": "MEJEPA_OPERATOR_OVERRIDE_PREDICTION_ID_ZERO",
              "actual": zero_prediction_id_err.to_string(), "pass": zero_prediction_id_pass},
+            {"case": "control_character_reason", "expected": "MEJEPA_OPERATOR_OVERRIDE_REASON_INVALID",
+             "actual": control_reason_err.to_string(), "pass": control_reason_pass},
+            {"case": "control_character_operator", "expected": "MEJEPA_OPERATOR_OVERRIDE_OPERATOR_INVALID",
+             "actual": invalid_operator_err.to_string(), "pass": invalid_operator_pass},
+            {"case": "invalid_sampling_weight", "expected": "MEJEPA_OPERATOR_OVERRIDE_WEIGHT_INVALID",
+             "actual": invalid_weight_err.to_string(), "pass": invalid_weight_pass},
             {"case": "absent_key_returns_none", "expected": "None",
              "actual": format!("{:?}", absent), "pass": absent_key_pass},
         ],
@@ -172,10 +229,12 @@ fn main() -> Result<()> {
         "cf_counts_after": {"CF_MEJEPA_OPERATOR_OVERRIDES": cf_count_after},
         "readback_equal": persist_readback_pass && reopen_readback_pass,
         "sampling_weight_multiplier": OPERATOR_OVERRIDE_SAMPLING_WEIGHT,
+        "override_flag_readback": flags,
+        "active_learning_label_projection": label,
         "physical_artifacts": physical_artifacts,
         "source_of_truth": {
             "writer": "context_graph_mejepa::operator_override::persist_operator_override",
-            "consumer": "BatchSampler reads CF_MEJEPA_OPERATOR_OVERRIDES on next training batch",
+            "consumer": "operator_override_flags_for_predictions exposes CF_MEJEPA_OPERATOR_OVERRIDES for next-batch sampling weight",
         },
     });
     ensure!(all_passed, "operator override FSV assertions failed");
@@ -192,18 +251,6 @@ fn main() -> Result<()> {
         }))?
     );
     Ok(())
-}
-
-fn count_cf_entries(db: &rocksdb::DB, cf_name: &str) -> Result<u64> {
-    let cf = db
-        .cf_handle(cf_name)
-        .ok_or_else(|| anyhow!("CF {cf_name} missing"))?;
-    let mut count = 0_u64;
-    for item in db.iterator_cf(cf, rocksdb::IteratorMode::Start) {
-        let _ = item?;
-        count += 1;
-    }
-    Ok(count)
 }
 
 fn write_json_readback(path: &Path, value: &Value) -> Result<()> {

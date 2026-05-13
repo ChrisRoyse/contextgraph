@@ -16,7 +16,6 @@ use context_graph_mejepa::heal::{
 use context_graph_mejepa::operator_override::{
     count_operator_overrides, load_operator_override, operator_override_flags_for_predictions,
     persist_operator_override, OperatorOverride, OverrideVerdict,
-    OPERATOR_OVERRIDE_SAMPLING_WEIGHT,
 };
 use context_graph_mejepa::{
     build_deterministic_compiler, open_infer_rocksdb, ActiveLearningQueueState, ActualOutcome,
@@ -1780,7 +1779,8 @@ fn record_operator_override_in_db(
         created_at_unix_ms,
     )
     .map_err(|err| anyhow!("{err}"))?;
-    let override_count_before = count_operator_overrides(db.as_ref()).unwrap_or(0);
+    let override_count_before =
+        count_operator_overrides(db.as_ref()).map_err(|err| anyhow!("{err}"))?;
     persist_operator_override(db.as_ref(), &override_record).map_err(|err| anyhow!("{err}"))?;
 
     let eval_store = RocksDbEvalStore::new(db.clone()).context("construct RocksDbEvalStore")?;
@@ -1788,6 +1788,8 @@ fn record_operator_override_in_db(
     eval_store
         .persist_label(&label)
         .context("persist operator override active-learning label")?;
+    db.flush_cf(cf_handle(db.as_ref(), CF_MEJEPA_ACTIVE_LEARNING_LABELS)?)
+        .context("flush operator override active-learning label CF")?;
     let override_readback = load_operator_override(db.as_ref(), prediction_id)
         .map_err(|err| anyhow!("{err}"))?
         .ok_or_else(|| anyhow!("MEJEPA_OPERATOR_OVERRIDE_READBACK_MISSING"))?;
@@ -2501,6 +2503,85 @@ mod mejepa_constellation_inspect_tests {
         );
     }
 
+    #[tokio::test]
+    async fn mejepa_operator_override_prediction_persists_override_and_label() {
+        let (handlers, _handler_tempdir) =
+            crate::handlers::tests::create_protocol_test_handlers().await;
+        let tmp = TempDir::new().unwrap();
+        let infer_db = tmp.path().join("infer-db");
+        let prediction = inspect_prediction_fixture([0x60; 16], "src/lib.rs#fn#override");
+        let prediction_id = PredictionId(prediction.prediction_id);
+        let db = open_infer_rocksdb(&infer_db).unwrap();
+        persist_prediction_and_dda(db.clone(), &prediction);
+        drop(db);
+
+        let response = handlers
+            .call_mejepa_operator_override_prediction(
+                Some(JsonRpcId::Number(60)),
+                json!({
+                    "dbPath": infer_db.display().to_string(),
+                    "predictionId": hex::encode(prediction.prediction_id),
+                    "overrideVerdict": "fail",
+                    "reason": "operator readback test",
+                    "operatorId": "operator-override-unit-test"
+                }),
+            )
+            .await;
+        assert!(response.error.is_none());
+        let result = response.result.unwrap();
+        assert_eq!(result["isError"], false);
+        let structured = &result["structuredContent"];
+        assert_eq!(structured["status"], "recorded");
+        assert_eq!(structured["operatorOverrideCountBefore"], 0);
+        assert_eq!(structured["operatorOverrideCountAfter"], 1);
+        assert_eq!(structured["samplingWeightMultiplier"], 6.0);
+        assert_eq!(
+            structured["sourceOfTruth"]["overrideCf"],
+            json!(CF_MEJEPA_OPERATOR_OVERRIDES)
+        );
+        assert_eq!(
+            structured["sourceOfTruth"]["labelCf"],
+            json!(CF_MEJEPA_ACTIVE_LEARNING_LABELS)
+        );
+        assert_eq!(structured["readback"]["overrideFlagForNextBatch"], true);
+
+        let reopened = open_infer_rocksdb(&infer_db).unwrap();
+        let override_readback = load_operator_override(reopened.as_ref(), prediction_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(override_readback.override_verdict, OverrideVerdict::Fail);
+        assert_eq!(override_readback.reason, "operator readback test");
+        let eval_store = RocksDbEvalStore::new(reopened.clone()).unwrap();
+        let label_readback = eval_store.load_label(&prediction.task_id).unwrap().unwrap();
+        assert_eq!(
+            label_readback.oracle_outcome,
+            context_graph_mejepa::OracleOutcome::Fail
+        );
+        assert_eq!(label_readback.method, LabelMethod::Human);
+        drop(eval_store);
+        drop(reopened);
+
+        let missing_response = handlers
+            .call_mejepa_operator_override_prediction(
+                Some(JsonRpcId::Number(61)),
+                json!({
+                    "dbPath": infer_db.display().to_string(),
+                    "predictionId": hex::encode([0x61; 16]),
+                    "overrideVerdict": "fail",
+                    "reason": "operator readback test",
+                    "operatorId": "operator-override-unit-test"
+                }),
+            )
+            .await;
+        let missing_result = missing_response.result.unwrap();
+        assert_eq!(missing_result["isError"], true);
+        let missing_text = missing_result["content"][0]["text"].as_str().unwrap();
+        assert!(
+            missing_text.contains("CF_MEJEPA_LIVE_PREDICTIONS"),
+            "{missing_text}"
+        );
+    }
+
     fn versions(seed: u8) -> BTreeMap<EmbedderId, [u8; 32]> {
         EmbedderId::all()
             .into_iter()
@@ -2878,7 +2959,7 @@ mod mejepa_constellation_inspect_tests {
                     && missing_prediction_result["content"][0]["text"]
                         .as_str()
                         .unwrap()
-                        .contains("was not found in CF_MEJEPA_LIVE_PREDICTIONS")
+                        .contains("CF_MEJEPA_LIVE_PREDICTIONS")
             }),
             json!({
                 "case": "missing_dda_signal_row_fails_closed",
@@ -2946,7 +3027,12 @@ mod mejepa_constellation_inspect_tests {
                 "infer_db": physical_file_summary(&infer_db)
             }
         });
-        assert_eq!(report["all_passed"], true);
+        assert_eq!(
+            report["all_passed"],
+            true,
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap()
+        );
         let evidence_path = fsv_root.join("inspect_prediction_fsv.json");
         write_fsv_json(&evidence_path, &report);
         let readback: Value = serde_json::from_slice(&fs::read(&evidence_path).unwrap()).unwrap();
@@ -3004,6 +3090,235 @@ mod mejepa_constellation_inspect_tests {
             .as_str()
             .unwrap()
             .contains("MEJEPA_PREDICTION_REPLAY_NOT_FOUND"));
+    }
+
+    #[tokio::test]
+    async fn mejepa_operator_override_prediction_writes_phase_f_fsv_artifact() {
+        let (handlers, _handler_tempdir) =
+            crate::handlers::tests::create_protocol_test_handlers().await;
+        let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
+        let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-operator-override-fsv");
+        fs::create_dir_all(&fsv_root).unwrap();
+        let run_root = fsv_root.join(format!(
+            "mcp-run-{}-{}",
+            started_at_unix_ms,
+            std::process::id()
+        ));
+        fs::create_dir_all(&run_root).unwrap();
+        let infer_db = run_root.join("infer-db");
+
+        let prediction = inspect_prediction_fixture([0x60; 16], "src/lib.rs#fn#override");
+        let db = open_infer_rocksdb(&infer_db).unwrap();
+        let cf_counts_before = json!({
+            CF_MEJEPA_LIVE_PREDICTIONS: count_cf_any(db.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS).unwrap(),
+            CF_MEJEPA_OPERATOR_OVERRIDES: count_cf_any(db.as_ref(), CF_MEJEPA_OPERATOR_OVERRIDES).unwrap(),
+            CF_MEJEPA_ACTIVE_LEARNING_LABELS: count_cf_any(db.as_ref(), CF_MEJEPA_ACTIVE_LEARNING_LABELS).unwrap()
+        });
+        persist_prediction_and_dda(db.clone(), &prediction);
+        drop(db);
+
+        let response = handlers
+            .call_mejepa_operator_override_prediction(
+                Some(JsonRpcId::Number(600)),
+                json!({
+                    "predictionId": hex::encode(prediction.prediction_id),
+                    "dbPath": infer_db.display().to_string(),
+                    "overrideVerdict": "fail",
+                    "reason": "operator observed oracle failure",
+                    "operatorId": "operator-1"
+                }),
+            )
+            .await;
+        assert!(response.error.is_none());
+        let result = response.result.unwrap();
+        let structured = result["structuredContent"].clone();
+        let happy_pass = result["isError"] == false
+            && structured["samplingWeightMultiplier"].as_f64() == Some(6.0)
+            && structured["operatorOverrideCountAfter"].as_u64() == Some(1)
+            && structured["report"]["operatorOverrideCount"].as_u64() == Some(1)
+            && structured["report"]["activeLearningLabelMethod"] == json!("human")
+            && structured["report"]["activeLearningOracleOutcome"] == json!("fail")
+            && structured["sourceOfTruth"]["overrideCf"] == json!(CF_MEJEPA_OPERATOR_OVERRIDES)
+            && structured["sourceOfTruth"]["labelCf"] == json!(CF_MEJEPA_ACTIVE_LEARNING_LABELS)
+            && structured["readback"]["overrideFlagForNextBatch"] == json!(true)
+            && structured["readback"]["override"]["reason"]
+                == json!("operator observed oracle failure");
+        assert!(happy_pass, "{structured}");
+
+        let reopened = open_infer_rocksdb(&infer_db).unwrap();
+        let override_readback =
+            load_operator_override(reopened.as_ref(), PredictionId(prediction.prediction_id))
+                .unwrap()
+                .unwrap();
+        let eval_store = RocksDbEvalStore::new(reopened.clone()).unwrap();
+        let label_readback = eval_store.load_label(&prediction.task_id).unwrap().unwrap();
+        let cf_counts_after = json!({
+            CF_MEJEPA_LIVE_PREDICTIONS: count_cf_any(reopened.as_ref(), CF_MEJEPA_LIVE_PREDICTIONS).unwrap(),
+            CF_MEJEPA_OPERATOR_OVERRIDES: count_cf_any(reopened.as_ref(), CF_MEJEPA_OPERATOR_OVERRIDES).unwrap(),
+            CF_MEJEPA_ACTIVE_LEARNING_LABELS: count_cf_any(reopened.as_ref(), CF_MEJEPA_ACTIVE_LEARNING_LABELS).unwrap()
+        });
+        let independent_reopen_equal = override_readback.reason
+            == "operator observed oracle failure"
+            && override_readback.override_verdict == OverrideVerdict::Fail
+            && label_readback.method == LabelMethod::Human
+            && label_readback.oracle_outcome == context_graph_mejepa::OracleOutcome::Fail;
+        drop(eval_store);
+        drop(reopened);
+
+        let malformed_response = handlers
+            .call_mejepa_operator_override_prediction(
+                Some(JsonRpcId::Number(601)),
+                json!({
+                    "predictionId": "not-hex",
+                    "dbPath": infer_db.display().to_string(),
+                    "overrideVerdict": "fail",
+                    "reason": "x",
+                    "operatorId": "operator-1"
+                }),
+            )
+            .await;
+        let malformed_result = malformed_response.result.unwrap();
+
+        let missing_response = handlers
+            .call_mejepa_operator_override_prediction(
+                Some(JsonRpcId::Number(602)),
+                json!({
+                    "predictionId": hex::encode([0x61; 16]),
+                    "dbPath": infer_db.display().to_string(),
+                    "overrideVerdict": "fail",
+                    "reason": "x",
+                    "operatorId": "operator-1"
+                }),
+            )
+            .await;
+        let missing_result = missing_response.result.unwrap();
+
+        let empty_reason_response = handlers
+            .call_mejepa_operator_override_prediction(
+                Some(JsonRpcId::Number(603)),
+                json!({
+                    "predictionId": hex::encode(prediction.prediction_id),
+                    "dbPath": infer_db.display().to_string(),
+                    "overrideVerdict": "fail",
+                    "reason": "  ",
+                    "operatorId": "operator-1"
+                }),
+            )
+            .await;
+        let empty_reason_result = empty_reason_response.result.unwrap();
+
+        let unknown_field_response = handlers
+            .call_mejepa_operator_override_prediction(
+                Some(JsonRpcId::Number(604)),
+                json!({
+                    "predictionId": hex::encode(prediction.prediction_id),
+                    "dbPath": infer_db.display().to_string(),
+                    "overrideVerdict": "fail",
+                    "reason": "x",
+                    "operatorId": "operator-1",
+                    "extra": true
+                }),
+            )
+            .await;
+        let unknown_field_result = unknown_field_response.result.unwrap();
+
+        let boundary_cases = vec![
+            json!({
+                "case": "malformed_prediction_id_fails_closed",
+                "expected": "predictionId must be exactly 32 hexadecimal characters",
+                "actual": malformed_result,
+                "pass": malformed_result["isError"] == true
+                    && malformed_result["content"][0]["text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("predictionId must be exactly 32 hexadecimal characters")
+            }),
+            json!({
+                "case": "missing_prediction_row_fails_closed",
+                "expected": "not found in CF_MEJEPA_LIVE_PREDICTIONS",
+                "actual": missing_result,
+                "pass": missing_result["isError"] == true
+                    && missing_result["content"][0]["text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("was not found in CF_MEJEPA_LIVE_PREDICTIONS")
+            }),
+            json!({
+                "case": "empty_reason_fails_closed",
+                "expected": "MEJEPA_OPERATOR_OVERRIDE_REASON_EMPTY",
+                "actual": empty_reason_result,
+                "pass": empty_reason_result["isError"] == true
+                    && empty_reason_result["content"][0]["text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("MEJEPA_OPERATOR_OVERRIDE_REASON_EMPTY")
+            }),
+            json!({
+                "case": "unknown_request_field_fails_schema_validation",
+                "expected": "schema validation failed",
+                "actual": unknown_field_result,
+                "pass": unknown_field_result["isError"] == true
+                    && unknown_field_result["content"][0]["text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("schema validation failed")
+            }),
+        ];
+        let all_boundaries_pass = boundary_cases
+            .iter()
+            .all(|case| case["pass"].as_bool() == Some(true));
+        let report = json!({
+            "fsv_root": fsv_root,
+            "task_id": "TASK-PREDICT-012",
+            "issue": 60,
+            "started_at_unix_ms": started_at_unix_ms,
+            "build_release_sha": std::process::Command::new("git")
+                .args(["rev-parse", "--short", "HEAD"])
+                .output()
+                .ok()
+                .and_then(|out| String::from_utf8(out.stdout).ok())
+                .map(|text| text.trim().to_string())
+                .unwrap_or_else(|| "unknown".to_string()),
+            "happy_path": [{
+                "case": "mcp_operator_override_persists_override_and_human_label",
+                "sot": format!("{CF_MEJEPA_OPERATOR_OVERRIDES} + {CF_MEJEPA_ACTIVE_LEARNING_LABELS}"),
+                "before": {
+                    "db_path": infer_db.display().to_string(),
+                    "prediction_id": hex::encode(prediction.prediction_id)
+                },
+                "trigger": "cargo test -p context-graph-mcp mejepa_operator_override_prediction_writes_phase_f_fsv_artifact -- --nocapture",
+                "after": structured,
+                "expected": {
+                    "sampling_weight_multiplier": 6.0,
+                    "override_count_after": 1,
+                    "label_method": "human",
+                    "label_oracle_outcome": "fail"
+                },
+                "actual": happy_pass,
+                "pass": happy_pass,
+                "evidence_path": run_root.display().to_string()
+            }],
+            "boundary_cases": boundary_cases,
+            "all_passed": happy_pass && all_boundaries_pass && independent_reopen_equal,
+            "cf_counts_before": cf_counts_before,
+            "cf_counts_after": cf_counts_after,
+            "readback_equal": independent_reopen_equal,
+            "physical_artifacts": {
+                "infer_db_exists": infer_db.exists(),
+                "run_root": run_root.display().to_string(),
+                "infer_db": physical_file_summary(&infer_db)
+            }
+        });
+        let evidence_path = fsv_root.join("operator_override_mcp_fsv.json");
+        write_fsv_json(&evidence_path, &report);
+        let readback: Value = serde_json::from_slice(&fs::read(&evidence_path).unwrap()).unwrap();
+        assert_eq!(
+            readback["all_passed"],
+            true,
+            "{}",
+            serde_json::to_string_pretty(&readback).unwrap()
+        );
+        assert_eq!(readback["readback_equal"], true);
     }
 
     #[test]

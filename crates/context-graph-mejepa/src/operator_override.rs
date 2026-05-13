@@ -2,9 +2,9 @@
 //!
 //! Persists operator-supplied overrides for individual predictions
 //! into `CF_MEJEPA_OPERATOR_OVERRIDES`, keyed by prediction-id. The
-//! BatchSampler reads this CF and applies a `6.0x` sampling-weight
-//! multiplier to affected chunks for the next training batch (per
-//! `TECH-PREDICT §13`).
+//! Training callers read this CF as an operator-override flag and apply a
+//! `6.0x` sampling-weight multiplier to affected chunks for the next batch
+//! (per `TECH-PREDICT §13`).
 
 use context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_OVERRIDES;
 use rocksdb::{WriteOptions, DB};
@@ -89,7 +89,7 @@ pub enum OperatorOverrideError {
     PredictionIdZero,
     #[error("MEJEPA_OPERATOR_OVERRIDE_REASON_EMPTY: reason must be non-empty")]
     ReasonEmpty,
-    #[error("MEJEPA_OPERATOR_OVERRIDE_REASON_TOO_LONG: reason capped at 4096 chars")]
+    #[error("MEJEPA_OPERATOR_OVERRIDE_REASON_TOO_LONG: reason capped at 4096 bytes")]
     ReasonTooLong,
     #[error("MEJEPA_OPERATOR_OVERRIDE_REASON_INVALID: reason must contain no control characters")]
     ReasonInvalid,
@@ -149,6 +149,9 @@ pub fn load_operator_override(
     db: &DB,
     prediction_id: PredictionId,
 ) -> Result<Option<OperatorOverride>, OperatorOverrideError> {
+    if prediction_id.0 == [0_u8; 16] {
+        return Err(OperatorOverrideError::PredictionIdZero);
+    }
     let cf = db
         .cf_handle(CF_MEJEPA_OPERATOR_OVERRIDES)
         .ok_or(OperatorOverrideError::CfMissing)?;
