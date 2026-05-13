@@ -1,12 +1,16 @@
 // Inspired by ruvnet/RuVector at HEAD ef5274c2 (clean-room reimplementation).
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use rocksdb::WriteBatch;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::entry::EntryId;
-use crate::error::OpsResult;
+use crate::error::{OpsError, OpsResult};
 use crate::quota::{quota_check_and_evict, quota_status};
 use crate::reports::{GcReport, GcStepReport};
 use crate::retention::{load_retention_policy, retained_by_rule, RetentionRule};
@@ -27,6 +31,9 @@ pub fn gc_run_nightly(env: &HygieneEnv) -> OpsResult<GcReport> {
         Ok(serde_json::to_value(tier_demote_all(env)?)?)
     })?);
     steps.push(step("compact_cf", || compact_hygiene_cfs(env))?);
+    steps.push(step("archive_timestamped_rows", || {
+        archive_expired_timestamped_rows(env, &retention_rules)
+    })?);
     steps.push(step("quota_check_and_evict", || {
         Ok(serde_json::to_value(quota_check_and_evict(env)?)?)
     })?);
@@ -96,6 +103,293 @@ fn compact_hygiene_cfs(env: &HygieneEnv) -> OpsResult<serde_json::Value> {
         compacted.push(cf_name);
     }
     Ok(serde_json::json!({ "compactedColumnFamilies": compacted }))
+}
+
+fn archive_expired_timestamped_rows(
+    env: &HygieneEnv,
+    retention_rules: &BTreeMap<String, RetentionRule>,
+) -> OpsResult<serde_json::Value> {
+    let cold_root = cold_archive_root(&env.config.archive_root);
+    let mut reports = Vec::new();
+    for cf_name in [
+        context_graph_mejepa_cf::CF_MEJEPA_AGENT_FEEDBACK,
+        context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_OVERRIDES,
+    ] {
+        let Some(rule) = retention_rules.get(cf_name) else {
+            reports.push(serde_json::json!({
+                "cf": cf_name,
+                "retentionPolicyActive": false,
+                "archived": 0,
+                "retained": scan_cf(&env.config.db, cf_name)?.len()
+            }));
+            continue;
+        };
+        let report = archive_expired_rows_for_cf(env, cf_name, rule, &cold_root)?;
+        reports.push(serde_json::to_value(report)?);
+    }
+    Ok(serde_json::json!({
+        "coldArchiveRoot": cold_root,
+        "columnFamilies": reports
+    }))
+}
+
+fn archive_expired_rows_for_cf(
+    env: &HygieneEnv,
+    cf_name: &str,
+    rule: &RetentionRule,
+    cold_root: &Path,
+) -> OpsResult<TimestampedCfArchiveReport> {
+    let rows = scan_cf(&env.config.db, cf_name)?;
+    let now_millis = env.now_unix().saturating_mul(1_000);
+    let ttl_millis = i64::from(rule.minimum_retention_days).saturating_mul(86_400_000);
+    let mut batch = WriteBatch::default();
+    let mut archives = Vec::new();
+    let mut retained = 0usize;
+
+    for (key, value) in rows {
+        let row_timestamp_millis = timestamp_millis_for_row(cf_name, &value)?;
+        if !timestamp_is_expired(row_timestamp_millis, now_millis, ttl_millis) {
+            retained += 1;
+            continue;
+        }
+        let archive = write_timestamped_row_archive(
+            cold_root,
+            cf_name,
+            &key,
+            &value,
+            row_timestamp_millis,
+            env.now_unix(),
+            rule,
+        )?;
+        batch.delete_cf(cf(&env.config.db, cf_name)?, &key);
+        archives.push(archive);
+    }
+
+    if !archives.is_empty() {
+        env.config.db.write(batch)?;
+        for archive in &archives {
+            verify_archived_row_deleted(env, cf_name, archive)?;
+        }
+    }
+
+    Ok(TimestampedCfArchiveReport {
+        cf: cf_name.to_string(),
+        retention_class: rule.retention_class.clone(),
+        minimum_retention_days: rule.minimum_retention_days,
+        retention_policy_active: true,
+        archived: archives.len(),
+        retained,
+        archives,
+    })
+}
+
+fn timestamp_is_expired(row_timestamp_millis: i64, now_millis: i64, ttl_millis: i64) -> bool {
+    if row_timestamp_millis > now_millis {
+        return false;
+    }
+    now_millis.saturating_sub(row_timestamp_millis) > ttl_millis
+}
+
+fn timestamp_millis_for_row(cf_name: &str, value: &[u8]) -> OpsResult<i64> {
+    let timestamp = match cf_name {
+        context_graph_mejepa_cf::CF_MEJEPA_AGENT_FEEDBACK => {
+            let row: serde_json::Value = serde_json::from_slice(value)?;
+            row.get("ts_millis")
+                .and_then(serde_json::Value::as_i64)
+                .ok_or_else(|| {
+                    OpsError::invalid(
+                        "retention.ts_millis",
+                        "CF_MEJEPA_AGENT_FEEDBACK row missing integer ts_millis",
+                    )
+                })?
+        }
+        context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_OVERRIDES => {
+            let row: OperatorOverrideRetentionRow = bincode::deserialize(value).map_err(|err| {
+                OpsError::invalid(
+                    "retention.created_at_unix_ms",
+                    format!("CF_MEJEPA_OPERATOR_OVERRIDES row failed decode: {err}"),
+                )
+            })?;
+            row.created_at_unix_ms
+        }
+        other => {
+            return Err(OpsError::invalid(
+                "retention.cf_name",
+                format!("unsupported timestamped retention CF {other}"),
+            ));
+        }
+    };
+    if timestamp < 0 {
+        return Err(OpsError::invalid(
+            "retention.timestamp_millis",
+            format!("timestamp must be non-negative; got {timestamp}"),
+        ));
+    }
+    Ok(timestamp)
+}
+
+fn cold_archive_root(archive_root: &Path) -> PathBuf {
+    if archive_root.file_name().and_then(|name| name.to_str()) == Some("cold") {
+        return archive_root.to_path_buf();
+    }
+    if archive_root.file_name().and_then(|name| name.to_str()) == Some("witness") {
+        if let Some(parent) = archive_root.parent() {
+            if parent.file_name().and_then(|name| name.to_str()) == Some("storage") {
+                return parent.join("cold");
+            }
+        }
+    }
+    archive_root.join("cold")
+}
+
+fn write_timestamped_row_archive(
+    cold_root: &Path,
+    cf_name: &str,
+    key: &[u8],
+    value: &[u8],
+    row_timestamp_millis: i64,
+    archived_at_unix: i64,
+    rule: &RetentionRule,
+) -> OpsResult<TimestampedRowArchive> {
+    let value_sha256_hex = hex::encode(Sha256::digest(value));
+    let key_hex = hex::encode(key);
+    let file_name = format!("{key_hex}-{}.json", &value_sha256_hex[..12]);
+    let path = cold_root
+        .join("timestamped-retention")
+        .join(cf_name)
+        .join(file_name);
+    let archive = TimestampedRowArchive {
+        schema: "mejepa_timestamped_retention_archive_v1".to_string(),
+        cf_name: cf_name.to_string(),
+        key_hex,
+        row_timestamp_millis,
+        archived_at_unix,
+        retention_class: rule.retention_class.clone(),
+        minimum_retention_days: rule.minimum_retention_days,
+        value_encoding: value_encoding_for_cf(cf_name).to_string(),
+        value_len_bytes: value.len() as u64,
+        value_sha256_hex,
+        value_hex: hex::encode(value),
+        archive_path: path.clone(),
+    };
+    write_synced_json(&path, &archive)?;
+    Ok(archive)
+}
+
+fn verify_archived_row_deleted(
+    env: &HygieneEnv,
+    cf_name: &str,
+    archive: &TimestampedRowArchive,
+) -> OpsResult<()> {
+    let key = hex::decode(&archive.key_hex).map_err(|err| {
+        OpsError::invalid(
+            "retention.archive_key_hex",
+            format!("archive key hex failed decode: {err}"),
+        )
+    })?;
+    let row = env.config.db.get_cf(cf(&env.config.db, cf_name)?, key)?;
+    if row.is_some() {
+        return Err(OpsError::invalid(
+            "retention.archive_delete_readback",
+            format!("{cf_name} row {} remained after archive", archive.key_hex),
+        ));
+    }
+    let bytes = fs::read(&archive.archive_path)
+        .map_err(|err| OpsError::io("read", &archive.archive_path, err))?;
+    let decoded: TimestampedRowArchive = serde_json::from_slice(&bytes)?;
+    if decoded.value_sha256_hex != archive.value_sha256_hex || decoded.key_hex != archive.key_hex {
+        return Err(OpsError::invalid(
+            "retention.archive_readback",
+            format!(
+                "archive readback mismatch for {}",
+                archive.archive_path.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn value_encoding_for_cf(cf_name: &str) -> &'static str {
+    match cf_name {
+        context_graph_mejepa_cf::CF_MEJEPA_AGENT_FEEDBACK => "json",
+        context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_OVERRIDES => "bincode",
+        _ => "unknown",
+    }
+}
+
+fn write_synced_json<T: Serialize>(path: &Path, value: &T) -> OpsResult<()> {
+    let parent = path.parent().ok_or_else(|| {
+        OpsError::invalid(
+            "retention.archive_path",
+            format!("archive path {} has no parent", path.display()),
+        )
+    })?;
+    fs::create_dir_all(parent).map_err(|err| OpsError::io("create_dir_all", parent, err))?;
+    let tmp_path = path.with_extension(format!("json.{}.tmp", std::process::id()));
+    let bytes = serde_json::to_vec_pretty(value)?;
+    {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&tmp_path)
+            .map_err(|err| OpsError::io("open", &tmp_path, err))?;
+        file.write_all(&bytes)
+            .map_err(|err| OpsError::io("write_all", &tmp_path, err))?;
+        file.sync_all()
+            .map_err(|err| OpsError::io("sync_all", &tmp_path, err))?;
+    }
+    fs::rename(&tmp_path, path).map_err(|err| OpsError::io("rename", &tmp_path, err))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TimestampedCfArchiveReport {
+    cf: String,
+    retention_class: String,
+    minimum_retention_days: u32,
+    #[serde(rename = "retentionPolicyActive")]
+    retention_policy_active: bool,
+    archived: usize,
+    retained: usize,
+    archives: Vec<TimestampedRowArchive>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TimestampedRowArchive {
+    schema: String,
+    cf_name: String,
+    key_hex: String,
+    row_timestamp_millis: i64,
+    archived_at_unix: i64,
+    retention_class: String,
+    minimum_retention_days: u32,
+    value_encoding: String,
+    value_len_bytes: u64,
+    value_sha256_hex: String,
+    value_hex: String,
+    archive_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OperatorOverrideRetentionRow {
+    _prediction_id: [u8; 16],
+    _override_verdict: OperatorOverrideRetentionVerdict,
+    _reason: String,
+    _operator_id: String,
+    created_at_unix_ms: i64,
+    _sampling_weight_multiplier: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+enum OperatorOverrideRetentionVerdict {
+    Pass,
+    Fail,
+    Abstain,
+    OutOfDistribution,
 }
 
 fn prune_cf_keep_latest(

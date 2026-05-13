@@ -125,4 +125,20 @@ mod tests {
         let err = policy.validate().unwrap_err();
         assert_eq!(err.code, "MEJEPA_HYGIENE_INVALID_CONFIG");
     }
+
+    #[test]
+    fn default_policy_declares_feedback_and_override_retention() {
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/retention_policy.toml");
+        let policy = load_retention_policy(path).unwrap();
+        let by_cf = policy.by_cf().unwrap();
+
+        for cf_name in [
+            context_graph_mejepa_cf::CF_MEJEPA_AGENT_FEEDBACK,
+            context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_OVERRIDES,
+        ] {
+            let rule = by_cf.get(cf_name).expect("CF must have a retention rule");
+            assert_eq!(rule.minimum_retention_days, 365);
+        }
+    }
 }

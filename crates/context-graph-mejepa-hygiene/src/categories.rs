@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub const BYTES_PER_GB: u64 = 1024 * 1024 * 1024;
 pub const DEFAULT_TOTAL_QUOTA_BYTES: u64 = 115 * BYTES_PER_GB;
 const DEFAULT_CATEGORY_BUDGET_TOTAL_BYTES: u64 =
-    (5 + 50 + 10 + 20 + 4 + 20 + 5 + 2) * BYTES_PER_GB + (BYTES_PER_GB / 2);
+    (5 + 50 + 10 + 20 + 4 + 20 + 5 + 2 + 2) * BYTES_PER_GB + (BYTES_PER_GB / 2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -18,11 +18,12 @@ pub enum StorageCategory {
     LivePanelDiskOverflow,
     CalibrationSnapshots,
     AuxSignalsOverrides,
+    AgentFeedbackAndOverrides,
     ShiftLogSubscriberState,
 }
 
 impl StorageCategory {
-    pub fn all() -> [Self; 9] {
+    pub fn all() -> [Self; 10] {
         [
             Self::MutationCorpus,
             Self::LiveAttemptCorpus,
@@ -32,6 +33,7 @@ impl StorageCategory {
             Self::LivePanelDiskOverflow,
             Self::CalibrationSnapshots,
             Self::AuxSignalsOverrides,
+            Self::AgentFeedbackAndOverrides,
             Self::ShiftLogSubscriberState,
         ]
     }
@@ -46,6 +48,7 @@ impl StorageCategory {
             Self::LivePanelDiskOverflow => "live_panel_disk_overflow",
             Self::CalibrationSnapshots => "calibration_snapshots",
             Self::AuxSignalsOverrides => "aux_signals_overrides",
+            Self::AgentFeedbackAndOverrides => "agent_feedback_and_overrides",
             Self::ShiftLogSubscriberState => "shift_log_subscriber_state",
         }
     }
@@ -60,6 +63,7 @@ impl StorageCategory {
             Self::LivePanelDiskOverflow => 20 * BYTES_PER_GB,
             Self::CalibrationSnapshots => 5 * BYTES_PER_GB,
             Self::AuxSignalsOverrides => 2 * BYTES_PER_GB,
+            Self::AgentFeedbackAndOverrides => 2 * BYTES_PER_GB,
             Self::ShiftLogSubscriberState => BYTES_PER_GB / 2,
         }
     }
@@ -84,6 +88,9 @@ impl StorageCategory {
             Self::LivePanelDiskOverflow => &[CF_MEJEPA_PANEL_DISK_OVERFLOW],
             Self::CalibrationSnapshots => &[CF_MEJEPA_CALIBRATION_HISTORY],
             Self::AuxSignalsOverrides => &[CF_MEJEPA_AUX_SIGNALS_OVERRIDES],
+            Self::AgentFeedbackAndOverrides => {
+                &[CF_MEJEPA_AGENT_FEEDBACK, CF_MEJEPA_OPERATOR_OVERRIDES]
+            }
             Self::ShiftLogSubscriberState => &[CF_MEJEPA_SHIFT_WATERMARK],
         }
     }
@@ -92,5 +99,22 @@ impl StorageCategory {
         Self::all()
             .into_iter()
             .find(|category| category.cf_names().contains(&cf_name))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn feedback_and_operator_override_cfs_are_quota_accounted() {
+        assert_eq!(
+            StorageCategory::from_cf(context_graph_mejepa_cf::CF_MEJEPA_AGENT_FEEDBACK),
+            Some(StorageCategory::AgentFeedbackAndOverrides)
+        );
+        assert_eq!(
+            StorageCategory::from_cf(context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_OVERRIDES),
+            Some(StorageCategory::AgentFeedbackAndOverrides)
+        );
     }
 }
