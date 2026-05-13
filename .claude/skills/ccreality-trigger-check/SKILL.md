@@ -1,17 +1,12 @@
 ---
 name: ccreality-trigger-check
-description: Read the latest ccreality trigger decision and report whether an optimizer turn should run, why, and what artifacts changed since the last turn.
+description: Retired historical skill. Do not invoke; the post-pivot /loop workflow no longer uses inner-loop trigger checks.
+status: retired
+superseded_by: .claude/loop.md
 ---
 
 # ccreality-trigger-check
 
-Step 1 - Pull. Call `mcp__cgreality__reality_latest_root`, then `mcp__cgreality__reality_trigger_decision` for the latest attempt.
+This skill is retired. It is kept only as historical provenance for the pre-pivot trigger-check workflow.
 
-Step 2 - Report. Output a short Markdown report:
-- Should run? yes | no
-- Policy: ...
-- Reasons: bullet list
-- Source of truth: file:...
-- If should_run is true, suggest invoking `/ccreality-iterate` next.
-
-Do not edit anything. Do not call alter tools. This is a read-only status command.
+Do not invoke this skill and do not use it to decide whether a local inner actor should run. Use `.claude/loop.md` and the current ME-JEPA outer-loop workflow instead.

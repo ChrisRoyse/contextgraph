@@ -263,6 +263,7 @@ This phase is **operational, not implementation**. The system is built; this pha
 | `TASK-LOOP-004` | Retire legacy MCP tools (mark fail-closed, update tool registry) | **complete (#133)** — retired names excluded from tool definitions and fail closed through `CCREALITY_ENGINE_RETIRED`; FSV at `/mnt/d/contextgraph/fsv/phase-h-retired-mcp-tools-fsv/retired_mcp_tools_fsv.json` |
 | `TASK-LOOP-005` | Confirm absence of inner-actor model files (audit script) | **complete (#134)** — FSV at `/mnt/d/contextgraph/fsv/phase-h-no-inner-actor-models-fsv/no_inner_actor_models_fsv.json` |
 | `TASK-LOOP-006` | Delete stale `target/release/reality-loop` binary if present | **complete (#135)** — FSV at `/mnt/d/contextgraph/fsv/phase-h-reality-loop-binary-absence-fsv/reality_loop_binary_absence_fsv.json` |
+| `TASK-LOOP-008` | Verify deletion list fully applied | **complete (#136)** — audit report at `memory/reports/phase-h-deletion-list-audit.md`; FSV at `/mnt/d/contextgraph/fsv/phase-h-deletion-list-audit-fsv/deletion_list_audit_fsv.json` |
 | `TASK-LOOP-009` | Update CLAUDE.md inner-loop references | **complete (#137)** — FSV at `/mnt/d/contextgraph/fsv/phase-h-claude-inner-loop-reference-fsv/claude_inner_loop_reference_fsv.json` |
 | `TASK-LOOP-010` | Update agents/README.md retirements | **complete (#138)** — FSV at `/mnt/d/contextgraph/fsv/phase-h-agent-roster-retirement-fsv/agent_roster_retirement_fsv.json` |
 | `TASK-LOOP-011` | Audit `CCREALITY_ENGINE_RETIRED` gate coverage for retired MCP endpoints | **complete (#139)** — FSV at `/mnt/d/contextgraph/fsv/phase-h-ccreality-engine-retired-fsv/ccreality_engine_retired_gate_fsv.json` |
@@ -273,6 +274,7 @@ This phase is **operational, not implementation**. The system is built; this pha
 2. SMAP supersession is consistent (no active decision asserts the retired inner-actor contract; legacy decisions have `superseded_by` pointers). **Passed for TASK-LOOP-003 on 2026-05-13.**
 3. CLAUDE.md + `agents/README.md` reflect current state. **Passed on 2026-05-13 (#137/#138).**
 4. `scripts/` and `config/` contain no active Qwen/Hermes/Ollama/llama.cpp code paths. **Passed on 2026-05-13 (#140).**
+5. The deletion list has an entry-by-entry APPLIED/SKIPPED audit with deterministic spot checks. **Passed on 2026-05-13 (#136).**
 
 ---
 

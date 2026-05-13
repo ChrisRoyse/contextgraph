@@ -1,6 +1,6 @@
 ---
 name: ccreality-readback
-description: Re-read the most recent N ccreality optimizer recommendations and verify each one's claimed source-of-truth files still exist with matching SHAs. Use to detect drift after long pauses or git operations.
+description: Re-read recent optimizer recommendations and verify each one's claimed source-of-truth files still exist with matching SHAs. Use to detect drift after long pauses or git operations.
 ---
 
 # ccreality-readback
@@ -20,4 +20,4 @@ Step 3 - Report:
 |----------------|----------------|-------|
 | file:... | N | none / file:... mismatch |
 
-If drift is detected, advise the operator to re-run `/ccreality-iterate` to mint a fresh recommendation against current reality.
+If drift is detected, report the mismatched source-of-truth path and continue through the canonical `.claude/loop.md` workflow. Do not suggest retired ccreality iteration skills.

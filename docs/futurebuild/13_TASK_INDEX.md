@@ -270,12 +270,13 @@ The A-F implementation issues are closed for the Phase G handoff. Analyzer-backe
 | `TASK-LOOP-004` | Retire legacy MCP tools | H | none | **complete (#133)** — five retired cgreality compatibility names are excluded from tool definitions and fail closed with `CCREALITY_ENGINE_RETIRED`; FSV at `/mnt/d/contextgraph/fsv/phase-h-retired-mcp-tools-fsv/retired_mcp_tools_fsv.json` |
 | `TASK-LOOP-005` | Audit absence of inner-actor model files | H | none | **complete (#134)** — `scripts/audit/no_inner_actor_models.sh`; FSV at `/mnt/d/contextgraph/fsv/phase-h-no-inner-actor-models-fsv/no_inner_actor_models_fsv.json` |
 | `TASK-LOOP-006` | Delete stale `target/release/reality-loop` binary | H | none | **complete (#135)** — `scripts/ci/phase_h_reality_loop_binary_absence_fsv.sh`; FSV at `/mnt/d/contextgraph/fsv/phase-h-reality-loop-binary-absence-fsv/reality_loop_binary_absence_fsv.json` |
+| `TASK-LOOP-008` | Verify `11_DELETION_LIST_INNER_LOOP` fully applied | H | LOOP-003..006, LOOP-009..012 | **complete (#136)** — entry-by-entry audit report at `memory/reports/phase-h-deletion-list-audit.md`, retired skill cleanup, stale `memory/context/current-phase.md` rewrite, and FSV at `/mnt/d/contextgraph/fsv/phase-h-deletion-list-audit-fsv/deletion_list_audit_fsv.json` |
 | `TASK-LOOP-009` | Update CLAUDE.md inner-loop references | H | none | **complete (#137)** — remaining references are retirement/deny/fail-closed guidance; FSV at `/mnt/d/contextgraph/fsv/phase-h-claude-inner-loop-reference-fsv/claude_inner_loop_reference_fsv.json` |
 | `TASK-LOOP-010` | Update agents/README.md retirements | H | none | **complete (#138)** — retired agent frontmatter + active roster FSV at `/mnt/d/contextgraph/fsv/phase-h-agent-roster-retirement-fsv/agent_roster_retirement_fsv.json` |
 | `TASK-LOOP-011` | `CCREALITY_ENGINE_RETIRED` gate audit | H | LOOP-004 | **complete (#139)** — all five retired endpoints have unit fail-closed coverage, one JSON-RPC round-trip structured-error test, and fmt/check/clippy FSV at `/mnt/d/contextgraph/fsv/phase-h-ccreality-engine-retired-fsv/ccreality_engine_retired_gate_fsv.json` |
 | `TASK-LOOP-012` | Remove orphaned scripts/config inner-LLM references | H | LOOP-005 | **complete (#140)** — `scripts/ci/phase_h_scripts_config_inner_llm_residue_fsv.sh` classifies scripts/config matches as retired-audit, generated snapshot, or explicit `historical, do not reanimate`; active disallowed count 0; four retired Shakespeare local-runtime helpers abort; FSV at `/mnt/d/contextgraph/fsv/phase-h-scripts-config-inner-llm-residue-fsv/scripts_config_inner_llm_residue_fsv.json` |
 
-**Phase H total: ~0.8 days.**
+**Phase H total: ~0.9 days.**
 
 ---
 

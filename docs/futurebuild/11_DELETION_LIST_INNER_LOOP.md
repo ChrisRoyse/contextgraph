@@ -100,11 +100,11 @@ The `memory/` SMAP tree has many decisions and reports that reference inner-acto
 
 | Skill | Action | Notes |
 |---|---|---|
-| `/ccreality-iterate` | RETIRE — supersede with `/loop` | one canonical skill |
-| `/ccreality-smoke` | KEEP — repurpose | now verifies daemon mode + shift subscriber + GC scheduler boot |
-| `/ccreality-trigger-check` | RETIRE | inner-actor drip trigger; concept gone |
-| `/ccreality-readback` | KEEP | drift detection on past recommendations is still useful |
-| `/loop` | REFACTOR per `14_NEW_LOOP_MD.md` | the canonical per-tick skill |
+| `/ccreality-iterate` | **RETIRED / audit-verified 2026-05-13 (#136)** | frontmatter `status: retired`; superseded by `.claude/loop.md` |
+| `/ccreality-smoke` | KEEP — repurpose | now verifies post-pivot retirement smoke and active CLI/MCP build surface |
+| `/ccreality-trigger-check` | **RETIRED / audit-verified 2026-05-13 (#136)** | frontmatter `status: retired`; inner-actor drip trigger is gone |
+| `/ccreality-readback` | **KEEP / audit-updated 2026-05-13 (#136)** | drift detection on past recommendations remains useful; no longer points operators to `/ccreality-iterate` |
+| `/loop` | **REFACTORED / audit-verified 2026-05-13 (#136)** | the canonical per-tick skill |
 
 ---
 
@@ -132,18 +132,16 @@ The `memory/` SMAP tree has many decisions and reports that reference inner-acto
 
 ## 10. CLAUDE.md updates
 
-CLAUDE.md §11 already reflects the post-pivot single-loop architecture. Three small updates needed:
+CLAUDE.md reflects the post-pivot single-loop architecture:
 
-1. **§11.11 (Operator-driven skills)**: mark `/ccreality-trigger-check` as retired; mark `/loop` as canonical (already correct in spirit; tighten language).
-2. **§13 (Support)**: replace `19_MIGRATION_RUNBOOK.md` reference with a pointer to `docs/futurebuild/12_IMPLEMENTATION_PHASES.md` once the new plan is the working document.
-3. **§3 (Directory layout)**: add `docs/futurebuild/` to the directory layout block.
+1. **Operator-driven skills**: **complete (#136)** — `/ccreality-trigger-check` and `/ccreality-iterate` are retired skill files; `.claude/loop.md` is canonical.
+2. **Support pointer**: **complete (#137/#136 audit)** — support points at `docs/futurebuild/00_INDEX.md` and the indexed futurebuild docs.
+3. **Directory layout**: **complete (#137/#136 audit)** — `docs/futurebuild/` is included through the `./docs/` futurebuild plan entry.
 4. **Inner-loop references**: **complete (#137)** — remaining CLAUDE.md mentions are retirement/deny/fail-closed compatibility guidance only; FSV at `/mnt/d/contextgraph/fsv/phase-h-claude-inner-loop-reference-fsv/claude_inner_loop_reference_fsv.json`.
-
-Items 1-3 are covered by `TASK-LOOP-002`; item 4 is covered by `TASK-LOOP-009`.
 
 ---
 
-## 11. `agents/README.md` updates
+## 11. `.claude/agents/README.md` updates
 
 The SMAP roster doc lists agents. Update:
 
