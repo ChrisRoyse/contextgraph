@@ -958,6 +958,7 @@ fn eval_report_with_cells(per_cell_correlation: BTreeMap<String, Option<f32>>) -
         )]),
         ood_calibration_health: BTreeMap::from([(Language::Rust, Some(0.90))]),
         gtau_pass_rate: BTreeMap::from([(Language::Rust, 0.98)]),
+        per_prediction_class_calibration: BTreeMap::new(),
         active_learning: ActiveLearningSummary {
             queued_count: 0,
             evicted_count: 0,

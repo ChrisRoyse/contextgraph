@@ -3,6 +3,7 @@ pub mod fixtures;
 pub mod graph;
 pub mod metrics;
 pub mod mi_heatmap_renderer;
+pub mod per_head_calibration_tracker;
 pub mod queue;
 pub mod report;
 pub mod runner;
@@ -22,6 +23,11 @@ pub use metrics::{
 pub use mi_heatmap_renderer::{
     load_pairwise_mi_heatmap_csv, render_pairwise_mi_heatmap, PairwiseMiHeatmapMatrix,
     PairwiseMiHeatmapRender,
+};
+pub use per_head_calibration_tracker::{
+    compute_calibration_for_samples, compute_prediction_class_calibration, CalibrationSample,
+    PredictionClassCalibration, PredictionClassCalibrationBin, DEFAULT_CALIBRATION_BIN_COUNT,
+    DEFAULT_ECE_TOLERANCE,
 };
 pub use queue::{
     ActiveLearningKind, ActiveLearningLabel, ActiveLearningQueueEntry, ActiveLearningQueueState,

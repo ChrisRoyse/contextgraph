@@ -1,4 +1,5 @@
 use super::error::{EvalError, EvalErrorCode};
+use super::per_head_calibration_tracker::PredictionClassCalibration;
 use crate::types::{Language, OracleOutcome, PatchBundle, RealityPrediction, TaskContext, TaskId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -249,6 +250,7 @@ pub struct EvalReport {
     pub conformal_coverage_health: BTreeMap<Language, ConformalHealthEntry>,
     pub ood_calibration_health: BTreeMap<Language, Option<f32>>,
     pub gtau_pass_rate: BTreeMap<Language, f32>,
+    pub per_prediction_class_calibration: BTreeMap<String, PredictionClassCalibration>,
     pub active_learning: ActiveLearningSummary,
     pub state_transfer_diagnostic: Option<StateTransferDiagnostic>,
     pub per_cell_state_transfer: BTreeMap<String, Option<StateTransferDiagnostic>>,
@@ -315,6 +317,18 @@ impl EvalReport {
         }
         for value in self.gtau_pass_rate.values() {
             validate_unit("gtau_pass_rate", *value)?;
+        }
+        for (class_name, calibration) in &self.per_prediction_class_calibration {
+            if class_name != &calibration.class_name {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!(
+                        "per_prediction_class_calibration key {class_name} does not match class_name {}",
+                        calibration.class_name
+                    ),
+                ));
+            }
+            calibration.validate(&format!("per_prediction_class_calibration.{class_name}"))?;
         }
         if let Some(diagnostic) = &self.state_transfer_diagnostic {
             diagnostic.validate("state_transfer_diagnostic")?;

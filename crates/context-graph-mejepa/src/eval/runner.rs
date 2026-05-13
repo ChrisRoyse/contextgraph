@@ -4,6 +4,7 @@ use super::metrics::{
     gtau_pass_rate_by_language, ood_auc_by_language, oracle_target_opt, ship_gate_failures,
     state_transfer_from_observations, ShipGateInputs,
 };
+use super::per_head_calibration_tracker::compute_prediction_class_calibration;
 use super::queue::ActiveLearningQueueState;
 use super::report::seed_open_research_questions;
 use super::store::RocksDbEvalStore;
@@ -86,6 +87,7 @@ impl EvalRunner {
         let conformal = conformal_health(&observations, &self.config)?;
         let ood = ood_auc_by_language(&observations)?;
         let gtau = gtau_pass_rate_by_language(&observations)?;
+        let per_prediction_class_calibration = compute_prediction_class_calibration(&observations)?;
         let previous_report = self.store.load_latest_report()?;
         let regression_checks = regression_checks(previous_report.as_ref(), overall, &self.config);
         let q1 = q1_pass_rate(&observations)?;
@@ -124,6 +126,7 @@ impl EvalRunner {
             conformal_coverage_health: conformal,
             ood_calibration_health: ood,
             gtau_pass_rate: gtau,
+            per_prediction_class_calibration,
             active_learning: ActiveLearningSummary {
                 queued_count: queue.entries.len(),
                 evicted_count: queue.evicted.len(),
