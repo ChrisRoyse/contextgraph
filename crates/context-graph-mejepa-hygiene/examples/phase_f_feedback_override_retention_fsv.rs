@@ -34,7 +34,7 @@ fn main() -> Result<()> {
     let archive_root = fsv_root.join("storage/witness");
     let cold_root = fsv_root.join("storage/cold");
     let db = open_hygiene_rocksdb(&db_path)?;
-    let mut config = runtime_config(db.clone(), archive_root)?;
+    let mut config = runtime_config(db.clone(), archive_root.clone())?;
     config.retention_policy_path = Some(PathBuf::from("config/retention_policy.toml"));
     config.now_unix = Some(NOW_MS / 1_000);
     let env = HygieneEnv::try_new(config)?;
@@ -44,10 +44,17 @@ fn main() -> Result<()> {
     let quota_before = quota_used(&env)?;
 
     let report = gc_run_nightly(&env)?;
+    drop(env);
+    drop(db);
 
-    let counts_after = counts(env.config.db.as_ref())?;
-    let quota_after = quota_used(&env)?;
-    let row_readbacks = readback_rows(env.config.db.as_ref(), &inserted, &cold_root)?;
+    let reopened = open_hygiene_rocksdb(&db_path)?;
+    let mut reopened_config = runtime_config(reopened.clone(), archive_root)?;
+    reopened_config.retention_policy_path = Some(PathBuf::from("config/retention_policy.toml"));
+    reopened_config.now_unix = Some(NOW_MS / 1_000);
+    let reopened_env = HygieneEnv::try_new(reopened_config)?;
+    let counts_after = counts(reopened.as_ref())?;
+    let quota_after = quota_used(&reopened_env)?;
+    let row_readbacks = readback_rows(reopened.as_ref(), &inserted, &cold_root)?;
     let physical_artifacts = archive_physical_artifacts(&cold_root)?;
     let archive_step = report
         .steps

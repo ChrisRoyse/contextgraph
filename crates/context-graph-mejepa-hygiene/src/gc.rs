@@ -5,7 +5,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use rocksdb::WriteBatch;
+use rocksdb::{WriteBatch, WriteOptions};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -166,7 +166,10 @@ fn archive_expired_rows_for_cf(
     }
 
     if !archives.is_empty() {
-        env.config.db.write(batch)?;
+        let mut write_opts = WriteOptions::default();
+        write_opts.set_sync(true);
+        env.config.db.write_opt(batch, &write_opts)?;
+        env.config.db.flush_cf(cf(&env.config.db, cf_name)?)?;
         for archive in &archives {
             verify_archived_row_deleted(env, cf_name, archive)?;
         }
