@@ -130,7 +130,7 @@ git log --since="1 month ago" --oneline -- docs/futurebuild/ docs/ruvectorfindin
 
 ## 5. Incident response — alert classes
 
-### 5.1 `MEJEPA_DAEMON_FLAPPING` — supervised task restarting > 5 times in 5 min
+### 5.1 `MEJEPA_SCHEDULER_FLAPPING` — supervised task restarting > 5 times in 5 min
 
 **Cause:** persistent error in a tokio task (panic, OOM, dependency crash).
 
@@ -145,7 +145,7 @@ tail -100 /mnt/d/contextgraph/logs/mejepa-daemon.stderr.log
 2. Check if it's a known issue (CF corruption → see 5.2; OOM → see 5.5; etc.).
 3. If unknown: `systemctl --user stop mejepa-daemon`; investigate; create blocker in `memory/blockers/`; restart.
 
-### 5.2 `MEJEPA_WITNESS_CHAIN_CORRUPTION`
+### 5.2 `MEJEPA_INFER_WITNESS_CHAIN_BROKEN`
 
 **Cause:** hash chain integrity check failed.
 
@@ -155,7 +155,7 @@ tail -100 /mnt/d/contextgraph/logs/mejepa-daemon.stderr.log
 3. If auto-repair failed: `mcp_call optimizer_witness_chain_repair_legacy --force` and check.
 4. Last resort: restore the last known-good RocksDB checkpoint per `20_DISASTER_RECOVERY_AND_BACKUP.md §4`.
 
-### 5.3 `MEJEPA_DRIFT_CATASTROPHIC`
+### 5.3 `MEJEPA_OBSERVE_DRIFT_DETECTED`
 
 **Cause:** rolling accuracy < 80%.
 
@@ -165,7 +165,7 @@ tail -100 /mnt/d/contextgraph/logs/mejepa-daemon.stderr.log
 3. If retrain looks reasonable: `mcp_call mejepa_promote_approval --promotion-id <id> --approve true`
 4. If suspicious: `--approve false --reason "..."`; investigate.
 
-### 5.4 `MEJEPA_QUOTA_EXCEEDED`
+### 5.4 `MEJEPA_HYGIENE_QUOTA_EXCEEDED`
 
 **Cause:** disk usage > 115 GB hard cap.
 

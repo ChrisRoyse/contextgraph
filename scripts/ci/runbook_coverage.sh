@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# TASK-RUN-012: Operator runbook alert-coverage CI lint.
+#
+# For every `MEJEPA_*` error / alert class documented under §5 of
+# `docs/futurebuild/19_OPERATOR_RUNBOOK.md`, this script grep-asserts that
+# the same identifier appears at least once in the Rust source tree
+# (`crates/**/*.rs`). Orphan runbook entries fail the lint so the next
+# operator never finds a documented playbook for a code that the system
+# can no longer raise.
+#
+# Per CLAUDE.md §3.6 "no backwards compatibility": when an alert is
+# renamed the runbook entry must be renamed in the same PR; this lint
+# enforces that. Exit non-zero on any orphan.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+RUNBOOK="${REPO_ROOT}/docs/futurebuild/19_OPERATOR_RUNBOOK.md"
+
+if [[ ! -f "${RUNBOOK}" ]]; then
+  echo "MEJEPA_RUNBOOK_COVERAGE_RUNBOOK_MISSING: ${RUNBOOK} not found" >&2
+  exit 1
+fi
+
+# Extract identifiers from §5 alert subsections. The runbook convention is
+# `### 5.N \`MEJEPA_*\`` so we grep for that exact prefix.
+mapfile -t alert_codes < <(
+  awk '
+    /^## /        { in_section=0 }
+    /^## .*§5|^## 5\b|^## 5\./ { in_section=1; next }
+    in_section && /^### / {
+      while (match($0, /MEJEPA_[A-Z][A-Z0-9_]+/)) {
+        print substr($0, RSTART, RLENGTH)
+        $0 = substr($0, RSTART + RLENGTH)
+      }
+    }
+  ' "${RUNBOOK}" | sort -u
+)
+
+# Fallback: if §5 is not findable by header, accept any `### N.N MEJEPA_*`
+# heading. This keeps the lint resilient to small refactors of the runbook.
+if [[ ${#alert_codes[@]} -eq 0 ]]; then
+  mapfile -t alert_codes < <(
+    grep -oE '### [0-9]+\.[0-9]+ `MEJEPA_[A-Z][A-Z0-9_]+`' "${RUNBOOK}" \
+      | grep -oE 'MEJEPA_[A-Z][A-Z0-9_]+' \
+      | sort -u
+  )
+fi
+
+if [[ ${#alert_codes[@]} -eq 0 ]]; then
+  echo "MEJEPA_RUNBOOK_COVERAGE_NO_ALERTS: no MEJEPA_* alert classes in ${RUNBOOK} §5" >&2
+  exit 1
+fi
+
+orphans=()
+for code in "${alert_codes[@]}"; do
+  if ! grep -RnE --include="*.rs" "\b${code}\b" "${REPO_ROOT}/crates" >/dev/null 2>&1; then
+    orphans+=("${code}")
+  fi
+done
+
+if [[ ${#orphans[@]} -gt 0 ]]; then
+  echo "MEJEPA_RUNBOOK_COVERAGE_ORPHAN_ALERTS: documented but never emitted:" >&2
+  for code in "${orphans[@]}"; do
+    echo "  - ${code}" >&2
+  done
+  exit 1
+fi
+
+echo "runbook_coverage_ok: ${#alert_codes[@]} alert classes verified against crates/**/*.rs"
