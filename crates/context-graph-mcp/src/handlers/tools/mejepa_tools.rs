@@ -2407,12 +2407,18 @@ fn parse_version_id(value: &str) -> Result<[u8; 32], String> {
 }
 
 #[cfg(test)]
+// Tests use a shared sync Mutex (test_env_lock) to serialize env-var setup
+// across `current_thread` tokio tests. The guard is intentionally held across
+// `.await` to keep the env vars stable for the duration of each test; no
+// real concurrency risk because tests run single-threaded and the lock is
+// the only synchronization point.
+#[allow(clippy::await_holding_lock)]
 mod mejepa_constellation_inspect_tests {
     use super::*;
     use std::collections::BTreeMap;
     use std::fs::{self, OpenOptions};
     use std::io::Write;
-    use std::sync::{Mutex, MutexGuard};
+    use std::sync::MutexGuard;
     use std::time::{Duration, SystemTime};
 
     use context_graph_mejepa_tct::{
@@ -2421,10 +2427,10 @@ mod mejepa_constellation_inspect_tests {
     };
     use tempfile::TempDir;
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
     fn env_guard() -> MutexGuard<'static, ()> {
-        let guard = ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+        // Shared cross-module lock — see crate::handlers::tools::test_env_lock.
+        // mejepa_phase7_storage's FSV tests touch the same env vars.
+        let guard = crate::handlers::tools::test_env_lock::lock();
         std::env::remove_var(ENV_TCT_DB);
         std::env::remove_var(ENV_INFER_DB);
         std::env::remove_var(ENV_PAUSE_PATH);

@@ -64,6 +64,24 @@ mod typed_edges_tools;
 mod utl_tools;
 pub(crate) mod validate;
 
+/// Test-only shared environment-variable lock.
+///
+/// Several integration tests across this module set/remove process-wide env
+/// vars (`CONTEXTGRAPH_MEJEPA_INFER_DB`, `CONTEXTGRAPH_MEJEPA_PANEL_DB`, etc.).
+/// Cargo runs tests in parallel by default, so two tests in *different*
+/// submodules can race even though each submodule serializes within itself.
+/// This shared lock is the cross-module synchronization point.
+#[cfg(test)]
+pub(super) mod test_env_lock {
+    use std::sync::{Mutex, MutexGuard};
+
+    pub static LOCK: Mutex<()> = Mutex::new(());
+
+    pub fn lock() -> MutexGuard<'static, ()> {
+        LOCK.lock().unwrap_or_else(|err| err.into_inner())
+    }
+}
+
 // DTOs for PRD v6 gap tools (TASK-GAP-005)
 pub mod causal_dtos;
 pub mod code_dtos;

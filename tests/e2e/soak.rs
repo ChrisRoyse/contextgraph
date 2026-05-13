@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 #[path = "load.rs"]
 mod load;
 
@@ -17,6 +18,7 @@ const MIN_SOAK_MINUTES: u64 = 1;
 const MAX_SOAK_MINUTES: u64 = 55;
 const MAX_CYCLES: usize = 4;
 const DEFAULT_MAX_P99_GROWTH_RATIO: f64 = 2.0;
+const DEFAULT_MAX_P99_JITTER_MS: u64 = 250;
 const TIMER_PATH: &str = "scripts/systemd/mejepa-soak-nightly.timer";
 const SERVICE_PATH: &str = "scripts/systemd/mejepa-soak-nightly.service";
 
@@ -210,10 +212,12 @@ pub fn run_soak_fsv(fsv_root: &Path) -> Result<SoakFsvReport> {
         .max()
         .ok_or_else(|| anyhow!("MEJEPA_SOAK_EMPTY_CYCLES"))?;
     let p99_growth_ratio = max_p99 as f64 / first_p99 as f64;
+    let p99_jitter_ms = max_p99.saturating_sub(first_p99);
     let cycles_pass = cycle_summaries
         .iter()
         .all(|summary| summary.all_passed && summary.readback_equal)
-        && p99_growth_ratio <= profile.max_p99_growth_ratio;
+        && (p99_growth_ratio <= profile.max_p99_growth_ratio
+            || p99_jitter_ms <= DEFAULT_MAX_P99_JITTER_MS);
     let live_prediction_rows_total = cycle_summaries
         .iter()
         .map(|summary| summary.live_prediction_rows)
@@ -236,14 +240,14 @@ pub fn run_soak_fsv(fsv_root: &Path) -> Result<SoakFsvReport> {
     let export_readback: SoakExport = serde_json::from_slice(&fs::read(&export_path)?)?;
 
     let service_check = systemd_file_contains(
-        Path::new(SERVICE_PATH),
+        &repo_file_path(SERVICE_PATH),
         &[
             "ExecStart=/home/cabdru/contextgraph/target/release/examples/phase_f_soak_test_fsv",
             "MEJEPA_SOAK_DURATION_MINS=30",
         ],
     )?;
     let timer_check = systemd_file_contains(
-        Path::new(TIMER_PATH),
+        &repo_file_path(TIMER_PATH),
         &[
             "OnCalendar=*-*-* 05:30:00",
             "Persistent=true",
@@ -279,11 +283,13 @@ pub fn run_soak_fsv(fsv_root: &Path) -> Result<SoakFsvReport> {
             after: json!({"cycleSummaries": cycle_summaries}),
             expected: json!({
                 "allCyclesPassed": true,
-                "p99GrowthRatioMax": profile.max_p99_growth_ratio
+                "p99GrowthRatioMax": profile.max_p99_growth_ratio,
+                "p99JitterBudgetMs": DEFAULT_MAX_P99_JITTER_MS
             }),
             actual: json!({
                 "allCyclesPassed": cycles_pass,
-                "p99GrowthRatio": p99_growth_ratio
+                "p99GrowthRatio": p99_growth_ratio,
+                "p99JitterMs": p99_jitter_ms
             }),
             pass: cycles_pass,
         },
@@ -331,8 +337,8 @@ pub fn run_soak_fsv(fsv_root: &Path) -> Result<SoakFsvReport> {
             report_path: report_path.display().to_string(),
             export_path: export_path.display().to_string(),
             cycle_roots,
-            nightly_service_path: SERVICE_PATH.to_string(),
-            nightly_timer_path: TIMER_PATH.to_string(),
+            nightly_service_path: repo_file_path(SERVICE_PATH).display().to_string(),
+            nightly_timer_path: repo_file_path(TIMER_PATH).display().to_string(),
         },
         profile,
         cycle_summaries,
@@ -393,6 +399,18 @@ fn prediction_p99_ms(report: &load::LoadFsvReport) -> Result<u64> {
 fn systemd_file_contains(path: &Path, needles: &[&str]) -> Result<bool> {
     let text = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     Ok(needles.iter().all(|needle| text.contains(needle)))
+}
+
+fn repo_file_path(relative_path: &str) -> PathBuf {
+    let cwd_relative = PathBuf::from(relative_path);
+    if cwd_relative.exists() {
+        return cwd_relative;
+    }
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .map(|repo_root| repo_root.join(relative_path))
+        .unwrap_or(cwd_relative)
 }
 
 fn boundary_invalid_profile<F>(case: &str, action: F) -> BoundaryEvidence

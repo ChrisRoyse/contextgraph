@@ -824,6 +824,12 @@ fn rss_bytes() -> Result<u64, String> {
 }
 
 #[cfg(test)]
+// Tests use the shared cross-module env lock (see test_env_lock in the
+// handlers/tools mod.rs). The sync MutexGuard is intentionally held across
+// `.await` points to keep CONTEXTGRAPH_MEJEPA_INFER_DB / PANEL_DB /
+// SHIFT_LOG_ROOT stable for the duration of each `current_thread` tokio test.
+// No deadlock risk: tests run single-threaded and the lock serializes them.
+#[allow(clippy::await_holding_lock)]
 mod phase7_fsv_tests {
     use super::*;
     use crate::handlers::tools::reality_loop::helpers::sha256_file;
@@ -835,13 +841,15 @@ mod phase7_fsv_tests {
     use std::collections::BTreeMap;
     use std::fs::OpenOptions;
     use std::io::Write;
+    use std::sync::MutexGuard;
     use tempfile::TempDir;
-    use tokio::sync::{Mutex, MutexGuard};
 
-    static ENV_LOCK: Mutex<()> = Mutex::const_new(());
-
-    async fn env_guard() -> MutexGuard<'static, ()> {
-        let guard = ENV_LOCK.lock().await;
+    fn env_guard() -> MutexGuard<'static, ()> {
+        // Shared cross-module lock — see crate::handlers::tools::test_env_lock.
+        // We hold a sync MutexGuard for the duration of the test; tokio tests
+        // here run on a current_thread flavor and never hand off the runtime
+        // while the env vars are live, so the blocking lock is safe.
+        let guard = crate::handlers::tools::test_env_lock::lock();
         std::env::remove_var(ENV_INFER_DB);
         std::env::remove_var(ENV_PANEL_DB);
         std::env::remove_var(ENV_SHIFT_LOG_ROOT);
@@ -850,7 +858,7 @@ mod phase7_fsv_tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn phase7_mcp_fsv_happy_path_and_edges() {
-        let _guard = env_guard().await;
+        let _guard = env_guard();
         let temp = TempDir::new().unwrap();
         let root = temp.path().to_path_buf();
         let infer_db = root.join("infer-db");

@@ -265,7 +265,7 @@ fn validate_configured_agent(agent: &ConfiguredAgent) -> AnyhowResult<()> {
             "{MEJEPA_AGENT_IDENTITY_CONFIG_INVALID}: agent_id must be single-line text <=256 bytes"
         );
     }
-    if agent.psk.as_bytes().len() < MIN_PSK_BYTES {
+    if agent.psk.len() < MIN_PSK_BYTES {
         bail!("{MEJEPA_AGENT_IDENTITY_CONFIG_INVALID}: psk must be at least 16 bytes");
     }
     Ok(())
