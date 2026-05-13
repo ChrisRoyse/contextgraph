@@ -194,7 +194,7 @@ The A-F implementation issues are closed for the Phase G handoff. Analyzer-backe
 | `TASK-PREDICT-LABEL-010` | Toolchain availability fail-closed audit | **complete (#61, commit 0379df9c)** — `crates/context-graph-mejepa/src/toolchain_detect.rs`; 16-binary default catalogue across 11 languages |
 | `TASK-PREDICT-LABEL-011` | Cross-language label gating | **complete (#62, commit 0379df9c)** — `crates/context-graph-mejepa/src/cross_language_label_gating.rs`; same-root-cause + similarity > 0.85 + correlation ≥ 0.60 ⇒ transfer at 0.5× weight |
 | `TASK-PREDICT-LABEL-012` | Cross-language label gating consumer | **complete (#86)** — `label_transfer_audit` + `apply_phase_b_labels_with_transfer_gate()` + `CF_MEJEPA_LABEL_TRANSFER_DECISIONS`; weekly surfaces include accept/reject ratios per language pair |
-| `TASK-UTML-009` | Per-cell state-transfer T in eval reports | **complete (#63)** — weekly eval reports carry per-cell state-transfer diagnostics; FSV sha256:ada99a63 |
+| `TASK-UTML-009` | Per-cell state-transfer T in eval reports | **complete (#63)** — weekly eval reports carry per-cell state-transfer diagnostics; FSV sha256:63234e2d |
 
 ### Closed integration test tasks
 
@@ -247,7 +247,7 @@ The A-F implementation issues are closed for the Phase G handoff. Analyzer-backe
 - `/mnt/d/contextgraph/fsv/phase-f-system-cost-fsv/system_cost_fsv.json` — sha256:cb76b6ee937fc9a968511db158e400abca0aaeb344643387bc6ce0abc6212b6b
 - `/mnt/d/contextgraph/fsv/phase-f-operator-override-fsv/operator_override_fsv.json` — sha256:5eea66f1744b8e954a54ab2b9ea0be334e95861e4f73fc037b6977d91a46f99a
 - `/mnt/d/contextgraph/fsv/phase-f-pause-cli-fsv/pause_cli_fsv.json` — sha256:1228d14e4a56afa7a67f8c17fd2fdeb5d2103c67e052d2fcfd8729d800b6df63
-- `/mnt/d/contextgraph/fsv/utml-009-fsv/per_cell_state_transfer_fsv.json` — sha256:ada99a63709fdde01fadd0a6a282feeb41563d2812c30fe41dc322e1a35b6344
+- `/mnt/d/contextgraph/fsv/utml-009-fsv/per_cell_state_transfer_fsv.json` — sha256:63234e2d1b492a18ca4533d750a1aa589206b02b060e4f0c3546654f4f078e0e
 - `/mnt/d/contextgraph/fsv/phase-f-restart-safety-fsv/restart_safety_fsv.json`
 - `/mnt/d/contextgraph/fsv/phase-f-multi-agent-fsv/multi_agent_fsv.json`
 - `/mnt/d/contextgraph/fsv/phase-f-catastrophic-event-fsv/catastrophic_event_fsv.json`
