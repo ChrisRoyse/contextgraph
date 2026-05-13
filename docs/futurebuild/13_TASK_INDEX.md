@@ -291,6 +291,74 @@ The A-F and H implementation issues are closed for the Phase G handoff. Analyzer
 
 **Phase G status (2026-05-13):** active and Python-first. The orchestrator proves corpus rows can enter the source-of-truth reward pipeline with `input_task_count = output_panel_count = logical_dda_signal_count / 462 = oracle_verdict_count`. The current blocker is model-quality convergence: `prediction_oracle_correlation = 0.866667 < 0.95`. The open issue queue now exists to make the Python SWE-bench path real end to end: Python code changes are parsed into AST chunks, exploded through frozen instruments, DDA, and TCT, trained into calibrated Q1-Q5 `RealityPrediction`, served through local MCP stdio, fed back to AI agents, and continually improved by oracle outcomes, Edit shifts, and agent/operator feedback. Non-Python fixture expansion and proof-domain harnesses are explicitly deferred until this Python gate is green.
 
+### Python Ship-Gate Dependency Map (TASK-PY-G-001 / #158)
+
+This is the active execution-order map for the Python ME-JEPA-Code ship gate. The path starts at a SWE-bench Lite Python row and ends at a calibrated MCP `RealityPrediction`; gridworld, proof-domain, and non-Python harnesses are not active prerequisites. Any task, command, or report that reintroduces a stale 80-cell `(mutation_category x language)` gate into this Python-only path must fail closed through `TASK-PY-G-036` before it can influence release decisions.
+
+Trigger -> Process -> Outcome for the active gate:
+
+```text
+SWE-bench Lite Python row
+  -> Python AST chunks + typed task metadata
+  -> frozen target instruments (oracle, witness, type/claim/impact panels)
+  -> DDA/TCT reward-signal constellation
+  -> checkpointed Python training + calibration
+  -> Q1-Q5 RealityPrediction heads
+  -> MCP stdio prediction surface
+  -> durable feedback/replay loop
+  -> four-window 0.95 Python ship-gate verdict
+```
+
+Boundary invariants for the dependency map:
+
+- Empty or missing corpus input: no downstream task may synthesize rows; the runner must fail closed before panel/DDA/TCT writes.
+- Malformed Python or invalid metadata: the row must be quarantined or rejected with a typed error; it must not enter calibration as a weak label.
+- Maximum batch: the active corpus gate is `300 x 8 = 2400` Python mutation rows; max+1 is an error, not truncation.
+- Scope guard: non-Python rows and proof-domain fixtures are archived evidence only until `TASK-PY-G-034` accepts the Python bundle.
+
+| Order | Task | Issue | Stage | Direct predecessors | Direct successors | Source-of-truth state |
+|---:|---|---:|---|---|---|---|
+| 1 | `TASK-PY-G-001` Python ship-gate dependency map | #158 | graph | `TASK-G-001..021` complete Phase G substrate | `TASK-PY-G-036`, `TASK-PY-G-037`, `TASK-PY-G-002` | `docs/futurebuild/13_TASK_INDEX.md`, GitHub issue graph |
+| 2 | `TASK-PY-G-036` Reject stale 80-cell gates | #178 | scope guard | `TASK-PY-G-001` | `TASK-PY-G-037`, `TASK-PY-G-002`, `TASK-PY-G-038` | CLI/MCP gate output rejects non-Python active gates |
+| 3 | `TASK-PY-G-037` Isolate proof-domain harnesses | #179 | scope guard | `TASK-PY-G-001`, `TASK-PY-G-036` | `TASK-PY-G-002`, `TASK-PY-G-038` | proof-domain reports excluded from active Python release path |
+| 4 | `TASK-PY-G-002` Checkpointed Python training runner | #159 | runner | `TASK-PY-G-001`, `TASK-PY-G-036`, `TASK-PY-G-037` | `TASK-PY-G-018`, `TASK-PY-G-022`, `TASK-PY-G-023` | checkpoint files + train/calibration/holdout CF readback |
+| 5 | `TASK-PY-G-018` SWE-bench Verified Python subset | #149 | corpus | `TASK-PY-G-002` | `TASK-PY-G-022`, `TASK-PY-G-017`, `TASK-PY-G-004` | Python task rows and verified subset manifest |
+| 6 | `TASK-PY-G-022` Python oracle pass/fail audit | #153 | oracle | `TASK-PY-G-018`, `TASK-PY-G-002` | `TASK-PY-G-017`, `TASK-PY-G-005`, `TASK-PY-G-010` | oracle verdict rows and flake/quarantine evidence |
+| 7 | `TASK-PY-G-017` Python leakage detector | #148 | corpus guard | `TASK-PY-G-022`, `TASK-PY-G-018` | `TASK-PY-G-009`, `TASK-PY-G-030`, `TASK-PY-G-012`, `TASK-PY-G-013` | leakage report and quarantined row readback |
+| 8 | `TASK-PY-G-009` Frozen instrument coverage audit | #124 | target panel | `TASK-PY-G-017` | `TASK-PY-G-007`, `TASK-PY-G-008` | frozen instrument coverage rows |
+| 9 | `TASK-PY-G-007` Python embedder MI rotation | #122 | embedding | `TASK-PY-G-009` | `TASK-PY-G-008`, `TASK-PY-G-039` | MI rotation report + selected embedder config |
+| 10 | `TASK-PY-G-008` Python TCT signal-density audit | #123 | TCT | `TASK-PY-G-009`, `TASK-PY-G-007` | `TASK-PY-G-039`, `TASK-PY-G-019` | TCT density report over Python cells |
+| 11 | `TASK-PY-G-039` TCT completeness audit | #181 | TCT | `TASK-PY-G-008`, `TASK-PY-G-007` | `TASK-PY-G-003`, `TASK-PY-G-019` | per-row TCT completeness readback |
+| 12 | `TASK-PY-G-019` Python sample-efficiency analysis | #150 | data quality | `TASK-PY-G-008`, `TASK-PY-G-039` | `TASK-PY-G-004`, `TASK-PY-G-020` | sample-efficiency report by mutation category |
+| 13 | `TASK-PY-G-003` Per-head Q1-Q5 distillation | #118 | heads | `TASK-PY-G-039` | `TASK-PY-G-010`, `TASK-PY-G-011`, `TASK-PY-G-012`, `TASK-PY-G-013`, `TASK-PY-G-020` | Q1-Q5 head weights and calibration rows |
+| 14 | `TASK-PY-G-010` Q1 claim existence at corpus scale | #125 | Q1 | `TASK-PY-G-003`, `TASK-PY-G-022` | `TASK-PY-G-027`, `TASK-PY-G-038` | claim existence predictions vs file-system SoT |
+| 15 | `TASK-PY-G-011` Q3 failure-mode calibration | #126 | Q3 | `TASK-PY-G-003`, `TASK-PY-G-022` | `TASK-PY-G-006`, `TASK-PY-G-028`, `TASK-PY-G-038` | failure-mode labels and calibrated Q3 bins |
+| 16 | `TASK-PY-G-012` Q4 concern confidence calibration | #127 | Q4 | `TASK-PY-G-003`, `TASK-PY-G-017` | `TASK-PY-G-006`, `TASK-PY-G-038` | security/perf/tech-debt concern calibration |
+| 17 | `TASK-PY-G-013` Q5 impact vs shift-log | #128 | Q5 | `TASK-PY-G-003`, `TASK-PY-G-017` | `TASK-PY-G-038` | shift-log impact readback vs predicted Q5 impact |
+| 18 | `TASK-PY-G-020` Predictor ablation harness | #151 | diagnostics | `TASK-PY-G-003`, `TASK-PY-G-019` | `TASK-PY-G-027`, `TASK-PY-G-031` | head/instrument ablation metrics |
+| 19 | `TASK-PY-G-014` Python OOD detection gate | #129 | safety | `TASK-PY-G-003`, `TASK-PY-G-039` | `TASK-PY-G-027`, `TASK-PY-G-030` | OOD score distribution and fail-closed gate |
+| 20 | `TASK-PY-G-006` Python conformal RCA classifier | #121 | RCA | `TASK-PY-G-011`, `TASK-PY-G-012` | `TASK-PY-G-015`, `TASK-PY-G-028`, `TASK-PY-G-031` | conformal RCA class rows |
+| 21 | `TASK-PY-G-015` Python Gtau guard audit | #130 | calibration guard | `TASK-PY-G-006`, `TASK-PY-G-003` | `TASK-PY-G-027` | Gtau guard evidence and rejected-boundary rows |
+| 22 | `TASK-PY-G-021` Python E_Trace gating | #152 | trace guard | `TASK-PY-G-003`, `TASK-PY-G-006` | `TASK-PY-G-027` | E_Trace gate rows and rejected traces |
+| 23 | `TASK-PY-G-028` Python error taxonomy | #166 | errors | `TASK-PY-G-006`, `TASK-PY-G-011` | `TASK-PY-G-031`, `TASK-PY-G-034` | typed Python error taxonomy and dashboard mapping |
+| 24 | `TASK-PY-G-005` Catastrophic Python cell quarantine | #120 | safety | `TASK-PY-G-022`, `TASK-PY-G-017` | `TASK-PY-G-030`, `TASK-PY-G-027` | quarantined catastrophic cell rows |
+| 25 | `TASK-PY-G-023` Active-learning consumer | #154 | feedback | `TASK-PY-G-002`, `TASK-PY-G-022` | `TASK-PY-G-016`, `TASK-PY-G-024` | active-learning queue events |
+| 26 | `TASK-PY-G-016` Feedback cooldown for Python | #131 | feedback guard | `TASK-PY-G-023` | `TASK-PY-G-024`, `TASK-PY-G-040` | cooldown state and duplicate/replay rejection |
+| 27 | `TASK-PY-G-024` Feedback retrain consumer | #163 | feedback retrain | `TASK-PY-G-023`, `TASK-PY-G-016` | `TASK-PY-G-025`, `TASK-PY-G-040` | feedback replay rows and retrain trigger |
+| 28 | `TASK-PY-G-040` Feedback replay-weight FSV | #182 | feedback FSV | `TASK-PY-G-024`, `TASK-PY-G-016` | `TASK-PY-G-034` | replay weight before/after and row equality |
+| 29 | `TASK-PY-G-025` Eval-after-promotion hook | #162 | promotion | `TASK-PY-G-024`, `TASK-PY-G-040` | `TASK-PY-G-026`, `TASK-PY-G-027`, `TASK-PY-G-032` | promotion eval report persisted after candidate flip |
+| 30 | `TASK-PY-G-026` Checkpoint provenance | #164 | provenance | `TASK-PY-G-025` | `TASK-PY-G-027`, `TASK-PY-G-033` | checkpoint manifest, hashes, train/eval commit |
+| 31 | `TASK-PY-G-027` Python 0.95 confidence gate | #165 | gate | `TASK-PY-G-010`, `TASK-PY-G-014`, `TASK-PY-G-015`, `TASK-PY-G-020`, `TASK-PY-G-021`, `TASK-PY-G-026` | `TASK-PY-G-029`, `TASK-PY-G-032`, `TASK-PY-G-033`, `TASK-PY-G-038` | Python-only confidence/correlation gate |
+| 32 | `TASK-PY-G-004` Python generalization audit | #119 | generalization | `TASK-PY-G-018`, `TASK-PY-G-019` | `TASK-PY-G-034` | unseen/generalization audit report |
+| 33 | `TASK-PY-G-030` Unseen Python holdout quarantine | #169 | holdout guard | `TASK-PY-G-017`, `TASK-PY-G-005`, `TASK-PY-G-014` | `TASK-PY-G-032` | holdout quarantine manifest |
+| 34 | `TASK-PY-G-031` Model-quality RCA dashboard | #170 | operator RCA | `TASK-PY-G-006`, `TASK-PY-G-020`, `TASK-PY-G-028` | `TASK-PY-G-034`, `TASK-PY-G-035` | RCA dashboard JSON/markdown |
+| 35 | `TASK-PY-G-029` Live Python patch backfill | #168 | live data | `TASK-PY-G-027` | `TASK-PY-G-038`, `TASK-PY-G-032`, `TASK-PY-G-034` | live patch backfill rows and outcomes |
+| 36 | `TASK-PY-G-032` Four-window Python burn-in | #167 | stability | `TASK-PY-G-025`, `TASK-PY-G-027`, `TASK-PY-G-029`, `TASK-PY-G-030` | `TASK-PY-G-033`, `TASK-PY-G-034` | four rolling windows, all Python cells >= 0.95 |
+| 37 | `TASK-PY-G-033` Fail-closed release switch | #171 | release gate | `TASK-PY-G-026`, `TASK-PY-G-027`, `TASK-PY-G-032` | `TASK-PY-G-038`, `TASK-PY-G-034` | release switch rejects unknown or stale gate state |
+| 38 | `TASK-PY-G-038` MCP RealityPrediction FSV | #180 | MCP | `TASK-PY-G-010`, `TASK-PY-G-011`, `TASK-PY-G-012`, `TASK-PY-G-013`, `TASK-PY-G-027`, `TASK-PY-G-029`, `TASK-PY-G-033`, `TASK-PY-G-037` | `TASK-PY-G-034` | MCP stdio `RealityPrediction` readback |
+| 39 | `TASK-PY-G-034` Python acceptance bundle | #172 | acceptance | `TASK-PY-G-004`, `TASK-PY-G-028`, `TASK-PY-G-029`, `TASK-PY-G-031`, `TASK-PY-G-032`, `TASK-PY-G-033`, `TASK-PY-G-038`, `TASK-PY-G-040` | `TASK-PY-G-035` | acceptance bundle with issue/FSV/doc hashes |
+| 40 | `TASK-PY-G-035` Post-green drift guardrails | #173 | post-green | `TASK-PY-G-031`, `TASK-PY-G-034` | Python ship gate may stay green under drift monitors | drift guardrail alerts and rollback hooks |
+
 ---
 
 ## Phase H — Inner-Loop Residue Cleanup (expanded cleanup)
