@@ -6,8 +6,8 @@ use anyhow::{ensure, Context, Result};
 use context_graph_mcp::handlers::tools::mejepa_eval_tools::mejepa_ship_gate_status_payload;
 use context_graph_mejepa::eval::report::write_json_0600;
 use context_graph_mejepa::eval::{
-    cell_key, ActiveLearningSummary, EvalProvenance, EvalReport, MutationCategory,
-    OpenResearchQuestionStatus, SHIP_GATE_STABILITY_BLOCKER,
+    cell_key, required_active_python_ship_gate_cells, ActiveLearningSummary, EvalProvenance,
+    EvalReport, MutationCategory, OpenResearchQuestionStatus, SHIP_GATE_STABILITY_BLOCKER,
 };
 use context_graph_mejepa::{count_cf, open_infer_rocksdb, Language, RocksDbEvalStore};
 use context_graph_mejepa_cf::{CF_MEJEPA_EVAL_REPORTS, CF_MEJEPA_MODEL_PROMOTIONS};
@@ -61,6 +61,12 @@ fn run(output_root: &Path) -> Result<Value> {
     let promotion_key = persist_model_promotion_reset(&db_path, 8_000)?;
     let after_promotion_reset = mejepa_ship_gate_status_payload(&db_path)?;
 
+    let stale_db_path = output_root.join("stale-80-cell-rocksdb");
+    persist_reports(&stale_db_path, &[stale_non_python_report()])?;
+    let stale_80_error = mejepa_ship_gate_status_payload(&stale_db_path)
+        .unwrap_err()
+        .to_string();
+
     let reopened_counts = cf_counts(&db_path)?;
     ensure!(after_three["consecutivePassingWindows"] == 3);
     ensure!(after_three["shipGatePassed"] == false);
@@ -71,6 +77,7 @@ fn run(output_root: &Path) -> Result<Value> {
     ensure!(before_promotion_reset["consecutivePassingWindows"] == 2);
     ensure!(after_promotion_reset["consecutivePassingWindows"] == 0);
     ensure!(after_promotion_reset["modelPromotionResetCount"] == 1);
+    ensure!(stale_80_error.contains("MEJEPA_ACTIVE_PYTHON_GATE_STALE_GRID"));
 
     let assertions = json!({
         "mcp_response_includes_consecutive_passing_windows": after_four.get("consecutivePassingWindows").is_some(),
@@ -79,6 +86,7 @@ fn run(output_root: &Path) -> Result<Value> {
         "failing_window_resets": after_failure["consecutivePassingWindows"] == 0 && after_failure["shipGatePassed"] == false,
         "stability_blocker_returned_before_four": after_three["shipGateFailures"].as_array().unwrap().iter().any(|value| value.as_str().unwrap_or("").starts_with(SHIP_GATE_STABILITY_BLOCKER)),
         "model_promotion_resets": after_promotion_reset["consecutivePassingWindows"] == 0 && after_promotion_reset["modelPromotionResetCount"] == 1,
+        "stale_80_cell_gate_rejected": stale_80_error.contains("MEJEPA_ACTIVE_PYTHON_GATE_STALE_GRID"),
         "reopened_report_rows": reopened_counts[CF_MEJEPA_EVAL_REPORTS] == 7,
         "reopened_model_promotion_rows": reopened_counts[CF_MEJEPA_MODEL_PROMOTIONS] == 1,
     });
@@ -109,6 +117,7 @@ fn run(output_root: &Path) -> Result<Value> {
         "after_failure": after_failure,
         "before_promotion_reset": before_promotion_reset,
         "after_promotion_reset": after_promotion_reset,
+        "stale_80_error": stale_80_error,
         "reopened_counts": reopened_counts,
         "assertions": assertions,
     });
@@ -161,10 +170,9 @@ fn cf_counts(db_path: &Path) -> Result<Value> {
 
 fn report(date: &str, timestamp_millis: i64, correlation: f32, passed: bool) -> EvalReport {
     let mut per_cell = BTreeMap::new();
-    per_cell.insert(
-        cell_key(MutationCategory::KnownGood, Language::Python),
-        Some(correlation),
-    );
+    for (_category, _language, cell) in required_active_python_ship_gate_cells() {
+        per_cell.insert(cell, Some(correlation));
+    }
     let per_cell_convergence_eta =
         context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell, 0.95);
     EvalReport {
@@ -173,8 +181,11 @@ fn report(date: &str, timestamp_millis: i64, correlation: f32, passed: bool) -> 
         rolling_window_size: 100,
         holdout_count: 100,
         overall_correlation: Some(correlation),
-        per_category_correlation: BTreeMap::new(),
-        per_language_correlation: BTreeMap::new(),
+        per_category_correlation: MutationCategory::all()
+            .into_iter()
+            .map(|category| (category, Some(correlation)))
+            .collect(),
+        per_language_correlation: BTreeMap::from([(Language::Python, Some(correlation))]),
         per_cell_correlation: per_cell,
         cell_exemptions: BTreeMap::new(),
         bayesian_shrinkage: BTreeMap::new(),
@@ -220,6 +231,87 @@ fn report(date: &str, timestamp_millis: i64, correlation: f32, passed: bool) -> 
         },
         wall_clock_seconds: 0.01,
     }
+}
+
+fn stale_non_python_report() -> EvalReport {
+    let mut per_cell = BTreeMap::new();
+    for category in MutationCategory::all() {
+        for language in stale_non_python_languages() {
+            per_cell.insert(cell_key(category, language), Some(0.97));
+        }
+    }
+    let per_cell_convergence_eta =
+        context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell, 0.95);
+    EvalReport {
+        report_date: "2026-05-20-stale-80-cell-grid".to_string(),
+        generated_at_unix_ms: 9_000,
+        rolling_window_size: 800,
+        holdout_count: 800,
+        overall_correlation: Some(0.97),
+        per_category_correlation: MutationCategory::all()
+            .into_iter()
+            .map(|category| (category, Some(0.97)))
+            .collect(),
+        per_language_correlation: stale_non_python_languages()
+            .into_iter()
+            .map(|language| (language, Some(0.97)))
+            .collect(),
+        per_cell_correlation: per_cell,
+        cell_exemptions: BTreeMap::new(),
+        bayesian_shrinkage: BTreeMap::new(),
+        conformal_coverage_health: BTreeMap::new(),
+        ood_calibration_health: BTreeMap::new(),
+        gtau_pass_rate: BTreeMap::new(),
+        per_prediction_class_calibration: BTreeMap::new(),
+        per_failure_mode_class: context_graph_mejepa::empty_failure_mode_class_metrics(
+            800,
+            &context_graph_mejepa::EvalConfig::default(),
+        ),
+        per_cell_convergence_eta,
+        active_learning: ActiveLearningSummary {
+            queued_count: 0,
+            evicted_count: 0,
+            ood_escalation_count: 0,
+        },
+        state_transfer_diagnostic: None,
+        per_cell_state_transfer: BTreeMap::new(),
+        failing_cell_classifications: BTreeMap::new(),
+        aux_head_distillation: None,
+        regression_checks: Vec::new(),
+        open_research_questions: vec![OpenResearchQuestionStatus {
+            id: "TASK-PY-G-036".to_string(),
+            question: "Does MCP ship-gate status reject stale non-Python 80-cell reports?"
+                .to_string(),
+            status: "fsv".to_string(),
+        }],
+        q1_pass_rate: 1.0,
+        q2_report_correlation: Some(0.97),
+        q3_side_effect_agreement: Some(1.0),
+        ship_gate_passed: true,
+        ship_gate_failures: Vec::new(),
+        provenance: EvalProvenance {
+            corpus_sha: "phase-g-ship-gate-stability-fsv".to_string(),
+            eval_code_version: "task-py-g-036-fsv".to_string(),
+            calibration_version: "task-py-g-036-fsv".to_string(),
+            generated_by: "phase_g_ship_gate_stability_fsv".to_string(),
+        },
+        wall_clock_seconds: 0.01,
+    }
+}
+
+fn stale_non_python_languages() -> [Language; 10] {
+    [
+        Language::Rust,
+        Language::Javascript,
+        Language::Typescript,
+        Language::Go,
+        Language::Java,
+        Language::C,
+        Language::Cpp,
+        Language::CSharp,
+        Language::Ruby,
+        Language::Php,
+    ]
 }
 
 fn git_sha() -> String {

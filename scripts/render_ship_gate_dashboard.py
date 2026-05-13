@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Render the Phase G ship-gate cell dashboard from SoT JSON.
+"""Render the active Python ship-gate cell dashboard from SoT JSON.
 
 The preferred input is `context-graph-cli mejepa cell-status` JSON, which is
 read from `CF_MEJEPA_EVAL_REPORTS`. The renderer also accepts the
-`mejepa_ship_gate_status` MCP payload shape and synthesizes the same 80-cell
-grid from `perCellCorrelation`.
+`mejepa_ship_gate_status` MCP payload shape. Both inputs must describe exactly
+the 8 Python mutation-category cells; stale 80-cell language grids fail closed.
 """
 
 from __future__ import annotations
@@ -32,20 +32,16 @@ MUTATION_CATEGORIES = [
     "compile_error",
 ]
 
-NON_PYTHON_LANGUAGES = [
-    "rust",
-    "javascript",
-    "typescript",
-    "go",
-    "java",
-    "c",
-    "cpp",
-    "c_sharp",
-    "ruby",
-    "php",
-]
+ACTIVE_GATE_LANGUAGES = ["python"]
 
-REQUIRED_CELL_COUNT = len(MUTATION_CATEGORIES) * len(NON_PYTHON_LANGUAGES)
+ACTIVE_GATE_NAME = "python_swebench_lite_300x8"
+ACTIVE_REQUIRED_GRID = "8 mutation categories x python"
+REQUIRED_CELL_COUNT = len(MUTATION_CATEGORIES) * len(ACTIVE_GATE_LANGUAGES)
+REQUIRED_CELLS = {
+    f"{category}::{language}"
+    for category in MUTATION_CATEGORIES
+    for language in ACTIVE_GATE_LANGUAGES
+}
 DEFAULT_THRESHOLD = 0.95
 
 
@@ -142,6 +138,7 @@ def build_dashboard_state(
     output_path: Path,
 ) -> DashboardState:
     threshold = parse_threshold(payload)
+    validate_active_gate_metadata(payload)
     source_of_truth = source_of_truth_label(payload)
     exemptions = parse_exemptions(payload.get("cellExemptions", {}))
     provided_rows = parse_cell_rows(payload, threshold)
@@ -150,6 +147,7 @@ def build_dashboard_state(
         per_cell_correlations = {}
     if not isinstance(per_cell_correlations, dict):
         raise SystemExit("MEJEPA_SHIP_GATE_DASHBOARD_SCHEMA: perCellCorrelation must be an object")
+    validate_active_gate_cells(provided_rows, per_cell_correlations)
     prediction_map = parse_prediction_links(payload.get("failingPredictions", {}))
 
     rows: list[CellRow] = []
@@ -158,7 +156,7 @@ def build_dashboard_state(
     below = 0
     missing = 0
     for category in MUTATION_CATEGORIES:
-        for language in NON_PYTHON_LANGUAGES:
+        for language in ACTIVE_GATE_LANGUAGES:
             cell = f"{category}::{language}"
             raw = provided_rows.get(cell)
             if raw is None:
@@ -278,9 +276,60 @@ def split_cell(cell: str) -> tuple[str, str]:
     category, language = cell.split("::", 1)
     if category not in MUTATION_CATEGORIES:
         raise SystemExit(f"MEJEPA_SHIP_GATE_DASHBOARD_CATEGORY_INVALID: {category!r}")
-    if language not in NON_PYTHON_LANGUAGES:
-        raise SystemExit(f"MEJEPA_SHIP_GATE_DASHBOARD_LANGUAGE_INVALID: {language!r}")
+    if language not in ACTIVE_GATE_LANGUAGES:
+        raise SystemExit(
+            f"MEJEPA_SHIP_GATE_DASHBOARD_STALE_GATE_LANGUAGE: active gate {ACTIVE_GATE_NAME} accepts only python cells; got {language!r}"
+        )
     return category, language
+
+
+def validate_active_gate_metadata(payload: dict[str, Any]) -> None:
+    count = payload.get("requiredCellCount")
+    if count is not None:
+        parsed = parse_optional_int(count)
+        if parsed != REQUIRED_CELL_COUNT:
+            raise SystemExit(
+                f"MEJEPA_SHIP_GATE_DASHBOARD_STALE_REQUIRED_CELL_COUNT: expected {REQUIRED_CELL_COUNT} for {ACTIVE_REQUIRED_GRID}; got {count!r}"
+            )
+    gate = payload.get("activeGate")
+    if gate is not None and str(gate) != ACTIVE_GATE_NAME:
+        raise SystemExit(
+            f"MEJEPA_SHIP_GATE_DASHBOARD_ACTIVE_GATE_INVALID: expected {ACTIVE_GATE_NAME}; got {gate!r}"
+        )
+    source = payload.get("sourceOfTruth")
+    if isinstance(source, dict):
+        required_grid = source.get("required_grid") or source.get("requiredGrid")
+        if required_grid is not None and str(required_grid) != ACTIVE_REQUIRED_GRID:
+            raise SystemExit(
+                f"MEJEPA_SHIP_GATE_DASHBOARD_STALE_REQUIRED_GRID: expected {ACTIVE_REQUIRED_GRID}; got {required_grid!r}"
+            )
+
+
+def validate_active_gate_cells(
+    provided_rows: dict[str, dict[str, Any]],
+    per_cell_correlations: dict[str, Any],
+) -> None:
+    actual = set(provided_rows) if provided_rows else set(per_cell_correlations)
+    if actual != REQUIRED_CELLS:
+        missing = sorted(REQUIRED_CELLS - actual)
+        extra = sorted(actual - REQUIRED_CELLS)
+        if extra:
+            for cell in extra:
+                split_cell(cell)
+        raise SystemExit(
+            "MEJEPA_SHIP_GATE_DASHBOARD_CELL_SET_MISMATCH: "
+            f"expected {REQUIRED_CELL_COUNT} cells for {ACTIVE_REQUIRED_GRID}; "
+            f"observed={len(actual)} missing={format_list(missing)} extra={format_list(extra)}"
+        )
+
+
+def format_list(values: list[str]) -> str:
+    if not values:
+        return "[]"
+    preview = values[:8]
+    if len(values) > 8:
+        preview.append(f"...{len(values) - 8} more")
+    return "[" + ", ".join(preview) + "]"
 
 
 def parse_exemptions(raw: Any) -> dict[str, str]:
@@ -294,11 +343,11 @@ def parse_exemptions(raw: Any) -> dict[str, str]:
             raise SystemExit("MEJEPA_SHIP_GATE_DASHBOARD_SCHEMA: exemption key must be a string")
         if "::" in cell:
             category, language = cell.split("::", 1)
-            if category in MUTATION_CATEGORIES and language in NON_PYTHON_LANGUAGES:
-                if isinstance(payload, dict):
-                    result[cell] = str(payload.get("reason") or "active exemption")
-                else:
-                    result[cell] = "active exemption"
+            split_cell(cell)
+            if isinstance(payload, dict):
+                result[cell] = str(payload.get("reason") or "active exemption")
+            else:
+                result[cell] = "active exemption"
     return result
 
 
@@ -441,12 +490,12 @@ def render_markdown(state: DashboardState, title: str) -> str:
 def heatmap_markdown(state: DashboardState) -> str:
     row_by_cell = {row.cell: row for row in state.rows}
     lines = [
-        "| Mutation category | " + " | ".join(f"`{language}`" for language in NON_PYTHON_LANGUAGES) + " |",
-        "|---|" + "---:|" * len(NON_PYTHON_LANGUAGES),
+        "| Mutation category | " + " | ".join(f"`{language}`" for language in ACTIVE_GATE_LANGUAGES) + " |",
+        "|---|" + "---:|" * len(ACTIVE_GATE_LANGUAGES),
     ]
     for category in MUTATION_CATEGORIES:
         values = []
-        for language in NON_PYTHON_LANGUAGES:
+        for language in ACTIVE_GATE_LANGUAGES:
             row = row_by_cell[f"{category}::{language}"]
             values.append(heatmap_value(row))
         lines.append(f"| `{category}` | " + " | ".join(values) + " |")
@@ -525,11 +574,11 @@ th {{ background: #eef2f6; }}
 
 def html_heatmap(state: DashboardState) -> str:
     row_by_cell = {row.cell: row for row in state.rows}
-    header = "".join(f"<th>{html.escape(language)}</th>" for language in NON_PYTHON_LANGUAGES)
+    header = "".join(f"<th>{html.escape(language)}</th>" for language in ACTIVE_GATE_LANGUAGES)
     body_rows = []
     for category in MUTATION_CATEGORIES:
         cells = []
-        for language in NON_PYTHON_LANGUAGES:
+        for language in ACTIVE_GATE_LANGUAGES:
             row = row_by_cell[f"{category}::{language}"]
             cells.append(f"<td>{html.escape(heatmap_value(row))}</td>")
         body_rows.append(f"<tr><th>{html.escape(category)}</th>{''.join(cells)}</tr>")

@@ -6,8 +6,8 @@ use anyhow::{ensure, Context, Result};
 use context_graph_mcp::handlers::tools::mejepa_eval_tools::mejepa_ship_gate_status_payload_with_exemptions;
 use context_graph_mejepa::eval::report::write_json_0600;
 use context_graph_mejepa::eval::{
-    cell_key, ActiveLearningSummary, EvalProvenance, EvalReport, MutationCategory,
-    OpenResearchQuestionStatus,
+    required_active_python_ship_gate_cells, ActiveLearningSummary, EvalProvenance, EvalReport,
+    MutationCategory, OpenResearchQuestionStatus,
 };
 use context_graph_mejepa::{count_cf, open_infer_rocksdb, Language, RocksDbEvalStore};
 use context_graph_mejepa_cf::CF_MEJEPA_EVAL_REPORTS;
@@ -196,11 +196,10 @@ fn cell_correlation_close(status: &Value, cell: &str, expected: f64) -> bool {
 
 fn report(date: &str, timestamp_millis: i64) -> EvalReport {
     let mut per_cell = BTreeMap::new();
-    per_cell.insert(
-        cell_key(MutationCategory::KnownGood, Language::Python),
-        Some(0.96),
-    );
-    per_cell.insert(EXEMPT_CELL.to_string(), Some(0.10));
+    for (_category, _language, cell) in required_active_python_ship_gate_cells() {
+        let correlation = if cell == EXEMPT_CELL { 0.10 } else { 0.96 };
+        per_cell.insert(cell, Some(correlation));
+    }
     let per_cell_convergence_eta =
         context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell, 0.95);
     EvalReport {
@@ -209,8 +208,20 @@ fn report(date: &str, timestamp_millis: i64) -> EvalReport {
         rolling_window_size: 100,
         holdout_count: 100,
         overall_correlation: Some(0.96),
-        per_category_correlation: BTreeMap::new(),
-        per_language_correlation: BTreeMap::new(),
+        per_category_correlation: MutationCategory::all()
+            .into_iter()
+            .map(|category| {
+                (
+                    category,
+                    Some(if category == MutationCategory::CompileError {
+                        0.10
+                    } else {
+                        0.96
+                    }),
+                )
+            })
+            .collect(),
+        per_language_correlation: BTreeMap::from([(Language::Python, Some(0.96))]),
         per_cell_correlation: per_cell,
         cell_exemptions: BTreeMap::new(),
         bayesian_shrinkage: BTreeMap::new(),

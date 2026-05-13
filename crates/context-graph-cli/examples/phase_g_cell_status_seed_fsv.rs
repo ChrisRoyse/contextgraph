@@ -1,4 +1,4 @@
-//! Phase G cell-status FSV seed harness.
+//! Active Python ship-gate cell-status FSV seed harness.
 //!
 //! Writes schema-valid `EvalReport` rows into real inference RocksDB stores so
 //! the shell FSV can exercise the public `mejepa cell-status` CLI against
@@ -12,8 +12,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, ensure, Context, Result};
 use chrono::Utc;
 use context_graph_mejepa::eval::{
-    cell_key, ActiveLearningSummary, EvalProvenance, EvalReport, MutationCategory,
-    OpenResearchQuestionStatus,
+    cell_key, required_active_python_ship_gate_cells, ActiveLearningSummary, EvalProvenance,
+    EvalReport, MutationCategory, OpenResearchQuestionStatus, ACTIVE_PYTHON_SHIP_GATE_GRID,
+    ACTIVE_PYTHON_SHIP_GATE_NAME,
 };
 use context_graph_mejepa::{count_cf, open_infer_rocksdb, Language, RocksDbEvalStore};
 use context_graph_mejepa_cf::CF_MEJEPA_EVAL_REPORTS;
@@ -28,7 +29,10 @@ const BELOW_CORRELATION: f32 = 0.91;
 enum Scenario {
     Pass,
     BelowThreshold,
-    MissingCell,
+    MissingCorrelation,
+    Stale80CellGrid,
+    OverLimitCell,
+    EmptyDb,
 }
 
 impl Scenario {
@@ -36,22 +40,34 @@ impl Scenario {
         match self {
             Self::Pass => "pass",
             Self::BelowThreshold => "below-threshold",
-            Self::MissingCell => "missing-cell",
+            Self::MissingCorrelation => "missing-correlation",
+            Self::Stale80CellGrid => "stale-80-cell-grid",
+            Self::OverLimitCell => "over-limit-cell",
+            Self::EmptyDb => "empty-db",
         }
     }
 
-    fn report_date(self) -> &'static str {
+    fn report_date(self) -> Option<&'static str> {
         match self {
-            Self::Pass => "2026-05-13-phase-g-cell-status-pass",
-            Self::BelowThreshold => "2026-05-13-phase-g-cell-status-below-threshold",
-            Self::MissingCell => "2026-05-13-phase-g-cell-status-missing-cell",
+            Self::Pass => Some("2026-05-13-active-python-cell-status-pass"),
+            Self::BelowThreshold => Some("2026-05-13-active-python-cell-status-below-threshold"),
+            Self::MissingCorrelation => {
+                Some("2026-05-13-active-python-cell-status-missing-correlation")
+            }
+            Self::Stale80CellGrid => Some("2026-05-13-active-python-cell-status-stale-80"),
+            Self::OverLimitCell => Some("2026-05-13-active-python-cell-status-over-limit"),
+            Self::EmptyDb => None,
         }
     }
 
     fn expected_exit_code(self) -> i32 {
         match self {
             Self::Pass => 0,
-            Self::BelowThreshold | Self::MissingCell => 1,
+            Self::BelowThreshold
+            | Self::MissingCorrelation
+            | Self::Stale80CellGrid
+            | Self::OverLimitCell
+            | Self::EmptyDb => 1,
         }
     }
 }
@@ -66,7 +82,10 @@ fn main() -> Result<()> {
     let scenarios = [
         Scenario::Pass,
         Scenario::BelowThreshold,
-        Scenario::MissingCell,
+        Scenario::MissingCorrelation,
+        Scenario::Stale80CellGrid,
+        Scenario::OverLimitCell,
+        Scenario::EmptyDb,
     ]
     .into_iter()
     .map(|scenario| seed_scenario(&fsv_root, scenario))
@@ -74,15 +93,17 @@ fn main() -> Result<()> {
 
     let output = json!({
         "schema_version": 1,
-        "fsv_name": "phase-g-cell-status-seed-fsv",
+        "fsv_name": "active-python-cell-status-seed-fsv",
         "seeded_at_unix_ms": Utc::now().timestamp_millis(),
         "threshold": THRESHOLD,
-        "required_cell_count": required_phase_g_cells().len(),
+        "active_gate": ACTIVE_PYTHON_SHIP_GATE_NAME,
+        "required_grid": ACTIVE_PYTHON_SHIP_GATE_GRID,
+        "required_cell_count": required_active_python_ship_gate_cells().len(),
         "source_of_truth": {
             "column_family": CF_MEJEPA_EVAL_REPORTS,
             "writer": "RocksDbEvalStore::persist_report",
             "readback": "RocksDbEvalStore::load_latest_report",
-            "grid": "8 mutation categories x 10 non-Python fixture languages"
+            "grid": ACTIVE_PYTHON_SHIP_GATE_GRID
         },
         "scenarios": scenarios,
     });
@@ -100,53 +121,79 @@ fn seed_scenario(fsv_root: &Path, scenario: Scenario) -> Result<Value> {
         )
     })?;
 
-    let report = build_report(scenario);
-    let input_hash = report
-        .determinism_hash()
-        .map_err(|err| anyhow!("hash input eval report: {err}"))?;
-
     let db = open_infer_rocksdb(&db_path).context("open inference RocksDB")?;
     let store =
         RocksDbEvalStore::new(db.clone()).map_err(|err| anyhow!("construct eval store: {err}"))?;
-    store
-        .persist_report(&report)
-        .map_err(|err| anyhow!("persist eval report: {err}"))?;
-    let readback = store
-        .load_latest_report()
-        .map_err(|err| anyhow!("load latest eval report: {err}"))?
-        .ok_or_else(|| anyhow!("latest eval report missing after persist"))?;
-    let readback_hash = readback
-        .determinism_hash()
-        .map_err(|err| anyhow!("hash readback eval report: {err}"))?;
-    ensure!(
-        input_hash == readback_hash,
-        "readback hash mismatch for {}",
-        scenario.name()
-    );
+    let (report_date, input_hash, readback_hash) = if matches!(scenario, Scenario::EmptyDb) {
+        let readback = store
+            .load_latest_report()
+            .map_err(|err| anyhow!("load latest empty eval report: {err}"))?;
+        ensure!(readback.is_none(), "empty-db scenario unexpectedly has a report");
+        (Value::Null, Value::Null, Value::Null)
+    } else {
+        let report = build_report(scenario);
+        let input_hash = report
+            .determinism_hash()
+            .map_err(|err| anyhow!("hash input eval report: {err}"))?;
+        store
+            .persist_report(&report)
+            .map_err(|err| anyhow!("persist eval report: {err}"))?;
+        let readback = store
+            .load_latest_report()
+            .map_err(|err| anyhow!("load latest eval report: {err}"))?
+            .ok_or_else(|| anyhow!("latest eval report missing after persist"))?;
+        let readback_hash = readback
+            .determinism_hash()
+            .map_err(|err| anyhow!("hash readback eval report: {err}"))?;
+        ensure!(
+            input_hash == readback_hash,
+            "readback hash mismatch for {}",
+            scenario.name()
+        );
+        (
+            json!(report.report_date),
+            json!(input_hash),
+            json!(readback_hash),
+        )
+    };
     let cf_count = count_cf(&db, CF_MEJEPA_EVAL_REPORTS).context("count eval-report CF")?;
-    ensure!(cf_count == 1, "expected exactly one eval report row");
+    let expected_cf_count = if matches!(scenario, Scenario::EmptyDb) {
+        0
+    } else {
+        1
+    };
+    ensure!(cf_count == expected_cf_count, "unexpected eval report row count");
     drop(store);
     drop(db);
 
     Ok(json!({
         "name": scenario.name(),
         "db_path": db_path,
-        "report_date": report.report_date,
+        "report_date": report_date,
         "expected_exit_code": scenario.expected_exit_code(),
-        "expected_required_cell_count": required_phase_g_cells().len(),
+        "expected_required_cell_count": required_active_python_ship_gate_cells().len(),
         "expected_passing_cell_count": match scenario {
-            Scenario::Pass => 80,
-            Scenario::BelowThreshold | Scenario::MissingCell => 79,
+            Scenario::Pass => json!(8),
+            Scenario::BelowThreshold | Scenario::MissingCorrelation => json!(7),
+            Scenario::Stale80CellGrid | Scenario::OverLimitCell | Scenario::EmptyDb => Value::Null,
         },
-        "expected_below_threshold_cell_count": if matches!(scenario, Scenario::BelowThreshold) { 1 } else { 0 },
-        "expected_missing_cell_count": if matches!(scenario, Scenario::MissingCell) { 1 } else { 0 },
-        "expected_failing_cell_count": if matches!(scenario, Scenario::Pass) { 0 } else { 1 },
+        "expected_below_threshold_cell_count": if matches!(scenario, Scenario::BelowThreshold) { json!(1) } else if matches!(scenario, Scenario::Pass | Scenario::MissingCorrelation) { json!(0) } else { Value::Null },
+        "expected_missing_cell_count": if matches!(scenario, Scenario::MissingCorrelation) { json!(1) } else if matches!(scenario, Scenario::Pass | Scenario::BelowThreshold) { json!(0) } else { Value::Null },
+        "expected_failing_cell_count": match scenario {
+            Scenario::Pass => json!(0),
+            Scenario::BelowThreshold | Scenario::MissingCorrelation => json!(1),
+            Scenario::Stale80CellGrid | Scenario::OverLimitCell | Scenario::EmptyDb => Value::Null,
+        },
         "target_cell": match scenario {
             Scenario::Pass => Value::Null,
-            Scenario::BelowThreshold => json!("off_by_one::rust"),
-            Scenario::MissingCell => json!("known_good::ruby"),
+            Scenario::BelowThreshold => json!("off_by_one::python"),
+            Scenario::MissingCorrelation => json!("known_good::python"),
+            Scenario::Stale80CellGrid => json!("known_good::rust"),
+            Scenario::OverLimitCell => json!("known_good::rust"),
+            Scenario::EmptyDb => Value::Null,
         },
         "determinism_hash": input_hash,
+        "readback_hash": readback_hash,
         "cf_count": cf_count,
         "readback_equal": true,
     }))
@@ -154,32 +201,52 @@ fn seed_scenario(fsv_root: &Path, scenario: Scenario) -> Result<Value> {
 
 fn build_report(scenario: Scenario) -> EvalReport {
     let mut per_cell_correlation = BTreeMap::new();
-    for (category, language, key) in required_phase_g_cells() {
-        if matches!(scenario, Scenario::MissingCell)
-            && category == MutationCategory::KnownGood
-            && language == Language::Ruby
-        {
-            continue;
+    let cells = match scenario {
+        Scenario::Stale80CellGrid => stale_non_python_phase_g_cells(),
+        Scenario::OverLimitCell => {
+            let mut cells = required_active_python_ship_gate_cells();
+            cells.push((
+                MutationCategory::KnownGood,
+                Language::Rust,
+                cell_key(MutationCategory::KnownGood, Language::Rust),
+            ));
+            cells
         }
+        Scenario::Pass | Scenario::BelowThreshold | Scenario::MissingCorrelation => {
+            required_active_python_ship_gate_cells()
+        }
+        Scenario::EmptyDb => unreachable!("empty-db scenario has no report"),
+    };
+    for (category, language, key) in cells {
         let correlation = if matches!(scenario, Scenario::BelowThreshold)
             && category == MutationCategory::OffByOne
-            && language == Language::Rust
+            && language == Language::Python
         {
-            BELOW_CORRELATION
+            Some(BELOW_CORRELATION)
+        } else if matches!(scenario, Scenario::MissingCorrelation)
+            && category == MutationCategory::KnownGood
+            && language == Language::Python
+        {
+            None
         } else {
-            PASS_CORRELATION
+            Some(PASS_CORRELATION)
         };
-        per_cell_correlation.insert(key, Some(correlation));
+        per_cell_correlation.insert(key, correlation);
     }
     let per_cell_convergence_eta =
         context_graph_mejepa::baseline_convergence_eta_for_cells(&per_cell_correlation, 0.95);
 
     let ship_gate_passed = matches!(scenario, Scenario::Pass);
+    let holdout_count = match scenario {
+        Scenario::Stale80CellGrid => 800,
+        Scenario::OverLimitCell => 900,
+        _ => 2400,
+    };
     EvalReport {
-        report_date: scenario.report_date().to_string(),
+        report_date: scenario.report_date().expect("report date").to_string(),
         generated_at_unix_ms: Utc::now().timestamp_millis(),
-        rolling_window_size: 800,
-        holdout_count: 800,
+        rolling_window_size: holdout_count,
+        holdout_count,
         overall_correlation: Some(if ship_gate_passed {
             PASS_CORRELATION
         } else {
@@ -189,7 +256,7 @@ fn build_report(scenario: Scenario) -> EvalReport {
             .into_iter()
             .map(|category| (category, Some(PASS_CORRELATION)))
             .collect(),
-        per_language_correlation: phase_g_languages()
+        per_language_correlation: report_languages(scenario)
             .into_iter()
             .map(|language| (language, Some(PASS_CORRELATION)))
             .collect(),
@@ -201,7 +268,7 @@ fn build_report(scenario: Scenario) -> EvalReport {
         gtau_pass_rate: BTreeMap::new(),
         per_prediction_class_calibration: BTreeMap::new(),
         per_failure_mode_class: context_graph_mejepa::empty_failure_mode_class_metrics(
-            800,
+            holdout_count,
             &context_graph_mejepa::EvalConfig::default(),
         ),
         per_cell_convergence_eta,
@@ -216,8 +283,8 @@ fn build_report(scenario: Scenario) -> EvalReport {
         aux_head_distillation: None,
         regression_checks: Vec::new(),
         open_research_questions: vec![OpenResearchQuestionStatus {
-            id: "TASK-G-002".to_string(),
-            question: "Does the per-cell convergence driver bind to eval-report source of truth?"
+            id: "TASK-PY-G-036".to_string(),
+            question: "Does the active Python ship gate reject stale non-Python cell grids?"
                 .to_string(),
             status: "closed_by_fsv".to_string(),
         }],
@@ -235,26 +302,37 @@ fn build_report(scenario: Scenario) -> EvalReport {
             vec![format!("{} scenario intentionally fails", scenario.name())]
         },
         provenance: EvalProvenance {
-            corpus_sha: "phase-g-cell-status-fsv".to_string(),
-            eval_code_version: "task-g-002-fsv".to_string(),
-            calibration_version: "task-g-002-fsv".to_string(),
-            generated_by: "phase_g_cell_status_seed_fsv".to_string(),
+            corpus_sha: "active-python-cell-status-fsv".to_string(),
+            eval_code_version: "task-py-g-036-fsv".to_string(),
+            calibration_version: "task-py-g-036-fsv".to_string(),
+            generated_by: "active_python_cell_status_seed_fsv".to_string(),
         },
         wall_clock_seconds: 1.0,
     }
 }
 
-fn required_phase_g_cells() -> Vec<(MutationCategory, Language, String)> {
-    let mut cells = Vec::with_capacity(MutationCategory::all().len() * phase_g_languages().len());
+fn report_languages(scenario: Scenario) -> Vec<Language> {
+    if matches!(scenario, Scenario::Stale80CellGrid) {
+        return stale_non_python_languages().to_vec();
+    }
+    if matches!(scenario, Scenario::OverLimitCell) {
+        return vec![Language::Python, Language::Rust];
+    }
+    vec![Language::Python]
+}
+
+fn stale_non_python_phase_g_cells() -> Vec<(MutationCategory, Language, String)> {
+    let mut cells =
+        Vec::with_capacity(MutationCategory::all().len() * stale_non_python_languages().len());
     for category in MutationCategory::all() {
-        for language in phase_g_languages() {
+        for language in stale_non_python_languages() {
             cells.push((category, language, cell_key(category, language)));
         }
     }
     cells
 }
 
-fn phase_g_languages() -> [Language; 10] {
+fn stale_non_python_languages() -> [Language; 10] {
     [
         Language::Rust,
         Language::Javascript,
