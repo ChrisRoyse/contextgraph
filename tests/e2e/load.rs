@@ -179,7 +179,27 @@ struct FeedbackSample {
 }
 
 pub fn default_fsv_root() -> PathBuf {
-    PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-load-test-fsv")
+    process_thread_scoped_fsv_root("phase-f-load-test-fsv")
+}
+
+pub fn process_thread_scoped_fsv_root(task_dir: &str) -> PathBuf {
+    let thread_id = sanitize_path_segment(&format!("{:?}", std::thread::current().id()));
+    PathBuf::from("/mnt/d/contextgraph/fsv")
+        .join(task_dir)
+        .join("runs")
+        .join(format!("pid-{}-{thread_id}", std::process::id()))
+}
+
+fn sanitize_path_segment(raw: &str) -> String {
+    raw.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect()
 }
 
 pub fn default_report_path(fsv_root: &Path) -> PathBuf {

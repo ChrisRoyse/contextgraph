@@ -149,7 +149,7 @@ struct SoakExport {
 }
 
 pub fn default_fsv_root() -> PathBuf {
-    PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-soak-test-fsv")
+    load::process_thread_scoped_fsv_root("phase-f-soak-test-fsv")
 }
 
 pub fn default_report_path(fsv_root: &Path) -> PathBuf {
@@ -553,5 +553,17 @@ mod tests {
             .cycle_summaries
             .iter()
             .all(|summary| summary.live_prediction_rows > 0 && summary.feedback_rows > 0));
+    }
+
+    #[test]
+    fn default_fsv_root_is_process_thread_scoped_to_prevent_readback_races() {
+        let fsv_root = default_fsv_root();
+        let root_text = fsv_root.to_string_lossy();
+        assert!(fsv_root.starts_with("/mnt/d/contextgraph/fsv/phase-f-soak-test-fsv/runs"));
+        assert!(root_text.contains(&format!("pid-{}", std::process::id())));
+        assert_ne!(
+            fsv_root,
+            PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-soak-test-fsv")
+        );
     }
 }
