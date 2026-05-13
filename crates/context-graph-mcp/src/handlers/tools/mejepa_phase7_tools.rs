@@ -6,6 +6,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tracing::error;
 
+use crate::deprecation::{
+    apply_retired_cgreality_deprecation, is_retired_cgreality_tool as retired_tool_is_registered,
+};
 use crate::handlers::tools::helpers::ToolErrorKind;
 use crate::handlers::tools::mejepa_phase7_storage::{
     capture_audit, locate_shift, replay_shift, subscriber_status, valid_shift_id,
@@ -14,14 +17,6 @@ use crate::handlers::tools::mejepa_phase7_storage::{
 use crate::handlers::Handlers;
 use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
 use crate::tools::names as tool_names;
-
-const RETIRED_TOOLS: &[&str] = &[
-    "mcp__cgreality__reality_run_attempt",
-    "mcp__cgreality__reality_alter_file",
-    "mcp__cgreality__reality_alter_run",
-    "mcp__cgreality__reality_alter_apply",
-    "mcp__cgreality__reality_drip_attempt",
-];
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -42,7 +37,7 @@ struct CaptureAuditRequest {
 }
 
 pub(crate) fn is_retired_cgreality_tool(tool_name: &str) -> bool {
-    RETIRED_TOOLS.contains(&tool_name)
+    retired_tool_is_registered(tool_name)
 }
 
 pub(crate) fn retired_tool_response(id: Option<JsonRpcId>, tool_name: &str) -> JsonRpcResponse {
@@ -56,18 +51,19 @@ pub(crate) fn retired_tool_response(id: Option<JsonRpcId>, tool_name: &str) -> J
         "attempted_tool": tool_name,
         "remediation": "use mcp__cgreality__mejepa_verify, mcp__cgreality__mejepa_predict_latest, or a Phase 7 mejepa subscriber tool"
     });
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "content": [{
-                "type": "text",
-                "text": "CCREALITY_ENGINE_RETIRED: tool retired in 2026-05-09 ME-JEPA pivot; use mcp__cgreality__mejepa_*"
-            }],
-            "structuredContent": structured,
-            "isError": true,
-            "errorCode": error_codes::INVALID_PARAMS
-        }),
-    )
+    let response = json!({
+        "content": [{
+            "type": "text",
+            "text": "CCREALITY_ENGINE_RETIRED: tool retired in 2026-05-09 ME-JEPA pivot; use mcp__cgreality__mejepa_*"
+        }],
+        "structuredContent": structured,
+        "isError": true,
+        "errorCode": error_codes::INVALID_PARAMS
+    });
+    match apply_retired_cgreality_deprecation(tool_name, response) {
+        Ok(value) => JsonRpcResponse::success(id, value),
+        Err(message) => JsonRpcResponse::error(id, error_codes::INVALID_PARAMS, message),
+    }
 }
 
 impl Handlers {
@@ -213,6 +209,8 @@ mod tests {
 
     #[test]
     fn retired_tool_returns_mcp_tool_error_result() {
+        let _guard = crate::handlers::tools::test_env_lock::lock();
+        std::env::remove_var("CONTEXT_GRAPH_DEPRECATION_LEVEL");
         let response = retired_tool_response(
             Some(JsonRpcId::Number(7)),
             "mcp__cgreality__reality_run_attempt",
@@ -228,5 +226,26 @@ mod tests {
             result["structuredContent"]["attempted_tool"],
             json!("mcp__cgreality__reality_run_attempt")
         );
+        assert_eq!(
+            result["warnings"][0]["code"],
+            json!("MEJEPA_TOOL_DEPRECATED_MCP__CGREALITY__REALITY_RUN_ATTEMPT")
+        );
+    }
+
+    #[test]
+    fn retired_tool_deprecation_error_level_returns_jsonrpc_error() {
+        let _guard = crate::handlers::tools::test_env_lock::lock();
+        std::env::set_var("CONTEXT_GRAPH_DEPRECATION_LEVEL", "error");
+        let response = retired_tool_response(
+            Some(JsonRpcId::Number(8)),
+            "mcp__cgreality__reality_run_attempt",
+        );
+        assert!(response.result.is_none());
+        let error = response.error.unwrap();
+        assert_eq!(error.code, error_codes::INVALID_PARAMS);
+        assert!(error
+            .message
+            .contains("MEJEPA_TOOL_DEPRECATED_MCP__CGREALITY__REALITY_RUN_ATTEMPT"));
+        std::env::remove_var("CONTEXT_GRAPH_DEPRECATION_LEVEL");
     }
 }

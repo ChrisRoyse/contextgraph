@@ -22,7 +22,7 @@ use context_graph_mejepa::{
     AgentId, CalibrationStore, ChunkId, DdaSignals, FailedGate, FeedbackId, FeedbackKind,
     LabelMethod, MeJepaInferConfig, OracleOutcome, PanelId, PatchBundle, PredictionId,
     RealityPrediction, RocksDbEvalStore, RocksDbInferStore, SurpriseEvent, SurpriseSeverity,
-    TaskContext, TestId, VerifyVerdict, WitnessHash,
+    SystemCostCounters, TaskContext, TestId, VerifyVerdict, WitnessHash,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
@@ -346,7 +346,10 @@ impl Handlers {
                     },
                 )?;
             let calibration = CalibrationStore::new(db.clone(), 30)?;
-            let store = Arc::new(RocksDbInferStore::new(db));
+            let store = Arc::new(RocksDbInferStore::new_with_system_cost_counters(
+                db,
+                Arc::clone(&self.system_cost_counters),
+            ));
             let compiler = build_deterministic_compiler(
                 repo_root,
                 store,
@@ -639,6 +642,19 @@ impl Handlers {
         id: Option<JsonRpcId>,
         args: serde_json::Value,
     ) -> JsonRpcResponse {
+        let request_body_bytes = match serde_json::to_vec(&args) {
+            Ok(bytes) => bytes.len() as u64,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} request-body serialization failed: {err}",
+                        tool_names::MEJEPA_RECORD_AGENT_FEEDBACK
+                    ),
+                );
+            }
+        };
         let request: RecordAgentFeedbackRequest = match serde_json::from_value(args) {
             Ok(value) => value,
             Err(err) => {
@@ -656,9 +672,40 @@ impl Handlers {
             Ok(path) => path,
             Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
         };
-        let result = record_agent_feedback_in_db(&db_path, request);
+        let result = record_agent_feedback_in_db(
+            &db_path,
+            request,
+            Some(Arc::clone(&self.system_cost_counters)),
+        );
         match result {
-            Ok(value) => self.tool_result(id, value),
+            Ok(mut value) => {
+                self.system_cost_counters
+                    .record_agent_feedback_tokens(request_body_bytes);
+                let snapshot_json = match serde_json::to_value(self.system_cost_counters.snapshot())
+                {
+                    Ok(value) => value,
+                    Err(err) => {
+                        return self.tool_error_structured(
+                            id,
+                            ToolErrorKind::Execution,
+                            "MEJEPA_SYSTEM_COST_SNAPSHOT_SERIALIZE_FAILED",
+                            &err.to_string(),
+                            json!({}),
+                        );
+                    }
+                };
+                let Some(object) = value.as_object_mut() else {
+                    return self.tool_error_structured(
+                        id,
+                        ToolErrorKind::Execution,
+                        "MEJEPA_RECORD_AGENT_FEEDBACK_RESULT_SHAPE_INVALID",
+                        "record_agent_feedback_in_db returned a non-object response",
+                        json!({"dbPath": db_path}),
+                    );
+                };
+                object.insert("systemCostSnapshot".to_string(), snapshot_json);
+                self.tool_result(id, value)
+            }
             Err(err) => {
                 let message = err.to_string();
                 let (kind, code) = mejepa_write_error_classification(
@@ -1666,6 +1713,7 @@ fn saliency_by_chunk(prediction: &RealityPrediction) -> AnyhowResult<BTreeMap<St
 fn record_agent_feedback_in_db(
     db_path: &std::path::Path,
     request: RecordAgentFeedbackRequest,
+    system_cost_counters: Option<Arc<SystemCostCounters>>,
 ) -> AnyhowResult<Value> {
     let prediction_id = parse_prediction_id_hex(&request.prediction_id)?;
     let identity = resolve_feedback_identity(
@@ -1734,11 +1782,16 @@ fn record_agent_feedback_in_db(
     })
     .map_err(|err| anyhow!("SurpriseEvent validation failed: {err}"))?;
 
-    let mut queue = RocksDbEvalStore::new(db.clone())
-        .context("construct RocksDbEvalStore")?
-        .load_queue()
-        .context("load active-learning queue")?
-        .unwrap_or(ActiveLearningQueueState::new(4096).context("create active-learning queue")?);
+    let mut queue = match &system_cost_counters {
+        Some(counters) => {
+            RocksDbEvalStore::new_with_system_cost_counters(db.clone(), Arc::clone(counters))
+        }
+        None => RocksDbEvalStore::new(db.clone()),
+    }
+    .context("construct RocksDbEvalStore")?
+    .load_queue()
+    .context("load active-learning queue")?
+    .unwrap_or(ActiveLearningQueueState::new(4096).context("create active-learning queue")?);
     let queue_count_before = queue.entries.len();
     let mut active_learning_queued = matches!(
         event.feedback_kind,
@@ -1750,7 +1803,13 @@ fn record_agent_feedback_in_db(
             .context("enqueue agent surprise")?;
     }
 
-    persist_feedback_and_queue(db.as_ref(), &persisted_feedback_key, &event, &queue)?;
+    persist_feedback_and_queue(
+        db.as_ref(),
+        &persisted_feedback_key,
+        &event,
+        &queue,
+        system_cost_counters.as_deref(),
+    )?;
     let queue_entry = queue.entries.get(&prediction.task_id).cloned();
     let sampling_weight_multiplier = 1.0 + 2.0 * event.severity.severity_score();
     Ok(json!({
@@ -2110,6 +2169,7 @@ fn persist_feedback_and_queue(
     feedback_key: &[u8],
     event: &SurpriseEvent,
     queue: &ActiveLearningQueueState,
+    system_cost_counters: Option<&SystemCostCounters>,
 ) -> AnyhowResult<()> {
     let feedback_cf = cf_handle(db, CF_MEJEPA_AGENT_FEEDBACK)?;
     let queue_cf = cf_handle(db, CF_MEJEPA_ACTIVE_LEARNING_QUEUE)?;
@@ -2117,22 +2177,22 @@ fn persist_feedback_and_queue(
     let ood_cf = cf_handle(db, CF_MEJEPA_OOD_ESCALATIONS)?;
     let feedback_bytes = serde_json::to_vec(event).context("encode SurpriseEvent")?;
     let queue_bytes = bincode::serialize(queue).context("encode ActiveLearningQueueState")?;
+    let mut bytes_written = feedback_bytes.len() as u64 + queue_bytes.len() as u64;
+    let mut writes = 2_u64;
     let mut batch = WriteBatch::default();
     batch.put_cf(feedback_cf, feedback_key, &feedback_bytes);
     batch.put_cf(queue_cf, b"active", &queue_bytes);
     for entry in &queue.evicted {
-        batch.put_cf(
-            evictions_cf,
-            entry.task_id.0.as_bytes(),
-            bincode::serialize(entry).context("encode active-learning eviction")?,
-        );
+        let entry_bytes = bincode::serialize(entry).context("encode active-learning eviction")?;
+        bytes_written = bytes_written.saturating_add(entry_bytes.len() as u64);
+        writes = writes.saturating_add(1);
+        batch.put_cf(evictions_cf, entry.task_id.0.as_bytes(), entry_bytes);
     }
     for entry in &queue.ood_escalations {
-        batch.put_cf(
-            ood_cf,
-            entry.task_id.0.as_bytes(),
-            bincode::serialize(entry).context("encode OOD escalation")?,
-        );
+        let entry_bytes = bincode::serialize(entry).context("encode OOD escalation")?;
+        bytes_written = bytes_written.saturating_add(entry_bytes.len() as u64);
+        writes = writes.saturating_add(1);
+        batch.put_cf(ood_cf, entry.task_id.0.as_bytes(), entry_bytes);
     }
     let mut opts = WriteOptions::default();
     opts.set_sync(true);
@@ -2161,6 +2221,9 @@ fn persist_feedback_and_queue(
     }
     let _decoded_queue: ActiveLearningQueueState =
         bincode::deserialize(&queue_readback).context("decode queue readback")?;
+    if let Some(counters) = system_cost_counters {
+        counters.record_rocksdb_writes(bytes_written, writes);
+    }
     Ok(())
 }
 
@@ -3238,6 +3301,171 @@ can_operator_override = {operator}
             }
             _ => false,
         }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn mejepa_system_cost_feedback_counter_writes_phase_f_fsv_artifact() {
+        let _guard = env_guard();
+        let (handlers, _handler_tempdir) =
+            crate::handlers::tests::create_protocol_test_handlers().await;
+        let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
+        let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-system-cost-producers-fsv");
+        fs::create_dir_all(&fsv_root).unwrap();
+        let run_root = fsv_root.join(format!(
+            "mcp-feedback-run-{}-{}",
+            started_at_unix_ms,
+            std::process::id()
+        ));
+        fs::create_dir_all(&run_root).unwrap();
+        let infer_db = run_root.join("infer-db");
+        std::env::set_var(ENV_INFER_DB, &infer_db);
+
+        let prediction = inspect_prediction_fixture([0x84; 16], "src/lib.rs#fn#feedback-counter");
+        let db = open_infer_rocksdb(&infer_db).unwrap();
+        persist_prediction_and_dda(db.clone(), &prediction);
+        let cf_counts_before = json!({
+            CF_MEJEPA_AGENT_FEEDBACK: count_cf_any(db.as_ref(), CF_MEJEPA_AGENT_FEEDBACK).unwrap(),
+            CF_MEJEPA_ACTIVE_LEARNING_QUEUE: count_cf_any(db.as_ref(), CF_MEJEPA_ACTIVE_LEARNING_QUEUE).unwrap()
+        });
+        drop(db);
+
+        let mut expected_agent_feedback_tokens = 0_u64;
+        let mut final_snapshot = json!(null);
+        let mut final_structured = json!(null);
+        for idx in 0..50_u64 {
+            let args = json!({
+                "predictionId": hex::encode(prediction.prediction_id),
+                "feedbackKind": "confirmed",
+                "agentExplanation": format!("system cost feedback counter fsv event {idx}"),
+                "severity": if idx % 3 == 0 { "high" } else { "medium" },
+                "extraStructuredData": {"caseIndex": idx}
+            });
+            expected_agent_feedback_tokens += serde_json::to_vec(&args).unwrap().len() as u64;
+            let response = handlers
+                .call_mejepa_record_agent_feedback(Some(JsonRpcId::Number(840 + idx as i64)), args)
+                .await;
+            assert!(response.error.is_none());
+            let result = response.result.unwrap();
+            assert_eq!(result["isError"], json!(false), "{result}");
+            final_structured = result["structuredContent"].clone();
+            final_snapshot = final_structured["systemCostSnapshot"].clone();
+        }
+
+        let reopened = open_infer_rocksdb(&infer_db).unwrap();
+        for cf_name in [
+            CF_MEJEPA_AGENT_FEEDBACK,
+            CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
+            CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS,
+            CF_MEJEPA_OOD_ESCALATIONS,
+        ] {
+            let cf = cf_handle(reopened.as_ref(), cf_name).unwrap();
+            reopened.flush_cf(cf).unwrap();
+        }
+        let feedback_rows = count_cf_any(reopened.as_ref(), CF_MEJEPA_AGENT_FEEDBACK).unwrap();
+        let queue_rows = count_cf_any(reopened.as_ref(), CF_MEJEPA_ACTIVE_LEARNING_QUEUE).unwrap();
+        let cf_counts_after = json!({
+            CF_MEJEPA_AGENT_FEEDBACK: feedback_rows,
+            CF_MEJEPA_ACTIVE_LEARNING_QUEUE: queue_rows
+        });
+        drop(reopened);
+
+        let physical = physical_file_summary(&run_root);
+        let rocksdb_writes = final_snapshot["rocksdbWritesTotal"].as_u64().unwrap_or(0);
+        let rocksdb_bytes = final_snapshot["rocksdbBytesWrittenTotal"]
+            .as_u64()
+            .unwrap_or(0);
+        let actual_tokens = final_snapshot["agentFeedbackTokensTotal"]
+            .as_u64()
+            .unwrap_or(0);
+        let happy_pass = feedback_rows == 50
+            && queue_rows == 1
+            && actual_tokens == expected_agent_feedback_tokens
+            && rocksdb_writes >= 100
+            && rocksdb_bytes > 0
+            && final_structured["sourceOfTruth"]["feedbackCf"] == json!(CF_MEJEPA_AGENT_FEEDBACK)
+            && final_structured["systemCostSnapshot"]["agentFeedbackTokensTotal"]
+                == json!(expected_agent_feedback_tokens);
+        let boundary_cases = vec![
+            json!({
+                "case": "feedback_rows_reopen_to_exact_count",
+                "sot": CF_MEJEPA_AGENT_FEEDBACK,
+                "expected": 50,
+                "actual": feedback_rows,
+                "pass": feedback_rows == 50
+            }),
+            json!({
+                "case": "request_body_token_counter_matches_independent_sum",
+                "sot": "SystemCostCounters.agentFeedbackTokensTotal",
+                "expected": expected_agent_feedback_tokens,
+                "actual": actual_tokens,
+                "pass": actual_tokens == expected_agent_feedback_tokens
+            }),
+            json!({
+                "case": "feedback_batch_write_counter_records_feedback_and_queue_puts",
+                "sot": "SystemCostCounters.rocksdbWritesTotal",
+                "expected_minimum": 100,
+                "actual": rocksdb_writes,
+                "pass": rocksdb_writes >= 100
+            }),
+            json!({
+                "case": "feedback_batch_byte_counter_is_nonzero",
+                "sot": "SystemCostCounters.rocksdbBytesWrittenTotal",
+                "expected": "> 0",
+                "actual": rocksdb_bytes,
+                "pass": rocksdb_bytes > 0
+            }),
+        ];
+        let all_passed = happy_pass
+            && boundary_cases
+                .iter()
+                .all(|case| case["pass"].as_bool() == Some(true));
+        let artifact_path = fsv_root.join("feedback_counter_fsv.json");
+        let report = json!({
+            "fsv_root": fsv_root.display().to_string(),
+            "task_id": "TASK-OBS-017",
+            "started_at_unix_ms": started_at_unix_ms,
+            "build_release_sha": git_head_short_for_test(),
+            "happy_path": [{
+                "case": "feedback_handler_records_tokens_and_rocksdb_write_counters",
+                "sot": format!("{CF_MEJEPA_AGENT_FEEDBACK} + SystemCostCounters"),
+                "before": cf_counts_before,
+                "trigger": "50 mejepa_record_agent_feedback calls through handler",
+                "after": {
+                    "cf_counts_after": cf_counts_after,
+                    "system_cost_snapshot": final_snapshot
+                },
+                "expected": {
+                    "feedback_rows": 50,
+                    "queue_rows": 1,
+                    "agent_feedback_tokens_total": expected_agent_feedback_tokens,
+                    "rocksdb_writes_total_min": 100,
+                    "rocksdb_bytes_written_total": "> 0"
+                },
+                "actual": {
+                    "feedback_rows": feedback_rows,
+                    "queue_rows": queue_rows,
+                    "agent_feedback_tokens_total": actual_tokens,
+                    "rocksdb_writes_total": rocksdb_writes,
+                    "rocksdb_bytes_written_total": rocksdb_bytes
+                },
+                "pass": happy_pass,
+                "evidence_path": run_root.display().to_string()
+            }],
+            "boundary_cases": boundary_cases,
+            "cf_counts_before": cf_counts_before,
+            "cf_counts_after": cf_counts_after,
+            "physical_artifacts": physical,
+            "readback_equal": happy_pass,
+            "all_passed": all_passed
+        });
+        write_fsv_json(&artifact_path, &report);
+        let report_readback: Value =
+            serde_json::from_slice(&fs::read(&artifact_path).unwrap()).unwrap();
+        assert_eq!(
+            report_readback["all_passed"],
+            json!(true),
+            "{report_readback}"
+        );
     }
 
     #[tokio::test]

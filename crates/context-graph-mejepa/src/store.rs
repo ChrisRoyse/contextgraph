@@ -13,20 +13,39 @@ use crate::park_list::{
     read_park_list_entry as read_park_list_entry_row,
     record_park_list_failure as record_park_list_failure_row, ParkListEntry,
 };
+use crate::system_cost::SystemCostCounters;
 use crate::types::{ChunkId, DdaSignals, PanelId, RealityPrediction};
 
 #[derive(Clone)]
 pub struct RocksDbInferStore {
     db: Arc<DB>,
+    system_cost_counters: Option<Arc<SystemCostCounters>>,
 }
 
 impl RocksDbInferStore {
     pub fn new(db: Arc<DB>) -> Self {
-        Self { db }
+        Self {
+            db,
+            system_cost_counters: None,
+        }
+    }
+
+    pub fn new_with_system_cost_counters(
+        db: Arc<DB>,
+        system_cost_counters: Arc<SystemCostCounters>,
+    ) -> Self {
+        Self {
+            db,
+            system_cost_counters: Some(system_cost_counters),
+        }
     }
 
     pub fn db(&self) -> Arc<DB> {
         self.db.clone()
+    }
+
+    pub fn system_cost_counters(&self) -> Option<Arc<SystemCostCounters>> {
+        self.system_cost_counters.clone()
     }
 
     fn live_key(prediction: &RealityPrediction) -> Vec<u8> {
@@ -92,6 +111,9 @@ impl MejepaStore for RocksDbInferStore {
                 field: "live_predictions".to_string(),
                 detail: "read-after-write decoded prediction does not match input".to_string(),
             });
+        }
+        if let Some(counters) = &self.system_cost_counters {
+            counters.record_rocksdb_write(value.len() as u64);
         }
         Ok(())
     }
@@ -246,7 +268,11 @@ impl MejepaStore for RocksDbInferStore {
         now_unix_ms: i64,
         error_code: &str,
     ) -> Result<ParkListEntry, MejepaInferError> {
-        record_park_list_failure_row(&self.db, prediction_id, now_unix_ms, error_code)
+        let entry = record_park_list_failure_row(&self.db, prediction_id, now_unix_ms, error_code)?;
+        if let Some(counters) = &self.system_cost_counters {
+            counters.record_rocksdb_write(serde_json::to_vec(&entry)?.len() as u64);
+        }
+        Ok(entry)
     }
 
     fn clear_park_list_entry(&self, prediction_id: [u8; 16]) -> Result<(), MejepaInferError> {

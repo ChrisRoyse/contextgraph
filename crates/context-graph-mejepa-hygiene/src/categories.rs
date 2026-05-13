@@ -88,10 +88,14 @@ impl StorageCategory {
             Self::LivePanelDiskOverflow => &[CF_MEJEPA_PANEL_DISK_OVERFLOW],
             Self::CalibrationSnapshots => &[CF_MEJEPA_CALIBRATION_HISTORY],
             Self::AuxSignalsOverrides => &[CF_MEJEPA_AUX_SIGNALS_OVERRIDES],
-            Self::AgentFeedbackAndOverrides => {
-                &[CF_MEJEPA_AGENT_FEEDBACK, CF_MEJEPA_OPERATOR_OVERRIDES]
+            Self::AgentFeedbackAndOverrides => &[
+                CF_MEJEPA_AGENT_FEEDBACK,
+                CF_MEJEPA_OPERATOR_OVERRIDES,
+                CF_MEJEPA_LABEL_TRANSFER_DECISIONS,
+            ],
+            Self::ShiftLogSubscriberState => {
+                &[CF_MEJEPA_SHIFT_WATERMARK, CF_MEJEPA_LIVE_PREDICTIONS]
             }
-            Self::ShiftLogSubscriberState => &[CF_MEJEPA_SHIFT_WATERMARK],
         }
     }
 
@@ -115,6 +119,22 @@ mod tests {
         assert_eq!(
             StorageCategory::from_cf(context_graph_mejepa_cf::CF_MEJEPA_OPERATOR_OVERRIDES),
             Some(StorageCategory::AgentFeedbackAndOverrides)
+        );
+        assert_eq!(
+            StorageCategory::from_cf(context_graph_mejepa_cf::CF_MEJEPA_LABEL_TRANSFER_DECISIONS),
+            Some(StorageCategory::AgentFeedbackAndOverrides)
+        );
+    }
+
+    #[test]
+    fn session_cleanup_cfs_are_quota_accounted() {
+        assert_eq!(
+            StorageCategory::from_cf(context_graph_mejepa_cf::CF_MEJEPA_SHIFT_WATERMARK),
+            Some(StorageCategory::ShiftLogSubscriberState)
+        );
+        assert_eq!(
+            StorageCategory::from_cf(context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS),
+            Some(StorageCategory::ShiftLogSubscriberState)
         );
     }
 }

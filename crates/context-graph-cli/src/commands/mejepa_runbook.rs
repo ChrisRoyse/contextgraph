@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Context, Result};
 use chrono::NaiveDate;
-use clap::Args;
+use clap::{Args, Subcommand};
 use context_graph_mejepa::eval::store::CF_MEJEPA_EVAL_REPORTS;
 use context_graph_mejepa::eval::types::EvalReport;
 use context_graph_mejepa::heal::{
@@ -20,7 +20,7 @@ use context_graph_mejepa::heal::{
     WitnessChainAppender,
 };
 use context_graph_mejepa::{open_infer_rocksdb, RocksDbEvalStore};
-use rocksdb::IteratorMode;
+use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, WriteBatch};
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -219,11 +219,297 @@ pub fn run_storage_verify(args: StorageVerifyArgs) -> Result<StorageVerifyOutput
     })
 }
 
+#[derive(Subcommand, Debug, Clone)]
+pub enum StorageCommands {
+    /// Integrity-check the inference RocksDB.
+    Verify(StorageVerifyArgs),
+    /// Restore one column family from a source RocksDB snapshot into the target DB.
+    #[command(name = "restore-cf")]
+    RestoreCf(StorageRestoreCfArgs),
+    /// Copy rows from one column family to another in the same target DB.
+    #[command(name = "migrate-cf")]
+    MigrateCf(StorageMigrateCfArgs),
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct StorageRestoreCfArgs {
+    /// Target ME-JEPA RocksDB path to restore into.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_INFER_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
+    pub db_path: PathBuf,
+
+    /// Source RocksDB snapshot path containing the same column family.
+    #[arg(long)]
+    pub source: PathBuf,
+
+    /// Column family name to restore.
+    pub cf_name: String,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct StorageMigrateCfArgs {
+    /// Target ME-JEPA RocksDB path containing both column families.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_INFER_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
+    pub db_path: PathBuf,
+
+    /// Source column family name.
+    pub old_cf_name: String,
+
+    /// Destination column family name.
+    pub new_cf_name: String,
+
+    /// Inspect source/destination counts without writing.
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Permit replacing an already-populated destination CF.
+    #[arg(long)]
+    pub allow_overwrite: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageRestoreCfOutput {
+    pub db_path: PathBuf,
+    pub source_path: PathBuf,
+    pub cf_name: String,
+    pub source_rows: u64,
+    pub source_value_bytes: u64,
+    pub target_rows_before: u64,
+    pub target_rows_after: u64,
+    pub replaced_target_rows: u64,
+    pub readback_equal: bool,
+    pub reopened_readback_equal: bool,
+    pub source_of_truth: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageMigrateCfOutput {
+    pub db_path: PathBuf,
+    pub old_cf_name: String,
+    pub new_cf_name: String,
+    pub dry_run: bool,
+    pub allow_overwrite: bool,
+    pub source_rows: u64,
+    pub source_value_bytes: u64,
+    pub target_rows_before: u64,
+    pub target_rows_after: u64,
+    pub migrated_rows: u64,
+    pub readback_equal: bool,
+    pub reopened_readback_equal: bool,
+    pub source_of_truth: Value,
+}
+
+pub fn run_storage_command(action: StorageCommands) -> Result<Value> {
+    match action {
+        StorageCommands::Verify(args) => {
+            serde_json::to_value(run_storage_verify(args)?).context("serialize storage verify")
+        }
+        StorageCommands::RestoreCf(args) => serde_json::to_value(run_storage_restore_cf(args)?)
+            .context("serialize storage restore-cf"),
+        StorageCommands::MigrateCf(args) => serde_json::to_value(run_storage_migrate_cf(args)?)
+            .context("serialize storage migrate-cf"),
+    }
+}
+
+pub fn run_storage_restore_cf(args: StorageRestoreCfArgs) -> Result<StorageRestoreCfOutput> {
+    let cf_name = validate_hygiene_cf_name(&args.cf_name, "restore-cf")?;
+    validate_dir(&args.db_path, "storage-db-path")?;
+    validate_dir(&args.source, "storage-source-path")?;
+    ensure_distinct_dirs(
+        &args.db_path,
+        &args.source,
+        "MEJEPA_RUNBOOK_STORAGE_RESTORE_SAME_DB",
+    )?;
+
+    let source_db = open_hygiene_rocksdb_read_only(&args.source).with_context(|| {
+        format!(
+            "MEJEPA_RUNBOOK_STORAGE_RESTORE_SOURCE_OPEN_FAILED: {}",
+            args.source.display()
+        )
+    })?;
+    let source_rows = collect_cf_rows(&source_db, &cf_name)
+        .with_context(|| format!("MEJEPA_RUNBOOK_STORAGE_RESTORE_SOURCE_READ_FAILED: {cf_name}"))?;
+    if source_rows.is_empty() {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_STORAGE_RESTORE_SOURCE_EMPTY: cf_name={cf_name} source={}",
+            args.source.display()
+        ));
+    }
+    let source_value_bytes = rows_value_bytes(&source_rows);
+    drop(source_db);
+
+    let target_db = context_graph_mejepa_hygiene::open_hygiene_rocksdb(&args.db_path)
+        .map_err(|err| anyhow!("MEJEPA_RUNBOOK_STORAGE_RESTORE_TARGET_OPEN_FAILED: {err}"))?;
+    let target_rows_before = collect_cf_rows(target_db.as_ref(), &cf_name)
+        .with_context(|| format!("MEJEPA_RUNBOOK_STORAGE_RESTORE_TARGET_READ_FAILED: {cf_name}"))?;
+    replace_cf_rows(
+        target_db.as_ref(),
+        &cf_name,
+        &target_rows_before,
+        &source_rows,
+    )
+    .with_context(|| format!("MEJEPA_RUNBOOK_STORAGE_RESTORE_WRITE_FAILED: {cf_name}"))?;
+    let target_rows_after = collect_cf_rows(target_db.as_ref(), &cf_name)
+        .with_context(|| format!("MEJEPA_RUNBOOK_STORAGE_RESTORE_READBACK_FAILED: {cf_name}"))?;
+    let readback_equal = target_rows_after == source_rows;
+    if !readback_equal {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_STORAGE_RESTORE_READBACK_MISMATCH: cf_name={cf_name}"
+        ));
+    }
+    drop(target_db);
+
+    let reopened = open_hygiene_rocksdb_read_only(&args.db_path).with_context(|| {
+        format!(
+            "MEJEPA_RUNBOOK_STORAGE_RESTORE_REOPEN_FAILED: {}",
+            args.db_path.display()
+        )
+    })?;
+    let reopened_rows = collect_cf_rows(&reopened, &cf_name)
+        .with_context(|| format!("MEJEPA_RUNBOOK_STORAGE_RESTORE_REOPEN_READ_FAILED: {cf_name}"))?;
+    let reopened_readback_equal = reopened_rows == source_rows;
+    if !reopened_readback_equal {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_STORAGE_RESTORE_REOPEN_MISMATCH: cf_name={cf_name}"
+        ));
+    }
+
+    Ok(StorageRestoreCfOutput {
+        db_path: args.db_path.clone(),
+        source_path: args.source.clone(),
+        cf_name: cf_name.clone(),
+        source_rows: source_rows.len() as u64,
+        source_value_bytes,
+        target_rows_before: target_rows_before.len() as u64,
+        target_rows_after: target_rows_after.len() as u64,
+        replaced_target_rows: target_rows_before.len() as u64,
+        readback_equal,
+        reopened_readback_equal,
+        source_of_truth: json!({
+            "target_db_path": args.db_path,
+            "source_db_path": args.source,
+            "column_family": cf_name,
+            "process": "source read-only DB iterator -> target WriteBatch delete+put -> sync write -> flush -> reopen readback",
+        }),
+    })
+}
+
+pub fn run_storage_migrate_cf(args: StorageMigrateCfArgs) -> Result<StorageMigrateCfOutput> {
+    let old_cf_name = validate_hygiene_cf_name(&args.old_cf_name, "migrate-cf-old")?;
+    let new_cf_name = validate_hygiene_cf_name(&args.new_cf_name, "migrate-cf-new")?;
+    if old_cf_name == new_cf_name {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_STORAGE_MIGRATE_SAME_CF: old_cf_name and new_cf_name must differ"
+        ));
+    }
+    validate_dir(&args.db_path, "storage-db-path")?;
+
+    let db = context_graph_mejepa_hygiene::open_hygiene_rocksdb(&args.db_path)
+        .map_err(|err| anyhow!("MEJEPA_RUNBOOK_STORAGE_MIGRATE_OPEN_FAILED: {err}"))?;
+    let source_rows = collect_cf_rows(db.as_ref(), &old_cf_name).with_context(|| {
+        format!("MEJEPA_RUNBOOK_STORAGE_MIGRATE_SOURCE_READ_FAILED: {old_cf_name}")
+    })?;
+    let target_rows_before = collect_cf_rows(db.as_ref(), &new_cf_name).with_context(|| {
+        format!("MEJEPA_RUNBOOK_STORAGE_MIGRATE_TARGET_READ_FAILED: {new_cf_name}")
+    })?;
+    let source_value_bytes = rows_value_bytes(&source_rows);
+
+    if args.dry_run {
+        return Ok(StorageMigrateCfOutput {
+            db_path: args.db_path.clone(),
+            old_cf_name,
+            new_cf_name,
+            dry_run: true,
+            allow_overwrite: args.allow_overwrite,
+            source_rows: source_rows.len() as u64,
+            source_value_bytes,
+            target_rows_before: target_rows_before.len() as u64,
+            target_rows_after: target_rows_before.len() as u64,
+            migrated_rows: 0,
+            readback_equal: true,
+            reopened_readback_equal: true,
+            source_of_truth: json!({
+                "db_path": args.db_path,
+                "old_column_family": args.old_cf_name,
+                "new_column_family": args.new_cf_name,
+                "process": "dry-run iterator read only; no WriteBatch executed",
+            }),
+        });
+    }
+
+    if !target_rows_before.is_empty() && !args.allow_overwrite {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_STORAGE_MIGRATE_TARGET_NOT_EMPTY: new_cf_name={new_cf_name} rows={}",
+            target_rows_before.len()
+        ));
+    }
+
+    replace_cf_rows(db.as_ref(), &new_cf_name, &target_rows_before, &source_rows)
+        .with_context(|| format!("MEJEPA_RUNBOOK_STORAGE_MIGRATE_WRITE_FAILED: {new_cf_name}"))?;
+    let target_rows_after = collect_cf_rows(db.as_ref(), &new_cf_name).with_context(|| {
+        format!("MEJEPA_RUNBOOK_STORAGE_MIGRATE_READBACK_FAILED: {new_cf_name}")
+    })?;
+    let readback_equal = target_rows_after == source_rows;
+    if !readback_equal {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_STORAGE_MIGRATE_READBACK_MISMATCH: new_cf_name={new_cf_name}"
+        ));
+    }
+    drop(db);
+
+    let reopened = open_hygiene_rocksdb_read_only(&args.db_path).with_context(|| {
+        format!(
+            "MEJEPA_RUNBOOK_STORAGE_MIGRATE_REOPEN_FAILED: {}",
+            args.db_path.display()
+        )
+    })?;
+    let reopened_rows = collect_cf_rows(&reopened, &new_cf_name).with_context(|| {
+        format!("MEJEPA_RUNBOOK_STORAGE_MIGRATE_REOPEN_READ_FAILED: {new_cf_name}")
+    })?;
+    let reopened_readback_equal = reopened_rows == source_rows;
+    if !reopened_readback_equal {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_STORAGE_MIGRATE_REOPEN_MISMATCH: new_cf_name={new_cf_name}"
+        ));
+    }
+
+    Ok(StorageMigrateCfOutput {
+        db_path: args.db_path.clone(),
+        old_cf_name: old_cf_name.clone(),
+        new_cf_name: new_cf_name.clone(),
+        dry_run: false,
+        allow_overwrite: args.allow_overwrite,
+        source_rows: source_rows.len() as u64,
+        source_value_bytes,
+        target_rows_before: target_rows_before.len() as u64,
+        target_rows_after: target_rows_after.len() as u64,
+        migrated_rows: source_rows.len() as u64,
+        readback_equal,
+        reopened_readback_equal,
+        source_of_truth: json!({
+            "db_path": args.db_path,
+            "old_column_family": old_cf_name,
+            "new_column_family": new_cf_name,
+            "transform": "identity bytes",
+            "process": "source iterator -> destination WriteBatch put -> sync write -> flush -> reopen readback",
+        }),
+    })
+}
+
 #[derive(Args, Debug, Clone)]
 pub struct SessionCleanupArgs {
     /// Inference RocksDB path containing CF_MEJEPA_LIVE_PREDICTIONS + CF_MEJEPA_SHIFT_WATERMARK.
     #[arg(long, env = "CONTEXTGRAPH_MEJEPA_INFER_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
     pub db_path: PathBuf,
+
+    /// Hygiene archive root used for quota readback.
+    #[arg(
+        long,
+        env = "CONTEXTGRAPH_MEJEPA_HYGIENE_ARCHIVE_ROOT",
+        default_value = DEFAULT_HYGIENE_ARCHIVE_ROOT
+    )]
+    pub archive_root: PathBuf,
 
     /// 32-character lowercase hexadecimal session id.
     #[arg(long)]
@@ -236,6 +522,15 @@ pub struct SessionCleanupOutput {
     pub session_id_hex: String,
     pub live_predictions_deleted: u64,
     pub shift_watermark_deleted: bool,
+    pub deleted_live_prediction_bytes: u64,
+    pub deleted_shift_watermark_bytes: u64,
+    pub deleted_total_bytes: u64,
+    pub quota_before_total_used_bytes: u64,
+    pub quota_after_total_used_bytes: u64,
+    pub quota_state_key_hex: String,
+    pub gc_event_key_hex: String,
+    pub quota_report_readback_equal: bool,
+    pub gc_event_readback_equal: bool,
     pub readback_equal: bool,
     pub source_of_truth: Value,
 }
@@ -243,12 +538,21 @@ pub struct SessionCleanupOutput {
 pub fn run_session_cleanup(args: SessionCleanupArgs) -> Result<SessionCleanupOutput> {
     let session_id = parse_session_hex(&args.session_id)?;
     validate_dir(&args.db_path, "session-db-path")?;
-    let db = open_infer_rocksdb(&args.db_path).with_context(|| {
-        format!(
-            "MEJEPA_RUNBOOK_SESSION_CLEANUP_OPEN_FAILED: {}",
-            args.db_path.display()
-        )
-    })?;
+    validate_path_non_empty(&args.archive_root, "archiveRoot")?;
+    let db =
+        context_graph_mejepa_hygiene::open_hygiene_rocksdb(&args.db_path).with_context(|| {
+            format!(
+                "MEJEPA_RUNBOOK_SESSION_CLEANUP_OPEN_FAILED: {}",
+                args.db_path.display()
+            )
+        })?;
+    let env = context_graph_mejepa_hygiene::HygieneEnv::try_new(
+        context_graph_mejepa_hygiene::runtime_config(db.clone(), args.archive_root.clone())
+            .map_err(|err| anyhow!("MEJEPA_RUNBOOK_SESSION_CLEANUP_QUOTA_ENV_FAILED: {err}"))?,
+    )
+    .map_err(|err| anyhow!("MEJEPA_RUNBOOK_SESSION_CLEANUP_QUOTA_ENV_FAILED: {err}"))?;
+    let quota_before = context_graph_mejepa_hygiene::quota_status(&env)
+        .map_err(|err| anyhow!("MEJEPA_RUNBOOK_SESSION_CLEANUP_QUOTA_BEFORE_FAILED: {err}"))?;
 
     let live_cf = db
         .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS)
@@ -256,10 +560,13 @@ pub fn run_session_cleanup(args: SessionCleanupArgs) -> Result<SessionCleanupOut
             anyhow!("MEJEPA_RUNBOOK_SESSION_CLEANUP_LIVE_CF_MISSING: CF_MEJEPA_LIVE_PREDICTIONS")
         })?;
     let mut keys_to_delete = Vec::new();
+    let mut deleted_live_prediction_bytes = 0u64;
     for item in db.iterator_cf(live_cf, rocksdb::IteratorMode::Start) {
-        let (key, _value) =
+        let (key, value) =
             item.with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_ITER_FAILED".to_string())?;
         if key.starts_with(session_id.as_slice()) {
+            deleted_live_prediction_bytes =
+                deleted_live_prediction_bytes.saturating_add(value.len() as u64);
             keys_to_delete.push(key.to_vec());
         }
     }
@@ -288,7 +595,9 @@ pub fn run_session_cleanup(args: SessionCleanupArgs) -> Result<SessionCleanupOut
     let watermark_existed = db
         .get_cf(watermark_cf, session_id)
         .with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_WATERMARK_READ_FAILED".to_string())?
-        .is_some();
+        .map(|value| value.len() as u64);
+    let deleted_shift_watermark_bytes = watermark_existed.unwrap_or(0);
+    let watermark_existed = watermark_existed.is_some();
     if watermark_existed {
         db.delete_cf_opt(watermark_cf, session_id, &write_opts)
             .with_context(|| {
@@ -318,19 +627,215 @@ pub fn run_session_cleanup(args: SessionCleanupArgs) -> Result<SessionCleanupOut
         ));
     }
 
-    Ok(SessionCleanupOutput {
-        session_id_hex: args.session_id.to_ascii_lowercase(),
+    let quota_after = context_graph_mejepa_hygiene::quota_status(&env)
+        .map_err(|err| anyhow!("MEJEPA_RUNBOOK_SESSION_CLEANUP_QUOTA_AFTER_FAILED: {err}"))?;
+    let deleted_total_bytes =
+        deleted_live_prediction_bytes.saturating_add(deleted_shift_watermark_bytes);
+    let quota_delta = quota_before
+        .total_used_bytes
+        .checked_sub(quota_after.total_used_bytes)
+        .ok_or_else(|| {
+            anyhow!(
+                "MEJEPA_RUNBOOK_SESSION_CLEANUP_QUOTA_INCREASED: before={} after={}",
+                quota_before.total_used_bytes,
+                quota_after.total_used_bytes
+            )
+        })?;
+    if quota_delta != deleted_total_bytes {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_SESSION_CLEANUP_QUOTA_MISMATCH: deleted_total_bytes={deleted_total_bytes} quota_delta={quota_delta}"
+        ));
+    }
+
+    let quota_report = context_graph_mejepa_hygiene::QuotaEvictionReport {
+        before: quota_before.clone(),
+        after: quota_after.clone(),
+        evicted: Vec::new(),
+    };
+    let quota_report_bytes = serde_json::to_vec(&quota_report).with_context(|| {
+        "MEJEPA_RUNBOOK_SESSION_CLEANUP_QUOTA_REPORT_SERIALIZE_FAILED".to_string()
+    })?;
+    put_cf_sync_readback(
+        db.as_ref(),
+        context_graph_mejepa_cf::CF_MEJEPA_QUOTA_STATE,
+        context_graph_mejepa_hygiene::QUOTA_LAST_REPORT_KEY,
+        &quota_report_bytes,
+        "MEJEPA_RUNBOOK_SESSION_CLEANUP_QUOTA_REPORT",
+    )?;
+    let quota_report_readback_equal = true;
+
+    let occurred_unix_ms = chrono::Utc::now().timestamp_millis();
+    let session_id_hex = args.session_id.to_ascii_lowercase();
+    let gc_event_key = format!("session_cleanup:{occurred_unix_ms}:{session_id_hex}");
+    let gc_event_key_bytes = gc_event_key.as_bytes();
+    let gc_event = context_graph_mejepa_hygiene::GcEvent::SessionCleanup {
+        session_id_hex: session_id_hex.clone(),
+        occurred_unix_ms,
         live_predictions_deleted,
         shift_watermark_deleted: watermark_existed,
+        deleted_live_prediction_bytes,
+        deleted_shift_watermark_bytes,
+        deleted_total_bytes,
+        quota_category: context_graph_mejepa_hygiene::StorageCategory::ShiftLogSubscriberState,
+        quota_before_total_used_bytes: quota_before.total_used_bytes,
+        quota_after_total_used_bytes: quota_after.total_used_bytes,
+        source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_GC_HISTORY.to_string(),
+        report_key_hex: hex::encode(gc_event_key_bytes),
+    };
+    let gc_event_bytes = serde_json::to_vec(&gc_event)
+        .with_context(|| "MEJEPA_RUNBOOK_SESSION_CLEANUP_GC_EVENT_SERIALIZE_FAILED".to_string())?;
+    put_cf_sync_readback(
+        db.as_ref(),
+        context_graph_mejepa_cf::CF_MEJEPA_GC_HISTORY,
+        gc_event_key_bytes,
+        &gc_event_bytes,
+        "MEJEPA_RUNBOOK_SESSION_CLEANUP_GC_EVENT",
+    )?;
+    let gc_event_readback_equal = true;
+
+    Ok(SessionCleanupOutput {
+        session_id_hex,
+        live_predictions_deleted,
+        shift_watermark_deleted: watermark_existed,
+        deleted_live_prediction_bytes,
+        deleted_shift_watermark_bytes,
+        deleted_total_bytes,
+        quota_before_total_used_bytes: quota_before.total_used_bytes,
+        quota_after_total_used_bytes: quota_after.total_used_bytes,
+        quota_state_key_hex: hex::encode(context_graph_mejepa_hygiene::QUOTA_LAST_REPORT_KEY),
+        gc_event_key_hex: hex::encode(gc_event_key_bytes),
+        quota_report_readback_equal,
+        gc_event_readback_equal,
         readback_equal,
         source_of_truth: json!({
             "writer": "rocksdb DB::delete_cf with WriteOptions::set_sync(true)",
             "column_families": [
                 context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
                 context_graph_mejepa_cf::CF_MEJEPA_SHIFT_WATERMARK,
+                context_graph_mejepa_cf::CF_MEJEPA_GC_HISTORY,
+                context_graph_mejepa_cf::CF_MEJEPA_QUOTA_STATE,
             ],
+            "archive_root": args.archive_root,
+            "quota_category": context_graph_mejepa_hygiene::StorageCategory::ShiftLogSubscriberState,
         }),
     })
+}
+
+fn put_cf_sync_readback(
+    db: &rocksdb::DB,
+    cf_name: &str,
+    key: &[u8],
+    value: &[u8],
+    error_prefix: &str,
+) -> Result<()> {
+    let cf = db
+        .cf_handle(cf_name)
+        .ok_or_else(|| anyhow!("{error_prefix}_CF_MISSING: {cf_name}"))?;
+    let mut write_opts = rocksdb::WriteOptions::default();
+    write_opts.set_sync(true);
+    db.put_cf_opt(cf, key, value, &write_opts)
+        .with_context(|| format!("{error_prefix}_WRITE_FAILED: {cf_name}"))?;
+    db.flush_cf(cf)
+        .with_context(|| format!("{error_prefix}_FLUSH_FAILED: {cf_name}"))?;
+    let readback = db
+        .get_cf(cf, key)
+        .with_context(|| format!("{error_prefix}_READBACK_FAILED: {cf_name}"))?
+        .ok_or_else(|| anyhow!("{error_prefix}_READBACK_MISSING: {cf_name}"))?;
+    if readback.as_slice() != value {
+        return Err(anyhow!("{error_prefix}_READBACK_MISMATCH: {cf_name}"));
+    }
+    Ok(())
+}
+
+fn open_hygiene_rocksdb_read_only(path: &Path) -> Result<rocksdb::DB> {
+    validate_dir(path, "storage-db-path")?;
+    let mut opts = Options::default();
+    opts.set_paranoid_checks(true);
+    let descriptors = context_graph_mejepa_cf::all_hygiene_referenced_cfs()
+        .into_iter()
+        .map(|cf| ColumnFamilyDescriptor::new(cf, Options::default()))
+        .collect::<Vec<_>>();
+    rocksdb::DB::open_cf_descriptors_read_only(&opts, path, descriptors, false).with_context(|| {
+        format!(
+            "MEJEPA_RUNBOOK_STORAGE_READ_ONLY_OPEN_FAILED: {}",
+            path.display()
+        )
+    })
+}
+
+fn validate_hygiene_cf_name(raw: &str, field: &str) -> Result<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_STORAGE_CF_EMPTY: {field} must be a non-empty CF name"
+        ));
+    }
+    if !context_graph_mejepa_cf::all_hygiene_referenced_cfs().contains(&trimmed) {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_STORAGE_CF_UNKNOWN: {field} {trimmed} is not in the ME-JEPA hygiene CF registry"
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn ensure_distinct_dirs(left: &Path, right: &Path, error_code: &str) -> Result<()> {
+    let left_real = std::fs::canonicalize(left)
+        .with_context(|| format!("{error_code}_CANONICALIZE_LEFT_FAILED: {}", left.display()))?;
+    let right_real = std::fs::canonicalize(right).with_context(|| {
+        format!(
+            "{error_code}_CANONICALIZE_RIGHT_FAILED: {}",
+            right.display()
+        )
+    })?;
+    if left_real == right_real {
+        return Err(anyhow!(
+            "{error_code}: source and target DB paths must differ: {}",
+            left_real.display()
+        ));
+    }
+    Ok(())
+}
+
+fn collect_cf_rows(db: &rocksdb::DB, cf_name: &str) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    let cf = db
+        .cf_handle(cf_name)
+        .ok_or_else(|| anyhow!("MEJEPA_RUNBOOK_STORAGE_CF_MISSING: {cf_name}"))?;
+    let mut rows = Vec::new();
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let (key, value) =
+            item.with_context(|| format!("MEJEPA_RUNBOOK_STORAGE_CF_ITER_FAILED: {cf_name}"))?;
+        rows.push((key.to_vec(), value.to_vec()));
+    }
+    Ok(rows)
+}
+
+fn rows_value_bytes(rows: &[(Vec<u8>, Vec<u8>)]) -> u64 {
+    rows.iter().map(|(_, value)| value.len() as u64).sum()
+}
+
+fn replace_cf_rows(
+    db: &rocksdb::DB,
+    cf_name: &str,
+    rows_to_delete: &[(Vec<u8>, Vec<u8>)],
+    rows_to_put: &[(Vec<u8>, Vec<u8>)],
+) -> Result<()> {
+    let cf = db
+        .cf_handle(cf_name)
+        .ok_or_else(|| anyhow!("MEJEPA_RUNBOOK_STORAGE_CF_MISSING: {cf_name}"))?;
+    let mut batch = WriteBatch::default();
+    for (key, _) in rows_to_delete {
+        batch.delete_cf(cf, key);
+    }
+    for (key, value) in rows_to_put {
+        batch.put_cf(cf, key, value);
+    }
+    let mut write_opts = rocksdb::WriteOptions::default();
+    write_opts.set_sync(true);
+    db.write_opt(batch, &write_opts)
+        .with_context(|| format!("MEJEPA_RUNBOOK_STORAGE_CF_BATCH_WRITE_FAILED: {cf_name}"))?;
+    db.flush_cf(cf)
+        .with_context(|| format!("MEJEPA_RUNBOOK_STORAGE_CF_FLUSH_FAILED: {cf_name}"))?;
+    Ok(())
 }
 
 fn parse_session_hex(raw: &str) -> Result<[u8; 16]> {
@@ -645,7 +1150,9 @@ fn load_report_for_date(db_path: &Path, date: &str) -> Result<EvalReport> {
         }
     }
     latest.ok_or_else(|| {
-        anyhow!("MEJEPA_RUNBOOK_REPORT_NOT_FOUND: no CF_MEJEPA_EVAL_REPORTS row with report_date={date}")
+        anyhow!(
+            "MEJEPA_RUNBOOK_REPORT_NOT_FOUND: no CF_MEJEPA_EVAL_REPORTS row with report_date={date}"
+        )
     })
 }
 

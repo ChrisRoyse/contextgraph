@@ -44,6 +44,7 @@
 mod adapters;
 mod daemon;
 mod daemon_validate;
+mod deprecation;
 mod handlers;
 mod health_probe;
 mod monitoring;
@@ -2369,6 +2370,9 @@ const DOOMSDAY_SECS: u64 = 20;
 async fn run_reality_loop_stdio() -> Result<()> {
     use crate::handlers::tools::reality_loop;
     use crate::tools::tool_names;
+    use context_graph_mcp::deprecation::{
+        apply_retired_cgreality_deprecation, is_retired_cgreality_tool,
+    };
     use serde_json::{json, Value};
     use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -2537,14 +2541,7 @@ async fn run_reality_loop_stdio() -> Result<()> {
                     .get("arguments")
                     .cloned()
                     .unwrap_or_else(|| json!({}));
-                if matches!(
-                    name,
-                    "mcp__cgreality__reality_run_attempt"
-                        | "mcp__cgreality__reality_alter_file"
-                        | "mcp__cgreality__reality_alter_run"
-                        | "mcp__cgreality__reality_alter_apply"
-                        | "mcp__cgreality__reality_drip_attempt"
-                ) {
+                if is_retired_cgreality_tool(name) {
                     let err = reality_loop::CCRealityError::new(
                         "CCREALITY_ENGINE_RETIRED",
                         "tool retired in 2026-05-09 ME-JEPA pivot; use mcp__cgreality__mejepa_*",
@@ -2553,7 +2550,26 @@ async fn run_reality_loop_stdio() -> Result<()> {
                         json!({"attempted_tool": name}),
                         None,
                     );
-                    let response = tool_error(id, err.into_value());
+                    let error_value = err.into_value();
+                    let response = match apply_retired_cgreality_deprecation(
+                        name,
+                        json!({
+                            "content": [{"type": "text", "text": serde_json::to_string(&error_value).unwrap_or_else(|_| "{}".to_string())}],
+                            "structuredContent": error_value,
+                            "isError": true
+                        }),
+                    ) {
+                        Ok(result) => json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "result": result
+                        }),
+                        Err(message) => json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": {"code": -32602, "message": message}
+                        }),
+                    };
                     write_jsonrpc_line(&mut writer, &response).await?;
                     continue;
                 }

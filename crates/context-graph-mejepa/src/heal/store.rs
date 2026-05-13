@@ -14,14 +14,30 @@ use crate::heal::drift::{DriftHistoryStore, DriftSample, DriftStore};
 use crate::heal::errors::HealError;
 use crate::heal::ewc::{SnapshotStore, TaskSnapshot};
 use crate::heal::integrity::{active_witness_quarantine, is_witness_quarantine_pointer_key};
+use crate::system_cost::SystemCostCounters;
 
 #[derive(Clone)]
 pub struct HealRocksStore {
     db: Arc<DB>,
+    system_cost_counters: Option<Arc<SystemCostCounters>>,
 }
 
 impl HealRocksStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Arc<Self>, HealError> {
+        Self::open_inner(path, None)
+    }
+
+    pub fn open_with_system_cost_counters(
+        path: impl AsRef<Path>,
+        system_cost_counters: Arc<SystemCostCounters>,
+    ) -> Result<Arc<Self>, HealError> {
+        Self::open_inner(path, Some(system_cost_counters))
+    }
+
+    fn open_inner(
+        path: impl AsRef<Path>,
+        system_cost_counters: Option<Arc<SystemCostCounters>>,
+    ) -> Result<Arc<Self>, HealError> {
         let mut opts = Options::default();
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
@@ -39,10 +55,27 @@ impl HealRocksStore {
                 ));
             }
         }
-        Ok(Arc::new(Self { db }))
+        Ok(Arc::new(Self {
+            db,
+            system_cost_counters,
+        }))
     }
 
     pub fn from_db(db: Arc<DB>) -> Result<Arc<Self>, HealError> {
+        Self::from_db_inner(db, None)
+    }
+
+    pub fn from_db_with_system_cost_counters(
+        db: Arc<DB>,
+        system_cost_counters: Arc<SystemCostCounters>,
+    ) -> Result<Arc<Self>, HealError> {
+        Self::from_db_inner(db, Some(system_cost_counters))
+    }
+
+    fn from_db_inner(
+        db: Arc<DB>,
+        system_cost_counters: Option<Arc<SystemCostCounters>>,
+    ) -> Result<Arc<Self>, HealError> {
         for cf in all_referenced_cf_names() {
             if db.cf_handle(cf).is_none() {
                 return Err(HealError::invalid(
@@ -51,7 +84,10 @@ impl HealRocksStore {
                 ));
             }
         }
-        Ok(Arc::new(Self { db }))
+        Ok(Arc::new(Self {
+            db,
+            system_cost_counters,
+        }))
     }
 
     pub fn db(&self) -> Arc<DB> {
@@ -80,6 +116,9 @@ impl HealRocksStore {
                 "heal_store.readback",
                 format!("readback mismatch in {cf_name}"),
             ));
+        }
+        if let Some(counters) = &self.system_cost_counters {
+            counters.record_rocksdb_write(value.len() as u64);
         }
         Ok(())
     }

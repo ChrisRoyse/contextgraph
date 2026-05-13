@@ -106,3 +106,22 @@ pub struct GcReport {
     pub source_of_truth_cf: String,
     pub report_key_hex: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "event_type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum GcEvent {
+    SessionCleanup {
+        session_id_hex: String,
+        occurred_unix_ms: i64,
+        live_predictions_deleted: u64,
+        shift_watermark_deleted: bool,
+        deleted_live_prediction_bytes: u64,
+        deleted_shift_watermark_bytes: u64,
+        deleted_total_bytes: u64,
+        quota_category: StorageCategory,
+        quota_before_total_used_bytes: u64,
+        quota_after_total_used_bytes: u64,
+        source_of_truth_cf: String,
+        report_key_hex: String,
+    },
+}

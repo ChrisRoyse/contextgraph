@@ -4,6 +4,7 @@ use super::queue::{ActiveLearningLabel, ActiveLearningQueueEntry, ActiveLearning
 use super::telemetry::ProductionTelemetryWindow;
 use super::types::{EvalReport, OpenResearchQuestionStatus};
 use crate::calibration::cf;
+use crate::system_cost::SystemCostCounters;
 use rocksdb::{IteratorMode, WriteOptions, DB};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -19,10 +20,25 @@ pub use context_graph_mejepa_cf::{
 #[derive(Clone)]
 pub struct RocksDbEvalStore {
     db: Arc<DB>,
+    system_cost_counters: Option<Arc<SystemCostCounters>>,
 }
 
 impl RocksDbEvalStore {
     pub fn new(db: Arc<DB>) -> Result<Self, EvalError> {
+        Self::new_inner(db, None)
+    }
+
+    pub fn new_with_system_cost_counters(
+        db: Arc<DB>,
+        system_cost_counters: Arc<SystemCostCounters>,
+    ) -> Result<Self, EvalError> {
+        Self::new_inner(db, Some(system_cost_counters))
+    }
+
+    fn new_inner(
+        db: Arc<DB>,
+        system_cost_counters: Option<Arc<SystemCostCounters>>,
+    ) -> Result<Self, EvalError> {
         for cf_name in context_graph_mejepa_cf::EVAL_CFS {
             if db.cf_handle(cf_name).is_none() {
                 return Err(EvalError::new(
@@ -31,11 +47,18 @@ impl RocksDbEvalStore {
                 ));
             }
         }
-        Ok(Self { db })
+        Ok(Self {
+            db,
+            system_cost_counters,
+        })
     }
 
     pub fn db(&self) -> Arc<DB> {
         self.db.clone()
+    }
+
+    pub fn system_cost_counters(&self) -> Option<Arc<SystemCostCounters>> {
+        self.system_cost_counters.clone()
     }
 
     pub fn persist_report(&self, report: &EvalReport) -> Result<(), EvalError> {
@@ -217,6 +240,9 @@ impl RocksDbEvalStore {
                 EvalErrorCode::ReadbackMismatch,
                 format!("decoded readback differs for {cf_name}"),
             ));
+        }
+        if let Some(counters) = &self.system_cost_counters {
+            counters.record_rocksdb_write(bytes.len() as u64);
         }
         Ok(())
     }

@@ -357,7 +357,10 @@ impl SchedulerState {
         system_cost_counters: Arc<SystemCostCounters>,
     ) -> Result<Self, HealError> {
         config.validate()?;
-        let storage = HealRocksStore::from_db(db.clone())?;
+        let storage = HealRocksStore::from_db_with_system_cost_counters(
+            db.clone(),
+            Arc::clone(&system_cost_counters),
+        )?;
         for cf in context_graph_mejepa_cf::all_hygiene_referenced_cfs() {
             if db.cf_handle(cf).is_none() {
                 return Err(HealError::invalid(
@@ -366,7 +369,11 @@ impl SchedulerState {
                 ));
             }
         }
-        let eval_store = RocksDbEvalStore::new(db.clone()).map_err(map_eval_error)?;
+        let eval_store = RocksDbEvalStore::new_with_system_cost_counters(
+            db.clone(),
+            Arc::clone(&system_cost_counters),
+        )
+        .map_err(map_eval_error)?;
         let witness_chain = WitnessChainAppender::new(config.witness_chain_path.clone())?;
         let integrity_checker = ChainIntegrityChecker::try_new(config.witness_chain_path.clone())?;
         let pipeline = SelfHealingPipeline::new(

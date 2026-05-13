@@ -16,6 +16,19 @@ use serde::Serialize;
 use serde_json::{json, Map, Value};
 
 const ENV_LEVEL: &str = "CONTEXT_GRAPH_DEPRECATION_LEVEL";
+pub const RETIRED_CGREALITY_DEPRECATED_SINCE: &str = "2026-05-09";
+pub const RETIRED_CGREALITY_REMOVE_AFTER: &str = "2026-08-09";
+pub const RETIRED_CGREALITY_REPLACEMENT: &str =
+    "mcp__cgreality__mejepa_verify, mcp__cgreality__mejepa_predict_latest, or mcp__cgreality__mejepa_observe_shift";
+pub const RETIRED_CGREALITY_REASON: &str =
+    "retired by the 2026-05-09 ME-JEPA pivot to the single outer-loop truth system";
+pub const RETIRED_CGREALITY_TOOLS: &[&str] = &[
+    "mcp__cgreality__reality_run_attempt",
+    "mcp__cgreality__reality_alter_file",
+    "mcp__cgreality__reality_alter_run",
+    "mcp__cgreality__reality_alter_apply",
+    "mcp__cgreality__reality_drip_attempt",
+];
 
 /// Severity level the operator chose at process start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -96,6 +109,34 @@ pub fn apply_deprecation(notice: &DeprecationNotice, response: Value) -> Result<
             notice.replacement.unwrap_or("none")
         )),
     }
+}
+
+pub fn is_retired_cgreality_tool(tool_name: &str) -> bool {
+    RETIRED_CGREALITY_TOOLS.contains(&tool_name)
+}
+
+pub fn retired_cgreality_notice(tool_name: &str) -> Option<DeprecationNotice> {
+    let tool = RETIRED_CGREALITY_TOOLS
+        .iter()
+        .copied()
+        .find(|candidate| *candidate == tool_name)?;
+    Some(DeprecationNotice {
+        tool,
+        deprecated_since: RETIRED_CGREALITY_DEPRECATED_SINCE,
+        remove_after: RETIRED_CGREALITY_REMOVE_AFTER,
+        replacement: Some(RETIRED_CGREALITY_REPLACEMENT),
+        reason: RETIRED_CGREALITY_REASON,
+    })
+}
+
+pub fn apply_retired_cgreality_deprecation(
+    tool_name: &str,
+    response: Value,
+) -> Result<Value, String> {
+    let notice = retired_cgreality_notice(tool_name).ok_or_else(|| {
+        format!("MEJEPA_DEPRECATION_NOTICE_MISSING: no retired cgreality notice for {tool_name}")
+    })?;
+    apply_deprecation(&notice, response)
 }
 
 fn inject_warning(notice: &DeprecationNotice, response: Value) -> Result<Value, String> {
@@ -220,5 +261,40 @@ mod tests {
         let result =
             apply_deprecation(&notice(), json!({"warnings": [{"code": "ALREADY"}]})).unwrap();
         assert_eq!(result["warnings"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn retired_cgreality_tools_have_structured_notices() {
+        for tool in RETIRED_CGREALITY_TOOLS {
+            let notice = retired_cgreality_notice(tool).expect("retired tool notice");
+            assert_eq!(notice.deprecated_since, RETIRED_CGREALITY_DEPRECATED_SINCE);
+            assert_eq!(notice.remove_after, RETIRED_CGREALITY_REMOVE_AFTER);
+            assert_eq!(notice.replacement, Some(RETIRED_CGREALITY_REPLACEMENT));
+        }
+        assert!(retired_cgreality_notice("mcp__cgreality__mejepa_verify").is_none());
+    }
+
+    #[test]
+    fn retired_cgreality_warn_and_error_paths_match_framework() {
+        let _guard = env_guard();
+        std::env::remove_var(ENV_LEVEL);
+        let warn = apply_retired_cgreality_deprecation(
+            "mcp__cgreality__reality_run_attempt",
+            json!({"isError": true}),
+        )
+        .unwrap();
+        assert_eq!(
+            warn["warnings"][0]["code"],
+            "MEJEPA_TOOL_DEPRECATED_MCP__CGREALITY__REALITY_RUN_ATTEMPT"
+        );
+
+        std::env::set_var(ENV_LEVEL, "error");
+        let err = apply_retired_cgreality_deprecation(
+            "mcp__cgreality__reality_run_attempt",
+            json!({"isError": true}),
+        )
+        .unwrap_err();
+        assert!(err.contains("MEJEPA_TOOL_DEPRECATED_MCP__CGREALITY__REALITY_RUN_ATTEMPT"));
+        std::env::remove_var(ENV_LEVEL);
     }
 }

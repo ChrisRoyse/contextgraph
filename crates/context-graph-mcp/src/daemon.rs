@@ -53,6 +53,7 @@ struct WeeklyOperationalSummary {
     drift_history_rows: usize,
     active_learning_queue_rows: usize,
     ood_escalation_rows: usize,
+    session_cleanup_gc_events: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -1414,6 +1415,8 @@ fn write_weekly_eval_markdown(
          ## Storage Utilization\n\n\
          - storage source: /mnt/d/contextgraph runtime root\n\
          - detailed slice readback: `mcp__cgreality__mejepa_quota_status`\n\n\
+         - session_cleanup_gc_events: {}\n\
+         - session_cleanup_gc_event_source: CF_MEJEPA_GC_HISTORY event_type=session_cleanup\n\n\
          ## Per-Cell State Transfer T\n\n{}\n\n\
          ## Ship Gate Failures\n\n{}\n",
         report.report_date,
@@ -1435,6 +1438,7 @@ fn write_weekly_eval_markdown(
         operational.drift_window_rows,
         operational.drift_history_rows,
         regression_checks,
+        operational.session_cleanup_gc_events,
         per_cell_state_transfer,
         if report.ship_gate_failures.is_empty() {
             "- none".to_string()
@@ -1481,6 +1485,7 @@ fn weekly_operational_summary(db: &DB) -> Result<WeeklyOperationalSummary> {
             db,
             context_graph_mejepa_cf::CF_MEJEPA_OOD_ESCALATIONS,
         )?,
+        session_cleanup_gc_events: weekly_session_cleanup_gc_event_count(db)?,
     })
 }
 
@@ -1492,6 +1497,24 @@ fn weekly_count_cf(db: &DB, cf_name: &str) -> Result<usize> {
     for item in db.iterator_cf(cf, IteratorMode::Start) {
         item?;
         count += 1;
+    }
+    Ok(count)
+}
+
+fn weekly_session_cleanup_gc_event_count(db: &DB) -> Result<usize> {
+    let cf_name = context_graph_mejepa_cf::CF_MEJEPA_GC_HISTORY;
+    let cf = db
+        .cf_handle(cf_name)
+        .ok_or_else(|| anyhow::anyhow!("MEJEPA_WEEKLY_REPORT_CF_MISSING: {cf_name}"))?;
+    let mut count = 0usize;
+    for item in db.iterator_cf(cf, IteratorMode::Start) {
+        let (_key, value) = item?;
+        let Ok(row) = serde_json::from_slice::<serde_json::Value>(&value) else {
+            continue;
+        };
+        if row.get("event_type").and_then(serde_json::Value::as_str) == Some("session_cleanup") {
+            count += 1;
+        }
     }
     Ok(count)
 }
@@ -1845,6 +1868,100 @@ mod tests {
         let readback = db.get_cf(cf, &key).expect("read cf").expect("row");
         let decoded: FlywheelJobRunRecord = serde_json::from_slice(&readback).expect("decode row");
         assert_eq!(decoded, record);
+    }
+
+    #[test]
+    fn weekly_report_counts_and_renders_session_cleanup_gc_events() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db = open_mejepa_test_db(temp.path());
+        ensure_mejepa_column_families(&db).expect("ensure cfs");
+        let key = b"session_cleanup:1778666683000:00112233445566778899aabbccddeeff";
+        let event = context_graph_mejepa_hygiene::GcEvent::SessionCleanup {
+            session_id_hex: "00112233445566778899aabbccddeeff".to_string(),
+            occurred_unix_ms: 1_778_666_683_000,
+            live_predictions_deleted: 2,
+            shift_watermark_deleted: true,
+            deleted_live_prediction_bytes: 28,
+            deleted_shift_watermark_bytes: 9,
+            deleted_total_bytes: 37,
+            quota_category: context_graph_mejepa_hygiene::StorageCategory::ShiftLogSubscriberState,
+            quota_before_total_used_bytes: 37,
+            quota_after_total_used_bytes: 0,
+            source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_GC_HISTORY.to_string(),
+            report_key_hex: hex::encode(key),
+        };
+        let cf = db
+            .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_GC_HISTORY)
+            .expect("gc history cf");
+        let mut opts = WriteOptions::default();
+        opts.set_sync(true);
+        db.put_cf_opt(
+            cf,
+            key,
+            serde_json::to_vec(&event).expect("event JSON"),
+            &opts,
+        )
+        .expect("write session-cleanup GC event");
+        db.put_cf_opt(cf, b"nightly-gc-report", b"{\"source\":\"nightly\"}", &opts)
+            .expect("write unrelated GC history row");
+        db.flush_cf(cf).expect("flush GC history");
+
+        assert_eq!(weekly_session_cleanup_gc_event_count(&db).unwrap(), 1);
+
+        let markdown_path = temp.path().join("weekly.md");
+        let report = context_graph_mejepa::EvalReport {
+            report_date: "2026-05-13".to_string(),
+            generated_at_unix_ms: 1_778_666_683_000,
+            rolling_window_size: 4,
+            holdout_count: 1,
+            overall_correlation: Some(1.0),
+            per_category_correlation: BTreeMap::new(),
+            per_language_correlation: BTreeMap::new(),
+            per_cell_correlation: BTreeMap::new(),
+            cell_exemptions: BTreeMap::new(),
+            bayesian_shrinkage: BTreeMap::new(),
+            conformal_coverage_health: BTreeMap::new(),
+            ood_calibration_health: BTreeMap::new(),
+            gtau_pass_rate: BTreeMap::new(),
+            per_prediction_class_calibration: BTreeMap::new(),
+            active_learning: context_graph_mejepa::ActiveLearningSummary {
+                queued_count: 0,
+                evicted_count: 0,
+                ood_escalation_count: 0,
+            },
+            state_transfer_diagnostic: None,
+            per_cell_state_transfer: BTreeMap::new(),
+            aux_head_distillation: None,
+            regression_checks: Vec::new(),
+            open_research_questions: Vec::new(),
+            q1_pass_rate: 1.0,
+            q2_report_correlation: Some(1.0),
+            q3_side_effect_agreement: Some(1.0),
+            ship_gate_passed: true,
+            ship_gate_failures: Vec::new(),
+            provenance: context_graph_mejepa::EvalProvenance {
+                corpus_sha: "synthetic".to_string(),
+                eval_code_version: "test".to_string(),
+                calibration_version: "test".to_string(),
+                generated_by: "weekly-report-unit-test".to_string(),
+            },
+            wall_clock_seconds: 0.1,
+        };
+        let operational = WeeklyOperationalSummary {
+            agent_feedback_rows: 0,
+            drift_window_rows: 0,
+            drift_history_rows: 0,
+            active_learning_queue_rows: 0,
+            ood_escalation_rows: 0,
+            session_cleanup_gc_events: 1,
+        };
+        write_weekly_eval_markdown(&markdown_path, &report, "synthetic-hash", &operational)
+            .expect("write weekly markdown");
+        let markdown = fs::read_to_string(markdown_path).expect("read weekly markdown");
+        assert!(markdown.contains("- session_cleanup_gc_events: 1"));
+        assert!(markdown.contains(
+            "- session_cleanup_gc_event_source: CF_MEJEPA_GC_HISTORY event_type=session_cleanup"
+        ));
     }
 
     #[test]

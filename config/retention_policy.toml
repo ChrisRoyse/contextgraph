@@ -204,6 +204,11 @@ retention_class = "operator_override"
 minimum_retention_days = 365
 
 [[column_families]]
+cf_name = "CF_MEJEPA_LABEL_TRANSFER_DECISIONS"
+retention_class = "label_transfer_audit"
+minimum_retention_days = 365
+
+[[column_families]]
 cf_name = "CF_MEJEPA_PARK_LIST"
 retention_class = "retry_control"
 minimum_retention_days = 30

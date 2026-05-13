@@ -237,9 +237,14 @@ impl SystemCostCounters {
     }
 
     pub fn record_rocksdb_write(&self, bytes: u64) {
+        self.record_rocksdb_writes(bytes, 1);
+    }
+
+    pub fn record_rocksdb_writes(&self, bytes: u64, writes: u64) {
         self.rocksdb_bytes_written_total
             .fetch_add(bytes, Ordering::Relaxed);
-        self.rocksdb_writes_total.fetch_add(1, Ordering::Relaxed);
+        self.rocksdb_writes_total
+            .fetch_add(writes, Ordering::Relaxed);
     }
 
     pub fn record_heal_ticker_run(

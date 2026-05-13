@@ -16,6 +16,7 @@ use crate::storage::{
 
 const UNRECOVERABLE_PREFIX: &[u8] = b"unrecoverable:";
 const LAST_REPORT_KEY: &[u8] = b"last_quota_report";
+pub const QUOTA_LAST_REPORT_KEY: &[u8] = LAST_REPORT_KEY;
 
 pub fn quota_status(env: &HygieneEnv) -> OpsResult<QuotaStatus> {
     let mut categories = Vec::new();
@@ -112,13 +113,17 @@ pub fn quota_check_and_evict(env: &HygieneEnv) -> OpsResult<QuotaEvictionReport>
         after,
         evicted,
     };
+    record_quota_report(env, &report)?;
+    Ok(report)
+}
+
+pub fn record_quota_report(env: &HygieneEnv, report: &QuotaEvictionReport) -> OpsResult<()> {
     put_readback(
         &env.config.db,
         context_graph_mejepa_cf::CF_MEJEPA_QUOTA_STATE,
         LAST_REPORT_KEY,
         &encode_cf_json(&report)?,
-    )?;
-    Ok(report)
+    )
 }
 
 fn collect_candidates(

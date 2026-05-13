@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use context_graph_mejepa_instruments::materialize::{
     materialize_panel, PanelVectorInput, TimeStep,
@@ -32,6 +33,7 @@ use crate::pause_state::{
 const PARK_LIST_REASON_CODE: &str = "MEJEPA_PREDICTION_PARKED";
 use crate::prediction_surfaces::{covered_chunks_for_patch, infer_phase_b_surfaces};
 use crate::secret_redaction::{redact_patch_bundle, SECRET_REDACTION_ATTESTATION_KEY};
+use crate::system_cost::SystemCostCounters;
 use crate::types::{
     validate_probability, AgentClaimGraph, ChunkId, ConformalInterval, ConformalMethod, DdaSignals,
     FailedGate, OracleOutcome, PanelId, PatchBundle, PredictionProvenance, RealityPrediction,
@@ -188,6 +190,7 @@ pub struct MeJepaCompiler {
     store: Arc<dyn MejepaStore>,
     calibration: CalibrationStore,
     repo_root: PathBuf,
+    system_cost_counters: Option<Arc<SystemCostCounters>>,
 }
 
 impl MeJepaCompiler {
@@ -203,6 +206,33 @@ impl MeJepaCompiler {
         calibration: CalibrationStore,
         repo_root: PathBuf,
     ) -> Result<Self, MejepaInferError> {
+        Self::new_with_system_cost_counters(
+            config,
+            predictor,
+            frozen_target,
+            oracle_head,
+            constellation_guard,
+            witness_reader,
+            store,
+            calibration,
+            repo_root,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_system_cost_counters(
+        config: MeJepaInferConfig,
+        predictor: Arc<dyn Predictor>,
+        frozen_target: Arc<dyn FrozenTarget>,
+        oracle_head: Arc<dyn OracleHead>,
+        constellation_guard: Arc<dyn ConstellationGuard>,
+        witness_reader: Arc<dyn WitnessChainReader>,
+        store: Arc<dyn MejepaStore>,
+        calibration: CalibrationStore,
+        repo_root: PathBuf,
+        system_cost_counters: Option<Arc<SystemCostCounters>>,
+    ) -> Result<Self, MejepaInferError> {
         config.validate()?;
         Ok(Self {
             config,
@@ -214,6 +244,7 @@ impl MeJepaCompiler {
             store,
             calibration,
             repo_root,
+            system_cost_counters,
         })
     }
 
@@ -249,7 +280,9 @@ impl MeJepaCompiler {
         let inference_patch = &redacted.patch;
         let (panel_t0, panel_t1, panel_t2) =
             materialize_inference_panels(inference_patch, context)?;
+        let predict_started = Instant::now();
         let predicted = run_infer_head("panel", || self.predictor.predict(&panel_t0, &panel_t1))?;
+        self.record_predictor_elapsed(predict_started);
         let target = run_infer_head("frozen_target", || self.frozen_target.target(&panel_t2))?;
         let mut oracle = run_infer_head("oracle", || self.oracle_head.score(&predicted))?;
         let source_panel_sha = panel_sha(&predicted);
@@ -387,6 +420,19 @@ impl MeJepaCompiler {
             rows.push((chunk.clone(), signals));
         }
         project_dda_features(&rows, self.config.dda_expected_embedder_count)
+    }
+
+    fn record_predictor_elapsed(&self, started: Instant) {
+        let Some(counters) = &self.system_cost_counters else {
+            return;
+        };
+        let micros = started.elapsed().as_micros();
+        let bounded = if micros > u128::from(u64::MAX) {
+            u64::MAX
+        } else {
+            micros as u64
+        };
+        counters.record_cuda_microseconds(bounded.max(1));
     }
 
     pub fn verify(

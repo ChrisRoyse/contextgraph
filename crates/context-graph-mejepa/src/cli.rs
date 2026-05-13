@@ -123,7 +123,8 @@ pub fn build_deterministic_compiler(
     mut config: MeJepaInferConfig,
 ) -> Result<MeJepaCompiler, MejepaInferError> {
     config.outcome_set_max = config.outcome_set_max.max(1);
-    MeJepaCompiler::new(
+    let system_cost_counters = store.system_cost_counters();
+    MeJepaCompiler::new_with_system_cost_counters(
         config,
         Arc::new(DeterministicPredictor),
         Arc::new(IdentityFrozenTarget),
@@ -133,6 +134,7 @@ pub fn build_deterministic_compiler(
         store,
         calibration,
         repo_root,
+        system_cost_counters,
     )
 }
 

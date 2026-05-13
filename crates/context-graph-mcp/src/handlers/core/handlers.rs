@@ -19,6 +19,7 @@ use context_graph_core::clustering::{ClusterError, MultiSpaceClusterManager};
 use context_graph_core::memory::{CodeEmbeddingProvider, CodeStorage};
 use context_graph_core::monitoring::LayerStatusProvider;
 use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore};
+use context_graph_mejepa::SystemCostCounters;
 use context_graph_storage::{BackgroundGraphBuilder, EdgeRepository};
 
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
@@ -104,6 +105,9 @@ pub struct Handlers {
     pub(in crate::handlers) daemon_state:
         Option<Arc<crate::handlers::tools::daemon_tools::DaemonState>>,
 
+    /// Resource counters used by ME-JEPA producer paths.
+    pub(in crate::handlers) system_cost_counters: Arc<SystemCostCounters>,
+
     /// Auto-consolidation status for daemon_status reporting.
     pub(in crate::handlers) auto_consolidation_status:
         Arc<TokioRwLock<crate::handlers::tools::consolidation::AutoConsolidationStatus>>,
@@ -145,6 +149,7 @@ impl Handlers {
             causal_hint_provider: Some(causal_hint_provider),
             custom_profiles: Arc::new(RwLock::new(HashMap::new())),
             daemon_state: None,
+            system_cost_counters: Arc::new(SystemCostCounters::new()),
             auto_consolidation_status: Arc::new(TokioRwLock::new(
                 crate::handlers::tools::consolidation::AutoConsolidationStatus::default(),
             )),
