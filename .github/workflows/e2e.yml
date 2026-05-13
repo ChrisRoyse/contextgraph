@@ -2,7 +2,7 @@
 #
 # Runs the workspace happy-path E2E tests on every PR. GitHub Free-plan
 # discipline (CLAUDE.md §11): runs-on ubuntu-latest only, timeout set,
-# actions pinned to a tagged release for stability.
+# actions pinned to immutable commit SHAs for supply-chain integrity.
 name: Phase F E2E
 
 on:
@@ -30,11 +30,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
       - name: Cache cargo registry + build
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             ~/.cargo/registry
