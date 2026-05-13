@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::future::Future;
 use std::io::Write;
@@ -17,11 +17,17 @@ use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 
 use crate::daemon_validate::DaemonPaths;
-
+use context_graph_mejepa::toolchain_detect::{
+    audit_required_toolchains, default_enabled_label_toolchains, ToolchainAuditReport,
+    ToolchainBinary, ToolchainMissingDiagnostic,
+};
+use context_graph_mejepa::Language;
 const RESTART_WINDOW: Duration = Duration::from_secs(5 * 60);
 const FLAPPING_THRESHOLD: usize = 5;
 const BACKOFF_CAP: Duration = Duration::from_secs(60);
 const SUPERVISOR_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
+const DAEMON_CONFIG_ROOT_ENV: &str = "MEJEPA_CONFIG_ROOT";
+const DAEMON_CONFIG_FILE: &str = "daemon.toml";
 
 type TaskRunner = Arc<
     dyn Fn(
@@ -49,6 +55,59 @@ pub struct FlywheelDaemonConfig {
     pub repo_root: PathBuf,
     nightly_gc_interval_override: Option<Duration>,
     weekly_eval_interval_override: Option<Duration>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct StartupToolchainGateReport {
+    pub schema_version: u32,
+    pub config_path: Option<String>,
+    pub config_source: String,
+    pub enabled_languages: Vec<Language>,
+    pub required_count: usize,
+    pub path_entries_checked: usize,
+    pub resolved_count: usize,
+    pub missing_count: usize,
+    pub all_available: bool,
+    pub no_rocksdb_opened: bool,
+    pub missing: Vec<ToolchainMissingDiagnostic>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct StartupToolchainGateError {
+    pub error_code: &'static str,
+    pub detail: String,
+    pub report: StartupToolchainGateReport,
+}
+
+impl StartupToolchainGateError {
+    pub fn structured_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "error_code": self.error_code,
+            "detail": self.detail,
+            "toolchain_audit": self.report,
+        })
+    }
+}
+
+impl std::fmt::Display for StartupToolchainGateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.error_code, self.detail)
+    }
+}
+
+impl std::error::Error for StartupToolchainGateError {}
+
+#[derive(Debug, Deserialize)]
+struct OperatorDaemonToml {
+    enabled_languages: Option<Vec<Language>>,
+    daemon: Option<OperatorDaemonSection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OperatorDaemonSection {
+    enabled_languages: Option<Vec<Language>>,
 }
 
 impl FlywheelDaemonConfig {
@@ -82,6 +141,167 @@ fn validate_scheduler_period(field: &str, period: Duration) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+pub fn default_daemon_config_path() -> Option<PathBuf> {
+    if let Ok(root) = std::env::var(DAEMON_CONFIG_ROOT_ENV) {
+        return Some(PathBuf::from(root).join(DAEMON_CONFIG_FILE));
+    }
+    dirs::home_dir().map(|home| home.join(".config/mejepa").join(DAEMON_CONFIG_FILE))
+}
+
+pub fn default_daemon_enabled_label_languages() -> Vec<Language> {
+    vec![Language::Python]
+}
+
+pub fn required_toolchains_for_languages(enabled_languages: &[Language]) -> Vec<ToolchainBinary> {
+    let enabled = enabled_languages.iter().copied().collect::<BTreeSet<_>>();
+    default_enabled_label_toolchains()
+        .into_iter()
+        .filter(|toolchain| enabled.contains(&toolchain.language))
+        .collect()
+}
+
+pub fn load_enabled_label_languages_from_daemon_config(
+    config_path: Option<&Path>,
+) -> std::result::Result<(Option<PathBuf>, String, Vec<Language>), StartupToolchainGateError> {
+    let Some(path) = config_path
+        .map(Path::to_path_buf)
+        .or_else(default_daemon_config_path)
+    else {
+        return Ok((
+            None,
+            "default_python_no_config_path".to_string(),
+            default_daemon_enabled_label_languages(),
+        ));
+    };
+    if !path.exists() {
+        return Ok((
+            Some(path),
+            "default_python_config_missing".to_string(),
+            default_daemon_enabled_label_languages(),
+        ));
+    }
+    let contents = fs::read_to_string(&path).map_err(|err| {
+        startup_toolchain_config_error(
+            Some(path.clone()),
+            "MEJEPA_LABEL_TOOLCHAIN_CONFIG_READ_FAILED",
+            format!("failed to read daemon toolchain config: {err}"),
+        )
+    })?;
+    let parsed: OperatorDaemonToml = toml::from_str(&contents).map_err(|err| {
+        startup_toolchain_config_error(
+            Some(path.clone()),
+            "MEJEPA_LABEL_TOOLCHAIN_CONFIG_INVALID",
+            format!("failed to parse daemon toolchain config: {err}"),
+        )
+    })?;
+    let configured = parsed
+        .daemon
+        .and_then(|section| section.enabled_languages)
+        .or(parsed.enabled_languages);
+    let Some(languages) = configured else {
+        return Ok((
+            Some(path),
+            "default_python_config_no_enabled_languages".to_string(),
+            default_daemon_enabled_label_languages(),
+        ));
+    };
+    normalize_enabled_languages(Some(path), languages)
+}
+
+pub fn enforce_startup_toolchain_gate(
+    config_path: Option<&Path>,
+    path_env: Option<&str>,
+) -> std::result::Result<StartupToolchainGateReport, StartupToolchainGateError> {
+    let (resolved_config_path, config_source, enabled_languages) =
+        load_enabled_label_languages_from_daemon_config(config_path)?;
+    let required = required_toolchains_for_languages(&enabled_languages);
+    let audit = audit_required_toolchains(&required, path_env).map_err(|err| {
+        startup_toolchain_config_error(
+            resolved_config_path.clone(),
+            "MEJEPA_LABEL_TOOLCHAIN_CONFIG_INVALID",
+            err.to_string(),
+        )
+    })?;
+    let report = startup_toolchain_report(
+        resolved_config_path.as_deref(),
+        config_source,
+        enabled_languages,
+        &audit,
+    );
+    if report.all_available {
+        return Ok(report);
+    }
+    Err(StartupToolchainGateError {
+        error_code: "MEJEPA_LABEL_TOOLCHAIN_MISSING",
+        detail: "daemon startup refused before opening RocksDB because one or more configured label toolchains are missing".to_string(),
+        report,
+    })
+}
+
+fn normalize_enabled_languages(
+    path: Option<PathBuf>,
+    languages: Vec<Language>,
+) -> std::result::Result<(Option<PathBuf>, String, Vec<Language>), StartupToolchainGateError> {
+    let deduped = languages.into_iter().collect::<BTreeSet<_>>();
+    if deduped.is_empty() {
+        return Err(startup_toolchain_config_error(
+            path,
+            "MEJEPA_LABEL_TOOLCHAIN_CONFIG_INVALID",
+            "enabled_languages must contain at least one language".to_string(),
+        ));
+    }
+    Ok((
+        path,
+        "daemon_toml_enabled_languages".to_string(),
+        deduped.into_iter().collect(),
+    ))
+}
+
+fn startup_toolchain_report(
+    config_path: Option<&Path>,
+    config_source: String,
+    enabled_languages: Vec<Language>,
+    audit: &ToolchainAuditReport,
+) -> StartupToolchainGateReport {
+    StartupToolchainGateReport {
+        schema_version: 1,
+        config_path: config_path.map(|path| path.display().to_string()),
+        config_source,
+        enabled_languages,
+        required_count: audit.required_count,
+        path_entries_checked: audit.path_entries_checked,
+        resolved_count: audit.resolved.len(),
+        missing_count: audit.missing.len(),
+        all_available: audit.all_available,
+        no_rocksdb_opened: true,
+        missing: audit.missing.clone(),
+    }
+}
+
+fn startup_toolchain_config_error(
+    path: Option<PathBuf>,
+    error_code: &'static str,
+    detail: String,
+) -> StartupToolchainGateError {
+    StartupToolchainGateError {
+        error_code,
+        detail,
+        report: StartupToolchainGateReport {
+            schema_version: 1,
+            config_path: path.map(|path| path.display().to_string()),
+            config_source: "daemon_toml_invalid".to_string(),
+            enabled_languages: Vec::new(),
+            required_count: 0,
+            path_entries_checked: 0,
+            resolved_count: 0,
+            missing_count: 0,
+            all_available: false,
+            no_rocksdb_opened: true,
+            missing: Vec::new(),
+        },
+    }
 }
 
 pub struct FlywheelDaemonHandle {

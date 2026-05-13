@@ -5,9 +5,9 @@ host = "127.0.0.1"
 mcp_port = 3100
 http_port = 3101
 require_private_droot = true
+enabled_languages = ["python"]
 
 [scheduler]
 enabled = true
 status_path = "/mnt/d/contextgraph/state/schedulers/self_optimization_status.json"
 test_outcome_root = "/mnt/d/contextgraph/runtime/test-outcomes"
-

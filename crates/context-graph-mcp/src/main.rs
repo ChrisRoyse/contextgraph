@@ -110,6 +110,8 @@ struct CliArgs {
     /// Internal flag: this process IS the headless daemon (--daemon-server-only).
     /// Set automatically by spawn_daemon_process(). Not exposed in --help.
     daemon_server_only: bool,
+    /// Internal test/FSV flag: run startup toolchain audit and exit before daemon side effects.
+    daemon_toolchain_audit_only: bool,
 }
 
 impl CliArgs {
@@ -142,6 +144,7 @@ impl CliArgs {
             d_root: None,
             explicit_daemon_port: false,
             daemon_server_only: false,
+            daemon_toolchain_audit_only: false,
         };
 
         let mut i = 1;
@@ -234,6 +237,13 @@ impl CliArgs {
                 "--daemon-server-only" => {
                     // Internal flag: this process IS the headless daemon.
                     // Spawned by spawn_daemon_process() — not for direct user use.
+                    cli.daemon_server_only = true;
+                    cli.daemon = true;
+                }
+                "--daemon-toolchain-audit-only" => {
+                    // Internal FSV path: prove daemon startup gate behavior without leaving
+                    // a long-running daemon process behind.
+                    cli.daemon_toolchain_audit_only = true;
                     cli.daemon_server_only = true;
                     cli.daemon = true;
                 }
@@ -2233,6 +2243,23 @@ fn main() -> Result<()> {
     result
 }
 
+fn run_daemon_startup_toolchain_gate(audit_only: bool) -> Result<bool> {
+    let path_env = env::var("PATH").unwrap_or_default();
+    match daemon::enforce_startup_toolchain_gate(None, Some(&path_env)) {
+        Ok(report) => {
+            if audit_only {
+                eprintln!("{}", serde_json::to_string(&report)?);
+                return Ok(true);
+            }
+            Ok(false)
+        }
+        Err(error) => {
+            eprintln!("{}", serde_json::to_string(&error.structured_json())?);
+            Err(error.into())
+        }
+    }
+}
+
 /// Install kernel-level parent-death tracking (Linux `PR_SET_PDEATHSIG`).
 ///
 /// When the process that forked/spawned us dies for ANY reason, the kernel
@@ -2766,6 +2793,10 @@ async fn async_main() -> Result<()> {
         config.mcp.tcp_port = daemon_port;
         config.mcp.transport = "tcp".to_string();
 
+        if run_daemon_startup_toolchain_gate(cli.daemon_toolchain_audit_only)? {
+            return Ok(());
+        }
+
         // Kill stale holders (both daemon and standalone)
         #[cfg(unix)]
         if uses_rocksdb {
@@ -3050,6 +3081,9 @@ async fn async_main() -> Result<()> {
             #[cfg(not(unix))]
             {
                 // Non-Unix fallback: in-process daemon (original behavior)
+                if run_daemon_startup_toolchain_gate(cli.daemon_toolchain_audit_only)? {
+                    return Ok(());
+                }
                 let pid_guard = if uses_rocksdb {
                     let mut guard_result = PidFileGuard::acquire(&db_path);
                     if guard_result.is_err() && killed_stale {
