@@ -15,14 +15,14 @@ use context_graph_mejepa::heal::{
 };
 use context_graph_mejepa::{
     build_deterministic_compiler, open_infer_rocksdb, ActiveLearningQueueState, ActualOutcome,
-    AgentId, CalibrationStore, FeedbackId, FeedbackKind, MeJepaInferConfig, OracleOutcome,
-    PatchBundle, PredictionId, RealityPrediction, RocksDbEvalStore, RocksDbInferStore,
-    SurpriseEvent, SurpriseSeverity, TaskContext, TestId, WitnessHash,
+    AgentId, CalibrationStore, ChunkId, DdaSignals, FeedbackId, FeedbackKind, MeJepaInferConfig,
+    OracleOutcome, PatchBundle, PanelId, PredictionId, RealityPrediction, RocksDbEvalStore,
+    RocksDbInferStore, SurpriseEvent, SurpriseSeverity, TaskContext, TestId, WitnessHash,
 };
 use context_graph_mejepa_cf::{
     CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_AGENT_FEEDBACK,
-    CF_MEJEPA_CALIBRATION_HISTORY, CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_OOD_ESCALATIONS,
-    CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_CALIBRATION_HISTORY, CF_MEJEPA_DDA_SIGNALS, CF_MEJEPA_LIVE_PREDICTIONS,
+    CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_embedders::{query_vram_budget, VramBudget};
 use context_graph_mejepa_hygiene::{mcp_quota_status, HygieneMcpRequest};
@@ -77,6 +77,12 @@ struct PredictWhatIfRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ExplainPredictionRequest {
+    prediction_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct InspectPredictionRequest {
     prediction_id: String,
 }
 
@@ -423,6 +429,41 @@ impl Handlers {
                 id,
                 ToolErrorKind::Storage,
                 "MEJEPA_EXPLAIN_PREDICTION_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_inspect_prediction(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: InspectPredictionRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_INSPECT_PREDICTION
+                    ),
+                );
+            }
+        };
+        let db_path = match infer_db_path() {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        let result = run_inspect_prediction(&db_path, request);
+        match result {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Storage,
+                "MEJEPA_INSPECT_PREDICTION_FAILED",
                 &err.to_string(),
                 json!({"dbPath": db_path}),
             ),
@@ -1212,6 +1253,94 @@ fn run_explain_prediction(
             "dbPath": db_path.display().to_string(),
             "cf": CF_MEJEPA_LIVE_PREDICTIONS,
             "predictionId": request.prediction_id
+        }
+    }))
+}
+
+fn run_inspect_prediction(
+    db_path: &Path,
+    request: InspectPredictionRequest,
+) -> AnyhowResult<Value> {
+    let prediction_id = parse_prediction_id_hex(&request.prediction_id)?;
+    let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
+    let row = find_prediction_row_by_id(db.as_ref(), prediction_id)?;
+    let saliency = saliency_by_chunk(&row.prediction)?;
+    let contributing_chunks = inspect_contributing_chunks(db.as_ref(), &row.prediction, &saliency)?;
+    let granger_mean = mean_prediction_attestation(&row.prediction.granger_attestations);
+
+    Ok(json!({
+        "predictionId": request.prediction_id,
+        "predictionIdentity": {
+            "predictionId": hex::encode(row.prediction.prediction_id),
+            "taskId": row.prediction.task_id.0,
+            "sessionId": hex::encode(row.prediction.session_id),
+            "language": row.prediction.language,
+            "createdAtUnixMs": row.prediction.created_at_unix_ms
+        },
+        "witnessHash": hex::encode(row.prediction.witness_hash.0),
+        "sourcePanelSha": hex::encode(row.prediction.source_panel_sha),
+        "versions": {
+            "predictorVersion": row.prediction.provenance.predictor_version,
+            "constellationVersion": row.prediction.provenance.constellation_version,
+            "calibrationVersion": row.prediction.provenance.calibration_version,
+            "activePointer": row.prediction.provenance.active_pointer,
+            "predictionCalibrationVersion": row.prediction.calibration_version
+        },
+        "conformalTrace": {
+            "steps": [
+                {
+                    "step": "load_prediction_row",
+                    "cf": CF_MEJEPA_LIVE_PREDICTIONS,
+                    "keyHex": hex::encode(&row.key),
+                    "valueSha256": row.value_sha256_hex,
+                    "valueBytes": row.value_len
+                },
+                {
+                    "step": "load_calibration_version",
+                    "calibrationVersion": row.prediction.calibration_version
+                },
+                {
+                    "step": "assemble_outcome_set",
+                    "alpha": row.prediction.outcome_set.alpha,
+                    "tau": row.prediction.outcome_set.tau,
+                    "entropyBits": row.prediction.outcome_set.entropy_bits,
+                    "outcomes": row.prediction.outcome_set.outcomes
+                },
+                {
+                    "step": "compute_confidence_interval",
+                    "method": row.prediction.confidence_interval.method,
+                    "coverageTarget": row.prediction.confidence_interval.coverage_target,
+                    "empiricalCoverage": row.prediction.confidence_interval.empirical_coverage,
+                    "lower": row.prediction.confidence_interval.lower,
+                    "upper": row.prediction.confidence_interval.upper,
+                    "width": row.prediction.confidence_interval.width()
+                },
+                {
+                    "step": "calibrate_confidence",
+                    "predictedOraclePass": row.prediction.predicted_oracle_pass,
+                    "oodScore": row.prediction.ood_score,
+                    "grangerAttestationMean": granger_mean,
+                    "calibratedConfidence": row.prediction.calibrated_confidence,
+                    "degradedStatus": row.prediction.degraded_status
+                }
+            ],
+            "predictedTestPass": row.prediction.predicted_test_pass,
+            "grangerAttestations": row.prediction.granger_attestations
+        },
+        "tctTrace": {
+            "constellationVersion": row.prediction.provenance.constellation_version,
+            "guardViolations": row.prediction.guard_violations,
+            "guardViolationCount": row.prediction.guard_violations.len()
+        },
+        "contributingChunks": contributing_chunks,
+        "prediction": row.prediction,
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "livePredictionCf": CF_MEJEPA_LIVE_PREDICTIONS,
+            "livePredictionKeyHex": hex::encode(&row.key),
+            "livePredictionValueSha256": row.value_sha256_hex,
+            "ddaSignalsCf": CF_MEJEPA_DDA_SIGNALS,
+            "readbackVerified": true
         }
     }))
 }
