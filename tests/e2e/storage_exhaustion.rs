@@ -364,11 +364,11 @@ fn boundary_invalid_quota(root: &Path) -> Result<BoundaryEvidence> {
     Ok(BoundaryEvidence {
         case: "invalid_quota_rejected".to_string(),
         trigger: "HygieneEnv::try_new(total_quota_bytes=0)".to_string(),
-        expected_error_code: "MEJEPA_HYGIENE_INVALID_INPUT".to_string(),
+        expected_error_code: "MEJEPA_HYGIENE_INVALID_CONFIG".to_string(),
         actual_error_code: err.code.to_string(),
         before: json!({"envCreated": false}),
         after: json!({"envCreated": false, "errorKind": err.kind}),
-        pass: err.code == "MEJEPA_HYGIENE_INVALID_INPUT",
+        pass: err.code == "MEJEPA_HYGIENE_INVALID_CONFIG",
     })
 }
 
