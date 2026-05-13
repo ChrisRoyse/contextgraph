@@ -260,6 +260,7 @@ fn telemetry_window(
         vram_total_bytes: 48_000_000_000,
         vram_required_bytes: 16_000_000_000,
         heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
+        training_holdout_distribution_drift: None,
         source: "phase-g-telemetry-feedback-fsv".to_string(),
     }
 }

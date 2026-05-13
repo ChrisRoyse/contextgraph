@@ -40,6 +40,7 @@ pub enum TriggerReason {
     OperatorTriggered,
     TelemetryConformalRecalibration,
     TelemetryFullRetrainCandidate,
+    TrainingHoldoutDistributionDrift,
     OperatorOverrideRecalibration,
 }
 

@@ -137,6 +137,7 @@ pub fn run_heal_ticker_telemetry_fsv(fsv_root: &Path) -> Result<HealTickerTeleme
         vram_total_bytes: 16,
         vram_required_bytes: 4,
         heal_ticker_telemetry_total: after_restart_snapshot.heal_ticker_telemetry_total.clone(),
+        training_holdout_distribution_drift: None,
         source: "phase_f_heal_ticker_telemetry_fsv".to_string(),
     };
     telemetry_window.validate()?;

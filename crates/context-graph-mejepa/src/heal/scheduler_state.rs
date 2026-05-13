@@ -12,7 +12,10 @@ use sha2::{Digest, Sha256};
 
 use crate::compiler::MejepaStore;
 use crate::conformal::CalibrationExample;
-use crate::eval::{ActiveLearningKind, ProductionTelemetryWindow, RocksDbEvalStore};
+use crate::eval::{
+    ActiveLearningKind, ProductionTelemetryWindow, RocksDbEvalStore,
+    TRAINING_HOLDOUT_DRIFT_ALERT_CODE,
+};
 use crate::heal::calibration::continuous_calibration_if_due;
 use crate::heal::cf::{decode_value, encode_value, CF_MEJEPA_DRIFT_WINDOW};
 use crate::heal::dissipation::{detect_dissipation, DissipationConfig};
@@ -234,6 +237,7 @@ impl TickName {
 pub enum TelemetryFeedbackActionKind {
     QueueRecalibration,
     QueueFullRetrainCandidate,
+    TrainingHoldoutDriftAlert,
 }
 
 impl TelemetryFeedbackActionKind {
@@ -241,6 +245,7 @@ impl TelemetryFeedbackActionKind {
         match self {
             Self::QueueRecalibration => "queue_recalibration",
             Self::QueueFullRetrainCandidate => "queue_full_retrain_candidate",
+            Self::TrainingHoldoutDriftAlert => "training_holdout_drift_alert",
         }
     }
 
@@ -248,6 +253,7 @@ impl TelemetryFeedbackActionKind {
         match self {
             Self::QueueRecalibration => TriggerReason::TelemetryConformalRecalibration,
             Self::QueueFullRetrainCandidate => TriggerReason::TelemetryFullRetrainCandidate,
+            Self::TrainingHoldoutDriftAlert => TriggerReason::TrainingHoldoutDistributionDrift,
         }
     }
 }
@@ -1707,6 +1713,29 @@ fn classify_telemetry_feedback_actions(
             recorded_at_unix_ms,
         });
     }
+    if let Some(drift) = &telemetry.training_holdout_distribution_drift {
+        if drift.alert_fired {
+            actions.push(TelemetryFeedbackAction {
+                kind: TelemetryFeedbackActionKind::TrainingHoldoutDriftAlert,
+                window_id: telemetry.window_id.clone(),
+                captured_at_unix_ms: telemetry.captured_at_unix_ms,
+                reason: format!(
+                    "{TRAINING_HOLDOUT_DRIFT_ALERT_CODE}: training-vs-holdout KL {:.6} exceeded {:.2} for {} batches",
+                    drift.kl_divergence, drift.threshold, drift.sustained_batch_count
+                ),
+                metric_name: "training_holdout_kl_divergence".to_string(),
+                metric_value: drift.kl_divergence,
+                threshold_min: None,
+                threshold_max: Some(drift.threshold),
+                source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY
+                    .to_string(),
+                heal_report_key_hex: String::new(),
+                pending_promotion_id: None,
+                already_queued: false,
+                recorded_at_unix_ms,
+            });
+        }
+    }
     Ok(actions)
 }
 
@@ -1808,6 +1837,7 @@ fn telemetry_feedback_heal_report(
         status_change: match action.kind {
             TelemetryFeedbackActionKind::QueueRecalibration => StatusChange::Degraded,
             TelemetryFeedbackActionKind::QueueFullRetrainCandidate => StatusChange::Retraining,
+            TelemetryFeedbackActionKind::TrainingHoldoutDriftAlert => StatusChange::Degraded,
         },
         trigger_reason: action.kind.trigger_reason(),
     })

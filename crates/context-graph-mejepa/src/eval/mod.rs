@@ -48,7 +48,11 @@ pub use ship_gate_stability::{
     SHIP_GATE_STABILITY_CORRELATION_THRESHOLD,
 };
 pub use store::RocksDbEvalStore;
-pub use telemetry::{LatencyTelemetry, ProductionTelemetryWindow};
+pub use telemetry::{
+    training_holdout_distribution_drift, LatencyTelemetry, ProductionTelemetryWindow,
+    TrainingHoldoutDistributionDrift, TRAINING_HOLDOUT_DRIFT_ALERT_CODE,
+    TRAINING_HOLDOUT_DRIFT_KL_THRESHOLD, TRAINING_HOLDOUT_DRIFT_REQUIRED_BATCHES,
+};
 pub use types::{
     cell_key, language_slug, ActiveLearningSummary, AuxHeadDistillationSummary,
     ConformalHealthEntry, EvalConfig, EvalObservation, EvalProvenance, EvalReport, HoldoutPanel,

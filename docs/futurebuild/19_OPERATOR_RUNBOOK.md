@@ -294,6 +294,26 @@ context-graph-cli mejepa active-learning list
 2. If a specific (category, language) cell is regressing, force constellation refresh: `mcp_call mejepa_constellation_inspect --force-refit --category <c> --language <l>`.
 3. If pervasive: file blocker; consider triggering full retrain.
 
+### 5.9 `MEJEPA_TRAINING_HOLDOUT_DRIFT`
+
+**Cause:** the training-batch `(mutation_category, language)` distribution has diverged from the holdout distribution with `KL > 0.5` for at least 100 batches.
+
+**Investigate:**
+```bash
+mcp_call mejepa_heal_status
+context-graph-cli mejepa report-weekly --date "$(date -u +%F)"
+```
+
+**Resolution:**
+```bash
+context-graph-cli mejepa cell-status --threshold 0.95
+context-graph-cli mejepa active-learning list
+```
+
+1. Read the latest `telemetry_feedback` action and confirm `metric_name=training_holdout_kl_divergence`.
+2. Compare weak cells in `cell-status` against recent active-learning and operator-override entries.
+3. Reduce the skew by draining high-priority labels or broadening corpus sampling for underrepresented cells before promoting a new model.
+
 ---
 
 ## 6. Configuration tuning

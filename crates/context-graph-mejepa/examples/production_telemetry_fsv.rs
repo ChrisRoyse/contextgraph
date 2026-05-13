@@ -255,6 +255,7 @@ fn production_windows_from_real_evidence() -> FsvResult<(Vec<ProductionTelemetry
         vram_total_bytes,
         vram_required_bytes,
         heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
+        training_holdout_distribution_drift: None,
         source: "real_fsv_sources:swebench_300x8+conformal+ood+shift_latency+cuda_vram".to_string(),
     };
     let rolling_reports = ship_gate["execute_and_inspect"]["rolling_reports"]
@@ -284,6 +285,7 @@ fn production_windows_from_real_evidence() -> FsvResult<(Vec<ProductionTelemetry
             vram_total_bytes,
             vram_required_bytes,
             heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
+            training_holdout_distribution_drift: None,
             source: "real_fsv_sources:rolling_swebench_300x8+conformal+ood+shift_latency+cuda_vram"
                 .to_string(),
         });
