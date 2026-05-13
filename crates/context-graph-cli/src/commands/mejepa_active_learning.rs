@@ -29,6 +29,11 @@ pub enum MejepaCommands {
     Replay(crate::commands::mejepa_replay::ReplayArgs),
     /// End-to-end Phase G corpus training-pipeline orchestrator.
     Train(crate::commands::mejepa_train::MejepaTrainArgs),
+    /// Phase G cross-validation against a pre-scraped public CI corpus.
+    #[command(name = "cross-validate-public-ci")]
+    CrossValidatePublicCi(
+        crate::commands::mejepa_public_ci_cross_validate::PublicCiCrossValidationArgs,
+    ),
     /// Phase G per-cell convergence status from CF_MEJEPA_EVAL_REPORTS.
     #[command(name = "cell-status")]
     CellStatus(crate::commands::mejepa_runbook::CellStatusArgs),
@@ -239,6 +244,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
             serde_json::to_value(crate::commands::mejepa_train::run_mejepa_train(args)?)
                 .context("serialize train")
         }
+        MejepaCommands::CrossValidatePublicCi(args) => serde_json::to_value(
+            crate::commands::mejepa_public_ci_cross_validate::run_public_ci_cross_validation(args)?,
+        )
+        .context("serialize cross-validate-public-ci"),
         MejepaCommands::CellStatus(args) => {
             serde_json::to_value(crate::commands::mejepa_runbook::run_cell_status(args)?)
                 .context("serialize cell-status")

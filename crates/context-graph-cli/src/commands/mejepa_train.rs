@@ -115,6 +115,8 @@ struct CorpusEntry {
     oracle_verdict_sha256: Option<String>,
     patch_path: String,
     patch_sha256: String,
+    #[serde(default)]
+    predicted_oracle_pass: Option<f32>,
     repo: String,
     task_id: String,
 }
@@ -364,6 +366,13 @@ fn validate_entry(entry: &CorpusEntry, entry_idx: usize, index_path: &Path) -> R
             )
         })?;
     }
+    if let Some(predicted) = entry.predicted_oracle_pass {
+        ensure!(
+            predicted.is_finite() && (0.0..=1.0).contains(&predicted),
+            "{} entry {entry_idx} predicted_oracle_pass must be finite in [0,1]",
+            index_path.display()
+        );
+    }
     Ok(())
 }
 
@@ -506,10 +515,10 @@ fn process_row(
         row.attempt_id
     );
 
-    let predicted_probability = if row.entry.oracle_all_passed {
-        0.95
-    } else {
-        0.05
+    let predicted_probability = match row.entry.predicted_oracle_pass {
+        Some(predicted) => predicted,
+        None if row.entry.oracle_all_passed => 0.95,
+        None => 0.05,
     };
     let actual_probability = if row.entry.oracle_all_passed {
         1.0

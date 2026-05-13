@@ -19,6 +19,7 @@ pub mod export_training;
 pub mod hooks;
 pub mod learning;
 pub mod mejepa_active_learning;
+pub mod mejepa_public_ci_cross_validate;
 pub mod mejepa_replay;
 pub mod mejepa_runbook;
 pub mod mejepa_train;
