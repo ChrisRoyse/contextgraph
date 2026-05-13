@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use anyhow::{anyhow, ensure, Context, Result};
 use context_graph_mejepa_hygiene::{
@@ -534,7 +535,22 @@ fn remove_existing_fsv_root(path: &Path) -> Result<()> {
         "refusing to remove existing storage-exhaustion FSV root outside /mnt/d/contextgraph/fsv or temp dir: {}",
         path.display()
     );
-    fs::remove_dir_all(path).with_context(|| format!("remove {}", path.display()))
+    let mut last_err = None;
+    for attempt in 0..5 {
+        match fs::remove_dir_all(path) {
+            Ok(()) => return Ok(()),
+            Err(err) if err.kind() == ErrorKind::NotFound => return Ok(()),
+            Err(err) => {
+                last_err = Some(err);
+                std::thread::sleep(Duration::from_millis(50 * (attempt + 1) as u64));
+            }
+        }
+    }
+    if !path.exists() {
+        return Ok(());
+    }
+    Err(last_err.expect("remove_dir_all attempted at least once"))
+        .with_context(|| format!("remove {}", path.display()))
 }
 
 fn collect_file_artifacts(root: &Path) -> Result<Vec<FileArtifact>> {
