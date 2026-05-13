@@ -55,13 +55,13 @@ The `memory/` SMAP tree has many decisions and reports that reference inner-acto
 
 | Item | Path | Action | Replacement reference |
 |---|---|---|---|
-| `agent-77-harness-editor--inner-actor-model-swap-qwen3-coder-30b-a3b.md` | `memory/decisions/` | SUPERSEDE | `2026-05-09--single-outer-loop-mejepa-no-local-llm.md` |
+| `agent-77-harness-editor--inner-actor-model-swap-qwen3-coder-30b-a3b.md` | `memory/decisions/` | **SUPERSEDED / FSV-verified 2026-05-13 (#132)** | `2026-05-09--single-outer-loop-mejepa-no-local-llm.md`; evidence at `/mnt/d/contextgraph/fsv/phase-h-smap-superseded-decisions-fsv/smap_superseded_decisions_fsv.json` |
 | `agent-79-harness-editor--tool-result-history-cap-tightened-to-4kb.md` | `memory/decisions/` | KEEP | still applies to prediction-injection size |
-| `agent-73-harness-editor--wallclock-budget-raise.md` | `memory/decisions/` | SUPERSEDE | n/a — wallclock concept retired |
-| `agent-58-harness-editor--post-apply-action-message-clarification.md` | `memory/decisions/` | SUPERSEDE | apply-action protocol no longer exists |
-| `agent-47-harness-editor--per-attempt-wallclock-budget.md` | `memory/decisions/` | SUPERSEDE | concept retired |
+| `agent-73-harness-editor--wallclock-budget-raise.md` | `memory/decisions/` | **SUPERSEDED / FSV-verified 2026-05-13 (#132)** | `2026-05-09--single-outer-loop-mejepa-no-local-llm.md`; wallclock concept retired with the local inner actor |
+| `agent-58-harness-editor--post-apply-action-message-clarification.md` | `memory/decisions/` | **SUPERSEDED / FSV-verified 2026-05-13 (#132)** | `2026-05-09--single-outer-loop-mejepa-no-local-llm.md`; apply-action protocol no longer exists |
+| `agent-47-harness-editor--per-attempt-wallclock-budget.md` | `memory/decisions/` | **SUPERSEDED / FSV-verified 2026-05-13 (#132)** | `2026-05-09--single-outer-loop-mejepa-no-local-llm.md`; concept retired |
 | `agent-42-harness-editor--nvidia-smi-na-sentinel-tolerance.md` | `memory/decisions/` | KEEP | nvidia-smi handling still applies to VRAM telemetry |
-| `agent-111-coordinator--reality-run-attempt-fire-and-forget.md` | `memory/decisions/` | SUPERSEDE | fire-and-forget engine spawn retired |
+| `agent-111-coordinator--reality-run-attempt-fire-and-forget.md` | `memory/decisions/` | **SUPERSEDED / FSV-verified 2026-05-13 (#132)** | `2026-05-09--single-outer-loop-mejepa-no-local-llm.md`; fire-and-forget engine spawn retired |
 | `agent-72-coordinator--docker-permission-denied-blocks-official-eval.md` | `memory/blockers/` | KEEP if active | Docker permission still relevant for capture mode |
 | All `memory/context/current-phase.md` referencing inner-actor | `memory/context/` | UPDATE | rewrite per current state once daemon mode ships |
 | All `memory/reports/agent-*--turn-*` | `memory/reports/` | KEEP | append-only; per CLAUDE.md §6 never delete |
@@ -160,7 +160,7 @@ The SMAP roster doc lists agents. Update:
 1. **Apply `14_NEW_LOOP_MD.md` content to `.claude/loop.md`** (`TASK-LOOP-001`).
 2. **Update CLAUDE.md §11.11 + §13 + §3** (`TASK-LOOP-002`).
 3. **Mark retired agents in `agents/README.md`** (part of `TASK-LOOP-002`).
-4. **Mark superseded SMAP decisions** with frontmatter `status: superseded` + `superseded_by:` pointer (`TASK-LOOP-003`).
+4. **Mark superseded SMAP decisions** with frontmatter `status: superseded` + `superseded_by:` pointer (`TASK-LOOP-003`) — **complete (#132)**; FSV asserts five legacy decision files point to `2026-05-09--single-outer-loop-mejepa-no-local-llm.md` and `rg '^status: superseded$' memory/decisions` returns the expected total.
 5. **Delete or retire unused MCP tools** (`TASK-LOOP-004`).
 6. **Confirm absence of inner-actor model files on disk** (`TASK-LOOP-005`).
 7. **Delete `target/release/reality-loop` if it lingers** (`TASK-LOOP-006`).

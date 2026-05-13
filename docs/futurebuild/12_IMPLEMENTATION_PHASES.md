@@ -259,14 +259,14 @@ This phase is **operational, not implementation**. The system is built; this pha
 
 | Task | Description | Effort |
 |---|---|---|
-| `TASK-LOOP-003` | Mark superseded SMAP decisions with frontmatter | 0.25 day |
+| `TASK-LOOP-003` | Mark superseded SMAP decisions with frontmatter | **complete (#132)** — `scripts/ci/phase_h_smap_superseded_decisions_fsv.sh` |
 | `TASK-LOOP-004` | Retire legacy MCP tools (mark fail-closed, update tool registry) | 0.25 day |
 | `TASK-LOOP-005` | Confirm absence of inner-actor model files (audit script) | 0.1 day |
 | `TASK-LOOP-006` | Delete stale `target/release/reality-loop` binary if present | 0.1 day |
 
 **Ship gate:**
 1. No `MEJEPA_*_RETIRED` symbols accidentally invokable.
-2. SMAP supersession is consistent (no live reference to a retired concept without a `superseded_by` pointer).
+2. SMAP supersession is consistent (no active decision asserts the retired inner-actor contract; legacy decisions have `superseded_by` pointers). **Passed for TASK-LOOP-003 on 2026-05-13.**
 3. CLAUDE.md + `agents/README.md` reflect current state.
 
 ---
