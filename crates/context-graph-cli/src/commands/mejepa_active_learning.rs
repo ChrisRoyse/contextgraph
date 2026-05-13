@@ -40,6 +40,9 @@ pub enum MejepaCommands {
     EvalShipGate(crate::commands::mejepa_runbook::EvalShipGateArgs),
     /// Operator runbook: hygiene cold-audit / aggressive-cold-tier-down.
     Hygiene(crate::commands::mejepa_runbook::HygieneArgs),
+    /// Operator runbook: integrity-check the inference RocksDB.
+    #[command(name = "storage-verify")]
+    StorageVerify(crate::commands::mejepa_runbook::StorageVerifyArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -213,6 +216,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
         MejepaCommands::Hygiene(args) => {
             serde_json::to_value(crate::commands::mejepa_runbook::run_hygiene(args)?)
                 .context("serialize hygiene")
+        }
+        MejepaCommands::StorageVerify(args) => {
+            serde_json::to_value(crate::commands::mejepa_runbook::run_storage_verify(args)?)
+                .context("serialize storage-verify")
         }
     }
 }

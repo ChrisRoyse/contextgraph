@@ -32,6 +32,50 @@ const DEFAULT_WITNESS_CHAIN_PATH: &str =
 const DEFAULT_HYGIENE_ARCHIVE_ROOT: &str = "/mnt/d/contextgraph/storage/hygiene-archive";
 
 #[derive(Args, Debug, Clone)]
+pub struct StorageVerifyArgs {
+    /// Inference RocksDB path to integrity-check.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_INFER_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
+    pub db_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageVerifyOutput {
+    pub db_path: PathBuf,
+    pub paranoid_open_ok: bool,
+    pub cf_count: usize,
+    pub cf_row_counts: std::collections::BTreeMap<String, u64>,
+    pub source_of_truth: Value,
+}
+
+pub fn run_storage_verify(args: StorageVerifyArgs) -> Result<StorageVerifyOutput> {
+    validate_dir(&args.db_path, "storage-db-path")?;
+    let db = open_infer_rocksdb(&args.db_path).with_context(|| {
+        format!(
+            "MEJEPA_RUNBOOK_STORAGE_VERIFY_OPEN_FAILED: {}",
+            args.db_path.display()
+        )
+    })?;
+    let mut counts = std::collections::BTreeMap::new();
+    for cf_name in context_graph_mejepa_cf::INFER_CFS {
+        let count = context_graph_mejepa::count_cf(db.as_ref(), cf_name).with_context(|| {
+            format!("MEJEPA_RUNBOOK_STORAGE_VERIFY_CF_FAILED: {cf_name}")
+        })?;
+        counts.insert((*cf_name).to_string(), count);
+    }
+    Ok(StorageVerifyOutput {
+        db_path: args.db_path.clone(),
+        paranoid_open_ok: true,
+        cf_count: counts.len(),
+        cf_row_counts: counts,
+        source_of_truth: json!({
+            "writer": "rocksdb DB::open_cf_descriptors with set_paranoid_checks(true)",
+            "verification": "count_cf walks every iterator key — surfaces SST corruption",
+        }),
+    })
+}
+
+#[derive(Args, Debug, Clone)]
 pub struct HygieneArgs {
     /// Hygiene RocksDB path containing the hygiene CFs.
     #[arg(long, env = "CONTEXTGRAPH_MEJEPA_HYGIENE_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
