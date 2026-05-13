@@ -213,6 +213,10 @@ impl Trainer {
                 distillation_skipped_count: None,
                 counterfactual_smoothness: None,
                 counterfactual_smoothness_anomaly: None,
+                adversarial_mix_target_ratio: self.config.adversarial_mix_ratio,
+                adversarial_mix_count: plan.adversarial_count,
+                adversarial_mix_example_indices: plan.adversarial_example_indices.clone(),
+                adversarial_mix_fallback_count: plan.adversarial_fallback_count as u64,
                 cross_task_transfer_indices: plan.cross_task_indices,
                 cross_task_transfer_fallback_count: plan.cross_task_fallback_count as u64,
                 predictor_redundancy_pairwise_mi,
@@ -303,7 +307,14 @@ impl Trainer {
 
     fn rebuild_sampler(&mut self, dataset: &TrainingDataset) -> Result<(), TrainerError> {
         let n = dataset.train.examples.len();
-        self.sampler = BatchSampler::new(
+        let adversarial_indices = dataset
+            .train
+            .examples
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, example)| example.adversarial.then_some(idx))
+            .collect::<Vec<_>>();
+        self.sampler = BatchSampler::new_with_adversarial_indices(
             self.config.clone(),
             (0..n).map(|i| 0.1 + (i % 10) as f32 * 0.05).collect(),
             (0..n).map(|i| i % 17 == 0).collect(),
@@ -314,6 +325,7 @@ impl Trainer {
                 .iter()
                 .map(|ex| ex.task_id.clone())
                 .collect(),
+            adversarial_indices,
             PatchSimilarityGraph {
                 neighbors: vec![Vec::new(); n],
             },

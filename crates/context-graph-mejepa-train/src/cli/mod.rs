@@ -55,6 +55,8 @@ pub struct TrainArgs {
     pub cross_task_transfer_probability: Option<f32>,
     #[arg(long, name = "cross-task-cosine-threshold")]
     pub cross_task_cosine_threshold: Option<f32>,
+    #[arg(long, name = "adversarial-mix-ratio")]
+    pub adversarial_mix_ratio: Option<f32>,
     #[arg(long, name = "random-seed")]
     pub random_seed: u64,
     #[arg(long)]
@@ -205,6 +207,9 @@ fn apply_overrides(config: &mut TrainingConfig, args: &TrainArgs) {
     if let Some(v) = args.cross_task_cosine_threshold {
         config.cross_task_cosine_threshold = v;
     }
+    if let Some(v) = args.adversarial_mix_ratio {
+        config.adversarial_mix_ratio = v;
+    }
 }
 
 pub fn load_corpus_index_dataset(corpus: &Path) -> Result<TrainingDataset, TrainerError> {
@@ -252,6 +257,7 @@ pub fn load_corpus_index_dataset(corpus: &Path) -> Result<TrainingDataset, Train
             .get("oracle_all_passed")
             .and_then(|v| v.as_bool())
             .ok_or_else(|| corpus_field(i, "oracle_all_passed"))?;
+        let adversarial = parse_optional_adversarial_flag(i, entry)?;
         let bucket = parse_bucket(
             i,
             entry
@@ -267,6 +273,7 @@ pub fn load_corpus_index_dataset(corpus: &Path) -> Result<TrainingDataset, Train
             panel_t01: panel.clone(),
             panel_t2: panel,
             actual_oracle_pass: actual,
+            adversarial,
         };
         match bucket {
             CorpusBucket::Train => train.push(example),
@@ -385,6 +392,26 @@ fn parse_bucket(row: usize, value: &str) -> Result<CorpusBucket, TrainerError> {
             "bucket": other,
             "allowed": ["train", "calibration", "holdout"]
         }))),
+    }
+}
+
+fn parse_optional_adversarial_flag(
+    row: usize,
+    entry: &serde_json::Value,
+) -> Result<bool, TrainerError> {
+    match entry.get("adversarial") {
+        Some(value) => value.as_bool().ok_or_else(|| {
+            TrainerError::new(
+                TrainerErrorCode::MejepaTrainConfigInvalid,
+                format!("corpus entry {row} adversarial field must be boolean"),
+            )
+            .with_context(json!({
+                "row": row,
+                "field": "adversarial",
+                "remediation": "set adversarial to true only for TASK-TEST-010 adversarial training rows"
+            }))
+        }),
+        None => Ok(false),
     }
 }
 

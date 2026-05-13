@@ -35,14 +35,20 @@ impl BatchSampler {
         batch_size: usize,
     ) -> Result<BatchPlan, TrainerError> {
         let mut plan = self.force_prefix(batch_size);
-        let need = batch_size.saturating_sub(plan.force_count);
-        let regular_set: HashSet<usize> = self.regular_indices.iter().copied().collect();
+        let mut used = plan.indices.iter().copied().collect::<HashSet<_>>();
+        let mut used_ordered = plan.indices.iter().copied().collect();
+        self.fill_adversarial_mix(&mut plan, batch_size, &mut used_ordered);
+        used.extend(used_ordered);
+        let need = batch_size.saturating_sub(plan.indices.len());
+        let regular_set: HashSet<usize> = self
+            .regular_pool_excluding(&plan.indices.iter().copied().collect(), true)
+            .into_iter()
+            .collect();
         let neighbors = related_tasks_above(&self.patch_similarity_graph, current_task_idx)
             .iter()
             .copied()
             .filter(|idx| regular_set.contains(idx))
             .collect::<Vec<_>>();
-        let mut used = plan.indices.iter().copied().collect::<HashSet<_>>();
         for _ in 0..need {
             let use_cross_task =
                 self.rng.next_unit_f32() < self.config.cross_task_transfer_probability;
@@ -54,14 +60,17 @@ impl BatchSampler {
                     .collect::<Vec<_>>();
                 if pool.is_empty() {
                     plan.cross_task_fallback_count += 1;
-                    self.weighted_pick_from_regular()?
+                    self.weighted_pick_from_regular_excluding(
+                        &used.iter().copied().collect(),
+                        true,
+                    )?
                 } else {
                     let picked = pool[(self.rng.next_u64() as usize) % pool.len()];
                     plan.cross_task_indices.push(plan.indices.len());
                     Some(picked)
                 }
             } else {
-                self.weighted_pick_from_regular()?
+                self.weighted_pick_from_regular_excluding(&used.iter().copied().collect(), true)?
             };
             if let Some(idx) = candidate {
                 if used.insert(idx) {
@@ -70,7 +79,7 @@ impl BatchSampler {
                 }
             }
         }
-        self.record_operator_override_sampler_batch(&mut plan);
+        self.finalize_batch_plan(&mut plan, batch_size);
         Ok(plan)
     }
 }

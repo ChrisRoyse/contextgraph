@@ -32,6 +32,7 @@ toml = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+anyhow = { workspace = true }
 tempfile = "3.10"
 
 [[bin]]
@@ -73,3 +74,7 @@ path = "examples/operator_override_sampler_fsv.rs"
 [[example]]
 name = "label_transfer_consumer_fsv"
 path = "examples/label_transfer_consumer_fsv.rs"
+
+[[example]]
+name = "phase_g_adversarial_retrain_fsv"
+path = "examples/phase_g_adversarial_retrain_fsv.rs"

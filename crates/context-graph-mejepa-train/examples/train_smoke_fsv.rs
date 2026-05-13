@@ -87,6 +87,7 @@ fn synthetic_examples(n: usize) -> Result<Vec<HoldoutExample>, candle_core::Erro
             panel_t01: panel.clone(),
             panel_t2: panel,
             actual_oracle_pass: i % 2 == 0,
+            adversarial: false,
         });
     }
     Ok(out)

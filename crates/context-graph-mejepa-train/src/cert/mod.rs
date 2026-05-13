@@ -56,6 +56,10 @@ pub struct TrainingCertificate {
     pub distillation_skipped_count: Option<u64>,
     pub counterfactual_smoothness: Option<f32>,
     pub counterfactual_smoothness_anomaly: Option<bool>,
+    pub adversarial_mix_target_ratio: f32,
+    pub adversarial_mix_count: usize,
+    pub adversarial_mix_example_indices: Vec<usize>,
+    pub adversarial_mix_fallback_count: u64,
     pub cross_task_transfer_indices: Vec<usize>,
     pub cross_task_transfer_fallback_count: u64,
     pub predictor_redundancy_pairwise_mi: f32,
@@ -135,6 +139,30 @@ impl TrainingCertificate {
                 format!(
                     "delta_xi_global_min={} at step {} must be finite in [0,1]",
                     self.delta_xi_global_min, self.step
+                ),
+            )
+            .with_step(self.step));
+        }
+        if !self.adversarial_mix_target_ratio.is_finite()
+            || !(0.0..=1.0).contains(&self.adversarial_mix_target_ratio)
+        {
+            return Err(crate::error::TrainerError::new(
+                crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                format!(
+                    "adversarial_mix_target_ratio={} at step {} must be finite in [0,1]",
+                    self.adversarial_mix_target_ratio, self.step
+                ),
+            )
+            .with_step(self.step));
+        }
+        if self.adversarial_mix_count != self.adversarial_mix_example_indices.len() {
+            return Err(crate::error::TrainerError::new(
+                crate::error::TrainerErrorCode::MejepaTrainCertChainBroken,
+                format!(
+                    "adversarial_mix_count={} at step {} does not match {} indices",
+                    self.adversarial_mix_count,
+                    self.step,
+                    self.adversarial_mix_example_indices.len()
                 ),
             )
             .with_step(self.step));

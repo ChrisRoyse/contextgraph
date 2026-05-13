@@ -25,6 +25,9 @@ pub struct BatchPlan {
     pub indices: Vec<usize>,
     pub force_count: usize,
     pub regular_count: usize,
+    pub adversarial_count: usize,
+    pub adversarial_example_indices: Vec<usize>,
+    pub adversarial_fallback_count: usize,
     pub cross_task_indices: Vec<usize>,
     pub cross_task_fallback_count: usize,
     pub operator_override_sampler_applied_count: usize,
@@ -77,11 +80,14 @@ pub struct BatchSampler {
     pub task_ids: Vec<String>,
     pub patch_similarity_graph: PatchSimilarityGraph,
     pub rng: SplitMix64,
+    pub adversarial_indices: Vec<usize>,
     pub force_indices: Vec<usize>,
     pub drop_indices: Vec<usize>,
     pub regular_indices: Vec<usize>,
     pub force_cursor: usize,
+    pub adversarial_cursor: usize,
     pub operator_override_sampler_applied_count: usize,
+    adversarial_index_set: BTreeSet<usize>,
     operator_override_boosted_indices: BTreeSet<usize>,
     system_cost_counters: Option<Arc<SystemCostCounters>>,
 }
@@ -93,6 +99,26 @@ impl BatchSampler {
         overrides: Vec<bool>,
         ages_days: Vec<f32>,
         task_ids: Vec<String>,
+        patch_similarity_graph: PatchSimilarityGraph,
+    ) -> Result<Self, TrainerError> {
+        Self::new_with_adversarial_indices(
+            config,
+            l_steps,
+            overrides,
+            ages_days,
+            task_ids,
+            Vec::new(),
+            patch_similarity_graph,
+        )
+    }
+
+    pub fn new_with_adversarial_indices(
+        config: TrainingConfig,
+        l_steps: Vec<f32>,
+        overrides: Vec<bool>,
+        ages_days: Vec<f32>,
+        task_ids: Vec<String>,
+        adversarial_indices: Vec<usize>,
         patch_similarity_graph: PatchSimilarityGraph,
     ) -> Result<Self, TrainerError> {
         config.validate()?;
@@ -116,6 +142,8 @@ impl BatchSampler {
                 ));
             }
         }
+        let (adversarial_indices, adversarial_index_set) =
+            Self::validate_adversarial_indices(n, adversarial_indices)?;
         let mut sampler = Self {
             rng: SplitMix64::new(config.random_seed),
             config,
@@ -125,11 +153,14 @@ impl BatchSampler {
             l_steps,
             task_ids,
             patch_similarity_graph,
+            adversarial_indices,
             force_indices: Vec::new(),
             drop_indices: Vec::new(),
             regular_indices: Vec::new(),
             force_cursor: 0,
+            adversarial_cursor: 0,
             operator_override_sampler_applied_count: 0,
+            adversarial_index_set,
             operator_override_boosted_indices: BTreeSet::new(),
             system_cost_counters: None,
         };
@@ -213,8 +244,10 @@ impl BatchSampler {
             return Err(Self::config_error("batch_size", "must be positive"));
         }
         let mut plan = self.force_prefix(batch_size);
-        let need = batch_size.saturating_sub(plan.force_count);
-        let mut pool = self.regular_indices.clone();
+        let mut used = plan.indices.iter().copied().collect::<BTreeSet<_>>();
+        self.fill_adversarial_mix(&mut plan, batch_size, &mut used);
+        let need = batch_size.saturating_sub(plan.indices.len());
+        let mut pool = self.regular_pool_excluding(&used, true);
         for _ in 0..need.min(pool.len()) {
             let chosen = self.weighted_pick_from_pool(&pool)?;
             let pos = pool
@@ -224,8 +257,9 @@ impl BatchSampler {
             pool.swap_remove(pos);
             plan.indices.push(chosen);
             plan.regular_count += 1;
+            used.insert(chosen);
         }
-        self.record_operator_override_sampler_batch(&mut plan);
+        self.finalize_batch_plan(&mut plan, batch_size);
         Ok(plan)
     }
 
@@ -234,6 +268,9 @@ impl BatchSampler {
             indices: Vec::with_capacity(batch_size),
             force_count: 0,
             regular_count: 0,
+            adversarial_count: 0,
+            adversarial_example_indices: Vec::new(),
+            adversarial_fallback_count: 0,
             cross_task_indices: Vec::new(),
             cross_task_fallback_count: 0,
             operator_override_sampler_applied_count: 0,
@@ -255,6 +292,18 @@ impl BatchSampler {
             return Ok(None);
         }
         let pool = self.regular_indices.clone();
+        self.weighted_pick_from_pool(&pool).map(Some)
+    }
+
+    pub(crate) fn weighted_pick_from_regular_excluding(
+        &mut self,
+        used: &BTreeSet<usize>,
+        exclude_adversarial: bool,
+    ) -> Result<Option<usize>, TrainerError> {
+        let pool = self.regular_pool_excluding(used, exclude_adversarial);
+        if pool.is_empty() {
+            return Ok(None);
+        }
         self.weighted_pick_from_pool(&pool).map(Some)
     }
 
@@ -310,6 +359,105 @@ impl BatchSampler {
                 counters.record_operator_override_sampler_applied(count as u64);
             }
         }
+    }
+
+    pub(crate) fn finalize_batch_plan(&self, plan: &mut BatchPlan, requested_batch_size: usize) {
+        self.record_adversarial_mix_batch(plan, requested_batch_size);
+        self.record_operator_override_sampler_batch(plan);
+    }
+
+    pub(crate) fn adversarial_quota(&self, batch_size: usize) -> usize {
+        if batch_size == 0
+            || self.adversarial_indices.is_empty()
+            || self.config.adversarial_mix_ratio <= 0.0
+        {
+            return 0;
+        }
+        let raw = (batch_size as f32 * self.config.adversarial_mix_ratio).round() as usize;
+        raw.max(1).min(batch_size)
+    }
+
+    pub(crate) fn fill_adversarial_mix(
+        &mut self,
+        plan: &mut BatchPlan,
+        batch_size: usize,
+        used: &mut BTreeSet<usize>,
+    ) {
+        let target = self.adversarial_quota(batch_size);
+        if target == 0 {
+            return;
+        }
+        let mut selected = plan
+            .indices
+            .iter()
+            .filter(|idx| self.adversarial_index_set.contains(idx))
+            .count();
+        let mut scanned_without_pick = 0usize;
+        while selected < target
+            && plan.indices.len() < batch_size
+            && scanned_without_pick < self.adversarial_indices.len()
+        {
+            let idx =
+                self.adversarial_indices[self.adversarial_cursor % self.adversarial_indices.len()];
+            self.adversarial_cursor =
+                (self.adversarial_cursor + 1) % self.adversarial_indices.len();
+            if used.insert(idx) {
+                plan.indices.push(idx);
+                selected += 1;
+                scanned_without_pick = 0;
+            } else {
+                scanned_without_pick += 1;
+            }
+        }
+    }
+
+    pub(crate) fn regular_pool_excluding(
+        &self,
+        used: &BTreeSet<usize>,
+        exclude_adversarial: bool,
+    ) -> Vec<usize> {
+        self.regular_indices
+            .iter()
+            .copied()
+            .filter(|idx| !used.contains(idx))
+            .filter(|idx| {
+                !exclude_adversarial || !self.adversarial_index_set.contains(idx)
+            })
+            .collect()
+    }
+
+    fn record_adversarial_mix_batch(&self, plan: &mut BatchPlan, requested_batch_size: usize) {
+        plan.adversarial_example_indices = plan
+            .indices
+            .iter()
+            .copied()
+            .filter(|idx| self.adversarial_index_set.contains(idx))
+            .collect();
+        plan.adversarial_count = plan.adversarial_example_indices.len();
+        let quota = self.adversarial_quota(requested_batch_size).min(plan.indices.len());
+        plan.adversarial_fallback_count = quota.saturating_sub(plan.adversarial_count);
+    }
+
+    fn validate_adversarial_indices(
+        n: usize,
+        indices: Vec<usize>,
+    ) -> Result<(Vec<usize>, BTreeSet<usize>), TrainerError> {
+        let mut set = BTreeSet::new();
+        for idx in indices {
+            if idx >= n {
+                return Err(Self::config_error(
+                    "adversarial_indices",
+                    format!("index {idx} outside sampler length {n}"),
+                ));
+            }
+            if !set.insert(idx) {
+                return Err(Self::config_error(
+                    "adversarial_indices",
+                    format!("duplicate adversarial index {idx}"),
+                ));
+            }
+        }
+        Ok((set.iter().copied().collect(), set))
     }
 
     fn config_error(field: &'static str, message: impl Into<String>) -> TrainerError {
@@ -568,5 +716,56 @@ mod tests {
         let expected = a.next_batch(None, 16).unwrap();
         a.restore_rng_state(state);
         assert_eq!(expected, a.next_batch(None, 16).unwrap());
+    }
+
+    #[test]
+    fn adversarial_mix_reserves_twenty_percent() {
+        let cfg = TrainingConfig {
+            random_seed: 19,
+            batch_size: 10,
+            adversarial_mix_ratio: 0.20,
+            ..TrainingConfig::default()
+        };
+        let mut sampler = BatchSampler::new_with_adversarial_indices(
+            cfg,
+            vec![0.2; 50],
+            vec![false; 50],
+            vec![0.0; 50],
+            (0..50).map(|idx| format!("task-{idx}")).collect(),
+            (40..50).collect(),
+            PatchSimilarityGraph {
+                neighbors: vec![Vec::new(); 50],
+            },
+        )
+        .unwrap();
+        let plan = sampler.next_batch(None, 10).unwrap();
+        assert_eq!(plan.indices.len(), 10);
+        assert_eq!(plan.adversarial_count, 2);
+        assert_eq!(plan.adversarial_fallback_count, 0);
+        assert_eq!(plan.regular_count, 8);
+        assert!(
+            plan.adversarial_example_indices
+                .iter()
+                .all(|idx| (40..50).contains(idx))
+        );
+    }
+
+    #[test]
+    fn duplicate_adversarial_index_fails_closed() {
+        let cfg = TrainingConfig::default();
+        let err = BatchSampler::new_with_adversarial_indices(
+            cfg,
+            vec![0.2; 3],
+            vec![false; 3],
+            vec![0.0; 3],
+            vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            vec![1, 1],
+            PatchSimilarityGraph {
+                neighbors: vec![Vec::new(); 3],
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_TRAIN_CONFIG_INVALID");
+        assert!(err.to_string().contains("duplicate adversarial index"));
     }
 }

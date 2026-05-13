@@ -41,6 +41,7 @@ pub struct HoldoutExample {
     pub panel_t01: Tensor,
     pub panel_t2: Tensor,
     pub actual_oracle_pass: bool,
+    pub adversarial: bool,
 }
 
 #[derive(Debug, Clone)]
