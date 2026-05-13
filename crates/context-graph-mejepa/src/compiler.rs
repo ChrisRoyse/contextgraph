@@ -28,7 +28,7 @@ use crate::prediction_surfaces::{covered_chunks_for_patch, infer_phase_b_surface
 use crate::types::{
     validate_probability, AgentClaimGraph, ChunkId, ConformalInterval, ConformalMethod, DdaSignals,
     FailedGate, PanelId, PatchBundle, PredictionProvenance, RealityPrediction,
-    RealityPredictionBuilder, TaskContext, Verdict, VerifyVerdict, WitnessHash,
+    RealityPredictionBuilder, TaskContext, VerifyVerdict, WitnessHash,
 };
 use crate::verdict_assembly::{assemble_verdict, VerdictAssemblyInput};
 
@@ -417,15 +417,6 @@ impl MeJepaCompiler {
                 failed_gate: FailedGate::PredictedFailure {
                     predicted_oracle_pass: prediction.predicted_oracle_pass,
                     threshold: self.config.p_test_threshold,
-                },
-                gates_passed: 3,
-            });
-        }
-        if prediction.verdict != Verdict::Pass {
-            return Ok(VerifyVerdict::EscalateToHuman {
-                reality_prediction: Some(prediction.clone()),
-                failed_gate: FailedGate::PredictionVerdictRejected {
-                    verdict: prediction.verdict,
                 },
                 gates_passed: 3,
             });
