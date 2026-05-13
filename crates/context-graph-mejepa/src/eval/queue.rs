@@ -1,6 +1,8 @@
 use super::error::{EvalError, EvalErrorCode};
 use super::types::EvalObservation;
+use crate::pause_state::prediction_is_operator_paused;
 use crate::types::{OracleOutcome, PredictionId, SurpriseSeverity, TaskId};
+use crate::RealityPrediction;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -102,6 +104,9 @@ impl ActiveLearningQueueState {
         uncertainty_outcome_len: usize,
         ood_escalation_threshold: f32,
     ) -> Result<(), EvalError> {
+        if prediction_is_operator_paused(&observation.prediction) {
+            return Ok(());
+        }
         if uncertainty_outcome_len < 2 {
             return Err(EvalError::new(
                 EvalErrorCode::InvalidConfig,
@@ -145,6 +150,22 @@ impl ActiveLearningQueueState {
         self.entries.insert(observation.task_id.clone(), entry);
         self.evict_to_capacity()?;
         Ok(())
+    }
+
+    pub fn enqueue_agent_surprise_for_prediction(
+        &mut self,
+        prediction: &RealityPrediction,
+        severity: SurpriseSeverity,
+    ) -> Result<bool, EvalError> {
+        if prediction_is_operator_paused(prediction) {
+            return Ok(false);
+        }
+        self.enqueue_agent_surprise(
+            prediction.task_id.clone(),
+            PredictionId(prediction.prediction_id),
+            severity,
+        )?;
+        Ok(true)
     }
 
     /// REQ-FLYWHEEL-11 / TASK-FLYWHEEL-005 — enqueue an agent-flagged surprise.

@@ -270,6 +270,7 @@ fn minimal_report() -> Result<EvalReport, Box<dyn std::error::Error>> {
         per_category_correlation: BTreeMap::from([(MutationCategory::KnownGood, Some(1.0))]),
         per_language_correlation: BTreeMap::from([(Language::Python, Some(1.0))]),
         per_cell_correlation: BTreeMap::from([(cell, Some(1.0))]),
+        cell_exemptions: BTreeMap::new(),
         bayesian_shrinkage: BTreeMap::from([("known_good::python".to_string(), 1.0)]),
         conformal_coverage_health: BTreeMap::new(),
         ood_calibration_health: BTreeMap::new(),

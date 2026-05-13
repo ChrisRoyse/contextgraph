@@ -287,6 +287,7 @@ fn open_env(db_path: &Path, archive_root: &Path, total_quota_bytes: u64) -> Resu
         witness_min_age_days: 1,
         now_unix: Some(2_000_000_000),
         self_healing: None,
+        retention_policy_path: None,
     };
     Ok(HygieneEnv::try_new(config)?)
 }
@@ -357,6 +358,7 @@ fn boundary_invalid_quota(root: &Path) -> Result<BoundaryEvidence> {
         witness_min_age_days: 1,
         now_unix: Some(2_000_000_000),
         self_healing: None,
+        retention_policy_path: None,
     };
     let err = match HygieneEnv::try_new(config) {
         Ok(_) => anyhow::bail!("MEJEPA_STORAGE_EXHAUSTION_INVALID_QUOTA_ACCEPTED"),

@@ -1,3 +1,4 @@
+use super::cell_exemptions::CellExemption;
 use super::error::{EvalError, EvalErrorCode};
 use super::per_head_calibration_tracker::PredictionClassCalibration;
 use crate::types::{Language, OracleOutcome, PatchBundle, RealityPrediction, TaskContext, TaskId};
@@ -246,6 +247,7 @@ pub struct EvalReport {
     pub per_category_correlation: BTreeMap<MutationCategory, Option<f32>>,
     pub per_language_correlation: BTreeMap<Language, Option<f32>>,
     pub per_cell_correlation: BTreeMap<String, Option<f32>>,
+    pub cell_exemptions: BTreeMap<String, CellExemption>,
     pub bayesian_shrinkage: BTreeMap<String, f32>,
     pub conformal_coverage_health: BTreeMap<Language, ConformalHealthEntry>,
     pub ood_calibration_health: BTreeMap<Language, Option<f32>>,
@@ -281,6 +283,15 @@ impl EvalReport {
             ));
         }
         validate_optional_correlation("overall_correlation", self.overall_correlation)?;
+        for (cell, exemption) in &self.cell_exemptions {
+            if cell != &exemption.cell {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!("cell_exemptions key {cell} does not match payload cell"),
+                ));
+            }
+            exemption.validate()?;
+        }
         validate_unit("q1_pass_rate", self.q1_pass_rate)?;
         validate_optional_correlation("q2_report_correlation", self.q2_report_correlation)?;
         validate_optional_unit("q3_side_effect_agreement", self.q3_side_effect_agreement)?;

@@ -1723,13 +1723,13 @@ fn record_agent_feedback_in_db(
         .context("load active-learning queue")?
         .unwrap_or(ActiveLearningQueueState::new(4096).context("create active-learning queue")?);
     let queue_count_before = queue.entries.len();
-    let active_learning_queued = matches!(
+    let mut active_learning_queued = matches!(
         event.feedback_kind,
         FeedbackKind::Surprise | FeedbackKind::Omission
     );
     if active_learning_queued {
-        queue
-            .enqueue_agent_surprise(prediction.task_id.clone(), prediction_id, event.severity)
+        active_learning_queued = queue
+            .enqueue_agent_surprise_for_prediction(&prediction, event.severity)
             .context("enqueue agent surprise")?;
     }
 

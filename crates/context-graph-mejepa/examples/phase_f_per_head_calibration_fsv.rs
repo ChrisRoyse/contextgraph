@@ -189,6 +189,7 @@ fn synthetic_report(
         per_category_correlation: BTreeMap::from([(MutationCategory::KnownGood, Some(0.96))]),
         per_language_correlation: BTreeMap::from([(Language::Rust, Some(0.96))]),
         per_cell_correlation: BTreeMap::from([(cell, Some(0.96))]),
+        cell_exemptions: BTreeMap::new(),
         bayesian_shrinkage: BTreeMap::from([("known_good::rust".to_string(), 0.95)]),
         conformal_coverage_health: BTreeMap::from([(
             Language::Rust,

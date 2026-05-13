@@ -1683,6 +1683,16 @@ pub enum FailedGate {
         paused_until_unix_ms: i64,
         reason: String,
     },
+    PredictionParked {
+        attempt_count: u32,
+        park_until_unix_ms: i64,
+        reason: String,
+    },
+    HeadFailure {
+        head: String,
+        code: String,
+        detail: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

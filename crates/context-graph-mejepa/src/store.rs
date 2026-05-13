@@ -8,6 +8,11 @@ use crate::calibration::{
 use crate::compiler::{MejepaStore, TrainCertSummary};
 use crate::conformal::CalibrationExample;
 use crate::error::MejepaInferError;
+use crate::park_list::{
+    clear_park_list_entry as clear_park_list_entry_row,
+    read_park_list_entry as read_park_list_entry_row,
+    record_park_list_failure as record_park_list_failure_row, ParkListEntry,
+};
 use crate::types::{ChunkId, DdaSignals, PanelId, RealityPrediction};
 
 #[derive(Clone)]
@@ -226,6 +231,26 @@ impl MejepaStore for RocksDbInferStore {
         let signals: DdaSignals = serde_json::from_slice(&bytes)?;
         signals.validate()?;
         Ok(Some(signals))
+    }
+
+    fn read_park_list_entry(
+        &self,
+        prediction_id: [u8; 16],
+    ) -> Result<Option<ParkListEntry>, MejepaInferError> {
+        read_park_list_entry_row(&self.db, prediction_id)
+    }
+
+    fn record_park_list_failure(
+        &self,
+        prediction_id: [u8; 16],
+        now_unix_ms: i64,
+        error_code: &str,
+    ) -> Result<ParkListEntry, MejepaInferError> {
+        record_park_list_failure_row(&self.db, prediction_id, now_unix_ms, error_code)
+    }
+
+    fn clear_park_list_entry(&self, prediction_id: [u8; 16]) -> Result<(), MejepaInferError> {
+        clear_park_list_entry_row(&self.db, prediction_id)
     }
 }
 

@@ -358,6 +358,7 @@ fn build_synthetic_report(
         per_category_correlation: BTreeMap::new(),
         per_language_correlation: BTreeMap::new(),
         per_cell_correlation: BTreeMap::new(),
+        cell_exemptions: BTreeMap::new(),
         bayesian_shrinkage: BTreeMap::new(),
         conformal_coverage_health: BTreeMap::new(),
         ood_calibration_health: BTreeMap::new(),

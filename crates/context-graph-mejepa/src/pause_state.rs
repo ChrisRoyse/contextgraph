@@ -3,6 +3,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::types::{OracleOutcome, RealityPrediction, Verdict};
+
 pub const DEFAULT_PAUSE_STATE_PATH: &str =
     "/mnt/d/contextgraph/state/cgreality/predictions_paused_until.json";
 pub const ENV_PAUSE_STATE_PATH: &str = "CONTEXTGRAPH_MEJEPA_PAUSE_PATH";
@@ -114,6 +116,17 @@ pub fn validate_pause_state(state: &PauseState) -> Result<(), String> {
     validate_text("reason", &state.reason)?;
     validate_text("source", &state.source)?;
     Ok(())
+}
+
+pub fn prediction_is_operator_paused(prediction: &RealityPrediction) -> bool {
+    prediction.verdict == Verdict::Abstain
+        && prediction.calibration_version == PAUSE_REASON_CODE
+        && prediction.provenance.calibration_version == PAUSE_REASON_CODE
+        && prediction
+            .provenance
+            .active_pointer
+            .starts_with("paused_until_")
+        && prediction.outcome_set.outcomes == [OracleOutcome::Abstain]
 }
 
 fn validate_text(field: &str, value: &str) -> Result<(), String> {

@@ -238,6 +238,7 @@ fn synthetic_dashboard_report(report_date: &str) -> EvalReport {
         per_category_correlation: BTreeMap::from([(MutationCategory::KnownGood, Some(0.96))]),
         per_language_correlation: BTreeMap::from([(Language::Python, Some(0.96))]),
         per_cell_correlation,
+        cell_exemptions: BTreeMap::new(),
         bayesian_shrinkage: BTreeMap::from([(cell.clone(), 0.95)]),
         conformal_coverage_health: BTreeMap::from([(
             Language::Python,

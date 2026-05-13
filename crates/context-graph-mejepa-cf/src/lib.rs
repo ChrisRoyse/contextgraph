@@ -53,6 +53,8 @@ pub const CF_MEJEPA_AGENT_FEEDBACK: &str = "CF_MEJEPA_AGENT_FEEDBACK";
 pub const CF_MEJEPA_FLYWHEEL_JOB_RUNS: &str = "CF_MEJEPA_FLYWHEEL_JOB_RUNS";
 // REQ-PREDICT-12 — operator override records, keyed by prediction_id.
 pub const CF_MEJEPA_OPERATOR_OVERRIDES: &str = "CF_MEJEPA_OPERATOR_OVERRIDES";
+// TASK-FLYWHEEL-007 — fail-closed retry park-list records, keyed by prediction_id.
+pub const CF_MEJEPA_PARK_LIST: &str = "CF_MEJEPA_PARK_LIST";
 
 /// REQ-FLYWHEEL-10 grouping. Daemon openers extend their CF descriptor list
 /// with this slice so the three new CFs land on disk during the first daemon
@@ -62,6 +64,7 @@ pub const FLYWHEEL_CFS: &[&str] = &[
     CF_MEJEPA_FAILURE_EXEMPLARS,
     CF_MEJEPA_AGENT_FEEDBACK,
     CF_MEJEPA_FLYWHEEL_JOB_RUNS,
+    CF_MEJEPA_PARK_LIST,
 ];
 
 pub const SELF_HEALING_CFS: &[&str] = &[
@@ -111,6 +114,7 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_AGENT_FEEDBACK,
     CF_MEJEPA_FLYWHEEL_JOB_RUNS,
     CF_MEJEPA_OPERATOR_OVERRIDES,
+    CF_MEJEPA_PARK_LIST,
 ];
 
 pub const EVAL_CFS: &[&str] = &[
@@ -125,6 +129,7 @@ pub const EVAL_CFS: &[&str] = &[
     CF_MEJEPA_MODEL_PROMOTIONS,
     CF_MEJEPA_PRODUCTION_TELEMETRY,
     CF_MEJEPA_FLYWHEEL_JOB_RUNS,
+    CF_MEJEPA_PARK_LIST,
 ];
 
 pub const HYGIENE_CFS: &[&str] = &[
@@ -208,6 +213,7 @@ pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
     CF_MEJEPA_GUARD_DECISIONS,
     CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
     CF_MEJEPA_OPERATOR_OVERRIDES,
+    CF_MEJEPA_PARK_LIST,
 ];
 
 pub const MEJEPA_HYGIENE_REFERENCED_CF_COUNT: usize = ALL_HYGIENE_REFERENCED_CFS.len();

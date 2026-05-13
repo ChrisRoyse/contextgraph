@@ -54,6 +54,134 @@ if [[ ${#alert_codes[@]} -eq 0 ]]; then
   exit 1
 fi
 
+mapfile -t actionability_failures < <(
+  awk '
+    function finish_entry() {
+      if (code == "") {
+        return
+      }
+      if (!investigate_has_shell) {
+        print code "|MEJEPA_RUNBOOK_ACTIONABILITY_MISSING_INVESTIGATE"
+      }
+      if (!resolution_has_shell) {
+        print code "|MEJEPA_RUNBOOK_ACTIONABILITY_MISSING_RESOLUTION"
+      }
+    }
+
+    function reset_entry() {
+      code = ""
+      block = ""
+      investigate_has_shell = 0
+      resolution_has_shell = 0
+      in_shell_fence = 0
+      shell_block_has_command = 0
+      shell_block_target = ""
+    }
+
+    function close_shell_fence() {
+      if (in_shell_fence && shell_block_has_command) {
+        if (shell_block_target == "investigate") {
+          investigate_has_shell = 1
+        } else if (shell_block_target == "resolution") {
+          resolution_has_shell = 1
+        }
+      }
+      in_shell_fence = 0
+      shell_block_has_command = 0
+      shell_block_target = ""
+    }
+
+    BEGIN {
+      reset_entry()
+      in_section = 0
+    }
+
+    /^## / {
+      if (in_section) {
+        close_shell_fence()
+        finish_entry()
+      }
+      in_section = 0
+      reset_entry()
+    }
+
+    /^## .*§5|^## 5\b|^## 5\./ {
+      in_section = 1
+      next
+    }
+
+    !in_section {
+      next
+    }
+
+    /^### / {
+      close_shell_fence()
+      finish_entry()
+      reset_entry()
+      if (match($0, /MEJEPA_[A-Z][A-Z0-9_]+/)) {
+        code = substr($0, RSTART, RLENGTH)
+      }
+      next
+    }
+
+    code == "" {
+      next
+    }
+
+    in_shell_fence && /^```/ {
+      close_shell_fence()
+      next
+    }
+
+    in_shell_fence {
+      if ($0 ~ /[^[:space:]]/ && $0 !~ /^[[:space:]]*#/) {
+        shell_block_has_command = 1
+      }
+      next
+    }
+
+    /^\*\*Investigate:\*\*/ {
+      block = "investigate"
+      next
+    }
+
+    /^\*\*Resolution:\*\*/ {
+      block = "resolution"
+      next
+    }
+
+    /^\*\*[^*]+:\*\*/ {
+      block = ""
+      next
+    }
+
+    /^```(bash|sh|shell)[[:space:]]*$/ {
+      if (block == "investigate" || block == "resolution") {
+        in_shell_fence = 1
+        shell_block_target = block
+        shell_block_has_command = 0
+      }
+      next
+    }
+
+    END {
+      if (in_section) {
+        close_shell_fence()
+        finish_entry()
+      }
+    }
+  ' "${RUNBOOK}" | sort -u
+)
+
+if [[ ${#actionability_failures[@]} -gt 0 ]]; then
+  for failure in "${actionability_failures[@]}"; do
+    code="${failure%%|*}"
+    error_code="${failure#*|}"
+    echo "${error_code}: ${code}" >&2
+  done
+  exit 1
+fi
+
 orphans=()
 for code in "${alert_codes[@]}"; do
   if ! grep -RnE --include="*.rs" "\b${code}\b" "${CRATES_ROOT}" >/dev/null 2>&1; then

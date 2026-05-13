@@ -1,4 +1,5 @@
 use super::error::{EvalError, EvalErrorCode};
+use super::cell_exemptions::{default_cell_exemptions_path, load_cell_exemptions};
 use super::metrics::{
     bayesian_shrinkage, compute_correlations, compute_state_transfer_per_cell, conformal_health,
     gtau_pass_rate_by_language, ood_auc_by_language, oracle_target_opt, ship_gate_failures,
@@ -92,9 +93,15 @@ impl EvalRunner {
         let regression_checks = regression_checks(previous_report.as_ref(), overall, &self.config);
         let q1 = q1_pass_rate(&observations)?;
         let q3 = q3_side_effect_agreement(&observations);
+        let cell_exemptions = load_cell_exemptions(
+            default_cell_exemptions_path(),
+            chrono::Utc::now().timestamp_millis(),
+        )?;
         let failures = ship_gate_failures(ShipGateInputs {
             observations: &observations,
             report_overall: overall,
+            per_cell: &per_cell,
+            cell_exemptions: &cell_exemptions,
             conformal: &conformal,
             ood: &ood,
             gtau: &gtau,
@@ -122,6 +129,7 @@ impl EvalRunner {
             per_category_correlation: per_category,
             per_language_correlation: per_language,
             per_cell_correlation: per_cell.clone(),
+            cell_exemptions,
             bayesian_shrinkage: bayesian_shrinkage(&per_cell, overall, 4.0)?,
             conformal_coverage_health: conformal,
             ood_calibration_health: ood,

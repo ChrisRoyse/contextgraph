@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
 use context_graph_mejepa_instruments::materialize::{
@@ -21,13 +22,16 @@ use crate::dda_features::{project_dda_features, DDA_FEATURE_PROJECTION_SCHEMA};
 use crate::degraded::{
     calibrated_confidence, calibrated_confidence_multiplier, compute_train_health, evidence_factor,
 };
-use crate::error::MejepaInferError;
+use crate::error::{MejepaInferError, PredictorError};
 use crate::gates::{check_source_sha_drift, replay_witness_segment};
 use crate::ood::{compute_ood_score, squared_l2};
 use crate::pause_state::{
     current_unix_ms, read_pause_state, PauseReadOutcome, PauseState, PAUSE_REASON_CODE,
 };
+use crate::park_list::ParkListEntry;
+const PARK_LIST_REASON_CODE: &str = "MEJEPA_PREDICTION_PARKED";
 use crate::prediction_surfaces::{covered_chunks_for_patch, infer_phase_b_surfaces};
+use crate::secret_redaction::{redact_patch_bundle, SECRET_REDACTION_ATTESTATION_KEY};
 use crate::types::{
     validate_probability, AgentClaimGraph, ChunkId, ConformalInterval, ConformalMethod, DdaSignals,
     FailedGate, OracleOutcome, PanelId, PatchBundle, PredictionProvenance, RealityPrediction,
@@ -158,6 +162,20 @@ pub trait MejepaStore: Send + Sync {
         panel_id: &PanelId,
         chunk_id: &ChunkId,
     ) -> Result<Option<DdaSignals>, MejepaInferError>;
+
+    fn read_park_list_entry(
+        &self,
+        prediction_id: [u8; 16],
+    ) -> Result<Option<ParkListEntry>, MejepaInferError>;
+
+    fn record_park_list_failure(
+        &self,
+        prediction_id: [u8; 16],
+        now_unix_ms: i64,
+        error_code: &str,
+    ) -> Result<ParkListEntry, MejepaInferError>;
+
+    fn clear_park_list_entry(&self, prediction_id: [u8; 16]) -> Result<(), MejepaInferError>;
 }
 
 pub struct MeJepaCompiler {
@@ -227,12 +245,20 @@ impl MeJepaCompiler {
             return self.paused_prediction_with_panel(patch, context, &pause_state);
         }
         let calibration = self.calibration.load_active()?;
-        let (panel_t0, panel_t1, panel_t2) = materialize_inference_panels(patch, context)?;
-        let predicted = self.predictor.predict(&panel_t0, &panel_t1)?;
-        let target = self.frozen_target.target(&panel_t2)?;
-        let mut oracle = self.oracle_head.score(&predicted)?;
+        let redacted = redact_patch_bundle(patch)?;
+        let inference_patch = &redacted.patch;
+        let (panel_t0, panel_t1, panel_t2) = materialize_inference_panels(inference_patch, context)?;
+        let predicted = run_infer_head("panel", || self.predictor.predict(&panel_t0, &panel_t1))?;
+        let target = run_infer_head("frozen_target", || self.frozen_target.target(&panel_t2))?;
+        let mut oracle = run_infer_head("oracle", || self.oracle_head.score(&predicted))?;
         let source_panel_sha = panel_sha(&predicted);
-        let covered_chunks = covered_chunks_for_patch(patch)?;
+        let covered_chunks = covered_chunks_for_patch(inference_patch)?;
+        if redacted.report.redacted_span_count() > 0 {
+            oracle.granger_attestations.insert(
+                SECRET_REDACTION_ATTESTATION_KEY.to_string(),
+                1.0,
+            );
+        }
         if self.config.require_dda_features {
             let dda_projection = self.load_dda_projection(&source_panel_sha, &covered_chunks)?;
             oracle
@@ -278,7 +304,9 @@ impl MeJepaCompiler {
             train_health.delta_xi_mean,
         )?;
         let prediction_id = prediction_id(context, patch, &calibration);
-        let phase_b_surfaces = infer_phase_b_surfaces(patch, context, &oracle.predicted_test_pass)?;
+        let phase_b_surfaces = run_infer_head("phase_b_surfaces", || {
+            infer_phase_b_surfaces(inference_patch, context, &oracle.predicted_test_pass)
+        })?;
         let confidence_interval = ConformalInterval {
             lower: (confidence - calibration.tau).clamp(0.0, 1.0),
             upper: (confidence + calibration.tau).clamp(0.0, 1.0),
@@ -397,6 +425,31 @@ impl MeJepaCompiler {
             });
         }
 
+        let calibration = self.calibration.load_active()?;
+        let candidate_prediction_id = prediction_id(context, patch, &calibration);
+        if let Some(entry) = self.store.read_park_list_entry(candidate_prediction_id)? {
+            if entry.is_parked_at(current_unix_ms()) {
+                let (prediction, _panel) =
+                    self.parked_prediction_with_panel(patch, context, &entry)?;
+                let park_until_unix_ms =
+                    entry
+                        .park_until_unix_ms
+                        .ok_or_else(|| MejepaInferError::InvalidInput {
+                            field: "park_list.park_until_unix_ms".to_string(),
+                            detail: "parked entry was missing park_until_unix_ms".to_string(),
+                        })?;
+                return Ok(VerifyVerdict::EscalateToHuman {
+                    reality_prediction: Some(prediction),
+                    failed_gate: FailedGate::PredictionParked {
+                        attempt_count: entry.attempt_count,
+                        park_until_unix_ms,
+                        reason: PARK_LIST_REASON_CODE.to_string(),
+                    },
+                    gates_passed: 2,
+                });
+            }
+        }
+
         let (prediction, predicted_panel) = match self.compile_with_panel(patch, context) {
             Ok(value) => value,
             Err(MejepaInferError::OodRefuse {
@@ -404,12 +457,35 @@ impl MeJepaCompiler {
                 threshold,
                 ..
             }) => {
+                self.store.record_park_list_failure(
+                    candidate_prediction_id,
+                    current_unix_ms(),
+                    "MEJEPA_INFER_OOD_REFUSE",
+                )?;
                 return Ok(VerifyVerdict::EscalateToHuman {
                     reality_prediction: None,
                     failed_gate: FailedGate::OutOfDistribution {
                         ood_score,
                         threshold,
                     },
+                    gates_passed: 2,
+                });
+            }
+            Err(MejepaInferError::Predictor(PredictorError::HeadFailure {
+                head,
+                code,
+                detail,
+            })) => {
+                let (prediction, _panel) =
+                    self.head_failure_prediction_with_panel(patch, context, &head, &code, &detail)?;
+                self.store.record_park_list_failure(
+                    candidate_prediction_id,
+                    current_unix_ms(),
+                    "MEJEPA_HEAD_FAILURE",
+                )?;
+                return Ok(VerifyVerdict::EscalateToHuman {
+                    reality_prediction: Some(prediction),
+                    failed_gate: FailedGate::HeadFailure { head, code, detail },
                     gates_passed: 2,
                 });
             }
@@ -420,6 +496,11 @@ impl MeJepaCompiler {
         self.store.write_live_prediction(&prediction)?;
 
         if prediction.ood_score > self.config.ood_refuse_threshold {
+            self.store.record_park_list_failure(
+                prediction.prediction_id,
+                current_unix_ms(),
+                "MEJEPA_INFER_OOD_REFUSE",
+            )?;
             return Ok(VerifyVerdict::EscalateToHuman {
                 reality_prediction: Some(prediction.clone()),
                 failed_gate: FailedGate::OutOfDistribution {
@@ -430,6 +511,11 @@ impl MeJepaCompiler {
             });
         }
         if prediction.predicted_oracle_pass < self.config.p_test_threshold {
+            self.store.record_park_list_failure(
+                prediction.prediction_id,
+                current_unix_ms(),
+                "MEJEPA_PREDICTED_FAILURE",
+            )?;
             return Ok(VerifyVerdict::EscalateToHuman {
                 reality_prediction: Some(prediction.clone()),
                 failed_gate: FailedGate::PredictedFailure {
@@ -440,6 +526,11 @@ impl MeJepaCompiler {
             });
         }
         if prediction.outcome_set.outcomes.len() > self.config.outcome_set_max {
+            self.store.record_park_list_failure(
+                prediction.prediction_id,
+                current_unix_ms(),
+                "MEJEPA_LOW_CONFIDENCE",
+            )?;
             return Ok(VerifyVerdict::EscalateToHuman {
                 reality_prediction: Some(prediction.clone()),
                 failed_gate: FailedGate::LowConfidence {
@@ -456,6 +547,11 @@ impl MeJepaCompiler {
             .map(|(key, value)| (key.clone(), *value))
             .collect::<BTreeMap<_, _>>();
         if !rejected.is_empty() {
+            self.store.record_park_list_failure(
+                prediction.prediction_id,
+                current_unix_ms(),
+                "MEJEPA_GRANGER_REJECTION",
+            )?;
             return Ok(VerifyVerdict::EscalateToHuman {
                 reality_prediction: Some(prediction.clone()),
                 failed_gate: FailedGate::GrangerRejection {
@@ -476,6 +572,11 @@ impl MeJepaCompiler {
             });
         }
         if !constellation.approved {
+            self.store.record_park_list_failure(
+                prediction.prediction_id,
+                current_unix_ms(),
+                "MEJEPA_CONSTELLATION_REJECTED",
+            )?;
             return Ok(VerifyVerdict::EscalateToHuman {
                 reality_prediction: Some(prediction.clone()),
                 failed_gate: FailedGate::ConstellationGuardRejected {
@@ -485,6 +586,7 @@ impl MeJepaCompiler {
             });
         }
 
+        self.store.clear_park_list_entry(prediction.prediction_id)?;
         Ok(VerifyVerdict::Approve {
             reality_prediction: prediction,
             gates_passed: 7,
@@ -557,6 +659,120 @@ impl MeJepaCompiler {
         Ok((prediction, panel))
     }
 
+    fn head_failure_prediction_with_panel(
+        &self,
+        patch: &PatchBundle,
+        context: &TaskContext,
+        head: &str,
+        code: &str,
+        detail: &str,
+    ) -> Result<(RealityPrediction, Panel), MejepaInferError> {
+        let redacted = redact_patch_bundle(patch)?;
+        let panel = materialize_panel(
+            TimeStep::T0,
+            vectors_for(TimeStep::T0, &redacted.patch, context),
+        )?
+        .panel;
+        let prediction_id = head_failure_prediction_id(context, patch, head, code);
+        let outcome_set =
+            crate::types::ConformalSet::try_new(vec![OracleOutcome::Abstain], self.config.alpha, 1.0)?;
+        let mut source_panel_sha = [0u8; 32];
+        source_panel_sha.copy_from_slice(&Sha256::digest(code.as_bytes())[..32]);
+        let prediction = RealityPredictionBuilder::from_parts(
+            context.task_id.clone(),
+            context.session_id,
+            context.language,
+            outcome_set,
+        )
+        .prediction_id(prediction_id)
+        .witness_hash(witness_hash(patch))
+        .covered_chunks(covered_chunks_for_patch(&redacted.patch)?)
+        .verdict(Verdict::Abstain)
+        .confidence_interval(ConformalInterval::default())
+        .predicted_oracle_pass(0.0)
+        .predicted_test_pass(vec![0.0])
+        .predicted_runtime_trace([0.0; 32])
+        .ood_score(0.0)
+        .calibrated_confidence(0.0)
+        .degraded_status(true)
+        .granger_attestations(BTreeMap::from([
+            ("MEJEPA_HEAD_FAILURE".to_string(), 0.0),
+            (format!("MEJEPA_HEAD_FAILURE_HEAD:{head}"), 0.0),
+        ]))
+        .provenance(PredictionProvenance {
+            predictor_version: env!("CARGO_PKG_VERSION").to_string(),
+            constellation_version: self
+                .constellation_guard
+                .version_id()
+                .unwrap_or_else(|| "unversioned".to_string()),
+            calibration_version: "MEJEPA_HEAD_FAILURE".to_string(),
+            active_pointer: format!("head={head};code={code};detail_sha={}", short_sha(detail)),
+        })
+        .source_panel_sha(source_panel_sha)
+        .calibration_version("MEJEPA_HEAD_FAILURE")
+        .build()?;
+        Ok((prediction, panel))
+    }
+
+    fn parked_prediction_with_panel(
+        &self,
+        patch: &PatchBundle,
+        context: &TaskContext,
+        entry: &ParkListEntry,
+    ) -> Result<(RealityPrediction, Panel), MejepaInferError> {
+        entry.validate()?;
+        let redacted = redact_patch_bundle(patch)?;
+        let panel = materialize_panel(
+            TimeStep::T0,
+            vectors_for(TimeStep::T0, &redacted.patch, context),
+        )?
+        .panel;
+        let outcome_set =
+            crate::types::ConformalSet::try_new(vec![OracleOutcome::Abstain], self.config.alpha, 1.0)?;
+        let mut source_panel_sha = [0u8; 32];
+        source_panel_sha.copy_from_slice(&Sha256::digest(PARK_LIST_REASON_CODE.as_bytes())[..32]);
+        let prediction = RealityPredictionBuilder::from_parts(
+            context.task_id.clone(),
+            context.session_id,
+            context.language,
+            outcome_set,
+        )
+        .prediction_id(entry.prediction_id)
+        .witness_hash(witness_hash(patch))
+        .covered_chunks(covered_chunks_for_patch(&redacted.patch)?)
+        .verdict(Verdict::Abstain)
+        .confidence_interval(ConformalInterval::default())
+        .predicted_oracle_pass(0.0)
+        .predicted_test_pass(vec![0.0])
+        .predicted_runtime_trace([0.0; 32])
+        .ood_score(0.0)
+        .calibrated_confidence(0.0)
+        .degraded_status(true)
+        .granger_attestations(BTreeMap::from([(PARK_LIST_REASON_CODE.to_string(), 0.0)]))
+        .provenance(PredictionProvenance {
+            predictor_version: env!("CARGO_PKG_VERSION").to_string(),
+            constellation_version: self
+                .constellation_guard
+                .version_id()
+                .unwrap_or_else(|| "unversioned".to_string()),
+            calibration_version: PARK_LIST_REASON_CODE.to_string(),
+            active_pointer: format!(
+                "parked_until_{};attempts={}",
+                entry
+                    .park_until_unix_ms
+                    .ok_or_else(|| MejepaInferError::InvalidInput {
+                        field: "park_list.park_until_unix_ms".to_string(),
+                        detail: "parked prediction missing park_until_unix_ms".to_string(),
+                    })?,
+                entry.attempt_count
+            ),
+        })
+        .source_panel_sha(source_panel_sha)
+        .calibration_version(PARK_LIST_REASON_CODE)
+        .build()?;
+        Ok((prediction, panel))
+    }
+
     pub fn observe(
         &self,
         pipeline: &mut crate::heal::SelfHealingPipeline,
@@ -608,6 +824,12 @@ fn vectors_for(
     seed.update(context.task_id.0.as_bytes());
     seed.update(context.problem_statement.as_bytes());
     seed.update(patch.patch_sha);
+    seed.update(patch.commit_message.as_bytes());
+    for hunk in &patch.ast_diff.hunks {
+        seed.update(hunk.path.to_string_lossy().as_bytes());
+        seed.update(hunk.before.as_bytes());
+        seed.update(hunk.after.as_bytes());
+    }
     seed.update(format!("{time_step:?}").as_bytes());
     let digest: [u8; 32] = seed.finalize().into();
     let scenario = scenario_code(context);
@@ -666,6 +888,25 @@ fn prediction_id(
     id
 }
 
+fn head_failure_prediction_id(
+    context: &TaskContext,
+    patch: &PatchBundle,
+    head: &str,
+    code: &str,
+) -> [u8; 16] {
+    let mut hasher = Sha256::new();
+    hasher.update(context.task_id.0.as_bytes());
+    hasher.update(context.session_id);
+    hasher.update(patch.patch_sha);
+    hasher.update(b"MEJEPA_HEAD_FAILURE");
+    hasher.update(head.as_bytes());
+    hasher.update(code.as_bytes());
+    let digest = hasher.finalize();
+    let mut id = [0u8; 16];
+    id.copy_from_slice(&digest[..16]);
+    id
+}
+
 fn paused_prediction_id(
     context: &TaskContext,
     patch: &PatchBundle,
@@ -687,6 +928,52 @@ fn witness_hash(patch: &PatchBundle) -> WitnessHash {
     let mut hasher = Sha256::new();
     hasher.update(&patch.witness_chain_segment);
     WitnessHash(hasher.finalize().into())
+}
+
+fn run_infer_head<T, F>(head: &str, run: F) -> Result<T, MejepaInferError>
+where
+    F: FnOnce() -> Result<T, MejepaInferError>,
+{
+    match std::panic::catch_unwind(AssertUnwindSafe(run)) {
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(MejepaInferError::Predictor(PredictorError::HeadFailure {
+            head,
+            code,
+            detail,
+        }))) => Err(MejepaInferError::Predictor(PredictorError::HeadFailure {
+            head,
+            code,
+            detail,
+        })),
+        Ok(Err(err)) => {
+            let code = err.code().to_string();
+            let detail = err.to_string();
+            Err(MejepaInferError::Predictor(PredictorError::HeadFailure {
+                head: head.to_string(),
+                code,
+                detail,
+            }))
+        }
+        Err(payload) => Err(MejepaInferError::Predictor(PredictorError::HeadFailure {
+            head: head.to_string(),
+            code: "MEJEPA_HEAD_PANIC".to_string(),
+            detail: panic_payload_to_string(payload),
+        })),
+    }
+}
+
+fn panic_payload_to_string(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "head panicked with non-string payload".to_string()
+    }
+}
+
+fn short_sha(text: &str) -> String {
+    hex::encode(&Sha256::digest(text.as_bytes())[..8])
 }
 
 fn mean_attestation(

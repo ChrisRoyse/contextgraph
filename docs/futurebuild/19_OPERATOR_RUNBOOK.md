@@ -141,6 +141,11 @@ tail -100 /mnt/d/contextgraph/logs/mejepa-daemon.stderr.log
 ```
 
 **Resolution:**
+```bash
+systemctl --user stop mejepa-daemon
+systemctl --user restart mejepa-daemon
+```
+
 1. Identify which supervised task is flapping (log lines name it).
 2. Check if it's a known issue (CF corruption → see 5.2; OOM → see 5.5; etc.).
 3. If unknown: `systemctl --user stop mejepa-daemon`; investigate; create blocker in `memory/blockers/`; restart.
@@ -149,7 +154,18 @@ tail -100 /mnt/d/contextgraph/logs/mejepa-daemon.stderr.log
 
 **Cause:** hash chain integrity check failed.
 
+**Investigate:**
+```bash
+mcp_call optimizer_witness_chain_diff --since-last-verified
+journalctl --user -u mejepa-daemon -n 200
+```
+
 **Resolution:**
+```bash
+mcp_call optimizer_witness_chain_repair_legacy --force
+context-graph-cli mejepa storage-verify --db-path /mnt/d/contextgraph/state/cgreality/rocksdb
+```
+
 1. Auto-repair has already attempted. Check: `mcp_call optimizer_witness_chain_diff --since-last-verified`
 2. If auto-repair succeeded: log + carry on.
 3. If auto-repair failed: `mcp_call optimizer_witness_chain_repair_legacy --force` and check.
@@ -159,7 +175,18 @@ tail -100 /mnt/d/contextgraph/logs/mejepa-daemon.stderr.log
 
 **Cause:** rolling accuracy < 80%.
 
+**Investigate:**
+```bash
+mcp_call mejepa_heal_status
+context-graph-cli mejepa report-weekly --date "$(date -u +%F)"
+```
+
 **Resolution:**
+```bash
+mcp_call mejepa_promote_approval --promotion-id <id> --approve true
+mcp_call mejepa_promote_approval --promotion-id <id> --approve false --reason "rejecting suspicious drift candidate"
+```
+
 1. Check `mejepa_heal_status` for the queued full retrain candidate.
 2. Read `weekly.md` for context (data shift? Operator-introduced label change?).
 3. If retrain looks reasonable: `mcp_call mejepa_promote_approval --promotion-id <id> --approve true`
@@ -169,7 +196,18 @@ tail -100 /mnt/d/contextgraph/logs/mejepa-daemon.stderr.log
 
 **Cause:** disk usage > 115 GB hard cap.
 
+**Investigate:**
+```bash
+mcp_call mejepa_quota_status
+du -sh /mnt/d/contextgraph/runtime /mnt/d/contextgraph/state /mnt/d/contextgraph/fsv
+```
+
 **Resolution:**
+```bash
+mcp_call mejepa_gc_run --force-eviction true
+context-graph-cli mejepa hygiene aggressive-cold-tier-down
+```
+
 1. Check `mcp_call mejepa_quota_status` for slice breakdown.
 2. Run emergency eviction: `mcp_call mejepa_gc_run --force-eviction true`.
 3. If eviction insufficient: `context-graph-cli mejepa hygiene aggressive-cold-tier-down`.
@@ -179,7 +217,18 @@ tail -100 /mnt/d/contextgraph/logs/mejepa-daemon.stderr.log
 
 **Cause:** memory leak in supervised task.
 
+**Investigate:**
+```bash
+journalctl --user -u mejepa-daemon -n 200
+ps -o pid,rss,comm -C context-graph-mcp
+```
+
 **Resolution:**
+```bash
+systemctl --user restart mejepa-daemon
+context-graph-cli mejepa daemon-status
+```
+
 1. `systemctl --user restart mejepa-daemon`
 2. Check `valgrind`-style profiling (collect data during repro)
 3. Create blocker in `memory/blockers/` with severity and reproducible scenario.
@@ -188,7 +237,18 @@ tail -100 /mnt/d/contextgraph/logs/mejepa-daemon.stderr.log
 
 **Cause:** D-drive unmounted or corrupted.
 
+**Investigate:**
+```bash
+mount | grep /mnt/d
+ls -ld /mnt/d/contextgraph
+```
+
 **Resolution:**
+```bash
+systemctl --user restart mejepa-daemon
+context-graph-cli mejepa storage-verify --db-path /mnt/d/contextgraph/state/cgreality/rocksdb
+```
+
 1. Check mount: `mount | grep /mnt/d`
 2. If unmounted: remount; restart daemon.
 3. If corrupted: see `20_DISASTER_RECOVERY_AND_BACKUP.md §3`.
@@ -197,7 +257,18 @@ tail -100 /mnt/d/contextgraph/logs/mejepa-daemon.stderr.log
 
 **Cause:** the shift subscriber has sustained pending shift-log lines above its configured threshold, so predictions may be stale.
 
+**Investigate:**
+```bash
+mcp_call mejepa_subscriber_status
+find /mnt/d/contextgraph/runtime/cgreality-shift-log -maxdepth 1 -type f -name "*.jsonl" -printf "%p %s bytes\n"
+```
+
 **Resolution:**
+```bash
+systemctl --user restart mejepa-daemon
+mcp_call mejepa_subscriber_status
+```
+
 1. Check `mcp_call mejepa_subscriber_status` and confirm `lag_alert_active=true`, pending shift count, and latest watermark.
 2. Inspect `/mnt/d/contextgraph/runtime/cgreality-shift-log/` for oversized or malformed JSONL files.
 3. If the daemon is alive but not consuming, restart it once: `systemctl --user restart mejepa-daemon`.
@@ -207,7 +278,18 @@ tail -100 /mnt/d/contextgraph/logs/mejepa-daemon.stderr.log
 
 **Cause:** drift below detection threshold; OR data distribution shift the detector hasn't caught; OR head's λ ramped too high prematurely.
 
+**Investigate:**
+```bash
+mcp_call mejepa_ship_gate_status
+context-graph-cli mejepa report-weekly --date "$(date -u +%F)"
+```
+
 **Resolution:**
+```bash
+mcp_call mejepa_constellation_inspect --force-refit --category <category> --language <language>
+context-graph-cli mejepa active-learning list
+```
+
 1. Pull `mejepa_ship_gate_status` → check per-cell status.
 2. If a specific (category, language) cell is regressing, force constellation refresh: `mcp_call mejepa_constellation_inspect --force-refit --category <c> --language <l>`.
 3. If pervasive: file blocker; consider triggering full retrain.

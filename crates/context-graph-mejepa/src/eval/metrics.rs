@@ -1,3 +1,4 @@
+use super::cell_exemptions::CellExemption;
 use super::error::{EvalError, EvalErrorCode};
 use super::types::{
     cell_key, language_slug, ConformalHealthEntry, EvalConfig, EvalObservation, MutationCategory,
@@ -245,6 +246,8 @@ pub fn bayesian_shrinkage(
 pub struct ShipGateInputs<'a> {
     pub observations: &'a [EvalObservation],
     pub report_overall: Option<f32>,
+    pub per_cell: &'a BTreeMap<String, Option<f32>>,
+    pub cell_exemptions: &'a BTreeMap<String, CellExemption>,
     pub conformal: &'a BTreeMap<Language, ConformalHealthEntry>,
     pub ood: &'a BTreeMap<Language, Option<f32>>,
     pub gtau: &'a BTreeMap<Language, f32>,
@@ -266,6 +269,19 @@ pub fn ship_gate_failures(inputs: ShipGateInputs<'_>) -> Vec<String> {
             inputs.config.correlation_min
         )),
         None => failures.push("overall_correlation unavailable".to_string()),
+    }
+    for (cell, value) in inputs.per_cell {
+        if inputs.cell_exemptions.contains_key(cell) {
+            continue;
+        }
+        match value {
+            Some(correlation) if *correlation >= inputs.config.correlation_min => {}
+            Some(correlation) => failures.push(format!(
+                "per_cell_correlation {cell} {correlation:.6} < {:.6}",
+                inputs.config.correlation_min
+            )),
+            None => failures.push(format!("per_cell_correlation {cell} unavailable")),
+        }
     }
     for (language, health) in inputs.conformal {
         if !health.within_band {

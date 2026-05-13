@@ -56,6 +56,12 @@ pub enum PredictorError {
         gamma: f32,
         consecutive_passes: u8,
     },
+    #[error("MEJEPA_HEAD_FAILURE: head={head} code={code} detail={detail}")]
+    HeadFailure {
+        head: String,
+        code: String,
+        detail: String,
+    },
     #[error("MEJEPA_PRED_CANDLE: {0}")]
     Candle(#[from] candle_core::Error),
     #[error("MEJEPA_PRED_IO: {0}")]
@@ -74,6 +80,7 @@ impl PredictorError {
             Self::VramExceeded { .. } => "MEJEPA_PRED_VRAM_EXCEEDED",
             Self::FrozenTargetGrad { .. } => "MEJEPA_PRED_FROZEN_TARGET_GRAD",
             Self::VicregDegenerate { .. } => "MEJEPA_PRED_VICREG_DEGENERATE",
+            Self::HeadFailure { .. } => "MEJEPA_HEAD_FAILURE",
             Self::Candle(_) => "MEJEPA_PRED_CANDLE",
             Self::Io(_) => "MEJEPA_PRED_IO",
             Self::Json(_) => "MEJEPA_PRED_JSON",

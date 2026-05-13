@@ -1,3 +1,4 @@
+pub mod cell_exemptions;
 pub mod error;
 pub mod fixtures;
 pub mod graph;
@@ -41,4 +42,8 @@ pub use types::{
     cell_key, language_slug, ActiveLearningSummary, AuxHeadDistillationSummary,
     ConformalHealthEntry, EvalConfig, EvalObservation, EvalProvenance, EvalReport, HoldoutPanel,
     MutationCategory, OpenResearchQuestionStatus, RegressionCheck, StateTransferDiagnostic,
+};
+pub use cell_exemptions::{
+    default_cell_exemptions_path, load_cell_exemptions, CellExemption, CellExemptionConfig,
+    DEFAULT_CELL_EXEMPTIONS_PATH,
 };

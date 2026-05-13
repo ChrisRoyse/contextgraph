@@ -1,5 +1,6 @@
 use candle_core::Tensor;
 use candle_nn::{linear, ops, Linear, Module, VarBuilder};
+use std::panic::AssertUnwindSafe;
 
 use crate::config::PANEL_DIM;
 use crate::data_models::PredictedPanel;
@@ -69,44 +70,35 @@ impl AuxiliaryHeads {
     ) -> Result<AuxiliaryHeadOutputs, PredictorError> {
         validate_predicted_panel(predicted)?;
         Ok(AuxiliaryHeadOutputs {
-            failure_mode: project_head(
-                HeadId::FailureMode,
-                &self.failure_mode,
-                predicted,
-                FAILURE_MODE_CLASSES,
-            )?,
-            edge_case: project_head(
-                HeadId::EdgeCase,
-                &self.edge_case,
-                predicted,
-                EDGE_CASE_CLASSES,
-            )?,
-            tech_debt: project_head(
-                HeadId::TechDebt,
-                &self.tech_debt,
-                predicted,
-                TECH_DEBT_CLASSES,
-            )?,
-            perf: project_head(HeadId::Perf, &self.perf, predicted, PERF_CLASSES)?,
-            security: project_head(
-                HeadId::Security,
-                &self.security,
-                predicted,
-                SECURITY_CLASSES,
-            )?,
-            accuracy: project_head(
-                HeadId::Accuracy,
-                &self.accuracy,
-                predicted,
-                ACCURACY_CLASSES,
-            )?,
-            cost: project_head(HeadId::Cost, &self.cost, predicted, COST_CLASSES)?,
-            reasoning: project_head(
-                HeadId::Reasoning,
-                &self.reasoning,
-                predicted,
-                REASONING_CLASSES,
-            )?,
+            failure_mode: run_head_fail_closed(HeadId::FailureMode, || {
+                project_head(
+                    HeadId::FailureMode,
+                    &self.failure_mode,
+                    predicted,
+                    FAILURE_MODE_CLASSES,
+                )
+            })?,
+            edge_case: run_head_fail_closed(HeadId::EdgeCase, || {
+                project_head(HeadId::EdgeCase, &self.edge_case, predicted, EDGE_CASE_CLASSES)
+            })?,
+            tech_debt: run_head_fail_closed(HeadId::TechDebt, || {
+                project_head(HeadId::TechDebt, &self.tech_debt, predicted, TECH_DEBT_CLASSES)
+            })?,
+            perf: run_head_fail_closed(HeadId::Perf, || {
+                project_head(HeadId::Perf, &self.perf, predicted, PERF_CLASSES)
+            })?,
+            security: run_head_fail_closed(HeadId::Security, || {
+                project_head(HeadId::Security, &self.security, predicted, SECURITY_CLASSES)
+            })?,
+            accuracy: run_head_fail_closed(HeadId::Accuracy, || {
+                project_head(HeadId::Accuracy, &self.accuracy, predicted, ACCURACY_CLASSES)
+            })?,
+            cost: run_head_fail_closed(HeadId::Cost, || {
+                project_head(HeadId::Cost, &self.cost, predicted, COST_CLASSES)
+            })?,
+            reasoning: run_head_fail_closed(HeadId::Reasoning, || {
+                project_head(HeadId::Reasoning, &self.reasoning, predicted, REASONING_CLASSES)
+            })?,
         })
     }
 }
@@ -163,6 +155,35 @@ fn project_head(
         probabilities,
         class_count,
     })
+}
+
+fn run_head_fail_closed<F>(head_id: HeadId, run: F) -> Result<HeadPrediction, PredictorError>
+where
+    F: FnOnce() -> Result<HeadPrediction, PredictorError>,
+{
+    match std::panic::catch_unwind(AssertUnwindSafe(run)) {
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(err)) => Err(PredictorError::HeadFailure {
+            head: head_id.as_str().to_string(),
+            code: err.code().to_string(),
+            detail: err.to_string(),
+        }),
+        Err(payload) => Err(PredictorError::HeadFailure {
+            head: head_id.as_str().to_string(),
+            code: "MEJEPA_HEAD_PANIC".to_string(),
+            detail: panic_payload_to_string(payload),
+        }),
+    }
+}
+
+fn panic_payload_to_string(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "head panicked with non-string payload".to_string()
+    }
 }
 
 fn validate_predicted_panel(predicted: &PredictedPanel) -> Result<(), PredictorError> {

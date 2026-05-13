@@ -946,6 +946,7 @@ fn eval_report_with_cells(per_cell_correlation: BTreeMap<String, Option<f32>>) -
         per_category_correlation: BTreeMap::from([(MutationCategory::CompileError, Some(0.90))]),
         per_language_correlation: BTreeMap::from([(Language::Rust, Some(0.90))]),
         per_cell_correlation,
+        cell_exemptions: BTreeMap::new(),
         bayesian_shrinkage: BTreeMap::from([("compile_error::rust".to_string(), 0.10)]),
         conformal_coverage_health: BTreeMap::from([(
             Language::Rust,

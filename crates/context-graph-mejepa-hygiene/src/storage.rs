@@ -13,6 +13,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use crate::categories::{BYTES_PER_GB, DEFAULT_TOTAL_QUOTA_BYTES};
 use crate::entry::{EntryId, HygieneEntryMeta};
 use crate::error::{OpsError, OpsErrorKind, OpsResult};
+use crate::retention::default_retention_policy_path;
 
 pub trait SelfHealingHandle: Send + Sync {
     fn detect_drift(&self) -> OpsResult<serde_json::Value>;
@@ -28,6 +29,7 @@ pub struct RuntimeConfig {
     pub witness_min_age_days: u32,
     pub now_unix: Option<i64>,
     pub self_healing: Option<Arc<dyn SelfHealingHandle>>,
+    pub retention_policy_path: Option<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -104,6 +106,7 @@ pub fn runtime_config(db: Arc<DB>, archive_root: PathBuf) -> OpsResult<RuntimeCo
         witness_min_age_days: 1,
         now_unix: None,
         self_healing: None,
+        retention_policy_path: Some(default_retention_policy_path()),
     })
 }
 
