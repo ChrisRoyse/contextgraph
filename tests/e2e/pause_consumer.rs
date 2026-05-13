@@ -13,9 +13,8 @@ use context_graph_mejepa::gates::{sha256_bytes, valid_witness_segment};
 use context_graph_mejepa::{
     build_deterministic_compiler, current_unix_ms, open_infer_rocksdb, read_pause_state, AstDiff,
     CalibrationExample, CalibrationStore, DiffHunk, FailedGate, Language, MeJepaInferConfig,
-    OracleOutcome, PatchBundle, PauseReadOutcome, PauseState, RocksDbInferStore, TaskContext,
-    TaskEnvironment, TaskId, TestId, VerifyVerdict, CF_MEJEPA_LIVE_PREDICTIONS, MEJEPA_INFER_CFS,
-    PAUSE_REASON_CODE,
+    PatchBundle, PauseReadOutcome, PauseState, RocksDbInferStore, TaskContext, TaskEnvironment,
+    TaskId, TestId, VerifyVerdict, CF_MEJEPA_LIVE_PREDICTIONS, MEJEPA_INFER_CFS, PAUSE_REASON_CODE,
 };
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
