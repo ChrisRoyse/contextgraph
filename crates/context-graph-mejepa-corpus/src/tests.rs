@@ -323,6 +323,42 @@ fn off_by_one_skips_triple_quoted_string_digits() {
 }
 
 #[test]
+fn off_by_one_mutates_range_boundary_expression_without_numeric_literals() {
+    let src = "def actual(values):\n    return list(range(len(values)))\n";
+    let outcome = apply_mutation(
+        MutationCategory::OffByOne,
+        src,
+        MutationConfig {
+            seed: 0,
+            alternate_source: None,
+        },
+    )
+    .unwrap();
+    let site = outcome.mutation_site.unwrap();
+    assert_eq!(site.original_text, "len(values)");
+    assert!(site.note.contains("range(...) boundary"));
+    assert!(site.replacement_text.contains("+ 1"));
+}
+
+#[test]
+fn off_by_one_mutates_slice_boundary_expression_without_numeric_literals() {
+    let src = "def actual(values, stop):\n    return values[:stop]\n";
+    let outcome = apply_mutation(
+        MutationCategory::OffByOne,
+        src,
+        MutationConfig {
+            seed: 1,
+            alternate_source: None,
+        },
+    )
+    .unwrap();
+    let site = outcome.mutation_site.unwrap();
+    assert_eq!(site.original_text, "stop");
+    assert!(site.note.contains("slice boundary"));
+    assert!(site.replacement_text.contains("- 1"));
+}
+
+#[test]
 fn swap_variable_renames_one_usage() {
     let outcome = apply_mutation(
         MutationCategory::SwapVariable,
@@ -336,6 +372,48 @@ fn swap_variable_renames_one_usage() {
     assert_ne!(outcome.mutated_source, PY_SAMPLE_VARS);
     let site = outcome.mutation_site.unwrap();
     assert_ne!(site.original_text, site.replacement_text);
+}
+
+#[test]
+fn subtle_flip_flips_membership_identity_and_any_all_patterns() {
+    let membership = apply_mutation(
+        MutationCategory::SubtleFlip,
+        "def actual(value, values):\n    return value in values\n",
+        MutationConfig::default(),
+    )
+    .unwrap();
+    let membership_site = membership.mutation_site.unwrap();
+    assert_eq!(membership_site.original_text, "in");
+    assert_eq!(membership_site.replacement_text, "not in");
+
+    let identity = apply_mutation(
+        MutationCategory::SubtleFlip,
+        "def actual(value):\n    return value is None\n",
+        MutationConfig::default(),
+    )
+    .unwrap();
+    let identity_site = identity.mutation_site.unwrap();
+    assert_eq!(identity_site.original_text, "is");
+    assert_eq!(identity_site.replacement_text, "is not");
+
+    let any_all = apply_mutation(
+        MutationCategory::SubtleFlip,
+        "def actual(flags):\n    return any(flags)\n",
+        MutationConfig::default(),
+    )
+    .unwrap();
+    let any_all_site = any_all.mutation_site.unwrap();
+    assert_eq!(any_all_site.original_text, "any");
+    assert_eq!(any_all_site.replacement_text, "all");
+}
+
+#[test]
+fn subtle_flip_does_not_mutate_for_loop_in_keyword() {
+    let src =
+        "def actual(values):\n    for value in values:\n        return value\n    return None\n";
+    let err =
+        apply_mutation(MutationCategory::SubtleFlip, src, MutationConfig::default()).unwrap_err();
+    assert_eq!(err.code(), "MEJEPA_CORPUS_NO_MUTATION_SITE");
 }
 
 #[test]
@@ -353,6 +431,48 @@ fn swap_variable_uses_previously_defined_replacement() {
     let site = outcome.mutation_site.unwrap();
     assert!(matches!(site.replacement_text.as_str(), "a" | "b" | "c"));
     assert_ne!(site.original_text, site.replacement_text);
+}
+
+#[test]
+fn swap_variable_collects_parameters_tuple_assignments_and_loop_locals() {
+    let params = apply_mutation(
+        MutationCategory::SwapVariable,
+        "def actual(left, right):\n    return left + right\n",
+        MutationConfig::default(),
+    )
+    .unwrap();
+    let params_site = params.mutation_site.unwrap();
+    assert!(matches!(
+        params_site.original_text.as_str(),
+        "left" | "right"
+    ));
+    assert_ne!(params_site.original_text, params_site.replacement_text);
+
+    let tuple_assignment = apply_mutation(
+        MutationCategory::SwapVariable,
+        "def actual():\n    left, right = ('L', 'R')\n    return left + right\n",
+        MutationConfig::default(),
+    )
+    .unwrap();
+    let tuple_site = tuple_assignment.mutation_site.unwrap();
+    assert!(matches!(
+        tuple_site.original_text.as_str(),
+        "left" | "right"
+    ));
+    assert_ne!(tuple_site.original_text, tuple_site.replacement_text);
+
+    let loop_local = apply_mutation(
+        MutationCategory::SwapVariable,
+        "def actual(values):\n    prefix = ''\n    for item in values:\n        prefix = prefix + item\n    return prefix\n",
+        MutationConfig::default(),
+    )
+    .unwrap();
+    let loop_site = loop_local.mutation_site.unwrap();
+    assert!(matches!(
+        loop_site.original_text.as_str(),
+        "prefix" | "item"
+    ));
+    assert_ne!(loop_site.original_text, loop_site.replacement_text);
 }
 
 #[test]

@@ -103,22 +103,41 @@ fn collect_var_defs(source: &str, code_mask: &[bool]) -> Vec<VarDef> {
             line_start = line_end + 1;
             continue;
         }
-        if let Some((name, eq_pos)) = parse_assignment_line(line) {
+        if let Some((names, eq_pos)) = parse_assignment_line(line) {
             if !range_is_code(code_mask, line_start, eq_pos + 1) {
                 line_start = line_end + 1;
                 continue;
             }
-            if !PYTHON_KEYWORDS.contains(&name) && !name.starts_with("__") && !seen.contains(name) {
-                seen.insert(name.to_string());
-                defs.push(VarDef {
-                    name: name.to_string(),
-                    def_line_end_offset: line_end,
-                });
+            for name in names {
+                push_var_def(&mut defs, &mut seen, name, line_end);
             }
+        }
+        if let Some(names) = parse_function_parameters(line) {
+            for name in names {
+                push_var_def(&mut defs, &mut seen, name, line_end);
+            }
+        }
+        if let Some(name) = parse_for_target(line) {
+            push_var_def(&mut defs, &mut seen, name, line_end);
         }
         line_start = line_end + 1;
     }
     defs
+}
+
+fn push_var_def(
+    defs: &mut Vec<VarDef>,
+    seen: &mut std::collections::HashSet<String>,
+    name: &str,
+    def_line_end_offset: usize,
+) {
+    if !PYTHON_KEYWORDS.contains(&name) && !name.starts_with("__") && !seen.contains(name) {
+        seen.insert(name.to_string());
+        defs.push(VarDef {
+            name: name.to_string(),
+            def_line_end_offset,
+        });
+    }
 }
 
 fn collect_swap_candidates(
@@ -156,44 +175,127 @@ fn collect_swap_candidates(
         .collect()
 }
 
-/// Parse `<indent><name> = ...` assignment headers. Returns Some((name, eq_pos))
-/// where `name` is a borrow into `line` and `eq_pos` is the byte index of the `=`.
+/// Parse `<indent><name>[, <name>...] = ...` assignment headers. Returns
+/// Some((names, eq_pos)) where every name is a borrow into `line` and `eq_pos`
+/// is the byte index of the `=`.
 /// Rejects compound ops (`==`, `+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `**=`,
 /// `>=`, `<=`, `!=`, `:=`, `&=`, `|=`, `^=`, `>>=`, `<<=`, `@=`).
-fn parse_assignment_line(line: &str) -> Option<(&str, usize)> {
+fn parse_assignment_line(line: &str) -> Option<(Vec<&str>, usize)> {
     let bytes = line.as_bytes();
     let mut i = 0;
     while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
         i += 1;
     }
-    let name_start = i;
-    if i >= bytes.len() || !is_ident_start(bytes[i]) {
-        return None;
-    }
-    i += 1;
-    while i < bytes.len() && is_ident_continue(bytes[i]) {
+    let lhs_start = i;
+    while i < bytes.len() && bytes[i] != b'=' {
         i += 1;
     }
-    let name_end = i;
-    if name_start == name_end {
+    if i >= bytes.len() || i == lhs_start {
         return None;
     }
-    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
-        i += 1;
-    }
-    if i >= bytes.len() || bytes[i] != b'=' {
+    let eq_pos = i;
+    let prev = previous_non_ws(bytes, eq_pos)?;
+    if matches!(
+        bytes[prev],
+        b'=' | b'!'
+            | b'<'
+            | b'>'
+            | b'+'
+            | b'-'
+            | b'*'
+            | b'/'
+            | b'%'
+            | b':'
+            | b'&'
+            | b'|'
+            | b'^'
+            | b'@'
+    ) || (eq_pos + 1 < bytes.len() && bytes[eq_pos + 1] == b'=')
+    {
         return None;
     }
-    // Reject compound operators by checking the byte BEFORE the `=` and
-    // AFTER the `=`. The byte before should be space/tab (we already
-    // skipped those — so it must be `=` directly after whitespace, not
-    // after `+`, `-`, etc., because those would have failed `is_ident_*`).
-    // The byte after must NOT be `=` (which would mean `==`).
-    if i + 1 < bytes.len() && bytes[i + 1] == b'=' {
+    let lhs = &line[lhs_start..eq_pos];
+    let mut names = Vec::new();
+    for raw in lhs.split(',') {
+        let name = raw.trim().split(':').next().unwrap_or("").trim();
+        if !name.is_empty() && name.as_bytes().iter().copied().all(is_ident_continue) {
+            let first = name.as_bytes()[0];
+            if is_ident_start(first) {
+                names.push(name);
+            }
+        }
+    }
+    if names.is_empty() {
+        None
+    } else {
+        Some((names, eq_pos))
+    }
+}
+
+fn parse_function_parameters(line: &str) -> Option<Vec<&str>> {
+    let trimmed = line.trim_start();
+    if !trimmed.starts_with("def ") {
         return None;
     }
-    let name = &line[name_start..name_end];
-    Some((name, i))
+    let open = line.find('(')?;
+    let close = line[open + 1..].find(')')? + open + 1;
+    let params = &line[open + 1..close];
+    let mut names = Vec::new();
+    for raw in params.split(',') {
+        let name = raw
+            .trim()
+            .trim_start_matches('*')
+            .split('=')
+            .next()
+            .unwrap_or("")
+            .split(':')
+            .next()
+            .unwrap_or("")
+            .trim();
+        if !name.is_empty()
+            && is_ident_start(name.as_bytes()[0])
+            && name.as_bytes().iter().copied().all(is_ident_continue)
+        {
+            names.push(name);
+        }
+    }
+    if names.is_empty() {
+        None
+    } else {
+        Some(names)
+    }
+}
+
+fn parse_for_target(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    if !trimmed.starts_with("for ") {
+        return None;
+    }
+    let after_for = &trimmed[4..];
+    let in_pos = after_for.find(" in ")?;
+    let target = after_for[..in_pos].trim();
+    if target
+        .as_bytes()
+        .first()
+        .copied()
+        .is_some_and(is_ident_start)
+        && target.as_bytes().iter().copied().all(is_ident_continue)
+    {
+        Some(target)
+    } else {
+        None
+    }
+}
+
+fn previous_non_ws(bytes: &[u8], offset: usize) -> Option<usize> {
+    let mut i = offset;
+    while i > 0 {
+        i -= 1;
+        if !bytes[i].is_ascii_whitespace() {
+            return Some(i);
+        }
+    }
+    None
 }
 
 fn find_first_usage_after(
