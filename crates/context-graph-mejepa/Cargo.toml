@@ -79,3 +79,7 @@ path = "examples/phase_f_toolchain_availability_fsv.rs"
 [[example]]
 name = "phase_f_cross_language_label_gating_fsv"
 path = "examples/phase_f_cross_language_label_gating_fsv.rs"
+
+[[example]]
+name = "phase_f_system_cost_fsv"
+path = "examples/phase_f_system_cost_fsv.rs"

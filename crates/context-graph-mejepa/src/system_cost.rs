@@ -16,6 +16,7 @@
 //! is NO `cost_estimate_usd` field, and NO `cost_cap_reached` status.
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug, Default)]
@@ -26,13 +27,30 @@ pub struct SystemCostCounters {
     rocksdb_writes_total: AtomicU64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct SystemCostSnapshot {
     pub cuda_kernel_microseconds_total: u64,
     pub agent_feedback_tokens_total: u64,
     pub rocksdb_bytes_written_total: u64,
     pub rocksdb_writes_total: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SystemCostBreakdown {
+    pub window_delta: SystemCostSnapshot,
+    pub no_spend_caps: bool,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SystemCostError {
+    #[error("MEJEPA_SYSTEM_COST_WEEKLY_REPORT_NOT_OBJECT: weekly report must be a JSON object")]
+    WeeklyReportNotObject,
+    #[error("MEJEPA_SYSTEM_COST_FORBIDDEN_FIELD: forbidden cost-cap/spend field present: {0}")]
+    ForbiddenField(&'static str),
+    #[error("MEJEPA_SYSTEM_COST_SERIALIZE_FAILED: {0}")]
+    Serialize(String),
 }
 
 impl SystemCostSnapshot {
@@ -52,6 +70,57 @@ impl SystemCostSnapshot {
                 .saturating_sub(earlier.rocksdb_writes_total),
         }
     }
+}
+
+impl SystemCostBreakdown {
+    pub fn from_snapshots(earlier: &SystemCostSnapshot, current: &SystemCostSnapshot) -> Self {
+        Self {
+            window_delta: current.delta(earlier),
+            no_spend_caps: true,
+        }
+    }
+}
+
+pub fn attach_system_cost_to_weekly_report(
+    mut report: Value,
+    breakdown: &SystemCostBreakdown,
+) -> Result<Value, SystemCostError> {
+    reject_forbidden_fields(&report)?;
+    let object = report
+        .as_object_mut()
+        .ok_or(SystemCostError::WeeklyReportNotObject)?;
+    let section = serde_json::to_value(breakdown)
+        .map_err(|err| SystemCostError::Serialize(err.to_string()))?;
+    object.insert("systemCost".to_string(), section);
+    reject_forbidden_fields(&report)?;
+    Ok(report)
+}
+
+fn reject_forbidden_fields(value: &Value) -> Result<(), SystemCostError> {
+    let Some(object) = value.as_object() else {
+        return Ok(());
+    };
+    reject_forbidden_object_fields(object)?;
+    for child in object.values() {
+        reject_forbidden_fields(child)?;
+    }
+    Ok(())
+}
+
+fn reject_forbidden_object_fields(object: &Map<String, Value>) -> Result<(), SystemCostError> {
+    for forbidden in [
+        "costEstimateUsd",
+        "cost_estimate_usd",
+        "costCapReached",
+        "cost_cap_reached",
+        "spendCap",
+        "spend_cap",
+    ] {
+        if object.contains_key(forbidden) {
+            return Err(SystemCostError::ForbiddenField(forbidden));
+        }
+    }
+    Ok(())
 }
 
 impl SystemCostCounters {
@@ -170,5 +239,49 @@ mod tests {
         assert!(!json.contains("costEstimateUsd"));
         assert!(!json.contains("cost_estimate_usd"));
         assert!(!json.contains("costCapReached"));
+    }
+
+    #[test]
+    fn attaches_resource_cost_breakdown_to_weekly_report() {
+        let earlier = SystemCostSnapshot {
+            cuda_kernel_microseconds_total: 100,
+            agent_feedback_tokens_total: 10,
+            rocksdb_bytes_written_total: 1_000,
+            rocksdb_writes_total: 1,
+        };
+        let current = SystemCostSnapshot {
+            cuda_kernel_microseconds_total: 250,
+            agent_feedback_tokens_total: 25,
+            rocksdb_bytes_written_total: 1_750,
+            rocksdb_writes_total: 3,
+        };
+        let breakdown = SystemCostBreakdown::from_snapshots(&earlier, &current);
+        let report = serde_json::json!({
+            "reportDate": "2026-05-13",
+            "shipGatePassed": false
+        });
+        let extended = attach_system_cost_to_weekly_report(report, &breakdown).unwrap();
+        assert_eq!(
+            extended["systemCost"]["windowDelta"]["cudaKernelMicrosecondsTotal"],
+            150
+        );
+        assert_eq!(extended["systemCost"]["noSpendCaps"], true);
+    }
+
+    #[test]
+    fn forbidden_spend_cap_field_fails_closed() {
+        let breakdown = SystemCostBreakdown::from_snapshots(
+            &SystemCostSnapshot::default(),
+            &SystemCostSnapshot::default(),
+        );
+        let report = serde_json::json!({
+            "reportDate": "2026-05-13",
+            "costCapReached": false
+        });
+        let err = attach_system_cost_to_weekly_report(report, &breakdown).unwrap_err();
+        assert!(matches!(
+            err,
+            SystemCostError::ForbiddenField("costCapReached")
+        ));
     }
 }
