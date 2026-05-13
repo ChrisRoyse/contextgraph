@@ -1,1 +1,3 @@
+# Active per-cell ship-gate exemptions. Keep empty unless an operator approves
+# a genuinely impossible (mutation_category::language) cell with a reason.
 exemptions = []

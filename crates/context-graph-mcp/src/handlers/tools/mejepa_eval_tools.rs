@@ -265,6 +265,14 @@ impl Handlers {
 pub fn mejepa_ship_gate_status_payload(
     db_path: &Path,
 ) -> Result<serde_json::Value, context_graph_mejepa::EvalError> {
+    let exemptions_path = context_graph_mejepa::eval::default_cell_exemptions_path();
+    mejepa_ship_gate_status_payload_with_exemptions(db_path, &exemptions_path)
+}
+
+pub fn mejepa_ship_gate_status_payload_with_exemptions(
+    db_path: &Path,
+    exemptions_path: &Path,
+) -> Result<serde_json::Value, context_graph_mejepa::EvalError> {
     let db = open_infer_rocksdb(db_path)?;
     let eval_store = RocksDbEvalStore::new(db)?;
     let report = eval_store.load_latest_report()?.ok_or_else(|| {
@@ -273,8 +281,16 @@ pub fn mejepa_ship_gate_status_payload(
             "no eval report exists in CF_MEJEPA_EVAL_REPORTS",
         )
     })?;
-    let stability = context_graph_mejepa::eval::ship_gate_stability_status(&eval_store)?;
-    let mut ship_gate_failures = report.ship_gate_failures.clone();
+    let cell_exemptions = context_graph_mejepa::eval::load_cell_exemptions(
+        exemptions_path,
+        chrono::Utc::now().timestamp_millis(),
+    )?;
+    let stability = context_graph_mejepa::eval::ship_gate_stability_status_with_exemptions(
+        &eval_store,
+        &cell_exemptions,
+    )?;
+    let mut ship_gate_failures =
+        context_graph_mejepa::eval::non_exempt_ship_gate_failures(&report, &cell_exemptions);
     if !stability.ready
         && !ship_gate_failures
             .iter()
@@ -287,8 +303,11 @@ pub fn mejepa_ship_gate_status_payload(
     }
     Ok(json!({
         "shipGatePassed": stability.ready,
-        "latestWindowShipGatePassed": report.ship_gate_passed,
+        "latestWindowShipGatePassed": stability.latest_report_passed_window,
+        "latestWindowRawShipGatePassed": report.ship_gate_passed,
         "latestWindowPassedStability": stability.latest_report_passed_window,
+        "latestWindowCorrelation": stability.latest_report_correlation,
+        "effectiveShipGateCorrelation": stability.latest_effective_correlation,
         "consecutivePassingWindows": stability.consecutive_passing_windows,
         "requiredConsecutivePassingWindows": stability.required_consecutive_windows,
         "shipGateCorrelationThreshold": stability.correlation_threshold,
@@ -296,11 +315,14 @@ pub fn mejepa_ship_gate_status_payload(
         "stabilityResetReason": stability.latest_reset_reason,
         "stabilityResetUnixMs": stability.latest_reset_unix_ms,
         "modelPromotionResetCount": stability.model_promotion_reset_count,
+        "cellExemptionsPath": exemptions_path,
+        "cellExemptions": cell_exemptions,
+        "perCellCorrelation": report.per_cell_correlation.clone(),
         "reportHash": report.determinism_hash()?,
         "holdoutCount": report.holdout_count,
-        "perCellStateTransfer": report.per_cell_state_transfer,
+        "perCellStateTransfer": report.per_cell_state_transfer.clone(),
         "lowStateTransferCells": low_state_transfer_cells(&report),
-        "perPredictionClassCalibration": report.per_prediction_class_calibration,
+        "perPredictionClassCalibration": report.per_prediction_class_calibration.clone(),
         "sourceOfTruth": "CF_MEJEPA_EVAL_REPORTS"
     }))
 }

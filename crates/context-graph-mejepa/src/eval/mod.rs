@@ -42,7 +42,8 @@ pub use queue::{
 pub use report::{seed_open_research_questions, write_weekly_report};
 pub use runner::{corpus_sha_from_holdout, EvalRunner};
 pub use ship_gate_stability::{
-    ship_gate_stability_status, ship_gate_stability_status_with_requirements,
+    effective_ship_gate_correlation, non_exempt_ship_gate_failures, ship_gate_stability_status,
+    ship_gate_stability_status_with_exemptions, ship_gate_stability_status_with_requirements,
     ShipGateStabilityStatus, SHIP_GATE_REQUIRED_CONSECUTIVE_WINDOWS, SHIP_GATE_STABILITY_BLOCKER,
     SHIP_GATE_STABILITY_CORRELATION_THRESHOLD,
 };

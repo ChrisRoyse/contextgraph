@@ -1,6 +1,8 @@
 use rocksdb::IteratorMode;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
+use super::cell_exemptions::CellExemption;
 use super::error::{EvalError, EvalErrorCode};
 use super::store::{RocksDbEvalStore, CF_MEJEPA_EVAL_REPORTS, CF_MEJEPA_MODEL_PROMOTIONS};
 use super::types::EvalReport;
@@ -24,6 +26,7 @@ pub struct ShipGateStabilityStatus {
     pub latest_report_date: Option<String>,
     pub latest_report_passed_window: bool,
     pub latest_report_correlation: Option<f32>,
+    pub latest_effective_correlation: Option<f32>,
     pub correlation_threshold: f32,
     pub evaluated_window_count: usize,
     pub model_promotion_reset_count: usize,
@@ -34,10 +37,18 @@ pub struct ShipGateStabilityStatus {
 pub fn ship_gate_stability_status(
     store: &RocksDbEvalStore,
 ) -> Result<ShipGateStabilityStatus, EvalError> {
+    ship_gate_stability_status_with_exemptions(store, &BTreeMap::new())
+}
+
+pub fn ship_gate_stability_status_with_exemptions(
+    store: &RocksDbEvalStore,
+    cell_exemptions: &BTreeMap<String, CellExemption>,
+) -> Result<ShipGateStabilityStatus, EvalError> {
     ship_gate_stability_status_with_requirements(
         store,
         SHIP_GATE_REQUIRED_CONSECUTIVE_WINDOWS,
         SHIP_GATE_STABILITY_CORRELATION_THRESHOLD,
+        cell_exemptions,
     )
 }
 
@@ -45,6 +56,7 @@ pub fn ship_gate_stability_status_with_requirements(
     store: &RocksDbEvalStore,
     required_consecutive_windows: usize,
     correlation_threshold: f32,
+    cell_exemptions: &BTreeMap<String, CellExemption>,
 ) -> Result<ShipGateStabilityStatus, EvalError> {
     if required_consecutive_windows == 0 {
         return Err(EvalError::new(
@@ -65,6 +77,7 @@ pub fn ship_gate_stability_status_with_requirements(
         &resets,
         required_consecutive_windows,
         correlation_threshold,
+        cell_exemptions,
     ))
 }
 
@@ -114,6 +127,7 @@ fn compute_ship_gate_stability(
     resets: &[ModelPromotionResetEvent],
     required_consecutive_windows: usize,
     correlation_threshold: f32,
+    cell_exemptions: &BTreeMap<String, CellExemption>,
 ) -> ShipGateStabilityStatus {
     let mut consecutive_passing_windows = 0usize;
     let mut reset_idx = 0usize;
@@ -122,6 +136,7 @@ fn compute_ship_gate_stability(
     let mut latest_report_date = None;
     let mut latest_report_passed_window = false;
     let mut latest_report_correlation = None;
+    let mut latest_effective_correlation = None;
 
     for report in reports {
         while let Some(reset) = resets.get(reset_idx) {
@@ -136,7 +151,9 @@ fn compute_ship_gate_stability(
 
         latest_report_date = Some(report.report_date.clone());
         latest_report_correlation = report.overall_correlation;
-        latest_report_passed_window = report_passes_stability_window(report, correlation_threshold);
+        latest_effective_correlation = effective_ship_gate_correlation(report, cell_exemptions);
+        latest_report_passed_window =
+            report_passes_stability_window(report, correlation_threshold, cell_exemptions);
         if latest_report_passed_window {
             consecutive_passing_windows += 1;
         } else {
@@ -160,6 +177,7 @@ fn compute_ship_gate_stability(
         latest_report_date,
         latest_report_passed_window,
         latest_report_correlation,
+        latest_effective_correlation,
         correlation_threshold,
         evaluated_window_count: reports.len(),
         model_promotion_reset_count: resets.len(),
@@ -168,12 +186,52 @@ fn compute_ship_gate_stability(
     }
 }
 
-fn report_passes_stability_window(report: &EvalReport, correlation_threshold: f32) -> bool {
-    report.ship_gate_passed
-        && report
-            .overall_correlation
-            .map(|value| value >= correlation_threshold)
-            .unwrap_or(false)
+pub fn effective_ship_gate_correlation(
+    report: &EvalReport,
+    cell_exemptions: &BTreeMap<String, CellExemption>,
+) -> Option<f32> {
+    let mut worst_non_exempt = None::<f32>;
+    for (cell, value) in &report.per_cell_correlation {
+        if cell_exemptions.contains_key(cell) {
+            continue;
+        }
+        match value {
+            Some(value) => {
+                worst_non_exempt = Some(worst_non_exempt.map_or(*value, |worst| worst.min(*value)));
+            }
+            None => return None,
+        }
+    }
+    worst_non_exempt.or(report.overall_correlation)
+}
+
+pub fn non_exempt_ship_gate_failures(
+    report: &EvalReport,
+    cell_exemptions: &BTreeMap<String, CellExemption>,
+) -> Vec<String> {
+    report
+        .ship_gate_failures
+        .iter()
+        .filter(|failure| {
+            !cell_exemptions
+                .keys()
+                .any(|cell| failure.contains(cell.as_str()))
+        })
+        .cloned()
+        .collect()
+}
+
+fn report_passes_stability_window(
+    report: &EvalReport,
+    correlation_threshold: f32,
+    cell_exemptions: &BTreeMap<String, CellExemption>,
+) -> bool {
+    if !non_exempt_ship_gate_failures(report, cell_exemptions).is_empty() {
+        return false;
+    }
+    effective_ship_gate_correlation(report, cell_exemptions)
+        .map(|value| value >= correlation_threshold)
+        .unwrap_or(false)
 }
 
 fn model_promotion_reset_timestamp_from_key(key: &[u8]) -> Option<i64> {
@@ -218,13 +276,13 @@ mod tests {
             report("2026-05-14", 2_000, 0.96, true),
             report("2026-05-15", 3_000, 0.96, true),
         ];
-        let status = compute_ship_gate_stability(&reports, &[], 4, 0.95);
+        let status = compute_ship_gate_stability(&reports, &[], 4, 0.95, &BTreeMap::new());
         assert_eq!(status.consecutive_passing_windows, 3);
         assert!(!status.ready);
 
         let mut reports = reports;
         reports.push(report("2026-05-16", 4_000, 0.96, true));
-        let status = compute_ship_gate_stability(&reports, &[], 4, 0.95);
+        let status = compute_ship_gate_stability(&reports, &[], 4, 0.95, &BTreeMap::new());
         assert_eq!(status.consecutive_passing_windows, 4);
         assert!(status.ready);
     }
@@ -236,7 +294,7 @@ mod tests {
             report("2026-05-14", 2_000, 0.96, true),
             report("2026-05-15", 3_000, 0.90, false),
         ];
-        let status = compute_ship_gate_stability(&reports, &[], 4, 0.95);
+        let status = compute_ship_gate_stability(&reports, &[], 4, 0.95, &BTreeMap::new());
         assert_eq!(status.consecutive_passing_windows, 0);
         assert_eq!(
             status.latest_reset_reason,
@@ -251,13 +309,37 @@ mod tests {
             timestamp_millis: 3_000,
             key: "phase_e/per-cell-promotion/00000000000000003000".to_string(),
         }];
-        let status = compute_ship_gate_stability(&reports, &resets, 4, 0.95);
+        let status = compute_ship_gate_stability(&reports, &resets, 4, 0.95, &BTreeMap::new());
         assert_eq!(status.consecutive_passing_windows, 0);
         assert_eq!(status.model_promotion_reset_count, 1);
         assert_eq!(
             status.latest_reset_reason,
             Some("model_promotion:phase_e/per-cell-promotion/00000000000000003000".to_string())
         );
+    }
+
+    #[test]
+    fn exempt_low_cell_does_not_reset_passing_window() {
+        let mut report = report("2026-05-13", 1_000, 0.96, false);
+        report
+            .per_cell_correlation
+            .insert("compile_error::python".to_string(), Some(0.10));
+        report.ship_gate_failures =
+            vec!["per_cell_correlation compile_error::python 0.100000 < 0.950000".to_string()];
+        let exemptions = BTreeMap::from([(
+            "compile_error::python".to_string(),
+            CellExemption {
+                cell: "compile_error::python".to_string(),
+                reason: "operator marked impossible".to_string(),
+                operator_id: "operator".to_string(),
+                expires_unix_ms: None,
+            },
+        )]);
+
+        let status = compute_ship_gate_stability(&[report], &[], 1, 0.95, &exemptions);
+        assert_eq!(status.consecutive_passing_windows, 1);
+        assert!(status.ready);
+        assert_eq!(status.latest_effective_correlation, Some(0.96));
     }
 
     fn report(date: &str, timestamp_millis: i64, correlation: f32, passed: bool) -> EvalReport {
