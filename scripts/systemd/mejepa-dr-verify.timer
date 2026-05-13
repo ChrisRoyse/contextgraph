@@ -1,0 +1,15 @@
+[Unit]
+Description=ContextGraph ME-JEPA monthly DR verification timer
+Documentation=file:/home/cabdru/contextgraph/docs/futurebuild/tasks/dr/_all_tasks.md
+Requires=mejepa-dr-verify.service
+
+[Timer]
+# First Sunday of each month at 04:00 local; the randomized delay keeps
+# this clear of mejepa-log-rotate at 03:15.
+OnCalendar=Sun *-*-1..7 04:00:00
+RandomizedDelaySec=30min
+Persistent=true
+Unit=mejepa-dr-verify.service
+
+[Install]
+WantedBy=timers.target

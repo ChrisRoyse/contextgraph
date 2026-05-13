@@ -1,0 +1,17 @@
+[Unit]
+Description=ContextGraph ME-JEPA monthly DR restore verification
+Documentation=file:/home/cabdru/contextgraph/docs/futurebuild/tasks/dr/_all_tasks.md
+ConditionPathExists=/mnt/d/contextgraph-backups/local
+
+[Service]
+Type=oneshot
+UMask=0077
+WorkingDirectory=/home/cabdru/contextgraph
+Environment=MEJEPA_CLI_BIN=/home/cabdru/contextgraph/target/release/context-graph-cli
+ExecStart=/home/cabdru/contextgraph/scripts/dr/verify_backup.sh
+SuccessExitStatus=0
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
