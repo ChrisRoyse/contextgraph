@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 
 use context_graph_mejepa::eval::{
     build_eval_compiler, build_patch_similarity_graph, corpus_sha_from_holdout, synthetic_holdout,
-    synthetic_patch_embeddings, write_weekly_report, EvalConfig, EvalProvenance, EvalRunner,
-    RocksDbEvalStore, SHIP_GATE_STABILITY_BLOCKER,
+    synthetic_patch_embeddings, validate_active_python_ship_gate_report, write_weekly_report,
+    EvalConfig, EvalProvenance, EvalRunner, RocksDbEvalStore, ACTIVE_PYTHON_SHIP_GATE_CELL_COUNT,
+    ACTIVE_PYTHON_SHIP_GATE_GRID, ACTIVE_PYTHON_SHIP_GATE_NAME, SHIP_GATE_STABILITY_BLOCKER,
 };
 use context_graph_mejepa::open_infer_rocksdb;
 use serde::Deserialize;
@@ -281,6 +282,7 @@ pub fn mejepa_ship_gate_status_payload_with_exemptions(
             "no eval report exists in CF_MEJEPA_EVAL_REPORTS",
         )
     })?;
+    validate_active_python_ship_gate_report(&report)?;
     let cell_exemptions = context_graph_mejepa::eval::load_cell_exemptions(
         exemptions_path,
         chrono::Utc::now().timestamp_millis(),
@@ -317,6 +319,9 @@ pub fn mejepa_ship_gate_status_payload_with_exemptions(
         "modelPromotionResetCount": stability.model_promotion_reset_count,
         "cellExemptionsPath": exemptions_path,
         "cellExemptions": cell_exemptions,
+        "activeGate": ACTIVE_PYTHON_SHIP_GATE_NAME,
+        "requiredGrid": ACTIVE_PYTHON_SHIP_GATE_GRID,
+        "requiredCellCount": ACTIVE_PYTHON_SHIP_GATE_CELL_COUNT,
         "perCellCorrelation": report.per_cell_correlation.clone(),
         "reportHash": report.determinism_hash()?,
         "holdoutCount": report.holdout_count,

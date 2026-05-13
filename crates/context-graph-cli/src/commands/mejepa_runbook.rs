@@ -15,12 +15,15 @@ use chrono::NaiveDate;
 use clap::{Args, Subcommand};
 use context_graph_mejepa::eval::store::CF_MEJEPA_EVAL_REPORTS;
 use context_graph_mejepa::eval::types::EvalReport;
-use context_graph_mejepa::eval::{cell_key, language_slug, MutationCategory};
+use context_graph_mejepa::eval::{
+    language_slug, required_active_python_ship_gate_cells, validate_active_python_ship_gate_report,
+    ACTIVE_PYTHON_SHIP_GATE_GRID, ACTIVE_PYTHON_SHIP_GATE_NAME,
+};
 use context_graph_mejepa::heal::{
     AbcPromoter, HealRocksStore, PromotionGate, PromotionLockState, RollbackEvidence,
     WitnessChainAppender,
 };
-use context_graph_mejepa::{open_infer_rocksdb, Language, RocksDbEvalStore};
+use context_graph_mejepa::{open_infer_rocksdb, RocksDbEvalStore};
 use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, WriteBatch};
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -1142,6 +1145,8 @@ pub fn run_hygiene(args: HygieneArgs) -> Result<HygieneOutput> {
 
 pub fn run_eval_ship_gate(args: EvalShipGateArgs) -> Result<EvalShipGateOutput> {
     let report = load_latest_report(&args.db_path)?;
+    validate_active_python_ship_gate_report(&report)
+        .map_err(|err| anyhow!("MEJEPA_RUNBOOK_STALE_SHIP_GATE_GRID: {err}"))?;
     let per_cell_passing_count = report
         .per_cell_correlation
         .values()
@@ -1162,6 +1167,8 @@ pub fn run_eval_ship_gate(args: EvalShipGateArgs) -> Result<EvalShipGateOutput> 
             "column_family": CF_MEJEPA_EVAL_REPORTS,
             "selector": "load_latest_report()",
             "ship_gate_threshold": 0.95,
+            "active_gate": ACTIVE_PYTHON_SHIP_GATE_NAME,
+            "required_grid": ACTIVE_PYTHON_SHIP_GATE_GRID,
         }),
     })
 }
@@ -1174,7 +1181,9 @@ pub fn run_cell_status(args: CellStatusArgs) -> Result<CellStatusOutput> {
         ));
     }
     let report = load_latest_report(&args.db_path)?;
-    let required = required_phase_g_cells();
+    validate_active_python_ship_gate_report(&report)
+        .map_err(|err| anyhow!("MEJEPA_RUNBOOK_STALE_SHIP_GATE_GRID: {err}"))?;
+    let required = required_active_python_ship_gate_cells();
     let mut rows = Vec::with_capacity(required.len());
     let mut observed_cell_count = 0usize;
     let mut passing_cell_count = 0usize;
@@ -1230,32 +1239,11 @@ pub fn run_cell_status(args: CellStatusArgs) -> Result<CellStatusOutput> {
             "db_path": args.db_path,
             "column_family": CF_MEJEPA_EVAL_REPORTS,
             "selector": "load_latest_report()",
-            "required_grid": "8 mutation categories x 10 non-Python fixture languages",
+            "required_grid": ACTIVE_PYTHON_SHIP_GATE_GRID,
+            "active_gate": ACTIVE_PYTHON_SHIP_GATE_NAME,
             "threshold": args.threshold,
         }),
     })
-}
-
-fn required_phase_g_cells() -> Vec<(MutationCategory, Language, String)> {
-    let languages = [
-        Language::Rust,
-        Language::Javascript,
-        Language::Typescript,
-        Language::Go,
-        Language::Java,
-        Language::C,
-        Language::Cpp,
-        Language::CSharp,
-        Language::Ruby,
-        Language::Php,
-    ];
-    let mut cells = Vec::with_capacity(MutationCategory::all().len() * languages.len());
-    for category in MutationCategory::all() {
-        for language in languages {
-            cells.push((category, language, cell_key(category, language)));
-        }
-    }
-    cells
 }
 
 fn load_report_for_date(db_path: &Path, date: &str) -> Result<EvalReport> {
