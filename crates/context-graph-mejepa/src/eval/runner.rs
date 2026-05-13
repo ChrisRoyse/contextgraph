@@ -11,12 +11,15 @@ use super::report::seed_open_research_questions;
 use super::store::RocksDbEvalStore;
 use super::types::{
     ActiveLearningSummary, EvalConfig, EvalObservation, EvalProvenance, EvalReport, HoldoutPanel,
-    RegressionCheck,
+    RegressionCheck, StateTransferDiagnostic,
 };
 use crate::compiler::MeJepaCompiler;
+use crate::heal::drift_attribution::{
+    classify_failing_cell, FailingCellClassification, FailingCellSignature,
+};
 use crate::types::{FailedGate, RealityPrediction, TaskId, VerifyVerdict};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -119,6 +122,13 @@ impl EvalRunner {
 
         let research = seed_open_research_questions();
         self.store.persist_research_questions(&research)?;
+        let per_cell_state_transfer = compute_state_transfer_per_cell(&observations)?;
+        let failing_cell_classifications = classify_report_failing_cells(
+            &per_cell,
+            &observations,
+            &per_cell_state_transfer,
+            &self.config,
+        )?;
 
         let report = EvalReport {
             report_date: report_date.into(),
@@ -141,7 +151,8 @@ impl EvalRunner {
                 ood_escalation_count: queue.ood_escalations.len(),
             },
             state_transfer_diagnostic: state_transfer_from_observations(&observations)?,
-            per_cell_state_transfer: compute_state_transfer_per_cell(&observations)?,
+            per_cell_state_transfer,
+            failing_cell_classifications,
             aux_head_distillation: None,
             regression_checks,
             open_research_questions: research,
@@ -257,6 +268,48 @@ fn regression_checks(
         drop,
         passed: drop <= config.regression_max_drop,
     }]
+}
+
+fn classify_report_failing_cells(
+    per_cell: &BTreeMap<String, Option<f32>>,
+    observations: &[EvalObservation],
+    per_cell_state_transfer: &BTreeMap<String, Option<StateTransferDiagnostic>>,
+    config: &EvalConfig,
+) -> Result<BTreeMap<String, FailingCellClassification>, EvalError> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for observation in observations {
+        let key = super::types::cell_key(observation.mutation_category, observation.language);
+        *counts.entry(key).or_insert(0) += 1;
+    }
+    let mut classifications = BTreeMap::new();
+    for (cell, correlation) in per_cell {
+        if matches!(correlation, Some(value) if *value >= 0.95) {
+            continue;
+        }
+        let distribution_shift_score = per_cell_state_transfer
+            .get(cell)
+            .and_then(|diagnostic| diagnostic.as_ref())
+            .map(|diagnostic| diagnostic.wasserstein_1);
+        let signature = FailingCellSignature {
+            cell: cell.clone(),
+            correlation: *correlation,
+            holdout_count: counts.get(cell).copied().unwrap_or(0),
+            min_holdout_count: config.min_samples_per_slice,
+            embedder_pairwise_mi: None,
+            blind_spot_z: None,
+            label_disagreement_rate: None,
+            oracle_flake_rate: None,
+            distribution_shift_score,
+        };
+        let classification = classify_failing_cell(&signature).map_err(|err| {
+            EvalError::new(
+                EvalErrorCode::InvalidInput,
+                format!("failed to classify failing cell {cell}: {err}"),
+            )
+        })?;
+        classifications.insert(cell.clone(), classification);
+    }
+    Ok(classifications)
 }
 
 pub fn corpus_sha_from_holdout(holdout: &[HoldoutPanel]) -> String {

@@ -277,6 +277,7 @@ fn synthetic_dashboard_report(report_date: &str) -> EvalReport {
             performance_deploy: 0.91,
         }),
         per_cell_state_transfer,
+        failing_cell_classifications: BTreeMap::new(),
         aux_head_distillation: None,
         regression_checks: vec![RegressionCheck {
             name: "overall_correlation".to_string(),

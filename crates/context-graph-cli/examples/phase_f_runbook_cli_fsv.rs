@@ -586,6 +586,7 @@ fn build_synthetic_report(
         },
         state_transfer_diagnostic: None,
         per_cell_state_transfer: BTreeMap::new(),
+        failing_cell_classifications: BTreeMap::new(),
         aux_head_distillation: None,
         regression_checks: Vec::new(),
         open_research_questions: vec![OpenResearchQuestionStatus {

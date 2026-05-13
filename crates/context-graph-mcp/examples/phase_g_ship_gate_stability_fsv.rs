@@ -187,6 +187,7 @@ fn report(date: &str, timestamp_millis: i64, correlation: f32, passed: bool) -> 
         },
         state_transfer_diagnostic: None,
         per_cell_state_transfer: BTreeMap::new(),
+        failing_cell_classifications: BTreeMap::new(),
         aux_head_distillation: None,
         regression_checks: Vec::new(),
         open_research_questions: vec![OpenResearchQuestionStatus {

@@ -967,6 +967,7 @@ fn eval_report_with_cells(per_cell_correlation: BTreeMap<String, Option<f32>>) -
         },
         state_transfer_diagnostic: None,
         per_cell_state_transfer,
+        failing_cell_classifications: BTreeMap::new(),
         aux_head_distillation: None,
         regression_checks: vec![RegressionCheck {
             name: "perf_latency".to_string(),

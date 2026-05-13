@@ -1,6 +1,7 @@
 use super::cell_exemptions::CellExemption;
 use super::error::{EvalError, EvalErrorCode};
 use super::per_head_calibration_tracker::PredictionClassCalibration;
+use crate::heal::drift_attribution::{FailingCellClassification, FailingCellRootCause};
 use crate::types::{Language, OracleOutcome, PatchBundle, RealityPrediction, TaskContext, TaskId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -256,6 +257,7 @@ pub struct EvalReport {
     pub active_learning: ActiveLearningSummary,
     pub state_transfer_diagnostic: Option<StateTransferDiagnostic>,
     pub per_cell_state_transfer: BTreeMap<String, Option<StateTransferDiagnostic>>,
+    pub failing_cell_classifications: BTreeMap<String, FailingCellClassification>,
     pub aux_head_distillation: Option<AuxHeadDistillationSummary>,
     pub regression_checks: Vec<RegressionCheck>,
     pub open_research_questions: Vec<OpenResearchQuestionStatus>,
@@ -353,6 +355,45 @@ impl EvalReport {
             }
             if let Some(diagnostic) = diagnostic {
                 diagnostic.validate(&format!("per_cell_state_transfer.{cell}"))?;
+            }
+        }
+        for (cell, classification) in &self.failing_cell_classifications {
+            if !self.per_cell_correlation.contains_key(cell) {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!(
+                        "failing_cell_classifications.{cell} has no per_cell_correlation entry"
+                    ),
+                ));
+            }
+            if classification.cell != *cell {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!(
+                        "failing_cell_classifications key {cell} does not match payload cell {}",
+                        classification.cell
+                    ),
+                ));
+            }
+            validate_unit(
+                &format!("failing_cell_classifications.{cell}.confidence"),
+                classification.confidence,
+            )?;
+            if classification.heuristic.trim().is_empty() || classification.evidence.is_empty() {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!("failing_cell_classifications.{cell} requires heuristic and evidence"),
+                ));
+            }
+            if matches!(classification.root_cause, FailingCellRootCause::Unknown)
+                && classification.confidence > 0.50
+            {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!(
+                        "failing_cell_classifications.{cell}.unknown_confidence must be <= 0.50"
+                    ),
+                ));
             }
         }
         Ok(())

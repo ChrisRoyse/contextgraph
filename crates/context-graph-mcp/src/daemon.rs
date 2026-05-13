@@ -1320,6 +1320,7 @@ pub fn write_weekly_eval_markdown(
         fs::create_dir_all(parent)?;
     }
     let per_cell_state_transfer = render_state_transfer_per_cell_table(report);
+    let failing_cell_root_causes = render_failing_cell_root_cause_table(report);
     let per_cell_ship_gate = if report.per_cell_correlation.is_empty() {
         "- none".to_string()
     } else {
@@ -1395,6 +1396,7 @@ pub fn write_weekly_eval_markdown(
          ## Per-Prediction-Class Calibration\n\n{}\n\n\
          ## Catastrophic Events\n\n{}\n\n\
          ## Per-Cell Ship Gate Status\n\n{}\n\n\
+         ## Failing Cell Root-Cause Classification\n\n{}\n\n\
          ## Active-Learning Queue Summary\n\n\
          - queued_count: {}\n\
          - evicted_count: {}\n\
@@ -1427,6 +1429,7 @@ pub fn write_weekly_eval_markdown(
         per_prediction_class_calibration,
         catastrophic_events,
         per_cell_ship_gate,
+        failing_cell_root_causes,
         report.active_learning.queued_count,
         report.active_learning.evicted_count,
         report.active_learning.ood_escalation_count,
@@ -1502,6 +1505,48 @@ fn render_state_transfer_per_cell_table(report: &context_graph_mejepa::EvalRepor
             }),
     );
     rows.join("\n")
+}
+
+fn render_failing_cell_root_cause_table(report: &context_graph_mejepa::EvalReport) -> String {
+    let mut rows = vec![
+        "| failing_cell | root_cause | confidence | heuristic | evidence |".to_string(),
+        "|---|---|---:|---|---|".to_string(),
+    ];
+    if report.failing_cell_classifications.is_empty() {
+        rows.push("| none | unknown | 0.000000 | no_failing_cells_classified | none |".to_string());
+        return rows.join("\n");
+    }
+    rows.extend(
+        report
+            .failing_cell_classifications
+            .iter()
+            .map(|(cell, classification)| {
+                format!(
+                    "| {} | {} | {:.6} | {} | {} |",
+                    escape_markdown_table_cell(cell),
+                    failing_cell_root_cause_slug(classification.root_cause),
+                    classification.confidence,
+                    escape_markdown_table_cell(&classification.heuristic),
+                    escape_markdown_table_cell(&classification.evidence.join("; "))
+                )
+            }),
+    );
+    rows.join("\n")
+}
+
+fn failing_cell_root_cause_slug(
+    root_cause: context_graph_mejepa::heal::drift_attribution::FailingCellRootCause,
+) -> &'static str {
+    use context_graph_mejepa::heal::drift_attribution::FailingCellRootCause;
+
+    match root_cause {
+        FailingCellRootCause::InsufficientTrainingData => "insufficient_training_data",
+        FailingCellRootCause::EmbedderSignalGap => "embedder_signal_gap",
+        FailingCellRootCause::LabelNoise => "label_noise",
+        FailingCellRootCause::OracleFlakiness => "oracle_flakiness",
+        FailingCellRootCause::DistributionShift => "distribution_shift",
+        FailingCellRootCause::Unknown => "unknown",
+    }
 }
 
 fn escape_markdown_table_cell(value: &str) -> String {
@@ -1961,6 +2006,7 @@ mod tests {
             },
             state_transfer_diagnostic: None,
             per_cell_state_transfer: BTreeMap::new(),
+            failing_cell_classifications: BTreeMap::new(),
             aux_head_distillation: None,
             regression_checks: Vec::new(),
             open_research_questions: Vec::new(),
@@ -2054,6 +2100,7 @@ mod tests {
             },
             state_transfer_diagnostic: None,
             per_cell_state_transfer,
+            failing_cell_classifications: BTreeMap::new(),
             aux_head_distillation: None,
             regression_checks: Vec::new(),
             open_research_questions: Vec::new(),
@@ -2082,6 +2129,78 @@ mod tests {
         assert!(markdown.contains(
             "| subtle_flip::go | unavailable | unavailable | unavailable | collect_more_labels |"
         ));
+    }
+
+    #[test]
+    fn weekly_eval_markdown_renders_failing_cell_root_cause_table() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let markdown_path = temp.path().join("weekly.md");
+        let off_by_one_rust = context_graph_mejepa::cell_key(
+            context_graph_mejepa::MutationCategory::OffByOne,
+            context_graph_mejepa::Language::Rust,
+        );
+        let mut per_cell_correlation = BTreeMap::new();
+        per_cell_correlation.insert(off_by_one_rust.clone(), Some(0.81));
+        let mut failing_cell_classifications = BTreeMap::new();
+        failing_cell_classifications.insert(
+            off_by_one_rust.clone(),
+            context_graph_mejepa::heal::drift_attribution::FailingCellClassification {
+                cell: off_by_one_rust.clone(),
+                root_cause:
+                    context_graph_mejepa::heal::drift_attribution::FailingCellRootCause::EmbedderSignalGap,
+                confidence: 0.82,
+                heuristic: "blind_spot_z >= 2.0 or embedder_pairwise_mi <= 0.15".to_string(),
+                evidence: vec!["blind_spot_z=2.400000".to_string()],
+            },
+        );
+        let report = context_graph_mejepa::EvalReport {
+            report_date: "2026-05-13".to_string(),
+            generated_at_unix_ms: 1_778_666_683_000,
+            rolling_window_size: 4,
+            holdout_count: 1,
+            overall_correlation: Some(0.81),
+            per_category_correlation: BTreeMap::new(),
+            per_language_correlation: BTreeMap::new(),
+            per_cell_correlation,
+            cell_exemptions: BTreeMap::new(),
+            bayesian_shrinkage: BTreeMap::new(),
+            conformal_coverage_health: BTreeMap::new(),
+            ood_calibration_health: BTreeMap::new(),
+            gtau_pass_rate: BTreeMap::new(),
+            per_prediction_class_calibration: BTreeMap::new(),
+            active_learning: context_graph_mejepa::ActiveLearningSummary {
+                queued_count: 0,
+                evicted_count: 0,
+                ood_escalation_count: 0,
+            },
+            state_transfer_diagnostic: None,
+            per_cell_state_transfer: BTreeMap::new(),
+            failing_cell_classifications,
+            aux_head_distillation: None,
+            regression_checks: Vec::new(),
+            open_research_questions: Vec::new(),
+            q1_pass_rate: 1.0,
+            q2_report_correlation: Some(0.81),
+            q3_side_effect_agreement: Some(1.0),
+            ship_gate_passed: false,
+            ship_gate_failures: vec!["synthetic below threshold".to_string()],
+            provenance: context_graph_mejepa::EvalProvenance {
+                corpus_sha: "synthetic".to_string(),
+                eval_code_version: "test".to_string(),
+                calibration_version: "test".to_string(),
+                generated_by: "weekly-root-cause-unit-test".to_string(),
+            },
+            wall_clock_seconds: 0.1,
+        };
+        report.validate().expect("root-cause report is valid");
+        let operational = WeeklyOperationalSummary::new(0, 0, 0, 0, 0, 0);
+        write_weekly_eval_markdown(&markdown_path, &report, "synthetic-hash", &operational)
+            .expect("write weekly markdown");
+        let markdown = fs::read_to_string(markdown_path).expect("read weekly markdown");
+        assert!(
+            markdown.contains("| failing_cell | root_cause | confidence | heuristic | evidence |")
+        );
+        assert!(markdown.contains("| off_by_one::rust | embedder_signal_gap | 0.820000 | blind_spot_z >= 2.0 or embedder_pairwise_mi <= 0.15 | blind_spot_z=2.400000 |"));
     }
 
     #[test]

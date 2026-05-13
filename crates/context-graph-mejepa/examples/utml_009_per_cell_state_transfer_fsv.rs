@@ -283,6 +283,7 @@ fn minimal_report() -> Result<EvalReport, Box<dyn std::error::Error>> {
         },
         state_transfer_diagnostic: None,
         per_cell_state_transfer,
+        failing_cell_classifications: BTreeMap::new(),
         aux_head_distillation: None,
         regression_checks: Vec::new(),
         open_research_questions: Vec::new(),

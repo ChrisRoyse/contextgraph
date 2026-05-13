@@ -170,6 +170,7 @@ fn synthetic_report() -> EvalReport {
             performance_deploy: 0.87,
         }),
         per_cell_state_transfer,
+        failing_cell_classifications: BTreeMap::new(),
         aux_head_distillation: None,
         regression_checks: Vec::new(),
         open_research_questions: Vec::new(),
