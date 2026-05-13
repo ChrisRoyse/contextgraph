@@ -26,7 +26,7 @@
 | Local Qwen3-Coder-30B-A3B-MoE GGUF | per `memory/decisions/agent-77-...md` | already DELETED 2026-05-09 | confirm |
 | `config/ccreality_model_pins.json` (if it still exists) | `config/` | DELETE | inner-actor pin file; no forward purpose |
 | `crates/context-graph-cli/src/bin/reality-loop.rs` | crate bin | already DELETED 2026-05-09 | confirm absence; CLI inventory should not list `reality-loop` binary |
-| `target/release/reality-loop` (build artifact) | `target/release/` | DELETE next clean rebuild | builds skip it; remove stale artifact |
+| `target/release/reality-loop` (build artifact) | `target/release/` | **ABSENT / FSV-verified 2026-05-13 (#135)** | `scripts/ci/phase_h_reality_loop_binary_absence_fsv.sh` proves Cargo metadata has no `reality-loop` package/target, shared `target/` has no stale `reality-loop*` files, and an isolated release build does not produce one |
 | `mcp__cgreality__reality_run_attempt` MCP tool | `crates/context-graph-mcp/src/handlers/tools/reality_loop/` | already RETIRED (fails closed `CCREALITY_ENGINE_RETIRED`) | keep the failure path; do not re-enable |
 | `cc-reality-harness-editor` agent | `.claude/agents/` | RETIRE (mark frontmatter `status: retired`) | agent definition can stay as historical doc; do not invoke |
 | `cc-reality-diagnostician` agent | `.claude/agents/` | RETIRE | same |
