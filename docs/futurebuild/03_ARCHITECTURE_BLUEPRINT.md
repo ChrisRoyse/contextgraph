@@ -45,7 +45,7 @@ Architecture review for this project is therefore simple: for every component, i
    ┌──────────────────────────────────────────┐                │
    │   Per-chunk DDA enrichment               │                │
    │   N embedders → N + N² signals per chunk │                │
-   │   per-(category × language × embedder)   │                │
+   │   active Python category × embedder      │                │
    │   centroids → TCT Gτ guard on each       │                │
    └─────────────┬────────────────────────────┘                │
                  │                                             │
@@ -118,7 +118,7 @@ The storage block now mixes shipped and remaining work. **CF_MEJEPA_AGENT_FEEDBA
 | Continuous self-optimization daemon | shipped Phase E policy loop + FSV | `context-graph-mejepa::heal::scheduler` | tokio task: observe durable reality → drift detect → A/B/C promote → continual backprop → recalibrate |
 | Storage hygiene daemon | shipped (no scheduler) | `context-graph-mejepa-hygiene::gc` | nightly demote + compact + evict + Merkle compress |
 | Active-learning queue surfacing | shipped | `context-graph-mejepa::eval::queue` | when conformal interval > T or surprise recorded |
-| Weekly evaluation report writer | shipped | `context-graph-mejepa::eval::report` | per-(category × language) stratified ship-gate report |
+| Weekly evaluation report writer | shipped | `context-graph-mejepa::eval::report` | Python mutation-category stratified ship-gate report |
 | Witness chain + Stage 0/F/Merkle certs | shipped | `context-graph-witness` | cryptographic provenance of every step |
 | Per-step training certificate | shipped carrier + doc-11 reconciliation FSV | `context-graph-mejepa-train::cert` | hash-chained ΔP/ΔK/ΔΩ/ΔΞ + L_step per step, with explicit carrier components and source-of-truth readback |
 
@@ -374,13 +374,13 @@ Per the operator's "self-healing and self-learning property," the following inva
 
 The system gets better the more it is used because of three compounding effects:
 
-1. **Every Edit is a training example.** The shift subscriber turns every keystroke into (panel_t-1, action, panel_t) tuples. The 250ms tick rate means even a fast-typing agent contributes hundreds of tuples per session. Over weeks, the corpus grows to millions of examples beyond the seeded 7,520 Phase C rows (2,400 Python SWE-bench rows + 5,120 non-Python fixture rows).
+1. **Every Edit is a training example.** The shift subscriber turns every keystroke into (panel_t-1, action, panel_t) tuples. The 250ms tick rate means even a fast-typing agent contributes hundreds of tuples per session. Over weeks, the active Python corpus grows to millions of examples beyond the seeded 2,400 SWE-bench Python rows; the 5,120 non-Python fixture rows remain archived future-generalization evidence and do not define the current ship gate.
 
 2. **Surprise events get over-sampled.** The agent-feedback channel multiplies the sampling weight of examples where the prediction was wrong. A surprised agent tells ME-JEPA "look here," and ME-JEPA's next epoch over-samples the chunks involved by 2–10× depending on severity. This is the active-learning loop closed.
 
 3. **Operator-override examples are gold.** When the operator confirms or overrides a prediction via the active-learning queue, the example is sampled at 6× the base rate and Fisher-protected against catastrophic forgetting. Operator labels become permanent anchors.
 
-The result: in a session-week of normal Claude Code usage, ME-JEPA accumulates roughly an order of magnitude more training data than the completed Phase C seed corpus, weighted toward the examples that matter most. Per the UTML §VII consolidation integral M(t), with `k_replay ≈ 3` during periodic full-retrain phases and `τ_decay ≈ 365 days` for high-Fisher consolidated examples, the system's effective training corpus grows monotonically. The Phase 8 evaluation report tracks `prediction_oracle_correlation` per (category × language) over rolling windows; a stable monotone climb toward ≥ 0.95 is the empirical signature that self-learning is working.
+The result: in a session-week of normal Claude Code usage, ME-JEPA accumulates roughly an order of magnitude more Python code-reality training data than the active Phase C Python seed corpus, weighted toward the examples that matter most. Per the UTML §VII consolidation integral M(t), with `k_replay ≈ 3` during periodic full-retrain phases and `τ_decay ≈ 365 days` for high-Fisher consolidated examples, the system's effective training corpus grows monotonically. The Phase G evaluation report tracks `prediction_oracle_correlation` per Python mutation category over rolling windows; a stable monotone climb toward ≥ 0.95 is the empirical signature that self-learning is working.
 
 ---
 
@@ -437,8 +437,8 @@ Implementing this architecture means delivering, in order:
 4. **`CF_MEJEPA_DDA_SIGNALS` + `CF_MEJEPA_FAILURE_EXEMPLARS`** for the multi-head label substrate. Shipped; DDA rows are persisted and read back.
 5. **Prediction-injection hook** so that `RealityPrediction` is rendered into UserPromptSubmit context for the agent. Shipped.
 6. **Neural and algorithmic per-embedder forward wrappers** replacing placeholder-only paths. Shipped for the 12 active content slots with full routing/readback FSV.
-7. **Per-language mutation operators** so the corpus covers all 11 languages, not just Python. Shipped for the 10 non-Python fixture languages plus the Python SWE-bench Lite 300x8 corpus.
-8. **Full 300×8 corpus run and rolling holdout FSV** so the predictor trains against real durable reality. The evidence exists; the measured ship gate is not green yet (`0.866667` vs `0.95`), which means Phase G convergence is not complete.
+7. **Python mutation-category ship gate first.** Shipped language tooling and archived non-Python fixture rows remain useful for later generalization, but the current review-replacement product is the Python SWE-bench Lite 300x8 corpus.
+8. **Full 300×8 Python corpus run and rolling holdout FSV** so the predictor trains against real durable Python code reality. The evidence exists; the measured ship gate is not green yet (`0.866667` vs `0.95`), which means Phase G convergence is not complete.
 9. **Production rolling-window telemetry** for conformal coverage, OOD, p50/p99, VRAM, and ship-gate trends, per [#11](https://github.com/ChrisRoyse/contextgraph/issues/11).
 10. **UTML carrier reconciliation** so training certs prove the production formulas they claim. This is physically verified at `/mnt/d/contextgraph/fsv/contextgraph-utml-fsv/utml-fsv-summary.json`.
 11. **The refactored `.claude/loop.md`** that aligns the per-tick agent behavior with this architecture (Mode A becomes "ship a futurebuild deliverable"; the dual-mode A/B split is retired).

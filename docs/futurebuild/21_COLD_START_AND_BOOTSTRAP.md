@@ -24,7 +24,7 @@ Calling `mejepa_verify(patch, context)` in this state must NOT return a dangerou
 
 State:
 - Predictor weights: seeded from a "baseline" checkpoint shipped under `models/mejepa-baseline-vN.safetensors` (small model, trained on the completed Phase C seed corpus during release prep).
-- Constellation: bootstrapped from the completed Phase C seed corpus (2,400 Python SWE-bench rows + 5,120 non-Python fixture rows, with Bayesian-shrunk centroids per `04 §4`).
+- Constellation: bootstrapped from the completed active Phase C Python seed corpus (2,400 SWE-bench rows, with Bayesian-shrunk centroids per `04 §4`). The 5,120 non-Python fixture rows are archived future-generalization evidence and are not part of the current ship gate.
 - Conformal predictor: bootstrapped on the same seed corpus's holdout split.
 - Patch-similarity graph: bootstrapped from seed corpus.
 
@@ -115,7 +115,7 @@ If a cell has zero examples (e.g., a language × entity-type combination not in 
 | 4-7 | Conformal coverage stabilizing; constellation centroids refitting per-cell as N crosses thresholds |
 | 7+ | Steady-state operation |
 
-If by day 14, ship-gate per-(category × language) is not approaching 0.85 in any cell, escalate per `19 §10`.
+If by day 14, the Python mutation-category ship gate is not approaching 0.85 in any cell, escalate per `19 §10`.
 
 ---
 

@@ -238,7 +238,7 @@ Re-init of one head's dormant units does not perturb other heads (they share the
 
 ---
 
-## 11. State-transfer T per (category × language)
+## 11. State-transfer T per Python mutation category
 
 Per `11 §8` + REQ-UTML-08 (shipped), state-transfer T is the train→deploy distribution gap:
 
@@ -247,13 +247,13 @@ T_global(train, deploy) = exp(−d(P_train, P_deploy) / λ)
 performance_deploy = M(t) · T_global(train, deploy)
 ```
 
-Multi-head extension: compute T per (mutation_category × language) cell:
+Multi-head extension for the active Phase G gate: compute T per Python mutation-category cell:
 
 ```
-T_cell(c, l) = exp(−d(P_train_cell(c, l), P_deploy_cell(c, l)) / λ_cell)
+T_cell(c, python) = exp(−d(P_train_cell(c, python), P_deploy_cell(c, python)) / λ_cell)
 ```
 
-Phase 8's per-(category × language) stratified evaluation already computes this implicitly by reporting per-cell correlations. The futurebuild extension makes T explicit per cell so the active-learning queue can prioritize cells with low T (the deploy distribution drifted from training).
+Phase G's Python mutation-category stratified evaluation already computes this implicitly by reporting per-cell correlations. The futurebuild extension makes T explicit per cell so the active-learning queue can prioritize Python cells with low T (the deploy distribution drifted from training). Non-Python cells are future generalization, not the current ship gate.
 
 ---
 

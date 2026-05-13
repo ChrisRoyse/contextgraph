@@ -129,7 +129,7 @@ Plus, on the operator side:
 | MCP daemon mode (the supervised-process container) | YES (code + template + FSV) | `--daemon-server-only --d-root`; supervisor in `crates/context-graph-mcp/src/daemon.rs`; durable `CF_MEJEPA_FLYWHEEL_JOB_RUNS`; `scripts/systemd/mejepa-daemon.service`; fresh-host operator install/runbook remains |
 | Weekly evaluation cron | partial (daemon scheduler FSV exists) | weekly daemon task runs holdout eval, writes reports/status, and records job-run rows; missing populated production holdout feed + operator dashboard/runbook |
 
-**The unshipped pieces are production hardening and model-quality work, not new Phase A-E architecture:** weekly production evaluation/dashboard cadence, per-head holdout gates, non-Python analyzer parity expansion, Phase G convergence to the 0.95 ship gate, and operator packaging. Phase A-E now provides the durable reward-signal substrate that Phase F/G consumes.
+**The unshipped pieces are production hardening and model-quality work, not new Phase A-E architecture:** weekly production evaluation/dashboard cadence, per-head holdout gates, Python Phase G convergence to the 0.95 ship gate, and operator packaging. Phase A-E now provides the durable reward-signal substrate that Phase F/G consumes.
 
 ---
 
@@ -365,7 +365,7 @@ Tier transition decisions are made by `hygiene::tier::tier_for_score` based on `
 4. **Asynchronous oracle-binding** path inside observe(). (`TASK-FLYWHEEL-004`)
 5. **`mejepa_record_agent_feedback` MCP tool** + `CF_MEJEPA_AGENT_FEEDBACK` + sampling-weight bump wiring. (`TASK-PREDICT-002`, complete)
 6. **Active-learning queue surfacing** of agent-flagged surprises. (`TASK-FLYWHEEL-005`, complete)
-7. **Weekly evaluation report cron** that runs `mejepa_eval_run` and writes the per-(category × language) report. (`TASK-OBS-001`)
+7. **Weekly evaluation report cron** that runs `mejepa_eval_run` and writes the Python mutation-category ship-gate report. (`TASK-OBS-001`)
 8. **CF additions** for the new flywheel CFs in the shared `context-graph-mejepa-cf` registry. (`TASK-FLYWHEEL-006`)
 
 All listed in [`13_TASK_INDEX.md`](13_TASK_INDEX.md).

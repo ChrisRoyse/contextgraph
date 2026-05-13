@@ -140,7 +140,7 @@ Per `docs/ruvectorfindings/specs/_README.md` Phase 5 (REQ-HEAL-04), shipped:
 For every potential promotion, all three are evaluated on the holdout split:
 
 ```
-A: holdout correlation 0.91 per (mutation_category × language)
+A: holdout correlation 0.91 per Python mutation category
 B: holdout correlation 0.93 with 1.8x slower inference
 C: holdout correlation 0.94 with 1.4x slower inference
 ```
@@ -164,7 +164,7 @@ Catastrophic   : rolling_accuracy < 80%
 ```
 
 Phase E operational policy:
-- **Per-(category × language) stratification.** Per-cell observations and eval-report cells are tracked separately so a single regressing language/category can trigger LoRA refresh or full-retrain approval without hiding behind the global average.
+- **Python mutation-category stratification.** Per-category observations and eval-report cells are tracked separately so a single regressing Python mutation category can trigger LoRA refresh or full-retrain approval without hiding behind the global average.
 - **Bayesian posterior on small windows.** When per-cell sample count is small, Jeffreys-prior Beta posterior classification replaces raw point estimates; the FSV includes both catastrophic 0/10 and noisy 7/10 windows.
 - **Surprise-event-weighted drift.** Agent-flagged catastrophic surprises persist fast-path records with 4x drift weight before ordinary uncertainty backlog.
 
@@ -321,7 +321,7 @@ After the self-healing scheduler ships, the operator's role narrows from "monito
 | Operator action | Frequency | Purpose |
 |---|---|---|
 | Approve Catastrophic-class A/B/C promotions | as triggered (rare) | guard against regression on rare events |
-| Review weekly evaluation report | weekly | confirm ship-gate metrics, per-(category × language) trends |
+| Review weekly evaluation report | weekly | confirm ship-gate metrics and Python mutation-category trends |
 | Triage active-learning queue (top-N labels) | weekly or as queue grows | provide gold-standard labels for hard examples |
 | Inspect pairwise MI matrix when audit flags slot | quarterly or as flagged | decide whether to retire / recalibrate / accept |
 | Adjust scheduler tick periods, drift thresholds, severity bumps | as needed | policy tuning |

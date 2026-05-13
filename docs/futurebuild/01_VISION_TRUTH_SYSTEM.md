@@ -10,7 +10,7 @@ Every AI coding agent today (Claude Code, Cursor, Copilot, Devin, the swarm-of-a
 
 ## 2. The thesis
 
-**Human review of AI-produced code is unjustified the moment a system can predict — to a calibrated, auditable certainty — what the deterministic reality oracle would say if the code were actually run.** That predictive system is ME-JEPA-Code. When it stably reaches `prediction_oracle_correlation ≥ 0.95` across all 8 mutation categories AND all supported languages on rolling-window holdout, the verifier *is* the system. Humans become spot-checkers of the verifier-of-the-verifier.
+**Human review of AI-produced code is unjustified the moment a system can predict — to a calibrated, auditable certainty — what the deterministic reality oracle would say if the code were actually run.** That predictive system is ME-JEPA-Code. The current ship path is Python-first: when it stably reaches `prediction_oracle_correlation >= 0.95` across the 8 Python mutation categories on rolling-window holdout for the 300×8 SWE-bench Lite Python corpus, the verifier *is* the system for Python AI-generated patches. Humans become spot-checkers of the verifier-of-the-verifier. Other languages are later generalization work, not the active gate.
 
 ## 2.1 Product boundary
 
@@ -28,13 +28,13 @@ That means the project optimizes for **reality-prediction accuracy**, not agent 
 
 The 0.95 prediction-oracle correlation gate is the *only* metric that closes the truth system. Every other Phase A–F item exists to feed the training loop that closes it. Specifically:
 
-- **The 300×8 SWE-bench Lite Python corpus on `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/` is the ground-truth training set** for Phase G. Each task ships with the upstream SWE-bench instance metadata, the gold patch + gold tests, and the per-task Docker oracle so we know unambiguously which mutated variants should `Pass` and which should `Fail`. The combined 5,120-row non-Python fixture corpus at `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/` provides the cross-language generalization sample.
-- **Every corpus row must flow end-to-end through the trained ME-JEPA stack**, not just be sampled by FSV smoke harnesses. The 11-language AST chunker → per-chunk embedder forwards (12 active content slots) → 15-slot frozen instrument panel → DDA signal compute → TCT cell membership → predictor forward → conformal calibration → oracle reconciliation pipeline must materialize per task and per mutation category. Phase G's per-cell ship-gate is the source of truth that this pipeline is operating at full coverage, not just on the example samples used for FSV.
-- **Reward-signal density per teleological constellation cell is the convergence currency.** Per `13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md §1.1`, each chunk produces N · (N + N²) ≈ 462 reward signals at N=21 active embedders: per-embedder cosine to the cell's centroid, strict-upper-triangle pairwise cosine across embedders, strict-upper-triangle pairwise MI, plus blind-spot z-scores between the primary embedder and each enhancer embedder. Phase G must run this signal extraction across the entire corpus, persist every signal into `CF_MEJEPA_DDA_SIGNALS`, and converge the predictor against the resulting reward field until each (mutation_category × language) cell beats the 0.95 threshold.
+- **The 300×8 SWE-bench Lite Python corpus on `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/` is the ground-truth training set** for Phase G. Each task ships with upstream SWE-bench instance metadata, the gold patch + gold tests, and the per-task Docker oracle so we know unambiguously which mutated variants should `Pass` and which should `Fail`. The 5,120-row non-Python fixture corpus at `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/` is archived future-generalization evidence; it does not participate in the current Python human-review-replacement gate.
+- **Every Python corpus row must flow end-to-end through the trained ME-JEPA stack**, not just be sampled by FSV smoke harnesses. Python AST chunking → per-chunk embedder forwards (12 active content slots) → 15-slot frozen instrument panel → DDA signal compute → TCT cell membership → predictor forward → conformal calibration → oracle reconciliation must materialize per task and per mutation category. Phase G's Python per-cell ship gate is the source of truth that this pipeline is operating at full coverage, not just on the example samples used for FSV.
+- **Reward-signal density per teleological constellation cell is the convergence currency.** Per `13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md §1.1`, each chunk produces N · (N + N²) ≈ 462 reward signals at N=21 active embedders: per-embedder cosine to the cell's centroid, strict-upper-triangle pairwise cosine across embedders, strict-upper-triangle pairwise MI, plus blind-spot z-scores between the primary embedder and each enhancer embedder. Phase G must run this signal extraction across the entire Python corpus, persist every signal into `CF_MEJEPA_DDA_SIGNALS`, and converge the predictor against the resulting reward field until each `(mutation_category × Python)` cell beats the 0.95 threshold.
 - **The training pipeline is JEPA-classic by construction.** The frozen instruments produce `f_target(panel_t2)` with zero trainable parameters, so `ΔΞ.target_collapse = 0` by structure. The predictor's only job is to learn `f_predictor(panel_t1) → f_target(panel_t2)` for every reality-shift the corpus encodes. Phase G is the controlled training run that drives this objective to convergence.
 - **Operator overrides + agent-feedback events fold back into training as 6×-weighted reward.** TASK-PREDICT-012 persists overrides into `CF_MEJEPA_OPERATOR_OVERRIDES`, and the Phase F follow-up consumer wiring now upweights affected chunks in the next training step. Phase G uses that reward pressure during corpus and live convergence runs.
 
-Phase G therefore decomposes into a concrete set of atomic, FSV-able tasks: corpus-wide panel materialization, per-cell training and eval drivers, conformal recalibration after each promotion, holdout rotation, per-head fail-closed audits, adversarial-corpus retrains, and the rolling-window stability assertion. The blind-spot doc enumerates these as `TASK-G-*` issues filed to GitHub.
+Phase G therefore decomposes into a concrete set of atomic, FSV-able tasks: Python corpus-wide panel materialization, Python per-cell training and eval drivers, conformal recalibration after each promotion, holdout rotation, per-head fail-closed audits, Python adversarial/weak-cell retrains, and the rolling-window stability assertion. The task index enumerates these as Python-first `TASK-PY-G-*` GitHub issues.
 
 ## 2.2 Research alignment
 
@@ -83,7 +83,7 @@ RealityEvent = {
 
 Every field is either physically observed or absent. Missing source-of-truth data is a fail-closed diagnostic, not a default label. No synthetic pass/fail label can satisfy a ship gate. Synthetic inputs are allowed only for manual FSV when the expected output is known and the persisted result is independently read back.
 
-The reward target is teleological: what changed, what purpose it served, what deterministic oracle observed, what side effects appeared, and where ME-JEPA's prediction diverged from durable reality. Teleological constellations are the compressed geometry of those purpose/outcome relationships; they must cover all observed `(mutation_category, language, entity_family, embedder, chunk_type)` cells that reality actually emits.
+The reward target is teleological: what changed, what purpose it served, what deterministic oracle observed, what side effects appeared, and where ME-JEPA's prediction diverged from durable reality. Teleological constellations are the compressed geometry of those purpose/outcome relationships; the active Python ship gate requires coverage for all observed `(mutation_category, Python, entity_family, embedder, chunk_type)` cells that the SWE-bench corpus and live AI-agent Python edits emit.
 
 ## 3.2 Phase E reality-compiler loop
 
@@ -150,22 +150,22 @@ The closed loop: predictions feed back to Claude Code as a `RealityPrediction` i
 
 **For an operator monitoring the system:**
 
-1. A weekly evaluation report shows `prediction_oracle_correlation` per (mutation_category × language) on rolling-window holdout against the real 300×8 corpus, with per-language stratified conformal coverage and OOD AUC.
+1. A weekly evaluation report shows `prediction_oracle_correlation` per Python mutation category on rolling-window holdout against the real 300×8 corpus, with Python-stratified conformal coverage and OOD AUC.
 2. Active-learning queue surfaces the 30 most uncertain real-world patches for Docker oracle re-run.
-3. Drift detector flags any per-language conformal-coverage regression > 5% over the last 1,000 attempts.
+3. Drift detector flags any Python cell conformal-coverage regression > 5% over the last 1,000 attempts.
 4. Self-healing scheduler runs A/B/C promotion automatically when drift is detected; operator approves only the catastrophic-drift retrain.
 5. Storage hygiene runs nightly GC, demoting cool panels to lower tier compression, evicting beyond-quota.
 
 **For the project as a whole:**
 
-The line in the sand is: when ME-JEPA's per-(category × language) correlation is stable at ≥ 0.95 over four consecutive rolling windows on the full 300×8 SWE-bench Lite corpus, **the system is the verifier**. Code-review-as-a-gate becomes statistically unjustified for any patch that ME-JEPA gives `Verdict::Pass` to with confidence above the ship-gate threshold. That doesn't eliminate the role of senior engineers — it shifts them from "did the AI do what it said" to "is the verifier itself still calibrated, and what does the active-learning queue say." Per `docs/ruvectorfindings/13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md §6`: the role becomes "occasional spot-checker of the verifier-of-the-verifier."
+The line in the sand is: when ME-JEPA's per-Python-mutation-category correlation is stable at >= 0.95 over four consecutive rolling windows on the full 300×8 SWE-bench Lite Python corpus, **the system is the verifier for Python AI-generated patches**. Code-review-as-a-gate becomes statistically unjustified for any Python patch that ME-JEPA gives `Verdict::Pass` to with confidence above the ship-gate threshold. That doesn't eliminate the role of senior engineers — it shifts them from "did the AI do what it said" to "is the verifier itself still calibrated, and what does the active-learning queue say." Per `docs/ruvectorfindings/13_TELEOLOGICAL_CONSTELLATION_TRAINING_MEJEPA.md §6`: the role becomes "occasional spot-checker of the verifier-of-the-verifier."
 
 ## 7. What this is not
 
 - **Not a replacement for intent.** The agent (and the operator behind it) still says what they want done. ME-JEPA verifies the *result*.
 - **Not a replacement for tests.** Tests are part of the truth signal; ME-JEPA predicts what tests would say. When ME-JEPA is wrong, the test outcome is the ground truth that retrains it.
 - **Not a hallucination detector for natural language.** ME-JEPA cares about bytes on disk and oracle outcomes, not about whether the agent's prose is accurate. If the agent says "I think this is right" without editing anything, ME-JEPA returns "no shift, no prediction needed."
-- **Not language-restricted.** The architecture is language-agnostic; per-language operators are an operational extension, not a model rebuild.
+- **Not permanently language-restricted.** The architecture is language-agnostic, but the active ship path is Python. Per-language operators are a later operational extension after the Python truth system is green.
 - **Not domain-restricted.** ME-JEPA-Code is the code-domain instance of TCT; ME-JEPA-Voice / ME-JEPA-Image / ME-JEPA-X follow the same template (frozen instruments + predictor + Gτ guard + observe/EWC++/A/B/C).
 
 ## 8. Falsifiable predictions about the end state
@@ -174,8 +174,8 @@ Per the operator's stated invariant ("system is built to improve continuously wi
 
 | Prediction | Falsifier |
 |---|---|
-| `prediction_oracle_correlation` ≥ 0.95 stable over 4 consecutive rolling windows on 300×8 SWE-bench Lite | Any window drops below 0.92 without a coincident known infrastructure incident |
-| Per-language conformal coverage stays within 88-92% of stated 90% ± 2% on holdout for each of the 11 supported languages | Any language exceeds ±5% deviation for two consecutive evaluation cycles |
+| `prediction_oracle_correlation` >= 0.95 stable over 4 consecutive rolling windows on 300×8 SWE-bench Lite Python | Any window drops below 0.92 without a coincident known infrastructure incident |
+| Python-cell conformal coverage stays within 88-92% of stated 90% ± 2% on holdout for each Python mutation category | Any Python mutation category exceeds ±5% deviation for two consecutive evaluation cycles |
 | OOD AUC ≥ 0.85 between in-distribution and synthetic OOD inputs | Any week below 0.80 |
 | Subscriber p50 latency < 5s, p99 < 30s under production traffic (every Edit shift → panel materialized → ME-JEPA prediction available) | Two weeks at p99 ≥ 60s |
 | Self-healing detects soft drift (88-85%) within 1,000 observations and promotes mode-winner without operator intervention | Operator forced to manually trigger A/B/C in any non-catastrophic case |

@@ -245,11 +245,13 @@ The whole pipeline takes ≤ 5s p50 / 30s p99 per `REQ-SHIFT-03`, ensuring the p
 
 ## 7. What the per-language operator extension changed
 
-As of 2026-05-12, the chunker handles all 11 languages and Phase C has a verified non-Python fixture corpus. The Python SWE-bench corpus remains the real Docker-oracle corpus; the 10 non-Python languages now have deterministic fixture corpora with real toolchain validation. Source of truth:
+As of 2026-05-12, the chunker handles all 11 languages and Phase C has a verified archived non-Python fixture corpus. The Python SWE-bench corpus remains the active real Docker-oracle corpus; the 10 non-Python languages have deterministic fixture corpora with real toolchain validation for future generalization. Source of truth:
 
 - Python: `/mnt/d/contextgraph/corpus/swebench-lite-python-300x8-v1-20260511/` — 2,400 verified entries.
-- Non-Python: `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/` — 5,120 verified entries, 512 per non-Python language, 64 per `(language × category)` cell.
+- Archived non-Python: `/mnt/d/contextgraph/corpus/phase-c-non-python-fixtures-v1-20260512/` — 5,120 verified entries, 512 per non-Python language, 64 per `(language × category)` cell.
 - Combined Phase C split: `/mnt/d/contextgraph/fsv/corpus-fsv/split_full.json` — `passes=true`, 940 tasks, bucket sizes `[752, 94, 94]`.
+
+**Active execution scope:** Phase G consumes the Python SWE-bench corpus as the ship corpus. Non-Python fixture rows are archived future-generalization evidence and must not drive the current ME-JEPA-Code review-replacement gate.
 
 - **Rust**: 8 operators ported. `SubtleFlip` swaps `==` ↔ `!=`, `<=` ↔ `>=`, `&&` ↔ `||`. `OffByOne` perturbs integer literals. `SwapVariable` renames a local var. `DeleteTestCall` removes one `assert!` / `assert_eq!`. `WrongFile` patches a sibling. `OverEngineer` appends an unused fn. `CompileError` introduces a syntax error. `KnownGood` echoes.
 - **JS/TS**: same 8, JS/TS-aware. `SubtleFlip` swaps equality/comparison/logical operators and boolean literals while requiring the mutated source to remain parseable. `OffByOne` perturbs numeric literals. Etc.
@@ -257,7 +259,7 @@ As of 2026-05-12, the chunker handles all 11 languages and Phase C has a verifie
 - **Java**: same 8, Java-aware. `SubtleFlip` swaps `==` ↔ `!=` for primitives, `.equals` ↔ `!.equals` for objects. Etc.
 - **C/C++/C#/Ruby/PHP**: same 8, language-aware.
 
-The non-Python implementation is currently shared generic operator logic in `crates/context-graph-mejepa-corpus/src/generic_language_ops.rs`, exercised through `apply_mutation_for_language`, not one file per language. `generate-fixtures` produces fixture tasks and `phase-c-verify` verifies the combined Python + non-Python corpus. Future corpus broadening can add scraped/public CI corpora, but the Phase C ship gate no longer waits on that.
+The archived non-Python implementation is shared generic operator logic in `crates/context-graph-mejepa-corpus/src/generic_language_ops.rs`, exercised through `apply_mutation_for_language`, not one file per language. `generate-fixtures` produces fixture tasks and `phase-c-verify` verifies the combined Python + archived non-Python corpus. Future corpus broadening can add scraped/public CI corpora, but the active Phase G ship gate no longer waits on that.
 
 ---
 
@@ -302,7 +304,7 @@ Per `docs/ruvectorfindings/specs/_README.md` Phase 6, the system has a **115 GB 
 2. **Wire DDA signal computation** as a step between embedder forward and panel assembly. The compute/store API, RocksDB FSV, and live shift-subscriber write/readback path are shipped for real algorithmic forward outputs.
 3. **Open `CF_MEJEPA_DDA_SIGNALS` and `CF_MEJEPA_FAILURE_EXEMPLARS` in inference runtime.** Shipped 2026-05-12; this fixed the root cause where the CF constants existed but `open_infer_rocksdb` did not open them.
 4. **Multi-head extensions** to the predictor that consume DDA signals as auxiliary features. Phase B schema/API code exists; trained DDA feature consumption remains open.
-5. **Per-language mutation operators** for the 10 non-Python languages are complete in Phase C. Future work here is corpus broadening, not the Phase C ship gate.
+5. **Python mutation-category convergence first.** The 10 non-Python fixture operators are archived complete Phase C evidence, but Phase G work here is Python DDA/TCT reward-signal density, Q1-Q5 calibration, and the 8 Python mutation-category ship gate.
 6. **Pairwise MI heatmap renderer** as an operator UI surface. (Task: `TASK-OBS-002-mi-heatmap-renderer.md`.)
 7. **Constellation refresh trigger** wired into the continuous self-optimization daemon. (Task: `TASK-HEAL-005-constellation-refresh.md`.)
 

@@ -81,7 +81,7 @@ Per `09_SELF_HEALING_AUTONOMY.md §3` + REQ-HEAL-FB-08: catastrophic A/B/C promo
 
 ### 3.5 Per-cell promotion criterion
 
-Per REQ-HEAL-FB-11: promotions require every (category × language) cell to hold or improve. An agent biasing one cell can't promote a model that regresses other cells.
+Per REQ-HEAL-FB-11 under the active Python gate: promotions require every Python mutation-category cell to hold or improve. An agent biasing one cell can't promote a model that regresses other cells.
 
 ---
 

@@ -38,7 +38,7 @@
 | D14 | Cross-cutting integration tests (provenance integrity, watermark restart-safety, scheduler+drift+heal end-to-end) | only per-task FSV exists | covered in `18_INTEGRATION_AND_E2E_TESTING.md` |
 | D15 | Health & readiness endpoints (HTTP probe, not just MCP) | for k8s/systemd health checks | new `TASK-OBS-014-health-readiness-endpoint` |
 | D16 | Log aggregation and rotation policy | `logs/` mentioned but no rotation rules | new `TASK-OBS-015-log-rotation-policy` |
-| D17 | Per-(category × language) ship-gate exemption (some cells may be impossible) | impossible cells should be marked exempt, not blocking ship gate | new `TASK-EVAL-001-cell-exemption-policy` |
+| D17 | Python mutation-category ship-gate exemption (some cells may be impossible) | impossible Python cells should be marked exempt, not blocking ship gate | new `TASK-PY-G-036-python-cell-exemption-policy` |
 | D18 | Prediction explanation for non-technical operators (executive summary) | rich `RealityPrediction` is verbose; need executive view | new `TASK-OBS-016-executive-summary-renderer` |
 | D19 | Data retention policy beyond GC (legal / compliance hold) | none currently | new `TASK-HYG-001-data-retention-policy` |
 | D20 | Cross-machine / multi-node deployment (operator runs daemon on different hardware) | implicitly single-machine; document the boundary | `23 §6` |

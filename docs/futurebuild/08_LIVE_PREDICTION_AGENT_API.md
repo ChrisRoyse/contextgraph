@@ -275,7 +275,7 @@ Remaining work: refresh the renderer so every Phase B Q1-Q5 field is surfaced us
 Already shipped:
 - `mejepa_active_learning_queue` — operator surfaces top-N most uncertain predictions for label
 - `mejepa_eval_run` — operator triggers a holdout-eval run (or it runs on a weekly cron)
-- `mejepa_ship_gate_status` — current ≥0.95 ship-gate status per (category × language)
+- `mejepa_ship_gate_status` — current ≥0.95 ship-gate status per Python mutation category
 - `mejepa_eval_build_graph` — patch-similarity graph builder
 
 Extension:
