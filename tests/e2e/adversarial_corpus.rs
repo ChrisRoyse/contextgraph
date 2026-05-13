@@ -238,6 +238,14 @@ pub fn run_adversarial_corpus_fsv(fsv_root: &Path) -> Result<AdversarialCorpusFs
 
     let total_cases = happy_path.len() as u64;
     let non_pass_count = happy_path.iter().filter(|case| case.pass).count() as u64;
+    let live_rows_before = cf_counts_before
+        .get(CF_MEJEPA_LIVE_PREDICTIONS)
+        .copied()
+        .unwrap_or(0);
+    let live_rows_after = reopened_counts
+        .get(CF_MEJEPA_LIVE_PREDICTIONS)
+        .copied()
+        .unwrap_or(0);
     let high_confidence_false_passes = happy_path
         .iter()
         .filter(|case| {
@@ -262,6 +270,7 @@ pub fn run_adversarial_corpus_fsv(fsv_root: &Path) -> Result<AdversarialCorpusFs
         && non_pass_rate >= MIN_NON_PASS_RATE
         && high_confidence_false_passes == 0
         && categories_with_exactly_ten_cases
+        && live_rows_after == live_rows_before + total_cases
         && happy_path.iter().all(|case| case.pass)
         && boundary_cases.iter().all(|case| case.pass)
         && reopened_counts == cf_counts_after;
@@ -546,7 +555,7 @@ fn validate_cases(cases: &[AdversarialCase]) -> Result<()> {
         AdversarialCategory::KnownGoodLookalike,
         AdversarialCategory::EmbedderTargeted,
     ] {
-        let count = counts.get(category.as_str()).copied().unwrap_or_default();
+        let count = counts.get(category.as_str()).copied().unwrap_or(0);
         ensure!(
             count == 10,
             "MEJEPA_ADVERSARIAL_CATEGORY_COUNT: {}={count}",
@@ -590,22 +599,21 @@ fn boundary_empty_diff(fixture_root: &Path, cases: &[AdversarialCase]) -> Result
 fn boundary_duplicate_case_id(cases: &[AdversarialCase]) -> Result<BoundaryEvidence> {
     let before = json!({"caseCount": cases.len()});
     let mut duplicate = cases.to_vec();
-    duplicate.push(
-        cases
-            .first()
-            .ok_or_else(|| anyhow!("MEJEPA_ADVERSARIAL_CASE_COUNT: no cases"))?
-            .clone(),
+    ensure!(
+        duplicate.len() >= 2,
+        "MEJEPA_ADVERSARIAL_CASE_COUNT: not enough cases"
     );
+    duplicate[1] = duplicate[0].clone();
     let err = validate_cases(&duplicate).expect_err("duplicate case id must fail closed");
     let after = json!({"caseCount": cases.len()});
     Ok(BoundaryEvidence {
         case: "duplicate_case_id_rejected".to_string(),
         trigger: "validate adversarial corpus with duplicate id".to_string(),
-        expected_error_code: "MEJEPA_ADVERSARIAL_CASE_COUNT".to_string(),
+        expected_error_code: "MEJEPA_ADVERSARIAL_DUPLICATE_CASE".to_string(),
         actual_error_code: error_code(&err),
         before,
         after,
-        pass: error_code(&err) == "MEJEPA_ADVERSARIAL_CASE_COUNT",
+        pass: error_code(&err) == "MEJEPA_ADVERSARIAL_DUPLICATE_CASE",
     })
 }
 

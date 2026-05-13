@@ -1256,6 +1256,7 @@ dependencies = [
 name = "context-graph-mejepa-hygiene"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "chrono",
  "context-graph-mejepa-cf",
  "context-graph-tier-compression",

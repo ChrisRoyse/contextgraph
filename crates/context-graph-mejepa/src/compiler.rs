@@ -398,6 +398,9 @@ impl MeJepaCompiler {
             Err(err) => return Err(err),
         };
 
+        // Persist compiled predictions before downstream gates so escalations remain replayable.
+        self.store.write_live_prediction(&prediction)?;
+
         if prediction.ood_score > self.config.ood_refuse_threshold {
             return Ok(VerifyVerdict::EscalateToHuman {
                 reality_prediction: Some(prediction.clone()),
@@ -473,7 +476,6 @@ impl MeJepaCompiler {
             });
         }
 
-        self.store.write_live_prediction(&prediction)?;
         Ok(VerifyVerdict::Approve {
             reality_prediction: prediction,
             gates_passed: 7,

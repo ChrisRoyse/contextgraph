@@ -23,6 +23,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+anyhow = { workspace = true }
 tempfile = "3.10"
 
 [[example]]
@@ -36,3 +37,7 @@ path = "examples/quota_overflow_fsv.rs"
 [[example]]
 name = "gc_stress_fsv"
 path = "examples/gc_stress_fsv.rs"
+
+[[example]]
+name = "phase_f_storage_exhaustion_fsv"
+path = "examples/phase_f_storage_exhaustion_fsv.rs"
