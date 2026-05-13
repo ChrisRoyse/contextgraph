@@ -136,17 +136,12 @@ struct PromoteApprovalRequest {
     two_person_rule: bool,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum DaemonStatusVramBudget {
+    #[default]
     ContentSet,
     FullPhase1,
-}
-
-impl Default for DaemonStatusVramBudget {
-    fn default() -> Self {
-        Self::ContentSet
-    }
 }
 
 impl DaemonStatusVramBudget {
