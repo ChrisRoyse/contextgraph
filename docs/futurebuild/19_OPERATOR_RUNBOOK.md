@@ -80,11 +80,17 @@ less /mnt/d/contextgraph/exports/eval/$(date +%Y-%m-%d)/weekly.md
 
 # Look for:
 # - Operator Cell Triage top-10 table; take the suggested action per row
+# - Oracle flakiness quarantine changes in config/corpus_quarantine.toml before train/holdout reruns
 # - Per-(category × language) ship-gate status (≥0.95 met / not met per cell)
 # - Drift events of the week
 # - Promotions / rollbacks
 # - Agent-feedback summary (top surprises)
 # - Storage trend
+
+# 3.1a Refresh oracle flakiness quarantine if repeat-oracle observations exist
+context-graph-cli mejepa oracle-flakiness-audit \
+  --input /mnt/d/contextgraph/exports/eval/$(date +%Y-%m-%d)/oracle-repeat-observations.json \
+  --output config/corpus_quarantine.toml
 
 # 3.2 Address active-learning queue
 context-graph-cli mejepa active-learning list --top-n 20

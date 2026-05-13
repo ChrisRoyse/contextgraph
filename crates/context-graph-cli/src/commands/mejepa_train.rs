@@ -24,6 +24,9 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use super::mejepa_active_learning::DEFAULT_MEJEPA_INFER_DB;
+use super::mejepa_oracle_flakiness::{
+    load_corpus_quarantine, quarantine_load_error, DEFAULT_CORPUS_QUARANTINE_PATH,
+};
 
 const ACTIVE_CONTENT_EMBEDDER_FORWARDS: usize = 12;
 const DDA_EMBEDDER_SURFACES: usize = 21;
@@ -46,6 +49,14 @@ pub struct MejepaTrainArgs {
     /// Internal FSV/test throttle. Omit in production to process the full split.
     #[arg(long, hide = true)]
     pub max_tasks: Option<usize>,
+
+    /// Corpus task quarantine config produced by `mejepa oracle-flakiness-audit`.
+    #[arg(
+        long,
+        env = "CONTEXTGRAPH_CORPUS_QUARANTINE",
+        default_value = DEFAULT_CORPUS_QUARANTINE_PATH
+    )]
+    pub quarantine_config: PathBuf,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ValueEnum)]
@@ -81,6 +92,9 @@ pub struct MejepaTrainOutput {
     pub prediction_count: usize,
     pub oracle_verdict_count: usize,
     pub train_cert_count: usize,
+    pub quarantine_config_path: String,
+    pub quarantined_task_count: usize,
+    pub skipped_quarantined_task_count: usize,
     pub readback_equal: bool,
     pub active_content_embedder_forwards: usize,
     pub dda_embedder_surfaces: usize,
@@ -176,7 +190,8 @@ pub fn run_mejepa_train(args: MejepaTrainArgs) -> Result<MejepaTrainOutput> {
         )
     })?;
     let store = RocksDbInferStore::new(db.clone());
-    let mut rows = load_selected_rows(&args)?;
+    let selection = load_selected_rows(&args)?;
+    let mut rows = selection.rows;
     if let Some(max_tasks) = args.max_tasks {
         rows.truncate(max_tasks);
     }
@@ -248,6 +263,9 @@ pub fn run_mejepa_train(args: MejepaTrainArgs) -> Result<MejepaTrainOutput> {
         prediction_count,
         oracle_verdict_count,
         train_cert_count,
+        quarantine_config_path: selection.quarantine_config_path.display().to_string(),
+        quarantined_task_count: selection.quarantined_task_count,
+        skipped_quarantined_task_count: selection.skipped_quarantined_task_count,
         readback_equal,
         active_content_embedder_forwards: ACTIVE_CONTENT_EMBEDDER_FORWARDS,
         dda_embedder_surfaces: DDA_EMBEDDER_SURFACES,
@@ -258,6 +276,7 @@ pub fn run_mejepa_train(args: MejepaTrainArgs) -> Result<MejepaTrainOutput> {
             "prediction_cf": context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
             "oracle_cf": context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS,
             "train_cert_cf": context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS,
+            "quarantine_config": selection.quarantine_config_path,
             "db_path": args.db_path,
         }),
     })
@@ -290,8 +309,20 @@ struct SelectedRow {
     attempt_id: String,
 }
 
-fn load_selected_rows(args: &MejepaTrainArgs) -> Result<Vec<SelectedRow>> {
+#[derive(Debug)]
+struct SelectedRows {
+    rows: Vec<SelectedRow>,
+    quarantine_config_path: PathBuf,
+    quarantined_task_count: usize,
+    skipped_quarantined_task_count: usize,
+}
+
+fn load_selected_rows(args: &MejepaTrainArgs) -> Result<SelectedRows> {
     let mut rows = Vec::new();
+    let quarantine_config_path = args.quarantine_config.clone();
+    let quarantine = load_corpus_quarantine(&quarantine_config_path)
+        .map_err(|err| quarantine_load_error(&quarantine_config_path, err))?;
+    let mut skipped_quarantined_task_count = 0usize;
     for root in &args.corpus {
         let index_path = if root.is_dir() {
             root.join("index.json")
@@ -320,6 +351,10 @@ fn load_selected_rows(args: &MejepaTrainArgs) -> Result<Vec<SelectedRow>> {
                 continue;
             }
             validate_entry(&entry, entry_idx, &index_path)?;
+            if quarantine.contains_key(&entry.task_id) {
+                skipped_quarantined_task_count += 1;
+                continue;
+            }
             let attempt_id = format!(
                 "{}::{}::{:08}::{}::{}",
                 corpus_version,
@@ -337,7 +372,12 @@ fn load_selected_rows(args: &MejepaTrainArgs) -> Result<Vec<SelectedRow>> {
             });
         }
     }
-    Ok(rows)
+    Ok(SelectedRows {
+        rows,
+        quarantine_config_path,
+        quarantined_task_count: quarantine.len(),
+        skipped_quarantined_task_count,
+    })
 }
 
 fn validate_entry(entry: &CorpusEntry, entry_idx: usize, index_path: &Path) -> Result<()> {

@@ -34,6 +34,9 @@ pub enum MejepaCommands {
     CrossValidatePublicCi(
         crate::commands::mejepa_public_ci_cross_validate::PublicCiCrossValidationArgs,
     ),
+    /// Phase G oracle determinism audit that writes corpus quarantine config.
+    #[command(name = "oracle-flakiness-audit")]
+    OracleFlakinessAudit(crate::commands::mejepa_oracle_flakiness::OracleFlakinessAuditArgs),
     /// Phase G per-cell convergence status from CF_MEJEPA_EVAL_REPORTS.
     #[command(name = "cell-status")]
     CellStatus(crate::commands::mejepa_runbook::CellStatusArgs),
@@ -248,6 +251,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
             crate::commands::mejepa_public_ci_cross_validate::run_public_ci_cross_validation(args)?,
         )
         .context("serialize cross-validate-public-ci"),
+        MejepaCommands::OracleFlakinessAudit(args) => serde_json::to_value(
+            crate::commands::mejepa_oracle_flakiness::run_oracle_flakiness_audit(args)?,
+        )
+        .context("serialize oracle-flakiness-audit"),
         MejepaCommands::CellStatus(args) => {
             serde_json::to_value(crate::commands::mejepa_runbook::run_cell_status(args)?)
                 .context("serialize cell-status")

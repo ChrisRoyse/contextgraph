@@ -16,6 +16,7 @@ use clap::Args;
 use serde_json::json;
 
 use crate::commands::mejepa_active_learning::DEFAULT_MEJEPA_INFER_DB;
+use crate::commands::mejepa_oracle_flakiness::DEFAULT_CORPUS_QUARANTINE_PATH;
 use crate::commands::mejepa_train::{run_mejepa_train, MejepaTrainArgs, TrainSplitArg};
 
 #[cfg(test)]
@@ -99,6 +100,7 @@ pub fn run_public_ci_cross_validation(
         split: args.split,
         db_path: args.db_path.clone(),
         max_tasks: None,
+        quarantine_config: PathBuf::from(DEFAULT_CORPUS_QUARANTINE_PATH),
     })?;
     ensure!(
         ingest.input_task_count == observations.len(),
