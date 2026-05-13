@@ -379,7 +379,29 @@ pub fn run_load_fsv(fsv_root: &Path) -> Result<LoadFsvReport> {
 
     let all_passed =
         happy_path.iter().all(|step| step.pass) && boundary_cases.iter().all(|case| case.pass);
-    ensure!(all_passed, "load FSV contains failed evidence");
+    if !all_passed {
+        let failed = json!({
+            "failedSteps": happy_path
+                .iter()
+                .filter(|step| !step.pass)
+                .map(|step| json!({
+                    "step": step.step,
+                    "expected": step.expected,
+                    "actual": step.actual
+                }))
+                .collect::<Vec<_>>(),
+            "failedBoundaries": boundary_cases
+                .iter()
+                .filter(|case| !case.pass)
+                .map(|case| json!({
+                    "case": case.case,
+                    "expectedErrorCode": case.expected_error_code,
+                    "actualErrorCode": case.actual_error_code
+                }))
+                .collect::<Vec<_>>()
+        });
+        bail!("load FSV contains failed evidence: {failed}");
+    }
     ensure!(readback_equal, "load FSV reopen counts changed");
 
     Ok(LoadFsvReport {
