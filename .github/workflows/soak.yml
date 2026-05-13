@@ -1,0 +1,66 @@
+# TASK-TEST-011 — Phase F quarterly soak workflow.
+#
+# Manual-trigger only by design: soak tests run long. The operator
+# kicks this off once per quarter per CLAUDE.md §40 (operational
+# cadence). Free-plan budget: ubuntu-latest, 60min cap; the actual
+# soak duration is parameterized so the workflow itself stays inside
+# the monthly minute budget.
+name: Phase F Soak
+
+on:
+  workflow_dispatch:
+    inputs:
+      soak_minutes:
+        description: "Soak duration in minutes (default 30, cap 55 to stay under 60min timeout)"
+        type: string
+        default: "30"
+      reason:
+        description: "Why this soak is being run (audited for traceability)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-f-soak-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  soak:
+    name: Phase F soak harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Echo soak parameters
+        run: |
+          echo "Soak duration (minutes): ${{ inputs.soak_minutes }}"
+          echo "Reason: ${{ inputs.reason }}"
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: phase-f-soak-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: cargo build --release -p context-graph-mejepa --tests
+        run: cargo build --release -p context-graph-mejepa --tests
+      - name: Run available soak harness
+        env:
+          MEJEPA_SOAK_DURATION_MINS: ${{ inputs.soak_minutes }}
+        run: |
+          set -euo pipefail
+          if [[ -f crates/context-graph-mejepa/tests/soak.rs ]]; then
+            cargo test --release -p context-graph-mejepa --test soak -- --include-ignored --nocapture
+          else
+            echo "Phase F soak: no soak harness present yet; skipping."
+          fi

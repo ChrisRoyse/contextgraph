@@ -1,0 +1,65 @@
+# TASK-TEST-011 — Phase F chaos workflow (failpoints + storage-exhaustion).
+#
+# Triggers: every PR (smoke) + nightly cron at 02:30 UTC. Free-plan
+# budget: ubuntu-latest, timeout 60min hard cap (well under monthly).
+name: Phase F Chaos
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly at 02:30 UTC — clear of the daily log-rotate (03:15 local)
+    # and the monthly DR drill (Sunday 04:00).
+    - cron: "30 2 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-f-chaos-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  chaos:
+    name: Phase F chaos harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: phase-f-chaos-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: cargo build --release -p context-graph-mejepa --tests
+        run: cargo build --release -p context-graph-mejepa --tests
+      - name: Run available chaos harnesses
+        run: |
+          set -euo pipefail
+          # TASK-TEST-006 (failpoints) and TASK-TEST-005 (storage exhaustion)
+          # are still landing. Run whichever harnesses already exist so the
+          # workflow stops gating Phase F closure once they appear.
+          ran_any=0
+          for harness in \
+            crates/context-graph-mejepa/tests/chaos_failpoints.rs \
+            crates/context-graph-mejepa/tests/storage_exhaustion.rs; do
+            if [[ -f "${harness}" ]]; then
+              name="$(basename "${harness}" .rs)"
+              cargo test --release -p context-graph-mejepa --test "${name}"
+              ran_any=1
+            fi
+          done
+          if [[ "${ran_any}" -eq 0 ]]; then
+            echo "Phase F chaos: no chaos harnesses present yet; skipping."
+          fi

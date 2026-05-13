@@ -1,0 +1,49 @@
+# TASK-TEST-011 — Phase F E2E workflow.
+#
+# Runs the workspace happy-path E2E tests on every PR. GitHub Free-plan
+# discipline (CLAUDE.md §11): runs-on ubuntu-latest only, timeout set,
+# actions pinned to a tagged release for stability.
+name: Phase F E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-f-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  e2e:
+    name: Phase F E2E (happy path)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: phase-f-e2e-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: cargo build --release -p context-graph-mejepa --tests
+        run: cargo build --release -p context-graph-mejepa --tests
+      - name: cargo test --release -p context-graph-mejepa --test e2e
+        run: cargo test --release -p context-graph-mejepa --test e2e -- --nocapture
+      - name: cargo test --release -p context-graph-mejepa --test toolchain_fail_closed
+        run: cargo test --release -p context-graph-mejepa --test toolchain_fail_closed

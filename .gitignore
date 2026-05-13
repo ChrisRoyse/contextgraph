@@ -6,6 +6,11 @@ benchmark_results/
 .github/workflows/*
 !.github/workflows/ci.yml
 !.github/workflows/ci_smoke_*.yml
+# TASK-TEST-011 Phase F workflow allowlist.
+!.github/workflows/e2e.yml
+!.github/workflows/chaos.yml
+!.github/workflows/load.yml
+!.github/workflows/soak.yml
 
 # Rust build artifacts
 target/
