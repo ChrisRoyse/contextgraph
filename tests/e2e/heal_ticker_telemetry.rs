@@ -84,9 +84,12 @@ pub fn run_heal_ticker_telemetry_fsv(fsv_root: &Path) -> Result<HealTickerTeleme
         "observe ticker count did not increment"
     );
 
+    let previous_panic_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
     let panic_result = std::panic::catch_unwind(|| {
         panic!("synthetic scheduler panic for heal ticker telemetry FSV");
     });
+    std::panic::set_hook(previous_panic_hook);
     if panic_result.is_err() {
         counters.record_heal_scheduler_restart();
     }
@@ -148,6 +151,7 @@ pub fn run_heal_ticker_telemetry_fsv(fsv_root: &Path) -> Result<HealTickerTeleme
     );
     flush_infer_db(db.as_ref())?;
     drop(eval_store);
+    drop(state);
     drop(db);
     let reopened = open_scheduler_rocksdb(&db_path)?;
     let reopened_store = RocksDbEvalStore::new(reopened.clone())?;
