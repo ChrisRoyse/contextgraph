@@ -47,13 +47,33 @@ type TaskRunner = Arc<
 type TaskHealthRegistryHandle = Arc<Mutex<SupervisedTaskHealthRegistryState>>;
 
 #[derive(Debug, Clone, Serialize)]
-struct WeeklyOperationalSummary {
+pub struct WeeklyOperationalSummary {
     agent_feedback_rows: usize,
     drift_window_rows: usize,
     drift_history_rows: usize,
     active_learning_queue_rows: usize,
     ood_escalation_rows: usize,
     session_cleanup_gc_events: usize,
+}
+
+impl WeeklyOperationalSummary {
+    pub fn new(
+        agent_feedback_rows: usize,
+        drift_window_rows: usize,
+        drift_history_rows: usize,
+        active_learning_queue_rows: usize,
+        ood_escalation_rows: usize,
+        session_cleanup_gc_events: usize,
+    ) -> Self {
+        Self {
+            agent_feedback_rows,
+            drift_window_rows,
+            drift_history_rows,
+            active_learning_queue_rows,
+            ood_escalation_rows,
+            session_cleanup_gc_events,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1289,7 +1309,7 @@ fn run_weekly_eval_once(config: &FlywheelDaemonConfig, db: Arc<DB>) -> Result<se
     }))
 }
 
-fn write_weekly_eval_markdown(
+pub fn write_weekly_eval_markdown(
     path: &Path,
     report: &context_graph_mejepa::EvalReport,
     report_hash: &str,
@@ -1299,29 +1319,7 @@ fn write_weekly_eval_markdown(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let per_cell_state_transfer = if report.per_cell_state_transfer.is_empty() {
-        "- none".to_string()
-    } else {
-        report
-            .per_cell_state_transfer
-            .iter()
-            .map(|(cell, diagnostic)| match diagnostic {
-                Some(diagnostic) => format!(
-                    "- {cell}: transfer_score={:.6}, wasserstein_1={:.6}, performance_deploy={:.6}, candidate={}",
-                    diagnostic.transfer_score,
-                    diagnostic.wasserstein_1,
-                    diagnostic.performance_deploy,
-                    if diagnostic.transfer_score < 0.80 {
-                        "fine_tune"
-                    } else {
-                        "hold"
-                    }
-                ),
-                None => format!("- {cell}: unavailable"),
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
+    let per_cell_state_transfer = render_state_transfer_per_cell_table(report);
     let per_cell_ship_gate = if report.per_cell_correlation.is_empty() {
         "- none".to_string()
     } else {
@@ -1469,24 +1467,56 @@ fn write_weekly_eval_markdown(
     Ok(())
 }
 
+fn render_state_transfer_per_cell_table(report: &context_graph_mejepa::EvalReport) -> String {
+    let mut rows = vec![
+        "| state_transfer_per_cell | transfer_score | wasserstein_1 | performance_deploy | candidate |".to_string(),
+        "|---|---:|---:|---:|---|".to_string(),
+    ];
+    if report.per_cell_state_transfer.is_empty() {
+        rows.push(
+            "| none | unavailable | unavailable | unavailable | collect_more_labels |".to_string(),
+        );
+        return rows.join("\n");
+    }
+    rows.extend(
+        report
+            .per_cell_state_transfer
+            .iter()
+            .map(|(cell, diagnostic)| match diagnostic {
+                Some(diagnostic) => format!(
+                    "| {} | {:.6} | {:.6} | {:.6} | {} |",
+                    escape_markdown_table_cell(cell),
+                    diagnostic.transfer_score,
+                    diagnostic.wasserstein_1,
+                    diagnostic.performance_deploy,
+                    if diagnostic.transfer_score < 0.80 {
+                        "fine_tune"
+                    } else {
+                        "hold"
+                    }
+                ),
+                None => format!(
+                    "| {} | unavailable | unavailable | unavailable | collect_more_labels |",
+                    escape_markdown_table_cell(cell)
+                ),
+            }),
+    );
+    rows.join("\n")
+}
+
+fn escape_markdown_table_cell(value: &str) -> String {
+    value.replace('\n', " ").replace('|', "\\|")
+}
+
 fn weekly_operational_summary(db: &DB) -> Result<WeeklyOperationalSummary> {
-    Ok(WeeklyOperationalSummary {
-        agent_feedback_rows: weekly_count_cf(
-            db,
-            context_graph_mejepa_cf::CF_MEJEPA_AGENT_FEEDBACK,
-        )?,
-        drift_window_rows: weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_DRIFT_WINDOW)?,
-        drift_history_rows: weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_DRIFT_HISTORY)?,
-        active_learning_queue_rows: weekly_count_cf(
-            db,
-            context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE,
-        )?,
-        ood_escalation_rows: weekly_count_cf(
-            db,
-            context_graph_mejepa_cf::CF_MEJEPA_OOD_ESCALATIONS,
-        )?,
-        session_cleanup_gc_events: weekly_session_cleanup_gc_event_count(db)?,
-    })
+    Ok(WeeklyOperationalSummary::new(
+        weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_AGENT_FEEDBACK)?,
+        weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_DRIFT_WINDOW)?,
+        weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_DRIFT_HISTORY)?,
+        weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE)?,
+        weekly_count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_OOD_ESCALATIONS)?,
+        weekly_session_cleanup_gc_event_count(db)?,
+    ))
 }
 
 fn weekly_count_cf(db: &DB, cf_name: &str) -> Result<usize> {
@@ -1961,6 +1991,96 @@ mod tests {
         assert!(markdown.contains("- session_cleanup_gc_events: 1"));
         assert!(markdown.contains(
             "- session_cleanup_gc_event_source: CF_MEJEPA_GC_HISTORY event_type=session_cleanup"
+        ));
+    }
+
+    #[test]
+    fn weekly_eval_markdown_renders_state_transfer_table_for_every_cell() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let markdown_path = temp.path().join("weekly.md");
+        let known_good_python = context_graph_mejepa::cell_key(
+            context_graph_mejepa::MutationCategory::KnownGood,
+            context_graph_mejepa::Language::Python,
+        );
+        let off_by_one_rust = context_graph_mejepa::cell_key(
+            context_graph_mejepa::MutationCategory::OffByOne,
+            context_graph_mejepa::Language::Rust,
+        );
+        let subtle_flip_go = context_graph_mejepa::cell_key(
+            context_graph_mejepa::MutationCategory::SubtleFlip,
+            context_graph_mejepa::Language::Go,
+        );
+        let mut per_cell_correlation = BTreeMap::new();
+        per_cell_correlation.insert(known_good_python.clone(), Some(0.96));
+        per_cell_correlation.insert(off_by_one_rust.clone(), Some(0.81));
+        per_cell_correlation.insert(subtle_flip_go.clone(), None);
+        let mut per_cell_state_transfer = BTreeMap::new();
+        per_cell_state_transfer.insert(
+            known_good_python.clone(),
+            Some(context_graph_mejepa::StateTransferDiagnostic {
+                wasserstein_1: 0.050,
+                transfer_score: 0.920,
+                performance_deploy: 0.910,
+            }),
+        );
+        per_cell_state_transfer.insert(
+            off_by_one_rust.clone(),
+            Some(context_graph_mejepa::StateTransferDiagnostic {
+                wasserstein_1: 0.260,
+                transfer_score: 0.740,
+                performance_deploy: 0.700,
+            }),
+        );
+        per_cell_state_transfer.insert(subtle_flip_go.clone(), None);
+        let report = context_graph_mejepa::EvalReport {
+            report_date: "2026-05-13".to_string(),
+            generated_at_unix_ms: 1_778_666_683_000,
+            rolling_window_size: 4,
+            holdout_count: 3,
+            overall_correlation: Some(0.90),
+            per_category_correlation: BTreeMap::new(),
+            per_language_correlation: BTreeMap::new(),
+            per_cell_correlation,
+            cell_exemptions: BTreeMap::new(),
+            bayesian_shrinkage: BTreeMap::new(),
+            conformal_coverage_health: BTreeMap::new(),
+            ood_calibration_health: BTreeMap::new(),
+            gtau_pass_rate: BTreeMap::new(),
+            per_prediction_class_calibration: BTreeMap::new(),
+            active_learning: context_graph_mejepa::ActiveLearningSummary {
+                queued_count: 0,
+                evicted_count: 0,
+                ood_escalation_count: 0,
+            },
+            state_transfer_diagnostic: None,
+            per_cell_state_transfer,
+            aux_head_distillation: None,
+            regression_checks: Vec::new(),
+            open_research_questions: Vec::new(),
+            q1_pass_rate: 1.0,
+            q2_report_correlation: Some(0.90),
+            q3_side_effect_agreement: Some(1.0),
+            ship_gate_passed: false,
+            ship_gate_failures: vec!["synthetic below threshold".to_string()],
+            provenance: context_graph_mejepa::EvalProvenance {
+                corpus_sha: "synthetic".to_string(),
+                eval_code_version: "test".to_string(),
+                calibration_version: "test".to_string(),
+                generated_by: "weekly-state-transfer-unit-test".to_string(),
+            },
+            wall_clock_seconds: 0.1,
+        };
+        let operational = WeeklyOperationalSummary::new(0, 0, 0, 0, 0, 0);
+        write_weekly_eval_markdown(&markdown_path, &report, "synthetic-hash", &operational)
+            .expect("write weekly markdown");
+        let markdown = fs::read_to_string(markdown_path).expect("read weekly markdown");
+        assert!(markdown.contains("| state_transfer_per_cell | transfer_score | wasserstein_1 | performance_deploy | candidate |"));
+        assert!(markdown.contains("| known_good::python | 0.920000 | 0.050000 | 0.910000 | hold |"));
+        assert!(
+            markdown.contains("| off_by_one::rust | 0.740000 | 0.260000 | 0.700000 | fine_tune |")
+        );
+        assert!(markdown.contains(
+            "| subtle_flip::go | unavailable | unavailable | unavailable | collect_more_labels |"
         ));
     }
 

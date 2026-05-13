@@ -344,7 +344,10 @@ fn weekly_markdown_with_required_sections() -> &'static str {
      ## Drift Events Of The Week\n\n- none\n\n\
      ## Promotions / Rollbacks Of The Week\n\n- none\n\n\
      ## Storage Utilization\n\n- ok\n\n\
-     ## Per-Cell State Transfer T\n\n- known_good::python: hold\n\n\
+     ## Per-Cell State Transfer T\n\n\
+     | state_transfer_per_cell | transfer_score | wasserstein_1 | performance_deploy | candidate |\n\
+     |---|---:|---:|---:|---|\n\
+     | known_good::python | 0.920000 | 0.050000 | 0.910000 | hold |\n\n\
      ## Ship Gate Failures\n\n- none\n"
 }
 
