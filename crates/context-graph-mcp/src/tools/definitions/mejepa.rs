@@ -88,6 +88,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "predictionId": {
                         "type": "string",
                         "pattern": "^[0-9a-fA-F]{32}$"
+                    },
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional Phase 4 inference RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
                     }
                 }
             }),

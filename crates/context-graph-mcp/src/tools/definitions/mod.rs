@@ -1,6 +1,6 @@
 //! Tool definitions for the MCP surface.
 //!
-//! The current default registry exposes 169 tools, including the 39-tool
+//! The current default registry exposes 170 tools, including the 39-tool
 //! DynamicJEPA MCP surface. The
 //! ccreality tool surface is listed separately in reality-loop mode.
 
@@ -38,7 +38,7 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(169);
+    let mut tools = Vec::with_capacity(170);
 
     // Capability discovery tools (1) - compact map of embedders, CFs, and tools
     tools.extend(capability::definitions());

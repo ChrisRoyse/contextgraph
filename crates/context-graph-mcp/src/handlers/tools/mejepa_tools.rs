@@ -2151,7 +2151,6 @@ mod mejepa_constellation_inspect_tests {
 
     #[tokio::test]
     async fn mejepa_inspect_prediction_writes_phase_f_fsv_artifact() {
-        let _guard = env_guard();
         let (handlers, _handler_tempdir) =
             crate::handlers::tests::create_protocol_test_handlers().await;
         let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
