@@ -68,7 +68,9 @@ fn run(output_root: &Path) -> Result<Value> {
         let promoted = result.is_ok();
         let error_code = result.as_ref().err().map(HealError::code);
         let empirical = match &result {
-            Ok(report) => Some(report.conformal_recalibration.empirical_coverage),
+            Ok(_) => promoter
+                .fsv_snapshot()
+                .map(|evidence| evidence.conformal_recalibration.empirical_coverage),
             Err(HealError::ConformalCoverageOutOfBand {
                 empirical_coverage, ..
             }) => Some(*empirical_coverage),
