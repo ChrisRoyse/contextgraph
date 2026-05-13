@@ -38,6 +38,8 @@ pub enum MejepaCommands {
     /// Operator runbook: read ship-gate status from the latest EvalReport.
     #[command(name = "eval-ship-gate")]
     EvalShipGate(crate::commands::mejepa_runbook::EvalShipGateArgs),
+    /// Operator runbook: hygiene cold-audit / aggressive-cold-tier-down.
+    Hygiene(crate::commands::mejepa_runbook::HygieneArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -207,6 +209,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
         MejepaCommands::EvalShipGate(args) => {
             serde_json::to_value(crate::commands::mejepa_runbook::run_eval_ship_gate(args)?)
                 .context("serialize eval-ship-gate")
+        }
+        MejepaCommands::Hygiene(args) => {
+            serde_json::to_value(crate::commands::mejepa_runbook::run_hygiene(args)?)
+                .context("serialize hygiene")
         }
     }
 }

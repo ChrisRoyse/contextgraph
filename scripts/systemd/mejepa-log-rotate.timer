@@ -1,0 +1,17 @@
+[Unit]
+Description=ContextGraph ME-JEPA daily log rotation timer
+Documentation=file:/home/cabdru/contextgraph/docs/futurebuild/tasks/observability/_all_tasks.md
+# Requires the rotate service to be co-located so `systemctl --user` can
+# resolve `mejepa-log-rotate.service` without an extra path.
+Requires=mejepa-log-rotate.service
+
+[Timer]
+# Daily at 03:15 local; the random delay avoids contention with the heal
+# scheduler tickers at the top of the hour.
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=15min
+Persistent=true
+Unit=mejepa-log-rotate.service
+
+[Install]
+WantedBy=timers.target

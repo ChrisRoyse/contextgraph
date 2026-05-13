@@ -29,6 +29,43 @@ const DEFAULT_MEJEPA_HEAL_DB: &str = "/mnt/d/contextgraph/storage/mejepa-heal";
 const DEFAULT_SCHEDULER_STATE_ROOT: &str = "/mnt/d/contextgraph/state/schedulers";
 const DEFAULT_WITNESS_CHAIN_PATH: &str =
     "/mnt/d/contextgraph/state/cgreality/mejepa-witness-chain.bin";
+const DEFAULT_HYGIENE_ARCHIVE_ROOT: &str = "/mnt/d/contextgraph/storage/hygiene-archive";
+
+#[derive(Args, Debug, Clone)]
+pub struct HygieneArgs {
+    /// Hygiene RocksDB path containing the hygiene CFs.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_HYGIENE_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
+    pub db_path: PathBuf,
+
+    /// Hygiene archive root (cold-tier-down destination).
+    #[arg(
+        long,
+        env = "CONTEXTGRAPH_MEJEPA_HYGIENE_ARCHIVE_ROOT",
+        default_value = DEFAULT_HYGIENE_ARCHIVE_ROOT
+    )]
+    pub archive_root: PathBuf,
+
+    #[command(subcommand)]
+    pub action: HygieneAction,
+}
+
+#[derive(clap::Subcommand, Debug, Clone)]
+pub enum HygieneAction {
+    /// Read-only quota / cold-audit status against the hygiene CFs.
+    #[command(name = "cold-audit")]
+    ColdAudit,
+    /// Run nightly GC: cold-tier compression + emergency eviction if needed.
+    #[command(name = "aggressive-cold-tier-down")]
+    AggressiveColdTierDown,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HygieneOutput {
+    pub action: String,
+    pub result: Value,
+    pub source_of_truth: Value,
+}
 
 #[derive(Args, Debug, Clone)]
 pub struct DaemonStatusArgs {
@@ -204,6 +241,37 @@ pub fn run_rollback(args: RollbackArgs) -> Result<RollbackOutput> {
         source_of_truth: json!({
             "writer": "context_graph_mejepa::heal::AbcPromoter::rollback_to",
             "verification": "witness chain offset advance + CF_MEJEPA_ACTIVE_POINTERS updated",
+        }),
+    })
+}
+
+pub fn run_hygiene(args: HygieneArgs) -> Result<HygieneOutput> {
+    use context_graph_mejepa_hygiene::mcp::{mcp_gc_run, mcp_quota_status, HygieneMcpRequest};
+    validate_dir(&args.db_path, "hygiene-db-path")?;
+    validate_path_non_empty(&args.archive_root, "archiveRoot")?;
+    let request = HygieneMcpRequest {
+        db_path: args.db_path.clone(),
+        archive_root: args.archive_root.clone(),
+    };
+    let (action_name, result) = match args.action {
+        HygieneAction::ColdAudit => (
+            "cold-audit",
+            mcp_quota_status(request)
+                .map_err(|err| anyhow!("MEJEPA_RUNBOOK_HYGIENE_COLD_AUDIT_FAILED: {err}"))?,
+        ),
+        HygieneAction::AggressiveColdTierDown => (
+            "aggressive-cold-tier-down",
+            mcp_gc_run(request)
+                .map_err(|err| anyhow!("MEJEPA_RUNBOOK_HYGIENE_GC_FAILED: {err}"))?,
+        ),
+    };
+    Ok(HygieneOutput {
+        action: action_name.to_string(),
+        result,
+        source_of_truth: json!({
+            "writer": "context_graph_mejepa_hygiene::mcp",
+            "db_path": args.db_path,
+            "archive_root": args.archive_root,
         }),
     })
 }
