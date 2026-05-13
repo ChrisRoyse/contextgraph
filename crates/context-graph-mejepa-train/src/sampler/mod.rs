@@ -287,14 +287,6 @@ impl BatchSampler {
         plan
     }
 
-    pub(crate) fn weighted_pick_from_regular(&mut self) -> Result<Option<usize>, TrainerError> {
-        if self.regular_indices.is_empty() {
-            return Ok(None);
-        }
-        let pool = self.regular_indices.clone();
-        self.weighted_pick_from_pool(&pool).map(Some)
-    }
-
     pub(crate) fn weighted_pick_from_regular_excluding(
         &mut self,
         used: &BTreeSet<usize>,
@@ -420,9 +412,7 @@ impl BatchSampler {
             .iter()
             .copied()
             .filter(|idx| !used.contains(idx))
-            .filter(|idx| {
-                !exclude_adversarial || !self.adversarial_index_set.contains(idx)
-            })
+            .filter(|idx| !exclude_adversarial || !self.adversarial_index_set.contains(idx))
             .collect()
     }
 
@@ -434,7 +424,9 @@ impl BatchSampler {
             .filter(|idx| self.adversarial_index_set.contains(idx))
             .collect();
         plan.adversarial_count = plan.adversarial_example_indices.len();
-        let quota = self.adversarial_quota(requested_batch_size).min(plan.indices.len());
+        let quota = self
+            .adversarial_quota(requested_batch_size)
+            .min(plan.indices.len());
         plan.adversarial_fallback_count = quota.saturating_sub(plan.adversarial_count);
     }
 
@@ -743,11 +735,10 @@ mod tests {
         assert_eq!(plan.adversarial_count, 2);
         assert_eq!(plan.adversarial_fallback_count, 0);
         assert_eq!(plan.regular_count, 8);
-        assert!(
-            plan.adversarial_example_indices
-                .iter()
-                .all(|idx| (40..50).contains(idx))
-        );
+        assert!(plan
+            .adversarial_example_indices
+            .iter()
+            .all(|idx| (40..50).contains(idx)));
     }
 
     #[test]

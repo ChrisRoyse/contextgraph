@@ -1,5 +1,6 @@
 use crate::error::TrainerError;
 use crate::sampler::{BatchPlan, BatchSampler, PatchSimilarityGraph};
+use std::collections::BTreeSet;
 use std::collections::HashSet;
 
 pub const DEFAULT_FALLBACK_WARNING_RATIO: f32 = 0.30;
@@ -35,13 +36,11 @@ impl BatchSampler {
         batch_size: usize,
     ) -> Result<BatchPlan, TrainerError> {
         let mut plan = self.force_prefix(batch_size);
-        let mut used = plan.indices.iter().copied().collect::<HashSet<_>>();
-        let mut used_ordered = plan.indices.iter().copied().collect();
-        self.fill_adversarial_mix(&mut plan, batch_size, &mut used_ordered);
-        used.extend(used_ordered);
+        let mut used = plan.indices.iter().copied().collect::<BTreeSet<_>>();
+        self.fill_adversarial_mix(&mut plan, batch_size, &mut used);
         let need = batch_size.saturating_sub(plan.indices.len());
         let regular_set: HashSet<usize> = self
-            .regular_pool_excluding(&plan.indices.iter().copied().collect(), true)
+            .regular_pool_excluding(&used, true)
             .into_iter()
             .collect();
         let neighbors = related_tasks_above(&self.patch_similarity_graph, current_task_idx)
@@ -60,17 +59,14 @@ impl BatchSampler {
                     .collect::<Vec<_>>();
                 if pool.is_empty() {
                     plan.cross_task_fallback_count += 1;
-                    self.weighted_pick_from_regular_excluding(
-                        &used.iter().copied().collect(),
-                        true,
-                    )?
+                    self.weighted_pick_from_regular_excluding(&used, true)?
                 } else {
                     let picked = pool[(self.rng.next_u64() as usize) % pool.len()];
                     plan.cross_task_indices.push(plan.indices.len());
                     Some(picked)
                 }
             } else {
-                self.weighted_pick_from_regular_excluding(&used.iter().copied().collect(), true)?
+                self.weighted_pick_from_regular_excluding(&used, true)?
             };
             if let Some(idx) = candidate {
                 if used.insert(idx) {
