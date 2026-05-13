@@ -31,7 +31,9 @@ use crate::heal::emergency_eviction::{
 use crate::heal::errors::HealError;
 use crate::heal::fisher::snapshot_per_head_fisher;
 use crate::heal::full_retrain::full_retrain_if_due;
-use crate::heal::integrity::{verify, ChainIntegrityChecker, WitnessChainAppender};
+use crate::heal::integrity::{
+    complete_witness_quarantine_repair, verify, ChainIntegrityChecker, WitnessChainAppender,
+};
 use crate::heal::lambda_ramp::tick_lambda_ramp;
 use crate::heal::pipeline::{LinearHealPredictor, MeJepaHealConfig, SelfHealingPipeline};
 use crate::heal::policy::{
@@ -683,24 +685,42 @@ impl SchedulerState {
     fn tick_promote(&mut self) -> Result<TickRunRecord, HealError> {
         let mut approved = approved_promotions(self.storage.as_ref())?;
         approved.sort_by_key(|record| record.updated_at_unix_ms);
-        let catastrophic_promotion = if let Some(record) = approved.pop() {
-            let report = self
-                .pipeline
-                .trigger_abc_for_current_drift(TriggerReason::DriftCatastrophic)?;
-            let executed = mark_promotion_executed(self.storage.as_ref(), &record.promotion_id)?;
-            Some(json!({
-                "approval": executed,
-                "heal_report": report,
-            }))
-        } else {
-            None
-        };
+        let mut witness_repair = None;
+        let mut catastrophic_promotion = None;
+        if let Some(record) = approved.pop() {
+            match &record.kind {
+                PendingPromotionKind::WitnessChainRepairRequired { .. } => {
+                    let cleared = complete_witness_quarantine_repair(
+                        self.storage.as_ref(),
+                        &self.pipeline.integrity_checker,
+                        &record.promotion_id,
+                    )?;
+                    witness_repair = Some(json!({
+                        "approval": record,
+                        "quarantine": cleared,
+                    }));
+                }
+                PendingPromotionKind::CatastrophicFullRetrainRequired { .. }
+                | PendingPromotionKind::CatastrophicAbcCandidate { .. } => {
+                    let report = self
+                        .pipeline
+                        .trigger_abc_for_current_drift(TriggerReason::DriftCatastrophic)?;
+                    let executed =
+                        mark_promotion_executed(self.storage.as_ref(), &record.promotion_id)?;
+                    catastrophic_promotion = Some(json!({
+                        "approval": executed,
+                        "heal_report": report,
+                    }));
+                }
+            }
+        }
         let calibration = continuous_calibration_if_due(&mut self.pipeline)?;
         let retrain = full_retrain_if_due(&mut self.pipeline)?;
         Ok(TickRunRecord::success(
             TickName::Promote,
             "promotion_gates_checked",
             json!({
+                "witness_repair": witness_repair,
                 "catastrophic_promotion": catastrophic_promotion,
                 "calibration_record": calibration,
                 "full_retrain_report": retrain,

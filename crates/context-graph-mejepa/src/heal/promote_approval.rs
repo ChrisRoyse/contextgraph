@@ -22,6 +22,11 @@ pub enum PendingPromotionKind {
         candidate_sha_hex: String,
         eval_report_key_hex: String,
     },
+    WitnessChainRepairRequired {
+        chain_path: String,
+        broken_at_offset: Option<usize>,
+        quarantine_recorded_at_unix_ms: i64,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -316,6 +321,7 @@ fn required_approvals_for_kind(kind: &PendingPromotionKind) -> u8 {
         | PendingPromotionKind::CatastrophicAbcCandidate { .. } => {
             CATASTROPHIC_REQUIRED_DISTINCT_APPROVALS
         }
+        PendingPromotionKind::WitnessChainRepairRequired { .. } => 1,
     }
 }
 

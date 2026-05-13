@@ -13,6 +13,7 @@ use crate::heal::cf::{encode_value, DriftHistoryRecord};
 use crate::heal::drift::{DriftHistoryStore, DriftSample, DriftStore};
 use crate::heal::errors::HealError;
 use crate::heal::ewc::{SnapshotStore, TaskSnapshot};
+use crate::heal::integrity::{active_witness_quarantine, is_witness_quarantine_pointer_key};
 
 #[derive(Clone)]
 pub struct HealRocksStore {
@@ -63,6 +64,7 @@ impl HealRocksStore {
         key: &[u8],
         value: &[u8],
     ) -> Result<(), HealError> {
+        self.ensure_not_witness_quarantined_for_write(cf_name, key)?;
         let cf = self.cf(cf_name)?;
         let mut opts = WriteOptions::default();
         opts.set_sync(true);
@@ -80,6 +82,34 @@ impl HealRocksStore {
             ));
         }
         Ok(())
+    }
+
+    fn ensure_not_witness_quarantined_for_write(
+        &self,
+        cf_name: &str,
+        key: &[u8],
+    ) -> Result<(), HealError> {
+        if Self::write_allowed_during_witness_quarantine(cf_name, key) {
+            return Ok(());
+        }
+        if let Some(record) = active_witness_quarantine(self)? {
+            return Err(HealError::WitnessQuarantined {
+                reason: record.reason,
+                repair_promotion_id: record.repair_promotion_id,
+            });
+        }
+        Ok(())
+    }
+
+    fn write_allowed_during_witness_quarantine(cf_name: &str, key: &[u8]) -> bool {
+        if cf_name == context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_POINTERS {
+            return is_witness_quarantine_pointer_key(key);
+        }
+        if cf_name == context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS {
+            return key.starts_with(b"phase_e/pending-promotion/")
+                || key.starts_with(b"phase_e/operator-alert/");
+        }
+        false
     }
 
     pub fn get_cf(&self, cf_name: &str, key: &[u8]) -> Result<Option<Vec<u8>>, HealError> {

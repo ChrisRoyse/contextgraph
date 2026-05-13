@@ -81,6 +81,10 @@ pub enum HealError {
         theta_sha: [u8; 32],
         gced_at: i64,
     },
+    WitnessQuarantined {
+        reason: String,
+        repair_promotion_id: Option<String>,
+    },
     FsvIncomplete {
         missing: Vec<String>,
         wrong_mode: Vec<(String, u32)>,
@@ -121,6 +125,7 @@ impl HealError {
             Self::ConformalInsufficientSamples { .. } => "MEJEPA_CALIBRATION_INSUFFICIENT_SAMPLES",
             Self::CriticalBug { .. } => "MEJEPA_HEAL_CRITICAL_BUG",
             Self::RollbackTargetGone { .. } => "MEJEPA_HEAL_ROLLBACK_TARGET_GONE",
+            Self::WitnessQuarantined { .. } => "MEJEPA_HEAL_WITNESS_QUARANTINED",
             Self::FsvIncomplete { .. } => "MEJEPA_HEAL_FSV_INCOMPLETE",
             Self::FeatureDisabled => "MEJEPA_HEAL_FEATURE_DISABLED",
             Self::InvalidState { .. } => "MEJEPA_HEAL_INVALID_STATE",
@@ -262,6 +267,10 @@ mod tests {
             HealError::RollbackTargetGone {
                 theta_sha: [0; 32],
                 gced_at: 0,
+            },
+            HealError::WitnessQuarantined {
+                reason: "corrupt witness chain".into(),
+                repair_promotion_id: Some("repair-1".into()),
             },
             HealError::FeatureDisabled,
         ];

@@ -80,7 +80,9 @@ pub fn encode_calibration_history_key(frozen_at_seconds: i64) -> [u8; 8] {
 
 pub fn validate_active_pointer_name(name: &str) -> Result<(), HealError> {
     match name {
-        "active_weights" | "active_calibration" | "active_constellation" => Ok(()),
+        "active_weights" | "active_calibration" | "active_constellation" | "witness_quarantine" => {
+            Ok(())
+        }
         _ => Err(HealError::invalid(
             "active_pointer.name",
             format!("unsupported active pointer key {name:?}"),
@@ -191,7 +193,7 @@ pub fn cf_retention_descriptor(cf_name: &str) -> Option<RetentionPolicy> {
         }),
         CF_MEJEPA_ACTIVE_POINTERS => Some(RetentionPolicy {
             time_capped_days: None,
-            count_capped: Some(3),
+            count_capped: Some(4),
             byte_capped_gb: None,
             single_row_per_key: true,
         }),
@@ -228,6 +230,7 @@ mod tests {
     #[test]
     fn active_pointer_names_are_strict() {
         assert!(encode_active_pointer_key("active_weights").is_ok());
+        assert!(encode_active_pointer_key("witness_quarantine").is_ok());
         assert!(encode_active_pointer_key("other").is_err());
     }
 

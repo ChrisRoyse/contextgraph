@@ -441,8 +441,12 @@ impl AbcPromoter {
             mode_c_weights,
             calibration_version,
         )?;
-        let witness_offset =
-            witness_chain.append_model_event("ModelPromote", winner_sha, eval_summary_sha)?;
+        let witness_offset = witness_chain.append_model_event_checked(
+            storage.as_ref(),
+            "ModelPromote",
+            winner_sha,
+            eval_summary_sha,
+        )?;
         let active =
             ActivePointerValue::try_new(winner_sha.to_vec(), chrono::Utc::now().timestamp())?;
         let active_key = encode_active_pointer_key("active_weights")?;
@@ -542,7 +546,12 @@ impl AbcPromoter {
         )?;
         storage.put_cf_readback(CF_MEJEPA_WEIGHT_BLOBS, &target_sha, &blob)?;
         let eval_sha = sha_bytes(&blob);
-        let new_offset = witness_chain.append_model_event("ModelRollback", target_sha, eval_sha)?;
+        let new_offset = witness_chain.append_model_event_checked(
+            storage.as_ref(),
+            "ModelRollback",
+            target_sha,
+            eval_sha,
+        )?;
         let active =
             ActivePointerValue::try_new(target_sha.to_vec(), chrono::Utc::now().timestamp())?;
         storage.put_cf_readback(
