@@ -920,6 +920,26 @@ fn write_weekly_eval_markdown(
             .collect::<Vec<_>>()
             .join("\n")
     };
+    let per_prediction_class_calibration = if report.per_prediction_class_calibration.is_empty() {
+        "- none".to_string()
+    } else {
+        report
+            .per_prediction_class_calibration
+            .values()
+            .map(|calibration| {
+                format!(
+                    "- {}: ece={:.6}, samples={}, mean_confidence={:.6}, empirical_accuracy={:.6}, within_tolerance={}",
+                    calibration.class_name,
+                    calibration.expected_calibration_error,
+                    calibration.sample_count,
+                    calibration.mean_confidence,
+                    calibration.empirical_accuracy,
+                    calibration.within_tolerance
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     let catastrophic_events = report
         .ship_gate_failures
         .iter()
@@ -941,6 +961,7 @@ fn write_weekly_eval_markdown(
          - q1_pass_rate: {:.6}\n\
          - q2_report_correlation: {:?}\n\
          - q3_side_effect_agreement: {:?}\n\n\
+         ## Per-Prediction-Class Calibration\n\n{}\n\n\
          ## Catastrophic Events\n\n{}\n\n\
          ## Per-Cell Ship Gate Status\n\n{}\n\n\
          ## Active-Learning Queue Summary\n\n\
@@ -970,6 +991,7 @@ fn write_weekly_eval_markdown(
         report.q1_pass_rate,
         report.q2_report_correlation,
         report.q3_side_effect_agreement,
+        per_prediction_class_calibration,
         catastrophic_events,
         per_cell_ship_gate,
         report.active_learning.queued_count,
