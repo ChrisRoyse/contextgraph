@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use super::cell_exemptions::CellExemption;
 use super::error::{EvalError, EvalErrorCode};
 use super::store::{RocksDbEvalStore, CF_MEJEPA_EVAL_REPORTS, CF_MEJEPA_MODEL_PROMOTIONS};
-use super::types::EvalReport;
+use super::types::{validate_active_python_ship_gate_report, EvalReport};
 
 pub const SHIP_GATE_REQUIRED_CONSECUTIVE_WINDOWS: usize = 4;
 pub const SHIP_GATE_STABILITY_CORRELATION_THRESHOLD: f32 = 0.95;
@@ -89,6 +89,7 @@ fn load_eval_reports_chronological(store: &RocksDbEvalStore) -> Result<Vec<EvalR
         let (_key, value) = item?;
         let report: EvalReport = bincode::deserialize(&value)?;
         report.validate()?;
+        validate_active_python_ship_gate_report(&report)?;
         reports.push(report);
     }
     reports.sort_by(|left, right| {

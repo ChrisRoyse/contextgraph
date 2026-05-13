@@ -657,6 +657,169 @@ pub fn cell_key(category: MutationCategory, language: Language) -> String {
     format!("{}::{}", category.slug(), language_slug(language))
 }
 
+pub const ACTIVE_PYTHON_SHIP_GATE_NAME: &str = "python_swebench_lite_300x8";
+pub const ACTIVE_PYTHON_SHIP_GATE_GRID: &str = "8 mutation categories x python";
+pub const ACTIVE_PYTHON_SHIP_GATE_CELL_COUNT: usize = 8;
+
+pub fn required_active_python_ship_gate_cells() -> Vec<(MutationCategory, Language, String)> {
+    MutationCategory::all()
+        .into_iter()
+        .map(|category| {
+            (
+                category,
+                Language::Python,
+                cell_key(category, Language::Python),
+            )
+        })
+        .collect()
+}
+
+pub fn validate_active_python_ship_gate_report(report: &EvalReport) -> Result<(), EvalError> {
+    let expected_cells = active_python_ship_gate_cell_set();
+    let actual_cells = report
+        .per_cell_correlation
+        .keys()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if actual_cells != expected_cells {
+        let missing = expected_cells
+            .difference(&actual_cells)
+            .cloned()
+            .collect::<Vec<_>>();
+        let extra = actual_cells
+            .difference(&expected_cells)
+            .cloned()
+            .collect::<Vec<_>>();
+        let non_python = actual_cells
+            .iter()
+            .filter(|cell| !cell.ends_with("::python"))
+            .cloned()
+            .collect::<Vec<_>>();
+        let code = if non_python.is_empty() {
+            "MEJEPA_ACTIVE_PYTHON_GATE_CELL_SET_MISMATCH"
+        } else {
+            "MEJEPA_ACTIVE_PYTHON_GATE_STALE_GRID"
+        };
+        return Err(EvalError::new(
+            EvalErrorCode::InvalidInput,
+            format!(
+                "{code}: expected {} cells for {ACTIVE_PYTHON_SHIP_GATE_GRID}; observed={} missing={} extra={} non_python={}",
+                ACTIVE_PYTHON_SHIP_GATE_CELL_COUNT,
+                actual_cells.len(),
+                preview_strings(&missing),
+                preview_strings(&extra),
+                preview_strings(&non_python)
+            ),
+        ));
+    }
+
+    validate_cell_key_subset(
+        "cell_exemptions",
+        report.cell_exemptions.keys(),
+        &expected_cells,
+    )?;
+    validate_cell_key_subset(
+        "bayesian_shrinkage",
+        report.bayesian_shrinkage.keys(),
+        &expected_cells,
+    )?;
+    validate_cell_key_subset(
+        "per_cell_state_transfer",
+        report.per_cell_state_transfer.keys(),
+        &expected_cells,
+    )?;
+    validate_cell_key_subset(
+        "failing_cell_classifications",
+        report.failing_cell_classifications.keys(),
+        &expected_cells,
+    )?;
+
+    validate_python_only_languages(
+        "per_language_correlation",
+        report.per_language_correlation.keys().copied(),
+    )?;
+    validate_python_only_languages(
+        "conformal_coverage_health",
+        report.conformal_coverage_health.keys().copied(),
+    )?;
+    validate_python_only_languages(
+        "ood_calibration_health",
+        report.ood_calibration_health.keys().copied(),
+    )?;
+    validate_python_only_languages("gtau_pass_rate", report.gtau_pass_rate.keys().copied())?;
+
+    Ok(())
+}
+
+fn active_python_ship_gate_cell_set() -> BTreeSet<String> {
+    required_active_python_ship_gate_cells()
+        .into_iter()
+        .map(|(_, _, cell)| cell)
+        .collect()
+}
+
+fn validate_cell_key_subset<'a, I>(
+    field: &str,
+    keys: I,
+    expected_cells: &BTreeSet<String>,
+) -> Result<(), EvalError>
+where
+    I: IntoIterator<Item = &'a String>,
+{
+    let invalid = keys
+        .into_iter()
+        .filter(|cell| !expected_cells.contains(*cell))
+        .cloned()
+        .collect::<Vec<_>>();
+    if invalid.is_empty() {
+        return Ok(());
+    }
+    Err(EvalError::new(
+        EvalErrorCode::InvalidInput,
+        format!(
+            "MEJEPA_ACTIVE_PYTHON_GATE_STALE_CELL_METADATA: {field} contains cells outside {ACTIVE_PYTHON_SHIP_GATE_GRID}: {}",
+            preview_strings(&invalid)
+        ),
+    ))
+}
+
+fn validate_python_only_languages<I>(field: &str, languages: I) -> Result<(), EvalError>
+where
+    I: IntoIterator<Item = Language>,
+{
+    let invalid = languages
+        .into_iter()
+        .filter(|language| *language != Language::Python)
+        .map(|language| language_slug(language).to_string())
+        .collect::<Vec<_>>();
+    if invalid.is_empty() {
+        return Ok(());
+    }
+    Err(EvalError::new(
+        EvalErrorCode::InvalidInput,
+        format!(
+            "MEJEPA_ACTIVE_PYTHON_GATE_STALE_LANGUAGE_METADATA: {field} contains non-Python languages for {ACTIVE_PYTHON_SHIP_GATE_GRID}: {}",
+            preview_strings(&invalid)
+        ),
+    ))
+}
+
+fn preview_strings(values: &[String]) -> String {
+    const MAX_PREVIEW: usize = 8;
+    if values.is_empty() {
+        return "[]".to_string();
+    }
+    let mut preview = values
+        .iter()
+        .take(MAX_PREVIEW)
+        .cloned()
+        .collect::<Vec<_>>();
+    if values.len() > MAX_PREVIEW {
+        preview.push(format!("...{} more", values.len() - MAX_PREVIEW));
+    }
+    format!("[{}]", preview.join(", "))
+}
+
 pub(crate) fn validate_unit(name: &str, value: f32) -> Result<(), EvalError> {
     if !value.is_finite() || !(0.0..=1.0).contains(&value) {
         return Err(EvalError::new(

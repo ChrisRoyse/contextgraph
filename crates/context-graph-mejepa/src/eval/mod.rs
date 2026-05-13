@@ -61,8 +61,10 @@ pub use telemetry::{
     TRAINING_HOLDOUT_DRIFT_KL_THRESHOLD, TRAINING_HOLDOUT_DRIFT_REQUIRED_BATCHES,
 };
 pub use types::{
-    cell_key, language_slug, ActiveLearningSummary, AuxHeadDistillationSummary,
+    cell_key, language_slug, required_active_python_ship_gate_cells,
+    validate_active_python_ship_gate_report, ActiveLearningSummary, AuxHeadDistillationSummary,
     ConformalHealthEntry, EvalConfig, EvalObservation, EvalProvenance, EvalReport,
     FailureModeClassMetrics, HoldoutPanel, MutationCategory, OpenResearchQuestionStatus,
-    RegressionCheck, StateTransferDiagnostic,
+    RegressionCheck, StateTransferDiagnostic, ACTIVE_PYTHON_SHIP_GATE_CELL_COUNT,
+    ACTIVE_PYTHON_SHIP_GATE_GRID, ACTIVE_PYTHON_SHIP_GATE_NAME,
 };
