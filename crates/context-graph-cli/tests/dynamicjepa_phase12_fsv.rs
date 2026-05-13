@@ -11,8 +11,12 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use context_graph_storage::dynamicjepa::column_families::CF_DJ_AUDIT_LOG;
-use context_graph_storage::dynamicjepa::{put_audit_record, AuditStatus, DjAuditRecord};
+use context_graph_storage::dynamicjepa::keys::audit_key;
+use context_graph_storage::dynamicjepa::{
+    encode_plain, AuditStatus, DjAuditRecord, DJ_AUDIT_RECORD_VERSION,
+};
 use context_graph_storage::teleological::{RocksDbTeleologicalStore, TeleologicalStoreConfig};
+use rocksdb::WriteOptions;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -110,7 +114,7 @@ fn setup_counter_bundle(db: &Path) {
     ]);
 }
 
-fn insert_audit_row(db: &Path, operation: &str, signal_yield: u32) {
+fn insert_corrupt_audit_row(db: &Path, operation: &str, signal_yield: u32) {
     let config = TeleologicalStoreConfig {
         create_if_missing: false,
         create_missing_column_families: false,
@@ -121,8 +125,9 @@ fn insert_audit_row(db: &Path, operation: &str, signal_yield: u32) {
         .duration_since(UNIX_EPOCH)
         .expect("clock after epoch")
         .as_nanos() as u64;
+    let audit_id = Uuid::new_v4();
     let record = DjAuditRecord {
-        audit_id: Uuid::new_v4(),
+        audit_id,
         timestamp_unix_nanos,
         operation: operation.to_string(),
         actor: "phase12_fsv_test".to_string(),
@@ -134,7 +139,29 @@ fn insert_audit_row(db: &Path, operation: &str, signal_yield: u32) {
         verification_run_id: None,
         signal_yield,
     };
-    put_audit_record(store.dynamicjepa_db(), &record).expect("insert audit row");
+    let key = audit_key(timestamp_unix_nanos, audit_id);
+    let value =
+        encode_plain(&record, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord").expect("encode audit row");
+    let cf = store
+        .dynamicjepa_db()
+        .cf_handle(CF_DJ_AUDIT_LOG)
+        .expect("audit CF handle");
+    let mut write_options = WriteOptions::default();
+    write_options.set_sync(true);
+    store
+        .dynamicjepa_db()
+        .put_cf_opt(cf, key, &value, &write_options)
+        .expect("insert corrupt audit row");
+    store
+        .dynamicjepa_db()
+        .flush_cf(cf)
+        .expect("flush corrupt audit row");
+    let readback = store
+        .dynamicjepa_db()
+        .get_cf(cf, key)
+        .expect("read back corrupt audit row")
+        .expect("corrupt audit row exists");
+    assert_eq!(readback, value, "corrupt audit row readback mismatch");
 }
 
 #[test]
@@ -260,7 +287,7 @@ fn dynamicjepa_phase12_compute_mc_ratio_and_edges() {
         unknown_db.to_str().expect("db utf8"),
         "--json",
     ]);
-    insert_audit_row(&unknown_db, "phase12_unknown_operation", 0);
+    insert_corrupt_audit_row(&unknown_db, "phase12_unknown_operation", 0);
     let unknown_err = run_err(&[
         "dynamicjepa",
         "compute-mc-ratio",
@@ -296,7 +323,7 @@ fn dynamicjepa_phase12_compute_mc_ratio_and_edges() {
         drift_db.to_str().expect("db utf8"),
         "--json",
     ]);
-    insert_audit_row(&drift_db, "ingest_event", 99);
+    insert_corrupt_audit_row(&drift_db, "ingest_event", 99);
     let drift_err = run_err(&[
         "dynamicjepa",
         "compute-mc-ratio",
