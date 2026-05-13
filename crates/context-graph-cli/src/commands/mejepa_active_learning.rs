@@ -29,6 +29,9 @@ pub enum MejepaCommands {
     Replay(crate::commands::mejepa_replay::ReplayArgs),
     /// End-to-end Phase G corpus training-pipeline orchestrator.
     Train(crate::commands::mejepa_train::MejepaTrainArgs),
+    /// Checkpointed Python train/calibration/holdout cycle with eval readback.
+    #[command(name = "checkpointed-train")]
+    CheckpointedTrain(crate::commands::mejepa_train::MejepaCheckpointedTrainArgs),
     /// Phase G cross-validation against a pre-scraped public CI corpus.
     #[command(name = "cross-validate-public-ci")]
     CrossValidatePublicCi(
@@ -247,6 +250,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
             serde_json::to_value(crate::commands::mejepa_train::run_mejepa_train(args)?)
                 .context("serialize train")
         }
+        MejepaCommands::CheckpointedTrain(args) => serde_json::to_value(
+            crate::commands::mejepa_train::run_checkpointed_python_train(args)?,
+        )
+        .context("serialize checkpointed-train"),
         MejepaCommands::CrossValidatePublicCi(args) => serde_json::to_value(
             crate::commands::mejepa_public_ci_cross_validate::run_public_ci_cross_validation(args)?,
         )

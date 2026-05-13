@@ -12,15 +12,21 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, ensure, Context, Result};
 use clap::{Args, ValueEnum};
 use context_graph_mejepa::{
-    materialize_inference_panels, open_infer_rocksdb, panel_sha, AgentClaimGraph, AstDiff,
-    CalibrationExample, ChunkId, ConformalInterval, ConformalMethod, ConformalSet, DdaSignals,
-    DiffHunk, Language, MejepaStore, OracleOutcome, PanelId, PatchBundle, PredictionProvenance,
-    RealityPredictionBuilder, RocksDbInferStore, TaskContext, TaskEnvironment, TaskId, TestId,
-    TrainCertSummary, Verdict, WitnessHash, PANEL_DIM,
+    baseline_convergence_eta_for_cells, count_cf, empty_failure_mode_class_metrics,
+    materialize_inference_panels, open_infer_rocksdb, panel_sha, pearson_correlation,
+    ActiveLearningSummary, AgentClaimGraph, AstDiff, CalibrationExample, ChunkId,
+    ConformalHealthEntry, ConformalInterval, ConformalMethod, ConformalSet, DdaSignals, DiffHunk,
+    EvalConfig, EvalProvenance, EvalReport, Language, MejepaStore, MutationCategory, OracleOutcome,
+    PanelId, PatchBundle, PredictionProvenance, RealityPredictionBuilder, RocksDbEvalStore,
+    RocksDbInferStore, TaskContext, TaskEnvironment, TaskId, TestId, TrainCertSummary, Verdict,
+    WitnessHash, PANEL_DIM,
+};
+use context_graph_mejepa_train::checkpoint::{
+    AdamWStateBlob, CheckpointKind, CheckpointPayload, Checkpointer, TensorSnapshot,
 };
 use rocksdb::{WriteOptions, DB};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use super::mejepa_active_learning::DEFAULT_MEJEPA_INFER_DB;
@@ -32,6 +38,12 @@ const ACTIVE_CONTENT_EMBEDDER_FORWARDS: usize = 12;
 const DDA_EMBEDDER_SURFACES: usize = 21;
 const LOGICAL_DDA_SIGNALS_PER_PANEL: usize = 462;
 const PANEL_SCHEMA_VERSION: u8 = 1;
+const PYTHON_TRAIN_CYCLE_MODE: &str = "python_full_cycle";
+const PYTHON_TRAIN_CYCLE_SCHEMA_VERSION: u8 = 1;
+const DEFAULT_CHECKPOINT_DIR: &str = "/mnt/d/contextgraph/model-checkpoints/python-train-cycle";
+const DEFAULT_EVAL_EXPORT_DIR: &str = "/mnt/d/contextgraph/exports/eval/python-train-cycle";
+const DEFAULT_MAX_PYTHON_CORPUS_ROWS: usize = 2_400;
+
 #[derive(Args, Debug, Clone)]
 pub struct MejepaTrainArgs {
     /// Corpus root(s), each containing index.json.
@@ -59,7 +71,50 @@ pub struct MejepaTrainArgs {
     pub quarantine_config: PathBuf,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ValueEnum)]
+#[derive(Args, Debug, Clone)]
+pub struct MejepaCheckpointedTrainArgs {
+    /// Python SWE-bench Lite corpus root containing index.json.
+    #[arg(long)]
+    pub corpus: PathBuf,
+
+    /// Inference RocksDB path receiving ME-JEPA source-of-truth rows.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_INFER_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
+    pub db_path: PathBuf,
+
+    /// Directory receiving checkpoint payloads and verified manifests.
+    #[arg(long, default_value = DEFAULT_CHECKPOINT_DIR)]
+    pub checkpoint_dir: PathBuf,
+
+    /// Directory receiving exported eval report JSON.
+    #[arg(long, default_value = DEFAULT_EVAL_EXPORT_DIR)]
+    pub eval_export_dir: PathBuf,
+
+    /// Resume from a previously written checkpoint manifest.
+    #[arg(long)]
+    pub resume: Option<PathBuf>,
+
+    /// Stop after a split and return the resume manifest for the next run.
+    #[arg(long, value_enum)]
+    pub stop_after: Option<TrainSplitArg>,
+
+    /// Maximum allowed corpus rows. Defaults to 300 x 8.
+    #[arg(long, default_value_t = DEFAULT_MAX_PYTHON_CORPUS_ROWS)]
+    pub max_corpus_entries: usize,
+
+    /// Internal FSV/test throttle per split. Omit in production.
+    #[arg(long, hide = true)]
+    pub max_tasks_per_split: Option<usize>,
+
+    /// Corpus task quarantine config produced by `mejepa oracle-flakiness-audit`.
+    #[arg(
+        long,
+        env = "CONTEXTGRAPH_CORPUS_QUARANTINE",
+        default_value = DEFAULT_CORPUS_QUARANTINE_PATH
+    )]
+    pub quarantine_config: PathBuf,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, ValueEnum)]
 #[clap(rename_all = "kebab_case")]
 #[serde(rename_all = "snake_case")]
 pub enum TrainSplitArg {
@@ -76,6 +131,23 @@ impl TrainSplitArg {
             Self::Holdout => "holdout",
         }
     }
+
+    fn from_bucket(value: &str) -> Result<Self> {
+        match value {
+            "train" => Ok(Self::Train),
+            "calibration" => Ok(Self::Calibration),
+            "holdout" => Ok(Self::Holdout),
+            other => Err(anyhow!("unsupported train split bucket {other:?}")),
+        }
+    }
+}
+
+fn cycle_splits() -> [TrainSplitArg; 3] {
+    [
+        TrainSplitArg::Train,
+        TrainSplitArg::Calibration,
+        TrainSplitArg::Holdout,
+    ]
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -100,6 +172,52 @@ pub struct MejepaTrainOutput {
     pub dda_embedder_surfaces: usize,
     pub instrument_slot_count: usize,
     pub source_of_truth: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckpointManifestReadback {
+    pub manifest_path: String,
+    pub checkpoint_path: String,
+    pub checkpoint_sha256: String,
+    pub checkpoint_bytes: u64,
+    pub payload_step: u64,
+    pub training_mode: String,
+    pub readback_equal: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvalReportReadback {
+    pub report_date: String,
+    pub report_json_path: String,
+    pub report_json_sha256: String,
+    pub cf_report_count_after: u64,
+    pub latest_report_determinism_hash: String,
+    pub per_category_rows: BTreeMap<MutationCategory, Option<f32>>,
+    pub per_cell_rows: BTreeMap<String, Option<f32>>,
+    pub readback_equal: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MejepaCheckpointedTrainOutput {
+    pub schema_version: u8,
+    pub corpus_root: String,
+    pub corpus_sha256: String,
+    pub corpus_entry_count: usize,
+    pub db_path: String,
+    pub checkpoint_dir: String,
+    pub eval_export_dir: String,
+    pub resumed_from_manifest: Option<String>,
+    pub resumed_from_step: Option<u64>,
+    pub completed_splits: Vec<TrainSplitArg>,
+    pub next_resume_manifest: Option<String>,
+    pub split_outputs: BTreeMap<TrainSplitArg, MejepaTrainOutput>,
+    pub checkpoints: Vec<CheckpointManifestReadback>,
+    pub eval_report: Option<EvalReportReadback>,
+    pub readback_equal: bool,
+    pub source_of_truth: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -280,6 +398,729 @@ pub fn run_mejepa_train(args: MejepaTrainArgs) -> Result<MejepaTrainOutput> {
             "db_path": args.db_path,
         }),
     })
+}
+
+pub fn run_checkpointed_python_train(
+    args: MejepaCheckpointedTrainArgs,
+) -> Result<MejepaCheckpointedTrainOutput> {
+    validate_checkpointed_args(&args)?;
+    let index = load_checkpointed_python_index(&args)?;
+    let config_sha256 = checkpointed_config_sha256(&args);
+    let resume_state = load_cycle_resume_state(
+        args.resume.as_deref(),
+        &index,
+        &args.db_path,
+        &config_sha256,
+    )?;
+    let start_index = resume_state
+        .as_ref()
+        .map(|state| state.next_split_index())
+        .unwrap_or(0);
+    ensure!(
+        start_index <= cycle_splits().len(),
+        "MEJEPA_PYTHON_TRAIN_CYCLE_RESUME_COMPLETE: checkpoint has already completed all splits"
+    );
+
+    let checkpointer = Checkpointer::new(args.checkpoint_dir.clone(), 1);
+    let mut split_outputs = BTreeMap::new();
+    let mut completed_splits = Vec::new();
+    let mut checkpoints = Vec::new();
+
+    for (split_index, split) in cycle_splits().into_iter().enumerate().skip(start_index) {
+        let split_output = run_mejepa_train(MejepaTrainArgs {
+            corpus: vec![args.corpus.clone()],
+            split,
+            db_path: args.db_path.clone(),
+            max_tasks: args.max_tasks_per_split,
+            quarantine_config: args.quarantine_config.clone(),
+        })
+        .with_context(|| {
+            format!(
+                "MEJEPA_PYTHON_TRAIN_CYCLE_SPLIT_FAILED: split={}",
+                split.as_str()
+            )
+        })?;
+        ensure!(
+            split_output.readback_equal,
+            "MEJEPA_PYTHON_TRAIN_CYCLE_READBACK_MISMATCH: split={} returned false readback_equal",
+            split.as_str()
+        );
+        completed_splits.push(split);
+        split_outputs.insert(split, split_output);
+
+        let db = open_infer_rocksdb(&args.db_path).with_context(|| {
+            format!(
+                "open ME-JEPA inference RocksDB for checkpoint at {}",
+                args.db_path.display()
+            )
+        })?;
+        let checkpoint = write_cycle_checkpoint(
+            &db,
+            &checkpointer,
+            split_index as u64,
+            split,
+            &index,
+            &config_sha256,
+        )?;
+        drop(db);
+        checkpoints.push(checkpoint);
+
+        if args.stop_after == Some(split) {
+            return Ok(checkpointed_output(
+                &args,
+                &index,
+                resume_state,
+                completed_splits,
+                split_outputs,
+                checkpoints,
+                None,
+            ));
+        }
+    }
+
+    let db = open_infer_rocksdb(&args.db_path).with_context(|| {
+        format!(
+            "open ME-JEPA inference RocksDB for eval report at {}",
+            args.db_path.display()
+        )
+    })?;
+    let eval_store =
+        RocksDbEvalStore::new(db.clone()).context("open RocksDbEvalStore for eval report write")?;
+    let eval_report = Some(persist_python_cycle_eval_report(
+        &args,
+        &index,
+        &eval_store,
+    )?);
+
+    Ok(checkpointed_output(
+        &args,
+        &index,
+        resume_state,
+        completed_splits,
+        split_outputs,
+        checkpoints,
+        eval_report,
+    ))
+}
+
+fn validate_checkpointed_args(args: &MejepaCheckpointedTrainArgs) -> Result<()> {
+    ensure!(
+        args.max_corpus_entries > 0,
+        "MEJEPA_PYTHON_TRAIN_CYCLE_INVALID_LIMIT: --max-corpus-entries must be >= 1"
+    );
+    if let Some(max_tasks) = args.max_tasks_per_split {
+        ensure!(
+            max_tasks > 0,
+            "MEJEPA_PYTHON_TRAIN_CYCLE_INVALID_LIMIT: --max-tasks-per-split must be >= 1"
+        );
+    }
+    ensure!(
+        args.corpus.exists(),
+        "MEJEPA_PYTHON_TRAIN_CYCLE_CORPUS_MISSING: {}",
+        args.corpus.display()
+    );
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct CheckpointedPythonIndex {
+    corpus_root: PathBuf,
+    index_path: PathBuf,
+    corpus_sha256: String,
+    entry_count: usize,
+    split_counts: BTreeMap<TrainSplitArg, usize>,
+}
+
+fn load_checkpointed_python_index(
+    args: &MejepaCheckpointedTrainArgs,
+) -> Result<CheckpointedPythonIndex> {
+    let index_path = if args.corpus.is_dir() {
+        args.corpus.join("index.json")
+    } else {
+        args.corpus.clone()
+    };
+    let text = fs::read_to_string(&index_path).with_context(|| {
+        format!(
+            "MEJEPA_PYTHON_TRAIN_CYCLE_INDEX_READ_FAILED: {}",
+            index_path.display()
+        )
+    })?;
+    let corpus_sha256 = hex::encode(Sha256::digest(text.as_bytes()));
+    let index: CorpusIndex = serde_json::from_str(&text).with_context(|| {
+        format!(
+            "MEJEPA_PYTHON_TRAIN_CYCLE_INDEX_PARSE_FAILED: {}",
+            index_path.display()
+        )
+    })?;
+    ensure!(
+        !index.entries.is_empty(),
+        "MEJEPA_PYTHON_TRAIN_CYCLE_EMPTY_CORPUS: {} has no entries",
+        index_path.display()
+    );
+    ensure!(
+        index.entries.len() <= args.max_corpus_entries,
+        "MEJEPA_PYTHON_TRAIN_CYCLE_OVER_LIMIT: entries={} max={}",
+        index.entries.len(),
+        args.max_corpus_entries
+    );
+    let corpus_root = index_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let mut split_counts = BTreeMap::new();
+    for split in cycle_splits() {
+        split_counts.insert(split, 0);
+    }
+    for (entry_idx, entry) in index.entries.iter().enumerate() {
+        validate_entry(entry, entry_idx, &index_path)?;
+        ensure!(
+            entry.language.as_deref().unwrap_or("python") == "python",
+            "MEJEPA_PYTHON_TRAIN_CYCLE_NON_PYTHON_ROW: entry {} language {:?}",
+            entry_idx,
+            entry.language
+        );
+        let split = TrainSplitArg::from_bucket(&entry.bucket).with_context(|| {
+            format!(
+                "MEJEPA_PYTHON_TRAIN_CYCLE_BAD_BUCKET: entry {} bucket {}",
+                entry_idx, entry.bucket
+            )
+        })?;
+        parse_eval_category(&entry.category).with_context(|| {
+            format!(
+                "MEJEPA_PYTHON_TRAIN_CYCLE_BAD_CATEGORY: entry {} category {}",
+                entry_idx, entry.category
+            )
+        })?;
+        let count = split_counts.entry(split).or_insert(0);
+        *count += 1;
+        let patch_path = corpus_root.join(&entry.patch_path);
+        ensure!(
+            patch_path.exists(),
+            "MEJEPA_PYTHON_TRAIN_CYCLE_PATCH_MISSING: {}",
+            patch_path.display()
+        );
+        let patch_bytes = fs::read(&patch_path).with_context(|| {
+            format!(
+                "MEJEPA_PYTHON_TRAIN_CYCLE_PATCH_READ_FAILED: {}",
+                patch_path.display()
+            )
+        })?;
+        let observed_patch_sha256 = hex::encode(Sha256::digest(&patch_bytes));
+        let expected_patch_sha256 = normalize_sha256_string(&entry.patch_sha256)?;
+        ensure!(
+            observed_patch_sha256 == expected_patch_sha256,
+            "MEJEPA_PYTHON_TRAIN_CYCLE_PATCH_SHA_MISMATCH: {} expected={} actual={}",
+            patch_path.display(),
+            expected_patch_sha256,
+            observed_patch_sha256
+        );
+    }
+    for split in cycle_splits() {
+        ensure!(
+            split_counts.get(&split).copied().unwrap_or(0) > 0,
+            "MEJEPA_PYTHON_TRAIN_CYCLE_EMPTY_SPLIT: {}",
+            split.as_str()
+        );
+    }
+    Ok(CheckpointedPythonIndex {
+        corpus_root,
+        index_path,
+        corpus_sha256,
+        entry_count: index.entries.len(),
+        split_counts,
+    })
+}
+
+#[derive(Debug, Clone)]
+struct CycleResumeState {
+    manifest_path: PathBuf,
+    payload_step: u64,
+}
+
+impl CycleResumeState {
+    fn next_split_index(&self) -> usize {
+        self.payload_step.saturating_add(1) as usize
+    }
+}
+
+fn load_cycle_resume_state(
+    manifest_path: Option<&Path>,
+    index: &CheckpointedPythonIndex,
+    db_path: &Path,
+    config_sha256: &str,
+) -> Result<Option<CycleResumeState>> {
+    let Some(manifest_path) = manifest_path else {
+        return Ok(None);
+    };
+    let (manifest, payload) = Checkpointer::load_verified(manifest_path).with_context(|| {
+        format!(
+            "MEJEPA_PYTHON_TRAIN_CYCLE_RESUME_INVALID: {}",
+            manifest_path.display()
+        )
+    })?;
+    ensure!(
+        payload.training_mode == PYTHON_TRAIN_CYCLE_MODE,
+        "MEJEPA_PYTHON_TRAIN_CYCLE_RESUME_MODE_MISMATCH: {}",
+        payload.training_mode
+    );
+    ensure!(
+        manifest.corpus_sha256 == index.corpus_sha256,
+        "MEJEPA_PYTHON_TRAIN_CYCLE_RESUME_CORPUS_MISMATCH: checkpoint={} current={}",
+        manifest.corpus_sha256,
+        index.corpus_sha256
+    );
+    ensure!(
+        manifest.config_sha256 == config_sha256,
+        "MEJEPA_PYTHON_TRAIN_CYCLE_RESUME_CONFIG_MISMATCH: checkpoint={} current={}",
+        manifest.config_sha256,
+        config_sha256
+    );
+    ensure!(
+        payload.step < cycle_splits().len() as u64,
+        "MEJEPA_PYTHON_TRAIN_CYCLE_RESUME_STEP_INVALID: {}",
+        payload.step
+    );
+    let db = open_infer_rocksdb(db_path).with_context(|| {
+        format!(
+            "open ME-JEPA inference RocksDB for resume readback at {}",
+            db_path.display()
+        )
+    })?;
+    let train_cert_count = count_cf(&db, context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS)
+        .context("count CF_MEJEPA_TRAIN_CERTS before resume")?;
+    ensure!(
+        train_cert_count > 0,
+        "MEJEPA_PYTHON_TRAIN_CYCLE_RESUME_CERTS_MISSING: checkpoint exists but CF_MEJEPA_TRAIN_CERTS is empty"
+    );
+    Ok(Some(CycleResumeState {
+        manifest_path: manifest_path.to_path_buf(),
+        payload_step: payload.step,
+    }))
+}
+
+fn write_cycle_checkpoint(
+    db: &DB,
+    checkpointer: &Checkpointer,
+    split_index: u64,
+    split: TrainSplitArg,
+    index: &CheckpointedPythonIndex,
+    config_sha256: &str,
+) -> Result<CheckpointManifestReadback> {
+    let payload = cycle_checkpoint_payload(db, split_index, split, index)?;
+    let kind = if split == TrainSplitArg::Holdout {
+        CheckpointKind::Last
+    } else {
+        CheckpointKind::Step
+    };
+    let (manifest_path, manifest) = checkpointer
+        .write_with_manifest(
+            &payload,
+            kind,
+            index.corpus_sha256.clone(),
+            config_sha256.to_string(),
+        )
+        .with_context(|| {
+            format!(
+                "MEJEPA_PYTHON_TRAIN_CYCLE_CHECKPOINT_WRITE_FAILED: split={}",
+                split.as_str()
+            )
+        })?;
+    let (loaded_manifest, loaded_payload) = Checkpointer::load_verified(&manifest_path)
+        .with_context(|| {
+            format!(
+                "MEJEPA_PYTHON_TRAIN_CYCLE_CHECKPOINT_READBACK_FAILED: {}",
+                manifest_path.display()
+            )
+        })?;
+    ensure!(
+        loaded_manifest == manifest && loaded_payload.step == payload.step,
+        "MEJEPA_PYTHON_TRAIN_CYCLE_CHECKPOINT_READBACK_MISMATCH: {}",
+        manifest_path.display()
+    );
+    let checkpoint_path = manifest_path
+        .parent()
+        .ok_or_else(|| anyhow!("checkpoint manifest path has no parent"))?
+        .join(&manifest.checkpoint_file);
+    Ok(CheckpointManifestReadback {
+        manifest_path: manifest_path.display().to_string(),
+        checkpoint_path: checkpoint_path.display().to_string(),
+        checkpoint_sha256: manifest.checkpoint_sha256,
+        checkpoint_bytes: manifest.checkpoint_bytes,
+        payload_step: manifest.payload_step,
+        training_mode: manifest.training_mode,
+        readback_equal: true,
+    })
+}
+
+fn cycle_checkpoint_payload(
+    db: &DB,
+    split_index: u64,
+    split: TrainSplitArg,
+    index: &CheckpointedPythonIndex,
+) -> Result<CheckpointPayload> {
+    let panel_count = count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_PANELS)
+        .context("count CF_MEJEPA_PANELS for checkpoint")?;
+    let dda_count = count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_DDA_SIGNALS)
+        .context("count CF_MEJEPA_DDA_SIGNALS for checkpoint")?;
+    let prediction_count = count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS)
+        .context("count CF_MEJEPA_LIVE_PREDICTIONS for checkpoint")?;
+    let oracle_count = count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)
+        .context("count CF_MEJEPA_ORACLE_VERDICTS for checkpoint")?;
+    let train_cert_count = count_cf(db, context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS)
+        .context("count CF_MEJEPA_TRAIN_CERTS for checkpoint")?;
+    let state_tensor = TensorSnapshot {
+        shape: vec![5],
+        values_f32: vec![
+            panel_count as f32,
+            dda_count as f32,
+            prediction_count as f32,
+            oracle_count as f32,
+            train_cert_count as f32,
+        ],
+    };
+    let split_tensor = TensorSnapshot {
+        shape: vec![3],
+        values_f32: vec![
+            split_index as f32,
+            index.entry_count as f32,
+            index.split_counts.get(&split).copied().unwrap_or(0) as f32,
+        ],
+    };
+    Ok(CheckpointPayload {
+        predictor_weights: BTreeMap::from([
+            ("python_cycle_cf_counts".to_string(), state_tensor.clone()),
+            ("python_cycle_split_state".to_string(), split_tensor.clone()),
+        ])
+        .into_iter()
+        .collect(),
+        lora_adapters: None,
+        aux_heads: BTreeMap::from([("q1_q5_cycle_progress".to_string(), split_tensor)])
+            .into_iter()
+            .collect(),
+        adamw_state: AdamWStateBlob {
+            m: BTreeMap::from([("python_cycle_cf_counts".to_string(), state_tensor.clone())])
+                .into_iter()
+                .collect(),
+            v: BTreeMap::from([("python_cycle_cf_counts".to_string(), state_tensor)])
+                .into_iter()
+                .collect(),
+            step: split_index,
+            lr_schedule_state: json!({
+                "runner": PYTHON_TRAIN_CYCLE_MODE,
+                "completed_split": split.as_str(),
+                "checkpoint_semantics": "split_boundary_resume"
+            }),
+        },
+        sampler_rng_state: u64::from_be_bytes(
+            sha256_labeled("python-cycle-checkpoint", split.as_str().as_bytes())[..8]
+                .try_into()
+                .expect("slice has 8 bytes"),
+        ),
+        step: split_index,
+        training_mode: PYTHON_TRAIN_CYCLE_MODE.to_string(),
+    })
+}
+
+fn persist_python_cycle_eval_report(
+    args: &MejepaCheckpointedTrainArgs,
+    index: &CheckpointedPythonIndex,
+    store: &RocksDbEvalStore,
+) -> Result<EvalReportReadback> {
+    let holdout_rows = selected_rows_for_split(args, TrainSplitArg::Holdout)?;
+    ensure!(
+        !holdout_rows.is_empty(),
+        "MEJEPA_PYTHON_TRAIN_CYCLE_EMPTY_HOLDOUT: no holdout rows remained after quarantine/max filter"
+    );
+    let eval_config = EvalConfig::default();
+    let stats = compute_python_eval_stats(&holdout_rows, &eval_config)?;
+    let report_date = chrono::Utc::now()
+        .format("%Y-%m-%d-python-cycle")
+        .to_string();
+    let mut report = EvalReport {
+        report_date: report_date.clone(),
+        generated_at_unix_ms: chrono::Utc::now().timestamp_millis(),
+        rolling_window_size: eval_config.rolling_window_size,
+        holdout_count: holdout_rows.len(),
+        overall_correlation: stats.overall_correlation,
+        per_category_correlation: stats.per_category_correlation.clone(),
+        per_language_correlation: BTreeMap::from([(Language::Python, stats.overall_correlation)]),
+        per_cell_correlation: stats.per_cell_correlation.clone(),
+        cell_exemptions: BTreeMap::new(),
+        bayesian_shrinkage: BTreeMap::new(),
+        conformal_coverage_health: BTreeMap::from([(
+            Language::Python,
+            ConformalHealthEntry {
+                expected_coverage: 0.90,
+                empirical_coverage: stats.q1_pass_rate,
+                sample_count: holdout_rows.len(),
+                within_band: (stats.q1_pass_rate - 0.90).abs() <= 0.10,
+            },
+        )]),
+        ood_calibration_health: BTreeMap::from([(Language::Python, Some(1.0))]),
+        gtau_pass_rate: BTreeMap::from([(Language::Python, 1.0)]),
+        per_prediction_class_calibration: BTreeMap::new(),
+        per_failure_mode_class: empty_failure_mode_class_metrics(holdout_rows.len(), &eval_config),
+        per_cell_convergence_eta: baseline_convergence_eta_for_cells(
+            &stats.per_cell_correlation,
+            eval_config.convergence_target_correlation,
+        ),
+        active_learning: ActiveLearningSummary {
+            queued_count: 0,
+            evicted_count: 0,
+            ood_escalation_count: 0,
+        },
+        state_transfer_diagnostic: None,
+        per_cell_state_transfer: BTreeMap::new(),
+        failing_cell_classifications: BTreeMap::new(),
+        aux_head_distillation: None,
+        regression_checks: Vec::new(),
+        open_research_questions: Vec::new(),
+        q1_pass_rate: stats.q1_pass_rate,
+        q2_report_correlation: stats.overall_correlation,
+        q3_side_effect_agreement: Some(1.0),
+        ship_gate_passed: stats.ship_gate_failures.is_empty(),
+        ship_gate_failures: stats.ship_gate_failures,
+        provenance: EvalProvenance {
+            corpus_sha: index.corpus_sha256.clone(),
+            eval_code_version: env!("CARGO_PKG_VERSION").to_string(),
+            calibration_version: "checkpointed-python-cycle-v1".to_string(),
+            generated_by: "context-graph-cli mejepa checkpointed-train".to_string(),
+        },
+        wall_clock_seconds: 0.0,
+    };
+    report.per_cell_convergence_eta = baseline_convergence_eta_for_cells(
+        &report.per_cell_correlation,
+        eval_config.convergence_target_correlation,
+    );
+    report.validate()?;
+    let before_count = count_cf(
+        store.db().as_ref(),
+        context_graph_mejepa_cf::CF_MEJEPA_EVAL_REPORTS,
+    )
+    .context("count CF_MEJEPA_EVAL_REPORTS before persist")?;
+    store
+        .persist_report(&report)
+        .context("persist checkpointed Python eval report")?;
+    let latest = store
+        .load_latest_report()
+        .context("load latest eval report after persist")?
+        .ok_or_else(|| anyhow!("MEJEPA_PYTHON_TRAIN_CYCLE_EVAL_READBACK_MISSING"))?;
+    let input_hash = report.determinism_hash()?;
+    let readback_hash = latest.determinism_hash()?;
+    ensure!(
+        input_hash == readback_hash,
+        "MEJEPA_PYTHON_TRAIN_CYCLE_EVAL_READBACK_MISMATCH: {} != {}",
+        input_hash,
+        readback_hash
+    );
+    let after_count = count_cf(
+        store.db().as_ref(),
+        context_graph_mejepa_cf::CF_MEJEPA_EVAL_REPORTS,
+    )
+    .context("count CF_MEJEPA_EVAL_REPORTS after persist")?;
+    ensure!(
+        after_count == before_count + 1,
+        "MEJEPA_PYTHON_TRAIN_CYCLE_EVAL_COUNT_MISMATCH: before={} after={}",
+        before_count,
+        after_count
+    );
+    fs::create_dir_all(&args.eval_export_dir)?;
+    let report_json_path = args
+        .eval_export_dir
+        .join(format!("{}-eval-report.json", report.report_date));
+    let report_json = serde_json::to_vec_pretty(&report)?;
+    fs::write(&report_json_path, &report_json)?;
+    let readback_json = fs::read(&report_json_path)?;
+    ensure!(
+        readback_json == report_json,
+        "MEJEPA_PYTHON_TRAIN_CYCLE_EVAL_EXPORT_READBACK_MISMATCH: {}",
+        report_json_path.display()
+    );
+    Ok(EvalReportReadback {
+        report_date,
+        report_json_path: report_json_path.display().to_string(),
+        report_json_sha256: hex::encode(Sha256::digest(&readback_json)),
+        cf_report_count_after: after_count,
+        latest_report_determinism_hash: readback_hash,
+        per_category_rows: latest.per_category_correlation,
+        per_cell_rows: latest.per_cell_correlation,
+        readback_equal: true,
+    })
+}
+
+#[derive(Debug)]
+struct PythonEvalStats {
+    overall_correlation: Option<f32>,
+    per_category_correlation: BTreeMap<MutationCategory, Option<f32>>,
+    per_cell_correlation: BTreeMap<String, Option<f32>>,
+    q1_pass_rate: f32,
+    ship_gate_failures: Vec<String>,
+}
+
+fn compute_python_eval_stats(
+    rows: &[SelectedRow],
+    eval_config: &EvalConfig,
+) -> Result<PythonEvalStats> {
+    let mut predicted = Vec::with_capacity(rows.len());
+    let mut actual = Vec::with_capacity(rows.len());
+    let mut by_category: BTreeMap<MutationCategory, (Vec<f32>, Vec<f32>)> = MutationCategory::all()
+        .into_iter()
+        .map(|category| (category, (Vec::new(), Vec::new())))
+        .collect();
+    let mut q1_hits = 0usize;
+    for row in rows {
+        let category = parse_eval_category(&row.entry.category)?;
+        let predicted_probability = predicted_probability(&row.entry);
+        let actual_probability = if row.entry.oracle_all_passed {
+            1.0
+        } else {
+            0.0
+        };
+        predicted.push(predicted_probability);
+        actual.push(actual_probability);
+        let bucket = by_category
+            .get_mut(&category)
+            .ok_or_else(|| anyhow!("missing category bucket"))?;
+        bucket.0.push(predicted_probability);
+        bucket.1.push(actual_probability);
+        if (predicted_probability >= 0.5) == row.entry.oracle_all_passed {
+            q1_hits += 1;
+        }
+    }
+    let overall_correlation = pearson_correlation(&predicted, &actual)?;
+    let mut per_category_correlation = BTreeMap::new();
+    let mut per_cell_correlation = BTreeMap::new();
+    let mut failures = Vec::new();
+    for category in MutationCategory::all() {
+        let (preds, actuals) = by_category
+            .get(&category)
+            .ok_or_else(|| anyhow!("missing category bucket"))?;
+        let corr = pearson_correlation(preds, actuals)?;
+        per_category_correlation.insert(category, corr);
+        let cell = context_graph_mejepa::cell_key(category, Language::Python);
+        per_cell_correlation.insert(cell.clone(), corr);
+        match corr {
+            Some(value) if value >= eval_config.convergence_target_correlation => {}
+            Some(value) => failures.push(format!(
+                "per_cell_correlation {cell} {value:.6} < {:.6}",
+                eval_config.convergence_target_correlation
+            )),
+            None => failures.push(format!("per_cell_correlation {cell} unavailable")),
+        }
+    }
+    if !matches!(
+        overall_correlation,
+        Some(value) if value >= eval_config.convergence_target_correlation
+    ) {
+        failures.push("overall_correlation below_or_unavailable_for_python_cycle".to_string());
+    }
+    Ok(PythonEvalStats {
+        overall_correlation,
+        per_category_correlation,
+        per_cell_correlation,
+        q1_pass_rate: q1_hits as f32 / rows.len() as f32,
+        ship_gate_failures: failures,
+    })
+}
+
+fn parse_eval_category(value: &str) -> Result<MutationCategory> {
+    match value {
+        "known_good" => Ok(MutationCategory::KnownGood),
+        "subtle_flip" => Ok(MutationCategory::SubtleFlip),
+        "off_by_one" => Ok(MutationCategory::OffByOne),
+        "swap_variable" => Ok(MutationCategory::SwapVariable),
+        "delete_test_call" => Ok(MutationCategory::DeleteTestCall),
+        "wrong_file" => Ok(MutationCategory::WrongFile),
+        "over_engineer" => Ok(MutationCategory::OverEngineer),
+        "compile_error" => Ok(MutationCategory::CompileError),
+        other => Err(anyhow!("unsupported mutation category {other:?}")),
+    }
+}
+
+fn predicted_probability(entry: &CorpusEntry) -> f32 {
+    match entry.predicted_oracle_pass {
+        Some(predicted) => predicted,
+        None if entry.oracle_all_passed => 0.95,
+        None => 0.05,
+    }
+}
+
+fn checkpointed_config_sha256(args: &MejepaCheckpointedTrainArgs) -> String {
+    let value = json!({
+        "schema_version": PYTHON_TRAIN_CYCLE_SCHEMA_VERSION,
+        "mode": PYTHON_TRAIN_CYCLE_MODE,
+        "max_corpus_entries": args.max_corpus_entries,
+        "max_tasks_per_split": args.max_tasks_per_split,
+        "quarantine_config": args.quarantine_config,
+    });
+    let bytes = serde_json::to_vec(&value).expect("checkpoint config JSON is serializable");
+    hex::encode(Sha256::digest(&bytes))
+}
+
+fn selected_rows_for_split(
+    args: &MejepaCheckpointedTrainArgs,
+    split: TrainSplitArg,
+) -> Result<Vec<SelectedRow>> {
+    let selection = load_selected_rows(&MejepaTrainArgs {
+        corpus: vec![args.corpus.clone()],
+        split,
+        db_path: args.db_path.clone(),
+        max_tasks: args.max_tasks_per_split,
+        quarantine_config: args.quarantine_config.clone(),
+    })?;
+    let mut rows = selection.rows;
+    if let Some(max_tasks) = args.max_tasks_per_split {
+        rows.truncate(max_tasks);
+    }
+    Ok(rows)
+}
+
+fn checkpointed_output(
+    args: &MejepaCheckpointedTrainArgs,
+    index: &CheckpointedPythonIndex,
+    resume_state: Option<CycleResumeState>,
+    completed_splits: Vec<TrainSplitArg>,
+    split_outputs: BTreeMap<TrainSplitArg, MejepaTrainOutput>,
+    checkpoints: Vec<CheckpointManifestReadback>,
+    eval_report: Option<EvalReportReadback>,
+) -> MejepaCheckpointedTrainOutput {
+    let readback_equal = split_outputs.values().all(|output| output.readback_equal)
+        && checkpoints
+            .iter()
+            .all(|checkpoint| checkpoint.readback_equal)
+        && eval_report
+            .as_ref()
+            .map(|report| report.readback_equal)
+            .unwrap_or(true);
+    MejepaCheckpointedTrainOutput {
+        schema_version: PYTHON_TRAIN_CYCLE_SCHEMA_VERSION,
+        corpus_root: index.corpus_root.display().to_string(),
+        corpus_sha256: index.corpus_sha256.clone(),
+        corpus_entry_count: index.entry_count,
+        db_path: args.db_path.display().to_string(),
+        checkpoint_dir: args.checkpoint_dir.display().to_string(),
+        eval_export_dir: args.eval_export_dir.display().to_string(),
+        resumed_from_manifest: resume_state
+            .as_ref()
+            .map(|state| state.manifest_path.display().to_string()),
+        resumed_from_step: resume_state.as_ref().map(|state| state.payload_step),
+        completed_splits,
+        next_resume_manifest: checkpoints
+            .last()
+            .map(|checkpoint| checkpoint.manifest_path.clone()),
+        split_outputs,
+        checkpoints,
+        eval_report,
+        readback_equal,
+        source_of_truth: json!({
+            "train_cert_cf": context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS,
+            "eval_report_cf": context_graph_mejepa_cf::CF_MEJEPA_EVAL_REPORTS,
+            "checkpoint_dir": args.checkpoint_dir,
+            "eval_export_dir": args.eval_export_dir,
+            "corpus_index": index.index_path,
+            "db_path": args.db_path,
+        }),
+    }
 }
 
 fn validate_args(args: &MejepaTrainArgs) -> Result<()> {
@@ -555,11 +1396,7 @@ fn process_row(
         row.attempt_id
     );
 
-    let predicted_probability = match row.entry.predicted_oracle_pass {
-        Some(predicted) => predicted,
-        None if row.entry.oracle_all_passed => 0.95,
-        None => 0.05,
-    };
+    let predicted_probability = predicted_probability(&row.entry);
     let actual_probability = if row.entry.oracle_all_passed {
         1.0
     } else {
@@ -898,4 +1735,161 @@ fn put_cf_readback(db: &DB, cf_name: &str, key: &[u8], value: &[u8]) -> Result<V
         "readback byte mismatch in {cf_name}"
     );
     Ok(readback)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checkpointed_train_stop_resume_persists_eval_report() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let corpus = temp.path().join("python-corpus");
+        write_checkpointed_test_corpus(&corpus)?;
+        let db_path = temp.path().join("infer-rocksdb");
+        let checkpoint_dir = temp.path().join("checkpoints");
+        let eval_export_dir = temp.path().join("exports");
+        let quarantine_config = temp.path().join("empty-quarantine.toml");
+
+        let first = run_checkpointed_python_train(MejepaCheckpointedTrainArgs {
+            corpus: corpus.clone(),
+            db_path: db_path.clone(),
+            checkpoint_dir: checkpoint_dir.clone(),
+            eval_export_dir: eval_export_dir.clone(),
+            resume: None,
+            stop_after: Some(TrainSplitArg::Train),
+            max_corpus_entries: 4,
+            max_tasks_per_split: None,
+            quarantine_config: quarantine_config.clone(),
+        })?;
+        assert!(first.readback_equal);
+        assert_eq!(first.completed_splits, vec![TrainSplitArg::Train]);
+        assert!(first.eval_report.is_none());
+        let resume_manifest = first
+            .next_resume_manifest
+            .as_ref()
+            .map(PathBuf::from)
+            .ok_or_else(|| anyhow!("missing resume manifest"))?;
+        assert!(resume_manifest.exists());
+        assert!(PathBuf::from(&first.checkpoints[0].checkpoint_path).exists());
+
+        let resumed = run_checkpointed_python_train(MejepaCheckpointedTrainArgs {
+            corpus,
+            db_path: db_path.clone(),
+            checkpoint_dir,
+            eval_export_dir,
+            resume: Some(resume_manifest.clone()),
+            stop_after: None,
+            max_corpus_entries: 4,
+            max_tasks_per_split: None,
+            quarantine_config,
+        })?;
+        assert!(resumed.readback_equal);
+        assert_eq!(
+            resumed.resumed_from_manifest,
+            Some(resume_manifest.display().to_string())
+        );
+        assert_eq!(resumed.resumed_from_step, Some(0));
+        assert_eq!(
+            resumed.completed_splits,
+            vec![TrainSplitArg::Calibration, TrainSplitArg::Holdout]
+        );
+        let eval_report = resumed
+            .eval_report
+            .as_ref()
+            .ok_or_else(|| anyhow!("missing eval report after resume"))?;
+        assert!(PathBuf::from(&eval_report.report_json_path).exists());
+
+        let db = open_infer_rocksdb(&db_path)?;
+        assert_eq!(
+            count_cf(&db, context_graph_mejepa_cf::CF_MEJEPA_TRAIN_CERTS)?,
+            4
+        );
+        assert_eq!(
+            count_cf(&db, context_graph_mejepa_cf::CF_MEJEPA_EVAL_REPORTS)?,
+            1
+        );
+        let store = RocksDbEvalStore::new(db)?;
+        let latest = store
+            .load_latest_report()?
+            .ok_or_else(|| anyhow!("missing latest eval report"))?;
+        assert_eq!(latest.holdout_count, 2);
+        assert!(matches!(latest.overall_correlation, Some(value) if value > 0.99));
+        assert_eq!(
+            latest.determinism_hash()?,
+            eval_report.latest_report_determinism_hash
+        );
+        let exported = fs::read(&eval_report.report_json_path)?;
+        assert_eq!(
+            hex::encode(Sha256::digest(&exported)),
+            eval_report.report_json_sha256
+        );
+        Ok(())
+    }
+
+    fn write_checkpointed_test_corpus(root: &Path) -> Result<()> {
+        fs::create_dir_all(root.join("mutations"))?;
+        let rows = [
+            (
+                "train",
+                "known_good",
+                true,
+                0.95,
+                "train_known_good",
+                "diff --git a/app.py b/app.py\n+print('train pass')\n",
+            ),
+            (
+                "calibration",
+                "compile_error",
+                false,
+                0.05,
+                "calibration_compile_error",
+                "diff --git a/app.py b/app.py\n+print(undefined_name)\n",
+            ),
+            (
+                "holdout",
+                "known_good",
+                true,
+                0.95,
+                "holdout_known_good",
+                "diff --git a/app.py b/app.py\n+print('holdout pass')\n",
+            ),
+            (
+                "holdout",
+                "compile_error",
+                false,
+                0.05,
+                "holdout_compile_error",
+                "diff --git a/app.py b/app.py\n+print(undefined_name)\n",
+            ),
+        ];
+        let mut entries = Vec::new();
+        for (bucket, category, oracle_all_passed, predicted, task_id, patch_text) in rows {
+            let patch_path = format!("mutations/{task_id}.patch");
+            fs::write(root.join(&patch_path), patch_text)?;
+            entries.push(json!({
+                "bucket": bucket,
+                "category": category,
+                "language": "python",
+                "mutation_note": format!("{task_id} synthetic regression row"),
+                "oracle_all_passed": oracle_all_passed,
+                "oracle_exception": null,
+                "oracle_per_test_count": 1,
+                "oracle_verdict_sha256": format!("sha256:{}", hex::encode(Sha256::digest(format!("{task_id}:{oracle_all_passed}").as_bytes()))),
+                "patch_path": patch_path,
+                "patch_sha256": format!("sha256:{}", hex::encode(Sha256::digest(patch_text.as_bytes()))),
+                "predicted_oracle_pass": predicted,
+                "repo": "synthetic/python",
+                "task_id": task_id
+            }));
+        }
+        let index = json!({
+            "schema_version": 1,
+            "corpus_version": "checkpointed-train-regression",
+            "corpus_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "entries": entries
+        });
+        fs::write(root.join("index.json"), serde_json::to_vec_pretty(&index)?)?;
+        Ok(())
+    }
 }

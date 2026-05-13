@@ -951,6 +951,7 @@ dependencies = [
  "context-graph-mejepa",
  "context-graph-mejepa-cf",
  "context-graph-mejepa-hygiene",
+ "context-graph-mejepa-train",
  "context-graph-paths",
  "context-graph-storage",
  "context-graph-test-utils",

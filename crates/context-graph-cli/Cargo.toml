@@ -32,6 +32,7 @@ context-graph-dynamicjepa = { path = "../context-graph-dynamicjepa" }
 context-graph-mejepa = { path = "../context-graph-mejepa" }
 context-graph-mejepa-cf = { path = "../context-graph-mejepa-cf" }
 context-graph-mejepa-hygiene = { path = "../context-graph-mejepa-hygiene" }
+context-graph-mejepa-train = { path = "../context-graph-mejepa-train" }
 # TASK-HOOKS-011: Required for semantic search (--query flag)
 context-graph-embeddings = { path = "../context-graph-embeddings" }
 
