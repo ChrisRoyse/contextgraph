@@ -266,6 +266,10 @@ fn synthetic_dashboard_report(report_date: &str) -> EvalReport {
             )
             .unwrap(),
         )]),
+        per_failure_mode_class: context_graph_mejepa::empty_failure_mode_class_metrics(
+            4,
+            &context_graph_mejepa::EvalConfig::default(),
+        ),
         active_learning: ActiveLearningSummary {
             queued_count: 1,
             evicted_count: 0,

@@ -224,10 +224,7 @@ impl FailureModeClassMetrics {
             ));
         }
         if self.sample_count
-            != self.true_positive
-                + self.false_positive
-                + self.false_negative
-                + self.true_negative
+            != self.true_positive + self.false_positive + self.false_negative + self.true_negative
         {
             return Err(EvalError::new(
                 EvalErrorCode::InvalidInput,
@@ -650,10 +647,7 @@ pub(crate) fn validate_optional_correlation(
     Ok(())
 }
 
-fn validate_actual_failure_modes(
-    name: &str,
-    modes: &[FailureModeClass],
-) -> Result<(), EvalError> {
+fn validate_actual_failure_modes(name: &str, modes: &[FailureModeClass]) -> Result<(), EvalError> {
     const MAX_ACTUAL_FAILURE_MODES: usize = 8;
     if modes.len() > MAX_ACTUAL_FAILURE_MODES {
         return Err(EvalError::new(

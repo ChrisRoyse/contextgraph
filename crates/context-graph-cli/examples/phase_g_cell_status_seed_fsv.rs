@@ -198,6 +198,10 @@ fn build_report(scenario: Scenario) -> EvalReport {
         ood_calibration_health: BTreeMap::new(),
         gtau_pass_rate: BTreeMap::new(),
         per_prediction_class_calibration: BTreeMap::new(),
+        per_failure_mode_class: context_graph_mejepa::empty_failure_mode_class_metrics(
+            800,
+            &context_graph_mejepa::EvalConfig::default(),
+        ),
         active_learning: ActiveLearningSummary {
             queued_count: 0,
             evicted_count: 0,

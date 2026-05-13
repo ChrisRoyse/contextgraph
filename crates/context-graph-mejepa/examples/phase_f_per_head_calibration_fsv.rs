@@ -203,6 +203,10 @@ fn synthetic_report(
         ood_calibration_health: BTreeMap::from([(Language::Rust, Some(0.88))]),
         gtau_pass_rate: BTreeMap::from([(Language::Rust, 0.98)]),
         per_prediction_class_calibration,
+        per_failure_mode_class: context_graph_mejepa::empty_failure_mode_class_metrics(
+            4,
+            &context_graph_mejepa::EvalConfig::default(),
+        ),
         active_learning: ActiveLearningSummary {
             queued_count: 0,
             evicted_count: 0,

@@ -323,6 +323,7 @@ pub fn mejepa_ship_gate_status_payload_with_exemptions(
         "perCellStateTransfer": report.per_cell_state_transfer.clone(),
         "lowStateTransferCells": low_state_transfer_cells(&report),
         "perPredictionClassCalibration": report.per_prediction_class_calibration.clone(),
+        "perFailureModeClass": report.per_failure_mode_class.clone(),
         "sourceOfTruth": "CF_MEJEPA_EVAL_REPORTS"
     }))
 }

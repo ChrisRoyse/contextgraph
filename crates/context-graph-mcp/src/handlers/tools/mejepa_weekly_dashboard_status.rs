@@ -87,7 +87,8 @@ pub(super) fn weekly_eval_dashboard(
             "conformalCoverage": report.conformal_coverage_health,
             "oodCalibration": report.ood_calibration_health,
             "gtauPassRate": report.gtau_pass_rate,
-            "perPredictionClassCalibration": report.per_prediction_class_calibration
+            "perPredictionClassCalibration": report.per_prediction_class_calibration,
+            "perFailureModeClass": report.per_failure_mode_class
         },
         "activeLearning": report.active_learning,
         "labelTransferDecisions": label_transfer,
@@ -396,6 +397,7 @@ fn required_weekly_sections_status(exports_root: &Path, report_date: &str) -> Va
     let path = exports_root.join(report_date).join("weekly.md");
     let required = [
         "## Catastrophic Events",
+        "## Per-Failure-Mode-Class Metrics",
         "## Per-Cell Ship Gate Status",
         "## Active-Learning Queue Summary",
         "## Agent-Feedback Summary",
@@ -482,6 +484,13 @@ fn runbook_actions(
     }
     if !report.ship_gate_passed {
         actions.push("inspect ship_gate_failures and block Phase G promotion");
+    }
+    if report
+        .per_failure_mode_class
+        .values()
+        .any(|metrics| !metrics.passed_threshold)
+    {
+        actions.push("review low precision/recall failure-mode classes before Phase G promotion");
     }
     if !low_state_transfer_cells(report).is_empty() {
         actions.push("queue fine-tune review for low state-transfer cells");

@@ -1,8 +1,8 @@
 use super::cell_exemptions::CellExemption;
 use super::error::{EvalError, EvalErrorCode};
 use super::types::{
-    cell_key, language_slug, ConformalHealthEntry, EvalConfig, EvalObservation, MutationCategory,
-    FailureModeClassMetrics, RegressionCheck, StateTransferDiagnostic,
+    cell_key, language_slug, ConformalHealthEntry, EvalConfig, EvalObservation,
+    FailureModeClassMetrics, MutationCategory, RegressionCheck, StateTransferDiagnostic,
 };
 use crate::types::{FailureModeClass, Language, OracleOutcome};
 use std::collections::BTreeMap;
@@ -255,7 +255,10 @@ pub fn compute_failure_mode_class_metrics(
         let mut true_negative = 0usize;
 
         for obs in observations {
-            let actual = obs.actual_failure_modes.iter().any(|mode| *mode == failure_class);
+            let actual = obs
+                .actual_failure_modes
+                .iter()
+                .any(|mode| *mode == failure_class);
             let predicted = obs
                 .prediction
                 .predicted_failure_modes

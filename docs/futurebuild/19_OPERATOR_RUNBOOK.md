@@ -81,6 +81,7 @@ less /mnt/d/contextgraph/exports/eval/$(date +%Y-%m-%d)/weekly.md
 # Look for:
 # - Operator Cell Triage top-10 table; take the suggested action per row
 # - Oracle flakiness quarantine changes in config/corpus_quarantine.toml before train/holdout reruns
+# - Per-Failure-Mode-Class Metrics rows below precision 0.90 or recall 0.70; inspect the weakness column
 # - Per-(category × language) ship-gate status (≥0.95 met / not met per cell)
 # - Drift events of the week
 # - Promotions / rollbacks

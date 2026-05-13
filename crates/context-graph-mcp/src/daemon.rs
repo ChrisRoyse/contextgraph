@@ -1322,6 +1322,7 @@ pub fn write_weekly_eval_markdown(
     let per_cell_state_transfer = render_state_transfer_per_cell_table(report);
     let failing_cell_root_causes = render_failing_cell_root_cause_table(report);
     let operator_cell_triage = render_operator_cell_triage_table(report);
+    let per_failure_mode_class = render_failure_mode_class_metrics_table(report);
     let per_cell_ship_gate = if report.per_cell_correlation.is_empty() {
         "- none".to_string()
     } else {
@@ -1395,6 +1396,7 @@ pub fn write_weekly_eval_markdown(
          - q2_report_correlation: {:?}\n\
          - q3_side_effect_agreement: {:?}\n\n\
          ## Per-Prediction-Class Calibration\n\n{}\n\n\
+         ## Per-Failure-Mode-Class Metrics\n\n{}\n\n\
          ## Catastrophic Events\n\n{}\n\n\
          ## Per-Cell Ship Gate Status\n\n{}\n\n\
          ## Operator Cell Triage\n\n{}\n\n\
@@ -1429,6 +1431,7 @@ pub fn write_weekly_eval_markdown(
         report.q2_report_correlation,
         report.q3_side_effect_agreement,
         per_prediction_class_calibration,
+        per_failure_mode_class,
         catastrophic_events,
         per_cell_ship_gate,
         operator_cell_triage,
@@ -1471,6 +1474,33 @@ pub fn write_weekly_eval_markdown(
         ));
     }
     Ok(())
+}
+
+fn render_failure_mode_class_metrics_table(report: &context_graph_mejepa::EvalReport) -> String {
+    let mut rows = vec![
+        "| failure_mode_class | precision | recall | f1 | tp | fp | fn | sample_count | passed | weakness |".to_string(),
+        "|---|---:|---:|---:|---:|---:|---:|---:|---|---|".to_string(),
+    ];
+    if report.per_failure_mode_class.is_empty() {
+        rows.push("| none | unavailable | unavailable | unavailable | 0 | 0 | 0 | 0 | false | metrics_unavailable |".to_string());
+        return rows.join("\n");
+    }
+    rows.extend(report.per_failure_mode_class.values().map(|metrics| {
+        format!(
+            "| {} | {:.6} | {:.6} | {:.6} | {} | {} | {} | {} | {} | {} |",
+            metrics.failure_class.slug(),
+            metrics.precision,
+            metrics.recall,
+            metrics.f1,
+            metrics.true_positive,
+            metrics.false_positive,
+            metrics.false_negative,
+            metrics.sample_count,
+            metrics.passed_threshold,
+            escape_markdown_table_cell(metrics.weakness.as_deref().unwrap_or("none"))
+        )
+    }));
+    rows.join("\n")
 }
 
 fn render_state_transfer_per_cell_table(report: &context_graph_mejepa::EvalReport) -> String {
@@ -2090,6 +2120,10 @@ mod tests {
             ood_calibration_health: BTreeMap::new(),
             gtau_pass_rate: BTreeMap::new(),
             per_prediction_class_calibration: BTreeMap::new(),
+            per_failure_mode_class: context_graph_mejepa::empty_failure_mode_class_metrics(
+                1,
+                &context_graph_mejepa::EvalConfig::default(),
+            ),
             active_learning: context_graph_mejepa::ActiveLearningSummary {
                 queued_count: 0,
                 evicted_count: 0,
@@ -2184,6 +2218,10 @@ mod tests {
             ood_calibration_health: BTreeMap::new(),
             gtau_pass_rate: BTreeMap::new(),
             per_prediction_class_calibration: BTreeMap::new(),
+            per_failure_mode_class: context_graph_mejepa::empty_failure_mode_class_metrics(
+                3,
+                &context_graph_mejepa::EvalConfig::default(),
+            ),
             active_learning: context_graph_mejepa::ActiveLearningSummary {
                 queued_count: 0,
                 evicted_count: 0,
@@ -2326,6 +2364,10 @@ mod tests {
             ood_calibration_health: BTreeMap::new(),
             gtau_pass_rate: BTreeMap::new(),
             per_prediction_class_calibration: BTreeMap::new(),
+            per_failure_mode_class: context_graph_mejepa::empty_failure_mode_class_metrics(
+                6,
+                &context_graph_mejepa::EvalConfig::default(),
+            ),
             active_learning: context_graph_mejepa::ActiveLearningSummary {
                 queued_count: 0,
                 evicted_count: 0,
@@ -2401,6 +2443,10 @@ mod tests {
             ood_calibration_health: BTreeMap::new(),
             gtau_pass_rate: BTreeMap::new(),
             per_prediction_class_calibration: BTreeMap::new(),
+            per_failure_mode_class: context_graph_mejepa::empty_failure_mode_class_metrics(
+                1,
+                &context_graph_mejepa::EvalConfig::default(),
+            ),
             active_learning: context_graph_mejepa::ActiveLearningSummary {
                 queued_count: 0,
                 evicted_count: 0,

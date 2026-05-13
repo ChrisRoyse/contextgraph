@@ -363,6 +363,10 @@ mod tests {
             ood_calibration_health: BTreeMap::new(),
             gtau_pass_rate: BTreeMap::new(),
             per_prediction_class_calibration: BTreeMap::new(),
+            per_failure_mode_class: crate::eval::empty_failure_mode_class_metrics(
+                100,
+                &crate::eval::EvalConfig::default(),
+            ),
             active_learning: ActiveLearningSummary {
                 queued_count: 0,
                 evicted_count: 0,
