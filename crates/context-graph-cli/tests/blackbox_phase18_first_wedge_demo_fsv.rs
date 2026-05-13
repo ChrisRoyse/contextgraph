@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::OnceLock;
 
 use rusqlite::{params, Connection};
 use serde_json::{json, Value};
@@ -56,16 +57,61 @@ fn context_graph_bin() -> PathBuf {
         .expect("target/debug path")
 }
 
+fn non_empty_env(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn gh_auth_token() -> Option<String> {
+    let output = Command::new("gh").args(["auth", "token"]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn github_token() -> Option<String> {
+    static TOKEN: OnceLock<Option<String>> = OnceLock::new();
+    TOKEN
+        .get_or_init(|| {
+            ["BBX_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"]
+                .into_iter()
+                .find_map(non_empty_env)
+                .or_else(gh_auth_token)
+        })
+        .clone()
+}
+
+fn github_auth_state() -> &'static str {
+    if github_token().is_some() {
+        "authenticated"
+    } else {
+        "unauthenticated"
+    }
+}
+
+fn context_graph_command(args: &[&str]) -> Command {
+    let mut command = Command::new(context_graph_bin());
+    command.args(args);
+    if let Some(token) = github_token() {
+        command.env("GITHUB_TOKEN", token);
+    }
+    command
+}
+
 fn run_context_graph(args: &[&str]) -> Output {
-    Command::new(context_graph_bin())
-        .args(args)
+    context_graph_command(args)
         .output()
         .expect("spawn context-graph binary")
 }
 
 fn run_context_graph_with_env(args: &[&str], envs: &[(&str, &str)]) -> Output {
-    let mut command = Command::new(context_graph_bin());
-    command.args(args);
+    let mut command = context_graph_command(args);
     for (key, value) in envs {
         command.env(key, value);
     }
@@ -194,15 +240,7 @@ fn github_api_json(path_and_query: &str) -> Value {
         .arg("-H")
         .arg("User-Agent: contextgraph-blackbox-phase18-tests");
 
-    if let Some(token) = std::env::var("BBX_GITHUB_TOKEN")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .or_else(|| {
-            std::env::var("GITHUB_TOKEN")
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-        })
-    {
+    if let Some(token) = github_token() {
         command
             .arg("-H")
             .arg(format!("Authorization: Bearer {token}"));
@@ -214,7 +252,8 @@ fn github_api_json(path_and_query: &str) -> Value {
         .expect("spawn curl for live GitHub source-of-truth read");
     assert!(
         output.status.success(),
-        "GitHub source-of-truth curl failed\npath={path_and_query}\nstatus={:?}\nstdout={}\nstderr={}",
+        "GitHub source-of-truth curl failed\npath={path_and_query}\nauth={}\nstatus={:?}\nstdout={}\nstderr={}\nhint=set BBX_GITHUB_TOKEN/GITHUB_TOKEN/GH_TOKEN or run `gh auth login` before live GitHub FSV tests; do not treat this as verifier success",
+        github_auth_state(),
         output.status.code(),
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)

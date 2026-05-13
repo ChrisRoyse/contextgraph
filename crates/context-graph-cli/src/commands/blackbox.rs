@@ -27346,6 +27346,11 @@ fn github_token() -> Option<String> {
                 .ok()
                 .filter(|value| !value.trim().is_empty())
         })
+        .or_else(|| {
+            std::env::var("GH_TOKEN")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
 }
 
 fn github_client(source_of_truth: &str, connector: &'static str) -> BbxResult<Client> {
@@ -27456,7 +27461,7 @@ async fn github_get_json(
                     source_of_truth.to_string(),
                     "env.BBX_GITHUB_TOKEN",
                     format!("GitHub token could not be encoded as an HTTP header: {err}"),
-                    "replace BBX_GITHUB_TOKEN/GITHUB_TOKEN with a valid bearer token",
+                    "replace BBX_GITHUB_TOKEN/GITHUB_TOKEN/GH_TOKEN with a valid bearer token",
                 )
             })?;
         request = request.header(REQWEST_AUTHORIZATION, header_value);
