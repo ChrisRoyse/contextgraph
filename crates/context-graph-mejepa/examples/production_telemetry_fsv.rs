@@ -1,6 +1,7 @@
 use chrono::DateTime;
 use context_graph_mejepa::eval::{LatencyTelemetry, ProductionTelemetryWindow, RocksDbEvalStore};
 use context_graph_mejepa::open_infer_rocksdb;
+use context_graph_mejepa::system_cost::HealTickerTelemetrySnapshot;
 use rocksdb::{IteratorMode, DB};
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -253,6 +254,7 @@ fn production_windows_from_real_evidence() -> FsvResult<(Vec<ProductionTelemetry
         vram_free_bytes,
         vram_total_bytes,
         vram_required_bytes,
+        heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
         source: "real_fsv_sources:swebench_300x8+conformal+ood+shift_latency+cuda_vram".to_string(),
     };
     let rolling_reports = ship_gate["execute_and_inspect"]["rolling_reports"]
@@ -281,6 +283,7 @@ fn production_windows_from_real_evidence() -> FsvResult<(Vec<ProductionTelemetry
             vram_free_bytes,
             vram_total_bytes,
             vram_required_bytes,
+            heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
             source: "real_fsv_sources:rolling_swebench_300x8+conformal+ood+shift_latency+cuda_vram"
                 .to_string(),
         });

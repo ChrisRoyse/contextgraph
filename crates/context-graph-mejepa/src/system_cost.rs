@@ -17,7 +17,9 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 #[derive(Debug, Default)]
 pub struct SystemCostCounters {
@@ -25,6 +27,8 @@ pub struct SystemCostCounters {
     agent_feedback_tokens_total: AtomicU64,
     rocksdb_bytes_written_total: AtomicU64,
     rocksdb_writes_total: AtomicU64,
+    heal_ticker_telemetry_total: Mutex<BTreeMap<String, HealTickerTelemetryTotals>>,
+    heal_scheduler_restart_count_total: AtomicU64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -34,6 +38,7 @@ pub struct SystemCostSnapshot {
     pub agent_feedback_tokens_total: u64,
     pub rocksdb_bytes_written_total: u64,
     pub rocksdb_writes_total: u64,
+    pub heal_ticker_telemetry_total: HealTickerTelemetrySnapshot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -43,12 +48,43 @@ pub struct SystemCostBreakdown {
     pub no_spend_caps: bool,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct HealTickerTelemetrySnapshot {
+    pub ticker_totals: BTreeMap<String, HealTickerTelemetryTotals>,
+    pub scheduler_restart_count_total: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct HealTickerTelemetryTotals {
+    pub run_count_total: u64,
+    pub wall_clock_ms_total: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct HealTickerWindowSummary {
+    pub scheduler_restart_count: u64,
+    pub tickers: Vec<HealTickerWindowRow>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct HealTickerWindowRow {
+    pub ticker: String,
+    pub run_count: u64,
+    pub wall_clock_ms: u64,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SystemCostError {
     #[error("MEJEPA_SYSTEM_COST_WEEKLY_REPORT_NOT_OBJECT: weekly report must be a JSON object")]
     WeeklyReportNotObject,
     #[error("MEJEPA_SYSTEM_COST_FORBIDDEN_FIELD: forbidden cost-cap/spend field present: {0}")]
     ForbiddenField(&'static str),
+    #[error("MEJEPA_SYSTEM_COST_INVALID_TICKER: {0}")]
+    InvalidTicker(String),
     #[error("MEJEPA_SYSTEM_COST_SERIALIZE_FAILED: {0}")]
     Serialize(String),
 }
@@ -68,6 +104,9 @@ impl SystemCostSnapshot {
             rocksdb_writes_total: self
                 .rocksdb_writes_total
                 .saturating_sub(earlier.rocksdb_writes_total),
+            heal_ticker_telemetry_total: self
+                .heal_ticker_telemetry_total
+                .delta(&earlier.heal_ticker_telemetry_total),
         }
     }
 }
@@ -77,6 +116,53 @@ impl SystemCostBreakdown {
         Self {
             window_delta: current.delta(earlier),
             no_spend_caps: true,
+        }
+    }
+
+    pub fn heal_tickers_per_window(&self) -> HealTickerWindowSummary {
+        self.window_delta
+            .heal_ticker_telemetry_total
+            .window_summary()
+    }
+}
+
+impl HealTickerTelemetrySnapshot {
+    pub fn delta(&self, earlier: &Self) -> Self {
+        let mut ticker_totals = BTreeMap::new();
+        for (ticker, current) in &self.ticker_totals {
+            let previous = earlier.ticker_totals.get(ticker).cloned().unwrap_or_default();
+            ticker_totals.insert(
+                ticker.clone(),
+                HealTickerTelemetryTotals {
+                    run_count_total: current
+                        .run_count_total
+                        .saturating_sub(previous.run_count_total),
+                    wall_clock_ms_total: current
+                        .wall_clock_ms_total
+                        .saturating_sub(previous.wall_clock_ms_total),
+                },
+            );
+        }
+        Self {
+            ticker_totals,
+            scheduler_restart_count_total: self
+                .scheduler_restart_count_total
+                .saturating_sub(earlier.scheduler_restart_count_total),
+        }
+    }
+
+    pub fn window_summary(&self) -> HealTickerWindowSummary {
+        HealTickerWindowSummary {
+            scheduler_restart_count: self.scheduler_restart_count_total,
+            tickers: self
+                .ticker_totals
+                .iter()
+                .map(|(ticker, totals)| HealTickerWindowRow {
+                    ticker: ticker.clone(),
+                    run_count: totals.run_count_total,
+                    wall_clock_ms: totals.wall_clock_ms_total,
+                })
+                .collect(),
         }
     }
 }
@@ -92,6 +178,9 @@ pub fn attach_system_cost_to_weekly_report(
     let section = serde_json::to_value(breakdown)
         .map_err(|err| SystemCostError::Serialize(err.to_string()))?;
     object.insert("systemCost".to_string(), section);
+    let heal_tickers = serde_json::to_value(breakdown.heal_tickers_per_window())
+        .map_err(|err| SystemCostError::Serialize(err.to_string()))?;
+    object.insert("heal_tickers_per_window".to_string(), heal_tickers);
     reject_forbidden_fields(&report)?;
     Ok(report)
 }
@@ -124,13 +213,8 @@ fn reject_forbidden_object_fields(object: &Map<String, Value>) -> Result<(), Sys
 }
 
 impl SystemCostCounters {
-    pub const fn new() -> Self {
-        Self {
-            cuda_kernel_microseconds_total: AtomicU64::new(0),
-            agent_feedback_tokens_total: AtomicU64::new(0),
-            rocksdb_bytes_written_total: AtomicU64::new(0),
-            rocksdb_writes_total: AtomicU64::new(0),
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn record_cuda_microseconds(&self, micros: u64) {
@@ -149,6 +233,27 @@ impl SystemCostCounters {
         self.rocksdb_writes_total.fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn record_heal_ticker_run(
+        &self,
+        ticker: &str,
+        wall_clock_ms: u64,
+    ) -> Result<(), SystemCostError> {
+        validate_ticker_name(ticker)?;
+        let mut tickers = self
+            .heal_ticker_telemetry_total
+            .lock()
+            .expect("heal ticker telemetry mutex poisoned");
+        let entry = tickers.entry(ticker.to_string()).or_default();
+        entry.run_count_total = entry.run_count_total.saturating_add(1);
+        entry.wall_clock_ms_total = entry.wall_clock_ms_total.saturating_add(wall_clock_ms);
+        Ok(())
+    }
+
+    pub fn record_heal_scheduler_restart(&self) {
+        self.heal_scheduler_restart_count_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> SystemCostSnapshot {
         SystemCostSnapshot {
             cuda_kernel_microseconds_total: self
@@ -157,8 +262,41 @@ impl SystemCostCounters {
             agent_feedback_tokens_total: self.agent_feedback_tokens_total.load(Ordering::Relaxed),
             rocksdb_bytes_written_total: self.rocksdb_bytes_written_total.load(Ordering::Relaxed),
             rocksdb_writes_total: self.rocksdb_writes_total.load(Ordering::Relaxed),
+            heal_ticker_telemetry_total: HealTickerTelemetrySnapshot {
+                ticker_totals: self
+                    .heal_ticker_telemetry_total
+                    .lock()
+                    .expect("heal ticker telemetry mutex poisoned")
+                    .clone(),
+                scheduler_restart_count_total: self
+                    .heal_scheduler_restart_count_total
+                    .load(Ordering::Relaxed),
+            },
         }
     }
+}
+
+fn validate_ticker_name(ticker: &str) -> Result<(), SystemCostError> {
+    if ticker.is_empty() {
+        return Err(SystemCostError::InvalidTicker(
+            "ticker name must be non-empty".to_string(),
+        ));
+    }
+    if ticker.len() > 64 {
+        return Err(SystemCostError::InvalidTicker(format!(
+            "ticker name length {} exceeds 64",
+            ticker.len()
+        )));
+    }
+    if !ticker
+        .bytes()
+        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+    {
+        return Err(SystemCostError::InvalidTicker(format!(
+            "ticker name must use lowercase ascii, digits, or underscore: {ticker}"
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -214,6 +352,7 @@ mod tests {
             agent_feedback_tokens_total: 0,
             rocksdb_bytes_written_total: 0,
             rocksdb_writes_total: 0,
+            heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
         };
         let now = counters.snapshot();
         let delta = now.delta(&earlier);
@@ -248,12 +387,14 @@ mod tests {
             agent_feedback_tokens_total: 10,
             rocksdb_bytes_written_total: 1_000,
             rocksdb_writes_total: 1,
+            heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
         };
         let current = SystemCostSnapshot {
             cuda_kernel_microseconds_total: 250,
             agent_feedback_tokens_total: 25,
             rocksdb_bytes_written_total: 1_750,
             rocksdb_writes_total: 3,
+            heal_ticker_telemetry_total: HealTickerTelemetrySnapshot::default(),
         };
         let breakdown = SystemCostBreakdown::from_snapshots(&earlier, &current);
         let report = serde_json::json!({
@@ -266,6 +407,57 @@ mod tests {
             150
         );
         assert_eq!(extended["systemCost"]["noSpendCaps"], true);
+    }
+
+    #[test]
+    fn heal_ticker_telemetry_accumulates_and_renders_weekly_table() {
+        let counters = SystemCostCounters::new();
+        let earlier = counters.snapshot();
+        counters
+            .record_heal_ticker_run("observe", 5)
+            .expect("record observe");
+        counters
+            .record_heal_ticker_run("observe", 7)
+            .expect("record observe again");
+        counters
+            .record_heal_ticker_run("drift_check", 11)
+            .expect("record drift");
+        counters.record_heal_scheduler_restart();
+        let current = counters.snapshot();
+        let breakdown = SystemCostBreakdown::from_snapshots(&earlier, &current);
+        let summary = breakdown.heal_tickers_per_window();
+        assert_eq!(summary.scheduler_restart_count, 1);
+        assert_eq!(summary.tickers.len(), 2);
+        assert_eq!(summary.tickers[0].ticker, "drift_check");
+        assert_eq!(summary.tickers[0].run_count, 1);
+        assert_eq!(summary.tickers[1].ticker, "observe");
+        assert_eq!(summary.tickers[1].run_count, 2);
+        assert_eq!(summary.tickers[1].wall_clock_ms, 12);
+
+        let extended = attach_system_cost_to_weekly_report(
+            serde_json::json!({"reportDate": "2026-05-13"}),
+            &breakdown,
+        )
+        .expect("attach system cost");
+        assert_eq!(
+            extended["heal_tickers_per_window"]["schedulerRestartCount"],
+            1
+        );
+        assert_eq!(
+            extended["heal_tickers_per_window"]["tickers"][1]["wallClockMs"],
+            12
+        );
+    }
+
+    #[test]
+    fn heal_ticker_rejects_invalid_names_without_mutating_snapshot() {
+        let counters = SystemCostCounters::new();
+        let before = counters.snapshot();
+        let err = counters
+            .record_heal_ticker_run("DriftCheck", 10)
+            .expect_err("uppercase ticker should fail");
+        assert!(matches!(err, SystemCostError::InvalidTicker(_)));
+        assert_eq!(counters.snapshot(), before);
     }
 
     #[test]

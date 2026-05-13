@@ -1,4 +1,5 @@
 use super::error::{EvalError, EvalErrorCode};
+use crate::system_cost::HealTickerTelemetrySnapshot;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -27,6 +28,7 @@ pub struct ProductionTelemetryWindow {
     pub vram_free_bytes: u64,
     pub vram_total_bytes: u64,
     pub vram_required_bytes: u64,
+    pub heal_ticker_telemetry_total: HealTickerTelemetrySnapshot,
     pub source: String,
 }
 

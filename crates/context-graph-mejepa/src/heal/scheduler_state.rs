@@ -45,6 +45,7 @@ use crate::heal::promote_approval::{
 use crate::heal::regulate::{assess_substrate, regulate_substrate};
 use crate::heal::store::HealRocksStore;
 use crate::store::RocksDbInferStore;
+use crate::system_cost::{HealTickerTelemetrySnapshot, SystemCostCounters};
 
 pub const DEFAULT_OBSERVE_PERIOD: Duration = Duration::from_millis(250);
 pub const DEFAULT_DRIFT_PERIOD: Duration = Duration::from_secs(60);
@@ -322,6 +323,7 @@ pub struct SchedulerStatusSnapshot {
     pub started_at_unix_ms: i64,
     pub updated_at_unix_ms: i64,
     pub ticker_counts: BTreeMap<String, u64>,
+    pub heal_ticker_telemetry_total: HealTickerTelemetrySnapshot,
     pub last_ticker: Option<String>,
     pub last_success: BTreeMap<String, TickRunRecord>,
     pub last_error: BTreeMap<String, TickRunRecord>,
@@ -334,6 +336,7 @@ pub struct SchedulerState {
     storage: Arc<HealRocksStore>,
     eval_store: RocksDbEvalStore,
     pipeline: SelfHealingPipeline,
+    system_cost_counters: Arc<SystemCostCounters>,
     started_at_unix_ms: i64,
     ticker_counts: BTreeMap<String, u64>,
     last_ticker: Option<String>,
@@ -343,6 +346,14 @@ pub struct SchedulerState {
 
 impl SchedulerState {
     pub fn open(db: Arc<DB>, config: SelfOptimConfig) -> Result<Self, HealError> {
+        Self::open_with_counters(db, config, Arc::new(SystemCostCounters::new()))
+    }
+
+    pub fn open_with_counters(
+        db: Arc<DB>,
+        config: SelfOptimConfig,
+        system_cost_counters: Arc<SystemCostCounters>,
+    ) -> Result<Self, HealError> {
         config.validate()?;
         let storage = HealRocksStore::from_db(db.clone())?;
         for cf in context_graph_mejepa_cf::all_hygiene_referenced_cfs() {
@@ -369,6 +380,7 @@ impl SchedulerState {
             storage,
             eval_store,
             pipeline,
+            system_cost_counters,
             started_at_unix_ms: chrono::Utc::now().timestamp_millis(),
             ticker_counts: BTreeMap::new(),
             last_ticker: None,
@@ -429,6 +441,10 @@ impl SchedulerState {
             started_at_unix_ms: self.started_at_unix_ms,
             updated_at_unix_ms: chrono::Utc::now().timestamp_millis(),
             ticker_counts: self.ticker_counts.clone(),
+            heal_ticker_telemetry_total: self
+                .system_cost_counters
+                .snapshot()
+                .heal_ticker_telemetry_total,
             last_ticker: self.last_ticker.clone(),
             last_success: self.last_success.clone(),
             last_error: self.last_error.clone(),
@@ -1030,6 +1046,11 @@ impl SchedulerState {
 
     fn record_tick(&mut self, tick: TickName, record: TickRunRecord) -> Result<(), HealError> {
         let ticker = tick.as_str().to_string();
+        self.system_cost_counters
+            .record_heal_ticker_run(&ticker, record.duration_ms)
+            .map_err(|err| {
+                HealError::invalid("self_optim_scheduler.heal_ticker_telemetry", err.to_string())
+            })?;
         *self.ticker_counts.entry(ticker.clone()).or_insert(0) += 1;
         self.last_ticker = Some(ticker.clone());
         if record.ok {

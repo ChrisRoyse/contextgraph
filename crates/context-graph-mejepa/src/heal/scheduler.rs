@@ -7,6 +7,7 @@ use tokio::time::{interval, Interval, MissedTickBehavior};
 
 use crate::heal::errors::HealError;
 use crate::heal::scheduler_state::{SchedulerState, SelfOptimConfig, TickName};
+use crate::system_cost::SystemCostCounters;
 
 pub async fn run_self_optimization_scheduler(
     db: Arc<DB>,
@@ -14,6 +15,23 @@ pub async fn run_self_optimization_scheduler(
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(), HealError> {
     let mut state = SchedulerState::open(db, config)?;
+    run_scheduler_loop(&mut state, &mut shutdown_rx).await
+}
+
+pub async fn run_self_optimization_scheduler_with_counters(
+    db: Arc<DB>,
+    config: SelfOptimConfig,
+    mut shutdown_rx: watch::Receiver<bool>,
+    system_cost_counters: Arc<SystemCostCounters>,
+) -> Result<(), HealError> {
+    let mut state = SchedulerState::open_with_counters(db, config, system_cost_counters)?;
+    run_scheduler_loop(&mut state, &mut shutdown_rx).await
+}
+
+async fn run_scheduler_loop(
+    state: &mut SchedulerState,
+    shutdown_rx: &mut watch::Receiver<bool>,
+) -> Result<(), HealError> {
     if *shutdown_rx.borrow() {
         state.mark_stopped()?;
         return Ok(());
@@ -56,6 +74,7 @@ fn new_interval(period: Duration) -> Interval {
 mod tests {
     use super::*;
     use crate::heal::scheduler_state::read_status_snapshot;
+    use crate::system_cost::SystemCostCounters;
     use rocksdb::{ColumnFamilyDescriptor, Options};
     use std::collections::BTreeMap;
 
@@ -85,8 +104,14 @@ mod tests {
         let db = open_test_db(&temp.path().join("db"));
         let config = test_config(temp.path(), Duration::from_millis(20));
         let status_path = config.status_path.clone();
+        let counters = Arc::new(SystemCostCounters::new());
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        let scheduler = tokio::spawn(run_self_optimization_scheduler(db, config, shutdown_rx));
+        let scheduler = tokio::spawn(run_self_optimization_scheduler_with_counters(
+            db,
+            config,
+            shutdown_rx,
+            counters.clone(),
+        ));
         wait_for_all_tickers(&status_path, Duration::from_secs(5)).await;
         shutdown_tx.send(true).expect("send shutdown");
         tokio::time::timeout(Duration::from_secs(5), scheduler)
@@ -108,7 +133,24 @@ mod tests {
                 "{} did not tick",
                 tick.as_str()
             );
+            assert!(
+                snapshot
+                    .heal_ticker_telemetry_total
+                    .ticker_totals
+                    .get(tick.as_str())
+                    .map(|totals| totals.run_count_total > 0)
+                    .unwrap_or(false),
+                "{} telemetry did not tick",
+                tick.as_str()
+            );
         }
+        assert_eq!(
+            counters
+                .snapshot()
+                .heal_ticker_telemetry_total
+                .scheduler_restart_count_total,
+            0
+        );
     }
 
     async fn wait_for_all_tickers(status_path: &std::path::Path, timeout: Duration) {
