@@ -12,8 +12,9 @@ use futures_util::FutureExt;
 use rocksdb::{IteratorMode, WriteOptions, DB};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tokio::sync::watch;
+use tokio::sync::{watch, Mutex};
 use tokio::task::JoinSet;
+use tokio::time::MissedTickBehavior;
 use tracing::{error, info, warn};
 
 use crate::daemon_validate::DaemonPaths;
@@ -26,6 +27,9 @@ const RESTART_WINDOW: Duration = Duration::from_secs(5 * 60);
 const FLAPPING_THRESHOLD: usize = 5;
 const BACKOFF_CAP: Duration = Duration::from_secs(60);
 const SUPERVISOR_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
+const TASK_HEALTH_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+pub const SUPERVISED_TASK_HEALTH_TIMEOUT_SECONDS: u64 = 30;
+pub const SUPERVISED_TASK_HEALTH_FILE: &str = "supervised_task_health.json";
 const DAEMON_CONFIG_ROOT_ENV: &str = "MEJEPA_CONFIG_ROOT";
 const DAEMON_CONFIG_FILE: &str = "daemon.toml";
 
@@ -39,6 +43,8 @@ type TaskRunner = Arc<
         + Send
         + Sync,
 >;
+
+type TaskHealthRegistryHandle = Arc<Mutex<SupervisedTaskHealthRegistryState>>;
 
 #[derive(Debug, Clone, Serialize)]
 struct WeeklyOperationalSummary {
@@ -345,6 +351,10 @@ pub fn supervised_task_names() -> Vec<&'static str> {
     all_task_kinds().iter().map(|kind| kind.name()).collect()
 }
 
+pub fn supervised_task_health_path(scheduler_state_dir: &Path) -> PathBuf {
+    scheduler_state_dir.join(SUPERVISED_TASK_HEALTH_FILE)
+}
+
 fn all_task_kinds() -> [SupervisedTaskKind; 4] {
     [
         SupervisedTaskKind::ShiftSubscriber,
@@ -352,6 +362,162 @@ fn all_task_kinds() -> [SupervisedTaskKind; 4] {
         SupervisedTaskKind::NightlyGcScheduler,
         SupervisedTaskKind::WeeklyEvalScheduler,
     ]
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SupervisedTaskHealthRegistrySnapshot {
+    pub schema_version: u32,
+    pub pid: u32,
+    pub updated_at_unix_seconds: i64,
+    pub heartbeat_timeout_seconds: u64,
+    pub tasks: BTreeMap<String, SupervisedTaskHealthRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SupervisedTaskHealthRecord {
+    pub task: String,
+    pub status: String,
+    pub pid: u32,
+    pub generation: u64,
+    pub heartbeat_count: u64,
+    pub started_at_unix_seconds: i64,
+    pub last_heartbeat_unix_seconds: i64,
+    pub last_restart_unix_seconds: Option<i64>,
+    pub restart_count_5m: usize,
+    pub last_exit_status: Option<String>,
+    pub last_error_code: Option<String>,
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug)]
+struct SupervisedTaskHealthRegistryState {
+    snapshot: SupervisedTaskHealthRegistrySnapshot,
+}
+
+impl SupervisedTaskHealthRegistryState {
+    fn new() -> Self {
+        let now = chrono::Utc::now().timestamp();
+        let tasks = all_task_kinds()
+            .into_iter()
+            .map(|kind| {
+                let name = kind.name().to_string();
+                (
+                    name.clone(),
+                    SupervisedTaskHealthRecord {
+                        task: name,
+                        status: "starting".to_string(),
+                        pid: std::process::id(),
+                        generation: 0,
+                        heartbeat_count: 0,
+                        started_at_unix_seconds: now,
+                        last_heartbeat_unix_seconds: now,
+                        last_restart_unix_seconds: None,
+                        restart_count_5m: 0,
+                        last_exit_status: None,
+                        last_error_code: None,
+                        last_error: None,
+                    },
+                )
+            })
+            .collect();
+        Self {
+            snapshot: SupervisedTaskHealthRegistrySnapshot {
+                schema_version: 1,
+                pid: std::process::id(),
+                updated_at_unix_seconds: now,
+                heartbeat_timeout_seconds: SUPERVISED_TASK_HEALTH_TIMEOUT_SECONDS,
+                tasks,
+            },
+        }
+    }
+
+    fn persist(&self, config: &FlywheelDaemonConfig) -> Result<()> {
+        write_json_atomic(
+            &supervised_task_health_path(&config.paths.scheduler_state_dir),
+            &self.snapshot,
+        )
+    }
+
+    fn mark_task_started(&mut self, kind: SupervisedTaskKind) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        self.snapshot.updated_at_unix_seconds = now;
+        let record = self.record_mut(kind)?;
+        record.status = "starting".to_string();
+        record.pid = std::process::id();
+        record.generation = record.generation.saturating_add(1);
+        record.heartbeat_count = 0;
+        record.started_at_unix_seconds = now;
+        record.last_heartbeat_unix_seconds = now;
+        record.last_exit_status = None;
+        record.last_error_code = None;
+        record.last_error = None;
+        Ok(())
+    }
+
+    fn mark_task_heartbeat(&mut self, kind: SupervisedTaskKind) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        self.snapshot.updated_at_unix_seconds = now;
+        let record = self.record_mut(kind)?;
+        record.status = "healthy".to_string();
+        record.pid = std::process::id();
+        record.heartbeat_count = record.heartbeat_count.saturating_add(1);
+        record.last_heartbeat_unix_seconds = now;
+        Ok(())
+    }
+
+    fn mark_task_restarting(
+        &mut self,
+        kind: SupervisedTaskKind,
+        exit: &TaskExit,
+        restart: RestartDecision,
+    ) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        self.snapshot.updated_at_unix_seconds = now;
+        let record = self.record_mut(kind)?;
+        record.status = "restarting".to_string();
+        record.pid = std::process::id();
+        record.last_restart_unix_seconds = Some(now);
+        record.restart_count_5m = restart.count_in_window;
+        match &exit.status {
+            TaskExitStatus::Completed => {
+                record.last_exit_status = Some("completed".to_string());
+                record.last_error_code = None;
+                record.last_error = None;
+            }
+            TaskExitStatus::Error(detail) => {
+                record.last_exit_status = Some("error".to_string());
+                record.last_error_code = Some(error_code_from_message(detail));
+                record.last_error = Some(detail.clone());
+            }
+            TaskExitStatus::Panic(detail) => {
+                record.last_exit_status = Some("panic".to_string());
+                record.last_error_code = Some("MEJEPA_DAEMON_TASK_PANIC".to_string());
+                record.last_error = Some(detail.clone());
+            }
+        }
+        Ok(())
+    }
+
+    fn mark_all_stopped(&mut self) {
+        let now = chrono::Utc::now().timestamp();
+        self.snapshot.updated_at_unix_seconds = now;
+        for record in self.snapshot.tasks.values_mut() {
+            record.status = "stopped".to_string();
+            record.pid = std::process::id();
+            record.last_heartbeat_unix_seconds = now;
+        }
+    }
+
+    fn record_mut(&mut self, kind: SupervisedTaskKind) -> Result<&mut SupervisedTaskHealthRecord> {
+        self.snapshot.tasks.get_mut(kind.name()).ok_or_else(|| {
+            anyhow::anyhow!(
+                "MEJEPA_SUPERVISED_TASK_HEALTH_TASK_MISSING: {}",
+                kind.name()
+            )
+        })
+    }
 }
 
 fn flywheel_job_run_source_of_truth() -> serde_json::Value {
@@ -594,6 +760,11 @@ async fn supervise_with_runner(
 ) -> Result<()> {
     let mut tasks = JoinSet::new();
     let mut restart_state = RestartState::default();
+    let task_health = Arc::new(Mutex::new(SupervisedTaskHealthRegistryState::new()));
+    {
+        let health = task_health.lock().await;
+        health.persist(&config)?;
+    }
     for kind in all_task_kinds() {
         spawn_supervised_task(
             &mut tasks,
@@ -602,6 +773,7 @@ async fn supervise_with_runner(
             db.clone(),
             shutdown_rx.clone(),
             runner.clone(),
+            task_health.clone(),
         );
     }
     write_supervisor_status(&config, "running", &restart_state.restart_counts())?;
@@ -609,7 +781,7 @@ async fn supervise_with_runner(
     loop {
         if *shutdown_rx.borrow() {
             info!("MEJEPA_DAEMON_SUPERVISOR_SHUTDOWN: stopping supervised flywheel tasks");
-            stop_supervised_tasks(&mut tasks, &config, &restart_state).await?;
+            stop_supervised_tasks(&mut tasks, &config, &restart_state, task_health.clone()).await?;
             return Ok(());
         }
 
@@ -617,7 +789,7 @@ async fn supervise_with_runner(
             changed = shutdown_rx.changed() => {
                 if changed.is_ok() && *shutdown_rx.borrow() {
                     info!("MEJEPA_DAEMON_SUPERVISOR_SHUTDOWN: stopping supervised flywheel tasks");
-                    stop_supervised_tasks(&mut tasks, &config, &restart_state).await?;
+                    stop_supervised_tasks(&mut tasks, &config, &restart_state, task_health.clone()).await?;
                     return Ok(());
                 }
             }
@@ -640,6 +812,11 @@ async fn supervise_with_runner(
                 if restart.flapping {
                     record_scheduler_flapping(&db, exit.kind, restart.count_in_window)?;
                 }
+                {
+                    let mut health = task_health.lock().await;
+                    health.mark_task_restarting(exit.kind, &exit, restart)?;
+                    health.persist(&config)?;
+                }
                 write_supervisor_status(&config, "restarting", &restart_state.restart_counts())?;
                 tokio::select! {
                     _ = tokio::time::sleep(restart.backoff) => {}
@@ -657,6 +834,7 @@ async fn supervise_with_runner(
                         db.clone(),
                         shutdown_rx.clone(),
                         runner.clone(),
+                        task_health.clone(),
                     );
                     write_supervisor_status(&config, "running", &restart_state.restart_counts())?;
                 }
@@ -669,6 +847,7 @@ async fn stop_supervised_tasks(
     tasks: &mut JoinSet<TaskExit>,
     config: &FlywheelDaemonConfig,
     restart_state: &RestartState,
+    task_health: TaskHealthRegistryHandle,
 ) -> Result<()> {
     let timeout = tokio::time::sleep(SUPERVISOR_SHUTDOWN_TIMEOUT);
     tokio::pin!(timeout);
@@ -703,6 +882,11 @@ async fn stop_supervised_tasks(
             }
         }
     }
+    {
+        let mut health = task_health.lock().await;
+        health.mark_all_stopped();
+        health.persist(config)?;
+    }
     write_supervisor_status(config, "stopped", &restart_state.restart_counts())?;
     Ok(())
 }
@@ -721,9 +905,20 @@ fn spawn_supervised_task(
     db: Arc<DB>,
     shutdown_rx: watch::Receiver<bool>,
     runner: TaskRunner,
+    task_health: TaskHealthRegistryHandle,
 ) {
     tasks.spawn(async move {
         let started = chrono::Utc::now().timestamp();
+        {
+            let mut health = task_health.lock().await;
+            if let Err(err) = health.mark_task_started(kind).and_then(|_| health.persist(&config)) {
+                return TaskExit::errored(
+                    kind,
+                    started,
+                    format!("MEJEPA_SUPERVISED_TASK_HEALTH_WRITE_FAILED: {err}"),
+                );
+            }
+        }
         let run_id = flywheel_run_id(kind, "task_started");
         if let Err(err) = record_flywheel_job_run(
             &db,
@@ -735,13 +930,30 @@ fn spawn_supervised_task(
                 format!("MEJEPA_FLYWHEEL_JOB_RUN_LEDGER_WRITE_FAILED: {err}"),
             );
         }
-        let result = std::panic::AssertUnwindSafe(runner(kind, config, db, shutdown_rx))
-            .catch_unwind()
-            .await;
-        match result {
-            Ok(Ok(())) => TaskExit::completed(kind, started),
-            Ok(Err(err)) => TaskExit::errored(kind, started, err.to_string()),
-            Err(payload) => TaskExit::panicked(kind, started, panic_payload(payload)),
+        let mut result =
+            Box::pin(std::panic::AssertUnwindSafe(runner(kind, config.clone(), db, shutdown_rx)).catch_unwind());
+        let mut heartbeat = tokio::time::interval(TASK_HEALTH_HEARTBEAT_INTERVAL);
+        heartbeat.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                completed = &mut result => {
+                    return match completed {
+                        Ok(Ok(())) => TaskExit::completed(kind, started),
+                        Ok(Err(err)) => TaskExit::errored(kind, started, err.to_string()),
+                        Err(payload) => TaskExit::panicked(kind, started, panic_payload(payload)),
+                    };
+                }
+                _ = heartbeat.tick() => {
+                    let mut health = task_health.lock().await;
+                    if let Err(err) = health.mark_task_heartbeat(kind).and_then(|_| health.persist(&config)) {
+                        return TaskExit::errored(
+                            kind,
+                            started,
+                            format!("MEJEPA_SUPERVISED_TASK_HEALTH_WRITE_FAILED: {err}"),
+                        );
+                    }
+                }
+            }
         }
     });
 }
@@ -1756,6 +1968,7 @@ mod tests {
             })
         });
         let mut tasks = JoinSet::new();
+        let task_health = Arc::new(Mutex::new(SupervisedTaskHealthRegistryState::new()));
         spawn_supervised_task(
             &mut tasks,
             SupervisedTaskKind::SelfOptimizationScheduler,
@@ -1763,6 +1976,7 @@ mod tests {
             db,
             shutdown_rx,
             runner,
+            task_health,
         );
         let exit = tasks
             .join_next()

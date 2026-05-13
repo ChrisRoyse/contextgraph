@@ -37,6 +37,7 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 | `TASK-FLYWHEEL-004` | Captured test-outcome oracle binding | A | FLYWHEEL-003 | **complete (2026-05-12 code path)** |
 | `TASK-FLYWHEEL-005` | `ActiveLearningKind::AgentSurprise` variant + queue extension | A | none | **complete (2026-05-11)** |
 | `TASK-FLYWHEEL-006` | New CFs: `CF_MEJEPA_DDA_SIGNALS`, `CF_MEJEPA_FAILURE_EXEMPLARS`, `CF_MEJEPA_AGENT_FEEDBACK` | A | none | **complete (2026-05-11)** |
+| `TASK-FLYWHEEL-010` | Unified supervised-task health registry powering `/ready` | F | FLYWHEEL-001, OBS-014 | **complete (#87)** — `supervised_task_health.json` records heartbeat/restart health for all daemon tasks; `/ready` aggregates it |
 | `TASK-PREDICT-001` | UserPromptSubmit prediction-injection hook | A | FLYWHEEL-001 | **complete (2026-05-12)** |
 | `TASK-PREDICT-002` | `mejepa_record_agent_feedback` MCP tool + sampling-weight bump wiring | A | FLYWHEEL-005, FLYWHEEL-006 | **complete (2026-05-12; no feedback rate limit)** |
 | `TASK-LOOP-001` | Apply new `.claude/loop.md` content from `14_NEW_LOOP_MD.md` | A | FLYWHEEL-001 | **complete (already applied)** |
@@ -223,7 +224,7 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 - `/mnt/d/contextgraph/fsv/phase-f-runbook-cli-fsv/runbook_cli_fsv.json` — sha256:b836a21a (5 happy + 12 boundary)
 - `/mnt/d/contextgraph/fsv/phase-f-renderers-fsv/renderers_fsv.json` — sha256:ae363d5b (3 happy + 5 boundary)
 - `/mnt/d/contextgraph/fsv/phase-f-deprecation-framework-fsv/deprecation_framework_fsv.json` — sha256:812ad8f6 (3 happy + 3 boundary)
-- `/mnt/d/contextgraph/fsv/phase-f-health-probe-fsv/health_probe_fsv.json` — sha256:7f7c03f2
+- `/mnt/d/contextgraph/fsv/phase-f-health-probe-fsv/health_probe_fsv.json` — 7 boundary + live daemon subscriber failure/recovery
 - `/mnt/d/contextgraph/fsv/phase-f-toolchain-availability-fsv/toolchain_availability_fsv.json`
 - `/mnt/d/contextgraph/fsv/phase-f-cross-language-label-gating-fsv/cross_language_label_gating_fsv.json`
 - `/mnt/d/contextgraph/fsv/phase-f-label-transfer-gating-fsv/label_transfer_consumer_fsv.json`
