@@ -15,8 +15,9 @@
 > file mirrors CLAUDE.md and adds operational detail — it does not replace it).
 >
 > **Authored:** 2026-05-12. **Phase A–D readiness:** independently audited
-> 2026-05-12, zero gaps. **Phase E entry:** unblocked. Audit trail:
-> `./memory/discoveries/2026-05-12--phase-a-d-independent-audit-zero-gaps.md`.
+> 2026-05-12, zero gaps. **Phase E:** code/FSV-shipped 2026-05-13 with
+> evidence at `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`.
+> Phase G remains the 0.95 correlation convergence gate.
 
 ---
 
@@ -345,32 +346,21 @@ corpus roots, embedder forwards, DDA/TCT rows, semantic heads, production
 telemetry windows, and UTML carrier certs all have independent readback
 evidence.
 
-**That gate is satisfied at code/FSV level as of 2026-05-12.**
+**That gate is satisfied at code/FSV level as of 2026-05-12. Phase E
+itself is code/FSV-shipped as of 2026-05-13.**
 
 Phase E does **not** mean the system can replace human code review yet.
-That is Phase G's job. Phase E's job is to make the autonomous
-self-optimization policy learn from the Phase A–D reality stream so the
-Phase G gate can eventually become true.
+That is Phase G's job. Phase E means the autonomous self-optimization
+policy is live at code/FSV level and can learn from the Phase A–D
+reality stream: global/per-cell drift, Bayesian small-window drift,
+AgentSurprise fast-pathing, dissipation, lambda ramp, per-head Fisher,
+per-head dormancy, constellation refresh policy, catastrophic approval,
+emergency eviction suppression, and per-cell promotion rejection.
 
-**Next-up Phase E tasks** (from `13_TASK_INDEX.md` Phase E section, in
-dependency order):
-
-1. `TASK-HEAL-001` — Self-optimization scheduler full implementation
-   (drift, active-learning, promote, continual_backprop, constellation
-   freshness tickers). Code skeleton exists; Phase E replaces the
-   conservative inspection/action handlers with the full autonomous
-   learner.
-2. `TASK-HEAL-002` — Per-cell stratified drift detection.
-3. `TASK-HEAL-003` — Dissipation detection (training falls, holdout
-   doesn't).
-4. `TASK-HEAL-004` — Bayesian small-window drift (Beta posterior on
-   per-cell sample counts < 50).
-5. `TASK-HEAL-005` — Production constellation refresh policy.
-6. `TASK-HEAL-006` — `mejepa_promote_approval` MCP tool (operator
-   approval for catastrophic promotions).
-7. `TASK-HEAL-007` — Emergency eviction policy validation.
-8. `TASK-UTML-005..008` — Per-head Fisher / dormancy / lambda ramp /
-   dissipation.
+**Phase E evidence:** `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`
+contains 11 source-of-truth readback cases over RocksDB CFs and scheduler
+status files. The remaining human-review-replacement gate is Phase G:
+`prediction_oracle_correlation ≥ 0.95` stable over four rolling windows.
 
 ---
 
@@ -3498,9 +3488,11 @@ SAMP.
 - Cascading thread-pool exhaustion.
 - Missing timeout in long-tail dep.
 
-For ME-JEPA: Phase E ship gate includes synthetic drift injection
-(soft 90% → 84%, catastrophic 90% → 75%, dormancy 20% units zero)
-to validate the heal scheduler's autonomous response.
+For ME-JEPA: Phase E FSV uses controlled persisted reality-state cases
+(soft `860/1000`, catastrophic `750/1000`, per-head dormancy, exact
+quota threshold, noisy small-window drift, and invalid approval input)
+to validate the heal scheduler's autonomous response by source-of-truth
+readback.
 
 ---
 
@@ -3966,8 +3958,9 @@ about.
 
 ## 49. Continuous self-optimization (Phase E)
 
-The Phase A skeleton (`heal::run_self_optimization_scheduler`) ships
-with 7 daemon-wired tickers and readback-verified status:
+The Phase E scheduler (`heal::run_self_optimization_scheduler`) ships
+with 7 daemon-wired tickers, readback-verified status, and autonomous
+policy actions:
 
 ```
 observe              # observe(panel, oracle_outcome) ticks
@@ -3979,13 +3972,12 @@ constellation        # TCT centroid refresh
 emergency_eviction   # disk-quota guard
 ```
 
-**Phase E hardens these.** Phase E's job is NOT to ship new code — it
-is to replace the conservative inspection/action handlers with the
-full autonomous learner per
-`docs/futurebuild/12_IMPLEMENTATION_PHASES.md §Phase E`. Ship-gate
-ladders:
+**Phase E has shipped these policies at code/FSV level.** The scheduler
+acts from durable reality rows, not LLM claims. Evidence lives at
+`/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`.
+Ship-gate ladders:
 
-1. Inject synthetic drift (90% → 84% over 1000 obs); scheduler
+1. Inject controlled soft drift (860/1000 obs); scheduler
    detects within 1k more obs; queues LoRA refresh; A/B/C runs;
    winner promoted.
 2. Inject catastrophic drift (90% → 75%); scheduler queues full
@@ -4482,10 +4474,6 @@ override default agent behavior. When this conflicts with anything
 else, the more specific rule wins; where it conflicts with
 `CLAUDE.md`, CLAUDE.md wins (this file mirrors CLAUDE.md and adds
 operational detail — it does not replace it).
-
-
-
-
 
 
 

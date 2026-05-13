@@ -8,9 +8,9 @@
 
 ## Phase E entry rule
 
-Phase E can start when the Phase A-D substrate is source-of-truth verified: daemon/job-run ledgers, prediction/feedback surfaces, corpus roots, embedder forwards, DDA/TCT rows, semantic heads, production telemetry windows, and UTML carrier certs all have independent readback evidence. That gate is now satisfied at implementation/FSV level.
+Phase E started when the Phase A-D substrate became source-of-truth verified: daemon/job-run ledgers, prediction/feedback surfaces, corpus roots, embedder forwards, DDA/TCT rows, semantic heads, production telemetry windows, and UTML carrier certs all had independent readback evidence. That gate was satisfied at implementation/FSV level on 2026-05-12, and Phase E self-optimization policy is code/FSV-shipped as of 2026-05-13.
 
-This does **not** mean the system can replace human code review yet. The latest rolling holdout evidence reports `prediction_oracle_correlation = 0.866667` against the `0.95` ship gate. That is Phase G model-quality convergence. Phase E's job is to make the autonomous self-optimization policy learn from the Phase A-D reality stream so the Phase G gate can eventually become true.
+This does **not** mean the system can replace human code review yet. The latest rolling holdout evidence reports `prediction_oracle_correlation = 0.866667` against the `0.95` ship gate. That is Phase G model-quality convergence. Phase E's job is now to keep feeding durable-reality reward signals back into ME-JEPA so the Phase G gate can eventually become true.
 
 ## Phase summary
 
@@ -19,8 +19,8 @@ This does **not** mean the system can replace human code review yet. The latest 
 | **A. Operational unblock** | Daemon mode + prediction injection + agent-feedback channel + D-drive enforcement | code/FSV closure 2026-05-12; fresh-host operator burn-in remains | none | Daemon task set runs; GC/eval job-run rows persist; first prediction injected; first SurpriseEvent recorded; cargo lint passes |
 | **B. Multi-head extension** | Q1-Q5 `RealityPrediction` schema, what-if/explain APIs, auxiliary heads, deterministic label extractors, per-head UTML accounting | code + FSV complete 2026-05-12; training/eval hardening remains | Phase A | Code/FSV gate passed; production holdout metrics and remaining per-head self-healing tasks still open |
 | **C. Corpus expansion** | Completed Python 300×8 corpus + 10-language fixture corpus + combined split | complete 2026-05-12 | Phase A | 2,400 Python entries verified; 5,120 non-Python entries verified; combined corpus FSV passes |
-| **D. Neural embedder forwards** | Ship real forward/DDA enrichment substrate and remove placeholder-only Phase D paths | code/FSV substrate shipped 2026-05-12; Phase E handoff ready | Phase A | Forward wrappers, full pretrained/routing FSV, DDA compute/store, live shift DDA rows, cache, stdlib registry, TCT refresh, semantic-head evidence, production telemetry, and UTML carrier FSV pass |
-| **E. Continuous self-optimization** | Scheduler tokio task + per-cell stratified drift + dissipation detection + lambda ramp | 5-7 days | Phase A-D substrate verified | Scheduler runs; drift detected within 1k obs; A/B/C promotion executes autonomously |
+| **D. Neural embedder forwards** | Ship real forward/DDA enrichment substrate and remove placeholder-only Phase D paths | code/FSV substrate shipped 2026-05-12 | Phase A | Forward wrappers, full pretrained/routing FSV, DDA compute/store, live shift DDA rows, cache, stdlib registry, TCT refresh, semantic-head evidence, production telemetry, and UTML carrier FSV pass |
+| **E. Continuous self-optimization** | Scheduler tokio task + per-cell stratified drift + dissipation detection + lambda ramp | **code/FSV shipped 2026-05-13** | Phase A-D substrate verified | Scheduler runs; drift detected within 1k obs; A/B/C promotion executes autonomously; catastrophic promotion requires two distinct approvals |
 | **F. Production observability** | Live conformal/OOD/p50/p99 capture + weekly eval + active-learning dashboard + WSL GPU telemetry hardening | 5-7 days | Phase A | Weekly report writes; conformal coverage measured; active-learning queue cleared by operator weekly |
 | **G. Rolling-window holdout to ≥0.95** | Run live evaluations until ship gate stably met across (category × language) | ongoing | Phase B + C + D + E + F | 4 consecutive rolling windows ≥ 0.95 |
 | **H. Inner-loop residue cleanup** | Apply deletion list, refactor loop.md, supersede SMAP files | 1-2 days | Phase A (so daemon is the new norm) | All `MEJEPA_*_RETIRED` symbols fail-closed; CLAUDE.md + agents/README.md updated |
@@ -34,9 +34,9 @@ This does **not** mean the system can replace human code review yet. The latest 
 - **BOOTSTRAP** (3 tasks, ~2 days) — BOOT-001 + BOOT-003 in Phase A; BOOT-002 baseline checkpoint FSV is closed, with release packaging tracked by the readiness gate if it regresses
 - **API** (5 tasks, ~2.5 days) — API-001 (semver in MCP) + API-005 (changelog) in Phase A; API-002/003/004 in Phase F
 
-**Updated remaining fresh implementation effort:** Phase C no longer counts as remaining work. Phase A, the Phase B prediction/API/schema carrier, Phase C corpus expansion, and the Phase D enrichment substrate (forward surface, full pretrained/routing FSV, DDA compute/store, live shift DDA persistence, persistent cache, stdlib registry, TCT refresh support, semantic analyzer/head evidence, production telemetry capture, and UTML carrier reconciliation) are code/FSV-shipped. The remaining estimate is dominated by autonomous self-optimization policy, production observability/dashboard cadence, DR, operator packaging, and Phase G model-quality convergence.
+**Updated remaining fresh implementation effort:** Phase C no longer counts as remaining work. Phase A, the Phase B prediction/API/schema carrier, Phase C corpus expansion, Phase D enrichment substrate, and Phase E autonomous self-optimization policy are code/FSV-shipped. The remaining estimate is dominated by production observability/dashboard cadence, DR, operator packaging, and Phase G model-quality convergence.
 
-**Current Phase A-D baseline (2026-05-12).** `TASK-FLYWHEEL-001/002/003/004/005/006`, `TASK-PREDICT-001/002`, `TASK-LOOP-001/007`, `TASK-OBS-005/006`, `TASK-RUN-001/010/011`, `TASK-BOOT-001/003`, and `TASK-SEC-001/006/007/008` are code-shipped or operationally applied. Daemon supervision now has durable `CF_MEJEPA_FLYWHEEL_JOB_RUNS` evidence plus GC/eval source-of-truth readback at `/mnt/d/contextgraph/fsv/mcp-daemon-supervision-fsv/daemon-supervision-evidence.json`. Phase B code/FSV now ships `TASK-PREDICT-003/004/005/006/007/008`, `TASK-SEC-003`, deterministic `TASK-PREDICT-LABEL-001..009` coverage in one label module, and the core `TASK-UTML-001/002/003/004` accounting path with carrier evidence. Phase D now ships active content forward wrappers, DDA compute/store/readback, live shift DDA rows, persistent cache behavior, stdlib registry, TCT refresh support, semantic analyzer/head evidence, production telemetry windows, and UTML cert readback. Phase E can start; Phase G remains non-green until the 0.95 correlation requirement is met.
+**Current Phase A-E baseline (2026-05-13).** `TASK-FLYWHEEL-001/002/003/004/005/006`, `TASK-PREDICT-001/002`, `TASK-LOOP-001/007`, `TASK-OBS-005/006`, `TASK-RUN-001/010/011`, `TASK-BOOT-001/003`, and `TASK-SEC-001/006/007/008` are code-shipped or operationally applied. Daemon supervision now has durable `CF_MEJEPA_FLYWHEEL_JOB_RUNS` evidence plus GC/eval source-of-truth readback at `/mnt/d/contextgraph/fsv/mcp-daemon-supervision-fsv/daemon-supervision-evidence.json`. Phase B code/FSV ships `TASK-PREDICT-003/004/005/006/007/008`, `TASK-SEC-003`, deterministic `TASK-PREDICT-LABEL-001..009` coverage in one label module, and the core `TASK-UTML-001/002/003/004` accounting path with carrier evidence. Phase D ships active content forward wrappers, DDA compute/store/readback, live shift DDA rows, persistent cache behavior, stdlib registry, TCT refresh support, semantic analyzer/head evidence, production telemetry windows, and UTML cert readback. Phase E now ships the autonomous self-optimization policy layer with FSV at `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`. Phase G remains non-green until the 0.95 prediction-oracle correlation requirement is met.
 
 ---
 
@@ -92,7 +92,7 @@ This does **not** mean the system can replace human code review yet. The latest 
 | `TASK-PREDICT-007` | Agent claim graph extractor (deterministic rule-based) | **complete (2026-05-12)** |
 | `TASK-PREDICT-008` | Reality-impact reconciler (Q5 path) | **complete (2026-05-12)** |
 | `TASK-UTML-001..004` | Per-head learning signal skeleton, cert readout, global `min_h` value, surprise sampling factor | **complete/code_complete (2026-05-12; BatchSampler policy hardening remains)** |
-| `TASK-UTML-005..009` | Per-head Fisher, dormancy, lambda ramp, dissipation, per-cell T | **open; moves with Phase E/F policy hardening** |
+| `TASK-UTML-005..009` | Per-head Fisher, dormancy, lambda ramp, dissipation, per-cell T | **TASK-UTML-005..008 complete/code+FSV (2026-05-13); TASK-UTML-009 remains Phase F reporting** |
 | `TASK-PREDICT-LABEL-001..009` | Label-source extractors: failure trace classifier, edge/security/debt/perf/accuracy/cost/reasoning signals | **code_complete (2026-05-12 deterministic unified extractor; per-tool/per-language analyzers remain hardening work)** |
 
 **Code/FSV gate passed 2026-05-12:**
@@ -106,7 +106,7 @@ This does **not** mean the system can replace human code review yet. The latest 
 1. Each new head's holdout metric beats random baseline by ≥ 10 pp after real training.
 2. Per-step training cert expands from persisted per-head L-step/global-min to all loss/delta/lambda values.
 3. Production DDA/neural embedder features are consumed by the heads and shown to improve holdout quality, not merely persisted as side-channel evidence.
-4. Per-head Fisher, dormancy, lambda ramp, dissipation, and per-cell T are completed under Phase E/F.
+4. Per-head Fisher, dormancy, lambda ramp, and dissipation are complete under Phase E; per-cell T reporting remains Phase F.
 
 **Risks / mitigations:**
 - *Risk:* auxiliary heads destabilize the trunk. *Mitigation:* per-head λ defaults are small (0.05); ramp gated on holdout improvement (per `10 §8`).
@@ -149,7 +149,7 @@ This does **not** mean the system can replace human code review yet. The latest 
 
 ---
 
-## Phase D — Neural Embedder Forwards and DDA Substrate (code/FSV shipped; Phase E handoff ready 2026-05-12)
+## Phase D — Neural Embedder Forwards and DDA Substrate (code/FSV shipped 2026-05-12; consumed by Phase E)
 
 **Goal:** Replace deterministic placeholder encoders with real forward outputs in the embedder routing layer and persist DDA enrichment signals. The forward/routing gap tracked in [#3](https://github.com/ChrisRoyse/contextgraph/issues/3), the DDA predictor-consumption gap tracked in [#16](https://github.com/ChrisRoyse/contextgraph/issues/16), the cache LRU/telemetry gap tracked in [#17](https://github.com/ChrisRoyse/contextgraph/issues/17), production telemetry gap tracked in [#11](https://github.com/ChrisRoyse/contextgraph/issues/11), analyzer-head gap tracked in [#4](https://github.com/ChrisRoyse/contextgraph/issues/4), and UTML-carrier gap tracked in [#13](https://github.com/ChrisRoyse/contextgraph/issues/13) are closed for the Phase A-D readiness scope.
 
@@ -194,26 +194,27 @@ This does **not** mean the system can replace human code review yet. The latest 
 
 ---
 
-## Phase E — Continuous Self-Optimization (5-7 days)
+## Phase E — Continuous Self-Optimization (code/FSV shipped 2026-05-13)
 
-**Goal:** Make the heal scheduler autonomous. The Phase A `TASK-FLYWHEEL-002` skeleton already fires seven tickers, delegates to shipped modules, persists readback-verified status, and is called by daemon mode. Phase E replaces the conservative inspection/action handlers with the full per-cell stratified, dissipation-aware, lambda-ramping autonomous learner.
+**Goal:** Make the heal scheduler autonomous. Phase E replaces the earlier conservative inspection/action handlers with the full per-cell stratified, dissipation-aware, lambda-ramping autonomous learner. The scheduler now treats durable RocksDB rows and the scheduler status file as source of truth, not tool return values.
 
 **Deliverables (TASK IDs):**
 
-| Task | Description | Effort |
+| Task | Description | Status |
 |---|---|---|
-| `TASK-HEAL-001` | Self-optimization scheduler full implementation (drift, active-learning, promote, continual_backprop, constellation freshness ticks) | 1.5 days |
-| `TASK-HEAL-002` | Per-cell stratified drift detection | 1 day |
-| `TASK-HEAL-003` | Dissipation detection (training falls, holdout doesn't) | 1 day |
-| `TASK-HEAL-004` | Bayesian small-window drift (Beta posterior on per-cell sample counts < 50) | 0.5 day |
-| `TASK-HEAL-005` | Production constellation refresh policy (scheduler tick exists; refresh thresholds/actions still need Phase E policy) | 0.5 day |
-| `TASK-HEAL-006` | `mejepa_promote_approval` MCP tool (operator approval for catastrophic promotions) | 0.5 day |
-| `TASK-HEAL-007` | Emergency eviction policy validation (scheduler tick exists; production quota thresholds/reporting still need hardening) | 0.5 day |
+| `TASK-HEAL-001` | Self-optimization scheduler full implementation (drift, active-learning, promote, continual_backprop, constellation freshness ticks) | complete/code+FSV |
+| `TASK-HEAL-002` | Per-cell stratified drift detection | complete/code+FSV |
+| `TASK-HEAL-003` | Dissipation detection (training falls, holdout doesn't) | complete/code+FSV |
+| `TASK-HEAL-004` | Bayesian small-window drift (Jeffreys/Beta posterior on per-cell sample counts < 50) | complete/code+FSV |
+| `TASK-HEAL-005` | Production constellation refresh policy | complete/code+FSV |
+| `TASK-HEAL-006` | `mejepa_promote_approval` MCP tool (two-distinct-operator approval for catastrophic promotions) | complete/code+FSV |
+| `TASK-HEAL-007` | Emergency eviction policy validation | complete/code+FSV |
+| `TASK-HEAL-008` | Drift attribution and operator alert policy stream | complete/code+FSV |
 
 **Ship gate:**
-1. Inject synthetic drift (90% → 84% over 1000 obs); scheduler detects within 1k more obs; queues LoRA refresh; A/B/C runs; winner promoted.
-2. Inject catastrophic drift (90% → 75%); scheduler queues full retrain + writes operator alert; promotion blocked until `mejepa_promote_approval` called.
-3. Inject dormancy (force 20% units to zero pre-activation); detector fires; reinit runs; re-eval shows recovery.
+1. Controlled soft-drift window (`860/1000`) is persisted to `CF_MEJEPA_DRIFT_WINDOW`; scheduler reads it back, writes `CF_MEJEPA_HEAL_REPORTS`, and persists A/B/C policy records in `CF_MEJEPA_MODEL_PROMOTIONS`.
+2. Controlled catastrophic-drift window (`750/1000`) queues full retrain approval, writes an operator alert, and does not execute promotion until two distinct `mejepa_promote_approval` approvals are durably read back.
+3. Per-head dormancy, dissipation, lambda ramp, Fisher snapshot, active-learning surprise, emergency eviction, per-cell promotion rejection, and invalid approval edge cases are verified by independent source-of-truth reads in `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`.
 
 **Risks / mitigations:**
 - *Risk:* over-eager promotion regresses some cells while improving others. *Mitigation:* per-(category × language) acceptance criterion in promotion gate (every cell must hold or improve; not just the average).
@@ -284,13 +285,13 @@ Phase A    [days 1–7]    ============
 Phase B    [days 4–18]       =====================
 Phase C    [complete 2026-05-12] ================= closed
 Phase D    [days 8–22]            ===================
-Phase E    [days 12–18]                ============
+Phase E    [complete 2026-05-13]       ========== closed
 Phase F    [days 15–21]                   ===========
 Phase H    [days 21–22]                          ==
 Phase G                                            ──── ongoing
 ```
 
-Phases A → B; A → C; A → D; then Phase E starts from the verified A-D substrate. A → F → G and A → H proceed when their own gates are satisfied. Phase G never gates Phase E because it is the convergence phase; its non-green `0.866667 < 0.95` evidence blocks only the human-review-replacement claim.
+Phases A → B; A → C; A → D; then Phase E shipped from the verified A-D substrate. A → F → G and A → H proceed when their own gates are satisfied. Phase G never gates Phase E because it is the convergence phase; its non-green `0.866667 < 0.95` evidence blocks only the human-review-replacement claim.
 
 **Most aggressive single-engineer schedule:** ~3-4 weeks to all-shipped (Phases A-F + H), with G running indefinitely after week 1.
 
@@ -317,7 +318,7 @@ Phases A → B; A → C; A → D; then Phase E starts from the verified A-D subs
 - **End of Phase B**: "Predictions now cover Q1–Q5; agent gets 'what's wrong' for every change, even on Pass."
 - **End of Phase C** (reached 2026-05-12): "Corpus is full; per-language operators ship; ME-JEPA can train against the real distribution."
 - **End of Phase D**: "Embedders are real neural forwards; DDA signal substrate is live."
-- **End of Phase E**: "Self-healing actually heals; operator approves only catastrophic promotions."
+- **End of Phase E** (reached 2026-05-13): "Self-healing actually heals; operator approves only catastrophic promotions."
 - **End of Phase F**: "Operator has a dashboard; weekly report writes; active-learning queue surfaces."
 - **End of Phase H**: "No inner-loop residue; codebase is post-pivot clean."
 - **Phase G stable**: "ME-JEPA prediction-oracle correlation ≥ 0.95 across all cells over 4 rolling windows. Code review of AI patches is statistically unjustified."

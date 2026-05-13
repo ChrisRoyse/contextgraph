@@ -76,13 +76,13 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 | `TASK-UTML-002` | Per-head cert columns in `CF_MEJEPA_TRAIN_CERTS` | B | UTML-001 | **complete for Phase A-D (2026-05-12; cert readback + carrier fields FSV)** |
 | `TASK-UTML-003` | `ΔΞ_global = min_h(ΔΞ_h)` aggregation | B | UTML-001 | **complete for persisted learning-signal carrier; BatchSampler policy belongs to Phase E** |
 | `TASK-UTML-004` | `agent_surprise_severity_score` factor in sampling_weight | B | PREDICT-002 | **complete** |
-| `TASK-UTML-005` | Per-head Fisher matrices | E | UTML-001 | open Phase E policy |
-| `TASK-UTML-006` | Per-head dormancy detection | E | UTML-001 | open Phase E policy |
-| `TASK-UTML-007` | Per-head loss coefficient λ ramp in heal scheduler | E | HEAL-001, UTML-001 | open Phase E policy |
-| `TASK-UTML-008` | Per-head dissipation detection | E | UTML-001 | open |
+| `TASK-UTML-005` | Per-head Fisher matrices | E | UTML-001 | **complete/code+FSV (2026-05-13)** |
+| `TASK-UTML-006` | Per-head dormancy detection | E | UTML-001 | **complete/code+FSV (2026-05-13)** |
+| `TASK-UTML-007` | Per-head loss coefficient λ ramp in heal scheduler | E | HEAL-001, UTML-001 | **complete/code+FSV (2026-05-13)** |
+| `TASK-UTML-008` | Per-head dissipation detection | E | UTML-001 | **complete/code+FSV (2026-05-13)** |
 | `TASK-UTML-009` | Per-cell state-transfer T in eval reports | F | UTML-001 | open Phase F reporting |
 
-**Phase B code/FSV status (2026-05-12):** primary prediction/API/schema/label/UTML carrier work is complete with FSV at `/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-prediction-fsv.json` and `/mnt/d/contextgraph/fsv/contextgraph-utml-fsv/utml-fsv-summary.json`. Remaining items are Phase E/F/G quality/policy work: per-head Fisher, dormancy, lambda ramp, dissipation, per-cell state-transfer reporting, full analyzer/toolchain label deltas, and holdout metrics.
+**Phase B/E code/FSV status (2026-05-13):** primary prediction/API/schema/label/UTML carrier work is complete with FSV at `/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-prediction-fsv.json` and `/mnt/d/contextgraph/fsv/contextgraph-utml-fsv/utml-fsv-summary.json`; Phase E completes Fisher, dormancy, lambda ramp, and dissipation with evidence in `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`. Remaining quality/reporting work: per-cell state-transfer reporting, full analyzer/toolchain label deltas, and holdout metrics.
 
 ---
 
@@ -111,24 +111,25 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 | `TASK-ENRICH-006` | Per-embedder FSV (real model file, deterministic input → expected output) | D | ENRICH-001 | **complete (2026-05-12; 8 pretrained + 4 algorithmic + 143 routing rows read back)** |
 | `TASK-ENRICH-007` | Per-language stdlib registry for `ReinventedWheel` | D | none | **complete (2026-05-12)** |
 
-**Phase D status (2026-05-12):** enrichment substrate is code/FSV-shipped for full pretrained/routing forwards, DDA compute/store, live shift-subscriber DDA rows, persistent cache/LRU telemetry, inference CF opening, TCT refresh support, production telemetry windows, analyzer-backed semantic heads, UTML carrier evidence, and stdlib registry. Autonomous Phase E can start from this substrate; the non-green 0.95 prediction-oracle threshold remains Phase G convergence work.
+**Phase D/E status (updated 2026-05-13):** enrichment substrate is code/FSV-shipped for full pretrained/routing forwards, DDA compute/store, live shift-subscriber DDA rows, persistent cache/LRU telemetry, inference CF opening, TCT refresh support, production telemetry windows, analyzer-backed semantic heads, UTML carrier evidence, and stdlib registry. Autonomous Phase E now ships on top of that substrate. The non-green 0.95 prediction-oracle threshold remains Phase G convergence work.
 
 ---
 
-## Phase E — Continuous Self-Optimization (7 tasks)
+## Phase E — Continuous Self-Optimization (code/FSV shipped 2026-05-13)
 
 | ID | Title | Phase | Blocked by | Effort |
 |---|---|---|---|---|
-| `TASK-HEAL-001` | Self-optimization scheduler full implementation | E | Phase A-D substrate verified | 1.5d |
-| `TASK-HEAL-002` | Per-cell stratified drift detection | E | HEAL-001 | 1d |
-| `TASK-HEAL-003` | Dissipation detection | E | HEAL-001, UTML-008 | 1d |
-| `TASK-HEAL-004` | Bayesian small-window drift (Beta posterior) | E | HEAL-002 | 0.5d |
-| `TASK-HEAL-005` | Production constellation refresh policy (scheduler tick exists) | E | HEAL-001 | 0.5d |
-| `TASK-HEAL-006` | `mejepa_promote_approval` MCP tool | E | HEAL-001 | 0.5d |
-| `TASK-HEAL-007` | Emergency eviction policy validation (scheduler tick exists) | E | none | 0.5d |
-| `TASK-UTML-008` | Per-head dissipation detection | E | UTML-001 | 0.5d |
+| `TASK-HEAL-001` | Self-optimization scheduler full implementation | E | Phase A-D substrate verified | **complete/code+FSV** |
+| `TASK-HEAL-002` | Per-cell stratified drift detection | E | HEAL-001 | **complete/code+FSV** |
+| `TASK-HEAL-003` | Dissipation detection | E | HEAL-001, UTML-008 | **complete/code+FSV** |
+| `TASK-HEAL-004` | Bayesian small-window drift (Jeffreys/Beta posterior) | E | HEAL-002 | **complete/code+FSV** |
+| `TASK-HEAL-005` | Production constellation refresh policy | E | HEAL-001 | **complete/code+FSV** |
+| `TASK-HEAL-006` | `mejepa_promote_approval` MCP tool | E | HEAL-001 | **complete/code+FSV** |
+| `TASK-HEAL-007` | Emergency eviction policy validation | E | none | **complete/code+FSV** |
+| `TASK-HEAL-008` | Drift attribution and alert policy stream | E | HEAL-002 | **complete/code+FSV** |
+| `TASK-UTML-008` | Per-head dissipation detection | E | UTML-001 | **complete/code+FSV** |
 
-**Phase E total: ~6 days.**
+**Phase E FSV source of truth:** `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`, with durable readback from `CF_MEJEPA_MODEL_PROMOTIONS`, `CF_MEJEPA_HEAL_REPORTS`, `CF_MEJEPA_DRIFT_WINDOW`, and `self_optimization_status.json`.
 
 ---
 

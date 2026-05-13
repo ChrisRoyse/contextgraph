@@ -4,7 +4,7 @@
 >
 > **Source theory:** `docs2/TheoryOfMachineLearning.md` (UTML v1.0 — JEPA Edition) + `docs/ruvectorfindings/11_MEJEPA_LEARNING_FORMULA.md` (the existing single-head application). This doc adds the multi-head extension that the futurebuild plan requires.
 
-**Status snapshot (2026-05-12):** The Phase B/Phase D UTML carrier is implemented and physically verified. `crates/context-graph-mejepa-train/src/learning_signal/per_head.rs` computes per-head L-step inputs and `delta_xi_global_min`; `TrainingCertificate` persists `per_head_l_step`, `delta_xi_global_min`, and explicit ΔP/ΔK/ΔΩ/ΔΞ component carriers; sampling weight includes the agent-surprise severity factor. FSV source of truth: `/mnt/d/contextgraph/fsv/contextgraph-utml-fsv/utml-fsv-summary.json` (`passes=true`, SHA-256 `a7d1041db76adca835649305645e4e5df8a5157673cbde40fc2ac5e18d112657`) reads back `CF_MEJEPA_TRAIN_CERTS` after reopen and covers non-finite component, zero gate, conflicting state-transfer, empty input, and negative-age edge cases. Remaining work is Phase E/F policy automation: per-head Fisher, per-head dormancy, lambda ramp, per-head dissipation, and per-cell state-transfer reporting cadence.
+**Status snapshot (2026-05-13):** The Phase B/Phase D UTML carrier is implemented and physically verified. `crates/context-graph-mejepa-train/src/learning_signal/per_head.rs` computes per-head L-step inputs and `delta_xi_global_min`; `TrainingCertificate` persists `per_head_l_step`, `delta_xi_global_min`, and explicit ΔP/ΔK/ΔΩ/ΔΞ component carriers; sampling weight includes the agent-surprise severity factor. FSV source of truth: `/mnt/d/contextgraph/fsv/contextgraph-utml-fsv/utml-fsv-summary.json` (`passes=true`, SHA-256 `a7d1041db76adca835649305645e4e5df8a5157673cbde40fc2ac5e18d112657`) reads back `CF_MEJEPA_TRAIN_CERTS` after reopen and covers non-finite component, zero gate, conflicting state-transfer, empty input, and negative-age edge cases. Phase E now ships policy automation for per-head Fisher, per-head dormancy, lambda ramp, and per-head/global dissipation with FSV at `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`. Remaining formula work is per-cell state-transfer reporting cadence and Phase G model-quality convergence.
 
 ---
 
@@ -359,12 +359,12 @@ Reward:
 
 1. **Per-head ΔP, ΔK, ΔΞ tracking** in `learning_signal/` — complete/code_complete in `learning_signal/per_head.rs`.
 2. **Per-head cert columns** in `CF_MEJEPA_TRAIN_CERTS` — Phase A-D complete for `per_head_l_step`, `delta_xi_global_min`, and component-carrier audit fields; richer per-head loss/lambda trend maps remain Phase E/F policy telemetry.
-3. **`ΔΞ_global = min_h(ΔΞ_h)`** in the learning signal — complete for the persisted carrier path; BatchSampler skip/requeue automation remains Phase E policy.
+3. **`ΔΞ_global = min_h(ΔΞ_h)`** in the learning signal — complete for the persisted carrier path; BatchSampler skip/requeue automation remains Phase F/G model-quality hardening.
 4. **`agent_surprise_severity_score` factor** in `sampling_weight` — complete.
-5. **Per-head Fisher matrices** in `heal::ewc::FisherSnapshot` — open.
-6. **Per-head dormancy detection** in `learning_signal::continual_backprop` — open.
-7. **Per-head loss coefficient ramping** in the heal scheduler — open.
-8. **Dissipation detection per head** in the heal scheduler — open.
+5. **Per-head Fisher matrices** in Phase E policy ledger — complete/code+FSV.
+6. **Per-head dormancy detection** in Phase E scheduler policy — complete/code+FSV.
+7. **Per-head loss coefficient ramping** in the heal scheduler — complete/code+FSV.
+8. **Dissipation detection per head** in the heal scheduler — complete/code+FSV.
 9. **Per-cell state-transfer T** in eval reports — open.
 
 All listed in [`13_TASK_INDEX.md`](13_TASK_INDEX.md). Implementation assumes the existing `learning_signal/`, `heal/ewc`, `heal/promote`, `eval/` modules are extended in-place — no new crate.

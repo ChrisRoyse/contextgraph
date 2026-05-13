@@ -73,6 +73,12 @@ Every field is either physically observed or absent. Missing source-of-truth dat
 
 The reward target is teleological: what changed, what purpose it served, what deterministic oracle observed, what side effects appeared, and where ME-JEPA's prediction diverged from durable reality. Teleological constellations are the compressed geometry of those purpose/outcome relationships; they must cover all observed `(mutation_category, language, entity_family, embedder, chunk_type)` cells that reality actually emits.
 
+## 3.2 Phase E reality-compiler loop
+
+Phase E makes this vision operational as a self-optimization loop. The scheduler consumes durable reality events, not agent prose: persisted drift windows, per-cell observations, train certs, eval reports, active-learning surprise, production telemetry, constellation freshness, quota state, and promotion approvals. It writes every policy decision back to a source-of-truth ledger (`CF_MEJEPA_MODEL_PROMOTIONS`, `CF_MEJEPA_HEAL_REPORTS`, active pointers, weight blobs, and `self_optimization_status.json`) and immediately verifies those writes by readback.
+
+That loop is the reward engine for the ME-JEPA truth system. Prediction mistakes, oracle outcomes, catastrophic surprises, dissipation, dormancy, per-cell regressions, and operator approvals all become structured learning pressure for the predictor. The LLM remains outside the trust boundary: it proposes edits; ME-JEPA predicts and verifies what reality will say.
+
 ## 4. The architectural property that makes this possible
 
 ME-JEPA-Code is **structurally collapse-immune on the target side**. The target representation `f_target(panel_t2)` is not produced by a learnable network; it is the output of a panel of **frozen externally-defined instruments** (E_AST, E_CFG, E_DataFlow, E_TypeGraph, E_Test, E_Trace, E_Diff, E_Witness, E_Oracle, E_Problem, E_CommitMsg, E_StaticAnalysis, E_Runtime, E_Reasoning), each a deterministic function from a typed event to a structured feature output. Instruments have **zero trainable parameters**. They cannot drift, cannot collapse, cannot be gradient-pushed toward the trivial fixed point — there is no gradient flowing through them, ever.

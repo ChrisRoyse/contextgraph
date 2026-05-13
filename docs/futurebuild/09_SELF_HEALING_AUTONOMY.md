@@ -6,7 +6,7 @@
 >
 > Owned by [`SPEC-HEAL.md`](specs/functional/SPEC-HEAL.md) and [`TECH-HEAL.md`](specs/technical/TECH-HEAL.md).
 
-**Status snapshot (2026-05-12):** The daemon/scheduler skeleton and seven tickers are code/FSV-shipped under Phase A. Phase B added `ActiveLearningKind::AgentSurprise` consumption and core per-head UTML carriers. The full autonomous policy remains Phase E: per-cell drift, Bayesian small-window drift, full dissipation handling, per-head Fisher/dormancy/lambda ramp, constellation refresh policy, catastrophic promotion approval, emergency eviction tick, and drift attribution.
+**Status snapshot (2026-05-13):** Phase E is code/FSV-shipped. The seven-ticker scheduler now acts from durable RocksDB/status-file source of truth: global and per-cell drift, Jeffreys small-window drift, AgentSurprise fast-pathing, dissipation, lambda ramp, per-head Fisher snapshots, per-head dormancy reinit, constellation refresh policy, catastrophic promotion approval, emergency eviction suppression, drift attribution, and operator alerts. Evidence: `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`.
 
 ---
 
@@ -28,14 +28,14 @@
 | Self-optim scheduler tokio task panic | JoinSet supervisor | restart with exponential backoff | none | escalate if flapping |
 | Agent records Catastrophic surprise | CF_MEJEPA_AGENT_FEEDBACK write | fast-track observe + optionally fast-track A/B/C if drift threshold crossed | per-prediction-class metric | none unless drift triggered |
 
-**Target behavior:** only Catastrophic-class events surface to the operator. Everything else should be automatic, measured, and reversible once Phase E policy work is complete.
+**Target behavior:** only Catastrophic-class events require operator approval. Everything else is automatic, measured, readback-verified, and reversible through active pointers or policy records.
 
 ---
 
 ## 2. The continuous self-optimization scheduler (the daemon's heart)
 
 ```rust
-// crates/context-graph-mejepa/src/heal/scheduler.rs (skeleton shipped; full policy Phase E)
+// crates/context-graph-mejepa/src/heal/scheduler.rs + scheduler_state.rs (Phase E policy shipped)
 pub async fn run_self_optimization_scheduler(
     storage: Storage,
     config: SelfOptimConfig,
@@ -122,11 +122,10 @@ pub async fn run_self_optimization_scheduler(
 ```
 
 Implementation status:
-- All `heal::*` modules exist (shipped Phase 5).
-- `learning_signal::continual_backprop::*` exists (shipped REQ-UTML-07).
-- `mejepa_tct::freshness::*` exists (shipped Phase 4b).
-- `eval::queue::ActiveLearningQueueState::*` exists (shipped Phase 8).
-- The scheduler `run_self_optimization_scheduler` itself is **the new code**. It's pure orchestration over shipped APIs.
+- `run_self_optimization_scheduler` and `SchedulerState` are the Phase E orchestration surface.
+- `CF_MEJEPA_MODEL_PROMOTIONS` is the policy source of truth for promotion approvals, operator alerts, per-cell reports, dissipation reports, lambda state, Fisher snapshots, dormancy reports, emergency decisions, and active-learning fast-path records.
+- `CF_MEJEPA_DRIFT_WINDOW`, `CF_MEJEPA_HEAL_REPORTS`, `CF_MEJEPA_ACTIVE_POINTERS`, `CF_MEJEPA_PRODUCTION_TELEMETRY`, TCT constellation CFs, and `self_optimization_status.json` are read back independently in FSV.
+- Catastrophic-class promotion is blocked until two distinct operator approvals are persisted and read back through `mejepa_promote_approval`; non-catastrophic drift can A/B/C-promote autonomously.
 
 ---
 
@@ -164,10 +163,10 @@ Hard           : 85% > rolling_accuracy ≥ 80%
 Catastrophic   : rolling_accuracy < 80%
 ```
 
-Operational tuning the futurebuild plan adds (`TASK-HEAL-002`):
-- **Per-(category × language) stratification.** Today the rolling window is global; we add per-cell tracking so soft drift in one language can trigger a per-cell intervention without retraining the whole model.
-- **Bayesian posterior on small windows.** When per-cell sample count < 50, use a Bayesian posterior (Beta(α, β)) over accuracy rather than the point estimate, so we don't fire on noise.
-- **Surprise-event-weighted drift.** Agent-flagged surprise events count as 2× weight in the rolling window — they're stronger signal than passive missed predictions.
+Phase E operational policy:
+- **Per-(category × language) stratification.** Per-cell observations and eval-report cells are tracked separately so a single regressing language/category can trigger LoRA refresh or full-retrain approval without hiding behind the global average.
+- **Bayesian posterior on small windows.** When per-cell sample count is small, Jeffreys-prior Beta posterior classification replaces raw point estimates; the FSV includes both catastrophic 0/10 and noisy 7/10 windows.
+- **Surprise-event-weighted drift.** Agent-flagged catastrophic surprises persist fast-path records with 4x drift weight before ordinary uncertainty backlog.
 
 ---
 
@@ -175,7 +174,7 @@ Operational tuning the futurebuild plan adds (`TASK-HEAL-002`):
 
 `learning_signal::continual_backprop::{detect_dormant_units, reinit_dormant_units}` (shipped). Detector identifies units (ReLU pre-activations, attention heads) that are near-zero on > 99% of recent batches. Re-init applies a small magnitude Gaussian to the dormant unit's incoming weights and resets the corresponding output bias.
 
-Scheduler integration (skeleton shipped; full policy in §2 above):
+Scheduler integration (Phase E policy shipped; see §2 above):
 - Detector runs every 1800s (30 minutes).
 - If `dormant_fraction > 0.15`, re-init runs.
 - Re-init writes to `CF_MEJEPA_WEIGHT_BLOBS` as a new variant; A/B/C promotion gate evaluates whether the re-init helped (A = pre-re-init; B = post-re-init).
@@ -233,7 +232,7 @@ Process:
 6. If B or C wins: promote (after operator approval if Catastrophic class)
 ```
 
-Catastrophic-class promotion gate requires the operator's `mejepa_promote_approval` (NEW, small task) MCP tool call before A is replaced; non-Catastrophic promotions are automatic.
+Catastrophic-class promotion gate requires two distinct operator `mejepa_promote_approval` MCP approvals before A is replaced; non-Catastrophic promotions are automatic.
 
 ---
 
@@ -284,7 +283,7 @@ Intervention (per UTML §VII.1):
 - Continual-backprop dormant-unit reinit
 - Fresh real-data injection (anti-Shumailov; the flywheel handles this naturally)
 
-The scheduler's drift_check_tick is extended to detect dissipation as a fourth class beyond Soft/Hard/Catastrophic (`TASK-HEAL-003-dissipation-detection.md`).
+The scheduler's drift_check/continual_backprop path now detects dissipation as a fourth class beyond Soft/Hard/Catastrophic and persists replay-buffer enrichment, EWC re-anchor, and LR reset policy records.
 
 ---
 
@@ -300,7 +299,7 @@ Scheduler integration now has:
 - An in-process nightly GC scheduler in the MCP daemon that runs `gc_run_nightly` at 03:00 local time.
 - An `emergency_eviction_tick` in the self-optimization scheduler that runs every 10 minutes to check quota and invokes incremental eviction when the threshold is exceeded.
 
-Still missing: production threshold validation, operator-visible dashboard/runbook surfaces, and the Phase E policy that decides when quota pressure should also pause writes or alert.
+Still missing: operator-visible dashboard/runbook surfaces for quota history. The Phase E policy now persists exact-threshold decisions and suppresses repeated identical emergency events until state changes.
 
 ---
 
@@ -356,15 +355,16 @@ Each of these is detectable from the weekly evaluation report; if any fires sust
 
 ---
 
-## 15. What this self-healing spec commits us to
+## 15. Phase E implementation commitment
 
-1. `TASK-HEAL-001-self-optimization-scheduler.md` — the orchestrator over shipped heal modules
-2. `TASK-HEAL-002-per-cell-stratified-drift.md` — extend drift detection to per-(category × language)
-3. `TASK-HEAL-003-dissipation-detection.md` — UTML §VII.1 detection
-4. `TASK-HEAL-004-bayesian-small-window-drift.md` — Beta posterior on small N
-5. `TASK-HEAL-005-constellation-refresh-scheduler.md` — wire into scheduler
-6. `TASK-HEAL-006-promote-approval-tool.md` — `mejepa_promote_approval` MCP tool
-7. `TASK-HEAL-007-emergency-eviction-tick.md` — short-period quota check beyond nightly
-8. `TASK-FLYWHEEL-001-mcp-daemon-mode.md` — the supervised process that hosts the scheduler
+1. `TASK-HEAL-001-self-optimization-scheduler.md` — complete/code+FSV
+2. `TASK-HEAL-002-per-cell-stratified-drift.md` — complete/code+FSV
+3. `TASK-HEAL-003-dissipation-detection.md` — complete/code+FSV
+4. `TASK-HEAL-004-bayesian-small-window-drift.md` — complete/code+FSV
+5. `TASK-HEAL-005-constellation-refresh-scheduler.md` — complete/code+FSV
+6. `TASK-HEAL-006-promote-approval-tool.md` — complete/code+FSV
+7. `TASK-HEAL-007-emergency-eviction-tick.md` — complete/code+FSV
+8. `TASK-HEAL-008-drift-attribution.md` — complete/code+FSV
+9. `TASK-FLYWHEEL-001-mcp-daemon-mode.md` — supervised host already shipped
 
-All listed in [`13_TASK_INDEX.md`](13_TASK_INDEX.md).
+All status rows are listed in [`13_TASK_INDEX.md`](13_TASK_INDEX.md). Phase E's FSV artifact is `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`.

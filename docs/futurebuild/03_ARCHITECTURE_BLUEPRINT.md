@@ -115,7 +115,7 @@ The storage block now mixes shipped and remaining work. **CF_MEJEPA_AGENT_FEEDBA
 | `mejepa_verify` / `mejepa_predict_latest` / `mejepa_predict_what_if` / `mejepa_explain_prediction` MCP tools | shipped | `context-graph-mcp::handlers::tools::mejepa_tools` | agent-facing read API |
 | `mejepa_record_agent_feedback` MCP tool | shipped Phase A | `context-graph-mcp` | agent-facing write API for surprise events |
 | `mejepa_observe_shift` MCP tool | shipped | `context-graph-mcp` | trigger online observe() from a captured shift |
-| Continuous self-optimization daemon | shipped skeleton; full policy loop remains Phase E | `context-graph-mejepa::heal::scheduler` | tokio task: drift detect → A/B/C promote → continual backprop → recalibrate |
+| Continuous self-optimization daemon | shipped Phase E policy loop + FSV | `context-graph-mejepa::heal::scheduler` | tokio task: observe durable reality → drift detect → A/B/C promote → continual backprop → recalibrate |
 | Storage hygiene daemon | shipped (no scheduler) | `context-graph-mejepa-hygiene::gc` | nightly demote + compact + evict + Merkle compress |
 | Active-learning queue surfacing | shipped | `context-graph-mejepa::eval::queue` | when conformal interval > T or surprise recorded |
 | Weekly evaluation report writer | shipped | `context-graph-mejepa::eval::report` | per-(category × language) stratified ship-gate report |
@@ -194,9 +194,9 @@ The handler:
 
 When the operator labels an example via the active-learning queue (`mejepa_active_learning_queue` MCP tool returns the queue, operator marks an entry), the `operator_override_flag` is set on the example. Per the formula in §4.1, this multiplies sampling weight by 6×. Operator examples are gold-standard.
 
-### 4.5 Continuous self-optimization daemon (skeleton shipped; full policy open)
+### 4.5 Continuous self-optimization daemon (Phase E shipped)
 
-A long-running tokio task (`context-graph-mejepa::heal::scheduler`) runs the following loop forever, gated by config. Phase A ships the skeleton and tickers; Phase E still owns the full policy logic behind several branches:
+A long-running tokio task (`context-graph-mejepa::heal::scheduler`) runs the following loop forever, gated by config. Phase E implements the policy logic behind the seven tickers and proves it by durable source-of-truth readback in `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`:
 
 ```rust
 loop {
@@ -240,7 +240,7 @@ loop {
 }
 ```
 
-**Target policy:** no human in the loop unless drift is Catastrophic. The shipped skeleton has the tick structure; Phase E must finish the production policy that observes shifts every 250ms, checks drift every minute, drains active-learning every 10 minutes, runs LoRA refresh + full-retrain hourly, and triggers continual backprop every 30 minutes. Catastrophic drift surfaces to the operator + writes a high-severity blocker; everything else should be automatic once Phase E is complete.
+**Target policy:** no human in the loop unless drift is Catastrophic. The Phase E policy observes shifts every 250ms, checks drift every minute, drains active-learning every 10 minutes, runs LoRA refresh + full-retrain hourly, and triggers continual backprop every 30 minutes. Catastrophic drift surfaces to the operator, writes a high-severity alert, and blocks promotion until two distinct approvals are durably persisted through `mejepa_promote_approval`.
 
 This is the operator's "ME-JEPA system needs to continually learn and evolve and improve itself the more it is used, it continually self optimizes."
 

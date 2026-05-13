@@ -4,6 +4,8 @@
 > Owns: REQ-HEAL-FB-01..15.
 > Implementation reference: [`09_SELF_HEALING_AUTONOMY.md`](../../09_SELF_HEALING_AUTONOMY.md). Extends Phase 5 SPEC-HEAL (shipped) per `docs/ruvectorfindings/specs/`.
 
+**Status snapshot (2026-05-13):** REQ-HEAL-FB-01..15 are code/FSV shipped for Phase E. The durable source of truth for policy decisions is `CF_MEJEPA_MODEL_PROMOTIONS`; intervention reports land in `CF_MEJEPA_HEAL_REPORTS`; drift windows are read from `CF_MEJEPA_DRIFT_WINDOW`; scheduler execution state is read from `self_optimization_status.json`. Evidence: `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`.
+
 ---
 
 ## User stories
@@ -49,7 +51,7 @@ When a head's holdout metric crosses its ramp gate (per `10 §8`), the scheduler
 
 ### REQ-HEAL-FB-08 — `mejepa_promote_approval` MCP tool
 
-A new MCP tool SHALL allow the operator to approve or reject a queued catastrophic A/B/C promotion. Catastrophic promotions block until approved; non-catastrophic auto-promote.
+A new MCP tool SHALL allow the operator to approve or reject a queued catastrophic A/B/C promotion. Catastrophic promotions block until two distinct operator approvals are durably recorded; non-catastrophic promotions auto-promote through the A/B/C gate. Duplicate operator approvals, invalid operator IDs, empty reasons, and downgrade attempts on the required approval count fail closed.
 
 ### REQ-HEAL-FB-09 — Constellation refresh trigger
 
@@ -60,7 +62,7 @@ The scheduler's constellation_freshness_tick SHALL refresh constellation cells w
 
 ### REQ-HEAL-FB-10 — Emergency eviction tick
 
-In addition to the nightly GC at 03:00, a 10-minute tick SHALL check `quota_status` and trigger emergency eviction when usage > 110 GB.
+In addition to the nightly GC at 03:00, a 10-minute tick SHALL check `quota_status` and trigger emergency eviction when usage is at or above the 110 GiB threshold.
 
 ### REQ-HEAL-FB-11 — Per-cell promotion criterion
 
@@ -76,7 +78,7 @@ Active pointers SHALL retain the previous active for 30 days as a rollback targe
 
 ### REQ-HEAL-FB-14 — Operator alert stream
 
-Catastrophic-class events SHALL write to `CF_MEJEPA_HEAL_REPORTS` with `severity=Catastrophic` AND emit to a separate operator-visible alert stream (e.g., a top-of-`weekly.md` section).
+Catastrophic-class events SHALL write intervention evidence to `CF_MEJEPA_HEAL_REPORTS` and emit a separate operator-visible alert record to the policy ledger under `CF_MEJEPA_MODEL_PROMOTIONS`. Alert records include severity, title/body, attribution, creation time, and the source-of-truth CF that persisted them.
 
 ### REQ-HEAL-FB-15 — Witness-chain integrity check
 
@@ -84,18 +86,19 @@ The scheduler SHALL run witness-chain integrity check every 10000 attempts (even
 
 ## Acceptance criteria
 
-1. Inject synthetic drift (90% → 84% over 1000 obs); scheduler detects within next 1k obs; queues LoRA refresh; A/B/C runs; winner promoted automatically; per-cell breakdown shows the affected cell improved.
-2. Inject catastrophic drift (90% → 75%); scheduler queues full retrain + writes operator alert; promotion blocked until `mejepa_promote_approval` called.
-3. Inject dissipation pattern (low ΔΞ, high training-but-no-validation gain); detector fires `MEJEPA_DISSIPATION_DETECTED`; replay-buffer enrichment runs.
-4. Inject dormancy in one head's projection (force 20% units to zero pre-activation); per-head detector fires; reinit runs on that head only.
-5. λ ramping observed: head F1 crosses ramp gate; next week's λ_h = previous + 0.05.
-6. Witness-chain corruption injected (manually mutate a CF_MEJEPA_TRAIN_CERTS row); integrity check fires; auto-repair attempted; if repair fails, writes paused + alert written.
+1. Persist a controlled soft-drift window (`860/1000`) to `CF_MEJEPA_DRIFT_WINDOW`; scheduler detects within the next tick, queues LoRA refresh, runs A/B/C, persists the winner, and readback shows `CF_MEJEPA_HEAL_REPORTS` plus policy rows.
+2. Persist a controlled catastrophic-drift window (`750/1000`); scheduler queues full retrain, writes an operator alert, and promotion remains blocked until two distinct `mejepa_promote_approval` approvals are read back.
+3. Persist controlled dissipation evidence (high L_step with degrading ΔΞ/holdout); detector fires `MEJEPA_DISSIPATION_DETECTED`; replay-buffer/EWC/LR interventions are persisted.
+4. Persist dormancy evidence in one head's projection; per-head detector fires and reinit touches that head only.
+5. λ ramping is observed by reading back the persisted lambda-ramp state; a head crossing its gate increments λ_h by 0.05 up to the configured ceiling.
+6. Witness-chain integrity runs every 10000 observations; corruption attempts trigger auto-repair and, on repair failure, write-pause plus alert.
 
 ## Edge cases
 
 - **All cells passing ship gate**: scheduler observes idle; no interventions queued; recommendation: `no_change` from any health checks.
 - **Drift detected but A and B and C all fail to beat the gate**: log `MEJEPA_PROMOTION_NO_WINNER`; retain A; do not regress.
 - **Operator approval times out (no decision in 24h)**: catastrophic promotion stays queued; reminder alert escalated daily; no auto-promotion.
+- **Invalid approval request**: invalid operator ID, empty reason, duplicate operator, and approval-count downgrade attempts return a structured heal error and leave the persisted pending-promotion row unchanged.
 - **Storage at exactly 110 GB**: emergency eviction fires once; subsequent ticks no-op until 1 GB headroom restored.
 
 ## Non-functional

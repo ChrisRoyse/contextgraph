@@ -4,7 +4,7 @@
 
 Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file covers the rest of the FLYWHEEL + UTML tasks compactly.
 
-**Status snapshot (2026-05-12):**
+**Status snapshot (2026-05-13):**
 - FLYWHEEL-001: `code_complete` (daemon ships; fresh-host enablement proof still pending)
 - FLYWHEEL-002: `complete` (scheduler skeleton, 7 tickers, FSV at `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/scheduler_ticks.json`)
 - FLYWHEEL-003: `complete (2026-05-12)` — PostToolUse Bash capture hook + parser wired into `.claude/settings.json`; source of truth `/mnt/d/contextgraph/runtime/test-outcomes/<session>.jsonl`.
@@ -14,9 +14,10 @@ Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file cove
 - FLYWHEEL-007: `open` — Park-list CF (blocked-by FLYWHEEL-006 → now unblocked)
 - UTML-001: `complete/code_complete (2026-05-12)` — per-head signal module added in `crates/context-graph-mejepa-train/src/learning_signal/per_head.rs`; `delta_xi_global_min = min_h(delta_xi_h)` validates fail-closed.
 - UTML-002: `partial/code_complete (2026-05-12)` — `TrainingCertificate` now persists `per_head_l_step` and `delta_xi_global_min`; full per-head loss/delta/lambda columns remain open.
-- UTML-003: `partial/code_complete (2026-05-12)` — min-head aggregation exists; BatchSampler skip/requeue policy for collapsed heads remains open.
+- UTML-003: `partial/code_complete (2026-05-12)` — min-head aggregation exists; BatchSampler skip/requeue policy for collapsed heads remains Phase F/G hardening work.
 - UTML-004: `complete (2026-05-12)` — sampling weight includes agent surprise severity.
-- UTML-005..009: `open` — per-head Fisher, dormancy, lambda ramp, dissipation, and per-cell state-transfer T remain with Phase E/F policy hardening.
+- UTML-005..008: `complete/code+FSV (2026-05-13)` — per-head Fisher, dormancy, lambda ramp, and dissipation are implemented in the Phase E policy layer with source-of-truth readback at `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`.
+- UTML-009: `open` — per-cell state-transfer T remains Phase F reporting work.
 
 ---
 
@@ -32,7 +33,7 @@ Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file cove
 
 ## TASK-FLYWHEEL-004 — Asynchronous oracle binding inside observe()
 
-**Status:** complete (2026-05-12 code path). Current live schema does not persist per-test IDs or panel handles inside `RealityPrediction`, so the shipped binding uses the real persisted session prediction and writes hard labels to `CF_MEJEPA_ORACLE_VERDICTS`; panel-rich observe remains Phase E/B follow-up once prediction provenance stores panel handles.
+**Status:** complete (2026-05-12 code path). Current live schema does not persist per-test IDs or panel handles inside `RealityPrediction`, so the shipped binding uses the real persisted session prediction and writes hard labels to `CF_MEJEPA_ORACLE_VERDICTS`; panel-rich observe remains a prediction-provenance follow-up once prediction rows store panel handles.
 
 - **Phase:** A · **Effort:** 0.5d · **Blocked by:** TASK-FLYWHEEL-003
 - **Goal:** Self-optim scheduler's observe_tick consumes `TestOutcomeEvent`s from the JSONL queue and binds each to the most recent matching `RealityPrediction` (matching session + including the test_id), then calls `MeJepaCompiler::observe(panel, action, panel_after_test, OracleOutcome::from(event))`.
@@ -71,7 +72,7 @@ Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file cove
 
 ## TASK-UTML-002 — Per-head training cert columns
 
-**Status:** partial/code_complete (2026-05-12). `per_head_l_step` and `delta_xi_global_min` are persisted in `TrainingCertificate`; full `loss_per_head`, `delta_p_per_head`, `delta_k_per_head`, `delta_xi_per_head`, and `lambda_h` maps remain open.
+**Status:** partial/code_complete (2026-05-12). `per_head_l_step` and `delta_xi_global_min` are persisted in `TrainingCertificate`; full `loss_per_head`, `delta_p_per_head`, `delta_k_per_head`, `delta_xi_per_head`, and `lambda_h` maps remain Phase F/G telemetry hardening work.
 
 - **Phase:** B · **Effort:** 0.25d · **Blocked by:** TASK-UTML-001
 - **Goal:** Extend `TrainingCertificate` struct with `loss_per_head`, `delta_p_per_head`, `delta_k_per_head`, `delta_xi_per_head`, `lambda_h` fields per `10 §7`.
@@ -98,12 +99,16 @@ Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file cove
 
 ## TASK-UTML-005 — Per-head Fisher matrices
 
+**Status:** complete/code+FSV (2026-05-13). Per-head Fisher snapshots are persisted and read back through the Phase E policy ledger; FSV case `lambda_ramp_and_per_head_fisher`.
+
 - **Phase:** B · **Effort:** 0.5d · **Blocked by:** TASK-UTML-001
 - **Goal:** Extend `FisherSnapshot` per `10 §9` with `per_head_fisher: HashMap<HeadId, Tensor>`. EWC++ regularization uses per-head Fisher for head-specific updates.
 - **Outputs:** `heal/ewc.rs` extension.
 - **DoD:** per-head Fisher computed from per-head holdout; round-trip serde + on-disk verify.
 
 ## TASK-UTML-006 — Per-head dormancy detection
+
+**Status:** complete/code+FSV (2026-05-13). Detection is per head and reinitialization is targeted to the detected head; FSV case `per_head_dormancy_targeted_reinit`.
 
 - **Phase:** B · **Effort:** 0.5d · **Blocked by:** TASK-UTML-001
 - **Goal:** `detect_dormant_units_per_head` returns `HashMap<HeadId, DormantUnitReport>`. Reinit applies per-head; trunk preserved.
@@ -112,12 +117,16 @@ Phase A FLYWHEEL-001/002/006 have detailed individual task files. This file cove
 
 ## TASK-UTML-007 — Per-head λ ramp in heal scheduler
 
+**Status:** complete/code+FSV (2026-05-13). The scheduler reads latest eval metrics, blocks on critical degradation, and increments a qualifying head by at most 0.05 per tick; FSV case `lambda_ramp_and_per_head_fisher`.
+
 - **Phase:** E · **Effort:** 0.25d · **Blocked by:** TASK-HEAL-001, TASK-UTML-001
 - **Goal:** `lambda_ramp::tick` per `TECH-HEAL §3 / TECH-HEAL.md lambda_ramp` increments λ_h when head's holdout metric crosses gate.
 - **Outputs:** `heal/lambda_ramp.rs` (NEW).
 - **DoD:** failure_mode head F1 crosses 0.6 → next tick increments λ_failure_mode by 0.05 toward 0.30.
 
 ## TASK-UTML-008 — Per-head dissipation detection
+
+**Status:** complete/code+FSV (2026-05-13). Dissipation records include global and per-head detections plus queued replay/EWC/LR interventions; FSV case `dissipation_high_l_step_degrading_xi`.
 
 - **Phase:** E · **Effort:** 0.5d · **Blocked by:** TASK-UTML-001
 - **Goal:** Extend dissipation detection to per-head; per-head fires its own `MEJEPA_HEAD_DISSIPATION_DETECTED`.

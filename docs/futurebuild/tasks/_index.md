@@ -32,11 +32,13 @@
 - [`bootstrap/_all_tasks.md`](bootstrap/_all_tasks.md) — BOOT-001..003
 - [`api/_all_tasks.md`](api/_all_tasks.md) — API-001..005
 
-## Phase B status snapshot (2026-05-12)
+## Phase B/E status snapshot (2026-05-13)
 
-Phase B code/FSV is now shipped for the core prediction surface: `PREDICT-003/004/005/006/007/008/009`, `SEC-003`, deterministic `PREDICT-LABEL-001..009` coverage in `crates/context-graph-mejepa-train/src/labels.rs`, and core `UTML-001..004` accounting. Source-of-truth proof is `/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-prediction-fsv.json`, with persisted RocksDB data in `CF_MEJEPA_LIVE_PREDICTIONS`.
+Phase B code/FSV is shipped for the core prediction surface: `PREDICT-003/004/005/006/007/008/009`, `SEC-003`, deterministic `PREDICT-LABEL-001..009` coverage in `crates/context-graph-mejepa-train/src/labels.rs`, and core `UTML-001..004` accounting. Source-of-truth proof is `/mnt/d/contextgraph/fsv/contextgraph-phase-b-fsv/phase-b-prediction-fsv.json`, with persisted RocksDB data in `CF_MEJEPA_LIVE_PREDICTIONS`.
 
-What remains is quality and hardening work, not the first API/schema substrate: full per-tool/per-language label analyzers, production DDA/neural feature consumption, trained per-head holdout gates, per-head Fisher/dormancy/lambda/dissipation, per-cell state-transfer T, and fresh-host/operator burn-in.
+Phase E code/FSV is shipped for the autonomous self-optimization policy layer: scheduler orchestration, per-cell drift, Jeffreys small-window drift, surprise weighting, real holdout promotion, A/B/C scoring, catastrophic approval, two-person approval enforcement, dissipation, per-head Fisher, dormancy, lambda ramp, constellation freshness, emergency eviction, witness integrity, drift attribution, and alert persistence. Source-of-truth proof is `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`, with durable readback from RocksDB CFs and `self_optimization_status.json`.
+
+What remains is quality and hardening work, not the first API/schema/self-optimization substrate: full per-tool/per-language label analyzers, trained per-head holdout convergence, per-cell state-transfer T reporting, Phase F observability/dashboard cadence, and fresh-host/operator burn-in.
 
 ## Total task count
 

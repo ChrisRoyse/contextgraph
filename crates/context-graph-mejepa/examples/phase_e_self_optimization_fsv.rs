@@ -365,6 +365,11 @@ fn dissipation_detector_persists_interventions(root: &Path) -> Result<Value> {
 fn lambda_and_fisher_readback(root: &Path) -> Result<Value> {
     let db = open_seeded_db(root, "lambda-fisher")?;
     let store = HealRocksStore::from_db(db.clone())?;
+    let before = physical_state(
+        db.as_ref(),
+        store.as_ref(),
+        &root.join("self_optimization_status.json"),
+    )?;
     let before_lambda = read_lambda(store.as_ref(), HeadId::FailureMode)?;
     let lambda_decision =
         ramp_lambda_for_head(store.as_ref(), HeadId::FailureMode, 0.75, 0.30, false)?;
@@ -378,7 +383,7 @@ fn lambda_and_fisher_readback(root: &Path) -> Result<Value> {
         !blocked_lambda.updated,
         "critical degraded head should block lambda ramp"
     );
-    let before = physical_state(
+    let after_lambda_physical = physical_state(
         db.as_ref(),
         store.as_ref(),
         &root.join("self_optimization_status.json"),
@@ -405,6 +410,7 @@ fn lambda_and_fisher_readback(root: &Path) -> Result<Value> {
         "blockedLambda": blocked_lambda,
         "fisherSnapshotCount": fisher.len(),
         "before": before,
+        "afterLambdaPhysical": after_lambda_physical,
         "after": after,
     }))
 }
@@ -581,6 +587,11 @@ fn invalid_approval_fails_without_mutation(root: &Path) -> Result<Value> {
         context_graph_mejepa::heal::TriggerReason::DriftCatastrophic,
         "FSV invalid approval edge case",
     )?;
+    let queued_before = pending_promotions(store.as_ref())?;
+    ensure!(
+        queued_before.len() == 1 && queued_before[0].promotion_id == promotion_id,
+        "invalid approval edge case must start with exactly one pending promotion"
+    );
     let before = physical_state(
         db.as_ref(),
         store.as_ref(),
@@ -606,6 +617,11 @@ fn invalid_approval_fails_without_mutation(root: &Path) -> Result<Value> {
         before["cfCounts"][CF_MEJEPA_MODEL_PROMOTIONS]
             == after["cfCounts"][CF_MEJEPA_MODEL_PROMOTIONS],
         "invalid approval changed policy CF row count"
+    );
+    let queued_after = pending_promotions(store.as_ref())?;
+    ensure!(
+        queued_after == queued_before,
+        "invalid approval mutated pending promotion contents"
     );
     Ok(json!({
         "case": "invalid_approval_operator_id",

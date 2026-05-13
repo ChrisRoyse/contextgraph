@@ -2,6 +2,10 @@
 
 > **Level 3.** Defines HOW the autonomous self-healing scheduler is built. Implements [`SPEC-HEAL.md`](../functional/SPEC-HEAL.md). Extends shipped Phase 5 `heal/*` modules.
 
+**Status snapshot (2026-05-13):** Phase E is code/FSV shipped. The implementation is centered on `heal::scheduler_state`, deterministic heal policy modules, the MCP `mejepa_promote_approval` surface, and a durable policy ledger in `CF_MEJEPA_MODEL_PROMOTIONS`. Source-of-truth verification evidence is `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json`.
+
+**Research alignment:** The policy follows production ML best practices from Google Cloud's guidance on continuous model monitoring, ground-truth joins, rollout/rollback, and efficiency metrics; Azure ML's model-monitoring guidance on production/reference data, drift thresholds, alerts, and objective performance signals; and AWS Prescriptive Guidance on automated quality gates, A/B/canary rollout, automatic rollback, security gates, and human approval for high-impact promotion. References: <https://docs.cloud.google.com/architecture/guidelines-for-developing-high-quality-ml-solutions>, <https://learn.microsoft.com/en-us/azure/machine-learning/concept-model-monitoring?view=azureml-api-2>, <https://docs.aws.amazon.com/prescriptive-guidance/latest/gen-ai-lifecycle-operational-excellence/prod-monitoring-advanced-operations.html>.
+
 ---
 
 ## Module layout
@@ -10,15 +14,20 @@
 crates/context-graph-mejepa/
   src/
     heal/
-      scheduler.rs                 # NEW: run_self_optimization_scheduler (REQ-HEAL-FB-01)
-      drift_per_cell.rs            # NEW: per-(category × language) stratification (REQ-HEAL-FB-02)
-      drift_bayesian.rs            # NEW: Beta posterior small-window (REQ-HEAL-FB-03)
-      drift_surprise_weighted.rs   # NEW: agent-flagged 2× / catastrophic 4× (REQ-HEAL-FB-04)
-      dissipation.rs               # NEW: UTML §VII.1 detection (REQ-HEAL-FB-05)
-      lambda_ramp.rs               # NEW: per-head λ ramping (REQ-HEAL-FB-07)
-      promote_approval.rs          # NEW: operator-approval queue (REQ-HEAL-FB-08)
-      emergency_eviction.rs        # NEW: 10-minute quota tick (REQ-HEAL-FB-10)
-      per_cell_promotion.rs        # NEW: per-cell promotion criterion (REQ-HEAL-FB-11)
+      scheduler.rs                 # shipped: run_self_optimization_scheduler (REQ-HEAL-FB-01)
+      scheduler_state.rs           # shipped: seven ticker policy implementation
+      drift_per_cell.rs            # shipped: per-(category × language) stratification (REQ-HEAL-FB-02)
+      drift_bayesian.rs            # shipped: Jeffreys/Beta posterior small-window (REQ-HEAL-FB-03)
+      drift_surprise_weighted.rs   # shipped: agent-flagged 2× / catastrophic 4× (REQ-HEAL-FB-04)
+      dissipation.rs               # shipped: UTML §VII.1 detection (REQ-HEAL-FB-05)
+      dormancy.rs                  # shipped: per-head dormancy and targeted reinit (REQ-HEAL-FB-06)
+      fisher.rs                    # shipped: per-head Fisher snapshots
+      lambda_ramp.rs               # shipped: per-head λ ramping (REQ-HEAL-FB-07)
+      policy.rs                    # shipped: readback-verified policy ledger
+      promote_approval.rs          # shipped: two-operator approval queue (REQ-HEAL-FB-08)
+      drift_attribution.rs         # shipped: drift attribution and alerts (REQ-HEAL-FB-14)
+      emergency_eviction.rs        # shipped: 10-minute quota tick (REQ-HEAL-FB-10)
+      per_cell_promotion.rs        # shipped: per-cell promotion criterion (REQ-HEAL-FB-11)
       
       # existing modules (consumed)
       drift.rs, ewc.rs, promote.rs, full_retrain.rs, lora_refresh.rs,
@@ -38,10 +47,27 @@ crates/context-graph-mcp/
 
 ---
 
-## Scheduler implementation skeleton
+## Source-of-truth persistence
+
+Phase E policy records are not trusted from function return values. Mutating paths sync-write and read back their source-of-truth row:
+
+| Concern | Source of truth |
+|---|---|
+| Drift windows | `CF_MEJEPA_DRIFT_WINDOW` |
+| Intervention reports | `CF_MEJEPA_HEAL_REPORTS` |
+| Promotion approvals, alerts, refresh policies, lambda/dissipation/Fisher records | `CF_MEJEPA_MODEL_PROMOTIONS` |
+| Active model pointer | `CF_MEJEPA_ACTIVE_POINTERS` |
+| Dormancy reinit weights | `CF_MEJEPA_WEIGHT_BLOBS` |
+| Scheduler health | `self_optimization_status.json` |
+
+`heal::store::put_cf_readback` performs sync write + exact byte readback for critical writes. Heterogeneous policy records are stored in `CF_MEJEPA_MODEL_PROMOTIONS` instead of overloading `CF_MEJEPA_HEAL_REPORTS`, so heal-report decoders remain type-safe.
+
+---
+
+## Scheduler implementation shape
 
 ```rust
-// crates/context-graph-mejepa/src/heal/scheduler.rs (NEW)
+// crates/context-graph-mejepa/src/heal/scheduler.rs + scheduler_state.rs (shipped)
 pub async fn run_self_optimization_scheduler(
     storage: Storage,
     config: SelfOptimConfig,
@@ -193,7 +219,7 @@ impl SchedulerState {
 ## Per-cell drift detection
 
 ```rust
-// crates/context-graph-mejepa/src/heal/drift_per_cell.rs (NEW)
+// crates/context-graph-mejepa/src/heal/drift_per_cell.rs (shipped)
 pub fn snapshot_per_cell(storage: &Storage) -> Result<PerCellDriftSnapshot> {
     let mut by_cell = HashMap::new();
     for (key, train_cert) in storage.iter_cf(CF_MEJEPA_TRAIN_CERTS)? {
@@ -213,7 +239,7 @@ pub fn snapshot_per_cell(storage: &Storage) -> Result<PerCellDriftSnapshot> {
 ## Bayesian small-window posterior
 
 ```rust
-// crates/context-graph-mejepa/src/heal/drift_bayesian.rs (NEW)
+// crates/context-graph-mejepa/src/heal/drift_bayesian.rs (shipped)
 pub fn posterior_below_threshold(snapshot: &RollingAccuracySnapshot, threshold: f32, ci: f32) -> bool {
     let n = snapshot.n() as f32;
     let k = snapshot.successes() as f32;
@@ -232,7 +258,7 @@ If the upper bound of the 95% Beta CI is below the drift threshold, fire. Otherw
 ## Dissipation detection
 
 ```rust
-// crates/context-graph-mejepa/src/heal/dissipation.rs (NEW)
+// crates/context-graph-mejepa/src/heal/dissipation.rs (shipped)
 pub fn detect(storage: &Storage, recent_certs: &[TrainingCertificate]) -> Result<bool> {
     let mean_l_step = recent_certs.iter().map(|c| c.l_step).sum::<f32>() / recent_certs.len() as f32;
     if mean_l_step <= 0.3 { return Ok(false); }
@@ -258,7 +284,7 @@ pub fn detect(storage: &Storage, recent_certs: &[TrainingCertificate]) -> Result
 ## Per-head λ ramping
 
 ```rust
-// crates/context-graph-mejepa/src/heal/lambda_ramp.rs (NEW)
+// crates/context-graph-mejepa/src/heal/lambda_ramp.rs (shipped)
 pub fn tick(storage: &Storage, head: HeadId) -> Result<()> {
     let metric = read_head_holdout_metric(storage, head)?;
     let gate = head_ramp_gate(head);
@@ -307,7 +333,7 @@ fn head_steady_state_lambda(head: HeadId) -> f32 {
 ## `mejepa_promote_approval` MCP tool
 
 ```rust
-// crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs (extension)
+// crates/context-graph-mcp/src/handlers/tools/mejepa_tools.rs (shipped extension)
 pub async fn handle_promote_approval(storage: &Storage, args: PromoteApprovalArgs) -> Result<PromoteApprovalResponse> {
     let promotion = read_pending_promotion(storage, &args.promotion_id)?
         .ok_or(HealError::PromotionNotFound)?;
@@ -326,18 +352,22 @@ pub async fn handle_promote_approval(storage: &Storage, args: PromoteApprovalArg
 }
 ```
 
+The live tool accepts `promotionId`, `operatorId`, `action=approve|reject`, `operatorReason`, and `twoPersonRule`. Catastrophic promotions require two distinct operator IDs; duplicate approvals, invalid IDs, empty reasons, and attempts to lower the required approval count fail closed with a heal error and leave the pending promotion row unchanged.
+
 ---
 
 ## FSV strategy
 
 | FSV | What it proves | Output |
 |---|---|---|
-| `scheduler_5_ticker_fsv` | all 7 scheduler tickers fire at expected periods over 10 seconds in the Phase A FSV harness | `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/scheduler_ticks.json` |
-| `drift_soft_to_lora_fsv` | injected soft drift triggers LoRA refresh + auto-promotion | `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/drift_soft.json` |
-| `drift_catastrophic_alert_fsv` | injected catastrophic drift triggers operator alert + blocks promotion | `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/drift_catastrophic.json` |
-| `dissipation_detection_fsv` | synthetic dissipation pattern fires `MEJEPA_DISSIPATION_DETECTED` | `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/dissipation.json` |
-| `per_head_dormancy_fsv` | per-head detector fires per head; reinit affects only that head | `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/per_head_dormancy.json` |
-| `lambda_ramp_fsv` | head F1 crosses gate; next tick increments λ_h by 0.05 | `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/lambda_ramp.json` |
-| `per_cell_promotion_gate_fsv` | promotion that helps overall but regresses one cell is rejected | `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/per_cell_gate.json` |
-| `bayesian_small_window_fsv` | small N=10 sample with 7/10 PASS does NOT fire (too noisy) | `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/bayesian.json` |
-| `emergency_eviction_fsv` | 110+ GB usage triggers eviction outside the nightly window | `/mnt/d/contextgraph/fsv/mejepa-heal-fsv/emergency_eviction.json` |
+| `phase_e_self_optimization_fsv` | all Phase E policy paths execute against durable RocksDB/status-file state with before/after readback | `/mnt/d/contextgraph/fsv/mejepa-phase-e-fsv/phase_e_self_optimization_fsv.json` |
+| `soft_drift_860_of_1000` | persisted soft drift triggers LoRA/A/B/C and heal-report rows | same artifact |
+| `catastrophic_drift_750_of_1000` | catastrophic drift queues approval, records alert, and promotes only after two distinct approvals | same artifact |
+| `per_cell_small_window_compile_error_rust` | Jeffreys small-window posterior fires on catastrophic per-cell evidence | same artifact |
+| `per_cell_small_window_7_of_10_noise` | noisy 7/10 small window does not fire | same artifact |
+| `dissipation_high_l_step_degrading_xi` | per-head dissipation persists replay/EWC/LR interventions | same artifact |
+| `lambda_ramp_and_per_head_fisher` | lambda ramp and Fisher snapshots persist/read back for every head | same artifact |
+| `per_head_dormancy_targeted_reinit` | only detected head units are reinitialized | same artifact |
+| `emergency_eviction_exact_110gb` | exact 110 GB threshold fires once and duplicate tick suppresses | same artifact |
+| `per_cell_promotion_rejects_regression` | A/B/C score winner is rejected when any cell regresses | same artifact |
+| `invalid_approval_operator_id` | invalid approval fails closed and leaves pending-promotion contents unchanged | same artifact |
