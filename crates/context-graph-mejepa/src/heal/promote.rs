@@ -37,6 +37,7 @@ pub enum TriggerReason {
     OperatorTriggered,
     TelemetryConformalRecalibration,
     TelemetryFullRetrainCandidate,
+    OperatorOverrideRecalibration,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

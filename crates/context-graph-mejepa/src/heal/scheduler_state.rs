@@ -67,6 +67,7 @@ const TELEMETRY_CONFORMAL_COVERAGE_MIN: f32 = 0.88;
 const TELEMETRY_CONFORMAL_COVERAGE_MAX: f32 = 0.92;
 const TELEMETRY_CONFORMAL_ECE_MAX: f32 = 0.02;
 const TELEMETRY_ORACLE_AGREEMENT_MIN: f32 = 0.95;
+pub const OPERATOR_OVERRIDE_RECALIBRATION_THRESHOLD: u64 = 100;
 
 #[derive(Debug, Clone)]
 pub struct SelfOptimConfig {
@@ -266,6 +267,23 @@ pub struct TelemetryFeedbackAction {
     pub heal_report_key_hex: String,
     pub pending_promotion_id: Option<String>,
     pub already_queued: bool,
+    pub recorded_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct OperatorOverrideCalibrationCounter {
+    pub total_applied_count: u64,
+    pub last_observed_sampler_counter: u64,
+    pub overrides_consumed_since_calibration: u64,
+    pub threshold: u64,
+    pub recalibration_queued: bool,
+    pub already_queued: bool,
+    pub counter_reset_detected: bool,
+    pub heal_report_key_hex: Option<String>,
+    pub last_recalibration_total_applied_count: Option<u64>,
+    pub last_recalibration_override_count: Option<u64>,
+    pub source_of_truth_cfs: Vec<String>,
     pub recorded_at_unix_ms: i64,
 }
 
@@ -1009,13 +1027,24 @@ impl SchedulerState {
     }
 
     fn tick_telemetry_feedback(&self) -> Result<TickRunRecord, HealError> {
+        let operator_override_calibration = track_operator_override_recalibration(
+            self.storage.as_ref(),
+            self.system_cost_counters
+                .snapshot()
+                .operator_override_sampler_applied_count_total,
+        )?;
         let Some(telemetry) = latest_production_telemetry(self.storage.as_ref())? else {
             return Ok(TickRunRecord::success(
                 TickName::TelemetryFeedback,
                 "production_telemetry_absent",
                 json!({
-                    "source_of_truth_cf": context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY,
+                    "source_of_truth_cfs": [
+                        context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY,
+                        context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS,
+                        context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS
+                    ],
                     "queued_action_count": 0,
+                    "operator_override_calibration": operator_override_calibration,
                     "actions": [],
                 }),
             ));
@@ -1059,6 +1088,7 @@ impl SchedulerState {
                 "heal_report_count_before": heal_report_count_before,
                 "heal_report_count_after": heal_report_count_after,
                 "queued_action_count": actions.iter().filter(|action| !action.already_queued).count(),
+                "operator_override_calibration": operator_override_calibration,
                 "actions": actions,
             }),
         ))
@@ -1434,6 +1464,196 @@ fn put_oracle_binding_readback(
         ));
     }
     Ok(())
+}
+
+pub fn operator_override_calibration_counter_key() -> Result<Vec<u8>, HealError> {
+    policy_key(&["phase_g", "operator-override-calibration-counter"])
+}
+
+pub fn track_operator_override_recalibration(
+    storage: &HealRocksStore,
+    raw_sampler_counter: u64,
+) -> Result<OperatorOverrideCalibrationCounter, HealError> {
+    let key = operator_override_calibration_counter_key()?;
+    let previous = load_policy_record::<OperatorOverrideCalibrationCounter>(storage, &key)?;
+    let previous_heal_report_key_hex = previous
+        .as_ref()
+        .and_then(|record| record.heal_report_key_hex.clone());
+    let previous_recalibration_total = previous
+        .as_ref()
+        .and_then(|record| record.last_recalibration_total_applied_count);
+    let previous_recalibration_override_count = previous
+        .as_ref()
+        .and_then(|record| record.last_recalibration_override_count);
+    let (total_applied_count, overrides_consumed_since_calibration, counter_reset_detected) =
+        match &previous {
+            Some(previous) => {
+                let counter_reset = raw_sampler_counter < previous.last_observed_sampler_counter;
+                let delta = if counter_reset {
+                    raw_sampler_counter
+                } else {
+                    raw_sampler_counter.saturating_sub(previous.last_observed_sampler_counter)
+                };
+                (
+                    previous.total_applied_count.saturating_add(delta),
+                    previous
+                        .overrides_consumed_since_calibration
+                        .saturating_add(delta),
+                    counter_reset,
+                )
+            }
+            None => (raw_sampler_counter, raw_sampler_counter, false),
+        };
+    let mut counter = OperatorOverrideCalibrationCounter {
+        total_applied_count,
+        last_observed_sampler_counter: raw_sampler_counter,
+        overrides_consumed_since_calibration,
+        threshold: OPERATOR_OVERRIDE_RECALIBRATION_THRESHOLD,
+        recalibration_queued: false,
+        already_queued: false,
+        counter_reset_detected,
+        heal_report_key_hex: previous_heal_report_key_hex,
+        last_recalibration_total_applied_count: previous_recalibration_total,
+        last_recalibration_override_count: previous_recalibration_override_count,
+        source_of_truth_cfs: vec![
+            context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS.to_string(),
+            context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS.to_string(),
+        ],
+        recorded_at_unix_ms: chrono::Utc::now().timestamp_millis(),
+    };
+    let unqueued_override_count = counter
+        .last_recalibration_total_applied_count
+        .map(|last_total| counter.total_applied_count.saturating_sub(last_total))
+        .unwrap_or(counter.overrides_consumed_since_calibration);
+    if unqueued_override_count > OPERATOR_OVERRIDE_RECALIBRATION_THRESHOLD {
+        counter.recalibration_queued = true;
+        let report_key = operator_override_recalibration_report_key(counter.total_applied_count)?;
+        counter.heal_report_key_hex = Some(hex::encode(&report_key));
+        counter.last_recalibration_total_applied_count = Some(counter.total_applied_count);
+        counter.last_recalibration_override_count = Some(unqueued_override_count);
+        if storage
+            .get_cf(context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS, &report_key)?
+            .is_some()
+        {
+            counter.already_queued = true;
+        } else {
+            persist_operator_override_recalibration_report(
+                storage,
+                &counter,
+                &report_key,
+                unqueued_override_count,
+            )?;
+        }
+    } else if counter.last_recalibration_total_applied_count == Some(counter.total_applied_count)
+        && counter.heal_report_key_hex.is_some()
+    {
+        counter.recalibration_queued = true;
+        counter.already_queued = true;
+    }
+    persist_policy_record(storage, &key, &counter)?;
+    Ok(counter)
+}
+
+fn operator_override_recalibration_report_key(
+    total_applied_count: u64,
+) -> Result<Vec<u8>, HealError> {
+    policy_key(&[
+        "operator-override-recalibration",
+        &format!("{:020}", total_applied_count),
+    ])
+}
+
+fn persist_operator_override_recalibration_report(
+    storage: &HealRocksStore,
+    counter: &OperatorOverrideCalibrationCounter,
+    report_key: &[u8],
+    override_count: u64,
+) -> Result<(), HealError> {
+    if storage
+        .get_cf(context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS, report_key)?
+        .is_some()
+    {
+        return Ok(());
+    }
+    let report = operator_override_recalibration_heal_report(counter, override_count)?;
+    let encoded = encode_value(&report)?;
+    storage.put_cf_readback(
+        context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS,
+        report_key,
+        &encoded,
+    )?;
+    let readback = storage
+        .get_cf(context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS, report_key)?
+        .ok_or_else(|| {
+            HealError::invalid(
+                "operator_override_recalibration.heal_report_readback",
+                "missing heal report after write",
+            )
+        })?;
+    if readback != encoded {
+        return Err(HealError::invalid(
+            "operator_override_recalibration.heal_report_readback",
+            "heal report readback bytes differ",
+        ));
+    }
+    let decoded: HealReport = decode_value(&readback)?;
+    if decoded.trigger_reason != TriggerReason::OperatorOverrideRecalibration {
+        return Err(HealError::invalid(
+            "operator_override_recalibration.heal_report_readback",
+            "heal report trigger reason differs after readback",
+        ));
+    }
+    Ok(())
+}
+
+fn operator_override_recalibration_heal_report(
+    counter: &OperatorOverrideCalibrationCounter,
+    override_count: u64,
+) -> Result<HealReport, HealError> {
+    let digest = operator_override_recalibration_digest(counter, override_count);
+    let sample_count = usize::try_from(override_count).map_err(|_| {
+        HealError::invalid(
+            "operator_override_recalibration.sample_count",
+            "override counter exceeds usize",
+        )
+    })?;
+    let eval = HoldoutEval::try_new(
+        TELEMETRY_CONFORMAL_TARGET_COVERAGE,
+        TELEMETRY_ORACLE_AGREEMENT_MIN,
+        0.0,
+        sample_count,
+        digest,
+    )?;
+    Ok(HealReport {
+        mode_winner: ModeWinner::AUnchangedNoWinner,
+        mode_a_score: eval.clone(),
+        mode_b_score: eval.clone(),
+        mode_c_score: eval,
+        mode_c_weights: (1.0, 0.0),
+        weights_sha_winner: digest,
+        evaluation_summary_sha: digest,
+        witness_chain_offset: 0,
+        promotion_latency_seconds: 0,
+        status_change: StatusChange::Degraded,
+        trigger_reason: TriggerReason::OperatorOverrideRecalibration,
+    })
+}
+
+fn operator_override_recalibration_digest(
+    counter: &OperatorOverrideCalibrationCounter,
+    override_count: u64,
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"operator-override-recalibration-v1");
+    hasher.update(counter.total_applied_count.to_be_bytes());
+    hasher.update(counter.last_observed_sampler_counter.to_be_bytes());
+    hasher.update(counter.overrides_consumed_since_calibration.to_be_bytes());
+    hasher.update(counter.threshold.to_be_bytes());
+    hasher.update(override_count.to_be_bytes());
+    let digest = hasher.finalize();
+    let mut out = [0_u8; 32];
+    out.copy_from_slice(&digest);
+    out
 }
 
 fn classify_telemetry_feedback_actions(
@@ -1866,6 +2086,80 @@ mod tests {
         assert_eq!(decoded.language, Language::Python);
         assert_eq!(decoded.predicted_test_pass, vec![0.9, 0.8]);
         assert_eq!(decoded.actual_test_pass, vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn operator_override_recalibration_queues_and_watermarks_distinct_windows() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("db");
+        {
+            let db = open_test_db(&db_path);
+            let storage = HealRocksStore::from_db(db.clone()).expect("heal store");
+
+            let exact_threshold =
+                track_operator_override_recalibration(storage.as_ref(), 100).expect("track 100");
+            assert_eq!(exact_threshold.overrides_consumed_since_calibration, 100);
+            assert!(!exact_threshold.recalibration_queued);
+            assert_eq!(
+                storage
+                    .count_cf(context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS)
+                    .expect("heal report count"),
+                0
+            );
+
+            let first =
+                track_operator_override_recalibration(storage.as_ref(), 101).expect("track 101");
+            assert!(first.recalibration_queued);
+            assert!(!first.already_queued);
+            assert_eq!(first.last_recalibration_total_applied_count, Some(101));
+            assert_eq!(first.last_recalibration_override_count, Some(101));
+            assert_eq!(
+                storage
+                    .count_cf(context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS)
+                    .expect("heal report count"),
+                1
+            );
+
+            let duplicate =
+                track_operator_override_recalibration(storage.as_ref(), 101).expect("track dup");
+            assert!(duplicate.already_queued);
+            assert_eq!(
+                storage
+                    .count_cf(context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS)
+                    .expect("heal report count"),
+                1
+            );
+
+            let second =
+                track_operator_override_recalibration(storage.as_ref(), 202).expect("track 202");
+            assert!(second.recalibration_queued);
+            assert!(!second.already_queued);
+            assert_eq!(second.last_recalibration_total_applied_count, Some(202));
+            assert_eq!(second.last_recalibration_override_count, Some(101));
+            assert_eq!(
+                storage
+                    .count_cf(context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS)
+                    .expect("heal report count"),
+                2
+            );
+        }
+
+        let reopened = open_test_db(&db_path);
+        let storage = HealRocksStore::from_db(reopened).expect("reopened heal store");
+        let counter_key =
+            operator_override_calibration_counter_key().expect("operator counter key");
+        let counter_bytes = storage
+            .get_cf(
+                context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS,
+                &counter_key,
+            )
+            .expect("counter readback")
+            .expect("counter row exists");
+        let counter: OperatorOverrideCalibrationCounter =
+            decode_value(&counter_bytes).expect("decode counter");
+        assert_eq!(counter.total_applied_count, 202);
+        assert_eq!(counter.last_recalibration_total_applied_count, Some(202));
+        assert_eq!(counter.last_recalibration_override_count, Some(101));
     }
 
     #[test]
