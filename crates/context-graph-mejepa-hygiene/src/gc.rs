@@ -1,5 +1,6 @@
 // Inspired by ruvnet/RuVector at HEAD ef5274c2 (clean-room reimplementation).
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use rocksdb::WriteBatch;
@@ -8,6 +9,7 @@ use crate::entry::EntryId;
 use crate::error::OpsResult;
 use crate::quota::{quota_check_and_evict, quota_status};
 use crate::reports::{GcReport, GcStepReport};
+use crate::retention::{load_retention_policy, retained_by_rule, RetentionRule};
 use crate::storage::{
     cf, encode_cf_json, list_meta, open_exclusive_lock, put_readback, scan_cf, HygieneEnv,
 };
@@ -18,6 +20,7 @@ pub fn gc_run_nightly(env: &HygieneEnv) -> OpsResult<GcReport> {
     let started_unix = env.now_unix();
     let lock_path = gc_lock_path();
     let _lock = open_exclusive_lock(&lock_path)?;
+    let retention_rules = retention_rules_for_env(env)?;
 
     let mut steps = Vec::new();
     steps.push(step("tier_demote", || {
@@ -28,13 +31,19 @@ pub fn gc_run_nightly(env: &HygieneEnv) -> OpsResult<GcReport> {
         Ok(serde_json::to_value(quota_check_and_evict(env)?)?)
     })?);
     steps.push(step("prune_checkpoints", || {
-        prune_cf_keep_latest(env, context_graph_mejepa_cf::CF_MEJEPA_WEIGHT_BLOBS, 10)
+        prune_cf_keep_latest(
+            env,
+            context_graph_mejepa_cf::CF_MEJEPA_WEIGHT_BLOBS,
+            10,
+            &retention_rules,
+        )
     })?);
     steps.push(step("prune_calibration", || {
         prune_cf_keep_latest(
             env,
             context_graph_mejepa_cf::CF_MEJEPA_CALIBRATION_HISTORY,
             30,
+            &retention_rules,
         )
     })?);
     steps.push(step("witness_compress", || {
@@ -93,6 +102,7 @@ fn prune_cf_keep_latest(
     env: &HygieneEnv,
     cf_name: &str,
     keep: usize,
+    retention_rules: &BTreeMap<String, RetentionRule>,
 ) -> OpsResult<serde_json::Value> {
     let mut rows = scan_cf(&env.config.db, cf_name)?;
     if rows.len() <= keep {
@@ -101,16 +111,36 @@ fn prune_cf_keep_latest(
     rows.sort_by(|a, b| a.0.cmp(&b.0));
     let delete_count = rows.len() - keep;
     let metas = list_meta(&env.config.db)?;
-    let gold_keys = metas
-        .into_iter()
-        .filter(|m| m.entry_id.cf_name == cf_name && m.gold)
-        .map(|m| m.entry_id.key)
-        .collect::<std::collections::BTreeSet<_>>();
+    let meta_by_key = metas
+        .iter()
+        .filter(|m| m.entry_id.cf_name == cf_name)
+        .map(|m| (m.entry_id.key.clone(), m.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let gold_keys = meta_by_key
+        .iter()
+        .filter(|(_, meta)| meta.gold)
+        .map(|(key, _)| key.clone())
+        .collect::<BTreeSet<_>>();
+    let retention_rule = retention_rules.get(cf_name);
     let mut batch = WriteBatch::default();
     let mut deleted = 0usize;
+    let mut deleted_keys = Vec::new();
+    let mut retention_skipped = Vec::new();
     for (key, _) in rows.into_iter().take(delete_count) {
         if gold_keys.contains(&key) {
             continue;
+        }
+        if let (Some(rule), Some(meta)) = (retention_rule, meta_by_key.get(&key)) {
+            if retained_by_rule(meta, rule, env.now_unix()) {
+                retention_skipped.push(serde_json::json!({
+                    "key_hex": hex::encode(&key),
+                    "created_unix": meta.created_unix,
+                    "retained_until_unix": rule.retained_until_unix(meta.created_unix),
+                    "retention_class": &rule.retention_class,
+                    "minimum_retention_days": rule.minimum_retention_days
+                }));
+                continue;
+            }
         }
         batch.delete_cf(cf(&env.config.db, cf_name)?, &key);
         batch.delete_cf(
@@ -120,12 +150,27 @@ fn prune_cf_keep_latest(
             )?,
             crate::storage::meta_key(&EntryId::new(cf_name, key.clone())),
         );
+        deleted_keys.push(hex::encode(&key));
         deleted += 1;
     }
     if deleted > 0 {
         env.config.db.write(batch)?;
     }
-    Ok(serde_json::json!({ "cf": cf_name, "deleted": deleted, "keptAtLeast": keep }))
+    Ok(serde_json::json!({
+        "cf": cf_name,
+        "deleted": deleted,
+        "keptAtLeast": keep,
+        "deletedKeysHex": deleted_keys,
+        "retentionSkipped": retention_skipped,
+        "retentionPolicyActive": retention_rule.is_some()
+    }))
+}
+
+fn retention_rules_for_env(env: &HygieneEnv) -> OpsResult<BTreeMap<String, RetentionRule>> {
+    let Some(path) = &env.config.retention_policy_path else {
+        return Ok(BTreeMap::new());
+    };
+    load_retention_policy(path)?.by_cf()
 }
 
 fn gc_lock_path() -> PathBuf {

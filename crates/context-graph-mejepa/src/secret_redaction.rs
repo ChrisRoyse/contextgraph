@@ -139,7 +139,13 @@ fn detect_env_assignments(text: &str, spans: &mut Vec<SecretRedactionSpan>) {
                     value_end -= 1;
                 }
                 if value_end > value_start + 3 {
-                    push_span(text, spans, "env-secret", offset + value_start, offset + value_end);
+                    push_span(
+                        text,
+                        spans,
+                        "env-secret",
+                        offset + value_start,
+                        offset + value_end,
+                    );
                 }
             }
         }
@@ -161,7 +167,13 @@ fn detect_ascii_tokens(text: &str, spans: &mut Vec<SecretRedactionSpan>) {
         }
         let token = &text[start..idx];
         if is_aws_access_key(token) {
-            push_span(text, spans, "aws-access-key", start, start + AWS_ACCESS_KEY_LEN);
+            push_span(
+                text,
+                spans,
+                "aws-access-key",
+                start,
+                start + AWS_ACCESS_KEY_LEN,
+            );
         } else if is_jwt_like(token) {
             push_span(text, spans, "jwt", start, idx);
         } else if is_high_entropy_secret(token) {
@@ -292,8 +304,7 @@ mod tests {
     #[test]
     fn high_entropy_token_is_redacted() {
         let mut spans = Vec::new();
-        let redacted =
-            redact_text("token aB3dE5gH7jK9mN2pQ4rS6tU8vW0xY1z_+", &mut spans).unwrap();
+        let redacted = redact_text("token aB3dE5gH7jK9mN2pQ4rS6tU8vW0xY1z_+", &mut spans).unwrap();
         assert!(redacted.contains("[REDACTED:high-entropy]"));
         assert_eq!(spans.len(), 1);
     }

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::panic::AssertUnwindSafe;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use context_graph_mejepa_instruments::materialize::{
@@ -25,10 +25,10 @@ use crate::degraded::{
 use crate::error::{MejepaInferError, PredictorError};
 use crate::gates::{check_source_sha_drift, replay_witness_segment};
 use crate::ood::{compute_ood_score, squared_l2};
+use crate::park_list::ParkListEntry;
 use crate::pause_state::{
     current_unix_ms, read_pause_state, PauseReadOutcome, PauseState, PAUSE_REASON_CODE,
 };
-use crate::park_list::ParkListEntry;
 const PARK_LIST_REASON_CODE: &str = "MEJEPA_PREDICTION_PARKED";
 use crate::prediction_surfaces::{covered_chunks_for_patch, infer_phase_b_surfaces};
 use crate::secret_redaction::{redact_patch_bundle, SECRET_REDACTION_ATTESTATION_KEY};
@@ -247,17 +247,17 @@ impl MeJepaCompiler {
         let calibration = self.calibration.load_active()?;
         let redacted = redact_patch_bundle(patch)?;
         let inference_patch = &redacted.patch;
-        let (panel_t0, panel_t1, panel_t2) = materialize_inference_panels(inference_patch, context)?;
+        let (panel_t0, panel_t1, panel_t2) =
+            materialize_inference_panels(inference_patch, context)?;
         let predicted = run_infer_head("panel", || self.predictor.predict(&panel_t0, &panel_t1))?;
         let target = run_infer_head("frozen_target", || self.frozen_target.target(&panel_t2))?;
         let mut oracle = run_infer_head("oracle", || self.oracle_head.score(&predicted))?;
         let source_panel_sha = panel_sha(&predicted);
         let covered_chunks = covered_chunks_for_patch(inference_patch)?;
         if redacted.report.redacted_span_count() > 0 {
-            oracle.granger_attestations.insert(
-                SECRET_REDACTION_ATTESTATION_KEY.to_string(),
-                1.0,
-            );
+            oracle
+                .granger_attestations
+                .insert(SECRET_REDACTION_ATTESTATION_KEY.to_string(), 1.0);
         }
         if self.config.require_dda_features {
             let dda_projection = self.load_dda_projection(&source_panel_sha, &covered_chunks)?;
@@ -674,8 +674,11 @@ impl MeJepaCompiler {
         )?
         .panel;
         let prediction_id = head_failure_prediction_id(context, patch, head, code);
-        let outcome_set =
-            crate::types::ConformalSet::try_new(vec![OracleOutcome::Abstain], self.config.alpha, 1.0)?;
+        let outcome_set = crate::types::ConformalSet::try_new(
+            vec![OracleOutcome::Abstain],
+            self.config.alpha,
+            1.0,
+        )?;
         let mut source_panel_sha = [0u8; 32];
         source_panel_sha.copy_from_slice(&Sha256::digest(code.as_bytes())[..32]);
         let prediction = RealityPredictionBuilder::from_parts(
@@ -727,8 +730,11 @@ impl MeJepaCompiler {
             vectors_for(TimeStep::T0, &redacted.patch, context),
         )?
         .panel;
-        let outcome_set =
-            crate::types::ConformalSet::try_new(vec![OracleOutcome::Abstain], self.config.alpha, 1.0)?;
+        let outcome_set = crate::types::ConformalSet::try_new(
+            vec![OracleOutcome::Abstain],
+            self.config.alpha,
+            1.0,
+        )?;
         let mut source_panel_sha = [0u8; 32];
         source_panel_sha.copy_from_slice(&Sha256::digest(PARK_LIST_REASON_CODE.as_bytes())[..32]);
         let prediction = RealityPredictionBuilder::from_parts(

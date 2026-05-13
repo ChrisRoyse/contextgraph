@@ -38,7 +38,10 @@ impl CellExemption {
         if self.expires_unix_ms == Some(0) {
             return Err(EvalError::new(
                 EvalErrorCode::InvalidInput,
-                format!("cell exemption {} expires_unix_ms must be non-zero", self.cell),
+                format!(
+                    "cell exemption {} expires_unix_ms must be non-zero",
+                    self.cell
+                ),
             ));
         }
         Ok(())
@@ -66,7 +69,10 @@ impl CellExemptionConfig {
         Ok(())
     }
 
-    pub fn active_map(&self, now_unix_ms: i64) -> Result<BTreeMap<String, CellExemption>, EvalError> {
+    pub fn active_map(
+        &self,
+        now_unix_ms: i64,
+    ) -> Result<BTreeMap<String, CellExemption>, EvalError> {
         self.validate()?;
         Ok(self
             .exemptions

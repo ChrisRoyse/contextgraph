@@ -79,25 +79,50 @@ impl AuxiliaryHeads {
                 )
             })?,
             edge_case: run_head_fail_closed(HeadId::EdgeCase, || {
-                project_head(HeadId::EdgeCase, &self.edge_case, predicted, EDGE_CASE_CLASSES)
+                project_head(
+                    HeadId::EdgeCase,
+                    &self.edge_case,
+                    predicted,
+                    EDGE_CASE_CLASSES,
+                )
             })?,
             tech_debt: run_head_fail_closed(HeadId::TechDebt, || {
-                project_head(HeadId::TechDebt, &self.tech_debt, predicted, TECH_DEBT_CLASSES)
+                project_head(
+                    HeadId::TechDebt,
+                    &self.tech_debt,
+                    predicted,
+                    TECH_DEBT_CLASSES,
+                )
             })?,
             perf: run_head_fail_closed(HeadId::Perf, || {
                 project_head(HeadId::Perf, &self.perf, predicted, PERF_CLASSES)
             })?,
             security: run_head_fail_closed(HeadId::Security, || {
-                project_head(HeadId::Security, &self.security, predicted, SECURITY_CLASSES)
+                project_head(
+                    HeadId::Security,
+                    &self.security,
+                    predicted,
+                    SECURITY_CLASSES,
+                )
             })?,
             accuracy: run_head_fail_closed(HeadId::Accuracy, || {
-                project_head(HeadId::Accuracy, &self.accuracy, predicted, ACCURACY_CLASSES)
+                project_head(
+                    HeadId::Accuracy,
+                    &self.accuracy,
+                    predicted,
+                    ACCURACY_CLASSES,
+                )
             })?,
             cost: run_head_fail_closed(HeadId::Cost, || {
                 project_head(HeadId::Cost, &self.cost, predicted, COST_CLASSES)
             })?,
             reasoning: run_head_fail_closed(HeadId::Reasoning, || {
-                project_head(HeadId::Reasoning, &self.reasoning, predicted, REASONING_CLASSES)
+                project_head(
+                    HeadId::Reasoning,
+                    &self.reasoning,
+                    predicted,
+                    REASONING_CLASSES,
+                )
             })?,
         })
     }

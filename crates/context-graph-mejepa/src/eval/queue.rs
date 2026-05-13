@@ -1,8 +1,7 @@
 use super::error::{EvalError, EvalErrorCode};
 use super::types::EvalObservation;
 use crate::pause_state::prediction_is_operator_paused;
-use crate::types::{OracleOutcome, PredictionId, SurpriseSeverity, TaskId};
-use crate::RealityPrediction;
+use crate::types::{OracleOutcome, PredictionId, RealityPrediction, SurpriseSeverity, TaskId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

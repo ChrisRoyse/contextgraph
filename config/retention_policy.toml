@@ -1,0 +1,209 @@
+[[column_families]]
+cf_name = "CF_MEJEPA_FISHER_SNAPSHOTS"
+retention_class = "training_lineage"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_DRIFT_WINDOW"
+retention_class = "drift_monitoring"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_DRIFT_HISTORY"
+retention_class = "drift_monitoring"
+minimum_retention_days = 180
+
+[[column_families]]
+cf_name = "CF_MEJEPA_HEAL_REPORTS"
+retention_class = "self_healing_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_DISTILL_STEPS"
+retention_class = "training_lineage"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_ACTIVE_POINTERS"
+retention_class = "model_pointer"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CALIBRATION_HISTORY"
+retention_class = "calibration_lineage"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_WEIGHT_BLOBS"
+retention_class = "model_checkpoint"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_SHIFT_WATERMARK"
+retention_class = "subscriber_state"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_TRAIN_CERTS"
+retention_class = "training_lineage"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_LIVE_PREDICTIONS"
+retention_class = "prediction_audit"
+minimum_retention_days = 180
+
+[[column_families]]
+cf_name = "CF_MEJEPA_ORACLE_VERDICTS"
+retention_class = "oracle_label"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_PANEL_CACHE"
+retention_class = "cache"
+minimum_retention_days = 7
+
+[[column_families]]
+cf_name = "CF_MEJEPA_PANEL_META"
+retention_class = "metadata"
+minimum_retention_days = 180
+
+[[column_families]]
+cf_name = "CF_MEJEPA_AUX_SIGNALS_OVERRIDES"
+retention_class = "operator_override"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_EVAL_REPORTS"
+retention_class = "evaluation_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_TASK_GRAPH"
+retention_class = "evaluation_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_TASK_GRAPH_HISTORY"
+retention_class = "evaluation_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_ACTIVE_LEARNING_QUEUE"
+retention_class = "active_learning"
+minimum_retention_days = 180
+
+[[column_families]]
+cf_name = "CF_MEJEPA_ACTIVE_LEARNING_LABELS"
+retention_class = "active_learning"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS"
+retention_class = "active_learning_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_OOD_ESCALATIONS"
+retention_class = "safety_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_RESEARCH_QUESTIONS"
+retention_class = "evaluation_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_MODEL_PROMOTIONS"
+retention_class = "model_promotion"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_PRODUCTION_TELEMETRY"
+retention_class = "telemetry"
+minimum_retention_days = 180
+
+[[column_families]]
+cf_name = "CF_MEJEPA_DDA_SIGNALS"
+retention_class = "feature_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FAILURE_EXEMPLARS"
+retention_class = "failure_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_AGENT_FEEDBACK"
+retention_class = "feedback_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_FLYWHEEL_JOB_RUNS"
+retention_class = "daemon_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_MUTATION_CORPUS"
+retention_class = "corpus"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_LIVE_ATTEMPT_CORPUS"
+retention_class = "corpus"
+minimum_retention_days = 180
+
+[[column_families]]
+cf_name = "CF_MEJEPA_QUOTA_STATE"
+retention_class = "hygiene_state"
+minimum_retention_days = 90
+
+[[column_families]]
+cf_name = "CF_MEJEPA_WEIGHT_BLOBS_META"
+retention_class = "model_checkpoint"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_WITNESS_CHAIN"
+retention_class = "witness_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_WITNESS_SEGMENT_META"
+retention_class = "witness_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_PANEL_DISK_OVERFLOW"
+retention_class = "cache_overflow"
+minimum_retention_days = 30
+
+[[column_families]]
+cf_name = "CF_MEJEPA_GC_HISTORY"
+retention_class = "hygiene_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CONSTELLATION"
+retention_class = "tct_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_GUARD_DECISIONS"
+retention_class = "tct_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS"
+retention_class = "tct_audit"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_OPERATOR_OVERRIDES"
+retention_class = "operator_override"
+minimum_retention_days = 365
+
+[[column_families]]
+cf_name = "CF_MEJEPA_PARK_LIST"
+retention_class = "retry_control"
+minimum_retention_days = 30

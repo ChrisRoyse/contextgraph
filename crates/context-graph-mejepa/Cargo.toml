@@ -96,5 +96,9 @@ name = "phase_f_pause_consumer_fsv"
 path = "examples/phase_f_pause_consumer_fsv.rs"
 
 [[example]]
+name = "phase_f_pause_active_learning_fsv"
+path = "examples/phase_f_pause_active_learning_fsv.rs"
+
+[[example]]
 name = "phase_f_restart_safety_fsv"
 path = "examples/phase_f_restart_safety_fsv.rs"

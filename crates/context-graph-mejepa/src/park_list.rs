@@ -151,7 +151,10 @@ mod tests {
         let third =
             record_park_list_failure(&db, prediction_id, 3_000, "MEJEPA_TEST_FAILURE").unwrap();
         assert_eq!(third.attempt_count, PARK_LIST_FAILURE_THRESHOLD);
-        assert_eq!(third.park_until_unix_ms, Some(3_000 + PARK_LIST_DURATION_MS));
+        assert_eq!(
+            third.park_until_unix_ms,
+            Some(3_000 + PARK_LIST_DURATION_MS)
+        );
         assert!(third.is_parked_at(3_000 + PARK_LIST_DURATION_MS - 1));
         assert!(!third.is_parked_at(3_000 + PARK_LIST_DURATION_MS));
     }

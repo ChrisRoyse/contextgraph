@@ -12,6 +12,10 @@ pub mod store;
 pub mod telemetry;
 pub mod types;
 
+pub use cell_exemptions::{
+    default_cell_exemptions_path, load_cell_exemptions, CellExemption, CellExemptionConfig,
+    DEFAULT_CELL_EXEMPTIONS_PATH,
+};
 pub use error::{EvalError, EvalErrorCode};
 pub use fixtures::{build_eval_compiler, synthetic_holdout, synthetic_patch_embeddings};
 pub use graph::{
@@ -42,8 +46,4 @@ pub use types::{
     cell_key, language_slug, ActiveLearningSummary, AuxHeadDistillationSummary,
     ConformalHealthEntry, EvalConfig, EvalObservation, EvalProvenance, EvalReport, HoldoutPanel,
     MutationCategory, OpenResearchQuestionStatus, RegressionCheck, StateTransferDiagnostic,
-};
-pub use cell_exemptions::{
-    default_cell_exemptions_path, load_cell_exemptions, CellExemption, CellExemptionConfig,
-    DEFAULT_CELL_EXEMPTIONS_PATH,
 };
