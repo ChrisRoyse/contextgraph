@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -5,18 +7,25 @@ use rocksdb::IteratorMode;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::calibration_types::CalibrationRecord;
+use crate::heal::calibration::compute_conformal_tau;
 use crate::heal::cf::{
-    encode_active_pointer_key, encode_heal_report_key, encode_value, ActivePointerValue,
-    CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_HEAL_REPORTS, CF_MEJEPA_WEIGHT_BLOBS,
+    encode_active_pointer_key, encode_calibration_history_record_key, encode_heal_report_key,
+    encode_value, ActivePointerValue, CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_CALIBRATION_HISTORY,
+    CF_MEJEPA_HEAL_REPORTS, CF_MEJEPA_WEIGHT_BLOBS,
 };
 use crate::heal::errors::HealError;
 use crate::heal::integrity::WitnessChainAppender;
 use crate::heal::store::HealRocksStore;
-use crate::types::OracleOutcome;
+use crate::types::{Language, OracleOutcome};
 
 const MODE_A_INFERENCE_LATENCY_MULTIPLIER: f32 = 1.0;
 const MODE_B_INFERENCE_LATENCY_MULTIPLIER: f32 = 1.05;
 const MODE_C_INFERENCE_LATENCY_MULTIPLIER: f32 = 1.15;
+const PROMOTION_CALIBRATION_ALPHA: f32 = 0.10;
+const PROMOTION_TARGET_COVERAGE: f32 = 0.90;
+const PROMOTION_COVERAGE_MIN: f32 = 0.88;
+const PROMOTION_COVERAGE_MAX: f32 = 0.92;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -227,6 +236,7 @@ pub struct HoldoutExample {
     pub predicted: Vec<OracleOutcome>,
     pub actual: OracleOutcome,
     pub ood_score: f32,
+    pub calibration_nonconformity_score: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -257,6 +267,14 @@ impl HoldoutDataset {
                     "OOD score must be finite and non-negative",
                 ));
             }
+            if !example.calibration_nonconformity_score.is_finite()
+                || !(0.0..=1.0).contains(&example.calibration_nonconformity_score)
+            {
+                return Err(HealError::invalid(
+                    format!("holdout.examples[{idx}].calibration_nonconformity_score"),
+                    "calibration non-conformity score must be finite in [0,1]",
+                ));
+            }
         }
         Ok(Self {
             examples,
@@ -273,12 +291,28 @@ pub struct HealReport {
     pub mode_b_score: HoldoutEval,
     pub mode_c_score: HoldoutEval,
     pub mode_c_weights: (f32, f32),
+    pub conformal_recalibration: PromotionConformalCalibration,
     pub weights_sha_winner: [u8; 32],
     pub evaluation_summary_sha: [u8; 32],
     pub witness_chain_offset: u64,
     pub promotion_latency_seconds: u64,
     pub status_change: crate::heal::pipeline::StatusChange,
     pub trigger_reason: TriggerReason,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PromotionConformalCalibration {
+    pub calibration_version: String,
+    pub alpha: f32,
+    pub target_coverage: f32,
+    pub empirical_coverage: f32,
+    pub coverage_band_min: f32,
+    pub coverage_band_max: f32,
+    pub tau: f32,
+    pub sample_count: usize,
+    pub persisted_key: Vec<u8>,
+    pub persisted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -306,6 +340,7 @@ pub struct AbcFsvEvidence {
     pub mode_b_score: HoldoutEval,
     pub mode_c_score: HoldoutEval,
     pub mode_c_weights: (f32, f32),
+    pub conformal_recalibration: PromotionConformalCalibration,
     pub mode_winner: ModeWinner,
     pub theta_sha_winner: [u8; 32],
     pub evaluation_summary_sha: [u8; 32],
@@ -328,6 +363,28 @@ pub struct RetrainPromoteRequest<'a> {
     pub holdout: HoldoutDataset,
     pub lock: Arc<Mutex<PromotionLockState>>,
     pub calibration_version: &'a str,
+}
+
+struct PromotionCommitRequest<'a> {
+    storage: &'a HealRocksStore,
+    witness_chain: &'a mut WitnessChainAppender,
+    holdout: &'a HoldoutDataset,
+    winner: ModeWinner,
+    winner_sha: [u8; 32],
+    winner_blob: Vec<u8>,
+    winner_eval: &'a HoldoutEval,
+    mode_a: &'a HoldoutEval,
+    mode_b: &'a HoldoutEval,
+    mode_c: &'a HoldoutEval,
+    mode_c_weights: (f32, f32),
+    started: Instant,
+}
+
+struct PromotionCommitResult {
+    conformal_recalibration: PromotionConformalCalibration,
+    evaluation_summary_sha: [u8; 32],
+    witness_chain_offset: u64,
+    promotion_latency_seconds: u64,
 }
 
 impl AbcPromoter {
@@ -432,39 +489,31 @@ impl AbcPromoter {
         if !winner.is_promoted() {
             return Err(HealError::holdout_regression(mode_a, mode_b, mode_c));
         }
-        storage.put_cf_readback(CF_MEJEPA_WEIGHT_BLOBS, &winner_sha, &winner_blob)?;
-        let eval_summary_sha = evaluation_summary_sha(
+        let commit = self.commit(PromotionCommitRequest {
+            storage: storage.as_ref(),
+            witness_chain,
+            holdout: &holdout,
             winner,
-            &mode_a,
-            &mode_b,
-            &mode_c,
-            mode_c_weights,
-            calibration_version,
-        )?;
-        let witness_offset = witness_chain.append_model_event_checked(
-            storage.as_ref(),
-            "ModelPromote",
             winner_sha,
-            eval_summary_sha,
-        )?;
-        let active =
-            ActivePointerValue::try_new(winner_sha.to_vec(), chrono::Utc::now().timestamp())?;
-        let active_key = encode_active_pointer_key("active_weights")?;
-        storage.put_cf_readback(
-            CF_MEJEPA_ACTIVE_POINTERS,
-            &active_key,
-            &encode_value(&active)?,
-        )?;
+            winner_blob,
+            winner_eval: &winner_eval,
+            mode_a: &mode_a,
+            mode_b: &mode_b,
+            mode_c: &mode_c,
+            mode_c_weights,
+            started,
+        })?;
         let report = HealReport {
             mode_winner: winner,
             mode_a_score: mode_a.clone(),
             mode_b_score: mode_b.clone(),
             mode_c_score: mode_c.clone(),
             mode_c_weights,
+            conformal_recalibration: commit.conformal_recalibration.clone(),
             weights_sha_winner: winner_sha,
-            evaluation_summary_sha: eval_summary_sha,
-            witness_chain_offset: witness_offset,
-            promotion_latency_seconds: started.elapsed().as_secs(),
+            evaluation_summary_sha: commit.evaluation_summary_sha,
+            witness_chain_offset: commit.witness_chain_offset,
+            promotion_latency_seconds: commit.promotion_latency_seconds,
             status_change: crate::heal::pipeline::StatusChange::Active,
             trigger_reason,
         };
@@ -475,14 +524,145 @@ impl AbcPromoter {
             mode_b_score: mode_b,
             mode_c_score: mode_c,
             mode_c_weights,
+            conformal_recalibration: commit.conformal_recalibration,
             mode_winner: winner,
             theta_sha_winner: winner_sha,
-            evaluation_summary_sha: eval_summary_sha,
-            witness_chain_offset: witness_offset,
+            evaluation_summary_sha: commit.evaluation_summary_sha,
+            witness_chain_offset: commit.witness_chain_offset,
             promotion_latency_seconds: report.promotion_latency_seconds,
         });
-        let _ = winner_eval;
         Ok(report)
+    }
+
+    fn commit(
+        &self,
+        request: PromotionCommitRequest<'_>,
+    ) -> Result<PromotionCommitResult, HealError> {
+        let recalibration = self.recalibrate_conformal(
+            request.storage,
+            request.holdout,
+            request.winner_sha,
+            request.winner_eval,
+        )?;
+        request.storage.put_cf_readback(
+            CF_MEJEPA_WEIGHT_BLOBS,
+            &request.winner_sha,
+            &request.winner_blob,
+        )?;
+        let eval_summary_sha = evaluation_summary_sha(
+            request.winner,
+            request.mode_a,
+            request.mode_b,
+            request.mode_c,
+            request.mode_c_weights,
+            &recalibration.calibration_version,
+        )?;
+        let witness_offset = request.witness_chain.append_model_event_checked(
+            request.storage,
+            "ModelPromote",
+            request.winner_sha,
+            eval_summary_sha,
+        )?;
+        let active = ActivePointerValue::try_new(
+            request.winner_sha.to_vec(),
+            chrono::Utc::now().timestamp(),
+        )?;
+        request.storage.put_cf_readback(
+            CF_MEJEPA_ACTIVE_POINTERS,
+            &encode_active_pointer_key("active_weights")?,
+            &encode_value(&active)?,
+        )?;
+        Ok(PromotionCommitResult {
+            conformal_recalibration: recalibration,
+            evaluation_summary_sha: eval_summary_sha,
+            witness_chain_offset: witness_offset,
+            promotion_latency_seconds: request.started.elapsed().as_secs(),
+        })
+    }
+
+    fn recalibrate_conformal(
+        &self,
+        storage: &HealRocksStore,
+        holdout: &HoldoutDataset,
+        winner_sha: [u8; 32],
+        winner_eval: &HoldoutEval,
+    ) -> Result<PromotionConformalCalibration, HealError> {
+        let scores = holdout
+            .examples
+            .iter()
+            .map(|example| example.calibration_nonconformity_score)
+            .collect::<Vec<_>>();
+        let tau = compute_conformal_tau(&scores, PROMOTION_CALIBRATION_ALPHA)?;
+        let empirical_coverage = winner_eval.coverage;
+        if !empirical_coverage.is_finite() || !(0.0..=1.0).contains(&empirical_coverage) {
+            return Err(HealError::invalid(
+                "promotion.conformal.empirical_coverage",
+                "empirical coverage must be finite in [0,1]",
+            ));
+        }
+        let frozen_at = chrono::Utc::now().timestamp();
+        let calibration_version = format!(
+            "promotion-calib-{frozen_at}-{}-n{}",
+            short_sha_hex(&winner_sha),
+            holdout.examples.len()
+        );
+        let mut per_language_counts = BTreeMap::new();
+        per_language_counts.insert(Language::Python, holdout.examples.len());
+        let sigma_squared = holdout
+            .examples
+            .iter()
+            .map(|example| example.ood_score * example.ood_score)
+            .sum::<f32>()
+            / holdout.examples.len() as f32
+            + 1e-6;
+        let record = CalibrationRecord {
+            version: calibration_version.clone(),
+            alpha: PROMOTION_CALIBRATION_ALPHA,
+            target_coverage: PROMOTION_TARGET_COVERAGE,
+            tau,
+            sigma_squared,
+            empirical_coverage,
+            min_samples_per_stratum: 1,
+            sample_count: holdout.examples.len(),
+            per_language_counts,
+            corpus_sha: holdout.corpus_sha,
+            embedder_versions: BTreeMap::new(),
+            frozen_at,
+        };
+        record
+            .validate()
+            .map_err(|err| HealError::invalid("promotion.conformal.record", err.to_string()))?;
+        let key = encode_calibration_history_record_key(frozen_at, &calibration_version);
+        storage.put_cf_readback(CF_MEJEPA_CALIBRATION_HISTORY, &key, &encode_value(&record)?)?;
+        let result = PromotionConformalCalibration {
+            calibration_version,
+            alpha: PROMOTION_CALIBRATION_ALPHA,
+            target_coverage: PROMOTION_TARGET_COVERAGE,
+            empirical_coverage,
+            coverage_band_min: PROMOTION_COVERAGE_MIN,
+            coverage_band_max: PROMOTION_COVERAGE_MAX,
+            tau,
+            sample_count: holdout.examples.len(),
+            persisted_key: key,
+            persisted: true,
+        };
+        if !(PROMOTION_COVERAGE_MIN..=PROMOTION_COVERAGE_MAX).contains(&empirical_coverage) {
+            return Err(HealError::ConformalCoverageOutOfBand {
+                target_coverage: PROMOTION_TARGET_COVERAGE,
+                empirical_coverage,
+                min_allowed: PROMOTION_COVERAGE_MIN,
+                max_allowed: PROMOTION_COVERAGE_MAX,
+                calibration_version: result.calibration_version,
+            });
+        }
+        let active =
+            ActivePointerValue::try_new(result.calibration_version.as_bytes().to_vec(), frozen_at)?;
+        storage.put_cf_readback(
+            CF_MEJEPA_ACTIVE_POINTERS,
+            &encode_active_pointer_key("active_calibration")?,
+            &encode_value(&active)?,
+        )?;
+        Ok(result)
     }
 
     fn best_ensemble(
@@ -748,6 +928,14 @@ fn sha_bytes(bytes: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
+fn short_sha_hex(bytes: &[u8; 32]) -> String {
+    let mut out = String::with_capacity(16);
+    for byte in &bytes[..8] {
+        write!(&mut out, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    out
+}
+
 fn evaluation_summary_sha(
     winner: ModeWinner,
     a: &HoldoutEval,
@@ -803,15 +991,16 @@ mod tests {
         let chain_path = temp.path().join("chain.bin");
         let mut witness_chain = WitnessChainAppender::new(chain_path.clone()).unwrap();
         let holdout = HoldoutDataset::try_new(
-            (0..50)
+            (0..100)
                 .map(|idx| HoldoutExample {
                     predicted: vec![OracleOutcome::Pass],
-                    actual: if idx % 5 == 0 {
-                        OracleOutcome::Fail
-                    } else {
+                    actual: if idx < 72 {
                         OracleOutcome::Pass
+                    } else {
+                        OracleOutcome::Fail
                     },
                     ood_score: 0.05,
+                    calibration_nonconformity_score: if idx < 72 { 0.05 } else { 0.95 },
                 })
                 .collect(),
             [9; 32],
@@ -845,6 +1034,6 @@ mod tests {
         assert_eq!(rollback.target_witness_chain_offset, 0);
         assert_eq!(rollback.rolled_back_to, report.weights_sha_winner);
         assert_eq!(rollback.new_witness_chain_offset, 1);
-        assert_eq!(storage.count_cf(CF_MEJEPA_ACTIVE_POINTERS).unwrap(), 1);
+        assert_eq!(storage.count_cf(CF_MEJEPA_ACTIVE_POINTERS).unwrap(), 2);
     }
 }

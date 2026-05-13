@@ -155,6 +155,7 @@ pub fn calibrate(
     let record = CalibrationRecord {
         version,
         alpha,
+        target_coverage: 1.0 - alpha,
         tau,
         sigma_squared,
         empirical_coverage,

@@ -1,13 +1,15 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
+use crate::calibration_types::CalibrationRecord;
 use crate::heal::cf::{
-    encode_active_pointer_key, encode_calibration_history_key, encode_value, ActivePointerValue,
-    CF_MEJEPA_ACTIVE_POINTERS,
+    encode_active_pointer_key, encode_calibration_history_record_key, encode_value,
+    ActivePointerValue, CF_MEJEPA_ACTIVE_POINTERS,
 };
 use crate::heal::errors::HealError;
 use crate::heal::pipeline::SelfHealingPipeline;
+use crate::types::Language;
 
 pub const DEFAULT_CALIBRATION_ALPHA: f32 = 0.10;
 pub const DEFAULT_CALIBRATION_WINDOW_SIZE: usize = 1000;
@@ -46,57 +48,7 @@ impl CalibrationExample {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct HealCalibrationRecord {
-    pub tau: f32,
-    pub sigma_squared: f32,
-    pub frozen_at: i64,
-    pub corpus_sha: [u8; 32],
-    pub embedder_versions_sha: [u8; 32],
-    pub num_samples: usize,
-    pub calibration_version: String,
-}
-
-impl HealCalibrationRecord {
-    pub fn try_new(
-        tau: f32,
-        sigma_squared: f32,
-        frozen_at: i64,
-        corpus_sha: [u8; 32],
-        embedder_versions_sha: [u8; 32],
-        num_samples: usize,
-    ) -> Result<Self, HealError> {
-        if !tau.is_finite() || !(0.0..=1.0).contains(&tau) {
-            return Err(HealError::invalid(
-                "calibration_record.tau",
-                "tau must be in [0,1]",
-            ));
-        }
-        if !sigma_squared.is_finite() || sigma_squared <= 0.0 {
-            return Err(HealError::invalid(
-                "calibration_record.sigma_squared",
-                "sigma_squared must be positive",
-            ));
-        }
-        if num_samples == 0 {
-            return Err(HealError::invalid(
-                "calibration_record.num_samples",
-                "num_samples must be > 0",
-            ));
-        }
-        let calibration_version = format!("heal-calib-{}-{num_samples}", frozen_at);
-        Ok(Self {
-            tau,
-            sigma_squared,
-            frozen_at,
-            corpus_sha,
-            embedder_versions_sha,
-            num_samples,
-            calibration_version,
-        })
-    }
-}
+pub type HealCalibrationRecord = CalibrationRecord;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -176,24 +128,33 @@ pub fn continuous_calibration_if_due(
         .collect::<Vec<_>>();
     let tau = compute_conformal_tau(&scores, writer.alpha)?;
     let sigma_squared = binary_search_sigma_squared(&ood, &scores, 0.30, 64)?;
-    let record = HealCalibrationRecord::try_new(
+    let frozen_at = chrono::Utc::now().timestamp();
+    let mut per_language_counts = BTreeMap::new();
+    per_language_counts.insert(Language::Python, writer.sliding_window.len());
+    let empirical_coverage =
+        scores.iter().filter(|score| **score <= tau).count() as f32 / scores.len() as f32;
+    let record = HealCalibrationRecord {
+        version: format!("heal-calib-{frozen_at}-{}", writer.sliding_window.len()),
+        alpha: writer.alpha,
+        target_coverage: 1.0 - writer.alpha,
         tau,
         sigma_squared,
-        chrono::Utc::now().timestamp(),
-        pipeline.corpus_sha,
-        pipeline.embedder_versions_sha,
-        writer.sliding_window.len(),
-    )?;
+        empirical_coverage,
+        min_samples_per_stratum: 1,
+        sample_count: writer.sliding_window.len(),
+        per_language_counts,
+        corpus_sha: pipeline.corpus_sha,
+        embedder_versions: BTreeMap::new(),
+        frozen_at,
+    };
+    validate_heal_calibration_record(&record)?;
     let bytes = encode_value(&record)?;
     pipeline.storage.put_cf_readback(
         crate::heal::cf::CF_MEJEPA_CALIBRATION_HISTORY,
-        &encode_calibration_history_key(record.frozen_at),
+        &encode_calibration_history_record_key(record.frozen_at, &record.version),
         &bytes,
     )?;
-    let active = ActivePointerValue::try_new(
-        record.calibration_version.as_bytes().to_vec(),
-        record.frozen_at,
-    )?;
+    let active = ActivePointerValue::try_new(record.version.as_bytes().to_vec(), record.frozen_at)?;
     pipeline.storage.put_cf_readback(
         CF_MEJEPA_ACTIVE_POINTERS,
         &encode_active_pointer_key("active_calibration")?,
@@ -202,9 +163,15 @@ pub fn continuous_calibration_if_due(
     writer.last_record = Some(record.clone());
     if let Ok(mut status) = pipeline.status.lock() {
         status.last_calibration_at = record.frozen_at;
-        status.active_calibration_version = record.calibration_version.clone();
+        status.active_calibration_version = record.version.clone();
     }
     Ok(Some(record))
+}
+
+fn validate_heal_calibration_record(record: &CalibrationRecord) -> Result<(), HealError> {
+    record
+        .validate()
+        .map_err(|err| HealError::invalid("calibration_record", err.to_string()))
 }
 
 pub fn compute_conformal_tau(scores: &[f32], alpha: f32) -> Result<f32, HealError> {

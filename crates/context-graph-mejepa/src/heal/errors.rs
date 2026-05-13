@@ -74,6 +74,13 @@ pub enum HealError {
         observed: usize,
         required: usize,
     },
+    ConformalCoverageOutOfBand {
+        target_coverage: f32,
+        empirical_coverage: f32,
+        min_allowed: f32,
+        max_allowed: f32,
+        calibration_version: String,
+    },
     CriticalBug {
         kind: CriticalBugKind,
     },
@@ -123,6 +130,7 @@ impl HealError {
             Self::LoraRefreshFail { .. } => "MEJEPA_HEAL_LORA_REFRESH_FAIL",
             Self::PromotionDeadlock { .. } => "MEJEPA_HEAL_PROMOTION_DEADLOCK",
             Self::ConformalInsufficientSamples { .. } => "MEJEPA_CALIBRATION_INSUFFICIENT_SAMPLES",
+            Self::ConformalCoverageOutOfBand { .. } => "MEJEPA_CONFORMAL_COVERAGE_OUT_OF_BAND",
             Self::CriticalBug { .. } => "MEJEPA_HEAL_CRITICAL_BUG",
             Self::RollbackTargetGone { .. } => "MEJEPA_HEAL_ROLLBACK_TARGET_GONE",
             Self::WitnessQuarantined { .. } => "MEJEPA_HEAL_WITNESS_QUARANTINED",
@@ -257,6 +265,13 @@ mod tests {
             HealError::ConformalInsufficientSamples {
                 observed: 999,
                 required: 1000,
+            },
+            HealError::ConformalCoverageOutOfBand {
+                target_coverage: 0.90,
+                empirical_coverage: 0.93,
+                min_allowed: 0.88,
+                max_allowed: 0.92,
+                calibration_version: "calibration-v1".into(),
             },
             HealError::CriticalBug {
                 kind: CriticalBugKind::StabilityFloorZero {

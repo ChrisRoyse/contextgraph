@@ -3,6 +3,7 @@
 // cross-domain names and are re-exported by name only.
 
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 
 use crate::heal::drift::{DriftSample, DriftSeverity};
 use crate::heal::errors::HealError;
@@ -76,6 +77,13 @@ pub fn encode_active_pointer_key(name: &str) -> Result<Vec<u8>, HealError> {
 
 pub fn encode_calibration_history_key(frozen_at_seconds: i64) -> [u8; 8] {
     frozen_at_seconds.to_be_bytes()
+}
+
+pub fn encode_calibration_history_record_key(frozen_at_seconds: i64, version: &str) -> Vec<u8> {
+    let mut key = Vec::with_capacity(40);
+    key.extend_from_slice(&frozen_at_seconds.to_be_bytes());
+    key.extend_from_slice(&sha2::Sha256::digest(version.as_bytes())[..16]);
+    key
 }
 
 pub fn validate_active_pointer_name(name: &str) -> Result<(), HealError> {

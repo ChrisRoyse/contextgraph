@@ -10,6 +10,7 @@ use crate::types::{EmbedderId, Language};
 pub struct CalibrationRecord {
     pub version: String,
     pub alpha: f32,
+    pub target_coverage: f32,
     pub tau: f32,
     pub sigma_squared: f32,
     pub empirical_coverage: f32,
@@ -31,6 +32,7 @@ impl CalibrationRecord {
         }
         for (field, value) in [
             ("alpha", self.alpha),
+            ("target_coverage", self.target_coverage),
             ("tau", self.tau),
             ("sigma_squared", self.sigma_squared),
             ("empirical_coverage", self.empirical_coverage),
@@ -46,6 +48,24 @@ impl CalibrationRecord {
             return Err(MejepaInferError::InvalidInput {
                 field: "alpha".to_string(),
                 detail: format!("alpha must be in (0, 1), got {}", self.alpha),
+            });
+        }
+        if !(0.0..=1.0).contains(&self.target_coverage) {
+            return Err(MejepaInferError::InvalidInput {
+                field: "target_coverage".to_string(),
+                detail: format!(
+                    "target_coverage must be in [0, 1], got {}",
+                    self.target_coverage
+                ),
+            });
+        }
+        if (self.target_coverage - (1.0 - self.alpha)).abs() > 1e-4 {
+            return Err(MejepaInferError::InvalidInput {
+                field: "target_coverage".to_string(),
+                detail: format!(
+                    "target_coverage {} must equal 1 - alpha {}",
+                    self.target_coverage, self.alpha
+                ),
             });
         }
         if !(0.0..=1.0).contains(&self.tau) {

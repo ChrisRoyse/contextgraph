@@ -480,10 +480,12 @@ impl SelfHealingPipeline {
                     format!("drift sample {idx} could not be decoded: {err}"),
                 )
             })?;
+            let calibration_nonconformity_score = if sample.covered() { 0.05 } else { 0.95 };
             examples.push(HoldoutExample {
                 predicted: sample.predicted_set,
                 actual: sample.actual_oracle,
                 ood_score: sample.ood_score,
+                calibration_nonconformity_score,
             });
         }
         HoldoutDataset::try_new(examples, self.corpus_sha)

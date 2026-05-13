@@ -98,7 +98,7 @@ impl CalibrationStore {
                     .to_string(),
             });
         }
-        let decoded: CalibrationRecord = bincode::deserialize(&readback)?;
+        let decoded = decode_calibration_record(&readback)?;
         decoded.validate()?;
         if decoded != *record {
             return Err(MejepaInferError::InvalidInput {
@@ -175,7 +175,7 @@ impl CalibrationStore {
         let mut out = Vec::with_capacity(limit);
         for item in iter {
             let (_key, value) = item?;
-            let record: CalibrationRecord = bincode::deserialize(&value)?;
+            let record = decode_calibration_record(&value)?;
             record.validate()?;
             out.push(record);
             if out.len() == limit {
@@ -233,6 +233,51 @@ fn calibration_key(record: &CalibrationRecord) -> Vec<u8> {
     let digest = sha2::Sha256::digest(record.version.as_bytes());
     key.extend_from_slice(&digest[..16]);
     key
+}
+
+fn decode_calibration_record(bytes: &[u8]) -> Result<CalibrationRecord, MejepaInferError> {
+    match bincode::deserialize::<CalibrationRecord>(bytes) {
+        Ok(record) => Ok(record),
+        Err(current_err) => match bincode::deserialize::<LegacyCalibrationRecord>(bytes) {
+            Ok(legacy) => Ok(legacy.into_current()),
+            Err(_) => Err(current_err.into()),
+        },
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyCalibrationRecord {
+    version: String,
+    alpha: f32,
+    tau: f32,
+    sigma_squared: f32,
+    empirical_coverage: f32,
+    min_samples_per_stratum: usize,
+    sample_count: usize,
+    per_language_counts: BTreeMap<crate::types::Language, usize>,
+    corpus_sha: [u8; 32],
+    embedder_versions: BTreeMap<EmbedderId, String>,
+    frozen_at: i64,
+}
+
+impl LegacyCalibrationRecord {
+    fn into_current(self) -> CalibrationRecord {
+        CalibrationRecord {
+            version: self.version,
+            alpha: self.alpha,
+            target_coverage: 1.0 - self.alpha,
+            tau: self.tau,
+            sigma_squared: self.sigma_squared,
+            empirical_coverage: self.empirical_coverage,
+            min_samples_per_stratum: self.min_samples_per_stratum,
+            sample_count: self.sample_count,
+            per_language_counts: self.per_language_counts,
+            corpus_sha: self.corpus_sha,
+            embedder_versions: self.embedder_versions,
+            frozen_at: self.frozen_at,
+        }
+    }
 }
 
 #[cfg(test)]
