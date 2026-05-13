@@ -1,8 +1,10 @@
-# CLAUDE.md — ContextGraph / ME-JEPA-Code Project Configuration
+# CLAUDE.md — ContextGraph / ME-JEPA-Code project addendum
 
 You are working in the **ContextGraph** repository, building **ME-JEPA-Code**: the deterministic predictive truth system that lets AI coding agents stop generating unverified claims and start producing patches a calibrated verifier can trust. This file is loaded automatically into every Claude Code session that opens this directory.
 
-**Canonical operating contract:** `docs/MEJEPA_SUPER_PROMPT.md` — read it once at session start. It is the long-form synthesis of CLAUDE.md, the 27 futurebuild docs, FSV-PROTOCOL, SAMP/SMAP, the updated `docs2/hardeningprompt.md` (14 axes), the updated `docs2/flagprompt.md` (multi-agent coordination + Free-plan budget), and the forensic + simplification disciplines. When this file and the super prompt agree, follow either; when they conflict, the super prompt wins for operational detail and this file wins for top-level invariants.
+**Master rules (universal protocol):** [`docs2/AICodingAgentSuperPrompt.md`](docs2/AICodingAgentSuperPrompt.md) — the AI Coding Agent Doctrine. Read it once at session start. It is the canonical, density-first reference for memory (GitHub Issues), claiming, FSV, RCA, hardening, communication, session lifecycle, and the forensic + simplification disciplines.
+
+**This file (CLAUDE.md)** is the project-specific addendum. When this file and the doctrine agree, follow either. When they conflict, **the doctrine wins for protocol detail** and **this file wins for project-specific invariants** (paths, crates, deny-list, current phase, build commands, MEJEPA architecture).
 
 ---
 
@@ -18,7 +20,7 @@ You are working in the **ContextGraph** repository, building **ME-JEPA-Code**: t
 | **Q4** | **WHAT ELSE** could go wrong? | Always-on heads: edge cases, latent bugs, tech debt, dead code, redundancy, perf, security, accuracy, cost |
 | **Q5** | How is it **IMPACTING REALITY**? | Shift log replayed against predicted side-effects → `RealityImpact` |
 
-Ship-gate predicate: `prediction_oracle_correlation ≥ 0.95` stably across `(mutation_category × language)` on four consecutive rolling windows of the 300×8 SWE-bench Lite corpus. When that's met, human review of AI-generated patches is statistically unjustified — the verifier *is* the system.
+**Ship-gate predicate:** `prediction_oracle_correlation ≥ 0.95` stably across `(mutation_category × language)` on four consecutive rolling windows of the 300×8 SWE-bench Lite corpus. When that's met, human review of AI-generated patches is statistically unjustified — the verifier *is* the system.
 
 ME-JEPA runs as an **MCP server** locally on operator hardware. AI agents call it via JSON-RPC stdio. Underneath, a continuous self-optimization daemon consumes every Edit shift, every test outcome, and every agent-feedback event to retrain itself online.
 
@@ -26,7 +28,7 @@ ME-JEPA runs as an **MCP server** locally on operator hardware. AI agents call i
 
 ---
 
-## 2. Verified phase status (2026-05-12)
+## 2. Verified phase status (2026-05-13)
 
 **Independent audit completed 2026-05-12.** 35/35 Phase A–D items PRESENT against the live tree; 16/16 FSV evidence files present on `/mnt/d/contextgraph/fsv/`; all 17 GitHub issues (#3–#19) including umbrella gate [#15](https://github.com/ChrisRoyse/contextgraph/issues/15) CLOSED. **Phase E entry is unblocked.**
 
@@ -37,7 +39,7 @@ The only outstanding gate is `prediction_oracle_correlation = 0.866667 < 0.95` (
 - `TASK-HEAL-001..007` — Self-optimization scheduler full implementation; per-cell stratified drift; dissipation detection; Bayesian small-window drift; constellation refresh policy; `mejepa_promote_approval` MCP tool; emergency eviction validation.
 - `TASK-UTML-005..008` — Per-head Fisher / dormancy / lambda ramp / dissipation.
 
-Audit trail: `./memory/discoveries/2026-05-12--phase-a-d-independent-audit-zero-gaps.md`.
+The historical 2026-05-12 audit trail lived at `./memory/discoveries/2026-05-12--phase-a-d-independent-audit-zero-gaps.md`. That namespace is now archived under `./memory.archive/`. Any audit-trail entries needed going forward become `type:discovery` GitHub issues per the doctrine §3.
 
 ---
 
@@ -56,31 +58,50 @@ Audit trail: `./memory/discoveries/2026-05-12--phase-a-d-independent-audit-zero-
 - **`context-graph-mejepa-train`** — Trainer + UTML formula carriers + DDA computation + samplers.
 - **`context-graph-{core,mincut,solver,tier-compression,witness,benchmark}`** — Supporting primitives.
 
-Legacy `reality-loop` binary and inner-actor LLM (Qwen3.6-27B / Hermes-2-Pro / Ollama / llama.cpp generative inference) were deleted 2026-05-09 and Phase H FSV-verified on 2026-05-13 (#134/#135). **Do not reanimate.**
+Legacy `reality-loop` binary and inner-actor LLM (Qwen3.6-27B / Hermes-2-Pro / Ollama / llama.cpp generative inference) were deleted 2026-05-09 and Phase H FSV-verified on 2026-05-13 (#134/#135). **Do not reanimate without explicit operator authorization.**
 
 ---
 
-## 4. Behavioral rules (always enforced)
+## 4. Memory = GitHub Issues (per doctrine §3)
+
+**There is no `./memory/` directory.** The old SAMP/SMAP namespace is archived to `./memory.archive/` (read-only history; do not write new files there). New memory is captured exclusively in this repo's GitHub Issues:
+
+| Old `./memory/` namespace | New home |
+|---|---|
+| `context/` (mission / current phase / scope) | Pinned `type:context` issue |
+| `decisions/` (locked architectural choices) | Closed `type:decision` issue (ADR; doctrine §3.10) |
+| `discoveries/` (constraints / gotchas / edge cases) | Closed `type:discovery` issue (doctrine §3.11) |
+| `patterns/` (reusable conventions) | Closed `type:pattern` issue (or `AGENTS.md` for stable ones) |
+| `blockers/` (unresolved walls) | Open issue with `status:blocked` |
+| `handoff/` (deliverable for next agent) | Comment on relevant issue + assignee change |
+| `journal/` (chronological execution log) | Issue comments (CLAIM / milestone / PAUSE / RESOLVED / BLOCKED) |
+| `reports/` (end-of-session summary) | Final RESOLVED comment on the worked issue + PR description |
+
+Label set: see [`.github/labels.yml`](.github/labels.yml). Bootstrap with `scripts/gh-labels-bootstrap.sh`. The six startup queries to run every turn are in [`AGENTS.md`](AGENTS.md) and doctrine §3.3.
+
+---
+
+## 5. Behavioral rules (always enforced; additive to doctrine §1)
 
 1. Do what has been asked; nothing more, nothing less.
 2. NEVER create files unless absolutely necessary.
 3. ALWAYS prefer editing an existing file to creating a new one.
 4. NEVER proactively create documentation files (`*.md`) or READMEs unless explicitly requested.
-5. NEVER save working files, ad-hoc tests, or scratch markdown to the project root. Use `./memory/`, `/tmp/`, or `/mnt/d/contextgraph/` (§7).
+5. NEVER save working files, ad-hoc tests, or scratch markdown to the project root. Use `/tmp/`, `/mnt/d/contextgraph/`, or open a GitHub issue + comment (§7).
 6. ALWAYS read a file before editing it.
 7. NEVER commit secrets, credentials, or `.env` files.
-8. After ANY correction from the operator, write the lesson into `./memory/decisions/` (if it's a locked rule) or `./memory/discoveries/` (if it's a finding) so future agents inherit it.
+8. After ANY correction from the operator, capture the lesson as a `type:decision` (locked rule) or `type:discovery` (finding) GitHub issue so future agents inherit it.
 9. Do file-reading, synthesis, code edits, and decisions personally. Own every step.
 
 ---
 
-## 5. Architectural invariants (inviolable)
+## 6. Architectural invariants (project-specific; inviolable)
 
-These are non-negotiable. See `docs/MEJEPA_SUPER_PROMPT.md §3` for the full derivation.
+These are non-negotiable and project-specific. Doctrine universal rules still apply.
 
 1. **Structural collapse-immunity on the target side.** Frozen instruments have ZERO trainable parameters. `ΔΞ.target_collapse = 0` by construction. Never wire a gradient into the frozen-target path; the `MEJEPA_INSTRUMENT_GRADIENT_LEAK` guard is correct behavior.
 2. **Reality-shift principle.** No alteration without current state. No alteration without a delta back into perception. Pre/post-tool hooks enforce this.
-3. **GENERIC-ONLY.** Every primitive must generalize across every SWE-bench task, every Python repo, every bug class. If it only helps one task, it would HURT 299 others. Mental check: *"would this be load-bearing for `psf__requests-2317` / `django__django-12286` / `sympy__sympy-13895` and any future repo?"*
+3. **GENERIC-ONLY in the trained model.** Every trained primitive must generalize across every SWE-bench task, every Python repo, every bug class. Mental check: *"would this be load-bearing for `psf__requests-2317` / `django__django-12286` / `sympy__sympy-13895` and any future repo?"* You may reason task-specifically when attempting a SWE-bench task; never bake task-specifics into the trained model.
 4. **Single outer loop around the invoking agent.** No inner LLM. The agent (Claude / Codex / Cursor) IS the actor. Its Edit / Write / Bash / tests ARE the data-generating process.
 5. **D-drive only for bulk durable state.** All corpora, FSV evidence, runtime shift logs, test outcomes, and weekly exports live under `/mnt/d/contextgraph/`. Never `/tmp`, never project root, never C drive.
 6. **No backwards compatibility.** Pre-production tree. Wipe DB on schema change; fail fast with structured errors; never write migration shims.
@@ -92,33 +113,34 @@ These are non-negotiable. See `docs/MEJEPA_SUPER_PROMPT.md §3` for the full der
 
 ---
 
-## 6. Path discipline (BEHAVIORAL — gates removed 2026-05-07)
+## 7. Path discipline (BEHAVIORAL — gates removed 2026-05-07)
 
 The MCP-server-side path-policy gate and pre-edit hook deny-list were both removed by operator directive. Honor these don't-touch paths behaviorally:
 
-- `.env` and `.env.*` anywhere.
-- `swebench/**` (the upstream evaluator).
-- `tests/oracle_**/**` (benchmark fixtures).
-- `crates/context-graph-benchmark/datasets/swe_bench_*/**`.
-- `crates/*/src/reward_specs/**`.
-- `crates/*/src/verifiers/**`.
-- Any `*.pem`, `*.key`, `**/credentials.json`.
+- `.env` and `.env.*` anywhere
+- `swebench/**` (the upstream evaluator)
+- `tests/oracle_**/**` (benchmark fixtures)
+- `crates/context-graph-benchmark/datasets/swe_bench_*/**`
+- `crates/*/src/reward_specs/**`
+- `crates/*/src/verifiers/**`
+- Any `*.pem`, `*.key`, `**/credentials.json`
 
 If editing one of these is genuinely the right thing for an operator-directed task, ask the operator first.
 
 ---
 
-## 7. Directory layout
+## 8. Directory layout
 
 ```
-./crates/      — Rust workspace (the source tree)
-./docs/        — futurebuild plan + ruvectorfindings + MEJEPA_SUPER_PROMPT.md
-./docs2/       — external best-practice guides (hardeningprompt, flagprompt, prdtospec)
-./scripts/     — CC hook scripts (scripts/cc/), CI lint (scripts/ci/), setup, systemd
-./memory/      — SAMP/SMAP shared mind (context/, decisions/, discoveries/, handoff/, journal/, blockers/, patterns/, reports/)
-./tasks/       — workstream manifests (e.g., tasks/swebench-lite/*.json)
-./config/      — governed paths, model pins
-./.claude/     — settings.json, agents/, loop.md, skills/
+./crates/         — Rust workspace (the source tree)
+./docs/           — futurebuild plan + ruvectorfindings + MEJEPA_SUPER_PROMPT.md (project narrative; SUPERSEDED for protocol)
+./docs2/          — AICodingAgentSuperPrompt.md (master doctrine) + hardeningprompt.md (14-axis deep-dive) + flagprompt.md (SUPERSEDED issue protocol) + prdtospec.md
+./scripts/        — CC hook scripts (scripts/cc/), CI lint (scripts/ci/), setup, systemd, label bootstrap (gh-labels-bootstrap.sh)
+./tasks/          — workstream manifests (e.g., tasks/swebench-lite/*.json)
+./config/         — governed paths, model pins
+./.claude/        — settings.json, agents/, loop.md, skills/
+./.github/        — workflows + labels.yml
+./memory.archive/ — read-only legacy SAMP/SMAP narrative (no new entries; see STOP_READING.md)
 
 # D-drive (durable bulk state)
 /mnt/d/contextgraph/
@@ -134,29 +156,31 @@ CI lint `scripts/ci/check_no_c_drive_paths.sh` enforces no C-drive paths in code
 
 ---
 
-## 8. Per-turn protocol
+## 9. Per-turn protocol (project overlay on doctrine §12)
 
-1. **Read memory.** `./memory/context/`, `./memory/decisions/`, `./memory/blockers/` (skip resolved), most recent `./memory/reports/`. Bootstrap the directory tree if missing.
+1. **READ** (doctrine §3.3 + §12.1) — Run the six issue queries to see pinned context / in-progress / blocked / unclaimed agent queue / active decisions / discoveries touching your task area. Skim `AGENTS.md` and this file.
 2. **Read phase docs.** `docs/futurebuild/{00_INDEX, 02_CURRENT_STATE_HONEST, 12_IMPLEMENTATION_PHASES, 13_TASK_INDEX}.md`.
-3. **Check GitHub state.** `gh issue list --state open --label "status:in-progress"` (avoid these), `--label "source:agent" --search "no:assignee"` (your candidate queue).
+3. **Check GitHub state** — `gh issue list --state open --label "status:in-progress"` (avoid these), `--label "source:agent" --search "no:assignee"` (your candidate queue).
 4. **Pick** the highest-priority incomplete deliverable. Or follow operator direction.
-5. **Claim** the issue (if existing): assign self, flip `status:needs-triage` → `status:in-progress`, post a plan comment with files-touched + ETA.
-6. **Audit the task** against the live tree per FSV-PROTOCOL §7. `ASSUME THE TASK IS WRONG`. Examine code BEFORE reading claims (Linear Sequential Unmasking, super prompt §15.4).
-7. **Plan.** Trigger → Process → Outcome. Name the SoT. List ≥3 boundary cases.
-8. **Work.** Ship one primitive end-to-end. Write `./memory/*.md` immediately when discoveries / decisions / blockers / patterns emerge — never batch.
-9. **Verify.** `cargo build --release -p <crate>`, `cargo test -p <crate>`, `cargo clippy -p <crate> --no-deps --tests --examples -- -D warnings`. FSV harness to `/mnt/d/contextgraph/fsv/<task>-fsv/<artifact>.json`. Independent re-open readback for any RocksDB write.
-10. **Simplify.** Apply the code-simplification discipline (super prompt §16): preserve functionality, enhance clarity, avoid nested ternaries, no over-simplification.
-11. **Holmes pass.** For non-trivial primitives: Cold Read, Contradiction Engine, ≥3 hypotheses, LSU bias check (super prompt §15).
-12. **Report.** Write `./memory/reports/session-YYYY-MM-DD--<slug>.md` per SAMP §14.7. Comment milestone/done on the GitHub issue. Comment a pause-note (Done / Tried-failed / Learned / Resume-at / Hypothesis) if stopping mid-task.
-13. **Observe & file.** Note any defect / smell / dead-code / tech-debt / anomaly / security / architecture / test-gap you observed but are NOT fixing — file a GitHub issue per the dedupe protocol (super prompt §20.3) before turn ends.
+5. **Claim** the issue (if existing) per doctrine §3.4: atomic `gh issue edit` assigning self + flipping `status:needs-triage` → `status:in-progress` + CLAIM comment listing files-touched and ETA.
+6. **Audit the task** against the live tree per `docs/futurebuild/specs/FSV-PROTOCOL.md` §7. `ASSUME THE TASK IS WRONG`. Examine code BEFORE reading claims (Linear Sequential Unmasking, doctrine §2.8).
+7. **Plan.** Trigger → Process → Outcome (doctrine §2.2). Name the SoT. List ≥3 boundary cases.
+8. **Work.** Ship one primitive end-to-end. Comment milestone updates on the issue (doctrine §3.5) — discovery / direction-change / heartbeat / sibling-issue. Never silent.
+9. **Verify** per doctrine §4: `cargo build --release -p <crate>`, `cargo test -p <crate>`, `cargo clippy -p <crate> --no-deps --tests --examples -- -D warnings`. FSV harness to `/mnt/d/contextgraph/fsv/<task>-fsv/<artifact>.json`. Independent re-open readback for any RocksDB write.
+10. **Simplify** (doctrine §17.1 / per-PR gate): files ≤500 lines, functions ≤30 lines, cyclomatic ≤10; avoid nested ternaries; prefer `match` / `if let` / explicit `if / else if / else`.
+11. **Forensic pass** (doctrine §11) for non-trivial primitives: Cold Read, Contradiction Engine, ≥3 hypotheses, LSU bias check.
+12. **Close out** (doctrine §3.6–§3.8) — comment RESOLVED / PAUSE / BLOCKED on each worked issue. RESOLVED comment includes: fix summary (root cause + structural fix), build/test/clippy status, FSV evidence (SoT before → action → SoT after with values), regression test name, side effects observed, follow-up issues filed.
+13. **Observe & file** (doctrine §3.2 / §3.12) — any defect / smell / dead-code / tech-debt / anomaly / security / architecture / test-gap you observed but are NOT fixing → open an Issue before turn ends. Dedupe first (doctrine §3.14).
+
+**No `./memory/*.md` reads or writes.** That directory is archived.
 
 ---
 
-## 9. FSV protocol — the verification contract
+## 10. FSV protocol — the verification contract
 
-Binding contract for every task. Source: `docs/futurebuild/specs/FSV-PROTOCOL.md`; full operational detail: `docs/MEJEPA_SUPER_PROMPT.md §14`.
+Binding contract for every task. Universal protocol: doctrine §4. Project-specific operational detail: `docs/futurebuild/specs/FSV-PROTOCOL.md`. The doctrine summary:
 
-**First principle.** A function returning `Ok(())`, a process exiting `0`, a log line saying `"persisted"`, and an HTTP `200 OK` are all *claims*. The only evidence that counts is a separate read against the SoT.
+> *A return value is a claim. The Source of Truth is the verdict. Read the verdict.*
 
 Before declaring a task complete:
 
@@ -167,103 +191,55 @@ Before declaring a task complete:
 
 If you cannot answer all four, you don't understand the feature well enough to call it done. **No mocks** in tests that gate task completion. **No backwards compatibility.** **No workarounds.** **Tests must fail when the feature is broken.** **Fail closed on unknowns** with `SCREAMING_SNAKE_CASE` codes. **Assume the task is wrong** — audit every file path / symbol / CF reference against the live tree before following it.
 
-Required evidence per task: build output, test output (zero failed, zero ignored), clippy output (`-D warnings`), SoT readback JSON, physical artifact verification, independent re-open verification (RocksDB only), session report. See super prompt §14 for the JSON schema.
+Required evidence per task: build output, test output (zero failed, zero ignored), clippy output (`-D warnings`), SoT readback JSON, physical artifact verification, independent re-open verification (RocksDB only), final RESOLVED issue comment with the evidence table.
 
 ---
 
-## 10. Memory protocol — SAMP / SMAP
-
-Long-term memory lives in `./memory/` at the project root.
-
-```
-./memory/
-├── context/      — mission, current phase, scope — read first every turn
-├── decisions/    — locked choices future agents MUST NOT contradict
-├── discoveries/  — constraints, gotchas, edge cases learned during work
-├── handoff/      — concrete deliverables passed agent-to-agent
-├── journal/      — append-only chronological execution log
-├── blockers/     — unresolved issues with severity (never delete; mark resolved)
-├── patterns/     — reusable conventions
-└── reports/      — end-of-session summaries
-```
-
-Every `.md` file MUST start with frontmatter (namespace, agent_id, created, updated, status, severity for blockers, tags). Decision and discovery bodies lead with the rule, then `**Why:**` (motivation/incident/constraint) and `**How to apply:**` (when this kicks in).
-
-**Lifecycle:** READ → ORIENT → WORK → WRITE → REPORT. Write `.md` files IMMEDIATELY when discoveries / decisions / blockers / patterns emerge — never batch. End every turn with `./memory/reports/session-YYYY-MM-DD--<slug>.md` using the SAMP §14.7 template (super prompt).
-
-**Resolved blockers** stay in `./memory/blockers/` with `status: resolved`. **Superseded decisions** stay in `./memory/decisions/` with `status: superseded` and a forward pointer. Never delete.
-
-**Trust the code over memory** when they conflict. Update or supersede stale memory rather than acting on it.
-
----
-
-## 11. GitHub coordination — File rule + Claim rule
-
-Source: `docs2/flagprompt.md`. Full operational detail: super prompt §17–§20.
+## 11. GitHub coordination — File rule + Claim rule (doctrine §3.2)
 
 **Two non-negotiable rules:**
 
-1. **File rule.** Observe a defect / smell / dead-code / tech-debt / anomaly / security / architecture / test-gap you are NOT fixing this turn → file a GitHub issue before turn ends. Dedupe first (3–6 distinctive keywords, `gh issue list --state all --search "<kw> in:title,body"`). Threshold ≥8/10 → comment on existing, don't file.
-2. **Claim rule.** Before touching code tied to an issue: assign self, flip `status:needs-triage` → `status:in-progress`, post a plan comment. Comment at every milestone (Discovery / Direction change / Sibling issue / Heartbeat). When pausing: comment Done / Tried-failed / Learned / Resume-at / Hypothesis. When done: comment Fix summary / Verification / Side effects.
+1. **File rule.** Observe a defect / smell / dead-code / tech-debt / anomaly / security / architecture / test-gap / decision / discovery / pattern you are NOT capturing in code this turn → open a GitHub Issue before turn ends. Dedupe first (3–6 distinctive keywords, `gh issue list --state all --search "<kw> in:title,body"`). Threshold ≥8/10 → comment on existing, don't file.
+2. **Claim rule.** Before touching code tied to an issue: assign self, flip `status:needs-triage` → `status:in-progress`, post a CLAIM comment. Comment at every milestone (Discovery / Direction change / Sibling issue / Heartbeat). When pausing: PAUSE comment (Done / Tried-failed / Learned / Resume-at / Hypothesis). When done: RESOLVED comment (Fix summary / Verification / Side effects). Blocked: BLOCKED comment with link to blocker.
 
-**No silent work.** Never edit files referenced by another agent's `status:in-progress` issue without commenting first.
+**No silent work.** Never edit files referenced by another agent's `status:in-progress` issue without commenting first (doctrine §10).
 
-**GitHub Free-plan budget ($0/mo).** Workflows must `runs-on: ubuntu-latest` only; declare `timeout-minutes:` (≤30 default, ≤60 cap); pin Actions to SHA (not tag); cron at most weekly for SAST, daily for stale. Never enable paid features (premium runners, GHAS on private, Codespaces overage, Packages overage, LFS overage). See super prompt §19 for the full allow-list / deny-list.
+**GitHub Free-plan budget ($0/mo).** Workflows must `runs-on: ubuntu-latest` only; declare `timeout-minutes:` (≤30 default, ≤60 cap); pin Actions to SHA (not tag); cron at most weekly for SAST, daily for stale. Never enable paid features. See doctrine §3.20 for full allow/deny list.
 
 ---
 
 ## 12. Hardening — the 14 axes
 
-Source: `docs2/hardeningprompt.md`. Full detail: super prompt §21–§41.
+Universal summary: doctrine §14. Project-specific deep-dive: [`docs2/hardeningprompt.md`](docs2/hardeningprompt.md). When the doctrine summary suffices, use it. When you need primitive lists, threat-model templates, or per-axis checklists, use hardeningprompt.md.
 
-| # | Axis | Section |
-|---|------|---------|
-| 1 | Security | §24 |
-| 2 | Correctness & accuracy (FSV) | §25 |
-| 3 | Performance | §26 |
-| 4 | Reliability (SRE) | §27 |
-| 5 | Resilience (fault tolerance) | §28 |
-| 6 | Scalability | §29 |
-| 7 | Cost efficiency (light for local ML) | §30 |
-| 8 | Architecture | §31 |
-| 9 | Code quality & maintainability | §32 |
-| 10 | Data layer (RocksDB hardening) | §33 |
-| 11 | Observability | §34 |
-| 12 | Supply chain integrity | §35 |
-| 13 | AI / ML / LLM-specific | §36 |
-| 14 | Benchmarking discipline | §37 |
+| # | Axis | Where |
+|---|------|-------|
+| 1 | Security | doctrine §14.2 / hardeningprompt §3 |
+| 2 | Correctness & accuracy (FSV) | doctrine §4 (universal contract) |
+| 3 | Performance | doctrine §14.4 / hardeningprompt §5 |
+| 4 | Reliability (SRE) | doctrine §14.5 / hardeningprompt §6 |
+| 5 | Resilience (fault tolerance) | doctrine §14.6 / hardeningprompt §7 |
+| 6 | Scalability | doctrine §14.7 / hardeningprompt §8 |
+| 7 | Cost efficiency | doctrine §14.8 / hardeningprompt §9 |
+| 8 | Architecture | doctrine §14.9 / hardeningprompt §10-§11 |
+| 9 | Code quality & maintainability | doctrine §14.10 / hardeningprompt §11 |
+| 10 | Data layer (RocksDB hardening) | doctrine §14.11 / hardeningprompt §12 |
+| 11 | Observability | doctrine §14.12 / hardeningprompt §13 |
+| 12 | Supply chain integrity | doctrine §14.13 / hardeningprompt §14 |
+| 13 | AI / ML / LLM-specific | doctrine §14.14 / hardeningprompt §15 |
+| 14 | Benchmarking discipline | doctrine §14.15 / hardeningprompt §16 |
 
-Universal mental models: Trigger → Process → Outcome; first-principles decomposition; symptom vs cause vs root cause; fail-closed not fail-open; defense in depth; asymmetry of risk; 80/20 priority.
+Universal mental models: Trigger → Process → Outcome; first-principles decomposition; symptom vs cause vs root cause; fail-closed not fail-open; defense in depth; asymmetry of risk; 80/20 priority (doctrine §2).
 
-RCA: 5 Whys → Fishbone → Fault Tree Analysis → first-principles debugging → Causal DAG. Output root cause as a **system property** ("the system allowed X because Y"), not "human error."
+RCA: 5 Whys → Fishbone → Fault Tree Analysis → first-principles debugging (doctrine §5). Output root cause as a **system property** ("the system allowed X because Y"), not "human error."
 
 ---
 
 ## 13. Forensic + simplification disciplines
 
-**Forensic discipline (super prompt §15).** Apply when verifying claims, auditing code, validating implementations:
+**Forensic discipline.** Universal protocol: doctrine §11. Apply when verifying claims, auditing code, validating implementations: guilty until proven innocent; abductive reasoning (≥3 hypotheses); Linear Sequential Unmasking; Cold Read; Contradiction Engine; adversarial personas; investigation tiers (Glance/Scan/Investigate/Deep Dive); self-verification before any GUILTY verdict.
 
-- **Guilty until proven innocent.** All code is suspected of failure until you have irrefutable forensic evidence at the SoT.
-- **Abductive reasoning.** Generate ≥3 hypotheses, rank by parsimony, test each. Never equate "best explanation" with "true explanation."
-- **Linear Sequential Unmasking.** Examine code BEFORE reading claims to avoid confirmation / expectation / motivational / anchoring biases.
-- **Cold Read** (30-sec structural / naming / behavioral / emotional tells).
-- **Contradiction Engine** (code vs comments, tests vs implementation, docs vs behavior, types vs runtime, commit vs diff, function name vs side effects).
-- **Adversarial personas** (Bug / Attacker / Tired Developer / Future Archaeologist).
-- **Daubert Standard** (testability / peer review / error rate / standards / acceptance) before accepting a claim as proven.
-- **ACE-V framework** for code comparison.
-- **Investigation tiers** (Glance 5s / Scan 30s / Investigation 5min / Deep Dive 30min+) — match depth to stakes.
-- **Self-verification** (≥3 alternative hypotheses considered? sought disproving evidence? falsifiable conclusion?) before any GUILTY verdict.
-
-**Code-simplification discipline (super prompt §16).** Apply on every shipped primitive before merging:
-
-- Preserve functionality — never change what code does, only how.
-- Apply project standards from CLAUDE.md (files ≤500 lines, functions ≤30 lines, cyclomatic ≤10).
-- Enhance clarity — reduce nesting, eliminate redundancy, clear naming, consolidate logic.
-- **Avoid nested ternaries** — prefer `match` / `if let` / explicit `if / else if / else`.
-- Choose clarity over brevity. Explicit code is almost always better than overly compact code.
-- Maintain balance — don't over-simplify into unmaintainable cleverness.
-- Focus scope — only recently modified code unless instructed otherwise.
-- BLOCKER refinements → STOP refinement, fix the underlying bug, re-run FSV.
+**Code-simplification discipline.** Universal protocol: doctrine §16 / §17.1 / pre-completion check. Apply on every shipped primitive before merging: preserve functionality; project standards (files ≤500 lines, functions ≤30 lines, cyclomatic ≤10); reduce nesting; avoid nested ternaries; choose clarity over brevity; maintain balance.
 
 ---
 
@@ -272,7 +248,7 @@ RCA: 5 Whys → Fishbone → Fault Tree Analysis → first-principles debugging 
 ```bash
 cargo build --release -p context-graph-cli      # workhorse CLI
 cargo build --release -p context-graph-mcp      # MCP protocol shim
-cargo build --release -p <touched-crate>        # after any `changed` recommendation
+cargo build --release -p <touched-crate>        # after any change
 cargo test                                       # full suite
 cargo test -p <touched-crate>                    # scoped
 cargo clippy --no-deps --tests --examples -- -D warnings
@@ -283,32 +259,22 @@ cargo fmt
 
 ---
 
-## 15. Hard rules — never do (top of list)
+## 15. Project-specific hard "never"s (additive to doctrine §15-equivalent)
 
-1. Never call HTTP from action paths (curl / wget / fetch). MCP is the only action surface.
-2. Never edit `.env`, `swebench/**`, `tests/oracle_**/**`, `crates/*/src/reward_specs/**`, `crates/*/src/verifiers/**`.
-3. Never use destructive git (`push --force`, `reset --hard`, `checkout --`, `clean -f`, `rebase`).
-4. Never reintroduce the retired inner-actor LLM stack (Qwen, Hermes, Ollama, llama.cpp generative inference) without explicit operator authorization and new FSV evidence.
-5. Never use mock data in tests that gate task completion.
-6. Never write tests that pass when the project is broken.
-7. Never weaken or remove a verifier or hook that legitimately blocked you.
-8. Never silently fall back to defaults / `None` / empty Vec / placeholder strings on missing artifact / CF / env-var / model.
-9. Never add backwards-compat shims (rename-tolerant deserialization, version probes).
-10. Never delete a resolved blocker file. Never silently overwrite a superseded decision.
-11. Never commit secrets or `.env` files.
-12. Never proactively create `*.md` or README files unless explicitly requested.
-13. Never save scratch files to the project root.
-14. Never add cost caps or dollar budgets.
-15. Never cater a primitive to a specific task (GENERIC-ONLY rule).
-16. Never trust a return value as evidence of work — read the SoT.
-17. Never batch documentation at end of session.
-18. Never edit files in another agent's `status:in-progress` scope without commenting first.
-19. Never enable a paid GitHub feature.
-20. Never read PR descriptions / commit messages / developer claims BEFORE examining the code (Linear Sequential Unmasking).
-21. Never settle on the first plausible explanation in RCA.
-22. Never use nested ternary operators.
+These are on top of the doctrine's universal forbidden list.
 
-Full list (30+ rules): super prompt §7.
+1. Never reintroduce the retired inner-actor LLM stack (Qwen, Hermes, Ollama, llama.cpp generative inference) without explicit operator authorization and new FSV evidence.
+2. Never call HTTP from action paths (curl / wget / fetch). MCP is the only action surface.
+3. Never edit `.env`, `swebench/**`, `tests/oracle_**/**`, `crates/*/src/reward_specs/**`, `crates/*/src/verifiers/**` without operator OK.
+4. Never use destructive git (`push --force`, `--force-with-lease`, `reset --hard`, `checkout --`, `clean -f`, `rebase`).
+5. Never write `./memory/*.md` files. Memory is GitHub Issues (doctrine §3).
+6. Never cater a trained primitive to a specific task (GENERIC-ONLY rule §6.3).
+7. Never trust a return value as evidence of work — read the SoT (doctrine §0 / §4).
+8. Never add cost caps or dollar budgets.
+9. Never use mock data in tests that gate task completion.
+10. Never write tests that pass when the project is broken.
+
+Full universal list: doctrine §1, §7, §8, §15-equivalent.
 
 ---
 
@@ -318,45 +284,29 @@ All independent tool calls in a single response MUST be made in one message. Bat
 
 ---
 
-## 17. Hard rules summary (the most important constraints, in order)
-
-1. Do what the operator asked, nothing more, nothing less.
-2. Read `./memory/context/` and `./memory/decisions/` at the start of every turn.
-3. Read the futurebuild status docs (00/02/12/13) and pick the highest-priority next item. Check GitHub claim state.
-4. Audit every task against the live tree before writing code (`ASSUME THE TASK IS WRONG`).
-5. GENERIC-ONLY: no per-task overfit (§5.3).
-6. No HTTP. No destructive git. No editing the §6 deny set.
-7. FSV is the contract — pair every recommendation with SoT readback evidence on `/mnt/d/`.
-8. Pair every recommendation with a SMAP report in `./memory/reports/`.
-9. Resolved blockers stay in `./memory/blockers/` with `status: resolved`. Never delete.
-10. Never contradict locked decisions in `./memory/decisions/` with `status: active` — supersede explicitly or escalate.
-11. Three consecutive `blocked` for the same root cause → escalate (high-severity blocker + `remaining_risks: ["requires human inspection: ..."]`).
-12. File a GitHub issue for any observed defect not fixed this turn. Claim before working — no silent work.
-13. Apply the code-simplification discipline on every shipped primitive. Apply the forensic discipline on non-trivial verifications.
-
----
-
-## 18. Core principles
+## 17. Core principles
 
 - **Simplicity first.** Make every change as simple as possible. Touch minimal code.
 - **No laziness.** Find root causes; no temporary fixes; senior-developer standards.
 - **Minimal impact.** Changes touch only what's necessary; avoid introducing bugs in unrelated code.
-- **Document failures with the same care as successes.** Every failure is a lesson for the next agent. Record in `./memory/journal/` or `./memory/blockers/` immediately.
-- **`./memory/` is the single source of truth across agents.** If it isn't written there, it didn't happen.
-- **`/mnt/d/contextgraph/` is the durable SoT.** If FSV evidence isn't on D-drive, it doesn't count.
+- **Document failure as carefully as success — in issue comments.** Failure is the next agent's lesson.
+- **GitHub Issues are the single source of truth for memory across agents** (doctrine §3). If it isn't in Issues, it dies with the session.
+- **`/mnt/d/contextgraph/` is the durable SoT** for FSV evidence. If FSV evidence isn't on D-drive, it doesn't count.
 
 ---
 
-## 19. Support
+## 18. Support
 
-- **Project repo:** this repo. Issues / PRs land here.
-- **Super prompt:** `docs/MEJEPA_SUPER_PROMPT.md` (the long-form operating contract — read at session start).
-- **Futurebuild plan:** `docs/futurebuild/00_INDEX.md` and the 27 docs it indexes.
-- **FSV contract:** `docs/futurebuild/specs/FSV-PROTOCOL.md`.
-- **External best-practice guides:** `docs2/hardeningprompt.md`, `docs2/flagprompt.md`, `docs2/prdtospec.md`.
-- **SAMP / SMAP:** `/home/cabdru/leapablememory/docs2/{SOLO-AGENT-MEMORY-PROTOCOL.md, SHARED-MIND-AGENT-PROTOCOL.md}`.
-- **Per-tick prompt:** `.claude/loop.md` (post-pivot loop content).
+- **Doctrine (master):** [`docs2/AICodingAgentSuperPrompt.md`](docs2/AICodingAgentSuperPrompt.md)
+- **Project pointers:** [`AGENTS.md`](AGENTS.md)
+- **Futurebuild plan:** [`docs/futurebuild/00_INDEX.md`](docs/futurebuild/00_INDEX.md)
+- **FSV contract:** [`docs/futurebuild/specs/FSV-PROTOCOL.md`](docs/futurebuild/specs/FSV-PROTOCOL.md)
+- **14-axis hardening deep-dive:** [`docs2/hardeningprompt.md`](docs2/hardeningprompt.md)
+- **Per-tick prompt:** [`.claude/loop.md`](.claude/loop.md)
+- **Legacy MEJEPA narrative (SUPERSEDED for protocol; project content still valid):** [`docs/MEJEPA_SUPER_PROMPT.md`](docs/MEJEPA_SUPER_PROMPT.md)
+- **Legacy issue protocol (SUPERSEDED by doctrine §3):** [`docs2/flagprompt.md`](docs2/flagprompt.md)
+- **Legacy SAMP/SMAP narrative (read-only history):** [`./memory.archive/`](./memory.archive/)
 
 ---
 
-**One-line summary.** ME-JEPA-Code is the deterministic predictive truth system that returns a calibrated multi-head `RealityPrediction` for any AI-generated code change so human review becomes statistically unjustified once `prediction_oracle_correlation ≥ 0.95` stably across 4 rolling windows on the 300×8 SWE-bench Lite corpus — every primitive must be generic, every change must verify by source-of-truth readback, every memory must be written to `./memory/` immediately, every observed defect not fixed this turn must become a GitHub issue (claim before working — no silent work), every post-write must pass the code-simplification discipline, and every turn must end with both an FSV evidence file and a session report.
+**One-line summary.** ME-JEPA-Code is the deterministic predictive truth system that returns a calibrated multi-head `RealityPrediction` for any AI-generated code change so human review becomes statistically unjustified once `prediction_oracle_correlation ≥ 0.95` stably across 4 rolling windows on the 300×8 SWE-bench Lite corpus — every primitive must be generic, every change must verify by source-of-truth readback, every memory must be captured in a GitHub Issue (claim before working — no silent work), every observed defect not fixed this turn must become a GitHub issue, every post-write must pass the code-simplification discipline, and every turn must end with both an FSV evidence file and a RESOLVED/PAUSE/BLOCKED issue comment.

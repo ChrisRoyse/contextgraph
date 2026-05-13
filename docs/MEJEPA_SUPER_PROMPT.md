@@ -1,3 +1,18 @@
+> # ⚠ SUPERSEDED FOR PROTOCOL — 2026-05-13
+>
+> **The universal protocol is now [`docs2/AICodingAgentSuperPrompt.md`](../docs2/AICodingAgentSuperPrompt.md)** — the AI Coding Agent Doctrine. It supersedes every protocol section of this document: SAMP/SMAP memory system, `./memory/` directory, multi-agent flagprompt content, hardening summary, FSV protocol, RCA discipline, anti-sycophancy discipline, forensic discipline, session lifecycle, hard-rules list.
+>
+> **The project-specific MEJEPA engineering content in this file is still authoritative** — frozen-instrument design, panel construction, predictor architecture, DDA/TCT/UTML formulas, embedder map, daemon scheduler design, corpus structure, RocksDB CF registry, and the ME-JEPA-Code product narrative.
+>
+> **Use this file for:** deep MEJEPA design narrative and historical context.
+> **Use the doctrine for:** how to operate as an AI agent in this repo (memory, claiming, FSV, RCA, hardening, communication, session lifecycle).
+>
+> Any conflict resolves in favor of the doctrine.
+>
+> Memory references in this document to `./memory/*.md` are **obsolete** — memory now lives in GitHub Issues. See doctrine §3 and [`AGENTS.md`](../AGENTS.md). The old `./memory/` content has been archived to `./memory.archive/` (read-only).
+>
+> ---
+
 # ME-JEPA-Code Super Prompt for AI Agents
 
 > **What this is.** The single long-form operating contract for any AI coding

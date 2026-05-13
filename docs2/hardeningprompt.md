@@ -1,3 +1,11 @@
+> # 📎 Complementary reference — 2026-05-13
+>
+> The 14 hardening axes are **summarized** in [`docs2/AICodingAgentSuperPrompt.md` §14](AICodingAgentSuperPrompt.md). This document is the **deep-dive reference** for those same 14 axes (Security, Correctness/FSV, Performance, Reliability, Resilience, Scalability, Cost, Architecture, Code quality, Data layer, Observability, Supply chain, AI/ML/LLM-specific, Benchmarking).
+>
+> When the doctrine summary suffices, use it. When you need primitive lists, threat-model templates, or per-axis checklists, use this file.
+>
+> ---
+
 # Software System Hardening — AI Agent Reference
 
 **Audience:** AI agent given the task "harden / improve / optimize this system."

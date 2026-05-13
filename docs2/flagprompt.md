@@ -1,3 +1,11 @@
+> # ⚠ SUPERSEDED — 2026-05-13
+>
+> **This document is superseded by [`docs2/AICodingAgentSuperPrompt.md` §3 (GitHub Issues as Persistent Memory)](AICodingAgentSuperPrompt.md).** The doctrine §3 is the canonical, more rigorous version of the agent issue protocol described here — covering the same two non-negotiable rules (File rule, Claim rule), the same six startup queries, the same CLAIM / milestone / PAUSE / RESOLVED / BLOCKED comment lifecycle, plus ADR / discovery / pattern templates, dedupe protocol, label set, priority heuristics, hygiene, and GitHub-Free platform discipline.
+>
+> Kept for reference / archaeology only. New agents should read the doctrine §3 directly.
+>
+> ---
+
 # Agent Issue Protocol — GitHub Issues as Source of Truth & Coordination Channel
 
 **Audience:** AI agents. **Purpose:** (1) file every observed defect as a tracked Issue, (2) coordinate parallel agents through issue claims + comments so nobody steps on anyone's work. Agent sessions are amnesiac — if it isn't in the tracker, it dies with the session.
