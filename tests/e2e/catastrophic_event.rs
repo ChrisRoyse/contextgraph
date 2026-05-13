@@ -23,8 +23,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 const TASK_ID: &str = "TASK-TEST-004";
-const COVERED_SAMPLES: u64 = 750;
-const UNCOVERED_SAMPLES: u64 = 250;
+const COVERED_SAMPLES: u64 = 720;
+const UNCOVERED_SAMPLES: u64 = 280;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -135,11 +135,11 @@ pub fn run_catastrophic_event_fsv(fsv_root: &Path) -> Result<CatastrophicEventFs
             == json!(COVERED_SAMPLES + UNCOVERED_SAMPLES);
         steps.push(StepEvidence {
             step: "seed_catastrophic_drift_window".to_string(),
-            trigger: "persist 750 covered and 250 uncovered drift samples".to_string(),
+            trigger: "persist 720 covered and 280 uncovered drift samples".to_string(),
             source_of_truth: context_graph_mejepa_cf::CF_MEJEPA_DRIFT_WINDOW.to_string(),
             before: before_seed,
             after: after_seed.clone(),
-            expected: json!({"driftWindowRows": 1000, "empiricalCoverage": 0.75}),
+            expected: json!({"driftWindowRows": 1000, "empiricalCoverage": 0.72}),
             actual: json!({
                 "driftWindowRows": after_seed["cfCounts"][context_graph_mejepa_cf::CF_MEJEPA_DRIFT_WINDOW],
                 "empiricalCoverage": COVERED_SAMPLES as f64 / (COVERED_SAMPLES + UNCOVERED_SAMPLES) as f64
@@ -539,11 +539,15 @@ fn queue_boundary_promotion(store: &HealRocksStore) -> Result<String> {
         store,
         PendingPromotionKind::CatastrophicFullRetrainRequired {
             cell_key: "global_or_per_cell".to_string(),
-            metric_value: 0.75,
+            metric_value: catastrophic_empirical_coverage(),
         },
         context_graph_mejepa::heal::TriggerReason::DriftCatastrophic,
         "Phase F catastrophic boundary promotion",
     )?)
+}
+
+fn catastrophic_empirical_coverage() -> f32 {
+    COVERED_SAMPLES as f32 / (COVERED_SAMPLES + UNCOVERED_SAMPLES) as f32
 }
 
 fn seed_train_certs(store: &HealRocksStore) -> Result<()> {
