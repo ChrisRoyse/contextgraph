@@ -1985,4 +1985,170 @@ mod mejepa_constellation_inspect_tests {
             .unwrap()
             .contains("schema validation failed"));
     }
+
+    #[tokio::test]
+    async fn mejepa_daemon_status_writes_phase_f_fsv_artifact() {
+        let _guard = env_guard();
+        let (handlers, _handler_tempdir) =
+            crate::handlers::tests::create_protocol_test_handlers().await;
+        let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
+        let fsv_root = PathBuf::from("/mnt/d/contextgraph/fsv/phase-f-daemon-status-fsv");
+        std::fs::create_dir_all(&fsv_root).unwrap();
+        let run_root = fsv_root.join(format!("run-{}-{}", started_at_unix_ms, std::process::id()));
+        std::fs::create_dir_all(&run_root).unwrap();
+
+        let infer_db = run_root.join("infer-db");
+        let panel_db = run_root.join("panel-db");
+        let heal_db = run_root.join("heal-db");
+        let quota_db = run_root.join("quota-db");
+        let archive_root = run_root.join("archive");
+
+        let infer = open_infer_rocksdb(&infer_db).unwrap();
+        drop(infer);
+        let panel =
+            context_graph_mejepa_instruments::panel_store::PanelStore::open(&panel_db).unwrap();
+        drop(panel);
+        let heal = HealRocksStore::open(&heal_db).unwrap();
+        drop(heal);
+
+        let happy_response = handlers
+            .call_mejepa_daemon_status(
+                Some(JsonRpcId::Number(43)),
+                json!({
+                    "inferDbPath": infer_db,
+                    "panelDbPath": panel_db,
+                    "healDbPath": heal_db,
+                    "quotaDbPath": quota_db,
+                    "archiveRoot": archive_root,
+                    "includeVram": false
+                }),
+            )
+            .await;
+        assert!(happy_response.error.is_none());
+        let happy_result = happy_response.result.unwrap();
+        let happy_structured = happy_result["structuredContent"].clone();
+        let happy_pass = happy_result["isError"] == false
+            && happy_structured["overallStatus"] == "healthy"
+            && happy_structured["components"]["runtime"]["status"] == "healthy"
+            && happy_structured["components"]["subscriber"]["status"] == "healthy"
+            && happy_structured["components"]["heal"]["status"] == "healthy"
+            && happy_structured["components"]["quota"]["status"] == "healthy"
+            && happy_structured["components"]["vram"]["status"] == "disabled";
+
+        let missing_response = handlers
+            .call_mejepa_daemon_status(Some(JsonRpcId::Number(44)), json!({"includeVram": false}))
+            .await;
+        assert!(missing_response.error.is_none());
+        let missing_structured = missing_response.result.unwrap()["structuredContent"].clone();
+
+        let unknown_response = handlers
+            .call_mejepa_daemon_status(
+                Some(JsonRpcId::Number(45)),
+                json!({"includeVram": false, "unexpected": true}),
+            )
+            .await;
+        assert!(unknown_response.error.is_none());
+        let unknown_result = unknown_response.result.unwrap();
+
+        let bad_infer_db = run_root.join("not-a-rocksdb-infer-file");
+        let bad_heal_db = run_root.join("not-a-rocksdb-heal-file");
+        std::fs::write(&bad_infer_db, b"not rocksdb").unwrap();
+        std::fs::write(&bad_heal_db, b"not rocksdb").unwrap();
+        let bad_response = handlers
+            .call_mejepa_daemon_status(
+                Some(JsonRpcId::Number(46)),
+                json!({
+                    "inferDbPath": bad_infer_db,
+                    "healDbPath": bad_heal_db,
+                    "quotaDbPath": run_root.join("bad-quota-db"),
+                    "archiveRoot": run_root.join("bad-quota-db/archive"),
+                    "includeVram": false
+                }),
+            )
+            .await;
+        assert!(bad_response.error.is_none());
+        let bad_structured = bad_response.result.unwrap()["structuredContent"].clone();
+
+        let boundary_cases = vec![
+            json!({
+                "case": "missing_component_sources_degrades",
+                "expected": "degraded",
+                "actual": missing_structured["overallStatus"],
+                "pass": missing_structured["overallStatus"] == "degraded"
+                    && missing_structured["components"]["subscriber"]["errorCode"]
+                        == "MEJEPA_DAEMON_STATUS_INFER_DB_MISSING"
+                    && missing_structured["components"]["heal"]["errorCode"]
+                        == "MEJEPA_DAEMON_STATUS_HEAL_DB_MISSING"
+            }),
+            json!({
+                "case": "unknown_argument_fails_schema",
+                "expected": "schema validation failed",
+                "actual": unknown_result,
+                "pass": unknown_result["isError"] == true
+                    && unknown_result["content"][0]["text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("schema validation failed")
+            }),
+            json!({
+                "case": "malformed_component_sots_are_component_errors",
+                "expected": {
+                    "overallStatus": "degraded",
+                    "subscriberErrorCode": "MEJEPA_DAEMON_STATUS_SUBSCRIBER_READ_FAILED"
+                },
+                "actual": bad_structured,
+                "pass": bad_structured["overallStatus"] == "degraded"
+                    && bad_structured["components"]["subscriber"]["errorCode"]
+                        == "MEJEPA_DAEMON_STATUS_SUBSCRIBER_READ_FAILED"
+            }),
+        ];
+        let all_passed = happy_pass && boundary_cases.iter().all(|case| case["pass"] == true);
+        let evidence = json!({
+            "fsv_root": fsv_root,
+            "task_id": "TASK-OBS-003",
+            "started_at_unix_ms": started_at_unix_ms,
+            "build_release_sha": git_head_short_for_test(),
+            "happy_path": [{
+                "case": "daemon_status_aggregates_sources",
+                "sot": "mcp__cgreality__mejepa_daemon_status structuredContent",
+                "before": null,
+                "trigger": "cargo test -p context-graph-mcp mejepa_daemon_status_writes_phase_f_fsv_artifact",
+                "after": happy_structured,
+                "expected": "runtime/subscriber/heal/quota healthy and VRAM disabled",
+                "actual": happy_pass,
+                "pass": happy_pass,
+                "evidence_path": run_root
+            }],
+            "boundary_cases": boundary_cases,
+            "all_passed": all_passed,
+            "readback_equal": true,
+            "physical_artifacts": {
+                "run_root": run_root
+            }
+        });
+        assert!(all_passed);
+        let evidence_path = fsv_root.join("daemon_status_fsv.json");
+        context_graph_mejepa::eval::report::write_json_0600(&evidence_path, &evidence).unwrap();
+        let readback: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&evidence_path).unwrap()).unwrap();
+        assert_eq!(readback, evidence);
+        let metadata = std::fs::metadata(&evidence_path).unwrap();
+        assert!(metadata.len() > 0);
+    }
+
+    fn git_head_short_for_test() -> String {
+        std::process::Command::new("git")
+            .args(["rev-parse", "--short", "HEAD"])
+            .output()
+            .ok()
+            .and_then(|output| {
+                if output.status.success() {
+                    Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+                } else {
+                    None
+                }
+            })
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "unknown".to_string())
+    }
 }
