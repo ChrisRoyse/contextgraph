@@ -12,6 +12,7 @@ paid CI services are used by this script. Evidence stays on local disk.
 Environment:
   MEJEPA_CI_RUN_ROOT       default: tmp/mejepa_local_ci_runs
   ONET_TEXT_ZIP           default: tmp/onet_probe/db_30_2_text.zip
+                          required official O*NET 30.2 text ZIP for smoke/release tiers
   LOCAL_CI_RUN_ID_PREFIX  default: local_<UTC timestamp>_<pid>
   RELEASE_D_SIF_PATH      default: <run_root>/<run_id>_contextgraph_mejepa_v2.sif
 USAGE
@@ -220,7 +221,7 @@ static_gate() {
 
 build_dynamicjepa() {
   log "dynamicjepa FSV integration test"
-  cargo test -p context-graph-cli --test dynamicjepa_research_smoke_fsv --all-features -- --nocapture
+  cargo test -p context-graph-cli --test dynamicjepa_research_smoke_fsv --all-features -- --include-ignored --nocapture
   log "build context-graph CLI"
   cargo build -p context-graph-cli --bin context-graph --all-features
 }

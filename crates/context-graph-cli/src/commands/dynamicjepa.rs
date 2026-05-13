@@ -9672,6 +9672,9 @@ fn hp_sweep_command(args: HpSweepArgs) -> DynamicJepaResult<CommandOutcome> {
             "choose a fresh sweep bundle path; HP sweeps never overwrite prior evidence",
         ));
     }
+    let axis = HpSweepAxis::parse(&args.sweep_axis)?;
+    let values = parse_hp_sweep_values(axis, &args.sweep_values)?;
+    let seeds = parse_hp_sweep_seeds(&args)?;
     if !args.onet_text_zip.exists() {
         return Err(DynamicJepaError::validation(
             "hp_sweep.onet_text_zip",
@@ -9691,9 +9694,6 @@ fn hp_sweep_command(args: HpSweepArgs) -> DynamicJepaResult<CommandOutcome> {
     }
     let base_config = TrainConfig::from_path(&args.base_config)?;
     let base_hp = HpSweepHyperparameters::from_train_config(&base_config);
-    let axis = HpSweepAxis::parse(&args.sweep_axis)?;
-    let values = parse_hp_sweep_values(axis, &args.sweep_values)?;
-    let seeds = parse_hp_sweep_seeds(&args)?;
     let career_event_count =
         research_career_event_count(&args.purpose, args.career_event_count, true)?;
 

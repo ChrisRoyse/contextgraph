@@ -13,8 +13,21 @@ use serde_json::Value;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
+const DEFAULT_ONET_TEXT_ZIP: &str = "tmp/onet_probe/db_30_2_text.zip";
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn real_onet_zip_path() -> PathBuf {
+    match std::env::var_os("ONET_TEXT_ZIP") {
+        Some(path) if !path.to_string_lossy().is_empty() => PathBuf::from(path),
+        _ => repo_root().join(DEFAULT_ONET_TEXT_ZIP),
+    }
+}
+
+fn missing_onet_zip_path() -> PathBuf {
+    repo_root().join("tmp/onet_probe/__missing_db_30_2_text.zip")
 }
 
 fn context_graph_bin() -> &'static str {
@@ -246,11 +259,7 @@ fn hp_sweep_fails_closed_for_unknown_axis_before_bundle_creation() {
     if output_root.exists() {
         fs::remove_dir_all(&output_root).expect("remove previous HP sweep test output");
     }
-    let onet_zip = root.join("tmp/onet_probe/db_30_2_text.zip");
-    assert!(
-        onet_zip.exists(),
-        "real O*NET ZIP required for HP sweep validation"
-    );
+    let onet_zip = missing_onet_zip_path();
 
     let (stdout, _stderr) = run_err(&[
         "dynamicjepa",
@@ -298,11 +307,7 @@ fn hp_sweep_fails_closed_for_invalid_value_before_bundle_creation() {
     if output_root.exists() {
         fs::remove_dir_all(&output_root).expect("remove previous HP sweep test output");
     }
-    let onet_zip = root.join("tmp/onet_probe/db_30_2_text.zip");
-    assert!(
-        onet_zip.exists(),
-        "real O*NET ZIP required for HP sweep validation"
-    );
+    let onet_zip = missing_onet_zip_path();
 
     let (stdout, _stderr) = run_err(&[
         "dynamicjepa",
@@ -351,11 +356,7 @@ fn hp_sweep_fails_closed_for_existing_output_root() {
         fs::remove_dir_all(&output_root).expect("remove previous HP sweep test output");
     }
     fs::create_dir_all(&output_root).expect("create existing HP sweep output root");
-    let onet_zip = root.join("tmp/onet_probe/db_30_2_text.zip");
-    assert!(
-        onet_zip.exists(),
-        "real O*NET ZIP required for HP sweep validation"
-    );
+    let onet_zip = missing_onet_zip_path();
 
     let (stdout, _stderr) = run_err(&[
         "dynamicjepa",
@@ -533,6 +534,7 @@ fn research_smoke_fails_closed_for_unsafe_onet_zip_member_path() {
 }
 
 #[test]
+#[ignore = "requires the real O*NET 30.2 text ZIP; run scripts/5090jepa/local_ci_gate.sh smoke-a or set ONET_TEXT_ZIP and pass --include-ignored"]
 fn research_smoke_persists_paper_bundle_and_db_readbacks() {
     let root = repo_root();
     let run_root = root.join("tmp/5090jepa_evidence/research_smoke/test_runtime");
@@ -542,10 +544,10 @@ fn research_smoke_persists_paper_bundle_and_db_readbacks() {
     if run_dir.exists() {
         fs::remove_dir_all(&run_dir).expect("remove previous research smoke test run");
     }
-    let onet_zip = root.join("tmp/onet_probe/db_30_2_text.zip");
+    let onet_zip = real_onet_zip_path();
     assert!(
         onet_zip.exists(),
-        "real O*NET 30.2 text ZIP is required for research smoke FSV: {}",
+        "real O*NET 30.2 text ZIP is required for research smoke FSV: {}; set ONET_TEXT_ZIP or run scripts/5090jepa/local_ci_gate.sh smoke-a",
         onet_zip.display()
     );
 
