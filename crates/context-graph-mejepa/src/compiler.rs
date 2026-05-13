@@ -224,7 +224,7 @@ impl MeJepaCompiler {
         patch.validate()?;
         context.validate()?;
         if let Some(pause_state) = self.active_pause_state() {
-            return Ok(self.paused_prediction_with_panel(patch, context, &pause_state)?);
+            return self.paused_prediction_with_panel(patch, context, &pause_state);
         }
         let calibration = self.calibration.load_active()?;
         let (panel_t0, panel_t1, panel_t2) = materialize_inference_panels(patch, context)?;
