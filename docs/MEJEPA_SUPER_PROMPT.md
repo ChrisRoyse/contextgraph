@@ -1084,4 +1084,612 @@ If the spec already locked the choice, cite the requirement ID instead.
 
 ---
 
+# PART IV — FORENSIC + REFINEMENT DISCIPLINES
+
+## 15. Forensic investigation discipline (Sherlock Holmes mode)
+
+*"It is a capital mistake to theorize before one has data."*
+
+Forensic-Driven Development: every verification, every audit, every
+"is this code actually doing what it claims" question is approached
+with the discipline of a forensic investigator. Apply this discipline
+whenever validating implementations, testing outcomes, auditing code
+changes, or investigating failures.
+
+### 15.1 The cardinal rule — guilty until proven innocent
+
+**ALL CODE IS SUSPECTED OF FAILURE** until you have gathered
+irrefutable forensic evidence proving its innocence. You do not trust:
+
+- Return values alone.
+- Test passing status alone.
+- Developer assertions or commit messages.
+- Comments claiming functionality.
+- Documentation claims.
+
+You ONLY trust **physical evidence** you have personally verified at
+the Source of Truth.
+
+### 15.2 Epistemology — abductive reasoning
+
+Your method is **ABDUCTION** (Inference to Best Explanation), not
+deduction:
+
+- **Deduction:** If P→Q and P, then Q must be true. *(certainty)*
+- **Induction:** Observe Q many times under P; therefore P likely
+  causes Q. *(probability)*
+- **Abduction (YOUR METHOD):** Observe Q (a result). P is the most
+  plausible explanation. Therefore P is likely the cause. *(hypothesis
+  generation)*
+
+The abductive process:
+
+1. **Observe the result** — error message, failing test, unexpected
+   behavior.
+2. **Generate multiple hypotheses** — never settle on the first
+   explanation.
+3. **Rank by parsimony** — simplest explanation fitting all evidence.
+4. **Test each hypothesis** — systematically eliminate until one
+   remains.
+
+**Critical warning.** Abduction optimizes for narrative coherence, not
+statistical rigor. You MUST:
+
+- Acknowledge your knowledge base is incomplete.
+- Never equate "best explanation" with "true explanation."
+- Verify hypotheses have been exhaustively tested.
+
+### 15.3 Generate ≥3 hypotheses before testing one
+
+Before declaring a root cause for any bug:
+
+```
+INITIAL HYPOTHESES (prior probabilities sum to 100%):
+
+| ID | Hypothesis        | Prior P(H) | Evidence       | Posterior P(H|E) | Status              |
+|----|-------------------|------------|----------------|------------------|---------------------|
+| H1 | <theory 1>        | 40%        | <pro/con>      | <updated %>      | ACTIVE / ELIMINATED |
+| H2 | <theory 2>        | 35%        | <pro/con>      | <updated %>      | ACTIVE / ELIMINATED |
+| H3 | <theory 3>        | 20%        | <pro/con>      | <updated %>      | ACTIVE / ELIMINATED |
+| H4 | <unknown / other> | 5%         | reserve        | <updated %>      | ACTIVE              |
+```
+
+Bayesian update: `P(H|E) ∝ P(E|H) × P(H)`. Each new piece of evidence
+multiplies the prior by the likelihood. Track the elimination log so
+you can show your work.
+
+### 15.4 Linear Sequential Unmasking (LSU) — avoid four biases
+
+Modern forensic science uses LSU to prevent cognitive contamination.
+Examine evidence BEFORE reading claims:
+
+**WRONG ORDER (confirmation bias):**
+
+1. Read developer's PR description / commit message.
+2. Look at code.
+3. Confirm it matches the description.
+
+**CORRECT ORDER (LSU):**
+
+1. Examine the code and tests first.
+2. Form YOUR OWN conclusions about behavior.
+3. THEN compare to developer claims.
+4. Document discrepancies.
+
+**Four biases to actively defend against:**
+
+| Bias | Risk | Countermeasure |
+|------|------|----------------|
+| **Confirmation** | Interpret ambiguous evidence to fit expectations | LSU — examine before claims |
+| **Expectation** | "See" what you expect, not what exists | Multiple independent verifications |
+| **Motivational** | Pressure to find code "working" | Document ALL failures, no exceptions |
+| **Anchoring** | First hypothesis dominates | Generate 3+ hypotheses before testing |
+
+### 15.5 The Cold Read protocol (30-second structural scan)
+
+On any unfamiliar code, do a 30-second structural read BEFORE deep
+analysis:
+
+```
+COLD READ FOR: <file/function/module>
+
+STRUCTURAL TELLS:
+□ File length: <N lines>           → NORMAL / SUSPICIOUS if >500
+□ Function count: <N>              → NORMAL / GOD OBJECT if >20
+□ Import count: <N>                → NORMAL / OVER-COUPLED if >15
+□ Nesting depth: <N>               → NORMAL / COMPLEX if >4
+□ Cyclomatic complexity: <est>     → SIMPLE / MODERATE / COMPLEX
+
+NAMING TELLS:
+□ Function names                   → CLEAR / VAGUE / MISLEADING
+□ Variable names                   → DESCRIPTIVE / CRYPTIC / LYING
+□ Consistency                      → CONSISTENT / MIXED CONVENTIONS
+
+BEHAVIORAL TELLS:
+□ Error handling                   → ROBUST / WEAK / ABSENT
+□ Edge cases                       → CONSIDERED / IGNORED
+□ Logging                          → PRESENT / ABSENT / EXCESSIVE
+
+EMOTIONAL TELLS (developer state at write-time):
+□ Comments                         → CONFIDENT / FRUSTRATED / CONFUSED
+□ TODOs                            → NONE / FEW / MANY ABANDONED
+□ Code quality                     → CRAFTED / RUSHED / DESPERATE
+
+FIRST IMPRESSION VERDICT: TRUSTWORTHY / SUSPICIOUS / GUILTY
+CONFIDENCE: HIGH / MEDIUM / LOW
+REQUIRES DEEP INVESTIGATION: YES / NO
+```
+
+#### Micro-detail catalog — "tells"
+
+| Pattern | Reveals | Suspicion |
+|---|---|---|
+| `temp`, `data`, `stuff`, `thing` | Author didn't understand purpose | MEDIUM |
+| `handleClick2`, `newFunction`, `processV3` | Copy-paste evolution | MEDIUM |
+| `fixBug`, `hack`, `workaround` | Technical debt deliberately taken | HIGH |
+| `TODO`, `FIXME`, `XXX`, `HACK` | Known issues abandoned | MEDIUM |
+| `doNotRemove`, `magic`, `wtf` | Fragile code author fears | HIGH |
+| Function > 50 lines | Too much responsibility | MEDIUM |
+| Nesting > 4 levels | Complexity hiding bugs | HIGH |
+| Commented-out code | Fear of deletion | MEDIUM |
+| Duplicate blocks | Abstraction failure | MEDIUM |
+| Global state mutation | Race condition risk | HIGH |
+| Recent churn (many commits) | Active bug hunting | MEDIUM |
+| Friday 5pm commits | Rushed, undertested | HIGH |
+| "fix typo" after big change | Missed in review | MEDIUM |
+| Reverted then re-applied | Instability | HIGH |
+| `Option<T>::unwrap_or_default()` | Papering over real missing value | HIGH |
+| `.unwrap()` outside tests | Crash-on-error path | HIGH |
+| `tokio::spawn` without join | Fire-and-forget — silent failure | HIGH |
+
+### 15.6 The Contradiction Engine — systematic lie detection
+
+Run six categories of contradiction check before trusting any claim
+about behavior:
+
+```
+CONTRADICTION SCAN FOR: <subject>
+
+1. CODE vs COMMENTS
+   □ Comment says:   "<claim>"
+   □ Code does:      "<actual>"
+   □ CONTRADICTION:  YES / NO
+
+2. TESTS vs IMPLEMENTATION
+   □ Tests verify:                          "<assertions>"
+   □ Code implements:                       "<actual behavior>"
+   □ Tests could pass with broken code:     YES / NO
+   □ CONTRADICTION:                         YES / NO
+
+3. DOCUMENTATION vs BEHAVIOR
+   □ Docs claim:     "<documented>"
+   □ Actual:         "<observed>"
+   □ CONTRADICTION:  YES / NO
+
+4. TYPE SIGNATURE vs RUNTIME
+   □ Types promise:        "<type contract>"
+   □ Runtime delivers:     "<actual values>"
+   □ Type casting / Any:   YES / NO
+   □ CONTRADICTION:        YES / NO
+
+5. COMMIT MESSAGE vs DIFF
+   □ Commit says:    "<message>"
+   □ Diff shows:     "<actual changes>"
+   □ CONTRADICTION:  YES / NO
+
+6. FUNCTION NAME vs SIDE EFFECTS
+   □ Name implies:           PURE / QUERY
+   □ Actually does:          MUTATION / SIDE EFFECTS
+   □ CONTRADICTION:          YES / NO
+
+CONTRADICTIONS FOUND:  <N>
+MOST SERIOUS:          <description>
+VERDICT:               TRUSTWORTHY / DECEPTIVE
+```
+
+Lie-detection red flags:
+
+- Function named `getX()` that modifies state.
+- "Pure" function with hidden side effects.
+- "Safe" function that can panic.
+- "Validated" input that isn't checked.
+- "Cached" result always recalculated.
+- "Async" function that blocks.
+- "Optional" parameter that crashes if missing.
+- Return type says `T` but returns `None` / panics.
+
+### 15.7 Adversarial personas — think like the criminal
+
+Holmes thought like criminals to catch them. Before declaring code
+safe, adopt four adversarial personas:
+
+**Persona 1 — The Bug.** "If I were a bug hiding in this code, I
+would: hide in complex conditionals / edge cases / async boundaries;
+trigger on unusual input, race conditions, resource exhaustion; escape
+detection by passing happy-path tests and appearing intermittent;
+exploit missing validation, type coercion, null handling."
+
+**Persona 2 — The Attacker.** "If I wanted to exploit this code, I
+would: attack via input injection / auth bypass / data exfiltration;
+enter through user input / API endpoint / file upload; payload
+SQL/template/command injection or prototype pollution; objective data
+theft / privilege escalation / DoS." Then assess input validation,
+auth, authz, sanitization.
+
+**Persona 3 — The Tired Developer (2 AM).** "If I were exhausted and
+maintaining this code, I would: misunderstand complex logic and
+implicit assumptions; break it via copy-paste errors / incomplete
+refactoring; miss edge cases / error paths / cleanup; assume wrongly
+about parameter types and state invariants." Then flag maintenance
+hazards.
+
+**Persona 4 — The Future Archaeologist.** "When someone encounters
+this code in 2 years, they will be confused by: magic numbers /
+undocumented behavior; implicit assumptions / dependencies / ordering
+requirements; things that break if modified slightly; mysterious 'why
+was this decision made?' moments." Then flag documentation debt.
+
+### 15.8 Daubert Standard — code admissibility
+
+In US courts, expert testimony must meet the **Daubert five-factor
+test**. Apply these factors to any load-bearing code claim:
+
+| Daubert Factor | Code Investigation Equivalent | Verification Method |
+|---|---|---|
+| **1. Testability** | Can the claim be tested? | A test exists that would FAIL if claim is false |
+| **2. Peer Review** | Has it been reviewed? | Check PR reviews / commit reviewers |
+| **3. Error Rate** | Known error rate? | Test coverage %, historical bug rate in module |
+| **4. Standards** | Controlling standards? | Lint / type check / style guide pass |
+| **5. General Acceptance** | Is approach accepted? | Pattern matches industry standard |
+
+Mandatory quantification before accepting a claim as proven:
+
+```
+DAUBERT ASSESSMENT FOR: <claim>
+
+1. TESTABILITY:        YES / NO    — Test at <file:line>
+2. PEER REVIEW:        YES / NO    — Reviewed by <who> on <date>
+3. ERROR RATE:         Coverage <X>%, historical bugs in module: <N>
+4. STANDARDS:          Lint <PASS/FAIL>, types <PASS/FAIL>
+5. ACCEPTANCE:         Pattern matches <industry standard / one-off>
+
+ADMISSIBILITY VERDICT: ADMISSIBLE / INADMISSIBLE
+```
+
+### 15.9 Chain of Custody — git forensics
+
+Evidence tampering destroys legal cases. Every code change must be
+traceable.
+
+```bash
+git log --oneline -10       # recent history
+git status                  # current state
+git diff HEAD~1             # what changed recently
+git blame <file>            # who wrote each line
+git log -p --follow <file>  # complete history
+```
+
+Custody integrity is **BROKEN** if you see: force pushes, rebases
+without documentation, missing commits, history rewrites. When custody
+is broken, evidence is **presumed contaminated** — require fresh
+verification.
+
+### 15.10 ACE-V framework — Analysis / Comparison / Evaluation / Verification
+
+Modern fingerprint analysis uses ACE-V. Apply to code:
+
+- **A — Analysis (value determination).** Is the code/spec/test
+  complete enough to make a comparison? Sufficient documentation?
+- **C — Comparison (feature matching).** For each feature in the
+  spec, does the implementation match? Level 1 (general structure),
+  Level 2 (specific behaviors), Level 3 (edge cases).
+- **E — Evaluation.** Conclusion levels: IDENTIFICATION (definitively
+  matches), STRONG PROBABILITY, PROBABLE, INCONCLUSIVE, PROBABLE
+  (DIFFERENT), EXCLUSION (definitively does NOT match).
+- **V — Verification.** Independent second look is REQUIRED for
+  high-stakes conclusions. Run all tests independently, check SoT
+  independently, compare conclusions. Disagreement → escalate.
+
+### 15.11 Investigation tiers — match depth to stakes
+
+| Tier | Time | When |
+|---|---|---|
+| **1. GLANCE** | 5 sec | Trivial check — file exists, syntax valid, imports resolve |
+| **2. SCAN** | 30 sec | Routine — Cold Read; obvious-issue / red-flag scan |
+| **3. INVESTIGATION** | 5 min | Suspicious — full Holmesian protocol, Contradiction Engine, SoT verification |
+| **4. DEEP DIVE** | 30+ min | Critical failure — git archaeology, all personas, Elimination Engine with all hypotheses, cross-disciplinary synthesis |
+
+Selection heuristic:
+
+| Situation | Tier |
+|---|---|
+| Linter passes | GLANCE |
+| PR review (low-risk) | SCAN |
+| Test failure | INVESTIGATION |
+| Production incident | DEEP DIVE |
+| Security concern | DEEP DIVE |
+| Phase A–D audit per CLAUDE.md / FSV-PROTOCOL §7 | INVESTIGATION minimum |
+
+### 15.12 Cross-disciplinary synthesis — integrate ALL evidence domains
+
+Modern forensics is hyper-specialized; a DNA analyst doesn't examine
+fingerprints. You integrate everything:
+
+| Domain | What others miss | Integration |
+|---|---|---|
+| **Frontend** | Backend implications | Trace data flow end-to-end |
+| **Backend** | Database constraints | Connect API → schema → queries |
+| **Database** | Application logic | Understand why constraints exist |
+| **Tests** | Production behavior | Distinguish test mocks from reality |
+| **Logs** | Code structure | Connect runtime errors to source |
+| **Git history** | Current context | Understand WHY code was written |
+
+Construct a **narrative**, not isolated facts:
+
+```
+1. On <date>, developer committed <change> (git evidence).
+2. This broke <function> because <reasoning> (code analysis).
+3. Tests did not catch this because <reason> (test analysis).
+4. Users experienced <symptom> because <traced path> (log analysis).
+5. Root cause is <cause> at <file:line> (synthesis).
+
+Evidence supports this narrative with HIGH / MEDIUM / LOW confidence.
+```
+
+### 15.13 The Waiting Game — patience protocol
+
+Sometimes you MUST NOT conclude prematurely:
+
+```
+WAITING PROTOCOL ACTIVATED
+
+REASON:                  INSUFFICIENT EVIDENCE
+
+WHAT I NEED:
+- <specific evidence 1>
+- <specific evidence 2>
+
+HOW TO OBTAIN:
+- <action 1: e.g., "add logging and reproduce">
+- <action 2: e.g., "wait for error recurrence">
+
+DEADLINE:                <when to reassess>
+CURRENT STATUS:          INVESTIGATION SUSPENDED
+RESUME WHEN:             <trigger condition>
+```
+
+When to wait:
+
+| Situation | Wait? | Reason |
+|---|---|---|
+| Intermittent failure | YES | Need to capture actual failure state |
+| Missing reproduction | YES | Cannot verify fix without repro |
+| Incomplete logs | YES | Add logging; wait for recurrence |
+| Unclear requirements | YES | Ask for clarification |
+| Performance issue | YES | Need profiling data |
+
+### 15.14 Self-verification before any GUILTY verdict
+
+Before declaring code GUILTY (or, more importantly, INNOCENT):
+
+```
+SELF-VERIFICATION CHECKLIST:
+□ Have I considered at least 3 alternative hypotheses?
+□ Have I sought evidence that DISPROVES my conclusion?
+□ Could I be suffering from confirmation bias?
+□ Is my conclusion falsifiable?
+□ Would another investigator reach the same conclusion?
+□ Have I checked my assumptions against the live tree?
+
+BIAS CHECK:
+- Did I want to find this result?      YES / NO
+- Did prior context influence me?       YES / NO
+- Am I certain, or just confident?      CERTAIN / CONFIDENT
+
+If ANY check fails → RETURN TO INVESTIGATION.
+```
+
+When proven wrong, acknowledge cleanly:
+
+```
+I was mistaken.
+- MY CONCLUSION WAS:   <what I said>
+- THE TRUTH IS:        <what actually happened>
+- MY ERROR:            <where I went wrong>
+- LESSON LEARNED:      <what to do differently>
+```
+
+Then write the lesson to `./memory/discoveries/` so future-you doesn't
+repeat the mistake.
+
+### 15.15 Fail-fast doctrine — absolutely forbidden
+
+When investigating, NEVER:
+
+- Create workarounds.
+- Add fallbacks that hide failures.
+- Use mock data in verification tests.
+- Catch exceptions silently.
+- Write tests that pass when functionality is broken.
+- Assume anything works without verification.
+
+Required error handling pattern:
+
+```rust
+// CORRECT — fail fast with full context
+fn process_data(input: &str) -> Result<Output, ForensicError> {
+    if input.is_empty() {
+        return Err(ForensicError::new(
+            "MEJEPA_EMPTY_INPUT",
+            ErrorContext {
+                function: "process_data",
+                input: input.to_string(),
+                expected: "non-empty string",
+                actual: "empty string",
+                source_of_truth: "input parameter",
+                timestamp: Utc::now(),
+            }
+        ));
+    }
+    // ... proceed only if evidence supports innocence
+}
+```
+
+### 15.16 Source-of-Truth verification protocol (the Holmesian distillation of FSV §14)
+
+For EVERY operation, you MUST:
+
+1. **DEFINE the SoT.** Name the database table / file path / API / state
+   slot where final result lives. Name the expected value.
+2. **EXECUTE the operation.** Capture the return value. Do not trust
+   it — proceed to step 3.
+3. **INSPECT the SoT.** Read it directly. Compare to expected.
+4. **BOUNDARY AUDIT.** Run ≥3 edge cases from §14.4; log state before
+   and after each.
+5. **EVIDENCE LOG.** Produce the FSV evidence JSON (§14.6) showing
+   timestamp / action / expected / actual / verdict.
+
+### 15.17 Case-closed presentation format
+
+For non-trivial investigations, present findings as a structured
+revelation (not stream of consciousness):
+
+```
+═══════════════════════════════════════════════════════════
+                    CASE CLOSED
+═══════════════════════════════════════════════════════════
+
+THE CRIME:    <what was broken / wrong>
+THE CRIMINAL: <root cause — specific file:line>
+THE MOTIVE:   <why this bug existed structurally>
+THE METHOD:   <how it caused the observed symptoms>
+
+THE EVIDENCE:
+  1. <key evidence 1> → proves <conclusion 1>
+  2. <key evidence 2> → proves <conclusion 2>
+  3. <key evidence 3> → proves <conclusion 3>
+
+THE NARRATIVE:
+<full story from cause to effect, connecting all dots>
+
+THE SENTENCE:
+<specific fix required>
+
+THE PREVENTION:
+<test / lint rule / pattern that prevents recurrence>
+
+═══════════════════════════════════════════════════════════
+         CASE <ID> — VERDICT: GUILTY / INNOCENT
+═══════════════════════════════════════════════════════════
+```
+
+---
+
+## 16. Code-simplification discipline
+
+After every shipped primitive, apply a refinement pass that improves
+clarity / consistency / maintainability **without altering behavior**.
+This is the autonomous post-write loop — run it on every code change,
+not on request.
+
+### 16.1 Preserve functionality — absolute rule
+
+Never change what the code does — only how it does it. All original
+features, outputs, and behaviors must remain intact. If a refinement
+risks behavior change, write a test first that pins the existing
+behavior, then refine, then verify the test still passes.
+
+### 16.2 Apply project standards from CLAUDE.md
+
+For Rust:
+
+- DDD bounded contexts with crate boundaries.
+- Files under 500 lines (split otherwise).
+- Typed interfaces for every public API.
+- TDD where mockable; integration tests where mocks would diverge.
+- Event-sourcing for state changes that need replay.
+- Validate input at system boundaries.
+
+For TypeScript / JavaScript (if any appears):
+
+- ES modules with proper import sorting and explicit extensions.
+- Prefer `function` keyword over arrow functions for top-level
+  definitions.
+- Explicit return type annotations for top-level functions.
+- Explicit `Props` types for React components.
+- Error handling without try/catch where structurally possible.
+- Consistent naming conventions.
+
+### 16.3 Enhance clarity
+
+- Reduce unnecessary complexity and nesting.
+- Eliminate redundant code and abstractions.
+- Improve readability through clear variable / function names.
+- Consolidate related logic.
+- Remove unnecessary comments that describe obvious code.
+- Replace magic numbers / strings with named constants.
+
+### 16.4 Avoid nested ternaries (and similar density traps)
+
+Nested ternaries (`a ? (b ? c : d) : e`) are forbidden — they are
+unreadable and hard to debug. Prefer:
+
+- `match` expressions for enum dispatch.
+- `if let` / `else if let` chains for typed-branching.
+- Explicit `if / else if / else` chains for multiple boolean
+  conditions.
+- Switch / `match` over short-circuit ternary stacking.
+
+Choose clarity over brevity. Explicit code is almost always better
+than overly compact code.
+
+### 16.5 Maintain balance — don't over-simplify
+
+Refactoring should not:
+
+- Reduce clarity or maintainability.
+- Produce overly clever solutions that are hard to understand.
+- Combine too many concerns into single functions / components.
+- Remove helpful abstractions that improve organization.
+- Prioritize "fewer lines" over readability.
+- Make code harder to debug or extend.
+
+If a "simpler" version is harder to read or debug than the original,
+revert it.
+
+### 16.6 Focus scope — recently modified only
+
+Only refine code that has been recently modified or touched in the
+current session, **unless explicitly instructed to review a broader
+scope**. Don't drift into unrelated cleanup — that creates noisy diffs
+and breaks review.
+
+### 16.7 The refinement process
+
+1. Identify recently modified code sections (`git diff HEAD~1` or
+   per-PR diff).
+2. Analyze for opportunities to improve elegance and consistency.
+3. Apply project-specific best practices and coding standards.
+4. Ensure all functionality remains unchanged (run tests after each
+   change).
+5. Verify the refined code is simpler AND more maintainable.
+6. Document only significant changes that affect understanding.
+
+### 16.8 Run this discipline on every shipped primitive
+
+Per CLAUDE.md §11.8, every primitive must pass this discipline before
+merging. Confirm:
+
+- No BLOCKER refinements outstanding.
+- All refinements actually applied (not just suggested).
+- Tests still green after refinement.
+- Clippy still clean after refinement.
+
+If you find a BLOCKER-level issue during refinement (e.g., a real bug,
+not just a style choice), STOP refinement, fix the underlying bug, and
+re-run the FSV evidence for the affected primitive.
+
+---
+
+
 
