@@ -1983,7 +1983,6 @@ mod mejepa_constellation_inspect_tests {
 
     #[tokio::test]
     async fn mejepa_daemon_status_writes_phase_f_fsv_artifact() {
-        let _guard = env_guard();
         let (handlers, _handler_tempdir) =
             crate::handlers::tests::create_protocol_test_handlers().await;
         let started_at_unix_ms = chrono::Utc::now().timestamp_millis();
@@ -2030,11 +2029,14 @@ mod mejepa_constellation_inspect_tests {
             && happy_structured["components"]["quota"]["status"] == "healthy"
             && happy_structured["components"]["vram"]["status"] == "disabled";
 
-        let missing_response = handlers
-            .call_mejepa_daemon_status(Some(JsonRpcId::Number(44)), json!({"includeVram": false}))
+        let empty_path_response = handlers
+            .call_mejepa_daemon_status(
+                Some(JsonRpcId::Number(44)),
+                json!({"inferDbPath": "", "includeVram": false}),
+            )
             .await;
-        assert!(missing_response.error.is_none());
-        let missing_structured = missing_response.result.unwrap()["structuredContent"].clone();
+        assert!(empty_path_response.error.is_none());
+        let empty_path_result = empty_path_response.result.unwrap();
 
         let unknown_response = handlers
             .call_mejepa_daemon_status(
@@ -2066,14 +2068,14 @@ mod mejepa_constellation_inspect_tests {
 
         let boundary_cases = vec![
             json!({
-                "case": "missing_component_sources_degrades",
-                "expected": "degraded",
-                "actual": missing_structured["overallStatus"],
-                "pass": missing_structured["overallStatus"] == "degraded"
-                    && missing_structured["components"]["subscriber"]["errorCode"]
-                        == "MEJEPA_DAEMON_STATUS_INFER_DB_MISSING"
-                    && missing_structured["components"]["heal"]["errorCode"]
-                        == "MEJEPA_DAEMON_STATUS_HEAL_DB_MISSING"
+                "case": "empty_infer_path_fails_validation",
+                "expected": "inferDbPath must be a non-empty path",
+                "actual": empty_path_result,
+                "pass": empty_path_result["isError"] == true
+                    && empty_path_result["content"][0]["text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("inferDbPath must be a non-empty path")
             }),
             json!({
                 "case": "unknown_argument_fails_schema",
