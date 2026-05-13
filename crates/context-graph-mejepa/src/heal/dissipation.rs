@@ -128,7 +128,10 @@ pub fn detect_dissipation(
     if records.len() > config.window_size {
         records.drain(0..records.len() - config.window_size);
     }
-    let signals = records.into_iter().map(|(_, signal)| signal).collect::<Vec<_>>();
+    let signals = records
+        .into_iter()
+        .map(|(_, signal)| signal)
+        .collect::<Vec<_>>();
     let mut by_head = BTreeMap::<HeadId, Vec<DissipationSignal>>::new();
     for signal in &signals {
         by_head.entry(signal.head).or_default().push(signal.clone());

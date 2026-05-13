@@ -11,23 +11,30 @@ use serde_json::json;
 
 use crate::compiler::MejepaStore;
 use crate::conformal::CalibrationExample;
-use crate::eval::RocksDbEvalStore;
+use crate::eval::{ActiveLearningKind, ProductionTelemetryWindow, RocksDbEvalStore};
 use crate::heal::calibration::continuous_calibration_if_due;
 use crate::heal::cf::{decode_value, CF_MEJEPA_DRIFT_WINDOW};
-use crate::eval::ProductionTelemetryWindow;
 use crate::heal::dissipation::{detect_dissipation, DissipationConfig};
 use crate::heal::dormancy::tick_per_head_dormancy;
-use crate::heal::drift::{DriftDetector, DriftSample, NoopDriftSurface, SeverityTable};
+use crate::heal::drift::{
+    DriftDetector, DriftSample, DriftSeverity, NoopDriftSurface, SeverityTable,
+};
+use crate::heal::drift_attribution::{classify_drift_attribution, write_operator_alert};
 use crate::heal::drift_per_cell::{
     detect_and_act_per_cell_drift, PerCellDriftConfig, PerCellIntervention,
+};
+use crate::heal::drift_surprise_weighted::surprise_weight_from_score;
+use crate::heal::emergency_eviction::{
+    classify_emergency_eviction, latest_emergency_eviction_decision,
+    persist_emergency_eviction_decision, EmergencyEvictionAction, EmergencyEvictionDecision,
 };
 use crate::heal::errors::HealError;
 use crate::heal::fisher::snapshot_per_head_fisher;
 use crate::heal::full_retrain::full_retrain_if_due;
-use crate::heal::integrity::{ChainIntegrityChecker, WitnessChainAppender};
+use crate::heal::integrity::{verify, ChainIntegrityChecker, WitnessChainAppender};
 use crate::heal::lambda_ramp::tick_lambda_ramp;
 use crate::heal::pipeline::{LinearHealPredictor, MeJepaHealConfig, SelfHealingPipeline};
-use crate::heal::policy::{persist_policy_record, timestamped_policy_key};
+use crate::heal::policy::{persist_policy_record, policy_key, timestamped_policy_key};
 use crate::heal::promote::TriggerReason;
 use crate::heal::promote_approval::{
     approved_promotions, mark_promotion_executed, queue_pending_retrain_request,
@@ -231,6 +238,28 @@ struct TestOutcomeBindingReport {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct ActiveLearningFastPathRecord {
+    task_id: String,
+    prediction_id_hex: String,
+    severity_score: f32,
+    surprise_weight: u8,
+    source_queue_cf: String,
+    recorded_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WitnessIntegrityTickRecord {
+    observation_counter: u64,
+    checked: bool,
+    reason: String,
+    entry_count: Option<u64>,
+    recorded_at_unix_ms: i64,
+    source_of_truth_cf: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TickRunRecord {
     pub ticker: String,
     pub ok: bool,
@@ -360,6 +389,53 @@ impl SchedulerState {
         self.write_status("stopped")
     }
 
+    fn maybe_verify_witness_chain_integrity(&mut self) -> Result<serde_json::Value, HealError> {
+        let report = verify(
+            &mut self.pipeline.integrity_checker,
+            &self.pipeline.witness_chain,
+            self.storage.as_ref(),
+            &self.pipeline.status,
+        )?;
+        Ok(json!({
+            "source_of_truth_path": self.config.witness_chain_path,
+            "report": report,
+        }))
+    }
+
+    fn write_drift_alert_if_needed(
+        &self,
+        severity: DriftSeverity,
+        catastrophic_cell_count: usize,
+        lora_cell_count: usize,
+        empirical_coverage: Option<f32>,
+    ) -> Result<Option<crate::heal::drift_attribution::OperatorAlert>, HealError> {
+        if severity == DriftSeverity::Healthy
+            && catastrophic_cell_count == 0
+            && lora_cell_count == 0
+        {
+            return Ok(None);
+        }
+        let coverage = empirical_coverage.unwrap_or(1.0).clamp(0.0, 1.0);
+        let tau_drift_fraction = (1.0 - coverage).clamp(0.0, 1.0);
+        let attribution = classify_drift_attribution(
+            severity == DriftSeverity::Healthy
+                && (catastrophic_cell_count > 0 || lora_cell_count > 0),
+            tau_drift_fraction,
+            0,
+            false,
+        )?;
+        let alert = write_operator_alert(
+            self.storage.as_ref(),
+            severity,
+            format!("ME-JEPA drift {:?} detected", severity),
+            format!(
+                "empirical_coverage={coverage:.6}; catastrophic_cells={catastrophic_cell_count}; lora_cells={lora_cell_count}"
+            ),
+            Some(attribution),
+        )?;
+        Ok(Some(alert))
+    }
+
     pub fn run_tick(&mut self, tick: TickName) -> Result<(), HealError> {
         let started = Instant::now();
         let result = self.dispatch_tick(tick);
@@ -425,9 +501,10 @@ impl SchedulerState {
         }
     }
 
-    fn tick_observe(&self) -> Result<TickRunRecord, HealError> {
+    fn tick_observe(&mut self) -> Result<TickRunRecord, HealError> {
         let test_outcome_bindings =
             bind_test_outcomes(&self.config.test_outcome_root, self.storage.db())?;
+        let witness_integrity = self.maybe_verify_witness_chain_integrity()?;
         let oracle_verdicts = self
             .storage
             .count_cf(context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS)?;
@@ -445,10 +522,12 @@ impl SchedulerState {
                 "live_prediction_rows": live_predictions,
                 "shift_watermark_rows": shift_watermarks,
                 "test_outcome_bindings": test_outcome_bindings,
+                "witness_integrity": witness_integrity,
                 "source_of_truth_cfs": [
                     context_graph_mejepa_cf::CF_MEJEPA_ORACLE_VERDICTS,
                     context_graph_mejepa_cf::CF_MEJEPA_LIVE_PREDICTIONS,
-                    context_graph_mejepa_cf::CF_MEJEPA_SHIFT_WATERMARK
+                    context_graph_mejepa_cf::CF_MEJEPA_SHIFT_WATERMARK,
+                    context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS
                 ],
             }),
         ))
@@ -488,42 +567,45 @@ impl SchedulerState {
             .values()
             .filter(|decision| decision.intervention == PerCellIntervention::QueueLoraRefresh)
             .count();
-        let promotion_action = if severity == crate::heal::drift::DriftSeverity::Catastrophic
-            || catastrophic_cell_count > 0
-        {
-            let coverage = detector.last_empirical_coverage.unwrap_or(0.0);
-            let promotion_id = queue_pending_retrain_request(
-                self.storage.as_ref(),
-                PendingPromotionKind::CatastrophicFullRetrainRequired {
-                    cell_key: "global_or_per_cell".to_string(),
-                    metric_value: coverage,
-                },
-                TriggerReason::DriftCatastrophic,
-                "catastrophic global/per-cell drift requires operator approval",
-            )?;
-            json!({
-                "kind": "catastrophic_promotion_approval_queued",
-                "promotion_id": promotion_id,
-                "coverage": coverage,
-                "sample_count": sample_count,
-            })
-        } else if matches!(
+        let promotion_action =
+            if severity == DriftSeverity::Catastrophic || catastrophic_cell_count > 0 {
+                let coverage = detector.last_empirical_coverage.unwrap_or(0.0);
+                let promotion_id = queue_pending_retrain_request(
+                    self.storage.as_ref(),
+                    PendingPromotionKind::CatastrophicFullRetrainRequired {
+                        cell_key: "global_or_per_cell".to_string(),
+                        metric_value: coverage,
+                    },
+                    TriggerReason::DriftCatastrophic,
+                    "catastrophic global/per-cell drift requires operator approval",
+                )?;
+                json!({
+                    "kind": "catastrophic_promotion_approval_queued",
+                    "promotion_id": promotion_id,
+                    "coverage": coverage,
+                    "sample_count": sample_count,
+                })
+            } else if matches!(severity, DriftSeverity::Soft | DriftSeverity::Hard)
+                || lora_cell_count > 0
+            {
+                let abc_report = self
+                    .pipeline
+                    .trigger_abc_for_current_drift(TriggerReason::DriftHard)?;
+                json!({
+                    "kind": "lora_refresh_and_abc_promoted",
+                    "reason": "soft_or_hard_drift",
+                    "sample_count": sample_count,
+                    "heal_report": abc_report,
+                })
+            } else {
+                json!({"kind": "none"})
+            };
+        let drift_alert = self.write_drift_alert_if_needed(
             severity,
-            crate::heal::drift::DriftSeverity::Soft | crate::heal::drift::DriftSeverity::Hard
-        ) || lora_cell_count > 0
-        {
-            let abc_report = self
-                .pipeline
-                .trigger_abc_for_current_drift(TriggerReason::DriftHard)?;
-            json!({
-                "kind": "lora_refresh_and_abc_promoted",
-                "reason": "soft_or_hard_drift",
-                "sample_count": sample_count,
-                "heal_report": abc_report,
-            })
-        } else {
-            json!({"kind": "none"})
-        };
+            catastrophic_cell_count,
+            lora_cell_count,
+            detector.last_empirical_coverage,
+        )?;
         Ok(TickRunRecord::success(
             TickName::DriftCheck,
             "drift_window_evaluated",
@@ -536,6 +618,7 @@ impl SchedulerState {
                 "lora_cell_count": lora_cell_count,
                 "catastrophic_cell_count": catastrophic_cell_count,
                 "promotion_action": promotion_action,
+                "operator_alert": drift_alert,
             }),
         ))
     }
@@ -563,13 +646,48 @@ impl SchedulerState {
                 .cmp(&right.kind.fast_track_rank())
                 .then_with(|| right.score.total_cmp(&left.score))
         });
-        let top_tasks = top_tasks
+        let selected = top_tasks.into_iter().take(10).collect::<Vec<_>>();
+        let mut fast_path_records = Vec::new();
+        for entry in &selected {
+            if let ActiveLearningKind::AgentSurprise {
+                prediction_id,
+                severity_score,
+            } = &entry.kind
+            {
+                let record = ActiveLearningFastPathRecord {
+                    task_id: entry.task_id.0.clone(),
+                    prediction_id_hex: hex::encode(prediction_id.0),
+                    severity_score: *severity_score,
+                    surprise_weight: surprise_weight_from_score(*severity_score),
+                    source_queue_cf: context_graph_mejepa_cf::CF_MEJEPA_ACTIVE_LEARNING_QUEUE
+                        .to_string(),
+                    recorded_at_unix_ms: chrono::Utc::now().timestamp_millis(),
+                };
+                let key = policy_key(&[
+                    "phase_e",
+                    "active-learning-fast-path",
+                    &format!(
+                        "{:020}-{}-{}",
+                        record.recorded_at_unix_ms, record.task_id, record.prediction_id_hex
+                    ),
+                ])?;
+                persist_policy_record(self.storage.as_ref(), &key, &record)?;
+                fast_path_records.push(record);
+            }
+        }
+        let top_tasks = selected
             .into_iter()
-            .take(10)
             .map(|entry| {
+                let surprise_weight = match &entry.kind {
+                    ActiveLearningKind::AgentSurprise { severity_score, .. } => {
+                        surprise_weight_from_score(*severity_score)
+                    }
+                    _ => 1,
+                };
                 json!({
                     "task_id": entry.task_id.0,
                     "score": entry.score,
+                    "surprise_weight": surprise_weight,
                     "reason": entry.reason,
                     "ood_score": entry.ood_score,
                     "outcome_set_len": entry.outcome_set_len,
@@ -585,6 +703,7 @@ impl SchedulerState {
                 "queued_count": queue.entries.len(),
                 "evicted_count": queue.evicted.len(),
                 "ood_escalation_count": queue.ood_escalations.len(),
+                "fast_path_records": fast_path_records,
                 "top_tasks": top_tasks,
             }),
         ))
@@ -635,7 +754,7 @@ impl SchedulerState {
             self.pipeline.ewc.fisher_matrix.rank,
             self.pipeline.ewc.fisher_matrix.step_count,
         )?;
-        let per_head_dormancy = tick_per_head_dormancy(&self.pipeline)?;
+        let per_head_dormancy = tick_per_head_dormancy(&mut self.pipeline)?;
         Ok(TickRunRecord::success(
             TickName::ContinualBackprop,
             "continual_backprop_regulation_checked",
@@ -759,30 +878,199 @@ impl SchedulerState {
         let env = context_graph_mejepa_hygiene::HygieneEnv::try_new(runtime)
             .map_err(map_hygiene_error)?;
         let before = context_graph_mejepa_hygiene::quota_status(&env).map_err(map_hygiene_error)?;
-        if before.total_used_bytes <= self.config.emergency_eviction_threshold_bytes {
+        let previous = latest_emergency_eviction_decision(self.storage.as_ref())?;
+        let initial_action = classify_emergency_eviction(
+            before.total_used_bytes,
+            None,
+            self.config.emergency_eviction_threshold_bytes,
+            previous.as_ref(),
+        )?;
+        if before.total_used_bytes < self.config.emergency_eviction_threshold_bytes
+            || initial_action == EmergencyEvictionAction::SuppressedRepeat
+        {
+            let decision = EmergencyEvictionDecision {
+                total_used_bytes_before: before.total_used_bytes,
+                total_used_bytes_after: None,
+                threshold_bytes: self.config.emergency_eviction_threshold_bytes,
+                action: initial_action,
+                recorded_at_unix_ms: chrono::Utc::now().timestamp_millis(),
+                source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS.to_string(),
+            };
+            let decision_key =
+                persist_emergency_eviction_decision(self.storage.as_ref(), &decision)?;
             return Ok(TickRunRecord::success(
                 TickName::EmergencyEviction,
-                "quota_below_emergency_threshold",
+                if decision.action == EmergencyEvictionAction::SuppressedRepeat {
+                    "emergency_quota_eviction_suppressed_repeat"
+                } else {
+                    "quota_below_emergency_threshold"
+                },
                 json!({
                     "source_of_truth_cf": context_graph_mejepa_cf::CF_MEJEPA_QUOTA_STATE,
                     "total_used_bytes": before.total_used_bytes,
                     "threshold_bytes": self.config.emergency_eviction_threshold_bytes,
                     "total_quota_bytes": before.total_quota_bytes,
+                    "decision": decision,
+                    "decision_key_hex": hex::encode(decision_key),
                 }),
             ));
         }
         let report =
             context_graph_mejepa_hygiene::quota_check_and_evict(&env).map_err(map_hygiene_error)?;
+        let final_action = classify_emergency_eviction(
+            report.before.total_used_bytes,
+            Some(report.after.total_used_bytes),
+            self.config.emergency_eviction_threshold_bytes,
+            previous.as_ref(),
+        )?;
+        let decision = EmergencyEvictionDecision {
+            total_used_bytes_before: report.before.total_used_bytes,
+            total_used_bytes_after: Some(report.after.total_used_bytes),
+            threshold_bytes: self.config.emergency_eviction_threshold_bytes,
+            action: final_action,
+            recorded_at_unix_ms: chrono::Utc::now().timestamp_millis(),
+            source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS.to_string(),
+        };
+        let decision_key = persist_emergency_eviction_decision(self.storage.as_ref(), &decision)?;
         Ok(TickRunRecord::success(
             TickName::EmergencyEviction,
-            "emergency_quota_eviction_run",
+            if decision.action == EmergencyEvictionAction::UnrecoverableAlert {
+                "emergency_quota_unrecoverable_alert"
+            } else {
+                "emergency_quota_eviction_run"
+            },
             json!({
                 "source_of_truth_cf": context_graph_mejepa_cf::CF_MEJEPA_QUOTA_STATE,
                 "before": report.before,
                 "after": report.after,
                 "evicted": report.evicted,
+                "decision": decision,
+                "decision_key_hex": hex::encode(decision_key),
             }),
         ))
+    }
+
+    fn write_drift_alert_if_needed(
+        &self,
+        severity: DriftSeverity,
+        catastrophic_cell_count: usize,
+        lora_cell_count: usize,
+        empirical_coverage: Option<f32>,
+    ) -> Result<Option<serde_json::Value>, HealError> {
+        if matches!(
+            severity,
+            DriftSeverity::WarmupNotReady | DriftSeverity::Healthy
+        ) && catastrophic_cell_count == 0
+            && lora_cell_count == 0
+        {
+            return Ok(None);
+        }
+        let latest_telemetry = latest_production_telemetry(self.storage.as_ref())?;
+        let tau_drift_fraction = latest_telemetry
+            .as_ref()
+            .map(|telemetry| (1.0 - telemetry.gtau_pass_rate).max(0.0))
+            .or_else(|| empirical_coverage.map(|coverage| (1.0 - coverage).max(0.0)))
+            .unwrap_or(0.0);
+        let last_promotion_at = self
+            .pipeline
+            .status
+            .lock()
+            .map(|status| status.last_promotion_at)
+            .unwrap_or(-1);
+        let model_age_days = if last_promotion_at > 0 {
+            ((chrono::Utc::now().timestamp() - last_promotion_at).max(0) / 86_400) as u32
+        } else {
+            0
+        };
+        let per_cell_only = matches!(
+            severity,
+            DriftSeverity::WarmupNotReady | DriftSeverity::Healthy
+        ) && (catastrophic_cell_count > 0 || lora_cell_count > 0);
+        let attribution =
+            classify_drift_attribution(per_cell_only, tau_drift_fraction, model_age_days, false)?;
+        let alert_severity =
+            if catastrophic_cell_count > 0 || severity == DriftSeverity::Catastrophic {
+                DriftSeverity::Catastrophic
+            } else if matches!(
+                severity,
+                DriftSeverity::WarmupNotReady | DriftSeverity::Healthy
+            ) {
+                DriftSeverity::Hard
+            } else {
+                severity
+            };
+        let alert = write_operator_alert(
+            self.storage.as_ref(),
+            alert_severity,
+            format!("ME-JEPA drift detected: {:?}", alert_severity),
+            format!(
+                "global={severity:?}; catastrophic_cells={catastrophic_cell_count}; lora_cells={lora_cell_count}; tau_drift_fraction={tau_drift_fraction:.6}"
+            ),
+            Some(attribution),
+        )?;
+        Ok(Some(json!(alert)))
+    }
+
+    fn maybe_verify_witness_chain_integrity(
+        &mut self,
+    ) -> Result<WitnessIntegrityTickRecord, HealError> {
+        let observation_counter = self.pipeline.status.lock().unwrap().observation_counter;
+        let recorded_at_unix_ms = chrono::Utc::now().timestamp_millis();
+        if observation_counter == 0 {
+            return Ok(WitnessIntegrityTickRecord {
+                observation_counter,
+                checked: false,
+                reason: "no_observations_seen".to_string(),
+                entry_count: None,
+                recorded_at_unix_ms,
+                source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS.to_string(),
+            });
+        }
+        if !observation_counter.is_multiple_of(self.pipeline.config.integrity_check_period) {
+            return Ok(WitnessIntegrityTickRecord {
+                observation_counter,
+                checked: false,
+                reason: "not_due".to_string(),
+                entry_count: None,
+                recorded_at_unix_ms,
+                source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS.to_string(),
+            });
+        }
+        let counter_key = observation_counter.to_string();
+        let key = policy_key(&["phase_e", "witness-integrity-check", &counter_key])?;
+        if let Some(record) =
+            load_policy_record::<WitnessIntegrityTickRecord>(self.storage.as_ref(), &key)?
+        {
+            return Ok(record);
+        }
+        let integrity = match verify(
+            &mut self.pipeline.integrity_checker,
+            &self.pipeline.witness_chain,
+            self.storage.as_ref(),
+            &self.pipeline.status,
+        ) {
+            Ok(report) => report,
+            Err(err) => {
+                let _ = write_operator_alert(
+                    self.storage.as_ref(),
+                    DriftSeverity::Catastrophic,
+                    "ME-JEPA witness-chain integrity failed",
+                    err.to_string(),
+                    None,
+                );
+                return Err(err);
+            }
+        };
+        let record = WitnessIntegrityTickRecord {
+            observation_counter,
+            checked: true,
+            reason: "verified".to_string(),
+            entry_count: Some(integrity.entry_count),
+            recorded_at_unix_ms,
+            source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS.to_string(),
+        };
+        persist_policy_record(self.storage.as_ref(), &key, &record)?;
+        Ok(record)
     }
 
     fn record_tick(&mut self, tick: TickName, record: TickRunRecord) -> Result<(), HealError> {
@@ -799,6 +1087,44 @@ impl SchedulerState {
 
     fn write_status(&self, status: &str) -> Result<(), HealError> {
         write_json_atomic_readback(&self.config.status_path, &self.snapshot(status))
+    }
+
+    fn maybe_verify_witness_chain_integrity(&mut self) -> Result<serde_json::Value, HealError> {
+        let (observation_counter, last_integrity_check_at) = {
+            let status = self.pipeline.status.lock().map_err(|_| {
+                HealError::invalid(
+                    "self_optim_scheduler.status_lock",
+                    "heal status lock poisoned while checking witness-chain integrity",
+                )
+            })?;
+            (status.observation_counter, status.last_integrity_check_at)
+        };
+        let period = self.pipeline.config.integrity_check_period;
+        let due = last_integrity_check_at < 0
+            || (observation_counter > 0 && observation_counter % period == 0);
+        if !due {
+            return Ok(json!({
+                "action": "skipped_not_due",
+                "observation_counter": observation_counter,
+                "integrity_check_period": period,
+                "last_integrity_check_at": last_integrity_check_at,
+                "chain_path": self.pipeline.witness_chain.chain_path,
+            }));
+        }
+
+        let report = verify(
+            &mut self.pipeline.integrity_checker,
+            &self.pipeline.witness_chain,
+            self.storage.as_ref(),
+            &self.pipeline.status,
+        )?;
+        Ok(json!({
+            "action": "verified",
+            "observation_counter": observation_counter,
+            "integrity_check_period": period,
+            "chain_path": self.pipeline.witness_chain.chain_path,
+            "report": report,
+        }))
     }
 }
 

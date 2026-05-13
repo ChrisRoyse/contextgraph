@@ -130,8 +130,10 @@ pub fn write_operator_alert(
 }
 
 pub fn list_operator_alerts(storage: &HealRocksStore) -> Result<Vec<OperatorAlert>, HealError> {
-    Ok(scan_policy_records::<OperatorAlert>(storage, OPERATOR_ALERT_PREFIX)?
-        .into_iter()
-        .map(|(_, alert)| alert)
-        .collect())
+    Ok(
+        scan_policy_records::<OperatorAlert>(storage, OPERATOR_ALERT_PREFIX)?
+            .into_iter()
+            .map(|(_, alert)| alert)
+            .collect(),
+    )
 }

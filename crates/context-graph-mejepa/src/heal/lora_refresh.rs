@@ -5,8 +5,8 @@ use context_graph_embeddings::training::lora::LoraConfig;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::heal::cf::{encode_heal_report_key, encode_value, CF_MEJEPA_HEAL_REPORTS};
 use crate::heal::errors::HealError;
+use crate::heal::policy::{persist_policy_record, policy_key};
 use crate::heal::store::HealRocksStore;
 
 pub const DEFAULT_LORA_RANK: usize = 32;
@@ -192,11 +192,12 @@ pub fn refresh(
         frozen_at: chrono::Utc::now().timestamp(),
         duration_ms: started.elapsed().as_millis() as u64,
     })?;
-    storage.put_cf_readback(
-        CF_MEJEPA_HEAL_REPORTS,
-        &encode_heal_report_key(report.frozen_at),
-        &encode_value(&report)?,
-    )?;
+    let key = policy_key(&[
+        "phase_e",
+        "lora-refresh-report",
+        &format!("{:020}-{}", report.frozen_at, embedder_id),
+    ])?;
+    persist_policy_record(storage.as_ref(), &key, &report)?;
     Ok(report)
 }
 

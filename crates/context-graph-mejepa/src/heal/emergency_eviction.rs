@@ -40,7 +40,10 @@ pub fn persist_emergency_eviction_decision(
     let key = policy_key(&[
         "phase_e",
         "emergency-eviction",
-        &format!("{:020}-{}", decision.recorded_at_unix_ms, decision.total_used_bytes_before),
+        &format!(
+            "{:020}-{}",
+            decision.recorded_at_unix_ms, decision.total_used_bytes_before
+        ),
     ])?;
     persist_policy_record(storage, &key, decision)?;
     Ok(key)
@@ -49,10 +52,12 @@ pub fn persist_emergency_eviction_decision(
 pub fn latest_emergency_eviction_decision(
     storage: &HealRocksStore,
 ) -> Result<Option<EmergencyEvictionDecision>, HealError> {
-    Ok(scan_policy_records::<EmergencyEvictionDecision>(storage, EMERGENCY_EVICTION_PREFIX)?
-        .into_iter()
-        .last()
-        .map(|(_, value)| value))
+    Ok(
+        scan_policy_records::<EmergencyEvictionDecision>(storage, EMERGENCY_EVICTION_PREFIX)?
+            .into_iter()
+            .last()
+            .map(|(_, value)| value),
+    )
 }
 
 pub fn classify_emergency_eviction(
@@ -77,6 +82,7 @@ pub fn classify_emergency_eviction(
                     prior.action,
                     EmergencyEvictionAction::EvictionRun
                         | EmergencyEvictionAction::ThresholdReached
+                        | EmergencyEvictionAction::SuppressedRepeat
                         | EmergencyEvictionAction::UnrecoverableAlert
                 )
         })

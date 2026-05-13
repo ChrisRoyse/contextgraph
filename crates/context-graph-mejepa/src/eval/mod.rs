@@ -26,6 +26,5 @@ pub use telemetry::{LatencyTelemetry, ProductionTelemetryWindow};
 pub use types::{
     cell_key, language_slug, ActiveLearningSummary, AuxHeadDistillationSummary,
     ConformalHealthEntry, EvalConfig, EvalObservation, EvalProvenance, EvalReport, HoldoutPanel,
-    MutationCategory,
-    OpenResearchQuestionStatus, RegressionCheck, StateTransferDiagnostic,
+    MutationCategory, OpenResearchQuestionStatus, RegressionCheck, StateTransferDiagnostic,
 };

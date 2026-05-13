@@ -1,6 +1,6 @@
+use rocksdb::IteratorMode;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use rocksdb::IteratorMode;
 
 use crate::heal::cf::{decode_value, encode_value, CF_MEJEPA_MODEL_PROMOTIONS};
 use crate::heal::errors::HealError;
@@ -51,7 +51,10 @@ where
         .ok_or_else(|| {
             HealError::invalid(
                 "phase_e.policy_readback",
-                format!("missing CF_MEJEPA_MODEL_PROMOTIONS row {}", hex::encode(key)),
+                format!(
+                    "missing CF_MEJEPA_MODEL_PROMOTIONS row {}",
+                    hex::encode(key)
+                ),
             )
         })?;
     if readback != bytes {
@@ -77,10 +80,7 @@ where
     Ok(())
 }
 
-pub fn load_policy_record<T>(
-    storage: &HealRocksStore,
-    key: &[u8],
-) -> Result<Option<T>, HealError>
+pub fn load_policy_record<T>(storage: &HealRocksStore, key: &[u8]) -> Result<Option<T>, HealError>
 where
     T: DeserializeOwned,
 {
@@ -104,14 +104,12 @@ where
         ));
     }
     let db = storage.db();
-    let cf = db
-        .cf_handle(CF_MEJEPA_MODEL_PROMOTIONS)
-        .ok_or_else(|| {
-            HealError::invalid(
-                "phase_e.policy_cf",
-                format!("missing {CF_MEJEPA_MODEL_PROMOTIONS}"),
-            )
-        })?;
+    let cf = db.cf_handle(CF_MEJEPA_MODEL_PROMOTIONS).ok_or_else(|| {
+        HealError::invalid(
+            "phase_e.policy_cf",
+            format!("missing {CF_MEJEPA_MODEL_PROMOTIONS}"),
+        )
+    })?;
     let mut out = Vec::new();
     for item in db.iterator_cf(cf, IteratorMode::Start) {
         let (key, value) = item?;
@@ -134,14 +132,12 @@ pub fn delete_policy_record_readback(
         ));
     }
     let db = storage.db();
-    let cf = db
-        .cf_handle(CF_MEJEPA_MODEL_PROMOTIONS)
-        .ok_or_else(|| {
-            HealError::invalid(
-                "phase_e.policy_cf",
-                format!("missing {CF_MEJEPA_MODEL_PROMOTIONS}"),
-            )
-        })?;
+    let cf = db.cf_handle(CF_MEJEPA_MODEL_PROMOTIONS).ok_or_else(|| {
+        HealError::invalid(
+            "phase_e.policy_cf",
+            format!("missing {CF_MEJEPA_MODEL_PROMOTIONS}"),
+        )
+    })?;
     let mut opts = rocksdb::WriteOptions::default();
     opts.set_sync(true);
     db.delete_cf_opt(cf, key, &opts)?;

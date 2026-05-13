@@ -14,6 +14,10 @@ use crate::heal::integrity::WitnessChainAppender;
 use crate::heal::store::HealRocksStore;
 use crate::types::OracleOutcome;
 
+const MODE_A_INFERENCE_LATENCY_MULTIPLIER: f32 = 1.0;
+const MODE_B_INFERENCE_LATENCY_MULTIPLIER: f32 = 1.05;
+const MODE_C_INFERENCE_LATENCY_MULTIPLIER: f32 = 1.15;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TriggerReason {
@@ -611,8 +615,10 @@ fn choose_winner(
     theta_a: [u8; 32],
     mode_b_weights: &[f32],
 ) -> Result<(ModeWinner, [u8; 32], Vec<u8>, HoldoutEval), HealError> {
+    let mode_a_score = phase_e_promotion_score(mode_a, MODE_A_INFERENCE_LATENCY_MULTIPLIER)?;
     let mut candidates = Vec::new();
-    if gate.passes(mode_b) {
+    let mode_b_score = phase_e_promotion_score(mode_b, MODE_B_INFERENCE_LATENCY_MULTIPLIER)?;
+    if gate.passes(mode_b) && mode_b_score > mode_a_score {
         candidates.push((
             ModeWinner::B,
             theta_b,
@@ -620,7 +626,8 @@ fn choose_winner(
             mode_b.clone(),
         ));
     }
-    if gate.passes(mode_c) && mode_c.oracle_agreement > mode_a.oracle_agreement {
+    let mode_c_score = phase_e_promotion_score(mode_c, MODE_C_INFERENCE_LATENCY_MULTIPLIER)?;
+    if gate.passes(mode_c) && mode_c_score > mode_a_score {
         let mut blob = Vec::new();
         blob.extend_from_slice(&theta_a);
         blob.extend_from_slice(&theta_b);
@@ -629,10 +636,36 @@ fn choose_winner(
     }
     candidates
         .into_iter()
-        .max_by(|a, b| a.3.oracle_agreement.total_cmp(&b.3.oracle_agreement))
+        .max_by(|a, b| {
+            let a_score = phase_e_promotion_score(&a.3, latency_for_winner(a.0))
+                .expect("validated candidate latency");
+            let b_score = phase_e_promotion_score(&b.3, latency_for_winner(b.0))
+                .expect("validated candidate latency");
+            a_score.total_cmp(&b_score)
+        })
         .ok_or_else(|| {
             HealError::holdout_regression(mode_a.clone(), mode_b.clone(), mode_c.clone())
         })
+}
+
+fn phase_e_promotion_score(eval: &HoldoutEval, latency_multiplier: f32) -> Result<f32, HealError> {
+    if !latency_multiplier.is_finite() || latency_multiplier <= 0.0 {
+        return Err(HealError::invalid(
+            "promotion.latency_multiplier",
+            "latency multiplier must be positive and finite",
+        ));
+    }
+    Ok(eval.oracle_agreement - 0.05 * latency_multiplier)
+}
+
+fn latency_for_winner(winner: ModeWinner) -> f32 {
+    match winner {
+        ModeWinner::A | ModeWinner::AUnchangedNoFloorClearance | ModeWinner::AUnchangedNoWinner => {
+            MODE_A_INFERENCE_LATENCY_MULTIPLIER
+        }
+        ModeWinner::B => MODE_B_INFERENCE_LATENCY_MULTIPLIER,
+        ModeWinner::C => MODE_C_INFERENCE_LATENCY_MULTIPLIER,
+    }
 }
 
 fn evaluate_holdout(

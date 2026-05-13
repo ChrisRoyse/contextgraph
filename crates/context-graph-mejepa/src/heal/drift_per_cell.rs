@@ -43,6 +43,7 @@ pub struct PerCellDriftObservation {
     pub witness_chain_offset: u64,
     pub observed_at_unix_ms: i64,
     pub source: String,
+    pub sample_hash: [u8; 32],
 }
 
 impl PerCellDriftObservation {
@@ -67,6 +68,14 @@ impl PerCellDriftObservation {
                 "source must be non-empty",
             ));
         }
+        let sample_hash = observation_sample_hash(
+            cell,
+            covered,
+            surprise_weight,
+            witness_chain_offset,
+            observed_at_unix_ms,
+            &source,
+        );
         Ok(Self {
             cell,
             covered,
@@ -74,6 +83,7 @@ impl PerCellDriftObservation {
             witness_chain_offset,
             observed_at_unix_ms,
             source,
+            sample_hash,
         })
     }
 }
@@ -187,7 +197,8 @@ pub fn detect_and_act_per_cell_drift(
         match cell.intervention {
             PerCellIntervention::NoChange => {}
             PerCellIntervention::QueueLoraRefresh => {
-                let corpus = corpus_slice_for_cell(&cell.cell_key, cell.weighted_trials)?;
+                let corpus =
+                    corpus_slice_for_cell(storage.as_ref(), &cell.cell_key, cell.weighted_trials)?;
                 let lora_report = refresh(lora_refresher, 7, &corpus, storage.clone())?;
                 report.lora_refresh_reports.push(lora_report);
             }
@@ -361,7 +372,8 @@ fn latest_observations(
     storage: &HealRocksStore,
     max_window_observations: usize,
 ) -> Result<Vec<PerCellDriftObservation>, HealError> {
-    let mut records = scan_policy_records::<PerCellDriftObservation>(storage, CELL_OBSERVATION_PREFIX)?;
+    let mut records =
+        scan_policy_records::<PerCellDriftObservation>(storage, CELL_OBSERVATION_PREFIX)?;
     if records.len() > max_window_observations {
         records.drain(0..records.len() - max_window_observations);
     }
@@ -372,10 +384,7 @@ fn latest_eval_report(db: &DB) -> Result<Option<EvalReport>, HealError> {
     let cf = db
         .cf_handle(context_graph_mejepa_cf::CF_MEJEPA_EVAL_REPORTS)
         .ok_or_else(|| {
-            HealError::invalid(
-                "per_cell_drift.eval_cf",
-                "missing CF_MEJEPA_EVAL_REPORTS",
-            )
+            HealError::invalid("per_cell_drift.eval_cf", "missing CF_MEJEPA_EVAL_REPORTS")
         })?;
     let mut iter = db.iterator_cf(cf, IteratorMode::End);
     let Some(item) = iter.next() else {
@@ -396,8 +405,15 @@ fn correlation_to_unit(value: f32) -> f32 {
     value.clamp(0.0, 1.0)
 }
 
-fn persist_per_cell_report(storage: &HealRocksStore, report: &PerCellDriftReport) -> Result<(), HealError> {
-    let key = report_key(CELL_REPORT_PREFIX, report.generated_at_unix_ms, &report.cells)?;
+fn persist_per_cell_report(
+    storage: &HealRocksStore,
+    report: &PerCellDriftReport,
+) -> Result<(), HealError> {
+    let key = report_key(
+        CELL_REPORT_PREFIX,
+        report.generated_at_unix_ms,
+        &report.cells,
+    )?;
     persist_policy_record(storage, &key, report)
 }
 
@@ -430,17 +446,45 @@ fn report_key<T: Serialize>(prefix: &[u8], ts: i64, value: &T) -> Result<Vec<u8>
     .into_bytes())
 }
 
-fn corpus_slice_for_cell(cell_key: &str, weighted_trials: u64) -> Result<CorpusSlice, HealError> {
-    let mut hashes = Vec::new();
-    for idx in 0..weighted_trials.max(1).min(128) {
-        let mut hasher = Sha256::new();
-        hasher.update(cell_key.as_bytes());
-        hasher.update(idx.to_be_bytes());
-        hashes.push(hasher.finalize().into());
+fn observation_sample_hash(
+    cell: DriftCell,
+    covered: bool,
+    surprise_weight: u8,
+    witness_chain_offset: u64,
+    observed_at_unix_ms: i64,
+    source: &str,
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(cell.key().as_bytes());
+    hasher.update([covered as u8]);
+    hasher.update([surprise_weight]);
+    hasher.update(witness_chain_offset.to_be_bytes());
+    hasher.update(observed_at_unix_ms.to_be_bytes());
+    hasher.update(source.as_bytes());
+    hasher.finalize().into()
+}
+
+fn corpus_slice_for_cell(
+    storage: &HealRocksStore,
+    cell_key: &str,
+    weighted_trials: u64,
+) -> Result<CorpusSlice, HealError> {
+    let mut observations = latest_observations(storage, weighted_trials.max(1).min(128) as usize)?;
+    observations.retain(|observation| observation.cell.key() == cell_key);
+    if observations.is_empty() {
+        return Err(HealError::invalid(
+            "per_cell_drift.corpus_slice",
+            format!("no persisted observations found for cell {cell_key}"),
+        ));
     }
+    let hashes = observations
+        .into_iter()
+        .rev()
+        .map(|observation| observation.sample_hash)
+        .collect::<Vec<_>>();
     CorpusSlice::try_new(
         hashes,
-        format!("per-cell-drift-replay-buffer::{cell_key}::{weighted_trials}"),
+        format!("per-cell-drift-observations::{cell_key}::{weighted_trials}"),
     )
 }
 
@@ -490,8 +534,8 @@ mod tests {
             )
             .unwrap();
         }
-        let report = build_per_cell_drift_report(storage.as_ref(), &PerCellDriftConfig::default())
-            .unwrap();
+        let report =
+            build_per_cell_drift_report(storage.as_ref(), &PerCellDriftConfig::default()).unwrap();
         let cell_report = report.cells.get(&cell.key()).unwrap();
         assert_eq!(cell_report.intervention, PerCellIntervention::NoChange);
     }
@@ -520,8 +564,8 @@ mod tests {
             )
             .unwrap();
         }
-        let report = build_per_cell_drift_report(storage.as_ref(), &PerCellDriftConfig::default())
-            .unwrap();
+        let report =
+            build_per_cell_drift_report(storage.as_ref(), &PerCellDriftConfig::default()).unwrap();
         let cell_report = report.cells.get(&cell.key()).unwrap();
         assert_eq!(cell_report.severity, DriftSeverity::Catastrophic);
         assert_eq!(

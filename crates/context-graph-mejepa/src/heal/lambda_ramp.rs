@@ -80,9 +80,11 @@ pub fn ramp_lambda_for_head(
 }
 
 pub fn read_lambda(storage: &HealRocksStore, head: HeadId) -> Result<f32, HealError> {
-    Ok(load_policy_record::<LambdaRampState>(storage, &lambda_key(head)?)?
-        .map(|state| state.lambda)
-        .unwrap_or(default_lambda(head)))
+    Ok(
+        load_policy_record::<LambdaRampState>(storage, &lambda_key(head)?)?
+            .map(|state| state.lambda)
+            .unwrap_or(default_lambda(head)),
+    )
 }
 
 pub fn tick_lambda_ramp(storage: &HealRocksStore) -> Result<Vec<LambdaRampDecision>, HealError> {
@@ -156,13 +158,19 @@ fn head_metric(report: &EvalReport, head: HeadId) -> Option<f32> {
                 )
             }
         }
-        HeadId::Oracle => report.overall_correlation.map(|value| value.clamp(0.0, 1.0)),
-        HeadId::FailureMode => report.q2_report_correlation.map(|value| value.clamp(0.0, 1.0)),
+        HeadId::Oracle => report
+            .overall_correlation
+            .map(|value| value.clamp(0.0, 1.0)),
+        HeadId::FailureMode => report
+            .q2_report_correlation
+            .map(|value| value.clamp(0.0, 1.0)),
         HeadId::EdgeCase => report.q3_side_effect_agreement,
         HeadId::TechDebt => report.q3_side_effect_agreement,
         HeadId::Perf => metric_from_regression(report, "perf"),
         HeadId::Security => Some(report.q1_pass_rate),
-        HeadId::Accuracy => report.q2_report_correlation.map(|value| value.clamp(0.0, 1.0)),
+        HeadId::Accuracy => report
+            .q2_report_correlation
+            .map(|value| value.clamp(0.0, 1.0)),
         HeadId::Cost => metric_from_regression(report, "cost"),
         HeadId::Reasoning => report.q3_side_effect_agreement,
     }

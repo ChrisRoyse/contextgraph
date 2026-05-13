@@ -8,7 +8,7 @@ use crate::heal::policy::{persist_policy_record, timestamped_policy_key};
 use crate::types::HeadId;
 
 const ACTIVATION_THRESHOLD: f32 = 0.05;
-const DORMANT_FRACTION_THRESHOLD: f32 = 0.10;
+const DORMANT_FRACTION_THRESHOLD: f32 = 0.15;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -29,12 +29,17 @@ pub struct PerHeadDormancyReport {
     pub dormant_fraction_threshold: f32,
     pub decisions: BTreeMap<String, HeadDormancyDecision>,
     pub detected_head_count: usize,
+    pub reinitialized_units_by_head: BTreeMap<String, Vec<usize>>,
+    pub reinitialized_unit_count: usize,
 }
 
 pub fn tick_per_head_dormancy(
-    pipeline: &SelfHealingPipeline,
+    pipeline: &mut SelfHealingPipeline,
 ) -> Result<PerHeadDormancyReport, HealError> {
-    let report = detect_per_head_dormancy(pipeline)?;
+    let mut report = detect_per_head_dormancy(pipeline)?;
+    let reinitialized = reinit_dormant_units_per_head(pipeline, &report)?;
+    report.reinitialized_unit_count = reinitialized.values().map(Vec::len).sum();
+    report.reinitialized_units_by_head = reinitialized;
     let key = timestamped_policy_key("per_head_dormancy")?;
     persist_policy_record(pipeline.storage.as_ref(), &key, &report)?;
     Ok(report)
@@ -106,7 +111,7 @@ pub fn detect_per_head_dormancy(
             dormant
         };
         let dormant_fraction = dormant_units.len() as f32 / units.len() as f32;
-        let detected = sample_count > 0 && dormant_fraction >= DORMANT_FRACTION_THRESHOLD;
+        let detected = sample_count > 0 && dormant_fraction > DORMANT_FRACTION_THRESHOLD;
         decisions.insert(
             head_name.clone(),
             HeadDormancyDecision {
@@ -118,7 +123,10 @@ pub fn detect_per_head_dormancy(
             },
         );
     }
-    let detected_head_count = decisions.values().filter(|decision| decision.detected).count();
+    let detected_head_count = decisions
+        .values()
+        .filter(|decision| decision.detected)
+        .count();
     Ok(PerHeadDormancyReport {
         generated_at_unix_ms: chrono::Utc::now().timestamp_millis(),
         sample_count,
@@ -126,5 +134,46 @@ pub fn detect_per_head_dormancy(
         dormant_fraction_threshold: DORMANT_FRACTION_THRESHOLD,
         decisions,
         detected_head_count,
+        reinitialized_units_by_head: BTreeMap::new(),
+        reinitialized_unit_count: 0,
     })
+}
+
+pub fn reinit_dormant_units_per_head(
+    pipeline: &mut SelfHealingPipeline,
+    report: &PerHeadDormancyReport,
+) -> Result<BTreeMap<String, Vec<usize>>, HealError> {
+    let mut reinitialized = BTreeMap::new();
+    for decision in report
+        .decisions
+        .values()
+        .filter(|decision| decision.detected)
+    {
+        if decision.dormant_units.is_empty() {
+            continue;
+        }
+        for embedder in &mut pipeline.active_embedders {
+            for &unit in &decision.dormant_units {
+                if unit >= embedder.weights.len() {
+                    return Err(HealError::invalid(
+                        "per_head_dormancy.reinit",
+                        format!(
+                            "unit {unit} exceeds embedder {} weight length {}",
+                            embedder.embedder_id,
+                            embedder.weights.len()
+                        ),
+                    ));
+                }
+                embedder.weights[unit] =
+                    deterministic_reinit_weight(embedder.embedder_id, &decision.head, unit);
+            }
+        }
+        reinitialized.insert(decision.head.clone(), decision.dormant_units.clone());
+    }
+    Ok(reinitialized)
+}
+
+fn deterministic_reinit_weight(embedder_id: u32, head: &str, unit: usize) -> f32 {
+    let head_sum = head.bytes().map(u32::from).sum::<u32>() as f32;
+    ((embedder_id as f32 + head_sum + unit as f32 + 1.0).sin() * 0.02).clamp(-0.02, 0.02)
 }

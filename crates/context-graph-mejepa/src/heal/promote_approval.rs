@@ -2,16 +2,22 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::heal::errors::HealError;
-use crate::heal::policy::{load_policy_record, persist_policy_record, policy_key, scan_policy_records};
+use crate::heal::policy::{
+    load_policy_record, persist_policy_record, policy_key, scan_policy_records,
+};
 use crate::heal::promote::TriggerReason;
 use crate::heal::store::HealRocksStore;
 
 const PENDING_PROMOTION_PREFIX: &[u8] = b"phase_e/pending-promotion/";
+pub const CATASTROPHIC_REQUIRED_DISTINCT_APPROVALS: u8 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PendingPromotionKind {
-    CatastrophicFullRetrainRequired { cell_key: String, metric_value: f32 },
+    CatastrophicFullRetrainRequired {
+        cell_key: String,
+        metric_value: f32,
+    },
     CatastrophicAbcCandidate {
         candidate_sha_hex: String,
         eval_report_key_hex: String,
@@ -118,6 +124,7 @@ pub fn queue_pending_retrain_request(
     let reason = reason.into();
     let created_at = chrono::Utc::now().timestamp_millis();
     let promotion_id = promotion_id(&kind, trigger_reason, created_at, &reason)?;
+    let required_distinct_approvals = required_approvals_for_kind(&kind);
     let promotion = PendingPromotion {
         promotion_id: promotion_id.clone(),
         kind,
@@ -126,7 +133,7 @@ pub fn queue_pending_retrain_request(
         state: PromotionApprovalState::Pending,
         created_at_unix_ms: created_at,
         updated_at_unix_ms: created_at,
-        required_distinct_approvals: 1,
+        required_distinct_approvals,
         approvals: Vec::new(),
         rejections: Vec::new(),
     };
@@ -140,10 +147,16 @@ pub fn apply_promotion_approval(
     request: PromotionApprovalRequest,
 ) -> Result<PromotionApprovalResponse, HealError> {
     validate_operator(&request.operator_id)?;
-    if request.reason.trim().is_empty() {
+    if request.reason.trim().is_empty()
+        || request.reason.len() > 4096
+        || request
+            .reason
+            .bytes()
+            .any(|byte| byte == 0 || byte == b'\n')
+    {
         return Err(HealError::invalid(
             "promote_approval.reason",
-            "approval reason must be non-empty",
+            "approval reason must be non-empty single-line text up to 4096 bytes",
         ));
     }
     let key = promotion_key(&request.promotion_id)?;
@@ -164,7 +177,12 @@ pub fn apply_promotion_approval(
             ),
         ));
     }
-    promotion.required_distinct_approvals = if request.two_person_rule { 2 } else { 1 };
+    let requested_required = if request.two_person_rule { 2 } else { 1 };
+    let policy_required = required_approvals_for_kind(&promotion.kind);
+    promotion.required_distinct_approvals = promotion
+        .required_distinct_approvals
+        .max(policy_required)
+        .max(requested_required);
     let event = PromotionApprovalEvent {
         operator_id: request.operator_id,
         action: request.action,
@@ -220,19 +238,23 @@ pub fn apply_promotion_approval(
 }
 
 pub fn pending_promotions(storage: &HealRocksStore) -> Result<Vec<PendingPromotion>, HealError> {
-    Ok(scan_policy_records::<PendingPromotion>(storage, PENDING_PROMOTION_PREFIX)?
-        .into_iter()
-        .map(|(_, value)| value)
-        .filter(|value| value.state == PromotionApprovalState::Pending)
-        .collect())
+    Ok(
+        scan_policy_records::<PendingPromotion>(storage, PENDING_PROMOTION_PREFIX)?
+            .into_iter()
+            .map(|(_, value)| value)
+            .filter(|value| value.state == PromotionApprovalState::Pending)
+            .collect(),
+    )
 }
 
 pub fn approved_promotions(storage: &HealRocksStore) -> Result<Vec<PendingPromotion>, HealError> {
-    Ok(scan_policy_records::<PendingPromotion>(storage, PENDING_PROMOTION_PREFIX)?
-        .into_iter()
-        .map(|(_, value)| value)
-        .filter(|value| value.state == PromotionApprovalState::Approved)
-        .collect())
+    Ok(
+        scan_policy_records::<PendingPromotion>(storage, PENDING_PROMOTION_PREFIX)?
+            .into_iter()
+            .map(|(_, value)| value)
+            .filter(|value| value.state == PromotionApprovalState::Approved)
+            .collect(),
+    )
 }
 
 pub fn mark_promotion_executed(
@@ -249,7 +271,10 @@ pub fn mark_promotion_executed(
     if promotion.state != PromotionApprovalState::Approved {
         return Err(HealError::invalid(
             "promote_approval.state",
-            format!("promotion {promotion_id} is {:?}, not approved", promotion.state),
+            format!(
+                "promotion {promotion_id} is {:?}, not approved",
+                promotion.state
+            ),
         ));
     }
     promotion.state = PromotionApprovalState::Executed;
@@ -283,6 +308,15 @@ fn distinct_approvals(promotion: &PendingPromotion) -> usize {
 
 fn promotion_key(promotion_id: &str) -> Result<Vec<u8>, HealError> {
     policy_key(&["phase_e", "pending-promotion", promotion_id])
+}
+
+fn required_approvals_for_kind(kind: &PendingPromotionKind) -> u8 {
+    match kind {
+        PendingPromotionKind::CatastrophicFullRetrainRequired { .. }
+        | PendingPromotionKind::CatastrophicAbcCandidate { .. } => {
+            CATASTROPHIC_REQUIRED_DISTINCT_APPROVALS
+        }
+    }
 }
 
 fn validate_operator(operator_id: &str) -> Result<(), HealError> {
@@ -343,6 +377,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(first.state_after, PromotionApprovalState::Pending);
+        assert_eq!(
+            first.required_distinct_approvals,
+            CATASTROPHIC_REQUIRED_DISTINCT_APPROVALS
+        );
         let duplicate = apply_promotion_approval(
             storage.as_ref(),
             PromotionApprovalRequest {
@@ -355,5 +393,50 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(duplicate.code(), "MEJEPA_HEAL_INVALID_STATE");
+    }
+
+    #[test]
+    fn catastrophic_policy_cannot_be_downgraded_to_one_person() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = HealRocksStore::open(temp.path().join("db")).unwrap();
+        let promotion_id = queue_pending_retrain_request(
+            storage.as_ref(),
+            PendingPromotionKind::CatastrophicFullRetrainRequired {
+                cell_key: "global_or_per_cell".to_string(),
+                metric_value: 0.75,
+            },
+            TriggerReason::DriftCatastrophic,
+            "catastrophic drift",
+        )
+        .unwrap();
+        let first = apply_promotion_approval(
+            storage.as_ref(),
+            PromotionApprovalRequest {
+                promotion_id: promotion_id.clone(),
+                operator_id: "operator-a".to_string(),
+                action: PromotionApprovalAction::Approve,
+                reason: "reviewed catastrophic eval".to_string(),
+                two_person_rule: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(first.state_after, PromotionApprovalState::Pending);
+        assert_eq!(
+            first.required_distinct_approvals,
+            CATASTROPHIC_REQUIRED_DISTINCT_APPROVALS
+        );
+        let second = apply_promotion_approval(
+            storage.as_ref(),
+            PromotionApprovalRequest {
+                promotion_id,
+                operator_id: "operator-b".to_string(),
+                action: PromotionApprovalAction::Approve,
+                reason: "second operator approval".to_string(),
+                two_person_rule: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(second.state_after, PromotionApprovalState::Approved);
+        assert_eq!(second.distinct_approval_count, 2);
     }
 }

@@ -39,7 +39,10 @@ pub struct CellPromotionDelta {
     pub holds_or_improves: bool,
 }
 
-pub fn score_holdout(eval: &HoldoutEval, latency_multiplier: f32) -> Result<PromotionScore, HealError> {
+pub fn score_holdout(
+    eval: &HoldoutEval,
+    latency_multiplier: f32,
+) -> Result<PromotionScore, HealError> {
     if !latency_multiplier.is_finite() || latency_multiplier <= 0.0 {
         return Err(HealError::invalid(
             "promotion.latency_multiplier",

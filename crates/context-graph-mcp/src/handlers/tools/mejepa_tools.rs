@@ -124,11 +124,18 @@ struct PromoteApprovalRequest {
     db_path: Option<PathBuf>,
     promotion_id: String,
     operator_id: String,
-    approve: bool,
+    action: PromotionApprovalAction,
+    operator_reason: String,
+    #[serde(default = "default_two_person_rule")]
+    two_person_rule: bool,
 }
 
 fn default_limit() -> u32 {
     10
+}
+
+fn default_two_person_rule() -> bool {
+    true
 }
 
 impl Handlers {
@@ -627,7 +634,9 @@ impl Handlers {
             &db_path,
             &request.promotion_id,
             &request.operator_id,
-            request.approve,
+            request.action,
+            &request.operator_reason,
+            request.two_person_rule,
         ) {
             Ok(value) => self.tool_result(id, value),
             Err(err) => {
@@ -738,7 +747,9 @@ fn run_promote_approval(
     db_path: &std::path::Path,
     promotion_id: &str,
     operator_id: &str,
-    approve: bool,
+    action: PromotionApprovalAction,
+    operator_reason: &str,
+    two_person_rule: bool,
 ) -> Result<serde_json::Value, Box<context_graph_mejepa::heal::HealError>> {
     let store = HealRocksStore::open(db_path)?;
     let response = apply_promotion_approval(
@@ -746,13 +757,9 @@ fn run_promote_approval(
         HealPromotionApprovalRequest {
             promotion_id: promotion_id.to_string(),
             operator_id: operator_id.to_string(),
-            action: if approve {
-                PromotionApprovalAction::Approve
-            } else {
-                PromotionApprovalAction::Reject
-            },
-            reason: "operator MCP approval".to_string(),
-            two_person_rule: false,
+            action,
+            reason: operator_reason.to_string(),
+            two_person_rule,
         },
     )?;
     Ok(json!({

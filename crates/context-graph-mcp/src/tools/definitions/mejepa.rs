@@ -246,7 +246,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
             json!({
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["promotionId", "operatorId", "approve"],
+                "required": ["promotionId", "operatorId", "action", "operatorReason"],
                 "properties": {
                     "dbPath": {
                         "type": "string",
@@ -262,8 +262,20 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "minLength": 1,
                         "maxLength": 128
                     },
-                    "approve": {
-                        "type": "boolean"
+                    "action": {
+                        "type": "string",
+                        "enum": ["approve", "reject"]
+                    },
+                    "operatorReason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096,
+                        "description": "Single-line operator rationale persisted with the approval/rejection event."
+                    },
+                    "twoPersonRule": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Defaults to true; catastrophic promotions require two distinct operator approvals unless an existing queued record already requires more."
                     }
                 }
             }),

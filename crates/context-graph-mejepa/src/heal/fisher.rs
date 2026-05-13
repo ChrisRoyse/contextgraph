@@ -70,10 +70,12 @@ pub fn persist_per_head_fisher_snapshot(
 pub fn list_per_head_fisher_snapshots(
     storage: &HealRocksStore,
 ) -> Result<Vec<PerHeadFisherSnapshot>, HealError> {
-    Ok(scan_policy_records::<PerHeadFisherSnapshot>(storage, HEAD_FISHER_PREFIX)?
-        .into_iter()
-        .map(|(_, value)| value)
-        .collect())
+    Ok(
+        scan_policy_records::<PerHeadFisherSnapshot>(storage, HEAD_FISHER_PREFIX)?
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect(),
+    )
 }
 
 pub fn snapshot_per_head_fisher(
