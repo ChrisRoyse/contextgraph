@@ -8,12 +8,13 @@ use std::time::{Duration, Instant};
 use rocksdb::{WriteOptions, DB};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 use crate::compiler::MejepaStore;
 use crate::conformal::CalibrationExample;
 use crate::eval::{ActiveLearningKind, ProductionTelemetryWindow, RocksDbEvalStore};
 use crate::heal::calibration::continuous_calibration_if_due;
-use crate::heal::cf::{decode_value, CF_MEJEPA_DRIFT_WINDOW};
+use crate::heal::cf::{decode_value, encode_value, CF_MEJEPA_DRIFT_WINDOW};
 use crate::heal::dissipation::{detect_dissipation, DissipationConfig};
 use crate::heal::dormancy::tick_per_head_dormancy;
 use crate::heal::drift::{
@@ -35,11 +36,13 @@ use crate::heal::integrity::{
     complete_witness_quarantine_repair, verify, ChainIntegrityChecker, WitnessChainAppender,
 };
 use crate::heal::lambda_ramp::tick_lambda_ramp;
-use crate::heal::pipeline::{LinearHealPredictor, MeJepaHealConfig, SelfHealingPipeline};
+use crate::heal::pipeline::{
+    LinearHealPredictor, MeJepaHealConfig, SelfHealingPipeline, StatusChange,
+};
 use crate::heal::policy::{
     load_policy_record, persist_policy_record, policy_key, timestamped_policy_key,
 };
-use crate::heal::promote::TriggerReason;
+use crate::heal::promote::{HealReport, HoldoutEval, ModeWinner, TriggerReason};
 use crate::heal::promote_approval::{
     approved_promotions, mark_promotion_executed, queue_pending_retrain_request,
     PendingPromotionKind,
@@ -56,7 +59,14 @@ pub const DEFAULT_PROMOTE_PERIOD: Duration = Duration::from_secs(3600);
 pub const DEFAULT_CONTINUAL_BACKPROP_PERIOD: Duration = Duration::from_secs(1800);
 pub const DEFAULT_CONSTELLATION_PERIOD: Duration = Duration::from_secs(3600);
 pub const DEFAULT_EMERGENCY_EVICTION_PERIOD: Duration = Duration::from_secs(600);
+pub const DEFAULT_TELEMETRY_FEEDBACK_PERIOD: Duration = Duration::from_secs(900);
 pub const DEFAULT_EMERGENCY_EVICTION_THRESHOLD_BYTES: u64 = 110 * 1024 * 1024 * 1024;
+
+const TELEMETRY_CONFORMAL_TARGET_COVERAGE: f32 = 0.90;
+const TELEMETRY_CONFORMAL_COVERAGE_MIN: f32 = 0.88;
+const TELEMETRY_CONFORMAL_COVERAGE_MAX: f32 = 0.92;
+const TELEMETRY_CONFORMAL_ECE_MAX: f32 = 0.02;
+const TELEMETRY_ORACLE_AGREEMENT_MIN: f32 = 0.95;
 
 #[derive(Debug, Clone)]
 pub struct SelfOptimConfig {
@@ -67,6 +77,7 @@ pub struct SelfOptimConfig {
     pub continual_backprop_period: Duration,
     pub constellation_period: Duration,
     pub emergency_eviction_period: Duration,
+    pub telemetry_feedback_period: Duration,
     pub status_path: PathBuf,
     pub hygiene_archive_root: PathBuf,
     pub witness_chain_path: PathBuf,
@@ -84,6 +95,7 @@ impl Default for SelfOptimConfig {
             continual_backprop_period: DEFAULT_CONTINUAL_BACKPROP_PERIOD,
             constellation_period: DEFAULT_CONSTELLATION_PERIOD,
             emergency_eviction_period: DEFAULT_EMERGENCY_EVICTION_PERIOD,
+            telemetry_feedback_period: DEFAULT_TELEMETRY_FEEDBACK_PERIOD,
             status_path: PathBuf::from(
                 "/mnt/d/contextgraph/state/schedulers/self_optimization_status.json",
             ),
@@ -106,6 +118,7 @@ impl SelfOptimConfig {
         self.continual_backprop_period = period;
         self.constellation_period = period;
         self.emergency_eviction_period = period;
+        self.telemetry_feedback_period = period;
         self
     }
 
@@ -118,6 +131,7 @@ impl SelfOptimConfig {
             ("continual_backprop_period", self.continual_backprop_period),
             ("constellation_period", self.constellation_period),
             ("emergency_eviction_period", self.emergency_eviction_period),
+            ("telemetry_feedback_period", self.telemetry_feedback_period),
         ] {
             if value.is_zero() {
                 return Err(HealError::invalid(
@@ -168,6 +182,7 @@ impl SelfOptimConfig {
             TickName::ContinualBackprop => self.continual_backprop_period,
             TickName::ConstellationFreshness => self.constellation_period,
             TickName::EmergencyEviction => self.emergency_eviction_period,
+            TickName::TelemetryFeedback => self.telemetry_feedback_period,
         }
     }
 }
@@ -182,10 +197,11 @@ pub enum TickName {
     ContinualBackprop,
     ConstellationFreshness,
     EmergencyEviction,
+    TelemetryFeedback,
 }
 
 impl TickName {
-    pub fn all() -> [Self; 7] {
+    pub fn all() -> [Self; 8] {
         [
             Self::Observe,
             Self::DriftCheck,
@@ -194,6 +210,7 @@ impl TickName {
             Self::ContinualBackprop,
             Self::ConstellationFreshness,
             Self::EmergencyEviction,
+            Self::TelemetryFeedback,
         ]
     }
 
@@ -206,8 +223,50 @@ impl TickName {
             Self::ContinualBackprop => "continual_backprop",
             Self::ConstellationFreshness => "constellation_freshness",
             Self::EmergencyEviction => "emergency_eviction",
+            Self::TelemetryFeedback => "telemetry_feedback",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TelemetryFeedbackActionKind {
+    QueueRecalibration,
+    QueueFullRetrainCandidate,
+}
+
+impl TelemetryFeedbackActionKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::QueueRecalibration => "queue_recalibration",
+            Self::QueueFullRetrainCandidate => "queue_full_retrain_candidate",
+        }
+    }
+
+    fn trigger_reason(self) -> TriggerReason {
+        match self {
+            Self::QueueRecalibration => TriggerReason::TelemetryConformalRecalibration,
+            Self::QueueFullRetrainCandidate => TriggerReason::TelemetryFullRetrainCandidate,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TelemetryFeedbackAction {
+    pub kind: TelemetryFeedbackActionKind,
+    pub window_id: String,
+    pub captured_at_unix_ms: i64,
+    pub reason: String,
+    pub metric_name: String,
+    pub metric_value: f32,
+    pub threshold_min: Option<f32>,
+    pub threshold_max: Option<f32>,
+    pub source_of_truth_cf: String,
+    pub heal_report_key_hex: String,
+    pub pending_promotion_id: Option<String>,
+    pub already_queued: bool,
+    pub recorded_at_unix_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -478,6 +537,7 @@ impl SchedulerState {
             TickName::ContinualBackprop => self.tick_continual_backprop(),
             TickName::ConstellationFreshness => self.tick_constellation_freshness(),
             TickName::EmergencyEviction => self.tick_emergency_eviction(),
+            TickName::TelemetryFeedback => self.tick_telemetry_feedback(),
         }
     }
 
@@ -948,6 +1008,62 @@ impl SchedulerState {
         ))
     }
 
+    fn tick_telemetry_feedback(&self) -> Result<TickRunRecord, HealError> {
+        let Some(telemetry) = latest_production_telemetry(self.storage.as_ref())? else {
+            return Ok(TickRunRecord::success(
+                TickName::TelemetryFeedback,
+                "production_telemetry_absent",
+                json!({
+                    "source_of_truth_cf": context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY,
+                    "queued_action_count": 0,
+                    "actions": [],
+                }),
+            ));
+        };
+        let heal_report_count_before = self
+            .storage
+            .count_cf(context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS)?;
+        let mut actions = Vec::new();
+        for action in classify_telemetry_feedback_actions(&telemetry)? {
+            actions.push(persist_telemetry_feedback_action(
+                self.storage.as_ref(),
+                &telemetry,
+                action,
+            )?);
+        }
+        let heal_report_count_after = self
+            .storage
+            .count_cf(context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS)?;
+        let action_name = if actions.is_empty() {
+            "telemetry_feedback_within_thresholds"
+        } else {
+            "telemetry_feedback_actions_queued"
+        };
+        Ok(TickRunRecord::success(
+            TickName::TelemetryFeedback,
+            action_name,
+            json!({
+                "source_of_truth_cfs": [
+                    context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY,
+                    context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS,
+                    context_graph_mejepa_cf::CF_MEJEPA_MODEL_PROMOTIONS
+                ],
+                "latest_production_telemetry": telemetry,
+                "coverage_gate": {
+                    "target": TELEMETRY_CONFORMAL_TARGET_COVERAGE,
+                    "min": TELEMETRY_CONFORMAL_COVERAGE_MIN,
+                    "max": TELEMETRY_CONFORMAL_COVERAGE_MAX,
+                    "ece_max": TELEMETRY_CONFORMAL_ECE_MAX
+                },
+                "prediction_oracle_agreement_min": TELEMETRY_ORACLE_AGREEMENT_MIN,
+                "heal_report_count_before": heal_report_count_before,
+                "heal_report_count_after": heal_report_count_after,
+                "queued_action_count": actions.iter().filter(|action| !action.already_queued).count(),
+                "actions": actions,
+            }),
+        ))
+    }
+
     fn write_drift_alert_if_needed(
         &self,
         severity: DriftSeverity,
@@ -1318,6 +1434,176 @@ fn put_oracle_binding_readback(
         ));
     }
     Ok(())
+}
+
+fn classify_telemetry_feedback_actions(
+    telemetry: &ProductionTelemetryWindow,
+) -> Result<Vec<TelemetryFeedbackAction>, HealError> {
+    telemetry
+        .validate()
+        .map_err(|err| HealError::invalid("production_telemetry", err.to_string()))?;
+    let mut actions = Vec::new();
+    let recorded_at_unix_ms = chrono::Utc::now().timestamp_millis();
+    if telemetry.conformal_ece > TELEMETRY_CONFORMAL_ECE_MAX {
+        actions.push(TelemetryFeedbackAction {
+            kind: TelemetryFeedbackActionKind::QueueRecalibration,
+            window_id: telemetry.window_id.clone(),
+            captured_at_unix_ms: telemetry.captured_at_unix_ms,
+            reason: format!(
+                "conformal ECE {:.6} implies coverage outside [{:.2}, {:.2}] around target {:.2}",
+                telemetry.conformal_ece,
+                TELEMETRY_CONFORMAL_COVERAGE_MIN,
+                TELEMETRY_CONFORMAL_COVERAGE_MAX,
+                TELEMETRY_CONFORMAL_TARGET_COVERAGE
+            ),
+            metric_name: "conformal_ece".to_string(),
+            metric_value: telemetry.conformal_ece,
+            threshold_min: None,
+            threshold_max: Some(TELEMETRY_CONFORMAL_ECE_MAX),
+            source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY.to_string(),
+            heal_report_key_hex: String::new(),
+            pending_promotion_id: None,
+            already_queued: false,
+            recorded_at_unix_ms,
+        });
+    }
+    if telemetry.prediction_oracle_agreement < TELEMETRY_ORACLE_AGREEMENT_MIN {
+        actions.push(TelemetryFeedbackAction {
+            kind: TelemetryFeedbackActionKind::QueueFullRetrainCandidate,
+            window_id: telemetry.window_id.clone(),
+            captured_at_unix_ms: telemetry.captured_at_unix_ms,
+            reason: format!(
+                "prediction_oracle_agreement {:.6} is below {:.2}",
+                telemetry.prediction_oracle_agreement, TELEMETRY_ORACLE_AGREEMENT_MIN
+            ),
+            metric_name: "prediction_oracle_agreement".to_string(),
+            metric_value: telemetry.prediction_oracle_agreement,
+            threshold_min: Some(TELEMETRY_ORACLE_AGREEMENT_MIN),
+            threshold_max: None,
+            source_of_truth_cf: context_graph_mejepa_cf::CF_MEJEPA_PRODUCTION_TELEMETRY.to_string(),
+            heal_report_key_hex: String::new(),
+            pending_promotion_id: None,
+            already_queued: false,
+            recorded_at_unix_ms,
+        });
+    }
+    Ok(actions)
+}
+
+fn persist_telemetry_feedback_action(
+    storage: &HealRocksStore,
+    telemetry: &ProductionTelemetryWindow,
+    mut action: TelemetryFeedbackAction,
+) -> Result<TelemetryFeedbackAction, HealError> {
+    let report_key = telemetry_feedback_report_key(action.kind, &telemetry.window_id);
+    action.heal_report_key_hex = hex::encode(&report_key);
+    if storage
+        .get_cf(context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS, &report_key)?
+        .is_some()
+    {
+        action.already_queued = true;
+        return Ok(action);
+    }
+    if action.kind == TelemetryFeedbackActionKind::QueueFullRetrainCandidate {
+        action.pending_promotion_id = Some(queue_pending_retrain_request(
+            storage,
+            PendingPromotionKind::CatastrophicFullRetrainRequired {
+                cell_key: format!("production_telemetry::{}", telemetry.window_id),
+                metric_value: telemetry.prediction_oracle_agreement,
+            },
+            action.kind.trigger_reason(),
+            format!(
+                "production telemetry window {} fell below prediction-oracle agreement gate: {:.6} < {:.2}",
+                telemetry.window_id,
+                telemetry.prediction_oracle_agreement,
+                TELEMETRY_ORACLE_AGREEMENT_MIN
+            ),
+        )?);
+    }
+    let report = telemetry_feedback_heal_report(telemetry, &action)?;
+    let encoded = encode_value(&report)?;
+    storage.put_cf_readback(
+        context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS,
+        &report_key,
+        &encoded,
+    )?;
+    let readback = storage
+        .get_cf(context_graph_mejepa_cf::CF_MEJEPA_HEAL_REPORTS, &report_key)?
+        .ok_or_else(|| {
+            HealError::invalid(
+                "telemetry_feedback.heal_report_readback",
+                "missing heal report after write",
+            )
+        })?;
+    if readback != encoded {
+        return Err(HealError::invalid(
+            "telemetry_feedback.heal_report_readback",
+            "heal report readback bytes differ",
+        ));
+    }
+    let decoded: HealReport = decode_value(&readback)?;
+    if decoded.trigger_reason != action.kind.trigger_reason() {
+        return Err(HealError::invalid(
+            "telemetry_feedback.heal_report_readback",
+            "heal report trigger reason differs after readback",
+        ));
+    }
+    Ok(action)
+}
+
+fn telemetry_feedback_report_key(kind: TelemetryFeedbackActionKind, window_id: &str) -> Vec<u8> {
+    format!(
+        "telemetry-feedback/{}/{}",
+        kind.as_str(),
+        hex::encode(window_id.as_bytes())
+    )
+    .into_bytes()
+}
+
+fn telemetry_feedback_heal_report(
+    telemetry: &ProductionTelemetryWindow,
+    action: &TelemetryFeedbackAction,
+) -> Result<HealReport, HealError> {
+    let digest = telemetry_feedback_digest(telemetry, action)?;
+    let inferred_coverage =
+        (TELEMETRY_CONFORMAL_TARGET_COVERAGE - telemetry.conformal_ece).clamp(0.0, 1.0);
+    let ood_kl_proxy = (1.0 - telemetry.ood_auc).max(0.0);
+    let eval = HoldoutEval::try_new(
+        inferred_coverage,
+        telemetry.prediction_oracle_agreement,
+        ood_kl_proxy,
+        telemetry.sample_count,
+        digest,
+    )?;
+    Ok(HealReport {
+        mode_winner: ModeWinner::AUnchangedNoWinner,
+        mode_a_score: eval.clone(),
+        mode_b_score: eval.clone(),
+        mode_c_score: eval,
+        mode_c_weights: (1.0, 0.0),
+        weights_sha_winner: digest,
+        evaluation_summary_sha: digest,
+        witness_chain_offset: 0,
+        promotion_latency_seconds: 0,
+        status_change: match action.kind {
+            TelemetryFeedbackActionKind::QueueRecalibration => StatusChange::Degraded,
+            TelemetryFeedbackActionKind::QueueFullRetrainCandidate => StatusChange::Retraining,
+        },
+        trigger_reason: action.kind.trigger_reason(),
+    })
+}
+
+fn telemetry_feedback_digest(
+    telemetry: &ProductionTelemetryWindow,
+    action: &TelemetryFeedbackAction,
+) -> Result<[u8; 32], HealError> {
+    let mut hasher = Sha256::new();
+    hasher.update(b"telemetry-feedback-v1");
+    hasher.update(telemetry.window_id.as_bytes());
+    hasher.update(telemetry.corpus_sha.as_bytes());
+    hasher.update(telemetry.captured_at_unix_ms.to_be_bytes());
+    hasher.update(serde_json::to_vec(action)?);
+    Ok(hasher.finalize().into())
 }
 
 fn latest_production_telemetry(

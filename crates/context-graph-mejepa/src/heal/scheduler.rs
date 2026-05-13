@@ -44,6 +44,7 @@ async fn run_scheduler_loop(
     let mut continual_backprop = new_interval(state.config().continual_backprop_period);
     let mut constellation = new_interval(state.config().constellation_period);
     let mut emergency_eviction = new_interval(state.config().emergency_eviction_period);
+    let mut telemetry_feedback = new_interval(state.config().telemetry_feedback_period);
 
     loop {
         tokio::select! {
@@ -60,6 +61,7 @@ async fn run_scheduler_loop(
             _ = continual_backprop.tick() => state.run_tick(TickName::ContinualBackprop)?,
             _ = constellation.tick() => state.run_tick(TickName::ConstellationFreshness)?,
             _ = emergency_eviction.tick() => state.run_tick(TickName::EmergencyEviction)?,
+            _ = telemetry_feedback.tick() => state.run_tick(TickName::TelemetryFeedback)?,
         }
     }
 }

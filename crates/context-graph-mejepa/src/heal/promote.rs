@@ -35,6 +35,8 @@ pub enum TriggerReason {
     DriftCatastrophic,
     PeriodicFullRetrain,
     OperatorTriggered,
+    TelemetryConformalRecalibration,
+    TelemetryFullRetrainCandidate,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
