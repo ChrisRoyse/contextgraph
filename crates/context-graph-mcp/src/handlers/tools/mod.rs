@@ -43,6 +43,7 @@ mod learning_tools;
 // this sits next to helpers which consumes it).
 mod maintenance_tools;
 mod mejepa_eval_tools;
+mod mejepa_agent_identity;
 mod mejepa_hygiene_tools;
 mod mejepa_phase7_storage;
 mod mejepa_phase7_tools;

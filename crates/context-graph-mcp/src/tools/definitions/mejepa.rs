@@ -2,7 +2,7 @@
 
 use crate::tools::names as tool_names;
 use crate::tools::types::ToolDefinition;
-use serde_json::json;
+use serde_json::{json, Value};
 
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
@@ -121,7 +121,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
             json!({
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["predictionId", "agentId", "feedbackKind", "agentExplanation", "severity"],
+                "required": ["predictionId", "feedbackKind", "agentExplanation", "severity"],
                 "properties": {
                     "predictionId": {
                         "type": "string",
@@ -130,8 +130,11 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "agentId": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 256
+                        "maxLength": 256,
+                        "default": "anonymous",
+                        "description": "Configured signed agent id. Omit or set to anonymous for unauthenticated feedback."
                     },
+                    "identityAttestation": identity_attestation_schema(),
                     "feedbackKind": {
                         "type": "string",
                         "enum": ["confirmed", "surprise", "omission", "calibration"]
@@ -354,7 +357,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 256
-                    }
+                    },
+                    "identityAttestation": identity_attestation_schema()
                 }
             }),
         ),
@@ -579,4 +583,32 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
     ]
+}
+
+fn identity_attestation_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId", "nonce", "timestampUnixMs", "signatureHex"],
+        "properties": {
+            "sessionId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+            },
+            "nonce": {
+                "type": "string",
+                "minLength": 8,
+                "maxLength": 256
+            },
+            "timestampUnixMs": {
+                "type": "integer",
+                "minimum": 1
+            },
+            "signatureHex": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{64}$"
+            }
+        }
+    })
 }

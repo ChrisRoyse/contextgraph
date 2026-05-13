@@ -42,6 +42,10 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 
 use super::mejepa_phase7_storage::{subscriber_state_for_provenance, subscriber_status_for_paths};
+use super::mejepa_agent_identity::{
+    resolve_feedback_identity, resolve_operator_identity, IdentityAttestationRequest,
+    ResolvedAgentIdentity, MEJEPA_AGENT_IDENTITY_CONFIG_INVALID, MEJEPA_AGENT_IDENTITY_UNVERIFIED,
+};
 use crate::handlers::tools::helpers::ToolErrorKind;
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
@@ -107,13 +111,15 @@ struct ReplayPredictionRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecordAgentFeedbackRequest {
     prediction_id: String,
-    agent_id: String,
+    #[serde(default)]
+    agent_id: Option<String>,
     feedback_kind: FeedbackKind,
     agent_explanation: String,
     actual_outcome: Option<ActualOutcomeRequest>,
     severity: SurpriseSeverity,
     #[serde(default)]
     extra_structured_data: Value,
+    identity_attestation: Option<IdentityAttestationRequest>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -143,6 +149,7 @@ struct OperatorOverridePredictionRequest {
     override_verdict: OverrideVerdict,
     reason: String,
     operator_id: String,
+    identity_attestation: Option<IdentityAttestationRequest>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -652,13 +659,15 @@ impl Handlers {
         let result = record_agent_feedback_in_db(&db_path, request);
         match result {
             Ok(value) => self.tool_result(id, value),
-            Err(err) => self.tool_error_structured(
-                id,
-                ToolErrorKind::Storage,
-                "MEJEPA_RECORD_AGENT_FEEDBACK_FAILED",
-                &err.to_string(),
-                json!({"dbPath": db_path}),
-            ),
+            Err(err) => {
+                let message = err.to_string();
+                let (kind, code) = mejepa_write_error_classification(
+                    &message,
+                    ToolErrorKind::Storage,
+                    "MEJEPA_RECORD_AGENT_FEEDBACK_FAILED",
+                );
+                self.tool_error_structured(id, kind, code, &message, json!({"dbPath": db_path}))
+            }
         }
     }
 
@@ -891,13 +900,15 @@ impl Handlers {
         };
         match record_operator_override_in_db(&db_path, request) {
             Ok(value) => self.tool_result(id, value),
-            Err(err) => self.tool_error_structured(
-                id,
-                ToolErrorKind::Storage,
-                "MEJEPA_OPERATOR_OVERRIDE_FAILED",
-                &err.to_string(),
-                json!({"dbPath": db_path}),
-            ),
+            Err(err) => {
+                let message = err.to_string();
+                let (kind, code) = mejepa_write_error_classification(
+                    &message,
+                    ToolErrorKind::Storage,
+                    "MEJEPA_OPERATOR_OVERRIDE_FAILED",
+                );
+                self.tool_error_structured(id, kind, code, &message, json!({"dbPath": db_path}))
+            }
         }
     }
 
@@ -1657,10 +1668,16 @@ fn record_agent_feedback_in_db(
     request: RecordAgentFeedbackRequest,
 ) -> AnyhowResult<Value> {
     let prediction_id = parse_prediction_id_hex(&request.prediction_id)?;
+    let identity = resolve_feedback_identity(
+        request.agent_id.as_deref(),
+        request.identity_attestation.as_ref(),
+        tool_names::MEJEPA_RECORD_AGENT_FEEDBACK,
+        chrono::Utc::now().timestamp_millis(),
+    )?;
     if request.agent_explanation.len() > 4096 {
         bail!("agentExplanation exceeds 4096 bytes");
     }
-    let agent_id = AgentId::try_new(request.agent_id.clone())
+    let agent_id = AgentId::try_new(identity.id.clone())
         .map_err(|err| anyhow!("agentId validation failed: {err}"))?;
     let actual_outcome = request
         .actual_outcome
@@ -1745,6 +1762,7 @@ fn record_agent_feedback_in_db(
         "severity": event.severity,
         "severityScore": event.severity.severity_score(),
         "samplingWeightMultiplier": sampling_weight_multiplier,
+        "identity": identity_status_json(&identity),
         "activeLearningQueued": active_learning_queued,
         "catastrophicAlert": matches!(event.severity, SurpriseSeverity::Catastrophic),
         "queueCountBefore": queue_count_before,
@@ -1768,6 +1786,12 @@ fn record_operator_override_in_db(
     request: OperatorOverridePredictionRequest,
 ) -> AnyhowResult<Value> {
     let prediction_id = parse_prediction_id_hex(&request.prediction_id)?;
+    let identity = resolve_operator_identity(
+        &request.operator_id,
+        request.identity_attestation.as_ref(),
+        tool_names::MEJEPA_OPERATOR_OVERRIDE_PREDICTION,
+        chrono::Utc::now().timestamp_millis(),
+    )?;
     let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
     let prediction = find_prediction_by_id(db.as_ref(), prediction_id)?;
     let created_at_unix_ms = chrono::Utc::now().timestamp_millis();
@@ -1819,6 +1843,7 @@ fn record_operator_override_in_db(
         "taskId": task_id_string.clone(),
         "overrideVerdict": override_record.override_verdict,
         "operatorId": override_record.operator_id,
+        "identity": identity_status_json(&identity),
         "samplingWeightMultiplier": sampling_weight_multiplier,
         "operatorOverrideCountBefore": override_count_before,
         "operatorOverrideCountAfter": override_count_after,
@@ -1841,6 +1866,30 @@ fn record_operator_override_in_db(
             "overrideFlagForNextBatch": flags[0]
         }
     }))
+}
+
+fn identity_status_json(identity: &ResolvedAgentIdentity) -> Value {
+    json!({
+        "id": identity.id.as_str(),
+        "authenticated": identity.authenticated,
+        "configPath": identity.config_path.as_ref().map(|path| path.display().to_string()),
+        "sessionId": identity.session_id.as_deref(),
+        "nonce": identity.nonce.as_deref()
+    })
+}
+
+fn mejepa_write_error_classification<'a>(
+    message: &'a str,
+    default_kind: ToolErrorKind,
+    default_code: &'a str,
+) -> (ToolErrorKind, &'a str) {
+    if message.contains(MEJEPA_AGENT_IDENTITY_UNVERIFIED) {
+        return (ToolErrorKind::Validation, MEJEPA_AGENT_IDENTITY_UNVERIFIED);
+    }
+    if message.contains(MEJEPA_AGENT_IDENTITY_CONFIG_INVALID) {
+        return (ToolErrorKind::Validation, MEJEPA_AGENT_IDENTITY_CONFIG_INVALID);
+    }
+    (default_kind, default_code)
 }
 
 impl ActualOutcomeRequest {
