@@ -343,6 +343,10 @@ fn seed_surprise_feedback(db: &DB) {
 fn weekly_markdown_with_required_sections() -> &'static str {
     "# ME-JEPA Weekly Evaluation\n\n\
      ## Catastrophic Events\n\n- none\n\n\
+     ## Per-Failure-Mode-Class Metrics\n\n\
+     | failure_mode_class | precision | recall | f1 | tp | fp | fn | sample_count | passed | weakness |\n\
+     |---|---:|---:|---:|---:|---:|---:|---:|---|---|\n\
+     | name_error | 1.000000 | 1.000000 | 1.000000 | 0 | 0 | 0 | 4 | true | none |\n\n\
      ## Per-Cell Ship Gate Status\n\n- known_good::python: pass\n\n\
      ## Active-Learning Queue Summary\n\n- queued_count: 1\n\n\
      ## Agent-Feedback Summary\n\n- surprise: 1\n\n\
