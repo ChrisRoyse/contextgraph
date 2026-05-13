@@ -826,6 +826,29 @@ fn write_weekly_eval_markdown(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
+    let per_cell_state_transfer = if report.per_cell_state_transfer.is_empty() {
+        "- none".to_string()
+    } else {
+        report
+            .per_cell_state_transfer
+            .iter()
+            .map(|(cell, diagnostic)| match diagnostic {
+                Some(diagnostic) => format!(
+                    "- {cell}: transfer_score={:.6}, wasserstein_1={:.6}, performance_deploy={:.6}, candidate={}",
+                    diagnostic.transfer_score,
+                    diagnostic.wasserstein_1,
+                    diagnostic.performance_deploy,
+                    if diagnostic.transfer_score < 0.80 {
+                        "fine_tune"
+                    } else {
+                        "hold"
+                    }
+                ),
+                None => format!("- {cell}: unavailable"),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     let bytes = format!(
         "# ME-JEPA Weekly Evaluation\n\n\
          - report_date: {}\n\
@@ -836,6 +859,7 @@ fn write_weekly_eval_markdown(
          - q1_pass_rate: {:.6}\n\
          - q2_report_correlation: {:?}\n\
          - q3_side_effect_agreement: {:?}\n\n\
+         ## Per-Cell State Transfer T\n\n{}\n\n\
          ## Ship Gate Failures\n\n{}\n",
         report.report_date,
         report.holdout_count,
@@ -844,6 +868,7 @@ fn write_weekly_eval_markdown(
         report.q1_pass_rate,
         report.q2_report_correlation,
         report.q3_side_effect_agreement,
+        per_cell_state_transfer,
         if report.ship_gate_failures.is_empty() {
             "- none".to_string()
         } else {

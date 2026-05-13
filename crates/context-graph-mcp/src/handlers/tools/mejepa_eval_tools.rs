@@ -151,6 +151,8 @@ impl Handlers {
                 "shipGateFailures": report.ship_gate_failures,
                 "reportHash": report.determinism_hash()?,
                 "holdoutCount": report.holdout_count,
+                "perCellStateTransfer": report.per_cell_state_transfer,
+                "lowStateTransferCells": low_state_transfer_cells(&report),
                 "sourceOfTruth": "CF_MEJEPA_EVAL_REPORTS"
             }))
         })();
@@ -276,4 +278,17 @@ impl Handlers {
             }
         }
     }
+}
+
+fn low_state_transfer_cells(report: &context_graph_mejepa::EvalReport) -> Vec<String> {
+    report
+        .per_cell_state_transfer
+        .iter()
+        .filter_map(|(cell, diagnostic)| {
+            diagnostic
+                .as_ref()
+                .filter(|value| value.transfer_score < 0.80)
+                .map(|_| cell.clone())
+        })
+        .collect()
 }

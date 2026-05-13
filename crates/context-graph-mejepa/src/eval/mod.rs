@@ -14,7 +14,10 @@ pub use fixtures::{build_eval_compiler, synthetic_holdout, synthetic_patch_embed
 pub use graph::{
     build_patch_similarity_graph, PatchEmbedding, PatchGraphEdge, PatchSimilarityGraph,
 };
-pub use metrics::{conformal_health, ood_auc_by_language, pearson_correlation};
+pub use metrics::{
+    compute_state_transfer_per_cell, conformal_health, ood_auc_by_language, pearson_correlation,
+    state_transfer_from_observations,
+};
 pub use queue::{
     ActiveLearningKind, ActiveLearningLabel, ActiveLearningQueueEntry, ActiveLearningQueueState,
     LabelMethod,

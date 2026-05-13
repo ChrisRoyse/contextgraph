@@ -256,6 +256,18 @@ pub(crate) fn replay_shift(shift: &LocatedShift) -> Result<Value, String> {
 
 pub(crate) async fn subscriber_status() -> Result<Value, String> {
     let db_path = required_env_path(ENV_INFER_DB)?;
+    let panel_db_path = match std::env::var(ENV_PANEL_DB) {
+        Ok(path) => Some(PathBuf::from(path)),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(err) => return Err(format!("{ENV_PANEL_DB} must be readable UTF-8: {err}")),
+    };
+    subscriber_status_for_paths(&db_path, panel_db_path.as_deref()).await
+}
+
+pub(crate) async fn subscriber_status_for_paths(
+    db_path: &Path,
+    panel_db_path: Option<&Path>,
+) -> Result<Value, String> {
     let db = open_infer_rocksdb(&db_path).map_err(|err| err.to_string())?;
     let watermarks = read_watermarks(db.as_ref())?;
     let last_watermark_per_session = watermarks
@@ -270,17 +282,16 @@ pub(crate) async fn subscriber_status() -> Result<Value, String> {
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let instrument_cache_entries = match std::env::var(ENV_PANEL_DB) {
-        Ok(path) => {
-            let store = PanelStore::open(&path).map_err(|err| err.to_string())?;
+    let instrument_cache_entries = match panel_db_path {
+        Some(path) => {
+            let store = PanelStore::open(path).map_err(|err| err.to_string())?;
             json!({
-                "panel_db": file_sot(Path::new(&path)),
+                "panel_db": file_sot(path),
                 "panels": store.count_cf(context_graph_mejepa_instruments::CF_MEJEPA_PANELS).map_err(|err| err.to_string())?,
                 "panel_meta": store.count_cf(context_graph_mejepa_instruments::CF_MEJEPA_PANEL_META).map_err(|err| err.to_string())?
             })
         }
-        Err(std::env::VarError::NotPresent) => Value::Null,
-        Err(err) => return Err(format!("{ENV_PANEL_DB} must be readable UTF-8: {err}")),
+        None => Value::Null,
     };
     Ok(json!({
         "last_watermark_per_session": last_watermark_per_session,
@@ -760,6 +771,9 @@ fn watermark_key(session_id_hex: &str) -> String {
 }
 
 async fn observed_shift_lag(watermarks: &BTreeMap<String, Value>) -> Result<Value, String> {
+    if watermarks.is_empty() {
+        return Ok(json!({}));
+    }
     let log_dir = shift_log_dir().await?;
     if !log_dir.is_dir() {
         return Ok(Value::Null);
@@ -821,6 +835,7 @@ mod phase7_fsv_tests {
     use std::collections::BTreeMap;
     use std::fs::OpenOptions;
     use std::io::Write;
+    use tempfile::TempDir;
     use tokio::sync::{Mutex, MutexGuard};
 
     static ENV_LOCK: Mutex<()> = Mutex::const_new(());
@@ -836,9 +851,8 @@ mod phase7_fsv_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn phase7_mcp_fsv_happy_path_and_edges() {
         let _guard = env_guard().await;
-        let root = PathBuf::from("/tmp/contextgraph-mejepa-phase7-mcp-fsv");
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().to_path_buf();
         let infer_db = root.join("infer-db");
         let panel_db = root.join("panel-db");
         let runtime_root = root.join("runtime");

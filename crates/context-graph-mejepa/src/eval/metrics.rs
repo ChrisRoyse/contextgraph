@@ -1,7 +1,7 @@
 use super::error::{EvalError, EvalErrorCode};
 use super::types::{
-    language_slug, ConformalHealthEntry, EvalConfig, EvalObservation, MutationCategory,
-    RegressionCheck,
+    cell_key, language_slug, ConformalHealthEntry, EvalConfig, EvalObservation, MutationCategory,
+    RegressionCheck, StateTransferDiagnostic,
 };
 use crate::types::{Language, OracleOutcome};
 use std::collections::BTreeMap;
@@ -196,6 +196,30 @@ pub fn gtau_pass_rate_by_language(
     Ok(out)
 }
 
+pub fn state_transfer_from_observations(
+    observations: &[EvalObservation],
+) -> Result<Option<StateTransferDiagnostic>, EvalError> {
+    state_transfer_from_iter(observations.iter())
+}
+
+pub fn compute_state_transfer_per_cell(
+    observations: &[EvalObservation],
+) -> Result<BTreeMap<String, Option<StateTransferDiagnostic>>, EvalError> {
+    let mut out = BTreeMap::new();
+    for category in MutationCategory::all() {
+        for language in languages_in(observations) {
+            let filtered = observations
+                .iter()
+                .filter(|obs| obs.mutation_category == category && obs.language == language);
+            out.insert(
+                cell_key(category, language),
+                state_transfer_from_iter(filtered)?,
+            );
+        }
+    }
+    Ok(out)
+}
+
 pub fn bayesian_shrinkage(
     raw: &BTreeMap<String, Option<f32>>,
     global: Option<f32>,
@@ -304,6 +328,33 @@ fn slice_correlation(
         }
     }
     pearson_correlation(&predicted, &actual)
+}
+
+fn state_transfer_from_iter<'a>(
+    observations: impl Iterator<Item = &'a EvalObservation>,
+) -> Result<Option<StateTransferDiagnostic>, EvalError> {
+    let mut predicted = Vec::new();
+    let mut actual = Vec::new();
+    for obs in observations {
+        if let Some(target) = oracle_target_opt(obs.actual_oracle) {
+            predicted.push(obs.prediction.predicted_oracle_pass);
+            actual.push(target);
+        }
+    }
+    if predicted.len() < 2 {
+        return Ok(None);
+    }
+    let mut p = predicted.clone();
+    let mut a = actual.clone();
+    p.sort_by(f32::total_cmp);
+    a.sort_by(f32::total_cmp);
+    let wasserstein_1 = p.iter().zip(&a).map(|(x, y)| (x - y).abs()).sum::<f32>() / p.len() as f32;
+    let transfer_score = (-wasserstein_1 / 0.5).exp().clamp(0.0, 1.0);
+    Ok(Some(StateTransferDiagnostic {
+        wasserstein_1,
+        transfer_score,
+        performance_deploy: transfer_score * predicted.iter().sum::<f32>() / predicted.len() as f32,
+    }))
 }
 
 fn auc_pairwise(positives: &[f32], negatives: &[f32]) -> Result<Option<f32>, EvalError> {

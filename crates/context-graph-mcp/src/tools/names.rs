@@ -116,6 +116,8 @@ pub const MEJEPA_CAPTURE_AUDIT: &str = "mcp__cgreality__mejepa_capture_audit";
 pub const MEJEPA_CONSTELLATION_INSPECT: &str = "mcp__cgreality__mejepa_constellation_inspect";
 /// Phase 5 self-healing source-of-truth status inspector.
 pub const MEJEPA_HEAL_STATUS: &str = "mcp__cgreality__mejepa_heal_status";
+/// Phase F aggregate status across ME-JEPA runtime, subscriber, heal, quota, and VRAM surfaces.
+pub const MEJEPA_DAEMON_STATUS: &str = "mcp__cgreality__mejepa_daemon_status";
 /// Phase 5 operator-locked rollback to a promoted witness-chain offset.
 pub const MEJEPA_ROLLBACK_TO: &str = "mcp__cgreality__mejepa_rollback_to";
 /// Phase E approval gate for catastrophic ME-JEPA self-optimization promotions.

@@ -933,6 +933,10 @@ fn invalid_approval_fails_without_mutation(root: &Path) -> Result<Value> {
 }
 
 fn eval_report_with_cells(per_cell_correlation: BTreeMap<String, Option<f32>>) -> EvalReport {
+    let per_cell_state_transfer = per_cell_correlation
+        .keys()
+        .map(|key| (key.clone(), None))
+        .collect();
     EvalReport {
         report_date: "2026-05-13-phase-e-fsv".to_string(),
         generated_at_unix_ms: chrono::Utc::now().timestamp_millis(),
@@ -960,6 +964,7 @@ fn eval_report_with_cells(per_cell_correlation: BTreeMap<String, Option<f32>>) -
             ood_escalation_count: 0,
         },
         state_transfer_diagnostic: None,
+        per_cell_state_transfer,
         aux_head_distillation: None,
         regression_checks: vec![RegressionCheck {
             name: "perf_latency".to_string(),

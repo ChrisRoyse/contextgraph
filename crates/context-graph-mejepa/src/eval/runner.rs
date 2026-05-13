@@ -1,14 +1,15 @@
 use super::error::{EvalError, EvalErrorCode};
 use super::metrics::{
-    bayesian_shrinkage, compute_correlations, conformal_health, gtau_pass_rate_by_language,
-    ood_auc_by_language, oracle_target_opt, ship_gate_failures, ShipGateInputs,
+    bayesian_shrinkage, compute_correlations, compute_state_transfer_per_cell, conformal_health,
+    gtau_pass_rate_by_language, ood_auc_by_language, oracle_target_opt, ship_gate_failures,
+    state_transfer_from_observations, ShipGateInputs,
 };
 use super::queue::ActiveLearningQueueState;
 use super::report::seed_open_research_questions;
 use super::store::RocksDbEvalStore;
 use super::types::{
     ActiveLearningSummary, EvalConfig, EvalObservation, EvalProvenance, EvalReport, HoldoutPanel,
-    RegressionCheck, StateTransferDiagnostic,
+    RegressionCheck,
 };
 use crate::compiler::MeJepaCompiler;
 use crate::types::{FailedGate, TaskId, VerifyVerdict};
@@ -129,6 +130,7 @@ impl EvalRunner {
                 ood_escalation_count: queue.ood_escalations.len(),
             },
             state_transfer_diagnostic: state_transfer_from_observations(&observations)?,
+            per_cell_state_transfer: compute_state_transfer_per_cell(&observations)?,
             aux_head_distillation: None,
             regression_checks,
             open_research_questions: research,
@@ -212,35 +214,6 @@ fn q1_pass_rate(observations: &[EvalObservation]) -> Result<f32, EvalError> {
         })
         .count();
     Ok(passed as f32 / observations.len() as f32)
-}
-
-fn state_transfer_from_observations(
-    observations: &[EvalObservation],
-) -> Result<Option<StateTransferDiagnostic>, EvalError> {
-    let predicted = observations
-        .iter()
-        .filter_map(|obs| {
-            oracle_target_opt(obs.actual_oracle).map(|_| obs.prediction.predicted_oracle_pass)
-        })
-        .collect::<Vec<_>>();
-    let actual = observations
-        .iter()
-        .filter_map(|obs| oracle_target_opt(obs.actual_oracle))
-        .collect::<Vec<_>>();
-    if predicted.len() < 2 || predicted.len() != actual.len() {
-        return Ok(None);
-    }
-    let mut p = predicted.clone();
-    let mut a = actual.clone();
-    p.sort_by(f32::total_cmp);
-    a.sort_by(f32::total_cmp);
-    let w1 = p.iter().zip(&a).map(|(x, y)| (x - y).abs()).sum::<f32>() / p.len() as f32;
-    let transfer = (-w1 / 0.5).exp().clamp(0.0, 1.0);
-    Ok(Some(StateTransferDiagnostic {
-        wasserstein_1: w1,
-        transfer_score: transfer,
-        performance_deploy: transfer * predicted.iter().sum::<f32>() / predicted.len() as f32,
-    }))
 }
 
 fn q3_side_effect_agreement(observations: &[EvalObservation]) -> Option<f32> {

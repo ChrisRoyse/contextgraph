@@ -219,6 +219,45 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_DAEMON_STATUS,
+            "Aggregate ME-JEPA Phase F runtime status in one structured call: process mode, shift subscriber, self-healing store, hygiene quota, and optional CUDA-driver VRAM readback. Missing component SoTs are reported as unavailable instead of guessed.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "inferDbPath": {
+                        "type": "string",
+                        "description": "Inference/hygiene RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used for subscriber and as quotaDbPath fallback."
+                    },
+                    "panelDbPath": {
+                        "type": "string",
+                        "description": "Panel RocksDB path for subscriber panel counts. If omitted, CONTEXTGRAPH_MEJEPA_PANEL_DB is used when present."
+                    },
+                    "healDbPath": {
+                        "type": "string",
+                        "description": "Self-healing RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_HEAL_DB is used when present."
+                    },
+                    "quotaDbPath": {
+                        "type": "string",
+                        "description": "Hygiene RocksDB path. If omitted, inferDbPath/CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    },
+                    "archiveRoot": {
+                        "type": "string",
+                        "description": "Hygiene archive root. If omitted, CONTEXTGRAPH_MEJEPA_HYGIENE_ARCHIVE_ROOT is used when present."
+                    },
+                    "includeVram": {
+                        "type": "boolean",
+                        "default": true
+                    },
+                    "vramBudget": {
+                        "type": "string",
+                        "enum": ["content_set", "full_phase1"],
+                        "default": "content_set"
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_ROLLBACK_TO,
             "Rollback ME-JEPA active weights to a previously promoted witness-chain offset. The target must exist in CF_MEJEPA_HEAL_REPORTS and the weight blob must exist in CF_MEJEPA_WEIGHT_BLOBS; otherwise the tool fails closed.",
             json!({

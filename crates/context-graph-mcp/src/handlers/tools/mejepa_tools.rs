@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, bail, Context, Result as AnyhowResult};
 use context_graph_mejepa::heal::{
@@ -23,6 +24,8 @@ use context_graph_mejepa_cf::{
     CF_MEJEPA_CALIBRATION_HISTORY, CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_OOD_ESCALATIONS,
     CF_MEJEPA_TRAIN_CERTS,
 };
+use context_graph_mejepa_embedders::{query_vram_budget, VramBudget};
+use context_graph_mejepa_hygiene::{mcp_quota_status, HygieneMcpRequest};
 use context_graph_mejepa_tct::{
     build_inspect_summary, open_tct_rocksdb, ConstellationStore, EmbedderId,
 };
@@ -32,7 +35,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tracing::info;
 
-use super::mejepa_phase7_storage::subscriber_state_for_provenance;
+use super::mejepa_phase7_storage::{subscriber_state_for_provenance, subscriber_status_for_paths};
 use crate::handlers::tools::helpers::ToolErrorKind;
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
@@ -40,6 +43,9 @@ use crate::tools::names as tool_names;
 
 const ENV_TCT_DB: &str = "CONTEXTGRAPH_MEJEPA_TCT_DB";
 const ENV_HEAL_DB: &str = "CONTEXTGRAPH_MEJEPA_HEAL_DB";
+const ENV_HYGIENE_ARCHIVE_ROOT: &str = "CONTEXTGRAPH_MEJEPA_HYGIENE_ARCHIVE_ROOT";
+const ENV_PANEL_DB: &str = "CONTEXTGRAPH_MEJEPA_PANEL_DB";
+const ENV_INFER_DB: &str = "CONTEXTGRAPH_MEJEPA_INFER_DB";
 const ENV_ALLOW_DETERMINISTIC_VERIFY: &str = "CONTEXTGRAPH_MEJEPA_ALLOW_DETERMINISTIC_VERIFY";
 
 #[derive(Debug, Deserialize)]
@@ -130,11 +136,51 @@ struct PromoteApprovalRequest {
     two_person_rule: bool,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DaemonStatusVramBudget {
+    ContentSet,
+    FullPhase1,
+}
+
+impl Default for DaemonStatusVramBudget {
+    fn default() -> Self {
+        Self::ContentSet
+    }
+}
+
+impl DaemonStatusVramBudget {
+    fn as_budget(self) -> VramBudget {
+        match self {
+            Self::ContentSet => VramBudget::content_set_rtx5090(),
+            Self::FullPhase1 => VramBudget::full_phase1_rtx5090(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MejepaDaemonStatusRequest {
+    infer_db_path: Option<PathBuf>,
+    panel_db_path: Option<PathBuf>,
+    heal_db_path: Option<PathBuf>,
+    quota_db_path: Option<PathBuf>,
+    archive_root: Option<PathBuf>,
+    #[serde(default = "default_include_vram")]
+    include_vram: bool,
+    #[serde(default)]
+    vram_budget: DaemonStatusVramBudget,
+}
+
 fn default_limit() -> u32 {
     10
 }
 
 fn default_two_person_rule() -> bool {
+    true
+}
+
+fn default_include_vram() -> bool {
     true
 }
 
@@ -569,6 +615,30 @@ impl Handlers {
         }
     }
 
+    pub(crate) async fn call_mejepa_daemon_status(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: MejepaDaemonStatusRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_DAEMON_STATUS
+                    ),
+                );
+            }
+        };
+        match self.run_mejepa_daemon_status(request).await {
+            Ok(value) => self.tool_result(id, value),
+            Err(message) => self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        }
+    }
+
     pub(crate) async fn call_mejepa_rollback_to(
         &self,
         id: Option<JsonRpcId>,
@@ -649,6 +719,218 @@ impl Handlers {
             }
         }
     }
+
+    async fn run_mejepa_daemon_status(
+        &self,
+        request: MejepaDaemonStatusRequest,
+    ) -> Result<serde_json::Value, String> {
+        let started = Instant::now();
+        let infer_db_path =
+            resolve_optional_path(request.infer_db_path, ENV_INFER_DB, "inferDbPath")?;
+        let panel_db_path =
+            resolve_optional_path(request.panel_db_path, ENV_PANEL_DB, "panelDbPath")?;
+        let heal_db_path = resolve_optional_path(request.heal_db_path, ENV_HEAL_DB, "healDbPath")?;
+        let quota_db_path = request
+            .quota_db_path
+            .map(|path| validate_non_empty_path("quotaDbPath", path))
+            .transpose()?
+            .or_else(|| infer_db_path.clone());
+        let archive_root = resolve_optional_path(
+            request.archive_root,
+            ENV_HYGIENE_ARCHIVE_ROOT,
+            "archiveRoot",
+        )?;
+
+        let mut components = BTreeMap::new();
+        components.insert("runtime".to_string(), self.mejepa_runtime_status().await);
+
+        let subscriber = match infer_db_path.as_deref() {
+            Some(path) => match subscriber_status_for_paths(path, panel_db_path.as_deref()).await {
+                Ok(value) => healthy_component(value),
+                Err(message) => unavailable_component(
+                    "MEJEPA_DAEMON_STATUS_SUBSCRIBER_READ_FAILED",
+                    message,
+                    json!({"inferDbPath": path, "panelDbPath": panel_db_path}),
+                ),
+            },
+            None => unavailable_component(
+                "MEJEPA_DAEMON_STATUS_INFER_DB_MISSING",
+                format!("inferDbPath or {ENV_INFER_DB} is required for subscriber status"),
+                json!({"env": ENV_INFER_DB}),
+            ),
+        };
+        components.insert("subscriber".to_string(), subscriber);
+
+        let heal = match heal_db_path.as_deref() {
+            Some(path) => match run_heal_status(path) {
+                Ok(value) => healthy_component(value),
+                Err(err) => unavailable_component(
+                    err.code().to_string(),
+                    err.to_string(),
+                    json!({"healDbPath": path}),
+                ),
+            },
+            None => unavailable_component(
+                "MEJEPA_DAEMON_STATUS_HEAL_DB_MISSING",
+                format!("healDbPath or {ENV_HEAL_DB} is required for heal status"),
+                json!({"env": ENV_HEAL_DB}),
+            ),
+        };
+        components.insert("heal".to_string(), heal);
+
+        let quota = match (quota_db_path.as_ref(), archive_root.as_ref()) {
+            (Some(db_path), Some(root)) => {
+                let request = HygieneMcpRequest {
+                    db_path: db_path.clone(),
+                    archive_root: root.clone(),
+                };
+                match mcp_quota_status(request) {
+                    Ok(value) => healthy_component(value),
+                    Err(err) => unavailable_component(
+                        err.code.to_string(),
+                        err.to_string(),
+                        json!({"quotaDbPath": db_path, "archiveRoot": root}),
+                    ),
+                }
+            }
+            (None, _) => unavailable_component(
+                "MEJEPA_DAEMON_STATUS_QUOTA_DB_MISSING",
+                format!("quotaDbPath or {ENV_INFER_DB} is required for quota status"),
+                json!({"env": ENV_INFER_DB}),
+            ),
+            (_, None) => unavailable_component(
+                "MEJEPA_DAEMON_STATUS_ARCHIVE_ROOT_MISSING",
+                format!("archiveRoot or {ENV_HYGIENE_ARCHIVE_ROOT} is required for quota status"),
+                json!({"env": ENV_HYGIENE_ARCHIVE_ROOT}),
+            ),
+        };
+        components.insert("quota".to_string(), quota);
+
+        let vram = if request.include_vram {
+            match query_vram_budget(request.vram_budget.as_budget()) {
+                Ok(value) => healthy_component(json!(value)),
+                Err(err) => unavailable_component(
+                    err.code().to_string(),
+                    err.to_string(),
+                    json!({"budget": format!("{:?}", request.vram_budget)}),
+                ),
+            }
+        } else {
+            disabled_component("VRAM status disabled by includeVram=false")
+        };
+        components.insert("vram".to_string(), vram);
+
+        Ok(json!({
+            "tool": tool_names::MEJEPA_DAEMON_STATUS,
+            "overallStatus": aggregate_status(&components),
+            "generatedAtUnixMs": unix_now_ms()?,
+            "elapsedMs": started.elapsed().as_millis() as u64,
+            "components": components,
+            "sourceOfTruth": {
+                "runtime": "process",
+                "subscriber": "CF_MEJEPA_SHIFT_WATERMARK + optional CF_MEJEPA_PANELS",
+                "heal": "ME-JEPA heal RocksDB CFs",
+                "quota": "ME-JEPA hygiene RocksDB CFs + archive root filesystem",
+                "vram": "CUDA driver cuMemGetInfo_v2"
+            }
+        }))
+    }
+
+    async fn mejepa_runtime_status(&self) -> serde_json::Value {
+        match &self.daemon_state {
+            Some(state) => healthy_component(json!({
+                "pid": std::process::id(),
+                "mode": "daemon",
+                "uptimeSecs": state.start_time.elapsed().as_secs(),
+                "activeConnections": state.active_connections.load(std::sync::atomic::Ordering::SeqCst),
+                "maxConnections": state.max_connections,
+                "backgroundShutdown": state.background_shutdown.load(std::sync::atomic::Ordering::SeqCst),
+                "modelsState": if state.models_loading.load(std::sync::atomic::Ordering::SeqCst) {
+                    "loading".to_string()
+                } else {
+                    match state.models_failed.read().await.as_ref() {
+                        Some(err) => format!("failed: {err}"),
+                        None => "ready".to_string(),
+                    }
+                }
+            })),
+            None => healthy_component(json!({
+                "pid": std::process::id(),
+                "mode": "stdio",
+                "note": "daemon runtime state is not injected in stdio mode"
+            })),
+        }
+    }
+}
+
+fn resolve_optional_path(
+    input: Option<PathBuf>,
+    env_name: &'static str,
+    field: &'static str,
+) -> Result<Option<PathBuf>, String> {
+    match input {
+        Some(path) => validate_non_empty_path(field, path).map(Some),
+        None => match std::env::var(env_name) {
+            Ok(raw) => validate_non_empty_path(env_name, PathBuf::from(raw)).map(Some),
+            Err(std::env::VarError::NotPresent) => Ok(None),
+            Err(err) => Err(format!("{env_name} must be readable UTF-8: {err}")),
+        },
+    }
+}
+
+fn validate_non_empty_path(field: &'static str, path: PathBuf) -> Result<PathBuf, String> {
+    if path.as_os_str().is_empty() {
+        return Err(format!("{field} must be a non-empty path"));
+    }
+    Ok(path)
+}
+
+fn healthy_component(data: serde_json::Value) -> serde_json::Value {
+    json!({
+        "status": "healthy",
+        "data": data
+    })
+}
+
+fn unavailable_component(
+    error_code: impl Into<String>,
+    message: impl Into<String>,
+    source: serde_json::Value,
+) -> serde_json::Value {
+    json!({
+        "status": "unavailable",
+        "errorCode": error_code.into(),
+        "message": message.into(),
+        "source": source
+    })
+}
+
+fn disabled_component(message: impl Into<String>) -> serde_json::Value {
+    json!({
+        "status": "disabled",
+        "message": message.into()
+    })
+}
+
+fn aggregate_status(components: &BTreeMap<String, serde_json::Value>) -> &'static str {
+    let unavailable_count = components
+        .values()
+        .filter(|component| component.get("status").and_then(Value::as_str) == Some("unavailable"))
+        .count();
+    if unavailable_count == 0 {
+        "healthy"
+    } else if unavailable_count == components.len() {
+        "unavailable"
+    } else {
+        "degraded"
+    }
+}
+
+fn unix_now_ms() -> Result<u64, String> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .map_err(|err| format!("system clock is before UNIX_EPOCH: {err}"))
 }
 
 fn resolve_heal_db_path(input: Option<PathBuf>) -> Result<PathBuf, String> {
@@ -1597,5 +1879,110 @@ mod mejepa_constellation_inspect_tests {
         assert_eq!(rollback["targetWitnessChainOffset"], 0);
         let status_after = run_heal_status(&db_path).unwrap();
         assert_eq!(status_after["cfCounts"][CF_MEJEPA_ACTIVE_POINTERS], 1);
+    }
+
+    #[tokio::test]
+    async fn mejepa_daemon_status_aggregates_real_sources_of_truth() {
+        let (handlers, _handler_tempdir) =
+            crate::handlers::tests::create_protocol_test_handlers().await;
+        let temp = TempDir::new().unwrap();
+        let infer_db = temp.path().join("infer-db");
+        let panel_db = temp.path().join("panel-db");
+        let heal_db = temp.path().join("heal-db");
+        let quota_db = temp.path().join("quota-db");
+        let archive_root = temp.path().join("archive");
+
+        let infer = open_infer_rocksdb(&infer_db).unwrap();
+        drop(infer);
+        let panel =
+            context_graph_mejepa_instruments::panel_store::PanelStore::open(&panel_db).unwrap();
+        drop(panel);
+        let heal = HealRocksStore::open(&heal_db).unwrap();
+        drop(heal);
+
+        let response = handlers
+            .call_mejepa_daemon_status(
+                Some(JsonRpcId::Number(40)),
+                json!({
+                    "inferDbPath": infer_db,
+                    "panelDbPath": panel_db,
+                    "healDbPath": heal_db,
+                    "quotaDbPath": quota_db,
+                    "archiveRoot": archive_root,
+                    "includeVram": false
+                }),
+            )
+            .await;
+        assert!(response.error.is_none());
+        let result = response.result.unwrap();
+        assert_eq!(result["isError"], false);
+        let structured = &result["structuredContent"];
+        assert_eq!(structured["overallStatus"], "healthy");
+        assert_eq!(structured["components"]["runtime"]["status"], "healthy");
+        assert_eq!(structured["components"]["subscriber"]["status"], "healthy");
+        assert_eq!(structured["components"]["heal"]["status"], "healthy");
+        assert_eq!(structured["components"]["quota"]["status"], "healthy");
+        assert_eq!(structured["components"]["vram"]["status"], "disabled");
+        assert_eq!(
+            structured["components"]["subscriber"]["data"]["source_of_truth"],
+            json!(format!("file:{}", temp.path().join("infer-db").display()))
+        );
+    }
+
+    #[tokio::test]
+    async fn mejepa_daemon_status_reports_missing_component_sots() {
+        let (handlers, _handler_tempdir) =
+            crate::handlers::tests::create_protocol_test_handlers().await;
+        let temp = TempDir::new().unwrap();
+        let bad_infer_db = temp.path().join("not-a-rocksdb-infer-file");
+        let bad_heal_db = temp.path().join("not-a-rocksdb-heal-file");
+        let quota_db = temp.path().join("quota-db");
+        let nested_archive_root = quota_db.join("archive");
+        std::fs::write(&bad_infer_db, b"not rocksdb").unwrap();
+        std::fs::write(&bad_heal_db, b"not rocksdb").unwrap();
+        let response = handlers
+            .call_mejepa_daemon_status(
+                Some(JsonRpcId::Number(41)),
+                json!({
+                    "inferDbPath": bad_infer_db,
+                    "healDbPath": bad_heal_db,
+                    "quotaDbPath": quota_db,
+                    "archiveRoot": nested_archive_root,
+                    "includeVram": false
+                }),
+            )
+            .await;
+        assert!(response.error.is_none());
+        let result = response.result.unwrap();
+        assert_eq!(result["isError"], false);
+        let structured = &result["structuredContent"];
+        assert_eq!(structured["overallStatus"], "degraded");
+        assert_eq!(
+            structured["components"]["subscriber"]["errorCode"],
+            "MEJEPA_DAEMON_STATUS_SUBSCRIBER_READ_FAILED"
+        );
+        assert_eq!(
+            structured["components"]["quota"]["errorCode"],
+            "MEJEPA_HYGIENE_INVALID_CONFIG"
+        );
+    }
+
+    #[tokio::test]
+    async fn mejepa_daemon_status_rejects_unknown_args() {
+        let (handlers, _handler_tempdir) =
+            crate::handlers::tests::create_protocol_test_handlers().await;
+        let response = handlers
+            .call_mejepa_daemon_status(
+                Some(JsonRpcId::Number(42)),
+                json!({"includeVram": false, "unexpected": true}),
+            )
+            .await;
+        assert!(response.error.is_none());
+        let result = response.result.unwrap();
+        assert_eq!(result["isError"], true);
+        assert!(result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("schema validation failed"));
     }
 }

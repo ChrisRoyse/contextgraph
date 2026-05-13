@@ -57,5 +57,9 @@ name = "phase8_eval_fsv"
 path = "examples/phase8_eval_fsv.rs"
 
 [[example]]
+name = "utml_009_per_cell_state_transfer_fsv"
+path = "examples/utml_009_per_cell_state_transfer_fsv.rs"
+
+[[example]]
 name = "continual_backprop_regulation_fsv"
 path = "examples/continual_backprop_regulation_fsv.rs"

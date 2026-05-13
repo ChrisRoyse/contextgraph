@@ -187,6 +187,17 @@ pub struct StateTransferDiagnostic {
     pub performance_deploy: f32,
 }
 
+impl StateTransferDiagnostic {
+    pub fn validate(&self, name: &str) -> Result<(), EvalError> {
+        validate_unit(&format!("{name}.wasserstein_1"), self.wasserstein_1)?;
+        validate_unit(&format!("{name}.transfer_score"), self.transfer_score)?;
+        validate_unit(
+            &format!("{name}.performance_deploy"),
+            self.performance_deploy,
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuxHeadDistillationSummary {
@@ -240,6 +251,7 @@ pub struct EvalReport {
     pub gtau_pass_rate: BTreeMap<Language, f32>,
     pub active_learning: ActiveLearningSummary,
     pub state_transfer_diagnostic: Option<StateTransferDiagnostic>,
+    pub per_cell_state_transfer: BTreeMap<String, Option<StateTransferDiagnostic>>,
     pub aux_head_distillation: Option<AuxHeadDistillationSummary>,
     pub regression_checks: Vec<RegressionCheck>,
     pub open_research_questions: Vec<OpenResearchQuestionStatus>,
@@ -303,6 +315,20 @@ impl EvalReport {
         }
         for value in self.gtau_pass_rate.values() {
             validate_unit("gtau_pass_rate", *value)?;
+        }
+        if let Some(diagnostic) = &self.state_transfer_diagnostic {
+            diagnostic.validate("state_transfer_diagnostic")?;
+        }
+        for (cell, diagnostic) in &self.per_cell_state_transfer {
+            if !self.per_cell_correlation.contains_key(cell) {
+                return Err(EvalError::new(
+                    EvalErrorCode::InvalidInput,
+                    format!("per_cell_state_transfer.{cell} has no per_cell_correlation entry"),
+                ));
+            }
+            if let Some(diagnostic) = diagnostic {
+                diagnostic.validate(&format!("per_cell_state_transfer.{cell}"))?;
+            }
         }
         Ok(())
     }

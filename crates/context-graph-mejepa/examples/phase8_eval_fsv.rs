@@ -82,7 +82,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     write_json_0600(
         &out.join("state-transfer-evidence.json"),
-        &latest.state_transfer_diagnostic,
+        &json!({
+            "global": latest.state_transfer_diagnostic,
+            "per_cell": latest.per_cell_state_transfer
+        }),
     )?;
     write_json_0600(
         &out.join("aux-head-distillation.json"),
@@ -120,7 +123,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "cf_counts": cf_counts,
         "graph_edge_count": graph_readback.edge_count,
         "queue_entries": queue.entries.len(),
-        "evidence_file_count": 17
+        "evidence_file_count": 17,
+        "per_cell_state_transfer_cells": latest.per_cell_state_transfer.len()
     });
     write_json_0600(&out.join("manifest.json"), &manifest)?;
     println!("{}", serde_json::to_string_pretty(&manifest)?);

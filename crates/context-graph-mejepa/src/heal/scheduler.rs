@@ -57,6 +57,7 @@ mod tests {
     use super::*;
     use crate::heal::scheduler_state::read_status_snapshot;
     use rocksdb::{ColumnFamilyDescriptor, Options};
+    use std::collections::BTreeMap;
 
     fn open_test_db(path: &std::path::Path) -> Arc<DB> {
         let mut opts = Options::default();
@@ -86,7 +87,7 @@ mod tests {
         let status_path = config.status_path.clone();
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let scheduler = tokio::spawn(run_self_optimization_scheduler(db, config, shutdown_rx));
-        tokio::time::sleep(Duration::from_millis(180)).await;
+        wait_for_all_tickers(&status_path, Duration::from_secs(5)).await;
         shutdown_tx.send(true).expect("send shutdown");
         tokio::time::timeout(Duration::from_secs(5), scheduler)
             .await
@@ -107,6 +108,32 @@ mod tests {
                 "{} did not tick",
                 tick.as_str()
             );
+        }
+    }
+
+    async fn wait_for_all_tickers(status_path: &std::path::Path, timeout: Duration) {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut last_counts = BTreeMap::new();
+        loop {
+            if let Ok(snapshot) = read_status_snapshot(status_path) {
+                last_counts = snapshot.ticker_counts.clone();
+                if TickName::all().iter().all(|tick| {
+                    snapshot
+                        .ticker_counts
+                        .get(tick.as_str())
+                        .copied()
+                        .unwrap_or(0)
+                        > 0
+                }) {
+                    return;
+                }
+            }
+            if tokio::time::Instant::now() >= deadline {
+                panic!(
+                    "scheduler did not tick all tickers before timeout; counts={last_counts:?}"
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
     }
 
