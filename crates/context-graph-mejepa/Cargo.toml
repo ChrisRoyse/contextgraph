@@ -34,6 +34,8 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
+context-graph-mejepa-shift-subscriber = { path = "../context-graph-mejepa-shift-subscriber" }
+context-graph-mejepa-train = { path = "../context-graph-mejepa-train" }
 tempfile = "3.10"
 
 [[bin]]
@@ -87,3 +89,7 @@ path = "examples/phase_f_system_cost_fsv.rs"
 [[example]]
 name = "phase_f_adversarial_corpus_fsv"
 path = "examples/phase_f_adversarial_corpus_fsv.rs"
+
+[[example]]
+name = "phase_f_restart_safety_fsv"
+path = "examples/phase_f_restart_safety_fsv.rs"

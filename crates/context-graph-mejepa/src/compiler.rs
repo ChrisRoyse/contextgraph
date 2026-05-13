@@ -24,11 +24,14 @@ use crate::degraded::{
 use crate::error::MejepaInferError;
 use crate::gates::{check_source_sha_drift, replay_witness_segment};
 use crate::ood::{compute_ood_score, squared_l2};
+use crate::pause_state::{
+    current_unix_ms, read_pause_state, PauseReadOutcome, PauseState, PAUSE_REASON_CODE,
+};
 use crate::prediction_surfaces::{covered_chunks_for_patch, infer_phase_b_surfaces};
 use crate::types::{
     validate_probability, AgentClaimGraph, ChunkId, ConformalInterval, ConformalMethod, DdaSignals,
-    FailedGate, PanelId, PatchBundle, PredictionProvenance, RealityPrediction,
-    RealityPredictionBuilder, TaskContext, VerifyVerdict, WitnessHash,
+    FailedGate, OracleOutcome, PanelId, PatchBundle, PredictionProvenance, RealityPrediction,
+    RealityPredictionBuilder, TaskContext, Verdict, VerifyVerdict, WitnessHash,
 };
 use crate::verdict_assembly::{assemble_verdict, VerdictAssemblyInput};
 
@@ -220,6 +223,9 @@ impl MeJepaCompiler {
     ) -> Result<(RealityPrediction, Panel), MejepaInferError> {
         patch.validate()?;
         context.validate()?;
+        if let Some(pause_state) = self.active_pause_state() {
+            return Ok(self.paused_prediction_with_panel(patch, context, &pause_state)?);
+        }
         let calibration = self.calibration.load_active()?;
         let (panel_t0, panel_t1, panel_t2) = materialize_inference_panels(patch, context)?;
         let predicted = self.predictor.predict(&panel_t0, &panel_t1)?;
@@ -362,6 +368,16 @@ impl MeJepaCompiler {
     ) -> Result<VerifyVerdict, MejepaInferError> {
         patch.validate()?;
         context.validate()?;
+        if let Some(pause_state) = self.active_pause_state() {
+            return Ok(VerifyVerdict::EscalateToHuman {
+                reality_prediction: None,
+                failed_gate: FailedGate::PredictionPaused {
+                    paused_until_unix_ms: pause_state.paused_until_unix_ms,
+                    reason: PAUSE_REASON_CODE.to_string(),
+                },
+                gates_passed: 0,
+            });
+        }
         if let Some(failed_gate) = check_source_sha_drift(patch, &self.repo_root)? {
             return Ok(VerifyVerdict::EscalateToHuman {
                 reality_prediction: None,
@@ -473,6 +489,72 @@ impl MeJepaCompiler {
         })
     }
 
+    fn active_pause_state(&self) -> Option<PauseState> {
+        let path = self.config.pause_state_path.as_ref()?;
+        match read_pause_state(path, current_unix_ms()) {
+            PauseReadOutcome::Active { state } => Some(state),
+            PauseReadOutcome::Inactive { .. } => None,
+            PauseReadOutcome::IgnoredInvalid { warning } => {
+                tracing::warn!(
+                    code = %warning.code,
+                    state_path = %warning.state_path.display(),
+                    message = %warning.message,
+                    "ignoring invalid ME-JEPA pause-state file"
+                );
+                None
+            }
+        }
+    }
+
+    fn paused_prediction_with_panel(
+        &self,
+        patch: &PatchBundle,
+        context: &TaskContext,
+        pause_state: &PauseState,
+    ) -> Result<(RealityPrediction, Panel), MejepaInferError> {
+        let panel =
+            materialize_panel(TimeStep::T0, vectors_for(TimeStep::T0, patch, context))?.panel;
+        let prediction_id = paused_prediction_id(context, patch, pause_state);
+        let outcome_set = crate::types::ConformalSet::try_new(
+            vec![OracleOutcome::Abstain],
+            self.config.alpha,
+            1.0,
+        )?;
+        let mut source_panel_sha = [0u8; 32];
+        source_panel_sha.copy_from_slice(&Sha256::digest(PAUSE_REASON_CODE.as_bytes())[..32]);
+        let prediction = RealityPredictionBuilder::from_parts(
+            context.task_id.clone(),
+            context.session_id,
+            context.language,
+            outcome_set,
+        )
+        .prediction_id(prediction_id)
+        .witness_hash(witness_hash(patch))
+        .covered_chunks(covered_chunks_for_patch(patch)?)
+        .verdict(Verdict::Abstain)
+        .confidence_interval(ConformalInterval::default())
+        .predicted_oracle_pass(0.0)
+        .predicted_test_pass(vec![0.0])
+        .predicted_runtime_trace([0.0; 32])
+        .ood_score(0.0)
+        .calibrated_confidence(0.0)
+        .degraded_status(true)
+        .granger_attestations(BTreeMap::from([(PAUSE_REASON_CODE.to_string(), 0.0)]))
+        .provenance(PredictionProvenance {
+            predictor_version: env!("CARGO_PKG_VERSION").to_string(),
+            constellation_version: self
+                .constellation_guard
+                .version_id()
+                .unwrap_or_else(|| "unversioned".to_string()),
+            calibration_version: PAUSE_REASON_CODE.to_string(),
+            active_pointer: format!("paused_until_{}", pause_state.paused_until_unix_ms),
+        })
+        .source_panel_sha(source_panel_sha)
+        .calibration_version(PAUSE_REASON_CODE)
+        .build()?;
+        Ok((prediction, panel))
+    }
+
     pub fn observe(
         &self,
         pipeline: &mut crate::heal::SelfHealingPipeline,
@@ -576,6 +658,23 @@ fn prediction_id(
     hasher.update(context.session_id);
     hasher.update(patch.patch_sha);
     hasher.update(calibration.version.as_bytes());
+    let digest = hasher.finalize();
+    let mut id = [0u8; 16];
+    id.copy_from_slice(&digest[..16]);
+    id
+}
+
+fn paused_prediction_id(
+    context: &TaskContext,
+    patch: &PatchBundle,
+    pause_state: &PauseState,
+) -> [u8; 16] {
+    let mut hasher = Sha256::new();
+    hasher.update(context.task_id.0.as_bytes());
+    hasher.update(context.session_id);
+    hasher.update(patch.patch_sha);
+    hasher.update(PAUSE_REASON_CODE.as_bytes());
+    hasher.update(pause_state.paused_until_unix_ms.to_le_bytes());
     let digest = hasher.finalize();
     let mut id = [0u8; 16];
     id.copy_from_slice(&digest[..16]);

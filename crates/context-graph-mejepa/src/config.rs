@@ -1,4 +1,8 @@
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
+
+use crate::pause_state::DEFAULT_PAUSE_STATE_PATH;
 
 use crate::error::PredictorError;
 
@@ -139,6 +143,9 @@ pub struct MeJepaInferConfig {
     /// every covered chunk to match it. Production callers should set this to
     /// the active routed embedder count, currently 12 for Phase D.
     pub dda_expected_embedder_count: usize,
+    /// Pause-state file checked at the start of compile/verify.
+    /// `None` disables pause consumption for isolated tests only.
+    pub pause_state_path: Option<PathBuf>,
 }
 
 impl Default for MeJepaInferConfig {
@@ -157,6 +164,7 @@ impl Default for MeJepaInferConfig {
             instrument_cache_capacity: INFER_DEFAULT_INSTRUMENT_CACHE_CAPACITY,
             require_dda_features: INFER_DEFAULT_REQUIRE_DDA_FEATURES,
             dda_expected_embedder_count: INFER_DEFAULT_DDA_EXPECTED_EMBEDDER_COUNT,
+            pause_state_path: Some(PathBuf::from(DEFAULT_PAUSE_STATE_PATH)),
         }
     }
 }
@@ -213,6 +221,15 @@ impl MeJepaInferConfig {
                     "dda_expected_embedder_count must be <= {INFER_MAX_DDA_EXPECTED_EMBEDDER_COUNT}; got {}",
                     self.dda_expected_embedder_count
                 ),
+            });
+        }
+        if self
+            .pause_state_path
+            .as_ref()
+            .is_some_and(|path| path.as_os_str().is_empty())
+        {
+            return Err(PredictorError::ConfigInvalid {
+                detail: "pause_state_path must be non-empty when configured".to_string(),
             });
         }
         Ok(())
