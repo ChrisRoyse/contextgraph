@@ -23,7 +23,7 @@
 
 ## Current gate
 
-The A-F and H implementation issues are closed for the Phase G handoff. Analyzer-backed instrument parity (#4), production telemetry (#11), UTML carrier reconciliation (#13), Phase E self-optimization, Phase F operations, and Phase H residue cleanup all have source-of-truth FSV. The latest holdout remains `0.866667 < 0.95`; that is Phase G model-quality convergence, not an A-F/H implementation blocker. Phase G now has an explicit GitHub task set; `TASK-G-001` is complete.
+The A-F and H implementation issues are closed for the Phase G handoff. Analyzer-backed instrument parity (#4), production telemetry (#11), UTML carrier reconciliation (#13), Phase E self-optimization, Phase F operations, and Phase H residue cleanup all have source-of-truth FSV. The latest holdout remains `0.866667 < 0.95`; that is Phase G model-quality convergence, not an A-F/H implementation blocker. Phase G now has an explicit GitHub task set; `TASK-G-001` and `TASK-G-002` are complete.
 
 ---
 
@@ -267,9 +267,10 @@ The A-F and H implementation issues are closed for the Phase G handoff. Analyzer
 | ID | Title | Phase | Blocked by | Effort |
 |---|---|---|---|---|
 | `TASK-G-001` | End-to-end corpus training-pipeline orchestrator (`context-graph-cli mejepa train --corpus <root> --split <train\|calibration\|holdout>`) | G | Phase C + D substrate | **complete (#97)** — writes/readbacks `CF_MEJEPA_PANELS`, `CF_MEJEPA_DDA_SIGNALS`, `CF_MEJEPA_LIVE_PREDICTIONS`, `CF_MEJEPA_ORACLE_VERDICTS`, and `CF_MEJEPA_TRAIN_CERTS`; FSV at `/mnt/d/contextgraph/fsv/phase-g-training-pipeline-orchestrator-fsv/training_pipeline_orchestrator_fsv.json` |
-| `TASK-G-002..TASK-G-058` | Remaining Phase G convergence tasks: full split operating cadence, per-cell training/eval drivers, conformal recalibration, holdout rotation, analyzer hardening, adversarial retraining, and rolling-window stability assertions | G | TASK-G-001 where corpus rows are required | open GitHub issues #98-#154 |
+| `TASK-G-002` | Per-(mutation category x language) cell convergence verification driver (`context-graph-cli mejepa cell-status --threshold 0.95`) | G | `CF_MEJEPA_EVAL_REPORTS` | **complete (#98)** — reads the latest eval report, lists all 80 required non-Python cells with correlation, holdout count, distance to threshold, last update timestamp, and exits non-zero for below-threshold or missing cells; FSV at `/mnt/d/contextgraph/fsv/phase-g-cell-status-fsv/cell_status_fsv.json` |
+| `TASK-G-003..TASK-G-058` | Remaining Phase G convergence tasks: full split operating cadence, per-cell training/eval drivers, conformal recalibration, holdout rotation, analyzer hardening, adversarial retraining, and rolling-window stability assertions | G | TASK-G-001 where corpus rows are required | open GitHub issues #99-#154 |
 
-**Phase G status (2026-05-13):** active. The orchestrator now proves the corpus rows can enter the full source-of-truth reward pipeline, including the required invariant `input_task_count = output_panel_count = logical_dda_signal_count / 462 = oracle_verdict_count`. The human-review-replacement claim is still blocked by the rolling 0.95 prediction-oracle correlation gate.
+**Phase G status (2026-05-13):** active. The orchestrator now proves the corpus rows can enter the full source-of-truth reward pipeline, including the required invariant `input_task_count = output_panel_count = logical_dda_signal_count / 462 = oracle_verdict_count`. The cell-status driver now gives the operator an 80-cell source-of-truth convergence view from `CF_MEJEPA_EVAL_REPORTS`. The human-review-replacement claim is still blocked by the rolling 0.95 prediction-oracle correlation gate.
 
 ---
 

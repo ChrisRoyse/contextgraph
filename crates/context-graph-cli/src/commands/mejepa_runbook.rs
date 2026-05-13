@@ -15,11 +15,12 @@ use chrono::NaiveDate;
 use clap::{Args, Subcommand};
 use context_graph_mejepa::eval::store::CF_MEJEPA_EVAL_REPORTS;
 use context_graph_mejepa::eval::types::EvalReport;
+use context_graph_mejepa::eval::{cell_key, language_slug, MutationCategory};
 use context_graph_mejepa::heal::{
     AbcPromoter, HealRocksStore, PromotionGate, PromotionLockState, RollbackEvidence,
     WitnessChainAppender,
 };
-use context_graph_mejepa::{open_infer_rocksdb, RocksDbEvalStore};
+use context_graph_mejepa::{open_infer_rocksdb, Language, RocksDbEvalStore};
 use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, WriteBatch};
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -937,6 +938,17 @@ pub struct EvalShipGateArgs {
     pub db_path: PathBuf,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct CellStatusArgs {
+    /// Inference RocksDB path containing CF_MEJEPA_EVAL_REPORTS.
+    #[arg(long, env = "CONTEXTGRAPH_MEJEPA_INFER_DB", default_value = DEFAULT_MEJEPA_INFER_DB)]
+    pub db_path: PathBuf,
+
+    /// Per-cell prediction/oracle correlation threshold.
+    #[arg(long, default_value_t = 0.95)]
+    pub threshold: f32,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DaemonStatusOutput {
@@ -983,6 +995,36 @@ pub struct EvalShipGateOutput {
     pub holdout_count: usize,
     pub per_cell_passing_count: usize,
     pub per_cell_failing_count: usize,
+    pub source_of_truth: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CellStatusRow {
+    pub cell: String,
+    pub mutation_category: String,
+    pub language: String,
+    pub correlation: Option<f32>,
+    pub holdout_count: usize,
+    pub distance_to_threshold: Option<f32>,
+    pub last_update_unix_ms: i64,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CellStatusOutput {
+    pub latest_report_date: String,
+    pub generated_at_unix_ms: i64,
+    pub threshold: f32,
+    pub required_cell_count: usize,
+    pub observed_cell_count: usize,
+    pub passing_cell_count: usize,
+    pub below_threshold_cell_count: usize,
+    pub missing_cell_count: usize,
+    pub failing_cell_count: usize,
+    pub passed: bool,
+    pub cells: Vec<CellStatusRow>,
     pub source_of_truth: Value,
 }
 
@@ -1121,6 +1163,96 @@ pub fn run_eval_ship_gate(args: EvalShipGateArgs) -> Result<EvalShipGateOutput> 
             "ship_gate_threshold": 0.95,
         }),
     })
+}
+
+pub fn run_cell_status(args: CellStatusArgs) -> Result<CellStatusOutput> {
+    if !args.threshold.is_finite() || !(-1.0..=1.0).contains(&args.threshold) {
+        return Err(anyhow!(
+            "MEJEPA_RUNBOOK_CELL_STATUS_THRESHOLD_INVALID: --threshold must be finite in [-1,1], got {}",
+            args.threshold
+        ));
+    }
+    let report = load_latest_report(&args.db_path)?;
+    let required = required_phase_g_cells();
+    let mut rows = Vec::with_capacity(required.len());
+    let mut observed_cell_count = 0usize;
+    let mut passing_cell_count = 0usize;
+    let mut below_threshold_cell_count = 0usize;
+    let mut missing_cell_count = 0usize;
+
+    for (category, language, key) in required {
+        let correlation = report.per_cell_correlation.get(&key).copied().flatten();
+        let status = match correlation {
+            Some(value) if value >= args.threshold => {
+                observed_cell_count += 1;
+                passing_cell_count += 1;
+                "pass"
+            }
+            Some(_) => {
+                observed_cell_count += 1;
+                below_threshold_cell_count += 1;
+                "below_threshold"
+            }
+            None => {
+                missing_cell_count += 1;
+                "missing"
+            }
+        };
+        rows.push(CellStatusRow {
+            cell: key,
+            mutation_category: category.slug().to_string(),
+            language: language_slug(language).to_string(),
+            correlation,
+            holdout_count: report.holdout_count,
+            distance_to_threshold: correlation.map(|value| (args.threshold - value).max(0.0)),
+            last_update_unix_ms: report.generated_at_unix_ms,
+            status: status.to_string(),
+        });
+    }
+
+    let failing_cell_count = below_threshold_cell_count + missing_cell_count;
+    Ok(CellStatusOutput {
+        latest_report_date: report.report_date.clone(),
+        generated_at_unix_ms: report.generated_at_unix_ms,
+        threshold: args.threshold,
+        required_cell_count: rows.len(),
+        observed_cell_count,
+        passing_cell_count,
+        below_threshold_cell_count,
+        missing_cell_count,
+        failing_cell_count,
+        passed: failing_cell_count == 0,
+        cells: rows,
+        source_of_truth: json!({
+            "db_path": args.db_path,
+            "column_family": CF_MEJEPA_EVAL_REPORTS,
+            "selector": "load_latest_report()",
+            "required_grid": "8 mutation categories x 10 non-Python fixture languages",
+            "threshold": args.threshold,
+        }),
+    })
+}
+
+fn required_phase_g_cells() -> Vec<(MutationCategory, Language, String)> {
+    let languages = [
+        Language::Rust,
+        Language::Javascript,
+        Language::Typescript,
+        Language::Go,
+        Language::Java,
+        Language::C,
+        Language::Cpp,
+        Language::CSharp,
+        Language::Ruby,
+        Language::Php,
+    ];
+    let mut cells = Vec::with_capacity(MutationCategory::all().len() * languages.len());
+    for category in MutationCategory::all() {
+        for language in languages {
+            cells.push((category, language, cell_key(category, language)));
+        }
+    }
+    cells
 }
 
 fn load_report_for_date(db_path: &Path, date: &str) -> Result<EvalReport> {

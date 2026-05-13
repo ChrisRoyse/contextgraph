@@ -29,6 +29,9 @@ pub enum MejepaCommands {
     Replay(crate::commands::mejepa_replay::ReplayArgs),
     /// End-to-end Phase G corpus training-pipeline orchestrator.
     Train(crate::commands::mejepa_train::MejepaTrainArgs),
+    /// Phase G per-cell convergence status from CF_MEJEPA_EVAL_REPORTS.
+    #[command(name = "cell-status")]
+    CellStatus(crate::commands::mejepa_runbook::CellStatusArgs),
     /// Operator runbook: read the self-optimization scheduler status file.
     #[command(name = "daemon-status")]
     DaemonStatus(crate::commands::mejepa_runbook::DaemonStatusArgs),
@@ -176,6 +179,29 @@ pub struct ActiveLearningDismissOutput {
 }
 
 pub async fn handle_mejepa_command(action: MejepaCommands) -> i32 {
+    let action = match action {
+        MejepaCommands::CellStatus(args) => {
+            return match crate::commands::mejepa_runbook::run_cell_status(args) {
+                Ok(output) => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&output)
+                            .unwrap_or_else(|_| serde_json::to_string(&output).unwrap_or_default())
+                    );
+                    if output.passed {
+                        0
+                    } else {
+                        1
+                    }
+                }
+                Err(err) => {
+                    eprintln!("mejepa command FAILED: {err:#}");
+                    1
+                }
+            };
+        }
+        other => other,
+    };
     match run(action).await {
         Ok(value) => {
             println!(
@@ -212,6 +238,10 @@ async fn run(action: MejepaCommands) -> Result<serde_json::Value> {
         MejepaCommands::Train(args) => {
             serde_json::to_value(crate::commands::mejepa_train::run_mejepa_train(args)?)
                 .context("serialize train")
+        }
+        MejepaCommands::CellStatus(args) => {
+            serde_json::to_value(crate::commands::mejepa_runbook::run_cell_status(args)?)
+                .context("serialize cell-status")
         }
         MejepaCommands::DaemonStatus(args) => {
             serde_json::to_value(crate::commands::mejepa_runbook::run_daemon_status(args)?)
