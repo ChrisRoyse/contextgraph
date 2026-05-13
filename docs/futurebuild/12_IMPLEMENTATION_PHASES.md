@@ -263,9 +263,10 @@ This phase is **operational, not implementation**. The system is built; this pha
 | `TASK-LOOP-004` | Retire legacy MCP tools (mark fail-closed, update tool registry) | **complete (#133)** — retired names excluded from tool definitions and fail closed through `CCREALITY_ENGINE_RETIRED`; FSV at `/mnt/d/contextgraph/fsv/phase-h-retired-mcp-tools-fsv/retired_mcp_tools_fsv.json` |
 | `TASK-LOOP-005` | Confirm absence of inner-actor model files (audit script) | 0.1 day |
 | `TASK-LOOP-006` | Delete stale `target/release/reality-loop` binary if present | 0.1 day |
+| `TASK-LOOP-011` | Audit `CCREALITY_ENGINE_RETIRED` gate coverage for retired MCP endpoints | **complete (#139)** — FSV at `/mnt/d/contextgraph/fsv/phase-h-ccreality-engine-retired-fsv/ccreality_engine_retired_gate_fsv.json` |
 
 **Ship gate:**
-1. No `MEJEPA_*_RETIRED` symbols accidentally invokable. **Passed for legacy cgreality MCP tools on 2026-05-13 (#133).**
+1. No `MEJEPA_*_RETIRED` symbols accidentally invokable. **Passed for legacy cgreality MCP tools on 2026-05-13 (#133/#139).**
 2. SMAP supersession is consistent (no active decision asserts the retired inner-actor contract; legacy decisions have `superseded_by` pointers). **Passed for TASK-LOOP-003 on 2026-05-13.**
 3. CLAUDE.md + `agents/README.md` reflect current state.
 

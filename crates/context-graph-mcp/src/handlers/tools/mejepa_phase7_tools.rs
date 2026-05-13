@@ -237,6 +237,38 @@ mod tests {
     }
 
     #[test]
+    fn retired_reality_run_attempt_jsonrpc_round_trip_has_structured_error() {
+        let _guard = crate::handlers::tools::test_env_lock::lock();
+        std::env::remove_var("CONTEXT_GRAPH_DEPRECATION_LEVEL");
+        let response = retired_tool_response(
+            Some(JsonRpcId::Number(9001)),
+            "mcp__cgreality__reality_run_attempt",
+        );
+
+        let encoded = serde_json::to_value(&response).expect("JsonRpcResponse serializes");
+        assert_eq!(encoded["jsonrpc"], json!("2.0"));
+        assert_eq!(encoded["id"], json!(9001));
+        assert_eq!(encoded["result"]["isError"], json!(true));
+        assert_eq!(
+            encoded["result"]["structuredContent"]["error_code"],
+            json!("CCREALITY_ENGINE_RETIRED")
+        );
+        assert_eq!(
+            encoded["result"]["structuredContent"]["attempted_tool"],
+            json!("mcp__cgreality__reality_run_attempt")
+        );
+
+        let decoded: crate::protocol::JsonRpcResponse =
+            serde_json::from_value(encoded).expect("JsonRpcResponse round-trip parses");
+        assert!(decoded.error.is_none());
+        let result = decoded.result.expect("retired tool returns result payload");
+        assert_eq!(
+            result["structuredContent"]["error_code"],
+            json!("CCREALITY_ENGINE_RETIRED")
+        );
+    }
+
+    #[test]
     fn retired_tool_deprecation_error_level_returns_jsonrpc_error() {
         let _guard = crate::handlers::tools::test_env_lock::lock();
         std::env::set_var("CONTEXT_GRAPH_DEPRECATION_LEVEL", "error");

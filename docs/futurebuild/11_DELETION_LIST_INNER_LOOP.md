@@ -91,6 +91,8 @@ The `memory/` SMAP tree has many decisions and reports that reference inner-acto
 | `mcp__cgreality__champion_state_get` and `_promote` MCP tools | MCP server | KEEP — repurpose for ME-JEPA model variant pinning | the "champion" now refers to the active ME-JEPA model, not an inner-actor patch |
 | `crates/context-graph-cli` `reality-loop` subcommand if present | CLI | DELETE | confirm absence |
 
+**CCREALITY retirement gate audit:** **complete (#139)** — `scripts/ci/phase_h_ccreality_engine_retired_gate_fsv.sh` proves all five retired cgreality compatibility endpoints have unit fail-closed coverage, one endpoint round-trips as a serialized JSON-RPC structured error, and fmt/check/clippy pass. Evidence: `/mnt/d/contextgraph/fsv/phase-h-ccreality-engine-retired-fsv/ccreality_engine_retired_gate_fsv.json`.
+
 ---
 
 ## 7. Skills (`.claude/skills/`)
