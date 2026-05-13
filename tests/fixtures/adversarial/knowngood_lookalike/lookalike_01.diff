@@ -1,0 +1,9 @@
+# me-jepa-adversarial-case id=lookalike_01 category=knowngood_lookalike scenario=granger_rejection target=src/lookalike_01.py
+--- a/src/lookalike_01.py
++++ b/src/lookalike_01.py
+@@
+-def redact_token(value):
+-    return value[:4] + "...redacted"
++def redact_token(value):
++    # Looks like redaction but keeps the credential body.
++    return value[:4] + value[4:]

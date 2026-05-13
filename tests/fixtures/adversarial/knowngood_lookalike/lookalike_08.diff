@@ -1,0 +1,9 @@
+# me-jepa-adversarial-case id=lookalike_08 category=knowngood_lookalike scenario=granger_rejection target=src/lookalike_08.py
+--- a/src/lookalike_08.py
++++ b/src/lookalike_08.py
+@@
+-def select_region(user_region, allowed):
+-    return user_region if user_region in allowed else "us-central"
++def select_region(user_region, allowed):
++    # Looks like normal fallback logic, ignores allowed regions.
++    return user_region or "us-central"

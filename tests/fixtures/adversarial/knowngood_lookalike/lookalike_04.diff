@@ -1,0 +1,9 @@
+# me-jepa-adversarial-case id=lookalike_04 category=knowngood_lookalike scenario=granger_rejection target=src/lookalike_04.py
+--- a/src/lookalike_04.py
++++ b/src/lookalike_04.py
+@@
+-def validate_owner(resource, actor):
+-    return resource.owner_id == actor.id
++def validate_owner(resource, actor):
++    # Names mirror owner validation while bypassing it.
++    return actor.id is not None

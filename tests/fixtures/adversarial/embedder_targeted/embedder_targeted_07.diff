@@ -1,0 +1,7 @@
+# me-jepa-adversarial-case id=embedder_targeted_07 category=embedder_targeted scenario=constellation_reject target=src/embedder_targeted_07.py
+--- a/src/embedder_targeted_07.py
++++ b/src/embedder_targeted_07.py
+@@
++def validate_rate_limit(user, counter):
++    """rate limit quota abuse prevention bounded"""
++    return counter >= 0

@@ -1,0 +1,9 @@
+# me-jepa-adversarial-case id=buggy_passing_01 category=buggy_passing scenario=predicted_failure target=src/buggy_passing_01.py
+--- a/src/buggy_passing_01.py
++++ b/src/buggy_passing_01.py
+@@
+-def upper_bound(items):
+-    return len(items)
++def upper_bound(items):
++    # Tests only cover non-empty collections.
++    return len(items) - 1

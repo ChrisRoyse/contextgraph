@@ -1,0 +1,9 @@
+# me-jepa-adversarial-case id=lookalike_06 category=knowngood_lookalike scenario=granger_rejection target=src/lookalike_06.py
+--- a/src/lookalike_06.py
++++ b/src/lookalike_06.py
+@@
+-def verify_signature(signature, body):
+-    return hmac.compare_digest(signature, sign(body))
++def verify_signature(signature, body):
++    # Keeps signature words and shape, removes the comparison.
++    return signature or body

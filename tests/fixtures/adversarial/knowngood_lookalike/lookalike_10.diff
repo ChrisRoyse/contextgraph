@@ -1,0 +1,11 @@
+# me-jepa-adversarial-case id=lookalike_10 category=knowngood_lookalike scenario=granger_rejection target=src/lookalike_10.py
+--- a/src/lookalike_10.py
++++ b/src/lookalike_10.py
+@@
+-def mask_email(email):
+-    name, domain = email.split("@", 1)
+-    return name[:1] + "***@" + domain
++def mask_email(email):
++    # Looks masked in tests with short names, leaks longer names.
++    name, domain = email.split("@", 1)
++    return name[:6] + "***@" + domain

@@ -1,0 +1,9 @@
+# me-jepa-adversarial-case id=lookalike_09 category=knowngood_lookalike scenario=granger_rejection target=src/lookalike_09.py
+--- a/src/lookalike_09.py
++++ b/src/lookalike_09.py
+@@
+-def stable_sort(rows):
+-    return sorted(rows, key=lambda row: row.created_at)
++def stable_sort(rows):
++    # Same surface structure, reverses chronology.
++    return sorted(rows, key=lambda row: row.created_at, reverse=True)

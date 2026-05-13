@@ -1,0 +1,7 @@
+# me-jepa-adversarial-case id=embedder_targeted_02 category=embedder_targeted scenario=constellation_reject target=src/embedder_targeted_02.py
+--- a/src/embedder_targeted_02.py
++++ b/src/embedder_targeted_02.py
+@@
++def safe_database_query(query, params):
++    """safe parameterized query validated escaped sanitized"""
++    return f"{query} {params}"

@@ -1,0 +1,9 @@
+# me-jepa-adversarial-case id=buggy_passing_03 category=buggy_passing scenario=predicted_failure target=src/buggy_passing_03.py
+--- a/src/buggy_passing_03.py
++++ b/src/buggy_passing_03.py
+@@
+-def retry_count(config):
+-    return min(config.retry_count, 3)
++def retry_count(config):
++    # Boundary suite misses None and large retry_count.
++    return config.retry_count

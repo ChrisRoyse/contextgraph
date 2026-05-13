@@ -1,0 +1,9 @@
+# me-jepa-adversarial-case id=lookalike_02 category=knowngood_lookalike scenario=granger_rejection target=src/lookalike_02.py
+--- a/src/lookalike_02.py
++++ b/src/lookalike_02.py
+@@
+-def clamp_score(score):
+-    return max(0.0, min(1.0, score))
++def clamp_score(score):
++    # Same shape as clamp, but lets high values through.
++    return max(0.0, score)

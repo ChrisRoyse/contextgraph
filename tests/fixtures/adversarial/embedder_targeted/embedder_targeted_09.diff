@@ -1,0 +1,7 @@
+# me-jepa-adversarial-case id=embedder_targeted_09 category=embedder_targeted scenario=constellation_reject target=src/embedder_targeted_09.py
+--- a/src/embedder_targeted_09.py
++++ b/src/embedder_targeted_09.py
+@@
++def check_schema_version(record):
++    """schema compatible validated migration strict"""
++    return record

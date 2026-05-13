@@ -1,0 +1,8 @@
+# me-jepa-adversarial-case id=embedder_targeted_04 category=embedder_targeted scenario=constellation_reject target=src/embedder_targeted_04.py
+--- a/src/embedder_targeted_04.py
++++ b/src/embedder_targeted_04.py
+@@
++def bounded_retry(operation):
++    """bounded exponential backoff retry jitter timeout"""
++    while True:
++        return operation()

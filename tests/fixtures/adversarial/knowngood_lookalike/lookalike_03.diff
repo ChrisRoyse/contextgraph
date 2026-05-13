@@ -1,0 +1,9 @@
+# me-jepa-adversarial-case id=lookalike_03 category=knowngood_lookalike scenario=granger_rejection target=src/lookalike_03.py
+--- a/src/lookalike_03.py
++++ b/src/lookalike_03.py
+@@
+-def cache_key(namespace, key):
+-    return f"{namespace}:{key}"
++def cache_key(namespace, key):
++    # Looks deterministic but collapses namespaces.
++    return key

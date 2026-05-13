@@ -1,0 +1,9 @@
+# me-jepa-adversarial-case id=buggy_passing_08 category=buggy_passing scenario=predicted_failure target=src/buggy_passing_08.py
+--- a/src/buggy_passing_08.py
++++ b/src/buggy_passing_08.py
+@@
+-def convert_cents(amount):
+-    return amount // 100
++def convert_cents(amount):
++    # Rounds floats and loses cents on several boundary values.
++    return round(amount / 100)

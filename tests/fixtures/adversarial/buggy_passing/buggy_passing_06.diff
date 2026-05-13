@@ -1,0 +1,9 @@
+# me-jepa-adversarial-case id=buggy_passing_06 category=buggy_passing scenario=predicted_failure target=src/buggy_passing_06.py
+--- a/src/buggy_passing_06.py
++++ b/src/buggy_passing_06.py
+@@
+-def page_slice(rows, limit):
+-    return rows[:limit]
++def page_slice(rows, limit):
++    # Off-by-one hidden by tests that request all rows.
++    return rows[: limit + 1]

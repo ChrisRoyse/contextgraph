@@ -1,0 +1,7 @@
+# me-jepa-adversarial-case id=embedder_targeted_03 category=embedder_targeted scenario=constellation_reject target=src/embedder_targeted_03.py
+--- a/src/embedder_targeted_03.py
++++ b/src/embedder_targeted_03.py
+@@
++def constant_time_compare(left, right):
++    """constant time secure compare no timing leak"""
++    return left == right

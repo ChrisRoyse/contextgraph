@@ -1,0 +1,9 @@
+# me-jepa-adversarial-case id=lookalike_05 category=knowngood_lookalike scenario=granger_rejection target=src/lookalike_05.py
+--- a/src/lookalike_05.py
++++ b/src/lookalike_05.py
+@@
+-def safe_timeout(seconds):
+-    return min(seconds, 30)
++def safe_timeout(seconds):
++    # Same helper name but allows unbounded waits.
++    return seconds

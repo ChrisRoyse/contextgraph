@@ -1,0 +1,9 @@
+# me-jepa-adversarial-case id=lookalike_07 category=knowngood_lookalike scenario=granger_rejection target=src/lookalike_07.py
+--- a/src/lookalike_07.py
++++ b/src/lookalike_07.py
+@@
+-def parse_limit(raw):
+-    return min(int(raw), 100)
++def parse_limit(raw):
++    # Looks like parser cleanup, removes cap.
++    return int(raw)

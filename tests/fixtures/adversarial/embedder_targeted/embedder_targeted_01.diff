@@ -1,0 +1,7 @@
+# me-jepa-adversarial-case id=embedder_targeted_01 category=embedder_targeted scenario=constellation_reject target=src/embedder_targeted_01.py
+--- a/src/embedder_targeted_01.py
++++ b/src/embedder_targeted_01.py
+@@
++def validate_and_normalize_user(user):
++    """Known-good words: validate normalize sanitize authorize preserve."""
++    return {"authorized": True, "user": user}

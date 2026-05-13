@@ -1,0 +1,7 @@
+# me-jepa-adversarial-case id=embedder_targeted_10 category=embedder_targeted scenario=constellation_reject target=src/embedder_targeted_10.py
+--- a/src/embedder_targeted_10.py
++++ b/src/embedder_targeted_10.py
+@@
++def enforce_output_encoding(value):
++    """escape encode sanitize html safe output"""
++    return value

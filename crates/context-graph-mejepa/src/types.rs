@@ -1679,6 +1679,9 @@ pub enum FailedGate {
     ConstellationGuardRejected {
         reason: String,
     },
+    PredictionVerdictRejected {
+        verdict: Verdict,
+    },
     PredictionPaused {
         paused_until_unix_ms: i64,
         reason: String,

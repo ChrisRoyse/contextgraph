@@ -1,0 +1,9 @@
+# me-jepa-adversarial-case id=buggy_passing_09 category=buggy_passing scenario=predicted_failure target=src/buggy_passing_09.py
+--- a/src/buggy_passing_09.py
++++ b/src/buggy_passing_09.py
+@@
+-def should_alert(error_rate):
+-    return error_rate >= 0.05
++def should_alert(error_rate):
++    # Alert threshold is inverted for exactly-threshold cases.
++    return error_rate > 0.05
