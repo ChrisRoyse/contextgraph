@@ -121,13 +121,51 @@ EOF
 
 ---
 
-## 3. Platform facts (free tier)
+## 3. Platform facts — PRIVATE REPO on GitHub Free plan ONLY
 
-- Unlimited issues on public + private. Templates, labels, milestones, sub-issues all free.
-- REST + GraphQL, `gh` CLI, official MCP server (`github/github-mcp-server`).
-- Actions: 2,000 min/mo private, unlimited public.
+This protocol assumes a **private repository on the GitHub Free plan** (individual account, no paid org). Every tool below is free under that plan. Anything not in the "free here" column → **stop and ask the operator.**
 
-**Rate limits:** PAT user 5,000/hr; `GITHUB_TOKEN` in Actions 1,000/hr/repo; GitHub App on GHEC 15,000/hr. Secondary: ≤900 pts/min REST, ≤2,000/min GraphQL (POST=5 pts, GET=1).
+### 3.1 Free on private + Free plan (use freely)
+
+- **Issues:** unlimited (issues, comments, labels, milestones, sub-issues, templates, assignees, reactions, cross-links, `Closes #N` auto-close).
+- **API surfaces:** REST, GraphQL, `gh` CLI, official GitHub MCP server (`github/github-mcp-server`). Rate limit 5,000/hr per PAT.
+- **Actions:** **2,000 minutes/month** of `ubuntu-latest` (Linux runner; Windows costs 2×, macOS 10× the minute budget — Linux only). Workflows triggered by `push`, `pull_request`, `schedule` (cron), `workflow_dispatch`, `issues`, `issue_comment`.
+- **Default runners only:** `ubuntu-latest`, `ubuntu-22.04`, `ubuntu-24.04`. **Never** request `*-large`, `*-xlarge`, GPU, ARM-premium, or self-hosted billable runners.
+- **Dependabot:** alerts, security updates (auto-PRs), version updates (`dependabot.yml`) — all free on private repos.
+- **Secret scanning (push protection):** free on private repos for **generic + partner-detected secret patterns** (enabled via Settings → Code security). Advanced/custom patterns require GHAS (paid) — skip.
+- **Branch protection, required reviews, required status checks:** free.
+- **PRs, Discussions, Projects (new), Wiki, Releases, Tags:** free.
+- **Packages:** 500MB storage + 1GB/mo bandwidth free for private. Don't push beyond.
+- **Git LFS:** 1GB storage + 1GB/mo bandwidth free. Don't push beyond.
+- **Codespaces:** 120 core-hours + 15GB storage/mo free. Treat as scarce — local dev preferred.
+- **Pre-commit hooks, `gitleaks`, OSS SAST tools (Semgrep OSS, etc.)** as workflow steps using free Actions minutes.
+
+### 3.2 NOT free on private + Free plan (refuse / ask first)
+
+| Category | Why blocked |
+|---|---|
+| **Actions minutes > 2,000/mo** | Overage billed per-minute. Workflows must budget. |
+| **`runs-on:` containing `large`/`xlarge`/`gpu`** | Premium runner SKUs are billed. |
+| **Windows / macOS runners** | Cost 2× / 10× Linux minutes. Use `ubuntu-latest` always. |
+| **GitHub Advanced Security** (CodeQL code scanning on private repos, custom secret patterns, secret scanning historical) | Per-committer license; only free on public repos. |
+| **GitHub Pages on private repos** | Private Pages requires paid plan. Public-repo Pages is free. |
+| **Codespaces > 120 core-hours / 15GB storage** | Overage billed. |
+| **Packages > 500MB / LFS > 1GB** storage/bandwidth | Overage billed. |
+| **Paid Marketplace apps** (anything with $ in pricing) | Subscription. |
+| **GitHub Copilot / Copilot Business / Copilot Enterprise** | Per-seat subscription. |
+| **Plan upgrades** (Team, Enterprise) | Per-seat subscription. |
+| **Larger Codespaces machine types** | Higher core-hour billing rate. |
+
+### 3.3 Hard rules
+
+1. Workflows must declare `runs-on: ubuntu-latest` (or fixed Ubuntu version). Never premium runners.
+2. Workflows must be cheap: cron at most **weekly** for SAST, **daily** for stale-issue cleanup, **on PR** for lint/test. No `*/N * * * *` minute/hour densities.
+3. Long jobs add `timeout-minutes:` (≤30 default, ≤60 absolute cap) so a hung step can't drain the monthly minute budget.
+4. Skip `paths-ignore`/`paths` filters when their inverse would cut minutes — be specific about what triggers a workflow.
+5. Never enable a paid feature via UI, API, or workflow YAML. If a task needs one, **file an issue** describing the cost / free alternative / what the operator gains, and let them decide.
+6. If unsure whether something costs money → assume yes, ask.
+
+**Rate limits (free, all included):** PAT user 5,000/hr; `GITHUB_TOKEN` in Actions 1,000/hr/repo. Secondary: ≤900 pts/min REST, ≤2,000/min GraphQL (POST/PATCH/DELETE=5 pts, GET=1).
 
 ---
 
@@ -141,7 +179,7 @@ EOF
 
 **4.4 Architecture:** distributed monolith symptoms; shared DB across services; God class; missing circuit breaker; SPOFs; tight coupling; missing observability; missing idempotency on retryable ops; schema/contract drift.
 
-**4.5 Security (always p0/p1):** hardcoded secrets (file even after removal → track rotation); missing auth/authz; SQL/NoSQL/OS/template injection; missing input validation, output encoding, CSRF; weak crypto (MD5, SHA1, DES, ECB, custom); verbose errors leaking internals; missing security headers / TLS. Public repo + exploitable → GitHub Security Advisories, NOT public Issue.
+**4.5 Security (always p0/p1):** hardcoded secrets (file even after removal → track rotation); missing auth/authz; SQL/NoSQL/OS/template injection; missing input validation, output encoding, CSRF; weak crypto (MD5, SHA1, DES, ECB, custom); verbose errors leaking internals; missing security headers / TLS. Repo is private so issue content is already restricted to collaborators — file normally. For credential-class findings (active leaked tokens/keys), use **GitHub Security Advisories** (free on private repos) instead so disclosure is gated.
 
 **4.6 Performance:** N+1 queries; unbounded list/loop/recursion; sync blocking I/O on hot path; missing pagination/rate-limit/timeout; missing retry-with-backoff; cache stampede risk / no TTL jitter.
 
@@ -528,18 +566,21 @@ gh issue list --repo $REPO --state open \
 
 ---
 
-## 14. Automation backstop (Actions)
+## 14. Automation backstop (Actions — within 2,000 min/mo free budget)
 
-### 14.1 SAST → Issues
+All workflows below use `ubuntu-latest` only, have explicit `timeout-minutes`, and run at most weekly/daily to stay well under the free 2,000-min budget. Never edit a workflow to use premium runners or remove timeouts.
+
+### 14.1 SAST → Issues (weekly, ~5–10 min/run = ~40 min/mo)
 ```yaml
 name: SAST → Issues
 on:
-  schedule: [{cron: "0 4 * * 1"}]
+  schedule: [{cron: "0 4 * * 1"}]    # weekly Monday 04:00 UTC
   workflow_dispatch: {}
 permissions: {contents: read, issues: write, security-events: read}
 jobs:
   scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest            # NEVER change to larger/premium
+    timeout-minutes: 20               # hard cap so a hang can't drain minutes
     steps:
       - uses: actions/checkout@v4
       - run: |
@@ -548,12 +589,14 @@ jobs:
       - env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}", REPO: "${{ github.repository }}"}
         run: python .github/scripts/findings_to_issues.py findings.json
 ```
-Script must hash `rule_id + file + line` as fingerprint → search title → file new only if absent.
+Script hashes `rule_id + file + line` as fingerprint → searches title → files new only if absent.
 
-### 14.2 Dependabot
-Settings → Security → Code security: alerts + security updates + version updates via `.github/dependabot.yml`. Convert unfixed alerts → `type:security` issues after N days.
+(Note: Semgrep OSS is free. GitHub-native CodeQL code scanning on private repos requires Advanced Security — skip; Semgrep is the free equivalent here.)
 
-### 14.3 Stale cleanup
+### 14.2 Dependabot (free on private repos)
+Settings → Security → Code security: enable alerts + security updates + version updates via `.github/dependabot.yml`. Convert unfixed alerts → `type:security` issues after N days. Dependabot PRs run on Actions minutes — keep `open-pull-requests-limit` reasonable (≤5 per ecosystem) so it doesn't flood.
+
+### 14.3 Stale cleanup (daily, ~1 min/run = ~30 min/mo)
 ```yaml
 name: Stale issues
 on: {schedule: [{cron: "30 1 * * *"}]}
@@ -561,6 +604,7 @@ permissions: {issues: write}
 jobs:
   stale:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/stale@v9
         with:
@@ -572,8 +616,11 @@ jobs:
           close-issue-message: "Closed stale. Reopen if still relevant."
 ```
 
-### 14.4 Auto-labeling
-`actions/labeler` applies `area:*` by file-path patterns.
+### 14.4 Auto-labeling (on PR open, ~30s/run)
+`actions/labeler` applies `area:*` by file-path patterns. Trigger `on: pull_request_target` only — cheap.
+
+### 14.5 Budget guard (recommended)
+Add a tiny workflow that fails CI if `gh api /repos/{owner}/{repo}/actions/usage` reports >1,800 minutes used this month, so the operator sees the warning before overage. Use as a required status check on PRs that add workflows.
 
 ---
 
@@ -679,23 +726,29 @@ if __name__ == "__main__":
     main()
 ```
 
-### 16.3 Quick-start checklist
+### 16.3 Quick-start checklist (all steps free on private repo)
 - [ ] Create labels (§7).
 - [ ] Add 7 templates (§8) + `config.yml`.
 - [ ] Create `AGENTS.md` (§16.1).
-- [ ] Fine-grained PAT scoped `Issues: R/W`.
-- [ ] Store PAT in vault / MCP config.
-- [ ] Enable Dependabot (Settings → Security).
-- [ ] Add `actions/stale` (§14.3).
+- [ ] Fine-grained PAT scoped `Issues: R/W`, `Metadata: R`, `Contents: R/W if committing`. Repo: this repo only. Expiry ≤90d.
+- [ ] Store PAT in vault / MCP config (never commit).
+- [ ] Enable Dependabot alerts + security updates + version updates (Settings → Security → Code security).
+- [ ] Enable Secret scanning push protection for generic+partner patterns (Settings → Code security — free on private).
+- [ ] Add `actions/stale` (§14.3) — uses ~30 min/mo of free Actions budget.
+- [ ] Add SAST workflow (§14.1) — uses ~40 min/mo of free Actions budget.
+- [ ] (Optional) Add §14.5 budget guard so the operator sees overage warnings.
 - [ ] (Optional) Install GitHub MCP server.
-- [ ] Smoke: `gh issue create --title "[TEST] verify setup" --body test --label type:docs` → close.
-- [ ] Instruct agents: *"Read AGENTS.md. File issues for anything abnormal. Claim before working. Comment every milestone."*
+- [ ] Smoke: `gh issue create --title "[TEST] verify setup" --body test --label type:docs` → claim → comment → close.
+- [ ] Instruct agents: *"Read AGENTS.md. Private repo, GitHub Free plan, $0 budget — never enable paid features. File issues for anything abnormal. Claim before working. Comment every milestone."*
 
 ---
 
 ## 17. Limits
 
-- **Cost:** $0/mo.
+- **Plan:** private repo on GitHub Free. **Cost cap: $0/mo.**
 - **API:** 5,000/hr PAT; 1,000/hr `GITHUB_TOKEN` in Actions.
+- **Actions budget:** 2,000 min/mo of Linux runners. §14 workflows together use ~75 min/mo, leaving headroom for PR-triggered CI.
+- **Storage:** Packages 500MB, LFS 1GB, Codespaces 120 core-hr + 15GB — don't push beyond.
+- **Refuse paid features.** If a task needs one, file an issue with cost trade-off + free alternative and let the operator decide.
 - **The discipline is the work.** GitHub makes filing+claiming+commenting free; agents must actually do it.
 - **Win condition:** Issues become SoT + claim-board. Prompts shrink to "work `priority:p1` + `area:auth` + `no:assignee`."
