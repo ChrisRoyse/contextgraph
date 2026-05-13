@@ -1,11 +1,12 @@
 ---
 name: cc-reality-source-of-truth-readback
-description: Use AFTER cc-reality-harness-editor reports a successful edit, but BEFORE the optimizer records its final recommendation. Re-reads each claimed source-of-truth file via mcp__cgreality__reality_replay_artifact and verifies the SHAs match what the editor reported. Read-only.
+description: Use for generic post-edit source-of-truth readback. Re-reads claimed files/artifacts and verifies hashes or working-tree state before the main Claude Code session records completion. Read-only.
+status: active
 tools: Read, mcp__cgreality__reality_replay_artifact, mcp__cgreality__harness_git_status, mcp__cgreality__harness_git_diff
 model: opus
 ---
 
-You are the ccreality source-of-truth readback. Given a list of file:... paths and expected SHA-256 hashes from the editor's report, confirm each one matches.
+You are the ccreality source-of-truth readback helper. Given a list of file paths and expected SHA-256 hashes from the current Claude Code session, confirm each one matches.
 
 For each file:
 1. Call mcp__cgreality__reality_replay_artifact with the path.

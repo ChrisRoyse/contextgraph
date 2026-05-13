@@ -28,11 +28,11 @@
 | `crates/context-graph-cli/src/bin/reality-loop.rs` | crate bin | already DELETED 2026-05-09 | confirm absence; CLI inventory should not list `reality-loop` binary |
 | `target/release/reality-loop` (build artifact) | `target/release/` | **ABSENT / FSV-verified 2026-05-13 (#135)** | `scripts/ci/phase_h_reality_loop_binary_absence_fsv.sh` proves Cargo metadata has no `reality-loop` package/target, shared `target/` has no stale `reality-loop*` files, and an isolated release build does not produce one |
 | `mcp__cgreality__reality_run_attempt` MCP tool | `crates/context-graph-mcp/src/handlers/tools/reality_loop/` | already RETIRED (fails closed `CCREALITY_ENGINE_RETIRED`) | keep the failure path; do not re-enable |
-| `cc-reality-harness-editor` agent | `.claude/agents/` | RETIRE (mark frontmatter `status: retired`) | agent definition can stay as historical doc; do not invoke |
-| `cc-reality-diagnostician` agent | `.claude/agents/` | RETIRE | same |
-| `cc-reality-reward-analyst` agent | `.claude/agents/` | RETIRE | same |
-| `cc-reality-source-of-truth-readback` agent | `.claude/agents/` | KEEP — still useful for futurebuild source-of-truth verification | repurpose as a generic readback agent |
-| `cc-reality-swe-failure-triage` agent | `.claude/agents/` | KEEP — useful for SWE-bench Docker eval triage in capture mode | scope changes from inner-actor to outer-Claude-Code attempts |
+| `cc-reality-harness-editor` agent | `.claude/agents/` | **RETIRED / FSV-verified 2026-05-13 (#138)** | frontmatter `status: retired`; kept as historical doc; do not invoke |
+| `cc-reality-diagnostician` agent | `.claude/agents/` | **RETIRED / FSV-verified 2026-05-13 (#138)** | same |
+| `cc-reality-reward-analyst` agent | `.claude/agents/` | **RETIRED / FSV-verified 2026-05-13 (#138)** | same |
+| `cc-reality-source-of-truth-readback` agent | `.claude/agents/` | **KEEP / FSV-verified active 2026-05-13 (#138)** | repurposed as a generic readback agent |
+| `cc-reality-swe-failure-triage` agent | `.claude/agents/` | **KEEP / FSV-verified active 2026-05-13 (#138)** | read-only capture-mode SWE-bench Docker/evaluator triage; no retired-agent routing |
 
 ---
 
@@ -145,11 +145,11 @@ The SMAP roster doc lists agents. Update:
 
 | Agent | Action |
 |---|---|
-| `cc-reality-harness-editor` | mark `status: retired`; keep as historical reference |
-| `cc-reality-diagnostician` | mark `status: retired` |
-| `cc-reality-reward-analyst` | mark `status: retired` |
-| `cc-reality-source-of-truth-readback` | KEEP (still useful for source-of-truth verification) |
-| `cc-reality-swe-failure-triage` | KEEP (repurposed for capture-mode SWE-bench triage) |
+| `cc-reality-harness-editor` | **complete (#138)** — marked `status: retired`; kept as historical reference |
+| `cc-reality-diagnostician` | **complete (#138)** — marked `status: retired` |
+| `cc-reality-reward-analyst` | **complete (#138)** — marked `status: retired` |
+| `cc-reality-source-of-truth-readback` | **complete (#138)** — kept active for generic source-of-truth verification |
+| `cc-reality-swe-failure-triage` | **complete (#138)** — kept active for capture-mode SWE-bench triage |
 | All other agents | review per `agents/README.md`; most KEEP |
 
 ---
