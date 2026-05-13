@@ -48,6 +48,7 @@ mod handlers;
 mod monitoring;
 mod protocol;
 mod server;
+mod telemetry;
 mod tools;
 mod weights;
 

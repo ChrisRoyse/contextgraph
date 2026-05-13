@@ -375,7 +375,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         ToolDefinition::new(
             "mejepa_vram_budget_report",
-            "Run the CUDA cuMemGetInfo-backed Phase 1b VRAM budget check. Fails closed when WSL/Windows GPU access is unavailable.",
+            "Run the CUDA cuMemGetInfo-backed Phase 1b VRAM budget check and include non-authoritative hardened nvidia-smi WSL diagnostics.",
             json!({
                 "type": "object",
                 "properties": {

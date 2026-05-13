@@ -22,5 +22,6 @@ pub mod handlers;
 pub mod monitoring;
 pub mod protocol;
 pub mod server;
+pub mod telemetry;
 pub mod tools;
 pub mod weights;

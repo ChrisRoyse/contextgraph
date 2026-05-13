@@ -59,6 +59,7 @@ use super::embedder_dtos::{
 
 use super::super::Handlers;
 use super::helpers::ToolErrorKind;
+use crate::telemetry::gpu_wsl::{default_query as gpu_wsl_default_query, nvidia_smi_query};
 
 impl Handlers {
     /// search_by_embedder tool implementation.
@@ -1846,8 +1847,28 @@ impl Handlers {
                 )
             }
         };
+        let nvidia_smi_diagnostic = match nvidia_smi_query(gpu_wsl_default_query()).await {
+            Ok(value) => json!({
+                "status": "available",
+                "unavailable": !value.unavailable_fields.is_empty(),
+                "telemetry": value
+            }),
+            Err(err) => json!({
+                "status": "unavailable",
+                "unavailable": true,
+                "fault": err
+            }),
+        };
         match mejepa_query_vram_budget(budget) {
-            Ok(report) => self.tool_result(id, json!({"report": report, "passes": true})),
+            Ok(report) => self.tool_result(
+                id,
+                json!({
+                    "report": report,
+                    "passes": true,
+                    "sourceOfTruth": "CUDA driver cuMemGetInfo_v2",
+                    "nvidiaSmiDiagnostic": nvidia_smi_diagnostic
+                }),
+            ),
             Err(err) => self.tool_error(id, &format!("{}: {}", err.code(), err)),
         }
     }

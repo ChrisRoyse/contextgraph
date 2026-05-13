@@ -39,6 +39,7 @@ use super::mejepa_phase7_storage::{subscriber_state_for_provenance, subscriber_s
 use crate::handlers::tools::helpers::ToolErrorKind;
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
+use crate::telemetry::gpu_wsl::{default_query as gpu_wsl_default_query, nvidia_smi_query};
 use crate::tools::names as tool_names;
 
 const ENV_TCT_DB: &str = "CONTEXTGRAPH_MEJEPA_TCT_DB";
@@ -802,12 +803,32 @@ impl Handlers {
         components.insert("quota".to_string(), quota);
 
         let vram = if request.include_vram {
+            let nvidia_smi = match nvidia_smi_query(gpu_wsl_default_query()).await {
+                Ok(value) => json!({
+                    "status": "available",
+                    "unavailable": !value.unavailable_fields.is_empty(),
+                    "telemetry": value
+                }),
+                Err(err) => json!({
+                    "status": "unavailable",
+                    "unavailable": true,
+                    "fault": err
+                }),
+            };
             match query_vram_budget(request.vram_budget.as_budget()) {
-                Ok(value) => healthy_component(json!(value)),
+                Ok(value) => healthy_component(json!({
+                    "cudaDriverBudget": value,
+                    "nvidiaSmi": nvidia_smi,
+                    "sourceOfTruth": "cuda_driver_cuMemGetInfo_v2",
+                    "nvidiaSmiAuthoritative": false
+                })),
                 Err(err) => unavailable_component(
                     err.code().to_string(),
                     err.to_string(),
-                    json!({"budget": format!("{:?}", request.vram_budget)}),
+                    json!({
+                        "budget": format!("{:?}", request.vram_budget),
+                        "nvidiaSmi": nvidia_smi
+                    }),
                 ),
             }
         } else {
@@ -826,7 +847,7 @@ impl Handlers {
                 "subscriber": "CF_MEJEPA_SHIFT_WATERMARK + optional CF_MEJEPA_PANELS",
                 "heal": "ME-JEPA heal RocksDB CFs",
                 "quota": "ME-JEPA hygiene RocksDB CFs + archive root filesystem",
-                "vram": "CUDA driver cuMemGetInfo_v2"
+                "vram": "CUDA driver cuMemGetInfo_v2; nvidia-smi diagnostic is non-authoritative under WSL"
             }
         }))
     }

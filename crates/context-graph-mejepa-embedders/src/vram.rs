@@ -3,9 +3,11 @@ use crate::types::VramBudgetReport;
 use context_graph_cuda::safe::GpuDevice;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 pub const GB: u64 = 1024 * 1024 * 1024;
+const NVIDIA_SMI_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -92,17 +94,26 @@ pub fn nvidia_smi_total_mb_from_command(
     command: impl AsRef<Path>,
     device_ordinal: i32,
 ) -> Result<u64, String> {
+    nvidia_smi_total_mb_from_command_with_timeout(command, device_ordinal, NVIDIA_SMI_TIMEOUT)
+}
+
+pub fn nvidia_smi_total_mb_from_command_with_timeout(
+    command: impl AsRef<Path>,
+    device_ordinal: i32,
+    timeout: Duration,
+) -> Result<u64, String> {
     let command = command.as_ref();
     let ordinal = device_ordinal.to_string();
-    let output = Command::new(command)
-        .args([
+    let output = run_nvidia_smi_with_timeout(
+        command,
+        &[
             "--query-gpu=memory.total",
             "--format=csv,noheader,nounits",
             "-i",
             &ordinal,
-        ])
-        .output()
-        .map_err(|err| format!("failed to execute {}: {err}", command.display()))?;
+        ],
+        timeout,
+    )?;
     if !output.status.success() {
         return Err(format!(
             "{} exited with status {:?}: {}",
@@ -114,6 +125,51 @@ pub fn nvidia_smi_total_mb_from_command(
     let stdout = String::from_utf8(output.stdout)
         .map_err(|err| format!("nvidia-smi stdout was not UTF-8: {err}"))?;
     parse_nvidia_smi_memory_total_mb(&stdout)
+}
+
+fn run_nvidia_smi_with_timeout(
+    command: &Path,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<Output, String> {
+    if timeout.is_zero() {
+        return Err("nvidia-smi timeout must be greater than zero".to_string());
+    }
+    let mut child = Command::new(command)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| format!("failed to execute {}: {err}", command.display()))?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        if child
+            .try_wait()
+            .map_err(|err| format!("failed to poll {}: {err}", command.display()))?
+            .is_some()
+        {
+            return child
+                .wait_with_output()
+                .map_err(|err| format!("failed to collect {} output: {err}", command.display()));
+        }
+        if Instant::now() >= deadline {
+            let kill_result = child.kill();
+            let _ = child.wait_with_output();
+            return match kill_result {
+                Ok(()) => Err(format!(
+                    "{} timed out after {} ms and was killed",
+                    command.display(),
+                    timeout.as_millis()
+                )),
+                Err(err) => Err(format!(
+                    "{} timed out after {} ms and kill failed: {err}",
+                    command.display(),
+                    timeout.as_millis()
+                )),
+            };
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 pub fn parse_nvidia_smi_memory_total_mb(stdout: &str) -> Result<u64, String> {
@@ -174,5 +230,26 @@ mod tests {
     fn diagnostic_status_marks_nvidia_smi_non_authoritative() {
         let status = nvidia_smi_status(&Err("failed to execute nvidia-smi".to_string()));
         assert!(status.starts_with("diagnostic_unavailable_not_authoritative"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn times_out_hung_nvidia_smi_command() {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let command = root.path().join("nvidia-smi-hang");
+        {
+            let mut file = std::fs::File::create(&command).unwrap();
+            writeln!(file, "#!/usr/bin/env bash").unwrap();
+            writeln!(file, "exec sleep 5").unwrap();
+            file.sync_all().unwrap();
+        }
+        std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let err =
+            nvidia_smi_total_mb_from_command_with_timeout(&command, 0, Duration::from_millis(100))
+                .unwrap_err();
+        assert!(err.contains("timed out"));
     }
 }
