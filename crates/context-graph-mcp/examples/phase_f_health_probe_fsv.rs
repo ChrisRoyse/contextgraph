@@ -74,6 +74,23 @@ async fn main() -> Result<()> {
             && restarting.body["errorCode"] == "MEJEPA_HEALTH_PROBE_SUPERVISOR_NOT_RUNNING",
     }));
 
+    write_status_with_pid(
+        &status_path,
+        "running",
+        std::process::id().saturating_add(1),
+        BTreeMap::new(),
+    )?;
+    let pid_mismatch = http_get(probe.local_addr, "/ready")?;
+    boundary_cases.push(json!({
+        "case": "supervisor_pid_mismatch_returns_503",
+        "before": {"pid": "not current process"},
+        "trigger": "GET /ready",
+        "expected": "HTTP 503 and MEJEPA_HEALTH_PROBE_SUPERVISOR_PID_MISMATCH",
+        "actual": {"status": pid_mismatch.status, "body": pid_mismatch.body},
+        "pass": pid_mismatch.status == 503
+            && pid_mismatch.body["errorCode"] == "MEJEPA_HEALTH_PROBE_SUPERVISOR_PID_MISMATCH",
+    }));
+
     fs::remove_file(&status_path)?;
     let missing = http_get(probe.local_addr, "/ready")?;
     boundary_cases.push(json!({
@@ -194,9 +211,18 @@ fn http_get(addr: SocketAddr, path: &str) -> Result<HttpResponse> {
 }
 
 fn write_status(path: &Path, status: &str, restart_counts: BTreeMap<String, usize>) -> Result<()> {
+    write_status_with_pid(path, status, std::process::id(), restart_counts)
+}
+
+fn write_status_with_pid(
+    path: &Path,
+    status: &str,
+    pid: u32,
+    restart_counts: BTreeMap<String, usize>,
+) -> Result<()> {
     let bytes = serde_json::to_vec_pretty(&json!({
         "status": status,
-        "pid": std::process::id(),
+        "pid": pid,
         "supervised_tasks": supervised_task_names(),
         "restart_counts": restart_counts,
         "updated_at_unix_seconds": chrono::Utc::now().timestamp(),

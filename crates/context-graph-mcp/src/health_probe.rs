@@ -220,6 +220,21 @@ pub fn evaluate_readiness(scheduler_state_dir: &Path) -> HealthReadinessReport {
         }
     };
 
+    let current_pid = std::process::id();
+    if snapshot.pid != current_pid {
+        return not_ready(
+            status_file,
+            "MEJEPA_HEALTH_PROBE_SUPERVISOR_PID_MISMATCH",
+            format!(
+                "supervisor status pid {} does not match current daemon pid {}",
+                snapshot.pid, current_pid
+            ),
+            snapshot.restart_counts,
+            snapshot.supervised_tasks,
+            generated_at_unix_seconds,
+        );
+    }
+
     let missing_tasks = supervised_task_names()
         .into_iter()
         .filter(|task| !snapshot.supervised_tasks.iter().any(|seen| seen == task))
@@ -314,7 +329,7 @@ mod tests {
         let path = dir.join("flywheel_supervisor_status.json");
         let bytes = serde_json::to_vec_pretty(&json!({
             "status": status,
-            "pid": 12345,
+            "pid": std::process::id(),
             "supervised_tasks": supervised_task_names(),
             "restart_counts": restart_counts,
             "updated_at_unix_seconds": 1_778_000_000_i64,
@@ -361,6 +376,28 @@ mod tests {
         assert_eq!(
             report.error_code.as_deref(),
             Some("MEJEPA_HEALTH_PROBE_SUPERVISOR_STATUS_MISSING")
+        );
+    }
+
+    #[test]
+    fn readiness_rejects_pid_mismatch() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(temp.path()).expect("create scheduler dir");
+        let path = temp.path().join("flywheel_supervisor_status.json");
+        let bytes = serde_json::to_vec_pretty(&json!({
+            "status": "running",
+            "pid": std::process::id().saturating_add(1),
+            "supervised_tasks": supervised_task_names(),
+            "restart_counts": {},
+            "updated_at_unix_seconds": 1_778_000_000_i64,
+        }))
+        .expect("encode status");
+        std::fs::write(path, bytes).expect("write status");
+        let report = evaluate_readiness(temp.path());
+        assert!(!report.ready);
+        assert_eq!(
+            report.error_code.as_deref(),
+            Some("MEJEPA_HEALTH_PROBE_SUPERVISOR_PID_MISMATCH")
         );
     }
 }
