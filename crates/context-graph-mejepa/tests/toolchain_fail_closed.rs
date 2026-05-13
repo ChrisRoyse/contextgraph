@@ -33,7 +33,10 @@ fn default_catalogue_has_one_extractor_per_language() {
     let languages: BTreeSet<Language> = catalogue.iter().map(|t| t.language).collect();
     // Per CLAUDE.md §3.10 the supported languages are Rust, Python,
     // JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP.
-    assert!(languages.len() >= 11, "default catalogue must cover all supported languages");
+    assert!(
+        languages.len() >= 11,
+        "default catalogue must cover all supported languages"
+    );
 }
 
 #[test]
@@ -97,5 +100,7 @@ fn empty_path_env_yields_missing_diagnostics_for_all_extractors() {
 fn invalid_requirement_fails_closed() {
     let bad = ToolchainBinary::new("", Language::Python, "py", "install");
     let err = audit_required_toolchains(std::slice::from_ref(&bad), Some("/usr/bin")).unwrap_err();
-    assert!(err.to_string().contains("MEJEPA_LABEL_TOOLCHAIN_INVALID_REQUIREMENT"));
+    assert!(err
+        .to_string()
+        .contains("MEJEPA_LABEL_TOOLCHAIN_INVALID_REQUIREMENT"));
 }

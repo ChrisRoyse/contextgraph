@@ -25,6 +25,7 @@ pub mod grad_hook;
 pub mod heal;
 pub mod loss;
 pub mod ood;
+pub mod operator_override;
 pub mod oracle_head;
 pub mod panel_source;
 pub mod prediction_replay;
@@ -82,6 +83,7 @@ pub use grad_hook::{
 };
 pub use loss::{huber_loss_delta_one, vicreg_loss, VarianceFloorHistory};
 pub use ood::*;
+pub use operator_override::*;
 pub use oracle_head::OracleHead;
 pub use prediction_replay::*;
 pub use prediction_surfaces::*;

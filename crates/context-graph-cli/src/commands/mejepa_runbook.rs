@@ -110,11 +110,9 @@ pub fn run_pause(args: PauseArgs) -> Result<PauseOutput> {
         .checked_mul(60_000)
         .and_then(|value| i64::try_from(value).ok())
         .ok_or_else(|| anyhow!("MEJEPA_RUNBOOK_PAUSE_OVERFLOW: duration calculation overflowed"))?;
-    let paused_until_ms = now_ms
-        .checked_add(duration_ms)
-        .ok_or_else(|| {
-            anyhow!("MEJEPA_RUNBOOK_PAUSE_OVERFLOW: paused_until calculation overflowed i64")
-        })?;
+    let paused_until_ms = now_ms.checked_add(duration_ms).ok_or_else(|| {
+        anyhow!("MEJEPA_RUNBOOK_PAUSE_OVERFLOW: paused_until calculation overflowed i64")
+    })?;
     let state = PauseState {
         paused_until_unix_ms: paused_until_ms,
         set_at_unix_ms: now_ms,
@@ -762,5 +760,54 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("MEJEPA_RUNBOOK_STATEROOT_MISSING"));
+    }
+
+    #[test]
+    fn run_pause_writes_and_reads_back_state_file() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let state_path = temp.path().join("pause-state.json");
+        let output = run_pause(PauseArgs {
+            state_path: state_path.clone(),
+            duration_mins: 5,
+            reason: "unit-test".to_string(),
+        })
+        .unwrap();
+        assert!(output.readback_equal);
+        assert!(output.paused_until_unix_ms > output.set_at_unix_ms);
+        let readback: PauseState =
+            serde_json::from_slice(&std::fs::read(state_path).unwrap()).unwrap();
+        assert_eq!(readback.reason, "unit-test");
+        assert_eq!(readback.paused_until_unix_ms, output.paused_until_unix_ms);
+    }
+
+    #[test]
+    fn run_pause_rejects_invalid_boundaries() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let zero = run_pause(PauseArgs {
+            state_path: temp.path().join("zero.json"),
+            duration_mins: 0,
+            reason: "unit-test".to_string(),
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(zero.contains("MEJEPA_RUNBOOK_PAUSE_DURATION_ZERO"));
+
+        let invalid_reason = run_pause(PauseArgs {
+            state_path: temp.path().join("reason.json"),
+            duration_mins: 1,
+            reason: "bad\nreason".to_string(),
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(invalid_reason.contains("MEJEPA_RUNBOOK_PAUSE_REASON_INVALID"));
+
+        let empty_path = run_pause(PauseArgs {
+            state_path: PathBuf::new(),
+            duration_mins: 1,
+            reason: "unit-test".to_string(),
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(empty_path.contains("MEJEPA_RUNBOOK_PAUSE_STATE_PATH_EMPTY"));
     }
 }

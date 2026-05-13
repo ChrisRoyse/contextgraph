@@ -326,6 +326,39 @@ pub fn definitions() -> Vec<ToolDefinition> {
             }),
         ),
         ToolDefinition::new(
+            tool_names::MEJEPA_OPERATOR_OVERRIDE_PREDICTION,
+            "Record an operator override for a persisted ME-JEPA RealityPrediction. Persists CF_MEJEPA_OPERATOR_OVERRIDES, writes a human active-learning label, and returns the 6x sampling-weight flag readback for the next batch.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["predictionId", "overrideVerdict", "reason", "operatorId"],
+                "properties": {
+                    "dbPath": {
+                        "type": "string",
+                        "description": "Optional Phase 4 inference RocksDB path. If omitted, CONTEXTGRAPH_MEJEPA_INFER_DB is used."
+                    },
+                    "predictionId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{32}$"
+                    },
+                    "overrideVerdict": {
+                        "type": "string",
+                        "enum": ["pass", "fail", "abstain", "out_of_distribution"]
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                    },
+                    "operatorId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
             tool_names::MEJEPA_ROLLBACK_TO,
             "Rollback ME-JEPA active weights to a previously promoted witness-chain offset. The target must exist in CF_MEJEPA_HEAL_REPORTS and the weight blob must exist in CF_MEJEPA_WEIGHT_BLOBS; otherwise the tool fails closed.",
             json!({

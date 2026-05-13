@@ -1679,6 +1679,10 @@ pub enum FailedGate {
     ConstellationGuardRejected {
         reason: String,
     },
+    PredictionPaused {
+        paused_until_unix_ms: i64,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

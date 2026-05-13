@@ -51,6 +51,8 @@ pub const CF_MEJEPA_DDA_SIGNALS: &str = "CF_MEJEPA_DDA_SIGNALS";
 pub const CF_MEJEPA_FAILURE_EXEMPLARS: &str = "CF_MEJEPA_FAILURE_EXEMPLARS";
 pub const CF_MEJEPA_AGENT_FEEDBACK: &str = "CF_MEJEPA_AGENT_FEEDBACK";
 pub const CF_MEJEPA_FLYWHEEL_JOB_RUNS: &str = "CF_MEJEPA_FLYWHEEL_JOB_RUNS";
+// REQ-PREDICT-12 — operator override records, keyed by prediction_id.
+pub const CF_MEJEPA_OPERATOR_OVERRIDES: &str = "CF_MEJEPA_OPERATOR_OVERRIDES";
 
 /// REQ-FLYWHEEL-10 grouping. Daemon openers extend their CF descriptor list
 /// with this slice so the three new CFs land on disk during the first daemon
@@ -108,6 +110,7 @@ pub const INFER_CFS: &[&str] = &[
     CF_MEJEPA_FAILURE_EXEMPLARS,
     CF_MEJEPA_AGENT_FEEDBACK,
     CF_MEJEPA_FLYWHEEL_JOB_RUNS,
+    CF_MEJEPA_OPERATOR_OVERRIDES,
 ];
 
 pub const EVAL_CFS: &[&str] = &[
@@ -204,6 +207,7 @@ pub const ALL_HYGIENE_REFERENCED_CFS: &[&str] = &[
     CF_MEJEPA_CONSTELLATION,
     CF_MEJEPA_GUARD_DECISIONS,
     CF_MEJEPA_CONSTELLATION_REFRESH_REPORTS,
+    CF_MEJEPA_OPERATOR_OVERRIDES,
 ];
 
 pub const MEJEPA_HYGIENE_REFERENCED_CF_COUNT: usize = ALL_HYGIENE_REFERENCED_CFS.len();

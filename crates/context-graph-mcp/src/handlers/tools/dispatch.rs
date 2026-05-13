@@ -226,6 +226,7 @@ impl Handlers {
             tool_names::MEJEPA_HEAL_STATUS => call_mejepa_heal_status(arguments),
             tool_names::MEJEPA_DAEMON_STATUS => call_mejepa_daemon_status(arguments),
             tool_names::MEJEPA_PAUSE_PREDICTIONS => call_mejepa_pause_predictions(arguments),
+            tool_names::MEJEPA_OPERATOR_OVERRIDE_PREDICTION => call_mejepa_operator_override_prediction(arguments),
             tool_names::MEJEPA_ROLLBACK_TO => call_mejepa_rollback_to(arguments),
             tool_names::MEJEPA_PROMOTE_APPROVAL => call_mejepa_promote_approval(arguments),
             tool_names::MEJEPA_GC_RUN => call_mejepa_gc_run(arguments),

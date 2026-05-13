@@ -13,17 +13,23 @@ use context_graph_mejepa::heal::{
     PromotionApprovalRequest as HealPromotionApprovalRequest, PromotionGate, PromotionLockState,
     WitnessChainAppender, CF_MEJEPA_ACTIVE_POINTERS, CF_MEJEPA_HEAL_REPORTS,
 };
+use context_graph_mejepa::operator_override::{
+    count_operator_overrides, load_operator_override, operator_override_flags_for_predictions,
+    persist_operator_override, OperatorOverride, OverrideVerdict,
+    OPERATOR_OVERRIDE_SAMPLING_WEIGHT,
+};
 use context_graph_mejepa::{
     build_deterministic_compiler, open_infer_rocksdb, ActiveLearningQueueState, ActualOutcome,
     AgentId, CalibrationStore, ChunkId, DdaSignals, FailedGate, FeedbackId, FeedbackKind,
-    MeJepaInferConfig, OracleOutcome, PanelId, PatchBundle, PredictionId, RealityPrediction,
-    RocksDbEvalStore, RocksDbInferStore, SurpriseEvent, SurpriseSeverity, TaskContext, TestId,
-    VerifyVerdict, WitnessHash,
+    LabelMethod, MeJepaInferConfig, OracleOutcome, PanelId, PatchBundle, PredictionId,
+    RealityPrediction, RocksDbEvalStore, RocksDbInferStore, SurpriseEvent, SurpriseSeverity,
+    TaskContext, TestId, VerifyVerdict, WitnessHash,
 };
 use context_graph_mejepa_cf::{
-    CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_AGENT_FEEDBACK,
-    CF_MEJEPA_CALIBRATION_HISTORY, CF_MEJEPA_DDA_SIGNALS, CF_MEJEPA_LIVE_PREDICTIONS,
-    CF_MEJEPA_OOD_ESCALATIONS, CF_MEJEPA_TRAIN_CERTS,
+    CF_MEJEPA_ACTIVE_LEARNING_EVICTIONS, CF_MEJEPA_ACTIVE_LEARNING_LABELS,
+    CF_MEJEPA_ACTIVE_LEARNING_QUEUE, CF_MEJEPA_AGENT_FEEDBACK, CF_MEJEPA_CALIBRATION_HISTORY,
+    CF_MEJEPA_DDA_SIGNALS, CF_MEJEPA_LIVE_PREDICTIONS, CF_MEJEPA_OOD_ESCALATIONS,
+    CF_MEJEPA_OPERATOR_OVERRIDES, CF_MEJEPA_TRAIN_CERTS,
 };
 use context_graph_mejepa_embedders::{query_vram_budget, VramBudget};
 use context_graph_mejepa_hygiene::{mcp_quota_status, HygieneMcpRequest};
@@ -128,6 +134,16 @@ struct PausePredictionsRequest {
     duration_mins: u64,
     #[serde(default = "default_pause_reason")]
     reason: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct OperatorOverridePredictionRequest {
+    db_path: Option<PathBuf>,
+    prediction_id: String,
+    override_verdict: OverrideVerdict,
+    reason: String,
+    operator_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -245,6 +261,10 @@ impl Handlers {
             Ok(path) => path,
             Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
         };
+        let pause_path = match resolve_pause_state_path(None) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
         let repo_root = request.context.environment.repo_root.clone();
         info!(
             tool = tool_names::MEJEPA_VERIFY,
@@ -253,6 +273,62 @@ impl Handlers {
             "ME-JEPA verify"
         );
         let session_id = request.context.session_id;
+        let now_ms = match now_unix_ms() {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_structured(
+                    id,
+                    ToolErrorKind::Execution,
+                    "MEJEPA_PAUSE_CLOCK_FAILED",
+                    &err.to_string(),
+                    json!({"statePath": pause_path}),
+                );
+            }
+        };
+        match active_pause_state(&pause_path, now_ms) {
+            Ok(Some(pause_state)) => {
+                let verdict = VerifyVerdict::EscalateToHuman {
+                    reality_prediction: None,
+                    failed_gate: FailedGate::PredictionPaused {
+                        paused_until_unix_ms: pause_state.paused_until_unix_ms,
+                        reason: pause_state.reason.clone(),
+                    },
+                    gates_passed: 0,
+                };
+                let mut response = match serde_json::to_value(verdict) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        return self.tool_error_structured(
+                            id,
+                            ToolErrorKind::Execution,
+                            "MEJEPA_PAUSE_RESPONSE_SERIALIZE_FAILED",
+                            &err.to_string(),
+                            json!({"statePath": pause_path}),
+                        );
+                    }
+                };
+                response["pause_state"] = pause_state_value(&pause_path, &pause_state, now_ms);
+                if request.include_provenance {
+                    response["provenance"] = json!({
+                        "codeVersion": env!("CARGO_PKG_VERSION"),
+                        "dbPath": db_path,
+                        "mode": "deterministic_phase4_harness",
+                        "pauseStatePath": pause_path,
+                    });
+                }
+                return self.tool_result(id, response);
+            }
+            Ok(None) => {}
+            Err(err) => {
+                return self.tool_error_structured(
+                    id,
+                    ToolErrorKind::Storage,
+                    "MEJEPA_PAUSE_STATE_INVALID",
+                    &err.to_string(),
+                    json!({"statePath": pause_path}),
+                );
+            }
+        }
         let result = (|| {
             ensure_deterministic_verify_allowed()?;
             let db = open_infer_rocksdb(&db_path)?;
@@ -788,6 +864,40 @@ impl Handlers {
                 "MEJEPA_PAUSE_PREDICTIONS_FAILED",
                 &err.to_string(),
                 json!({"statePath": state_path}),
+            ),
+        }
+    }
+
+    pub(crate) async fn call_mejepa_operator_override_prediction(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let request: OperatorOverridePredictionRequest = match serde_json::from_value(args) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Validation,
+                    &format!(
+                        "{} schema validation failed: {err}",
+                        tool_names::MEJEPA_OPERATOR_OVERRIDE_PREDICTION
+                    ),
+                );
+            }
+        };
+        let db_path = match resolve_optional_infer_db_path(request.db_path.as_ref()) {
+            Ok(path) => path,
+            Err(message) => return self.tool_error_typed(id, ToolErrorKind::Validation, &message),
+        };
+        match record_operator_override_in_db(&db_path, request) {
+            Ok(value) => self.tool_result(id, value),
+            Err(err) => self.tool_error_structured(
+                id,
+                ToolErrorKind::Storage,
+                "MEJEPA_OPERATOR_OVERRIDE_FAILED",
+                &err.to_string(),
+                json!({"dbPath": db_path}),
             ),
         }
     }
@@ -1654,6 +1764,83 @@ fn record_agent_feedback_in_db(
     }))
 }
 
+fn record_operator_override_in_db(
+    db_path: &Path,
+    request: OperatorOverridePredictionRequest,
+) -> AnyhowResult<Value> {
+    let prediction_id = parse_prediction_id_hex(&request.prediction_id)?;
+    let db = open_infer_rocksdb(db_path).context("open inference RocksDB")?;
+    let prediction = find_prediction_by_id(db.as_ref(), prediction_id)?;
+    let created_at_unix_ms = chrono::Utc::now().timestamp_millis();
+    let override_record = OperatorOverride::new(
+        prediction_id,
+        request.override_verdict,
+        request.reason,
+        request.operator_id,
+        created_at_unix_ms,
+    )
+    .map_err(|err| anyhow!("{err}"))?;
+    let override_count_before = count_operator_overrides(db.as_ref()).unwrap_or(0);
+    persist_operator_override(db.as_ref(), &override_record).map_err(|err| anyhow!("{err}"))?;
+
+    let eval_store = RocksDbEvalStore::new(db.clone()).context("construct RocksDbEvalStore")?;
+    let label = override_record.active_learning_label(prediction.task_id.clone());
+    eval_store
+        .persist_label(&label)
+        .context("persist operator override active-learning label")?;
+    let override_readback = load_operator_override(db.as_ref(), prediction_id)
+        .map_err(|err| anyhow!("{err}"))?
+        .ok_or_else(|| anyhow!("MEJEPA_OPERATOR_OVERRIDE_READBACK_MISSING"))?;
+    let label_readback = eval_store
+        .load_label(&prediction.task_id)
+        .context("load operator override active-learning label")?
+        .ok_or_else(|| anyhow!("MEJEPA_OPERATOR_OVERRIDE_LABEL_READBACK_MISSING"))?;
+    if override_readback != override_record {
+        bail!("MEJEPA_OPERATOR_OVERRIDE_READBACK_MISMATCH");
+    }
+    if label_readback.oracle_outcome != override_record.override_verdict.oracle_outcome()
+        || label_readback.method != LabelMethod::Human
+    {
+        bail!("MEJEPA_OPERATOR_OVERRIDE_LABEL_READBACK_MISMATCH");
+    }
+    let override_count_after =
+        count_operator_overrides(db.as_ref()).map_err(|err| anyhow!("{err}"))?;
+    let flags = operator_override_flags_for_predictions(db.as_ref(), &[prediction_id])
+        .map_err(|err| anyhow!("{err}"))?;
+    let sampling_weight_multiplier =
+        context_graph_mejepa_train::learning_signal::sampling_weight(1.0, flags[0], 0.0, 0.995);
+    let task_id_string = prediction.task_id.0.clone();
+    let covered_chunks = prediction.covered_chunks.clone();
+    Ok(json!({
+        "status": "recorded",
+        "predictionId": hex::encode(prediction_id.0),
+        "taskId": task_id_string.clone(),
+        "overrideVerdict": override_record.override_verdict,
+        "operatorId": override_record.operator_id,
+        "samplingWeightMultiplier": sampling_weight_multiplier,
+        "operatorOverrideCountBefore": override_count_before,
+        "operatorOverrideCountAfter": override_count_after,
+        "affectedChunks": covered_chunks,
+        "report": {
+            "operatorOverrideCount": override_count_after,
+            "activeLearningLabelMethod": label_readback.method,
+            "activeLearningOracleOutcome": label_readback.oracle_outcome
+        },
+        "sourceOfTruth": {
+            "dbPath": db_path.display().to_string(),
+            "overrideCf": CF_MEJEPA_OPERATOR_OVERRIDES,
+            "overrideKeyHex": hex::encode(prediction_id.0),
+            "labelCf": CF_MEJEPA_ACTIVE_LEARNING_LABELS,
+            "labelKey": task_id_string
+        },
+        "readback": {
+            "override": override_readback,
+            "activeLearningLabel": label_readback,
+            "overrideFlagForNextBatch": flags[0]
+        }
+    }))
+}
+
 impl ActualOutcomeRequest {
     fn into_actual(self) -> ActualOutcome {
         ActualOutcome {
@@ -1955,6 +2142,9 @@ fn resolve_pause_state_path(input: Option<PathBuf>) -> Result<PathBuf, String> {
 }
 
 fn write_pause_state(state_path: &Path, duration_mins: u64, reason: &str) -> AnyhowResult<Value> {
+    if state_path.as_os_str().is_empty() {
+        bail!("MEJEPA_PAUSE_STATE_PATH_EMPTY: statePath must be a non-empty path");
+    }
     if duration_mins == 0 {
         bail!("MEJEPA_PAUSE_DURATION_ZERO: durationMins must be > 0");
     }
@@ -2011,6 +2201,7 @@ fn write_pause_state(state_path: &Path, duration_mins: u64, reason: &str) -> Any
     if readback != state {
         bail!("MEJEPA_PAUSE_READBACK_STATE_MISMATCH");
     }
+    validate_pause_state(&readback)?;
     Ok(json!({
         "statePath": state_path,
         "pausedUntilUnixMs": state.paused_until_unix_ms,
@@ -2024,6 +2215,72 @@ fn write_pause_state(state_path: &Path, duration_mins: u64, reason: &str) -> Any
             "writer": "mcp__cgreality__mejepa_pause_predictions",
         }
     }))
+}
+
+fn now_unix_ms() -> AnyhowResult<i64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("MEJEPA_PAUSE_CLOCK_BEFORE_UNIX_EPOCH")?
+        .as_millis()
+        .try_into()
+        .context("MEJEPA_PAUSE_CLOCK_OVERFLOW")
+}
+
+fn active_pause_state(
+    state_path: &Path,
+    now_unix_ms: i64,
+) -> AnyhowResult<Option<PausePredictionState>> {
+    if state_path.as_os_str().is_empty() {
+        bail!("MEJEPA_PAUSE_STATE_PATH_EMPTY: statePath must be a non-empty path");
+    }
+    if !state_path.exists() {
+        return Ok(None);
+    }
+    let bytes = std::fs::read(state_path)
+        .with_context(|| format!("MEJEPA_PAUSE_READBACK_FAILED: {}", state_path.display()))?;
+    if bytes.is_empty() {
+        bail!(
+            "MEJEPA_PAUSE_STATE_EMPTY: {} is empty",
+            state_path.display()
+        );
+    }
+    let state: PausePredictionState =
+        serde_json::from_slice(&bytes).context("MEJEPA_PAUSE_READBACK_DESERIALIZE_FAILED")?;
+    validate_pause_state(&state)?;
+    if state.paused_until_unix_ms > now_unix_ms {
+        Ok(Some(state))
+    } else {
+        Ok(None)
+    }
+}
+
+fn validate_pause_state(state: &PausePredictionState) -> AnyhowResult<()> {
+    if state.paused_until_unix_ms <= state.set_at_unix_ms {
+        bail!("MEJEPA_PAUSE_STATE_INVALID: pausedUntilUnixMs must be greater than setAtUnixMs");
+    }
+    if state.reason.trim().is_empty() || state.reason.chars().any(char::is_control) {
+        bail!("MEJEPA_PAUSE_STATE_INVALID: reason must be non-empty and contain no control characters");
+    }
+    if state.source.trim().is_empty() || state.source.chars().any(char::is_control) {
+        bail!("MEJEPA_PAUSE_STATE_INVALID: source must be non-empty and contain no control characters");
+    }
+    Ok(())
+}
+
+fn pause_state_value(state_path: &Path, state: &PausePredictionState, now_unix_ms: i64) -> Value {
+    json!({
+        "statePath": state_path,
+        "pausedUntilUnixMs": state.paused_until_unix_ms,
+        "setAtUnixMs": state.set_at_unix_ms,
+        "remainingMs": state.paused_until_unix_ms.saturating_sub(now_unix_ms),
+        "reason": state.reason.clone(),
+        "source": state.source.clone(),
+        "sourceOfTruth": {
+            "kind": "file",
+            "path": state_path,
+            "reader": "mcp__cgreality__mejepa_verify",
+        }
+    })
 }
 
 fn count_cf_any(db: &DB, name: &str) -> AnyhowResult<u64> {
@@ -2115,6 +2372,8 @@ mod mejepa_constellation_inspect_tests {
     fn env_guard() -> MutexGuard<'static, ()> {
         let guard = ENV_LOCK.lock().unwrap();
         std::env::remove_var(ENV_TCT_DB);
+        std::env::remove_var(ENV_INFER_DB);
+        std::env::remove_var(ENV_PAUSE_PATH);
         std::env::remove_var(ENV_ALLOW_DETERMINISTIC_VERIFY);
         std::env::remove_var(context_graph_mejepa_tct::ENV_ALLOW_STALE);
         std::env::remove_var(context_graph_mejepa_tct::ENV_MAX_AGE_DAYS);
@@ -2140,6 +2399,106 @@ mod mejepa_constellation_inspect_tests {
         let err =
             write_pause_state(&tmp.path().join("pause-state.json"), 0, "unit-test").unwrap_err();
         assert!(err.to_string().contains("MEJEPA_PAUSE_DURATION_ZERO"));
+    }
+
+    #[test]
+    fn active_pause_state_only_returns_future_pauses() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("pause-state.json");
+        let future = PausePredictionState {
+            paused_until_unix_ms: 2_000,
+            set_at_unix_ms: 1_000,
+            reason: "unit-test".to_string(),
+            source: tool_names::MEJEPA_PAUSE_PREDICTIONS.to_string(),
+        };
+        std::fs::write(&path, serde_json::to_vec_pretty(&future).unwrap()).unwrap();
+        assert!(active_pause_state(&path, 1_500).unwrap().is_some());
+        assert!(active_pause_state(&path, 2_000).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn mejepa_pause_predictions_handler_writes_state_file() {
+        let (handlers, _handler_tempdir) =
+            crate::handlers::tests::create_protocol_test_handlers().await;
+        let tmp = TempDir::new().unwrap();
+        let state_path = tmp.path().join("pause-state.json");
+        let response = handlers
+            .call_mejepa_pause_predictions(
+                Some(JsonRpcId::Number(47)),
+                json!({
+                    "statePath": state_path.display().to_string(),
+                    "durationMins": 5,
+                    "reason": "incident response"
+                }),
+            )
+            .await;
+        assert!(response.error.is_none());
+        let result = response.result.unwrap();
+        assert_eq!(result["isError"], false);
+        let structured = &result["structuredContent"];
+        assert_eq!(structured["readbackEqual"], true);
+        assert_eq!(structured["reason"], "incident response");
+        let readback: PausePredictionState =
+            serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+        assert!(readback.paused_until_unix_ms > readback.set_at_unix_ms);
+
+        let zero_response = handlers
+            .call_mejepa_pause_predictions(
+                Some(JsonRpcId::Number(48)),
+                json!({
+                    "statePath": state_path.display().to_string(),
+                    "durationMins": 0,
+                    "reason": "x"
+                }),
+            )
+            .await;
+        let zero_result = zero_response.result.unwrap();
+        assert_eq!(zero_result["isError"], true);
+        assert!(zero_result["structuredContent"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("MEJEPA_PAUSE_DURATION_ZERO"));
+    }
+
+    #[tokio::test]
+    async fn mejepa_verify_honors_active_pause_state() {
+        let _guard = env_guard();
+        let (handlers, _handler_tempdir) =
+            crate::handlers::tests::create_protocol_test_handlers().await;
+        let tmp = TempDir::new().unwrap();
+        let infer_db = tmp.path().join("infer-db");
+        let pause_path = tmp.path().join("pause-state.json");
+        std::env::set_var(ENV_INFER_DB, &infer_db);
+        std::env::set_var(ENV_PAUSE_PATH, &pause_path);
+        write_pause_state(&pause_path, 5, "operator requested pause").unwrap();
+        let (patch, context) =
+            context_graph_mejepa::fixture_patch_context(tmp.path(), "happy").unwrap();
+        let response = handlers
+            .call_mejepa_verify(
+                Some(JsonRpcId::Number(49)),
+                json!({
+                    "patch": patch,
+                    "context": context,
+                    "includeProvenance": true
+                }),
+            )
+            .await;
+        assert!(response.error.is_none());
+        let result = response.result.unwrap();
+        assert_eq!(result["isError"], false);
+        let structured = &result["structuredContent"];
+        assert_eq!(structured["verdict"], "escalate_to_human");
+        assert_eq!(structured["failed_gate"]["kind"], "prediction_paused");
+        assert_eq!(structured["gates_passed"], 0);
+        assert_eq!(
+            structured["pause_state"]["reason"],
+            "operator requested pause"
+        );
+        assert!(structured["pause_state"]["remainingMs"].as_i64().unwrap() > 0);
+        assert_eq!(
+            structured["provenance"]["pauseStatePath"],
+            json!(pause_path.display().to_string())
+        );
     }
 
     fn versions(seed: u8) -> BTreeMap<EmbedderId, [u8; 32]> {
