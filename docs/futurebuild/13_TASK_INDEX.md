@@ -240,7 +240,7 @@ The A-D readiness issues are closed for the Phase E handoff. Analyzer-backed ins
 |---|---|---|---|---|
 | `TASK-LOOP-003` | Mark superseded SMAP decisions | H | LOOP-001 | 0.25d |
 | `TASK-LOOP-004` | Retire legacy MCP tools | H | none | 0.25d |
-| `TASK-LOOP-005` | Audit absence of inner-actor model files | H | none | 0.1d |
+| `TASK-LOOP-005` | Audit absence of inner-actor model files | H | none | **complete (#134)** — `scripts/audit/no_inner_actor_models.sh`; FSV at `/mnt/d/contextgraph/fsv/phase-h-no-inner-actor-models-fsv/no_inner_actor_models_fsv.json` |
 | `TASK-LOOP-006` | Delete stale `target/release/reality-loop` binary | H | none | **complete (#135)** — `scripts/ci/phase_h_reality_loop_binary_absence_fsv.sh`; FSV at `/mnt/d/contextgraph/fsv/phase-h-reality-loop-binary-absence-fsv/reality_loop_binary_absence_fsv.json` |
 
 **Phase H total: ~0.7 days.**
