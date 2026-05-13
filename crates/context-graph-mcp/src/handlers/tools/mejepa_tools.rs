@@ -4164,6 +4164,7 @@ can_operator_override = {operator}
                     },
                     ood_score: 0.05,
                     calibration_nonconformity_score: if idx < 36 { 0.05 } else { 0.95 },
+                    cell_key: "known_good::python".to_string(),
                 })
                 .collect(),
             [7; 32],

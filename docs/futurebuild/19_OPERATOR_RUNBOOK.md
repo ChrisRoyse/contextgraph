@@ -79,6 +79,7 @@ If anything is degraded, see §6 Incident Response. Otherwise, you're done.
 less /mnt/d/contextgraph/exports/eval/$(date +%Y-%m-%d)/weekly.md
 
 # Look for:
+# - Operator Cell Triage top-10 table; take the suggested action per row
 # - Per-(category × language) ship-gate status (≥0.95 met / not met per cell)
 # - Drift events of the week
 # - Promotions / rollbacks

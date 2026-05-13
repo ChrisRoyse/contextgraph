@@ -1321,6 +1321,7 @@ pub fn write_weekly_eval_markdown(
     }
     let per_cell_state_transfer = render_state_transfer_per_cell_table(report);
     let failing_cell_root_causes = render_failing_cell_root_cause_table(report);
+    let operator_cell_triage = render_operator_cell_triage_table(report);
     let per_cell_ship_gate = if report.per_cell_correlation.is_empty() {
         "- none".to_string()
     } else {
@@ -1396,6 +1397,7 @@ pub fn write_weekly_eval_markdown(
          ## Per-Prediction-Class Calibration\n\n{}\n\n\
          ## Catastrophic Events\n\n{}\n\n\
          ## Per-Cell Ship Gate Status\n\n{}\n\n\
+         ## Operator Cell Triage\n\n{}\n\n\
          ## Failing Cell Root-Cause Classification\n\n{}\n\n\
          ## Active-Learning Queue Summary\n\n\
          - queued_count: {}\n\
@@ -1429,6 +1431,7 @@ pub fn write_weekly_eval_markdown(
         per_prediction_class_calibration,
         catastrophic_events,
         per_cell_ship_gate,
+        operator_cell_triage,
         failing_cell_root_causes,
         report.active_learning.queued_count,
         report.active_learning.evicted_count,
@@ -1505,6 +1508,94 @@ fn render_state_transfer_per_cell_table(report: &context_graph_mejepa::EvalRepor
             }),
     );
     rows.join("\n")
+}
+
+struct OperatorTriageRow {
+    cell: String,
+    correlation: Option<f32>,
+    sort_distance: f32,
+    root_cause: context_graph_mejepa::heal::drift_attribution::FailingCellRootCause,
+    confidence: f32,
+    suggested_action: &'static str,
+    evidence: String,
+}
+
+fn render_operator_cell_triage_table(report: &context_graph_mejepa::EvalReport) -> String {
+    let mut rows = vec![
+        "| rank | failing_cell | correlation | distance_to_0_95 | root_cause | confidence | suggested_action | evidence |".to_string(),
+        "|---:|---|---:|---:|---|---:|---|---|".to_string(),
+    ];
+    let mut triage_rows = report
+        .failing_cell_classifications
+        .iter()
+        .filter_map(|(cell, classification)| {
+            let correlation = report.per_cell_correlation.get(cell).copied().flatten();
+            if matches!(correlation, Some(value) if value >= 0.95) {
+                return None;
+            }
+            Some(OperatorTriageRow {
+                cell: cell.clone(),
+                correlation,
+                sort_distance: triage_sort_distance(correlation),
+                root_cause: classification.root_cause,
+                confidence: classification.confidence,
+                suggested_action: suggested_action_for_root_cause(classification.root_cause),
+                evidence: classification.evidence.join("; "),
+            })
+        })
+        .collect::<Vec<_>>();
+    if triage_rows.is_empty() {
+        rows.push("| none | none | unavailable | unavailable | unknown | 0.000000 | no_action | no failing cells classified |".to_string());
+        return rows.join("\n");
+    }
+    triage_rows.sort_by(|left, right| {
+        right
+            .sort_distance
+            .total_cmp(&left.sort_distance)
+            .then_with(|| right.confidence.total_cmp(&left.confidence))
+            .then_with(|| left.cell.cmp(&right.cell))
+    });
+    rows.extend(triage_rows.iter().take(10).enumerate().map(|(index, row)| {
+        format!(
+            "| {} | {} | {} | {} | {} | {:.6} | {} | {} |",
+            index + 1,
+            escape_markdown_table_cell(&row.cell),
+            format_optional_metric(row.correlation),
+            format_optional_metric(row.correlation.map(|value| (0.95 - value).max(0.0))),
+            failing_cell_root_cause_slug(row.root_cause),
+            row.confidence,
+            row.suggested_action,
+            escape_markdown_table_cell(&row.evidence)
+        )
+    }));
+    rows.join("\n")
+}
+
+fn triage_sort_distance(correlation: Option<f32>) -> f32 {
+    correlation
+        .map(|value| (0.95 - value).max(0.0))
+        .unwrap_or(f32::INFINITY)
+}
+
+fn suggested_action_for_root_cause(
+    root_cause: context_graph_mejepa::heal::drift_attribution::FailingCellRootCause,
+) -> &'static str {
+    use context_graph_mejepa::heal::drift_attribution::FailingCellRootCause;
+
+    match root_cause {
+        FailingCellRootCause::InsufficientTrainingData => "expand_corpus",
+        FailingCellRootCause::EmbedderSignalGap => "request_adversarial_sample",
+        FailingCellRootCause::LabelNoise => "recalibrate",
+        FailingCellRootCause::OracleFlakiness => "mark_exempt",
+        FailingCellRootCause::DistributionShift => "expand_corpus",
+        FailingCellRootCause::Unknown => "request_adversarial_sample",
+    }
+}
+
+fn format_optional_metric(value: Option<f32>) -> String {
+    value
+        .map(|value| format!("{value:.6}"))
+        .unwrap_or_else(|| "unavailable".to_string())
 }
 
 fn render_failing_cell_root_cause_table(report: &context_graph_mejepa::EvalReport) -> String {
@@ -2129,6 +2220,148 @@ mod tests {
         assert!(markdown.contains(
             "| subtle_flip::go | unavailable | unavailable | unavailable | collect_more_labels |"
         ));
+    }
+
+    #[test]
+    fn weekly_eval_markdown_renders_operator_cell_triage() {
+        use context_graph_mejepa::heal::drift_attribution::{
+            FailingCellClassification, FailingCellRootCause,
+        };
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let markdown_path = temp.path().join("weekly.md");
+        let insufficient_data = context_graph_mejepa::cell_key(
+            context_graph_mejepa::MutationCategory::KnownGood,
+            context_graph_mejepa::Language::Python,
+        );
+        let embedder_gap = context_graph_mejepa::cell_key(
+            context_graph_mejepa::MutationCategory::OffByOne,
+            context_graph_mejepa::Language::Rust,
+        );
+        let label_noise = context_graph_mejepa::cell_key(
+            context_graph_mejepa::MutationCategory::SubtleFlip,
+            context_graph_mejepa::Language::Go,
+        );
+        let oracle_flake = context_graph_mejepa::cell_key(
+            context_graph_mejepa::MutationCategory::SwapVariable,
+            context_graph_mejepa::Language::Java,
+        );
+        let distribution_shift = context_graph_mejepa::cell_key(
+            context_graph_mejepa::MutationCategory::WrongFile,
+            context_graph_mejepa::Language::Ruby,
+        );
+        let passing_classification = context_graph_mejepa::cell_key(
+            context_graph_mejepa::MutationCategory::KnownGood,
+            context_graph_mejepa::Language::Javascript,
+        );
+        let mut per_cell_correlation = BTreeMap::new();
+        per_cell_correlation.insert(insufficient_data.clone(), Some(0.40));
+        per_cell_correlation.insert(embedder_gap.clone(), Some(0.50));
+        per_cell_correlation.insert(label_noise.clone(), Some(0.60));
+        per_cell_correlation.insert(oracle_flake.clone(), Some(0.65));
+        per_cell_correlation.insert(distribution_shift.clone(), Some(0.70));
+        per_cell_correlation.insert(passing_classification.clone(), Some(0.99));
+        let mut failing_cell_classifications = BTreeMap::new();
+        for (cell, root_cause, confidence, evidence) in [
+            (
+                insufficient_data.clone(),
+                FailingCellRootCause::InsufficientTrainingData,
+                0.95,
+                "holdout_count=3",
+            ),
+            (
+                embedder_gap.clone(),
+                FailingCellRootCause::EmbedderSignalGap,
+                0.82,
+                "blind_spot_z=2.400000",
+            ),
+            (
+                label_noise.clone(),
+                FailingCellRootCause::LabelNoise,
+                0.86,
+                "label_disagreement_rate=0.210000",
+            ),
+            (
+                oracle_flake.clone(),
+                FailingCellRootCause::OracleFlakiness,
+                0.90,
+                "oracle_flake_rate=0.120000",
+            ),
+            (
+                distribution_shift.clone(),
+                FailingCellRootCause::DistributionShift,
+                0.84,
+                "distribution_shift_score=0.340000",
+            ),
+            (
+                passing_classification.clone(),
+                FailingCellRootCause::Unknown,
+                0.25,
+                "correlation=0.990000",
+            ),
+        ] {
+            failing_cell_classifications.insert(
+                cell.clone(),
+                FailingCellClassification {
+                    cell,
+                    root_cause,
+                    confidence,
+                    heuristic: "synthetic triage unit test".to_string(),
+                    evidence: vec![evidence.to_string()],
+                },
+            );
+        }
+        let report = context_graph_mejepa::EvalReport {
+            report_date: "2026-05-13".to_string(),
+            generated_at_unix_ms: 1_778_666_683_000,
+            rolling_window_size: 4,
+            holdout_count: 6,
+            overall_correlation: Some(0.65),
+            per_category_correlation: BTreeMap::new(),
+            per_language_correlation: BTreeMap::new(),
+            per_cell_correlation,
+            cell_exemptions: BTreeMap::new(),
+            bayesian_shrinkage: BTreeMap::new(),
+            conformal_coverage_health: BTreeMap::new(),
+            ood_calibration_health: BTreeMap::new(),
+            gtau_pass_rate: BTreeMap::new(),
+            per_prediction_class_calibration: BTreeMap::new(),
+            active_learning: context_graph_mejepa::ActiveLearningSummary {
+                queued_count: 0,
+                evicted_count: 0,
+                ood_escalation_count: 0,
+            },
+            state_transfer_diagnostic: None,
+            per_cell_state_transfer: BTreeMap::new(),
+            failing_cell_classifications,
+            aux_head_distillation: None,
+            regression_checks: Vec::new(),
+            open_research_questions: Vec::new(),
+            q1_pass_rate: 1.0,
+            q2_report_correlation: Some(0.65),
+            q3_side_effect_agreement: Some(1.0),
+            ship_gate_passed: false,
+            ship_gate_failures: vec!["synthetic below threshold".to_string()],
+            provenance: context_graph_mejepa::EvalProvenance {
+                corpus_sha: "synthetic".to_string(),
+                eval_code_version: "test".to_string(),
+                calibration_version: "test".to_string(),
+                generated_by: "weekly-operator-triage-unit-test".to_string(),
+            },
+            wall_clock_seconds: 0.1,
+        };
+        report.validate().expect("triage report is valid");
+        let operational = WeeklyOperationalSummary::new(0, 0, 0, 0, 0, 0);
+        write_weekly_eval_markdown(&markdown_path, &report, "synthetic-hash", &operational)
+            .expect("write weekly markdown");
+        let markdown = fs::read_to_string(markdown_path).expect("read weekly markdown");
+        assert!(markdown.contains("| rank | failing_cell | correlation | distance_to_0_95 | root_cause | confidence | suggested_action | evidence |"));
+        assert!(markdown.contains("| 1 | known_good::python | 0.400000 | 0.550000 | insufficient_training_data | 0.950000 | expand_corpus | holdout_count=3 |"));
+        assert!(markdown.contains("| 2 | off_by_one::rust | 0.500000 | 0.450000 | embedder_signal_gap | 0.820000 | request_adversarial_sample | blind_spot_z=2.400000 |"));
+        assert!(markdown.contains("| 3 | subtle_flip::go | 0.600000 | 0.350000 | label_noise | 0.860000 | recalibrate | label_disagreement_rate=0.210000 |"));
+        assert!(markdown.contains("| 4 | swap_variable::java | 0.650000 | 0.300000 | oracle_flakiness | 0.900000 | mark_exempt | oracle_flake_rate=0.120000 |"));
+        assert!(markdown.contains("| 5 | wrong_file::ruby | 0.700000 | 0.250000 | distribution_shift | 0.840000 | expand_corpus | distribution_shift_score=0.340000 |"));
+        assert!(!markdown.contains("| known_good::javascript | 0.990000 |"));
     }
 
     #[test]
