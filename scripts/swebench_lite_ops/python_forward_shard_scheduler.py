@@ -478,6 +478,74 @@ def cpu_snapshot() -> dict[str, Any]:
     }
 
 
+def parse_proc_meminfo() -> dict[str, Any]:
+    path = Path("/proc/meminfo")
+    require("MEJEPA_SCHEDULER_MEMINFO_EXISTS: /proc/meminfo exists", path.is_file())
+    wanted = {
+        "MemTotal",
+        "MemAvailable",
+        "MemFree",
+        "Buffers",
+        "Cached",
+        "SwapTotal",
+        "SwapFree",
+    }
+    rows: dict[str, int] = {}
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if ":" not in line:
+            continue
+        key, rest = line.split(":", 1)
+        if key not in wanted:
+            continue
+        parts = rest.strip().split()
+        require(f"MEJEPA_SCHEDULER_MEMINFO_PARSE: {key} has kB value", len(parts) >= 1)
+        rows[f"{key}_bytes"] = int(parts[0]) * 1024
+    for key in wanted:
+        require(f"MEJEPA_SCHEDULER_MEMINFO_MISSING: {key}", f"{key}_bytes" in rows)
+    require(
+        "MEJEPA_SCHEDULER_MEMINFO_AVAILABLE_BOUNDS: MemAvailable <= MemTotal",
+        rows["MemAvailable_bytes"] <= rows["MemTotal_bytes"],
+    )
+    return rows
+
+
+def process_snapshot(pid: int | None = None) -> dict[str, Any]:
+    pid = os.getpid() if pid is None else pid
+    status_path = Path(f"/proc/{pid}/status")
+    require(
+        f"MEJEPA_SCHEDULER_PROC_STATUS_EXISTS: /proc/{pid}/status exists",
+        status_path.is_file(),
+    )
+    fields: dict[str, str] = {}
+    for line in status_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        fields[key.strip()] = value.strip()
+
+    def kb_field(name: str) -> int | None:
+        value = fields.get(name)
+        if value is None:
+            return None
+        parts = value.split()
+        require(f"MEJEPA_SCHEDULER_PROC_PARSE: {name} has kB value", len(parts) >= 1)
+        return int(parts[0]) * 1024
+
+    threads = int(fields.get("Threads", "0"))
+    require("MEJEPA_SCHEDULER_PROC_THREADS: scheduler process has threads", threads > 0)
+    return {
+        "pid": pid,
+        "name": fields.get("Name"),
+        "state": fields.get("State"),
+        "threads": threads,
+        "vmrss_bytes": kb_field("VmRSS"),
+        "vmhwm_bytes": kb_field("VmHWM"),
+        "vmsize_bytes": kb_field("VmSize"),
+        "vmswap_bytes": kb_field("VmSwap"),
+        "cpus_allowed_list": fields.get("Cpus_allowed_list"),
+    }
+
+
 def gpu_snapshot(args: argparse.Namespace) -> dict[str, Any]:
     command = shlex.split(args.nvidia_smi_command) + [
         "--query-gpu=name,driver_version,compute_cap,memory.total,memory.free",
@@ -513,6 +581,62 @@ def gpu_snapshot(args: argparse.Namespace) -> dict[str, Any]:
             **nvcc,
             "present": nvcc["exit_code"] == 0,
         },
+    }
+
+
+def gpu_resource_snapshot(args: argparse.Namespace) -> dict[str, Any]:
+    command = shlex.split(args.nvidia_smi_command) + [
+        "--query-gpu=name,memory.total,memory.used,memory.free,utilization.gpu,utilization.memory,pstate,temperature.gpu,power.draw",
+        "--format=csv,noheader,nounits",
+    ]
+    result = run_probe(command)
+    require_probe_success("MEJEPA_SCHEDULER_GPU_RESOURCE_SNAPSHOT_FAILED", result)
+    gpus = []
+    for line in result["stdout"].splitlines():
+        if not line.strip():
+            continue
+        parts = [part.strip() for part in line.split(",")]
+        require("MEJEPA_SCHEDULER_GPU_RESOURCE_PARSE: nvidia-smi row has expected columns", len(parts) == 9)
+        name, total_mib, used_mib, free_mib, util_gpu, util_mem, pstate, temperature_gpu, power_draw = parts
+        total_bytes = int(float(total_mib) * 1024 * 1024)
+        used_bytes = int(float(used_mib) * 1024 * 1024)
+        free_bytes = int(float(free_mib) * 1024 * 1024)
+        require(
+            "MEJEPA_SCHEDULER_GPU_RESOURCE_MEMORY_ACCOUNTING: used+free does not exceed total by more than one MiB",
+            used_bytes + free_bytes <= total_bytes + 1024 * 1024,
+        )
+        gpus.append({
+            "name": name,
+            "memory_total_mib": float(total_mib),
+            "memory_used_mib": float(used_mib),
+            "memory_free_mib": float(free_mib),
+            "memory_total_bytes": total_bytes,
+            "memory_used_bytes": used_bytes,
+            "memory_free_bytes": free_bytes,
+            "utilization_gpu_percent": float(util_gpu),
+            "utilization_memory_percent": float(util_mem),
+            "pstate": pstate,
+            "temperature_gpu_c": float(temperature_gpu),
+            "power_draw_watts": power_draw,
+        })
+    require("MEJEPA_SCHEDULER_GPU_RESOURCE_NO_GPU: at least one CUDA GPU in resource snapshot", bool(gpus))
+    return {
+        "nvidia_smi": result,
+        "gpu_count": len(gpus),
+        "gpus": gpus,
+    }
+
+
+def resource_snapshot(args: argparse.Namespace, phase: str) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "created_at_utc": utc_now(),
+        "phase": phase,
+        "memory": parse_proc_meminfo(),
+        "scheduler_process": process_snapshot(),
+        "gpu": gpu_resource_snapshot(args),
+        "disk": disk_snapshot(),
     }
 
 
@@ -728,6 +852,7 @@ def run_shard(
         env[f"CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_PADDED_SOURCE_BYTES_{slug.upper()}"] = str(value)
     if extra_env:
         env.update(extra_env)
+    resource_before = resource_snapshot(args, f"{shard.shard_id}_runner_before")
     event(
         event_path,
         "shard_run_start",
@@ -737,6 +862,7 @@ def run_shard(
             "max_chunks": shard.max_chunks,
             "cache_root": str(shard.cache_root),
             "fsv_root": str(shard.fsv_root),
+            "resource": resource_before,
         },
     )
     started = time.monotonic()
@@ -749,6 +875,7 @@ def run_shard(
         check=False,
     )
     elapsed = time.monotonic() - started
+    resource_after = resource_snapshot(args, f"{shard.shard_id}_runner_after")
     run_log = {
         "shard_id": shard.shard_id,
         "exit_code": completed.returncode,
@@ -756,6 +883,8 @@ def run_shard(
         "runner_batch_controls": runner_batch_controls(args),
         "runner_extra_env": extra_env or {},
         "host_preflight": preflight,
+        "resource_before": resource_before,
+        "resource_after": resource_after,
         "stdout_tail": completed.stdout[-8000:],
         "stderr_tail": completed.stderr[-8000:],
     }
@@ -1069,6 +1198,7 @@ def write_checkpoint(
         },
         "recent_run_logs": run_logs[-5:],
         "disk": disk_snapshot(),
+        "resource": resource_snapshot(args, f"checkpoint_{phase}"),
         "passes": True,
     }
     cache_checkpoint_path = args.cache_root / "python_forward_cache_checkpoint.json"
@@ -1487,6 +1617,36 @@ def edge_checks(
     edge_root = args.fsv_root / "edge_inputs"
     edge_root.mkdir(parents=True, exist_ok=True)
     cases: list[dict[str, Any]] = preflight_edge_checks(args, preflight)
+    resources = resource_snapshot(args, "edge_resource_snapshot")
+    require(
+        "resource snapshot records RAM total",
+        resources["memory"]["MemTotal_bytes"] > 0,
+    )
+    require(
+        "resource snapshot records available RAM",
+        resources["memory"]["MemAvailable_bytes"] > 0,
+    )
+    require(
+        "resource snapshot records scheduler process",
+        resources["scheduler_process"]["pid"] == os.getpid(),
+    )
+    require(
+        "resource snapshot records GPU VRAM",
+        resources["gpu"]["gpus"][0]["memory_total_bytes"] > 0
+        and resources["gpu"]["gpus"][0]["memory_free_bytes"] > 0,
+    )
+    require(
+        "resource snapshot records disk readback",
+        resources["disk"]["exit_code"] == 0,
+    )
+    cases.append({
+        "case": "resource_snapshot_records_ram_vram_cpu_disk",
+        "passes": True,
+        "memory": resources["memory"],
+        "scheduler_process": resources["scheduler_process"],
+        "gpu": resources["gpu"]["gpus"][0],
+        "disk_command": resources["disk"]["command"],
+    })
 
     invalid_configs = [
         ("invalid_e7_batch_config_rejected", {"e7": 64}),
@@ -1753,6 +1913,7 @@ def main() -> int:
         "fsv_root": tree_state(args.fsv_root),
         "hot_root": tree_state(args.hot_root),
         "disk": disk_snapshot(),
+        "resource": resource_snapshot(args, "scheduler_before"),
     }
     started_at = utc_now()
     plan = {
@@ -1795,6 +1956,7 @@ def main() -> int:
             "phase": checkpoint["phase"],
             "progress": checkpoint["progress"],
             "summary": checkpoint["summary"],
+            "resource": checkpoint["resource"],
         },
     )
     if args.mode == "run":
@@ -1832,6 +1994,7 @@ def main() -> int:
                                     "phase": checkpoint["phase"],
                                     "progress": checkpoint["progress"],
                                     "summary": checkpoint["summary"],
+                                    "resource": checkpoint["resource"],
                                 },
                             )
                         continue
@@ -1867,6 +2030,7 @@ def main() -> int:
                         "phase": checkpoint["phase"],
                         "progress": checkpoint["progress"],
                         "summary": checkpoint["summary"],
+                        "resource": checkpoint["resource"],
                     },
                 )
     else:
@@ -1879,6 +2043,7 @@ def main() -> int:
                 "phase": checkpoint["phase"],
                 "progress": checkpoint["progress"],
                 "summary": checkpoint["summary"],
+                "resource": checkpoint["resource"],
             },
         )
 
@@ -1892,6 +2057,7 @@ def main() -> int:
             "phase": checkpoint["phase"],
             "progress": checkpoint["progress"],
             "summary": checkpoint["summary"],
+            "resource": checkpoint["resource"],
         },
     )
     edge_cases = edge_checks(args, shards, preflight)
@@ -1900,6 +2066,7 @@ def main() -> int:
         "fsv_root": tree_state(args.fsv_root),
         "hot_root": tree_state(args.hot_root),
         "disk": disk_snapshot(),
+        "resource": resource_snapshot(args, "scheduler_after"),
     }
     fsv = {
         "schema_version": SCHEMA_VERSION,

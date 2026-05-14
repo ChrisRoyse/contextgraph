@@ -3995,7 +3995,18 @@ fn schema_json() -> Value {
 fn write_json_checked(path: &Path, value: &impl Serialize) -> FsvResult<()> {
     let bytes = serde_json::to_vec_pretty(value)?;
     write_bytes_atomic(path, &bytes)?;
-    require("JSON byte readback equality", fs::read(path)? == bytes)?;
+    let readback = fs::read(path)?;
+    require(
+        &format!(
+            "JSON byte readback equality path={} expected_len={} actual_len={} expected_sha256={} actual_sha256={}",
+            path.display(),
+            bytes.len(),
+            readback.len(),
+            sha256_prefixed_bytes(&bytes),
+            sha256_prefixed_bytes(&readback),
+        ),
+        readback == bytes,
+    )?;
     Ok(())
 }
 
@@ -4006,7 +4017,18 @@ fn write_jsonl_checked(path: &Path, rows: &[Value]) -> FsvResult<()> {
         bytes.push(b'\n');
     }
     write_bytes_atomic(path, &bytes)?;
-    require("JSONL byte readback equality", fs::read(path)? == bytes)?;
+    let readback = fs::read(path)?;
+    require(
+        &format!(
+            "JSONL byte readback equality path={} expected_len={} actual_len={} expected_sha256={} actual_sha256={}",
+            path.display(),
+            bytes.len(),
+            readback.len(),
+            sha256_prefixed_bytes(&bytes),
+            sha256_prefixed_bytes(&readback),
+        ),
+        readback == bytes,
+    )?;
     Ok(())
 }
 
