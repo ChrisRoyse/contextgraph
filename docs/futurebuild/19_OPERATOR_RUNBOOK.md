@@ -124,11 +124,12 @@ cargo build --release --example python_forward_cache_fsv
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 CACHE_ROOT="/mnt/d/contextgraph/corpus/python-forward-cache-v1-task-py-data-026-smoke-${RUN_ID}"
 FSV_ROOT="/mnt/d/contextgraph/fsv/task-py-data-026-smoke-${RUN_ID}-fsv"
+HOT_ROOT="/home/cabdru/.cache/contextgraph/task-py-data-026-smoke-${RUN_ID}"
 python3 scripts/swebench_lite_ops/python_forward_shard_scheduler.py \
   --task-id TASK-PY-DATA-026-SMOKE \
   --cache-root "$CACHE_ROOT" \
   --fsv-root "$FSV_ROOT" \
-  --hot-root /home/cabdru/.cache/contextgraph/task-py-data-026-smoke \
+  --hot-root "$HOT_ROOT" \
   --start-offset 0 \
   --shard-size 1 \
   --shard-count 1 \
@@ -157,7 +158,12 @@ Then read the bytes, not the return value:
 jq '{passes, source_of_truth}' "$FSV_ROOT/python_forward_shard_scheduler_fsv.json"
 jq '{progress, summary, resource}' "$CACHE_ROOT/python_forward_cache_checkpoint.json"
 find "$CACHE_ROOT" -maxdepth 3 -type f | sort | head -40
-du -sh /home/cabdru/.cache/contextgraph/task-py-data-026-smoke "$CACHE_ROOT" "$FSV_ROOT"
+du -sh "$HOT_ROOT" "$CACHE_ROOT" "$FSV_ROOT"
+
+# After the D-drive cache/FSV readback succeeds, remove only this unique hot
+# staging root. The D-drive cache and FSV roots are the durable SoT.
+rm -rf -- "$HOT_ROOT"
+test ! -e "$HOT_ROOT"
 ```
 
 The existing known-good observability smoke evidence is
