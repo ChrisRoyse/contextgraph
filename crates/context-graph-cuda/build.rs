@@ -71,8 +71,9 @@ fn compile_cuda_kernels() {
     // Find nvcc
     let nvcc = find_nvcc();
 
-    // Compile knn.cu to native cubin (uses Driver API to avoid WSL2 cudart bugs)
+    // Compile native cubins (uses Driver API to avoid WSL2 cudart bugs).
     compile_kernel_to_cubin(&nvcc, "kernels/knn.cu", "knn", &cuda_arch, &out_dir);
+    compile_exact_kernel_to_cubin(&nvcc, "kernels/hdc.cu", "hdc", &cuda_arch, &out_dir);
 
     // Link CUDA driver library (libcuda.so)
     // Required for Driver API (cuInit, cuDeviceGetCount, cuLaunchKernel)
@@ -244,6 +245,35 @@ fn compile_kernel_to_cubin(
     arch: &str,
     out_dir: &std::path::Path,
 ) {
+    compile_kernel_to_cubin_inner(nvcc, source, name, arch, out_dir, true);
+}
+
+/// Compile CUDA kernel to native cubin without fast-math.
+///
+/// HDC output is hashed into durable ME-JEPA cache records, so approximate
+/// arithmetic is not acceptable. The HDC kernel keeps exact integer bit logic
+/// on-device and normalizes on the Rust side with the same f32 reduction used
+/// by the CPU implementation.
+#[cfg(feature = "cuda")]
+fn compile_exact_kernel_to_cubin(
+    nvcc: &std::path::Path,
+    source: &str,
+    name: &str,
+    arch: &str,
+    out_dir: &std::path::Path,
+) {
+    compile_kernel_to_cubin_inner(nvcc, source, name, arch, out_dir, false);
+}
+
+#[cfg(feature = "cuda")]
+fn compile_kernel_to_cubin_inner(
+    nvcc: &std::path::Path,
+    source: &str,
+    name: &str,
+    arch: &str,
+    out_dir: &std::path::Path,
+    use_fast_math: bool,
+) {
     let cubin_path = out_dir.join(format!("{}.cubin", name));
 
     // Get additional nvcc flags from environment
@@ -266,12 +296,14 @@ fn compile_kernel_to_cubin(
         .arg("-O3")
         .args(["-arch", arch])
         .args(["-Xptxas", "-O3"])
-        .arg("--use_fast_math")
         .arg("--restrict")
         .arg("-DNDEBUG")
         .args(&extra_flags)
-        .args(["-o", cubin_path.to_str().unwrap()])
-        .arg(source);
+        .args(["-o", cubin_path.to_str().unwrap()]);
+    if use_fast_math {
+        compile_cmd.arg("--use_fast_math");
+    }
+    compile_cmd.arg(source);
 
     println!("cargo:warning=Running cubin compilation: {:?}", compile_cmd);
 

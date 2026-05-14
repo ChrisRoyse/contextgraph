@@ -84,7 +84,7 @@ static INIT: Once = Once::new();
 static INIT_RESULT: AtomicI32 = AtomicI32::new(CUDA_SUCCESS);
 
 /// Initialize CUDA driver. Thread-safe, idempotent.
-fn ensure_cuda_initialized() -> CudaResult<()> {
+pub(crate) fn ensure_cuda_initialized() -> CudaResult<()> {
     INIT.call_once(|| {
         let result = unsafe { cuInit(0) };
         INIT_RESULT.store(result, Ordering::Release);
@@ -133,14 +133,14 @@ pub fn cuda_device_count() -> CudaResult<i32> {
 }
 
 /// RAII wrapper for GPU memory allocation.
-pub struct GpuBuffer {
+pub(crate) struct GpuBuffer {
     ptr: CUdeviceptr,
     size: usize,
 }
 
 impl GpuBuffer {
     /// Allocate GPU memory.
-    pub fn new(size: usize) -> CudaResult<Self> {
+    pub(crate) fn new(size: usize) -> CudaResult<Self> {
         let mut ptr: CUdeviceptr = 0;
         let ret = unsafe { cuMemAlloc_v2(&mut ptr, size) };
         if ret == CUDA_SUCCESS && ptr != 0 {
@@ -154,7 +154,7 @@ impl GpuBuffer {
     }
 
     /// Copy data from host to device.
-    pub fn copy_from_host(&self, src: &[u8]) -> CudaResult<()> {
+    pub(crate) fn copy_from_host(&self, src: &[u8]) -> CudaResult<()> {
         if src.len() > self.size {
             return Err(CudaError::InvalidArgument {
                 argument: "src".to_string(),
@@ -179,7 +179,7 @@ impl GpuBuffer {
     }
 
     /// Copy data from device to host.
-    pub fn copy_to_host(&self, dst: &mut [u8]) -> CudaResult<()> {
+    pub(crate) fn copy_to_host(&self, dst: &mut [u8]) -> CudaResult<()> {
         if dst.len() > self.size {
             return Err(CudaError::InvalidArgument {
                 argument: "dst".to_string(),
@@ -204,13 +204,8 @@ impl GpuBuffer {
     }
 
     /// Get the device pointer.
-    pub fn ptr(&self) -> CUdeviceptr {
+    pub(crate) fn ptr(&self) -> CUdeviceptr {
         self.ptr
-    }
-
-    /// Get buffer size in bytes.
-    pub fn size(&self) -> usize {
-        self.size
     }
 }
 
@@ -228,12 +223,12 @@ impl Drop for GpuBuffer {
 unsafe impl Send for GpuBuffer {}
 
 /// RAII wrapper for CUDA context.
-struct CudaContext {
+pub(crate) struct CudaContext {
     ctx: CUcontext,
 }
 
 impl CudaContext {
-    fn new(device: i32) -> CudaResult<Self> {
+    pub(crate) fn new(device: i32) -> CudaResult<Self> {
         let mut dev: c_int = 0;
         let ret = unsafe { cuDeviceGet(&mut dev, device as c_int) };
         if ret != CUDA_SUCCESS {
@@ -267,12 +262,12 @@ impl Drop for CudaContext {
 }
 
 /// RAII wrapper for CUDA module.
-struct CudaModule {
+pub(crate) struct CudaModule {
     module: CUmodule,
 }
 
 impl CudaModule {
-    fn load_image(image: &[u8]) -> CudaResult<Self> {
+    pub(crate) fn load_image(image: &[u8]) -> CudaResult<Self> {
         if image.is_empty() {
             return Err(CudaError::InvalidArgument {
                 argument: "image".to_string(),
@@ -292,7 +287,7 @@ impl CudaModule {
         }
     }
 
-    fn get_function(&self, name: &str) -> CudaResult<CUfunction> {
+    pub(crate) fn get_function(&self, name: &str) -> CudaResult<CUfunction> {
         let name_cstring = CString::new(name).map_err(|_| CudaError::InvalidArgument {
             argument: "name".to_string(),
             reason: "Function name contains null bytes".to_string(),

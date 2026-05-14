@@ -50,6 +50,8 @@ pub mod stub;
 pub use error::{CudaError, CudaResult};
 pub use ffi::{
     compute_core_distances_gpu,
+    // Custom k-NN kernel
+    compute_hdc_embeddings_gpu,
     compute_pairwise_distances_gpu,
     // CUDA Driver API exports
     cuCtxCreate_v2,
@@ -64,7 +66,6 @@ pub use ffi::{
     cuDriverGetVersion,
     cuInit,
     cuMemGetInfo_v2,
-    // Custom k-NN kernel
     cuda_available,
     cuda_device_count,
     cuda_result_to_string,

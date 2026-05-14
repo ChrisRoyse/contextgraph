@@ -29,7 +29,7 @@ DEFAULT_HOT_ROOT = Path("/home/cabdru/.cache/contextgraph/python-forward-shard-s
 DEFAULT_RUNNER_TIMEOUT_SECONDS = 3600
 SCHEMA_VERSION = 1
 TASK_ID = "TASK-PY-DATA-029"
-SUPPORTED_PRETRAINED_SLUGS = {"e1", "e6", "e7", "e8", "e10", "e12", "e13", "e14"}
+SUPPORTED_TRUE_BATCH_SLUGS = {"e1", "e6", "e7", "e8", "e9", "e10", "e12", "e13", "e14"}
 DEFAULT_ACTIVE_EMBEDDER_COUNT = 12
 DEFAULT_ESTIMATED_RECORD_BYTES = 16 * 1024
 DEFAULT_HOT_STAGE_BUDGET_BYTES = 48 * 1024 * 1024 * 1024
@@ -190,7 +190,7 @@ def parse_embedder_int_map(raw: str, flag_name: str) -> dict[str, int]:
         slug, value_text = item.split("=", 1)
         slug = slug.strip().lower()
         value_text = value_text.strip()
-        require(f"{flag_name} embedder slug is supported pretrained slot", slug in SUPPORTED_PRETRAINED_SLUGS)
+        require(f"{flag_name} embedder slug is supported true-batch slot", slug in SUPPORTED_TRUE_BATCH_SLUGS)
         require(f"{flag_name} embedder slug appears once", slug not in parsed)
         try:
             value = int(value_text)

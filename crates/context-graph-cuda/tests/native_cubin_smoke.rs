@@ -1,5 +1,6 @@
 use context_graph_cuda::{
-    compute_core_distances_gpu, compute_pairwise_distances_gpu, cuda_available, cuda_device_count,
+    compute_core_distances_gpu, compute_hdc_embeddings_gpu, compute_pairwise_distances_gpu,
+    cuda_available, cuda_device_count,
 };
 
 fn assert_close(actual: f32, expected: f32) {
@@ -72,4 +73,48 @@ fn native_sm120a_cubin_rejects_invalid_vector_length() {
     println!("AFTER edge=invalid_vector_length source_of_truth=error_state error={err}");
     let msg = err.to_string();
     assert!(msg.contains("Expected 6 elements, got 5"));
+}
+
+#[test]
+fn native_sm120a_cubin_hdc_outputs_expected_shape_and_norm() {
+    println!(
+        "BEFORE source_of_truth=device_copyback hdc_batch=2 cuda_available={} cuda_device_count={:?}",
+        cuda_available(),
+        cuda_device_count()
+    );
+    assert!(
+        cuda_available(),
+        "CUDA is required; no CPU fallback is allowed"
+    );
+
+    let vectors = compute_hdc_embeddings_gpu(
+        &[
+            "def add(a, b):\n    return a + b\n",
+            "def unicode_edge():\n    return 'cafe\u{301}'\n",
+        ],
+        42,
+        3,
+    )
+    .expect("native sm_120a cubin HDC kernel must run");
+    println!(
+        "AFTER source_of_truth=device_copyback hdc_shapes={:?}",
+        vectors.iter().map(Vec::len).collect::<Vec<_>>()
+    );
+
+    assert_eq!(vectors.len(), 2);
+    for vector in vectors {
+        assert_eq!(vector.len(), 1024);
+        assert!(vector.iter().any(|value| *value != 0.0));
+        let norm = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
+        assert_close(norm, 1.0);
+    }
+}
+
+#[test]
+fn native_sm120a_cubin_hdc_rejects_empty_batch_before_launch() {
+    println!("BEFORE edge=hdc_empty_batch source_of_truth=error_state expected=rejection");
+    let err = compute_hdc_embeddings_gpu(&[], 42, 3)
+        .expect_err("empty HDC GPU batch must fail closed before launch");
+    println!("AFTER edge=hdc_empty_batch source_of_truth=error_state error={err}");
+    assert!(err.to_string().contains("HDC GPU batch is empty"));
 }

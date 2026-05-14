@@ -364,8 +364,7 @@ async fn main() -> FsvResult<()> {
     let chunks = load_chunks(&paths.chunks_jsonl, chunk_offset, max_chunks)?;
     let registry = load_active_embedder_records(&paths.registry_jsonl)?;
     verify_registry_matches_runtime(&registry)?;
-    let batch_controls =
-        build_pretrained_batch_controls(&registry, true_batch_size, max_source_bytes)?;
+    let batch_controls = build_true_batch_controls(&registry, true_batch_size, max_source_bytes)?;
     let config = ModelsConfig::load(&paths.models_config)?;
     let mut cache_store = ForwardCacheStore::open(&paths, cache_store_layout)?;
 
@@ -381,12 +380,12 @@ async fn main() -> FsvResult<()> {
     let mut batch_telemetry_sink =
         JsonlSink::create(&paths.batch_telemetry_path(), jsonl_sync_every_rows)?;
     for record in &registry {
-        if SUPPORTED_PRETRAINED_FORWARD_EMBEDDERS.contains(&record.embedder_id()?) {
+        if is_true_batch_forward_embedder(record.embedder_id()?) {
             let embedder = record.embedder_id()?;
             let controls = batch_controls
                 .get(&embedder)
                 .ok_or_else(|| format!("missing batch controls for {}", embedder.slug()))?;
-            first_pass_pretrained_record(
+            first_pass_true_batch_record(
                 &paths,
                 &config,
                 &chunks,
@@ -408,6 +407,12 @@ async fn main() -> FsvResult<()> {
             .await?;
         } else {
             let mut loaded = None;
+            let embedder = record.embedder_id()?;
+            let serial_started = Instant::now();
+            let mut serial_row_summaries = Vec::new();
+            let mut serial_quarantine_count = 0usize;
+            let mut serial_source_byte_total = 0usize;
+            let mut serial_source_byte_max = 0usize;
             for chunk in &chunks {
                 if let Some((code, reason)) = chunk_non_forwardable_reason(chunk, max_source_bytes)
                 {
@@ -416,6 +421,7 @@ async fn main() -> FsvResult<()> {
                     coverage_tracker.record_quarantine(record)?;
                     record_quarantine_pair(&mut quarantined_pairs, chunk, record)?;
                     push_sample(&mut quarantine_sample, row);
+                    serial_quarantine_count += 1;
                     continue;
                 }
                 let action = cache_or_forward(
@@ -433,7 +439,51 @@ async fn main() -> FsvResult<()> {
                 index_sink.write_row(&row)?;
                 coverage_tracker.record_first(record, &action)?;
                 first_pass_count += 1;
+                serial_source_byte_total = serial_source_byte_total
+                    .checked_add(chunk.source_text.len())
+                    .ok_or("serial algorithmic source byte total overflow")?;
+                serial_source_byte_max = serial_source_byte_max.max(chunk.source_text.len());
+                if serial_row_summaries.len() < SAMPLE_LIMIT {
+                    serial_row_summaries.push(json!({
+                        "chunk_id": chunk.chunk_id,
+                        "cache_key_sha256": action.cache_key_sha256,
+                        "action": action.action,
+                        "record_path": action.record_path,
+                        "record_store_layout": action.record_store_layout,
+                        "vector_len": action.vector_len,
+                        "vector_sha256": action.vector_sha256,
+                        "latency_ms": action.latency_ms,
+                    }));
+                }
                 push_sample(&mut first_pass_sample, action);
+            }
+            if matches!(embedder, EmbedderId::E2 | EmbedderId::E3 | EmbedderId::E4) {
+                let serial_processed_count = chunks.len().saturating_sub(serial_quarantine_count);
+                batch_telemetry_sink.write_row(&json!({
+                    "schema_version": CACHE_SCHEMA_VERSION,
+                    "task_id": "TASK-PY-DATA-039",
+                    "artifact_kind": "python_forward_algorithmic_serial_telemetry",
+                    "timestamp_utc": utc_now()?,
+                    "embedder_id": embedder.slug(),
+                    "instrument_id": record.instrument_id,
+                    "instrument_record_id": record.instrument_record_id,
+                    "true_batch": false,
+                    "cuda_applicable": false,
+                    "reason_code": "MEJEPA_ALGORITHMIC_TEMPORAL_EXACT_PATH_NOT_GPU_BATCHED",
+                    "reason": "E2/E3/E4 use exact timestamp/session hash and f64 sin/cos paths; they remain fail-closed for CUDA true-batch until an exact-output kernel proves vector-hash equivalence",
+                    "row_count": serial_processed_count,
+                    "rows_sample_count": serial_row_summaries.len(),
+                    "processed_non_quarantine_count": serial_processed_count,
+                    "quarantine_count": serial_quarantine_count,
+                    "source_stats": {
+                        "row_count": serial_processed_count,
+                        "source_byte_total": serial_source_byte_total,
+                        "source_byte_max": serial_source_byte_max,
+                    },
+                    "output_dimension": embedder.dimension(),
+                    "rows_sample": serial_row_summaries,
+                    "latency_ms": serial_started.elapsed().as_millis(),
+                }))?;
             }
         }
     }
@@ -441,7 +491,7 @@ async fn main() -> FsvResult<()> {
     let quarantine_write_state = quarantine_sink.finish()?;
     let batch_telemetry_write_state = batch_telemetry_sink.finish()?;
     require(
-        "true-batch telemetry exists for pretrained runner path",
+        "true-batch telemetry exists for pretrained and E9 algorithmic runner paths",
         batch_telemetry_write_state.row_count > 0,
     )?;
 
@@ -694,7 +744,8 @@ impl Paths {
     }
 
     fn packed_manifest_path(&self) -> PathBuf {
-        self.cache_root.join("python_forward_cache_packed_manifest.json")
+        self.cache_root
+            .join("python_forward_cache_packed_manifest.json")
     }
 
     fn progress_path(&self) -> PathBuf {
@@ -1085,7 +1136,7 @@ struct RunnerBatchVramPlan {
     guard_bytes: u64,
 }
 
-fn build_pretrained_batch_controls(
+fn build_true_batch_controls(
     registry: &[RegistryRecord],
     global_true_batch_size: usize,
     max_source_bytes: usize,
@@ -1098,20 +1149,24 @@ fn build_pretrained_batch_controls(
     let mut controls = BTreeMap::new();
     for record in registry {
         let embedder = record.embedder_id()?;
-        if !SUPPORTED_PRETRAINED_FORWARD_EMBEDDERS.contains(&embedder) {
+        if !is_true_batch_forward_embedder(embedder) {
             continue;
         }
         let control = embedder_batch_controls(embedder, global_true_batch_size, max_source_bytes)?;
         require(
-            "one batch control row per active pretrained embedder",
+            "one batch control row per active true-batch embedder",
             controls.insert(embedder, control).is_none(),
         )?;
     }
     require(
-        "at least one pretrained embedder batch control exists",
+        "at least one true-batch embedder batch control exists",
         !controls.is_empty(),
     )?;
     Ok(controls)
+}
+
+fn is_true_batch_forward_embedder(embedder: EmbedderId) -> bool {
+    SUPPORTED_PRETRAINED_FORWARD_EMBEDDERS.contains(&embedder) || embedder == EmbedderId::E9
 }
 
 fn embedder_batch_controls(
@@ -1269,7 +1324,7 @@ fn estimated_tokens_from_source_bytes(source_byte_len: usize) -> usize {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn first_pass_pretrained_record(
+async fn first_pass_true_batch_record(
     paths: &Paths,
     config: &ModelsConfig,
     chunks: &[AstChunk],
@@ -1290,8 +1345,8 @@ async fn first_pass_pretrained_record(
 ) -> FsvResult<()> {
     let embedder = record.embedder_id()?;
     require(
-        "pretrained record uses active true-batch pretrained embedder",
-        SUPPORTED_PRETRAINED_FORWARD_EMBEDDERS.contains(&embedder),
+        "record uses active true-batch forward embedder",
+        is_true_batch_forward_embedder(embedder),
     )?;
     validate_embedder_batch_controls(embedder, batch_controls)?;
 
@@ -1390,7 +1445,7 @@ async fn first_pass_pretrained_record(
     )
     .await?;
     require(
-        "loaded pretrained wrapper supports true batch",
+        "loaded wrapper supports true batch",
         loaded.supports_true_batch(),
     )?;
 
@@ -1445,8 +1500,11 @@ async fn first_pass_pretrained_record(
         )?;
 
         let mut row_summaries = Vec::with_capacity(forward_outcome.outputs.len());
+        let mut precision_classes = BTreeSet::new();
         for (row_index, pending, output) in forward_outcome.outputs {
             let chunk = &chunks[pending.chunk_index];
+            let precision_class = output.precision_class.clone();
+            precision_classes.insert(precision_class.clone());
             let record_json =
                 record_from_output(chunk, record, pending.key, pending.key_sha.clone(), output)?;
             validate_record(&record_json, record)?;
@@ -1491,12 +1549,13 @@ async fn first_pass_pretrained_record(
                 "record_sha256": action.record_sha256,
                 "vector_sha256": record_json.output.vector_sha256,
                 "vector_len": record_json.output.vector_len,
+                "precision_class": precision_class,
             }));
         }
 
         let telemetry = json!({
             "schema_version": CACHE_SCHEMA_VERSION,
-            "task_id": "TASK-PY-DATA-036",
+            "task_id": "TASK-PY-DATA-039",
             "artifact_kind": "python_forward_true_batch_telemetry",
             "timestamp_utc": utc_now()?,
             "embedder_id": embedder.slug(),
@@ -1510,7 +1569,7 @@ async fn first_pass_pretrained_record(
             "output_count": row_summaries.len(),
             "quarantine_count": forward_outcome.quarantined_rows.len(),
             "true_batch": true,
-            "precision_class": "candle_real_true_batch_forward",
+            "precision_classes": precision_classes.into_iter().collect::<Vec<_>>(),
             "latency_ms": batch_started.elapsed().as_millis(),
             "vram_plan": vram_plan,
             "quarantined_rows": forward_outcome.quarantined_rows,
@@ -1802,8 +1861,8 @@ async fn cache_or_forward(
             paths,
             chunk,
             record,
-                "load_start",
-                json!({
+            "load_start",
+            json!({
                     "cache_key_sha256": key_sha,
                     "record_path": record_locator.clone(),
                     "cache_store_layout": cache_store.layout().as_str(),
@@ -1827,8 +1886,8 @@ async fn cache_or_forward(
             paths,
             chunk,
             record,
-                "load_complete",
-                json!({
+            "load_complete",
+            json!({
                     "cache_key_sha256": key_sha,
                     "record_path": record_locator.clone(),
                     "cache_store_layout": cache_store.layout().as_str(),
@@ -1841,8 +1900,8 @@ async fn cache_or_forward(
             paths,
             chunk,
             record,
-                "load_reuse",
-                json!({
+            "load_reuse",
+            json!({
                     "cache_key_sha256": key_sha,
                     "record_path": record_locator.clone(),
                     "cache_store_layout": cache_store.layout().as_str(),
@@ -2246,9 +2305,11 @@ impl ForwardCacheStore {
         key: &ForwardCacheKey,
     ) -> FsvResult<String> {
         match self.layout {
-            CacheStoreLayout::LegacyFiles => Ok(cache_record_path(&paths.cache_root, embedder, key)?
-                .display()
-                .to_string()),
+            CacheStoreLayout::LegacyFiles => {
+                Ok(cache_record_path(&paths.cache_root, embedder, key)?
+                    .display()
+                    .to_string())
+            }
             CacheStoreLayout::PackedJsonl => Ok(format!(
                 "{}#{}",
                 paths.packed_record_path(embedder).display(),
@@ -2306,7 +2367,9 @@ impl ForwardCacheStore {
                     record_path: format!("{}#{}", row.packed_record_path, row.cache_key_sha256),
                     record_store_layout: self.layout.as_str().to_string(),
                     packed_record_path: Some(row.packed_record_path.clone()),
-                    packed_index_path: Some(paths.packed_index_path(embedder).display().to_string()),
+                    packed_index_path: Some(
+                        paths.packed_index_path(embedder).display().to_string(),
+                    ),
                     packed_byte_offset: Some(row.byte_offset),
                     packed_byte_len: Some(row.byte_len),
                     record_sha256: row.record_sha256.clone(),
@@ -2451,13 +2514,8 @@ fn load_packed_index_rows(paths: &Paths) -> FsvResult<BTreeMap<String, PackedInd
             continue;
         }
         for row in read_packed_index_file(&path)? {
-            let inserted = rows
-                .insert(row.cache_key_sha256.clone(), row)
-                .is_none();
-            require(
-                "packed index duplicate key rejected on load",
-                inserted,
-            )?;
+            let inserted = rows.insert(row.cache_key_sha256.clone(), row).is_none();
+            require("packed index duplicate key rejected on load", inserted)?;
         }
     }
     Ok(rows)
@@ -2840,11 +2898,12 @@ async fn edge_embedder_mismatch(paths: &Paths) -> FsvResult<Value> {
 
 async fn edge_unsupported_true_batch(paths: &Paths) -> FsvResult<Value> {
     let before = store_state("edge_unsupported_true_batch_before", paths)?;
-    let forward = AlgorithmicEmbedderForward::load(EmbedderId::E9)?;
+    let forward = AlgorithmicEmbedderForward::load(EmbedderId::E2)?;
     let err = forward
         .forward_true_batch(&[EmbedderInput {
-            embedder: EmbedderId::E9,
-            text: "def synthetic_hdc_only():\n    return 1\n".to_string(),
+            embedder: EmbedderId::E2,
+            text: "timestamp:2026-05-14T00:00:00+00:00\ndef temporal_row():\n    return 1\n"
+                .to_string(),
             source_id: "synthetic/unsupported_true_batch.py".to_string(),
         }])
         .await
@@ -2857,7 +2916,7 @@ async fn edge_unsupported_true_batch(paths: &Paths) -> FsvResult<Value> {
     Ok(json!({
         "case": "unsupported_true_batch_rejected",
         "before_state": before,
-        "trigger": "request true-batch forwarding from an active algorithmic embedder wrapper",
+        "trigger": "request true-batch forwarding from E2 temporal algorithmic wrapper before exact-output CUDA proof exists",
         "after_state": after,
         "error_code": err.code(),
         "error": err.to_string(),

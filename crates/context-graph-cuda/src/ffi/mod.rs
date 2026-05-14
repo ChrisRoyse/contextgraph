@@ -33,6 +33,7 @@
 //! with lazy CUDA initialization.
 
 pub mod cuda_driver;
+pub mod hdc;
 pub mod knn;
 
 // FAISS module - only compiled when faiss-working feature is explicitly enabled.
@@ -46,7 +47,11 @@ pub mod knn;
 pub mod faiss;
 
 pub use cuda_driver::*;
-pub use knn::*;
+pub use hdc::{compute_hdc_embeddings_gpu, HDC_DIMENSION, HDC_PROJECTED_DIMENSION};
+pub use knn::{
+    compute_core_distances_gpu, compute_pairwise_distances_gpu, cuda_available, cuda_device_count,
+    CUdeviceptr, CUfunction, CUmodule,
+};
 
 // Re-export FAISS types when available
 #[cfg(feature = "faiss-working")]

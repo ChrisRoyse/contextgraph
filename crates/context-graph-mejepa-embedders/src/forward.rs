@@ -5,6 +5,7 @@ use crate::error::{EmbedError, EmbedResult};
 use crate::types::{EmbedderInput, EmbedderOutput};
 use async_trait::async_trait;
 use context_graph_core::memory::ast::Language as AstLanguage;
+use context_graph_cuda::compute_hdc_embeddings_gpu;
 use context_graph_embeddings::models::custom::HdcModel;
 use context_graph_embeddings::models::pretrained::BgeM3DenseModel;
 use context_graph_embeddings::models::{
@@ -47,6 +48,10 @@ pub const SUPPORTED_FORWARD_EMBEDDERS: &[EmbedderId] = &[
     EmbedderId::E13,
     EmbedderId::E14,
 ];
+
+const E9_HDC_NGRAM_SIZE: usize = 3;
+const E9_HDC_SEED: u64 = 42;
+const E9_HDC_CUDA_PRECISION_CLASS: &str = "algorithmic_cuda_hdc_true_batch_forward";
 
 #[async_trait]
 pub trait EmbedderForward: Send + Sync {
@@ -225,6 +230,87 @@ impl EmbedderForward for AlgorithmicEmbedderForward {
         };
         output.validate()?;
         Ok(output)
+    }
+
+    fn supports_true_batch(&self) -> bool {
+        self.embedder == EmbedderId::E9
+    }
+
+    async fn forward_true_batch(
+        &self,
+        inputs: &[EmbedderInput],
+    ) -> EmbedResult<Vec<EmbedderOutput>> {
+        if inputs.is_empty() {
+            return Err(EmbedError::true_batch_empty(self.embedder));
+        }
+        if self.embedder != EmbedderId::E9 {
+            return Err(EmbedError::true_batch_unsupported(
+                self.embedder,
+                inputs.len(),
+                "E2/E3/E4 temporal embedders are exact timestamp/hash paths and are not CUDA-true-batch until a kernel proves output equivalence",
+            ));
+        }
+
+        let mut texts = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            input.validate()?;
+            if input.embedder != self.embedder {
+                return Err(EmbedError::forward(
+                    self.embedder,
+                    format!(
+                        "input embedder {} does not match loaded wrapper {}",
+                        input.embedder, self.embedder
+                    ),
+                    "load and call the wrapper for the same EmbedderId; cross-slot batch forwarding is rejected",
+                ));
+            }
+            texts.push(input.text.as_str());
+        }
+
+        let embeddings =
+            compute_hdc_embeddings_gpu(&texts, E9_HDC_SEED, E9_HDC_NGRAM_SIZE).map_err(|err| {
+                EmbedError::forward(
+                    self.embedder,
+                    format!("E9 CUDA HDC true-batch forward failed: {err}"),
+                    "inspect CUDA 13.2 driver/toolkit state, native sm_120a cubin build output, and HDC batch inputs; no CPU fallback is used",
+                )
+            })?;
+        if embeddings.len() != inputs.len() {
+            return Err(EmbedError::forward(
+                self.embedder,
+                format!(
+                    "E9 CUDA true-batch output count {}, expected {}",
+                    embeddings.len(),
+                    inputs.len()
+                ),
+                "fix HDC CUDA kernel row alignment before persisting outputs",
+            ));
+        }
+
+        let mut outputs = Vec::with_capacity(inputs.len());
+        for (input, vector) in inputs.iter().zip(embeddings) {
+            if vector.len() != self.embedder.dimension() {
+                return Err(EmbedError::forward(
+                    self.embedder,
+                    format!(
+                        "E9 CUDA true-batch vector dimension {}, expected {}",
+                        vector.len(),
+                        self.embedder.dimension()
+                    ),
+                    "fix HDC CUDA projection dimensions before using this embedder slot",
+                ));
+            }
+            let output = EmbedderOutput {
+                embedder: self.embedder,
+                source_id: input.source_id.clone(),
+                vector,
+                model_version: self.model_version.clone(),
+                precision_class: E9_HDC_CUDA_PRECISION_CLASS.to_string(),
+            };
+            output.validate()?;
+            outputs.push(output);
+        }
+        Ok(outputs)
     }
 }
 
@@ -486,13 +572,15 @@ fn construct_algorithmic_model(embedder: EmbedderId) -> EmbedResult<Box<dyn Embe
         EmbedderId::E2 => Box::new(TemporalRecentModel::new()),
         EmbedderId::E3 => Box::new(TemporalPeriodicModel::new()),
         EmbedderId::E4 => Box::new(TemporalPositionalModel::new()),
-        EmbedderId::E9 => Box::new(HdcModel::new(3, 42).map_err(|err| {
-            EmbedError::forward(
-                embedder,
-                format!("HdcModel construction failed: {err}"),
-                "fix E9 algorithmic hypervector parameters before loading",
-            )
-        })?),
+        EmbedderId::E9 => Box::new(HdcModel::new(E9_HDC_NGRAM_SIZE, E9_HDC_SEED).map_err(
+            |err| {
+                EmbedError::forward(
+                    embedder,
+                    format!("HdcModel construction failed: {err}"),
+                    "fix E9 algorithmic hypervector parameters before loading",
+                )
+            },
+        )?),
         other => {
             return Err(EmbedError::forward(
                 other,
@@ -670,15 +758,55 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn algorithmic_true_batch_rejects_without_single_forward_loop() {
-        let forward = AlgorithmicEmbedderForward::load(EmbedderId::E9).unwrap();
+    async fn temporal_algorithmic_true_batch_rejects_without_single_forward_loop() {
+        let forward = AlgorithmicEmbedderForward::load(EmbedderId::E2).unwrap();
         assert!(!forward.supports_true_batch());
         let input = EmbedderInput {
-            embedder: EmbedderId::E9,
-            text: "fn add(a: i32, b: i32) -> i32 { a + b }".to_string(),
-            source_id: "src/lib.rs#0".to_string(),
+            embedder: EmbedderId::E2,
+            text: "timestamp:2026-05-14T00:00:00+00:00\nx = 1".to_string(),
+            source_id: "src/lib.py#0".to_string(),
         };
         let err = forward.forward_true_batch(&[input]).await.unwrap_err();
         assert_eq!(err.code(), "MEJEPA_EMBED_TRUE_BATCH_UNSUPPORTED");
+    }
+
+    #[tokio::test]
+    async fn e9_hdc_cuda_true_batch_matches_single_forward_outputs() {
+        let forward = AlgorithmicEmbedderForward::load(EmbedderId::E9).unwrap();
+        assert!(forward.supports_true_batch());
+        let inputs = vec![
+            EmbedderInput {
+                embedder: EmbedderId::E9,
+                text: "fn add(a: i32, b: i32) -> i32 { a + b }".to_string(),
+                source_id: "src/lib.py#0".to_string(),
+            },
+            EmbedderInput {
+                embedder: EmbedderId::E9,
+                text: "def unicode_edge():\n    return 'cafe\u{301}'\n".to_string(),
+                source_id: "src/unicode.py#1".to_string(),
+            },
+        ];
+        let mut single_outputs = Vec::new();
+        for input in &inputs {
+            single_outputs.push(forward.forward(input).await.unwrap());
+        }
+        let batch_outputs = forward.forward_true_batch(&inputs).await.unwrap();
+        assert_eq!(batch_outputs.len(), inputs.len());
+        for (single, batch) in single_outputs.iter().zip(batch_outputs.iter()) {
+            assert_eq!(batch.precision_class, E9_HDC_CUDA_PRECISION_CLASS);
+            assert_eq!(batch.source_id, single.source_id);
+            assert_eq!(batch.vector.len(), single.vector.len());
+            let single_bits = single
+                .vector
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>();
+            let batch_bits = batch
+                .vector
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>();
+            assert_eq!(batch_bits, single_bits);
+        }
     }
 }
