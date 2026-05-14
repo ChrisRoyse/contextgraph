@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -39,6 +40,7 @@ DEFAULT_DURABLE_SLACK_BYTES = 2 * 1024 * 1024 * 1024
 DEFAULT_FSV_EDGE_COPY_BUDGET_BYTES = 2 * 1024 * 1024 * 1024
 MAX_D_DRIVE_IO_WORKERS = 8
 MAX_GPU_WORKERS_PER_DEVICE = 1
+SHARD_RUN_LOG_NAME_PATTERN = re.compile(r"^shard-\d{6}-offset-\d{9}\.json$")
 
 
 class SchedulerError(RuntimeError):
@@ -821,6 +823,8 @@ def load_existing_run_logs(fsv_root: Path) -> list[dict[str, Any]]:
         return []
     logs = []
     for path in sorted(run_log_root.glob("*.json")):
+        if not SHARD_RUN_LOG_NAME_PATTERN.fullmatch(path.name):
+            continue
         log = read_json(path)
         require(f"{path} run log exit code zero", log.get("exit_code") == 0)
         logs.append(log)
@@ -856,14 +860,39 @@ def shard_completion_readback(
     }
 
 
+def require_full_scheduler_shard(
+    args: argparse.Namespace,
+    shard: ShardSpec,
+    summary: dict[str, Any],
+) -> None:
+    active_embedder_count = int(summary.get("active_embedder_count", -1))
+    chunk_count = int(summary.get("chunk_count", -1))
+    cache_record_count = int(summary.get("cache_record_count", -1))
+    quarantine_row_count = int(summary.get("quarantine_row_count", -1))
+    expected_pairs = chunk_count * args.active_embedder_count
+    accounted_pairs = cache_record_count + quarantine_row_count
+    require(
+        f"{shard.shard_id} completed shard active embedder count matches scheduler",
+        active_embedder_count == args.active_embedder_count,
+    )
+    require(
+        f"{shard.shard_id} completed shard accounts all scheduler embedder pairs",
+        accounted_pairs == expected_pairs,
+    )
+
+
 def completed_shard_readback(args: argparse.Namespace, shard: ShardSpec) -> dict[str, Any]:
+    readback = shard_completion_readback(args, shard)
+    summary = readback.get("summary")
+    require(f"{shard.shard_id} completed shard summary exists", isinstance(summary, dict))
+    require_full_scheduler_shard(args, shard, summary)
     return {
         "shard_id": shard.shard_id,
         "exit_code": 0,
         "elapsed_seconds": 0.0,
         "skipped_completed": True,
         "runner_batch_controls": runner_batch_controls(args),
-        **shard_completion_readback(args, shard),
+        **readback,
     }
 
 
@@ -1190,6 +1219,10 @@ def validate_manifest(
 def write_minimal_packed_shard(root: Path, shard_id: str, chunk_offset: int, max_chunks: int) -> ShardSpec:
     cache_root = root / shard_id
     fsv_root = root / f"{shard_id}-fsv"
+    if cache_root.exists():
+        shutil.rmtree(cache_root)
+    if fsv_root.exists():
+        shutil.rmtree(fsv_root)
     packed_root = cache_root / "packed_records"
     packed_root.mkdir(parents=True, exist_ok=True)
     fsv_root.mkdir(parents=True, exist_ok=True)
@@ -1600,6 +1633,45 @@ def edge_checks(
             "passes": True,
             "current_run_rows": packed_readback["current_run_rows"],
             "cumulative_rows": packed_readback["cumulative_rows"],
+        })
+        try:
+            completed_shard_readback(args, isolated_cumulative)
+        except SchedulerError as exc:
+            cases.append({
+                "case": "isolated_partial_manifest_rejected_as_completed_shard",
+                "passes": True,
+                "error": str(exc),
+            })
+        else:
+            raise SchedulerError("isolated partial manifest unexpectedly passed completed shard readback")
+
+        log_filter_root = edge_root / "run-log-filter-fsv"
+        log_root = log_filter_root / "run_logs"
+        if log_filter_root.exists():
+            shutil.rmtree(log_filter_root)
+        log_root.mkdir(parents=True)
+        canonical_log = {
+            "shard_id": "shard-123456-offset-987654321",
+            "exit_code": 0,
+            "summary": {"active_embedder_count": args.active_embedder_count},
+        }
+        isolated_log = {
+            "shard_id": "shard-123456-offset-987654321",
+            "exit_code": 0,
+            "summary": {"active_embedder_count": 1},
+        }
+        json_dump_checked(log_root / "shard-123456-offset-987654321.json", canonical_log)
+        json_dump_checked(log_root / "shard-123456-offset-987654321.e1.json", isolated_log)
+        loaded_logs = load_existing_run_logs(log_filter_root)
+        require("aggregate-only log loader ignores isolated subrun logs", len(loaded_logs) == 1)
+        require(
+            "aggregate-only log loader preserves canonical shard log",
+            loaded_logs[0]["summary"]["active_embedder_count"] == args.active_embedder_count,
+        )
+        cases.append({
+            "case": "aggregate_only_ignores_isolated_subrun_logs",
+            "passes": True,
+            "loaded_log_count": len(loaded_logs),
         })
 
     partial = ShardSpec(
