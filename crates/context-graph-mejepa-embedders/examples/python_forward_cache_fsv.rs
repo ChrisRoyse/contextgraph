@@ -193,26 +193,30 @@ struct CacheRecordReadback {
     byte_count: u64,
 }
 
-fn cache_action_from_readback(
+struct CacheActionContext {
     embedder: EmbedderId,
     key_sha: String,
-    action: &str,
+    action: &'static str,
     true_batch: bool,
     batch_id: Option<String>,
     batch_size: Option<usize>,
     batch_index: Option<usize>,
     latency_ms: u128,
+}
+
+fn cache_action_from_readback(
+    context: CacheActionContext,
     readback: CacheRecordReadback,
 ) -> CacheAction {
     CacheAction {
-        embedder_id: embedder.slug().to_string(),
-        cache_key_sha256: key_sha,
-        action: action.to_string(),
-        true_batch,
-        batch_id,
-        batch_size,
-        batch_index,
-        latency_ms,
+        embedder_id: context.embedder.slug().to_string(),
+        cache_key_sha256: context.key_sha,
+        action: context.action.to_string(),
+        true_batch: context.true_batch,
+        batch_id: context.batch_id,
+        batch_size: context.batch_size,
+        batch_index: context.batch_index,
+        latency_ms: context.latency_ms,
         record_path: readback.record_path,
         record_store_layout: readback.record_store_layout,
         packed_record_path: readback.packed_record_path,
@@ -454,14 +458,16 @@ async fn main() -> FsvResult<()> {
             let readback = cache_store.read(&paths, embedder.slug(), &key)?;
             validate_record(&readback.record, record)?;
             let action = cache_action_from_readback(
-                embedder,
-                key_hash(&key)?,
-                "hit",
-                false,
-                None,
-                None,
-                None,
-                0,
+                CacheActionContext {
+                    embedder,
+                    key_sha: key_hash(&key)?,
+                    action: "hit",
+                    true_batch: false,
+                    batch_id: None,
+                    batch_size: None,
+                    batch_index: None,
+                    latency_ms: 0,
+                },
                 readback,
             );
             coverage_tracker.record_second(record, &action)?;
@@ -553,6 +559,10 @@ async fn main() -> FsvResult<()> {
         edge_true_batch_vram_guard(&paths, &registry, max_source_bytes)?,
         edge_hot_stage_promotion_mismatch(&paths)?,
         edge_cache_corruption(&paths)?,
+        edge_packed_duplicate_key(&paths)?,
+        edge_packed_corrupt_row(&paths)?,
+        edge_packed_missing_payload(&paths)?,
+        edge_packed_truncated_payload(&paths)?,
         edge_maximum_size_chunk(&paths, &registry, max_source_bytes).await?,
         edge_dimension_mismatch(&paths, &chunks[0], &registry[0], max_source_bytes)?,
     ];
@@ -1322,14 +1332,16 @@ async fn first_pass_pretrained_record(
                 readback.record.cache_key_sha256 == key_sha && readback.record.key == key,
             )?;
             let action = cache_action_from_readback(
-                embedder,
-                key_sha,
-                "hit",
-                false,
-                None,
-                None,
-                None,
-                started.elapsed().as_millis(),
+                CacheActionContext {
+                    embedder,
+                    key_sha,
+                    action: "hit",
+                    true_batch: false,
+                    batch_id: None,
+                    batch_size: None,
+                    batch_index: None,
+                    latency_ms: started.elapsed().as_millis(),
+                },
                 readback,
             );
             index_sink.write_row(&index_row(chunk, record, &action))?;
@@ -1451,14 +1463,16 @@ async fn first_pass_pretrained_record(
                         == vector_sha256(&readback.record.output.vector),
             )?;
             let action = cache_action_from_readback(
-                embedder,
-                pending.key_sha.clone(),
-                "write",
-                true,
-                Some(batch_id.clone()),
-                Some(batch.len()),
-                Some(batch_index),
-                batch_started.elapsed().as_millis(),
+                CacheActionContext {
+                    embedder,
+                    key_sha: pending.key_sha.clone(),
+                    action: "write",
+                    true_batch: true,
+                    batch_id: Some(batch_id.clone()),
+                    batch_size: Some(batch.len()),
+                    batch_index: Some(batch_index),
+                    latency_ms: batch_started.elapsed().as_millis(),
+                },
                 readback,
             );
             index_sink.write_row(&index_row(chunk, record, &action))?;
@@ -1757,14 +1771,16 @@ async fn cache_or_forward(
             }),
         )?;
         return Ok(cache_action_from_readback(
-            embedder,
-            key_sha,
-            "hit",
-            false,
-            None,
-            None,
-            None,
-            started.elapsed().as_millis(),
+            CacheActionContext {
+                embedder,
+                key_sha,
+                action: "hit",
+                true_batch: false,
+                batch_id: None,
+                batch_size: None,
+                batch_index: None,
+                latency_ms: started.elapsed().as_millis(),
+            },
             readback,
         ));
     }
@@ -1893,14 +1909,16 @@ async fn cache_or_forward(
                 == vector_sha256(&readback.record.output.vector),
     )?;
     let action = cache_action_from_readback(
-        embedder,
-        key_sha.clone(),
-        "write",
-        false,
-        None,
-        None,
-        None,
-        started.elapsed().as_millis(),
+        CacheActionContext {
+            embedder,
+            key_sha: key_sha.clone(),
+            action: "write",
+            true_batch: false,
+            batch_id: None,
+            batch_size: None,
+            batch_index: None,
+            latency_ms: started.elapsed().as_millis(),
+        },
         readback,
     );
     write_progress(
@@ -2407,7 +2425,7 @@ impl ForwardCacheStore {
         let readback: Value = serde_json::from_slice(&fs::read(paths.packed_manifest_path())?)?;
         require(
             "packed manifest readback row count matches",
-            readback["row_count"] == Value::from(total_rows),
+            readback["row_count"].as_u64() == Some(total_rows as u64),
         )?;
         Ok(manifest)
     }
@@ -3136,6 +3154,176 @@ fn edge_cache_corruption(paths: &Paths) -> FsvResult<Value> {
     }))
 }
 
+fn edge_paths_with_cache_root(paths: &Paths, cache_root: PathBuf) -> Paths {
+    Paths {
+        chunks_jsonl: paths.chunks_jsonl.clone(),
+        registry_jsonl: paths.registry_jsonl.clone(),
+        models_config: paths.models_config.clone(),
+        cache_root,
+        fsv_root: paths.fsv_root.clone(),
+        hot_root: paths.hot_root.clone(),
+    }
+}
+
+fn write_edge_packed_row(
+    paths: &Paths,
+    case: &str,
+    key: &str,
+    payload: &[u8],
+    record_sha256_override: Option<String>,
+    byte_len_override: Option<u64>,
+    missing_payload: bool,
+) -> FsvResult<Paths> {
+    let cache_root = paths.fsv_root.join("packed_store_edges").join(case);
+    if cache_root.exists() {
+        fs::remove_dir_all(&cache_root)?;
+    }
+    let edge_paths = edge_paths_with_cache_root(paths, cache_root);
+    fs::create_dir_all(edge_paths.packed_root())?;
+    let record_path = edge_paths.packed_record_path("e1");
+    let index_path = edge_paths.packed_index_path("e1");
+    if !missing_payload {
+        let mut record_bytes = payload.to_vec();
+        record_bytes.push(b'\n');
+        write_bytes_atomic(&record_path, &record_bytes)?;
+    }
+    let row = PackedIndexRow {
+        schema_version: CACHE_SCHEMA_VERSION,
+        artifact_kind: "python_forward_cache_packed_index_row".to_string(),
+        cache_key_sha256: key.to_string(),
+        embedder_id: "e1".to_string(),
+        packed_record_path: record_path.display().to_string(),
+        byte_offset: 0,
+        byte_len: byte_len_override.unwrap_or(payload.len() as u64),
+        record_sha256: record_sha256_override.unwrap_or_else(|| sha256_prefixed_bytes(payload)),
+        vector_sha256: sha256_prefixed_bytes(b"edge-vector"),
+        vector_len: 3,
+    };
+    append_jsonl_row_checked(&index_path, &row)?;
+    Ok(edge_paths)
+}
+
+fn edge_packed_duplicate_key(paths: &Paths) -> FsvResult<Value> {
+    let before = store_state("edge_packed_duplicate_before", paths)?;
+    let key = format!("sha256:{}", "a".repeat(64));
+    let edge_paths = write_edge_packed_row(
+        paths,
+        "duplicate-key",
+        &key,
+        br#"{"edge":"duplicate"}"#,
+        None,
+        None,
+        false,
+    )?;
+    let row = read_packed_index_file(&edge_paths.packed_index_path("e1"))?
+        .into_iter()
+        .next()
+        .ok_or("duplicate edge did not create an index row")?;
+    append_jsonl_row_checked(&edge_paths.packed_index_path("e1"), &row)?;
+    let err = load_packed_index_rows(&edge_paths).unwrap_err();
+    let after = store_state("edge_packed_duplicate_after", paths)?;
+    require(
+        "packed duplicate-key edge writes no primary cache records",
+        before.cache_record_count == after.cache_record_count,
+    )?;
+    Ok(json!({
+        "case": "packed_duplicate_key_rejected",
+        "before_state": before,
+        "trigger": "write two packed index rows with the same cache_key_sha256 and load the packed index",
+        "edge_index_path": edge_paths.packed_index_path("e1").display().to_string(),
+        "error": err.to_string(),
+        "after_state": after,
+        "passes": true,
+    }))
+}
+
+fn edge_packed_corrupt_row(paths: &Paths) -> FsvResult<Value> {
+    let before = store_state("edge_packed_corrupt_before", paths)?;
+    let key = format!("sha256:{}", "b".repeat(64));
+    let edge_paths = write_edge_packed_row(
+        paths,
+        "corrupt-row",
+        &key,
+        br#"{"edge":"corrupt"}"#,
+        Some(format!("sha256:{}", "0".repeat(64))),
+        None,
+        false,
+    )?;
+    let err = load_packed_index_rows(&edge_paths).unwrap_err();
+    let after = store_state("edge_packed_corrupt_after", paths)?;
+    require(
+        "packed corrupt-row edge writes no primary cache records",
+        before.cache_record_count == after.cache_record_count,
+    )?;
+    Ok(json!({
+        "case": "packed_corrupt_row_rejected",
+        "before_state": before,
+        "trigger": "packed index row points to payload bytes whose sha256 does not match record_sha256",
+        "edge_index_path": edge_paths.packed_index_path("e1").display().to_string(),
+        "error": err.to_string(),
+        "after_state": after,
+        "passes": true,
+    }))
+}
+
+fn edge_packed_missing_payload(paths: &Paths) -> FsvResult<Value> {
+    let before = store_state("edge_packed_missing_before", paths)?;
+    let key = format!("sha256:{}", "c".repeat(64));
+    let edge_paths = write_edge_packed_row(
+        paths,
+        "missing-payload",
+        &key,
+        br#"{"edge":"missing"}"#,
+        None,
+        None,
+        true,
+    )?;
+    let err = load_packed_index_rows(&edge_paths).unwrap_err();
+    let after = store_state("edge_packed_missing_after", paths)?;
+    require(
+        "packed missing-payload edge writes no primary cache records",
+        before.cache_record_count == after.cache_record_count,
+    )?;
+    Ok(json!({
+        "case": "packed_missing_indexed_payload_rejected",
+        "before_state": before,
+        "trigger": "packed index row points to an absent payload file",
+        "edge_index_path": edge_paths.packed_index_path("e1").display().to_string(),
+        "error": err.to_string(),
+        "after_state": after,
+        "passes": true,
+    }))
+}
+
+fn edge_packed_truncated_payload(paths: &Paths) -> FsvResult<Value> {
+    let before = store_state("edge_packed_truncated_before", paths)?;
+    let key = format!("sha256:{}", "d".repeat(64));
+    let edge_paths = write_edge_packed_row(
+        paths,
+        "truncated-payload",
+        &key,
+        br#"{"edge":"short"}"#,
+        None,
+        Some(4096),
+        false,
+    )?;
+    let err = load_packed_index_rows(&edge_paths).unwrap_err();
+    let after = store_state("edge_packed_truncated_after", paths)?;
+    require(
+        "packed truncated-payload edge writes no primary cache records",
+        before.cache_record_count == after.cache_record_count,
+    )?;
+    Ok(json!({
+        "case": "packed_truncated_payload_rejected",
+        "before_state": before,
+        "trigger": "packed index row byte_len exceeds available payload bytes",
+        "edge_index_path": edge_paths.packed_index_path("e1").display().to_string(),
+        "error": err.to_string(),
+        "after_state": after,
+        "passes": true,
+    }))
+}
+
 async fn edge_maximum_size_chunk(
     paths: &Paths,
     registry: &[RegistryRecord],
@@ -3405,6 +3593,11 @@ fn append_jsonl_row_checked<T: Serialize>(path: &Path, row: &T) -> FsvResult<()>
     file.write_all(serde_json::to_string(row)?.as_bytes())?;
     file.write_all(b"\n")?;
     file.flush()?;
+    file.sync_all()?;
+    drop(file);
+    if let Some(parent) = path.parent() {
+        File::open(parent)?.sync_all()?;
+    }
     require(
         "appended JSONL row increases row count by one",
         count_jsonl_rows(path)? == before_rows + 1,
@@ -3486,6 +3679,9 @@ impl JsonlSink {
 }
 
 fn count_jsonl_rows(path: &Path) -> FsvResult<usize> {
+    if !path.exists() {
+        return Ok(0);
+    }
     let file = File::open(path)?;
     let mut count = 0usize;
     for line in BufReader::new(file).lines() {
