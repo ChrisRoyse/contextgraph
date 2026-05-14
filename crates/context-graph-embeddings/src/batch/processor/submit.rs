@@ -76,7 +76,12 @@ impl BatchProcessor {
         inputs: Vec<ModelInput>,
     ) -> EmbeddingResult<Vec<ModelEmbedding>> {
         if inputs.is_empty() {
-            return Ok(Vec::new());
+            return Err(EmbeddingError::TrueBatchEmpty {
+                model_id,
+                recovery_hint:
+                    "submit at least one input; empty batches are caller bugs, not no-op successes"
+                        .to_string(),
+            });
         }
 
         if !self.is_running_internal() {
@@ -140,29 +145,84 @@ impl BatchProcessor {
 
 #[cfg(test)]
 mod tests {
+    use crate::batch::{BatchProcessor, BatchProcessorConfig};
+    use crate::error::EmbeddingError;
+    use crate::models::{ModelRegistry, ModelRegistryConfig};
+    use crate::traits::{EmbeddingModel, ModelFactory, SingleModelConfig};
+    use crate::types::ModelId;
     use crate::types::ModelInput;
+    use std::sync::Arc;
+
+    struct EmptyBatchFactory;
+
+    #[async_trait::async_trait]
+    impl ModelFactory for EmptyBatchFactory {
+        fn create_model(
+            &self,
+            model_id: ModelId,
+            _config: &SingleModelConfig,
+        ) -> crate::error::EmbeddingResult<Box<dyn EmbeddingModel>> {
+            panic!("empty submit_batch must reject before loading {model_id:?}")
+        }
+
+        fn supported_models(&self) -> &[ModelId] {
+            ModelId::all()
+        }
+
+        fn estimate_memory(&self, _model_id: ModelId) -> usize {
+            1
+        }
+    }
 
     #[tokio::test]
     async fn test_edge_case_1_empty_batch() {
         // BEFORE: Call submit_batch with empty vec
         // OPERATION: submit_batch(ModelId::Semantic, vec![])
-        // AFTER: Returns Ok(vec![]) immediately - no queue interaction
-        // VERIFY: No panic, returns empty vec
+        // AFTER: Returns TRUE_BATCH_EMPTY immediately - no queue interaction
+        // VERIFY: No silent no-op success
 
         println!("\n========================================");
         println!("EDGE CASE 1: Empty Batch");
         println!("========================================");
 
-        // We can't easily create a full BatchProcessor without a real registry,
-        // but we can test the submit_batch early return logic by simulating it
+        let registry = Arc::new(
+            ModelRegistry::new(
+                ModelRegistryConfig::testing(1024),
+                Arc::new(EmptyBatchFactory),
+            )
+            .await
+            .unwrap(),
+        );
+        let mut processor = BatchProcessor::new(registry, BatchProcessorConfig::default())
+            .await
+            .unwrap();
         let inputs: Vec<ModelInput> = vec![];
+        let model_id = ModelId::Semantic;
+        let before = processor.stats().await;
 
-        // The submit_batch method returns immediately for empty inputs
+        // The submit_batch method must reject empty inputs before queueing.
         assert!(inputs.is_empty());
         println!("BEFORE: inputs = {:?}", inputs);
+        println!("BEFORE: stats = {:?}", before);
         println!("OPERATION: submit_batch with empty vec");
-        println!("AFTER: Should return Ok(vec![])");
-        println!("VERIFY: No panic, empty vec returned");
+        let err = processor.submit_batch(model_id, inputs).await.unwrap_err();
+        let after = processor.stats().await;
+        processor.shutdown().await;
+        match err {
+            EmbeddingError::TrueBatchEmpty {
+                model_id: observed,
+                recovery_hint,
+            } => {
+                assert_eq!(observed, ModelId::Semantic);
+                assert!(recovery_hint.contains("at least one input"));
+            }
+            _ => panic!("Expected TrueBatchEmpty error"),
+        }
+        println!("AFTER: TRUE_BATCH_EMPTY for {:?}", model_id);
+        println!("AFTER: stats = {:?}", after);
+        assert_eq!(before.requests_submitted, after.requests_submitted);
+        assert_eq!(before.current_queue_depth, after.current_queue_depth);
+        println!("VERIFY: No panic, no empty success vector");
         println!("========================================\n");
     }
 }

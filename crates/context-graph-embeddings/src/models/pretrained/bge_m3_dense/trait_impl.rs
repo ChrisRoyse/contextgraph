@@ -39,4 +39,15 @@ impl EmbeddingModel for BgeM3DenseModel {
         self.validate_input(input)?;
         self.embed_single(input).await
     }
+
+    fn supports_true_batch(&self) -> bool {
+        true
+    }
+
+    async fn embed_true_batch(
+        &self,
+        inputs: &[ModelInput],
+    ) -> EmbeddingResult<Vec<ModelEmbedding>> {
+        BgeM3DenseModel::embed_batch(self, inputs).await
+    }
 }

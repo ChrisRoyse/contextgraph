@@ -17,6 +17,7 @@ pub(crate) fn compute_embeddings(
     token_type_tensor: &Tensor,
     weights: &BertWeights,
     config: &crate::gpu::BertConfig,
+    batch_size: usize,
     seq_len: usize,
 ) -> EmbeddingResult<Tensor> {
     let word_embeds = weights
@@ -33,7 +34,7 @@ pub(crate) fn compute_embeddings(
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("SparseModel word embedding lookup failed: {}", e),
         })?
-        .reshape((1, seq_len, config.hidden_size))
+        .reshape((batch_size, seq_len, config.hidden_size))
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("SparseModel word embedding reshape failed: {}", e),
         })?;
@@ -52,7 +53,7 @@ pub(crate) fn compute_embeddings(
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("SparseModel position embedding lookup failed: {}", e),
         })?
-        .reshape((1, seq_len, config.hidden_size))
+        .reshape((batch_size, seq_len, config.hidden_size))
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("SparseModel position embedding reshape failed: {}", e),
         })?;
@@ -71,7 +72,7 @@ pub(crate) fn compute_embeddings(
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("SparseModel token_type embedding lookup failed: {}", e),
         })?
-        .reshape((1, seq_len, config.hidden_size))
+        .reshape((batch_size, seq_len, config.hidden_size))
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("SparseModel token_type embedding reshape failed: {}", e),
         })?;

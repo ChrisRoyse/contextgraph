@@ -72,6 +72,30 @@ pub struct QwenWeights {
 }
 
 impl QwenWeights {
+    /// Estimated VRAM occupied by loaded Qwen2 tensors.
+    pub fn vram_bytes(&self) -> usize {
+        tensor_bytes(&self.embed_tokens)
+            + tensor_bytes(&self.norm_weight)
+            + self
+                .layers
+                .iter()
+                .map(|layer| {
+                    tensor_bytes(&layer.attention.q_proj_weight)
+                        + tensor_bytes(&layer.attention.q_proj_bias)
+                        + tensor_bytes(&layer.attention.k_proj_weight)
+                        + tensor_bytes(&layer.attention.k_proj_bias)
+                        + tensor_bytes(&layer.attention.v_proj_weight)
+                        + tensor_bytes(&layer.attention.v_proj_bias)
+                        + tensor_bytes(&layer.attention.o_proj_weight)
+                        + tensor_bytes(&layer.input_layernorm_weight)
+                        + tensor_bytes(&layer.post_attention_layernorm_weight)
+                        + tensor_bytes(&layer.mlp.gate_proj_weight)
+                        + tensor_bytes(&layer.mlp.up_proj_weight)
+                        + tensor_bytes(&layer.mlp.down_proj_weight)
+                })
+                .sum::<usize>()
+    }
+
     /// Load Qwen2 weights from sharded safetensors files.
     pub fn from_path(model_path: &Path, device: &'static Device) -> EmbeddingResult<Self> {
         // Check for sharded model files
@@ -284,4 +308,8 @@ impl QwenWeights {
             mlp,
         })
     }
+}
+
+fn tensor_bytes(tensor: &Tensor) -> usize {
+    tensor.elem_count() * tensor.dtype().size_in_bytes()
 }

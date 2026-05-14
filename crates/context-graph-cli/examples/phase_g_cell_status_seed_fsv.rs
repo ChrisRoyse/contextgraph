@@ -128,7 +128,10 @@ fn seed_scenario(fsv_root: &Path, scenario: Scenario) -> Result<Value> {
         let readback = store
             .load_latest_report()
             .map_err(|err| anyhow!("load latest empty eval report: {err}"))?;
-        ensure!(readback.is_none(), "empty-db scenario unexpectedly has a report");
+        ensure!(
+            readback.is_none(),
+            "empty-db scenario unexpectedly has a report"
+        );
         (Value::Null, Value::Null, Value::Null)
     } else {
         let report = build_report(scenario);
@@ -162,7 +165,10 @@ fn seed_scenario(fsv_root: &Path, scenario: Scenario) -> Result<Value> {
     } else {
         1
     };
-    ensure!(cf_count == expected_cf_count, "unexpected eval report row count");
+    ensure!(
+        cf_count == expected_cf_count,
+        "unexpected eval report row count"
+    );
     drop(store);
     drop(db);
 

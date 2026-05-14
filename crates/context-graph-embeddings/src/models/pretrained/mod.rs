@@ -14,6 +14,7 @@
 
 pub(crate) mod shared;
 
+mod bert_batch;
 mod bge_m3_dense;
 pub(crate) mod causal;
 mod code;
@@ -65,6 +66,7 @@ pub use kepler::{
     KeplerModel, KEPLER_DIMENSION, KEPLER_LATENCY_BUDGET_MS, KEPLER_MAX_TOKENS, KEPLER_MODEL_NAME,
 };
 pub use late_interaction::{
+    validate_late_interaction_batch_vram_budget, LateInteractionBatchVramPlan,
     LateInteractionModel, TokenEmbeddings, LATE_INTERACTION_DIMENSION,
     LATE_INTERACTION_LATENCY_BUDGET_MS, LATE_INTERACTION_MAX_TOKENS, LATE_INTERACTION_MODEL_NAME,
 };
@@ -77,8 +79,9 @@ pub use semantic::{
     SEMANTIC_MAX_TOKENS,
 };
 pub use sparse::{
-    SparseModel, SparseVector, SPARSE_EXPECTED_SPARSITY, SPARSE_LATENCY_BUDGET_MS,
-    SPARSE_MAX_TOKENS, SPARSE_MODEL_NAME, SPARSE_NATIVE_DIMENSION, SPARSE_PROJECTED_DIMENSION,
+    validate_true_batch_vram_budget, SparseBatchVramPlan, SparseModel, SparseVector,
+    SPARSE_EXPECTED_SPARSITY, SPARSE_LATENCY_BUDGET_MS, SPARSE_MAX_TOKENS, SPARSE_MODEL_NAME,
+    SPARSE_NATIVE_DIMENSION, SPARSE_PROJECTED_DIMENSION, SPARSE_VOCAB_SIZE,
 };
 pub use weight_projection::{
     LearnedWeightProjection, DEFAULT_CATEGORY_WEIGHTS, DEFAULT_WEIGHTS_PATH, HIDDEN_DIM_1,

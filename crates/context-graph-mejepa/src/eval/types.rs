@@ -809,11 +809,7 @@ fn preview_strings(values: &[String]) -> String {
     if values.is_empty() {
         return "[]".to_string();
     }
-    let mut preview = values
-        .iter()
-        .take(MAX_PREVIEW)
-        .cloned()
-        .collect::<Vec<_>>();
+    let mut preview = values.iter().take(MAX_PREVIEW).cloned().collect::<Vec<_>>();
     if values.len() > MAX_PREVIEW {
         preview.push(format!("...{} more", values.len() - MAX_PREVIEW));
     }

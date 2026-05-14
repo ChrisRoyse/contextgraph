@@ -15,7 +15,7 @@ use crate::models::attention::{self, resolve_attention_mode, AttentionStrategy};
 use crate::traits::{EmbeddingModel, SingleModelConfig};
 use crate::types::{InputType, ModelEmbedding, ModelId, ModelInput};
 
-use super::forward::gpu_forward;
+use super::forward::{gpu_forward, gpu_forward_batch};
 use super::weights::QwenWeights;
 
 use crate::models::pretrained::shared::ModelState;
@@ -187,8 +187,7 @@ impl CodeModel {
         Ok(())
     }
 
-    /// Sequential processing of multiple inputs. Note: processes items one at a
-    /// time (no GPU batching). For true batch inference, see Kepler model.
+    /// True CUDA batch processing using one padded Qwen2 tensor forward pass.
     pub async fn embed_batch(&self, inputs: &[ModelInput]) -> EmbeddingResult<Vec<ModelEmbedding>> {
         if !self.is_initialized() {
             return Err(EmbeddingError::NotInitialized {
@@ -196,11 +195,52 @@ impl CodeModel {
             });
         }
 
-        let mut results = Vec::with_capacity(inputs.len());
-        for input in inputs {
-            results.push(self.embed(input).await?);
+        if inputs.is_empty() {
+            return Err(EmbeddingError::TrueBatchEmpty {
+                model_id: ModelId::Code,
+                recovery_hint: "submit at least one CodeModel input; empty batches are invalid"
+                    .to_string(),
+            });
         }
-        Ok(results)
+
+        let mut prepared = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            self.validate_input(input)?;
+            prepared.push(Self::extract_content(input)?);
+        }
+
+        let start = std::time::Instant::now();
+        let state = self
+            .model_state
+            .read()
+            .map_err(|e| EmbeddingError::InternalError {
+                message: format!("Qwen2 failed to acquire read lock: {}", e),
+            })?;
+
+        let (weights, tokenizer) = match &*state {
+            ModelState::Loaded { weights, tokenizer } => (weights, tokenizer),
+            _ => {
+                return Err(EmbeddingError::NotInitialized {
+                    model_id: ModelId::Code,
+                })
+            }
+        };
+
+        let vectors = gpu_forward_batch(
+            &prepared,
+            weights,
+            tokenizer,
+            self.attention_strategy.as_ref(),
+        )?;
+        let latency_us = ((start.elapsed().as_micros() as u64) / inputs.len() as u64).max(1);
+        vectors
+            .into_iter()
+            .map(|vector| {
+                let embedding = ModelEmbedding::new(ModelId::Code, vector, latency_us);
+                embedding.validate()?;
+                Ok(embedding)
+            })
+            .collect()
     }
 
     /// Extract text content from model input for embedding.
@@ -282,6 +322,17 @@ impl EmbeddingModel for CodeModel {
                 model_id: ModelId::Code,
             }),
         }
+    }
+
+    fn supports_true_batch(&self) -> bool {
+        true
+    }
+
+    async fn embed_true_batch(
+        &self,
+        inputs: &[ModelInput],
+    ) -> EmbeddingResult<Vec<ModelEmbedding>> {
+        CodeModel::embed_batch(self, inputs).await
     }
 }
 

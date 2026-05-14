@@ -124,6 +124,50 @@ async fn test_embed_deterministic_for_same_input() {
     assert_eq!(embedding1.vector, embedding2.vector);
 }
 
+#[test]
+fn test_true_batch_unsupported_by_default() {
+    let model = TestModel::new(ModelId::Semantic, vec![InputType::Text]);
+    assert!(!model.supports_true_batch());
+}
+
+#[tokio::test]
+async fn test_true_batch_empty_rejects_with_structured_error() {
+    let model = TestModel::new(ModelId::Semantic, vec![InputType::Text]);
+    let err = model.embed_true_batch(&[]).await.unwrap_err();
+
+    match err {
+        EmbeddingError::TrueBatchEmpty {
+            model_id,
+            recovery_hint,
+        } => {
+            assert_eq!(model_id, ModelId::Semantic);
+            assert!(recovery_hint.contains("at least one input"));
+        }
+        _ => panic!("Expected TrueBatchEmpty error"),
+    }
+}
+
+#[tokio::test]
+async fn test_true_batch_default_does_not_loop_single_embed() {
+    let model = TestModel::new(ModelId::Semantic, vec![InputType::Text]);
+    let input = ModelInput::text("batch contract must not call embed").unwrap();
+    let err = model.embed_true_batch(&[input]).await.unwrap_err();
+
+    assert_eq!(model.embed_calls(), 0);
+    match err {
+        EmbeddingError::TrueBatchUnsupported {
+            model_id,
+            batch_size,
+            recovery_hint,
+        } => {
+            assert_eq!(model_id, ModelId::Semantic);
+            assert_eq!(batch_size, 1);
+            assert!(recovery_hint.contains("native"));
+        }
+        _ => panic!("Expected TrueBatchUnsupported error"),
+    }
+}
+
 // =========================================================================
 // INITIALIZATION STATE TESTS (2 tests)
 // =========================================================================

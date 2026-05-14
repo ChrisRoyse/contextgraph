@@ -9,7 +9,10 @@
 use candle_core::Tensor;
 use tokenizers::Tokenizer;
 
+use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::gpu::BertWeights;
+use crate::traits::get_memory_estimate;
+use crate::types::ModelId;
 
 use super::projection::ProjectionMatrix;
 
@@ -151,6 +154,30 @@ impl SparseVector {
         1.0 - (self.indices.len() as f32 / self.dimension as f32)
     }
 
+    /// Validate a SPLADE output row before it is accepted into the true-batch path.
+    pub fn validate_true_batch_output(
+        &self,
+        model_id: ModelId,
+        batch_index: usize,
+    ) -> EmbeddingResult<()> {
+        if self.dimension != SPARSE_VOCAB_SIZE {
+            return Err(EmbeddingError::ModelDimensionMismatch {
+                model_id,
+                expected: SPARSE_VOCAB_SIZE,
+                actual: self.dimension,
+            });
+        }
+        if self.nnz() == 0 {
+            return Err(EmbeddingError::InferenceValidationFailed {
+                model_id,
+                reason: format!(
+                    "SPLADE true-batch produced empty sparse row at batch_index={batch_index}"
+                ),
+            });
+        }
+        Ok(())
+    }
+
     // =========================================================================
     // REMOVED: to_dense_projected()
     // =========================================================================
@@ -177,6 +204,55 @@ impl Default for SparseVector {
             dimension: SPARSE_VOCAB_SIZE,
         }
     }
+}
+
+/// VRAM budget plan for a SPLADE true-batch forward pass.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SparseBatchVramPlan {
+    /// Model-level conservative VRAM reservation.
+    pub model_vram_bytes: usize,
+    /// Input and mask tensor bytes needed for this batch.
+    pub batch_tensor_bytes: usize,
+    /// Total required bytes before CUDA tensor allocation.
+    pub required_bytes: usize,
+    /// Available GPU memory bytes used for the guard decision.
+    pub available_bytes: usize,
+}
+
+/// Fail closed if a SPLADE true batch would exceed the available VRAM budget.
+pub fn validate_true_batch_vram_budget(
+    model_id: ModelId,
+    batch_tensor_bytes: usize,
+    available_bytes: usize,
+) -> EmbeddingResult<SparseBatchVramPlan> {
+    let model_vram_bytes = get_memory_estimate(model_id);
+    let required_bytes = model_vram_bytes
+        .checked_add(batch_tensor_bytes)
+        .ok_or_else(|| EmbeddingError::ConfigError {
+            message: format!(
+                "SPLADE true-batch VRAM plan overflow for {model_id:?}: model_vram_bytes={model_vram_bytes}, batch_tensor_bytes={batch_tensor_bytes}"
+            ),
+        })?;
+
+    if available_bytes < required_bytes {
+        return Err(EmbeddingError::InsufficientVram {
+            required_bytes,
+            available_bytes,
+            required_gb: bytes_to_gb(required_bytes),
+            available_gb: bytes_to_gb(available_bytes),
+        });
+    }
+
+    Ok(SparseBatchVramPlan {
+        model_vram_bytes,
+        batch_tensor_bytes,
+        required_bytes,
+        available_bytes,
+    })
+}
+
+fn bytes_to_gb(bytes: usize) -> f64 {
+    bytes as f64 / (1024.0 * 1024.0 * 1024.0)
 }
 
 /// MLM head weights for SPLADE vocabulary projection.

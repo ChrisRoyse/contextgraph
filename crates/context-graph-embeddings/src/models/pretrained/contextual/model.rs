@@ -31,6 +31,7 @@ use crate::gpu::{init_gpu, normalize_gpu, GpuModelLoader};
 use crate::traits::{EmbeddingModel, SingleModelConfig};
 use crate::types::{InputType, ModelEmbedding, ModelId, ModelInput};
 
+use super::super::bert_batch::{gpu_forward_text_batch, BertBatchPooling, BertBatchSpec};
 use super::constants::{
     CONTEXTUAL_DIMENSION, CONTEXTUAL_MAX_TOKENS, CONTEXT_PREFIX, INTENT_PREFIX,
 };
@@ -188,19 +189,70 @@ impl ContextualModel {
         Ok(())
     }
 
-    /// Sequential processing of multiple inputs. Note: processes items one at a
-    /// time (no GPU batching). For true batch inference, see Kepler model.
+    /// True CUDA batch processing using one padded E5-base tensor forward pass.
     pub async fn embed_batch(&self, inputs: &[ModelInput]) -> EmbeddingResult<Vec<ModelEmbedding>> {
         if !self.is_initialized() {
             return Err(EmbeddingError::NotInitialized {
                 model_id: self.model_id(),
             });
         }
-        let mut results = Vec::with_capacity(inputs.len());
-        for input in inputs {
-            results.push(self.embed(input).await?);
+
+        if inputs.is_empty() {
+            return Err(EmbeddingError::TrueBatchEmpty {
+                model_id: ModelId::Contextual,
+                recovery_hint:
+                    "submit at least one ContextualModel input; empty batches are invalid"
+                        .to_string(),
+            });
         }
-        Ok(results)
+
+        let mut prepared = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            self.validate_input(input)?;
+            let content = Self::extract_content(input)?;
+            prepared.push(format!("{}{}", CONTEXT_PREFIX, content));
+        }
+
+        let start = std::time::Instant::now();
+        let state = self
+            .model_state
+            .read()
+            .map_err(|e| EmbeddingError::InternalError {
+                message: format!("ContextualModel failed to acquire read lock: {}", e),
+            })?;
+
+        let (weights, tokenizer) = match &*state {
+            ModelState::Loaded { weights, tokenizer } => (weights, tokenizer),
+            _ => {
+                return Err(EmbeddingError::NotInitialized {
+                    model_id: ModelId::Contextual,
+                })
+            }
+        };
+
+        let vectors = gpu_forward_text_batch(
+            &prepared,
+            weights,
+            tokenizer,
+            BertBatchSpec {
+                model_id: ModelId::Contextual,
+                model_label: "ContextualModel",
+                max_tokens: CONTEXTUAL_MAX_TOKENS,
+                position_offset: 0,
+                position_padding_id: 0,
+                pooling: BertBatchPooling::Mean,
+            },
+        )?;
+
+        let latency_us = ((start.elapsed().as_micros() as u64) / inputs.len() as u64).max(1);
+        vectors
+            .into_iter()
+            .map(|vector| {
+                let embedding = ModelEmbedding::new(ModelId::Contextual, vector, latency_us);
+                embedding.validate()?;
+                Ok(embedding)
+            })
+            .collect()
     }
 
     /// Extract text content from model input for embedding.
@@ -1043,6 +1095,17 @@ impl EmbeddingModel for ContextualModel {
         let latency_us = start.elapsed().as_micros() as u64;
         Ok(ModelEmbedding::new(ModelId::Contextual, vector, latency_us))
     }
+
+    fn supports_true_batch(&self) -> bool {
+        true
+    }
+
+    async fn embed_true_batch(
+        &self,
+        inputs: &[ModelInput],
+    ) -> EmbeddingResult<Vec<ModelEmbedding>> {
+        ContextualModel::embed_batch(self, inputs).await
+    }
 }
 
 unsafe impl Send for ContextualModel {}
@@ -1052,6 +1115,35 @@ unsafe impl Sync for ContextualModel {}
 mod tests {
     use super::*;
     use candle_core::{Device, Tensor};
+
+    #[tokio::test]
+    async fn test_embed_true_batch_returns_ordered_768d_vectors() {
+        use crate::models::pretrained::shared::pretrained_test_model_path;
+        use crate::traits::SingleModelConfig;
+        use crate::types::ModelInput;
+
+        let model_path = pretrained_test_model_path("contextual-e5-base");
+        let model = ContextualModel::new(&model_path, SingleModelConfig::default())
+            .expect("create contextual model");
+        model.load().await.expect("load contextual model");
+        assert!(model.supports_true_batch());
+
+        let inputs = vec![
+            ModelInput::text("intent traces explain why the code failed").expect("input"),
+            ModelInput::text("context chunks preserve durable reality evidence").expect("input"),
+        ];
+        let embeddings = EmbeddingModel::embed_true_batch(&model, &inputs)
+            .await
+            .expect("contextual true batch");
+
+        assert_eq!(embeddings.len(), inputs.len());
+        for embedding in &embeddings {
+            embedding
+                .validate()
+                .expect("valid contextual true-batch vector");
+            assert_eq!(embedding.vector.len(), CONTEXTUAL_DIMENSION);
+        }
+    }
 
     #[test]
     fn test_layer_norm_shape_compatibility() {

@@ -73,6 +73,19 @@ pub enum EmbedError {
         message: String,
         remediation: &'static str,
     },
+    #[error("[MEJEPA_EMBED_TRUE_BATCH_EMPTY] true-batch input empty for {embedder}: batch_size={batch_size}; remediation: {remediation}")]
+    TrueBatchEmpty {
+        embedder: EmbedderId,
+        batch_size: usize,
+        remediation: &'static str,
+    },
+    #[error("[MEJEPA_EMBED_TRUE_BATCH_UNSUPPORTED] true-batch forward unsupported for {embedder}: batch_size={batch_size}; message: {message}; remediation: {remediation}")]
+    TrueBatchUnsupported {
+        embedder: EmbedderId,
+        batch_size: usize,
+        message: String,
+        remediation: &'static str,
+    },
 }
 
 impl EmbedError {
@@ -89,6 +102,8 @@ impl EmbedError {
             Self::VramExceeded { .. } => "MEJEPA_EMBED_VRAM_EXCEEDED",
             Self::E17Uncalibrated { .. } => "MEJEPA_EMBED_E17_UNCALIBRATED",
             Self::ForwardFailed { .. } => "MEJEPA_EMBED_FORWARD_FAILED",
+            Self::TrueBatchEmpty { .. } => "MEJEPA_EMBED_TRUE_BATCH_EMPTY",
+            Self::TrueBatchUnsupported { .. } => "MEJEPA_EMBED_TRUE_BATCH_UNSUPPORTED",
         }
     }
 
@@ -113,6 +128,29 @@ impl EmbedError {
             embedder,
             message: message.into(),
             remediation,
+        }
+    }
+
+    pub(crate) fn true_batch_empty(embedder: EmbedderId) -> Self {
+        Self::TrueBatchEmpty {
+            embedder,
+            batch_size: 0,
+            remediation:
+                "submit at least one input; empty batches are caller bugs, not no-op successes",
+        }
+    }
+
+    pub(crate) fn true_batch_unsupported(
+        embedder: EmbedderId,
+        batch_size: usize,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::TrueBatchUnsupported {
+            embedder,
+            batch_size,
+            message: message.into(),
+            remediation:
+                "implement a native true-batch model path for this embedder before claiming CUDA-batched throughput",
         }
     }
 }

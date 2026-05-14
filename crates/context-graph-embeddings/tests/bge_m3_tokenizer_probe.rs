@@ -7,19 +7,18 @@
 //! # Hard rules (from SMAP coordinator)
 //! - NO workarounds. If the tokenizers crate can't load bge-m3's tokenizer,
 //!   that is a HIGH blocker; this test MUST fail loudly.
-//! - NO mock tokenizer.json. Use the real file from HuggingFace Hub.
+//! - NO mock tokenizer.json. Use the real pinned model artifact.
 //! - NO assumption it'll work — verify end-to-end.
 //!
 //! # Strategy
-//! BAAI/bge-m3 is already cached in the standard HF hub cache from prior
-//! v4.2 work. The existing codebase pattern is
+//! ME-JEPA model artifacts are pinned in `mejepa_models_config.toml` under the
+//! local model root. The existing codebase pattern is
 //! `tokenizers::Tokenizer::from_file(&model_path.join("tokenizer.json"))`
-//! (see semantic/loader.rs, kepler/model.rs, etc.). We resolve the cached
-//! snapshot path directly — no HTTP download, no `hf-hub` crate needed.
+//! (see semantic/loader.rs, kepler/model.rs, etc.). We resolve the E14
+//! bge-m3-dense artifact from that active registry directly.
 //!
-//! If the cache is missing, the test fails with a clear message instructing
-//! the operator to run `huggingface-cli download BAAI/bge-m3` or the Python
-//! v4.2 setup; that is preferable to silently hiding a cache miss.
+//! If the model root or registry is missing, the test fails with a clear setup
+//! error. That is preferable to silently passing on an unverified tokenizer.
 //!
 //! # Acceptance (Task 1 from 12_task_breakdown_pilot.md)
 //! - Tokenization succeeds without panic
@@ -36,79 +35,76 @@ use std::path::{Path, PathBuf};
 
 use tokenizers::Tokenizer;
 
-/// HuggingFace Hub cache location for BAAI/bge-m3.
-///
-/// HF Hub layout: `~/.cache/huggingface/hub/models--{org}--{repo}/snapshots/{commit_sha}/`
-/// The snapshot commit sha varies; we pick the one that has `tokenizer.json`
-/// (the other snapshot in this repo only has the safetensors).
-const BGE_M3_HUB_DIR: &str = "models--BAAI--bge-m3";
+/// Canonical local ME-JEPA model artifact root used by this workstation.
+const DEFAULT_MODELS_ROOT: &str = "/mnt/d/cabdru/contextgraph/models";
+const MODELS_REGISTRY_FILENAME: &str = "mejepa_models_config.toml";
+const BGE_M3_MODEL_DIR: &str = "bge-m3-dense";
 const BGE_M3_TOKENIZER_FILENAME: &str = "tokenizer.json";
 
-/// Resolve the cached bge-m3 tokenizer.json path.
-///
-/// Walks `~/.cache/huggingface/hub/models--BAAI--bge-m3/snapshots/*/` looking
-/// for the first snapshot that contains `tokenizer.json` at the root (not
-/// the `onnx/` subdir). Fails loudly if nothing is found — we do NOT
-/// silently pass on a cache miss.
-fn resolve_bge_m3_tokenizer_path() -> PathBuf {
-    // Respect HF_HOME > HUGGINGFACE_HUB_CACHE > default, matching HF client semantics
-    let hub_root = if let Ok(hf_home) = std::env::var("HF_HOME") {
-        PathBuf::from(hf_home).join("hub")
-    } else if let Ok(cache) = std::env::var("HUGGINGFACE_HUB_CACHE") {
-        PathBuf::from(cache)
-    } else {
-        let home = std::env::var("HOME").expect("HOME env must be set");
-        PathBuf::from(home)
-            .join(".cache")
-            .join("huggingface")
-            .join("hub")
-    };
-
-    let model_dir = hub_root.join(BGE_M3_HUB_DIR);
-    assert!(
-        model_dir.is_dir(),
-        "BAAI/bge-m3 not found in HF cache at {}. \
-         Run `huggingface-cli download BAAI/bge-m3 tokenizer.json` first.",
-        model_dir.display()
-    );
-
-    let snapshots_dir = model_dir.join("snapshots");
-    assert!(
-        snapshots_dir.is_dir(),
-        "bge-m3 cache at {} has no snapshots/ dir — cache may be corrupt",
-        model_dir.display()
-    );
-
-    let snapshots = std::fs::read_dir(&snapshots_dir)
-        .expect("read snapshots dir")
-        .filter_map(Result::ok)
-        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
-        .collect::<Vec<_>>();
-
-    assert!(
-        !snapshots.is_empty(),
-        "no snapshots found under {} — try re-downloading",
-        snapshots_dir.display()
-    );
-
-    // Prefer a snapshot that has tokenizer.json at its root.
-    for snap in &snapshots {
-        let candidate = snap.path().join(BGE_M3_TOKENIZER_FILENAME);
-        if candidate.is_file() {
-            return candidate;
+fn configured_models_root() -> PathBuf {
+    for var in [
+        "CONTEXT_GRAPH_MODELS_PATH",
+        "CONTEXTGRAPH_MODELS_ROOT",
+        "EMBEDDING_MODELS_DIR",
+    ] {
+        if let Ok(value) = std::env::var(var) {
+            return PathBuf::from(value);
         }
     }
 
-    panic!(
-        "none of the {} snapshot(s) under {} contain tokenizer.json at the root. \
-         Snapshots checked: {:?}",
-        snapshots.len(),
-        snapshots_dir.display(),
-        snapshots
-            .iter()
-            .map(|s| s.file_name().to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
+    PathBuf::from(DEFAULT_MODELS_ROOT)
+}
+
+/// Resolve the pinned bge-m3 tokenizer.json path from the active model registry.
+///
+/// Fails loudly if the registry does not pin `bge-m3-dense` or if the tokenizer
+/// file is missing. Retired, cache-only, or experimental paths must not be used
+/// by this probe.
+fn resolve_bge_m3_tokenizer_path() -> PathBuf {
+    let root = configured_models_root();
+    let registry_path = root.join(MODELS_REGISTRY_FILENAME);
+    assert!(
+        registry_path.is_file(),
+        "BGE_M3_MODEL_REGISTRY_MISSING: expected active model registry at {}. \
+         Set CONTEXT_GRAPH_MODELS_PATH, CONTEXTGRAPH_MODELS_ROOT, or EMBEDDING_MODELS_DIR \
+         to the real ME-JEPA model artifact root.",
+        registry_path.display()
     );
+
+    let registry_text = std::fs::read_to_string(&registry_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", registry_path.display()));
+    let registry_value: toml::Value = toml::from_str(&registry_text)
+        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", registry_path.display()));
+
+    let model_dir = root.join(BGE_M3_MODEL_DIR);
+    let model_dir_text = model_dir.to_string_lossy();
+    let is_pinned = registry_value
+        .get("embedders")
+        .and_then(toml::Value::as_table)
+        .map(|embedders| {
+            embedders.values().any(|embedder| {
+                embedder
+                    .get("path")
+                    .and_then(toml::Value::as_str)
+                    .is_some_and(|path| path == model_dir_text)
+            })
+        })
+        .unwrap_or(false);
+    assert!(
+        is_pinned,
+        "BGE_M3_MODEL_NOT_PINNED: expected {} to be pinned in active registry {}",
+        model_dir.display(),
+        registry_path.display()
+    );
+
+    let tokenizer_path = model_dir.join(BGE_M3_TOKENIZER_FILENAME);
+    assert!(
+        tokenizer_path.is_file(),
+        "BGE_M3_TOKENIZER_MISSING: expected real tokenizer at {}",
+        tokenizer_path.display()
+    );
+
+    tokenizer_path
 }
 
 /// Tokenize with `add_special_tokens=true` (matches production usage).
@@ -290,10 +286,8 @@ fn bge_m3_xlm_roberta_sentencepiece_loads_and_tokenizes() {
     println!("E14 Phase 1 Task 1: UNBLOCKED for agent-e14-2 (enum plumbing).");
 }
 
-/// Sanity test: the path resolver itself is deterministic and reports
-/// reasonable errors (not tested against the real cache — caller depends
-/// on env, so we just ensure it doesn't panic for reasons unrelated to
-/// the probe's intent).
+/// Sanity test: the path resolver itself is deterministic and pinned to the
+/// active local model artifact root.
 #[test]
 fn resolve_path_finds_existing_snapshot() {
     let path = resolve_bge_m3_tokenizer_path();
@@ -312,8 +306,9 @@ fn resolve_path_finds_existing_snapshot() {
     // Ensure we picked a root snapshot tokenizer.json, not the onnx/ one.
     let parent = path.parent().expect("has parent");
     assert!(
-        !parent.ends_with("onnx"),
-        "picked the ONNX tokenizer.json ({}), not the root one",
+        parent.ends_with(BGE_M3_MODEL_DIR),
+        "resolved tokenizer path must come from the pinned {} artifact, got {}",
+        BGE_M3_MODEL_DIR,
         path.display()
     );
     let _: &Path = &path; // ensure Path trait is imported + used

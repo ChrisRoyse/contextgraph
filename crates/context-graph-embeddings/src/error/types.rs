@@ -126,6 +126,39 @@ pub enum EmbeddingError {
     #[error("Batch processing error: {message}")]
     BatchError { message: String },
 
+    /// True tensor/model batching was requested with an empty input set.
+    #[error("[TRUE_BATCH_EMPTY] True-batch inference rejected for {model_id:?}: batch_size=0\n  Recovery: {recovery_hint}")]
+    TrueBatchEmpty {
+        /// Model that received the invalid empty true batch.
+        model_id: ModelId,
+        /// Operational recovery hint for the caller.
+        recovery_hint: String,
+    },
+
+    /// Model does not implement the explicit true-batch inference contract.
+    #[error("[TRUE_BATCH_UNSUPPORTED] True-batch inference unsupported for {model_id:?}: batch_size={batch_size}\n  Recovery: {recovery_hint}")]
+    TrueBatchUnsupported {
+        /// Model missing true-batch support.
+        model_id: ModelId,
+        /// Number of inputs the caller attempted to batch.
+        batch_size: usize,
+        /// Operational recovery hint for the caller.
+        recovery_hint: String,
+    },
+
+    /// A true-batch implementation returned a different row count than requested.
+    #[error("[TRUE_BATCH_OUTPUT_COUNT_MISMATCH] True-batch output count mismatch for {model_id:?}: expected={expected}, actual={actual}\n  Recovery: {recovery_hint}")]
+    TrueBatchOutputCountMismatch {
+        /// Model that returned the mismatched batch output.
+        model_id: ModelId,
+        /// Number of embeddings expected.
+        expected: usize,
+        /// Number of embeddings returned.
+        actual: usize,
+        /// Operational recovery hint for the caller.
+        recovery_hint: String,
+    },
+
     /// Tokenization failed (unknown tokens, encoding error).
     #[error("Tokenization error for {model_id:?}: {message}")]
     TokenizationError { model_id: ModelId, message: String },

@@ -4,9 +4,11 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use crate::error::{EmbeddingError, EmbeddingResult};
-use crate::traits::SingleModelConfig;
+use crate::traits::{EmbeddingModel, SingleModelConfig};
 use crate::types::{InputType, ModelEmbedding, ModelId, ModelInput};
 
+use super::super::bert_batch::{gpu_forward_text_batch, BertBatchPooling, BertBatchSpec};
+use super::constants::{BGE_M3_DENSE_MAX_TOKENS, XLM_R_PAD_TOKEN_ID, XLM_R_POSITION_OFFSET};
 use super::gpu_forward::gpu_forward;
 use super::types::{BgeM3DenseModel, ModelState};
 
@@ -71,20 +73,69 @@ impl BgeM3DenseModel {
         self.loaded.load(Ordering::SeqCst)
     }
 
-    /// Sequential batch processing. Matches SemanticModel's pattern — a real
-    /// batched path would concatenate padded tensors, but that's a separate
-    /// optimisation (EMB-L3) that applies to all pretrained models.
+    /// True CUDA batch processing using one padded XLM-R tensor forward pass.
     pub async fn embed_batch(&self, inputs: &[ModelInput]) -> EmbeddingResult<Vec<ModelEmbedding>> {
         if !self.is_initialized() {
             return Err(EmbeddingError::NotInitialized {
                 model_id: ModelId::BgeM3Dense,
             });
         }
-        let mut out = Vec::with_capacity(inputs.len());
-        for input in inputs {
-            out.push(self.embed_single(input).await?);
+
+        if inputs.is_empty() {
+            return Err(EmbeddingError::TrueBatchEmpty {
+                model_id: ModelId::BgeM3Dense,
+                recovery_hint:
+                    "submit at least one BgeM3DenseModel input; empty batches are invalid"
+                        .to_string(),
+            });
         }
-        Ok(out)
+
+        let mut prepared = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            self.validate_input(input)?;
+            prepared.push(self.prepare_input(input)?);
+        }
+
+        let start = std::time::Instant::now();
+        let state = self
+            .model_state
+            .read()
+            .map_err(|e| EmbeddingError::InternalError {
+                message: format!("BgeM3DenseModel failed to acquire read lock: {}", e),
+            })?;
+
+        let (weights, tokenizer) = match &*state {
+            ModelState::Loaded { weights, tokenizer } => (weights, tokenizer),
+            _ => {
+                return Err(EmbeddingError::NotInitialized {
+                    model_id: ModelId::BgeM3Dense,
+                });
+            }
+        };
+
+        let vectors = gpu_forward_text_batch(
+            &prepared,
+            weights,
+            tokenizer,
+            BertBatchSpec {
+                model_id: ModelId::BgeM3Dense,
+                model_label: "BgeM3DenseModel",
+                max_tokens: BGE_M3_DENSE_MAX_TOKENS,
+                position_offset: XLM_R_POSITION_OFFSET,
+                position_padding_id: XLM_R_PAD_TOKEN_ID,
+                pooling: BertBatchPooling::Cls,
+            },
+        )?;
+
+        let latency_us = ((start.elapsed().as_micros() as u64) / inputs.len() as u64).max(1);
+        vectors
+            .into_iter()
+            .map(|vector| {
+                let embedding = ModelEmbedding::new(ModelId::BgeM3Dense, vector, latency_us);
+                embedding.validate()?;
+                Ok(embedding)
+            })
+            .collect()
     }
 
     /// Embed a single input (internal).

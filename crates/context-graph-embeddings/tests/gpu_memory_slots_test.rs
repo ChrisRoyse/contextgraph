@@ -1,6 +1,6 @@
 //! Integration tests for GPU memory slot management (TASK-CORE-011).
 //!
-//! Tests the ModelSlotManager for managing 13 embedding model slots
+//! Tests the ModelSlotManager for managing 14 embedding model slots
 //! within the 8GB budget constraint.
 //!
 //! # Full State Verification
@@ -154,9 +154,9 @@ fn test_fsv_edge_case_3_lru_eviction_selection() {
     println!("[PASS] Edge Case 3: LRU candidate correctly identified");
 }
 
-/// Test: Allocate All 14 Embedders (from task spec)
+/// Test: Allocate All 14 ABI slots (from task spec)
 #[test]
-fn test_allocate_all_13_embedders_within_budget() {
+fn test_allocate_all_14_embedder_slots_within_budget() {
     println!("\n=== TEST: ALLOCATE ALL 14 EMBEDDERS ===");
 
     // Approximate sizes for quantized models (from task spec)
@@ -176,7 +176,7 @@ fn test_allocate_all_13_embedders_within_budget() {
         (
             Embedder::Causal,
             150_000_000,
-            "E5: 150MB (768D nomic-embed)",
+            "E5: 150MB retired causal ABI slot",
         ),
         (Embedder::Sparse, 50_000_000, "E6: 50MB sparse SPLADE"),
         (Embedder::Code, 300_000_000, "E7: 300MB (1536D Qodo)"),
@@ -247,15 +247,15 @@ fn test_allocate_all_13_embedders_within_budget() {
     );
     println!("Pressure level: {:?}", manager.pressure_level());
 
-    assert_eq!(manager.loaded_count(), 13);
+    assert_eq!(manager.loaded_count(), 14);
     assert_eq!(manager.allocated(), total_expected);
     assert_eq!(
         manager.pressure_level(),
         MemoryPressure::Low,
-        "13 models should fit comfortably in 8GB budget"
+        "14 model slots should fit comfortably in 8GB budget"
     );
 
-    println!("\n[PASS] All 13 embedders allocated within 8GB budget");
+    println!("\n[PASS] All 14 embedder slots allocated within 8GB budget");
 }
 
 /// Test: Memory Pressure Reaches Critical

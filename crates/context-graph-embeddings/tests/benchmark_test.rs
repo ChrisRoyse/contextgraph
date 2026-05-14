@@ -278,7 +278,7 @@ fn create_benchmark_embeddings() -> HashMap<u8, QuantizedEmbedding> {
         };
 
         let data: Vec<u8> = (0..data_size)
-            .map(|j| ((idx as usize * 17 + j) % 256) as u8)
+            .map(|j| ((idx * 17 + j) % 256) as u8)
             .collect();
 
         map.insert(

@@ -54,6 +54,22 @@ pub trait EmbedderForward: Send + Sync {
     fn model_version(&self) -> &str;
     fn artifact_root(&self) -> &Path;
     async fn forward(&self, input: &EmbedderInput) -> EmbedResult<EmbedderOutput>;
+    fn supports_true_batch(&self) -> bool {
+        false
+    }
+    async fn forward_true_batch(
+        &self,
+        inputs: &[EmbedderInput],
+    ) -> EmbedResult<Vec<EmbedderOutput>> {
+        if inputs.is_empty() {
+            return Err(EmbedError::true_batch_empty(self.embedder()));
+        }
+        Err(EmbedError::true_batch_unsupported(
+            self.embedder(),
+            inputs.len(),
+            "this embedder wrapper has no native true-batch forward implementation",
+        ))
+    }
 }
 
 pub struct PretrainedEmbedderForward {
@@ -226,6 +242,10 @@ impl EmbedderForward for PretrainedEmbedderForward {
         &self.model_root
     }
 
+    fn supports_true_batch(&self) -> bool {
+        self.model.supports_true_batch()
+    }
+
     async fn forward(&self, input: &EmbedderInput) -> EmbedResult<EmbedderOutput> {
         input.validate()?;
         if input.embedder != self.embedder {
@@ -277,6 +297,95 @@ impl EmbedderForward for PretrainedEmbedderForward {
         };
         output.validate()?;
         Ok(output)
+    }
+
+    async fn forward_true_batch(
+        &self,
+        inputs: &[EmbedderInput],
+    ) -> EmbedResult<Vec<EmbedderOutput>> {
+        if inputs.is_empty() {
+            return Err(EmbedError::true_batch_empty(self.embedder));
+        }
+        let mut model_inputs = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            input.validate()?;
+            if input.embedder != self.embedder {
+                return Err(EmbedError::forward(
+                    self.embedder,
+                    format!(
+                        "input embedder {} does not match loaded wrapper {}",
+                        input.embedder, self.embedder
+                    ),
+                    "load and call the wrapper for the same EmbedderId; cross-slot batch forwarding is rejected",
+                ));
+            }
+            model_inputs.push(model_input_for_embedder(self.embedder, input)?);
+        }
+
+        let embeddings = self
+            .model
+            .embed_true_batch(&model_inputs)
+            .await
+            .map_err(|err| match err {
+                context_graph_embeddings::EmbeddingError::TrueBatchEmpty { .. } => {
+                    EmbedError::true_batch_empty(self.embedder)
+                }
+                context_graph_embeddings::EmbeddingError::TrueBatchUnsupported { .. } => {
+                    EmbedError::true_batch_unsupported(self.embedder, inputs.len(), err.to_string())
+                }
+                other => EmbedError::forward(
+                    self.embedder,
+                    format!("true-batch forward pass failed: {other}"),
+                    "inspect tokenizer/model compatibility and input modality; no deterministic vector fallback is permitted",
+                ),
+            })?;
+        if embeddings.len() != inputs.len() {
+            return Err(EmbedError::forward(
+                self.embedder,
+                format!(
+                    "true-batch output count {}, expected {}",
+                    embeddings.len(),
+                    inputs.len()
+                ),
+                "fix concrete model batch row alignment before persisting outputs",
+            ));
+        }
+
+        let model_id = embedder_model_id(self.embedder)?;
+        let mut outputs = Vec::with_capacity(inputs.len());
+        for (input, embedding) in inputs.iter().zip(embeddings) {
+            if embedding.model_id != model_id {
+                return Err(EmbedError::forward(
+                    self.embedder,
+                    format!(
+                        "model id mismatch: wrapper expected {:?}, concrete model returned {:?}",
+                        model_id, embedding.model_id
+                    ),
+                    "fix the EmbedderId to ModelId mapping before persisting outputs",
+                ));
+            }
+            if embedding.vector.len() != self.embedder.dimension() {
+                return Err(EmbedError::forward(
+                    self.embedder,
+                    format!(
+                        "true-batch vector dimension {}, expected {}",
+                        embedding.vector.len(),
+                        self.embedder.dimension()
+                    ),
+                    "fix model projection/output dimensions before using this embedder slot",
+                ));
+            }
+            let output = EmbedderOutput {
+                embedder: self.embedder,
+                source_id: input.source_id.clone(),
+                vector: embedding.vector,
+                model_version: self.model_version.clone(),
+                precision_class: "candle_real_true_batch_forward".to_string(),
+            };
+            output.validate()?;
+            outputs.push(output);
+        }
+        Ok(outputs)
     }
 }
 
@@ -551,5 +660,25 @@ mod tests {
         assert_eq!(output.vector.len(), EmbedderId::E9.dimension());
         assert!(output.vector.iter().any(|value| *value != 0.0));
         assert_eq!(output.precision_class, "algorithmic_real_forward");
+    }
+
+    #[tokio::test]
+    async fn true_batch_empty_fails_closed_at_embedder_boundary() {
+        let forward = AlgorithmicEmbedderForward::load(EmbedderId::E9).unwrap();
+        let err = forward.forward_true_batch(&[]).await.unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_EMBED_TRUE_BATCH_EMPTY");
+    }
+
+    #[tokio::test]
+    async fn algorithmic_true_batch_rejects_without_single_forward_loop() {
+        let forward = AlgorithmicEmbedderForward::load(EmbedderId::E9).unwrap();
+        assert!(!forward.supports_true_batch());
+        let input = EmbedderInput {
+            embedder: EmbedderId::E9,
+            text: "fn add(a: i32, b: i32) -> i32 { a + b }".to_string(),
+            source_id: "src/lib.rs#0".to_string(),
+        };
+        let err = forward.forward_true_batch(&[input]).await.unwrap_err();
+        assert_eq!(err.code(), "MEJEPA_EMBED_TRUE_BATCH_UNSUPPORTED");
     }
 }

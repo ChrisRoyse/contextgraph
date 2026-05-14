@@ -1,21 +1,11 @@
 //! Core tests for LateInteractionModel.
 
 use super::*;
+use crate::models::pretrained::shared::pretrained_test_model_path;
 use crate::traits::SingleModelConfig;
-use std::path::PathBuf;
-
-/// Get the workspace root directory for test model paths.
-fn workspace_root() -> PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(manifest_dir)
-        .parent()
-        .and_then(|p| p.parent())
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."))
-}
 
 pub(crate) fn create_test_model() -> LateInteractionModel {
-    let model_path = workspace_root().join("models/late-interaction");
+    let model_path = pretrained_test_model_path("late-interaction");
     LateInteractionModel::new(&model_path, SingleModelConfig::default())
         .expect("Failed to create LateInteractionModel")
 }

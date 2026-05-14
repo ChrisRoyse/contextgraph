@@ -44,4 +44,15 @@ impl EmbeddingModel for SemanticModel {
         // 3. Embed using internal method
         self.embed_single(input).await
     }
+
+    fn supports_true_batch(&self) -> bool {
+        true
+    }
+
+    async fn embed_true_batch(
+        &self,
+        inputs: &[ModelInput],
+    ) -> EmbeddingResult<Vec<ModelEmbedding>> {
+        SemanticModel::embed_batch(self, inputs).await
+    }
 }

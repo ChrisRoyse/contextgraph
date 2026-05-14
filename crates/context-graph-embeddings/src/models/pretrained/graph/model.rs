@@ -27,7 +27,8 @@ use crate::gpu::{init_gpu, GpuModelLoader};
 use crate::traits::{EmbeddingModel, SingleModelConfig};
 use crate::types::{InputType, ModelEmbedding, ModelId, ModelInput};
 
-use super::constants::GRAPH_DIMENSION;
+use super::super::bert_batch::{gpu_forward_text_batch, BertBatchPooling, BertBatchSpec};
+use super::constants::{GRAPH_DIMENSION, GRAPH_MAX_TOKENS};
 use super::encoding::{encode_context, encode_relation};
 use super::forward::gpu_forward;
 use super::projections::{GraphProjectionWeights, GRAPH_PROJECTION_SEED};
@@ -186,19 +187,71 @@ impl GraphModel {
         Ok(())
     }
 
-    /// Sequential processing of multiple inputs. Note: processes items one at a
-    /// time (no GPU batching). For true batch inference, see Kepler model.
+    /// True CUDA batch processing using one padded E5-large tensor forward pass.
     pub async fn embed_batch(&self, inputs: &[ModelInput]) -> EmbeddingResult<Vec<ModelEmbedding>> {
         if !self.is_initialized() {
             return Err(EmbeddingError::NotInitialized {
                 model_id: self.model_id(),
             });
         }
-        let mut results = Vec::with_capacity(inputs.len());
-        for input in inputs {
-            results.push(self.embed(input).await?);
+
+        if inputs.is_empty() {
+            return Err(EmbeddingError::TrueBatchEmpty {
+                model_id: ModelId::Graph,
+                recovery_hint: "submit at least one GraphModel input; empty batches are invalid"
+                    .to_string(),
+            });
         }
-        Ok(results)
+
+        let mut prepared = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            self.validate_input(input)?;
+            let content = Self::extract_content(input)?;
+            prepared.push(format!("passage: {}", content));
+        }
+
+        let start = std::time::Instant::now();
+        let state = self
+            .model_state
+            .read()
+            .map_err(|e| EmbeddingError::InternalError {
+                message: format!("GraphModel failed to acquire read lock: {}", e),
+            })?;
+
+        let (weights, tokenizer) = match &*state {
+            ModelState::Loaded {
+                weights, tokenizer, ..
+            } => (weights, tokenizer),
+            _ => {
+                return Err(EmbeddingError::NotInitialized {
+                    model_id: ModelId::Graph,
+                })
+            }
+        };
+
+        let vectors = gpu_forward_text_batch(
+            &prepared,
+            weights,
+            tokenizer,
+            BertBatchSpec {
+                model_id: ModelId::Graph,
+                model_label: "GraphModel",
+                max_tokens: GRAPH_MAX_TOKENS,
+                position_offset: 0,
+                position_padding_id: 0,
+                pooling: BertBatchPooling::Mean,
+            },
+        )?;
+
+        let latency_us = ((start.elapsed().as_micros() as u64) / inputs.len() as u64).max(1);
+        vectors
+            .into_iter()
+            .map(|vector| {
+                let embedding = ModelEmbedding::new(ModelId::Graph, vector, latency_us);
+                embedding.validate()?;
+                Ok(embedding)
+            })
+            .collect()
     }
 
     /// Extract text content from model input for embedding.
@@ -427,6 +480,17 @@ impl EmbeddingModel for GraphModel {
         let vector = gpu_forward(&prefixed, weights, tokenizer)?;
         let latency_us = start.elapsed().as_micros() as u64;
         Ok(ModelEmbedding::new(ModelId::Graph, vector, latency_us))
+    }
+
+    fn supports_true_batch(&self) -> bool {
+        true
+    }
+
+    async fn embed_true_batch(
+        &self,
+        inputs: &[ModelInput],
+    ) -> EmbeddingResult<Vec<ModelEmbedding>> {
+        GraphModel::embed_batch(self, inputs).await
     }
 }
 

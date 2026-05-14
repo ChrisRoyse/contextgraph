@@ -6,10 +6,11 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use crate::error::{EmbeddingError, EmbeddingResult};
-use crate::traits::SingleModelConfig;
+use crate::traits::{EmbeddingModel, SingleModelConfig};
 use crate::types::{InputType, ModelEmbedding, ModelId, ModelInput};
 
-use super::constants::{PASSAGE_PREFIX, QUERY_PREFIX};
+use super::super::bert_batch::{gpu_forward_text_batch, BertBatchPooling, BertBatchSpec};
+use super::constants::{PASSAGE_PREFIX, QUERY_PREFIX, SEMANTIC_MAX_TOKENS};
 use super::gpu_forward::gpu_forward;
 use super::types::{ModelState, SemanticModel};
 
@@ -101,13 +102,7 @@ impl SemanticModel {
         self.loaded.load(Ordering::SeqCst)
     }
 
-    /// Sequential processing of multiple inputs.
-    ///
-    /// **Known limitation (EMB-L3):** This processes items one at a time in a
-    /// sequential loop. True GPU batching would require concatenating tokenized
-    /// inputs into a single padded tensor and running a single forward pass,
-    /// which is not yet implemented. For batch-optimized inference, see the
-    /// Kepler model which supports tensor-level batching.
+    /// True CUDA batch processing of multiple inputs.
     ///
     /// # Arguments
     /// * `inputs` - Slice of ModelInput to embed
@@ -116,6 +111,7 @@ impl SemanticModel {
     /// - `EmbeddingError::NotInitialized` if model not loaded
     /// - `EmbeddingError::UnsupportedModality` if any input is not Text
     /// - `EmbeddingError::TokenizationError` if tokenization fails
+    /// - `EmbeddingError::TrueBatchEmpty` if the batch is empty
     pub async fn embed_batch(&self, inputs: &[ModelInput]) -> EmbeddingResult<Vec<ModelEmbedding>> {
         if !self.is_initialized() {
             return Err(EmbeddingError::NotInitialized {
@@ -123,11 +119,60 @@ impl SemanticModel {
             });
         }
 
-        let mut results = Vec::with_capacity(inputs.len());
-        for input in inputs {
-            results.push(self.embed_single(input).await?);
+        if inputs.is_empty() {
+            return Err(EmbeddingError::TrueBatchEmpty {
+                model_id: ModelId::Semantic,
+                recovery_hint: "submit at least one SemanticModel input; empty batches are invalid"
+                    .to_string(),
+            });
         }
-        Ok(results)
+
+        let mut prepared = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            self.validate_input(input)?;
+            prepared.push(self.prepare_input(input)?);
+        }
+
+        let start = std::time::Instant::now();
+        let state = self
+            .model_state
+            .read()
+            .map_err(|e| EmbeddingError::InternalError {
+                message: format!("SemanticModel failed to acquire read lock: {}", e),
+            })?;
+
+        let (weights, tokenizer) = match &*state {
+            ModelState::Loaded { weights, tokenizer } => (weights, tokenizer),
+            _ => {
+                return Err(EmbeddingError::NotInitialized {
+                    model_id: ModelId::Semantic,
+                });
+            }
+        };
+
+        let vectors = gpu_forward_text_batch(
+            &prepared,
+            weights,
+            tokenizer,
+            BertBatchSpec {
+                model_id: ModelId::Semantic,
+                model_label: "SemanticModel",
+                max_tokens: SEMANTIC_MAX_TOKENS,
+                position_offset: 0,
+                position_padding_id: 0,
+                pooling: BertBatchPooling::Mean,
+            },
+        )?;
+
+        let latency_us = ((start.elapsed().as_micros() as u64) / inputs.len() as u64).max(1);
+        vectors
+            .into_iter()
+            .map(|vector| {
+                let embedding = ModelEmbedding::new(ModelId::Semantic, vector, latency_us);
+                embedding.validate()?;
+                Ok(embedding)
+            })
+            .collect()
     }
 
     /// Embed a single input (internal implementation).

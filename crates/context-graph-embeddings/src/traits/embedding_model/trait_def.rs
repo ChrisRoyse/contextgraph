@@ -114,6 +114,49 @@ pub trait EmbeddingModel: Send + Sync {
     /// ```
     async fn embed(&self, input: &ModelInput) -> EmbeddingResult<ModelEmbedding>;
 
+    /// Returns whether this model has a real tensor/model batch implementation.
+    ///
+    /// Queue batching and loops over `embed()` do not count. Implementations
+    /// must only return `true` when `embed_true_batch()` performs one native
+    /// batched inference over the provided inputs.
+    fn supports_true_batch(&self) -> bool {
+        false
+    }
+
+    /// Generate embeddings through the explicit true-batch inference contract.
+    ///
+    /// The default implementation is intentionally fail-closed so callers can
+    /// distinguish real CUDA/model batching from sequential loops. Concrete
+    /// model families must override this method when they implement a native
+    /// batched forward pass.
+    ///
+    /// # Errors
+    /// - `EmbeddingError::TrueBatchEmpty` if `inputs` is empty
+    /// - `EmbeddingError::TrueBatchUnsupported` if the model has no native
+    ///   true-batch implementation
+    async fn embed_true_batch(
+        &self,
+        inputs: &[ModelInput],
+    ) -> EmbeddingResult<Vec<ModelEmbedding>> {
+        let batch_size = inputs.len();
+        if batch_size == 0 {
+            return Err(EmbeddingError::TrueBatchEmpty {
+                model_id: self.model_id(),
+                recovery_hint:
+                    "submit at least one input; empty batches are caller bugs, not no-op successes"
+                        .to_string(),
+            });
+        }
+
+        Err(EmbeddingError::TrueBatchUnsupported {
+            model_id: self.model_id(),
+            batch_size,
+            recovery_hint:
+                "implement a native padded CUDA/model batch forward path for this model family before using corpus-scale batched throughput"
+                    .to_string(),
+        })
+    }
+
     /// Returns whether the model is initialized and ready for inference.
     ///
     /// Models may require initialization (loading weights, warming up GPU)

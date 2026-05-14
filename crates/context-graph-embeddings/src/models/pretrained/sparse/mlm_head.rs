@@ -7,6 +7,7 @@
 use candle_core::Tensor;
 
 use crate::error::{EmbeddingError, EmbeddingResult};
+use crate::types::ModelId;
 
 use super::encoder::layer_norm;
 use super::types::{MlmHeadWeights, SparseVector};
@@ -150,7 +151,32 @@ pub(crate) fn apply_splade_activation(
 
 /// Convert dense tensor to sparse vector format.
 pub(crate) fn convert_to_sparse(sparse_vector: Tensor) -> EmbeddingResult<SparseVector> {
-    let sparse_dense: Vec<f32> = sparse_vector
+    let mut sparse_batch = convert_to_sparse_batch(sparse_vector, ModelId::Sparse)?;
+    if sparse_batch.len() != 1 {
+        return Err(EmbeddingError::TrueBatchOutputCountMismatch {
+            model_id: ModelId::Sparse,
+            expected: 1,
+            actual: sparse_batch.len(),
+            recovery_hint: "single SPLADE sparse conversion must produce exactly one row"
+                .to_string(),
+        });
+    }
+    Ok(sparse_batch.remove(0))
+}
+
+/// Convert dense SPLADE output tensor to one sparse vector per batch row.
+pub(crate) fn convert_to_sparse_batch(
+    sparse_vectors: Tensor,
+    model_id: ModelId,
+) -> EmbeddingResult<Vec<SparseVector>> {
+    let (batch_size, vocab_size) =
+        sparse_vectors
+            .dims2()
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("SparseModel batched sparse dims failed: {}", e),
+            })?;
+
+    let sparse_dense: Vec<f32> = sparse_vectors
         .flatten_all()
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("SparseModel flatten output failed: {}", e),
@@ -162,12 +188,39 @@ pub(crate) fn convert_to_sparse(sparse_vector: Tensor) -> EmbeddingResult<Sparse
 
     // Extract non-zero indices and weights
     let threshold = 0.01f32;
-    let (indices, weights): (Vec<usize>, Vec<f32>) = sparse_dense
-        .iter()
-        .enumerate()
-        .filter(|(_, &w)| w > threshold)
-        .map(|(i, &w)| (i, w))
-        .unzip();
+    let mut rows = Vec::with_capacity(batch_size);
+    for (row_idx, row) in sparse_dense.chunks_exact(vocab_size).enumerate() {
+        let (indices, weights): (Vec<usize>, Vec<f32>) = row
+            .iter()
+            .enumerate()
+            .filter(|(_, &w)| w > threshold)
+            .map(|(i, &w)| (i, w))
+            .unzip();
 
-    Ok(SparseVector::new(indices, weights))
+        if indices.is_empty() {
+            return Err(EmbeddingError::InferenceValidationFailed {
+                model_id,
+                reason: format!(
+                    "SPLADE sparse row {row_idx} produced zero non-zero terms above threshold {threshold}"
+                ),
+            });
+        }
+
+        let sparse = SparseVector::new(indices, weights);
+        sparse.validate_true_batch_output(model_id, row_idx)?;
+        rows.push(sparse);
+    }
+
+    if rows.len() != batch_size {
+        return Err(EmbeddingError::TrueBatchOutputCountMismatch {
+            model_id,
+            expected: batch_size,
+            actual: rows.len(),
+            recovery_hint:
+                "batched SPLADE sparse conversion must preserve one sparse row per input"
+                    .to_string(),
+        });
+    }
+
+    Ok(rows)
 }

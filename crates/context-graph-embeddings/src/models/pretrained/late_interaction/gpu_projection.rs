@@ -73,33 +73,71 @@ pub(crate) fn project_and_normalize(
         })
 }
 
-/// Convert normalized tensor to TokenEmbeddings.
-pub(crate) fn convert_to_token_embeddings(
+/// Convert normalized batched tensor to one TokenEmbeddings row per input.
+pub(crate) fn convert_to_token_embeddings_batch(
     normalized: Tensor,
-    token_strings: Vec<String>,
-    attention_mask: &[f32],
+    token_strings_by_row: Vec<Vec<String>>,
+    attention_masks_by_row: Vec<Vec<f32>>,
     seq_len: usize,
-) -> EmbeddingResult<TokenEmbeddings> {
-    let normalized_2d = normalized
-        .squeeze(0)
-        .map_err(|e| EmbeddingError::GpuError {
-            message: format!("LateInteractionModel squeeze failed: {}", e),
+) -> EmbeddingResult<Vec<TokenEmbeddings>> {
+    let (batch_size, tensor_seq_len, _dim) =
+        normalized.dims3().map_err(|e| EmbeddingError::GpuError {
+            message: format!("LateInteractionModel batch convert get dims failed: {}", e),
         })?;
 
-    let mut vectors: Vec<Vec<f32>> = Vec::with_capacity(seq_len);
-    for i in 0..seq_len {
-        let token_vec: Vec<f32> = normalized_2d
-            .get(i)
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("LateInteractionModel get token {} failed: {}", i, e),
-            })?
-            .to_vec1()
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("LateInteractionModel to_vec1 token {} failed: {}", i, e),
-            })?;
-        vectors.push(token_vec);
+    if tensor_seq_len != seq_len {
+        return Err(EmbeddingError::InvalidDimension {
+            expected: seq_len,
+            actual: tensor_seq_len,
+        });
+    }
+    if token_strings_by_row.len() != batch_size || attention_masks_by_row.len() != batch_size {
+        return Err(EmbeddingError::TrueBatchOutputCountMismatch {
+            model_id: crate::types::ModelId::LateInteraction,
+            expected: batch_size,
+            actual: token_strings_by_row.len().min(attention_masks_by_row.len()),
+            recovery_hint:
+                "ColBERT true-batch conversion metadata row count must match tensor batch size"
+                    .to_string(),
+        });
     }
 
-    let mask: Vec<bool> = attention_mask.iter().map(|&m| m > 0.5).collect();
-    TokenEmbeddings::new(vectors, token_strings, mask)
+    let mut rows = Vec::with_capacity(batch_size);
+    for row_idx in 0..batch_size {
+        let row_tensor = normalized
+            .get(row_idx)
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("LateInteractionModel get batch row {row_idx} failed: {e}"),
+            })?;
+        let mut vectors: Vec<Vec<f32>> = Vec::with_capacity(seq_len);
+        for token_idx in 0..seq_len {
+            let token_vec: Vec<f32> = row_tensor
+                .get(token_idx)
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!(
+                        "LateInteractionModel get batch row {row_idx} token {token_idx} failed: {e}"
+                    ),
+                })?
+                .to_vec1()
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!(
+                        "LateInteractionModel to_vec1 batch row {row_idx} token {token_idx} failed: {e}"
+                    ),
+                })?;
+            vectors.push(token_vec);
+        }
+
+        let token_strings = token_strings_by_row[row_idx].clone();
+        let attention_mask = &attention_masks_by_row[row_idx];
+        if token_strings.len() != seq_len || attention_mask.len() != seq_len {
+            return Err(EmbeddingError::InvalidDimension {
+                expected: seq_len,
+                actual: token_strings.len().min(attention_mask.len()),
+            });
+        }
+        let mask: Vec<bool> = attention_mask.iter().map(|&m| m > 0.5).collect();
+        rows.push(TokenEmbeddings::new(vectors, token_strings, mask)?);
+    }
+
+    Ok(rows)
 }

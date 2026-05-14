@@ -1,59 +1,34 @@
-//! Tests for the CausalModel (nomic-embed-text-v1.5).
+//! Tests for the retired E5 CausalModel production contract.
+//!
+//! E5 causal remains as a legacy type for ABI compatibility, but the active
+//! ME-JEPA registry no longer pins or loads it. These tests must fail closed if
+//! a stale causal artifact is accidentally treated as an active pretrained input.
 
-use super::*;
-use crate::traits::{EmbeddingModel, SingleModelConfig};
-use std::path::PathBuf;
-
-fn workspace_root() -> PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(manifest_dir)
-        .parent()
-        .and_then(|p| p.parent())
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."))
-}
-
-fn create_test_model() -> CausalModel {
-    let model_path = workspace_root().join("models/causal");
-    CausalModel::new(&model_path, SingleModelConfig::default())
-        .expect("Failed to create CausalModel")
-}
-
-async fn create_and_load_model() -> CausalModel {
-    let model = create_test_model();
-    model.load().await.expect("Failed to load model");
-    model
-}
+use crate::models::pretrained::shared::pretrained_test_model_path_result;
 
 #[test]
-fn test_new_creates_unloaded_model() {
-    assert!(!create_test_model().is_initialized());
-}
-
-#[tokio::test]
-async fn test_embed_as_cause_returns_768d_vector() {
-    let model = create_and_load_model().await;
-    let embedding = model
-        .embed_as_cause("The pressure increase causes temperature rise")
-        .await
-        .expect("embed_as_cause should succeed");
-    assert_eq!(
-        embedding.len(),
-        CAUSAL_DIMENSION,
-        "Cause embedding must be 768D"
+fn test_causal_artifact_is_not_active_pretrained_input() {
+    let err = pretrained_test_model_path_result("causal")
+        .expect_err("retired E5 causal artifact must be rejected by active test registry");
+    assert!(
+        err.contains("PRETRAINED_TEST_MODEL_NOT_PINNED"),
+        "expected retired E5 to fail at the active registry gate, got: {err}"
+    );
+    assert!(
+        err.contains("causal"),
+        "error must name the rejected model_dir for operator diagnosis: {err}"
     );
 }
 
-#[tokio::test]
-async fn test_embed_as_effect_returns_768d_vector() {
-    let model = create_and_load_model().await;
-    let embedding = model
-        .embed_as_effect("Temperature rose due to pressure increase")
-        .await
-        .expect("embed_as_effect should succeed");
-    assert_eq!(
-        embedding.len(),
-        CAUSAL_DIMENSION,
-        "Effect embedding must be 768D"
+#[test]
+fn test_warm_causal_accessor_fails_closed_as_retired() {
+    let err = match crate::get_warm_causal_model() {
+        Ok(_) => panic!("warm E5 causal accessor must fail closed because E5 is retired"),
+        Err(err) => err,
+    };
+    let err_text = format!("{err:?}");
+    assert!(
+        err_text.contains("retired") && err_text.contains("disabled"),
+        "retired E5 error must be explicit and actionable, got: {err_text}"
     );
 }

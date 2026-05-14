@@ -2,23 +2,13 @@
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use crate::models::pretrained::code::{CodeModel, CODE_PROJECTED_DIMENSION};
+    use crate::models::pretrained::shared::pretrained_test_model_path;
     use crate::traits::{EmbeddingModel, SingleModelConfig};
     use crate::types::ModelInput;
 
-    fn workspace_root() -> PathBuf {
-        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(manifest_dir)
-            .parent()
-            .and_then(|p| p.parent())
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| PathBuf::from("."))
-    }
-
     async fn create_and_load_model() -> CodeModel {
-        let model_path = workspace_root().join("models/code-1536");
+        let model_path = pretrained_test_model_path("code-1536");
         let model =
             CodeModel::new(&model_path, SingleModelConfig::default()).expect("Failed to create");
         model.load().await.expect("Failed to load model");

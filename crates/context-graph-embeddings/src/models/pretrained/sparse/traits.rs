@@ -40,6 +40,17 @@ impl EmbeddingModel for SparseModel {
         SparseModel::embed(self, input).await
     }
 
+    fn supports_true_batch(&self) -> bool {
+        true
+    }
+
+    async fn embed_true_batch(
+        &self,
+        inputs: &[ModelInput],
+    ) -> EmbeddingResult<Vec<ModelEmbedding>> {
+        SparseModel::embed_batch(self, inputs).await
+    }
+
     async fn embed_sparse(&self, input: &ModelInput) -> EmbeddingResult<(Vec<u16>, Vec<f32>)> {
         // Call the inherent sparse embedding method
         let sparse_vector = SparseModel::embed_sparse(self, input).await?;

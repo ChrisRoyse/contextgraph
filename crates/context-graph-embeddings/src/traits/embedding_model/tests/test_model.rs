@@ -4,13 +4,14 @@ use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::traits::EmbeddingModel;
 use crate::types::{InputType, ModelEmbedding, ModelId, ModelInput};
 use async_trait::async_trait;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Test implementation of EmbeddingModel for testing the trait.
 pub struct TestModel {
     model_id: ModelId,
     supported_types: Vec<InputType>,
     initialized: AtomicBool,
+    embed_calls: AtomicU64,
 }
 
 impl TestModel {
@@ -20,12 +21,18 @@ impl TestModel {
             model_id,
             supported_types,
             initialized: AtomicBool::new(true),
+            embed_calls: AtomicU64::new(0),
         }
     }
 
     /// Set the initialization state of the model.
     pub fn set_initialized(&self, initialized: bool) {
         self.initialized.store(initialized, Ordering::SeqCst);
+    }
+
+    /// Number of single-input embed calls observed.
+    pub fn embed_calls(&self) -> u64 {
+        self.embed_calls.load(Ordering::SeqCst)
     }
 }
 
@@ -40,6 +47,8 @@ impl EmbeddingModel for TestModel {
     }
 
     async fn embed(&self, input: &ModelInput) -> EmbeddingResult<ModelEmbedding> {
+        self.embed_calls.fetch_add(1, Ordering::SeqCst);
+
         // Check initialization
         if !self.is_initialized() {
             return Err(EmbeddingError::NotInitialized {

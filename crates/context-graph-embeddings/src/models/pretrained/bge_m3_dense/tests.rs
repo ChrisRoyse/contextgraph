@@ -4,8 +4,7 @@
 //! disk. Weights-loading tests live under an `#[ignore]` guard so they can
 //! be run manually after downloading the BAAI/bge-m3 snapshot.
 
-use std::path::PathBuf;
-
+use crate::models::pretrained::shared::pretrained_test_model_path;
 use crate::traits::SingleModelConfig;
 use crate::types::ModelId;
 
@@ -28,7 +27,7 @@ fn test_bge_m3_dense_constants_match_spec() {
 
 #[test]
 fn test_new_with_valid_config_succeeds() {
-    let path = PathBuf::from("./models/bge-m3-dense");
+    let path = pretrained_test_model_path("bge-m3-dense");
     let config = SingleModelConfig::default();
 
     let model = BgeM3DenseModel::new(&path, config).expect("new() should accept defaults");
@@ -40,7 +39,7 @@ fn test_new_with_valid_config_succeeds() {
 
 #[test]
 fn test_new_with_zero_batch_size_fails() {
-    let path = PathBuf::from("./models/bge-m3-dense");
+    let path = pretrained_test_model_path("bge-m3-dense");
     let config = SingleModelConfig {
         max_batch_size: 0,
         ..Default::default()
@@ -62,7 +61,7 @@ fn test_new_with_zero_batch_size_fails() {
 fn test_embed_on_unloaded_model_fails_with_not_initialized() {
     use crate::types::ModelInput;
 
-    let path = PathBuf::from("./models/bge-m3-dense");
+    let path = pretrained_test_model_path("bge-m3-dense");
     let model = BgeM3DenseModel::new(&path, SingleModelConfig::default()).expect("new");
 
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -90,14 +89,15 @@ fn test_embed_on_unloaded_model_fails_with_not_initialized() {
 fn test_model_id_reports_bge_m3_dense() {
     use crate::traits::EmbeddingModel;
 
-    let path = PathBuf::from("./models/bge-m3-dense");
+    let path = pretrained_test_model_path("bge-m3-dense");
     let model = BgeM3DenseModel::new(&path, SingleModelConfig::default()).expect("new");
     assert_eq!(model.model_id(), ModelId::BgeM3Dense);
+    assert!(model.supports_true_batch());
 }
 
 #[test]
 fn test_prepare_input_text_passes_through_without_prefix() {
-    let path = PathBuf::from("./models/bge-m3-dense");
+    let path = pretrained_test_model_path("bge-m3-dense");
     let model = BgeM3DenseModel::new(&path, SingleModelConfig::default()).expect("new");
 
     let raw = "The quick brown fox jumps over the lazy dog.";
@@ -116,7 +116,7 @@ fn test_prepare_input_text_passes_through_without_prefix() {
 fn test_prepare_input_rejects_non_text_modalities() {
     use crate::types::ImageFormat;
 
-    let path = PathBuf::from("./models/bge-m3-dense");
+    let path = pretrained_test_model_path("bge-m3-dense");
     let model = BgeM3DenseModel::new(&path, SingleModelConfig::default()).expect("new");
 
     let err = model
@@ -129,15 +129,16 @@ fn test_prepare_input_rejects_non_text_modalities() {
     assert!(msg.contains("UnsupportedModality"), "unexpected: {}", msg);
 }
 
-// Weights-dependent tests follow. Keep them under `#[ignore]` so `cargo test`
-// passes in CI environments without the 2.3 GB snapshot.
+// Weights-dependent tests follow. They are ignored by default because they
+// load the multi-GB artifact, but still use the same fail-closed real artifact
+// resolver as the rest of the pretrained integration tests.
 
 #[test]
-#[ignore = "requires BAAI/bge-m3 weights under ./models/bge-m3-dense/"]
+#[ignore = "requires real BAAI/bge-m3 weights under the ME-JEPA model artifact root"]
 fn test_load_real_weights_populates_state() {
     use crate::traits::EmbeddingModel;
 
-    let path = PathBuf::from("/home/cabdru/contextgraph/models/bge-m3-dense");
+    let path = pretrained_test_model_path("bge-m3-dense");
     let model = BgeM3DenseModel::new(&path, SingleModelConfig::default()).expect("new");
 
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -151,12 +152,12 @@ fn test_load_real_weights_populates_state() {
 }
 
 #[test]
-#[ignore = "requires BAAI/bge-m3 weights under ./models/bge-m3-dense/"]
+#[ignore = "requires real BAAI/bge-m3 weights under the ME-JEPA model artifact root"]
 fn test_embed_real_text_produces_normalised_1024d_vector() {
     use crate::traits::EmbeddingModel;
     use crate::types::ModelInput;
 
-    let path = PathBuf::from("/home/cabdru/contextgraph/models/bge-m3-dense");
+    let path = pretrained_test_model_path("bge-m3-dense");
     let model = BgeM3DenseModel::new(&path, SingleModelConfig::default()).expect("new");
 
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -188,5 +189,37 @@ fn test_embed_real_text_produces_normalised_1024d_vector() {
             "BGE-M3 output must be L2-normalised, got norm={}",
             norm
         );
+    });
+}
+
+#[test]
+#[ignore = "requires real BAAI/bge-m3 weights under the ME-JEPA model artifact root"]
+fn test_embed_true_batch_real_text_produces_ordered_1024d_vectors() {
+    use crate::traits::EmbeddingModel;
+    use crate::types::ModelInput;
+
+    let path = pretrained_test_model_path("bge-m3-dense");
+    let model = BgeM3DenseModel::new(&path, SingleModelConfig::default()).expect("new");
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    rt.block_on(async {
+        EmbeddingModel::load(&model).await.expect("load");
+        let inputs = vec![
+            ModelInput::text("Python AST chunk with an assertion repair").expect("input"),
+            ModelInput::text("SWE-bench oracle confirms the patch works").expect("input"),
+        ];
+        let out = EmbeddingModel::embed_true_batch(&model, &inputs)
+            .await
+            .expect("bge true batch");
+
+        assert_eq!(out.len(), inputs.len());
+        for embedding in &out {
+            embedding.validate().expect("valid BGE true-batch vector");
+            assert_eq!(embedding.vector.len(), BGE_M3_DENSE_DIMENSION);
+        }
     });
 }

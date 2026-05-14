@@ -4,7 +4,7 @@ use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::traits::EmbeddingModel;
 use crate::types::{InputType, ModelEmbedding, ModelId, ModelInput};
 
-use super::gpu_forward::gpu_forward_tokens;
+use super::gpu_forward::{gpu_forward_tokens, gpu_forward_tokens_batch};
 use super::model::LateInteractionModel;
 use super::types::{ModelState, TokenEmbeddings, LATE_INTERACTION_DIMENSION};
 
@@ -58,6 +58,71 @@ impl LateInteractionModel {
         gpu_forward_tokens(trimmed, weights, projection, tokenizer)
     }
 
+    /// Get full per-token embeddings for a true padded ColBERT CUDA batch.
+    pub async fn embed_tokens_batch(
+        &self,
+        texts: &[String],
+    ) -> EmbeddingResult<Vec<TokenEmbeddings>> {
+        if !self.is_initialized() {
+            return Err(EmbeddingError::NotInitialized {
+                model_id: self.model_id(),
+            });
+        }
+
+        if texts.is_empty() {
+            return Err(EmbeddingError::TrueBatchEmpty {
+                model_id: ModelId::LateInteraction,
+                recovery_hint: "submit at least one ColBERT input; empty batches are invalid"
+                    .to_string(),
+            });
+        }
+
+        let mut prepared = Vec::with_capacity(texts.len());
+        for (idx, text) in texts.iter().enumerate() {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                return Err(EmbeddingError::EmptyInput);
+            }
+            prepared.push(trimmed.to_string());
+            tracing::trace!(batch_index = idx, "ColBERT true-batch input accepted");
+        }
+
+        let state = self
+            .model_state
+            .read()
+            .map_err(|e| EmbeddingError::InternalError {
+                message: format!("LateInteractionModel failed to acquire read lock: {}", e),
+            })?;
+
+        let (weights, projection, tokenizer) = match &*state {
+            ModelState::Loaded {
+                weights,
+                projection,
+                tokenizer,
+            } => (weights, projection, tokenizer),
+            _ => {
+                return Err(EmbeddingError::NotInitialized {
+                    model_id: ModelId::LateInteraction,
+                });
+            }
+        };
+
+        let rows = gpu_forward_tokens_batch(&prepared, weights, projection, tokenizer)?;
+        if rows.len() != prepared.len() {
+            return Err(EmbeddingError::TrueBatchOutputCountMismatch {
+                model_id: ModelId::LateInteraction,
+                expected: prepared.len(),
+                actual: rows.len(),
+                recovery_hint: "ColBERT true-batch token output count must match input batch size"
+                    .to_string(),
+            });
+        }
+        for (idx, row) in rows.iter().enumerate() {
+            row.validate_true_batch_output(ModelId::LateInteraction, idx)?;
+        }
+        Ok(rows)
+    }
+
     /// Pool token embeddings to single 128D vector for fusion.
     ///
     /// Uses mean pooling over valid (non-padding) tokens,
@@ -100,8 +165,7 @@ impl LateInteractionModel {
         pooled
     }
 
-    /// Sequential processing of multiple inputs. Note: processes items one at a
-    /// time (no GPU batching). For true batch inference, see Kepler model.
+    /// True CUDA batch processing using one padded ColBERT tensor forward pass.
     pub async fn embed_batch(&self, inputs: &[ModelInput]) -> EmbeddingResult<Vec<ModelEmbedding>> {
         if !self.is_initialized() {
             return Err(EmbeddingError::NotInitialized {
@@ -109,11 +173,51 @@ impl LateInteractionModel {
             });
         }
 
-        let mut results = Vec::with_capacity(inputs.len());
-        for input in inputs {
-            results.push(self.embed(input).await?);
+        if inputs.is_empty() {
+            return Err(EmbeddingError::TrueBatchEmpty {
+                model_id: ModelId::LateInteraction,
+                recovery_hint: "submit at least one ColBERT input; empty batches are invalid"
+                    .to_string(),
+            });
         }
-        Ok(results)
+        if inputs.len() > self.config.max_batch_size {
+            return Err(EmbeddingError::ConfigError {
+                message: format!(
+                    "ColBERT true-batch size {} exceeds max_batch_size guard {}; reduce batch size before CUDA forward",
+                    inputs.len(),
+                    self.config.max_batch_size
+                ),
+            });
+        }
+
+        let mut prepared = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            self.validate_input(input)?;
+            prepared.push(Self::extract_content(input)?);
+        }
+
+        let start = std::time::Instant::now();
+        let token_rows = self.embed_tokens_batch(&prepared).await?;
+        if token_rows.len() != inputs.len() {
+            return Err(EmbeddingError::TrueBatchOutputCountMismatch {
+                model_id: ModelId::LateInteraction,
+                expected: inputs.len(),
+                actual: token_rows.len(),
+                recovery_hint: "ColBERT pooled embedding count must match input batch size"
+                    .to_string(),
+            });
+        }
+
+        let latency_us = ((start.elapsed().as_micros() as u64) / inputs.len() as u64).max(1);
+        token_rows
+            .iter()
+            .map(|token_embs| {
+                let vector = self.pool_tokens(token_embs);
+                let embedding = ModelEmbedding::new(ModelId::LateInteraction, vector, latency_us);
+                embedding.validate()?;
+                Ok(embedding)
+            })
+            .collect()
     }
 
     /// Extract text content from model input for embedding.

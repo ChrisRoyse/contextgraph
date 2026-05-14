@@ -28,7 +28,9 @@ from .oracle_events import command_oracle_events
 from .python_ast_chunk_command import command_ast_chunks
 from .python_ast_parse import command_ast_parse
 from .python_diff_chunk_map import command_diff_chunk_map
+from .python_instrument_registry import command_instrument_registry
 from .python_static_graph import command_static_graph
+from .python_test_intent import command_test_intent
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -152,6 +154,35 @@ def build_parser() -> argparse.ArgumentParser:
     static_graph.add_argument("--evidence-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-012-static-graph-fsv"))
     static_graph.add_argument("--hot-root", type=Path, default=Path("/home/cabdru/.cache/contextgraph/task-py-data-012-static-graph"))
     static_graph.set_defaults(func=command_static_graph, evidence_name="static-graph-command-evidence.json")
+
+    test_intent = sub.add_parser("test-intent", help="Extract Python test intent and assertion reward signals.")
+    test_intent.add_argument("--cleaned-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-cleaned-manifest-v1/cleaned_manifest.json"))
+    test_intent.add_argument("--workspace-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-workspaces-v1/workspace_manifest.json"))
+    test_intent.add_argument("--chunks-jsonl", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl"))
+    test_intent.add_argument("--diff-map-records", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-diff-chunk-map-v1/diff_chunk_map_records.jsonl"))
+    test_intent.add_argument("--intent-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-test-intent-v1"))
+    test_intent.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-013-test-intent-fsv"))
+    test_intent.add_argument("--evidence-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-013-test-intent-fsv"))
+    test_intent.add_argument("--hot-root", type=Path, default=Path("/home/cabdru/.cache/contextgraph/task-py-data-013-test-intent"))
+    test_intent.add_argument("--hot-budget-bytes", type=int, default=1_073_741_824)
+    test_intent.set_defaults(func=command_test_intent, evidence_name="test-intent-command-evidence.json")
+
+    registry = sub.add_parser("instrument-registry", help="Register the frozen Python ME-JEPA-Code target-side instrument panel.")
+    registry.add_argument("--models-config", type=Path, default=Path("/mnt/d/cabdru/contextgraph/models/mejepa_models_config.toml"))
+    registry.add_argument("--embedders-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/contextgraph-mejepa-embedders-fsv/embedders_fsv_evidence.json"))
+    registry.add_argument("--forward-fsv", type=Path, default=Path("/mnt/d/contextgraph/fsv/contextgraph-mejepa-forward-fsv/forward-wrapper-evidence.json"))
+    registry.add_argument("--oracle-event-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-oracle-events-v1/oracle_event_manifest.json"))
+    registry.add_argument("--ast-parse-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-parse-v1/python_ast_parse_manifest.json"))
+    registry.add_argument("--ast-chunk-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunk_manifest.json"))
+    registry.add_argument("--diff-chunk-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-diff-chunk-map-v1/diff_chunk_map_manifest.json"))
+    registry.add_argument("--static-graph-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-static-reality-graph-v1/python_static_graph_manifest.json"))
+    registry.add_argument("--test-intent-manifest", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-test-intent-v1/python_test_intent_manifest.json"))
+    registry.add_argument("--registry-root", type=Path, default=Path("/mnt/d/contextgraph/corpus/python-frozen-instrument-registry-v1"))
+    registry.add_argument("--fsv-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-014-instrument-registry-fsv"))
+    registry.add_argument("--evidence-root", type=Path, default=Path("/mnt/d/contextgraph/fsv/task-py-data-014-instrument-registry-fsv"))
+    registry.add_argument("--hot-root", type=Path, default=Path("/home/cabdru/.cache/contextgraph/task-py-data-014-instrument-registry"))
+    registry.add_argument("--hot-budget-bytes", type=int, default=1_073_741_824)
+    registry.set_defaults(func=command_instrument_registry, evidence_name="instrument-registry-command-evidence.json")
     return parser
 
 

@@ -80,4 +80,15 @@ impl EmbeddingModel for LateInteractionModel {
             latency_us,
         ))
     }
+
+    fn supports_true_batch(&self) -> bool {
+        true
+    }
+
+    async fn embed_true_batch(
+        &self,
+        inputs: &[ModelInput],
+    ) -> EmbeddingResult<Vec<ModelEmbedding>> {
+        LateInteractionModel::embed_batch(self, inputs).await
+    }
 }

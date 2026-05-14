@@ -118,7 +118,7 @@ impl LateInteractionModel {
 
         // Load tokenizer from model directory
         let tokenizer_path = self.model_path.join("tokenizer.json");
-        let tokenizer =
+        let mut tokenizer =
             Tokenizer::from_file(&tokenizer_path).map_err(|e| EmbeddingError::ModelLoadError {
                 model_id: ModelId::LateInteraction,
                 source: Box::new(std::io::Error::new(
@@ -129,6 +129,14 @@ impl LateInteractionModel {
                         e
                     ),
                 )),
+            })?;
+        tokenizer
+            .with_truncation(None)
+            .map_err(|e| EmbeddingError::ModelLoadError {
+                model_id: ModelId::LateInteraction,
+                source: Box::new(std::io::Error::other(format!(
+                    "LateInteractionModel disable tokenizer truncation failed: {e}"
+                ))),
             })?;
 
         // Load BERT weights from safetensors

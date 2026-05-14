@@ -14,7 +14,7 @@ use crate::gpu::{init_gpu, GpuModelLoader};
 use crate::traits::SingleModelConfig;
 use crate::types::{InputType, ModelEmbedding, ModelId, ModelInput};
 
-use super::forward::{extract_text, gpu_forward_sparse};
+use super::forward::{extract_text, gpu_forward_sparse, gpu_forward_sparse_batch};
 use super::loader::load_mlm_head;
 use super::types::{ModelState, SparseVector};
 
@@ -144,7 +144,7 @@ impl SparseModel {
 
         // Load tokenizer from model directory
         let tokenizer_path = self.model_path.join("tokenizer.json");
-        let tokenizer =
+        let mut tokenizer =
             Tokenizer::from_file(&tokenizer_path).map_err(|e| EmbeddingError::ModelLoadError {
                 model_id: ModelId::Sparse,
                 source: Box::new(std::io::Error::new(
@@ -155,6 +155,14 @@ impl SparseModel {
                         e
                     ),
                 )),
+            })?;
+        tokenizer
+            .with_truncation(None)
+            .map_err(|e| EmbeddingError::ModelLoadError {
+                model_id: self.model_id,
+                source: Box::new(std::io::Error::other(format!(
+                    "SparseModel disable tokenizer truncation failed: {e}"
+                ))),
             })?;
 
         // Load BERT backbone weights from safetensors
@@ -244,20 +252,10 @@ impl SparseModel {
         Ok(())
     }
 
-    /// Sequential processing of multiple inputs. Note: processes items one at a
-    /// time (no GPU batching). For true batch inference, see Kepler model.
+    /// True CUDA batch processing using one padded SPLADE tensor forward pass.
     pub async fn embed_batch(&self, inputs: &[ModelInput]) -> EmbeddingResult<Vec<ModelEmbedding>> {
-        if !self.is_initialized() {
-            return Err(EmbeddingError::NotInitialized {
-                model_id: self.model_id(),
-            });
-        }
-
-        let mut results = Vec::with_capacity(inputs.len());
-        for input in inputs {
-            results.push(self.embed(input).await?);
-        }
-        Ok(results)
+        let dual = self.embed_dual_batch(inputs).await?;
+        Ok(dual.into_iter().map(|embedding| embedding.dense).collect())
     }
 
     /// Embed text to sparse vector format.
@@ -380,7 +378,7 @@ impl SparseModel {
         match input {
             ModelInput::Text { .. } => Ok(()),
             _ => Err(EmbeddingError::UnsupportedModality {
-                model_id: ModelId::Sparse,
+                model_id: self.model_id,
                 input_type: InputType::from(input),
             }),
         }
@@ -478,6 +476,121 @@ impl SparseModel {
                         is_projected: true,
                     },
                 })
+            }
+            _ => Err(EmbeddingError::NotInitialized {
+                model_id: self.model_id,
+            }),
+        }
+    }
+
+    /// Embed a true batch and return BOTH sparse and dense vectors for each row.
+    pub async fn embed_dual_batch(
+        &self,
+        inputs: &[ModelInput],
+    ) -> EmbeddingResult<Vec<DualEmbedding>> {
+        if !self.is_initialized() {
+            return Err(EmbeddingError::NotInitialized {
+                model_id: self.model_id(),
+            });
+        }
+
+        if inputs.is_empty() {
+            return Err(EmbeddingError::TrueBatchEmpty {
+                model_id: self.model_id,
+                recovery_hint: "submit at least one SparseModel input; empty batches are invalid"
+                    .to_string(),
+            });
+        }
+
+        if inputs.len() > self.config.max_batch_size {
+            return Err(EmbeddingError::ConfigError {
+                message: format!(
+                    "SPLADE true-batch size {} exceeds max_batch_size guard {} for {:?}; reduce batch size before CUDA forward",
+                    inputs.len(),
+                    self.config.max_batch_size,
+                    self.model_id
+                ),
+            });
+        }
+
+        let mut prepared = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            self.validate_input(input)?;
+            prepared.push(extract_text(input)?);
+        }
+
+        let state = self
+            .model_state
+            .read()
+            .map_err(|e| EmbeddingError::InternalError {
+                message: format!("SparseModel failed to acquire read lock: {}", e),
+            })?;
+
+        match &*state {
+            ModelState::Loaded {
+                weights,
+                tokenizer,
+                mlm_head,
+                projection,
+            } => {
+                let start = Instant::now();
+                let sparse_vectors = gpu_forward_sparse_batch(
+                    &prepared,
+                    weights,
+                    tokenizer,
+                    mlm_head,
+                    self.model_id,
+                )?;
+
+                if sparse_vectors.len() != inputs.len() {
+                    return Err(EmbeddingError::TrueBatchOutputCountMismatch {
+                        model_id: self.model_id,
+                        expected: inputs.len(),
+                        actual: sparse_vectors.len(),
+                        recovery_hint:
+                            "SPLADE true-batch sparse output count must match input batch size"
+                                .to_string(),
+                    });
+                }
+
+                for (idx, sparse) in sparse_vectors.iter().enumerate() {
+                    sparse.validate_true_batch_output(self.model_id, idx)?;
+                }
+
+                let dense_vectors = projection.project_batch(&sparse_vectors).map_err(|e| {
+                    EmbeddingError::GpuError {
+                        message: format!("SPLADE true-batch projection failed: {}", e),
+                    }
+                })?;
+
+                if dense_vectors.len() != inputs.len() {
+                    return Err(EmbeddingError::TrueBatchOutputCountMismatch {
+                        model_id: self.model_id,
+                        expected: inputs.len(),
+                        actual: dense_vectors.len(),
+                        recovery_hint:
+                            "SPLADE true-batch dense output count must match input batch size"
+                                .to_string(),
+                    });
+                }
+
+                let latency_us =
+                    ((start.elapsed().as_micros() as u64) / inputs.len() as u64).max(1);
+                sparse_vectors
+                    .into_iter()
+                    .zip(dense_vectors)
+                    .map(|(sparse, vector)| {
+                        let dense = ModelEmbedding {
+                            model_id: self.model_id,
+                            vector,
+                            latency_us,
+                            attention_weights: None,
+                            is_projected: true,
+                        };
+                        dense.validate()?;
+                        Ok(DualEmbedding { sparse, dense })
+                    })
+                    .collect()
             }
             _ => Err(EmbeddingError::NotInitialized {
                 model_id: self.model_id,

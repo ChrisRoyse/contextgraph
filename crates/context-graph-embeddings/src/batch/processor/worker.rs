@@ -22,9 +22,9 @@ use std::time::Duration;
 use tokio::sync::{mpsc, Notify, RwLock, Semaphore};
 use tokio::time::interval;
 
-use crate::error::EmbeddingResult;
+use crate::error::EmbeddingError;
 use crate::models::ModelRegistry;
-use crate::types::{ModelEmbedding, ModelId};
+use crate::types::ModelId;
 
 use crate::batch::{Batch, BatchQueue, BatchRequest};
 
@@ -187,36 +187,94 @@ async fn process_batch(
         }
     };
 
-    // Process each input in the batch
-    let mut results: Vec<EmbeddingResult<ModelEmbedding>> = Vec::with_capacity(batch_size);
-    let mut success_count: u64 = 0;
-    let mut fail_count: u64 = 0;
-
-    for input in &batch.inputs {
-        match model.embed(input).await {
-            Ok(embedding) => {
-                results.push(Ok(embedding));
-                success_count += 1;
-            }
-            Err(e) => {
-                tracing::warn!(
-                    model_id = ?model_id,
-                    error = %e,
-                    "Embedding failed for input"
-                );
-                results.push(Err(e));
-                fail_count += 1;
-            }
+    // Process the full input set through the explicit true-batch contract.
+    // Queue batching is not sufficient here; unsupported models must fail
+    // closed instead of silently looping over single-input inference.
+    let embeddings = match model.embed_true_batch(&batch.inputs).await {
+        Ok(embeddings) => embeddings,
+        Err(e) => {
+            tracing::error!(
+                model_id = ?model_id,
+                batch_size,
+                error = %e,
+                "True-batch embedding failed - failing entire batch"
+            );
+            let results = (0..batch_size)
+                .map(|_| Err(clone_batch_error(&e)))
+                .collect();
+            batch.complete(results);
+            stats.add_requests_failed(batch_size as u64);
+            stats.inc_batches_processed();
+            return;
         }
+    };
+
+    if embeddings.len() != batch_size {
+        tracing::error!(
+            model_id = ?model_id,
+            batch_size,
+            actual_outputs = embeddings.len(),
+            "True-batch embedding returned wrong output count - failing entire batch"
+        );
+        let expected = batch_size;
+        let actual = embeddings.len();
+        let results = (0..batch_size)
+            .map(|_| {
+                Err(EmbeddingError::TrueBatchOutputCountMismatch {
+                    model_id,
+                    expected,
+                    actual,
+                    recovery_hint:
+                        "fix the concrete true-batch implementation so output rows exactly match input rows before durable promotion"
+                            .to_string(),
+                })
+            })
+            .collect();
+        batch.complete(results);
+        stats.add_requests_failed(batch_size as u64);
+        stats.inc_batches_processed();
+        return;
     }
 
-    // Complete batch with individual results
-    batch.complete(results);
+    batch.complete(embeddings.into_iter().map(Ok).collect());
 
-    // Update stats
-    stats.add_requests_completed(success_count);
-    stats.add_requests_failed(fail_count);
+    stats.add_requests_completed(batch_size as u64);
     stats.inc_batches_processed();
+}
+
+fn clone_batch_error(error: &EmbeddingError) -> EmbeddingError {
+    match error {
+        EmbeddingError::TrueBatchEmpty {
+            model_id,
+            recovery_hint,
+        } => EmbeddingError::TrueBatchEmpty {
+            model_id: *model_id,
+            recovery_hint: recovery_hint.clone(),
+        },
+        EmbeddingError::TrueBatchUnsupported {
+            model_id,
+            batch_size,
+            recovery_hint,
+        } => EmbeddingError::TrueBatchUnsupported {
+            model_id: *model_id,
+            batch_size: *batch_size,
+            recovery_hint: recovery_hint.clone(),
+        },
+        EmbeddingError::TrueBatchOutputCountMismatch {
+            model_id,
+            expected,
+            actual,
+            recovery_hint,
+        } => EmbeddingError::TrueBatchOutputCountMismatch {
+            model_id: *model_id,
+            expected: *expected,
+            actual: *actual,
+            recovery_hint: recovery_hint.clone(),
+        },
+        other => EmbeddingError::BatchError {
+            message: other.to_string(),
+        },
+    }
 }
 
 // ============================================================================
@@ -270,6 +328,11 @@ async fn flush_all_queues(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::EmbeddingResult;
+    use crate::models::ModelRegistryConfig;
+    use crate::traits::{EmbeddingModel, ModelFactory, SingleModelConfig};
+    use crate::types::{InputType, ModelEmbedding, ModelInput};
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     #[test]
     fn test_queues_created_for_all_14_models() {
@@ -279,5 +342,123 @@ mod tests {
             15,
             "Expected 15 models (14 + legacy Entity)"
         );
+    }
+
+    struct CountingModel {
+        embed_calls: Arc<AtomicU64>,
+    }
+
+    #[async_trait::async_trait]
+    impl EmbeddingModel for CountingModel {
+        fn model_id(&self) -> ModelId {
+            ModelId::Semantic
+        }
+
+        fn supported_input_types(&self) -> &[InputType] {
+            &[InputType::Text]
+        }
+
+        async fn embed(&self, _input: &ModelInput) -> EmbeddingResult<ModelEmbedding> {
+            self.embed_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(ModelEmbedding::new(ModelId::Semantic, vec![0.0; 1024], 1))
+        }
+
+        fn is_initialized(&self) -> bool {
+            true
+        }
+    }
+
+    struct CountingFactory {
+        embed_calls: Arc<AtomicU64>,
+    }
+
+    impl CountingFactory {
+        fn new(embed_calls: Arc<AtomicU64>) -> Self {
+            Self { embed_calls }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ModelFactory for CountingFactory {
+        fn create_model(
+            &self,
+            model_id: ModelId,
+            config: &SingleModelConfig,
+        ) -> EmbeddingResult<Box<dyn EmbeddingModel>> {
+            config.validate()?;
+            if model_id != ModelId::Semantic {
+                return Err(EmbeddingError::ModelNotFound { model_id });
+            }
+            Ok(Box::new(CountingModel {
+                embed_calls: Arc::clone(&self.embed_calls),
+            }))
+        }
+
+        fn supported_models(&self) -> &[ModelId] {
+            &[ModelId::Semantic]
+        }
+
+        fn estimate_memory(&self, model_id: ModelId) -> usize {
+            if model_id == ModelId::Semantic {
+                1
+            } else {
+                0
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn process_batch_rejects_unsupported_true_batch_without_single_embed_loop() {
+        let embed_calls = Arc::new(AtomicU64::new(0));
+        let factory = Arc::new(CountingFactory::new(Arc::clone(&embed_calls)));
+        let registry = Arc::new(
+            ModelRegistry::new(ModelRegistryConfig::testing(1024), factory)
+                .await
+                .unwrap(),
+        );
+        let stats = Arc::new(BatchProcessorStatsInternal::default());
+        let mut batch = Batch::new(ModelId::Semantic);
+        let (request_one, rx_one) = BatchRequest::new(
+            ModelInput::text("first real input").unwrap(),
+            ModelId::Semantic,
+        );
+        let (request_two, rx_two) = BatchRequest::new(
+            ModelInput::text("second real input").unwrap(),
+            ModelId::Semantic,
+        );
+        batch.add(request_one);
+        batch.add(request_two);
+
+        println!("BEFORE: embed_calls={}", embed_calls.load(Ordering::SeqCst));
+        println!("BEFORE: stats={:?}", stats.snapshot());
+
+        process_batch(batch, &registry, &stats).await;
+
+        let err_one = rx_one.await.unwrap().unwrap_err();
+        let err_two = rx_two.await.unwrap().unwrap_err();
+        println!("AFTER: err_one={err_one}");
+        println!("AFTER: err_two={err_two}");
+        println!("AFTER: embed_calls={}", embed_calls.load(Ordering::SeqCst));
+        println!("AFTER: stats={:?}", stats.snapshot());
+
+        assert_eq!(embed_calls.load(Ordering::SeqCst), 0);
+        for err in [err_one, err_two] {
+            match err {
+                EmbeddingError::TrueBatchUnsupported {
+                    model_id,
+                    batch_size,
+                    recovery_hint,
+                } => {
+                    assert_eq!(model_id, ModelId::Semantic);
+                    assert_eq!(batch_size, 2);
+                    assert!(recovery_hint.contains("native"));
+                }
+                _ => panic!("expected TRUE_BATCH_UNSUPPORTED, got {err}"),
+            }
+        }
+        let snapshot = stats.snapshot();
+        assert_eq!(snapshot.requests_completed, 0);
+        assert_eq!(snapshot.requests_failed, 2);
+        assert_eq!(snapshot.batches_processed, 1);
     }
 }

@@ -1,0 +1,1221 @@
+#!/usr/bin/env python3
+"""Shard scheduler for Python ME-JEPA-Code forward-cache generation.
+
+This script is intentionally small and fail-closed. It does not embed code
+itself; it schedules the Rust forward-cache FSV runner over explicit chunk
+windows, then aggregates the physical shard manifests it reads back from disk.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+DEFAULT_CHUNKS_JSONL = Path("/mnt/d/contextgraph/corpus/python-ast-chunks-v1/python_ast_chunks.jsonl")
+DEFAULT_CACHE_ROOT = Path("/mnt/d/contextgraph/corpus/python-forward-cache-v1")
+DEFAULT_FSV_ROOT = Path("/mnt/d/contextgraph/fsv/task-py-data-029-sharded-cuda-scheduler-fsv")
+DEFAULT_HOT_ROOT = Path("/home/cabdru/.cache/contextgraph/python-forward-shard-scheduler")
+DEFAULT_RUNNER_TIMEOUT_SECONDS = 3600
+SCHEMA_VERSION = 1
+TASK_ID = "TASK-PY-DATA-029"
+SUPPORTED_PRETRAINED_SLUGS = {"e1", "e6", "e7", "e8", "e10", "e12", "e13", "e14"}
+DEFAULT_ACTIVE_EMBEDDER_COUNT = 12
+DEFAULT_ESTIMATED_RECORD_BYTES = 16 * 1024
+DEFAULT_HOT_STAGE_BUDGET_BYTES = 48 * 1024 * 1024 * 1024
+DEFAULT_DURABLE_SLACK_BYTES = 2 * 1024 * 1024 * 1024
+DEFAULT_FSV_EDGE_COPY_BUDGET_BYTES = 2 * 1024 * 1024 * 1024
+MAX_D_DRIVE_IO_WORKERS = 8
+MAX_GPU_WORKERS_PER_DEVICE = 1
+
+
+class SchedulerError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class ShardSpec:
+    shard_id: str
+    chunk_offset: int
+    max_chunks: int
+    cache_root: Path
+    fsv_root: Path
+
+    def manifest_path(self) -> Path:
+        return self.cache_root / "python_forward_cache_manifest.json"
+
+    def index_path(self) -> Path:
+        return self.cache_root / "python_forward_cache_index.jsonl"
+
+    def quarantine_path(self) -> Path:
+        return self.cache_root / "python_forward_cache_quarantine.jsonl"
+
+    def fsv_path(self) -> Path:
+        return self.fsv_root / "python_forward_cache_fsv.json"
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run and aggregate sharded Python forward-cache generation."
+    )
+    parser.add_argument("--chunks-jsonl", type=Path, default=DEFAULT_CHUNKS_JSONL)
+    parser.add_argument("--cache-root", type=Path, default=DEFAULT_CACHE_ROOT)
+    parser.add_argument("--fsv-root", type=Path, default=DEFAULT_FSV_ROOT)
+    parser.add_argument("--hot-root", type=Path, default=DEFAULT_HOT_ROOT)
+    parser.add_argument("--task-id", default=TASK_ID)
+    parser.add_argument("--start-offset", type=int, default=0)
+    parser.add_argument("--shard-size", type=int, required=True)
+    parser.add_argument("--shard-count", type=int, required=True)
+    parser.add_argument("--max-source-bytes", type=int, default=32768)
+    parser.add_argument("--true-batch-size", type=int, default=8)
+    parser.add_argument(
+        "--true-batch-max-padded-source-bytes",
+        type=int,
+        default=None,
+        help="Optional global padded source-byte budget per true batch.",
+    )
+    parser.add_argument(
+        "--embedder-batch-sizes",
+        default="",
+        help="Comma-separated per-embedder row caps, e.g. e1=128,e12=32,e14=8.",
+    )
+    parser.add_argument(
+        "--embedder-max-padded-source-bytes",
+        default="",
+        help="Comma-separated per-embedder padded source-byte budgets, e.g. e1=4194304,e14=262144.",
+    )
+    parser.add_argument(
+        "--gpu-vram-guard-bytes",
+        type=int,
+        default=32607 * 1024 * 1024,
+        help="Fail shard runners before model forward if their batch VRAM plan exceeds this byte guard.",
+    )
+    parser.add_argument("--io-workers", type=int, default=2)
+    parser.add_argument("--cpu-workers", type=int, default=32)
+    parser.add_argument("--gpu-workers", type=int, default=1)
+    parser.add_argument("--jsonl-sync-every-rows", type=int, default=512)
+    parser.add_argument("--runner-timeout-seconds", type=int, default=DEFAULT_RUNNER_TIMEOUT_SECONDS)
+    parser.add_argument(
+        "--cache-store-layout",
+        choices=("packed", "legacy-files"),
+        default="packed",
+        help="Forward-cache store layout to request from shard runners.",
+    )
+    parser.add_argument(
+        "--require-packed-store",
+        action="store_true",
+        help="Fail closed unless every shard manifest proves packed JSONL store readback.",
+    )
+    parser.add_argument(
+        "--active-embedder-count",
+        type=int,
+        default=DEFAULT_ACTIVE_EMBEDDER_COUNT,
+        help="Expected active content embedder count used for capacity projection before shard manifests exist.",
+    )
+    parser.add_argument(
+        "--estimated-record-bytes",
+        type=int,
+        default=DEFAULT_ESTIMATED_RECORD_BYTES,
+        help="Projected durable bytes per chunk/embedder output for pre-run D-drive capacity checks.",
+    )
+    parser.add_argument(
+        "--projected-output-bytes",
+        type=int,
+        default=None,
+        help="Override projected durable output bytes for capacity edge tests or full-run planning.",
+    )
+    parser.add_argument(
+        "--hot-stage-budget-bytes",
+        type=int,
+        default=DEFAULT_HOT_STAGE_BUDGET_BYTES,
+        help="Required free bytes on WSL ext4 hot storage before any writes.",
+    )
+    parser.add_argument(
+        "--fsv-edge-copy-budget-bytes",
+        type=int,
+        default=DEFAULT_FSV_EDGE_COPY_BUDGET_BYTES,
+        help="Required temporary D-drive bytes reserved for FSV edge/readback artifacts.",
+    )
+    parser.add_argument(
+        "--nvidia-smi-command",
+        default="nvidia-smi",
+        help="Command used for required CUDA/GPU runtime detection.",
+    )
+    parser.add_argument(
+        "--nvcc-command",
+        default="nvcc",
+        help="Command used to record CUDA compiler version when present.",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("run", "aggregate-only"),
+        default="run",
+        help="run executes shard runners first; aggregate-only only reads existing shard manifests.",
+    )
+    parser.add_argument(
+        "--cargo-runner",
+        default="cargo run -p context-graph-mejepa-embedders --example python_forward_cache_fsv",
+        help="Shell command for the existing Rust shard runner.",
+    )
+    return parser.parse_args()
+
+
+def utc_now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def require(label: str, condition: bool) -> None:
+    if not condition:
+        raise SchedulerError(f"python forward shard scheduler assertion failed: {label}")
+
+
+def parse_embedder_int_map(raw: str, flag_name: str) -> dict[str, int]:
+    if not raw.strip():
+        return {}
+    parsed: dict[str, int] = {}
+    for part in raw.split(","):
+        item = part.strip()
+        require(f"{flag_name} contains no empty entries", bool(item))
+        require(f"{flag_name} entries use slug=value", "=" in item)
+        slug, value_text = item.split("=", 1)
+        slug = slug.strip().lower()
+        value_text = value_text.strip()
+        require(f"{flag_name} embedder slug is supported pretrained slot", slug in SUPPORTED_PRETRAINED_SLUGS)
+        require(f"{flag_name} embedder slug appears once", slug not in parsed)
+        try:
+            value = int(value_text)
+        except ValueError as exc:
+            raise SchedulerError(f"{flag_name} value for {slug} is not an integer: {value_text}") from exc
+        require(f"{flag_name} value for {slug} is positive", value > 0)
+        parsed[slug] = value
+    return parsed
+
+
+def validate_embedder_batch_maps(
+    row_caps: dict[str, int],
+    padded_source_budgets: dict[str, int],
+) -> None:
+    for sparse_slug in ("e6", "e13"):
+        if sparse_slug in row_caps:
+            require(f"{sparse_slug.upper()} row cap respects sparse hard max 32", row_caps[sparse_slug] <= 32)
+    if "e7" in row_caps:
+        require("E7 row cap respects CUDA OOM hard max 32", row_caps["e7"] <= 32)
+    if "e12" in row_caps:
+        require("E12 row cap respects hard max 32", row_caps["e12"] <= 32)
+    if "e14" in row_caps:
+        require("E14 row cap respects BGE activation hard max 8", row_caps["e14"] <= 8)
+    for slug, value in padded_source_budgets.items():
+        require(f"{slug} padded source-byte budget is positive", value > 0)
+
+
+def runner_batch_controls(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "true_batch_size": args.true_batch_size,
+        "true_batch_max_padded_source_bytes": args.true_batch_max_padded_source_bytes,
+        "embedder_batch_sizes": args.embedder_batch_size_map,
+        "embedder_max_padded_source_bytes": args.embedder_max_padded_source_byte_map,
+        "gpu_vram_guard_bytes": args.gpu_vram_guard_bytes,
+        "worker_tiers": {
+            "d_drive_io_workers": args.io_workers,
+            "cpu_static_tokenization_workers": args.cpu_workers,
+            "gpu_batch_workers": args.gpu_workers,
+        },
+        "cache_store_layout": args.cache_store_layout,
+        "require_packed_store": args.require_packed_store,
+    }
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return f"sha256:{digest.hexdigest()}"
+
+
+def json_dump_checked(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = json.dumps(value, indent=2, sort_keys=True).encode("utf-8")
+    tmp = path.with_suffix(path.suffix + f".tmp-{os.getpid()}")
+    tmp.write_bytes(data)
+    require(f"{path} JSON byte readback equality", tmp.read_bytes() == data)
+    tmp.replace(path)
+    require(f"{path} final JSON byte readback equality", path.read_bytes() == data)
+
+
+def jsonl_append_checked(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(value, sort_keys=True) + "\n"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line)
+        handle.flush()
+        os.fsync(handle.fileno())
+    last = path.read_text(encoding="utf-8").splitlines()[-1]
+    require("event JSONL last-line readback parses", json.loads(last) == value)
+
+
+def read_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - fail-closed with path context.
+        raise SchedulerError(f"failed to read JSON {path}: {exc}") from exc
+
+
+def count_jsonl_rows(path: Path) -> int:
+    if not path.exists():
+        return 0
+    count = 0
+    with path.open("r", encoding="utf-8") as handle:
+        for line_no, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                json.loads(line)
+            except Exception as exc:  # noqa: BLE001 - include line number.
+                raise SchedulerError(f"invalid JSONL row in {path}:{line_no}: {exc}") from exc
+            count += 1
+    return count
+
+
+def tree_state(path: Path) -> dict[str, Any]:
+    file_count = 0
+    byte_count = 0
+    sample: list[str] = []
+    if path.exists():
+        for item in sorted(path.rglob("*")):
+            if not item.is_file():
+                continue
+            file_count += 1
+            byte_count += item.stat().st_size
+            if len(sample) < 20:
+                sample.append(f"{item.relative_to(path)}:{sha256_file(item)}")
+    return {
+        "path": str(path),
+        "exists": path.exists(),
+        "file_count": file_count,
+        "byte_count": byte_count,
+        "hash_sample": sample,
+        "hash_sample_truncated": file_count > len(sample),
+    }
+
+
+def run_probe(cmd: list[str]) -> dict[str, Any]:
+    try:
+        completed = subprocess.run(cmd, text=True, capture_output=True, check=False)
+        return {
+            "command": " ".join(shlex.quote(part) for part in cmd),
+            "exit_code": completed.returncode,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+        }
+    except FileNotFoundError as exc:
+        return {
+            "command": " ".join(shlex.quote(part) for part in cmd),
+            "exit_code": 127,
+            "stdout": "",
+            "stderr": str(exc),
+        }
+
+
+def require_probe_success(label: str, result: dict[str, Any]) -> None:
+    if result["exit_code"] != 0:
+        raise SchedulerError(
+            f"{label}: command failed "
+            f"command={result['command']!r} "
+            f"exit_code={result['exit_code']} "
+            f"stdout={result['stdout']!r} "
+            f"stderr={result['stderr']!r}"
+        )
+
+
+def disk_snapshot() -> dict[str, Any]:
+    return run_probe(
+        ["df", "-B1", "--output=source,size,used,avail,pcent,target", "/", "/mnt/c", "/mnt/d"]
+    )
+
+
+def parse_disk_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    require("MEJEPA_SCHEDULER_DF_FAILED: df readback succeeded", snapshot["exit_code"] == 0)
+    rows: dict[str, Any] = {}
+    for line in snapshot["stdout"].splitlines()[1:]:
+        parts = line.split()
+        require("MEJEPA_SCHEDULER_DF_PARSE: df row has expected columns", len(parts) == 6)
+        source, size, used, avail, percent, target = parts
+        rows[target] = {
+            "source": source,
+            "size_bytes": int(size),
+            "used_bytes": int(used),
+            "available_bytes": int(avail),
+            "percent_used": percent,
+            "target": target,
+        }
+    for target in ("/", "/mnt/c", "/mnt/d"):
+        require(f"MEJEPA_SCHEDULER_DF_MISSING: df includes {target}", target in rows)
+    return rows
+
+
+def first_cpuinfo_value(key: str) -> str | None:
+    cpuinfo = Path("/proc/cpuinfo")
+    if not cpuinfo.is_file():
+        return None
+    prefix = f"{key}\t:"
+    for line in cpuinfo.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith(prefix):
+            return line.split(":", 1)[1].strip()
+    return None
+
+
+def cpu_snapshot() -> dict[str, Any]:
+    nproc = run_probe(["nproc"])
+    require_probe_success("MEJEPA_SCHEDULER_NPROC_FAILED", nproc)
+    return {
+        "nproc": nproc,
+        "logical_threads": int(nproc["stdout"].strip()),
+        "os_cpu_count": os.cpu_count(),
+        "model_name": first_cpuinfo_value("model name"),
+        "cpu_cores_per_socket": first_cpuinfo_value("cpu cores"),
+        "siblings": first_cpuinfo_value("siblings"),
+    }
+
+
+def gpu_snapshot(args: argparse.Namespace) -> dict[str, Any]:
+    command = shlex.split(args.nvidia_smi_command) + [
+        "--query-gpu=name,driver_version,compute_cap,memory.total,memory.free",
+        "--format=csv,noheader,nounits",
+    ]
+    result = run_probe(command)
+    require_probe_success("MEJEPA_SCHEDULER_CUDA_REQUIRED", result)
+    gpus = []
+    for line in result["stdout"].splitlines():
+        if not line.strip():
+            continue
+        parts = [part.strip() for part in line.split(",")]
+        require("MEJEPA_SCHEDULER_GPU_PARSE: nvidia-smi row has expected columns", len(parts) == 5)
+        name, driver_version, compute_capability, memory_total_mib, memory_free_mib = parts
+        gpus.append(
+            {
+                "name": name,
+                "driver_version": driver_version,
+                "compute_capability": compute_capability,
+                "memory_total_mib": float(memory_total_mib),
+                "memory_free_mib": float(memory_free_mib),
+                "memory_total_bytes": int(float(memory_total_mib) * 1024 * 1024),
+                "memory_free_bytes": int(float(memory_free_mib) * 1024 * 1024),
+            }
+        )
+    require("MEJEPA_SCHEDULER_NO_GPU: at least one CUDA GPU detected", bool(gpus))
+    nvcc = run_probe(shlex.split(args.nvcc_command) + ["--version"])
+    return {
+        "nvidia_smi": result,
+        "gpu_count": len(gpus),
+        "gpus": gpus,
+        "nvcc": {
+            **nvcc,
+            "present": nvcc["exit_code"] == 0,
+        },
+    }
+
+
+def path_is_under(path: Path, root: Path) -> bool:
+    try:
+        path.expanduser().resolve(strict=False).relative_to(root.resolve(strict=False))
+        return True
+    except ValueError:
+        return False
+
+
+def projected_capacity(args: argparse.Namespace) -> dict[str, Any]:
+    require("MEJEPA_SCHEDULER_ACTIVE_EMBEDDERS_INVALID: active embedder count is positive", args.active_embedder_count > 0)
+    require("MEJEPA_SCHEDULER_RECORD_ESTIMATE_INVALID: estimated record bytes is positive", args.estimated_record_bytes > 0)
+    require("MEJEPA_SCHEDULER_HOT_BUDGET_INVALID: hot-stage budget bytes is positive", args.hot_stage_budget_bytes > 0)
+    require("MEJEPA_SCHEDULER_FSV_BUDGET_INVALID: FSV edge-copy budget is non-negative", args.fsv_edge_copy_budget_bytes >= 0)
+    if args.projected_output_bytes is not None:
+        require("MEJEPA_SCHEDULER_PROJECTED_BYTES_INVALID: projected output bytes is positive", args.projected_output_bytes > 0)
+    planned_chunks = args.shard_size * args.shard_count
+    projected_pairs = planned_chunks * args.active_embedder_count
+    projected_output_bytes = args.projected_output_bytes
+    if projected_output_bytes is None:
+        projected_output_bytes = projected_pairs * args.estimated_record_bytes
+    return {
+        "planned_chunks": planned_chunks,
+        "active_embedder_count": args.active_embedder_count,
+        "projected_pairs": projected_pairs,
+        "estimated_record_bytes": args.estimated_record_bytes,
+        "projected_output_bytes": projected_output_bytes,
+        "hot_stage_budget_bytes": args.hot_stage_budget_bytes,
+        "fsv_edge_copy_budget_bytes": args.fsv_edge_copy_budget_bytes,
+        "durable_slack_bytes": DEFAULT_DURABLE_SLACK_BYTES,
+        "required_durable_available_bytes": projected_output_bytes
+        + args.fsv_edge_copy_budget_bytes
+        + DEFAULT_DURABLE_SLACK_BYTES,
+    }
+
+
+def host_preflight(args: argparse.Namespace) -> dict[str, Any]:
+    hot_root = args.hot_root.expanduser().resolve(strict=False)
+    cache_root = args.cache_root.expanduser().resolve(strict=False)
+    fsv_root = args.fsv_root.expanduser().resolve(strict=False)
+    require(
+        "MEJEPA_SCHEDULER_HOT_ROOT_WINDOWS_MOUNT: hot root must not be under /mnt/c",
+        not path_is_under(hot_root, Path("/mnt/c")),
+    )
+    require(
+        "MEJEPA_SCHEDULER_HOT_ROOT_DURABLE_MOUNT: hot root must use WSL ext4, not /mnt/d",
+        not path_is_under(hot_root, Path("/mnt/d")),
+    )
+    require(
+        "MEJEPA_SCHEDULER_CACHE_ROOT_NOT_D_ROOT: cache root must be durable under /mnt/d/contextgraph",
+        path_is_under(cache_root, Path("/mnt/d/contextgraph")),
+    )
+    require(
+        "MEJEPA_SCHEDULER_FSV_ROOT_NOT_D_ROOT: FSV root must be durable under /mnt/d/contextgraph/fsv",
+        path_is_under(fsv_root, Path("/mnt/d/contextgraph/fsv")),
+    )
+
+    disks_raw = disk_snapshot()
+    disks = parse_disk_snapshot(disks_raw)
+    cpu = cpu_snapshot()
+    gpu = gpu_snapshot(args)
+    capacity = projected_capacity(args)
+    worker_ceiling = max(int(cpu["logical_threads"]) + 2, 32)
+    require("MEJEPA_SCHEDULER_IO_WORKERS_INVALID: D-drive I/O workers is positive", args.io_workers > 0)
+    require("MEJEPA_SCHEDULER_CPU_WORKERS_INVALID: CPU workers is positive", args.cpu_workers > 0)
+    require("MEJEPA_SCHEDULER_GPU_WORKERS_INVALID: GPU workers is positive", args.gpu_workers > 0)
+    require(
+        "MEJEPA_SCHEDULER_IO_WORKERS_EXCEED_POLICY: D-drive/Docker I/O workers stay bounded",
+        args.io_workers <= MAX_D_DRIVE_IO_WORKERS,
+    )
+    require(
+        "MEJEPA_SCHEDULER_CPU_WORKERS_EXCEED_POLICY: CPU workers fit live WSL thread policy",
+        args.cpu_workers <= worker_ceiling,
+    )
+    require(
+        "MEJEPA_SCHEDULER_GPU_WORKERS_EXCEED_DEVICES: GPU workers fit detected CUDA devices",
+        args.gpu_workers <= gpu["gpu_count"] * MAX_GPU_WORKERS_PER_DEVICE,
+    )
+    require(
+        "MEJEPA_SCHEDULER_HOT_CAPACITY: WSL ext4 hot root has planned free bytes",
+        capacity["hot_stage_budget_bytes"] <= disks["/"]["available_bytes"],
+    )
+    require(
+        "MEJEPA_SCHEDULER_D_CAPACITY: D-drive durable root has planned free bytes",
+        capacity["required_durable_available_bytes"] <= disks["/mnt/d"]["available_bytes"],
+    )
+    min_gpu_total = min(gpu_row["memory_total_bytes"] for gpu_row in gpu["gpus"])
+    require(
+        "MEJEPA_SCHEDULER_VRAM_GUARD_EXCEEDS_DEVICE: VRAM guard fits detected GPU memory",
+        args.gpu_vram_guard_bytes <= min_gpu_total,
+    )
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "created_at_utc": utc_now(),
+        "host": {
+            "cpu": cpu,
+            "gpu": gpu,
+            "disks_raw": disks_raw,
+            "filesystems": disks,
+        },
+        "paths": {
+            "hot_root": str(hot_root),
+            "cache_root": str(cache_root),
+            "fsv_root": str(fsv_root),
+            "hot_root_on_wsl_ext4": True,
+            "cache_root_on_durable_d": True,
+            "fsv_root_on_durable_d": True,
+        },
+        "capacity_policy": capacity,
+        "worker_policy": {
+            "selected": runner_batch_controls(args)["worker_tiers"],
+            "max_d_drive_io_workers": MAX_D_DRIVE_IO_WORKERS,
+            "cpu_worker_ceiling": worker_ceiling,
+            "detected_logical_threads": cpu["logical_threads"],
+            "detected_gpu_count": gpu["gpu_count"],
+            "max_gpu_workers_per_device": MAX_GPU_WORKERS_PER_DEVICE,
+        },
+    }
+
+
+def build_plan(args: argparse.Namespace) -> list[ShardSpec]:
+    require("start offset is non-negative", args.start_offset >= 0)
+    require("shard size is positive", args.shard_size > 0)
+    require("shard count is positive", args.shard_count > 0)
+    require("max source bytes is positive", args.max_source_bytes > 0)
+    require("true batch size is positive", args.true_batch_size > 0)
+    if args.true_batch_max_padded_source_bytes is not None:
+        require(
+            "global padded source-byte budget is positive",
+            args.true_batch_max_padded_source_bytes > 0,
+        )
+    validate_embedder_batch_maps(
+        args.embedder_batch_size_map,
+        args.embedder_max_padded_source_byte_map,
+    )
+    require("GPU VRAM guard bytes is positive", args.gpu_vram_guard_bytes > 0)
+    require("D-drive I/O worker count is positive", args.io_workers > 0)
+    require("CPU worker count is positive", args.cpu_workers > 0)
+    require("GPU worker count is positive", args.gpu_workers > 0)
+    require("JSONL sync interval is positive", args.jsonl_sync_every_rows > 0)
+    require("runner timeout is positive", args.runner_timeout_seconds > 0)
+    require("chunks JSONL exists", args.chunks_jsonl.is_file())
+    shards: list[ShardSpec] = []
+    for idx in range(args.shard_count):
+        offset = args.start_offset + idx * args.shard_size
+        shard_id = f"shard-{idx:06d}-offset-{offset:09d}"
+        shards.append(
+            ShardSpec(
+                shard_id=shard_id,
+                chunk_offset=offset,
+                max_chunks=args.shard_size,
+                cache_root=args.cache_root / "shards" / shard_id,
+                fsv_root=args.fsv_root / "shards" / shard_id,
+            )
+        )
+    return shards
+
+
+def event(path: Path, phase: str, detail: dict[str, Any]) -> None:
+    jsonl_append_checked(
+        path,
+        {
+            "schema_version": SCHEMA_VERSION,
+            "task_id": TASK_ID,
+            "timestamp_utc": utc_now(),
+            "phase": phase,
+            "detail": detail,
+        },
+    )
+
+
+def run_shard(
+    args: argparse.Namespace,
+    shard: ShardSpec,
+    event_path: Path,
+    preflight: dict[str, Any],
+) -> dict[str, Any]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "CG_MEJEPA_PY_FORWARD_CACHE_ROOT": str(shard.cache_root),
+            "CG_MEJEPA_PY_FORWARD_CACHE_FSV_ROOT": str(shard.fsv_root),
+            "CG_MEJEPA_PY_FORWARD_CACHE_HOT_ROOT": str(args.hot_root),
+            "CG_MEJEPA_PY_FORWARD_CACHE_CHUNK_OFFSET": str(shard.chunk_offset),
+            "CG_MEJEPA_PY_FORWARD_CACHE_MAX_CHUNKS": str(shard.max_chunks),
+            "CG_MEJEPA_PY_FORWARD_MAX_SOURCE_BYTES": str(args.max_source_bytes),
+            "CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE": str(args.true_batch_size),
+            "CG_MEJEPA_PY_FORWARD_GPU_VRAM_GUARD_BYTES": str(args.gpu_vram_guard_bytes),
+            "CG_MEJEPA_PY_FORWARD_IO_WORKERS": str(args.io_workers),
+            "CG_MEJEPA_PY_FORWARD_CPU_WORKERS": str(args.cpu_workers),
+        "CG_MEJEPA_PY_FORWARD_GPU_WORKERS": str(args.gpu_workers),
+        "CG_MEJEPA_PY_FORWARD_JSONL_SYNC_EVERY_ROWS": str(args.jsonl_sync_every_rows),
+        "CG_MEJEPA_PY_FORWARD_CACHE_STORE_LAYOUT": args.cache_store_layout,
+    }
+    )
+    if args.true_batch_max_padded_source_bytes is not None:
+        env["CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_PADDED_SOURCE_BYTES"] = str(
+            args.true_batch_max_padded_source_bytes
+        )
+    for slug, value in args.embedder_batch_size_map.items():
+        env[f"CG_MEJEPA_PY_FORWARD_TRUE_BATCH_SIZE_{slug.upper()}"] = str(value)
+    for slug, value in args.embedder_max_padded_source_byte_map.items():
+        env[f"CG_MEJEPA_PY_FORWARD_TRUE_BATCH_MAX_PADDED_SOURCE_BYTES_{slug.upper()}"] = str(value)
+    event(
+        event_path,
+        "shard_run_start",
+        {
+            "shard_id": shard.shard_id,
+            "chunk_offset": shard.chunk_offset,
+            "max_chunks": shard.max_chunks,
+            "cache_root": str(shard.cache_root),
+            "fsv_root": str(shard.fsv_root),
+        },
+    )
+    started = time.monotonic()
+    completed = subprocess.run(
+        shlex.split(args.cargo_runner),
+        text=True,
+        capture_output=True,
+        env=env,
+        timeout=args.runner_timeout_seconds,
+        check=False,
+    )
+    elapsed = time.monotonic() - started
+    run_log = {
+        "shard_id": shard.shard_id,
+        "exit_code": completed.returncode,
+        "elapsed_seconds": round(elapsed, 3),
+        "runner_batch_controls": runner_batch_controls(args),
+        "host_preflight": preflight,
+        "stdout_tail": completed.stdout[-8000:],
+        "stderr_tail": completed.stderr[-8000:],
+    }
+    json_dump_checked(args.fsv_root / "run_logs" / f"{shard.shard_id}.json", run_log)
+    require(f"{shard.shard_id} runner exited zero", completed.returncode == 0)
+    event(event_path, "shard_run_complete", run_log)
+    return run_log
+
+
+def load_existing_run_logs(fsv_root: Path) -> list[dict[str, Any]]:
+    run_log_root = fsv_root / "run_logs"
+    if not run_log_root.exists():
+        return []
+    logs = []
+    for path in sorted(run_log_root.glob("*.json")):
+        log = read_json(path)
+        require(f"{path} run log exit code zero", log.get("exit_code") == 0)
+        logs.append(log)
+    return logs
+
+
+def count_packed_index_rows(packed_root: Path) -> int:
+    if not packed_root.exists():
+        return 0
+    total = 0
+    for path in sorted(packed_root.glob("*.index.jsonl")):
+        total += count_jsonl_rows(path)
+    return total
+
+
+def validate_packed_store_manifest(shard: ShardSpec, manifest: dict[str, Any]) -> dict[str, Any]:
+    source_of_truth = manifest.get("source_of_truth", {})
+    packed_manifest_path = Path(source_of_truth.get("packed_manifest", ""))
+    packed_root = Path(source_of_truth.get("packed_record_root", ""))
+    require(f"{shard.shard_id} packed manifest path exists", packed_manifest_path.is_file())
+    require(f"{shard.shard_id} packed record root exists", packed_root.is_dir())
+    packed_manifest = read_json(packed_manifest_path)
+    summary = manifest.get("summary", {})
+    require(
+        f"{shard.shard_id} packed manifest passes",
+        packed_manifest.get("passes") is True,
+    )
+    require(
+        f"{shard.shard_id} packed manifest layout",
+        packed_manifest.get("layout") == "packed-jsonl",
+    )
+    require(
+        f"{shard.shard_id} packed row count matches manifest",
+        packed_manifest.get("row_count") == summary.get("cache_record_count"),
+    )
+    packed_index_rows = count_packed_index_rows(packed_root)
+    require(
+        f"{shard.shard_id} packed index rows match manifest",
+        packed_index_rows == summary.get("cache_record_count"),
+    )
+    for embedder, row in packed_manifest.get("per_embedder", {}).items():
+        record_path = Path(row.get("record_path", ""))
+        index_path = Path(row.get("index_path", ""))
+        require(f"{shard.shard_id} {embedder} packed record path exists", record_path.is_file())
+        require(f"{shard.shard_id} {embedder} packed index path exists", index_path.is_file())
+        require(
+            f"{shard.shard_id} {embedder} packed index row count matches",
+            count_jsonl_rows(index_path) == row.get("row_count"),
+        )
+    return {
+        "packed_manifest_path": str(packed_manifest_path),
+        "packed_manifest_sha256": sha256_file(packed_manifest_path),
+        "packed_record_root": str(packed_root),
+        "packed_index_rows": packed_index_rows,
+        "packed_manifest": packed_manifest,
+    }
+
+
+def validate_manifest(shard: ShardSpec, require_packed_store: bool) -> dict[str, Any]:
+    manifest = read_json(shard.manifest_path())
+    require(f"{shard.shard_id} manifest status passed", manifest.get("status") == "passed")
+    require(f"{shard.shard_id} manifest passes true", manifest.get("passes") is True)
+    inputs = manifest.get("inputs", {})
+    require(
+        f"{shard.shard_id} chunk_offset readback",
+        inputs.get("chunk_offset") == shard.chunk_offset,
+    )
+    require(f"{shard.shard_id} max_chunks readback", inputs.get("max_chunks") == shard.max_chunks)
+    summary = manifest.get("summary", {})
+    require(f"{shard.shard_id} chunk_count positive", summary.get("chunk_count", 0) > 0)
+    require(
+        f"{shard.shard_id} second pass covers first pass",
+        summary.get("second_pass_hits") == summary.get("cache_record_count"),
+    )
+    index_rows = count_jsonl_rows(shard.index_path())
+    quarantine_rows = count_jsonl_rows(shard.quarantine_path())
+    batch_telemetry_path = Path(
+        manifest.get("source_of_truth", {}).get("batch_telemetry_jsonl", "")
+    )
+    require(
+        f"{shard.shard_id} batch telemetry path exists",
+        batch_telemetry_path.is_file(),
+    )
+    batch_telemetry_rows = count_jsonl_rows(batch_telemetry_path)
+    require(
+        f"{shard.shard_id} batch telemetry row count positive",
+        batch_telemetry_rows > 0,
+    )
+    require(
+        f"{shard.shard_id} batch telemetry row count matches manifest",
+        batch_telemetry_rows == summary.get("batch_telemetry_row_count"),
+    )
+    require(
+        f"{shard.shard_id} index row count matches manifest",
+        index_rows == summary.get("cache_record_count"),
+    )
+    require(
+        f"{shard.shard_id} quarantine row count matches manifest",
+        quarantine_rows == summary.get("quarantine_row_count"),
+    )
+    layout = manifest.get("inputs", {}).get("cache_store_layout", "legacy-files")
+    if require_packed_store:
+        require(
+            f"{shard.shard_id} packed store is required",
+            layout == "packed-jsonl",
+        )
+    if layout == "packed-jsonl":
+        manifest["packed_store_readback"] = validate_packed_store_manifest(shard, manifest)
+    return manifest
+
+
+def write_minimal_packed_shard(root: Path, shard_id: str, chunk_offset: int, max_chunks: int) -> ShardSpec:
+    cache_root = root / shard_id
+    fsv_root = root / f"{shard_id}-fsv"
+    packed_root = cache_root / "packed_records"
+    packed_root.mkdir(parents=True, exist_ok=True)
+    fsv_root.mkdir(parents=True, exist_ok=True)
+    record_path = packed_root / "e1.jsonl"
+    index_path = packed_root / "e1.index.jsonl"
+    record = {
+        "schema_version": SCHEMA_VERSION,
+        "cache_key_sha256": f"sha256:{'1' * 64}",
+        "vector_sha256": f"sha256:{'2' * 64}",
+        "vector_len": 3,
+    }
+    jsonl_append_checked(record_path, record)
+    index_row = {
+        "schema_version": SCHEMA_VERSION,
+        "cache_key_sha256": record["cache_key_sha256"],
+        "embedder_id": "e1",
+        "packed_record_path": str(record_path),
+        "byte_offset": 0,
+        "byte_len": len(record_path.read_bytes().rstrip(b"\n")),
+        "record_sha256": sha256_file(record_path),
+        "vector_sha256": record["vector_sha256"],
+        "vector_len": record["vector_len"],
+    }
+    jsonl_append_checked(index_path, index_row)
+    index_jsonl = cache_root / "python_forward_cache_index.jsonl"
+    quarantine_jsonl = cache_root / "python_forward_cache_quarantine.jsonl"
+    telemetry_jsonl = cache_root / "python_forward_cache_batch_telemetry.jsonl"
+    jsonl_append_checked(index_jsonl, {"cache_key_sha256": record["cache_key_sha256"]})
+    quarantine_jsonl.write_text("", encoding="utf-8")
+    jsonl_append_checked(telemetry_jsonl, {"batch_id": "edge", "batch_size": 1})
+    packed_manifest_path = cache_root / "python_forward_cache_packed_manifest.json"
+    json_dump_checked(
+        packed_manifest_path,
+        {
+            "schema_version": SCHEMA_VERSION,
+            "artifact_kind": "python_forward_cache_packed_manifest",
+            "layout": "packed-jsonl",
+            "packed_record_root": str(packed_root),
+            "row_count": 1,
+            "per_embedder": {
+                "e1": {
+                    "record_path": str(record_path),
+                    "record_sha256": sha256_file(record_path),
+                    "byte_count": record_path.stat().st_size,
+                    "index_path": str(index_path),
+                    "index_sha256": sha256_file(index_path),
+                    "row_count": 1,
+                }
+            },
+            "passes": True,
+        },
+    )
+    json_dump_checked(
+        cache_root / "python_forward_cache_manifest.json",
+        {
+            "schema_version": SCHEMA_VERSION,
+            "status": "passed",
+            "passes": True,
+            "inputs": {
+                "chunk_offset": chunk_offset,
+                "max_chunks": max_chunks,
+                "cache_store_layout": "packed-jsonl",
+            },
+            "source_of_truth": {
+                "index_jsonl": str(index_jsonl),
+                "quarantine_jsonl": str(quarantine_jsonl),
+                "batch_telemetry_jsonl": str(telemetry_jsonl),
+                "packed_manifest": str(packed_manifest_path),
+                "packed_record_root": str(packed_root),
+            },
+            "summary": {
+                "chunk_count": 1,
+                "active_embedder_count": 1,
+                "cache_record_count": 1,
+                "first_pass_hits": 0,
+                "first_pass_writes": 1,
+                "second_pass_hits": 1,
+                "quarantine_row_count": 0,
+                "batch_telemetry_row_count": 1,
+            },
+        },
+    )
+    json_dump_checked(fsv_root / "python_forward_cache_fsv.json", {"passes": True})
+    return ShardSpec(shard_id, chunk_offset, max_chunks, cache_root, fsv_root)
+
+
+def aggregate(shards: list[ShardSpec], output_path: Path, require_packed_store: bool = False) -> dict[str, Any]:
+    require("at least one shard in aggregate", bool(shards))
+    intervals: list[tuple[int, int, str]] = []
+    manifests: list[dict[str, Any]] = []
+    for shard in shards:
+        end = shard.chunk_offset + shard.max_chunks
+        for left, right, other_id in intervals:
+            overlaps = shard.chunk_offset < right and left < end
+            require(
+                f"{shard.shard_id} does not overlap {other_id}",
+                not overlaps,
+            )
+        intervals.append((shard.chunk_offset, end, shard.shard_id))
+        manifests.append(validate_manifest(shard, require_packed_store))
+
+    active_embedder_count = manifests[0]["summary"]["active_embedder_count"]
+    totals = {
+        "chunk_count": 0,
+        "cache_record_count": 0,
+        "first_pass_hits": 0,
+        "first_pass_writes": 0,
+        "second_pass_hits": 0,
+        "quarantine_row_count": 0,
+        "batch_telemetry_row_count": 0,
+    }
+    shard_rows = []
+    for shard, manifest in zip(shards, manifests):
+        summary = manifest["summary"]
+        require(
+            f"{shard.shard_id} active embedder count stable",
+            summary["active_embedder_count"] == active_embedder_count,
+        )
+        for key in totals:
+            totals[key] += int(summary[key])
+        shard_rows.append(
+            {
+                "shard_id": shard.shard_id,
+                "chunk_offset": shard.chunk_offset,
+                "max_chunks": shard.max_chunks,
+                "manifest_path": str(shard.manifest_path()),
+                "manifest_sha256": sha256_file(shard.manifest_path()),
+                "fsv_path": str(shard.fsv_path()),
+                "fsv_sha256": sha256_file(shard.fsv_path()),
+                "index_rows": count_jsonl_rows(shard.index_path()),
+                "quarantine_rows": count_jsonl_rows(shard.quarantine_path()),
+                "batch_telemetry_rows": int(summary["batch_telemetry_row_count"]),
+                "packed_store_readback": manifest.get("packed_store_readback"),
+                "summary": summary,
+            }
+        )
+
+    expected_pairs = totals["chunk_count"] * active_embedder_count
+    accounted_pairs = totals["cache_record_count"] + totals["quarantine_row_count"]
+    require("aggregate accounted pairs match expected pairs", accounted_pairs == expected_pairs)
+    require("aggregate second pass covers cache records", totals["second_pass_hits"] == totals["cache_record_count"])
+    corpus_manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_forward_cache_corpus_manifest",
+        "created_at_utc": utc_now(),
+        "status": "passed",
+        "passes": True,
+        "summary": {
+            **totals,
+            "active_embedder_count": active_embedder_count,
+            "expected_pairs": expected_pairs,
+            "accounted_pairs": accounted_pairs,
+            "shard_count": len(shards),
+        },
+        "shards": shard_rows,
+    }
+    json_dump_checked(output_path, corpus_manifest)
+    readback = read_json(output_path)
+    require("aggregate manifest readback equals written summary", readback["summary"] == corpus_manifest["summary"])
+    return corpus_manifest
+
+
+def preflight_edge_checks(args: argparse.Namespace, preflight: dict[str, Any]) -> list[dict[str, Any]]:
+    cases: list[dict[str, Any]] = []
+
+    def expect_preflight_failure(case: str, **overrides: Any) -> None:
+        edge_args = argparse.Namespace(**vars(args))
+        for key, value in overrides.items():
+            setattr(edge_args, key, value)
+        try:
+            host_preflight(edge_args)
+        except SchedulerError as exc:
+            cases.append({"case": case, "passes": True, "error": str(exc)})
+        else:
+            raise SchedulerError(f"{case} edge unexpectedly passed")
+
+    expect_preflight_failure(
+        "hot_root_under_mnt_c_rejected_before_writes",
+        hot_root=Path("/mnt/c/contextgraph-hot-edge"),
+    )
+    expect_preflight_failure(
+        "d_root_projected_capacity_overflow_rejected_before_writes",
+        projected_output_bytes=preflight["host"]["filesystems"]["/mnt/d"]["available_bytes"] + 1,
+    )
+    expect_preflight_failure(
+        "missing_cuda_runtime_rejected_before_writes",
+        nvidia_smi_command="/definitely/missing-nvidia-smi-contextgraph",
+    )
+    expect_preflight_failure(
+        "too_many_gpu_workers_rejected_before_writes",
+        gpu_workers=preflight["host"]["gpu"]["gpu_count"] + 1,
+    )
+    expect_preflight_failure(
+        "zero_cpu_workers_rejected_before_writes",
+        cpu_workers=0,
+    )
+    return cases
+
+
+def edge_checks(
+    args: argparse.Namespace,
+    shards: list[ShardSpec],
+    preflight: dict[str, Any],
+) -> list[dict[str, Any]]:
+    edge_root = args.fsv_root / "edge_inputs"
+    edge_root.mkdir(parents=True, exist_ok=True)
+    cases: list[dict[str, Any]] = preflight_edge_checks(args, preflight)
+
+    invalid_configs = [
+        ("invalid_e7_batch_config_rejected", {"e7": 64}),
+        ("invalid_e12_batch_config_rejected", {"e12": 33}),
+        ("invalid_e14_batch_config_rejected", {"e14": 16}),
+    ]
+    for case_name, row_caps in invalid_configs:
+        try:
+            validate_embedder_batch_maps(row_caps, {})
+        except SchedulerError as exc:
+            cases.append({"case": case_name, "passes": True, "error": str(exc)})
+        else:
+            raise SchedulerError(f"{case_name} edge unexpectedly passed")
+
+    missing = ShardSpec(
+        shard_id="edge-missing-manifest",
+        chunk_offset=999_000_000,
+        max_chunks=1,
+        cache_root=edge_root / "missing",
+        fsv_root=edge_root / "missing-fsv",
+    )
+    try:
+        aggregate([missing], edge_root / "missing-output.json", args.require_packed_store)
+    except SchedulerError as exc:
+        cases.append({"case": "missing_manifest_rejected", "passes": True, "error": str(exc)})
+    else:
+        raise SchedulerError("missing manifest edge unexpectedly passed")
+
+    overlap = ShardSpec(
+        shard_id="edge-overlap",
+        chunk_offset=shards[0].chunk_offset,
+        max_chunks=shards[0].max_chunks,
+        cache_root=shards[0].cache_root,
+        fsv_root=shards[0].fsv_root,
+    )
+    try:
+        aggregate([shards[0], overlap], edge_root / "overlap-output.json", args.require_packed_store)
+    except SchedulerError as exc:
+        cases.append({"case": "overlap_rejected", "passes": True, "error": str(exc)})
+    else:
+        raise SchedulerError("overlap edge unexpectedly passed")
+
+    if args.require_packed_store:
+        corrupt = write_minimal_packed_shard(edge_root, "edge-corrupt-manifest", 100_000_000, 1)
+        (corrupt.cache_root / "python_forward_cache_manifest.json").write_text("{not-json", encoding="utf-8")
+    else:
+        corrupt_root = edge_root / "corrupt-shard"
+        if corrupt_root.exists():
+            shutil.rmtree(corrupt_root)
+        shutil.copytree(shards[0].cache_root, corrupt_root)
+        (corrupt_root / "python_forward_cache_manifest.json").write_text("{not-json", encoding="utf-8")
+        corrupt = ShardSpec(
+            shard_id="edge-corrupt-manifest",
+            chunk_offset=shards[0].chunk_offset + 100_000_000,
+            max_chunks=shards[0].max_chunks,
+            cache_root=corrupt_root,
+            fsv_root=shards[0].fsv_root,
+        )
+    try:
+        aggregate([corrupt], edge_root / "corrupt-output.json", args.require_packed_store)
+    except SchedulerError as exc:
+        cases.append({"case": "corrupt_manifest_rejected", "passes": True, "error": str(exc)})
+    else:
+        raise SchedulerError("corrupt manifest edge unexpectedly passed")
+
+    incomplete_offset = shards[0].chunk_offset + 200_000_000
+    if args.require_packed_store:
+        incomplete = write_minimal_packed_shard(edge_root, "edge-incomplete-shard", incomplete_offset, 1)
+        manifest_path = incomplete.cache_root / "python_forward_cache_manifest.json"
+        incomplete_manifest = read_json(manifest_path)
+        incomplete_manifest["summary"]["second_pass_hits"] = 0
+        json_dump_checked(manifest_path, incomplete_manifest)
+    else:
+        incomplete_root = edge_root / "incomplete-shard"
+        if incomplete_root.exists():
+            shutil.rmtree(incomplete_root)
+        shutil.copytree(shards[0].cache_root, incomplete_root)
+        manifest_path = incomplete_root / "python_forward_cache_manifest.json"
+        incomplete_manifest = read_json(manifest_path)
+        incomplete_manifest["inputs"]["chunk_offset"] = incomplete_offset
+        incomplete_manifest["summary"]["second_pass_hits"] -= 1
+        json_dump_checked(manifest_path, incomplete_manifest)
+        incomplete = ShardSpec(
+            shard_id="edge-incomplete-shard",
+            chunk_offset=incomplete_offset,
+            max_chunks=shards[0].max_chunks,
+            cache_root=incomplete_root,
+            fsv_root=shards[0].fsv_root,
+        )
+    try:
+        aggregate([incomplete], edge_root / "incomplete-output.json", args.require_packed_store)
+    except SchedulerError as exc:
+        cases.append({"case": "incomplete_shard_rejected", "passes": True, "error": str(exc)})
+    else:
+        raise SchedulerError("incomplete shard edge unexpectedly passed")
+
+    if args.require_packed_store:
+        old_layout = write_minimal_packed_shard(edge_root, "edge-old-layout", 300_000_000, 1)
+        manifest_path = old_layout.cache_root / "python_forward_cache_manifest.json"
+        old_manifest = read_json(manifest_path)
+        old_manifest["inputs"]["cache_store_layout"] = "legacy-files"
+        del old_manifest["source_of_truth"]["packed_manifest"]
+        del old_manifest["source_of_truth"]["packed_record_root"]
+        json_dump_checked(manifest_path, old_manifest)
+        try:
+            aggregate([old_layout], edge_root / "old-layout-output.json", args.require_packed_store)
+        except SchedulerError as exc:
+            cases.append({"case": "old_per_record_layout_rejected_when_packed_required", "passes": True, "error": str(exc)})
+        else:
+            raise SchedulerError("old layout edge unexpectedly passed")
+
+    return cases
+
+
+def main() -> int:
+    global TASK_ID
+    args = parse_args()
+    TASK_ID = args.task_id
+    args.embedder_batch_size_map = parse_embedder_int_map(
+        args.embedder_batch_sizes,
+        "--embedder-batch-sizes",
+    )
+    args.embedder_max_padded_source_byte_map = parse_embedder_int_map(
+        args.embedder_max_padded_source_bytes,
+        "--embedder-max-padded-source-bytes",
+    )
+    shards = build_plan(args)
+    preflight = host_preflight(args)
+    event_path = args.fsv_root / "scheduler_events.jsonl"
+    if args.mode == "run" and event_path.exists():
+        event_path.unlink()
+    args.cache_root.mkdir(parents=True, exist_ok=True)
+    args.fsv_root.mkdir(parents=True, exist_ok=True)
+    args.hot_root.mkdir(parents=True, exist_ok=True)
+    os.chmod(args.hot_root, 0o700)
+
+    before = {
+        "cache_root": tree_state(args.cache_root),
+        "fsv_root": tree_state(args.fsv_root),
+        "hot_root": tree_state(args.hot_root),
+        "disk": disk_snapshot(),
+    }
+    started_at = utc_now()
+    plan = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_forward_shard_scheduler_plan",
+        "created_at_utc": started_at,
+        "mode": args.mode,
+        "chunks_jsonl": str(args.chunks_jsonl),
+        "cache_root": str(args.cache_root),
+        "fsv_root": str(args.fsv_root),
+        "hot_root": str(args.hot_root),
+        "runner_batch_controls": runner_batch_controls(args),
+        "host_preflight": preflight,
+        "shards": [
+            {
+                "shard_id": shard.shard_id,
+                "chunk_offset": shard.chunk_offset,
+                "max_chunks": shard.max_chunks,
+                "cache_root": str(shard.cache_root),
+                "fsv_root": str(shard.fsv_root),
+            }
+            for shard in shards
+        ],
+    }
+    plan_path = args.cache_root / "python_forward_cache_shard_plan.json"
+    json_dump_checked(plan_path, plan)
+    event(event_path, "plan_written", {"plan_path": str(plan_path), "plan_sha256": sha256_file(plan_path)})
+
+    run_logs = []
+    if args.mode == "run":
+        for shard in shards:
+            run_logs.append(run_shard(args, shard, event_path, preflight))
+    else:
+        run_logs = load_existing_run_logs(args.fsv_root)
+
+    aggregate_path = args.cache_root / "python_forward_cache_corpus_manifest.json"
+    corpus_manifest = aggregate(shards, aggregate_path, args.require_packed_store)
+    edge_cases = edge_checks(args, shards, preflight)
+    after = {
+        "cache_root": tree_state(args.cache_root),
+        "fsv_root": tree_state(args.fsv_root),
+        "hot_root": tree_state(args.hot_root),
+        "disk": disk_snapshot(),
+    }
+    fsv = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": TASK_ID,
+        "artifact_kind": "python_forward_shard_scheduler_fsv",
+        "started_at_utc": started_at,
+        "created_at_utc": utc_now(),
+        "source_of_truth": {
+            "plan": str(plan_path),
+            "events": str(event_path),
+            "aggregate_manifest": str(aggregate_path),
+            "cache_root": str(args.cache_root),
+            "fsv_root": str(args.fsv_root),
+            "hot_root": str(args.hot_root),
+        },
+        "runner_controls": {
+            **runner_batch_controls(args),
+        },
+        "host_preflight": preflight,
+        "before_state": before,
+        "run_logs": run_logs,
+        "aggregate_manifest_sha256": sha256_file(aggregate_path),
+        "aggregate_summary": corpus_manifest["summary"],
+        "edge_cases": edge_cases,
+        "after_state": after,
+        "passes": True,
+    }
+    fsv_path = args.fsv_root / "python_forward_shard_scheduler_fsv.json"
+    json_dump_checked(fsv_path, fsv)
+    readback = read_json(fsv_path)
+    require("scheduler FSV readback passes", readback["passes"] is True)
+    print(json.dumps(fsv, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as exc:  # noqa: BLE001 - CLI must fail loudly with context.
+        print(f"PY_FORWARD_SHARD_SCHEDULER_FAILED: {exc}", file=sys.stderr)
+        raise

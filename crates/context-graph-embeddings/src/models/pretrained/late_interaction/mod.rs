@@ -60,6 +60,7 @@ mod tests_token;
 // Re-export all public types for backwards compatibility
 pub use model::LateInteractionModel;
 pub use types::{
-    TokenEmbeddings, LATE_INTERACTION_DIMENSION, LATE_INTERACTION_LATENCY_BUDGET_MS,
-    LATE_INTERACTION_MAX_TOKENS, LATE_INTERACTION_MODEL_NAME,
+    validate_late_interaction_batch_vram_budget, LateInteractionBatchVramPlan, TokenEmbeddings,
+    LATE_INTERACTION_DIMENSION, LATE_INTERACTION_LATENCY_BUDGET_MS, LATE_INTERACTION_MAX_TOKENS,
+    LATE_INTERACTION_MODEL_NAME,
 };

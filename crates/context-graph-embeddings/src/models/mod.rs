@@ -60,6 +60,9 @@ pub use custom::{
 pub use factory::DefaultModelFactory;
 pub use memory_tracker::MemoryTracker;
 pub use pretrained::{
+    validate_late_interaction_batch_vram_budget,
+    // SparseModel (E6) - SPLADE
+    validate_true_batch_vram_budget,
     // BgeM3DenseModel (E14) - BAAI/bge-m3 dense head
     BgeM3DenseModel,
     // CausalModel (E5) - nomic-embed-text-v1.5
@@ -72,11 +75,12 @@ pub use pretrained::{
     GraphModel,
     // KeplerModel (E11) - RoBERTa-base + TransE on Wikidata5M (768D)
     KeplerModel,
+    LateInteractionBatchVramPlan,
     // LateInteractionModel (E12) - ColBERT
     LateInteractionModel,
     // SemanticModel (E1) - intfloat/e5-large-v2
     SemanticModel,
-    // SparseModel (E6) - SPLADE
+    SparseBatchVramPlan,
     SparseModel,
     SparseVector,
     TokenEmbeddings,
@@ -116,5 +120,6 @@ pub use pretrained::{
     SPARSE_MODEL_NAME,
     SPARSE_NATIVE_DIMENSION,
     SPARSE_PROJECTED_DIMENSION,
+    SPARSE_VOCAB_SIZE,
 };
 pub use registry::{ModelRegistry, ModelRegistryConfig, RegistryStats, RegistryStatsInternal};
